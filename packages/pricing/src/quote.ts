@@ -41,9 +41,10 @@ export type RatingAlgorithmVersion =
 	| "pricing-rating/v2"
 	| "pricing-rating/v3"
 	| "pricing-rating/v4"
-	| "pricing-rating/v5";
+	| "pricing-rating/v5"
+	| "pricing-rating/v6";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v5";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v6";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function rejection(
@@ -184,7 +185,8 @@ export function quoteScenario(
 		version !== "pricing-rating/v2" &&
 		version !== "pricing-rating/v3" &&
 		version !== "pricing-rating/v4" &&
-		version !== "pricing-rating/v5"
+		version !== "pricing-rating/v5" &&
+		version !== "pricing-rating/v6"
 	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
@@ -195,15 +197,18 @@ export function quoteScenario(
 	const strictTimes =
 		version === "pricing-rating/v3" ||
 		version === "pricing-rating/v4" ||
-		version === "pricing-rating/v5";
+		version === "pricing-rating/v5" ||
+		version === "pricing-rating/v6";
 	const time = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	const compareTimes = strictTimes ? compareUtcExact : compareStrings;
 	try {
 		validateScenarioState(
 			scenario,
 			time,
-			version === "pricing-rating/v4" || version === "pricing-rating/v5",
-			version === "pricing-rating/v5",
+			version === "pricing-rating/v4" ||
+				version === "pricing-rating/v5" ||
+				version === "pricing-rating/v6",
+			version === "pricing-rating/v5" || version === "pricing-rating/v6",
 		);
 		validateQuoteOptions(scenario);
 		const catalog = scenario.catalog;
@@ -234,7 +239,8 @@ export function quoteScenario(
 			compareTimes,
 			time,
 			strictTimes,
-			version === "pricing-rating/v5",
+			version === "pricing-rating/v5" || version === "pricing-rating/v6",
+			version === "pricing-rating/v6",
 		);
 		const candidate = rateSnapshot(
 			scenario,
@@ -243,7 +249,8 @@ export function quoteScenario(
 			compareTimes,
 			time,
 			strictTimes,
-			version === "pricing-rating/v5",
+			version === "pricing-rating/v5" || version === "pricing-rating/v6",
+			version === "pricing-rating/v6",
 		);
 		if (
 			candidate.currency.length === 0 ||

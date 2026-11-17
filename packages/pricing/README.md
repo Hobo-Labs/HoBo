@@ -15,7 +15,7 @@ paid/promotional credits, and provider-actual spend commitments. Baseline and
 candidate snapshots use the same pinned state; incremental amounts are
 `F(baseline + candidate) - F(baseline)`.
 
-New quotes use `pricing-rating/v5`. It orders ties by string code units,
+New quotes use `pricing-rating/v6`. It orders ties by string code units,
 compares UTC instants without truncating fractional seconds, rejects impossible
 calendar dates, and requires each allowance, credit, and commitment to have a
 unique nonempty identity within its kind and the financial state's tenant. This
@@ -31,9 +31,17 @@ Version 1 used locale-sensitive ordering, so reproducing an old tied quote also
 requires its original locale. Versions 1 and 2 also retain their previous
 timestamp comparison and millisecond validation behavior. Versions 1–3 do not
 enforce the new source identity checks. Versions 1–4 also retain earlier source
-amount, basis and commitment-unit behavior. Preserve the original quote as evidence
-rather than treating a new v5 quote as the old one, and reconcile affected old
+amount, basis and commitment-unit behavior. Versions 1–5 retain earlier
+workload-selector and meter behavior. Preserve the original quote as evidence
+rather than treating a new v6 quote as the old one, and reconcile affected old
 expiry, evidence, observation, and financial-source decisions before use.
+
+V6 selects charges for each workload and groups matching measurements for each
+charge before applying its pricing model. A workload's product must match its
+agreement, each measurement must have a product meter, and meter dimensions and
+charge IDs must be present and unique. The earlier algorithm selected charges
+from the first workload and could apply its price to other workloads, or ignore
+an unmetered measurement entirely.
 
 V5 requires nonnegative source amounts and rate-card prices and compatible units.
 For allowances and credits it bounds used plus remaining by the declared amount plus rollover; for
@@ -103,7 +111,7 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-The replay corpus pins complete v1, v2, v3, and v4 quote outputs. The replay test parses
+The replay corpus pins complete v1 through v5 quote outputs. The replay test parses
 each scenario through protobuf JSON, rerates it with the recorded version, and
 compares the stable JSON result, including the quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
@@ -113,7 +121,7 @@ claimed.
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
-bounded TLA+ models, and abstract balance proofs. The credit model explores 40 states and hides ten
+bounded TLA+ models, and abstract balance proofs. The credit model explores 48 states and hides twelve
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -130,7 +138,7 @@ stateDiagram-v2
 ```
 
 The source-admission projection covers one abstract financial source. Its
-model explores 342 states and hides 144 same-state transitions; it assumes the
+model explores 441 states and hides 192 same-state transitions; it assumes the
 source identity, tenant, and account classifications reflect the provider's
 actual records.
 
@@ -185,6 +193,25 @@ stateDiagram-v2
   s1 --> s4: check evidence interval
   s2 --> s3: order credit expiry
   s2 --> s4: order credit expiry
+```
+
+## Workload selector verification
+
+The [pricing selector skill](../../.agents/skills/verify-pricing-selectors/SKILL.md)
+checks per-workload selection, grouped rating and meter binding. Its selector
+model checks 608 states; this constrained projection checks 152 and hides 64
+same-state transitions. A separate binding model checks 64 states.
+
+```mermaid
+stateDiagram-v2
+  s0: Workloads received
+  s1: Quote rejected
+  s2: Matching charges selected
+  s3: Groups rated
+  [*] --> s0
+  s0 --> s1: select per workload
+  s0 --> s2: select per workload
+  s2 --> s3: rate each group
 ```
 
 ## Architecture boundaries

@@ -2,7 +2,7 @@
 EXTENDS Naturals
 VARIABLES version, kind, owned, unique, present, accountScoped, phase, accepted, consumed
 vars == <<version, kind, owned, unique, present, accountScoped, phase, accepted, consumed>>
-Init == /\ version \in {"old", "v4", "v5"} /\ kind \in {"allowance", "credit", "commitment"}
+Init == /\ version \in {"old", "v4", "v5", "v6"} /\ kind \in {"allowance", "credit", "commitment"}
         /\ owned \in BOOLEAN /\ unique \in BOOLEAN /\ present \in BOOLEAN /\ accountScoped \in BOOLEAN
         /\ phase = "received" /\ accepted = FALSE /\ consumed = 0
 Validate == /\ phase = "received"
@@ -15,7 +15,7 @@ Apply == /\ phase = "accepted" /\ phase' = "applied"
 Done == /\ phase \in {"rejected", "applied"} /\ UNCHANGED vars
 Next == Validate \/ Apply \/ Done
 Spec == Init /\ [][Next]_vars
-TypeOK == /\ version \in {"old", "v4", "v5"} /\ kind \in {"allowance", "credit", "commitment"}
+TypeOK == /\ version \in {"old", "v4", "v5", "v6"} /\ kind \in {"allowance", "credit", "commitment"}
           /\ owned \in BOOLEAN /\ unique \in BOOLEAN /\ present \in BOOLEAN /\ accountScoped \in BOOLEAN /\ accepted \in BOOLEAN
           /\ phase \in {"received", "rejected", "accepted", "applied"} /\ consumed \in 0..2
 CurrentSourceSafe == version # "old" /\ accepted => owned /\ unique /\ present /\ accountScoped

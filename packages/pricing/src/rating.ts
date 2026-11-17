@@ -1,5 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import {
+	type ChargeComponent,
 	type CommitmentAmount,
 	CommitmentAmountSchema,
 	type Consumption,
@@ -132,6 +133,19 @@ function validateRateCardAmounts(rateCard: RateCard): void {
 				}
 			}
 		}
+	}
+}
+
+function validateChargeIdentities(rateCard: RateCard): void {
+	const seen = new Set<string>();
+	for (const charge of rateCard.charges) {
+		const id = charge.base?.id;
+		if (!id || seen.has(id))
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"charge identities must be present and unique within a rate card",
+			);
+		seen.add(id);
 	}
 }
 
@@ -818,6 +832,7 @@ export function rateSnapshot(
 	time: TemporalPolicy = EXACT_TIME,
 	strictTimes = true,
 	strictSourceValues = true,
+	selectorPerWorkload = true,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -854,6 +869,7 @@ export function rateSnapshot(
 			time,
 		);
 		if (strictSourceValues) validateRateCardAmounts(rateCard);
+		if (selectorPerWorkload) validateChargeIdentities(rateCard);
 		if (currency === "") currency = rateCard.currency;
 		if (currency !== rateCard.currency)
 			throw new PricingFault(
@@ -863,14 +879,62 @@ export function rateSnapshot(
 		const agreementWorkloads = workloads.filter(
 			(workload) => workload.agreementRef === agreementRef,
 		);
+		if (selectorPerWorkload) {
+			const dimensions = new Set<string>();
+			for (const meter of product.meters) {
+				if (!meter.dimension || !meter.unit || dimensions.has(meter.dimension))
+					throw new PricingFault(
+						"INVALID_PRICING_INPUT",
+						"meter dimensions and units must be present and unique",
+					);
+				dimensions.add(meter.dimension);
+			}
+			for (const delta of agreementWorkloads) {
+				if (delta.productRef !== agreement.productId)
+					throw new PricingFault(
+						"INVALID_PRICING_INPUT",
+						"workload product does not match its provider agreement",
+					);
+				for (const measurement of delta.usage)
+					if (!dimensions.has(measurement.dimension))
+						throw new PricingFault(
+							"RATE_CARD_NOT_FOUND",
+							`no meter for ${measurement.dimension}`,
+						);
+			}
+		}
 		const workload = agreementWorkloads[0];
-		for (const charge of selectChargeComponents(
-			rateCard,
-			workload,
-			undefined,
-			"fixed",
-			compareStrings,
-		)) {
+		let fixedEntries: [ChargeComponent, WorkloadDelta[]][];
+		if (selectorPerWorkload) {
+			const fixedGroups = new Map<ChargeComponent, WorkloadDelta[]>();
+			const contexts =
+				agreementWorkloads.length > 0 ? agreementWorkloads : [undefined];
+			for (const context of contexts) {
+				for (const charge of selectChargeComponents(
+					rateCard,
+					context,
+					undefined,
+					"fixed",
+					compareStrings,
+				)) {
+					const group = fixedGroups.get(charge) ?? [];
+					if (context !== undefined) group.push(context);
+					fixedGroups.set(charge, group);
+				}
+			}
+			fixedEntries = [...fixedGroups.entries()].sort(([a], [b]) =>
+				compareStrings(a.base?.id ?? "", b.base?.id ?? ""),
+			);
+		} else {
+			fixedEntries = selectChargeComponents(
+				rateCard,
+				workload,
+				undefined,
+				"fixed",
+				compareStrings,
+			).map((charge) => [charge, agreementWorkloads]);
+		}
+		for (const [charge, matchingWorkloads] of fixedEntries) {
 			if (charge.variant.case !== "fixed" || charge.base === undefined)
 				continue;
 			if (charge.variant.value.proration !== "none")
@@ -878,7 +942,7 @@ export function rateSnapshot(
 					"PRICING_MODEL_UNSUPPORTED",
 					"proration is not supported in batch 1",
 				);
-			const quantity = fixedQuantity(charge, agreementWorkloads, agreement);
+			const quantity = fixedQuantity(charge, matchingWorkloads, agreement);
 			const amount = charge.variant.value.amount;
 			requireCurrency(amount, currency, "fixed amount");
 			const unit = moneyDecimal(amount, "fixed amount");
@@ -913,30 +977,71 @@ export function rateSnapshot(
 					.filter((measurement) => measurement.dimension === meter.dimension)
 					.map((measurement) => ({ delta, measurement })),
 			);
-			const charges = selectChargeComponents(
-				rateCard,
-				workload,
-				meter.dimension,
-				"usage",
-				compareStrings,
-			);
-			if (entries.length === 0 && charges.length > 0) continue;
-			if (charges.length === 0 && entries.length > 0) {
-				throw new PricingFault(
-					"RATE_CARD_NOT_FOUND",
-					`no charge for ${meter.dimension}`,
+			let usageEntries: [ChargeComponent, typeof entries][];
+			let legacyMeasured: Quantity | undefined;
+			if (selectorPerWorkload) {
+				const usageGroups = new Map<ChargeComponent, typeof entries>();
+				for (const context of agreementWorkloads) {
+					const selectedEntries = context.usage
+						.filter((measurement) => measurement.dimension === meter.dimension)
+						.map((measurement) => ({ delta: context, measurement }));
+					if (selectedEntries.length === 0) continue;
+					const charges = selectChargeComponents(
+						rateCard,
+						context,
+						meter.dimension,
+						"usage",
+						compareStrings,
+					);
+					if (charges.length === 0)
+						throw new PricingFault(
+							"RATE_CARD_NOT_FOUND",
+							`no charge for ${meter.dimension}`,
+						);
+					for (const charge of charges)
+						usageGroups.set(charge, [
+							...(usageGroups.get(charge) ?? []),
+							...selectedEntries,
+						]);
+				}
+				usageEntries = [...usageGroups.entries()].sort(([a], [b]) =>
+					compareStrings(a.base?.id ?? "", b.base?.id ?? ""),
 				);
+			} else {
+				const charges = selectChargeComponents(
+					rateCard,
+					workload,
+					meter.dimension,
+					"usage",
+					compareStrings,
+				);
+				if (entries.length === 0 && charges.length > 0) continue;
+				if (charges.length === 0 && entries.length > 0)
+					throw new PricingFault(
+						"RATE_CARD_NOT_FOUND",
+						`no charge for ${meter.dimension}`,
+					);
+				legacyMeasured = aggregateMeasurements(
+					meter,
+					entries,
+					compareTimes,
+					time,
+					strictTimes,
+				);
+				usageEntries = charges.map((charge) => [charge, entries]);
 			}
-			const measured = aggregateMeasurements(
-				meter,
-				entries,
-				compareTimes,
-				time,
-				strictTimes,
-			);
-			for (const charge of charges) {
+			for (const [charge, selectedEntries] of usageEntries) {
 				if (charge.variant.case !== "usage" || charge.base === undefined)
 					continue;
+				const measured =
+					legacyMeasured ??
+					aggregateMeasurements(
+						meter,
+						selectedEntries,
+						compareTimes,
+						time,
+						strictTimes,
+					);
 				const allowance = consumeAllowances(
 					state,
 					agreement,
