@@ -128,6 +128,36 @@ describe("toolchain lock verification", () => {
 });
 
 describe("forward/reverse surface parity", () => {
+	it("generates async durable messaging operations and keeps unknown and expired distinct", async () => {
+		const { readFile } = await import("node:fs/promises");
+		const path = join(
+			PACKAGE_ROOT,
+			"src/generated/sdk/interfaces/hobo-durable-messaging-messaging.d.ts",
+		);
+		const types = await readFile(path, "utf8");
+		for (const method of [
+			"ensureTopic",
+			"ensureSubscription",
+			"publish",
+			"consume",
+			"ack",
+			"nack",
+			"compact",
+			"events",
+		]) {
+			expect(types).toMatch(
+				new RegExp(`export function ${method}\\([^\\n]*\\): Promise<`, "u"),
+			);
+		}
+		expect(types).toContain("MessageOutcomeUnknown");
+		expect(types).toContain("MessageOutcomeExpired");
+		expect(types).toContain("topics: number");
+		expect(types).toContain("tag: 'lease-expired'");
+		expect(types).toContain("originalSequence: bigint");
+		expect(types).toContain("nextAfterSequence: bigint");
+		expect(types).toContain("tag: 'gap'");
+	});
+
 	it("matches golden component imports against hobo:sdk world", async () => {
 		const { readFile } = await import("node:fs/promises");
 		const wit = await readFile(WIT_PATH, "utf8");
@@ -142,10 +172,12 @@ describe("forward/reverse surface parity", () => {
 				"hobo:runtime/command@0.1.0",
 				"hobo:runtime/subscribe@0.1.0",
 				"hobo:queue/queue@0.1.0",
+				"hobo:durable-messaging/messaging@0.1.0",
 				"hobo:scheduler/scheduler@0.1.0",
 				"hobo:blob-events/blob-events@0.1.0",
 				"hobo:evidence/evidence@0.1.0",
 			],
+			// SAFETY: the fixture deliberately contains no component exports.
 			exports: [] as string[],
 		};
 		const manifest = buildComponentManifest(declared, artifact);

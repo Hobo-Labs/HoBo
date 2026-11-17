@@ -179,7 +179,7 @@
       "version": "0.1.0",
       "stability": "experimental",
       "path": "wit/hobo-sdk.wit",
-      "sha256": "sha256:30169e873df4d026138724e2c82c416f3551df81abb58a4d67b9e74ca6c86bbe"
+      "sha256": "sha256:cca81df86de465835ede86b603ce562e478c9f8128a776199b82818709956ac7"
     },
     {
       "id": "hobo:runtime/workflow@0.1.0@experimental",
@@ -250,6 +250,16 @@
       "stability": "experimental",
       "path": "wit/deps/hobo-queue/hobo-queue.wit",
       "sha256": "sha256:a76d08a1a9ca9dad0a90b4fbb2d0828a4ba986caf1581ab7a94275c7f8341aa7"
+    },
+    {
+      "id": "hobo:durable-messaging/messaging@0.1.0@experimental",
+      "namespace": "hobo",
+      "package_name": "durable-messaging",
+      "interface_name": "messaging",
+      "version": "0.1.0",
+      "stability": "experimental",
+      "path": "wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
+      "sha256": "sha256:0c4f573eeed24f766fae6ebf46cb5a55a7b04b834c51047a4112c1791eca1dd0"
     },
     {
       "id": "hobo:scheduler/scheduler@0.1.0@experimental",
