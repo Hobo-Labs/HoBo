@@ -164,3 +164,14 @@ value, including `null`, is refused. The
 [verification skill](../../.agents/skills/verify-shared-budget-policy/SKILL.md)
 records generated implementation tests, the bounded state model, the
 unbounded arithmetic obligations, and their assumptions.
+
+The model's user-facing projection collapses internal checks into the following
+flow. It hides 128 same-label transitions from 256 explored steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> CheckingPolicy
+  CheckingPolicy --> RequestDenied: scope, window, budget, evidence or metric fails
+  CheckingPolicy --> PolicyAllows: all applicable checks pass
+  CheckingPolicy --> PlanNeedsEvidence: plan requires native evidence before admission
+```
