@@ -1,6 +1,7 @@
 import { clone, create } from "@bufbuild/protobuf";
 import {
 	createTargetPricingInventory,
+	isBoundedPricingInput,
 	QuoteScenarioSchema,
 	QuoteVectorSchema,
 	quoteTargetPricing,
@@ -40,14 +41,55 @@ export interface IacFinancialServicesOptions extends IacTargetAdmissionDeps {
 export function createIacFinancialServices(
 	options: IacFinancialServicesOptions,
 ) {
-	const model =
-		options.pricing === undefined
-			? undefined
-			: {
-					...options.pricing,
-					scenario: clone(QuoteScenarioSchema, options.pricing.scenario),
-					bindings: options.pricing.bindings.map((binding) => ({ ...binding })),
+	let rawPricing: IacFinancialServicesOptions["pricing"];
+	try {
+		const field = Object.getOwnPropertyDescriptor(options, "pricing");
+		if (
+			(field === undefined && "pricing" in options) ||
+			(field !== undefined &&
+				(!("value" in field) || field.value === undefined))
+		)
+			throw new Error("pricing must be own data");
+		rawPricing = field?.value;
+	} catch {
+		throw new TypeError("invalid pricing configuration");
+	}
+	let model: Omit<TargetPricingModelInput, "planDigest"> | undefined;
+	if (rawPricing !== undefined) {
+		if (!isBoundedPricingInput(rawPricing))
+			throw new TypeError("invalid or unbounded pricing configuration");
+		let stable: NonNullable<IacFinancialServicesOptions["pricing"]>;
+		try {
+			stable = structuredClone(rawPricing);
+		} catch {
+			throw new TypeError("invalid pricing configuration");
+		}
+		if (Object.hasOwn(stable, "planDigest"))
+			throw new TypeError("the target plan digest is supplied by admission");
+		const prepared = targetPricingModel({
+			...stable,
+			planDigest: `sha256:${"0".repeat(64)}`,
+		});
+		if (prepared.state.case !== "model")
+			throw new TypeError("invalid pricing configuration");
+		const source = prepared.state.value;
+		const scenario = source.scenario;
+		if (scenario === undefined)
+			throw new TypeError("invalid pricing configuration");
+		model = {
+			modelId: source.modelId,
+			revision: source.revision,
+			scenario,
+			bindings: source.bindings.map((binding) => {
+				if (binding.candidateIndex === undefined)
+					throw new TypeError("invalid pricing binding");
+				return {
+					resourceId: binding.resourceId,
+					candidateIndex: binding.candidateIndex,
 				};
+			}),
+		};
+	}
 	const assess = (plan: IacFinancialPlan) => {
 		const inventory = createTargetPricingInventory({ ...plan, complete: true });
 		const pricing =

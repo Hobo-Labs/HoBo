@@ -6,6 +6,7 @@ import {
 	DECIMAL_ZERO,
 	type Decimal,
 	isBoundedPricingInput,
+	isExactProtoMessage,
 	isQuoteVector,
 	parseDecimal,
 	type QuoteScenario,
@@ -221,6 +222,13 @@ export async function admitIacTarget(
 			targetId,
 			"PRICING_INPUT_TOO_LARGE",
 			"financial input exceeds the bounded data limits",
+		);
+	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, input.pricing))
+		return denial(
+			requestId,
+			targetId,
+			"PRICING_MODEL_INVALID",
+			"pricing model contains unsupported or malformed data",
 		);
 	let inventory: TargetPricingInventory;
 	let pricing: TargetPricingAvailability;

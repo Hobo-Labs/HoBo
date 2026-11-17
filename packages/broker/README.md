@@ -15,6 +15,10 @@ Price ranking alone does not create a reservation; admission is the budget gate.
 `createIacFinancialServices` combines these checks into an injectable port for
 IaC adapters. Its optional `pricing` model is developer supplied; the trusted
 host still provides liability issuance and verification, policy and authority.
+When no model is available, omit `pricing`. Supplied model data is checked
+before normalization; malformed or unsupported input raises an error instead of
+becoming an unavailable model or a lower quote. Incomplete bindings cannot
+produce a quote.
 It accepts both the synchronous local authority and the asynchronous shared
 authority, including the PostgreSQL implementation.
 

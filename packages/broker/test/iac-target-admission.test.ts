@@ -19,6 +19,7 @@ import {
 	admitIacTarget,
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
+	createIacFinancialServices,
 	createSqliteBudgetAdmissionAuthority,
 	HostingPolicyProofSchema,
 	IacTargetLiabilityEvidenceSchema,
@@ -137,6 +138,182 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 }
 
 describe("provider-neutral IaC target budget admission", () => {
+	it.each([
+		"surcharge",
+		"length",
+		"undefined",
+		"array-property",
+		"sparse-array",
+		"accessor",
+		"prototype",
+		"cycle",
+		"oversized",
+	])("rejects raw model %s before any normalization or authority call", (kind) => {
+		const ledger = authority();
+		try {
+			const { pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("fixture model missing");
+			const scenario = pricing.state.value.scenario;
+			const charges = scenario.catalog?.rateCards[0]?.charges;
+			const charge = charges?.[0];
+			if (!charges || !charge) throw new Error("fixture charge missing");
+			let calls = 0;
+			if (kind === "surcharge")
+				Object.defineProperty(charge, "surcharge", {
+					value: { amount: "100", currency: "USD" },
+					enumerable: true,
+				});
+			if (kind === "length")
+				Object.defineProperty(charge, "length", {
+					value: 100,
+					enumerable: true,
+				});
+			if (kind === "undefined")
+				Object.defineProperty(charge, "unknown", {
+					value: undefined,
+					enumerable: true,
+				});
+			if (kind === "array-property")
+				Object.defineProperty(charges, "extra", {
+					value: "fee",
+					enumerable: true,
+				});
+			if (kind === "sparse-array") charges.length = 2;
+			if (kind === "accessor")
+				Object.defineProperty(charge, "fee", {
+					enumerable: true,
+					get: () => {
+						calls++;
+						return "100";
+					},
+				});
+			if (kind === "prototype") Object.setPrototypeOf(charge, { fee: 100 });
+			if (kind === "cycle")
+				Object.defineProperty(charge, "cycle", {
+					value: scenario,
+					enumerable: true,
+				});
+			if (kind === "oversized") charges.length = 1025;
+			const deps = dependencies(ledger);
+			expect(() =>
+				createIacFinancialServices({
+					...deps,
+					pricing: {
+						modelId: "terms",
+						revision: "1",
+						scenario,
+						bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+					},
+					issueLiability: () => {
+						calls++;
+						return evidence;
+					},
+				}),
+			).toThrow();
+			expect(calls).toBe(0);
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("rejects a malformed pricing property without invoking its getter or treating it as unavailable", () => {
+		const ledger = authority();
+		try {
+			const { evidence } = fixture();
+			let calls = 0;
+			const options = {
+				...dependencies(ledger),
+				issueLiability: () => evidence,
+			};
+			Object.defineProperty(options, "pricing", {
+				enumerable: true,
+				configurable: true,
+				get: () => {
+					calls++;
+					return undefined;
+				},
+			});
+			expect(() => createIacFinancialServices(options)).toThrow();
+			expect(calls).toBe(0);
+			Object.defineProperty(options, "pricing", {
+				value: undefined,
+				enumerable: true,
+			});
+			expect(() => createIacFinancialServices(options)).toThrow();
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("accepts intact generated pricing data at the broker entrypoint", () => {
+		const ledger = authority();
+		try {
+			const { inventory, pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("fixture model missing");
+			const financial = createIacFinancialServices({
+				...dependencies(ledger),
+				pricing: {
+					modelId: "terms",
+					revision: "1",
+					scenario: pricing.state.value.scenario,
+					bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+				},
+				issueLiability: () => evidence,
+			});
+			expect(financial.assess(inventory)).toMatchObject({
+				quote: { ok: true },
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("rejects pricing that was altered after construction before liability or policy evaluation", async () => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			if (request.pricing.state.case !== "model")
+				throw new Error("model missing");
+			const charge =
+				request.pricing.state.value.scenario?.catalog?.rateCards[0]?.charges[0];
+			if (!charge) throw new Error("charge missing");
+			Object.defineProperty(charge, "surcharge", {
+				value: "100",
+				enumerable: true,
+			});
+			let calls = 0;
+			const deps = dependencies(ledger);
+			expect(
+				await admitIacTarget(
+					{ requestId: "bad-model", ...request },
+					{
+						...deps,
+						verifyLiability: () => {
+							calls++;
+							return true;
+						},
+						authorize: (input) => {
+							calls++;
+							return deps.authorize(input);
+						},
+					},
+				),
+			).toMatchObject({
+				status: "denied",
+				code: "PRICING_MODEL_INVALID",
+				budget: { reservation: "not-created" },
+			});
+			expect(calls).toBe(0);
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
 	it.each([
 		"verified",
 		1,
