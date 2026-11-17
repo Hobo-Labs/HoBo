@@ -23,8 +23,8 @@ runner.test("the api answers", async () => {
 });
 ```
 
-Swapping to `node:test` is a two-line change: `import * as runnerModule from
-"node:test"` and `createNodeTestRunnerAdapter(runnerModule)`. Nothing else in
+Swapping to `node:test` is a two-line change: import its module as
+`runnerModule`, then pass it to `createNodeTestRunnerAdapter`. Nothing else in
 the suite moves.
 
 ## HONEST SCOPE
@@ -42,21 +42,18 @@ Read this section before you believe a green suite.
   HTTP crosses the wire;
 - resolves binding values for the whole graph through `runtime-local`'s
   `createLocalBindingResolver`;
-- exposes separate in-memory `Queue`, `Messaging`, and `SecretsPort`
-  implementations for `queue`, `topic`, and `secret` aliases, with their
-  actual fidelity on the handle;
+- exposes isolated local ports for queue, topic, secret, data, and schedule
+  aliases, with their actual fidelity on the handle;
 - tears everything down in reverse dependency order.
 
 What it does **not** do:
 
-- run the deployed artifact on the deployed host — hence handles are labelled
-  `simulated`, never `real`;
-- provide an engine behind `data`, `kv`, `bucket`, `auth`, `crypto`,
-  `flag`, `job`, `schedule`, `websocket` or any other unsupported
-  non-HTTP kind. Those get a handle and a `hobo-test://` binding locator and
-  nothing behind them. They are labelled `mocked`. Labelling them `simulated`
-  because an in-memory map *could* back them would be the overclaim, since
-  nothing on `DeployedGraph` exposes such a store;
+- run the deployed artifact on the deployed host; handles in this lane are
+  never labelled `real`;
+- provide an engine behind unsupported kinds such as `kv`, `bucket`, `auth`,
+  `crypto`, `flag`, `job`, and `websocket`. Those get a handle and a
+  `hobo-test://` binding locator and nothing behind them; they are labelled
+  `mocked`;
 - automatically wire local ports from the graph into an entrypoint.
   These are in-process ports, not services listening at the `hobo-test://`
   locator. A test must explicitly inject the port into the code under test;
