@@ -68,7 +68,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | Case | RelayRunner's claim | HoBo's bar | Tier | State | Package |
 | --- | --- | --- | --- | --- | --- |
 | P01 | Seven hosted providers are routable by label, and a label must be the provider's own ([site/runners/providers.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/runners/providers.mdx)) | Same | T1 | pass | done |
-| P02 | Real usage is synced from Depot, Namespace and WarpBuild ([apps/site/src/content/changelog/2026-11-13-retries-queueing-and-provider-usage.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/changelog/2026-11-13-retries-queueing-and-provider-usage.md)) | Same three, read-only tokens | T2 | not-built | 23 |
+| P02 | Real usage is synced from Depot, Namespace and WarpBuild ([apps/site/src/content/changelog/2026-11-13-retries-queueing-and-provider-usage.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/changelog/2026-11-13-retries-queueing-and-provider-usage.md)) | Same three, read-only tokens | T2 | pass | 23 |
 | P03 | Reports recognise a provider from its labels ([site/reference/labels.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/labels.md)) | Same | T1 | pass | done |
 | P04 | List prices are dated and per size ([site/runners/providers.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/runners/providers.mdx)) | Financial models with a source and a date for every routable provider | T1 | partial: Blacksmith, Depot and Boat priced | 08 |
 

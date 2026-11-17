@@ -24,11 +24,41 @@ Feature: Hosted provider parity with RelayRunner
     Then the relay job succeeds on "ubuntu-24.04" from the "github" step
     And the journaled decision passed over "depot" because "not_provider_label"
 
-  @parity @P02 @t2 @pending
+  @parity @P02 @t2
   Scenario: P02 Real usage is synced from Depot, Namespace and WarpBuild with read-only tokens
     Given read-only usage tokens for depot, namespace and warpbuild
+    And the ledger holds this month's spend:
+      | provider   | usd |
+      | depot      | 1   |
+      | warpbuild  | 2   |
+      | blacksmith | 5   |
     When provider usage is synced from the simulated provider APIs
-    Then this month's spend per provider is in the ledger
+    Then the sync outcomes are:
+      | provider  | outcome |
+      | depot     | synced  |
+      | namespace | synced  |
+      | warpbuild | synced  |
+    And the spend limit reads this month's spend per provider:
+      | provider   | usd    |
+      | depot      | 123.45 |
+      | namespace  | 60     |
+      | warpbuild  | 42.5   |
+      | blacksmith | 5      |
+    And every provider API call was a read its pact declares
+    And no token value is kept by the sync
+    When the "warpbuild" token is revoked and provider usage is synced again
+    Then the sync outcomes are:
+      | provider  | outcome    |
+      | depot     | synced     |
+      | namespace | synced     |
+      | warpbuild | unmeasured |
+    And the spend limit reads this month's spend per provider:
+      | provider   | usd    |
+      | depot      | 123.45 |
+      | namespace  | 60     |
+      | warpbuild  | 2      |
+      | blacksmith | 5      |
+    And every provider API call was a read its pact declares
 
   @parity @P03 @t1
   Scenario Outline: P03 Reports recognise a provider from its labels
