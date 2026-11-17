@@ -451,6 +451,47 @@ the authority may already have reserved funds even if the receipt is unusable.
 An instance also blocks subsequent attempts after any outcome requiring
 reconciliation; the host must resolve the previous attempt before replacing it.
 
+Every preview, assessment, apply, destroy and refresh has an
+`operationTimeoutMs` deadline, defaulting to 300,000 ms and configurable from
+1 through 3,600,000 ms. A preview or refresh timeout reports
+`PREVIEW_DEADLINE_EXCEEDED` or `REFRESH_DEADLINE_EXCEEDED`; a late preview does
+not become eligible for apply. Execution timeout results always require
+reconciliation and distinguish these stages:
+
+- `EXECUTION_DEADLINE_BEFORE_ROUTE`: the provider has not started and the local
+  continuation is latched. No durable route claim is implied. To exclude retry
+  across processes, the host must establish and maintain a durable logical
+  operation fence before invoking the adapter.
+- `ROUTE_DEADLINE_UNKNOWN`: a route claim or one-use permit consumption may have
+  committed. Inspect and recover the shared route before any retry or fallback.
+- `ADMISSION_DEADLINE_UNKNOWN`: admission may have established a budget hold,
+  even if its receipt or reservation ID is unavailable. Reconcile against the
+  financial authority using the stable request ID.
+- `EXECUTION_DEADLINE_AFTER_ADMISSION`: provider execution has not started and
+  the known reservation remains held for reconciliation.
+- `PROVIDER_DEADLINE_UNKNOWN`: the provider may have changed infrastructure or
+  may still do so; the known hold remains in place.
+- `ROUTE_COMPLETION_DEADLINE_UNKNOWN`: the provider completed, but its durable
+  route completion was not confirmed; retain and reconcile the hold and route.
+
+A timeout is a bounded response, not cancellation: an outstanding callback,
+state-store operation or provider request can complete later. The latch prevents
+late authorization callbacks from starting a new Alchemy apply. Once apply has
+started, later internal provider effects may still occur. The host must enforce
+its durable operation fence, isolate and watchdog the executor process, retain
+credentials and state/source fences as appropriate, and independently prove
+permanent executor/provider fencing and the disposition of all possible
+reservations and external effects before authorizing recovery or a successor.
+A synchronous infinite loop can block JavaScript timers and requires that external
+watchdog. Marking a known hold uncertain is best effort; the host must still
+reconcile the authority if that callback fails or hangs. A timed-out adapter
+instance retains its local resource fence until it is replaced after recovery.
+An instance accepts at most 128 concurrent preview/refresh operations and at
+most 128 running or unresolved executions. A timed-out read still counts as
+running until its underlying work settles, so repeated timeouts cannot create
+an unbounded number of pending operations. When the read limit is reached,
+`READ_OPERATION_LIMIT` is returned before starting another read.
+
 Plan fingerprints are bounded and include inspectable resource inputs,
 bindings, state and source identity. Pure Alchemy literal, property, named and
 aggregate outputs are inspected recursively. Every target requires a trusted
