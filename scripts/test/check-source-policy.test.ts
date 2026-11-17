@@ -271,6 +271,78 @@ describe("source policy", () => {
 		assert.match(design.stderr, /docs\/design\/existing\.md/u);
 	});
 
+	it("rejects a new multiline comment assembled from both merge parents", () => {
+		const repo = fixture();
+		write(repo, "combined.ts", "/*\n base\n*/\nexport const value = 1;\n");
+		git(repo, "add", "combined.ts");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"base comment",
+		);
+		const originalBranch = git(repo, "symbolic-ref", "--short", "HEAD");
+		git(repo, "switch", "--quiet", "-c", "incoming");
+		write(repo, "combined.ts", "/*\n incoming\n*/\nexport const value = 1;\n");
+		git(repo, "add", "combined.ts");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"incoming comment",
+		);
+		git(repo, "switch", "--quiet", originalBranch);
+		write(repo, "combined.ts", "/*\n local\n*/\nexport const value = 1;\n");
+		git(repo, "add", "combined.ts");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"local comment",
+		);
+		const merge = spawnSync(
+			"git",
+			[
+				"-C",
+				repo,
+				"-c",
+				"user.name=fixture",
+				"-c",
+				"user.email=fixture@example.invalid",
+				"merge",
+				"--no-commit",
+				"--no-ff",
+				"incoming",
+			],
+			{ env, encoding: "utf8" },
+		);
+		assert.equal(merge.status, 1);
+		write(
+			repo,
+			"combined.ts",
+			"/*\n local\n incoming\n*/\nexport const value = 1;\n",
+		);
+		git(repo, "add", "combined.ts");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /combined\.ts:1/u);
+	});
+
 	it("checks filenames containing Git pathspec metacharacters literally", () => {
 		const repo = fixture();
 		write(repo, "literal[1].ts", "export const value = 1; // explanation\n");

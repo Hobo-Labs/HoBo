@@ -236,17 +236,17 @@ export function commentViolations(
 	file: string,
 	text: string,
 	added: Set<number>,
+	parentAdditions: readonly Set<number>[] = [],
 ): Violation[] {
 	return commentLocations(file, text).flatMap((comment) => {
 		const { first, last } = comment;
-		let intersects = false;
-		for (let line = first; line <= last; line++) {
-			if (added.has(line)) {
-				intersects = true;
-				break;
+		const intersects = (lines: Set<number>) => {
+			for (let line = first; line <= last; line++) {
+				if (lines.has(line)) return true;
 			}
-		}
-		if (!intersects) return [];
+			return false;
+		};
+		if (!intersects(added) || !parentAdditions.every(intersects)) return [];
 		if (first === 1 && comment.text.startsWith("#!")) return [];
 		if (
 			!DEFERRED.test(comment.text) &&
@@ -314,7 +314,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			continue;
 		const text = contents(mode, file);
 		const source = renamed.get(file);
-		let added = untracked.includes(file)
+		const added = untracked.includes(file)
 			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
 			: addedLineNumbers(
 					git([
@@ -327,13 +327,10 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 						...(source === undefined ? [file] : [source, file]),
 					]),
 				);
-		for (const parent of parents) {
-			if (!parent.files.has(file)) {
-				added.clear();
-				break;
-			}
+		const parentAdditions = parents.map((parent) => {
+			if (!parent.files.has(file)) return new Set<number>();
 			const parentSource = parent.renamed.get(file);
-			const parentAdded = addedLineNumbers(
+			return addedLineNumbers(
 				git([
 					...parent.args,
 					"--find-renames",
@@ -344,9 +341,8 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 					...(parentSource === undefined ? [file] : [parentSource, file]),
 				]),
 			);
-			added = new Set([...added].filter((line) => parentAdded.has(line)));
-		}
-		violations.push(...commentViolations(file, text, added));
+		});
+		violations.push(...commentViolations(file, text, added, parentAdditions));
 	}
 	return violations;
 }
