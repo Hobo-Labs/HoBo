@@ -108,7 +108,7 @@ export function createFlagEmulator(
 	const store = new FeatureFlagStore({ sampleRate: 1, ...options });
 	return {
 		port: store,
-		inspector: { events: () => store.events.slice() },
+		inspector: { events: () => structuredClone(store.events) },
 		fidelity: "simulated",
 	};
 }
