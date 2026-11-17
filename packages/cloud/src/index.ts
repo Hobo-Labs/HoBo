@@ -1,11 +1,3 @@
-// @hobo/cloud — the Yard control-plane kernel (S2-01) and the Planner (S2-02).
-// A coherent vertical: a Deploy command becomes past-tense facts, the pure
-// Planner resolves them to a content-addressed DeploymentPlan DAG, and the
-// DeploymentView projection reconstructs deployment state from the log.
-
-// Resolved Deployment Set and secret-free projections: the CD inputs that
-// @hobo/cd consumes. The former fixture-only CD plane moved into
-// @hobo/cd reconcilers and realizers.
 export {
 	createResolvedDeploymentSet,
 	type GatekeeperApproval,
@@ -296,8 +288,15 @@ export {
 	type CredentialGrantStatus,
 	compactCredentialAuditStream,
 	credentialAuditProjection,
+	getCredentialAuditRow,
 	isCredentialAuditEvent,
 } from "./projections/credential-audit.js";
+export {
+	credentialAuditRowFromJson,
+	credentialAuditRowToJson,
+	decodeCredentialAuditRow,
+	encodeCredentialAuditRow,
+} from "./projections/credential-audit-wire.js";
 export {
 	type DeploymentDecisionRow,
 	type DeploymentViewRow,
@@ -350,5 +349,5 @@ export {
 } from "./registry/resource-definition-vnext.js";
 export { collectStream, currentFenceToken } from "./store/index.js";
 
-// public-contract: package id consumers assert against.
+// public-contract:
 export const HOBO_CLOUD_PACKAGE = "@hobo/cloud";

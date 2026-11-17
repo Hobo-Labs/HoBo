@@ -1,0 +1,59 @@
+{
+  "correlationId": "run-1",
+  "grants": [
+    {
+      "grantId": "grant-1",
+      "svidSubject": "spiffe://tenant-a/alice",
+      "scope": {
+        "port": "secret",
+        "resource": "demo",
+        "action": "read"
+      },
+      "status": "granted",
+      "grantedAt": "2026-11-17T12:00:00.000Z"
+    }
+  ],
+  "identityIds": [
+    "identity-1"
+  ],
+  "timeline": [
+    {
+      "seq": 1,
+      "type": "identity.Issued"
+    },
+    {
+      "seq": 2,
+      "type": "token.Granted",
+      "grantId": "grant-1"
+    },
+    {
+      "seq": 3,
+      "type": "mcp.ToolCallDecided",
+      "eventId": "evt-3",
+      "streamId": "audit:fixture",
+      "time": "2026-11-17T12:00:00.000Z",
+      "actorKind": "user",
+      "actorId": "alice",
+      "tool": "capture_secret",
+      "subject": "alice",
+      "effect": "allow",
+      "reason": "scope granted"
+    },
+    {
+      "seq": 4,
+      "type": "secret.CaptureStored",
+      "eventId": "evt-4",
+      "streamId": "audit:fixture",
+      "time": "2026-11-17T12:00:00.000Z",
+      "actorKind": "user",
+      "actorId": "alice",
+      "name": "DEMO_SECRET",
+      "ref": "secref://fixture/DEMO_SECRET",
+      "ticketId": "cap_AAAAAAAAAAAAAAAAAAAAAA",
+      "target": "runtime",
+      "channel": "mcp-app"
+    }
+  ],
+  "grantCount": 1,
+  "tenant": "tenant-a"
+}
