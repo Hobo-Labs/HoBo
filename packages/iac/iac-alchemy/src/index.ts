@@ -37,7 +37,6 @@ export {
 	ResourceScopeSchema,
 	TargetSchema,
 } from "./_generated/alchemy_iac_pb.js";
-export { captureAlchemyOptions } from "./input-boundary.js";
 export type {
 	AlchemyBindleMapping,
 	AlchemyMappedPrimitive,
@@ -50,6 +49,7 @@ export {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
 } from "./bindle.js";
+export { captureAlchemyOptions } from "./input-boundary.js";
 export { AlchemyIacError } from "./plan.js";
 export type {
 	FinancialDecision,
@@ -744,7 +744,12 @@ export function createAlchemyIacProvider<
 			);
 		running.add(key);
 		try {
-			return await executeUnlocked(program, requestId, expected, requireDestroy);
+			return await executeUnlocked(
+				program,
+				requestId,
+				expected,
+				requireDestroy,
+			);
 		} catch (error) {
 			if (error instanceof AlchemyIacError && error.requiresReconciliation)
 				unresolved.add(key);

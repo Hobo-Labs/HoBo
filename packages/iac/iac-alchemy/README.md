@@ -9,6 +9,8 @@ The Rivet integration is tested against `@alchemy.run/rivet` beta.87 and its
 RivetKit 3 runtime dependency.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
+Run `pnpm --filter @hobo/iac-alchemy lint` to check the adapter's formatting and
+imports before committing changes.
 
 `mapBindleToAlchemy` accepts a HoBo bindle structurally and a provider-owned
 mapping for each declared primitive. Mappings declare their Alchemy resource
