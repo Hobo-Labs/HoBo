@@ -113,11 +113,15 @@ export type UnverifiedUnpricedScopeProof = Omit<
 };
 
 /** An admitted apply explicitly distinguishes a bounded hold from a policy-authorized unbounded exposure. */
-export type HeldFinancialDecision = FinancialDecision &
+export type HeldFinancialDecision = Omit<
+	FinancialDecision,
+	"budget" | "reservation" | "unpricedPolicyProof"
+> &
 	(
 		| {
 				budget: { evaluation: "allowed"; reservation: "held" };
 				reservation: { reservationId: string; unboundedExposure?: false };
+				unpricedPolicyProof?: never;
 		  }
 		| {
 				budget: { evaluation: "bypassed"; reservation: "held" };

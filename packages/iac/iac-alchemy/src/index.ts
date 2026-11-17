@@ -1376,8 +1376,12 @@ export function createAlchemyIacProvider<
 							unpricedPolicyProof: policy,
 						};
 					} else {
+						const {
+							unpricedPolicyProof: _unpricedPolicyProof,
+							...pricedDecision
+						} = decision;
 						admission = {
-							...decision,
+							...pricedDecision,
 							budget: { evaluation: "allowed", reservation: "held" },
 							reservation: {
 								reservationId: claimedReservationId,

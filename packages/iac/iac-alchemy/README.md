@@ -178,7 +178,8 @@ reports which manifest plans the pricing kernel supports.
 
 `applyWithAdmission(program, requestId)` returns bounded string-valued stack
 outputs and the broker admission receipt, including its reservation identifier
-and budget disclosure. A resource-property output is supported when it refers
+and budget disclosure. The returned receipt types distinguish priced and
+unpriced admission modes. A resource-property output is supported when it refers
 to a resource in the reviewed plan. If a completed apply produces outputs that
 cannot fit HoBo's output contract, `APPLY_OUTPUT_UNREPRESENTABLE` reports the
 held reservation and requires reconciliation. The
