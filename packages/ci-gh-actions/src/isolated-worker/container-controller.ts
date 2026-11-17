@@ -1740,7 +1740,7 @@ export function createIsolatedContainerController(options: {
 				runnerCustodyHoldsActive = custody.holdsActive;
 				if (lease.actualJobId > 0 && lease.actualJobId !== reservedJobId)
 					options.onStorageGrantRelease?.(reservedJobId);
-				// `forceStop` never overrides a confirmed executing assignment (shard-0 kill).
+				// `forceStop` retains confirmed or possibly executing assignments.
 				if (custody.holdsActive && forceStop) return;
 			}
 			if (forceStop && isUnregisteredDispatchingCreate(lease)) {
@@ -1792,8 +1792,8 @@ export function createIsolatedContainerController(options: {
 				lease = attached;
 			}
 			if (hasIsolatedStopIntent(lease)) {
-				// `forceStop` only disables fail-closed on unreadable GitHub here; executing
-				// assignments still block via `evaluateRunnerTeardownGuard`.
+				// `forceStop` only disables fail-closed on unreadable GitHub here;
+				// confirmed or possibly executing assignments still block.
 				if (await runnerTeardownBlocked(lease, forceStop !== true)) return;
 				if (!(await isolatedSessionPresent(lease))) {
 					lease = await markStopped(lease, false);
@@ -1987,7 +1987,7 @@ export function createIsolatedContainerController(options: {
 			if (!stop) return;
 			if (runnerCustodyHoldsActive) return;
 			// Pre-kill: `forceStop` uses `failClosed: false` only — guard still runs
-			// (correlation → getJob) so confirmed executing assignments defer.
+			// (correlation → getJob) so possibly executing assignments defer.
 			if (await runnerTeardownBlocked(lease, forceStop !== true)) return;
 			let removed = false;
 			try {

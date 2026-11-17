@@ -24,11 +24,16 @@ export const RUNNER_EXECUTING_JOB_STATUSES = new Set([
 	"requested",
 ]);
 
+/** A new or malformed status is not evidence that a runner has finished. */
+export function isUnknownRunnerJobStatus(status: string): boolean {
+	return status !== "completed" && !RUNNER_HELD_JOB_STATUSES.has(status);
+}
+
 export type ResolvedRunnerAssignment = Readonly<{
 	jobId: number;
 	runId: number;
 	status: string;
-	/** A queued match was found, but a later GitHub scan failed. */
+	/** A queued or unknown match was found, but a later scan was incomplete. */
 	incomplete?: true;
 }>;
 
@@ -60,12 +65,19 @@ export function correlateRunnerOnRun(
 	);
 	if (served.length === 0) return { kind: "unassigned" };
 	// A runner may have a completed reservation and another job still running.
-	// Pick executing work first so terminal or queued records cannot hide it.
+	// Pick confirmed execution first, then unknown work, then queued records.
 	const executing = served.filter((job) =>
 		RUNNER_EXECUTING_JOB_STATUSES.has(job.status),
 	);
+	const unknown = served.filter((job) => isUnknownRunnerJobStatus(job.status));
 	const held = served.filter((job) => RUNNER_HELD_JOB_STATUSES.has(job.status));
-	const candidates = executing.length ? executing : held.length ? held : served;
+	const candidates = executing.length
+		? executing
+		: unknown.length
+			? unknown
+			: held.length
+				? held
+				: served;
 	const reserved = candidates.find((job) => job.id === reservedJobId);
 	if (reserved) {
 		return {
@@ -100,7 +112,11 @@ function servedOnRun(
 export function runnerHoldsActiveJob(
 	assignment: ResolvedRunnerAssignment | undefined,
 ): boolean {
-	return !!assignment && RUNNER_HELD_JOB_STATUSES.has(assignment.status);
+	return (
+		!!assignment &&
+		(RUNNER_HELD_JOB_STATUSES.has(assignment.status) ||
+			isUnknownRunnerJobStatus(assignment.status))
+	);
 }
 
 export function runnerMatchesGitHubJob(
@@ -123,7 +139,11 @@ export function servedGitHubJobBlocksSettlement(
 		runner_name?: string | null;
 	}>,
 ): boolean {
-	if (!RUNNER_EXECUTING_JOB_STATUSES.has(job.status)) return false;
+	if (
+		!RUNNER_EXECUTING_JOB_STATUSES.has(job.status) &&
+		!isUnknownRunnerJobStatus(job.status)
+	)
+		return false;
 	return runnerMatchesGitHubJob(lease, job);
 }
 
@@ -134,7 +154,11 @@ export function assignmentBlocksRunnerTeardown(
 	queuedBoundGraceMs = ISOLATED_JIT_QUEUED_BOUND_GRACE_MS,
 ): boolean {
 	if (!assignment) return false;
-	if (RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status)) return true;
+	if (
+		RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status) ||
+		isUnknownRunnerJobStatus(assignment.status)
+	)
+		return true;
 	if (assignment.status === "queued") {
 		if (!Number.isFinite(boundSinceMs)) return true;
 		return nowMs - boundSinceMs < queuedBoundGraceMs;
@@ -159,7 +183,7 @@ export async function evaluateRunnerTeardownGuard(
 		/**
 		 * When true and GitHub cannot be read, defer teardown.
 		 * When false (`forceStop` paths), unreadable GitHub does not block — a
-		 * **confirmed** executing assignment still blocks via `assignmentBlocksRunnerTeardown`.
+		 * confirmed or possibly executing assignment still blocks teardown.
 		 */
 		failClosed?: boolean;
 		queuedBoundGraceMs?: number;
@@ -258,13 +282,15 @@ export async function resolveRunnerAssignedJob(
 		);
 		return servedOnRun(jobs, reservedJobId, runnerName, runnerId);
 	};
+	let unknown: ResolvedRunnerAssignment | undefined;
 	let queued: ResolvedRunnerAssignment | undefined;
 	let inactive: ResolvedRunnerAssignment | undefined;
 	try {
 		for (const runId of options?.preferRunIds ?? []) {
 			const hit = await scanRun(runId);
 			if (hit && RUNNER_EXECUTING_JOB_STATUSES.has(hit.status)) return hit;
-			if (hit?.status === "queued") queued ??= hit;
+			if (hit && isUnknownRunnerJobStatus(hit.status)) unknown ??= hit;
+			else if (hit?.status === "queued") queued ??= hit;
 		}
 		let runIds: readonly number[];
 		let incomplete = false;
@@ -284,15 +310,17 @@ export async function resolveRunnerAssignedJob(
 			const hit = await scanRun(runId);
 			if (!hit) continue;
 			if (RUNNER_EXECUTING_JOB_STATUSES.has(hit.status)) return hit;
-			if (hit.status === "queued") queued ??= hit;
+			if (isUnknownRunnerJobStatus(hit.status)) unknown ??= hit;
+			else if (hit.status === "queued") queued ??= hit;
 			else inactive ??= hit;
 		}
 		if (incomplete) throw new Error("GitHub runner assignment scan incomplete");
 	} catch (error) {
-		// Preserve an already observed queued binding, but tell the guard that
-		// later runs could not be checked before it makes a fail-closed decision.
+		// Preserve an observed uncertain or queued binding while signaling that
+		// later runs could not be checked before a teardown decision.
+		if (unknown) return { ...unknown, incomplete: true };
 		if (queued) return { ...queued, incomplete: true };
 		throw error;
 	}
-	return queued ?? inactive;
+	return unknown ?? queued ?? inactive;
 }
