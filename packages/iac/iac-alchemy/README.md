@@ -111,7 +111,10 @@ cannot enforce these requirements by wrapping the returned stack. For compiled
 state operations it restricts access to the exact authorized stack and stage;
 cross-stack `Output.stackRef`, unrestricted listings and state migration are
 unsupported. Perform migrations separately under independently verified host
-control.
+control. State identity fields are snapshotted for guarded writes, but provider
+properties, attributes and other nonidentity values may still be shared by
+reference. The host must fence those values, the plan and its capabilities
+against concurrent mutation throughout the operation.
 
 `target.stackName` is the physical Alchemy stack name and must match the
 configured `Stack`; `program.stackName` is an opaque HoBo logical identifier
