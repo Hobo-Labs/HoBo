@@ -94,8 +94,32 @@ Approval requests and decisions (from `approve()`, the A2H approver or the
 webhook callback) are `saga.StepEmitted` facts on the same stream, scoped
 `<campId>` or `<campId>/<stage>`. Ids are deterministic digests of the tenant
 and idempotency key (`promo_`, `rollback_`, `preview_`), so a repeated command
-returns the recorded promotion (I12) and a key reused for other Freight or
-targets is refused. CUE constraints: [`data-models/promotion.cue`](../../data-models/promotion.cue).
+returns the recorded promotion (I12). New promotion requests persist a
+fingerprint in the `env.PromoteRequested` envelope metadata, binding the
+Freight, targets, intent, deployment mode, pipeline, node, source Camp,
+strategy, proposal flag, fan-out, and preview TTL. A different request is
+refused, including when another writer wins the initial append. The store must
+preserve event metadata and enforce atomic stream appends. Upgrade all
+promotion workers before relying on this binding: older workers do not check
+it. Historical records without the fingerprint are checked against their
+available fields; a retry with an ambiguous inferred strategy or proposal may
+be refused and needs a new key after the prior result is inspected. Preview
+retries also compare their recorded inputs and return the persisted expiry.
+This binding does not fence concurrent executions of the same request.
+CUE constraints: [`data-models/promotion.cue`](../../data-models/promotion.cue).
+
+New rollbacks claim a separate `cd-rollback-claim-<rollback-id>` stream before
+effects. Its metadata binds the Camp, reason, requested Set, and current Set;
+the result stores the request fingerprint. Conflicting requests using the same
+key are refused. If the current Set has changed since the claim, a retry is
+refused for reconciliation instead of attempting another rollback. A historical
+rollback without a fingerprint cannot safely establish its original target
+Set, so its retry is refused; inspect the previous result before using a new
+key. The rollback rechecks its base before preparing the Delta; the desired
+state port must atomically enforce that base through apply. A claim does not
+fence concurrent retries of the same rollback or prove that a failed result
+append left no external effects. Rail effects and other effects that do not
+change the current Set need separate reconciliation.
 
 ## Parse, don't validate
 
@@ -193,3 +217,30 @@ A failing sink never fails a command.
 | `hobo.cd.promotion.step_error` rising | A port is throwing (transient). | Check the named dependency (orchestrator, verification, approval endpoint); promotions resume on recovery. |
 | `approval-signature-invalid` (401 on the callback) | The callback token was not signed with the configured secret. | Check the approver uses the token it received; rotate the secret ref if leaked (old tokens then fail closed). |
 | `preview-teardown-refused` | The gate refused a preview's teardown. | Fix the gate causes; `expirePreviews` retries each sweep. |
+
+The [promotion verification skill](../../../../.agents/skills/verify-promotion-verification/SKILL.md)
+checks these request bindings alongside verification and qualification. This
+projection of the request-binding model is not a production trace. TLC
+explored 28 states and 70 steps; 59 same-label steps are hidden.
+
+```mermaid
+stateDiagram-v2
+  [*] --> WaitingForClaim
+  WaitingForClaim --> RequestRecorded: claim or observe journal
+  RequestRecorded --> MatchingRequest: check recorded identity
+  RequestRecorded --> DifferentRequestRefused: check recorded identity
+```
+
+The rollback-retry model assumes the effect changes the current Set and the
+check and effect are atomic. TLC explored five states and nine steps; five
+same-label steps are hidden. Rail effects and concurrent reads need additional
+fencing.
+
+```mermaid
+stateDiagram-v2
+  [*] --> NotClaimed
+  NotClaimed --> Claimed: record original Set
+  Claimed --> Reconcile: another change advances the Set
+  Claimed --> ResultUncertain: apply rollback
+  ResultUncertain --> ResultRecorded: record result
+```
