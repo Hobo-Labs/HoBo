@@ -19,6 +19,10 @@ This page is generated from the source, so it lists every code the code returns 
 else. Text in braces, such as `{repository}`, is filled in when the command runs. A code whose
 message is composed when the command runs shows no message here; read the command's output.
 
+Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, mirrored in
+`.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
+for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
+
 92 codes.
 
 | Code | Returned from |

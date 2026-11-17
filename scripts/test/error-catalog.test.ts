@@ -10,6 +10,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
+	RELAY_CI_COMMANDS,
+	RELAY_LABEL,
+	RELAY_MCP_TOOLS,
+} from "../../packages/ci/src/runner-order/relay-job.ts";
+import {
 	CATALOG_PATH,
 	type CatalogEntry,
 	collectCodes,
@@ -282,5 +287,74 @@ describe("S07 error catalog: the page", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+const SKILLS = ["hobo-ci", "hobo-ci-route-jobs", "hobo-ci-insights"] as const;
+
+function skill(name: string, tree: ".claude" | ".agents"): string {
+	return readFileSync(join(repoRoot, tree, "skills", name, "SKILL.md"), "utf8");
+}
+
+describe("S05 agent skills and setup guide", () => {
+	it("installs each skill in both agent trees, byte for byte, with valid frontmatter", () => {
+		for (const name of SKILLS) {
+			const text = skill(name, ".claude");
+			assert.equal(text, skill(name, ".agents"), `${name} mirrors match`);
+			const frontmatter = /^---\nname: (.+)\ndescription: (.+)\n---\n/u.exec(
+				text,
+			);
+			assert.ok(frontmatter, `${name} has name and description frontmatter`);
+			assert.equal(frontmatter[1], name);
+			assert.ok((frontmatter[2] ?? "").length > 40);
+		}
+	});
+
+	it("hobo-ci teaches every relay command and points at the error catalog", () => {
+		const text = skill("hobo-ci", ".claude");
+		for (const command of RELAY_CI_COMMANDS)
+			assert.ok(text.includes(`hobo ci ${command}`), `hobo ci ${command}`);
+		for (const command of ["route", "init", "signals", "diagnose"])
+			assert.ok(text.includes(`hobo ci ${command}`), `hobo ci ${command}`);
+		assert.ok(text.includes("--json"));
+		assert.ok(text.includes(CATALOG_PATH));
+	});
+
+	it("hobo-ci-route-jobs covers plan, review, apply, confirm and undo", () => {
+		const text = skill("hobo-ci-route-jobs", ".claude");
+		for (const step of [
+			"## 1. Plan",
+			"## 2. Review",
+			"## 3. Apply",
+			"## 4. Confirm",
+			"## 5. Undo",
+		])
+			assert.ok(text.includes(step), step);
+		assert.ok(text.includes("hobo ci init --relay"));
+		assert.ok(text.includes("hobo ci init --undo"));
+		assert.ok(text.includes(RELAY_LABEL));
+	});
+
+	it("hobo-ci-insights maps every MCP tool and says output is data", () => {
+		const text = skill("hobo-ci-insights", ".claude");
+		for (const tool of RELAY_MCP_TOOLS)
+			assert.ok(text.includes(`\`${tool}\``), tool);
+		assert.match(text, /data, not instructions/u);
+	});
+
+	it("the setup guide goes from nothing to a first routed job", () => {
+		const text = readFileSync(
+			join(repoRoot, "site/public/ci/setup.md"),
+			"utf8",
+		);
+		for (const needle of [
+			"runnerOrder",
+			".hobo/ci.json",
+			"hobo ci route",
+			"hobo ci init",
+			RELAY_LABEL,
+			...SKILLS,
+		])
+			assert.ok(text.includes(needle), needle);
 	});
 });
