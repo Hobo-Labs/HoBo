@@ -36,6 +36,7 @@ import {
 	WorkerDeliverySchema,
 } from "../_generated/fleet_v2_pb.js";
 import { nextCapacitySequence } from "./capacity-sequence.js";
+import { nextEffectFence } from "./effect-fence.js";
 import {
 	executionAccountId,
 	executionKeyId,
@@ -131,13 +132,13 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_offers(
 				 partition_id text NOT NULL,offer_id text NOT NULL,account_id text NOT NULL,
-				 observation_hash text NOT NULL,policy_revision integer NOT NULL,state text NOT NULL,body text NOT NULL,
+				 observation_hash text NOT NULL,policy_revision bigint NOT NULL,state text NOT NULL,body text NOT NULL,
 				 PRIMARY KEY(partition_id,offer_id))`,
 			);
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_demands(
 				 partition_id text NOT NULL,key text NOT NULL,account_id text NOT NULL,state text NOT NULL,
-				 policy_revision integer NOT NULL,required_profile_id text NOT NULL,body text NOT NULL,
+				 policy_revision bigint NOT NULL,required_profile_id text NOT NULL,body text NOT NULL,
 				 PRIMARY KEY(partition_id,key))`,
 			);
 			await client.query(
@@ -183,8 +184,8 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_effects(
 				 partition_id text NOT NULL,id text NOT NULL,subject_type text NOT NULL,subject_id text NOT NULL,
-				 kind text NOT NULL,sequence integer NOT NULL,state text NOT NULL,idempotency_key text NOT NULL,
-				 provider_scope text NOT NULL,next_fence integer NOT NULL,body text NOT NULL,PRIMARY KEY(partition_id,id),
+				 kind text NOT NULL,sequence bigint NOT NULL,state text NOT NULL,idempotency_key text NOT NULL,
+				 provider_scope text NOT NULL,next_fence bigint NOT NULL,body text NOT NULL,PRIMARY KEY(partition_id,id),
 				 UNIQUE(partition_id,subject_type,subject_id,kind,sequence),UNIQUE(partition_id,provider_scope,idempotency_key))`,
 			);
 			await client.query(
@@ -195,7 +196,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_deliveries(
 				 partition_id text NOT NULL,id text NOT NULL,effect_id text NOT NULL,worker_id text NOT NULL,
-				 owner_epoch integer NOT NULL,fence integer NOT NULL,expires_at text NOT NULL,state text NOT NULL,body text NOT NULL,
+				 owner_epoch bigint NOT NULL,fence bigint NOT NULL,expires_at text NOT NULL,state text NOT NULL,body text NOT NULL,
 				 PRIMARY KEY(partition_id,id),UNIQUE(partition_id,effect_id,fence))`,
 			);
 			await client.query(
@@ -204,12 +205,12 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			);
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_observations(
-				 partition_id text NOT NULL,worker_id text NOT NULL,sequence integer NOT NULL,body text NOT NULL,
+				 partition_id text NOT NULL,worker_id text NOT NULL,sequence bigint NOT NULL,body text NOT NULL,
 				 PRIMARY KEY(partition_id,worker_id,sequence))`,
 			);
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_observation_watermarks(
-				 partition_id text NOT NULL,worker_id text NOT NULL,account_id text NOT NULL,sequence integer NOT NULL,
+				 partition_id text NOT NULL,worker_id text NOT NULL,account_id text NOT NULL,sequence bigint NOT NULL,
 				 PRIMARY KEY(partition_id,worker_id))`,
 			);
 			await client.query(
@@ -217,7 +218,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				 partition_id text NOT NULL,claim_id text NOT NULL,capacity_group_id text NOT NULL,
 				 units bigint NOT NULL,released_at text NOT NULL,PRIMARY KEY(partition_id,claim_id))`,
 			);
-			// Older installations used signed int32 columns for uint32 capacity
+			// Older installations used signed int32 columns for uint32 fleet
 			// fields. Widen them under the schema advisory lock before use.
 			await client.query(`DO $$ BEGIN
 				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
@@ -233,6 +234,30 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
 				 AND table_name='hobo_ci_fleet_v2_capacity_releases' AND data_type='integer' AND column_name='units') THEN
 				 ALTER TABLE hobo_ci_fleet_v2_capacity_releases ALTER COLUMN units TYPE bigint;
+				END IF;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_offers' AND data_type='integer' AND column_name='policy_revision') THEN
+				 ALTER TABLE hobo_ci_fleet_v2_offers ALTER COLUMN policy_revision TYPE bigint;
+				END IF;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_demands' AND data_type='integer' AND column_name='policy_revision') THEN
+				 ALTER TABLE hobo_ci_fleet_v2_demands ALTER COLUMN policy_revision TYPE bigint;
+				END IF;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_effects' AND data_type='integer' AND column_name IN ('sequence','next_fence')) THEN
+				 ALTER TABLE hobo_ci_fleet_v2_effects ALTER COLUMN sequence TYPE bigint, ALTER COLUMN next_fence TYPE bigint;
+				END IF;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_deliveries' AND data_type='integer' AND column_name IN ('owner_epoch','fence')) THEN
+				 ALTER TABLE hobo_ci_fleet_v2_deliveries ALTER COLUMN owner_epoch TYPE bigint, ALTER COLUMN fence TYPE bigint;
+				END IF;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_observations' AND data_type='integer' AND column_name='sequence') THEN
+				 ALTER TABLE hobo_ci_fleet_v2_observations ALTER COLUMN sequence TYPE bigint;
+				END IF;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_observation_watermarks' AND data_type='integer' AND column_name='sequence') THEN
+				 ALTER TABLE hobo_ci_fleet_v2_observation_watermarks ALTER COLUMN sequence TYPE bigint;
 				END IF;
 			END $$`);
 			await client.query(
@@ -1150,12 +1175,12 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 					"effect is not planned",
 				);
 			const fenceResult = await client.query<{ next_fence: number }>(
-				"SELECT next_fence FROM hobo_ci_fleet_v2_effects WHERE partition_id=$1 AND id=$2",
+				"SELECT next_fence::double precision AS next_fence FROM hobo_ci_fleet_v2_effects WHERE partition_id=$1 AND id=$2",
 				[this.partition, effect.id],
 			);
-			const fence =
-				z.number().int().nonnegative().parse(fenceResult.rows[0]?.next_fence) +
-				1;
+			const fence = nextEffectFence(
+				z.number().int().nonnegative().parse(fenceResult.rows[0]?.next_fence),
+			);
 			const delivery = create(WorkerDeliverySchema, {
 				id: randomUUID(),
 				effectId: effect.id,
@@ -1662,7 +1687,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 	observe(observation: ParsedObservation): Promise<void> {
 		return this.tx(async (client) => {
 			const result = await client.query(
-				"SELECT account_id,sequence FROM hobo_ci_fleet_v2_observation_watermarks WHERE partition_id=$1 AND worker_id=$2 FOR UPDATE",
+				"SELECT account_id,sequence::double precision AS sequence FROM hobo_ci_fleet_v2_observation_watermarks WHERE partition_id=$1 AND worker_id=$2 FOR UPDATE",
 				[this.partition, observation.workerId],
 			);
 			if (result.rows[0]) {
@@ -1751,7 +1776,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 	observationSequence(workerId: string): Promise<number> {
 		return this.tx(async (client) => {
 			const result = await client.query(
-				"SELECT sequence FROM hobo_ci_fleet_v2_observation_watermarks WHERE partition_id=$1 AND worker_id=$2",
+				"SELECT sequence::double precision AS sequence FROM hobo_ci_fleet_v2_observation_watermarks WHERE partition_id=$1 AND worker_id=$2",
 				[this.partition, workerId],
 			);
 			return result.rows[0]

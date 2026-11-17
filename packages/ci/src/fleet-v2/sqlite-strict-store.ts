@@ -36,6 +36,7 @@ import {
 	WorkerDeliverySchema,
 } from "../_generated/fleet_v2_pb.js";
 import { nextCapacitySequence } from "./capacity-sequence.js";
+import { nextEffectFence } from "./effect-fence.js";
 import {
 	executionAccountId,
 	executionKeyId,
@@ -961,7 +962,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 						.prepare("SELECT next_fence FROM fleet_v2_effects WHERE id=?")
 						.get(effect.id),
 				);
-			const fence = fenceRow.next_fence + 1;
+			const fence = nextEffectFence(fenceRow.next_fence);
 			const expiresAt = this.expiry(input.leaseMs);
 			const delivery = create(WorkerDeliverySchema, {
 				id: randomUUID(),

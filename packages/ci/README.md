@@ -638,13 +638,19 @@ already marked uncertain by an older version. That version may have released
 their reservations; this change cannot reconstruct whether those runners still
 exist or restore the missing accounting automatically.
 
-Fleet capacity values use the unsigned 32-bit wire range. PostgreSQL startup
-widens legacy signed capacity columns under its schema lock; the database user
-must have permission to alter those tables. Capacity revisions never wrap: at
+Fleet capacity values and other fleet counters use the unsigned 32-bit wire
+range. PostgreSQL startup widens legacy signed columns under its schema lock;
+the database user must have permission to alter those tables. Capacity revisions never wrap: at
 the wire limit, further changes, including capacity releases, fail atomically.
 Do not reset a revision, because a stale reservation could become valid again.
 Recovering an exhausted group requires a future revision-format migration and
 operator reconciliation.
+
+Effect-delivery fences also stop at the wire limit and never wrap. An effect
+whose fence is exhausted cannot be claimed again; do not reset the fence,
+because an old worker token could then be reused. Observation sequences cannot
+advance beyond their wire limit either. These limits require future format
+migrations and reconciliation for continued operation.
 
 The [start-binding verification skill](../../.agents/skills/verify-ci-start-binding/SKILL.md)
 checks the store boundary and records its assumptions. This projection of its

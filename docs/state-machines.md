@@ -42,7 +42,7 @@ When covered behavior changes, review the code and its intended policy, update t
 ## Open work and proof boundaries
 
 - The historical candidate queue covers only selected source languages and paths and has not been fully classified. CI, CD, cloud providers, stores, examples, integrations, and additional stateful subsystems need further source review and their own checks.
-- Fleet capacity revisions stop at the uint32 wire limit; further changes, including releases, require a future format migration and reconciliation. Other PostgreSQL fleet counters still need their own range and overflow review.
+- Fleet capacity revisions stop at the uint32 wire limit; further changes, including releases, require a future format migration and reconciliation. Delivery fences and observation sequences have the same finite wire limit.
 - Fleet teardown confirmations are trusted controller assertions; provider evidence is not independently checked or recorded by the strict store.
 - Older versions may already have released reservations for uncertain slots. Quarantine and reconcile those slots before enabling admission after upgrade.
 - Strict CI starts remain unavailable in production: the GitHub assignment lookup and hook endpoint are not wired, and the hook does not derive the actual assigned job on its own.
