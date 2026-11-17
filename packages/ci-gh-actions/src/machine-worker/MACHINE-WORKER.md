@@ -36,4 +36,4 @@ The worker is tested against the GitHub simulator with the fake container driver
 - `--host` on a real Linux machine;
 - the relay assigning jobs to a machine: the worker has the source a relay pushes into, but no relay endpoint sends to it yet.
 
-macOS machines are not supported yet: the pinned runner archives are for Linux.
+A Mac connects with `--host` or `--vm`; see [macOS machines](macos/MACOS.md).

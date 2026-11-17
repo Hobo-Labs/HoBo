@@ -55,6 +55,10 @@
       "types": "./dist/machine-worker/testing.d.ts",
       "default": "./dist/machine-worker/testing.js"
     },
+    "./machine-worker/macos": {
+      "types": "./dist/machine-worker/macos/index.d.ts",
+      "default": "./dist/machine-worker/macos/index.js"
+    },
     "./relay-cache": {
       "types": "./dist/relay-cache/index.d.ts",
       "default": "./dist/relay-cache/index.js"
