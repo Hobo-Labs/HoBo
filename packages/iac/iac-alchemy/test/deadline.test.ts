@@ -35,8 +35,10 @@ function deferred() {
 	return { promise, resolve };
 }
 afterEach(() => vi.useRealTimers());
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
 
-function fixture(directory: string, timeout = 50) {
+function fixture(directory: string, timeout = 5_000) {
 	const gate = deferred();
 	const started = deferred();
 	const completed = deferred();
@@ -311,10 +313,47 @@ function timers() {
 	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 }
 async function expire() {
-	await vi.advanceTimersByTimeAsync(51);
+	await vi.advanceTimersByTimeAsync(5_001);
+}
+
+async function waitForPhase(
+	started: Promise<void>,
+	operation: Promise<unknown>,
+) {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await Promise.race([
+			started,
+			operation.then(
+				() => {
+					throw new Error("operation completed before the expected phase");
+				},
+				// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: rejected values are retained only as an opaque test error cause.
+				(error: unknown) => {
+					throw new Error("operation failed before the expected phase", {
+						cause: error,
+					});
+				},
+			),
+			new Promise<never>((_resolve, reject) => {
+				timer = realSetTimeout(
+					() => reject(new Error("expected phase did not start")),
+					4_000,
+				);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) realClearTimeout(timer);
+	}
 }
 
 describe("bounded Alchemy execution deadlines", () => {
+	it("reports an operation that ends before its expected phase", async () => {
+		const never = new Promise<void>(() => {});
+		await expect(
+			waitForPhase(never, Promise.reject(new Error("early"))),
+		).rejects.toThrow("operation failed before the expected phase");
+	});
 	it("rejects proxied and revoked expectations and permits without running traps", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
 		const old = process.env.ALCHEMY_HOME;
@@ -884,15 +923,13 @@ describe("bounded Alchemy execution deadlines", () => {
 			await f.provider.preview(program);
 			f.block("ownership-apply");
 			f.ownershipResult(decision);
-			const result = expect(
-				f.provider.applyWithAdmission(program, "request"),
-			).rejects.toMatchObject({
+			const operation = f.provider.applyWithAdmission(program, "request");
+			await waitForPhase(f.started.promise, operation);
+			await expire();
+			await expect(operation).rejects.toMatchObject({
 				code: "EXECUTION_DEADLINE_AFTER_ADMISSION",
 				requiresReconciliation: true,
 			});
-			await f.started.promise;
-			await expire();
-			await result;
 			f.gate.resolve();
 			await f.completed.promise;
 			expect(f.observed()).toMatchObject({
