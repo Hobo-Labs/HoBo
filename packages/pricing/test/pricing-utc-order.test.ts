@@ -50,7 +50,7 @@ it("orders equal-priority credits by the actual expiry instant and preserves v2 
 	});
 	if (!isQuoteVector(current) || !isQuoteVector(prior))
 		throw new Error("quote rejected");
-	expect(current.ratingAlgorithmVersion).toBe("pricing-rating/v6");
+	expect(current.ratingAlgorithmVersion).toBe("pricing-rating/v7");
 	expect(current.consumption.map((item) => item.sourceId)).toEqual(["z-early"]);
 	expect(current.incremental?.effective?.decimal).toBe("9");
 	expect(prior.consumption.map((item) => item.sourceId)).toEqual(["a-late"]);

@@ -3,7 +3,7 @@ EXTENDS Naturals
 VARIABLES version, basis, doneEn, doneSv, paidEn, promoEn, paidSv, promoSv, effectiveEn, effectiveSv
 vars == <<version, basis, doneEn, doneSv, paidEn, promoEn, paidSv, promoSv, effectiveEn, effectiveSv>>
 First(locale) == IF version # "v1" THEN "paid" ELSE IF locale = "en" THEN "promo" ELSE "paid"
-Init == /\ version \in {"v1", "v2", "v3", "v4", "v5", "v6"} /\ basis \in {1, 9}
+Init == /\ version \in {"v1", "v2", "v3", "v4", "v5", "v6", "v7"} /\ basis \in {1, 9}
         /\ doneEn = FALSE /\ doneSv = FALSE /\ paidEn = 1 /\ promoEn = 1 /\ paidSv = 1 /\ promoSv = 1
         /\ effectiveEn = 0 /\ effectiveSv = 0
 RateEn == /\ ~doneEn /\ doneEn' = TRUE
@@ -19,7 +19,7 @@ RateSv == /\ ~doneSv /\ doneSv' = TRUE
 Done == /\ doneEn /\ doneSv /\ UNCHANGED vars
 Next == RateEn \/ RateSv \/ Done
 Spec == Init /\ [][Next]_vars
-TypeOK == /\ version \in {"v1", "v2", "v3", "v4", "v5", "v6"} /\ basis \in {1, 9} /\ doneEn \in BOOLEAN /\ doneSv \in BOOLEAN
+TypeOK == /\ version \in {"v1", "v2", "v3", "v4", "v5", "v6", "v7"} /\ basis \in {1, 9} /\ doneEn \in BOOLEAN /\ doneSv \in BOOLEAN
           /\ paidEn \in 0..1 /\ promoEn \in 0..1 /\ paidSv \in 0..1 /\ promoSv \in 0..1
           /\ effectiveEn \in {0, basis} /\ effectiveSv \in {0, basis}
 CreditConservation == /\ (doneEn => paidEn + promoEn = 1) /\ (doneSv => paidSv + promoSv = 1)
