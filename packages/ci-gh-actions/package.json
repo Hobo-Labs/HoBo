@@ -51,6 +51,10 @@
       "types": "./dist/relay-cache/index.d.ts",
       "default": "./dist/relay-cache/index.js"
     },
+    "./relay-job-assets": {
+      "types": "./dist/_generated-assets/relay-job-assets.d.ts",
+      "default": "./dist/_generated-assets/relay-job-assets.js"
+    },
     "./schema/ci-project.schema.json": "./schema/ci-project.schema.json",
     "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json"
   },

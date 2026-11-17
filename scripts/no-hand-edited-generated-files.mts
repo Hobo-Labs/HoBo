@@ -108,6 +108,24 @@ if (generated.every((file) => file === proxyBundle)) {
 		"Sandbox proxy bundle staged without a generator change, and the generator reports drift.",
 	);
 }
+// The relay job's workflow and job-mode evaluator (ADR-0183) are bundled from
+// the package's own sources, so the same answer: the generator's --check.
+const relayJobAsset =
+	"packages/ci-gh-actions/src/_generated-assets/relay-job-assets.ts";
+if (generated.every((file) => file === relayJobAsset)) {
+	const check = spawnSync(
+		process.execPath,
+		["--import", "tsx", "scripts/generate-relay-job.mts", "--check"],
+		{ cwd: "packages/ci-gh-actions", encoding: "utf8" },
+	);
+	if (check.status === 0) {
+		console.error(
+			"Relay job asset staged; its generator reports it matches its sources. Allowing.",
+		);
+		process.exit(0);
+	}
+	console.error("Relay job asset staged, and its generator reports drift.");
+}
 console.error(
 	"Generated outputs changed without matching protobuf/CUE source or generator change:",
 );

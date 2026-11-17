@@ -1,0 +1,175 @@
+name: Parity probe
+
+# Routes real jobs with the relay job's job mode (ADR-0183) and records what
+# happened, so the parity scorecard (docs/ci/parity-scorecard.md) can link a
+# production run for gauntlet cases R04, R14 and R15. It needs no relay and
+# nothing it does depends on the fleet: every relay here names only
+# GitHub-hosted runners or a machine label nothing holds.
+#
+# Each relay job runs the evaluator generated into
+# packages/ci-gh-actions/src/_generated-assets/relay-job-assets.ts, after
+# checking its digest, with the arguments templates/hobo-relay.yml passes.
+# Every result is one `hobo-ci-parity` notice holding JSON: the case, what
+# was expected and what happened.
+#
+# R04 needs a relay job that fails, which fails the run, so it runs only when
+# dispatched with `expect-failure`; such a run is red by design.
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      expect-failure:
+        description: Also run R04, a relay that finds no runner and fails the run.
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  # A relay that names GitHub-hosted runners: it feeds one job and a matrix.
+  relay:
+    name: relay routes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      runner: ${{ steps.answer.outputs.runner }}
+      outcome: ${{ steps.answer.outputs.outcome }}
+      reason: ${{ steps.answer.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            packages/ci-gh-actions/package.json
+            packages/ci-gh-actions/src/_generated-assets/relay-job-assets.ts
+            .hobo/ci.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+      - name: Write the evaluator and check its digest
+        run: |
+          set -euo pipefail
+          node --no-warnings --input-type=module -e 'import { mkdirSync, writeFileSync } from "node:fs"; const asset = await import(`${process.cwd()}/packages/ci-gh-actions/src/_generated-assets/relay-job-assets.ts`); mkdirSync(".hobo-ci", { recursive: true }); writeFileSync(".hobo-ci/relay.mjs", asset.RELAY_JOB_EVALUATOR);'
+          stated="$(sed -n 's#^// sha256: ##p' .hobo-ci/relay.mjs)"
+          actual="$(sed '1,/^\/\/ --- end of header ---$/d' .hobo-ci/relay.mjs | sha256sum | cut -d' ' -f1)"
+          test "${stated}" = "${actual}"
+      - id: answer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node --no-warnings .hobo-ci/relay.mjs
+          --github ubuntu-24.04
+          --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --job "$GITHUB_JOB" --event "$GITHUB_EVENT_NAME" --actor-id "$GITHUB_ACTOR_ID"
+          --private false --fork false --workflow-ref "$GITHUB_WORKFLOW_REF"
+
+  one:
+    name: one job on the relay's runner
+    needs: relay
+    runs-on: ${{ needs.relay.outputs.runner }}
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - env:
+          WANTED: ${{ needs.relay.outputs.runner }}
+        run: >-
+          echo "::notice title=hobo-ci-parity::{\"case\":\"R15\",\"expected\":\"${WANTED}\",\"ranOn\":\"${RUNNER_NAME}\",\"environment\":\"${RUNNER_ENVIRONMENT}\"}"
+
+  legs:
+    name: matrix leg ${{ matrix.leg }} on the relay's runner
+    needs: relay
+    runs-on: ${{ needs.relay.outputs.runner }}
+    timeout-minutes: 2
+    permissions: {}
+    strategy:
+      matrix:
+        leg: [1, 2, 3]
+    steps:
+      - env:
+          WANTED: ${{ needs.relay.outputs.runner }}
+          LEG: ${{ matrix.leg }}
+        run: >-
+          echo "::notice title=hobo-ci-parity::{\"case\":\"R14\",\"leg\":${LEG},\"expected\":\"${WANTED}\",\"ranOn\":\"${RUNNER_NAME}\"}"
+
+  # A relay that names only a machine label nothing holds: it must fail with
+  # its reason, and the job behind it must be skipped.
+  relay-none:
+    name: relay finds no runner
+    if: ${{ inputs.expect-failure }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      runner: ${{ steps.answer.outputs.runner }}
+      outcome: ${{ steps.answer.outputs.outcome }}
+      reason: ${{ steps.answer.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            packages/ci-gh-actions/package.json
+            packages/ci-gh-actions/src/_generated-assets/relay-job-assets.ts
+            .hobo/ci.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+      - name: Write the evaluator and check its digest
+        run: |
+          set -euo pipefail
+          node --no-warnings --input-type=module -e 'import { mkdirSync, writeFileSync } from "node:fs"; const asset = await import(`${process.cwd()}/packages/ci-gh-actions/src/_generated-assets/relay-job-assets.ts`); mkdirSync(".hobo-ci", { recursive: true }); writeFileSync(".hobo-ci/relay.mjs", asset.RELAY_JOB_EVALUATOR);'
+          stated="$(sed -n 's#^// sha256: ##p' .hobo-ci/relay.mjs)"
+          actual="$(sed '1,/^\/\/ --- end of header ---$/d' .hobo-ci/relay.mjs | sha256sum | cut -d' ' -f1)"
+          test "${stated}" = "${actual}"
+      - id: answer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node --no-warnings .hobo-ci/relay.mjs
+          --machine hobo-parity-no-such-machine
+          --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --job "$GITHUB_JOB" --event "$GITHUB_EVENT_NAME" --actor-id "$GITHUB_ACTOR_ID"
+          --private false --fork false --workflow-ref "$GITHUB_WORKFLOW_REF"
+
+  behind-none:
+    name: job behind a relay with no runner
+    needs: relay-none
+    runs-on: ${{ needs.relay-none.outputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - run: echo "This job runs only if the relay that found no runner succeeded."
+
+  verdict:
+    name: record the relay results
+    needs: [relay, one, legs, relay-none, behind-none]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - env:
+          ROUTED: ${{ needs.relay.outputs.outcome }}
+          ONE: ${{ needs.one.result }}
+          LEGS: ${{ needs.legs.result }}
+          NONE_RESULT: ${{ needs.relay-none.result }}
+          NONE_OUTCOME: ${{ needs.relay-none.outputs.outcome }}
+          NONE_REASON: ${{ needs.relay-none.outputs.reason }}
+          BEHIND: ${{ needs.behind-none.result }}
+        run: |
+          set -euo pipefail
+          reason="$(printf '%s' "${NONE_REASON}" | tr -d '"\\\r\n')"
+          echo "::notice title=hobo-ci-parity::{\"case\":\"R15\",\"outcome\":\"${ROUTED}\",\"job\":\"${ONE}\"}"
+          echo "::notice title=hobo-ci-parity::{\"case\":\"R14\",\"outcome\":\"${ROUTED}\",\"legs\":\"${LEGS}\"}"
+          if [ "${NONE_RESULT}" = "skipped" ]; then exit 0; fi
+          echo "::notice title=hobo-ci-parity::{\"case\":\"R04\",\"relay\":\"${NONE_RESULT}\",\"outcome\":\"${NONE_OUTCOME}\",\"reason\":\"${reason}\",\"behind\":\"${BEHIND}\"}"

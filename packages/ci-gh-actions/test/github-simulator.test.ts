@@ -723,7 +723,7 @@ describe("GithubSimulator", () => {
 		await api(sim, `/repos/${REPO}/actions/jobs/${job.id}`, {
 			headers: { authorization: "Bearer test" },
 		});
-		await api(sim, "/nowhere");
+		await api(sim, "/no-such-route");
 		expect(sim.requests()).toEqual([
 			expect.objectContaining({
 				method: "GET",
@@ -731,7 +731,7 @@ describe("GithubSimulator", () => {
 				status: 200,
 				authorized: true,
 			}),
-			expect.objectContaining({ path: "/nowhere", status: 404 }),
+			expect.objectContaining({ path: "/no-such-route", status: 404 }),
 		]);
 		expect(
 			sim
