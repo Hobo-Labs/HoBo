@@ -8,6 +8,7 @@ import { must } from "@hobo/core/total-access";
 import { type AdapterClaims, dualVerifyClaims } from "./dual-adapter.js";
 import {
 	FeatureFlagStore,
+	type FeatureFlagPort,
 	type FlagDefinition,
 	type FlagEvaluation,
 	migrationCohortFlagKey,
@@ -69,7 +70,7 @@ export type ControlPlaneProgress = Readonly<{
  */
 export class IdentityMigrationControlPlane {
 	readonly tenant: string;
-	readonly flags: FeatureFlagStore;
+	readonly flags: FeatureFlagPort;
 	readonly service: IdentityMigrationService;
 	private pair: DualAdapterPair | null = null;
 	private lastMatch: IdentityMigrationMatchDecision | null = null;
@@ -80,7 +81,7 @@ export class IdentityMigrationControlPlane {
 		readonly tenant: string;
 		readonly vaultRoot?: string;
 		readonly now?: () => string;
-		readonly flags?: FeatureFlagStore;
+		readonly flags?: FeatureFlagPort;
 	}) {
 		this.tenant = options.tenant;
 		this.now = options.now ?? (() => new Date().toISOString());
