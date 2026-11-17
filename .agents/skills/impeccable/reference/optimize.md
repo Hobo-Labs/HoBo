@@ -21,7 +21,7 @@ Understand current performance and identify problems:
 
 ## Optimization Strategy
 
-Create systematic improvement plan:
+Improve the measured bottlenecks:
 
 ### Loading Performance
 

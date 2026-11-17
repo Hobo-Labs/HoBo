@@ -83,6 +83,9 @@ for (const harness of [".agents", ".claude", ".cursor", ".github"]) {
 				"visualize",
 				"doctor",
 				"critique",
+				"craft",
+				"routing",
+				"degraded/asset-producer",
 			]) {
 				const text = readFileSync(
 					join(skill, "reference", `${reference}.md`),
@@ -91,7 +94,17 @@ for (const harness of [".agents", ".claude", ".cursor", ".github"]) {
 				assert.match(text, /AGENTS\.md/u);
 				assert.doesNotMatch(
 					text,
-					/write DESIGN\.md|persist a snapshot|return a confirmed design brief/iu,
+					/write DESIGN\.md|persist a snapshot|return a confirmed design brief|create missing PRODUCT\.md|decision card packet/iu,
+				);
+			}
+			for (const reference of ["animate", "extract", "optimize", "live"]) {
+				const text = readFileSync(
+					join(skill, "reference", `${reference}.md`),
+					"utf8",
+				);
+				assert.doesNotMatch(
+					text,
+					/write a short plan before implementation|create (?:a )?systematic (?:improvement )?plan|read PRODUCT\.md's Brand Personality/iu,
 				);
 			}
 		} finally {
@@ -102,18 +115,40 @@ for (const harness of [".agents", ".claude", ".cursor", ".github"]) {
 
 test("visual agent definitions follow the common source policy", () => {
 	for (const file of [
+		".agents/skills/impeccable/agents/impeccable_asset_producer.toml",
 		".agents/skills/impeccable/agents/impeccable_documenter.toml",
 		".agents/skills/impeccable/agents/impeccable_finish_reviewer.toml",
 		".cursor/agents/impeccable-documenter.md",
+		".cursor/agents/impeccable-asset-producer.md",
 		".cursor/agents/impeccable-finish-reviewer.md",
 		".github/agents/impeccable-documenter.agent.md",
+		".github/agents/impeccable-asset-producer.agent.md",
 		".github/agents/impeccable-finish-reviewer.agent.md",
 	]) {
 		const instructions = readFileSync(resolve(file), "utf8");
 		assert.match(instructions, /AGENTS\.md/u, file);
 		assert.doesNotMatch(
 			instructions,
-			/write DESIGN\.md|records DESIGN\.md/iu,
+			/write DESIGN\.md|records DESIGN\.md|decision card packet/iu,
+			file,
+		);
+	}
+});
+
+test("agent guidance refers to implemented sources rather than retired design documents", () => {
+	const files = ["AGENTS.md"];
+	for (const harness of [".agents", ".claude"]) {
+		files.push(
+			`${harness}/skills/hobo-deploy/SKILL.md`,
+			`${harness}/skills/optimizexp/references/dx/repo-package-hierarchy.md`,
+			`${harness}/skills/optimizexp/references/ax/specs.md`,
+			`${harness}/skills/optimizexp/references/ax/auth.md`,
+		);
+	}
+	for (const file of files) {
+		assert.doesNotMatch(
+			readFileSync(resolve(file), "utf8"),
+			/docs\/design\//u,
 			file,
 		);
 	}

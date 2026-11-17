@@ -5,9 +5,7 @@ description: Use when running a HoBo deployment that needs a secrets manager —
 
 # HoBo deployment: secretless first, a secrets manager for the rest
 
-The rule is ADR-0179's amendment "Secretless first"
-(`docs/design/adr/hosted-relay-stateless.md#amendment-secretless-first`). In
-one line: **the relay deploys where it always has (Vercel project `hobo-ci`,
+The deployment follows the secretless-first configuration: **the relay deploys where it always has (Vercel project `hobo-ci`,
 through Vercel's Git integration); nothing it needs is a token a person
 handles; the few secrets that exist live in a secrets manager the relay
 signs in to with OIDC.**
