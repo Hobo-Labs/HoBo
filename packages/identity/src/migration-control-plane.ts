@@ -7,8 +7,8 @@
 import { must } from "@hobo/core/total-access";
 import { type AdapterClaims, dualVerifyClaims } from "./dual-adapter.js";
 import {
-	FeatureFlagStore,
 	type FeatureFlagPort,
+	FeatureFlagStore,
 	type FlagDefinition,
 	type FlagEvaluation,
 	migrationCohortFlagKey,
