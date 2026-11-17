@@ -3,6 +3,10 @@ export const CLOUDFLARE_R2_MAX_KEY_BYTES = 512;
 export const CLOUDFLARE_R2_MAX_CONTENT_TYPE_BYTES = 512;
 export const CLOUDFLARE_R2_MAX_OBJECT_BYTES = 1_048_576;
 export type CloudflareR2Operation = "read" | "write" | "delete";
+export interface CloudflareR2Grant {
+	readonly grantEpoch: string;
+	readonly bucketEpoch: string;
+}
 
 export class CloudflareR2Error extends Error {
 	constructor(
@@ -173,11 +177,15 @@ export async function readCloudflareR2Bytes(
 export function cloudflareR2Grant(
 	allow: readonly string[],
 	grantEpoch: string,
+	bucketEpoch: string,
 ) {
 	if (
 		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: epoch crosses the host authority boundary. */
 		typeof grantEpoch !== "string" ||
 		!/^sha256:[a-f0-9]{64}$/u.test(grantEpoch) ||
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: bucket identity crosses the host authority boundary. */
+		typeof bucketEpoch !== "string" ||
+		!/^sha256:[a-f0-9]{64}$/u.test(bucketEpoch) ||
 		!Array.isArray(allow) ||
 		allow.length === 0 ||
 		allow.length > 3 ||
@@ -211,5 +219,50 @@ export function cloudflareR2Grant(
 			"R2_GRANT_INVALID",
 			"operation grant is invalid",
 		);
-	return Object.freeze({ grantEpoch, allow: Object.freeze(result.sort()) });
+	return Object.freeze({
+		grantEpoch,
+		bucketEpoch,
+		allow: Object.freeze(result.sort()),
+	});
+}
+
+/** Target-specific selection; the provider-neutral Bindle remains unchanged. */
+export function cloudflareR2Option(grant: CloudflareR2Grant) {
+	if (
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the target choice crosses an application boundary. */
+		typeof grant !== "object" ||
+		grant === null ||
+		Array.isArray(grant) ||
+		Object.getOwnPropertySymbols(grant).length !== 0
+	)
+		throw new CloudflareR2Error(
+			"R2_GRANT_INVALID",
+			"a plain host grant is required",
+		);
+	const values = Object.getOwnPropertyDescriptors(grant);
+	const epoch = values.grantEpoch;
+	const bucket = values.bucketEpoch;
+	if (
+		Object.keys(values).length !== 2 ||
+		epoch === undefined ||
+		!("value" in epoch) ||
+		!epoch.enumerable ||
+		bucket === undefined ||
+		!("value" in bucket) ||
+		!bucket.enumerable
+	)
+		throw new CloudflareR2Error(
+			"R2_GRANT_INVALID",
+			"a plain host grant is required",
+		);
+	const checked = cloudflareR2Grant(["read"], epoch.value, bucket.value);
+	return Object.freeze({
+		provider: "cloudflare",
+		option: "bounded-r2",
+		config: Object.freeze({
+			grantEpoch: checked.grantEpoch,
+			bucketEpoch: checked.bucketEpoch,
+			runtime: "worker-js",
+		}),
+	});
 }

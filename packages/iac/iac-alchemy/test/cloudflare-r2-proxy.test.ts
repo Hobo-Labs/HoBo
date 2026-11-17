@@ -433,6 +433,8 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		const n = native();
 		let completeWrite: () => void = () => {};
 		let completeDelete: () => void = () => {};
+		let writeAttempts = 0;
+		let deleteAttempts = 0;
 		let startedWrite: () => void = () => {};
 		let startedDelete: () => void = () => {};
 		const writeStarted = new Promise<void>((resolve) => {
@@ -445,6 +447,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 			...n.binding,
 			put: (...args) =>
 				new Promise((resolve) => {
+					writeAttempts++;
 					startedWrite();
 					completeWrite = () => {
 						void n.binding.put(...args).then(resolve);
@@ -452,6 +455,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 				}),
 			delete: (...args) =>
 				new Promise((resolve) => {
+					deleteAttempts++;
 					startedDelete();
 					completeDelete = () => {
 						void n.binding.delete(...args).then(resolve);
@@ -493,5 +497,6 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		await Promise.resolve();
 		expect(n.items.has("key")).toBe(false);
 		expect(n.calls).toEqual(["put:key", "delete:key"]);
+		expect([writeAttempts, deleteAttempts]).toEqual([1, 1]);
 	});
 });
