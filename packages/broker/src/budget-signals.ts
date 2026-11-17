@@ -189,10 +189,9 @@ export function foldBudgetSignals(
 	// signals sit after the usage facts in global order, and dedupe must not
 	// depend on where in the stream they landed.
 	const buffered = Array.isArray(events) ? events : [...events];
-	const recorded = new Map<
-		string,
-		Array<{ type: string; data: unknown; metadataKey: unknown }>
-	>();
+	type RecordedEntry = { type: string; data: unknown; metadataKey: unknown };
+	const recorded = new Map<string, RecordedEntry[]>();
+	const unmatched = new Set<RecordedEntry>();
 	for (const event of buffered) {
 		const isSignal =
 			event.type === BUDGET_EVENTS.ThresholdCrossed ||
@@ -202,11 +201,13 @@ export function foldBudgetSignals(
 		const metadataKey = isJsonObject(event.meta)
 			? event.meta.idempotencyKey
 			: undefined;
+		const entry: RecordedEntry = { type: event.type, data, metadataKey };
 		if (isSignal && isJsonObject(data)) {
 			const belongsToPolicy = identity
 				? sameIdentity(data.identity, identity)
 				: data.tenantId === tenantId && data.identity === undefined;
 			if (belongsToPolicy) {
+				unmatched.add(entry);
 				if (data.tenantId !== tenantId)
 					throw new TypeError(
 						"budget signal scope conflicts with its identity; reconcile the journal",
@@ -234,7 +235,7 @@ export function foldBudgetSignals(
 		if (isJsonString(metadataKey) && metadataKey) keys.add(metadataKey);
 		for (const key of keys) {
 			const entries = recorded.get(key) ?? [];
-			entries.push({ type: event.type, data, metadataKey });
+			entries.push(entry);
 			recorded.set(key, entries);
 		}
 	}
@@ -254,6 +255,7 @@ export function foldBudgetSignals(
 			throw new TypeError(
 				"budget signal conflicts with reconstructed transition; reconcile the journal",
 			);
+		for (const entry of entries) unmatched.delete(entry);
 		if (entries.length || emitted.has(key)) return;
 		emitted.add(key);
 		signals.push(signal);
@@ -372,6 +374,10 @@ export function foldBudgetSignals(
 		}
 	}
 
+	if (unmatched.size)
+		throw new TypeError(
+			"recorded budget signal has no reconstructed transition; reconcile the journal",
+		);
 	return { state, signals };
 }
 

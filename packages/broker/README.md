@@ -151,8 +151,9 @@ guarantee; new hosting controls use versioned identities.
 
 Replay the complete target stream, including event metadata, before appending
 signals to it. A recorded signal suppresses emission only if its scope and
-payload match the reconstructed transition. A conflicting signal or occupied
-idempotency key requires journal reconciliation. Explicitly foreign facts are
+payload match the reconstructed transition. A recorded signal that cannot be
+reconstructed, a conflicting signal, or an occupied idempotency key requires
+journal reconciliation. Explicitly foreign facts are
 ignored, but missing scope or invalid amounts on relevant financial facts now
 stop the fold; reconcile older unscoped or incomplete records before upgrade.
 The journal and its evidence are trusted, and replay alone cannot authenticate
