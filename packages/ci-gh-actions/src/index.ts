@@ -798,3 +798,13 @@ export {
 	type GithubWorkflowClaims,
 	type GithubWorkflowVerifier,
 } from "./workflow-oidc.js";
+export {
+	foldInsightWebhook,
+	type InsightAttemptStore,
+	InsightIngest,
+	type InsightWebhookFact,
+	type JobWebhookFact,
+	parseInsightWebhook,
+	type RunWebhookFact,
+	UNKNOWN_EVENT,
+} from "./insight-ingest.js";
