@@ -459,6 +459,230 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			expect(await store.events()).toEqual(before);
 		});
 
+		it.each([
+			"reserved",
+			"provisioning",
+			"registered",
+		] as const)("retains %s slot capacity while teardown is uncertain", async (phase) => {
+			const store = current();
+			await store.intake(demand("1", "webhook", `uncertain-${phase}`));
+			const reserved = reservation(parsedKey("1"), `uncertain-${phase}`, 0);
+			await store.reserveCapacity(reserved.input);
+			if (phase !== "reserved")
+				await store.transitionRunnerSlot(
+					reserved.input.slot.id,
+					"reserved",
+					"provisioning",
+				);
+			if (phase === "registered")
+				await store.transitionRunnerSlot(
+					reserved.input.slot.id,
+					"provisioning",
+					"registered",
+					"runner",
+				);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				phase,
+				"uncertain",
+			);
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				reservedUnits: 1,
+				seq: 1,
+			});
+			await expect(
+				store.transitionRunnerSlot(
+					reserved.input.slot.id,
+					"uncertain",
+					"released",
+				),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.TEARDOWN_UNCONFIRMED,
+			});
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"uncertain",
+				"released",
+				undefined,
+				{ teardownConfirmed: true },
+			);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"uncertain",
+				"released",
+				undefined,
+				{ teardownConfirmed: true },
+			);
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				reservedUnits: 0,
+				seq: 2,
+			});
+			expect(
+				(await store.events()).filter(
+					(event) => event.type === FleetEventType.CAPACITY_RELEASED,
+				),
+			).toHaveLength(1);
+		});
+
+		it("settles a claimed uncertain slot only through confirmed teardown", async () => {
+			const store = current();
+			await store.intake(demand("1", "webhook", "claimed-uncertain"));
+			const reserved = reservation(parsedKey("1"), "claimed-uncertain", 0);
+			await store.reserveCapacity(reserved.input);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"reserved",
+				"provisioning",
+			);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"provisioning",
+				"registered",
+				"runner",
+			);
+			await store.bindStart(
+				parseStartBindingInput({
+					slotId: reserved.input.slot.id,
+					claimId: "uncertain-claim",
+					key: githubKey("1"),
+					bindingSecret: reserved.bindingSecret,
+					assignment: {
+						verified: true,
+						accountId: "hobo-labs",
+						runnerName: reserved.input.slot.runnerName,
+						profileId: "trusted-linux-x64",
+					},
+				}),
+			);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"bound",
+				"uncertain",
+			);
+			await store.completeExecution({
+				claimId: "uncertain-claim",
+				state: "completed",
+				teardownConfirmed: false,
+			});
+			await expect(
+				store.transitionRunnerSlot(
+					reserved.input.slot.id,
+					"uncertain",
+					"released",
+					undefined,
+					{ teardownConfirmed: true },
+				),
+			).rejects.toMatchObject({ code: FleetRejectionCode.EXECUTION_CONFLICT });
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				reservedUnits: 1,
+			});
+			const first = await store.completeExecution({
+				claimId: "uncertain-claim",
+				state: "completed",
+				teardownConfirmed: true,
+			});
+			const second = await store.completeExecution({
+				claimId: "uncertain-claim",
+				state: "completed",
+				teardownConfirmed: true,
+			});
+			expect(first).toMatchObject({ settled: false, capacityReleased: true });
+			expect(second).toMatchObject({ settled: false, capacityReleased: false });
+			expect(await store.runnerSlot(reserved.input.slot.id)).toMatchObject({
+				state: "released",
+			});
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				reservedUnits: 0,
+				seq: 2,
+			});
+		});
+
+		it("retains an uncertain reservation through generated failed release attempts", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.constantFrom("reserved", "provisioning", "registered"),
+					fc.integer({ min: 0, max: 5 }),
+					async (phase, attempts) => {
+						const instance = await open();
+						try {
+							const store = instance.store;
+							await seed(store);
+							await store.intake(
+								demand("1", "webhook", "generated-uncertainty"),
+							);
+							const reserved = reservation(
+								parsedKey("1"),
+								"generated-uncertainty",
+								0,
+							);
+							await store.reserveCapacity(reserved.input);
+							if (phase !== "reserved")
+								await store.transitionRunnerSlot(
+									reserved.input.slot.id,
+									"reserved",
+									"provisioning",
+								);
+							if (phase === "registered")
+								await store.transitionRunnerSlot(
+									reserved.input.slot.id,
+									"provisioning",
+									"registered",
+									"runner",
+								);
+							await store.transitionRunnerSlot(
+								reserved.input.slot.id,
+								phase,
+								"uncertain",
+							);
+							for (let index = 0; index < attempts; index++) {
+								await expect(
+									store.transitionRunnerSlot(
+										reserved.input.slot.id,
+										"uncertain",
+										"released",
+										undefined,
+										{ teardownConfirmed: false },
+									),
+								).rejects.toMatchObject({
+									code: FleetRejectionCode.TEARDOWN_UNCONFIRMED,
+								});
+								expect(await store.capacityGroup("device-1")).toMatchObject({
+									reservedUnits: 1,
+									seq: 1,
+								});
+							}
+							await store.transitionRunnerSlot(
+								reserved.input.slot.id,
+								"uncertain",
+								"released",
+								undefined,
+								{ teardownConfirmed: true },
+							);
+							await store.transitionRunnerSlot(
+								reserved.input.slot.id,
+								"uncertain",
+								"released",
+								undefined,
+								{ teardownConfirmed: true },
+							);
+							expect(await store.capacityGroup("device-1")).toMatchObject({
+								reservedUnits: 0,
+								seq: 2,
+							});
+							expect(
+								(await store.events()).filter(
+									(event) => event.type === FleetEventType.CAPACITY_RELEASED,
+								),
+							).toHaveLength(1);
+						} finally {
+							await instance.close();
+						}
+					},
+				),
+				{ seed: 614452, numRuns: 50 },
+			);
+		}, 60_000);
+
 		it("deduplicates intake across webhook, pull, and repair", async () => {
 			const store = current();
 			await store.intake(demand("1", "webhook", "webhook-1"));
