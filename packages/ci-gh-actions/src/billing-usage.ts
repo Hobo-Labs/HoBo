@@ -147,10 +147,11 @@ export class GithubMinutesReader implements MinutesReader {
 		return usage;
 	}
 
+	/** The body of a 2xx reply, null for a 404, undefined for any other refusal. */
 	private async getJson(
 		path: string,
 		token: string,
-	): Promise<string | undefined> {
+	): Promise<string | null | undefined> {
 		const response = await this.deps.fetch(
 			`${this.deps.baseUrl.replace(/\/+$/u, "")}${path}`,
 			{
@@ -161,16 +162,22 @@ export class GithubMinutesReader implements MinutesReader {
 				},
 			},
 		);
+		if (response.status === 404) return null;
 		return response.ok ? await response.text() : undefined;
 	}
 
+	/**
+	 * The first of `paths` that answers. Only a 404 (an organization path
+	 * asked of a user, or the reverse) moves on to the next; a refusal such
+	 * as a 403 for a missing billing permission ends the reading there.
+	 */
 	private async firstJson(
 		paths: readonly string[],
 		token: string,
 	): Promise<string | undefined> {
 		for (const path of paths) {
 			const body = await this.getJson(path, token);
-			if (body !== undefined) return body;
+			if (body !== null) return body;
 		}
 		return undefined;
 	}
