@@ -2,10 +2,23 @@ import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
 import type { ActorHost } from "@hobo/data";
 import { emit } from "@hobo/events";
 
-import { CLOUD_EVENTS, deploymentRolledBack } from "../events.js";
+import {
+	type DeploymentTransitionData,
+	deploymentRolledBack,
+	deploymentTransitionCompleted,
+	deploymentTransitionStarted,
+} from "../events.js";
 import type { CredentialBroker, Executor } from "../executor/executor.js";
 import type { DeploymentPlan } from "../plan-types.js";
 import { currentFenceToken } from "../store/index.js";
+import {
+	DeploymentTransitionError,
+	deploymentPlanHash,
+	foldDeploymentTransition,
+	newTransitionId,
+	transitionResourceNames,
+} from "./deployment-transition.js";
+import { recordedResources } from "./desired-state.js";
 import { readDeploymentHistory } from "./history-scope.js";
 import {
 	type PendingResourceOperation,
@@ -105,6 +118,16 @@ export async function runCompensation(
 	triggeringFailure: { resourceId: string; reason: string },
 	ctx: CompensationContext,
 ): Promise<CompensationResult> {
+	plan = structuredClone(plan);
+	triggeringFailure = { ...triggeringFailure };
+	const resourceIds = transitionResourceNames(plan);
+	if (
+		triggeringFailure.resourceId.length === 0 ||
+		triggeringFailure.resourceId.length > 200 ||
+		triggeringFailure.reason.length === 0 ||
+		triggeringFailure.reason.length > 4096
+	)
+		throw new DeploymentTransitionError("rollback cause is invalid");
 	const stream = streamId(deploymentId);
 	const appendOpts = {
 		actor: ctx.actor,
@@ -129,31 +152,56 @@ export async function runCompensation(
 		return { status: "needs-human", destroyedOrder: [], events };
 	}
 
-	// Emit deployment.RolledBack once (idempotent — resume-safe). The stream is
-	// fenced by the leased writes that came before; continue under the current
-	// owner epoch.
-	if (!events.some((e) => e.type === CLOUD_EVENTS.DeploymentRolledBack)) {
+	const planHash = deploymentPlanHash(plan);
+	const state = foldDeploymentTransition(events);
+	if (state.status === "closed") {
+		const unsettled = [...recordedResources(events).values()].some(
+			(resource) =>
+				resource.state === "Provisioned" ||
+				resource.state === "Provisioning" ||
+				resource.state === "Destroying" ||
+				(state.legacy && resource.state === "Failed"),
+		);
+		return {
+			status: unsettled ? "needs-human" : "rolled-back",
+			destroyedOrder: [],
+			events,
+		};
+	}
+	let transition: DeploymentTransitionData;
+	if (state.status === "active") {
+		if (
+			state.transition.kind !== "rollback" ||
+			state.transition.planHash !== planHash
+		)
+			return { status: "needs-human", destroyedOrder: [], events };
+		transition = state.transition;
+	} else {
+		transition = {
+			deploymentId,
+			transitionId: newTransitionId(events),
+			kind: "rollback",
+			planHash,
+			resourceIds,
+			triggerResource: triggeringFailure.resourceId,
+			reason: triggeringFailure.reason,
+		};
 		const lastSeq =
 			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
 		const fenceToken = currentFenceToken(deps.store, stream);
-		await emit(
-			deps.store,
-			stream,
-			[
-				deploymentRolledBack({
-					deploymentId,
-					targetSetId: `${deploymentId}-previous-set`,
-					reason: `resource ${triggeringFailure.resourceId} crossed no-go threshold: ${triggeringFailure.reason}`,
-				}),
-			],
-			{
-				expectedSeq: lastSeq,
-				...(fenceToken !== undefined ? { fenceToken } : undefined),
-				...appendOpts,
-			},
-		);
+		await emit(deps.store, stream, [deploymentTransitionStarted(transition)], {
+			expectedSeq: lastSeq,
+			...(fenceToken !== undefined ? { fenceToken } : undefined),
+			...appendOpts,
+		});
 		events = await readHistory();
+		const confirmed = foldDeploymentTransition(events);
+		if (
+			confirmed.status !== "active" ||
+			JSON.stringify(confirmed.transition) !== JSON.stringify(transition)
+		)
+			throw new Error("rollback transition start could not be confirmed");
 	}
 
 	const actorDeps: ResourceActorDeps = {
@@ -254,5 +302,43 @@ export async function runCompensation(
 			events,
 			pendingOperations,
 		};
+	if (
+		plan.resources.some((resource) => {
+			const state = foldResourceActor(events, {
+				...resource,
+				deploymentId,
+			}).state;
+			return (
+				state === "Provisioning" ||
+				state === "Provisioned" ||
+				state === "Updating" ||
+				state === "Destroying"
+			);
+		})
+	)
+		return { status: "needs-human", destroyedOrder, events };
+	const lastSeq = events.at(-1)?.seq ?? 0;
+	const fenceToken = currentFenceToken(deps.store, stream);
+	await emit(
+		deps.store,
+		stream,
+		[
+			deploymentTransitionCompleted(transition),
+			deploymentRolledBack({
+				deploymentId,
+				targetSetId: `${deploymentId}-previous-set`,
+				reason: `resource ${transition.triggerResource} crossed no-go threshold: ${transition.reason}`,
+			}),
+		],
+		{
+			expectedSeq: lastSeq,
+			...(fenceToken !== undefined ? { fenceToken } : undefined),
+			...appendOpts,
+		},
+	);
+	events = await readHistory();
+	const finished = foldDeploymentTransition(events);
+	if (finished.status !== "closed" || finished.legacy)
+		throw new Error("rollback transition completion could not be confirmed");
 	return { status: "rolled-back", destroyedOrder, events };
 }

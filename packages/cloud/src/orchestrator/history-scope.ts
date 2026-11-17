@@ -1,6 +1,6 @@
 import type { EventEnvelope, EventStore } from "@hobo/core";
 import { CLOUD_EVENTS } from "../events.js";
-import { isJsonObject } from "../json.js";
+import { isJsonObject, isJsonString } from "../json.js";
 import { collectStream } from "../store/index.js";
 
 /** A deployment stream cannot mix tenants or facts for different deployments. */
@@ -31,6 +31,14 @@ export function assertDeploymentHistoryScope(
 		if (
 			scopedType &&
 			(!isJsonObject(data) || data.deploymentId !== deploymentId)
+		)
+			throw new DeploymentHistoryScopeError();
+		if (
+			event.type.startsWith("resource.") &&
+			(!isJsonObject(data) ||
+				!isJsonString(data.resourceId) ||
+				data.resourceId.length === 0 ||
+				data.resourceId.length > 200)
 		)
 			throw new DeploymentHistoryScopeError();
 		if (

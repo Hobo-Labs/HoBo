@@ -12,13 +12,14 @@ import {
 
 export interface PendingResourceOperation {
 	readonly resourceId: string;
-	readonly operation: "apply" | "destroy";
+	readonly operation: "apply" | "destroy" | "unknown";
 	readonly reason:
 		| "removed-from-plan"
 		| "opposite-operation"
 		| "apply-spec-unverified"
 		| "resume-unverified"
 		| "dependency-unverified"
+		| "resource-outside-plan"
 		| "apply-in-progress";
 }
 
@@ -132,6 +133,19 @@ export function pendingCompensationBarriers(
 	const declared = new Set(plan.resources.map((resource) => resource.name));
 	const output: PendingResourceOperation[] = [];
 	for (const previous of recordedResources(events).values()) {
+		if (
+			!declared.has(previous.resourceId) &&
+			previous.state !== "Destroyed" &&
+			previous.state !== "Provisioning" &&
+			previous.state !== "Destroying"
+		) {
+			output.push({
+				resourceId: previous.resourceId,
+				operation: "unknown",
+				reason: "resource-outside-plan",
+			});
+			continue;
+		}
 		if (previous.state !== "Provisioning" && previous.state !== "Destroying")
 			continue;
 		const operation = previous.state === "Provisioning" ? "apply" : "destroy";

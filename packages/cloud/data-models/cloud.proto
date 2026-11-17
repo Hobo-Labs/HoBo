@@ -349,11 +349,35 @@ message DeploymentDeployedRecord {
   repeated string resource_ids = 3;
 }
 
-// deployment.RolledBack: a no-go failure crossed threshold; saga compensates.
+// deployment.RolledBack: compensation completed after the transition closed.
 message DeploymentRolledBackRecord {
   string deployment_id = 1;
   string target_set_id = 2;
   string reason = 3;
+}
+
+// deployment.TransitionStarted / deployment.TransitionCompleted: CAS-fenced work.
+message DeploymentTransitionRecord {
+  string deployment_id = 1;
+  string transition_id = 2;
+  string kind = 3; // "rollback" | "prune"
+  string plan_hash = 4;
+  repeated string resource_ids = 5;
+  optional string trigger_resource = 6;
+  optional string reason = 7;
+}
+
+message ReopenedResource {
+  string resource_id = 1;
+  string spec_hash = 2;
+}
+
+// deployment.Reopened: explicitly start a new reviewed run after rollback.
+message DeploymentReopenedRecord {
+  string deployment_id = 1;
+  string rollback_event_id = 2;
+  string plan_hash = 3;
+  repeated ReopenedResource resources = 4;
 }
 
 // ---- S3-04: CredentialAudit projection (ai-native-agent-auth.md §6.2/§6.8) ----

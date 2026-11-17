@@ -232,6 +232,45 @@ describe("orchestration with pending provider effects", () => {
 		}
 	});
 
+	it("does not compensate a dependency of an omitted live resource", async () => {
+		const f = fixture();
+		try {
+			await f.append([
+				deploymentPlanned({ deploymentId, planHash: "sha256:test", plan }),
+				resourceProvisioned({
+					deploymentId,
+					resourceId: dependency.name,
+					outputs: {},
+					execId: "prior-network",
+					specHash: desiredSpecHash(dependency),
+				}),
+				resourceProvisioned({
+					deploymentId,
+					resourceId: child.name,
+					outputs: {},
+					execId: "prior-web",
+					specHash: desiredSpecHash(child),
+				}),
+			]);
+			const result = await runCompensation(
+				f.deps,
+				smaller,
+				deploymentId,
+				{ resourceId: "failed", reason: "test" },
+				f.context,
+			);
+			expect(result.status).toBe("needs-human");
+			expect(result.pendingOperations).toContainEqual({
+				resourceId: "web",
+				operation: "unknown",
+				reason: "resource-outside-plan",
+			});
+			expect(f.calls).toEqual([]);
+		} finally {
+			f.store.close();
+		}
+	});
+
 	it("refuses a changed in-flight application before updating its dependency", async () => {
 		const f = fixture();
 		try {

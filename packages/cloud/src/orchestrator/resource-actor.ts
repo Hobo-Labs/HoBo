@@ -28,6 +28,10 @@ import { isJsonObject, isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
 import { currentFenceToken } from "../store/index.js";
 import {
+	requireApplyOpen,
+	requireDestroyAllowed,
+} from "./deployment-transition.js";
+import {
 	type BlockedProviderMove,
 	blockedProviderMove,
 	desiredSpecHash,
@@ -466,6 +470,7 @@ export async function reconcileResource(
 			ctx.deploymentId,
 			ctx.tenant,
 		);
+		requireApplyOpen(events, resource);
 		let snapshot = foldResourceActor(events, {
 			...resource,
 			deploymentId: ctx.deploymentId,
@@ -804,6 +809,7 @@ export async function destroyResource(
 			ctx.deploymentId,
 			ctx.tenant,
 		);
+		requireDestroyAllowed(events, resource.name);
 		let snapshot = foldResourceActor(events, {
 			...resource,
 			deploymentId: ctx.deploymentId,

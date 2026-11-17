@@ -1,7 +1,7 @@
 import { defineProjection, type Projection } from "@hobo/data";
 
 import { CLOUD_EVENTS } from "../events.js";
-import type { JsonValue } from "../json.js";
+import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import type { DeploymentPlan, PlanRemediation } from "../plan-types.js";
 
 // The DeploymentView projection (control-plane.md "Choreography over
@@ -46,6 +46,8 @@ export interface DeploymentViewRow {
 		| "planned"
 		| "rejected"
 		| "deployed"
+		| "rolling-back"
+		| "pruning"
 		| "rolled-back"
 		| "needs-human";
 	/** Last recorded deployment status before any unresolved resource. */
@@ -348,6 +350,45 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				const next = base(row, data.deploymentId);
 				if (next.reconciliations === undefined) next.status = "rolled-back";
 				next.rollback = { reason: data.reason, targetSetId: data.targetSetId };
+				return next;
+			},
+			[CLOUD_EVENTS.DeploymentTransitionStarted]: (row, event) => {
+				const data = event.data;
+				if (
+					!isJsonObject(data) ||
+					!isJsonString(data.deploymentId) ||
+					(data.kind !== "rollback" && data.kind !== "prune")
+				)
+					throw new TypeError("invalid deployment transition");
+				const next = base(row, data.deploymentId);
+				const status = data.kind === "rollback" ? "rolling-back" : "pruning";
+				if (next.reconciliations === undefined) next.status = status;
+				else next.statusBeforeReconciliation = status;
+				return next;
+			},
+			[CLOUD_EVENTS.DeploymentTransitionCompleted]: (row, event) => {
+				const data = event.data;
+				if (
+					!isJsonObject(data) ||
+					!isJsonString(data.deploymentId) ||
+					(data.kind !== "rollback" && data.kind !== "prune")
+				)
+					throw new TypeError("invalid deployment transition");
+				const next = base(row, data.deploymentId);
+				if (data.kind === "prune") {
+					if (next.reconciliations === undefined) next.status = "planned";
+					else next.statusBeforeReconciliation = "planned";
+				}
+				return next;
+			},
+			[CLOUD_EVENTS.DeploymentReopened]: (row, event) => {
+				const data = event.data;
+				if (!isJsonObject(data) || !isJsonString(data.deploymentId))
+					throw new TypeError("invalid deployment reopening");
+				const next = base(row, data.deploymentId);
+				delete next.rollback;
+				if (next.reconciliations === undefined) next.status = "planned";
+				else next.statusBeforeReconciliation = "planned";
 				return next;
 			},
 		},

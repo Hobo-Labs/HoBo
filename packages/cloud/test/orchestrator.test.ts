@@ -660,7 +660,12 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 		expect(types).toContain("deployment.RolledBack");
 		const rolledBackIdx = types.indexOf("deployment.RolledBack");
 		const firstDestroyIdx = types.indexOf("resource.Destroying");
-		expect(rolledBackIdx).toBeLessThan(firstDestroyIdx);
+		expect(types.indexOf("deployment.TransitionStarted")).toBeLessThan(
+			firstDestroyIdx,
+		);
+		expect(rolledBackIdx).toBeGreaterThan(
+			types.lastIndexOf("resource.Destroyed"),
+		);
 
 		const destroyed = events
 			.filter((e) => e.type === "resource.Destroyed")
