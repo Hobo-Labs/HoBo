@@ -725,3 +725,12 @@ either signal, and returned URLs; it does not directly assert listener counts
 or inject a close failure. The WASM guest execution test also checks tenant
 environment injection through the separately bundled guest entry, which host
 typechecking cannot cover.
+
+## `hobo ci` command table
+
+A `hobo ci` command added for the relay build (ADR-0183) is one file that
+exports a `CiCommand` and one entry in `CI_COMMANDS`
+([`src/ci-commands.ts`](src/ci-commands.ts)). `ci-command.ts` looks a name up
+there only when it is not one of `BUILT_IN_CI_COMMANDS`, and hands the command
+its own arguments, the flags, the environment, the transport, the clock and a
+way to find the local repository. The command parses its own options.
