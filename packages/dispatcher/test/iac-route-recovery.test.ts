@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { runIacRoute } from "../src/iac-route.js";
-import { recoverIacRoute } from "../src/iac-route-recovery.js";
+import {
+	normalizeIacRouteRecoveryClaim,
+	recoverIacRoute,
+	recoveryClaimDigest,
+} from "../src/iac-route-recovery.js";
 import { createSqliteIacRouteRecoveryStore } from "../src/iac-route-recovery-sqlite.js";
 import { createSqliteIacRouteAuthority } from "../src/iac-route-sqlite.js";
 
@@ -998,4 +1002,68 @@ it("never reopens an already-selected route", async () => {
 		).status,
 	).toBe("denied");
 	expect(await f.store.get(f.identity)).toBeUndefined();
+});
+
+describe("recovery store trust boundary", () => {
+	it.each([
+		"file::memory:?cache=shared",
+		"file:recovery-volatile?mode=memory&cache=shared",
+	])("rejects a memory-backed SQLite URI even with a complete journal schema: %s", (path) => {
+		const db = new DatabaseSync(path);
+		db.exec(`CREATE TABLE iac_routes(tenant TEXT,request TEXT,PRIMARY KEY(tenant,request));
+			CREATE TABLE iac_route_attempts(consumed INTEGER);
+			CREATE TABLE iac_route_operations(tenant TEXT);
+			CREATE TABLE iac_route_successors(tenant TEXT);`);
+		expect(() => {
+			const store = createSqliteIacRouteRecoveryStore({ path });
+			store.close();
+		}).toThrow();
+		db.close();
+	});
+
+	it("rejects accessor-based identity redirection before reading the ledger", async () => {
+		const f = await started();
+		let reads = 0;
+		const identity = {
+			tenantId: "tenant",
+			get requestId() {
+				reads++;
+				return reads === 1 ? "request" : "other";
+			},
+		};
+		expect(() => f.store.inspect(identity)).toThrow();
+		expect(() => f.store.get(identity)).toThrow();
+		expect(reads).toBe(0);
+		expect(await f.authority.verifyAttempt(f.permit)).toBe(true);
+	});
+
+	it("rejects an accessor that changes the digest during commit", async () => {
+		const f = await started();
+		const claim = normalizeIacRouteRecoveryClaim(f.claim);
+		if (!claim) throw new Error("claim missing");
+		let reads = 0;
+		const input = {
+			claim,
+			get claimDigest() {
+				reads++;
+				return recoveryClaimDigest(claim);
+			},
+		};
+		expect(() => f.store.commit(input)).toThrow();
+		expect(reads).toBe(0);
+		expect(await f.authority.verifyAttempt(f.permit)).toBe(true);
+	});
+});
+
+it("rejects accessor-based store configuration before opening a path", async () => {
+	const f = await started();
+	let reads = 0;
+	const options = {
+		get path() {
+			reads++;
+			return f.path;
+		},
+	};
+	expect(() => createSqliteIacRouteRecoveryStore(options)).toThrow();
+	expect(reads).toBe(0);
 });

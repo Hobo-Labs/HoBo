@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: validate persisted SQLite values before using them. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- SAFETY: validate persisted SQLite values before using them. */
 import { randomBytes } from "node:crypto";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import { stableHash } from "./dispatcher.js";
@@ -20,6 +20,27 @@ import {
 	recoveryMatchesSnapshot,
 } from "./iac-route-recovery.js";
 
+function data(input: unknown, key: string): unknown {
+	if (typeof input !== "object" || input === null || Array.isArray(input))
+		return undefined;
+	const descriptor = Object.getOwnPropertyDescriptor(input, key);
+	if (descriptor === undefined) return undefined;
+	if (!("value" in descriptor))
+		throw new TypeError("accessor at recovery store boundary");
+	return descriptor.value;
+}
+function copyIdentity(input: IacRouteIdentity): IacRouteIdentity {
+	const tenantId = data(input, "tenantId");
+	const requestId = data(input, "requestId");
+	if (
+		typeof tenantId !== "string" ||
+		!routeName(tenantId) ||
+		typeof requestId !== "string" ||
+		!routeName(requestId)
+	)
+		throw new TypeError("invalid route identity");
+	return Object.freeze({ tenantId, requestId });
+}
 function assertIdentity(identity: IacRouteIdentity): void {
 	if (!routeName(identity.tenantId) || !routeName(identity.requestId))
 		throw new TypeError("invalid route identity");
@@ -57,11 +78,26 @@ export function createSqliteIacRouteRecoveryStore(options: {
 	readonly path: string;
 	readonly now?: () => number;
 }): IacRouteRecoveryStore & { close(): void } {
-	if (!options.path || options.path === ":memory:")
-		throw new TypeError("a persistent route authority path is required");
-	const database = new DatabaseSync(options.path);
-	const now = options.now ?? Date.now;
+	const path = data(options, "path");
+	const clock = data(options, "now");
+	if (
+		typeof path !== "string" ||
+		!path ||
+		path === ":memory:" ||
+		(clock !== undefined && typeof clock !== "function")
+	)
+		throw new TypeError(
+			"a persistent route authority path and valid clock are required",
+		);
+	const database = new DatabaseSync(path);
+	const now = typeof clock === "function" ? clock : Date.now;
 	try {
+		const main = database
+			.prepare("PRAGMA database_list")
+			.all()
+			.find((entry) => entry.name === "main");
+		if (typeof main?.file !== "string" || main.file.length === 0)
+			throw new TypeError("a persistent route authority file is required");
 		database.exec(
 			"PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON",
 		);
@@ -294,8 +330,13 @@ export function createSqliteIacRouteRecoveryStore(options: {
 		readonly claim: IacRouteRecoveryClaim;
 		readonly claimDigest: string;
 	}): void {
-		const claim = normalizeIacRouteRecoveryClaim(input.claim);
-		if (!claim || input.claimDigest !== recoveryClaimDigest(claim))
+		const claim = normalizeIacRouteRecoveryClaim(data(input, "claim"));
+		const claimDigest = data(input, "claimDigest");
+		if (
+			!claim ||
+			typeof claimDigest !== "string" ||
+			claimDigest !== recoveryClaimDigest(claim)
+		)
 			throw new Error("invalid recovery claim");
 		transaction(
 			true,
@@ -303,7 +344,7 @@ export function createSqliteIacRouteRecoveryStore(options: {
 				const existing = record(claim);
 				if (existing) {
 					if (
-						existing.claimDigest !== input.claimDigest ||
+						existing.claimDigest !== claimDigest ||
 						JSON.stringify(existing.claim) !== JSON.stringify(claim)
 					)
 						throw new Error("conflicting recovery");
@@ -377,7 +418,7 @@ export function createSqliteIacRouteRecoveryStore(options: {
 						claim.tenantId,
 						claim.requestId,
 						JSON.stringify(claim),
-						input.claimDigest,
+						claimDigest,
 						after.routeVersion,
 						claim.outcome.kind === "no-effect"
 							? claim.outcome.successorRequestId
@@ -389,10 +430,16 @@ export function createSqliteIacRouteRecoveryStore(options: {
 	}
 	return {
 		persistence: "durable-cas",
-		inspect: (identity) => transaction(false, () => snapshot(identity)),
-		get: (identity) => transaction(false, () => record(identity)),
+		inspect: (identity) => {
+			const stable = copyIdentity(identity);
+			return transaction(false, () => snapshot(stable));
+		},
+		get: (identity) => {
+			const stable = copyIdentity(identity);
+			return transaction(false, () => record(stable));
+		},
 		commit,
 		close: () => database.close(),
 	};
 }
-/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns */
