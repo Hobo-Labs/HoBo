@@ -47,7 +47,12 @@ export interface RivetAsyncQueueSource {
 		};
 	};
 	readonly binding: RivetQueueBinding;
-	/** Independently verify source content, exact registry and exclusive pool ownership. */
+	/**
+	 * Independently verify the source and artifact closure, exclusive pool, and
+	 * that the deployed main starts a registry with this exact actor definition
+	 * and its authorized host policies. Inspecting the in-process registry alone
+	 * cannot prove that the separately bundled main actually starts it.
+	 */
 	readonly verifySource: (source: {
 		readonly main: string;
 		readonly sourceDigest: string;

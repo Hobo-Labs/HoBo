@@ -562,26 +562,44 @@ headers or a configuration declaration alone are not proof. The host must bound
 provider-side buffering and concurrency even for BYOB streams, and keep those
 limits in force through each request and any in-flight response.
 
+`setup()` constructs a registry; it does not start one. Keep the actor
+definition, the standalone pool program, and the IaC declaration separate so
+planning does not start an envoy. For example, define the actor and registry
+in `jobs.ts`:
+
 ```ts
 import { setup } from "rivetkit";
-import {
-  createRivetQueueActor,
-  createRivetAsyncQueueClient,
-  rivetAsyncQueueResource,
-} from "@hobo/iac-alchemy/rivet/queue";
+import { createRivetQueueActor } from "@hobo/iac-alchemy/rivet/queue";
+import { host } from "./host.js";
 
-const jobs = createRivetQueueActor({
+export const jobs = createRivetQueueActor({
   actorName: "jobs",
   now: () => host.trustedClock.nowMs(),
   authorize: (request) => host.queuePolicy.authorize(request),
   verifyIngress: (claim) => host.verifyBoundedQueueIngress(claim),
 });
 export const registry = setup({ use: { jobs: jobs.actor } });
+```
 
-// The host verifies the reviewed source, exact single-actor registry, physical
-// pool and runner isolation domain; these identities are not app assertions.
+The pool's `jobs-main.ts` imports the definition and starts the envoy:
+
+```ts
+import { registry } from "./jobs.js";
+
+registry.start();
+```
+
+The IaC declaration imports only the inert definition and gives Alchemy the
+absolute path to that exact standalone main:
+
+```ts
+import { rivetAsyncQueueResource } from "@hobo/iac-alchemy/rivet/queue";
+import { jobs, registry } from "./jobs.js";
+
+// The host verifies the reviewed main starts this actor and authorizer, and
+// verifies the entire source graph, physical pool and runner isolation.
 const jobsResource = rivetAsyncQueueResource({
-  main: absoluteProgramPath,
+  main: absoluteJobsMainPath,
   resourceName: "jobs",
   bindleName: "queue-app",
   sourceDigest,
@@ -593,8 +611,13 @@ const jobsResource = rivetAsyncQueueResource({
   binding: jobs,
   verifySource: (source) => host.verifyQueueSourceAndExclusivePool(source),
 });
+```
 
-// An authorized application supplies a transport bound to its exact actor key.
+An authorized application uses a transport bound to its exact actor key:
+
+```ts
+import { createRivetAsyncQueueClient } from "@hobo/iac-alchemy/rivet/queue";
+
 const actor = rivetClient.jobs.getOrCreate([tenantId, "jobs"]);
 const queue = createRivetAsyncQueueClient({
   fetch: (path, init) => actor.fetch(path, host.attachQueueCredential(init)),
@@ -611,11 +634,15 @@ if (message) {
 The adapter's composite plan guard must include the exact source requirement
 `{ resourceId: "jobs", resourceType: "Rivet.DurableObject", bindleName:
 "queue-app", applicationName: "jobs", sourceKind: "rivet-async-queue",
-sourcePath: absoluteProgramPath }` and independently verify that inventory.
+sourcePath: absoluteJobsMainPath }` and independently verify that inventory.
 The source fence must cover the complete program, transitive dependencies,
-build environment and upload through provider completion. The external program
-is restricted to one queue actor and requires a host-verified exclusive pool. This capability does not yet wire queue dependencies
-into a Bindle application. A host must fence old writers and consumers, drain
+build environment and upload through provider completion. The host's
+`verifySource` must independently authenticate that the main actually starts
+the same registered actor and its intended host policies in the target pool;
+the registry object supplied to the IaC declaration alone cannot prove this.
+The external program is restricted to one queue actor and requires a
+host-verified exclusive pool. This capability does not yet wire queue
+dependencies into a Bindle application. A host must fence old writers and consumers, drain
 or otherwise reconcile messages, and authorize destruction before deleting or
 recreating the actor: destroying its database destroys messages and deduplication
 history. Provider credentials, pool isolation, source identity, durable storage,
