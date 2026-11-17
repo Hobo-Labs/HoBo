@@ -737,6 +737,44 @@ describe("reading GitHub's queue", () => {
 		assert.equal(labelLoad(jobs, "hobo", NOW).oldestWaitSeconds, 4000);
 	});
 
+	it("can exhaust the bounded lookups after refusal without changing the default", async () => {
+		const read = async (path: string): Promise<JsonValue> => {
+			if (!path.includes("/jobs")) return runsPage;
+			if (path.includes("/runs/40/"))
+				return {
+					jobs: [
+						{
+							run_id: 40,
+							status: "completed",
+							labels: ["self-hosted", "hobo"],
+							runner_name: "runner",
+							created_at: at(10),
+							started_at: at(8),
+						},
+					],
+				};
+			return jobsPage(10, 4000);
+		};
+		const observe = (exhaustLookups: boolean) =>
+			observeQueue({
+				read,
+				repository: "acme/app",
+				ownRunId: 7,
+				labels: ["hobo"],
+				limits,
+				nowMs: NOW,
+				exhaustLookups,
+			});
+		assert.equal(
+			(await observe(false)).jobs.some((job) => job.labels.length > 1),
+			false,
+		);
+		assert.equal(
+			(await observe(true)).jobs.some((job) => job.labels.length > 1),
+			true,
+		);
+	});
+
 	it("stops once enough jobs are waiting, though none has waited long", async () => {
 		const many = {
 			workflow_runs: Array.from({ length: 40 }, (_, index) => ({

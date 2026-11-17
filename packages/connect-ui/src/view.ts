@@ -69,6 +69,14 @@ export function stepView(step: ConnectStep): StepView {
 	switch (step.kind) {
 		case "configure": {
 			const hasSecret = step.fields.some((field) => field.kind === "secret");
+			const confirmation = [
+				step.submitConfirm,
+				hasSecret
+					? `Submits the ${provider} settings, including the secret you entered, to continue setup.`
+					: undefined,
+			]
+				.filter((message) => message !== undefined)
+				.join(" ");
 			return {
 				...base,
 				title: step.title,
@@ -83,11 +91,7 @@ export function stepView(step: ConnectStep): StepView {
 						label: "Save and continue",
 						variant: "primary",
 						submits: true,
-						...(hasSecret
-							? {
-									confirm: `Submits the ${provider} settings, including the secret you entered, to continue setup.`,
-								}
-							: undefined),
+						...(confirmation ? { confirm: confirmation } : undefined),
 					},
 					cancel,
 				],

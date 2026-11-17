@@ -7,8 +7,15 @@ export {
 	resolveGithubAppHost,
 } from "./app-hosts.js";
 export {
+	CI_SETTINGS,
+	lookupGithubOwner,
+	resolveGithubAppExpectation,
+	storeSettings,
+} from "./ceremony-settings.js";
+export {
 	createGithubConnectFlow,
 	GITHUB_APP_CREDENTIAL_KEYS,
+	type GithubAppExpectation,
 	type GithubConnectOptions,
 	githubAppConnected,
 } from "./github.js";

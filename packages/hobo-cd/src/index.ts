@@ -6,6 +6,7 @@ export {
 	vercelYard,
 } from "./junction.js";
 export {
+	CD_SETTINGS,
 	DEFAULT_VERCEL_REDIRECT_URI,
 	type PrepareVercelDeps,
 	prepareVercelConnection,

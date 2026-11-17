@@ -457,22 +457,34 @@ pnpm ci:attest fleet --local-signoff --policy-current
 ```
 
 The command respects the committed pin and uses a usable routing slip with the
-same pickup and queue limits as runner routing. A slip naming the local runner
-rejects the fleet but does not by itself prove that the local runner is taking
-jobs; the queue must establish that. A known available fleet, enrolled local
-runner, or GitHub-hosted runner stays ahead of local signoff.
+same pickup and queue limits as runner routing. A fresh healthy fleet pickup
+takes precedence over an unpinned fallback slip. A slip naming the local runner
+does not by itself prove it is taking jobs; the queue must establish that. A
+known available fleet, enrolled local runner, or GitHub-hosted runner stays
+ahead of local signoff.
 When no option is observed available, an unknown runner state or failed queue
 read causes `waiting`, not an assumed outage. `--local-signoff` opts this
 invocation into executing the fallback; without it the decision waits when all
 runners are unavailable. The policy assertion does not change runner selection:
 healthy and pinned runners remain selectable without it. It cannot turn an
-unknown provider into an unavailable one or override an
-available runner. The base SHA used to read the policy must still be the tested
+unknown provider into an unavailable one or override an available runner. To
+declare an independently observed provider outage, pass
+`--provider-unavailable=ID` for that exact enabled inventory member, once per
+confirmed outage. Policy providers use `ENV:PROVIDER`, integrations use
+`integration:ID:LABEL`, and external pools use `external-pool:INDEX:LABEL`.
+Unknown or disabled IDs cannot authorize fallback and are reported if no runner
+is selected; malformed or duplicate options are rejected before selection. A
+healthy pickup for that label prevents an outage assertion from enabling
+fallback. Without outage evidence an unobserved provider remains unknown. If the queue is
+silent, a separately confirmed outage of the fleet or an enrolled local runner
+can be supplied with `--runner-unavailable=fleet` or `--runner-unavailable=local`.
+These assertions cannot override a pin, healthy observed pickup, or failed
+queue read. The base SHA used to read the policy must still be the tested
 base when checks run and when statuses are published; if it moves, the command
 stops and the operator must update and retry. For hosted jobs that fail before entering the queue,
 an operator who has observed the outage may add `--github-unavailable`; this
-only supplies missing hosted availability and does not displace a recent,
-timely hosted pickup or another available runner. A selected runner is reported;
+only supplies missing hosted availability and does not displace an observed
+healthy hosted runner or another available runner. A selected runner is reported;
 the existing workflow still owns its own routing. The command never relabels,
 dispatches, cancels, or completes an already queued Actions job.
 

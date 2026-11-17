@@ -10,9 +10,9 @@ step is generated as exactly the component it needs and rendered with
 ## The generated component
 
 A flow's step (`ConnectStep`, data) becomes a view (`stepView`, `view.ts`): only
-the fields that step is missing, the one choice it asks for, and the actions
-that move it. A `configure` step lists exactly the settings and secrets the
-flow still lacks, and a finished step lists store references. The browser
+the fields that need an answer or correction, the one choice it asks for, and
+the actions that move it. A `configure` step lists missing or invalid settings
+and secrets, and a finished step lists store references. The browser
 renders the view from UI SDK parts:
 
 | The step needs | UI SDK |
@@ -37,6 +37,16 @@ through `onValueChange`, so a person and an agent drive the same page.
 **Styling.** `@ui-sdk/core/web.css`, themed through its `--ui-*` tokens with
 HoBo Rubberhose (`DESIGN.md`): ink on paper, thick outlines, hard sticker
 shadows. Parts are restyled from their `data-slot` attributes.
+
+## Ceremonies
+
+`configureThen` turns missing settings into a `configure` step, then hands the
+answers to `proceed`, which builds the provider's own flow (or returns field
+errors to show on the same page). `resolveSettings` reads each setting from the
+environment, then from earlier answers, then from its fallback, and lists what
+is still missing. `familySettingsStore(family)` keeps answers in
+`$HOBO_HOME/ceremonies/<family>.json`; fields of kind `secret` are used for the
+run and never saved.
 
 ## Secretless by construction
 

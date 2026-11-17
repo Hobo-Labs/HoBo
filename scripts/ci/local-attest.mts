@@ -10,7 +10,7 @@
  *   pnpm ci:attest publish [--remote=origin] [--file=PATH]
  *   pnpm ci:attest verify [--base=origin/main] [--event=pull_request] [--file=PATH]
  *   pnpm ci:attest signoff [--base=origin/main] [--event=pull_request] [--file=PATH]
- *   pnpm ci:attest fleet [--local-signoff] [--github-unavailable] [--policy-current] [--base=origin/main] [--fresh]
+ *   pnpm ci:attest fleet [--local-signoff] [--github-unavailable] [--policy-current] [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]... [--base=origin/main] [--fresh]
  *
  * `run` executes what `attested-jobs.json` describes: the same commands, in
  * the same order, under the same conditions as the workflow jobs, once for
@@ -55,7 +55,6 @@ import {
 	type AttestationVerdict,
 	type AttestedJobResult,
 	asObject,
-	asText,
 	attestationPath,
 	type CoveredJob,
 	GATE_JOBS,
@@ -64,7 +63,6 @@ import {
 	MAX_TRUST_DAYS,
 	NEEDS_CONTAINER_ENGINE,
 	parseEnvelope,
-	parseJson,
 	publicKeyText,
 	sha256Digest,
 	signStatement,
@@ -83,6 +81,8 @@ import {
 	parsePlan,
 	substituteExpressions,
 } from "./attested-jobs.mts";
+
+import { trustedGithubTarget } from "./github-target.mts";
 
 export const DEFAULT_KEY_PATH = join(
 	homedir(),
@@ -1417,48 +1417,6 @@ async function assertSignoffPolicy(input: {
 	}
 }
 
-type SignoffRepository = Readonly<{ name: string; host: string }>;
-
-/** Parse only the stable identity returned by `gh repo view`; never log its input URL. */
-function signoffRepository(text: string): SignoffRepository {
-	const value = asObject(parseJson(text));
-	const nameWithOwner = asText(value?.nameWithOwner);
-	const url = asText(value?.url);
-	if (!nameWithOwner || !url) throw new Error("invalid repository identity");
-	const parsed = new URL(url);
-	if (
-		parsed.protocol !== "https:" ||
-		parsed.username ||
-		parsed.password ||
-		parsed.search ||
-		parsed.hash ||
-		!/^[A-Za-z0-9][A-Za-z0-9_-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/u.test(
-			nameWithOwner,
-		) ||
-		parsed.pathname.replace(/^\//u, "").replace(/\/$/u, "").toLowerCase() !==
-			nameWithOwner.toLowerCase()
-	)
-		throw new Error("invalid repository URL");
-	return { name: nameWithOwner, host: parsed.host.toLowerCase() };
-}
-
-/** Remove embedded credentials before sending a Git remote URL to another process. */
-function remoteWithoutCredentials(remote: string): string {
-	const scp = /^[^@\s]+@([^/:\s]+):(.+)$/u.exec(remote);
-	if (scp) {
-		const host = scp[1] ?? "";
-		const path = (scp[2] ?? "").replace(/^\/+|[?#].*$/gu, "");
-		return `https://${host}/${path}`;
-	}
-	if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(remote)) return remote;
-	const url = new URL(remote);
-	url.username = "";
-	url.password = "";
-	url.search = "";
-	url.hash = "";
-	return url.toString();
-}
-
 /** Pin every status write to the same repository whose live base was tested. */
 function signoffEnvironment(input: {
 	root: string;
@@ -1469,50 +1427,32 @@ function signoffEnvironment(input: {
 }): NodeJS.ProcessEnv {
 	const environment = { ...input.env };
 	for (const name of GIT_LOCATION_VARIABLES) delete environment[name];
-	const gh = (args: readonly string[], env = environment) =>
-		execFileSync("gh", args, {
-			cwd: input.root,
-			env,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-			timeout: 10_000,
-			maxBuffer: 1024 * 1024,
-		}).trim();
 	try {
-		const selected = signoffRepository(
-			gh(["repo", "view", "--json", "nameWithOwner,url"]),
-		);
-		const remoteUrl = remoteWithoutCredentials(
-			git(input.root, ["remote", "get-url", input.remote]),
-		);
-		const baseRepo = signoffRepository(
-			gh(["repo", "view", "--json", "nameWithOwner,url", "--", remoteUrl]),
-		);
-		const requested = environment.GH_REPO?.split("/");
-		const requestedName = requested?.slice(-2).join("/");
-		const requestedHost = requested?.length === 3 ? requested[0] : undefined;
-		if (
-			selected.host !== baseRepo.host ||
-			selected.name.toLowerCase() !== baseRepo.name.toLowerCase() ||
-			(environment.GH_HOST &&
-				environment.GH_HOST.toLowerCase() !== selected.host) ||
-			(requested &&
-				(requested.length < 2 ||
-					requested.length > 3 ||
-					requestedName?.toLowerCase() !== selected.name.toLowerCase() ||
-					(requestedHost && requestedHost.toLowerCase() !== selected.host)))
-		)
-			throw new Error("selected repository differs from the base remote");
-		environment.GH_HOST = selected.host;
-		environment.GH_REPO = `${selected.host}/${selected.name}`;
-		const liveBase = gh([
-			"api",
-			`repos/{owner}/{repo}/branches/${encodeURIComponent(input.branch)}`,
-			"--jq",
-			".commit.sha",
-		]);
+		const target = trustedGithubTarget({
+			cwd: input.root,
+			remoteUrl: git(input.root, ["remote", "get-url", input.remote]),
+			env: environment,
+			timeoutMs: 10_000,
+		});
+		const liveBase = execFileSync(
+			"gh",
+			[
+				"api",
+				`repos/{owner}/{repo}/branches/${encodeURIComponent(input.branch)}`,
+				"--jq",
+				".commit.sha",
+			],
+			{
+				cwd: input.root,
+				env: target.environment,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 10_000,
+				maxBuffer: 1024 * 1024,
+			},
+		).trim();
 		if (liveBase !== input.base) throw new Error("GitHub base changed");
-		return environment;
+		return target.environment;
 	} catch {
 		throw new AttestError(
 			"could not verify that the GitHub target and live base match the tested remote; signoff refused",
@@ -1711,8 +1651,18 @@ const USAGE = `usage: pnpm ci:attest <command>
       Check an attestation the way the workflows do.
   signoff [--base=origin/main] [--event=pull_request] [--file=PATH]
       Post gh-signoff statuses for this machine's covered local jobs on HEAD.
-  fleet [--local-signoff] [--github-unavailable] [--policy-current] [--base=origin/main] [--fresh]
+  fleet [--local-signoff] [--github-unavailable] [--policy-current]
+        [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]...
+        [--base=origin/main] [--fresh]
       Select from fleet availability; opt in to local signoff as a fallback.
+      --policy-current asserts, after comparison, that live offers, desired policy and
+      daemon routing match the base.
+      --github-unavailable asserts an independently observed hosted outage.
+      --runner-unavailable asserts an independently observed outage of one enabled tier.
+      --provider-unavailable asserts an independently observed outage of one exact enabled
+      provider, integration or external-pool ID from the base. Repeat for each outage.
+      A healthy pickup or pin still wins. Invalid syntax and duplicate assertions are
+      rejected before routing, including when a pin is configured.
 
 The key is read from HOBO_CI_ATTESTOR_KEY, or ${DEFAULT_KEY_PATH}.`;
 
@@ -1909,12 +1859,34 @@ export async function main(
 		for (const arg of rest)
 			if (
 				!arg.startsWith("--base=") &&
+				!arg.startsWith("--provider-unavailable=") &&
+				!arg.startsWith("--runner-unavailable=") &&
 				arg !== "--local-signoff" &&
 				arg !== "--github-unavailable" &&
 				arg !== "--policy-current" &&
 				arg !== "--fresh"
 			)
 				throw new AttestError(`unknown fleet option: ${arg}`);
+		const providerUnavailable = options(rest, "provider-unavailable");
+		if (new Set(providerUnavailable).size !== providerUnavailable.length)
+			throw new AttestError("--provider-unavailable IDs must not be repeated");
+		if (providerUnavailable.length > 4096)
+			throw new AttestError("--provider-unavailable supports at most 4096 IDs");
+		if (
+			providerUnavailable.some(
+				(id) =>
+					id.length > 240 ||
+					!/^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)+$/u.test(id),
+			)
+		)
+			throw new AttestError(
+				"--provider-unavailable requires an enabled inventory ID",
+			);
+		const runnerUnavailable = options(rest, "runner-unavailable");
+		if (new Set(runnerUnavailable).size !== runnerUnavailable.length)
+			throw new AttestError("--runner-unavailable tiers must not be repeated");
+		if (runnerUnavailable.some((tier) => tier !== "fleet" && tier !== "local"))
+			throw new AttestError("--runner-unavailable requires fleet or local");
 		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
 		const { executeFleetVerification, observeFleetVerification } = await import(
 			"./fleet-signoff.mts"
@@ -1926,10 +1898,20 @@ export async function main(
 			githubUnavailable: rest.includes("--github-unavailable"),
 			baseRef: option(rest, "base") ?? "origin/main",
 			policyCurrent: rest.includes("--policy-current"),
+			providerUnavailable,
+			runnerUnavailable,
 		};
 		const choice: Awaited<ReturnType<typeof observeFleetVerification>> & {
 			baseSha?: string;
 		} = await observeFleetVerification(observation);
+		if (choice.kind === "invalid-provider-assertion")
+			throw new AttestError(
+				`--provider-unavailable=${choice.provider} does not name one enabled inventory member in the trusted base`,
+			);
+		if (choice.kind === "invalid-runner-assertion")
+			throw new AttestError(
+				`--runner-unavailable=${choice.runner} does not name an enabled runner tier in the trusted base`,
+			);
 		if (choice.kind === "runner") {
 			console.log(
 				`ci:attest fleet: ${choice.tier} runner ${choice.runner}; the workflow routes its jobs normally`,

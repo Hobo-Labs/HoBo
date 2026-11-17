@@ -8,6 +8,7 @@ import {
 	type FleetVerificationSelection,
 	selectFleetVerification,
 } from "../../packages/ci/src/fleet-overflow.ts";
+import { trustedGithubTarget } from "./github-target.mts";
 import {
 	askSlip,
 	type JsonValue,
@@ -17,6 +18,7 @@ import {
 	type RouteSettings,
 	refusingJobs,
 	routeSettings,
+	type SeenJob,
 	type SlipReading,
 	takingJobs,
 } from "./route-runner.mts";
@@ -26,6 +28,67 @@ import {
 	parseJson,
 	readRunnerRouting,
 } from "./runner-routing.mts";
+
+/** Allow at most 30 seconds of GitHub/operator clock skew, never reversed ordering. */
+export const FLEET_CLOCK_SKEW_MS = 30_000;
+
+type PreciseUtc = Readonly<{ secondMs: number; nanosecond: number }>;
+
+/** GitHub UTC times allow up to nanoseconds; greater precision fails closed. */
+function preciseUtc(value: JsonValue | undefined): PreciseUtc | undefined {
+	const text = asText(value);
+	const match =
+		/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/u.exec(
+			text ?? "",
+		);
+	if (!match?.[1]) return undefined;
+	const secondMs = Date.parse(`${match[1]}Z`);
+	if (
+		!Number.isFinite(secondMs) ||
+		new Date(secondMs).toISOString().slice(0, 19) !== match[1]
+	)
+		return undefined;
+	return { secondMs, nanosecond: Number((match[2] ?? "").padEnd(9, "0")) };
+}
+
+function compareUtc(first: PreciseUtc, second: PreciseUtc): number {
+	return (
+		first.secondMs - second.secondMs || first.nanosecond - second.nanosecond
+	);
+}
+
+function withinClockSkew(value: JsonValue | undefined, nowMs: number): boolean {
+	const timestamp = preciseUtc(value);
+	if (!timestamp) return false;
+	const boundMs = nowMs + FLEET_CLOCK_SKEW_MS;
+	const secondMs = Math.floor(boundMs / 1000) * 1000;
+	return (
+		compareUtc(timestamp, {
+			secondMs,
+			nanosecond: (boundMs - secondMs) * 1_000_000,
+		}) <= 0
+	);
+}
+
+function orderedUtc(
+	first: JsonValue | undefined,
+	second: JsonValue | undefined,
+): boolean {
+	const left = preciseUtc(first);
+	const right = preciseUtc(second);
+	return !!left && !!right && compareUtc(left, right) <= 0;
+}
+
+function validJobChronology(job: SeenJob, nowMs: number): boolean {
+	return (
+		Number.isFinite(job.createdAtMs) &&
+		job.createdAtMs <= nowMs + FLEET_CLOCK_SKEW_MS &&
+		(job.startedAtMs === undefined ||
+			(Number.isFinite(job.startedAtMs) &&
+				job.startedAtMs >= job.createdAtMs &&
+				job.startedAtMs <= nowMs + FLEET_CLOCK_SKEW_MS))
+	);
+}
 
 /** An enabled provider outside the fleet/local/hosted routing labels. */
 export type FleetOverflowMember = Readonly<{
@@ -48,6 +111,8 @@ export type FleetVerificationPlan =
 /** The base used for inventory must also be used for execution and signoff. */
 export type FleetVerificationObservation =
 	| Exclude<FleetVerificationPlan, { kind: "local-signoff" }>
+	| Readonly<{ kind: "invalid-provider-assertion"; provider: string }>
+	| Readonly<{ kind: "invalid-runner-assertion"; runner: string }>
 	| Readonly<{ kind: "local-signoff"; baseSha: string }>;
 
 /** Execute the selected fallback only; a failed local run cannot post a signoff. */
@@ -70,6 +135,10 @@ export async function planFleetVerification(input: {
 	githubUnavailable?: boolean | undefined;
 	/** Extra enabled providers from the trusted base's declared inventory. */
 	overflow?: readonly FleetOverflowMember[] | undefined;
+	/** Independently observed outages of identified inventory members. */
+	providerUnavailable?: readonly string[] | undefined;
+	/** Independently observed outage of the fleet or enabled local tier. */
+	runnerUnavailable?: readonly string[] | undefined;
 	readSlip: () => Promise<SlipReading>;
 	readQueue: (
 		fleetLabel: string,
@@ -111,6 +180,8 @@ export async function planFleetVerification(input: {
 			tier: slip.decision.tier,
 			runner: slip.decision.runner,
 		};
+	if (!Number.isFinite(input.nowMs))
+		return { kind: "wait", reason: "availability-unknown" };
 	const fleetLabel =
 		slip.ok && slip.decision.tier === "fleet"
 			? slip.decision.runner
@@ -125,14 +196,31 @@ export async function planFleetVerification(input: {
 		queue = await input.readQueue(
 			fleetLabel,
 			busy,
-			(input.overflow ?? [])
-				.filter((entry) => entry.observable)
-				.map((entry) => entry.runsOn.toLowerCase()),
+			(input.overflow ?? []).map((entry) => entry.runsOn.toLowerCase()),
 		);
 	} catch {
 		return { kind: "wait", reason: "availability-unknown" };
 	}
+	const validJobs = queue.jobs.filter((job) =>
+		validJobChronology(job, input.nowMs),
+	);
+	const incompleteQueue = validJobs.length !== queue.jobs.length;
+	queue = { ...queue, jobs: validJobs };
 	const unknown: string[] = [];
+	const providerOutages = new Set(input.providerUnavailable ?? []);
+	// Multi-label jobs are deliberately excluded from normal routing load.
+	// A recent timely pickup still prevents an outage assertion here, but does
+	// not establish that a job needing only this one label would be accepted.
+	const multiLabelPickup = (label: string, limits: RouteSettings["limits"]) =>
+		queue.jobs.some(
+			(job) =>
+				job.labels.length > 1 &&
+				job.labels.some((candidate) => candidate.toLowerCase() === label) &&
+				takingJobs(
+					labelLoad([{ ...job, labels: [label] }], label, input.nowMs),
+					limits,
+				),
+		);
 	const member = (
 		id: "fleet" | "local" | "github",
 		enabled: boolean,
@@ -151,12 +239,17 @@ export async function planFleetVerification(input: {
 			(slip.decision.tier === "github" || slip.decision.tier === "local");
 		const reservedAhead =
 			id !== "github" && !(id === "fleet" && busy) && queue.undecidedAhead > 0;
-		const available =
-			!rejectedBySlip && !reservedAhead && takingJobs(load, limits);
+		const healthy = takingJobs(load, limits);
+		const available = !reservedAhead && healthy;
+		// A fresh pickup is stronger evidence than an older slip or outage
+		// assertion. A runner reserved by an earlier run remains unknown.
 		const unavailable =
-			rejectedBySlip ||
-			refusingJobs(load, limits) ||
-			(id === "github" && !available && input.githubUnavailable === true);
+			!healthy &&
+			!multiLabelPickup(runnerLabel.toLowerCase(), limits) &&
+			(rejectedBySlip ||
+				refusingJobs(load, limits) ||
+				(id !== "github" && input.runnerUnavailable?.includes(id) === true) ||
+				(id === "github" && input.githubUnavailable === true));
 		if (enabled && !available && !unavailable) unknown.push(id);
 		return {
 			id,
@@ -170,16 +263,22 @@ export async function planFleetVerification(input: {
 		const id = `overflow:${entry.id}`;
 		const load = labelLoad(queue.jobs, entry.runsOn.toLowerCase(), input.nowMs);
 		const backend = entry.backend ?? "arc";
+		const healthy = takingJobs(load, settings.limits);
 		const available =
 			entry.observable &&
 			(backend === "github" || queue.undecidedAhead === 0) &&
-			takingJobs(load, settings.limits);
+			healthy;
+		// An opaque backend cannot be inferred available from Actions, but a
+		// healthy pickup on its label prevents declaring that member down.
 		const unavailable =
-			entry.observable &&
-			(refusingJobs(load, settings.limits) ||
-				(backend === "github" &&
-					!available &&
-					input.githubUnavailable === true));
+			!healthy &&
+			!multiLabelPickup(entry.runsOn.toLowerCase(), settings.limits) &&
+			(providerOutages.has(entry.id) ||
+				(entry.observable &&
+					(refusingJobs(load, settings.limits) ||
+						(backend === "github" && input.githubUnavailable === true) ||
+						(backend === "local" &&
+							input.runnerUnavailable?.includes("local") === true))));
 		if (!available && !unavailable) unknown.push(id);
 		return {
 			id,
@@ -199,7 +298,10 @@ export async function planFleetVerification(input: {
 		unknownMembers: unknown,
 		localSignoffEnabled: input.localSignoffEnabled,
 	});
-	if (selection.kind !== "runner") return selection;
+	if (selection.kind !== "runner")
+		return incompleteQueue
+			? { kind: "wait", reason: "availability-unknown" }
+			: selection;
 	return {
 		kind: "runner",
 		tier:
@@ -418,6 +520,10 @@ export async function observeFleetVerification(input: {
 	baseRef?: string | undefined;
 	/** Operator verified that live provider inventory matches the base. */
 	policyCurrent?: boolean | undefined;
+	/** Operator observed that each named inventory member is unavailable. */
+	providerUnavailable?: readonly string[] | undefined;
+	/** Operator observed that each named runner tier is unavailable. */
+	runnerUnavailable?: readonly string[] | undefined;
 }): Promise<FleetVerificationObservation> {
 	const environment = { ...input.env };
 	for (const name of [
@@ -479,37 +585,117 @@ export async function observeFleetVerification(input: {
 			tier: settings.pin,
 			runner: settings.labels[settings.pin],
 		};
-	const overflow = readFleetOverflowPolicy(config);
-	if (!overflow) return { kind: "wait", reason: "availability-unknown" };
 	let repository: string;
 	try {
-		repository = gh([
-			"repo",
-			"view",
-			"--json",
-			"nameWithOwner",
-			"--jq",
-			".nameWithOwner",
-		]);
-		if (
-			!/^[A-Za-z0-9][A-Za-z0-9_-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/u.test(
-				repository,
-			)
-		)
-			throw new Error("invalid repository");
+		const target = trustedGithubTarget({
+			cwd: input.cwd,
+			remoteUrl: git(["remote", "get-url", remote]),
+			env: environment,
+		});
+		repository = target.repository;
+		Object.assign(environment, target.environment);
 	} catch {
 		return { kind: "wait", reason: "availability-unknown" };
 	}
+	const inventory = readFleetOverflowPolicy(config);
+	// Missing inventory must not prevent a pinned slip or an observed runner,
+	// but it is an unknown tier and can never establish fallback eligibility.
+	const overflow = inventory ?? [
+		{
+			id: "@unknown-inventory",
+			runsOn: "unknown-inventory",
+			observable: false,
+		},
+	];
+	const assertions = input.providerUnavailable ?? [];
+	const runnerAssertions = input.runnerUnavailable ?? [];
+	const counts = new Map<string, number>();
+	for (const entry of inventory ?? [])
+		counts.set(entry.id, (counts.get(entry.id) ?? 0) + 1);
+	const seenAssertions = new Set<string>();
+	const invalidProvider = inventory
+		? assertions.find((id) => {
+				const invalid = seenAssertions.has(id) || counts.get(id) !== 1;
+				seenAssertions.add(id);
+				return invalid;
+			})
+		: undefined;
+	const localEnabled =
+		settings.localRunner ||
+		inventory?.some((entry) => entry.backend === "local") === true;
+	const invalidRunner = runnerAssertions.find(
+		(id, index) =>
+			runnerAssertions.indexOf(id) !== index ||
+			(id !== "fleet" && id !== "local") ||
+			(id === "local" && inventory !== undefined && !localEnabled),
+	);
 	const read = async (path: string): Promise<JsonValue> => {
 		// SAFETY: a successful GitHub API response is parsed as JSON data.
 		return JSON.parse(gh(["api", path])) as JsonValue;
 	};
+	const nowMs = Date.now();
+	let incompleteQueue = false;
+	let uncertainInProgress = false;
 	const readQueuePage = async (path: string): Promise<JsonValue> => {
 		const body = await read(path);
 		const field = path.includes("/jobs?") ? "jobs" : "workflow_runs";
-		if (!Array.isArray(asObject(body)?.[field]))
+		const items = asObject(body)?.[field];
+		const validTime = (value: JsonValue | undefined) =>
+			withinClockSkew(value, nowMs);
+		const validId = (value: JsonValue | undefined) =>
+			Number.isSafeInteger(value) && Number(value) > 0;
+		const statuses = [
+			"queued",
+			"in_progress",
+			"completed",
+			"pending",
+			"waiting",
+			"requested",
+		];
+		if (!Array.isArray(items))
 			throw new Error(`malformed GitHub queue response: missing ${field}`);
-		return body;
+		const validItems = items.filter((entry) => {
+			const item = asObject(entry);
+			const status = asText(item?.status);
+			if (!item || !status || !statuses.includes(status)) return false;
+			if (field === "workflow_runs")
+				return (
+					validId(item.id) &&
+					(asText(item.path)?.trim().length ?? 0) > 0 &&
+					validTime(item.created_at) &&
+					validTime(item.updated_at) &&
+					orderedUtc(item.created_at, item.updated_at)
+				);
+			const runner = asText(item.runner_name);
+			return (
+				validId(item.run_id) &&
+				validTime(item.created_at) &&
+				Array.isArray(item.labels) &&
+				item.labels.every((label) => (asText(label)?.length ?? 0) > 0) &&
+				(item.labels.length > 0 || (status === "completed" && !runner)) &&
+				(item.runner_name === null || runner !== undefined) &&
+				(status !== "queued" || !runner) &&
+				(status !== "completed" ||
+					!!runner ||
+					["skipped", "cancelled"].includes(asText(item.conclusion) ?? "")) &&
+				(item.started_at === null || validTime(item.started_at)) &&
+				(!runner || validTime(item.started_at)) &&
+				(item.started_at === null ||
+					orderedUtc(item.created_at, item.started_at))
+			);
+		});
+		if (validItems.length !== items.length) incompleteQueue = true;
+		if (
+			field === "jobs" &&
+			validItems.some((entry) => {
+				const item = asObject(entry);
+				return (
+					asText(item?.status) === "in_progress" && !asText(item?.runner_name)
+				);
+			})
+		)
+			uncertainInProgress = true;
+		return { [field]: validItems };
 	};
 	const apiFetch: typeof fetch = async (request) => {
 		const url = new URL(
@@ -524,12 +710,13 @@ export async function observeFleetVerification(input: {
 			return new Response(null, { status: 503 });
 		}
 	};
-	const nowMs = Date.now();
 	const choice = await planFleetVerification({
 		settings,
 		localSignoffEnabled: input.localSignoffEnabled,
 		githubUnavailable: input.githubUnavailable,
 		overflow,
+		providerUnavailable: inventory ? assertions : [],
+		runnerUnavailable: runnerAssertions,
 		nowMs,
 		readSlip: () =>
 			askSlip({
@@ -557,8 +744,16 @@ export async function observeFleetVerification(input: {
 					? { ...settings.limits, maxQueued: Number.MAX_SAFE_INTEGER }
 					: settings.limits,
 				nowMs,
+				exhaustLookups: true,
 			}),
 	});
+	if (choice.kind === "runner") return choice;
+	if (invalidProvider !== undefined)
+		return { kind: "invalid-provider-assertion", provider: invalidProvider };
+	if (invalidRunner !== undefined)
+		return { kind: "invalid-runner-assertion", runner: invalidRunner };
+	if (incompleteQueue || uncertainInProgress)
+		return { kind: "wait", reason: "availability-unknown" };
 	if (choice.kind !== "local-signoff") return choice;
 	if (input.policyCurrent !== true)
 		return { kind: "wait", reason: "availability-unknown" };
