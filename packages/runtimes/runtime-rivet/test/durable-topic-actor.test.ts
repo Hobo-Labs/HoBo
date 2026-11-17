@@ -581,6 +581,118 @@ describe("Rivet durable topic log actor", () => {
 		}
 	});
 
+	it("fences malformed-wire markers after receipt lookup for every operation", async () => {
+		const f = await fixture();
+		const create = { operation: op("30"), topic: "orders" };
+		const poisonedCreate = { ...create, __hobo_invalid_request: true };
+		expect(await (await f.send("ensure-topic", poisonedCreate)).json()).toEqual(
+			{ status: "rejected", code: "invalid-argument" },
+		);
+		expect(await (await f.send("ensure-topic", poisonedCreate)).json()).toEqual(
+			{ status: "rejected", code: "invalid-argument" },
+		);
+		expect(await (await f.send("ensure-topic", create)).json()).toEqual({
+			status: "rejected",
+			code: "operation-conflict",
+		});
+		const validCreate = { ...create, operation: op("31") };
+		const committed = { status: "committed", value: { topic: "orders" } };
+		expect(await (await f.send("ensure-topic", validCreate)).json()).toEqual(
+			committed,
+		);
+		expect(
+			await (
+				await f.send("ensure-topic", {
+					...validCreate,
+					__hobo_invalid_request: true,
+				})
+			).json(),
+		).toEqual({ status: "rejected", code: "operation-conflict" });
+		expect(await (await f.send("ensure-topic", validCreate)).json()).toEqual(
+			committed,
+		);
+		const publication = {
+			operation: op("32"),
+			topic: "orders",
+			message: { id: "m", subject: "s", payload: "AA==", attributes: [] },
+		};
+		expect(
+			await (
+				await f.send("publish", {
+					...publication,
+					__hobo_invalid_request: true,
+				})
+			).json(),
+		).toEqual({ status: "rejected", code: "invalid-argument" });
+		expect(await (await f.send("publish", publication)).json()).toEqual({
+			status: "rejected",
+			code: "operation-conflict",
+		});
+		expect(
+			await (
+				await f.send("compact", {
+					operation: op("33"),
+					topic: "orders",
+					throughSequence: 0,
+					__hobo_invalid_request: true,
+				})
+			).json(),
+		).toEqual({ status: "rejected", code: "invalid-argument" });
+		for (const [index, method] of [
+			"ensure-subscription",
+			"consume",
+			"ack",
+			"nack",
+		].entries()) {
+			const body = {
+				operation: op(String(34 + index)),
+				__hobo_invalid_request: true,
+			};
+			expect(await (await f.send(method, body)).json()).toEqual({
+				status: "rejected",
+				code: "unsupported",
+			});
+			expect(await (await f.send(method, body)).json()).toEqual({
+				status: "rejected",
+				code: "unsupported",
+			});
+		}
+		expect(
+			await (
+				await f.send("read-log", {
+					topic: "orders",
+					afterSequence: 0,
+					limit: 1,
+					__hobo_invalid_request: true,
+				})
+			).json(),
+		).toEqual({ status: "rejected", code: "invalid-argument" });
+		expect(
+			await (
+				await f.send("events", {
+					afterSequence: 0,
+					limit: 1,
+					__hobo_invalid_request: true,
+				})
+			).json(),
+		).toEqual({ status: "rejected", code: "invalid-argument" });
+		expect(
+			await (
+				await f.send("read-log", {
+					topic: "orders",
+					afterSequence: 0,
+					limit: 1,
+				})
+			).json(),
+		).toMatchObject({ status: "ok", messages: [] });
+		expect(
+			await (await f.send("events", { afterSequence: 0, limit: 10 })).json(),
+		).toMatchObject({
+			status: "ok",
+			events: [{ kind: "topic-created", topic: "orders" }],
+		});
+	});
+
 	it("isolates authenticated tenant scopes and fails closed on revoked authority", async () => {
 		const f = await fixture();
 		await f.send(
