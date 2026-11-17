@@ -233,6 +233,52 @@ describe("in-process service emulators", () => {
 		expect(closed).toBe(1);
 	});
 
+	it("waits for an in-flight harness teardown in every concurrent caller", async () => {
+		let release: (() => void) | undefined;
+		let started: (() => void) | undefined;
+		const blocked = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const closing = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		let closes = 0;
+		const harness = createTestHarness({
+			emulators: {
+				queue: () => ({
+					...createQueueEmulator(),
+					async close() {
+						closes += 1;
+						started?.();
+						await blocked;
+					},
+				}),
+			},
+		});
+		const bindle = fakeBindle({
+			resources: { q: { kind: "queue" } },
+			handlers: {},
+		});
+		await harness.deploy(bindle)();
+		const first = harness.destroy(bindle)();
+		await closing;
+		let secondFinished = false;
+		const second = harness
+			.destroy(bindle)()
+			.then(() => {
+				secondFinished = true;
+			});
+		await Promise.resolve();
+		await Promise.resolve();
+		try {
+			expect(secondFinished).toBe(false);
+		} finally {
+			release?.();
+			await Promise.all([first, second]);
+		}
+		expect(closes).toBe(1);
+	});
+
 	it("does not discard a replacement graph when an older deployment fails", async () => {
 		let calls = 0;
 		let failFirst: (() => void) | undefined;

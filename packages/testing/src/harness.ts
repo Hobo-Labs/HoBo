@@ -264,6 +264,7 @@ export function createTestHarness(
 
 	const probe = internals.probe ?? createFetchReadinessProbe();
 	const states = new Map<unknown, Promise<HarnessState>>();
+	const destroying = new Map<unknown, Set<Promise<void>>>();
 	let latest: HarnessState | undefined;
 
 	async function ensure(bindle: unknown): Promise<HarnessState> {
@@ -303,11 +304,24 @@ export function createTestHarness(
 		destroy(bindle: unknown): () => Promise<void> {
 			return async () => {
 				const pending = states.get(bindle);
-				if (pending === undefined) return;
-				states.delete(bindle);
-				const state = await pending;
-				if (latest === state) latest = undefined;
-				await destroyInProcess(state.deployment);
+				if (pending !== undefined) {
+					states.delete(bindle);
+					const cleanups = destroying.get(bindle) ?? new Set<Promise<void>>();
+					destroying.set(bindle, cleanups);
+					const cleanup = (async () => {
+						const state = await pending;
+						if (latest === state) latest = undefined;
+						await destroyInProcess(state.deployment);
+					})();
+					cleanups.add(cleanup);
+					try {
+						await cleanup;
+					} finally {
+						cleanups.delete(cleanup);
+						if (cleanups.size === 0) destroying.delete(bindle);
+					}
+				}
+				await Promise.all(destroying.get(bindle) ?? []);
 			};
 		},
 		async untilReady(
