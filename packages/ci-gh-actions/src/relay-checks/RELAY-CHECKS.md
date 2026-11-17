@@ -9,7 +9,12 @@ holds the `checks` handler it passes to `answerRelayJob`.
 
 **It is built, not proven.** The checks are tested against the GitHub
 simulator, and the lint check against a fake sandbox. No check job has been
-answered from GitHub's runner service yet.
+answered from GitHub's runner service yet. Gauntlet cases C01 and C02
+run at T2 in
+[`features/hobo-ci-parity/checks.feature`](../../../../features/hobo-ci-parity/checks.feature);
+C01's T3 part is owed until a scheduled probe in this repository answers a
+title check job through a live relay and the run is linked in the case
+catalog.
 
 ## Files
 
