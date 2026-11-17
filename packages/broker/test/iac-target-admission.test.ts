@@ -141,6 +141,50 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 }
 
 describe("provider-neutral IaC target budget admission", () => {
+	it.each([
+		"settlement",
+		"liability",
+	])("discloses budget evaluation as pending when %s trust may refuse admission", async (missing) => {
+		const ledger = authority(3_000_000, missing !== "settlement");
+		try {
+			const { inventory, pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("fixture model missing");
+			const deps = dependencies(ledger);
+			const financial = createIacFinancialServices({
+				...deps,
+				verifyLiability: () => missing !== "liability",
+				pricing: {
+					modelId: "terms",
+					revision: "1",
+					scenario: pricing.state.value.scenario,
+					bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+				},
+				issueLiability: () => evidence,
+			});
+			expect(financial.assess(inventory)).toMatchObject({
+				quote: { ok: true },
+				admissionPath: {
+					kind: "bounded-budget",
+					budget: "evaluation-required",
+				},
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			expect(
+				await financial.admit(`missing-${missing}`, inventory),
+			).toMatchObject({
+				status: "denied",
+				code:
+					missing === "settlement"
+						? "budget.settlement-unavailable"
+						: "LIABILITY_EVIDENCE_UNVERIFIED",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
 	it("refuses a priced target before execution when settlement trust is absent", async () => {
 		const ledger = authority(3_000_000, false);
 		try {
@@ -546,6 +590,67 @@ describe("provider-neutral IaC target budget admission", () => {
 				evidenceRef: inventory.evidenceRef,
 				resources: inventory.resources,
 			};
+			expect(financial.assess(plan)).toMatchObject({
+				quote: { ok: true, source: "developer-supplied" },
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				admissionPath: {
+					kind: "bounded-budget",
+					budget: "evaluation-required",
+				},
+				providerCoverage: {
+					basis: "declared-inventory",
+					providers: [{ providerId: "sandbox", status: "quoted" }],
+				},
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+			const withoutHost = createIacFinancialServices({
+				authority: ledger,
+				now: () => NOW,
+				pricing: {
+					modelId: source.modelId,
+					revision: source.revision,
+					scenario: source.scenario,
+					bindings,
+				},
+			});
+			expect(withoutHost.assess(plan)).toMatchObject({
+				admissionPath: {
+					kind: "unavailable",
+					code: "FINANCIAL_CONFIGURATION_INCOMPLETE",
+				},
+			});
+			expect(await withoutHost.admit("unconfigured", plan)).toMatchObject({
+				status: "denied",
+				code: "FINANCIAL_CONFIGURATION_INCOMPLETE",
+			});
+			let unpricedCalls = 0;
+			const invalidModel = createIacFinancialServices({
+				authority: ledger,
+				now: () => NOW,
+				pricing: {
+					modelId: source.modelId,
+					revision: source.revision,
+					scenario: source.scenario,
+					bindings: [],
+				},
+				unpriced: {
+					authorize: () => {
+						unpricedCalls++;
+						throw new Error("unexpected bypass");
+					},
+				},
+			});
+			expect(invalidModel.assess(plan)).toMatchObject({
+				admissionPath: {
+					kind: "unavailable",
+					code: "TARGET_PRICING_INCOMPLETE",
+				},
+			});
+			expect(await invalidModel.admit("incomplete", plan)).toMatchObject({
+				status: "denied",
+				code: "TARGET_PRICING_INCOMPLETE",
+			});
+			expect(unpricedCalls).toBe(0);
 			const admission = await financial.admit("priced-service", plan);
 			expect(admission.status).toBe("admitted");
 			expect(await financial.revalidate(admission, plan)).toBe(true);

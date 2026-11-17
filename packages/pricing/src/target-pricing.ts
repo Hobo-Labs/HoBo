@@ -49,6 +49,48 @@ export type TargetPricingQuote =
 	  }
 	| { readonly ok: false; readonly code: string; readonly reason: string };
 
+/** A provider's coverage in this declared target; it is not an independently
+ * authenticated catalog or a separately allocated provider price. */
+export type TargetProviderPricingCoverage = {
+	readonly providerId: string;
+	readonly resources: readonly {
+		readonly resourceId: string;
+		readonly productId: string;
+		readonly providerAccountRef: string;
+		readonly binding:
+			| "declared"
+			| "missing"
+			| "invalid"
+			| "unavailable"
+			| "unverified";
+	}[];
+} & (
+	| {
+			readonly status: "quoted";
+			readonly model: {
+				readonly source: "developer-supplied";
+				readonly modelId: string;
+				readonly revision: string;
+			};
+	  }
+	| {
+			readonly status: "unavailable" | "incomplete" | "unverified";
+			readonly rejection: { readonly code: string; readonly reason: string };
+	  }
+);
+
+export interface TargetPricingAssessment {
+	readonly quote: TargetPricingQuote;
+	/** This describes the caller's declared inventory; a trusted host must still
+	 * verify completeness before execution. No per-provider cost is inferred. */
+	readonly providerCoverage:
+		| {
+				readonly basis: "declared-inventory";
+				readonly providers: readonly TargetProviderPricingCoverage[];
+		  }
+		| { readonly basis: "unavailable"; readonly providers: readonly [] };
+}
+
 export function createTargetPricingInventory(
 	input: TargetPricingInventoryInput,
 ): TargetPricingInventory {
@@ -273,6 +315,9 @@ function validName(value: string): boolean {
 		value.trim() === value &&
 		!/[\p{Cc}]/u.test(value)
 	);
+}
+function compareName(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
 }
 function refuse(code: string, reason: string): TargetPricingQuote {
 	return { ok: false, code, reason };
@@ -538,4 +583,121 @@ export function quoteTargetPricing(
 		),
 		quote,
 	};
+}
+
+/** Explain provider coverage using the same joint quote used for routing.
+ * Binding disclosure is structural only; failed joint quotes do not establish
+ * that any provider is independently priceable. */
+export function assessTargetPricing(
+	inventory: TargetPricingInventory,
+	availability: TargetPricingAvailability,
+): TargetPricingAssessment {
+	let quote: TargetPricingQuote;
+	let stableInventory: TargetPricingInventory;
+	let stableAvailability: TargetPricingAvailability;
+	if (!isBoundedPricingInput(inventory) || !isBoundedPricingInput(availability))
+		return {
+			quote: refuse(
+				"PRICING_INPUT_TOO_LARGE",
+				"pricing input exceeds the bounded data limits",
+			),
+			providerCoverage: { basis: "unavailable", providers: [] },
+		};
+	try {
+		stableInventory = structuredClone(inventory);
+		stableAvailability = structuredClone(availability);
+		quote = quoteTargetPricing(stableInventory, stableAvailability);
+	} catch {
+		return {
+			quote: refuse(
+				"INVALID_PRICING_INPUT",
+				"target pricing could not be inspected",
+			),
+			providerCoverage: { basis: "unavailable", providers: [] },
+		};
+	}
+	if (hashTargetPricingInventory(stableInventory) === undefined)
+		return { quote, providerCoverage: { basis: "unavailable", providers: [] } };
+	try {
+		const model =
+			stableAvailability.state?.case === "model"
+				? stableAvailability.state.value
+				: undefined;
+		const bindings = Array.isArray(model?.bindings)
+			? model.bindings
+			: undefined;
+		const candidates = Array.isArray(model?.scenario?.candidate)
+			? model.scenario.candidate
+			: undefined;
+		const groups = new Map<string, TargetPricingInventory["resources"]>();
+		for (const resource of stableInventory.resources) {
+			const rows = groups.get(resource.providerId) ?? [];
+			rows.push(resource);
+			groups.set(resource.providerId, rows);
+		}
+		const providers: TargetProviderPricingCoverage[] = [...groups.entries()]
+			.sort(([a], [b]) => compareName(a, b))
+			.map(([providerId, rows]) => {
+				const resources: TargetProviderPricingCoverage["resources"] = rows
+					.map(({ resourceId, productId, providerAccountRef }) => {
+						let binding: TargetProviderPricingCoverage["resources"][number]["binding"] =
+							"unverified";
+						if (quote.ok) binding = "declared";
+						else if (quote.code === "PRICING_MODEL_UNAVAILABLE")
+							binding = "unavailable";
+						else if (bindings !== undefined && candidates !== undefined) {
+							const matches = bindings.filter(
+								(entry) => entry.resourceId === resourceId,
+							);
+							const index = matches[0]?.candidateIndex;
+							if (matches.length === 0) binding = "missing";
+							else if (
+								matches.length !== 1 ||
+								index === undefined ||
+								!Number.isSafeInteger(index) ||
+								index < 0 ||
+								candidates[index] === undefined ||
+								bindings.filter((entry) => entry.candidateIndex === index)
+									.length !== 1
+							)
+								binding = "invalid";
+							else binding = "declared";
+						}
+						return { resourceId, productId, providerAccountRef, binding };
+					})
+					.sort((a, b) => compareName(a.resourceId, b.resourceId));
+				if (quote.ok)
+					return {
+						providerId,
+						status: "quoted",
+						resources,
+						model: {
+							source: quote.source,
+							modelId: quote.modelId,
+							revision: quote.revision,
+						},
+					};
+				const status =
+					quote.code === "PRICING_MODEL_UNAVAILABLE"
+						? "unavailable"
+						: resources.some(
+									(row) =>
+										row.binding === "missing" || row.binding === "invalid",
+								)
+							? "incomplete"
+							: "unverified";
+				return {
+					providerId,
+					status,
+					resources,
+					rejection: { code: quote.code, reason: quote.reason },
+				};
+			});
+		return {
+			quote,
+			providerCoverage: { basis: "declared-inventory", providers },
+		};
+	} catch {
+		return { quote, providerCoverage: { basis: "unavailable", providers: [] } };
+	}
 }

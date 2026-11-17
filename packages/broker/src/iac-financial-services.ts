@@ -1,11 +1,11 @@
 import { clone, create, toJson } from "@bufbuild/protobuf";
 import {
+	assessTargetPricing,
 	createTargetPricingInventory,
 	hashTargetPricingInventory,
 	isBoundedPricingInput,
 	QuoteScenarioSchema,
 	QuoteVectorSchema,
-	quoteTargetPricing,
 	stableHash,
 	type TargetPricingInventoryInput,
 	TargetPricingInventorySchema,
@@ -45,6 +45,15 @@ export type IacFinancialExpectation =
 			readonly targetId: string;
 			readonly inventoryHash: string;
 	  };
+
+/** What this configuration must do next; no policy has been evaluated yet. */
+export type IacAdmissionPath =
+	| { readonly kind: "bounded-budget"; readonly budget: "evaluation-required" }
+	| {
+			readonly kind: "unpriced-policy";
+			readonly budget: "bypassed-if-authorized";
+	  }
+	| { readonly kind: "unavailable"; readonly code: string };
 
 /** Structural receipt accepted from an IaC adapter before provider execution. */
 export interface IacRevalidationReceipt {
@@ -187,11 +196,33 @@ export function createIacFinancialServices(
 						bindings: model.bindings.map((binding) => ({ ...binding })),
 						planDigest: plan.planDigest,
 					});
+		const { quote, providerCoverage } = assessTargetPricing(inventory, pricing);
+		let admissionPath: IacAdmissionPath;
+		if (quote.ok) {
+			admissionPath =
+				options.issueLiability !== undefined &&
+				options.authorize !== undefined &&
+				options.verifyLiability !== undefined
+					? { kind: "bounded-budget", budget: "evaluation-required" }
+					: { kind: "unavailable", code: "FINANCIAL_CONFIGURATION_INCOMPLETE" };
+		} else if (
+			quote.code === "PRICING_MODEL_UNAVAILABLE" &&
+			options.unpriced !== undefined
+		) {
+			admissionPath = {
+				kind: "unpriced-policy",
+				budget: "bypassed-if-authorized",
+			};
+		} else {
+			admissionPath = { kind: "unavailable", code: quote.code };
+		}
 		return {
 			inventory,
 			inventoryHash: hashTargetPricingInventory(inventory),
 			pricing,
-			quote: quoteTargetPricing(inventory, pricing),
+			quote,
+			providerCoverage,
+			admissionPath,
 			budget: {
 				evaluation: "not-evaluated",
 				reservation: "not-created",

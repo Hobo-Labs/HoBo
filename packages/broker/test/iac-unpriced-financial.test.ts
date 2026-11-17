@@ -203,9 +203,24 @@ describe("policy-directed unpriced IaC admission", () => {
 	it("exposes unknown pricing and refuses execution by default", async () => {
 		const { authority, plan } = fixture();
 		const financial = createIacFinancialServices({ authority, now: () => now });
-		expect(financial.assess(plan).quote).toMatchObject({
+		const assessment = financial.assess(plan);
+		expect(assessment.quote).toMatchObject({
 			ok: false,
 			code: "PRICING_MODEL_UNAVAILABLE",
+		});
+		expect(assessment).toMatchObject({
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			admissionPath: { kind: "unavailable", code: "PRICING_MODEL_UNAVAILABLE" },
+			providerCoverage: {
+				basis: "declared-inventory",
+				providers: [
+					{
+						providerId: "provider",
+						status: "unavailable",
+						resources: [{ resourceId: "worker", binding: "unavailable" }],
+					},
+				],
+			},
 		});
 		expect(await financial.admit("attempt", plan)).toMatchObject({
 			status: "denied",
@@ -222,6 +237,13 @@ describe("policy-directed unpriced IaC admission", () => {
 			authority,
 			now: () => now,
 			unpriced: { authorize },
+		});
+		expect(financial.assess(plan)).toMatchObject({
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			admissionPath: {
+				kind: "unpriced-policy",
+				budget: "bypassed-if-authorized",
+			},
 		});
 		const admission = await financial.admit("attempt", plan);
 		expect(admission).toMatchObject({
@@ -403,6 +425,13 @@ describe("policy-directed unpriced IaC admission", () => {
 						return decision;
 					},
 				},
+			});
+			expect(financial.assess(plan)).toMatchObject({
+				admissionPath: {
+					kind: "unpriced-policy",
+					budget: "bypassed-if-authorized",
+				},
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
 			});
 			expect(await financial.admit(kind, plan)).toMatchObject({
 				status: "denied",

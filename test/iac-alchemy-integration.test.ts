@@ -936,6 +936,20 @@ describe("Alchemy IaC provider against the real library", () => {
 				},
 				pricing: { state: { case: "unavailable" } },
 				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				admissionPath: {
+					kind: "unavailable",
+					code: "PRICING_MODEL_UNAVAILABLE",
+				},
+				providerCoverage: {
+					basis: "declared-inventory",
+					providers: [
+						{
+							providerId: "rivet-cloud",
+							status: "unavailable",
+							resources: [{ resourceId: "runner", binding: "unavailable" }],
+						},
+					],
+				},
 				diff: { changes: 1 },
 			});
 			await expect(fixture.provider.apply(program)).rejects.toMatchObject({
@@ -956,6 +970,22 @@ describe("Alchemy IaC provider against the real library", () => {
 		try {
 			const assessment = await fixture.provider.assessPricing(program);
 			expect(assessment.quote).toMatchObject({ ok: true });
+			expect(assessment).toMatchObject({
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				admissionPath: {
+					kind: "bounded-budget",
+					budget: "evaluation-required",
+				},
+				providerCoverage: {
+					providers: [
+						{
+							providerId: "rivet-cloud",
+							status: "quoted",
+							model: { source: "developer-supplied", modelId: "terms" },
+						},
+					],
+				},
+			});
 			const result = await fixture.provider.applyWithAdmission(program);
 			expect(result.admission).toMatchObject({
 				status: "admitted",
@@ -980,6 +1010,12 @@ describe("Alchemy IaC provider against the real library", () => {
 		});
 		try {
 			const assessment = await fixture.provider.assessPricing(program);
+			expect(assessment).toMatchObject({
+				admissionPath: {
+					kind: "unpriced-policy",
+					budget: "bypassed-if-authorized",
+				},
+			});
 			if (assessment.inventoryHash === undefined)
 				throw new Error("inventory hash missing");
 			const result = await fixture.provider.applyWithAdmission(

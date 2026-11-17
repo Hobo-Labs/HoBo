@@ -67,6 +67,18 @@ liability digests rather than the complete authenticated quote evidence; replay
 cannot authenticate an initial event supplied by an arbitrary journal writer.
 Never expose raw journal writes as an admission or recovery API.
 
+`financial.assess(plan)` exposes `providerCoverage` for the actual target. It
+distinguishes unavailable models and missing bindings from a successfully
+quoted joint model, and labels failures that cannot be attributed to a single
+provider as unverified. `admissionPath` says whether the configured next step
+is a bounded budget evaluation, an explicit unpriced policy check that would
+bypass the budget if allowed, or an unavailable path with a reason code. This
+does not evaluate the policy or predict its outcome. Its `budget` is always `not-evaluated` and
+`not-created`: price assessment and ranking are not budget authorization.
+Only the later admission receipt says whether a bounded hold was allowed, an
+explicit unbounded policy bypass was held, or the request was denied or left
+uncertain.
+
 When pricing is unavailable, admission denies by default. A host may explicitly
 configure `unpriced.authorize` and an independently enrolled
 `unpricedScopeTrust` on the budget authority to permit a particular request.
