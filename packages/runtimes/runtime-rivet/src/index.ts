@@ -24,6 +24,13 @@ export {
 	type RivetSignedCapability,
 } from "./distributed-auth.js";
 export {
+	createRivetDurableTopicActor,
+	isRivetDurableTopicBinding,
+	type RivetDurableTopicBinding,
+	type RivetDurableTopicContext,
+	type RivetDurableTopicOptions,
+} from "./durable-topic-actor.js";
+export {
 	createRivetDurableTopicClient,
 	createRivetDurableTopicMetadataGrant,
 	type RivetDurableTopicCapabilities,
@@ -36,6 +43,10 @@ export {
 	type RivetDurableTopicRequest,
 	type RivetDurableTopicTransportClaim,
 } from "./durable-topic-client.js";
+export {
+	RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
+	RIVET_DURABLE_TOPIC_LOG_LIMITS,
+} from "./durable-topic-log.js";
 export {
 	createRivetRuntimeHost,
 	diagnoseRivetReadiness,
