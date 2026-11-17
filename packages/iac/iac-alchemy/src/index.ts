@@ -22,6 +22,13 @@ import type {
 	IacProgram,
 	IacProvider,
 } from "./port.js";
+import {
+	guardAlchemyStack,
+	safeAlchemyFqn,
+	safeAlchemyStateSegment,
+	uniqueAlchemyFqns,
+	verifyAlchemyStateIdentities,
+} from "./state-identity.js";
 
 export type { ResourceScope, Target } from "./_generated/alchemy_iac_pb.js";
 export {
@@ -40,6 +47,7 @@ export type {
 	IacProgram,
 	IacProvider,
 } from "./port.js";
+export { alchemyStateScopeKey } from "./state-identity.js";
 
 export type AlchemyTargetInput = Omit<Target, "$typeName" | "resources"> & {
 	readonly resources: readonly Omit<ResourceScope, "$typeName">[];
@@ -151,6 +159,17 @@ export function createAlchemyIacProvider<
 ): AlchemyIacProvider<Assessment> {
 	const target = clone(TargetSchema, options.target);
 	if (
+		!safeAlchemyStateSegment(target.stackName) ||
+		!safeAlchemyStateSegment(target.stage) ||
+		target.resources.some((entry) => !safeAlchemyFqn(entry.resourceId)) ||
+		!uniqueAlchemyFqns(target.resources.map((entry) => entry.resourceId))
+	)
+		throw new AlchemyIacError(
+			"STATE_IDENTITY_INVALID",
+			"stack, stage, and resource identities must be safe and round-trip through Alchemy state storage",
+		);
+	const stack = guardAlchemyStack(options.stack);
+	if (
 		!isAbsolute(options.runtimeDirectory) ||
 		options.stack.stackName !== target.stackName ||
 		![
@@ -238,12 +257,12 @@ export function createAlchemyIacProvider<
 	const planned = (program: IacProgram) =>
 		program.action === "destroy"
 			? Alchemist.plan({
-					stack: options.stack,
+					stack,
 					stage: target.stage,
 					operation: "destroy",
 				})
 			: Alchemist.plan({
-					stack: options.stack,
+					stack,
 					stage: target.stage,
 					operation: "deploy",
 				});
@@ -284,6 +303,14 @@ export function createAlchemyIacProvider<
 		const result = await run(
 			Effect.gen(function* () {
 				const plan = yield* planned(program);
+				if (!(yield* verifyAlchemyStateIdentities(plan)))
+					return {
+						ok: false as const,
+						error: new AlchemyIacError(
+							"STATE_IDENTITY_UNVERIFIED",
+							"persisted Alchemy state identities are ambiguous or unavailable",
+						),
+					};
 				try {
 					return {
 						ok: true as const,
@@ -350,6 +377,13 @@ export function createAlchemyIacProvider<
 			result = await run(
 				Effect.gen(function* () {
 					const plan = yield* planned(program);
+					if (!(yield* verifyAlchemyStateIdentities(plan)))
+						return {
+							error: new AlchemyIacError(
+								"STATE_IDENTITY_UNVERIFIED",
+								"persisted Alchemy state identities are ambiguous or unavailable",
+							),
+						};
 					let inspected: ReturnType<typeof inspectAlchemyPlan>;
 					try {
 						inspected = inspectAlchemyPlan(plan, target);
@@ -443,6 +477,17 @@ export function createAlchemyIacProvider<
 								"admission differs from the ranked pricing assessment",
 								undefined,
 								heldReservation,
+							),
+						};
+					}
+					if (!(yield* verifyAlchemyStateIdentities(plan))) {
+						yield* Effect.promise(() => markUncertain(claimedReservationId));
+						return {
+							error: new AlchemyIacError(
+								"STATE_IDENTITY_UNVERIFIED",
+								"persisted Alchemy state identities changed or became unavailable; the reservation is retained",
+								undefined,
+								claimedReservationId,
 							),
 						};
 					}
@@ -543,7 +588,7 @@ export function createAlchemyIacProvider<
 		refresh: async (program): Promise<IacDriftReport> => {
 			checkProgram(program);
 			const scan = await run(
-				Alchemist.Drift.scan({ stack: options.stack, stage: target.stage }),
+				Alchemist.Drift.scan({ stack, stage: target.stage }),
 			);
 			const resources = new Map(
 				scan.resources.map((entry) => [entry.fqn, entry]),

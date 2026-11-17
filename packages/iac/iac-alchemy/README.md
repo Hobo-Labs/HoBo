@@ -20,6 +20,27 @@ credentials in its sandbox. Planning runs the supplied stack program, so the
 adapter cannot make untrusted program code safe by inspecting the resulting
 plan.
 
+Alchemy beta.87 encodes `/` as `__` in local and bucket state keys, so the
+adapter accepts only portable alphanumeric, dot, hyphen and underscore FQN
+segments whose complete FQN round-trips through that encoding. Stack and stage
+must be single portable path segments. Case-insensitive resource-key collisions
+in one target are rejected. State reads, writes and deletes are checked in each
+plan, destroy and drift scope; a stored row whose own FQN differs from its key,
+an unsafe rename, or an unavailable/inconsistent scan stops execution. A
+post-admission failure retains the reservation for reconciliation. Existing
+unsafe state requires a host-controlled, independently verified migration;
+state already overwritten by an earlier collision cannot be reconstructed by
+this check.
+
+The host must isolate and authenticate the actual state store and its writers,
+including a durable registry of stack and stage ownership. Use
+`alchemyStateScopeKey(stackName, stage)` as the case-folded registry key: for
+example, `Demo/Production` and `demo/production` are the same key. Two distinct
+logical scopes must never share that key in the same physical store, even if
+the current filesystem happens to be case-sensitive. The host must maintain the
+store's lease or equivalent exclusive fencing throughout each operation; the
+adapter's checks do not repair a compromised or concurrently modified store.
+
 The host can construct that port with `@hobo/broker`'s
 `createIacFinancialServices`. Pricing is optional in its options. Without it,
 `assessPricing(program)` returns explicit

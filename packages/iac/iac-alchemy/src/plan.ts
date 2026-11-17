@@ -3,6 +3,7 @@ import type { StackPlan } from "alchemy/Alchemist";
 import * as Output from "alchemy/Output";
 import type { Target } from "./_generated/alchemy_iac_pb.js";
 import type { FinancialDecision } from "./port.js";
+import { safeAlchemyFqn, safeAlchemyState } from "./state-identity.js";
 
 type JsonValue =
 	| null
@@ -308,6 +309,19 @@ export function inspectAlchemyPlan(
 			throw new AlchemyIacError(
 				"PLAN_UNINSPECTABLE",
 				"plan description does not match the native plan",
+			);
+		if (
+			!safeAlchemyFqn(row.fqn) ||
+			(node.state !== undefined && !safeAlchemyState(node.state, row.fqn)) ||
+			node.resource.FormerFqns?.some(
+				(former: string) => !safeAlchemyFqn(former),
+			) ||
+			("renamedFrom" in node &&
+				node.renamedFrom?.some((former: string) => !safeAlchemyFqn(former)))
+		)
+			throw new AlchemyIacError(
+				"STATE_IDENTITY_UNVERIFIED",
+				"the resource and its persisted or former state have unsafe identities",
 			);
 		references.set(node.resource, {
 			resourceId: scope.resourceId,
