@@ -8,6 +8,12 @@ contains itemized expected cost and a separate conservative liability bound in
 integer USD microdollars. Unknown, stale, foreign, unbounded or unaffordable
 quotes are ineligible. The provider and tenant on every quote must match the
 selected Yard; residual resources stay within that Yard's provider.
+Each residual resource requires a full catalog capability verdict and a region
+supported by its selected definition. Wildcards must also report a full match.
+Eligible definitions need distinct IDs and nonnegative decimal marginal prices
+with matching units; comparison is exact and ties use the definition ID. Failed
+or changing catalog evidence refuses placement. Marginal ordering remains a
+per-resource comparison and does not establish whole-request cost optimality.
 
 Funded hosting requires `hostingBudget: {authority, quotes, now}` and a bound
 `authorizeHosting` callback. The callback returns the existing `GateDecision`
