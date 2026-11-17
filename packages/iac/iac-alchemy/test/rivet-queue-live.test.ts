@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-it("runs the Alchemy-selected queue entrypoint in a separate Rivet pool", {
+it("runs the Alchemy-selected queue entrypoint in a standalone Rivet process", {
 	timeout: 100_000,
 }, async () => {
 	const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-http-"));
