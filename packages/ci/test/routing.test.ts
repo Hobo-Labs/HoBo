@@ -4,6 +4,7 @@ import {
 	type JsonObject,
 	toJsonString,
 } from "@bufbuild/protobuf";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
 	AccountSchema,
@@ -13,7 +14,11 @@ import {
 	OfferSchema,
 } from "../src/_generated/ci_pb.js";
 import { parseConfiguration } from "../src/config.js";
-import { compareCiRoutingCandidates, route } from "../src/routing.js";
+import {
+	compareCiRoutingCandidates,
+	route,
+	shouldCountLocalUsage,
+} from "../src/routing.js";
 
 function present<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error("missing fixture value");
@@ -80,6 +85,65 @@ function lease(offerId: string, free: number, paid = 0) {
 }
 
 describe("account allocation routing", () => {
+	it("refuses future financial evidence within the current millisecond", () => {
+		const a = account();
+		a.usageObservedAt = "2026-10-26T12:00:00.0000009Z";
+		expect(route(a, [], now)).toBeUndefined();
+		a.usageObservedAt = "";
+		for (const entry of a.offers)
+			entry.observedAt = "2026-10-26T12:00:00.0000009Z";
+		expect(route(a, [], now)).toBeUndefined();
+	});
+
+	it("checks generated fractional runtime coverage against integer nanoseconds", () => {
+		fc.assert(
+			fc.property(
+				fc.integer({ min: 0, max: 999_999 }),
+				fc.integer({ min: 0, max: 999_999 }),
+				(start, expiry) => {
+					const a = account();
+					for (const entry of a.offers)
+						entry.validUntil = `2026-10-26T12:10:00.000${String(expiry).padStart(6, "0")}Z`;
+					const now = `2026-10-26T12:00:00.000${String(start).padStart(6, "0")}Z`;
+					expect(route(a, [], now) !== undefined).toBe(expiry >= start);
+				},
+			),
+			{ seed: 614513, numRuns: 500 },
+		);
+	});
+
+	it("requires provider evidence to cover the exact fractional end time", () => {
+		const a = account();
+		for (const entry of a.offers)
+			entry.validUntil = "2026-10-26T12:10:00.0000001Z";
+		expect(route(a, [], "2026-10-26T12:00:00.0000009Z")).toBeUndefined();
+		for (const entry of a.offers)
+			entry.validUntil = "2026-10-26T12:10:00.0000009Z";
+		expect(route(a, [], "2026-10-26T12:00:00.0000009Z")).toBeDefined();
+	});
+
+	it("counts local usage using the exact observation instant", () => {
+		const entry = create(LeaseSchema, {
+			usageCompletedAt: "2026-10-26T12:00:00.0000001Z",
+		});
+		expect(shouldCountLocalUsage(entry, "2026-10-26T12:00:00.0000009Z")).toBe(
+			false,
+		);
+		expect(shouldCountLocalUsage(entry, "2026-10-26T12:00:00.0000001Z")).toBe(
+			true,
+		);
+	});
+
+	it("requires the entire fractional runtime to fit in the funded window", () => {
+		const a = account();
+		a.budgetPolicy = common({
+			periodKind: "fixed-window",
+			periodStartsAtMs: Date.parse("2026-10-26T11:00:00Z"),
+			periodEndsAtMs: Date.parse("2026-10-26T12:10:00Z"),
+		});
+		expect(route(a, [], "2026-10-26T12:00:00.0000009Z")).toBeUndefined();
+		expect(route(a, [], "2026-10-26T12:00:00Z")).toBeDefined();
+	});
 	it("preserves legacy fleet overflow while honoring an authored budget objective", () => {
 		const a = account();
 		const arc = offer("arc", 0, 100);

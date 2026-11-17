@@ -22,6 +22,11 @@ PR is merged and its connection activated, workflows select HoBo with one line:
 runs-on: hobo
 ```
 
+Financial observations and host completion times must use valid timestamps with
+an explicit offset. The relay requires the pinned free window to cover the full
+runtime and rounds host usage up using the full timestamp precision; future or
+backwards host completion evidence leaves the reservation for reconciliation.
+
 HoBo reserves the account's budget before dispatching a provider host. That host
 claims a single-use JIT configuration with GitHub OIDC and starts the official
 Actions runner. GitHub assigns an original queued job to that runner. The

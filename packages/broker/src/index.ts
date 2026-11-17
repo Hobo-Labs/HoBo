@@ -50,7 +50,12 @@ export {
 	type BrokerEventType,
 	brokerEvent,
 } from "./events.js";
-export { compareFinancialTime } from "./financial-time.js";
+export {
+	addFinancialMilliseconds,
+	ceilFinancialMinutes,
+	compareFinancialTime,
+	validFinancialTime,
+} from "./financial-time.js";
 export {
 	assertGuestEvidenceMatchesOffer,
 	BOOTSTRAP_CLASSES,

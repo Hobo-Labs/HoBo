@@ -351,6 +351,7 @@ export async function verifyLocalRunnerPact(
 				await h.relay.claim(lease.id, "valid");
 				if (state === "completed") {
 					h.api.host.status = "completed";
+					h.clock.now = h.api.host.updated_at;
 					await h.relay.reconcile(lease.id, 22);
 				}
 			}

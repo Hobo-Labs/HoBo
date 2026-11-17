@@ -170,6 +170,26 @@ describe("native CI usage finality and persisted execution binding", () => {
 		reopened.rebuild();
 		expect(reopened.get(lease.id)?.externalOperationId).toBe("execution-1");
 	});
+	it("rejects future provider-final usage within one millisecond and keeps its hold", async () => {
+		const s = store();
+		const a = account();
+		const future = backend(async (scope) => ({
+			...finalUsage(scope),
+			completedAt: "2026-10-27T12:00:00.0000009Z",
+		}));
+		const scheduler = new PipelineScheduler(
+			s,
+			a.id,
+			new Map([["native", future]]),
+			() => NOW,
+		);
+		await expect(scheduler.execute(a, pipeline())).rejects.toThrow(
+			/does not match/iu,
+		);
+		expect(s.all()[0]?.state).toBe("uncertain");
+		expect(s.all()[0]?.reservedPaidMicros).toBe(200);
+	});
+
 	it("rejects foreign-account final usage and keeps the original hold uncertain", async () => {
 		const s = store();
 		const a = account();
@@ -256,6 +276,32 @@ describe("native CI usage finality and persisted execution binding", () => {
 		expect(s.all()[0]?.state).toBe("uncertain");
 		expect(opens).toBe(1);
 	});
+	it("rounds fractional extra native runtime up before estimated settlement", async () => {
+		const s = store();
+		const a = account();
+		let clock = "2026-10-27T12:00:00.0000001Z";
+		const actual = backend();
+		const open = actual.open.bind(actual);
+		actual.open = async (...args) => {
+			const session = await open(...args);
+			return {
+				...session,
+				async run(step) {
+					clock = "2026-10-27T12:01:00.0000009Z";
+					return create(PipelineStepResultSchema, { id: step.id });
+				},
+			};
+		};
+		const scheduler = new PipelineScheduler(
+			s,
+			a.id,
+			new Map([["native", actual]]),
+			() => clock,
+		);
+		expect((await scheduler.execute(a, pipeline())).status).toBe("succeeded");
+		expect(s.all()[0]?.billedMinutes).toBe(2);
+	});
+
 	it("labels compatibility wall-clock accounting as estimated", async () => {
 		const s = store();
 		const a = account();

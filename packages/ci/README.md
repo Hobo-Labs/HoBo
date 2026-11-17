@@ -417,6 +417,14 @@ Inclusive monetary snapshots remain independent of routing signal state.
 CI validates the Broker's exact decimal threshold projection. Reconcile older
 rounded signals before replay and upgrade the Broker and CI together.
 
+CI financial observations and rate attestations require valid explicit-offset
+timestamps. Account and provider observations compare actual instants, including
+sub-millisecond fractions; a changed fact at an equivalent instant requires a
+newer observation. Admission and free allocation require evidence through the
+full runtime, and settlement rejects a future or backwards completion. Native
+estimated runtime is rounded up using the full timestamp precision. Reconcile
+older ambiguous, invalid or inconsistent persisted observations before replay.
+
 
 ## Author CI policy
 

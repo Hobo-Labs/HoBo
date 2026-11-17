@@ -850,6 +850,7 @@ describe("authenticated account control plane over actual HTTP", () => {
 			[],
 		);
 		h.api.host.status = "completed";
+		h.clock.now = h.api.host.updated_at;
 		const own = await fetch(`${route}/reconcile`, {
 			method: "POST",
 			headers: headers(),
