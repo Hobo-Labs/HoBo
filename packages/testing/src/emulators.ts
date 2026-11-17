@@ -6,6 +6,7 @@ import {
 	type Queue,
 	type VirtualClock,
 } from "@hobo/core";
+import { createMemorySecretsPort, type SecretsPort } from "@hobo/identity";
 import { createRuntimeLocalQueueClock } from "@hobo/runtime-local";
 
 /** A factory owns an isolated resource and may release it when the graph closes. */
@@ -32,6 +33,7 @@ export type EmulatorFactory<T> = (context: EmulatorContext) => T | Promise<T>;
 export interface ServiceEmulatorFactories {
 	readonly queue?: EmulatorFactory<QueueEmulator>;
 	readonly topic?: EmulatorFactory<ServiceEmulator<Messaging>>;
+	readonly secret?: EmulatorFactory<ServiceEmulator<SecretsPort>>;
 }
 
 export function createQueueEmulator(): QueueEmulator {
@@ -43,4 +45,8 @@ export function createTopicEmulator(
 	options: InMemoryMessagingOptions = {},
 ): ServiceEmulator<Messaging> {
 	return { port: createInMemoryMessaging(options), fidelity: "simulated" };
+}
+
+export function createSecretEmulator(): ServiceEmulator<SecretsPort> {
+	return { port: createMemorySecretsPort(), fidelity: "simulated" };
 }
