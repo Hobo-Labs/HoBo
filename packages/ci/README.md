@@ -697,12 +697,17 @@ A connected machine is kept in a machine registry (ADR-0183). The rules are in
 keeps them in the host's SQLite file (ADR-0135).
 
 - A machine signs each advert with its mesh identity key (Ed25519), and the
-  advert names that key. The first key a machine id arrives with is pinned. An
-  advert for the same id under another key is refused and gives a
+  advert names that key. The key is pinned on first use (TOFU); it is not
+  checked against the mesh's trusted-key set. An advert for the same id under
+  another key, or from another account, is refused and gives a
   `machine.taken_over` event; it stays refused until the owner removes the
-  machine.
+  machine. The SQLite store refuses such a move inside its own write.
+- The advert's account and owner (GitHub user id and login) must be the ones
+  the sender authenticated as, and a renewal keeps the owner the machine
+  connected with; otherwise it is refused as `wrong_account` or `wrong_owner`.
 - An advert not renewed for 90 seconds is offline, and the walk passes the
-  machine over.
+  machine over. An advert dated ahead of the reader's clock is kept at the
+  reader's clock.
 - Pause and sharing are the owner's settings. A renewal from the machine never
   undoes them. A paused machine takes no new job; its running jobs finish.
 - `machineCandidates` turns adverts into the walk's `MachineCandidate` values.
