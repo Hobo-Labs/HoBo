@@ -71,9 +71,22 @@ selected resource definitions; the host remains responsible for its policy and
 provider assertions.
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
-checks finite abstractions of the reservation handoff and generation recovery.
-The first view hides 128 same-label steps and the second hides 16; both assume a
-truthful host and an atomic durable authority.
+checks finite abstractions of quote approval, the reservation handoff and
+generation recovery. The quote view hides 12 same-label steps and assumes a
+truthful host and collision-resistant hash.
+
+```mermaid
+stateDiagram-v2
+  s0: Quote awaits policy proof
+  s1: Unbound approval refused
+  s2: Approved quote admitted
+  [*] --> s0
+  s0 --> s1: refuse mismatched or missing proof
+  s0 --> s2: approve this quote
+```
+
+The reservation and recovery views hide 128 and 16 same-label steps,
+respectively; both assume a truthful host and an atomic durable authority.
 
 ```mermaid
 stateDiagram-v2

@@ -7,7 +7,7 @@ description: Verify explicit local-hosting policy, zero-liability proof, current
 
 **Properties:** Local Yard placement without a durable hosting budget requires a host policy decision with fulfilled obligations, an evidence reference, a SHA-256 policy digest, an exact work-binding digest and zero managed-hosting liability. The authority, budget, broker, tenant, catalog, request and selected work must remain current around the callback. A local placement proof cannot authorize Yard generation. A failure can run a paid or policy-denied workload without a financial hold.
 
-**Review baseline:** commit `c77179e1005c14b2ca54a7507c72ac484f9592fa`. PASS for the bounded models, symbolic abstraction and generated tests below.
+**Review baseline:** commit `29ada8a1f73d499a2909e94b92bc42b41021f9bb`. PASS for the bounded models, symbolic abstraction and generated tests below.
 
 ## Covered code
 
@@ -30,7 +30,7 @@ The shared runner checks the pinned TLC 1.7.4 jar and Z3 4.15.4. Set `TLA2TOOLS`
 
 Eleven weakened model guards and eleven symbolic Boolean premises yield counterexamples. Fifteen real-code mutations exercise missing or invalid proofs, policy and evidence, incorrect liability, authority, budget, broker, tenant and catalog changes, a post-callback receipt race, and an unbudgeted generation. The unmodified tests exercise the actual broker and embedded host. The model treats hash equality, host policy, zero liability and durable funding as trusted predicates; Z3 proves only the stated guard implications, not the TypeScript implementation.
 
-The host callback is the trust boundary: a digest does not authenticate a dishonest policy or establish actual provider bills. The embedded proof excludes the machine's infrastructure and third-party costs. Proofs are checked during resolution, not again at an external receiver, and the Yard protobuf and CUE receipt omit the local proof. Cross-process execution claims, remote effects, quote binding in the separately funded path and full liveness remain outside this skill. `verify-yard-funded-admission` checks the funded context and hold fences separately.
+The host callback is the trust boundary: a digest does not authenticate a dishonest policy or establish actual provider bills. The embedded proof excludes the machine's infrastructure and third-party costs. Proofs are checked during resolution, not again at an external receiver, and the Yard protobuf and CUE receipt omit the local proof. Cross-process execution claims, remote effects, full liveness and binding a funded quote to selected definitions remain outside this skill. `verify-yard-funded-admission` checks funded quote content, context and hold fences separately.
 
 For an implementation mutation, copy `packages/broker` to a scratch package with linked `node_modules`, set `BROKER_YARD_LOCAL_VERIFY_PACKAGE_ROOT`, and remove the work-binding or zero-liability check. The real-code tests must fail. Restore the source and rerun the unmodified skill. Set `HOBO_YARD_LOCAL_VERIFY_PACKAGE_ROOT` to check a scratch embedded host.
 

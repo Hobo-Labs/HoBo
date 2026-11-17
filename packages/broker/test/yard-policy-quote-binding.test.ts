@@ -65,7 +65,7 @@ const changes = [
 type Change = (typeof changes)[number];
 
 async function evaluate(
-	mode: "missing" | "stale" | "foreign" | "matching",
+	mode: "missing" | "stale" | "foreign" | "wrong-id" | "matching",
 	change: Change = "liability",
 	total = 10,
 ) {
@@ -175,7 +175,7 @@ async function evaluate(
 					gate: { effect: "allow", reasons: [], events: [] },
 					proof: create(HostingPolicyProofSchema, {
 						requestDigest: input.requestDigest,
-						quoteId: input.quote.quoteId,
+						quoteId: mode === "wrong-id" ? "other-id" : input.quote.quoteId,
 						quoteDigest: supplied,
 						identity: input.identity,
 						effect: "allow",
@@ -202,6 +202,7 @@ it.each([
 	"missing",
 	"stale",
 	"foreign",
+	"wrong-id",
 	"matching",
 ] as const)("binds funded policy proof to complete quote content: %s", async (mode) => {
 	const { result, expected, presentedDigest, reserved } = await evaluate(mode);
