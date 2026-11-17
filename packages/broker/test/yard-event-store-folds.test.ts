@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-
 import {
 	BudgetLedgerSnapshotSchema,
 	buildDeploymentRequestFromParts,
@@ -31,6 +30,7 @@ import {
 	type YardFirstPlacementDeps,
 	yardEvent,
 } from "../src/index.js";
+import { approveLocalHosting } from "./helpers/local-hosting.js";
 
 describe("yard event-store folds + provider resolvers", () => {
 	it("rebuilds inventory from yard.* facts alone", () => {
@@ -170,6 +170,7 @@ describe("yard event-store folds + provider resolvers", () => {
 
 		const result = await resolveBindleDeployment(request, {
 			brokerId: "broker:test",
+			authorizeLocalHosting: approveLocalHosting,
 			catalog,
 			seedLocalYard: false,
 			priorEvents,

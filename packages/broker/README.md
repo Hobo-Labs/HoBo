@@ -56,8 +56,36 @@ Funded hosting requires `hostingBudget: {authority, quotes, now}` and a bound
 plus a generated `HostingPolicyProof` tied to request digest, quote, budget
 identity/revision and policy hash. Denials, pending approvals and unfulfilled
 obligations refuse admission. A successful receipt pins proof, quote and financial
-reservation. The zero-cost local host floor remains available; the local seed
-cannot impersonate a remote provider.
+reservation. Without a budget authority, local placement also requires an
+explicit `authorizeLocalHosting` callback. It approves the exact request,
+catalog, Yard and selected resource placements and returns a bound policy proof
+with fulfilled obligations and zero managed-hosting liability. The broker
+refuses missing or changed authorization context and stores the proof in the
+Yard receipt. Local generation still needs a funded admission; a placement-only
+proof cannot authorize provisioning. Hosts must authenticate their own policy
+and ensure the asserted bound is enforceable. The local seed cannot impersonate
+a remote provider.
+
+The embedded local-process runtime supplies a narrowly scoped policy asserting
+that its HoBo service fee is zero. It does not fund the machine's infrastructure
+or charges from third-party services; those require separate budget authority.
+Its local catalog now records a zero service fee instead of a synthetic positive
+price used for preference. Generic hosts must supply their own local authority
+or a durable hosting budget; caller-supplied zero estimates alone are refused.
+
+The [local-hosting skill](../../.agents/skills/verify-yard-local-hosting/SKILL.md)
+checks a finite abstraction of the policy and liability evidence. This view
+hides 64 same-label steps and assumes the host's assertion is truthful.
+
+```mermaid
+stateDiagram-v2
+  s0: Local work awaits host approval
+  s1: Local placement refused
+  s2: Bound zero-liability proof accepted
+  [*] --> s0
+  s0 --> s1: refuse incomplete or denied proof
+  s0 --> s2: approve bound zero-liability work
+```
 
 `createSqliteBudgetAdmissionAuthority({path, snapshot, now})` is the concrete
 local durable adapter. Every operation reloads the authoritative journal under

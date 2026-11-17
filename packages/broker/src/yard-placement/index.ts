@@ -7,6 +7,7 @@ export {
 } from "./connectors.js";
 export {
 	buildDeploymentRequestFromParts,
+	type LocalHostingAuthorizationContext,
 	parseBindleDeploymentRequest,
 	resolveBindleDeployment,
 	type YardFirstPlacementDeps,
@@ -76,6 +77,7 @@ export {
 	type ExecutionUnit,
 	emptyYardLayout,
 	type JsonValue,
+	type LocalHostingProof,
 	type PrimitiveResolverConfig,
 	type PrimitiveResolverDescriptor,
 	parseCampLayout,

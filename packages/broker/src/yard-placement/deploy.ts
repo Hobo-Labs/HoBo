@@ -54,12 +54,25 @@ import {
 	type ContentHash,
 	contentHashOf,
 	emptyYardLayout,
+	type LocalHostingProof,
 	parseYardLayout,
 	YARD_PLACEMENT_RECEIPT_SCHEMA,
 	type YardGenerationPolicy,
 	type YardPlacementReceipt,
 	type YardPlacementRequest,
 } from "./types.js";
+
+export interface LocalHostingAuthorizationContext {
+	readonly brokerId: string;
+	readonly request: BindleDeploymentRequest;
+	readonly requestDigest: ContentHash;
+	readonly catalogHash: string;
+	readonly yardId: string;
+	readonly providerId: string;
+	readonly ownerTenantId: string;
+	readonly placements: readonly Readonly<PlacementDecision>[];
+	readonly bindingDigest: ContentHash;
+}
 
 export interface YardFirstPlacementDeps {
 	readonly brokerId: string;
@@ -85,6 +98,11 @@ export interface YardFirstPlacementDeps {
 	}) =>
 		| { gate: GateDecision; proof: HostingPolicyProof }
 		| Promise<{ gate: GateDecision; proof: HostingPolicyProof }>;
+	/** Host policy approval and an enforceable zero-liability assertion for
+	 * this exact local work. No local generation is authorized by this hook. */
+	readonly authorizeLocalHosting?: (
+		input: LocalHostingAuthorizationContext,
+	) => LocalHostingProof | undefined | Promise<LocalHostingProof | undefined>;
 	/** Trusted whole-request quotes and the shared durable financial authority.
 	 * Estimates without an enforceable exposure bound cannot authorize hosting. */
 	readonly hostingBudget?: {
@@ -199,10 +217,32 @@ export async function resolveBindleDeployment(
 		);
 	const runtimeCatalog = deps.runtimeCatalog ?? createYardRuntimeCatalog();
 	const requestDigest = contentHashOf(request);
+	const brokerId = deps.brokerId;
+	const ownerTenant = deps.ownerTenantId;
+	const catalog = deps.catalog;
+	const hostingBudget = deps.hostingBudget;
+	const localAuthority = deps.authorizeLocalHosting;
+	const catalogHash = deps.catalog.catalogHash;
+	const localContextCurrent = () => {
+		try {
+			return (
+				deps.authorizeLocalHosting === localAuthority &&
+				deps.hostingBudget === hostingBudget &&
+				deps.brokerId === brokerId &&
+				deps.ownerTenantId === ownerTenant &&
+				deps.catalog === catalog &&
+				deps.catalog.catalogHash === catalogHash &&
+				contentHashOf(request) === requestDigest
+			);
+		} catch {
+			return false;
+		}
+	};
 	const reservationId = `hosting:${deps.brokerId}:${request.requestId}`;
 	let budgetReservation: BudgetReservation | undefined;
 	let hostingQuote: HostingQuote | undefined;
 	let hostingPolicyProof: HostingPolicyProof | undefined;
+	let localHostingProof: LocalHostingProof | undefined;
 	const isLocalProvider = (providerId: string) =>
 		providerId === "local" || providerId === "@hobo/provider-local-host";
 	function economicCosts(
@@ -225,7 +265,8 @@ export async function resolveBindleDeployment(
 			if (
 				!context &&
 				isLocalProvider(yard.providerId) &&
-				request.spendEstimateUsd === 0
+				request.spendEstimateUsd === 0 &&
+				deps.authorizeLocalHosting !== undefined
 			) {
 				costs.set(yard.yardId, 0);
 				continue;
@@ -269,14 +310,68 @@ export async function resolveBindleDeployment(
 	async function admitHosting(
 		yardId: string,
 		providerId: string,
+		placements?: readonly PlacementDecision[],
 	): Promise<void> {
 		const context = deps.hostingBudget;
+		if (context !== hostingBudget)
+			throw new Error("hosting budget changed during placement");
 		if (
 			!context &&
 			isLocalProvider(providerId) &&
 			request.spendEstimateUsd === 0
-		)
+		) {
+			const authorize = localAuthority;
+			if (!authorize || !placements)
+				throw new Error(
+					"bound local hosting authorization required before placement",
+				);
+			if (!localContextCurrent())
+				throw new Error("local hosting context changed before authorization");
+			const work = Object.freeze(
+				placements.map((placement) => Object.freeze({ ...placement })),
+			);
+			const binding = {
+				brokerId,
+				requestDigest,
+				catalogHash,
+				yardId,
+				providerId,
+				ownerTenantId,
+				placements: work,
+			};
+			const bindingDigest = contentHashOf(binding);
+			const input = Object.freeze({ ...binding, request, bindingDigest });
+			const proof = await authorize(input);
+			if (
+				!localContextCurrent() ||
+				contentHashOf(placements) !== contentHashOf(work)
+			)
+				throw new Error("local hosting context changed during authorization");
+			if (
+				proof?.schemaVersion !== "hobo.local-hosting-proof/v1" ||
+				proof.bindingDigest !== bindingDigest ||
+				(proof.effect !== "allow" && proof.effect !== "allow-degraded") ||
+				proof.obligationsSatisfied !== true ||
+				!isJsonString(proof.policyHash) ||
+				!/^sha256:[0-9a-f]{64}$/u.test(proof.policyHash) ||
+				!isJsonString(proof.evidenceRef) ||
+				!proof.evidenceRef.trim() ||
+				proof.liabilityBoundMicros !== 0
+			)
+				throw new Error(
+					"local hosting lacks bound policy and zero-liability proof",
+				);
+			localHostingProof = Object.freeze({
+				schemaVersion: proof.schemaVersion,
+				bindingDigest: proof.bindingDigest,
+				effect: proof.effect,
+				obligationsSatisfied: true,
+				policyHash: proof.policyHash,
+				evidenceRef: proof.evidenceRef,
+				liabilityBoundMicros: 0,
+			});
 			return;
+		}
 		if (context?.authority.persistence !== "durable-cas")
 			throw new Error("durable shared hosting budget authority required");
 		const quote = context.quotes.find(
@@ -700,7 +795,22 @@ export async function resolveBindleDeployment(
 		);
 	}
 	try {
-		await admitHosting(yard.yardId, yard.providerId);
+		await admitHosting(yard.yardId, yard.providerId, placements.decisions);
+		if (
+			localHostingProof &&
+			(!localContextCurrent() ||
+				localHostingProof.bindingDigest !==
+					contentHashOf({
+						brokerId,
+						requestDigest,
+						catalogHash,
+						yardId: yard.yardId,
+						providerId: yard.providerId,
+						ownerTenantId,
+						placements: placements.decisions,
+					}))
+		)
+			throw new Error("local hosting context changed before receipt");
 	} catch (error) {
 		return rejectResult(
 			foldState,
@@ -756,6 +866,7 @@ export async function resolveBindleDeployment(
 	if (budgetReservation && hostingQuote)
 		Object.assign(receiptBody, { budgetReservation, hostingQuote });
 	if (hostingPolicyProof) Object.assign(receiptBody, { hostingPolicyProof });
+	if (localHostingProof) Object.assign(receiptBody, { localHostingProof });
 
 	const receipt: YardPlacementReceipt = Object.freeze({
 		...receiptBody,

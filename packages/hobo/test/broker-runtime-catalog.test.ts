@@ -12,9 +12,8 @@
  * is why `includeWasmSandbox` and `includeOci` are inputs rather than probes
  * made here.
  *
- * **Pricing is the placement policy.** `min-cost` picks among whatever the
- * catalog offers, so the prices *are* the preference order: wasm free, oci a
- * cent, local process two. A pricing change is a placement change.
+ * **Prices describe service fees.** The local process and wasm service fees
+ * are zero; runtime preference is selected from installed hosts separately.
  *
  * **Persisted state that cannot be trusted reads as absent.** A
  * `broker-runtime.json` from an older schema, or a truncated one, must not be
@@ -54,7 +53,9 @@ function home(): string {
 	return dir;
 }
 
-function state(overrides: Partial<EmbeddedBrokerState> = {}) {
+function state(
+	overrides: Partial<EmbeddedBrokerState> = {},
+): EmbeddedBrokerState {
 	return {
 		schemaVersion: EMBEDDED_BROKER_SCHEMA,
 		brokerId: "broker:local/test",
@@ -62,7 +63,7 @@ function state(overrides: Partial<EmbeddedBrokerState> = {}) {
 		catalogHash: "sha256:test",
 		updatedAt: "2026-01-01T00:00:00.000Z",
 		...overrides,
-	} as EmbeddedBrokerState;
+	};
 }
 
 /** Provider ids present in the catalog, deduplicated. */
@@ -120,9 +121,9 @@ describe("createYardBrokerCatalog", () => {
 		).toBe(false);
 	});
 
-	it("prices wasm below oci below local process", () => {
-		// `min-cost` is the placement objective, so these numbers *are* the
-		// preference order. A change here silently changes where deployments land.
+	it("records zero service fees for local process and wasm", () => {
+		// Local runtime preference is chosen explicitly rather than encoded as a
+		// fictitious positive service charge.
 		const catalog = createYardBrokerCatalog({
 			includeWasmSandbox: true,
 			includeOci: true,
@@ -132,12 +133,9 @@ describe("createYardBrokerCatalog", () => {
 				catalog.definitions().find((d) => d.providerId === providerId)?.cost
 					.marginalPrice,
 			);
-		expect(priceOf(WASM_SANDBOX_PROVIDER_ID)).toBeLessThan(
-			priceOf(OCI_PROVIDER_ID),
-		);
-		expect(priceOf(OCI_PROVIDER_ID)).toBeLessThan(
-			priceOf(LOCAL_PROCESS_PROVIDER_ID),
-		);
+		expect(priceOf(WASM_SANDBOX_PROVIDER_ID)).toBe(0);
+		expect(priceOf(LOCAL_PROCESS_PROVIDER_ID)).toBe(0);
+		expect(priceOf(OCI_PROVIDER_ID)).toBeGreaterThan(0);
 	});
 
 	it("matches a definition to its own port and refuses another", () => {
@@ -146,10 +144,10 @@ describe("createYardBrokerCatalog", () => {
 		const definition = createYardBrokerCatalog({ includeWasmSandbox: false })
 			.definitions()
 			.find((d) => d.port === "hobo:http-service");
-		expect(
-			definition?.satisfies({ port: "hobo:http-service" } as never),
-		).toEqual({ kind: "full" });
-		expect(definition?.satisfies({ port: "hobo:web-app" } as never)).toEqual({
+		expect(definition?.satisfies({ port: "hobo:http-service" })).toEqual({
+			kind: "full",
+		});
+		expect(definition?.satisfies({ port: "hobo:web-app" })).toEqual({
 			kind: "none",
 		});
 	});
@@ -158,7 +156,7 @@ describe("createYardBrokerCatalog", () => {
 		const wildcard = createYardBrokerCatalog({ includeWasmSandbox: false })
 			.definitions()
 			.find((d) => d.port === "*");
-		expect(wildcard?.satisfies({ port: "anything:at-all" } as never)).toEqual({
+		expect(wildcard?.satisfies({ port: "anything:at-all" })).toEqual({
 			kind: "full",
 		});
 	});
@@ -183,7 +181,9 @@ describe("createYardBrokerCatalog", () => {
 		// that edited one in place would change where every later deploy lands.
 		const catalog = createYardBrokerCatalog({ includeWasmSandbox: true });
 		const first = catalog.definitions();
-		(first[0] as { providerId: string }).providerId = "tampered";
+		const firstDefinition = first[0];
+		if (!firstDefinition) throw new Error("catalog fixture is empty");
+		firstDefinition.providerId = "tampered";
 		expect(catalog.definitions().some((d) => d.providerId === "tampered")).toBe(
 			false,
 		);
@@ -268,6 +268,7 @@ describe("persisted broker state", () => {
 		// is not.
 		const dir = home();
 		saveEmbeddedBrokerState(
+			// SAFETY: This fixture deliberately represents an unsupported schema.
 			state({ schemaVersion: "hobo.broker-runtime/v0" as never }),
 			dir,
 		);
@@ -319,6 +320,7 @@ describe("defaultComponentHostFromBroker", () => {
 		// every command on a machine that has simply not re-run `yard init`.
 		const dir = home();
 		saveEmbeddedBrokerState(
+			// SAFETY: This fixture deliberately represents a legacy host value.
 			state({ preferredComponentHost: "isolated-wasm" as never }),
 			dir,
 		);
@@ -330,6 +332,7 @@ describe("defaultComponentHostFromBroker", () => {
 		// The default is always serviceable, which an invented host is not.
 		const dir = home();
 		saveEmbeddedBrokerState(
+			// SAFETY: This fixture deliberately represents a corrupt host value.
 			state({ preferredComponentHost: "frobnicate" as never }),
 			dir,
 		);
@@ -350,6 +353,7 @@ describe("collectExplicitProviderPins", () => {
 		// Bindles are provider-agnostic by construction (ADR-0144); Yard
 		// selection owns provider context. The deprecated helper survives only
 		// to assert that, so an empty result is the whole contract.
+		// SAFETY: This minimal Bindle fixture supplies all fields the check reads.
 		const pins = collectExplicitProviderPins({
 			name: "app",
 			resources: {},
