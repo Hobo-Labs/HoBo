@@ -199,6 +199,7 @@ otherwise duplicate code without testing a service contract.
 | HoBo HTTP service | Run its Fetch handler in the harness; use a Pact-derived mock when the consumer needs isolation | Only handlers explicitly provided to a Bindle are served |
 | HoBo CI relay | `createRelayHandler` with an injected application, as in the service emulator test | A memory-backed application does not prove durable admission |
 | HoBo control API | `createControlApiServer` with a temporary `hoboHome`; optional seeded `@hobo/yard-world` demo | Runs the actual local service and simulator, not a deployed Station |
+| HoBo CD notifications | `@hobo/cd/boundary` notification port with an `@hobo/cd/testing` recording CDEvents sink | Exercises CD's local event construction; no webhook or provider behavior |
 | Queue / topic | This harness's `Queue` / `Messaging` port implementations | In-memory, process-local, not a provider protocol or a durability proof |
 | Secrets | `graph.secret(alias)` and `createSecretEmulator()` wrap the identity package's in-memory `SecretsPort` | Test material lives in process memory; use fixture values, not real credentials |
 | Data engine | `graph.data(alias)` and `createDataEmulator()` use SQLite through the shared engine SPI; the emulator runs its conformance suite | Process-local SQLite, no raw SQL or remote database protocol; no schema migration port in memory |
@@ -243,7 +244,7 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `flag` | `port` | Identity's local FeatureFlagPort; not a remote provider |
 | `auth` | `placeholder` | IdentityService can test workload identity; it is not a full auth/session emulator |
 | `crypto` | `placeholder` | The in-memory KMS supports identity signing, not the whole crypto catalog |
-| `notify` | `placeholder` | CD has its own NotificationPort; it is not the catalog's general notify port |
+| `notify` | `placeholder` | CD's NotificationPort has a recording sink; it is not the catalog's general notify port |
 | `guardrail` | `placeholder` | Use the relevant policy implementation or a contract double |
 | `ui` | `http` | Fetch handlers only; no general UI render/drive port |
 | `experiment` | `fixture` | Identity's local experiment fixture is separate from the graph |
