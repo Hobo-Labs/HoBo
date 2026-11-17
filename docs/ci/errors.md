@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-105 codes.
+106 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -43,7 +43,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_APP_HOST_UNSUPPORTED_OWNER`](#hobo_ci_app_host_unsupported_owner) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_APP_TIMEOUT`](#hobo_ci_app_timeout) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_APP_UNVERIFIED`](#hobo_ci_app_unverified) | `packages/hobo/src/ci-app-create.ts` |
-| [`HOBO_CI_AUTH_REQUIRED`](#hobo_ci_auth_required) | `packages/hobo/src/ci-command.ts` |
+| [`HOBO_CI_AUTH_REQUIRED`](#hobo_ci_auth_required) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_CONFIG_INVALID`](#hobo_ci_config_invalid) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_CONFIG_SERVICE_ERROR`](#hobo_ci_config_service_error) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_CONFIG_SERVICE_UNCONFIGURED`](#hobo_ci_config_service_unconfigured) | `packages/hobo/src/ci-app-create.ts` |
@@ -82,7 +82,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_YARD_UNREADABLE`](#hobo_ci_deploy_yard_unreadable) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_GITHUB_AUTH`](#hobo_ci_github_auth) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_DEVICE`](#hobo_ci_github_device) | `packages/hobo/src/ci-github-connect.ts` |
-| [`HOBO_CI_GITHUB_FAILED`](#hobo_ci_github_failed) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
+| [`HOBO_CI_GITHUB_FAILED`](#hobo_ci_github_failed) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_GITHUB_KEY_ERROR`](#hobo_ci_github_key_error) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_GITHUB_NOT_CONNECTED`](#hobo_ci_github_not_connected) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_GITHUB_NOT_READY`](#hobo_ci_github_not_ready) | `packages/hobo/src/ci-github-connect.ts` |
@@ -106,10 +106,11 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_MCP_REPOSITORY_NOT_CONNECTED`](#hobo_ci_mcp_repository_not_connected) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
 | [`HOBO_CI_MCP_RUN_NOT_FOUND`](#hobo_ci_mcp_run_not_found) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
 | [`HOBO_CI_MCP_SCOPE_REQUIRED`](#hobo_ci_mcp_scope_required) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
+| [`HOBO_CI_NOT_STORED_HERE`](#hobo_ci_not_stored_here) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
-| [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
-| [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-command.ts` |
+| [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
+| [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_RERUN_AMBIGUOUS`](#hobo_ci_rerun_ambiguous) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_RUNNER_ORDER_INVALID`](#hobo_ci_runner_order_invalid) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_RUN_FAILED`](#hobo_ci_run_failed) | `packages/hobo/src/ci-runs.ts` |
@@ -130,7 +131,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_SECRET_STORE_VERIFIED`](#hobo_ci_secret_store_verified) | `packages/hobo/src/ci-secret-store-connect.ts` |
 | [`HOBO_CI_SECRET_STORE_VERIFY_FAILED`](#hobo_ci_secret_store_verify_failed) | `packages/hobo/src/ci-secret-store-connect.ts` |
 | [`HOBO_CI_SETUP_ERROR`](#hobo_ci_setup_error) | `packages/hobo/src/ci-command.ts` |
-| [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
+| [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_WAIT_TIMEOUT`](#hobo_ci_wait_timeout) | `packages/hobo/src/ci-runs.ts` |
 
 ## Codes
@@ -343,12 +344,24 @@ What to do: follow the message.
 
 ### HOBO_CI_AUTH_REQUIRED
 
-Returned from `packages/hobo/src/ci-command.ts`.
+Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts`.
 
-Message:
+Messages:
+
+```text
+The CI account token file {tokenFile} could not be read. Check the path given by --token-file or HOBO_CI_ACCOUNT_TOKEN_FILE.
+```
 
 ```text
 Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.
+```
+
+```text
+The CI relay did not accept the account credential. Check HOBO_CI_ACCOUNT_TOKEN.
+```
+
+```text
+The CI account credential cannot read this relay's records: it needs the policy:read scope.
 ```
 
 What to do: follow the message.
@@ -932,7 +945,7 @@ What to do: follow the message.
 
 ### HOBO_CI_GITHUB_FAILED
 
-Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`.
+Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts`.
 
 Messages:
 
@@ -954,6 +967,10 @@ GitHub could not be read, or answered with something that is not a run. Check gh
 
 ```text
 GitHub CLI could not complete the CI run operation. Check gh auth status and repository Actions permissions; inspect the run before repeating a rerun because its outcome may be unconfirmed.
+```
+
+```text
+GitHub found no such repository. Check --repo.
 ```
 
 What to do:
@@ -1259,6 +1276,26 @@ What to do:
 
 - Use a token that holds the read scope.
 
+### HOBO_CI_NOT_STORED_HERE
+
+Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-usage.ts`.
+
+Messages:
+
+```text
+This relay keeps no route journal, so there is no activity to show. Activity needs a relay with a journal: hobo ci serve, a box, or a relay deployed with storage.
+```
+
+```text
+This relay keeps no run history (the hosted relay stores none). Read GitHub instead with --source github.
+```
+
+What to do:
+
+- See one decision without a journal with hobo ci route.
+- Run hobo ci usage --source github.
+- Run hobo ci performance --source github.
+
 ### HOBO_CI_NO_RUNNER
 
 Returned from `packages/hobo/src/ci-route.ts`.
@@ -1283,7 +1320,7 @@ What to do: follow the message.
 
 ### HOBO_CI_OPERATION_TIMEOUT
 
-Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`.
+Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts`.
 
 Messages:
 
@@ -1299,9 +1336,21 @@ What to do: follow the message.
 
 ### HOBO_CI_RELAY_ERROR
 
-Returned from `packages/hobo/src/ci-command.ts`.
+Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts`.
 
-Message:
+Messages:
+
+```text
+The CI relay at {target.origin} could not be reached. Nothing was changed; retry.
+```
+
+```text
+The CI relay refused the read ({response.status}): {…}.
+```
+
+```text
+The CI relay at {origin} answered with something that is not the read API's record. Check that the relay is up to date.
+```
 
 ```text
 CI relay request failed ({error.status}). {guidance}
@@ -1559,7 +1608,7 @@ What to do: follow the message.
 
 ### HOBO_CI_TOOL_REQUIRED
 
-Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`.
+Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts`.
 
 Messages:
 

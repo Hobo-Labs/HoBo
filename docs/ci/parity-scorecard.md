@@ -16,10 +16,10 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | State | Cases |
 | --- | --- |
-| pass | 10 |
+| pass | 14 |
 | built-not-proven | 1 |
-| partial | 26 |
-| not-built | 20 |
+| partial | 24 |
+| not-built | 18 |
 | met-differently | 1 |
 | Total | 58 |
 
@@ -84,11 +84,11 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | Case | RelayRunner's claim | HoBo's bar | Tier | State | Package |
 | --- | --- | --- | --- | --- | --- |
-| I01 | Activity lists each job, where it ran and why, with filters, for 90 days ([site/dashboard/activity.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/activity.mdx)) | `hobo ci activity`, an MCP tool and the dashboard, from the journal, 90 days | T2 | not-built | 05, 19 |
+| I01 | Activity lists each job, where it ran and why, with filters, for 90 days ([site/dashboard/activity.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/activity.mdx)) | `hobo ci activity`, an MCP tool and the dashboard, from the journal, 90 days | T2 | pass | 05, 19 |
 | I02 | History shows runs and jobs with step timings, time-outs and superseded runs ([site/dashboard/activity.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/activity.mdx)) | Same from the journal | T2 | partial: on demand from GitHub only | 06 |
-| I03 | Usage shows minutes against the included amount, burn, short jobs and what checks saved ([site/dashboard/usage.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/usage.mdx)) | `hobo ci usage` | T2 | not-built | 06, 08 |
-| I04 | Performance compares workflows, jobs and runners, and each runner against `ubuntu-latest` ([site/dashboard/performance.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/performance.mdx)) | Same; the reports exist | T1, T2 | partial: per-runner line only | 19 |
-| I05 | Nine signals with thresholds, a breakdown and a trend ([site/dashboard/signals.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/signals.mdx)) | Same; breakdown and trend need stored history | T1, T2 | partial: nine signals built | 06, 19 |
+| I03 | Usage shows minutes against the included amount, burn, short jobs and what checks saved ([site/dashboard/usage.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/usage.mdx)) | `hobo ci usage` | T2 | pass | 06, 08 |
+| I04 | Performance compares workflows, jobs and runners, and each runner against `ubuntu-latest` ([site/dashboard/performance.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/performance.mdx)) | Same; the reports exist | T1, T2 | pass | 19 |
+| I05 | Nine signals with thresholds, a breakdown and a trend ([site/dashboard/signals.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/signals.mdx)) | Same; breakdown and trend need stored history | T1, T2 | pass | 06, 19 |
 | I06 **B** | A failed job shows its step, a log excerpt and whether a re-run will help ([site/reference/mcp.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/mcp.md)) | Same, with no model and the evidence printed | T1, T3 | built-not-proven: never run against GitHub | 24 |
 | I07 | One OpenTelemetry trace per run attempt ([site/dashboard/telemetry.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/telemetry.md)) | Same | T2 | pass | 16 |
 

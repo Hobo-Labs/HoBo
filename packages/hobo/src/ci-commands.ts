@@ -9,8 +9,11 @@
  * A name already handled in `ci-command.ts` is never looked up in the table.
  */
 import type { CommandResult, CommandRunInput } from "@hobo/cli";
+import { CI_ACTIVITY_COMMAND } from "./ci-activity.js";
 import { CI_MACHINE_CONNECT_COMMAND } from "./ci-machine-connect.js";
+import { CI_PERFORMANCE_COMMAND } from "./ci-performance.js";
 import { CI_PROVIDER_HEALTH_COMMAND } from "./ci-provider-health.js";
+import { CI_USAGE_COMMAND } from "./ci-usage.js";
 
 /** The checkout a command runs in, and its GitHub repository when one is known. */
 export type CiLocalRepository = Readonly<{
@@ -47,6 +50,9 @@ export const CI_COMMANDS: readonly CiCommand[] = [
 	// `machine`: `connect` runs in ci-machine-connect.ts, every other word in ci-machine.ts.
 	CI_MACHINE_CONNECT_COMMAND,
 	CI_PROVIDER_HEALTH_COMMAND,
+	CI_ACTIVITY_COMMAND,
+	CI_USAGE_COMMAND,
+	CI_PERFORMANCE_COMMAND,
 ];
 
 /** The command named `name` in `table`, or undefined. */
