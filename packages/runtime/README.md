@@ -54,9 +54,34 @@ running, and separate executions are not fenced by this queue. A journal at
 is migrated; invalid or exhausted sequences fail before the next step runs.
 
 Resuming a completed or failed run returns its recorded terminal outcome without
-calling the workflow or appending another event. New failure records preserve
-the failed step when present; older failure records without a step cannot
-reconstruct that detail.
+calling the workflow or appending another event. For versioned journals, resume
+first validates the command tree and refuses missing completion evidence,
+duplicate terminal outcomes, and records after the terminal outcome. Unknown
+command-tree versions are refused. New failure records preserve the failed step
+when present; older failure records without a step cannot reconstruct that
+detail.
+
+Application `ctx.emit` event types cannot begin with `run.`; those names belong
+to the workflow engine. The journal and its writer are trusted: records written
+by older versions or by another writer cannot be authenticated retroactively.
+Legacy unversioned journals retain their previous resume checks.
+
+The journal-authority model explores 10 distinct states. Its projection hides
+five internal transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Workflow running
+  s1: Terminal evidence recorded
+  s2: Terminal result returned
+  s3: Terminal evidence damaged
+  s4: Invalid history refused
+  [*] --> s0
+  s0 --> s1: record runtime outcome
+  s1 --> s2: validate and resume
+  s1 --> s3: history damaged
+  s3 --> s4: validate and resume
+```
 
 Replay checks each recorded sleep in order and refuses missing, changed, or
 unused sleep records and unused completed steps. Existing sleep records without

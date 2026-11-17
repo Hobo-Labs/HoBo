@@ -70,6 +70,8 @@ export function readReplayCommandTree(
 			throw new Error("invalid workflow journal sequence");
 		}
 		lastSeq = event.seq;
+		if (afterTerminal)
+			throw new Error("workflow journal record after terminal outcome");
 		if (event.type === "run.Completed" || event.type === "run.Failed") {
 			if (requireSleepCompletion) {
 				for (const root of roots) {
@@ -92,8 +94,6 @@ export function readReplayCommandTree(
 			event.type !== "run.SleepCompleted"
 		)
 			continue;
-		if (afterTerminal)
-			throw new Error("workflow command recorded after terminal outcome");
 		if (
 			!isJsonObject(event.data) ||
 			!isJsonNumber(event.data.index) ||
