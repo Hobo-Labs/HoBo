@@ -114,6 +114,13 @@ tested base. Commands are executed individually, including repeated commands;
 Turbo may still reuse its own cache unless `--fresh` is specified. The current
 PR impact group is omitted because its shadow classifier depends on a GitHub
 variable unavailable locally, even when a container engine is available.
+The `hobo-ci` and `release-hobo` route jobs load their route action and
+attestation verifier from a separate checkout of the event's base commit. The
+verifier still inspects the tested checkout's tree. A missing base verifier
+fails closed. The workflow definitions themselves come from the tested event;
+a protected required workflow or review of workflow changes is still needed to
+prevent a pull request from replacing the verification step.
+
 The extension requires a pushed commit and a credential allowed to write commit
 statuses. These statuses use the credential's authority, rather than the
 base-branch trust list used for workflow-reuse attestations. Local commands run

@@ -242,8 +242,19 @@ jobs:
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.sha }}
+          path: .ci-trusted
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
       - id: route
-        uses: $/.github/actions/route-runner
+        uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
 
