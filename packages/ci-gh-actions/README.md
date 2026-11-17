@@ -2154,3 +2154,47 @@ deployed relay, to be linked when relay mode is on for this repository. The
 Docker lint sandbox is new rather than an existing HoBo sandbox, because the
 existing ones start runners; the `LintSandbox` port lets another replace it.
 See [`src/relay-checks/RELAY-CHECKS.md`](src/relay-checks/RELAY-CHECKS.md).
+
+## Wiring: turning the built pieces on
+
+`createRelayWiring` (`src/relay-wiring.ts`) connects three earlier pieces to
+the relay's Node host (`startRelayFromEnvironment`), each behind its own flag
+and each off unless its variable is exactly `1` (ADR-0183,
+[runner order](../../docs/design/adr/runner-order.md)):
+
+| Flag | What it turns on |
+| --- | --- |
+| `HOBO_CI_RELAY_JOBS_ANSWER` (label `HOBO_CI_RELAY_JOBS_LABEL`) | Relay mode's rescue, then sweep, after each pull-admission poll. A pass still running makes the next poll skip its own, and admission never waits for one. `hobo ci serve` sets this from the project's `.hobo/ci.json` `relayJobs.answer` and clears any value from the shell |
+| `HOBO_CI_AUTO_RETRY` | Every `workflow_job` and `workflow_run` delivery the relay accepted is folded into run history, and a failed `workflow_run` goes to `autoRetryRun` with the SQLite retry ledger |
+| `HOBO_CI_DASHBOARD` | The read-only dashboard (`@hobo/ci-dashboard`) at `/dashboard`, for `GET` and `HEAD` only, and the read API it reads (`GET /v1/accounts/self/{runner-order,routes,machines,runs,signals,job-times,usage}`), checked with the relay's own account tokens and read scope. Run history is kept for it from the accepted webhooks. `hobo ci serve` supplies the page route; a host that supplies none serves the read API alone |
+
+The wiring keeps its route journal, retry ledger, run history and machine
+registry in `relay-wiring.sqlite` beside the relay's journal (or
+`HOBO_CI_WIRING_DB`), a file of its own written only by the relay process
+(ADR-0135). With every flag off the relay opens no such file, asks GitHub
+nothing more and serves no new path. The project schema accepts the
+`relayJobs` and `checks` blocks those pieces read from `.hobo/ci.json`, so
+`hobo ci serve` can load a project that sets them.
+
+What is not wired, and why:
+
+- Runner-less checks (`RelayChecks`) are not passed to the answerer, so every
+  relay job is routed; the lint sandbox needs its own configuration first.
+- Relay mode's decisions here leave the fleet step, spend, provider health and
+  minutes unmeasured, and so does the read API's usage report for minutes:
+  the host has no fleet slots, ledger sum, health feed or billing reader to
+  give them. A missing measurement never blocks a step. Nothing on this host
+  writes machine adverts or machine events yet, so the machine registry is
+  empty and a retry sees no machine disconnect.
+- Relay mode answers through the pull-admission poller. A relay on push
+  admission runs no poller, so it does not answer relay jobs.
+- With the CI agent on, `hobo ci serve` starts the relay through the agent's
+  entry, which takes no dashboard route: the dashboard is not served then.
+
+Built, not proven. `test/relay-wiring.test.ts` drives the wiring against the
+GitHub simulator (a lost relay job answered after a poll, a failed run re-run
+once for a webhook delivered twice, nothing with each flag off);
+`test/relay-wiring-entry.test.ts` drives `startRelayFromEnvironment` over
+HTTP (a webhook folded into run history, the page, the read API behind its
+token, and none of it with the flags off); `packages/hobo/test/ci-serve.test.ts` drives `hobo ci serve` and its
+poller. No relay has run with a flag on against GitHub yet.

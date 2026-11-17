@@ -13,6 +13,12 @@ import { type JoinedMesh, joinMeshFromEnv } from "./mesh-join.js";
 import { createGithubOidcVerifier } from "./oidc.js";
 import { acquirePartitionLock } from "./partition-lock.js";
 import { createRelayHost, type RelayAgent } from "./relay-host.js";
+import {
+	createRelayWiring,
+	type RelayWiring,
+	relayWiringFlags,
+	relayWiringOn,
+} from "./relay-wiring.js";
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
 	const value = env[name];
@@ -43,6 +49,12 @@ export async function startRelayFromEnvironment(
 				readonly { installationId: number; repository: string }[]
 			>;
 		}) => RelayAgent | Promise<RelayAgent>;
+		/**
+		 * The dashboard route (`createDashboardRoute` from `@hobo/ci-dashboard`),
+		 * served only while `HOBO_CI_DASHBOARD` is 1. `hobo ci serve` supplies it;
+		 * a host that does not serves no dashboard.
+		 */
+		dashboard?: (request: Request) => Promise<Response | undefined>;
 	} = {},
 ) {
 	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
@@ -88,6 +100,7 @@ export async function startRelayFromEnvironment(
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);
 	let store: SqliteCiStore;
+	let wiring: RelayWiring | undefined;
 	try {
 		store = new SqliteCiStore(database);
 	} catch (error) {
@@ -150,16 +163,50 @@ export async function startRelayFromEnvironment(
 					message: error instanceof Error ? error.message : "unknown",
 				});
 			}
+		const github =
+			ports.github ??
+			createGithubAppTransport({
+				appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
+				privateKey,
+			});
+		// Relay mode's passes, automatic retry and the dashboard (ADR-0183),
+		// each off unless its HOBO_CI_* flag is 1.
+		const flags = relayWiringFlags(env);
+		const wired = relayWiringOn(flags)
+			? createRelayWiring({
+					flags,
+					github,
+					connections: async () =>
+						(
+							(await store.configuration())?.configuration?.connections ?? []
+						).map((connection) => ({
+							accountId: connection.accountId,
+							installationId: connection.installationId,
+							repository: connection.repository,
+							// A public repository is connected only with its owner's consent.
+							public: connection.publicRepositoryAcknowledged,
+						})),
+					// Beside the relay's journal, a file of its own (ADR-0135).
+					database:
+						env.HOBO_CI_WIRING_DB ??
+						join(dirname(database), "relay-wiring.sqlite"),
+					node: `relay-${hostname()}`,
+					dashboard: ports.dashboard,
+					authenticate,
+					log: (event, fields) => meshLog("info", event, fields),
+				})
+			: undefined;
+		wiring = wired;
 		const { service, runtime } = createRelayHost({
 			store,
 			agent,
 			meshNodes: mesh?.node.reports,
-			github:
-				ports.github ??
-				createGithubAppTransport({
-					appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
-					privateKey,
-				}),
+			wiring: wired && {
+				onWebhook: (webhook) => void wired.onWebhook(webhook),
+				page: (request) => wired.page(request),
+				control: (request) => wired.control(request),
+			},
+			github,
 			identity: createGithubOidcVerifier(publicUrl.origin),
 			webhookSecret,
 			ingressForwardSecret,
@@ -188,12 +235,15 @@ export async function startRelayFromEnvironment(
 			service,
 			runtime,
 			store,
+			/** The wiring, when a flag turned it on; a poller calls its `afterPoll`. */
+			wiring: wired,
 			stop() {
 				stopping ??= (async () => {
 					// Say so before going: the list shows the relay draining, then lost.
 					ready = () => false;
 					await mesh?.stop().catch(() => undefined);
 					const result = await service.stop();
+					wired?.close();
 					if (result.drained) await lock.release();
 					return result;
 				})();
@@ -201,6 +251,7 @@ export async function startRelayFromEnvironment(
 			},
 		};
 	} catch (error) {
+		wiring?.close();
 		store.close();
 		await lock.release();
 		throw error;

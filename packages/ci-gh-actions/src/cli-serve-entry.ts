@@ -12,7 +12,14 @@ export { createPollIngestCoalesce } from "./isolated-worker/poll-ingest-coalesce
 export { startRelayFromEnvironment } from "./main.js";
 export type { CiWorkerStore } from "./project-config.js";
 export { loadCiProjectFromDirectory } from "./project-config-loader.js";
+export { parseRelayJobs } from "./relay-answer/ci-file.js";
 export { type CiJobAdmission, inferJobAdmission } from "./relay-routing.js";
+export {
+	type RelayModePass,
+	type RelayWiring,
+	type RelayWiringFlags,
+	relayWiringFlags,
+} from "./relay-wiring.js";
 export {
 	ADOPTED_RUNNER_LABEL_PREFIX,
 	ADOPTED_RUNNER_SIGNER,

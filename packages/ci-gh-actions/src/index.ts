@@ -748,6 +748,18 @@ export {
 	traceGithubTransport,
 } from "./relay-trace.js";
 export {
+	createRelayWiring,
+	RELAY_WIRING_OFF,
+	type RelayModePass,
+	type RelayWiring,
+	type RelayWiringFlags,
+	type RelayWiringLog,
+	type RelayWiringOptions,
+	relayWiringFlags,
+	relayWiringOn,
+	type WiredConnection,
+} from "./relay-wiring.js";
+export {
 	judgeRoutingSlip,
 	type ParsedRoutingSlip,
 	parseRoutingSlip,
