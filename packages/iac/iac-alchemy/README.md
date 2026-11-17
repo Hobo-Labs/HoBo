@@ -32,10 +32,13 @@ its proof and environment digest must match the composite guard. The guard's
 The host must authenticate the complete transitive source graph, module cache,
 build toolchain and exact upload, and keep them fenced from planning until the
 provider completes. The callbacks attest a host-enforced guarantee; they do not
-make a mutable filesystem or module cache immutable. For source deletion, the
-host must independently authenticate the reported prior-state digest against
-durable ownership evidence. Revocation after a provider effect retains the
-budget hold as uncertain.
+make a mutable filesystem or module cache immutable. The fence object must use
+own data properties; accessor-backed or malformed authorities are rejected.
+For source deletion, the host must compute `hashAlchemyPriorState` from its
+independently authenticated durable record and compare it with the reported
+prior-state digest. The state must be complete, stable, and inspectable without
+unresolved references. Revocation after a provider effect retains the budget
+hold as uncertain.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy
