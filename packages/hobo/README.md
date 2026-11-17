@@ -738,8 +738,11 @@ way to find the local repository. The command parses its own options.
 ## `hobo ci activity`, `usage` and `performance`
 
 Three read-only commands show what a connected relay keeps about an account's
-CI (ADR-0183). They find the relay the way `hobo ci status` does (`--relay`,
-`HOBO_CI_RELAY_URL`, then `.hobo/ci.json`), read it with the account
+CI (ADR-0183). They find the relay the way `hobo ci status` does: `--relay`,
+then `.hobo/ci.json` at the checkout's root (so they work from any
+subdirectory), then `HOBO_CI_RELAY_URL`, then the link `hobo ci setup` saved
+for the checkout. Only a project file that sets `allowInsecureLoopback` may
+name a loopback `http://` relay. They read it with the account
 credential (`HOBO_CI_ACCOUNT_TOKEN` or `--token-file`), and ask only the
 read API's frozen `GET /v1/accounts/self/...` paths. Each takes `--json`.
 

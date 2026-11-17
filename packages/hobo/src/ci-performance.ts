@@ -50,7 +50,7 @@ const PERFORMANCE_HELP = [
 	"hobo ci performance [--repo owner/name] [--since 30d] [--json]",
 	"hobo ci performance --source github [--repo owner/name] [--since 30d] [--runs <n>] [--json]",
 	"Workflow, job and runner times, each runner against ubuntu-latest, and the nine signals with a breakdown and trend.",
-	"  --source relay   the connected relay's run history (default; --relay, HOBO_CI_RELAY_URL or .hobo/ci.json)",
+	"  --source relay   the connected relay's run history (default; --relay, .hobo/ci.json, HOBO_CI_RELAY_URL or the hobo ci setup link)",
 	"  --source github  the repository's recent runs, read with the GitHub CLI",
 ].join("\n");
 

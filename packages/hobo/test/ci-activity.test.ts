@@ -1,7 +1,13 @@
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { create } from "@bufbuild/protobuf";
+import { create, toJsonString } from "@bufbuild/protobuf";
 import {
+	DesiredCiPolicySchema,
+	defineCiPolicy,
 	type RunnerRouteEvent,
 	RunnerRouteEventSchema,
 	RunnerRouteRequestSchema,
@@ -9,7 +15,7 @@ import {
 import { SqliteRouteJournal } from "@hobo/ci/runner-order/journal-sqlite";
 import { InMemoryRouteJournal } from "@hobo/ci/runner-order/testing";
 import { createHoboCli } from "@hobo/cli";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
 	CI_ACTIVITY_COMMAND,
 	decodeActivityCursor,
@@ -112,23 +118,97 @@ const RELAY_ENV = {
 	HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
 };
 
+const directories: string[] = [];
+afterEach(async () => {
+	await Promise.all(
+		directories
+			.splice(0)
+			.map((path) => rm(path, { recursive: true, force: true })),
+	);
+});
+
+async function temporaryDirectory(prefix: string): Promise<string> {
+	const path = await realpath(await mkdtemp(join(tmpdir(), prefix)));
+	directories.push(path);
+	return path;
+}
+
+/** A hobo home with no saved links, so a developer's own links never leak in. */
+const EMPTY_HOBO_HOME = join(tmpdir(), "hobo-ci-activity-no-home");
+
 async function run(
 	readApi: FakeReadApi,
 	args: readonly string[],
 	env: NodeJS.ProcessEnv = RELAY_ENV,
+	cwd: string = tmpdir(),
 ) {
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env,
+				env: { HOBO_HOME: EMPTY_HOBO_HOME, ...env },
 				now: () => NOW,
 				fetch: fakeReadApiFetch(readApi),
 				commands: [CI_ACTIVITY_COMMAND],
 			}),
 		},
 	});
-	const result = await cli.run(["ci", "activity", ...args], { cwd: tmpdir() });
+	const result = await cli.run(["ci", "activity", ...args], { cwd });
 	return { ...result, output: result.stdout + result.stderr };
+}
+
+/** A git checkout whose `.hobo/ci.json` names `relayOrigin`, with a subdirectory. */
+async function configuredCheckout(relayOrigin: string) {
+	const root = await temporaryDirectory("hobo-ci-activity-checkout-");
+	execFileSync("git", ["init", "-q", root]);
+	const policy = JSON.parse(
+		toJsonString(
+			DesiredCiPolicySchema,
+			defineCiPolicy({
+				accountId: ACCOUNT,
+				tenantId: ACCOUNT,
+				pool: { label: "hobo", os: "linux", architecture: "x64" },
+				providers: [
+					{
+						id: "gh",
+						kind: "github",
+						connectionRef: "gh",
+						runsOn: "ubuntu-24.04",
+					},
+				],
+				budget: {
+					scope: "ci-account",
+					currency: "USD",
+					period: "manual",
+					timeZone: "UTC",
+					limitMicros: 1,
+				},
+				routing: {
+					strategy: "lowest-total-incremental-cost",
+					noEligibleProvider: "queue",
+					unknownAllocation: "zero",
+				},
+				thresholds: [],
+			}),
+		),
+	);
+	await mkdir(join(root, ".hobo"), { recursive: true });
+	await writeFile(
+		join(root, ".hobo", "ci.json"),
+		JSON.stringify({
+			defaultEnvironment: "production",
+			environments: {
+				production: {
+					relayOrigin,
+					jobAdmission: "push",
+					engines: ["gh-actions"],
+					policy,
+				},
+			},
+		}),
+	);
+	const subdirectory = join(root, "packages", "app");
+	await mkdir(subdirectory, { recursive: true });
+	return { root, subdirectory };
 }
 
 async function runJson(readApi: FakeReadApi, args: readonly string[]) {
@@ -252,6 +332,100 @@ describe("hobo ci activity", () => {
 		const entries: { atMs: number }[] = result.envelope.data.entries;
 		expect(entries).toHaveLength(90);
 		expect(entries.every((entry) => entry.atMs >= NOW - 90 * DAY)).toBe(true);
+	});
+
+	it("stops at the read API's depth and says the read was cut short", async () => {
+		const events: RunnerRouteEvent[] = [];
+		for (let index = 0; index < 1100; index += 1)
+			events.push(
+				decided({
+					atMs: NOW - index * 60_000,
+					jobId: `j${index}`,
+					runId: index,
+				}),
+			);
+		const readApi = api({ journal: await journalOf(events) });
+		const result = await runJson(readApi, ["--limit", "500"]);
+		expect(result.envelope.data.truncated).toBe(true);
+		expect(
+			readApi.asked.filter((path) =>
+				path.startsWith("/v1/accounts/self/routes"),
+			),
+		).toHaveLength(5);
+		const text = await run(readApi, ["--limit", "1"]);
+		expect(text.stdout).toContain("Only the newest 1000 journal entries");
+	});
+
+	it("finds the relay in .hobo/ci.json from a subdirectory of the checkout", async () => {
+		const { subdirectory } = await configuredCheckout(FAKE_RELAY_ORIGIN);
+		const result = await run(
+			api({ journal: await journalOf([decided({ atMs: NOW, jobId: "j1" })]) }),
+			["--json"],
+			{ HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN },
+			subdirectory,
+		);
+		expect(result.exitCode, result.output).toBe(0);
+		const envelope = JSON.parse(result.stdout);
+		expect(envelope.data.relay).toBe(FAKE_RELAY_ORIGIN);
+		expect(envelope.data.entries).toHaveLength(1);
+	});
+
+	it("prefers .hobo/ci.json to HOBO_CI_RELAY_URL, as hobo ci status does", async () => {
+		const { subdirectory } = await configuredCheckout(FAKE_RELAY_ORIGIN);
+		const result = await run(
+			api(),
+			["--json"],
+			{
+				HOBO_CI_RELAY_URL: "https://elsewhere.example.test",
+				HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
+			},
+			subdirectory,
+		);
+		expect(result.exitCode, result.output).toBe(0);
+		expect(JSON.parse(result.stdout).data.relay).toBe(FAKE_RELAY_ORIGIN);
+	});
+
+	it("falls back to the link hobo ci setup saved for the checkout", async () => {
+		const root = await temporaryDirectory("hobo-ci-activity-linked-");
+		execFileSync("git", ["init", "-q", root]);
+		const home = await temporaryDirectory("hobo-ci-activity-home-");
+		await mkdir(join(home, "ci", "links"), { recursive: true });
+		await writeFile(
+			join(
+				home,
+				"ci",
+				"links",
+				`${createHash("sha256").update(root).digest("hex")}.json`,
+			),
+			JSON.stringify({
+				relayOrigin: FAKE_RELAY_ORIGIN,
+				accountId: ACCOUNT,
+				repository: "octo/app",
+			}),
+		);
+		const env = { HOBO_HOME: home, HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN };
+		const linked = await run(
+			api(),
+			["--repo", "octo/app", "--json"],
+			env,
+			root,
+		);
+		expect(linked.exitCode, linked.output).toBe(0);
+		expect(JSON.parse(linked.stdout).data.relay).toBe(FAKE_RELAY_ORIGIN);
+		const other = await run(api(), ["--repo", "octo/other"], env, root);
+		expect(other.exitCode).not.toBe(0);
+		expect(other.output).toContain("--relay");
+	});
+
+	it("reports a token file it cannot read as a missing credential", async () => {
+		const result = await run(api(), ["--json"], {
+			HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN,
+			HOBO_CI_ACCOUNT_TOKEN_FILE: join(tmpdir(), "hobo-ci-no-such-token"),
+		});
+		expect(result.exitCode).not.toBe(0);
+		const envelope = JSON.parse(result.stdout);
+		expect(envelope.code).toBe("HOBO_CI_AUTH_REQUIRED");
+		expect(envelope.message).toContain("hobo-ci-no-such-token");
 	});
 
 	it("pages newest first and resumes from the printed cursor", async () => {

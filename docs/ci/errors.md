@@ -349,6 +349,10 @@ Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.
 Messages:
 
 ```text
+The CI account token file {tokenFile} could not be read. Check the path given by --token-file or HOBO_CI_ACCOUNT_TOKEN_FILE.
+```
+
+```text
 Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.
 ```
 
@@ -1288,8 +1292,9 @@ This relay keeps no run history (the hosted relay stores none). Read GitHub inst
 
 What to do:
 
-- See one decision without a journal with {…}.
-- Run {command} --source github.
+- See one decision without a journal with hobo ci route.
+- Run hobo ci usage --source github.
+- Run hobo ci performance --source github.
 
 ### HOBO_CI_NO_RUNNER
 

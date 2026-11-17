@@ -6,8 +6,9 @@
  *                      [--outcome routed|waiting|none|pending] [--machine <id>]
  *                      [--limit <n>] [--cursor <next>] [--json]
  *
- * The relay is the one `hobo ci status` asks: `--relay`, else
- * `HOBO_CI_RELAY_URL`, else `.hobo/ci.json`; the credential is
+ * The relay is the one `hobo ci status` asks: `--relay`, else the checkout's
+ * `.hobo/ci.json`, else `HOBO_CI_RELAY_URL`, else the link `hobo ci setup`
+ * saved; the credential is
  * `HOBO_CI_ACCOUNT_TOKEN` or the file `--token-file` / `HOBO_CI_ACCOUNT_TOKEN_FILE`
  * names. The command reads the journal entries through the read API's
  * `routes` path and builds the entries with `activityFeed` from `@hobo/ci`,
@@ -18,9 +19,11 @@
  * This file also holds the read API client `hobo ci usage` and
  * `hobo ci performance` share.
  */
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { fromJsonString } from "@bufbuild/protobuf";
 import {
 	ACTIVITY_OUTCOMES,
 	type ActivityCursor,
@@ -33,7 +36,9 @@ import {
 import { loadCiProjectFromDirectory } from "@hobo/ci-gh-actions/cli-serve";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
+import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import type { CiCommand, CiCommandContext } from "./ci-commands.js";
+import { defaultHoboHome } from "./hobo-home.js";
 
 const DAY_MS = 86_400_000;
 
@@ -56,7 +61,7 @@ const ACTIVITY_HELP = [
 	"  --since    90d, 12h, 30m or a date (default 90d, the journal's retention)",
 	"  --runner   the order step that took the job: machine, github, blacksmith, depot, ...",
 	`  --outcome  ${ACTIVITY_OUTCOMES.join(", ")}`,
-	"Relay: --relay <https-origin>, HOBO_CI_RELAY_URL or .hobo/ci.json; credential: HOBO_CI_ACCOUNT_TOKEN or --token-file.",
+	"Relay: --relay <https-origin>, else .hobo/ci.json, HOBO_CI_RELAY_URL, then the hobo ci setup link; credential: HOBO_CI_ACCOUNT_TOKEN or --token-file.",
 ].join("\n");
 
 /** A command result that ends the command, raised from deep in a read. */
@@ -120,24 +125,65 @@ function relayOrigin(value: string, allowLoopback: boolean): string {
 	return url.origin;
 }
 
+/** The relay a `hobo ci setup` link saved for this checkout, when it names `repository`. */
+async function savedLinkOrigin(
+	context: CiCommandContext,
+	root: string,
+	repository: string | undefined,
+): Promise<string | undefined> {
+	const path = join(
+		defaultHoboHome(context.env),
+		"ci",
+		"links",
+		`${createHash("sha256").update(resolve(root)).digest("hex")}.json`,
+	);
+	let text: string;
+	try {
+		text = await readFile(path, "utf8");
+	} catch {
+		return undefined;
+	}
+	let link: ReturnType<typeof fromJsonString<typeof CiRepositoryLinkSchema>>;
+	try {
+		link = fromJsonString(CiRepositoryLinkSchema, text.slice(0, 8192));
+	} catch {
+		throw ciUsage(
+			"The saved CI link is invalid. Run hobo ci enable with --relay and --repo to reconnect.",
+			"",
+		);
+	}
+	if (
+		repository === undefined ||
+		link.repository.toLowerCase() !== repository.toLowerCase()
+	)
+		return undefined;
+	return link.relayOrigin;
+}
+
 /**
- * The relay these commands read: `--relay`, `HOBO_CI_RELAY_URL`, then the
- * project's `.hobo/ci.json`. Undefined when none is selected.
+ * The relay these commands read, chosen as `hobo ci status` chooses it:
+ * `--relay`, the checkout's `.hobo/ci.json`, `HOBO_CI_RELAY_URL`, then the link
+ * `hobo ci setup` saved for this checkout. Only a project file that allows
+ * insecure loopback may name an `http://127.0.0.1` relay. Undefined when none
+ * is selected.
  */
 export async function selectRelay(
 	context: CiCommandContext,
 	options: Readonly<{
 		relay: string | undefined;
 		tokenFile: string | undefined;
+		repo: string | undefined;
 	}>,
 ): Promise<RelayReadTarget | undefined> {
 	let origin: string | undefined;
-	const given = options.relay ?? context.env.HOBO_CI_RELAY_URL;
-	if (given) origin = relayOrigin(given, false);
+	if (options.relay) origin = relayOrigin(options.relay, false);
 	else {
+		const local = await context
+			.localRepository(options.repo)
+			.catch(() => ({ root: context.flags.cwd, repository: options.repo }));
 		try {
 			const project = await loadCiProjectFromDirectory({
-				repositoryRoot: context.flags.cwd,
+				repositoryRoot: local.root,
 				env: context.env,
 			});
 			origin = relayOrigin(
@@ -148,6 +194,16 @@ export async function selectRelay(
 			if (error instanceof CiCommandStop) throw error;
 			origin = undefined;
 		}
+		if (origin === undefined && context.env.HOBO_CI_RELAY_URL)
+			origin = relayOrigin(context.env.HOBO_CI_RELAY_URL, false);
+		if (origin === undefined) {
+			const saved = await savedLinkOrigin(
+				context,
+				local.root,
+				local.repository,
+			);
+			if (saved !== undefined) origin = relayOrigin(saved, false);
+		}
 	}
 	if (origin === undefined) return undefined;
 	const tokenFile = options.tokenFile ?? context.env.HOBO_CI_ACCOUNT_TOKEN_FILE;
@@ -156,11 +212,21 @@ export async function selectRelay(
 			"Choose one CI credential source: a token file or HOBO_CI_ACCOUNT_TOKEN.",
 			"",
 		);
-	const token = tokenFile
-		? (await readFile(resolve(context.flags.cwd, tokenFile), "utf8"))
+	let token = context.env.HOBO_CI_ACCOUNT_TOKEN ?? "";
+	if (tokenFile) {
+		try {
+			token = (await readFile(resolve(context.flags.cwd, tokenFile), "utf8"))
 				.slice(0, 1024)
-				.trimEnd()
-		: (context.env.HOBO_CI_ACCOUNT_TOKEN ?? "");
+				.trimEnd();
+		} catch {
+			throw new CiCommandStop({
+				ok: false,
+				status: "authentication-required",
+				code: "HOBO_CI_AUTH_REQUIRED",
+				message: `The CI account token file ${tokenFile} could not be read. Check the path given by --token-file or HOBO_CI_ACCOUNT_TOKEN_FILE.`,
+			});
+		}
+	}
 	if (!token)
 		throw new CiCommandStop({
 			ok: false,
@@ -252,7 +318,7 @@ export function noRelaySelected(extra: string): CommandResult {
 		ok: false,
 		status: "usage",
 		code: "HOBO_CLI_USAGE",
-		message: `Select your CI relay with --relay, HOBO_CI_RELAY_URL, or .hobo/ci.json${extra}.`,
+		message: `Select your CI relay with --relay, .hobo/ci.json, HOBO_CI_RELAY_URL, or hobo ci setup${extra}.`,
 	};
 }
 
@@ -281,22 +347,14 @@ export async function readRouteEvents(
 		params.set("since", String(Math.max(0, Math.floor(query.sinceMs))));
 		params.set("limit", String(RELAY_ROUTES_PAGE));
 		if (cursor !== undefined) params.set("cursor", cursor);
-		const body = await readRelayApi(
-			context,
-			target,
-			"/routes",
-			params,
-			(command) => ({
-				ok: false,
-				status: "unavailable",
-				code: "HOBO_CI_NOT_STORED_HERE",
-				message:
-					"This relay keeps no route journal, so there is no activity to show. Activity needs a relay with a journal: hobo ci serve, a box, or a relay deployed with storage.",
-				remediation: [
-					`See one decision without a journal with ${command ?? "hobo ci route"}.`,
-				],
-			}),
-		);
+		const body = await readRelayApi(context, target, "/routes", params, () => ({
+			ok: false,
+			status: "unavailable",
+			code: "HOBO_CI_NOT_STORED_HERE",
+			message:
+				"This relay keeps no route journal, so there is no activity to show. Activity needs a relay with a journal: hobo ci serve, a box, or a relay deployed with storage.",
+			remediation: ["See one decision without a journal with hobo ci route."],
+		}));
 		let page: z.infer<typeof RoutesPageJson>;
 		try {
 			page = RoutesPageJson.parse(JSON.parse(body));
@@ -412,6 +470,7 @@ async function activity(context: CiCommandContext): Promise<CommandResult> {
 	const target = await selectRelay(context, {
 		relay: values.relay,
 		tokenFile: values["token-file"],
+		repo: values.repo,
 	});
 	if (!target) return noRelaySelected("; activity is read from its journal");
 	const read = await readRouteEvents(context, target, {

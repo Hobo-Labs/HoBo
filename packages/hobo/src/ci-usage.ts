@@ -76,7 +76,7 @@ const USAGE_HELP = [
 	"hobo ci usage [--repo owner/name] [--since 30d] [--json]",
 	"hobo ci usage --source github [--repo owner/name] [--since 30d] [--runs <n>] [--json]",
 	"Billed minutes per runner and day, short jobs, minutes kept off GitHub-hosted runners and the included minutes left.",
-	"  --source relay   the connected relay's run history (default; --relay, HOBO_CI_RELAY_URL or .hobo/ci.json)",
+	"  --source relay   the connected relay's run history (default; --relay, .hobo/ci.json, HOBO_CI_RELAY_URL or the hobo ci setup link)",
 	"  --source github  the repository's recent runs, read with the GitHub CLI",
 ].join("\n");
 
@@ -388,7 +388,7 @@ export async function readRelayReport<T>(
 	path: string,
 	query: Readonly<{ repository: string | undefined; sinceMs: number }>,
 	schema: z.ZodType<T>,
-	command: string,
+	command: "hobo ci usage" | "hobo ci performance",
 ): Promise<T> {
 	const params = new URLSearchParams();
 	if (query.repository) params.set("repository", query.repository);
@@ -399,7 +399,11 @@ export async function readRelayReport<T>(
 		code: "HOBO_CI_NOT_STORED_HERE",
 		message:
 			"This relay keeps no run history (the hosted relay stores none). Read GitHub instead with --source github.",
-		remediation: [`Run ${command} --source github.`],
+		remediation: [
+			command === "hobo ci usage"
+				? "Run hobo ci usage --source github."
+				: "Run hobo ci performance --source github.",
+		],
 	}));
 	try {
 		return schema.parse(JSON.parse(body));
