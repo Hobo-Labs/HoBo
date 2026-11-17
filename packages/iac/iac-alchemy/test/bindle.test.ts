@@ -23,6 +23,9 @@ const Queue = Resource<Queue>("Spec.Queue");
 const Web = Resource<Web>("Spec.Web");
 
 const entrypoint = () => "application logic";
+const supportedRequirements = {
+	assessRequirements: () => ({ status: "supported" as const }),
+};
 const declaration = {
 	name: "app",
 	resources: {
@@ -111,13 +114,61 @@ function mappers(observed: string[]) {
 }
 
 describe("explicit Alchemy primitive mapping", () => {
+	it("rejects connector declarations until their authorization and runtime bindings can be mapped", () => {
+		const observed: string[] = [];
+		const input = {
+			...declaration,
+			connectors: { payments: { kind: "connector" as const } },
+		};
+		expect(() =>
+			mapBindleToAlchemy(input, mappers(observed), supportedRequirements),
+		).toThrow("BINDLE_CONNECTORS_UNSUPPORTED");
+		expect(observed).toEqual([]);
+	});
+
+	it("requires a provider decision on bindle-wide requirements before construction", () => {
+		const observed: string[] = [];
+		expect(() =>
+			mapBindleToAlchemy(declaration, mappers(observed), {
+				assessRequirements: () => ({
+					status: "unsupported",
+					reason: "runtime unavailable",
+				}),
+			}),
+		).toThrow("BINDLE_REQUIREMENTS_UNSUPPORTED");
+		expect(() =>
+			mapBindleToAlchemy(declaration, mappers(observed), {
+				assessRequirements: () => {
+					throw new Error("unavailable");
+				},
+			}),
+		).toThrow("REQUIREMENTS_ASSESSMENT_FAILED");
+		for (const decision of [
+			undefined,
+			{},
+			{ status: "unknown" },
+			{ status: "unsupported", reason: "" },
+		]) {
+			expect(() =>
+				mapBindleToAlchemy(declaration, mappers(observed), {
+					// SAFETY: these malformed decisions exercise the runtime boundary.
+					assessRequirements: () => decision as never,
+				}),
+			).toThrow("REQUIREMENTS_ASSESSMENT_FAILED");
+		}
+		expect(observed).toEqual([]);
+	});
 	it("constructs Alchemy resources in dependency order and passes application logic to the mapper", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-alchemy-bindle-"));
 		const priorHome = process.env.ALCHEMY_HOME;
 		process.env.ALCHEMY_HOME = join(directory, "auth");
 		const observed: string[] = [];
 		try {
-			const program = mapBindleToAlchemy(declaration, mappers(observed));
+			const program = mapBindleToAlchemy(
+				declaration,
+				mappers(observed),
+				supportedRequirements,
+			);
 			const providers = Layer.mergeAll(
 				Provider.succeed(Store, {
 					reconcile: () => Effect.succeed({ id: "store" }),
@@ -236,7 +287,7 @@ describe("explicit Alchemy primitive mapping", () => {
 			requirements: {},
 			entrypoint: () => undefined,
 		};
-		expect(() => mapBindleToAlchemy(input, {})).toThrow(
+		expect(() => mapBindleToAlchemy(input, {}, supportedRequirements)).toThrow(
 			"PRIMITIVE_UNSUPPORTED",
 		);
 	});
@@ -272,7 +323,7 @@ describe("explicit Alchemy primitive mapping", () => {
 			},
 		};
 		// SAFETY: intentionally malformed mapper results exercise the runtime contract.
-		const program = mapBindleToAlchemy(one, registry as never);
+		const program = mapBindleToAlchemy(one, registry as never, supportedRequirements);
 		await expect(
 			Effect.runPromise(
 				program.pipe(
@@ -332,12 +383,18 @@ describe("explicit Alchemy primitive mapping", () => {
 			},
 		];
 		for (const input of cases)
-			expect(() => mapBindleToAlchemy(input, registry)).toThrow();
+			expect(() =>
+				mapBindleToAlchemy(input, registry, supportedRequirements),
+			).toThrow();
 		expect(() =>
-			mapBindleToAlchemy(declaration, {
-				...registry,
-				web: { ...registry.web, bindsEntrypoint: false },
-			}),
+			mapBindleToAlchemy(
+				declaration,
+				{
+					...registry,
+					web: { ...registry.web, bindsEntrypoint: false },
+				},
+				supportedRequirements,
+			),
 		).toThrow();
 		expect(observed).toEqual([]);
 	});
@@ -389,10 +446,13 @@ describe("explicit Alchemy primitive mapping", () => {
 				entrypoint: () => undefined,
 			};
 			if (cyclic)
-				expect(() => mapBindleToAlchemy(input, mappers([]))).toThrow(
-					"BINDLE_GRAPH_UNSUPPORTED",
-				);
-			else expect(() => mapBindleToAlchemy(input, mappers([]))).not.toThrow();
+				expect(() =>
+					mapBindleToAlchemy(input, mappers([]), supportedRequirements),
+				).toThrow("BINDLE_GRAPH_UNSUPPORTED");
+			else
+				expect(() =>
+					mapBindleToAlchemy(input, mappers([]), supportedRequirements),
+				).not.toThrow();
 		}
 	});
 });

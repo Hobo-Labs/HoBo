@@ -382,6 +382,13 @@ describe("Alchemy IaC provider against the real library", () => {
 			queue: createMapper(["enqueue", "dequeue"], false),
 			web: createMapper([], true, ["hobo:session-replay"]),
 		};
+		const assessed: (typeof application.requirements)[] = [];
+		const options = {
+			assessRequirements: (requirements: typeof application.requirements) => {
+				assessed.push(requirements);
+				return { status: "supported" as const };
+			},
+		};
 		const coverage = describeAlchemyPrimitiveSupport(CATALOG_ROWS, mappings);
 		expect(coverage).toHaveLength(CATALOG_ROWS.length);
 		expect(coverage.find((entry) => entry.kind === "bucket")).toMatchObject({
@@ -398,18 +405,19 @@ describe("Alchemy IaC provider against the real library", () => {
 		expect(coverage.find((entry) => entry.kind === "topic")).toMatchObject({
 			status: "unsupported",
 		});
-		expect(Effect.isEffect(mapBindleToAlchemy(application, mappings))).toBe(
-			true,
-		);
+		expect(
+			Effect.isEffect(mapBindleToAlchemy(application, mappings, options)),
+		).toBe(true);
+		expect(assessed).toEqual([application.requirements]);
 		const missingDependency = bindle("missing-dependency", (builder) => {
 			const queue = builder.queue();
 			return {
 				web: builder.web(() => () => new Response("ok")).dependsOn(queue),
 			};
 		});
-		expect(() => mapBindleToAlchemy(missingDependency, mappings)).toThrow(
-			"BINDLE_GRAPH_UNSUPPORTED",
-		);
+		expect(() =>
+			mapBindleToAlchemy(missingDependency, mappings, options),
+		).toThrow("BINDLE_GRAPH_UNSUPPORTED");
 	});
 
 	it("uses the RivetKit major required by the external Rivet provider", () => {
