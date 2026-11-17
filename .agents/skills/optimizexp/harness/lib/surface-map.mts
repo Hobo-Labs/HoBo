@@ -35,6 +35,7 @@ export type SurfaceMap = {
 	scannedAt: string;
 	productName: string;
 	packageDir: string;
+	coverageScope?: "primary-bin";
 	cliAssessment?: CliAssessment;
 	binaries: {
 		name: string;
@@ -291,6 +292,7 @@ export function buildSurfaceMap(input: {
 	root?: string;
 	probeBinary?: boolean;
 	skipProbes?: boolean;
+	primaryBinOnly?: boolean;
 }): SurfaceMap {
 	const root = input.root ?? repoRoot();
 	const packageDir = path.join(root, input.project.path || ".");
@@ -368,6 +370,7 @@ export function buildSurfaceMap(input: {
 		scannedAt: new Date().toISOString(),
 		productName: primaryBin?.name ?? pkg?.name ?? input.project.id,
 		packageDir: input.project.path || ".",
+		...(input.primaryBinOnly ? { coverageScope: "primary-bin" as const } : {}),
 		cliAssessment,
 		binaries,
 		binAssessments,
@@ -411,6 +414,11 @@ export function validateSurfaceMap(map: SurfaceMap): string[] {
 	const problems: string[] = [];
 	if (map.schemaVersion !== 1) problems.push("schemaVersion must be 1");
 	if (!map.projectId) problems.push("projectId required");
+	if (map.coverageScope !== undefined && map.coverageScope !== "primary-bin") problems.push("unknown coverage scope");
+	if (map.coverageScope === "primary-bin" && !map.binaries.length) problems.push("primary-bin scope requires a declared binary");
+	if (map.coverageScope === "primary-bin" && map.defaultEntry && map.defaultEntry.command !== map.binaries[0]?.name) problems.push("default entry must name the primary binary");
+	if (map.coverageScope === "primary-bin" && map.nonInteractiveHelp && map.nonInteractiveHelp.command !== `${map.binaries[0]?.name} --help`) problems.push("help entry must name the primary binary");
+	if (map.coverageScope === "primary-bin" && map.commands.some((command) => command.argv.length !== 1 || command.argv[0] !== command.id || !/^[a-z][a-z0-9-]{1,24}$/.test(command.id))) problems.push("primary-bin commands must be single observed verbs");
 	if (
 		!map.cliAssessment ||
 		map.cliAssessment.scope !== "package.json bin" ||
@@ -436,6 +444,13 @@ export function validateSurfaceMap(map: SurfaceMap): string[] {
 	const assessments = Array.isArray(map.binAssessments) ? map.binAssessments : [];
 	for (const [index, bin] of map.binaries.entries()) {
 		if (index > 0) {
+			if (map.coverageScope === "primary-bin") {
+				const matches = assessments.filter((assessment) => assessment.name === bin.name);
+				if (matches.length !== 1 || matches[0]?.status !== "unverified" || map.probes.some((probe) => probe.binName === bin.name)) {
+					problems.push(`binary ${bin.name} must remain unverified outside primary-bin scope`);
+				}
+				continue;
+			}
 			problems.push(`binary ${bin.name} is unverified; secondary-bin journeys are not assessed`);
 			continue;
 		}

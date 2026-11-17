@@ -78,7 +78,14 @@ unverified, including the FinOps cost goal when neither a `cost` command nor cos
 help is observed. A generic `plan` verb is insufficient. Cost-specific help
 selects a journey to inspect cost information; it does not prove runtime
 output includes an accurate cost estimate. Secondary-bin journeys, including
-`hobo-mcp`, block `from-catalog` until per-bin assessment is supported.
+`hobo-mcp`, block full package-bin `from-catalog` coverage until per-bin
+assessment is supported. For an explicitly narrower catalog, explore with
+`--probe-bin --primary-bin-only`. The saved map, catalog, and doctor report
+identify primary-bin-only coverage. Other binaries remain unverified and are
+not run; catalog validation refuses entries outside the observed primary
+surface. This scope does not cover the whole package or its other interfaces.
+It does not waive unverified persona goals. Re-explore without
+`--primary-bin-only` to return to full package-bin validation.
 
 ## Saved observations and scoped confirmation
 

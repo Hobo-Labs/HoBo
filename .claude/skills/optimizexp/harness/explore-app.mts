@@ -44,6 +44,7 @@ function parseArgs(argv: string[]) {
 		else if (a === "--personas") out.personas = argv[++i] ?? "";
 		else if (a === "--skip-probes") out.skipProbes = "1";
 		else if (a === "--probe-bin") out.probeBin = "1";
+		else if (a === "--primary-bin-only") out.primaryBinOnly = "1";
 		else if (a.startsWith("--confirm-surface-current=")) out.confirmedSurfaces = [out.confirmedSurfaces, a.slice("--confirm-surface-current=".length)].filter(Boolean).join(",");
 		else if (a === "--with-catalog") out.withCatalog = "1";
 	}
@@ -60,6 +61,7 @@ function help() {
   --personas a,b          Limit catalog personas
   --skip-probes           No live CLI probes (tests)
   --probe-bin             Run the primary binary with --help (trusted code; inherits environment and may change state)
+  --primary-bin-only      Limit coverage to the primary binary; other binaries remain unassessed
   --confirm-surface-current=<project>:<map-sha256>  Assert saved observation still matches current imports, config, and environment (repeatable)
   --with-catalog          Compatibility flag; explore always writes the experience catalog
 
@@ -100,7 +102,7 @@ function validTargetDirectory(root: string, projectPath: string): boolean {
 function main() {
 	const input = normalizeCliOptions(process.argv.slice(2), {
 		values: ["--mode", "--project", "--projects", "--personas"],
-		flags: ["--help", "-h", "--all-projects", "--skip-probes", "--probe-bin", "--with-catalog"],
+		flags: ["--help", "-h", "--all-projects", "--skip-probes", "--probe-bin", "--primary-bin-only", "--with-catalog"],
 		inlineValues: ["--confirm-surface-current"],
 	});
 	if (input.error) {
@@ -118,6 +120,10 @@ function main() {
 	}
 	if (!["explore", "validate", "catalog"].includes(args.mode ?? "")) {
 		console.error(`Unknown mode: ${args.mode}`);
+		process.exit(2);
+	}
+	if (args.primaryBinOnly === "1" && args.mode !== "explore") {
+		console.error("--primary-bin-only applies when building a surface map");
 		process.exit(2);
 	}
 	if (args.projectError) {
@@ -189,7 +195,7 @@ function main() {
 			}
 			console.log(
 				JSON.stringify(
-					{ ok: problems.length === 0, projectId: project.id, problems, mapPath: "surface-map.json", cliAssessment: map.cliAssessment, coverageScope: "package.json bin only; other surfaces are not assessed" },
+					{ ok: problems.length === 0, projectId: project.id, problems, mapPath: "surface-map.json", cliAssessment: map.cliAssessment, coverageScope: map.coverageScope === "primary-bin" ? "primary package binary only; secondary binaries and other surfaces are not assessed" : "package.json bin only; other surfaces are not assessed" },
 					null,
 					2,
 				),
@@ -227,7 +233,7 @@ function main() {
 						path: pathOut,
 						experienceCount: catalog.experiences.length,
 						cliAssessment: catalog.cliAssessment,
-						coverageScope: "package.json bin only; other surfaces are not assessed",
+						coverageScope: map?.coverageScope === "primary-bin" ? "primary package binary only; secondary binaries and other surfaces are not assessed" : "package.json bin only; other surfaces are not assessed",
 						coverageProblems: cov,
 					},
 					null,
@@ -244,6 +250,7 @@ function main() {
 			root,
 			probeBinary: args.probeBin === "1",
 			skipProbes: args.skipProbes === "1",
+			primaryBinOnly: args.primaryBinOnly === "1",
 		});
 		const pathOut = writeSurfaceMap(map, project, root);
 		const problems = validateSurfaceMap(map);
@@ -276,7 +283,7 @@ function main() {
 					productName: map.productName,
 					binaries: map.binaries.map((b) => b.name),
 					cliAssessment: map.cliAssessment,
-					coverageScope: "package.json bin only; other surfaces are not assessed",
+					coverageScope: map.coverageScope === "primary-bin" ? "primary package binary only; secondary binaries and other surfaces are not assessed" : "package.json bin only; other surfaces are not assessed",
 					defaultEntry: map.defaultEntry,
 					commandCount: map.commands.length,
 					requiredJourneys: map.requiredJourneys,
