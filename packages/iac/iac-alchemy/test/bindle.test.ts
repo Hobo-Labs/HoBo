@@ -115,6 +115,35 @@ function mappers(observed: string[]) {
 }
 
 describe("explicit Alchemy primitive mapping", () => {
+	it("validates dependency declarations before any Alchemy resource is built", () => {
+		const observed: string[] = [];
+		const registry = mappers(observed);
+		expect(() =>
+			mapBindleToAlchemy(
+				declaration,
+				{
+					...registry,
+					web: {
+						...registry.web,
+						validate: ({ dependencyDeclarations }) => {
+							expect(Object.keys(dependencyDeclarations).sort()).toEqual([
+								"queue",
+								"store",
+							]);
+							expect(dependencyDeclarations.store?.declaredAllow).toEqual([
+								"read",
+								"write",
+							]);
+							throw new Error("unhandled annotation");
+						},
+					},
+				},
+				supportedRequirements,
+			),
+		).toThrow("unhandled annotation");
+		expect(observed).toEqual([]);
+	});
+
 	it("rejects connector declarations until their authorization and runtime bindings can be mapped", () => {
 		const observed: string[] = [];
 		const input = {
@@ -284,6 +313,23 @@ describe("explicit Alchemy primitive mapping", () => {
 			{ kind: "bucket", status: "partial", unsupportedOperations: ["delete"] },
 			{ kind: "web", status: "supported", bindsEntrypoint: true },
 			{ kind: "topic", status: "unsupported" },
+		]);
+	});
+
+	it("reports partial coverage even when all operations are present but runtime behavior is limited", () => {
+		const registry = mappers([]);
+		const support = describeAlchemyPrimitiveSupport(
+			[{ factory: "web", allowVerbs: [] }],
+			{
+				...registry,
+				web: {
+					...registry.web,
+					limitations: ["session replay is unavailable"],
+				},
+			},
+		);
+		expect(support).toMatchObject([
+			{ status: "partial", limitations: ["session replay is unavailable"] },
 		]);
 	});
 

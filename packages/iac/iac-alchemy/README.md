@@ -11,6 +11,10 @@ provider requirements can use a union of those requirement types.
 Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
 `rivetkit` 3.0.0 peers; install both when using Rivet components.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
+The Cloudflare worker runtime binds a module-exported HoBo HTTP entrypoint to
+declared Worker service dependencies. HoBo bucket, KV and queue runtime contracts,
+topics, and enabled session replay are not yet supported; the adapter refuses
+those uses.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy

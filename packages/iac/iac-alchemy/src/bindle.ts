@@ -35,12 +35,26 @@ export interface AlchemyPrimitiveMapper<Entrypoint, Requirements, Services> {
 	readonly operations: readonly string[];
 	readonly annotations: readonly string[];
 	readonly bindsEntrypoint: boolean;
-	readonly build: (input: {
-		readonly declaration: PrimitiveDeclaration;
-		readonly requirements: Requirements;
-		readonly entrypoint: Entrypoint | undefined;
-		readonly dependencies: Readonly<Record<string, ResourceLike>>;
-	}) => Effect.Effect<AlchemyMappedPrimitive<Entrypoint>, never, Services>;
+	/** Remaining limits in an otherwise usable primitive mapping. */
+	readonly limitations?: readonly string[];
+	readonly validate?: (
+		input: AlchemyPrimitiveInput<Entrypoint, Requirements>,
+	) => void;
+	readonly build: (
+		input: AlchemyPrimitiveInput<Entrypoint, Requirements> & {
+			readonly dependencies: Readonly<Record<string, ResourceLike>>;
+		},
+	) => Effect.Effect<AlchemyMappedPrimitive<Entrypoint>, never, Services>;
+}
+
+export interface AlchemyPrimitiveInput<Entrypoint, Requirements> {
+	readonly bindleName: string;
+	readonly declaration: PrimitiveDeclaration;
+	readonly requirements: Requirements;
+	readonly entrypoint: Entrypoint | undefined;
+	readonly dependencyDeclarations: Readonly<
+		Record<string, PrimitiveDeclaration>
+	>;
 }
 
 export interface AlchemyMappedPrimitive<Entrypoint> {
@@ -73,6 +87,7 @@ export interface AlchemyPrimitiveSupport {
 	readonly unsupportedOperations: readonly string[];
 	readonly supportedAnnotations: readonly string[];
 	readonly bindsEntrypoint: boolean;
+	readonly limitations: readonly string[];
 }
 
 /** Report provider-declared coverage for every entry in a host primitive catalog. */
@@ -110,7 +125,10 @@ export function describeAlchemyPrimitiveSupport<
 			candidate.resourceTypes.length <= 256 &&
 			candidate.resourceTypes.every(validName) &&
 			candidate.operations.length <= 256 &&
-			candidate.annotations.length <= 256
+			candidate.annotations.length <= 256 &&
+			(candidate.limitations === undefined ||
+				(candidate.limitations.length <= 256 &&
+					candidate.limitations.every(validName)))
 				? candidate
 				: undefined;
 		const supportedOperations = entry.allowVerbs.filter((verb) =>
@@ -124,7 +142,8 @@ export function describeAlchemyPrimitiveSupport<
 			status:
 				mapper === undefined
 					? "unsupported"
-					: unsupportedOperations.length === 0
+					: unsupportedOperations.length === 0 &&
+							(mapper.limitations?.length ?? 0) === 0
 						? "supported"
 						: "partial",
 			resourceTypes: mapper === undefined ? [] : [...mapper.resourceTypes],
@@ -132,6 +151,7 @@ export function describeAlchemyPrimitiveSupport<
 			unsupportedOperations,
 			supportedAnnotations: mapper === undefined ? [] : [...mapper.annotations],
 			bindsEntrypoint: mapper?.bindsEntrypoint ?? false,
+			limitations: mapper === undefined ? [] : [...(mapper.limitations ?? [])],
 		};
 	});
 }
@@ -247,6 +267,9 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			mapper.resourceTypes.length > 256 ||
 			mapper.operations.length > 256 ||
 			mapper.annotations.length > 256 ||
+			(mapper.limitations !== undefined &&
+				(mapper.limitations.length > 256 ||
+					mapper.limitations.some((limitation) => !validName(limitation)))) ||
 			mapper.resourceTypes.some((type) => !validName(type)) ||
 			declaration.declaredAllow.some(
 				(verb) => !mapper.operations.includes(verb),
@@ -325,6 +348,26 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			pending.delete(name);
 		}
 	}
+	for (const row of order) {
+		const dependencyDeclarations: Record<string, PrimitiveDeclaration> =
+			Object.create(null);
+		for (const name of row.dependencies) {
+			const dependency = rows.get(name);
+			if (dependency === undefined)
+				throw new AlchemyIacError(
+					"BINDLE_GRAPH_UNSUPPORTED",
+					"dependency declaration vanished",
+				);
+			dependencyDeclarations[name] = dependency.declaration;
+		}
+		row.mapper.validate?.({
+			bindleName: bindle.name,
+			declaration: row.declaration,
+			requirements: bindle.requirements,
+			entrypoint: row.entrypoint,
+			dependencyDeclarations,
+		});
+	}
 	return Effect.gen(function* () {
 		const currentStack = yield* Effect.serviceOption(StackContext);
 		if (Option.isNone(currentStack))
@@ -388,21 +431,27 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 		for (const row of order) {
 			ownedActions.clear();
 			const dependencies: Record<string, ResourceLike> = Object.create(null);
+			const dependencyDeclarations: Record<string, PrimitiveDeclaration> =
+				Object.create(null);
 			for (const name of row.dependencies) {
 				const resource = primary[name];
-				if (resource === undefined)
+				const dependency = rows.get(name);
+				if (resource === undefined || dependency === undefined)
 					throw new AlchemyIacError(
 						"BINDLE_GRAPH_UNSUPPORTED",
 						"dependency has no Alchemy resource",
 					);
 				dependencies[name] = resource;
+				dependencyDeclarations[name] = dependency.declaration;
 			}
 			const mapped = yield* row.mapper
 				.build({
-					declaration: row.declaration,
-					requirements: bindle.requirements,
-					entrypoint: row.entrypoint,
-					dependencies,
+				bindleName: bindle.name,
+				declaration: row.declaration,
+				requirements: bindle.requirements,
+				entrypoint: row.entrypoint,
+				dependencies,
+				dependencyDeclarations,
 				})
 				.pipe(Effect.provideService(StackContext, guardedStack));
 			if (
