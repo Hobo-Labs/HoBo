@@ -11,6 +11,7 @@
  *   on the page contains what was typed;
  * - once stored, the form is gone and its fields are empty;
  * - a submit always ends: the button comes back, or the page says stored;
+ * - a hand-over's page never claims a secret store;
  * - nothing throws, and no CSP violation or console error.
  */
 import {
@@ -36,7 +37,9 @@ export {
 } from "@antithesishq/bombadil/browser/defaults/properties";
 
 /** What the owner pastes: synthetic, the shape the capture expects. */
-const PASTED = "hobo-bombadil-synthetic-session-value";
+// Base64, as Infisical's Copy to clipboard gives it: the capture accepts
+// this shape, so exploration reaches the stored state too.
+const PASTED = "aG9iby1ib21iYWRpbC1zeW50aGV0aWMtc2Vzc2lvbg==";
 
 const pasteAndSubmit = registerCustomAction(
 	"pasteAndSubmit",
@@ -81,6 +84,7 @@ const page = extract((state: { document: Document; window: Window }) => {
 		typed,
 		done: done !== null && !done.hidden,
 		formShown: document.getElementById("capture-form")?.hidden === false,
+		caption: document.getElementById("capture-caption")?.textContent ?? "",
 		busy: submit instanceof HTMLButtonElement && submit.disabled,
 	};
 });
@@ -107,4 +111,12 @@ export const a_submit_always_ends = always(() =>
 	page.current.busy
 		? eventually(() => !page.current.busy).within(5, "seconds")
 		: true,
+);
+
+/** A hand-over goes only to the waiting run: its page never claims a store. */
+export const a_hand_over_never_claims_a_store = always(
+	() =>
+		!page.current.onPage ||
+		!page.current.caption.includes("hand-over") ||
+		!/secret store|Store it/u.test(page.current.text),
 );

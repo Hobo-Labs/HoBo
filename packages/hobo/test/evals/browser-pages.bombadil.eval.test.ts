@@ -320,6 +320,7 @@ describe.skipIf(!runnable)(
 							ticket: {
 								ticketId: "cap_broken",
 								name: INFISICAL_CLI_SESSION,
+								target: "handoff",
 								label: "Infisical session",
 								purpose: "Paste what Infisical copied.",
 								charset: "printable",

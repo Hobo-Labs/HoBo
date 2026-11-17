@@ -516,6 +516,7 @@ export function createSecretCaptureApp(
 		return {
 			ticketId: ticket.id,
 			name: ticket.spec.name,
+			target: ticket.spec.target,
 			label: ticket.spec.label,
 			purpose: ticket.spec.purpose,
 			charset: ticket.spec.charset,
