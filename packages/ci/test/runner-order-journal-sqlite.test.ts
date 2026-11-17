@@ -180,7 +180,7 @@ describe("SqliteRouteJournal", () => {
 			await journal.record(decided({ atMs: 199 * DAY_MS, jobId: "b" }));
 			const rows = db.prepare("SELECT job_key FROM route_journal").all();
 			expect(rows.map((row) => row.job_key)).toEqual([
-				"b\u0000runner.route.Decided",
+				"b|runner.route.Decided",
 			]);
 		});
 

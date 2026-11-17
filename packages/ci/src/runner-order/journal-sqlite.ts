@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS route_journal_at ON route_journal(at_ms);`;
 
 /** One entry per relay job and event type; an entry with no job id is never a redelivery. */
 function jobKey(event: RunnerRouteEvent): string | null {
-	return event.jobId === "" ? null : `${event.jobId}\u0000${event.type}`;
+	return event.jobId === "" ? null : `${event.jobId}|${event.type}`;
 }
 
 export class SqliteRouteJournal implements RouteJournal {
