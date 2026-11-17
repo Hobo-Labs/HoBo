@@ -19,10 +19,12 @@ has setup and operational commands.
 
 ## Selection contract
 
-A configured pin wins before availability is read. A valid pinned or local
-routing slip is also respected. An unpinned fleet slip requires a recent timely
-pickup on its exact label; a `fleet-busy` slip permits a young backlog but not
-an old wait or a slow pickup. An unusable, expired, or unreadable slip leaves
+A configured pin or valid pinned slip wins before availability is read. An
+unpinned fleet slip requires a recent timely pickup on its exact label; a
+`fleet-busy` slip permits a young backlog but not an old wait or a slow pickup.
+A slip choosing an enrolled local runner refuses the fleet, but enrollment does
+not establish that the local runner is taking jobs; the queue must establish
+its availability or refusal. An unusable, expired, or unreadable slip leaves
 the queue rule to decide. A slip choosing GitHub has already refused the
 self-hosted tiers for that decision.
 
@@ -98,7 +100,8 @@ on GitHub's generated merge-group commit. No branch-protection rule is changed.
   states and both opt-in settings, and checks malformed observations.
 - [`fleet-signoff.test.ts`](../../scripts/test/fleet-signoff.test.ts) covers
   preference, pins, unavailable and unknown tiers, outage assertions, exact
-  slip labels, young backlogs, queue errors, malformed queue envelopes, and an
+  slip labels, an unavailable local runner, young backlogs, queue errors,
+  malformed queue envelopes, and an
   end-to-end temporary checkout. The end-to-end case executes a real local
   command, records the signoff invocation through a fake `gh`, and proves that
   a failing local command does not invoke signoff.

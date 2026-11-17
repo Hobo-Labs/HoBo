@@ -70,9 +70,8 @@ export async function planFleetVerification(input: {
 	}
 	if (
 		slip.ok &&
-		(slip.decision.tier === "local" ||
-			(slip.decision.slip?.kind === "used" &&
-				slip.decision.slip.reason === "pinned"))
+		slip.decision.slip?.kind === "used" &&
+		slip.decision.slip.reason === "pinned"
 	)
 		return {
 			kind: "runner",
@@ -105,9 +104,12 @@ export async function planFleetVerification(input: {
 			id === "fleet" && busy
 				? { ...settings.limits, maxQueued: Number.MAX_SAFE_INTEGER }
 				: settings.limits;
-		// A slip choosing GitHub already rejected both self-hosted tiers.
+		// A slip choosing a fallback rejected the tiers ahead of it. A local
+		// slip does not assert that the enrolled local runner is taking jobs.
 		const rejectedBySlip =
-			slip.ok && slip.decision.tier === "github" && id !== "github";
+			slip.ok &&
+			((slip.decision.tier === "github" && id !== "github") ||
+				(slip.decision.tier === "local" && id === "fleet"));
 		const reservedAhead =
 			id !== "github" && !(id === "fleet" && busy) && queue.undecidedAhead > 0;
 		const available =

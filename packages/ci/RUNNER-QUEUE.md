@@ -445,9 +445,11 @@ git push
 pnpm ci:attest fleet --local-signoff
 ```
 
-The command respects the committed pin and a usable routing slip, then uses the
-same pickup and queue limits as runner routing. A known available fleet,
-enrolled local runner, or GitHub-hosted runner stays ahead of local signoff.
+The command respects the committed pin and uses a usable routing slip with the
+same pickup and queue limits as runner routing. A slip naming the local runner
+rejects the fleet but does not by itself prove that the local runner is taking
+jobs; the queue must establish that. A known available fleet, enrolled local
+runner, or GitHub-hosted runner stays ahead of local signoff.
 When no option is observed available, an unknown runner state or failed queue
 read causes `waiting`, not an assumed outage. `--local-signoff` opts this
 invocation into executing the fallback; without it the decision waits when all

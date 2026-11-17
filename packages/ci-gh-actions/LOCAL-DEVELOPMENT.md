@@ -29,9 +29,11 @@ queueing, an operator who observed that outage can pass `--github-unavailable`
 alongside `--local-signoff`; a recently observed hosted pickup still wins.
 An unpinned fleet slip is checked against current queue evidence for its exact
 runner label. A busy-fleet slip permits a young backlog, but still requires a
-recent timely pickup. If the slip cannot be read, the queue rule decides;
-if the queue cannot be read, the command waits. GitHub's separate PR batch
-admission still applies to Actions jobs.
+recent timely pickup. A slip naming an enrolled local runner rejects the fleet
+but does not prove the local runner is available; the queue decides for it.
+If the slip cannot be read, the queue rule decides; if the queue cannot be read,
+the command waits. GitHub's separate PR batch admission still applies to
+Actions jobs.
 The command reports a runner choice but does not dispatch, relabel, cancel, or
 complete an Actions job. A missing container engine leaves container-dependent
 jobs and the PR impact group out of the local signoff.

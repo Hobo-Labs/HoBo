@@ -163,11 +163,14 @@ describe("local signoff in the fleet decision", () => {
 				reason: "available",
 			},
 		};
-		assert.deepEqual(await plan(queue([]), { slip: localSlip }), {
-			kind: "runner",
-			tier: "local",
-			runner: "hobo-local-host",
-		});
+		assert.deepEqual(
+			await plan(queue([picked("hobo-local-host")]), { slip: localSlip }),
+			{
+				kind: "runner",
+				tier: "local",
+				runner: "hobo-local-host",
+			},
+		);
 		const githubSlip: SlipReading = {
 			ok: true,
 			decision: {
@@ -179,6 +182,52 @@ describe("local signoff in the fleet decision", () => {
 		assert.deepEqual(
 			await plan(queue([waiting("ubuntu-24.04")]), { slip: githubSlip }),
 			{ kind: "local-signoff" },
+		);
+	});
+
+	it("does not mistake a local routing slip for proof that the local runner is available", async () => {
+		const localSlip: SlipReading = {
+			ok: true,
+			decision: {
+				tier: "local",
+				runner: "hobo-local-host",
+				reason: "fleet refused",
+				slip: { kind: "used", reason: "no-capacity", from: "node@abc" },
+			},
+		};
+		assert.deepEqual(
+			await plan(queue([waiting("ubuntu-24.04")]), { slip: localSlip }),
+			{ kind: "wait", reason: "availability-unknown" },
+		);
+		assert.deepEqual(
+			await plan(queue([waiting("hobo-local-host"), waiting("ubuntu-24.04")]), {
+				slip: localSlip,
+			}),
+			{ kind: "local-signoff" },
+		);
+		assert.deepEqual(
+			await plan(queue([waiting("hobo-local-host"), picked("ubuntu-24.04")]), {
+				slip: localSlip,
+			}),
+			{ kind: "runner", tier: "github", runner: "ubuntu-24.04" },
+		);
+		assert.deepEqual(
+			await planFleetVerification({
+				settings,
+				localSignoffEnabled: true,
+				nowMs: now,
+				readSlip: async () => ({
+					ok: true,
+					decision: {
+						...localSlip.decision,
+						slip: { kind: "used", reason: "pinned", from: "node@abc" },
+					},
+				}),
+				readQueue: async () => {
+					throw new Error("a pin must not read the queue");
+				},
+			}),
+			{ kind: "runner", tier: "local", runner: "hobo-local-host" },
 		);
 	});
 
