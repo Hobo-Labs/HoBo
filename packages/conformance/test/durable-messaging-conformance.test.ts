@@ -47,6 +47,252 @@ function inertHarness(
 
 describe("durable messaging conformance runner", () => {
 	it.each([
+		{ variant: "malformed", expected: "unknown" },
+		{ variant: "contradictory", expected: "fail" },
+	] as const)("classifies a $variant audit event as $expected", async ({
+		variant,
+		expected,
+	}) => {
+		const topics: string[] = [];
+		const fail = async () => {
+			throw new Error("unexpected operation");
+		};
+		const client: DurableMessaging = {
+			limits: DURABLE_MESSAGING_LIMITS,
+			ensureTopic: async ({ topic }) => {
+				topics.push(topic);
+				return { status: "committed", value: { topic } };
+			},
+			ensureSubscription: fail,
+			publish: fail,
+			consume: fail,
+			ack: fail,
+			nack: fail,
+			compact: fail,
+			events: async ({ afterSequence, limit }) => {
+				const end = Math.min(afterSequence + limit, topics.length);
+				const events = topics.slice(afterSequence, end).map((topic, index) => ({
+					sequence:
+						variant === "malformed"
+							? String(afterSequence + index + 1)
+							: afterSequence + index + 1,
+					kind: "topic-created" as const,
+					topic: variant === "contradictory" ? "other" : topic,
+				}));
+				const outcome = {
+					status: "ok",
+					events,
+					firstAvailableSequence: 1,
+					nextAfterSequence: end,
+					hasMore: end < topics.length,
+				};
+				// SAFETY: one fixture deliberately returns malformed runtime data.
+				return outcome as never;
+			},
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: "audit-pagination" },
+		);
+		expect(report.cases[0]?.status).toBe(expected);
+	});
+
+	it("stops after a malformed publication receipt without calling consume", async () => {
+		let consumes = 0;
+		const fail = async () => {
+			throw new Error("unexpected operation");
+		};
+		const client: DurableMessaging = {
+			limits: DURABLE_MESSAGING_LIMITS,
+			ensureTopic: async ({ topic }) => ({
+				status: "committed",
+				value: { topic },
+			}),
+			ensureSubscription: async ({ subscription }) => ({
+				status: "committed",
+				value: {
+					subscription,
+					firstAvailableSequence: 1,
+					historyTruncated: false,
+				},
+			}),
+			publish: async () => {
+				const malformed = {
+					status: "committed",
+					value: { messageId: "message-1", sequence: "1" },
+				};
+				// SAFETY: this fixture deliberately returns malformed runtime data.
+				return malformed as never;
+			},
+			consume: async () => {
+				consumes++;
+				return { status: "committed", value: [] };
+			},
+			ack: fail,
+			nack: fail,
+			compact: fail,
+			events: fail,
+		};
+		const report = await runDurableMessagingConformance(async () =>
+			inertHarness(async () => client),
+		);
+		expect(report.cases[0]?.status).toBe("unknown");
+		expect(
+			report.cases.slice(1).every(({ status }) => status === "unknown"),
+		).toBe(true);
+		expect(consumes).toBe(0);
+	});
+
+	it.each([
+		{ variant: "rejected-value", expected: "fail" },
+		{ variant: "rejected-operation", expected: "fail" },
+		{ variant: "unknown-extra", expected: "fail" },
+		{ variant: "unknown-symbol", expected: "fail" },
+		{ variant: "unknown-nested", expected: "fail" },
+		{ variant: "expired-extra", expected: "fail" },
+		{ variant: "malformed-committed", expected: "fail" },
+		{ variant: "accessor", expected: "unknown" },
+		{ variant: "proxy", expected: "unknown" },
+	] as const)("classifies revoked $variant disclosure as $expected", async ({
+		variant,
+		expected,
+	}) => {
+		let consumes = 0;
+		let traps = 0;
+		const fail = async () => {
+			throw new Error("unexpected operation");
+		};
+		const client: DurableMessaging = {
+			limits: DURABLE_MESSAGING_LIMITS,
+			ensureTopic: async ({ topic }) => ({
+				status: "committed",
+				value: { topic },
+			}),
+			ensureSubscription: async ({ subscription }) => ({
+				status: "committed",
+				value: {
+					subscription,
+					firstAvailableSequence: 1,
+					historyTruncated: false,
+				},
+			}),
+			publish: async () => ({
+				status: "committed",
+				value: { messageId: "message-1", sequence: 1 },
+			}),
+			consume: async ({ operation }) => {
+				consumes++;
+				if (consumes > 1) {
+					let outcome;
+					if (variant === "rejected-value")
+						outcome = {
+							status: "rejected",
+							code: "unauthorized",
+							value: { payload: "secret" },
+						};
+					else if (variant === "rejected-operation")
+						outcome = {
+							status: "rejected",
+							code: "unauthorized",
+							operation: { payload: "secret" },
+						};
+					else if (variant === "unknown-extra")
+						outcome = { status: "unknown", operation, secret: "secret" };
+					else if (variant === "unknown-symbol")
+						outcome = {
+							status: "unknown",
+							operation,
+							[Symbol("secret")]: "secret",
+						};
+					else if (variant === "unknown-nested")
+						outcome = {
+							status: "unknown",
+							operation: { ...operation, secret: "secret" },
+						};
+					else if (variant === "expired-extra")
+						outcome = { status: "expired", operation, secret: "secret" };
+					else if (variant === "malformed-committed")
+						outcome = { status: "committed", value: { payload: "secret" } };
+					else if (variant === "accessor") {
+						outcome = { status: "unknown", operation };
+						Object.defineProperty(outcome, "secret", {
+							get() {
+								traps++;
+								return "secret";
+							},
+						});
+					} else {
+						outcome = new Proxy(
+							{ status: "unknown", operation },
+							{
+								get(_target, key) {
+									if (key === "then") return undefined;
+									traps++;
+									throw new Error("trap");
+								},
+								getOwnPropertyDescriptor() {
+									traps++;
+									throw new Error("trap");
+								},
+							},
+						);
+					}
+					// SAFETY: these fixtures deliberately model untrusted provider outcomes.
+					return outcome as never;
+				}
+				return {
+					status: "committed",
+					value: [
+						{
+							message: {
+								id: "message-1",
+								subject: "orders.created",
+								payload: new Uint8Array([0, 1, 255]),
+								attributes: [{ key: "content-type", value: "binary" }],
+							},
+							sequence: 1,
+							topic: "orders",
+							consumerGroup: "group-a",
+							leaseId: "lease",
+							leaseExpiresAtMs: 1_100,
+							deliveryAttempt: 1,
+						},
+					],
+				};
+			},
+			ack: fail,
+			nack: fail,
+			compact: fail,
+			events: fail,
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: "revoked-receipt-privacy" },
+		);
+		expect(report.cases[0]?.status).toBe(expected);
+		expect(traps).toBe(0);
+	});
+
+	it("rejects a proxied client before reading any properties", async () => {
+		let traps = 0;
+		// SAFETY: the empty client is an intentionally malformed proxy fixture.
+		const client = new Proxy({} as DurableMessaging, {
+			get(_target, key) {
+				if (key === "then") return undefined;
+				traps++;
+				throw new Error("trap");
+			},
+		});
+		const report = await runDurableMessagingConformance(async () =>
+			inertHarness(async () => client),
+		);
+		expect(report.cases[0]?.status).toBe("unknown");
+		expect(
+			report.cases.slice(1).every(({ status }) => status === "unknown"),
+		).toBe(true);
+		expect(traps).toBe(0);
+	});
+	it.each([
 		Number.NaN,
 		1.5,
 		undefined,
@@ -188,7 +434,7 @@ describe("durable messaging conformance runner", () => {
 			ensureTopic: async ({ topic }) => {
 				calls++;
 				const start = Date.now();
-				while (Date.now() - start < 20) {
+				while (Date.now() - start < 200) {
 					/* intentional event-loop starvation */
 				}
 				return { status: "committed", value: { topic } };
@@ -203,7 +449,7 @@ describe("durable messaging conformance runner", () => {
 		};
 		const report = await runDurableMessagingConformance(
 			async () => inertHarness(async () => client),
-			{ caseTimeoutMs: 5 },
+			{ caseTimeoutMs: 100 },
 		);
 		expect(report.cases[0]?.status).toBe("unknown");
 		expect(calls).toBe(1);

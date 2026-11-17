@@ -1,4 +1,5 @@
 import { performance } from "node:perf_hooks";
+import { types as utilTypes } from "node:util";
 import {
 	DURABLE_MESSAGING_LIMITS,
 	type DurableMessaging,
@@ -10,6 +11,11 @@ import {
 	durableMessagingOperation,
 	parseDurableMessagingOperation,
 } from "@hobo/core";
+import {
+	snapshotAudit,
+	snapshotLimits,
+	snapshotMutation,
+} from "./durable-messaging-shapes.js";
 
 // public-contract: version of the bounded durable-messaging conformance suite.
 export const DURABLE_MESSAGING_CONFORMANCE =
@@ -91,6 +97,7 @@ function sameOperation(
 	right: DurableMessagingOperation,
 ): boolean {
 	try {
+		if (utilTypes.isProxy(left)) return false;
 		const prototype = Object.getPrototypeOf(left);
 		if (prototype !== Object.prototype && prototype !== null) return false;
 		const snapshot = parseDurableMessagingOperation(left);
@@ -109,7 +116,12 @@ export function validUnknownEnvelope(
 	expected: DurableMessagingOperation,
 ): boolean {
 	try {
-		if (value === null || typeof value !== "object" || Array.isArray(value))
+		if (
+			value === null ||
+			typeof value !== "object" ||
+			utilTypes.isProxy(value) ||
+			Array.isArray(value)
+		)
 			return false;
 		const prototype = Object.getPrototypeOf(value);
 		if (prototype !== Object.prototype && prototype !== null) return false;
@@ -2638,22 +2650,41 @@ function guardConformanceHarness(
 	return {
 		connect: async (tenant) => {
 			const client = await call(() => source.connect(tenant));
+			if (utilTypes.isProxy(client)) throw new Error("proxied provider client");
+			check();
+			const advertised = client.limits;
+			check();
+			const limits = snapshotLimits(advertised);
+			check();
+			const mutate = async <T>(
+				kind: Parameters<typeof snapshotMutation>[0],
+				read: () => Promise<DurableMessagingOutcome<T>>,
+			) => {
+				const outcome = await call(read);
+				const snapshot = snapshotMutation(kind, outcome, limits);
+				check();
+				return snapshot;
+			};
 			return {
 				get limits() {
 					check();
-					const limits = client.limits;
-					check();
 					return limits;
 				},
-				ensureTopic: (input) => call(() => client.ensureTopic(input)),
+				ensureTopic: (input) =>
+					mutate("topic", () => client.ensureTopic(input)),
 				ensureSubscription: (input) =>
-					call(() => client.ensureSubscription(input)),
-				publish: (input) => call(() => client.publish(input)),
-				consume: (input) => call(() => client.consume(input)),
-				ack: (input) => call(() => client.ack(input)),
-				nack: (input) => call(() => client.nack(input)),
-				compact: (input) => call(() => client.compact(input)),
-				events: (input) => call(() => client.events(input)),
+					mutate("subscription", () => client.ensureSubscription(input)),
+				publish: (input) => mutate("publish", () => client.publish(input)),
+				consume: (input) => mutate("consume", () => client.consume(input)),
+				ack: (input) => mutate("ack", () => client.ack(input)),
+				nack: (input) => mutate("nack", () => client.nack(input)),
+				compact: (input) => mutate("compact", () => client.compact(input)),
+				events: async (input) => {
+					const outcome = await call(() => client.events(input));
+					const snapshot = snapshotAudit(outcome, limits);
+					check();
+					return snapshot;
+				},
 			};
 		},
 		restart: () => call(() => source.restart()),

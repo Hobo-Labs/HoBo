@@ -39,16 +39,24 @@ typed, event-sourced port-suite harness under `packages/conformance/`.
   A separately controlled runner must
   establish these facts before treating passing cases as provider evidence.
   In particular, a no-op restart over an in-memory map can pass the behavioral
-  restart case and does not establish durability. The suite does not validate
-  transport parsing or prove the host's transaction and fencing assumptions.
+  restart case and does not establish durability. The runner bounds and
+  snapshots structured provider receipts, deliveries and audit pages before
+  checking their meaning. Malformed responses remain unknown; explicit
+  assertions report well-formed contradictions as failures. The suite does not
+  validate transport parsing or prove the host's transaction and fencing
+  assumptions.
   Each case has an in-process deadline covering creation, calls, barriers and
   close. A timeout, failed creation or failed teardown reports unknown; a
   behavioral failure also stops the run because a sibling call may be in
   flight. All later cases remain unrun. A selected single-case diagnostic is
   identified in the report and is not a full suite. The timer
-  cannot stop provider effects or a blocked event loop: an independent host
-  must impose a process deadline, terminate and fence the old execution, and
-  establish durable outcomes before starting any replacement run.
+  cannot stop provider effects or a blocked event loop, and checking unknown
+  envelopes requires enumerating their own keys. JavaScript promise resolution
+  may also read a returned object's or proxy's `then` property before the runner
+  receives it.
+  An independent host must bound process time and memory, terminate and fence
+  the old execution, and establish durable outcomes before starting any
+  replacement run.
 
 ### `@hobo/conformance/anonymous` — the anonymous/claimable dimension
 
