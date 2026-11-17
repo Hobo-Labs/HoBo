@@ -224,6 +224,18 @@ export function matchesDurableSettlement(
 	);
 }
 
+/** Bind a publish receipt and delivery to the submitted message identity. */
+export function matchesDurablePublication(
+	messageId: string,
+	receipt: { readonly messageId: string; readonly sequence: number },
+	delivery: DurableMessagingDelivery,
+): boolean {
+	return (
+		receipt.messageId === messageId &&
+		matchesDurableSettlement(receipt, delivery)
+	);
+}
+
 type AuditPage = Extract<
 	Awaited<ReturnType<DurableMessaging["events"]>>,
 	{ status: "ok" }
@@ -274,6 +286,21 @@ function sameAuditPage(left: AuditPage, right: AuditPage): boolean {
 				event.consumerGroup === other.consumerGroup
 			);
 		})
+	);
+}
+
+/** Match retained topic-creation events against independently submitted topics. */
+export function matchesTopicAuditEvents(
+	events: readonly AuditPage["events"][number][],
+	topics: readonly string[],
+): boolean {
+	return events.every(
+		(event) =>
+			Number.isSafeInteger(event.sequence) &&
+			event.sequence >= 1 &&
+			event.sequence <= topics.length &&
+			event.kind === "topic-created" &&
+			event.topic === topics[event.sequence - 1],
 	);
 }
 
@@ -1127,6 +1154,12 @@ async function operationReplay(harness: DurableMessagingConformanceHarness) {
 		conflict.status === "rejected" && conflict.code === "operation-conflict",
 		"operation ID accepted a different request",
 	);
+	const afterConflict = await committed(reopened.publish(request));
+	requireCondition(
+		afterConflict.messageId === first.messageId &&
+			afterConflict.sequence === first.sequence,
+		"conflict overwrote the original publish receipt",
+	);
 	await harness.advanceMs(operation.expiresAtMs - harness.nowMs());
 	const expired = await reopened.publish(request);
 	requireCondition(
@@ -1192,30 +1225,43 @@ async function concurrentOperations(
 			).length === 1,
 		"conflicting concurrent requests both took effect or neither was fenced",
 	);
-	const firstDeliveryValue = firstDelivery(
-		await f.consume(f.client, "orders", "group-a"),
-	);
-	requireCondition(
-		sameMessage(firstDeliveryValue),
-		"concurrent retry lost the original message",
-	);
 	const winner = pair.find((outcome) => outcome.status === "committed");
-	if (winner?.status !== "committed")
+	if (winner?.status !== "committed" || first.status !== "committed")
 		throw new DurableMessagingConformanceFailure(
 			"conflicting publication has no winner",
 		);
-	await committed(f.client.ack(acknowledgement(f.next(), firstDeliveryValue)));
-	const winningDelivery = firstDelivery(
-		await f.consume(f.client, "orders", "group-a"),
+	const winningMessageId =
+		pair[0]?.status === "committed" ? "other-a" : "other-b";
+	const deliveries: DurableMessagingDelivery[] = [];
+	for (let index = 0; index < 2; index++) {
+		const delivery = firstDelivery(
+			await f.consume(f.client, "orders", "group-a"),
+		);
+		deliveries.push(delivery);
+		await committed(f.client.ack(acknowledgement(f.next(), delivery)));
+	}
+	const originalDelivery = deliveries.find(
+		(delivery) => delivery.message.id === request.message.id,
+	);
+	const winningDelivery = deliveries.find(
+		(delivery) => delivery.message.id === winningMessageId,
 	);
 	requireCondition(
-		winningDelivery.message.id === winner.value.messageId &&
-			winningDelivery.sequence === winner.value.sequence &&
-			(winningDelivery.message.id === "other-a" ||
-				winningDelivery.message.id === "other-b"),
-		"conflicting winner receipt did not identify its delivered message",
+		originalDelivery !== undefined &&
+			winningDelivery !== undefined &&
+			matchesDurablePublication(
+				request.message.id,
+				first.value,
+				originalDelivery,
+			) &&
+			sameMessage(originalDelivery) &&
+			matchesDurablePublication(
+				winningMessageId,
+				winner.value,
+				winningDelivery,
+			),
+		"concurrent publications did not deliver exactly their corresponding receipts",
 	);
-	await committed(f.client.ack(acknowledgement(f.next(), winningDelivery)));
 	await harness.restart();
 	const reopened = await harness.connect("tenant-a");
 	requireCondition(
@@ -1303,7 +1349,9 @@ async function pendingConflict(harness: DurableMessagingConformanceHarness) {
 		first.status === "committed" ? conflictingRequest : request;
 	const replay = await committed(other.publish(winningRequest));
 	requireCondition(
-		replay.messageId === winner.messageId &&
+		winner.messageId === winningRequest.message.id &&
+			replay.messageId === winningRequest.message.id &&
+			replay.messageId === winner.messageId &&
 			replay.sequence === winner.sequence,
 		"conflict overwrote the original operation receipt",
 	);
@@ -1315,8 +1363,7 @@ async function pendingConflict(harness: DurableMessagingConformanceHarness) {
 	);
 	const delivered = firstDelivery(await f.consume(other, "orders", "group-a"));
 	requireCondition(
-		delivered.message.id === replay.messageId &&
-			delivered.sequence === replay.sequence &&
+		matchesDurablePublication(winningRequest.message.id, replay, delivered) &&
 			delivered.message.subject === "orders.created" &&
 			sameBytes(delivered.message.payload, new Uint8Array([0, 1, 255])) &&
 			sameExpectedAttributes(delivered.message.attributes),
@@ -1336,7 +1383,8 @@ async function ackExpiryRace(harness: DurableMessagingConformanceHarness) {
 	const old = firstDelivery(await f.consume(f.client, "orders", "group-a"));
 	const other = await harness.connect("tenant-a");
 	const barrier = await harness.holdConcurrentMutations();
-	const ack = f.client.ack(acknowledgement(f.next(), old));
+	const ackRequest = acknowledgement(f.next(), old);
+	const ack = f.client.ack(ackRequest);
 	const consume = other.consume({
 		operation: f.next(),
 		topic: "orders",
@@ -1354,6 +1402,14 @@ async function ackExpiryRace(harness: DurableMessagingConformanceHarness) {
 				oldAck.value.sequence === old.sequence &&
 				next.length === 0,
 			"acknowledged delivery was concurrently re-leased",
+		);
+		await harness.restart();
+		const reopened = await harness.connect("tenant-a");
+		const replay = await committed(reopened.ack(ackRequest));
+		requireCondition(
+			matchesDurableSettlement(replay, old) &&
+				(await f.consume(reopened, "orders", "group-a")).length === 0,
+			"committed acknowledgment was lost or redelivered after restart",
 		);
 	} else {
 		requireCondition(
@@ -1463,7 +1519,7 @@ async function fingerprintFields(harness: DurableMessagingConformanceHarness) {
 		attributes: [{ key: "content-type", value: "binary" }],
 	};
 	const publish = { operation: f.next(), topic: "orders", message };
-	await committed(f.client.publish(publish));
+	const published = await committed(f.client.publish(publish));
 	const expectConflict = async (
 		promise: Promise<DurableMessagingOutcome<unknown>>,
 	) => {
@@ -1491,6 +1547,12 @@ async function fingerprintFields(harness: DurableMessagingConformanceHarness) {
 		},
 	])
 		await expectConflict(f.client.publish(request));
+	const publishReplay = await committed(f.client.publish(publish));
+	requireCondition(
+		publishReplay.messageId === published.messageId &&
+			publishReplay.sequence === published.sequence,
+		"publish conflict overwrote the original receipt",
+	);
 	const subscription = {
 		topic: "orders",
 		consumerGroup: "group-b",
@@ -1499,7 +1561,7 @@ async function fingerprintFields(harness: DurableMessagingConformanceHarness) {
 		startAt: "earliest" as const,
 	};
 	const subRequest = { operation: f.next(), subscription };
-	await committed(f.client.ensureSubscription(subRequest));
+	const subscribed = await committed(f.client.ensureSubscription(subRequest));
 	for (const changed of [
 		{ ...subscription, topic: "archive" },
 		{ ...subscription, consumerGroup: "group-c" },
@@ -1510,6 +1572,24 @@ async function fingerprintFields(harness: DurableMessagingConformanceHarness) {
 		await expectConflict(
 			f.client.ensureSubscription({ ...subRequest, subscription: changed }),
 		);
+	const subscriptionReplay = await committed(
+		f.client.ensureSubscription(subRequest),
+	);
+	requireCondition(
+		subscriptionReplay.firstAvailableSequence ===
+			subscribed.firstAvailableSequence &&
+			subscriptionReplay.historyTruncated === subscribed.historyTruncated &&
+			subscriptionReplay.subscription.topic === subscribed.subscription.topic &&
+			subscriptionReplay.subscription.consumerGroup ===
+				subscribed.subscription.consumerGroup &&
+			subscriptionReplay.subscription.deadLetterTopic ===
+				subscribed.subscription.deadLetterTopic &&
+			subscriptionReplay.subscription.maxDeliveryAttempts ===
+				subscribed.subscription.maxDeliveryAttempts &&
+			subscriptionReplay.subscription.startAt ===
+				subscribed.subscription.startAt,
+		"subscription conflict overwrote the original receipt",
+	);
 	const consume = {
 		operation: f.next(),
 		topic: "orders",
@@ -1525,8 +1605,15 @@ async function fingerprintFields(harness: DurableMessagingConformanceHarness) {
 		{ ...consume, visibilityTimeoutMs: 101 },
 	])
 		await expectConflict(f.client.consume(changed));
+	const consumeReplay = firstDelivery(
+		await committed(f.client.consume(consume)),
+	);
+	requireCondition(
+		sameDurableDelivery(consumeReplay, delivery),
+		"consume conflict overwrote the original receipt",
+	);
 	const nack = { ...acknowledgement(f.next(), delivery), reason: "retry" };
-	await committed(f.client.nack(nack));
+	const nackReceipt = await committed(f.client.nack(nack));
 	for (const changed of [
 		{ ...nack, topic: "archive" },
 		{ ...nack, consumerGroup: "group-b" },
@@ -1536,6 +1623,14 @@ async function fingerprintFields(harness: DurableMessagingConformanceHarness) {
 		{ ...nack, reason: "other" },
 	])
 		await expectConflict(f.client.nack(changed));
+	const nackReplay = await committed(f.client.nack(nack));
+	requireCondition(
+		nackReceipt.disposition === "released" &&
+			nackReplay.disposition === "released" &&
+			matchesDurableSettlement(nackReceipt, delivery) &&
+			matchesDurableSettlement(nackReplay, delivery),
+		"nack conflict overwrote the original receipt",
+	);
 	const topicRequest = { operation: f.next(), topic: "archive" };
 	const topicReceipt = await committed(f.client.ensureTopic(topicRequest));
 	await expectConflict(
@@ -1676,6 +1771,7 @@ async function tenantIsolation(harness: DurableMessagingConformanceHarness) {
 
 async function auditPagination(harness: DurableMessagingConformanceHarness) {
 	const f = await createFixture(harness);
+	const topics = ["orders", "orders-dlq", "archive", "audit-extra"];
 	await committed(
 		f.client.ensureTopic({ operation: f.next(), topic: "audit-extra" }),
 	);
@@ -1706,7 +1802,9 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 			"first retained audit page unavailable",
 		);
 	requireCondition(
-		validDurableAuditPage(first, cursor, 2, 4) && first.hasMore,
+		validDurableAuditPage(first, cursor, 2, 4) &&
+			matchesTopicAuditEvents(first.events, topics) &&
+			first.hasMore,
 		"first audit page was not ordered or complete",
 	);
 	const repeated = await f.client.events({ afterSequence: cursor, limit: 2 });
@@ -1722,6 +1820,10 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 		if (page.status !== "ok" || !validDurableAuditPage(page, after, 2, 4))
 			throw new DurableMessagingConformanceFailure(
 				"next audit page skipped or reordered events",
+			);
+		if (!matchesTopicAuditEvents(page.events, topics))
+			throw new DurableMessagingConformanceFailure(
+				"audit page changed topic creation identity",
 			);
 		after = page.nextAfterSequence;
 	}
@@ -1754,6 +1856,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 		Math.min(client.limits.operationWindowMs, 10_000),
 	);
 	const total = client.limits.retainedEvents + 2;
+	const topics = Array.from({ length: total }, (_, index) => `audit-${index}`);
 	for (let index = 0; index < total; index++)
 		await committed(
 			client.ensureTopic({ operation: next(), topic: `audit-${index}` }),
@@ -1773,6 +1876,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 	const page = await client.events({ afterSequence: floor - 1, limit: 2 });
 	requireCondition(
 		page.status === "ok" &&
+			matchesTopicAuditEvents(page.events, topics) &&
 			validDurableAuditPage(page, floor - 1, 2, total) &&
 			page.firstAvailableSequence === floor &&
 			(floor === total + 1
@@ -1795,6 +1899,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 	const nextPage = await reopened.events({ afterSequence: total, limit: 2 });
 	requireCondition(
 		(nextPage.status === "ok" &&
+			matchesTopicAuditEvents(nextPage.events, [...topics, "audit-next"]) &&
 			validDurableAuditPage(nextPage, total, 2, total + 1) &&
 			nextPage.events.length === 1 &&
 			nextPage.events[0]?.sequence === total + 1 &&

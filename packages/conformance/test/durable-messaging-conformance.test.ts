@@ -11,7 +11,9 @@ import { describe, expect, it } from "vitest";
 import {
 	DURABLE_MESSAGING_CONFORMANCE_CASES,
 	type DurableMessagingConformanceHarness,
+	matchesDurablePublication,
 	matchesDurableSettlement,
+	matchesTopicAuditEvents,
 	runDurableMessagingConformance,
 	sameDurableDelivery,
 	validDurableAuditPage,
@@ -44,6 +46,70 @@ function inertHarness(
 }
 
 describe("durable messaging conformance runner", () => {
+	it("detects a claimed ack that redelivers after the expiry race and restart", async () => {
+		let consumes = 0;
+		const message = {
+			id: "message-1",
+			subject: "orders.created",
+			payload: new Uint8Array([0, 1, 255]),
+			attributes: [{ key: "content-type", value: "binary" }],
+		};
+		const fail = async () => {
+			throw new Error("unexpected operation");
+		};
+		const client: DurableMessaging = {
+			limits: DURABLE_MESSAGING_LIMITS,
+			ensureTopic: async ({ topic }) => ({
+				status: "committed",
+				value: { topic },
+			}),
+			ensureSubscription: async ({ subscription }) => ({
+				status: "committed",
+				value: {
+					subscription,
+					firstAvailableSequence: 1,
+					historyTruncated: false,
+				},
+			}),
+			publish: async () => ({
+				status: "committed",
+				value: { messageId: message.id, sequence: 1 },
+			}),
+			consume: async ({ topic, consumerGroup }) => {
+				consumes++;
+				return {
+					status: "committed",
+					value:
+						consumes === 2
+							? []
+							: [
+									{
+										topic,
+										consumerGroup,
+										sequence: 1,
+										leaseId: consumes === 1 ? "old" : "new",
+										leaseExpiresAtMs: 1_100,
+										deliveryAttempt: consumes === 1 ? 1 : 2,
+										message,
+									},
+								],
+				};
+			},
+			ack: async ({ messageId, sequence }) => ({
+				status: "committed",
+				value: { messageId, sequence },
+			}),
+			nack: fail,
+			compact: fail,
+			events: fail,
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: "ack-expiry-race" },
+		);
+		expect(report.cases[0]?.status).toBe("fail");
+		expect(consumes).toBe(3);
+	});
 	it.each([
 		{ retention: 1, pageSize: 1, oversized: false, expected: "unverified" },
 		{ retention: 4, pageSize: 1, oversized: false, expected: "pass" },
@@ -115,6 +181,15 @@ describe("durable messaging conformance runner", () => {
 			events: [event(1), event(2)],
 		};
 		expect(validDurableAuditPage(page, 0, 2, 4)).toBe(true);
+		expect(matchesTopicAuditEvents(page.events, ["orders", "orders"])).toBe(
+			true,
+		);
+		expect(
+			matchesTopicAuditEvents([{ ...event(1), kind: "published" }], ["orders"]),
+		).toBe(false);
+		expect(
+			matchesTopicAuditEvents([{ ...event(1), topic: "other" }], ["orders"]),
+		).toBe(false);
 		expect(
 			validDurableAuditPage(
 				{ ...page, events: [event(1)], nextAfterSequence: 1 },
@@ -189,6 +264,27 @@ describe("durable messaging conformance runner", () => {
 		expect(
 			matchesDurableSettlement({ messageId: "m", sequence: 8 }, delivery),
 		).toBe(false);
+		for (const winner of ["other-a", "other-b"]) {
+			const loser = winner === "other-a" ? "other-b" : "other-a";
+			const delivered = {
+				...delivery,
+				message: { ...delivery.message, id: winner },
+			};
+			expect(
+				matchesDurablePublication(
+					winner,
+					{ messageId: winner, sequence: 7 },
+					delivered,
+				),
+			).toBe(true);
+			expect(
+				matchesDurablePublication(
+					winner,
+					{ messageId: loser, sequence: 7 },
+					{ ...delivered, message: { ...delivered.message, id: loser } },
+				),
+			).toBe(false);
+		}
 	});
 
 	it("rejects hidden, symbol, accessor and prototype data in unknown receipts", () => {
