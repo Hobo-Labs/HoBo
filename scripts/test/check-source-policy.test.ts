@@ -297,9 +297,23 @@ e: ##"raw \##(2 + // raw interpolation
 			["notes/new.md", "---\ntype: Design\n---\n"],
 			[".impeccable/design.json", "{}"],
 			["site/.impeccable/surfaces/example.md", "# Example"],
+			["site/.impeccable/surfaces/example.json", "{}"],
+			[".impeccable/critique/example.md", "# Example"],
+			[".sdlc/example/sdlc-state.md", "# State"],
 		] as const)
 			assert.ok(documentViolation(file, text), file);
 		assert.equal(documentViolation("docs/usage.md", "# Usage"), undefined);
+	});
+
+	it("rejects ignored agent planning and design documents in the worktree", () => {
+		const repo = fixture();
+		write(repo, ".gitignore", ".sdlc/\n.impeccable/\n");
+		write(repo, ".sdlc/feature/sdlc-state.md", "# Plan\n");
+		write(repo, ".impeccable/critique/example.md", "# Critique\n");
+		const result = guard(repo, "--worktree");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /\.sdlc\/feature\/sdlc-state\.md/u);
+		assert.match(result.stderr, /\.impeccable\/critique\/example\.md/u);
 	});
 
 	it("checks the staged snapshot rather than the working tree", () => {
