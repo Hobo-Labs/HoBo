@@ -217,3 +217,30 @@ A failing sink never fails a command.
 | `hobo.cd.promotion.step_error` rising | A port is throwing (transient). | Check the named dependency (orchestrator, verification, approval endpoint); promotions resume on recovery. |
 | `approval-signature-invalid` (401 on the callback) | The callback token was not signed with the configured secret. | Check the approver uses the token it received; rotate the secret ref if leaked (old tokens then fail closed). |
 | `preview-teardown-refused` | The gate refused a preview's teardown. | Fix the gate causes; `expirePreviews` retries each sweep. |
+
+The [promotion verification skill](../../../../.agents/skills/verify-promotion-verification/SKILL.md)
+checks these request bindings alongside verification and qualification. This
+projection of the request-binding model is not a production trace. TLC
+explored 28 states and 70 steps; 59 same-label steps are hidden.
+
+```mermaid
+stateDiagram-v2
+  [*] --> WaitingForClaim
+  WaitingForClaim --> RequestRecorded: claim or observe journal
+  RequestRecorded --> MatchingRequest: check recorded identity
+  RequestRecorded --> DifferentRequestRefused: check recorded identity
+```
+
+The rollback-retry model assumes the effect changes the current Set and the
+check and effect are atomic. TLC explored five states and nine steps; five
+same-label steps are hidden. Rail effects and concurrent reads need additional
+fencing.
+
+```mermaid
+stateDiagram-v2
+  [*] --> NotClaimed
+  NotClaimed --> Claimed: record original Set
+  Claimed --> Reconcile: another change advances the Set
+  Claimed --> ResultUncertain: apply rollback
+  ResultUncertain --> ResultRecorded: record result
+```
