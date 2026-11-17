@@ -9,7 +9,13 @@ import {
 } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
 import { createSqliteEngine } from "@hobo/data-sqlite";
-import { createMemorySecretsPort, type SecretsPort } from "@hobo/identity";
+import {
+	createMemorySecretsPort,
+	type FeatureFlagPort,
+	FeatureFlagStore,
+	type FlagEvent,
+	type SecretsPort,
+} from "@hobo/identity";
 import {
 	createLocalScheduler,
 	createRuntimeLocalQueueClock,
@@ -52,6 +58,15 @@ export interface BucketEmulator extends ServiceEmulator<BlobStorePort> {
 	readonly inspector?: BucketInspector;
 }
 
+/** Test-only access to a local flag engine's event history. */
+export interface FlagInspector {
+	events(): readonly FlagEvent[];
+}
+
+export interface FlagEmulator extends ServiceEmulator<FeatureFlagPort> {
+	readonly inspector?: FlagInspector;
+}
+
 export interface EmulatorContext {
 	readonly alias: string;
 	readonly stage: string;
@@ -68,6 +83,7 @@ export interface ServiceEmulatorFactories {
 	readonly schedule?: EmulatorFactory<ScheduleEmulator>;
 	readonly kv?: EmulatorFactory<ServiceEmulator<KeyValuePort>>;
 	readonly bucket?: EmulatorFactory<BucketEmulator>;
+	readonly flag?: EmulatorFactory<FlagEmulator>;
 }
 
 export function createQueueEmulator(): QueueEmulator {
@@ -83,6 +99,18 @@ export function createTopicEmulator(
 
 export function createSecretEmulator(): ServiceEmulator<SecretsPort> {
 	return { port: createMemorySecretsPort(), fidelity: "simulated" };
+}
+
+/** A fresh flag engine, with every evaluation recorded by default. */
+export function createFlagEmulator(
+	options: ConstructorParameters<typeof FeatureFlagStore>[0] = {},
+): FlagEmulator {
+	const store = new FeatureFlagStore({ sampleRate: 1, ...options });
+	return {
+		port: store,
+		inspector: { events: () => structuredClone(store.events) },
+		fidelity: "simulated",
+	};
 }
 
 /** An isolated SQLite engine exposing the data engine SPI, not a remote SQL server. */

@@ -62,6 +62,11 @@
 			"response": { "status": 200, "body": { "fidelity": "simulated", "size": 5, "value": "hello" } }
 		},
 		{
+			"description": "a flag resource evaluates a change without leaking it to another tenant",
+			"request": { "method": "POST", "path": "/flag/features", "body": { "key": "checkout" } },
+			"response": { "status": 200, "body": { "fidelity": "simulated", "enabled": true, "otherTenantDefault": true } }
+		},
+		{
 			"description": "a resource of the wrong kind cannot be used as a queue",
 			"request": { "method": "GET", "path": "/queue/events" },
 			"response": {

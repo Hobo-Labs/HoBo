@@ -5,10 +5,7 @@
  *
  * Event-sourced; auto-rollback is a durable obligation shape (policy.Decided-compatible).
  */
-import type {
-	FeatureFlagStore,
-	FlagEvalContext,
-} from "./feature-flag-store.js";
+import type { FeatureFlagPort, FlagEvalContext } from "./feature-flag-store.js";
 import {
 	applyRolloutToGatewayRouting,
 	type DomainRoutingEvent,
@@ -41,7 +38,7 @@ export interface ExposureTrack {
 }
 
 export type HarnessPorts = Readonly<{
-	flags: FeatureFlagStore;
+	flags: FeatureFlagPort;
 	delivery: OpenDeliveryEngine;
 	experiment: OpenExperimentEngine;
 }>;
@@ -64,7 +61,7 @@ export type ProgressiveRun = Readonly<{
  */
 export class Harness {
 	readonly schemaVersion = HARNESS_SCHEMA;
-	readonly flags: FeatureFlagStore;
+	readonly flags: FeatureFlagPort;
 	readonly delivery: OpenDeliveryEngine;
 	readonly experiment: OpenExperimentEngine;
 	readonly deliveryAdapter: DeliveryAdapter;
@@ -73,7 +70,7 @@ export class Harness {
 	private readonly now: () => string;
 
 	constructor(options: {
-		readonly store: FeatureFlagStore;
+		readonly store: FeatureFlagPort;
 		readonly now?: () => string;
 		readonly emitOtel?: (span: {
 			readonly name: string;
@@ -211,7 +208,7 @@ export class Harness {
 }
 
 export function createHarness(options: {
-	readonly store: FeatureFlagStore;
+	readonly store: FeatureFlagPort;
 	readonly now?: () => string;
 	readonly emitOtel?: (span: {
 		readonly name: string;
