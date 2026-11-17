@@ -20,6 +20,7 @@ import {
 	type BudgetFenceTrust,
 	createBudgetFenceVerifier,
 } from "./budget-fence-settlement.js";
+import { compareFinancialTime, validFinancialTime } from "./financial-time.js";
 
 export type {
 	BudgetEntitlement,
@@ -135,8 +136,8 @@ export function validateBudgetSnapshot(
 			!row.bucketId ||
 			!row.unit ||
 			!row.periodId ||
-			!Number.isFinite(Date.parse(row.observedAt)) ||
-			!Number.isFinite(Date.parse(row.validUntil))
+			!validFinancialTime(row.observedAt) ||
+			!validFinancialTime(row.validUntil)
 		)
 			throw new TypeError("entitlement scope and evidence required");
 		budgetMicros(row.remainingUnits);
@@ -149,11 +150,11 @@ export function validateBudgetSnapshot(
 	)
 		throw new TypeError("invalid budget sequence");
 	if (
-		!Number.isFinite(Date.parse(now)) ||
-		!Number.isFinite(Date.parse(snapshot.observedAt)) ||
-		!Number.isFinite(Date.parse(snapshot.validUntil)) ||
-		Date.parse(snapshot.observedAt) > Date.parse(now) ||
-		Date.parse(snapshot.validUntil) <= Date.parse(now)
+		!validFinancialTime(now) ||
+		!validFinancialTime(snapshot.observedAt) ||
+		!validFinancialTime(snapshot.validUntil) ||
+		compareFinancialTime(snapshot.observedAt, now) > 0 ||
+		compareFinancialTime(snapshot.validUntil, now) <= 0
 	)
 		throw new TypeError("budget snapshot is stale or future-dated");
 }
@@ -205,11 +206,11 @@ export function validateHostingQuote(quote: HostingQuote, now: string): void {
 		budgetMicros(row.units);
 	}
 	if (
-		!Number.isFinite(Date.parse(now)) ||
-		!Number.isFinite(Date.parse(quote.observedAt)) ||
-		!Number.isFinite(Date.parse(quote.validUntil)) ||
-		Date.parse(quote.observedAt) > Date.parse(now) ||
-		Date.parse(quote.validUntil) <= Date.parse(now)
+		!validFinancialTime(now) ||
+		!validFinancialTime(quote.observedAt) ||
+		!validFinancialTime(quote.validUntil) ||
+		compareFinancialTime(quote.observedAt, now) > 0 ||
+		compareFinancialTime(quote.validUntil, now) <= 0
 	)
 		throw new TypeError("hosting quote is stale or future-dated");
 }
@@ -323,14 +324,16 @@ export function createBudgetAdmissionAuthority(options: {
 					current.entitlements.some((row) => entitlementKey(row) === key))
 			)
 				continue;
-			const observedAt = Date.parse(bucket.observedAt);
-			const previousObservedAt = Date.parse(previous.observedAt);
+			const observedOrder = compareFinancialTime(
+				bucket.observedAt,
+				previous.observedAt,
+			);
 			if (
-				observedAt < previousObservedAt ||
-				(observedAt === previousObservedAt &&
+				observedOrder < 0 ||
+				(observedOrder === 0 &&
 					(bucket.remainingUnits !== previous.remainingUnits ||
 						bucket.unit !== previous.unit ||
-						Date.parse(bucket.validUntil) !== Date.parse(previous.validUntil)))
+						compareFinancialTime(bucket.validUntil, previous.validUntil) !== 0))
 			)
 				throw new Error(
 					"entitlement observation must advance with changed allocation, unit or expiry",
@@ -899,8 +902,8 @@ export function createBudgetAdmissionAuthority(options: {
 					!bucket ||
 					!current.identity ||
 					bucket.periodId !== current.identity.periodId ||
-					Date.parse(bucket.observedAt) > Date.parse(input.now) ||
-					Date.parse(bucket.validUntil) <= Date.parse(input.now)
+					compareFinancialTime(bucket.observedAt, input.now) > 0 ||
+					compareFinancialTime(bucket.validUntil, input.now) <= 0
 				)
 					throw new Error("entitlement exhausted, stale or unsupported");
 				if (add(bucket.reservedUnits, claim.units) > bucket.remainingUnits)
@@ -1008,10 +1011,14 @@ export function createBudgetAdmissionAuthority(options: {
 				throw new Error(
 					"spend watermark cannot decrease within a budget period",
 				);
+			const observedOrder = compareFinancialTime(
+				snapshot.observedAt,
+				current.observedAt,
+			);
 			if (
 				samePeriod &&
-				(Date.parse(snapshot.observedAt) < Date.parse(current.observedAt) ||
-					(snapshot.observedAt === current.observedAt &&
+				(observedOrder < 0 ||
+					(observedOrder === 0 &&
 						snapshot.spentMicros !== current.spentMicros &&
 						!evidence?.liabilityResolutionEvidenceRef))
 			)
@@ -1063,16 +1070,16 @@ export function createBudgetAdmissionAuthority(options: {
 					(old.periodId !== bucket.periodId || old.unit !== bucket.unit)
 				)
 					throw new Error("active entitlement cannot change unit or period");
-				if (
-					old &&
-					old.periodId === bucket.periodId &&
-					(Date.parse(bucket.observedAt) < Date.parse(old.observedAt) ||
-						(bucket.observedAt === old.observedAt &&
-							bucket.remainingUnits !== old.remainingUnits))
-				)
-					throw new Error(
-						"entitlement observation must advance with changed remaining allocation",
-					);
+				if (old && old.periodId === bucket.periodId) {
+					const order = compareFinancialTime(bucket.observedAt, old.observedAt);
+					if (
+						order < 0 ||
+						(order === 0 && bucket.remainingUnits !== old.remainingUnits)
+					)
+						throw new Error(
+							"entitlement observation must advance with changed remaining allocation",
+						);
+				}
 			}
 			if (
 				budgetIdentityKey(snapshot.identity) ===

@@ -94,6 +94,35 @@ evidence, not provider-verified billing evidence. Regression tests exercise the
 real SQLite adapter, competing connections, crash/reopen, policy changes,
 protected reserves, free-allocation exhaustion and quote selection.
 
+Hosting quote, budget and entitlement evidence must use a valid timestamp with
+an explicit `Z` or numeric offset. Freshness and observation-history checks
+compare the actual instants, including fractional seconds; different spellings
+of the same instant do not create a newer observation. Previously persisted
+ambiguous or invalid dates need reconciliation before replay. The HoBo hosting
+bridge has additional millisecond-based checks that are outside this model.
+
+The [hosting evidence time skill](../../.agents/skills/verify-hosting-evidence-time/SKILL.md)
+checks freshness and observation ordering. Its freshness model explores 256
+states and hides 128 same-state steps in this projection.
+
+```mermaid
+stateDiagram-v2
+  s0: Evidence has an invalid date
+  s1: Evidence has expired
+  s2: Evidence is from the future
+  s3: Evidence is current
+  s4: Evidence refused
+  s5: Evidence accepted
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  s0 --> s4: refuse evidence
+  s1 --> s4: refuse evidence
+  s2 --> s4: refuse evidence
+  s3 --> s5: accept evidence
+```
+
 ## Budget signal migration and metered preflight
 
 Versioned signal policies supply `identity: {tenantId,budgetId,periodId,policyRevision}`.

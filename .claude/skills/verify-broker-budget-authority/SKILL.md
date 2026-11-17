@@ -9,12 +9,12 @@ description: Verify quote authorization, hosting budget admission, execution cla
 
 **Why:** A missing hold or lost journal entry can fund multiple provider operations with the same money, while a premature release can leave running work unaccounted for.
 
-**Review baseline:** commit `5e25015dca4133f8e5a0726a970085ee2b02afb4`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
+**Review baseline:** commit `a4edbf08aeb4156f616313e72033e2a7a4616446`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
 
 ## Covered code
 
 - `packages/broker/src/pricing-authorization.ts`, `packages/broker/src/billing-decimal.ts`, `packages/pricing/src/quote.ts`, and `packages/broker/test/pricing-authorization.test.ts`: quote validation, exact decimal bounds, zero/unlimited policy, conservative numeric output, and 300 generated cap cases (seed 614493).
-- `packages/broker/src/budget-authority.ts`: `createBudgetAdmissionAuthority`, especially `reserve`, `claimExecution`, `uncertain`, `release`, `settle`, `save`, and journal replay.
+- `packages/broker/src/budget-authority.ts` and `financial-time.ts`: `createBudgetAdmissionAuthority`, especially `reserve`, `claimExecution`, `uncertain`, `release`, `settle`, `save`, and journal replay.
 - `packages/broker/test/budget-authority.property.test.ts`: generated actual-code cases.
 - `packages/broker/src/budget-fence-settlement.ts` and `packages/broker/test/fenced-budget-settlement.test.ts`: receiver- and finance-signed settlement verification, with generated adversarial histories.
 - `packages/hobo/src/hosting-budget-authority.ts` and `packages/hobo/test/hosting-budget-authority.test.ts`: existing SQLite-backed composition examples exercise the bridge from cloud planning and transitions to the broker authority.
@@ -33,7 +33,7 @@ This runs quote and budget fast-check cases, signed-settlement cases, a cached H
 
 ## Scope and evidence
 
-Quote authorization rejects raw quote amounts without the full quote, old or changed quote contents, ineligible or unpriced quotes, non-USD amounts, invalid bounded policy and exact liabilities above budget or cap. Zero means zero unless the corresponding unlimited flag is explicit. Accepted exact liabilities round upward when returned as a number; denials return zero authorized amount. A content hash detects changes but is not authentication. A trusted legacy `spendEstimateUsd` remains accepted without quote provenance, and the general broker request path does not automatically invoke this quote helper. The broker suite passed 584 tests with 13 skipped; pricing passed 196 and dispatcher passed 266. Sixteen deliberate implementation mutations covering quote checks, zero and unlimited handling, exact comparison, policy validation and rounding fail the real-code tests.
+Quote authorization rejects raw quote amounts without the full quote, old or changed quote contents, ineligible or unpriced quotes, non-USD amounts, invalid bounded policy and exact liabilities above budget or cap. Zero means zero unless the corresponding unlimited flag is explicit. Accepted exact liabilities round upward when returned as a number; denials return zero authorized amount. A content hash detects changes but is not authentication. A trusted legacy `spendEstimateUsd` remains accepted without quote provenance, and the general broker request path does not automatically invoke this quote helper. The broker suite passed 608 tests with 13 skipped; pricing passed 196 and dispatcher passed 266. Sixteen deliberate implementation mutations covering quote checks, zero and unlimited handling, exact comparison, policy validation and rounding fail the real-code tests.
 
 BrokerQuoteAuthorization checks 2,304 reachable states for historical or current behavior, full quotes, raw quote amounts and trusted estimates, abstract quote validity, rounded or exact amount, and two independent bounds and unlimited flags. It checks that current authorization respects both bounds and requires valid full quote evidence for quote-based use. Its 96-state constrained projection hides 48 same-state steps. Three model mutations and two executable historical counterexamples violate those properties. The model abstracts hash verification, version, eligibility, currency and provenance into a validity flag; it does not prove cryptography, IEEE conversion, TypeScript refinement, persistent holds or caller honesty.
 
