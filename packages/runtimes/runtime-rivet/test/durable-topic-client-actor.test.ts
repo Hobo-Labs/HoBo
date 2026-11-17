@@ -2,6 +2,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { durableMessagingOperation } from "@hobo/core";
+import { ActorHandleRaw } from "rivetkit/client";
 import type { RawAccess } from "rivetkit/db";
 import { expect, it } from "vitest";
 import { migrateDurableReceiptJournal } from "../src/durable-receipt-journal.js";
@@ -300,6 +301,98 @@ it("preserves malformed and lost-commit outcomes through the actor's SQLite jour
 		expect(
 			audit.events.filter(
 				(event) => event.kind === "published" && event.messageId === "m2",
+			),
+		).toHaveLength(1);
+
+		let sdkAttempts = 0;
+		let sdkFirstBody = "";
+		let sdkFirstProof: string | null = null;
+		let sdkFirstReply = "";
+		type SdkDriver = ConstructorParameters<typeof ActorHandleRaw>[1];
+		const sdkDriver: Pick<SdkDriver, "sendRequest"> = {
+			async sendRequest(
+				target: Parameters<SdkDriver["sendRequest"]>[0],
+				request: Request,
+			) {
+				sdkAttempts++;
+				expect(target).toEqual({
+					getOrCreateForKey: { name: actorName, key },
+				});
+				expect(new URL(request.url).pathname).toBe("/request/publish");
+				const body = await request.text();
+				const proof = request.headers.get("x-hobo-proof");
+				if (sdkAttempts === 1) {
+					sdkFirstBody = body;
+					sdkFirstProof = proof;
+				} else {
+					expect(body).toBe(sdkFirstBody);
+					expect(proof).toBe(sdkFirstProof);
+				}
+				const response = await actor.handle(
+					{ name: actorName, key, db },
+					new Request("https://actor.test/publish", {
+						method: request.method,
+						headers: request.headers,
+						body,
+					}),
+				);
+				if (sdkAttempts === 1) {
+					sdkFirstReply = await response.text();
+					return Response.json(
+						{ group: "actor", code: "dropped_reply", message: "reply lost" },
+						{ status: 503 },
+					);
+				}
+				expect(await response.clone().text()).toBe(sdkFirstReply);
+				return response;
+			},
+		};
+		// SAFETY: raw fetch uses only sendRequest on this test driver.
+		const sdk = new ActorHandleRaw(
+			{},
+			sdkDriver as SdkDriver,
+			undefined,
+			undefined,
+			"json",
+			{ getOrCreateForKey: { name: actorName, key } },
+		);
+		const sdkFetch = (path: string, init: RequestInit) => sdk.fetch(path, init);
+		const sdkClient = createRivetDurableTopicClient({
+			binding: {
+				actorName,
+				actorKey: key,
+				tenant: "tenant",
+				instance: "topic",
+				semanticDigest,
+				limits: actor.limits,
+				actorCapabilities: actor.capabilities,
+			},
+			metadataGrant: createRivetDurableTopicMetadataGrant(),
+			verifyTransport: (claim) => claim.fetch === sdkFetch,
+			authorize: (claim) => ({ "x-hobo-proof": sign(claim) }),
+			revalidate: () => true,
+			fetch: sdkFetch,
+		});
+		expect(
+			await sdkClient.publish({
+				...publish,
+				operation: op("sdk-retry"),
+				message: { ...publish.message, id: "m3" },
+			}),
+		).toEqual({ status: "committed", value: { messageId: "m3", sequence: 3 } });
+		expect(sdkAttempts).toBe(2);
+		const afterSdkRetry = await client.readRetainedLog({
+			topic: "orders",
+			afterSequence: 2,
+			limit: 4,
+		});
+		if (afterSdkRetry.status !== "ok") throw new Error("missing SDK retry log");
+		expect(afterSdkRetry.messages.map((message) => message.id)).toEqual(["m3"]);
+		const sdkAudit = await client.events({ afterSequence: 0, limit: 10 });
+		if (sdkAudit.status !== "ok") throw new Error("missing SDK audit page");
+		expect(
+			sdkAudit.events.filter(
+				(event) => event.kind === "published" && event.messageId === "m3",
 			),
 		).toHaveLength(1);
 	} finally {
