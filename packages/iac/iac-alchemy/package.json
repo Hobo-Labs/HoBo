@@ -74,6 +74,7 @@
 		"effect": "4.1.4",
 		"@effect/platform-node": "4.1.4",
 		"rivetkit": "3.0.0",
+		"miniflare": "4.20260722.0",
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
 		"@types/node": "^22.15.29"

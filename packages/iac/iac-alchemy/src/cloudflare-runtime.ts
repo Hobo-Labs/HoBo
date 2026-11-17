@@ -2,8 +2,10 @@ import type { BindleForAlchemy, PrimitiveDeclaration } from "./bindle.js";
 import {
 	CLOUDFLARE_KV_MAX_VALUE_BYTES,
 	CloudflareKvError,
+	type CloudflareKvGrant,
 	type CloudflareKvMode,
 	cloudflareEventualKv,
+	cloudflareKvGrant,
 	encodeCloudflareKvKey,
 	readCloudflareKvBytes,
 } from "./cloudflare-kv-protocol.js";
@@ -12,6 +14,7 @@ export {
 	CLOUDFLARE_KV_MAX_KEY_BYTES,
 	CLOUDFLARE_KV_MAX_VALUE_BYTES,
 	CloudflareKvError,
+	type CloudflareKvGrant,
 	type CloudflareKvMode,
 } from "./cloudflare-kv-protocol.js";
 
@@ -96,7 +99,7 @@ const workers = new WeakMap<object, CloudflareWorkerDescription>();
  */
 export function withCloudflareEventualKv<Requirements>(
 	bindle: BindleForAlchemy<CloudflareBindleEntrypoint, Requirements>,
-	modes: Readonly<Record<string, CloudflareKvMode>>,
+	modes: Readonly<Record<string, CloudflareKvGrant>>,
 ): BindleForAlchemy<CloudflareBindleEntrypoint, Requirements> {
 	const choices = Object.getOwnPropertyDescriptors(modes);
 	if (
@@ -320,6 +323,8 @@ export function cloudflareBindings(
 /** Validate an explicit native subset and the exact HoBo capability grant. */
 export function cloudflareKvConfiguration(declaration: PrimitiveDeclaration): {
 	readonly mode: CloudflareKvMode;
+	readonly grantEpoch: string;
+	readonly namespaceEpoch: string;
 	readonly allow: readonly string[];
 } {
 	const annotation = declaration.annotations[0];
@@ -334,13 +339,19 @@ export function cloudflareKvConfiguration(declaration: PrimitiveDeclaration): {
 		);
 	const config = Object.getOwnPropertyDescriptors(annotation.config);
 	const mode = config.mode;
+	const epoch = config.grantEpoch;
+	const namespace = config.namespaceEpoch;
 	const consistency = config.consistency;
 	const runtime = config.runtime;
 	if (
-		Object.keys(config).length !== 3 ||
+		Object.keys(config).length !== 5 ||
 		mode === undefined ||
 		!("value" in mode) ||
 		(mode.value !== "read-only" && mode.value !== "write-only") ||
+		epoch === undefined ||
+		!("value" in epoch) ||
+		namespace === undefined ||
+		!("value" in namespace) ||
 		consistency === undefined ||
 		!("value" in consistency) ||
 		consistency.value !== "eventual" ||
@@ -351,23 +362,12 @@ export function cloudflareKvConfiguration(declaration: PrimitiveDeclaration): {
 		throw new Error(
 			"KV runtime is unsupported: invalid eventual worker-js mode",
 		);
-	const allowed = declaration.declaredAllow;
-	if (
-		allowed.length === 0 ||
-		allowed.length > 2 ||
-		new Set(allowed).size !== allowed.length ||
-		(mode.value === "read-only" &&
-			(allowed.length !== 1 || allowed[0] !== "get")) ||
-		(mode.value === "write-only" &&
-			allowed.some((verb) => verb !== "set" && verb !== "delete"))
-	)
-		throw new Error(
-			"KV requires an explicit read-only or write-only allow list",
-		);
-	return Object.freeze({
-		mode: mode.value,
-		allow: Object.freeze([...allowed].sort()),
-	});
+	return cloudflareKvGrant(
+		mode.value,
+		epoch.value,
+		namespace.value,
+		declaration.declaredAllow,
+	);
 }
 
 function allowFor(declaration: PrimitiveDeclaration) {

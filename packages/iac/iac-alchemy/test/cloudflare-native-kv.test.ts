@@ -12,7 +12,7 @@ import * as Provider from "alchemy/Provider";
 import type { ResourceClass } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
@@ -22,6 +22,7 @@ import {
 	cloudflareKvProxy,
 } from "../src/cloudflare-kv-proxy.js";
 import {
+	cloudflareKvNamespaceClaim,
 	cloudflareKvProxySource,
 	cloudflareNativeKvBindleMappers,
 } from "../src/cloudflare-native-kv.js";
@@ -33,20 +34,31 @@ import {
 	withCloudflareEventualKv,
 } from "../src/cloudflare-runtime.js";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
+import { hashAlchemyPriorState } from "../src/plan.js";
 import worker, {
 	application,
 	neutralApplication,
 } from "./fixtures/cloudflare-kv-app.js";
+import { application as writerApplication } from "./fixtures/cloudflare-kv-writer-app.js";
 import { routeFixture, testOperation } from "./route-fixture.js";
 
 const main = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"fixtures/cloudflare-kv-app.ts",
 );
+const writerMain = join(
+	dirname(fileURLToPath(import.meta.url)),
+	"fixtures/cloudflare-kv-writer-app.ts",
+);
 const httpAnnotation = {
 	provider: "hobo",
 	option: "session-replay",
 	config: { enabled: false },
+};
+const readGrant = {
+	mode: "read-only" as const,
+	grantEpoch: `sha256:${"1".repeat(64)}`,
+	namespaceEpoch: `sha256:${"4".repeat(64)}`,
 };
 
 function appFor(
@@ -79,7 +91,13 @@ function appFor(
 			requirements: {},
 			entrypoint: (name: string) => (name === "web" ? entrypoint : undefined),
 		},
-		{ cache: mode },
+		{
+			cache: {
+				mode,
+				grantEpoch: readGrant.grantEpoch,
+				namespaceEpoch: readGrant.namespaceEpoch,
+			},
+		},
 	);
 }
 
@@ -90,10 +108,12 @@ function nativeNamespace() {
 		values,
 		calls,
 		binding: {
-			async get(key: string, type: "arrayBuffer") {
+			async get(key: string, type: "stream") {
 				calls.push(`get:${key}:${type}`);
 				const value = values.get(key);
-				return value === undefined ? null : new Uint8Array(value).buffer;
+				return value === undefined
+					? null
+					: new Response(new Uint8Array(value)).body;
 			},
 			async put(key: string, value: ArrayBuffer) {
 				calls.push(`put:${key}`);
@@ -144,10 +164,10 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			{ provider: "cloudflare", option: "eventual-kv" },
 		]);
 		expect(() =>
-			withCloudflareEventualKv(neutralApplication, { missing: "read-only" }),
+			withCloudflareEventualKv(neutralApplication, { missing: readGrant }),
 		).toThrow("unknown resource");
 		expect(() =>
-			withCloudflareEventualKv(neutralApplication, { web: "read-only" }),
+			withCloudflareEventualKv(neutralApplication, { web: readGrant }),
 		).toThrow("unannotated KV resource");
 		const accessor = Object.defineProperty({}, "cache", {
 			enumerable: true,
@@ -158,6 +178,42 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 		expect(() =>
 			withCloudflareEventualKv(neutralApplication, accessor),
 		).toThrow("unannotated KV resource");
+	});
+
+	it("pins the proxy to an exact grant incarnation and canonical verbs", () => {
+		const grant = {
+			mode: "write-only" as const,
+			grantEpoch: readGrant.grantEpoch,
+			namespaceEpoch: readGrant.namespaceEpoch,
+		};
+		const source = (allow: string[], grantEpoch = grant.grantEpoch) =>
+			cloudflareKvProxySource("kv-app", "cache", {
+				...grant,
+				grantEpoch,
+				allow,
+			}).resourceId;
+		expect(source(["set", "delete"])).toBe(source(["delete", "set"]));
+		expect(source(["set"])).not.toBe(source(["delete"]));
+		expect(source(["set"])).not.toBe(
+			source(["set"], `sha256:${"2".repeat(64)}`),
+		);
+		expect(source(["set"])).not.toBe(
+			cloudflareKvProxySource("kv-app", "cache", {
+				...readGrant,
+				allow: ["get"],
+			}).resourceId,
+		);
+		expect(() => source(["set"], "invalid")).toThrow("KV_GRANT_INVALID");
+		const firstRead = cloudflareKvProxySource("kv-app", "cache", {
+			...readGrant,
+			allow: ["get"],
+		});
+		const renewedRead = cloudflareKvProxySource("kv-app", "cache", {
+			...readGrant,
+			grantEpoch: `sha256:${"3".repeat(64)}`,
+			allow: ["get"],
+		});
+		expect(firstRead.resourceId).not.toBe(renewedRead.resourceId);
 	});
 
 	it("requires independent authorization of the proxy source before mapping", () => {
@@ -172,8 +228,17 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 		]) {
 			const mappingOptions =
 				sourceFence === undefined
-					? { workerModules: { web: main } }
-					: { workerModules: { web: main }, sourceFence };
+					? {
+							workerModules: { web: main },
+							verifyNamespace: () => true,
+							verifyGrant: () => true,
+						}
+					: {
+							workerModules: { web: main },
+							sourceFence,
+							verifyNamespace: () => true,
+							verifyGrant: () => true,
+						};
 			expect(() =>
 				mapBindleToAlchemy(
 					application,
@@ -182,6 +247,46 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				),
 			).toThrow(/SOURCE_FENCE_(REQUIRED|UNVERIFIED)/u);
 		}
+	});
+
+	it("refuses namespace creation when ownership or migration is not independently authorized", () => {
+		expect(() =>
+			mapBindleToAlchemy(
+				application,
+				cloudflareNativeKvBindleMappers({
+					workerModules: { web: main },
+					sourceFence: {
+						sourceDigest: `sha256:${"a".repeat(64)}`,
+						environmentDigest: `sha256:${"b".repeat(64)}`,
+						proofRef: "test:host",
+						verify: () => true,
+					},
+					verifyNamespace: () => false,
+					verifyGrant: () => true,
+				}),
+				{ assessRequirements: () => ({ status: "supported" }) },
+			),
+		).toThrow("KV_NAMESPACE_UNVERIFIED");
+	});
+
+	it("refuses a grant the independent host authority does not authorize", () => {
+		expect(() =>
+			mapBindleToAlchemy(
+				application,
+				cloudflareNativeKvBindleMappers({
+					workerModules: { web: main },
+					sourceFence: {
+						sourceDigest: `sha256:${"a".repeat(64)}`,
+						environmentDigest: `sha256:${"b".repeat(64)}`,
+						proofRef: "test:host",
+						verify: () => true,
+					},
+					verifyNamespace: () => true,
+					verifyGrant: () => false,
+				}),
+				{ assessRequirements: () => ({ status: "supported" }) },
+			),
+		).toThrow("KV_GRANT_UNVERIFIED");
 	});
 	it("reads binary, empty and missing values through an isolated read-only proxy", async () => {
 		const native = nativeNamespace();
@@ -236,6 +341,56 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			(await cloudflareKvProxy.fetch(request("set"), environment)).status,
 		).toBe(204);
 		expect(native.calls).toEqual(["put:key"]);
+	});
+
+	it("exhaustively rejects unauthorized combinations of proxy mode, allow list and operation", async () => {
+		const modes = ["read-only", "write-only", "invalid"] as const;
+		const grants = [
+			"get",
+			"set",
+			"delete",
+			"delete,set",
+			"set,delete",
+			"",
+			"get,set",
+		] as const;
+		const operations = ["get", "set", "delete", "other"] as const;
+		const permitted = new Set([
+			"read-only/get/get",
+			"write-only/set/set",
+			"write-only/delete/delete",
+			"write-only/delete,set/set",
+			"write-only/delete,set/delete",
+		]);
+		for (const mode of modes) {
+			for (const grant of grants) {
+				for (const operation of operations) {
+					const native = nativeNamespace();
+					const allowed = permitted.has(`${mode}/${grant}/${operation}`);
+					const response = await cloudflareKvProxy.fetch(
+						new Request(`https://hobo-kv.internal/${operation}`, {
+							method: "POST",
+							headers: { "x-hobo-kv-key": "key" },
+						}),
+						{
+							// SAFETY: the test deliberately sends malformed external bindings.
+							HOBO_KV_MODE:
+								mode as CloudflareKvProxyEnvironment["HOBO_KV_MODE"],
+							// SAFETY: malformed grant strings are intentional negative cases.
+							HOBO_KV_ALLOW:
+								grant as CloudflareKvProxyEnvironment["HOBO_KV_ALLOW"],
+							HOBO_KV_NAMESPACE: native.binding,
+						},
+					);
+					expect(response.status, `${mode}/${grant}/${operation}`).toBe(
+						allowed ? (operation === "get" ? 404 : 204) : 403,
+					);
+					expect(native.calls.length, `${mode}/${grant}/${operation}`).toBe(
+						allowed ? 1 : 0,
+					);
+				}
+			}
+		}
 	});
 
 	it("allows an explicitly granted delete without granting writes or reads", async () => {
@@ -320,6 +475,107 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 		);
 	});
 
+	it("cancels an oversized native read stream before buffering it", async () => {
+		const native = nativeNamespace();
+		let canceled = false;
+		const app = appFor("read-only", ["get"], (context) => async () => {
+			await expect(
+				cloudflareBindings(context).kv("cache").get("key"),
+			).rejects.toMatchObject({ code: "KV_READ_UNAVAILABLE" });
+			return new Response("ok");
+		});
+		await bindleCloudflareWorker(app, "web").fetch(
+			new Request("https://app.test"),
+			{
+				HOBO_RESOURCE_0: service({
+					HOBO_KV_MODE: "read-only",
+					HOBO_KV_ALLOW: "get",
+					HOBO_KV_NAMESPACE: {
+						...native.binding,
+						async get() {
+							return new ReadableStream<Uint8Array>({
+								type: "bytes",
+								start(controller) {
+									controller.enqueue(
+										new Uint8Array(CLOUDFLARE_KV_MAX_VALUE_BYTES),
+									);
+									controller.enqueue(new Uint8Array(1));
+								},
+								cancel() {
+									canceled = true;
+								},
+							});
+						},
+					},
+				}),
+			},
+		);
+		expect(canceled).toBe(true);
+	});
+
+	it("fails closed and cancels a native stream without BYOB support", async () => {
+		const native = nativeNamespace();
+		let canceled = false;
+		const response = await cloudflareKvProxy.fetch(
+			new Request("https://hobo-kv.internal/get", {
+				method: "POST",
+				headers: { "x-hobo-kv-key": "key" },
+			}),
+			{
+				HOBO_KV_MODE: "read-only",
+				HOBO_KV_ALLOW: "get",
+				HOBO_KV_NAMESPACE: {
+					...native.binding,
+					async get() {
+						return new ReadableStream<Uint8Array>({
+							cancel() {
+								canceled = true;
+							},
+						});
+					},
+				},
+			},
+		);
+		expect(response.status).toBe(413);
+		expect(canceled).toBe(true);
+	});
+
+	it("bounds a native mutation wait without claiming the timed-out write stopped", async () => {
+		vi.useFakeTimers();
+		try {
+			const native = nativeNamespace();
+			let finish: (() => void) | undefined;
+			let completed = false;
+			const result = cloudflareKvProxy.fetch(
+				new Request("https://hobo-kv.internal/set", {
+					method: "POST",
+					headers: { "x-hobo-kv-key": "key" },
+				}),
+				{
+					HOBO_KV_MODE: "write-only",
+					HOBO_KV_ALLOW: "set",
+					HOBO_KV_NAMESPACE: {
+						...native.binding,
+						async put() {
+							await new Promise<void>((resolve) => {
+								finish = resolve;
+							});
+							completed = true;
+						},
+					},
+				},
+			);
+			await vi.advanceTimersByTimeAsync(10_000);
+			expect((await result).status).toBe(502);
+			expect(completed).toBe(false);
+			finish?.();
+			await vi.runAllTicks();
+			expect(completed).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it.each([
 		["read-only", []],
 		["read-only", ["get", "set"]],
@@ -372,7 +628,19 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			const uncertain: string[] = [];
 			let admissions = 0;
 			let revokeOnFinancialRevalidation = false;
-			const proxySource = cloudflareKvProxySource("kv-app", "cache");
+			let revokeNamespaceOnFinancialRevalidation = false;
+			let namespaceAuthorized = true;
+			let revokeGrantOnFinancialRevalidation = false;
+			let grantAuthorized = true;
+			const proxySource = cloudflareKvProxySource("kv-app", "cache", {
+				...readGrant,
+				allow: ["get"],
+			});
+			const namespaceClaim = cloudflareKvNamespaceClaim(
+				"kv-app",
+				"cache",
+				readGrant.namespaceEpoch,
+			);
 			const appSource = {
 				resourceId: "web",
 				resourceType: "Cloudflare.Worker",
@@ -456,6 +724,15 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			const mappers = cloudflareNativeKvBindleMappers({
 				workerModules: { web: main },
 				sourceFence,
+				verifyNamespace: (claim) =>
+					namespaceAuthorized &&
+					JSON.stringify(claim) === JSON.stringify(namespaceClaim),
+				verifyGrant: (claim) =>
+					grantAuthorized &&
+					claim.proxyResourceId === proxySource.resourceId &&
+					claim.grantEpoch === readGrant.grantEpoch &&
+					claim.mode === "read-only" &&
+					JSON.stringify(claim.allow) === JSON.stringify(["get"]),
 			});
 			const coverage = describeAlchemyPrimitiveSupport(
 				[{ factory: "kv", allowVerbs: ["get", "set", "delete"] }],
@@ -468,9 +745,11 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			const mapped = mapBindleToAlchemy(application, mappers, {
 				assessRequirements,
 			});
+			const states: NonNullable<Parameters<typeof inMemoryState>[0]> = {};
+			const state = inMemoryState(states);
 			const stack = Stack(
 				"App",
-				{ providers, state: inMemoryState() },
+				{ providers, state },
 				mapped.pipe(Effect.map(() => ({}))),
 			);
 			const proxyId = proxySource.resourceId;
@@ -484,7 +763,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				inventoryEvidenceRef: "inventory:1",
 				resources: [
 					{
-						resourceId: "cache",
+						resourceId: namespaceClaim.resourceId,
 						resourceType: "Cloudflare.KV.Namespace",
 						providerId: "cloudflare",
 						providerAccountRef: "account",
@@ -557,6 +836,9 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 						},
 						revalidate: () => {
 							if (revokeOnFinancialRevalidation) proxyAuthorized = false;
+							if (revokeNamespaceOnFinancialRevalidation)
+								namespaceAuthorized = false;
+							if (revokeGrantOnFinancialRevalidation) grantAuthorized = false;
 							return true;
 						},
 						uncertain: (id) => {
@@ -620,6 +902,29 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			expect(created).toEqual([]);
 			revokeOnFinancialRevalidation = false;
 			proxyAuthorized = true;
+			const namespaceRevokedProvider = makeProvider();
+			await namespaceRevokedProvider.preview(program);
+			revokeNamespaceOnFinancialRevalidation = true;
+			await expect(
+				namespaceRevokedProvider.applyWithAdmission(
+					program,
+					"namespace-revoked",
+				),
+			).rejects.toMatchObject({ requiresReconciliation: true });
+			expect(uncertain).toContain("iac:namespace-revoked");
+			expect(created).toEqual([]);
+			revokeNamespaceOnFinancialRevalidation = false;
+			namespaceAuthorized = true;
+			const grantRevokedProvider = makeProvider();
+			await grantRevokedProvider.preview(program);
+			revokeGrantOnFinancialRevalidation = true;
+			await expect(
+				grantRevokedProvider.applyWithAdmission(program, "grant-revoked"),
+			).rejects.toMatchObject({ requiresReconciliation: true });
+			expect(uncertain).toContain("iac:grant-revoked");
+			expect(created).toEqual([]);
+			revokeGrantOnFinancialRevalidation = false;
+			grantAuthorized = true;
 			await provider.applyWithAdmission(program, "request");
 			expect(
 				created.filter((entry) => entry.type === Namespace.Type),
@@ -678,6 +983,171 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				}),
 			});
 			expect(await result.text()).toBe("hello");
+
+			// Regranting must create a new proxy; the old app may still hold the
+			// old service binding, which must never acquire the new write grant.
+			const writerGrant = {
+				mode: "write-only" as const,
+				grantEpoch: `sha256:${"2".repeat(64)}`,
+				namespaceEpoch: readGrant.namespaceEpoch,
+				allow: ["set"],
+			};
+			const writerSource = cloudflareKvProxySource(
+				"kv-app",
+				"cache",
+				writerGrant,
+			);
+			const writerAppSource = { ...appSource, sourcePath: writerMain };
+			const nextSources = [proxySource, writerSource, writerAppSource];
+			const previousState = states.App?.test?.[proxyId];
+			expect(previousState).toBeDefined();
+			const trustedPriorDigest = hashAlchemyPriorState(previousState);
+			const nextFence = {
+				...sourceFence,
+				verify: (claim: typeof proxySource) =>
+					nextSources.some(
+						(expected) =>
+							expected.resourceId === claim.resourceId &&
+							expected.resourceType === claim.resourceType &&
+							expected.bindleName === claim.bindleName &&
+							expected.applicationName === claim.applicationName &&
+							expected.sourceKind === claim.sourceKind &&
+							expected.sourcePath === claim.sourcePath,
+					),
+			};
+			const writerMapped = mapBindleToAlchemy(
+				writerApplication,
+				cloudflareNativeKvBindleMappers({
+					workerModules: { web: writerMain },
+					sourceFence: nextFence,
+					verifyNamespace: (claim) =>
+						JSON.stringify(claim) === JSON.stringify(namespaceClaim),
+					verifyGrant: (claim) =>
+						claim.proxyResourceId === writerSource.resourceId &&
+						claim.grantEpoch === writerGrant.grantEpoch &&
+						claim.mode === "write-only" &&
+						JSON.stringify(claim.allow) === JSON.stringify(["set"]),
+				}),
+				{
+					assessRequirements: (requirements) =>
+						JSON.stringify(requirements.require) ===
+							JSON.stringify(["http", "kv-eventual-write"]) &&
+						JSON.stringify(requirements.runtimes) ===
+							JSON.stringify(["javascript"])
+							? { status: "supported" }
+							: { status: "unsupported", reason: "unrecognized requirements" },
+				},
+			);
+			const writerStack = Stack(
+				"App",
+				{ providers, state },
+				writerMapped.pipe(Effect.map(() => ({}))),
+			);
+			const updateTarget = alchemyTarget({
+				targetId: target.targetId,
+				tenantId: target.tenantId,
+				stackName: target.stackName,
+				stage: target.stage,
+				programResourceId: target.programResourceId,
+				sourceDigest: target.sourceDigest,
+				inventoryEvidenceRef: target.inventoryEvidenceRef,
+				resources: [
+					...target.resources,
+					{
+						resourceId: writerSource.resourceId,
+						resourceType: "Cloudflare.Worker",
+						providerId: "cloudflare",
+						providerAccountRef: "account",
+						productId: "worker",
+					},
+				],
+			});
+			let retiredAndDrained = false;
+			const updateProvider = (updateScope = updateTarget) =>
+				createAlchemyIacProvider({
+					stack: writerStack,
+					target: updateScope,
+					runtimeLayer: Alchemist.layer(),
+					runtimeDirectory: join(directory, "runtime-update"),
+					route: routeFixture({ inventoryHash: `sha256:${"d".repeat(64)}` })
+						.port,
+					resolveRoute: ({ requestId }) => ({
+						requestId: requestId ?? "update",
+						operation: testOperation,
+					}),
+					composite: {
+						proofRef: "test:host",
+						environmentDigest: `sha256:${"b".repeat(64)}`,
+						sourceRequirements: nextSources,
+						verifyEnvironment: () => true,
+						verifyPlan: ({ scope, historicalSources }) => {
+							expect(scope.map(({ resourceId }) => resourceId)).toEqual(
+								expect.arrayContaining([proxyId, writerSource.resourceId]),
+							);
+							expect(historicalSources).toContainEqual({
+								resourceId: proxyId,
+								resourceType: "Cloudflare.Worker",
+								priorStateDigest: trustedPriorDigest,
+							});
+							return retiredAndDrained;
+						},
+					},
+					financial: {
+						assess: (plan) => ({ plan }),
+						admit: async (requestId) => ({
+							requestId,
+							targetId: "yard",
+							status: "admitted",
+							code: "",
+							message: "",
+							budget: { evaluation: "allowed", reservation: "held" },
+							reservation: { reservationId: `iac:${requestId}` },
+							requestDigest: `sha256:${"c".repeat(64)}`,
+							inventoryHash: `sha256:${"d".repeat(64)}`,
+							modelHash: `sha256:${"e".repeat(64)}`,
+							quoteHash: `sha256:${"f".repeat(64)}`,
+						}),
+						revalidate: () => true,
+						uncertain: () => {},
+					},
+				});
+			const updatedProgram = {
+				...program,
+				operationGeneration: "generation-2",
+			};
+			const missingOld = alchemyTarget({
+				...updateTarget,
+				resources: updateTarget.resources.filter(
+					(entry) => entry.resourceId !== proxyId,
+				),
+			});
+			await expect(
+				updateProvider(missingOld).preview(updatedProgram),
+			).rejects.toThrow("TARGET_INVENTORY_INCOMPLETE");
+			const nextProvider = updateProvider();
+			await expect(nextProvider.preview(updatedProgram)).rejects.toThrow(
+				"COMPOSITE_PLAN_UNVERIFIED",
+			);
+			retiredAndDrained = true;
+			await nextProvider.preview(updatedProgram);
+			await nextProvider.applyWithAdmission(updatedProgram, "update");
+			const staleWrite = new Request("https://hobo-kv.internal/set", {
+				method: "POST",
+				headers: { "x-hobo-kv-key": "greeting" },
+				body: "unexpected",
+			});
+			expect(
+				(
+					await cloudflareKvProxy.fetch(staleWrite, {
+						HOBO_KV_MODE: "read-only",
+						HOBO_KV_ALLOW: "get",
+						HOBO_KV_NAMESPACE: native.binding,
+					})
+				).status,
+			).toBe(403);
+			expect(native.values.get("greeting")).toEqual(
+				new TextEncoder().encode("hello"),
+			);
 		} finally {
 			if (before === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = before;

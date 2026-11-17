@@ -4,19 +4,122 @@ export const CLOUDFLARE_KV_MAX_VALUE_BYTES = 1_048_576;
 
 export type CloudflareKvMode = "read-only" | "write-only";
 export type CloudflareKvOperation = "get" | "set" | "delete";
+export interface CloudflareKvGrant {
+	readonly mode: CloudflareKvMode;
+	/** Host-issued per-incarnation identity; never reuse after a grant is retired. */
+	readonly grantEpoch: string;
+	/** Host-issued stable identity for this namespace incarnation. */
+	readonly namespaceEpoch: string;
+}
+
+/** Normalize the exact grant used by the proxy identity and Worker environment. */
+export function cloudflareKvGrant(
+	mode: CloudflareKvMode,
+	grantEpoch: string,
+	namespaceEpoch: string,
+	input: readonly string[],
+): CloudflareKvGrant & { readonly allow: readonly string[] } {
+	if (
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the host-provided epoch is an external input. */
+		typeof grantEpoch !== "string" ||
+		!/^sha256:[a-f0-9]{64}$/u.test(grantEpoch)
+	)
+		throw new CloudflareKvError(
+			"KV_GRANT_INVALID",
+			"a host-issued grant epoch is required",
+		);
+	if (
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the host-provided epoch is an external input. */
+		typeof namespaceEpoch !== "string" ||
+		!/^sha256:[a-f0-9]{64}$/u.test(namespaceEpoch)
+	)
+		throw new CloudflareKvError(
+			"KV_GRANT_INVALID",
+			"a host-issued namespace epoch is required",
+		);
+	if (
+		!Array.isArray(input) ||
+		input.length === 0 ||
+		input.length > 2 ||
+		Object.getOwnPropertySymbols(input).length !== 0
+	)
+		throw new CloudflareKvError(
+			"KV_GRANT_INVALID",
+			"an explicit allow list is required",
+		);
+	const properties = Object.getOwnPropertyDescriptors(input);
+	const allowed: string[] = [];
+	for (let index = 0; index < input.length; index++) {
+		const entry = properties[String(index)];
+		if (entry === undefined || !("value" in entry) || !entry.enumerable)
+			throw new CloudflareKvError(
+				"KV_GRANT_INVALID",
+				"the allow list is invalid",
+			);
+		allowed.push(entry.value);
+	}
+	if (
+		Object.keys(properties).length !== input.length + 1 ||
+		new Set(allowed).size !== allowed.length ||
+		(mode === "read-only" && (allowed.length !== 1 || allowed[0] !== "get")) ||
+		(mode === "write-only" &&
+			allowed.some((verb) => verb !== "set" && verb !== "delete")) ||
+		(mode !== "read-only" && mode !== "write-only")
+	)
+		throw new CloudflareKvError(
+			"KV_GRANT_INVALID",
+			"KV requires an explicit read-only or write-only allow list",
+		);
+	return Object.freeze({
+		mode,
+		grantEpoch,
+		namespaceEpoch,
+		allow: Object.freeze(allowed.sort()),
+	});
+}
 
 /** Explicitly opt into the provider's eventual, JavaScript-only subset. */
-export function cloudflareEventualKv(mode: CloudflareKvMode) {
-	if (mode !== "read-only" && mode !== "write-only")
+export function cloudflareEventualKv(grant: CloudflareKvGrant) {
+	/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: adapter options are an external input. */
+	if (typeof grant !== "object" || grant === null || Array.isArray(grant))
 		throw new CloudflareKvError(
 			"KV_MODE_INVALID",
-			"a read-only or write-only mode is required",
+			"a grant choice is required",
 		);
+	const properties = Object.getOwnPropertyDescriptors(grant);
+	const mode = properties.mode;
+	const epoch = properties.grantEpoch;
+	const namespace = properties.namespaceEpoch;
+	if (
+		Object.getOwnPropertySymbols(grant).length !== 0 ||
+		Object.keys(properties).length !== 3 ||
+		mode === undefined ||
+		!("value" in mode) ||
+		!mode.enumerable ||
+		epoch === undefined ||
+		!("value" in epoch) ||
+		!epoch.enumerable ||
+		namespace === undefined ||
+		!("value" in namespace) ||
+		!namespace.enumerable
+	)
+		throw new CloudflareKvError(
+			"KV_GRANT_INVALID",
+			"grant choice must be plain data",
+		);
+	const checked = cloudflareKvGrant(
+		mode.value,
+		epoch.value,
+		namespace.value,
+		mode.value === "read-only" ? ["get"] : ["set"],
+	);
 	return Object.freeze({
 		provider: "cloudflare",
 		option: "eventual-kv",
 		config: Object.freeze({
-			mode,
+			mode: checked.mode,
+			grantEpoch: checked.grantEpoch,
+			namespaceEpoch: checked.namespaceEpoch,
 			consistency: "eventual",
 			runtime: "worker-js",
 		}),
@@ -79,7 +182,16 @@ export async function readCloudflareKvBytes(
 	body: ReadableStream<Uint8Array> | null,
 ): Promise<ArrayBuffer> {
 	if (body === null) return new Uint8Array().buffer;
-	const reader = body.getReader();
+	let reader: ReadableStreamBYOBReader;
+	try {
+		reader = body.getReader({ mode: "byob" });
+	} catch {
+		void body.cancel().catch(() => {});
+		throw new CloudflareKvError(
+			"KV_STREAM_INVALID",
+			"a bounded byte stream is required",
+		);
+	}
 	const chunks: Uint8Array[] = [];
 	let total = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -94,7 +206,11 @@ export async function readCloudflareKvBytes(
 	});
 	try {
 		while (true) {
-			const result = await Promise.race([reader.read(), deadline]);
+			const size = Math.min(65_536, CLOUDFLARE_KV_MAX_VALUE_BYTES - total + 1);
+			const result = await Promise.race([
+				reader.read(new Uint8Array(size)),
+				deadline,
+			]);
 			if (result.done) break;
 			if (!(result.value instanceof Uint8Array) || chunks.length >= 4096)
 				throw new CloudflareKvError(

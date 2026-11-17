@@ -31,7 +31,11 @@ export const neutralApplication = bindle(
 );
 
 export const application = withCloudflareEventualKv(neutralApplication, {
-	cache: "read-only",
+	cache: {
+		mode: "read-only",
+		grantEpoch: `sha256:${"1".repeat(64)}`,
+		namespaceEpoch: `sha256:${"4".repeat(64)}`,
+	},
 });
 
 export default bindleCloudflareWorker(application, "web");
