@@ -16,6 +16,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	AWS_DYNAMODB_PRODUCT_ID,
 	AWS_S3_PRODUCT_ID,
+	AWS_SECRETS_MANAGER_PRODUCT_ID,
+	AWS_SNS_PRODUCT_ID,
+	AWS_SSM_PARAMETER_PRODUCT_ID,
 	awsResolverRegistry,
 } from "../src/index.js";
 
@@ -202,6 +205,16 @@ emulatorSuite("AWS resolvers with AWS Emulator", () => {
 		await emulator?.close();
 	});
 
+	function resolverFor(productId: string) {
+		const resolver = awsResolverRegistry({
+			region: "us-east-1",
+			nowMs: Date.now,
+			resolveCredential: async () => emulator.credentials,
+		}).get(productId);
+		if (!resolver) throw new Error("AWS resolver is missing");
+		return resolver;
+	}
+
 	const products: readonly {
 		readonly id: string;
 		readonly slot: ResolveRequest["ref"]["slot"];
@@ -224,13 +237,7 @@ emulatorSuite("AWS resolvers with AWS Emulator", () => {
 	for (const product of products) {
 		it(`creates, adopts, reads and deletes ${product.id}`, async () => {
 			const firstCall = emulator.calls.length;
-			const registry = awsResolverRegistry({
-				region: "us-east-1",
-				nowMs: Date.now,
-				resolveCredential: async () => emulator.credentials,
-			});
-			const resolver = registry.get(product.id);
-			if (!resolver) throw new Error("AWS resolver is missing");
+			const resolver = resolverFor(product.id);
 			const request: ResolveRequest = {
 				ref: {
 					slot: product.slot,
@@ -276,4 +283,114 @@ emulatorSuite("AWS resolvers with AWS Emulator", () => {
 			await resolver.delete(request, emulator.transport);
 		}, 30_000);
 	}
+
+	it("creates, updates and removes a non-secret SSM parameter", async () => {
+		const resolver = resolverFor(AWS_SSM_PARAMETER_PRODUCT_ID);
+		const request: ResolveRequest = {
+			ref: {
+				slot: "secretRef",
+				productId: AWS_SSM_PARAMETER_PRODUCT_ID,
+				logicalId: "hobo-emulator-endpoint",
+			},
+			desired: { value: "https://first.example.test", tier: "standard" },
+			credentialRef: "emulator://credentials",
+		};
+		expect((await resolver.reconcile(request, emulator.transport)).action).toBe(
+			"create",
+		);
+		expect((await resolver.reconcile(request, emulator.transport)).action).toBe(
+			"adopt",
+		);
+		const updated = {
+			...request,
+			desired: { ...request.desired, value: "https://second.example.test" },
+		};
+		const outcome = await resolver.reconcile(updated, emulator.transport);
+		expect(outcome.action).toBe("update");
+		expect(JSON.stringify(outcome)).not.toContain(
+			"https://second.example.test",
+		);
+		expect((await resolver.reconcile(updated, emulator.transport)).action).toBe(
+			"adopt",
+		);
+		await resolver.delete(updated, emulator.transport);
+		expect(await resolver.read?.(updated, emulator.transport)).toBeUndefined();
+		await resolver.delete(updated, emulator.transport);
+	}, 30_000);
+
+	it("honors the Secrets Manager recovery window and explicit restore", async () => {
+		const resolver = resolverFor(AWS_SECRETS_MANAGER_PRODUCT_ID);
+		const request: ResolveRequest = {
+			ref: {
+				slot: "secretRef",
+				productId: AWS_SECRETS_MANAGER_PRODUCT_ID,
+				logicalId: "hobo-emulator-credentials",
+			},
+			desired: { description: "local emulator fixture" },
+			credentialRef: "emulator://credentials",
+		};
+		expect((await resolver.reconcile(request, emulator.transport)).action).toBe(
+			"create",
+		);
+		expect((await resolver.reconcile(request, emulator.transport)).action).toBe(
+			"adopt",
+		);
+		await resolver.delete(request, emulator.transport);
+		expect((await resolver.read?.(request, emulator.transport))?.action).toBe(
+			"delete",
+		);
+		await expect(
+			resolver.reconcile(request, emulator.transport),
+		).rejects.toThrow(/scheduled for deletion/u);
+		const restore = {
+			...request,
+			desired: { ...request.desired, restoreScheduled: true },
+		};
+		expect((await resolver.reconcile(restore, emulator.transport)).action).toBe(
+			"update",
+		);
+		expect((await resolver.read?.(request, emulator.transport))?.action).toBe(
+			"adopt",
+		);
+		const remove = {
+			...request,
+			desired: { ...request.desired, forceDelete: true },
+		};
+		await resolver.delete(remove, emulator.transport);
+		await expect
+			.poll(() => resolver.read?.(request, emulator.transport), {
+				timeout: 15_000,
+				interval: 200,
+			})
+			.toBeUndefined();
+	}, 30_000);
+
+	it("creates and removes an SNS topic", async () => {
+		const firstCall = emulator.calls.length;
+		const resolver = resolverFor(AWS_SNS_PRODUCT_ID);
+		const request: ResolveRequest = {
+			ref: {
+				slot: "topic",
+				productId: AWS_SNS_PRODUCT_ID,
+				logicalId: "hobo-emulator-events",
+			},
+			desired: {},
+			credentialRef: "emulator://credentials",
+		};
+		const created = await resolver.reconcile(request, emulator.transport);
+		expect(created.action).toBe("create");
+		const adopted = await resolver.reconcile(request, emulator.transport);
+		expect(adopted.action).toBe("adopt");
+		expect(adopted.physicalId).toBe(created.physicalId);
+		expect(
+			emulator.calls
+				.slice(firstCall)
+				.filter(
+					(call) =>
+						new URLSearchParams(call.body).get("Action") === "CreateTopic",
+				),
+		).toHaveLength(1);
+		await resolver.delete(request, emulator.transport);
+		expect(await resolver.read?.(request, emulator.transport)).toBeUndefined();
+	}, 30_000);
 });

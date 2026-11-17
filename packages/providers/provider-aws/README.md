@@ -50,10 +50,12 @@ This opt-in test starts a fresh AWS Emulator on an OS-assigned loopback port,
 with authentication on and telemetry off. It reads that instance's generated
 credentials and CA, signs the resolver's requests, and sends them over TLS to
 the emulator. It checks S3 bucket creation, versioning and public-access-block
-settings, and DynamoDB table creation and eventual deletion; both are reconciled
-twice to check adoption without a second create. The emulator's temporary
-credentials and certificate are written under `~/.aws/emulator/<port>` and
-removed by the emulator on clean shutdown. The normal unit lane skips this test;
+settings; DynamoDB table creation and eventual deletion; SNS topic convergence;
+SSM parameter updates; and the Secrets Manager recovery window and explicit
+restore. Repeated reconciles check adoption without a second create. The
+emulator's temporary credentials and certificate are written under
+`~/.aws/emulator/<port>` and removed by the emulator on clean shutdown. The
+normal unit lane skips this test;
 the explicit command fails if the binary cannot start. `HOBO_AWS_EMULATOR_BIN`
 is for a native executable, not a Docker image.
 
@@ -182,6 +184,11 @@ IAM actions for `aws.secrets-manager/v1`, per verb:
 | `read` | `secretsmanager:DescribeSecret` |
 | `reconcile` | `secretsmanager:DescribeSecret`, `secretsmanager:CreateSecret`, `secretsmanager:UpdateSecret`, and `secretsmanager:RestoreSecret` when `restoreScheduled: true` is declared |
 | `delete` | `secretsmanager:DescribeSecret` (it describes the secret first), `secretsmanager:DeleteSecret` |
+
+`CreateSecret` sends a deterministic 64-character `ClientRequestToken` derived
+from the region and secret name. AWS SDKs fill this automatically; direct HTTP
+callers must supply it ([AWS CreateSecret reference](https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_CreateSecret.html)).
+The request still creates only a container and does not include a secret value.
 
 Path-style S3 addressing (`/{bucket}`) is deliberate: it keeps the transport
 allowlist to one reviewable host per region instead of one host per bucket name
