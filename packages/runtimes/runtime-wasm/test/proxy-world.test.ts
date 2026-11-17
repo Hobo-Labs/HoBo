@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
+	appendFileSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -144,7 +145,7 @@ writeFileSync(process.argv[process.argv.indexOf("-o") + 1], "component-" + count
 
 		writeFileSync(guest, "export const version = 2;\n");
 		writeFileSync(failureFile, "fail\n");
-		await assert.rejects(compile(), /jco componentize failed/u);
+		await assert.rejects(compile(), /componentization failed/u);
 		assert.equal(existsSync(first.wasmPath), false);
 		assert.equal(existsSync(path.join(workDir, ".componentize-ok")), false);
 		rmSync(failureFile);
@@ -177,7 +178,13 @@ writeFileSync(process.argv[process.argv.indexOf("-o") + 1], "component-" + count
 			assert.equal(Number(count()), previousCount + 1);
 			symlinkSync(wit, path.join(wit, "cycle"), "dir");
 			await assert.rejects(compile(), /symbolic link cycle/u);
+			rmSync(path.join(wit, "cycle"));
 		}
+		await compile();
+		const previousCount = Number(count());
+		appendFileSync(fakeJco, "\n");
+		await compile();
+		assert.equal(Number(count()), previousCount + 1);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

@@ -36,6 +36,8 @@ partial binary). Tests share one warm cache: `test/wasmtime-global-setup.ts`
 (vitest `globalSetup` in the root `vitest.config.ts`) pre-installs wasmtime once
 into the default HOBO_HOME and exports `HOBO_WASMTIME_BIN`, so tests using
 throwaway HOBO_HOME dirs don't re-download per test under parallel sweeps.
+Componentization uses `$HOBO_HOME/cache` for its compiler cache and passes only
+that cache location into the compiler's initialization environment.
 
 ## Architecture rules
 
@@ -50,4 +52,4 @@ self-contained guards; it cannot reference TypeScript host-only helper names.
 `packages/hobo/test/wasm-guest-generic.test.ts` componentizes and executes a guest
 in Wasmtime and checks tenant environment injection. This is an execution gate
 beyond the runtime's TypeScript build: template contents are compiled separately
-by esbuild and jco. No Protobuf, CUE, or WIT record changes are introduced.
+by esbuild and componentize-js.
