@@ -132,6 +132,7 @@ export type AppendEvents = Readonly<{
 		type: string;
 		data: JsonValue;
 		idempotencyKey: string;
+		meta?: JsonObject;
 	}>[];
 	tenant: string;
 	actor: PrincipalRef;
@@ -149,7 +150,7 @@ export async function appendAll(
 				input.events.map((event) => ({
 					type: event.type,
 					data: event.data,
-					meta: { idempotencyKey: event.idempotencyKey },
+					meta: { ...event.meta, idempotencyKey: event.idempotencyKey },
 				})),
 				{ expectedSeq, actor: input.actor, tenant: input.tenant },
 			);
@@ -167,6 +168,7 @@ export type AppendOne = Readonly<{
 	type: string;
 	data: JsonValue;
 	idempotencyKey: string;
+	meta?: JsonObject;
 	tenant: string;
 	actor: PrincipalRef;
 }>;
@@ -188,7 +190,7 @@ export async function appendOnce(
 					{
 						type: input.type,
 						data: input.data,
-						meta: { idempotencyKey: input.idempotencyKey },
+						meta: { ...input.meta, idempotencyKey: input.idempotencyKey },
 					},
 				],
 				{ expectedSeq, actor: input.actor, tenant: input.tenant },

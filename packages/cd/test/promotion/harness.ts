@@ -1,5 +1,5 @@
 // Wires the promotion service over the WP6 doubles.
-import type { PrincipalRef } from "@hobo/core";
+import type { DurableEventStore, PrincipalRef } from "@hobo/core";
 import { createA2HApprover } from "../../src/adapters/approval.js";
 import type { FanoutAggregateGate } from "../../src/adapters/gatekeeper.js";
 import type { TrailsMigrations } from "../../src/adapters/trails.js";
@@ -65,9 +65,9 @@ export function harness(options: HarnessOptions = {}) {
 		authorizer,
 		telemetry,
 	});
-	const build = () => {
+	const build = (journal: DurableEventStore = store) => {
 		const deps: Mutable<PromotionServiceDeps> = {
-			store,
+			store: journal,
 			tenant: TENANT,
 			now: c.now,
 			freight,
@@ -111,7 +111,9 @@ export function harness(options: HarnessOptions = {}) {
 		approvals,
 		service,
 		/** A second service over the same journal (a restarted process). */
-		restart: build,
+		restart: () => build(),
+		/** Exercise the same dependencies with a supplied durable journal. */
+		withStore: (journal: DurableEventStore) => build(journal),
 		ctx,
 	};
 }
