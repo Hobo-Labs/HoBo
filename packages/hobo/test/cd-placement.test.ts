@@ -210,5 +210,12 @@ it("refuses CD up and down before an unguarded hosting supervisor is called", as
 			code: "HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
 		});
 	}
+	const preview = await cli.run(["cd", "up", "--what-if", "--json"], {
+		cwd: CD_PROJECT,
+		env: {},
+	});
+	expect(JSON.parse(preview.stdout).code).not.toBe(
+		"HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
+	);
 	expect(called).toEqual([]);
 });

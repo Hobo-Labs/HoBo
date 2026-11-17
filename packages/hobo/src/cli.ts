@@ -342,7 +342,7 @@ export function createComposedHoboCli(
 				// resolved from the owner's secret store for this run only.
 				// hobo cd up also provisions the CD journal's fleet.
 				prepare: (input) =>
-					runtime.delivery || runtime.hostingExecution
+					!input.whatIf && (runtime.delivery || runtime.hostingExecution)
 						? Promise.resolve({
 								kind: "refused" as const,
 								result: cdUnavailableResult("up"),
