@@ -187,8 +187,20 @@ describe("rendering a Pulumi YAML program", () => {
 	it("renders every type it claims to support", () => {
 		// The token table is the lane's public claim about what it can deploy;
 		// a listed type that throws is a lie in the capability matrix.
+		// A cron trigger is only real with its cadence and the Worker it runs.
+		const required = new Map<string, JsonObject>([
+			[
+				"cloudflare:cron-trigger",
+				{
+					options: { cron: "0 * * * *" },
+					bindings: [
+						{ resource: "api", resourceType: "cloudflare:workers-script" },
+					],
+				},
+			],
+		]);
 		for (const type of Object.keys(PULUMI_YAML_TYPE_TOKENS)) {
-			expect(() => render(type)).not.toThrow();
+			expect(() => render(type, undefined, required.get(type))).not.toThrow();
 		}
 	});
 });

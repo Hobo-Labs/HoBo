@@ -665,6 +665,15 @@ standby, so an interrupted copy leaves it unchanged and the next tick copies it
 whole. A move is a sealed register entry that the next tick completes or
 undoes. Opening a fleet runs a tick first.
 
+A move loses no committed write: the PostgreSQL fleet fences each write
+transaction on its member's own copy of the register (`SHARE` on the register
+table, which the seal's `INSERT` waits for), so a write either committed before
+the seal and is in the final copy, or is refused. Scheduled backups
+(`backupEveryMs`, `backupsKept`) are verified snapshot copies into a schema per
+backup on a witness, scheduled by their catalog rather than a process, and
+restorable into a standby or a replaced writer. `continuityShortfalls` also
+reports a plan whose backups have nowhere to go.
+
 HoBo's own projects declare theirs. The CD journal is `standard` with two
 standbys and runs on a PostgreSQL fleet (`createPostgresFleetEventStore`,
 `HOBO_CD_POSTGRES_FLEET`). The CI relay keeps no database, so all of its state

@@ -1,8 +1,11 @@
-import { createVerify, generateKeyPairSync } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { createGithubAppManifest } from "@hobo/ci-gh-actions";
-import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import { generateKeyPairSync } from "node:crypto";
+import { tmpdir } from "node:os";
+import {
+	type CommandRunInput,
+	createHoboCli,
+	createLifecycleFamilyCommand,
+	type PrepareInput,
+} from "@hobo/cli";
 import {
 	type ConnectPage,
 	type FlowTransition,
@@ -19,12 +22,14 @@ import {
 	GITHUB_APP_CREDENTIAL_KEYS,
 	type GithubAppHost,
 	githubAppConnected,
+	loadGithubAppCredentials,
 	type OpenedSecretStore,
 	prepareGithubConnection,
 	resolveGithubAppExpectation,
 	resolveGithubAppHost,
 	type SecretStoreOpening,
 } from "../src/index.js";
+import { pactGithub } from "./support/fake-github.js";
 
 // `hobo ci up`'s GitHub connection: a GitHub App from the reviewed manifest,
 // credentials straight into the secret store, idempotent on re-run. GitHub is
@@ -33,93 +38,7 @@ import {
 
 const RELAY = "https://ci.hobo.example";
 const OWNER_ID = 4242;
-const { privateKey, publicKey } = generateKeyPairSync("rsa", {
-	modulusLength: 2048,
-});
-const PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
-
-const reviewed = createGithubAppManifest({
-	name: "HoBo CI",
-	relayUrl: RELAY,
-	manifestCallbackUrl: `${RELAY}/v1/app-bootstrap/callback`,
-	installationCallbackUrl: `${RELAY}/v1/app-registration/install-callback`,
-});
-
-interface FakeGithub {
-	readonly fetch: typeof fetch;
-	readonly calls: string[];
-}
-
-interface PactInteraction {
-	readonly request: { readonly method: string; readonly path: string };
-	readonly response: { readonly status: number; readonly body: object };
-}
-
-// The provider side of contracts/pacts/github-app-manifest.pact.json.
-const PACT: { readonly interactions: readonly PactInteraction[] } = JSON.parse(
-	readFileSync(
-		fileURLToPath(
-			new URL(
-				"../contracts/pacts/github-app-manifest.pact.json",
-				import.meta.url,
-			),
-		),
-		"utf8",
-	),
-);
-
-/** The pact's requests, in order: what the flow must call. */
-const PACT_CALLS = PACT.interactions.map(
-	(interaction) => `${interaction.request.method} ${interaction.request.path}`,
-);
-
-// GitHub, answering from the pact: the reviewed permissions and events are
-// added to the App bodies and the per-run key replaces the pem placeholder.
-function fakeGithub(ownerId = OWNER_ID, ownerType = "User"): FakeGithub {
-	const calls: string[] = [];
-	return {
-		calls,
-		async fetch(input, init) {
-			const url = new URL(String(input));
-			const call = `${init?.method ?? "GET"} ${url.pathname}`;
-			calls.push(call);
-			if (call.startsWith("GET /app")) {
-				const bearer = new Headers(init?.headers).get("authorization");
-				const parts = bearer?.replace(/^Bearer /u, "").split(".") ?? [];
-				if (
-					parts.length !== 3 ||
-					!parts[2] ||
-					!createVerify("RSA-SHA256")
-						.update(`${parts[0]}.${parts[1]}`)
-						.verify(publicKey, Buffer.from(parts[2], "base64url"))
-				)
-					return new Response(null, { status: 401 });
-			}
-			const interaction = PACT.interactions.find(
-				(candidate) =>
-					`${candidate.request.method} ${candidate.request.path}` === call,
-			);
-			if (interaction === undefined)
-				return new Response('{"message":"not found"}', { status: 404 });
-			const declared = interaction.response.body;
-			const body = {
-				...declared,
-				...("owner" in declared
-					? {
-							owner: { id: ownerId, type: ownerType },
-							permissions: reviewed.defaultPermissions,
-							events: reviewed.defaultEvents,
-						}
-					: undefined),
-				...("pem" in declared ? { pem: PEM } : undefined),
-			};
-			return new Response(JSON.stringify(body), {
-				status: interaction.response.status,
-				headers: { "content-type": "application/json" },
-			});
-		},
-	};
-}
+const { PEM, PACT_CALLS, fakeGithub } = pactGithub(RELAY, OWNER_ID);
 
 function memoryStore(): OpenedSecretStore & {
 	readonly names: () => readonly string[];
@@ -475,17 +394,19 @@ function prepareInput(
 	whatIf = false,
 ): PrepareInput & { readonly progress: string[] } {
 	const progress: string[] = [];
-	const run: Pick<CommandRunInput, "emitProgress"> = {
+	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: (message: string) => {
 			progress.push(message);
 		},
+		// SAFETY: the preparation fixture reads only these two output flags.
+		flags: { json: false, quiet: false } as CommandRunInput["flags"],
 	};
 	return {
 		action: "up",
 		projectDir: "/tmp/hobo-ci",
 		whatIf,
 		yes: false,
-		// SAFETY: prepareGithubConnection reads only run.emitProgress.
+		// SAFETY: prepareGithubConnection reads only progress and these output flags.
 		run: run as CommandRunInput,
 		progress,
 	};
@@ -497,10 +418,11 @@ const ENV = {
 	HOBO_CI_GITHUB_OWNER_TYPE: "User",
 };
 
-/** The committed locator of a store that is already set up. */
+/** The locator of a store set up to sign in with a token typed on the page. */
 const LOCATOR = {
 	HOBO_SECRET_STORE: "infisical",
 	INFISICAL_PROJECT_ID: "proj",
+	INFISICAL_SIGN_IN: "typed",
 };
 
 function memorySettings(initial: SavedSettings = {}) {
@@ -552,6 +474,84 @@ function githubWithUsers(kind: "User" | "Organization") {
 }
 
 describe("prepareGithubConnection", () => {
+	it("reports a silent hand-off through the CLI instead of waiting for a hidden page", async () => {
+		const unused = {
+			run: async () => {
+				throw new Error("a refused hand-off must not converge");
+			},
+		};
+		const cli = createHoboCli({
+			commands: {
+				ci: createLifecycleFamilyCommand({
+					family: "ci",
+					resolveProject: () => ({
+						ok: true,
+						projectDir: tmpdir(),
+						source: "test",
+					}),
+					up: unused,
+					down: unused,
+					plan: unused,
+					prepare: (input) =>
+						prepareGithubConnection(input, {
+							env: {},
+							fetch: async () => new Response(null, { status: 401 }),
+							// The owner chose the egress proxy: the run would wait for it.
+							locator: memorySettings({
+								HOBO_SECRET_STORE: "infisical",
+								INFISICAL_PROJECT_ID: "proj",
+								INFISICAL_SIGN_IN: "egress-proxy",
+							}),
+							startPage: () => {
+								throw new Error("the silent page must not be started");
+							},
+						}),
+				}),
+			},
+		});
+		for (const mode of ["--json", "-q"]) {
+			const progress: string[] = [];
+			const result = await cli.run(["ci", "up", "--hand-off", mode], {
+				cwd: tmpdir(),
+				onProgress: (message) => progress.push(message),
+			});
+			expect(result.exitCode).not.toBe(0);
+			expect(`${result.stdout}${result.stderr}`).toContain(
+				"The owner hand-off needs progress output",
+			);
+			expect(progress).toEqual([]);
+		}
+	});
+
+	it("refuses a silent owner hand-off before starting the page", async () => {
+		for (const mode of ["json", "quiet"] as const) {
+			const input = prepareInput();
+			const outcome = await prepareGithubConnection(
+				{
+					...input,
+					handOff: true,
+					run: { ...input.run, flags: { ...input.run.flags, [mode]: true } },
+				},
+				{
+					env: {},
+					fetch: async () => new Response(null, { status: 401 }),
+					// The owner chose the egress proxy: the run would wait for it.
+					locator: memorySettings({
+						HOBO_SECRET_STORE: "infisical",
+						INFISICAL_PROJECT_ID: "proj",
+						INFISICAL_SIGN_IN: "egress-proxy",
+					}),
+					startPage: () => {
+						throw new Error("the silent page must not be started");
+					},
+				},
+			);
+			expect(outcome).toMatchObject({
+				kind: "refused",
+				result: { code: "HOBO_CI_HANDOFF_SILENT" },
+			});
+		}
+	});
 	it("closes the real setup page if progress or browser launch throws", async () => {
 		for (const failure of ["progress", "browser"] as const) {
 			const input = prepareInput();
@@ -698,23 +698,31 @@ describe("prepareGithubConnection", () => {
 		expect(vault.names()).toEqual([]);
 	});
 
-	it("verifies a stored connection before reporting it unchanged", async () => {
+	it("reuses a verified connection even when a hand-off would be silent", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
 		await seedSettings(store);
 		const github = fakeGithub();
 		const vault = createTrustedVault();
 		vault.put("INFISICAL_TOKEN", "session-token");
-		const outcome = await prepareGithubConnection(prepareInput(), {
-			env: ENV,
-			vault,
-			locator: memorySettings(LOCATOR),
-			openStore: signedIn(store),
-			fetch: github.fetch,
-			startPage: () => {
-				throw new Error("must not open setup");
+		const input = prepareInput();
+		const outcome = await prepareGithubConnection(
+			{
+				...input,
+				handOff: true,
+				run: { ...input.run, flags: { ...input.run.flags, json: true } },
 			},
-		});
+			{
+				env: ENV,
+				vault,
+				locator: memorySettings(LOCATOR),
+				openStore: signedIn(store),
+				fetch: github.fetch,
+				startPage: () => {
+					throw new Error("must not open setup");
+				},
+			},
+		);
 		expect(outcome).toMatchObject({
 			kind: "ready",
 			steps: [{ outcome: "unchanged" }],
@@ -867,6 +875,29 @@ describe("prepareGithubConnection", () => {
 		expect(vault.names()).toEqual([]);
 	});
 
+	it("hands the Vercel connection hobo cd up keeps in the store to the relay deploy", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		await seedSettings(store);
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", "vercel-token");
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: ENV,
+			fetch: fakeGithub().fetch,
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
+		});
+		// Only the deploy's connection is handed on; the store sign-in ended with prepare.
+		expect(outcome.kind === "ready" && outcome.credentials?.names()).toEqual([
+			"VERCEL_TOKEN",
+		]);
+		expect(
+			outcome.kind === "ready" && outcome.credentials?.reveal("VERCEL_TOKEN"),
+		).toBe("vercel-token");
+	});
+
 	it("ignores secrets in the environment, and says so", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
@@ -882,8 +913,10 @@ describe("prepareGithubConnection", () => {
 			steps: [{ outcome: "would-create" }],
 		});
 		expect(JSON.stringify(outcome)).toMatch(/would sign in to infisical/);
+		// INFISICAL_TOKEN is ignored; the Bitwarden access token is the store's
+		// own sign-in, adopted into the vault, so it is not reported as ignored.
 		expect(input.progress.join("\n")).toMatch(
-			/Setup ignored these known secret environment variables: BWS_ACCESS_TOKEN, INFISICAL_TOKEN/,
+			/Setup ignored these known secret environment variables: INFISICAL_TOKEN\./,
 		);
 	});
 
@@ -899,6 +932,7 @@ describe("prepareGithubConnection", () => {
 			result: { code: "HOBO_CI_CONNECTION_NEEDS_OWNER" },
 		});
 		expect(JSON.stringify(outcome)).toContain("INFISICAL_IDENTITY_ID");
+		expect(JSON.stringify(outcome)).not.toContain("HOBO_OWNER_PAGE");
 	});
 
 	it("a CI run signs in with its own OIDC token through the preconfigured identity", async () => {
@@ -999,8 +1033,11 @@ describe("prepareGithubConnection", () => {
 			kind: "ready",
 			steps: [{ id: "github-app", outcome: "created" }],
 		});
-		// On disk (committed): where the store is. Never the token.
-		expect(locator.saved()).toEqual(LOCATOR);
+		// In the owner's settings: where the store is. Never the token.
+		expect(locator.saved()).toEqual({
+			HOBO_SECRET_STORE: "infisical",
+			INFISICAL_PROJECT_ID: "proj",
+		});
 		// In the store: what the ceremony was told, beside the App.
 		const kept = await store.port.access("HOBO_CI_SETTINGS");
 		expect(kept.status === "ok" && JSON.parse(kept.material ?? "{}")).toEqual({
@@ -1152,6 +1189,80 @@ describe("organization-owned Apps", () => {
 		);
 		expect(done?.step.kind).toBe("failed");
 		expect(store.names()).toEqual([]);
+	});
+});
+
+describe("loadGithubAppCredentials", () => {
+	it("loads exactly the values verified, and does nothing for an empty store", async () => {
+		const store = memoryStore();
+		const empty = createTrustedVault();
+		let resolved = false;
+		expect(
+			await loadGithubAppCredentials(store, empty, async () => {
+				resolved = true;
+				return undefined;
+			}),
+		).toBe(false);
+		expect(resolved).toBe(false);
+		expect(empty.names()).toEqual([]);
+		await seedConnection(store);
+		const accesses = new Map<string, number>();
+		const tracked: OpenedSecretStore = {
+			...store,
+			port: {
+				...store.port,
+				async access(key) {
+					accesses.set(key, (accesses.get(key) ?? 0) + 1);
+					return store.port.access(key);
+				},
+			},
+		};
+		const github = fakeGithub();
+		const vault = createTrustedVault();
+		expect(
+			await loadGithubAppCredentials(tracked, vault, async () => ({
+				relayUrl: RELAY,
+				ownerId: OWNER_ID,
+				ownerType: "User",
+				fetch: github.fetch,
+			})),
+		).toBe(true);
+		for (const key of GITHUB_APP_CREDENTIAL_KEYS) {
+			expect(accesses.get(key)).toBe(1);
+			const result = await store.port.access(key);
+			expect(vault.reveal(key)).toBe(
+				result.status === "ok" ? result.material : undefined,
+			);
+		}
+		expect(github.calls).toEqual(PACT_CALLS.slice(1));
+	});
+
+	it("refuses a partial connection", async () => {
+		const store = memoryStore();
+		await store.port.put("HOBO_CI_GITHUB_APP_ID", "1");
+		await expect(
+			loadGithubAppCredentials(store, createTrustedVault()),
+		).rejects.toThrow(/incomplete/);
+	});
+
+	it("does not load an App without a matching owner and relay", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const vault = createTrustedVault();
+		await expect(loadGithubAppCredentials(store, vault)).rejects.toThrow(
+			/identity/,
+		);
+		const github = fakeGithub(9999);
+		await expect(
+			loadGithubAppCredentials(store, vault, async () => ({
+				relayUrl: RELAY,
+				ownerId: OWNER_ID,
+				ownerType: "User",
+				fetch: github.fetch,
+			})),
+		).rejects.toThrow();
+		expect(vault.names()).toEqual([]);
+		expect(github.calls).toEqual(["GET /app"]);
 	});
 });
 
