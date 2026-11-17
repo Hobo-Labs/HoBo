@@ -13,6 +13,8 @@
  * The API has no handler binding and the schedule has no cadence in this
  * declaration yet. PostgreSQL fleet placement does not provision or replicate
  * a journal. These resources must be wired before this project can deploy CD.
+ * Continuity annotations describe desired policy; they do not establish a
+ * safely fenced fleet, independent failure domains, or working backups.
  *
  * Nothing here names a provider; Vercel is the default *connection* `hobo cd
  * up` makes, chosen where the deploy runs. Loaded by the Bindle loader, not
@@ -20,6 +22,8 @@
  */
 import { bindle } from "@hobo/bindles";
 import { postgres } from "@hobo/data-postgres";
+
+import { CD_CONTINUITY } from "./continuity.js";
 
 export const CD_RESOURCES = Object.freeze({
 	api: "cd-api",
@@ -38,8 +42,8 @@ export const CD_TICK_SCHEDULE = Object.freeze({
 } as const);
 
 export default bindle("hobo-cd", (b) => {
-	const journal = b.data();
-	const config = b.secret().allow("access");
+	const journal = b.data().with(CD_CONTINUITY.journal);
+	const config = b.secret().allow("access").with(CD_CONTINUITY.config);
 	const api = b.api().dependsOn(journal, config);
 	const tick = b.schedule().dependsOn(api);
 	return {

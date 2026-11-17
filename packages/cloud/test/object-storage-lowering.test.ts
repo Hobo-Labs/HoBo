@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { lowerManifest } from "../src/index.js";
 
 describe("SDK object storage lowering", () => {
-	it("uses the object paradigm for generic data ports while preserving explicit ports and relational data", () => {
+	it("lowers generic object and relational data while preserving explicit ports", () => {
 		const manifest = parseManifest({
 			schema: "hobo.manifest/v1",
 			componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -19,7 +19,7 @@ describe("SDK object storage lowering", () => {
 		});
 		expect(lowerManifest(manifest)).toMatchObject([
 			{ name: "bucket", port: "objectStore", require: ["durable"] },
-			{ name: "database", port: "data", require: [] },
+			{ name: "database", port: "database", require: [] },
 			{ name: "explicit", port: "kv", require: ["eventual"] },
 		]);
 	});

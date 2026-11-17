@@ -17,7 +17,7 @@ import {
 	verbHelpText,
 	type YardRuntime,
 } from "@hobo/cli";
-import type { HttpTransport } from "@hobo/core";
+import type { HttpTransport, TrustedVault } from "@hobo/core";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
@@ -413,6 +413,8 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
+		/** A vault already holding the deploy token (`VERCEL_TOKEN`), read from the store. */
+		deployCredentials?: TrustedVault;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
 		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
@@ -545,6 +547,9 @@ export function createCiCommand(
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
+					...(deps.deployCredentials !== undefined
+						? { credentials: deps.deployCredentials }
+						: undefined),
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
 						: undefined),
