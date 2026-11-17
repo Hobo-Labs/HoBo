@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	CLOUDFLARE_R2_MAX_OBJECT_BYTES,
 	cloudflareR2Digest,
@@ -12,6 +12,7 @@ import {
 } from "../src/cloudflare-r2-proxy.js";
 
 type Item = { bytes: Uint8Array; contentType?: string; digest?: string };
+afterEach(() => vi.useRealTimers());
 function native() {
 	const items = new Map<string, Item>();
 	const calls: string[] = [];
@@ -27,8 +28,9 @@ function native() {
 				httpMetadata: { contentType: item.contentType },
 				customMetadata: item.digest ? { "hobo-sha256": item.digest } : {},
 				body: new ReadableStream({
+					type: "bytes",
 					start(controller) {
-						controller.enqueue(bytes);
+						if (bytes.byteLength > 0) controller.enqueue(bytes);
 						controller.close();
 					},
 				}),
@@ -200,6 +202,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 	it("cancels an oversized or excessively chunked native stream without buffering it fully", async () => {
 		let cancelled = false;
 		const stream = new ReadableStream<Uint8Array>({
+			type: "bytes",
 			pull(controller) {
 				controller.enqueue(new Uint8Array(CLOUDFLARE_R2_MAX_OBJECT_BYTES + 1));
 			},
@@ -213,8 +216,9 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		expect(cancelled).toBe(true);
 		let cancelledChunks = false;
 		const chunks = new ReadableStream<Uint8Array>({
+			type: "bytes",
 			pull(controller) {
-				controller.enqueue(new Uint8Array(0));
+				controller.enqueue(new Uint8Array([1]));
 			},
 			cancel() {
 				cancelledChunks = true;
@@ -224,6 +228,37 @@ describe("bounded private Cloudflare R2 proxy", () => {
 			code: "R2_OBJECT_INVALID",
 		});
 		expect(cancelledChunks).toBe(true);
+	});
+
+	it("cancels unsupported non-BYOB streams rather than making unbounded reads", async () => {
+		let cancelled = false;
+		const stream = new ReadableStream<Uint8Array>({
+			cancel() {
+				cancelled = true;
+			},
+		});
+		await expect(readCloudflareR2Bytes(stream)).rejects.toMatchObject({
+			code: "R2_STREAM_UNSUPPORTED",
+		});
+		expect(cancelled).toBe(true);
+	});
+
+	it("times out and cancels a stalled byte stream", async () => {
+		vi.useFakeTimers();
+		let cancelled = false;
+		const stream = new ReadableStream<Uint8Array>({
+			type: "bytes",
+			pull() {},
+			cancel() {
+				cancelled = true;
+			},
+		});
+		const result = expect(readCloudflareR2Bytes(stream)).rejects.toMatchObject({
+			code: "R2_STREAM_TIMEOUT",
+		});
+		await vi.advanceTimersByTimeAsync(10_001);
+		await result;
+		expect(cancelled).toBe(true);
 	});
 
 	it("reports an ambiguous write if the native response is lost or mismatched", async () => {

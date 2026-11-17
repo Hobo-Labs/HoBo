@@ -106,7 +106,16 @@ export async function readCloudflareR2Bytes(
 	body: ReadableStream<Uint8Array> | null,
 ): Promise<ArrayBuffer> {
 	if (body === null) return new Uint8Array().buffer;
-	const reader = body.getReader();
+	let reader: ReadableStreamBYOBReader;
+	try {
+		reader = body.getReader({ mode: "byob" });
+	} catch {
+		void body.cancel().catch(() => {});
+		throw new CloudflareR2Error(
+			"R2_STREAM_UNSUPPORTED",
+			"a bounded byte stream is required",
+		);
+	}
 	const chunks: Uint8Array[] = [];
 	let total = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -121,9 +130,17 @@ export async function readCloudflareR2Bytes(
 	});
 	try {
 		while (true) {
-			const result = await Promise.race([reader.read(), deadline]);
+			const size = Math.min(65_536, CLOUDFLARE_R2_MAX_OBJECT_BYTES - total + 1);
+			const result = await Promise.race([
+				reader.read(new Uint8Array(size)),
+				deadline,
+			]);
 			if (result.done) break;
-			if (!(result.value instanceof Uint8Array) || chunks.length >= 4096)
+			if (
+				!(result.value instanceof Uint8Array) ||
+				result.value.byteLength === 0 ||
+				chunks.length >= 4096
+			)
 				throw new CloudflareR2Error(
 					"R2_OBJECT_INVALID",
 					"object stream is invalid",
