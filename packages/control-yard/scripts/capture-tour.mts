@@ -86,6 +86,12 @@ function staticHandler(base: string) {
 			let rel = decodeURIComponent(url.pathname);
 			if (rel === "/") rel = "/index.html";
 			const file = join(base, rel);
+			// Some browsers request an icon even when the page has none.
+			if (base === PUBLIC && rel === "/favicon.ico" && !existsSync(file)) {
+				res.writeHead(204);
+				res.end();
+				return;
+			}
 			if (
 				!file.startsWith(base) ||
 				!existsSync(file) ||
