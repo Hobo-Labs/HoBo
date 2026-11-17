@@ -803,6 +803,53 @@ describe("Rivet durable topic bus using a SQLite actor fixture", () => {
 		});
 	});
 
+	it("preserves provenance through a bounded cyclic DLQ chain", async () => {
+		const f = await fixture();
+		for (const topic of ["first", "second"])
+			await f.mutate("ensure-topic", { topic });
+		await f.mutate("ensure-subscription", {
+			subscription: subscription("first", "first-group", "second", 1),
+		});
+		await f.mutate("ensure-subscription", {
+			subscription: subscription("second", "second-group", "first", 1),
+		});
+		await f.mutate("publish", { topic: "first", message: message() });
+		let topic = "first";
+		let group = "first-group";
+		let previousId = "m";
+		for (let index = 1; index <= 5; index++) {
+			const delivery = (await f.mutate("consume", consume(topic, group)))
+				.value[0];
+			expect(delivery.message.id).toBe(previousId);
+			expect(delivery.message.payload).toBe("AAH/");
+			const settled = await f.mutate("nack", {
+				...settle(delivery),
+				reason: `attempt-${index}`,
+			});
+			expect(settled.value.deadLetterMessageId).toBe(`dlq-${index}`);
+			previousId = settled.value.deadLetterMessageId;
+			[topic, group] =
+				topic === "first"
+					? ["second", "second-group"]
+					: ["first", "first-group"];
+		}
+		const last = (await f.mutate("consume", consume(topic, group))).value[0];
+		expect(last.message.id).toBe("dlq-5");
+		expect(last.deadLetter).toMatchObject({
+			originalMessageId: "dlq-4",
+			cause: { kind: "nack", reason: "attempt-5" },
+		});
+		expect((await f.mutate("ack", settle(last))).status).toBe("committed");
+		expect(
+			(await f.mutate("compact", { topic: "first", throughSequence: 3 }))
+				.status,
+		).toBe("committed");
+		expect(
+			(await f.mutate("compact", { topic: "second", throughSequence: 3 }))
+				.status,
+		).toBe("committed");
+	});
+
 	it("fences leases at their exact deadline and rejects deadline overflow", async () => {
 		const f = await fixture();
 		await setup(f);
