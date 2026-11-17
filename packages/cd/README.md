@@ -121,3 +121,17 @@ completion, as it is when selecting candidates. The normal journal fold
 initializes a slot for every Camp. See the
 [fan-out verification skill](../../.agents/skills/verify-cd-fanout/SKILL.md)
 for the checked models, generated cases, and their limits.
+
+This projection shows the modeled scheduling decision, not an execution
+trace. TLC explored 256 states and 256 steps; the chart hides 128 steps that
+remain within a displayed state. Production is eligible only after the
+mandatory pilot succeeds.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Evaluate
+  Evaluate --> PilotEligible: evaluate gates and slots
+  Evaluate --> ProductionEligible: evaluate gates and slots
+  Evaluate --> PendingOrMissing: evaluate gates and slots
+  Evaluate --> NoEligibleWork: evaluate gates and slots
+```
