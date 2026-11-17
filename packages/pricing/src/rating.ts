@@ -108,6 +108,33 @@ function moneyDecimal(money: Money | undefined, path: string): Decimal {
 	return requiredDecimal(money.decimal, path);
 }
 
+function validateRateCardAmounts(rateCard: RateCard): void {
+	const check = (amount: Money | undefined, path: string) => {
+		requireCurrency(amount, rateCard.currency, path);
+		if (compareDecimal(moneyDecimal(amount, path), DECIMAL_ZERO) < 0)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				`${path} cannot be negative`,
+			);
+	};
+	for (const charge of rateCard.charges) {
+		if (charge.variant.case === "fixed") {
+			check(charge.variant.value.amount, "fixed amount");
+		} else if (charge.variant.case === "usage") {
+			const price = charge.variant.value.price;
+			if (price.case === "perUnit") check(price.value, "per-unit price");
+			else if (price.case === "package")
+				check(price.value.packageAmount, "package amount");
+			else if (price.case === "graduated" || price.case === "volume") {
+				for (const tier of price.value.tiers) {
+					check(tier.flatAmount, "tier flat amount");
+					check(tier.unitAmount, "tier unit amount");
+				}
+			}
+		}
+	}
+}
+
 function requireCurrency(
 	money: Money | undefined,
 	currency: string,
@@ -516,6 +543,7 @@ function applyCommitments(
 	lines: MutableLine[],
 	consumption: Consumption[],
 	scenario: QuoteScenario,
+	strictSourceValues: boolean,
 ): void {
 	for (const line of lines) {
 		for (const commitmentState of state.commitments) {
@@ -589,7 +617,10 @@ function applyCommitments(
 					sourceId: commitment.id,
 					kind: "commitment",
 					dimension: line.dimension,
-					quantity: quantityOf(consumed, line.quantity.unit),
+					quantity: quantityOf(
+						consumed,
+						strictSourceValues ? rateCard.currency : line.quantity.unit,
+					),
 				}),
 			);
 		}
@@ -602,6 +633,7 @@ function applyCredits(
 	rateCard: RateCard,
 	lines: MutableLine[],
 	consumption: Consumption[],
+	strictSourceValues: boolean,
 ): void {
 	for (const line of lines) {
 		for (const creditState of state.credits) {
@@ -662,6 +694,24 @@ function applyCredits(
 					"PRICING_MODEL_UNSUPPORTED",
 					`credit ${grant.id} basis is unsupported`,
 				);
+			}
+			if (strictSourceValues) {
+				requireCurrency(
+					creditState.remainingBasis,
+					rateCard.currency,
+					"remaining basis",
+				);
+				if (
+					compareDecimal(
+						basis,
+						moneyDecimal(creditState.remainingBasis, "remaining basis"),
+					) > 0
+				) {
+					throw new PricingFault(
+						"INVALID_PRICING_INPUT",
+						`credit ${grant.id} has insufficient remaining basis`,
+					);
+				}
 			}
 			line.billed = subtractDecimal(line.billed, consumed);
 			line.dueNow = maxDecimal(
@@ -767,6 +817,7 @@ export function rateSnapshot(
 	compareTimes: TextComparison = compareUtcExact,
 	time: TemporalPolicy = EXACT_TIME,
 	strictTimes = true,
+	strictSourceValues = true,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -802,6 +853,7 @@ export function rateSnapshot(
 			compareTimes,
 			time,
 		);
+		if (strictSourceValues) validateRateCardAmounts(rateCard);
 		if (currency === "") currency = rateCard.currency;
 		if (currency !== rateCard.currency)
 			throw new PricingFault(
@@ -918,6 +970,17 @@ export function rateSnapshot(
 		const agreementLines = lines.filter(
 			(line) => line.agreementRef === agreementRef,
 		);
+		if (
+			strictSourceValues &&
+			agreementLines.some(
+				(line) => compareDecimal(line.billed, DECIMAL_ZERO) < 0,
+			)
+		) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"gross charge cannot be negative",
+			);
+		}
 		applyCommitments(
 			state,
 			agreement,
@@ -925,8 +988,16 @@ export function rateSnapshot(
 			agreementLines,
 			consumption,
 			scenario,
+			strictSourceValues,
 		);
-		applyCredits(state, agreement, rateCard, agreementLines, consumption);
+		applyCredits(
+			state,
+			agreement,
+			rateCard,
+			agreementLines,
+			consumption,
+			strictSourceValues,
+		);
 	}
 	const finalized = lines.map((line) => finalizeLine(line, currency));
 	const total = (select: (line: MutableLine) => Decimal) =>
