@@ -1,17 +1,3 @@
-// HoBo's own builds as Freight. When HoBo CI builds main, each deliverable
-// (the relay bundle, the runner image, the CLI and SDK tarballs, the site
-// bundle) leaves the run as three CI outputs: its bytes, its
-// `hobo.freight-manifest/v1` document, and the run's in-toto/SLSA provenance
-// statement. A `HOBO_CI` Freight source in @hobo/cd reads them through its
-// CiEventReader: the CI event only triggers, the source re-reads the bytes and
-// checks the digest (I15).
-//
-// The manifest is the wire form @hobo/cd's `writeFreightManifest` writes,
-// byte for byte (test/freight.test.ts checks a fixture @hobo/cd produced).
-// @hobo/ci cannot import @hobo/cd: @hobo/cd depends on @hobo/stations, which
-// depends on @hobo/ci, so the edge would close a cycle. The schema is the
-// contract between them, not a shared module. Parse, don't validate: nothing
-// leaves this module as a manifest without passing `writeCiFreightManifest`.
 import { createHash } from "node:crypto";
 import type { PipelineArtifact } from "./_generated/ci_pb.js";
 import { createArtifact } from "./execution.js";
@@ -35,7 +21,6 @@ export const CI_FREIGHT_REASON = Object.freeze({
 	secretInRecord: "freight-secret-in-record",
 } as const);
 
-/** cd.proto ArtifactKind, as its protobuf JSON name. */
 export type CiFreightArtifactKind =
 	| "ARTIFACT_KIND_WASM_COMPONENT"
 	| "ARTIFACT_KIND_FUNCTION_BUNDLE"
@@ -68,21 +53,13 @@ const ECOSYSTEMS: ReadonlySet<string> = new Set([
 
 export type HoboDeliverable = Readonly<{
 	id: string;
-	/** The Bindle the Freight is for. */
 	bindle: string;
-	/** CI output path; a HOBO_CI subscription names it as `artifactName`. */
 	output: string;
 	kind: CiFreightArtifactKind;
 	ecosystem: string;
 	mediaType: string;
 }>;
 
-/**
- * What HoBo CI delivers of HoBo itself. The relay and runner-fleet entries are
- * the Bindles and output paths `hoboCiDogfoodSources` in @hobo/cd subscribes
- * to (HOBO_CI_COMPONENTS). The runner image's output is its OCI image
- * manifest, whose sha256 is the image digest.
- */
 // public-contract: HoBo's own deliverables, their Bindles and CI output paths.
 export const HOBO_DELIVERABLES = Object.freeze({
 	relay: Object.freeze({
@@ -129,13 +106,10 @@ export const HOBO_DELIVERABLES = Object.freeze({
 
 export type HoboDeliverableId = keyof typeof HOBO_DELIVERABLES;
 
-/** The run that built the deliverables. Every field is observed from the CI. */
 export type CiBuild = Readonly<{
 	repository: string;
-	/** The built commit, 7-64 lowercase hex. */
 	commit: string;
 	ref: string;
-	/** The CI pipeline (or repository) a HOBO_CI subscription names as its locator. */
 	pipeline: string;
 	runId: string;
 	ciSystem: string;
@@ -149,7 +123,6 @@ export type CiFreightReason = Readonly<{
 	subject: string;
 }>;
 
-/** Thrown for a manifest or build the Freight boundary would refuse. */
 export class CiFreightError extends Error {
 	readonly reasons: readonly CiFreightReason[];
 	constructor(reasons: readonly CiFreightReason[]) {
@@ -161,7 +134,6 @@ export class CiFreightError extends Error {
 	}
 }
 
-/** cd.proto ProvenanceRef; proto3 defaults ("" and false) are written as omitted. */
 export type CiProvenanceRef = Readonly<{
 	statementDigest: string;
 	predicateType: string;
@@ -173,7 +145,6 @@ export type CiProvenanceRef = Readonly<{
 	subjectDigests: readonly string[];
 }>;
 
-/** cd.proto ArtifactRef; `kind` is the protobuf JSON enum name. */
 export type CiFreightArtifact = Readonly<{
 	name: string;
 	kind: string;
@@ -184,7 +155,6 @@ export type CiFreightArtifact = Readonly<{
 	ecosystem: string;
 }>;
 
-/** cd.proto SourceRef. */
 export type CiFreightSource = Readonly<{
 	repository: string;
 	commit: string;
@@ -195,7 +165,6 @@ export type CiFreightSource = Readonly<{
 }>;
 
 // domain-view: the fields of @hobo/cd's FreightManifestRecord that a HoBo CI
-// build writes; @hobo/ci has no cd.proto codegen and cannot import @hobo/cd.
 export type CiFreightManifest = Readonly<{
 	schemaVersion: string;
 	bindle: string;
@@ -213,7 +182,6 @@ const LABEL_KEY = /^[a-z0-9]([a-z0-9._/-]{0,62}[a-z0-9])?$/;
 const COMMIT = /^[0-9a-f]{7,64}$/;
 const CONTROL = /\p{Cc}/u;
 const MAX_TEXT = 1024;
-// The credential shapes @hobo/cd refuses (I9). Matching refuses; nothing is redacted.
 const SECRET_PATTERNS: readonly RegExp[] = [
 	/[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@/i,
 	/\bgh[pousr]_[A-Za-z0-9]{30,}\b/,
@@ -225,9 +193,6 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 	/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
 ];
 
-// Canonical JSON (keys sorted by code unit, no whitespace), written field by
-// field: every writer below lists its keys already in that order and leaves
-// out proto3 defaults, as protobuf toJson does.
 const text = (value: string) => JSON.stringify(value);
 const field = (key: string, json: string) => `${text(key)}:${json}`;
 const object = (fields: readonly string[]) => `{${fields.join(",")}}`;
@@ -352,7 +317,6 @@ function artifactJson(item: CiFreightArtifact): string {
 	textField(fields, "kind", item.kind);
 	textField(fields, "mediaType", item.mediaType);
 	textField(fields, "name", item.name);
-	// uint64 is a JSON string in protobuf JSON; zero is the default and is omitted.
 	if (item.sizeBytes > 0)
 		textField(fields, "sizeBytes", String(item.sizeBytes));
 	return object(fields);
@@ -388,7 +352,6 @@ function sourceJson(source: CiFreightSource): string {
 	return object(fields);
 }
 
-/** The canonical `hobo.freight-manifest/v1` document @hobo/cd parses, or a CiFreightError. */
 export function writeCiFreightManifest(
 	manifest: CiFreightManifest,
 ): Uint8Array {
@@ -426,15 +389,10 @@ export function writeCiFreightManifest(
 	return new TextEncoder().encode(object(fields));
 }
 
-/** Where a HOBO_CI subscription finds an output: @hobo/cd's `ciCoordinate`. */
 export function ciFreightCoordinate(build: CiBuild, path: string): string {
 	return `hobo-ci://${encodeURIComponent(build.pipeline)}/${encodeURIComponent(build.runId)}/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-/**
- * The deliverable's declaration hash: sha256 over its canonical declaration.
- * A change to the declaration with the same bytes is new Freight, as in @hobo/cd.
- */
 export function ciDeclarationHash(deliverable: HoboDeliverable): string {
 	const declaration = object([
 		field("bindle", text(deliverable.bindle)),
@@ -460,12 +418,6 @@ function refuseBuild(build: CiBuild): void {
 		]);
 }
 
-/**
- * The run's in-toto Statement v1 with an SLSA provenance v1 predicate over
- * every subject it built. It is unsigned: the reference CD records says
- * `verified: false` with no verifier, so a source with `requireProvenance`
- * refuses it until a sigstore or hobo-jwt signer signs it.
- */
 export function ciProvenanceStatement(
 	build: CiBuild,
 	subjects: readonly Readonly<{ name: string; digest: string }>[],
@@ -535,7 +487,6 @@ export function ciProvenanceStatement(
 	};
 }
 
-/** One deliverable's Freight manifest (not yet checked: write it with writeCiFreightManifest). */
 export function ciFreightManifest(
 	input: Readonly<{
 		deliverable: HoboDeliverable;
@@ -578,12 +529,10 @@ export function ciFreightManifest(
 export type CiFreightOutput = Readonly<{
 	path: string;
 	bytes: Uint8Array;
-	/** Lowercase hex, as PipelineArtifact.sha256 records it. */
 	sha256: string;
 }>;
 
 export type CiFreightOutputs = Readonly<{
-	/** Sorted by path. */
 	outputs: readonly CiFreightOutput[];
 	manifests: readonly CiFreightManifest[];
 }>;
@@ -597,11 +546,6 @@ function deliverableOf(id: string): HoboDeliverable {
 	return found;
 }
 
-/**
- * Every CI output of a HoBo build: each deliverable's bytes at its output
- * path, its Freight manifest beside it, and one provenance statement over all
- * of them. Pure; the caller exposes the outputs as its CI system does.
- */
 export function ciFreightOutputs(
 	build: CiBuild,
 	built: readonly Readonly<{ id: string; bytes: Uint8Array }>[],
@@ -650,12 +594,6 @@ export function ciFreightOutputs(
 	return { outputs, manifests };
 }
 
-/**
- * The outputs as PipelineArtifacts of a @hobo/ci pipeline result. The store
- * journals the passing result as `ci.PipelineResultObserved`, the event a
- * HOBO_CI source's CiEventReader reads. An output over the pipeline artifact
- * limit (one MiB) is refused by createArtifact, never truncated.
- */
 export async function ciFreightPipelineArtifacts(
 	build: CiBuild,
 	built: readonly Readonly<{ id: string; bytes: Uint8Array }>[],
@@ -666,7 +604,6 @@ export async function ciFreightPipelineArtifacts(
 	);
 }
 
-/** A passing `ci.PipelineResultObserved` lease, as far as a HOBO_CI source reads it. */
 export type CiFreightResult = Readonly<{
 	pipelineId: string;
 	repository: string;
@@ -678,11 +615,6 @@ export type CiFreightResult = Readonly<{
 	}>;
 }>;
 
-/**
- * The structural shape of a passing `ci.PipelineResultObserved` lease for
- * these outputs, for a CI system that exposes outputs as files (GitHub
- * Actions artifacts) rather than through the @hobo/ci store.
- */
 export function ciFreightResult(
 	build: CiBuild,
 	outputs: readonly CiFreightOutput[],

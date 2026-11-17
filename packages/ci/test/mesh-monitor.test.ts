@@ -50,20 +50,17 @@ describe("meshCapacity", () => {
 						free: { memoryMb: 6_000, diskMb: 50_000 },
 					}),
 					node("b", { freeSlots: 0, totalSlots: 2, free: { memoryMb: 2_000 } }),
-					// A failed signature: the advertisement is nobody's capacity.
 					node("forged", {
 						trust: "invalid",
 						freeSlots: 64,
 						free: { memoryMb: 512_000, diskMb: 900_000 },
 					}),
-					// Unhealthy: neither its slots nor its memory count.
 					node("c", {
 						healthy: false,
 						freeSlots: 3,
 						free: { memoryMb: 9_999 },
 					}),
 					node("d", { validUntilMs: NOW }),
-					// No total advertised: its free slots are all that is known.
 					node("e", { freeSlots: 2, totalSlots: undefined }),
 				],
 				NOW,
@@ -74,10 +71,8 @@ describe("meshCapacity", () => {
 			available: 2,
 			totalSlots: 8,
 			freeSlots: 3,
-			// Node e reports no memory: it adds nothing rather than a guess.
 			freeMemoryMb: 8_000,
 			largestFreeMemoryMb: 6_000,
-			// Only node a measures its disk.
 			freeDiskMb: 50_000,
 		});
 	});
@@ -111,7 +106,6 @@ describe("createMeshMonitor", () => {
 		await monitor.observe();
 		await board.advertise(node("b", { healthy: true }));
 		await monitor.observe();
-		// "b" stops advertising; its entry expires.
 		clock.now += 46_000;
 		await board.advertise(node("a", { validUntilMs: clock.now + 45_000 }));
 		await monitor.observe();
@@ -135,7 +129,6 @@ describe("createMeshMonitor", () => {
 		events.length = 0;
 		await board.advertise(node("a", { freeSlots: 0 }));
 		await monitor.observe();
-		// One node still has room: not exhausted.
 		expect(names()).not.toContain("hobo_ci_mesh_capacity_exhausted");
 		await board.advertise(node("b", { freeSlots: 0 }));
 		await monitor.observe();
@@ -166,10 +159,8 @@ describe("createMeshMonitor", () => {
 		await a.board.advertise(node("c"));
 		await a.monitor.observe();
 		await monitorB.observe();
-		// "a" is the lowest id: it reports; "b" watches in silence.
 		expect(a.names()).toContain("hobo_ci_mesh_node_joined");
 		expect(events).toEqual([]);
-		// "a" dies. "b" is now the lowest live node and reports the loss.
 		a.clock.now += 46_000;
 		for (const id of ["b", "c"])
 			await a.board.advertise(node(id, { validUntilMs: a.clock.now + 45_000 }));
@@ -212,7 +203,6 @@ describe("createMemoryMeshConfig", () => {
 		const config = createMemoryMeshConfig();
 		expect(await config.read()).toBeUndefined();
 		expect(await config.publish("one")).toEqual({ revision: 1 });
-		// A second first-publish of something else loses; of the same thing, agrees.
 		expect(await config.publish("other")).toBe("conflict");
 		expect(await config.publish("one")).toEqual({ revision: 1 });
 		expect(await config.publish("two", 1)).toEqual({ revision: 2 });

@@ -1,16 +1,3 @@
-/**
- * Runner financial models, compiled for the `@hobo/pricing` quote engine.
- *
- * The fleet never multiplies a rate by a duration itself. A model becomes a
- * catalog product with a rate card (usage per runner minute, the plan fee as
- * a fixed monthly charge) and an allowance grant for the included minutes;
- * the member's commercial state says whether the account exists and how much
- * of the allowance is left. The engine rates the month with and without the
- * job, and the difference is what the job really costs: nothing while free
- * minutes remain, the whole plan fee if taking the job means opening the
- * account.
- */
-
 import {
 	catalogHashOf,
 	parseDecimal,
@@ -21,14 +8,12 @@ import {
 import type { RunnerFinancialModel } from "./models.js";
 
 const RUNNER_MINUTE = "runner-minute";
-/** Fixed-charge quantity: 1 while the plan is paid for, 0 before it is opened. */
 const PLAN = "plan";
 const USD = "USD";
 const ZERO_HASH = `sha256:${"0".repeat(64)}`;
 
 const MICROS_SCALE = 6;
 
-/** Whole microdollars, rounded up: a bound must never understate a charge. */
 export function usdToMicrosCeil(decimal: string): number | undefined {
 	const parsed = parseDecimal(decimal);
 	if (parsed === undefined || parsed.coefficient < 0n) return undefined;
@@ -48,21 +33,14 @@ const MINUTE_METER = {
 	unit: "minute",
 	aggregation: "sum",
 } as const;
-/** Each job is rounded up to a whole minute before it is rated. */
 const WHOLE_MINUTE_CEILING = {
 	scope: "event",
 	multiple: "1",
 	mode: "ceil",
 } as const;
 
-/** What is known about one member's account when a job is priced. */
 export type RunnerCommercialState = Readonly<{
-	/** The provider account exists and its plan fee is already being paid. */
 	subscribed: boolean;
-	/**
-	 * Included minutes left this billing month. Absent means the full monthly
-	 * grant; a provider whose usage has been observed supplies the remainder.
-	 */
 	allowanceRemainingMinutes?: string;
 }>;
 
@@ -70,9 +48,7 @@ export type RunnerQuoteRequest = Readonly<{
 	model: RunnerFinancialModel;
 	state: RunnerCommercialState;
 	tenantId: string;
-	/** Reserved runner minutes, startup included. */
 	minutes: number;
-	/** Authoritative current time, RFC 3339 UTC. */
 	at: string;
 }>;
 
@@ -94,10 +70,6 @@ function compact(iso: string): string {
 	return iso.replace(".000Z", "Z");
 }
 
-/**
- * The scenario the dispatcher rates for one job on one member. Throws only on
- * a malformed request; an unpriceable member is the engine's rejection.
- */
 export function runnerQuoteScenario(
 	request: RunnerQuoteRequest,
 ): QuoteScenario {
@@ -145,7 +117,6 @@ export function runnerQuoteScenario(
 	const scenario = parseQuoteScenario({
 		action: "dispatch",
 		at,
-		// A job is rated against the month it lands in, never past the evidence.
 		horizon: compact(
 			new Date(
 				Math.min(
@@ -229,8 +200,6 @@ export function runnerQuoteScenario(
 					providerAccountRef: model.id,
 					productId: model.id,
 					rateSchedule: [{ rateCardId, effective: interval }],
-					// The rate schedule is always ratable. Whether the plan is being paid
-					// for is its quantity, so opening it shows up as incremental cost.
 					status: "active",
 					term: interval,
 					billingPeriod: {

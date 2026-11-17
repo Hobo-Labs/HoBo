@@ -1,147 +1,61 @@
-/**
- * Financial models for the runner providers the HoBo CI fleet can draw on.
- *
- * One model is one machine class at one provider: what a minute costs, how the
- * provider rounds it, what it gives away each month, what it charges to have
- * an account at all, how much of it can run at once, and which repositories
- * it will serve. Nothing here decides anything. `./pricing.ts` compiles a
- * model into an `@hobo/pricing` catalog the quote engine rates, and
- * `./balance.ts` puts those quotes through the shared budget policy.
- *
- * Every number carries the page it was read from and the day it was read.
- * `derived: true` marks a figure the vendor does not print for this machine
- * class and that was computed from one it does print; the arithmetic is in the
- * note. A model past `validUntil` is refused by the quote engine, so a stale
- * price takes its provider out of rotation instead of being trusted.
- */
+export type FleetBinding = "inject" | "label";
 
-/** How a job reaches the capacity. */
-export type FleetBinding =
-	/** The relay starts a one-shot runner labelled for the job on this compute. */
-	| "inject"
-	/** The provider brings the runner; the job must ask for the provider's label. */
-	| "label";
+export type FleetRole = "primary" | "overflow" | "last-resort";
 
-/** Where a member sits before price is compared. */
-export type FleetRole =
-	/** Capacity already paid for. Used first. */
-	| "primary"
-	/** Rented capacity. Ranked by incremental billed cost. */
-	| "overflow"
-	/** Considered only when no primary or overflow member is admitted. */
-	| "last-resort";
+export type RunnerBilling = "per-minute-ceil" | "per-second";
 
-export type RunnerBilling =
-	/** Each job is rounded up to a whole minute. */
-	| "per-minute-ceil"
-	/** Metered by the second; no rounding to the minute. */
-	| "per-second";
+export type PublicRepositorySupport = "yes" | "opt-in" | "no";
 
-export type PublicRepositorySupport =
-	| "yes"
-	/** Off until the owner turns it on at the provider. */
-	| "opt-in"
-	| "no";
-
-/** What keeps one job's machine apart from the provider's other tenants. */
-export type RunnerIsolation =
-	/** A virtual machine with its own kernel; microVMs are virtual machines. */
-	| "vm"
-	/** A container whose system calls go to a user-space kernel, not the host's. */
-	| "sandboxed-container"
-	/** A container on a kernel it shares with other containers. */
-	| "container";
+export type RunnerIsolation = "vm" | "sandboxed-container" | "container";
 
 export type RunnerArchitecture = "x64" | "arm64";
 
-/**
- * What a provider's machine can and cannot do, as its vendor documents it.
- * `./balance.ts` refuses a job that asks for more than this; the rest is
- * printed on the providers page. An absent optional field means the vendor
- * publishes no figure, never that there is no limit.
- */
 export type RunnerCapabilities = Readonly<{
 	isolation: RunnerIsolation;
 	architectures?: readonly RunnerArchitecture[];
-	/** Longest one machine may run, in whole minutes. */
 	maxRuntimeMinutes?: number;
-	/** Largest machine one job can be given. */
 	maxMachine?: Readonly<{ vcpus: number; memoryGb: number }>;
-	/**
-	 * The four flags below are true only where the vendor documents the
-	 * ability. False covers both "documented as absent" and "not stated".
-	 */
-	/** The machine starts from an image the operator supplies. */
 	customImage: boolean;
-	/** The machine reaches the internet without extra setup. */
 	outboundInternet: boolean;
-	/** Outbound traffic can be limited to an allow list at the provider. */
 	egressControl: boolean;
-	/** The provider's software can run on the operator's own machines. */
 	selfHostable: boolean;
-	/** Vendor page the limits were read from. */
 	source: string;
 }>;
 
 export type RunnerFinancialModel = Readonly<{
-	/** Fleet member id and pricing product id. */
 	id: string;
-	/** `DesiredCiPolicy` provider kind this model prices. */
 	provider: string;
 	displayName: string;
 	binding: FleetBinding;
 	role: FleetRole;
-	/** Label the job asks for (label) or the runner registers with (inject). */
 	runsOn: string;
 	machine: Readonly<{ vcpus: number; memoryGb: number }>;
-	/** Exact USD per runner minute for this machine class. */
 	usdPerMinute: string;
 	billing: RunnerBilling;
-	/** Plan fee owed each month for having an account. Absent means none. */
 	monthlyFeeUsd?: string;
-	/** Minutes of this machine class included each month. Absent means none. */
 	monthlyFreeMinutes?: string;
-	/**
-	 * The provider's own ceiling on jobs running at once. Absent means the
-	 * provider publishes none, and only the budget bounds it.
-	 */
 	concurrency?: number;
 	eligibility: Readonly<{
 		publicRepositories: PublicRepositorySupport;
 		privateRepositories: boolean;
-		/** Serves repositories owned by an organization only. */
 		organizationOnly: boolean;
-		/** A job can use a Docker daemon. */
 		docker: boolean;
-		/** Jobs from forks may run here. */
 		forkPullRequests: boolean;
-		/**
-		 * Every job gets a machine nothing else shares and that is discarded
-		 * afterwards. Admission requires this for public repositories and pull
-		 * requests; a shared cluster or a workstation does not qualify.
-		 */
 		isolated: boolean;
 	}>;
-	/**
-	 * Documented limits of the machine. Absent for a model whose limits have
-	 * not been read from the vendor; nothing is assumed in that case.
-	 */
 	capabilities?: RunnerCapabilities;
 	evidence: Readonly<{
 		source: string;
 		observedAt: string;
 		validUntil: string;
-		/** The vendor prints no figure for this class; see `note`. */
 		derived: boolean;
 		note: string;
 	}>;
 }>;
 
 const OBSERVED_AT = "2026-11-09T00:00:00Z";
-/** Prices are re-read at least quarterly. */
 const VALID_UNTIL = "2027-02-09T00:00:00Z";
 
-/** The day the sandbox providers were read. */
 const SANDBOXES_OBSERVED_AT = "2026-11-10T00:00:00Z";
 
 function evidence(
@@ -165,10 +79,6 @@ const HOSTED_VM = {
 	isolated: true,
 } as const;
 
-/**
- * The fleet, in the order the page reads: capacity that is already paid for,
- * then rented capacity, then GitHub's own runners.
- */
 export const RUNNER_FINANCIAL_MODELS = [
 	{
 		id: "hobo-box",
@@ -193,8 +103,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 	},
 	{
 		id: "agent-box",
-		// The existing trusted workstation runner: `hobo ci` in pull mode on the
-		// machine of the agent that opened the pull request.
 		provider: "local",
 		displayName: "Box of the agent that opened the pull request",
 		binding: "label",
@@ -207,9 +115,7 @@ export const RUNNER_FINANCIAL_MODELS = [
 			publicRepositories: "yes",
 			privateRepositories: true,
 			organizationOnly: false,
-			// An agent session's container has no Docker daemon to offer.
 			docker: false,
-			// The box holds the agent's own credentials.
 			forkPullRequests: false,
 			isolated: false,
 		},
@@ -224,7 +130,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 		provider: "kubernetes",
 		displayName: "Remote actions-runner-controller scale set",
 		binding: "label",
-		// Owned, but kept behind the box: it is the first place work spills to.
 		role: "overflow",
 		runsOn: "hobo-arc",
 		machine: { vcpus: 4, memoryGb: 16 },
@@ -235,7 +140,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 			...HOSTED_VM,
 			organizationOnly: false,
 			forkPullRequests: false,
-			// Pods share the operator's cluster and its node credentials.
 			isolated: false,
 		},
 		evidence: evidence(
@@ -411,7 +315,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 			organizationOnly: false,
 			docker: true,
 			forkPullRequests: true,
-			// "runs as a Linux container and shares the kernel of the host."
 			isolated: false,
 		},
 		capabilities: {
@@ -519,7 +422,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 			publicRepositories: "yes",
 			privateRepositories: true,
 			organizationOnly: false,
-			// Docker inside a sandbox is not documented.
 			docker: false,
 			forkPullRequests: true,
 			isolated: true,
@@ -555,7 +457,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 			publicRepositories: "yes",
 			privateRepositories: true,
 			organizationOnly: false,
-			// Docker inside a sandbox is not documented.
 			docker: false,
 			forkPullRequests: true,
 			isolated: true,
@@ -598,7 +499,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 			isolation: "vm",
 			maxMachine: { vcpus: 4, memoryGb: 8 },
 			customImage: false,
-			// "A VM gets nothing implicitly — no outbound Internet, no inbound"
 			outboundInternet: false,
 			egressControl: true,
 			selfHostable: false,
@@ -737,7 +637,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 			publicRepositories: "yes",
 			...HOSTED_VM,
 			organizationOnly: true,
-			// Fork jobs are mentioned, but no fork policy is published.
 			forkPullRequests: false,
 		},
 		capabilities: {
@@ -780,7 +679,6 @@ export const RUNNER_FINANCIAL_MODELS = [
 			isolation: "vm",
 			maxMachine: { vcpus: 4, memoryGb: 12 },
 			customImage: true,
-			// The SDK 0.x guide and the current security page disagree.
 			outboundInternet: false,
 			egressControl: true,
 			selfHostable: false,
@@ -852,7 +750,6 @@ export function runnerFinancialModel(
 	return RUNNER_FINANCIAL_MODELS.find((model) => model.id === id);
 }
 
-/** Provider kinds the fleet has a financial model for. */
 export const FLEET_PROVIDER_KINDS: readonly string[] = [
 	...new Set(RUNNER_FINANCIAL_MODELS.map((model) => model.provider)),
 ].sort();

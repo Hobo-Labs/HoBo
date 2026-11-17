@@ -34,15 +34,12 @@ export type CiRoutingRefusal = Pick<
 	"code" | "reason" | "offerId"
 >;
 export interface CiRoutingOptions {
-	/** A plan requiring a native bound is never execution authorization. */
 	phase?: "plan" | "admit";
 	attempt?: number;
 	queueDurationMs?: number;
 	onRefusal?: (refusal: CiRoutingRefusal) => void;
 }
 
-/** Shared by admission and pre-dispatch repricing. Negative means left wins.
- * A partly free job can still cost more than an entirely paid alternative. */
 export function compareCiRoutingCandidates(
 	left: CiRoutingCandidateCost,
 	right: CiRoutingCandidateCost,
@@ -82,9 +79,6 @@ export function compareCiRoutingCandidates(
 	return freeDifference;
 }
 
-// Timestamp-only snapshots cannot prove that a later completion at the same
-// clock tick was included. Count equality (and unknown timestamps) until a
-// strictly newer observation establishes coverage.
 export function shouldCountLocalUsage(
 	lease: Lease,
 	observedAt: string,
@@ -93,7 +87,6 @@ export function shouldCountLocalUsage(
 	return !Number.isFinite(completed) || completed >= Date.parse(observedAt);
 }
 
-/** Pure ranking input; availability is measured per customer-owned account. */
 export function route(
 	account: Account,
 	leases: readonly Lease[],
@@ -213,7 +206,6 @@ export function route(
 		const usedFree = used
 			.filter((lease) => shouldCountLocalUsage(lease, offer.observedAt))
 			.map((lease) => lease.billedFreeMinutes);
-		// Sandbox charges are multidimensional and cannot consume host-minute credits.
 		if (
 			offer.backend === "sandbox" &&
 			(!offer.sandboxPricing ||
@@ -343,8 +335,6 @@ export function route(
 		}
 		return [{ offer, free, reservedFree, paid, sandboxReservedAllowance }];
 	});
-	// Legacy fleet routing prefers the box, then ARC, then GitHub overflow.
-	// An authored shared policy ranks every admitted offer by its objective.
 	const preferred = common ? candidates : preferFleetCandidates(candidates);
 	if (preferred.length === 0) return undefined;
 	const cost = (
@@ -363,8 +353,6 @@ export function route(
 		(candidate) =>
 			compareCiRoutingCandidates(cost(candidate), cost(best), strategy) === 0,
 	);
-	// Dispatcher ranks the lowest-cost shortlist, retaining its native credit
-	// rationale and deterministic tie-breaking.
 	const decision = decideDispatch({
 		category: "runner",
 		dispatchId: "ci-route",
@@ -404,11 +392,6 @@ export function route(
 	};
 }
 
-/**
- * 0 isolated box, 1 kubernetes gh-actions (ARC), 2 GitHub-hosted.
- * For legacy accounts, unranked providers are kept and a worse fleet tier is
- * dropped when a better one remains.
- */
 function fleetCandidateRank(offer: Offer): number | undefined {
 	if (
 		offer.provider === "hobo-box-worker" ||

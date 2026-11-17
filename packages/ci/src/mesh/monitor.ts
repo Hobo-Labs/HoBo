@@ -1,55 +1,22 @@
-/**
- * Watching the mesh: who is in it, who can take work, and how much room
- * is left.
- *
- * Ranking only needs the board at the moment a job is queued. Operating a
- * mesh needs the changes: a node that joined, one that stopped advertising,
- * one that turned unhealthy, and the moment no node has a free slot. This
- * turns successive readings of the board into those facts.
- *
- * Every node can run it. To keep one fact from being reported once per node,
- * only the live node with the lowest id reports changes about others; if it
- * dies, the next one takes over on its following reading.
- */
 import { LOCAL_HOST_RUNNER_LABEL } from "../fleet-overflow.js";
 import type { MeshBoard } from "./coordinator.js";
 import { type MeshNode, meshAdvertRejected } from "./rendezvous.js";
 
 export type MeshCapacity = Readonly<{
-	/** Fleet nodes with an advertisement that has not expired. */
 	nodes: number;
-	/** Of those, the ones that are healthy. */
 	healthy: number;
-	/** Healthy nodes with at least one free slot. */
 	available: number;
-	/** Runner slots across healthy nodes, when they advertise a total. */
 	totalSlots: number;
-	/** Free runner slots across healthy nodes. */
 	freeSlots: number;
-	/** Free memory across the healthy nodes that report it. */
 	freeMemoryMb: number;
-	/** The most free memory on any one healthy node: the largest job that fits. */
 	largestFreeMemoryMb: number;
-	/** Free disk across the healthy nodes that report it. */
 	freeDiskMb: number;
 }>;
 
-/**
- * Whether a node is fleet capacity: it runs jobs for a fleet label. A relay
- * host (no labels) and a machine running jobs for one repository (only the
- * local-host label) are on the node list but are not the fleet.
- */
 export function isMeshFleetNode(node: MeshNode): boolean {
 	return node.labels.some((label) => label !== LOCAL_HOST_RUNNER_LABEL);
 }
 
-/**
- * What the board says the fleet can do right now. Only fleet nodes count
- * (`isMeshFleetNode`). An advertisement a reader rejects (a failed
- * signature, an expiry beyond any node's) says nothing about any node and
- * is not counted; with `requireTrusted`, neither is one whose key the reader
- * does not trust, since this mesh ranks nobody else.
- */
 export function meshCapacity(
 	nodes: readonly MeshNode[],
 	nowMs: number,
@@ -87,14 +54,6 @@ export function meshCapacity(
 	};
 }
 
-/**
- * The mesh's leader: the live node with the lowest id, among advertisements
- * that have not expired and whose signature holds. It is the one node that
- * reports changes about others, and the one box relay that writes the routing
- * slip (ADR-0181, decisions 1-2). A node that sees no live node leads itself, so a box
- * without a mesh is its own leader. When the leader stops advertising, the
- * next lowest takes over on its following reading.
- */
 export function meshLeaderId(
 	nodes: readonly MeshNode[],
 	nowMs: number,
@@ -120,13 +79,10 @@ export type MeshMonitorEvent =
 	| "hobo_ci_mesh_capacity";
 
 export function createMeshMonitor(options: {
-	/** This node's id: decides whether it is the one that reports. */
 	selfId: string;
 	board: MeshBoard;
 	now?: () => number;
-	/** How often the capacity summary is logged when nothing changed. */
 	summaryEveryMs?: number;
-	/** Whether this mesh ranks only trusted nodes, as its settings stand now. */
 	requireTrusted?: (() => boolean) | undefined;
 	log: (
 		event: MeshMonitorEvent,
@@ -136,17 +92,11 @@ export function createMeshMonitor(options: {
 	const now = options.now ?? Date.now;
 	const summaryEveryMs = options.summaryEveryMs ?? 60_000;
 	let previous: ReadonlyMap<string, MeshNode> | undefined;
-	/** Node ids whose advertisement failed its signature, already reported. */
 	let rejected: ReadonlySet<string> = new Set();
 	let exhausted = false;
 	let summarizedAt = Number.NEGATIVE_INFINITY;
 
 	return {
-		/**
-		 * Reads the board and reports what changed since the last reading.
-		 * Returns the capacity it saw, or `undefined` when the board could not
-		 * be read (the coordinator reports that).
-		 */
 		async observe(): Promise<MeshCapacity | undefined> {
 			let nodes: readonly MeshNode[];
 			try {
@@ -156,8 +106,6 @@ export function createMeshMonitor(options: {
 			}
 			const nowMs = now();
 			const current = nodes.filter((node) => node.validUntilMs > nowMs);
-			// An advertisement whose signature failed is not a node: it does not
-			// join, is not counted, and cannot be the one that reports.
 			const live = new Map(
 				current
 					.filter((node) => !meshAdvertRejected(node, nowMs))
@@ -171,8 +119,6 @@ export function createMeshMonitor(options: {
 			const capacity = meshCapacity(nodes, nowMs, {
 				requireTrusted: options.requireTrusted?.() ?? false,
 			});
-			// One reporter: the lowest live id. A node always reports for itself
-			// being alone, since then it is the lowest.
 			const reporter = meshLeaderId(nodes, nowMs, options.selfId);
 			const reports = reporter === options.selfId;
 			let changed = previous === undefined;
@@ -205,15 +151,12 @@ export function createMeshMonitor(options: {
 					}
 			}
 			if (reports) {
-				// Once per node for as long as its advertisement keeps failing.
 				for (const id of invalid)
 					if (!rejected.has(id))
 						options.log("hobo_ci_mesh_node_invalid", { nodeId: id });
 				rejected = invalid;
 			}
 			if (reports) {
-				// "Exhausted" is the mesh having nodes and none with room: a job
-				// queued now waits for a slot, not for a turn.
 				const full = capacity.nodes > 0 && capacity.available === 0;
 				if (full !== exhausted) {
 					exhausted = full;

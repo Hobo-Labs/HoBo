@@ -28,8 +28,6 @@ describe("fleet capacity", () => {
 	});
 });
 
-// ADR-0180, "Retirement": the HOBO_CI_FLEET_CAPACITY record is retired;
-// whether the fleet can take a run is the relay's to decide (ADR-0180).
 describe("the retired capacity record", () => {
 	it("is no longer exported or defined", () => {
 		const exported = Object.keys(root);
