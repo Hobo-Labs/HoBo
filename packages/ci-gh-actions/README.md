@@ -2147,5 +2147,10 @@ sandbox with no network
 whole check (the relay renews no job lock, so a slow or hung tool ends as
 "Lint timed out" inside the lock), and reports one result per tool and 50
 annotations at most. Each answered job is a `check.completed`
-event. It is built, not proven: tested against the GitHub simulator and a fake
-sandbox. See [`src/relay-checks/RELAY-CHECKS.md`](src/relay-checks/RELAY-CHECKS.md).
+event, a callback rather than a journal record. It is built, not proven:
+tested against the GitHub simulator and a fake sandbox. C01's T3 run is owed:
+a title check job from `.github/workflows/parity-probe.yml` answered by the
+deployed relay, to be linked when relay mode is on for this repository. The
+Docker lint sandbox is new rather than an existing HoBo sandbox, because the
+existing ones start runners; the `LintSandbox` port lets another replace it.
+See [`src/relay-checks/RELAY-CHECKS.md`](src/relay-checks/RELAY-CHECKS.md).
