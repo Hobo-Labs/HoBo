@@ -4,7 +4,7 @@ Feature: Insight parity with RelayRunner
   file. A scenario tagged @pending waits for the work package that builds
   it.
 
-  @parity @I01 @t2 @pending
+  @parity @I01 @t2
   Scenario: I01 Activity lists each job, where it ran and why, for 90 days
     Given route decisions journaled over the last 100 days
     When "hobo ci activity --since 90d --runner depot" runs
@@ -18,20 +18,20 @@ Feature: Insight parity with RelayRunner
     Then each job shows its step timings
     And the timed-out and superseded runs are marked
 
-  @parity @I03 @t2 @pending
+  @parity @I03 @t2
   Scenario: I03 Usage shows minutes against the included amount, burn, short jobs and what checks saved
     Given a month of stored runs and the owner's included minutes
     When "hobo ci usage" runs
     Then it shows minutes used against the included amount, the burn rate, short jobs and minutes saved by checks
 
-  @parity @I04 @t1 @t2 @pending
+  @parity @I04 @t1 @t2
   Scenario: I04 Performance compares workflows, jobs and runners, and each runner against ubuntu-latest
     Given stored runs on two runner types
     When "hobo ci performance" runs
     Then it compares workflows, jobs and runners
     And each runner is compared with the GitHub-hosted baseline
 
-  @parity @I05 @t1 @t2 @pending
+  @parity @I05 @t1 @t2
   Scenario: I05 Nine signals with thresholds, a breakdown and a trend
     Given stored runs over two weeks
     When the signals are read

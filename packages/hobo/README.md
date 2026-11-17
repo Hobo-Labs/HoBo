@@ -734,3 +734,38 @@ exports a `CiCommand` and one entry in `CI_COMMANDS`
 there only when it is not one of `BUILT_IN_CI_COMMANDS`, and hands the command
 its own arguments, the flags, the environment, the transport, the clock and a
 way to find the local repository. The command parses its own options.
+
+## `hobo ci activity`, `usage` and `performance`
+
+Three read-only commands show what a connected relay keeps about an account's
+CI (ADR-0183). They find the relay the way `hobo ci status` does (`--relay`,
+`HOBO_CI_RELAY_URL`, then `.hobo/ci.json`), read it with the account
+credential (`HOBO_CI_ACCOUNT_TOKEN` or `--token-file`), and ask only the
+read API's frozen `GET /v1/accounts/self/...` paths. Each takes `--json`.
+
+| Command | Read API path | What it shows |
+| --- | --- | --- |
+| [`hobo ci activity`](src/ci-activity.ts) | `routes` | Each relay job: where it ran, why, and every order step passed over, built with `activityFeed` from `@hobo/ci`. Filters `--repo`, `--since` (default 90 days, the journal's retention), `--runner <step>`, `--outcome`, `--machine`; pages newest first with `--limit` and the printed `--cursor` |
+| [`hobo ci usage`](src/ci-usage.ts) | `usage` | Billed minutes per runner type and day, short jobs and the minutes they waste, minutes kept off GitHub-hosted runners priced at GitHub's rate, relay jobs answered without a billed minute, and the included minutes left with the burn rate |
+| [`hobo ci performance`](src/ci-performance.ts) | `job-times`, `signals` | Workflow, job and runner times; each runner against `ubuntu-latest` (the median of its per-job speedups); the nine signals with their thresholds, a breakdown by person, repository, workflow, branch and event, and a per-day trend |
+
+A relay that keeps no journal or run history (the stateless hosted relay)
+answers `not-stored-here`, and the commands report `HOBO_CI_NOT_STORED_HERE`.
+`activity` has nothing else to read: no history of route decisions exists
+outside the journal. `usage` and `performance` take `--source github`
+instead: they read the repository's recent runs with the GitHub CLI (`--runs`,
+default 50), fold each run and job through the same webhook parser a relay
+uses (`parseInsightWebhook`, `foldInsightWebhook`), and compute the same
+reports, so both sources print and answer alike. With `--source github` the
+included minutes come from GitHub's billing usage API with the CLI's token and
+read "not measured" when it may not see billing. Kept minutes are priced at
+GitHub's standard Linux rate (`GITHUB_STANDARD_RATE`, with the page and day it
+was read).
+
+The tests serve the frozen records from the in-memory ports through a fake
+read API ([`test/support/ci-read-api-fake.ts`](test/support/ci-read-api-fake.ts))
+and check that a report computed from GitHub's history equals the relay's for
+the same runs. Gauntlet cases I01, I03, I04 and I05 run the commands through
+the `hobo` CLI in `features/hobo-ci-parity/insights.feature`. The channel to a
+deployed relay's read API is built, not proven, until a production read is
+linked.
