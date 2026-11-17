@@ -95,9 +95,21 @@ export function buildExecutionUnits(options: {
 	readonly providerId: string;
 	readonly campId: string;
 	readonly bindleName: string;
-	readonly resourceIds: readonly string[];
-	readonly residualDefinitionIds: readonly string[];
+	readonly resourcePlacements: readonly {
+		readonly resourceId: string;
+		readonly definitionId: string;
+	}[];
 }): readonly ExecutionUnit[] {
+	const resourceIds = new Set<string>();
+	for (const placement of options.resourcePlacements) {
+		if (!placement.resourceId.trim() || !placement.definitionId.trim())
+			throw new TypeError("resource and definition identities are required");
+		if (resourceIds.has(placement.resourceId))
+			throw new TypeError(
+				`duplicate resource identity ${placement.resourceId}`,
+			);
+		resourceIds.add(placement.resourceId);
+	}
 	const units: ExecutionUnit[] = [
 		Object.freeze({
 			unitId: `unit:yard:${options.yardId}`,
@@ -130,7 +142,8 @@ export function buildExecutionUnits(options: {
 			residualDefinitions: Object.freeze([] as string[]),
 		}),
 	];
-	for (const resourceId of options.resourceIds) {
+	for (const placement of options.resourcePlacements) {
+		const resourceId = placement.resourceId;
 		units.push(
 			Object.freeze({
 				unitId: `unit:resource:${resourceId}`,
@@ -139,9 +152,7 @@ export function buildExecutionUnits(options: {
 				yardId: options.yardId,
 				destroyWithBindle: true,
 				claims: Object.freeze([`resource:${resourceId}`]),
-				residualDefinitions: Object.freeze(
-					options.residualDefinitionIds.filter((d) => d.includes(resourceId)),
-				),
+				residualDefinitions: Object.freeze([placement.definitionId]),
 			}),
 		);
 	}

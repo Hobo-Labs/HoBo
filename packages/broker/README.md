@@ -14,6 +14,11 @@ Eligible definitions need distinct IDs and nonnegative decimal marginal prices
 with matching units; comparison is exact and ties use the definition ID. Failed
 or changing catalog evidence refuses placement. Marginal ordering remains a
 per-resource comparison and does not establish whole-request cost optimality.
+Resource IDs and ports must be nonempty, and resource IDs must be unique. Each
+resource execution unit records the exact definition selected for that resource.
+`buildExecutionUnits` callers must pass `resourcePlacements` containing explicit
+resource and definition ID pairs; the former parallel ID arrays could not express
+that association reliably.
 
 The [Yard residual placement skill](../../.agents/skills/verify-yard-residual-placement/SKILL.md)
 checks a one-resource abstraction of capability and evidence. This view hides 24
@@ -30,6 +35,20 @@ stateDiagram-v2
   s0 --> s2: full match in Yard
   s2 --> s1: catalog evidence changed
   s2 --> s3: evidence remains current
+```
+
+The [Yard resource binding skill](../../.agents/skills/verify-yard-resource-binding/SKILL.md)
+checks a two-resource abstraction. This projection hides 32 same-label steps;
+the separate request-snapshot model also checks a caller mutation.
+
+```mermaid
+stateDiagram-v2
+  s0: Resource placements ready
+  s1: Each resource has its selected definition
+  s2: Duplicate resources refused
+  [*] --> s0
+  s0 --> s2: refuse duplicate identities
+  s0 --> s1: record exact associations
 ```
 
 Funded hosting requires `hostingBudget: {authority, quotes, now}` and a bound
