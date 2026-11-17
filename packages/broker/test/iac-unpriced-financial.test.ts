@@ -279,6 +279,10 @@ describe("policy-directed unpriced IaC admission", () => {
 
 	it.each([
 		"missing-gate",
+		"missing-reasons",
+		"unknown-gate",
+		"unknown-decision",
+		"non-json-event",
 		"truthy-obligation",
 		"unknown-proof",
 		"unknown-scope",
@@ -295,6 +299,29 @@ describe("policy-directed unpriced IaC admission", () => {
 						const decision = authorize(input);
 						if (kind === "missing-gate")
 							Object.defineProperty(decision, "gate", { value: undefined });
+						if (kind === "missing-reasons")
+							Object.defineProperty(decision.gate, "reasons", {
+								value: undefined,
+							});
+						if (kind === "unknown-gate")
+							Object.defineProperty(decision.gate, "condition", {
+								value: "unfulfilled",
+								enumerable: true,
+							});
+						if (kind === "unknown-decision")
+							Object.defineProperty(decision, "condition", {
+								value: undefined,
+								enumerable: true,
+							});
+						if (kind === "non-json-event")
+							Object.defineProperty(decision.gate, "events", {
+								value: [
+									Object.defineProperty({}, "future", {
+										value: undefined,
+										enumerable: true,
+									}),
+								],
+							});
 						if (kind === "truthy-obligation")
 							Object.defineProperty(decision.proof, "obligationsSatisfied", {
 								value: "yes",

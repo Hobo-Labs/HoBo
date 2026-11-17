@@ -25,6 +25,7 @@ import {
 	BudgetReservationSchema,
 	budgetIdentityKey,
 } from "./budget-authority.js";
+import { validIacPolicyGate } from "./iac-policy-gate.js";
 import type { IacTargetAdmissionDeps } from "./iac-target.js";
 import type { GateDecision } from "./planes.js";
 
@@ -229,7 +230,8 @@ export async function admitUnpricedIacTarget(
 			throw new Error("malformed policy decision");
 		policy = structuredClone(policy);
 		if (
-			!policy.gate ||
+			Object.keys(policy).length !== 3 ||
+			!validIacPolicyGate(policy.gate) ||
 			!isExactProtoMessage(IacUnpricedPolicyProofSchema, policy.proof) ||
 			!isExactProtoMessage(IacUnpricedScopeProofSchema, policy.scopeProof)
 		)
