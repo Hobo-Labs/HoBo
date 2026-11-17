@@ -618,9 +618,24 @@ export function createBudgetAdmissionAuthority(options: {
 					JSON.stringify(next.iacPricingPin) !==
 						JSON.stringify(old.iacPricingPin) ||
 					next.requestDigest !== old.requestDigest ||
+					next.quoteId !== old.quoteId ||
 					next.quoteDigest !== old.quoteDigest ||
 					next.financialPlanHash !== old.financialPlanHash ||
-					(old.executionDigest && old.executionDigest !== next.executionDigest)
+					next.reservedMicros !== old.reservedMicros ||
+					JSON.stringify(next.identity) !== JSON.stringify(old.identity) ||
+					JSON.stringify(next.providerAccounts) !==
+						JSON.stringify(old.providerAccounts) ||
+					JSON.stringify(next.entitlementClaims) !==
+						JSON.stringify(old.entitlementClaims) ||
+					(old.executionDigest &&
+						old.executionDigest !== next.executionDigest) ||
+					((old.status === "settled" || old.status === "released") &&
+						(old.status !== next.status ||
+							old.actualMicros !== next.actualMicros ||
+							old.usageEvidenceRef !== next.usageEvidenceRef ||
+							old.sourceStoppedEvidenceRef !== next.sourceStoppedEvidenceRef ||
+							JSON.stringify(old.settlementEvidence) !==
+								JSON.stringify(next.settlementEvidence)))
 				)
 					throw new Error(
 						"journal changed an immutable priced IaC reservation",
@@ -744,6 +759,7 @@ export function createBudgetAdmissionAuthority(options: {
 			if (
 				row.iacPricingPin &&
 				(row.unboundedExposure ||
+					(row.status === "released" && !!row.executionDigest) ||
 					!validIacPin(row.iacPricingPin, row.financialPlanHash) ||
 					(!old &&
 						(event.type !== "budget.ReservationHeld" ||
@@ -831,6 +847,124 @@ export function createBudgetAdmissionAuthority(options: {
 				row.identity.periodId !== event.snapshot.identity.periodId
 			)
 				throw new Error("active journal reservation period mismatch");
+		}
+		const iacSettlements = event.reservations.filter((row) => {
+			const old = reservations.get(row.reservationId);
+			return (
+				(row.unboundedExposure || row.iacPricingPin !== undefined) &&
+				row.status === "settled" &&
+				old !== undefined &&
+				(old.status === "held" || old.status === "uncertain")
+			);
+		});
+		if (
+			iacSettlements.length > 1 ||
+			(event.type === "budget.UnboundedUsageRecorded" &&
+				(iacSettlements.length !== 1 || !iacSettlements[0]?.unboundedExposure))
+		)
+			throw new Error("invalid IaC settlement transition");
+		if (iacSettlements.length === 1) {
+			const row = iacSettlements[0];
+			if (!row) throw new Error("IaC settlement missing");
+			const expectedType = row.unboundedExposure
+				? "budget.UnboundedUsageRecorded"
+				: row.actualMicros > row.reservedMicros
+					? "budget.OverrunRecorded"
+					: "budget.ReservationSettled";
+			if (event.type !== expectedType)
+				throw new Error("invalid IaC settlement event type");
+			const old = reservations.get(row.reservationId);
+			const evidence = row.settlementEvidence;
+			if (
+				!old ||
+				!evidence ||
+				event.reservations.length !== reservations.size ||
+				event.reconciliationEvidenceRef
+			)
+				throw new Error("invalid IaC settlement record");
+			for (const entry of event.reservations) {
+				const prior = reservations.get(entry.reservationId);
+				if (!prior) throw new Error("settlement introduced a reservation");
+				if (
+					entry.reservationId !== row.reservationId &&
+					toJsonString(BudgetReservationSchema, prior) !==
+						toJsonString(BudgetReservationSchema, entry)
+				)
+					throw new Error("settlement changed another reservation");
+			}
+			const accounts = evidence.providerAccounts;
+			const claims = evidence.entitlementClaims;
+			if (
+				accounts.length !== old.providerAccounts.length ||
+				claims.length !== old.entitlementClaims.length ||
+				new Set(accounts.map((account) => account.providerAccountId)).size !==
+					accounts.length ||
+				new Set(claims.map((claim) => claim.bucketId)).size !== claims.length ||
+				(accounts.length > 0 &&
+					add(...accounts.map((account) => account.liabilityMicros)) !==
+						row.actualMicros)
+			)
+				throw new Error("invalid IaC settlement dimensions");
+			const expected = clone(BudgetLedgerSnapshotSchema, current);
+			expected.seq = event.snapshot.seq;
+			expected.spentMicros = add(current.spentMicros, row.actualMicros);
+			for (const account of accounts) {
+				const target = expected.providerAccounts.find(
+					(entry) => entry.providerAccountId === account.providerAccountId,
+				);
+				if (
+					!target ||
+					!old.providerAccounts.some(
+						(entry) => entry.providerAccountId === account.providerAccountId,
+					)
+				)
+					throw new Error("foreign provider settlement");
+				target.spentMicros = add(target.spentMicros, account.liabilityMicros);
+			}
+			for (const claim of claims) {
+				const target = expected.entitlements.find(
+					(entry) =>
+						entry.bucketId === claim.bucketId && entry.unit === claim.unit,
+				);
+				if (
+					!target ||
+					!old.entitlementClaims.some(
+						(entry) =>
+							entry.bucketId === claim.bucketId && entry.unit === claim.unit,
+					)
+				)
+					throw new Error("foreign entitlement settlement");
+				target.remainingUnits = Math.max(
+					0,
+					target.remainingUnits - budgetMicros(claim.units),
+				);
+			}
+			const rows = new Map(
+				event.reservations.map((entry) => [entry.reservationId, entry]),
+			);
+			expected.reservedMicros = held(rows);
+			expected.unboundedExposureCount = unboundedCount(rows);
+			updateDimensions(expected, rows);
+			if (
+				toJsonString(BudgetLedgerSnapshotSchema, expected) !==
+				toJsonString(BudgetLedgerSnapshotSchema, event.snapshot)
+			)
+				throw new Error("IaC settlement snapshot does not account for usage");
+			const expectedRow = clone(BudgetReservationSchema, old);
+			expectedRow.status = "settled";
+			expectedRow.ledgerSeq = event.snapshot.seq;
+			expectedRow.actualMicros = row.actualMicros;
+			expectedRow.usageEvidenceRef = evidence.usageEvidenceRef;
+			expectedRow.sourceStoppedEvidenceRef = evidence.sourceStoppedEvidenceRef;
+			expectedRow.settlementEvidence = clone(
+				BudgetSettlementEvidenceSchema,
+				evidence,
+			);
+			if (
+				toJsonString(BudgetReservationSchema, expectedRow) !==
+				toJsonString(BudgetReservationSchema, row)
+			)
+				throw new Error("IaC settlement changed its reservation");
 		}
 		if (event.snapshot.identity.periodId === current.identity.periodId) {
 			for (const old of current.providerAccounts) {

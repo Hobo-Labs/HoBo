@@ -1,22 +1,31 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clone, create, toJson } from "@bufbuild/protobuf";
+import { DatabaseSync } from "node:sqlite";
+import {
+	clone,
+	create,
+	fromJsonString,
+	toJson,
+	toJsonString,
+} from "@bufbuild/protobuf";
 import { stableHash } from "@hobo/pricing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	IacPricingPinSchema,
 	IacUnpricedPolicyProofSchema,
 	IacUnpricedScopeProofSchema,
 } from "../src/_generated/yard_placement_pb.js";
 import {
-	BudgetIdentitySchema,
 	BudgetAuthorityEventSchema,
+	BudgetIdentitySchema,
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
-	createSqliteBudgetAdmissionAuthority,
 	createBudgetAdmissionAuthority,
+	createSqliteBudgetAdmissionAuthority,
 	HostingQuoteSchema,
 } from "../src/index.js";
+import { isJsonString } from "../src/json.js";
 
 const now = "2026-01-02T00:00:00Z";
 const end = "2026-01-31T00:00:00Z";
@@ -527,7 +536,9 @@ describe("durable unbounded liability admission", () => {
 
 	it("requires independently canonical account IDs instead of caller-chosen aliases", () => {
 		const { options, unpriced } = fixture();
-		options.snapshot.providerAccounts[0]!.providerAccountId = "provider-alias";
+		const account = options.snapshot.providerAccounts[0];
+		if (!account) throw new Error("missing account");
+		account.providerAccountId = "provider-alias";
 		unpriced.providerAccountIds = ["provider-alias"];
 		unpriced.scopeProof.providerAccountIds = ["provider-alias"];
 		const ledger = createSqliteBudgetAdmissionAuthority({
@@ -640,4 +651,176 @@ describe("durable unbounded liability admission", () => {
 		expect(ledger.read(now).unboundedExposureCount).toBe(1);
 		ledger.close();
 	});
+});
+
+it("rejects a journal settlement that omits authenticated unbounded spend", () => {
+	const { options, unpriced } = fixture();
+	const events: ReturnType<typeof create<typeof BudgetAuthorityEventSchema>>[] =
+		[];
+	const ledger = createBudgetAdmissionAuthority({
+		snapshot: options.snapshot,
+		unpricedScopeTrust: options.unpricedScopeTrust,
+		commit: (event) => events.push(clone(BudgetAuthorityEventSchema, event)),
+	});
+	ledger.reserveUnbounded(unpriced);
+	ledger.claimExecution({
+		reservationId: unpriced.reservationId,
+		requestDigest: unpriced.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+		now,
+	});
+	ledger.settle(unpriced.reservationId, 1_200_000, {
+		usageEvidenceRef: "usage:1",
+		sourceStoppedEvidenceRef: "stop:1",
+		financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:1200000:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":1200000}]`,
+		providerAccounts: [
+			{ providerAccountId: "account-a", liabilityMicros: 1_200_000 },
+		],
+	});
+	const settlement = events.at(-1);
+	if (!settlement?.snapshot) throw new Error("missing settlement");
+	settlement.snapshot.spentMicros = 0;
+	settlement.snapshot.providerAccounts[0].spentMicros = 0;
+	expect(() =>
+		createBudgetAdmissionAuthority({
+			snapshot: options.snapshot,
+			priorEvents: events,
+			unpricedScopeTrust: options.unpricedScopeTrust,
+		}),
+	).toThrow();
+});
+
+it("rejects replay that changes a priced IaC hold while retaining its pin", () => {
+	const { options, quote } = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	quote.financialPlanHash = stableHash(fields);
+	const pin = create(IacPricingPinSchema, {
+		...fields,
+		validUntil: quote.validUntil,
+	});
+	const events: ReturnType<typeof create<typeof BudgetAuthorityEventSchema>>[] =
+		[];
+	const ledger = createBudgetAdmissionAuthority({
+		snapshot: options.snapshot,
+		commit: (event) => events.push(clone(BudgetAuthorityEventSchema, event)),
+	});
+	ledger.reserve({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		quote,
+		iacPricingPin: pin,
+		identity,
+		expectedSeq: 0,
+		now,
+	});
+	const forged = clone(BudgetAuthorityEventSchema, events[0]);
+	if (!forged.snapshot) throw new Error("missing snapshot");
+	forged.type = "budget.ExecutionClaimed";
+	forged.snapshot.seq++;
+	forged.snapshot.reservedMicros = 0;
+	forged.snapshot.providerAccounts[0].reservedMicros = 0;
+	forged.reservations[0].ledgerSeq++;
+	forged.reservations[0].executionDigest = "exec:1";
+	forged.reservations[0].reservedMicros = 0;
+	forged.reservations[0].providerAccounts[0].liabilityMicros = 0;
+	events.push(forged);
+	expect(() =>
+		createBudgetAdmissionAuthority({
+			snapshot: options.snapshot,
+			priorEvents: events,
+		}),
+	).toThrow();
+});
+
+it("rejects a priced IaC settlement journal that omits recorded charges", () => {
+	const { options, quote } = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	quote.financialPlanHash = stableHash(fields);
+	const pin = create(IacPricingPinSchema, {
+		...fields,
+		validUntil: quote.validUntil,
+	});
+	const events: ReturnType<typeof create<typeof BudgetAuthorityEventSchema>>[] =
+		[];
+	const ledger = createBudgetAdmissionAuthority({
+		snapshot: options.snapshot,
+		commit: (event) => events.push(clone(BudgetAuthorityEventSchema, event)),
+	});
+	ledger.reserve({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		quote,
+		iacPricingPin: pin,
+		identity,
+		expectedSeq: 0,
+		now,
+	});
+	ledger.settle("priced", 500_000, {
+		usageEvidenceRef: "usage:1",
+		sourceStoppedEvidenceRef: "stop:1",
+		providerAccounts: [
+			{ providerAccountId: "account-a", liabilityMicros: 500_000 },
+		],
+	});
+	const settlement = events.at(-1);
+	if (!settlement?.snapshot) throw new Error("missing settlement");
+	settlement.snapshot.spentMicros = 0;
+	settlement.snapshot.providerAccounts[0].spentMicros = 0;
+	expect(() =>
+		createBudgetAdmissionAuthority({
+			snapshot: options.snapshot,
+			priorEvents: events,
+		}),
+	).toThrow();
+});
+
+it("fails closed when a persisted SQLite settlement omits authenticated spend", () => {
+	const { options, unpriced } = fixture();
+	const ledger = createSqliteBudgetAdmissionAuthority(options);
+	ledger.reserveUnbounded(unpriced);
+	ledger.claimExecution({
+		reservationId: unpriced.reservationId,
+		requestDigest: unpriced.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+	});
+	ledger.settle(unpriced.reservationId, 1_200_000, {
+		usageEvidenceRef: "usage:1",
+		sourceStoppedEvidenceRef: "stop:1",
+		financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:1200000:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":1200000}]`,
+		providerAccounts: [
+			{ providerAccountId: "account-a", liabilityMicros: 1_200_000 },
+		],
+	});
+	ledger.close();
+	const database = new DatabaseSync(options.path);
+	const persisted = database
+		.prepare("SELECT body FROM budget_events WHERE seq=3")
+		.get();
+	if (!isJsonString(persisted?.body)) throw new Error("settlement missing");
+	const event = fromJsonString(BudgetAuthorityEventSchema, persisted.body);
+	if (!event.snapshot?.providerAccounts[0])
+		throw new Error("settlement snapshot missing");
+	event.snapshot.spentMicros = 0;
+	event.snapshot.providerAccounts[0].spentMicros = 0;
+	database
+		.prepare("UPDATE budget_events SET body=? WHERE seq=3")
+		.run(toJsonString(BudgetAuthorityEventSchema, event));
+	database.close();
+	const reopened = createSqliteBudgetAdmissionAuthority(options);
+	expect(() => reopened.read(now)).toThrow();
+	reopened.close();
 });
