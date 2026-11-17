@@ -100,6 +100,8 @@ compare the actual instants, including fractional seconds; different spellings
 of the same instant do not create a newer observation. Previously persisted
 ambiguous or invalid dates need reconciliation before replay. The HoBo hosting
 bridge uses the same exact comparisons; its trusted clock is in milliseconds.
+The shared financial time helpers also add integer milliseconds and round elapsed
+intervals up to whole minutes without discarding finer timestamp fractions.
 
 The [hosting evidence time skill](../../.agents/skills/verify-hosting-evidence-time/SKILL.md)
 checks freshness and observation ordering. Its freshness model explores 256

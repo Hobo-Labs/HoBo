@@ -5,6 +5,7 @@ import {
 	fromJsonString,
 	toJsonString,
 } from "@bufbuild/protobuf";
+import { compareFinancialTime, validFinancialTime } from "@hobo/broker";
 import {
 	AccountSchema,
 	AccountStateSchema,
@@ -180,14 +181,14 @@ function requireFreshObservation(
 			throw new ControlError(409, "financial observation timestamp required");
 		return;
 	}
-	const incomingTime = Date.parse(incomingAt);
-	const previousTime = previousAt ? Date.parse(previousAt) : undefined;
 	if (
-		!Number.isFinite(incomingTime) ||
-		incomingTime > Date.parse(now) ||
-		(previousTime !== undefined &&
-			(incomingTime < previousTime ||
-				(incomingTime === previousTime && !unchanged)))
+		!validFinancialTime(incomingAt) ||
+		!validFinancialTime(now) ||
+		(previousAt !== "" && !validFinancialTime(previousAt)) ||
+		compareFinancialTime(incomingAt, now) > 0 ||
+		(previousAt !== "" &&
+			(compareFinancialTime(incomingAt, previousAt) < 0 ||
+				(compareFinancialTime(incomingAt, previousAt) === 0 && !unchanged)))
 	)
 		throw new ControlError(409, "stale or conflicting financial observation");
 }
@@ -990,7 +991,10 @@ export function createHostedControlPlane(options: {
 						offer.freeMinutes === observation.freeMinutes &&
 							offer.priceMicrosPerMinute === observation.priceMicrosPerMinute &&
 							offer.spentMicros === observation.spentMicros &&
-							offer.validUntil === observation.validUntil &&
+							validFinancialTime(offer.validUntil) &&
+							validFinancialTime(observation.validUntil) &&
+							compareFinancialTime(offer.validUntil, observation.validUntil) ===
+								0 &&
 							offer.sourceUrl === observation.sourceUrl &&
 							(offer.sandboxPricing
 								? toJsonString(SandboxPricingSchema, offer.sandboxPricing)

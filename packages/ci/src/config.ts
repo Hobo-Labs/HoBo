@@ -1,4 +1,5 @@
 import { fromJsonString } from "@bufbuild/protobuf";
+import { compareFinancialTime, validFinancialTime } from "@hobo/broker";
 import { type Configuration, ConfigurationSchema } from "./_generated/ci_pb.js";
 import { ciBudgetPolicy, ciRoutingObjective } from "./policy.js";
 import {
@@ -36,10 +37,7 @@ export function parseConfiguration(json: string): Configuration {
 			)
 		)
 			throw new Error("invalid routing signal state");
-		if (
-			account.usageObservedAt &&
-			!Number.isFinite(Date.parse(account.usageObservedAt))
-		)
+		if (account.usageObservedAt && !validFinancialTime(account.usageObservedAt))
 			throw new Error("invalid account usage snapshot");
 		if (
 			!Number.isInteger(account.maxRuntimeMinutes) ||
@@ -162,9 +160,9 @@ export function parseConfiguration(json: string): Configuration {
 			if (
 				offer.concurrency < 1 ||
 				offer.concurrency > 1000 ||
-				!Number.isFinite(Date.parse(offer.observedAt)) ||
-				!Number.isFinite(Date.parse(offer.validUntil)) ||
-				Date.parse(offer.validUntil) <= Date.parse(offer.observedAt)
+				!validFinancialTime(offer.observedAt) ||
+				!validFinancialTime(offer.validUntil) ||
+				compareFinancialTime(offer.validUntil, offer.observedAt) <= 0
 			)
 				throw new Error("invalid offer evidence");
 			if (

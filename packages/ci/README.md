@@ -429,6 +429,40 @@ Inclusive monetary snapshots remain independent of routing signal state.
 CI validates the Broker's exact decimal threshold projection. Reconcile older
 rounded signals before replay and upgrade the Broker and CI together.
 
+CI financial observations and rate attestations require valid explicit-offset
+timestamps. Account and provider observations compare actual instants, including
+sub-millisecond fractions; a changed fact at an equivalent instant requires a
+newer observation. Admission and free allocation require evidence through the
+full runtime, and settlement rejects a future or backwards completion. Native
+estimated runtime is rounded up using the full timestamp precision. Reconcile
+older ambiguous, invalid or inconsistent persisted observations before replay.
+
+The [CI financial time skill](../../.agents/skills/verify-ci-financial-time/SKILL.md)
+checks 288 observation states, 384 coverage states and 42 duration states.
+This observation projection hides 144 same-label transitions; source evidence
+and the host clock are trusted.
+
+```mermaid
+stateDiagram-v2
+  s0: Timestamp is invalid
+  s1: Observation is current
+  s2: Observation moves backwards
+  s3: Observation is in the future
+  s4: Facts changed at the same instant
+  s5: Observation accepted
+  s6: Observation refused
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  [*] --> s4
+  s0 --> s6: refuse observation
+  s1 --> s5: accept observation
+  s2 --> s6: refuse observation
+  s3 --> s6: refuse observation
+  s4 --> s6: refuse observation
+```
+
 
 ## Author CI policy
 

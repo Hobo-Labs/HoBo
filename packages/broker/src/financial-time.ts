@@ -36,3 +36,49 @@ export function compareFinancialTime(left: string, right: string): number {
 		return a.secondMillis < b.secondMillis ? -1 : 1;
 	return a.fraction < b.fraction ? -1 : a.fraction > b.fraction ? 1 : 0;
 }
+
+/** Add a whole number of milliseconds without losing finer timestamp precision. */
+export function addFinancialMilliseconds(
+	value: string,
+	milliseconds: number,
+): string {
+	const instant = parseFinancialTime(value);
+	if (!instant || !Number.isSafeInteger(milliseconds))
+		throw new TypeError("invalid financial timestamp or duration");
+	const fraction = instant.fraction.padEnd(3, "0");
+	const elapsedMillis = Number(fraction.slice(0, 3));
+	const shifted = instant.secondMillis + elapsedMillis + milliseconds;
+	if (!Number.isSafeInteger(shifted))
+		throw new RangeError("financial timestamp is out of range");
+	const date = new Date(shifted);
+	if (!Number.isFinite(date.getTime()))
+		throw new RangeError("financial timestamp is out of range");
+	const result = `${date.toISOString().slice(0, -1)}${fraction.slice(3)}Z`;
+	if (!validFinancialTime(result))
+		throw new RangeError("financial timestamp is out of range");
+	return result;
+}
+
+/** Round an exact elapsed interval up to whole minutes. */
+export function ceilFinancialMinutes(start: string, finish: string): number {
+	if (
+		!validFinancialTime(start) ||
+		!validFinancialTime(finish) ||
+		compareFinancialTime(finish, start) < 0
+	)
+		throw new TypeError("invalid financial time interval");
+	const elapsedMillis = Date.parse(finish) - Date.parse(start);
+	if (!Number.isSafeInteger(elapsedMillis))
+		throw new RangeError("financial time interval is out of range");
+	let minutes = Math.ceil(elapsedMillis / 60_000);
+	if (
+		compareFinancialTime(
+			finish,
+			addFinancialMilliseconds(start, minutes * 60_000),
+		) > 0
+	)
+		minutes += 1;
+	if (!Number.isSafeInteger(minutes))
+		throw new RangeError("financial time interval is out of range");
+	return minutes;
+}

@@ -9,6 +9,8 @@ import {
 	validateHostingQuote,
 } from "../src/budget-authority.js";
 import {
+	addFinancialMilliseconds,
+	ceilFinancialMinutes,
 	compareFinancialTime,
 	validFinancialTime,
 } from "../src/financial-time.js";
@@ -59,6 +61,80 @@ function quote() {
 }
 
 describe("hosting financial evidence time", () => {
+	it("adds integer milliseconds without losing the sub-millisecond fraction", () => {
+		expect(
+			addFinancialMilliseconds("2026-10-30T17:30:00.123456789+05:30", -200),
+		).toBe("2026-10-30T11:59:59.923456789Z");
+		expect(() => addFinancialMilliseconds("2026-09-31T00:00:00Z", 1)).toThrow(
+			/invalid/iu,
+		);
+		expect(() => addFinancialMilliseconds(observed, 0.5)).toThrow(/invalid/iu);
+		fc.assert(
+			fc.property(
+				fc.integer({ min: 0, max: 999_999_999 }),
+				fc.integer({ min: -10_000, max: 10_000 }),
+				(nanos, milliseconds) => {
+					const shifted = addFinancialMilliseconds(
+						instant(nanos),
+						milliseconds,
+					);
+					const expectedNanos =
+						BigInt(Date.parse(observed)) * 1_000_000n +
+						BigInt(nanos) +
+						BigInt(milliseconds) * 1_000_000n;
+					const wholeMillis = expectedNanos / 1_000_000n;
+					const remainder = String(expectedNanos % 1_000_000n).padStart(6, "0");
+					const expected = `${new Date(Number(wholeMillis)).toISOString().slice(0, -1)}${remainder}Z`;
+					expect(compareFinancialTime(shifted, expected)).toBe(0);
+				},
+			),
+			{ seed: 614511, numRuns: 500 },
+		);
+	});
+	it("rounds exact elapsed intervals up to whole minutes", () => {
+		expect(
+			ceilFinancialMinutes(
+				"2026-10-30T12:00:00.0000001Z",
+				"2026-10-30T12:01:00.0000009Z",
+			),
+		).toBe(2);
+		expect(
+			ceilFinancialMinutes(
+				"2026-10-30T12:00:00.0000009Z",
+				"2026-10-30T12:01:00.0000001Z",
+			),
+		).toBe(1);
+		expect(() =>
+			ceilFinancialMinutes(
+				"2026-10-30T12:00:00.0000009Z",
+				"2026-10-30T12:00:00.0000001Z",
+			),
+		).toThrow(/interval/iu);
+		fc.assert(
+			fc.property(
+				fc.integer({ min: 0, max: 999_999 }),
+				fc.integer({ min: 0, max: 180_000 }),
+				fc.integer({ min: 0, max: 999_999 }),
+				(startNanos, durationMs, endNanos) => {
+					const baseNanos = BigInt(Date.parse(observed)) * 1_000_000n;
+					const startNs = baseNanos + BigInt(startNanos);
+					const finishNs =
+						baseNanos + BigInt(durationMs) * 1_000_000n + BigInt(endNanos);
+					if (finishNs < startNs) return;
+					const encode = (value: bigint) =>
+						`${new Date(Number(value / 1_000_000n)).toISOString().slice(0, -1)}${String(value % 1_000_000n).padStart(6, "0")}Z`;
+					const expected = Number(
+						(finishNs - startNs + 59_999_999_999n) / 60_000_000_000n,
+					);
+					expect(ceilFinancialMinutes(encode(startNs), encode(finishNs))).toBe(
+						expected,
+					);
+				},
+			),
+			{ seed: 614514, numRuns: 500 },
+		);
+	});
+
 	it("rejects a quote or budget observation later within the same millisecond", () => {
 		const now = instant(100);
 		const later = instant(900);

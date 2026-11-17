@@ -7,9 +7,12 @@ import {
 	toJsonString,
 } from "@bufbuild/protobuf";
 import {
+	addFinancialMilliseconds,
 	BudgetAdmissionDeniedError,
 	type BudgetReservation,
 	type BudgetSettlementEvidence,
+	compareFinancialTime,
+	validFinancialTime,
 } from "@hobo/broker";
 import type { BudgetPolicyEvaluationContext } from "@hobo/core";
 import { z } from "zod";
@@ -501,8 +504,10 @@ export class LeaseStore {
 						if (
 							old.usageObservedAt &&
 							(!account.usageObservedAt ||
-								Date.parse(account.usageObservedAt) <
-									Date.parse(old.usageObservedAt))
+								compareFinancialTime(
+									account.usageObservedAt,
+									old.usageObservedAt,
+								) < 0)
 						)
 							throw new Error(
 								"historical account usage watermark cannot move backwards",
@@ -535,7 +540,7 @@ export class LeaseStore {
 									"provider spending watermark cannot decrease within a budget period",
 								);
 							if (
-								Date.parse(offer.observedAt) < Date.parse(oldOffer.observedAt)
+								compareFinancialTime(offer.observedAt, oldOffer.observedAt) < 0
 							)
 								throw new Error(
 									"historical provider usage watermark cannot move backwards",
@@ -548,22 +553,23 @@ export class LeaseStore {
 								offer.id !== oldOffer.id ||
 								!previousOffer
 							) {
-								const lastUsage = nativeLeases.reduce(
-									(latest, lease) =>
-										Math.max(
-											latest,
-											Date.parse(
-												lease.usageCompletedAt ||
-													lease.settledAt ||
-													lease.createdAt,
-											),
-										),
-									Date.parse(oldOffer.observedAt),
-								);
+								const lastUsage = nativeLeases.reduce((latest, lease) => {
+									const observed =
+										lease.usageCompletedAt ||
+										lease.settledAt ||
+										lease.createdAt;
+									if (!validFinancialTime(observed))
+										throw new Error(
+											"invalid historical provider usage timestamp",
+										);
+									return compareFinancialTime(observed, latest) > 0
+										? observed
+										: latest;
+								}, oldOffer.observedAt);
 								if (
-									Date.parse(offer.observedAt) <=
-										Date.parse(oldOffer.observedAt) ||
-									Date.parse(offer.observedAt) < lastUsage ||
+									compareFinancialTime(offer.observedAt, oldOffer.observedAt) <=
+										0 ||
+									compareFinancialTime(offer.observedAt, lastUsage) < 0 ||
 									nativeLeases.some(
 										(lease) =>
 											!lease.providerAccountId &&
@@ -585,6 +591,8 @@ export class LeaseStore {
 		at: string,
 	): ConfigurationState {
 		return this.transaction(() => {
+			if (!validFinancialTime(at))
+				throw new Error("invalid financial observation timestamp");
 			const previous = this.configuration();
 			if ((previous?.revision ?? 0) !== expectedRevision)
 				throw new Error("configuration revision conflict");
@@ -614,7 +622,7 @@ export class LeaseStore {
 			for (const account of parsed.accounts) {
 				if (
 					account.usageObservedAt &&
-					Date.parse(account.usageObservedAt) > Date.parse(at)
+					compareFinancialTime(account.usageObservedAt, at) > 0
 				)
 					throw new Error("future account usage snapshot");
 				const old = previous?.configuration?.accounts.find(
@@ -623,27 +631,29 @@ export class LeaseStore {
 				if (
 					old?.usageObservedAt &&
 					(!account.usageObservedAt ||
-						Date.parse(account.usageObservedAt) <
-							Date.parse(old.usageObservedAt))
+						compareFinancialTime(account.usageObservedAt, old.usageObservedAt) <
+							0)
 				)
 					throw new Error("account usage snapshot cannot move backwards");
 				if (
 					old?.usageObservedAt &&
-					account.usageObservedAt === old.usageObservedAt &&
+					compareFinancialTime(account.usageObservedAt, old.usageObservedAt) ===
+						0 &&
 					account.spentMicros !== old.spentMicros
 				)
 					throw new Error("account usage facts require a newer observation");
 				for (const offer of account.offers) {
 					const oldOffer = old?.offers.find((entry) => entry.id === offer.id);
-					if (Date.parse(offer.observedAt) > Date.parse(at))
+					if (compareFinancialTime(offer.observedAt, at) > 0)
 						throw new Error("future provider usage snapshot");
 					if (
 						oldOffer &&
-						offer.observedAt === oldOffer.observedAt &&
+						compareFinancialTime(offer.observedAt, oldOffer.observedAt) === 0 &&
 						(offer.freeMinutes !== oldOffer.freeMinutes ||
 							offer.priceMicrosPerMinute !== oldOffer.priceMicrosPerMinute ||
 							offer.spentMicros !== oldOffer.spentMicros ||
-							offer.validUntil !== oldOffer.validUntil ||
+							compareFinancialTime(offer.validUntil, oldOffer.validUntil) !==
+								0 ||
 							offer.sourceUrl !== oldOffer.sourceUrl ||
 							observedSandboxPricing(oldOffer.sandboxPricing) !==
 								observedSandboxPricing(offer.sandboxPricing) ||
@@ -664,7 +674,7 @@ export class LeaseStore {
 						throw new Error("provider usage facts require a newer observation");
 					if (
 						oldOffer &&
-						Date.parse(offer.observedAt) < Date.parse(oldOffer.observedAt)
+						compareFinancialTime(offer.observedAt, oldOffer.observedAt) < 0
 					)
 						throw new Error("provider usage snapshot cannot move backwards");
 				}
@@ -782,17 +792,20 @@ export class LeaseStore {
 				!previous?.configuration
 			)
 				throw new Error("invalid configuration revision");
-			const now = Date.parse(at);
-			const checked = Date.parse(input.checkedAt);
-			const until = Date.parse(input.validUntil);
 			if (
-				!Number.isFinite(now) ||
-				!Number.isFinite(checked) ||
-				!Number.isFinite(until) ||
-				checked > now ||
-				checked < now - 5 * 60_000 ||
-				until <= now ||
-				until > checked + 24 * 60 * 60_000
+				!validFinancialTime(at) ||
+				!validFinancialTime(input.checkedAt) ||
+				!validFinancialTime(input.validUntil) ||
+				compareFinancialTime(input.checkedAt, at) > 0 ||
+				compareFinancialTime(
+					input.checkedAt,
+					addFinancialMilliseconds(at, -5 * 60_000),
+				) < 0 ||
+				compareFinancialTime(input.validUntil, at) <= 0 ||
+				compareFinancialTime(
+					input.validUntil,
+					addFinancialMilliseconds(input.checkedAt, 24 * 60 * 60_000),
+				) > 0
 			)
 				throw new Error("invalid rate attestation time");
 			const config = clone(ConfigurationSchema, previous.configuration);
@@ -808,7 +821,7 @@ export class LeaseStore {
 				offer.sandboxAllowance !== undefined ||
 				!offer.sourceUrl ||
 				offer.sourceUrl !== input.sourceUrl ||
-				until <= Date.parse(offer.validUntil)
+				compareFinancialTime(input.validUntil, offer.validUntil) <= 0
 			)
 				throw new Error("invalid rate attestation offer");
 			const oldValidUntil = offer.validUntil;
@@ -1779,6 +1792,14 @@ export class LeaseStore {
 			if (lease.hostRunId !== 0 && lease.hostRunId !== hostRunId)
 				throw new Error("host run mismatch");
 			if (
+				!validFinancialTime(at) ||
+				!validFinancialTime(completedAt) ||
+				!validFinancialTime(lease.createdAt) ||
+				compareFinancialTime(completedAt, lease.createdAt) < 0 ||
+				compareFinancialTime(completedAt, at) > 0
+			)
+				throw new Error("invalid settlement completion time");
+			if (
 				!Number.isFinite(billedMinutes) ||
 				billedMinutes < 0 ||
 				billedMinutes > Number.MAX_SAFE_INTEGER
@@ -1788,7 +1809,8 @@ export class LeaseStore {
 			lease.state = "completed";
 			lease.billedMinutes = billedMinutes;
 			const quote = allocationQuote(
-				Date.parse(completedAt) <= Date.parse(lease.freeValidUntil)
+				validFinancialTime(lease.freeValidUntil) &&
+					compareFinancialTime(completedAt, lease.freeValidUntil) <= 0
 					? lease.reservedFreeMinutes
 					: 0,
 				[],
@@ -1894,9 +1916,11 @@ export class LeaseStore {
 				!observation.stopped ||
 				!observation.usageEvidenceRef ||
 				!observation.sourceStoppedEvidenceRef ||
-				!Number.isFinite(Date.parse(observation.completedAt)) ||
-				Date.parse(observation.completedAt) < Date.parse(lease.createdAt) ||
-				Date.parse(observation.completedAt) > Date.parse(at) ||
+				!validFinancialTime(observation.completedAt) ||
+				!validFinancialTime(lease.createdAt) ||
+				!validFinancialTime(at) ||
+				compareFinancialTime(observation.completedAt, lease.createdAt) < 0 ||
+				compareFinancialTime(observation.completedAt, at) > 0 ||
 				![
 					observation.billedMinutes,
 					observation.billedFreeMinutes,
