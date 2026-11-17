@@ -56,7 +56,6 @@ describe("observed Kubernetes rollout readiness", () => {
 		);
 	});
 	it("keeps surge rollouts progressing when only old replicas are available", () => {
-		// Both new pods exist, but only the two old pods are available.
 		const surging = deployment(2, 2, 4);
 		expect(parseDeploymentRecord(JSON.stringify(surging)).phase).toBe(
 			"progressing",

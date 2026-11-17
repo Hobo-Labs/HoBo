@@ -1,16 +1,3 @@
-/**
- * The HTTP boundary to a Kubernetes apiserver, as an injected port.
- *
- * Nothing in this package reaches for a global `fetch`, and nothing in it
- * reads a kubeconfig. A host supplies a transport that already carries
- * whatever credential the cluster wants; this package never sees it.
- *
- * Unlike a SaaS driver there is no host allowlist to write down — the
- * apiserver is the operator's own, at an address only they know. What can be
- * pinned is everything else: TLS (with one narrow, explicit loopback escape
- * for `kubectl proxy`), the two API path roots this driver uses, no redirect
- * chasing, a bounded body and a bounded wait.
- */
 import { encodesPathSeparator } from "@hobo/core";
 import { KubernetesProviderError, redactClusterText } from "./errors.js";
 
@@ -31,23 +18,12 @@ export type TransportResponse = {
 	readonly body: string;
 };
 
-/**
- * Implementations MUST NOT follow redirects and MUST abort at `timeoutMs`.
- * The guard re-checks both, but a transport that silently follows a 302 has
- * already sent a namespaced object to the redirect target.
- */
 export interface KubernetesTransport {
 	request(request: TransportRequest): Promise<TransportResponse>;
 }
 
 export type TransportPolicy = {
-	/** Only the API roots this driver actually uses. */
 	readonly allowedPathPrefixes: readonly string[];
-	/**
-	 * `kubectl proxy` terminates TLS locally and serves plain HTTP on
-	 * 127.0.0.1. That is the only cleartext apiserver address this driver will
-	 * talk to, and only when a host opts in.
-	 */
 	readonly allowInsecureLoopback: boolean;
 	readonly maxResponseBytes: number;
 	readonly timeoutMs: number;
@@ -62,10 +38,6 @@ export const DEFAULT_TRANSPORT_POLICY: TransportPolicy = {
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
-/**
- * Parse an outbound URL against the policy. Returns the parsed URL so callers
- * cannot accidentally use the unchecked string.
- */
 export function assertAllowedEndpoint(
 	url: string,
 	policy: TransportPolicy,
@@ -107,26 +79,12 @@ export function assertAllowedEndpoint(
 			`path ${parsed.pathname} is outside the ${policy.allowedPathPrefixes.join(" / ")} roots this driver uses`,
 		);
 	}
-	// `..` in a request path is how a namespaced call reaches a cluster-scoped
-	// object. The apiserver would normalize it; this driver refuses it. The
-	// literal check below only ever saw the literal form — the percent-encoded
-	// one survives parsing and would reach the apiserver intact.
-	// Also the raw path: `%2F` survives parsing, but `%2E%2E` does not — it is
-	// decoded to `..` and then resolved away, so the normalized form no longer
-	// carries the encoding this check is looking for.
 	if (encodesPathSeparator(parsed.pathname) || encodesPathSeparator(rawPath)) {
 		throw new KubernetesProviderError(
 			"PROVIDER_CONTRACT_CHANGED",
 			`apiserver path ${parsed.pathname} percent-encodes a path separator or dot segment, which this guard refuses rather than decodes`,
 		);
 	}
-	// Checked against the *caller's* path, not `parsed.pathname`. `new URL()`
-	// resolves dot segments while parsing, so by the time the URL exists a
-	// namespaced `/api/v1/namespaces/default/../../nodes` has already become the
-	// cluster-scoped `/api/v1/nodes` — which passes the root allowlist above and
-	// reads, to every later frame, as a path the caller wrote. Inspecting the
-	// normalized form is therefore blind to the exact escalation this refusal
-	// exists to stop.
 	if (rawPath.includes("//") || /(?:^|\/)\.\.?(?:\/|$)/u.test(rawPath)) {
 		throw new KubernetesProviderError(
 			"PROVIDER_CONTRACT_CHANGED",
@@ -136,12 +94,6 @@ export function assertAllowedEndpoint(
 	return parsed;
 }
 
-/**
- * The path the caller actually wrote, before `new URL()` resolves anything.
- *
- * Everything up to the authority is scheme and host; the path starts at the
- * first `/` after it, and ends at the query or fragment.
- */
 function rawPathOf(url: string): string {
 	const afterScheme = url.indexOf("://");
 	const start = url.indexOf("/", afterScheme < 0 ? 0 : afterScheme + 3);
@@ -165,13 +117,6 @@ function headerValue(
 	return undefined;
 }
 
-/**
- * Wrap any transport with the request/response invariants.
- *
- * A 3xx is rejected outright rather than followed: the apiserver documents no
- * redirects on these paths, so one is either a contract change or a hijack,
- * and neither should silently resolve.
- */
 export function createGuardedTransport(
 	inner: KubernetesTransport,
 	policy: TransportPolicy = DEFAULT_TRANSPORT_POLICY,
@@ -230,11 +175,6 @@ function byteLength(text: string): number {
 	return new TextEncoder().encode(text).length;
 }
 
-/**
- * Minimal WHATWG-fetch adapter. `fetchImpl` is required — the point of the
- * port is that reaching a cluster is always something a host decided to hand
- * over, never something a library reached for.
- */
 export function createFetchTransport(options: {
 	readonly fetchImpl: typeof globalThis.fetch;
 }): KubernetesTransport {
@@ -267,8 +207,6 @@ export function createFetchTransport(options: {
 				return { status: response.status, headers, body: text };
 			} catch (cause) {
 				if (cause instanceof KubernetesProviderError) throw cause;
-				// A timed-out write never proves the apiserver did nothing, so it
-				// can only be reported as ambiguous.
 				throw new KubernetesProviderError(
 					"PROVIDER_OPERATION_AMBIGUOUS",
 					`${request.method} to the apiserver did not complete`,

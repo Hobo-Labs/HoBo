@@ -1,12 +1,3 @@
-/**
- * Stable HoBo error codes for the Kubernetes placement driver.
- *
- * Apiserver text is never interpolated verbatim. A `Status` message routinely
- * quotes the object that caused it, and the objects this driver sends near a
- * failure path include ServiceAccount tokens, imagePullSecrets and, on an
- * adopted namespace, whatever the operator already put there.
- */
-
 import {
 	createProviderRedactor,
 	type ProviderRedactionProfile,
@@ -30,32 +21,21 @@ export type KubernetesErrorDetail = Readonly<
 >;
 
 export type KubernetesErrorOptions = {
-	/** Safe to repeat the request verbatim. Ambiguity is never retryable. */
 	readonly retryable?: boolean;
 	readonly retryAfterMs?: number;
 	readonly detail?: KubernetesErrorDetail;
 	readonly cause?: Error;
 };
 
-/** The provider's own patterns, on top of the shared ones. */
 export const KUBERNETES_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
 		/\b(?:client-key-data|client-certificate-data|certificate-authority-data)\s*[=:]\s*\S+/gi,
-		// .dockerconfigjson, the usual imagePullSecret payload: to its first
-		// closing brace, or to the end of the text when there is none.
 		/"auths"\s*:\s*\{[^}]*\}?/gu,
 	],
 };
 
 const clusterRedactor = createProviderRedactor(KUBERNETES_REDACTION_PROFILE);
 
-/**
- * Replace anything credential-shaped with a marker and flatten control
- * characters so apiserver text cannot forge a log record. The shared redactor
- * (`@hobo/provider-redaction`) holds the shapes, the window and the cut;
- * Kubernetes adds the kubeconfig's embedded blobs and the dockerconfigjson an
- * imagePullSecret carries.
- */
 export function redactClusterText(text: string, maxLength = 256): string {
 	return clusterRedactor(text, maxLength);
 }

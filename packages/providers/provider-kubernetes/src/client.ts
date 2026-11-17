@@ -1,11 +1,3 @@
-/**
- * The Kubernetes apiserver client: six calls, each one parsed on the way back.
- *
- * Every method returns a refined record from `src/api.ts`, never a response
- * body. The only place in this package that knows what an apiserver JSON
- * document looks like is that parser and this file's request rendering.
- */
-
 import {
 	type DeploymentRecord,
 	type NamespaceRecord,
@@ -39,19 +31,12 @@ export const APPS_PATH = "/apis/apps/v1/namespaces";
 
 export type KubernetesApiClientOptions = {
 	readonly transport: KubernetesTransport;
-	/** The apiserver root, e.g. `https://cluster.example:6443`. */
 	readonly apiServerUrl: string;
 	readonly policy?: TransportPolicy;
 	readonly timeoutMs?: number;
 };
 
 export interface KubernetesApiClient {
-	/**
-	 * Create the placement namespace, or adopt the one that is already there.
-	 * A 409 AlreadyExists is not a failure — it is the second run of the same
-	 * deploy, and the distinction is carried in `createdByHobo` because only a
-	 * namespace this driver created may later be deleted.
-	 */
 	createOrAdoptNamespace(
 		placement: WorkloadPlacement,
 	): Promise<NamespaceRecord>;
@@ -62,11 +47,6 @@ export interface KubernetesApiClient {
 	deleteNamespace(name: string): Promise<NamespaceRecord>;
 }
 
-/**
- * Map an apiserver failure onto a HoBo code, using its own `Status.reason`
- * rather than the HTTP status alone. 409 is `AlreadyExists` on a create and
- * `Conflict` on a stale resourceVersion; those want opposite responses.
- */
 export function errorForApiResponse(
 	response: TransportResponse,
 	context: { readonly method: TransportMethod; readonly what: string },
@@ -78,8 +58,6 @@ export function errorForApiResponse(
 		reason = status.reason;
 		message = status.message;
 	} catch {
-		// A non-Status error body is itself a contract change, but the HTTP
-		// status is still the more useful thing to report.
 		message = redactClusterText(response.body, 180);
 	}
 	const detail = {
@@ -119,9 +97,6 @@ export function errorForApiResponse(
 		);
 	}
 	if (response.status >= 500) {
-		// A 5xx on a create is indistinguishable from "created but not
-		// acknowledged", so it is ambiguous rather than retryable. A 5xx on a
-		// read is safe to repeat.
 		return context.method === "GET"
 			? new KubernetesProviderError(
 					"PROVIDER_CONTRACT_CHANGED",
@@ -198,9 +173,6 @@ export function createKubernetesApiClient(
 			if (response.status === 409) {
 				const existing = await getNamespace(placement.namespace);
 				if (existing === undefined) {
-					// AlreadyExists followed by NotFound means the namespace was
-					// deleted between the two calls; retrying the create is the
-					// caller's decision, not this method's.
 					throw errorForApiResponse(response, {
 						method: "POST",
 						what: `namespace ${placement.namespace}`,
@@ -266,9 +238,6 @@ export function createKubernetesApiClient(
 					what: `namespace ${name}`,
 				});
 			}
-			// The delete response is the namespace itself, now Terminating. It
-			// was created by this driver — that is why it is being deleted — so
-			// the flag survives the round trip.
 			return parseNamespaceRecord(response.body, { createdByHobo: true });
 		},
 	};

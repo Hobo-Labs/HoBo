@@ -1,67 +1,3 @@
-/**
- * Direct apiserver resource resolvers for built-in Kubernetes objects.
- *
- * Why this module exists: this package shipped a *placement driver* — one
- * opinionated sequence that creates a Namespace, a Deployment and a Service for
- * a web workload — and no `ResourceResolver`, so a deploy routed through a Yard
- * failed closed for want of one. These resolvers close that gap: one convergent
- * `reconcile` per built-in object, talking to the apiserver over an injected,
- * guarded `HttpTransport`, with no IaC engine and no state file in the middle.
- * The driver in `./driver.ts` stays exactly as it was; it is the opinionated
- * path, this is the general one.
- *
- * The property that makes that safe is **convergence**, and Kubernetes makes it
- * unusually easy: every object here has a deterministic name inside a
- * namespace, so "does it already exist" is a single GET rather than a listing.
- * `reconcile()` reads first, creates only when the read says absent, and then
- * applies the mutable delta as a merge patch. Running it twice yields the same
- * `physicalId`, exactly one object, and exactly one create call. `delete()`
- * treats "already gone" as success for the same reason.
- *
- * Three deliberate refusals, each of which would otherwise be a plausible
- * convenience:
- *
- * 1. **The namespace is never defaulted.** A resolver that quietly fell back to
- *    `default` would put a workload in the busiest namespace in the cluster,
- *    where an RBAC mistake reaches everything. `desired.namespace` is required
- *    and its absence is a typed refusal naming the fix.
- * 2. **`"replace"` is never emitted.** A Job's pod template and a PVC's storage
- *    class are immutable, and "converging" them means deleting the object —
- *    which for a PVC deletes data and for a Job discards a completed run. Drift
- *    on an immutable field is reported as a diagnostic for a human.
- * 3. **Secrets ship no resolver at all.** Creating one means putting its
- *    contents in `desired`, and `desired` is recorded in the event log. The
- *    catalog still declares `kubernetes.secret/v1` as a *locator* row, which is
- *    the whole point of that profile — see
- *    {@link KUBERNETES_UNRESOLVED_PRODUCT_IDS}.
- *
- * Credentials are locators, never material. A resolver is constructed with an
- * injected `resolveCredential(ref)`; `ResolveRequest.credentialRef` must be a
- * `scheme://…` locator — the grammar core's `parseResolveRequest` enforces —
- * and a value that looks like a bearer token is refused, because a raw token in
- * a request record is a token in the event log. The token reaches exactly one
- * place: the `authorization` header. Apiserver `Status` text is passed through
- * `redactClusterText` before it reaches a message, because a Status routinely
- * quotes the object that caused it and those objects carry tokens.
- *
- * Determinism: no clock, no randomness, no environment reads.
- *
- * HONEST SCOPE (also in the README):
- *   - These resolvers are exercised against an *injected fake* transport
- *     modelling an apiserver. Nothing in this package proves a live deploy:
- *     that additionally needs a real cluster, real credentials and real network
- *     egress, none of which a unit test supplies.
- *   - They do **not** support `kubectl proxy`. The `ResourceResolver` contract
- *     runs over `@hobo/core`'s HTTPS-only transport guard; the cleartext
- *     loopback escape lives on the driver path and deliberately not here. See
- *     `./resolver-transport.ts`.
- *   - Coverage is the built-in objects named below and explicitly not the whole
- *     API. Anything an operator installs — a Postgres CRD, a queue CRD — is out
- *     of scope by construction, not by omission.
- *   - The `productId` strings are read off the `./slots.js` factories, so the
- *     registry and the Yard catalog cannot drift apart.
- */
-
 import {
 	createResolverRegistry,
 	type HttpTransport,
@@ -105,11 +41,6 @@ import {
 	statefulSet,
 } from "./slots.js";
 
-// ---------------------------------------------------------------------------
-// Product ids — read off the slot factories so the registry cannot drift from
-// the catalog it is supposed to serve.
-// ---------------------------------------------------------------------------
-
 function productIdOf(binding: SlotBinding, factory: string): string {
 	const { productId } = binding;
 	if (productId === undefined) {
@@ -143,7 +74,6 @@ export const KUBERNETES_PVC_PRODUCT_ID = productIdOf(
 	"persistentVolumeClaim",
 );
 
-/** Every product this module resolves, id-sorted for a deterministic registry. */
 export const KUBERNETES_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze(
 	[
 		KUBERNETES_CRONJOB_PRODUCT_ID,
@@ -158,74 +88,24 @@ export const KUBERNETES_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze(
 	].sort(compareStrings),
 );
 
-/**
- * Product ids this package catalogs but does not resolve.
- *
- * Empty. Every catalogued object has a convergent path against the apiserver,
- * the Secret included — its material arrives through an injected function
- * rather than through `desired`, so nothing about it reaches the event log.
- *
- * It is exported anyway, and the tests still assert that resolved + unresolved
- * accounts for the catalog exactly once. The list existing and being empty is a
- * different claim from the list not existing: an object added to `./slots.ts`
- * without a resolver has to be named here, and that is a decision a reviewer
- * sees rather than a gap nobody counted.
- */
 export const KUBERNETES_UNRESOLVED_PRODUCT_IDS: readonly string[] =
 	Object.freeze([]);
 
-// ---------------------------------------------------------------------------
-// Construction
-// ---------------------------------------------------------------------------
-
-/** What a host must supply to build the resolvers. */
 export interface KubernetesResolverOptions {
-	/** The apiserver root, e.g. `https://cluster.example:6443`. HTTPS only. */
 	readonly apiServerUrl: string;
-	/**
-	 * Resolves a credential *locator* to a bearer token (in practice a
-	 * projected ServiceAccount token). Injected so the resolver never holds a
-	 * secret and never decides where secrets live.
-	 */
 	readonly resolveCredential: (ref: string) => Promise<string>;
-	/**
-	 * Resolves the contents of one Secret, by logical id.
-	 *
-	 * Keyed by logical id rather than by anything in `desired`, because core
-	 * refuses credential-shaped keys in a property bag: `desired` is recorded in
-	 * the event log, the plan digest, and every diagnostic printed from them,
-	 * and a Secret's whole content is material. The host maps the logical id to
-	 * its own custody and hands back plain strings; this package base64-encodes
-	 * them for the apiserver and holds them no longer than the call. Required
-	 * only to build the Secret resolver.
-	 */
 	readonly resolveSecretData?: (
 		logicalId: string,
 	) => Promise<Readonly<Record<string, string>>>;
 }
 
-/**
- * A credential locator, using the same grammar core's `parseResolveRequest`
- * enforces (`scheme://path`, no userinfo). Restated here rather than imported
- * because a resolver must refuse a bad ref even when a caller skipped the parse
- * boundary — and a second grammar would be a second answer.
- */
 const CREDENTIAL_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^\s@]+$/u;
 
-/**
- * A compact JWS, which is what a projected ServiceAccount token looks like when
- * someone pastes the value into `credentialRef` by mistake.
- */
 const RAW_CREDENTIAL_PATTERN =
 	/^(?:eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|[A-Za-z0-9_-]{40,})$/u;
 
-/** RFC 1123 subdomain: the name grammar every object here must satisfy. */
 const OBJECT_NAME_PATTERN =
 	/^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/u;
-
-// ---------------------------------------------------------------------------
-// Small shared parsers
-// ---------------------------------------------------------------------------
 
 function compareStrings(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
@@ -249,7 +129,6 @@ function nestedRecord(record: JsonObject, key: string): JsonObject {
 	return isPlainObject(value) ? value : {};
 }
 
-/** Key-sorted JSON, so a spec compare does not depend on key order. */
 function stableJson(value: JsonValue): string {
 	if (Array.isArray(value)) {
 		return `[${value.map((item) => stableJson(item)).join(",")}]`;
@@ -263,23 +142,11 @@ function stableJson(value: JsonValue): string {
 	return JSON.stringify(value) ?? "null";
 }
 
-// ---------------------------------------------------------------------------
-// Object kinds
-// ---------------------------------------------------------------------------
-
-/** Everything the generic reconcile needs to address one built-in kind. */
 interface ObjectKind {
-	/** `apps/v1`, `v1`, `batch/v1`, `networking.k8s.io/v1`. */
 	readonly apiVersion: string;
 	readonly kind: string;
-	/** The allowlisted API root this kind lives under. */
 	readonly apiRoot: string;
-	/** The lower-case plural the apiserver uses in a path. */
 	readonly plural: string;
-	/**
-	 * True when the whole spec is fixed at creation. A Job's pod template is;
-	 * "converging" it would mean deleting a completed run.
-	 */
 	readonly specImmutable: boolean;
 }
 
@@ -296,8 +163,6 @@ const OBJECT_KINDS: Readonly<Record<string, ObjectKind>> = Object.freeze({
 		kind: "Secret",
 		apiRoot: "/api/v1",
 		plural: "secrets",
-		// A Secret has no `spec`; it is resolved by SECRET_SPEC rather than by
-		// the generic path, and this entry exists for the URL helpers only.
 		specImmutable: false,
 	}),
 	[KUBERNETES_SERVICE_PRODUCT_ID]: Object.freeze({
@@ -319,9 +184,6 @@ const OBJECT_KINDS: Readonly<Record<string, ObjectKind>> = Object.freeze({
 		kind: "Job",
 		apiRoot: "/apis/batch/v1",
 		plural: "jobs",
-		// A Job's `spec.template` is immutable once created; the apiserver
-		// rejects a patch that touches it, so drift is reported rather than
-		// attempted.
 		specImmutable: true,
 	}),
 	[KUBERNETES_STATEFULSET_PRODUCT_ID]: Object.freeze({
@@ -329,9 +191,6 @@ const OBJECT_KINDS: Readonly<Record<string, ObjectKind>> = Object.freeze({
 		kind: "StatefulSet",
 		apiRoot: "/apis/apps/v1",
 		plural: "statefulsets",
-		// `volumeClaimTemplates` and `serviceName` are immutable, and a patch
-		// touching either is rejected by the apiserver. The whole spec is
-		// treated as fixed rather than guessing which half of a drift is safe.
 		specImmutable: true,
 	}),
 	[KUBERNETES_DAEMONSET_PRODUCT_ID]: Object.freeze({
@@ -353,22 +212,14 @@ const OBJECT_KINDS: Readonly<Record<string, ObjectKind>> = Object.freeze({
 		kind: "PersistentVolumeClaim",
 		apiRoot: "/api/v1",
 		plural: "persistentvolumeclaims",
-		// A PVC's storage class and access modes are fixed at creation and its
-		// size only grows; a general patch would either be rejected or destroy
-		// data, so drift is reported.
 		specImmutable: true,
 	}),
 });
-
-// ---------------------------------------------------------------------------
-// The wire
-// ---------------------------------------------------------------------------
 
 interface ApiCall {
 	readonly method: TransportMethod;
 	readonly path: string;
 	readonly json?: unknown;
-	/** Merge patches need their own content type; the apiserver is strict. */
 	readonly contentType?: string;
 }
 
@@ -408,7 +259,6 @@ function parseJsonRecord(
 	if (response.body.trim().length === 0) return {};
 	let parsed: JsonValue;
 	try {
-		// SAFETY: assertion to `) as unknown; } catch { throw new` is required at this boundary.
 		parsed = JSON.parse(response.body) as JsonValue;
 	} catch {
 		throw new ResolverError(
@@ -425,13 +275,6 @@ function parseJsonRecord(
 	return parsed;
 }
 
-/**
- * The refusal path. A Kubernetes `Status` is
- * `{"kind":"Status","reason":"Forbidden","message":"…"}`, and the message
- * routinely quotes the object that caused it — objects that carry
- * ServiceAccount tokens and imagePullSecrets. `redactClusterText` is what makes
- * quoting it safe.
- */
 function providerRejection(
 	response: TransportResponse,
 	label: string,
@@ -460,27 +303,15 @@ function expectOk(response: TransportResponse, label: string): JsonObject {
 	return parseJsonRecord(response, label);
 }
 
-// ---------------------------------------------------------------------------
-// Resolver plumbing
-// ---------------------------------------------------------------------------
-
-/** Everything a resolver body needs, with the credential already resolved. */
 interface KubernetesResolverContext {
 	readonly request: ResolveRequest;
 	readonly transport: HttpTransport;
 	readonly token: string;
 	readonly apiServerUrl: string;
-	/** The deterministic object name: `desired.name`, else the logical id. */
 	readonly name: string;
 	readonly namespace: string;
 	readonly desired: JsonObject;
 	readonly knownPhysicalId: string | undefined;
-	/**
-	 * The host's Secret custody, if it wired one. A function rather than a
-	 * resolved map so nothing is fetched for a request that does not need it,
-	 * and so material never sits on a context that gets passed around.
-	 * Undefined on every path but the Secret.
-	 */
 	readonly resolveSecretData:
 		| ((logicalId: string) => Promise<Readonly<Record<string, string>>>)
 		| undefined;
@@ -501,12 +332,6 @@ function outcome(
 	});
 }
 
-/**
- * Existing object, no delta: `noop` when the caller already named it, `adopt`
- * when the resolver found something the request did not know about. The
- * distinction is the audit record — adopting an object somebody else created is
- * a fact an operator should see, not something folded into "nothing happened".
- */
 function settledAction(context: KubernetesResolverContext): ResolverAction {
 	return context.knownPhysicalId === undefined ? "adopt" : "noop";
 }
@@ -575,11 +400,6 @@ function objectName(request: ResolveRequest, productId: string): string {
 	return candidate;
 }
 
-/**
- * The namespace, never defaulted. Falling back to `default` would put a
- * workload in the busiest namespace in the cluster — the one where an RBAC
- * mistake reaches everything — because nobody said otherwise.
- */
 function requiredNamespace(request: ResolveRequest, productId: string): string {
 	const namespace = optionalString(request.desired, "namespace");
 	if (namespace === undefined) {
@@ -602,14 +422,6 @@ function knownPhysicalId(request: ResolveRequest): string | undefined {
 	return isJsonString(value) && value.trim().length > 0 ? value : undefined;
 }
 
-/**
- * The object spec the caller authored.
- *
- * Passed through rather than assembled field by field: a Deployment spec
- * carries replicas, a selector, a whole pod template with containers, probes,
- * volumes and affinity, and a resolver that rebuilt a subset of that would
- * silently drop everything it did not know about on the next reconcile.
- */
 function desiredSpec(
 	context: KubernetesResolverContext,
 	productId: string,
@@ -628,10 +440,6 @@ function desiredLabels(context: KubernetesResolverContext): JsonObject {
 	const labels = context.desired.labels;
 	return isPlainObject(labels) ? labels : {};
 }
-
-// ---------------------------------------------------------------------------
-// Paths, bodies and outputs
-// ---------------------------------------------------------------------------
 
 function collectionPath(
 	kind: ObjectKind,
@@ -665,12 +473,6 @@ function objectBody(
 	};
 }
 
-/**
- * The in-cluster DNS name a Service publishes. It is deliberately not an
- * external URL: this resolver creates no LoadBalancer and installs no Ingress
- * controller, so advertising a public hostname would be claiming something it
- * never provisioned.
- */
 function clusterDnsName(context: KubernetesResolverContext): string {
 	return `${context.name}.${context.namespace}.svc.cluster.local`;
 }
@@ -739,10 +541,6 @@ function driftDiagnostics(
 	];
 }
 
-// ---------------------------------------------------------------------------
-// The generic built-in object resolver
-// ---------------------------------------------------------------------------
-
 function builtInSpec(
 	productId: string,
 ): Omit<KubernetesResolverSpec, "productId"> {
@@ -752,7 +550,6 @@ function builtInSpec(
 	}
 	const kind = selected;
 
-	// SAFETY: assertion to ` async function read( context: Kube` is required at this boundary.
 	async function read(
 		context: KubernetesResolverContext,
 	): Promise<JsonObject | undefined> {
@@ -815,10 +612,6 @@ function builtInSpec(
 					driftDiagnostics(kind, observed, spec),
 				);
 			}
-			// A strategic-merge patch would merge list items by key and silently
-			// keep containers the new spec dropped. A plain merge patch replaces
-			// the spec wholesale, which is what "the spec you authored is the
-			// spec that runs" actually requires.
 			const label = `kubernetes patch ${kind.kind} ${context.namespace}/${context.name}`;
 			const patched = expectOk(
 				await send(context, {
@@ -850,40 +643,8 @@ function builtInSpec(
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Secret — material that never touches `desired`, an output, or a diagnostic
-// ---------------------------------------------------------------------------
-
-/**
- * A Secret is the one catalogued object whose *content* is the material.
- *
- * That is a real constraint, and the wrong conclusion to draw from it is that
- * the object cannot be resolved. `desired` is what must stay clean, not the
- * request: core refuses credential-shaped keys in a property bag for exactly
- * this reason, so the contents arrive through the injected
- * `resolveSecretData(logicalId)` — the same shape as every other credential in
- * this repo — and `desired` carries only the Secret's `type` and its labels.
- *
- * From there the discipline is mechanical, and each piece is tested:
- *
- *   - material is fetched immediately before the call and held no longer;
- *   - it goes into the request body and nowhere else — never an output, never a
- *     diagnostic, never a URL, never an error message;
- *   - outputs publish the *key names* and the type, because a binding needs to
- *     know a Secret has a `password` key, and never the values;
- *   - drift is decided by comparing encoded values in memory, so a rotation
- *     converges without either version being rendered anywhere.
- */
-// SAFETY: assertion to `jectKind; /** * Base64 of the UTF-8 bytes, which is wh` is required at this boundary.
 const SECRET_KIND = OBJECT_KINDS[KUBERNETES_SECRET_PRODUCT_ID] as ObjectKind;
 
-/**
- * Base64 of the UTF-8 bytes, which is what the apiserver stores in `data`.
- *
- * `btoa` alone is latin1 and would corrupt any non-ASCII secret, so the string
- * is encoded to bytes first. Built on globals rather than `node:buffer` because
- * this package also runs in `@hobo/runtime-browser`.
- */
 function base64Utf8(value: string): string {
 	const bytes = new TextEncoder().encode(value);
 	let binary = "";
@@ -891,18 +652,10 @@ function base64Utf8(value: string): string {
 	return btoa(binary);
 }
 
-/** The Secret's `type`, defaulted to the one Kubernetes itself defaults to. */
 function secretType(context: KubernetesResolverContext): string {
 	return optionalString(context.desired, "secretType") ?? "Opaque";
 }
 
-/**
- * Fetch the Secret's contents from the host's custody.
- *
- * The return value is deliberately not stored on the context: it is fetched at
- * the point of use so that a `read` — which never needs material — never causes
- * the host's custody to be touched at all.
- */
 async function secretData(
 	context: KubernetesResolverContext,
 ): Promise<Readonly<Record<string, string>>> {
@@ -934,7 +687,6 @@ async function secretData(
 		if (!isJsonString(value)) {
 			throw new ResolverError(
 				"RESOLVER_CREDENTIAL_MISSING",
-				// The key name is safe to print; the value is not, and is not.
 				`${KUBERNETES_SECRET_PRODUCT_ID}: resolveSecretData returned a non-string for key ${JSON.stringify(key)}. Kubernetes stores byte strings, so the host's custody must hand over strings`,
 				KUBERNETES_SECRET_PRODUCT_ID,
 			);
@@ -943,7 +695,6 @@ async function secretData(
 	return Object.freeze({ ...material });
 }
 
-/** `{ key: base64(value) }`, which is exactly the apiserver's `data` shape. */
 function encodedData(material: StringBag): StringBag {
 	const out: StringBag = {};
 	for (const key of Object.keys(material).sort(compareStrings)) {
@@ -952,14 +703,6 @@ function encodedData(material: StringBag): StringBag {
 	return out;
 }
 
-/**
- // SAFETY: assertion to `tputs: what a binding n` is required at this boundary.
- * Outputs: what a binding needs to *use* the Secret, and nothing more.
- *
- * The key names are published because a projection has to name a key to mount
- * it, and a binding that had to guess would be worse. The values are not, and
- * neither is anything derived from them.
- */
 function secretOutputs(
 	context: KubernetesResolverContext,
 	observed: JsonObject,
@@ -967,13 +710,8 @@ function secretOutputs(
 	const data = nestedRecord(observed, "data");
 	return {
 		...objectOutputs(SECRET_KIND, context, observed),
-		// Deliberately not named `secretType`/`secretRef`: core refuses
-		// credential-shaped keys in an outcome's outputs as well as in `desired`,
-		// and it is right to — a bag that can hold a key called `secret…` is a
-		// bag someone will eventually put a secret in.
 		objectType: optionalString(observed, "type") ?? secretType(context),
 		keys: Object.keys(data).sort(compareStrings),
-		/** The locator a `secret-ref` binding projects from. */
 		locator: `k8s://${context.namespace}/${context.name}`,
 	};
 }
@@ -1003,8 +741,6 @@ const SECRET_SPEC: Omit<KubernetesResolverSpec, "productId"> = {
 		const observed = isNotFound(existing)
 			? undefined
 			: expectOk(existing, label);
-		// Material is fetched only now — after the read that might have made it
-		// unnecessary is done, and only on a path that will actually send it.
 		const wanted = encodedData(await secretData(context));
 		const labels = desiredLabels(context);
 		const body = {
@@ -1036,9 +772,6 @@ const SECRET_SPEC: Omit<KubernetesResolverSpec, "productId"> = {
 				],
 			);
 		}
-		// Drift is decided on the encoded values, compared in memory. Neither
-		// version is rendered into a message, so a rotation converges without
-		// either secret being written anywhere.
 		const live = nestedRecord(observed, "data");
 		const settled =
 			stableJson(live) === stableJson(wanted) &&
@@ -1056,8 +789,6 @@ const SECRET_SPEC: Omit<KubernetesResolverSpec, "productId"> = {
 			(optionalString(observed, "type") ?? secretType(context)) !==
 			secretType(context)
 		) {
-			// `type` is immutable on a Secret; the apiserver rejects a patch that
-			// changes it. Reporting drift beats a request that cannot succeed.
 			return outcome(
 				settledAction(context),
 				`${context.namespace}/${context.name}`,
@@ -1072,9 +803,6 @@ const SECRET_SPEC: Omit<KubernetesResolverSpec, "productId"> = {
 				method: "PATCH",
 				path: objectPath(SECRET_KIND, context),
 				contentType: "application/merge-patch+json",
-				// A merge patch on `data` replaces the map wholesale, which is what
-				// a rotation means. A strategic-merge patch would keep keys the new
-				// material dropped, leaving a retired credential mounted.
 				json: { data: wanted },
 			}),
 			`kubernetes patch Secret ${context.namespace}/${context.name}`,
@@ -1102,11 +830,6 @@ const SECRET_SPEC: Omit<KubernetesResolverSpec, "productId"> = {
 	},
 };
 
-// ---------------------------------------------------------------------------
-// Wrapper and registry
-// ---------------------------------------------------------------------------
-
-/** Per-product behaviour; the wrapper owns credentials, naming, and refusals. */
 interface KubernetesResolverSpec {
 	readonly productId: string;
 	reconcile(context: KubernetesResolverContext): Promise<ResolveOutcome>;
@@ -1118,8 +841,6 @@ function createResolver(
 	spec: KubernetesResolverSpec,
 	options: KubernetesResolverOptions,
 ): ResourceResolver {
-	// Parses (and refuses) the apiserver URL at construction time rather than
-	// on the first call, when a token is already in hand.
 	parseApiServerEndpoint(options.apiServerUrl);
 	if (!(options.resolveCredential instanceof Function)) {
 		throw new ResolverError(
@@ -1180,12 +901,6 @@ function createResolver(
 	};
 }
 
-/**
- * Every Kubernetes resolver, id-sorted so the list is a function of the code
- * rather than of construction order. Every catalogued object has one;
- * {@link KUBERNETES_UNRESOLVED_PRODUCT_IDS} is empty and stays exported so that
- * stops being true loudly rather than quietly.
- */
 export function kubernetesResolvers(
 	options: KubernetesResolverOptions,
 ): readonly ResourceResolver[] {
@@ -1204,7 +919,6 @@ export function kubernetesResolvers(
 	);
 }
 
-/** The same resolvers, behind core's product-id lookup. */
 export function kubernetesResolverRegistry(
 	options: KubernetesResolverOptions,
 ): {

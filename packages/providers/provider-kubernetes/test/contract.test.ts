@@ -1,22 +1,3 @@
-/**
- * Consumer-driven contract verification for the Kubernetes apiserver boundary.
- *
- * `contracts/provider-kubernetes-apiserver.pact.json` states what this package
- * expects of an apiserver. A pact file nobody replays is a wish, so this suite
- * loads it and drives the real client against each interaction: the request
- * the client emits must match the one the pact describes, and the client must
- * behave as documented when handed the pact's recorded response.
- *
- * Only the consumer half is verifiable here. Nobody can verify a cluster's
- * half offline, and the default test lane starts no cluster. What the pact
- * does is pin what this client sends and record — with a
- * `metadata.source.checkedAt` date — what a human last observed core/v1 and
- * apps/v1 sending back.
- *
- * The fake sits at the HTTP seam and nowhere else: every parser, every
- * manifest renderer, the guarded transport and the driver are the real ones.
- */
-
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -68,12 +49,6 @@ type PactFile = {
 	readonly interactions: readonly PactInteraction[];
 };
 
-/**
- * Parse the pact rather than trusting its shape. The file is checked-in JSON,
- * so this is a legibility boundary, not a security one: a suite that fails
- * with "cannot read property of undefined" three assertions later is worse
- * than one that says the pact is malformed.
- */
 function loadPact(): PactFile {
 	const raw = readFileSync(
 		fileURLToPath(
@@ -88,7 +63,6 @@ function loadPact(): PactFile {
 	if (!isJsonObject(decoded) || decoded === null) {
 		throw new Error("the pact file is not a JSON object");
 	}
-	// SAFETY: assertion to `ded as Partial<PactFile>; i` is required at this boundary.
 	const candidate = decoded as Partial<PactFile>;
 	if (
 		!Array.isArray(candidate.interactions) ||
@@ -107,7 +81,6 @@ function loadPact(): PactFile {
 			"the pact file does not record when its source was checked",
 		);
 	}
-	// SAFETY: assertion to `idate as PactFile; } ` is required at this boundary.
 	return candidate as PactFile;
 }
 
@@ -129,7 +102,6 @@ type RecordingTransport = KubernetesTransport & {
 	readonly requests: readonly TransportRequest[];
 };
 
-/** Answer with the recorded responses, in order, and remember every request. */
 function transportReplaying(
 	...interactions: readonly PactInteraction[]
 ): RecordingTransport {
@@ -177,10 +149,6 @@ function pathOf(request: TransportRequest): string {
 	return new URL(request.url).pathname;
 }
 
-/**
- * The placement the whole pact is written against. It goes through the real
- * parser, so a change that makes this input unacceptable fails here first.
- */
 const placement: WorkloadPlacement = parseWorkloadPlacement({
 	name: "try-site",
 	namespace: "hobo-try-site",
@@ -215,9 +183,6 @@ describe("the pact file itself", () => {
 	});
 
 	it("carries no credential-shaped string in any recorded body", () => {
-		// An apiserver body near a failure path routinely quotes the object that
-		// caused it, and those objects carry tokens. Nothing like one belongs in
-		// a checked-in fixture.
 		const serialized = JSON.stringify(pact.interactions);
 		expect(serialized).not.toMatch(/Bearer\s+\S/u);
 		expect(serialized).not.toMatch(/eyJ[A-Za-z0-9_-]{8,}\./u);
@@ -239,7 +204,6 @@ describe("namespace creation, verified against the pact", () => {
 
 		await clientOver(transport).createOrAdoptNamespace(placement);
 
-		// SAFETY: assertion to `sport.requests[0] as TransportRequest, cr` is required at this boundary.
 		assertMatchesPactRequest(transport.requests[0] as TransportRequest, create);
 	});
 
@@ -267,7 +231,6 @@ describe("adoption, verified against the pact", () => {
 			await clientOver(transport).createOrAdoptNamespace(placement);
 
 		expect(transport.requests).toHaveLength(2);
-		// SAFETY: assertion to `sport.requests[1] as TransportRequest, re` is required at this boundary.
 		assertMatchesPactRequest(transport.requests[1] as TransportRequest, read);
 		expect(namespace.name).toBe("hobo-try-site");
 	});
@@ -290,18 +253,15 @@ describe("deployment creation, verified against the pact", () => {
 
 		await clientOver(transport).createDeployment(placement);
 
-		// SAFETY: assertion to `sport.requests[0] as TransportRequest, cr` is required at this boundary.
 		assertMatchesPactRequest(transport.requests[0] as TransportRequest, create);
 	});
 
 	it("pins the surge the CUE replica bounds depend on", () => {
-		const spec =
-			// SAFETY: assertion to `te.request.body as { spec: { strategy: { rollingUpdate: { maxSurge: number } } }; } )` is required at this boundary.
-			(
-				create.request.body as {
-					spec: { strategy: { rollingUpdate: { maxSurge: number } } };
-				}
-			).spec;
+		const spec = (
+			create.request.body as {
+				spec: { strategy: { rollingUpdate: { maxSurge: number } } };
+			}
+		).spec;
 		expect(spec.strategy.rollingUpdate.maxSurge).toBe(1);
 	});
 
@@ -324,7 +284,6 @@ describe("service creation, verified against the pact", () => {
 
 		await clientOver(transport).createService(placement);
 
-		// SAFETY: assertion to `sport.requests[0] as TransportRequest, cr` is required at this boundary.
 		assertMatchesPactRequest(transport.requests[0] as TransportRequest, create);
 	});
 
@@ -348,7 +307,6 @@ describe("rollout observation, verified against the pact", () => {
 
 		const record = await clientOver(transport).readDeploymentStatus(placement);
 
-		// SAFETY: assertion to `sport.requests[0] as TransportRequest, st` is required at this boundary.
 		assertMatchesPactRequest(transport.requests[0] as TransportRequest, status);
 		expect(record.phase).toBe("progressing");
 		expect(record.readyReplicas).toBe(1);
@@ -369,9 +327,6 @@ describe("rollout observation, verified against the pact", () => {
 	});
 
 	it("calls a deadline-exceeded rollout failed even though its replicas look healthy", async () => {
-		// This is the interaction that justifies deriving a phase at all: two
-		// replicas are available and the controller has observed the current
-		// generation, so every counter says "fine" while the rollout is dead.
 		const status = interaction("ran out of progress deadline");
 		const transport = transportReplaying(status);
 
@@ -467,7 +422,6 @@ describe("cleanup, verified against the pact", () => {
 		});
 
 		assertMatchesPactRequest(
-			// SAFETY: assertion to `sport.requests[0] as TransportRequest, ` is required at this boundary.
 			transport.requests[0] as TransportRequest,
 			deleteInteraction,
 		);
