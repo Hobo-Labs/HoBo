@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type MessageDescriptor, Verifier } from "@pact-foundation/pact";
 import { describe, expect, it } from "vitest";
 import {
 	type CreditLedgerView,
@@ -14,17 +15,32 @@ type LibraryInteraction = {
 	type: string;
 	description: string;
 	request: {
-		contentType: string;
 		contents: {
-			registryCandidates: DispatchProviderInput[];
-			category: DispatchCategory;
-			objective: "maximize-credits";
-			dispatchId: string;
-			units?: number;
-			ledgerView: CreditLedgerView;
+			contentType: string;
+			encoded: false;
+			content: {
+				registryCandidates: DispatchProviderInput[];
+				category: DispatchCategory;
+				objective: "maximize-credits";
+				dispatchId: string;
+				units?: number;
+				ledgerView: CreditLedgerView;
+			};
 		};
 	};
-	response: Array<{ contentType: string; contents: object }>;
+	response: Array<{
+		contents: {
+			contentType: string;
+			encoded: false;
+			content: {
+				ok: boolean;
+				selectedProvider?: string;
+				reason?: string;
+				dispatchEvent?: { type: string };
+				ranking?: Array<{ providerId: string; eligible?: boolean }>;
+			};
+		};
+	}>;
 };
 
 type LibraryContract = {
@@ -51,17 +67,49 @@ describe("dispatch decision library contract", () => {
 
 	it.each(pact.interactions)("$description", (interaction) => {
 		expect(interaction.type).toBe("Synchronous/Messages");
-		expect(interaction.request.contentType).toBe("application/json");
+		expect(interaction.request.contents.contentType).toBe("application/json");
+		expect(interaction.request.contents.encoded).toBe(false);
 		expect(interaction.response).toHaveLength(1);
 		const [response] = interaction.response;
 		if (!response) throw new Error("contract response missing");
-		expect(response.contentType).toBe("application/json");
-		const { registryCandidates, ...request } = interaction.request.contents;
+		expect(response.contents.contentType).toBe("application/json");
+		expect(response.contents.encoded).toBe(false);
+		const { registryCandidates, ...request } =
+			interaction.request.contents.content;
 		const decision = decideDispatch({
 			...request,
 			registry: createDispatcherRegistry(registryCandidates),
 		});
-		expect(decision).toMatchObject(response.contents);
+		expect(decision).toMatchObject(response.contents.content);
 		if (!decision.ok) expect(decision.dispatchEvent).toBeUndefined();
 	});
+
+	it("verifies recorded requests with the Pact provider verifier", async () => {
+		const verified = new Set<string>();
+		const invoke = (message: MessageDescriptor) => {
+			if (message.content === undefined || Buffer.isBuffer(message.content))
+				throw new Error("invalid dispatcher contract request");
+			const input: LibraryInteraction["request"]["contents"]["content"] =
+				JSON.parse(JSON.stringify(message.content));
+			const { registryCandidates, ...request } = input;
+			verified.add(message.description);
+			return decideDispatch({
+				...request,
+				registry: createDispatcherRegistry(registryCandidates),
+			});
+		};
+		const messageProviders = Object.fromEntries(
+			pact.interactions.map(({ description }) => [description, invoke]),
+		);
+		await new Verifier({
+			provider: "DispatcherDecisionBoundary",
+			pactUrls: [join(packageRoot, "../pacts/dispatch_decision.pact.json")],
+			messageProviders,
+			logLevel: "error",
+			failIfNoPactsFound: true,
+		}).verifyProvider();
+		expect([...verified].sort()).toEqual(
+			pact.interactions.map(({ description }) => description).sort(),
+		);
+	}, 30_000);
 });

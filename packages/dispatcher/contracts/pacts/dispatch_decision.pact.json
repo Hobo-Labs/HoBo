@@ -1,8 +1,14 @@
 {
-  "consumer": { "name": "RoutingControlLoopConsumer" },
-  "provider": { "name": "DispatcherDecisionBoundary" },
+  "consumer": {
+    "name": "RoutingControlLoopConsumer"
+  },
+  "provider": {
+    "name": "DispatcherDecisionBoundary"
+  },
   "metadata": {
-    "pactSpecification": { "version": "4.0.0" },
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
     "transport": "library-call"
   },
   "interactions": [
@@ -10,34 +16,70 @@
       "type": "Synchronous/Messages",
       "description": "budget pressure rejects the unaffordable backend and selects the cheaper one",
       "request": {
-        "contentType": "application/json",
         "contents": {
-          "registryCandidates": [
-            { "providerId": "vercel-primary", "category": "traffic-backend", "listUnitCost": 0.05 },
-            { "providerId": "lakebed-cheap", "category": "traffic-backend", "listUnitCost": 0.01 }
-          ],
-          "category": "traffic-backend",
-          "objective": "maximize-credits",
-          "dispatchId": "route-swap-pact",
-          "units": 100,
-          "ledgerView": {
-            "view": "CreditLedgerView",
-            "seq": 7,
-            "accounts": [
-              { "providerId": "vercel-primary", "dimension": "traffic.requests", "listUnitCost": 0.05, "budgetCap": 4, "spendToDate": 1 },
-              { "providerId": "lakebed-cheap", "dimension": "traffic.requests", "listUnitCost": 0.01, "budgetCap": 4, "spendToDate": 1 }
-            ]
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "registryCandidates": [
+              {
+                "providerId": "vercel-primary",
+                "category": "traffic-backend",
+                "listUnitCost": 0.05
+              },
+              {
+                "providerId": "lakebed-cheap",
+                "category": "traffic-backend",
+                "listUnitCost": 0.01
+              }
+            ],
+            "category": "traffic-backend",
+            "objective": "maximize-credits",
+            "dispatchId": "route-swap-pact",
+            "units": 100,
+            "ledgerView": {
+              "view": "CreditLedgerView",
+              "seq": 7,
+              "accounts": [
+                {
+                  "providerId": "vercel-primary",
+                  "dimension": "traffic.requests",
+                  "listUnitCost": 0.05,
+                  "budgetCap": 4,
+                  "spendToDate": 1
+                },
+                {
+                  "providerId": "lakebed-cheap",
+                  "dimension": "traffic.requests",
+                  "listUnitCost": 0.01,
+                  "budgetCap": 4,
+                  "spendToDate": 1
+                }
+              ]
+            }
           }
         }
       },
       "response": [
         {
-          "contentType": "application/json",
           "contents": {
-            "ok": true,
-            "selectedProvider": "lakebed-cheap",
-            "dispatchEvent": { "type": "dispatch.Decided" },
-            "ranking": [{ "providerId": "lakebed-cheap" }, { "providerId": "vercel-primary", "eligible": false }]
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "ok": true,
+              "selectedProvider": "lakebed-cheap",
+              "dispatchEvent": {
+                "type": "dispatch.Decided"
+              },
+              "ranking": [
+                {
+                  "providerId": "lakebed-cheap"
+                },
+                {
+                  "providerId": "vercel-primary",
+                  "eligible": false
+                }
+              ]
+            }
           }
         }
       ]
@@ -46,19 +88,32 @@
       "type": "Synchronous/Messages",
       "description": "no registered candidates fails closed without a decision event",
       "request": {
-        "contentType": "application/json",
         "contents": {
-          "registryCandidates": [],
-          "category": "runner",
-          "objective": "maximize-credits",
-          "dispatchId": "no-candidates-pact",
-          "ledgerView": { "view": "CreditLedgerView", "seq": 7, "accounts": [] }
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "registryCandidates": [],
+            "category": "runner",
+            "objective": "maximize-credits",
+            "dispatchId": "no-candidates-pact",
+            "ledgerView": {
+              "view": "CreditLedgerView",
+              "seq": 7,
+              "accounts": []
+            }
+          }
         }
       },
       "response": [
         {
-          "contentType": "application/json",
-          "contents": { "ok": false, "reason": "no registered runner candidates" }
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "ok": false,
+              "reason": "no registered runner candidates"
+            }
+          }
         }
       ]
     },
@@ -66,24 +121,47 @@
       "type": "Synchronous/Messages",
       "description": "all registered backends exceeding the hard budget fail closed",
       "request": {
-        "contentType": "application/json",
         "contents": {
-          "registryCandidates": [{ "providerId": "cloud", "category": "traffic-backend", "listUnitCost": 1 }],
-          "category": "traffic-backend",
-          "objective": "maximize-credits",
-          "dispatchId": "hard-cap-pact",
-          "units": 2,
-          "ledgerView": {
-            "view": "CreditLedgerView",
-            "seq": 8,
-            "accounts": [{ "providerId": "cloud", "dimension": "traffic.requests", "budgetCap": 1, "spendToDate": 0, "listUnitCost": 1 }]
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "registryCandidates": [
+              {
+                "providerId": "cloud",
+                "category": "traffic-backend",
+                "listUnitCost": 1
+              }
+            ],
+            "category": "traffic-backend",
+            "objective": "maximize-credits",
+            "dispatchId": "hard-cap-pact",
+            "units": 2,
+            "ledgerView": {
+              "view": "CreditLedgerView",
+              "seq": 8,
+              "accounts": [
+                {
+                  "providerId": "cloud",
+                  "dimension": "traffic.requests",
+                  "budgetCap": 1,
+                  "spendToDate": 0,
+                  "listUnitCost": 1
+                }
+              ]
+            }
           }
         }
       },
       "response": [
         {
-          "contentType": "application/json",
-          "contents": { "ok": false, "reason": "no eligible candidates within budget and capacity" }
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "ok": false,
+              "reason": "no eligible candidates within budget and capacity"
+            }
+          }
         }
       ]
     }
