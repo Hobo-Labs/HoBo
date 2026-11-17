@@ -115,7 +115,7 @@ in the history of commit `d7bbc39c`.
 - **Protocol:** three independent read-only finders (one per surface slice), refute-if-uncertain self-verification inside each pass, coordinator verifier spot-checks on the HIGH/MED candidates (ADR-0122 vs `packages/connectivity/src/config.ts` re-read; renumber-fallout greps re-run).
 - **Raw → verdicts:** 60+ candidates → **40 confirmed** / 20+ refuted with reasons (refutations include: golden-replay baseline append-only holds in git history; broker residency filter is a real hard filter; `evaluateResidency` fails closed on unmapped regions and transfer modes; convex credential gate throws before any fetch; dispatcher hysteresis short-circuits on budget violation).
 - **New findings:** DRIFT-011..024, GAP-031..039, IMPL-014..030 (rows below).
-- **Same-pass remediation:** 23 applied (all 14 DRIFT rows; GAP-031 docs side, GAP-033, GAP-035, GAP-036 catalog note, GAP-037 catalog row, GAP-039; IMPL-021, IMPL-022, IMPL-023 ADR-claim side, IMPL-030 stations docs side). 17 remain documented-not-applied (🧯), each with a concrete remediation in its row.
+- **Same-pass remediation:** 23 applied (all 14 DRIFT rows; GAP-031 docs side, GAP-033, GAP-035, GAP-036 catalog note, GAP-037 catalog row, GAP-039; IMPL-021, IMPL-022, IMPL-023 ADR-claim side, IMPL-030 stations docs side). Remaining findings appear in the register below.
 - **Stop rule:** finder passes each ended with a refuted-candidate tail and no new finding class on re-read; the surface is audited. Next register action: execute the 🧯 rows.
 
 ## Gap register
@@ -1964,7 +1964,6 @@ classified 📘 deliberate-documented, not gaps.
 | IMPL-025 | MED | ADR-0071 §6 / ADR-0035 §2 make cost routing legal only for replica-safe resources with a per-route can-deploy refusal; no replica-class eligibility check exists and the control loop cost-routes any topology. | `packages/stations/src/traffic-routing/control-loop.ts:176-226` · `packages/contracts/src/can-deploy.ts` | 🧯 carry replica-class on RoutingTopology backends; refuse synthesis/can-deploy for single-writer cost routes. |
 | IMPL-027 | LOW | Control-evidence coverage is unverifiable: refs are caller-invented strings with no binding to real streams/gates, one fact is cited under two spellings, and OCSF-export controls are `planned` though the exporter ships. | `packages/policy/src/control-evidence-pack.ts:157-215` · `packages/policy/src/seed-packs.ts:47-56` | 🧯 canonical evidence-ref registry packs must resolve against; re-audit seed statuses. |
 | IMPL-029 | LOW | `@hobo/dispatcher` opts out of base TS strictness (strict/noImplicitAny/noUncheckedIndexedAccess/exactOptionalPropertyTypes all false); public entry points take implicit any. | `packages/dispatcher/tsconfig.json:5-9` | 🧯 type the exported shapes and restore base strictness. |
-| IMPL-030 | LOW | Package docs omit the shipped wave (stations routing loop/cutover/offering registry; trails executors; events upcaster/corpus) and the four `routing.*` loop payloads have no proto/CUE. | `packages/stations/README.md:47-61` · `packages/trails/ARCHITECTURE.md:23-31` | ✔ stations layering + ADR anchor fixed same-pass. 🧯 refresh the three package README/ARCHITECTURE sets + proto/CUE for routing.* payloads. |
 
 
 ## HoBo.CD closures (2026-11-12)

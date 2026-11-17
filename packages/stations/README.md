@@ -305,6 +305,15 @@ capabilities refuse the move; the loop never invents a hard budget guarantee fro
 an empty ledger. Financial settlement and source retirement belong to the hosting
 transition supervisor, not the traffic-routing port.
 
+The `routing.ReplanProposed`, `routing.ReplanHeld`, `routing.ReplanDenied`,
+`routing.Reapplied`, `routing.ReconciliationRequired`, `routing.ApplyRequested`,
+and `routing.Observed` payloads have
+[Protobuf](./data-models/routing_events.proto) and
+[CUE](./data-models/routing_events.cue) contracts. `routing.RampAdvanced` uses
+the existing [cutover contract](./data-models/traffic_cutover.proto).
+Reconciliation facts from the loop identify the pending plan; cutover facts
+include the observed percent and time, with a plan identifier when available.
+
 The host CAS-persists the generated `RoutingControlStateRecord` under its service
 actor fence. `snapshot()` and `initialState` retain incumbent, stability history,
 sustained savings evidence, and pending effect identity across restart. Provider
