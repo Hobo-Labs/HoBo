@@ -189,6 +189,22 @@ function durable() {
 	);
 	return { first, second, path };
 }
+function asyncBudgetAuthority(
+	first: ReturnType<typeof createSqliteBudgetAdmissionAuthority>,
+	claim: typeof first.claimExecution,
+): AsyncBudgetAdmissionAuthority {
+	return {
+		persistence: first.persistence,
+		read: async (at) => first.read(at),
+		lookup: async (id) => first.lookup(id),
+		reserve: async (input) => first.reserve(input),
+		claimExecution: async (input) => claim(input),
+		uncertain: async (id) => first.uncertain(id),
+		settle: async (id, actual, evidence) => first.settle(id, actual, evidence),
+		release: async (id, unused, evidence) =>
+			first.release(id, unused, evidence),
+	};
+}
 function hosting(
 	authority: ReturnType<typeof createSqliteBudgetAdmissionAuthority>,
 	cost: number,
@@ -581,18 +597,7 @@ describe("CI bridge to the shared hosting financial authority", () => {
 							return result;
 						};
 						const sync = { ...first, claimExecution: claim };
-						const asyncAuthority: AsyncBudgetAdmissionAuthority = {
-							persistence: first.persistence,
-							read: async (at) => first.read(at),
-							lookup: async (id) => first.lookup(id),
-							reserve: async (input) => first.reserve(input),
-							claimExecution: async (input) => claim(input),
-							uncertain: async (id) => first.uncertain(id),
-							settle: async (id, actual, evidence) =>
-								first.settle(id, actual, evidence),
-							release: async (id, unused, evidence) =>
-								first.release(id, unused, evidence),
-						};
+						const asyncAuthority = asyncBudgetAuthority(first, claim);
 						const options = {
 							quoteLease,
 							now: () => now,
@@ -627,6 +632,49 @@ describe("CI bridge to the shared hosting financial authority", () => {
 			{ seed: 614454, numRuns: 40 },
 		);
 	}, 60_000);
+	it.each([
+		"sync",
+		"async",
+	] as const)("rechecks allocation coverage after a %s claim", async (kind) => {
+		const { first } = durable();
+		const row = lease();
+		row.budgetPolicyDigest = policy("strict");
+		row.reservedFreeMinutes = 0.5;
+		let coverageValid = true;
+		const claim = (command: Parameters<typeof first.claimExecution>[0]) => {
+			const result = first.claimExecution(command);
+			coverageValid = false;
+			return result;
+		};
+		const options = {
+			quoteLease,
+			now: () => NOW,
+			verifyProviderLiabilityBound: () => true,
+			verifyAllocationCoverage: (
+				candidate: Lease,
+				quote: HostingQuote,
+				ledger: BudgetLedgerSnapshot,
+			) => coverageValid && runnerCoverage(candidate, quote, ledger),
+		};
+		const hooks =
+			kind === "sync"
+				? createCiSharedBudgetHooks({
+						...options,
+						authority: { ...first, claimExecution: claim },
+					})
+				: createCiAsyncSharedBudgetHooks({
+						...options,
+						authority: asyncBudgetAuthority(first, claim),
+					});
+		await hooks.reserve(row);
+		await expect(async () => hooks.claim(row)).rejects.toThrow(
+			/allocation coverage/,
+		);
+		expect(first.lookup(ciReservationId(row))?.executionDigest).toBe(
+			ciExecutionDigest(row),
+		);
+		expect(first.read(NOW).reservedMicros).toBe(60);
+	});
 	it("exposes only definitive precommit policy denial as a queueable budget error", () => {
 		const { first } = durable();
 		const row = lease();
