@@ -62,6 +62,69 @@ apply; a failed check after admission retains the reservation for reconciliation
 For a reconstructed deletion, the host must independently authenticate the
 prior resource state and compare its `hashAlchemyPriorState` digest with the
 historical source observation before approving the plan.
+
+Alchemy plans can contain Effect `Redacted<string>` values, including the
+credential on a real Rivet `PoolHost`. To inspect them, the trusted host must
+provide `composite.secretFingerprint`: a Node secret `KeyObject`, a stable
+opaque epoch and proof reference, and a verifier that independently authenticates
+the exact key and tenant, target, stack and stage. The verifier must keep that
+authorization and key fenced through provider completion and reconciliation.
+Without this capability, a plan containing a redacted value fails closed.
+
+```ts
+const secretFingerprint = {
+  // Host-managed CSPRNG key, not a developer password or a per-process key.
+  key: host.iacFingerprintKey,
+  epoch: host.iacFingerprintEpoch,
+  proofRef: host.iacFingerprintProof,
+  verify: (claim) => host.verifyIacFingerprintKey(claim),
+};
+const composite = { ...host.compositeGuard, secretFingerprint };
+
+// Authenticate the state independently and hash the decoded, persisted record.
+const priorDigest = hashAlchemyPriorState(decodedPriorState, {
+  scope: { tenantId, targetId, stackName, stage },
+  resourceId, resourceType, fingerprint: secretFingerprint,
+});
+```
+
+The host must generate a high-entropy 32–64 byte key with a cryptographically
+secure RNG, keep it confidential, and restore the same key and epoch across
+restarts for the lifetime of all plans, receipts and prior-state checks. Key or
+epoch changes require a host-authenticated migration and fencing of all old
+work; they change the resulting identities. The adapter uses HMAC with separate
+tenant, target, stack, stage, resource, purpose and structural-path domains.
+It never includes the wrapped string, key, or an unkeyed hash of the wrapped
+string in its plan or prior-state digests. A principal allowed to submit chosen
+plans and observe same-scope digests can still test guesses or detect equality:
+authorize and rate-limit plan submission and restrict digest disclosure. HMAC
+does not replace access control.
+
+Only genuine Effect `Redacted<string>` wrappers from the adapter's Effect
+module instance receive this treatment; unsupported, forged, wiped or
+cross-instance wrappers fail closed. Wrap credentials before constructing the
+Alchemy stack. Ordinary strings are ordinary plan data, and their structural
+hashes may allow guessing. Effect includes a Redacted label in diagnostic text,
+so never put a secret in the label. Labels are included in exact plan and
+prior-state identities because providers can observe them.
+
+Alchemy beta.87 state encoding unwraps Redacted values into the stored state;
+it also drops their labels when loading. These fingerprints do not encrypt
+Alchemy state. The host must encrypt and restrict the state backend and its
+transport, backups and diagnostics, and authenticate the actual decoded state
+before hashing it. It must also fence the sandbox before planning: genuine
+Alchemy outputs use JavaScript proxies, so inspecting a plan can execute proxy
+traps. Use an independent watchdog to enforce deadlines for synchronous code.
+Failures from stack planning, runtime-layer acquisition or finalizers, drift
+scans and financial assessment are returned with fixed adapter error messages;
+an upstream error cannot choose its public failure code. Planning and drift
+failures whose origin cannot be established use `PLAN_UNAVAILABLE` and
+`DRIFT_CHECK_UNAVAILABLE`; checks performed by the adapter retain their specific
+codes. Host and provider logs still need their own protected diagnostic policy.
+Successful financial assessments and decisions, including denial codes and
+messages, and explicit application outputs are caller-visible data. Their
+trusted authorities must ensure those values are safe to disclose; structural
+validation does not redact them.
 Alchemy does not run the multi-pool mapper while reconstructing a deletion;
 the host's plan verifier must also authenticate the affected pool and runner
 ownership and maintain its fencing until deletion completes.
@@ -508,6 +571,12 @@ distinguish these stages:
   may still do so; the known hold remains in place.
 - `ROUTE_COMPLETION_DEADLINE_UNKNOWN`: the provider completed, but its durable
   route completion was not confirmed; retain and reconcile the hold and route.
+
+If scoped runtime cleanup fails after the provider has completed,
+`APPLY_CLEANUP_UNCERTAIN` reports `executionOutcome: "completed"` and retains
+the hold for reconciliation. Cleanup failure after route or admission dispatch
+instead reports the corresponding uncertain route or admission outcome; a
+matching known reservation is retained and no fallback is authorized.
 
 A timeout is a bounded response, not cancellation: an outstanding callback,
 state-store operation or provider request can complete later. The latch prevents

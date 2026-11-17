@@ -226,7 +226,11 @@ export interface IacRoutePort {
 	): Promise<IacDirectRouteResult<T>>;
 }
 
-/** The host supplies this port. The adapter never imports a policy implementation. */
+/**
+ * The host supplies this port. The adapter never imports a policy implementation.
+ * Successful assessment and decision fields are caller-visible data, including
+ * denial codes and messages; the host must ensure they contain no secrets.
+ */
 export interface FinancialPort<Assessment extends object> {
 	assess(plan: FinancialPlan): Assessment;
 	admit(

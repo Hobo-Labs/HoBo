@@ -528,6 +528,7 @@ describe("bounded Alchemy execution deadlines", () => {
 	it.each([
 		"throw",
 		"overrun",
+		"overrun-throw",
 	] as const)("does not publish a preview when financial assessment can %s", async (failure) => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
 		const old = process.env.ALCHEMY_HOME;
@@ -535,11 +536,15 @@ describe("bounded Alchemy execution deadlines", () => {
 		try {
 			const f = fixture(dir, 300);
 			await f.provider.preview(program);
-			if (failure === "throw") f.failAssessment();
-			else f.synchronousBlock("assess");
+			if (failure === "throw" || failure === "overrun-throw")
+				f.failAssessment();
+			if (failure === "overrun" || failure === "overrun-throw")
+				f.synchronousBlock("assess");
 			const result = f.provider.preview(program);
 			if (failure === "throw")
-				await expect(result).rejects.toThrow("assessment unavailable");
+				await expect(result).rejects.toMatchObject({
+					code: "PRICING_ASSESSMENT_UNAVAILABLE",
+				});
 			else
 				await expect(result).rejects.toMatchObject({
 					code: "PREVIEW_DEADLINE_EXCEEDED",
