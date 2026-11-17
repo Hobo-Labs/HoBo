@@ -189,7 +189,10 @@ the authority's check and an external provider call cannot be one transaction.
 One adapter instance refuses concurrent execution of the same program. Across
 instances or process restarts, the host must use the same stable request ID for
 the same logical attempt so the durable admission authority can recognize a
-replay. A malformed or unreadable admission receipt requires reconciliation:
+replay. Without an explicit request ID the adapter derives one from the tenant,
+deployment, program, resource and operation; it does not include the target or
+provider. A new logical attempt needs a new deployment or program ID, or an
+explicit new request ID. A malformed or unreadable admission receipt requires reconciliation:
 the authority may already have reserved funds even if the receipt is unusable.
 An instance also blocks subsequent attempts after any outcome requiring
 reconciliation; the host must resolve the previous attempt before replacing it.

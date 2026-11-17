@@ -834,7 +834,15 @@ export function createAlchemyIacProvider<
 				"PROGRAM_SCOPE_MISMATCH",
 				"destroy requires a destroy program",
 			);
-		const requestId = requestedId ?? key;
+		const requestId =
+			requestedId ??
+			digestData({
+				tenantId: target.tenantId,
+				programId: program.programId,
+				deploymentId: program.deploymentId,
+				resourceId: program.resourceId,
+				operation: program.action === "destroy" ? "destroy" : "deploy",
+			});
 		if (!name(requestId))
 			throw new AlchemyIacError(
 				"REQUEST_INVALID",

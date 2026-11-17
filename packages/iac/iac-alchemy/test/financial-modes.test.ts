@@ -27,6 +27,7 @@ function fixture(
 		admission: FinancialDecision,
 		plan: FinancialPlan,
 	) => boolean | Promise<boolean> = () => true,
+	targetId = "target",
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-alchemy-financial-"));
 	dirs.push(dir);
@@ -57,7 +58,7 @@ function fixture(
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(dir, "runtime"),
 		target: alchemyTarget({
-			targetId: "target",
+			targetId,
 			tenantId: "tenant",
 			stackName: "App",
 			stage: "test",
@@ -163,6 +164,43 @@ function admitted(
 }
 
 describe("financial admission modes", () => {
+	it("uses one target-independent default request ID for the same logical operation", async () => {
+		const seen: string[] = [];
+		const deny = (targetId: string) => (requestId: string) => {
+			seen.push(requestId);
+			return {
+				requestId,
+				targetId,
+				status: "denied",
+				code: "NOT_ALLOWED",
+				message: "denied",
+				budget: { evaluation: "denied", reservation: "not-created" },
+			};
+		};
+		const first = fixture(deny("target-a"), undefined, "target-a");
+		const second = fixture(deny("target-b"), undefined, "target-b");
+		const firstProgram = {
+			...first.program,
+			provider: "provider-a",
+			driver: "driver-a",
+		};
+		const secondProgram = {
+			...second.program,
+			provider: "provider-b",
+			driver: "driver-b",
+		};
+		await first.provider.preview(firstProgram);
+		await second.provider.preview(secondProgram);
+		await expect(first.provider.apply(firstProgram)).rejects.toMatchObject({
+			code: "NOT_ALLOWED",
+		});
+		await expect(second.provider.apply(secondProgram)).rejects.toMatchObject({
+			code: "NOT_ALLOWED",
+		});
+		expect(seen).toHaveLength(2);
+		expect(seen[0]).toBe(seen[1]);
+	});
+
 	it("executes an explicitly authorized unbounded exposure and discloses the budget bypass", async () => {
 		const f = fixture((id) => admitted(id, "bypassed", true));
 		await f.provider.preview(f.program);
