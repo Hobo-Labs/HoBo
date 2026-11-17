@@ -3248,6 +3248,9 @@ importers:
 
   packages/runtimes/runtime-wasm:
     dependencies:
+      '@bytecodealliance/componentize-js':
+        specifier: 0.19.3
+        version: 0.19.3
       '@bytecodealliance/jco':
         specifier: 1.24.3
         version: 1.24.3

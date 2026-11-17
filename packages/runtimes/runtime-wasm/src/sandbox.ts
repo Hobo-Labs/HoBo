@@ -600,6 +600,19 @@ function hashWitDirectory(hash: Hash, root: string): void {
 	visit(root);
 }
 
+function componentizeRunner(): string {
+	const sibling = join(
+		dirname(fileURLToPath(import.meta.url)),
+		"componentize-runner.js",
+	);
+	if (existsSync(sibling)) return sibling;
+	const built = join(packageRoot(), "dist", "componentize-runner.js");
+	if (existsSync(built)) return built;
+	throw new Error(
+		"componentize runner is missing; build @hobo/runtime-wasm first",
+	);
+}
+
 export async function componentizePrivateGuest(options: {
 	readonly resourceName: string;
 	readonly guestSourcePath: string;
@@ -618,12 +631,16 @@ export async function componentizePrivateGuest(options: {
 	const guestBytes = readFileSync(options.guestSourcePath);
 	const hoboHome = options.hoboHome ?? defaultHoboHome();
 	const witDir = options.witDir ?? wasiHttpWitDir();
+	const runner = options.jcoBin ?? componentizeRunner();
 	const hash = createHash("sha256")
 		.update(options.resourceName)
 		.update("\0")
 		.update(options.guestSourcePath)
 		.update("\0")
-		.update(createHash("sha256").update(guestBytes).digest());
+		.update(createHash("sha256").update(guestBytes).digest())
+		.update("\0componentizer\0")
+		.update(options.jcoBin === undefined ? "componentize-js@0.19.3" : "jco")
+		.update(createHash("sha256").update(readFileSync(runner)).digest());
 	hashWitDirectory(hash, witDir);
 	const digest = hash.digest("hex");
 	const workDir =
@@ -650,25 +667,26 @@ export async function componentizePrivateGuest(options: {
 		};
 	}
 
-	const jco = options.jcoBin ?? resolveJcoBin();
 	rmSync(markerPath, { force: true });
 	rmSync(wasmPath, { force: true });
 	emit(
 		`hobo: componentizing private ${options.resourceName} → HoBo HTTP world .wasm`,
 	);
-	const args = [
-		jco,
-		"componentize",
-		guestSourcePath,
-		"-w",
-		witDir,
-		"-n",
-		"proxy",
-		"-o",
-		wasmPath,
-		"--disable",
-		"stdio",
-	];
+	const args = options.jcoBin
+		? [
+				runner,
+				"componentize",
+				guestSourcePath,
+				"-w",
+				witDir,
+				"-n",
+				"proxy",
+				"-o",
+				wasmPath,
+				"--disable",
+				"stdio",
+			]
+		: [runner, guestSourcePath, witDir, wasmPath, join(hoboHome, "cache")];
 	const result = spawnSync(process.execPath, args, {
 		encoding: "utf8",
 		timeout: 180_000,
@@ -676,7 +694,7 @@ export async function componentizePrivateGuest(options: {
 	});
 	if (result.status !== 0) {
 		throw new Error(
-			`jco componentize failed for ${options.resourceName}: ${result.stderr || result.stdout}`,
+			`componentization failed for ${options.resourceName}: ${result.stderr || result.stdout}`,
 		);
 	}
 	if (!existsSync(wasmPath)) {
