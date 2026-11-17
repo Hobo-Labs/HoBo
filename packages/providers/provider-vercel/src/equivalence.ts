@@ -5,23 +5,23 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		providerService: "Vercel Web",
 		features: ["http", "static", "managed"],
 	},
+	project: {
+		port: "project",
+		resourceClass: "vercel:project",
+		providerService: "Vercel Project",
+		features: ["managed"],
+	},
 	objectStore: {
 		port: "objectStore",
 		resourceClass: "vercel:blob",
 		providerService: "Vercel Blob",
-		features: ["durable"],
-	},
-	"database/postgres": {
-		port: "database",
-		resourceClass: "vercel:neon-postgres",
-		providerService: "Neon (marketplace)",
-		features: ["postgres", "managed", "integration-backed"],
+		features: ["durable", "read", "write", "delete"],
 	},
 	kv: {
 		port: "kv",
 		resourceClass: "vercel:edge-config",
-		providerService: "Edge Config / Upstash",
-		features: ["key-value", "edge", "integration-backed"],
+		providerService: "Vercel Edge Config",
+		features: ["key-value", "edge"],
 	},
 } as const);
 
@@ -33,8 +33,8 @@ export type InitialCapabilityPort = keyof typeof EQUIVALENCE_CLASSES;
 // The package's own test asserts `Object.isFrozen` for exactly that reason.
 export const INITIAL_CAPABILITY_PORTS = Object.freeze([
 	"web/service",
+	"project",
 	"objectStore",
-	"database/postgres",
 	"kv",
 ] as const satisfies readonly InitialCapabilityPort[]);
 

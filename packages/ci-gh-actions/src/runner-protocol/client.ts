@@ -654,7 +654,7 @@ export class GithubRunnerServiceClient implements RunnerServiceClient {
 					);
 				if (attempt > 1)
 					throw new RunnerProtocolError(
-						`the ${init.name} call failed: ${error instanceof Error ? error.message : String(error)}`,
+						`the ${init.name} call failed after a transport error`,
 						0,
 					);
 				this.emit({ kind: "retried", call: init.name, status: 0 });

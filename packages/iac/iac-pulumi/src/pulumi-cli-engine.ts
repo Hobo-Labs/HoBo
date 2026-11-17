@@ -15,6 +15,10 @@ import {
 	type JsonObject,
 	parseJsonObject,
 } from "./json.js";
+import { PulumiEngineUnavailableError } from "./pulumi-engine-errors.js";
+import { requireStatePassphrase, statePassphrase } from "./state-passphrase.js";
+
+export { PulumiEngineUnavailableError } from "./pulumi-engine-errors.js";
 
 // The REAL Pulumi backend. This engine speaks the
 // exact preview/apply/refresh/destroy shape the in-memory stand-in defined
@@ -29,16 +33,6 @@ import {
 export const PULUMI_CLI_MISSING = "pulumi-cli-missing";
 // public-contract: error code for a resource class with no real translation.
 export const PULUMI_UNSUPPORTED_RESOURCE = "pulumi-unsupported-resource-type";
-
-export class PulumiEngineUnavailableError extends Error {
-	code: string;
-
-	constructor(code: string, message: string) {
-		super(message);
-		this.name = "PulumiEngineUnavailableError";
-		this.code = code;
-	}
-}
 
 // The hobo resource classes provider realize() emits, mapped to real Pulumi
 // YAML type tokens (package:Resource shorthand). Anything else fails closed —
@@ -171,6 +165,10 @@ export interface PulumiCliEngineOptions {
 	// Environment for pulumi invocations. Must carry CLOUDFLARE_API_TOKEN for
 	// live cloudflare programs; CLOUDFLARE_ACCOUNT_ID feeds program config.
 	readonly env?: Record<string, string | undefined>;
+	/** Recoverable key supplied by the caller for retained state. */
+	readonly statePassphrase?: string;
+	/** The caller guarantees this workspace will be discarded at process exit. */
+	readonly ephemeralState?: boolean;
 }
 
 // Create the real CLI-backed engine. Same return shape as
@@ -181,6 +179,11 @@ export function createPulumiCliAutomationEngine(
 	const bin = options.pulumiBin ?? "pulumi";
 	const env = options.env ?? process.env;
 	const stateDir = join(options.workDir, "state");
+	const runPassphrase = statePassphrase(
+		options.statePassphrase,
+		env.PULUMI_CONFIG_PASSPHRASE,
+		options.ephemeralState,
+	);
 	const programsDir = join(options.workDir, "programs");
 	let verified = false;
 
@@ -192,12 +195,13 @@ export function createPulumiCliAutomationEngine(
 				),
 			),
 			PULUMI_BACKEND_URL: `file://${stateDir}`,
-			PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE ?? "",
+			PULUMI_CONFIG_PASSPHRASE: requireStatePassphrase(runPassphrase),
 			PULUMI_SKIP_UPDATE_CHECK: "true",
 		};
 	}
 
 	function ensureAvailable(): void {
+		requireStatePassphrase(runPassphrase);
 		if (verified) {
 			return;
 		}

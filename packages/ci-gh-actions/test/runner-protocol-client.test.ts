@@ -408,6 +408,38 @@ describe("GithubRunnerServiceClient", () => {
 		await session.close();
 	});
 
+	it("does not disclose credentials in transport errors", async () => {
+		let attempts = 0;
+		const { client } = setup({
+			fetch: async (_input, init) => {
+				attempts += 1;
+				const authorization = new Headers(init?.headers).get("authorization");
+				throw new Error(
+					`transport failed: ${authorization} ${String(init?.body)}`,
+				);
+			},
+		});
+		const failure = await client
+			.send(
+				{
+					method: "POST",
+					url: new URL("https://broker.actions.githubusercontent.com/session"),
+					body: "client_assertion=fixture-assertion-secret",
+					contentType: "application/x-www-form-urlencoded",
+					timeoutMs: 2_000,
+					name: "session",
+				},
+				"fixture-bearer-secret",
+			)
+			.catch((error) => error);
+		expect(attempts).toBe(2);
+		expect(failure).toBeInstanceOf(RunnerProtocolError);
+		expect(failure).toMatchObject({ status: 0 });
+		expect(failure.message).toContain("session");
+		expect(failure.message).not.toContain("fixture-bearer-secret");
+		expect(failure.message).not.toContain("fixture-assertion-secret");
+	});
+
 	it("skips an offer another runner acquired first", async () => {
 		const { service, client, jit, events } = setup();
 		const session = await client.open(jit);
