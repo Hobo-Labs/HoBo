@@ -64,7 +64,12 @@
       "default": "./dist/_generated-assets/relay-job-assets.js"
     },
     "./schema/ci-project.schema.json": "./schema/ci-project.schema.json",
-    "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json"
+    "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json",
+    "./read-api": {
+      "types": "./dist/read-api.d.ts",
+      "default": "./dist/read-api.js"
+    },
+    "./schema/read-api.openapi.json": "./schema/read-api.openapi.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
