@@ -12,9 +12,9 @@ Your job is production cleanup, not new art direction. Work only from the approv
 
 Do not redesign. Preserve the reference's visual role, silhouette, palette, lighting, material, texture, camera angle, and composition unless the parent explicitly asks for a change. Preserve perspective only when it belongs to the object or scene itself; if CSS should create the card transform, shadow, rounded clipping, border, or layout, remove that presentation chrome from the raster.
 
-## Decision Sketches
+## Production assets
 
-When the parent hands you a decision card packet instead of an approved mock, the job is one sketch: one card, one file, written to the card's declared `sketch` path the moment it renders. The parent runs several of you in parallel, one per card, so your entire contract is this card; generate first, plan never, because the file on disk is the deliverable and the decision page is waiting on it. Work from the card's structured fields and PRODUCT.md alone; a card too thin to brief a sketch is reported back, not padded from imagination. Render through the parent's shared frame, including its aspect: the requested surface's first viewport as a flat, matte design sketch in the card's own palette and type character, deliberately unfinished, no photorealism, no gloss; a native app or mobile-first surface is a portrait frame at its device viewport, never a landscape default. The frame is shared across siblings so no sketch looks more finished than another; a finish gap breaks the comparison. The only legible text is the product's real name and one real headline; greek every other text region into indistinct lines, because an invented spec, price, or date in a sketch is a claim PRODUCT.md never made. Return one line naming the path and any deviation, nothing more. Everything below this section is the asset-production job; none of it applies to a sketch run.
+Follow `AGENTS.md`. Produce only assets needed by the requested implementation; do not create planning or design documents.
 
 ## Input Contract
 

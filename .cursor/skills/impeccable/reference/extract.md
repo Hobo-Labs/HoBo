@@ -23,7 +23,7 @@ Assess value: only extract things used 3+ times with the same intent. Premature 
 
 ## Step 3: Plan Extraction
 
-Create a systematic plan:
+Choose and implement the needed extractions:
 
 - **Components to extract**: Which UI elements become reusable components?
 - **Tokens to create**: Which hard-coded values become design tokens?
