@@ -8,11 +8,13 @@ tags: [hobo, design, adr, ci, relay, routing, fleet]
 # ADR-0183 — A Runner Order Is Committed Configuration, Walked First-Fit {#adr-0183}
 
 **Status:** Accepted. Built: the records, the parser, the walk and its rules,
-the committed `runnerOrder` block, the insight reports and the commands
-`hobo ci route`, `hobo ci init`, `hobo ci signals` and `hobo ci diagnose`.
-Not built: any host that walks an order when a job is routed ("Not built"
-below).
-**Date:** 2026-11-16
+the committed `runnerOrder` block, the insight reports, the relay job in job
+mode and in relay mode, machines, limit readers, provider health, retries,
+runner-less checks, stored history, the read API, the MCP tools and the
+dashboard. Proven in production: failure diagnosis only. Relay mode stays off
+by default ("Relay-mode default" below); what is still owed is in "Not built
+or not proven".
+**Date:** 2026-11-16; revised 2026-11-17
 **Builds on:** [ADR-0181](routing-slips.md#adr-0181) (routing policy is
 committed configuration; the relay decides; unknown changes nothing).
 **Relates to:** [CI fleet balancing](../ci-fleet-balancing.md) (cost-ranked
@@ -34,7 +36,8 @@ RelayRunner, read on 2026-11-16, is built on exactly that preference: an
 ordered list walked first-fit, a relay job that names the runner types it
 allows, a recorded reason for every step passed over, and a failure with the
 reason when nothing fits. The comparison is in the
-[capture](../../competitors/relayrunner.md#parity-ledger).
+[capture](../../competitors/relayrunner.md#parity-scorecard), and the
+cases are scored on the generated [parity scorecard](../../ci/parity-scorecard.md).
 
 ## Decision
 
@@ -87,9 +90,11 @@ reason when nothing fits. The comparison is in the
 
 ## Consequences
 
-- **The route job and relay admission are unchanged.** Nothing that routes a
-  job today reads `runnerOrder`. Committing one changes what `hobo ci route`
-  prints and nothing else.
+- **The route job and relay admission are unchanged.** This repository's
+  route job and the allocation router do not read `runnerOrder`. A relay job
+  does: in job mode the vendored evaluator walks the order on a GitHub-hosted
+  runner, and in relay mode a HoBo node walks it when `relayJobs.answer` is
+  on for the node and for the repository.
 - **Two routing vocabularies exist.** Offers and budgets for admission; steps
   and limits for the order. The order's `fleet` step is where they meet.
 - **Hosted provider labels are facts with a date.** The label catalog names
@@ -99,17 +104,45 @@ reason when nothing fits. The comparison is in the
   `runner.route.Decided`; "where did this job run, and why" is a projection
   of that record.
 
-## Not built
+## Relay-mode default
 
-- No host walks a runner order when a job is routed: not the route job, not
-  the relay, and nothing answers a relay job in place of a runner.
-- Nothing reads GitHub's included-minutes usage or sums a month's spend per
-  provider; nothing feeds the provider-health record or applies the retry
-  policy.
-- No machine enrollment, sharing or pause command exists; `chooseMachine`
-  holds the rules only.
-- The pull request title rule is a function; no check run posts it.
-- The insight commands read GitHub on demand; no history is stored.
+Relay mode stays off: `relayJobs.answer` is false unless a repository and a
+node both write it. The default changes only after one production run shows a
+relay job answered with no billed minute (case R01), and that run has not
+been made. Turning it on for this repository on the deployed relay changes
+production routing, so it was not done from the build session. Job mode is
+opt-in per workflow through `hobo ci init --relay` and needs no flag.
+
+## Not built or not proven
+
+The [parity scorecard](../../ci/parity-scorecard.md) is the record; on
+2026-11-17 it shows 25 of 58 cases `pass` and one met differently. The
+[capture](../../competitors/relayrunner.md#parity-scorecard) lists every
+owed case with the run that would prove it. In short:
+
+- **Owed production runs.** Relay mode (R01) and the runner-less title check
+  (C01) need relay mode turned on for one repository on a deployed relay.
+  Job mode's failure, matrix and no-relay cases (R04, R14, R15) need the
+  `parity-probe.yml` workflow on the default branch and one run of it. The
+  runner-protocol client, machine connect, runner adoption, the billing
+  reader and provider usage sync have run only against the GitHub simulator
+  and their pacts.
+- **Owed gauntlet scenarios.** Thirty cases are built and tested in
+  their packages, but their scenario under `features/hobo-ci-parity` is still
+  pending, so the scorecard keeps the state they had before the build.
+- **Not wired.** `adoptRunner` exists, but no `hobo ci runners` command calls
+  it (case M10's bar names that command).
+- **Met differently.** No human roles (S08) and no email (M08's takeover is
+  the `machine.taken_over` event).
+
+Failure diagnosis was run against GitHub on 2026-11-17: `hobo ci diagnose
+44044299552` read a failed run of this repository and printed, for each of
+its two failed jobs, the failed step, the log lines leading to the error and
+the re-run outlook, with no model. The first job, a type check, was called a
+build error that a re-run will not fix, which is right. The second, a gate
+that failed because the first did, was called a test failure that a re-run
+will not fix: the outlook is right and the kind is not. A gate that only
+reports another job's result has no pattern of its own yet.
 
 ## Measurable outcomes {#adr-0183-outcomes}
 
@@ -123,6 +156,7 @@ reason when nothing fits. The comparison is in the
 | M6 | A broken committed order is refused, not replaced | `test/runner-order-config.test.ts`, `test/ci-route.test.ts` |
 | M7 | No `auto` label is `ubuntu-latest` | `test/runner-order-catalog.test.ts` |
 | M8 | A re-run is called likely to pass only for a runner or network failure | `test/insights-failure-diagnosis.test.ts` |
+| M9 | Every gauntlet case has one scenario and the scorecard matches the last run | `node --import tsx scripts/ci/parity-scorecard.mts --check` |
 
 ## Contracts and gates
 
@@ -140,4 +174,6 @@ reason when nothing fits. The comparison is in the
   `runner.route.Decided` name the boundary a host implements; the decision
   record is the event payload and the read model's row.
 - **PACT:** `packages/hobo/contracts/ci-insights-github.pact.json` pins the
-  GitHub reads of the insight commands. The walk has no service boundary yet.
+  GitHub reads of the insight commands. The relay's GitHub boundary is pinned
+  by the pacts under `packages/ci-gh-actions/contracts/` (relay answer,
+  webhooks, job-mode facts, billing, runner labels, read API, MCP tools).
