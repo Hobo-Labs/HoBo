@@ -1,0 +1,31 @@
+package wasi:http@0.2.3;
+
+@since(version = 0.2.0)
+world imports {
+  @since(version = 0.2.0)
+  import wasi:clocks/monotonic-clock@0.2.3;
+  @since(version = 0.2.0)
+  import wasi:clocks/wall-clock@0.2.3;
+  @since(version = 0.2.0)
+  import wasi:random/random@0.2.3;
+
+  @since(version = 0.2.0)
+  import wasi:cli/stdout@0.2.3;
+  @since(version = 0.2.0)
+  import wasi:cli/stderr@0.2.3;
+
+  @since(version = 0.2.0)
+  import wasi:cli/stdin@0.2.3;
+
+  @since(version = 0.2.0)
+  import outgoing-handler;
+}
+
+@since(version = 0.2.0)
+world proxy {
+  @since(version = 0.2.0)
+  include imports;
+
+  @since(version = 0.2.0)
+  export incoming-handler;
+}
