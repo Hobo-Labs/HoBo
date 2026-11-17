@@ -1874,6 +1874,56 @@ describe("Alchemy IaC provider against the real library", () => {
 		}
 	});
 
+	it.each([
+		"fenceSettlementGuard",
+		"settlementEvidence",
+	] as const)("retains the real hold and route when an admitted receipt contains unsupported %s", async (field) => {
+		const fixture = setup({
+			onReceipt: (receipt) => {
+				if (receipt.reservation === undefined)
+					throw new Error("reservation missing");
+				Object.defineProperty(receipt.reservation, field, {
+					value: {},
+					enumerable: true,
+				});
+			},
+		});
+		try {
+			await fixture.provider.preview(program);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "unsupported-evidence"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_UNSUPPORTED_EVIDENCE",
+				reservationId: "iac:unsupported-evidence",
+				requiresReconciliation: true,
+				executionOutcome: "not-started",
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
+			expect(fixture.authority.lookup("iac:unsupported-evidence")?.status).toBe(
+				"uncertain",
+			);
+			expect(
+				await fixture.routeAuthority.inspect({
+					tenantId: "tenant-a",
+					requestId: "unsupported-evidence",
+				}),
+			).toMatchObject({
+				phase: "finished",
+				outcome: { status: "uncertain", targetId: "yard-a" },
+				attempts: [{ targetId: "yard-a", status: "finished" }],
+			});
+			await expect(
+				fixture.provider.applyWithAdmission(program, "another-attempt"),
+			).rejects.toMatchObject({
+				requiresReconciliation: true,
+				reservationId: "iac:unsupported-evidence",
+			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
 	it("returns an independent validated admission receipt", async () => {
 		let original: IacTargetAdmissionDecision | undefined;
 		const fixture = setup({

@@ -465,6 +465,8 @@ inspectable and its reservation can be scoped safely, the receipt reports
 receipt. Both cases require reconciliation before execution or fallback. A
 `not-started` outcome describes this adapter invocation; a previous attempt may
 have run, so the hold and route remain uncertain.
+The root integration suite verifies that both unsupported evidence forms leave
+the real budget hold and route uncertain without invoking the provider.
 An optional proof explicitly set to `undefined` is treated as absent; a bypassed
 admission still requires its policy and scope proofs. The bounded receipt graph
 allows at most 16,384 values, 32 nesting levels, 1,024 array entries, 256 object
