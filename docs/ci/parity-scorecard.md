@@ -16,10 +16,10 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | State | Cases |
 | --- | --- |
-| pass | 15 |
+| pass | 16 |
 | built-not-proven | 1 |
 | partial | 24 |
-| not-built | 17 |
+| not-built | 16 |
 | met-differently | 1 |
 | Total | 58 |
 
