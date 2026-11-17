@@ -12,9 +12,16 @@ simulator, and the lint check against a fake sandbox. No check job has been
 answered from GitHub's runner service yet. Gauntlet cases C01 and C02
 run at T2 in
 [`features/hobo-ci-parity/checks.feature`](../../../../features/hobo-ci-parity/checks.feature);
-C01's T3 part is owed until a scheduled probe in this repository answers a
-title check job through a live relay and the run is linked in the case
-catalog.
+C01's T3 part is owed, and C01 reads `built-not-proven` in
+[`docs/ci/parity-scorecard.md`](../../../../docs/ci/parity-scorecard.md) until
+it is linked. The T3 run C01 expects: the closing package of the CI parity
+work turns relay mode on for this repository alone on the deployed relay, and
+a title check job (`hobo-labs/hobo/checks/pr-title`) asked of the relay label
+by the scheduled probe
+[`.github/workflows/parity-probe.yml`](../../../../.github/workflows/parity-probe.yml)
+is completed by that relay with no runner and no billed minute. That probe
+run's URL is what gets linked as C01's `t3Run` in
+`features/hobo-ci-parity/cases.json`. No such run exists yet. C02 is T2 only.
 
 ## Files
 
@@ -110,6 +117,17 @@ standard input and unpacked into a scratch folder. A tool that overstays is
 killed and its container removed. The image must hold the five tools, `sh` and
 `tar`; a missing tool is reported as not installed.
 
+This sandbox is new, not one of HoBo's existing ones, and that is a
+deviation from asking for "an existing HoBo sandbox". The ones that exist do
+not fit a lint run: the isolated worker's Docker driver
+(`../isolated-worker/cli-docker-driver.ts`) talks to the Docker socket to
+start long-lived runner containers from a just-in-time runner configuration,
+and `ci-vercel`'s `IsolatedSandboxDriver` creates a Vercel Sandbox and starts
+a runner in it with a JIT config. Both start a runner that takes a job; a lint
+run needs one command on an archive with no network and no runner. The lint
+sandbox is the `LintSandbox` port, so an adapter over another sandbox can
+replace `createDockerLintSandbox` without touching the checks.
+
 ## What it reads
 
 `.hobo/ci.json` at the default branch or the pull request's base branch, never
@@ -128,7 +146,9 @@ reads no log and no secret. Each of
 these reads is an interaction of the hand-authored pact
 [`contracts/relay-checks.pact.json`](../../contracts/relay-checks.pact.json),
 which `contracts/relay-checks.consumer.test.ts` runs `GithubRelayCheckSource`
-against.
+against. The codeload download is the one interaction on another host: its
+request names `codeload.github.com`, and the test checks it carries no
+Authorization header.
 
 ## What it reports
 
@@ -137,6 +157,14 @@ to the `completed` callback: repository, run, job, each check's result, the
 conclusion, the time and the node. A failure there never changes the answer.
 The usage report counts the job as a relay job finished with no billed minute,
 from the run's own job facts.
+
+The event is a callback, not a journal record: nothing here writes
+`check.completed` to a journal or store, because the route journal's
+`defineRunnerRouteEvent` takes only `runner.route.*` events and a new record
+type belongs in `packages/ci/data-models`, outside this folder. A durable
+`check.completed` record is follow-up work for that package's owner. No test
+here yet shows the usage report counting a check job; that rests on the
+existing relay job facts.
 
 ## Wiring
 

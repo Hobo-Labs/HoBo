@@ -17,6 +17,8 @@ type Interaction = Readonly<{
 	description: string;
 	request: Readonly<{
 		method: string;
+		/** The host asked; GitHub's REST API when absent. */
+		host?: string;
 		path: string;
 		query?: Readonly<Record<string, readonly string[]>>;
 	}>;
@@ -35,13 +37,18 @@ const pact = JSON.parse(
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
 it("reads what a runner-less check needs through every declared GitHub interaction", async () => {
-	expect(pact.interactions).toHaveLength(5);
+	expect(pact.interactions).toHaveLength(6);
 	const matched = new Set<string>();
 	const unmatched: string[] = [];
-	function serve(path: string, method: string): Response {
-		const url = new URL(path, "https://api.github.com");
+	function serve(
+		path: string,
+		method: string,
+		host = "api.github.com",
+	): Response {
+		const url = new URL(path, `https://${host}`);
 		const entry = pact.interactions.find(
 			(candidate) =>
+				(candidate.request.host ?? "api.github.com") === host &&
 				candidate.request.path === url.pathname &&
 				candidate.request.method === method,
 		);
@@ -69,7 +76,8 @@ it("reads what a runner-less check needs through every declared GitHub interacti
 		},
 	};
 	// The archive read leaves the transport: the API's 302 is read here, and
-	// codeload (not GitHub's REST API, so not in the pact) sends the bytes.
+	// codeload, the pact's one interaction on another host, sends the bytes
+	// to a request that carries no Authorization header.
 	const downloads: string[] = [];
 	const source = new GithubRelayCheckSource(
 		github,
@@ -87,9 +95,11 @@ it("reads what a runner-less check needs through every declared GitHub interacti
 				expect(url.hostname).toBe("codeload.github.com");
 				expect(authorization).toBeNull();
 				downloads.push(url.pathname);
-				return new Response("gzipped tarball", {
-					headers: { "content-type": "application/x-gzip" },
-				});
+				return serve(
+					`${url.pathname}${url.search}`,
+					init?.method ?? "GET",
+					url.hostname,
+				);
 			},
 		},
 	);

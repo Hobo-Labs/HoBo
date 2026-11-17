@@ -2,7 +2,7 @@
   "consumer": { "name": "HoBoCiRelayChecks" },
   "provider": { "name": "GitHubRestApi" },
   "metadata": {
-    "note": "Hand-authored. What runner-less checks read of GitHub (ADR-0183): .hobo/ci.json at the pull request's base branch, the run, the pull request (by the run's ref, or for a pull_request_target run from a fork, among the open pull requests from the run's head) and, for the lint check only, the commit's tarball: GitHub's API answers with a 302 to codeload.github.com, which is read without the installation token. Shapes from GitHub's REST documentation (pulls, actions/workflow-runs, repos/contents, repos/contents#download-a-repository-archive-tar), read 2026-11-17."
+    "note": "Hand-authored. What runner-less checks read of GitHub (ADR-0183): .hobo/ci.json at the pull request's base branch, the run, the pull request (by the run's ref, or for a pull_request_target run from a fork, among the open pull requests from the run's head) and, for the lint check only, the commit's tarball: GitHub's API answers with a 302 to codeload.github.com, which is read without the installation token (the one interaction whose request names a host: codeload.github.com, not the REST API). Shapes from GitHub's REST documentation (pulls, actions/workflow-runs, repos/contents, repos/contents#download-a-repository-archive-tar), read 2026-11-17."
   },
   "interactions": [
     {
@@ -74,6 +74,21 @@
           "location": "https://codeload.github.com/octo/app/legacy.tar.gz/0123456789abcdef0123456789abcdef01234567?token=SHORTLIVED"
         },
         "body": ""
+      }
+    },
+    {
+      "description": "download the archive from codeload with no Authorization header",
+      "providerState": "codeload.github.com serves the archive the API's 302 named, to the short-lived token in its URL alone; the request carries no Authorization header",
+      "request": {
+        "method": "GET",
+        "host": "codeload.github.com",
+        "path": "/octo/app/legacy.tar.gz/0123456789abcdef0123456789abcdef01234567",
+        "query": { "token": ["SHORTLIVED"] }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/x-gzip" },
+        "body": "gzipped tarball"
       }
     }
   ]
