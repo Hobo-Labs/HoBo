@@ -1,11 +1,3 @@
-// ADR-0071 Dispatcher: credit/budget-aware deterministic selection across
-// registered providers for placement, dispatch, and traffic. Promoted from
-// src/draft/technical-proofs/dispatcher-maximize-credits-contract (decision
-// ranking, hysteresis, reservation CAS) and
-// dispatcher-reservation-hardening-contract (reserve/confirm/release/expire
-// invariants). Decisions are pure functions of (registry, CreditLedgerView@seq,
-// request): identical inputs replay to identical dispatch.Decided facts.
-
 import { createHash } from "node:crypto";
 import { isJsonObject, isJsonString } from "./json.js";
 
@@ -60,7 +52,6 @@ export interface CreditAccount {
 	budgetCap?: number;
 	spendToDate?: number;
 	reservedUnits?: number;
-	/** Pending monetary exposure, in the same currency as budgetCap. */
 	reservedCost?: number;
 	credits?: CreditGrant[];
 }
@@ -123,7 +114,6 @@ export interface HysteresisInput {
 	minimumSavings: number;
 	dwellWindow: string;
 	observedAt: string;
-	/** First continuously qualifying observation, bound to this challenger. */
 	savingsSince?: string;
 	challengerProviderId?: string;
 }
@@ -151,8 +141,6 @@ export interface DispatchDecidedData {
 	}[];
 }
 
-// Parse-don't-validate boundary: raw provider declarations become a frozen
-// registry of derived candidate records before any ranking runs.
 export function createDispatcherRegistry(
 	providers: DispatchProviderInput[] = [],
 ) {
@@ -272,9 +260,6 @@ export function decideDispatch(request) {
 	};
 }
 
-// Snapshots produced by dispatch-and-reserve can contain prior replay inputs.
-// Exclude those nested inputs to bound growth, while keeping legacy snapshots
-// byte-identical and retaining the original ledger identity in the decision.
 function replayLedgerView(ledgerView: CreditLedgerView): CreditLedgerView {
 	if (
 		!ledgerView.reservations?.some(
@@ -1249,8 +1234,12 @@ function rankCreditCandidate({
 	const totalCost = roundCost(baseCost + switchingCost);
 	const budgetExceeded = totalCost > credit.budgetHeadroom;
 	const hardBudgetInvalid =
-		account?.budgetCap !== undefined &&
-		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));
+		account !== null &&
+		((account.budgetCap !== undefined && !credit.valid) ||
+			(account.spendToDate !== undefined &&
+				!optionalNonNegativeNumber(account.spendToDate)) ||
+			(account.reservedCost !== undefined &&
+				!optionalNonNegativeNumber(account.reservedCost)));
 	const capacityExceeded =
 		account !== null &&
 		((account.rateHeadroom !== undefined &&
@@ -1333,7 +1322,6 @@ function creditFactsFor(
 ) {
 	if (!account) {
 		return {
-			// SAFETY: assertion required at this I/O or test boundary.
 			status: "missing" as CreditFacts,
 			valid: false,
 			listUnitCost: nonNegativeNumber(
@@ -1373,7 +1361,6 @@ function creditFactsFor(
 
 	if (!valid) {
 		return {
-			// SAFETY: assertion required at this I/O or test boundary.
 			status: "invalid" as CreditFacts,
 			valid: false,
 			listUnitCost: nonNegativeNumber(
@@ -1389,7 +1376,6 @@ function creditFactsFor(
 	}
 
 	return {
-		// SAFETY: assertion required at this I/O or test boundary.
 		status: (freeHeadroom > 0 ? "present" : "present-empty") as CreditFacts,
 		valid: true,
 		listUnitCost,
@@ -1415,7 +1401,6 @@ function freeHeadroomFor(account: CreditAccount, asOf?: string) {
 		allGrants += credit.freeHeadroom;
 		if (grantIsLive(credit, asOf)) liveGrants += credit.freeHeadroom;
 	}
-	// Account headroom is an aggregate cap; grants describe its composition.
 	if (account.freeHeadroom === undefined) return liveGrants;
 	return Math.min(
 		account.freeHeadroom,
@@ -1670,8 +1655,6 @@ function parseRegistry(registry) {
 	return registry;
 }
 
-// Parse-don't-validate boundary: an untrusted CreditLedgerView snapshot is
-// parsed once here; every ranking/reservation path receives the derived view.
 export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 	if (!ledgerView || !isJsonObject(ledgerView) || Array.isArray(ledgerView)) {
 		throw new TypeError("ledgerView must be a CreditLedgerView snapshot");

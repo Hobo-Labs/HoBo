@@ -30,7 +30,6 @@ function ledgerView(
 }
 
 function account(providerId: string, overrides: JsonObject = {}) {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const freeHeadroom = (overrides.freeHeadroom as number) ?? 0;
 	return {
 		providerId,
@@ -57,12 +56,9 @@ function runner(id: string, overrides: JsonObject = {}) {
 		id,
 		providerId: id,
 		category: "runner" as const,
-		// SAFETY: assertion required at this I/O or test boundary.
 		registered: (overrides.registered as boolean) ?? true,
 		dimension: "runner.minutes",
-		// SAFETY: assertion required at this I/O or test boundary.
 		listUnitCost: (overrides.listUnitCost as number) ?? 0.02,
-		// SAFETY: assertion required at this I/O or test boundary.
 		switchingCost: (overrides.switchingCost as number) ?? 0,
 	};
 }
@@ -70,21 +66,14 @@ function runner(id: string, overrides: JsonObject = {}) {
 function placementCandidate(definitionId: string, overrides: JsonObject = {}) {
 	return {
 		definitionId,
-		// SAFETY: assertion required at this I/O or test boundary.
 		providerId: (overrides.providerId as string) ?? definitionId,
-		// SAFETY: assertion required at this I/O or test boundary.
 		registered: (overrides.registered as boolean) ?? true,
 		resourceType: "object-store",
 		dimension: "object-store.gib-month",
-		// SAFETY: assertion required at this I/O or test boundary.
 		listUnitCost: (overrides.listUnitCost as number) ?? 0.02,
-		// SAFETY: assertion required at this I/O or test boundary.
 		specificity: (overrides.specificity as number) ?? 1,
-		// SAFETY: assertion required at this I/O or test boundary.
 		priority: (overrides.priority as number) ?? 0,
-		// SAFETY: assertion required at this I/O or test boundary.
 		region: (overrides.region as string) ?? "us-east-1",
-		// SAFETY: assertion required at this I/O or test boundary.
 		switchingCost: (overrides.switchingCost as number) ?? 0,
 	};
 }
@@ -657,4 +646,60 @@ test("no registered candidates fails closed without emitting dispatch.Decided", 
 	assert.equal(decision.ok, false);
 	assert.match(decision.reason, /no registered runner candidates/);
 	assert.equal(decision.dispatchEvent, undefined);
+});
+
+test("dispatch refuses when every registered candidate exceeds its budget", () => {
+	const decision = decideDispatch({
+		registry: createDispatcherRegistry([
+			runner("first", { listUnitCost: 2 }),
+			runner("second", { listUnitCost: 3 }),
+		]),
+		category: "runner",
+		dispatchId: "all-over-budget",
+		ledgerView: ledgerView([
+			account("first", { budgetCap: 1, spendToDate: 0, listUnitCost: 2 }),
+			account("second", { budgetCap: 1, spendToDate: 0, listUnitCost: 3 }),
+		]),
+	});
+	assert.equal(decision.ok, false);
+	assert.equal(decision.dispatchEvent, undefined);
+	assert.deepEqual(
+		decision.ranking.map((entry) => entry.rejectionReason),
+		["budget-cap-exceeded", "budget-cap-exceeded"],
+	);
+});
+
+test("malformed monetary facts never authorize a dispatch", () => {
+	for (const invalid of [
+		{ budgetCap: "unbounded" },
+		{ spendToDate: "unknown" },
+		{ reservedCost: "unknown" },
+	]) {
+		const decision = decideDispatch({
+			registry: createDispatcherRegistry([runner("candidate")]),
+			category: "runner",
+			dispatchId: "malformed-budget",
+			ledgerView: ledgerView([{ ...account("candidate"), ...invalid }]),
+		});
+		assert.equal(decision.ok, false);
+		assert.equal(decision.dispatchEvent, undefined);
+		assert.equal(
+			decision.ranking[0].rejectionReason,
+			"invalid-hard-budget-facts",
+		);
+		const ledger = createReservationLedger(
+			ledgerView([{ ...account("candidate"), ...invalid }]),
+		);
+		const reservation = ledger.reserve({
+			providerId: "candidate",
+			dimension: "runner.minutes",
+			reservationId: "invalid-budget",
+			expectedSeq: 91,
+			units: 1,
+		});
+		assert.equal(reservation.ok, false);
+		assert.equal(reservation.reason, "invalid-hard-budget-facts");
+		assert.equal(ledger.snapshot().seq, 91);
+		assert.deepEqual(ledger.events(), []);
+	}
 });
