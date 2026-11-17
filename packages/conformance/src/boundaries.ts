@@ -152,6 +152,9 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-gh-actions",
 	// The optional relay agent composes the relay; nothing depends on it.
 	"packages/ci-agent",
+	// The read-only relay dashboard reads the relay's read API; only the
+	// `hobo ci serve` composition depends on it.
+	"packages/ci-dashboard",
 	"packages/ci-ado",
 	"packages/ci-dagger",
 	"packages/ci-cf",
