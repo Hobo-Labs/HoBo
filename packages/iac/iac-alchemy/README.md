@@ -15,8 +15,12 @@ Alchemy Rivet DurableObjects. `@hobo/iac-alchemy/rivet/runtime` provides the
 actor runtime without importing the IaC provider, and `@hobo/iac-alchemy/rivet/multi`
 maps multiple applications to separately attested pool and runner domains.
 The host must verify each source and dependency closure, authenticate requests,
-and attest exclusive physical pool ownership; it must include every pool and
-its infrastructure in the financial inventory. Unsupported Rivet storage,
+and attest exclusive canonical pool and runner isolation domains across all
+active stacks, maintaining ownership through deletion and reconciliation. It
+must include every pool and its infrastructure in the financial inventory. The
+Rivet HTTP mapper requires each resource FQN to equal its actor name, so use
+distinct actor names or independently isolated stacks and pools; placing these
+actors inside an Alchemy namespace is rejected. Unsupported Rivet storage,
 messaging, dependencies and replay are rejected explicitly.
 The Rivet HTTP binding authorizes a snapshot of the actor key, HTTP method,
 URL and headers before starting application code. It transfers the request
