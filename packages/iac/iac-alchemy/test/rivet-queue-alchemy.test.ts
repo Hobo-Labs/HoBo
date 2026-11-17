@@ -16,6 +16,7 @@ import {
 	createRivetQueueActor,
 	rivetAsyncQueueResource,
 } from "../src/rivet-queue.js";
+import { testStateOwnership } from "./route-fixture.js";
 
 function fixture() {
 	const binding = createRivetQueueActor({
@@ -108,6 +109,7 @@ describe("Alchemy Rivet async queue resource", () => {
 		process.env.ALCHEMY_HOME = join(directory, "auth");
 		try {
 			const provider = createAlchemyIacProvider({
+				stateOwnership: testStateOwnership,
 				stack,
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: directory,
