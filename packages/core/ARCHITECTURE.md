@@ -46,3 +46,13 @@ contract surfaces other packages compile against.
 - Port interfaces and branded parsers: [`src/ports/queue.ts`](./src/ports/queue.ts), [`src/ports/clock.ts`](./src/ports/clock.ts)
 - Protobuf + CUE records: [`data-models/queue_port.proto`](./data-models/queue_port.proto), [`data-models/clock_port.proto`](./data-models/clock_port.proto)
 - Production adapter: `@hobo/runtime-local` (`createRuntimeLocalQueueClock`)
+
+## Durable messaging port
+
+[`src/ports/durable-messaging.ts`](./src/ports/durable-messaging.ts) defines an
+additive asynchronous port for group leases, durable acknowledgements and
+dead-letter delivery. Mutation receipts distinguish committed, rejected,
+unknown and expired outcomes. Expiry-bound operation IDs prevent an old retry
+from becoming a new write after its receipt is collected. This contract does
+not make the legacy synchronous `Messaging` port durable; an adapter must
+implement and verify the new port separately.

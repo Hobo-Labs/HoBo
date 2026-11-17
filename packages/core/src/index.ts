@@ -377,6 +377,27 @@ export {
 	type LifecycleParticipantKind,
 } from "./ports/durable-lifecycle-gate.js";
 export type {
+	DurableMessaging,
+	DurableMessagingAttribute,
+	DurableMessagingDeadLetter,
+	DurableMessagingDelivery,
+	DurableMessagingEvent,
+	DurableMessagingLimits,
+	DurableMessagingMessage,
+	DurableMessagingNackReceipt,
+	DurableMessagingOperation,
+	DurableMessagingOutcome,
+	DurableMessagingRejectionCode,
+	DurableMessagingSubscription,
+} from "./ports/durable-messaging.js";
+export {
+	DURABLE_MESSAGING_CONTRACT,
+	DURABLE_MESSAGING_LIMITS,
+	DURABLE_MESSAGING_WIT_INTERFACE,
+	durableMessagingOperation,
+	parseDurableMessagingOperation,
+} from "./ports/durable-messaging.js";
+export type {
 	EphemeralEntry,
 	EphemeralKey,
 	EphemeralLockLease,
