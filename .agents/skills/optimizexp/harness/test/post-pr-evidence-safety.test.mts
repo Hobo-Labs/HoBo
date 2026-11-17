@@ -201,4 +201,37 @@ describe("PR evidence manifest read boundary", () => {
 			assert.equal(comments.includes(secret), false);
 		});
 	});
+
+	it("keeps transcript fences and path punctuation literal in comments", () => {
+		fixture(({ scenario, invoke, log }) => {
+			artifact(scenario, "nested/primary`|odd.txt", "start\n```\n@team\n````\nend\n");
+			const result = invoke();
+			assert.equal(result.status, 0, String(result.stderr));
+			const comments = readFileSync(log, "utf8");
+			assert.ok(comments.includes("`````text\nstart\n```\n@team\n````\nend\n\n`````"));
+			assert.ok(comments.includes("primary`\\|odd.txt``"));
+		});
+	});
+
+	it("rejects a manifest kind that can inject Markdown before posting", () => {
+		fixture(({ scenario, invoke, log }) => {
+			const hash = artifact(scenario, "primary.txt", "evidence\n");
+			const kind = "transcript\n@team";
+			writeFileSync(path.join(scenario, "manifest.json"), JSON.stringify({ kind, primaryPath: "primary.txt" }));
+			writeFileSync(path.join(scenario, "meta.json"), JSON.stringify({ driver: "cli", primary: { file: "primary.txt", kind, sha256: hash }, claims: [] }));
+			assertNoComment(invoke(), log);
+		});
+	});
+
+	it("encodes punctuation in image link destinations", () => {
+		fixture(({ scenario, invoke, log }) => {
+			const primaryPath = "nested/picture )`|.png";
+			const sha256 = artifact(scenario, primaryPath, "image bytes");
+			writeFileSync(path.join(scenario, "manifest.json"), JSON.stringify({ kind: "image", primaryPath }));
+			writeFileSync(path.join(scenario, "meta.json"), JSON.stringify({ driver: "web", primary: { file: primaryPath, kind: "image", sha256 }, claims: [] }));
+			const result = invoke();
+			assert.equal(result.status, 0, String(result.stderr));
+			assert.match(readFileSync(log, "utf8"), /nested\/picture%20%29%60%7C\.png\)/);
+		});
+	});
 });

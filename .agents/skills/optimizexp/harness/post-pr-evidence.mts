@@ -107,6 +107,23 @@ function primaryEvidencePath(directory: string, value: unknown): string {
 	return path.join(directory, ...parts);
 }
 
+function markdownFence(value: string, minimum: number): string {
+	let length = minimum;
+	for (const match of value.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1);
+	return "`".repeat(length);
+}
+
+function markdownCode(value: string, table = false): string {
+	const content = table ? value.replace(/\|/g, "\\|") : value;
+	const fence = markdownFence(content, 1);
+	const padded = content.startsWith("`") || content.endsWith("`") ? ` ${content} ` : content;
+	return `${fence}${padded}${fence}`;
+}
+
+function markdownPath(value: string): string {
+	return value.split("/").map((part) => encodeURIComponent(part).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)).join("/");
+}
+
 function loadScenarios(featureId: string, root: string) {
 	const loc = findFeature(featureId, root);
 	const dir = loc?.dir ?? featureDir(featureId, root);
@@ -128,7 +145,7 @@ function loadScenarios(featureId: string, root: string) {
 			const man = JSON.parse(
 				readFileSync(manifest, "utf8"),
 			) as { primaryPath?: unknown; kind?: unknown; updatedAt?: string } | null;
-			if (!man || typeof man.kind !== "string" || !man.kind) throw new Error("Invalid evidence manifest kind");
+			if (!man || typeof man.kind !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(man.kind)) throw new Error("Invalid evidence manifest kind");
 			const primary = primaryEvidencePath(eDir, man.primaryPath);
 			const stat = safeEvidenceEntry(root, primary, "file");
 			if (!stat) throw new Error("Evidence primary file is missing");
@@ -265,10 +282,10 @@ function main() {
 		`|---|---|---:|---|---|`,
 		...scenarios.map(
 			(s) =>
-				`| \`${s.slug}\` | ${s.kind} | ${s.bytes} | \`${s.primaryPath}\` | ${s.reviewStatus} |`,
+				`| ${markdownCode(s.slug, true)} | ${s.kind} | ${s.bytes} | ${markdownCode(s.primaryPath, true)} | ${s.reviewStatus} |`,
 		),
 		``,
-		`Canonical evidence lives on the branch under \`${evidencePath}\`. New captures **overwrite** the prior primary per scenario.`,
+		`Canonical evidence lives on the branch under ${markdownCode(evidencePath)}. New captures **overwrite** the prior primary per scenario.`,
 		``,
 	];
 	const indexResult = postComment(pr, indexLines.join("\n"), dry);
@@ -300,9 +317,9 @@ function main() {
 				``,
 				`Kind: **${s.kind}** (${bytes} bytes)`,
 				``,
-				`Path: \`${s.primaryPath}\``,
+				`Path: ${markdownCode(s.primaryPath)}`,
 				``,
-				`![${s.slug}](${s.primaryPath})`,
+				`![${s.slug}](${markdownPath(s.primaryPath)})`,
 				``,
 				`_If the image does not render in the comment, open the path on the PR branch._`,
 			].join("\n");
@@ -312,14 +329,15 @@ function main() {
 		) {
 			const text = readFileSync(abs, "utf8");
 			const clipped = text.length > 12000 ? `${text.slice(0, 12000)}\n…[clipped]` : text;
+			const fence = markdownFence(clipped, 3);
 			body = [
 				`### Scenario \`${s.slug}\` (transcript)`,
 				``,
-				`Path: \`${s.primaryPath}\``,
+				`Path: ${markdownCode(s.primaryPath)}`,
 				``,
-				"```text",
+				`${fence}text`,
 				clipped,
-				"```",
+				fence,
 			].join("\n");
 		} else {
 			body = [
@@ -327,7 +345,7 @@ function main() {
 				``,
 				`Kind: **${s.kind}** (${s.bytes} bytes)`,
 				``,
-				`See committed path: \`${s.primaryPath}\``,
+				`See committed path: ${markdownCode(s.primaryPath)}`,
 				``,
 				`Size exceeded inline thresholds; open the file on the PR branch or download from the commit.`,
 			].join("\n");
