@@ -48,6 +48,7 @@ import {
 	roundDecimalToMultiple,
 	subtractDecimal,
 } from "./decimal.js";
+import { compareCodeUnits, type TextComparison } from "./order.js";
 import { PricingFault, scopeMatches, workingState } from "./state.js";
 import { convertQuantity } from "./units.js";
 
@@ -190,6 +191,7 @@ function roundQuantity(
 function aggregateMeasurements(
 	meter: MeterDefinition,
 	entries: readonly { delta: WorkloadDelta; measurement: UsageMeasurement }[],
+	compareStrings: TextComparison,
 ): Quantity {
 	if (meter.aggregation === "unique-count") {
 		const values = new Set<string>();
@@ -240,7 +242,8 @@ function aggregateMeasurements(
 	let aggregate: Quantity;
 	if (meter.aggregation === "latest") {
 		const latest = [...roundedEntries].sort((left, right) =>
-			right.entry.measurement.observedAt.localeCompare(
+			compareStrings(
+				right.entry.measurement.observedAt,
 				left.entry.measurement.observedAt,
 			),
 		)[0];
@@ -745,6 +748,7 @@ function finalizeLine(line: MutableLine, currency: string): QuoteLine {
 export function rateSnapshot(
 	scenario: QuoteScenario,
 	workloads: readonly WorkloadDelta[],
+	compareStrings: TextComparison = compareCodeUnits,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -754,7 +758,7 @@ export function rateSnapshot(
 			"state and catalog are required",
 		);
 	}
-	const state = workingState(stateView);
+	const state = workingState(stateView, compareStrings);
 	const lines: MutableLine[] = [];
 	const consumption: Consumption[] = [];
 	let nominal = DECIMAL_ZERO;
@@ -773,6 +777,7 @@ export function rateSnapshot(
 			agreement,
 			scenario.at,
 			scenario.horizon,
+			compareStrings,
 		);
 		if (currency === "") currency = rateCard.currency;
 		if (currency !== rateCard.currency)
@@ -789,6 +794,7 @@ export function rateSnapshot(
 			workload,
 			undefined,
 			"fixed",
+			compareStrings,
 		)) {
 			if (charge.variant.case !== "fixed" || charge.base === undefined)
 				continue;
@@ -825,7 +831,7 @@ export function rateSnapshot(
 			});
 		}
 		for (const meter of [...product.meters].sort((left, right) =>
-			left.dimension.localeCompare(right.dimension),
+			compareStrings(left.dimension, right.dimension),
 		)) {
 			const entries = agreementWorkloads.flatMap((delta) =>
 				delta.usage
@@ -837,6 +843,7 @@ export function rateSnapshot(
 				workload,
 				meter.dimension,
 				"usage",
+				compareStrings,
 			);
 			if (entries.length === 0 && charges.length > 0) continue;
 			if (charges.length === 0 && entries.length > 0) {
@@ -845,7 +852,7 @@ export function rateSnapshot(
 					`no charge for ${meter.dimension}`,
 				);
 			}
-			const measured = aggregateMeasurements(meter, entries);
+			const measured = aggregateMeasurements(meter, entries, compareStrings);
 			for (const charge of charges) {
 				if (charge.variant.case !== "usage" || charge.base === undefined)
 					continue;
@@ -936,7 +943,7 @@ export function rateSnapshot(
 				),
 			}),
 		),
-	].sort((left, right) => left.sourceId.localeCompare(right.sourceId));
+	].sort((left, right) => compareStrings(left.sourceId, right.sourceId));
 	const projectedWaste: ProjectedWaste[] = state.commitments.map((commitment) =>
 		create(ProjectedWasteSchema, {
 			commitmentId: commitment.commitment?.id ?? "",

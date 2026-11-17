@@ -26,7 +26,9 @@ describe("pricing golden replay corpus", () => {
 			if (scenario === undefined) {
 				throw new Error(`invalid pinned scenario: ${entry.key}`);
 			}
-			const result = quoteScenario(scenario);
+			const result = quoteScenario(scenario, {
+				ratingAlgorithmVersion: entry.quote.ratingAlgorithmVersion,
+			});
 			if (!isQuoteVector(result)) {
 				throw new Error(`${entry.key}: ${result.code}: ${result.message}`);
 			}

@@ -15,6 +15,18 @@ paid/promotional credits, and provider-actual spend commitments. Baseline and
 candidate snapshots use the same pinned state; incremental amounts are
 `F(baseline + candidate) - F(baseline)`.
 
+New quotes use `pricing-rating/v2`, which orders ties by string code units
+instead of the process locale. This changes the algorithm version and quote
+hash, and can change which equal-priority credit is consumed. To rerate an old
+record, pass its stored version, for example
+`quoteScenario(scenario, { ratingAlgorithmVersion: "pricing-rating/v1" })`.
+Version 1 used locale-sensitive ordering, so reproducing an old tied quote also
+requires its original locale. Preserve the original quote as evidence rather
+than treating a new v2 quote as the old one.
+Timestamp priority is still compared as text: fractional UTC representations
+can therefore be ordered differently from their actual instants. Reconcile
+affected expiry or latest-observation decisions until that ordering is fixed.
+
 - Exact decimal strings and scaled-integer arithmetic; no floating-point money.
 - Explicit unit identities/conversions; GB and GiB are never treated as aliases.
 - Complete, current evidence is required through the quote horizon.
@@ -73,8 +85,8 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-`corpus/golden-replay-baseline.json` pins a complete quote output. The replay
-test parses its scenario through protobuf JSON, rerates it, and compares the
+`corpus/golden-replay-baseline.json` pins a complete v1 quote output. The replay
+test parses its scenario through protobuf JSON, rerates it with the recorded version, and compares the
 stable JSON result, including the deterministic quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
 claimed.

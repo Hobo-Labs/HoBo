@@ -8,6 +8,7 @@ import {
 	type QuoteScenario,
 } from "./_generated/pricing_pb.js";
 import { stableHash } from "./json.js";
+import { compareCodeUnits, type TextComparison } from "./order.js";
 import type { PricingRejectionCode } from "./types.js";
 
 const UTC_PATTERN =
@@ -251,26 +252,31 @@ export function validateScenarioState(scenario: QuoteScenario): void {
 	}
 }
 
-export function workingState(state: FinancialStateView): FinancialStateView {
+export function workingState(
+	state: FinancialStateView,
+	compareStrings: TextComparison = compareCodeUnits,
+): FinancialStateView {
 	const working = clone(FinancialStateViewSchema, state);
 	working.allowances.sort(
 		(left, right) =>
 			(left.grant?.priority ?? 0) - (right.grant?.priority ?? 0) ||
-			(left.grant?.effective?.end ?? "9999").localeCompare(
+			compareStrings(
+				left.grant?.effective?.end ?? "9999",
 				right.grant?.effective?.end ?? "9999",
 			) ||
-			(left.grant?.id ?? "").localeCompare(right.grant?.id ?? ""),
+			compareStrings(left.grant?.id ?? "", right.grant?.id ?? ""),
 	);
 	working.credits.sort(
 		(left, right) =>
 			(left.grant?.priority ?? 0) - (right.grant?.priority ?? 0) ||
-			(left.grant?.effective?.end ?? "9999").localeCompare(
+			compareStrings(
+				left.grant?.effective?.end ?? "9999",
 				right.grant?.effective?.end ?? "9999",
 			) ||
-			(left.grant?.id ?? "").localeCompare(right.grant?.id ?? ""),
+			compareStrings(left.grant?.id ?? "", right.grant?.id ?? ""),
 	);
 	working.commitments.sort((left, right) =>
-		(left.commitment?.id ?? "").localeCompare(right.commitment?.id ?? ""),
+		compareStrings(left.commitment?.id ?? "", right.commitment?.id ?? ""),
 	);
 	return working;
 }

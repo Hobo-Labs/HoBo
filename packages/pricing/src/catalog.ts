@@ -9,6 +9,7 @@ import {
 	type WorkloadDelta,
 } from "./_generated/pricing_pb.js";
 import { stableHash } from "./json.js";
+import { compareCodeUnits, type TextComparison } from "./order.js";
 import { intervalCovers, PricingFault } from "./state.js";
 import type { PricingRejectionCode } from "./types.js";
 
@@ -61,6 +62,7 @@ export function resolveRateCard(
 	agreement: ProviderAgreement,
 	at: string,
 	horizon: string,
+	compareStrings: TextComparison = compareCodeUnits,
 ): RateCard {
 	const schedule = agreement.rateSchedule
 		.filter(
@@ -68,9 +70,8 @@ export function resolveRateCard(
 				entry.effective !== undefined &&
 				intervalCovers(entry.effective, at, horizon),
 		)
-		.sort(
-			(left, right) =>
-				right.effective?.start.localeCompare(left.effective?.start ?? "") ?? 0,
+		.sort((left, right) =>
+			compareStrings(right.effective?.start ?? "", left.effective?.start ?? ""),
 		);
 	const selected = schedule[0];
 	if (selected === undefined) {
@@ -99,10 +100,11 @@ function matchesSelectors(
 	component: ChargeComponent,
 	workload: WorkloadDelta | undefined,
 	dimension: string | undefined,
+	compareStrings: TextComparison,
 ): boolean {
 	const selectors = component.base?.selectors ?? {};
 	for (const [key, expected] of Object.entries(selectors).sort(([a], [b]) =>
-		a.localeCompare(b),
+		compareStrings(a, b),
 	)) {
 		const actual =
 			key === "productId" || key === "productRef"
@@ -122,6 +124,7 @@ export function selectChargeComponents(
 	workload: WorkloadDelta | undefined,
 	dimension: string | undefined,
 	variant: "fixed" | "usage",
+	compareStrings: TextComparison = compareCodeUnits,
 ): readonly ChargeComponent[] {
 	const matching = rateCard.charges.filter(
 		(component) =>
@@ -129,7 +132,7 @@ export function selectChargeComponents(
 			(component.variant.case !== "usage" ||
 				(dimension !== undefined &&
 					component.variant.value.dimension === dimension)) &&
-			matchesSelectors(component, workload, dimension),
+			matchesSelectors(component, workload, dimension, compareStrings),
 	);
 	const selected: ChargeComponent[] = [];
 	const groups = new Map<string, ChargeComponent[]>();
@@ -139,7 +142,7 @@ export function selectChargeComponents(
 		else groups.set(group, [...(groups.get(group) ?? []), component]);
 	}
 	for (const [group, components] of [...groups.entries()].sort(([a], [b]) =>
-		a.localeCompare(b),
+		compareStrings(a, b),
 	)) {
 		const nonFallback = components.filter(
 			(component) => component.base?.fallback !== true,
@@ -172,7 +175,7 @@ export function selectChargeComponents(
 		selected.push(fallback);
 	}
 	return selected.sort((left, right) =>
-		(left.base?.id ?? "").localeCompare(right.base?.id ?? ""),
+		compareStrings(left.base?.id ?? "", right.base?.id ?? ""),
 	);
 }
 
