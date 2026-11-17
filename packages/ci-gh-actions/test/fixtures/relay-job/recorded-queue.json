@@ -1,5 +1,5 @@
 {
-  "about": "GitHub Actions REST answers recorded from api.github.com on 2026-11-17 against Hobo-Labs/HoBo (read only), trimmed to the fields the queue reader uses: GET /actions/runs?per_page=20, and GET /actions/runs/{id}/jobs?filter=latest for one in-progress CI run and one fleet-probe run whose hobo job was still waiting.",
+  "about": "GitHub Actions REST answers recorded from api.github.com on 2026-11-17 against Hobo-Labs/HoBo (read only), trimmed to the fields the queue reader uses: GET /actions/runs?per_page=20, and GET /actions/runs/{id}/jobs?filter=latest for one in-progress CI run and one fleet-probe run whose hobo job GitHub reported as pending: held by the probe workflow's job-level concurrency group behind the older queued probe run 43986627356, not waiting for a runner.",
   "readAt": "2026-11-17T00:31:30Z",
   "runs": {
     "total_count": 13500,

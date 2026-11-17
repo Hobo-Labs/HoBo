@@ -10,11 +10,12 @@
  * These are the rules this repository's own route job has run in production
  * (`labelLoad`, `takingJobs`, `refusingJobs` and the run-reading order in
  * `scripts/ci/route-runner.mts`), written again here so the relay job's
- * evaluator does not depend on a script. They agree on the same job lists,
- * with one difference: a job GitHub reports as `pending` is counted as
- * waiting, as a `queued` one is. GitHub was seen reporting a job waiting for
- * a self-hosted label as `pending` (see the recorded fixture in
- * `test/fixtures/relay-job/recorded-queue.json`).
+ * evaluator does not depend on a script. They agree on the same job lists.
+ * As there, only a `queued` job counts as waiting for a runner. A `pending`
+ * job is held back by a concurrency group, not by a missing runner (the
+ * recorded fixture in `test/fixtures/relay-job/recorded-queue.json` has one:
+ * a fleet probe waiting behind an older queued probe run), so it says nothing
+ * about whether a label is full or failing.
  *
  * Pure functions: no clock, network or store. Parsers take GitHub's JSON and
  * return the parsed shape or nothing; they never throw.
@@ -203,12 +204,16 @@ export function queueRunsOf(body: JsonInput): readonly QueueRun[] | undefined {
 	}));
 }
 
-/** Statuses of a job still waiting for a runner. */
-const WAITING_STATUSES: ReadonlySet<string> = new Set(["queued", "pending"]);
+/**
+ * Statuses of a job still waiting for a runner. `pending` is left out: GitHub
+ * uses it for a job held by a concurrency group, which waits on another run.
+ */
+const WAITING_STATUSES: ReadonlySet<string> = new Set(["queued"]);
 
 /**
  * The jobs on one page of `GET /actions/runs/{id}/jobs`, or nothing when it
- * is not one. A job skipped or cancelled before a runner took it is left out.
+ * is not one. A job skipped, cancelled or held by a concurrency group before a
+ * runner took it is left out.
  */
 export function queueJobsOf(body: JsonInput): QueueJobsPage | undefined {
 	const page = JobsPage.safeParse(body);

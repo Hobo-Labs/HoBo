@@ -57,25 +57,41 @@ describe("queue evidence from a recorded job list", () => {
 		expect(runs.find((run) => run.id === CI_RUN)?.finished).toBe(false);
 	});
 
-	it("counts a pending job with no runner as waiting and drops skipped jobs", () => {
+	it("leaves out a job held by a concurrency group and skipped jobs", () => {
 		const page = queueJobsOf(recorded.jobs[String(PROBE_RUN)]);
 		expect(page?.chosen).toBe(true);
 		const labels = page?.jobs.map((seen) => seen.labels.join(","));
-		expect(labels).toEqual(["ubuntu-24.04", "hobo", "hobo-trunk"]);
-		expect(page?.jobs[1]?.startedAtMs).toBeUndefined();
+		expect(labels).toEqual(["ubuntu-24.04", "hobo-trunk"]);
 	});
 
-	it("shows the waiting fleet label refusing and the trunk label taking", () => {
+	it("counts the same job as waiting once GitHub reports it queued", () => {
+		const recordedPage = recorded.jobs[String(PROBE_RUN)];
+		const queued = {
+			jobs: recordedPage.jobs.map((seen: { status: string }) =>
+				seen.status === "pending" ? { ...seen, status: "queued" } : seen,
+			),
+		};
+		const fleet = queueEvidence(
+			queueJobsOf(queued)?.jobs ?? [],
+			"hobo",
+			readAtMs,
+		);
+		expect(fleet.waiting).toBe(1);
+		expect(fleet.oldestWaitSeconds).toBe(253);
+		expect(refusingJobs(fleet)).toBe(true);
+	});
+
+	it("shows nothing for the held fleet label and the trunk label taking", () => {
 		const jobs = recordedJobs();
 		const fleet = queueEvidence(jobs, "hobo", readAtMs);
 		expect(fleet).toEqual({
-			waiting: 1,
-			oldestWaitSeconds: 253,
+			waiting: 0,
+			oldestWaitSeconds: 0,
 			recentPickups: 0,
 			slowestRecentPickupSeconds: 0,
 			lastPickupAtMs: 0,
 		});
-		expect(refusingJobs(fleet)).toBe(true);
+		expect(refusingJobs(fleet)).toBe(false);
 		expect(takingJobs(fleet)).toBe(false);
 		const trunk = queueEvidence(jobs, "HOBO-TRUNK", readAtMs);
 		expect(trunk.recentPickups).toBe(1);
@@ -114,9 +130,9 @@ describe("the route job's queue rules", () => {
 		expect(takingJobs(queueEvidence([job("hobo", 5, 5)], "hobo", NOW))).toBe(
 			true,
 		);
-		expect(
-			takingJobs(queueEvidence([job("hobo", 20, 20)], "hobo", NOW)),
-		).toBe(false);
+		expect(takingJobs(queueEvidence([job("hobo", 20, 20)], "hobo", NOW))).toBe(
+			false,
+		);
 	});
 
 	it("refuses on a long wait, a slow pickup or a full queue", () => {
@@ -143,10 +159,7 @@ describe("the route job's queue rules", () => {
 
 	it("ignores abandoned jobs and jobs that asked for more than the one label", () => {
 		const evidence = queueEvidence(
-			[
-				job("hobo", 25 * 60),
-				{ ...job("hobo", 3), labels: ["hobo", "linux"] },
-			],
+			[job("hobo", 25 * 60), { ...job("hobo", 3), labels: ["hobo", "linux"] }],
 			"hobo",
 			NOW,
 		);
