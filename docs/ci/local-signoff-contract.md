@@ -120,6 +120,15 @@ base-branch trust list used for workflow-reuse attestations. Local commands run
 with the invoking user's authority, so only run trusted code. Serialize local
 runs in a checkout and inspect statuses after an interrupted publication.
 
+Before signoff, HoBo verifies the tested commit against a live branch on the
+verified target remote: it must be that branch's tip, or an ancestor of a live
+tip already known locally. Fetch the target branch if its newer tip is not
+known locally. A fork-only head is refused until the target advertises it on a
+branch. HoBo rechecks the branch, base, target and checkout before invoking the
+extension in a private temporary Git view; it neither changes the checkout's
+refs nor forces signoff. A branch can move after the check, and a status stays
+on the tested SHA.
+
 The attestor key's new parent directory is created with mode `0700` or more
 restrictive according to the umask. An existing parent must already deny
 group and other access; the command refuses to change its permissions.

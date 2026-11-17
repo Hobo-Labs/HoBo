@@ -54,7 +54,11 @@ and before signoff.
 The GitHub repository selected by `gh` must match the base remote. In a fork
 checkout, set `GH_REPO` to the base repository (for example,
 `GH_REPO=github.com/Hobo-Labs/HoBo`) and use `--base=upstream/main` when that
-is the intended remote branch.
+is the intended remote branch. The tested commit must also be reachable from a
+live branch on that base remote; a head present only on the fork is refused.
+If a target branch has advanced, fetch it so its tip is known locally. Use a
+normal runner, or have an authorized maintainer publish the reviewed commit on
+the target repository, when that proof is unavailable.
 
 The coordinator interprets routing and provider inventory, not the complete
 project policy schema. Malformed inventory, unsupported provider references,
