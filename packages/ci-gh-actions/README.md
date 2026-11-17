@@ -779,10 +779,11 @@ with the parser's own sentence.
 
 `parseCiRunnerOrder(json)` reads the block: the committed order, or the
 default (`fleet`, `machine`, `github`) when the file has none. A block that
-is there but broken is not silently replaced; the result carries `problem`
-and `source: "default"`, so a caller can refuse to route on an order nobody
-wrote. `hobo ci route` walks the order for one job and shows every step
-passed over. Nothing in the relay reads `runnerOrder` yet.
+is there but broken, or a project document that is not a JSON object, is not
+silently replaced; the result carries `problem` and `source: "default"`, so a
+caller can refuse to route on an order nobody wrote. `hobo ci route` walks the
+order for one job and shows every step passed over. Nothing in the relay reads
+`runnerOrder` yet.
 
 ### Moving workflow jobs to the fleet
 

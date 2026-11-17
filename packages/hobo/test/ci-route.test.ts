@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHoboCli } from "@hobo/cli";
@@ -188,6 +188,34 @@ describe("hobo ci route", () => {
 		});
 		expect(envelope.message).toContain("Relay: no inputs");
 	});
+
+	it("refuses an existing project configuration that cannot be read", async () => {
+		const { root, route } = await repository();
+		await mkdir(join(root, ".hobo", "ci.json"));
+		const { exitCode, envelope } = await route("--github", "ubuntu-24.04");
+		expect(exitCode).not.toBe(0);
+		expect(envelope.code).toBe("HOBO_CI_RUNNER_ORDER_INVALID");
+		expect(envelope.message).toContain("cannot read .hobo/ci.json");
+	});
+
+	it("refuses a non-object project document instead of using the default order", async () => {
+		const { route } = await repository({ project: "[]" });
+		const { exitCode, envelope } = await route("--github", "ubuntu-24.04");
+		expect(exitCode).not.toBe(0);
+		expect(envelope.code).toBe("HOBO_CI_RUNNER_ORDER_INVALID");
+		expect(envelope.message).toContain("the project file is not a JSON object");
+	});
+
+	it.skipIf(process.platform === "win32")(
+		"refuses a dangling project configuration link",
+		async () => {
+			const { root, route } = await repository();
+			await symlink("missing.json", join(root, ".hobo", "ci.json"));
+			const { exitCode, envelope } = await route("--github", "ubuntu-24.04");
+			expect(exitCode).not.toBe(0);
+			expect(envelope.code).toBe("HOBO_CI_RUNNER_ORDER_INVALID");
+		},
+	);
 
 	it("refuses to route on a committed order that is broken", async () => {
 		const { route } = await repository({

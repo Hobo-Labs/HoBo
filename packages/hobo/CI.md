@@ -329,7 +329,10 @@ minutes used, money spent, tripped runner types); without it the fleet and
 machines are absent and no limit is measured. When nothing can take the job
 the command exits non-zero with `HOBO_CI_NO_RUNNER` and the reason. A
 committed order that breaks a rule is refused with
-`HOBO_CI_RUNNER_ORDER_INVALID` instead of being replaced by the default.
+`HOBO_CI_RUNNER_ORDER_INVALID` instead of being replaced by the default. An
+existing configuration that cannot be read, including a dangling file link,
+or is not a JSON object is also refused; only an absent configuration or a
+valid object without a runner order selects the default.
 
 No relay endpoint or route job walks a runner order yet: this command is how
 an order is checked before it is committed.

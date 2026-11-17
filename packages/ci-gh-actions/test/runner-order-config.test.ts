@@ -77,6 +77,17 @@ describe("committed runner order", () => {
 		expect(parseCiRunnerOrder("[]").source).toBe("default");
 	});
 
+	it.each([
+		"[]",
+		"null",
+		"42",
+		'"project"',
+	])("refuses a project document that is not an object: %s", (json) => {
+		expect(parseCiRunnerOrder(json).problem).toBe(
+			"the project file is not a JSON object",
+		);
+	});
+
 	it("is part of the project document: a valid order parses, a broken one fails the file", () => {
 		expect(
 			parseCiProjectConfig(project('{"steps":[{"key":"github"}]}')),

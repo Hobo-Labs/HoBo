@@ -98,8 +98,9 @@ export function parseCiRunnerOrder(json: string): CommittedRunnerOrder {
 		return { ...missing, problem: "the project file is not JSON" };
 	}
 	const envelope = Envelope.safeParse(value);
-	if (!envelope.success || envelope.data.runnerOrder === undefined)
-		return missing;
+	if (!envelope.success)
+		return { ...missing, problem: "the project file is not a JSON object" };
+	if (envelope.data.runnerOrder === undefined) return missing;
 	const committed = JSON.stringify(envelope.data.runnerOrder);
 	const problem = orderProblem(committed);
 	if (problem.length > 0) return { ...missing, problem };
