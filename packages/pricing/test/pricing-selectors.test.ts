@@ -308,3 +308,15 @@ it.each([
 	if (isQuoteVector(result)) throw new Error("invalid meter accepted");
 	expect(result.code).toBe("INVALID_PRICING_INPUT");
 });
+
+it("rates baseline and candidate selector groups independently before subtracting", () => {
+	const scenario = makeScenario({
+		charges: [charge("a", "a", 1), charge("b", "b", 100)],
+		baseline: [job("a", 2), job("b", 3)],
+		candidate: [job("b", 5), job("a", 4)],
+	});
+	const result = successful(scenario);
+	expect(result.baseline?.billed?.decimal).toBe("302");
+	expect(result.candidate?.billed?.decimal).toBe("806");
+	expect(result.incremental?.billed?.decimal).toBe("504");
+});

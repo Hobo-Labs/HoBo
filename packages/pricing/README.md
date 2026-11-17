@@ -121,7 +121,7 @@ claimed.
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
-bounded TLA+ models, and abstract balance proofs. The credit model explores 40 states and hides ten
+bounded TLA+ models, and abstract balance proofs. The credit model explores 48 states and hides twelve
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -138,7 +138,7 @@ stateDiagram-v2
 ```
 
 The source-admission projection covers one abstract financial source. Its
-model explores 342 states and hides 144 same-state transitions; it assumes the
+model explores 441 states and hides 192 same-state transitions; it assumes the
 source identity, tenant, and account classifications reflect the provider's
 actual records.
 
@@ -193,6 +193,25 @@ stateDiagram-v2
   s1 --> s4: check evidence interval
   s2 --> s3: order credit expiry
   s2 --> s4: order credit expiry
+```
+
+## Workload selector verification
+
+The [pricing selector skill](../../.agents/skills/verify-pricing-selectors/SKILL.md)
+checks per-workload selection, grouped rating and meter binding. Its selector
+model checks 608 states; this constrained projection checks 152 and hides 64
+same-state transitions. A separate binding model checks 64 states.
+
+```mermaid
+stateDiagram-v2
+  s0: Workloads received
+  s1: Quote rejected
+  s2: Matching charges selected
+  s3: Groups rated
+  [*] --> s0
+  s0 --> s1: select per workload
+  s0 --> s2: select per workload
+  s2 --> s3: rate each group
 ```
 
 ## Architecture boundaries
