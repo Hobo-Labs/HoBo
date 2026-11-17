@@ -7,7 +7,7 @@ description: Verify metered broker preflight, exact budget arithmetic, finalized
 
 **Properties:** A fresh metered reservation is admitted only when the complete observed charge and all outstanding holds plus its estimate fit the bounded budget and its own amount fits the per-resolution cap. Unknown or changed observations cannot release a hold; finalized identities cannot be reused. A repeated broker resolution does not issue another receipt or release an earlier hold.
 
-**Review baseline:** commit `7e6f4d1bc8be723f45d3425a26ec34eabf158315`. PASS for the stated tests, bounded model and exact-real abstraction under the assumptions below.
+**Review baseline:** commit `3557d0c3f1d9937d40f96caa9ec9857d080d00c6`. PASS for the stated tests, bounded model and exact-real abstraction under the assumptions below.
 
 ## Covered code
 

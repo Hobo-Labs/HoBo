@@ -7,7 +7,7 @@ description: Verify broker resolution signatures against an independently truste
 
 **Properties:** Verification requires an independently enrolled matching public key, a valid Ed25519 signature and the matching payload digest. Signing requires a matching Ed25519 key pair and accepts only public key material in the advertised field. Canonical object-key ordering is independent of locale. The previous verifier trusted its own embedded key and ignored the recorded digest; a private PEM could also be emitted as a public key.
 
-**Review baseline:** commit `7e6f4d1bc8be723f45d3425a26ec34eabf158315`. PASS for the generated tests, bounded models and symbolic guard obligations below.
+**Review baseline:** commit `3557d0c3f1d9937d40f96caa9ec9857d080d00c6`. PASS for the generated tests, bounded models and symbolic guard obligations below.
 
 ## Covered code
 

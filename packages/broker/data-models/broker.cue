@@ -1,5 +1,7 @@
 package data_models
 
+import "list"
+
 #ScopeKind: "bindle" | "camp" | "yard" | "junction"
 
 #PlacementObjective: "min-cost" | "pinned"
@@ -96,6 +98,7 @@ package data_models
 	request_id:     string & !=""
 	scope:          #TopologyScope
 	requirements: [...#ResourceRequirement] & [_, ...]
+	_unique_resource_ids: true & list.UniqueItems([for requirement in requirements {requirement.resource_id}])
 	spend_estimate_usd: number & >=0
 	guest?:             #GuestResolutionInput
 }

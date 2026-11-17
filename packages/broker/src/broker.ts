@@ -71,6 +71,9 @@ import {
 // mutates a query read model directly. Read models are folds over the emitted
 // facts (see foldBrokerDecisions), with snapshot/restore for the read store.
 
+/** Maximum complete placement plans evaluated by quote-backed routing. */
+export const MAX_BROKER_QUOTE_PLANS = 128;
+
 export interface BrokerResolution {
 	outcome: "resolved" | "rejected";
 	receipt?: ResolutionReceipt;
@@ -177,6 +180,8 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			environmentSnapshot: string;
 			pricing?: {
 				authority: BrokerPricingAuthority;
+				quoteMethod: BrokerPricingAuthority["quote"];
+				attestMethod: BrokerPricingAuthority["attest"];
 				quote: QuoteVector;
 				context: BrokerQuoteContext;
 				amount: number;
@@ -185,9 +190,10 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 		}
 	>();
 
-	function selectPlacements(
+	function placementChoices(
 		request: BrokerRequest,
 		effective: EffectivePlacementPolicy,
+		quoteAll: boolean,
 	) {
 		const approved = deps.environment?.approvedProviders;
 		const definitions =
@@ -196,14 +202,72 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 						.definitions()
 						.filter((definition) => approved.includes(definition.providerId))
 				: deps.catalog.definitions();
-		const placements: PlacementDecision[] = [];
+		const choices: PlacementDecision[][] = [];
 		const reasons: RejectionReason[] = [];
 		for (const requirement of request.requirements) {
-			const placed = placeRequirement(requirement, definitions, effective);
+			const placed = placeRequirement(
+				requirement,
+				definitions,
+				effective,
+				quoteAll,
+			);
 			if ("reason" in placed) reasons.push(placed.reason);
-			else placements.push(placed.placement);
+			else choices.push(placed.placements);
+		}
+		return { choices, reasons };
+	}
+	function selectPlacements(
+		request: BrokerRequest,
+		effective: EffectivePlacementPolicy,
+	) {
+		const { choices, reasons } = placementChoices(request, effective, false);
+		const placements: PlacementDecision[] = [];
+		for (const options of choices) {
+			const selected = options[0];
+			if (!selected)
+				return {
+					placements,
+					reasons: [
+						...reasons,
+						{
+							plane: "placement" as const,
+							code: "no-eligible-provider",
+							message: "no eligible placement",
+						},
+					],
+				};
+			placements.push(selected);
 		}
 		return { placements, reasons };
+	}
+	function enumeratePlans(
+		request: BrokerRequest,
+		effective: EffectivePlacementPolicy,
+	) {
+		const { choices, reasons } = placementChoices(request, effective, true);
+		if (reasons.length) return { plans: [], reasons };
+		let plans: PlacementDecision[][] = [[]];
+		for (const options of choices) {
+			if (
+				options.length === 0 ||
+				options.length > Math.floor(MAX_BROKER_QUOTE_PLANS / plans.length)
+			) {
+				return {
+					plans: [],
+					reasons: [
+						{
+							plane: "placement" as const,
+							code: "quote-search-limit",
+							message: `complete quote search exceeds ${MAX_BROKER_QUOTE_PLANS} candidate plans`,
+						},
+					],
+				};
+			}
+			plans = plans.flatMap((plan) =>
+				options.map((option) => [...plan, option]),
+			);
+		}
+		return { plans, reasons: [] };
 	}
 
 	function quoteContext(
@@ -432,60 +496,156 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					events,
 				);
 			const pricing = deps.pricingAuthority;
-			if (pricing) {
-				const plan = selectPlacements(request, effective);
-				if (plan.reasons.length) return reject(request, plan.reasons, events);
-				placements = plan.placements;
-				const context = quoteContext(
+			const quoteMethod = pricing?.quote;
+			const attestMethod = pricing?.attest;
+			const pricingChanged = () =>
+				deps.pricingAuthority !== pricing ||
+				(pricing !== undefined &&
+					(pricing.quote !== quoteMethod || pricing.attest !== attestMethod));
+			const rejectPricing = () =>
+				reject(
 					request,
-					placements,
-					catalogHash,
-					environmentDigest,
+					[
+						{
+							plane: "billing",
+							code: "quote-authority-stale",
+							message: "pricing authority changed during resolution",
+						},
+					],
+					events,
 				);
+			const quotedCandidates: Array<{
+				placements: PlacementDecision[];
+				context: BrokerQuoteContext;
+				quote: QuoteVector;
+				amount: number;
+				score: Decimal;
+				key: string;
+			}> = [];
+			if (pricing) {
+				const search = enumeratePlans(request, effective);
+				if (pricingChanged()) return rejectPricing();
+				if (search.reasons.length)
+					return reject(request, search.reasons, events);
+				if (environmentChanged()) return rejectEnvironment();
+				if (deps.catalog.catalogHash !== catalogHash)
+					return reject(
+						request,
+						[
+							{
+								plane: "policy",
+								code: "catalog-snapshot-stale",
+								message: "catalog changed during candidate enumeration",
+							},
+						],
+						events,
+					);
+				let refused: RejectionReason[] | undefined;
 				try {
-					const suppliedQuote = await pricing.quote(context);
-					if (!suppliedQuote)
+					for (const candidate of search.plans) {
+						const context = quoteContext(
+							request,
+							candidate,
+							catalogHash,
+							environmentDigest,
+						);
+						const suppliedQuote = await pricing.quote(context);
+						if (pricingChanged()) return rejectPricing();
+						if (!suppliedQuote)
+							return reject(
+								request,
+								[
+									{
+										plane: "billing",
+										code: "quote-authority-unavailable",
+										message:
+											"pricing authority returned no quote for a candidate plan",
+									},
+								],
+								events,
+							);
+						const quote = clone(QuoteVectorSchema, suppliedQuote);
+						const authorization = authorizeBillingSpend({
+							quote,
+							billing: policies.billing,
+							attestQuote: (item) => pricing.attest(context, item),
+						});
+						if (pricingChanged()) return rejectPricing();
+						if (deps.catalog.catalogHash !== catalogHash)
+							return reject(
+								request,
+								[
+									{
+										plane: "policy",
+										code: "catalog-snapshot-stale",
+										message: "catalog changed during quote search",
+									},
+								],
+								events,
+							);
+						if (environmentChanged()) return rejectEnvironment();
+						if (!authorization.ok) {
+							if (
+								authorization.reasons.length > 0 &&
+								authorization.reasons.every(
+									(reason) =>
+										reason.code === "budget-exceeded" ||
+										reason.code === "spend-cap-exceeded",
+								)
+							) {
+								refused ??= authorization.reasons;
+								continue;
+							}
+							return reject(request, authorization.reasons, events);
+						}
+						const score = parseDecimal(
+							quote.incremental?.billed?.decimal ?? "",
+						);
+						if (!score)
+							return reject(
+								request,
+								[
+									{
+										plane: "billing",
+										code: "quote-invalid",
+										message: "candidate quote has no valid total",
+									},
+								],
+								events,
+							);
+						const key = JSON.stringify(
+							candidate.map((entry) => [
+								entry.resourceId,
+								entry.providerId,
+								entry.definitionId,
+								entry.region,
+							]),
+						);
+						quotedCandidates.push({
+							placements: candidate,
+							context,
+							quote,
+							amount: authorization.authorizedUsd,
+							score,
+							key,
+						});
+					}
+					if (quotedCandidates.length === 0)
 						return reject(
 							request,
-							[
+							refused ?? [
 								{
 									plane: "billing",
-									code: "quote-authority-unavailable",
-									message: "pricing authority returned no quote",
+									code: "quote-ineligible",
+									message: "no eligible affordable quote",
 								},
 							],
 							events,
 						);
-					const quote = clone(QuoteVectorSchema, suppliedQuote);
-					const authorization = authorizeBillingSpend({
-						quote,
-						billing: policies.billing,
-						attestQuote: (candidate) => pricing.attest(context, candidate),
-					});
-					if (!authorization.ok)
-						return reject(request, authorization.reasons, events);
-					if (deps.catalog.catalogHash !== catalogHash)
-						return reject(
-							request,
-							[
-								{
-									plane: "policy",
-									code: "catalog-snapshot-stale",
-									message: "catalog changed during quote authorization",
-								},
-							],
-							events,
-						);
-					authorizedEstimate = authorization.authorizedUsd;
-					quoteHash = quote.quoteHash;
-					selectedQuote = quote;
-					selectedContext = context;
-					bindingDigest = context.bindingDigest;
-					requestDigest = JSON.stringify({
-						bindingDigest,
-						quoteHash,
-						authorizedEstimate,
-					});
+					quotedCandidates.sort(
+						(a, b) =>
+							compareDecimal(a.score, b.score) || compareIdentity(a.key, b.key),
+					);
 				} catch {
 					return reject(
 						request,
@@ -493,7 +653,7 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 							{
 								plane: "billing",
 								code: "quote-authority-unavailable",
-								message: "pricing authority could not verify the selected work",
+								message: "pricing authority could not verify candidate plans",
 							},
 						],
 						events,
@@ -513,268 +673,358 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				);
 			}
 
-			if (environmentChanged()) return rejectEnvironment();
-
-			// Plane 1 — the Gatekeeper composition (policy pack + contract
-			// compatibility + obligations + quota), imported and RUN from
-			// @hobo/contracts. Its policy.Decided / gatekeeper.Decided facts are
-			// appended to this resolution's event list.
-			const gate = await gatePlane.evaluate({
-				request: toPolicyDecisionRequest(policies.brokerId, {
-					...request,
-					spendEstimateUsd: authorizedEstimate,
-				}),
-				costQuota: {
-					quota: policies.billing.quota,
-					used: policies.billing.quotaUsed,
-					limit: policies.billing.quotaLimit,
-				},
-			});
-			for (const gateEvent of gate.events) {
-				events.push({
-					type: String(gateEvent.type ?? "gatekeeper.Event"),
-					data: gateEvent,
-				});
-			}
-			if (gate.effect === "deny" || gate.effect === "require-approval") {
-				const reasons: RejectionReason[] =
-					gate.reasons.length > 0
-						? gate.reasons
-						: [
-								{
-									plane: "policy",
-									code: "approval-required",
-									message: "the gate plane requires approval before placement",
-								},
-							];
-				return reject(request, reasons, events);
-			}
-
-			if (environmentChanged()) return rejectEnvironment();
-
-			// The gate can await external policy. Recheck evidence and the catalog
-			// before creating a hold; the authority must refuse expired evidence.
-			if (pricing && selectedQuote && selectedContext) {
-				if (deps.catalog.catalogHash !== catalogHash)
+			let candidateIndex = 0;
+			for (;;) {
+				if (pricingChanged()) return rejectPricing();
+				if (pricing) {
+					const candidate = quotedCandidates[candidateIndex++];
+					if (!candidate) throw new Error("candidate search exhausted");
+					placements = candidate.placements;
+					authorizedEstimate = candidate.amount;
+					quoteHash = candidate.quote.quoteHash;
+					selectedQuote = candidate.quote;
+					selectedContext = candidate.context;
+					bindingDigest = candidate.context.bindingDigest;
+					requestDigest = JSON.stringify({
+						bindingDigest,
+						quoteHash,
+						authorizedEstimate,
+					});
+				}
+				if (environmentChanged()) return rejectEnvironment();
+				if (pricing && deps.catalog.catalogHash !== catalogHash)
 					return reject(
 						request,
 						[
 							{
 								plane: "policy",
 								code: "catalog-snapshot-stale",
-								message: "catalog changed before billing admission",
+								message: "catalog changed before policy evaluation",
 							},
 						],
 						events,
 					);
-				const checked = authorizeBillingSpend({
-					quote: selectedQuote,
-					billing: policies.billing,
-					attestQuote: (candidate) =>
-						pricing.attest(selectedContext, candidate),
+
+				// Plane 1 — the Gatekeeper composition (policy pack + contract
+				// compatibility + obligations + quota), imported and RUN from
+				// @hobo/contracts. Its policy.Decided / gatekeeper.Decided facts are
+				// appended to this resolution's event list.
+				const gate = await gatePlane.evaluate({
+					request: toPolicyDecisionRequest(policies.brokerId, {
+						...request,
+						spendEstimateUsd: authorizedEstimate,
+					}),
+					costQuota: {
+						quota: policies.billing.quota,
+						used: policies.billing.quotaUsed,
+						limit: policies.billing.quotaLimit,
+					},
 				});
-				if (!checked.ok) return reject(request, checked.reasons, events);
-				if (checked.authorizedUsd !== authorizedEstimate)
+				if (pricingChanged()) return rejectPricing();
+				for (const gateEvent of gate.events) {
+					events.push({
+						type: String(gateEvent.type ?? "gatekeeper.Event"),
+						data: gateEvent,
+					});
+				}
+				if (gate.effect === "deny" || gate.effect === "require-approval") {
+					const reasons: RejectionReason[] =
+						gate.reasons.length > 0
+							? gate.reasons
+							: [
+									{
+										plane: "policy",
+										code: "approval-required",
+										message:
+											"the gate plane requires approval before placement",
+									},
+								];
+					return reject(request, reasons, events);
+				}
+
+				if (environmentChanged()) return rejectEnvironment();
+
+				// The gate can await external policy. Recheck evidence and the catalog
+				// before creating a hold; the authority must refuse expired evidence.
+				if (pricing && selectedQuote && selectedContext) {
+					const context = selectedContext;
+					if (deps.catalog.catalogHash !== catalogHash)
+						return reject(
+							request,
+							[
+								{
+									plane: "policy",
+									code: "catalog-snapshot-stale",
+									message: "catalog changed before billing admission",
+								},
+							],
+							events,
+						);
+					const checked = authorizeBillingSpend({
+						quote: selectedQuote,
+						billing: policies.billing,
+						attestQuote: (candidate) => pricing.attest(context, candidate),
+					});
+					if (pricingChanged()) return rejectPricing();
+					if (!checked.ok) return reject(request, checked.reasons, events);
+					if (checked.authorizedUsd !== authorizedEstimate)
+						return reject(
+							request,
+							[
+								{
+									plane: "billing",
+									code: "quote-authority-stale",
+									message: "quote liability changed while policy was evaluated",
+								},
+							],
+							events,
+						);
+				}
+
+				// Attestation itself is host code, so check its side effects before
+				// asking billing to create a hold.
+				if (environmentChanged()) return rejectEnvironment();
+				if (pricing && deps.catalog.catalogHash !== catalogHash)
+					return reject(
+						request,
+						[
+							{
+								plane: "policy",
+								code: "catalog-snapshot-stale",
+								message: "catalog changed during final quote attestation",
+							},
+						],
+						events,
+					);
+
+				// Plane 2 — billing enforcement beyond quota: budget + spend cap.
+				const billing = billingPlane.authorize({
+					spendEstimateUsd: authorizedEstimate,
+					billing: { ...policies.billing },
+					requestId: request.requestId,
+					requestDigest,
+				});
+				if (pricingChanged()) {
+					if (billing.ok && billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
+					return rejectPricing();
+				}
+				if (!billing.ok) {
+					if (
+						pricing &&
+						candidateIndex < quotedCandidates.length &&
+						billing.noReservationCreated === true &&
+						billing.reservationCreated !== true &&
+						billing.reasons.length > 0 &&
+						billing.reasons.every(
+							(reason) =>
+								reason.code === "budget-exceeded" ||
+								reason.code === "spend-cap-exceeded",
+						)
+					) {
+						events.push(
+							brokerEvent(BROKER_EVENTS.CandidateUnaffordable, {
+								requestId: request.requestId,
+								quoteHash: quoteHash ?? "",
+								bindingDigest: bindingDigest ?? "",
+								authorizedUsd: authorizedEstimate,
+								reasons: billing.reasons.map((reason) => ({ ...reason })),
+							}),
+						);
+						continue;
+					}
+					return reject(
+						request,
+						billing.reasons.length > 0
+							? billing.reasons
+							: [
+									{
+										plane: "billing",
+										code: "billing-denied",
+										message: "billing denied admission without a reason",
+									},
+								],
+						events,
+					);
+				}
+				if (pricing && billing.reservationCreated === undefined) {
 					return reject(
 						request,
 						[
 							{
 								plane: "billing",
-								code: "quote-authority-stale",
-								message: "quote liability changed while policy was evaluated",
+								code: "reservation-evidence-required",
+								message:
+									"billing did not confirm creation of a new reservation",
 							},
 						],
 						events,
 					);
-			}
-
-			// Attestation itself is host code, so check its side effects before
-			// asking billing to create a hold.
-			if (environmentChanged()) return rejectEnvironment();
-			if (pricing && deps.catalog.catalogHash !== catalogHash)
-				return reject(
-					request,
-					[
-						{
-							plane: "policy",
-							code: "catalog-snapshot-stale",
-							message: "catalog changed during final quote attestation",
-						},
-					],
-					events,
-				);
-
-			// Plane 2 — billing enforcement beyond quota: budget + spend cap.
-			const billing = billingPlane.authorize({
-				spendEstimateUsd: authorizedEstimate,
-				billing: { ...policies.billing },
-				requestId: request.requestId,
-				requestDigest,
-			});
-			if (!billing.ok) {
-				return reject(request, billing.reasons, events);
-			}
-			if (pricing && billing.reservationCreated === undefined) {
-				return reject(
-					request,
-					[
-						{
-							plane: "billing",
-							code: "reservation-evidence-required",
-							message: "billing did not confirm creation of a new reservation",
-						},
-					],
-					events,
-				);
-			}
-			if (billing.reservationCreated === false) {
-				return reject(
-					request,
-					[
-						{
-							plane: "billing",
-							code: "reservation-replay-requires-reconciliation",
-							message:
-								"this reservation was already authorized; reconcile the prior resolution",
-						},
-					],
-					events,
-				);
-			}
-
-			if (environmentChanged()) {
-				if (billing.reservationCreated === true)
-					billingPlane.release?.(request.requestId, true);
-				return rejectEnvironment();
-			}
-			if (pricing && deps.catalog.catalogHash !== catalogHash) {
-				if (billing.reservationCreated === true)
-					billingPlane.release?.(request.requestId, true);
-				return reject(
-					request,
-					[
-						{
-							plane: "policy",
-							code: "catalog-snapshot-stale",
-							message: "catalog changed while the hold was created",
-						},
-					],
-					events,
-				);
-			}
-
-			// Billing is synchronous but host code can take time or change its
-			// evidence. Revalidate before a receipt can authorize effects.
-			if (pricing && selectedQuote && selectedContext) {
-				const checked = authorizeBillingSpend({
-					quote: selectedQuote,
-					billing: policies.billing,
-					attestQuote: (candidate) =>
-						pricing.attest(selectedContext, candidate),
-				});
-				if (!checked.ok || checked.authorizedUsd !== authorizedEstimate) {
-					if (billing.reservationCreated === true)
-						billingPlane.release?.(request.requestId, true);
+				}
+				if (billing.reservationCreated === false) {
 					return reject(
 						request,
-						checked.ok
-							? [
-									{
-										plane: "billing",
-										code: "quote-authority-stale",
-										message:
-											"quote liability changed while the hold was created",
-									},
-								]
-							: checked.reasons,
+						[
+							{
+								plane: "billing",
+								code: "reservation-replay-requires-reconciliation",
+								message:
+									"this reservation was already authorized; reconcile the prior resolution",
+							},
+						],
 						events,
 					);
 				}
-				if (environmentChanged() || deps.catalog.catalogHash !== catalogHash) {
+
+				if (environmentChanged()) {
 					if (billing.reservationCreated === true)
 						billingPlane.release?.(request.requestId, true);
-					if (environmentChanged()) return rejectEnvironment();
+					return rejectEnvironment();
+				}
+				if (pricing && deps.catalog.catalogHash !== catalogHash) {
+					if (billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
 					return reject(
 						request,
 						[
 							{
 								plane: "policy",
 								code: "catalog-snapshot-stale",
-								message: "catalog changed during final quote check",
+								message: "catalog changed while the hold was created",
 							},
 						],
 						events,
 					);
 				}
-			}
 
-			// Legacy estimate mode retains its prior placement order. The quoted
-			// path already pinned these placements before authorizing the liability.
-			if (!placements) {
-				const plan = selectPlacements(request, effective);
-				if (plan.reasons.length) {
+				// Billing is synchronous but host code can take time or change its
+				// evidence. Revalidate before a receipt can authorize effects.
+				if (pricing && selectedQuote && selectedContext) {
+					const context = selectedContext;
+					const checked = authorizeBillingSpend({
+						quote: selectedQuote,
+						billing: policies.billing,
+						attestQuote: (candidate) => pricing.attest(context, candidate),
+					});
+					if (pricingChanged()) {
+						if (billing.reservationCreated === true)
+							billingPlane.release?.(request.requestId, true);
+						return rejectPricing();
+					}
+					if (!checked.ok || checked.authorizedUsd !== authorizedEstimate) {
+						if (billing.reservationCreated === true)
+							billingPlane.release?.(request.requestId, true);
+						return reject(
+							request,
+							checked.ok
+								? [
+										{
+											plane: "billing",
+											code: "quote-authority-stale",
+											message:
+												"quote liability changed while the hold was created",
+										},
+									]
+								: checked.reasons,
+							events,
+						);
+					}
+					if (
+						environmentChanged() ||
+						deps.catalog.catalogHash !== catalogHash
+					) {
+						if (billing.reservationCreated === true)
+							billingPlane.release?.(request.requestId, true);
+						if (environmentChanged()) return rejectEnvironment();
+						return reject(
+							request,
+							[
+								{
+									plane: "policy",
+									code: "catalog-snapshot-stale",
+									message: "catalog changed during final quote check",
+								},
+							],
+							events,
+						);
+					}
+				}
+
+				// Legacy estimate mode retains its prior placement order. The quoted
+				// path already pinned these placements before authorizing the liability.
+				if (!placements) {
+					const plan = selectPlacements(request, effective);
+					if (plan.reasons.length) {
+						if (billing.reservationCreated === true)
+							billingPlane.release?.(request.requestId, true);
+						return reject(request, plan.reasons, events);
+					}
+					placements = plan.placements;
+				}
+				if (pricingChanged()) {
 					if (billing.reservationCreated === true)
 						billingPlane.release?.(request.requestId, true);
-					return reject(request, plan.reasons, events);
+					return rejectPricing();
 				}
-				placements = plan.placements;
-			}
 
-			const receipt: ResolutionReceipt = {
-				schemaVersion: BROKER_SCHEMA_VERSION,
-				requestId: request.requestId,
-				brokerId: policies.brokerId,
-				catalogHash,
-				policyHash,
-				placementPolicyId: effective.id,
-				placements,
-				stationId,
-				railHash,
-				...(quoteHash && bindingDigest
-					? {
-							quoteHash,
-							pricingBindingDigest: bindingDigest,
-							authorizedUsd: authorizedEstimate,
-						}
-					: undefined),
-			};
-			events.push(
-				brokerEvent(BROKER_EVENTS.Resolved, {
+				const receipt: ResolutionReceipt = {
+					schemaVersion: BROKER_SCHEMA_VERSION,
 					requestId: request.requestId,
 					brokerId: policies.brokerId,
 					catalogHash,
 					policyHash,
 					placementPolicyId: effective.id,
-					placements: placements.map((placement) => ({ ...placement })),
+					placements,
+					stationId,
+					railHash,
 					...(quoteHash && bindingDigest
-						? { quoteHash, bindingDigest, authorizedUsd: authorizedEstimate }
+						? {
+								quoteHash,
+								pricingBindingDigest: bindingDigest,
+								authorizedUsd: authorizedEstimate,
+							}
 						: undefined),
-				}),
-			);
-			const signature = sign(receipt, events);
-			issuedResolutions.set(request.requestId, {
-				canonical: canonicalResolutionJson(receipt),
-				receipt: structuredClone(receipt),
-				catalogHash,
-				environmentSnapshot,
-				...(pricing && selectedQuote && selectedContext
-					? {
-							pricing: {
-								authority: pricing,
-								quote: selectedQuote,
-								context: selectedContext,
-								amount: authorizedEstimate,
-							},
-						}
-					: undefined),
-				state: "ready",
-			});
-			return {
-				outcome: "resolved",
-				receipt,
-				...(signature !== undefined ? { signature } : undefined),
-				events,
-			};
+				};
+				events.push(
+					brokerEvent(BROKER_EVENTS.Resolved, {
+						requestId: request.requestId,
+						brokerId: policies.brokerId,
+						catalogHash,
+						policyHash,
+						placementPolicyId: effective.id,
+						placements: placements.map((placement) => ({ ...placement })),
+						...(quoteHash && bindingDigest
+							? { quoteHash, bindingDigest, authorizedUsd: authorizedEstimate }
+							: undefined),
+					}),
+				);
+				const signature = sign(receipt, events);
+				issuedResolutions.set(request.requestId, {
+					canonical: canonicalResolutionJson(receipt),
+					receipt: structuredClone(receipt),
+					catalogHash,
+					environmentSnapshot,
+					...(pricing && selectedQuote && selectedContext
+						? {
+								pricing: {
+									authority: pricing,
+									quoteMethod: pricing.quote,
+									attestMethod: pricing.attest,
+									quote: selectedQuote,
+									context: selectedContext,
+									amount: authorizedEstimate,
+								},
+							}
+						: undefined),
+					state: "ready",
+				});
+				return {
+					outcome: "resolved",
+					receipt,
+					...(signature !== undefined ? { signature } : undefined),
+					events,
+				};
+			}
 		},
 		scale(input) {
 			const directive = parseScaleDirective(input);
@@ -822,8 +1072,19 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					);
 				}
 				if (issued.pricing) {
-					const { authority, quote, context, amount } = issued.pricing;
-					if (deps.pricingAuthority !== authority)
+					const {
+						authority,
+						quoteMethod,
+						attestMethod,
+						quote,
+						context,
+						amount,
+					} = issued.pricing;
+					const authorityChanged = () =>
+						deps.pricingAuthority !== authority ||
+						authority.quote !== quoteMethod ||
+						authority.attest !== attestMethod;
+					if (authorityChanged())
 						throw new BrokerParseError(
 							"delivery-quote-stale",
 							"delivery-quote-stale: pricing authority changed",
@@ -837,6 +1098,11 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 						throw new BrokerParseError(
 							"delivery-quote-stale",
 							"delivery-quote-stale: quote or liability is no longer current",
+						);
+					if (authorityChanged())
+						throw new BrokerParseError(
+							"delivery-quote-stale",
+							"delivery-quote-stale: pricing authority changed during quote check",
 						);
 					if (
 						!currentEnvironment() ||
@@ -910,9 +1176,10 @@ function placeRequirement(
 	requirement: ResourceRequirement,
 	definitions: readonly BrokerCatalogDefinition[],
 	policy: EffectivePlacementPolicy,
-): { placement: PlacementDecision } | { reason: RejectionReason } {
+	quoteAll: boolean,
+): { placements: PlacementDecision[] } | { reason: RejectionReason } {
 	let invalidDefinition = false;
-	const selectedRegions = new Map<BrokerCatalogDefinition, string>();
+	const selectedRegions = new Map<BrokerCatalogDefinition, string[]>();
 	const eligible = definitions.filter((definition) => {
 		if (
 			policy.objective === "pinned" &&
@@ -931,13 +1198,17 @@ function placeRequirement(
 				features: [...requirement.features],
 			});
 			if (verdict.kind !== "full") return false;
-			const region = pickRegion(requirement, definition, policy);
-			if (region === undefined) return false;
-			if (!isJsonString(region) || region.trim().length === 0) {
+			const regions = eligibleRegions(requirement, definition, policy);
+			if (regions.length === 0) return false;
+			if (
+				regions.some(
+					(region) => !isJsonString(region) || region.trim().length === 0,
+				)
+			) {
 				invalidDefinition = true;
 				return false;
 			}
-			selectedRegions.set(definition, region);
+			selectedRegions.set(definition, regions);
 			return true;
 		} catch {
 			invalidDefinition = true;
@@ -1059,7 +1330,7 @@ function placeRequirement(
 				},
 			};
 		}
-		if (comparisonUnit !== undefined && unit !== comparisonUnit) {
+		if (!quoteAll && comparisonUnit !== undefined && unit !== comparisonUnit) {
 			return {
 				reason: {
 					plane: "placement",
@@ -1077,8 +1348,7 @@ function placeRequirement(
 			compareIdentity(a.providerId, b.providerId) ||
 			compareIdentity(a.id, b.id),
 	);
-	const selected = priced[0];
-	if (selected === undefined) {
+	if (priced.length === 0) {
 		return {
 			reason: {
 				plane: "placement",
@@ -1087,59 +1357,66 @@ function placeRequirement(
 			},
 		};
 	}
-	const winner = selected.definition;
+	const placements: PlacementDecision[] = [];
+	for (const selected of priced) {
+		const winner = selected.definition;
 
-	let region: string | undefined;
-	try {
-		region = pickRegion(requirement, winner, policy);
-	} catch {
-		region = undefined;
-	}
-	if (!isJsonString(region) || region !== selectedRegions.get(winner)) {
-		return {
-			reason: {
-				plane: "placement",
-				code: "catalog-definition-invalid",
-				message: "selected catalog region changed during placement",
-			},
-		};
-	}
-	try {
+		let regions: string[];
+		try {
+			regions = eligibleRegions(requirement, winner, policy);
+		} catch {
+			regions = [];
+		}
 		if (
-			winner.id !== selected.id ||
-			winner.providerId !== selected.providerId ||
-			winner.cost.sku !== selected.sku ||
-			winner.cost.unit !== selected.unit ||
-			winner.cost.marginalPrice !== selected.priceText
+			JSON.stringify(regions) !== JSON.stringify(selectedRegions.get(winner))
 		) {
 			return {
 				reason: {
 					plane: "placement",
 					code: "catalog-definition-invalid",
-					message: "selected catalog definition changed during placement",
+					message: "selected catalog regions changed during placement",
 				},
 			};
 		}
-	} catch {
-		return {
-			reason: {
-				plane: "placement",
-				code: "catalog-definition-invalid",
-				message: "selected catalog definition could not be rechecked",
-			},
-		};
+
+		try {
+			if (
+				winner.id !== selected.id ||
+				winner.providerId !== selected.providerId ||
+				winner.cost.sku !== selected.sku ||
+				winner.cost.unit !== selected.unit ||
+				winner.cost.marginalPrice !== selected.priceText
+			) {
+				return {
+					reason: {
+						plane: "placement",
+						code: "catalog-definition-invalid",
+						message: "selected catalog definition changed during placement",
+					},
+				};
+			}
+		} catch {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-definition-invalid",
+					message: "selected catalog definition could not be rechecked",
+				},
+			};
+		}
+		for (const region of quoteAll ? regions : regions.slice(0, 1)) {
+			placements.push({
+				resourceId: requirement.resourceId,
+				providerId: selected.providerId,
+				definitionId: selected.id,
+				region,
+				sku: selected.sku,
+				unit: selected.unit,
+				marginalPrice: selected.priceText,
+			});
+		}
 	}
-	return {
-		placement: {
-			resourceId: requirement.resourceId,
-			providerId: selected.providerId,
-			definitionId: selected.id,
-			region,
-			sku: selected.sku,
-			unit: selected.unit,
-			marginalPrice: selected.priceText,
-		},
-	};
+	return { placements };
 }
 
 // Tie breaks use a stable code-unit order, independent of host locale.
@@ -1147,23 +1424,20 @@ function compareIdentity(a: string, b: string): number {
 	return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function pickRegion(
+function eligibleRegions(
 	requirement: ResourceRequirement,
 	definition: BrokerCatalogDefinition,
 	policy: EffectivePlacementPolicy,
-): string | undefined {
+): string[] {
 	const allowed =
 		policy.allowedRegions.length > 0
 			? definition.regions.filter((region) =>
 					policy.allowedRegions.includes(region),
 				)
 			: [...definition.regions];
-	if (requirement.region !== undefined) {
-		return allowed.includes(requirement.region)
-			? requirement.region
-			: undefined;
-	}
-	return allowed[0];
+	if (requirement.region !== undefined)
+		return allowed.includes(requirement.region) ? [requirement.region] : [];
+	return [...new Set(allowed)];
 }
 
 export function parseScaleDirective(

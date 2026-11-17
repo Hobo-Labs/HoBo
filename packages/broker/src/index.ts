@@ -7,6 +7,7 @@ export {
 	foldBrokerDecisions,
 	type HoboBroker,
 	type HoboBrokerDeps,
+	MAX_BROKER_QUOTE_PLANS,
 	parseScaleDirective,
 	restoreBrokerDecisions,
 	snapshotBrokerDecisions,

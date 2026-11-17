@@ -15,6 +15,17 @@ export interface RejectionMatrixRow {
 // public-contract: the closed rejection-code catalog agents self-correct against.
 export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 	{
+		code: "billing-denied",
+		plane: "billing",
+		remediation: "inspect the billing authority and reconcile its refusal",
+	},
+	{
+		code: "quote-search-limit",
+		plane: "placement",
+		remediation:
+			"narrow the policy or request until all candidate plans can be quoted",
+	},
+	{
 		code: "catalog-definition-invalid",
 		plane: "placement",
 		remediation: "repair the catalog definition and its capability check",
