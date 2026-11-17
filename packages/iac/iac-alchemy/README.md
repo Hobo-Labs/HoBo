@@ -117,9 +117,10 @@ is an estimate supplied by the developer, not proof of a maximum charge.
 `assessPricing` returns the plan-bound inventory, pricing state and quote for
 `@hobo/dispatcher`'s `rankIacTargets`. Ranking reports that it has not checked
 a budget. `executeRankedIacTargets` can invoke each adapter's
-`applyWithAdmission(program, requestId, expected)` in ranked order, sharing one durable
-admission request across the route. It advances only after a definitive denial
-without a reservation. Alternatively, call `apply` on a chosen target directly.
+`applyWithAdmission(program, requestId, expected, permit)` in ranked order,
+sharing one durable admission request across the route. It advances only after a
+definitive denial without a reservation. Alternatively, call `apply` on a
+chosen target directly.
 The adapter replans, refuses changes, obtains host-issued liability evidence,
 and requests admission before applying the exact plan under Alchemy's state
 lease. Financial services include a durable budget authority, a trusted clock,
@@ -141,8 +142,9 @@ const financial = createIacFinancialServices({
     bindings: [{ resourceId: "service", candidateIndex: 0 }],
   },
 });
+const route = createDirectRoutePort({ authority: routeAuthority, hashInventory });
 const provider = createAlchemyIacProvider({
-  stack, target, runtimeLayer, runtimeDirectory, financial,
+  stack, target, runtimeLayer, runtimeDirectory, financial, route,
 });
 const assessment = await provider.assessPricing(program);
 const ranking = rankIacTargets({
@@ -151,8 +153,8 @@ const ranking = rankIacTargets({
   candidates: [{ workloadRef, inventory: assessment.inventory, pricing: assessment.pricing }],
 });
 const result = await executeRankedIacTargets({
-  requestId: "deployment-attempt-1", ranking,
-  candidates: [{ targetId: target.targetId, run: (id, expected) => provider.applyWithAdmission(program, id, expected) }],
+  authority: routeAuthority, tenantId, requestId: "deployment-attempt-1", ranking,
+  candidates: [{ targetId: target.targetId, run: (id, expected, permit) => provider.applyWithAdmission(program, id, expected, permit) }],
 });
 ```
 
@@ -160,7 +162,7 @@ Omit `pricing` from the financial services to obtain an explicit unavailable
 assessment. `describePricingSupport` in `@hobo/provider-manifest` separately
 reports which manifest plans the pricing kernel supports.
 
-`applyWithAdmission(program, requestId?)` returns bounded string-valued stack
+`applyWithAdmission(program, requestId)` returns bounded string-valued stack
 outputs and the broker admission receipt, including its reservation identifier
 and budget disclosure. A resource-property output is supported when it refers
 to a resource in the reviewed plan. If a completed apply produces outputs that
@@ -186,13 +188,23 @@ exclusively owned until settlement and has no shared entitlements. The trusted
 host must fence policy, scope and credential revocation through provider start:
 the authority's check and an external provider call cannot be one transaction.
 
-One adapter instance refuses concurrent execution of the same program. Across
-instances or process restarts, the host must use the same stable request ID for
-the same logical attempt so the durable admission authority can recognize a
-replay. Without an explicit request ID the adapter derives one from the tenant,
-deployment, program, resource and operation; it does not include the target or
-provider. A new logical attempt needs a new deployment or program ID, or an
-explicit new request ID. A malformed or unreadable admission receipt requires reconciliation:
+All attempts use a shared durable route authority, including direct `apply` and
+`destroy` calls. Configure `route` using `createDirectRoutePort` from
+`@hobo/dispatcher`, the same route authority used by the ranked dispatcher, and
+a host-owned `hashInventory` that hashes the exact target inventory in the
+format used by financial admission. The dispatcher supplies an attempt permit;
+direct calls claim a route and attempt through the port. The adapter verifies
+and atomically consumes that permit before financial admission, then verifies
+the still-active attempt again immediately before provider start. Denial,
+success and uncertainty are durably recorded by the route owner. A lost or
+ambiguous acknowledgment requires reconciliation, not a second attempt.
+
+One adapter instance refuses concurrent execution of the same program. Use
+the same explicit request ID for the same logical attempt across all targets,
+instances and restarts; use a new ID for each new attempt. Standard `apply` and
+`destroy` take their ID from the host-configured `defaultRequestId`, which must
+also be unique to that attempt. Missing IDs are rejected. A malformed or
+unreadable admission receipt requires reconciliation:
 the authority may already have reserved funds even if the receipt is unusable.
 An instance also blocks subsequent attempts after any outcome requiring
 reconciliation; the host must resolve the previous attempt before replacing it.

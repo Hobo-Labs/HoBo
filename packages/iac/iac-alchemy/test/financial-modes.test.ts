@@ -7,7 +7,12 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
-import type { FinancialDecision, FinancialPlan } from "../src/port.js";
+import type {
+	FinancialDecision,
+	FinancialPlan,
+	IacRoutePort,
+} from "../src/port.js";
+import { routeFixture } from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", object, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -28,6 +33,8 @@ function fixture(
 		plan: FinancialPlan,
 	) => boolean | Promise<boolean> = () => true,
 	targetId = "target",
+	defaultRequestId: string | null = "logical-attempt",
+	route: IacRoutePort | undefined = routeFixture().port,
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-alchemy-financial-"));
 	dirs.push(dir);
@@ -57,6 +64,8 @@ function fixture(
 		stack,
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(dir, "runtime"),
+		defaultRequestId: defaultRequestId ?? undefined,
+		route,
 		target: alchemyTarget({
 			targetId,
 			tenantId: "tenant",
@@ -76,7 +85,7 @@ function fixture(
 			],
 		}),
 		financial: {
-			assess: () => ({}),
+			assess: (plan) => ({ plan }),
 			admit: async (requestId) => {
 				admissions++;
 				// SAFETY: this boundary intentionally tests malformed provider receipts.
@@ -164,7 +173,199 @@ function admitted(
 }
 
 describe("financial admission modes", () => {
-	it("uses one target-independent default request ID for the same logical operation", async () => {
+	it("snapshots the requested operation before asynchronous planning", async () => {
+		const f = fixture((id) => admitted(id, "allowed", false));
+		const program = { ...f.program };
+		const pending = f.provider.assessPricing(program);
+		Object.assign(program, { action: "destroy" });
+		const assessment = await pending;
+		expect(assessment.plan.operation).toBe("deploy");
+	});
+
+	it("requires a stable request ID before claiming a route", async () => {
+		const route = routeFixture();
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			null,
+			route.port,
+		);
+		await f.provider.preview(f.program);
+		await expect(f.provider.apply(f.program)).rejects.toMatchObject({
+			code: "REQUEST_ID_REQUIRED",
+			requiresReconciliation: false,
+		});
+		expect(route.calls.direct).toBe(0);
+		expect(f.admissions()).toBe(0);
+		expect(f.applies()).toBe(0);
+	});
+
+	it.each([
+		"reused",
+		"lost acknowledgment",
+	] as const)("does not admit a route permit with %s consumption", async (failure) => {
+		const route = routeFixture({
+			consume: () => {
+				if (failure === "lost acknowledgment") throw new Error("lost");
+				return false;
+			},
+		});
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ROUTE_PERMIT_UNVERIFIED",
+			requiresReconciliation: true,
+		});
+		expect(route.calls.consumed).toBe(1);
+		expect(route.calls.denied).toBe(0);
+		expect(f.admissions()).toBe(0);
+		expect(f.applies()).toBe(0);
+	});
+
+	it("retains the hold if the route is no longer active before provider start", async () => {
+		let verifications = 0;
+		const route = routeFixture({ verify: () => ++verifications === 1 });
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ROUTE_PERMIT_UNVERIFIED",
+			requiresReconciliation: true,
+			reservationId: "iac:attempt",
+		});
+		expect(route.calls.consumed).toBe(1);
+		expect(route.calls.verified).toBe(2);
+		expect(f.admissions()).toBe(1);
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
+	it("uses a dispatched permit without acquiring a second route", async () => {
+		const route = routeFixture();
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		await f.provider.preview(f.program);
+		const attemptId = "A".repeat(43);
+		const result = await f.provider.applyWithAdmission(
+			f.program,
+			"attempt",
+			undefined,
+			{
+				tenantId: "tenant",
+				requestId: "attempt",
+				targetId: "target",
+				inventoryHash: `sha256:${"c".repeat(64)}`,
+				attemptId,
+			},
+		);
+		expect(route.calls.direct).toBe(0);
+		expect(route.calls.consumed).toBe(1);
+		expect(route.calls.verified).toBe(2);
+		expect(f.applies()).toBe(1);
+		expect(JSON.stringify(result)).not.toContain(attemptId);
+	});
+
+	it("only admits one of two adapters racing the same dispatched permit", async () => {
+		let consumed = false;
+		const route = routeFixture({
+			consume: () => {
+				if (consumed) return false;
+				consumed = true;
+				return true;
+			},
+		});
+		const first = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		const second = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		await Promise.all([
+			first.provider.preview(first.program),
+			second.provider.preview(second.program),
+		]);
+		const permit = {
+			tenantId: "tenant",
+			requestId: "attempt",
+			targetId: "target",
+			inventoryHash: `sha256:${"c".repeat(64)}`,
+			attemptId: "A".repeat(43),
+		};
+		const outcomes = await Promise.allSettled([
+			first.provider.applyWithAdmission(
+				first.program,
+				"attempt",
+				undefined,
+				permit,
+			),
+			second.provider.applyWithAdmission(
+				second.program,
+				"attempt",
+				undefined,
+				permit,
+			),
+		]);
+		expect(
+			outcomes.filter((outcome) => outcome.status === "fulfilled"),
+		).toHaveLength(1);
+		expect(
+			outcomes.filter((outcome) => outcome.status === "rejected"),
+		).toHaveLength(1);
+		expect(first.admissions() + second.admissions()).toBe(1);
+		expect(first.applies() + second.applies()).toBe(1);
+	});
+
+	it("retains a successful hold when durable route completion is unknown", async () => {
+		const route = routeFixture({ loseCompletion: true });
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ROUTE_OUTCOME_UNKNOWN",
+			requiresReconciliation: true,
+			reservationId: "iac:attempt",
+		});
+		expect(f.applies()).toBe(1);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
+	it("uses the host's stable request ID across candidate targets", async () => {
 		const seen: string[] = [];
 		const deny = (targetId: string) => (requestId: string) => {
 			seen.push(requestId);
@@ -243,7 +444,7 @@ describe("financial admission modes", () => {
 		await expect(
 			f.provider.applyWithAdmission(f.program, "attempt", {
 				targetId: "target",
-				inventoryHash: `sha256:${"a".repeat(64)}`,
+				inventoryHash: `sha256:${"c".repeat(64)}`,
 				modelHash: `sha256:${"b".repeat(64)}`,
 				quoteHash: `sha256:${"c".repeat(64)}`,
 			}),
@@ -318,12 +519,19 @@ describe("financial admission modes", () => {
 		"changed-inventory",
 		"changed-mode",
 	] as const)("refuses an unpriced expectation with %s", async (reason) => {
-		const f = fixture((id) =>
-			admitted(
-				id,
-				reason === "changed-mode" ? "allowed" : "bypassed",
-				reason !== "changed-mode",
-			),
+		const f = fixture(
+			(id) =>
+				admitted(
+					id,
+					reason === "changed-mode" ? "allowed" : "bypassed",
+					reason !== "changed-mode",
+				),
+			undefined,
+			undefined,
+			undefined,
+			routeFixture({
+				inventoryHash: `sha256:${(reason === "changed-inventory" ? "d" : "c").repeat(64)}`,
+			}).port,
 		);
 		await f.provider.preview(f.program);
 		await expect(
@@ -333,7 +541,10 @@ describe("financial admission modes", () => {
 				inventoryHash: `sha256:${(reason === "changed-inventory" ? "d" : "c").repeat(64)}`,
 			}),
 		).rejects.toMatchObject({
-			code: "ADMISSION_QUOTE_MISMATCH",
+			code:
+				reason === "changed-inventory"
+					? "ROUTE_INVENTORY_MISMATCH"
+					: "ADMISSION_QUOTE_MISMATCH",
 			requiresReconciliation: true,
 		});
 		expect(f.applies()).toBe(0);

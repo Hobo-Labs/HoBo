@@ -86,6 +86,10 @@ export class AlchemyIacError extends Error {
 			code === "EXECUTION_IN_PROGRESS" ||
 			code === "EXECUTION_OUTCOME_UNRESOLVED" ||
 			code === "EXECUTION_ALREADY_CLAIMED" ||
+			code === "ROUTE_OUTCOME_UNKNOWN" ||
+			code === "ROUTE_IN_PROGRESS" ||
+			code === "ROUTE_ALREADY_FINISHED" ||
+			code === "ROUTE_PERMIT_UNVERIFIED" ||
 			admission?.status === "uncertain" ||
 			admission?.status === "replay" ||
 			admission?.budget?.reservation === "held" ||

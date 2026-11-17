@@ -125,6 +125,53 @@ export type FinancialExpectation =
 			readonly inventoryHash: string;
 	  };
 
+/** An opaque capability for one active target attempt, issued by a shared route authority. */
+export interface IacRoutePermit {
+	readonly tenantId: string;
+	readonly requestId: string;
+	readonly targetId: string;
+	readonly inventoryHash: string;
+	readonly attemptId: string;
+}
+
+export interface IacRouteOutcome {
+	readonly status: "selected" | "denied" | "uncertain" | "replay";
+	readonly targetId?: string;
+}
+
+export interface IacDirectRouteAttempt {
+	readonly permit: IacRoutePermit;
+	/** Persist a verified no-effect denial before completing the route. */
+	deny(): Promise<void>;
+}
+
+export type IacDirectRouteResult<T> =
+	| { readonly status: "executed"; readonly value: T }
+	| {
+			readonly status: "uncertain" | "replay";
+			readonly code: string;
+			readonly targetId?: string;
+	  };
+
+/** Host-supplied route service shared by all targets for a tenant. */
+export interface IacRoutePort {
+	readonly persistence: "durable-cas";
+	/** Atomically consume this attempt once across all adapter instances. */
+	consumeAttempt(permit: IacRoutePermit): boolean | Promise<boolean>;
+	verifyAttempt(permit: IacRoutePermit): boolean | Promise<boolean>;
+	runDirect<T>(
+		input: {
+			readonly tenantId: string;
+			readonly requestId: string;
+			readonly targetId: string;
+			readonly plan: FinancialPlan;
+		},
+		run: (
+			attempt: IacDirectRouteAttempt,
+		) => Promise<{ readonly value: T; readonly outcome: IacRouteOutcome }>,
+	): Promise<IacDirectRouteResult<T>>;
+}
+
 /** The host supplies this port. The adapter never imports a policy implementation. */
 export interface FinancialPort<Assessment extends object> {
 	assess(plan: FinancialPlan): Assessment;
@@ -133,7 +180,7 @@ export interface FinancialPort<Assessment extends object> {
 		plan: FinancialPlan,
 		expected?: FinancialExpectation,
 	): Promise<FinancialDecision>;
-	/** Recheck a claimed unpriced exposure against durable authority and trusted current policy. */
+	/** Recheck the exact claimed exposure against durable authority and trusted current policy. */
 	revalidate(
 		admission: FinancialDecision,
 		plan: FinancialPlan,

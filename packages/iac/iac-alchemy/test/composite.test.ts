@@ -9,6 +9,7 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
+import { routeFixture } from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", { artifact: string }, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -83,6 +84,7 @@ function fixture(
 		});
 	const provider = createAlchemyIacProvider({
 		stack,
+		route: routeFixture().port,
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(dir, "runtime"),
 		target: alchemyTarget({
