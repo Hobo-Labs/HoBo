@@ -1,24 +1,31 @@
 #!/usr/bin/env node
 /** Generates docs/design/fleet-enrollment-scorecard.md */
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-type Status = "pass" | "blocked-on-credentials" | "not-implemented";
-type Row = { section: string; item: string; evidence: string; status: Status };
+export type Status =
+	| "pass"
+	| "not-verified"
+	| "blocked-on-credentials"
+	| "not-implemented";
+export type Row = {
+	section: string;
+	item: string;
+	evidence: string;
+	status: Status;
+};
 
-const rows: Row[] = [];
+export const rows: Row[] = [];
 
-function add(
-	section: string,
-	item: string,
-	evidence: string,
-	status: Status = "pass",
-) {
+function add(section: string, item: string, evidence: string, status: Status) {
 	rows.push({ section, item, evidence, status });
 }
 
 const G9_CREDENTIALS =
-	"Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9";
+	"Requires completed strict integrations and authorized staging: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9";
+const UNVERIFIED =
+	"No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md";
 
 const sections = {
 	"0": ["Continuous coordinated delivery directive acknowledged"],
@@ -104,22 +111,23 @@ for (const [section, items] of Object.entries(sections)) {
 	for (const item of items) {
 		const gap = notImplementedRows.get(item);
 		const status: Status =
-			gap !== undefined
-				? "not-implemented"
-				: section === "20" && item === "Final handoff vertical slice"
-					? "blocked-on-credentials"
-					: "pass";
+			gap !== undefined ? "not-implemented" : "not-verified";
 		const evidence =
 			gap ??
-			(status === "blocked-on-credentials"
+			(section === "20" && item === "Final handoff vertical slice"
 				? G9_CREDENTIALS
-				: "docs/design/fleet-enrollment-design.md");
+				: UNVERIFIED);
 		add(section, item, evidence, status);
 	}
 }
 
 for (let i = 1; i <= 20; i++) {
-	add("19", `Guardrail ${i}`, "packages/ci/src/fleet-v2/state-machine.ts");
+	add(
+		"19",
+		`Guardrail ${i}`,
+		"No guardrail-specific test or review evidence is recorded; see design section 19",
+		"not-verified",
+	);
 }
 
 const matrix162 = [
@@ -132,8 +140,52 @@ const matrix162 = [
 	"Policy changes during admission",
 	"Completion delivered twice",
 ];
+const verified162 = new Map<string, string>([
+	[
+		"Two admissions race for one capacity unit",
+		"allows exactly one admission to race for one capacity unit",
+	],
+	[
+		"Duplicate intake across webhook/pull/repair",
+		"deduplicates intake across webhook, pull, and repair",
+	],
+	[
+		"Two workers race for one effect",
+		"allows one active delivery and fence when workers race",
+	],
+	[
+		"Stale worker renews or acknowledges",
+		"rejects stale delivery tokens across generated lease histories",
+	],
+	[
+		"Worker observation sequence regresses",
+		"rejects observation sequence regression without state change",
+	],
+	[
+		"Capacity sequence changes before commit",
+		"rejects a stale revision even when capacity remains",
+	],
+	[
+		"Completion delivered twice",
+		"settles duplicate completion and releases capacity once",
+	],
+]);
 for (const item of matrix162) {
-	add("16.2", item, "packages/ci/test/fleet-v2-store-conformance.test.ts");
+	const testCase = verified162.get(item);
+	if (testCase === undefined)
+		add(
+			"16.2",
+			item,
+			"A stale policy snapshot is tested, but a concurrent policy change during the transaction has no recorded result",
+			"not-verified",
+		);
+	else
+		add(
+			"16.2",
+			item,
+			`SQLite and PostgreSQL case "${testCase}" in packages/ci/test/fleet-v2-store-conformance.test.ts, verified at 1fcfc3bdcc0701b69c5f22a91db0053b4f9fbded; this is scoped store evidence`,
+			"pass",
+		);
 }
 
 const matrix163 = [
@@ -173,8 +225,9 @@ for (const item of matrix163) {
 	add(
 		"16.3",
 		item,
-		gap ?? "packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts",
-		gap === undefined ? "pass" : "not-implemented",
+		gap ??
+			"Store or authorizer tests do not establish the unwired end-to-end GitHub start fence",
+		gap === undefined ? "not-verified" : "not-implemented",
 	);
 }
 
@@ -182,7 +235,8 @@ for (let cut = 1; cut <= 15; cut++) {
 	add(
 		"16.6",
 		`Crash cut ${cut}`,
-		"packages/ci/test/fleet-v2-store-conformance.test.ts",
+		"No crash-cut-specific fault-injection evidence is recorded; see design section 16.6",
+		"not-verified",
 	);
 }
 
@@ -199,7 +253,7 @@ const g9LiveEvidence = [
 	"Staging backup/restore and rollback drills without duplicate execution",
 ];
 for (const item of g9LiveEvidence) {
-	add("18.9", `G9 live: ${item}`, G9_CREDENTIALS, "blocked-on-credentials");
+	add("18.9", `G9 live: ${item}`, G9_CREDENTIALS, "not-verified");
 }
 
 for (const gate of [
@@ -215,13 +269,8 @@ for (const gate of [
 	"G9",
 	"G10",
 ]) {
-	const status: Status =
-		gate === "G9" || gate === "G10" ? "blocked-on-credentials" : "pass";
-	const evidence =
-		status === "blocked-on-credentials"
-			? G9_CREDENTIALS
-			: ".github/workflows/fleet-enrollment.yml";
-	add("18", `${gate} production gate`, evidence, status);
+	const evidence = gate === "G9" ? G9_CREDENTIALS : UNVERIFIED;
+	add("18", `${gate} production gate`, evidence, "not-verified");
 }
 
 const passCount = rows.filter((row) => row.status === "pass").length;
@@ -231,11 +280,21 @@ const blockedCount = rows.filter(
 const notImplementedCount = rows.filter(
 	(row) => row.status === "not-implemented",
 ).length;
+const notVerifiedCount = rows.filter(
+	(row) => row.status === "not-verified",
+).length;
 
 const lines = [
+	"---",
+	"type: Verification scorecard",
+	'title: "Fleet enrollment scorecard"',
+	'description: "Evidence and open verification work for CI fleet enrollment."',
+	"tags: [ci, fleet, verification]",
+	"---",
+	"",
 	"# Fleet enrollment scorecard",
 	"",
-	"Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` and `not-implemented` separately from `pass`. The allowed status vocabulary (`pass`, `blocked-on-credentials`, `not-implemented`) is pinned by `test/fleet-enrollment-scorecard.eval.test.ts`.",
+	"Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). A `pass` names scoped evidence and its verified commit; it does not establish current production readiness. Refresh it when covered behavior changes. `not-verified` means no requirement-specific result is recorded, and `not-implemented` identifies a known implementation gap. The CI evaluation checks the status vocabulary and prevents unsupported blanket passes.",
 	"",
 	"| Section | Requirement | Status | Evidence |",
 	"| --- | --- | --- | --- |",
@@ -244,12 +303,17 @@ const lines = [
 			`| ${row.section} | ${row.item} | ${row.status} | ${row.evidence} |`,
 	),
 	"",
-	`Total rows: ${rows.length}. Pass: ${passCount}. Blocked on credentials (G9 live staging): ${blockedCount}. Not implemented: ${notImplementedCount}.`,
+	`Total rows: ${rows.length}. Pass: ${passCount}. Not verified: ${notVerifiedCount}. Blocked on credentials (G9 live staging): ${blockedCount}. Not implemented: ${notImplementedCount}.`,
 	"",
 ];
 
-const out = join(process.cwd(), "docs/design/fleet-enrollment-scorecard.md");
-writeFileSync(out, lines.join("\n"));
-console.log(
-	`wrote ${out} (${rows.length} rows, ${passCount} pass, ${blockedCount} blocked-on-credentials, ${notImplementedCount} not-implemented)`,
-);
+if (
+	process.argv[1] &&
+	resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+	const out = join(process.cwd(), "docs/design/fleet-enrollment-scorecard.md");
+	writeFileSync(out, lines.join("\n"));
+	console.log(
+		`wrote ${out} (${rows.length} rows, ${passCount} pass, ${notVerifiedCount} not-verified, ${blockedCount} blocked-on-credentials, ${notImplementedCount} not-implemented)`,
+	);
+}

@@ -1,3 +1,10 @@
+---
+type: Operational reference
+title: "Hosting evidence observation"
+description: "Read-only checks for the hosting identity and enrolled secret-store scopes."
+tags: [ci, hosting, evidence]
+---
+
 # Hosting evidence observation
 
 The manually dispatched `HoBo hosting evidence (read-only)` workflow checks

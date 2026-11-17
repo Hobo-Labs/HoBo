@@ -1,3 +1,10 @@
+---
+type: Operational reference
+title: "Vercel credential evidence"
+description: "Read-only checks for Vercel credentials and the enrolled project."
+tags: [ci, vercel, evidence]
+---
+
 # Vercel credential evidence
 
 The manually dispatched `HoBo Vercel credential evidence (read-only)` workflow
