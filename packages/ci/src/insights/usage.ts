@@ -150,13 +150,57 @@ function zero(): Counts {
 // public-contract: the runner group GitHub's own runners, larger runners included, report.
 export const GITHUB_HOSTED_RUNNER_GROUP = "GitHub Actions";
 
-/** Ran on one of GitHub's own runners, a larger runner on custom labels included. */
-function hostedJob(job: InsightJob): boolean {
+// The labels of GitHub's standard hosted runners: free in a public repository.
+const STANDARD_HOSTED_LABEL =
+	/^(?:ubuntu-(?:latest|\d+\.\d+)(?:-arm)?|ubuntu-slim|windows-(?:latest|\d{4})|windows-11-arm|macos-(?:latest|\d+)(?:-intel)?)$/u;
+// GitHub's own larger macOS runners, which take no custom label.
+const MACOS_LARGER_LABEL = /^macos-(?:latest|\d+)(?:-intel)?-x?large$/u;
+
+type RunnerOf = Pick<InsightJob, "labels" | "runnerGroup">;
+
+const lower = (label: string): string => label.trim().toLowerCase();
+
+/**
+ * Ran on one of GitHub's larger runners: a macOS `-large` or `-xlarge` label,
+ * or a label that is not a standard hosted label in GitHub's runner group.
+ */
+export function isLargerRunnerJob(job: RunnerOf): boolean {
+	const labels = job.labels.map(lower);
 	return (
-		job.billed ||
+		labels.some((label) => MACOS_LARGER_LABEL.test(label)) ||
+		(job.runnerGroup === GITHUB_HOSTED_RUNNER_GROUP &&
+			labels.some((label) => !STANDARD_HOSTED_LABEL.test(label)))
+	);
+}
+
+/** Ran on one of GitHub's own runners, a larger runner on custom labels included. */
+function onGithubRunner(job: RunnerOf): boolean {
+	return (
 		job.runnerGroup === GITHUB_HOSTED_RUNNER_GROUP ||
 		(job.labels.length > 0 && job.labels.every(isGithubHostedLabel))
 	);
+}
+
+/**
+ * Whether GitHub bills a job's minutes. Standard hosted runners are free in
+ * a public repository; larger runners are billed in every repository
+ * (https://docs.github.com/en/billing/concepts/product-billing/github-actions,
+ * read 2026-11-17: "Larger runners are billed for public repositories.").
+ */
+export function githubBillsJob(
+	job: RunnerOf,
+	repositoryPrivate: boolean,
+): boolean {
+	return onGithubRunner(job) && (repositoryPrivate || isLargerRunnerJob(job));
+}
+
+/** Billed: stored so, or a larger runner, which GitHub bills everywhere. */
+function billedJob(job: InsightJob): boolean {
+	return job.billed || isLargerRunnerJob(job);
+}
+
+function hostedJob(job: InsightJob): boolean {
+	return job.billed || onGithubRunner(job) || isLargerRunnerJob(job);
 }
 
 /** Adds one finished job to every slice it belongs to. */
@@ -169,9 +213,10 @@ function count(
 ): void {
 	const minutes = jobBilledMinutes(job);
 	const hosted = hostedJob(job);
+	const billed = billedJob(job);
 	for (const slice of slices) {
 		slice.jobs += 1;
-		if (job.billed) {
+		if (billed) {
 			slice.billedMinutes += minutes;
 			if (runMs < shortJobMs) {
 				slice.shortJobs += 1;

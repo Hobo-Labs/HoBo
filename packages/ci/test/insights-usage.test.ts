@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { InsightJob, InsightRun } from "../src/insights/types.js";
-import { type MinuteRate, usageReport } from "../src/insights/usage.js";
+import {
+	githubBillsJob,
+	isLargerRunnerJob,
+	type MinuteRate,
+	usageReport,
+} from "../src/insights/usage.js";
 
 const DAY = 86_400_000;
 const MIN = 60_000;
@@ -233,7 +238,8 @@ describe("usageReport", () => {
 						runnerGroup: "GitHub Actions",
 						billed: true,
 					}),
-					// Same labels, public repository: not billed, still GitHub's runner.
+					// Same labels, stored unbilled: GitHub bills a larger runner
+					// in a public repository too, so the report bills it.
 					job(32, ["ubuntu-24.04-16core"], DAY_ONE + 2_000, 2 * MIN, {
 						runnerGroup: "GitHub Actions",
 					}),
@@ -242,10 +248,72 @@ describe("usageReport", () => {
 			{ githubRate: RATE, included: undefined, publicRepositories: NONE },
 		);
 		expect(larger.keptMinutes).toBe(0);
-		expect(larger.billedMinutes).toBe(2);
+		expect(larger.billedMinutes).toBe(4);
 		expect(larger.runners.map((row) => [row.runner, row.hosted])).toEqual([
 			["ubuntu-24.04-16core", true],
 		]);
+	});
+
+	it("bills a larger runner in a public repository, never as kept", () => {
+		const open = usageReport(
+			[
+				run(
+					4,
+					[
+						job(41, ["macos-15-xlarge"], DAY_ONE + 1_000, 3 * MIN, {
+							billed: true,
+						}),
+						job(42, ["linux-8core"], DAY_ONE + 2_000, 2 * MIN, {
+							runnerGroup: "GitHub Actions",
+							billed: true,
+						}),
+						// A standard hosted runner in a public repository is free.
+						job(43, ["ubuntu-24.04"], DAY_ONE + 3_000, 5 * MIN, {
+							runnerGroup: "GitHub Actions",
+						}),
+					],
+					"octo/open",
+				),
+			],
+			{
+				githubRate: RATE,
+				included: undefined,
+				publicRepositories: new Set(["octo/open"]),
+			},
+		);
+		expect(open.billedMinutes).toBe(5);
+		expect(open.keptMinutes).toBe(0);
+		expect(open.keptUsd).toBe(0);
+	});
+
+	it("tells a larger runner from a standard GitHub-hosted one", () => {
+		const of = (labels: readonly string[], runnerGroup?: string) => ({
+			labels,
+			...(runnerGroup ? { runnerGroup } : undefined),
+		});
+		expect(isLargerRunnerJob(of(["ubuntu-latest"], "GitHub Actions"))).toBe(
+			false,
+		);
+		expect(isLargerRunnerJob(of(["ubuntu-24.04-arm"], "GitHub Actions"))).toBe(
+			false,
+		);
+		expect(isLargerRunnerJob(of(["windows-2025"], "GitHub Actions"))).toBe(
+			false,
+		);
+		expect(isLargerRunnerJob(of(["macos-15"]))).toBe(false);
+		expect(
+			isLargerRunnerJob(of(["ubuntu-24.04-16core"], "GitHub Actions")),
+		).toBe(true);
+		expect(isLargerRunnerJob(of(["macos-15-large"]))).toBe(true);
+		expect(isLargerRunnerJob(of(["macos-latest-xlarge"]))).toBe(true);
+		// A custom label outside GitHub's runner group is a self-hosted runner.
+		expect(isLargerRunnerJob(of(["ubuntu-24.04-16core"], "Default"))).toBe(
+			false,
+		);
+		expect(githubBillsJob(of(["ubuntu-latest"]), false)).toBe(false);
+		expect(githubBillsJob(of(["ubuntu-latest"]), true)).toBe(true);
+		expect(githubBillsJob(of(["macos-15-large"]), false)).toBe(true);
+		expect(githubBillsJob(of(["self-hosted", "linux"]), true)).toBe(false);
 	});
 
 	it("counts a job under a custom short-job threshold", () => {
