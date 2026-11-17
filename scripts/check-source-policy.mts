@@ -66,6 +66,12 @@ const GENERATED_OR_VENDOR =
 	/^(?:tools\/oxlint\/anti-slop\/)|(?:^|\/)(?:_generated|dist|node_modules)\//u;
 const DIRECTIVE =
 	/^(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma|buf|go|atlas):|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
+const TYPESCRIPT_DIRECTIVE =
+	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?)@ts-(?:check|nocheck|ignore|expect-error)\b/iu;
+const CONCISE_TYPESCRIPT_DIRECTIVE =
+	/^\/\/\s*@ts-(?:check|nocheck|ignore|expect-error)\s*$/iu;
+const LINT_DIRECTIVE_EXPLANATION =
+	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|<!--\s*)(?:eslint|oxlint|stylelint)-(?:disable|enable)\b[^\r\n]*\s--(?:\s|$)/iu;
 const VITE_DIRECTIVE = /^\/\*\s*@vite-ignore\s*\*\/$/u;
 const GENERATED_DIRECTIVE =
 	/^\/\/\s*@generated(?:\s+(?:by|from)\s+[^\r\n]+)?\s*$/u;
@@ -487,8 +493,11 @@ export function commentViolations(
 		const deferred =
 			DEFERRED.test(comment.text) || DEFERRED_TYPE_DIRECTIVE.test(comment.text);
 		const concise =
-			!ARCHITECTURE_DIRECTIVE.test(comment.text) ||
-			CONCISE_ARCHITECTURE_DIRECTIVE.test(comment.text);
+			(!ARCHITECTURE_DIRECTIVE.test(comment.text) ||
+				CONCISE_ARCHITECTURE_DIRECTIVE.test(comment.text)) &&
+			(!TYPESCRIPT_DIRECTIVE.test(comment.text) ||
+				CONCISE_TYPESCRIPT_DIRECTIVE.test(comment.text)) &&
+			!LINT_DIRECTIVE_EXPLANATION.test(comment.text);
 		if (
 			!deferred &&
 			concise &&
@@ -552,6 +561,49 @@ export function documentViolation(
 		: undefined;
 }
 
+function changedLines(
+	args: string[],
+	file: string,
+	text: string,
+	untracked: boolean,
+): Set<number> {
+	if (untracked)
+		return new Set(text.split(/\r?\n/u).map((_, index) => index + 1));
+	return addedLineNumbers(
+		git([
+			...args,
+			"--no-renames",
+			"--no-color",
+			"--no-ext-diff",
+			"--unified=0",
+			"--",
+			file,
+		]),
+	);
+}
+
+export function proofArtifactViolations(
+	file: string,
+	text: string,
+	added: Set<number>,
+): Violation[] {
+	if (!file.startsWith("src/draft/")) return [];
+	const placeholder =
+		/\b(?:proof-identity:\s*ok|identity\s+noop|Hardened notebook scaffold)\b/iu;
+	return text.split(/\r?\n/u).flatMap((line, index) =>
+		added.has(index + 1) && placeholder.test(line)
+			? [
+					{
+						file,
+						line: index + 1,
+						message:
+							"replace synthetic proof scaffolding with executable behavior",
+					},
+				]
+			: [],
+	);
+}
+
 export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
@@ -573,6 +625,15 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			const reason = documentViolation(file, contents(mode, file));
 			if (reason) violations.push({ file, line: 1, message: reason });
 		}
+		if (
+			file.startsWith("src/draft/") &&
+			(/\/(?:examples|bench)\/.*\.[cm]?[jt]sx?$/u.test(sourceFile) ||
+				sourceFile.endsWith(".ipynb"))
+		) {
+			const text = contents(mode, file);
+			const added = changedLines(args, file, text, untracked.includes(file));
+			violations.push(...proofArtifactViolations(file, text, added));
+		}
 		const extension = extname(sourceFile).toLowerCase();
 		if (
 			extension &&
@@ -586,19 +647,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		const text = contents(mode, file);
 		if (!extension && !file.startsWith(".githooks/") && !text.startsWith("#!"))
 			continue;
-		const added = untracked.includes(file)
-			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
-			: addedLineNumbers(
-					git([
-						...args,
-						"--no-renames",
-						"--no-color",
-						"--no-ext-diff",
-						"--unified=0",
-						"--",
-						file,
-					]),
-				);
+		const added = changedLines(args, file, text, untracked.includes(file));
 		violations.push(...commentViolations(file, text, added));
 	}
 	return violations;
@@ -618,7 +667,9 @@ function main(args: string[]): number {
 				`${violation.file}:${violation.line}: ${violation.message}`,
 			);
 		if (violations.length > 0) return 1;
-		console.log("source:guard: no new comment or planning-document violations");
+		console.log(
+			"source:guard: no new comment, planning-document, or synthetic-proof violations",
+		);
 		return 0;
 	} catch (error) {
 		console.error(
