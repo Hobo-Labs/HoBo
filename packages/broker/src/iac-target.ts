@@ -346,12 +346,12 @@ export async function admitIacTarget(
 		);
 	try {
 		if (
-			!(await deps.verifyLiability({
+			(await deps.verifyLiability({
 				evidence: clone(IacTargetLiabilityEvidenceSchema, evidence),
 				inventory: clone(TargetPricingInventorySchema, inventory),
 				scenario: clone(QuoteScenarioSchema, scenario),
 				quote: clone(QuoteVectorSchema, priced.quote),
-			}))
+			})) !== true
 		)
 			return denial(
 				requestId,
