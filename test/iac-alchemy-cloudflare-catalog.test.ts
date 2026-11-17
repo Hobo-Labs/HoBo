@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { bindle, sessionReplay } from "../packages/bindles/dist/index.js";
+import {
+	bindle,
+	continuity,
+	sessionReplay,
+} from "../packages/bindles/dist/index.js";
 import { CATALOG_ROWS } from "../packages/bindles/dist/types.js";
 import { mapBindleToAlchemy } from "../packages/iac/iac-alchemy/src/bindle.js";
 import {
@@ -125,6 +129,28 @@ describe("Cloudflare coverage of the real HoBo catalog", () => {
 					options,
 				),
 			).toThrow("PRIMITIVE_UNSUPPORTED");
+		}
+	});
+
+	it("refuses unimplemented continuity guarantees for each native storage primitive", () => {
+		const options = {
+			assessRequirements: () => ({ status: "supported" as const }),
+		};
+		const mappers = cloudflareBindleMappers({ workerModules: {} });
+		for (const application of [
+			bindle("app", (b) => ({ data: b.bucket().with(continuity()) })),
+			bindle("app", (b) => ({ data: b.kv().with(continuity()) })),
+			bindle("app", (b) => ({ data: b.queue().with(continuity()) })),
+		]) {
+			expect(() => mapBindleToAlchemy(application, mappers, options)).toThrow(
+				"annotation hobo:continuity",
+			);
+		}
+		for (const kind of ["bucket", "kv", "queue"]) {
+			const entry = describeCloudflarePrimitiveSupport(CATALOG_ROWS).find(
+				(row) => row.kind === kind,
+			);
+			expect(entry?.supportedAnnotations).not.toContain("hobo:continuity");
 		}
 	});
 });

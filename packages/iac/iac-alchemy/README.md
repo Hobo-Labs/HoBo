@@ -20,6 +20,8 @@ those uses.
 `cloudflareBindleMappers` can provision native R2, KV and queue infrastructure;
 it rejects their HoBo runtime operations until blob metadata and events, WASI KV
 semantics, and queue deduplication and leases are implemented.
+It also rejects `continuity` annotations on these resources: provisioning the
+native component alone does not establish failover, backup or spending guarantees.
 `describeCloudflarePrimitiveSupport` reports partial or unsupported coverage
 for each supplied HoBo catalog entry with the reason.
 Alchemy namespaces can separate multiple mapped Cloudflare Bindles in one
