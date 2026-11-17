@@ -154,13 +154,17 @@ async function exploreOnce(url: string, spec: string) {
  * Bombadil explores `url` against `spec`. A run its browser driver could not
  * finish (it says "driver error", e.g. a screenshot the starved browser never
  * took) and that found no violation is run once more: that is the browser,
- * not the page. A violation is never retried.
+ * not the page; up to three runs in all. A violation is never retried.
  */
 async function explore(url: string, spec: string) {
-	const first = await exploreOnce(url, spec);
-	return first.violated.length === 0 && /driver error/u.test(first.said)
-		? exploreOnce(url, spec)
-		: first;
+	let run = await exploreOnce(url, spec);
+	for (
+		let again = 1;
+		again < 3 && run.violated.length === 0 && /driver error/u.test(run.said);
+		again += 1
+	)
+		run = await exploreOnce(url, spec);
+	return run;
 }
 
 /** A static server for `site/public`, with one route that may be overridden. */
@@ -267,9 +271,10 @@ describe.skipIf(!runnable)(
 				`${pages.origin}${route}`,
 				"github-app-handoff.spec.ts",
 			);
-			expect(run.violated.map((violation) => violation.property)).toContain(
-				property,
-			);
+			expect(
+				run.violated.map((violation) => violation.property),
+				run.said,
+			).toContain(property);
 		});
 
 		it("secret-capture page the HoBo MCP server serves", async () => {
@@ -331,9 +336,10 @@ describe.skipIf(!runnable)(
 					`${shows.origin}/capture/cap_broken#token`,
 					"secret-capture.spec.ts",
 				);
-				expect(run.violated.map((violation) => violation.property)).toContain(
-					"the_value_is_never_shown",
-				);
+				expect(
+					run.violated.map((violation) => violation.property),
+					run.said,
+				).toContain("the_value_is_never_shown");
 			} finally {
 				await shows.close();
 			}

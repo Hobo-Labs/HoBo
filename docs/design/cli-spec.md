@@ -382,7 +382,12 @@ environment variables.
   comes back on the next run with the same link and code. Only a host that
   shows no form gets `HOBO_CD_VERCEL_AWAITING_APPROVAL` at once. The store
   sign-in HoBo created is kept in the server's memory (the owner channel's
-  vault) so the owner signs in once. Egress is applied to the whole process at
+  vault) so the owner signs in once. On a host with no form, the grant's
+  link goes as the host's link prompt, completed
+  (`notifications/elicitation/complete`) when its job ends. Completion
+  follows the job identity even when two grants use the same URL; racing
+  starts for one store show only the accepted grant. Egress is applied to
+  the whole process at
   start (`applyEgressToProcess`: Node's global dispatcher, built on the
   first request so an unused CA path cannot stop a run): every fetch honours
   the box's proxy, bypass list and CA. The Infisical store offers a verified

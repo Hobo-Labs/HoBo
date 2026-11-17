@@ -23,7 +23,7 @@ export interface OwnerChannel {
 	 * device code to approve). Through the HoBo MCP server: the host's own
 	 * link prompt, since no progress line reaches them.
 	 */
-	show?(url: string, message: string): Promise<void>;
+	show?(url: string, message: string, jobKey: string): Promise<void>;
 	/**
 	 * Ask the owner to do something at a link and say when it is done: one
 	 * form, the link in it, answered when they have. `true` once they
@@ -75,12 +75,12 @@ export type OwnerJobOutcome = Exclude<OwnerJobState, { state: "pending" }>;
 
 export interface OwnerJobs {
 	status(key: string): OwnerJobState | undefined;
-	/** Start a job unless one runs under `key`; it ends with its outcome. */
+	/** Start a job only when `key` has no record; return whether it started. */
 	start(
 		key: string,
 		pending: { readonly link: string; readonly code: string },
 		job: (signal: AbortSignal) => Promise<OwnerJobOutcome>,
-	): void;
+	): boolean;
 	/** The job's outcome once it ends (at once when none runs under `key`). */
 	outcome(key: string): Promise<OwnerJobState | undefined>;
 	/** Drop a finished job's record, so the next call starts afresh. */
@@ -95,6 +95,7 @@ export function createOwnerJobs(
 	options: {
 		/** A job ended: the channel can say so (complete the prompt it showed). */
 		readonly onSettled?: (
+			key: string,
 			pending: { readonly link: string; readonly code: string },
 			outcome: OwnerJobOutcome,
 		) => void;
@@ -107,11 +108,11 @@ export function createOwnerJobs(
 	return {
 		status: (key) => states.get(key),
 		start(key, pending, job) {
-			if (states.get(key)?.state === "pending") return;
+			if (states.has(key)) return false;
 			states.set(key, { state: "pending", ...pending });
 			const settle = (outcome: OwnerJobOutcome) => {
 				states.set(key, outcome);
-				options.onSettled?.(pending, outcome);
+				options.onSettled?.(key, pending, outcome);
 			};
 			const done = job(abort.signal).then(settle, () =>
 				settle({
@@ -126,6 +127,7 @@ export function createOwnerJobs(
 				running.delete(done);
 				if (ends.get(key) === done) ends.delete(key);
 			});
+			return true;
 		},
 		async outcome(key) {
 			await ends.get(key);

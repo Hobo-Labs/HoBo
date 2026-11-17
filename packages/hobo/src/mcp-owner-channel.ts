@@ -66,7 +66,7 @@ export function createMcpOwnerChannel(
 ): McpOwnerChannel {
 	const held = new Map<string, string>();
 	const links = new Map<string, { url: string; message: string }>();
-	// The link prompts shown, by link: completed when the job behind one ends.
+	// Each prompt belongs to a job, even when several jobs share one URL.
 	const prompted = new Map<string, string>();
 	// Each capture's link, by its name: shown before that capture's form.
 	const opened = new Map<string, { url: string; message: string }>();
@@ -97,9 +97,9 @@ export function createMcpOwnerChannel(
 		// A link the owner opens while a step waits on them (Vercel's device
 		// code): the host's own link prompt, since no progress line reaches
 		// them through MCP.
-		async show(url, message) {
+		async show(url, message, jobKey) {
 			const elicitationId = `hobo-${randomUUID()}`;
-			prompted.set(url, elicitationId);
+			prompted.set(jobKey, elicitationId);
 			await options.prompt?.({ mode: "url", elicitationId, url, message });
 		},
 		async confirm({ url, message }) {
@@ -119,10 +119,10 @@ export function createMcpOwnerChannel(
 		// long as this server lives; when one ends, the prompt it showed is
 		// completed, so the host (and the agent) know without asking.
 		jobs: createOwnerJobs({
-			onSettled: (pending) => {
-				const elicitationId = prompted.get(pending.link);
+			onSettled: (key) => {
+				const elicitationId = prompted.get(key);
 				if (elicitationId === undefined) return;
-				prompted.delete(pending.link);
+				prompted.delete(key);
 				options.notify?.("notifications/elicitation/complete", {
 					elicitationId,
 				});

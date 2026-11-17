@@ -1,4 +1,5 @@
 import { mkdtempSync } from "node:fs";
+import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -26,11 +27,23 @@ describe("SPEC process egress: every fetch in the process honours the proxy", ()
 	it("a plain global fetch goes through the proxy the environment requires", async () => {
 		const proxy = await startForwardProxy({});
 		open.push(proxy);
-		applyEgressToProcess({ HTTPS_PROXY: proxy.url(), NO_PROXY: "" });
-		await fetch("https://neon.new/api/v1/database", { method: "POST" }).catch(
-			() => undefined,
+		// A local endpoint can close the tunnel as soon as it is reached. This
+		// checks proxy routing without waiting on an external host or its DNS.
+		const target = createServer((socket) => socket.destroy());
+		await new Promise<void>((resolve) =>
+			target.listen(0, "127.0.0.1", resolve),
 		);
-		expect(proxy.seen).toContain("CONNECT neon.new:443");
+		open.push({
+			close: () =>
+				new Promise<void>((resolve) => target.close(() => resolve())),
+		});
+		// SAFETY: target has just started listening on an IPv4 TCP socket.
+		const { port } = target.address() as AddressInfo;
+		applyEgressToProcess({ HTTPS_PROXY: proxy.url(), NO_PROXY: "" });
+		await fetch(`https://127.0.0.1:${port}/api/v1/database`, {
+			method: "POST",
+		}).catch(() => undefined);
+		expect(proxy.seen).toContain(`CONNECT 127.0.0.1:${port}`);
 	});
 
 	it("leaves the process alone when no proxy and no CA are configured", () => {
