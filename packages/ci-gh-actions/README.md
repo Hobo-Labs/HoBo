@@ -2127,3 +2127,30 @@ decision that moves the job to the other runner type. The simulator has no
 "re-run a job" route, so the test adapts it to a whole-run re-run where every
 job needs the relay. No relay runs this in production yet, so the channel is
 built, not proven.
+
+## Runner-less checks: title, then lint
+
+`createRelayChecks` (`src/relay-checks/`) is the `checks` handler relay mode
+passes to `answerRelayJob` (ADR-0183, F9). A relay job whose steps are all
+HoBo check steps (a `uses:` ending in `/checks/pr-title` or `/checks/lint`)
+is completed by the relay itself, passed or failed with annotations, so no
+runner starts and no minute is billed. Every step must be a check step with
+literal inputs, each check once; anything else fails the job with the reason.
+The title check needs a pull request event (for a `pull_request_target` run
+from a fork, the pull request is found from the run's head) and takes its
+allowed types from the step or from `checks.prTitle.types` in `.hobo/ci.json`.
+The lint check is off unless `checks.lint` is set; it runs `actionlint`,
+`shellcheck`, `oxlint`, `ruff` and `typos` on the commit's archive (read by
+following GitHub's redirect to codeload, see `RelayArchiveAccess`) in a
+sandbox with no network
+(`createDockerLintSandbox`), five minutes per tool and eight minutes for the
+whole check (the relay renews no job lock, so a slow or hung tool ends as
+"Lint timed out" inside the lock), and reports one result per tool and 50
+annotations at most. Each answered job is a `check.completed`
+event, a callback rather than a journal record. It is built, not proven:
+tested against the GitHub simulator and a fake sandbox. C01's T3 run is owed:
+a title check job from `.github/workflows/parity-probe.yml` answered by the
+deployed relay, to be linked when relay mode is on for this repository. The
+Docker lint sandbox is new rather than an existing HoBo sandbox, because the
+existing ones start runners; the `LintSandbox` port lets another replace it.
+See [`src/relay-checks/RELAY-CHECKS.md`](src/relay-checks/RELAY-CHECKS.md).

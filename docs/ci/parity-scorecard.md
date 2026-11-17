@@ -16,17 +16,10 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | State | Cases |
 | --- | --- |
-| pass | 16 |
-| built-not-proven | 1 |
-| partial | 24 |
-| not-built | 16 |
-
-| pass | 13 |
-
-| pass | 14 |
-| built-not-proven | 2 |
-| partial | 26 |
-| not-built | 15 |
+| pass | 22 |
+| built-not-proven | 3 |
+| partial | 22 |
+| not-built | 10 |
 | met-differently | 1 |
 | Total | 58 |
 
@@ -83,8 +76,8 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | Case | RelayRunner's claim | HoBo's bar | Tier | State | Package |
 | --- | --- | --- | --- | --- | --- |
-| C01 | A pull request title check runs with no runner and no minutes ([site/concepts/optimized-checks.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/optimized-checks.md)) | The relay completes the job; the allowed types are configurable | T2, T3 | partial: the rule exists | 20 |
-| C02 | Linters run in a sandbox with one result per tool ([site/concepts/optimized-checks.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/optimized-checks.md)) | Same, in a HoBo sandbox with no network | T2 | not-built | 20 |
+| C01 | A pull request title check runs with no runner and no minutes ([site/concepts/optimized-checks.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/optimized-checks.md)) | The relay completes the job; the allowed types are configurable | T2, T3 | built-not-proven: T3 owed: no production run is linked yet | 20 |
+| C02 | Linters run in a sandbox with one result per tool ([site/concepts/optimized-checks.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/optimized-checks.md)) | Same, in a HoBo sandbox with no network | T2 | pass | 20 |
 | C03 | The repository config file is strict, and a bad one shows as a failed check ([site/reference/repo-config.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/repo-config.md)) | `.hobo/ci.json` is strict already; a broken `runnerOrder` fails the relay job with the parser's sentence | T1, T2 | partial | 11 |
 
 ## Insights

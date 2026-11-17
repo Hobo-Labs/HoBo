@@ -63,6 +63,10 @@
       "types": "./dist/relay-cache/index.d.ts",
       "default": "./dist/relay-cache/index.js"
     },
+    "./relay-checks": {
+      "types": "./dist/relay-checks/index.d.ts",
+      "default": "./dist/relay-checks/index.js"
+    },
     "./relay-job-assets": {
       "types": "./dist/_generated-assets/relay-job-assets.d.ts",
       "default": "./dist/_generated-assets/relay-job-assets.js"
