@@ -258,7 +258,14 @@ export function inspectAlchemyPlan(
 			"TARGET_SCOPE_MISMATCH",
 			"plan stack or stage differs from the configured target",
 		);
-	if (plan.native.selectedFqns !== undefined || plan.actions.length > 0)
+	if (
+		plan.native.selectedFqns !== undefined ||
+		plan.actions.length > 0 ||
+		Object.keys(plan.native.actions).length > 0 ||
+		Object.values(plan.native.actionDeletions).some(
+			(node) => node !== undefined,
+		)
+	)
 		throw new AlchemyIacError(
 			"PLAN_UNSUPPORTED_EFFECTS",
 			"partial plans and stack actions cannot be financially covered",
@@ -273,6 +280,21 @@ export function inspectAlchemyPlan(
 			"every planned resource must have one financial scope",
 		);
 	const rows = [...plan.resources].sort((a, b) => a.fqn.localeCompare(b.fqn));
+	const nativeKeys = [
+		...Object.keys(plan.native.resources),
+		...Object.entries(plan.native.deletions)
+			.filter(([, node]) => node !== undefined)
+			.map(([key]) => key),
+	];
+	if (
+		nativeKeys.length !== rows.length ||
+		new Set(nativeKeys).size !== nativeKeys.length ||
+		nativeKeys.some((key) => !rows.some((row) => row.fqn === key))
+	)
+		throw new AlchemyIacError(
+			"PLAN_UNINSPECTABLE",
+			"native plan contains resources absent from its description",
+		);
 	if (new Set(rows.map((row) => row.fqn)).size !== rows.length)
 		throw new AlchemyIacError(
 			"TARGET_INVENTORY_INCOMPLETE",
@@ -345,11 +367,18 @@ export function inspectAlchemyPlan(
 			downstream: node.downstream,
 			mode: node.mode,
 			providerVersion: node.provider.version,
+			resourceLogicalId: node.resource.LogicalId,
 			resourceProps: node.resource.Props,
 			removalPolicy: node.resource.RemovalPolicy,
 			adopt: node.resource.Adopt,
+			resourceMode: node.resource.Mode,
+			requiresImplementation: node.resource.RequiresImplementation,
 			formerFqns: node.resource.FormerFqns,
 			rename: "renamedFrom" in node ? node.renamedFrom : undefined,
+			drift: "drift" in node ? node.drift : undefined,
+			adopting: "adopting" in node ? node.adopting : undefined,
+			deleteFirst: "deleteFirst" in node ? node.deleteFirst : undefined,
+			restart: "restart" in node ? node.restart : undefined,
 			adoptionBlocked:
 				"adoptionBlocked" in node ? node.adoptionBlocked : undefined,
 			deferredAdoption:
@@ -363,6 +392,7 @@ export function inspectAlchemyPlan(
 		tenantId: target.tenantId,
 		resources,
 		cycles: [...plan.native.cycleMembers].sort(),
+		defaultMode: plan.native.defaultMode,
 		output: plan.native.output,
 		destroy: plan.native.destroy,
 	};
