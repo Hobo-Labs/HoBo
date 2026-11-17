@@ -35,6 +35,7 @@ import {
 	type WorkerDelivery,
 	WorkerDeliverySchema,
 } from "../_generated/fleet_v2_pb.js";
+import { nextCapacitySequence } from "./capacity-sequence.js";
 import {
 	executionAccountId,
 	executionKeyId,
@@ -145,7 +146,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_capacity_groups(
 				 partition_id text NOT NULL,id text NOT NULL,account_id text NOT NULL,
-				 approved_units integer NOT NULL,reserved_units integer NOT NULL,seq integer NOT NULL,
+				 approved_units bigint NOT NULL,reserved_units bigint NOT NULL,seq bigint NOT NULL,
 				 state text NOT NULL,body text NOT NULL,PRIMARY KEY(partition_id,id),
 				 CHECK(reserved_units>=0 AND reserved_units<=approved_units))`,
 			);
@@ -153,7 +154,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_runner_slots(
 				 partition_id text NOT NULL,id text NOT NULL,account_id text NOT NULL,offer_id text NOT NULL,
 				 profile_id text NOT NULL,runner_name text NOT NULL,state text NOT NULL,capacity_group_id text NOT NULL,
-				 capacity_cost_units integer NOT NULL,offer_observation_hash text NOT NULL,binding_secret_hash text NOT NULL,
+				 capacity_cost_units bigint NOT NULL,offer_observation_hash text NOT NULL,binding_secret_hash text NOT NULL,
 				 incarnation_id text NOT NULL,demand_key text,body text NOT NULL,PRIMARY KEY(partition_id,id),
 				 UNIQUE(partition_id,account_id,runner_name))`,
 			);
@@ -212,8 +213,26 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_capacity_releases(
 				 partition_id text NOT NULL,claim_id text NOT NULL,capacity_group_id text NOT NULL,
-				 units integer NOT NULL,released_at text NOT NULL,PRIMARY KEY(partition_id,claim_id))`,
+				 units bigint NOT NULL,released_at text NOT NULL,PRIMARY KEY(partition_id,claim_id))`,
 			);
+			// Older installations used signed int32 columns for uint32 capacity
+			// fields. Widen them under the schema advisory lock before use.
+			await client.query(`DO $$ BEGIN
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_capacity_groups' AND data_type='integer'
+				 AND column_name IN ('approved_units','reserved_units','seq')) THEN
+				 ALTER TABLE hobo_ci_fleet_v2_capacity_groups
+				 ALTER COLUMN approved_units TYPE bigint, ALTER COLUMN reserved_units TYPE bigint, ALTER COLUMN seq TYPE bigint;
+				END IF;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_runner_slots' AND data_type='integer' AND column_name='capacity_cost_units') THEN
+				 ALTER TABLE hobo_ci_fleet_v2_runner_slots ALTER COLUMN capacity_cost_units TYPE bigint;
+				END IF;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+				 AND table_name='hobo_ci_fleet_v2_capacity_releases' AND data_type='integer' AND column_name='units') THEN
+				 ALTER TABLE hobo_ci_fleet_v2_capacity_releases ALTER COLUMN units TYPE bigint;
+				END IF;
+			END $$`);
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_events(
 				 seq bigserial PRIMARY KEY,partition_id text NOT NULL,id text NOT NULL,body text NOT NULL,
@@ -625,7 +644,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				group.state as CapacityGroupState,
 			);
 			const updated = clone(CapacityGroupSchema, group);
-			updated.seq += 1;
+			updated.seq = nextCapacitySequence(updated.seq);
 			const changed = await client.query(
 				`UPDATE hobo_ci_fleet_v2_capacity_groups SET approved_units=$3,seq=seq+1,state=$4,body=$5
 				 WHERE partition_id=$1 AND id=$2 AND seq=$6 AND reserved_units=$7`,
@@ -926,7 +945,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			);
 			const updatedGroup = clone(CapacityGroupSchema, group);
 			updatedGroup.reservedUnits += slot.capacityCostUnits;
-			updatedGroup.seq += 1;
+			updatedGroup.seq = nextCapacitySequence(updatedGroup.seq);
 			await this.saveCapacity(client, updatedGroup);
 			const updatedDemand = clone(CiDemandSchema, demand);
 			transitionCiDemand(demand.state as CiDemandState, "eligible");
@@ -1000,7 +1019,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 					if (currentGroup) {
 						const group = clone(CapacityGroupSchema, currentGroup);
 						group.reservedUnits -= slot.capacityCostUnits;
-						group.seq += 1;
+						group.seq = nextCapacitySequence(group.seq);
 						await this.saveCapacity(client, group);
 					}
 				}
@@ -1586,7 +1605,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 						);
 					const group = clone(CapacityGroupSchema, currentGroup);
 					group.reservedUnits -= slot.capacityCostUnits;
-					group.seq += 1;
+					group.seq = nextCapacitySequence(group.seq);
 					await this.saveCapacity(client, group);
 					transitionRunnerSlot(slot.state as RunnerSlotState, "released");
 					slot.state = "released";
