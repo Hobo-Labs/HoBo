@@ -247,6 +247,31 @@ describe("fleet facts from the slip and the queue", () => {
 		);
 	});
 
+	it("lets the queue contradict an open slip but not a busy one", async () => {
+		const fullQueue: FakeRun[] = [
+			{
+				id: 10,
+				created: 6,
+				jobs: [
+					{ label: "hobo", queued: 6, started: 5 },
+					...[1, 1, 1, 1].map((queued) => ({ label: "hobo", queued })),
+				],
+			},
+		];
+		const open = facts(fullQueue, { slip: slipText("fleet-open") });
+		expect((await open.source.facts(fleetRequest(), NOW)).fleet?.taking).toBe(
+			false,
+		);
+		const busy = facts(fullQueue, { slip: slipText("fleet-busy") });
+		expect((await busy.source.facts(fleetRequest(), NOW)).fleet?.taking).toBe(
+			true,
+		);
+		const none = facts(fullQueue);
+		expect((await none.source.facts(fleetRequest(), NOW)).fleet?.taking).toBe(
+			false,
+		);
+	});
+
 	it("enables the fleet on a pickup alone and refuses it on a long wait", async () => {
 		const taking = facts([
 			{ id: 10, created: 6, jobs: [{ label: "hobo", queued: 6, started: 5 }] },
@@ -372,6 +397,22 @@ describe("R05: a busy runner is waited on, and a cancelled job frees it", () => 
 		expect(outputs(result).get("runner")).toBe("my-mac");
 	});
 
+	it("does not take a job held by a concurrency group as waiting for the machine", async () => {
+		const { source } = facts([
+			{
+				id: 10,
+				created: 6,
+				jobs: [
+					{ label: "my-mac", queued: 6, started: 5 },
+					{ label: "my-mac", queued: 1, status: "pending" },
+				],
+			},
+		]);
+		const result = await answer(ORDER, { machine: "my-mac" }, source);
+		expect(outputs(result).get("outcome")).toBe("routed");
+		expect(outputs(result).get("runner")).toBe("my-mac");
+	});
+
 	it("waits on a full fleet the same way", async () => {
 		const { source } = facts([
 			{
@@ -425,6 +466,19 @@ describe("R09: a hosted runner type that misses three jobs in thirty minutes", (
 		expect(
 			(await spread.source.facts(testRouteRequest(REPO, OWN_RUN), NOW))
 				.unhealthy.size,
+		).toBe(0);
+	});
+
+	it("is not tripped by jobs held by a concurrency group", async () => {
+		const run = missed([14, 13, 12]);
+		const { source } = facts([
+			{
+				...run,
+				jobs: run.jobs.map((job) => ({ ...job, status: "pending" })),
+			},
+		]);
+		expect(
+			(await source.facts(testRouteRequest(REPO, OWN_RUN), NOW)).unhealthy.size,
 		).toBe(0);
 	});
 
@@ -507,7 +561,7 @@ describe("reads stay inside their budget", () => {
 });
 
 describe("a recorded job list", () => {
-	it("reads the waiting fleet probe as a fleet not taking jobs", async () => {
+	it("reads the held fleet probe as a fleet not taking jobs", async () => {
 		const recorded = JSON.parse(
 			readFileSync(
 				new URL("./fixtures/relay-job/recorded-queue.json", import.meta.url),

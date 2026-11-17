@@ -7,9 +7,11 @@
  *
  * - The fleet serves the repository when a usable routing slip routes some
  *   class to it, or a runner was seen taking a job for its label. It takes
- *   this job when the slip says it is open for this run's class, or the queue
- *   shows it taking jobs. It isolates public and fork jobs when the slip
- *   sends forks to it.
+ *   this job when the slip says it is open for this run's class and the
+ *   queue does not show it refusing jobs, or the queue shows it taking jobs
+ *   (with a busy slip, a full young queue alone does not refuse), as the route
+ *   job confirms a slip. It isolates public and fork jobs when the slip sends
+ *   forks to it.
  * - Each machine label the relay names is one machine. It is online when a
  *   runner took a job for that label in the last fifteen minutes, and full
  *   while a job is waiting for it.
@@ -65,6 +67,7 @@ import {
 	queueEvidence,
 	queueJobsOf,
 	queueRunsOf,
+	refusingJobs,
 	runsJustAhead,
 	runsToRead,
 	takingJobs,
@@ -147,10 +150,19 @@ function fleetFacts(
 		slip !== undefined &&
 		ROUTING_SLIP_CLASSES.some((name) => slip.classes[name].tier === "fleet");
 	const slipOpen = route?.tier === "fleet" && route.reason !== "fleet-busy";
+	const slipBusy = route?.tier === "fleet" && route.reason === "fleet-busy";
+	// As the route job confirms a fleet slip: an open slip vouches that a
+	// runner is there, but the queue can still contradict it; a busy slip is
+	// not contradicted by a full young queue alone.
+	const taking = slipOpen
+		? !refusingJobs(evidence, limits)
+		: takingJobs(
+				evidence,
+				slipBusy ? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER } : limits,
+			);
 	return {
 		enabled: slipNamesFleet || evidence.recentPickups > 0,
-		taking:
-			read.undecidedAhead === 0 && (slipOpen || takingJobs(evidence, limits)),
+		taking: read.undecidedAhead === 0 && taking,
 		isolated: slip?.classes.fork.tier === "fleet",
 	};
 }

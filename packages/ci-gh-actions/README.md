@@ -1657,17 +1657,20 @@ the runner-order walk needs:
   the oldest wait, the recent pickups and the slowest recent pickup;
   `takingJobs` and `refusingJobs` judge them. These are the rules this
   repository's route job runs (`scripts/ci/route-runner.mts`), written again
-  without importing the script, with one difference: a job GitHub reports as
-  `pending` with no runner counts as waiting, as GitHub was recorded reporting
-  a job that waited on a self-hosted label. `runsToRead` picks whose job lists
+  without importing the script. As there, only a `queued` job counts as
+  waiting: a `pending` one is held by a concurrency group, not waiting for a
+  runner, so it never makes a machine full or counts as a hosted-provider
+  miss. `runsToRead` picks whose job lists
   to read in the route job's order: probe runs, the slowest finished runs, the
   runs just ahead, then the rest.
 - [`src/relay-job/github-facts.ts`](src/relay-job/github-facts.ts):
   `GithubRouteFacts` is the `RouteFactsSource` for job mode. The fleet is on
   when a usable slip routes some class to it or its label was seen taking a
-  job. It takes the job when the slip says it is open for the run's class or
-  the queue shows it taking jobs, and it isolates public and fork jobs when
-  the slip sends forks to it. Each machine label the relay names is one
+  job. It takes the job when the slip says it is open for the run's class and
+  the queue does not show it refusing jobs, or when the queue shows it taking
+  jobs (with a busy slip, a full young queue alone does not refuse it), as the
+  route job confirms a slip. It isolates public and fork jobs when the slip
+  sends forks to it. Each machine label the relay names is one
   machine, online after a pickup in the last fifteen minutes and full while a
   job waits for it. A hosted label with three misses within thirty minutes in
   the job list, and no start since, is unhealthy by `@hobo/ci`'s
@@ -1678,6 +1681,6 @@ the runner-order walk needs:
   warning, never an error.
 
 The rules are tested against job lists recorded from GitHub
-(`test/fixtures/relay-job/recorded-queue.json`) and against the wave-0 fakes
-of `@hobo/ci`. No relay job uses them in a workflow yet, so the channel is
+(`test/fixtures/relay-job/recorded-queue.json`) and against the in-memory
+fakes in `@hobo/ci/runner-order/testing`. No relay job uses them in a workflow yet, so the channel is
 built, not proven.
