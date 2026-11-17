@@ -28,6 +28,7 @@ import {
 import type { ActorHost, RuntimeClock } from "./ports.js";
 import {
 	type ReplayCommand,
+	type ReplayEmitCommand,
 	type ReplaySleepCommand,
 	type ReplayStepCommand,
 	readReplayCommandTree,
@@ -216,7 +217,12 @@ export function createWorkflowEngine(
 			throw new Error(`workflow name differs from run.Started for ${runId}`);
 		}
 		const version = started.data.commandTreeVersion;
-		if (version !== undefined && version !== 1 && version !== 2) {
+		if (
+			version !== undefined &&
+			version !== 1 &&
+			version !== 2 &&
+			version !== 3
+		) {
 			throw new Error("unsupported workflow command tree version");
 		}
 		const terminal = [...journal]
@@ -226,8 +232,8 @@ export function createWorkflowEngine(
 					event.type === "run.Completed" || event.type === "run.Failed",
 			);
 		if (terminal) {
-			if (version === 1 || version === 2) {
-				readReplayCommandTree(journal, version === 2);
+			if (version === 1 || version === 2 || version === 3) {
+				readReplayCommandTree(journal, version >= 2, version === 3);
 			}
 			const data = cloneAsJson(terminal.data);
 			if (!isRecord(data)) {
@@ -255,7 +261,9 @@ export function createWorkflowEngine(
 		}
 		const runSeed = isJsonString(started.data.seed) ? started.data.seed : seed;
 		const rootCommands =
-			version === 2 ? readReplayCommandTree(journal, true) : undefined;
+			version === 2 || version === 3
+				? readReplayCommandTree(journal, true, version === 3)
+				: undefined;
 		type RecordedCommand =
 			| { kind: "step"; index: number; name: string }
 			| { kind: "sleep"; index: number; delayMs: number };
@@ -327,14 +335,21 @@ export function createWorkflowEngine(
 		// Stores may reject with any thrown value; preserve it for the caller.
 		type JournalAppendFailure = unknown;
 		let appendFailure: JournalAppendFailure;
-		function abortHistory(message: string): never {
+		function poison(error: JournalAppendFailure): never {
 			if (!appendFailed) {
 				appendFailed = true;
-				appendFailure = new WorkflowExecutionAborted(message);
+				appendFailure = error;
 			}
 			throw appendFailure;
 		}
-		function appendEvent<T>(type: string, data: T): Promise<number> {
+		function abortHistory(message: string): never {
+			return poison(new WorkflowExecutionAborted(message));
+		}
+		function appendEvent<T>(
+			type: string,
+			data: T,
+			extraMeta?: JsonBag,
+		): Promise<number> {
 			let snapshot:
 				| { ok: true; value: JsonValue }
 				| { ok: false; error: unknown };
@@ -353,7 +368,10 @@ export function createWorkflowEngine(
 					const payload = snapshot.value;
 					const nextSeq = seq + 1;
 					const envelope = nextEnvelope(streamId, nextSeq, type, payload, {
-						meta: { idempotencyKey: `${runId}:${type}:${nextSeq}` },
+						meta: {
+							idempotencyKey: `${runId}:${type}:${nextSeq}`,
+							...extraMeta,
+						},
 					});
 					await recordEffect(store, envelope, seq);
 					seq = nextSeq;
@@ -374,6 +392,19 @@ export function createWorkflowEngine(
 
 		let stepIndex = rootCommands ? stepNames.size : 0;
 		let sleepIndex = rootCommands ? recordedSleeps : 0;
+		function countEmits(records: ReplayCommand[]): number {
+			return records.reduce(
+				(total, record) =>
+					total +
+					(record.kind === "emit"
+						? 1
+						: record.kind === "step"
+							? countEmits(record.children)
+							: 0),
+				0,
+			);
+		}
+		let emitIndex = rootCommands ? countEmits(rootCommands) : 0;
 		type CommandScope = {
 			index: number | null;
 			parent: CommandScope | null;
@@ -446,6 +477,39 @@ export function createWorkflowEngine(
 				parent: scope.index,
 				deadlineMs: undefined,
 				completed: false,
+			};
+			scope.commands.push(next);
+			scope.cursor += 1;
+			return next;
+		}
+		function nextTreeEmit(
+			scope: CommandScope,
+			type: string,
+			data: JsonValue,
+		): ReplayEmitCommand {
+			if (!scope.commands)
+				return abortHistory("workflow event command scope is missing");
+			const previous = scope.commands[scope.cursor];
+			if (previous) {
+				if (
+					previous.kind !== "emit" ||
+					previous.type !== type ||
+					!isDeepStrictEqual(previous.data, data)
+				) {
+					abortHistory(
+						`workflow command history diverged at index ${scope.cursor}`,
+					);
+				}
+				scope.cursor += 1;
+				return previous;
+			}
+			const next: ReplayEmitCommand = {
+				kind: "emit",
+				index: emitIndex++,
+				parent: scope.index,
+				type,
+				data,
+				seq: undefined,
 			};
 			scope.commands.push(next);
 			scope.cursor += 1;
@@ -737,13 +801,30 @@ export function createWorkflowEngine(
 				});
 			},
 			async emit(type, data) {
-				return command(async () => {
+				return command(async (scope) => {
 					if (type.startsWith("run.")) {
 						throw new TypeError(
 							"workflow event type uses the reserved run. namespace",
 						);
 					}
-					return appendEvent(type, data ?? null);
+					if (version !== 3) return appendEvent(type, data ?? null);
+					let snapshot: JsonValue;
+					try {
+						snapshot = cloneAsJson(data ?? null);
+					} catch (error) {
+						return poison(error);
+					}
+					const event = nextTreeEmit(scope, type, snapshot);
+					if (event.seq !== undefined) return event.seq;
+					const seq = await appendEvent(type, snapshot, {
+						workflowEmit: {
+							index: event.index,
+							parentStepIndex: scope.index,
+							nullPayload: snapshot === null,
+						},
+					});
+					event.seq = seq;
+					return seq;
 				});
 			},
 			now: () => deterministic.now(),
@@ -864,7 +945,7 @@ export function createWorkflowEngine(
 					seed,
 					args,
 					workflowName: def.name,
-					commandTreeVersion: 2,
+					commandTreeVersion: 3,
 				}),
 			);
 			await recordEffect(store, started, 0);
@@ -893,7 +974,8 @@ export function createWorkflowEngine(
 							sleep: async (durationMs: number) => {
 								await rctx.sleep(durationMs);
 							},
-							emit: async () => 0,
+							emit: (type, data) =>
+								rctx.emit?.(type, data) ?? Promise.resolve(0),
 							now: () => rctx.now(),
 							random: (label) => rctx.random(label),
 							token: tokenBroker,

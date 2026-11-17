@@ -62,9 +62,38 @@ when present; older failure records without a step cannot reconstruct that
 detail.
 
 Application `ctx.emit` event types cannot begin with `run.`; those names belong
-to the workflow engine. The journal and its writer are trusted: records written
-by older versions or by another writer cannot be authenticated retroactively.
-Legacy unversioned journals retain their previous resume checks.
+to the workflow engine. New journals include command identity in each emitted
+event's metadata. Resume and parent retries reuse a committed event and return
+its original sequence, including when the write response was lost. Changed
+event type, payload, or order aborts the execution. The event store must
+preserve this metadata and provide atomic expected-sequence writes. SQLite
+normalizes a null event payload to `{}`; the metadata preserves the original
+command value for recovery. Older journals do not identify emitted commands,
+so an event can be repeated when they resume.
+
+The journal and its writer are trusted: records written by older versions or by
+another writer cannot be authenticated retroactively. Legacy unversioned
+journals retain their previous resume checks.
+
+The event-recovery model explores five distinct states. Its projection hides one
+internal transition that does not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Event not yet recorded
+  s1: Stopped before event commit
+  s2: Event recorded
+  s3: Event committed, response lost
+  s4: Original event sequence returned
+  [*] --> s0
+  s0 --> s1: host stops or write response lost before commit
+  s0 --> s2: write event or lose response
+  s0 --> s3: write event or lose response
+  s1 --> s0: resume and read journal
+  s2 --> s3: host stops
+  s2 --> s4: return recorded sequence
+  s3 --> s2: resume and read journal
+```
 
 The journal-authority model explores 10 distinct states. Its projection hides
 five internal transitions that do not change the displayed state.
@@ -97,8 +126,8 @@ Retries of a parent reuse completed child commands. Replay can use a completed
 parent when nested steps have outcomes and nested sleeps have completion facts;
 it refuses children that were unfinished when the parent ended. Older journals
 may lack parent information or sleep completion facts and retain the flat
-resume path. Application `ctx.emit` calls are not memoized and can be repeated
-on resume; use an idempotent consumer when repetition matters.
+resume path. Version-three histories also include `ctx.emit` commands in each
+parent's ordered history.
 
 Await `ctx.step`, `ctx.sleep`, and `ctx.emit` before returning from
 their parent. If a parent finishes with one of these commands still pending,
