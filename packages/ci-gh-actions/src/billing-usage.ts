@@ -68,7 +68,20 @@ const usageItem = z.object({
 const usageReport = z.object({ usageItems: z.array(usageItem) });
 const accountPlan = z.object({ plan: z.object({ name: z.string() }) });
 
-/** Linux minutes of Actions compute the usage items record. */
+/**
+ * Linux minutes of Actions compute the usage items record, from the gross
+ * amount.
+ *
+ * Known overcount: the gross amount includes public-repository usage, which
+ * GitHub does not charge against the plan's included compute. It cannot be
+ * told apart here: a usage item carries no repository visibility, and the
+ * included allowance is reported as a discount just like public-repository
+ * usage, so gross minus discount would hide exactly the usage this limit
+ * measures. An owner with heavy public-repository CI therefore reads closer
+ * to its limit than it is, and the `github` step is passed over sooner. The
+ * fix is to filter items by repository visibility, which needs a repository
+ * read per item and is not done yet.
+ */
 export function actionsMinutesUsed(
 	items: readonly z.infer<typeof usageItem>[],
 ): number {

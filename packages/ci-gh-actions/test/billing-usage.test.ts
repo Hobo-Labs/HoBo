@@ -152,6 +152,21 @@ describe("included compute per plan", () => {
 			]),
 		).toBeCloseTo(13, 10);
 	});
+
+	it("counts public-repository usage too (a known overcount)", () => {
+		// GitHub discounts it in full, but it discounts the included allowance too:
+		// the item alone cannot tell them apart, so the gross amount counts.
+		expect(
+			actionsMinutesUsed([
+				{
+					product: "actions",
+					unitType: "Minutes",
+					quantity: 100,
+					grossAmount: 0.6,
+				},
+			]),
+		).toBeCloseTo(100, 10);
+	});
 });
 
 describe("GithubMinutesReader (R07)", () => {
