@@ -51,6 +51,20 @@ describe("budget signal replay identity", () => {
 		);
 	});
 
+	it("does not let an identical record hide another conflicting record", () => {
+		const facts = [usage(120)];
+		const first = foldBudgetSignals(facts, policy).signals[0];
+		if (!first) throw new Error("fixture signal missing");
+		const corrupt = { ...first, data: { ...first.data, netSpentUsd: 0 } };
+		for (const entries of [
+			[first, corrupt],
+			[corrupt, first],
+		])
+			expect(() => foldBudgetSignals([...facts, ...entries], policy)).toThrow(
+				/signal.*conflict/iu,
+			);
+	});
+
 	it("refuses same-key changes to the signal kind, threshold or cycle", () => {
 		const facts = [usage(120)];
 		const first = foldBudgetSignals(facts, policy).signals[0];

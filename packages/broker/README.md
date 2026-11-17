@@ -156,8 +156,35 @@ idempotency key requires journal reconciliation. Explicitly foreign facts are
 ignored, but missing scope or invalid amounts on relevant financial facts now
 stop the fold; reconcile older unscoped or incomplete records before upgrade.
 The journal and its evidence are trusted, and replay alone cannot authenticate
-an otherwise matching signal. Signal threshold arithmetic still rounds to nine
+an otherwise matching signal. A concurrent append can occupy a key after the
+read; callers must inspect deduplicated append results and reconcile mismatches. Signal threshold arithmetic still rounds to nine
 decimal places and needs separate review for sub-nanodollar amounts.
+
+The [budget signal replay skill](../../.agents/skills/verify-budget-signal-replay/SKILL.md)
+checks 54 model states. This projection hides 24 transitions between states
+with the same label. It assumes the target stream does not change between
+replay and append.
+
+```mermaid
+stateDiagram-v2
+  s0: Journal contains a conflicting signal or key
+  s1: Matching signal already recorded
+  s2: No matching signal recorded
+  s3: Financial facts are incomplete
+  s4: Replay refused for reconciliation
+  s5: Matching signal suppressed
+  s6: Signal ready to append
+  s7: Signal appended
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  s0 --> s4: require reconciliation
+  s1 --> s5: reuse recorded signal
+  s2 --> s6: prepare signal
+  s3 --> s4: require reconciliation
+  s6 --> s7: append signal
+```
 
 Zero USD budget or per-resolution cap means zero, never unlimited. Unlimited
 preflight behavior requires `budgetUnlimited` or `spendCapUnlimited` explicitly.
