@@ -95,7 +95,7 @@ claimed.
 
 The [pricing credit-order skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks the equal-priority credit flow against real code, a bounded TLA+ model,
-and an abstract balance proof. The model explores 16 states and hides four
+and an abstract balance proof. The model explores 24 states and hides six
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -109,6 +109,29 @@ stateDiagram-v2
   s0 --> s1: rate on Swedish host or rate on English host
   s1 --> s2: rate on English host or rate on Swedish host
   s1 --> s3: rate on English host or rate on Swedish host
+```
+
+## UTC verification
+
+The [pricing time skill](../../.agents/skills/verify-pricing-time/SKILL.md)
+checks UTC validity, evidence coverage and time ordering. Its model explores
+256 states and hides 64 same-state transitions. `parseUtc` returns milliseconds;
+use `compareUtcExact` when fractional ordering matters.
+
+```mermaid
+stateDiagram-v2
+  s0: Inputs loaded
+  s1: Expiry ordered
+  s2: Evidence checked
+  s3: Exact checks complete
+  s4: Legacy checks complete
+  [*] --> s0
+  s0 --> s1: order credit expiry
+  s0 --> s2: check evidence interval
+  s1 --> s3: check evidence interval
+  s1 --> s4: check evidence interval
+  s2 --> s3: order credit expiry
+  s2 --> s4: order credit expiry
 ```
 
 ## Architecture boundaries
