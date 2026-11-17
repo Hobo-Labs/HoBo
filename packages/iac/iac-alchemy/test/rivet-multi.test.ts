@@ -241,6 +241,18 @@ describe("Rivet multiple pool mapping", () => {
 		expect(observed).toBe(web.poolDigest);
 	});
 
+	it.each([
+		"poolDigest",
+		"isolationDigest",
+	] as const)("rejects a non-string %s even if it coerces to a valid digest", (field) => {
+		const web = app("web", "web", "1");
+		const source = { ...web };
+		Reflect.set(source, field, { toString: () => web[field] });
+		expect(() =>
+			createRivetMultiPoolPrimitiveMappers([source], () => true),
+		).toThrow("RIVET_POOL_UNVERIFIED");
+	});
+
 	it("rejects different pools that share one runner isolation domain", () => {
 		const web = app("web", "web", "1");
 		const api = app("api", "api", "2");

@@ -71,6 +71,8 @@ export function createRivetMultiPoolPrimitiveMappers<
 		const poolDigest = input.poolDigest;
 		const isolationDigest = input.isolationDigest;
 		if (
+			typeof poolDigest !== "string" ||
+			typeof isolationDigest !== "string" ||
 			!/^sha256:[a-f0-9]{64}$/u.test(poolDigest) ||
 			!/^sha256:[a-f0-9]{64}$/u.test(isolationDigest) ||
 			host === null ||
