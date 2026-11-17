@@ -21,7 +21,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | CI uncertain-runner capacity | [verify-ci-uncertain-capacity](../.agents/skills/verify-ci-uncertain-capacity/SKILL.md) | Uncertain slots retain capacity; confirmed recovery releases it once, under trusted teardown evidence. |
 | CI fleet effect delivery | [verify-ci-fleet-delivery](../.agents/skills/verify-ci-fleet-delivery/SKILL.md) | Fresh bounded delivery fences reject stale workers and ambiguous dispatch is not reissued. |
 | CI fleet start binding | [verify-ci-start-binding](../.agents/skills/verify-ci-start-binding/SKILL.md) | Transactional claims and retries preserve unique job/slot bindings, subject to trusted assignment evidence. |
-| CI runner correlation | [verify-ci-runner-correlation](../.agents/skills/verify-ci-runner-correlation/SKILL.md) | Executing jobs take priority over queued or finished matches within one observed run. |
+| CI runner correlation | [verify-ci-runner-correlation](../.agents/skills/verify-ci-runner-correlation/SKILL.md) | Executing jobs take priority across observed runs; failed lookups retain runners in fail-closed mode. |
 | CI shared-budget window | [verify-ci-budget-window](../.agents/skills/verify-ci-budget-window/SKILL.md) | Work duration is rechecked after durable reservations and claims; post-commit refusals keep their holds. |
 | CI budget routing | [verify-ci-budget-routing](../.agents/skills/verify-ci-budget-routing/SKILL.md) | Routing counts unobserved usage and conservatively aggregates provider-account observations. |
 | CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
