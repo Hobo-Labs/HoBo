@@ -36,6 +36,12 @@ export {
 } from "./execution.js";
 export * from "./fleet/index.js";
 export {
+	HOSTED_LIST_PRICES,
+	type HostedListPrice,
+	type HostedListRate,
+	hostedListRate,
+} from "./fleet/models.js";
+export {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,
 	type FleetMember,
@@ -141,6 +147,14 @@ export {
 	signMachineAdvert,
 	verifyMachineAdvert,
 } from "./runner-order/machine-registry.js";
+	billedMinutes,
+	type FinishedJobSource,
+	LedgerSpendReader,
+	type LedgerSpendReaderDeps,
+	listPriceOfJob,
+	monthStartMs,
+	type SpendLedger,
+} from "./runner-order/spend.js";
 export {
 	sandboxProxyOnlyUsageQuote,
 	sandboxReservationMicros,

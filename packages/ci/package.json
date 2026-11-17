@@ -69,6 +69,9 @@
     "./runner-order/journal-sqlite": {
       "types": "./dist/runner-order/journal-sqlite.d.ts",
       "default": "./dist/runner-order/journal-sqlite.js"
+    "./runner-order/provider-health-sqlite": {
+      "types": "./dist/runner-order/provider-health-sqlite.d.ts",
+      "default": "./dist/runner-order/provider-health-sqlite.js"
     },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
