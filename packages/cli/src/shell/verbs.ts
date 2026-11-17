@@ -378,6 +378,7 @@ Usage:
                                    Run jobs routed to this computer, each in a fresh container; Ctrl-C drains
   hobo ci status                  Inspect the relay connection
   hobo ci provider-health          Hosted runner types the relay stopped routing to; clear <provider> <label> lets one through
+  hobo ci activity                 Each relay job from the relay's journal: where it ran and why (--since, --runner, --outcome)
   hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
