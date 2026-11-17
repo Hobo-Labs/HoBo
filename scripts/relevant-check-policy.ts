@@ -42,7 +42,7 @@ export function workspaceFor(file: string) {
 	);
 	if (exp) return `src/draft/exp-proofs/${exp[1]}/${exp[2]}`;
 	const production = normalized.match(
-		/^(packages|examples)\/(?:(runtimes|providers|iac|build)\/)?([^/]+)\//u,
+		/^(packages|examples)\/(?:(adapters|connectors|packs|runtimes|providers|iac|build)\/)?([^/]+)\//u,
 	);
 	if (!production) return undefined;
 	return production[2]
@@ -57,12 +57,12 @@ function workspaceTestRelevant(file: string) {
 
 	const relative = normalized.slice(workspace.length + 1);
 	return (
-		/^(src|app|apps|test|tests|type-tests|features|contracts|simulation|scripts|data-models)\//u.test(
+		/^(src|app|apps|test|tests|type-tests|features|contracts|simulation|scripts|data-models|wit)\//u.test(
 			relative,
 		) ||
 		/^(package|tsconfig(?:\.[^.]+)?)\.json$/u.test(relative) ||
 		/^(pnpm-lock\.yaml|turbo\.json)$/u.test(relative) ||
-		/\.(?:proto|cue|pact\.json)$/u.test(relative)
+		/\.(?:proto|cue|wit|pact\.json)$/u.test(relative)
 	);
 }
 
