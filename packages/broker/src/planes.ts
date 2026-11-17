@@ -161,11 +161,11 @@ export const DELIVERY_FAILURES = Object.freeze({
 	},
 	"delivery-refused": {
 		remediation:
-			"CD refused the promotion; the reasons name the gate, window, lineage or policy that refused it. Resolve those and deliver again; the request is idempotent per receipt.",
+			"CD refused the promotion; inspect the reasons and reconcile the delivery attempt before authorizing another one.",
 	},
 	"delivery-transport-failed": {
 		remediation:
-			"The CD control plane could not be reached. Check the CD service health and retry; nothing was applied.",
+			"The promotion may have been accepted before the response was lost. Reconcile its status with CD before authorizing another attempt.",
 	},
 } as const);
 

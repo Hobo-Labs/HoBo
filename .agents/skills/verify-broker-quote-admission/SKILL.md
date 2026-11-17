@@ -7,7 +7,7 @@ description: Verify the general broker's quote-backed admission, current evidenc
 
 **Properties:** In the checked quote-backed path, the policy gate and a newly confirmed hold receive the attested conservative liability for the selected work. The broker refuses untrusted or stale quotes, changes to the selected environment or catalog, and missing hold confirmation. It rechecks the quote after policy and after billing. The receipt carries the quote hash, work-binding digest and amount, and a configured signature covers them. Raw estimates require explicit host trust.
 
-**Review baseline:** commit `52fc736200906e09c7e1493d747e41edf83d1496`. PASS for the generated tests, bounded model and symbolic obligations below.
+**Review baseline:** commit `3f0140e6b8fc1b1aeb4fe4b0b73368b16a1869e8`. PASS for the generated tests, bounded model and symbolic obligations below.
 
 ## Covered code
 
@@ -33,7 +33,7 @@ TLC explores 108 states. The chart has seven states and nine arrows and hides 14
 
 Z3 checks the final guards over arbitrary modeled nonnegative exact-real values: the gate and hold cover the bound, the bound covers the quoted bill, and it fits the cap and budget, under the trusted evidence predicates. A satisfying witness rules out vacuity; removing each of six guards produces a counterexample. This abstraction does not prove IEEE rounding or source integrity; those are checked separately by `verify-broker-quote-provenance`.
 
-The default billing plane is process-local and loses holds on restart. A custom plane's confirmation is trusted, and a newly created hold may remain if the plane lacks or fails release. Host attestation must establish source, work binding, current evidence and a conservative bound. Signatures are optional and HTTP delivery does not authenticate the receipt or enforce its signature. The local-host authority excludes infrastructure and third-party charges. Guest requests fail closed. Yard-first hosting has its own path and is not covered here.
+The default billing plane is process-local and loses holds on restart. A custom plane's confirmation is trusted, and a newly created hold may remain if the plane lacks or fails release. Host attestation must establish source, work binding, current evidence and a conservative bound. Signatures are optional. HTTP delivery now requires a matching receipt issued by the same broker instance, but it does not authenticate the caller or enforce a signature; see `verify-broker-delivery-claim`. The local-host authority excludes infrastructure and third-party charges. Guest requests fail closed. Yard-first hosting has its own path and is not covered here.
 
 For implementation mutation, copy `packages/broker` to a scratch package with its `node_modules` linked, set `BROKER_ADMISSION_VERIFY_PACKAGE_ROOT` to that package, and remove the final quote recheck or restore the old broker. The real-code test must fail. Restore the source and rerun the skill.
 
