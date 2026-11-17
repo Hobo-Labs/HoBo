@@ -193,12 +193,17 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 		claimExecution(input) {
 			return transaction((authority) => {
 				authority.read(now());
-				return authority.claimExecution(input);
+				return authority.claimExecution({ ...input, now: now() });
 			});
 		},
 		reserve(input) {
 			return transaction((authority) =>
 				authority.reserve({ ...input, now: now() }),
+			);
+		},
+		reserveUnbounded(input) {
+			return transaction((authority) =>
+				authority.reserveUnbounded({ ...input, now: now() }),
 			);
 		},
 		settle(id, actualMicros, evidence) {

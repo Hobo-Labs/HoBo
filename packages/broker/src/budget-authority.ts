@@ -14,6 +14,8 @@ import {
 	type BudgetSettlementEvidence as GeneratedSettlementEvidence,
 	type HostingQuote,
 	HostingQuoteSchema,
+	type IacUnpricedPolicyProof,
+	IacUnpricedPolicyProofSchema,
 } from "./_generated/yard_placement_pb.js";
 import {
 	type BudgetFenceGuardRequest,
@@ -40,6 +42,7 @@ export {
 	HostingPolicyProofSchema,
 	HostingQuoteComponentSchema,
 	HostingQuoteSchema,
+	IacUnpricedPolicyProofSchema,
 	ProviderAccountExposureSchema,
 } from "./_generated/yard_placement_pb.js";
 export type {
@@ -48,6 +51,7 @@ export type {
 	BudgetLedgerSnapshot,
 	BudgetReservation,
 	HostingQuote,
+	IacUnpricedPolicyProof,
 };
 export type BudgetSettlementEvidence = Pick<
 	GeneratedSettlementEvidence,
@@ -65,6 +69,9 @@ export type BudgetSettlementEvidence = Pick<
 
 export type BudgetAdmissionDeniedCode =
 	| "budget.exhausted"
+	| "budget.unbounded-exposure"
+	| "budget.bounded-exposure"
+	| "budget.exposure-limit"
 	| "provider.exhausted"
 	| "entitlement.exhausted"
 	| "policy.denied";
@@ -94,6 +101,59 @@ export function budgetMicros(value: number): number {
 function add(...values: number[]): number {
 	return budgetMicros(
 		values.reduce((sum, value) => sum + budgetMicros(value), 0),
+	);
+}
+
+function boundedName(value: string, limit = 200): boolean {
+	return (
+		value.length > 0 &&
+		value.length <= limit &&
+		value.trim() === value &&
+		!/[\p{Cc}]/u.test(value)
+	);
+}
+
+function unboundedFingerprint(input: {
+	requestDigest: string;
+	inventoryHash: string;
+	policyProof: IacUnpricedPolicyProof;
+	identity: BudgetIdentity;
+	providerAccountIds: readonly string[];
+}): string {
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				requestDigest: input.requestDigest,
+				inventoryHash: input.inventoryHash,
+				policyProof: toJsonString(
+					IacUnpricedPolicyProofSchema,
+					input.policyProof,
+				),
+				identity: input.identity,
+				providerAccountIds: [...input.providerAccountIds].sort(),
+			}),
+		)
+		.digest("hex");
+}
+
+function validUnpricedProof(
+	proof: IacUnpricedPolicyProof,
+	identity: BudgetIdentity,
+	requestDigest: string,
+	inventoryHash: string,
+): boolean {
+	return (
+		proof.requestDigest === requestDigest &&
+		proof.inventoryHash === inventoryHash &&
+		proof.identity !== undefined &&
+		budgetIdentityKey(proof.identity) === budgetIdentityKey(identity) &&
+		(proof.effect === "allow" || proof.effect === "allow-degraded") &&
+		proof.obligationsSatisfied &&
+		Number.isFinite(Date.parse(proof.observedAt)) &&
+		Number.isFinite(Date.parse(proof.validUntil)) &&
+		Date.parse(proof.observedAt) < Date.parse(proof.validUntil) &&
+		boundedName(proof.policyHash) &&
+		boundedName(proof.evidenceRef)
 	);
 }
 
@@ -148,6 +208,8 @@ export function validateBudgetSnapshot(
 		snapshot.seq >= 4294967295
 	)
 		throw new TypeError("invalid budget sequence");
+	if (snapshot.unboundedExposureCount > 256)
+		throw new TypeError("too many unbounded exposures");
 	if (
 		!Number.isFinite(Date.parse(now)) ||
 		!Number.isFinite(Date.parse(snapshot.observedAt)) ||
@@ -227,6 +289,8 @@ export interface BudgetAdmissionAuthority {
 		executionDigest: string;
 		/** Head used to revalidate policy and exposure immediately before execution. */
 		expectedSeq?: number;
+		/** Trusted clock. Required when the reservation has unpriced policy proof. */
+		now?: string;
 	}): BudgetReservation;
 	reserve(input: {
 		reservationId: string;
@@ -235,6 +299,18 @@ export interface BudgetAdmissionAuthority {
 		identity: BudgetIdentity;
 		/** Installed and authenticated at initial admission; never added later. */
 		fenceSettlementGuard?: BudgetFenceGuardRequest;
+		expectedSeq: number;
+		now: string;
+	}): BudgetReservation;
+	/** Journal unknown liability only after an explicit host policy decision.
+	 * The marker is not a monetary bound. It blocks all bounded admissions. */
+	reserveUnbounded(input: {
+		reservationId: string;
+		requestDigest: string;
+		inventoryHash: string;
+		policyProof: IacUnpricedPolicyProof;
+		identity: BudgetIdentity;
+		providerAccountIds: readonly string[];
 		expectedSeq: number;
 		now: string;
 	}): BudgetReservation;
@@ -286,6 +362,15 @@ export function createBudgetAdmissionAuthority(options: {
 				)
 				.map((row) => [row.providerAccountId, row.limitMicros]),
 		]);
+	const financialScopes = (snapshot: BudgetLedgerSnapshot) =>
+		JSON.stringify({
+			accounts: snapshot.providerAccounts
+				.map((row) => row.providerAccountId)
+				.sort(),
+			entitlements: snapshot.entitlements
+				.map((row) => [row.bucketId, row.unit, row.periodId].join("\u0000"))
+				.sort(),
+		});
 	const policyBindings = new Map<string, string>();
 	// Derived from the complete journal, including snapshots that no longer expose
 	// a bucket. Dropping a projection row must never erase its financial history.
@@ -359,6 +444,7 @@ export function createBudgetAdmissionAuthority(options: {
 		);
 	if (
 		current.reservedMicros !== 0 ||
+		current.unboundedExposureCount !== 0 ||
 		current.providerAccounts.some((row) => row.reservedMicros !== 0) ||
 		current.entitlements.some((row) => row.reservedUnits !== 0)
 	)
@@ -398,7 +484,50 @@ export function createBudgetAdmissionAuthority(options: {
 			active().length !== 0
 		)
 			throw new Error("journal period reset discards outstanding commitments");
+		if (
+			unboundedCount() > 0 &&
+			financialScopes(event.snapshot) !== financialScopes(current)
+		)
+			throw new Error(
+				"journal changed financial scopes with unbounded exposure",
+			);
 		for (const old of reservations.values()) {
+			if (old.unboundedExposure) {
+				const next = event.reservations.find(
+					(row) => row.reservationId === old.reservationId,
+				);
+				if (!next) {
+					if (
+						event.snapshot.identity.periodId === current.identity.periodId ||
+						old.status === "held" ||
+						old.status === "uncertain"
+					)
+						throw new Error("journal removed unbounded exposure");
+					continue;
+				}
+				if (
+					!next.unboundedExposure ||
+					next.requestDigest !== old.requestDigest ||
+					next.quoteId !== old.quoteId ||
+					next.quoteDigest !== old.quoteDigest ||
+					next.financialPlanHash !== old.financialPlanHash ||
+					JSON.stringify(next.unpricedPolicyProof) !==
+						JSON.stringify(old.unpricedPolicyProof) ||
+					JSON.stringify(next.identity) !== JSON.stringify(old.identity) ||
+					JSON.stringify(next.providerAccounts) !==
+						JSON.stringify(old.providerAccounts) ||
+					JSON.stringify(next.entitlementClaims) !==
+						JSON.stringify(old.entitlementClaims) ||
+					(old.executionDigest &&
+						old.executionDigest !== next.executionDigest) ||
+					((old.status === "settled" || old.status === "released") &&
+						(old.status !== next.status ||
+							old.actualMicros !== next.actualMicros ||
+							old.usageEvidenceRef !== next.usageEvidenceRef ||
+							old.sourceStoppedEvidenceRef !== next.sourceStoppedEvidenceRef))
+				)
+					throw new Error("journal changed an immutable unbounded reservation");
+			}
 			if (!old.fenceSettlementGuard) continue;
 			const next = event.reservations.find(
 				(row) => row.reservationId === old.reservationId,
@@ -474,6 +603,40 @@ export function createBudgetAdmissionAuthority(options: {
 			budgetMicros(row.reservedMicros);
 			budgetMicros(row.actualMicros);
 			const old = reservations.get(row.reservationId);
+			if (
+				row.unboundedExposure &&
+				(row.reservedMicros !== 0 ||
+					row.fenceSettlementGuard !== undefined ||
+					row.quoteId !== "" ||
+					row.unpricedPolicyProof === undefined ||
+					!validUnpricedProof(
+						row.unpricedPolicyProof,
+						row.identity,
+						row.requestDigest,
+						row.financialPlanHash,
+					) ||
+					row.quoteDigest !==
+						unboundedFingerprint({
+							requestDigest: row.requestDigest,
+							inventoryHash: row.financialPlanHash,
+							policyProof: row.unpricedPolicyProof,
+							identity: row.identity,
+							providerAccountIds: row.providerAccounts.map(
+								(account) => account.providerAccountId,
+							),
+						}) ||
+					row.providerAccounts.some(
+						(account) => account.liabilityMicros !== 0,
+					) ||
+					row.entitlementClaims.some((claim) => claim.units !== 0) ||
+					(!old &&
+						(event.type !== "budget.UnboundedExposureHeld" ||
+							row.status !== "held" ||
+							row.executionDigest)) ||
+					(old !== undefined && !old.unboundedExposure) ||
+					(row.status === "released" && row.executionDigest))
+			)
+				throw new Error("invalid unbounded reservation history");
 			if (row.fenceSettlementGuard) {
 				if (
 					(!old &&
@@ -539,6 +702,9 @@ export function createBudgetAdmissionAuthority(options: {
 			(row) => row.status === "held" || row.status === "uncertain",
 		);
 	}
+	function unboundedCount(rows = reservations): number {
+		return active(rows).filter((row) => row.unboundedExposure).length;
+	}
 	function updateDimensions(
 		snapshot: BudgetLedgerSnapshot,
 		rows: Map<string, BudgetReservation>,
@@ -582,7 +748,11 @@ export function createBudgetAdmissionAuthority(options: {
 		}
 	}
 	function assertProjection(): void {
-		if (held() !== current.reservedMicros)
+		if (
+			held() !== current.reservedMicros ||
+			unboundedCount() !== current.unboundedExposureCount ||
+			(unboundedCount() > 0 && active().some((row) => !row.unboundedExposure))
+		)
 			throw new Error("budget journal exposure mismatch");
 		const projected = clone(BudgetLedgerSnapshotSchema, current);
 		updateDimensions(projected, reservations);
@@ -617,6 +787,7 @@ export function createBudgetAdmissionAuthority(options: {
 			throw new Error("policy revision reused for different financial limits");
 		next.seq = expectedSeq + 1;
 		next.reservedMicros = held(rows);
+		next.unboundedExposureCount = unboundedCount(rows);
 		updateDimensions(next, rows);
 		const event = create(BudgetAuthorityEventSchema, {
 			type,
@@ -748,9 +919,11 @@ export function createBudgetAdmissionAuthority(options: {
 		}
 		rows.set(id, updated);
 		save(
-			actualMicros !== undefined && actualMicros > existing.reservedMicros
-				? "budget.OverrunRecorded"
-				: `budget.Reservation${status.charAt(0).toUpperCase()}${status.slice(1)}`,
+			existing.unboundedExposure && actualMicros !== undefined
+				? "budget.UnboundedUsageRecorded"
+				: actualMicros !== undefined && actualMicros > existing.reservedMicros
+					? "budget.OverrunRecorded"
+					: `budget.Reservation${status.charAt(0).toUpperCase()}${status.slice(1)}`,
 			next,
 			rows,
 		);
@@ -779,6 +952,17 @@ export function createBudgetAdmissionAuthority(options: {
 				throw new Error(
 					"execution adoption requires the exact live financial reservation",
 				);
+			if (
+				previous.unboundedExposure &&
+				(previous.unpricedPolicyProof === undefined ||
+					input.now === undefined ||
+					!Number.isFinite(Date.parse(input.now)) ||
+					Date.parse(previous.unpricedPolicyProof.observedAt) >
+						Date.parse(input.now) ||
+					Date.parse(previous.unpricedPolicyProof.validUntil) <=
+						Date.parse(input.now))
+			)
+				throw new Error("unpriced policy authorization is stale");
 			if (
 				previous.fenceSettlementGuard &&
 				previous.fenceSettlementGuard.executionDigest !== input.executionDigest
@@ -858,6 +1042,11 @@ export function createBudgetAdmissionAuthority(options: {
 					throw new Error("released reservation cannot authorize execution");
 				return clone(BudgetReservationSchema, previous);
 			}
+			if (unboundedCount() > 0)
+				throw new BudgetAdmissionDeniedError(
+					"budget.unbounded-exposure",
+					"bounded budget admission is unavailable while unbounded exposure is active",
+				);
 			if (
 				input.fenceSettlementGuard &&
 				(input.quote.yardId !== input.fenceSettlementGuard.destination.yardId ||
@@ -952,6 +1141,105 @@ export function createBudgetAdmissionAuthority(options: {
 			);
 			return clone(BudgetReservationSchema, reservation);
 		},
+		reserveUnbounded(input) {
+			validateBudgetSnapshot(current, input.now);
+			if (
+				!current.identity ||
+				!input.identity ||
+				budgetIdentityKey(input.identity) !==
+					budgetIdentityKey(current.identity)
+			)
+				throw new Error("budget identity or policy revision changed");
+			const digestPattern = /^sha256:[a-f0-9]{64}$/u;
+			const ids = [...input.providerAccountIds].sort();
+			const proof = clone(IacUnpricedPolicyProofSchema, input.policyProof);
+			if (
+				!boundedName(input.reservationId, 204) ||
+				!digestPattern.test(input.requestDigest) ||
+				!digestPattern.test(input.inventoryHash) ||
+				!validUnpricedProof(
+					proof,
+					input.identity,
+					input.requestDigest,
+					input.inventoryHash,
+				) ||
+				Date.parse(proof.observedAt) > Date.parse(input.now) ||
+				Date.parse(proof.validUntil) <= Date.parse(input.now) ||
+				ids.length === 0 ||
+				ids.length > 256 ||
+				current.entitlements.length > 256 ||
+				new Set(ids).size !== ids.length ||
+				ids.some(
+					(id) =>
+						!boundedName(id) ||
+						!current.providerAccounts.some(
+							(account) => account.providerAccountId === id,
+						),
+				)
+			)
+				throw new Error(
+					"unbounded exposure requires a bounded, registered target scope",
+				);
+			const fingerprint = unboundedFingerprint({
+				requestDigest: input.requestDigest,
+				inventoryHash: input.inventoryHash,
+				policyProof: proof,
+				identity: input.identity,
+				providerAccountIds: ids,
+			});
+			const previous = reservations.get(input.reservationId);
+			if (previous) {
+				if (
+					!previous.unboundedExposure ||
+					previous.requestDigest !== input.requestDigest ||
+					previous.quoteDigest !== fingerprint ||
+					previous.status === "released"
+				)
+					throw new Error("unbounded reservation replay differs");
+				return clone(BudgetReservationSchema, previous);
+			}
+			if (current.seq !== input.expectedSeq)
+				throw new Error("budget sequence conflict");
+			if (active().some((row) => !row.unboundedExposure))
+				throw new BudgetAdmissionDeniedError(
+					"budget.bounded-exposure",
+					"unbounded admission would invalidate a bounded reservation",
+				);
+			if (unboundedCount() >= 256)
+				throw new BudgetAdmissionDeniedError(
+					"budget.exposure-limit",
+					"unbounded exposure limit reached",
+				);
+			const reservation = create(BudgetReservationSchema, {
+				reservationId: input.reservationId,
+				identity: input.identity,
+				requestDigest: input.requestDigest,
+				quoteId: "",
+				quoteDigest: fingerprint,
+				financialPlanHash: input.inventoryHash,
+				unboundedExposure: true,
+				unpricedPolicyProof: proof,
+				status: "held",
+				ledgerSeq: current.seq + 1,
+				providerAccounts: ids.map((providerAccountId) => ({
+					providerAccountId,
+					liabilityMicros: 0,
+				})),
+				entitlementClaims: current.entitlements.map((row) => ({
+					bucketId: row.bucketId,
+					unit: row.unit,
+					units: 0,
+				})),
+			});
+			const rows = new Map(reservations);
+			rows.set(input.reservationId, reservation);
+			save(
+				"budget.UnboundedExposureHeld",
+				clone(BudgetLedgerSnapshotSchema, current),
+				rows,
+			);
+			return clone(BudgetReservationSchema, reservation);
+		},
 		settle(id, actualMicros, evidence) {
 			if (!evidence?.usageEvidenceRef || !evidence.sourceStoppedEvidenceRef)
 				throw new Error(
@@ -986,6 +1274,13 @@ export function createBudgetAdmissionAuthority(options: {
 				current.identity.budgetId !== snapshot.identity.budgetId
 			)
 				throw new Error("authority cannot change budget ownership");
+			if (
+				unboundedCount() > 0 &&
+				financialScopes(snapshot) !== financialScopes(current)
+			)
+				throw new Error(
+					"financial scopes cannot change with unbounded exposure",
+				);
 			if (
 				snapshot.unresolvedMicros < current.unresolvedMicros &&
 				!evidence?.liabilityResolutionEvidenceRef

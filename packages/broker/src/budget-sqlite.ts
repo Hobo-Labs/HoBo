@@ -114,11 +114,16 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 		claimExecution(input) {
 			return transaction((port) => {
 				port.read(now());
-				return port.claimExecution(input);
+				return port.claimExecution({ ...input, now: now() });
 			});
 		},
 		reserve(input) {
 			return transaction((port) => port.reserve({ ...input, now: now() }));
+		},
+		reserveUnbounded(input) {
+			return transaction((port) =>
+				port.reserveUnbounded({ ...input, now: now() }),
+			);
 		},
 		settle(id, actualMicros, evidence) {
 			return transaction((port) => port.settle(id, actualMicros, evidence));

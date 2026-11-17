@@ -22,6 +22,7 @@ import "list"
 	unresolvedMicros?:        #Micros
 	recoveryReserveMicros?:   #Micros
 	externalCommittedMicros?: #Micros
+	unboundedExposureCount?: int & >=0 & <=256
 }
 #BudgetProviderAccount: {providerAccountId: string & !="", limitMicros: #Micros, spentMicros: #Micros, reservedMicros: #Micros, externalCommittedMicros?: #Micros}
 #BudgetEntitlement: {bucketId: string & !="", unit: string & !="", periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
@@ -49,7 +50,7 @@ import "list"
   reservationId: string & !=""
   identity: #BudgetIdentity
   requestDigest: string & !=""
-  quoteId: string & !=""
+  quoteId: string
   reservedMicros: #Micros
   status: "held" | "uncertain" | "settled" | "released"
   actualMicros: #Micros
@@ -63,9 +64,17 @@ import "list"
   executionDigest?: string
   financialPlanHash?: string
   fenceSettlementGuard?: #BudgetFenceSettlementGuard
+  unboundedExposure?: bool
+  unpricedPolicyProof?: #IacUnpricedPolicyProof
+  if unboundedExposure == _|_ {quoteId: string & !=""}
+  if unboundedExposure != _|_ {
+    if unboundedExposure == false {quoteId: string & !=""}
+    if unboundedExposure == true {quoteId: "", reservedMicros: 0, unpricedPolicyProof: #IacUnpricedPolicyProof}
+  }
 }
 #BudgetSettlementEvidence: {usageEvidenceRef: string & !="", sourceStoppedEvidenceRef: string & !="", providerAccounts?: [...#ProviderAccountExposure], entitlementClaims?: [...#EntitlementClaim], fenceOperationReceiptJson?: string, financeSignature?: string}
 #HostingPolicyProof: {requestDigest: string & !="", quoteId: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool}
+#IacUnpricedPolicyProof: {requestDigest: string & !="", inventoryHash: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool, observedAt: string & !="", validUntil: string & !=""}
 #BudgetAuthorityEvent: {type: string & !="", snapshot: #BudgetLedgerSnapshot, reservations: [...#BudgetReservation], reconciliationEvidenceRef?: string}
 
 #IacTargetLiabilityEvidence: {
@@ -89,7 +98,7 @@ import "list"
 	}
 }
 #IacBudgetDisclosure: {
-	evaluation:  "allowed" | "denied" | "unavailable"
+	evaluation:  "allowed" | "bypassed" | "denied" | "unavailable"
 	reservation: "not-created" | "held" | "uncertain" | "settled" | "released" | "unknown"
 	if evaluation == "denied" {reservation: "not-created"}
 }
@@ -107,11 +116,12 @@ import "list"
 	quote?:         #HostingQuote
 	reservation?:   #BudgetReservation
 	policyProof?:   #HostingPolicyProof
+	unpricedPolicyProof?: #IacUnpricedPolicyProof
 	if status == "denied" {
 		code: string & !=""
 		budget: {evaluation: "denied" | "unavailable", reservation: "not-created"}
 	}
-	if status == "admitted" {
+	if status == "admitted" && budget.evaluation == "allowed" {
 		budget: {evaluation: "allowed", reservation: "held"}
 		requestDigest: string & =~"^sha256:[a-f0-9]{64}$"
 		inventoryHash: string & =~"^sha256:[a-f0-9]{64}$"
@@ -141,9 +151,19 @@ import "list"
 			obligationsSatisfied: true
 		}
 	}
+	if status == "admitted" && budget.evaluation == "bypassed" {
+		budget: {reservation: "held"}
+		requestDigest: string & =~"^sha256:[a-f0-9]{64}$"
+		inventoryHash: string & =~"^sha256:[a-f0-9]{64}$"
+		_requestID: requestDigest
+		_inventoryID: inventoryHash
+		reservation: {status: "held", unboundedExposure: true, requestDigest: _requestID}
+		unpricedPolicyProof: {requestDigest: _requestID, inventoryHash: _inventoryID, identity: reservation.identity, effect: "allow" | "allow-degraded", obligationsSatisfied: true}
+	}
+	if status == "admitted" {budget: {evaluation: "allowed" | "bypassed"}}
 	if status == "replay" {
 		code: "EXECUTION_ALREADY_CLAIMED"
-		budget: {evaluation: "allowed", reservation: "held"}
+		budget: {evaluation: "allowed" | "bypassed", reservation: "held"}
 	}
 	if status == "uncertain" {
 		code: string & !=""

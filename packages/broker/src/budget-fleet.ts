@@ -202,12 +202,18 @@ export function createFleetBudgetAdmissionAuthority(options: {
 		claimExecution(input) {
 			return run((authority) => {
 				authority.read(now());
-				return authority.claimExecution(input);
+				return authority.claimExecution({ ...input, now: now() });
 			}, true);
 		},
 		reserve(input) {
 			return run(
 				(authority) => authority.reserve({ ...input, now: now() }),
+				true,
+			);
+		},
+		reserveUnbounded(input) {
+			return run(
+				(authority) => authority.reserveUnbounded({ ...input, now: now() }),
 				true,
 			);
 		},

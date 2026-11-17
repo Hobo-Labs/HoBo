@@ -104,6 +104,9 @@ message BudgetLedgerSnapshot {
   double recovery_reserve_micros = 11;
   // Commitments owned by another authority; excludes this journal's holds.
   double external_committed_micros = 12;
+  // Active admissions with unknown, unbounded liability. While nonzero the
+  // monetary counters are only known lower bounds and bounded admission stops.
+  uint32 unbounded_exposure_count = 13;
 }
 
 message BudgetProviderAccount {
@@ -225,6 +228,10 @@ message BudgetReservation {
   string financial_plan_hash = 16;
   // Field 17 is allocated by the shared subscope work.
   BudgetFenceSettlementGuard fence_settlement_guard = 18;
+  // A held/uncertain reservation with this marker represents unknown liability;
+  // reserved_micros and account amounts are not estimates or upper bounds.
+  bool unbounded_exposure = 19;
+  IacUnpricedPolicyProof unpriced_policy_proof = 20;
 }
 
 message BudgetAuthorityEvent {
@@ -242,6 +249,19 @@ message HostingPolicyProof {
   string effect = 5;
   string evidence_ref = 6;
   bool obligations_satisfied = 7;
+}
+
+// Policy explicitly authorizes execution without financial budget evaluation.
+message IacUnpricedPolicyProof {
+  string request_digest = 1;
+  string inventory_hash = 2;
+  BudgetIdentity identity = 3;
+  string policy_hash = 4;
+  string effect = 5;
+  string evidence_ref = 6;
+  bool obligations_satisfied = 7;
+  string observed_at = 8;
+  string valid_until = 9;
 }
 
 // A trusted host verifies this separately from developer-authored pricing.
@@ -278,4 +298,5 @@ message IacTargetAdmissionDecision {
   HostingQuote quote = 11;
   BudgetReservation reservation = 12;
   HostingPolicyProof policy_proof = 13;
+  IacUnpricedPolicyProof unpriced_policy_proof = 14;
 }
