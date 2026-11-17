@@ -290,6 +290,31 @@ default billing plane's holds are in memory; they are not shared or durable.
 HTTP delivery preserves receipt fields, but does not yet require an authenticated
 receipt or verify a signature before invoking the delivery plane.
 
+The [quote-backed admission skill](../../.agents/skills/verify-broker-quote-admission/SKILL.md)
+checks 108 states. This view hides 140 same-label steps, including evidence
+changes; it does not model delivery or guarantee freshness after the final check.
+
+```mermaid
+stateDiagram-v2
+  s0: Selected work awaits pricing
+  s1: Policy reviews the quoted liability
+  s2: Quote and policy checked
+  s3: Resolution refused
+  s4: Budget held#59; final check pending
+  s5: Evidence checked#59; receipt pending
+  s6: Resolution issued with pricing evidence
+  [*] --> s0
+  s0 --> s1: send liability to policy
+  s1 --> s2: recheck current evidence
+  s0 --> s3: refuse stale or unfunded work
+  s2 --> s3: refuse stale or unfunded work
+  s2 --> s4: create a hold
+  s1 --> s3: refuse stale or unfunded work
+  s4 --> s5: recheck the quote
+  s5 --> s6: issue the receipt
+  s4 --> s3: refuse stale or unfunded work
+```
+
 The [quote provenance skill](../../.agents/skills/verify-broker-quote-provenance/SKILL.md)
 checks 64 evidence states and 162 liability states. This projection hides 32
 same-label steps and treats the host attestation as a trusted predicate.
