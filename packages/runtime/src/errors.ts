@@ -1,9 +1,3 @@
-// Typed failures for the authoring surface. These mirror the `runtime-error`
-// variant in `hobo:runtime@0.1.0` (retryable / fatal / cancelled): workflow and
-// agent handlers throw these instead of log-and-continue, so replay and the
-// capability membrane observe a single, typed error channel.
-
-/** Base class for every authoring-surface error. */
 export class RuntimeAuthoringError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -11,12 +5,6 @@ export class RuntimeAuthoringError extends Error {
 	}
 }
 
-/**
- * Deny-by-default capability denial (`ctx` is scoped to declared capabilities,
- * sdk-api.md §Layer 4 / wasm-runtime-wit.md §Security substrate). Reaching for
- * an undeclared capability — an agent tool or a broker token that was never
- * granted — throws this, never a silent no-op.
- */
 export class CapabilityDeniedError extends RuntimeAuthoringError {
 	readonly code = "capability.denied" as const;
 	readonly capability: string;
@@ -32,7 +20,6 @@ export class CapabilityDeniedError extends RuntimeAuthoringError {
 	}
 }
 
-/** Lowers onto `runtime-error.fatal`: stop immediately, do not retry. */
 export class FatalError extends RuntimeAuthoringError {
 	readonly code = "fatal" as const;
 	constructor(message: string) {
@@ -41,7 +28,6 @@ export class FatalError extends RuntimeAuthoringError {
 	}
 }
 
-/** Lowers onto `runtime-error.retryable`: retry within the step budget. */
 export class RetryableError extends RuntimeAuthoringError {
 	readonly code = "retryable" as const;
 	readonly retries: number | undefined;
@@ -52,11 +38,6 @@ export class RetryableError extends RuntimeAuthoringError {
 	}
 }
 
-/**
- * A step whose retry budget is exhausted (or that threw `FatalError`). The
- * engine journals `run.StepFailed` + `run.Failed` and returns a failed handle;
- * it never re-throws for these — they are part of the durable record.
- */
 export class WorkflowFailure extends RuntimeAuthoringError {
 	readonly code = "workflow.failed" as const;
 	readonly step: string | undefined;

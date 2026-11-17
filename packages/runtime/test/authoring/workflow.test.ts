@@ -23,7 +23,6 @@ describe("durable workflow: journal, restart, replay", () => {
 					invocations.reserve += 1;
 					return { id: args.id, reserved: true };
 				});
-				// Host dies after the first step is durably journaled.
 				if (!crashed) {
 					crashed = true;
 					throw new Error("SIMULATED_HOST_CRASH");
@@ -45,12 +44,10 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		expect(invocations.reserve).toBe(1);
 
-		// A brand-new engine over the SAME durable store resumes the run.
 		const restarted = createWorkflowEngine({ store: engine.store });
 		const handle = await restarted.resume(checkout, "run-1", { id: "order-1" });
 
 		expect(handle.status).toBe("completed");
-		// reserve was journaled on attempt 1 — replayed from the log, not re-run.
 		expect(invocations.reserve).toBe(1);
 		expect(invocations.charge).toBe(1);
 		expect(invocations.confirm).toBe(1);
@@ -75,7 +72,6 @@ describe("durable workflow: journal, restart, replay", () => {
 		const handle = await engine.start(wf, { id: "order-2" });
 		expect(handle.status).toBe("completed");
 
-		// Feed the journal our engine wrote to the pre-existing replay engine.
 		const replay = await replayRun(
 			engine.store,
 			handle.runId,
@@ -101,7 +97,6 @@ describe("durable workflow: journal, restart, replay", () => {
 
 		const start = Date.now();
 		const handle = await engine.start(wf, { id: "order-3" });
-		// The durable timer is journaled, not a wall-clock wait.
 		expect(Date.now() - start).toBeLessThan(1000);
 
 		const journal = await engine.journal(handle.runId);
@@ -117,7 +112,6 @@ describe("durable workflow: journal, restart, replay", () => {
 		}
 		expect(data.delayMs).toBe(10_000);
 
-		// Two independent replays reproduce identical state + digest.
 		const first = await replayRun(
 			engine.store,
 			handle.runId,
