@@ -47,6 +47,7 @@ import {
 	type MachineWorkerEvent,
 	machinePlatform,
 	machineRunsOnLabel,
+	machineWorkerEventJson,
 	pinnedRunnerProgram,
 	registryAdvertSink,
 	runMachineSession,
@@ -350,7 +351,7 @@ async function connect(
 		sharing: parsed.sharing,
 		now: context.now,
 		emit: (event) => {
-			if (parsed.events) writeLine(JSON.stringify(event));
+			if (parsed.events) writeLine(machineWorkerEventJson(event));
 			else {
 				const line = eventLine(event);
 				if (line !== undefined) context.emitProgress(line);

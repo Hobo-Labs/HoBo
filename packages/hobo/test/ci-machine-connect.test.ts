@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { machineOnline } from "@hobo/ci";
 import { InMemoryMachineRegistry } from "@hobo/ci/runner-order/testing";
-import type {
-	JobExecutor,
-	MachineGithub,
-	MachineSession,
+import {
+	type JobExecutor,
+	type MachineGithub,
+	type MachineSession,
+	parseWorkerEvent,
 } from "@hobo/ci-gh-actions/machine-worker";
 import { createHoboCli } from "@hobo/cli";
 import { afterEach, describe, expect, it } from "vitest";
@@ -212,6 +213,11 @@ describe("hobo ci machine connect", () => {
 			"worker.draining",
 			"machine.disconnected",
 		]);
+		// Each worker line is a WorkerEvent record (machine_worker.proto).
+		const worker = lines.filter((line) => line.includes('"worker.'));
+		expect(worker.length).toBeGreaterThan(0);
+		for (const line of worker)
+			expect(parseWorkerEvent(line).type).toMatch(/^worker\./u);
 	});
 
 	it("pauses from the terminal and the registry keeps it", async () => {
