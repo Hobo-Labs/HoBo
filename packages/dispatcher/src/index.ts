@@ -42,4 +42,5 @@ export {
 	decideDispatchV2,
 } from "./dispatcher-v2.js";
 export * from "./iac-route.js";
+export * from "./iac-route-recovery.js";
 export * from "./iac-target-routing.js";
