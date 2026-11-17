@@ -237,6 +237,21 @@ describe("History", () => {
 		expect(html).toContain("octo/app #300 attempt 2");
 	});
 
+	it("says why a run attempt the address names is not opened", () => {
+		const shown = renderHistory({
+			nowMs: NOW,
+			runs: [run],
+			selected: undefined,
+			unfound: { repository: "octo/<other>", id: 9, attempt: 1 },
+		});
+		expect(shown).toContain(
+			'<h2 id="run-heading">octo/&lt;other&gt; #9 attempt 1</h2>',
+		);
+		expect(shown).toContain(
+			"This run attempt is not among the newest 50 stored runs of octo/&lt;other&gt;, so it cannot be opened here.",
+		);
+	});
+
 	it("shows jobs, step timings and the diagnosis of a failure", () => {
 		expect(html).toContain("<h3>unit tests</h3>");
 		expect(html).toContain("Run vitest");

@@ -7,7 +7,7 @@ relay's read API ([ADR-0183](../../docs/design/adr/runner-order.md)).
 | --- | --- | --- |
 | **Runners** | What needs attention first (offline, paused, full, running jobs on the host), then connected machines, adopted self-hosted runners and the HoBo fleet as the route journal saw it | `/machines`, `/routes` |
 | **Router** | The committed runner order with each step's limit and health, the recent decisions with every step passed over, and a what-if panel | `/runner-order`, `/routes`, `/machines` |
-| **History** | Stored runs; an opened run attempt shows its jobs, step timings and the diagnosis of each failed job | `/runs`, `/runs/{id}/{attempt}/jobs` |
+| **History** | Stored runs; an opened run attempt (looked up among its own repository's newest 50 runs, or a line saying it is not there) shows its jobs, step timings and the diagnosis of each failed job | `/runs`, `/runs/{id}/{attempt}/jobs` |
 | **Performance** | Times by workflow, by job and runner (each against `ubuntu-latest`), and by runner | `/job-times` |
 | **Signals** | The nine signals with their offenders, a breakdown by person, repository, workflow, branch and event, and a per-day trend | `/signals` |
 
@@ -37,6 +37,11 @@ when their advert is less than 90 seconds old. The person sets the rest: a
 public repository or a fork, whether the fleet has room, the share of
 included minutes used, and which hosted runner types to treat as failing to
 start jobs. The panel reads nothing and journals nothing.
+
+A question the relay would refuse is answered with the reason, never with
+silence: `answerWhatIf` returns a refusal sentence (for example a Started by
+that is not a GitHub user id, which the field also asks for with
+`pattern="[0-9]{0,20}"`), and the page shows it in `#what-if-answer`.
 
 ## Diagnosis
 
@@ -102,7 +107,8 @@ what-if question (`WhatIfQuestion`), are defined in
 
 The browser test needs a Chrome or Chromium binary (`PLAYWRIGHT_CHROMIUM_PATH`,
 Playwright's own, or a system Chrome); without one it is skipped and says
-so. The screenshots were taken with Chrome for Testing on Linux; on another
+so on a workstation, and fails under `CI=true` or `HOBO_REQUIRE_BROWSER=1`
+so a CI host never reports the accessibility and visual checks green unrun. The screenshots were taken with Chrome for Testing on Linux; on another
 font stack, refresh them with
 `UPDATE_VISUAL=1 pnpm exec vitest run test/dashboard.browser.test.ts` and
 review the images before committing.

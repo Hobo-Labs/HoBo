@@ -30,7 +30,12 @@ import {
 	stepKey,
 } from "@hobo/ci/runner-order";
 import { ago, duration, escapeHtml, minutes, percent, utc } from "./format.js";
-import type { JobTimesReport, OrderReply, SignalReport } from "./read-api.js";
+import {
+	DASHBOARD_PAGE_LIMIT,
+	type JobTimesReport,
+	type OrderReply,
+	type SignalReport,
+} from "./read-api.js";
 import {
 	isHostedStep,
 	isWhatIfRefusal,
@@ -452,6 +457,10 @@ export type HistoryModel = Readonly<{
 	runs: readonly RunFact[];
 	/** The run attempt opened, with its jobs. */
 	selected: RunFact | undefined;
+	/** The run attempt the address names when it is not among the newest stored runs. */
+	unfound?:
+		| Readonly<{ repository: string; id: number; attempt: number }>
+		| undefined;
 }>;
 
 /** The hash route of one run attempt in the History view. */
@@ -549,9 +558,16 @@ export function renderHistory(model: HistoryModel): string {
 						escapeHtml(ago(run.createdAtMs, nowMs)),
 					]),
 				);
+	const { unfound } = model;
 	const open =
 		selected === undefined
-			? ""
+			? unfound === undefined
+				? ""
+				: section(
+						"run-heading",
+						`${unfound.repository} #${unfound.id} attempt ${unfound.attempt}`,
+						`<p class="empty" role="status">This run attempt is not among the newest ${escapeHtml(DASHBOARD_PAGE_LIMIT)} stored runs of ${escapeHtml(unfound.repository)}, so it cannot be opened here.</p>`,
+					)
 			: section(
 					"run-heading",
 					`${selected.workflow} · ${selected.repository} #${selected.id} attempt ${selected.attempt}`,

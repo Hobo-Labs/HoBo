@@ -115,20 +115,29 @@ export async function loadView(
 		case "history": {
 			const runs = await api.runs(repository);
 			const wanted = location.run;
+			const matches = (run: RunFact): boolean =>
+				wanted !== undefined &&
+				run.id === wanted.id &&
+				run.attempt === wanted.attempt &&
+				run.repository.toLowerCase() === wanted.repository.toLowerCase();
+			// The opened run is looked up in its own repository's newest runs,
+			// whatever the picker holds.
 			const listed =
 				wanted === undefined
 					? undefined
-					: runs.find(
-							(run) =>
-								run.id === wanted.id &&
-								run.attempt === wanted.attempt &&
-								run.repository.toLowerCase() ===
-									wanted.repository.toLowerCase(),
-						);
+					: (runs.find(matches) ??
+						(repository?.toLowerCase() === wanted.repository.toLowerCase()
+							? undefined
+							: (await api.runs(wanted.repository)).find(matches)));
 			const selected =
 				listed === undefined ? undefined : await api.runWithJobs(listed);
 			return {
-				html: renderHistory({ nowMs, runs, selected }),
+				html: renderHistory({
+					nowMs,
+					runs,
+					selected,
+					unfound: listed === undefined ? wanted : undefined,
+				}),
 				repositories: seen([], runs),
 				router: undefined,
 			};

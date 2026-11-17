@@ -6,7 +6,9 @@
  * its screenshot in `test/visual/` (`UPDATE_VISUAL=1` rewrites them).
  *
  * It needs a Chrome or Chromium binary: `PLAYWRIGHT_CHROMIUM_PATH`,
- * Playwright's own, or a system Chrome. Without one it is skipped.
+ * Playwright's own, or a system Chrome. Without one it is skipped on a
+ * workstation, and fails under `CI=true` or `HOBO_REQUIRE_BROWSER=1`, so a CI
+ * host never reports the accessibility and visual checks green unrun.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import pixelmatch from "pixelmatch";
@@ -43,6 +45,13 @@ async function launch(): Promise<Browser | undefined> {
 }
 
 const browser = await launch();
+if (
+	browser === undefined &&
+	(process.env.CI === "true" || process.env.HOBO_REQUIRE_BROWSER === "1")
+)
+	throw new Error(
+		"dashboard.browser.test.ts needs Chrome or Chromium here (CI or HOBO_REQUIRE_BROWSER=1): install Playwright's chromium or set PLAYWRIGHT_CHROMIUM_PATH",
+	);
 if (browser === undefined)
 	console.warn(
 		"dashboard.browser.test.ts skipped: no Chrome or Chromium (set PLAYWRIGHT_CHROMIUM_PATH)",
@@ -180,6 +189,38 @@ describe.skipIf(browser === undefined)("the dashboard in a browser", () => {
 			);
 			await open("runners");
 			await open("router");
+		}
+	});
+
+	it("says so when the run attempt the address names is not among the newest stored runs", async () => {
+		await page.evaluate(() => {
+			location.hash = "#/history/octo/app/999/1";
+		});
+		await page.waitForSelector("#run-heading");
+		expect(await page.locator("#run-heading").textContent()).toBe(
+			"octo/app #999 attempt 1",
+		);
+		expect(await page.locator("#view").textContent()).toContain(
+			"This run attempt is not among the newest 50 stored runs of octo/app",
+		);
+	});
+
+	it("shows the sign-in form when the link's token has a broken escape", async () => {
+		if (browser === undefined) throw new Error("skipped without a browser");
+		const context = await browser.newContext();
+		try {
+			const fresh = await context.newPage();
+			const errors: string[] = [];
+			fresh.on("pageerror", (error) => errors.push(error.message));
+			await fresh.goto(`${local.origin}/dashboard#token=%E0`);
+			await fresh.waitForSelector("#signin:not([hidden])");
+			expect(await fresh.locator("#status").textContent()).toContain(
+				"The token in the link is not readable",
+			);
+			expect(fresh.url()).toBe(`${local.origin}/dashboard#/runners`);
+			expect(errors).toEqual([]);
+		} finally {
+			await context.close();
 		}
 	});
 

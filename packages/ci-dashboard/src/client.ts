@@ -48,17 +48,27 @@ function store(key: string, value: string | undefined): void {
 let token: string | undefined;
 let router: RouterState | undefined;
 
-/** Take a `#token=` fragment into session storage and out of the address bar and history. */
-function takeTokenFromFragment(): void {
+/**
+ * Take a `#token=` fragment into session storage and out of the address bar
+ * and history. Returns a sentence to show when the fragment is not readable.
+ */
+function takeTokenFromFragment(): string {
 	const match = /^#token=([^&]+)/u.exec(location.hash);
-	if (!match?.[1]) return;
-	token = decodeURIComponent(match[1]);
-	store(TOKEN_KEY, token);
+	if (!match?.[1]) return "";
+	let problem = "";
+	try {
+		token = decodeURIComponent(match[1]);
+		store(TOKEN_KEY, token);
+	} catch {
+		problem =
+			"The token in the link is not readable (a broken % escape). Paste the token below instead.";
+	}
 	history.replaceState(
 		null,
 		"",
 		`${location.pathname}${location.search}#/runners`,
 	);
+	return problem;
 }
 
 function currentLocation(): DashboardLocation {
@@ -242,7 +252,7 @@ function syncThemeButton(): void {
 }
 
 function start(): void {
-	takeTokenFromFragment();
+	const fragmentProblem = takeTokenFromFragment();
 	token ??= stored(TOKEN_KEY);
 	element("repository", HTMLInputElement).value = stored(REPOSITORY_KEY) ?? "";
 	document.addEventListener("submit", onSubmit);
@@ -261,7 +271,9 @@ function start(): void {
 		syncThemeButton();
 	});
 	syncThemeButton();
-	void show();
+	if (fragmentProblem !== "" && token === undefined)
+		showSignIn(fragmentProblem);
+	else void show();
 }
 
 start();
