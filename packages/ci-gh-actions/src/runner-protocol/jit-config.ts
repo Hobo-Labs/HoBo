@@ -166,7 +166,7 @@ export function jitSigningKey(rsaParameters: string): KeyObject {
 
 function readFile<T>(text: string, schema: z.ZodType<T>, what: string): T {
 	try {
-		return readProtocolJson(text, schema, what);
+		return readProtocolJson(text, schema, what, "refuse");
 	} catch (error) {
 		if (error instanceof ProtocolJsonRejection)
 			throw new JitConfigRejection(error.message);

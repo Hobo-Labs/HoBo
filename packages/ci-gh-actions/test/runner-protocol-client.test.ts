@@ -19,6 +19,7 @@ import {
 } from "../src/runner-protocol/fake-service.js";
 import { parseJitConfig } from "../src/runner-protocol/jit-config.js";
 import { runnerServiceClientConformance } from "../src/runner-protocol/port.js";
+import { completeJobBody } from "../src/runner-protocol/wire.js";
 
 const ON = { answer: true, label: "hobo-relay" } as const;
 
@@ -272,6 +273,119 @@ describe("GithubRunnerServiceClient", () => {
 		await expect(session.complete(answer("job-build"))).rejects.toThrow(
 			/not taken/u,
 		);
+		await session.close();
+	});
+
+	it("completes as failed an acquired job whose message it cannot read, and keeps waiting", async () => {
+		const { service, client, jit, events } = setup();
+		service.queue(testRelayJobMessage({ jobId: "job-bad-context" }), {
+			rewriteJob: (json) => {
+				const job = JSON.parse(json);
+				job.contextData.github = { notATypedContext: 1 };
+				return JSON.stringify(job);
+			},
+		});
+		service.queue(testRelayJobMessage({ jobId: "job-good" }));
+		const session = await client.open(jit);
+		expect((await session.nextJob(5_000))?.jobId).toBe("job-good");
+		expect(service.completions[0]).toMatchObject({
+			jobId: "job-bad-context",
+			conclusion: "failed",
+		});
+		expect(service.completions[0]?.annotations[0]).toMatchObject({
+			level: "failure",
+			message: expect.stringMatching(/could not read this job's message/u),
+		});
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				kind: "job-unreadable",
+				requestId: "1",
+				jobId: "job-bad-context",
+			}),
+		);
+		await session.close();
+	});
+
+	it("reads a job message whose dictionaries hold keys that differ only by case", async () => {
+		const { service, client, jit } = setup();
+		service.queue(testRelayJobMessage({ jobId: "job-variables" }), {
+			rewriteJob: (json) => {
+				const job = JSON.parse(json);
+				job.variables = {
+					Foo: { value: "1", isSecret: false },
+					FOO: { value: "2", isSecret: false },
+				};
+				return JSON.stringify(job);
+			},
+		});
+		const session = await client.open(jit);
+		expect((await session.nextJob(5_000))?.jobId).toBe("job-variables");
+		await session.complete(answer("job-variables"));
+		expect(service.completions[0]?.conclusion).toBe("succeeded");
+		await session.close();
+	});
+
+	it("reports a job message without its ids and keeps waiting rather than throwing", async () => {
+		const { service, client, jit, events } = setup();
+		service.queue(testRelayJobMessage({ jobId: "job-no-id" }), {
+			rewriteJob: (json) => {
+				const job = JSON.parse(json);
+				delete job.jobId;
+				return JSON.stringify(job);
+			},
+		});
+		service.queue(testRelayJobMessage({ jobId: "job-after-no-id" }));
+		const session = await client.open(jit);
+		expect((await session.nextJob(5_000))?.jobId).toBe("job-after-no-id");
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				kind: "job-unreadable",
+				requestId: "1",
+				jobId: "",
+			}),
+		);
+		expect(service.completions).toHaveLength(0);
+		await session.close();
+	});
+
+	it("completes a job as failed unless the answer says it succeeded", () => {
+		const body = (conclusion: string) =>
+			JSON.parse(
+				completeJobBody(
+					{ jobId: "job-1", conclusion, outputs: [], annotations: [] },
+					"plan-1",
+					"",
+				),
+			).conclusion;
+		expect(body("succeeded")).toBe("succeeded");
+		expect(body("failed")).toBe("failed");
+		expect(body("")).toBe("failed");
+		expect(body("cancelled")).toBe("failed");
+	});
+
+	it("reports a sign-in that runs out of time during a poll, not an empty poll", async () => {
+		const { service, jit } = setup();
+		let hangSignIn = false;
+		const client = new GithubRunnerServiceClient({
+			relayJobs: ON,
+			callTimeoutMs: 50,
+			fetch: async (input, init) => {
+				const signIn = String(init?.body ?? "").includes("client_assertion");
+				if (!(hangSignIn && signIn)) return service.fetch(input, init);
+				return new Promise((_resolve, reject) => {
+					init?.signal?.addEventListener("abort", () =>
+						reject(init.signal?.reason),
+					);
+				});
+			},
+		});
+		const session = await client.open(jit);
+		hangSignIn = true;
+		service.forceTokenRefresh();
+		const failure = await session.nextJob(3_000).catch((error) => error);
+		expect(failure).toBeInstanceOf(RunnerProtocolError);
+		expect(failure).toMatchObject({ timedOut: true, call: "OAuth token" });
+		hangSignIn = false;
 		await session.close();
 	});
 

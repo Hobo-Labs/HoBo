@@ -36,7 +36,7 @@ import type {
 	RelayJobsConfig,
 } from "@hobo/ci";
 import { isGithubServiceUrl, jitSigningKey } from "./jit-config.js";
-import { readProtocolJson } from "./json.js";
+import { ProtocolJsonRejection, readProtocolJson } from "./json.js";
 import type {
 	ParsedJitConfig,
 	RunnerServiceClient,
@@ -49,6 +49,7 @@ import {
 	completeJobBody,
 	FORCE_TOKEN_REFRESH,
 	isRelayJob,
+	JOB_IDS,
 	JOB_MESSAGE,
 	JOB_REQUEST_REF,
 	type JobRequestRef,
@@ -65,6 +66,13 @@ export type RunnerProtocolEvent =
 	| Readonly<{ kind: "message-ignored"; messageType: string }>
 	| Readonly<{ kind: "job-lost"; requestId: string; status: number }>
 	| Readonly<{ kind: "job-refused"; jobId: string; reason: string }>
+	| Readonly<{
+			kind: "job-unreadable";
+			requestId: string;
+			/** Empty when even the job's id could not be read. */
+			jobId: string;
+			reason: string;
+	  }>
 	| Readonly<{ kind: "acknowledge-failed"; requestId: string; status: number }>
 	| Readonly<{ kind: "close-failed"; status: number }>;
 
@@ -92,6 +100,8 @@ export class RunnerProtocolError extends Error {
 		readonly status: number,
 		/** The call ran past its deadline. */
 		readonly timedOut = false,
+		/** The call that failed, such as `message` or `OAuth token`; empty when none was sent. */
+		readonly call = "",
 	) {
 		super(message);
 	}
@@ -263,10 +273,11 @@ class GithubRunnerSession implements RunnerSession {
 
 	async nextJob(waitMs: number): Promise<RelayJobMessage | undefined> {
 		if (this.closed) throw new Error("the runner session is closed");
-		const until = Date.now() + Math.max(waitMs, 0);
+		const now = () => this.client.now();
+		const until = now() + Math.max(waitMs, 0);
 		for (;;) {
-			const remaining = until - Date.now();
-			const started = Date.now();
+			const remaining = until - now();
+			const started = now();
 			const offer = await this.poll(
 				Math.min(Math.max(remaining, MIN_POLL_MS), this.client.callTimeoutMs),
 			);
@@ -274,18 +285,19 @@ class GithubRunnerSession implements RunnerSession {
 				const job = await this.take(offer);
 				if (job) return job;
 			}
-			if (until - Date.now() <= 0) return undefined;
-			if (!offer && Date.now() - started < EMPTY_POLL_PAUSE_MS)
+			if (until - now() <= 0) return undefined;
+			if (!offer && now() - started < EMPTY_POLL_PAUSE_MS)
 				await new Promise((resolve) =>
-					setTimeout(
-						resolve,
-						Math.min(EMPTY_POLL_PAUSE_MS, until - Date.now()),
-					),
+					setTimeout(resolve, Math.min(EMPTY_POLL_PAUSE_MS, until - now())),
 				);
 		}
 	}
 
-	/** One long poll. Undefined when no job was offered before the deadline. */
+	/**
+	 * One long poll. Undefined when no job was offered before the deadline.
+	 * Only the message call running out of time counts as an empty poll; a
+	 * sign-in that times out is an error, so an outage is not hidden as quiet.
+	 */
 	private async poll(timeoutMs: number): Promise<JobRequestRef | undefined> {
 		const query = this.query();
 		query.set("disableUpdate", "true");
@@ -300,7 +312,11 @@ class GithubRunnerSession implements RunnerSession {
 				name: "message",
 			});
 		} catch (error) {
-			if (error instanceof RunnerProtocolError && error.timedOut)
+			if (
+				error instanceof RunnerProtocolError &&
+				error.timedOut &&
+				error.call === "message"
+			)
 				return undefined;
 			throw error;
 		}
@@ -402,18 +418,55 @@ class GithubRunnerSession implements RunnerSession {
 				`the run service refused to hand over the job (${acquired.status})`,
 				acquired.status,
 			);
-		const job = readProtocolJson(
-			await acquired.text(),
-			JOB_MESSAGE,
-			"the job message",
-		);
-		const message = relayJobMessageOf(job);
+		// The job is this runner's now: whatever its message holds, it is
+		// completed or handed out, never left until the service drops the lock.
+		const text = await acquired.text();
+		let ids: ReturnType<typeof JOB_IDS.parse>;
+		try {
+			ids = readProtocolJson(text, JOB_IDS, "the job message");
+		} catch (error) {
+			if (!(error instanceof ProtocolJsonRejection)) throw error;
+			// Without its plan and job id the job cannot be completed; the service
+			// fails it when the lock lapses.
+			this.client.emit({
+				kind: "job-unreadable",
+				requestId: offer.runner_request_id,
+				jobId: "",
+				reason: error.message,
+			});
+			return undefined;
+		}
 		const taken: TakenJob = {
-			planId: job.plan.planid,
+			planId: ids.plan.planid,
 			runServiceUrl: offer.run_service_url,
-			billingOwnerId: job.billingownerid ?? offer.billing_owner_id,
+			billingOwnerId: ids.billingownerid ?? offer.billing_owner_id,
 		};
-		this.taken.set(message.jobId, taken);
+		this.taken.set(ids.jobid, taken);
+		let message: RelayJobMessage;
+		try {
+			message = relayJobMessageOf(
+				readProtocolJson(text, JOB_MESSAGE, "the job message"),
+			);
+		} catch (error) {
+			if (!(error instanceof Error)) throw error;
+			const reason = `The HoBo relay could not read this job's message (${error instanceof ProtocolJsonRejection ? error.message : error.name}), so it completed the job as failed without running anything. Run it again; if it fails the same way, give it another runs-on label and report it.`;
+			await this.finish(
+				{
+					jobId: ids.jobid,
+					conclusion: "failed",
+					outputs: [],
+					annotations: [{ level: "error", message: reason }],
+				},
+				taken,
+			);
+			this.client.emit({
+				kind: "job-unreadable",
+				requestId: offer.runner_request_id,
+				jobId: ids.jobid,
+				reason,
+			});
+			return undefined;
+		}
 		if (isRelayJob(message)) return message;
 		const reason =
 			"This job asked for the HoBo relay's runner label but is not a relay job. A relay runs no job code, so the job was completed as failed; give it another runs-on label.";
@@ -597,6 +650,7 @@ export class GithubRunnerServiceClient implements RunnerServiceClient {
 						`the ${init.name} call ran past its ${init.timeoutMs} ms deadline`,
 						0,
 						true,
+						init.name,
 					);
 				if (attempt > 1)
 					throw new RunnerProtocolError(

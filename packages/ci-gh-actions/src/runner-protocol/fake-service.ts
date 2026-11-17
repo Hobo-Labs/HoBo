@@ -293,16 +293,24 @@ export class FakeGithubRunnerService {
 		).toString("base64");
 	}
 
-	/** Offer a job to the next session that polls. Returns the offer's runner request id. */
+	/**
+	 * Offer a job to the next session that polls. Returns the offer's runner
+	 * request id. `rewriteJob` changes the job message's JSON text before
+	 * `acquirejob` returns it, to test a message the client cannot read.
+	 */
 	queue(
 		message: RelayJobMessage,
-		options: Readonly<{ shouldAcknowledge?: boolean }> = {},
+		options: Readonly<{
+			shouldAcknowledge?: boolean;
+			rewriteJob?: (json: string) => string;
+		}> = {},
 	): string {
 		const requestId = String(this.nextRequest);
 		this.nextRequest += 1;
+		const job = JSON.stringify(agentJobRequestOf(message, Number(requestId)));
 		this.jobs.set(requestId, {
 			requestId,
-			job: JSON.stringify(agentJobRequestOf(message, Number(requestId))),
+			job: options.rewriteJob ? options.rewriteJob(job) : job,
 			jobId: message.jobId,
 			planId: message.planId,
 			acquiredBy: undefined,

@@ -172,6 +172,16 @@ const STEP = z.object({
 });
 
 /**
+ * The least of a job message: what completing the job needs. Read before the
+ * whole message, so a job whose message cannot be read can still be failed.
+ */
+export const JOB_IDS = z.object({
+	plan: z.object({ planid: z.string().min(1) }),
+	jobid: z.string().min(1),
+	billingownerid: z.string().optional(),
+});
+
+/**
  * `AgentJobRequestMessage` (`Sdk/DTPipelines/Pipelines/AgentJobRequestMessage.cs`):
  * what `acquirejob` returns. Only what a relay reads is kept.
  */
@@ -336,7 +346,9 @@ export function completeJobBody(
 	const body = {
 		planId,
 		jobId: answer.jobId,
-		conclusion: answer.conclusion === "failed" ? "failed" : "succeeded",
+		// Fails closed: only an answer that says it succeeded lets the job pass,
+		// so an empty or unknown conclusion never lets dependent jobs run.
+		conclusion: answer.conclusion === "succeeded" ? "succeeded" : "failed",
 		outputs: Object.fromEntries(
 			answer.outputs.map((output) => [
 				output.name,

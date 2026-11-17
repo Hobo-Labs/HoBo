@@ -21,7 +21,7 @@ repository turns it on.
 | [`jit-config.ts`](jit-config.ts) | `parseJitConfig`: decodes an `encoded_jit_config` and refuses it unless every URL is https on a GitHub host, no two keys differ only by case, the RSA key is usable and the runner is the one expected |
 | [`client.ts`](client.ts) | `GithubRunnerServiceClient`: the protocol itself |
 | [`wire.ts`](wire.ts) | The protocol's messages, and the mapping from a job message to a `RelayJobMessage` and from a `RelayJobAnswer` to a completion |
-| [`json.ts`](json.ts) | Reads JSON the way the runner does: keys without regard to case, and two keys that differ only by case refused |
+| [`json.ts`](json.ts) | Reads JSON the way the runner does: keys without regard to case. Two keys that differ only by case are refused in a configuration and keep the last in what the service sends |
 | [`fake-service.ts`](fake-service.ts) | `FakeGithubRunnerService`: the service in memory, for tests and for the GitHub simulator to mount through its `handle(request)` |
 | [`source.ts`](source.ts) | The `actions/runner` commit everything was read from, and the runner version the client reports |
 
@@ -70,11 +70,28 @@ and keeps waiting: a relay runs no job code, so it could never run it.
 ## Behaviour
 
 - Every call has a deadline (60 seconds unless set). A long poll waits as long
-  as the caller asked, and at least one second.
+  as the caller asked, and at least one second. The runner keeps the broker's
+  long poll open for about 50 seconds, and an offer the broker hands to a poll
+  the client then ends may be lost until the broker offers it again, so a
+  caller should pass `nextJob` a wait near that length (and a `callTimeoutMs`
+  above it) rather than many short ones.
+- Only the message call running out of time counts as an empty poll. A
+  sign-in that runs out of time during a poll is an error (`call` names it),
+  so an outage is never reported as a quiet queue.
 - A server error or a dropped connection is retried once. A 401 makes the
   client sign in again once. A `ForceTokenRefresh` message drops the token.
 - An offer another runner acquired first (404, 409 or 422 on `acquirejob`) is
   skipped, as the runner skips it.
+- Once `acquirejob` answers, the job is this runner's, so it is never left
+  waiting for the lock to lapse. The client reads only the plan and job id
+  first; if the rest of the message cannot be read, it completes the job as
+  failed with an error annotation saying the relay could not read it, reports
+  `job-unreadable` and keeps waiting. Only a message without those ids, which
+  cannot be completed at all, is left to the service, and is reported the same
+  way.
+- A job completes as succeeded only when the answer says `succeeded`; an empty
+  or unknown conclusion completes it as failed, so dependent jobs never run on
+  an answer that did not say.
 - A message type the client does not know is ignored, and reported through
   `onEvent`.
 - A call goes only to an https GitHub host, with redirects refused, so the
