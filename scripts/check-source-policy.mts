@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { parse as parseAstro } from "@astrojs/compiler/sync";
 import type { Node as AstroNode } from "@astrojs/compiler/types";
 import ts from "typescript";
+import { z } from "zod";
 import { frontmatterType } from "./check-no-committed-plans.mts";
 import { type CommentDialect, lexComments } from "./source-comment-lexer.mts";
 
@@ -486,31 +487,170 @@ export function commentViolations(
 			}
 		}
 		if (!intersects) return [];
-		if (first === 1 && comment.text.startsWith("#!")) return [];
-		const deferred =
-			DEFERRED.test(comment.text) || DEFERRED_TYPE_DIRECTIVE.test(comment.text);
-		const concise =
-			(!ARCHITECTURE_DIRECTIVE.test(comment.text) ||
-				CONCISE_ARCHITECTURE_DIRECTIVE.test(comment.text)) &&
-			(!TYPESCRIPT_DIRECTIVE.test(comment.text) ||
-				CONCISE_TYPESCRIPT_DIRECTIVE.test(comment.text)) &&
-			!LINT_DIRECTIVE_EXPLANATION.test(comment.text);
-		if (
-			!deferred &&
-			concise &&
-			(DIRECTIVE.test(comment.text) ||
-				VITE_DIRECTIVE.test(comment.text) ||
-				GENERATED_DIRECTIVE.test(comment.text) ||
-				DEPRECATED_DIRECTIVE.test(comment.text))
-		)
-			return [];
+		const message = commentMessage(comment.text, first);
+		return message ? [{ file, line: first, message }] : [];
+	});
+}
+
+function commentMessage(text: string, first: number): string | undefined {
+	if (first === 1 && text.startsWith("#!")) return undefined;
+	const deferred = DEFERRED.test(text) || DEFERRED_TYPE_DIRECTIVE.test(text);
+	const concise =
+		(!ARCHITECTURE_DIRECTIVE.test(text) ||
+			CONCISE_ARCHITECTURE_DIRECTIVE.test(text)) &&
+		(!TYPESCRIPT_DIRECTIVE.test(text) ||
+			CONCISE_TYPESCRIPT_DIRECTIVE.test(text)) &&
+		!LINT_DIRECTIVE_EXPLANATION.test(text);
+	if (
+		!deferred &&
+		concise &&
+		(DIRECTIVE.test(text) ||
+			VITE_DIRECTIVE.test(text) ||
+			GENERATED_DIRECTIVE.test(text) ||
+			DEPRECATED_DIRECTIVE.test(text))
+	)
+		return undefined;
+	return deferred
+		? "finish deferred work instead of adding a marker"
+		: "make the code self-documenting instead of adding a comment";
+}
+
+const notebookSchema = z
+	.object({
+		cells: z.array(
+			z
+				.object({
+					cell_type: z.string(),
+					source: z.union([z.string(), z.array(z.string())]).optional(),
+				})
+				.passthrough(),
+		),
+		metadata: z
+			.object({
+				language_info: z
+					.object({ name: z.string().optional() })
+					.passthrough()
+					.optional(),
+				kernelspec: z
+					.object({ language: z.string().optional() })
+					.passthrough()
+					.optional(),
+			})
+			.passthrough()
+			.optional(),
+	})
+	.passthrough();
+
+const notebookExtensions = new Map([
+	["typescript", ".ts"],
+	["ts", ".ts"],
+	["javascript", ".js"],
+	["js", ".js"],
+	["tsx", ".tsx"],
+	["jsx", ".jsx"],
+	["python", ".py"],
+	["python3", ".py"],
+	["py", ".py"],
+	["bash", ".sh"],
+	["shell", ".sh"],
+	["sh", ".sh"],
+	["rust", ".rs"],
+	["rs", ".rs"],
+	["go", ".go"],
+	["golang", ".go"],
+	["sql", ".sql"],
+	["yaml", ".yaml"],
+	["yml", ".yaml"],
+]);
+
+type NotebookComment = {
+	key: string;
+	cell: number;
+	line: number;
+	message: string;
+};
+
+function notebookComments(text: string): NotebookComment[] | undefined {
+	let json: ReturnType<typeof JSON.parse>;
+	try {
+		json = JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+	const parsed = notebookSchema.safeParse(json);
+	if (!parsed.success) return undefined;
+	const notebook = parsed.data;
+	const code = notebook.cells.filter((cell) => cell.cell_type === "code");
+	if (code.length === 0) return [];
+	const language =
+		notebook.metadata?.language_info?.name ??
+		notebook.metadata?.kernelspec?.language;
+	const extension =
+		language === undefined
+			? undefined
+			: notebookExtensions.get(language.toLowerCase());
+	if (!extension) return undefined;
+	const found: NotebookComment[] = [];
+	for (const [index, cell] of notebook.cells.entries()) {
+		if (cell.cell_type !== "code") continue;
+		if (cell.source === undefined) return undefined;
+		const source = Array.isArray(cell.source)
+			? cell.source.join("")
+			: cell.source;
+		for (const comment of commentLocations(`cell${extension}`, source)) {
+			const message = commentMessage(comment.text, comment.first);
+			if (message)
+				found.push({
+					key: `${index}:${comment.text}`,
+					cell: index + 1,
+					line: comment.first,
+					message,
+				});
+		}
+	}
+	return found;
+}
+
+function priorContents(mode: Mode, file: string): string | undefined {
+	try {
+		const revision =
+			mode.kind === "base"
+				? git(["merge-base", mode.ref, "HEAD"]).trim()
+				: "HEAD";
+		return git(["show", `${revision}:${file}`]);
+	} catch {
+		return undefined;
+	}
+}
+
+function notebookViolations(
+	file: string,
+	current: string,
+	previous: string | undefined,
+): Violation[] {
+	const comments = notebookComments(current);
+	if (!comments)
 		return [
 			{
 				file,
-				line: first,
-				message: deferred
-					? "finish deferred work instead of adding a marker"
-					: "make the code self-documenting instead of adding a comment",
+				line: 1,
+				message: "parse the notebook and use a supported code-cell language",
+			},
+		];
+	const old = previous === undefined ? [] : (notebookComments(previous) ?? []);
+	const counts = new Map<string, number>();
+	for (const item of old) counts.set(item.key, (counts.get(item.key) ?? 0) + 1);
+	return comments.flatMap((comment) => {
+		const count = counts.get(comment.key) ?? 0;
+		if (count > 0) {
+			counts.set(comment.key, count - 1);
+			return [];
+		}
+		return [
+			{
+				file,
+				line: 1,
+				message: `${comment.message} (code cell ${comment.cell}, line ${comment.line})`,
 			},
 		];
 	});
@@ -628,6 +768,16 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			violations.push(...proofArtifactViolations(file, text, added));
 		}
 		const extension = extname(sourceFile).toLowerCase();
+		if (extension === ".ipynb") {
+			violations.push(
+				...notebookViolations(
+					file,
+					contents(mode, file),
+					priorContents(mode, file),
+				),
+			);
+			continue;
+		}
 		if (
 			extension &&
 			!file.startsWith(".githooks/") &&
