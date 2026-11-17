@@ -164,6 +164,105 @@ async function fixture(
 }
 
 describe("operator resolution of uncertain infrastructure", () => {
+	it("rejects object-shaped evidence references before authorization", async () => {
+		const { store, deps, claim } = await fixture();
+		const reference = {
+			length: 5,
+			trim() {
+				return this;
+			},
+			toString() {
+				return "proof";
+			},
+		};
+		let calls = 0;
+		deps.authorize = async () => {
+			calls++;
+			return true;
+		};
+		await expect(
+			resolveResourceReconciliation(deps, {
+				...claim,
+				operation: "apply",
+				/* oxlint-disable anti-slop/no-chained-type-assertions -- SAFETY: the test supplies a malformed JavaScript value. */
+				evidenceRef: reference as unknown as string,
+				/* oxlint-enable anti-slop/no-chained-type-assertions */
+				outcome: { kind: "applied", outputs: {} },
+			}),
+		).rejects.toThrow("RECONCILIATION_INVALID");
+		expect(calls).toBe(0);
+		expect((await history(store)).at(-1)?.type).toBe("resource.Failed");
+	});
+
+	it("validates a single captured outcome when caller accessors change", async () => {
+		const { store, deps, claim } = await fixture();
+		let reads = 0;
+		const input = {
+			...claim,
+			operation: "apply" as const,
+			financial: { ...claim.financial, disposition: "released" as const },
+			outcome: {
+				get kind() {
+					return ++reads <= 4 ? ("no-effect" as const) : ("applied" as const);
+				},
+				outputs: { url: "not-verified" },
+			},
+		};
+		await expect(resolveResourceReconciliation(deps, input)).rejects.toThrow();
+		expect(
+			(await history(store)).some(
+				(event) => event.type === "resource.Reconciled",
+			),
+		).toBe(false);
+	});
+
+	it("persists the same financial disposition that it validates", async () => {
+		const { store, deps, claim } = await fixture();
+		let reads = 0;
+		await resolveResourceReconciliation(deps, {
+			...claim,
+			operation: "apply",
+			financial: {
+				...claim.financial,
+				get disposition() {
+					return ++reads <= 3 ? "held" : "released";
+				},
+			},
+			outcome: { kind: "applied", outputs: { url: "verified" } },
+		});
+		expect(reads).toBe(1);
+		expect((await history(store)).at(-1)).toMatchObject({
+			type: "resource.Reconciled",
+			data: { outcome: "applied", financialDisposition: "held" },
+		});
+	});
+
+	it("authorizes the same captured operator identity that it validates", async () => {
+		const { store, deps, claim } = await fixture();
+		let reads = 0;
+		const seen: string[] = [];
+		deps.authorize = async (input) => {
+			seen.push(input.actor.kind);
+			return true;
+		};
+		await resolveResourceReconciliation(deps, {
+			...claim,
+			actor: {
+				id: "operator",
+				get kind() {
+					return ++reads === 1 ? "user" : "system";
+				},
+			},
+			operation: "apply",
+			outcome: { kind: "applied", outputs: { url: "verified" } },
+		});
+		expect(reads).toBe(1);
+		expect(seen).toEqual(["user", "user"]);
+		expect((await history(store)).at(-1)?.actor).toMatchObject({
+			kind: "user",
+			id: "operator",
+		});
+	});
 	it("records verified apply outputs and retains the budget hold", async () => {
 		const { store, deps, claim } = await fixture();
 		const input = {

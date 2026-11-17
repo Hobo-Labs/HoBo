@@ -98,8 +98,10 @@ function fail(code: string, message: string): never {
 	throw new ResourceReconciliationError(code, message);
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof -- Recovery inputs cross an untrusted runtime boundary. */
 function name(value: string): boolean {
 	return (
+		typeof value === "string" &&
 		value.length > 0 &&
 		value.length <= 200 &&
 		value.trim() === value &&
@@ -109,72 +111,83 @@ function name(value: string): boolean {
 
 function generation(value: string | undefined): boolean {
 	return (
-		value !== undefined &&
+		typeof value === "string" &&
 		/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
 			value,
 		)
 	);
 }
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 function copyActor(
 	actor: PrincipalRef,
 	seen = new Set<PrincipalRef>(),
 ): PrincipalRef {
-	if (
-		seen.size >= 16 ||
-		seen.has(actor) ||
-		!name(actor.id) ||
-		!["user", "agent", "service", "system"].includes(actor.kind)
-	)
+	if (seen.size >= 16 || seen.has(actor))
+		fail("RECONCILIATION_INVALID", "invalid operator identity");
+	const { kind, id, delegatedBy } = actor;
+	if (!name(id) || !["user", "agent", "service", "system"].includes(kind))
 		fail("RECONCILIATION_INVALID", "invalid operator identity");
 	seen.add(actor);
-	const copy: PrincipalRef = { kind: actor.kind, id: actor.id };
-	if (actor.delegatedBy !== undefined)
-		copy.delegatedBy = copyActor(actor.delegatedBy, seen);
+	const copy: PrincipalRef = { kind, id };
+	if (delegatedBy !== undefined)
+		copy.delegatedBy = copyActor(delegatedBy, seen);
 	return copy;
 }
 
 function copyClaim(
 	input: ResourceReconciliationClaim,
 ): ResourceReconciliationClaim {
-	const operationGeneration = input.operationGeneration;
+	const {
+		tenant,
+		deploymentId,
+		resourceId,
+		failureEventId,
+		evidenceRef,
+		operation,
+		operationGeneration,
+	} = input;
+	const rawFinancial = input.financial;
+	const {
+		disposition,
+		reservationId,
+		evidenceRef: financialEvidenceRef,
+	} = rawFinancial;
+	const rawOutcome = input.outcome;
+	const outcomeKind = rawOutcome.kind;
 	if (
 		![
-			input.tenant,
-			input.deploymentId,
-			input.resourceId,
-			input.failureEventId,
-			input.evidenceRef,
-			input.financial.evidenceRef,
+			tenant,
+			deploymentId,
+			resourceId,
+			failureEventId,
+			evidenceRef,
+			financialEvidenceRef,
 		].every(name) ||
-		!["apply", "destroy"].includes(input.operation) ||
-		(input.operation === "destroy" && !generation(operationGeneration)) ||
-		(input.operation === "apply" && operationGeneration !== undefined) ||
-		!["none", "held", "settled", "released"].includes(
-			input.financial.disposition,
-		) ||
-		(input.financial.reservationId !== undefined &&
-			!name(input.financial.reservationId)) ||
-		(input.financial.disposition === "none") !==
-			(input.financial.reservationId === undefined) ||
-		(input.outcome.kind === "no-effect" &&
-			input.financial.disposition === "held") ||
-		(input.outcome.kind === "applied" &&
-			["settled", "released"].includes(input.financial.disposition)) ||
-		(input.outcome.kind === "applied" && input.operation !== "apply") ||
-		(input.outcome.kind === "destroyed" && input.operation !== "destroy")
+		!["apply", "destroy"].includes(operation) ||
+		(operation === "destroy" && !generation(operationGeneration)) ||
+		(operation === "apply" && operationGeneration !== undefined) ||
+		!["none", "held", "settled", "released"].includes(disposition) ||
+		(reservationId !== undefined && !name(reservationId)) ||
+		(disposition === "none") !== (reservationId === undefined) ||
+		(outcomeKind === "no-effect" && disposition === "held") ||
+		(outcomeKind === "applied" &&
+			["settled", "released"].includes(disposition)) ||
+		(outcomeKind === "applied" && operation !== "apply") ||
+		(outcomeKind === "destroyed" && operation !== "destroy")
 	)
 		fail(
 			"RECONCILIATION_INVALID",
 			"invalid operation, scope or financial disposition",
 		);
 	let outcome: ReconciliationOutcome;
-	if (input.outcome.kind === "applied") {
-		const descriptors = Object.getOwnPropertyDescriptors(input.outcome.outputs);
+	if (outcomeKind === "applied") {
+		const suppliedOutputs = rawOutcome.outputs;
+		const descriptors = Object.getOwnPropertyDescriptors(suppliedOutputs);
 		const keys = Object.keys(descriptors).sort();
 		if (
 			keys.length > 256 ||
-			Object.getOwnPropertySymbols(input.outcome.outputs).length > 0
+			Object.getOwnPropertySymbols(suppliedOutputs).length > 0
 		)
 			fail(
 				"RECONCILIATION_INVALID",
@@ -204,49 +217,48 @@ function copyClaim(
 			outputs[key] = descriptor.value;
 		}
 		outcome = { kind: "applied", outputs };
-	} else if (input.outcome.kind === "destroyed") {
-		if (!name(input.outcome.finalStateHash))
+	} else if (outcomeKind === "destroyed") {
+		const finalStateHash = rawOutcome.finalStateHash;
+		if (!name(finalStateHash))
 			fail("RECONCILIATION_INVALID", "final state evidence is required");
 		outcome = {
 			kind: "destroyed",
-			finalStateHash: input.outcome.finalStateHash,
+			finalStateHash,
 		};
-	} else if (input.outcome.kind === "no-effect") {
-		if (
-			input.outcome.baseline !== undefined &&
-			input.outcome.baseline !== "absent"
-		)
+	} else if (outcomeKind === "no-effect") {
+		const baseline = rawOutcome.baseline;
+		if (baseline !== undefined && baseline !== "absent")
 			fail("RECONCILIATION_INVALID", "invalid baseline claim");
 		outcome =
-			input.outcome.baseline === "absent"
+			baseline === "absent"
 				? { kind: "no-effect", baseline: "absent" }
 				: { kind: "no-effect" };
 	} else {
 		fail("RECONCILIATION_INVALID", "unknown outcome");
 	}
 	const financial: ReconciliationFinancialEvidence =
-		input.financial.reservationId === undefined
+		reservationId === undefined
 			? {
-					disposition: input.financial.disposition,
-					evidenceRef: input.financial.evidenceRef,
+					disposition,
+					evidenceRef: financialEvidenceRef,
 				}
 			: {
-					disposition: input.financial.disposition,
-					reservationId: input.financial.reservationId,
-					evidenceRef: input.financial.evidenceRef,
+					disposition,
+					reservationId,
+					evidenceRef: financialEvidenceRef,
 				};
 	const base = {
-		tenant: input.tenant,
-		deploymentId: input.deploymentId,
-		resourceId: input.resourceId,
-		failureEventId: input.failureEventId,
+		tenant,
+		deploymentId,
+		resourceId,
+		failureEventId,
 	};
 	const details = {
-		evidenceRef: input.evidenceRef,
+		evidenceRef,
 		financial,
 		outcome,
 	};
-	if (input.operation === "destroy") {
+	if (operation === "destroy") {
 		if (operationGeneration === undefined)
 			fail("RECONCILIATION_INVALID", "destroy generation is required");
 		return {
