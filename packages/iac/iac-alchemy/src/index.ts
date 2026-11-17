@@ -16,6 +16,7 @@ import {
 	AlchemyIacError,
 	digestData,
 	inspectAlchemyPlan,
+	reinspectAlchemyPlan,
 	verifyCompositeEnvironment,
 } from "./plan.js";
 import type {
@@ -1496,6 +1497,31 @@ export function createAlchemyIacProvider<
 							error: new AlchemyIacError(
 								"STATE_IDENTITY_UNVERIFIED",
 								"persisted Alchemy state identities changed or became unavailable; the reservation is retained",
+								admission,
+								claimedReservationId,
+							),
+						};
+					}
+					try {
+						if (
+							reinspectAlchemyPlan(plan, target, composite) !== inspected.digest
+						) {
+							yield* Effect.promise(() => markUncertain(claimedReservationId));
+							return {
+								error: new AlchemyIacError(
+									"PLAN_CHANGED_AFTER_ADMISSION",
+									"the plan changed during the final state scan; the reservation is retained",
+									admission,
+									claimedReservationId,
+								),
+							};
+						}
+					} catch {
+						yield* Effect.promise(() => markUncertain(claimedReservationId));
+						return {
+							error: new AlchemyIacError(
+								"PLAN_UNINSPECTABLE_AFTER_ADMISSION",
+								"the plan cannot be checked after the final state scan; the reservation is retained",
 								admission,
 								claimedReservationId,
 							),

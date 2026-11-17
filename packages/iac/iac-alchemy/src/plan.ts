@@ -164,7 +164,9 @@ export class AlchemyIacError extends Error {
 			admission?.budget?.reservation === "held" ||
 			admission?.budget?.reservation === "uncertain";
 		this.executionOutcome =
-			code === "STATE_IDENTITY_UNVERIFIED"
+			code === "STATE_IDENTITY_UNVERIFIED" ||
+			code === "PLAN_CHANGED_AFTER_ADMISSION" ||
+			code === "PLAN_UNINSPECTABLE_AFTER_ADMISSION"
 				? "not-started"
 				: code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
 						code === "SOURCE_FENCE_UNCERTAIN" ||
@@ -506,6 +508,7 @@ function inspectUnverified(
 	plan: StackPlan,
 	target: Target,
 	guard?: AlchemyCompositeGuard,
+	verifySourceCallbacks = true,
 ): InspectedAlchemyPlan & {
 	effects: AlchemyCompositeEffect[];
 	sourceClaims: AlchemySourceClaim[];
@@ -891,17 +894,19 @@ function inspectUnverified(
 					"SOURCE_FENCE_MISMATCH",
 					"the source fence does not match the financial target and resource",
 				);
-			let verified = false;
-			try {
-				verified = source.verify(claim) === true;
-			} catch {
-				/* host refusal */
+			if (verifySourceCallbacks) {
+				let verified = false;
+				try {
+					verified = source.verify(claim) === true;
+				} catch {
+					/* host refusal */
+				}
+				if (!verified)
+					throw new AlchemyIacError(
+						"SOURCE_FENCE_UNVERIFIED",
+						"the host source fence is unavailable or revoked",
+					);
 			}
-			if (!verified)
-				throw new AlchemyIacError(
-					"SOURCE_FENCE_UNVERIFIED",
-					"the host source fence is unavailable or revoked",
-				);
 			sourceClaims.push(claim);
 			sourceBindings.push(source);
 		}
@@ -1166,6 +1171,35 @@ export function verifyCompositeEnvironment(
 		);
 }
 
+/** Bind a structural plan fingerprint to the captured host authority. */
+function authorizedPlanDigest(
+	structuralDigest: string,
+	guard: AlchemyCompositeGuard,
+): string {
+	return digestData({
+		structuralDigest,
+		proofRef: guard.proofRef,
+		environmentDigest: guard.environmentDigest,
+	});
+}
+
+/**
+ * Final synchronous reinspection after the last asynchronous state scan.
+ * This intentionally invokes no host or source verifier: those authorities
+ * must keep their previously verified fences effective through provider start.
+ */
+export function reinspectAlchemyPlan(
+	plan: StackPlan,
+	target: Target,
+	guard: AlchemyCompositeGuard,
+): string {
+	validateGuard(guard);
+	return authorizedPlanDigest(
+		inspectUnverified(plan, target, guard, false).digest,
+		guard,
+	);
+}
+
 export function inspectAlchemyPlan(
 	plan: StackPlan,
 	target: Target,
@@ -1230,11 +1264,7 @@ export function inspectAlchemyPlan(
 			"the native plan changed during verification",
 		);
 	return {
-		digest: digestData({
-			structuralDigest: inspection.digest,
-			proofRef: guard.proofRef,
-			environmentDigest: guard.environmentDigest,
-		}),
+		digest: authorizedPlanDigest(inspection.digest, guard),
 		changes: inspection.changes,
 		hasSourceClaims: inspection.hasSourceClaims,
 		revalidateSources: () => {

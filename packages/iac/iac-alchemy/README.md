@@ -293,7 +293,15 @@ source. Both callbacks must remain valid through provider completion; the
 adapter rechecks them after admission and after provider apply, and before and
 after refresh scans. A failed or unavailable check stops execution. If a
 provider already completed, its reservation remains held and the result
-explicitly requires reconciliation.
+explicitly requires reconciliation. The adapter performs a final asynchronous
+state scan followed by a synchronous reinspection of the identical plan before
+provider start, with no host-verifier callbacks between that scan and start.
+The host must keep the previously verified source, credentials and state-store
+fences valid throughout that interval and through provider completion. The
+host must also prevent asynchronous or concurrent mutation of the in-memory
+native plan, its resource objects, provider definitions and captured closures
+until provider completion. A callback or a synchronous reinspection alone
+cannot enforce those guarantees after it returns.
 For a raw source-backed Alchemy component, register its exact resource with
 `registerAlchemySource(resource, { claim, verify })`; the claim must match the
 host's source requirement, target source digest and guard proof. The host's
