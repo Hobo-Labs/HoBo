@@ -1,0 +1,130 @@
+import {
+	addDecimal,
+	compareDecimal,
+	DECIMAL_ZERO,
+	type Decimal,
+	formatDecimal,
+	maxDecimal,
+	multiplyDecimal,
+	subtractDecimal,
+} from "@hobo/pricing";
+
+// Interpret the public number contract by the decimal value it serializes as.
+// JavaScript's shortest form can use an exponent; pricing's parser deliberately
+// accepts only plain decimal strings, so expand the exponent here.
+function decimal(value: number): Decimal {
+	if (!Number.isFinite(value) || value < 0) {
+		throw new RangeError("money input must be a finite non-negative number");
+	}
+	const [mantissa = "0", exponentText = "0"] = value.toString().split("e");
+	const [integer = "0", fraction = ""] = mantissa.split(".");
+	const exponent = Number(exponentText);
+	const scale = fraction.length - exponent;
+	let coefficient = BigInt(integer + fraction);
+	if (scale < 0) coefficient *= 10n ** BigInt(-scale);
+	return { coefficient, scale: Math.max(scale, 0) };
+}
+
+function adjacent(value: number, direction: "up" | "down"): number {
+	if (value === 0) return direction === "up" ? Number.MIN_VALUE : 0;
+	const buffer = new ArrayBuffer(8);
+	const view = new DataView(buffer);
+	view.setFloat64(0, value);
+	const bits = view.getBigUint64(0);
+	view.setBigUint64(0, direction === "up" ? bits + 1n : bits - 1n);
+	return view.getFloat64(0);
+}
+
+// Conversions to the legacy number wire format are conservative: never round
+// a liability down, or an available amount up. Infinity is ineligible.
+function asNumber(value: Decimal, direction: "up" | "down"): number {
+	const candidate = Number(formatDecimal(value));
+	if (!Number.isFinite(candidate)) return candidate;
+	const comparison = compareDecimal(decimal(candidate), value);
+	if (direction === "up" && comparison < 0) return adjacent(candidate, "up");
+	if (direction === "down" && comparison > 0)
+		return adjacent(candidate, "down");
+	return candidate;
+}
+
+export function costForUnits(
+	units: number,
+	freeUnits: number,
+	unitCost: number,
+	switchingCost: number,
+): number {
+	const paid = maxDecimal(
+		subtractDecimal(decimal(units), decimal(freeUnits)),
+		DECIMAL_ZERO,
+	);
+	return asNumber(
+		addDecimal(
+			multiplyDecimal(paid, decimal(unitCost)),
+			decimal(switchingCost),
+		),
+		"up",
+	);
+}
+
+export function addUpper(left: number, right: number): number {
+	return asNumber(addDecimal(decimal(left), decimal(right)), "up");
+}
+
+export function subtractUpper(left: number, right: number): number {
+	return asNumber(
+		maxDecimal(subtractDecimal(decimal(left), decimal(right)), DECIMAL_ZERO),
+		"up",
+	);
+}
+
+export function addAvailable(left: number, right: number): number {
+	return asNumber(addDecimal(decimal(left), decimal(right)), "down");
+}
+
+export function subtractAvailable(left: number, right: number): number {
+	return asNumber(
+		maxDecimal(subtractDecimal(decimal(left), decimal(right)), DECIMAL_ZERO),
+		"down",
+	);
+}
+
+export function availableCredits(
+	aggregate: number | undefined,
+	all: readonly number[],
+	live: readonly number[],
+): number {
+	const sum = (values: readonly number[]) =>
+		values.reduce(
+			(total, value) => addDecimal(total, decimal(value)),
+			DECIMAL_ZERO,
+		);
+	const liveTotal = sum(live);
+	if (aggregate === undefined) return asNumber(liveTotal, "down");
+	const cap = decimal(aggregate);
+	const unallocated = maxDecimal(subtractDecimal(cap, sum(all)), DECIMAL_ZERO);
+	const available = addDecimal(liveTotal, unallocated);
+	return asNumber(compareDecimal(available, cap) < 0 ? available : cap, "down");
+}
+
+export function remainingMoney(
+	cap: number,
+	spent: number,
+	held: number,
+): number {
+	const remaining = subtractDecimal(
+		subtractDecimal(decimal(cap), decimal(spent)),
+		decimal(held),
+	);
+	return asNumber(maxDecimal(remaining, DECIMAL_ZERO), "down");
+}
+
+export function moneySumExceeds(
+	values: readonly number[],
+	limit: number,
+): boolean {
+	const sum = values.reduce(
+		(total, value) => addDecimal(total, decimal(value)),
+		DECIMAL_ZERO,
+	);
+	return compareDecimal(sum, decimal(limit)) > 0;
+}
