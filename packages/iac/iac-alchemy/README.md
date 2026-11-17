@@ -336,6 +336,14 @@ const provider = createAlchemyIacProvider({
   stateOwnership, composite,
 });
 const assessment = await provider.assessPricing(program);
+// Each row is scoped to the declared inventory, not a provider-wide guarantee.
+for (const providerPricing of assessment.providerCoverage.providers) {
+  console.log(providerPricing.providerId, providerPricing.status);
+}
+// Here budget is { evaluation: "not-evaluated", reservation: "not-created" }.
+// admissionPath.kind says whether the next step needs a bounded budget check,
+// an explicit unpriced policy check, or cannot proceed with this configuration.
+console.log(assessment.admissionPath);
 const ranking = rankIacTargets({
   tenantId, workloadRef, action: scenario.action, at: scenario.at,
   horizon: scenario.horizon,
@@ -359,6 +367,15 @@ const result = await executeRankedIacTargets({
 Omit `pricing` from the financial services to obtain an explicit unavailable
 assessment. `describePricingSupport` in `@hobo/provider-manifest` separately
 reports which manifest plans the pricing kernel supports.
+In `providerCoverage`, `quoted` means the complete joint target model produced
+a quote; `unavailable` means no model was supplied, `incomplete` identifies
+missing or invalid bindings, and `unverified` means another joint-quote check
+failed. These labels do not claim independent provider prices or validate the
+host inventory. If the inventory cannot be inspected, its coverage basis is
+`unavailable`. The admission receipt from execution gives the actual budget
+decision; an unpriced policy bypass remains explicitly unbounded.
+`admissionPath` is `bounded-budget`, `unpriced-policy`, or `unavailable`;
+it describes the configured next step, not an authorization or reservation.
 
 `applyWithAdmission(program, requestId)` returns bounded string-valued stack
 outputs and the broker admission receipt, including its reservation identifier

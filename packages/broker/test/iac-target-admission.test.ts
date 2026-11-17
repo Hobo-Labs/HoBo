@@ -546,6 +546,67 @@ describe("provider-neutral IaC target budget admission", () => {
 				evidenceRef: inventory.evidenceRef,
 				resources: inventory.resources,
 			};
+			expect(financial.assess(plan)).toMatchObject({
+				quote: { ok: true, source: "developer-supplied" },
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				admissionPath: {
+					kind: "bounded-budget",
+					budget: "evaluation-required",
+				},
+				providerCoverage: {
+					basis: "declared-inventory",
+					providers: [{ providerId: "sandbox", status: "quoted" }],
+				},
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+			const withoutHost = createIacFinancialServices({
+				authority: ledger,
+				now: () => NOW,
+				pricing: {
+					modelId: source.modelId,
+					revision: source.revision,
+					scenario: source.scenario,
+					bindings,
+				},
+			});
+			expect(withoutHost.assess(plan)).toMatchObject({
+				admissionPath: {
+					kind: "unavailable",
+					code: "FINANCIAL_CONFIGURATION_INCOMPLETE",
+				},
+			});
+			expect(await withoutHost.admit("unconfigured", plan)).toMatchObject({
+				status: "denied",
+				code: "FINANCIAL_CONFIGURATION_INCOMPLETE",
+			});
+			let unpricedCalls = 0;
+			const invalidModel = createIacFinancialServices({
+				authority: ledger,
+				now: () => NOW,
+				pricing: {
+					modelId: source.modelId,
+					revision: source.revision,
+					scenario: source.scenario,
+					bindings: [],
+				},
+				unpriced: {
+					authorize: () => {
+						unpricedCalls++;
+						throw new Error("unexpected bypass");
+					},
+				},
+			});
+			expect(invalidModel.assess(plan)).toMatchObject({
+				admissionPath: {
+					kind: "unavailable",
+					code: "TARGET_PRICING_INCOMPLETE",
+				},
+			});
+			expect(await invalidModel.admit("incomplete", plan)).toMatchObject({
+				status: "denied",
+				code: "TARGET_PRICING_INCOMPLETE",
+			});
+			expect(unpricedCalls).toBe(0);
 			const admission = await financial.admit("priced-service", plan);
 			expect(admission.status).toBe("admitted");
 			expect(await financial.revalidate(admission, plan)).toBe(true);
