@@ -23,7 +23,6 @@ const binding: StrictRunnerPodBinding = {
 	connectionId: "connection-1",
 	namespace: "runners",
 	slotId: "slot-1",
-	claimId: "claim-1",
 	accountId: "account-1",
 	profileId: "profile-1",
 	ownerName: "runner-owner",
@@ -192,13 +191,36 @@ describe("strict runner Pod client", () => {
 			created: true,
 		});
 		const pod = record(stored);
-		const runner = record(array(record(pod.spec).containers)[0]);
+		const spec = record(pod.spec);
+		const runner = record(array(spec.containers)[0]);
+		expect(spec.securityContext).toMatchObject({
+			runAsNonRoot: true,
+			runAsUser: 1000,
+			runAsGroup: 1000,
+			fsGroup: 1000,
+		});
+		expect(array(spec.initContainers).map(record)).toEqual([
+			expect.objectContaining({ name: "install-hook" }),
+			expect.objectContaining({ name: "prepare-runner", image }),
+		]);
+		expect(runner).toMatchObject({
+			command: ["/opt/actions-runner/run.sh"],
+			workingDir: "/opt/actions-runner",
+			args: ["--jitconfig", "$(HOBO_JIT_CONFIG)"],
+			volumeMounts: expect.arrayContaining([
+				{ name: "hook", mountPath: "/opt/hobo/hooks", readOnly: true },
+				{ name: "runner-home", mountPath: "/opt/actions-runner" },
+				{ name: "work", mountPath: "/opt/actions-runner/_work" },
+				{ name: "tmp", mountPath: "/tmp" },
+			]),
+		});
 		const env = array(runner.env).map(record);
+		expect(env).toContainEqual({ name: "HOME", value: "/tmp" });
 		const references = env
 			.filter((item) => item.valueFrom)
 			.map((item) => record(record(item.valueFrom).secretKeyRef));
 		expect(references.map((item) => item.name)).toEqual(
-			Array(3).fill(created.name),
+			Array(2).fill(created.name),
 		);
 		expect(JSON.stringify(pod)).not.toContain("secret-value");
 		expect(await client.create(binding, created.uid)).toMatchObject({
@@ -231,9 +253,9 @@ describe("strict runner Pod client", () => {
 			},
 		],
 		[
-			"claim",
+			"slot",
 			(pod: MutableObject) => {
-				record(record(pod.metadata).annotations)["hobo.dev/claim-id"] = "other";
+				record(record(pod.metadata).annotations)["hobo.dev/slot-id"] = "other";
 			},
 		],
 		[
@@ -335,12 +357,11 @@ describe("strict runner Pod client", () => {
 		[
 			"secret reference",
 			(pod: MutableObject) => {
-				record(
-					record(
-						record(array(record(array(record(pod.spec).containers)[0]).env)[6])
-							.valueFrom,
-					).secretKeyRef,
-				).name = "other-secret";
+				const env = array(record(array(record(pod.spec).containers)[0]).env)
+					.map(record)
+					.find((entry) => entry.name === "HOBO_BINDING_SECRET");
+				record(record(record(env).valueFrom).secretKeyRef).name =
+					"other-secret";
 			},
 		],
 	])("rejects a Pod with changed %s", async (_name, mutate) => {

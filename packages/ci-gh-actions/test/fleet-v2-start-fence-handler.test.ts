@@ -293,7 +293,110 @@ function request(
 }
 
 describe("strict start-fence controller", () => {
-	it("runs the pre-job hook through HTTPS and commits the actual GitHub assignment", async () => {
+	it("binds the actual GitHub job when it differs from the provisioning demand", async () => {
+		const actualKey = { githubJob: { ...githubJob, jobId: "2" } };
+		await store.intake(
+			parseCiDemand(
+				JSON.stringify({
+					key: actualKey,
+					state: "eligible",
+					firstObservedAt: now,
+					lastObservedAt: now,
+					policyRevision: 1,
+					requiredProfileId: "trusted-linux-x64",
+					source: "webhook",
+					sourceDeliveryIds: ["actual-job-2"],
+				}),
+			),
+		);
+		jobs = [{ ...assignedJob, id: 2 }];
+		const body = {
+			slotId: payload.slotId,
+			bindingSecret: secret,
+			accountId: payload.accountId,
+			runnerName: payload.runnerName,
+			profileId: payload.profileId,
+			githubContext: {
+				repository: "owner/repository",
+				repositoryId: "101",
+				runId: "900",
+				runAttempt: 1,
+			},
+		};
+		const handle = relay();
+		const first = await handle(request(JSON.stringify(body)));
+		expect(first.status).toBe(200);
+		const receipt = await first.json();
+		expect(receipt).toMatchObject({
+			authorized: true,
+			executionKey: actualKey,
+		});
+		expect(receipt.claimId).toMatch(/^github-[a-f0-9]{64}$/u);
+		expect(
+			await store.executionClaim(
+				parseExecutionKey(JSON.stringify(executionKey)),
+			),
+		).toBeUndefined();
+		expect(
+			await store.executionClaim(parseExecutionKey(JSON.stringify(actualKey))),
+		).toMatchObject({
+			id: receipt.claimId,
+			runnerSlotId: "slot-1",
+			state: "start-authorized",
+		});
+		const retry = await handle(request(JSON.stringify(body)));
+		expect(retry.status).toBe(200);
+		expect(await retry.json()).toEqual(receipt);
+		expect(
+			(await store.events()).filter(
+				(event) => event.type === FleetEventType.EXECUTION_START_AUTHORIZED,
+			),
+		).toHaveLength(1);
+	});
+
+	it("rejects an actual-job request outside the configured repository scope", async () => {
+		const body = {
+			slotId: payload.slotId,
+			bindingSecret: secret,
+			accountId: payload.accountId,
+			runnerName: payload.runnerName,
+			profileId: payload.profileId,
+			githubContext: {
+				repository: "owner/other",
+				repositoryId: "101",
+				runId: "900",
+				runAttempt: 1,
+			},
+		};
+		expect((await relay()(request(JSON.stringify(body)))).status).toBe(403);
+		expect(githubRequests).toBe(0);
+	});
+
+	it.each([
+		"legacy",
+		"actual",
+	] as const)("runs the %s pre-job hook through HTTPS and commits the GitHub assignment", async (protocol) => {
+		const actualKey =
+			protocol === "actual"
+				? { githubJob: { ...githubJob, jobId: "2" } }
+				: executionKey;
+		if (protocol === "actual") {
+			await store.intake(
+				parseCiDemand(
+					JSON.stringify({
+						key: actualKey,
+						state: "eligible",
+						firstObservedAt: now,
+						lastObservedAt: now,
+						policyRevision: 1,
+						requiredProfileId: "trusted-linux-x64",
+						source: "webhook",
+						sourceDeliveryIds: ["https-actual-job-2"],
+					}),
+				),
+			);
+			jobs = [{ ...assignedJob, id: 2 }];
+		}
 		const directory = mkdtempSync(join(tmpdir(), "hobo-fence-e2e-"));
 		const key = join(directory, "key.pem");
 		const certificate = join(directory, "certificate.pem");
@@ -361,11 +464,15 @@ describe("strict start-fence controller", () => {
 						NODE_EXTRA_CA_CERTS: certificate,
 						HOBO_START_FENCE_URL: `https://127.0.0.1:${address.port}/v1/fleet/start-fence`,
 						HOBO_SLOT_ID: payload.slotId,
-						HOBO_CLAIM_ID: payload.claimId,
 						HOBO_BINDING_SECRET: secret,
 						HOBO_ACCOUNT_ID: payload.accountId,
 						HOBO_PROFILE_ID: payload.profileId,
-						HOBO_EXECUTION_KEY_JSON: JSON.stringify(executionKey),
+						...(protocol === "legacy"
+							? {
+									HOBO_CLAIM_ID: payload.claimId,
+									HOBO_EXECUTION_KEY_JSON: JSON.stringify(executionKey),
+								}
+							: { GITHUB_REPOSITORY_ID: "101" }),
 						GITHUB_REPOSITORY: "owner/repository",
 						GITHUB_RUN_ID: "900",
 						GITHUB_RUN_ATTEMPT: "1",
@@ -385,14 +492,12 @@ describe("strict start-fence controller", () => {
 			const [code] = await once(child, "close");
 			expect(code).toBe(0);
 			expect(output).not.toContain(secret);
-			expect(
-				await store.executionClaim(
-					parseExecutionKey(JSON.stringify(executionKey)),
-				),
-			).toMatchObject({
-				id: "claim-1",
-				state: "start-authorized",
-			});
+			const claim = await store.executionClaim(
+				parseExecutionKey(JSON.stringify(actualKey)),
+			);
+			expect(claim).toMatchObject({ state: "start-authorized" });
+			if (protocol === "legacy") expect(claim?.id).toBe("claim-1");
+			else expect(claim?.id).toMatch(/^github-[a-f0-9]{64}$/u);
 		} finally {
 			await new Promise<void>((resolveClose, rejectClose) =>
 				https.close((error) => (error ? rejectClose(error) : resolveClose())),

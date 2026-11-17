@@ -239,16 +239,20 @@ caused it and those objects carry ServiceAccount tokens and imagePullSecrets.
 ## Strict runner Pods
 
 `createStrictRunnerPodClient` creates one deterministic Pod for a reserved runner
-slot. The caller supplies an authenticated transport, the claim and placement
+slot. The caller supplies an authenticated transport, the slot and placement
 identity, a ConfigMap owner, a service account, resource limits, pinned runner
 and hook images, and the HTTPS start-fence endpoint. The hook image must provide
-`/opt/hobo/fleet/pre-job.sh`; the runner image must accept `--jitconfig` and
-support the hook's Bash and Node requirements. The Pod mounts a writable work
-directory and disables automatic service-account token mounting.
+`/opt/hobo/fleet/pre-job.sh`; build the supplied image from the repository root
+with `docker build -f packages/ci-gh-actions/deploy/fleet-hook/Dockerfile .`.
+The runner image must provide `/opt/actions-runner/run.sh`, accept `--jitconfig`,
+and support the hook's Bash and Node requirements. The Pod copies the runner
+into writable ephemeral storage, runs as UID and GID 1000 with a read-only root
+filesystem, and disables automatic service-account token mounting.
 
-The caller must create the Pod-named Secret with `jit-config`, `binding-secret`,
-and `execution-key.json` keys and persist the returned UID. Existing Pods are
-accepted only with that UID and an unchanged owner, claim, and specification. A
+The caller must create the Pod-named Secret with `jit-config` and
+`binding-secret` keys and persist the returned UID. The hook obtains the actual
+job identity at start time. Existing Pods are accepted only with that UID and
+an unchanged owner, slot, and specification. A
 lost create response or an absent previously recorded Pod requires reconciliation;
 it must not trigger an automatic replacement. A Pod phase describes Kubernetes
 state and does not establish GitHub registration or job authorization. Deletion

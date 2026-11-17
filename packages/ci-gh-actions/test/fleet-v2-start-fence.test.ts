@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+	authorizeActualAssignment,
 	authorizeStartFence,
 	type GithubAssignmentLookup,
 	hashBindingSecret,
@@ -46,6 +47,79 @@ function lookupReturning(
 }
 
 describe("fleet v2 GitHub start fence", () => {
+	it("derives an idempotent claim from the verified actual job", async () => {
+		const request = {
+			slotId: body.slotId,
+			bindingSecret: secret,
+			accountId: body.accountId,
+			runnerName: body.runnerName,
+			profileId: body.profileId,
+			githubContext: {
+				repository: "owner/repository",
+				repositoryId: "101",
+				runId: "900",
+				runAttempt: 1,
+			},
+		};
+		const first = await authorizeActualAssignment(
+			request,
+			lookupReturning({ accountId: "hobo-labs" }),
+		);
+		const second = await authorizeActualAssignment(
+			request,
+			lookupReturning({ accountId: "hobo-labs" }),
+		);
+		expect(first.ok).toBe(true);
+		expect(second).toEqual(first);
+		if (!first.ok) throw new Error("assignment refused");
+		expect(first.bindRequest.claimId).toMatch(/^github-[a-f0-9]{64}$/u);
+		expect(first.bindRequest.executionKey).toEqual(executionKey);
+		for (const githubContext of [
+			{ ...request.githubContext, repositoryId: "102" },
+			{ ...request.githubContext, runId: "901" },
+			{ ...request.githubContext, runAttempt: 2 },
+		]) {
+			expect(
+				(
+					await authorizeActualAssignment(
+						{ ...request, githubContext },
+						lookupReturning({ accountId: "hobo-labs" }),
+					)
+				).ok,
+			).toBe(false);
+		}
+	});
+
+	it("rejects malformed actual-job contexts before assignment lookup", async () => {
+		const lookup = { lookupAssignment: vi.fn() };
+		const request = {
+			slotId: body.slotId,
+			bindingSecret: secret,
+			accountId: body.accountId,
+			runnerName: body.runnerName,
+			profileId: body.profileId,
+			githubContext: {
+				repository: "owner/repository",
+				repositoryId: "101",
+				runId: "900",
+				runAttempt: 1,
+			},
+		};
+		for (const invalid of [
+			{
+				...request,
+				githubContext: { ...request.githubContext, runAttempt: "1" },
+			},
+			{
+				...request,
+				githubContext: { ...request.githubContext, repositoryId: "0" },
+			},
+			{ ...request, claimId: "preassigned" },
+		]) {
+			expect((await authorizeActualAssignment(invalid, lookup)).ok).toBe(false);
+		}
+		expect(lookup.lookupAssignment).not.toHaveBeenCalled();
+	});
 	it("uses deterministic runner slot names", () => {
 		expect(runnerSlotName("slot-uuid")).toBe("hobo-slot-uuid");
 	});
