@@ -19,6 +19,11 @@ import {
 	verifyAlchemySourceFence,
 } from "./source-fence.js";
 
+export {
+	describeRivetPrimitiveSupport,
+	type RivetPrimitiveSupport,
+} from "./rivet-catalog.js";
+
 export interface RivetRegistry {
 	readonly config: {
 		readonly use: Readonly<Record<string, AnyActorDefinition>>;

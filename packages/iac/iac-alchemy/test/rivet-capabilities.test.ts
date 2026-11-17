@@ -2,11 +2,16 @@ import type { PoolHost } from "@alchemy.run/rivet/Host";
 import * as Effect from "effect/Effect";
 import { setup } from "rivetkit";
 import { describe, expect, it } from "vitest";
+import { CATALOG } from "../../../bindles/src/catalog.js";
+import { CATALOG_ROWS } from "../../../bindles/src/types.js";
 import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
 } from "../src/bindle.js";
-import { createRivetPrimitiveMappers } from "../src/rivet.js";
+import {
+	createRivetPrimitiveMappers,
+	describeRivetPrimitiveSupport,
+} from "../src/rivet.js";
 import { createRivetMultiPoolPrimitiveMappers } from "../src/rivet-multi.js";
 import { createRivetHttpActor } from "../src/rivet-runtime.js";
 
@@ -55,6 +60,70 @@ function application(kind: (typeof kinds)[number], index: number) {
 }
 
 describe("Rivet source-aware primitive capabilities", () => {
+	it("accounts for every HoBo catalog entry and explains the messaging gaps", () => {
+		const { source } = application("web", 0);
+		const rows = describeRivetPrimitiveSupport(
+			CATALOG,
+			createRivetPrimitiveMappers(source),
+		);
+		expect(rows.map((row) => row.kind)).toEqual(
+			CATALOG_ROWS.map((row) => row.factory),
+		);
+		expect(
+			rows.filter((row) => row.status === "partial").map((row) => row.kind),
+		).toEqual(["web"]);
+		expect(rows.filter((row) => row.status === "unsupported")).toHaveLength(
+			CATALOG_ROWS.length - 1,
+		);
+		expect(
+			rows.every(
+				(row) =>
+					row.reason.length > 0 &&
+					!row.reason.includes(
+						"No Rivet Bindle mapping is implemented for this primitive",
+					),
+			),
+		).toBe(true);
+		expect(rows.find((row) => row.kind === "queue")?.reason).toContain(
+			"byte-and-attribute",
+		);
+		expect(rows.find((row) => row.kind === "topic")?.reason).toContain(
+			"consumer-group leases",
+		);
+		expect(
+			rows.find((row) => row.kind === "topic")?.unsupportedOperations,
+		).toEqual(["publish", "subscribe"]);
+	});
+
+	it("reports explicit custom mapper limitations and unknown kinds without claiming native support", () => {
+		const { source } = application("web", 0);
+		const mappers = createRivetPrimitiveMappers(source);
+		const rows = describeRivetPrimitiveSupport(
+			[
+				{ factory: "topic", allowVerbs: ["publish", "subscribe"] },
+				{ factory: "future-kind", allowVerbs: [] },
+			],
+			{
+				...mappers,
+				topic: {
+					...mappers.web,
+					operations: ["publish"],
+					limitations: ["Custom publisher only."],
+				},
+			},
+		);
+		expect(rows[0]).toMatchObject({
+			status: "partial",
+			supportedOperations: ["publish"],
+			unsupportedOperations: ["subscribe"],
+			reason: "Unsupported operations: subscribe. Custom publisher only.",
+		});
+		expect(rows[1]).toMatchObject({
+			status: "unsupported",
+			reason: "No Rivet Bindle mapping is implemented for this primitive.",
+		});
+	});
+
 	it.each(
 		kinds,
 	)("reports only the supplied %s source as partially mapped", (kind) => {

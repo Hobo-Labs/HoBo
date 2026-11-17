@@ -20,12 +20,30 @@ active stacks, maintaining ownership through deletion and reconciliation. It
 must include every pool and its infrastructure in the financial inventory. The
 Rivet HTTP mapper requires each resource FQN to equal its actor name, so use
 distinct actor names or independently isolated stacks and pools; placing these
-actors inside an Alchemy namespace is rejected. Unsupported Rivet storage,
-messaging, dependencies and replay are rejected explicitly.
+actors inside an Alchemy namespace is rejected. Rivet Bindle storage, queues,
+topics, resource dependencies and enabled replay are rejected explicitly when
+they are not supported by the mapping.
 `describeAlchemyPrimitiveSupport` reports only the HTTP kinds represented by
 the supplied Rivet source or sources. Those mappings are partial because they
 require a matching attested source, exclusive pool, disabled replay and no
 resource dependencies. A source for one HTTP kind does not authorize another.
+`describeRivetPrimitiveSupport(catalog, mappers)` also explains every missing
+primitive, including why a Rivet DurableStream is not a HoBo topic and why the
+standalone JSON queue does not satisfy the byte-and-attribute queue port.
+
+```ts
+import { CATALOG } from "@hobo/bindles";
+import {
+  createRivetPrimitiveMappers,
+  describeRivetPrimitiveSupport,
+} from "@hobo/iac-alchemy/rivet";
+
+const mappers = createRivetPrimitiveMappers(source); // host-attested Rivet source
+const coverage = describeRivetPrimitiveSupport(CATALOG, mappers);
+const topic = coverage.find((entry) => entry.kind === "topic");
+// topic.status is "unsupported"; topic.reason explains the missing semantics.
+```
+
 The Rivet HTTP binding authorizes a snapshot of the actor key, HTTP method,
 URL and headers before starting application code. It transfers the request
 body stream to the application without buffering it; callers must not consume
