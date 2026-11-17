@@ -1947,3 +1947,43 @@ names, and matches the answer. The relay's HTTP framing in front of them
 (bearer credentials, origins, sessions) is the one `mcp-boundary.pact.json`
 covers. `createRelayMcpServer` does not register the insight tools yet, so no
 deployed relay serves them: they are built, not proven.
+
+## `hobo ci init --relay` and `--undo`
+
+`hobo ci init --relay` puts the relay job in front of a workflow's jobs, and
+`hobo ci init --undo` takes it out again (ADR-0183,
+[`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+The edits are pure functions over a workflow's bytes in
+[`src/workflow-relay.ts`](src/workflow-relay.ts); the command is
+`packages/hobo/src/ci-init-relay.ts`.
+
+- `applyRelayPlan` takes the jobs `planWorkflow` calls ready. For each one it
+  adds a job `relay-<job>` just above it that calls
+  `./.github/workflows/hobo-relay.yml` with `actions: read` and
+  `contents: read`, `github:` set to the label the job had and any other
+  runner types given, adds the relay to the job's `needs` (a new line, a
+  list entry, or `[relay-<job>, <old>]` for a single name), and sets the
+  job's `runs-on` to `${{ needs.relay-<job>.outputs.runner }}`, keeping the
+  label's quotes and any comment after it. A matrix job gets one relay that
+  every leg reads. Bytes are spliced; the file is never written back out
+  from its parsed form.
+- Before it changes a job, it undoes the change on a copy and refuses the
+  job unless that gives the original bytes back, so every edit it makes can
+  be reversed exactly. A job written in flow style, shared through an
+  anchor, or with a `relay-<job>` id already taken is refused with the
+  reason.
+- `undoRelayPlan` removes each relay, its `needs` entry and the expression,
+  and puts back the label from the relay's `github:` input. It regenerates
+  the relay block it would have written from the relay's own `with:` and
+  compares; a relay, `needs` or `runs-on` changed since in a way it cannot
+  reverse is left in place, and the refusal names the lines.
+- `relayFilesFor(mode)` gives the generated files: in job mode the workflow
+  and `.hobo-ci/relay.mjs` from `@hobo/ci-gh-actions/relay-job-assets`; in
+  relay mode only the workflow, with its job on the `hobo-relay` label, so a
+  HoBo relay claims it over the runner protocol and its steps never run.
+  `checkRelayFiles` compares a repository's copies by SHA-256 and reports
+  each as `current`, `stale`, `edited`, `missing` or `not_needed`.
+
+`test/workflow-relay.test.ts` holds gauntlet cases S03 and S09 at T1: apply,
+undo and apply again are each byte-exact across every `needs` and `runs-on`
+form, line endings and indentation it accepts.
