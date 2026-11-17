@@ -32,6 +32,6 @@ values empty when the corresponding service or document is unavailable.
 
 ### Verification
 
-Run `npm run test:unit` for the local browser-state, message indicator, and payment-boundary tests. Set `TEST_DATABASE_URL` to an isolated PostgreSQL database with the application schema applied to include the message and profile operation tests.
+Run `npm run test:unit` for the local browser-state, message indicator, and payment-boundary tests. Set `TEST_DATABASE_URL` to an isolated PostgreSQL database with the application schema applied to include the message and profile operation tests; these database cases are skipped when it is unset.
 Run `wasp compile` to check the generated SDK and application types; a running
 PostgreSQL instance is needed to verify that database migrations are current.

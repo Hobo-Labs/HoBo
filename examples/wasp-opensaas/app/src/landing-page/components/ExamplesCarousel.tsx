@@ -58,7 +58,6 @@ export function ExamplesCarousel({ examples }: { examples: ExampleApp[] }) {
     scrollTimeoutRef.current = setTimeout(() => {
       if (scrollContainerRef.current) {
         const scrollContainer = scrollContainerRef.current;
-        // SAFETY: assertion to `scrollContainer.children[currentExample] as | HTMLElement | undefined` is required at this boundary.
         const targetCard = scrollContainer.children[currentExample] as
           | HTMLElement
           | undefined;

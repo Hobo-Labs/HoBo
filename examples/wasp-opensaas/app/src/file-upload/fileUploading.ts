@@ -53,6 +53,5 @@ export function validateFile(file: File): FileWithValidType {
 }
 
 function isFileWithAllowedFileType(file: File): file is FileWithValidType {
-  // SAFETY: assertion to `file.type as AllowedFileTypes` is required at this boundary.
   return ALLOWED_FILE_TYPES.includes(file.type as AllowedFileTypes);
 }

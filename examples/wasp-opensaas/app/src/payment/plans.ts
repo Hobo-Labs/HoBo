@@ -45,9 +45,7 @@ export function prettyPaymentPlanName(planId: PaymentPlanId): string {
 }
 
 export function parsePaymentPlanId(planId: string): PaymentPlanId {
-  // SAFETY: assertion to `Object.values(PaymentPlanId) as string[]` is required at this boundary.
   if ((Object.values(PaymentPlanId) as string[]).includes(planId)) {
-    // SAFETY: assertion to `planId as PaymentPlanId` is required at this boundary.
     return planId as PaymentPlanId;
   } else {
     throw new Error(`Invalid PaymentPlanId: ${planId}`);

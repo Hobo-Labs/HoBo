@@ -44,7 +44,6 @@ export const lemonSqueezyWebhook: PaymentsWebhook = async (
         await handleSubscriptionExpired(data, userId, prismaUserDelegate);
         break;
       default:
-        // If you'd like to handle more events, you can add more cases above.
         assertUnreachable(eventName);
     }
 
@@ -87,8 +86,6 @@ function parseRequestBody(request: express.Request): string {
 export const lemonSqueezyMiddlewareConfigFn: MiddlewareConfigFn = (
   middlewareConfig,
 ) => {
-  // We need to delete the default 'express.json' middleware and replace it with 'express.raw' middleware
-  // because webhook data in the body of the request as raw JSON, not as JSON in the body of the request.
   middlewareConfig.delete("express.json");
   middlewareConfig.set(
     "express.raw",
@@ -97,9 +94,6 @@ export const lemonSqueezyMiddlewareConfigFn: MiddlewareConfigFn = (
   return middlewareConfig;
 };
 
-// This will fire for one-time payment orders AND subscriptions. But subscriptions will ALSO send a follow-up
-// event of 'subscription_created'. So we use this handler mainly to process one-time, credit-based orders,
-// as well as to save the customer portal URL and customer id for the user.
 async function handleOrderCreated(
   data: OrderData,
   userId: string,
@@ -153,7 +147,6 @@ async function handleSubscriptionCreated(
         lemonSqueezyId,
         userId,
         subscriptionPlan: planId,
-        // SAFETY: assertion to `status as SubscriptionStatus` is required at this boundary.
         subscriptionStatus: status as SubscriptionStatus,
         datePaid: new Date(),
       },
@@ -168,7 +161,6 @@ async function handleSubscriptionCreated(
   console.log(`Subscription created for user ${lemonSqueezyId}`);
 }
 
-// NOTE: LemonSqueezy's 'subscription_updated' event is sent as a catch-all and fires even after 'subscription_created' & 'order_created'.
 async function handleSubscriptionUpdated(
   data: SubscriptionData,
   userId: string,
@@ -179,18 +171,12 @@ async function handleSubscriptionUpdated(
 
   const planId = getPlanIdByVariantId(variant_id.toString());
 
-  // We ignore other statuses like 'paused' and 'unpaid' for now, because we block user usage if their status is NOT active.
-  // Note that a status changes to 'past_due' on a failed payment retry, then after 4 unsuccesful payment retries status
-  // becomes 'unpaid' and finally 'expired' (i.e. 'deleted').
-  // NOTE: ability to pause or trial a subscription is something that has to be additionally configured in the lemon squeezy dashboard.
-  // If you do enable these features, make sure to handle these statuses here.
   if (status === "past_due" || status === "active") {
     await updateUserLemonSqueezyPaymentDetails(
       {
         lemonSqueezyId,
         userId,
         subscriptionPlan: planId,
-        // SAFETY: assertion to `status as SubscriptionStatus` is required at this boundary.
         subscriptionStatus: status as SubscriptionStatus,
         ...(status === "active" && { datePaid: new Date() }),
       },
@@ -212,8 +198,6 @@ async function handleSubscriptionCancelled(
     {
       lemonSqueezyId,
       userId,
-      // cancel_at_period_end is the Stripe equivalent of LemonSqueezy's cancelled
-      // SAFETY: assertion to `"cancel_at_period_end" as SubscriptionStatus` is required at this boundary.
       subscriptionStatus: "cancel_at_period_end" as SubscriptionStatus,
     },
     prismaUserDelegate,
@@ -234,7 +218,6 @@ async function handleSubscriptionExpired(
     {
       lemonSqueezyId,
       userId,
-      // deleted is the Stripe equivalent of LemonSqueezy's expired
       subscriptionStatus: SubscriptionStatus.Deleted,
     },
     prismaUserDelegate,

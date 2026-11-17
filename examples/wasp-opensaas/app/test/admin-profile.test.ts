@@ -11,9 +11,9 @@ const tinyPng =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a6kAAAAASUVORK5CYII=";
 
 describeDatabase("admin profile", () => {
-  const prisma = new PrismaClient({
-    datasources: { db: { url: databaseUrl } },
-  });
+  const prisma = new PrismaClient(
+    databaseUrl ? { datasources: { db: { url: databaseUrl } } } : undefined,
+  );
   const emailPrefix = crypto.randomUUID();
   let admin: { id: string; isAdmin: boolean };
   let member: { id: string; isAdmin: boolean };
