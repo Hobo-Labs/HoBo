@@ -156,3 +156,6 @@ independent host and runner evidence.
 
 The [Rivet topic-log actor guide](./DURABLE-TOPIC-ACTOR.md) describes its
 partial capabilities, setup, limits and host obligations.
+
+The separate [durable topic bus guide](./DURABLE-TOPIC-BUS.md) explains group
+leases, DLQ capacity reservations and its instance-wide host authorization.

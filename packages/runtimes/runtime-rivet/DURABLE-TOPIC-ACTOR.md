@@ -18,6 +18,9 @@ and instance. The journal retains at most 10,000 unexpired operation receipts;
 it will not evict one to admit work. Internal serialized request, receipt and
 state ceilings are 131,072, 262,144 and 4,194,304 bytes respectively. The
 profile's combination of limits is bounded for base64 and JSON expansion.
+The Alchemy adapter's branded binding check must resolve the same
+`@hobo/runtime-rivet` module instance as the application; duplicate copies
+fail closed instead of accepting an unverifiable actor definition.
 
 A deployment must provide a separately trusted host. For example, with
 `trustedHost` implemented by the embedding environment:

@@ -17,6 +17,12 @@ import {
 	runDurableReceiptJournal,
 } from "./durable-receipt-journal.js";
 import {
+	RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
+	RIVET_DURABLE_TOPIC_BUS_LIMITS,
+	readRivetTopicBusAudit,
+	reduceRivetTopicBus,
+} from "./durable-topic-bus.js";
+import {
 	RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
 	RIVET_DURABLE_TOPIC_LOG_LIMITS,
 	readRivetTopicAudit,
@@ -53,6 +59,17 @@ export interface RivetDurableTopicBinding {
 	readonly limits: typeof RIVET_DURABLE_TOPIC_LOG_LIMITS;
 	readonly capabilities: typeof RIVET_DURABLE_TOPIC_LOG_CAPABILITIES;
 }
+export interface RivetDurableTopicBusBinding {
+	readonly actorName: string;
+	readonly semanticDigest: string;
+	readonly actor: AnyActorDefinition;
+	readonly handle: (
+		context: RivetDurableTopicContext,
+		request: Request,
+	) => Promise<Response>;
+	readonly limits: typeof RIVET_DURABLE_TOPIC_BUS_LIMITS;
+	readonly capabilities: typeof RIVET_DURABLE_TOPIC_BUS_CAPABILITIES;
+}
 export interface RivetDurableTopicOptions {
 	readonly actorName: string;
 	/** Host-attested immutable source/dependency/configuration digest. */
@@ -79,9 +96,17 @@ export interface RivetDurableTopicOptions {
 		readonly maxHeaderBytes: number;
 	}) => boolean;
 }
+export interface RivetDurableTopicBusOptions extends RivetDurableTopicOptions {
+	/**
+	 * Verify a held grant for the entire authenticated instance, including all
+	 * its topics and DLQ transfers, through transaction and disclosure. This
+	 * profile does not implement per-topic capability isolation.
+	 */
+	readonly authorizeInstanceScope: (claim: TopicClaim) => boolean;
+}
 const registered = new WeakMap<
 	object,
-	Readonly<{ database: object; semanticDigest: string }>
+	Readonly<{ database: object; semanticDigest: string; mode: "log" | "bus" }>
 >();
 const MAX_CHUNK_BYTES = 65_536;
 const MAX_CHUNKS = 4_096;
@@ -300,9 +325,18 @@ async function readBody(
  * ingress/response path, including limits before chunk allocation. The fixed reducer
  * is trusted code isolated from ambient effects; this factory does not attest it.
  */
-export function createRivetDurableTopicActor(
+function buildTopicActor(
 	options: RivetDurableTopicOptions,
-): RivetDurableTopicBinding {
+	mode: "log",
+): RivetDurableTopicBinding;
+function buildTopicActor(
+	options: RivetDurableTopicBusOptions,
+	mode: "bus",
+): RivetDurableTopicBusBinding;
+function buildTopicActor(
+	options: RivetDurableTopicOptions | RivetDurableTopicBusOptions,
+	mode: "log" | "bus",
+): RivetDurableTopicBinding | RivetDurableTopicBusBinding {
 	const {
 		actorName,
 		semanticDigest,
@@ -311,6 +345,10 @@ export function createRivetDurableTopicActor(
 		authorize,
 		verifyIngress,
 	} = options;
+	const authorizeInstanceScope =
+		"authorizeInstanceScope" in options
+			? options.authorizeInstanceScope
+			: undefined;
 	if (
 		!name(actorName) ||
 		typeof semanticDigest !== "string" ||
@@ -318,7 +356,8 @@ export function createRivetDurableTopicActor(
 		typeof now !== "function" ||
 		typeof resolveScope !== "function" ||
 		typeof authorize !== "function" ||
-		typeof verifyIngress !== "function"
+		typeof verifyIngress !== "function" ||
+		(mode === "bus" && typeof authorizeInstanceScope !== "function")
 	)
 		throw new TypeError(
 			"actor identity, semantic digest and trusted host functions are required",
@@ -331,7 +370,10 @@ export function createRivetDurableTopicActor(
 		const method = new URL(request.url).pathname.slice(1);
 		if (
 			request.method !== "POST" ||
-			(!mutations.has(method) && method !== "events" && method !== "read-log")
+			(!mutations.has(method) &&
+				method !== "events" &&
+				method !== "read-log") ||
+			(mode === "bus" && method === "read-log")
 		)
 			return reply(404, { error: "not-found" });
 		if (
@@ -404,22 +446,29 @@ export function createRivetDurableTopicActor(
 					currentScope.instance !== scope.instance
 				)
 					return false;
-				const base = {
-					...scope,
-					actorName,
-					actorKey,
-					semanticDigest,
-					method,
-					requestBase64,
-					headers: new Headers(
-						headerEntries.map(([key, value]): [string, string] => [key, value]),
-					),
-				};
-				const claim =
-					operation === undefined
+				const claim = () => {
+					const base = {
+						...scope,
+						actorName,
+						actorKey,
+						semanticDigest,
+						method,
+						requestBase64,
+						headers: new Headers(
+							headerEntries.map(([key, value]): [string, string] => [
+								key,
+								value,
+							]),
+						),
+					};
+					return operation === undefined
 						? Object.freeze(base)
 						: Object.freeze({ ...base, operation });
-				return authorize(claim) === true;
+				};
+				return (
+					authorize(claim()) === true &&
+					(mode === "log" || authorizeInstanceScope?.(claim()) === true)
+				);
 			} catch {
 				return false;
 			}
@@ -440,11 +489,13 @@ export function createRivetDurableTopicActor(
 						claim.operation.expiresAtMs === operation.expiresAtMs &&
 						claim.requestBase64 === requestBase64 &&
 						check(),
-					(prior, _timestamp, detached) => {
+					(prior, timestamp, detached) => {
 						const decoded: unknown = JSON.parse(
 							Buffer.from(detached, "base64").toString("utf8"),
 						);
-						return reduceRivetTopicLog(prior, method, decoded);
+						return mode === "log"
+							? reduceRivetTopicLog(prior, method, decoded)
+							: reduceRivetTopicBus(prior, method, decoded, timestamp);
 					},
 				);
 				if (!check()) return reply(503, { error: "authority-unavailable" });
@@ -491,9 +542,11 @@ export function createRivetDurableTopicActor(
 				)
 					throw new Error("invalid state");
 				const value =
-					method === "events"
-						? readRivetTopicAudit(rows[0]?.value, body)
-						: readRivetTopicLog(rows[0]?.value, body);
+					mode === "bus"
+						? readRivetTopicBusAudit(rows[0]?.value, body)
+						: method === "events"
+							? readRivetTopicAudit(rows[0]?.value, body)
+							: readRivetTopicLog(rows[0]?.value, body);
 				if (!check()) throw new Error("revoked");
 				return value;
 			});
@@ -509,16 +562,38 @@ export function createRivetDurableTopicActor(
 	Object.freeze(definition.config.options);
 	Object.freeze(definition.config);
 	Object.freeze(definition);
-	const binding = Object.freeze({
+	const base = {
 		actorName,
 		semanticDigest,
 		actor: definition,
 		handle,
-		limits: RIVET_DURABLE_TOPIC_LOG_LIMITS,
-		capabilities: RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
-	});
-	registered.set(binding, Object.freeze({ database, semanticDigest }));
+	};
+	const binding =
+		mode === "log"
+			? Object.freeze({
+					...base,
+					limits: RIVET_DURABLE_TOPIC_LOG_LIMITS,
+					capabilities: RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
+				})
+			: Object.freeze({
+					...base,
+					limits: RIVET_DURABLE_TOPIC_BUS_LIMITS,
+					capabilities: RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
+				});
+	registered.set(binding, Object.freeze({ database, semanticDigest, mode }));
 	return binding;
+}
+/** Construct the separately pinned partial retained-log profile. */
+export function createRivetDurableTopicActor(
+	options: RivetDurableTopicOptions,
+): RivetDurableTopicBinding {
+	return buildTopicActor(options, "log");
+}
+/** Construct the separately pinned bus profile with full-instance authority. */
+export function createRivetDurableTopicBusActor(
+	options: RivetDurableTopicBusOptions,
+): RivetDurableTopicBusBinding {
+	return buildTopicActor(options, "bus");
 }
 /** Check the exact actor, database and handler retained at construction. */
 export function isRivetDurableTopicBinding(
@@ -527,6 +602,22 @@ export function isRivetDurableTopicBinding(
 	const identity = registered.get(binding);
 	return (
 		identity !== undefined &&
+		identity.mode === "log" &&
+		binding.semanticDigest === identity.semanticDigest &&
+		isStaticActorDefinition(binding.actor) &&
+		"db" in binding.actor.config &&
+		binding.actor.config.db === identity.database &&
+		binding.actor.config.onRequest === binding.handle
+	);
+}
+/** Check that the exact branded bus actor and reducer remain bound. */
+export function isRivetDurableTopicBusBinding(
+	binding: RivetDurableTopicBusBinding,
+): boolean {
+	const identity = registered.get(binding);
+	return (
+		identity !== undefined &&
+		identity.mode === "bus" &&
 		binding.semanticDigest === identity.semanticDigest &&
 		isStaticActorDefinition(binding.actor) &&
 		"db" in binding.actor.config &&
