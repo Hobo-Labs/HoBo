@@ -54,6 +54,10 @@ export {
 	type VariableRetireOutcome,
 } from "./fleet-routes.js";
 export {
+	createGithubAssignmentLookup,
+	type GithubAssignmentScope,
+} from "./fleet-v2/github-assignment.js";
+export {
 	agreedFleetBlocks,
 	countFleetVerdictAllowance,
 	createFleetVerdictStore,
