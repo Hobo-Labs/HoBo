@@ -32,12 +32,17 @@ describe("Alchemy persisted identity arrays", () => {
 	});
 
 	it("rejects oversized and malformed references before provider effects", () => {
+		let enumerations = 0;
+		const oversized = new Proxy(Array(1025).fill("a"), {
+			ownKeys(target) {
+				enumerations++;
+				return Reflect.ownKeys(target);
+			},
+		});
 		expect(
-			safeAlchemyState(
-				{ fqn: "widget", downstream: Array(1025).fill("a") },
-				"widget",
-			),
+			safeAlchemyState({ fqn: "widget", downstream: oversized }, "widget"),
 		).toBe(false);
+		expect(enumerations).toBe(0);
 		expect(
 			safeAlchemyState({ fqn: "widget", downstream: ["a__b"] }, "widget"),
 		).toBe(false);

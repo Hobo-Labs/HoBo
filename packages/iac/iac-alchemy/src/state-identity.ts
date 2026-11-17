@@ -43,14 +43,21 @@ export function safeAlchemyFqn(value: string): boolean {
 function stateArray(value: unknown): unknown[] | undefined {
 	try {
 		if (!Array.isArray(value)) return undefined;
+		const declaredLength = Object.getOwnPropertyDescriptor(value, "length");
+		if (
+			declaredLength === undefined ||
+			!("value" in declaredLength) ||
+			!Number.isSafeInteger(declaredLength.value) ||
+			declaredLength.value < 0 ||
+			declaredLength.value > 1024
+		)
+			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(value);
 		const lengthDescriptor: PropertyDescriptor | undefined =
 			Object.getOwnPropertyDescriptor(properties, "length")?.value;
 		const length = lengthDescriptor?.value;
 		if (
-			!Number.isSafeInteger(length) ||
-			length < 0 ||
-			length > 1024 ||
+			length !== declaredLength.value ||
 			Reflect.ownKeys(properties).length !== length + 1
 		)
 			return undefined;
