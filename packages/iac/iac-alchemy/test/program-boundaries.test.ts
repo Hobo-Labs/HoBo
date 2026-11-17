@@ -71,6 +71,87 @@ describe("Alchemy program input boundary", () => {
 		expect(Object.isFrozen(captured.program.resource)).toBe(true);
 	});
 
+	it("normalizes explicitly undefined optional fields to the same absent snapshot", () => {
+		const absent = captureAlchemyProgram(baseProgram());
+		for (const withResource of [false, true]) {
+			for (const withGeneration of [false, true]) {
+				const input = baseProgram();
+				if (withResource) input.resource = undefined;
+				if (withGeneration) input.operationGeneration = undefined;
+				const captured = captureAlchemyProgram(input);
+				expect(captured.program).toEqual(absent.program);
+				expect(Object.hasOwn(captured.program, "resource")).toBe(false);
+				expect(Object.hasOwn(captured.program, "operationGeneration")).toBe(
+					false,
+				);
+				expect(captured.declarationPresence).toBe("absent");
+				expect(captured.declarationDigest).toBe(absent.declarationDigest);
+			}
+		}
+		const withGeneration = captureAlchemyProgram({
+			...baseProgram(),
+			resource: undefined,
+			operationGeneration: "generation-1",
+		});
+		expect(withGeneration.program.operationGeneration).toBe("generation-1");
+		expect(withGeneration.declarationDigest).toBe(absent.declarationDigest);
+		const withDeclaration = captureAlchemyProgram({
+			...baseProgram(),
+			resource: resource(),
+			operationGeneration: undefined,
+		});
+		expect(withDeclaration.program.resource).toEqual(resource());
+		expect(withDeclaration.declarationPresence).toBe("present");
+		expect(withDeclaration.declarationDigest).not.toBe(
+			absent.declarationDigest,
+		);
+	});
+
+	it("rejects malformed optional fields and does not invoke their accessors", () => {
+		let calls = 0;
+		for (const [key, value] of [
+			["resource", null],
+			["resource", []],
+			["resource", { name: "other", provider: "provider" }],
+			["operationGeneration", null],
+			["operationGeneration", 1],
+			["operationGeneration", ""],
+			["operationGeneration", " generation"],
+		] as const) {
+			const program = baseProgram();
+			Object.defineProperty(program, key, { value, enumerable: true });
+			expect(() => captureAlchemyProgram(program)).toThrow("PROGRAM_INVALID");
+		}
+		for (const key of ["resource", "operationGeneration"]) {
+			const program = baseProgram();
+			Object.defineProperty(program, key, {
+				enumerable: true,
+				get() {
+					calls++;
+					return undefined;
+				},
+			});
+			expect(() => captureAlchemyProgram(program)).toThrow("PROGRAM_INVALID");
+		}
+		expect(calls).toBe(0);
+	});
+
+	it("accepts explicit undefined optionals through provider preview", async () => {
+		const f = fixture();
+		try {
+			await expect(
+				f.provider.preview({
+					...baseProgram(),
+					resource: undefined,
+					operationGeneration: undefined,
+				}),
+			).resolves.toMatchObject({ changes: 1 });
+			expect(f.effects()).toEqual([]);
+		} finally {
+			f.cleanup();
+		}
+	});
+
 	it("accepts bounded orchestrator composite identities without truncating them", () => {
 		const program = {
 			...baseProgram(),

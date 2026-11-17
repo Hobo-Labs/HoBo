@@ -188,14 +188,17 @@ export function captureAlchemyProgram(
 			action,
 			stackName,
 		};
-		if (Object.hasOwn(data, "operationGeneration")) {
+		if (
+			Object.hasOwn(data, "operationGeneration") &&
+			data.operationGeneration !== undefined
+		) {
 			if (!boundedName(data.operationGeneration))
 				throw new Error("invalid operation generation");
 			program.operationGeneration = data.operationGeneration;
 		}
 		let declarationDigest: string;
 		let declarationPresence: CapturedAlchemyProgram["declarationPresence"];
-		if (Object.hasOwn(data, "resource")) {
+		if (Object.hasOwn(data, "resource") && data.resource !== undefined) {
 			const declaration = snapshot(
 				data.resource,
 				new Set(),

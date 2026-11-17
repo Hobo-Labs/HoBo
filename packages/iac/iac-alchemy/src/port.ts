@@ -8,9 +8,9 @@ export interface IacProgram {
 	action: "preview" | "apply" | "destroy";
 	stackName: string;
 	/** The host declaration to authenticate against the configured stack, when supplied. */
-	resource?: object;
+	resource?: object | undefined;
 	/** A host-issued durable operation generation, stable across retries. */
-	operationGeneration?: string;
+	operationGeneration?: string | undefined;
 }
 
 export interface IacDiff {

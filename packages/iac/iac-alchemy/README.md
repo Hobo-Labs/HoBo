@@ -28,6 +28,8 @@ plan.
 Program identity and any desired `resource` declaration are snapshotted before
 planning or admission. `captureAlchemyProgram` returns a frozen bounded copy
 and a digest that distinguishes an absent declaration from a present one.
+An own `resource` or `operationGeneration` field set to `undefined` is treated
+as absent; null, accessors and malformed values are rejected.
 Declarations are limited to 16,384 values, 32 nesting levels, 1,024 array
 elements, 256 properties per object, 4,096 characters per string and 1 MiB of
 total text; proxies, getters, sparse or decorated arrays and unknown program
