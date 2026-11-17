@@ -1,0 +1,56 @@
+{
+  "consumer": { "name": "HoBoCiRelayChecks" },
+  "provider": { "name": "GitHubRestApi" },
+  "metadata": {
+    "note": "Hand-authored. What runner-less checks read of GitHub (ADR-0183): .hobo/ci.json at the pull request's base branch, the run, the pull request and, for the lint check only, the commit's tarball. Shapes from GitHub's REST documentation (pulls, actions/workflow-runs, repos/contents, repos/contents#download-a-repository-archive-tar), read 2026-11-17."
+  },
+  "interactions": [
+    {
+      "description": "read the pull request a run's ref names",
+      "providerState": "octo/app has pull request 7 into main",
+      "request": { "method": "GET", "path": "/repos/octo/app/pulls/7" },
+      "response": {
+        "status": 200,
+        "body": { "number": 7, "title": "feat: add retry", "base": { "ref": "main" } }
+      }
+    },
+    {
+      "description": "read .hobo/ci.json at the pull request's base branch",
+      "providerState": "octo/app's main branch turns relay mode, the title types and the lint check on",
+      "request": { "method": "GET", "path": "/repos/octo/app/contents/.hobo%2Fci.json", "query": { "ref": ["main"] } },
+      "response": {
+        "status": 200,
+        "body": {
+          "type": "file",
+          "path": ".hobo/ci.json",
+          "encoding": "base64",
+          "content": "eyJyZWxheUpvYnMiOnsiYW5zd2VyIjp0cnVlfSwiY2hlY2tzIjp7InByVGl0bGUiOnsidHlwZXMiOlsiZmVhdCIsImZpeCJdfSwibGludCI6dHJ1ZX19"
+        }
+      }
+    },
+    {
+      "description": "read a run's head commit and pull requests",
+      "providerState": "run 42 of octo/app tests pull request 7",
+      "request": { "method": "GET", "path": "/repos/octo/app/actions/runs/42" },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": 42,
+          "event": "pull_request_target",
+          "head_sha": "0123456789abcdef0123456789abcdef01234567",
+          "pull_requests": [{ "number": 7 }]
+        }
+      }
+    },
+    {
+      "description": "read the commit's archive",
+      "providerState": "octo/app has commit 0123456789abcdef0123456789abcdef01234567",
+      "request": { "method": "GET", "path": "/repos/octo/app/tarball/0123456789abcdef0123456789abcdef01234567" },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/x-gzip" },
+        "body": "gzipped tarball"
+      }
+    }
+  ]
+}

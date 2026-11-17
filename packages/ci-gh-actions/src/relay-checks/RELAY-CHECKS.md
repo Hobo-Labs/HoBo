@@ -89,7 +89,11 @@ killed and its container removed. The image must hold the five tools, `sh` and
 at the commit under test, so a branch cannot loosen its own checks; the run;
 the pull request; and, for the lint check only, the commit's archive. The relay
 job message carries no token of the job's own, so the archive is read with the
-App installation's `contents: read`. It reads no log and no secret.
+App installation's `contents: read`. It reads no log and no secret. Each of
+these reads is an interaction of the hand-authored pact
+[`contracts/relay-checks.pact.json`](../../contracts/relay-checks.pact.json),
+which `contracts/relay-checks.consumer.test.ts` runs `GithubRelayCheckSource`
+against.
 
 ## What it reports
 
