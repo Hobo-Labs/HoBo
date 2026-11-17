@@ -12,6 +12,7 @@ import type {
 	FinancialPlan,
 	IacRouteOperation,
 	IacRoutePort,
+	IacRouteResolver,
 	UnpricedScopeProof,
 } from "../src/port.js";
 import { routeFixture, testOperation } from "./route-fixture.js";
@@ -43,6 +44,7 @@ function fixture(
 	defaultRequestId: string | null = "logical-attempt",
 	route: IacRoutePort | undefined = routeFixture().port,
 	routeOperation: IacRouteOperation | null = testOperation,
+	resolver?: IacRouteResolver,
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-alchemy-financial-"));
 	dirs.push(dir);
@@ -72,9 +74,15 @@ function fixture(
 		stack,
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(dir, "runtime"),
-		defaultRequestId: defaultRequestId ?? undefined,
 		route,
-		routeOperation: routeOperation ?? undefined,
+		resolveRoute:
+			routeOperation === null
+				? undefined
+				: (resolver ??
+					(({ requestId }) => ({
+						requestId: requestId ?? defaultRequestId ?? "",
+						operation: routeOperation,
+					}))),
 		target: alchemyTarget({
 			targetId,
 			tenantId: "tenant",
@@ -119,6 +127,7 @@ function fixture(
 			driver: "external",
 			action: "apply" as const,
 			stackName: "App",
+			operationGeneration: "generation-1",
 		},
 	};
 }
@@ -236,7 +245,7 @@ describe("financial admission modes", () => {
 		expect(f.uncertain).toEqual(["iac:attempt"]);
 	});
 
-	it("requires a stable request ID before claiming a route", async () => {
+	it("requires the host to resolve a stable request ID before claiming a route", async () => {
 		const route = routeFixture();
 		const f = fixture(
 			(id) => admitted(id, "allowed", false),
@@ -247,7 +256,7 @@ describe("financial admission modes", () => {
 		);
 		await f.provider.preview(f.program);
 		await expect(f.provider.apply(f.program)).rejects.toMatchObject({
-			code: "REQUEST_ID_REQUIRED",
+			code: "ROUTE_OPERATION_UNVERIFIED",
 			requiresReconciliation: false,
 		});
 		expect(route.calls.direct).toBe(0);
@@ -272,6 +281,138 @@ describe("financial admission modes", () => {
 		});
 		expect(route.calls.direct).toBe(0);
 		expect(f.admissions()).toBe(0);
+	});
+
+	it("requires the persisted generation before claiming a route", async () => {
+		const route = routeFixture();
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		const legacy = { ...f.program, operationGeneration: undefined };
+		await f.provider.preview(legacy);
+		await expect(f.provider.apply(legacy)).rejects.toMatchObject({
+			code: "OPERATION_GENERATION_REQUIRED",
+			requiresReconciliation: false,
+		});
+		expect(route.calls.direct).toBe(0);
+		expect(f.admissions()).toBe(0);
+	});
+
+	it("authenticates the actual target-independent operation and generation", async () => {
+		const seen: object[] = [];
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			(context) => {
+				seen.push(context);
+				return {
+					requestId: context.requestId ?? "resolved",
+					operation: testOperation,
+				};
+			},
+		);
+		await f.provider.preview(f.program);
+		await f.provider.applyWithAdmission(f.program, "attempt");
+		expect(seen).toEqual([
+			{
+				tenantId: "tenant",
+				deploymentId: "d",
+				programId: "p",
+				resourceId: "app",
+				operation: "deploy",
+				operationGeneration: "generation-1",
+				requestId: "attempt",
+			},
+		]);
+	});
+
+	it("rejects a resolver that substitutes the caller's request ID", async () => {
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			() => ({ requestId: "other", operation: testOperation }),
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({ code: "ROUTE_OPERATION_UNVERIFIED" });
+		expect(f.admissions()).toBe(0);
+	});
+
+	it("allows a long-lived provider to process a new authenticated generation", async () => {
+		const f = fixture((id) => admitted(id, "allowed", false));
+		await f.provider.preview(f.program);
+		await f.provider.applyWithAdmission(f.program, "first");
+		const next = { ...f.program, operationGeneration: "generation-2" };
+		await f.provider.preview(next);
+		await f.provider.applyWithAdmission(next, "second");
+		expect(f.admissions()).toBe(2);
+	});
+
+	it("blocks a later generation while the prior resource outcome is unresolved", async () => {
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			() => false,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "first"),
+		).rejects.toMatchObject({ code: "ADMISSION_REVALIDATION_FAILED" });
+		const next = { ...f.program, operationGeneration: "generation-2" };
+		await f.provider.preview(next);
+		await expect(
+			f.provider.applyWithAdmission(next, "second"),
+		).rejects.toMatchObject({
+			code: "EXECUTION_ALREADY_CLAIMED",
+			reservationId: "iac:first",
+			requiresReconciliation: true,
+		});
+		expect(f.admissions()).toBe(1);
+	});
+
+	it("does not run two generations of the same resource concurrently", async () => {
+		let signal = () => {};
+		let release = () => {};
+		const started = new Promise<void>((resolve) => {
+			signal = resolve;
+		});
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			async () => {
+				signal();
+				await pending;
+				return true;
+			},
+		);
+		const next = { ...f.program, operationGeneration: "generation-2" };
+		await f.provider.preview(f.program);
+		await f.provider.preview(next);
+		const first = f.provider.applyWithAdmission(f.program, "first");
+		try {
+			await started;
+			await expect(
+				f.provider.applyWithAdmission(next, "second"),
+			).rejects.toMatchObject({ code: "EXECUTION_IN_PROGRESS" });
+		} finally {
+			release();
+			await first;
+		}
+		expect(f.admissions()).toBe(1);
 	});
 
 	it("does not consume a permit for a different logical operation", async () => {

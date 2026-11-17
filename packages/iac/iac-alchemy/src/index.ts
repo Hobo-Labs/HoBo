@@ -31,6 +31,8 @@ import type {
 	IacRouteOperation,
 	IacRoutePermit,
 	IacRoutePort,
+	IacRouteResolution,
+	IacRouteResolver,
 	UnpricedPolicyProof,
 	UnpricedScopeProof,
 } from "./port.js";
@@ -84,10 +86,13 @@ export type {
 	IacDriftReport,
 	IacProgram,
 	IacProvider,
+	IacRouteContext,
 	IacRouteOperation,
 	IacRouteOutcome,
 	IacRoutePermit,
 	IacRoutePort,
+	IacRouteResolution,
+	IacRouteResolver,
 	UnpricedPolicyProof,
 	UnpricedScopeProof,
 	UnverifiedUnpricedPolicyProof,
@@ -120,10 +125,8 @@ export interface AlchemyIacProviderOptions<
 	readonly financial: FinancialPort<Assessment>;
 	/** The host supplies one durable route authority shared by all candidate targets. */
 	readonly route?: IacRoutePort | undefined;
-	/** Host-authenticated logical operation identity, shared across candidate targets. */
-	readonly routeOperation?: IacRouteOperation | undefined;
-	/** Host-issued stable ID for one logical attempt when using the standard IaC port. */
-	readonly defaultRequestId?: string | undefined;
+	/** Authenticate the durable operation generation and return its shared route identity. */
+	readonly resolveRoute?: IacRouteResolver | undefined;
 	/** Host-owned authorization for executable plan effects in an immutable sandbox. */
 	readonly composite?: AlchemyCompositeGuard;
 }
@@ -289,6 +292,31 @@ function readRouteOperation(input: unknown): IacRouteOperation | undefined {
 		)
 			return undefined;
 		return Object.freeze({ operationId: id.value, authorization: proof.value });
+	} catch {
+		return undefined;
+	}
+}
+
+function readRouteResolution(input: unknown): IacRouteResolution | undefined {
+	try {
+		if (typeof input !== "object" || input === null || Array.isArray(input))
+			return undefined;
+		const properties = Object.getOwnPropertyDescriptors(input);
+		const requestId = properties.requestId;
+		const operation = properties.operation;
+		if (
+			requestId === undefined ||
+			!("value" in requestId) ||
+			typeof requestId.value !== "string" ||
+			!name(requestId.value) ||
+			operation === undefined ||
+			!("value" in operation)
+		)
+			return undefined;
+		const checked = readRouteOperation(operation.value);
+		return checked === undefined
+			? undefined
+			: Object.freeze({ requestId: requestId.value, operation: checked });
 	} catch {
 		return undefined;
 	}
@@ -761,8 +789,7 @@ export function createAlchemyIacProvider<
 	const target = captureAlchemyTargetOption(options);
 	const composite = captureCompositeGuard(options.composite);
 	const route = options.route;
-	const routeOperation = readRouteOperation(options.routeOperation);
-	const defaultRequestId = options.defaultRequestId;
+	const resolveRoute = options.resolveRoute;
 	if (
 		!safeAlchemyStateSegment(target.stackName) ||
 		!safeAlchemyStateSegment(target.stage) ||
@@ -809,7 +836,7 @@ export function createAlchemyIacProvider<
 	const previews = new Map<string, string>();
 	const claimed = new Map<string, string>();
 	const running = new Set<string>();
-	const unresolved = new Set<string>();
+	const unresolved = new Map<string, string | undefined>();
 	const snapshotProgram = (input: IacProgram): IacProgram => {
 		const captured = captureAlchemyProgram(input);
 		if (captured.declarationPresence === "present")
@@ -831,6 +858,8 @@ export function createAlchemyIacProvider<
 			].every(name) ||
 			program.resourceId !== target.programResourceId ||
 			program.stackName !== target.stackName ||
+			(program.operationGeneration !== undefined &&
+				!name(program.operationGeneration)) ||
 			!["preview", "apply", "destroy"].includes(program.action)
 		) {
 			throw new AlchemyIacError(
@@ -846,9 +875,9 @@ export function createAlchemyIacProvider<
 			driver: program.driver,
 			stackName: program.stackName,
 			operation: program.action === "destroy" ? "destroy" : "deploy",
+			operationGeneration: program.operationGeneration ?? "",
 			targetId: target.targetId,
 			tenantId: target.tenantId,
-			operationGeneration: program.operationGeneration,
 			declarationDigest: captureAlchemyProgram(program).declarationDigest,
 		});
 	};
@@ -905,16 +934,16 @@ export function createAlchemyIacProvider<
 	const verifyRoute = async (
 		input: IacRoutePermit,
 		requestId: string,
+		operation: IacRouteOperation,
 		expected?: FinancialExpectation,
 	): Promise<IacRoutePermit | undefined> => {
 		const permit = readRoutePermit(input);
 		if (
 			route?.persistence !== "durable-cas" ||
-			routeOperation === undefined ||
 			permit === undefined ||
 			permit.tenantId !== target.tenantId ||
 			permit.requestId !== requestId ||
-			permit.operationId !== routeOperation.operationId ||
+			permit.operationId !== operation.operationId ||
 			permit.targetId !== target.targetId ||
 			(expected !== undefined &&
 				permit.inventoryHash !== expected.inventoryHash)
@@ -987,7 +1016,8 @@ export function createAlchemyIacProvider<
 		(await assessPricing(program)).diff;
 	const executeUnlocked = async (
 		program: IacProgram,
-		requestedId?: string,
+		requestId: string,
+		operation: IacRouteOperation,
 		expected?: FinancialExpectation,
 		routePermit?: IacRoutePermit,
 	): Promise<{
@@ -995,12 +1025,6 @@ export function createAlchemyIacProvider<
 		admission: HeldFinancialDecision;
 	}> => {
 		const key = checkProgram(program);
-		const requestId = requestedId ?? defaultRequestId;
-		if (requestId === undefined)
-			throw new AlchemyIacError(
-				"REQUEST_ID_REQUIRED",
-				"the host must supply a stable request id for this logical attempt",
-			);
 		if (!name(requestId))
 			throw new AlchemyIacError(
 				"REQUEST_INVALID",
@@ -1078,7 +1102,7 @@ export function createAlchemyIacProvider<
 							),
 						};
 					const routeBeforeAdmission = yield* Effect.promise(() =>
-						verifyRoute(permit, requestId, checkedExpectation),
+						verifyRoute(permit, requestId, operation, checkedExpectation),
 					);
 					if (routeBeforeAdmission === undefined)
 						return {
@@ -1302,7 +1326,7 @@ export function createAlchemyIacProvider<
 						};
 					}
 					const routeBeforeApply = yield* Effect.promise(() =>
-						verifyRoute(permit, requestId, checkedExpectation),
+						verifyRoute(permit, requestId, operation, checkedExpectation),
 					);
 					if (routeBeforeApply === undefined) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
@@ -1397,13 +1421,23 @@ export function createAlchemyIacProvider<
 	) => {
 		const stableProgram = snapshotProgram(program);
 		const key = checkProgram(stableProgram);
-		const resolvedRequestId = requestId ?? defaultRequestId;
-		if (resolvedRequestId === undefined)
+		const fenceKey = digestData({
+			tenantId: target.tenantId,
+			targetId: target.targetId,
+			deploymentId: stableProgram.deploymentId,
+			resourceId: stableProgram.resourceId,
+		});
+		if (stableProgram.action === "preview")
 			throw new AlchemyIacError(
-				"REQUEST_ID_REQUIRED",
-				"the host must supply a stable request id for this logical attempt",
+				"PREVIEW_ONLY",
+				"preview programs cannot be applied",
 			);
-		if (!name(resolvedRequestId))
+		if (stableProgram.operationGeneration === undefined)
+			throw new AlchemyIacError(
+				"OPERATION_GENERATION_REQUIRED",
+				"a durable orchestrator operation generation is required",
+			);
+		if (requestId !== undefined && !name(requestId))
 			throw new AlchemyIacError(
 				"REQUEST_INVALID",
 				"a bounded admission request id is required",
@@ -1430,13 +1464,13 @@ export function createAlchemyIacProvider<
 				"ROUTE_AUTHORITY_UNAVAILABLE",
 				"a shared durable route authority is required",
 			);
-		if (routeOperation === undefined)
+		if (resolveRoute === undefined)
 			throw new AlchemyIacError(
 				"ROUTE_OPERATION_REQUIRED",
-				"a bounded host-authorized logical operation is required",
+				"a trusted operation resolver is required",
 			);
-		if (unresolved.has(key)) {
-			const reservationId = claimed.get(key);
+		if (unresolved.has(fenceKey)) {
+			const reservationId = unresolved.get(fenceKey);
 			throw new AlchemyIacError(
 				reservationId === undefined
 					? "EXECUTION_OUTCOME_UNRESOLVED"
@@ -1446,7 +1480,7 @@ export function createAlchemyIacProvider<
 				reservationId,
 			);
 		}
-		if (running.has(key))
+		if (running.has(fenceKey))
 			throw new AlchemyIacError(
 				"EXECUTION_IN_PROGRESS",
 				"another execution of this program must finish before retry",
@@ -1456,15 +1490,49 @@ export function createAlchemyIacProvider<
 				"EXECUTION_LIMIT",
 				"provider execution capacity reached",
 			);
-		running.add(key);
+		running.add(fenceKey);
 		try {
-			if (suppliedPermit !== undefined)
-				return await executeUnlocked(
+			let resolution: IacRouteResolution | undefined;
+			try {
+				resolution = readRouteResolution(
+					await resolveRoute(
+						Object.freeze({
+							tenantId: target.tenantId,
+							deploymentId: stableProgram.deploymentId,
+							programId: stableProgram.programId,
+							resourceId: stableProgram.resourceId,
+							operation:
+								stableProgram.action === "destroy" ? "destroy" : "deploy",
+							operationGeneration: stableProgram.operationGeneration,
+							requestId,
+						}),
+					),
+				);
+			} catch {
+				/* A resolver failure occurs before route or financial admission. */
+			}
+			if (
+				resolution === undefined ||
+				(requestId !== undefined && resolution.requestId !== requestId)
+			)
+				throw new AlchemyIacError(
+					"ROUTE_OPERATION_UNVERIFIED",
+					"the host did not authenticate this operation and request",
+				);
+			const { requestId: resolvedRequestId, operation: routeOperation } =
+				resolution;
+			if (suppliedPermit !== undefined) {
+				const result = await executeUnlocked(
 					stableProgram,
 					resolvedRequestId,
+					routeOperation,
 					checkedExpectation,
 					suppliedPermit,
 				);
+				previews.delete(key);
+				claimed.delete(key);
+				return result;
+			}
 			const state: RouteExecutionState = { invoked: false };
 			let routeResult: Awaited<ReturnType<IacRoutePort["runDirect"]>>;
 			try {
@@ -1484,6 +1552,7 @@ export function createAlchemyIacProvider<
 							state.result = await executeUnlocked(
 								stableProgram,
 								resolvedRequestId,
+								routeOperation,
 								checkedExpectation,
 								attempt.permit,
 							);
@@ -1558,13 +1627,15 @@ export function createAlchemyIacProvider<
 					"ROUTE_OUTCOME_UNKNOWN",
 					"the durable route returned no result",
 				);
+			previews.delete(key);
+			claimed.delete(key);
 			return state.result;
 		} catch (error) {
 			if (error instanceof AlchemyIacError && error.requiresReconciliation)
-				unresolved.add(key);
+				unresolved.set(fenceKey, error.reservationId ?? claimed.get(key));
 			throw error;
 		} finally {
-			running.delete(key);
+			running.delete(fenceKey);
 		}
 	};
 	const applyWithAdmission: AlchemyIacProvider<Assessment>["applyWithAdmission"] =

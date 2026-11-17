@@ -146,9 +146,11 @@ const route = createDirectRoutePort({
   authority: routeAuthority,
   hashInventory: (plan: IacFinancialPlan) => financial.assess(plan).inventoryHash,
 });
-const routeOperation = { operationId, authorization };
+// The trusted host authenticates these facts against its durable operation journal.
+const resolveRoute = async (context: IacRouteContext) =>
+  host.resolveIacOperation(context);
 const provider = createAlchemyIacProvider({
-  stack, target, runtimeLayer, runtimeDirectory, financial, route, routeOperation,
+  stack, target, runtimeLayer, runtimeDirectory, financial, route, resolveRoute,
 });
 const assessment = await provider.assessPricing(program);
 const ranking = rankIacTargets({
@@ -156,9 +158,16 @@ const ranking = rankIacTargets({
   horizon: scenario.horizon,
   candidates: [{ workloadRef, inventory: assessment.inventory, pricing: assessment.pricing }],
 });
+if (!program.operationGeneration) throw new Error("missing operation generation");
+const resolved = await resolveRoute({
+  tenantId, deploymentId: program.deploymentId, programId: program.programId,
+  resourceId: program.resourceId, operation: "deploy",
+  operationGeneration: program.operationGeneration,
+  requestId: "deployment-attempt-1",
+});
 const result = await executeRankedIacTargets({
-  authority: routeAuthority, tenantId, operation: routeOperation,
-  requestId: "deployment-attempt-1", ranking,
+  authority: routeAuthority, tenantId, operation: resolved.operation,
+  requestId: resolved.requestId, ranking,
   candidates: [{ targetId: target.targetId, run: (id, expected, permit) => provider.applyWithAdmission(program, id, expected, permit) }],
 });
 ```
@@ -203,20 +212,22 @@ and atomically consumes that permit before financial admission, then verifies
 the still-active attempt again immediately before provider start. Denial,
 success and uncertainty are durably recorded by the route owner. A lost or
 ambiguous acknowledgment requires reconciliation, not a second attempt.
-The route authority independently verifies the host-issued `routeOperation`
-authorization and pins its target-independent SHA-256 operation ID across
-request IDs. The same operation proof must be configured for every candidate;
-the adapter refuses a permit for another operation. The trusted host derives
-the ID from the tenant, deployment, workload and operation and verifies proof
-expiry and revocation. It must not expose the authorization to stack code.
+The trusted `resolveRoute` callback authenticates the actual tenant, deployment,
+program, resource, operation and durable orchestrator-issued generation against
+the host's operation journal. It returns a stable request ID and a signed
+operation authorization shared across candidate targets. The route authority
+independently verifies that authorization and pins its target-independent
+SHA-256 operation ID across request IDs. The adapter refuses a permit for
+another operation. The host verifies proof expiry and revocation and must not
+expose the authorization to stack code. An absent generation or failed resolver
+blocks execution before route or financial admission.
 
-One adapter instance refuses concurrent execution of the same program. Use
-the same explicit request ID for the same logical attempt across all targets,
-instances and restarts; use a new ID for each new attempt. Standard `apply` and
-`destroy` take their ID from the host-configured `defaultRequestId`, which must
-also be unique to that attempt. The trusted host binds each ID to its logical
-operation and issues a successor only after verified recovery of any prior
-unresolved attempt. Missing IDs are rejected. A malformed or
+One adapter instance refuses concurrent execution of the same operation. The
+resolver must return the same request and operation IDs for the same generation
+across targets, instances and restarts, and distinct IDs for each new operation.
+An explicit request ID passed to `applyWithAdmission` or `destroyWithAdmission`
+must match the resolver's result. The trusted host issues a successor only
+after verified recovery of any prior unresolved attempt. A malformed or
 unreadable admission receipt requires reconciliation:
 the authority may already have reserved funds even if the receipt is unusable.
 An instance also blocks subsequent attempts after any outcome requiring

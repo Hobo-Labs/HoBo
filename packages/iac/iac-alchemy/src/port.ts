@@ -9,7 +9,7 @@ export interface IacProgram {
 	stackName: string;
 	/** The host declaration to authenticate against the configured stack, when supplied. */
 	resource?: object | undefined;
-	/** A host-issued durable operation generation, stable across retries. */
+	/** Host-issued generation persisted before apply or destroy and stable across retries. */
 	operationGeneration?: string | undefined;
 }
 
@@ -149,6 +149,26 @@ export interface IacRouteOperation {
 	readonly operationId: string;
 	readonly authorization: string;
 }
+
+/** Target-independent operation facts authenticated by a trusted host resolver. */
+export interface IacRouteContext {
+	readonly tenantId: string;
+	readonly deploymentId: string;
+	readonly programId: string;
+	readonly resourceId: string;
+	readonly operation: "deploy" | "destroy";
+	readonly operationGeneration: string;
+	readonly requestId?: string | undefined;
+}
+
+export interface IacRouteResolution {
+	readonly requestId: string;
+	readonly operation: IacRouteOperation;
+}
+
+export type IacRouteResolver = (
+	context: IacRouteContext,
+) => IacRouteResolution | Promise<IacRouteResolution>;
 
 export interface IacRoutePermit {
 	readonly tenantId: string;

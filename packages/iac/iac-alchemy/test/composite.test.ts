@@ -85,7 +85,10 @@ function fixture(
 	const provider = createAlchemyIacProvider({
 		stack,
 		route: routeFixture().port,
-		routeOperation: testOperation,
+		resolveRoute: ({ requestId }) => ({
+			requestId: requestId ?? "logical-attempt",
+			operation: testOperation,
+		}),
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(dir, "runtime"),
 		target: alchemyTarget({
@@ -154,6 +157,7 @@ function fixture(
 		applied: () => applied,
 		program: {
 			programId: "p",
+			operationGeneration: "generation-1",
 			deploymentId: "d",
 			resourceId: "app",
 			provider: "test",
@@ -216,15 +220,15 @@ describe("host-authorized Alchemy composite effects", () => {
 		expect(f.applied()).toBe(0);
 	});
 
-	it("does not run the action twice after a completed execution", async () => {
+	it("requires a fresh preview after a completed execution", async () => {
 		const f = fixture();
 		await f.provider.preview(f.program);
 		await f.provider.applyWithAdmission(f.program, "attempt");
 		await expect(
 			f.provider.applyWithAdmission(f.program, "other-attempt"),
 		).rejects.toMatchObject({
-			code: "EXECUTION_ALREADY_CLAIMED",
-			requiresReconciliation: true,
+			code: "PREVIEW_REQUIRED",
+			requiresReconciliation: false,
 		});
 		expect(f.ran()).toBe(1);
 		expect(f.applied()).toBe(1);
