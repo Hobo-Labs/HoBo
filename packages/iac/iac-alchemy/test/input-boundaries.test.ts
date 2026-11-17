@@ -6,9 +6,9 @@ import { inMemoryState, Resource, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 import {
-	type AlchemyIacProviderOptions,
 	type AlchemyTargetInput,
 	alchemyTarget,
 	createAlchemyIacProvider,
@@ -41,13 +41,14 @@ function rawTarget(): AlchemyTargetInput {
 }
 
 function providerOptions(target = alchemyTarget(rawTarget())) {
+	const providers = Provider.succeed(Widget, {
+		reconcile: () => Effect.succeed({ id: "widget" }),
+		delete: () => Effect.void,
+	});
 	const stack = Stack(
 		"App",
 		{
-			providers: Provider.succeed(Widget, {
-				reconcile: () => Effect.succeed({ id: "widget" }),
-				delete: () => Effect.void,
-			}),
+			providers,
 			state: inMemoryState(),
 		},
 		Effect.gen(function* () {
@@ -58,7 +59,7 @@ function providerOptions(target = alchemyTarget(rawTarget())) {
 	return {
 		stack,
 		target,
-		runtimeLayer: Alchemist.layer(),
+		runtimeLayer: Layer.merge(Alchemist.layer(), providers),
 		runtimeDirectory: "/tmp",
 		financial: {
 			assess: (plan: FinancialPlan) => ({ plan }),
@@ -180,12 +181,31 @@ describe("Alchemy target input boundary", () => {
 				return alchemyTarget(rawTarget());
 			},
 		});
-		// SAFETY: the test intentionally replaces the target with an accessor.
-		expect(() =>
-			createAlchemyIacProvider(
-				options as AlchemyIacProviderOptions<unknown, never, object>,
-			),
-		).toThrow("TARGET_INVALID");
+		expect(() => createAlchemyIacProvider(options)).toThrow("OPTIONS_INVALID");
+		const stackAccessor = providerOptions();
+		Object.defineProperty(stackAccessor, "stack", {
+			enumerable: true,
+			get() {
+				traps++;
+				throw new Error("stack accessor must not run");
+			},
+		});
+		expect(() => createAlchemyIacProvider(stackAccessor)).toThrow(
+			"OPTIONS_INVALID",
+		);
+		const optionsProxy = new Proxy(providerOptions(), {
+			get() {
+				traps++;
+				throw new Error("options proxy must not run");
+			},
+			ownKeys() {
+				traps++;
+				throw new Error("options proxy must not run");
+			},
+		});
+		expect(() => createAlchemyIacProvider(optionsProxy)).toThrow(
+			"OPTIONS_INVALID",
+		);
 		expect(traps).toBe(0);
 	});
 });

@@ -7,6 +7,7 @@ import * as Exit from "effect/Exit";
 import type * as Layer from "effect/Layer";
 import type { ResourceScope, Target } from "./_generated/alchemy_iac_pb.js";
 import {
+	captureAlchemyOptions,
 	captureAlchemyTarget,
 	captureAlchemyTargetOption,
 } from "./input-boundary.js";
@@ -21,6 +22,7 @@ import type {
 	IacProgram,
 	IacProvider,
 } from "./port.js";
+import { captureAlchemyProgram } from "./program-boundary.js";
 import {
 	guardAlchemyStack,
 	safeAlchemyFqn,
@@ -34,6 +36,7 @@ export {
 	ResourceScopeSchema,
 	TargetSchema,
 } from "./_generated/alchemy_iac_pb.js";
+export { captureAlchemyOptions } from "./input-boundary.js";
 export { AlchemyIacError } from "./plan.js";
 export type {
 	FinancialDecision,
@@ -46,6 +49,8 @@ export type {
 	IacProgram,
 	IacProvider,
 } from "./port.js";
+export type { CapturedAlchemyProgram } from "./program-boundary.js";
+export { captureAlchemyProgram } from "./program-boundary.js";
 export { alchemyStateScopeKey } from "./state-identity.js";
 
 export type AlchemyTargetInput = Omit<Target, "$typeName" | "resources"> & {
@@ -154,8 +159,9 @@ export function createAlchemyIacProvider<
 	Requirements,
 	Assessment extends object,
 >(
-	options: AlchemyIacProviderOptions<Output, Requirements, Assessment>,
+	inputOptions: AlchemyIacProviderOptions<Output, Requirements, Assessment>,
 ): AlchemyIacProvider<Assessment> {
+	const options = captureAlchemyOptions(inputOptions);
 	const target = captureAlchemyTargetOption(options);
 	if (
 		!safeAlchemyStateSegment(target.stackName) ||
@@ -202,7 +208,9 @@ export function createAlchemyIacProvider<
 	}
 	const previews = new Map<string, string>();
 	const claimed = new Map<string, string>();
-	const checkProgram = (program: IacProgram): string => {
+	const checkProgram = (input: IacProgram) => {
+		const captured = captureAlchemyProgram(input);
+		const program = captured.program;
 		if (
 			![
 				program.programId,
@@ -221,7 +229,12 @@ export function createAlchemyIacProvider<
 				"program does not match the configured target",
 			);
 		}
-		return digestData({
+		if (captured.declarationPresence === "present")
+			throw new AlchemyIacError(
+				"PROGRAM_DECLARATION_UNVERIFIED",
+				"a host authority must authenticate the desired declaration against the configured stack",
+			);
+		const key = digestData({
 			programId: program.programId,
 			deploymentId: program.deploymentId,
 			resourceId: program.resourceId,
@@ -231,7 +244,10 @@ export function createAlchemyIacProvider<
 			operation: program.action === "destroy" ? "destroy" : "deploy",
 			targetId: target.targetId,
 			tenantId: target.tenantId,
+			operationGeneration: program.operationGeneration,
+			declarationDigest: captured.declarationDigest,
 		});
+		return { program, key };
 	};
 	const run = async <A>(
 		effect: Effect.Effect<
@@ -253,7 +269,7 @@ export function createAlchemyIacProvider<
 		const complete = supplied as Effect.Effect<A, unknown, never>;
 		return Effect.runPromise(complete);
 	};
-	const planned = (program: IacProgram) =>
+	const planned = (program: Readonly<IacProgram>) =>
 		program.action === "destroy"
 			? Alchemist.plan({
 					stack,
@@ -267,7 +283,7 @@ export function createAlchemyIacProvider<
 				});
 	const financialInputs = (
 		digest: string,
-		program: IacProgram,
+		program: Readonly<IacProgram>,
 	): FinancialPlan => ({
 		targetId: target.targetId,
 		tenantId: target.tenantId,
@@ -291,9 +307,9 @@ export function createAlchemyIacProvider<
 		}
 	};
 	const assessPricing: AlchemyIacProvider<Assessment>["assessPricing"] = async (
-		program,
+		input,
 	) => {
-		const key = checkProgram(program);
+		const { program, key } = checkProgram(input);
 		if (!previews.has(key) && previews.size >= 128)
 			throw new AlchemyIacError(
 				"PREVIEW_LIMIT",
@@ -335,14 +351,20 @@ export function createAlchemyIacProvider<
 	const preview = async (program: IacProgram): Promise<IacDiff> =>
 		(await assessPricing(program)).diff;
 	const execute = async (
-		program: IacProgram,
+		input: IacProgram,
 		requestedId?: string,
 		expected?: FinancialExpectation,
+		requireDestroy = false,
 	): Promise<{
 		outputs: Record<string, string>;
 		admission: HeldFinancialDecision;
 	}> => {
-		const key = checkProgram(program);
+		const { program, key } = checkProgram(input);
+		if (requireDestroy && program.action !== "destroy")
+			throw new AlchemyIacError(
+				"PROGRAM_SCOPE_MISMATCH",
+				"destroy requires a destroy program",
+			);
 		const requestId = requestedId ?? key;
 		if (!name(requestId))
 			throw new AlchemyIacError(
@@ -566,12 +588,7 @@ export function createAlchemyIacProvider<
 	};
 	const destroyWithAdmission: AlchemyIacProvider<Assessment>["destroyWithAdmission"] =
 		async (program, requestId, expected) => {
-			if (program.action !== "destroy")
-				throw new AlchemyIacError(
-					"PROGRAM_SCOPE_MISMATCH",
-					"destroy requires a destroy program",
-				);
-			const { admission } = await execute(program, requestId, expected);
+			const { admission } = await execute(program, requestId, expected, true);
 			return { admission };
 		};
 	return {

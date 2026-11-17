@@ -25,6 +25,18 @@ credentials in its sandbox. Planning runs the supplied stack program, so the
 adapter cannot make untrusted program code safe by inspecting the resulting
 plan.
 
+Program identity and any desired `resource` declaration are snapshotted before
+planning or admission. `captureAlchemyProgram` returns a frozen bounded copy
+and a digest that distinguishes an absent declaration from a present one.
+Declarations are limited to 16,384 values, 32 nesting levels, 1,024 array
+elements, 256 properties per object, 4,096 characters per string and 1 MiB of
+total text; proxies, getters, sparse or decorated arrays and unknown program
+fields are rejected. The host must enforce the serialized-size limit before
+materializing a program as an in-process object. This layer refuses
+programs with a desired declaration until a trusted host authority can bind that
+declaration to the configured stack. A durable operation generation, when
+present, is part of preview and execution identity.
+
 Alchemy beta.87 encodes `/` as `__` in local and bucket state keys, so the
 adapter accepts only portable alphanumeric, dot, hyphen and underscore FQN
 segments whose complete FQN round-trips through that encoding. Stack and stage

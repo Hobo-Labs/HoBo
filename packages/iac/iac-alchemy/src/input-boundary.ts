@@ -205,4 +205,40 @@ export function captureAlchemyTargetOption(options: unknown): Target {
 		);
 	}
 }
+
+/** Snapshot the host options container before any option accessor can run. */
+export function captureAlchemyOptions<T extends object>(input: T): T {
+	try {
+		if (input === null || types.isProxy(input) || Array.isArray(input))
+			throw new Error("invalid options");
+		const prototype = Object.getPrototypeOf(input);
+		if (prototype !== Object.prototype && prototype !== null)
+			throw new Error("invalid options prototype");
+		let count = 0;
+		for (const _key in input)
+			if (++count > 64) throw new Error("too many options");
+		const keys = Reflect.ownKeys(input);
+		if (keys.length > 64) throw new Error("too many options");
+		const values: Record<string, unknown> = Object.create(null);
+		for (const key of keys) {
+			if (typeof key !== "string" || key.length === 0 || key.length > 200)
+				throw new Error("invalid option name");
+			const property = Object.getOwnPropertyDescriptor(input, key);
+			if (
+				property === undefined ||
+				!("value" in property) ||
+				!property.enumerable
+			)
+				throw new Error("computed option");
+			values[key] = property.value;
+		}
+		// SAFETY: this copy contains exactly the original own data fields and preserves their value types.
+		return Object.freeze(values) as T;
+	} catch {
+		throw new AlchemyIacError(
+			"OPTIONS_INVALID",
+			"host options must be bounded own data properties",
+		);
+	}
+}
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof */

@@ -7,6 +7,10 @@ export interface IacProgram {
 	driver: string;
 	action: "preview" | "apply" | "destroy";
 	stackName: string;
+	/** The host declaration to authenticate against the configured stack, when supplied. */
+	resource?: object;
+	/** A host-issued durable operation generation, stable across retries. */
+	operationGeneration?: string;
 }
 
 export interface IacDiff {
