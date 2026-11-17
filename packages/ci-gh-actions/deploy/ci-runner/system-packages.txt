@@ -8,7 +8,6 @@ xz-utils
 docker.io
 # Copies the mise OCI layout into the Docker daemon (build.sh); without it build.sh goes through the local registry.
 skopeo
-# Retained for terminal tooling; the former @hobo/code resident-session use is historical.
 tmux
 # Unpacks the Playwright headless shell zip (base/Dockerfile).
 unzip

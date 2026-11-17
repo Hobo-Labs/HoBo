@@ -278,7 +278,7 @@ describe("project selection and write safety", () => {
 				const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "--eval", script], { cwd: root, encoding: "utf8", timeout: 30_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
 				assert.equal(result.status, 0, result.stderr);
 				const world = JSON.parse(result.stdout) as { lastExitCode: number; lastStdout: string; lastStderr: string };
-				assert.equal(world.lastExitCode, 0, world.lastStderr);
+				assert.equal(world.lastExitCode, 0, `${id}: ${world.lastStdout}\n${world.lastStderr}`);
 				assert.match(world.lastStdout, new RegExp(expected!));
 			}
 		});

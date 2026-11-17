@@ -111,6 +111,8 @@ CLI capture retains up to 8 MiB from each output stream. If either stream exceed
 
 CLI, TUI and native capture commands run in the selected project directory by default. A generated command discovered from root scripts retains the repository root; a project catalog command retains its project. Pass `--cwd=root` or `--cwd=project` to choose explicitly. The recorded `repro.cwd` is relative to the repository, and the command inherits the caller's `PATH` without loading a login profile.
 
+When a command runs a pnpm script, use the version pinned by the checkout and ensure its package store is writable.
+
 ## Step hooks
 
 Optional `steps/*.mts` under a feature may export:
