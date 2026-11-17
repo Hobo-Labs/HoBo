@@ -146,15 +146,15 @@ export function createBrokerAwareUpCommand(
 						(financialManifest &&
 							manifestHostingPolicy(financialManifest).required),
 				);
-				if (financialRequired && (target.kind !== "local" || !yardUp))
-					return {
-						ok: false,
-						status: "rejected",
-						code: "HOBO_HOSTING_AUTHORITY_REQUIRED",
-						message:
-							"budgeted hosting requires a configured authoritative hosting runtime; placement and local fallback cannot waive financial admission",
-						data: { command: "up", budgetRequired: true },
-					};
+				const budgetRequiredNow = () =>
+					financialRequired ||
+					Boolean(
+						deps.runtime?.hostingBudgetRequired ||
+							deps.runtime?.defaultHostingBudgetId ||
+							flags.budgetId,
+					);
+				if (budgetRequiredNow() && (target.kind !== "local" || !yardUp))
+					return refuseBudgetFallback();
 				const unsupportedMode = () => ({
 					ok: false,
 					status: "rejected",
@@ -188,8 +188,10 @@ export function createBrokerAwareUpCommand(
 						const planned = await yardUp.run(input);
 						if (planned.code !== "HOBO_CLI_STUB") return planned;
 					}
+					if (budgetRequiredNow()) return refuseBudgetFallback();
 					if (flags.mode) return unsupportedMode();
 					const definition = await loadBindleDefinition(projectDir);
+					if (budgetRequiredNow()) return refuseBudgetFallback();
 					return definition === null
 						? {
 								ok: false,
@@ -232,9 +234,11 @@ export function createBrokerAwareUpCommand(
 							};
 						}
 					}
+					if (budgetRequiredNow()) return refuseBudgetFallback();
 					if (flags.mode) return unsupportedMode();
 
 					const definition = await loadBindleDefinition(projectDir);
+					if (budgetRequiredNow()) return refuseBudgetFallback();
 					if (definition === null) {
 						return {
 							ok: false,
@@ -255,6 +259,7 @@ export function createBrokerAwareUpCommand(
 						definitionName: definition.name,
 						definition,
 						emitProgress,
+						budgetRequired: budgetRequiredNow,
 						persistent: deps.persistentLocal === true,
 						start: deps.startLocalDeployment ?? startLocalDeployment,
 						ttlSeconds: wantsAnonymousMode(flags)
@@ -543,6 +548,17 @@ export function createBrokerAwareUpCommand(
 	};
 }
 
+function refuseBudgetFallback() {
+	return {
+		ok: false,
+		status: "rejected",
+		code: "HOBO_HOSTING_AUTHORITY_REQUIRED",
+		message:
+			"budgeted hosting requires a configured authoritative hosting runtime; placement and local fallback cannot waive financial admission",
+		data: { command: "up", budgetRequired: true },
+	};
+}
+
 function localTtlSeconds(raw: string | undefined): number {
 	const value = raw === undefined ? 3600 : Number(raw);
 	if (!Number.isSafeInteger(value) || value < 1 || value > 604800)
@@ -563,8 +579,10 @@ async function runLocalUp(input: {
 		Awaited<ReturnType<typeof loadBindleDefinition>>
 	>;
 	readonly emitProgress: (message: string) => void;
+	readonly budgetRequired: () => boolean;
 }) {
 	const { projectDir, hoboHome, definition, emitProgress } = input;
+	if (input.budgetRequired()) return refuseBudgetFallback();
 
 	// Installed runtime always has a broker.
 	if (loadBareMetalYardConfig(hoboHome) === null) {
@@ -572,6 +590,7 @@ async function runLocalUp(input: {
 		initBareMetalYard({ hoboHome });
 	}
 	await ensureEmbeddedBroker({ hoboHome, emitProgress });
+	if (input.budgetRequired()) return refuseBudgetFallback();
 
 	const placement = await resolveBindlePlacement({
 		definition,
@@ -599,8 +618,10 @@ async function runLocalUp(input: {
 	}
 
 	emitProgress(`hobo up: ${placement.message}`);
+	if (input.budgetRequired()) return refuseBudgetFallback();
 
 	const port = await freePort();
+	if (input.budgetRequired()) return refuseBudgetFallback();
 	if (input.persistent) {
 		const { receipt, reused } = await input.start({
 			projectDir,

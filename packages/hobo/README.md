@@ -752,3 +752,12 @@ either signal, and returned URLs; it does not directly assert listener counts
 or inject a close failure. The WASM guest execution test also checks tenant
 environment injection through the separately bundled guest entry, which host
 typechecking cannot cover.
+
+### Budget-required local fallback
+
+If the configured Yard cannot collect a manifest, `hobo up` and its preview
+refuse to fall back to the embedded local lane when a hosting budget is required.
+The fallback cannot reserve or enforce that budget. The command also checks
+runtime and flag requirements again while preparing local placement and before
+startup. Changes to project artifacts during placement still require a separate
+execution handoff fence.
