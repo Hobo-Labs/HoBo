@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-
-import { isReplicatedTable, parseFleetLayout } from "../src/index.js";
 import { insertionOrder } from "../src/fleet/replication.js";
+import { isReplicatedTable, parseFleetLayout } from "../src/index.js";
 
 describe("fleet layout", () => {
 	it("the empty prefix copies a whole schema except control and excluded tables", () => {

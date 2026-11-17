@@ -205,7 +205,9 @@ async function bitwardenSdkClient(env: Env): Promise<BitwardenSdkClient> {
 	const sdk = await import("@bitwarden/sdk-napi");
 	const client = new sdk.BitwardenClient({
 		...(env.BWS_API_URL ? { apiUrl: env.BWS_API_URL } : undefined),
-		...(env.BWS_IDENTITY_URL ? { identityUrl: env.BWS_IDENTITY_URL } : undefined),
+		...(env.BWS_IDENTITY_URL
+			? { identityUrl: env.BWS_IDENTITY_URL }
+			: undefined),
 		userAgent: "HoBo",
 	});
 	await client.auth().loginAccessToken(token);
@@ -313,9 +315,7 @@ export async function openSecretStore(
 				};
 			}
 			try {
-				const client = await (deps.bitwardenClient ?? bitwardenSdkClient)(
-					env,
-				);
+				const client = await (deps.bitwardenClient ?? bitwardenSdkClient)(env);
 				return {
 					ok: true,
 					store: {

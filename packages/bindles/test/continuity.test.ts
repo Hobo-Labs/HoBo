@@ -14,7 +14,9 @@ import {
 
 describe("continuity trait", () => {
 	it("fills a tier's cost-balanced defaults and keeps overrides", () => {
-		expect(parseContinuityPolicy({})).toEqual(CONTINUITY_TIER_DEFAULTS.standard);
+		expect(parseContinuityPolicy({})).toEqual(
+			CONTINUITY_TIER_DEFAULTS.standard,
+		);
 		expect(
 			parseContinuityPolicy({ tier: "critical", standbys: 1 }),
 		).toMatchObject({ tier: "critical", standbys: 1, recoveryPointMs: 30_000 });
@@ -24,12 +26,12 @@ describe("continuity trait", () => {
 		expect(() =>
 			parseContinuityPolicy({ standbys: 0, backupEveryMs: 0 }),
 		).toThrow(ContinuityError);
-		expect(() =>
-			parseContinuityPolicy({ recoveryPointMs: 10 }),
-		).toThrow(/at least 1000 ms/);
-		expect(() =>
-			parseContinuityPolicy({ failoverAfterMs: 0 }),
-		).toThrow(/failoverAfterMs/);
+		expect(() => parseContinuityPolicy({ recoveryPointMs: 10 })).toThrow(
+			/at least 1000 ms/,
+		);
+		expect(() => parseContinuityPolicy({ failoverAfterMs: 0 })).toThrow(
+			/failoverAfterMs/,
+		);
 	});
 
 	it("rebuildable state promises no recovery point", () => {

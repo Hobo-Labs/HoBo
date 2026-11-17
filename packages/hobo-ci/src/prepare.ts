@@ -289,8 +289,7 @@ export async function prepareGithubConnection(
 			const side = resolveSettings(sideSettings, env, await settings.read());
 			const stage = await configureThen({
 				provider: "github",
-				title:
-					`Connect ${storeLabel(chosen)}`,
+				title: `Connect ${storeLabel(chosen)}`,
 				reason: `HoBo writes the App's credentials straight into ${storeLabel(chosen)}. Coordinates are saved for next time; a sign-in token is used for this run only.`,
 				settings: sideSettings,
 				missing: side.missing,
