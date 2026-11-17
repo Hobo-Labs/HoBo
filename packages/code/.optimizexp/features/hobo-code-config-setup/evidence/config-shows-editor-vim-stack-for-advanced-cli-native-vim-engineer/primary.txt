@@ -1,8 +1,0 @@
-◈ config
-····················
- setup · 8 tips · config · env · stacks · setup
- editor-vim · ○EDITOR ●nvim|vim|tmux PATH ●editor/hobo-code…
- gaps · set HOBO_CODE_MONETIZATION=0 to disable sponsored wait · export EDITOR=nvim (or VISUAL) for edit fallback
- filter · hobo-code config --stack cost-budget|editor-vim|…
- full · hobo-code config --json
-────────────────────

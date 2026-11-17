@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package hobo.draft.session_orchestration.v1;
-
-message SessionOrchestrationProof {
-  uint32 accepted_commands = 1;
-  bool detach_is_nonterminal = 2;
-  bool clients_share_snapshot = 3;
-}

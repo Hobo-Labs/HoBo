@@ -287,7 +287,7 @@ function inferPersonaSurfaces(
 	if (/cursor/i.test(personaId + body)) {
 		out.push({
 			experienceId: "guide-cursor-map",
-			intent: "Map Cursor features to hobo-code verbs",
+			intent: "Map Cursor features to product verbs",
 			entryCommand: `${bin} guide --cursor`,
 			driver: "cli",
 			observableSuccess: "Cursor map with honest residual",

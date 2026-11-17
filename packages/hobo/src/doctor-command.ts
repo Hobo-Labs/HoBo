@@ -13,7 +13,6 @@ import {
 } from "@hobo/trails";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { buildBindingDeliveryDoctorSection } from "./binding-delivery-doctor.js";
-import { describeCodeHarnessHealth } from "./code-health.js";
 import {
 	type DeployTargetDescription,
 	describeDeployTarget,
@@ -216,27 +215,6 @@ export function createDoctorCommand(
 			const messaging = buildMessagingDoctorSection(env);
 			remediation.push(...messaging.remediation);
 
-			// HoBo Code harness health (ADR-0139) — stations + OpenFeature progressive flags.
-			const codeHarness = describeCodeHarnessHealth({
-				hoboHome,
-				env,
-			});
-			if (!codeHarness.station.present) {
-				remediation.push(
-					"Code harness has no Station — run `hobo station init` (or `hobo-code platform`).",
-				);
-			}
-			if (!codeHarness.features.harnessEnabled) {
-				remediation.push(
-					"code.harness.enabled is false — `hobo feature set code.harness.enabled`.",
-				);
-			}
-			if (codeHarness.orphans > 0) {
-				remediation.push(
-					`Code harness has ${codeHarness.orphans} sandbox orphan(s) under HOBO_HOME/sandboxes — clean via hobo-code promote/session cleanup.`,
-				);
-			}
-
 			return {
 				ok: true,
 				status: target.live ? "live" : "in-memory",
@@ -253,7 +231,6 @@ export function createDoctorCommand(
 					trails: trailsReport,
 					bindingDelivery: bindingDelivery.report,
 					messaging: messaging.report,
-					codeHarness,
 				},
 			};
 		},

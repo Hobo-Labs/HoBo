@@ -82,7 +82,6 @@ export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 		),
 		run: async ({ context, flags, emitProgress }) => {
 			const projectDir = context.projectDir ?? context.cwd;
-			const bridged = process.env.HOBO_CODE_DEV_BRIDGE === "1";
 			// `--serve` is the explicit opt-in to the long-lived server for
 			// non-TTY callers (agents, supervisors, containers) that would
 			// otherwise probe-and-exit. `--once`/`--json` still win.
@@ -92,16 +91,13 @@ export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 			const once =
 				flags.once === true ||
 				flags.json === true ||
-				(!bridged &&
-					!forceServe &&
-					(!process.stdin.isTTY || !process.stdout.isTTY));
+				(!forceServe && (!process.stdin.isTTY || !process.stdout.isTTY));
 			// Off-TTY runs probe-and-exit silently otherwise — say why, and how
 			// to get the long-lived server instead.
 			if (
 				once &&
 				flags.once !== true &&
 				flags.json !== true &&
-				!bridged &&
 				!forceServe &&
 				(!process.stdin.isTTY || !process.stdout.isTTY)
 			) {

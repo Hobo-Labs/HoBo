@@ -133,33 +133,6 @@ export function hoboReleasePagesSparseCones(): readonly string[] {
 	]);
 }
 
-const CODE_RELEASE_DIR_CONES = [
-	".agents",
-	".claude",
-	".github",
-	"scripts",
-	"packages",
-	"external",
-	"release",
-	"deploy/release-images",
-] as const;
-
-/** HoBo Code release jobs with sparse checkout. */
-export function hoboCodeReleaseSparseCones(
-	repoRoot: string,
-): readonly string[] {
-	return Object.freeze([
-		...new Set([
-			...CODE_RELEASE_DIR_CONES,
-			...releaseOciInputSparseCones(),
-			...PINS_SPARSE_CONES,
-			...MISE_LOCK_SPARSE_CONES,
-			...rootVitestSparseCones(repoRoot),
-			...RELEASE_ROOT_FILES,
-		]),
-	]);
-}
-
 /** ts-autocode release workflow sparse cone. */
 export function tsAutocodeReleaseSparseCones(): readonly string[] {
 	return Object.freeze([
@@ -185,7 +158,7 @@ export const TS_AUTOCODE_PNPM_PREPARE_REQUIRED = [
 	"external/ts-autocode/packages/rewrite/package.json",
 ] as const;
 
-/** Vitest files run by HoBo / HoBo Code release contract jobs (static manifest checks). */
+/** Vitest files run by HoBo release contract jobs (static manifest checks). */
 export const RELEASE_CONTRACT_VITEST_FILES = [
 	"scripts/test/release-oci-affected.test.ts",
 	"scripts/test/release-oci-attest-contract.test.ts",
@@ -193,11 +166,6 @@ export const RELEASE_CONTRACT_VITEST_FILES = [
 	"scripts/test/release-version.test.ts",
 	"scripts/test/release-sparse-cone.test.ts",
 	"scripts/test/stage-release-oci-app.test.ts",
-] as const;
-
-export const CODE_RELEASE_CONTRACT_VITEST_FILES = [
-	"scripts/test/code-test-build-artifact.test.ts",
-	...RELEASE_CONTRACT_VITEST_FILES,
 ] as const;
 
 /** Repo-relative paths those tests read via join(root, …) or loadReleaseOciManifest. */
@@ -216,22 +184,6 @@ export function filePathsRequiredByReleaseOciContractTests(
 		),
 		"release/npm-scope-map.json",
 	]) {
-		const src = readFileSync(join(repoRoot, rel), "utf8");
-		for (const match of src.matchAll(
-			/join\(\s*root\s*,\s*["'`]([^"'`]+)["'`]/g,
-		)) {
-			paths.add(match[1]!.replace(/\\/g, "/"));
-		}
-	}
-	return Object.freeze([...paths].sort());
-}
-
-export function filePathsRequiredByCodeReleaseContractTests(
-	repoRoot: string,
-): readonly string[] {
-	const paths = new Set(filePathsRequiredByReleaseOciContractTests(repoRoot));
-	for (const rel of CODE_RELEASE_CONTRACT_VITEST_FILES) {
-		if (rel === "scripts/test/release-sparse-cone.test.ts") continue;
 		const src = readFileSync(join(repoRoot, rel), "utf8");
 		for (const match of src.matchAll(
 			/join\(\s*root\s*,\s*["'`]([^"'`]+)["'`]/g,
@@ -280,16 +232,6 @@ export function requiredPathsForHoboReleaseContract(
 		...rootVitestSetupFiles(repoRoot),
 		...PINS_FETCH_REQUIRED_FILES,
 		...filePathsRequiredByReleaseOciContractTests(repoRoot),
-	]);
-}
-
-export function requiredPathsForHoboCodeReleaseContract(
-	repoRoot: string,
-): readonly string[] {
-	return Object.freeze([
-		...rootVitestSetupFiles(repoRoot),
-		...PINS_FETCH_REQUIRED_FILES,
-		...filePathsRequiredByCodeReleaseContractTests(repoRoot),
 	]);
 }
 

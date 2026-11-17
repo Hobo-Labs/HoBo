@@ -4,7 +4,10 @@
   "type": "module",
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
-    "@hobo/contracts": "workspace:*"
+    "@hobo/connectivity": "workspace:*",
+    "@hobo/contracts": "workspace:*",
+    "@hobo/core": "workspace:*",
+    "@hobo/stations": "workspace:*"
   },
   "scripts": {
     "test": "vitest run --root .",

@@ -1,8 +1,0 @@
-◈ config
-····················
- setup · 9 tips · config · env · stacks · setup
- agent-native · ●HOBO_HOME ●HOBO_CODE_AGENT ○HOBO_CODE_NO_ELI… ○HOBO_CODE_SESSIO… ○HOBO_CODE_AGENT_… ●.mcp.json
- gaps · set HOBO_CODE_MONETIZATION=0 to disable sponsored wait · export EDITOR=nvim (or VISUAL) for edit fallback
- filter · hobo-code config --stack cost-budget|editor-vim|…
- full · hobo-code config --json
-────────────────────

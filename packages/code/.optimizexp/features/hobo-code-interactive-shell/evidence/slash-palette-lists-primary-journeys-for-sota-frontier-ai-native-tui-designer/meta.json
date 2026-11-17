@@ -1,7 +1,0 @@
-{
-  "capturedAt": "2026-07-31T20:52:03.170Z",
-  "harness": "optimizexp-shell-frame-post-reduce",
-  "binary": "packages/code/bin/hobo-code.mjs → dist InteractiveShell",
-  "primary": "primary.txt",
-  "captureStamp": true
-}

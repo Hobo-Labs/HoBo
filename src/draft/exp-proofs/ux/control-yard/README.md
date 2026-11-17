@@ -2,11 +2,17 @@
 
 Game-first control plane for HoBo Stations — not a multi-page admin SPA.
 
-## Parse, don't validate
+## Proof record
 
-`controlYardAcceptance()` is the **parse, don't validate** boundary for this proof:
-acceptance criteria become frozen **derived types** (`ControlYardAcceptance`).
-Tests assert required zones and art-bible invariants without re-checking free-form JSON.
+`controlYardAcceptance()` returns a static, shallow-frozen record naming zones,
+packages, the art bible, the management path, and two flags. Its tests check
+some record fields and the zone names in the SVG. They do not parse the criteria
+in `proof.json` or establish the full behavior those criteria describe.
+
+The `ControlYardZone` derived type comes from `REQUIRED_ZONES`.
+`assertYardZones()` checks that a string list includes those names; it does not
+parse the criteria in `proof.json`. There is no parse, don't validate boundary
+for those criteria.
 
 ## Event architecture
 
@@ -57,6 +63,12 @@ See [assets/yard-zones.svg](./assets/yard-zones.svg) for the v0 single-Station l
 | Error Bunker | doctor hazards |
 
 ## Acceptance
+
+The pixel-village core-loop, browser, scenario, and experience-review gates
+were removed with that package. The criteria in `proof.json` lack complete
+current executable acceptance gates and remain unverified as a whole. The
+remaining Yard tests and captured materials provide partial evidence, but do
+not replace those gates.
 
 - Management ops shared with CLI
 - Control API HTTP+SSE from fixtures

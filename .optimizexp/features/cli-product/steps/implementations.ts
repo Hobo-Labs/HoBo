@@ -1,7 +1,7 @@
 /**
  * Step implementations for `cli-product`.
- * Runs the REAL product CLIs (`hobo` from @hobo/cli, `hobo-code` from
- * @hobo/code) and captures exit code / stdout / stderr / parsed JSON
+ * Runs the REAL product CLI (`hobo` from @hobo/cli, and the composed `hobo`
+ * from @hobo/hobo) and captures exit code / stdout / stderr / parsed JSON
  * envelope so Then-steps assert observable behavior, not vibes.
  *
  * Invocation strategy:
@@ -10,7 +10,6 @@
  *   workspace dependencies built once (`pnpm --filter @hobo/cli... build`).
  * - composed `hobo` (real verb handlers incl. doctor): prefers
  *   `packages/hobo/dist/bin/hobo.js`; falls back to tsx on the source entry.
- * - `hobo-code`: runs the source entry via tsx (no build required).
  *
  * Do not call live third-party services from default tests.
  */
@@ -24,7 +23,7 @@ export const DISCOVERY_PRIMARY = {
   command: "hobo --help" as string | null,
   confidence: "high",
   reason:
-    "seed wants the product CLI exercised directly; hobo/hobo-code bins run offline",
+    "seed wants the product CLI exercised directly; the hobo bins run offline",
 };
 
 export const IMPLEMENTATION_STATUS = {
@@ -49,13 +48,6 @@ const HOBO_COMPOSED_SRC_ENTRY = path.join(
   "bin",
   "hobo.ts",
 );
-const HOBO_CODE_SRC_BIN = path.join(
-  "packages",
-  "code",
-  "src",
-  "bin",
-  "hobo-code.ts",
-);
 
 function hoboCommand(args: string): string {
   if (existsSync(path.join(process.cwd(), HOBO_DIST_BIN))) {
@@ -75,10 +67,6 @@ function hoboComposedCommand(args: string): string {
     return `node ${HOBO_COMPOSED_DIST_BIN} ${args}`;
   }
   return `pnpm exec tsx ${HOBO_COMPOSED_SRC_ENTRY} ${args}`;
-}
-
-function hoboCodeCommand(args: string): string {
-  return `pnpm exec tsx ${HOBO_CODE_SRC_BIN} ${args}`;
 }
 
 export function setPersona(world: OptimizexpWorld, personaId: string): void {
@@ -122,10 +110,6 @@ export function runHoboCli(world: OptimizexpWorld, args: string): void {
 
 export function runHoboComposedCli(world: OptimizexpWorld, args: string): void {
   runShell(world, hoboComposedCommand(args));
-}
-
-export function runHoboCodeCli(world: OptimizexpWorld, args: string): void {
-  runShell(world, hoboCodeCommand(args));
 }
 
 export function assertExitCode(world: OptimizexpWorld, expected: number): void {

@@ -17,9 +17,9 @@ networked, secret-bearing, or unrelated changes.
 ## Invocation
 
 ```bash
-node --import tsx .agents/skills/optimizexp/harness/doctor.mts check --project code
-node --import tsx .agents/skills/optimizexp/harness/doctor.mts repair --project code
-node --import tsx .agents/skills/optimizexp/harness/doctor.mts snapshot --project code
+node --import tsx .agents/skills/optimizexp/harness/doctor.mts check --project hobo
+node --import tsx .agents/skills/optimizexp/harness/doctor.mts repair --project hobo
+node --import tsx .agents/skills/optimizexp/harness/doctor.mts snapshot --project hobo
 node --import tsx .agents/skills/optimizexp/harness/doctor.mts check --json
 ```
 

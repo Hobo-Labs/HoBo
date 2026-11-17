@@ -2,7 +2,7 @@
 	"name": "@hobo/rift",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "Virtual worktrees for hobo-code: copy-on-write agent workspaces that work on this machine, not just on btrfs.",
+	"description": "Virtual worktrees: copy-on-write agent workspaces that work on this machine, not just on btrfs.",
 	"type": "module",
 	"bin": {
 		"hobo-rift": "./dist/bin/hobo-rift.js"

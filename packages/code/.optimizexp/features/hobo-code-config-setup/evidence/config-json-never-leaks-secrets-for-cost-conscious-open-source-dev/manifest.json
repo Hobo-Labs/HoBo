@@ -1,1 +1,0 @@
-{"featureId":"hobo-code-config-setup","scenarioSlug":"config-json-never-leaks-secrets-for-cost-conscious-open-source-dev","driver":"cli","primary":"primary.txt","kind":"transcript","capturedAt":"2026-07-31T19:35:43Z","command":"hobo-code config --json"}

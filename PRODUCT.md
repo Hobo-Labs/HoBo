@@ -17,7 +17,7 @@ Neither subordinates the other, and neither may be designed away.
   looking for a third option. They arrive to judge whether the portability
   claim is real.
 - **AI coding agents** operating HoBo directly — via the `hobo` control-plane
-  CLI, the `hobo-code` coding harness, MCP surfaces, and the agent briefing at
+  CLI, MCP surfaces, and the agent briefing at
   `site/public/llms.txt` / `/llms-full.txt`. Agents are consumers of the product
   *and* of the site.
 
@@ -49,8 +49,9 @@ lowest-common-denominator abstraction that hides the provider.
 
 ## Operating Context
 
-- Two CLIs: `hobo` (control plane, canonical verb set in
-  `packages/cli/src/shell/verbs.ts`) and `hobo-code` (interactive Bo session).
+- One CLI: `hobo` (control plane, canonical verb set in
+  `packages/cli/src/shell/verbs.ts`), with `hobo-mcp` exposing the same verbs
+  as MCP tools.
 - The website is landing page + developer docs + agent docs, built from `site/`
   and published to the `gh-pages` branch — deliberately **no GitHub Actions
   dependency** for gates or publish (`pnpm run site:deploy`). Checkin gates

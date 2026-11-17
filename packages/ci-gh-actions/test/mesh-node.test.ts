@@ -90,6 +90,8 @@ describe("a node's identity key", () => {
 	it("refuses a key others can read when it cannot be made private", async () => {
 		const path = join(directory(), "loose.key");
 		writeFileSync(path, generateMeshIdentity().privateKeyPem, { mode: 0o644 });
+		// A restrictive umask must not make this intentionally loose key private.
+		chmodSync(path, 0o644);
 		await expect(
 			loadMeshIdentity(path, {
 				chmod: async () => {

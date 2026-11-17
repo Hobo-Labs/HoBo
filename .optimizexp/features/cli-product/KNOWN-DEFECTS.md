@@ -16,15 +16,6 @@ scenarios to match desired behavior before the product fix lands.
   `@known-defect` tag. Re-check if `shell/registry.ts` / `render.ts`
   change.
 
-## KD-2 — hobo-code silently ignores unknown flags — FIXED in-flight
-
-- Previously `hobo-code status --bogusflag-zz --json` exited **0** with
-  `ok:true` — the unknown flag was dropped without warning.
-- An uncommitted worktree fix (parallel agent, `packages/code/src/cli.ts`)
-  now rejects unknown flags: exit **1** with `ok:false,
-  code:"HOBO_CODE_UNKNOWN_FLAG"`. The scenario asserts the FIXED behavior
-  with no `@known-defect` tag — it fails if the fix is reverted.
-
 ## KD-3 — boilerplate per-verb help missing flags (hobo) — FIXED in-flight
 
 - Wired verbs previously rendered `hobo <verb> [global flags] [args]` with
@@ -39,7 +30,7 @@ scenarios to match desired behavior before the product fix lands.
 - The real `doctor` handler lives in `packages/hobo` (composed CLI), but
   `packages/hobo` failed to build: type drift in `src/broker-runtime.ts`
   (`ResolutionReceipt`/`ResolutionRejection` missing `stationId`/`railHash`,
-  ADR-0131), `src/code-command.ts` (`exactOptionalPropertyTypes`), and a
+  ADR-0131), a since-removed bridge module (`exactOptionalPropertyTypes`), and a
   runtime `UsageError: Cannot register unknown HoBo verb "messaging"`
   against `@hobo/cli`'s `CANONICAL_VERBS` (`messaging` and `serve` were
   registered in the composed CLI but never added to `CANONICAL_VERBS`).

@@ -18,7 +18,6 @@ The full docs dump is at https://tyler-r-kendrick.github.io/HoBo/llms-full.txt.
 - [Getting started](https://tyler-r-kendrick.github.io/HoBo/guide/getting-started/)
 - [Core concepts](https://tyler-r-kendrick.github.io/HoBo/guide/concepts/)
 - [The hobo CLI](https://tyler-r-kendrick.github.io/HoBo/guide/cli/)
-- [hobo-code](https://tyler-r-kendrick.github.io/HoBo/guide/hobo-code/)
 - [Search](https://tyler-r-kendrick.github.io/HoBo/search/)
 - [The trail map](https://tyler-r-kendrick.github.io/HoBo/guide/status/)
 

@@ -55,7 +55,7 @@ function workspaceRev(): string {
  *
  * This used to be an unbounded recursive walk for any `package.json`, and that
  * was the whole bug. It swept up things that are not workspace packages at all —
- * `packages/code/examples/*`, `packages/hobo/fixtures/deploy/vercel`, the
+ * nested example apps, `packages/hobo/fixtures/deploy/vercel`, the
  * scaffolding templates under `packages/patterns/patterns/*` — and every one of
  * them classified as `unknown`, which makes `parseWorkspaceEdge` **throw**.
  *

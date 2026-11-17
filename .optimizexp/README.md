@@ -30,7 +30,7 @@ Reviews **merge** global + selected project trees. Same persona/feature id: **pr
 | `runs/<run-id>/backlog.json` | Ranked uplift experiments for this run |
 | `backlog/experiments.json` | Global merge of survey-driven experiment backlog |
 | `cucumber.yaml` | Cucumber profile for experience features |
-| `features/cli-product/` | Product-CLI coverage features driven from the real `hobo` / `hobo-code` surfaces |
+| `features/cli-product/` | Product-CLI coverage features driven from the real `hobo` surface |
 
 Skill (progressive disclosure + harness + host workflows):
 

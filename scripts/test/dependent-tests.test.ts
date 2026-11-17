@@ -1127,11 +1127,8 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	];
 	for (const [path, full] of [
 		["vitest.config.ts", withTiered(...merging)],
-		["test/setup/hobo-test-homes.ts", withTiered(...merging, "packages/code")],
-		[
-			"test/setup/isolate-hobo-home.ts",
-			withTiered(...merging, "packages/code"),
-		],
+		["test/setup/hobo-test-homes.ts", withTiered(...merging)],
+		["test/setup/isolate-hobo-home.ts", withTiered(...merging)],
 	] as const)
 		it(`runs the suites whose config reaches ${path}`, () => {
 			const planned = plan(path);
@@ -1145,12 +1142,12 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		});
 
 	it("runs a test that imports another package's source by relative path", () => {
-		// `packages/code` imports `../../cli/src/cloud/loader.js` and declares no
-		// dependency on @hobo/cli; 3317dcc2 changed cli and missed it.
+		// `packages/stations` imports `../../broker/src/budget-signals.js` and
+		// declares no dependency on @hobo/broker.
 		assert.ok(
-			plan("packages/cli/src/cloud/loader.ts").subsets[
-				"packages/code"
-			]?.includes("test/happy-path-run.test.ts"),
+			plan("packages/broker/src/budget-signals.ts").subsets[
+				"packages/stations"
+			]?.includes("test/ci-routing.test.ts"),
 		);
 	});
 

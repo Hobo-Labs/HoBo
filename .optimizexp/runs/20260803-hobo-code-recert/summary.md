@@ -1,5 +1,10 @@
 # OptimizeXP run summary: `hobo-code` evidence re-certification
 
+> **Historical record:** `packages/code` and its recordings were removed from
+> this branch. The scores and claims below describe the original run; they are
+> no longer checked against evidence in the current tree. The original files are
+> preserved in [commit `225352177`](https://github.com/Hobo-Labs/HoBo/tree/225352177c2bb83574b5669b82efafec9575a876/packages/code/.optimizexp/features/hobo-code-default-entry/evidence).
+
 Run: `20260803-hobo-code-recert`
 Product: `hobo-code` (`packages/code`, project id `code`)
 Experiences: UX, DX
@@ -29,7 +34,7 @@ the installed bin entry, with real TTY recordings.
   findings remain (SGR mouse regions; the engine path needs provider
   credentials to exercise end to end), so the stop reason is deliberately not
   a completion reason and `lint-runs` classifies this run as *not claiming*.
-  Its `evidenceChecks` are still enforced on every `optimizexp:check`.
+  Its evidence checks were retired when the package and recordings were removed.
 
 ## Measured before / after (same pty geometry, same 5s window)
 
@@ -41,8 +46,8 @@ the installed bin entry, with real TTY recordings.
 | Synchronized output (tear-free) | no | yes |
 
 Scores in `baseline.json` / `iterations/001/scores.json` are agent judgments;
-the claims underneath them are machine-checked by `evidenceChecks` that
-re-execute against the committed evidence.
+the original machine checks and recordings are available in the historical
+commit linked above; they are not current-tree evidence.
 
 ## Evidence captured (all `via: capture-evidence`, `degraded: false`)
 

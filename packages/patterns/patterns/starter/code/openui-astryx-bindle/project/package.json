@@ -4,8 +4,8 @@
 	"private": true,
 	"license": "MIT",
 	"type": "module",
-	"description": "High-value hobo-code template: OpenUI + Astryx Bindle, dark first-paint shell, Gherkin linked to OpenFeature.",
+	"description": "OpenUI catalog template: OpenUI + Astryx Bindle, dark first-paint shell, Gherkin linked to OpenFeature.",
 	"scripts": {
-		"test": "echo \"template — run via hobo-code scaffold\""
+		"test": "echo \"template input — render through @hobo/patterns\""
 	}
 }

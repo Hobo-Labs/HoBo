@@ -1,8 +1,0 @@
-{
-	"id": "barebones",
-	"title": "Barebones Bindle",
-	"blurb": "Minimal public web Bindle with no extra services.",
-	"aliases": ["barebones", "bare bones", "blank", "empty", "minimal"],
-	"tags": ["starter", "bindle", "web"],
-	"fallback": true
-}

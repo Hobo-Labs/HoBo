@@ -1,7 +1,0 @@
-{
-	"id": "hello-world",
-	"title": "Hello World",
-	"blurb": "Private API plus public web Bindle that greets.",
-	"aliases": ["hello world", "hello-world", "hello bindle", "greeting", "howdy"],
-	"tags": ["starter", "bindle", "web", "api"]
-}

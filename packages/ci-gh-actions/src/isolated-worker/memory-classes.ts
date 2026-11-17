@@ -40,7 +40,6 @@ const JOB_CLASSES = {
 	"Secret scan": "light",
 	"Pricing release contract (static)": "light",
 	"Attest GHCR images": "light",
-	"Attest hobo-code GHCR image": "light",
 	"CI runner image (mise oci)": "heavy",
 	// Planning is Node-only (turbo plan + cache upload); light admission avoids a 4096 MiB hold on thin main runs.
 	"Main workspace plan": "light",
@@ -52,10 +51,8 @@ const JOB_CLASSES = {
 	// database servers sit beside the job, outside what admission counts.
 	"Live data engines (PostgreSQL 16, MongoDB 8)": "heavy",
 	"Main full gate": "heavy",
-	"HoBo Code contract, lint, test + OCI image": "heavy",
 	"Release contract + affected OCI images": "heavy",
 	"Publish npm + GHCR (tagged release)": "heavy",
-	"Stage npm package + publish hobo-code GHCR image": "heavy",
 	"Build and test @hobo/pricing (release cone)": "heavy",
 	"@hobo/pricing affected gate": "heavy",
 	"Clean container bootstrap": "heavy",

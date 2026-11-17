@@ -9,10 +9,13 @@ import { pactBrokerClient } from "../scripts/pact-broker.js";
 
 const execute = promisify(execFile);
 
+// Leave time beyond the CLI's 15-second deadline for server cleanup.
 it.each([
 	true,
 	false,
-])("uses an independent upstream provider version in the deployment CLI (configured=%s)", async (configured) => {
+])("uses an independent upstream provider version in the deployment CLI (configured=%s)", {
+	timeout: 30_000,
+}, async (configured) => {
 	const selected: string[][] = [];
 	const server = createServer((request, response) => {
 		const query = new URL(request.url ?? "", "http://localhost").searchParams;

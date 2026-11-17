@@ -58,7 +58,6 @@ Durable Camp storage defaults to a **single-owner SQLite partition** behind Even
 ## Start here
 
 - [The MCP surface](/HoBo/agents/mcp/) — the shipping `hobo-mcp` binary: stdio transport, the canonical verb set as tools, `HOBO_MCP_TOOLS` scoping, deny-by-default audited decisions.
-- [hobo-code](/HoBo/guide/hobo-code/) — the interactive Bo session. Not a `hobo` verb.
 - [`llms.txt`](/HoBo/llms.txt) — the machine-readable site briefing.
 - [Architecture](/HoBo/architecture/) — package layout, durable EventStore default, contract effects.
 - [Testing](/HoBo/guide/testing/) — effect-aware isolation and offline durability tests.

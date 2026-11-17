@@ -82,6 +82,10 @@ npm.cmd --prefix src/draft/epic-proofs/finops-budget-routing-control-plane run s
 npm.cmd --prefix src/draft/epic-proofs/finops-budget-routing-control-plane test
 ```
 
+The loopback behavior steps use the workspace connectivity, core, and stations
+packages. The root behavior gate builds their declared dependencies before
+running Cucumber, including on a checkout without existing `dist` outputs.
+
 ## What Is Real
 
 - Parser functions reject provider-specific leakage and unsafe metric contracts.

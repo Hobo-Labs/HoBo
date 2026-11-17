@@ -8,8 +8,8 @@
  * root (every CI container) makes `/nonexistent/...` on the machine itself and
  * leaves it there. Every later suite that uses `/nonexistent` to mean "missing"
  * (a PATH entry, a binary that must not resolve) then finds a directory.
- * `packages/code`'s two shell suites did this: `/nonexistent/hobo-home-for-*`
- * held chats and a current-session file on every host that had run them.
+ * Two shell suites once did this: `/nonexistent/hobo-home-for-*` held chats
+ * and a current-session file on every host that had run them.
  *
  * The guard scans test sources rather than checking that `/nonexistent` is
  * absent after a run, for three reasons:
@@ -104,50 +104,6 @@ function hitsIn(file: string): readonly Hit[] {
  * removed, fails below.
  */
 const ALLOWANCES = {
-	"packages/code/test/composed-hobo.test.ts": {
-		literals: { "/no/such/bin": 1 },
-		why: "a PATH value; resolveHoboBin only existsSync-checks candidates and has no PATH fallback (src/composed-hobo.ts:89-111)",
-	},
-	"packages/code/test/config-surface-secrets.test.ts": {
-		literals: { "/nonexistent-hobo-config-test": 1, "/nonexistent": 1 },
-		why: "the cwd is only passed to existsSync (src/config-surface.ts:310-311, 349) and the other is a PATH entry walked with existsSync (:74-76)",
-	},
-	"packages/code/test/dev-browser-spawn-and-url.test.ts": {
-		literals: { "/no/such/hobo": 2, "/no/such/cli.js": 1 },
-		why: "a command string resolveHoboSpawn only inspects and returns (src/dev-browser.ts:55-73); nothing is spawned",
-	},
-	"packages/code/test/dev-browser.test.ts": {
-		literals: { "/no/such/bin": 4 },
-		why: "a PATH value resolveHoboBin never reads (src/composed-hobo.ts:89-111)",
-	},
-	"packages/code/test/editor-bridge-selection.test.ts": {
-		literals: { "/nonexistent": 1 },
-		why: "a PATH entry the editor lookup walks with existsSync (src/editor-bridge.ts:68-71)",
-	},
-	"packages/code/test/example-materialize.test.ts": {
-		literals: { "/nowhere": 1 },
-		why: "a catalog entry's sourceDir that renderExampleCatalogInstructions never opens; it prints id, title and aliases (src/example-catalog.ts:439-452)",
-	},
-	"packages/code/test/happy-path-run.test.ts": {
-		literals: { "/no/such/bin": 2 },
-		why: "a PATH value resolveHoboBin never reads (src/composed-hobo.ts:89-111)",
-	},
-	"packages/code/test/hobo-bin-resolve.test.ts": {
-		literals: { "/no/such/bin": 16 },
-		why: "a PATH value resolveHoboBin never reads (src/composed-hobo.ts:89-111)",
-	},
-	"packages/code/test/mux-agents.test.ts": {
-		literals: { "/nowhere": 1 },
-		why: "a home that detectAgents only joins and hands to the injected exists, which the test makes return false (src/agent-registry.ts:124-125)",
-	},
-	"packages/code/test/sandbox-promote-gates.test.ts": {
-		literals: { "/definitely/not/a/path": 1 },
-		why: "a project root assertNoVendoredTokenTools only existsSync-checks (src/sandbox-promote.ts:353)",
-	},
-	"packages/code/test/workspaces.test.ts": {
-		literals: { "/nowhere/at/all": 1 },
-		why: "findGitRoot walks up calling the injected exists, which returns false (src/agent-workspaces.ts:215-225)",
-	},
 	"packages/componentize/test/real-componentize.test.ts": {
 		literals: { "/nowhere": 2 },
 		why: "the toolchain probe fails first, so componentize rejects without opening sourceRoot (src/real-componentize.ts:137-142)",
@@ -292,17 +248,13 @@ describe("fixture paths at the filesystem root", () => {
 		).toEqual([]);
 	});
 
-	it("scans the suites that leaked, so an empty scan cannot pass", () => {
+	it("scans the package suites, so an empty scan cannot pass", () => {
 		expect(files.length).toBeGreaterThan(500);
+		expect(files).toContain("packages/hobo/test/station-command.test.ts");
 		expect(files).toContain(
-			"packages/code/test/shell-key-reducer-arms.test.ts",
+			"packages/patterns/test/render-compose-codec.test.ts",
 		);
-		expect(files).toContain(
-			"packages/code/test/shell-view-and-compact.test.ts",
-		);
-		expect(files).toContain(
-			"packages/code/test/config-surface-secrets.test.ts",
-		);
+		expect(files).toContain("packages/schema-tools/test/discover.test.ts");
 	});
 });
 
@@ -351,9 +303,14 @@ describe("the literal scan", () => {
 	});
 
 	it("reports a literal the allowances do not cover, an extra copy of one they do, and an allowance with no literal", () => {
-		const file = "packages/code/test/editor-bridge-selection.test.ts";
+		const file =
+			"packages/hobo/test/derivative-descriptor-and-conformance.test.ts";
 		const { offenders, stale } = audit([
-			{ file: "packages/code/test/new.test.ts", line: 7, literal: "/nowhere" },
+			{
+				file: "packages/hobo/test/unlisted.test.ts",
+				line: 7,
+				literal: "/nowhere",
+			},
 			{ file, line: 3, literal: "/nonexistent" },
 			{ file, line: 9, literal: "/nonexistent" },
 			{ file, line: 12, literal: "/nonexistent/other" },
@@ -361,10 +318,10 @@ describe("the literal scan", () => {
 		expect(offenders).toEqual([
 			`${file}:9  /nonexistent`,
 			`${file}:12  /nonexistent/other`,
-			"packages/code/test/new.test.ts:7  /nowhere",
+			"packages/hobo/test/unlisted.test.ts:7  /nowhere",
 		]);
 		expect(stale).toContain(
-			"packages/code/test/mux-agents.test.ts  /nowhere x1",
+			"packages/management/test/projections.test.ts  /nowhere x1",
 		);
 		expect(stale).not.toContain(`${file}  /nonexistent x1`);
 	});

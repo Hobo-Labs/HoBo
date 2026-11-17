@@ -1,6 +1,6 @@
 {
   "featureId": "cli-product",
-  "seed": "A developer or agent runs the real product CLIs (hobo, hobo-code) and gets discoverable help, honest JSON envelopes, and non-zero exits on failure.",
+  "seed": "A developer or agent runs the real product CLI (hobo) and gets discoverable help, honest JSON envelopes, and non-zero exits on failure.",
   "scannedAt": "2026-07-31T22:11:44.000Z",
   "bindings": [
     {
@@ -11,16 +11,6 @@
       "reason": "seed wants the product CLI exercised directly; @hobo/cli bin runs offline once workspace deps are built",
       "implementsSteps": [
         "I run the hobo CLI with arguments {string}"
-      ]
-    },
-    {
-      "kind": "product-cli",
-      "id": "bin:hobo-code",
-      "command": "pnpm exec tsx packages/code/src/bin/hobo-code.ts",
-      "confidence": "high",
-      "reason": "hobo-code source entry runs without a build and needs no credentials",
-      "implementsSteps": [
-        "I run the hobo-code CLI with arguments {string}"
       ]
     }
   ]

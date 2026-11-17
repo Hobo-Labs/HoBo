@@ -123,7 +123,7 @@ describe("ownedTempDir", () => {
 	it(
 		"installs one set of handlers however often the entry point asks, so a signal still ends the process",
 		async () => {
-			// hobo-code's loader asks on every /hobo verb. Two sets would each see
+			// A shell's loader may ask on every command. Two sets would each see
 			// the other listening and defer to it, and SIGINT would be swallowed.
 			const ended = await run("asked-twice", "SIGINT");
 			expect(ended.signal).toBe("SIGINT");
@@ -193,8 +193,8 @@ describe("ownedTempDir", () => {
 	it(
 		"leaves a SIGTERM to a handler the process installed before it asked, a once handler included",
 		async () => {
-			// hobo-code's shell has its own SIGTERM handler (a `once`) before a
-			// /hobo command first loads the composition and asks for these. Run
+			// A shell can install its own SIGTERM handler (a `once`) before a
+			// command first loads the composition and asks for these. Run
 			// after it, ours saw no other listener, since a once handler is gone by
 			// the time the next listener runs, and ended the process mid-stop.
 			const ended = await run("graceful-first", "SIGTERM");

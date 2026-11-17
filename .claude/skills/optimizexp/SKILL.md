@@ -265,9 +265,9 @@ Config merge: skill builtins → global config → project config (single-projec
 
 ```bash
 # Doctor — preflight / repair / snapshot (structure, personas, features, maps)
-node --import tsx .agents/skills/optimizexp/harness/doctor.mts check --project code
-node --import tsx .agents/skills/optimizexp/harness/doctor.mts repair --project code
-node --import tsx .agents/skills/optimizexp/harness/doctor.mts snapshot --project code --json
+node --import tsx .agents/skills/optimizexp/harness/doctor.mts check --project hobo
+node --import tsx .agents/skills/optimizexp/harness/doctor.mts repair --project hobo
+node --import tsx .agents/skills/optimizexp/harness/doctor.mts snapshot --project hobo --json
 
 node --import tsx .agents/skills/optimizexp/harness/init.mts --mode needs-init
 node --import tsx .agents/skills/optimizexp/harness/init.mts --mode list-projects
@@ -276,7 +276,7 @@ node --import tsx .agents/skills/optimizexp/harness/init.mts --mode validate-con
 node --import tsx .agents/skills/optimizexp/harness/init.mts
 node --import tsx .agents/skills/optimizexp/harness/init.mts --projects site,cli
 node --import tsx .agents/skills/optimizexp/harness/init.mts --dry-run
-node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --project code
+node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --project hobo
 node --import tsx .agents/skills/optimizexp/harness/generate-persona.mts \
   --seed "A junior frontend engineer who panics at monorepo gates" --id junior-frontend
 node --import tsx .agents/skills/optimizexp/harness/generate-feature.mts \

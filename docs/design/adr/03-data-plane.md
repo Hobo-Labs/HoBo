@@ -621,6 +621,13 @@ Operators and coding agents need OpenReplay-class session reconstruction for web
 ## ADR-0139
 **HoBo Code: coding harness and harness multiplexer (`hobo-code` / `@hobo/code`).**
 
+> Historical note (2026-11-17): `packages/code`, `@hobo/code`, and the
+> `hobo-code` binary were removed from both main and the preserved feature
+> branch. ADR-0139 and the related decisions below record the former design;
+> they do not describe a currently available package or command. The
+> `@hobo/patterns` catalog and its library APIs remain.
+
+
 ### Context
 Agents and humans need an opinionated path to write complete HoBo apps/Bindles end-to-end with extreme templates + ts-autocode, while protecting the canonical project tree. Existing surfaces already cover pieces — `hobo codegen` (HOBO-152), hobo-code-dsl (HOBO-394), `hobo sandbox`, stations (ADR-0131), trails (ADR-0134), OpenFeature/Harness (ADR-0044/0083), FinOps, SWE connectors, connectivity named endpoints (ADR-0130) — but there was no elevated **coding harness + multiplexer** that composes them under one product CLI with isolation purity, evidence triples, and durable learning outside ephemeral sandboxes.
 

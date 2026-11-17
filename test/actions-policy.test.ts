@@ -161,25 +161,6 @@ test("feature/hobo-code gets the PR and push gates but publishes nothing", async
 			name,
 		);
 	}
-	const releaseCode = await read("release-code.yml");
-	assert.match(
-		releaseCode,
-		/^ {2}pull_request:\n(?: {4}#[^\n]*\n)* {4}branches: \[main, feature\/hobo-code\]$/mu,
-	);
-	// A branch dispatch must say loudly that it publishes nothing.
-	assert.match(
-		releaseCode,
-		/- name: Branch dispatch publishes nothing\n {8}if: github\.event_name == 'workflow_dispatch' && !startsWith\(github\.ref, 'refs\/tags\/code-v'\)\n {8}run: echo "::error title=No publish on a branch dispatch::/u,
-	);
-	const publishConditions = [
-		...releaseCode.matchAll(
-			/^ {2}(release-code-[a-z]+):\n {4}name: [^\n]+\n(?: {4}#[^\n]*\n)* {4}if: ([^\n]+)$/gmu,
-		),
-	].map((match) => [match[1], match[2]]);
-	assert.deepEqual(publishConditions, [
-		["release-code-publish", "startsWith(github.ref, 'refs/tags/code-v')"],
-		["release-code-attest", "startsWith(github.ref, 'refs/tags/code-v')"],
-	]);
 });
 
 test("workflow conditions never read the secrets context", async () => {
@@ -488,7 +469,6 @@ test("every trunk-capable CI and release job requests the trunk label by default
 		"examples-e2e.yml",
 		"dev-env-smoke.yml",
 		"release-hobo.yml",
-		"release-code.yml",
 		"pricing-ci.yml",
 		"release-pricing.yml",
 	]) {
