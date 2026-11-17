@@ -73,25 +73,12 @@ fail after it reports every attempted comment.
 
 ### Payload strategy
 
-1. Prefer attaching/linking **committed** evidence paths (always works for reviewers who check out the branch).
-2. Additionally post a PR comment with:
-   - scenario table
-   - inline images if small enough
-   - video links or details attachments
-3. If API rejects size:
-   - compress / downscale (`ffmpeg`, `pngquant` if present)
-   - convert video → short GIF
-   - split into multiple comments (one scenario per comment)
-   - fall back to comment with repo-relative paths only
-
-### Size heuristics
-
-| Kind | Try upload | Else |
-|---|---|---|
-| Image ≤ ~1 MiB | PR comment image / gist | path link |
-| GIF ≤ ~2 MiB | PR comment | path link |
-| Video ≤ ~5 MiB | PR attachment if supported | compress or path link |
-| Larger | never raw upload | path + optional external artifact store only if user configured |
+The command posts a scenario index and one comment per scenario. It references
+small images and GIFs and includes excerpts from small transcripts; videos and
+larger files use their repository paths. The command does not upload or
+compress files, so commit and push the evidence before posting. Image references
+are limited to 1,000,000 bytes and GIF references to 2,000,000 bytes. Transcript
+excerpts are clipped to 12,000 characters.
 
 Never commit secrets in evidence. Never paste binary base64 walls into PR bodies when a path link suffices.
 
