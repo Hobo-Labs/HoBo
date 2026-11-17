@@ -53,10 +53,13 @@ export async function replayRun<S, A>(
 	const version = isJsonObject(started.data)
 		? started.data.commandTreeVersion
 		: undefined;
-	if (version !== undefined && version !== 1) {
+	if (version !== undefined && version !== 1 && version !== 2) {
 		throw new Error("unsupported workflow command tree version");
 	}
-	const tree = version === 1 ? readReplayCommandTree(events) : undefined;
+	const tree =
+		version === 1 || version === 2
+			? readReplayCommandTree(events, version === 2)
+			: undefined;
 	let treeCursor = 0;
 
 	let state = workflow.initialState(args);
@@ -127,6 +130,9 @@ export async function replayRun<S, A>(
 					throw new Error(`missing run.SleepScheduled at index ${treeCursor}`);
 				if (command.kind !== "sleep" || command.delayMs !== delayMs) {
 					throw new Error("sleep schedule diverged");
+				}
+				if (version === 2 && !command.completed) {
+					throw new Error("workflow sleep lacks completion evidence");
 				}
 				treeCursor += 1;
 				return;

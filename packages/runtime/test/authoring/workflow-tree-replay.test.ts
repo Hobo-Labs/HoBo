@@ -247,8 +247,21 @@ describe("nested workflow replay", () => {
 			},
 		});
 		const live = await engine.start(wf, null);
+		const events = await engine.store.readStream(`run/${live.runId}`);
+		const legacy = events
+			.filter((event) => event.type !== "run.SleepCompleted")
+			.map((event) => {
+				if (event.type !== "run.Started" || !isJsonObject(event.data))
+					return event;
+				return { ...event, data: { ...event.data, commandTreeVersion: 1 } };
+			});
 		await expect(
-			replayRun(engine.store, live.runId, engine.toReplayDefinition(wf), null),
+			replayRun(
+				{ ...engine.store, readStream: async () => legacy },
+				live.runId,
+				engine.toReplayDefinition(wf),
+				null,
+			),
 		).rejects.toThrow(/nested sleep.*completion/i);
 	});
 });
