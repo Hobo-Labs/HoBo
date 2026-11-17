@@ -535,6 +535,26 @@ export {
 	createCiSecretDirectoryResolver,
 	resolveCiSecrets,
 } from "./project-secrets.js";
+export {
+	type CredentialResolver,
+	DepotUsageReader,
+	envCredentialResolver,
+	NamespaceUsageReader,
+	PROVIDER_USAGE_MAX_AGE_MS,
+	PROVIDER_USAGE_SYNC_INTERVAL_MS,
+	type ProviderUsageReader,
+	type ProviderUsageReading,
+	type ProviderUsageSubscription,
+	ProviderUsageSync,
+	type ProviderUsageSyncOutcome,
+	parseProviderUsageSubscription,
+	providerUsageReaders,
+	SyncedSpendReader,
+	scheduleProviderUsageSync,
+	USAGE_SYNC_PROVIDERS,
+	type UsageSyncProvider,
+	WarpbuildUsageReader,
+} from "./provider-usage/index.js";
 export { createQueuedJobRepair } from "./queued-job-repair.js";
 export {
 	type AccountRepository,

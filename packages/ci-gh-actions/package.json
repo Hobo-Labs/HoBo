@@ -73,7 +73,11 @@
       "types": "./dist/read-api.d.ts",
       "default": "./dist/read-api.js"
     },
-    "./schema/read-api.openapi.json": "./schema/read-api.openapi.json"
+    "./schema/read-api.openapi.json": "./schema/read-api.openapi.json",
+    "./provider-usage": {
+      "types": "./dist/provider-usage/index.d.ts",
+      "default": "./dist/provider-usage/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
