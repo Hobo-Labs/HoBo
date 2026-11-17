@@ -12,6 +12,15 @@ lock and capped-ring helpers; bindings in `@hobo/kv-redis-compatible` and
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
+## Residency evaluation
+
+`evaluateResidency` checks the requested region against the configured jurisdiction
+catalog and transfer rules. It rejects unmapped regions, denies every region when
+`global` is denied, and refuses an unrestricted footprint when any jurisdiction
+is excluded. Azure's published default regions are mapped; provider placement
+hints alone do not establish where data is stored or processed. Enforcement
+requires the deployment path to call the evaluator with reliable provider evidence.
+
 ## Honest scope
 
 Implemented: parsers, derived record constructors, error taxonomies, the port
@@ -78,8 +87,7 @@ reasons. A provider package can add cited, per-product **host forms**
 (`parseRegisteredHostForm`) about products it already declares; the assessment
 then lists every form, so one provider can show a form that qualifies beside
 one that does not. Core holds no vendor facts; the PostgreSQL catalog built from these
-is in `@hobo/cloud-providers`. See
-[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+is in [`@hobo/cloud-providers`](../cloud-providers/README.md).
 
 ## Durable lifecycle gate leases
 

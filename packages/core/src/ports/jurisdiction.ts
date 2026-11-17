@@ -1,4 +1,3 @@
-// domain-view: parse-time vocabulary; wire form in data-models/jurisdiction.proto.
 import {
 	isJsonObject,
 	isJsonString,
@@ -28,7 +27,7 @@ export type DataClassification =
 	| "pci"
 	| "secret";
 
-// domain-view: parse-time catalog entry; wire form is JurisdictionRecord in data-models/jurisdiction.proto (_generated/jurisdiction_pb.ts).
+// domain-view:
 export interface JurisdictionRecord {
 	readonly id: JurisdictionId;
 	readonly name: string;
@@ -43,7 +42,7 @@ export interface ResidencyConstraint {
 
 export type TransferMechanismMode = "none" | "adequacy" | "adequacy-or-scc";
 
-// domain-view: catalog entry; wire form is TransferMechanismRecord in data-models/jurisdiction.proto.
+// domain-view:
 export interface TransferMechanismEdge {
 	readonly fromJurisdiction: JurisdictionId;
 	readonly toJurisdiction: JurisdictionId;
@@ -51,7 +50,7 @@ export interface TransferMechanismEdge {
 	readonly legalBasis: readonly string[];
 }
 
-// domain-view: evaluation output; wire form is TransferBasisRecord in data-models/jurisdiction.proto.
+// domain-view:
 export interface TransferBasis {
 	readonly mechanism: "intra-jurisdiction" | "adequacy" | "scc";
 	readonly fromJurisdiction: JurisdictionId;
@@ -303,6 +302,10 @@ export const REGION_JURISDICTIONS: Readonly<
 	"us-central1": ["us"],
 	"us-east1": ["us"],
 	"europe-west1": ["eu", "eea"],
+	eastus: ["us"],
+	eastus2: ["us"],
+	westus2: ["us"],
+	westeurope: ["eu", "eea"],
 	us: ["us"],
 	"us-east": ["us"],
 	"eu-west": ["eu", "eea"],
@@ -346,7 +349,9 @@ export function evaluateResidency(input: {
 		});
 	}
 	const denied = input.constraint.deniedJurisdictions ?? [];
-	const deniedHit = regionJurisdictions.find((entry) => denied.includes(entry));
+	const deniedHit = denied.includes("global")
+		? "global"
+		: regionJurisdictions.find((entry) => denied.includes(entry));
 	if (deniedHit !== undefined) {
 		return Object.freeze({
 			ok: false,
@@ -354,6 +359,15 @@ export function evaluateResidency(input: {
 			region,
 			regionJurisdictions,
 			remediation: `region "${region}" sits in denied jurisdiction "${deniedHit}"`,
+		});
+	}
+	if (regionJurisdictions.includes("global") && denied.length > 0) {
+		return Object.freeze({
+			ok: false,
+			code: "jurisdiction-not-allowed" as const,
+			region,
+			regionJurisdictions,
+			remediation: `region "${region}" has an unrestricted footprint; it cannot prove exclusion of denied jurisdictions [${denied.join(", ")}]`,
 		});
 	}
 	const allowed = input.constraint.allowedJurisdictions;
