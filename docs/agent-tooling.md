@@ -14,6 +14,9 @@ common `source:guard` for the languages and source templates listed in
 `AGENTS.md`. Commit checks read staged content, CI checks the PR diff, and the
 worktree check also finds ignored agent planning artifacts.
 
+The anti-slop installer leaves its comment-required assertion rule disabled so
+the lint configuration follows the same source policy.
+
 Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
 
 Run `bash scripts/setup-agent-tools.sh --help` to inspect the zero-key setup path. The optional gbrain MCP launcher refuses to start without a configured embedding provider and reports how to configure local Ollama.
