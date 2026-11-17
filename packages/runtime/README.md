@@ -20,6 +20,9 @@ deterministic-replay library that backs them.
   `deterministic-replay-engine` draft proof (frozen in
   `scripts/promotions.json`).
 
+Generated trainable modules carry a `// @generated` marker. Existing projects
+should run `hobo codegen` before checking generated-file freshness after upgrading.
+
 ## Naming: `runtime` vs `runtimes/`
 
 These are different concerns that share a word:

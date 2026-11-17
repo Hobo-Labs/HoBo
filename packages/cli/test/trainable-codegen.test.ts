@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { serializeTrainingArtifactProgram } from "@hobo/core";
@@ -14,12 +14,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeFixtureProject } from "../src/codegen/fixture.js";
 import { runCodegen } from "../src/codegen/run-codegen.js";
 import { createHoboCli } from "../src/index.js";
-
-// End-to-end trainable codegen (ADR-0125): codegen emits a contract-backed
-// training.define() stub per bindle step; the generated module serves its
-// contract example until a training artifact is applied, then serves the
-// tuned demo, and reverts cleanly. The temp project lives inside the package
-// so vitest's transform pipeline can import the generated TypeScript.
 
 type Incident = {
 	readonly id: string;
@@ -53,6 +47,13 @@ describe("trainable codegen", () => {
 		await expect(
 			access(join(projectRoot, "src/_generated/trainables.ts")),
 		).resolves.toBeUndefined();
+		const generated = await readFile(
+			join(projectRoot, "src/_generated/trainables.ts"),
+			"utf8",
+		);
+		expect(
+			generated.split("\n").filter((line) => line.trimStart().startsWith("//")),
+		).toEqual(["// @generated"]);
 
 		const result = await createHoboCli().run(["stub", "--json"], {
 			cwd: projectRoot,
@@ -116,14 +117,12 @@ describe("trainable codegen", () => {
 	it("generates inferred bindings for bare use-training markers (syntax 3)", async () => {
 		const mod = await importTrainables(projectRoot);
 
-		// The marker carried NO bindings — codegen generated them.
 		expect(isTrainable(mod.rankFeedTraining)).toBe(true);
 		const fact = listTrainables().find((f) => f.methodRef === "rankFeed");
 		expect(fact?.contractRef).toBe("inferred://rankFeed");
 		expect(fact?.baseline).toBe("body");
 		expect(fact?.intent).toContain("Rank feed items");
 
-		// DI-style resolution sees the generated registration...
 		const ranked = resolveTrainable<{ items: string[] }, { ranked: string[] }>(
 			"rankFeed",
 		);
@@ -131,7 +130,6 @@ describe("trainable codegen", () => {
 			ranked: ["a", "b"],
 		});
 
-		// ...and the optimization loop applies to it like any other form.
 		const tunedArtifact = {
 			engineId: "hobo.training-engine/built-in-opto@0.1.0",
 			engineVersion: "22.0.9",
@@ -184,7 +182,6 @@ async function importTrainables(projectRoot: string): Promise<{
 	const moduleUrl = pathToFileURL(
 		join(projectRoot, "src/_generated/trainables.ts"),
 	).href;
-	// SAFETY: `return (await import(moduleUrl)) as Awaited<` is required at this I/O or test boundary.
 	return (await import(moduleUrl)) as Awaited<
 		ReturnType<typeof importTrainables>
 	>;
