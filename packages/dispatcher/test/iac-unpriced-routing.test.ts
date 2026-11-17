@@ -348,6 +348,46 @@ describe("explicit unpriced routing", () => {
 		authority.close();
 	});
 
+	it.each([
+		"inherited",
+		"accessor",
+	])("does not trust %s no-effect markers", async (mode) => {
+		const { authority, inventory, pricing } = fixture();
+		const result = await executeUnpricedIacTarget({
+			authority,
+			operation,
+			tenantId: "tenant",
+			requestId: "request",
+			inventory,
+			pricing,
+			run: async (requestId) => {
+				const admission = {
+					requestId,
+					targetId: "yard",
+					status: "denied",
+					code: "DENIED",
+					message: "denied",
+					budget: { evaluation: "denied", reservation: "not-created" },
+				};
+				if (mode === "accessor")
+					throw Object.defineProperty(
+						{ admission, requiresReconciliation: false },
+						"executionOutcome",
+						{ get: () => "not-started" },
+					);
+				throw Object.assign(
+					Object.create({
+						requiresReconciliation: false,
+						executionOutcome: "not-started",
+					}),
+					{ admission },
+				);
+			},
+		});
+		expect(result.status).toBe("uncertain");
+		authority.close();
+	});
+
 	it("retains uncertainty when a provider receipt cannot prove the selected scope", async () => {
 		const { authority, inventory, pricing } = fixture();
 		const result = await executeUnpricedIacTarget({
