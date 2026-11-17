@@ -205,6 +205,198 @@ describe("Rivet native application binding", () => {
 		expect(await result.text()).toBe("original:application body");
 	});
 
+	it.each([
+		"function",
+		"fetch",
+	] as const)("passes authenticated request metadata to the %s handler despite later mutation", async (kind) => {
+		let release!: () => void;
+		let entered!: () => void;
+		const waiting = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const authorized = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const application = async (request: Request) =>
+			new Response(
+				`${request.method}:${request.url}:${request.headers.get("authorization")}:${await request.text()}`,
+			);
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint: () =>
+				kind === "function" ? application : { fetch: application },
+			authorize: async ({ request }) => {
+				expect(request.method).toBe("POST");
+				expect(request.url).toBe("https://example.test/app");
+				expect(request.headers.get("authorization")).toBe("tenant-a");
+				entered();
+				await waiting;
+				return true;
+			},
+		});
+		const request = new Request("https://example.test/app", {
+			method: "POST",
+			headers: { authorization: "tenant-a" },
+			body: "message",
+		});
+		const response = binding.handle(
+			{ name: "web", key: ["a"], vars: {} },
+			request,
+		);
+		await authorized;
+		request.headers.set("authorization", "tenant-b");
+		Object.defineProperty(request, "method", { value: "DELETE" });
+		Object.defineProperty(request, "url", {
+			value: "https://example.test/other",
+		});
+		release();
+		expect(await (await response).text()).toBe(
+			"POST:https://example.test/app:tenant-a:message",
+		);
+	});
+
+	it("preserves the authorized actor activation when the caller changes its context", async () => {
+		let release!: () => void;
+		const waiting = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let instances = 0;
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint: () => {
+				const id = ++instances;
+				return () => new Response(String(id));
+			},
+			authorize: async ({ actorKey }) => {
+				if (actorKey[0] === "a") await waiting;
+				return true;
+			},
+		});
+		const varsB = {};
+		expect(
+			await (
+				await binding.handle(
+					{ name: "web", key: ["b"], vars: varsB },
+					new Request("https://example.test/"),
+				)
+			).text(),
+		).toBe("1");
+		const context = { name: "web", key: ["a"], vars: {} };
+		const result = binding.handle(
+			context,
+			new Request("https://example.test/"),
+		);
+		context.vars = varsB;
+		release();
+		expect(await (await result).text()).toBe("2");
+	});
+
+	it("captures bounded actor keys without invoking a caller-supplied iterator", async () => {
+		const key = ["tenant"];
+		Object.defineProperty(key, Symbol.iterator, {
+			value: () => {
+				throw new Error("unexpected iterator");
+			},
+		});
+		let observed: readonly string[] | undefined;
+		const authorize = ({ actorKey }: { actorKey: readonly string[] }) => {
+			observed = actorKey;
+			return true;
+		};
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint: handler,
+			authorize,
+		});
+		const result = await binding.handle(
+			{ name: "web", key, vars: {} },
+			new Request("https://example.test/"),
+		);
+		expect(result.status).toBe(200);
+		expect(observed).toEqual(["tenant"]);
+	});
+
+	it("moves a streaming body without a second unconsumed tee or unbounded prefetch", async () => {
+		let release!: () => void;
+		const waiting = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let pulls = 0;
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				pulls++;
+				controller.enqueue(new Uint8Array([1]));
+				if (pulls === 64) controller.close();
+			},
+		});
+		const init: RequestInit & { duplex: "half" } = {
+			method: "POST",
+			body: stream,
+			duplex: "half",
+		};
+		const request = new Request("https://example.test/", init);
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint: () => async (input: Request) =>
+				new Response(String((await input.arrayBuffer()).byteLength)),
+			authorize: async () => {
+				await waiting;
+				return true;
+			},
+		});
+		const response = binding.handle(
+			{ name: "web", key: ["a"], vars: {} },
+			request,
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(request.body?.locked).toBe(true);
+		expect(pulls).toBeLessThanOrEqual(8);
+		release();
+		expect(await (await response).text()).toBe("64");
+	});
+
+	it("rejects a consumed body before authorization or application code runs", async () => {
+		const authorize = vi.fn(() => true);
+		const entrypoint = vi.fn(() => () => new Response("unexpected"));
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint,
+			authorize,
+		});
+		const request = new Request("https://example.test/", {
+			method: "POST",
+			body: "used",
+		});
+		await request.text();
+		expect(
+			(await binding.handle({ name: "web", key: ["a"], vars: {} }, request))
+				.status,
+		).toBe(403);
+		expect(authorize).not.toHaveBeenCalled();
+		expect(entrypoint).not.toHaveBeenCalled();
+	});
+
+	it("cancels the transferred body when authorization denies the request", async () => {
+		const cancel = vi.fn();
+		const body = new ReadableStream<Uint8Array>({ cancel });
+		const init: RequestInit & { duplex: "half" } = {
+			method: "POST",
+			body,
+			duplex: "half",
+		};
+		const request = new Request("https://example.test/", init);
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint: handler,
+			authorize: () => false,
+		});
+		expect(
+			(await binding.handle({ name: "web", key: ["a"], vars: {} }, request))
+				.status,
+		).toBe(403);
+		await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+	});
+
 	it("initializes an application only after authorization and once per activation", async () => {
 		const entrypoint = vi.fn(() => () => new Response("ok"));
 		const authorize = vi

@@ -18,6 +18,11 @@ The host must verify each source and dependency closure, authenticate requests,
 and attest exclusive physical pool ownership; it must include every pool and
 its infrastructure in the financial inventory. Unsupported Rivet storage,
 messaging, dependencies and replay are rejected explicitly.
+The Rivet HTTP binding authorizes a snapshot of the actor key, HTTP method,
+URL and headers before starting application code. It transfers the request
+body stream to the application without buffering it; callers must not consume
+the original stream after handoff. The authorization callback does not inspect
+or authenticate the body.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.

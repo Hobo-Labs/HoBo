@@ -45,7 +45,12 @@ function name(value: string): boolean {
 	);
 }
 
-/** Create an actual RivetKit actor around the exact Bindle HTTP entrypoint. */
+/**
+ * Create an actual RivetKit actor around the exact Bindle HTTP entrypoint.
+ * The handler takes ownership of the request body stream; the caller must not
+ * consume it after handoff. Authorization covers the actor key, method, URL
+ * and headers, not the streamed body.
+ */
 export function createRivetHttpActor<
 	Entrypoint extends RivetHttpEntrypoint,
 >(options: {
@@ -73,47 +78,72 @@ export function createRivetHttpActor<
 		context: RivetRequestContext,
 		request: Request,
 	): Promise<Response> => {
+		const { name: contextName, key, vars } = context;
 		if (
-			context.name !== actorName ||
-			!Array.isArray(context.key) ||
-			context.key.length === 0 ||
-			context.key.length > 16 ||
-			!context.key.every(name) ||
-			typeof context.vars !== "object" ||
-			context.vars === null
+			contextName !== actorName ||
+			!Array.isArray(key) ||
+			typeof vars !== "object" ||
+			vars === null
 		)
 			return new Response("Forbidden", { status: 403 });
+		const components: string[] = [];
+		try {
+			const length = key.length;
+			if (!Number.isSafeInteger(length) || length < 1 || length > 16)
+				return new Response("Forbidden", { status: 403 });
+			for (let index = 0; index < length; index++) {
+				const component = key[index];
+				if (typeof component !== "string" || !name(component))
+					return new Response("Forbidden", { status: 403 });
+				components.push(component);
+			}
+		} catch {
+			return new Response("Forbidden", { status: 403 });
+		}
+		const actorKey = Object.freeze(components);
+		let applicationRequest: Request;
+		try {
+			// Constructing a Request moves its body stream; clone() would tee it and
+			// buffer an unconsumed branch as the application reads the other one.
+			applicationRequest = new Request(request);
+		} catch {
+			return new Response("Forbidden", { status: 403 });
+		}
+		const forbidden = () => {
+			void applicationRequest.body?.cancel().catch(() => {});
+			return new Response("Forbidden", { status: 403 });
+		};
 		let allowed: boolean;
 		try {
 			allowed = await authorize({
 				actorName,
-				actorKey: Object.freeze([...context.key]),
+				actorKey,
 				request: Object.freeze({
-					method: request.method,
-					url: request.url,
-					headers: new Headers(request.headers),
+					method: applicationRequest.method,
+					url: applicationRequest.url,
+					headers: new Headers(applicationRequest.headers),
 				}),
 			});
 		} catch {
-			return new Response("Forbidden", { status: 403 });
+			return forbidden();
 		}
-		if (allowed !== true) return new Response("Forbidden", { status: 403 });
-		let instance = applications.get(context.vars);
+		if (allowed !== true) return forbidden();
+		let instance = applications.get(vars);
 		if (instance === undefined) {
 			instance = { value: entrypoint() };
-			applications.set(context.vars, instance);
+			applications.set(vars, instance);
 		}
 		const application = instance.value;
 		let response: unknown;
 		if (typeof application === "function")
-			response = await application(request);
+			response = await application(applicationRequest);
 		else if (
 			typeof application === "object" &&
 			application !== null &&
 			"fetch" in application &&
 			typeof application.fetch === "function"
 		)
-			response = await application.fetch(request);
+			response = await application.fetch(applicationRequest);
 		else
 			throw new TypeError(
 				"Rivet application entrypoint must produce an HTTP handler",
