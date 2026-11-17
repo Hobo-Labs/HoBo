@@ -13,6 +13,14 @@ Use `b.project()` for an infrastructure project that owns or groups other
 resources. It is a deployment dependency, not an HTTP entrypoint; use `b.web()`
 or `b.api()` for the application that serves requests.
 
+Ordinary HTTP handlers infer an HTTP capability without requiring a particular
+execution host. Container and Wasm-component dependencies infer their actual
+runtime requirements, including both when they occur together. An explicit
+runtime declaration is retained alongside those inferred dependencies. To
+require Wasm for an ordinary handler, declare `runtimes: ["wasm"]` explicitly;
+older inferred Bindles labeled all HTTP handlers as requiring Wasm. A saved
+definition retains that older requirement until it is regenerated and reviewed.
+
 The canonical shared budget language is `policy.budgetPolicy` with discriminator
 `hobo.budget-policy/v1`. Parsing uses `@hobo/core`'s typed policy contract and
 rejects unknown controls, unsupported objectives/currencies, malformed funding

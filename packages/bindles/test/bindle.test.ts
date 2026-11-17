@@ -38,7 +38,7 @@ describe("bindle()", () => {
 				labels: {},
 				prefer: [],
 				require: ["data", "http", "queue"],
-				runtimes: ["wasm"],
+				runtimes: [],
 			},
 			resources: {
 				store: {
@@ -321,7 +321,30 @@ describe("declared components (Plan 2 Syntax 0)", () => {
 		});
 		expect(definition.name).toBe("app");
 		expect(definition.requirements.require).toEqual(["http"]);
-		expect(definition.requirements.runtimes).toEqual(["wasm"]);
+		expect(definition.requirements.runtimes).toEqual([]);
+	});
+
+	it("preserves both concrete dependency runtimes alongside an explicit runtime", () => {
+		const build = (b: import("../src/types.js").BindleBuilder) => ({
+			api: b.api(),
+			db: b.container({ image: "redis:7" }),
+			plugin: b.wasmComponent({ source: "./plugin.wasm" }),
+		});
+		const inferred = bindle("mixed", build);
+		const explicit = bindle("mixed", { runtimes: ["local"] }, build);
+		expect(inferred.requirements.runtimes).toEqual(["oci", "wasm"]);
+		expect(explicit.requirements.runtimes).toEqual(["local", "oci", "wasm"]);
+	});
+
+	it("infers runtime requirements from dependency annotations", () => {
+		const definition = bindle("annotated-runtime", (b) => ({
+			api: b.api().with({
+				provider: "hobo",
+				option: "dependency",
+				config: { kind: "container", runtime: "oci" },
+			}),
+		}));
+		expect(definition.requirements.runtimes).toEqual(["oci"]);
 	});
 
 	it("infers http/container + oci from b.service() + b.container() with no requirements block", () => {

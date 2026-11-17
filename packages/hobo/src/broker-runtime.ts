@@ -534,13 +534,33 @@ export async function resolveBindlePlacement(options: {
 	}
 
 	// Fail fast on missing runtimes before equipping toolchains / downloading wasmtime.
-	const requiredRuntimes = collectRequiredRuntimes(options.definition);
+	const declaredRuntimeRequirements = () =>
+		[...new Set(options.definition.requirements?.runtimes ?? [])].sort();
+	const runtimeKinds = (): readonly RequiredRuntimeKind[] =>
+		[
+			...new Set([
+				...collectRequiredRuntimes(options.definition),
+				...declaredRuntimeRequirements().filter(
+					(runtime): runtime is RequiredRuntimeKind =>
+						runtime === "oci" || runtime === "wasm",
+				),
+			]),
+		].sort();
+	const declaredRuntimes = declaredRuntimeRequirements();
+	const requiredRuntimes = runtimeKinds();
 	const runtimeRequirementsCurrent = () => {
 		try {
-			const current = collectRequiredRuntimes(options.definition);
+			const current = runtimeKinds();
+			const currentDeclared = declaredRuntimeRequirements();
 			return (
 				current.length === requiredRuntimes.length &&
-				current.every((runtime, index) => runtime === requiredRuntimes[index])
+				current.every(
+					(runtime, index) => runtime === requiredRuntimes[index],
+				) &&
+				currentDeclared.length === declaredRuntimes.length &&
+				currentDeclared.every(
+					(runtime, index) => runtime === declaredRuntimes[index],
+				)
 			);
 		} catch {
 			return false;
@@ -665,6 +685,7 @@ export async function resolveBindlePlacement(options: {
 				input.providerId !== LOCAL_PROCESS_PROVIDER_ID ||
 				!runtimeRequirementsCurrent() ||
 				requiredRuntimes.length !== 0 ||
+				declaredRuntimes.some((runtime) => runtime !== "local") ||
 				input.catalogHash !== catalog.catalogHash ||
 				input.request.spendEstimateUsd !== 0 ||
 				input.placements.some(

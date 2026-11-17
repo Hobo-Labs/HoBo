@@ -90,11 +90,17 @@ describe("required runtimes + broker hard-fail", () => {
 		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
 		initBareMetalYard({ hoboHome, componentHost: "local" });
 		installRuntime("runtime-oci", hoboHome);
-		const definition = bindle("needs-oci", (b) => {
+		const original = bindle("needs-oci", (b) => {
 			const redis = b.container({ image: "redis:7" });
 			const api = b.api().withReference(redis);
 			return { redis, api };
 		});
+		// A caller can supply a definition that omitted the derived runtime;
+		// placement must still inspect the actual resource.
+		const definition = {
+			...original,
+			requirements: { ...original.requirements, runtimes: [] },
+		};
 		const placement = await resolveBindlePlacement({
 			definition,
 			hoboHome,

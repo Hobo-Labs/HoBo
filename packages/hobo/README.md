@@ -115,10 +115,12 @@ hosted service. There is no automatic fallback to a hosted broker.
 
 The embedded zero-fee policy authorizes local-process work only. A Bindle that
 requires an OCI or Wasm execution host needs separate authorization, even when
-the caller requests a local provider. The broker also rejects when runtime
-requirements change while placement is being resolved. This proof covers the
-HoBo service fee, not machine infrastructure or third-party charges; execution
-after placement still depends on the caller preserving the approved workload.
+the caller requests a local provider. Declared runtimes and runtimes implied by
+resources are both checked for installation and rechecked through placement.
+Other nonlocal runtime declarations cannot use this local-process proof. This
+proof covers the HoBo service fee, not machine infrastructure or third-party
+charges; execution after placement still depends on the caller preserving the
+approved workload.
 
 Explicit `--mode` is honored by Yard desired-state delivery. Remote broker
 placement and the embedded broker fallback reject that flag before placement,
