@@ -1,16 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { CREDENTIAL_AUDIT_RETENTION } from "@hobo/identity";
 
 import type { McpPrincipal } from "./auth.js";
-
-// S3-06 — per-principal / per-tenant backpressure at the tool-call boundary
-// (NFR-019). A token bucket (burst capacity + steady refill) plus an optional
-// hard call quota over a fixed window, keyed by (tenant, principal). It is
-// applied in server.callTool BEFORE dispatch, so a flooding principal is
-// throttled with a typed MCP_RATE_LIMITED result + an audited throttle fact,
-// while a control principal in the same window is unaffected.
-//
-// Time is a PARAMETER, never wall-clock: check({ ..., now }) is a pure function
-// of the injected clock value, so the limiter is fully deterministic in tests.
 
 export const MCP_TOOL_CALL_THROTTLED = "mcp.ToolCallThrottled";
 export const MCP_RATE_LIMIT_EVENTS_SCHEMA_VERSION = "hobo.mcp-events/v1";
@@ -18,15 +9,11 @@ export const MCP_RATE_LIMITED_CODE = "MCP_RATE_LIMITED";
 
 export type RateLimitReason = "ok" | "rate" | "quota";
 
-// domain-view: the fixed-window call quota; its wire form is McpQuota in
-// data-models/mcp.proto.
 export interface Quota {
 	readonly limit: number;
 	readonly windowMs: number;
 }
 
-// domain-view: the token-bucket + quota policy; its wire form is
-// McpRateLimitPolicy in data-models/mcp.proto.
 export interface RateLimitPolicy {
 	readonly capacity: number;
 	readonly refillTokens: number;
@@ -34,9 +21,6 @@ export interface RateLimitPolicy {
 	readonly quota?: Quota;
 }
 
-// domain-view: the limiter's per-call decision; its wire form is
-// McpRateLimitDecision in data-models/mcp.proto. `reason` is the typed
-// backpressure signal: "rate" (bucket empty) or "quota" (window cap hit).
 export interface RateLimitDecision {
 	readonly allowed: boolean;
 	readonly key: string;
@@ -46,9 +30,6 @@ export interface RateLimitDecision {
 	readonly quotaRemaining: number;
 }
 
-// domain-view: the audited throttle fact; its wire form is
-// McpToolCallThrottledEvent in data-models/mcp.proto. A credential-audit sibling
-// of AuthDecisionEvent, carrying the never-compact retention.
 export interface RateLimitEvent {
 	readonly id: string;
 	readonly type: typeof MCP_TOOL_CALL_THROTTLED;
@@ -86,11 +67,6 @@ export function rateLimitKey(tenant: string, principal: McpPrincipal): string {
 	return `${tenant}::${principal.kind}:${principal.id}`;
 }
 
-/**
- * A deterministic per-(tenant, principal) token-bucket + quota limiter. Refill
- * is lazy and computed from the elapsed injected time, so no timers are used and
- * two identical call sequences at identical clock values decide identically.
- */
 export function createRateLimiter(policy: RateLimitPolicy): RateLimiter {
 	const states = new Map<string, BucketState>();
 
@@ -112,7 +88,6 @@ export function createRateLimiter(policy: RateLimitPolicy): RateLimiter {
 			const key = rateLimitKey(tenant, principal);
 			const state = stateFor(key, now);
 
-			// Lazy refill: add whole intervals' worth of tokens since the last refill.
 			const elapsed = Math.max(0, now - state.lastRefill);
 			const refills = Math.floor(elapsed / policy.refillIntervalMs);
 			if (refills > 0) {
@@ -123,7 +98,6 @@ export function createRateLimiter(policy: RateLimitPolicy): RateLimiter {
 				state.lastRefill += refills * policy.refillIntervalMs;
 			}
 
-			// Roll the quota window if it has elapsed.
 			if (policy.quota && now - state.windowStart >= policy.quota.windowMs) {
 				state.windowStart = now;
 				state.windowCount = 0;
@@ -133,7 +107,6 @@ export function createRateLimiter(policy: RateLimitPolicy): RateLimiter {
 				? Math.max(0, policy.quota.limit - state.windowCount)
 				: Number.POSITIVE_INFINITY;
 
-			// Quota is the hard ceiling: exhausting it throttles until the window rolls.
 			if (policy.quota && state.windowCount >= policy.quota.limit) {
 				const retryAfterMs = Math.max(
 					0,
@@ -149,7 +122,6 @@ export function createRateLimiter(policy: RateLimitPolicy): RateLimiter {
 				};
 			}
 
-			// Then the burst bucket.
 			if (state.tokens < 1) {
 				const sinceRefill = Math.max(0, now - state.lastRefill);
 				const retryAfterMs = Math.max(0, policy.refillIntervalMs - sinceRefill);
@@ -164,7 +136,6 @@ export function createRateLimiter(policy: RateLimitPolicy): RateLimiter {
 				};
 			}
 
-			// Allowed — consume one token and one quota unit.
 			state.tokens -= 1;
 			state.windowCount += 1;
 			return {
@@ -182,7 +153,6 @@ export function createRateLimiter(policy: RateLimitPolicy): RateLimiter {
 	};
 }
 
-/** Build the audited throttle fact for a refused call. */
 export function createThrottleEvent(input: {
 	tool: string;
 	auth: { subject: string; tenant: string; principal: McpPrincipal };
@@ -194,7 +164,7 @@ export function createThrottleEvent(input: {
 	const reason: RateLimitReason =
 		input.decision.reason === "quota" ? "quota" : "rate";
 	return {
-		id: `evt-mcp-throttled-${input.tool}-${input.seq}`,
+		id: `evt-mcp-throttled-${randomUUID()}`,
 		type: MCP_TOOL_CALL_THROTTLED,
 		schemaVersion: MCP_RATE_LIMIT_EVENTS_SCHEMA_VERSION,
 		tenant: input.auth.tenant,
