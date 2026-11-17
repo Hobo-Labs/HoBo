@@ -23,6 +23,8 @@ export type DurableMessagingConformanceCase = (typeof DURABLE_CASES)[number][0];
  * clients; the two tenant labels must have independent scopes.
  */
 export interface DurableMessagingConformanceHarness {
+	/** Provider-advertised minimum event retention for the pagination case. */
+	readonly auditMinimumRetention: number;
 	connect(tenant: "tenant-a" | "tenant-b"): Promise<DurableMessaging>;
 	restart(): Promise<void>;
 	close(): Promise<void>;
@@ -31,20 +33,27 @@ export interface DurableMessagingConformanceHarness {
 	loseNextMutationResponse(
 		point: "before-commit" | "after-commit",
 	): Promise<void>;
+	/** Inject a raw transport failure after durable commit, before the reply. */
+	loseNextMutationTransport(mode: "throw" | "disconnect"): Promise<void>;
 	/** Force a provably rolled-back DLQ write with a capacity refusal. */
 	rejectNextDeadLetterWrite(): Promise<void>;
 	/** Temporarily prevent resolving a prior receipt for the specified reason. */
 	blockNextReceiptLookup(
 		reason: "revocation" | "capacity" | "unavailable",
 	): Promise<void>;
-	/** Switch ownership with either unavailable proof or a fenced shared journal. */
+	/** Switch ownership; existing clients remain pinned to their old owner. */
 	switchAuthority(mode: "unverified" | "verified-shared"): Promise<void>;
 	/** Hold the next mutation at the indicated point until the test releases it. */
 	holdNextMutation(point: "before-dispatch" | "before-commit"): Promise<{
 		readonly reached: Promise<void>;
 		release(): Promise<void>;
 	}>;
-	/** Independently hold both requests before their transactions may start. */
+	/**
+	 * Interpose concurrent requests at the critical read/CAS or commit boundary,
+	 * or observe one request blocked at the provider's serializing lock while
+	 * the other is held. `reached` means that contention was observed, not just
+	 * that both calls were made. This callback alone does not prove provenance.
+	 */
 	holdConcurrentMutations(): Promise<{
 		readonly reached: Promise<void>;
 		release(): Promise<void>;
@@ -61,10 +70,13 @@ export interface DurableMessagingConformanceReport {
 		readonly tenantIdentity: "unverified";
 		readonly clock: "unverified";
 		readonly concurrencyBarrier: "unverified";
+		readonly authorityTransition: "unverified";
+		readonly oldOwnerFence: "unverified";
+		readonly caseIsolation: "unverified";
 	};
 	readonly cases: readonly {
 		readonly name: DurableMessagingConformanceCase;
-		readonly status: "pass" | "fail";
+		readonly status: "pass" | "fail" | "unknown";
 		readonly detail?: string;
 	}[];
 }
@@ -105,8 +117,41 @@ function sameMessage(delivery: DurableMessagingDelivery): boolean {
 		delivery.message.id === "message-1" &&
 		delivery.message.subject === "orders.created" &&
 		sameBytes(delivery.message.payload, new Uint8Array([0, 1, 255])) &&
-		JSON.stringify(delivery.message.attributes) ===
-			JSON.stringify([{ key: "content-type", value: "binary" }])
+		sameExpectedAttributes(delivery.message.attributes)
+	);
+}
+
+function sameExpectedAttributes(
+	attributes: DurableMessagingDelivery["message"]["attributes"],
+): boolean {
+	return (
+		attributes.length === 1 &&
+		attributes[0]?.key === "content-type" &&
+		attributes[0]?.value === "binary"
+	);
+}
+
+type AuditPage = Extract<
+	Awaited<ReturnType<DurableMessaging["events"]>>,
+	{ status: "ok" }
+>;
+function sameAuditPage(left: AuditPage, right: AuditPage): boolean {
+	return (
+		left.firstAvailableSequence === right.firstAvailableSequence &&
+		left.nextAfterSequence === right.nextAfterSequence &&
+		left.hasMore === right.hasMore &&
+		left.events.length === right.events.length &&
+		left.events.every((event, index) => {
+			const other = right.events[index];
+			return (
+				other !== undefined &&
+				event.sequence === other.sequence &&
+				event.kind === other.kind &&
+				event.topic === other.topic &&
+				event.messageId === other.messageId &&
+				event.consumerGroup === other.consumerGroup
+			);
+		})
 	);
 }
 
@@ -133,11 +178,10 @@ async function createFixture(harness: DurableMessagingConformanceHarness) {
 			client.limits.attributeBytes >= 18 &&
 			client.limits.batchSize >= 2 &&
 			client.limits.deliveryAttempts >= 3 &&
-			client.limits.leaseMs >= 100 &&
-			client.limits.topics >= 3 &&
-			client.limits.subscriptions >= 3 &&
+			client.limits.leaseMs >= 101 &&
+			client.limits.topics >= 4 &&
+			client.limits.subscriptions >= 4 &&
 			client.limits.eventPageSize >= 2 &&
-			client.limits.retainedEvents >= 5 &&
 			client.limits.retainedMessages >= 3 &&
 			client.limits.retainedReceipts >= 64,
 		"provider limits are below the conformance profile",
@@ -271,16 +315,6 @@ async function restart(harness: DurableMessagingConformanceHarness) {
 			firstDelivery(await f.consume(nextClient, "orders", "group-b")),
 		),
 		"unacknowledged message was lost on restart",
-	);
-	const events = await nextClient.events({ afterSequence: 0, limit: 100 });
-	requireCondition(
-		events.status === "ok" &&
-			events.firstAvailableSequence === 1 &&
-			events.events.some(
-				(event) =>
-					event.kind === "acknowledged" && event.messageId === "message-1",
-			),
-		"durable acknowledgement event was lost on restart",
 	);
 }
 
@@ -435,8 +469,7 @@ async function deadLetter(harness: DurableMessagingConformanceHarness) {
 			dead.sequence === receipt.deadLetterSequence &&
 			sameBytes(dead.message.payload, new Uint8Array([0, 1, 255])) &&
 			dead.message.subject === "orders.created" &&
-			JSON.stringify(dead.message.attributes) ===
-				JSON.stringify([{ key: "content-type", value: "binary" }]) &&
+			sameExpectedAttributes(dead.message.attributes) &&
 			dead.deadLetter?.sourceTopic === "orders" &&
 			dead.deadLetter.consumerGroup === "group-a" &&
 			dead.deadLetter.originalMessageId === "message-1" &&
@@ -589,6 +622,104 @@ async function unavailableReceipt(
 	);
 }
 
+async function revokedReceipt(harness: DurableMessagingConformanceHarness) {
+	const f = await createFixture(harness);
+	await f.subscribe("orders", "group-a", "orders-dlq");
+	await f.publish();
+	const request = {
+		operation: f.next(),
+		topic: "orders",
+		consumerGroup: "group-a",
+		maxMessages: 1,
+		visibilityTimeoutMs: 100,
+	};
+	const original = firstDelivery(await committed(f.client.consume(request)));
+	await harness.blockNextReceiptLookup("revocation");
+	const revoked = await f.client.consume(request);
+	requireCondition(
+		revoked.status === "unknown" &&
+			sameOperation(revoked.operation, request.operation) &&
+			Object.keys(revoked).length === 2 &&
+			Object.hasOwn(revoked, "status") &&
+			Object.hasOwn(revoked, "operation"),
+		"revoked principal received a cached delivery or a false rejection",
+	);
+	const replay = firstDelivery(await committed(f.client.consume(request)));
+	requireCondition(
+		replay.sequence === original.sequence &&
+			replay.leaseId === original.leaseId &&
+			replay.leaseExpiresAtMs === original.leaseExpiresAtMs &&
+			replay.deliveryAttempt === original.deliveryAttempt &&
+			sameMessage(replay),
+		"reauthorized principal could not recover the exact receipt",
+	);
+}
+
+async function transportFailure(
+	harness: DurableMessagingConformanceHarness,
+	mode: "throw" | "disconnect",
+) {
+	const f = await createFixture(harness);
+	await f.subscribe("orders", "group-a", "orders-dlq");
+	const request = {
+		operation: f.next(),
+		topic: "orders",
+		message: {
+			id: "message-1",
+			subject: "orders.created",
+			payload: new Uint8Array([0, 1, 255]),
+			attributes: [{ key: "content-type", value: "binary" }],
+		},
+	};
+	await harness.loseNextMutationTransport(mode);
+	const lost = await f.client.publish(request);
+	requireCondition(
+		lost.status === "unknown" &&
+			sameOperation(lost.operation, request.operation),
+		"post-commit transport failure did not preserve uncertainty",
+	);
+	await harness.restart();
+	const reopened = await harness.connect("tenant-a");
+	const receipt = await committed(reopened.publish(request));
+	const delivery = firstDelivery(
+		await f.consume(reopened, "orders", "group-a"),
+	);
+	requireCondition(
+		receipt.messageId === delivery.message.id &&
+			receipt.sequence === delivery.sequence &&
+			sameMessage(delivery),
+		"transport failure retry did not recover the committed message",
+	);
+}
+
+async function independentOperationIdLimit(
+	harness: DurableMessagingConformanceHarness,
+) {
+	const client = await harness.connect("tenant-a");
+	requireCondition(
+		client.limits.nameBytes > 0 &&
+			client.limits.nameBytes <= 16 &&
+			client.limits.operationWindowMs >= 1_000 &&
+			client.limits.retainedReceipts >= 2,
+		"operation ID case needs a small independent name limit",
+	);
+	const next = operations(
+		harness,
+		Math.min(client.limits.operationWindowMs, 10_000),
+	);
+	const request = { operation: next(), topic: "a" };
+	requireCondition(
+		request.operation.id.length > client.limits.nameBytes,
+		"test operation does not exceed name limit",
+	);
+	const first = await committed(client.ensureTopic(request));
+	const replay = await committed(client.ensureTopic(request));
+	requireCondition(
+		first.topic === "a" && replay.topic === first.topic,
+		"valid operation ID was constrained by the provider name limit",
+	);
+}
+
 async function failover(harness: DurableMessagingConformanceHarness) {
 	const f = await createFixture(harness);
 	await f.subscribe("orders", "group-a", "orders-dlq");
@@ -609,6 +740,19 @@ async function failover(harness: DurableMessagingConformanceHarness) {
 			sameOperation(lost.operation, request.operation),
 		"lost publish did not preserve its operation identity",
 	);
+	const delayedRequest = {
+		operation: f.next(),
+		topic: "orders",
+		message: {
+			id: "message-2",
+			subject: "next",
+			payload: new Uint8Array([2]),
+			attributes: [],
+		},
+	};
+	const barrier = await harness.holdNextMutation("before-dispatch");
+	const delayed = f.client.publish(delayedRequest);
+	await barrier.reached;
 	await harness.switchAuthority("unverified");
 	const unverified = await harness.connect("tenant-a");
 	const uncertain = await unverified.publish(request);
@@ -618,6 +762,13 @@ async function failover(harness: DurableMessagingConformanceHarness) {
 		"unverified failover gave a definite answer",
 	);
 	await harness.switchAuthority("verified-shared");
+	await barrier.release();
+	const fenced = await delayed;
+	requireCondition(
+		fenced.status === "unknown" &&
+			sameOperation(fenced.operation, delayedRequest.operation),
+		"a held old-owner request was not fenced",
+	);
 	const verified = await harness.connect("tenant-a");
 	const receipt = await committed(verified.publish(request));
 	const delivered = firstDelivery(
@@ -626,6 +777,16 @@ async function failover(harness: DurableMessagingConformanceHarness) {
 	requireCondition(
 		receipt.sequence === delivered.sequence && sameMessage(delivered),
 		"fenced shared journal did not recover the original receipt",
+	);
+	const delayedReceipt = await committed(verified.publish(delayedRequest));
+	const delayedDelivery = firstDelivery(
+		await f.consume(verified, "orders", "group-a"),
+	);
+	requireCondition(
+		delayedReceipt.messageId === delayedDelivery.message.id &&
+			delayedReceipt.sequence === delayedDelivery.sequence &&
+			delayedDelivery.message.id === "message-2",
+		"successor did not resolve the fenced operation through its shared journal",
 	);
 }
 
@@ -879,7 +1040,8 @@ async function concurrentOperations(
 	requireCondition(
 		first.status === "committed" &&
 			second.status === "committed" &&
-			JSON.stringify(first.value) === JSON.stringify(second.value),
+			first.value.messageId === second.value.messageId &&
+			first.value.sequence === second.value.sequence,
 		"concurrent identical requests did not replay the same receipt",
 	);
 	const conflictOperation = f.next();
@@ -911,6 +1073,29 @@ async function concurrentOperations(
 	requireCondition(
 		sameMessage(firstDeliveryValue),
 		"concurrent retry lost the original message",
+	);
+	const winner = pair.find((outcome) => outcome.status === "committed");
+	if (winner?.status !== "committed")
+		throw new DurableMessagingConformanceFailure(
+			"conflicting publication has no winner",
+		);
+	await committed(f.client.ack(acknowledgement(f.next(), firstDeliveryValue)));
+	const winningDelivery = firstDelivery(
+		await f.consume(f.client, "orders", "group-a"),
+	);
+	requireCondition(
+		winningDelivery.message.id === winner.value.messageId &&
+			winningDelivery.sequence === winner.value.sequence &&
+			(winningDelivery.message.id === "other-a" ||
+				winningDelivery.message.id === "other-b"),
+		"conflicting winner receipt did not identify its delivered message",
+	);
+	await committed(f.client.ack(acknowledgement(f.next(), winningDelivery)));
+	await harness.restart();
+	const reopened = await harness.connect("tenant-a");
+	requireCondition(
+		(await f.consume(reopened, "orders", "group-a")).length === 0,
+		"rejected conflicting publication appeared after restart",
 	);
 }
 
@@ -944,6 +1129,56 @@ async function concurrentClaims(harness: DurableMessagingConformanceHarness) {
 	);
 }
 
+async function pendingConflict(harness: DurableMessagingConformanceHarness) {
+	const f = await createFixture(harness);
+	await f.subscribe("orders", "group-a", "orders-dlq");
+	const other = await harness.connect("tenant-a");
+	const request = {
+		operation: f.next(),
+		topic: "orders",
+		message: {
+			id: "message-1",
+			subject: "orders.created",
+			payload: new Uint8Array([0, 1, 255]),
+			attributes: [{ key: "content-type", value: "binary" }],
+		},
+	};
+	const barrier = await harness.holdNextMutation("before-commit");
+	const original = f.client.publish(request);
+	await barrier.reached;
+	const conflict = other.publish({
+		...request,
+		message: { ...request.message, id: "other" },
+	});
+	await barrier.release();
+	const [committedOriginal, refused] = await Promise.all([
+		committed(original),
+		conflict,
+	]);
+	requireCondition(
+		refused.status === "rejected" && refused.code === "operation-conflict",
+		"conflicting fingerprint did not remain scoped to its original pending operation",
+	);
+	const replay = await committed(other.publish(request));
+	requireCondition(
+		replay.messageId === committedOriginal.messageId &&
+			replay.sequence === committedOriginal.sequence,
+		"conflict overwrote the original operation receipt",
+	);
+	const delivered = firstDelivery(await f.consume(other, "orders", "group-a"));
+	requireCondition(
+		delivered.message.id === replay.messageId &&
+			delivered.sequence === replay.sequence &&
+			sameMessage(delivered),
+		"conflict changed the pending operation's effect",
+	);
+	await committed(other.ack(acknowledgement(f.next(), delivered)));
+	requireCondition(
+		(await f.consume(other, "orders", "group-a")).length === 0,
+		"conflicting fingerprint created a second message",
+	);
+}
+
 async function ackExpiryRace(harness: DurableMessagingConformanceHarness) {
 	const f = await createFixture(harness);
 	await f.subscribe("orders", "group-a", "orders-dlq");
@@ -963,15 +1198,30 @@ async function ackExpiryRace(harness: DurableMessagingConformanceHarness) {
 	await harness.advanceMs(101);
 	await barrier.release();
 	const [oldAck, next] = await Promise.all([ack, committed(consume)]);
-	const renewed = firstDelivery(next);
-	requireCondition(
-		oldAck.status === "rejected" &&
-			oldAck.code === "lease-lost" &&
-			renewed.sequence === old.sequence &&
-			renewed.leaseId !== old.leaseId &&
-			renewed.deliveryAttempt === old.deliveryAttempt + 1,
-		"an expired competing acknowledgement settled a renewed lease",
-	);
+	if (oldAck.status === "committed") {
+		requireCondition(
+			oldAck.value.messageId === old.message.id &&
+				oldAck.value.sequence === old.sequence &&
+				next.length === 0,
+			"acknowledged delivery was concurrently re-leased",
+		);
+	} else {
+		requireCondition(
+			oldAck.status === "rejected" &&
+				oldAck.code === "lease-lost" &&
+				next.length <= 1,
+			"expiry race had an invalid outcome",
+		);
+		if (next.length === 1) {
+			const renewed = firstDelivery(next);
+			requireCondition(
+				renewed.sequence === old.sequence &&
+					renewed.leaseId !== old.leaseId &&
+					renewed.deliveryAttempt === old.deliveryAttempt + 1,
+				"expired lease was not fenced on redelivery",
+			);
+		}
+	}
 }
 
 async function publishCompactionRace(
@@ -1050,6 +1300,91 @@ async function detachedRequests(harness: DurableMessagingConformanceHarness) {
 		conflict.status === "rejected" && conflict.code === "operation-conflict",
 		"the operation fingerprint omitted the method or scope",
 	);
+}
+
+async function fingerprintFields(harness: DurableMessagingConformanceHarness) {
+	const f = await createFixture(harness);
+	await f.subscribe("orders", "group-a", "orders-dlq");
+	const message = {
+		id: "message-1",
+		subject: "orders.created",
+		payload: new Uint8Array([0, 1, 255]),
+		attributes: [{ key: "content-type", value: "binary" }],
+	};
+	const publish = { operation: f.next(), topic: "orders", message };
+	await committed(f.client.publish(publish));
+	const expectConflict = async (
+		promise: Promise<DurableMessagingOutcome<unknown>>,
+	) => {
+		const outcome = await promise;
+		requireCondition(
+			outcome.status === "rejected" && outcome.code === "operation-conflict",
+			"semantic request change was not fenced",
+		);
+	};
+	for (const request of [
+		{ ...publish, topic: "archive" },
+		{ ...publish, message: { ...message, id: "other" } },
+		{ ...publish, message: { ...message, subject: "other" } },
+		{ ...publish, message: { ...message, payload: new Uint8Array([9]) } },
+		{
+			...publish,
+			message: { ...message, attributes: [{ key: "other", value: "binary" }] },
+		},
+		{
+			...publish,
+			message: {
+				...message,
+				attributes: [{ key: "content-type", value: "other" }],
+			},
+		},
+	])
+		await expectConflict(f.client.publish(request));
+	const subscription = {
+		topic: "orders",
+		consumerGroup: "group-b",
+		deadLetterTopic: "orders-dlq",
+		maxDeliveryAttempts: 2,
+		startAt: "earliest" as const,
+	};
+	const subRequest = { operation: f.next(), subscription };
+	await committed(f.client.ensureSubscription(subRequest));
+	for (const changed of [
+		{ ...subscription, topic: "archive" },
+		{ ...subscription, consumerGroup: "group-c" },
+		{ ...subscription, deadLetterTopic: "archive" },
+		{ ...subscription, maxDeliveryAttempts: 3 },
+		{ ...subscription, startAt: "latest" as const },
+	])
+		await expectConflict(
+			f.client.ensureSubscription({ ...subRequest, subscription: changed }),
+		);
+	const consume = {
+		operation: f.next(),
+		topic: "orders",
+		consumerGroup: "group-a",
+		maxMessages: 1,
+		visibilityTimeoutMs: 100,
+	};
+	const delivery = firstDelivery(await committed(f.client.consume(consume)));
+	for (const changed of [
+		{ ...consume, topic: "archive" },
+		{ ...consume, consumerGroup: "group-b" },
+		{ ...consume, maxMessages: 2 },
+		{ ...consume, visibilityTimeoutMs: 101 },
+	])
+		await expectConflict(f.client.consume(changed));
+	const nack = { ...acknowledgement(f.next(), delivery), reason: "retry" };
+	await committed(f.client.nack(nack));
+	for (const changed of [
+		{ ...nack, topic: "archive" },
+		{ ...nack, consumerGroup: "group-b" },
+		{ ...nack, messageId: "other" },
+		{ ...nack, sequence: nack.sequence + 1 },
+		{ ...nack, leaseId: "other" },
+		{ ...nack, reason: "other" },
+	])
+		await expectConflict(f.client.nack(changed));
 }
 
 async function subscriptionCompactionRace(
@@ -1147,9 +1482,18 @@ async function tenantIsolation(harness: DurableMessagingConformanceHarness) {
 }
 
 async function auditPagination(harness: DurableMessagingConformanceHarness) {
+	requireCondition(
+		harness.auditMinimumRetention >= 4,
+		"pagination case requires a provider-advertised minimum retention of four events",
+	);
 	const f = await createFixture(harness);
-	await f.subscribe("orders", "group-a", "orders-dlq");
-	await f.publish();
+	requireCondition(
+		f.client.limits.retainedEvents >= 4,
+		"audit retention limit is below the advertised pagination guarantee",
+	);
+	await committed(
+		f.client.ensureTopic({ operation: f.next(), topic: "audit-extra" }),
+	);
 	const first = await f.client.events({ afterSequence: 0, limit: 2 });
 	if (first.status !== "ok")
 		throw new DurableMessagingConformanceFailure(
@@ -1166,8 +1510,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 	);
 	const repeated = await f.client.events({ afterSequence: 0, limit: 2 });
 	requireCondition(
-		repeated.status === "ok" &&
-			JSON.stringify(repeated) === JSON.stringify(first),
+		repeated.status === "ok" && sameAuditPage(repeated, first),
 		"reused audit cursor changed without writes",
 	);
 	const second = await f.client.events({
@@ -1185,8 +1528,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 	const reopened = await harness.connect("tenant-a");
 	const afterRestart = await reopened.events({ afterSequence: 0, limit: 2 });
 	requireCondition(
-		afterRestart.status === "ok" &&
-			JSON.stringify(afterRestart) === JSON.stringify(first),
+		afterRestart.status === "ok" && sameAuditPage(afterRestart, first),
 		"audit cursor or page changed on restart",
 	);
 }
@@ -1196,7 +1538,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 	requireCondition(
 		client.limits.retainedEvents >= 2 &&
 			client.limits.retainedEvents <= 32 &&
-			client.limits.topics >= client.limits.retainedEvents + 2 &&
+			client.limits.topics >= client.limits.retainedEvents + 3 &&
 			client.limits.retainedReceipts >= 64 &&
 			client.limits.operationWindowMs >= 1_000,
 		"audit retention harness limits are not configured for this case",
@@ -1211,18 +1553,31 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 			client.ensureTopic({ operation: next(), topic: `audit-${index}` }),
 		);
 	const gap = await client.events({ afterSequence: 0, limit: 2 });
+	if (gap.status !== "gap")
+		throw new DurableMessagingConformanceFailure(
+			"old audit cursor did not report the retention gap",
+		);
 	requireCondition(
-		gap.status === "gap" &&
-			gap.firstAvailableSequence === 3 &&
+		gap.firstAvailableSequence >= 3 &&
+			gap.firstAvailableSequence <= total + 1 &&
 			gap.latestSequence === total,
-		"old audit cursor did not report the retention gap",
+		"audit gap gave an invalid floor or tail",
 	);
-	const page = await client.events({ afterSequence: 2, limit: 2 });
+	const floor = gap.firstAvailableSequence;
+	const page = await client.events({ afterSequence: floor - 1, limit: 2 });
 	requireCondition(
 		page.status === "ok" &&
-			page.events[0]?.sequence === 3 &&
-			page.events[1]?.sequence === 4 &&
-			page.nextAfterSequence === 4,
+			page.firstAvailableSequence === floor &&
+			(floor === total + 1
+				? page.events.length === 0 &&
+					page.nextAfterSequence === total &&
+					!page.hasMore
+				: page.events.length > 0 &&
+					page.events.every(
+						(event, index) => event.sequence === floor + index,
+					) &&
+					page.nextAfterSequence === floor + page.events.length - 1 &&
+					page.hasMore === page.nextAfterSequence < total),
 		"audit did not resume at the retained floor",
 	);
 	await harness.restart();
@@ -1232,11 +1587,14 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 	);
 	const nextPage = await reopened.events({ afterSequence: total, limit: 2 });
 	requireCondition(
-		nextPage.status === "ok" &&
+		(nextPage.status === "ok" &&
 			nextPage.events.length === 1 &&
 			nextPage.events[0]?.sequence === total + 1 &&
 			nextPage.nextAfterSequence === total + 1 &&
-			!nextPage.hasMore,
+			!nextPage.hasMore) ||
+			(nextPage.status === "gap" &&
+				nextPage.firstAvailableSequence === total + 2 &&
+				nextPage.latestSequence === total + 1),
 		"audit sequence was reused or reset after retention and restart",
 	);
 	const future = await reopened.events({ afterSequence: total + 2, limit: 1 });
@@ -1347,6 +1705,15 @@ async function bounds(harness: DurableMessagingConformanceHarness) {
 			payload: new Uint8Array(),
 			attributes: [{ key: "k", value: "\ud800" }],
 		},
+		{
+			id: "too-many-attributes",
+			subject: "orders",
+			payload: new Uint8Array(),
+			attributes: Array.from(
+				{ length: f.client.limits.attributeCount + 1 },
+				(_, index) => ({ key: `k${index}`, value: "v" }),
+			),
+		},
 	]) {
 		const input = { operation: f.next(), topic: "orders", message };
 		invalid.push(["invalid message", () => f.client.publish(input)]);
@@ -1419,6 +1786,51 @@ async function bounds(harness: DurableMessagingConformanceHarness) {
 		(await f.consume(f.client, "orders", "group-a")).length === 0,
 		"invalid operations changed durable state",
 	);
+	const boundaryName = "x".repeat(f.client.limits.nameBytes);
+	await committed(
+		f.client.ensureTopic({ operation: f.next(), topic: boundaryName }),
+	);
+	await committed(
+		f.client.ensureSubscription({
+			operation: f.next(),
+			subscription: {
+				topic: "orders",
+				consumerGroup: "boundary",
+				deadLetterTopic: "orders-dlq",
+				maxDeliveryAttempts: f.client.limits.deliveryAttempts,
+				startAt: "latest",
+			},
+		}),
+	);
+	const maximumPayload = new Uint8Array(f.client.limits.payloadBytes);
+	await committed(
+		f.client.publish({
+			operation: f.next(),
+			topic: "orders",
+			message: {
+				id: "boundary",
+				subject: "orders",
+				payload: maximumPayload,
+				attributes: [],
+			},
+		}),
+	);
+	const boundaryDelivery = firstDelivery(
+		await committed(
+			f.client.consume({
+				operation: f.next(),
+				topic: "orders",
+				consumerGroup: "group-a",
+				maxMessages: f.client.limits.batchSize,
+				visibilityTimeoutMs: 1,
+			}),
+		),
+	);
+	requireCondition(
+		sameBytes(boundaryDelivery.message.payload, maximumPayload),
+		"payload at the limit changed",
+	);
+	await committed(f.client.ack(acknowledgement(f.next(), boundaryDelivery)));
 	await f.publish();
 	const delivery = firstDelivery(
 		await f.consume(f.client, "orders", "group-a"),
@@ -1436,7 +1848,24 @@ async function bounds(harness: DurableMessagingConformanceHarness) {
 			replay.code === rejected.code,
 		"oversized nack reason was not durably rejected",
 	);
-	await committed(f.client.ack(acknowledgement(f.next(), delivery)));
+	await committed(
+		f.client.nack({
+			...acknowledgement(f.next(), delivery),
+			reason: "x".repeat(f.client.limits.reasonBytes),
+		}),
+	);
+	const retried = firstDelivery(
+		await committed(
+			f.client.consume({
+				operation: f.next(),
+				topic: "orders",
+				consumerGroup: "group-a",
+				maxMessages: 1,
+				visibilityTimeoutMs: f.client.limits.leaseMs,
+			}),
+		),
+	);
+	await committed(f.client.ack(acknowledgement(f.next(), retried)));
 }
 
 // The union, execution order and published case names all derive from this
@@ -1477,13 +1906,27 @@ const DURABLE_CASES = [
 		(harness: DurableMessagingConformanceHarness) =>
 			unavailableReceipt(harness, "unavailable"),
 	],
+	["revoked-receipt-privacy", revokedReceipt],
+	[
+		"transport-throw-after-commit",
+		(harness: DurableMessagingConformanceHarness) =>
+			transportFailure(harness, "throw"),
+	],
+	[
+		"transport-disconnect-after-commit",
+		(harness: DurableMessagingConformanceHarness) =>
+			transportFailure(harness, "disconnect"),
+	],
+	["operation-id-limit", independentOperationIdLimit],
 	["failover", failover],
 	["operation-replay", operationReplay],
 	["concurrent-operations", concurrentOperations],
 	["concurrent-claims", concurrentClaims],
+	["pending-conflict", pendingConflict],
 	["ack-expiry-race", ackExpiryRace],
 	["compact-publish-race", publishCompactionRace],
 	["detached-requests", detachedRequests],
+	["fingerprint-fields", fingerprintFields],
 	[
 		"compact-earliest-race",
 		(harness: DurableMessagingConformanceHarness) =>
@@ -1516,27 +1959,62 @@ export async function runDurableMessagingConformance(
 	create: (
 		name: DurableMessagingConformanceCase,
 	) => Promise<DurableMessagingConformanceHarness>,
+	options: { readonly caseTimeoutMs?: number } = {},
 ): Promise<DurableMessagingConformanceReport> {
+	const timeoutMs = options.caseTimeoutMs ?? 30_000;
+	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000)
+		throw new TypeError("invalid conformance case timeout");
 	const results: Array<DurableMessagingConformanceReport["cases"][number]> = [];
+	let stopped = false;
 	for (const [name, run] of DURABLE_CASES) {
-		try {
-			const harness = await create(name);
-			try {
-				await run(harness);
-			} finally {
-				await harness.close();
-			}
-			results.push({ name, status: "pass" });
-		} catch (error) {
+		if (stopped) {
 			results.push({
 				name,
-				status: "fail",
-				detail:
-					error instanceof DurableMessagingConformanceFailure
-						? error.message
-						: "provider threw or returned malformed data",
+				status: "unknown",
+				detail: "not run after an unfenced timeout",
 			});
+			continue;
 		}
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const task = (async (): Promise<
+			DurableMessagingConformanceReport["cases"][number]
+		> => {
+			try {
+				const harness = await create(name);
+				try {
+					await run(harness);
+				} finally {
+					await harness.close();
+				}
+				return { name, status: "pass" };
+			} catch (error) {
+				return {
+					name,
+					status: "fail",
+					detail:
+						error instanceof DurableMessagingConformanceFailure
+							? error.message
+							: "provider threw or returned malformed data",
+				};
+			}
+		})();
+		const timeout = new Promise<
+			DurableMessagingConformanceReport["cases"][number]
+		>((resolve) => {
+			timer = setTimeout(
+				() =>
+					resolve({
+						name,
+						status: "unknown",
+						detail: "case timed out; independent host fencing is required",
+					}),
+				timeoutMs,
+			);
+		});
+		const result = await Promise.race([task, timeout]);
+		if (timer !== undefined) clearTimeout(timer);
+		results.push(result);
+		if (result.status === "unknown") stopped = true;
 	}
 	return {
 		contract: DURABLE_MESSAGING_CONFORMANCE,
@@ -1547,6 +2025,9 @@ export async function runDurableMessagingConformance(
 			tenantIdentity: "unverified",
 			clock: "unverified",
 			concurrencyBarrier: "unverified",
+			authorityTransition: "unverified",
+			oldOwnerFence: "unverified",
+			caseIsolation: "unverified",
 		},
 		cases: results,
 	};

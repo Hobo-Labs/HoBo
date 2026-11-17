@@ -10,12 +10,35 @@ import {
 } from "../src/durable-messaging-conformance.js";
 
 describe("durable messaging conformance runner", () => {
+	it("stops after a timed-out case without trusting an in-process timer as a fence", async () => {
+		let created = 0;
+		const report = await runDurableMessagingConformance(
+			() => {
+				created++;
+				return new Promise(() => {});
+			},
+			{ caseTimeoutMs: 5 },
+		);
+		expect(created).toBe(1);
+		expect(report.cases[0]?.status).toBe("unknown");
+		expect(
+			report.cases
+				.slice(1)
+				.every(
+					(entry) =>
+						entry.status === "unknown" &&
+						entry.detail === "not run after an unfenced timeout",
+				),
+		).toBe(true);
+		expect(report.executionEvidence.caseIsolation).toBe("unverified");
+	});
 	it("fails every case when the provider is unavailable and closes each harness", async () => {
 		let created = 0;
 		let closed = 0;
 		const report = await runDurableMessagingConformance(async () => {
 			created++;
 			return {
+				auditMinimumRetention: 5,
 				connect: async () => {
 					throw new Error("private-provider-diagnostic");
 				},
@@ -26,6 +49,7 @@ describe("durable messaging conformance runner", () => {
 				nowMs: () => 1000,
 				advanceMs: async () => {},
 				loseNextMutationResponse: async () => {},
+				loseNextMutationTransport: async () => {},
 				rejectNextDeadLetterWrite: async () => {},
 				blockNextReceiptLookup: async () => {},
 				switchAuthority: async () => {},
@@ -56,13 +80,19 @@ describe("durable messaging conformance runner", () => {
 			"receipt-revocation",
 			"receipt-capacity",
 			"receipt-unavailable",
+			"revoked-receipt-privacy",
+			"transport-throw-after-commit",
+			"transport-disconnect-after-commit",
+			"operation-id-limit",
 			"failover",
 			"operation-replay",
 			"concurrent-operations",
 			"concurrent-claims",
+			"pending-conflict",
 			"ack-expiry-race",
 			"compact-publish-race",
 			"detached-requests",
+			"fingerprint-fields",
 			"compact-earliest-race",
 			"compact-latest-race",
 			"tenant-isolation",
@@ -92,7 +122,7 @@ describe("durable messaging conformance runner", () => {
 			let acknowledged = false;
 			let now = 1_000;
 			const client: DurableMessaging = {
-				limits: DURABLE_MESSAGING_LIMITS,
+				limits: { ...DURABLE_MESSAGING_LIMITS, retainedEvents: 1 },
 				ensureTopic: async ({ topic }) => ({
 					status: "committed",
 					value: { topic },
@@ -152,6 +182,7 @@ describe("durable messaging conformance runner", () => {
 				}),
 			};
 			return {
+				auditMinimumRetention: 1,
 				connect: async () => client,
 				restart: async () => {},
 				close: async () => {},
@@ -160,6 +191,7 @@ describe("durable messaging conformance runner", () => {
 					now += delta;
 				},
 				loseNextMutationResponse: async () => {},
+				loseNextMutationTransport: async () => {},
 				rejectNextDeadLetterWrite: async () => {},
 				blockNextReceiptLookup: async () => {},
 				switchAuthority: async () => {},

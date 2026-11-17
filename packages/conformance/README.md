@@ -32,14 +32,20 @@ typed, event-sourced port-suite harness under `packages/conformance/`.
   its persisted state, control time, inject faults at the specified points and
   provide independently authenticated clients and concurrency barriers.
   The report marks restart, store identity, clock, fault placement, tenant
-  identity and barrier provenance as `unverified`: caller-supplied callbacks
-  cannot authenticate their own execution. A separately controlled runner must
+  identity, barrier, authority transition and old-owner fence provenance as
+  `unverified`: caller-supplied callbacks cannot authenticate their own
+  execution. The pagination case requires a provider-advertised minimum audit
+  retention of four events; other cases do not assume a retention minimum.
+  A separately controlled runner must
   establish these facts before treating passing cases as provider evidence.
   In particular, a no-op restart over an in-memory map can pass the behavioral
   restart case and does not establish durability. The suite does not validate
   transport parsing or prove the host's transaction and fencing assumptions.
-  An independently controlled runner must impose a process deadline: a provider
-  or harness callback that never resolves can otherwise block this suite.
+  Each case has an in-process deadline covering creation, calls, barriers and
+  close. A timeout reports unknown and leaves all later cases unrun. The timer
+  cannot stop provider effects or a blocked event loop: an independent host
+  must impose a process deadline, terminate and fence the old execution, and
+  establish durable outcomes before starting any replacement run.
 
 ### `@hobo/conformance/anonymous` — the anonymous/claimable dimension
 
