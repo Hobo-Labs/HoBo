@@ -254,3 +254,16 @@ checks admission, held liabilities, replay, and receiver- and finance-signed
 settlement. Generated histories exercise the TypeScript authority; the finite
 TLA+ models and unbounded arithmetic abstraction state their assumptions and do
 not prove the storage adapters, cryptography, or provider effects.
+
+The following is a projection of the signed-settlement model, not a production
+trace. TLC explored 129 states and 830 steps; the chart hides 723 steps that
+remain within a displayed state.
+
+```mermaid
+stateDiagram-v2
+  [*] --> NoReservation
+  NoReservation --> UnclaimedHold: admit reservation
+  UnclaimedHold --> ClaimedHold: claim admitted execution
+  UnclaimedHold --> Released: confirm unused work
+  ClaimedHold --> Settled: accept both signed proofs
+```
