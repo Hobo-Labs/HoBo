@@ -100,9 +100,9 @@ claimed.
 
 ## Credit-order verification
 
-The [pricing credit-order skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
-checks the equal-priority credit flow against real code, a bounded TLA+ model,
-and an abstract balance proof. The model explores 24 states and hides six
+The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
+checks source admission and the equal-priority credit flow against real code,
+bounded TLA+ models, and abstract balance proofs. The credit model explores 32 states and hides eight
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -116,6 +116,23 @@ stateDiagram-v2
   s0 --> s1: rate on Swedish host or rate on English host
   s1 --> s2: rate on English host or rate on Swedish host
   s1 --> s3: rate on English host or rate on Swedish host
+```
+
+The source-admission projection covers one abstract financial source. Its
+model explores 243 states and hides 96 same-state transitions; it assumes the
+source identity, tenant, and account classifications reflect the provider's
+actual records.
+
+```mermaid
+stateDiagram-v2
+  s0: Financial state received
+  s1: Sources accepted
+  s2: Quote rejected
+  s3: Source value applied
+  [*] --> s0
+  s0 --> s1: check tenant, identity and account
+  s0 --> s2: check tenant, identity and account
+  s1 --> s3: apply source once
 ```
 
 ## UTC verification
