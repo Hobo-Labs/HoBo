@@ -63,6 +63,10 @@ later retry from authorizing a start. The stored reservation and assigned job
 must still match the current offer's policy revision, and the offer observation
 must match the reservation. Uncertain runner slots retain their reserved
 capacity and are not automatically released or retried.
+Draining or uncertain slots also block a new reservation for the same job on
+another capacity group. Existing unresolved duplicate records are preserved
+for reconciliation during store upgrades. A claimed runner is released through
+execution settlement with confirmed teardown.
 
 The stores also expose `startDagger` for a pipeline demand. It atomically pins
 the pipeline digest, engine endpoint hash, offer, policy, quote, and execution
