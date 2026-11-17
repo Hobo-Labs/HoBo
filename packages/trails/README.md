@@ -35,12 +35,9 @@ import {
   createHandsOffIdentityTrail,
 } from "@hobo/trails";
 
-// Hands-off continuous identity (Matching-driven; zero authoring)
-// Public surface is Trails-owned DTOs only — no @hobo/identity types leak.
 const id = createHandsOffIdentityTrail({ tenant: "acme" });
 activateIdentityContinuousFromMatching({ handle: id });
 
-// App-authored data Trail composed with platform recipes
 const trail = defineTrail({
   id: "app.checkout.migrate",
   version: "2026.07.27.1",
@@ -97,6 +94,12 @@ hobo trails inspect <id>
 2. App Trails = versioned schema/data/junction steps composed with platform recipes.
 3. Progressive ramp via existing Harness `FeatureFlagStore`.
 4. Fail-closed dual oracles + compensation; history is durable and idempotent.
+
+## Upgrade dry runs
+
+`evaluateUpgradeDryRun` produces evidence without running migration commands.
+Its optional `action` is `evaluate-upgrade-dry-run`; unknown actions are
+rejected by the scope boundary.
 
 ## Data migrations (ADR-0177)
 

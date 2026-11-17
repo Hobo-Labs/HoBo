@@ -1,6 +1,3 @@
-// M1 Dogfood/Alpha evidence: the promoted HOBO-499 dry-run contract plus the
-// remaining "Evidence Required For M1" rows (compatibility-input matrix,
-// rollback evidence, scope-boundary register, support handoff).
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
@@ -11,6 +8,7 @@ import {
 	evaluateUpgradeDryRun,
 	parseCompatibilityInputs,
 	parseRollbackEvidence,
+	UPGRADE_DRY_RUN_ACTION,
 	UPGRADE_DRY_RUN_FIXTURES,
 	UPGRADE_SCOPE_BOUNDARIES,
 } from "../src/upgrade-preflight.js";
@@ -25,7 +23,6 @@ test("compatibility-input matrix covers every upgrade path class with all 11 fie
 		"self-host-yard",
 	]);
 	for (const row of COMPATIBILITY_INPUT_MATRIX) {
-		// Parsing is the proof: every row round-trips the 11-field input set.
 		assert.deepEqual(parseCompatibilityInputs(row), row);
 	}
 });
@@ -75,12 +72,32 @@ test("scope-boundary register routes all six M0 scope-out categories", () => {
 		() => assertUpgradeScopeBoundary("run the rollback executor"),
 		/routed to owning initiatives/u,
 	);
-	// Evidence requests stay in scope.
-	assertUpgradeScopeBoundary("produce a dry-run report for self-host-yard");
+	assertUpgradeScopeBoundary(UPGRADE_DRY_RUN_ACTION);
 	assert.equal(
-		classifyUpgradeDryRunDecision("summarize compatibility inputs").inScope,
+		classifyUpgradeDryRunDecision(UPGRADE_DRY_RUN_ACTION).inScope,
 		true,
 	);
+	for (const action of [
+		"",
+		"delete customer data",
+		"remove all backups",
+		"summarize compatibility inputs",
+	]) {
+		assert.equal(classifyUpgradeDryRunDecision(action).inScope, false);
+		assert.throws(
+			() => assertUpgradeScopeBoundary(action),
+			/routed to owning initiatives/u,
+		);
+	}
+});
+
+test("the dry-run entry point rejects an unrecognized requested action", () => {
+	for (const action of ["delete customer data", "", null]) {
+		const request = JSON.parse(
+			JSON.stringify({ ...UPGRADE_DRY_RUN_FIXTURES.cleanUpgrade, action }),
+		);
+		assert.throws(() => evaluateUpgradeDryRun(request), /requestedAction/u);
+	}
 });
 
 test("dry-run fixtures produce the promoted decisions: passed / blocked / failed / passed", () => {
