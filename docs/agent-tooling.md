@@ -328,6 +328,8 @@ bash scripts/setup-agent-tools.sh --agent codex --no-gbrain
 bash scripts/setup-agent-tools.sh --agent copilot --no-gbrain
 ```
 
+The setup command stops if it cannot enter the checkout before making changes.
+
 The common layer installs agent-agnostic runtimes (`tgrep`, repo-pinned `ast-grep`, `rtk`, `serena`, `headroom`, `skillopt-train`, `skillopt-sleep`, and the **`github/gh-stack`** GitHub CLI extension for stacked PRs) and leaves per-agent plugin/skill registration alone. Agent-specific layers only install shims for the selected supported client. Devcontainers run the common layer by default through [`.devcontainer/post-create.sh`](../.devcontainer/post-create.sh), avoiding prompts, global CLI mutations, and optional gbrain setup during container creation.
 
 ## Per-agent wiring
