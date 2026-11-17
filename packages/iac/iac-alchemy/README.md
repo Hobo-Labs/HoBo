@@ -33,6 +33,9 @@ apply; a failed check after admission retains the reservation for reconciliation
 For a reconstructed deletion, the host must independently authenticate the
 prior resource state and compare its `hashAlchemyPriorState` digest with the
 historical source observation before approving the plan.
+Alchemy does not run the multi-pool mapper while reconstructing a deletion;
+the host's plan verifier must also authenticate the affected pool and runner
+ownership and maintain its fencing until deletion completes.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.

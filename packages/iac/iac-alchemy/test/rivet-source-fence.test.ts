@@ -166,6 +166,8 @@ describe("Rivet source and dependency closure fence", () => {
 		"during-provider-apply",
 		"pool-revoked-after-admission",
 		"pool-revoked-during-provider-apply",
+		"pool-unchanged-destroy",
+		"pool-revoked-before-destroy",
 		"revoked",
 	] as const)("enforces %s source authorization across a real Alchemy plan and apply", async (change) => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-rivet-source-apply-"));
@@ -218,7 +220,7 @@ describe("Rivet source and dependency closure fence", () => {
 					}),
 				deployCrate: () => Effect.void,
 			};
-			const mapper = change.startsWith("pool-revoked-")
+			const mapper = change.startsWith("pool-")
 				? createRivetMultiPoolPrimitiveMappers(
 						[
 							{
@@ -304,7 +306,8 @@ describe("Rivet source and dependency closure fence", () => {
 						sourceClaims.length === 1 &&
 						sourceClaims[0]?.sourcePath === f.main &&
 						(operation === "destroy"
-							? historicalSources.length === 1 &&
+							? poolAuthorized &&
+								historicalSources.length === 1 &&
 								historicalSources[0]?.priorStateDigest ===
 									trustedPriorStateDigest
 							: historicalSources.length === 0),
@@ -331,7 +334,11 @@ describe("Rivet source and dependency closure fence", () => {
 			if (change === "before-admission")
 				appendFileSync(f.dependency, "\n// changed before admission");
 			if (change === "revoked") f.revoke();
-			if (change === "unchanged") {
+			if (
+				change === "unchanged" ||
+				change === "pool-unchanged-destroy" ||
+				change === "pool-revoked-before-destroy"
+			) {
 				await provider.applyWithAdmission(program, "request");
 				expect(providerEffects).toBe(1);
 				const priorState = storedState.App?.test?.web;
@@ -344,13 +351,19 @@ describe("Rivet source and dependency closure fence", () => {
 					operationGeneration: "generation-2",
 				};
 				const authenticDigest = trustedPriorStateDigest;
+				if (change === "pool-revoked-before-destroy") poolAuthorized = false;
 				trustedPriorStateDigest = `sha256:${"f".repeat(64)}`;
 				await expect(provider.preview(destroy)).rejects.toThrow();
 				expect(providerDeletes).toBe(0);
 				trustedPriorStateDigest = authenticDigest;
-				await provider.preview(destroy);
-				await provider.destroyWithAdmission(destroy, "destroy-request");
-				expect(providerDeletes).toBe(1);
+				if (change === "pool-revoked-before-destroy") {
+					await expect(provider.preview(destroy)).rejects.toThrow();
+					expect(providerDeletes).toBe(0);
+				} else {
+					await provider.preview(destroy);
+					await provider.destroyWithAdmission(destroy, "destroy-request");
+					expect(providerDeletes).toBe(1);
+				}
 			} else {
 				const failure = await provider
 					.applyWithAdmission(program, "request")
