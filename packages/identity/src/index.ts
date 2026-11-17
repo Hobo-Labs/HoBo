@@ -342,6 +342,7 @@ export {
 	type ResolvedConfigEntry,
 	resolveConfigEntry,
 	type SecretsAccessResult,
+	type SecretsCreateOnlyResult,
 	type SecretsPort,
 } from "./secrets-port.js";
 export {

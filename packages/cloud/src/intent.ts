@@ -1,5 +1,6 @@
 import type { ManifestV1 } from "@hobo/bindles";
 
+import { isJsonString } from "./json.js";
 import type { ResourceIntent } from "./plan-types.js";
 
 // Planner step 0 (control-plane.md): lower each `hobo.manifest/v1` resource node
@@ -71,6 +72,11 @@ function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
 	return { capabilityPort: bare, require: [] };
 }
 
+/** A five-field cron expression, as the cadence trait writes it. */
+function isCadence<T>(value: T): value is T & string {
+	return isJsonString(value) && /^\S+(\s+\S+){4}$/u.test(value);
+}
+
 export function lowerManifest(
 	manifest: ManifestV1,
 	options: LowerOptions = {},
@@ -124,6 +130,9 @@ export function lowerManifest(
 			objective,
 		};
 		if (options.region !== undefined) intent.region = options.region;
+		const cadence = resource.annotations?.cadence;
+		if (capabilityPort === "schedule" && isCadence(cadence))
+			intent.cadence = cadence;
 		intents.push(intent);
 	}
 

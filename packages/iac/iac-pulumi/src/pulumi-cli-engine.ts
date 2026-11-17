@@ -8,6 +8,7 @@ import {
 	PINNED_PULUMI_AUTOMATION_VERSION,
 } from "./iac-pulumi-automation-adapter.js";
 import {
+	isJsonArray,
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
@@ -41,12 +42,17 @@ interface PulumiYamlTypeTokens {
 	"cloudflare:workers-script": string;
 	"cloudflare:kv-namespace": string;
 	"cloudflare:r2-bucket": string;
+	"cloudflare:queue": string;
+	"cloudflare:cron-trigger": string;
 }
 
 export const PULUMI_YAML_TYPE_TOKENS: PulumiYamlTypeTokens = {
 	"cloudflare:workers-script": "cloudflare:WorkersScript",
 	"cloudflare:kv-namespace": "cloudflare:WorkersKvNamespace",
 	"cloudflare:r2-bucket": "cloudflare:R2Bucket",
+	// Pulumi Cloudflare v6 (registry api-docs/queue, api-docs/workerscrontrigger).
+	"cloudflare:queue": "cloudflare:Queue",
+	"cloudflare:cron-trigger": "cloudflare:WorkersCronTrigger",
 };
 
 function pulumiYamlToken(resourceType: string): string | undefined {
@@ -57,6 +63,10 @@ function pulumiYamlToken(resourceType: string): string | undefined {
 			return PULUMI_YAML_TYPE_TOKENS["cloudflare:kv-namespace"];
 		case "cloudflare:r2-bucket":
 			return PULUMI_YAML_TYPE_TOKENS["cloudflare:r2-bucket"];
+		case "cloudflare:queue":
+			return PULUMI_YAML_TYPE_TOKENS["cloudflare:queue"];
+		case "cloudflare:cron-trigger":
+			return PULUMI_YAML_TYPE_TOKENS["cloudflare:cron-trigger"];
 		default:
 			return undefined;
 	}
@@ -102,6 +112,12 @@ export function renderPulumiYamlProgram(
 			: DEFAULT_WORKER_SCRIPT;
 	} else if (token === "cloudflare:WorkersKvNamespace") {
 		properties.title = resource.name;
+	} else if (token === "cloudflare:Queue") {
+		properties.queueName = resource.name;
+	} else if (token === "cloudflare:WorkersCronTrigger") {
+		const trigger = cronTrigger(resource, cfOptions);
+		properties.scriptName = trigger.scriptName;
+		properties.schedules = [{ cron: trigger.cron }];
 	} else {
 		properties.name = resource.name;
 	}
@@ -123,6 +139,59 @@ resources:
 outputs:
 ${outputLines}
 `;
+}
+
+/** The Worker a cron trigger runs and its five-field expression. */
+interface CronTrigger {
+	readonly scriptName: string;
+	readonly cron: string;
+}
+
+const CRON = /^\S+(\s+\S+){4}$/u;
+
+/**
+ * A cron trigger's Worker and expression: the Worker is its one dependency
+ * (the Workers script it runs), the expression the Cloudflare option block's
+ * `cron`. Either missing fails closed: a trigger with a guessed cadence or a
+ * guessed Worker is not one this program may create.
+ */
+function cronTrigger(
+	resource: IacResourceLike,
+	cfOptions: JsonObject,
+): CronTrigger {
+	const cron = cfOptions.cron;
+	if (!isJsonString(cron) || !CRON.test(cron.trim()))
+		throw new PulumiEngineUnavailableError(
+			PULUMI_UNSUPPORTED_RESOURCE,
+			`cron trigger ${resource.name} has no cron expression (the Cloudflare option \`cron\`, five fields)`,
+		);
+	const bindings = resource.inputs?.bindings;
+	const dependencies = isJsonArray(bindings)
+		? bindings.filter(isJsonObject)
+		: [];
+	// Only a dependency the realizer typed as a Workers script is a Worker to
+	// run: a sole dependency on a queue or a store is not one.
+	const workers = dependencies.flatMap((binding) => {
+		const name = binding.resource ?? binding.providerResourceId;
+		return binding.resourceType === "cloudflare:workers-script" &&
+			isJsonString(name) &&
+			name.length > 0
+			? [name]
+			: [];
+	});
+	const scriptName = workers[0];
+	if (
+		!isJsonArray(bindings) ||
+		bindings.length !== dependencies.length ||
+		dependencies.length !== 1 ||
+		workers.length !== 1 ||
+		scriptName === undefined
+	)
+		throw new PulumiEngineUnavailableError(
+			PULUMI_UNSUPPORTED_RESOURCE,
+			`cron trigger ${resource.name} must depend on exactly one Workers script to run; it depends on ${dependencies.length} resource(s), ${workers.length} of them a Workers script`,
+		);
+	return { scriptName, cron: cron.trim() };
 }
 
 const DEFAULT_WORKER_SCRIPT =
@@ -154,6 +223,12 @@ function outputExpression(
 	}
 	if (token === "cloudflare:R2Bucket" && output === "endpoint") {
 		return `\${${resourceName}.id}`;
+	}
+	if (token === "cloudflare:Queue" && output === "queueName") {
+		return `\${${resourceName}.queueName}`;
+	}
+	if (token === "cloudflare:WorkersCronTrigger" && output === "cron") {
+		return `\${${resourceName}.schedules[0].cron}`;
 	}
 	return `\${${resourceName}.id}`;
 }

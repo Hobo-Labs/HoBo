@@ -29,6 +29,7 @@ import {
 	selectPulumiEstateAdapter,
 } from "../src/index.js";
 import { isJsonObject } from "../src/json.js";
+import { ownerKeys, PULUMI_STATE_KEY } from "../src/owner-keys.js";
 
 // `hobo drift` — REAL drift detection: the declared bindle manifest's desired
 // resources are compared against the state the IaC backend actually holds.
@@ -86,6 +87,7 @@ function cfFetch(scriptGetStatus: number): CloudflareFetch {
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	vi.restoreAllMocks();
+	vi.unstubAllEnvs();
 	for (const store of openStores) store.close();
 	openStores = [];
 });
@@ -400,6 +402,26 @@ describe("createDriftCommand", () => {
 		});
 	});
 
+	it("ignores ambient cloud credentials when choosing the drift backend", async () => {
+		vi.stubEnv("HOBO_PULUMI_LIVE", undefined);
+		vi.stubEnv("HOBO_CREDENTIALS", undefined);
+		vi.stubEnv("HOBO_OPENSESAME_CHILD", undefined);
+		vi.stubEnv("VERCEL_TOKEN", undefined);
+		vi.stubEnv("CLOUDFLARE_API_TOKEN", "ambient-test-token");
+		vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "ambient-test-account");
+		await withProject(async (cwd) => {
+			const runtime = createDefaultYardRuntime();
+			// SAFETY: this runtime's concrete event store is closed after the test.
+			openStores.push(runtime.store as RuntimeLocalEventStore);
+			const result = await createDriftCommand({ runtime }).run(runInput(cwd));
+			expect(result).toMatchObject({
+				ok: true,
+				status: "no_deployment",
+				data: { backend: "in-memory" },
+			});
+		});
+	});
+
 	it("fails closed with a typed error when HOBO_PULUMI_LIVE=1 and the pulumi binary is missing", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
@@ -442,8 +464,64 @@ describe("createDriftCommand", () => {
 				ok: false,
 				code: "HOBO_PULUMI_UNAVAILABLE",
 				data: { engineCode: "pulumi-state-passphrase-missing" },
-				remediation: [expect.stringContaining("PULUMI_CONFIG_PASSPHRASE")],
+				remediation: [expect.stringContaining("HOBO_PULUMI_STATE_PASSPHRASE")],
 			});
+		});
+	});
+
+	it("refuses a retained Pulumi workspace when only an injected environment passphrase is present", async () => {
+		await withProject(async (cwd) => {
+			const runtime = createDefaultYardRuntime();
+			// SAFETY: this runtime's concrete event store is closed after the test.
+			openStores.push(runtime.store as RuntimeLocalEventStore);
+			const env = {
+				HOBO_PULUMI_LIVE: "1",
+				HOBO_PULUMI_BIN: "definitely-not-pulumi-xyz",
+				HOBO_PULUMI_WORKDIR: path.join(cwd, "retained-pulumi"),
+				PULUMI_CONFIG_PASSPHRASE: "untrusted-env-passphrase",
+			};
+			const adapter = selectPulumiEstateAdapter({ store: runtime.store, env });
+			expect(() => adapter?.snapshotState?.()).toThrow(/passphrase/iu);
+			const result = await createDriftCommand({ runtime, env }).run(
+				runInput(cwd),
+			);
+			expect(result).toMatchObject({
+				ok: false,
+				code: "HOBO_PULUMI_UNAVAILABLE",
+				data: { engineCode: "pulumi-state-passphrase-missing" },
+			});
+			expect(env.PULUMI_CONFIG_PASSPHRASE).toBe("untrusted-env-passphrase");
+		});
+	});
+
+	it("uses the stored state key even when an injected environment includes a different passphrase", async () => {
+		await withProject(async (cwd) => {
+			const pulumi = path.join(cwd, "pulumi-fixture");
+			await writeFile(
+				pulumi,
+				'#!/bin/sh\n[ "$PULUMI_CONFIG_PASSPHRASE" = "owner-store-key" ]\n',
+				{ mode: 0o700 },
+			);
+			const runtime = createDefaultYardRuntime();
+			// SAFETY: this runtime's concrete event store is closed after the test.
+			openStores.push(runtime.store as RuntimeLocalEventStore);
+			const env = {
+				HOBO_PULUMI_LIVE: "1",
+				HOBO_PULUMI_BIN: pulumi,
+				HOBO_PULUMI_WORKDIR: path.join(cwd, "retained-pulumi"),
+				PULUMI_CONFIG_PASSPHRASE: "untrusted-env-passphrase",
+			};
+			ownerKeys.put(PULUMI_STATE_KEY, "owner-store-key");
+			try {
+				const adapter = selectPulumiEstateAdapter({
+					store: runtime.store,
+					env,
+				});
+				expect(adapter?.snapshotState?.()).toEqual({});
+				expect(env.PULUMI_CONFIG_PASSPHRASE).toBe("untrusted-env-passphrase");
+			} finally {
+				ownerKeys.drop(PULUMI_STATE_KEY);
+			}
 		});
 	});
 

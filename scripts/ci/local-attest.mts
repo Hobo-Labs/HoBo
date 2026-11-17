@@ -9,6 +9,8 @@
  *                      [--skip-job=ID]... [--no-fetch] [--fresh]
  *   pnpm ci:attest publish [--remote=origin] [--file=PATH]
  *   pnpm ci:attest verify [--base=origin/main] [--event=pull_request] [--file=PATH]
+ *   pnpm ci:attest signoff [--base=origin/main] [--event=pull_request] [--file=PATH]
+ *   pnpm ci:attest fleet [--local-signoff] [--github-unavailable] [--policy-current] [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]... [--base=origin/main] [--fresh]
  *
  * `run` executes what `attested-jobs.json` describes: the same commands, in
  * the same order, under the same conditions as the workflow jobs, once for
@@ -21,26 +23,26 @@
  */
 import { execFileSync, type SpawnOptions, spawn } from "node:child_process";
 import {
-	createHash,
 	createPrivateKey,
 	createPublicKey,
 	generateKeyPairSync,
 	type KeyObject,
 } from "node:crypto";
 import {
-	chmodSync,
 	createWriteStream,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import {
 	ATTESTATION_BRANCH,
 	ATTESTATION_EVENTS,
@@ -52,9 +54,9 @@ import {
 	type AttestationTools,
 	type AttestationVerdict,
 	type AttestedJobResult,
+	asObject,
 	attestationPath,
 	type CoveredJob,
-	canonicalJson,
 	GATE_JOBS,
 	isObjectId,
 	keyIdOf,
@@ -73,10 +75,14 @@ import {
 	ExpressionError,
 	type ExprValue,
 	evaluateExpression,
+	expressionsOf,
 	loadPlan,
 	type PlannedJob,
+	parsePlan,
 	substituteExpressions,
 } from "./attested-jobs.mts";
+
+import { trustedGithubTarget } from "./github-target.mts";
 
 export const DEFAULT_KEY_PATH = join(
 	homedir(),
@@ -101,6 +107,15 @@ export function keyPathFrom(env: NodeJS.ProcessEnv): string {
  * 0700 and the file 0600; an existing key that others can read is refused.
  */
 export function ensureAttestorKey(path: string) {
+	const directory = dirname(path);
+	mkdirSync(directory, { recursive: true, mode: 0o700 });
+	if (
+		!statSync(directory).isDirectory() ||
+		(statSync(directory).mode & 0o077) !== 0
+	)
+		throw new AttestError(
+			`${directory} is not a private directory; choose one with mode 0700`,
+		);
 	if (existsSync(path)) {
 		if ((statSync(path).mode & 0o077) !== 0)
 			throw new AttestError(
@@ -111,9 +126,6 @@ export function ensureAttestorKey(path: string) {
 			created: false,
 		};
 	}
-	const directory = dirname(path);
-	mkdirSync(directory, { recursive: true, mode: 0o700 });
-	chmodSync(directory, 0o700);
 	const { privateKey } = generateKeyPairSync("ed25519");
 	writeFileSync(
 		path,
@@ -145,6 +157,7 @@ export type StepValues = Record<string, string>;
 type GitOptions = Readonly<{
 	env?: NodeJS.ProcessEnv;
 	input?: string;
+	timeoutMs?: number;
 }>;
 
 /**
@@ -187,6 +200,7 @@ export function git(
 		input: options.input,
 		stdio: ["pipe", "pipe", "pipe"],
 		maxBuffer: 64 * 1024 * 1024,
+		timeout: options.timeoutMs,
 	}).trim();
 }
 
@@ -745,8 +759,26 @@ export function assertKeyApart(
 	root: string,
 	machine: NodeJS.ProcessEnv,
 ): void {
-	const inside = (directory: string) =>
-		!relative(resolve(directory), resolve(keyPath)).startsWith("..");
+	// Resolve existing symlinks even when the key or a parent directory has not
+	// been created yet. A lexical prefix alone misses a link into the checkout.
+	const physical = (path: string): string => {
+		const absolute = resolve(path);
+		let existing = absolute;
+		while (!existsSync(existing)) {
+			const parent = dirname(existing);
+			if (parent === existing) break;
+			existing = parent;
+		}
+		return resolve(realpathSync(existing), relative(existing, absolute));
+	};
+	const key = physical(keyPath);
+	const inside = (directory: string) => {
+		const from = relative(physical(directory), key);
+		return (
+			from === "" ||
+			(!isAbsolute(from) && from !== ".." && !from.startsWith(`..${sep}`))
+		);
+	};
 	const shared = Object.values(
 		toolDirectories(machine, machine.HOME || homedir()),
 	);
@@ -853,6 +885,7 @@ type JobRun = {
 	commands: number;
 	durationMs: number;
 	events: AttestationEvent[];
+	eventChecks: Partial<Record<AttestationEvent, number>>;
 	uncovered?: string;
 };
 
@@ -899,6 +932,9 @@ export async function runAttestedJobs(input: {
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-attest-run-"));
 	const outputDirectory = join(root, OUTPUT_DIRECTORY, target.tree);
 	mkdirSync(outputDirectory, { recursive: true });
+	const file = join(root, OUTPUT_DIRECTORY, `${target.tree}.json`);
+	// A failed retry must not leave an older success available for signoff.
+	rmSync(file, { force: true });
 	// What a step starts from: an allowlist of this machine's variables and a
 	// home directory of its own, with nothing of the signer's in it.
 	const home = join(scratch, "home");
@@ -918,7 +954,12 @@ export async function runAttestedJobs(input: {
 	const runs = new Map<CoveredJob, JobRun>();
 	const logs = new Map<CoveredJob, string>();
 	for (const job of plan) {
-		runs.set(job.id, { commands: 0, durationMs: 0, events: [] });
+		runs.set(job.id, {
+			commands: 0,
+			durationMs: 0,
+			events: [],
+			eventChecks: {},
+		});
 		const log = join(outputDirectory, `${job.id}.log`);
 		writeFileSync(log, "");
 		logs.set(job.id, log);
@@ -946,9 +987,8 @@ export async function runAttestedJobs(input: {
 	process.once("SIGINT", onSignal);
 	process.once("SIGTERM", onSignal);
 	try {
+		let invocation = 0;
 		for (const event of events) {
-			/** Steps that already passed for this event, by what they run; their outputs. */
-			const passed = new Map<string, Record<string, string>>();
 			const jobResults = new Map<string, "success" | "skipped">();
 			const jobOutputs = new Map<string, Record<string, string>>();
 			for (const job of plan) {
@@ -983,6 +1023,10 @@ export async function runAttestedJobs(input: {
 							jobContext(new Map(), {}, undefined),
 						)
 					: null;
+				if (job.matrix && !Array.isArray(shardValues))
+					throw new AttestError(
+						`the matrix for ${job.id} is not an array; nothing was signed`,
+					);
 				const shards = Array.isArray(shardValues)
 					? shardValues.map((value: ExprValue, index: number) => ({
 							index,
@@ -991,8 +1035,25 @@ export async function runAttestedJobs(input: {
 						}))
 					: [undefined];
 				const began = Date.now();
+				let coveredChecks = 0;
+				let emptyShard = shards.length === 0;
 				let lastSteps = new Map<string, Record<string, string>>();
+				const markUncovered = (
+					stepId: string | undefined,
+					outputs: Record<string, string>,
+				) => {
+					const uncovered = job.uncoveredWhen;
+					if (
+						!uncovered ||
+						stepId !== uncovered.step ||
+						(outputs[uncovered.output] ?? "") === ""
+					)
+						return false;
+					run.uncovered = `${uncovered.reason} (${uncovered.output}: ${outputs[uncovered.output]})`;
+					return true;
+				};
 				for (const shard of shards) {
+					const checksBeforeShard = coveredChecks;
 					const steps = new Map<string, Record<string, string>>();
 					lastSteps = steps;
 					/** What earlier steps of this job wrote to GITHUB_ENV. */
@@ -1020,25 +1081,14 @@ export async function runAttestedJobs(input: {
 						const lookup = jobContext(steps, declared, shard);
 						if (!conditionHolds(step.if, lookup)) continue;
 						const script = substituteExpressions(step.run, lookup);
-						const key = createHash("sha256")
-							.update(canonicalJson([step.shell ?? "", script, declared]))
-							.digest("hex");
+						const key = invocation++;
 						const heading = `\n=== ${job.id} [${event}${shard ? ` shard ${shard.index + 1}/${shard.total}` : ""}] ${label} ===\n`;
-						const earlier = passed.get(key);
 						const sink = createWriteStream(log, { flags: "a" });
 						const write = (text: string) => {
 							sink.write(text);
 							process.stdout.write(text);
 						};
 						write(heading);
-						if (earlier) {
-							write(
-								"(the same command with the same inputs already passed in this run)\n",
-							);
-							if (step.id) steps.set(step.id, earlier);
-							await new Promise((done) => sink.end(done));
-							continue;
-						}
 						const outputFile = join(scratch, `output-${key}`);
 						const envFile = join(scratch, `env-${key}`);
 						const scriptFile = join(scratch, `step-${key}.sh`);
@@ -1070,6 +1120,7 @@ export async function runAttestedJobs(input: {
 							(chunk) => sink.write(chunk),
 						);
 						run.commands += 1;
+						coveredChecks += 1;
 						if (code !== 0 && !step.continueOnError) {
 							write(`\n${label}: exit ${code}\n`);
 							await new Promise((done) => sink.end(done));
@@ -1081,23 +1132,13 @@ export async function runAttestedJobs(input: {
 							);
 						await new Promise((done) => sink.end(done));
 						const outputs = parseCommandFile(readFileSync(outputFile, "utf8"));
-						Object.assign(
-							exported,
-							parseCommandFile(readFileSync(envFile, "utf8")),
-						);
+						const environment = parseCommandFile(readFileSync(envFile, "utf8"));
+						Object.assign(exported, environment);
 						if (step.id) steps.set(step.id, outputs);
-						if (code === 0) passed.set(key, outputs);
-						const uncovered = job.uncoveredWhen;
-						if (
-							uncovered &&
-							step.id === uncovered.step &&
-							(outputs[uncovered.output] ?? "") !== ""
-						) {
-							run.uncovered = `${uncovered.reason} (${uncovered.output}: ${outputs[uncovered.output]})`;
-							break;
-						}
+						if (markUncovered(step.id, outputs)) break;
 					}
 					if (run.uncovered) break;
+					if (coveredChecks === checksBeforeShard) emptyShard = true;
 				}
 				run.durationMs += Date.now() - began;
 				if (run.uncovered) {
@@ -1105,7 +1146,12 @@ export async function runAttestedJobs(input: {
 					jobResults.set(job.id, "skipped");
 					continue;
 				}
+				if (coveredChecks === 0 || emptyShard) {
+					jobResults.set(job.id, "skipped");
+					continue;
+				}
 				run.events.push(event);
+				run.eventChecks[event] = coveredChecks;
 				jobResults.set(job.id, "success");
 				const lookup = jobContext(lastSteps, {}, undefined);
 				jobOutputs.set(
@@ -1149,7 +1195,8 @@ export async function runAttestedJobs(input: {
 		const log = logs.get(job.id);
 		if (!run || !log || run.uncovered || leftOut.has(job.id)) continue;
 		if (run.events.length === 0) {
-			notAttested[job.id] = "it does not run on the events asked for";
+			notAttested[job.id] =
+				"it does not run on the events asked for, or a shard ran no executable command";
 			continue;
 		}
 		results.push({
@@ -1157,6 +1204,8 @@ export async function runAttestedJobs(input: {
 			status: "passed",
 			events: run.events,
 			commands: run.commands,
+			eventChecks: run.eventChecks,
+			executionMode: "each-step-v1",
 			durationMs: run.durationMs,
 			logDigest: sha256Digest(readFileSync(log)),
 		});
@@ -1186,7 +1235,6 @@ export async function runAttestedJobs(input: {
 		results,
 	};
 	const envelope = signStatement(statement, input.privateKey);
-	const file = join(root, OUTPUT_DIRECTORY, `${target.tree}.json`);
 	writeFileSync(file, `${JSON.stringify(envelope, null, "\t")}\n`);
 	return { envelope, file, notAttested, leftBehind };
 }
@@ -1225,6 +1273,358 @@ export function verifyLocally(input: {
 	});
 }
 
+// These are the repository files read or invoked by the omitted composite
+// actions. Adding another skipped action, or changing an action's dependencies,
+// requires reviewing and updating this list on the trusted base first.
+const HOSTED_TOOLCHAIN_DEPENDENCIES = [
+	".github/actions/ci-runner-preflight",
+	"scripts/lib/mise-path.sh",
+	"mise.toml",
+	"mise.lock",
+	"packages/ci-gh-actions/deploy/ci-runner",
+] as const;
+const SKIPPED_ACTION_DEPENDENCIES = {
+	"ci-runner-preflight": [
+		...HOSTED_TOOLCHAIN_DEPENDENCIES,
+		"scripts/ci-runner-preflight.mts",
+		"scripts/lib/ci-runner-contract.mts",
+		"scripts/ci/memory-env.mts",
+		"scripts/ci/data-live-servers.mts",
+		"packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts",
+		".mise/locks/turbo",
+	],
+	"hobo-checkout": [
+		...HOSTED_TOOLCHAIN_DEPENDENCIES,
+		".github/actions/hobo-checkout",
+		".gitmodules",
+	],
+	"hobo-repo-checkout": [
+		...HOSTED_TOOLCHAIN_DEPENDENCIES,
+		".github/actions/hobo-repo-checkout",
+		".github/actions/hobo-checkout",
+		".gitmodules",
+	],
+	"pnpm-store": [".github/actions/pnpm-store", "pnpm-lock.yaml"],
+	"turbo-cache": [
+		".github/actions/turbo-cache",
+		".hobo/ci.json",
+		"pnpm-lock.yaml",
+		"mise.lock",
+	],
+	"ci-trace": [".github/actions/ci-trace", "scripts/ci/ci-trace.mts"],
+} satisfies Readonly<Record<string, readonly string[]>>;
+
+function hasUnknownSignoffInputs(job: PlannedJob): boolean {
+	// Omitted steps do not receive these values locally. Job-level
+	// expressions and every executed step are still checked below.
+	const steps = job.steps.filter((step) => step.local === "run");
+	return expressionsOf({ ...job, steps }).some((expression) =>
+		/(?:\b(?:vars|secrets)\.|\bgithub\.event\.pull_request\.number\b)/iu.test(
+			expression,
+		),
+	);
+}
+
+/** A PR cannot authorize new local skips or change what an omitted action does. */
+async function assertSignoffPolicy(input: {
+	root: string;
+	base: string;
+	head: string;
+	plan: readonly PlannedJob[];
+	jobs: readonly string[];
+}): Promise<void> {
+	let trustedPlan: PlannedJob[];
+	let workflowDocument: typeof import("../lib/workflow-job-steps.mts").workflowDocument;
+	try {
+		trustedPlan = parsePlan(
+			git(input.root, ["show", `${input.base}:scripts/ci/attested-jobs.json`]),
+		);
+		({ workflowDocument } = await import("../lib/workflow-job-steps.mts"));
+	} catch {
+		throw new AttestError(
+			"the base has no usable local job policy; signoff refused",
+		);
+	}
+	for (const id of input.jobs) {
+		const described = input.plan.find((job) => job.id === id);
+		const trusted = trustedPlan.find((job) => job.id === id);
+		if (!described || !trusted || !isDeepStrictEqual(described, trusted))
+			throw new AttestError(
+				`local job policy for ${id} differs from the base; signoff refused`,
+			);
+		if (hasUnknownSignoffInputs(described))
+			throw new AttestError(
+				`local job ${id} uses GitHub values unavailable locally; signoff refused`,
+			);
+		try {
+			const scope = (text: string) => {
+				const document = workflowDocument(text);
+				const job = asObject(asObject(document.jobs)?.[id]);
+				if (!job) throw new Error("workflow job missing");
+				const { jobs: _jobs, ...workflow } = document;
+				return { workflow, job };
+			};
+			const base = scope(
+				git(input.root, ["show", `${input.base}:${described.workflow}`]),
+			);
+			const head = scope(
+				git(input.root, ["show", `${input.head}:${described.workflow}`]),
+			);
+			if (!isDeepStrictEqual(base, head)) throw new Error("workflow changed");
+		} catch {
+			throw new AttestError(
+				`the workflow job or workflow settings for ${id} changed from the base; signoff refused`,
+			);
+		}
+		for (const step of described.steps) {
+			if (step.local !== "skip" || !step.uses) continue;
+			const local = /^(?:\$\/|\.\/)(\.github\/actions\/[^/]+)$/u.exec(
+				step.uses,
+			);
+			if ((step.uses.startsWith("$/") || step.uses.startsWith("./")) && !local)
+				throw new AttestError(
+					`unrecognized local action in ${id}; signoff refused`,
+				);
+			if (!local) continue;
+			const action = local[1] ?? "";
+			const name = action.slice(".github/actions/".length);
+			const dependencies = Object.entries(SKIPPED_ACTION_DEPENDENCIES).find(
+				([actionName]) => actionName === name,
+			)?.[1];
+			if (!dependencies)
+				throw new AttestError(
+					`unknown skipped local action in ${id}; signoff refused`,
+				);
+			if (
+				!gitSucceeds(input.root, [
+					"cat-file",
+					"-e",
+					`${input.base}:${action}`,
+				]) ||
+				!gitSucceeds(input.root, [
+					"diff",
+					"--quiet",
+					input.base,
+					input.head,
+					"--",
+					...dependencies,
+				])
+			)
+				throw new AttestError(
+					`a skipped local action or its dependencies in ${id} changed from the base; signoff refused`,
+				);
+		}
+	}
+}
+
+/** Pin every status write to the same repository whose live base was tested. */
+function signoffEnvironment(input: {
+	root: string;
+	remote: string;
+	branch: string;
+	base: string;
+	env: NodeJS.ProcessEnv;
+}): NodeJS.ProcessEnv {
+	const environment = { ...input.env };
+	for (const name of GIT_LOCATION_VARIABLES) delete environment[name];
+	try {
+		const target = trustedGithubTarget({
+			cwd: input.root,
+			remoteUrl: git(input.root, ["remote", "get-url", input.remote]),
+			env: environment,
+			timeoutMs: 10_000,
+		});
+		const liveBase = execFileSync(
+			"gh",
+			[
+				"api",
+				`repos/{owner}/{repo}/branches/${encodeURIComponent(input.branch)}`,
+				"--jq",
+				".commit.sha",
+			],
+			{
+				cwd: input.root,
+				env: target.environment,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 10_000,
+				maxBuffer: 1024 * 1024,
+			},
+		).trim();
+		if (liveBase !== input.base) throw new Error("GitHub base changed");
+		return target.environment;
+	} catch {
+		throw new AttestError(
+			"could not verify that the GitHub target and live base match the tested remote; signoff refused",
+		);
+	}
+}
+
+/** Publish only the jobs this machine's signed record covers for one event. */
+export async function signoffLocalRun(input: {
+	cwd: string;
+	baseRef: string;
+	expectedBase?: string | undefined;
+	event: AttestationEvent;
+	envelopeText: string;
+	privateKey: KeyObject;
+	nowMs: number;
+	env?: NodeJS.ProcessEnv;
+}): Promise<readonly string[]> {
+	const root = git(input.cwd, ["rev-parse", "--show-toplevel"]);
+	if (git(root, ["status", "--porcelain"]))
+		throw new AttestError("the working tree is not clean; signoff refused");
+
+	// A commit status is attached to HEAD, so require the actual remote base
+	// still to be the one tested. ls-remote reads it without moving local refs.
+	const remoteBranch = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+)$/u.exec(
+		input.baseRef,
+	);
+	if (!remoteBranch)
+		throw new AttestError(
+			"--base must name a remote branch, such as origin/main",
+		);
+	const [, remote = "", branch = ""] = remoteBranch;
+	const ref = `refs/heads/${branch}`;
+	if (
+		!gitSucceeds(root, ["remote", "get-url", remote]) ||
+		!gitSucceeds(root, ["check-ref-format", ref])
+	)
+		throw new AttestError(
+			`--base=${input.baseRef} is not a valid remote branch`,
+		);
+	let remoteTip: string;
+	try {
+		const answer = git(
+			root,
+			["ls-remote", "--exit-code", "--heads", remote, ref],
+			{
+				env: {
+					GIT_TERMINAL_PROMPT: "0",
+					GIT_ASKPASS: "",
+					SSH_ASKPASS_REQUIRE: "never",
+					GCM_INTERACTIVE: "Never",
+				},
+				timeoutMs: 10_000,
+			},
+		);
+		const [sha, advertisedRef, extra] = answer.split(/\s+/u);
+		if (!sha || advertisedRef !== ref || extra !== undefined)
+			throw new Error("invalid remote branch advertisement");
+		remoteTip = sha;
+	} catch {
+		throw new AttestError(
+			`could not read ${input.baseRef} from its remote; signoff refused`,
+		);
+	}
+	const base = git(root, ["rev-parse", `${input.baseRef}^{commit}`]);
+	const head = git(root, ["rev-parse", "HEAD^{commit}"]);
+	if (input.expectedBase !== undefined && input.expectedBase !== base)
+		throw new AttestError("the fleet-observed base changed; signoff refused");
+	let envelope: AttestationEnvelope;
+	try {
+		envelope = parseEnvelope(input.envelopeText);
+	} catch {
+		throw new AttestError("the local record is malformed; signoff refused");
+	}
+	if (remoteTip !== base || envelope.statement.base !== base)
+		throw new AttestError(
+			`the base ${input.baseRef} changed since this run; update it and run the checks again`,
+		);
+	if (envelope.statement.head !== head)
+		throw new AttestError(
+			"the record is for a different HEAD; run the checks again",
+		);
+
+	// This is a local, GitHub-credential-backed signoff, not a workflow's
+	// base-branch trust decision. Verify with the key belonging to this machine.
+	const localKey = trustEntryFor(input.privateKey, {
+		nowMs: input.nowMs,
+		days: 1,
+		note: "local signoff",
+	});
+	const verdict = verifyAttestation({
+		envelopeText: input.envelopeText,
+		attestorsText: JSON.stringify([localKey]),
+		tree: git(root, ["rev-parse", "HEAD^{tree}"]),
+		baseTree: git(root, ["rev-parse", `${input.baseRef}^{tree}`]),
+		event: input.event,
+		nowMs: input.nowMs,
+		head,
+		base,
+	});
+	if (!verdict.attested)
+		throw new AttestError(`signoff refused: ${verdict.reason}`);
+	for (const id of verdict.jobs) {
+		const result = envelope.statement.results.find((entry) => entry.id === id);
+		if (!result?.eventChecks?.[input.event])
+			throw new AttestError(
+				`the record has no per-event command evidence for ${id}; run the checks again`,
+			);
+		if (result.executionMode !== "each-step-v1")
+			throw new AttestError(
+				`the record does not prove each step ran individually for ${id}; run the checks again`,
+			);
+	}
+	// Partial runs may omit the PR gate that normally runs the drift test.
+	// Independently compare every job we are about to sign with its workflow.
+	try {
+		const { workflowJob } = await import("../lib/workflow-job-steps.mts");
+		const plan = loadPlan(join(root, "scripts/ci/attested-jobs.json"));
+		await assertSignoffPolicy({ root, base, head, plan, jobs: verdict.jobs });
+		for (const id of verdict.jobs) {
+			const job = plan.find((entry) => entry.id === id);
+			if (!job) throw new AttestError(`no local job description for ${id}`);
+			const { id: _id, workflow, uncoveredWhen: _when, ...described } = job;
+			const actual = workflowJob(
+				readFileSync(join(root, workflow), "utf8"),
+				id,
+			);
+			if (
+				!isDeepStrictEqual(
+					{
+						...described,
+						steps: job.steps.map(
+							({ local: _local, reason: _reason, ...step }) => step,
+						),
+					},
+					actual,
+				)
+			)
+				throw new AttestError(
+					`workflow job ${id} differs from its local description`,
+				);
+		}
+	} catch (cause) {
+		if (cause instanceof AttestError) throw cause;
+		throw new AttestError(
+			"could not verify local job descriptions against the workflows",
+		);
+	}
+	const contexts = verdict.jobs.map(
+		(job) => `hobo-ci/local/${input.event}/${job}`,
+	);
+	const environment = signoffEnvironment({
+		root,
+		remote,
+		branch,
+		base,
+		env: input.env ?? process.env,
+	});
+	try {
+		execFileSync("gh", ["signoff", "create", "--commit", head, ...contexts], {
+			cwd: root,
+			env: environment,
+			stdio: "inherit",
+		});
+	} catch {
+		throw new AttestError(
+			"gh-signoff failed; check gh authentication, extension installation, and that HEAD is pushed. Some statuses may already have been posted",
+		);
+	}
+	return contexts;
+}
+
 function option(args: readonly string[], name: string): string | undefined {
 	const prefix = `--${name}=`;
 	return args.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
@@ -1249,6 +1649,20 @@ const USAGE = `usage: pnpm ci:attest <command>
       Push the signed attestation to the ${ATTESTATION_BRANCH} branch.
   verify [--base=origin/main] [--event=pull_request] [--file=PATH]
       Check an attestation the way the workflows do.
+  signoff [--base=origin/main] [--event=pull_request] [--file=PATH]
+      Post gh-signoff statuses for this machine's covered local jobs on HEAD.
+  fleet [--local-signoff] [--github-unavailable] [--policy-current]
+        [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]...
+        [--base=origin/main] [--fresh]
+      Select from fleet availability; opt in to local signoff as a fallback.
+      --policy-current asserts, after comparison, that live offers, desired policy and
+      daemon routing match the base.
+      --github-unavailable asserts an independently observed hosted outage.
+      --runner-unavailable asserts an independently observed outage of one enabled tier.
+      --provider-unavailable asserts an independently observed outage of one exact enabled
+      provider, integration or external-pool ID from the base. Repeat for each outage.
+      A healthy pickup or pin still wins. Invalid syntax and duplicate assertions are
+      rejected before routing, including when a pin is configured.
 
 The key is read from HOBO_CI_ATTESTOR_KEY, or ${DEFAULT_KEY_PATH}.`;
 
@@ -1271,12 +1685,17 @@ export async function main(
 	const [command, ...rest] = args[0] === "--" ? args.slice(1) : args;
 	const cwd = process.cwd();
 	if (command === "init-key") {
-		const { privateKey } = ensureAttestorKey(keyPathFrom(env));
+		const path = keyPathFrom(env);
+		const root = gitSucceeds(cwd, ["rev-parse", "--show-toplevel"])
+			? git(cwd, ["rev-parse", "--show-toplevel"])
+			: cwd;
+		assertKeyApart(path, root, env);
 		const days = Number(option(rest, "days") ?? DEFAULT_TRUST_DAYS);
 		if (!Number.isFinite(days) || days <= 0 || days > MAX_TRUST_DAYS)
 			throw new AttestError(
 				`--days must be a positive number of at most ${MAX_TRUST_DAYS}`,
 			);
+		const { privateKey } = ensureAttestorKey(path);
 		console.log(
 			JSON.stringify(
 				trustEntryFor(privateKey, {
@@ -1320,14 +1739,20 @@ export async function main(
 				if (!event) throw new AttestError(`unknown event: ${name}`);
 				return event;
 			});
-		const plan = loadPlan();
+		const target = resolveRunTarget({ cwd: root, baseRef });
+		const expectedBase = option(rest, "expected-base");
+		if (expectedBase !== undefined && expectedBase !== target.base)
+			throw new AttestError(
+				"the fleet-observed base changed; local signoff refused",
+			);
+		const plan = loadPlan(join(root, "scripts/ci/attested-jobs.json"));
 		const skipJobs = options(rest, "skip-job");
 		for (const id of skipJobs)
 			if (!plan.some((job) => job.id === id))
 				throw new AttestError(`--skip-job=${id} is not a covered job`);
-		const { privateKey } = ensureAttestorKey(keyPathFrom(env));
-		assertKeyApart(keyPathFrom(env), root, env);
-		const target = resolveRunTarget({ cwd: root, baseRef });
+		const path = keyPathFrom(env);
+		assertKeyApart(path, root, env);
+		const { privateKey } = ensureAttestorKey(path);
 		const began = Date.now();
 		try {
 			const outcome = await runAttestedJobs({
@@ -1350,7 +1775,7 @@ export async function main(
 					`  the commands left untracked files; remove them before the next run:\n${outcome.leftBehind.map((line) => `    ${line}`).join("\n")}`,
 				);
 			console.log(
-				"Publish it before you push the branch: pnpm ci:attest publish",
+				"For workflow reuse: pnpm ci:attest publish before pushing. For local GitHub statuses: push, then pnpm ci:attest signoff",
 			);
 			return 0;
 		} catch (cause) {
@@ -1397,6 +1822,183 @@ export async function main(
 				: `not attested: ${verdict.reason}`,
 		);
 		return verdict.attested ? 0 : 1;
+	}
+	if (command === "signoff") {
+		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
+		const file = attestationFile(root, rest);
+		if (!existsSync(file))
+			throw new AttestError(
+				`no local record at ${file}; run: pnpm ci:attest run`,
+			);
+		const name = option(rest, "event") ?? "pull_request";
+		const event = ATTESTATION_EVENTS.find((known) => known === name);
+		if (!event) throw new AttestError(`unknown event: ${name}`);
+		const path = keyPathFrom(env);
+		if (!existsSync(path))
+			throw new AttestError(
+				"this machine's attestor key is missing; run the checks again",
+			);
+		assertKeyApart(path, root, env);
+		const { privateKey } = ensureAttestorKey(path);
+		const contexts = await signoffLocalRun({
+			cwd: root,
+			baseRef: option(rest, "base") ?? "origin/main",
+			expectedBase: option(rest, "expected-base"),
+			event,
+			envelopeText: readFileSync(file, "utf8"),
+			privateKey,
+			nowMs: Date.now(),
+			env,
+		});
+		console.log(
+			`ci:attest: posted ${contexts.length} local signoff status(es)`,
+		);
+		return 0;
+	}
+	if (command === "fleet") {
+		for (const arg of rest)
+			if (
+				!arg.startsWith("--base=") &&
+				!arg.startsWith("--provider-unavailable=") &&
+				!arg.startsWith("--runner-unavailable=") &&
+				arg !== "--local-signoff" &&
+				arg !== "--github-unavailable" &&
+				arg !== "--policy-current" &&
+				arg !== "--fresh"
+			)
+				throw new AttestError(`unknown fleet option: ${arg}`);
+		const providerUnavailable = options(rest, "provider-unavailable");
+		if (new Set(providerUnavailable).size !== providerUnavailable.length)
+			throw new AttestError("--provider-unavailable IDs must not be repeated");
+		if (providerUnavailable.length > 4096)
+			throw new AttestError("--provider-unavailable supports at most 4096 IDs");
+		if (
+			providerUnavailable.some(
+				(id) =>
+					id.length > 240 ||
+					!/^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)+$/u.test(id),
+			)
+		)
+			throw new AttestError(
+				"--provider-unavailable requires an enabled inventory ID",
+			);
+		const runnerUnavailable = options(rest, "runner-unavailable");
+		if (new Set(runnerUnavailable).size !== runnerUnavailable.length)
+			throw new AttestError("--runner-unavailable tiers must not be repeated");
+		if (runnerUnavailable.some((tier) => tier !== "fleet" && tier !== "local"))
+			throw new AttestError("--runner-unavailable requires fleet or local");
+		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
+		const { executeFleetVerification, observeFleetVerification } = await import(
+			"./fleet-signoff.mts"
+		);
+		const observation = {
+			cwd: root,
+			env,
+			localSignoffEnabled: rest.includes("--local-signoff"),
+			githubUnavailable: rest.includes("--github-unavailable"),
+			baseRef: option(rest, "base") ?? "origin/main",
+			policyCurrent: rest.includes("--policy-current"),
+			providerUnavailable,
+			runnerUnavailable,
+		};
+		const choice: Awaited<ReturnType<typeof observeFleetVerification>> & {
+			baseSha?: string;
+		} = await observeFleetVerification(observation);
+		if (choice.kind === "invalid-provider-assertion")
+			throw new AttestError(
+				`--provider-unavailable=${choice.provider} does not name one enabled inventory member in the trusted base`,
+			);
+		if (choice.kind === "invalid-runner-assertion")
+			throw new AttestError(
+				`--runner-unavailable=${choice.runner} does not name an enabled runner tier in the trusted base`,
+			);
+		if (choice.kind === "runner") {
+			console.log(
+				`ci:attest fleet: ${choice.tier} runner ${choice.runner}; the workflow routes its jobs normally`,
+			);
+			return 0;
+		}
+		if (choice.kind === "wait") {
+			console.log(
+				`ci:attest fleet: waiting (${choice.reason}); no local signoff was started`,
+			);
+			return 1;
+		}
+		const expectedBase = choice.baseSha;
+		if (!expectedBase || !isObjectId(expectedBase))
+			throw new AttestError(
+				"the fleet observation has no trusted base; local signoff refused",
+			);
+		if (!gitSucceeds(root, ["config", "--get", "user.name"]))
+			throw new AttestError("set git user.name before starting local signoff");
+		const ghEnvironment = { ...env };
+		for (const name of GIT_LOCATION_VARIABLES) delete ghEnvironment[name];
+		try {
+			const help = execFileSync("gh", ["signoff", "--help"], {
+				cwd: root,
+				env: ghEnvironment,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 5000,
+			});
+			if (!help.includes("--commit")) throw new Error("missing --commit");
+		} catch {
+			throw new AttestError(
+				"install or upgrade basecamp/gh-signoff before starting local checks",
+			);
+		}
+		console.log(
+			"ci:attest fleet: no runner tier is available in the current observations; running the local signoff fallback",
+		);
+		const base = option(rest, "base") ?? "origin/main";
+		// Check signoff policy before running potentially expensive local jobs.
+		// Ordinary `run` and workflow-reuse attestations keep their existing rules.
+		const target = resolveRunTarget({ cwd: root, baseRef: base });
+		if (target.base !== expectedBase)
+			throw new AttestError(
+				"the fleet-observed base changed; local signoff refused",
+			);
+		const plan = loadPlan(join(root, "scripts/ci/attested-jobs.json"));
+		const omitted: string[] = [];
+		for (const job of plan) {
+			try {
+				await assertSignoffPolicy({
+					root,
+					base: target.base,
+					head: target.head,
+					plan,
+					jobs: [job.id],
+				});
+			} catch (cause) {
+				if (!(cause instanceof AttestError)) throw cause;
+				omitted.push(job.id);
+				console.log(`ci:attest fleet: ${job.id} not signed: ${cause.message}`);
+			}
+		}
+		if (omitted.length === plan.length)
+			throw new AttestError(
+				"no local job has a trusted signoff policy at the base",
+			);
+		return executeFleetVerification({
+			choice,
+			runLocal: () =>
+				main(
+					[
+						"run",
+						`--base=${base}`,
+						`--expected-base=${expectedBase}`,
+						"--events=pull_request",
+						...omitted.map((id) => `--skip-job=${id}`),
+						...(rest.includes("--fresh") ? ["--fresh"] : []),
+					],
+					env,
+				),
+			signoffLocal: () =>
+				main(
+					["signoff", `--base=${base}`, `--expected-base=${expectedBase}`],
+					env,
+				),
+		});
 	}
 	console.error(USAGE);
 	return command === undefined || command === "--help" ? 0 : 2;

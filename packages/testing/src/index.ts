@@ -15,11 +15,16 @@ export {
 	runChaosConformance,
 } from "./chaos-conformance.js";
 export {
+	createDataEmulator,
 	createQueueEmulator,
+	createScheduleEmulator,
+	createSecretEmulator,
 	createTopicEmulator,
+	type DataEmulator,
 	type EmulatorContext,
 	type EmulatorFactory,
 	type QueueEmulator,
+	type ScheduleEmulator,
 	type ServiceEmulator,
 	type ServiceEmulatorFactories,
 } from "./emulators.js";
