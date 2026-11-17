@@ -129,6 +129,26 @@ The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-rout
 
 Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. The abstract proof does not establish that the TypeScript implementation refines it.
 
+The ordering model checks 48 bounded states. It hides 16 same-state
+transitions; a separate expected counterexample shows why unversioned legacy
+ties can differ between hosts.
+
+```mermaid
+stateDiagram-v2
+  s0: New dispatch
+  s1: Legacy input
+  s2: Legacy decision recorded
+  s3: Ordering choice recorded
+  s4: Legacy decision replayed
+  s5: Same ordering replayed
+  [*] --> s0
+  [*] --> s1
+  s0 --> s3: select and record ordering
+  s1 --> s2: select and record ordering
+  s2 --> s4: replay on another host
+  s3 --> s5: replay on another host
+```
+
 The estimate-routing model checks 98 bounded states, with two providers and a
 shared estimate. Its projection hides 27 same-state transitions.
 
