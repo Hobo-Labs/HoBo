@@ -1,13 +1,19 @@
 import { TypeScriptGenerator } from '@asyncapi/modelina';
-import { execSync } from 'child_process';
+import { ESLint } from 'eslint';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as prettier from 'prettier';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const YAML_PATH = path.join(REPO_ROOT, 'core', 'asyncapi.yaml');
 const OUTPUT_PATH = path.join(REPO_ROOT, 'core', 'src', 'messages.ts');
 
 async function main(): Promise<void> {
+  const outputArg = process.argv.indexOf('--output');
+  const outputFile = outputArg < 0 ? OUTPUT_PATH : process.argv[outputArg + 1];
+  if (!outputFile || outputFile.startsWith('--')) {
+    throw new Error('--output requires a file path');
+  }
   if (!fs.existsSync(YAML_PATH)) {
     console.error(`[generate-messages] ${YAML_PATH} not found.`);
     process.exit(1);
@@ -50,25 +56,25 @@ async function main(): Promise<void> {
 
   const body = filtered.map((m) => exportify(m.result)).join('\n\n');
 
-  fs.writeFileSync(OUTPUT_PATH, body + '\n', 'utf-8');
-  console.log(`[generate-messages] wrote ${OUTPUT_PATH} (${filtered.length} models)`);
-
-  try {
-    execSync(`npx prettier --write ${quote(OUTPUT_PATH)}`, {
-      cwd: REPO_ROOT,
-      stdio: 'inherit',
-    });
-  } catch (err) {
-    console.error('[generate-messages] prettier failed:', err);
-    process.exit(1);
+  const formatted = await prettier.format(body + '\n', {
+    ...(await prettier.resolveConfig(OUTPUT_PATH)),
+    filepath: OUTPUT_PATH,
+  });
+  const [linted] = await new ESLint({ cwd: REPO_ROOT, fix: true }).lintText(formatted, {
+    filePath: OUTPUT_PATH,
+  });
+  if (linted.errorCount > 0) {
+    throw new Error(`generated messages have ${linted.errorCount} lint error(s)`);
   }
-  try {
-    execSync(`npx eslint --fix ${quote(path.relative(REPO_ROOT, OUTPUT_PATH))}`, {
-      cwd: REPO_ROOT,
-      stdio: 'inherit',
-    });
-  } catch (err) {
-    console.warn('[generate-messages] eslint --fix reported issues (non-fatal).');
+  const output = linted.output ?? formatted;
+  if (process.argv.includes('--check')) {
+    if (!fs.existsSync(outputFile) || fs.readFileSync(outputFile, 'utf-8') !== output) {
+      throw new Error('generated messages are stale; run npm run asyncapi:generate');
+    }
+    console.log(`[generate-messages] ${outputFile} is current (${filtered.length} models)`);
+  } else {
+    fs.writeFileSync(outputFile, output, 'utf-8');
+    console.log(`[generate-messages] wrote ${outputFile} (${filtered.length} models)`);
   }
 }
 
@@ -76,13 +82,6 @@ function exportify(decl: string): string {
   const trimmed = decl.trimStart();
   if (trimmed.startsWith('export ')) return decl;
   return `export ${trimmed}`;
-}
-
-function quote(s: string): string {
-  if (process.platform === 'win32') {
-    return `"${s.replace(/"/g, '\\"')}"`;
-  }
-  return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
 main().catch((err) => {
