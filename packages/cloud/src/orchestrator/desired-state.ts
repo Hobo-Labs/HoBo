@@ -144,6 +144,10 @@ export interface RecordedResource {
 		| "Destroyed";
 	/** Hash of the spec it was last provisioned from; absent on legacy facts. */
 	readonly specHash?: string;
+	/** True only when a provisioned fact recorded this hash itself. */
+	readonly specHashRecorded?: boolean;
+	/** A failed resource has an earlier provisioned baseline, even if hashless. */
+	readonly hasProvisionedBaseline?: boolean;
 	/** The last plan that declared it, from `deployment.Planned`. */
 	readonly plan?: ResourcePlan;
 	/** Provider that may own it, when established by a provisioning fact or plan. */
@@ -183,6 +187,7 @@ export function hasDestroyProvenance(
 	return (
 		previous !== undefined &&
 		previous.state !== "Destroyed" &&
+		previous.specHashRecorded === true &&
 		previous.specHash !== undefined &&
 		previous.specHash === desiredSpecHash(resource) &&
 		(previous.providerId === undefined ||
@@ -256,6 +261,7 @@ export function recordedResources(
 		const recorded: Omit<RecordedResource, "resourceId"> = {
 			state: "Provisioned",
 			...(specHash !== undefined ? { specHash } : undefined),
+			...(eventHash !== undefined ? { specHashRecorded: true } : undefined),
 			...(plan !== undefined ? { plan } : undefined),
 			...(providerId !== undefined ? { providerId } : undefined),
 		};
@@ -325,6 +331,9 @@ export function recordedResources(
 					state: "Provisioning",
 					...(previous?.specHash !== undefined
 						? { specHash: previous.specHash }
+						: undefined),
+					...(previous?.specHashRecorded === true
+						? { specHashRecorded: true }
 						: undefined),
 					...(plan !== undefined ? { plan } : undefined),
 					...(providerId !== undefined ? { providerId } : undefined),
@@ -400,6 +409,10 @@ export function recordedResources(
 		out.set(resourceId, {
 			resourceId,
 			...recorded,
+			...(recorded.state === "Failed" &&
+			stable.get(resourceId)?.state === "Provisioned"
+				? { hasProvisionedBaseline: true }
+				: undefined),
 		});
 	}
 	return out;

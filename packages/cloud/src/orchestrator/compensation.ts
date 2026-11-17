@@ -149,7 +149,9 @@ export async function runCompensation(
 					previous !== undefined &&
 					(previous.state === "Provisioned" ||
 						previous.state === "Destroying" ||
-						(previous.state === "Failed" && previous.specHash !== undefined)) &&
+						(previous.state === "Failed" &&
+							(previous.hasProvisionedBaseline === true ||
+								previous.specHash !== undefined))) &&
 					!hasDestroyProvenance(previous, resource)
 				);
 			})
@@ -185,7 +187,10 @@ export async function runCompensation(
 				resource.state === "Provisioned" ||
 				resource.state === "Provisioning" ||
 				resource.state === "Destroying" ||
-				(state.legacy && resource.state === "Failed"),
+				(resource.state === "Failed" &&
+					(state.legacy ||
+						resource.hasProvisionedBaseline === true ||
+						resource.specHash !== undefined)),
 		);
 		return {
 			status: unsettled ? "needs-human" : "rolled-back",
@@ -282,7 +287,9 @@ export async function runCompensation(
 				state !== "Updating" &&
 				state !== "Destroying" &&
 				!(
-					state === "Failed" && recorded.get(resourceId)?.specHash !== undefined
+					state === "Failed" &&
+					(recorded.get(resourceId)?.hasProvisionedBaseline === true ||
+						recorded.get(resourceId)?.specHash !== undefined)
 				)
 			)
 				continue;
@@ -294,7 +301,9 @@ export async function runCompensation(
 					s === "Provisioned" ||
 					s === "Updating" ||
 					s === "Destroying" ||
-					(s === "Failed" && recorded.get(depId)?.specHash !== undefined)
+					(s === "Failed" &&
+						(recorded.get(depId)?.hasProvisionedBaseline === true ||
+							recorded.get(depId)?.specHash !== undefined))
 				);
 			});
 			if (liveDependents.length > 0) continue;
@@ -365,7 +374,8 @@ export async function runCompensation(
 				state === "Updating" ||
 				state === "Destroying" ||
 				(state === "Failed" &&
-					finalRecorded.get(resource.name)?.specHash !== undefined)
+					(finalRecorded.get(resource.name)?.hasProvisionedBaseline === true ||
+						finalRecorded.get(resource.name)?.specHash !== undefined))
 			);
 		})
 	)
