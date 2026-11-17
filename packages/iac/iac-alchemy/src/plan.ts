@@ -715,6 +715,14 @@ function inspectUnverified(
 					"SOURCE_FENCE_INCOMPLETE",
 					"source deletion requires complete stable prior resource state",
 				);
+			if (
+				hashAlchemyPriorState(state.props) !==
+				hashAlchemyPriorState(node.resource.Props)
+			)
+				throw new AlchemyIacError(
+					"SOURCE_FENCE_MISMATCH",
+					"the deletion resource does not match the authenticated prior properties",
+				);
 			historicalStates.push({
 				resourceId: row.fqn,
 				resourceType: row.resourceType,

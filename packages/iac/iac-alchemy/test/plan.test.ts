@@ -218,6 +218,7 @@ describe("native Alchemy plan inspection", () => {
 			attr: { endpoint: "first" },
 		};
 		Object.assign(f.node, { action: "delete", state });
+		Object.assign(f.node.resource, { Props: state.props });
 		Object.assign(f.native, {
 			resources: {},
 			deletions: { store: f.node },
@@ -255,6 +256,9 @@ describe("native Alchemy plan inspection", () => {
 		approvedState = digestData(state);
 		expect(inspect().digest).not.toBe(first);
 		expect(observed).not.toBe(firstState);
+		Object.assign(f.node.resource, { Props: { main: "/source/other" } });
+		expect(inspect).toThrow("SOURCE_FENCE_MISMATCH");
+		Object.assign(f.node.resource, { Props: state.props });
 		state.status = "updating";
 		expect(inspect).toThrow("SOURCE_FENCE_INCOMPLETE");
 		state.status = "created";
