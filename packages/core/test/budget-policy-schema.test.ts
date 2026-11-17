@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import type { JsonValue } from "../src/json.js";
+import { parseBudgetPolicy } from "../src/ports/budget-policy.js";
 
 const cue =
 	process.env.HOBO_CUE_BIN ||
@@ -47,6 +48,14 @@ function check(document: JsonValue) {
 	);
 }
 describe("actual shared budget policy CUE contract", () => {
+	it("treats null constraints as invalid at both boundaries", () => {
+		const document = { ...base, constraints: null };
+		expect(check(document).status).not.toBe(0);
+		expect(() => parseBudgetPolicy(document)).toThrow();
+		expect(check(base).status).toBe(0);
+		expect(() => parseBudgetPolicy(base)).not.toThrow();
+	});
+
 	it.each([
 		base,
 		{ ...base, enforcement: "strict", objective: "maximize-credits" },

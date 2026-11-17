@@ -213,7 +213,7 @@ export function parseBudgetPolicy(value: JsonValue): BudgetPolicy {
 		invalid(
 			"manual periods cannot imply a clock reset; fixed windows require explicit bounds",
 		);
-	const constraints = value.constraints ?? [];
+	const constraints = value.constraints === undefined ? [] : value.constraints;
 	if (!Array.isArray(constraints) || constraints.length > 128)
 		invalid("invalid budget constraints");
 	const seen = new Set<string>();
