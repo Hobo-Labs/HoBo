@@ -115,6 +115,23 @@ The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-rout
 
 Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. The abstract proof does not establish that the TypeScript implementation refines it.
 
+The category-scope model checks 54 bounded states and hides 27 same-state
+transitions. It assumes a mismatched imported record has already been detected.
+
+```mermaid
+stateDiagram-v2
+  s0: Ready to dispatch
+  s1: Inconsistent snapshot
+  s2: One funded start
+  s3: Admission quarantined
+  s4: Second start blocked by budget
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: check history and reserve
+  s1 --> s3: check history and reserve
+  s2 --> s4: check history and reserve
+```
+
 The sequence model explores 88 states with a maximum revision of three and up
 to two pending reservations. Its projection hides 46 same-state transitions.
 
