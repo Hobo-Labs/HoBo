@@ -361,6 +361,12 @@ if [ "$1" = signoff ] && [ "$2" = --help ]; then
 fi
 if [ "$1" = signoff ] && [ "$2" = create ]; then exit 0; fi
 case "$2" in
+  */git/ref/hobo/routing-slip)
+    [ -n "\${HOBO_FLEET_SLIP:-}" ] || exit 1
+    echo '{"object":{"type":"commit","sha":"5555555555555555555555555555555555555555"}}' ;;
+  */git/commits/*)
+    [ -n "\${HOBO_FLEET_SLIP:-}" ] || exit 1
+    cat "$HOBO_FLEET_SLIP" ;;
   */actions/runs\\?*) cat "$HOBO_FLEET_RUNS" ;;
   */actions/runs/*/jobs\\?*) cat "$HOBO_FLEET_JOBS" ;;
   *) exit 1 ;;
@@ -373,7 +379,7 @@ esac
 				'#!/bin/sh\ncase "$*" in\n  --version) echo 10.0.0 ;;\n  "exec turbo --version") echo 2.0.0 ;;\n  *) exit 1 ;;\nesac\n',
 				{ mode: 0o755 },
 			);
-			const command = (extra: NodeJS.ProcessEnv = {}) =>
+			const command = (extra: NodeJS.ProcessEnv = {}, flags: string[] = []) =>
 				spawnSync(
 					process.execPath,
 					[
@@ -382,6 +388,7 @@ esac
 						fileURLToPath(new URL("../ci/local-attest.mts", import.meta.url)),
 						"fleet",
 						"--local-signoff",
+						...flags,
 					],
 					{
 						cwd: repo,
@@ -438,6 +445,51 @@ esac
 			assert.match(fallback.stdout, /running the local signoff fallback/u);
 			assert.match(fallback.stderr, /working tree is not clean/u);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
+
+			// A valid refusal slip and an asserted hosted outage cannot turn a
+			// malformed queue response into evidence of runner unavailability.
+			const slip = join(root, "slip.json");
+			const rejected = {
+				runner: "ubuntu-24.04",
+				tier: "github",
+				reason: "no-node",
+			};
+			writeFileSync(
+				slip,
+				JSON.stringify({
+					sha: "5".repeat(40),
+					message: JSON.stringify({
+						version: 1,
+						repository: "acme/app",
+						issuedAt: at(60),
+						expiresAt: new Date(Date.now() + 60_000).toISOString(),
+						classes: { pr: rejected, fork: rejected, trunk: rejected },
+						relay: { nodeId: "fixture", commit: "a".repeat(40) },
+					}),
+				}),
+			);
+			const downJobs = readFileSync(jobs, "utf8");
+			writeFileSync(jobs, "{}");
+			const malformed = command({ HOBO_FLEET_SLIP: slip }, [
+				"--github-unavailable",
+			]);
+			assert.notEqual(malformed.status, 0);
+			assert.match(malformed.stdout, /waiting \(availability-unknown\)/u);
+			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
+			writeFileSync(jobs, downJobs);
+			const validRuns = readFileSync(runs, "utf8");
+			writeFileSync(runs, "{}");
+			const malformedRuns = command({ HOBO_FLEET_SLIP: slip }, [
+				"--github-unavailable",
+			]);
+			assert.notEqual(malformedRuns.status, 0);
+			assert.match(malformedRuns.stdout, /waiting \(availability-unknown\)/u);
+			writeFileSync(runs, validRuns);
+			const validRefusal = command({ HOBO_FLEET_SLIP: slip }, [
+				"--github-unavailable",
+			]);
+			assert.match(validRefusal.stdout, /running the local signoff fallback/u);
+			assert.match(validRefusal.stderr, /working tree is not clean/u);
 
 			// A committed local workflow runs end to end and reaches gh-signoff.
 			rmSync(join(repo, "dirty.txt"));

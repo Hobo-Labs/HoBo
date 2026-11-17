@@ -22,7 +22,7 @@ import {
 	type SlipReading,
 	takingJobs,
 } from "./route-runner.mts";
-import { readRunnerRouting } from "./runner-routing.mts";
+import { asObject, readRunnerRouting } from "./runner-routing.mts";
 
 export type FleetVerificationPlan =
 	| Readonly<{
@@ -222,6 +222,13 @@ export async function observeFleetVerification(input: {
 		// SAFETY: a successful GitHub API response is parsed as JSON data.
 		return JSON.parse(gh(["api", path])) as JsonValue;
 	};
+	const readQueuePage = async (path: string): Promise<JsonValue> => {
+		const body = await read(path);
+		const field = path.includes("/jobs?") ? "jobs" : "workflow_runs";
+		if (!Array.isArray(asObject(body)?.[field]))
+			throw new Error(`malformed GitHub queue response: missing ${field}`);
+		return body;
+	};
 	const apiFetch: typeof fetch = async (request) => {
 		const url = new URL(
 			request instanceof Request ? request.url : request.toString(),
@@ -253,7 +260,7 @@ export async function observeFleetVerification(input: {
 			}),
 		readQueue: (fleetLabel, busy) =>
 			observeQueue({
-				read,
+				read: readQueuePage,
 				repository,
 				// A local decision follows every recently started GitHub run.
 				ownRunId: Number.MAX_SAFE_INTEGER,
