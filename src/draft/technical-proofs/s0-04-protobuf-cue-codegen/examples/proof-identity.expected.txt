@@ -1,3 +1,0 @@
-slug: s0-04-protobuf-cue-codegen
-layer: technical
-proof-identity: ok
