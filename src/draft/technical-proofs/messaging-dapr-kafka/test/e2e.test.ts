@@ -24,20 +24,20 @@ function makeYard(name: string, providerId: string) {
 }
 
 describe("messaging-dapr-kafka proof", () => {
-	it("native Kafka path publish/consume + audit events (live transport)", async () => {
+	it("native Kafka path publish/consume + audit events (in-memory transport)", async () => {
 		const result = await runNativeKafkaPath("acme");
 		expect(result.published).toBe(2);
 		expect(result.consumed).toBe(2);
-		expect(result.fidelity).toBe("live");
+		expect(result.fidelity).toBe("simulated");
 		expect(result.messaging.backend).toBe("native-kafka");
 		expect(result.events).toContain("messaging.published");
 		expect(result.events).toContain("messaging.acked");
 	});
 
-	it("Dapr path messaging + secretless component YAML (live client)", async () => {
+	it("Dapr path messaging + secretless component YAML (in-memory client)", async () => {
 		const result = await runDaprKafkaPath("acme");
 		expect(result.appId).toBe("acme.prod.app");
-		expect(result.fidelity).toBe("live");
+		expect(result.fidelity).toBe("simulated");
 		expect(result.consumed).toBe(1);
 		expect(result.yaml).toContain("pubsub.kafka");
 		expect(result.yaml).toContain("fromBinding:kafka-bootstrap");

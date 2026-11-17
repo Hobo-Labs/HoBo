@@ -13,30 +13,36 @@ import { describe, expect, it } from "vitest";
 import { runMessagingConformance } from "../src/messaging-conformance.js";
 
 describe("messaging conformance against adapters", () => {
-	it("passes against live Kafka transport path including DLQ", async () => {
+	it("passes against the in-memory Kafka transport including DLQ", async () => {
 		const report = await runMessagingConformance(
-			() =>
-				createKafkaMessaging({
+			() => {
+				const bus = createKafkaMessaging({
 					cluster: localRedpandaCluster("conf"),
 					transport: createInMemoryKafkaTransport(),
-				}),
-			{ backend: "native-kafka-live" },
+				});
+				expect(bus.fidelity).toBe("simulated");
+				return bus;
+			},
+			{ backend: "native-kafka-memory-transport" },
 		);
-		expect(report.backend).toBe("native-kafka-live");
+		expect(report.backend).toBe("native-kafka-memory-transport");
 		expect(report.assertions.publishConsumeAck).toBe("pass");
 		expect(report.assertions.consumerGroupIsolation).toBe("pass");
 		expect(report.assertions.exactlyOnceCapabilityGate).toBe("pass");
 		expect(report.assertions.deadLetterMaxAttempts).toBe("pass");
 	});
 
-	it("passes against live Dapr client path including DLQ", async () => {
+	it("passes against the in-memory Dapr client including DLQ", async () => {
 		const report = await runMessagingConformance(
-			() =>
-				createDaprMessaging({
+			() => {
+				const bus = createDaprMessaging({
 					config: defaultDaprRuntimeConfig("conf", "camp"),
 					client: createInMemoryDaprClient(),
-				}),
-			{ backend: "dapr-pubsub-live" },
+				});
+				expect(bus.fidelity).toBe("simulated");
+				return bus;
+			},
+			{ backend: "dapr-pubsub-memory-client" },
 		);
 		expect(report.assertions.publishConsumeAck).toBe("pass");
 		expect(report.assertions.consumerGroupIsolation).toBe("pass");

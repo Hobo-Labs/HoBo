@@ -9,13 +9,7 @@
 		],
 		"epicProofs": [],
 		"expProofs": [],
-		"designDocs": [
-			"docs/design/adr/01-architecture-core.md#adr-0138",
-			"docs/competitors/dapr.md",
-			"docs/design/wasm-runtime-wit.md",
-			"docs/design/sdk-api.md",
-			"docs/design/authoring-resources-wiring.md"
-		]
+		"designDocs": []
 	},
 	"artifacts": {
 		"examples": "examples",

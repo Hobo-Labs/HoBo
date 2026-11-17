@@ -1,8 +1,3 @@
-/**
- * Messaging over Dapr pub/sub building block.
- * Live fidelity requires an injected {@link DaprSidecarClient}.
- */
-
 import {
 	type ConsumedMessage,
 	createInMemoryMessaging,
@@ -30,9 +25,7 @@ import type { DaprRuntimeConfig } from "./types.js";
 export interface DaprMessagingOptions {
 	readonly config: DaprRuntimeConfig;
 	readonly metering?: MeteringBus;
-	/** Requires {@link client} when true. */
 	readonly live?: boolean;
-	/** Live path: all publish/drain/ack go through daprd client. */
 	readonly client?: DaprSidecarClient;
 	readonly now?: () => string;
 }
@@ -49,13 +42,13 @@ export function createDaprMessaging(
 	options: DaprMessagingOptions,
 ): DaprMessaging {
 	const { config } = options;
-	if (options.live === true && !options.client) {
+	const client = options.client ?? null;
+	const fidelity = client?.fidelity === "live" ? "live" : "simulated";
+	if (options.live === true && fidelity !== "live") {
 		throw new MessagingCapabilityError(
-			"createDaprMessaging: live fidelity requires a DaprSidecarClient",
+			"createDaprMessaging: live fidelity requires a DaprSidecarClient that declares live fidelity",
 		);
 	}
-
-	const client = options.client ?? null;
 	const capabilities = {
 		deliveryGuarantees: ["at-least-once", "at-most-once"] as const,
 		consumerGroups: true,
@@ -122,7 +115,6 @@ export function createDaprMessaging(
 		string,
 		{ topic: string; group: string; maxDeliveryAttempts: number }
 	>();
-	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = config.tenantId as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
 	const emit = (
@@ -139,11 +131,11 @@ export function createDaprMessaging(
 		);
 	};
 
-	const live: DaprMessaging = {
+	const clientBacked: DaprMessaging = {
 		backend: "dapr-pubsub",
 		capabilities: { ...capabilities },
 		pubsubName: config.defaultPubsubName,
-		fidelity: "live",
+		fidelity,
 		placement: "dapr-pubsub",
 		client,
 
@@ -203,7 +195,7 @@ export function createDaprMessaging(
 				"messaging.publish",
 				topic,
 				1,
-				"live",
+				fidelity,
 			);
 			return Object.freeze({
 				messageId,
@@ -256,7 +248,7 @@ export function createDaprMessaging(
 				"messaging.consume",
 				topic,
 				batch.length,
-				"live",
+				fidelity,
 			);
 			return batch;
 		},
@@ -266,7 +258,7 @@ export function createDaprMessaging(
 			const group = tenantScopedConsumerGroup(tenantId, consumerGroup);
 			const sub = subscriptions.get(`${physical}::${group}`);
 			const maxAttempts = sub?.maxDeliveryAttempts ?? 5;
-			const batch = await live.consume(topic, consumerGroup, {
+			const batch = await clientBacked.consume(topic, consumerGroup, {
 				maxMessages: opts.maxMessages ?? 32,
 				...opts,
 			});
@@ -286,7 +278,6 @@ export function createDaprMessaging(
 				} catch (err) {
 					const reason = err instanceof Error ? err.message : String(err);
 					if (message.deliveryAttempt >= maxAttempts) {
-						// Permanent: ack under the real consumer group (do not nack first).
 						await doAck(
 							client,
 							pending,
@@ -351,7 +342,7 @@ export function createDaprMessaging(
 		},
 	};
 
-	return Object.freeze(live);
+	return Object.freeze(clientBacked);
 }
 
 async function doAck(
@@ -407,7 +398,6 @@ async function meter(
 	if (!metering || quantity === 0) return;
 	await metering.emit(
 		createUsageEvent({
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: config.tenantId as TenantId,
 			eventType,
 			resource: tenantScopedTopicName(config.tenantId, String(topic)),

@@ -1,4 +1,9 @@
-import { parseConsumerGroupId, parseTopicName } from "@hobo/core";
+import {
+	createMeteringBus,
+	parseConsumerGroupId,
+	parseTopicName,
+	type UsageEvent,
+} from "@hobo/core";
 import { first } from "@hobo/core/total-access";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,7 +12,7 @@ import {
 	localRedpandaCluster,
 } from "../src/index.js";
 
-describe("kafka live transport path", () => {
+describe("kafka transport path", () => {
 	it("refuses live:true without transport", () => {
 		expect(() =>
 			createKafkaMessaging({
@@ -25,13 +30,13 @@ describe("kafka live transport path", () => {
 		expect(bus.transport).toBeNull();
 	});
 
-	it("exercises live client code path via in-memory broker transport", async () => {
+	it("reports simulated fidelity while using the in-memory broker transport", async () => {
 		const transport = createInMemoryKafkaTransport();
 		const bus = createKafkaMessaging({
 			cluster: localRedpandaCluster("acme"),
 			transport,
 		});
-		expect(bus.fidelity).toBe("live");
+		expect(bus.fidelity).toBe("simulated");
 		expect(bus.transport).toBe(transport);
 
 		const topic = parseTopicName("orders");
@@ -58,6 +63,42 @@ describe("kafka live transport path", () => {
 		const types = bus.events().map((e) => e.type);
 		expect(types).toContain("messaging.published");
 		expect(types).toContain("messaging.acked");
+	});
+
+	it("requires an explicit live declaration and preserves fidelity in usage events", async () => {
+		const transport = createInMemoryKafkaTransport();
+		const cluster = localRedpandaCluster("acme");
+		expect(() =>
+			createKafkaMessaging({ cluster, transport, live: true }),
+		).toThrow(/declares live fidelity/);
+		const { fidelity, ...unspecified } = transport;
+		expect(fidelity).toBe("simulated");
+		expect(
+			createKafkaMessaging({ cluster, transport: unspecified }).fidelity,
+		).toBe("simulated");
+		const events: UsageEvent[] = [];
+		const metering = createMeteringBus([
+			{
+				sinkId: "test",
+				emit(event) {
+					events.push(event);
+				},
+			},
+		]);
+		const simulated = createKafkaMessaging({ cluster, transport, metering });
+		const topic = parseTopicName("events");
+		await simulated.publish(topic, { value: 1 });
+		await simulated.consume(topic, parseConsumerGroupId("group"));
+		expect(events.map((event) => event.metadata?.fidelity)).toEqual([
+			"simulated",
+			"simulated",
+		]);
+		const declared = createKafkaMessaging({
+			cluster,
+			transport: { ...transport, fidelity: "live" },
+			live: true,
+		});
+		expect(declared.fidelity).toBe("live");
 	});
 
 	it("routes produce through the injected transport (not pure emulator)", async () => {
@@ -89,6 +130,6 @@ describe("kafka live transport path", () => {
 		});
 		await bus.publish(parseTopicName("t"), { x: 1 });
 		expect(produceCalls).toHaveLength(1);
-		expect(bus.fidelity).toBe("live");
+		expect(bus.fidelity).toBe("simulated");
 	});
 });
