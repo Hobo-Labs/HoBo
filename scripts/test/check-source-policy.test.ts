@@ -78,6 +78,88 @@ function guard(repo: string, ...args: string[]) {
 }
 
 describe("source policy", () => {
+	it("rejects new identity-only proof artifacts while allowing executable examples", () => {
+		const cases = [
+			["examples/proof-identity.ts", 'console.log("proof-identity: ok");\n'],
+			["bench/identity.bench.ts", 'bench("identity noop", () => {});\n'],
+			["notebook.ipynb", '{"source":["Hardened notebook scaffold"]}\n'],
+			["examples/scaffold.ts.tpl", 'console.log("proof-identity: ok");\n'],
+		];
+		for (const [suffix, content] of cases) {
+			if (!suffix || !content) throw new Error("missing fixture");
+			const repo = fixture();
+			const file = `src/draft/technical-proofs/sample/${suffix}`;
+			write(repo, file, content);
+			git(repo, "add", file);
+			const rejected = guard(repo, "--staged");
+			assert.equal(rejected.status, 1);
+			assert.match(
+				rejected.stderr + rejected.stdout,
+				/synthetic proof scaffolding/u,
+			);
+		}
+		const repo = fixture();
+		const file = "src/draft/technical-proofs/sample/examples/fold.ts";
+		write(
+			repo,
+			file,
+			"console.log([1, 2].reduce((sum, value) => sum + value, 0));\n",
+		);
+		git(repo, "add", file);
+		assert.equal(guard(repo, "--staged").status, 0);
+	});
+
+	it("checks untracked and committed proof artifacts in every guard mode", () => {
+		const repo = fixture();
+		const file = "src/draft/technical-proofs/sample/bench/identity.bench.ts";
+		write(repo, file, 'bench("identity noop", () => {});\n');
+		assert.equal(guard(repo, "--worktree").status, 1);
+		git(repo, "add", file);
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"added",
+		);
+		assert.equal(guard(repo, "--base=HEAD~1").status, 1);
+	});
+
+	it("grandfathers unchanged legacy scaffolding without allowing new copies", () => {
+		const repo = fixture();
+		const file = "src/draft/technical-proofs/sample/examples/proof-identity.ts";
+		write(repo, file, 'console.log("proof-identity: ok");\n');
+		git(repo, "add", file);
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"legacy",
+		);
+		write(
+			repo,
+			file,
+			'console.log("proof-identity: ok");\nexport const value = 1;\n',
+		);
+		git(repo, "add", file);
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			file,
+			'console.log("proof-identity: ok again");\nexport const value = 1;\n',
+		);
+		git(repo, "add", file);
+		assert.equal(guard(repo, "--staged").status, 1);
+	});
 	it("checks generated Protobuf comments while accepting compiler directives", () => {
 		const repo = fixture();
 		const file = "packages/sample/src/_generated/sample_pb.ts";
@@ -114,7 +196,7 @@ describe("source policy", () => {
 
 	it("allows required tool directives but rejects deferred markers, including inside directives", () => {
 		const text = [
-			"// @ts-expect-error required by the compiler test",
+			"// @ts-expect-error",
 			"const x = 1;",
 			"// eslint-disable-next-line no-alert -- TODO implement alternative",
 			"alert(x);",
@@ -122,6 +204,25 @@ describe("source policy", () => {
 		assert.deepEqual(
 			commentViolations("x.ts", text, new Set([1, 3])).map((item) => item.line),
 			[3],
+		);
+	});
+
+	it("rejects explanations on TypeScript and lint directives", () => {
+		const text = [
+			"// @ts-expect-error",
+			"// @ts-ignore",
+			"// @ts-expect-error this explains the error",
+			"// @ts-ignore: unnecessary explanation",
+			"/* @ts-ignore */",
+			"// eslint-disable-next-line no-alert",
+			"// eslint-disable-next-line no-alert -- explanation",
+			"/* oxlint-disable no-explicit-any -- explanation */",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1, 2, 3, 4, 5, 6, 7, 8])).map(
+				(item) => item.line,
+			),
+			[3, 4, 5, 7, 8],
 		);
 	});
 
