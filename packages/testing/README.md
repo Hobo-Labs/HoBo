@@ -209,6 +209,7 @@ otherwise duplicate code without testing a service contract.
 | HoBo HTTP service | Run its Fetch handler in the harness; use a Pact-derived mock when the consumer needs isolation | Only handlers explicitly provided to a Bindle are served |
 | HoBo CI relay | `createRelayHandler` with an injected application, as in the service emulator test | A memory-backed application does not prove durable admission |
 | HoBo control API | `createControlApiServer` with a temporary `hoboHome`; optional seeded `@hobo/yard-world` demo | Runs the actual local service and simulator, not a deployed Station |
+| HoBo CD notifications | `@hobo/cd/boundary` notification port with an `@hobo/cd/testing` recording CDEvents sink | Exercises CD's local event construction; no webhook or provider behavior |
 | Queue / topic | This harness's `Queue` / `Messaging` port implementations | In-memory, process-local, not a provider protocol or a durability proof |
 | Secrets | `graph.secret(alias)` and `createSecretEmulator()` wrap the identity package's in-memory `SecretsPort` | Test material lives in process memory; use fixture values, not real credentials |
 | Data engine | `graph.data(alias)` and `createDataEmulator()` use SQLite through the shared engine SPI; the emulator runs its conformance suite | Process-local SQLite, no raw SQL or remote database protocol; no schema migration port in memory |
@@ -219,7 +220,9 @@ otherwise duplicate code without testing a service contract.
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
 | Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
-| AWS, Azure and Vercel resolvers | Their package tests inject provider-specific fake `HttpTransport` implementations | These are not full provider emulators; the package READMEs do not claim live verification |
+| AWS resolvers | `@hobo/provider-aws` has an opt-in [AWS Emulator lane](../providers/provider-aws/README.md#aws-emulator-lane) | Requires the local emulator; supported APIs are limited and a pass does not verify live IAM |
+| Vercel project resolver | `@hobo/provider-vercel` uses [Vercel Labs' in-process emulator](../providers/provider-vercel/README.md#local-vercel-api-emulation) | Covers a project API subset, not deployed execution or all creation paths |
+| Azure ARM resolvers | `@hobo/provider-azure` tests inject a stateful fake `HttpTransport` | Models selected ARM interactions, not a complete Azure emulator or live provider |
 | External HTTP provider | `@hobo/contract-harness` `createMockProviderFromPact`; `@hobo/testing` `pactBackedTransport` for stateful sequences | Hand-authored or unverified Pact expectations are not evidence about the live provider |
 | Other resource kinds | Provider-specific doubles and external emulators where available | The application harness currently exposes only placeholders for those kinds |
 
@@ -253,7 +256,7 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `flag` | `port` | Identity's local FeatureFlagPort; not a remote provider |
 | `auth` | `placeholder` | IdentityService can test workload identity; it is not a full auth/session emulator |
 | `crypto` | `placeholder` | The in-memory KMS supports identity signing, not the whole crypto catalog |
-| `notify` | `placeholder` | CD has its own NotificationPort; it is not the catalog's general notify port |
+| `notify` | `placeholder` | CD's NotificationPort has a recording sink; it is not the catalog's general notify port |
 | `guardrail` | `placeholder` | Use the relevant policy implementation or a contract double |
 | `ui` | `http` | Fetch handlers only; no general UI render/drive port |
 | `experiment` | `fixture` | Identity's local experiment fixture is separate from the graph |
