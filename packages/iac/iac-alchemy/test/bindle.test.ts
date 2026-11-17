@@ -445,6 +445,40 @@ describe("explicit Alchemy primitive mapping", () => {
 		]);
 	});
 
+	it("identifies the rejected operation or annotation and the provider limitation", () => {
+		const registry = mappers([]);
+		const input = {
+			...declaration,
+			resources: {
+				...declaration.resources,
+				store: { ...declaration.resources.store, declaredAllow: ["delete"] },
+			},
+		};
+		const limited = {
+			...registry,
+			bucket: {
+				...registry.bucket,
+				limitations: ["blob events are unavailable"],
+			},
+		};
+		expect(() =>
+			mapBindleToAlchemy(input, limited, supportedRequirements),
+		).toThrow("operation delete: blob events are unavailable");
+		const withAnnotation = {
+			...input,
+			resources: {
+				...input.resources,
+				store: {
+					...declaration.resources.store,
+					annotations: [{ provider: "custom", option: "feature", config: {} }],
+				},
+			},
+		};
+		expect(() =>
+			mapBindleToAlchemy(withAnnotation, limited, supportedRequirements),
+		).toThrow("annotation custom:feature: blob events are unavailable");
+	});
+
 	it("reports partial coverage even when all operations are present but runtime behavior is limited", () => {
 		const registry = mappers([]);
 		const support = describeAlchemyPrimitiveSupport(

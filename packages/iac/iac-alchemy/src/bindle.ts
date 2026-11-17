@@ -380,21 +380,35 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			(mapper.limitations !== undefined &&
 				(mapper.limitations.length > 256 ||
 					mapper.limitations.some((limitation) => !validName(limitation)))) ||
-			mapper.resourceTypes.some((type) => !validName(type)) ||
-			declaration.declaredAllow.some(
-				(verb) => !mapper.operations.includes(verb),
-			) ||
-			declaration.annotations.some(
-				(annotation) =>
-					!mapper.annotations.includes(
-						`${annotation.provider}:${annotation.option}`,
-					),
-			)
+			mapper.resourceTypes.some((type) => !validName(type))
 		)
 			throw new AlchemyIacError(
 				"PRIMITIVE_UNSUPPORTED",
-				`mapping for ${name} does not cover its declared operations or annotations`,
+				`mapping for ${name} has invalid or missing capability metadata`,
 			);
+		const unsupportedOperation = declaration.declaredAllow.find(
+			(verb) => !mapper.operations.includes(verb),
+		);
+		const unsupportedAnnotation = declaration.annotations.find(
+			(annotation) =>
+				!mapper.annotations.includes(
+					`${annotation.provider}:${annotation.option}`,
+				),
+		);
+		if (
+			unsupportedOperation !== undefined ||
+			unsupportedAnnotation !== undefined
+		) {
+			const missing =
+				unsupportedOperation !== undefined
+					? `operation ${unsupportedOperation}`
+					: `annotation ${unsupportedAnnotation?.provider}:${unsupportedAnnotation?.option}`;
+			const detail = mapper.limitations?.[0];
+			throw new AlchemyIacError(
+				"PRIMITIVE_UNSUPPORTED",
+				`mapping for ${name} does not support ${missing}${detail === undefined ? "" : `: ${detail}`}`,
+			);
+		}
 		const entrypoint = entrypointOf.call(bindle, name);
 		if (entrypoint !== undefined && !mapper.bindsEntrypoint)
 			throw new AlchemyIacError(
