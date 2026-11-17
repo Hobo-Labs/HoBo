@@ -26,17 +26,17 @@ export {
 	translatePgError,
 } from "./errors.js";
 export {
-	notifyChannel,
-	parseSchemaName,
-	quoteSchema,
-	type SchemaName,
-} from "./identifiers.js";
-export {
 	createPostgresFleetEventStore,
 	type PostgresFleetEventStore,
 	type PostgresFleetEventStoreOptions,
 	type PostgresFleetMember,
 } from "./fleet.js";
+export {
+	notifyChannel,
+	parseSchemaName,
+	quoteSchema,
+	type SchemaName,
+} from "./identifiers.js";
 export { eventIdFor } from "./ids.js";
 export {
 	type MigrateOptions,
