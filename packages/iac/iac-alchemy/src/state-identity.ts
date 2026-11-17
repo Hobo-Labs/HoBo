@@ -104,6 +104,18 @@ export function verifyAlchemyStateIdentities(
 	return Effect.gen(function* () {
 		const state = yield* Context.get(plan.context, State);
 		const scope = { stack: plan.stack.name, stage: plan.stack.stage };
+		// The file and bucket stores omit their stack-output bookkeeping key
+		// from list(). A legacy resource stored under that same key must not
+		// disappear from the scan and be mistaken for an empty history.
+		const output = yield* state.getOutput(scope);
+		if (
+			/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: stack output is external persisted data. */
+			typeof output === "object" &&
+			output !== null &&
+			Object.getOwnPropertyDescriptor(output, "fqn")?.value ===
+				"__stack_output__"
+		)
+			return false;
 		const keys = yield* state.list(scope);
 		if (
 			keys.length > 1024 ||

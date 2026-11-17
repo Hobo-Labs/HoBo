@@ -87,17 +87,18 @@ function fixture(
 	legacyFqn?: string,
 	stackName = "App",
 	stage = "test",
+	storageKey = "a__b",
 ) {
 	let effects = 0;
 	const oldState =
 		legacyFqn === undefined ? undefined : JSON.stringify(persisted(legacyFqn));
 	const objects = bucket(
-		oldState === undefined ? {} : { "App/test/a__b.json": oldState },
+		oldState === undefined ? {} : { [`App/test/${storageKey}.json`]: oldState },
 	);
 	if (store === "local" && oldState !== undefined) {
 		mkdirSync(join(directory, "state", "App", "test"), { recursive: true });
 		writeFileSync(
-			join(directory, "state", "App", "test", "a__b.json"),
+			join(directory, "state", "App", "test", `${storageKey}.json`),
 			oldState,
 		);
 	}
@@ -361,6 +362,34 @@ describe("Alchemy state-key identity", () => {
 			await provider.preview(destroy);
 			await provider.destroyWithAdmission(destroy, "destroy");
 			expect(f.effects()).toBe(2);
+		} finally {
+			if (oldHome === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = oldHome;
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+	it.each([
+		"local",
+		"bucket",
+	] as const)("does not hide legacy resource state in the %s stack output key", async (store) => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-fqn-"));
+		const oldHome = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(directory, "home");
+		try {
+			const f = fixture(
+				directory,
+				"widget",
+				store,
+				"__stack_output__",
+				"App",
+				"test",
+				"__stack_output__",
+			);
+			const provider = createAlchemyIacProvider(f.options);
+			await expect(provider.preview(program)).rejects.toThrow(
+				"STATE_IDENTITY_UNVERIFIED",
+			);
+			expect(f.effects()).toBe(0);
 		} finally {
 			if (oldHome === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = oldHome;
