@@ -67,13 +67,14 @@ export function bindRivetHttpSource<Entrypoint extends RivetHttpEntrypoint>(
 		);
 	if (
 		!isRivetHttpBinding(source.binding) ||
+		source.resourceName !== source.actorName ||
 		source.actorName !== source.binding.actorName ||
 		!Object.hasOwn(source.registry.config.use, source.actorName) ||
 		source.registry.config.use[source.actorName] !== source.binding.actor
 	)
 		throw new AlchemyIacError(
 			"RIVET_SOURCE_MISMATCH",
-			"the registry must contain the actual bound actor",
+			"the resource and actor names must match and the registry must contain the bound actor",
 		);
 	let verified = false;
 	try {

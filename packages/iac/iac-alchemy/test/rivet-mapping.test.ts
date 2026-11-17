@@ -216,6 +216,13 @@ describe("Rivet native application binding", () => {
 		).toThrow("RIVET_SOURCE_UNVERIFIED");
 	});
 
+	it("requires the Alchemy resource name to match the registered actor name", () => {
+		const { source } = application();
+		expect(() =>
+			bindRivetHttpSource({ ...source, resourceName: "other" }),
+		).toThrow("RIVET_SOURCE_MISMATCH");
+	});
+
 	it("refuses a registry actor whose request handler is replaced after binding", () => {
 		const { binding, source } = application();
 		Object.assign(binding.actor.config, {
