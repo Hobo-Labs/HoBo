@@ -291,17 +291,6 @@ function getMockClaudeBinaryPath(tmpHome: string): string {
   return path.join(binDir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 }
 
-/**
- * Point a child process's home at the isolated test home on every platform.
- *
- * macOS/Linux: Node's os.homedir() honors $HOME, so setting HOME is enough.
- * Windows: os.homedir() reads USERPROFILE and IGNORES $HOME. The mock claude
- * runner (and the extension) resolve ~/.claude via os.homedir(), so without
- * USERPROFILE they read/write the REAL user profile while the test asserts on
- * tmpHome — every external-spawn test times out on Windows only. Set both, and
- * clear the legacy HOMEDRIVE/HOMEPATH fallbacks libuv consults when USERPROFILE
- * is unset so a stale host value can't win.
- */
 export function applyMockHomeEnv(base: NodeJS.ProcessEnv, tmpHome: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, HOME: tmpHome };
   if (process.platform === 'win32') {
@@ -317,20 +306,14 @@ export interface ExternalClaudeSpawn {
   sessionId: string;
 }
 
-/** Module-level registry of external mock-claude processes so fixture teardown
- *  can kill any that the test forgot to clean up. Suite runs with workers: 1,
- *  so cross-test contamination is impossible. */
 const trackedExternalProcesses = new Set<ChildProcess>();
 
-/** Kill any mock-claude processes spawned via spawnExternalClaudeScenario
- *  that are still alive. Called from the test fixture's teardown. */
 export async function killTrackedExternalProcesses(): Promise<void> {
   for (const child of trackedExternalProcesses) {
     if (child.exitCode === null && child.signalCode === null) {
       try {
         child.kill('SIGTERM');
       } catch {
-        // Process may already be gone; ignore.
       }
     }
   }
@@ -344,9 +327,6 @@ export async function spawnExternalClaudeScenario(options: {
   scenario: ClaudeMockScenario;
   sessionId: string;
 }): Promise<ExternalClaudeSpawn> {
-  // Universal narration moment (cosmetic): every external spawn is a detached
-  // session Pixel Agents adopts rather than launches. Its own magenta stdout
-  // narrates the per-hook timeline in the monitor tab.
   narrate.step('spawning a detached external mock session (adopted, not launched)');
   await arrangeNextClaudeInvocation(options.tmpHome, options.scenario);
 
@@ -355,13 +335,9 @@ export async function spawnExternalClaudeScenario(options: {
     ...applyMockHomeEnv(process.env, options.tmpHome),
     PATH: `${path.dirname(claudeBinary)}${path.delimiter}${process.env['PATH'] ?? ''}`,
     PIXEL_AGENTS_NODE_BIN: process.execPath,
-    // Switches the runner's narration to the magenta [external·tag] style.
     PIXEL_AGENTS_MOCK_EXTERNAL: '1',
   };
 
-  // Pipe stderr so we can surface diagnostics on timeout. stdout (the mock's
-  // step-by-step narration) appends to the per-test external-narration log,
-  // which the monitor terminal opened below tails inside the recorded window.
   const narrationLog = getExternalNarrationLogPath(options.tmpHome);
   fs.mkdirSync(path.dirname(narrationLog), { recursive: true });
   const narrationFd = fs.openSync(narrationLog, 'a');
@@ -373,14 +349,9 @@ export async function spawnExternalClaudeScenario(options: {
   });
   fs.closeSync(narrationFd);
 
-  // Track this child so fixture teardown can SIGTERM it if the test forgot to.
   trackedExternalProcesses.add(child);
   child.on('exit', () => trackedExternalProcesses.delete(child));
 
-  // Capture stderr + early exit so timeouts can blame the actual cause. Use a
-  // ref object so TypeScript narrows correctly through the async event-loop boundary
-  // (TS doesn't track let-bindings mutated in callbacks the same way it tracks
-  // property writes; the closure-narrowing limitation collapses spawnError to never).
   const watch: {
     stderrChunks: Buffer[];
     spawnError: Error | null;

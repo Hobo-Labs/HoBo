@@ -3,35 +3,10 @@ import { expect } from '@playwright/test';
 
 import { narrate } from './test-narration';
 
-/**
- * Overlay helpers work the same against a VS Code webview iframe (Frame) and
- * a standalone browser page (Page). Both Playwright surfaces expose `locator`
- * with identical semantics for the queries used here.
- */
 type OverlaySurface = Frame | Page;
 
 const OVERLAY_TIMEOUT_MS = 15_000;
 
-/**
- * Wait-strategy conventions for tests using this helper module:
- *
- * 1. **Positive assertion** ("X should appear"): use `expectOverlayVisible`,
- *    `expectOverlayCount(N>0)`, or `expectOverlayVisibleWithTexts`. These poll
- *    until the assertion succeeds or the timeout expires — no explicit
- *    `waitForTimeout` is needed before them.
- *
- * 2. **Negative assertion** ("X should NOT appear"): use `expectNoOverlay` /
- *    `expectNoOverlayWithTexts` with the desired timeout. A brief
- *    `waitForTimeout` before is a settling wait (give the runtime a chance to
- *    do the wrong thing before checking absence). Keep these short (<1s).
- *
- * 3. **Stability check** ("state remains correct N seconds later"): use
- *    `waitForTimeout(N)` followed by a re-assertion. This pattern guards
- *    against bugs where a state transition is correct momentarily then
- *    regresses (e.g. cleanup race vs. zombie re-spawn). Polling cannot
- *    replace stability checks because `expect.poll` returns at the first
- *    match, not after the state holds for N seconds.
- */
 
 export function getAgentOverlays(frame: OverlaySurface): Locator {
   return frame.locator('[data-testid="agent-overlay"]');
@@ -154,15 +129,6 @@ export async function closeAgentFromOverlay(
       : getOverlayByText(frame, options.text ?? '').first();
   await expect(overlay).toBeVisible({ timeout });
 
-  // Selecting an agent is what reveals its "Close agent" (×) button. The
-  // production path selects via a canvas hit-test on the sprite; driving that
-  // from a test means computing pixel offsets below the overlay, which is
-  // geometry-brittle and previously caused retry-flakes (e.g. the "close via
-  // X" lifecycle test). Instead, select deterministically through the test
-  // hook: it sets officeState.selectedAgentId (the same state a click sets),
-  // and ToolOverlay re-renders every rAF, so the × button surfaces and becomes
-  // clickable on the next frame. The overlay carries its agent id as
-  // data-agent-id, so the text-based lookup path resolves an id too.
   const agentId = options.agentId ?? Number(await overlay.getAttribute('data-agent-id'));
   await frame.evaluate((id) => {
     window.__pixelAgentsTestHooks?.selectAgent?.(id);
