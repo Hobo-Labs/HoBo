@@ -237,6 +237,8 @@ describe("parseInsightWebhook", () => {
 		expect(
 			of({ action: "queued", name: "router-tests" }).relay,
 		).toBeUndefined();
+		expect(of({ action: "queued", name: "route-lint" }).relay).toBeUndefined();
+		expect(of({ action: "queued", name: "relay-tests" }).relay).toBeUndefined();
 		// A larger runner asks for a custom label; its runner group shows it is GitHub's.
 		expect(
 			of({

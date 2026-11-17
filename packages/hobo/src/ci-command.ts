@@ -39,6 +39,7 @@ import {
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
+import { CI_RERUN_REROUTE_COMMAND, wantsReroute } from "./ci-rerun-reroute.js";
 import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
 import {
@@ -455,9 +456,14 @@ export function createCiCommand(
 		async run({ args, flags, emitProgress }) {
 			if (args.length === 0) return { message: CI_HELP };
 			const first = args[0] ?? "";
-			const tabled = BUILT_IN_CI_COMMANDS.some((name) => name === first)
-				? undefined
-				: findCiCommand(first, deps.commands);
+			// `rerun --reroute` asks GitHub to run the relay job again; a plain
+			// `rerun` stays the built-in one.
+			const tabled =
+				first === "rerun" && wantsReroute(args.slice(1))
+					? CI_RERUN_REROUTE_COMMAND
+					: BUILT_IN_CI_COMMANDS.some((name) => name === first)
+						? undefined
+						: findCiCommand(first, deps.commands);
 			if (tabled)
 				return tabled.run({
 					args: args.slice(1),

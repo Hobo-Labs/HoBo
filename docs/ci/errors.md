@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-107 codes.
+114 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -113,6 +113,13 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_RELAY_FILES_STALE`](#hobo_ci_relay_files_stale) | `packages/hobo/src/ci-init-relay.ts` |
 | [`HOBO_CI_RERUN_AMBIGUOUS`](#hobo_ci_rerun_ambiguous) | `packages/hobo/src/ci-runs.ts` |
+| [`HOBO_CI_RERUN_NOT_FOUND`](#hobo_ci_rerun_not_found) | `packages/hobo/src/ci-rerun-reroute.ts` |
+| [`HOBO_CI_RERUN_NO_RELAY`](#hobo_ci_rerun_no_relay) | `packages/hobo/src/ci-rerun-reroute.ts` |
+| [`HOBO_CI_RERUN_NO_TOKEN`](#hobo_ci_rerun_no_token) | `packages/hobo/src/ci-rerun-reroute.ts` |
+| [`HOBO_CI_RERUN_REFUSED`](#hobo_ci_rerun_refused) | `packages/hobo/src/ci-rerun-reroute.ts` |
+| [`HOBO_CI_RERUN_RUNNING`](#hobo_ci_rerun_running) | `packages/hobo/src/ci-rerun-reroute.ts` |
+| [`HOBO_CI_RERUN_SEVERAL_RELAYS`](#hobo_ci_rerun_several_relays) | `packages/hobo/src/ci-rerun-reroute.ts` |
+| [`HOBO_CI_RERUN_USAGE`](#hobo_ci_rerun_usage) | `packages/hobo/src/ci-rerun-reroute.ts` |
 | [`HOBO_CI_RUNNER_ORDER_INVALID`](#hobo_ci_runner_order_invalid) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_RUN_FAILED`](#hobo_ci_run_failed) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_RUN_NOT_FOUND`](#hobo_ci_run_not_found) | `packages/hobo/src/ci-runs.ts` |
@@ -1382,6 +1389,112 @@ Message:
 
 ```text
 GitHub accepted the rerun, but its attempt cannot be identified safely: another rerun may have intervened or the next attempt already finished. Inspect the run history; the CLI did not repeat the rerun.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_RERUN_NOT_FOUND
+
+Returned from `packages/hobo/src/ci-rerun-reroute.ts`.
+
+Messages:
+
+```text
+GitHub could not read run {parsed.runId} of {repository}: {…}.
+```
+
+```text
+GitHub could not list the jobs of run {parsed.runId}: {…}.
+```
+
+What to do:
+
+- Check the run id and that the token may read Actions on the repository.
+- Check that the token may read Actions on the repository.
+
+### HOBO_CI_RERUN_NO_RELAY
+
+Returned from `packages/hobo/src/ci-rerun-reroute.ts`.
+
+Messages:
+
+```text
+Run {parsed.runId} has no relay job, so there is nothing to route again.
+```
+
+```text
+Run {parsed.runId} has no relay job named {parsed.job}.
+```
+
+What to do:
+
+- Use hobo ci rerun for a plain re-run, or add a relay job with hobo ci init --relay.
+
+### HOBO_CI_RERUN_NO_TOKEN
+
+Returned from `packages/hobo/src/ci-rerun-reroute.ts`.
+
+Message:
+
+```text
+Rerouting a run needs a GitHub token that may re-run its jobs.
+```
+
+What to do:
+
+- Set GH_TOKEN (for example `GH_TOKEN=$(gh auth token)`) or GITHUB_TOKEN with actions: write on the repository.
+
+### HOBO_CI_RERUN_REFUSED
+
+Returned from `packages/hobo/src/ci-rerun-reroute.ts`.
+
+Message:
+
+```text
+GitHub did not re-run relay job {relay.name}: {…}.
+```
+
+What to do:
+
+- Check that the token has actions: write, then inspect the run before trying again; GitHub may have started it.
+
+### HOBO_CI_RERUN_RUNNING
+
+Returned from `packages/hobo/src/ci-rerun-reroute.ts`.
+
+Message:
+
+```text
+Run {parsed.runId} is {found.status}; only a finished run can be rerouted.
+```
+
+What to do:
+
+- Wait for the run to finish, or cancel it, then reroute it.
+
+### HOBO_CI_RERUN_SEVERAL_RELAYS
+
+Returned from `packages/hobo/src/ci-rerun-reroute.ts`.
+
+Message:
+
+```text
+Run {parsed.runId} has {relays.length} relay jobs: {…}.
+```
+
+What to do:
+
+- Pick one with --job \<name>.
+
+### HOBO_CI_RERUN_USAGE
+
+Returned from `packages/hobo/src/ci-rerun-reroute.ts`.
+
+Message:
+
+```text
+{message}
+Usage: hobo ci rerun <run-id> --reroute [--job <relay job name>] [--repo owner/name]
 ```
 
 What to do: follow the message.
