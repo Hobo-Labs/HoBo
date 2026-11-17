@@ -256,6 +256,43 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			});
 		});
 
+		it("rejects a stale revision even when capacity remains", async () => {
+			const store = current();
+			await store.putCapacityGroup(
+				parseCapacityGroup(
+					JSON.stringify({
+						id: "device-1",
+						accountId: "hobo-labs",
+						approvedUnits: 2,
+						reservedUnits: 0,
+						seq: 0,
+						state: "active",
+					}),
+				),
+			);
+			await store.intake(demand("1", "webhook", "webhook-1"));
+			await store.intake(demand("2", "webhook", "webhook-2"));
+			const first = reservation(parsedKey("1"), "stale-first", 1);
+			const second = reservation(parsedKey("2"), "stale-second", 1);
+			const results = await Promise.allSettled([
+				store.reserveCapacity(first.input),
+				store.reserveCapacity(second.input),
+			]);
+			expect(
+				results.filter((result) => result.status === "fulfilled"),
+			).toHaveLength(1);
+			const rejected = results.filter((result) => result.status === "rejected");
+			expect(rejected).toHaveLength(1);
+			expect(rejected[0]?.reason).toMatchObject({
+				code: FleetRejectionCode.CAPACITY_CONFLICT,
+			});
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				approvedUnits: 2,
+				reservedUnits: 1,
+				seq: 2,
+			});
+		});
+
 		it("deduplicates intake across webhook, pull, and repair", async () => {
 			const store = current();
 			await store.intake(demand("1", "webhook", "webhook-1"));
