@@ -15,17 +15,17 @@ paid/promotional credits, and provider-actual spend commitments. Baseline and
 candidate snapshots use the same pinned state; incremental amounts are
 `F(baseline + candidate) - F(baseline)`.
 
-New quotes use `pricing-rating/v2`, which orders ties by string code units
-instead of the process locale. This changes the algorithm version and quote
-hash, and can change which equal-priority credit is consumed. To rerate an old
+New quotes use `pricing-rating/v3`. It orders ties by string code units,
+compares UTC instants without truncating fractional seconds, and rejects
+impossible calendar dates. This changes the algorithm version and quote hash,
+and can change credit, rate-card, or latest-observation choices. To rerate an old
 record, pass its stored version, for example
 `quoteScenario(scenario, { ratingAlgorithmVersion: "pricing-rating/v1" })`.
 Version 1 used locale-sensitive ordering, so reproducing an old tied quote also
-requires its original locale. Preserve the original quote as evidence rather
-than treating a new v2 quote as the old one.
-Timestamp priority is still compared as text: fractional UTC representations
-can therefore be ordered differently from their actual instants. Reconcile
-affected expiry or latest-observation decisions until that ordering is fixed.
+requires its original locale. Versions 1 and 2 also retain their previous
+timestamp comparison and millisecond validation behavior. Preserve the original
+quote as evidence rather than treating a new v3 quote as the old one, and
+reconcile affected old expiry, evidence, and observation decisions.
 
 - Exact decimal strings and scaled-integer arithmetic; no floating-point money.
 - Explicit unit identities/conversions; GB and GiB are never treated as aliases.
@@ -85,9 +85,9 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-`corpus/golden-replay-baseline.json` pins a complete v1 quote output. The replay
-test parses its scenario through protobuf JSON, rerates it with the recorded version, and compares the
-stable JSON result, including the deterministic quote hash. The quote-boundary
+The replay corpus pins complete v1 and v2 quote outputs. The replay test parses
+each scenario through protobuf JSON, rerates it with the recorded version, and
+compares the stable JSON result, including the quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
 claimed.
 

@@ -10,7 +10,13 @@ import {
 } from "./_generated/pricing_pb.js";
 import { stableHash } from "./json.js";
 import { compareCodeUnits, type TextComparison } from "./order.js";
-import { intervalCovers, PricingFault } from "./state.js";
+import {
+	compareUtcExact,
+	EXACT_TIME,
+	intervalCovers,
+	PricingFault,
+	type TemporalPolicy,
+} from "./state.js";
 import type { PricingRejectionCode } from "./types.js";
 
 export function catalogHashOf(catalog: PricingCatalog): string {
@@ -62,16 +68,17 @@ export function resolveRateCard(
 	agreement: ProviderAgreement,
 	at: string,
 	horizon: string,
-	compareStrings: TextComparison = compareCodeUnits,
+	compareTimes: TextComparison = compareUtcExact,
+	time: TemporalPolicy = EXACT_TIME,
 ): RateCard {
 	const schedule = agreement.rateSchedule
 		.filter(
 			(entry) =>
 				entry.effective !== undefined &&
-				intervalCovers(entry.effective, at, horizon),
+				intervalCovers(entry.effective, at, horizon, time),
 		)
 		.sort((left, right) =>
-			compareStrings(right.effective?.start ?? "", left.effective?.start ?? ""),
+			compareTimes(right.effective?.start ?? "", left.effective?.start ?? ""),
 		);
 	const selected = schedule[0];
 	if (selected === undefined) {
@@ -84,7 +91,7 @@ export function resolveRateCard(
 		(card) =>
 			card.id === selected.rateCardId &&
 			card.effective !== undefined &&
-			intervalCovers(card.effective, at, horizon),
+			intervalCovers(card.effective, at, horizon, time),
 	);
 	const card = cards[0];
 	if (cards.length !== 1 || card === undefined) {

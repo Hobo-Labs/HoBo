@@ -19,10 +19,13 @@ const scenario = makeScenario({
 	credits,
 });
 const current = quoteScenario(scenario);
+const v2 = quoteScenario(scenario, {
+	ratingAlgorithmVersion: "pricing-rating/v2",
+});
 const legacy = quoteScenario(scenario, {
 	ratingAlgorithmVersion: "pricing-rating/v1",
 });
-if (!isQuoteVector(current) || !isQuoteVector(legacy))
+if (!isQuoteVector(current) || !isQuoteVector(v2) || !isQuoteVector(legacy))
 	throw new Error("quote rejected");
 console.log(
 	JSON.stringify({
@@ -31,6 +34,9 @@ console.log(
 		effective: current.incremental?.effective?.decimal,
 		consumption: current.consumption.map((item) => item.sourceId),
 		quoteHash: current.quoteHash,
+		v2Version: v2.ratingAlgorithmVersion,
+		v2Effective: v2.incremental?.effective?.decimal,
+		v2Consumption: v2.consumption.map((item) => item.sourceId),
 		legacyVersion: legacy.ratingAlgorithmVersion,
 		legacyEffective: legacy.incremental?.effective?.decimal,
 		legacyConsumption: legacy.consumption.map((item) => item.sourceId),
