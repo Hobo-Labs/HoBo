@@ -48,11 +48,12 @@ const SLIP_SHA = "a".repeat(40);
 function slipText(
 	fleet: "fleet-open" | "fleet-busy" | "no-capacity",
 	forkToFleet = false,
+	fleetRunner = "hobo",
 ): string {
 	const route =
 		fleet === "no-capacity"
 			? { runner: "ubuntu-24.04", tier: "github" as const, reason: fleet }
-			: { runner: "hobo", tier: "fleet" as const, reason: fleet };
+			: { runner: fleetRunner, tier: "fleet" as const, reason: fleet };
 	return routingSlipJson(
 		{
 			repository: REPO,
@@ -225,6 +226,31 @@ describe("fleet facts from the slip and the queue", () => {
 		expect(read.fleet).toEqual({ enabled: true, taking: true, isolated: true });
 	});
 
+	it("trusts a slip only for the fleet label it names", async () => {
+		// The slip issuer gives the trunk class its own label, "hobo-trunk";
+		// a relay asking for "hobo" learns nothing about "hobo" from it.
+		const { source } = facts([], {
+			slip: slipText("fleet-open", false, "hobo-trunk"),
+		});
+		expect((await source.facts(fleetRequest(), NOW)).fleet).toEqual({
+			enabled: false,
+			taking: false,
+			isolated: false,
+		});
+		const trunk = facts([], {
+			slip: slipText("fleet-open", false, "hobo-trunk"),
+		});
+		const asked = await trunk.source.facts(
+			relayRouteRequest(request({ fleet: "HOBO-trunk" })),
+			NOW,
+		);
+		expect(asked.fleet).toEqual({
+			enabled: true,
+			taking: true,
+			isolated: false,
+		});
+	});
+
 	it("reads a busy slip against the queue", async () => {
 		const busy = facts([], { slip: slipText("fleet-busy") });
 		expect((await busy.source.facts(fleetRequest(), NOW)).fleet).toEqual({
@@ -311,6 +337,25 @@ describe("fleet facts from the slip and the queue", () => {
 			taking: false,
 			isolated: false,
 		});
+	});
+
+	it("does not hold a busy slip back for a run just ahead, as the route job does not", async () => {
+		const queue: FakeRun[] = [
+			{ id: 10, created: 6, jobs: [{ label: "hobo", queued: 6, started: 5 }] },
+			{
+				id: 4999,
+				created: 0.5,
+				jobs: [{ label: "ubuntu-24.04", queued: 0.5 }],
+			},
+		];
+		const busy = facts(queue, { slip: slipText("fleet-busy") });
+		expect((await busy.source.facts(fleetRequest(), NOW)).fleet?.taking).toBe(
+			true,
+		);
+		const open = facts(queue, { slip: slipText("fleet-open") });
+		expect((await open.source.facts(fleetRequest(), NOW)).fleet?.taking).toBe(
+			false,
+		);
 	});
 
 	it("counts a run just ahead as decided once one of its jobs finished", async () => {

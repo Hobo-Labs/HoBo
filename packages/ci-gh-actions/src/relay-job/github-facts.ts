@@ -5,13 +5,15 @@
  * A job token can read the repository's runs and jobs and the routing slip
  * ref, but not its runners or its billing. So the facts are what those show:
  *
- * - The fleet serves the repository when a usable routing slip routes some
- *   class to it, or a runner was seen taking a job for its label. It takes
- *   this job when the slip says it is open for this run's class and the
- *   queue does not show it refusing jobs, or the queue shows it taking jobs
- *   (with a busy slip, a full young queue alone does not refuse), as the route
- *   job confirms a slip. It isolates public and fork jobs when the slip sends
- *   forks to it.
+ * - The fleet serves the repository when a usable routing slip routes this
+ *   run's class to the fleet label the relay names, or a runner was seen
+ *   taking a job for that label. A slip naming another label (the trunk
+ *   class's own label, or a pin) says nothing about this one. It takes this
+ *   job when the slip says it is open and the queue does not show it
+ *   refusing jobs, or the queue shows it taking jobs (with a busy slip, a
+ *   full young queue alone does not refuse, and a run just ahead does not
+ *   hold it back), as the route job confirms a slip. It isolates public and
+ *   fork jobs when the slip sends forks to it.
  * - Each machine label the relay names is one machine. It is online when a
  *   runner took a job for that label in the last fifteen minutes, and full
  *   while a job is waiting for it.
@@ -55,7 +57,6 @@ import { DEFAULT_RUNNER_ROUTING } from "../isolated-worker/box-routing-policy.js
 import {
 	judgeRoutingSlip,
 	type ParsedRoutingSlip,
-	ROUTING_SLIP_CLASSES,
 	ROUTING_SLIP_REF,
 	type RoutingSlipClassName,
 } from "../routing-slip.js";
@@ -145,24 +146,29 @@ function fleetFacts(
 	const label = namedLabels(request, "fleet")[0] ?? FLEET_LABEL;
 	const evidence = queueEvidence(read.jobs, label, nowMs);
 	const { slip } = read;
-	const route = slip?.classes[routeClassOf(request)];
-	const slipNamesFleet =
-		slip !== undefined &&
-		ROUTING_SLIP_CLASSES.some((name) => slip.classes[name].tier === "fleet");
-	const slipOpen = route?.tier === "fleet" && route.reason !== "fleet-busy";
-	const slipBusy = route?.tier === "fleet" && route.reason === "fleet-busy";
+	// The slip speaks for this label only when the route for this run's class
+	// names it: the trunk class has its own label, and a pin may name any.
+	const classRoute = slip?.classes[routeClassOf(request)];
+	const route =
+		classRoute?.tier === "fleet" &&
+		classRoute.runner.toLowerCase() === label.toLowerCase()
+			? classRoute
+			: undefined;
+	const slipOpen = route !== undefined && route.reason !== "fleet-busy";
+	const slipBusy = route !== undefined && route.reason === "fleet-busy";
 	// As the route job confirms a fleet slip: an open slip vouches that a
 	// runner is there, but the queue can still contradict it; a busy slip is
-	// not contradicted by a full young queue alone.
-	const taking = slipOpen
-		? !refusingJobs(evidence, limits)
-		: takingJobs(
-				evidence,
-				slipBusy ? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER } : limits,
-			);
+	// not contradicted by a full young queue alone, nor held back by a run
+	// just ahead that has not chosen yet.
+	const taking = slipBusy
+		? takingJobs(evidence, { ...limits, maxQueued: Number.MAX_SAFE_INTEGER })
+		: read.undecidedAhead === 0 &&
+			(slipOpen
+				? !refusingJobs(evidence, limits)
+				: takingJobs(evidence, limits));
 	return {
-		enabled: slipNamesFleet || evidence.recentPickups > 0,
-		taking: read.undecidedAhead === 0 && taking,
+		enabled: route !== undefined || evidence.recentPickups > 0,
+		taking,
 		isolated: slip?.classes.fork.tier === "fleet",
 	};
 }
