@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * Explore a product project → surface-map.json (+ optional experience-catalog).
- *
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --project hobo
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode validate --project hobo
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode catalog --project hobo --personas developer
- */
 import process from "node:process";
 import { listProjects, resolveProjects } from "./lib/projects.mts";
 import { repoRoot } from "./lib/paths.mts";
@@ -15,11 +8,7 @@ import {
 	validateSurfaceMap,
 	writeSurfaceMap,
 } from "./lib/surface-map.mts";
-import {
-	buildExperienceCatalog,
-	validateCatalogCoverage,
-	writeExperienceCatalog,
-} from "./lib/experience-catalog.mts";
+
 
 function parseArgs(argv: string[]) {
 	const out: Record<string, string> = { mode: "explore" };
@@ -43,13 +32,8 @@ function help() {
 
   --mode explore          Build surface-map.json (default)
   --mode validate         Validate existing surface-map
-  --mode catalog          Build experience-catalog from map + personas
   --project <id>          Project id (e.g. code, site, cli)
-  --personas a,b          Limit catalog personas
   --skip-probes           No live CLI probes (tests)
-  --with-catalog          Also write experience-catalog after explore
-
-Feeds critical-path feature generation (see references/feature-quality.md).
 `);
 }
 
@@ -57,6 +41,11 @@ function main() {
 	const args = parseArgs(process.argv.slice(2));
 	if (args.mode === "help") {
 		help();
+		return;
+	}
+	if ((args.mode !== "explore" && args.mode !== "validate") || args.withCatalog === "1") {
+		console.error("Only source exploration and validation are supported. Implement and verify requested improvements directly.");
+		process.exitCode = 1;
 		return;
 	}
 	const root = repoRoot();
@@ -67,7 +56,6 @@ function main() {
 		: [...selection.projects];
 
 	if (targets.length === 0) {
-		// fall back to explicit id path packages/<id>
 		const id = (args.projects || "").split(",")[0]?.trim();
 		if (id) {
 			const hit = all.find((p) => p.id === id);
@@ -91,10 +79,6 @@ function main() {
 		);
 		process.exit(2);
 	}
-
-	const personaIds = (args.personas || "")
-		.split(/[,\s]+/)
-		.filter(Boolean);
 
 	for (const project of targets) {
 		if (args.mode === "validate") {
@@ -122,39 +106,6 @@ function main() {
 			continue;
 		}
 
-		if (args.mode === "catalog") {
-			const map = readSurfaceMap(project, root);
-			const catalog = buildExperienceCatalog({
-				project,
-				root,
-				surfaceMap: map,
-				personaIds: personaIds.length ? personaIds : undefined,
-			});
-			const pathOut = writeExperienceCatalog(catalog, project, root);
-			const cov = validateCatalogCoverage(
-				catalog,
-				personaIds.length
-					? personaIds
-					: [...new Set(catalog.experiences.map((e) => e.personaId))],
-			);
-			console.log(
-				JSON.stringify(
-					{
-						ok: cov.length === 0,
-						projectId: project.id,
-						path: pathOut,
-						experienceCount: catalog.experiences.length,
-						coverageProblems: cov,
-					},
-					null,
-					2,
-				),
-			);
-			if (cov.length) process.exitCode = 1;
-			continue;
-		}
-
-		// explore
 		const map = buildSurfaceMap({
 			project,
 			root,
@@ -162,28 +113,10 @@ function main() {
 		});
 		const pathOut = writeSurfaceMap(map, project, root);
 		const problems = validateSurfaceMap(map);
-		let catalogPath: string | undefined;
-		let catalogProblems: string[] = [];
-		if (args.withCatalog === "1" || args.mode === "explore") {
-			// always build catalog after explore for critical path
-			const catalog = buildExperienceCatalog({
-				project,
-				root,
-				surfaceMap: map,
-				personaIds: personaIds.length ? personaIds : undefined,
-			});
-			catalogPath = writeExperienceCatalog(catalog, project, root);
-			catalogProblems = validateCatalogCoverage(
-				catalog,
-				personaIds.length
-					? personaIds
-					: [...new Set(catalog.experiences.map((e) => e.personaId))],
-			);
-		}
 		console.log(
 			JSON.stringify(
 				{
-					ok: problems.length === 0 && catalogProblems.length === 0,
+					ok: problems.length === 0,
 					projectId: project.id,
 					surfaceMap: pathOut,
 					productName: map.productName,
@@ -193,14 +126,12 @@ function main() {
 					requiredJourneys: map.requiredJourneys,
 					interactive: map.defaultEntry?.interactive ?? false,
 					problems,
-					catalogPath,
-					catalogProblems,
 				},
 				null,
 				2,
 			),
 		);
-		if (problems.length || catalogProblems.length) process.exitCode = 1;
+		if (problems.length) process.exitCode = 1;
 	}
 }
 

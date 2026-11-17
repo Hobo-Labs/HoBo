@@ -241,7 +241,7 @@ The **sdlc** skill coordinates implementation, validation, incremental commits, 
 
 The **gh-stack** skill is mirrored in `.agents/skills/gh-stack` and `.claude/skills/gh-stack`. Non-interactive CLI rules for `github/gh-stack` (`gh stack init|add|submit|sync|merge|view --json`). Install: `gh extension install github/gh-stack` (also `scripts/setup-agent-tools.sh` common layer). Docs: https://gh.io/stacks
 
-The **optimizexp** skill reviews actual UX, DX, and AX behavior, implements improvements, and verifies them with relevant evidence. It uses source code as the visual authority and does not create planning artifacts.
+The **optimizexp** skill reviews actual UX, DX, and AX behavior, implements improvements, and verifies them with relevant evidence. It uses source code as the visual authority and does not create planning artifacts. Its legacy feature and persona commands retain validation and project inspection, but reject synthetic scaffolds, generated review plans, and backlogs. Doctor repairs do not fabricate persona or experience documents.
 
 The **skill-creator-plus** initializer requires a complete description and
 instructions. It creates only the requested `SKILL.md`, without placeholder
