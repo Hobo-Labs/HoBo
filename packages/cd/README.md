@@ -45,6 +45,7 @@ typed failures and a **Runbook** section; `konsistent` enforces the README).
 | `@hobo/cd/failover` | `src/failover/` | Failover and rebalance sagas (D23, I21) |
 | `@hobo/cd/posture` | `src/posture/` | Policy bindings, shadow decisions, posture service (D24, D25, I22, I23) |
 | `@hobo/cd/compose` | `src/compose/` | Composition used by `@hobo/hobo` |
+| `@hobo/cd/testing` | `src/testing/` | Reusable in-process doubles for CD boundaries |
 
 `src/adapters/` is a flat folder of single-file adapters onto other HoBo
 packages, each owned with the module that uses it: `planning`, `gatekeeper`,
@@ -57,6 +58,30 @@ Frozen contract files (changed only with an ADR-0182 amendment):
 `data-models/cd.proto`, `src/events.ts` (event names, streams, refusal codes,
 `CD_DEFAULTS`), `src/ports.ts` and `src/index.ts`. Generated code is in
 `src/_generated/`.
+
+### Testing notification delivery
+
+Use the recording CDEvents sink with the real notification port to exercise
+CD's event construction without a webhook or external service:
+
+```ts
+import { createNotificationPort } from "@hobo/cd/boundary";
+import { createRecordingCdEventSink } from "@hobo/cd/testing";
+
+const sink = createRecordingCdEventSink();
+const notifications = createNotificationPort({ channels: { ops: sink }, source: "/test" });
+await notifications.notify(
+  { channel: "ops", subject: "promotion", body: { state: "PROMOTED" } },
+  { tenant: "example", principal: { kind: "service", id: "test" }, now: () => 0 },
+);
+await notifications.drain();
+expect(sink.events[0]?.subject.content).toMatchObject({ channel: "ops" });
+```
+
+Each sink is isolated; `events` returns copies and `clear()` resets its history.
+Pass a `delivery` result to exercise failure handling. This double does not
+persist dead letters or simulate webhook transport, retries, or a notification
+provider.
 
 ## Boundaries
 

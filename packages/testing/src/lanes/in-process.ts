@@ -13,8 +13,9 @@
  * WHAT THIS DOES NOT EXECUTE. `runtime-local` does not execute real `.wasm`
  * component bytes today, so nothing here is the deployed artifact on the
  * deployed host — hence `simulated`, never `real`. Queue, topic, secret, data,
- * schedule, kv and bucket resources expose local port implementations. Auth and the
- * rest get only a handle and a binding locator: they are labelled `mocked`.
+ * schedule, kv, bucket and flag resources expose local port implementations.
+ * Auth and the rest get only a handle and a binding locator: they are labelled
+ * `mocked`.
  * `container` and `wasm-component` are labelled `camp-only`. Built-in
  * emulators contact no provider, broker no credentials and write no `.hobo/`
  * state. Caller-supplied factories run their own code.
@@ -35,12 +36,14 @@ import {
 	type BucketEmulator,
 	createBucketEmulator,
 	createDataEmulator,
+	createFlagEmulator,
 	createKeyValueEmulator,
 	createQueueEmulator,
 	createScheduleEmulator,
 	createSecretEmulator,
 	createTopicEmulator,
 	type DataEmulator,
+	type FlagEmulator,
 	type KeyValuePort,
 	type QueueEmulator,
 	type ScheduleEmulator,
@@ -71,6 +74,7 @@ export interface InProcessDeployment {
 	readonly schedules: ReadonlyMap<string, ScheduleEmulator>;
 	readonly kv: ReadonlyMap<string, ServiceEmulator<KeyValuePort>>;
 	readonly buckets: ReadonlyMap<string, BucketEmulator>;
+	readonly flags: ReadonlyMap<string, FlagEmulator>;
 }
 
 type FetchLikeHandler = (request: Request) => Response | Promise<Response>;
@@ -216,7 +220,10 @@ function validateFactories(value: unknown): void {
 			typeof value.kv !== "function") ||
 		("bucket" in value &&
 			value.bucket !== undefined &&
-			typeof value.bucket !== "function")
+			typeof value.bucket !== "function") ||
+		("flag" in value &&
+			value.flag !== undefined &&
+			typeof value.flag !== "function")
 	) {
 		throw new TestHarnessError(
 			"HARNESS_EMULATOR_INVALID",
@@ -229,7 +236,15 @@ function validateFactories(value: unknown): void {
 function validateEmulator(
 	value: unknown,
 	alias: string,
-	kind: "queue" | "topic" | "secret" | "data" | "schedule" | "kv" | "bucket",
+	kind:
+		| "queue"
+		| "topic"
+		| "secret"
+		| "data"
+		| "schedule"
+		| "kv"
+		| "bucket"
+		| "flag",
 ): void {
 	const record =
 		typeof value === "object" && value !== null ? value : undefined;
@@ -269,7 +284,19 @@ function validateEmulator(
 							? ["every"]
 							: kind === "kv"
 								? ["get", "set", "delete", "exists"]
-								: ["get", "put", "delete"];
+								: kind === "bucket"
+									? ["get", "put", "delete"]
+									: [
+											"list",
+											"get",
+											"define",
+											"loadDefinitions",
+											"evaluateBoolean",
+											"evaluate",
+											"activateKillSwitch",
+											"clearKillSwitch",
+											"archive",
+										];
 	const datasets = portRecord?.datasets;
 	const records = portRecord?.records;
 	const hasMethods = (candidate: unknown, names: readonly string[]) =>
@@ -305,6 +332,10 @@ function validateEmulator(
 		(kind === "bucket" &&
 			service.inspector !== undefined &&
 			!hasMethods(service.inspector, ["readBody"])) ||
+		(kind === "flag" &&
+			(typeof portRecord.rulesetSeq !== "number" ||
+				(service.inspector !== undefined &&
+					!hasMethods(service.inspector, ["events"])))) ||
 		((kind === "queue" || kind === "schedule") &&
 			clock !== undefined &&
 			(clockRecord === undefined ||
@@ -344,6 +375,7 @@ export async function deployInProcess(
 	const schedules = new Map<string, ScheduleEmulator>();
 	const kv = new Map<string, ServiceEmulator<KeyValuePort>>();
 	const buckets = new Map<string, BucketEmulator>();
+	const flags = new Map<string, FlagEmulator>();
 	const resources = {
 		servers,
 		queues,
@@ -353,6 +385,7 @@ export async function deployInProcess(
 		schedules,
 		kv,
 		buckets,
+		flags,
 	};
 	const bindings: Record<string, Record<string, string>> = {};
 
@@ -401,6 +434,12 @@ export async function deployInProcess(
 				);
 				buckets.set(alias, emulator);
 				validateEmulator(emulator, alias, "bucket");
+			} else if (node.kind === "flag") {
+				const emulator = await (factories.flag ?? (() => createFlagEmulator()))(
+					context,
+				);
+				flags.set(alias, emulator);
+				validateEmulator(emulator, alias, "flag");
 			}
 			const handler =
 				isHttpServedKind(node.kind) && node.hasEntrypoint
@@ -422,6 +461,7 @@ export async function deployInProcess(
 				schedules.get(alias)?.fidelity ??
 				kv.get(alias)?.fidelity ??
 				buckets.get(alias)?.fidelity ??
+				flags.get(alias)?.fidelity ??
 				inProcessFidelity(node.kind, endpoint !== undefined);
 			handles.set(
 				alias,
@@ -500,11 +540,21 @@ async function closeResources(
 		| "schedules"
 		| "kv"
 		| "buckets"
+		| "flags"
 	>,
 ): Promise<unknown[]> {
 	const errors: unknown[] = [];
-	const { servers, queues, topics, secrets, data, schedules, kv, buckets } =
-		resources;
+	const {
+		servers,
+		queues,
+		topics,
+		secrets,
+		data,
+		schedules,
+		kv,
+		buckets,
+		flags,
+	} = resources;
 	for (const alias of order) {
 		const server = servers.get(alias);
 		const emulator =
@@ -514,7 +564,8 @@ async function closeResources(
 			data.get(alias) ??
 			schedules.get(alias) ??
 			kv.get(alias) ??
-			buckets.get(alias);
+			buckets.get(alias) ??
+			flags.get(alias);
 		try {
 			if (server?.listening) {
 				await new Promise<void>((resolve, reject) => {
