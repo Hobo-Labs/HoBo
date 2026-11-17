@@ -1284,6 +1284,9 @@ esac
 				join(bin, "git"),
 				`#!/bin/sh
 tool_dir="\${0%/*}"
+if [ "\${HOBO_FLEET_OLD_GIT:-0}" = 1 ] && [ "$1" = --no-lazy-fetch ]; then
+  exit 129
+fi
 if [ "$1" = hobo-test-advance ]; then
   if [ -f "$tool_dir/close-pr-on-job" ]; then
     touch "$tool_dir/pr-closed"
@@ -1316,6 +1319,11 @@ exec /usr/bin/git "$@"
 				HOBO_FLEET_JOBS: jobs,
 				HOBO_FLEET_REMOTE: remote,
 			};
+			const supportsNoLazyFetch =
+				spawnSync(join(bin, "git"), ["--no-lazy-fetch", "--version"], {
+					env: commandEnv,
+					stdio: "ignore",
+				}).status === 0;
 			const command = (
 				extra: NodeJS.ProcessEnv = {},
 				flags: string[] = [],
@@ -2244,7 +2252,17 @@ exec /usr/bin/git "$@"
 			git(remote, ["update-ref", "refs/heads/feature", baseA]);
 			const unpublished = command({}, ["--fresh"]);
 			assert.notEqual(unpublished.status, 0);
-			assert.match(unpublished.stderr, /not verifiably on a branch of origin/u);
+			assert.match(
+				unpublished.stderr,
+				supportsNoLazyFetch
+					? /not verifiably on a branch of origin/u
+					: /Git 2\.45 or newer/u,
+			);
+			const unpublishedOldGit = command({ HOBO_FLEET_OLD_GIT: "1" }, [
+				"--fresh",
+			]);
+			assert.notEqual(unpublishedOldGit.status, 0);
+			assert.match(unpublishedOldGit.stderr, /Git 2\.45 or newer/u);
 			assert.equal(
 				existsSync(join(repo, ".hobo/attestations-out", tree, "ci-guard.log")),
 				false,
@@ -2429,10 +2447,16 @@ exec /usr/bin/git "$@"
 			git(repo, ["update-ref", "-d", "refs/remotes/origin/feature"]);
 			git(repo, ["fetch", "--quiet", "origin", "feature"]);
 			const advancedSuccess = command({}, ["--fresh"]);
-			assert.equal(advancedSuccess.status, 0, advancedSuccess.stderr);
+			if (supportsNoLazyFetch)
+				assert.equal(advancedSuccess.status, 0, advancedSuccess.stderr);
+			else {
+				assert.notEqual(advancedSuccess.status, 0);
+				assert.match(advancedSuccess.stderr, /Git 2\.45 or newer/u);
+			}
+			const expectedSignoffs = supportsNoLazyFetch ? 3 : 2;
 			assert.equal(
 				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
-				3,
+				expectedSignoffs,
 			);
 			git(remote, ["update-ref", "refs/heads/feature", head]);
 
@@ -2457,7 +2481,7 @@ exec /usr/bin/git "$@"
 			assert.match(failed.stderr, /no local job has a trusted signoff policy/u);
 			assert.equal(
 				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
-				3,
+				expectedSignoffs,
 			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

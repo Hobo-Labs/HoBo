@@ -78,6 +78,14 @@ const IDENTITY = [
 	"commit.gpgsign=false",
 ];
 
+const supportsNoLazyFetch = () =>
+	spawnSync("git", ["--no-lazy-fetch", "--version"], { stdio: "ignore" })
+		.status === 0;
+const unprovedHeadMessage = () =>
+	supportsNoLazyFetch()
+		? /not verifiably on a branch of origin/u
+		: /Git 2\.45 or newer/u;
+
 function commit(repo: string, files: Readonly<Record<string, string>>): string {
 	for (const [name, text] of Object.entries(files)) {
 		mkdirSync(join(repo, name, ".."), { recursive: true });
@@ -1911,6 +1919,7 @@ exec /usr/bin/git "$@"
 	it("rechecks a pinned ancestor and requires a Git version that cannot lazy fetch", async () => {
 		const run = await fixture(false);
 		const descendant = git(run.repo, [
+			...IDENTITY,
 			"commit-tree",
 			`${run.head}^{tree}`,
 			"-p",
@@ -1941,8 +1950,13 @@ exec /usr/bin/git "$@"
 				}),
 				expectedPublished: { kind: "branch", branch: "topic", tip },
 			});
-		await sign(descendant);
-		rmSync(run.calls);
+		if (supportsNoLazyFetch()) {
+			await sign(descendant);
+			rmSync(run.calls);
+		} else {
+			await assert.rejects(sign(descendant), /Git 2\.45 or newer/u);
+			assert.equal(existsSync(run.calls), false);
+		}
 		const wrapper = directory("git-old-pinned-ancestor");
 		writeFileSync(
 			join(wrapper, "git"),
@@ -2088,7 +2102,7 @@ exec /usr/bin/git "$@"
 		git(run.repo, ["update-ref", "-d", "refs/remotes/origin/topic"]);
 		const result = run.command([], { HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1" });
 		assert.notEqual(result.status, 0);
-		assert.match(result.stderr, /not verifiably on a branch of origin/u);
+		assert.match(result.stderr, unprovedHeadMessage());
 		assert.equal(existsSync(run.calls), false);
 	});
 
@@ -2150,7 +2164,11 @@ exec /usr/bin/git "$@"
 		);
 	});
 
-	it("accepts a tested head that is an ancestor of a known live target tip", async () => {
+	it("accepts a tested head that is an ancestor of a known live target tip", async (t) => {
+		if (!supportsNoLazyFetch()) {
+			t.skip("Git before 2.45 cannot prove ancestry without lazy fetching");
+			return;
+		}
 		const run = await fixture(false);
 		const descendant = git(run.repo, [
 			...IDENTITY,
@@ -2234,10 +2252,7 @@ exec /usr/bin/git "$@"
 	});
 
 	it("does not lazily fetch an unknown branch tip from a partial clone", async (t) => {
-		if (
-			spawnSync("git", ["--no-lazy-fetch", "--version"], { stdio: "ignore" })
-				.status !== 0
-		) {
+		if (!supportsNoLazyFetch()) {
 			t.skip("Git before 2.45 cannot run the guarded ancestry probe");
 			return;
 		}
@@ -2281,7 +2296,7 @@ exec /usr/bin/git "$@"
 		git(run.repo, ["push", "--quiet", "other", "HEAD:refs/heads/topic"]);
 		const result = run.command();
 		assert.notEqual(result.status, 0);
-		assert.match(result.stderr, /not verifiably on a branch of origin/u);
+		assert.match(result.stderr, unprovedHeadMessage());
 		assert.equal(existsSync(run.calls), false);
 	});
 
@@ -2305,7 +2320,7 @@ exec /usr/bin/git "$@"
 		git(run.repo, ["update-ref", "refs/remotes/origin/topic", unrelated]);
 		const result = run.command([], { HOBO_SIGNOFF_TEST_GH_HEAD: unrelated });
 		assert.notEqual(result.status, 0);
-		assert.match(result.stderr, /not verifiably on a branch of origin/u);
+		assert.match(result.stderr, unprovedHeadMessage());
 		assert.equal(existsSync(run.calls), false);
 	});
 

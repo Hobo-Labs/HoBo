@@ -140,7 +140,7 @@ verified open PR; the tested base must remain reachable and unchanged. Fleet
 preflight retains its original branch or PR proof through the run, so adding an
 unrelated branch does not change the chosen proof, while moving or deleting the
 chosen branch still refuses publication. A failed final GitHub branch read
-identifies the selected branch separately from a changed or unreadable base.
+identifies the selected-branch check separately from a changed or unreadable base.
 
 The tested SHA must identify Git's original objects and parent graph. Local
 runs and signoff refuse replacement refs or nonempty graft metadata, including
