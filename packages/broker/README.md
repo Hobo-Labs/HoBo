@@ -37,6 +37,20 @@ stateDiagram-v2
   s2 --> s3: evidence remains current
 ```
 
+The [Yard resource binding skill](../../.agents/skills/verify-yard-resource-binding/SKILL.md)
+checks a two-resource abstraction. This projection hides 32 same-label steps;
+the separate request-snapshot model also checks a caller mutation.
+
+```mermaid
+stateDiagram-v2
+  s0: Resource placements ready
+  s1: Each resource has its selected definition
+  s2: Duplicate resources refused
+  [*] --> s0
+  s0 --> s2: refuse duplicate identities
+  s0 --> s1: record exact associations
+```
+
 Funded hosting requires `hostingBudget: {authority, quotes, now}` and a bound
 `authorizeHosting` callback. The callback returns the existing `GateDecision`
 plus a generated `HostingPolicyProof` tied to request digest, quote, budget

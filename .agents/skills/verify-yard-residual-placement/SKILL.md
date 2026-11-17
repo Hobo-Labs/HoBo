@@ -7,11 +7,11 @@ description: Verify capability, region, provider and catalog-price evidence for 
 
 **Properties:** A residual resource is placed only on a full capability match in its Yard provider or an explicitly compatible wildcard, in a region supported by the definition. Eligible catalog entries must have distinct identities, valid nonnegative decimal prices and matching units; the lowest exact marginal price wins with stable ID ties. Catalog evidence changed while resolving resources rejects. A failure can route a resource to an unsupported region, omit required capabilities, misrepresent its provider, or select the wrong catalog price.
 
-**Review baseline:** commit `10d92d87dbac1d40d08564b0fe0a7cc10484f9e9`. PASS for the bounded models, symbolic abstraction and generated tests below.
+**Review baseline:** commit `d8bf0e9f1ab922de79e6650326ee71a415439ed3`. PASS for the bounded models, symbolic abstraction and generated tests below.
 
 ## Covered code
 
-- `packages/broker/src/yard-placement/deploy.ts` filters provider definitions and implements `placeResourcesUnderYard`; it snapshots provider and candidate evidence, invokes capability checks, validates regions and prices, ranks candidates and rechecks evidence across all resources.
+- `packages/broker/src/yard-placement/deploy.ts` snapshots the request, filters provider definitions and implements `placeResourcesUnderYard`; it snapshots provider and candidate evidence, invokes capability checks, validates regions and prices, ranks candidates and rechecks evidence across all resources. `verify-yard-resource-binding` checks the subsequent association of selected definitions to execution units.
 - `packages/pricing/src/decimal.ts` supplies exact decimal parsing and comparison. The tests exercise it through actual Yard-first placement.
 - `packages/broker/test/yard-residual-placement.test.ts` checks partial and false wildcard verdicts, unsupported or malformed regions, callback failures, changed providers or price evidence, high-precision prices, incomparable units and duplicate IDs. Eighty generated arrays and their reverse permutations are compared with an independent integer reference (seed 614522).
 - `yard-placement.test.ts`, `yard-event-store-folds.test.ts` and `hosting-budget.test.ts` exercise integration with Yard matching, generation and budget admission.
