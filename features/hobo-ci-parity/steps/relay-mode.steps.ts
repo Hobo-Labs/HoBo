@@ -1,5 +1,6 @@
 /**
- * Steps for the relay-mode parity scenarios (R01, R06b, R13, R16, X01, X03): a
+ * Steps for the relay-mode parity scenarios (R01, R04, R05, R06b, R13, R16,
+ * X01, X03): a
  * HoBo node answers relay jobs over the runner protocol, run against the
  * GitHub simulator with no network (ADR-0183,
  * `packages/ci-gh-actions/src/relay-answer/RELAY-MODE.md`).
@@ -19,6 +20,7 @@ import {
 import {
 	InMemoryMachineRegistry,
 	InMemoryRouteJournal,
+	testMachineAdvert,
 } from "../../../packages/ci/src/runner-order/testing.js";
 import {
 	createRelayAnswerer,
@@ -31,12 +33,14 @@ import {
 import { testJitConfig } from "../../../packages/ci-gh-actions/src/runner-protocol/port.js";
 import {
 	GithubSimulator,
+	SIMULATED_ACTOR_ID,
 	SimulatedRunnerService,
 	simulatorTransport,
 } from "../../../packages/ci-gh-actions/test/support/github-simulator/index.js";
 
 const ACCOUNT = "acct-parity";
-const RELAY_SCENARIOS = "@R01 or @R06b or @R13 or @R16 or @X01 or @X03";
+const RELAY_SCENARIOS =
+	"@R01 or @R04 or @R05 or @R06b or @R13 or @R16 or @X01 or @X03";
 /** How often the rescue poll runs; the bar is two of them. */
 const POLL_INTERVAL_MS = 30_000;
 const MESH_STEP_MS = 20_000;
@@ -45,6 +49,7 @@ type RelayNode = Readonly<{
 	name: string;
 	answerer: RelayAnswerer;
 	journal: InMemoryRouteJournal;
+	registry: InMemoryMachineRegistry;
 }>;
 
 type RelayModeState = {
@@ -98,7 +103,7 @@ function relayNode(
 		webhookSecret: sim.webhookSecret,
 		nowMs: () => sim.nowMs(),
 	});
-	return { name, answerer, journal };
+	return { name, answerer, journal, registry };
 }
 
 function turnOn(repository: string, order: readonly string[] = ["github"]): void {
@@ -222,6 +227,109 @@ Given(
 		);
 	},
 );
+
+Given(
+	"relay mode is on for {string} with the runner order {string}",
+	(repository: string, order: string) => {
+		world.repository = repository;
+		turnOn(
+			repository,
+			order.split(",").map((key) => key.trim()),
+		);
+	},
+);
+
+Given(
+	"a relay job for {string} names only {string} and no machine is connected",
+	(repository: string, key: string) => {
+		world.repository = repository;
+		queueRelay(repository, "hobo-relay", [], new Map([[key, "self-hosted"]]));
+	},
+);
+
+Given("a job {string} needs the relay job", (name: string) => {
+	// GitHub lists a job only once what it needs has finished, so this reads
+	// the simulator's own record of the run.
+	const behind = [...world.sim.state.jobs.values()].find(
+		(job) => job.runId === world.runId && job.name === name,
+	);
+	assert.ok(behind, `the job ${name} waits behind the relay job`);
+	assert.deepEqual(behind.needs, [world.jobName]);
+});
+
+Given("every machine that fits the relay job is busy", async () => {
+	const [node] = world.nodes;
+	assert.ok(node);
+	await node.registry.put(
+		testMachineAdvert({
+			id: "m-1",
+			accountId: ACCOUNT,
+			slots: 1,
+			busy: 1,
+			// The run's starter owns it, so a machine shared with only its owner admits the job.
+			ownerId: SIMULATED_ACTOR_ID,
+			lastSeenMs: world.sim.nowMs(),
+		}),
+	);
+	queueRelay(
+		world.repository,
+		"hobo-relay",
+		[],
+		new Map([["machine", "self-hosted"]]),
+	);
+});
+
+When("the relay job is answered in relay mode", async () => {
+	await deliverToHosted();
+});
+
+When("the run is cancelled", () => {
+	world.sim.cancelRun(world.runId);
+});
+
+Then("the relay job fails with the one-sentence reason as an annotation", () => {
+	const job = relayJob();
+	assert.equal(job.conclusion, "failure");
+	assert.equal(job.outputs.get("outcome"), "none");
+	const reason = job.outputs.get("reason") ?? "";
+	assert.match(reason, /machine/u);
+	assert.deepEqual(job.annotations, [reason]);
+});
+
+Then("GitHub skips the job {string}", (name: string) => {
+	const behind = world.sim
+		.jobs()
+		.find((job) => job.runId === world.runId && job.name === name);
+	assert.equal(behind?.conclusion, "skipped");
+});
+
+Then(
+	"the relay job succeeds with outcome {string} and the busy step's label as its runner",
+	(outcome: string) => {
+		const job = relayJob();
+		assert.equal(job.conclusion, "success");
+		assert.equal(job.outputs.get("outcome"), outcome);
+		assert.equal(job.outputs.get("step"), "machine");
+		assert.equal(job.outputs.get("runner"), "hobo-machine-m-1");
+	},
+);
+
+Then("the job behind it queues on that label", () => {
+	const behind = world.sim
+		.jobs()
+		.find((job) => job.runId === world.runId && job.name === "build");
+	assert.equal(behind?.status, "queued");
+	assert.deepEqual(behind?.labels, [relayJob().outputs.get("runner")]);
+});
+
+Then("the queued job leaves the queue and holds no slot", () => {
+	const behind = world.sim
+		.jobs()
+		.find((job) => job.runId === world.runId && job.name === "build");
+	assert.equal(behind?.status, "completed");
+	assert.equal(behind?.conclusion, "cancelled");
+	assert.equal(behind?.runnerName, undefined);
+});
 
 Given("the fleet is taking jobs but does not isolate them", () => {
 	const node = relayNode("hosted", undefined, fleetRoom(false));

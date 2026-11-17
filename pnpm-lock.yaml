@@ -1833,6 +1833,9 @@ importers:
       '@hobo/ci':
         specifier: workspace:*
         version: link:../ci
+      '@hobo/ci-dashboard':
+        specifier: workspace:*
+        version: link:../ci-dashboard
       '@hobo/ci-gh-actions':
         specifier: workspace:*
         version: link:../ci-gh-actions

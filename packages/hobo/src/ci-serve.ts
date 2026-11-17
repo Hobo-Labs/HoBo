@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { create, toJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema } from "@hobo/ci";
+import { createDashboardRoute } from "@hobo/ci-dashboard";
 import {
 	type CiJobAdmission,
 	type CiWorkerStore,
@@ -19,6 +20,8 @@ import {
 	inferJobAdmission,
 	inventoryCiEnginesFromRepository,
 	loadCiProjectFromDirectory,
+	parseRelayJobs,
+	type RelayWiring,
 	resolveEnvironmentEngines,
 	startRelayFromEnvironment,
 } from "@hobo/ci-gh-actions/cli-serve";
@@ -156,30 +159,37 @@ async function loadAgentRelay() {
  * poller the box worker runs, feeding the relay's inbox. Only the repository
  * this serve was started for is read, and only once the relay holds a
  * connection for it; the relay's own tick then admits what was accepted.
+ *
+ * After each poll it hands the same repositories to the relay's wiring, whose
+ * relay-mode pass (rescue, then sweep) runs only when `relayJobs.answer` is
+ * on (ADR-0183). That pass is not waited for: it can wait minutes for an
+ * offer, and admission keeps its own cadence.
  */
 export function startPullAdmission(input: {
 	github: GithubTransport;
 	relay: {
 		runtime: Pick<RunningRelay["runtime"], "admissionOrder" | "ingestWebhook">;
 		store: Pick<RunningRelay["store"], "configuration">;
+		wiring?: Pick<RelayWiring, "afterPoll"> | undefined;
 	};
 	repository: string;
 	installationId: number;
 	intervalMs?: number;
 	emitProgress?: ((message: string) => void) | undefined;
 }) {
-	const { runtime, store } = input.relay;
+	const { runtime, store, wiring } = input.relay;
 	const repository = input.repository.toLowerCase();
+	const served = async () =>
+		((await store.configuration())?.configuration?.connections ?? []).filter(
+			(connection) =>
+				connection.installationId === input.installationId &&
+				connection.repository.toLowerCase() === repository,
+		);
 	const poller = createGithubJobPoller({
 		github: input.github,
 		admissionOrder: runtime.admissionOrder,
 		ingestCoalesce: createPollIngestCoalesce(),
-		connections: async () =>
-			((await store.configuration())?.configuration?.connections ?? []).filter(
-				(connection) =>
-					connection.installationId === input.installationId &&
-					connection.repository.toLowerCase() === repository,
-			),
+		connections: served,
 		ingest: (delivery) => runtime.ingestWebhook(delivery),
 		onIngestError: (jobId, message) =>
 			input.emitProgress?.(`poll-admission job ${jobId} refused: ${message}`),
@@ -213,8 +223,27 @@ export function startPullAdmission(input: {
 			})
 			.finally(() => {
 				inFlight = undefined;
+				if (wiring) void relayModePass(wiring);
 			});
 		return inFlight;
+	}
+	async function relayModePass(
+		relayWiring: Pick<RelayWiring, "afterPoll">,
+	): Promise<void> {
+		try {
+			const pass = await relayWiring.afterPoll(
+				(await served()).map((connection) => ({
+					installationId: connection.installationId,
+					repository: connection.repository,
+				})),
+			);
+			if (pass && (pass.rescue.queued > 0 || pass.sweep.deleted.length > 0))
+				input.emitProgress?.(
+					`relay mode: ${pass.rescue.queued} queued relay jobs, ${pass.sweep.deleted.length} leftover runners removed`,
+				);
+		} catch {
+			// The next poll's pass tries again.
+		}
 	}
 	const timer = setInterval(() => void poll(), input.intervalMs ?? 15_000);
 	void poll();
@@ -694,6 +723,15 @@ export async function startCiServe(input: {
 	if (plan.trustProxy) relayEnv.HOBO_CI_TRUST_PROXY = "1";
 	relayEnv.HOBO_CI_DB = dbPath;
 	relayEnv.HOBO_CI_CONFIG = seedConfig;
+	// Relay mode answers only as the project's own .hobo/ci.json says
+	// (relayJobs.answer, off by default; ADR-0183), never from the shell.
+	const relayJobs = parseRelayJobs(await readFile(plan.configPath, "utf8"));
+	delete relayEnv.HOBO_CI_RELAY_JOBS_ANSWER;
+	delete relayEnv.HOBO_CI_RELAY_JOBS_LABEL;
+	if (relayJobs.answer) {
+		relayEnv.HOBO_CI_RELAY_JOBS_ANSWER = "1";
+		relayEnv.HOBO_CI_RELAY_JOBS_LABEL = relayJobs.label;
+	}
 	const stubEngines = plan.engines.filter((engine) => engine !== "gh-actions");
 	if (stubEngines.length > 0)
 		relayEnv.HOBO_CI_STUB_ENGINES = stubEngines.join(",");
@@ -706,8 +744,9 @@ export async function startCiServe(input: {
 	const agentBlock = input.options.noAgent
 		? undefined
 		: parseCiAgentBlock(await readFile(plan.configPath, "utf8"));
-	let startRelay: (env: NodeJS.ProcessEnv) => Promise<RunningRelay> =
-		startRelayFromEnvironment;
+	// The dashboard is served only while HOBO_CI_DASHBOARD is 1.
+	let startRelay: (env: NodeJS.ProcessEnv) => Promise<RunningRelay> = (env) =>
+		startRelayFromEnvironment(env, { dashboard: createDashboardRoute() });
 	if (agentBlock !== undefined) {
 		relayEnv.HOBO_CI_AGENT_CONFIG = plan.configPath;
 		relayEnv.HOBO_CI_AGENT_DIR = join(stateDir, "agent");

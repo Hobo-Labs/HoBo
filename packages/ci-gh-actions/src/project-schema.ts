@@ -4,6 +4,8 @@ import {
 	CI_PROJECT_PROVIDERS_SCHEMA_REF,
 	CiProjectProviderSchema,
 } from "./project-providers.js";
+import { RelayJobsSettingsSchema } from "./relay-answer/ci-file.js";
+import { ChecksBlock } from "./relay-checks/config.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
 import { RunnerOrderDocumentSchema } from "./runner-order-config.js";
 import { RunnerRoutingSchema } from "./runner-routing.js";
@@ -276,6 +278,16 @@ export const CiProjectDocumentSchema = z
 		 * repository variable carries it (ADR-0181).
 		 */
 		turboCache: TurboCacheSchema.optional(),
+		/**
+		 * Relay mode (ADR-0183): whether a HoBo relay answers this repository's
+		 * relay jobs (`answer`, off unless true) and the label they ask for.
+		 */
+		relayJobs: RelayJobsSettingsSchema.optional(),
+		/**
+		 * Runner-less checks (ADR-0183): the pull request title types allowed
+		 * and whether the lint check may run.
+		 */
+		checks: ChecksBlock.optional(),
 	})
 	.strict();
 
@@ -378,6 +390,8 @@ export function resolveCiProjectReferences(
 		runnerRouting: _runnerRouting,
 		runnerOrder: _runnerOrder,
 		turboCache: _turboCache,
+		relayJobs: _relayJobs,
+		checks: _checks,
 		...document
 	} = input;
 	return expand(z.json().parse(document), 0);

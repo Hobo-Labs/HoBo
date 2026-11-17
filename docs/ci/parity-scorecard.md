@@ -16,9 +16,9 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | State | Cases |
 | --- | --- |
-| pass | 25 |
-| built-not-proven | 2 |
-| partial | 21 |
+| pass | 26 |
+| built-not-proven | 3 |
+| partial | 19 |
 | not-built | 9 |
 | met-differently | 1 |
 | Total | 58 |
@@ -30,8 +30,8 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | R01 | The relay is answered in about a second and bills no minutes ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | Relay mode answers within 5 s of the queued webhook in the simulator; a live run shows zero billed minutes for the relay job | T2, T3 | built-not-proven: T3 owed: no production run is linked yet | 12 |
 | R02 | A job goes to the first runner in the order that can take it now ([docs/architecture/pick-runner.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/architecture/pick-runner.md)) | Same | T1 | pass | done |
 | R03 | A runner type the job did not name, or the order leaves out, is never used ([site/concepts/runner-order.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/runner-order.mdx)) | Same, and the decision lists it | T1 | pass | done |
-| R04 | When nothing fits, the relay fails with the reason and the job does not start ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | The relay job fails with the one-sentence reason as an annotation and the dependent job is skipped | T2, T3 | partial: the reason exists, no job shows it | 11, 12 |
-| R05 | When machines are only busy the job waits in line; a cancelled job leaves it ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A `waiting` decision queues the job on the busy step's label; cancelling frees it | T2 | partial | 11, 12 |
+| R04 | When nothing fits, the relay fails with the reason and the job does not start ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | The relay job fails with the one-sentence reason as an annotation and the dependent job is skipped | T2, T3 | built-not-proven: T3 owed: no production run is linked yet | 11, 12 |
+| R05 | When machines are only busy the job waits in line; a cancelled job leaves it ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A `waiting` decision queues the job on the busy step's label; cancelling frees it | T2 | pass | 11, 12 |
 | R06 | Public repositories never run on machines ([site/reference/security.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/security.md)) | Same, and forks too | T1 | pass | done |
 | R06b **B** | n/a | The fleet takes a public repo or a fork's pull request only when it isolates such jobs | T1, T2 | pass | 12 |
 | R07 | GitHub-hosted is used while under N% of included minutes, with a two-hour runway ([site/concepts/runner-order.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/runner-order.mdx)) | Same on measured usage; unmeasured usage never blocks | T1, T2 | partial: rule built, no reader | 08 |

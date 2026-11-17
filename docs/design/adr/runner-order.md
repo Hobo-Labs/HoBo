@@ -116,7 +116,8 @@ opt-in per workflow through `hobo ci init --relay` and needs no flag.
 ## Not built or not proven
 
 The [parity scorecard](../../ci/parity-scorecard.md) is the record; on
-2026-11-17 it shows 25 of 58 cases `pass` and one met differently. The
+2026-11-17 it shows 26 of 58 cases `pass`, three built but not proven and
+one met differently. The
 [capture](../../competitors/relayrunner.md#parity-scorecard) lists every
 owed case with the run that would prove it. In short:
 
@@ -127,13 +128,13 @@ owed case with the run that would prove it. In short:
   runner-protocol client, machine connect, runner adoption, the billing
   reader and provider usage sync have run only against the GitHub simulator
   and their pacts.
-- **Owed gauntlet scenarios.** Thirty cases are built and tested in
-  their packages, but their scenario under `features/hobo-ci-parity` is still
-  pending, so the scorecard keeps the state they had before the build.
+- **Owed gauntlet scenarios.** Twenty-eight cases have package tests, but
+  their scenario under `features/hobo-ci-parity` is still pending, so the
+  scorecard keeps the state they had before the build.
 - **Not wired.** `adoptRunner` exists, but no `hobo ci runners` command calls
   it (case M10's bar names that command).
-- **Met differently.** No human roles (S08) and no email (M08's takeover is
-  the `machine.taken_over` event).
+- **Met differently.** No human roles (S08). M08 is not built; when it is,
+  its takeover email is met by the `machine.taken_over` event, not a message.
 
 Failure diagnosis was run against GitHub on 2026-11-17: `hobo ci diagnose
 44044299552` read a failed run of this repository and printed, for each of

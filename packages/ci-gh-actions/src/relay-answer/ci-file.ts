@@ -28,14 +28,16 @@ const Contents = z.object({
 	encoding: z.literal("base64"),
 });
 
+/** The `relayJobs` block of `.hobo/ci.json`; the project schema accepts the same shape. */
+export const RelayJobsSettingsSchema = z
+	.object({
+		answer: z.boolean().optional(),
+		label: z.string().trim().min(1).max(100).optional(),
+	})
+	.strict();
+
 const RelayJobsBlock = z.looseObject({
-	relayJobs: z
-		.object({
-			answer: z.boolean().optional(),
-			label: z.string().trim().min(1).max(100).optional(),
-		})
-		.strict()
-		.optional(),
+	relayJobs: RelayJobsSettingsSchema.optional(),
 });
 
 /**

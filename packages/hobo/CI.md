@@ -99,6 +99,19 @@ separate package, `@hobo/ci-agent`, loaded only when a block is present; a
 `hobo` install without it refuses to serve such a project unless `--no-agent`
 is passed.
 
+Three relay pieces of [ADR-0183](../../docs/design/adr/runner-order.md) are
+off until turned on. **Relay mode** answers relay jobs only when the
+project's `.hobo/ci.json` says `"relayJobs": { "answer": true }`; a value in
+the shell does not count. Its rescue and leftover-runner sweep then run after
+each pull-admission poll, never holding the poll up. **Automatic retry**
+needs `HOBO_CI_AUTO_RETRY=1`. **The dashboard** needs `HOBO_CI_DASHBOARD=1`:
+the page is served at `/dashboard` and the read API it reads under
+`/v1/accounts/self/`, checked with the relay's account tokens. Their records
+live in `<HOBO_HOME>/ci/serve/relay-wiring.sqlite`, opened only when one is on.
+With the agent block on, the relay starts through the agent's entry and the
+dashboard page is not served. See
+[the relay wiring](../ci-gh-actions/README.md#wiring-turning-the-built-pieces-on).
+
 Alternatively, import a self-hosted App's key and webhook secret from files:
 
 ```sh

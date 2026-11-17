@@ -772,3 +772,16 @@ the same runs. Gauntlet cases I01, I03, I04 and I05 run the commands through
 the `hobo` CLI in `features/hobo-ci-parity/insights.feature`. The channel to a
 deployed relay's read API is built, not proven, until a production read is
 linked.
+
+## Wiring: turning the built pieces on
+
+`hobo ci serve` turns on three relay pieces of ADR-0183 only when asked:
+relay mode follows the project's `.hobo/ci.json` `relayJobs.answer` (never
+the shell), automatic retry needs `HOBO_CI_AUTO_RETRY=1`, and the dashboard
+with its read API needs `HOBO_CI_DASHBOARD=1`. The pull-admission poller runs
+relay mode's rescue and sweep after each poll without waiting for them, and
+the serve supplies the `@hobo/ci-dashboard` route. See
+[CI.md](CI.md#host-a-local-relay) and the
+[relay wiring](../ci-gh-actions/README.md#wiring-turning-the-built-pieces-on).
+`test/ci-serve.test.ts` drives the serve and its poller with each flag on
+and off. Built, not proven: no serve has answered a relay job from GitHub yet.
