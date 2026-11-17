@@ -153,13 +153,19 @@ Replay the complete target stream, including event metadata, before appending
 signals to it. A recorded signal suppresses emission only if its scope and
 payload match the reconstructed transition. A recorded signal that cannot be
 reconstructed, a conflicting signal, or an occupied idempotency key requires
-journal reconciliation. Explicitly foreign facts are
-ignored, but missing scope or invalid amounts on relevant financial facts now
+journal reconciliation. Explicitly foreign facts are ignored, but missing
+scope or invalid amounts on relevant financial facts now
 stop the fold; reconcile older unscoped or incomplete records before upgrade.
 The journal and its evidence are trusted, and replay alone cannot authenticate
 an otherwise matching signal. A concurrent append can occupy a key after the
-read; callers must inspect deduplicated append results and reconcile mismatches. Signal threshold arithmetic still rounds to nine
-decimal places and needs separate review for sub-nanodollar amounts.
+read; callers must inspect deduplicated append results and reconcile mismatches.
+
+Threshold decisions use exact decimal values serialized from the numeric input.
+Reported amounts are numeric projections; if the wire format cannot preserve a
+threshold decision, the fold refuses it for reconciliation. Older rounded
+signals may disagree with the corrected calculation and must be reconciled before
+replay; coordinate the Broker and CI upgrade because CI now validates the exact
+decimal threshold projection.
 
 The [budget signal replay skill](../../.agents/skills/verify-budget-signal-replay/SKILL.md)
 checks 60 model states. This projection hides 27 transitions between states
@@ -188,6 +194,25 @@ stateDiagram-v2
   s3 --> s5: require reconciliation
   s4 --> s5: require reconciliation
   s7 --> s8: append signal
+```
+
+The [budget signal arithmetic skill](../../.agents/skills/verify-budget-signal-arithmetic/SKILL.md)
+checks 75 threshold states and 12 wire-projection states. The threshold chart
+hides 155 transitions between states with the same label.
+
+```mermaid
+stateDiagram-v2
+  s0: Spend remains below threshold
+  s1: Budget threshold crossed
+  s2: Spend remains above threshold
+  s3: Budget headroom restored
+  [*] --> s0
+  s0 --> s1: record usage
+  s1 --> s2: record usage or apply credit
+  s1 --> s3: apply credit
+  s2 --> s3: apply credit
+  s3 --> s1: record usage
+  s3 --> s0: apply credit or record usage
 ```
 
 Zero USD budget or per-resolution cap means zero, never unlimited. Unlimited
