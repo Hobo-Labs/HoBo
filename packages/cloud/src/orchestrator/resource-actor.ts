@@ -81,7 +81,7 @@ export function resourceActorKey(
 export function hasUnresolvedReconciliation(
 	events: readonly EventEnvelope[],
 ): boolean {
-	const unresolved = new Set<string>();
+	const unresolved = new Map<string, Set<string>>();
 	for (const event of events) {
 		if (!isJsonObject(event.data) || !isJsonString(event.data.resourceId))
 			continue;
@@ -90,12 +90,23 @@ export function hasUnresolvedReconciliation(
 			event.type === CLOUD_EVENTS.ResourceFailed &&
 			event.data.requiresReconciliation === true
 		) {
-			unresolved.add(resourceId);
+			const failures = unresolved.get(resourceId) ?? new Set<string>();
+			failures.add(event.id);
+			unresolved.set(resourceId, failures);
 		} else if (
-			event.type === CLOUD_EVENTS.ResourceProvisioned ||
-			event.type === CLOUD_EVENTS.ResourceDestroyed
+			event.type === CLOUD_EVENTS.ResourceReconciled &&
+			isJsonString(event.data.outcome) &&
+			["applied", "destroyed", "no-effect"].includes(event.data.outcome) &&
+			(event.data.outcome !== "no-effect" ||
+				(isJsonString(event.data.restoredState) &&
+					["provisioned", "destroyed", "failed"].includes(
+						event.data.restoredState,
+					))) &&
+			isJsonString(event.data.failureEventId)
 		) {
-			unresolved.delete(resourceId);
+			const failures = unresolved.get(resourceId);
+			failures?.delete(event.data.failureEventId);
+			if (failures?.size === 0) unresolved.delete(resourceId);
 		}
 	}
 	return unresolved.size > 0;
@@ -117,6 +128,7 @@ export function foldResourceActor(
 		outputs: {},
 		deps: [...resource.deps],
 	};
+	const unresolvedIds = new Set<string>();
 
 	for (const event of history) {
 		// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
@@ -125,6 +137,9 @@ export function foldResourceActor(
 			outputs?: Record<string, string>;
 			specHash?: string;
 			requiresReconciliation?: boolean;
+			failureEventId?: string;
+			outcome?: string;
+			restoredState?: string;
 		};
 		if (data.resourceId !== resource.name) continue;
 		switch (event.type) {
@@ -142,6 +157,10 @@ export function foldResourceActor(
 				snapshot.sequence += 1;
 				break;
 			case CLOUD_EVENTS.ResourceProvisioned:
+				if (unresolvedIds.size > 0) {
+					snapshot.sequence += 1;
+					break;
+				}
 				snapshot.state = "Provisioned";
 				snapshot.sequence += 1;
 				if (data.outputs) snapshot.outputs = { ...data.outputs };
@@ -160,7 +179,46 @@ export function foldResourceActor(
 					data.requiresReconciliation === true
 						? "ReconciliationRequired"
 						: "Failed";
+				if (data.requiresReconciliation === true) unresolvedIds.add(event.id);
 				snapshot.sequence += 1;
+				break;
+			case CLOUD_EVENTS.ResourceReconciled:
+				if (
+					snapshot.state === "ReconciliationRequired" &&
+					data.outcome !== undefined &&
+					["applied", "destroyed", "no-effect"].includes(data.outcome) &&
+					(data.outcome !== "no-effect" ||
+						(data.restoredState !== undefined &&
+							["provisioned", "destroyed", "failed"].includes(
+								data.restoredState,
+							))) &&
+					data.failureEventId !== undefined &&
+					unresolvedIds.has(data.failureEventId)
+				) {
+					unresolvedIds.delete(data.failureEventId);
+					if (unresolvedIds.size === 0) {
+						if (data.outcome === "applied") {
+							snapshot.state = "Provisioned";
+							if (data.outputs) snapshot.outputs = { ...data.outputs };
+							if (isJsonString(data.specHash))
+								snapshot.specHash = data.specHash;
+							else delete snapshot.specHash;
+						} else if (data.outcome === "destroyed") {
+							snapshot.state = "Destroyed";
+							snapshot.outputs = {};
+							delete snapshot.specHash;
+						} else if (data.outcome === "no-effect") {
+							if (data.restoredState === "provisioned")
+								snapshot.state = "Provisioned";
+							else if (data.restoredState === "destroyed") {
+								snapshot.state = "Destroyed";
+								snapshot.outputs = {};
+								delete snapshot.specHash;
+							} else snapshot.state = "Failed";
+						}
+					}
+					snapshot.sequence += 1;
+				}
 				break;
 			case CLOUD_EVENTS.ResourceDestroying:
 				if (snapshot.state === "ReconciliationRequired") {
@@ -171,6 +229,10 @@ export function foldResourceActor(
 				snapshot.sequence += 1;
 				break;
 			case CLOUD_EVENTS.ResourceDestroyed:
+				if (unresolvedIds.size > 0) {
+					snapshot.sequence += 1;
+					break;
+				}
 				snapshot.state = "Destroyed";
 				snapshot.sequence += 1;
 				snapshot.outputs = {};

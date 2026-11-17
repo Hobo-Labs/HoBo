@@ -276,6 +276,51 @@ package hobo
 	}
 }
 
+#ResourceReconciledRecord: {
+	deploymentId: string & !=""
+	resourceId: string & !=""
+	failureEventId: string & !=""
+	operation: "apply" | "destroy"
+	outcome: "applied" | "destroyed" | "no-effect"
+	evidenceRef: string & !=""
+	financialEvidenceRef: string & !=""
+	financialDisposition: "none" | "held" | "settled" | "released"
+	reservationId?: string & !=""
+	claimDigest: =~"^sha256:[0-9a-f]{64}$"
+	outputs?: {[string]: string}
+	execId?: string & !=""
+	specHash?: =~"^sha256:[0-9a-f]{64}$"
+	finalStateHash?: string & !=""
+	restoredState?: "provisioned" | "destroyed" | "failed"
+	if outcome == "applied" {
+		operation: "apply"
+		financialDisposition: "none" | "held"
+		outputs: {[string]: string}
+		execId: string & !=""
+		specHash: =~"^sha256:[0-9a-f]{64}$"
+		finalStateHash?: _|_
+		restoredState?: _|_
+	}
+	if outcome == "destroyed" {
+		operation: "destroy"
+		finalStateHash: string & !=""
+		outputs?: _|_
+		execId?: _|_
+		specHash?: _|_
+		restoredState?: _|_
+	}
+	if outcome == "no-effect" {
+		financialDisposition: "none" | "settled" | "released"
+		restoredState: "provisioned" | "destroyed" | "failed"
+		outputs?: _|_
+		execId?: _|_
+		specHash?: _|_
+		finalStateHash?: _|_
+	}
+	if financialDisposition != "none" {reservationId: string & !=""}
+	if financialDisposition == "none" {reservationId?: _|_}
+}
+
 #ResourceDestroyingRecord: {
 	deploymentId: string & !=""
 	resourceId:   string & !=""
@@ -402,6 +447,8 @@ package hobo
 	providerId?: string
 	region?:     string
 	lifecycle?: "provisioning" | "provisioned" | "failed" | "reconciliation-required" | "destroying" | "destroyed"
+	reconciliationEventId?: string & !=""
+	otherReconciliationEventIds?: [...string & !=""]
 }
 
 #TopologyEdge: {
