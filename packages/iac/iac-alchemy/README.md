@@ -5,8 +5,8 @@ host supplies an Alchemy stack, runtime layer, runtime directory, target scope
 and an injected financial port to `createAlchemyIacProvider`. It implements the
 `IacProvider` preview, apply, destroy and refresh port; no core package imports
 this adapter or the Alchemy library.
-The Rivet integration is tested against `@alchemy.run/rivet` beta.87 and its
-RivetKit 3 runtime dependency.
+Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
+`rivetkit` 3.0.0 peers; install both when using Rivet components.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
