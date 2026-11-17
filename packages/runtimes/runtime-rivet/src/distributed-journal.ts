@@ -1,0 +1,282 @@
+import type { FoldEvent } from "@hobo/core";
+
+const LEASE_MS = 30_000;
+const MAX_GRANTS = 4_096;
+const MAX_EVENTS = 1_024;
+const MAX_EVENT_BYTES = 65_536;
+const MAX_JOURNAL_BYTES = 4_194_304;
+
+interface Grant {
+	readonly requestId: string;
+	readonly holderId: string;
+	readonly fenceToken: number;
+	readonly expiresAtMs: number;
+}
+interface Entry {
+	readonly eventId: string;
+	readonly eventJson: string;
+}
+export interface DistributedJournalState {
+	readonly version: 1;
+	readonly epoch: number;
+	readonly current: Grant | null;
+	readonly grants: readonly Grant[];
+	readonly entries: readonly Entry[];
+	readonly bytes: number;
+}
+export type DistributedJournalCommand =
+	| {
+			readonly kind: "acquire";
+			readonly requestId: string;
+			readonly holderId: string;
+			readonly nowMs: number;
+	  }
+	| {
+			readonly kind: "release";
+			readonly holderId: string;
+			readonly fenceToken: number;
+			readonly nowMs: number;
+	  }
+	| {
+			readonly kind: "append";
+			readonly holderId: string;
+			readonly fenceToken: number;
+			readonly expectedRevision: number;
+			readonly eventId: string;
+			readonly event: FoldEvent;
+			readonly nowMs: number;
+	  };
+export type DistributedJournalResult =
+	| { readonly status: "denied"; readonly code: string }
+	| {
+			readonly status: "acquired";
+			readonly fenceToken: number;
+			readonly expiresAtMs: number;
+			readonly duplicate: boolean;
+	  }
+	| { readonly status: "released" }
+	| {
+			readonly status: "appended";
+			readonly revision: number;
+			readonly duplicate: boolean;
+	  };
+export interface DistributedJournalTransition {
+	readonly state: DistributedJournalState;
+	readonly result: DistributedJournalResult;
+}
+
+export function initialDistributedJournal(): DistributedJournalState {
+	return {
+		version: 1,
+		epoch: 0,
+		current: null,
+		grants: [],
+		entries: [],
+		bytes: 0,
+	};
+}
+
+function name(value: string): boolean {
+	return (
+		value.length > 0 &&
+		value.length <= 200 &&
+		value.trim() === value &&
+		!/[\p{Cc}]/u.test(value)
+	);
+}
+
+// SAFETY: actor action inputs cross a network boundary and must be bounded plain JSON data.
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
+function plainJson(
+	value: unknown,
+	depth: number,
+	seen: Set<object>,
+	remaining: { n: number },
+): unknown {
+	if (--remaining.n < 0 || depth > 32) throw new Error("event exceeds limits");
+	if (value === null || typeof value === "boolean") return value;
+	if (typeof value === "string") {
+		if (value.length > MAX_EVENT_BYTES)
+			throw new Error("event string too large");
+		return value;
+	}
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) throw new Error("event number invalid");
+		return value;
+	}
+	if (typeof value !== "object" || seen.has(value))
+		throw new Error("event is not JSON");
+	seen.add(value);
+	try {
+		const descriptors = Object.getOwnPropertyDescriptors(value);
+		if (Object.getOwnPropertySymbols(value).length !== 0)
+			throw new Error("event symbol");
+		if (Array.isArray(value)) {
+			if (
+				value.length > MAX_EVENTS ||
+				Object.keys(descriptors).some(
+					(key) => key !== "length" && !/^(0|[1-9][0-9]*)$/u.test(key),
+				)
+			)
+				throw new Error("event array invalid");
+			return Array.from({ length: value.length }, (_unused, index) => {
+				const item = descriptors[String(index)];
+				if (item === undefined || !("value" in item))
+					throw new Error("event array hole");
+				return plainJson(item.value, depth + 1, seen, remaining);
+			});
+		}
+		const prototype = Object.getPrototypeOf(value);
+		if (prototype !== Object.prototype && prototype !== null)
+			throw new Error("event object invalid");
+		const result: Record<string, unknown> = Object.create(null);
+		for (const key of Object.keys(descriptors).sort()) {
+			const property = descriptors[key];
+			if (
+				key.length > 200 ||
+				property === undefined ||
+				!("value" in property) ||
+				!property.enumerable
+			)
+				throw new Error("event property invalid");
+			result[key] = plainJson(property.value, depth + 1, seen, remaining);
+		}
+		return result;
+	} finally {
+		seen.delete(value);
+	}
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
+
+function encodeEvent(event: FoldEvent): string | undefined {
+	try {
+		if (!name(event.type)) return undefined;
+		const json = JSON.stringify(plainJson(event, 0, new Set(), { n: 4_096 }));
+		return Buffer.byteLength(json) <= MAX_EVENT_BYTES ? json : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Pure, bounded transition used by the Rivet actor before persisting a result. */
+export function transitionDistributedJournal(
+	state: DistributedJournalState,
+	command: DistributedJournalCommand,
+): DistributedJournalTransition {
+	const deny = (code: string): DistributedJournalTransition => ({
+		state,
+		result: { status: "denied", code },
+	});
+	if (
+		!Number.isSafeInteger(command.nowMs) ||
+		command.nowMs < 0 ||
+		!name(command.holderId)
+	)
+		return deny("INVALID_INPUT");
+	if (command.kind === "acquire") {
+		if (!name(command.requestId)) return deny("INVALID_INPUT");
+		const prior = state.grants.find(
+			(grant) => grant.requestId === command.requestId,
+		);
+		if (prior !== undefined) {
+			if (prior.holderId !== command.holderId)
+				return deny("REQUEST_ID_CONFLICT");
+			if (
+				state.current?.requestId !== prior.requestId ||
+				command.nowMs >= prior.expiresAtMs
+			)
+				return deny("LEASE_EXPIRED");
+			return {
+				state,
+				result: {
+					status: "acquired",
+					fenceToken: prior.fenceToken,
+					expiresAtMs: prior.expiresAtMs,
+					duplicate: true,
+				},
+			};
+		}
+		if (state.current !== null && command.nowMs < state.current.expiresAtMs)
+			return deny("LEASE_HELD");
+		if (
+			state.grants.length >= MAX_GRANTS ||
+			state.epoch >= Number.MAX_SAFE_INTEGER ||
+			command.nowMs > Number.MAX_SAFE_INTEGER - LEASE_MS
+		)
+			return deny("CAPACITY_EXCEEDED");
+		const grant = {
+			requestId: command.requestId,
+			holderId: command.holderId,
+			fenceToken: state.epoch + 1,
+			expiresAtMs: command.nowMs + LEASE_MS,
+		};
+		return {
+			state: {
+				...state,
+				epoch: grant.fenceToken,
+				current: grant,
+				grants: [...state.grants, grant],
+			},
+			result: {
+				status: "acquired",
+				fenceToken: grant.fenceToken,
+				expiresAtMs: grant.expiresAtMs,
+				duplicate: false,
+			},
+		};
+	}
+	if (
+		!Number.isSafeInteger(command.fenceToken) ||
+		command.fenceToken < 1 ||
+		state.current?.holderId !== command.holderId ||
+		state.current.fenceToken !== command.fenceToken ||
+		command.nowMs >= state.current.expiresAtMs
+	)
+		return deny("STALE_LEASE");
+	if (command.kind === "release")
+		return {
+			state: { ...state, current: null },
+			result: { status: "released" },
+		};
+	if (
+		!name(command.eventId) ||
+		!Number.isSafeInteger(command.expectedRevision) ||
+		command.expectedRevision < 0
+	)
+		return deny("INVALID_INPUT");
+	const json = encodeEvent(command.event);
+	if (json === undefined) return deny("INVALID_EVENT");
+	const index = state.entries.findIndex(
+		(entry) => entry.eventId === command.eventId,
+	);
+	if (index >= 0)
+		return state.entries[index]?.eventJson === json
+			? {
+					state,
+					result: { status: "appended", revision: index + 1, duplicate: true },
+				}
+			: deny("EVENT_ID_CONFLICT");
+	if (command.expectedRevision !== state.entries.length)
+		return deny("REVISION_CONFLICT");
+	const bytes = Buffer.byteLength(json);
+	if (
+		state.entries.length >= MAX_EVENTS ||
+		state.bytes + bytes > MAX_JOURNAL_BYTES
+	)
+		return deny("CAPACITY_EXCEEDED");
+	return {
+		state: {
+			...state,
+			entries: [
+				...state.entries,
+				{ eventId: command.eventId, eventJson: json },
+			],
+			bytes: state.bytes + bytes,
+		},
+		result: {
+			status: "appended",
+			revision: state.entries.length + 1,
+			duplicate: false,
+		},
+	};
+}
