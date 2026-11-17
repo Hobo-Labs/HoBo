@@ -12,13 +12,16 @@ export interface RivetPoolSource<Entrypoint extends RivetHttpEntrypoint> {
 	readonly source: RivetHttpSource<Entrypoint>;
 	/** Digest of the canonical physical pool identity, including its account and namespace. */
 	readonly poolDigest: string;
+	/** Digest of the host's exclusive runner isolation domain; Rivet Cloud uses its cluster. */
+	readonly isolationDigest: string;
 	readonly poolHost: PoolHost["Service"];
 }
 
 /**
  * Verify that the named host uses exactly this physical pool, that the digest
- * identifies it canonically, and that this external program exclusively owns
- * the pool. The host must perform this check independently of application input.
+ * and runner isolation domain identify them canonically, and that this external
+ * program exclusively owns them. The host must perform this check independently
+ * of application input.
  */
 export type RivetPoolVerifier<Entrypoint extends RivetHttpEntrypoint> = (
 	entry: RivetPoolSource<Entrypoint>,
@@ -66,12 +69,13 @@ export function createRivetMultiPoolPrimitiveMappers<
 		const host = input.poolHost;
 		if (
 			!/^sha256:[a-f0-9]{64}$/u.test(input.poolDigest) ||
+			!/^sha256:[a-f0-9]{64}$/u.test(input.isolationDigest) ||
 			host === null ||
 			typeof host !== "object"
 		)
 			throw new AlchemyIacError(
 				"RIVET_POOL_UNVERIFIED",
-				"a canonical pool digest and host service are required",
+				"canonical pool and runner isolation digests and a host service are required",
 			);
 		const external = Object.getOwnPropertyDescriptor(host, "deployExternal");
 		const crate = Object.getOwnPropertyDescriptor(host, "deployCrate");
@@ -96,6 +100,7 @@ export function createRivetMultiPoolPrimitiveMappers<
 		const attestation = Object.freeze({
 			source,
 			poolDigest: input.poolDigest,
+			isolationDigest: input.isolationDigest,
 			poolHost: host,
 		});
 		return {
@@ -110,10 +115,12 @@ export function createRivetMultiPoolPrimitiveMappers<
 	const verifySet = () => {
 		const names = new Set<string>();
 		const pools = new Set<string>();
+		const isolationDomains = new Set<string>();
 		const hosts = new Set<PoolHost["Service"]>();
 		const actorNames = new Set<string>();
 		for (const entry of entries) {
-			const { source, poolDigest, poolHost } = entry.attestation;
+			const { source, poolDigest, isolationDigest, poolHost } =
+				entry.attestation;
 			bindRivetHttpSource(source);
 			const external = Object.getOwnPropertyDescriptor(
 				poolHost,
@@ -141,16 +148,18 @@ export function createRivetMultiPoolPrimitiveMappers<
 			if (
 				names.has(source.resourceName) ||
 				pools.has(poolDigest) ||
+				isolationDomains.has(isolationDigest) ||
 				hosts.has(poolHost) ||
 				registryNames.length > 256 ||
 				registryNames.some((name) => actorNames.has(name))
 			)
 				throw new AlchemyIacError(
 					"RIVET_POOL_CONFLICT",
-					"external applications need distinct names, actor registries, pool identities and pool hosts",
+					"external applications need distinct names, actor registries, pools, runner isolation domains and hosts",
 				);
 			names.add(source.resourceName);
 			pools.add(poolDigest);
+			isolationDomains.add(isolationDigest);
 			hosts.add(poolHost);
 			for (const name of registryNames) actorNames.add(name);
 		}

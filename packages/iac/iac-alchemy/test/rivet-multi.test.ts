@@ -44,6 +44,7 @@ function app(name: string, kind: "web" | "api", digest: string) {
 	return {
 		source,
 		poolDigest: `sha256:${digest.repeat(64)}`,
+		isolationDigest: `sha256:${digest.repeat(64)}`,
 		poolHost,
 		deploys,
 		input: {
@@ -199,6 +200,17 @@ describe("Rivet multiple pool mapping", () => {
 		);
 		expect(web.deploys).toEqual([]);
 		expect(api.deploys).toEqual([]);
+	});
+
+	it("rejects different pools that share one runner isolation domain", () => {
+		const web = app("web", "web", "1");
+		const api = app("api", "api", "2");
+		expect(() =>
+			createRivetMultiPoolPrimitiveMappers(
+				[web, { ...api, isolationDigest: web.isolationDigest }],
+				() => true,
+			),
+		).toThrow("RIVET_POOL_CONFLICT");
 	});
 
 	it("rejects overlapping actor registries and changes to attested hosts", () => {
