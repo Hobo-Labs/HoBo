@@ -17,7 +17,11 @@ The in-process API surface is described by
 | `pnpm --filter @hobo/fuzz test` | fast-check properties + harness/API smoke | yes, via Turbo when this package changes |
 | `pnpm run test:property` | bounded fast-check command traces | yes, also when Bindle manifest code changes |
 | `pnpm run test:fuzz` | Jazzer-shaped serialized-input smoke | yes, as part of the package `test` script |
-| `pnpm run test:fuzz:nightly` | prints the docker-gated nightly plan | no |
+| `pnpm run test:fuzz:nightly` | runs seeded model, event, policy, and serialized-input campaigns | no |
+
+Pass the seed and run count to replay a campaign with the same inputs:
+`-- --seed 1742 --runs 5000`. The command prints the seed and number of
+cases completed in each campaign.
 
 Trainable gold/silver: `fuzzTrainable(fn, seeds)` runs seed-holds,
 determinism, fail-closed, pollution, and bound checks against a live

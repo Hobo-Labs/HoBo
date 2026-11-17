@@ -15,11 +15,13 @@
 		}
 	},
 	"dependencies": {
-		"@hobo/bindles": "workspace:*"
+		"@hobo/bindles": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/policy": "workspace:*",
+		"fast-check": "^4.3.0"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
-		"fast-check": "^4.3.0",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
 	},
