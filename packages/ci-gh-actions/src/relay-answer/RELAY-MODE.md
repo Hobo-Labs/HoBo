@@ -125,6 +125,14 @@ The parity scenarios for R01, R13, R16, X01 and X03
 against the simulator; the X03 one also replaces Node's process-starting
 functions for the answer and checks none was called.
 
+The GitHub boundary is held in two hand-authored pacts:
+[`contracts/relay-answer.pact.json`](../../contracts/relay-answer.pact.json)
+for the REST calls the answerer makes and
+[`contracts/relay-answer-webhook.pact.json`](../../contracts/relay-answer-webhook.pact.json)
+for the `workflow_job` deliveries it receives.
+`contracts/relay-answer.consumer.test.ts` drives the answerer through every
+interaction of both.
+
 The run that would prove relay mode: turn `relayJobs.answer` on for one
 repository on a deployed relay, push a workflow whose relay job asks for
 `hobo-relay`, and link the run showing the relay job completed with no billed

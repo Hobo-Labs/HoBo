@@ -2045,3 +2045,18 @@ and day each was read.
 `contracts/provider-usage.consumer.test.ts` drives each reader through them.
 No reader has called a vendor and the relay does not construct the spend
 reader yet: built, not proven.
+
+## Relay job, relay mode
+
+`createRelayAnswerer` (`src/relay-answer/`) lets a HoBo node answer a relay
+job itself, over the runner protocol, when the job asks only for the
+`hobo-relay` label and relay mode is on both for the node and in the
+repository's `.hobo/ci.json`. The job runs on no runner, bills no minute and
+runs no job code. A rescue poll answers relay jobs whose webhook never
+arrived, and a sweep deletes leftover `hobo-relay-*` runners. Of a repository
+it reads only `.hobo/ci.json`. It is built, not proven: it is tested against
+the GitHub simulator and the hand-authored pacts
+[`contracts/relay-answer.pact.json`](contracts/relay-answer.pact.json) and
+[`contracts/relay-answer-webhook.pact.json`](contracts/relay-answer-webhook.pact.json),
+and no run against GitHub's runner service is linked yet. See
+[`src/relay-answer/RELAY-MODE.md`](src/relay-answer/RELAY-MODE.md).
