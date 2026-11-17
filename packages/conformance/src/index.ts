@@ -26,6 +26,7 @@ export {
 export * from "./diff.js";
 export {
 	DURABLE_MESSAGING_CONFORMANCE,
+	DURABLE_MESSAGING_CONFORMANCE_CASES,
 	type DurableMessagingConformanceCase,
 	type DurableMessagingConformanceHarness,
 	type DurableMessagingConformanceReport,

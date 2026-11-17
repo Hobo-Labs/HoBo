@@ -25,12 +25,21 @@ typed, event-sourced port-suite harness under `packages/conformance/`.
   `@hobo/runtime-local` lives in
   `test/runtime-local-eventstore.conformance.test.ts` (dev-only edge to the adapter).
 - `runDurableMessagingConformance(createHarness)` — bounded checks for group
-  isolation, restart, uncertain acknowledgements and receipts, lease fencing,
-  DLQ payload preservation and rollback, compaction and tenant isolation. The
-  harness must actually restart the provider, control its clock, inject the
-  specified faults and use independently authenticated tenant clients. A pass
-  only describes the supplied harness; it is not proof of a live provider or
-  of its host's clock, authorization and isolation assumptions.
+  isolation, retry receipts, competing leases, expiry-driven DLQ, compaction,
+  audit retention and tenant isolation. The factory receives the case name so
+  capacity and audit-retention cases can select small, bounded limits. Each
+  case must use a fresh instance. The harness must restart the provider, reopen
+  its persisted state, control time, inject faults at the specified points and
+  provide independently authenticated clients and concurrency barriers.
+  The report marks restart, store identity, clock, fault placement, tenant
+  identity and barrier provenance as `unverified`: caller-supplied callbacks
+  cannot authenticate their own execution. A separately controlled runner must
+  establish these facts before treating passing cases as provider evidence.
+  In particular, a no-op restart over an in-memory map can pass the behavioral
+  restart case and does not establish durability. The suite does not validate
+  transport parsing or prove the host's transaction and fencing assumptions.
+  An independently controlled runner must impose a process deadline: a provider
+  or harness callback that never resolves can otherwise block this suite.
 
 ### `@hobo/conformance/anonymous` — the anonymous/claimable dimension
 
