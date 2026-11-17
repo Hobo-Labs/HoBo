@@ -18,8 +18,16 @@ function sqlite() {
 	const sql = new DatabaseSync(":memory:");
 	opened.push(sql);
 	let tail = Promise.resolve();
-	const execute = async (query: string, ...args: SQLInputValue[]) =>
-		sql.prepare(query).all(...args);
+	let failReceipt = false;
+	let loseCommitAck = false;
+	let postCommit: (() => void) | undefined;
+	const execute = async (query: string, ...args: SQLInputValue[]) => {
+		if (failReceipt && query.startsWith("INSERT INTO hobo_dm_receipts")) {
+			failReceipt = false;
+			throw new Error("injected receipt insert failure");
+		}
+		return sql.prepare(query).all(...args);
+	};
 	const transaction = async <T>(
 		run: (tx: RawAccess) => Promise<T>,
 	): Promise<T> => {
@@ -34,6 +42,13 @@ function sqlite() {
 			// SAFETY: this fixture exposes the transaction's execute operation only.
 			const value = await run({ execute } as RawAccess);
 			sql.exec("COMMIT");
+			const after = postCommit;
+			postCommit = undefined;
+			after?.();
+			if (loseCommitAck) {
+				loseCommitAck = false;
+				throw new Error("injected lost commit acknowledgement");
+			}
 			return value;
 		} catch (error) {
 			try {
@@ -45,7 +60,19 @@ function sqlite() {
 		}
 	};
 	// SAFETY: these are the only database methods used by the actor and journal.
-	return { sql, db: { execute, transaction } as RawAccess };
+	return {
+		sql,
+		db: { execute, transaction } as RawAccess,
+		failNextReceipt: () => {
+			failReceipt = true;
+		},
+		loseNextCommitAck: () => {
+			loseCommitAck = true;
+		},
+		afterNextCommit: (action: () => void) => {
+			postCommit = action;
+		},
+	};
 }
 function canonical(value: unknown): string {
 	if (
@@ -857,5 +884,61 @@ describe("Rivet durable topic bus using a SQLite actor fixture", () => {
 			attempt: 0,
 			lease: 0,
 		});
+	});
+
+	it("keeps DLQ state and receipt atomic under SQLite fixture faults and revoked authority", async () => {
+		for (const fault of [
+			"receipt-insert",
+			"lost-commit-ack",
+			"revoke-after-commit",
+		] as const) {
+			const f = await fixture();
+			await setup(f, 1);
+			await f.mutate("publish", { topic: "orders", message: message() });
+			const leased = (await f.mutate("consume", consume())).value[0];
+			const request = {
+				operation: f.next(),
+				...settle(leased),
+				reason: "failed",
+			};
+			const before = f.sql
+				.prepare("SELECT value FROM hobo_dm_topic_state")
+				.get();
+			if (fault === "receipt-insert") f.failNextReceipt();
+			else if (fault === "lost-commit-ack") f.loseNextCommitAck();
+			else f.afterNextCommit(f.revoke);
+			const failed = await f.send("nack", request);
+			if (fault === "revoke-after-commit") expect(failed.status).toBe(503);
+			else
+				expect(await failed.json()).toEqual({
+					status: "unknown",
+					operation: request.operation,
+				});
+			const uncertain = f.sql
+				.prepare("SELECT value FROM hobo_dm_topic_state")
+				.get();
+			if (fault === "receipt-insert") expect(uncertain).toEqual(before);
+			else expect(uncertain).not.toEqual(before);
+			f.restore();
+			f.restart();
+			const completed = await (await f.send("nack", request)).json();
+			expect(completed).toMatchObject({
+				status: "committed",
+				value: { messageId: "m", sequence: 1, disposition: "dead-lettered" },
+			});
+			expect(await (await f.send("nack", request)).json()).toEqual(completed);
+			const dead = (await f.mutate("consume", consume("dlq", "reader")))
+				.value[0];
+			expect(dead.message.id).toBe(completed.value.deadLetterMessageId);
+			expect(dead.sequence).toBe(completed.value.deadLetterSequence);
+			expect(dead.deadLetter).toMatchObject({
+				originalMessageId: "m",
+				cause: { kind: "nack", reason: "failed" },
+			});
+			await f.mutate("ack", settle(dead));
+			expect(
+				(await f.mutate("consume", consume("dlq", "reader"))).value,
+			).toEqual([]);
+		}
 	});
 });
