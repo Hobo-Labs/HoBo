@@ -68,6 +68,12 @@ const DIRECTIVE =
 	/^(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma|buf|go|atlas):|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
 const VITE_DIRECTIVE = /^\/\*\s*@vite-ignore\s*\*\/$/u;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
+const ARCHITECTURE_DIRECTIVE =
+	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:domain-view|public-contract):/iu;
+const CONCISE_ARCHITECTURE_DIRECTIVE =
+	/^(?:(?:\/\/\/?|#|--)\s*(?:domain-view|public-contract):\s*|\/\*+!?\s*(?:\*\s*)?(?:domain-view|public-contract):\s*\*\/|<!--\s*(?:domain-view|public-contract):\s*-->)$/iu;
+const DEFERRED_TYPE_DIRECTIVE =
+	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)parallel-type-allowed:/iu;
 
 function git(args: string[]): string {
 	return execFileSync("git", ["--literal-pathspecs", ...args], {
@@ -351,8 +357,14 @@ export function commentViolations(
 		}
 		if (!intersects) return [];
 		if (first === 1 && comment.text.startsWith("#!")) return [];
+		const deferred =
+			DEFERRED.test(comment.text) || DEFERRED_TYPE_DIRECTIVE.test(comment.text);
+		const concise =
+			!ARCHITECTURE_DIRECTIVE.test(comment.text) ||
+			CONCISE_ARCHITECTURE_DIRECTIVE.test(comment.text);
 		if (
-			!DEFERRED.test(comment.text) &&
+			!deferred &&
+			concise &&
 			(DIRECTIVE.test(comment.text) || VITE_DIRECTIVE.test(comment.text))
 		)
 			return [];
@@ -360,7 +372,7 @@ export function commentViolations(
 			{
 				file,
 				line: first,
-				message: DEFERRED.test(comment.text)
+				message: deferred
 					? "finish deferred work instead of adding a marker"
 					: "make the code self-documenting instead of adding a comment",
 			},

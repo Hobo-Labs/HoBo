@@ -105,6 +105,42 @@ describe("source policy", () => {
 		);
 	});
 
+	it("allows concise architecture directives and rejects explanations or deferred type exemptions", () => {
+		const text = [
+			"// domain-view:",
+			"// public-contract:",
+			"/* domain-view: */",
+			"// domain-view: this type has a reason",
+			"// public-contract: this value has a reason",
+			"// parallel-type-allowed:",
+			"/* parallel-type-allowed: migrate later */",
+			"// public-contract: TODO migrate",
+		].join("\n");
+		const violations = commentViolations(
+			"x.ts",
+			text,
+			new Set([1, 2, 3, 4, 5, 6, 7, 8]),
+		);
+		assert.deepEqual(
+			violations.map((item) => item.line),
+			[4, 5, 6, 7, 8],
+		);
+		assert.match(violations[2]?.message ?? "", /finish deferred work/u);
+		assert.equal(
+			commentViolations(
+				"x.ts",
+				"/// public-contract: explanation",
+				new Set([1]),
+			).length,
+			1,
+		);
+		assert.equal(
+			commentViolations("x.py", "# parallel-type-allowed: later", new Set([1]))
+				.length,
+			1,
+		);
+	});
+
 	it("accepts Vite dynamic import directives without exempting deferred work or lookalikes", () => {
 		const text = [
 			"export const loaded = import(/* @vite-ignore */ modulePath);",

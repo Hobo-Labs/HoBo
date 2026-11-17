@@ -1,13 +1,3 @@
-// Enforcement tiers, so nobody mistakes one for the other:
-// - Structural checks (data-models presence, PACT contract validity,
-//   proto<->CUE type coverage, parallel-proto-type) inspect real artifacts
-//   and cannot be satisfied by prose.
-// - Documentation-presence checks (missing-parse-derived-type,
-//   missing-event-architecture) grep for the vocabulary the architecture
-//   rules require the package to document. They verify the package SAYS how
-//   it applies parse-don't-validate and the event architecture, not that the
-//   code does — behavioral verification lives in each package's tests and
-//   PACT contracts.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
@@ -47,12 +37,7 @@ const TEXT_EXTENSIONS = new Set([
 	".wit",
 ]);
 
-// Production packages under packages/ require full scaffolding (contracts/,
-// data-models/). Barebones examples under examples/ are demos — only src/ +
-// tests; they must not be forced to ship contracts/data-models/deploy in git.
 const PRODUCTION_PACKAGE_PARENTS = new Set(["packages"]);
-// Nested categories hold one package per subdirectory (e.g. runtimes/local,
-// adapters/adapter-hono); the category dir itself is not a package.
 const NESTED_PRODUCTION_CATEGORIES = new Set([
 	"adapters",
 	"runtimes",
@@ -124,7 +109,7 @@ const REQUIRED_CHECKS = [
 	{
 		code: "parallel-proto-type",
 		message: (evidence) =>
-			`Import generated types from src/_generated/**_pb.ts instead of hand-declaring proto-shaped types (technical-standards.md); annotate deliberate exceptions with // parallel-type-allowed: <why>. Offenders: ${evidence.parallelTypeDeclarations.join(", ")}`,
+			`Import generated types from src/_generated/**_pb.ts instead of hand-declaring proto-shaped types; mark deliberate domain views with // domain-view:. Offenders: ${evidence.parallelTypeDeclarations.join(", ")}`,
 		passes: (evidence) => evidence.parallelTypeDeclarations.length === 0,
 	},
 ];
@@ -189,10 +174,6 @@ export async function checkArchitectureGuardrails({
 	return { packageRoots, problems };
 }
 
-// Frozen promoted proofs (scripts/promotions.json) are read-only by the
-// promoted-proof drift gate — their canonical successors in packages/ carry
-// the architecture evidence now. Evaluating them here would demand edits the
-// drift gate forbids, so they are excluded from guard evaluation.
 function frozenPromotedProofRoots(root) {
 	try {
 		const ledger = JSON.parse(
@@ -333,30 +314,8 @@ async function collectEvidence(root, packageRoot) {
 	};
 }
 
-// Hand-declared TS types that duplicate a proto message/enum name are the
-// "parallel interfaces" the architecture rules forbid — record types must be
-// the generated ones (technical-standards.md). Two markers on the
-// declaration line (or the line above) suppress a hit, for the two legitimate
-// cases the standard recognizes:
-//   // domain-view: <why>          — a deliberately richer parse-don't-validate
-//                                     domain type (branded ids, generics, extra
-//                                     fields) whose generated *_pb.ts is its
-//                                     wire form; permanent by design.
-//   // parallel-type-allowed: <why> — temporary debt awaiting migration.
 const PARALLEL_TYPE_MARKERS = ["domain-view:", "parallel-type-allowed:"];
 
-/**
- * True when the marker sits on the declaration line or anywhere in the comment
- * block immediately above it.
- *
- * This read exactly one preceding line, so a marker written as the *first* line
- * of a multi-line block — the natural place, since the reason usually needs a
- * sentence — was silently ignored and the guard reported an unannotated type
- * that was in fact annotated. `check-technical-standards.ts` had the identical
- * bug for `// public-contract:`; both are fixed, and they should stay
- * symmetric, because an author who learns the rule from one gate will apply it
- * at the other.
- */
 function hasMarkerAbove(lines, index, marker) {
 	if ((lines[index] ?? "").includes(marker)) return true;
 	for (let above = index - 1; above >= 0; above -= 1) {
@@ -377,9 +336,6 @@ function parallelTypeDeclarations(typeScriptSources, protoTypes) {
 	for (const { file, contents } of typeScriptSources) {
 		const lines = contents.split(/\r?\n/u);
 		for (const [index, line] of lines.entries()) {
-			// Declarations only: `interface X ...` or `type X = {` (an alias whose
-			// right-hand side derives from another type is a legitimate narrowing,
-			// and `type X,` inside import/export lists is not a declaration).
 			const match = line.match(
 				/^\s*(?:export\s+)?(?:interface\s+([A-Za-z_$][\w$]*)[\s<{]|type\s+([A-Za-z_$][\w$]*)(?:<[^>]*>)?\s*=\s*\{)/u,
 			);
@@ -398,13 +354,6 @@ function parallelTypeDeclarations(typeScriptSources, protoTypes) {
 	return offenders;
 }
 
-/**
- * Comments are stripped first, because this scrapes declarations out of prose
- * otherwise. A doc comment reading "a proto enum is a varint" registered a type
- * named `is`, and `missing-cue-constraints` then demanded a CUE constraint for
- * it — naming no type the author could find, because there wasn't one. Two
- * swarms lost a round trip to that in one day.
- */
 function protoTypeNames(content) {
 	const withoutComments = content
 		.replace(/\/\*[\s\S]*?\*\//g, " ")
@@ -461,9 +410,6 @@ function changedFiles(args) {
 	const base =
 		baseArg?.slice("--base=".length) ?? process.env.HOBO_ARCHITECTURE_BASE;
 
-	// Full-repo mode: evaluate every production package regardless of diff.
-	// Used by check:all and the CI main gate, where a fresh checkout has no
-	// diff and the bare invocation would otherwise pass vacuously.
 	if (args.has("--all")) {
 		return split(git(["ls-files", "packages", "examples"]));
 	}
@@ -489,7 +435,6 @@ function changedFiles(args) {
 function git(args) {
 	return execFileSync("git", args, {
 		encoding: "utf8",
-		// monorepo `git ls-files` exceeds Node's default 1 MiB maxBuffer
 		maxBuffer: 32 * 1024 * 1024,
 	}).trim();
 }
@@ -505,8 +450,6 @@ function implementationPackageRoot(file) {
 
 	if (parts[0] !== "src" || parts[1] !== "draft" || !parts[2]) return undefined;
 
-	// Aggregate metadata (underscore-prefixed like _templates/_grandfathered.json/_registry.md)
-	// and loose files directly under src/draft/<kind>/ are never proof packages.
 	const isPackageDir = (segment, next) =>
 		segment && !segment.startsWith("_") && next !== undefined;
 
