@@ -1,9 +1,11 @@
+import { clone } from "@bufbuild/protobuf";
 import {
 	compareDecimal,
 	type Decimal,
 	formatDecimal,
 	parseDecimal,
 	type QuoteVector,
+	QuoteVectorSchema,
 	quoteHashOf,
 	RATING_ALGORITHM_VERSION,
 } from "@hobo/pricing";
@@ -13,7 +15,14 @@ import {
 	decimalFromNumber,
 	upperNumber,
 } from "./billing-decimal.js";
+import { isJsonString } from "./json.js";
 import type { BillingPolicy, RejectionReason } from "./types.js";
+
+/** A trusted host must authenticate and bind the quote to the work before
+ * returning a conservative upper bound on the resulting USD liability. */
+export interface TrustedQuoteAttestation {
+	readonly liabilityBoundUsd: string;
+}
 
 export interface BillingAuthorizationInput {
 	readonly spendEstimateUsd?: number;
@@ -21,6 +30,11 @@ export interface BillingAuthorizationInput {
 	readonly quoteIncrementalUsd?: number;
 	readonly quoteIncrementalDecimal?: string;
 	readonly quote?: QuoteVector;
+	readonly attestQuote?: (
+		quote: QuoteVector,
+	) => TrustedQuoteAttestation | undefined;
+	/** Explicit compatibility mode for a host that trusts the raw estimate. */
+	readonly trustEstimate?: boolean;
 	readonly billing: BillingPolicy;
 }
 
@@ -39,16 +53,20 @@ function reject(code: string, message: string): BillingAuthorizationResult {
 }
 
 /**
- * Authorizes a complete, eligible current quote or a trusted legacy estimate.
+ * Authorizes a complete quote only after a trusted host attests its provenance,
+ * work binding and conservative liability, or an explicitly trusted estimate.
  * A quote hash detects changed contents; it does not authenticate the provider.
  */
 export function authorizeBillingSpend(
 	input: BillingAuthorizationInput,
 ): BillingAuthorizationResult {
+	const billing = { ...input.billing };
 	let estimate: Decimal | undefined;
 	if (input.quote !== undefined) {
-		const quote = input.quote;
+		let quote: QuoteVector;
+		let quoted: Decimal | undefined;
 		try {
+			quote = clone(QuoteVectorSchema, input.quote);
 			if (
 				quote.schema !== "hobo.pricing.quote/v1" ||
 				quote.ratingAlgorithmVersion !== RATING_ALGORITHM_VERSION ||
@@ -69,10 +87,50 @@ export function authorizeBillingSpend(
 					"quote-invalid",
 					"quote incremental billed amount must be USD",
 				);
-			estimate = parseDecimal(billed.decimal);
+			quoted = parseDecimal(billed.decimal);
 		} catch {
 			return reject("quote-invalid", "quote content is invalid");
 		}
+		if (quoted === undefined || quoted.coefficient < 0n)
+			return reject(
+				"spend-estimate-invalid",
+				"estimated spend must be a non-negative finite amount",
+			);
+		if (!input.attestQuote)
+			return reject(
+				"quote-provenance-required",
+				"a trusted authority must authenticate and bind the quote",
+			);
+		const expectedHash = quote.quoteHash;
+		let attestation: TrustedQuoteAttestation | undefined;
+		try {
+			attestation = input.attestQuote(quote);
+			const bound = attestation?.liabilityBoundUsd;
+			if (
+				!attestation ||
+				quote.quoteHash !== expectedHash ||
+				quoteHashOf(quote) !== expectedHash
+			)
+				return reject(
+					"quote-provenance-invalid",
+					"quote attestation failed or changed its contents",
+				);
+			estimate = isJsonString(bound) ? parseDecimal(bound) : undefined;
+		} catch {
+			return reject(
+				"quote-provenance-invalid",
+				"quote attestation failed or changed its contents",
+			);
+		}
+		if (
+			estimate === undefined ||
+			estimate.coefficient < 0n ||
+			compareDecimal(estimate, quoted) < 0
+		)
+			return reject(
+				"quote-bound-invalid",
+				"attested liability must cover the quoted amount",
+			);
 	} else {
 		if (
 			input.quoteIncrementalDecimal !== undefined ||
@@ -84,6 +142,11 @@ export function authorizeBillingSpend(
 			);
 		if (input.spendEstimateUsd !== undefined)
 			estimate = decimalFromNumber(input.spendEstimateUsd);
+		if (estimate !== undefined && input.trustEstimate !== true)
+			return reject(
+				"estimate-untrusted",
+				"raw spend estimates require explicit host trust",
+			);
 	}
 	if (estimate === undefined || estimate.coefficient < 0n)
 		return reject(
@@ -96,7 +159,7 @@ export function authorizeBillingSpend(
 			"spend-estimate-invalid",
 			"estimated spend cannot be represented safely",
 		);
-	const bounds = billingBounds(input.billing);
+	const bounds = billingBounds(billing);
 	if (bounds === undefined)
 		return reject(
 			"billing-policy-invalid",
@@ -108,13 +171,13 @@ export function authorizeBillingSpend(
 		reasons.push({
 			plane: "billing",
 			code: "spend-cap-exceeded",
-			message: `estimated spend ${formatDecimal(estimate)} USD exceeds per-resolution cap ${input.billing.spendCapUsd} USD`,
+			message: `estimated spend ${formatDecimal(estimate)} USD exceeds per-resolution cap ${billing.spendCapUsd} USD`,
 		});
 	if (budget !== undefined && compareDecimal(estimate, budget) > 0)
 		reasons.push({
 			plane: "billing",
 			code: "budget-exceeded",
-			message: `estimated spend ${formatDecimal(estimate)} USD exceeds remaining budget ${input.billing.budgetUsd} USD`,
+			message: `estimated spend ${formatDecimal(estimate)} USD exceeds remaining budget ${billing.budgetUsd} USD`,
 		});
 	return {
 		ok: reasons.length === 0,

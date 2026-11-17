@@ -140,6 +140,7 @@ export {
 	authorizeBillingSpend,
 	type BillingAuthorizationInput,
 	type BillingAuthorizationResult,
+	type TrustedQuoteAttestation,
 } from "./pricing-authorization.js";
 export {
 	isCatalogedRejectionCode,

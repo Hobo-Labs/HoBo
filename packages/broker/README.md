@@ -259,15 +259,18 @@ stateDiagram-v2
   s2 --> s3: record final usage
 ```
 
-`authorizeBillingSpend` accepts a complete current `QuoteVector` for
-quote-based authorization. It checks the content hash, explicit eligibility,
-unpriced items, USD currency and exact amount before applying budget bounds.
-Callers using `quoteIncrementalUsd` or `quoteIncrementalDecimal` must migrate
-to the full quote; those fields alone now reject. `spendEstimateUsd` remains a
-trusted legacy estimate and carries no quote provenance. A quote hash detects
-changed contents but does not authenticate provider data or the quote's source.
-The general broker request path still passes `spendEstimateUsd` to its billing
-plane; it does not automatically invoke this quote-based helper.
+`authorizeBillingSpend` accepts a complete current `QuoteVector` only with an
+`attestQuote` callback supplied by a trusted host. The callback must authenticate
+the quote, bind it to the actual work and current pricing evidence, and return a
+conservative `liabilityBoundUsd`. The bound must cover the quote's expected bill;
+the helper compares that bound, not the expected bill, against the budget. The
+helper rejects a quote changed during attestation. A quote hash detects changed
+contents but does not authenticate its source. Callers using `quoteIncrementalUsd`
+or `quoteIncrementalDecimal` must supply the complete quote and attestation.
+Raw `spendEstimateUsd` requires explicit `trustEstimate: true` and remains a
+trusted caller assertion. The helper does not create a hold; its caller must use
+a billing authority for admission. The general broker request path still passes
+`spendEstimateUsd` to its billing plane and does not invoke this helper.
 
 Broker request documents must supply `spendEstimateUsd` (or
 `spend_estimate_usd`) explicitly, including for free work. Conflicting aliases
@@ -340,7 +343,7 @@ be swapped without touching the brokering pipeline:
 |---|---|---|---|
 | Policy | `GatePlane` (OPA-shaped request/decision documents) | `@hobo/contracts` policy pack (imported and **run**, not reinvented) | **Rego** via `createOpaGatePlane` — OPA Data API decision at `hobo/broker/decision`, fail-closed (`policy-engine-unavailable`), pinned by `broker_policy_opa.pact.json` |
 | Contracts | `GatePlane` (can-deploy compatibility) | `@hobo/contracts` Gatekeeper (PACT-style boundary semantics) | an external Pact broker verification feed (port-compatible) |
-| Billing | `BillingPlane` | in-process budget holds, spend-cap and quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` checks a complete eligible pricing quote when supplied |
+| Billing | `BillingPlane` | in-process budget holds, spend-cap and quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` checks a complete eligible pricing quote and a host-attested liability bound |
 | Delivery | `DeliveryPlane` | `createDeliveryPlane` — in-process conductor only; agent/publisher policies fail closed with `delivery-plane-unwired` | `createReconcilerDeliveryPlane({ requestPromotion })` — every receipt is delivered through `@hobo/cd` (ADR-0182: D14), fail-closed, pinned by `broker_delivery_cd.pact.json`. GitOps rendering (Argo CD `Application`, Flux `Kustomization`) moved to `@hobo/cd-gitops` |
 | Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `custom` configs | an external connector catalog |
 
