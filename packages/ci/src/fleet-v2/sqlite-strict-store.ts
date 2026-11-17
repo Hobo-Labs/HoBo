@@ -828,13 +828,8 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 					`runner slot expected ${expected}, found ${slot.state}`,
 				);
 			transitionRunnerSlot(expected, next);
-			// Pre-claim release: a slot that leaves reserved/provisioning/
-			// registered for a terminal state without an execution claim gives
-			// its reserved units back, so abandoned reservations cannot leak
-			// capacity forever. Claimed slots release only via
-			// completeExecution teardown.
 			if (
-				(next === "released" || next === "uncertain") &&
+				next === "released" &&
 				["reserved", "provisioning", "registered"].includes(expected)
 			) {
 				const claim = this.db
@@ -883,9 +878,6 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 		});
 	}
 
-	/** Effects belong to the incarnation that planned their slot; after a
-	 * restore, delivering a stale incarnation's effect would act on a world
-	 * the controller no longer believes in. */
 	private assertEffectIncarnationCurrent(effect: Effect): void {
 		const slot =
 			effect.subjectType === "runner-slot"
@@ -1174,18 +1166,47 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				"binding secret does not match slot",
 			);
 		const offer = this.offerInside(slot.offerId);
-		if (offer?.state !== "active")
+		if (offer?.state !== "active" || offer.accountId !== slot.accountId)
 			rejectFleet(FleetRejectionCode.OFFER_REVOKED, "Offer is revoked");
-		const group = this.capacityInside(slot.capacityGroupId);
-		if (!group || ["paused", "revoked"].includes(group.state))
-			rejectFleet(
-				FleetRejectionCode.CAPACITY_INELIGIBLE,
-				"worker or capacity group is not start-eligible",
+		const reservedKey = z
+			.object({ demand_key: z.string() })
+			.safeParse(
+				this.db
+					.prepare("SELECT demand_key FROM fleet_v2_runner_slots WHERE id=?")
+					.get(slot.id),
 			);
-		if (group.state === "quarantined")
+		const reservedDemand = reservedKey.success
+			? this.demandInside(reservedKey.data.demand_key)
+			: undefined;
+		if (!reservedDemand)
+			rejectFleet(FleetRejectionCode.NOT_FOUND, "reservation demand not found");
+		if (
+			offer.policyRevision !== reservedDemand.policyRevision ||
+			offer.policyRevision !== demand.policyRevision
+		)
+			rejectFleet(
+				FleetRejectionCode.POLICY_REVISION_CONFLICT,
+				"runner policy revision changed",
+			);
+		if (offer.observationHash !== slot.offerObservationHash)
+			rejectFleet(
+				FleetRejectionCode.OFFER_OBSERVATION_CONFLICT,
+				"runner Offer observation changed",
+			);
+		const group = this.capacityInside(slot.capacityGroupId);
+		if (group?.state === "quarantined")
 			rejectFleet(
 				FleetRejectionCode.QUARANTINED,
 				"capacity group is quarantined",
+			);
+		if (
+			group?.state !== "active" ||
+			group.accountId !== slot.accountId ||
+			group.reservedUnits < slot.capacityCostUnits
+		)
+			rejectFleet(
+				FleetRejectionCode.CAPACITY_INELIGIBLE,
+				"worker or capacity group is not start-eligible",
 			);
 		const profile = this.profileInside(slot.profileId);
 		if (profile?.guarantee !== "start-fenced")
