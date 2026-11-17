@@ -17,6 +17,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | SQLite queue and outbox | [verify-outbox-lease](../.agents/skills/verify-outbox-lease/SKILL.md) | A stale delivery attempt cannot acknowledge a later attempt, even when lease IDs and fences repeat. |
 | Provider connections | [verify-connection-lifecycle](../.agents/skills/verify-connection-lifecycle/SKILL.md) | Revocation is terminal across commands and replay. |
 | Durable workflows | [verify-workflow-replay](../.agents/skills/verify-workflow-replay/SKILL.md) | Fresh runs claim identities; resume uses recorded context and terminal results. |
+| CI fleet start binding | [verify-ci-start-binding](../.agents/skills/verify-ci-start-binding/SKILL.md) | Transactional claims and retries preserve unique job/slot bindings, subject to trusted assignment evidence. |
 | CI budget routing | [verify-ci-budget-routing](../.agents/skills/verify-ci-budget-routing/SKILL.md) | Routing counts unobserved usage and conservatively aggregates provider-account observations. |
 | CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
 | CD promotion and rollback | [verify-promotion-verification](../.agents/skills/verify-promotion-verification/SKILL.md) | Qualification requires passing verification; request identities bind retries and rollback claims. |
@@ -39,6 +40,7 @@ When covered behavior changes, review the code and its intended policy, update t
 ## Open work and proof boundaries
 
 - The historical candidate queue covers only selected source languages and paths and has not been fully classified. CI, CD, cloud providers, stores, examples, integrations, and additional stateful subsystems need further source review and their own checks.
+- Strict CI starts remain unavailable in production: the GitHub assignment lookup and hook endpoint are not wired, and the hook does not derive the actual assigned job on its own.
 - Concurrent workflow resumes are not fenced. A crash between an external effect and its completion fact can repeat that effect. Legacy workflow records can lack identifying context.
 - Promotion and rollback binding assumes atomic journal claims and preserved metadata. Concurrent retries of the same operation and Rail effects that do not change the current Set still require fencing and reconciliation. Older records can be refused when their original request cannot be reconstructed.
 - The delivery checks assume the storage transaction and its persisted attempt counter are durable. Callers must pass the attempt returned by each claim. They do not establish exactly-once external delivery.
