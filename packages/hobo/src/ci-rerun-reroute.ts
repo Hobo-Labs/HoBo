@@ -12,9 +12,12 @@
  * GitHub is reached with the token in `GH_TOKEN` (or `GITHUB_TOKEN`) at
  * `GITHUB_API_URL` (`https://api.github.com` unless set, as in a workflow).
  * The token is sent to that host only and never printed. A relay job is one
- * asking `hobo-relay` or named `relay` or `route`, the rule the relay stores
- * jobs by; `--job <name>` picks one when a run has several.
+ * asking `hobo-relay` or named `relay` or `route` (with a matrix suffix at
+ * most), the rule the relay stores jobs by; jobs asking `hobo-relay` win over
+ * jobs matched by name alone, every page of the run's jobs is read, and
+ * `--job <name>` picks one when a run has several.
  */
+import { RELAY_LABEL } from "@hobo/ci";
 import { isRelayJobOf } from "@hobo/ci-gh-actions";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
@@ -98,6 +101,13 @@ const JobsSchema = z.looseObject({
 	),
 });
 
+/** Jobs read per page of a run's jobs, GitHub's largest page. */
+// public-contract: GitHub's largest page of a run attempt's jobs.
+const JOB_PAGE_SIZE = 100;
+/** Pages read at most: a run of more jobs than this is not searched further. */
+// public-contract: the most pages of jobs one reroute reads (5000 jobs).
+const JOB_PAGES_MAX = 50;
+
 const MessageSchema = z.looseObject({ message: z.string() });
 
 /** The GitHub API origin, or why the one set cannot be used. */
@@ -175,21 +185,29 @@ async function run(context: CiCommandContext): Promise<CommandResult> {
 			`Run ${parsed.runId} is ${found.status}; only a finished run can be rerouted.`,
 			["Wait for the run to finish, or cancel it, then reroute it."],
 		);
-	const jobsResponse = await request(
-		`/actions/runs/${parsed.runId}/attempts/${found.run_attempt}/jobs?per_page=100`,
-	);
-	if (!jobsResponse.ok)
-		return failed(
-			"HOBO_CI_RERUN_NOT_FOUND",
-			`GitHub could not list the jobs of run ${parsed.runId}: ${await githubMessage(jobsResponse)}.`,
-			["Check that the token may read Actions on the repository."],
+	const jobs: z.infer<typeof JobsSchema>["jobs"] = [];
+	for (let page = 1; page <= JOB_PAGES_MAX; page += 1) {
+		const jobsResponse = await request(
+			`/actions/runs/${parsed.runId}/attempts/${found.run_attempt}/jobs?per_page=${JOB_PAGE_SIZE}&page=${page}`,
 		);
-	const jobs = JobsSchema.parse(await jobsResponse.json()).jobs;
-	const relays = jobs.filter(
+		if (!jobsResponse.ok)
+			return failed(
+				"HOBO_CI_RERUN_NOT_FOUND",
+				`GitHub could not list the jobs of run ${parsed.runId}: ${await githubMessage(jobsResponse)}.`,
+				["Check that the token may read Actions on the repository."],
+			);
+		const read = JobsSchema.parse(await jobsResponse.json()).jobs;
+		jobs.push(...read);
+		if (read.length < JOB_PAGE_SIZE) break;
+	}
+	const candidates = jobs.filter(
 		(job) =>
 			isRelayJobOf(job.name, job.labels) &&
 			(parsed.job === undefined || job.name === parsed.job),
 	);
+	// A job asking `hobo-relay` is a relay for certain; a name is only a hint.
+	const labelled = candidates.filter((job) => job.labels.includes(RELAY_LABEL));
+	const relays = labelled.length > 0 ? labelled : candidates;
 	const relay = relays[0];
 	if (!relay)
 		return failed(

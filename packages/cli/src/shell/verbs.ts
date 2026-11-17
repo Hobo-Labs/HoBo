@@ -364,6 +364,7 @@ Usage:
   hobo ci logs [run]               Read run logs
   hobo ci grep <text>              Search recent run logs
   hobo ci rerun [run]              Retry a completed run
+  hobo ci rerun <run> --reroute    Run the relay job again so the run's jobs are routed afresh
   hobo ci init                     Show which workflow jobs can move to the fleet; --apply rewrites their runs-on
                                    (see init options)
   hobo ci signals                  Where recent runs lost time or money: waits, flaky and short jobs, extra runs

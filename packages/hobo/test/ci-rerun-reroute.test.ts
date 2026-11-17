@@ -2,7 +2,9 @@
  * `hobo ci rerun <run> --reroute` (ADR-0183, case R12): it re-runs the run's
  * relay job, never the failed jobs alone, so the relay decides again.
  */
+import { createHoboCli } from "@hobo/cli";
 import { describe, expect, it } from "vitest";
+import { createCiCommand } from "../src/ci-command.js";
 import type { CiCommandContext } from "../src/ci-commands.js";
 import {
 	CI_RERUN_REROUTE_COMMAND,
@@ -45,11 +47,19 @@ function fakeGithub(
 				conclusion: "failure",
 				run_attempt: 1,
 			});
-		if (method === "GET" && url.pathname === `${base}/runs/77/attempts/1/jobs`)
+		if (
+			method === "GET" &&
+			url.pathname === `${base}/runs/77/attempts/1/jobs`
+		) {
+			const perPage = Number(url.searchParams.get("per_page") ?? "30");
+			const page = Number(url.searchParams.get("page") ?? "1");
 			return Response.json({
 				total_count: jobs.length,
-				jobs: jobs.map((job) => ({ ...job, conclusion: "failure" })),
+				jobs: jobs
+					.slice((page - 1) * perPage, page * perPage)
+					.map((job) => ({ ...job, conclusion: "failure" })),
 			});
+		}
 		const rerun = new RegExp(`^${base}/jobs/(\\d+)/rerun$`, "u").exec(
 			url.pathname,
 		);
@@ -207,5 +217,72 @@ describe("hobo ci rerun --reroute", () => {
 		);
 		expect(refused).toMatchObject({ code: "HOBO_CI_RERUN_REFUSED" });
 		expect(refused.message).toContain("Resource not accessible by integration");
+	});
+
+	it("R12: is reached from the CLI as hobo ci rerun <run> --reroute", async () => {
+		const github = fakeGithub();
+		const cli = createHoboCli({
+			commands: {
+				ci: createCiCommand({
+					env: { GH_TOKEN: TOKEN },
+					fetch: github.fetch,
+					git: async (args) =>
+						args[0] === "rev-parse" ? "/work" : `git@github.com:${REPO}.git`,
+				}),
+			},
+		});
+		const result = await cli.run(["ci", "rerun", "77", "--reroute"], {
+			cwd: "/work",
+		});
+		expect(result.stderr).toBe("");
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("relay job route runs again as attempt 2");
+		expect(
+			github.requests
+				.filter((request) => request.method === "POST")
+				.map((request) => request.path),
+		).toEqual([`https://api.github.com/repos/${REPO}/actions/jobs/11/rerun`]);
+	});
+
+	it("reads every page of a large run's jobs to find its relay", async () => {
+		const jobs: FakeJob[] = Array.from({ length: 140 }, (_, index) => ({
+			id: 100 + index,
+			name: `build (${index})`,
+			labels: ["ubuntu-24.04"],
+		}));
+		jobs.push({ id: 11, name: "route", labels: ["hobo-relay"] });
+		const result = await CI_RERUN_REROUTE_COMMAND.run(
+			context(["77", "--reroute"], fakeGithub({ jobs })),
+		);
+		expect(result.ok).not.toBe(false);
+		expect(result.data).toMatchObject({ relayJob: { id: 11 } });
+	});
+
+	it("never takes route-lint or relay-tests for a relay, and prefers the relay label", async () => {
+		const named = await CI_RERUN_REROUTE_COMMAND.run(
+			context(
+				["77", "--reroute"],
+				fakeGithub({
+					jobs: [
+						{ id: 21, name: "route-lint", labels: ["ubuntu-24.04"] },
+						{ id: 22, name: "relay-tests", labels: ["ubuntu-24.04"] },
+						{ id: 11, name: "route", labels: ["ubuntu-24.04"] },
+					],
+				}),
+			),
+		);
+		expect(named.data).toMatchObject({ relayJob: { id: 11 } });
+		const labelled = await CI_RERUN_REROUTE_COMMAND.run(
+			context(
+				["77", "--reroute"],
+				fakeGithub({
+					jobs: [
+						{ id: 11, name: "route", labels: ["ubuntu-24.04"] },
+						{ id: 31, name: "dispatch", labels: ["hobo-relay"] },
+					],
+				}),
+			),
+		);
+		expect(labelled.data).toMatchObject({ relayJob: { id: 31 } });
 	});
 });
