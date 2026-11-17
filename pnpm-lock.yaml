@@ -3246,9 +3246,18 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/connectivity':
+        specifier: workspace:*
+        version: link:../../../../packages/connectivity
       '@hobo/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
+      '@hobo/stations':
+        specifier: workspace:*
+        version: link:../../../../packages/stations
 
   src/draft/epic-proofs/foundations-build-conformance-harness: {}
 

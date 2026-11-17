@@ -13,14 +13,14 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { After, Given, Then, When } from "@cucumber/cucumber";
 
-import { createSimpleTrafficRouting } from "../../../../../../packages/connectivity/src/index.js";
+import { createSimpleTrafficRouting } from "@hobo/connectivity";
 import {
 	allowDecision,
 	parseTenantId,
 	type PolicyDecision,
 	type RoutingPlan,
 	type RoutingPlanId,
-} from "../../../../../../packages/core/src/index.js";
+} from "@hobo/core";
 import {
 	createRoutingControlLoop,
 	CUTOVER_EVENTS,
@@ -29,7 +29,7 @@ import {
 	ROUTING_LOOP_EVENTS,
 	type RoutingTopology,
 	synthesizeRoutingPlan,
-} from "../../../../../../packages/stations/src/index.js";
+} from "@hobo/stations";
 
 const tenantId = parseTenantId("tenant-a");
 
