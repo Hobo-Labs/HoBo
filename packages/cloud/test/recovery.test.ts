@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,6 +47,7 @@ const previousResource: ResourcePlan = {
 	deps: [],
 };
 const previousSpecHash = desiredSpecHash(previousResource);
+const destroyGeneration = "11111111-1111-4111-8111-111111111111";
 afterEach(() => {
 	for (const store of stores.splice(0)) store.close();
 	for (const dir of directories.splice(0))
@@ -102,12 +104,15 @@ async function fixture(
 				providerId: "p",
 			}),
 		);
-	else if (previouslyProvisioned)
+	else
 		events.push(
 			resourceDestroying({
 				deploymentId: "dep",
 				resourceId: "web",
 				reason: "destroy",
+				operationGeneration: destroyGeneration,
+				programHash: `sha256:${"d".repeat(64)}`,
+				specHash: previousSpecHash,
 			}),
 		);
 	events.push(
@@ -137,6 +142,9 @@ async function fixture(
 		resourceId: "web",
 		failureEventId: failed.id,
 		operation,
+		...(operation === "destroy"
+			? { operationGeneration: destroyGeneration }
+			: undefined),
 		evidenceRef: "proof:provider",
 		actor,
 		financial: {
@@ -190,6 +198,33 @@ describe("operator resolution of uncertain infrastructure", () => {
 			"replay",
 		);
 		expect(await history(store)).toHaveLength(events.length);
+	});
+
+	it("preserves the digest and replay of pre-generation apply claims", async () => {
+		const { store, deps, claim } = await fixture();
+		const input = {
+			...claim,
+			operation: "apply" as const,
+			outcome: { kind: "applied" as const, outputs: { url: "old" } },
+		};
+		await resolveResourceReconciliation(deps, input);
+		const legacyClaim = {
+			tenant: input.tenant,
+			deploymentId: input.deploymentId,
+			resourceId: input.resourceId,
+			failureEventId: input.failureEventId,
+			operation: input.operation,
+			evidenceRef: input.evidenceRef,
+			financial: input.financial,
+			outcome: input.outcome,
+		};
+		const digest = `sha256:${createHash("sha256").update(JSON.stringify(legacyClaim)).digest("hex")}`;
+		expect((await history(store)).at(-1)?.data).toMatchObject({
+			claimDigest: digest,
+		});
+		expect((await resolveResourceReconciliation(deps, input)).status).toBe(
+			"replay",
+		);
 	});
 
 	it("does not interpret a no-effect apply as a destroyed resource", async () => {
@@ -283,17 +318,114 @@ describe("operator resolution of uncertain infrastructure", () => {
 
 	it("records a verified destroy separately from an apply", async () => {
 		const { store, deps, claim } = await fixture("destroy");
+		const outcomeStarts: EventEnvelope[] = [];
+		const financialStarts: EventEnvelope[] = [];
+		deps.verifyOutcome = async (input) => {
+			if (input.destroying !== undefined) outcomeStarts.push(input.destroying);
+			return true;
+		};
+		deps.verifyFinancial = async (input) => {
+			if (input.destroying !== undefined)
+				financialStarts.push(input.destroying);
+			return true;
+		};
 		await resolveResourceReconciliation(deps, {
 			...claim,
 			operation: "destroy",
+			operationGeneration: destroyGeneration,
 			outcome: { kind: "destroyed", finalStateHash: "sha256:destroyed" },
 		});
 		const events = await history(store);
+		const destroyStart = events.find(
+			(event) => event.type === "resource.Destroying",
+		);
+		expect(outcomeStarts).toEqual([destroyStart]);
+		expect(financialStarts).toEqual([destroyStart]);
 		expect(events.at(-1)).toMatchObject({
 			type: "resource.Reconciled",
 			data: { outcome: "destroyed", finalStateHash: "sha256:destroyed" },
 		});
 		expect(hasUnresolvedReconciliation(events)).toBe(false);
+	});
+
+	it.each([
+		"missing-start",
+		"missing-generation",
+		"start-missing-generation",
+		"malformed-generation",
+		"missing-program-hash",
+		"missing-spec-hash",
+		"different-generation",
+		"different-resource",
+		"different-tenant",
+		"different-deployment",
+	] as const)("rejects unbound destroy recovery: %s", async (variant) => {
+		const { store, deps, claim } = await fixture("destroy");
+		let calls = 0;
+		deps.verifyOutcome = async () => {
+			calls++;
+			return true;
+		};
+		const wrapped: EventStore = {
+			...store,
+			async *read(streamId, fromSeq) {
+				for await (const event of store.read(streamId, fromSeq)) {
+					if (event.type !== "resource.Destroying") {
+						yield event;
+						continue;
+					}
+					if (variant === "missing-start") continue;
+					if (!isJsonObject(event.data)) throw new Error("invalid fixture");
+					if (variant === "start-missing-generation") {
+						const data = { ...event.data };
+						delete data.operationGeneration;
+						yield { ...event, data };
+					} else if (variant === "missing-program-hash") {
+						const data = { ...event.data };
+						delete data.programHash;
+						yield { ...event, data };
+					} else if (variant === "missing-spec-hash") {
+						const data = { ...event.data };
+						delete data.specHash;
+						yield { ...event, data };
+					} else if (variant === "malformed-generation")
+						yield {
+							...event,
+							data: { ...event.data, operationGeneration: "bad" },
+						};
+					else if (variant === "different-resource")
+						yield { ...event, data: { ...event.data, resourceId: "other" } };
+					else if (variant === "different-tenant")
+						yield { ...event, tenant: "other" };
+					else if (variant === "different-deployment")
+						yield { ...event, data: { ...event.data, deploymentId: "other" } };
+					else yield event;
+				}
+			},
+		};
+		await expect(
+			resolveResourceReconciliation(
+				{ ...deps, store: wrapped },
+				{
+					...claim,
+					operation: "destroy",
+					operationGeneration:
+						variant === "missing-generation"
+							? undefined
+							: variant === "different-generation"
+								? "22222222-2222-4222-8222-222222222222"
+								: destroyGeneration,
+					outcome: { kind: "destroyed", finalStateHash: "sha256:destroyed" },
+				},
+			),
+		).rejects.toThrow(
+			variant === "different-tenant" || variant === "different-deployment"
+				? "RECONCILIATION_SCOPE_MISMATCH"
+				: variant === "missing-generation"
+					? "RECONCILIATION_INVALID"
+					: "RECONCILIATION_PROVENANCE",
+		);
+		expect(calls).toBe(0);
 	});
 
 	it.each([

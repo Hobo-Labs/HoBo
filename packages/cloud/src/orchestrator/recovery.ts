@@ -38,16 +38,22 @@ export type ReconciliationBaseline =
 	| { readonly state: "unknown" }
 	| { readonly state: "provisioned" | "absent"; readonly eventId: string };
 
-export interface ResourceReconciliationClaim {
+interface ResourceReconciliationClaimBase {
 	readonly tenant: string;
 	readonly deploymentId: string;
 	readonly resourceId: string;
 	readonly failureEventId: string;
-	readonly operation: "apply" | "destroy";
 	readonly evidenceRef: string;
 	readonly financial: ReconciliationFinancialEvidence;
 	readonly outcome: ReconciliationOutcome;
 }
+
+/** Destroy recovery names the exact durable generation whose effects are verified. */
+export type ResourceReconciliationClaim = ResourceReconciliationClaimBase &
+	(
+		| { readonly operation: "apply"; readonly operationGeneration?: never }
+		| { readonly operation: "destroy"; readonly operationGeneration: string }
+	);
 
 export interface ResourceReconciliationVerification {
 	readonly claim: ResourceReconciliationClaim;
@@ -56,6 +62,8 @@ export interface ResourceReconciliationVerification {
 	readonly baseline: ReconciliationBaseline;
 	/** The exact application whose result is being verified, when available. */
 	readonly provisioning?: EventEnvelope;
+	/** The exact durable destroy start, required for destroy recovery. */
+	readonly destroying?: EventEnvelope;
 }
 
 /** Both verifiers are independently trusted host ports; neither executes recovery. */
@@ -99,6 +107,15 @@ function name(value: string): boolean {
 	);
 }
 
+function generation(value: string | undefined): boolean {
+	return (
+		value !== undefined &&
+		/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+			value,
+		)
+	);
+}
+
 function copyActor(
 	actor: PrincipalRef,
 	seen = new Set<PrincipalRef>(),
@@ -120,6 +137,7 @@ function copyActor(
 function copyClaim(
 	input: ResourceReconciliationClaim,
 ): ResourceReconciliationClaim {
+	const operationGeneration = input.operationGeneration;
 	if (
 		![
 			input.tenant,
@@ -130,6 +148,8 @@ function copyClaim(
 			input.financial.evidenceRef,
 		].every(name) ||
 		!["apply", "destroy"].includes(input.operation) ||
+		(input.operation === "destroy" && !generation(operationGeneration)) ||
+		(input.operation === "apply" && operationGeneration !== undefined) ||
 		!["none", "held", "settled", "released"].includes(
 			input.financial.disposition,
 		) ||
@@ -215,16 +235,28 @@ function copyClaim(
 					reservationId: input.financial.reservationId,
 					evidenceRef: input.financial.evidenceRef,
 				};
-	return {
+	const base = {
 		tenant: input.tenant,
 		deploymentId: input.deploymentId,
 		resourceId: input.resourceId,
 		failureEventId: input.failureEventId,
-		operation: input.operation,
+	};
+	const details = {
 		evidenceRef: input.evidenceRef,
 		financial,
 		outcome,
 	};
+	if (input.operation === "destroy") {
+		if (operationGeneration === undefined)
+			fail("RECONCILIATION_INVALID", "destroy generation is required");
+		return {
+			...base,
+			operation: "destroy",
+			...details,
+			operationGeneration,
+		};
+	}
+	return { ...base, operation: "apply", ...details };
 }
 
 function claimDigest(claim: ResourceReconciliationClaim): string {
@@ -296,11 +328,55 @@ function restoredState(
 			: "failed";
 }
 
+/** Locate the exact unfinished destroy that preceded the named failure. */
+function destroyStartForFailure(
+	events: readonly EventEnvelope[],
+	claim: ResourceReconciliationClaim,
+): EventEnvelope | undefined {
+	if (claim.operation !== "destroy") return undefined;
+	let start: EventEnvelope | undefined;
+	for (const event of events) {
+		if (event.id === claim.failureEventId) break;
+		if (!isJsonObject(event.data) || event.data.resourceId !== claim.resourceId)
+			continue;
+		if (event.type === CLOUD_EVENTS.ResourceDestroying) start = event;
+		if (
+			event.type === CLOUD_EVENTS.ResourceProvisioning ||
+			event.type === CLOUD_EVENTS.ResourceProvisioned ||
+			event.type === CLOUD_EVENTS.ResourceDestroyed ||
+			event.type === CLOUD_EVENTS.ResourceReconciled
+		)
+			start = undefined;
+	}
+	const data = start?.data;
+	if (
+		start?.type !== CLOUD_EVENTS.ResourceDestroying ||
+		start.tenant !== claim.tenant ||
+		start.streamId !== `deployment:${claim.deploymentId}` ||
+		!isJsonObject(data) ||
+		data.deploymentId !== claim.deploymentId ||
+		data.resourceId !== claim.resourceId ||
+		!isJsonString(data.operationGeneration) ||
+		!generation(data.operationGeneration) ||
+		data.operationGeneration !== claim.operationGeneration ||
+		!isJsonString(data.programHash) ||
+		!/^sha256:[a-f0-9]{64}$/u.test(data.programHash) ||
+		!isJsonString(data.specHash) ||
+		!/^sha256:[a-f0-9]{64}$/u.test(data.specHash)
+	)
+		fail(
+			"RECONCILIATION_PROVENANCE_MISSING",
+			"the exact scoped destroy generation and hashes must be recorded",
+		);
+	return start;
+}
+
 function recoveryRecord(
 	events: readonly EventEnvelope[],
 	claim: ResourceReconciliationClaim,
 	digest: string,
 ): EventEnvelope | undefined {
+	destroyStartForFailure(events, claim);
 	for (const event of events) {
 		if (
 			isJsonObject(event.data) &&
@@ -479,6 +555,7 @@ export async function resolveResourceReconciliation(
 		const events = await readHistory();
 		const replay = recoveryRecord(events, claim, digest);
 		if (replay !== undefined) return { status: "replay", eventId: replay.id };
+		const destroying = destroyStartForFailure(events, claim);
 		const failures = new Map<
 			string,
 			{ failure: EventEnvelope; provisioning: EventEnvelope | undefined }
@@ -587,16 +664,18 @@ export async function resolveResourceReconciliation(
 			execId = data.execId;
 			specHash = data.specHash;
 		}
+		const verificationBase = {
+			claim,
+			actor: structuredClone(actor),
+			failure,
+			baseline,
+		};
 		const verification: ResourceReconciliationVerification =
-			provisioning === undefined
-				? { claim, actor: structuredClone(actor), failure, baseline }
-				: {
-						claim,
-						actor: structuredClone(actor),
-						failure,
-						provisioning,
-						baseline,
-					};
+			destroying !== undefined
+				? { ...verificationBase, destroying }
+				: provisioning !== undefined
+					? { ...verificationBase, provisioning }
+					: verificationBase;
 		let verified: boolean;
 		try {
 			verified =
