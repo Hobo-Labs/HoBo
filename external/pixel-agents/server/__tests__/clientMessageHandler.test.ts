@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import {
   type AssetCache,
@@ -11,6 +12,7 @@ import {
 } from '../src/clientMessageHandler.js';
 import { readConfig } from '../src/configPersistence.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
+import { claudeFileProvider } from '../src/providers/file/claudeFileProvider.js';
 import type { AgentState } from '../src/types.js';
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
@@ -42,12 +44,6 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
   } as AgentState;
 }
 
-/**
- * These tests exercise the area-related dispatch branches and the load-order
- * invariant in handleWebviewReady. They isolate the on-disk config + state
- * files by redirecting $HOME to a fresh temp dir for every test, so the
- * standalone adapter writes its config.json there.
- */
 describe('clientMessageHandler: areas + carpet wire ordering', () => {
   let tempHome: string;
   let originalHome: string | undefined;
@@ -79,8 +75,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     store.dispose();
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
-
-  // ── saveAreaMappings ─────────────────────────────────────────
 
   describe('saveAreaMappings', () => {
     it('persists a valid mapping payload to cfg.standalone.areaMappings', () => {
@@ -125,8 +119,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     });
   });
 
-  // ── setShowAreas ─────────────────────────────────────────────
-
   describe('setShowAreas', () => {
     it('persists the boolean via the adapter (standalone namespace)', () => {
       handleClientMessage({ type: 'setShowAreas', enabled: true }, (m) => sent.push(m), ctx);
@@ -139,12 +131,27 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     });
   });
 
-  // ── handleWebviewReady ordering ──────────────────────────────
-
   describe('handleWebviewReady ordering', () => {
+    it('reports unavailable hooks for a file-only runtime', () => {
+      const runtime = new AgentRuntime(store, claudeFileProvider);
+      try {
+        handleClientMessage({ type: 'webviewReady' }, (message) => sent.push(message), {
+          ...ctx,
+          runtime,
+        });
+        expect(sent).toContainEqual(
+          expect.objectContaining({
+            type: 'settingsLoaded',
+            hooksEnabled: false,
+            hooksAvailable: false,
+          }),
+        );
+      } finally {
+        runtime.dispose();
+      }
+    });
+
     it('emits settingsLoaded with showAreas before areaMappingsLoaded before existingAgents', () => {
-      // Seed config so the assertion proves the values round-trip via the
-      // dispatch rather than just relying on hard-coded defaults.
       handleClientMessage({ type: 'setShowAreas', enabled: true }, (m) => sent.push(m), ctx);
       handleClientMessage(
         { type: 'saveAreaMappings', mappings: { frontend: ['Engineering'] } },
@@ -175,9 +182,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     });
 
     it('emits layoutLoaded after existingAgents so buffered agents materialize', () => {
-      // The webview buffers agents from existingAgents and only materializes
-      // them on the next layoutLoaded. If layout arrives first, a client
-      // connecting after agents were created never renders their characters.
       store.set(1, createTestAgent({ id: 1 }));
 
       handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
@@ -195,8 +199,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     });
 
     it('emits carpetTilesLoaded after wallTilesLoaded when both are present in the cache', () => {
-      // Hex placeholders are test fixtures, not UI tokens — disable the
-      // centralized-color rule just for this cache literal.
       /* eslint-disable pixel-agents/no-inline-colors */
       const cache: AssetCache = {
         characters: null,

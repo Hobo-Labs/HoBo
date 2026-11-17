@@ -19,15 +19,12 @@ interface SettingsModalProps {
   watchAllSessions: boolean;
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
+  hooksAvailable: boolean;
   onToggleHooksEnabled: () => void;
-  /** Whether the areas overlay is rendered outside of the Areas edit tool. */
   showAreas: boolean;
   onToggleShowAreas: () => void;
-  /** Hide the Show Areas checkbox entirely when areas are unavailable. */
   showAreasAvailable: boolean;
-  /** Browser-native layout export (standalone only; VS Code uses the host save dialog). */
   onExportLayout: () => void;
-  /** Browser-native layout import from a chosen file (standalone only). */
   onImportLayout: (file: File) => void;
 }
 
@@ -42,6 +39,7 @@ export function SettingsModal({
   watchAllSessions,
   onToggleWatchAllSessions,
   hooksEnabled,
+  hooksAvailable,
   onToggleHooksEnabled,
   showAreas,
   onToggleShowAreas,
@@ -55,7 +53,7 @@ export function SettingsModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
-      {/* Open Sessions Folder opens an OS file manager — impossible in the browser. */}
+      {}
       {!isBrowserRuntime && (
         <MenuItem
           onClick={() => {
@@ -81,7 +79,6 @@ export function SettingsModal({
       <MenuItem
         onClick={() => {
           if (isBrowserRuntime) {
-            // Open the native file picker; the import is applied in onChange below.
             fileInputRef.current?.click();
           } else {
             transport.send({ type: 'importLayout' });
@@ -99,7 +96,6 @@ export function SettingsModal({
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            // Reset the value so re-selecting the same file fires change again.
             e.target.value = '';
             if (file) {
               onImportLayout(file);
@@ -108,7 +104,7 @@ export function SettingsModal({
           }}
         />
       )}
-      {/* Browser has no native directory picker, so accept a typed absolute path. */}
+      {}
       {isBrowserRuntime ? (
         <div className="flex items-center gap-4 py-4 px-10">
           <input
@@ -175,11 +171,13 @@ export function SettingsModal({
         checked={watchAllSessions}
         onChange={onToggleWatchAllSessions}
       />
-      <Checkbox
-        label="Instant Detection (Hooks)"
-        checked={hooksEnabled}
-        onChange={onToggleHooksEnabled}
-      />
+      {hooksAvailable && (
+        <Checkbox
+          label="Instant Detection (Hooks)"
+          checked={hooksEnabled}
+          onChange={onToggleHooksEnabled}
+        />
+      )}
       <Checkbox
         label="Always Show Labels"
         checked={alwaysShowOverlay}

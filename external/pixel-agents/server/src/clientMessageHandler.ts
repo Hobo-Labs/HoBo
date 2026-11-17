@@ -8,17 +8,10 @@ import { claudeProvider } from './providers/index.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
-/** Async hook toggle side effect (install/uninstall + script copy). Provided by cli.ts. */
 export type SetHooksEnabledSideEffect = (enabled: boolean) => Promise<void> | void;
 
-/**
- * Reload server-side assets after an external-asset-directory change and
- * re-broadcast the updated sprites to the requesting client. Provided by cli.ts,
- * which owns the dist root needed to re-run the loaders.
- */
 export type ReloadAssetsSideEffect = (send: WsSend) => Promise<void> | void;
 
-/** Cached assets loaded at server startup. Sent to each WebSocket client on webviewReady. */
 export interface AssetCache {
   characters: LoadedCharacterSprites | null;
   pets: LoadedPetSprites | null;
@@ -33,13 +26,10 @@ export interface ClientMessageContext {
   store: AgentStateStore;
   runtime?: AgentRuntime;
   cache: AssetCache | null;
-  /** Install/uninstall hooks side effect. Needs server url+token known only to cli.ts. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
-  /** Reload assets after an external-asset-directory change. Needs the dist root, known only to cli.ts. */
   onReloadAssets?: ReloadAssetsSideEffect;
 }
 
-// ── Setting key constants (mirror adapters/vscode/constants.ts) ──
 const KEY_SOUND_ENABLED = 'pixel-agents.soundEnabled';
 const KEY_LAST_SEEN_VERSION = 'pixel-agents.lastSeenVersion';
 const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
@@ -48,13 +38,6 @@ const KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 
-/**
- * Handle incoming ClientMessage from a WebSocket client.
- *
- * In standalone mode, the server is the authority for all state: assets,
- * layout, settings, agents. Assets are loaded once at startup and cached
- * in memory. Each connecting client receives the full state on webviewReady.
- */
 export function handleClientMessage(
   msg: Record<string, unknown>,
   send: WsSend,
@@ -69,10 +52,6 @@ export function handleClientMessage(
       break;
 
     case 'closeAgent': {
-      // Standalone agents are always external (no terminal), so mirror the VS
-      // Code external-agent branch: dismiss the file (so the external scanner
-      // doesn't re-adopt it) then remove. removeAgent fires the agentRemoved
-      // store event, which httpServer maps to an agentClosed broadcast.
       const id = msg.id as number;
       const agent = store.get(id);
       if (agent && runtime) {
@@ -83,7 +62,6 @@ export function handleClientMessage(
     }
 
     case 'requestDiagnostics':
-      // Point-to-point reply to the requesting socket (NOT a broadcast).
       send({ type: 'agentDiagnostics', agents: buildAgentDiagnostics(store) });
       break;
 
@@ -121,10 +99,10 @@ export function handleClientMessage(
     }
 
     case 'setHooksEnabled': {
-      const enabled = msg.enabled as boolean;
+      const enabled = Boolean(msg.enabled) && (runtime?.supportsHooks ?? true);
       adapter?.setSetting(KEY_HOOKS_ENABLED, enabled);
       if (runtime) runtime.hooksEnabled.current = enabled;
-      void ctx.onSetHooksEnabled?.(enabled);
+      if (runtime?.supportsHooks !== false) void ctx.onSetHooksEnabled?.(enabled);
       break;
     }
 
@@ -174,8 +152,6 @@ export function handleClientMessage(
     }
 
     default:
-      // focusAgent, exportLayout, importLayout
-      // require IDE-specific handling (not yet implemented for standalone)
       break;
   }
 }
@@ -184,14 +160,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const { store, runtime, cache } = ctx;
   const adapter = store.getAdapter();
 
-  // 1. Provider capabilities (must arrive before any agent messages)
   send({
     type: 'providerCapabilities',
     readingTools: [...claudeProvider.readingTools],
     subagentToolNames: [...claudeProvider.subagentToolNames],
   });
 
-  // 2. Assets (from server cache, loaded at startup via pngjs)
   if (cache) {
     if (cache.characters) {
       send({ type: 'characterSpritesLoaded', characters: cache.characters.characters });
@@ -221,16 +195,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
   }
 
-  // 3. Layout is sent AFTER existingAgents — see step 7 below. The webview
-  // buffers agents from existingAgents and only materializes them on the next
-  // layoutLoaded (useExtensionMessages.ts: "Buffer agents — they'll be added
-  // in layoutLoaded"), so layout-first would leave a client that connects
-  // after agent creation with no characters.
-
-  // 4. Settings (from adapter, with sensible defaults when adapter is absent)
   const cfg = readConfig();
   const watchAllSessions = adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false;
-  const hooksEnabled = adapter?.getSetting(KEY_HOOKS_ENABLED, true) ?? true;
+  const hooksEnabled =
+    (runtime?.supportsHooks ?? true) && (adapter?.getSetting(KEY_HOOKS_ENABLED, true) ?? true);
   const showAreas = adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false;
   send({
     type: 'settingsLoaded',
@@ -240,29 +208,24 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     watchAllSessions,
     alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
     hooksEnabled,
+    ...(runtime?.supportsHooks === false ? { hooksAvailable: false } : {}),
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
     showAreas,
   });
 
-  // 4b. Folder→Area mappings (must arrive before existingAgents so the
-  // webview seat-preference logic has the dict when characters are created).
   send({
     type: 'areaMappingsLoaded',
     mappings: cfg.standalone.areaMappings ?? {},
   });
 
-  // Sync runtime refs with the persisted settings so scanners behave correctly
-  // from the first tick after a server restart.
   if (runtime) {
     runtime.watchAllSessions.current = watchAllSessions;
     runtime.hooksEnabled.current = hooksEnabled;
   }
 
-  // 5. Restore persisted external agents (standalone only; VS Code handles its own restore)
   runtime?.restoreExternalAgents();
 
-  // 6. Existing agents (either just restored, or from VS Code adapter if present)
   const agentIds: number[] = [];
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
@@ -284,8 +247,6 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     externalAgents,
   });
 
-  // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
-  // into characters once seats are rebuilt.
   const savedLayout = readLayoutFromFile();
   send({ type: 'layoutLoaded', layout: savedLayout ?? cache?.defaultLayout ?? null });
 }

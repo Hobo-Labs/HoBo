@@ -1,13 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Standalone CLI entry point: `npx pixel-agents`
- *
- * Starts the Fastify server in standalone mode with SPA serving and WebSocket.
- * Loads all assets (PNGs -> SpriteData) on startup and caches in memory.
- * Each connecting WebSocket client receives the full state on webviewReady.
- */
-
 import * as os from 'os';
 import * as path from 'path';
 
@@ -24,21 +16,20 @@ import { readConfig, writeConfig } from './configPersistence.js';
 import { LAYOUT_FILE_DIR, MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
-import { claudeProvider, copyHookScript, OtelProvider } from './providers/index.js';
+import {
+  claudeFileProvider,
+  claudeProvider,
+  copyHookScript,
+  OtelProvider,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
-// ── Argument parsing ──────────────────────────────────────────
-
 export interface CliArgs {
-  /** Unset -> ephemeral (OS-assigned) port, so multiple standalone instances
-   *  can run at once without a collision. --port picks a fixed one. */
   port?: number;
   host: string;
+  fileOnly?: boolean;
 }
 
-/** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
- *  the parsing logic stays a pure, unit-testable function -- main() is the only
- *  place that turns a bad argument into an exit code. */
 export class CliArgsError extends Error {}
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -62,20 +53,21 @@ export function parseArgs(argv: string[]): CliArgs {
     } else if (argv[i] === '--host' && argv[i + 1]) {
       args.host = argv[i + 1];
       i++;
+    } else if (argv[i] === '--file-only') {
+      args.fileOnly = true;
     } else if (argv[i] === '--help') {
       console.log(`Usage: pixel-agents [options]
 
 Options:
   --port, -p <number>   Port to listen on (default: OS-assigned ephemeral port)
   --host <string>       Host to bind to (default: 127.0.0.1)
+  --file-only           Read transcripts without installing hooks
   --help                Show this help message`);
       process.exit(0);
     }
   }
   return args;
 }
-
-// ── Main ──────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   let args: CliArgs;
@@ -86,15 +78,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // dist/ contains both the CLI bundle and the assets/ + webview/ directories
   const distRoot = __dirname;
   const packageRoot = path.dirname(distRoot);
   const staticDir = path.join(distRoot, 'webview');
 
-  // ── Load assets on startup (same pipeline as VS Code extension) ──
-  // External asset directories are merged at startup too, so directories added
-  // in a previous session survive a restart. buildAssetCache is the shared
-  // loader used by both the standalone server and the VS Code adapter.
   console.log('[Pixel Agents] Loading assets...');
   const assetCache: AssetCache = await buildAssetCache(
     distRoot,
@@ -107,26 +94,20 @@ async function main(): Promise<void> {
     `[Pixel Agents] Assets loaded: ${charCount} characters, ${petCount} pets, ${furnitureCount} furniture items`,
   );
 
-  // ── Store + adapter (shared settings + standalone-scoped agents/seats) ──
   const store = new AgentStateStore();
   const adapter = new FileStateAdapter({ namespace: 'standalone' });
   store.setAdapter(adapter);
 
-  // ── Create server ──
   const server = new PixelAgentsServer();
 
   try {
-    // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const provider = args.fileOnly ? claudeFileProvider : claudeProvider;
+    const runtime = new AgentRuntime(store, provider);
 
-    // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
       runtime.handleHookEvent(providerId, event);
     });
 
-    // OTel provider: POST /v1/traces -> span→AgentEvent translation -> store.
-    // Camps become office Areas (auto-materialized into the saved layout);
-    // bindles become characters seated in their camp's Area.
     const otelProvider = new OtelProvider({
       store,
       catalog: assetCache.furniture?.catalog ?? null,
@@ -145,15 +126,11 @@ async function main(): Promise<void> {
       },
     });
 
-    // Boot migration: rebuild camp rooms persisted by the old fragmented
-    // area planner (disjoint regions, no wall enclosure).
     const rebuiltCamps = otelProvider.validatePersistedAreas();
     if (rebuiltCamps.length > 0) {
       console.log(`[Pixel Agents] OTel: migrated camp rooms: ${rebuiltCamps.join(', ')}`);
     }
 
-    // onSetHooksEnabled side effect: install/uninstall hooks when user toggles in UI.
-    // Captures config from the outer scope after server.start().
     let currentConfig: { port: number; token: string } | null = null;
     const onSetHooksEnabled = async (enabled: boolean): Promise<void> => {
       if (!currentConfig) return;
@@ -170,13 +147,6 @@ async function main(): Promise<void> {
       }
     };
 
-    // onReloadAssets side effect: re-run the shared loaders (bundled + external
-    // dirs) after an external-asset-directory change, then re-broadcast the
-    // updated sprites to the requesting client. Mutates the assetCache object in
-    // place so already-open sockets (which captured the same reference) and
-    // future webviewReady handshakes both observe the new assets. Only
-    // characters/pets/furniture can come from external dirs, so only those three
-    // are reloaded and re-sent (mirrors the VS Code reload path).
     const onReloadAssets: ReloadAssetsSideEffect = async (send): Promise<void> => {
       const externalDirs = readConfig().externalAssetDirectories;
       const [characters, pets, furniture] = await Promise.all([
@@ -221,11 +191,9 @@ async function main(): Promise<void> {
     });
     currentConfig = { port: config.port, token: config.token };
 
-    // Sync runtime refs with persisted settings BEFORE first scan tick
     runtime.hooksEnabled.current = adapter.getSetting('pixel-agents.hooksEnabled', true);
     runtime.watchAllSessions.current = adapter.getSetting('pixel-agents.watchAllSessions', false);
 
-    // Install hooks on startup if the persisted setting says so
     if (runtime.hooksEnabled.current) {
       try {
         await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
@@ -236,9 +204,8 @@ async function main(): Promise<void> {
       }
     }
 
-    // Start scanning for external sessions (Claude running in user's terminal)
     const cwd = process.cwd();
-    const dirs = claudeProvider.getSessionDirs?.(cwd);
+    const dirs = provider.getSessionDirs?.(cwd);
     if (dirs && dirs[0]) {
       const projectDir = dirs[0];
       console.log(`[Pixel Agents] Scanning project dir: ${projectDir}`);
@@ -249,7 +216,6 @@ async function main(): Promise<void> {
 
     console.log(`\n  Pixel Agents server running at http://${args.host}:${config.port}\n`);
 
-    // ── Graceful shutdown ──
     function shutdown(): void {
       console.log('\nShutting down...');
       runtime.dispose();
@@ -265,10 +231,6 @@ async function main(): Promise<void> {
   }
 }
 
-// Only auto-run when this file is executed directly (`node dist/cli.js`), not
-// when it's imported for its exports (e.g. `parseArgs` in tests) -- importing
-// it unconditionally used to start a real server and install real Claude
-// hooks as a side effect of module load.
 if (require.main === module) {
   main().catch((err) => {
     console.error(err);
