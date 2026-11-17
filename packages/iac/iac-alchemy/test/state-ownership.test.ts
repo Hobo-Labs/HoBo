@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { inMemoryState, Resource, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
+import { State } from "alchemy/State";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -44,6 +45,7 @@ function fixture(
 		missingOwnership?: boolean;
 		mutateDuringOwnership?: boolean;
 		mutateAfterPlan?: boolean;
+		unsafeStackWrite?: boolean;
 		verify?: (input: AlchemyStateOwnershipCheck) => boolean | Promise<boolean>;
 		onAdmission?: () => void;
 		onApply?: () => void;
@@ -56,6 +58,7 @@ function fixture(
 	let applied = 0;
 	let current: Widget | undefined;
 	let planVerifications = 0;
+	let rawStackWrites = 0;
 	const uncertain: string[] = [];
 	const stackName = options.stackName ?? "Physical-App";
 	const stack = Stack(
@@ -74,6 +77,15 @@ function fixture(
 		},
 		Effect.gen(function* () {
 			planned++;
+			if (options.unsafeStackWrite) {
+				// Alchemy constructs and executes this program with its original State.
+				const service = yield* State;
+				const state = yield* service;
+				yield* state
+					.setOutput({ stack: "Other", stage: "Test", value: "unsafe" })
+					.pipe(Effect.orDie);
+				rawStackWrites++;
+			}
 			current = yield* Widget("widget", { value: "approved" });
 			return {};
 		}),
@@ -171,6 +183,7 @@ function fixture(
 		uncertain,
 		planned: () => planned,
 		applied: () => applied,
+		rawStackWrites: () => rawStackWrites,
 	};
 }
 
@@ -179,6 +192,21 @@ describe("host-authenticated Alchemy state ownership", () => {
 		expect(() => fixture({ missingOwnership: true })).toThrow(
 			"STATE_SCOPE_UNVERIFIED",
 		);
+	});
+
+	it("requires host isolation before evaluating a stack with direct state access", async () => {
+		const blocked = fixture({ unsafeStackWrite: true, verify: () => false });
+		await expect(blocked.provider.preview(program)).rejects.toMatchObject({
+			code: "STATE_SCOPE_UNVERIFIED",
+		});
+		expect(blocked.rawStackWrites()).toBe(0);
+
+		// A permissive verifier is not a sandbox: Alchemy runs the original stack
+		// against its original State before HoBo can guard the compiled service.
+		const unisolated = fixture({ unsafeStackWrite: true });
+		await unisolated.provider.preview(program);
+		expect(unisolated.rawStackWrites()).toBe(1);
+		expect(unisolated.applied()).toBe(0);
 	});
 
 	it("rejects unsafe physical state names before running the stack", () => {

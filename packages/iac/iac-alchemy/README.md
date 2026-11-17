@@ -85,12 +85,12 @@ present, is part of preview and execution identity.
 Alchemy beta.87 encodes `/` as `__` in local and bucket state keys, so the
 adapter accepts only portable alphanumeric, dot, hyphen and underscore FQN
 segments whose complete FQN round-trips through that encoding. Stack and stage
-must be single portable path segments, and the program must name that physical
-stack exactly. Generated logical names containing `/` are refused before
-admission or provider effects until a host-authenticated mapping is available.
-Case-insensitive resource-key collisions
-in one target are rejected. State reads, writes and deletes are checked in each
-plan, destroy and drift scope; a stored row whose own FQN differs from its key,
+must be single portable path segments. The host authenticates the mapping from
+the logical program name, including names containing `/`, to the physical stack
+and its exclusive state owner. Case-insensitive resource-key collisions in one
+target are rejected. After a stack has been evaluated, the adapter checks its
+compiled state service for plan, destroy and drift; a stored row whose own FQN
+differs from its key,
 an unsafe rename, or an unavailable/inconsistent scan stops execution. FQNs and scope segments
 are limited to 200 ASCII characters; a scan accepts at most 1,024 stored rows,
 each stored row may reference at most 1,024 downstream FQNs, and replacement
@@ -99,6 +99,19 @@ post-admission failure retains the reservation for reconciliation. Existing
 unsafe state requires a host-controlled, independently verified migration;
 state already overwritten by an earlier collision cannot be reconstructed by
 this check.
+
+Alchemy beta.87 evaluates the supplied stack program using its original state
+layer before the adapter can wrap the compiled services. That program can use
+`State` directly, including writing to another stack or deleting a stage during
+preview, and it can perform arbitrary other effects. The host must run only
+independently authenticated stack code in a sandbox that prevents any
+pre-admission state mutation and isolates all credentials and resources. A
+successful ownership callback alone does not provide that sandbox. The adapter
+cannot enforce these requirements by wrapping the returned stack. For compiled
+state operations it restricts access to the exact authorized stack and stage;
+cross-stack `Output.stackRef`, unrestricted listings and state migration are
+unsupported. Perform migrations separately under independently verified host
+control.
 
 `target.stackName` is the physical Alchemy stack name and must match the
 configured `Stack`; `program.stackName` is an opaque HoBo logical identifier

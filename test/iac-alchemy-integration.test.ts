@@ -619,7 +619,7 @@ describe("Alchemy IaC provider against the real library", () => {
 		}
 	});
 
-	it("refuses a generated logical name until its physical stack is authenticated", async () => {
+	it("accepts a generated logical name when its physical stack is authenticated", async () => {
 		const generated = iacProgramFor(
 			"deployment-a",
 			{
@@ -647,13 +647,10 @@ describe("Alchemy IaC provider against the real library", () => {
 				ambient: false,
 			});
 			expect(result).toMatchObject({
-				status: "failed",
-				classification: "retryable",
-				reason: expect.stringContaining("PROGRAM_SCOPE_MISMATCH"),
+				status: "succeeded",
+				outputs: { poolName: "default" },
 			});
-			expect(fixture.applied()).toBe(0);
-			expect(fixture.issued()).toBe(0);
-			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
+			expect(fixture.applied()).toBe(1);
 		} finally {
 			fixture.authority.close();
 		}
