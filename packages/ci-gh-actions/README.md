@@ -1633,14 +1633,16 @@ gauntlet case M10).
   runner labels API and returns a `MachineAdvert`: host isolation, one slot,
   busy as GitHub reports it, signed by `github:runner-labels`. The label is
   derived from where the runner is registered and its id, so adopting twice
-  writes nothing the second time.
-- `releaseRunner` takes every `hobo-runner-` label off again; a label that is
-  already gone is not an error.
+  writes nothing the second time. The prospective advert is checked before the
+  label write, and adoption refuses a label already on another listed runner.
+  The listing is a point-in-time check; hosts must protect runner labels from
+  conflicting concurrent changes.
+- `releaseRunner` removes only the label derived for that runner; a label that
+  is already gone is not an error.
 
 The only writes are the two labels calls. Nothing is installed on the
 machine and no registration token is asked for. The calls are pinned by
 [`contracts/github-runner-labels.pact.json`](contracts/github-runner-labels.pact.json),
 hand-authored from GitHub's REST reference and executed by its consumer test;
 no provider verification or live run has been recorded, so the channel is
-built, not proven. The `hobo ci runners list|adopt|release` command in
-`@hobo/hobo` drives it.
+built, not proven. A CLI for these operations is not yet included.
