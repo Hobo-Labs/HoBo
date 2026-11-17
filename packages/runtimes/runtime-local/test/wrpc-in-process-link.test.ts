@@ -22,7 +22,12 @@ function createTestLayer() {
 		store,
 		codec: createJsonWitCodec(),
 	});
-	return createWrpcLinkLayer({ transport, compatibilityFloor: FLOOR, store });
+	return createWrpcLinkLayer({
+		transport,
+		compatibilityFloor: FLOOR,
+		store,
+		clock: { nowMs: () => Date.parse("2026-06-25T15:44:00.000Z") },
+	});
 }
 
 function kvPin() {
