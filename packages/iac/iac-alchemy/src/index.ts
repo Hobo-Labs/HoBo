@@ -44,6 +44,7 @@ import {
 	uniqueAlchemyFqns,
 	verifyAlchemyStateIdentities,
 } from "./state-identity.js";
+import { captureAlchemySourceRequirements } from "./source-fence.js";
 
 export type { ResourceScope, Target } from "./_generated/alchemy_iac_pb.js";
 export { captureAlchemyOptions } from "./input-boundary.js";
@@ -99,6 +100,17 @@ export type {
 	UnverifiedUnpricedScopeProof,
 } from "./port.js";
 export { alchemyStateScopeKey } from "./state-identity.js";
+export type {
+	AlchemySourceClaim,
+	AlchemySourceFence,
+	AlchemySourceRequirement,
+	AlchemySourceResource,
+} from "./source-fence.js";
+export {
+	captureAlchemySourceFence,
+	registerAlchemySource,
+	verifyAlchemySourceFence,
+} from "./source-fence.js";
 
 export type AlchemyTargetInput = Omit<Target, "$typeName" | "resources"> & {
 	readonly resources: readonly Omit<ResourceScope, "$typeName">[];
@@ -198,23 +210,35 @@ function captureCompositeGuard(
 ): AlchemyCompositeGuard | undefined {
 	if (input === undefined) return undefined;
 	try {
-		const { proofRef, environmentDigest, verifyEnvironment, verifyPlan } =
-			input;
+		const {
+			proofRef,
+			environmentDigest,
+			verifyEnvironment,
+			verifyPlan,
+			sourceRequirements,
+		} = input;
+		const capturedRequirements =
+			sourceRequirements === undefined
+				? undefined
+				: captureAlchemySourceRequirements(sourceRequirements);
 		if (
 			typeof proofRef !== "string" ||
 			!name(proofRef) ||
 			typeof environmentDigest !== "string" ||
 			!/^sha256:[a-f0-9]{64}$/u.test(environmentDigest) ||
 			typeof verifyEnvironment !== "function" ||
-			typeof verifyPlan !== "function"
+			typeof verifyPlan !== "function" ||
+			(sourceRequirements !== undefined && capturedRequirements === undefined)
 		)
 			throw new Error("invalid host guard");
-		return Object.freeze({
+		const base = {
 			proofRef,
 			environmentDigest,
 			verifyEnvironment: verifyEnvironment.bind(input),
 			verifyPlan: verifyPlan.bind(input),
-		});
+		};
+		if (capturedRequirements === undefined) return Object.freeze(base);
+		return Object.freeze({ ...base, sourceRequirements: capturedRequirements });
 	} catch {
 		throw new AlchemyIacError(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",

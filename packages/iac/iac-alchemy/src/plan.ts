@@ -4,6 +4,12 @@ import * as Output from "alchemy/Output";
 import type { Target } from "./_generated/alchemy_iac_pb.js";
 import type { FinancialDecision } from "./port.js";
 import { safeAlchemyFqn, safeAlchemyState } from "./state-identity.js";
+import {
+	type AlchemySourceClaim,
+	type AlchemySourceRequirement,
+	alchemySourceFor,
+	captureAlchemySourceRequirements,
+} from "./source-fence.js";
 
 type JsonValue =
 	| null
@@ -19,6 +25,7 @@ export interface AlchemyCompositeGuard {
 	readonly environmentDigest: string;
 	readonly verifyEnvironment: (input: AlchemyCompositeEnvironment) => boolean;
 	readonly verifyPlan: (input: AlchemyCompositeObservation) => boolean;
+	readonly sourceRequirements?: readonly AlchemySourceRequirement[];
 }
 
 export interface AlchemyCompositeEnvironment {
@@ -33,6 +40,7 @@ export interface AlchemyCompositeEnvironment {
 	readonly environmentDigest: string;
 	readonly proofRef: string;
 	readonly inventoryEvidenceRef: string;
+	readonly sourceRequirements: readonly AlchemySourceRequirement[] | undefined;
 	readonly scope: readonly {
 		readonly resourceId: string;
 		readonly resourceType: string;
@@ -52,6 +60,7 @@ export interface AlchemyCompositeObservation
 	extends Omit<AlchemyCompositeEnvironment, "phase"> {
 	readonly structuralDigest: string;
 	readonly effects: readonly AlchemyCompositeEffect[];
+	readonly sourceClaims: readonly AlchemySourceClaim[];
 }
 
 const DIGEST = /^sha256:[a-f0-9]{64}$/u;
@@ -425,8 +434,12 @@ interface InspectedAlchemyPlan {
 function inspectUnverified(
 	plan: StackPlan,
 	target: Target,
-	allowEffects: boolean,
-): InspectedAlchemyPlan & { effects: AlchemyCompositeEffect[] } {
+	guard?: AlchemyCompositeGuard,
+): InspectedAlchemyPlan & {
+	effects: AlchemyCompositeEffect[];
+	sourceClaims: AlchemySourceClaim[];
+} {
+	const allowEffects = guard !== undefined;
 	if (plan.stack.name !== target.stackName || plan.stack.stage !== target.stage)
 		throw new AlchemyIacError(
 			"TARGET_SCOPE_MISMATCH",
@@ -508,6 +521,7 @@ function inspectUnverified(
 	>();
 	const scopeByName = new Map(scopes.map((scope) => [scope.resourceId, scope]));
 	const effects: AlchemyCompositeEffect[] = [];
+	const sourceClaims: AlchemySourceClaim[] = [];
 	const actions = actionRows.map((row) => {
 		const node =
 			plan.native.actions[row.fqn] ?? plan.native.actionDeletions[row.fqn];
@@ -591,6 +605,38 @@ function inspectUnverified(
 				"STATE_IDENTITY_UNVERIFIED",
 				"the resource and its persisted or former state have unsafe identities",
 			);
+		const source = alchemySourceFor(node.resource);
+		if (source !== undefined) {
+			if (guard === undefined)
+				throw new AlchemyIacError(
+					"SOURCE_FENCE_REQUIRED",
+					"source-backed resources require trusted host authorization",
+				);
+			const claim = source.claim;
+			if (
+				claim.resourceId !== row.fqn ||
+				claim.resourceType !== row.resourceType ||
+				claim.sourceDigest !== target.sourceDigest ||
+				claim.environmentDigest !== guard.environmentDigest ||
+				claim.proofRef !== guard.proofRef
+			)
+				throw new AlchemyIacError(
+					"SOURCE_FENCE_MISMATCH",
+					"the source fence does not match the financial target and resource",
+				);
+			let verified = false;
+			try {
+				verified = source.verify(claim) === true;
+			} catch {
+				/* host refusal */
+			}
+			if (!verified)
+				throw new AlchemyIacError(
+					"SOURCE_FENCE_UNVERIFIED",
+					"the host source fence is unavailable or revoked",
+				);
+			sourceClaims.push(claim);
+		}
 		references.set(node.resource, {
 			resourceId: scope.resourceId,
 			resourceType: scope.resourceType,
@@ -643,6 +689,28 @@ function inspectUnverified(
 				"deferredAdoption" in node ? node.deferredAdoption : undefined,
 		};
 	});
+	const requirements = guard?.sourceRequirements;
+	if (
+		(sourceClaims.length > 0 && requirements === undefined) ||
+		(requirements !== undefined &&
+			(requirements.length !== sourceClaims.length ||
+				requirements.some(
+					(required) =>
+						!sourceClaims.some(
+							(claim) =>
+								claim.resourceId === required.resourceId &&
+								claim.resourceType === required.resourceType &&
+								claim.bindleName === required.bindleName &&
+								claim.applicationName === required.applicationName &&
+								claim.sourceKind === required.sourceKind &&
+								claim.sourcePath === required.sourcePath,
+						),
+				)))
+	)
+		throw new AlchemyIacError(
+			"SOURCE_FENCE_INCOMPLETE",
+			"source claims do not match the complete host inventory",
+		);
 	const material = {
 		stack: plan.stack,
 		sourceDigest: target.sourceDigest,
@@ -652,6 +720,7 @@ function inspectUnverified(
 		inventoryEvidenceRef: target.inventoryEvidenceRef,
 		resources,
 		actions,
+		sourceClaims,
 		cycles: [...plan.native.cycleMembers].sort(),
 		defaultMode: plan.native.defaultMode,
 		output: plan.native.output,
@@ -665,7 +734,7 @@ function inspectUnverified(
 	const changes =
 		rows.filter((row) => row.action !== "noop").length +
 		actionRows.filter((row) => row.action !== "noop").length;
-	return { digest: planDigest, changes, effects };
+	return { digest: planDigest, changes, effects, sourceClaims };
 }
 
 function validateGuard(guard: AlchemyCompositeGuard): void {
@@ -674,7 +743,9 @@ function validateGuard(guard: AlchemyCompositeGuard): void {
 		guard.proofRef.length === 0 ||
 		guard.proofRef.length > 200 ||
 		guard.proofRef.trim() !== guard.proofRef ||
-		/[\p{Cc}]/u.test(guard.proofRef)
+		/[\p{Cc}]/u.test(guard.proofRef) ||
+		(guard.sourceRequirements !== undefined &&
+			captureAlchemySourceRequirements(guard.sourceRequirements) === undefined)
 	)
 		throw new AlchemyIacError(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
@@ -719,6 +790,7 @@ export function verifyCompositeEnvironment(
 					environmentDigest: guard.environmentDigest,
 					proofRef: guard.proofRef,
 					inventoryEvidenceRef: target.inventoryEvidenceRef,
+					sourceRequirements: guard.sourceRequirements,
 					scope: compositeScope(target),
 				}),
 			) === true;
@@ -737,8 +809,14 @@ export function inspectAlchemyPlan(
 	target: Target,
 	guard?: AlchemyCompositeGuard,
 ): InspectedAlchemyPlan {
-	const inspection = inspectUnverified(plan, target, guard !== undefined);
-	if (inspection.effects.length === 0) return inspection;
+	if (guard !== undefined) validateGuard(guard);
+	const inspection = inspectUnverified(plan, target, guard);
+	if (
+		inspection.effects.length === 0 &&
+		inspection.sourceClaims.length === 0 &&
+		guard === undefined
+	)
+		return inspection;
 	if (guard === undefined)
 		throw new AlchemyIacError(
 			"PLAN_UNSUPPORTED_EFFECTS",
@@ -757,9 +835,13 @@ export function inspectAlchemyPlan(
 		proofRef: guard.proofRef,
 		structuralDigest: inspection.digest,
 		inventoryEvidenceRef: target.inventoryEvidenceRef,
+		sourceRequirements: guard.sourceRequirements,
 		scope: compositeScope(target),
 		effects: Object.freeze(
 			inspection.effects.map((effect) => Object.freeze({ ...effect })),
+		),
+		sourceClaims: Object.freeze(
+			inspection.sourceClaims.map((claim) => Object.freeze({ ...claim })),
 		),
 	});
 	let accepted = false;
@@ -773,7 +855,7 @@ export function inspectAlchemyPlan(
 			"COMPOSITE_PLAN_UNVERIFIED",
 			"the host did not authorize the complete effect graph",
 		);
-	const checked = inspectUnverified(plan, target, true);
+	const checked = inspectUnverified(plan, target, guard);
 	if (inspection.digest !== checked.digest)
 		throw new AlchemyIacError(
 			"PLAN_UNINSPECTABLE",

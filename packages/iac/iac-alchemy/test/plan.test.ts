@@ -2,6 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { alchemyTarget, ResourceScopeSchema } from "../src/index.js";
 import { type AlchemyCompositeGuard, inspectAlchemyPlan } from "../src/plan.js";
+import { registerAlchemySource } from "../src/source-fence.js";
 
 function fixture() {
 	const node = {
@@ -106,6 +107,100 @@ function compositeFixture() {
 }
 
 describe("native Alchemy plan inspection", () => {
+	it("binds source claims to the exact resource, target digest and host authority", () => {
+		const f = fixture();
+		let permitted = true;
+		const claim = {
+			resourceId: "store",
+			resourceType: "Spec.Store",
+			bindleName: "app",
+			applicationName: "store",
+			sourceKind: "test",
+			sourcePath: "/source/store",
+			sourceDigest: f.target.sourceDigest,
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			proofRef: "host:proof",
+		};
+		registerAlchemySource(f.node.resource, { claim, verify: () => permitted });
+		const guard: AlchemyCompositeGuard = {
+			proofRef: "host:proof",
+			environmentDigest: claim.environmentDigest,
+			sourceRequirements: [
+				{
+					resourceId: claim.resourceId,
+					resourceType: claim.resourceType,
+					bindleName: claim.bindleName,
+					applicationName: claim.applicationName,
+					sourceKind: claim.sourceKind,
+					sourcePath: claim.sourcePath,
+				},
+			],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ sourceClaims }) => {
+				expect(sourceClaims).toEqual([claim]);
+				expect(Object.isFrozen(sourceClaims[0])).toBe(true);
+				return true;
+			},
+		};
+		// SAFETY: this deliberately minimal plan exercises the source attestation boundary.
+		const inspect = (authority?: AlchemyCompositeGuard) =>
+			inspectAlchemyPlan(f.plan as never, f.target, authority);
+		expect(() => inspect()).toThrow("SOURCE_FENCE_REQUIRED");
+		const before = inspect(guard).digest;
+		const other = fixture();
+		registerAlchemySource(other.node.resource, {
+			claim: { ...claim, sourcePath: "/source/other" },
+			verify: () => true,
+		});
+		// SAFETY: this deliberately minimal plan exercises source-fingerprint coverage.
+		const changed = inspectAlchemyPlan(other.plan as never, other.target, {
+			...guard,
+			sourceRequirements: [
+				{
+					resourceId: claim.resourceId,
+					resourceType: claim.resourceType,
+					bindleName: claim.bindleName,
+					applicationName: claim.applicationName,
+					sourceKind: claim.sourceKind,
+					sourcePath: "/source/other",
+				},
+			],
+			verifyPlan: () => true,
+		}).digest;
+		expect(changed).not.toBe(before);
+		f.target.sourceDigest = `sha256:${"c".repeat(64)}`;
+		expect(() => inspect(guard)).toThrow("SOURCE_FENCE_MISMATCH");
+		f.target.sourceDigest = claim.sourceDigest;
+		expect(() => inspect({ ...guard, proofRef: "host:other" })).toThrow(
+			"SOURCE_FENCE_MISMATCH",
+		);
+		permitted = false;
+		expect(() => inspect(guard)).toThrow("SOURCE_FENCE_UNVERIFIED");
+	});
+
+	it("lets the host reject a plan missing an expected executable source", () => {
+		const f = fixture();
+		const guard: AlchemyCompositeGuard = {
+			proofRef: "host:proof",
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			sourceRequirements: [
+				{
+					resourceId: "store",
+					resourceType: "Spec.Store",
+					bindleName: "app",
+					applicationName: "store",
+					sourceKind: "test",
+					sourcePath: "/source/store",
+				},
+			],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ sourceClaims }) => sourceClaims.length === 1,
+		};
+		// SAFETY: this deliberately minimal plan exercises the missing-source boundary.
+		expect(() => inspectAlchemyPlan(f.plan as never, f.target, guard)).toThrow(
+			"SOURCE_FENCE_INCOMPLETE",
+		);
+	});
 	it.each([
 		"resources",
 		"deletions",
