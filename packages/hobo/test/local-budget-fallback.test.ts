@@ -147,3 +147,27 @@ it.each([
 		expect(starts).toBe(0);
 	});
 }, 300_000);
+
+it("refuses a budget introduced while the local preview loads", async () => {
+	await withUncollectableBindle(async (cwd, hoboHome) => {
+		const input = request(cwd, hoboHome, true);
+		let reads = 0;
+		let appeared = false;
+		Object.defineProperty(input.flags, "budgetId", {
+			get() {
+				reads++;
+				// The third observation is the guard just before the awaited load.
+				if (reads === 3)
+					queueMicrotask(() => {
+						appeared = true;
+					});
+				return appeared ? "requested-budget" : null;
+			},
+		});
+		const result = await command({ hostingBudgetRequired: false }, () => {
+			throw new Error("preview must not start a deployment");
+		}).run(input);
+		expect(appeared).toBe(true);
+		expect(result.code).toBe("HOBO_HOSTING_AUTHORITY_REQUIRED");
+	});
+}, 300_000);
