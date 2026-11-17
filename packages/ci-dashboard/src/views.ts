@@ -33,7 +33,9 @@ import { ago, duration, escapeHtml, minutes, percent, utc } from "./format.js";
 import type { JobTimesReport, OrderReply, SignalReport } from "./read-api.js";
 import {
 	isHostedStep,
+	isWhatIfRefusal,
 	machineIsOnline,
+	type WhatIfAnswer,
 	type WhatIfQuestion,
 } from "./what-if.js";
 
@@ -295,7 +297,7 @@ export type RouterModel = Readonly<{
 	routes: readonly RunnerRouteEvent[];
 	question: WhatIfQuestion;
 	/** The what-if answer, once the person has asked. */
-	answer: RunnerRouteDecision | undefined;
+	answer: WhatIfAnswer | undefined;
 }>;
 
 /** A step's limit in words. */
@@ -381,11 +383,13 @@ function whatIfForm(model: RouterModel): string {
 	const answer =
 		model.answer === undefined
 			? `<p class="note" id="what-if-answer" role="status" tabindex="-1">Set the inputs and run the walk. Nothing is sent to the relay.</p>`
-			: `<div id="what-if-answer" class="answer" role="status" tabindex="-1">${decisionLine(model.answer)}</div>`;
+			: isWhatIfRefusal(model.answer)
+				? `<div id="what-if-answer" class="answer" role="status" tabindex="-1" data-state="refused">${lamp("spark", model.answer.refused)}</div>`
+				: `<div id="what-if-answer" class="answer" role="status" tabindex="-1">${decisionLine(model.answer)}</div>`;
 	return `<form id="what-if" class="what-if" novalidate>
 <fieldset${disabled}><legend>What if a relay job asked now</legend>
 ${fields}
-<div class="field"><label for="what-if-started-by">Started by (GitHub user id)</label><input id="what-if-started-by" name="startedBy" value="${escapeHtml(question.startedBy)}" inputmode="numeric" autocomplete="off"></div>
+<div class="field"><label for="what-if-started-by">Started by (GitHub user id)</label><input id="what-if-started-by" name="startedBy" value="${escapeHtml(question.startedBy)}" inputmode="numeric" pattern="[0-9]{0,20}" autocomplete="off"></div>
 <div class="field"><label for="what-if-minutes">Included minutes used (%)</label><input id="what-if-minutes" name="minutesUsedPercent" type="number" min="0" max="100" value="${question.minutesUsedPercent === undefined ? "" : escapeHtml(question.minutesUsedPercent)}" placeholder="not measured"></div>
 <label class="check"><input type="checkbox" name="public"${question.public ? " checked" : ""}> The repository is public</label>
 <label class="check"><input type="checkbox" name="fork"${question.fork ? " checked" : ""}> The run comes from a fork</label>

@@ -13,7 +13,11 @@ import {
 	renderRunners,
 	renderSignals,
 } from "./views.js";
-import { questionFromRoutes, type WhatIfQuestion, whatIf } from "./what-if.js";
+import {
+	answerWhatIf,
+	questionFromRoutes,
+	type WhatIfQuestion,
+} from "./what-if.js";
 
 /** What the Router view loaded, kept so the what-if panel can walk again without reading anything. */
 export type RouterState = Readonly<{
@@ -55,7 +59,7 @@ export function routerWithAnswer(
 		question,
 		answer:
 			state.order.problem === ""
-				? whatIf(state.order.order, question, state.machines, nowMs)
+				? answerWhatIf(state.order.order, question, state.machines, nowMs)
 				: undefined,
 	});
 }

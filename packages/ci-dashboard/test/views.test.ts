@@ -192,6 +192,24 @@ describe("Router", () => {
 		expect(answered).toContain("Routed to ubuntu-24.04 (github).");
 	});
 
+	it("shows a what-if refusal as a status line, and asks for digits in Started by", () => {
+		const refused = renderRouter({
+			nowMs: NOW,
+			order: committed,
+			routes,
+			question: { ...question, startedBy: "<abc>" },
+			answer: { refused: "Started by must be a GitHub user id <digits>." },
+		});
+		expect(refused).toContain(
+			'<div id="what-if-answer" class="answer" role="status" tabindex="-1" data-state="refused">',
+		);
+		expect(refused).toContain(
+			"Started by must be a GitHub user id &lt;digits&gt;.",
+		);
+		expect(refused).toContain('value="&lt;abc&gt;"');
+		expect(refused).toContain('inputmode="numeric" pattern="[0-9]{0,20}"');
+	});
+
 	it("says loudly when the committed order does not parse, and disables the walk", () => {
 		const broken = order(
 			JSON.stringify({ steps: [{ key: "github" }] }),

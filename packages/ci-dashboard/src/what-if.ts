@@ -22,6 +22,7 @@ import {
 	type ParsedRunnerOrder,
 	parseRelayJobMessage,
 	providerHealthKey,
+	RelayRecordRejection,
 	type RouteFacts,
 	RUNNER_STEP_KEYS,
 	type RunnerStepKey,
@@ -167,6 +168,44 @@ export function whatIf(
 		relayRouteRequest(message),
 		facts(question, machines, nowMs),
 	);
+}
+
+/** A what-if the relay's parser refuses, with the sentence to show the person. */
+export type WhatIfRefusal = Readonly<{ refused: string }>;
+
+/** The panel's answer: the walk's decision, or why the question cannot be asked. */
+export type WhatIfAnswer = RunnerRouteDecision | WhatIfRefusal;
+
+/** Whether an answer is a refusal rather than a decision. */
+export function isWhatIfRefusal(answer: WhatIfAnswer): answer is WhatIfRefusal {
+	return "refused" in answer;
+}
+
+// public-contract: the GitHub user id rule of relay_job.cue (USER_ID in @hobo/ci).
+const GITHUB_USER_ID = /^[0-9]{1,20}$/u;
+
+/**
+ * `whatIf` for the panel: a question the relay would refuse comes back as a
+ * refusal with a sentence, never as a thrown error, so the page can say why.
+ */
+export function answerWhatIf(
+	order: ParsedRunnerOrder,
+	question: WhatIfQuestion,
+	machines: readonly MachineAdvert[],
+	nowMs: number,
+): WhatIfAnswer {
+	if (question.startedBy !== "" && !GITHUB_USER_ID.test(question.startedBy))
+		return {
+			refused:
+				"Started by must be a GitHub user id: digits only, at most 20 of them, or left blank.",
+		};
+	try {
+		return whatIf(order, question, machines, nowMs);
+	} catch (error) {
+		if (error instanceof RelayRecordRejection)
+			return { refused: `The relay would refuse this job: ${error.message}.` };
+		throw error;
+	}
 }
 
 /** Whether a step is a hosted provider, the only kind the unhealthy switch applies to. */

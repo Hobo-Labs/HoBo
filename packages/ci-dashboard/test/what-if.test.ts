@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	answerWhatIf,
 	blankQuestion,
+	isWhatIfRefusal,
 	questionFromRoutes,
 	type WhatIfQuestion,
 	whatIf,
@@ -113,6 +115,46 @@ describe("the what-if walk", () => {
 		);
 		expect(answer.outcome).toBe("none");
 		expect(answer.reason).toMatch(/^No runner available\./u);
+	});
+
+	it("refuses, with a sentence and no throw, a Started by that is not a GitHub user id", () => {
+		for (const startedBy of [
+			"abc",
+			"4 2",
+			"-1",
+			"1".repeat(21),
+			"9".repeat(30),
+		]) {
+			expect(() => whatIf(ORDER, question({ startedBy }), [], NOW)).toThrow(
+				/GitHub user id/u,
+			);
+			const answer = answerWhatIf(ORDER, question({ startedBy }), [], NOW);
+			expect(isWhatIfRefusal(answer), startedBy).toBe(true);
+			expect(answer).toEqual({
+				refused:
+					"Started by must be a GitHub user id: digits only, at most 20 of them, or left blank.",
+			});
+		}
+	});
+
+	it("answers the walk for a blank or numeric Started by", () => {
+		for (const startedBy of ["", "42", "1".repeat(20)]) {
+			const answer = answerWhatIf(ORDER, question({ startedBy }), [], NOW);
+			expect(isWhatIfRefusal(answer), startedBy).toBe(false);
+			if (!isWhatIfRefusal(answer)) expect(answer.step).toBe("github");
+		}
+	});
+
+	it("turns any other relay refusal into a sentence", () => {
+		const answer = answerWhatIf(
+			ORDER,
+			question({ repository: "not a repository" }),
+			[],
+			NOW,
+		);
+		expect(answer).toEqual({
+			refused: "The relay would refuse this job: repository is owner/name.",
+		});
 	});
 
 	it("seeds the question from the newest decision of the repository", () => {

@@ -161,6 +161,28 @@ describe.skipIf(browser === undefined)("the dashboard in a browser", () => {
 		expect(await edit.getAttribute("target")).toBe("_blank");
 	});
 
+	it("says why the what-if cannot run when Started by is not a GitHub user id", async () => {
+		await open("router");
+		expect(
+			await page.locator("#what-if-started-by").getAttribute("pattern"),
+		).toBe("[0-9]{0,20}");
+		for (const startedBy of ["abc", "1".repeat(30)]) {
+			await page.fill("#what-if-started-by", startedBy);
+			await page.click("#what-if button[type=submit]");
+			await page.waitForSelector('#what-if-answer[data-state="refused"]');
+			const answer = page.locator("#what-if-answer");
+			expect(await answer.getAttribute("role")).toBe("status");
+			expect(await answer.textContent()).toContain(
+				"Started by must be a GitHub user id",
+			);
+			expect(await page.evaluate(() => document.activeElement?.id)).toBe(
+				"what-if-answer",
+			);
+			await open("runners");
+			await open("router");
+		}
+	});
+
 	it("shows History and opens a run attempt with its jobs and step timings", async () => {
 		await open("history");
 		await page.click('a[href="#/history/octo/app/102/1"]');

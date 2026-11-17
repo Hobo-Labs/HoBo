@@ -72,11 +72,15 @@ export {
 	VIEW_TITLES,
 } from "./views.js";
 export {
+	answerWhatIf,
 	blankQuestion,
 	isHostedStep,
+	isWhatIfRefusal,
 	MACHINE_ONLINE_WINDOW_MS,
 	machineIsOnline,
 	questionFromRoutes,
+	type WhatIfAnswer,
 	type WhatIfQuestion,
+	type WhatIfRefusal,
 	whatIf,
 } from "./what-if.js";

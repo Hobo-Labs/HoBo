@@ -215,8 +215,20 @@ function onSubmit(event: SubmitEvent): void {
 	}
 	if (form.id === "what-if" && router !== undefined) {
 		const question = questionFrom(form, router.question);
-		const main = element("view", HTMLElement);
-		main.innerHTML = routerWithAnswer(router, question, Date.now());
+		let html: string;
+		try {
+			html = routerWithAnswer(router, question, Date.now());
+		} catch (error) {
+			// `answerWhatIf` turns every refusal it knows into a sentence; this
+			// keeps anything else from failing silently.
+			const answer = document.getElementById("what-if-answer");
+			if (answer) {
+				answer.textContent = `The walk could not run: ${error instanceof Error ? error.message : String(error)}`;
+				answer.focus();
+			}
+			return;
+		}
+		element("view", HTMLElement).innerHTML = html;
 		router = { ...router, question };
 		document.getElementById("what-if-answer")?.focus();
 	}
