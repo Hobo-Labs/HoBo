@@ -80,6 +80,22 @@ for one logical request must use the same route authority, even when they use
 different financial authorities. The host must also establish any shared
 provider-account or entitlement ownership required by its budget authorities.
 
+Priced execution snapshots caller data before the route claim. Denial evidence must
+be own data fields; accessors, proxies, and inherited or uninspectable
+reservation fields keep the result uncertain and stop fallback. A safely
+identified held reservation remains visible if outputs are uninspectable.
+
+Route callback values and direct-route plans must be plain bounded data, with
+at most 100,000 visited nodes, 4,000,000 UTF-16 code units, 4,096 array
+elements, and 1,048,576 code units in a single string. JavaScript resolves a
+callback's promise before the dispatcher can inspect its value, so a thenable
+or proxy can run code during promise assimilation. The host must treat callback
+execution as a trust boundary and provide its own isolation and time limits.
+Authorities and callbacks, including a method callback's original receiver,
+are host-owned capabilities. The host must keep their methods, backend identity,
+credentials and receiver state stable and exclusively fenced throughout a
+route; snapshotting data does not freeze those capabilities or their closures.
+
 `runIacRoute` requires a host-issued operation identity and authorization. The
 identity is a SHA-256 digest of the tenant, deployment, resource, action, and a
 durable operation generation assigned by the orchestrator. All retries and

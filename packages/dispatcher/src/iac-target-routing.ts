@@ -16,6 +16,7 @@ import {
 	type IacRoutePermit,
 	runIacRoute,
 } from "./iac-route.js";
+import { ownDataField, ownDataFields, uninspectable } from "./iac-untrusted.js";
 
 export interface IacPricingCandidate {
 	readonly workloadRef: string;
@@ -126,31 +127,104 @@ export interface RankedIacExecutionInput {
 	}[];
 }
 
-/** Claim the route before examining any target, then stop on every unknown outcome. */
-export async function executeRankedIacTargets(
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this boundary snapshots untrusted input before acquiring an execution claim. */
+function snapshotRankedExecutionInput(
 	input: RankedIacExecutionInput,
-): Promise<IacTargetExecutionResult> {
-	const { authority, tenantId, requestId, operation } = input;
-	const unavailable = {
-		evaluation: "unavailable",
-		reservation: "unknown",
-	} as const;
-	let stable: RankedIacExecutionInput;
+): RankedIacExecutionInput | undefined {
 	try {
-		const ranking = structuredClone(input.ranking);
-		const candidates = input.candidates.map(({ targetId, run }) => ({
-			targetId,
-			run,
-		}));
-		stable = {
-			authority,
-			tenantId,
-			requestId,
-			operation: structuredClone(operation),
+		const fields = ownDataFields(input, [
+			"authority",
+			"tenantId",
+			"requestId",
+			"operation",
+			"ranking",
+			"candidates",
+		]);
+		if (
+			fields === undefined ||
+			typeof fields.tenantId !== "string" ||
+			typeof fields.requestId !== "string" ||
+			!name(fields.tenantId) ||
+			!name(fields.requestId) ||
+			utilTypes.isProxy(fields.candidates) ||
+			!Array.isArray(fields.candidates) ||
+			Object.getPrototypeOf(fields.candidates) !== Array.prototype
+		)
+			return undefined;
+		const length = Object.getOwnPropertyDescriptor(
+			fields.candidates,
+			"length",
+		)?.value;
+		if (
+			typeof length !== "number" ||
+			length > 256 ||
+			Reflect.ownKeys(fields.candidates).length !== length + 1
+		)
+			return undefined;
+		const candidates: RankedIacExecutionInput["candidates"][number][] = [];
+		for (let index = 0; index < length; index++) {
+			const descriptor = Object.getOwnPropertyDescriptor(
+				fields.candidates,
+				String(index),
+			);
+			if (!descriptor?.enumerable || !("value" in descriptor)) return undefined;
+			const candidate = ownDataFields(descriptor.value, ["targetId", "run"]);
+			if (
+				candidate === undefined ||
+				typeof candidate.targetId !== "string" ||
+				!name(candidate.targetId) ||
+				typeof candidate.run !== "function"
+			)
+				return undefined;
+			// SAFETY: callable host-owned callbacks are captured once and invoked only after the route claim.
+			candidates.push({
+				targetId: candidate.targetId,
+				run: candidate.run as RankedIacExecutionInput["candidates"][number]["run"],
+			});
+		}
+		if (
+			!areBoundedPricingInputs([fields.ranking, fields.operation]) ||
+			!isBoundedPricingInput(fields.ranking) ||
+			!isBoundedPricingInput(fields.operation)
+		)
+			return undefined;
+		// SAFETY: the detached ranking is checked for its control fields below and fully validated after the route claim.
+		const ranking = structuredClone(fields.ranking) as IacPricingRankingResult;
+		if (
+			ranking === null ||
+			typeof ranking !== "object" ||
+			Array.isArray(ranking) ||
+			(ranking.coverage !== "complete" && ranking.coverage !== "partial") ||
+			typeof ranking.tenantId !== "string" ||
+			!Array.isArray(ranking.ranking) ||
+			!Array.isArray(ranking.rejected)
+		)
+			return undefined;
+		// SAFETY: the route layer validates the detached operation and trusted authority before use.
+		return {
+			authority: fields.authority as IacRouteAuthority,
+			tenantId: fields.tenantId,
+			requestId: fields.requestId,
+			operation: structuredClone(fields.operation) as IacRouteOperation,
 			ranking,
 			candidates,
 		};
 	} catch {
+		return undefined;
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
+
+/** Claim the route before examining any target, then stop on every unknown outcome. */
+export async function executeRankedIacTargets(
+	input: RankedIacExecutionInput,
+): Promise<IacTargetExecutionResult> {
+	const unavailable = {
+		evaluation: "unavailable",
+		reservation: "unknown",
+	} as const;
+	const stable = snapshotRankedExecutionInput(input);
+	if (stable === undefined) {
 		return {
 			status: "uncertain",
 			code: "ROUTING_INPUT_UNINSPECTABLE",
@@ -160,9 +234,9 @@ export async function executeRankedIacTargets(
 		};
 	}
 	const result = await runIacRoute({
-		authority,
-		tenantId,
-		requestId,
+		authority: stable.authority,
+		tenantId: stable.tenantId,
+		requestId: stable.requestId,
 		operation: stable.operation,
 		run: async (route) => {
 			const value = await executeClaimedIacTargets(stable, route);
@@ -292,48 +366,33 @@ async function executeClaimedIacTargets(
 				permit,
 			);
 			runReturned = true;
-			rawAdmission = result.admission;
-			outputs = readOutputs(result.outputs);
+			rawAdmission = ownDataField(result, "admission");
+			outputs = readOutputs(ownDataField(result, "outputs"));
 		} catch (error) {
 			/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns -- SAFETY: thrown provider values are untrusted inputs and must be inspected before use. */
-			try {
-				if (typeof error !== "object" || error === null)
-					throw new Error("uninspectable execution error");
-				const properties = Object.getOwnPropertyDescriptors(error);
-				const read = (key: string): unknown => {
-					const property = properties[key];
-					if (property === undefined) return undefined;
-					if (!("value" in property))
-						throw new Error("execution error contains an accessor");
-					return property.value;
-				};
-				const marker = read("requiresReconciliation");
-				const outcome = read("executionOutcome");
-				requiresReconciliation = !(
-					marker === false && outcome === "not-started"
-				);
-				if (outcome === "completed" || outcome === "unknown")
-					executionOutcome = outcome;
-				const code = read("code");
-				if (typeof code === "string" && name(code)) failureCode = code;
-				rawAdmission = read("admission");
-				const reservation = read("reservationId");
-				if (
-					typeof reservation === "string" &&
-					reservation.length > 0 &&
-					reservation.length <= 204 &&
-					reservation.trim() === reservation &&
-					!/[\p{Cc}]/u.test(reservation)
-				)
-					reservationId = reservation;
-			} catch {
-				// A provider's uninspectable error cannot prove an admission.
-				rawAdmission = undefined;
-				reservationId = undefined;
-				executionOutcome = undefined;
-				failureCode = undefined;
-				requiresReconciliation = true;
-			}
+			const marker = ownDataField(error, "requiresReconciliation");
+			const outcome = ownDataField(error, "executionOutcome");
+			const code = ownDataField(error, "code");
+			rawAdmission = ownDataField(error, "admission");
+			const reservation = ownDataField(error, "reservationId");
+			requiresReconciliation = !(
+				marker === false &&
+				outcome === "not-started" &&
+				code !== uninspectable &&
+				rawAdmission !== uninspectable &&
+				reservation === undefined
+			);
+			if (outcome === "completed" || outcome === "unknown")
+				executionOutcome = outcome;
+			if (typeof code === "string" && name(code)) failureCode = code;
+			if (
+				typeof reservation === "string" &&
+				reservation.length > 0 &&
+				reservation.length <= 204 &&
+				reservation.trim() === reservation &&
+				!/[\p{Cc}]/u.test(reservation)
+			)
+				reservationId = reservation;
 			/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns */
 		}
 		const admission = readAdmission(rawAdmission);
@@ -508,10 +567,19 @@ function withExecutionOutcome(
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- SAFETY: these parsers accept untrusted provider results and check each field before returning a bounded domain value. */
 function readAdmission(value: unknown): IacRoutingAdmission | undefined {
 	try {
-		if (typeof value !== "object" || value === null || Array.isArray(value))
-			return undefined;
-		// SAFETY: the preceding checks establish a non-null object; every field is checked below.
-		const row = value as Record<string, unknown>;
+		const row = ownDataFields(value, [
+			"requestId",
+			"targetId",
+			"status",
+			"code",
+			"message",
+			"budget",
+			"reservation",
+			"inventoryHash",
+			"modelHash",
+			"quoteHash",
+		]);
+		if (row === undefined) return undefined;
 		const {
 			requestId,
 			targetId,
@@ -532,26 +600,18 @@ function readAdmission(value: unknown): IacRoutingAdmission | undefined {
 			typeof message !== "string" ||
 			message.length > 4096 ||
 			typeof budget !== "object" ||
-			budget === null ||
-			Array.isArray(budget)
+			budget === null
 		)
 			return undefined;
-		// SAFETY: budget was checked as a non-null object; its fields are checked below.
-		const amounts = budget as Record<string, unknown>;
+		const amounts = ownDataFields(budget, ["evaluation", "reservation"]);
+		if (amounts === undefined) return undefined;
 		const evaluation = amounts.evaluation;
 		const reservationState = amounts.reservation;
 		if (typeof evaluation !== "string" || typeof reservationState !== "string")
 			return undefined;
 		let reserved: { reservationId: string } | undefined;
 		if (reservation !== undefined) {
-			if (
-				typeof reservation !== "object" ||
-				reservation === null ||
-				Array.isArray(reservation)
-			)
-				return undefined;
-			// SAFETY: reservation was checked as a non-null object; the id is checked below.
-			const id = (reservation as Record<string, unknown>).reservationId;
+			const id = ownDataField(reservation, "reservationId");
 			if (typeof id !== "string") return undefined;
 			reserved = { reservationId: id };
 		}
@@ -581,7 +641,12 @@ function readAdmission(value: unknown): IacRoutingAdmission | undefined {
 
 function readOutputs(value: unknown): Record<string, string> | undefined {
 	try {
-		if (typeof value !== "object" || value === null || Array.isArray(value))
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			utilTypes.isProxy(value) ||
+			Array.isArray(value)
+		)
 			return undefined;
 		const prototype = Object.getPrototypeOf(value);
 		if (prototype !== Object.prototype && prototype !== null) return undefined;

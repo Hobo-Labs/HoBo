@@ -1,3 +1,11 @@
+import {
+	isBoundedRouteValue,
+	ownDataField,
+	ownDataFields,
+	requiredOwnDataField,
+	uninspectable,
+} from "./iac-untrusted.js";
+
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- SAFETY: this module validates runtime authority receipts and deliberately omits absent optional fields. */
 /** A durable route authority must be shared by every target for the same tenant. */
 export interface IacRoutePermit {
@@ -130,13 +138,10 @@ export function routeSecret(value: string): boolean {
 	return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/u.test(value);
 }
 function data(input: unknown, key: string): unknown {
-	if (typeof input !== "object" || input === null || Array.isArray(input))
-		return undefined;
-	const descriptor = Object.getOwnPropertyDescriptor(input, key);
-	if (descriptor === undefined) return undefined;
-	if (!("value" in descriptor))
-		throw new Error("authority receipt contains an accessor");
-	return descriptor.value;
+	const result = ownDataField(input, key);
+	if (result === uninspectable)
+		throw new Error("authority receipt is uninspectable");
+	return result;
 }
 function copyPermit(
 	input: unknown,
@@ -247,15 +252,32 @@ export async function runIacRoute<T>(input: {
 		route: IacRouteController,
 	) => Promise<{ readonly value: T; readonly outcome: IacRouteOutcome }>;
 }): Promise<IacRouteExecution<T>> {
+	const fields = ownDataFields(input, [
+		"authority",
+		"tenantId",
+		"requestId",
+		"operation",
+		"run",
+	]);
+	if (
+		fields === undefined ||
+		typeof fields.tenantId !== "string" ||
+		typeof fields.requestId !== "string" ||
+		typeof fields.run !== "function"
+	)
+		return { status: "uncertain", code: "ROUTE_INPUT_UNINSPECTABLE" };
 	const identity = Object.freeze({
-		tenantId: input.tenantId,
-		requestId: input.requestId,
+		tenantId: fields.tenantId,
+		requestId: fields.requestId,
 	});
-	const authority = input.authority;
+	// SAFETY: the authority and callback are host-owned capabilities; their identities are captured once before the claim.
+	const authority = fields.authority as IacRouteAuthority;
+	// SAFETY: the callable host callback is captured before the claim and receives only the scoped controller.
+	const run = fields.run as typeof input.run;
 	let operation: IacRouteOperation;
 	try {
-		const operationId = data(input.operation, "operationId");
-		const authorization = data(input.operation, "authorization");
+		const operationId = data(fields.operation, "operationId");
+		const authorization = data(fields.operation, "authorization");
 		if (
 			typeof operationId !== "string" ||
 			!routeDigest(operationId) ||
@@ -270,7 +292,7 @@ export async function runIacRoute<T>(input: {
 	if (
 		!routeName(identity.tenantId) ||
 		!routeName(identity.requestId) ||
-		authority?.persistence !== "durable-cas"
+		ownDataField(authority, "persistence") !== "durable-cas"
 	)
 		return { status: "uncertain", code: "ROUTE_AUTHORITY_UNAVAILABLE" };
 	let claimed: IacRouteClaim | undefined;
@@ -302,9 +324,12 @@ export async function runIacRoute<T>(input: {
 			readonly targetId: string;
 			readonly inventoryHash: string;
 		}) {
-			const { targetId, inventoryHash } = attempt;
+			const targetId = data(attempt, "targetId");
+			const inventoryHash = data(attempt, "inventoryHash");
 			if (
 				current !== undefined ||
+				typeof targetId !== "string" ||
+				typeof inventoryHash !== "string" ||
 				!routeName(targetId) ||
 				!routeDigest(inventoryHash)
 			)
@@ -327,21 +352,33 @@ export async function runIacRoute<T>(input: {
 			return current;
 		},
 		async denyAttempt(permit: IacRoutePermit) {
-			if (current === undefined || !samePermit(current, permit))
+			if (current === undefined) throw new Error("route attempt mismatch");
+			const captured = copyPermit(
+				permit,
+				identity,
+				operation.operationId,
+				current.targetId,
+				current.inventoryHash,
+			);
+			if (captured === undefined || !samePermit(current, captured))
 				throw new Error("route attempt mismatch");
 			const denied = await authority.denyAttempt({
 				...identity,
 				claimToken,
 				permit: current,
 			});
-			if (denied?.status !== "denied")
+			if (data(denied, "status") !== "denied")
 				throw new Error("invalid route denial receipt");
 			current = undefined;
 		},
 	});
 	try {
-		const executed = await input.run(route);
-		const outcome = copyOutcome(executed.outcome);
+		const executed = await run.call(input, route);
+		const capturedOutcome = copyOutcome(data(executed, "outcome"));
+		const outcome =
+			capturedOutcome === undefined
+				? undefined
+				: Object.freeze(capturedOutcome);
 		if (
 			outcome === undefined ||
 			(outcome.status === "denied" && current !== undefined) ||
@@ -352,25 +389,34 @@ export async function runIacRoute<T>(input: {
 				outcome.targetId !== current.targetId)
 		)
 			throw new Error("invalid route outcome");
-		const value = structuredClone(executed.value);
-		const finished = await authority.finish({
-			...identity,
-			claimToken,
-			outcome,
-		});
+		const rawValue = requiredOwnDataField(executed, "value");
+		if (rawValue === uninspectable || !isBoundedRouteValue(rawValue))
+			throw new Error("route value is uninspectable");
+		// SAFETY: the bounded detached value preserves the callback's result type.
+		const value = structuredClone(rawValue) as T;
+		const finished = await authority.finish(
+			Object.freeze({
+				...identity,
+				claimToken,
+				outcome,
+			}),
+		);
 		if (
-			finished?.status !== "finished" ||
-			JSON.stringify(copyOutcome(finished.outcome)) !== JSON.stringify(outcome)
+			data(finished, "status") !== "finished" ||
+			JSON.stringify(copyOutcome(data(finished, "outcome"))) !==
+				JSON.stringify(outcome)
 		)
 			throw new Error("invalid route completion receipt");
 		return { status: "executed", value };
 	} catch {
-		const outcome: IacRouteOutcome = {
+		const outcome: IacRouteOutcome = Object.freeze({
 			status: "uncertain",
 			...(current === undefined ? {} : { targetId: current.targetId }),
-		};
+		});
 		try {
-			await authority.finish({ ...identity, claimToken, outcome });
+			await authority.finish(
+				Object.freeze({ ...identity, claimToken, outcome }),
+			);
 		} catch {
 			/* A lost acknowledgement leaves the route blocked. */
 		}
@@ -406,10 +452,28 @@ export function createDirectRoutePort<Plan>(options: {
 				readonly deny: () => Promise<void>;
 			}) => Promise<{ readonly value: T; readonly outcome: IacRouteOutcome }>,
 		): Promise<IacRouteExecution<T>> {
-			const { tenantId, requestId, targetId, operation } = input;
+			const fields = ownDataFields(input, [
+				"tenantId",
+				"requestId",
+				"targetId",
+				"operation",
+				"plan",
+			]);
+			if (
+				fields === undefined ||
+				typeof fields.tenantId !== "string" ||
+				typeof fields.requestId !== "string" ||
+				typeof fields.targetId !== "string" ||
+				!isBoundedRouteValue(fields.plan)
+			)
+				return { status: "uncertain", code: "ROUTE_INPUT_INVALID" };
+			const { tenantId, requestId, targetId } = fields;
+			// SAFETY: runIacRoute authenticates the captured operation before claiming.
+			const operation = fields.operation as IacRouteOperation;
 			let plan: Plan;
 			try {
-				plan = structuredClone(input.plan);
+				// SAFETY: the bounded plain-data snapshot preserves the host plan type.
+				plan = structuredClone(fields.plan) as Plan;
 			} catch {
 				return { status: "uncertain", code: "ROUTE_INPUT_INVALID" };
 			}

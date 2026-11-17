@@ -481,6 +481,224 @@ describe("budget-aware target execution", () => {
 	});
 
 	it.each([
+		"error-proxy",
+		"receipt-proxy",
+		"budget-proxy",
+		"reservation-accessor",
+		"budget-accessor",
+		"revoked-error",
+		"error-inherited-reservation",
+		"error-inherited-accessor",
+		"error-proxy-prototype",
+		"receipt-inherited-reservation",
+		"receipt-proxy-prototype",
+	] as const)("does not fall back on uninspectable %s denial evidence", async (kind) => {
+		const ranking = rankIacTargets(
+			request([candidate("cheap", "0.25"), candidate("expensive", "1")]),
+		);
+		let traps = 0;
+		let next = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						let admission = decision("cheap", "denied");
+						if (kind === "reservation-accessor")
+							Object.defineProperty(admission, "reservation", {
+								get: () => {
+									traps++;
+									return undefined;
+								},
+							});
+						if (kind === "budget-accessor")
+							Object.defineProperty(admission.budget, "reservation", {
+								get: () => {
+									traps++;
+									return "not-created";
+								},
+							});
+						if (kind === "budget-proxy")
+							admission.budget = new Proxy(admission.budget, {
+								get: (target, key) => {
+									traps++;
+									return Object.getOwnPropertyDescriptor(target, key)?.value;
+								},
+							});
+						if (kind === "receipt-proxy")
+							admission = new Proxy(admission, {
+								get: (target, key) => {
+									traps++;
+									return Object.getOwnPropertyDescriptor(target, key)?.value;
+								},
+							});
+						if (kind === "receipt-inherited-reservation")
+							Object.setPrototypeOf(admission, {
+								reservation: { reservationId: "iac:route-1" },
+							});
+						if (kind === "receipt-proxy-prototype")
+							Object.setPrototypeOf(
+								admission,
+								new Proxy(
+									{},
+									{
+										getOwnPropertyDescriptor: () => {
+											traps++;
+											return undefined;
+										},
+									},
+								),
+							);
+						const failure = {
+							admission,
+							requiresReconciliation: false,
+							executionOutcome: "not-started",
+						};
+						if (kind === "error-inherited-reservation")
+							Object.setPrototypeOf(failure, { reservationId: "iac:route-1" });
+						if (kind === "error-inherited-accessor")
+							Object.setPrototypeOf(
+								failure,
+								Object.defineProperty({}, "reservationId", {
+									get: () => {
+										traps++;
+										return undefined;
+									},
+								}),
+							);
+						if (kind === "error-proxy-prototype")
+							Object.setPrototypeOf(
+								failure,
+								new Proxy(
+									{},
+									{
+										getOwnPropertyDescriptor: () => {
+											traps++;
+											return undefined;
+										},
+									},
+								),
+							);
+						if (kind === "error-proxy")
+							throw new Proxy(failure, {
+								ownKeys: (target) => {
+									traps++;
+									return Reflect.ownKeys(target);
+								},
+							});
+						if (kind === "revoked-error") {
+							const revoked = Proxy.revocable(failure, {});
+							revoked.revoke();
+							throw revoked.proxy;
+						}
+						throw failure;
+					},
+				},
+				{
+					targetId: "expensive",
+					run: async (_id, expected) => {
+						next++;
+						return {
+							outputs: {},
+							admission: { ...decision("expensive", "admitted"), ...expected },
+						};
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+		expect(next).toBe(0);
+		expect(traps).toBe(0);
+	});
+
+	it.each([
+		"outputs-proxy",
+		"outputs-accessor",
+	] as const)("retains a hold without reading %s", async (kind) => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		let traps = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => {
+						const returned = {
+							outputs: {},
+							admission: { ...decision("cheap", "admitted"), ...expected },
+						};
+						if (kind === "outputs-proxy")
+							returned.outputs = new Proxy(
+								{},
+								{
+									getPrototypeOf: () => {
+										traps++;
+										return Object.prototype;
+									},
+								},
+							);
+						else
+							Object.defineProperty(returned, "outputs", {
+								get: () => {
+									traps++;
+									return {};
+								},
+							});
+						return returned;
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "allowed", reservation: "held" },
+			reservationId: "iac:route-1",
+		});
+		expect(traps).toBe(0);
+	});
+
+	it("retains a proven hold when an unrelated error field is an accessor", async () => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		let traps = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => {
+						const error = {
+							admission: { ...decision("cheap", "admitted"), ...expected },
+							reservationId: "iac:route-1",
+							requiresReconciliation: true,
+							executionOutcome: "unknown",
+						};
+						Object.defineProperty(error, "code", {
+							get: () => {
+								traps++;
+								return "ERROR";
+							},
+						});
+						throw error;
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			reservationId: "iac:route-1",
+			budget: { evaluation: "allowed", reservation: "held" },
+		});
+		expect(traps).toBe(0);
+	});
+
+	it.each([
 		"returned-denial",
 		"uncertain-denial",
 		"receipt-with-reservation",
@@ -995,8 +1213,9 @@ describe("budget-aware target execution", () => {
 			})),
 		});
 		expect(oversized).toMatchObject({
-			status: "denied",
-			code: "ROUTING_INPUT_INVALID",
+			status: "uncertain",
+			code: "ROUTING_INPUT_UNINSPECTABLE",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
 		});
 		expect(extraCalls).toBe(0);
 	}, 20_000);

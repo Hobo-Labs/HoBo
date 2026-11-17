@@ -50,6 +50,258 @@ afterEach(() => {
 });
 
 describe("durable shared IaC route claims", () => {
+	it.each([
+		"identity-accessor",
+		"plan-accessor",
+		"nested-plan-proxy",
+	] as const)("rejects direct route %s before claim", async (kind) => {
+		const { authority } = connect();
+		let traps = 0;
+		let calls = 0;
+		const fail = () => {
+			traps++;
+			throw new Error("untrusted direct input");
+		};
+		const direct = createDirectRoutePort({
+			authority,
+			hashInventory: (_plan: { config: object }) => {
+				calls++;
+				return hash;
+			},
+		});
+		const input = {
+			tenantId: "tenant",
+			requestId: "request",
+			targetId: "a",
+			operation: operationFor("request"),
+			plan: { config: {} },
+		};
+		if (kind === "identity-accessor")
+			Object.defineProperty(input, "tenantId", { get: fail });
+		if (kind === "plan-accessor")
+			Object.defineProperty(input, "plan", { get: fail });
+		if (kind === "nested-plan-proxy")
+			input.plan.config = new Proxy(
+				{},
+				{ ownKeys: fail, getPrototypeOf: fail },
+			);
+		const result = await direct.runDirect(input, async () => {
+			calls++;
+			throw new Error("must not run");
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			code: "ROUTE_INPUT_INVALID",
+		});
+		expect(
+			await authority.inspect({ tenantId: "tenant", requestId: "request" }),
+		).toBeUndefined();
+		expect({ calls, traps }).toEqual({ calls: 0, traps: 0 });
+	});
+	it("does not accept a durable outcome changed by the authority after validation", async () => {
+		const { authority, path } = connect();
+		const writes: {
+			status: string;
+			targetId?: string;
+			requestChanged: boolean;
+			outcomeChanged: boolean;
+		}[] = [];
+		const altered = {
+			...authority,
+			async finish(input: Parameters<typeof authority.finish>[0]) {
+				const original = input.outcome;
+				const requestChanged = Reflect.set(input, "outcome", {
+					status: "denied",
+				});
+				const outcomeChanged = Reflect.set(original, "status", "denied");
+				writes.push({
+					status: original.status,
+					targetId: original.targetId,
+					requestChanged,
+					outcomeChanged,
+				});
+				if (original.status === "selected") {
+					return authority.finish({
+						...input,
+						outcome: { status: "uncertain", targetId: "a" },
+					});
+				}
+				return authority.finish(input);
+			},
+		};
+		const result = await runIacRoute({
+			authority: altered,
+			tenantId: "tenant",
+			requestId: "request",
+			run: async (route) => {
+				const permit = await route.beginAttempt({
+					targetId: "a",
+					inventoryHash: hash,
+				});
+				expect(await authority.consumeAttempt(permit)).toBe(true);
+				return {
+					value: "selected result",
+					outcome: { status: "selected", targetId: "a" },
+				};
+			},
+		});
+		expect(result).toMatchObject({ status: "uncertain", targetId: "a" });
+		expect(writes).toEqual([
+			{
+				status: "selected",
+				targetId: "a",
+				requestChanged: false,
+				outcomeChanged: false,
+			},
+			{
+				status: "uncertain",
+				targetId: "a",
+				requestChanged: false,
+				outcomeChanged: false,
+			},
+		]);
+		const reopened = connect(path);
+		expect(
+			await reopened.authority.inspect({
+				tenantId: "tenant",
+				requestId: "request",
+			}),
+		).toMatchObject({
+			phase: "finished",
+			outcome: { status: "uncertain", targetId: "a" },
+		});
+	});
+	it("rejects a route callback getter before claiming the request", async () => {
+		const { authority } = connect();
+		let traps = 0;
+		const input = {
+			authority,
+			tenantId: "tenant",
+			requestId: "request",
+			operation: operationFor("request"),
+			run: async () => ({
+				value: "bad",
+				outcome: { status: "denied" as const },
+			}),
+		};
+		Object.defineProperty(input, "run", {
+			get: () => {
+				traps++;
+				throw new Error("callback getter");
+			},
+		});
+		expect(await runAuthorizedRoute(input)).toMatchObject({
+			status: "uncertain",
+			code: "ROUTE_INPUT_UNINSPECTABLE",
+		});
+		expect(
+			await authority.inspect({ tenantId: "tenant", requestId: "request" }),
+		).toBeUndefined();
+		expect(traps).toBe(0);
+	});
+
+	it("accepts an explicitly present undefined route value", async () => {
+		const { authority } = connect();
+		const result = await runIacRoute({
+			authority,
+			tenantId: "tenant",
+			requestId: "request",
+			run: async (route) => {
+				const permit = await route.beginAttempt({
+					targetId: "a",
+					inventoryHash: hash,
+				});
+				expect(await authority.consumeAttempt(permit)).toBe(true);
+				return {
+					value: undefined,
+					outcome: { status: "selected", targetId: "a" },
+				};
+			},
+		});
+		expect(result).toEqual({ status: "executed", value: undefined });
+	});
+
+	it("preserves the host callback's original method receiver", async () => {
+		const { authority } = connect();
+		const input = {
+			authority,
+			tenantId: "tenant",
+			requestId: "request",
+			operation: operationFor("request"),
+			marker: "host-owned",
+			async run(route: import("../src/iac-route.js").IacRouteController) {
+				expect(this.marker).toBe("host-owned");
+				const permit = await route.beginAttempt({
+					targetId: "a",
+					inventoryHash: hash,
+				});
+				expect(await authority.consumeAttempt(permit)).toBe(true);
+				return {
+					value: "ok",
+					outcome: { status: "selected" as const, targetId: "a" },
+				};
+			},
+		};
+		expect(await runAuthorizedRoute(input)).toEqual({
+			status: "executed",
+			value: "ok",
+		});
+	});
+
+	it.each([
+		"outcome-accessor",
+		"value-accessor",
+		"value-proxy",
+		"missing-value",
+	] as const)("blocks the route when callback %s cannot be inspected", async (kind) => {
+		const { authority, path } = connect();
+		let traps = 0;
+		let attempts = 0;
+		const fail = () => {
+			traps++;
+			throw new Error("untrusted value");
+		};
+		const result = await runIacRoute({
+			authority,
+			tenantId: "tenant",
+			requestId: "request",
+			run: async (route) => {
+				await route.beginAttempt({ targetId: "a", inventoryHash: hash });
+				attempts++;
+				const response = {
+					value: {},
+					outcome: { status: "selected" as const, targetId: "a" },
+				};
+				if (kind === "outcome-accessor")
+					Object.defineProperty(response, "outcome", { get: fail });
+				if (kind === "value-accessor")
+					Object.defineProperty(response.value, "field", {
+						enumerable: true,
+						get: fail,
+					});
+				if (kind === "value-proxy")
+					response.value = new Proxy(
+						{},
+						{ ownKeys: fail, getPrototypeOf: fail },
+					);
+				if (kind === "missing-value") Reflect.deleteProperty(response, "value");
+				return response;
+			},
+		});
+		expect(result).toMatchObject({ status: "uncertain", targetId: "a" });
+		const reopened = connect(path);
+		const retry = await runIacRoute({
+			authority: reopened.authority,
+			tenantId: "tenant",
+			requestId: "request",
+			run: async () => {
+				attempts++;
+				throw new Error("must not run");
+			},
+		});
+		expect(retry.status).toBe("uncertain");
+		expect({ traps, attempts }).toEqual({ traps: 0, attempts: 1 });
+	});
 	it("blocks concurrent and reopened callers before another target or policy can run", async () => {
 		const first = connect();
 		const second = connect(first.path);
@@ -318,6 +570,62 @@ describe("durable shared IaC route claims", () => {
 		});
 		expect(retry.status).toBe("uncertain");
 		expect(second).toBe(0);
+	});
+
+	it.each([
+		"proxy",
+		"accessor",
+	] as const)("stops on an uninspectable denial acknowledgement: %s", async (kind) => {
+		const { authority, path } = connect();
+		let traps = 0;
+		let second = 0;
+		const broken = {
+			...authority,
+			async denyAttempt(input: Parameters<typeof authority.denyAttempt>[0]) {
+				await authority.denyAttempt(input);
+				const receipt = { status: "denied" as const };
+				if (kind === "proxy")
+					return new Proxy(receipt, {
+						getOwnPropertyDescriptor: (target, key) => {
+							traps++;
+							return Reflect.getOwnPropertyDescriptor(target, key);
+						},
+					});
+				return Object.defineProperty(receipt, "status", {
+					get: () => {
+						traps++;
+						return "denied";
+					},
+				});
+			},
+		};
+		const attempt = await runIacRoute({
+			authority: broken,
+			tenantId: "tenant",
+			requestId: "denial",
+			run: async (route) => {
+				const first = await route.beginAttempt({
+					targetId: "a",
+					inventoryHash: hash,
+				});
+				await route.denyAttempt(first);
+				second++;
+				return { value: "wrong", outcome: { status: "denied" } };
+			},
+		});
+		expect(attempt.status).toBe("uncertain");
+		const reopened = connect(path);
+		const retry = await runIacRoute({
+			authority: reopened.authority,
+			tenantId: "tenant",
+			requestId: "denial",
+			run: async () => {
+				second++;
+				throw new Error("must not run");
+			},
+		});
+		expect(retry.status).toBe("uncertain");
+		expect({ second, traps }).toEqual({ second: 0, traps: 0 });
 	});
 
 	it("shares route identity between direct and ranked execution", async () => {

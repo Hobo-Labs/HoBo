@@ -67,6 +67,201 @@ function ranking(target: string) {
 	};
 }
 describe("ranked routes share durable execution ownership", () => {
+	it.each([
+		"root-accessor",
+		"root-proxy",
+		"ranking-accessor",
+		"nested-ranking-proxy",
+		"candidates-proxy",
+		"candidate-accessor",
+		"revoked-candidate",
+		"sparse-candidates",
+	] as const)("rejects %s before claiming or invoking an effect", async (kind) => {
+		const { authority } = connect();
+		let traps = 0;
+		let calls = 0;
+		const fail = () => {
+			traps++;
+			throw new Error("untrusted getter or proxy");
+		};
+		const handler = {
+			get: fail,
+			ownKeys: fail,
+			getOwnPropertyDescriptor: fail,
+			getPrototypeOf: fail,
+		};
+		const item = {
+			targetId: "first",
+			run: async () => {
+				calls++;
+				throw new Error("must not run");
+			},
+		};
+		const input = {
+			authority,
+			tenantId: "tenant",
+			requestId: "request",
+			operation: { operationId: digest, authorization: "host-proof" },
+			ranking: ranking("first"),
+			candidates: [item],
+		};
+		let received = input;
+		if (kind === "root-accessor")
+			Object.defineProperty(input, "tenantId", { get: fail });
+		if (kind === "root-proxy") received = new Proxy(input, handler);
+		if (kind === "ranking-accessor")
+			Object.defineProperty(input.ranking.ranking[0], "quoteHash", {
+				get: fail,
+			});
+		if (kind === "nested-ranking-proxy")
+			input.ranking.ranking[0].incrementalBilled = new Proxy(
+				input.ranking.ranking[0].incrementalBilled,
+				handler,
+			);
+		if (kind === "candidates-proxy")
+			input.candidates = new Proxy(input.candidates, handler);
+		if (kind === "candidate-accessor")
+			Object.defineProperty(item, "run", { get: fail });
+		if (kind === "revoked-candidate") {
+			const revoked = Proxy.revocable(item, handler);
+			revoked.revoke();
+			input.candidates[0] = revoked.proxy;
+		}
+		if (kind === "sparse-candidates") input.candidates.length = 2;
+		expect(await executeWithOperation(received)).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+		expect(
+			await authority.inspect({ tenantId: "tenant", requestId: "request" }),
+		).toBeUndefined();
+		expect({ traps, calls }).toEqual({ traps: 0, calls: 0 });
+	});
+	it("blocks a retried route when denial evidence was a proxy", async () => {
+		const first = connect();
+		let firstEffects = 0;
+		let otherEffects = 0;
+		let traps = 0;
+		const result = await executeRankedIacTargets({
+			authority: first.authority,
+			tenantId: "tenant",
+			requestId: "request",
+			ranking: ranking("first"),
+			candidates: [
+				{
+					targetId: "first",
+					run: async (_id, _expected, permit) => {
+						expect(await first.authority.consumeAttempt(permit)).toBe(true);
+						firstEffects++;
+						throw new Proxy(
+							{
+								requiresReconciliation: false,
+								executionOutcome: "not-started",
+								admission: {
+									requestId: "request",
+									targetId: "first",
+									status: "denied",
+									code: "DENIED",
+									message: "",
+									budget: { evaluation: "denied", reservation: "not-created" },
+								},
+							},
+							{
+								ownKeys: (value) => {
+									traps++;
+									return Reflect.ownKeys(value);
+								},
+							},
+						);
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+		const reopened = connect(first.path);
+		const retry = await executeRankedIacTargets({
+			authority: reopened.authority,
+			tenantId: "tenant",
+			requestId: "request",
+			ranking: ranking("other"),
+			candidates: [
+				{
+					targetId: "other",
+					run: async () => {
+						otherEffects++;
+						throw new Error("must not run");
+					},
+				},
+			],
+		});
+		expect(retry).toMatchObject({ status: "uncertain", targetId: "first" });
+		expect({ firstEffects, otherEffects, traps }).toEqual({
+			firstEffects: 1,
+			otherEffects: 0,
+			traps: 0,
+		});
+	});
+
+	it("keeps an existing route uncertain when a retry has an unreadable ranking", async () => {
+		const { authority } = connect();
+		let effects = 0;
+		let traps = 0;
+		const first = await executeRankedIacTargets({
+			authority,
+			tenantId: "tenant",
+			requestId: "request",
+			ranking: ranking("first"),
+			candidates: [
+				{
+					targetId: "first",
+					run: async () => {
+						effects++;
+						throw new Error("lost");
+					},
+				},
+			],
+		});
+		expect(first.status).toBe("uncertain");
+		const retry = {
+			authority,
+			tenantId: "tenant",
+			requestId: "request",
+			operation: {
+				operationId: `sha256:${createHash("sha256").update("request").digest("hex")}`,
+				authorization: "host-proof",
+			},
+			ranking: ranking("other"),
+			candidates: [
+				{
+					targetId: "other",
+					run: async () => {
+						effects++;
+						throw new Error("must not run");
+					},
+				},
+			],
+		};
+		Object.defineProperty(retry, "ranking", {
+			get: () => {
+				traps++;
+				throw new Error("unreadable");
+			},
+		});
+		expect(await executeWithOperation(retry)).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+		expect(
+			await authority.inspect({ tenantId: "tenant", requestId: "request" }),
+		).toMatchObject({
+			phase: "finished",
+			outcome: { status: "uncertain", targetId: "first" },
+		});
+		expect({ effects, traps }).toEqual({ effects: 1, traps: 0 });
+	});
 	it("blocks a different target and financial authority after an unknown prior provider effect", async () => {
 		const first = connect();
 		let firstEffects = 0;
