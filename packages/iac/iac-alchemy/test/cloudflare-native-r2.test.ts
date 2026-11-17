@@ -39,7 +39,11 @@ import worker, {
 	grant,
 	neutralApplication,
 } from "./fixtures/cloudflare-r2-app.js";
-import { routeFixture, testOperation } from "./route-fixture.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
 const main = join(
 	dirname(fileURLToPath(import.meta.url)),
@@ -498,6 +502,7 @@ describe("Cloudflare R2 Bindle mapping", () => {
 			let historicalAuthorized = false;
 			const trustedPriorDigests = new Map<string, string>();
 			const provider = createAlchemyIacProvider({
+				stateOwnership: testStateOwnership,
 				stack,
 				target,
 				runtimeLayer: Alchemist.layer(),
