@@ -223,6 +223,7 @@ describe("durable shared IaC route claims", () => {
 
 	it("preserves the host callback's original method receiver", async () => {
 		const { authority } = connect();
+		let traps = 0;
 		const input = {
 			authority,
 			tenantId: "tenant",
@@ -242,10 +243,17 @@ describe("durable shared IaC route claims", () => {
 				};
 			},
 		};
+		Object.defineProperty(input.run, "call", {
+			get: () => {
+				traps++;
+				throw new Error("mutable callback call");
+			},
+		});
 		expect(await runAuthorizedRoute(input)).toEqual({
 			status: "executed",
 			value: "ok",
 		});
+		expect(traps).toBe(0);
 	});
 
 	it.each([

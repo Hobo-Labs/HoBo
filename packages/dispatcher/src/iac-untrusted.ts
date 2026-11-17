@@ -1,5 +1,8 @@
 import { types as utilTypes } from "node:util";
 
+/** Capture the intrinsic before invoking any caller-owned callbacks. */
+export const applyHostCallback = Reflect.apply;
+
 /** Marks a field that cannot be read without executing caller-owned code. */
 export const uninspectable = Symbol("uninspectable");
 

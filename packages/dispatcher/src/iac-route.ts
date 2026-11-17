@@ -1,4 +1,5 @@
 import {
+	applyHostCallback,
 	isBoundedRouteValue,
 	ownDataField,
 	ownDataFields,
@@ -373,7 +374,7 @@ export async function runIacRoute<T>(input: {
 		},
 	});
 	try {
-		const executed = await run.call(input, route);
+		const executed = await applyHostCallback(run, input, [route]);
 		const capturedOutcome = copyOutcome(data(executed, "outcome"));
 		const outcome =
 			capturedOutcome === undefined
