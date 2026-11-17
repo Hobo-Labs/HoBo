@@ -9,10 +9,10 @@ tags: [hobo, agent-tooling.md]
 
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
-design documents. The shared pre-commit hook and CI run `source:guard` on new
-JavaScript, TypeScript, shell, Python, CSS, and HTML comments and added or
-changed planning or design documents. It reads the staged content for commits
-and the PR diff for CI; it does not inspect other languages or unchanged content.
+design documents. Agent edit hooks, the shared pre-commit hook, and CI run the
+common `source:guard` for the languages and source templates listed in
+`AGENTS.md`. Commit checks read staged content, CI checks the PR diff, and the
+worktree check also finds ignored agent planning artifacts.
 
 Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
 
