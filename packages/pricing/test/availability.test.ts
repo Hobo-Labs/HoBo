@@ -47,6 +47,77 @@ describe("declared pricing availability", () => {
 			parsePricingAvailability({ unavailable: { reason: 123 } }),
 		).toBeUndefined();
 	});
+
+	it("rejects a malformed availability before reading its discriminator", () => {
+		const availability = pricingUnavailable("no model");
+		Reflect.deleteProperty(availability, "state");
+		expect(quoteAvailablePricing("sandbox", availability)).toMatchObject({
+			ok: false,
+			code: "PRICING_MODEL_INVALID",
+		});
+	});
+
+	it("rejects a model with an unrecognized nested charge field", () => {
+		const availability = developerPricing(scope, scenario());
+		if (availability.state.case !== "developerModel")
+			throw new Error("fixture model missing");
+		const charge =
+			availability.state.value.scenario?.catalog?.rateCards[0]?.charges[0];
+		if (charge === undefined) throw new Error("fixture charge missing");
+		Object.defineProperty(charge, "unmodeledFee", {
+			value: { amount: "100", currency: "USD" },
+			enumerable: true,
+		});
+		expect(quoteAvailablePricing("sandbox", availability)).toMatchObject({
+			ok: false,
+			code: "PRICING_MODEL_INVALID",
+		});
+	});
+
+	it("rejects unknown scope and scenario fields before normalization", () => {
+		const invalidScope = { ...scope, unmodeledFee: "100" };
+		expect(() => developerPricing(invalidScope, scenario())).toThrow();
+		const input = scenario();
+		const charge = input.catalog?.rateCards[0]?.charges[0];
+		if (charge === undefined) throw new Error("fixture charge missing");
+		Object.defineProperty(charge, "unmodeledFee", {
+			value: { amount: "100", currency: "USD" },
+			enumerable: true,
+		});
+		expect(() => developerPricing(scope, input)).toThrow();
+	});
+
+	it("snapshots the scope and scenario supplied by the developer", () => {
+		const inputScope = { ...scope };
+		const input = scenario();
+		const availability = developerPricing(inputScope, input);
+		inputScope.tenantId = "other";
+		const charge = input.catalog?.rateCards[0]?.charges[0];
+		if (charge === undefined) throw new Error("fixture charge missing");
+		Object.defineProperty(charge, "unmodeledFee", {
+			value: "100",
+			enumerable: true,
+		});
+		expect(quoteAvailablePricing("sandbox", availability)).toMatchObject({
+			ok: true,
+			modelId: scope.modelId,
+		});
+	});
+
+	it("rejects proxy-backed models without invoking their traps", () => {
+		let traps = 0;
+		const proxy = new Proxy(
+			{ ...scope },
+			{
+				ownKeys(target) {
+					traps++;
+					return Reflect.ownKeys(target);
+				},
+			},
+		);
+		expect(() => developerPricing(proxy, scenario())).toThrow();
+		expect(traps).toBe(0);
+	});
 	it("distinguishes unavailable pricing from a genuinely zero quote", () => {
 		expect(
 			quoteAvailablePricing("sandbox", pricingUnavailable("no model")),
