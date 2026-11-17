@@ -404,7 +404,14 @@ export function readExperienceCatalog(
 	const p = catalogPath(project, root);
 	if (!existsSync(p)) return null;
 	try {
-		return JSON.parse(readFileSync(p, "utf8")) as ExperienceCatalog;
+		const catalog: unknown = JSON.parse(readFileSync(p, "utf8"));
+		const record = (value: unknown): value is Record<string, unknown> =>
+			value !== null && typeof value === "object" && !Array.isArray(value);
+		if (!record(catalog) || typeof catalog.schemaVersion !== "number" || typeof catalog.projectId !== "string" || typeof catalog.builtAt !== "string" ||
+			!Array.isArray(catalog.experiences) || !catalog.experiences.every((row) => record(row) &&
+				["experienceId", "personaId", "entryCommand", "driver", "priority", "featureId", "intent"].every((key) => typeof row[key] === "string")) ||
+			(catalog.unverifiedGoals !== undefined && (!Array.isArray(catalog.unverifiedGoals) || !catalog.unverifiedGoals.every((goal) => record(goal) && typeof goal.personaId === "string" && typeof goal.goal === "string" && typeof goal.reason === "string")))) return null;
+		return catalog as ExperienceCatalog;
 	} catch {
 		return null;
 	}
