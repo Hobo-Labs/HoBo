@@ -226,15 +226,19 @@ describe("the stored machine", () => {
 describe("who and what connects", () => {
 	it("connects Linux x64 and arm64 machines only", () => {
 		expect(machinePlatform("linux", "x64")).toEqual({
+			supported: true,
 			os: "linux",
 			arch: "x64",
 		});
-		expect(machinePlatform("linux", "arm64")).toEqual({
-			os: "linux",
-			arch: "arm64",
+		expect(machinePlatform("linux", "arm64")).toMatchObject({ arch: "arm64" });
+		expect(machinePlatform("darwin", "arm64")).toMatchObject({
+			supported: false,
+			reason: expect.stringMatching(/Only Linux/u),
 		});
-		expect(machinePlatform("darwin", "arm64")).toMatch(/Only Linux/u);
-		expect(machinePlatform("linux", "ia32")).toMatch(/x64 and arm64/u);
+		expect(machinePlatform("linux", "ia32")).toMatchObject({
+			supported: false,
+			reason: expect.stringMatching(/x64 and arm64/u),
+		});
 	});
 
 	it("reads the owner from GitHub's signed-in user", async () => {

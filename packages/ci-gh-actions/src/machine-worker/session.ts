@@ -94,16 +94,27 @@ function parseJson(text: string): z.infer<typeof Json> {
 	}
 }
 
+/** A machine that can connect, or why this one cannot yet. */
+export type MachinePlatform =
+	| Readonly<{ supported: true; os: "linux"; arch: "x64" | "arm64" }>
+	| Readonly<{ supported: false; reason: string }>;
+
 /** The OS and architecture labels of a Linux machine, or why it cannot connect yet. */
 export function machinePlatform(
 	platform: string,
 	arch: string,
-): Readonly<{ os: "linux"; arch: "x64" | "arm64" }> | string {
+): MachinePlatform {
 	if (platform !== "linux")
-		return `Only Linux machines can connect yet (this one is ${platform}); the pinned runner archives are for Linux.`;
+		return {
+			supported: false,
+			reason: `Only Linux machines can connect yet (this one is ${platform}); the pinned runner archives are for Linux.`,
+		};
 	if (arch !== "x64" && arch !== "arm64")
-		return `Only x64 and arm64 machines can connect (this one is ${arch}).`;
-	return { os: "linux", arch };
+		return {
+			supported: false,
+			reason: `Only x64 and arm64 machines can connect (this one is ${arch}).`,
+		};
+	return { supported: true, os: "linux", arch };
 }
 
 const User = z.object({

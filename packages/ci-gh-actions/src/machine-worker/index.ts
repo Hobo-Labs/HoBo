@@ -49,6 +49,7 @@ export {
 	MACHINE_FILE,
 	MACHINE_KEY_FILE,
 	MACHINE_TICK_MS,
+	type MachinePlatform,
 	type MachineSession,
 	machinePlatform,
 	runMachineSession,

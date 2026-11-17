@@ -1757,3 +1757,43 @@ only a machine label nothing holds and must fail with its reason while the
 job behind it is skipped (R04), which makes that run red by design. Each
 result is one `hobo-ci-parity` notice holding JSON. No probe run is linked
 yet, so job mode is built, not proven, in production.
+
+## Machine connect (`hobo ci machine connect`)
+
+`hobo ci machine connect --repo <owner/name>` makes the computer it runs on a
+machine a runner order can route jobs to (ADR-0183,
+[`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+It needs only an installed CLI and a GitHub sign-in (`gh auth login`, or a
+token in `GH_TOKEN`); it assumes no checkout. The command lives in
+`packages/hobo/src/ci-machine-connect.ts`; the worker it runs is in
+[`src/machine-worker/`](src/machine-worker/MACHINE-WORKER.md), exported as
+`@hobo/ci-gh-actions/machine-worker`.
+
+- The machine keeps one id and one Ed25519 key under
+  `$HOBO_HOME/ci/machine/` (made on the first connect, owner-only) and
+  advertises a signed advert every 30 seconds in the local node's machine
+  registry, the one `hobo ci machine status` reads.
+- It reads the named repositories' queues for its own label
+  (`hobo-machine-<id>`) with the owner's token, at most every 15 seconds.
+- Each job gets a one-job runner on its repository; the configuration is
+  checked with `parseJitConfig` before anything uses it, and the job runs in a
+  fresh container (`--host`: on the machine, and the advert says so) with none
+  of the CLI's environment.
+- `--concurrency`, `--share only-me|anyone`, `--events` (one JSON object per
+  line) and `p` on a terminal to pause. Ctrl-C drains and takes the machine
+  offline at once; a second Ctrl-C stops the running jobs. Public repositories
+  and fork pull requests are refused. Linux x64 and arm64 only.
+
+Tested against the GitHub simulator with a fake container driver
+(`test/machine-worker*.test.ts`) and, for the command, with fakes
+(`packages/hobo/test/ci-machine-connect.test.ts`). It is built, not proven:
+no run on a real machine against GitHub is linked yet. The run that would
+prove it, on a Linux machine with Docker and `gh auth login` done as a user
+with admin rights on a private test repository:
+
+1. `hobo ci machine connect --repo <owner>/<private-repo> --events`, and note
+   the `runsOn` label in the first `machine.connected` line.
+2. Push a workflow whose job has `runs-on: <that label>`; see
+   `worker.job_started` and `worker.job_finished`, the job green on GitHub,
+   and no self-hosted runner left under the repository's settings.
+3. Press Ctrl-C; `hobo ci machine status` shows the machine offline.
