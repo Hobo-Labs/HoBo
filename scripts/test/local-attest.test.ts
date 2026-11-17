@@ -63,7 +63,7 @@ after(() => rmSync(scratch, { recursive: true, force: true }));
 let counter = 0;
 const directory = (name: string) => {
 	const path = join(scratch, `${name}-${counter++}`);
-	mkdirSync(path, { recursive: true });
+	mkdirSync(path, { recursive: true, mode: 0o700 });
 	return path;
 };
 

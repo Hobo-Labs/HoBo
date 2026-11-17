@@ -120,6 +120,10 @@ base-branch trust list used for workflow-reuse attestations. Local commands run
 with the invoking user's authority, so only run trusted code. Serialize local
 runs in a checkout and inspect statuses after an interrupted publication.
 
+The attestor key's new parent directory is created with mode `0700` or more
+restrictive according to the umask. An existing parent must already deny
+group and other access; the command refuses to change its permissions.
+
 Statuses are `signoff/hobo-ci/local/<event>/<job>` on the tested head. They are
 separate from Actions job results, cannot complete queued jobs, and do not by
 themselves satisfy HoBo's existing required checks or merge-queue policy. A
