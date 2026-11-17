@@ -7,7 +7,9 @@ over conflicting repository workflow guidance.
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
-  dynamic imports.
+  dynamic imports. Use `// domain-view:` and `// public-contract:` without
+  explanatory text when the architecture checks require them; complete parallel
+  wire types instead of adding temporary exemptions, regardless of comment syntax.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
 - Do not create or retain planning documents, roadmaps, or design documents.
