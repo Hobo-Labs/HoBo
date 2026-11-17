@@ -40,6 +40,10 @@ pnpm --filter @hobo/control-yard run evidence:check
 # Syncs and checks all manifested files in src/draft/exp-proofs/ux/control-yard/assets/evidence/
 ```
 
+If a unit test is interrupted, its generated `tmp/yard-*-test-*` directory can
+remain in the package and be picked up by lint. After the test stops, remove
+that scratch directory before rerunning lint.
+
 Capture requires the checked-in, reviewed baselines and a working Pillow image
 comparison; a missing baseline or comparison dependency fails the capture. The
 comparison accepts RMS up to 25 for rendering variation and never replaces a
