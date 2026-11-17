@@ -16,7 +16,10 @@
  *   `checks.prTitle.types` in `.hobo/ci.json`.
  * - The lint check is off unless `.hobo/ci.json` sets `checks.lint`. It runs
  *   the tools in `./lint.ts` in a sandbox with no network, on the commit's
- *   archive, five minutes per tool at most.
+ *   archive, five minutes per tool at most and eight minutes for the whole
+ *   check, archive included (`LINT_CHECK_BUDGET_MS`). The relay renews no
+ *   job lock while it holds the job, so when the budget is spent the check
+ *   stops waiting and answers "timed out", naming the tools left unrun.
  *
  * Each answered check job is reported as one `check.completed` event. The
  * usage report counts the job, a relay job finished with no billed minute,
@@ -35,12 +38,16 @@ import {
 import { checkPullRequestTitle, parseTitleTypes } from "@hobo/ci/insights";
 import { parseRelayChecksConfig, type RelayChecksConfig } from "./config.js";
 import {
+	LINT_CHECK_BUDGET_MS,
 	LINT_MAX_ANNOTATIONS,
+	LINT_NOT_RUN_BY_BUDGET,
+	LINT_STOPPED_BY_BUDGET,
 	LINT_TOOL_COMMANDS,
 	LINT_TOOL_TIMEOUT_MS,
 	type LintSandbox,
 	type LintToolResult,
 	lintAnnotations,
+	lintSpan,
 	lintSummary,
 	lintToolResult,
 	lintToolsOf,
@@ -96,7 +103,11 @@ export type RelayChecksOptions = Readonly<{
 	nowMs: () => number;
 	/** `LINT_TOOL_TIMEOUT_MS` when absent. */
 	toolTimeoutMs?: number | undefined;
+	/** The whole lint check's time, archive and tools; `LINT_CHECK_BUDGET_MS` when absent. */
+	lintBudgetMs?: number | undefined;
 }>;
+
+const OUT_OF_TIME = Symbol("out of time");
 
 type Note = Pick<RelayJobAnnotation, "level" | "message">;
 
@@ -193,9 +204,11 @@ function failed(name: RelayCheckName, sentence: string): CheckResult {
 
 class Checks {
 	private readonly timeoutMs: number;
+	private readonly budgetMs: number;
 
 	constructor(private readonly options: RelayChecksOptions) {
 		this.timeoutMs = options.toolTimeoutMs ?? LINT_TOOL_TIMEOUT_MS;
+		this.budgetMs = options.lintBudgetMs ?? LINT_CHECK_BUDGET_MS;
 	}
 
 	async handle(message: RelayJobMessage): Promise<RelayJobAnswer | undefined> {
@@ -314,42 +327,97 @@ class Checks {
 		const tools = lintToolsOf(step.inputs.get("tools"));
 		if (!tools.ok)
 			return failed("lint", `The lint check failed: ${tools.problem}.`);
-		let archive: Uint8Array;
-		try {
-			const commit = await this.options.source.commit(message);
-			archive = await this.options.source.archive(message, commit);
-		} catch (error) {
-			return failed(
-				"lint",
-				`The commit could not be read for the lint check: ${error instanceof Error ? error.message : String(error)}. Run the job again.`,
-			);
-		}
-		const results: LintToolResult[] = [];
-		for (const tool of tools.tools) {
-			try {
-				const run = await sandbox.run({
-					tool,
-					argv: LINT_TOOL_COMMANDS.get(tool) ?? [tool],
-					archive,
-					timeoutMs: this.timeoutMs,
-					network: "none",
-				});
-				results.push(lintToolResult(tool, run, this.timeoutMs));
-			} catch (error) {
-				results.push({
-					tool,
-					passed: false,
-					summary: `could not start in the sandbox: ${error instanceof Error ? error.message : String(error)}`,
-					findings: [],
-				});
-			}
-		}
-		return {
-			name: "lint",
-			passed: results.every((result) => result.passed),
-			notes: lintAnnotations(results, room),
-			summary: lintSummary(results),
+		// One budget for the archive and every tool: a hung read or tool is
+		// abandoned when it is spent, so the job is completed inside its lock.
+		const budgetMs = this.budgetMs;
+		const startedAt = performance.now();
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const expired = new Promise<typeof OUT_OF_TIME>((resolve) => {
+			timer = setTimeout(() => resolve(OUT_OF_TIME), budgetMs);
+		});
+		const withinBudget = <T>(
+			work: Promise<T>,
+		): Promise<T | typeof OUT_OF_TIME> => {
+			work.catch(() => {});
+			return Promise.race([work, expired]);
 		};
+		try {
+			let archive: Uint8Array | typeof OUT_OF_TIME;
+			try {
+				archive = await withinBudget(
+					(async () => {
+						const commit = await this.options.source.commit(message);
+						return this.options.source.archive(message, commit);
+					})(),
+				);
+			} catch (error) {
+				return failed(
+					"lint",
+					`The commit could not be read for the lint check: ${error instanceof Error ? error.message : String(error)}. Run the job again.`,
+				);
+			}
+			if (archive === OUT_OF_TIME)
+				return failed(
+					"lint",
+					`Lint timed out: the check's ${lintSpan(budgetMs)} ran out while the commit was being read. Run the job again.`,
+				);
+			const results: LintToolResult[] = [];
+			let outOfTime = false;
+			for (const tool of tools.tools) {
+				const leftMs = Math.ceil(budgetMs - (performance.now() - startedAt));
+				if (outOfTime || leftMs <= 0) {
+					outOfTime = true;
+					results.push({
+						tool,
+						passed: false,
+						summary: LINT_NOT_RUN_BY_BUDGET,
+						findings: [],
+					});
+					continue;
+				}
+				const timeoutMs = Math.min(this.timeoutMs, leftMs);
+				try {
+					const run = await withinBudget(
+						sandbox.run({
+							tool,
+							argv: LINT_TOOL_COMMANDS.get(tool) ?? [tool],
+							archive,
+							timeoutMs,
+							network: "none",
+						}),
+					);
+					if (
+						run === OUT_OF_TIME ||
+						(run.timedOut && timeoutMs < this.timeoutMs)
+					) {
+						outOfTime = true;
+						results.push({
+							tool,
+							passed: false,
+							summary: LINT_STOPPED_BY_BUDGET,
+							findings: [],
+						});
+						continue;
+					}
+					results.push(lintToolResult(tool, run, this.timeoutMs));
+				} catch (error) {
+					results.push({
+						tool,
+						passed: false,
+						summary: `could not start in the sandbox: ${error instanceof Error ? error.message : String(error)}`,
+						findings: [],
+					});
+				}
+			}
+			return {
+				name: "lint",
+				passed: results.every((result) => result.passed),
+				notes: lintAnnotations(results, room),
+				summary: lintSummary(results, outOfTime ? budgetMs : undefined),
+			};
+		} finally {
+			clearTimeout(timer);
+		}
 	}
 
 	private async report(

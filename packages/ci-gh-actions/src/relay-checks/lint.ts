@@ -3,7 +3,8 @@
  * (ADR-0183, gauntlet case C02).
  *
  * Each tool runs once in a sandbox with no network, on the commit's archive,
- * for five minutes at most. Every tool is asked for one finding per line in
+ * for five minutes at most, and the whole check, archive included, for eight
+ * minutes at most (`LINT_CHECK_BUDGET_MS`). Every tool is asked for one finding per line in
  * the `file:line:column: message` form, so one reader turns any of them into
  * annotations. A job carries one result line per tool, then findings, 50
  * annotations at most in all.
@@ -25,6 +26,18 @@ export type LintTool = (typeof LINT_TOOLS)[number];
 
 /** How long one tool may run: five minutes. */
 export const LINT_TOOL_TIMEOUT_MS = 5 * 60_000;
+/**
+ * How long one whole lint check may take, the archive read and every tool
+ * together: eight minutes. A relay holds the job from `acquirejob` to
+ * `completejob` and renews no job lock (`runner-protocol/client.ts`), so the
+ * check must finish well inside the lock the service grants. The runner renews
+ * that lock every 60 seconds (`Runner.Listener/JobDispatcher.cs` in
+ * `actions/runner`, `RenewJobRequestAsync`) and the service sets its length
+ * (`lockedUntil`), which the runner source does not state. This package
+ * takes it as about ten minutes after the last renewal, not yet measured
+ * against GitHub, so eight minutes leaves two minutes over. See RELAY-CHECKS.md.
+ */
+export const LINT_CHECK_BUDGET_MS = 8 * 60_000;
 /** The most annotations a lint check puts on a job, result lines included. */
 export const LINT_MAX_ANNOTATIONS = 50;
 /** How much of a tool's output is read; the rest is left out. */
@@ -198,14 +211,39 @@ export function lintToolResult(
 	};
 }
 
-/** One line for the whole check: each tool and its result. */
-export function lintSummary(results: readonly LintToolResult[]): string {
+/** A span of time in words: minutes, seconds or milliseconds. */
+export function lintSpan(ms: number): string {
+	if (ms >= 60_000 && ms % 60_000 === 0) {
+		const minutes = ms / 60_000;
+		return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+	}
+	if (ms >= 1_000 && ms % 1_000 === 0) return `${ms / 1_000} seconds`;
+	return `${ms} ms`;
+}
+
+/** What a tool says when the check's budget ran out while it ran. */
+// public-contract: the result line a lint tool shows when the check's time ran out.
+export const LINT_STOPPED_BY_BUDGET = "stopped when the check's time ran out";
+/** What a tool says when the check's budget ran out before it started. */
+// public-contract: the result line a lint tool not started for lack of time shows.
+export const LINT_NOT_RUN_BY_BUDGET = "not run: the check's time ran out";
+
+/**
+ * One line for the whole check: each tool and its result. With
+ * `budgetMs`, the check's time ran out and the line says so first.
+ */
+export function lintSummary(
+	results: readonly LintToolResult[],
+	budgetMs?: number,
+): string {
 	const failed = results.filter((result) => !result.passed).length;
 	const parts = results.map((result) =>
 		result.passed
 			? `${result.tool} passed`
 			: `${result.tool} ${result.summary}`,
 	);
+	if (budgetMs !== undefined)
+		return `Lint timed out: the check's ${lintSpan(budgetMs)} ran out. ${parts.join("; ")}.`;
 	return `Lint ${failed === 0 ? "passed" : "failed"}: ${parts.join("; ")}.`;
 }
 

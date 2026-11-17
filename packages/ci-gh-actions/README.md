@@ -2143,7 +2143,9 @@ The lint check is off unless `checks.lint` is set; it runs `actionlint`,
 `shellcheck`, `oxlint`, `ruff` and `typos` on the commit's archive (read by
 following GitHub's redirect to codeload, see `RelayArchiveAccess`) in a
 sandbox with no network
-(`createDockerLintSandbox`), five minutes per tool, and reports one result per
-tool and 50 annotations at most. Each answered job is a `check.completed`
+(`createDockerLintSandbox`), five minutes per tool and eight minutes for the
+whole check (the relay renews no job lock, so a slow or hung tool ends as
+"Lint timed out" inside the lock), and reports one result per tool and 50
+annotations at most. Each answered job is a `check.completed`
 event. It is built, not proven: tested against the GitHub simulator and a fake
 sandbox. See [`src/relay-checks/RELAY-CHECKS.md`](src/relay-checks/RELAY-CHECKS.md).

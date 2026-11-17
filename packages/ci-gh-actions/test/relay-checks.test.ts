@@ -27,6 +27,7 @@ import {
 	createRelayChecks,
 	dockerLintArgs,
 	GithubRelayCheckSource,
+	LINT_CHECK_BUDGET_MS,
 	LINT_MAX_ANNOTATIONS,
 	LINT_TOOLS,
 	type LintRun,
@@ -497,6 +498,103 @@ describe("createRelayChecks", () => {
 		expect(answer?.annotations.at(-1)?.message).toContain(
 			"34 more findings are not shown",
 		);
+	});
+
+	describe("one time budget for the whole lint check", () => {
+		/** A sandbox whose named tools never answer, and whose others answer after `delayMs`. */
+		class SlowSandbox implements LintSandbox {
+			readonly runs: LintRun[] = [];
+			constructor(
+				private readonly hanging: ReadonlySet<string>,
+				private readonly delayMs = 0,
+			) {}
+			run(request: LintRun): Promise<LintRunResult> {
+				this.runs.push(request);
+				if (this.hanging.has(request.tool)) return new Promise(() => {});
+				return new Promise((resolve) =>
+					setTimeout(
+						() => resolve({ exitCode: 0, output: "", timedOut: false }),
+						this.delayMs,
+					),
+				);
+			}
+		}
+
+		function budgeted(
+			source: RelayCheckSource,
+			sandbox: LintSandbox,
+			lintBudgetMs: number,
+		) {
+			return createRelayChecks({
+				source,
+				sandbox,
+				completed: undefined,
+				node: "node-a",
+				nowMs: () => 1_700_000_000_000,
+				lintBudgetMs,
+			});
+		}
+
+		it("keeps the default budget well inside GitHub's job lock", () => {
+			expect(LINT_CHECK_BUDGET_MS).toBe(8 * 60_000);
+			expect(LINT_CHECK_BUDGET_MS).toBeLessThan(10 * 60_000);
+		});
+
+		it("answers timed out within the budget when a tool hangs", async () => {
+			const sandbox = new SlowSandbox(new Set(["shellcheck"]));
+			const started = performance.now();
+			const answer = await budgeted(
+				fakeSource(JSON.stringify({ checks: { lint: true } })),
+				sandbox,
+				200,
+			)(
+				message([step(LINT_STEP, { tools: "actionlint, shellcheck, oxlint" })]),
+			);
+			expect(performance.now() - started).toBeLessThan(1_000);
+			expect(sandbox.runs.map((run) => run.tool)).toEqual([
+				"actionlint",
+				"shellcheck",
+			]);
+			expect(answer?.conclusion).toBe("failed");
+			expect(answer?.outputs[1]?.value).toBe(
+				"Lint timed out: the check's 200 ms ran out. actionlint passed; shellcheck stopped when the check's time ran out; oxlint not run: the check's time ran out.",
+			);
+			expect(answer?.annotations.map((note) => note.message)).toEqual([
+				"actionlint: passed",
+				"shellcheck: stopped when the check's time ran out",
+				"oxlint: not run: the check's time ran out",
+			]);
+		});
+
+		it("gives each tool only the time the check has left", async () => {
+			const sandbox = new SlowSandbox(new Set(), 120);
+			await budgeted(
+				fakeSource(JSON.stringify({ checks: { lint: true } })),
+				sandbox,
+				1_000,
+			)(message([step(LINT_STEP, { tools: "actionlint, shellcheck" })]));
+			const [first, second] = sandbox.runs;
+			expect(first?.timeoutMs).toBeLessThanOrEqual(1_000);
+			expect(second?.timeoutMs).toBeLessThanOrEqual(1_000 - 100);
+		});
+
+		it("counts the archive download against the budget", async () => {
+			const source = fakeSource(JSON.stringify({ checks: { lint: true } }));
+			source.archive = () => new Promise(() => {});
+			const sandbox = new SlowSandbox(new Set());
+			const started = performance.now();
+			const answer = await budgeted(
+				source,
+				sandbox,
+				200,
+			)(message([step(LINT_STEP)]));
+			expect(performance.now() - started).toBeLessThan(1_000);
+			expect(sandbox.runs).toHaveLength(0);
+			expect(answer?.conclusion).toBe("failed");
+			expect(answer?.outputs[1]?.value).toBe(
+				"Lint timed out: the check's 200 ms ran out while the commit was being read. Run the job again.",
+			);
+		});
 	});
 
 	it("fails the lint check on a node with no sandbox", async () => {

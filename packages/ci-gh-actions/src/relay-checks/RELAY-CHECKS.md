@@ -77,6 +77,28 @@ step's `tools` names) on the archive of the commit the run tests, each in a
 sandbox with no network, five minutes per tool at most. Each tool is asked for
 one `file:line:column: message` line per finding.
 
+The whole lint check, the archive read and every tool together, has one time
+budget: eight minutes (`LINT_CHECK_BUDGET_MS`). The reason is the job lock. A
+relay holds the job from `acquirejob` until it calls `completejob`, and the
+runner protocol client renews no job lock (`renewjob`; see
+[`../runner-protocol/RUNNER-PROTOCOL.md`](../runner-protocol/RUNNER-PROTOCOL.md)),
+on the assumption that a relay answers in seconds. The open-source runner
+renews the lock every 60 seconds (`RenewJobRequestAsync` in
+`Runner.Listener/JobDispatcher.cs`, at the commit in
+`runner-protocol/source.ts`); the service sets how long a lock lasts
+(`lockedUntil`), and the runner source does not state it. This package takes
+it as about ten minutes after the last renewal, which has not been measured
+against GitHub yet. Eight minutes leaves two over for reading `.hobo/ci.json`,
+the title check and `completejob`.
+
+Each tool is given the five-minute limit or the time the check has left,
+whichever is less. When the budget is spent the check stops waiting, even for
+a tool or archive read that never answers: the tool that was running reads
+"stopped when the check's time ran out", each tool not started reads "not run:
+the check's time ran out", and the `reason` output starts "Lint timed out".
+The job then fails and is completed inside its lock. A longer budget needs
+`renewjob` in the runner protocol client first.
+
 The job carries one result annotation per tool, then the findings, 50
 annotations at most in all, the last saying how many more were left out. The
 `reason` output is one summary line.

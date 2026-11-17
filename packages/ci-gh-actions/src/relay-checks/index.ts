@@ -30,8 +30,11 @@ export {
 	type SandboxCommandRunner,
 } from "./docker-sandbox.js";
 export {
+	LINT_CHECK_BUDGET_MS,
 	LINT_MAX_ANNOTATIONS,
 	LINT_MAX_OUTPUT_BYTES,
+	LINT_NOT_RUN_BY_BUDGET,
+	LINT_STOPPED_BY_BUDGET,
 	LINT_TOOL_COMMANDS,
 	LINT_TOOL_TIMEOUT_MS,
 	LINT_TOOLS,
@@ -43,6 +46,7 @@ export {
 	type LintToolResult,
 	lintAnnotations,
 	lintFindings,
+	lintSpan,
 	lintSummary,
 	lintToolResult,
 	lintToolsOf,
