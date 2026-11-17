@@ -4,7 +4,7 @@ Feature: Surface parity with RelayRunner
   this file. A scenario tagged @pending waits for the work package that
   builds it.
 
-  @parity @S01 @t2 @pending
+  @parity @S01 @t2
   Scenario: S01 A read-only dashboard with Runners, Router, History, Performance and Signals
     Given a relay with stored routes, machines and runs
     When the dashboard is opened
@@ -54,7 +54,7 @@ Feature: Surface parity with RelayRunner
     When "hobo ci init --undo" runs
     Then the repository's workflows are as they were before
 
-  @parity @S10 @t2 @pending
+  @parity @S10 @t2
   Scenario: S10 A routing change is a reviewed commit, and the dashboard's edit opens a pull request
     Given the dashboard's Router view
     When an edit to the runner order is saved
