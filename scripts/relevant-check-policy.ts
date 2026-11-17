@@ -647,7 +647,17 @@ export function selectRelevantChecks(
 		});
 	}
 
-	if (behaviorChanged) {
+	// The parity scorecard (docs/ci/parity-scorecard.md) is generated from the
+	// parity scenarios' run, so any change to the CI packages they drive can
+	// leave it stale (ADR-0183).
+	const parityChanged = touchedAny([
+		/^features\/hobo-ci-parity\//u,
+		/^docs\/ci\/parity-scorecard\.md$/u,
+		/^scripts\/ci\/parity-scorecard\.mts$/u,
+		/^packages\/(ci|ci-gh-actions|ci-dashboard)\/(src|test\/support)\//u,
+		/^packages\/hobo\/(src\/ci-|test\/support\/ci-)/u,
+	]);
+	if (behaviorChanged || parityChanged) {
 		checks.push({
 			command: "pnpm",
 			args: [
@@ -661,6 +671,10 @@ export function selectRelevantChecks(
 				// packages from source; their dependencies resolve through dist/.
 				"--filter=@hobo/conformance^...",
 				"--filter=@hobo/example-cd-conformance-kit^...",
+				// So do the parity gauntlet's steps (features/hobo-ci-parity).
+				"--filter=@hobo/hobo^...",
+				"--filter=@hobo/ci-gh-actions^...",
+				"--filter=@hobo/ci-dashboard^...",
 				"--output-logs=new-only",
 				"--concurrency=100%",
 			],
@@ -668,12 +682,20 @@ export function selectRelevantChecks(
 				"behavior steps import the proofs' and root steps' workspace dependencies from dist, which a scoped run has not built",
 			serial: true,
 		});
+	}
+	if (behaviorChanged)
 		checks.push({
 			command: "pnpm",
 			args: ["run", "test:behavior"],
 			reason: "browser-driven behavior specs; never full-stack E2E",
 		});
-	}
+	if (parityChanged)
+		checks.push({
+			command: "pnpm",
+			args: ["run", "ci:parity-scorecard:check"],
+			reason:
+				"the parity scorecard is generated from the parity scenarios and must not go stale",
+		});
 	if (visualChanged)
 		checks.push({
 			command: "pnpm",

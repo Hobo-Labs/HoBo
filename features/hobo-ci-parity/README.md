@@ -52,6 +52,11 @@ node --import tsx scripts/ci/parity-scorecard.mts --check   # fail when the scor
 
 The repository's behaviour lane, `pnpm run test:behavior`, runs these
 scenarios too, with the same tag filter, alongside the other root suites.
+`pnpm run ci:parity-scorecard:check` is the `--check` run. `pnpm run check:all`
+runs it, and `pnpm agent:check` runs it whenever a change touches this folder,
+the scorecard, its script, or the CI packages the scenarios drive
+(`packages/ci`, `packages/ci-gh-actions`, `packages/ci-dashboard` and the
+`ci-*` commands of `packages/hobo`), so a stale scorecard fails a gate.
 
 No scenario touches a real provider, a paid service or GitHub.
 
