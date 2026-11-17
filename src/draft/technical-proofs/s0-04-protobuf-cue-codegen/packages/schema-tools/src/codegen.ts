@@ -3,8 +3,9 @@ import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { delimiter, dirname, join, relative } from "node:path";
+import { conciseGeneratedTypeScript } from "@hobo/schema-tools/generated-typescript";
 import { discoverDataModelPackages, hydrateCueSchemas } from "./discover.js";
 import { ensureCueBinary, vetCueConstraints } from "./cue.js";
 import {
@@ -88,7 +89,6 @@ function resolveBufCommand(repoRoot: string) {
         return { command: bufBin, args: [] };
       }
     } catch {
-      // fall through to PATH lookup
     }
   }
   return { command: "buf", args: [] };
@@ -128,18 +128,28 @@ async function generatePackageProtos(
   invocation: CodegenInvocation,
   outputDir: string,
 ): Promise<void> {
-  await mkdir(outputDir, { recursive: true });
-  const buf = resolveBufCommand(invocation.repoRoot);
-  const result = await runCommand(
-    buf.command,
-    [...buf.args, "generate", pkg.dataModelsDir, "--template", invocation.bufTemplate, "-o", outputDir],
-    invocation.repoRoot,
-    pluginPathEnv(invocation.repoRoot),
-  );
-  if (result.code !== 0) {
-    const message = result.stderr || result.stdout;
-    const protoMatch = message.match(/([^\s:]+\.proto)/);
-    throw new Error(protoMatch ? `protobuf parse failed in ${protoMatch[1]}: ${message}` : message);
+  const generated = await mkdtemp(join(tmpdir(), "hobo-proof-codegen-output-"));
+  try {
+    const buf = resolveBufCommand(invocation.repoRoot);
+    const result = await runCommand(
+      buf.command,
+      [...buf.args, "generate", pkg.dataModelsDir, "--template", invocation.bufTemplate, "-o", generated],
+      invocation.repoRoot,
+      pluginPathEnv(invocation.repoRoot),
+    );
+    if (result.code !== 0) {
+      const message = result.stderr || result.stdout;
+      const protoMatch = message.match(/([^\s:]+\.proto)/);
+      throw new Error(protoMatch ? `protobuf parse failed in ${protoMatch[1]}: ${message}` : message);
+    }
+    for (const file of await listFilesRecursive(generated)) {
+      if (!file.endsWith("_pb.ts")) continue;
+      await writeFile(file, conciseGeneratedTypeScript(await readFile(file, "utf8")));
+    }
+    await mkdir(outputDir, { recursive: true });
+    await cp(generated, outputDir, { recursive: true, force: true });
+  } finally {
+    await rm(generated, { recursive: true, force: true });
   }
 }
 
@@ -204,7 +214,7 @@ async function generateAll(
 ): Promise<{ drift: DriftEntry[]; cueViolations: CueViolation[] }> {
   const stagingRoot = write
     ? undefined
-    : await mkdtemp(join(homedir(), "hobo-codegen-check-"));
+    : await mkdtemp(join(tmpdir(), "hobo-codegen-check-"));
   const drift: DriftEntry[] = [];
 
   try {

@@ -43,6 +43,10 @@ pnpm --filter @hobo/schema-tools run lint
 pnpm --filter @hobo/schema-tools run test
 ```
 
+The package exposes the built CLI as `hobo-codegen`; build the package before
+running it from a workspace checkout. Package contents include the executable
+and compiled modules.
+
 Offline failure tests mock `fetch`; they never depend on a real CUE download
 failing on the host. Toolchain selection requires a successful version probe
 with the pinned CUE version.
