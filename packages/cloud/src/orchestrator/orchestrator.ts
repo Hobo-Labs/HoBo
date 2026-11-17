@@ -347,6 +347,36 @@ export async function runOrchestrator(
 			pendingOperations,
 		};
 	};
+	const startPrune = async (
+		history: EventEnvelope[],
+		targets: readonly string[],
+	) => {
+		const transition: DeploymentTransitionData = {
+			deploymentId,
+			transitionId: newTransitionId(history),
+			kind: "prune",
+			planHash,
+			resourceIds: [...targets].sort(),
+		};
+		const fenceToken = currentFenceToken(deps.store, stream);
+		await emit(deps.store, stream, [deploymentTransitionStarted(transition)], {
+			expectedSeq: history.at(-1)?.seq ?? 0,
+			actor: ctx.actor,
+			tenant: ctx.tenant,
+			...(fenceToken !== undefined ? { fenceToken } : undefined),
+			...(ctx.correlationId !== undefined
+				? { correlationId: ctx.correlationId }
+				: undefined),
+		});
+		const after = await readHistory();
+		const confirmed = foldDeploymentTransition(after);
+		if (
+			confirmed.status !== "active" ||
+			JSON.stringify(confirmed.transition) !== JSON.stringify(transition)
+		)
+			throw new Error("prune transition start could not be confirmed");
+		return { events: after, state: confirmed };
+	};
 	let initialPending = await pendingResult(initialEvents);
 	const recoveredPruned: string[] = [];
 	if (initialPending !== undefined) {
@@ -378,6 +408,32 @@ export async function runOrchestrator(
 				resource.deps.includes(only.resourceId),
 			)
 		) {
+			if (transitionState.status === "open") {
+				const snapshots = resourceSnapshots(initialEvents, plan, deploymentId);
+				const orphans = orphansToPrune(plan, initialEvents);
+				if (
+					!plan.resources.every((resource) => {
+						const snapshot = snapshots.get(resource.name);
+						return snapshot !== undefined && isConverged(snapshot, resource);
+					}) ||
+					orphans.unknown.length > 0 ||
+					orphans.ordered.length > 256 ||
+					!orphans.ordered.some((resource) => resource.name === only.resourceId)
+				)
+					return initialPending;
+				const started = await startPrune(
+					initialEvents,
+					orphans.ordered.map((resource) => resource.name),
+				);
+				initialEvents = started.events;
+				transitionState = started.state;
+				progressed = false;
+			} else if (
+				transitionState.status !== "active" ||
+				transitionState.transition.kind !== "prune" ||
+				!transitionState.transition.resourceIds.includes(only.resourceId)
+			)
+				return initialPending;
 			const resumed = await destroyResource(
 				actorDeps,
 				{ ...previous.plan, deploymentId },
@@ -612,35 +668,12 @@ export async function runOrchestrator(
 		) {
 			if (orphans.ordered.length > 256)
 				return blockedTransition(events, "prune-target-changed");
-			pruneTransition = {
-				deploymentId,
-				transitionId: newTransitionId(events),
-				kind: "prune",
-				planHash,
-				resourceIds: orphans.ordered.map((resource) => resource.name).sort(),
-			};
-			const fenceToken = currentFenceToken(deps.store, stream);
-			await emit(
-				deps.store,
-				stream,
-				[deploymentTransitionStarted(pruneTransition)],
-				{
-					expectedSeq: events.at(-1)?.seq ?? 0,
-					actor: ctx.actor,
-					tenant: ctx.tenant,
-					...(fenceToken !== undefined ? { fenceToken } : undefined),
-					...(ctx.correlationId !== undefined
-						? { correlationId: ctx.correlationId }
-						: undefined),
-				},
+			const started = await startPrune(
+				events,
+				orphans.ordered.map((resource) => resource.name),
 			);
-			events = await readHistory();
-			const confirmed = foldDeploymentTransition(events);
-			if (
-				confirmed.status !== "active" ||
-				JSON.stringify(confirmed.transition) !== JSON.stringify(pruneTransition)
-			)
-				throw new Error("prune transition start could not be confirmed");
+			events = started.events;
+			pruneTransition = started.state.transition;
 		}
 		// A live declared resource may still reference an undeclared one. An
 		// orphan without a recorded plan may depend on any other orphan, so

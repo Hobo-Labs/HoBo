@@ -116,12 +116,32 @@ export function foldDeploymentTransition(
 ): DeploymentTransitionState {
 	let state: DeploymentTransitionState = { status: "open" };
 	let completingRollback = false;
+	let legacyReopenUnconfirmed = false;
 	const transitionIds = new Set<string>();
 	const pendingApplies = new Set<string>();
+	const pendingDestroys = new Set<string>();
+	const liveResources = new Set<string>();
 	const unresolvedFailures = new Set<string>();
 	for (const event of events) {
 		if (completingRollback && event.type !== CLOUD_EVENTS.DeploymentRolledBack)
 			throw new DeploymentTransitionError("rollback completion is incomplete");
+		if (
+			event.type === CLOUD_EVENTS.ResourceProvisioning &&
+			state.status === "closed" &&
+			state.legacy
+		) {
+			if (
+				pendingApplies.size > 0 ||
+				pendingDestroys.size > 0 ||
+				liveResources.size > 0 ||
+				unresolvedFailures.size > 0
+			)
+				throw new DeploymentTransitionError(
+					"legacy rollback has unresolved effects",
+				);
+			state = { status: "open" };
+			legacyReopenUnconfirmed = true;
+		}
 		if (
 			event.type === CLOUD_EVENTS.ResourceProvisioning &&
 			state.status !== "open"
@@ -131,7 +151,7 @@ export function foldDeploymentTransition(
 			);
 		if (
 			event.type === CLOUD_EVENTS.ResourceDestroying &&
-			(state.status === "closed" ||
+			((state.status === "closed" && !state.legacy) ||
 				(state.status === "active" &&
 					(!isJsonObject(event.data) ||
 						!isJsonString(event.data.resourceId) ||
@@ -148,6 +168,10 @@ export function foldDeploymentTransition(
 				"deployment completed while a transition blocked it",
 			);
 		if (event.type === CLOUD_EVENTS.DeploymentTransitionStarted) {
+			if (legacyReopenUnconfirmed)
+				throw new DeploymentTransitionError(
+					"legacy redeployment has no verified completion",
+				);
 			if (state.status !== "open")
 				throw new DeploymentTransitionError(
 					"another deployment transition is active",
@@ -189,6 +213,7 @@ export function foldDeploymentTransition(
 				legacy: !completingRollback,
 			};
 			completingRollback = false;
+			legacyReopenUnconfirmed = false;
 		} else if (event.type === CLOUD_EVENTS.DeploymentReopened) {
 			const data = event.data;
 			if (
@@ -234,11 +259,34 @@ export function foldDeploymentTransition(
 			event.type === CLOUD_EVENTS.DeploymentDeployed &&
 			state.status === "open"
 		) {
+			if (
+				legacyReopenUnconfirmed &&
+				(pendingApplies.size > 0 ||
+					pendingDestroys.size > 0 ||
+					unresolvedFailures.size > 0 ||
+					!isJsonObject(event.data) ||
+					!Array.isArray(event.data.resourceIds) ||
+					!event.data.resourceIds.every(
+						(id) => isJsonString(id) && liveResources.has(id),
+					))
+			)
+				throw new DeploymentTransitionError(
+					"legacy redeployment completion is unverified",
+				);
 			state = { status: "open" };
+			legacyReopenUnconfirmed = false;
 		}
 		if (isJsonObject(event.data) && isJsonString(event.data.resourceId)) {
 			if (event.type === CLOUD_EVENTS.ResourceProvisioning)
 				pendingApplies.add(event.data.resourceId);
+			if (event.type === CLOUD_EVENTS.ResourceDestroying)
+				pendingDestroys.add(event.data.resourceId);
+			if (event.type === CLOUD_EVENTS.ResourceDestroyed) {
+				pendingDestroys.delete(event.data.resourceId);
+				liveResources.delete(event.data.resourceId);
+			}
+			if (event.type === CLOUD_EVENTS.ResourceProvisioned)
+				liveResources.add(event.data.resourceId);
 			if (
 				event.type === CLOUD_EVENTS.ResourceProvisioned ||
 				event.type === CLOUD_EVENTS.ResourceFailed
@@ -265,6 +313,10 @@ export function foldDeploymentTransition(
 	}
 	if (completingRollback)
 		throw new DeploymentTransitionError("rollback completion is incomplete");
+	if (legacyReopenUnconfirmed)
+		throw new DeploymentTransitionError(
+			"legacy redeployment has no verified completion",
+		);
 	return state;
 }
 
