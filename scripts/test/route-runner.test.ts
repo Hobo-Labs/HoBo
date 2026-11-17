@@ -1086,7 +1086,7 @@ const withGithub = async <T>(
 
 /** No routing slip: the relay has written none. */
 const NO_SLIP = { routingConfig: COMMITTED, fetch: slipApi(undefined) };
-/** A slip must not be read here: a pinned or attested run decides without it. */
+/** A slip must not be read here: a pinned run decides without it. */
 const NO_SLIP_CALL = {
 	routingConfig: COMMITTED,
 	fetch: async (): Promise<never> => {
@@ -1249,19 +1249,7 @@ describe("the script as a whole", () => {
 		);
 	});
 
-	it("sends what is left of an attested run to GitHub-hosted without reading the slip or the queue", async () => {
-		const attested = await main(
-			["--attested", "true"],
-			{
-				GITHUB_EVENT_NAME: "merge_group",
-				GITHUB_API_URL: "http://127.0.0.1:9",
-			},
-			NO_SLIP_CALL,
-		);
-		assert.equal(attested.runner, "ubuntu-24.04");
-		assert.equal(attested.tier, "github");
-		assert.match(attested.reason, /signed local run/);
-		// A pin is an operator's override: it still wins.
+	it("honours a pin even when a local run was attested", async () => {
 		const pinned = await main(
 			["--attested", "true", "--route", "fleet"],
 			{
@@ -1271,18 +1259,6 @@ describe("the script as a whole", () => {
 			NO_SLIP_CALL,
 		);
 		assert.equal(pinned.runner, "hobo-trunk");
-		// Anything but the literal `true` is not an attestation.
-		const unattested = await main(
-			["--attested", "false"],
-			{
-				GITHUB_EVENT_NAME: "pull_request",
-				GITHUB_REPOSITORY: "acme/app",
-				GITHUB_RUN_ID: "1",
-				GITHUB_API_URL: "http://127.0.0.1:9",
-			},
-			NO_SLIP,
-		);
-		assert.match(unattested.reason, /could not be read/);
 	});
 
 	it("writes runner, tier and shard_runner as step outputs", async () => {
@@ -1420,6 +1396,27 @@ describe("the script reading the slip", () => {
 				refusedBy: "slip",
 			}),
 		]);
+	});
+
+	it("routes the remaining jobs by the slip or queue even when local evidence exists", async () => {
+		const fromSlip = await route("http://127.0.0.1:9", REFUSED_SLIP, {}, [
+			"--attested",
+			"true",
+		]);
+		assert.deepEqual(
+			[fromSlip.decision.tier, fromSlip.decision.runner],
+			["local", "hobo-local-host"],
+		);
+		await withGithub(fleetUpPages, async (apiUrl) => {
+			const fromQueue = await route(apiUrl, undefined, {}, [
+				"--attested",
+				"true",
+			]);
+			assert.deepEqual(
+				[fromQueue.decision.tier, fromQueue.decision.runner],
+				["fleet", "hobo"],
+			);
+		});
 	});
 
 	/** A finished probe and the actual jobs observed for the requested labels. */
@@ -1766,7 +1763,7 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("annotates why no slip was read for a pinned or attested run", async () => {
+	it("annotates why no slip was read for a pinned run", async () => {
 		const env = {
 			GITHUB_EVENT_NAME: "push",
 			GITHUB_API_URL: "http://127.0.0.1:9",
@@ -1789,13 +1786,6 @@ describe("the script reading the slip", () => {
 					.lines,
 			),
 			unasked("pinned"),
-		);
-		assert.deepEqual(
-			noticesIn(
-				(await printedBy(() => main(["--attested", "true"], env, NO_SLIP_CALL)))
-					.lines,
-			),
-			unasked("attested"),
 		);
 		assert.deepEqual(
 			noticesIn(

@@ -263,6 +263,8 @@ local signoff only after all enabled runner tiers are known unavailable. It
 waits on unknown capacity when no runner is available, and always waits on
 malformed or contradictory observations. This is a separate
 verification path, not a `runs-on` label or an Actions job completion.
+In the HoBo checkout, `pnpm ci:attest fleet --local-signoff` applies that
+choice to a local run and publishes its covered statuses with `gh-signoff`.
 
 An account can offer its own development machine with `provider: "local"`,
 `backend: "gh-actions"`, `runsOn: "hobo-local-host"`, and `concurrency: 1`.

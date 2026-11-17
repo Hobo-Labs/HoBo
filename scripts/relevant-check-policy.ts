@@ -125,6 +125,7 @@ export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/merge-group-gate.test.ts",
 	"scripts/test/lint-actions-runner.test.ts",
 	"scripts/test/local-attest.test.ts",
+	"scripts/test/fleet-signoff.test.ts",
 ];
 
 const SIGNED_LOCAL_RUN_GUARDED = new Set([
@@ -136,6 +137,7 @@ const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	"scripts/ci/attestation.mts",
 	"scripts/ci/verify-attestation.mts",
 	"scripts/ci/local-attest.mts",
+	"scripts/ci/fleet-signoff.mts",
 	"scripts/ci/route-runner.mts",
 	// The route script loads it, so it is on the attested path too.
 	"scripts/ci/runner-routing.mts",
