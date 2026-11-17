@@ -1529,6 +1529,7 @@ export function createPromotionService(
 		toSetId: SetId | undefined,
 		scope: string,
 		ctx: CdContext,
+		strictCurrent = false,
 	): Promise<Outcome<SetRecord>> {
 		const current = await d.desired.current(campId);
 		if (!current)
@@ -1544,8 +1545,21 @@ export function createPromotionService(
 				],
 			};
 		// Compensation restores only the Set this promotion applied; a newer Set is not ours to undo.
-		if (expectedCurrent !== "" && current.setId !== expectedCurrent)
+		if (expectedCurrent !== "" && current.setId !== expectedCurrent) {
+			if (strictCurrent)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`the current Set changed while rollback ${scope} was being prepared`,
+							"Inspect and reconcile the current Set before retrying.",
+							campId,
+						),
+					],
+				};
 			return { ok: true, value: current };
+		}
 		const targetId = toSetId ?? current.predecessorSetId;
 		const target =
 			targetId === "" ? undefined : await d.desired.get(asSet(targetId));
@@ -2184,10 +2198,11 @@ export function createPromotionService(
 				}
 				const restored = await rollbackSet(
 					input.campId,
-					"",
+					current?.setId ?? "",
 					input.toSetId,
 					rollbackId,
 					ctx,
+					true,
 				);
 				if (!restored.ok) return restored;
 				restoredFreight = restored.value.freightId;
