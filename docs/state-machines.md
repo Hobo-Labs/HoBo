@@ -16,7 +16,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | Broker budget authority | [verify-broker-budget-authority](../.agents/skills/verify-broker-budget-authority/SKILL.md) | Holds account for liabilities; claimed work retains funding; signed settlement requires bound receiver and finance evidence. |
 | SQLite queue and outbox | [verify-outbox-lease](../.agents/skills/verify-outbox-lease/SKILL.md) | A stale delivery attempt cannot acknowledge a later attempt, even when lease IDs and fences repeat. |
 | Provider connections | [verify-connection-lifecycle](../.agents/skills/verify-connection-lifecycle/SKILL.md) | Revocation is terminal across commands and replay. |
-| Durable workflows | [verify-workflow-replay](../.agents/skills/verify-workflow-replay/SKILL.md) | Fresh runs claim identities; resume uses recorded context and terminal results. |
+| Durable workflows | [verify-workflow-replay](../.agents/skills/verify-workflow-replay/SKILL.md) | Fresh runs claim identities; resume uses recorded context and terminal results; replay checks the ordered sleep history. |
 | CI fleet capacity admission | [verify-ci-capacity](../.agents/skills/verify-ci-capacity/SKILL.md) | Stale capacity revisions are refused; revision exhaustion cannot wrap the wire counter. |
 | CI uncertain-runner capacity | [verify-ci-uncertain-capacity](../.agents/skills/verify-ci-uncertain-capacity/SKILL.md) | Uncertain slots retain capacity; confirmed recovery releases it once, under trusted teardown evidence. |
 | CI fleet effect delivery | [verify-ci-fleet-delivery](../.agents/skills/verify-ci-fleet-delivery/SKILL.md) | Fresh bounded delivery fences reject stale workers and ambiguous dispatch is not reissued. |
