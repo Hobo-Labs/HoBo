@@ -24,7 +24,6 @@ describe('configPersistence: areas', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  // ── parseAreaMappings ────────────────────────────────────────
 
   describe('parseAreaMappings', () => {
     it('returns empty object for non-object input (null, undefined, primitives)', () => {
@@ -82,7 +81,6 @@ describe('configPersistence: areas', () => {
     });
   });
 
-  // ── readConfig / writeConfig round-trip ──────────────────────
 
   describe('readConfig + writeConfig round-trip for area settings', () => {
     it('returns defaults (showAreas=false, areaMappings={}) when no config file exists', () => {
@@ -121,10 +119,8 @@ describe('configPersistence: areas', () => {
       );
 
       const cfg = readConfig();
-      // showAreas: 'yes please' is not a boolean → default false
       expect(cfg.vscode.showAreas).toBe(false);
       expect(cfg.vscode.areaMappings).toEqual({});
-      // showAreas: true is valid; areaMappings.frontend: 'broken' is not an array → dropped
       expect(cfg.standalone.showAreas).toBe(true);
       expect(cfg.standalone.areaMappings).toEqual({});
     });

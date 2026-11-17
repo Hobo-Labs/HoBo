@@ -1,6 +1,3 @@
-/**
- * Pure color conversion utilities — no external dependencies.
- */
 
 import { PNG_ALPHA_THRESHOLD } from './constants.js';
 

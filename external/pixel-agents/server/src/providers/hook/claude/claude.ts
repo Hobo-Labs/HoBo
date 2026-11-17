@@ -16,7 +16,6 @@ import {
 import { claudeTeamProvider } from './claudeTeamProvider.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from './constants.js';
 
-// ── formatToolStatus: moved from src/transcriptParser.ts ──
 
 export function formatToolStatus(toolName: string, input?: unknown): string {
   const inp = (input ?? {}) as Record<string, unknown>;
@@ -66,18 +65,13 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
   }
 }
 
-// ── Session dir + launch command ──
 
 function getSessionDirs(workspacePath: string): string[] {
-  // Claude stores sessions at ~/.claude/projects/<workspace-path-with-dashes>/.
   const dirName = normalizeProjectPath(workspacePath);
   const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
 
-  // Try exact match first.
   if (fs.existsSync(projectDir)) return [projectDir];
 
-  // Case-insensitive fallback for Windows: drive letter casing can differ
-  // between what VS Code gives us (e.g. "c:\...") and Claude's encoding ("C:\...").
   const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
   try {
     if (fs.existsSync(projectsRoot)) {
@@ -86,10 +80,8 @@ function getSessionDirs(workspacePath: string): string[] {
       if (match) return [path.join(projectsRoot, match)];
     }
   } catch {
-    /* ignore scan errors */
   }
 
-  // Return the expected path even if it doesn't exist yet (caller tolerates missing dirs).
   return [projectDir];
 }
 
@@ -103,22 +95,10 @@ function buildLaunchCommand(
   return { command: 'claude', args, env: { PWD: cwd } };
 }
 
-/** Root that holds every Claude session across all workspaces. Used by the
- *  global session scanner ("Watch All Sessions"). */
 function getAllSessionRoots(): string[] {
   return [path.join(os.homedir(), '.claude', 'projects')];
 }
 
-// ── normalizeHookEvent: the single Claude-specific normalization boundary ──
-//
-// All raw Claude hook payload fields (tool_name, tool_input, agent_type, etc.) are
-// read HERE and HERE ONLY. Downstream (hookEventHandler.ts) sees only the normalized
-// AgentEvent union.
-//
-// Sentinel 'current' toolIds are returned for PostToolUse/SubagentStop because the
-// raw hook payload doesn't carry the id; the handler correlates using its own
-// currentHookToolId state. Synthetic hook-* ids are returned for PreToolUse because
-// the real tool id arrives later via JSONL polling.
 
 function normalizeHookEvent(
   raw: Record<string, unknown>,
@@ -154,7 +134,6 @@ function normalizeHookEvent(
       return { sessionId, event: { kind: 'turnEnd' } };
 
     case 'UserPromptSubmit':
-      // No normalized kind for user prompts yet; silently ignore.
       return null;
 
     case 'SubagentStart': {
@@ -188,8 +167,6 @@ function normalizeHookEvent(
         return { sessionId, event: { kind: 'permissionRequest' } };
       }
       if (notificationType === 'idle_prompt') {
-        // idle_prompt = Claude went idle waiting on the user, not just a finished
-        // turn. awaitingInput drives the "Waiting for input" label (vs "Done" for Stop).
         return { sessionId, event: { kind: 'turnEnd', awaitingInput: true } };
       }
       return null;
@@ -215,9 +192,6 @@ function normalizeHookEvent(
         },
       };
 
-    // Agent Teams: a teammate went idle / marked a task complete. Normalize as
-    // `subagentTurnEnd` so the team handler can route by the provider's event-specific identity.
-    // `reason` discriminates the two so handlers don't read raw eventName.
     case 'TeammateIdle':
       return {
         sessionId,
@@ -229,14 +203,12 @@ function normalizeHookEvent(
         event: { kind: 'subagentTurnEnd', parentToolId: 'current', reason: 'completed' },
       };
 
-    // TaskCreated is informational; no AgentEvent shape fits it. Drop.
     case 'TaskCreated':
     default:
       return null;
   }
 }
 
-// ── Installer wrappers: adapt sync signatures to async interface ──
 
 function installHooks(_serverUrl: string, _authToken: string): Promise<void> {
   installerInstallHooks();
@@ -252,7 +224,6 @@ function areHooksInstalled(): Promise<boolean> {
   return Promise.resolve(installerAreHooksInstalled());
 }
 
-// ── The provider ──
 
 export const claudeProvider: HookProvider = {
   kind: 'hook',

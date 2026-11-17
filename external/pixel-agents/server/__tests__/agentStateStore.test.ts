@@ -172,7 +172,6 @@ describe('AgentStateStore', () => {
 
     it('persist without adapter is a no-op', () => {
       store.set(1, createTestAgent({ id: 1 }));
-      // Should not throw
       store.persist();
     });
 

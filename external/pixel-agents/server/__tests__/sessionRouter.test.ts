@@ -15,7 +15,6 @@ describe('SessionRouter', () => {
     vi.useRealTimers();
   });
 
-  // ── Session → Agent mapping ────────────────────────────────────────
 
   describe('session mapping', () => {
     it('register + resolve returns the agentId', () => {
@@ -40,7 +39,6 @@ describe('SessionRouter', () => {
     });
   });
 
-  // ── Pending external sessions ──────────────────────────────────────
 
   describe('pending external sessions', () => {
     const pending = { sessionId: 'sess-ext', transcriptPath: '/a/b.jsonl', cwd: '/a' };
@@ -65,7 +63,6 @@ describe('SessionRouter', () => {
     });
   });
 
-  // ── Event buffering ────────────────────────────────────────────────
 
   describe('event buffering', () => {
     it('bufferEvent stores events for later', () => {
@@ -98,20 +95,19 @@ describe('SessionRouter', () => {
 
     it('pruneExpired removes old events', () => {
       router.bufferEvent('claude', { session_id: 'sess-old', hook_event_name: 'Stop' });
-      vi.advanceTimersByTime(6_000); // > HOOK_EVENT_BUFFER_MS (5s)
+      vi.advanceTimersByTime(6_000);
       router.pruneExpired();
       expect(router.hasBuffered('sess-old')).toBe(false);
     });
 
     it('preserves recent events during prune', () => {
       router.bufferEvent('claude', { session_id: 'sess-new', hook_event_name: 'Stop' });
-      vi.advanceTimersByTime(1_000); // < HOOK_EVENT_BUFFER_MS
+      vi.advanceTimersByTime(1_000);
       router.pruneExpired();
       expect(router.hasBuffered('sess-new')).toBe(true);
     });
   });
 
-  // ── Lifecycle ──────────────────────────────────────────────────────
 
   describe('dispose', () => {
     it('clears all state', () => {

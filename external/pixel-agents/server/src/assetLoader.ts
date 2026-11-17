@@ -1,9 +1,3 @@
-/**
- * Asset Loader - Loads furniture assets from per-folder manifests
- *
- * Scans assets/furniture/ subdirectories, reads each manifest.json,
- * and loads all PNG files into SpriteData format for use in the webview.
- */
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -44,7 +38,7 @@ export type { FurnitureAsset };
 
 export interface LoadedAssets {
   catalog: FurnitureAsset[];
-  sprites: Map<string, string[][]>; // assetId -> SpriteData
+  sprites: Map<string, string[][]>;
 }
 
 export function mergeLoadedAssets(a: LoadedAssets, b: LoadedAssets): LoadedAssets {
@@ -56,9 +50,6 @@ export function mergeLoadedAssets(a: LoadedAssets, b: LoadedAssets): LoadedAsset
   };
 }
 
-/**
- * Load furniture assets from per-folder manifests
- */
 export async function loadFurnitureAssets(workspaceRoot: string): Promise<LoadedAssets | null> {
   try {
     console.log(`[AssetLoader] workspaceRoot received: "${workspaceRoot}"`);
@@ -96,7 +87,6 @@ export async function loadFurnitureAssets(workspaceRoot: string): Promise<Loaded
         const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
         const manifest = JSON.parse(manifestContent) as FurnitureManifest;
 
-        // Build the inherited props from the root manifest
         const inherited: InheritedProps = {
           groupId: manifest.id,
           name: manifest.name,
@@ -109,7 +99,6 @@ export async function loadFurnitureAssets(workspaceRoot: string): Promise<Loaded
         let assets: FurnitureAsset[];
 
         if (manifest.type === 'asset') {
-          // Single asset manifest (no groups) — file defaults to {id}.png
           assets = [
             {
               id: manifest.id,
@@ -129,7 +118,6 @@ export async function loadFurnitureAssets(workspaceRoot: string): Promise<Loaded
             },
           ];
         } else {
-          // Group manifest — flatten recursively
           if (manifest.rotationScheme) {
             inherited.rotationScheme = manifest.rotationScheme;
           }
@@ -142,7 +130,6 @@ export async function loadFurnitureAssets(workspaceRoot: string): Promise<Loaded
           assets = flattenManifest(rootGroup, inherited);
         }
 
-        // Load PNGs for each asset
         for (const asset of assets) {
           try {
             const assetPath = path.join(itemDir, asset.file);
@@ -192,18 +179,10 @@ export async function loadFurnitureAssets(workspaceRoot: string): Promise<Loaded
   }
 }
 
-// ── Default layout loading ───────────────────────────────────
 
-/**
- * Load the bundled default layout with the highest revision.
- * Scans for assets/default-layout-{N}.json files and picks the one
- * with the largest N. Falls back to assets/default-layout.json for
- * backward compatibility.
- */
 export function loadDefaultLayout(assetsRoot: string): Record<string, unknown> | null {
   const assetsDir = path.join(assetsRoot, 'assets');
   try {
-    // Scan for versioned default layouts: default-layout-{N}.json
     let bestRevision = 0;
     let bestPath: string | null = null;
 
@@ -220,7 +199,6 @@ export function loadDefaultLayout(assetsRoot: string): Record<string, unknown> |
       }
     }
 
-    // Fall back to unversioned default-layout.json
     if (!bestPath) {
       const fallback = path.join(assetsDir, 'default-layout.json');
       if (fs.existsSync(fallback)) {
@@ -235,7 +213,6 @@ export function loadDefaultLayout(assetsRoot: string): Record<string, unknown> |
 
     const content = fs.readFileSync(bestPath, 'utf-8');
     const layout = JSON.parse(content) as Record<string, unknown>;
-    // Ensure layoutRevision matches the file's revision number
     if (bestRevision > 0 && !layout[LAYOUT_REVISION_KEY]) {
       layout[LAYOUT_REVISION_KEY] = bestRevision;
     }
@@ -251,18 +228,11 @@ export function loadDefaultLayout(assetsRoot: string): Record<string, unknown> |
   }
 }
 
-// ── Wall tile loading ────────────────────────────────────────
 
 interface LoadedWallTiles {
-  /** Array of wall sets, each containing 16 sprites indexed by bitmask (N=1,E=2,S=4,W=8) */
   sets: string[][][][];
 }
 
-/**
- * Load wall tile sets from assets/walls/ folder.
- * Each file is named wall_N.png (e.g. wall_0.png, wall_1.png, ...).
- * Files are loaded in numeric order; each PNG is a 64×128 grid of 16 bitmask pieces.
- */
 export async function loadWallTiles(assetsRoot: string): Promise<LoadedWallTiles | null> {
   try {
     const wallsDir = path.join(assetsRoot, 'assets', 'walls');
@@ -273,7 +243,6 @@ export async function loadWallTiles(assetsRoot: string): Promise<LoadedWallTiles
 
     console.log('[AssetLoader] Loading wall tiles from:', wallsDir);
 
-    // Find all wall_N.png files and sort by index
     const entries = fs.readdirSync(wallsDir);
     const wallFiles: { index: number; filename: string }[] = [];
     for (const entry of entries) {
@@ -310,9 +279,6 @@ export async function loadWallTiles(assetsRoot: string): Promise<LoadedWallTiles
   }
 }
 
-/**
- * Send wall tiles to webview
- */
 export function sendWallTilesToWebview(webview: vscode.Webview, wallTiles: LoadedWallTiles): void {
   webview.postMessage({
     type: 'wallTilesLoaded',
@@ -321,24 +287,11 @@ export function sendWallTilesToWebview(webview: vscode.Webview, wallTiles: Loade
   console.log(`📤 Sent ${wallTiles.sets.length} wall tile set(s) to webview`);
 }
 
-// ── Carpet tile loading ─────────────────────────────────────
 
 export interface LoadedCarpetTiles {
-  /**
-   * Carpet sprite sets indexed [variant][msCase][row][col].
-   *   variant: PNG file index (sorted numerically by carpet_N.png suffix)
-   *   msCase:  marching-squares case 0..15
-   *   row/col: pixel coordinates within the 16×16 sprite
-   */
   sets: string[][][][];
 }
 
-/**
- * Load all carpet auto-tile PNGs from <assetsRoot>/assets/carpets/.
- * Scans for files named `carpet_N.png`, sorts numerically by N, parses each
- * via parseCarpetPng. Returns null if the directory is missing or contains
- * no matching files. Mirrors loadWallTiles structurally.
- */
 export async function loadCarpetTiles(assetsRoot: string): Promise<LoadedCarpetTiles | null> {
   try {
     const carpetsDir = path.join(assetsRoot, 'assets', 'carpets');
@@ -383,10 +336,6 @@ export async function loadCarpetTiles(assetsRoot: string): Promise<LoadedCarpetT
   }
 }
 
-/**
- * Send carpet tiles to webview (VS Code adapter convenience). The standalone
- * WebSocket path sends from clientMessageHandler.ts using AssetCache.carpetTiles.
- */
 export function sendCarpetTilesToWebview(
   webview: vscode.Webview,
   carpetTiles: LoadedCarpetTiles,
@@ -399,14 +348,9 @@ export function sendCarpetTilesToWebview(
 }
 
 interface LoadedFloorTiles {
-  sprites: string[][][]; // N sprites (one per floor_N.png), each 16x16 SpriteData
+  sprites: string[][][];
 }
 
-/**
- * Load floor tile patterns from assets/floors/ folder.
- * Each file is named floor_N.png (e.g. floor_0.png, floor_1.png, ...).
- * Files are loaded in numeric order; each PNG is a 16×16 grayscale tile.
- */
 export async function loadFloorTiles(assetsRoot: string): Promise<LoadedFloorTiles | null> {
   try {
     const floorsDir = path.join(assetsRoot, 'assets', 'floors');
@@ -417,7 +361,6 @@ export async function loadFloorTiles(assetsRoot: string): Promise<LoadedFloorTil
 
     console.log('[AssetLoader] Loading floor tiles from:', floorsDir);
 
-    // Find all floor_N.png files and sort by index
     const entries = fs.readdirSync(floorsDir);
     const floorFiles: { index: number; filename: string }[] = [];
     for (const entry of entries) {
@@ -452,9 +395,6 @@ export async function loadFloorTiles(assetsRoot: string): Promise<LoadedFloorTil
   }
 }
 
-/**
- * Send floor tiles to webview
- */
 export function sendFloorTilesToWebview(
   webview: vscode.Webview,
   floorTiles: LoadedFloorTiles,
@@ -466,10 +406,8 @@ export function sendFloorTilesToWebview(
   console.log(`📤 Sent ${floorTiles.sprites.length} floor tile patterns to webview`);
 }
 
-// ── Character sprite loading ────────────────────────────────
 
 export interface LoadedCharacterSprites {
-  /** Pre-colored characters, each with 7 frames per direction */
   characters: CharacterDirectionSprites[];
 }
 
@@ -480,10 +418,6 @@ export function mergeCharacterSprites(
   return { characters: [...a.characters, ...b.characters] };
 }
 
-/**
- * Load pre-colored character sprites from assets/characters/ (6 PNGs, each 112×96).
- * Each PNG has 3 direction rows (down, up, right) × 7 frames (16×32 each).
- */
 export async function loadCharacterSprites(
   assetsRoot: string,
 ): Promise<LoadedCharacterSprites | null> {
@@ -514,11 +448,6 @@ export async function loadCharacterSprites(
   }
 }
 
-/**
- * Load character sprites from an external asset directory.
- * Scans assets/characters/ for char_N.png files (any N, sorted numerically).
- * Returns null if no characters found.
- */
 export async function loadExternalCharacterSprites(
   externalRoot: string,
 ): Promise<LoadedCharacterSprites | null> {
@@ -578,9 +507,6 @@ export async function loadExternalCharacterSprites(
   }
 }
 
-/**
- * Send character sprites to webview
- */
 export function sendCharacterSpritesToWebview(
   webview: vscode.Webview,
   charSprites: LoadedCharacterSprites,
@@ -592,9 +518,6 @@ export function sendCharacterSpritesToWebview(
   console.log(`📤 Sent ${charSprites.characters.length} character sprites to webview`);
 }
 
-/**
- * Send loaded assets to webview
- */
 export function sendAssetsToWebview(webview: vscode.Webview, assets: LoadedAssets): void {
   if (!assets) {
     console.log('[AssetLoader] ⚠️  No assets to send');
@@ -602,7 +525,6 @@ export function sendAssetsToWebview(webview: vscode.Webview, assets: LoadedAsset
   }
 
   console.log('[AssetLoader] Converting sprites Map to object...');
-  // Convert sprites Map to plain object for JSON serialization
   const spritesObj: Record<string, string[][]> = {};
   for (const [id, spriteData] of assets.sprites) {
     spritesObj[id] = spriteData;
@@ -620,19 +542,12 @@ export function sendAssetsToWebview(webview: vscode.Webview, assets: LoadedAsset
   console.log(`📤 Sent ${assets.catalog.length} furniture assets to webview`);
 }
 
-// ── Pet sprite loading ──────────────────────────────────────
 
 export interface LoadedPetSprites {
-  /** Decoded pet spritesheets, one per pet, sorted by manifest directory name. */
   pets: PetSpriteFrames[];
-  /** Manifest data parallel-indexed to `pets`. Names are broadcast to the webview. */
   manifests: PetManifest[];
 }
 
-/**
- * Merge two sets of loaded pet sprites (e.g., bundled + external).
- * External pets are appended after bundled; webview maps by `petType` (array index).
- */
 export function mergePetSprites(a: LoadedPetSprites, b: LoadedPetSprites): LoadedPetSprites {
   return {
     pets: [...a.pets, ...b.pets],
@@ -640,13 +555,6 @@ export function mergePetSprites(a: LoadedPetSprites, b: LoadedPetSprites): Loade
   };
 }
 
-/**
- * Load bundled pet sprites from `<assetsRoot>/assets/pets/<id>/{manifest.json,pet.png}`.
- *
- * Each subdirectory MUST contain BOTH `manifest.json` and `pet.png`. Subdirectories
- * are sorted alphabetically for deterministic broadcast order. Returns `null` when
- * the directory is missing or no valid pets were loaded.
- */
 export async function loadPetSprites(assetsRoot: string): Promise<LoadedPetSprites | null> {
   try {
     const petDir = path.join(assetsRoot, 'assets', 'pets');
@@ -663,7 +571,6 @@ export async function loadPetSprites(assetsRoot: string): Promise<LoadedPetSprit
           petDirs.push(entry);
         }
       } catch {
-        // unreadable entry — skip silently
       }
     }
     petDirs.sort();
@@ -730,12 +637,6 @@ export async function loadPetSprites(assetsRoot: string): Promise<LoadedPetSprit
   }
 }
 
-/**
- * Load pet sprites from an external asset directory.
- *
- * Same scanning rules as {@link loadPetSprites}, against `<externalRoot>/assets/pets/`.
- * Returns `null` when the directory is missing or no valid pets were loaded.
- */
 export async function loadExternalPetSprites(
   externalRoot: string,
 ): Promise<LoadedPetSprites | null> {
@@ -754,7 +655,6 @@ export async function loadExternalPetSprites(
           petDirs.push(entry);
         }
       } catch {
-        // unreadable entry — skip silently
       }
     }
     petDirs.sort();
@@ -827,13 +727,6 @@ export async function loadExternalPetSprites(
   }
 }
 
-/**
- * Send pet sprites to webview.
- *
- * Wire format: parallel arrays `pets[i]` (frame data) and `petNames[i]` (display
- * names from manifest.json). Manifest IDs are dropped — the webview indexes by
- * `petType: number`.
- */
 export function sendPetSpritesToWebview(
   webview: vscode.Webview,
   petSprites: LoadedPetSprites,

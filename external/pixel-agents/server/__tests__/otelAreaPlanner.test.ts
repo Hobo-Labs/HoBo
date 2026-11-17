@@ -12,7 +12,6 @@ import {
 } from '../src/providers/otel/areaPlanner.js';
 import { TILE_FLOOR_1, TILE_WALL } from '../src/providers/otel/constants.js';
 
-/** Minimal furniture catalog: one desk (3x2, front) + one chair (1x2, back). */
 function testCatalog(): FurnitureAsset[] {
   return [
     {
@@ -47,7 +46,6 @@ function testCatalog(): FurnitureAsset[] {
   ];
 }
 
-/** Flat empty office: wall border, floor inside, no furniture. */
 function emptyLayout(cols: number, rows: number): OfficeLayoutLike {
   const tiles: number[] = [];
   for (let r = 0; r < rows; r++) {
@@ -59,7 +57,6 @@ function emptyLayout(cols: number, rows: number): OfficeLayoutLike {
   return { version: 1, cols, rows, tiles, furniture: [] };
 }
 
-/** All grid indices labeled with `label`. */
 function labeledIndices(layout: OfficeLayoutLike, label: string): number[] {
   const out: number[] = [];
   layout.areaTiles?.forEach((t, i) => {
@@ -68,7 +65,6 @@ function labeledIndices(layout: OfficeLayoutLike, label: string): number[] {
   return out;
 }
 
-/** 4-connected components over a set of grid indices. */
 function components(layout: OfficeLayoutLike, indices: number[]): number {
   const set = new Set(indices);
   const seen = new Set<number>();
@@ -133,9 +129,7 @@ describe('ensureCampArea — room allocation', () => {
 
     const labeled = labeledIndices(layout, 'payments');
     expect(labeled.length).toBeGreaterThan(0);
-    // Contiguity: exactly one connected component.
     expect(components(layout, labeled)).toBe(1);
-    // Enclosure: analyzer sees a valid room (≤2 leak adjacencies = the door).
     expect(analyzeCampRoom(layout, 'payments').kind).toBe('valid');
   });
 
@@ -150,20 +144,17 @@ describe('ensureCampArea — room allocation', () => {
     const maxC = Math.max(...cols);
     const wallRow = minR - 1;
 
-    // The wall line directly above the labeled interior: all WALL except the door.
     const doorTiles: number[] = [];
     for (let c = minC - 1; c <= maxC + 1; c++) {
       const t = layout.tiles[wallRow * layout.cols + c];
       if (t === TILE_WALL) continue;
       expect(t).toBe(TILE_FLOOR_1);
-      // Door tiles are floor but stay unlabeled (editor convention).
       expect(layout.areaTiles?.[wallRow * layout.cols + c] ?? null).toBeNull();
       doorTiles.push(c);
     }
     expect(doorTiles.length).toBeGreaterThanOrEqual(1);
     expect(doorTiles.length).toBeLessThanOrEqual(2);
 
-    // Side + bottom walls fully enclose the interior.
     for (let r = minR; r <= maxR; r++) {
       expect(layout.tiles[r * layout.cols + (minC - 1)]).toBe(TILE_WALL);
       expect(layout.tiles[r * layout.cols + (maxC + 1)]).toBe(TILE_WALL);
@@ -178,7 +169,7 @@ describe('ensureCampArea — room allocation', () => {
     const chairs = chairsOf(layout, 'payments');
     expect(chairs).toHaveLength(3);
     for (const chair of chairs) {
-      const seatRow = chair.row + 1; // backgroundTiles: 1 → seat on bottom row
+      const seatRow = chair.row + 1;
       expect(layout.areaTiles?.[seatRow * layout.cols + chair.col]).toBe('payments');
       expect(layout.tiles[seatRow * layout.cols + chair.col]).not.toBe(TILE_WALL);
     }
@@ -195,7 +186,6 @@ describe('ensureCampArea — room allocation', () => {
     expect(components(layout, [...payments])).toBe(1);
     expect(components(layout, [...search])).toBe(1);
 
-    // Separation: no labeled tile of one camp is directly adjacent to the other.
     for (const idx of payments) {
       const c = idx % layout.cols;
       const r = Math.floor(idx / layout.cols);
@@ -220,7 +210,6 @@ describe('ensureCampArea — room allocation', () => {
   });
 
   it('fills spare capacity in place without moving existing chairs', () => {
-    // Room for 1 seat has capacity 2 → the 2nd bindle fills the spare cell.
     const first = ensureCampArea(emptyLayout(24, 24), 'payments', 1, testCatalog());
     const grown = ensureCampArea(first.layout, 'payments', 2, testCatalog());
     expect(grown.seats).toBe(2);
@@ -239,7 +228,6 @@ describe('ensureCampArea — room allocation', () => {
     expect(grown.changed).toBe(true);
     expect(grown.seats).toBe(4);
 
-    // Still exactly one contiguous enclosed room, all chairs inside it.
     expect(components(grown.layout, labeledIndices(grown.layout, 'payments'))).toBe(1);
     expect(analyzeCampRoom(grown.layout, 'payments').kind).toBe('valid');
     const chairs = chairsOf(grown.layout, 'payments');
@@ -254,14 +242,12 @@ describe('ensureCampArea — room allocation', () => {
         'payments',
       );
     }
-    // The old room's wall ring was reverted to floor (no dead walled room left).
     const firstBbox = (() => {
       const idxs = labeledIndices(first.layout, 'payments');
       const rs = idxs.map((i) => Math.floor(i / first.layout.cols));
       return { minR: Math.min(...rs), maxR: Math.max(...rs) };
     })();
     if (!labeledIndices(grown.layout, 'payments').some((i) => Math.floor(i / grown.layout.cols) === firstBbox.minR)) {
-      // room moved away entirely: old wall rows must be floor again
       for (let r = firstBbox.minR - 1; r <= firstBbox.maxR + 1; r++) {
         for (let c = 0; c < grown.layout.cols; c++) {
           expect(grown.layout.tiles[r * grown.layout.cols + c]).not.toBe(TILE_WALL);
@@ -279,10 +265,6 @@ describe('ensureCampArea — room allocation', () => {
 });
 
 describe('ensureCampArea — migration of fragmented/unenclosed rooms', () => {
-  /**
-   * Mimics the pre-fix persisted layout: the camp's label splattered over two
-   * disjoint floor regions, no wall ring, OTel workstations scattered.
-   */
   function fragmentedFixture(): OfficeLayoutLike {
     const layout = emptyLayout(21, 34);
     layout.areaTiles = new Array<string | null>(layout.tiles.length).fill(null);
@@ -293,8 +275,8 @@ describe('ensureCampArea — migration of fragmented/unenclosed rooms', () => {
         }
       }
     };
-    paint(16, 22, 4, 5); // region A (like the bug report's cols 16-19 rows 22-26)
-    paint(0, 27, 4, 5); // region B, disjoint
+    paint(16, 22, 4, 5);
+    paint(0, 27, 4, 5);
     layout.areas = [{ label: 'payments', color: areaColorForName('payments') }];
     layout.furniture.push(
       { uid: 'otel-payments-ws0-desk', type: 'DESK_FRONT', col: 16, row: 22 },
@@ -310,7 +292,6 @@ describe('ensureCampArea — migration of fragmented/unenclosed rooms', () => {
     const status = analyzeCampRoom(layout, 'payments');
     expect(status.kind).toBe('fragmented');
 
-    // Single contiguous but wall-less region → unenclosed.
     const flat = emptyLayout(21, 20);
     flat.areaTiles = new Array<string | null>(flat.tiles.length).fill(null);
     for (let r = 5; r < 10; r++) {
@@ -326,13 +307,12 @@ describe('ensureCampArea — migration of fragmented/unenclosed rooms', () => {
       migrate: true,
     });
     expect(changed).toBe(true);
-    expect(seats).toBe(2); // seat count preserved
+    expect(seats).toBe(2);
 
     const labeled = labeledIndices(layout, 'payments');
     expect(components(layout, labeled)).toBe(1);
     expect(analyzeCampRoom(layout, 'payments').kind).toBe('valid');
 
-    // Chairs were relocated into the new enclosed room.
     for (const chair of chairsOf(layout, 'payments')) {
       const seatRow = chair.row + 1;
       expect(layout.areaTiles?.[seatRow * layout.cols + chair.col]).toBe('payments');
@@ -359,7 +339,6 @@ describe('ensureCampArea — migration of fragmented/unenclosed rooms', () => {
       migrate: true,
     });
     expect(note).toMatch(/user area/);
-    // Labels unchanged (area definition may be re-added, but tiles stay).
     expect(labeledIndices(layout, 'payments').length).toBe(25);
     expect(layout.furniture).toHaveLength(0);
     expect(changed).toBe(false);

@@ -82,7 +82,6 @@ describe('buildAgentDiagnostics', () => {
       ].sort(),
     );
     expect(entry.id).toBe(7);
-    // jsonlExists + fileSize are coupled (one statSync); fileSize is the real byte length.
     expect(entry.jsonlExists).toBe(true);
     expect(entry.fileSize).toBe(Buffer.byteLength(FILE_CONTENTS));
     expect(entry.projectDirExists).toBe(true);
@@ -110,7 +109,6 @@ describe('buildAgentDiagnostics', () => {
     expect(entry.jsonlExists).toBe(false);
     expect(entry.fileSize).toBe(0);
     expect(entry.projectDirExists).toBe(false);
-    // 0 is a meaningful "never" sentinel — must NOT be coerced.
     expect(entry.lastDataAt).toBe(0);
   });
 

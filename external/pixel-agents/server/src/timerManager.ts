@@ -10,9 +10,6 @@ export function clearAgentActivity(
 ): void {
   if (!agent) return;
 
-  // Preserve background agent tools — only clear foreground state.
-  // The subagent maps are keyed by parentToolId; deleting a non-parent key is a
-  // safe no-op, so no tool-name check is needed here.
   if (agent.backgroundAgentToolIds.size > 0) {
     for (const toolId of agent.activeToolIds) {
       if (agent.backgroundAgentToolIds.has(toolId)) continue;
@@ -34,7 +31,6 @@ export function clearAgentActivity(
   agent.permissionSent = false;
   cancelPermissionTimer(agentId, permissionTimers);
   agents.broadcast({ type: 'agentToolsClear', id: agentId });
-  // Re-send background agent tools so webview re-creates their sub-agents
   for (const toolId of agent.backgroundAgentToolIds) {
     const status = agent.activeToolStatuses.get(toolId);
     if (status) {
@@ -77,8 +73,6 @@ export function startWaitingTimer(
       type: 'agentStatus',
       id: agentId,
       status: 'waiting',
-      // Heuristic text-idle timer: the turn ended without a clear idle signal,
-      // so this is "Done", not "Waiting for input".
       awaitingInput: false,
     });
   }, delayMs);
@@ -108,7 +102,6 @@ export function startPermissionTimer(
     const agent = agents.get(agentId);
     if (!agent) return;
 
-    // Only flag if there are still active non-exempt tools (parent or sub-agent)
     let hasNonExempt = false;
     for (const toolId of agent.activeToolIds) {
       const toolName = agent.activeToolNames.get(toolId);
@@ -118,7 +111,6 @@ export function startPermissionTimer(
       }
     }
 
-    // Check sub-agent tools for non-exempt tools
     const stuckSubagentParentToolIds: string[] = [];
     for (const [parentToolId, subToolNames] of agent.activeSubagentToolNames) {
       for (const [, toolName] of subToolNames) {
@@ -137,7 +129,6 @@ export function startPermissionTimer(
         type: 'agentToolPermission',
         id: agentId,
       });
-      // Also notify stuck sub-agents
       for (const parentToolId of stuckSubagentParentToolIds) {
         agents.broadcast({
           type: 'subagentToolPermission',

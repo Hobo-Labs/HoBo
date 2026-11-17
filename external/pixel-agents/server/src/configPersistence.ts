@@ -15,7 +15,6 @@ export interface AdapterSettings {
   areaMappings: Record<string, string[]>;
 }
 
-/** All keys in AdapterSettings. Used by adapters to map `pixel-agents.foo` → `foo`. */
 export const ADAPTER_SETTING_KEYS = [
   'soundEnabled',
   'lastSeenVersion',
@@ -29,7 +28,6 @@ export const ADAPTER_SETTING_KEYS = [
 
 export type AdapterSettingKey = (typeof ADAPTER_SETTING_KEYS)[number];
 
-/** Namespaces = adapter identities sharing the same config.json file. */
 export type ConfigNamespace = 'vscode' | 'standalone';
 
 export interface PixelAgentsConfig {
@@ -53,12 +51,6 @@ function getConfigFilePath(): string {
   return path.join(os.homedir(), LAYOUT_FILE_DIR, CONFIG_FILE_NAME);
 }
 
-/**
- * Coerce a loose object into `Record<string, string[]>`, dropping any entries
- * whose value is not an array of strings. Returns `{}` if the input isn't an
- * object. Used to defensively load folder→area mappings from config.json,
- * which may have been hand-edited or written by an older build.
- */
 export function parseAreaMappings(raw: unknown): Record<string, string[]> {
   if (!raw || typeof raw !== 'object') {
     return {};
@@ -77,7 +69,6 @@ export function parseAreaMappings(raw: unknown): Record<string, string[]> {
   return out;
 }
 
-/** Coerce a loose object into a valid AdapterSettings with defaults for missing/wrong-typed fields. */
 function parseAdapterSettings(raw: unknown): AdapterSettings {
   const obj = (raw && typeof raw === 'object' ? raw : {}) as Partial<AdapterSettings>;
   return {

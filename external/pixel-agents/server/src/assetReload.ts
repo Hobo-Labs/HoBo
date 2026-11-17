@@ -15,17 +15,6 @@ import {
 } from './assetLoader.js';
 import type { AssetCache } from './clientMessageHandler.js';
 
-/**
- * Shared asset-loading helpers used by BOTH the VS Code adapter and the
- * standalone server, so external asset directories behave identically across
- * surfaces (no copy-paste of the load+merge loops).
- *
- * Asymmetry preserved deliberately: the bundled root uses the canonical loaders
- * (`loadCharacterSprites`/`loadPetSprites`), while external directories use the
- * flexible scanners (`loadExternalCharacterSprites`/`loadExternalPetSprites`).
- * Furniture uses `loadFurnitureAssets` for both. Callers pass `externalDirs`
- * (read from config) so these helpers stay pure and reusable.
- */
 export async function loadAllFurniture(
   assetsRoot: string,
   externalDirs: string[],
@@ -68,13 +57,6 @@ export async function loadAllPets(
   return pets;
 }
 
-/**
- * Build the full in-memory asset cache for the standalone server. External
- * directories contribute characters, pets, and furniture; floor/wall/carpet
- * tiles are bundled-only. Reproduces the wrap/unwrap shape `AssetCache` expects:
- * characters/pets/furniture are wrapper objects, while floor/wall/carpet are the
- * unwrapped sprite arrays.
- */
 export async function buildAssetCache(
   distRoot: string,
   externalDirs: string[],
