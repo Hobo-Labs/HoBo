@@ -39,7 +39,7 @@ export type CowTier = "reflink" | "overlayfs" | "hardlink" | "copy";
 /**
  * Behaviours a caller may depend on.
  *
- * `hobo-code` composes commands that only work against a sidecar which quotes
+ * A caller composes commands that only work against a sidecar which quotes
  * its argv vector and marks the namespace. Both arrived after the first
  * release, and a sidecar found on PATH may predate them — silently, since the
  * older one accepts the same flags and simply mangles them. Advertising the

@@ -233,7 +233,7 @@ describe("applyPatternPlan into an empty tree", () => {
 		expect(receipt.idempotent).toBe(false);
 		expect(receipt.reasonCode).toBe("applied-isolation");
 		expect(receipt.promotionRequired).toBe(true);
-		expect(receipt.promotionRef).toBe("hobo-code promote");
+		expect(receipt.promotionRef).toBe("caller-promotes");
 	});
 
 	it("is idempotent on a second run", () => {

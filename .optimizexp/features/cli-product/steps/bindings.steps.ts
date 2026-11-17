@@ -16,7 +16,6 @@ import {
   assertStdoutMatches,
   markEvidenceCapturable,
   runHoboCli,
-  runHoboCodeCli,
   runHoboComposedCli,
   setFeatureContext,
   setPersona,
@@ -60,13 +59,6 @@ When(
   "I run the composed hobo CLI with arguments {string}",
   function (this: OptimizexpWorld, args: string) {
     runHoboComposedCli(w(this), args);
-  },
-);
-
-When(
-  "I run the hobo-code CLI with arguments {string}",
-  function (this: OptimizexpWorld, args: string) {
-    runHoboCodeCli(w(this), args);
   },
 );
 

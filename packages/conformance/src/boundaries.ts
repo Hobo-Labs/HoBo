@@ -209,7 +209,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/broker",
 	"packages/mcp",
 	"packages/training-pipeline",
-	"packages/code",
 	"packages/ci-guard",
 	"packages/control-api",
 	"packages/control-yard",
@@ -223,7 +222,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/evals",
 	"packages/fuzz",
 	"packages/patterns",
-	"packages/pixel-village",
 	"packages/registry",
 	"packages/dispatcher",
 	"packages/rift",
@@ -250,11 +248,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	// projects station/project/bindle state into a page and reaches nothing
 	// below core.
 	"packages/status-page",
-	// Example Bindles vendored under the hobo-code harness. They consume
-	// adapters and bindles like any application would, so they classify as
-	// ordinary workspace packages rather than a new tier.
-	"packages/code/examples/barebones",
-	"packages/code/examples/hello-world",
 	// Pre-registered before the directories exist. This set is never asserted
 	// against the filesystem, and registering ahead of creation is the point:
 	// an unclassified workspace path makes `parseWorkspaceEdge` *throw*, which

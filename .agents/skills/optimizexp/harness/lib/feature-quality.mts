@@ -52,7 +52,7 @@ export function checkRubberduckDoc(experienceMd: string): RubberduckResult {
 		problems.push("rubber-duck answers too short (<280 non-space chars)");
 	}
 	// Must mention a command-like token
-	if (!/`[^`]+`/.test(experienceMd) && !/\bhobo-code\b|\b[a-z]-code\b/i.test(experienceMd)) {
+	if (!/`[^`]+`/.test(experienceMd) && !/\bhobo\b|\b[a-z]-code\b/i.test(experienceMd)) {
 		problems.push("EXPERIENCE.md must quote an entry command in backticks or name the binary");
 	}
 	if (!/accept|revise|reject/i.test(experienceMd)) {
@@ -119,7 +119,7 @@ export function checkGherkinQuality(featureDir: string): GherkinQualityResult {
 			const concreteThen =
 				/Then (?:the |I (?:see|get|receive) |stdout|help |panel|error |exit)/i.test(
 					text,
-				) || /Then .{10,}(?:◈|hobo-code|not stock|remediation|verb)/i.test(text);
+				) || /Then .{10,}(?:◈|not stock|remediation|verb)/i.test(text);
 			if (!concreteThen && !hasConcrete) {
 				problems.push(
 					`${f}: Then steps too generic (clear status only) without observable chrome asserts`,
@@ -236,7 +236,7 @@ Feature: ${input.title} (${input.personaName}${roleLabel})
   Scenario: Cold-start bare TTY shows product discoverability for ${input.personaId}${roleLabel}
     Given I am on the critical path described by the feature seed
     When I start bare TTY \`${input.bin}\`
-    Then stdout or session chrome mentions hobo-code or product discoverability
+    Then stdout or session chrome mentions the product or its discoverability
     And I do not only see stock third-party agent branding
     And evidence is capturable for this scenario
 
@@ -342,7 +342,7 @@ export type ScenarioBindingResult = {
 
 /**
  * A product-scoped feature must actually exercise the product. Personas used
- * to be filename decoration: a hobo-code feature could ship scenarios that
+ * to be filename decoration: a product feature could ship scenarios that
  * only ran `pnpm` repo scripts and still certify. When the owning project
  * declares its `productBinary`, every `.feature` file and the feature.json
  * `primaryCommand` must reference it.

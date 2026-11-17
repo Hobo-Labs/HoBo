@@ -213,7 +213,7 @@ packages/
   identity/          @hobo/identity     SVID issuance, OIDC provider, token broker
   mcp/               @hobo/mcp          MCP server exposing HoBo to agents
   agent-skills/ ✱    @hobo/agent-skills skills the Operator Agents (the Crew) + external MCP agents compose          [Plan 40]
-  hobo-code/ ✱       @hobo/hobo-code    the Hobo Code DSL (today: `packages/code` = the hobo-code coding harness) — token-efficient IR for codegen + platform config         [Plan 21]
+  hobo-code/ ✱       @hobo/hobo-code    the Hobo Code DSL — token-efficient IR for codegen + platform config         [Plan 21]
   conformance/       @hobo/conformance  port contract test suites (shared by all adapters)
   contracts/         @hobo/contracts    HoBo Contract IR + compatibility/can-deploy engine (built-in)  [Plan 29]
   policy/            @hobo/policy        policy decision model + built-in TypeScript engine + residency policy pack + control→evidence packs (ADR-0146)  [Plan 29]

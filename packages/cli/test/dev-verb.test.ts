@@ -11,7 +11,7 @@ import {
 	createLocalStreamer,
 	createRuntimeLocalComponentHost,
 } from "@hobo/runtime-local";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
 	createDevCommand,
@@ -280,45 +280,6 @@ describe("hobo dev boots a runtime-local Camp offline", () => {
 			expect(result.exitCode).toBe(0);
 			expect(once).toBe(true);
 			expect(waited).toBe(false);
-		});
-	});
-
-	it("keeps a hobo-code bridged Yard alive even when stdio is piped", async () => {
-		await withProject(async (cwd) => {
-			vi.stubEnv("HOBO_CODE_DEV_BRIDGE", "1");
-			let once: boolean | undefined;
-			let waited = false;
-			try {
-				const cli = createHoboCli({
-					commands: {
-						dev: createDevCommand({
-							serveProject: async (input) => {
-								once = input.once;
-								return {
-									primaryUrl: "http://127.0.0.1:4173/",
-									bindleName: "hello",
-									campId: "camp-local",
-									yardName: "local",
-									providerId: "bare-metal",
-									endpoints: [],
-									serviceDiscovery: {},
-									probe: { status: 200, body: "ok" },
-									close: async () => {},
-									waitUntilStopped: async () => {
-										waited = true;
-									},
-								};
-							},
-						}),
-					},
-				});
-				const result = await cli.run(["dev"], { cwd });
-				expect(result.exitCode).toBe(0);
-				expect(once).toBe(false);
-				expect(waited).toBe(true);
-			} finally {
-				vi.unstubAllEnvs();
-			}
 		});
 	});
 });

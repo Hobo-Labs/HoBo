@@ -9,8 +9,8 @@ CLI shape (`init`, `create`, `list`, `remove`, `exec`) and is a drop-in for it.
 Upstream rift needs a filesystem with copy-on-write — btrfs, XFS with reflinks,
 or APFS — and ships per-platform binaries. On the common case here, **ext4 on
 linux-arm64**, it fails twice over: there is no binary for the platform, and
-`cp --reflink=always` returns `Operation not supported`. `hobo-code mux` was
-therefore silently degrading every agent to one shared checkout.
+`cp --reflink=always` returns `Operation not supported`. An agent multiplexer
+relying on it therefore silently degrades every agent to one shared checkout.
 
 ## The ladder
 
@@ -52,8 +52,8 @@ hobo-rift exec --name claude -- claude          # run it
 hobo-rift exec --name claude --print-cmd -- claude   # print the wrapped command
 ```
 
-`hobo-code mux` wraps each tmux pane command in `hobo-rift exec` for the same
-reason, which is why panes land in a real isolated tree rather than an empty
+An agent multiplexer wraps each tmux pane command in `hobo-rift exec` for the
+same reason, so panes land in a real isolated tree rather than an empty
 directory. `--print-cmd` prints that wrapper instead of running it, for
 debugging.
 

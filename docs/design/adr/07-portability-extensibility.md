@@ -734,6 +734,10 @@ It was not. The owner asked for the game to be re-arted and found the **website*
 
 ### Decision
 1. **`HoBo Rubberhose` is restored as the product identity.** `site/DESIGN.md` and `packages/control-yard/DESIGN.md` return to it: thick ink outlines, hard sticker shadows, film grain, black-and-white day/night inversion, title-card lettering — never flat SaaS chrome. `site/` returns to its rubberhose implementation, and Bo returns with it (`bo-idle`, `bo-walk`, `bo-walk-left` and the site originals, plus the parallax plates and clouds).
+**Historical note (2026-11-17):** `packages/pixel-village` has been removed.
+The package-specific decisions below describe the former implementation and do
+not assert a currently available game package.
+
 2. **The pixel-RPG becomes `@hobo/pixel-village`, themed separately.** The village renderer, the vendored Kenney CC0 packs, and the `HoBo Pixel` DESIGN.md move into that package and are scoped to it. `HoBo Pixel` is that project's identity and binds nothing outside it; it must never be mirrored onto `site/DESIGN.md` again.
 3. **ADR-0148's buildability rule survives, and now binds rubberhose too.** Art is authored as art and vendored as assets; assembling props from `rect`/`line` primitives in a presenter stays prohibited on every surface. A rubberhose surface that cannot be built from real artwork is to be fixed by producing artwork, not by changing the identity.
 4. **The generated Bo action sheets return, for site use only.** The five sheets (`wave`, `jump`, `hurt`, `sleep-wake`, `bindle-adjust`) live at `site/public/bo-actions/` with their frame metadata in `sheets.json`. They are **not** game assets: neither `@hobo/pixel-village` nor `@hobo/control-yard` loads them. What the owner rejected was the *game surface* built from renderer-drawn primitives, not this artwork — reading the rejection as covering the sheets was too broad. The traced scene panels stay retired. The hand-authored Bo (`bo-idle`, `bo-walk`, `bo-walk-left`) remains the canonical character art in `site/public/parallax/`; the sheets cover actions that art does not.

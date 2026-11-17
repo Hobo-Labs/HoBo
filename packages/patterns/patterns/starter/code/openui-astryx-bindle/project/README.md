@@ -1,6 +1,6 @@
 # openui-astryx-bindle
 
-High-value **`hobo-code`** template — first paint under `public/`.
+OpenUI catalog template — first paint under `public/`.
 
 ```text
   1·generate → 2·edit → 3·lock → evidence
@@ -14,20 +14,11 @@ High-value **`hobo-code`** template — first paint under `public/`.
 | Evidence | Playwright + recording + screenshots on pass |
 | Platform | FinOps / Harness / Station — no parallel control plane |
 
-## Quick start
+## Use the template
 
-```bash
-# scaffold (from project root)
-hobo-code scaffold --name my-app
-hobo-code dev --cwd my-app
-
-# default verb is dispatch — bare prompt is work
-hobo-code "refine the openui first paint"
-```
-
-1. Open the browser URL printed by `hobo-code dev` — live first paint plus HoBo evidence controls.
-2. Edit in context, then **lock** an OpenUI intermediary artifact.
-3. Treat locked HTML as truth · codegen.
+Load and render `starter.code.openui-astryx-bindle` through the
+`@hobo/patterns` catalog API. The files here are template inputs and are not
+a standalone `hobo-code` application.
 
 ## Tokens
 
@@ -36,9 +27,3 @@ Palette lives in `public/styles.css` so OpenUI lock-ins match the scaffold:
 - `--bg` / `--panel` / `--line`
 - `--text` / `--muted`
 - `--accent` / `--ok`
-
-## Product shape
-
-- Binary: **`hobo-code`** (not a `hobo` verb)
-- Default verb: **`dispatch`**
-- Flat verbs only (no nested hive subcommand)

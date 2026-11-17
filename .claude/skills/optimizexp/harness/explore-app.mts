@@ -2,9 +2,9 @@
 /**
  * Explore a product project → surface-map.json (+ optional experience-catalog).
  *
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --project code
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode validate --project code
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode catalog --project code --personas developer
+ * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --project hobo
+ * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode validate --project hobo
+ * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode catalog --project hobo --personas developer
  */
 import process from "node:process";
 import { listProjects, resolveProjects } from "./lib/projects.mts";
@@ -86,7 +86,9 @@ function main() {
 	}
 
 	if (targets.length === 0) {
-		console.error("No projects resolved. Pass --project code");
+		console.error(
+			"No projects resolved. Pass --project <id> (list them: init.mts --mode list-projects)",
+		);
 		process.exit(2);
 	}
 

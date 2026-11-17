@@ -41,37 +41,5 @@
     "metric_max_delta": 0,
     "note": "harm/friction reduced against a measured baseline, not a remembered one"
   },
-  "justification": "Scores are agent judgments; the claims they rest on are machine-checked by the evidenceChecks below, which re-execute against committed evidence on every optimizexp:check.",
-  "evidenceChecks": [
-    {
-      "evidence": "packages/code/.optimizexp/features/hobo-code-default-entry/evidence/cold-start-bare-tty-shows-product-discoverability-for-protocol-native-coding-agent",
-      "exitCodeEquals": 0,
-      "note": "cold-start bare TTY exits cleanly through the real quit path"
-    },
-    {
-      "evidence": "packages/code/.optimizexp/features/hobo-code-default-entry/evidence/cold-start-bare-tty-shows-product-discoverability-for-protocol-native-coding-agent",
-      "firstOutputUnderMs": 500,
-      "note": "shell paints promptly (measured 186ms)"
-    },
-    {
-      "evidence": "packages/code/.optimizexp/features/hobo-code-default-entry/evidence/cold-start-bare-tty-shows-product-discoverability-for-protocol-native-coding-agent",
-      "maxSilentGapUnderMs": 3000,
-      "note": "idle animation keeps ticking without thrash (measured 1054ms gap)"
-    },
-    {
-      "evidence": "packages/code/.optimizexp/features/hobo-code-default-entry/evidence/cold-start-bare-tty-shows-product-discoverability-for-protocol-native-coding-agent",
-      "totalOutputBytesUnder": 120000,
-      "note": "repaint budget for a ~6s session (measured 31210 bytes; old shell spent 182576 in 5s)"
-    },
-    {
-      "evidence": "packages/code/.optimizexp/features/hobo-code-default-entry/evidence/cold-start-bare-tty-shows-product-discoverability-for-protocol-native-coding-agent",
-      "transcriptContains": "hobo-shell",
-      "note": "product chrome present"
-    },
-    {
-      "evidence": "packages/code/.optimizexp/features/hobo-code-default-entry/evidence/cold-start-bare-tty-shows-product-discoverability-for-protocol-native-coding-agent",
-      "transcriptContains": "engine:none",
-      "note": "honest engine label when no completion engine runs"
-    }
-  ]
+  "justification": "Historical agent judgments from the retired hobo-code package; the checks and recordings are no longer present in this tree. Their original evidence remains in Git at commit 225352177c2bb83574b5669b82efafec9575a876; this scorecard does not assert current verification."
 }

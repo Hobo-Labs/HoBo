@@ -3,9 +3,9 @@
 A sidecar that gives every agent its own copy-on-write checkout. It exists
 because upstream [rift](https://github.com/anomalyco/rift) cannot run on the
 machines we actually develop on: it requires btrfs, XFS-with-reflinks, or APFS,
-and ships per-platform binaries. On ext4/linux-arm64 both conditions fail, and
-`hobo-code mux` was quietly degrading every agent to one shared checkout — which
-is precisely the collision the feature exists to prevent.
+and ships per-platform binaries. On ext4/linux-arm64 both conditions fail, and an
+agent multiplexer relying on it quietly degrades every agent to one shared
+checkout — which is precisely the collision the feature exists to prevent.
 
 ## Capability ladder (the core decision)
 
@@ -26,10 +26,10 @@ equivalent isolation.
 
 The overlay tier's merged path exists **only inside a mount namespace**. `cd`
 from outside finds an empty directory, so commands must go through
-`hobo-rift exec`, which re-establishes the mount around them. `@hobo/code`
-wraps every tmux pane command in `hobo-rift exec` for exactly this reason, and
-depends on `@hobo/rift` as a workspace package so the binary is always present
-— resolving through `PATH` alone left the feature inert, with every agent
+`hobo-rift exec`, which re-establishes the mount around them. A multiplexer
+should wrap every tmux pane command in `hobo-rift exec` for exactly this reason,
+and depend on `@hobo/rift` as a package so the binary is always present —
+resolving through `PATH` alone leaves the feature inert, with every agent
 falling back to a git worktree.
 
 Inside the namespace, `.hobo-rift` is masked with an empty tmpfs. The lower
@@ -94,7 +94,7 @@ orphan directory nothing knew about.
 `create` never deletes a directory it cannot prove is dead. A name the registry
 does not list is *probably* debris, but the same state arises from a lost
 journal — where the directory holds an agent's uncommitted work — and from a
-clone another process is still running. Since `hobo-code mux` calls create on
+clone another process is still running. Since a multiplexer may call create on
 every run, deleting would turn one lost journal into silent, irreversible loss
 of every agent's tree. The directory is renamed to `<name>.debris` instead, and
 the new location is reported.
@@ -117,7 +117,7 @@ deletes.
 
 ## Boundaries
 
-The only interface `@hobo/code` depends on is the CLI: argv in, exit code plus
+The only interface a caller depends on is the CLI: argv in, exit code plus
 stdout out. That boundary is pinned by
 [`contracts/pacts/rift-workspace-boundary.pact.json`](contracts/pacts/rift-workspace-boundary.pact.json)
 and **executed** by `test/pact.test.ts`, which runs the built binary once per

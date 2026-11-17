@@ -1,7 +1,0 @@
-{
-	"id": "shared-network",
-	"description": "Two Camps in one Yard — same network.",
-	"tags": ["yard", "network", "camp"],
-	"queries": ["same network", "bundle apps in the same network"],
-	"atoms": ["arch.konsistent-layout", "yard.shared-network", "camp.colocate"]
-}

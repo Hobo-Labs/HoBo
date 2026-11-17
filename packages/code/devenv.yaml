@@ -1,6 +1,0 @@
-# hobo-code's own environment, declared rather than assumed.
-# Cross-platform: Linux and macOS natively, Windows via WSL2.
-inputs:
-  nixpkgs:
-    url: github:cachix/devenv-nixpkgs/rolling
-allowUnfree: false
