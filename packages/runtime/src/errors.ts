@@ -52,6 +52,14 @@ export class RetryableError extends RuntimeAuthoringError {
 	}
 }
 
+/** An execution cannot safely continue; retrying a step cannot repair it. */
+export class WorkflowExecutionAborted extends RuntimeAuthoringError {
+	constructor(message: string) {
+		super(message);
+		this.name = "WorkflowExecutionAborted";
+	}
+}
+
 /**
  * A step whose retry budget is exhausted (or that threw `FatalError`). The
  * engine journals `run.StepFailed` + `run.Failed` and returns a failed handle;
