@@ -15,6 +15,10 @@
 		"./replay": {
 			"types": "./dist/replay/index.d.ts",
 			"default": "./dist/replay/index.js"
+		},
+		"./durable-messaging-host": {
+			"types": "./dist/durable-messaging-host.d.ts",
+			"default": "./dist/durable-messaging-host.js"
 		}
 	},
 	"publishConfig": {
