@@ -137,23 +137,36 @@ export function selectFleetVerification(input: {
 	unknownMembers: readonly string[];
 	localSignoffEnabled: boolean;
 }): FleetVerificationSelection {
-	const ids = new Set(input.members.map((member) => member.id));
-	const malformed =
-		ids.size !== input.members.length ||
+	const tag = Object.prototype.toString;
+	if (
+		!Array.isArray(input.members) ||
+		!Array.isArray(input.unknownMembers) ||
+		(input.localSignoffEnabled !== true &&
+			input.localSignoffEnabled !== false) ||
 		input.members.some(
 			(member) =>
+				tag.call(member) !== "[object Object]" ||
+				(member.enabled !== true && member.enabled !== false) ||
+				tag.call(member.id) !== "[object String]" ||
 				member.id.trim().length === 0 ||
 				(member.enabled &&
 					(!VERIFICATION_BACKENDS.has(member.backend) ||
+						tag.call(member.runsOn) !== "[object String]" ||
 						member.runsOn.trim().length === 0)) ||
 				(member.enabled &&
 					(!Number.isSafeInteger(member.freeSlots) || member.freeSlots < 0)) ||
 				(member.enabled &&
 					member.freeSlots > 0 &&
 					input.unknownMembers.includes(member.id)),
-		) ||
-		input.unknownMembers.some((id) => !ids.has(id));
-	if (malformed) return { kind: "wait", reason: "availability-unknown" };
+		)
+	)
+		return { kind: "wait", reason: "availability-unknown" };
+	const ids = new Set(input.members.map((member) => member.id));
+	if (
+		ids.size !== input.members.length ||
+		input.unknownMembers.some((id) => !ids.has(id))
+	)
+		return { kind: "wait", reason: "availability-unknown" };
 	const runner = selectFleetBackend({
 		members: input.members,
 		currentLabels: [],
