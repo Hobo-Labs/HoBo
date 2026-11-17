@@ -1,21 +1,3 @@
-/**
- * Compact color control for carpet colors: a swatch + hex input that expands
- * into a popup with a saturation/brightness square and a vertical hue bar. The
- * picker panel only appears when the swatch/hex is clicked, and closes on an
- * outside click (matching the old carpet UI).
- *
- * The square is rendered with the SAME model the carpet renderer uses
- * (`flatColorizeSprite`): output is HSL where `lightness = 0.5 + b/200`. The
- * vertical axis is that brightness `b` (top = +100 → white, middle = 0 → pure
- * hue, bottom = -100 → black) and the horizontal axis is saturation. Drawing
- * the square from the renderer's formula keeps it what-you-see-is-what-you-get,
- * so the picked color matches the painted carpet exactly. ColorValue is emitted
- * with `colorize: true` and `c: 0`.
- *
- * Drag is captured at the document level via useEffect-managed listeners so the
- * marker keeps tracking when the cursor exits the picker bounds, matching
- * production color pickers (Photoshop, Figma).
- */
 
 import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -38,7 +20,6 @@ interface VisualColorPickerProps {
   onChange: (color: ColorValue) => void;
 }
 
-/** Convert HSL (h: 0-360, s: 0-1, l: 0-1) to an RGB tuple (0-255 each). */
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const hp = h / 60;
@@ -56,18 +37,15 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   return [Math.round((r1 + m) * 255), Math.round((g1 + m) * 255), Math.round((b1 + m) * 255)];
 }
 
-/** Carpet lightness from `b` (brightness), matching flatColorizeSprite. */
 function lightnessFromB(b: number): number {
   return Math.max(0, Math.min(1, 0.5 + b / 200));
 }
 
-/** Representative hex preview for a ColorValue, using the carpet HSL model. */
 function colorValueToHex(color: ColorValue): string {
   const [r, g, b] = hslToRgb(color.h, color.s / 100, lightnessFromB(color.b));
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
-/** Parse `#RRGGBB` (with or without leading #) → ColorValue, or null if malformed. */
 function hexToColorValue(hex: string): ColorValue | null {
   const match = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
   if (!match) return null;
@@ -115,14 +93,12 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
   const [inputHex, setInputHex] = useState(() => colorValueToHex(value));
   const [expanded, setExpanded] = useState(false);
 
-  // Keep the hex field in sync with external changes, but not while it's focused.
   useEffect(() => {
     if (inputRef.current !== document.activeElement) {
       setInputHex(colorValueToHex(value));
     }
   }, [value]);
 
-  // Paint the saturation × brightness square for the current hue.
   useEffect(() => {
     if (!expanded) return;
     const canvas = svCanvasRef.current;
@@ -189,7 +165,6 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
     [pickFromHue],
   );
 
-  // Document-level drag tracking so the cursor can leave the picker bounds.
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (draggingSvRef.current) pickFromSv(e.clientX, e.clientY);
@@ -207,7 +182,6 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
     };
   }, [pickFromSv, pickFromHue]);
 
-  // Close the popup on an outside click.
   useEffect(() => {
     if (!expanded) return undefined;
     const onPointerDown = (e: PointerEvent) => {
@@ -257,7 +231,7 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
 
   return (
     <div ref={containerRef} className="relative">
-      {/* Collapsed: swatch + hex — click to expand the picker popup. */}
+      { }
       <div
         className="flex items-center gap-3 cursor-pointer"
         style={{ width: VISUAL_COLOR_PICKER_COMPACT_WIDTH_PX }}
@@ -287,7 +261,7 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
         />
       </div>
 
-      {/* Expanded: popup to the right of the trigger, bottom-aligned. */}
+      { }
       {expanded && (
         <div
           className="absolute z-20 flex flex-col gap-4 py-4 px-6 bg-bg-dark border-2 border-border"

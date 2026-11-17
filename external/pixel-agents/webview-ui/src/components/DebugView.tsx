@@ -71,7 +71,6 @@ export function DebugView({
 }: DebugViewProps) {
   const [diagnostics, setDiagnostics] = useState<Record<number, AgentDiagnostics>>({});
 
-  // Request diagnostics from extension periodically
   useEffect(() => {
     transport.send({ type: 'requestDiagnostics' });
     const interval = setInterval(() => {
@@ -80,10 +79,6 @@ export function DebugView({
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for the diagnostics response via the transport (NOT a raw window
-  // 'message' listener): the standalone WebSocket transport delivers messages
-  // only to transport.onMessage handlers and never dispatches window events, so
-  // a window listener would never fire in standalone mode.
   useEffect(() => {
     return transport.onMessage((msg) => {
       if (msg.type === 'agentDiagnostics') {
@@ -152,7 +147,7 @@ export function DebugView({
               )}
           </div>
         )}
-        {/* Connection diagnostics */}
+        { }
         {diag && (
           <div className="mt-6 py-4 px-6 text-xs opacity-70 flex flex-col gap-2 border-t border-white/8">
             <span>

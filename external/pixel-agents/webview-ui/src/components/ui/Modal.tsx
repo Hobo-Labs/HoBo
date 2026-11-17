@@ -7,7 +7,6 @@ interface ModalProps {
   onClose: () => void;
   title: ReactNode;
   children: ReactNode;
-  /** z-index for backdrop (modal gets +1). Default 49 */
   zIndex?: number;
   className?: string;
 }

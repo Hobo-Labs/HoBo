@@ -1,6 +1,5 @@
 import { TileType } from '../types.js';
 
-/** Check if a tile is walkable (floor, carpet, or doorway, and not blocked by furniture) */
 export function isWalkable(
   col: number,
   row: number,
@@ -16,7 +15,6 @@ export function isWalkable(
   return true;
 }
 
-/** Get walkable tile positions (grid coords) for wandering */
 export function getWalkableTiles(
   tileMap: TileType[][],
   blockedTiles: Set<string>,
@@ -34,7 +32,6 @@ export function getWalkableTiles(
   return tiles;
 }
 
-/** BFS pathfinding on 4-connected grid (no diagonals). Returns path excluding start, including end. */
 export function findPath(
   startCol: number,
   startRow: number,
@@ -49,11 +46,8 @@ export function findPath(
   const startKey = key(startCol, startRow);
   const endKey = key(endCol, endRow);
 
-  // End must be walkable (or be a chair tile which may be adjacent to desk)
-  // We allow the end tile even if it's not strictly walkable for chair positions
   const endWalkable = isWalkable(endCol, endRow, tileMap, blockedTiles);
   if (!endWalkable) {
-    // If the end is a desk tile, we still can't path there
     return [];
   }
 
@@ -64,10 +58,10 @@ export function findPath(
   const queue: Array<{ col: number; row: number }> = [{ col: startCol, row: startRow }];
 
   const dirs = [
-    { dc: 0, dr: -1 }, // up
-    { dc: 0, dr: 1 }, // down
-    { dc: -1, dr: 0 }, // left
-    { dc: 1, dr: 0 }, // right
+    { dc: 0, dr: -1 },
+    { dc: 0, dr: 1 },
+    { dc: -1, dr: 0 },
+    { dc: 1, dr: 0 },
   ];
 
   while (queue.length > 0) {
@@ -75,7 +69,6 @@ export function findPath(
     const currKey = key(curr.col, curr.row);
 
     if (currKey === endKey) {
-      // Reconstruct path
       const path: Array<{ col: number; row: number }> = [];
       let k = endKey;
       while (k !== startKey) {
@@ -100,6 +93,5 @@ export function findPath(
     }
   }
 
-  // No path found
   return [];
 }

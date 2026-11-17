@@ -17,11 +17,6 @@ import { isE2E } from './runtime.js';
 let soundEnabled = true;
 let audioCtx: AudioContext | null = null;
 
-/** E2E test hook: append every (attempted) sound invocation to a window-side log
- *  under window.__pixelAgentsTestHooks.playedSounds (namespace and type
- *  declared by testHooks.ts). Records BEFORE the soundEnabled gate so tests
- *  verify dispatch independent of user audio prefs. Gated on the e2e harness
- *  flag so this unbounded log never grows in a real session. */
 function recordSoundForTests(kind: 'done' | 'permission'): void {
   if (!isE2E || typeof window === 'undefined') return;
   if (!window.__pixelAgentsTestHooks) window.__pixelAgentsTestHooks = {};
@@ -70,15 +65,12 @@ export async function playDoneSound(): Promise<void> {
     if (!audioCtx) {
       audioCtx = new AudioContext();
     }
-    // Resume suspended context (webviews suspend until user gesture)
     if (audioCtx.state === 'suspended') {
       await audioCtx.resume();
     }
-    // Ascending two-note chime: E5 → B5
     playNote(audioCtx, NOTIFICATION_NOTE_1_HZ, NOTIFICATION_NOTE_1_START_SEC);
     playNote(audioCtx, NOTIFICATION_NOTE_2_HZ, NOTIFICATION_NOTE_2_START_SEC);
   } catch {
-    // Audio may not be available
   }
 }
 
@@ -92,7 +84,6 @@ export async function playPermissionSound(): Promise<void> {
     if (audioCtx.state === 'suspended') {
       await audioCtx.resume();
     }
-    // Descending two-note tap: A5 → E5
     playNote(
       audioCtx,
       PERMISSION_NOTE_1_HZ,
@@ -108,11 +99,9 @@ export async function playPermissionSound(): Promise<void> {
       PERMISSION_VOLUME,
     );
   } catch {
-    // Audio may not be available
   }
 }
 
-/** Call from any user-gesture handler to ensure AudioContext is unlocked */
 export function unlockAudio(): void {
   try {
     if (!audioCtx) {
@@ -122,6 +111,5 @@ export function unlockAudio(): void {
       audioCtx.resume();
     }
   } catch {
-    // ignore
   }
 }

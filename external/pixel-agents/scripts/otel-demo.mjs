@@ -1,18 +1,4 @@
 #!/usr/bin/env node
-/**
- * otel-demo.mjs — drive the pixel-agents office with synthetic OTLP spans.
- *
- * Posts OTLP/JSON trace batches to a running standalone server
- * (`node dist/cli.js --port <port>`). Simulates 3 camps × 3 bindles with a
- * start/stop cadence: each tick some bindles start spans (records without
- * endTimeUnixNano), and spans started on earlier ticks are completed (same
- * spanId, now with endTimeUnixNano). Mixes span kinds (server/client → typing,
- * producer + db.* attrs → reading) and injects an occasional error span
- * (status.code 2 → attention bubble).
- *
- * Usage:
- *   node scripts/otel-demo.mjs [--port 3200] [--ticks 20] [--interval-ms 1200]
- */
 
 const args = process.argv.slice(2);
 function argValue(name, fallback) {
@@ -31,7 +17,6 @@ const BINDLES = {
   platform: ['gateway', 'auth-service', 'queue-consumer'],
 };
 
-/** Deterministic pseudo-random per (tick, bindle) so runs look organic but repeat. */
 function jitter(seed) {
   let h = 2166136261;
   for (const ch of String(seed)) {
@@ -65,17 +50,16 @@ function makeSpan({ camp, bindle, name, kind, attrs = {}, start, end, error }) {
 }
 
 const SPAN_SHAPES = [
-  { name: 'HTTP POST /v1/charge', kind: 2 }, // server → typing
+  { name: 'HTTP POST /v1/charge', kind: 2 },
   { name: 'HTTP GET /api/query', kind: 2 },
-  { name: 'call downstream', kind: 3 }, // client → typing
-  { name: 'SELECT orders', kind: 3, attrs: { 'db.system': 'postgres', 'db.statement': 'select …' } }, // → reading
-  { name: 'publish event', kind: 4, attrs: { 'messaging.system': 'kafka' } }, // producer → reading
-  { name: 'consume batch', kind: 5, attrs: { 'messaging.system': 'kafka' } }, // consumer → reading
+  { name: 'call downstream', kind: 3 },
+  { name: 'SELECT orders', kind: 3, attrs: { 'db.system': 'postgres', 'db.statement': 'select …' } },
+  { name: 'publish event', kind: 4, attrs: { 'messaging.system': 'kafka' } },
+  { name: 'consume batch', kind: 5, attrs: { 'messaging.system': 'kafka' } },
 ];
 
 async function postSpans(spanRecords) {
   if (spanRecords.length === 0) return;
-  // Group spans by resource attributes into OTLP resourceSpans.
   const byResource = new Map();
   for (const { resourceAttrs, span } of spanRecords) {
     const key = JSON.stringify(resourceAttrs);
@@ -110,14 +94,12 @@ async function main() {
   console.log(`OTel demo → ${URL} (${TICKS} ticks, ${INTERVAL_MS}ms interval)`);
   console.log(`Camps: ${CAMPS.join(', ')} — 3 bindles each`);
 
-  /** spanId → completion record to send later */
   const inFlight = new Map();
 
   for (let tick = 0; tick < TICKS; tick++) {
-    const now = Date.now() * 1e6; // ns
+    const now = Date.now() * 1e6;
     const batch = [];
 
-    // Complete most in-flight spans.
     for (const [spanId, record] of inFlight) {
       if (jitter(`${tick}:${spanId}:end`) < 0.7) {
         batch.push({ ...record, span: { ...record.span, endTimeUnixNano: String(now) } });
@@ -125,7 +107,6 @@ async function main() {
       }
     }
 
-    // Start new spans: each bindle active ~55% of ticks.
     for (const camp of CAMPS) {
       for (const bindle of BINDLES[camp]) {
         if (jitter(`${tick}:${camp}:${bindle}`) > 0.55) continue;
@@ -152,7 +133,6 @@ async function main() {
     await sleep(INTERVAL_MS);
   }
 
-  // Drain: complete everything still in flight.
   const now = Date.now() * 1e6;
   const drain = [...inFlight.values()].map((record) => ({
     ...record,

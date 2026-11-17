@@ -14,7 +14,6 @@ import {
   decodeAllWalls,
 } from '../core/src/assets/loader.ts';
 
-// ── Decoded asset cache (invalidated on file change) ─────────────────────────
 
 interface DecodedCache {
   characters: ReturnType<typeof decodeAllCharacters> | null;
@@ -24,13 +23,9 @@ interface DecodedCache {
   furniture: ReturnType<typeof decodeAllFurniture> | null;
 }
 
-// ── Vite plugin ───────────────────────────────────────────────────────────────
 
 function browserMockAssetsPlugin(): Plugin {
   const assetsDir = path.resolve(__dirname, 'public/assets');
-  // Default for production builds; configResolved below rewrites this to
-  // track the actual build.outDir, so vite build calls that override outDir
-  // (e.g. the build-subpath integration test) still receive the JSON sidecars.
   let distAssetsDir = path.resolve(__dirname, '../dist/webview/assets');
 
   const cache: DecodedCache = {
@@ -55,10 +50,8 @@ function browserMockAssetsPlugin(): Plugin {
       distAssetsDir = path.resolve(config.root, config.build.outDir, 'assets');
     },
     configureServer(server) {
-      // Strip trailing slash: '/' → '', '/sub/' → '/sub'
       const base = server.config.base.replace(/\/$/, '');
 
-      // Catalog & index (existing)
       server.middlewares.use(`${base}/assets/furniture-catalog.json`, (_req, res) => {
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(buildFurnitureCatalog(assetsDir)));
@@ -68,7 +61,6 @@ function browserMockAssetsPlugin(): Plugin {
         res.end(JSON.stringify(buildAssetIndex(assetsDir)));
       });
 
-      // Pre-decoded sprites (new — eliminates browser-side PNG decoding)
       server.middlewares.use(`${base}/assets/decoded/characters.json`, (_req, res) => {
         cache.characters ??= decodeAllCharacters(assetsDir);
         res.setHeader('Content-Type', 'application/json');
@@ -95,7 +87,6 @@ function browserMockAssetsPlugin(): Plugin {
         res.end(JSON.stringify(cache.furniture));
       });
 
-      // Hot-reload on asset file changes (PNGs, manifests, layouts)
       server.watcher.add(assetsDir);
       server.watcher.on('change', (file) => {
         if (file.startsWith(assetsDir)) {
@@ -105,7 +96,6 @@ function browserMockAssetsPlugin(): Plugin {
         }
       });
     },
-    // Build output includes lightweight metadata consumed by browser runtime.
     closeBundle() {
       fs.mkdirSync(distAssetsDir, { recursive: true });
 
