@@ -24,6 +24,13 @@ typed, event-sourced port-suite harness under `packages/conformance/`.
   (`hobo.camp-eventstore-runtime-port/v1`); provider verification for
   `@hobo/runtime-local` lives in
   `test/runtime-local-eventstore.conformance.test.ts` (dev-only edge to the adapter).
+- `runDurableMessagingConformance(createHarness)` — bounded checks for group
+  isolation, restart, uncertain acknowledgements and receipts, lease fencing,
+  DLQ payload preservation and rollback, compaction and tenant isolation. The
+  harness must actually restart the provider, control its clock, inject the
+  specified faults and use independently authenticated tenant clients. A pass
+  only describes the supplied harness; it is not proof of a live provider or
+  of its host's clock, authorization and isolation assumptions.
 
 ### `@hobo/conformance/anonymous` — the anonymous/claimable dimension
 
