@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type, anti-slop/no-object-parameters, anti-slop/no-conditional-empty-object-spread -- SAFETY: HTTP, SQLite and host authority values cross validated provider boundaries. */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type, anti-slop/no-object-parameters, anti-slop/no-conditional-empty-object-spread, anti-slop/no-reflect-apply -- SAFETY: host values cross provider boundaries, and Reflect.apply avoids mutable function.call properties. */
 import { isAbsolute, resolve } from "node:path";
 import { DurableObject } from "@alchemy.run/rivet";
 import { PoolHost } from "@alchemy.run/rivet/Host";
@@ -221,13 +221,12 @@ export function rivetAsyncQueueResource(input: RivetAsyncQueueSource) {
 					check();
 					registerAlchemySource(resource, { claim, verify });
 					registered = resource;
-					yield* deployExternal.call(
-						host,
+					yield* Reflect.apply(deployExternal, host, [
 						Object.freeze({ id, main, resource }),
-					);
+					]);
 					check();
 				}),
-			deployCrate: (object) => deployCrate.call(host, object),
+			deployCrate: (object) => Reflect.apply(deployCrate, host, [object]),
 		};
 		const primary = yield* DurableObject(source.resourceName, {
 			main: source.main,

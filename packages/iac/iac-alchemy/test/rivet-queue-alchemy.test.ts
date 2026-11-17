@@ -99,6 +99,13 @@ describe("Alchemy Rivet async queue resource", () => {
 				deployCrate: () => Effect.void,
 			},
 		};
+		let callAccesses = 0;
+		Object.defineProperty(source.poolHost.deployExternal, "call", {
+			get() {
+				callAccesses++;
+				throw new Error("untrusted function property");
+			},
+		});
 		const stack = Stack(
 			"Queue",
 			{ providers: Layer.merge(registry, pool), state: inMemoryState() },
@@ -169,6 +176,7 @@ describe("Alchemy Rivet async queue resource", () => {
 			});
 			expect(result.changes).toBe(1);
 			expect(deployed).toEqual([f.source.main]);
+			expect(callAccesses).toBe(0);
 		} finally {
 			if (previous === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = previous;
