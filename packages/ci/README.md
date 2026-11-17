@@ -689,3 +689,33 @@ it keeps a job's first answer when the answer is redelivered.
   through the `RouteJournal` port, narrowed by repository only (a job asked
   before `sinceMs` and answered after it keeps its request time), and
   builds the page from at most `ACTIVITY_JOURNAL_READ_LIMIT` (20,000) of them.
+
+## Machine registry
+
+A connected machine is kept in a machine registry (ADR-0183). The rules are in
+`src/runner-order/machine-registry.ts`; `@hobo/ci/runner-order/machine-registry-sqlite`
+keeps them in the host's SQLite file (ADR-0135).
+
+- A machine signs each advert with its mesh identity key (Ed25519), and the
+  advert names that key. The key is pinned on first use (TOFU); it is not
+  checked against the mesh's trusted-key set. An advert for the same id under
+  another key, or from another account, is refused and gives a
+  `machine.taken_over` event; it stays refused until the owner removes the
+  machine. The SQLite store refuses such a move inside its own write.
+- The advert's account and owner (GitHub user id and login) must be the ones
+  the sender authenticated as, and a renewal keeps the owner the machine
+  connected with; otherwise it is refused as `wrong_account` or `wrong_owner`.
+- An advert not renewed for 90 seconds is offline, and the walk passes the
+  machine over. An advert dated ahead of the reader's clock is kept at the
+  reader's clock.
+- Pause and sharing are the owner's settings. A renewal from the machine never
+  undoes them. A paused machine takes no new job; its running jobs finish.
+- `machineCandidates` turns adverts into the walk's `MachineCandidate` values.
+  Whether each owner can read the job's repository is an argument, so a machine
+  shared with `anyone` still serves only repositories its owner can read.
+
+`hobo ci machine status|pause|resume|share|remove` acts on one account's
+machines. By default that is the SQLite file a local node keeps under
+`HOBO_HOME` (`ci/machines.sqlite`, or `HOBO_CI_MACHINE_REGISTRY`), account
+`local` unless `--account` or `HOBO_CI_ACCOUNT_ID` names one. Each change is
+safe to repeat, and `--json` gives the result and the machine event as data.

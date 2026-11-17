@@ -46,6 +46,10 @@
       "types": "./dist/insights/index.d.ts",
       "default": "./dist/insights/index.js"
     },
+    "./runner-order/machine-registry-sqlite": {
+      "types": "./dist/runner-order/machine-registry-sqlite.d.ts",
+      "default": "./dist/runner-order/machine-registry-sqlite.js"
+    },
     "./runner-order/testing": {
       "types": "./dist/runner-order/testing.d.ts",
       "default": "./dist/runner-order/testing.js"

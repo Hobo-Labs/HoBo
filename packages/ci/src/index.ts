@@ -119,6 +119,29 @@ export {
 } from "./runner-order/activity.js";
 export * from "./runner-order/index.js";
 export {
+	findMachine,
+	MACHINE_ADVERT_SIGNING_CONTEXT,
+	MACHINE_ADVERT_TTL_MS,
+	type MachineAdvertRefusal,
+	type MachineAdvertVerdict,
+	type MachineChange,
+	type MachineEvent,
+	type MachineEventType,
+	MachineRegistryError,
+	type MachineRegistryRefusal,
+	machineAdvertSigningPayload,
+	machineCandidates,
+	machineOnline,
+	receiveMachineAdvert,
+	registryMachineCandidates,
+	removeMachine,
+	type SignedMachineAdvert,
+	setMachinePaused,
+	setMachineSharing,
+	signMachineAdvert,
+	verifyMachineAdvert,
+} from "./runner-order/machine-registry.js";
+export {
 	sandboxProxyOnlyUsageQuote,
 	sandboxReservationMicros,
 	sandboxReservationQuote,
