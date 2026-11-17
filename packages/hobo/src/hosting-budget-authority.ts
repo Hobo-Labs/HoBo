@@ -7,6 +7,7 @@ import {
 	type BudgetLedgerSnapshot,
 	type BudgetReservation,
 	type BudgetSettlementEvidence,
+	compareFinancialTime,
 	EntitlementClaimSchema,
 	HostingQuoteComponentSchema,
 	HostingQuoteSchema,
@@ -135,7 +136,8 @@ export function createHostingBudgetAuthorityBridge(options: {
 		at: number,
 	): void {
 		const budget = input.budget,
-			identity = snapshot.identity;
+			identity = snapshot.identity,
+			atIso = iso(at);
 		if (
 			!identity ||
 			budget.tenantId !== identity.tenantId ||
@@ -164,8 +166,8 @@ export function createHostingBudgetAuthorityBridge(options: {
 			input.nowMs > at ||
 			input.horizonEndMs <= at ||
 			budget.validUntilMs <= at ||
-			budget.validUntilMs > Date.parse(snapshot.validUntil) ||
-			Date.parse(snapshot.observedAt) > at
+			compareFinancialTime(iso(budget.validUntilMs), snapshot.validUntil) > 0 ||
+			compareFinancialTime(snapshot.observedAt, atIso) > 0
 		)
 			throw new Error("hosting financial evidence is no longer current");
 		if (snapshot.providerAccounts.length !== input.providerBudgets.length)
@@ -200,9 +202,10 @@ export function createHostingBudgetAuthorityBridge(options: {
 				bucket.periodId !== budget.periodId ||
 				baseUnits(entitlement.remainingQuantity, normalized.scale) !==
 					bucket.remainingUnits - bucket.reservedUnits ||
-				entitlement.validUntilMs > Date.parse(bucket.validUntil) ||
+				compareFinancialTime(iso(entitlement.validUntilMs), bucket.validUntil) >
+					0 ||
 				entitlement.validUntilMs <= at ||
-				Date.parse(bucket.observedAt) > at
+				compareFinancialTime(bucket.observedAt, atIso) > 0
 			)
 				throw new Error(
 					"entitlement exposure changed, expired or belongs to another period",

@@ -9,7 +9,7 @@ description: Verify quote authorization, hosting budget admission, execution cla
 
 **Why:** A missing hold or lost journal entry can fund multiple provider operations with the same money, while a premature release can leave running work unaccounted for.
 
-**Review baseline:** commit `a4edbf08aeb4156f616313e72033e2a7a4616446`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
+**Review baseline:** commit `a916d72797d202eec6f16c0610c44e7734754735`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
 
 ## Covered code
 
@@ -45,7 +45,7 @@ TLC explores 385 distinct states for two requests, one unit of budget, and one-u
 
 BrokerFence explores 129 distinct states and 830 steps for one reservation, a claimed or unclaimed hold, up to three evidence offers, and both release and settlement. Its invariants require both authentic, correctly bound proofs and a claim before settlement, and retain a claimed hold until settlement. The model treats signature verification, binding checks, trust enrollment, and persistence as correct atomic predicates; it does not prove cryptography, storage, concurrency, or the external receiver and finance authorities. The `/statechart` view collapses these to five displayed states and four arrows, hiding 723 same-label steps.
 
-The signed-settlement property uses seed 614450 and 120 generated histories. It varies final usage including overruns, uncertainty, and sequences of forged receiver signatures, forged finance signatures, changed charges, evidence references, account usage, and receipt scopes. The receiver forgery is accompanied by an otherwise valid finance signature. Every rejection must retain the hold and produce no event; after valid settlement, repeated settlement and journal replay preserve the result. A PostgreSQL integration case is skipped without its configured database.
+The signed-settlement property uses seed 614450 and 120 generated histories, with a 30-second verification timeout for loaded runners. It varies final usage including overruns, uncertainty, and sequences of forged receiver signatures, forged finance signatures, changed charges, evidence references, account usage, and receipt scopes. The receiver forgery is accompanied by an otherwise valid finance signature. Every rejection must retain the hold and produce no event; after valid settlement, repeated settlement and journal replay preserve the result. A PostgreSQL integration case is skipped without its configured database.
 
 The Z3 induction proves that arbitrarily many exact-real reserve, release, and settlement steps preserve `spent + held + unresolved + recovery + external <= cap`, assuming a safe initial state, fixed nonnegative outside exposures, an admission guard counting the full quote, and final usage no larger than its released hold. Claims and uncertain outcomes retain the same aggregate. This is an unbounded mathematical proof of an abstraction, not a proof of TypeScript refinement, durable CAS, provider bills, or behavior when configuration changes exposure. The proof also demonstrates that an actual overrun can exceed the cap; the implementation records overruns rather than pretending they cannot occur.
 

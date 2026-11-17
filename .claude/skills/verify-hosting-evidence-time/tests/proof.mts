@@ -25,4 +25,12 @@ try {
     if (mutant.status === 0 || !mutant.stdout.includes('FAIL ')) throw new Error(`proof mutation ${mutation} was not detected`);
     process.stdout.write(`Expected proof counterexample: ${mutation}\n`);
   }
+  const bridge=fileURLToPath(new URL('../proof/bridge_induction.py',import.meta.url));
+  const bridgeResult=spawnSync('python3',[bridge],{env,stdio:'inherit'});
+  if (bridgeResult.error) throw bridgeResult.error;
+  if (bridgeResult.status !== 0) throw new Error('bridge time proof failed');
+  const truncated=spawnSync('python3',[bridge],{env:{...env,HOSTING_BRIDGE_PROOF_MUTATION:'truncate'},encoding:'utf8'});
+  if (truncated.error) throw truncated.error;
+  if (truncated.status === 0 || !truncated.stdout.includes('FAIL ')) throw new Error('bridge truncation mutation was not detected');
+  process.stdout.write('Expected proof counterexample: bridge truncation\n');
 } finally { rmSync(scratch,{recursive:true,force:true}); }
