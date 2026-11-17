@@ -268,7 +268,6 @@ try {
 			subject: "created",
 			payload: "AA==",
 			attributes: [],
-			extra: true,
 		},
 	};
 	const refused = await messaging.publish(invalid);
@@ -282,7 +281,7 @@ try {
 		throw new Error("string payload did not receive a durable invalid receipt");
 	const corrected = await messaging.publish({
 		...invalid,
-		message: { ...invalid.message, payload: new Uint8Array([0]) },
+		message: { ...invalid.message, payload: new Uint8Array([0]), extra: true },
 	});
 	if (
 		corrected.status !== "rejected" ||
@@ -406,7 +405,7 @@ try {
 	if (events.status !== "ok" || events.events.length !== 3)
 		throw new Error("audit sequence mismatch");
 	process.stdout.write(
-		"rivet-topic-partial-live-ok process-restart=unverified fault-placement=unverified ingress=unverified",
+		"rivet-topic-partial-live-ok process-restart=unverified fault-placement=unverified ingress=unverified contention=unverified rollback=unverified old-owner-fence=unverified",
 	);
 } catch (error) {
 	process.stderr.write(`Rivet engine log:\n${engineLog}\n`);

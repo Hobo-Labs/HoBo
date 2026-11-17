@@ -63,7 +63,7 @@ it("executes the partial topic actor and client on a real Rivet 3 engine", {
 		expect(result.timedOut, result.stderr).toBe(false);
 		expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
 		expect(result.stdout).toContain(
-			"rivet-topic-partial-live-ok process-restart=unverified fault-placement=unverified ingress=unverified",
+			"rivet-topic-partial-live-ok process-restart=unverified fault-placement=unverified ingress=unverified contention=unverified rollback=unverified old-owner-fence=unverified",
 		);
 	} finally {
 		await rm(directory, { recursive: true, force: true });

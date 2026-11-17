@@ -147,6 +147,11 @@ untrusted work needs an independent worker or process watchdog. Revoking a
 metadata grant is irreversible; each regrant needs a fresh grant and binding,
 and revocation must be propagated and fenced across the host fleet.
 
+The partial-topic live smoke test exercises real Rivet calls and receipt replay.
+It does not establish process restart, fault placement, ingress limits,
+transaction contention or rollback, or fencing of old owners; those require
+independent host and runner evidence.
+
 ## Retained topic log
 
 The [Rivet topic-log actor guide](./DURABLE-TOPIC-ACTOR.md) describes its
