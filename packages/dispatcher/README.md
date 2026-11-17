@@ -45,6 +45,10 @@ legacy unconstrained selection behavior and do not establish a budget guarantee.
 The combined selection-and-reservation helper uses the account price for both
 steps when present, falling back to the registry price. It selects the provider
 registration for the requested category, including that registration's dimension.
+When an all-in `estimatedCost` is supplied, selection excludes each provider
+whose budget cannot cover that estimate as well as its calculated cost. New
+decision replay inputs retain the estimate; older inputs without it keep their
+original selection behavior.
 
 An older helper could reserve a different category when a provider had multiple
 registrations, leaving the intended account without its hold or settlement. The
