@@ -154,6 +154,7 @@ export const nav: NavGroup[] = [
 			{ label: "Providers", slug: "/ci/providers/" },
 			{ label: "Fleet balancing", slug: "/ci/fleet-balancing/" },
 			{ label: "Route table", slug: "/ci/route-table/" },
+			{ label: "Runner order and relay jobs", slug: "/ci/runner-order/" },
 			{ label: "Host health", slug: "/ci/host-health/" },
 		],
 	},
