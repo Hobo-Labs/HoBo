@@ -186,6 +186,33 @@ export class SqliteProviderHealthStore implements ProviderHealthFeedStore {
 	}
 }
 
+/**
+ * Every record kept in the provider-health file at `path`, in key order, read
+ * without writing: the file is opened read-only and nothing is created, so a
+ * reader such as `hobo ci provider-health` never competes with the relay, the
+ * file's one writer. A file without the table yet has no records.
+ */
+export function readProviderHealthRecords(
+	path: string,
+): readonly ProviderHealthRecord[] {
+	const db = new DatabaseSync(path, { readOnly: true });
+	try {
+		db.exec("PRAGMA busy_timeout = 5000");
+		const table = db
+			.prepare(
+				"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'provider_health'",
+			)
+			.get();
+		if (!table) return [];
+		return db
+			.prepare("SELECT body FROM provider_health ORDER BY key")
+			.all()
+			.map((row) => parseProviderHealthRecord(String(row.body)));
+	} finally {
+		db.close();
+	}
+}
+
 /** One outcome `feedProviderHealth` counted, and the record it left. */
 export type ProviderHealthFeed = Readonly<{
 	key: string;

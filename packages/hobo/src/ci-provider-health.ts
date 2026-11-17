@@ -7,8 +7,9 @@
  * tripped and passed over until a trial job starts. The record lives in the
  * relay's provider-health file, so this command reads and edits that file:
  * `--db <path>`, else `HOBO_CI_PROVIDER_HEALTH_DB`, else
- * `$HOBO_HOME/ci/serve/provider-health.sqlite`. Listing never creates the
- * file.
+ * `$HOBO_HOME/ci/serve/provider-health.sqlite`. Listing opens the file
+ * read-only and never creates it; `clear` is the one write made from outside
+ * the relay, a single delete through SQLite's own locking.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -19,7 +20,10 @@ import {
 	providerHealthOf,
 	providerHealthState,
 } from "@hobo/ci";
-import { SqliteProviderHealthStore } from "@hobo/ci/runner-order/provider-health-sqlite";
+import {
+	readProviderHealthRecords,
+	SqliteProviderHealthStore,
+} from "@hobo/ci/runner-order/provider-health-sqlite";
 import type { CommandResult } from "@hobo/cli";
 import type { CiCommand, CiCommandContext } from "./ci-commands.js";
 import { defaultHoboHome } from "./hobo-home.js";
@@ -73,26 +77,21 @@ async function list(path: string, nowMs: number): Promise<CommandResult> {
 			message: `No provider health recorded yet (${path}).`,
 			data: { path, providers: [] },
 		};
-	const store = new SqliteProviderHealthStore(path);
-	try {
-		const rows = (await store.list()).map((record) =>
-			providerHealthRow(record, nowMs),
-		);
-		const lines = rows.map((row) =>
-			row.state === "healthy"
-				? `${row.key}: healthy`
-				: `${row.key}: ${row.state}, tripped ${row.trippedAt ?? "?"}, next trial ${row.nextTrialAt ?? "?"}`,
-		);
-		return {
-			message:
-				rows.length === 0
-					? `No provider health recorded yet (${path}).`
-					: lines.join("\n"),
-			data: { path, providers: rows },
-		};
-	} finally {
-		store.close();
-	}
+	const rows = readProviderHealthRecords(path).map((record) =>
+		providerHealthRow(record, nowMs),
+	);
+	const lines = rows.map((row) =>
+		row.state === "healthy"
+			? `${row.key}: healthy`
+			: `${row.key}: ${row.state}, tripped ${row.trippedAt ?? "?"}, next trial ${row.nextTrialAt ?? "?"}`,
+	);
+	return {
+		message:
+			rows.length === 0
+				? `No provider health recorded yet (${path}).`
+				: lines.join("\n"),
+		data: { path, providers: rows },
+	};
 }
 
 async function clear(

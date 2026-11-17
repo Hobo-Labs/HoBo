@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { create } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
 import { type JobFact, JobFactSchema } from "../src/_generated/relay_job_pb.js";
@@ -15,6 +16,7 @@ import {
 import {
 	feedProviderHealth,
 	providerOutcomeOfJob,
+	readProviderHealthRecords,
 	SqliteProviderHealthStore,
 } from "../src/runner-order/provider-health-sqlite.js";
 import {
@@ -78,6 +80,22 @@ describe("SqliteProviderHealthStore (R09)", () => {
 		expect(await second.unhealthy(now)).toEqual(new Set([KEY]));
 		expect((await second.list()).map((record) => record.key)).toEqual([KEY]);
 		second.close();
+	});
+
+	it("lists records from outside the writer without writing the file", async () => {
+		const path = tempPath();
+		const writer = new SqliteProviderHealthStore(path);
+		await missThree(writer);
+		expect(readProviderHealthRecords(path).map((record) => record.key)).toEqual(
+			[KEY],
+		);
+		writer.close();
+		const empty = tempPath();
+		new DatabaseSync(empty).close();
+		expect(readProviderHealthRecords(empty)).toEqual([]);
+		const check = new DatabaseSync(empty, { readOnly: true });
+		expect(check.prepare("SELECT name FROM sqlite_master").all()).toEqual([]);
+		check.close();
 	});
 
 	it("clears a record by hand", async () => {

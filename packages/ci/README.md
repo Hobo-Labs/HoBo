@@ -739,6 +739,11 @@ it cannot read, so a missing measurement never blocks a step.
   (`githubBilledMinutes`), because the billing API reports by day. A refused
   read, an unknown plan or a reply in another shape is unmeasured; only a 404
   moves on to the `/users/` form. One reading is reused for five minutes.
+  Used minutes come from each item's gross amount, which overcounts an owner
+  with public-repository CI: GitHub does not charge that usage against the
+  plan, but a usage item carries no repository visibility and the included
+  allowance is reported as the same discount, so it cannot be subtracted
+  here. Such an owner reads closer to its limit than it is.
   `contracts/github-billing-usage.pact.json` in `@hobo/ci-gh-actions` holds
   the plan and usage reads, the 404 fallback and the 403 refusal, and a
   consumer test drives the reader through each of them.
@@ -761,13 +766,16 @@ it cannot read, so a missing measurement never blocks a step.
   outcome, so a redelivered webhook or a poller seeing the job again does not
   count twice. While a type is tripped, only the trial job's miss doubles the
   back-off: a miss of a job queued before the trial was let through was routed
-  before the trip, so a burst of misses leaves the first back-off. A start
-  older than the newest outcome or the trip is a late report and does not
-  clear the record. Marking the outcome counted and writing the record are one
+  before the trip, so a burst of misses leaves the first back-off. A start or
+  a miss older than the newest outcome or the trip is a late report (a poller
+  backfill, a job list read newest first): it neither clears the record nor
+  counts towards a trip, and the trip window runs from the earliest to the
+  latest miss, whatever order they were reported in. Marking the outcome counted and writing the record are one
   SQLite transaction.
 - **Command.** `hobo ci provider-health` lists the kept records with their
   state, misses and next trial; `hobo ci provider-health clear <provider>
-  <label>` forgets one so the next job may use it. The file is `--db <path>`,
+  <label>` forgets one so the next job may use it. Listing reads the file
+  read-only and never creates it. The file is `--db <path>`,
   else `HOBO_CI_PROVIDER_HEALTH_DB`, else
   `$HOBO_HOME/ci/serve/provider-health.sqlite`.
 
@@ -779,7 +787,12 @@ yet, and no relay writes the provider-health file today. The wiring, in
 
 - open one `SqliteProviderHealthStore` at
   `$HOBO_HOME/ci/serve/provider-health.sqlite` (the path the command reads,
-  or `HOBO_CI_PROVIDER_HEALTH_DB`), and let only that process write it;
+  or `HOBO_CI_PROVIDER_HEALTH_DB`), and let only that process write it.
+  The command's listing opens the file read-only and creates nothing
+  (`readProviderHealthRecords`); `clear` is the one sanctioned write from
+  outside the relay, a single delete made through SQLite's own locking
+  (busy timeout, WAL), so it never runs as a second writer alongside a
+  transaction (ADR-0135);
 - call `feedProviderHealth(store, jobFact, now)` from the `workflow_job`
   webhook handler and from the job poller, for every queued, started and
   completed job, and take `unhealthy` from `store.unhealthy(now)`;
