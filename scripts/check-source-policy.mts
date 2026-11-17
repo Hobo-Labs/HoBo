@@ -222,6 +222,7 @@ export function commentsIn(file: string, text: string): Comment[] {
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(sourcePath(file)).toLowerCase();
 	if (extension === ".astro") return astroComments(file, text);
+	if (extension === ".html") return htmlComments(file, text);
 	const lexicalLanguage = LEXER_LANGUAGES.get(extension);
 	if (lexicalLanguage) {
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
@@ -256,31 +257,139 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 			: ["rust", "java"].includes(language)
 				? ["line_comment", "block_comment"]
 				: ["comment"];
-	return kinds.flatMap((kind) => {
-		const result = spawnSync(
-			AST_GREP,
-			["run", "--stdin", "--lang", language, "--kind", kind, "--json"],
-			{
-				input: text,
-				encoding: "utf8",
-				maxBuffer: 64 * 1024 * 1024,
-			},
+	return kinds.flatMap((kind) =>
+		astGrepMatches(file, text, language, kind).map(matchLocation),
+	);
+}
+
+type AstGrepMatch = {
+	text: string;
+	range: {
+		byteOffset: { start: number; end: number };
+		start: { line: number };
+		end: { line: number; column: number };
+	};
+};
+
+function astGrepMatches(
+	file: string,
+	text: string,
+	language: string,
+	kind: string,
+): AstGrepMatch[] {
+	const result = spawnSync(
+		AST_GREP,
+		["run", "--stdin", "--lang", language, "--kind", kind, "--json"],
+		{ input: text, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+	);
+	if (result.error || (result.status !== 0 && result.status !== 1)) {
+		throw new Error(
+			`cannot parse ${file}: ${result.error?.message ?? result.stderr}`,
 		);
-		if (result.error || (result.status !== 0 && result.status !== 1)) {
-			throw new Error(
-				`cannot parse ${file}: ${result.error?.message ?? result.stderr}`,
-			);
+	}
+	return JSON.parse(result.stdout);
+}
+
+function matchLocation(match: AstGrepMatch): CommentLocation {
+	return {
+		text: match.text,
+		first: match.range.start.line + 1,
+		last: match.range.end.line + (match.range.end.column === 0 ? 0 : 1),
+	};
+}
+
+function htmlAttribute(
+	text: string,
+): { name: string; value: string } | undefined {
+	const match =
+		/^([^\s=/>]+)\s*=\s*(?:"([\s\S]*?)"|'([\s\S]*?)'|([^\s>]+))/u.exec(text);
+	const name = match?.[1]?.toLowerCase();
+	return name
+		? { name, value: match?.[2] ?? match?.[3] ?? match?.[4] ?? "" }
+		: undefined;
+}
+
+function htmlComments(file: string, text: string): CommentLocation[] {
+	const attributes = astGrepMatches(file, text, "html", "attribute");
+	const found = astGrepMatches(file, text, "html", "comment")
+		.filter(
+			(comment) =>
+				!attributes.some(
+					(attribute) =>
+						attribute.range.byteOffset.start <=
+							comment.range.byteOffset.start &&
+						attribute.range.byteOffset.end >= comment.range.byteOffset.end,
+				),
+		)
+		.map(matchLocation);
+	function inspect(
+		fragment: string,
+		extension: ".ts" | ".tsx" | ".css",
+		first: number,
+	) {
+		for (const comment of commentLocations(`fragment${extension}`, fragment)) {
+			found.push({
+				...comment,
+				first: first + comment.first - 1,
+				last: first + comment.last - 1,
+			});
 		}
-		const matches: {
-			text: string;
-			range: { start: { line: number }; end: { line: number; column: number } };
-		}[] = JSON.parse(result.stdout);
-		return matches.map((match) => ({
-			text: match.text,
-			first: match.range.start.line + 1,
-			last: match.range.end.line + (match.range.end.column === 0 ? 0 : 1),
-		}));
-	});
+	}
+	for (const [kind, extension] of [
+		["script_element", ".ts"],
+		["style_element", ".css"],
+	] as const) {
+		for (const match of astGrepMatches(file, text, "html", kind)) {
+			let fragmentExtension: ".ts" | ".tsx" | ".css" = extension;
+			const opening =
+				/^<\s*(?:script|style)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/iu.exec(
+					match.text,
+				);
+			if (!opening)
+				throw new Error(`cannot locate an embedded block in ${file}`);
+			if (kind === "script_element") {
+				const openingEnd =
+					match.range.byteOffset.start + Buffer.byteLength(opening[0]);
+				const type = attributes.find(
+					(attribute) =>
+						attribute.range.byteOffset.start >= match.range.byteOffset.start &&
+						attribute.range.byteOffset.end <= openingEnd &&
+						htmlAttribute(attribute.text)?.name === "type",
+				);
+				const value =
+					(type ? htmlAttribute(type.text)?.value : "")?.trim() ?? "";
+				if (
+					value &&
+					!/^(?:module|(?:text|application)\/(?:x-)?(?:(?:java|ecma)script(?:1\.\d)?|typescript|jsx|babel)(?:\s*;.*)?)$/iu.test(
+						value,
+					)
+				)
+					continue;
+				if (/\/(?:jsx|babel)(?:\s*;|$)/iu.test(value))
+					fragmentExtension = ".tsx";
+			}
+			const closing = /<\/\s*(?:script|style)\s*>\s*$/iu.exec(match.text);
+			const fragment = match.text.slice(opening[0].length, closing?.index);
+			const first = match.range.start.line + opening[0].split("\n").length;
+			inspect(fragment, fragmentExtension, first);
+		}
+	}
+	for (const match of attributes) {
+		const attribute = htmlAttribute(match.text);
+		if (!attribute) continue;
+		const { name, value } = attribute;
+		const extension =
+			name === "style" ? ".css" : name.startsWith("on") ? ".ts" : undefined;
+		if (!extension || (!value.includes("/*") && !value.includes("//")))
+			continue;
+		const first =
+			match.range.start.line +
+			match.text.slice(0, match.text.indexOf(value)).split("\n").length;
+		inspect(value, extension, first);
+	}
+	return found.sort(
+		(left, right) => left.first - right.first || left.last - right.last,
+	);
 }
 
 function astroComments(file: string, text: string): CommentLocation[] {

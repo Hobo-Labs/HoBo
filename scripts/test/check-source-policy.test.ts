@@ -316,6 +316,36 @@ e: ##"raw \##(2 + // raw interpolation
 		);
 	});
 
+	it("checks HTML markup and executable script, style, and attribute comments", () => {
+		const text = [
+			"<!doctype html>",
+			`<div title="<!-- literal -->" style="color:red; /* attribute */" onclick="const url = 'https://example.test'; /* handler */">`,
+			"<!-- markup -->",
+			`<script type="application/json">{"note":"// literal", "code":"/* literal */"}</script>`,
+			`<script data-note=" type='text/plain'">const url = "https://example.test"; // script`,
+			"const value = `/* literal */`; /* block */",
+			"</script>",
+			`<style>.x::after { content: "/* literal */"; } /* css */</style>`,
+			`<script type="text/babel">const node = <div/>; // jsx</script>`,
+			`<script type="text/plain">text // plain</script>`,
+			"</div>",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations(
+				"example.html",
+				text,
+				new Set(text.split("\n").map((_, index) => index + 1)),
+			).map((item) => item.line),
+			[2, 2, 3, 5, 6, 8, 9],
+		);
+		assert.deepEqual(
+			commentViolations("example.html", text, new Set([6])).map(
+				(item) => item.line,
+			),
+			[6],
+		);
+	});
+
 	it("preserves actual licensing and tool directives without exempting arbitrary banner comments", () => {
 		assert.equal(
 			commentViolations("x.ts", "/*! @license MIT */\n", new Set([1])).length,
@@ -445,6 +475,11 @@ e: ##"raw \##(2 + // raw interpolation
 		write(repo, "docs/design/example.md.tpl", "# Design\n");
 		write(repo, "docs/ADR-0001.md.tpl", "# Decision\n");
 		write(repo, "packages/example/ARCHITECTURE.md", "# Architecture\n");
+		write(
+			repo,
+			"index.html.tpl",
+			"<script>const value = 1; // explanation\n</script>\n",
+		);
 		git(repo, "add", "--all");
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
@@ -455,6 +490,7 @@ e: ##"raw \##(2 + // raw interpolation
 			"docs/design/example.md.tpl",
 			"docs/ADR-0001.md.tpl",
 			"packages/example/ARCHITECTURE.md",
+			"index.html.tpl",
 		]) {
 			assert.ok(result.stderr.includes(file), file);
 		}
