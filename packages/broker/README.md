@@ -90,6 +90,30 @@ stateDiagram-v2
   s0 --> s2: approve this quote
 ```
 
+The generated-work view hides 32 same-label steps. It assumes the quoted work
+and generation plan are truthful and the durable hold is atomic.
+
+```mermaid
+stateDiagram-v2
+  s0: Work awaits a bound quote
+  s1: Unquoted work refused
+  s2: Quoted work has a financial hold
+  s3: Generation is claimed
+  s4: Changed plan refused#59; hold retained
+  s5: Provider operation completed
+  s6: Current work admitted
+  s7: Changed work refused#59; reconcile the hold
+  [*] --> s0
+  s0 --> s1: refuse an unbound quote
+  s0 --> s2: reserve quoted work
+  s2 --> s4: refuse a changed plan
+  s2 --> s3: claim current generation
+  s3 --> s4: refuse a changed plan
+  s3 --> s5: run the current provider operation
+  s5 --> s7: retain exposure for reconciliation
+  s5 --> s6: admit current work
+```
+
 The reservation and recovery views hide 128 and 16 same-label steps,
 respectively; both assume a truthful host and an atomic durable authority.
 

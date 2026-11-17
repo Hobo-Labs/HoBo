@@ -37,10 +37,30 @@ def hold(s):
  if n!=1:raise Exception('hold guard not found')
  return s
 def claim(s):
- pattern=r'if \(!paidContextCurrent\(\)\)\s*throw new Error\(\s*"hosting context changed before generation claim; reconcile reservation",\s*\);'
+ pattern=r'if \(!paidContextCurrent\(\) \|\| !generationPlanCurrent\(\)\)\s*throw new Error\(\s*"hosting context changed before generation claim; reconcile reservation",\s*\);'
  found=list(re.finditer(pattern,s))
  if len(found)!=2:raise Exception(f'claim guards found {len(found)}')
  m=found[-1];return s[:m.start()]+s[m.end():]
+def work_binding(s):
+ pattern=r'if \(quote.workDigest !== workDigest\)\s*throw new Error\(\s*"hosting quote does not bind selected work and generation plan",\s*\);'
+ s,n=re.subn(pattern,'',s,count=1)
+ if n!=1:raise Exception('work binding guard not found')
+ return s
+def plan_claim(s):
+ pattern=r'if \(!generationPlanCurrent\(\)\)\s*throw new Error\(\s*"generation plan changed after quote approval; reconcile reservation",\s*\);'
+ s,n=re.subn(pattern,'',s,count=1)
+ if n!=1 or s.count(' || !generationPlanCurrent()')!=2:raise Exception('generation claim guards not found')
+ return s.replace(' || !generationPlanCurrent()','')
+def plan_effect(s):
+ pattern=r'if \(!generationPlanCurrent\(\)\)\s*throw new Error\(\s*"generation plan changed before provider operation",?\s*\);'
+ s,n=re.subn(pattern,'',s,count=1)
+ if n!=1:raise Exception('generation effect guard not found')
+ return s
+def generation_funding(s):
+ pattern=r'if \(generationPlanHash && !context\)\s*throw new Error\(\s*"durable shared hosting budget authority required for generation",\s*\);'
+ s,n=re.subn(pattern,'',s,count=1)
+ if n!=1:raise Exception('generation funding guard not found')
+ return s
 def signal(s):
  pattern=r'return rejectAfterGeneration\(\s*"placement",\s*"yard-generation-uncertain",\s*error instanceof Error\s*\? error\.message\s*:\s*"generation signals unavailable",\s*\);'
  s,n=re.subn(pattern,'throw error;',s,count=1)
@@ -51,6 +71,11 @@ cases=[
  ('policy-quote',lambda s:replace(s,'toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||',''),'yard-funded-quote-race.test.ts','changed provider while policy'),
  ('quote-id',lambda s:replace(s,'proof.quoteId !== quote.quoteId ||',''),'yard-policy-quote-binding.test.ts','complete quote content'),
  ('quote-digest',lambda s:replace(s,'proof.quoteDigest !== quoteDigest ||',''),'yard-policy-quote-binding.test.ts','complete quote content'),
+ ('work-binding',work_binding,'yard-quote-work-binding.test.ts','binds a Yard quote'),
+ ('work-after-generation',work_binding,'yard-event-store-folds.test.ts','changed-work-after-generation'),
+ ('plan-before-claim',plan_claim,'yard-event-store-folds.test.ts','changed-plan-before-claim'),
+ ('plan-before-effect',plan_effect,'yard-event-store-folds.test.ts','changed-plan-during-claim'),
+ ('generation-funding',generation_funding,'yard-local-funding.test.ts','does not use local placement approval to fund generation'),
  ('source-quote',lambda s:replace(s,'quoteKey(hostingBudget.quotes) === quotesDigest','true'),'yard-funded-quote-race.test.ts','changed source quote while policy'),
  ('policy-authority',lambda s:replace(s,'deps.authorizeHosting === paidAuthority &&','true &&'),'yard-funded-quote-race.test.ts','changed authority while policy'),
  ('budget',lambda s:first(s,'deps.hostingBudget === hostingBudget &&','true &&'),'yard-funded-quote-race.test.ts','changed budget while policy'),

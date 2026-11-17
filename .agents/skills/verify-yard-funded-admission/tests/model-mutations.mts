@@ -9,6 +9,8 @@ const scratch=mkdtempSync(path.join(os.tmpdir(),'hobo-yard-funded-model-'));
 const cases=[
  ['YardFundedAdmission',['CheckSelection','CheckGateQuote','CheckGateContext','CheckHoldQuote','CheckHoldContext','CheckFreshness','CheckFinal','KeepHold'],[
   ['CheckSelection','SelectedWork'],['CheckGateQuote','QuoteBeforeHold'],['CheckGateContext','ContextBeforeHold'],['CheckHoldQuote','QuoteAfterHold'],['CheckHoldContext','ContextAfterHold'],['CheckFreshness','FreshAtReceipt'],['CheckFinal','FinalContext'],['KeepHold','HoldRetained']]],
+ ['YardQuotedWork',['CheckWork','CheckClaimPlan','CheckEffectPlan','CheckFinalWork','MarkUncertain','ReportFailure'],[
+  ['CheckWork','FundedWork'],['CheckClaimPlan','PlanAtClaim'],['CheckEffectPlan','PlanAtEffect'],['CheckFinalWork','CurrentAtReceipt'],['MarkUncertain','ChangedWorkReconciled'],['ReportFailure','ChangedWorkReconciled']]],
  ['YardPolicyQuote',['CheckId','CheckDigest'],[
   ['CheckId','BoundId'],['CheckDigest','BoundQuote']]],
  ['YardFundedGeneration',['RequireFunding','RequireCurrent','MarkUncertain','ReportFailure','KeepHold'],[
