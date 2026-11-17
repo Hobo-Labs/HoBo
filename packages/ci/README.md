@@ -720,7 +720,7 @@ stateDiagram-v2
   Dispatching --> Confirmed: active worker confirms effect
 ```
 
-The [CI claim-window verification skill](../../.agents/skills/verify-ci-budget-claim-window/SKILL.md)
+The [CI budget-window verification skill](../../.agents/skills/verify-ci-budget-window/SKILL.md)
 models the post-claim time check. This projection hides 13 same-label steps
 from 24 modeled steps.
 
@@ -730,5 +730,18 @@ stateDiagram-v2
   Fits --> Claiming: claim the financial hold
   Claiming --> Committed: claim commits
   Committed --> Allowed: work still fits the window
+  Committed --> Refused: work no longer fits the window; hold retained
+```
+
+The reservation projection also hides 13 same-label steps from 24 modeled
+steps. A refused committed reservation retains its hold and cannot be treated
+as a pre-commit fallback denial.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Fits
+  Fits --> Reserving: reserve the financial hold
+  Reserving --> Committed: hold commits
+  Committed --> Accepted: work still fits the window
   Committed --> Refused: work no longer fits the window; hold retained
 ```

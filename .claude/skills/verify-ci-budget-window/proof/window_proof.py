@@ -5,7 +5,7 @@ from z3 import And, Ints, Not, Solver, sat, unsat
 start, delay, duration, end = Ints('start delay duration end')
 returned = start + delay
 assumptions = [start >= 0, delay >= 0, duration > 0, start + duration <= end, returned < end]
-if os.getenv('CI_CLAIM_WINDOW_MUTATION') != 'omit-return-check':
+if os.getenv('CI_BUDGET_WINDOW_MUTATION') != 'omit-return-check':
     assumptions.append(returned + duration <= end)
 feasible = Solver()
 feasible.add(*assumptions)

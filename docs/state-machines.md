@@ -21,7 +21,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | CI uncertain-runner capacity | [verify-ci-uncertain-capacity](../.agents/skills/verify-ci-uncertain-capacity/SKILL.md) | Uncertain slots retain capacity; confirmed recovery releases it once, under trusted teardown evidence. |
 | CI fleet effect delivery | [verify-ci-fleet-delivery](../.agents/skills/verify-ci-fleet-delivery/SKILL.md) | Fresh bounded delivery fences reject stale workers and ambiguous dispatch is not reissued. |
 | CI fleet start binding | [verify-ci-start-binding](../.agents/skills/verify-ci-start-binding/SKILL.md) | Transactional claims and retries preserve unique job/slot bindings, subject to trusted assignment evidence. |
-| CI shared-budget claim window | [verify-ci-budget-claim-window](../.agents/skills/verify-ci-budget-claim-window/SKILL.md) | Work duration is rechecked after a durable claim waits; refused claims keep their hold. |
+| CI shared-budget window | [verify-ci-budget-window](../.agents/skills/verify-ci-budget-window/SKILL.md) | Work duration is rechecked after durable reservations and claims; post-commit refusals keep their holds. |
 | CI budget routing | [verify-ci-budget-routing](../.agents/skills/verify-ci-budget-routing/SKILL.md) | Routing counts unobserved usage and conservatively aggregates provider-account observations. |
 | CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
 | CD promotion and rollback | [verify-promotion-verification](../.agents/skills/verify-promotion-verification/SKILL.md) | Qualification requires passing verification; request identities bind retries and rollback claims. |
