@@ -244,6 +244,23 @@ describe("answerRelayJob", () => {
 		expect(outputs(routed).get("outcome")).toBe("routed");
 	});
 
+	it("fails a check job if no handler actually answers it", async () => {
+		for (const checks of [undefined, async () => undefined]) {
+			const { deps, journal, order } = setup(undefined, NO_ROUTE_FACTS, checks);
+			const answer = await answerRelayJob(
+				testRelayJobMessage({
+					inputs: [],
+					uses: ["Hobo-Labs/hobo/checks/pr-title@v1"],
+				}),
+				deps,
+			);
+			expect(answer.conclusion).toBe("failed");
+			expect(answer.annotations[0]?.message).toMatch(/check.*handler/iu);
+			expect(journal.events).toEqual([]);
+			expect(order.asked).toEqual([]);
+		}
+	});
+
 	it("fails a message it cannot read, and still completes it", async () => {
 		const { deps, journal } = setup(undefined);
 		const answer = await answerRelayJob(

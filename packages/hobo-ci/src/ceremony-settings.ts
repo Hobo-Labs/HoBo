@@ -1,7 +1,11 @@
 import type { CeremonySetting } from "@hobo/connect-ui";
-
 import type { GithubAppOwner } from "./app-hosts.js";
 import type { GithubAppExpectation } from "./github.js";
+import {
+	checkedBy,
+	parseHttpsOrigin,
+	parseOnePasswordVaultId,
+} from "./parsed-values.js";
 
 // The settings a lifecycle's provider connections need, as ceremony fields:
 // asked for on the connect page when neither the environment nor an earlier
@@ -74,7 +78,7 @@ export function storeSettings(
 					name: "BWS_SERVER",
 					label: "Bitwarden cloud",
 					description:
-						"Where your Bitwarden account lives; a token works only there.",
+						"Where your Bitwarden account lives; a key works only there.",
 					kind: "choice",
 					required: true,
 					value: "us",
@@ -87,32 +91,41 @@ export function storeSettings(
 			},
 			{
 				field: {
-					name: "BWS_ORGANIZATION_ID",
-					label: "Bitwarden organization ID",
+					name: "BITWARDEN_SERVER_URL",
+					label: "Self-hosted server (optional)",
+					description: "Only if your vault is self-hosted: its https address.",
 					kind: "text",
-					required: true,
+					required: false,
 				},
-				validate: uuid,
+				validate: checkedBy(parseHttpsOrigin, "BITWARDEN_SERVER_URL"),
 			},
 			{
 				field: {
-					name: "BWS_PROJECT_ID",
-					label: "Bitwarden project ID",
-					description: "The Secrets Manager project the credentials go to.",
-					kind: "text",
-					required: true,
-				},
-				validate: uuid,
-			},
-			{
-				field: {
-					name: "BWS_ACCESS_TOKEN",
-					label: "Bitwarden machine account access token",
+					name: "BW_CLIENTID",
+					label: "Personal API key: client_id",
 					description:
-						"A token for a machine account with write access to the project. Used for this run only; never saved.",
+						"Account settings → Security → Keys → View API key. HoBo then asks you to approve one login request and sets up the rest itself.",
+					kind: "text",
+					required: true,
+				},
+			},
+			{
+				field: {
+					name: "BW_CLIENTSECRET",
+					label: "Personal API key: client_secret",
+					description: "Used for this run only; never saved.",
 					kind: "secret",
 					required: true,
 				},
+			},
+			{
+				field: {
+					name: "BWS_ORGANIZATION_ID",
+					label: "Organization ID (only if you belong to several)",
+					kind: "text",
+					required: false,
+				},
+				validate: uuid,
 			},
 		];
 	return store === "1password"
@@ -124,6 +137,7 @@ export function storeSettings(
 						kind: "text",
 						required: true,
 					},
+					validate: checkedBy(parseOnePasswordVaultId, "OP_VAULT_ID"),
 				},
 				{
 					field: {
@@ -134,6 +148,17 @@ export function storeSettings(
 						kind: "text",
 						required: true,
 					},
+				},
+				{
+					field: {
+						name: "OP_CONNECT_HOST",
+						label: "1Password Connect server (optional)",
+						description:
+							"The https origin of your own 1Password Connect server. With it, a run on a remote box reaches your vault through Connect, and the agent's egress proxy adds your Connect token: no desktop app and no token in the run.",
+						kind: "text",
+						required: false,
+					},
+					validate: checkedBy(parseHttpsOrigin, "OP_CONNECT_HOST"),
 				},
 			]
 		: [
@@ -164,12 +189,67 @@ export function storeSettings(
 					fallback: defaultPath,
 				},
 				{
+					// The owner's Infisical: US cloud unless they saved another (EU,
+					// self-hosted). Provisioning and the store use the same one.
+					field: {
+						name: "INFISICAL_SITE_URL",
+						label: "Infisical address",
+						kind: "url",
+						required: false,
+					},
+					fallback: "https://app.infisical.com",
+					validate: httpsOrigin,
+				},
+				{
 					field: {
 						name: "INFISICAL_IDENTITY_ID",
 						label: "Infisical machine identity for workloads (optional)",
 						description:
 							"An identity with OIDC Auth that trusts your CI; with it, a CI run signs in with its own OIDC token and nobody types a token.",
 						kind: "text",
+						required: false,
+					},
+				},
+				{
+					field: {
+						name: "INFISICAL_SIGN_IN",
+						label: "How this machine signs in to Infisical",
+						description:
+							"typed: you type an access token on this page. egress-proxy: the run holds no token; the agent's egress proxy injects one you gave it out of band (for an agent's remote box you cannot reach). oauth: you approve in your browser; the store opens read-only.",
+						kind: "choice",
+						required: false,
+						value: "typed",
+						options: [
+							{ value: "typed", label: "Type a token here" },
+							{
+								value: "egress-proxy",
+								label: "Injected by the agent's egress proxy",
+							},
+							{
+								value: "oauth",
+								label: "Approve in the browser (OAuth application, read-only)",
+							},
+						],
+					},
+					fallback: "typed",
+				},
+				{
+					field: {
+						name: "INFISICAL_OAUTH_CLIENT_ID",
+						label: "Infisical OAuth application client ID",
+						description:
+							"For the oauth sign-in: an application under Organization Settings → OAuth Applications, with redirect URI http://127.0.0.1:8793/infisical/callback and PKCE required.",
+						kind: "text",
+						required: false,
+					},
+				},
+				{
+					field: {
+						name: "INFISICAL_OAUTH_CLIENT_SECRET",
+						label: "Infisical OAuth application client secret",
+						description:
+							"For the oauth sign-in. Used for this run only; never saved.",
+						kind: "secret",
 						required: false,
 					},
 				},

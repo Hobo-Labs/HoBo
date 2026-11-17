@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 
 import { storeSettings } from "../src/ceremony-settings.js";
 import { STORE_CHOICE } from "../src/owner-store.js";
-import { openSecretStore } from "../src/secret-stores.js";
+import {
+	EGRESS_PROXY_PLACEHOLDER,
+	openSecretStore,
+} from "../src/secret-stores.js";
 
 function signedIn(token = "machine-token") {
 	const vault = createTrustedVault();
@@ -17,6 +20,32 @@ function signedIn(token = "machine-token") {
 
 const ORG = "11111111-2222-4333-8444-555555555555";
 const PROJECT = "66666666-7777-4888-9999-aaaaaaaaaaaa";
+
+it("uses the proxy marker rather than a token retained from an earlier choice", async () => {
+	const vault = createTrustedVault();
+	vault.put("INFISICAL_TOKEN", "old-writable-token");
+	let authorization: string | null = null;
+	const opened = await openSecretStore(
+		"infisical",
+		{
+			INFISICAL_SIGN_IN: "egress-proxy",
+			INFISICAL_PROJECT_ID: "proj",
+			INFISICAL_ENVIRONMENT: "prod",
+			INFISICAL_SECRET_PATH: "/hobo-ci",
+		},
+		vault,
+		{
+			fetch: async (_input, init) => {
+				authorization = new Headers(init?.headers).get("authorization");
+				return Response.json({}, { status: 403 });
+			},
+		},
+	);
+	expect(opened.ok).toBe(true);
+	if (!opened.ok) throw new Error("not opened");
+	await opened.store.port.access("NAME");
+	expect(authorization).toBe(`Bearer ${EGRESS_PROXY_PLACEHOLDER}`);
+});
 
 function fakeBitwarden(): BitwardenSdkClient {
 	const secrets: BitwardenSecret[] = [];
@@ -73,15 +102,21 @@ describe("Bitwarden Secrets Manager", () => {
 			expect.objectContaining({ value: "bitwarden" }),
 		);
 		const fields = storeSettings("bitwarden", "/unused").map((s) => s.field);
+		// The page asks only for the personal API key; the server URL and the
+		// organization (if several) are optional; what the run provisions
+		// (project, collection, device) never appears here.
 		expect(fields.map((field) => field.name)).toEqual([
 			"BWS_SERVER",
+			"BITWARDEN_SERVER_URL",
+			"BW_CLIENTID",
+			"BW_CLIENTSECRET",
 			"BWS_ORGANIZATION_ID",
-			"BWS_PROJECT_ID",
-			"BWS_ACCESS_TOKEN",
 		]);
-		expect(fields.find((f) => f.name === "BWS_ACCESS_TOKEN")?.kind).toBe(
+		expect(fields.find((f) => f.name === "BW_CLIENTSECRET")?.kind).toBe(
 			"secret",
 		);
+		for (const name of ["BITWARDEN_SERVER_URL", "BWS_ORGANIZATION_ID"])
+			expect(fields.find((f) => f.name === name)?.required).toBe(false);
 	});
 
 	it("writes into the bound project and names entries by reference", async () => {

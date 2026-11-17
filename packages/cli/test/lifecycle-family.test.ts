@@ -156,8 +156,19 @@ describe("parseLifecycleArgs", () => {
 		const parsed = parseLifecycleArgs(["--dry-run", "--mode=complete", "-y"]);
 		expect(parsed).toEqual({
 			ok: true,
-			flags: { whatIf: true, mode: "complete", project: null, yes: true },
+			flags: {
+				whatIf: true,
+				mode: "complete",
+				project: null,
+				yes: true,
+				handOff: false,
+			},
 		});
+		expect(parseLifecycleArgs(["--hand-off"])).toMatchObject({
+			ok: true,
+			flags: { handOff: true },
+		});
+		expect(parseLifecycleArgs(["--hand-off=yes"]).ok).toBe(false);
 		expect(parseLifecycleArgs(["--preview"]).ok).toBe(true);
 		expect(parseLifecycleArgs(["--mode", "replace"]).ok).toBe(false);
 		expect(parseLifecycleArgs(["--force"]).ok).toBe(false);
@@ -255,7 +266,13 @@ describe("resolveFamilyProject", () => {
 	it("prefers --project, then HOBO_<FAMILY>_PROJECT, then the bundled project", async () => {
 		const a = await project();
 		const b = await project();
-		const flags = { whatIf: false, mode: null, project: null, yes: false };
+		const flags = {
+			whatIf: false,
+			mode: null,
+			project: null,
+			yes: false,
+			handOff: false,
+		};
 		expect(
 			resolveFamilyProject({
 				family: "ci",

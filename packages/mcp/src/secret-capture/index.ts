@@ -3,6 +3,7 @@ export {
 	type CreateSecretCaptureAppOptions,
 	createSecretCaptureApp,
 	END_SECRET_CAPTURE_TOOL,
+	linkField,
 	MCP_APP_MIME_TYPE,
 	MCP_APPS_EXTENSION_ID,
 	MCP_APPS_SPEC_VERSION,

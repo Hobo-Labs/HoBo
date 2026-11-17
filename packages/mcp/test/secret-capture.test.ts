@@ -26,9 +26,11 @@ import {
 	WRITER_SECRET,
 } from "./secret-capture-support.js";
 
-const APPS = { apps: true, urlElicitation: false };
-const URL_ONLY = { apps: false, urlElicitation: true };
-const NEITHER = { apps: false, urlElicitation: false };
+const APPS = { apps: true, formElicitation: false, urlElicitation: false };
+const URL_ONLY = { apps: false, formElicitation: false, urlElicitation: true };
+const NEITHER = { apps: false, formElicitation: false, urlElicitation: false };
+/** A host that renders elicitation forms (MCP 2025-06-18 `{}` or `{ form }`). */
+const FORM_ONLY = { apps: false, formElicitation: true, urlElicitation: false };
 
 const apps: SecretCaptureApp[] = [];
 const watches: ReturnType<typeof leakWatch>[] = [];
@@ -86,7 +88,7 @@ describe("host negotiation (MCP Apps 2026-01-26, MCP 2025-11-25 elicitation)", (
 					"io.modelcontextprotocol/ui": { mimeTypes: [MCP_APP_MIME_TYPE] },
 				},
 			}),
-		).toEqual({ apps: true, urlElicitation: false });
+		).toEqual(APPS);
 		expect(
 			negotiateSecretCaptureSupport({
 				extensions: {
@@ -94,10 +96,12 @@ describe("host negotiation (MCP Apps 2026-01-26, MCP 2025-11-25 elicitation)", (
 				},
 			}).apps,
 		).toBe(false);
-		expect(negotiateSecretCaptureSupport({ elicitation: {} })).toEqual(NEITHER);
+		expect(negotiateSecretCaptureSupport({ elicitation: {} })).toEqual(
+			FORM_ONLY,
+		);
 		expect(
 			negotiateSecretCaptureSupport({ elicitation: { form: {}, url: {} } }),
-		).toEqual(URL_ONLY);
+		).toEqual({ ...URL_ONLY, formElicitation: true });
 		expect(negotiateSecretCaptureSupport(null)).toEqual(NEITHER);
 		expect(negotiateSecretCaptureSupport("apps")).toEqual(NEITHER);
 	});

@@ -1,5 +1,10 @@
 import { create } from "@bufbuild/protobuf";
-import { answerRelayJob, RelayJobAnswerSchema } from "@hobo/ci";
+import {
+	answerRelayJob,
+	RelayJobAnswerSchema,
+	RelayJobStepSchema,
+	RelayJobValueSchema,
+} from "@hobo/ci";
 import {
 	InMemoryRouteFactsSource,
 	InMemoryRouteJournal,
@@ -55,6 +60,38 @@ const answer = (jobId: string) =>
 		outputs: [{ name: "runner", value: "ubuntu-24.04" }],
 	});
 
+// Match the workflow installed by `hobo ci init --relay`; real runner
+// messages include its setup actions and evaluator script.
+const ROUTING_SCRIPT = [
+	"node --no-warnings .hobo-ci/relay.mjs",
+	'--fleet "$RELAY_FLEET" --machine "$RELAY_MACHINE" --github "$RELAY_GITHUB"',
+	'--blacksmith "$RELAY_BLACKSMITH" --depot "$RELAY_DEPOT" --namespace "$RELAY_NAMESPACE"',
+	'--warpbuild "$RELAY_WARPBUILD" --ubicloud "$RELAY_UBICLOUD" --boat "$RELAY_BOAT"',
+	'--runs-on "$RELAY_RUNS_ON" --size "$RELAY_SIZE" --first "$RELAY_FIRST"',
+	'--repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"',
+	'--job "$GITHUB_JOB" --event "$GITHUB_EVENT_NAME" --actor-id "$GITHUB_ACTOR_ID"',
+	'--triggering-actor-id "$RELAY_TRIGGERING_ACTOR_ID" --private "$RELAY_PRIVATE"',
+	'--fork "$RELAY_FORK" --workflow-ref "$GITHUB_WORKFLOW_REF"',
+].join(" ");
+
+function testRoutingJob(init: Parameters<typeof testRelayJobMessage>[0] = {}) {
+	const message = testRelayJobMessage(init);
+	if (message.steps.length === 0)
+		message.steps = [
+			create(RelayJobStepSchema, {
+				uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+			}),
+			create(RelayJobStepSchema, {
+				uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+			}),
+			create(RelayJobStepSchema, {
+				uses: "",
+				inputs: [{ name: "script", value: ROUTING_SCRIPT }],
+			}),
+		];
+	return message;
+}
+
 describe("GithubRunnerServiceClient", () => {
 	it("keeps the runner service port's rules against the fake service", () =>
 		runnerServiceClientConformance(
@@ -63,7 +100,7 @@ describe("GithubRunnerServiceClient", () => {
 				return { client, jit, queue: (message) => void service.queue(message) };
 			},
 			{
-				message: (jobId) => testRelayJobMessage({ jobId }),
+				message: (jobId) => testRoutingJob({ jobId }),
 				answer,
 			},
 		));
@@ -71,7 +108,7 @@ describe("GithubRunnerServiceClient", () => {
 	it("takes a relay job, answers it with the one engine, and completes it with outputs", async () => {
 		const { service, client, jit } = setup();
 		service.queue(
-			testRelayJobMessage({
+			testRoutingJob({
 				jobId: "a6d7f1c2-0000-4000-8000-000000000001",
 				planId: "b6d7f1c2-0000-4000-8000-000000000002",
 				repository: "octo/app",
@@ -133,7 +170,7 @@ describe("GithubRunnerServiceClient", () => {
 
 	it("fails a relay job whose order is broken, with the reason as a failure annotation", async () => {
 		const { service, client, jit } = setup();
-		service.queue(testRelayJobMessage({ jobId: "job-broken" }));
+		service.queue(testRoutingJob({ jobId: "job-broken" }));
 		const session = await client.open(jit);
 		const message = await session.nextJob(1_000);
 		if (!message) throw new Error("no job");
@@ -164,7 +201,7 @@ describe("GithubRunnerServiceClient", () => {
 	it("reads the fork, visibility and steps of a job", async () => {
 		const { service, client, jit } = setup();
 		service.queue(
-			testRelayJobMessage({
+			testRoutingJob({
 				jobId: "job-fork",
 				event: "pull_request",
 				private: false,
@@ -202,7 +239,7 @@ describe("GithubRunnerServiceClient", () => {
 		const { service, client, jit, events } = setup({ nowMs: () => now });
 		const session = await client.open(jit);
 		service.expireTokens();
-		service.queue(testRelayJobMessage({ jobId: "job-after-expiry" }));
+		service.queue(testRoutingJob({ jobId: "job-after-expiry" }));
 		expect((await session.nextJob(1_000))?.jobId).toBe("job-after-expiry");
 		expect(
 			events.filter((event) => event.kind === "token-issued"),
@@ -226,7 +263,7 @@ describe("GithubRunnerServiceClient", () => {
 	it("ignores a message type it does not know and keeps waiting for a job", async () => {
 		const { service, client, jit, events } = setup();
 		service.queueMessage("BrokerSomethingNew", "{}");
-		service.queue(testRelayJobMessage({ jobId: "job-after-unknown" }));
+		service.queue(testRoutingJob({ jobId: "job-after-unknown" }));
 		const session = await client.open(jit);
 		expect((await session.nextJob(5_000))?.jobId).toBe("job-after-unknown");
 		expect(events).toContainEqual({
@@ -240,7 +277,7 @@ describe("GithubRunnerServiceClient", () => {
 		const { service, client, jit, events } = setup();
 		const session = await client.open(jit);
 		service.forceTokenRefresh();
-		service.queue(testRelayJobMessage({ jobId: "job-after-refresh" }));
+		service.queue(testRoutingJob({ jobId: "job-after-refresh" }));
 		expect((await session.nextJob(5_000))?.jobId).toBe("job-after-refresh");
 		expect(
 			events.filter((event) => event.kind === "token-issued"),
@@ -251,13 +288,13 @@ describe("GithubRunnerServiceClient", () => {
 	it("completes a job that is not a relay job as failed and never hands it out", async () => {
 		const { service, client, jit, events } = setup();
 		service.queue(
-			testRelayJobMessage({
+			testRoutingJob({
 				jobId: "job-build",
 				inputs: [],
 				uses: ["actions/checkout@v4"],
 			}),
 		);
-		service.queue(testRelayJobMessage({ jobId: "job-relay" }));
+		service.queue(testRoutingJob({ jobId: "job-relay" }));
 		const session = await client.open(jit);
 		expect((await session.nextJob(5_000))?.jobId).toBe("job-relay");
 		expect(service.completions[0]).toMatchObject({
@@ -276,16 +313,103 @@ describe("GithubRunnerServiceClient", () => {
 		await session.close();
 	});
 
+	it("refuses other job steps even when a common relay input is present", async () => {
+		const { service, client, jit, events } = setup();
+		service.queue(
+			testRoutingJob({
+				jobId: "job-with-unrelated-steps",
+				inputs: [["size", "4"]],
+				uses: ["actions/checkout@v4", "actions/upload-artifact@v4"],
+			}),
+		);
+		service.queue(
+			testRelayJobMessage({
+				jobId: "job-without-steps",
+				inputs: [["size", "4"]],
+			}),
+		);
+		service.queue(
+			testRoutingJob({
+				jobId: "job-with-foreign-check",
+				inputs: [],
+				uses: ["other-owner/other/checks/lint@v1"],
+			}),
+		);
+		const modified = testRoutingJob({ jobId: "job-with-modified-script" });
+		const script = modified.steps[2]?.inputs[0];
+		if (!script) throw new Error("missing routing script fixture");
+		script.value += " && npm test";
+		service.queue(modified);
+		const customShell = testRoutingJob({ jobId: "job-with-custom-shell" });
+		const scriptStep = customShell.steps[2];
+		if (!scriptStep) throw new Error("missing routing step fixture");
+		scriptStep.inputs.push(
+			create(RelayJobValueSchema, {
+				name: "shell",
+				value: "bash --rcfile ./run-tests.sh {0}",
+			}),
+		);
+		service.queue(customShell);
+		service.queue(testRoutingJob({ jobId: "job-with-shell-env" }), {
+			rewriteJob: (json) => {
+				const job = JSON.parse(json);
+				job.steps[2].environment = {
+					type: 2,
+					map: [{ Key: "BASH_ENV", Value: "./run-tests.sh" }],
+				};
+				return JSON.stringify(job);
+			},
+		});
+		service.queue(testRoutingJob({ jobId: "job-with-container" }), {
+			rewriteJob: (json) => {
+				const job = JSON.parse(json);
+				job.jobContainer = { type: 0, lit: "alpine:latest" };
+				return JSON.stringify(job);
+			},
+		});
+		service.queue(testRoutingJob({ jobId: "job-relay" }), {
+			rewriteJob: (json) => {
+				const job = JSON.parse(json);
+				job.steps[2].environment = {
+					type: 2,
+					map: [{ Key: "RELAY_GITHUB", Value: "ubuntu-24.04" }],
+				};
+				return JSON.stringify(job);
+			},
+		});
+		const session = await client.open(jit);
+		expect((await session.nextJob(5_000))?.jobId).toBe("job-relay");
+		expect(service.completions[0]).toMatchObject({
+			jobId: "job-with-unrelated-steps",
+			conclusion: "failed",
+		});
+		expect(service.completions.slice(1)).toMatchObject([
+			{ jobId: "job-without-steps", conclusion: "failed" },
+			{ jobId: "job-with-foreign-check", conclusion: "failed" },
+			{ jobId: "job-with-modified-script", conclusion: "failed" },
+			{ jobId: "job-with-custom-shell", conclusion: "failed" },
+			{ jobId: "job-with-shell-env", conclusion: "failed" },
+			{ jobId: "job-with-container", conclusion: "failed" },
+		]);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				kind: "job-refused",
+				jobId: "job-with-unrelated-steps",
+			}),
+		);
+		await session.close();
+	});
+
 	it("completes as failed an acquired job whose message it cannot read, and keeps waiting", async () => {
 		const { service, client, jit, events } = setup();
-		service.queue(testRelayJobMessage({ jobId: "job-bad-context" }), {
+		service.queue(testRoutingJob({ jobId: "job-bad-context" }), {
 			rewriteJob: (json) => {
 				const job = JSON.parse(json);
 				job.contextData.github = { notATypedContext: 1 };
 				return JSON.stringify(job);
 			},
 		});
-		service.queue(testRelayJobMessage({ jobId: "job-good" }));
+		service.queue(testRoutingJob({ jobId: "job-good" }));
 		const session = await client.open(jit);
 		expect((await session.nextJob(5_000))?.jobId).toBe("job-good");
 		expect(service.completions[0]).toMatchObject({
@@ -308,7 +432,7 @@ describe("GithubRunnerServiceClient", () => {
 
 	it("reads a job message whose dictionaries hold keys that differ only by case", async () => {
 		const { service, client, jit } = setup();
-		service.queue(testRelayJobMessage({ jobId: "job-variables" }), {
+		service.queue(testRoutingJob({ jobId: "job-variables" }), {
 			rewriteJob: (json) => {
 				const job = JSON.parse(json);
 				job.variables = {
@@ -327,14 +451,14 @@ describe("GithubRunnerServiceClient", () => {
 
 	it("reports a job message without its ids and keeps waiting rather than throwing", async () => {
 		const { service, client, jit, events } = setup();
-		service.queue(testRelayJobMessage({ jobId: "job-no-id" }), {
+		service.queue(testRoutingJob({ jobId: "job-no-id" }), {
 			rewriteJob: (json) => {
 				const job = JSON.parse(json);
 				delete job.jobId;
 				return JSON.stringify(job);
 			},
 		});
-		service.queue(testRelayJobMessage({ jobId: "job-after-no-id" }));
+		service.queue(testRoutingJob({ jobId: "job-after-no-id" }));
 		const session = await client.open(jit);
 		expect((await session.nextJob(5_000))?.jobId).toBe("job-after-no-id");
 		expect(events).toContainEqual(
@@ -392,7 +516,7 @@ describe("GithubRunnerServiceClient", () => {
 	it("retries a server error once", async () => {
 		const { service, client, jit, events } = setup();
 		const session = await client.open(jit);
-		service.queue(testRelayJobMessage({ jobId: "job-retry" }));
+		service.queue(testRoutingJob({ jobId: "job-retry" }));
 		service.failNext("acquirejob", 503);
 		expect((await session.nextJob(1_000))?.jobId).toBe("job-retry");
 		expect(events).toContainEqual({
@@ -443,9 +567,9 @@ describe("GithubRunnerServiceClient", () => {
 	it("skips an offer another runner acquired first", async () => {
 		const { service, client, jit, events } = setup();
 		const session = await client.open(jit);
-		service.queue(testRelayJobMessage({ jobId: "job-taken" }));
+		service.queue(testRoutingJob({ jobId: "job-taken" }));
 		service.failNext("acquirejob", 409);
-		service.queue(testRelayJobMessage({ jobId: "job-next" }));
+		service.queue(testRoutingJob({ jobId: "job-next" }));
 		expect((await session.nextJob(5_000))?.jobId).toBe("job-next");
 		expect(events).toContainEqual({
 			kind: "job-lost",
@@ -490,7 +614,7 @@ describe("GithubRunnerServiceClient", () => {
 						})
 					: service.fetch(input, init),
 		});
-		service.queue(testRelayJobMessage({ jobId: "job-slow" }));
+		service.queue(testRoutingJob({ jobId: "job-slow" }));
 		const second = await slowComplete.open(jit);
 		expect((await second.nextJob(1_000))?.jobId).toBe("job-slow");
 		const failure = await second
@@ -513,7 +637,7 @@ describe("GithubRunnerServiceClient", () => {
 			},
 		});
 		const session = await client.open(jit);
-		service.queue(testRelayJobMessage({ jobId: "job-hosts" }));
+		service.queue(testRoutingJob({ jobId: "job-hosts" }));
 		await session.nextJob(1_000);
 		await session.close();
 		expect(seen.length).toBeGreaterThan(0);

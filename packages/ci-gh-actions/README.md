@@ -61,6 +61,8 @@ account lease API's actual job attribution to inspect routing and settlement.
 ## Follow HoBo platform budgets
 
 For an owned development machine, see [local CI and the default dev container](LOCAL-DEVELOPMENT.md).
+Its [runnerless local signoff](LOCAL-DEVELOPMENT.md#local-signoff-in-fleet-routing)
+uses `gh-signoff` to publish the jobs HoBo's local workflow run covered.
 The `local` provider dispatches the existing bridge to `hobo-local-host`; original
 jobs retain `runs-on: hobo`, lease accounting and JIT authorization. Offline act
 also runs the local zero-budget scenario without GitHub credentials.
