@@ -147,6 +147,8 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 ]);
 
 const KNOWN_PACKAGE_PATHS = new Set([
+	// Composes the Alchemy and Rivet adapters without coupling either adapter.
+	"packages/alchemy-rivet-topic",
 	// HoBo.CI application SDKs compose the existing Dispatcher at layer 3.
 	"packages/ci",
 	"packages/ci-gh-actions",
