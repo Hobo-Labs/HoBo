@@ -121,6 +121,7 @@ function defaultImportsTsAutocode(file: string) {
 export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/attestation.test.ts",
 	"scripts/test/verify-attestation.test.ts",
+	"scripts/test/trusted-route.test.ts",
 	"scripts/test/attested-jobs.test.ts",
 	"scripts/test/merge-group-gate.test.ts",
 	"scripts/test/lint-actions-runner.test.ts",

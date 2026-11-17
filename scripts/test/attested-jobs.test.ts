@@ -232,13 +232,9 @@ describe("skipping a covered job in the workflows", () => {
 	it("checks for an attestation in the route job of each workflow with a covered job", () => {
 		for (const path of workflows) {
 			const text = readFileSync(path, "utf8");
-			const route = text.slice(
-				text.indexOf("\n  route:\n"),
-				text.indexOf(
-					"\n  ",
-					text.indexOf("uses: $/.github/actions/route-runner"),
-				),
-			);
+			const route =
+				text.match(/\n  route:\n[\s\S]*?(?=\n  [A-Za-z0-9_-]+:\n|$)/u)?.[0] ??
+				"";
 			for (const needed of [
 				"scripts/ci/attestation.mts",
 				"scripts/ci/verify-attestation.mts",

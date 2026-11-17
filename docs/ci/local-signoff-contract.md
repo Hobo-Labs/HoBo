@@ -118,22 +118,23 @@ signing the PR impact group, HoBo checks the trusted workflow wiring and refuses
 if the classifier or its imports are missing, symlinked, or changed. It also
 refuses tracked pnpm hooks, module trees, patches, and other unreviewed
 dependency-resolution paths, even when unchanged; these can refer to code
-outside their own path.
-The exact reviewed workflow and local-plan blobs must already be present at
-both the tested base and head; with an unchanged verifier, a PR cannot
-authorize its own skipped steps.
-Changes to either file require reviewing and updating these pins. The current
-Actions workflow loads the route action and verifier from the tested checkout,
-so the pin checks alone do not defend against a change to that verification
-chain. Review changes to the workflow and verifier, or enforce them through a
-separately protected workflow. Workflow reuse verifies the base and tested
-trees through the GitHub API. Missing,
-truncated, or invalid tree responses cause the group to run in Actions; they
-do not invalidate independently covered jobs. Old records with an earlier
-base likewise lose only that group, even if their local run executed the
-classifiers. The checks assume the local and CI toolchains and their
-installed dependencies are trusted. A missing container engine still omits
-the coupled PR impact group.
+outside their own path. The exact reviewed workflow and local-plan blobs must
+already be present at both the tested base and head. Changes to either file
+require reviewing and updating these pins. Workflow reuse verifies the base and
+tested trees through the GitHub API. Missing, truncated, or invalid tree
+responses cause the group to run in Actions; independently covered jobs remain
+eligible. Old records with an earlier base likewise lose only that group, even
+if their local run executed the classifiers. The checks assume the local and
+CI toolchains and installed dependencies are trusted. A missing container
+engine still omits the coupled PR impact group.
+
+The `hobo-ci` and `release-hobo` route jobs load their route action and
+attestation verifier from a separate checkout of the event's base commit. The
+verifier still inspects the tested checkout's tree. A missing base verifier
+fails closed. The workflow definitions themselves come from the tested event;
+a protected required workflow or review of workflow changes is still needed to
+prevent a pull request from replacing the verification step.
+
 The extension requires a pushed commit and a credential allowed to write commit
 statuses. These statuses use the credential's authority, rather than the
 base-branch trust list used for workflow-reuse attestations. Local commands run
