@@ -1735,14 +1735,29 @@ describe("Alchemy IaC provider against the real library", () => {
 			).rejects.toMatchObject({
 				code: "ADMISSION_RECEIPT_INVALID",
 				requiresReconciliation: true,
+				reservationId: "iac:unreadable",
+			});
+			expect(fixture.authority.lookup("iac:unreadable")?.status).toBe(
+				"uncertain",
+			);
+			expect(
+				await fixture.routeAuthority.inspect({
+					tenantId: "tenant-a",
+					requestId: "unreadable",
+				}),
+			).toMatchObject({
+				phase: "finished",
+				outcome: { status: "uncertain", targetId: "yard-a" },
+				attempts: [{ targetId: "yard-a", status: "finished" }],
 			});
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 			expect(fixture.applied()).toBe(0);
 			await expect(
 				fixture.provider.applyWithAdmission(program, "another-attempt"),
 			).rejects.toMatchObject({
-				code: "EXECUTION_OUTCOME_UNRESOLVED",
+				code: "EXECUTION_ALREADY_CLAIMED",
 				requiresReconciliation: true,
+				reservationId: "iac:unreadable",
 			});
 			expect(fixture.issued()).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);

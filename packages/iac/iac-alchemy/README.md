@@ -448,6 +448,8 @@ must match the resolver's result. The trusted host issues a successor only
 after verified recovery of any prior unresolved attempt. A malformed or
 unreadable admission receipt requires reconciliation:
 the authority may already have reserved funds even if the receipt is unusable.
+When the exact request-scoped reservation can still be identified safely, the
+adapter reports its ID, marks the hold uncertain, and retains an uncertain route.
 An instance also blocks subsequent attempts after any outcome requiring
 reconciliation; the host must resolve the previous attempt before replacing it.
 
