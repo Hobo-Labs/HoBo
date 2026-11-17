@@ -1,7 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DurableObjectResource, Providers } from "@alchemy.run/rivet";
+import { fromJson, toJson } from "@bufbuild/protobuf";
+import { alchemyTarget, createAlchemyIacProvider } from "@hobo/iac-alchemy";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
@@ -9,14 +11,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { setup } from "rivetkit";
 import { describe, expect, it } from "vitest";
-import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
+import { TopicSourceClaimSchema } from "../src/_generated/topic_source_claim_pb.js";
 import {
 	bindRivetDurableTopicSource,
 	createRivetDurableTopicActor,
 	RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
 	type RivetDurableTopicSource,
 	rivetDurableTopicResource,
-} from "../src/rivet-topic.js";
+} from "../src/index.js";
 import { testStateOwnership } from "./route-fixture.js";
 
 const sourceDigest = `sha256:${"a".repeat(64)}`;
@@ -311,6 +313,19 @@ describe("Alchemy Rivet retained topic-log resource", () => {
 					sourceDigest,
 				}),
 			);
+			const fixture = JSON.parse(
+				readFileSync(
+					new URL("../data-models/fixtures/valid/source.json", import.meta.url),
+					"utf8",
+				),
+			);
+			expect(observed).toContainEqual(fixture);
+			expect(
+				toJson(
+					TopicSourceClaimSchema,
+					fromJson(TopicSourceClaimSchema, fixture),
+				),
+			).toEqual(fixture);
 		} finally {
 			if (previous === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = previous;
