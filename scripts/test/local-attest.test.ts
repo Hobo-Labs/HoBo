@@ -10,6 +10,7 @@ import {
 	readFileSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -145,6 +146,83 @@ describe("the attestor key", () => {
 		ensureAttestorKey(path);
 		chmodSync(path, 0o644);
 		assert.throws(() => ensureAttestorKey(path), AttestError);
+	});
+
+	it("does not change permissions on an existing non-private parent", () => {
+		const parent = directory("public-key-parent");
+		chmodSync(parent, 0o755);
+		const path = join(parent, "ed25519.pem");
+		assert.throws(() => ensureAttestorKey(path), /not a private directory/u);
+		assert.equal(statSync(parent).mode & 0o777, 0o755);
+		assert.equal(existsSync(path), false);
+	});
+
+	it("rejects keys inside the checkout or a shared tool directory through symlinks", () => {
+		const checkout = directory("key-checkout");
+		const outside = directory("key-outside");
+		const cache = directory("key-cache");
+		const checkoutLink = join(outside, "checkout-link");
+		const cacheLink = join(outside, "cache-link");
+		symlinkSync(checkout, checkoutLink, "dir");
+		symlinkSync(cache, cacheLink, "dir");
+		assert.throws(
+			() => assertKeyApart(join(checkoutLink, "new", "key.pem"), checkout, {}),
+			/inside/u,
+		);
+		assert.throws(
+			() =>
+				assertKeyApart(join(cacheLink, "new", "key.pem"), checkout, {
+					XDG_CACHE_HOME: cache,
+				}),
+			/inside/u,
+		);
+		// A similarly named sibling is not inside the checkout.
+		assert.doesNotThrow(() =>
+			assertKeyApart(join(`${checkout}-sibling`, "key.pem"), checkout, {}),
+		);
+	});
+
+	it("rejects an unsafe key path before creating its directory", () => {
+		const repo = repository({ "tracked.txt": "fixture\n" });
+		const path = join(repo, "new-keys", "ed25519.pem");
+		const run = spawnSync(
+			process.execPath,
+			["--experimental-strip-types", "--no-warnings", script, "init-key"],
+			{
+				cwd: repo,
+				encoding: "utf8",
+				env: { ...process.env, HOBO_CI_ATTESTOR_KEY: path },
+			},
+		);
+		assert.notEqual(run.status, 0);
+		assert.match(run.stderr, /inside .*keep it elsewhere/u);
+		assert.equal(existsSync(join(repo, "new-keys")), false);
+	});
+
+	it("checks the run key path before creating a key", () => {
+		const repo = repository({ "scripts/ci/attested-jobs.json": '{"jobs":[]}' });
+		git(repo, ["branch", "base"]);
+		commit(repo, { "change.txt": "changed" });
+		const path = join(repo, "new-keys", "ed25519.pem");
+		const run = spawnSync(
+			process.execPath,
+			[
+				"--experimental-strip-types",
+				"--no-warnings",
+				script,
+				"run",
+				"--base=base",
+				"--no-fetch",
+			],
+			{
+				cwd: repo,
+				encoding: "utf8",
+				env: { ...process.env, HOBO_CI_ATTESTOR_KEY: path },
+			},
+		);
+		assert.notEqual(run.status, 0);
+		assert.match(run.stderr, /inside .*keep it elsewhere/u);
+		assert.equal(existsSync(join(repo, "new-keys")), false);
 	});
 
 	it("gives a trust entry that is its own id, expires, and holds only the public key", () => {
@@ -440,6 +518,7 @@ async function runIn(
 		engine: "29.0.0-test",
 	},
 	initialFiles: Readonly<Record<string, string>> = {},
+	headFiles: Readonly<Record<string, string>> = {},
 ) {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const entry = trustEntryFor(privateKey, {
@@ -454,7 +533,7 @@ async function runIn(
 		...initialFiles,
 	});
 	git(repo, ["branch", "base"]);
-	const head = commit(repo, { "change.txt": "changed\n" });
+	const head = commit(repo, { "change.txt": "changed\n", ...headFiles });
 	const record = join(directory("record"), "record");
 	writeFileSync(record, "");
 	const target = resolveRunTarget({ cwd: repo, baseRef: "base" });
@@ -490,15 +569,19 @@ describe("a local run", () => {
 			// Pull request: the steps see the merge commit GitHub would build.
 			"install:pull_request",
 			`parents:${base}:${run.head}:${base}:none`,
-			// The same install in the next job, same event: not run again.
+			// The same command still runs independently for each shard.
+			"install:pull_request",
 			`tests:pull_request:0/2:4:${base}`,
+			"install:pull_request",
 			`tests:pull_request:1/2:7:${base}`,
 			`guard:${target.mergeCommit}`,
 			// Merge group: the base arrives under the merge group's name.
 			"install:merge_group",
 			`parents:${base}:${run.head}:none:${base}`,
 			"group-only",
+			"install:merge_group",
 			`tests:merge_group:0/2:4:${base}`,
+			"install:merge_group",
 			`tests:merge_group:1/2:7:${base}`,
 		]);
 		const { statement } = envelope;
@@ -531,7 +614,7 @@ describe("a local run", () => {
 			statement.results.map((result) => [result.id, result.commands]),
 			[
 				["pr_gate_validation", 7],
-				["workspace_tests", 4],
+				["workspace_tests", 8],
 				["ci-guard", 1],
 			],
 		);
@@ -655,6 +738,119 @@ describe("a local run", () => {
 		);
 		await assert.rejects(run.outcome, /no covered job ran/u);
 		assert.equal(git(run.repo, ["rev-parse", "HEAD"]), run.head);
+	});
+
+	it("does not sign an event for which every local step is skipped", async () => {
+		const run = await runIn(
+			planOf([
+				{
+					id: "ci-guard",
+					steps: [{ run: "true", local: "skip", reason: "a skipped command" }],
+				},
+			]),
+			["pull_request"],
+		);
+		await assert.rejects(run.outcome, /no covered job ran/u);
+	});
+
+	it("does not sign an event with an empty or all-skipped matrix shard", async () => {
+		for (const matrix of [
+			"${{ fromJSON('[]') }}",
+			"${{ fromJSON('[1,2]') }}",
+		]) {
+			const run = await runIn(
+				planOf([
+					{
+						id: "ci-guard",
+						matrix,
+						steps: [{ run: "true", if: "matrix.shard == 1", local: "run" }],
+					},
+				]),
+				["pull_request"],
+			);
+			await assert.rejects(run.outcome, /no covered job ran/u);
+		}
+	});
+
+	it("refuses a matrix that does not resolve to an array", async () => {
+		const run = await runIn(
+			planOf([
+				{
+					id: "ci-guard",
+					matrix: "${{ fromJSON('{}') }}",
+					steps: [{ run: "true", local: "run" }],
+				},
+			]),
+			["pull_request"],
+		);
+		await assert.rejects(run.outcome, /matrix for ci-guard is not an array/u);
+	});
+
+	it("records command evidence only for the event whose steps ran", async () => {
+		const run = await runIn(
+			planOf([
+				{
+					id: "ci-guard",
+					steps: [
+						{
+							run: "true",
+							if: "github.event_name == 'pull_request'",
+							local: "run",
+						},
+					],
+				},
+			]),
+			["pull_request", "merge_group"],
+		);
+		const { envelope } = await run.outcome;
+		assert.deepEqual(envelope.statement.results[0]?.events, ["pull_request"]);
+		assert.deepEqual(envelope.statement.results[0]?.eventChecks, {
+			pull_request: 1,
+		});
+	});
+
+	it("applies an uncovered-output guard after another job runs the same command", async () => {
+		const command = 'echo "image_ids=hobo-cli" >> "$GITHUB_OUTPUT"';
+		const run = await runIn(
+			planOf([
+				{ id: "ci-guard", steps: [{ run: command, local: "run" }] },
+				{
+					id: "release-contract",
+					uncoveredWhen: {
+						step: "affected",
+						output: "image_ids",
+						reason: "an image is affected",
+					},
+					steps: [{ id: "affected", run: command, local: "run" }],
+				},
+			]),
+			["pull_request"],
+		);
+		const { envelope, notAttested } = await run.outcome;
+		assert.deepEqual(envelope.statement.jobs, ["ci-guard"]);
+		assert.match(notAttested["release-contract"] ?? "", /image_ids: hobo-cli/u);
+	});
+
+	it("runs identical stateful commands separately and signs nothing if the second fails", async () => {
+		const command =
+			'if [ -e "$RUNNER_TEMP/marker" ]; then exit 1; else touch "$RUNNER_TEMP/marker"; fi';
+		const run = await runIn(
+			planOf([
+				{
+					id: "ci-guard",
+					steps: [
+						{ name: "first", run: command, local: "run" },
+						{ name: "second", run: command, local: "run" },
+					],
+				},
+			]),
+			["pull_request"],
+		);
+		await assert.rejects(run.outcome, /ci-guard: "second" failed/u);
+		assert.equal(
+			existsSync(join(run.repo, OUTPUT_DIRECTORY, `${run.target.tree}.json`)),
+			false,
+		);
 	});
 
 	it("gives a step an allowlisted environment and a home of its own", async () => {
@@ -1076,25 +1272,72 @@ describe("the secret scan and histories that end in the same tree", () => {
 });
 
 describe("local gh-signoff", () => {
-	async function fixture(hasEngine = true, drift = false) {
+	async function fixture(
+		hasEngine = true,
+		drift = false,
+		extraJobs: string[] = [],
+		mutateFiles?: (files: Record<string, string>) => void,
+		releaseImages = "",
+		useRealGate = false,
+		headFiles: Readonly<Record<string, string>> = {},
+	) {
 		const jobs = [
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
 			"ci-guard",
 			"secret-scan",
-		].map((id) => ({
-			id,
-			if: ["pr_affected", "ci-guard", "secret-scan"].includes(id)
-				? "github.event_name == 'pull_request'"
-				: undefined,
-			steps: [{ name: id, run: `echo ${id} >/dev/null`, local: "run" }],
-		}));
+			...extraJobs,
+		].map((id) =>
+			id === "release-contract"
+				? {
+						id,
+						uncoveredWhen: {
+							step: "affected",
+							output: "image_ids",
+							reason: "a release image is affected",
+						},
+						steps: [
+							{
+								id: "affected",
+								run: `printf '%s\\n' 'image_ids=${releaseImages}' >> "$GITHUB_OUTPUT"`,
+								local: "run",
+							},
+						],
+					}
+				: {
+						id,
+						if: ["pr_affected", "ci-guard", "secret-scan"].includes(id)
+							? "github.event_name == 'pull_request'"
+							: undefined,
+						steps:
+							useRealGate &&
+							id === "pr_gate_validation" &&
+							headFiles["scripts/ci/impact-classifier.mts"]
+								? [
+										{
+											run: "node scripts/ci/impact-classifier.mts",
+											local: "run",
+										},
+										{ run: 'test "$SHADOW_MARKER" = 1', local: "run" },
+									]
+								: [{ name: id, run: `echo ${id} >/dev/null`, local: "run" }],
+					},
+		);
 		const sourceRoot = fileURLToPath(new URL("../..", import.meta.url));
 		const sourcePaths = [
 			"scripts/ci/attested-jobs.json",
 			".github/workflows/hobo-ci.yml",
 			".github/workflows/release-hobo.yml",
+			"scripts/ci/memory-env.mts",
+			...[
+				"ci-runner-preflight",
+				"turbo-cache",
+				"pnpm-store",
+				"ci-trace",
+				"hobo-repo-checkout",
+				"hobo-checkout",
+			].map((name) => `.github/actions/${name}/action.yml`),
 		];
 		const files = Object.fromEntries(
 			sourcePaths.map((path) => [
@@ -1109,6 +1352,19 @@ describe("local gh-signoff", () => {
 				"  ci-guard:\n    env:\n      HOBO_SIGNOFF_DRIFT: test\n",
 			);
 		}
+		// Most signoff tests exercise an otherwise identical trusted workflow
+		// with a known shadow value. A separate regression keeps the real,
+		// unavailable variable to test the current gate's conservative refusal.
+		if (!useRealGate)
+			for (const path of [
+				"scripts/ci/attested-jobs.json",
+				".github/workflows/hobo-ci.yml",
+			])
+				files[path] = (files[path] ?? "").replaceAll(
+					"vars.HOBO_IMPACT_GATE",
+					"'shadow'",
+				);
+		mutateFiles?.(files);
 		const run = await runIn(
 			jobs,
 			["pull_request", "merge_group"],
@@ -1116,6 +1372,7 @@ describe("local gh-signoff", () => {
 			false,
 			hasEngine ? { engine: "29.0.0-test" } : {},
 			files,
+			headFiles,
 		);
 		const outcome = await run.outcome;
 		const remote = directory("signoff-remote");
@@ -1140,10 +1397,33 @@ describe("local gh-signoff", () => {
 		const bin = directory("signoff-bin");
 		writeFileSync(
 			join(bin, "gh"),
-			'#!/bin/sh\nprintf "%s\\n" "$@" > "$HOBO_SIGNOFF_TEST_CALLS"\nexit "${HOBO_SIGNOFF_TEST_EXIT:-0}"\n',
+			`#!/bin/sh
+if [ "$1" = repo ]; then
+  printf '%s\n' "$@" >> "$HOBO_SIGNOFF_TEST_REPO_CALLS"
+  case " $* " in
+    *" -- "*) name="\${HOBO_SIGNOFF_TEST_BASE_REPO:-acme/app}" ;;
+    *) name="\${HOBO_SIGNOFF_TEST_SELECTED_REPO:-acme/app}" ;;
+  esac
+  host="\${HOBO_SIGNOFF_TEST_HOST:-github.com}"
+  printf '{"nameWithOwner":"%s","url":"https://%s/%s"}\\n' "$name" "$host" "$name"
+  exit 0
+fi
+if [ "$1" = api ]; then
+  printf '%s\n' "$@" >> "$HOBO_SIGNOFF_TEST_API_CALLS"
+  if [ "\${HOBO_SIGNOFF_TEST_API_FAIL:-0}" = 1 ]; then exit 1; fi
+  if [ -n "\${HOBO_SIGNOFF_TEST_GH_BASE:-}" ]; then printf '%s\\n' "$HOBO_SIGNOFF_TEST_GH_BASE"; else git rev-parse refs/remotes/origin/main; fi
+  exit 0
+fi
+printf '%s\\n' "$@" > "$HOBO_SIGNOFF_TEST_CALLS"
+printf '%s\\n%s\\n' "$GH_HOST" "$GH_REPO" > "$HOBO_SIGNOFF_TEST_ENV"
+exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
+`,
 			{ mode: 0o755 },
 		);
 		const calls = join(directory("signoff-calls"), "calls");
+		const ghEnv = join(directory("signoff-env"), "env");
+		const repoCalls = join(directory("signoff-repo-calls"), "calls");
+		const apiCalls = join(directory("signoff-api-calls"), "calls");
 		const command = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) =>
 			spawnSync(
 				process.execPath,
@@ -1160,13 +1440,44 @@ describe("local gh-signoff", () => {
 					env: {
 						...process.env,
 						PATH: `${bin}:${process.env.PATH ?? ""}`,
+						GH_HOST: "github.com",
+						GH_REPO: "acme/app",
 						HOBO_CI_ATTESTOR_KEY: key,
 						HOBO_SIGNOFF_TEST_CALLS: calls,
+						HOBO_SIGNOFF_TEST_ENV: ghEnv,
+						HOBO_SIGNOFF_TEST_REPO_CALLS: repoCalls,
+						HOBO_SIGNOFF_TEST_API_CALLS: apiCalls,
 						...extra,
 					},
 				},
 			);
-		return { ...run, ...outcome, calls, command };
+		return {
+			...run,
+			...outcome,
+			calls,
+			ghEnv,
+			repoCalls,
+			apiCalls,
+			bin,
+			command,
+		};
+	}
+
+	function rebindToChangedHead(
+		run: Awaited<ReturnType<typeof fixture>>,
+		files: Readonly<Record<string, string>>,
+	) {
+		const head = commit(run.repo, files);
+		const statement = {
+			...run.envelope.statement,
+			head,
+			tree: git(run.repo, ["rev-parse", "HEAD^{tree}"]),
+		};
+		writeFileSync(
+			run.file,
+			JSON.stringify(signStatement(statement, run.privateKey)),
+		);
+		return run.command([`--file=${run.file}`]);
 	}
 
 	it("posts only the passed pull-request jobs for the exact pushed head", async () => {
@@ -1186,6 +1497,10 @@ describe("local gh-signoff", () => {
 				"secret-scan",
 			].map((job) => `hobo-ci/local/pull_request/${job}`),
 		]);
+		assert.deepEqual(readFileSync(run.ghEnv, "utf8").trim().split("\n"), [
+			"github.com",
+			"github.com/acme/app",
+		]);
 		assert.match(result.stdout, /posted 5 local signoff/u);
 	});
 
@@ -1202,6 +1517,34 @@ describe("local gh-signoff", () => {
 			"hobo-ci/local/pull_request/ci-guard",
 			"hobo-ci/local/pull_request/secret-scan",
 		]);
+	});
+
+	it("signs an unaffected release even though its skipped image step uses a secret", async () => {
+		const run = await fixture(false, false, ["release-contract"]);
+		assert.equal(run.notAttested["release-contract"], undefined);
+		const result = run.command();
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/pull_request\/release-contract/u,
+		);
+	});
+
+	it("does not sign release-contract when its detector reports an affected image", async () => {
+		const run = await fixture(
+			false,
+			false,
+			["release-contract"],
+			undefined,
+			"hobo-cli",
+		);
+		assert.match(
+			run.notAttested["release-contract"] ?? "",
+			/a release image is affected/u,
+		);
+		const result = run.command();
+		assert.equal(result.status, 0, result.stderr);
+		assert.doesNotMatch(readFileSync(run.calls, "utf8"), /release-contract/u);
 	});
 
 	it("uses separate contexts for the simulated merge-group event", async () => {
@@ -1276,6 +1619,347 @@ describe("local gh-signoff", () => {
 		const result = run.command([], { HOBO_SIGNOFF_TEST_EXIT: "1" });
 		assert.notEqual(result.status, 0);
 		assert.match(result.stderr, /Some statuses may already have been posted/u);
+	});
+
+	it("refuses a different target repository, host, or GitHub base before posting", async () => {
+		for (const extra of [
+			{ HOBO_SIGNOFF_TEST_BASE_REPO: "other/app" },
+			{ GH_REPO: "other/app", HOBO_SIGNOFF_TEST_SELECTED_REPO: "other/app" },
+			{ GH_HOST: "other.example" },
+			{ HOBO_SIGNOFF_TEST_GH_BASE: "a".repeat(40) },
+			{ HOBO_SIGNOFF_TEST_API_FAIL: "1" },
+		]) {
+			const run = await fixture();
+			const result = run.command([], extra);
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /GitHub target and live base match/u);
+			assert.equal(existsSync(run.calls), false);
+		}
+	});
+
+	it("refuses older local records without per-event command evidence", async () => {
+		const run = await fixture();
+		const statement = {
+			...run.envelope.statement,
+			results: run.envelope.statement.results.map(
+				({ eventChecks: _checks, ...entry }) => entry,
+			),
+		};
+		writeFileSync(
+			run.file,
+			JSON.stringify(signStatement(statement, run.privateKey)),
+		);
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /no per-event command evidence/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses cached-era local records while preserving workflow verification", async () => {
+		const run = await fixture(false);
+		const statement = {
+			...run.envelope.statement,
+			results: run.envelope.statement.results.map(
+				({ executionMode: _mode, ...entry }) => entry,
+			),
+		};
+		const oldRecord = JSON.stringify(signStatement(statement, run.privateKey));
+		writeFileSync(run.file, oldRecord);
+		assert.equal(
+			verifyLocally({
+				cwd: run.repo,
+				baseRef: "origin/main",
+				event: "pull_request",
+				envelopeText: oldRecord,
+				nowMs: Date.now(),
+			}).attested,
+			true,
+		);
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /does not prove each step ran individually/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses changed skip metadata and a removed release-image guard", async () => {
+		const guardRun = await fixture();
+		const planPath = "scripts/ci/attested-jobs.json";
+		const plan = JSON.parse(
+			readFileSync(join(guardRun.repo, planPath), "utf8"),
+		);
+		const guard = plan.jobs.find(
+			(job: { id: string }) => job.id === "ci-guard",
+		);
+		const check = guard.steps.find(
+			(step: { name?: string }) => step.name === "Assert CI fabric contract",
+		);
+		check.local = "skip";
+		check.reason = "incorrectly skip a substantive assertion";
+		const skipped = rebindToChangedHead(guardRun, {
+			[planPath]: JSON.stringify(plan),
+		});
+		assert.notEqual(skipped.status, 0);
+		assert.match(skipped.stderr, /local job policy for ci-guard differs/u);
+		assert.equal(existsSync(guardRun.calls), false);
+
+		const releaseRun = await fixture(true, false, ["release-contract"]);
+		const releasePlan = JSON.parse(
+			readFileSync(join(releaseRun.repo, planPath), "utf8"),
+		);
+		delete releasePlan.jobs.find(
+			(job: { id: string }) => job.id === "release-contract",
+		).uncoveredWhen;
+		const unguarded = rebindToChangedHead(releaseRun, {
+			[planPath]: JSON.stringify(releasePlan),
+		});
+		assert.notEqual(unguarded.status, 0);
+		assert.match(
+			unguarded.stderr,
+			/local job policy for release-contract differs/u,
+		);
+		assert.equal(existsSync(releaseRun.calls), false);
+	});
+
+	it("refuses workflow semantics or skipped local action changes absent from the base", async () => {
+		const workflowRun = await fixture(false);
+		const path = ".github/workflows/hobo-ci.yml";
+		const workflow = readFileSync(join(workflowRun.repo, path), "utf8").replace(
+			"  ci-guard:\n",
+			"  ci-guard:\n    strategy:\n      matrix:\n        node: [20, 24]\n",
+		);
+		const changedWorkflow = rebindToChangedHead(workflowRun, {
+			[path]: workflow,
+		});
+		assert.notEqual(changedWorkflow.status, 0);
+		assert.match(
+			changedWorkflow.stderr,
+			/workflow job or workflow settings for ci-guard changed/u,
+		);
+		assert.equal(existsSync(workflowRun.calls), false);
+
+		const actionRun = await fixture(false);
+		const action = ".github/actions/ci-runner-preflight/action.yml";
+		const changedAction = rebindToChangedHead(actionRun, {
+			[action]: `${readFileSync(join(actionRun.repo, action), "utf8")}\n# changed\n`,
+		});
+		assert.notEqual(changedAction.status, 0);
+		assert.match(
+			changedAction.stderr,
+			/skipped local action or its dependencies in ci-guard changed/u,
+		);
+		assert.equal(existsSync(actionRun.calls), false);
+	});
+
+	it("refuses a changed helper of a skipped action, even if the action itself is unchanged", async () => {
+		const run = await fixture(false);
+		const helper = "scripts/ci/memory-env.mts";
+		const result = rebindToChangedHead(run, {
+			[helper]: `${readFileSync(join(run.repo, helper), "utf8")}\n// changed\n`,
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/skipped local action or its dependencies in ci-guard changed/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a previously unknown skipped local action", async () => {
+		const run = await fixture(false, false, [], (files) => {
+			for (const path of [
+				"scripts/ci/attested-jobs.json",
+				".github/workflows/hobo-ci.yml",
+			]) {
+				files[path] = (files[path] ?? "").replaceAll(
+					"$/.github/actions/ci-runner-preflight",
+					"$/.github/actions/unknown-helper",
+				);
+			}
+			files[".github/actions/unknown-helper/action.yml"] =
+				"name: unreviewed\nruns:\n  using: composite\n  steps: []\n";
+		});
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /unknown skipped local action in ci-guard/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a trusted policy that depends on unknown GitHub inputs", async () => {
+		for (const condition of [
+			"vars.REQUIRE_CHECK == 'yes'",
+			"secrets.REQUIRE_CHECK != ''",
+			"github.event.pull_request.number != ''",
+		]) {
+			const run = await fixture(false, false, [], (files) => {
+				const path = "scripts/ci/attested-jobs.json";
+				const plan = JSON.parse(files[path] ?? "");
+				const job = plan.jobs.find(
+					(entry: { id: string }) => entry.id === "ci-guard",
+				);
+				job.steps.find((entry: { local: string }) => entry.local === "run").if =
+					condition;
+				files[path] = JSON.stringify(plan);
+			});
+			const result = run.command();
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /GitHub values unavailable locally/u);
+			assert.equal(existsSync(run.calls), false);
+		}
+	});
+
+	it("refuses unknown values in job-level expressions", async () => {
+		const run = await fixture(false, false, [], (files) => {
+			const path = "scripts/ci/attested-jobs.json";
+			const plan = JSON.parse(files[path] ?? "");
+			const job = plan.jobs.find(
+				(entry: { id: string }) => entry.id === "ci-guard",
+			);
+			job.env.REQUIRED_POLICY = "${{ vars.REQUIRED_POLICY }}";
+			files[path] = JSON.stringify(plan);
+		});
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /GitHub values unavailable locally/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses the unknown shadow variable even when a changed classifier injects later step environment", async () => {
+		const path = "scripts/ci/impact-classifier.mts";
+		const baseline = (files: Record<string, string>) => {
+			files[path] = "export {};\n";
+		};
+		const injected = {
+			[path]: `import { appendFileSync } from "node:fs";
+appendFileSync(process.env.GITHUB_ENV, "SHADOW_MARKER=1\\n");
+console.log("changed classifier set GITHUB_ENV");
+`,
+		};
+		const full = await fixture(true, false, [], baseline, "", true, injected);
+		const log = readFileSync(
+			join(
+				full.repo,
+				OUTPUT_DIRECTORY,
+				full.target.tree,
+				"pr_gate_validation.log",
+			),
+			"utf8",
+		);
+		assert.match(log, /changed classifier set GITHUB_ENV/u);
+		const denied = full.command();
+		assert.notEqual(denied.status, 0);
+		assert.match(denied.stderr, /GitHub values unavailable locally/u);
+		assert.equal(existsSync(full.calls), false);
+
+		// With the PR impact group omitted, independent jobs can still sign off.
+		const partial = await fixture(
+			false,
+			false,
+			[],
+			baseline,
+			"",
+			true,
+			injected,
+		);
+		const allowed = partial.command();
+		assert.equal(allowed.status, 0, allowed.stderr);
+		const calls = readFileSync(partial.calls, "utf8");
+		assert.match(calls, /hobo-ci\/local\/pull_request\/ci-guard/u);
+		assert.doesNotMatch(
+			calls,
+			/pr_gate_validation|workspace_tests|pr_affected/u,
+		);
+	});
+
+	it("encodes branch slashes when checking the GitHub base", async () => {
+		const run = await fixture(false);
+		git(run.repo, [
+			"push",
+			"--quiet",
+			"origin",
+			"base:refs/heads/feature/base",
+		]);
+		git(run.repo, [
+			"fetch",
+			"--quiet",
+			"origin",
+			"+refs/heads/feature/base:refs/remotes/origin/feature/base",
+		]);
+		const result = run.command(["--base=origin/feature/base"]);
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			readFileSync(run.apiCalls, "utf8"),
+			/branches\/feature%2Fbase/u,
+		);
+	});
+
+	it("removes scp-style userinfo from the base remote passed to gh", async () => {
+		const run = await fixture(false);
+		const wrapper = directory("git-wrapper");
+		writeFileSync(
+			join(wrapper, "git"),
+			`#!/bin/sh
+if [ "$1" = remote ] && [ "$2" = get-url ]; then
+  printf '%s\\n' 'credential-sentinel@github.com:acme/app.git'
+  exit 0
+fi
+exec /usr/bin/git "$@"
+`,
+			{ mode: 0o755 },
+		);
+		const result = run.command([], {
+			PATH: `${wrapper}:${run.bin}:${process.env.PATH ?? ""}`,
+		});
+		assert.equal(result.status, 0, result.stderr);
+		const seen = readFileSync(run.repoCalls, "utf8");
+		assert.match(seen, /https:\/\/github.com\/acme\/app.git/u);
+		assert.doesNotMatch(
+			`${seen}\n${result.stderr}\n${result.stdout}`,
+			/credential-sentinel/u,
+		);
+	});
+
+	it("disables interactive git authentication before reading the remote base", async () => {
+		const run = await fixture(false);
+		const wrapper = directory("git-no-prompt");
+		const captured = join(wrapper, "environment");
+		writeFileSync(
+			join(wrapper, "git"),
+			`#!/bin/sh
+if [ "$1" = ls-remote ]; then
+  printf '%s\\n%s\\n%s\\n' "$GIT_TERMINAL_PROMPT" "$SSH_ASKPASS_REQUIRE" "$GCM_INTERACTIVE" > "$HOBO_GIT_ENV_LOG"
+  exit 1
+fi
+exec /usr/bin/git "$@"
+`,
+			{ mode: 0o755 },
+		);
+		const result = run.command([], {
+			PATH: `${wrapper}:${run.bin}:${process.env.PATH ?? ""}`,
+			HOBO_GIT_ENV_LOG: captured,
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /could not read origin\/main/u);
+		assert.deepEqual(readFileSync(captured, "utf8").trim().split("\n"), [
+			"0",
+			"never",
+			"Never",
+		]);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("keeps safe jobs signable when an unrelated workflow job changes", async () => {
+		const run = await fixture(false);
+		const path = ".github/workflows/hobo-ci.yml";
+		const workflow = readFileSync(join(run.repo, path), "utf8").replace(
+			"  workspace_tests:\n",
+			"  workspace_tests:\n    env:\n      UNRELATED_TEST_FLAG: value\n",
+		);
+		const result = rebindToChangedHead(run, { [path]: workflow });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/pull_request\/ci-guard/u,
+		);
 	});
 });
 
