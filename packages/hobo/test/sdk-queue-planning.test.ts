@@ -16,6 +16,7 @@ describe("SDK queue planning", () => {
 	it.each([
 		["AWS", createAwsProvider(), "@hobo/provider-aws"],
 		["GCP", createGcpProvider(), "@hobo/provider-gcp"],
+		["Vercel", createVercelProvider(), "@hobo/provider-vercel"],
 	] as const)("plans a queue using %s's queue definition", (_name, provider, providerId) => {
 		const result = plan(
 			manifest,
@@ -31,10 +32,19 @@ describe("SDK queue planning", () => {
 		});
 	});
 	it("does not treat a key-value or object-storage provider as a queue", () => {
+		const vercel = createVercelProvider();
+		const storageOnly = {
+			...vercel,
+			capabilities: vercel.capabilities.filter(
+				(capability) =>
+					capability.port === "kv" || capability.port === "objectStore",
+			),
+		};
+		expect(storageOnly.capabilities.length).toBeGreaterThan(0);
 		const result = plan(
 			manifest,
 			{ deploymentId: "queue-test" },
-			createRegistryFromProviders([createVercelProvider()]),
+			createRegistryFromProviders([storageOnly]),
 		);
 		expect(result.ok).toBe(false);
 	});
