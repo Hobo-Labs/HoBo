@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +20,7 @@ import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
@@ -38,57 +46,166 @@ const moduleWithoutWorker = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"fixtures/cloudflare-app.ts",
 );
-
-const absentDirectory = mkdtempSync(join(tmpdir(), "hobo-cf-missing-"));
-const absentModule = join(absentDirectory, "worker.ts");
-afterAll(() => rmSync(absentDirectory, { recursive: true, force: true }));
+// The integration harness stubs the trusted host fence; production hosts must enforce it.
+const sourceFence = {
+	sourceDigest: `sha256:${"a".repeat(64)}`,
+	environmentDigest: `sha256:${"b".repeat(64)}`,
+	proofRef: "test:isolated-runtime",
+	verify: () => true,
+};
 
 describe("real Alchemy Cloudflare mappings", () => {
 	it.each([
-		[absentModule, "worker module could not be imported"],
+		"app",
+		"dependency",
+		"revoked",
+	] as const)("refuses a %s change between source admission and plan reconstruction", async (changed) => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-cf-source-"));
+		try {
+			const root = join(directory, "site");
+			mkdirSync(root);
+			const entry = join(root, "index.html");
+			const dependency = join(root, "dependency.js");
+			writeFileSync(entry, "<script src=dependency.js></script>");
+			writeFileSync(dependency, "export const version = 1;");
+			const digest = () =>
+				`sha256:${createHash("sha256").update(readFileSync(entry)).update(readFileSync(dependency)).digest("hex")}`;
+			const expected = digest();
+			let allowed = true;
+			let checks = 0;
+			let providerCalls = 0;
+			const fence = {
+				sourceDigest: expected,
+				environmentDigest: sourceFence.environmentDigest,
+				proofRef: sourceFence.proofRef,
+				verify: (claim) => {
+					checks++;
+					return (
+						allowed &&
+						claim.sourceKind === "vite" &&
+						claim.sourcePath === root &&
+						claim.sourceDigest === digest()
+					);
+				},
+			};
+			const marker = cloudflareViteApp("site");
+			const app = {
+				name: "site",
+				resources: {
+					web: {
+						kind: "web",
+						name: "web",
+						stableId: "web:web",
+						declaredAllow: [],
+						dependsOn: [],
+						annotations: [
+							{
+								provider: "hobo",
+								option: "webapp",
+								config: { framework: "vite", root: "site" },
+							},
+							{
+								provider: "hobo",
+								option: "session-replay",
+								config: { enabled: false },
+							},
+						],
+					},
+				},
+				edges: [],
+				requirements: {},
+				entrypoint: () => marker,
+			};
+			const mapped = mapBindleToAlchemy(
+				app,
+				cloudflareBindleMappers({
+					workerModules: {},
+					projectRoot: directory,
+					sourceFence: fence,
+				}),
+				{
+					assessRequirements: () => ({ status: "supported" }),
+				},
+			);
+			if (changed === "app") writeFileSync(entry, "changed");
+			if (changed === "dependency")
+				writeFileSync(dependency, "export const version = 2;");
+			if (changed === "revoked") allowed = false;
+			const stub = Provider.succeed(Worker, {
+				reconcile: () =>
+					Effect.sync(() => {
+						providerCalls++;
+						return { id: "unexpected" };
+					}),
+				delete: () => Effect.void,
+			});
+			const providers = Layer.effect(
+				Providers,
+				Provider.collection([Worker]),
+			).pipe(Layer.provide(stub));
+			await expect(
+				Effect.runPromise(Effect.provide(mapped, providers)),
+			).rejects.toThrow("SOURCE_FENCE_UNVERIFIED");
+			expect(checks).toBeGreaterThanOrEqual(2);
+			expect(providerCalls).toBe(0);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it.each([
+		[undefined, "worker module could not be imported"],
 		[moduleWithoutWorker, "worker module has no bindle worker default export"],
 		[main, "worker module does not bind this entrypoint"],
 	])("rejects an HTTP module that is missing or does not bind the declared app", async (path, reason) => {
-		const app = {
-			name: "other",
-			resources: {
-				web: {
-					kind: "web",
-					name: "web",
-					stableId: "web:web",
-					declaredAllow: [],
-					dependsOn: [],
-					annotations: [
-						{
-							provider: "hobo",
-							option: "session-replay",
-							config: { enabled: false },
-						},
-					],
+		const directory = mkdtempSync(join(tmpdir(), "hobo-cf-module-"));
+		try {
+			const app = {
+				name: "other",
+				resources: {
+					web: {
+						kind: "web",
+						name: "web",
+						stableId: "web:web",
+						declaredAllow: [],
+						dependsOn: [],
+						annotations: [
+							{
+								provider: "hobo",
+								option: "session-replay",
+								config: { enabled: false },
+							},
+						],
+					},
 				},
-			},
-			edges: [],
-			requirements: {},
-			entrypoint: () => () => () => new Response("other"),
-		};
-		const mapped = mapBindleToAlchemy(
-			app,
-			cloudflareBindleMappers({ workerModules: { web: path } }),
-			{
-				assessRequirements: () => ({ status: "supported" }),
-			},
-		);
-		const stub = Provider.succeed(Worker, {
-			reconcile: () => Effect.succeed({ id: "unexpected" }),
-			delete: () => Effect.void,
-		});
-		const providers = Layer.effect(
-			Providers,
-			Provider.collection([Worker]),
-		).pipe(Layer.provide(stub));
-		await expect(
-			Effect.runPromise(Effect.provide(mapped, providers)),
-		).rejects.toThrow(reason);
+				edges: [],
+				requirements: {},
+				entrypoint: () => () => () => new Response("other"),
+			};
+			const mapped = mapBindleToAlchemy(
+				app,
+				cloudflareBindleMappers({
+					workerModules: { web: path ?? join(directory, "absent.ts") },
+					sourceFence,
+				}),
+				{
+					assessRequirements: () => ({ status: "supported" }),
+				},
+			);
+			const stub = Provider.succeed(Worker, {
+				reconcile: () => Effect.succeed({ id: "unexpected" }),
+				delete: () => Effect.void,
+			});
+			const providers = Layer.effect(
+				Providers,
+				Provider.collection([Worker]),
+			).pipe(Layer.provide(stub));
+			await expect(
+				Effect.runPromise(Effect.provide(mapped, providers)),
+			).rejects.toThrow(reason);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
 	});
 
 	it("fails closed when a Vite root or entrypoint is forged, escapes the tree, or has runtime dependencies", () => {
@@ -128,10 +245,32 @@ describe("real Alchemy Cloudflare mappings", () => {
 			const mappers = cloudflareBindleMappers({
 				workerModules: {},
 				projectRoot: directory,
+				sourceFence,
 			});
 			const opts = {
 				assessRequirements: () => ({ status: "supported" as const }),
 			};
+			expect(() =>
+				mapBindleToAlchemy(
+					app,
+					cloudflareBindleMappers({
+						workerModules: {},
+						projectRoot: directory,
+					}),
+					opts,
+				),
+			).toThrow("SOURCE_FENCE_REQUIRED");
+			expect(() =>
+				mapBindleToAlchemy(
+					app,
+					cloudflareBindleMappers({
+						workerModules: {},
+						projectRoot: directory,
+						sourceFence: { ...sourceFence, verify: () => false },
+					}),
+					opts,
+				),
+			).toThrow("SOURCE_FENCE_UNVERIFIED");
 			expect(() => mapBindleToAlchemy(app, mappers, opts)).not.toThrow();
 			expect(() =>
 				mapBindleToAlchemy(
@@ -186,7 +325,10 @@ describe("real Alchemy Cloudflare mappings", () => {
 		}
 	});
 
-	it("plans and applies the native Alchemy Vite component using the declared source root", async () => {
+	it.each([
+		"stable",
+		"revoked",
+	] as const)("plans, deploys and destroys the native Vite component with a %s host fence", async (mode) => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-cf-vite-"));
 		const before = process.env.ALCHEMY_HOME;
 		process.env.ALCHEMY_HOME = join(directory, "home");
@@ -221,13 +363,22 @@ describe("real Alchemy Cloudflare mappings", () => {
 				entrypoint: () => marker,
 			};
 			const seen: object[] = [];
+			let deleted = 0;
+			let fenceActive = true;
+			const activeFence = { ...sourceFence, verify: () => fenceActive };
+			const uncertain: string[] = [];
+			const historicalDigests: string[] = [];
 			const workerProvider = Provider.succeed(Worker, {
 				reconcile: ({ news }) =>
 					Effect.sync(() => {
 						seen.push(news);
 						return { ...news, id: "web" };
 					}),
-				delete: () => Effect.void,
+				delete: () =>
+					Effect.sync(() => {
+						deleted++;
+						if (mode === "revoked") fenceActive = false;
+					}),
 			});
 			const providers = Layer.effect(
 				Providers,
@@ -235,7 +386,11 @@ describe("real Alchemy Cloudflare mappings", () => {
 			).pipe(Layer.provide(workerProvider));
 			const mapped = mapBindleToAlchemy(
 				app,
-				cloudflareBindleMappers({ workerModules: {}, projectRoot: directory }),
+				cloudflareBindleMappers({
+					workerModules: {},
+					projectRoot: directory,
+					sourceFence: activeFence,
+				}),
 				{
 					assessRequirements: () => ({ status: "supported" }),
 				},
@@ -275,8 +430,45 @@ describe("real Alchemy Cloudflare mappings", () => {
 				composite: {
 					proofRef: "test:isolated-runtime",
 					environmentDigest: `sha256:${"b".repeat(64)}`,
-					verifyEnvironment: () => true,
-					verifyPlan: () => true,
+					sourceRequirements: [
+						{
+							resourceId: "web",
+							resourceType: "Cloudflare.Worker",
+							bindleName: "site",
+							applicationName: "web",
+							sourceKind: "vite",
+							sourcePath: join(directory, "site"),
+						},
+					],
+					verifyEnvironment: () => fenceActive,
+					verifyPlan: ({ sourceClaims, historicalSources, operation }) => {
+						expect(sourceClaims).toMatchObject([
+							{
+								resourceId: "web",
+								resourceType: "Cloudflare.Worker",
+								bindleName: "site",
+								applicationName: "web",
+								sourceKind: "vite",
+								sourcePath: join(directory, "site"),
+								sourceDigest: sourceFence.sourceDigest,
+							},
+						]);
+						if (operation === "destroy") {
+							expect(historicalSources).toMatchObject([
+								{
+									resourceId: "web",
+									resourceType: "Cloudflare.Worker",
+									priorStateDigest: expect.stringMatching(
+										/^sha256:[a-f0-9]{64}$/u,
+									),
+								},
+							]);
+							historicalDigests.push(
+								historicalSources[0]?.priorStateDigest ?? "",
+							);
+						}
+						return fenceActive;
+					},
 				},
 				financial: {
 					assess: (inventory) => ({ inventory }),
@@ -294,7 +486,9 @@ describe("real Alchemy Cloudflare mappings", () => {
 						quoteHash: `sha256:${"f".repeat(64)}`,
 					}),
 					revalidate: () => true,
-					uncertain: () => {},
+					uncertain: (reservationId) => {
+						uncertain.push(reservationId);
+					},
 				},
 			});
 			const program = {
@@ -312,6 +506,26 @@ describe("real Alchemy Cloudflare mappings", () => {
 			expect(seen).toMatchObject([
 				{ vite: { rootDir: join(directory, "site") } },
 			]);
+			const destroy = {
+				...program,
+				action: "destroy" as const,
+				operationGeneration: "generation-2",
+			};
+			expect((await provider.preview(destroy)).changes).toBe(1);
+			if (mode === "revoked")
+				await expect(
+					provider.destroyWithAdmission(destroy, "destroy-request"),
+				).rejects.toMatchObject({
+					code: "SOURCE_FENCE_UNCERTAIN",
+					requiresReconciliation: true,
+					executionOutcome: "completed",
+				});
+			else await provider.destroyWithAdmission(destroy, "destroy-request");
+			expect(deleted).toBe(1);
+			expect(uncertain).toEqual(
+				mode === "revoked" ? ["iac:destroy-request"] : [],
+			);
+			expect(new Set(historicalDigests).size).toBe(1);
 		} finally {
 			if (before === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = before;
@@ -392,6 +606,7 @@ describe("real Alchemy Cloudflare mappings", () => {
 				application,
 				cloudflareBindleMappers({
 					workerModules: { web: main, catalog: service },
+					sourceFence,
 				}),
 				{
 					assessRequirements: () => ({ status: "supported" }),
@@ -461,8 +676,48 @@ describe("real Alchemy Cloudflare mappings", () => {
 				composite: {
 					proofRef: "test:isolated-runtime",
 					environmentDigest: `sha256:${"b".repeat(64)}`,
+					sourceRequirements: [
+						{
+							resourceId: "catalog",
+							resourceType: "Cloudflare.Worker",
+							bindleName: "shop",
+							applicationName: "catalog",
+							sourceKind: "worker",
+							sourcePath: service,
+						},
+						{
+							resourceId: "web",
+							resourceType: "Cloudflare.Worker",
+							bindleName: "shop",
+							applicationName: "web",
+							sourceKind: "worker",
+							sourcePath: main,
+						},
+					],
 					verifyEnvironment: () => true,
-					verifyPlan: () => true,
+					verifyPlan: ({ sourceClaims }) => {
+						expect(sourceClaims).toMatchObject([
+							{
+								resourceId: "catalog",
+								resourceType: "Cloudflare.Worker",
+								bindleName: "shop",
+								applicationName: "catalog",
+								sourceKind: "worker",
+								sourcePath: service,
+								sourceDigest: sourceFence.sourceDigest,
+							},
+							{
+								resourceId: "web",
+								resourceType: "Cloudflare.Worker",
+								bindleName: "shop",
+								applicationName: "web",
+								sourceKind: "worker",
+								sourcePath: main,
+								sourceDigest: sourceFence.sourceDigest,
+							},
+						]);
+						return true;
+					},
 				},
 				financial: {
 					assess: (inventory) => ({ inventory }),

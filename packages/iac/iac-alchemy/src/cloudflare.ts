@@ -21,12 +21,21 @@ import {
 	validateCloudflareHttpAnnotations,
 } from "./cloudflare-runtime.js";
 import { AlchemyIacError } from "./plan.js";
+import {
+	type AlchemySourceClaim,
+	type AlchemySourceFence,
+	captureAlchemySourceFence,
+	registerAlchemySource,
+	verifyAlchemySourceFence,
+} from "./source-fence.js";
 
 export interface CloudflareBindleMappingOptions {
 	/** Resource name to source module. The module must default-export bindleCloudflareWorker for that entrypoint. */
 	readonly workerModules: Readonly<Record<string, string>>;
 	/** Trusted source tree containing framework application roots. Defaults to the current directory. */
 	readonly projectRoot?: string;
+	/** Trusted host authority, required for every executable application source. */
+	readonly sourceFence?: AlchemySourceFence;
 }
 
 const viteEntrypoints = new WeakMap<CloudflareBindleEntrypoint, string>();
@@ -118,7 +127,46 @@ export function cloudflareBindleMappers<Requirements>(
 	const workerModules = Object.freeze({ ...options.workerModules });
 	const workingDirectory = process.cwd();
 	const projectRoot = resolve(options.projectRoot ?? workingDirectory);
+	const sourceFence = captureAlchemySourceFence(options.sourceFence);
 	type Input = AlchemyPrimitiveInput<CloudflareBindleEntrypoint, Requirements>;
+	const sourceBinding = (
+		input: Input,
+		sourceKind: "worker" | "vite",
+		sourcePath: string,
+		resourceId: string,
+	) => {
+		if (
+			sourceFence === undefined ||
+			!isAbsolute(sourcePath) ||
+			sourcePath.length > 4096 ||
+			/[\p{Cc}]/u.test(sourcePath)
+		)
+			throw new AlchemyIacError(
+				"SOURCE_FENCE_REQUIRED",
+				"a trusted immutable source and environment fence is required",
+			);
+		const claim: AlchemySourceClaim = Object.freeze({
+			resourceId,
+			resourceType: "Cloudflare.Worker",
+			bindleName: input.bindleName,
+			applicationName: input.declaration.name,
+			sourceKind,
+			sourcePath,
+			sourceDigest: sourceFence.sourceDigest,
+			environmentDigest: sourceFence.environmentDigest,
+			proofRef: sourceFence.proofRef,
+		});
+		if (!verifyAlchemySourceFence(sourceFence, claim))
+			throw new AlchemyIacError(
+				"SOURCE_FENCE_UNVERIFIED",
+				"the host did not fence this exact application source",
+			);
+		return {
+			claim,
+			verify: (value: AlchemySourceClaim) =>
+				verifyAlchemySourceFence(sourceFence, value),
+		};
+	};
 	const viteRoot = (input: Input): string | undefined => {
 		const websiteAnnotations = input.declaration.annotations.filter(
 			(annotation) =>
@@ -225,6 +273,12 @@ export function cloudflareBindleMappers<Requirements>(
 					"ENTRYPOINT_UNSUPPORTED",
 					`worker module is required for ${input.declaration.name}`,
 				);
+			sourceBinding(
+				input,
+				"worker",
+				resolve(workingDirectory, path),
+				input.declaration.name,
+			);
 		},
 		build(input) {
 			return Effect.gen(function* () {
@@ -235,6 +289,7 @@ export function cloudflareBindleMappers<Requirements>(
 						"worker module vanished",
 					);
 				const sourcePath = resolve(workingDirectory, path);
+				sourceBinding(input, "worker", sourcePath, input.declaration.name);
 				const loaded = yield* Effect.promise(async () => {
 					try {
 						return await import(pathToFileURL(sourcePath).href);
@@ -286,6 +341,10 @@ export function cloudflareBindleMappers<Requirements>(
 					main: sourcePath,
 					env: bindings,
 				});
+				registerAlchemySource(
+					primary,
+					sourceBinding(input, "worker", sourcePath, primary.FQN),
+				);
 				return {
 					primary,
 					resources: [primary],
@@ -305,7 +364,9 @@ export function cloudflareBindleMappers<Requirements>(
 		...http,
 		annotations: ["hobo:session-replay", "hobo:webapp"],
 		validate(input) {
-			if (viteRoot(input) === undefined) http.validate?.(input);
+			const root = viteRoot(input);
+			if (root === undefined) http.validate?.(input);
+			else sourceBinding(input, "vite", root, input.declaration.name);
 		},
 		build(input) {
 			const root = viteRoot(input);
@@ -316,8 +377,13 @@ export function cloudflareBindleMappers<Requirements>(
 					"ENTRYPOINT_UNSUPPORTED",
 					"Vite entrypoint is missing",
 				);
+			sourceBinding(input, "vite", root, input.declaration.name);
 			return Effect.gen(function* () {
 				const primary = yield* Vite(input.declaration.name, { rootDir: root });
+				registerAlchemySource(
+					primary,
+					sourceBinding(input, "vite", root, primary.FQN),
+				);
 				return {
 					primary,
 					resources: [primary],

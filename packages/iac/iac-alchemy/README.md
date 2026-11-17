@@ -25,7 +25,17 @@ for each supplied HoBo catalog entry with the reason.
 For a Vite web application, `b.web(cloudflareViteApp("apps/site"))` uses
 Alchemy's Cloudflare Website.Vite component with that project-relative root.
 Disable session replay explicitly; Vite resource dependencies and other web
-frameworks are not currently supported. The host must attest the source tree.
+frameworks are not currently supported. Every executable mapping requires a
+host-owned `sourceFence`; its digest must match the target's source digest, and
+its proof and environment digest must match the composite guard. The guard's
+`sourceRequirements` must name every executable resource and source path.
+The host must authenticate the complete transitive source graph, module cache,
+build toolchain and exact upload, and keep them fenced from planning until the
+provider completes. The callbacks attest a host-enforced guarantee; they do not
+make a mutable filesystem or module cache immutable. For source deletion, the
+host must independently authenticate the reported prior-state digest against
+durable ownership evidence. Revocation after a provider effect retains the
+budget hold as uncertain.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy
