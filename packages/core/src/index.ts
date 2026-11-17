@@ -378,7 +378,9 @@ export {
 } from "./ports/durable-lifecycle-gate.js";
 export type {
 	DurableMessaging,
+	DurableMessagingAckReceipt,
 	DurableMessagingAttribute,
+	DurableMessagingCompactionReceipt,
 	DurableMessagingDeadLetter,
 	DurableMessagingDelivery,
 	DurableMessagingEvent,
@@ -387,8 +389,10 @@ export type {
 	DurableMessagingNackReceipt,
 	DurableMessagingOperation,
 	DurableMessagingOutcome,
+	DurableMessagingPublishReceipt,
 	DurableMessagingRejectionCode,
 	DurableMessagingSubscription,
+	DurableMessagingSubscriptionReceipt,
 } from "./ports/durable-messaging.js";
 export {
 	DURABLE_MESSAGING_CONTRACT,

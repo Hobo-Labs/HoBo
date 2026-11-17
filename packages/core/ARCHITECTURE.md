@@ -56,3 +56,10 @@ unknown and expired outcomes. Expiry-bound operation IDs prevent an old retry
 from becoming a new write after its receipt is collected. This contract does
 not make the legacy synchronous `Messaging` port durable; an adapter must
 implement and verify the new port separately.
+Authorized compaction reclaims only fully settled prefixes and returns the
+retained sequence floor. A later earliest subscriber is told when earlier
+history was truncated. Acknowledgements bind the topic, group, caller message
+ID, message sequence and lease ID, including when a compacted ID is reused.
+If a provider cannot rule out a prior commit while
+retrying, including after authorization or receipt-store failures, the outcome
+remains unknown rather than becoming a rejection.
