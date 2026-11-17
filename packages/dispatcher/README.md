@@ -79,6 +79,27 @@ another target under a different reservation. They must pass the expected
 hashes into admission and check the resulting receipt before any provider
 effect; checking only after the callback returns is too late.
 
+`runIacRoute` records a single durable claim for the tenant and logical request
+before any target, admission policy, or provider is called. It records each
+selected target and inventory before execution, and records a definitive
+no-effect denial before another target can be tried. An existing running or
+uncertain claim stops the route; a finished claim cannot execute again. Use a
+new request ID only after an operator has reconciled any uncertain prior work.
+`inspect` exposes the bounded target/inventory history without claim secrets.
+The attempt permit is a capability: protect it as a credential and verify it
+with the same authority before admitting and starting a provider effect.
+
+The host must authenticate the tenant, restrict access to authority mutation,
+and route *every* entry point for one request through the same durable CAS
+ledger. An independent ledger or an older database restore cannot enforce this
+invariant. `@hobo/dispatcher/sqlite` supplies a persistent, transactionally
+serialized implementation for processes sharing one local SQLite file. SQLite
+files on separate machines are independent ledgers; distributed deployments
+must provide a shared transactional implementation of `IacRouteAuthority`.
+Provider and billing authorities remain responsible for their own effects and
+financial holds. Reconciliation requires independent evidence that the old
+source cannot act again before authorizing a new request.
+
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's
 declared currency, using the existing `budgetCap`/`listUnitCost` number units.
 `reserve({ expectedSeq, reservationId, providerId, dimension, units, unitCost?,
