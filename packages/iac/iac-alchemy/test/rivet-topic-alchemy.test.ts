@@ -200,6 +200,13 @@ describe("Alchemy Rivet retained topic-log resource", () => {
 
 	it("maps the actor to a real Alchemy DurableObject with an exact topic source claim", async () => {
 		const f = fixture();
+		let callAccesses = 0;
+		Object.defineProperty(f.source.poolHost.deployExternal, "call", {
+			get() {
+				callAccesses++;
+				throw new Error("untrusted function property");
+			},
+		});
 		const providers = Layer.effect(
 			Providers,
 			Provider.collection([DurableObjectResource]),
@@ -294,6 +301,7 @@ describe("Alchemy Rivet retained topic-log resource", () => {
 			});
 			expect(result.changes).toBe(1);
 			expect(f.calls).toEqual([f.source.main]);
+			expect(callAccesses).toBe(0);
 			expect(observed).toContainEqual(
 				expect.objectContaining({
 					resourceId: "events",
