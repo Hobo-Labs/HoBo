@@ -1797,3 +1797,54 @@ with admin rights on a private test repository:
    `worker.job_started` and `worker.job_finished`, the job green on GitHub,
    and no self-hosted runner left under the repository's settings.
 3. Press Ctrl-C; `hobo ci machine status` shows the machine offline.
+
+## Per-run traces
+
+[`src/run-trace.ts`](src/run-trace.ts) turns the run, job and step facts a
+relay stores from `workflow_run` and `workflow_job` webhooks
+([`src/insight-ingest.ts`](src/insight-ingest.ts)) into one OpenTelemetry
+trace per run attempt, and sends it through the relay's existing OTLP sink
+(`relayTraceSinkFromEnv` in [`src/relay-trace.ts`](src/relay-trace.ts)). It is
+part of the runner-order work recorded in
+[ADR-0183](../../docs/design/adr/runner-order.md).
+
+| Span | From | To | Parent |
+| --- | --- | --- | --- |
+| `RUN <workflow>` | the attempt was created | it completed | none (the root) |
+| the job's name | the job was queued | it finished | the root |
+| `waiting for a runner` | the job was queued | a runner took it, or it finished when none did | the job |
+| the step's name, for each step that ran | the step started | it finished | the job |
+
+- Every id is a hash of GitHub's ids, so the parts need no shared context.
+  The first attempt keeps the run's own trace (`runTraceId`), which the
+  relay's GitHub-call spans and a job's Turbo trace already write into. A
+  re-run's attempt gets a trace of its own (`runAttemptTraceId`).
+- A part is exported once it finishes: a job's spans when its `completed`
+  webhook is folded in, the root when the run's is. `RunTraceIngest` folds
+  each webhook into the store as `InsightIngest` does and sends only what that
+  webhook finished, so a job span sent minutes before its run span joins the
+  same trace, and a webhook GitHub delivers twice sends nothing the second
+  time. A failed export is not retried and never undoes the stored facts.
+- Attributes use OpenTelemetry's `cicd.*` and `vcs.*` semantic conventions
+  (the [CI/CD](https://opentelemetry.io/docs/specs/semconv/registry/attributes/cicd/)
+  and [VCS](https://opentelemetry.io/docs/specs/semconv/registry/attributes/vcs/)
+  attribute registries and the
+  [CI/CD span rules](https://opentelemetry.io/docs/specs/semconv/cicd/cicd-spans/),
+  read on 2026-11-17): the pipeline and task names, ids, URLs and results,
+  the runner as `cicd.worker.name`, and the repository, branch and commit.
+- A failed or timed-out run, job or step sets an error status and
+  `error.type`; a cancelled or skipped one does not.
+- A relay job, matched by its id in the workflow against the job name, and a
+  job whose known `needs` include it, carry the newest route decision the
+  journal holds for that attempt as `hobo.ci.route.step`, `.outcome`,
+  `.runner`, `.skipped` (each skipped step as `key:reason`) and `.mode`.
+  GitHub's job webhooks do not carry `needs`, so a routed job usually shows
+  the decision only through its relay job, in the same trace.
+- The root span is kind `internal`: the shared OTLP writer has no `server`
+  kind, which the CI/CD span rules recommend for a pipeline run.
+
+The tests drive it through the GitHub simulator: a relay job's span sent
+with its own webhook and the run's span sent a minute and a half later share
+the trace id of the run and attempt, and the job's parent is the root. The
+relay host does not call `RunTraceIngest` yet, so traces from production
+runs are built, not proven.

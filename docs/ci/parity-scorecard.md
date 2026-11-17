@@ -16,9 +16,9 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | State | Cases |
 | --- | --- |
-| pass | 9 |
+| pass | 10 |
 | built-not-proven | 1 |
-| partial | 27 |
+| partial | 26 |
 | not-built | 20 |
 | met-differently | 1 |
 | Total | 58 |
@@ -90,7 +90,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | I04 | Performance compares workflows, jobs and runners, and each runner against `ubuntu-latest` ([site/dashboard/performance.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/performance.mdx)) | Same; the reports exist | T1, T2 | partial: per-runner line only | 19 |
 | I05 | Nine signals with thresholds, a breakdown and a trend ([site/dashboard/signals.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/signals.mdx)) | Same; breakdown and trend need stored history | T1, T2 | partial: nine signals built | 06, 19 |
 | I06 **B** | A failed job shows its step, a log excerpt and whether a re-run will help ([site/reference/mcp.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/mcp.md)) | Same, with no model and the evidence printed | T1, T3 | built-not-proven: never run against GitHub | 24 |
-| I07 | One OpenTelemetry trace per run attempt ([site/dashboard/telemetry.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/telemetry.md)) | Same | T2 | partial: relay spans only | 16 |
+| I07 | One OpenTelemetry trace per run attempt ([site/dashboard/telemetry.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/telemetry.md)) | Same | T2 | pass | 16 |
 
 ## Surfaces
 
