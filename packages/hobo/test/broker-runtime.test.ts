@@ -41,7 +41,7 @@ describe("embedded broker-runtime", () => {
 				config: { componentHost: string };
 			};
 		};
-		expect(envelope.ok).toBe(true);
+		expect(envelope.ok, init.stdout).toBe(true);
 		expect(envelope.data.broker.brokerId).toMatch(/^broker:local\//);
 		expect(["wasm", "isolated-wasm", "local"]).toContain(
 			envelope.data.broker.preferredComponentHost,
@@ -141,7 +141,7 @@ describe("embedded broker-runtime", () => {
 				mode?: string;
 			};
 		};
-		expect(envelope.ok).toBe(true);
+		expect(envelope.ok, up.stdout).toBe(true);
 		expect(envelope.code).toBe("HOBO_OK");
 		// Composed CLI may take event-sourced yard lane or broker-runtime path.
 		if (envelope.data.bindleName !== undefined) {

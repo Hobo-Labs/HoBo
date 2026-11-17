@@ -16,7 +16,10 @@ import {
 	LocalDeploymentReceiptSchema,
 } from "./_generated/composition_pb.js";
 import { isJsonObject, isJsonString } from "./json.js";
-import { fingerprintLocalDeployment } from "./local-deployment-fingerprint.js";
+import {
+	fingerprintLocalDeployment,
+	materializeLocalDeploymentSnapshot,
+} from "./local-deployment-fingerprint.js";
 import { acquireLocalDeploymentLock } from "./local-deployment-lock.js";
 
 const RECEIPT_FILE = "local-deployment.json";
@@ -170,6 +173,11 @@ export async function startLocalDeployment(
 			expectedContentFingerprint !== contentFingerprint
 		)
 			throw new Error("Local project inputs changed before worker startup");
+		const executionProjectDir = await materializeLocalDeploymentSnapshot(
+			projectDir,
+			hoboHome,
+			contentFingerprint,
+		);
 		const existing = await readLocalDeployment(projectDir);
 		if (existing) {
 			let healthy = false;
@@ -230,7 +238,7 @@ export async function startLocalDeployment(
 			? js
 			: new URL("./local-deployment-worker.ts", import.meta.url);
 		const child = fork(worker, [], {
-			cwd: projectDir,
+			cwd: executionProjectDir,
 			detached: true,
 			stdio: ["ignore", "ignore", "ignore", "ipc"],
 			execArgv: ["--import", import.meta.resolve("tsx")],

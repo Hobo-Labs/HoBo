@@ -1,5 +1,15 @@
-import { createHash } from "node:crypto";
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import {
+	chmod,
+	mkdir,
+	readdir,
+	readFile,
+	realpath,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
 const IGNORED_DIRECTORIES = new Set([".git", "node_modules", ".cache"]);
@@ -12,11 +22,26 @@ function temporary(name: string): boolean {
 	);
 }
 
-/** Hash executable project inputs and packaged artifacts, excluding local control state. */
-export async function fingerprintLocalDeployment(
+type LocalDeploymentFingerprint = `sha256:${string}`;
+
+export function isLocalDeploymentFingerprint(
+	value: string,
+): value is LocalDeploymentFingerprint {
+	return /^sha256:[a-f0-9]{64}$/u.test(value);
+}
+
+async function walkLocalDeploymentInputs(
 	projectDir: string,
 	hoboHome: string,
-): Promise<`sha256:${string}`> {
+	visitor: {
+		readonly directory?: (path: string) => Promise<void>;
+		readonly file: (
+			path: string,
+			bytes: Buffer,
+			mode: number,
+		) => Promise<void> | void;
+	},
+): Promise<LocalDeploymentFingerprint> {
 	const project = resolve(projectDir);
 	const home = resolve(hoboHome);
 	if (project === home)
@@ -47,12 +72,15 @@ export async function fingerprintLocalDeployment(
 					continue;
 				if (resolve(file) === home) continue;
 				if (path.startsWith(".hobo/") && !generated) continue;
-				const info = entry.isSymbolicLink() ? await stat(file) : entry;
-				if (info.isDirectory()) await visit(file);
-				else if (info.isFile()) {
+				const info = await stat(file);
+				if (info.isDirectory()) {
+					await visitor.directory?.(path);
+					await visit(file);
+				} else if (info.isFile()) {
 					const bytes = await readFile(file);
-					hash.update(JSON.stringify([path, bytes.length]));
+					hash.update(JSON.stringify([path, bytes.length, info.mode & 0o555]));
 					hash.update(bytes);
+					await visitor.file(path, bytes, info.mode & 0o777);
 				} else throw new Error(`Unsupported deployment input: ${path}`);
 			}
 		} finally {
@@ -61,4 +89,102 @@ export async function fingerprintLocalDeployment(
 	}
 	await visit(project);
 	return `sha256:${hash.digest("hex")}`;
+}
+
+/** Hash executable project inputs and packaged artifacts, excluding local control state. */
+export async function fingerprintLocalDeployment(
+	projectDir: string,
+	hoboHome: string,
+): Promise<`sha256:${string}`> {
+	return walkLocalDeploymentInputs(projectDir, hoboHome, {
+		file: () => {},
+	});
+}
+
+export function localDeploymentSnapshotDirectory(
+	projectDir: string,
+	fingerprint: LocalDeploymentFingerprint,
+): string {
+	if (!isLocalDeploymentFingerprint(fingerprint))
+		throw new Error("Invalid local deployment fingerprint");
+	return join(
+		resolve(projectDir),
+		".hobo",
+		"local-deployment-work",
+		fingerprint.slice("sha256:".length),
+	);
+}
+
+/**
+ * Copy the exact approved input bytes into a content-addressed execution tree.
+ * The copy's digest, rather than a later observation of the mutable source,
+ * is the handoff between placement and execution.
+ */
+export async function materializeLocalDeploymentSnapshot(
+	projectDir: string,
+	hoboHome: string,
+	expectedFingerprint: LocalDeploymentFingerprint,
+): Promise<string> {
+	const destination = localDeploymentSnapshotDirectory(
+		projectDir,
+		expectedFingerprint,
+	);
+	try {
+		const existing = await fingerprintLocalDeployment(destination, hoboHome);
+		if (existing !== expectedFingerprint)
+			throw new Error("Approved local deployment snapshot is corrupted");
+		return destination;
+	} catch (error) {
+		if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+			throw error;
+	}
+
+	const parent = join(resolve(projectDir), ".hobo", "local-deployment-work");
+	await mkdir(parent, { recursive: true });
+	const temporaryDirectory = `${destination}.${randomUUID()}.tmp`;
+	await mkdir(temporaryDirectory);
+	try {
+		const actualFingerprint = await walkLocalDeploymentInputs(
+			projectDir,
+			hoboHome,
+			{
+				directory: async (path) => {
+					const directory = join(temporaryDirectory, path);
+					await mkdir(directory);
+				},
+				file: async (path, bytes, mode) => {
+					const file = join(temporaryDirectory, path);
+					await writeFile(file, bytes, { mode });
+					await chmod(file, mode & 0o555);
+				},
+			},
+		);
+		if (actualFingerprint !== expectedFingerprint)
+			throw new Error(
+				"Local project inputs changed while creating the approved execution snapshot",
+			);
+		try {
+			await rename(temporaryDirectory, destination);
+		} catch (error) {
+			if (
+				!(
+					error instanceof Error &&
+					"code" in error &&
+					(error.code === "EEXIST" || error.code === "ENOTEMPTY")
+				)
+			)
+				throw error;
+			const existing = await fingerprintLocalDeployment(destination, hoboHome);
+			if (existing !== expectedFingerprint)
+				throw new Error("Approved local deployment snapshot is corrupted");
+		}
+		if (
+			(await fingerprintLocalDeployment(destination, hoboHome)) !==
+			expectedFingerprint
+		)
+			throw new Error("Approved local deployment snapshot is corrupted");
+		return destination;
+	} finally {
+		await rm(temporaryDirectory, { recursive: true, force: true });
+	}
 }

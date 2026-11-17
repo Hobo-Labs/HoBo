@@ -45,7 +45,7 @@ describe("self-hosted broker without hosted services", () => {
 					),
 				},
 			);
-			expect(result.exitCode).toBe(0);
+			expect(result.exitCode, result.stdout).toBe(0);
 			expect(JSON.parse(result.stdout)).toMatchObject({
 				ok: true,
 				data: {
@@ -87,12 +87,15 @@ describe("self-hosted broker without hosted services", () => {
 					}),
 				},
 			});
-			await cli.run(["up", ...flags, "--home", hoboHome, "--json"], {
-				cwd: fileURLToPath(
-					new URL("../../../examples/hello-bindle", import.meta.url),
-				),
-			});
-			expect(asked).toEqual([ttlSeconds]);
+			const result = await cli.run(
+				["up", ...flags, "--home", hoboHome, "--json"],
+				{
+					cwd: fileURLToPath(
+						new URL("../../../examples/hello-bindle", import.meta.url),
+					),
+				},
+			);
+			expect(asked, result.stdout).toEqual([ttlSeconds]);
 		} finally {
 			await rm(hoboHome, { recursive: true, force: true });
 		}

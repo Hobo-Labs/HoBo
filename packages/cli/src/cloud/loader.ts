@@ -49,12 +49,18 @@ export const DEFAULT_COMPONENT_HOST = {
 	version: "46.0.1",
 } as const;
 
+export interface BindleLoaderOptions {
+	/** Import a candidate by absolute path (for loaders that create modules at runtime). */
+	readonly importModule?: (path: string) => Promise<object>;
+}
+
 // Import the project's bindle module and return its BindleDefinition, or null
 // when the project has no bindle source, the module cannot be imported in this
 // process (e.g. a .ts source without a TS loader), or the default export is
 // not a bindle() definition. Null means "fall back", never "crash the verb".
 export async function loadBindleDefinition(
 	projectDir: string,
+	options: BindleLoaderOptions = {},
 ): Promise<BindleDefinition | null> {
 	for (const candidate of BINDLE_SOURCE_CANDIDATES) {
 		if (candidate === "dist/app.js") {
@@ -72,9 +78,16 @@ export async function loadBindleDefinition(
 		let module: BindleModule;
 		try {
 			// SAFETY: ESM namespace from a local bindle source file.
-			module = (await import(pathToFileURL(absolute).href)) as BindleModule;
+			module = (
+				options.importModule
+					? await options.importModule(absolute)
+					: await import(pathToFileURL(absolute).href)
+			) as BindleModule;
 		} catch (error) {
-			if (isUncompiledTypeScript(candidate, error)) {
+			if (
+				options.importModule === undefined &&
+				isUncompiledTypeScript(candidate, error)
+			) {
 				continue;
 			}
 			throw new BindleImportError(absolute, error);

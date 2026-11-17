@@ -30,6 +30,7 @@ export {
 export { externalBoundaryRefusal } from "./cloud/boundaries.js";
 export {
 	BINDLE_SOURCE_CANDIDATES,
+	type BindleLoaderOptions,
 	compileProjectManifest,
 	DEFAULT_COMPONENT_HOST,
 	loadBindleDefinition,

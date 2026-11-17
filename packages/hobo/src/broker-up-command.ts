@@ -20,6 +20,7 @@ import {
  */
 
 import { createServer } from "node:net";
+import { pathToFileURL } from "node:url";
 import {
 	type CommandModule,
 	createUpCommand,
@@ -58,7 +59,10 @@ import {
 } from "./credential-presenter.js";
 import { isJsonString, type JsonObject } from "./json.js";
 import { startLocalDeployment } from "./local-deployment.js";
-import { fingerprintLocalDeployment } from "./local-deployment-fingerprint.js";
+import {
+	fingerprintLocalDeployment,
+	materializeLocalDeploymentSnapshot,
+} from "./local-deployment-fingerprint.js";
 import { serveProjectOnLocalYard } from "./wasm-host.js";
 
 async function freePort(): Promise<number> {
@@ -75,6 +79,23 @@ async function freePort(): Promise<number> {
 			server.close((error) => (error ? reject(error) : resolve(port)));
 		});
 		server.once("error", reject);
+	});
+}
+
+async function importApprovedBindleModule(path: string): Promise<object> {
+	const url = pathToFileURL(path).href;
+	if (/\.(?:ts|mts)$/u.test(path)) {
+		const { tsImport } = await import("tsx/esm/api");
+		// SAFETY: an ESM namespace loaded from the verified execution tree.
+		return (await tsImport(url, import.meta.url)) as object;
+	}
+	// SAFETY: an ESM namespace loaded from the verified execution tree.
+	return (await import(url)) as object;
+}
+
+async function loadApprovedBindleDefinition(projectDir: string) {
+	return loadBindleDefinition(projectDir, {
+		importModule: importApprovedBindleModule,
 	});
 }
 
@@ -301,8 +322,6 @@ export function createBrokerAwareUpCommand(
 						workloadDigest: localInputsHash,
 						inputsCurrent: localInputsCurrent,
 						hoboHome,
-						definitionName: definition.name,
-						definition,
 						emitProgress,
 						budgetRequired: budgetRequiredNow,
 						persistent: deps.persistentLocal === true,
@@ -594,14 +613,14 @@ export function createBrokerAwareUpCommand(
 	};
 }
 
-function refuseChangedInputs() {
+function refuseChangedInputs(stage?: string) {
 	return {
 		ok: false,
 		status: "rejected",
 		code: "HOBO_UP_INPUTS_CHANGED",
 		message:
 			"Local project inputs changed or became unavailable during placement; retry the deployment.",
-		data: { command: "up" },
+		data: { command: "up", ...(stage ? { stage } : undefined) },
 	};
 }
 
@@ -628,20 +647,16 @@ function localTtlSeconds(raw: string | undefined): number {
 async function runLocalUp(input: {
 	readonly projectDir: string;
 	readonly hoboHome: string;
-	readonly definitionName: string;
 	readonly persistent?: boolean;
 	readonly start: typeof startLocalDeployment;
 	readonly allocatePort: () => Promise<number>;
 	readonly ttlSeconds?: number;
-	readonly definition: NonNullable<
-		Awaited<ReturnType<typeof loadBindleDefinition>>
-	>;
 	readonly emitProgress: (message: string) => void;
 	readonly budgetRequired: () => boolean;
 	readonly workloadDigest: `sha256:${string}`;
 	readonly inputsCurrent: () => Promise<boolean>;
 }) {
-	const { projectDir, hoboHome, definition, emitProgress } = input;
+	const { projectDir, hoboHome, emitProgress } = input;
 	if (input.budgetRequired()) return refuseBudgetFallback();
 
 	// Installed runtime always has a broker.
@@ -650,8 +665,41 @@ async function runLocalUp(input: {
 		initBareMetalYard({ hoboHome });
 	}
 	await ensureEmbeddedBroker({ hoboHome, emitProgress });
-	if (!(await input.inputsCurrent())) return refuseChangedInputs();
+	if (!(await input.inputsCurrent())) return refuseChangedInputs("before-copy");
 	if (input.budgetRequired()) return refuseBudgetFallback();
+	let executionProjectDir: string;
+	try {
+		executionProjectDir = await materializeLocalDeploymentSnapshot(
+			projectDir,
+			hoboHome,
+			input.workloadDigest,
+		);
+	} catch {
+		return refuseChangedInputs("copy");
+	}
+	const executionBoundary = await externalBoundaryRefusal(
+		executionProjectDir,
+		"up",
+		{ importModule: importApprovedBindleModule },
+	);
+	if (executionBoundary !== undefined) return executionBoundary;
+	const executionManifest = await loadProjectManifest(executionProjectDir);
+	if (executionManifest && manifestHostingPolicy(executionManifest).required)
+		return refuseBudgetFallback();
+	const definition = await loadApprovedBindleDefinition(executionProjectDir);
+	if (definition === null) return refuseChangedInputs("load-approved-bindle");
+	const executionInputsCurrent = async () => {
+		try {
+			return (
+				(await fingerprintLocalDeployment(executionProjectDir, hoboHome)) ===
+				input.workloadDigest
+			);
+		} catch {
+			return false;
+		}
+	};
+	if (!(await executionInputsCurrent()))
+		return refuseChangedInputs("approved-copy-before-placement");
 
 	const placement = await resolveBindlePlacement({
 		definition,
@@ -680,13 +728,17 @@ async function runLocalUp(input: {
 	}
 
 	if (placement.workloadDigest !== input.workloadDigest)
-		return refuseChangedInputs();
+		return refuseChangedInputs("placement-digest");
+	if (!(await executionInputsCurrent()))
+		return refuseChangedInputs("approved-copy-after-placement");
 	emitProgress(`hobo up: ${placement.message}`);
-	if (!(await input.inputsCurrent())) return refuseChangedInputs();
+	if (!(await input.inputsCurrent()))
+		return refuseChangedInputs("source-after-placement");
 	if (input.budgetRequired()) return refuseBudgetFallback();
 
 	const port = await input.allocatePort();
-	if (!(await input.inputsCurrent())) return refuseChangedInputs();
+	if (!(await input.inputsCurrent()))
+		return refuseChangedInputs("source-after-port");
 	if (input.budgetRequired()) return refuseBudgetFallback();
 	if (input.persistent) {
 		const { receipt, reused } = await input.start({
@@ -725,8 +777,11 @@ async function runLocalUp(input: {
 			},
 		};
 	}
+	if (!(await executionInputsCurrent()))
+		return refuseChangedInputs("approved-copy-before-serve");
 	const serve = await serveProjectOnLocalYard({
-		projectDir,
+		projectDir: executionProjectDir,
+		definition,
 		hoboHome,
 		componentHost: placement.componentHost,
 		port,

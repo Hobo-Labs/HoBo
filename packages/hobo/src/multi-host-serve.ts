@@ -4,7 +4,11 @@
  */
 
 import { createServer, type Server } from "node:http";
-import { discoveryEnvForDependency, readDependencyConfig } from "@hobo/bindles";
+import {
+	type BindleDefinition,
+	discoveryEnvForDependency,
+	readDependencyConfig,
+} from "@hobo/bindles";
 import { loadBindleDefinition } from "@hobo/cli";
 import {
 	attachNamedEndpoints,
@@ -109,35 +113,34 @@ function componentDescriptor(
 	id: string,
 	handler: FetchHandler,
 ): ParsedComponentDescriptor {
+	const handle = async (
+		httpReq: HttpRequest,
+	): Promise<HttpResponse> => {
+		const req = httpReq;
+		const webReq = new Request(`http://component.local${req.path}`, {
+			method: req.method,
+			headers: Object.fromEntries(req.headers),
+			...(req.body && req.method !== "GET" && req.method !== "HEAD"
+				? { body: req.body }
+				: undefined),
+		});
+		const webRes = await handler(webReq);
+		return {
+			status: webRes.status,
+			// SAFETY: assertion required at this I/O or test boundary.
+			headers: [...webRes.headers.entries()] as [string, string][],
+			body: await webRes.text(),
+		};
+	};
 	return {
 		parsed: true,
 		id,
 		imports: [],
 		exports: {
 			[HTTP_INCOMING_HANDLER]: {
-				// SAFETY: the export table is heterogeneous by design -- each
-				// interface has its own argument shape, and `ComponentExport`
-				// describes the table, not this entry. The host reads it back through
-				// the matching handler type (`HttpIncomingHandler` in runtime-local),
-				// so the two-step cast is where that agreement is recorded rather
-				// than a claim that the signatures line up.
-				handle: (async (httpReq: HttpRequest): Promise<HttpResponse> => {
-					const req = httpReq;
-					const webReq = new Request(`http://component.local${req.path}`, {
-						method: req.method,
-						headers: Object.fromEntries(req.headers),
-						...(req.body && req.method !== "GET" && req.method !== "HEAD"
-							? { body: req.body }
-							: undefined),
-					});
-					const webRes = await handler(webReq);
-					return {
-						status: webRes.status,
-						// SAFETY: assertion required at this I/O or test boundary.
-						headers: [...webRes.headers.entries()] as [string, string][],
-						body: await webRes.text(),
-					};
-				}) as unknown as ParsedComponentDescriptor["exports"][string][string],
+				// SAFETY: the heterogeneous export table is read back through the
+				// matching HttpIncomingHandler contract by runtime-local.
+				handle: handle as never,
 			},
 		},
 	};
@@ -200,6 +203,7 @@ export type MultiHostServeResult = BareMetalServeResult & {
  */
 export async function serveProjectOnHost(options: {
 	readonly projectDir: string;
+	readonly definition?: BindleDefinition;
 	readonly componentHost: ComponentHostKind | string;
 	readonly yard?: BareMetalYard;
 	readonly port?: number;
@@ -219,7 +223,8 @@ export async function serveProjectOnHost(options: {
 		`hobo dev: local Yard '${yardHandle.config.name}' Camp component host=${kind}`,
 	);
 
-	const definition = await loadBindleDefinition(options.projectDir);
+	const definition =
+		options.definition ?? (await loadBindleDefinition(options.projectDir));
 	if (definition === null) {
 		ownedYard?.close();
 		throw new Error(

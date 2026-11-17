@@ -1,13 +1,17 @@
 import { fork } from "node:child_process";
 import { once } from "node:events";
 import { writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { create, toJson } from "@bufbuild/protobuf";
 import { bindle } from "@hobo/bindles";
-import { loadProjectManifest, parseArgv } from "@hobo/cli";
+import {
+	loadBindleDefinition,
+	loadProjectManifest,
+	parseArgv,
+} from "@hobo/cli";
 import { manifestHostingPolicy } from "@hobo/cloud";
 import fc from "fast-check";
 import { expect, it } from "vitest";
@@ -19,7 +23,10 @@ import {
 	readLocalDeployment,
 	startLocalDeployment,
 } from "../src/local-deployment.js";
-import { fingerprintLocalDeployment } from "../src/local-deployment-fingerprint.js";
+import {
+	fingerprintLocalDeployment,
+	materializeLocalDeploymentSnapshot,
+} from "../src/local-deployment-fingerprint.js";
 
 type ChangePhase = "none" | "ready" | "placement" | "handoff" | "temporary";
 
@@ -220,10 +227,54 @@ it("retains the approved fingerprint when the caller changes launch options", as
 	});
 }, 300_000);
 
-it("the persistent worker rejects a stale launch fingerprint before serving", async () => {
+it("loads changed source through a new content-addressed module path", async () => {
 	await withProject(async (cwd, hoboHome) => {
+		const source = join(cwd, "src/bindle.mjs");
+		await writeFile(
+			source,
+			`export default {name:'first', resources:{}, edges:[]};`,
+		);
+		const firstDigest = await fingerprintLocalDeployment(cwd, hoboHome);
+		const firstSnapshot = await materializeLocalDeploymentSnapshot(
+			cwd,
+			hoboHome,
+			firstDigest,
+		);
+		expect((await loadBindleDefinition(firstSnapshot))?.name).toBe("first");
+		if (process.platform !== "win32") {
+			expect(
+				(await stat(join(firstSnapshot, "src/bindle.mjs"))).mode & 0o222,
+			).toBe(0);
+		}
+
+		await writeFile(
+			source,
+			`export default {name:'second', resources:{}, edges:[]};`,
+		);
+		const secondDigest = await fingerprintLocalDeployment(cwd, hoboHome);
+		const secondSnapshot = await materializeLocalDeploymentSnapshot(
+			cwd,
+			hoboHome,
+			secondDigest,
+		);
+		expect(secondSnapshot).not.toBe(firstSnapshot);
+		expect((await loadBindleDefinition(secondSnapshot))?.name).toBe("second");
+	});
+}, 300_000);
+
+it("the persistent worker serves approved snapshot bytes after source changes", async () => {
+	await withProject(async (cwd, hoboHome) => {
+		await writeFile(
+			join(cwd, "src/bindle.mjs"),
+			`import {bindle} from ${JSON.stringify(import.meta.resolve("@hobo/bindles"))};
+export default bindle('sample', b => ({web: b.web(() => () => new Response('approved'))}));`,
+		);
 		const contentFingerprint = await fingerprintLocalDeployment(cwd, hoboHome);
-		await writeFile(join(cwd, "workload.txt"), "changed");
+		await materializeLocalDeploymentSnapshot(cwd, hoboHome, contentFingerprint);
+		await writeFile(
+			join(cwd, "src/bindle.mjs"),
+			`throw new Error('changed source must not be imported');`,
+		);
 		const worker = fork(
 			fileURLToPath(
 				new URL("../src/local-deployment-worker.ts", import.meta.url),
@@ -260,8 +311,74 @@ it("the persistent worker rejects a stale launch fingerprint before serving", as
 			});
 			const [response] = await message;
 			expect(response).toMatchObject({
+				type: "ready",
+				receipt: { contentFingerprint },
+			});
+			// SAFETY: the preceding assertion checks the worker's ready receipt shape.
+			const ready = response as {
+				readonly receipt: { readonly primaryUrl: string };
+			};
+			expect(await (await fetch(ready.receipt.primaryUrl)).text()).toBe(
+				"approved",
+			);
+		} finally {
+			worker.kill("SIGTERM");
+			await exited;
+		}
+	});
+}, 300_000);
+
+it("the persistent worker refuses a corrupted approved snapshot", async () => {
+	await withProject(async (cwd, hoboHome) => {
+		const contentFingerprint = await fingerprintLocalDeployment(cwd, hoboHome);
+		const executionProjectDir = await materializeLocalDeploymentSnapshot(
+			cwd,
+			hoboHome,
+			contentFingerprint,
+		);
+		const copiedSource = join(executionProjectDir, "src/bindle.mjs");
+		await chmod(copiedSource, 0o644);
+		await writeFile(copiedSource, `throw new Error('corrupted snapshot');`);
+		const worker = fork(
+			fileURLToPath(
+				new URL("../src/local-deployment-worker.ts", import.meta.url),
+			),
+			[],
+			{
+				cwd,
+				stdio: ["ignore", "ignore", "ignore", "ipc"],
+				execArgv: ["--import", import.meta.resolve("tsx")],
+				env: { ...process.env, HOBO_LOCAL_CONTROL_TOKEN: "fixture-token" },
+			},
+		);
+		const exited = once(worker, "exit").catch(() => undefined);
+		try {
+			const message = once(worker, "message", {
+				signal: AbortSignal.timeout(60_000),
+			});
+			worker.send({
+				type: "start",
+				launch: toJson(
+					LocalDeploymentLaunchSchema,
+					create(LocalDeploymentLaunchSchema, {
+						projectDir: cwd,
+						hoboHome,
+						componentHost: "local",
+						leaseId: "lease-corrupt",
+						bindleName: "sample",
+						brokerId: "broker:local",
+						campId: "camp:local",
+						providerId: "@hobo/provider-local-host",
+						port: 0,
+						ttlSeconds: 0,
+						contentFingerprint,
+					}),
+				),
+			});
+			const [response] = await message;
+			expect(response).toMatchObject({
 				type: "error",
-				message: "Local project inputs changed before worker startup",
+				message: "Approved local deployment snapshot is unavailable",
 			});
 		} finally {
 			worker.kill("SIGTERM");
