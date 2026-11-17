@@ -362,6 +362,16 @@ can be admitted against current policy; interrupted running leases remain uncert
 The persisted queue deadline is exclusive: allocation is refused at or after that
 instant, including after asynchronous provider preflight. A claimed financial hold
 is retained until native final usage or valid unused-release evidence resolves it.
+For a shared fixed-window budget, the full approved work duration is checked
+again after both the parent reservation and execution claim return, including
+time spent waiting for the store. The trusted allocation coverage check is
+also repeated at return. If the window can no longer fund the work, the result
+is refused and the committed hold remains for evidence-based reconciliation.
+That post-commit failure is not a pre-commit denial eligible for offer fallback.
+Callback errors that use the admission-denial type are converted to a
+reconciliation error once the hold has committed. A financial authority must
+itself use that denial type only for definitive refusals before an admission
+write; an uncertain commit or transport failure must use a different error.
 
 The root entrypoint and scheduler target Node. Cloudflare Workers import the
 portable `@hobo/ci/execution` entrypoint, which has no Node ledger or Dispatcher
@@ -724,4 +734,30 @@ stateDiagram-v2
   Held --> Dispatching: worker starts external dispatch
   Dispatching --> Reconcile: delivery expires during dispatch
   Dispatching --> Confirmed: active worker confirms effect
+```
+
+The [CI budget-window verification skill](../../.agents/skills/verify-ci-budget-window/SKILL.md)
+models the post-claim time check. This projection hides 13 same-label steps
+from 24 modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Fits
+  Fits --> Claiming: claim the financial hold
+  Claiming --> Committed: claim commits
+  Committed --> Allowed: work still fits the window
+  Committed --> Refused: work no longer fits the window; hold retained
+```
+
+The reservation projection also hides 13 same-label steps from 24 modeled
+steps. A refused committed reservation retains its hold and cannot be treated
+as a pre-commit fallback denial.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Fits
+  Fits --> Reserving: reserve the financial hold
+  Reserving --> Committed: hold commits
+  Committed --> Accepted: work still fits the window
+  Committed --> Refused: work no longer fits the window; hold retained
 ```
