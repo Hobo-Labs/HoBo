@@ -159,3 +159,25 @@ cancels a failed response before releasing its reader. This prevents text
 normalization from making different served bytes appear to match an approved
 artifact digest. Binary protocols need an explicit bytes/base64 boundary;
 replacement characters are not a valid binary transport.
+
+## Shared budget policy verification
+
+The shared policy evaluator checks scope, funded windows, measured constraints,
+and projected integer costs for CI and hosting. Strict admission requires a
+native-bound label supplied by the caller; the caller must authenticate that
+evidence. Omitted constraints mean none; an explicit non-array constraints
+value, including `null`, is refused. The
+[verification skill](../../.agents/skills/verify-shared-budget-policy/SKILL.md)
+records generated implementation tests, the bounded state model, the
+unbounded arithmetic obligations, and their assumptions.
+
+The model's user-facing projection collapses internal checks into the following
+flow. It hides 128 same-label transitions from 256 explored steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> CheckingPolicy
+  CheckingPolicy --> RequestDenied: scope, window, budget, evidence or metric fails
+  CheckingPolicy --> PolicyAllows: all applicable checks pass
+  CheckingPolicy --> PlanNeedsEvidence: plan requires native evidence before admission
+```
