@@ -1,11 +1,3 @@
-/**
- * Unified Messaging port — backend-agnostic publish/subscribe surface over
- * `wasi:messaging` / `topic()` (ADR-0138).
- *
- * App code targets this port; Kafka (native), Dapr pubsub, and local emulators
- * are adapters. Never import Kafka/Dapr clients from app Bindles.
- */
-
 import { CoreParseError } from "../errors.js";
 import {
 	cloneAsJson,
@@ -140,10 +132,6 @@ export interface MessagingEvent {
 	readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-/**
- * Backend-agnostic Messaging surface. Adapters: in-memory (tests), Kafka
- * provider, Dapr pubsub runtime.
- */
 export interface Messaging {
 	readonly backend: string;
 	readonly capabilities: MessagingCapabilities;
@@ -157,17 +145,12 @@ export interface Messaging {
 		options?: PublishOptions,
 	): Promise<PublishResult>;
 
-	/**
-	 * Pull-consume from a consumer group (aligned with wasi:messaging + queue
-	 * semantics). Push-style handlers use {@link subscribe}.
-	 */
 	consume(
 		topic: TopicName,
 		consumerGroup: ConsumerGroupId,
 		options?: ConsumeOptions,
 	): Promise<readonly ConsumedMessage[]>;
 
-	/** Push-style handler registration (at-least-once redelivery on throw). */
 	subscribe(
 		topic: TopicName,
 		consumerGroup: ConsumerGroupId,
@@ -182,7 +165,6 @@ export interface Messaging {
 		reason?: string,
 	): void;
 
-	/** Audit / control-plane fact log (replayable). */
 	events(): readonly MessagingEvent[];
 }
 
@@ -244,12 +226,10 @@ const DELIVERY_SET = new Set<DeliveryGuarantee>([
 ]);
 
 export function parseTopicName(value: string): TopicName {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "topic", MessagingParseError) as TopicName;
 }
 
 export function parseConsumerGroupId(value: string): ConsumerGroupId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"consumerGroup",
@@ -258,7 +238,6 @@ export function parseConsumerGroupId(value: string): ConsumerGroupId {
 }
 
 export function parseMessagingMessageId(value: string): MessagingMessageId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"messageId",
@@ -267,7 +246,6 @@ export function parseMessagingMessageId(value: string): MessagingMessageId {
 }
 
 export function parseMessagingLeaseId(value: string): MessagingLeaseId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"leaseId",
@@ -276,7 +254,6 @@ export function parseMessagingLeaseId(value: string): MessagingLeaseId {
 }
 
 export function parseSubscriptionName(value: string): SubscriptionName {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"subscription",
@@ -287,18 +264,13 @@ export function parseSubscriptionName(value: string): SubscriptionName {
 export function parseDeliveryGuarantee(
 	value: JsonValue | undefined,
 ): DeliveryGuarantee {
-	if (
-		!isJsonString(value) ||
-		// SAFETY: assertion required at this I/O or test boundary.
-		!DELIVERY_SET.has(value as DeliveryGuarantee)
-	) {
+	if (!isJsonString(value) || !DELIVERY_SET.has(value as DeliveryGuarantee)) {
 		throw new MessagingParseError(
 			"delivery",
 			"at-least-once|exactly-once|at-most-once",
 			value,
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return value as DeliveryGuarantee;
 }
 
@@ -326,12 +298,9 @@ export function tenantScopedTopicName(
 ): TopicName {
 	const tenant = nonEmptyString(tenantId, "tenantId", MessagingParseError);
 	const name = nonEmptyString(topic, "topic", MessagingParseError);
-	// Multi-tenant default: physical topic is tenant-prefixed unless already scoped.
 	if (name.startsWith(`${tenant}.`) || name.startsWith(`${tenant}/`)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return name as TopicName;
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return `${tenant}.${name}` as TopicName;
 }
 
@@ -342,10 +311,8 @@ export function tenantScopedConsumerGroup(
 	const tenant = nonEmptyString(tenantId, "tenantId", MessagingParseError);
 	const name = nonEmptyString(group, "consumerGroup", MessagingParseError);
 	if (name.startsWith(`${tenant}.`) || name.startsWith(`${tenant}/`)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return name as ConsumerGroupId;
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return `${tenant}.${name}` as ConsumerGroupId;
 }
 
@@ -353,12 +320,10 @@ export function parseTopicSpec(input: JsonValue | undefined): TopicSpec {
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("topicSpec", "object", input);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const delivery = parseDeliveryGuarantee(src.delivery ?? "at-least-once");
 	const spec: TopicSpec = {
 		name: parseTopicName(String(src.name ?? "")),
-		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",
@@ -391,7 +356,6 @@ export function parseSubscriptionSpec(
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("subscriptionSpec", "object", input);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const delivery = parseDeliveryGuarantee(src.delivery ?? "at-least-once");
 	const max = positiveInteger(
@@ -405,7 +369,6 @@ export function parseSubscriptionSpec(
 		consumerGroup: parseConsumerGroupId(
 			String(src.consumerGroup ?? src.consumer_group ?? ""),
 		),
-		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",
@@ -430,7 +393,6 @@ export function parseMessagingSpec(
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("messagingSpec", "object", input);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const topics = Array.isArray(src.topics)
 		? src.topics.map((t) => parseTopicSpec(t))
@@ -440,7 +402,6 @@ export function parseMessagingSpec(
 		: [];
 	return deepFreeze({
 		id: nonEmptyString(String(src.id ?? ""), "id", MessagingParseError),
-		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",
@@ -467,10 +428,6 @@ export function assertDeliverySupported(
 	}
 }
 
-/**
- * In-memory Messaging adapter — local/tests / hobo dev fallback.
- * At-least-once with optional exactly-once via idempotency keys when claimed.
- */
 export interface InMemoryMessagingOptions {
 	readonly tenantId?: string;
 	readonly capabilities?: Partial<MessagingCapabilities>;
@@ -489,7 +446,6 @@ interface StoredMessage {
 }
 
 interface GroupCursor {
-	/** offsets already acked per topic */
 	acked: Set<string>;
 	inflight: Map<
 		string,
@@ -501,7 +457,6 @@ interface GroupCursor {
 export function createInMemoryMessaging(
 	options: InMemoryMessagingOptions = {},
 ): Messaging {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = (options.tenantId ?? "local") as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
 	const capabilities: MessagingCapabilities = deepFreeze({

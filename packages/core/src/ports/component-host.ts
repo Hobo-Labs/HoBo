@@ -9,21 +9,9 @@ export function parseInterfaceId(raw: string): InterfaceId {
 	if (!INTERFACE_ID_PATTERN.test(raw)) {
 		throw new Error(`component_host.invalid_interface_id: ${raw}`);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return raw as InterfaceId;
 }
 
-/**
- * A function in a component's or provider's export table.
- *
- * The promise arm is not an accommodation — it is what these already are. An
- * export that calls back into the host (`callImport`) cannot answer
- * synchronously, and the local runtime awaits every export it invokes. Naming
- * only the synchronous arm forced each of those exports to be cast on its way
- * into the table, which is how an `async` function ends up asserted to a
- * synchronous type: a cast the compiler rightly calls a probable mistake, and
- * which would have silently hidden a genuinely wrong signature.
- */
 export type ComponentExport = (
 	...args: JsonValue[]
 ) => JsonValue | Promise<JsonValue>;

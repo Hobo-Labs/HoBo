@@ -1,33 +1,3 @@
-/**
- * Data-store catalog entries: a provider profile with its evidence attached.
- *
- * A `DataStoreProviderProfile` says *what* a store realizes; it cannot say how
- * anyone knows. Third-party facts in this repo are sourced and dated
- * (AGENTS.md legal hygiene), so a catalog entry carries, per offering, the
- * vendor documentation URL it was read from and the day it was read, and the
- * profile is *derived* from those claims ({@link dataStoreProfileOf}) instead
- * of being written beside them where the two could drift.
- *
- * A claim has one of five realizations, and only the first reaches a profile's
- * native offerings:
- *
- *   - `native`      — the product does this itself; cited.
- *   - `fallback`    — not native; HoBo realizes it on top of the store.
- *   - `operator`    — not provided; whoever runs the store has to build and
- *                     run it (self-hosted backups, failover, certificates).
- *   - `unsupported` — the vendor's documentation says it is not offered; cited.
- *   - `unknown`     — not confirmed from a primary source. Never matched,
- *                     never guessed: `detail` says what is missing.
- *
- * `fallback` and `operator` claims land on the profile's fallback ladder, so a
- * request that needs them resolves `partial` and names them — the caller sees
- * the native / not-native split instead of a flat "supported".
- *
- * This module is vocabulary and parsing only. It holds no vendor facts; the
- * PostgreSQL catalog built from it lives in `@hobo/cloud-providers`, a leaf
- * package, so refreshing a dated observation does not rebuild everything that
- * depends on `@hobo/core`.
- */
 import { cloneAsJson, isJsonString, type JsonValue } from "../json.js";
 import { deepFreeze, enumValue, expectObject } from "../parse-utils.js";
 import {
@@ -68,12 +38,6 @@ export const DATA_STORE_MANAGEMENT_MODES = Object.freeze([
 
 export type DataStoreManagement = (typeof DATA_STORE_MANAGEMENT_MODES)[number];
 
-/**
- * How an entry's stability is known: the vendor says so in as many words
- * (`vendor-stated`: a GA announcement, a "(Preview)" title, a feature-status
- * table), or it is read off the absence of any preview marker in the
- * documentation (`inferred`). The second is weaker and is kept visible.
- */
 // public-contract: the stability-basis vocabulary a catalog entry is written in.
 export const DATA_STORE_STABILITY_BASES = Object.freeze([
 	"vendor-stated",
@@ -83,18 +47,10 @@ export const DATA_STORE_STABILITY_BASES = Object.freeze([
 export type DataStoreStabilityBasis =
 	(typeof DATA_STORE_STABILITY_BASES)[number];
 
-/**
- * Where a claim was read and when. Same shape as the capability-profile
- * `sourceRefs` (`url` + `checkedAt` + `note`) so one evidence convention covers
- * both; `@hobo/core` is layer 0 and cannot import that type, so it is restated.
- */
 // domain-view: parse-time evidence reference; wire form is DataStoreClaimSourceRecord in data-models/data_store_catalog.proto.
 export interface DataStoreClaimSource {
-	/** Vendor documentation URL the claim was read from. */
 	readonly url: string;
-	/** UTC `YYYY-MM-DD` the URL was read. Never fabricated. */
 	readonly checkedAt: string;
-	/** What the page says, in the reader's words or a short quote. */
 	readonly note: string;
 }
 
@@ -105,7 +61,6 @@ export interface DataStoreCatalogClaim {
 	readonly stability: OfferingStability;
 	readonly fidelity: OfferingFidelity;
 	readonly features: readonly string[];
-	/** Qualifier a table cell cannot hold: endpoint shape, plan gate, limit. */
 	readonly detail: string;
 	readonly sources: readonly DataStoreClaimSource[];
 }
@@ -119,7 +74,6 @@ export interface DataStoreCatalogEntry {
 	readonly stability: OfferingStability;
 	readonly stabilityBasis: DataStoreStabilityBasis;
 	readonly stabilitySources: readonly DataStoreClaimSource[];
-	/** Yard product id of a registered provider that can allocate this store. */
 	readonly yardProductId?: string;
 	readonly claims: readonly DataStoreCatalogClaim[];
 }
@@ -175,9 +129,6 @@ export function parseDataStoreCatalogClaim(
 	);
 	const sources = sourceList(input.sources, `${path}.sources`);
 	const detail = isJsonString(input.detail) ? input.detail.trim() : "";
-	// The whole point of the record: a claim that asserts something about a
-	// third party names where it was read. Only "we do not know" may be bare,
-	// and then it has to say what is missing.
 	if (realization === "unknown" && detail.length === 0) {
 		fail(`${path}.detail`, "what could not be confirmed", input.detail);
 	}
@@ -251,16 +202,6 @@ export function parseDataStoreCatalogEntry(
 	);
 }
 
-/**
- * The provider profile an entry's claims amount to.
- *
- * Native claims become offerings, carrying the claim's own stability unless
- * the product as a whole is less stable than the claim says (a `stable`
- * feature of a `preview` product is a preview feature). `operator` and
- * `fallback` claims lead the fallback ladder in claim order, followed by the
- * platform's portable defaults. `unsupported` and `unknown` claims contribute
- * nothing, so a request that requires one fails closed.
- */
 export function dataStoreProfileOf(
 	entry: DataStoreCatalogEntry,
 ): DataStoreProviderProfile {
@@ -288,7 +229,6 @@ export function dataStoreProfileOf(
 	});
 }
 
-/** The offerings whoever runs this store has to realize themselves. */
 export function operatorOwnedOfferings(
 	entry: DataStoreCatalogEntry,
 ): readonly DataStoreOfferingId[] {
@@ -299,7 +239,6 @@ export function operatorOwnedOfferings(
 	);
 }
 
-/** How many of an entry's claims are cited, and how many are honest unknowns. */
 export function dataStoreCatalogEvidence(
 	entry: DataStoreCatalogEntry,
 ): DataStoreCatalogEvidenceSummary {

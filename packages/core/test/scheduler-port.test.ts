@@ -50,7 +50,6 @@ describe("hobo:scheduler port descriptor", () => {
 			parseIntervalCronSpec({ every_ms: -5 });
 			expect.unreachable();
 		} catch (error) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as SchedulerParseError).code).toBe(
 				"HOBO_CORE_SCHEDULER_PARSE",
 			);

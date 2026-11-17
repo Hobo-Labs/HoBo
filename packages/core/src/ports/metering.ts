@@ -1,8 +1,3 @@
-/**
- * Pluggable metering / usage events.
- * Full billing engines plug in as sinks that aggregate these events.
- */
-
 import type { TenantId } from "./tenant.js";
 
 export type UsageEventType =

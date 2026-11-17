@@ -1,20 +1,3 @@
-// AWS SigV4, pinned against the official `aws-sig-v4-test-suite` vectors.
-//
-// This is the highest-value test in the AWS deploy path. A SigV4 signer that
-// is subtly wrong — locale ordering instead of code-unit ordering, a header
-// name folded after collection instead of before, `encodeURIComponent` where
-// RFC 3986 was meant — produces a perfectly plausible `Authorization` header
-// that only the live API rejects, and this repo cannot reach the live API. The
-// published canonical-request / string-to-sign / Authorization triples are
-// therefore the only real proof available, so each case below asserts all
-// three rather than just the final signature: when a signature is wrong, the
-// canonical request says *why*.
-//
-// Every vector shares the suite's fixed inputs: access key `AKIDEXAMPLE`,
-// the published example secret, region `us-east-1`, service `service`, and
-// the signing instant 2015-08-30T12:36:00Z. The suite's requests do not carry
-// `x-amz-content-sha256`, so they sign with `contentSha256Header: false`; the
-// header is on by default because S3 requires it.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,13 +8,11 @@ import {
 	signAwsRequest,
 } from "../src/ports/aws-sigv4.js";
 
-/** The suite's published example credentials. Not a real key pair. */
 const SUITE_CREDENTIALS: AwsCredentials = {
 	accessKeyId: "AKIDEXAMPLE",
 	secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
 };
 
-/** The instant every vector in the suite is signed at. */
 const SUITE_INSTANT = new Date("2015-08-30T12:36:00.000Z");
 
 interface SigV4Vector {
@@ -45,11 +26,6 @@ interface SigV4Vector {
 	readonly authorization: string;
 }
 
-/**
- * Verbatim from the suite. A header given as an array is one the request sends
- * more than once, which is what `get-header-key-duplicate` and
- * `get-header-value-order` exist to pin.
- */
 const VECTORS: readonly SigV4Vector[] = [
 	{
 		name: "get-vanilla",
@@ -289,8 +265,6 @@ describe("signAwsRequest determinism and header handling", () => {
 			contentSha256Header: false,
 		});
 
-		// Code-unit ordering puts every upper-case name before every lower-case
-		// one; a locale-aware comparison interleaves them.
 		expect(signed.canonicalRequest.split("\n")[2]).toBe("A=1&a=3&b=2");
 	});
 

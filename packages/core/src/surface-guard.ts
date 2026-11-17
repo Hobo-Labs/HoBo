@@ -51,7 +51,6 @@ export const CORE_API_SNAPSHOT = deepFreeze({
 		"TemporaryEnvironmentStationResult",
 		"assertTemporaryEnvironmentStationResult",
 		"temporaryStationToAnonymousSessionView",
-		// ADR-0156 Plugin SPI surface.
 		"CloudProvider",
 		"CapabilityPortKind",
 		"ActorHost",
@@ -88,7 +87,6 @@ export function assertCoreApiSnapshot(
 			"public API snapshot drift: update snapshot deliberately with a breaking-change note",
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return deepFreeze(cloneJson(source)) as typeof CORE_API_SNAPSHOT;
 }
 
