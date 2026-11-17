@@ -11,6 +11,13 @@ these declarations do not provide a runtime or a bridge from the legacy
 bounds lease identifiers, which must be nonempty control-free Unicode scalar
 strings. Operation IDs use their separately bounded format.
 
+`hobo:durable-messaging-jspi/messaging@0.1.0` is a separate opt-in
+compatibility ABI. It uses synchronous component functions with the same data
+shapes; a JSPI-enabled JCO host suspends those calls while the asynchronous
+provider runs. It is not the native async interface, and hosts must verify its
+exact interface version before linking it. The checked parity test keeps the two
+sets of records, variants and operation semantics aligned.
+
 ## Layout
 
 - `wit/hobo-sdk.wit` — canonical `hobo:sdk@0.1.0` aggregate (`world sdk` imports only; ADR-0072).
