@@ -1,12 +1,3 @@
-/**
- * The PostgreSQL backend catalog: evidence discipline first, then what a
- * realistic request resolves to against the profiles the claims amount to.
- *
- * Nothing here talks to a provider. These tests pin the *shape* of the
- * evidence (every asserted fact has a vendor URL and a date) and the
- * native-versus-fallback split a resolver reports; they cannot and do not
- * prove a vendor's documentation is still true.
- */
 import {
 	DATA_STORE_OFFERING_IDS,
 	type DataStoreOfferingId,
@@ -44,7 +35,6 @@ const REQUIRED_PROVIDERS = [
 	"self-hosted-postgres",
 ] as const;
 
-/** Offerings a connection port and a standby policy need answered. */
 const CATALOGUED_OFFERINGS: readonly DataStoreOfferingId[] = [
 	"sql.relational",
 	"sql.transactions",
@@ -62,7 +52,6 @@ const CATALOGUED_OFFERINGS: readonly DataStoreOfferingId[] = [
 	"tls.public-ca",
 ];
 
-/** Relational + transactions + PITR + a standby that can be kept current. */
 const RELAY_REQUEST = {
 	features: [
 		"sql.relational",
@@ -182,7 +171,6 @@ describe("evidence discipline", () => {
 		}
 		const unknown = evidence.reduce((sum, row) => sum + row.unknown, 0);
 		expect(unknown).toBeGreaterThan(0);
-		// A preview product states its status in the vendor's own words.
 		const horizon = postgresBackend("azure-horizondb");
 		expect(horizon?.stability).toBe("preview");
 		expect(horizon?.stabilityBasis).toBe("vendor-stated");
@@ -223,22 +211,16 @@ describe("resolving the relay's request", () => {
 	});
 
 	it("fails closed where a required offering is unsupported or unknown", () => {
-		const expectations = {
-			// PITR is announced, not available, at the observed date.
-			"prisma-postgres": ["backup.pitr", "replicate.logical-subscribe"],
-			// Publisher is cited; subscriber is not.
-			"supabase-postgres": ["replicate.logical-subscribe"],
-			"aws-aurora-postgres": ["replicate.logical-subscribe"],
-			"azure-horizondb": ["replicate.logical-subscribe"],
-			"gcp-alloydb": ["replicate.logical-subscribe"],
-			"pgedge-cloud": ["backup.pitr", "replicate.logical-subscribe"],
-		} as const;
-		for (const [provider, missing] of Object.entries(expectations)) {
-			const match = matchDataStoreOfferings(
-				// SAFETY: keys of `expectations` are catalog provider ids by construction.
-				profile(provider as keyof typeof expectations),
-				RELAY_REQUEST,
-			);
+		const expectations = [
+			["prisma-postgres", ["backup.pitr", "replicate.logical-subscribe"]],
+			["supabase-postgres", ["replicate.logical-subscribe"]],
+			["aws-aurora-postgres", ["replicate.logical-subscribe"]],
+			["azure-horizondb", RELAY_REQUEST.features],
+			["gcp-alloydb", ["replicate.logical-subscribe"]],
+			["pgedge-cloud", ["backup.pitr", "replicate.logical-subscribe"]],
+		] as const;
+		for (const [provider, missing] of expectations) {
+			const match = matchDataStoreOfferings(profile(provider), RELAY_REQUEST);
 			expect(match.kind, provider).toBe("none");
 			if (match.kind === "none") expect(match.missing).toEqual(missing);
 		}
@@ -246,7 +228,12 @@ describe("resolving the relay's request", () => {
 
 	it("resolves self-hosted with PITR on the operator's side of the split", () => {
 		const selfHosted = profile("self-hosted-postgres");
-		const match = matchDataStoreOfferings(selfHosted, RELAY_REQUEST);
+		const strict = matchDataStoreOfferings(selfHosted, RELAY_REQUEST);
+		expect(strict).toMatchObject({ kind: "none", missing: ["backup.pitr"] });
+		const match = matchDataStoreOfferings(selfHosted, {
+			...RELAY_REQUEST,
+			negotiation: "prefer",
+		});
 		expect(match).toEqual({
 			kind: "partial",
 			offerings: RELAY_REQUEST.features,
@@ -255,7 +242,6 @@ describe("resolving the relay's request", () => {
 		});
 		const entry = postgresBackend("self-hosted-postgres");
 		expect(entry?.management).toBe("self-hosted");
-		// What a managed service would provide and the operator now owns.
 		expect(entry === undefined ? [] : operatorOwnedOfferings(entry)).toEqual([
 			"backup.pitr",
 			"replica.read",
