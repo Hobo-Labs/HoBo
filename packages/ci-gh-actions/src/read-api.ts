@@ -776,6 +776,18 @@ async function report(
 	});
 }
 
+/** What a host that does not keep a path's store lacks, in words. */
+function storeName(route: ReadApiRoute): string {
+	switch (route.stored?.store) {
+		case "journal":
+			return "route journal";
+		case "machines":
+			return "machine registry";
+		default:
+			return "run history";
+	}
+}
+
 /** The store a path reads, or the refusal that names the command reading GitHub instead. */
 function stored<T>(store: T | undefined, route: ReadApiRoute): T {
 	if (store !== undefined) return store;
@@ -783,7 +795,7 @@ function stored<T>(store: T | undefined, route: ReadApiRoute): T {
 	throw new ReadApiRefusal(
 		404,
 		"not-stored-here",
-		`not stored here: this relay keeps no ${route.stored?.store ?? "record"}; read GitHub with \`${command}\``,
+		`not stored here: this relay keeps no ${storeName(route)}; read GitHub with \`${command}\``,
 		command,
 	);
 }
@@ -999,7 +1011,7 @@ export function readApiOpenApi(): string {
 		const notStored =
 			route.stored === undefined
 				? ""
-				: ` A host that keeps no ${route.stored.store} answers 404 \`not-stored-here\` naming \`${route.stored.command}\`.`;
+				: ` A host that keeps no ${storeName(route)} answers 404 \`not-stored-here\` naming \`${route.stored.command}\`.`;
 		const responses = [
 			[
 				"200",

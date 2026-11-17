@@ -124,7 +124,7 @@
       "get": {
         "operationId": "listRouteDecisions",
         "summary": "Route journal entries, newest first.",
-        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no journal answers 404 `not-stored-here` naming `hobo ci route`.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no route journal answers 404 `not-stored-here` naming `hobo ci route`.",
         "parameters": [
           {
             "name": "repository",
@@ -250,7 +250,7 @@
       "get": {
         "operationId": "listMachines",
         "summary": "The account's connected machines, in id order.",
-        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no machines answers 404 `not-stored-here` naming `hobo ci runners list`.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no machine registry answers 404 `not-stored-here` naming `hobo ci runners list`.",
         "parameters": [
           {
             "name": "limit",
@@ -357,7 +357,7 @@
       "get": {
         "operationId": "listRuns",
         "summary": "Stored run attempts, newest first, without their jobs (read them from `/runs/{id}/{attempt}/jobs`).",
-        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no insights answers 404 `not-stored-here` naming `gh run list`.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `gh run list`.",
         "parameters": [
           {
             "name": "repository",
@@ -483,7 +483,7 @@
       "get": {
         "operationId": "listRunJobs",
         "summary": "The jobs of one stored run attempt, with their steps.",
-        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no insights answers 404 `not-stored-here` naming `gh run view <id> --attempt <attempt>`.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `gh run view <id> --attempt <attempt>`.",
         "parameters": [
           {
             "name": "id",
@@ -617,7 +617,7 @@
       "get": {
         "operationId": "getSignals",
         "summary": "The nine signals over stored runs, with a breakdown by person, repository, workflow, branch and event, and a per-day trend.",
-        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no insights answers 404 `not-stored-here` naming `hobo ci signals`.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `hobo ci signals`.",
         "parameters": [
           {
             "name": "repository",
@@ -707,7 +707,7 @@
       "get": {
         "operationId": "getJobTimes",
         "summary": "Times by workflow, job and runner over stored runs, each runner against ubuntu-latest.",
-        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no insights answers 404 `not-stored-here` naming `hobo ci performance --source github`.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `hobo ci performance --source github`.",
         "parameters": [
           {
             "name": "repository",
@@ -797,7 +797,7 @@
       "get": {
         "operationId": "getUsage",
         "summary": "Billed minutes per runner and day, short jobs, minutes kept off GitHub-hosted runners, and the included minutes left.",
-        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no insights answers 404 `not-stored-here` naming `hobo ci usage --source github`.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `hobo ci usage --source github`.",
         "parameters": [
           {
             "name": "repository",

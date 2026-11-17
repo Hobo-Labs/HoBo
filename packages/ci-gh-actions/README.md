@@ -1890,6 +1890,12 @@ route table.
   with. `node --import tsx scripts/read-api-openapi.ts` writes it and
   `--check` fails when it is stale; `test/read-api.test.ts` calls every path
   and checks each answer against the file.
+- [`contracts/read-api.pact.json`](contracts/read-api.pact.json) holds one
+  interaction per path and three refusals (no read scope, another account's
+  repository, a host that keeps no run history).
+  `contracts/read-api.consumer.test.ts` reads each through `ReadApiClient`,
+  and `contracts/read-api.provider.test.ts` has the handler answer each with
+  the declared body.
 
 `createReadApi` returns a handler that answers a read API path and returns
 `undefined` for any other, so a relay can try it before its control routes.
