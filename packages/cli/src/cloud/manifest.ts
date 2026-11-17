@@ -5,12 +5,6 @@ import { type ManifestV1, parseManifest } from "@hobo/bindles";
 import type { JsonValue } from "../json.js";
 import { compileProjectManifest } from "./loader.js";
 
-// Resolve the Bindle manifest a project-scoped cloud verb operates on. The
-// committed `hobo.bindle.json` artifact wins when present (byte-stable,
-// reviewable); otherwise the TS-source loader compiles the project's
-// `src/bindle.ts` through run-to-collect — the flagship authoring flow. A
-// project with neither surfaces as `null` so the caller can fall back to
-// the shell stub rather than throwing an internal error.
 
 export const BINDLE_MANIFEST_FILE = "hobo.bindle.json"; // public-contract: manifest file name read from user projects
 

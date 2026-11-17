@@ -17,16 +17,7 @@ import {
 	loadTypeScriptHttpDefinition,
 } from "./typescript-app-loader.js";
 
-// The TypeScript-source bindle loader. It
-// materializes the collection target the cloud verbs operate on from the
-// project's own `src/bindle.ts` (the flagship authoring flow the site
-// teaches), instead of requiring a hand-written `hobo.bindle.json`. The
-// compiled JSON stays the committed artifact — `loadProjectManifest` still
-// prefers it — so this loader is the source path, not a second format.
 
-// Candidate module locations, preferred order: a built artifact first (no
-// TS loader needed), then the TS source (importable when the process runs
-// under a TS-aware loader, e.g. `node --import tsx` — the repo's own lanes).
 export const BINDLE_SOURCE_CANDIDATES = [
 	"dist/bindle.js",
 	"dist/src/bindle.js",
@@ -34,9 +25,6 @@ export const BINDLE_SOURCE_CANDIDATES = [
 	"src/bindle.mjs",
 	"src/bindle.ts",
 	"src/bindle.mts",
-	// The try-site catalog convention (examples/try-site/apps/<id>/app.ts):
-	// same `export default bindle(...)` shape, so the CLI deploys the exact
-	// apps the GitHub Pages Examples console shows. bindle.* stays preferred.
 	"dist/app.js",
 	"app.js",
 	"app.mjs",
@@ -49,10 +37,6 @@ export const DEFAULT_COMPONENT_HOST = {
 	version: "46.0.1",
 } as const;
 
-// Import the project's bindle module and return its BindleDefinition, or null
-// when the project has no bindle source, the module cannot be imported in this
-// process (e.g. a .ts source without a TS loader), or the default export is
-// not a bindle() definition. Null means "fall back", never "crash the verb".
 export async function loadBindleDefinition(
 	projectDir: string,
 ): Promise<BindleDefinition | null> {
@@ -71,7 +55,6 @@ export async function loadBindleDefinition(
 		};
 		let module: BindleModule;
 		try {
-			// SAFETY: ESM namespace from a local bindle source file.
 			module = (await import(pathToFileURL(absolute).href)) as BindleModule;
 		} catch (error) {
 			if (isUncompiledTypeScript(candidate, error)) {
@@ -95,8 +78,6 @@ export async function loadBindleDefinition(
 	return null;
 }
 
-// `error` is a `catch` binding, which is `unknown`; the body already handles
-// that with `error instanceof Error ? … : String(error)`.
 function isUncompiledTypeScript<T>(candidate: string, error: T): boolean {
 	if (!/\.(ts|mts)$/u.test(candidate)) return false;
 	const message = error instanceof Error ? error.message : String(error);
@@ -105,13 +86,10 @@ function isUncompiledTypeScript<T>(candidate: string, error: T): boolean {
 	);
 }
 
-// `unknown`: this tests a value pulled off an imported ESM namespace, which is
-// exactly the untyped input a type guard exists for.
 function isBindleDefinition<T>(value: T): value is T & BindleDefinition {
 	if (value === null || !isJsonObject(value)) {
 		return false;
 	}
-	// SAFETY: `const candidate = value as {` is required at this I/O or test boundary.
 	const candidate = value as {
 		name?: JsonValue;
 		resources?: JsonValue;
@@ -126,11 +104,8 @@ function isBindleDefinition<T>(value: T): value is T & BindleDefinition {
 	);
 }
 
-// Component-shaped kinds compile to manifest components (service.v1); the
-// rest are backing resources the components bind to.
 const COMPONENT_KINDS = new Set(["api", "web", "service"]);
 
-// The wiring layer's `data()` paradigm string for each backing-resource kind.
 interface DataParadigmMap {
 	data: string;
 	kv: string;
@@ -168,10 +143,6 @@ const DATA_PARADIGM: DataParadigmMap = {
 	secret: "secret",
 };
 
-// Adapt a bindle() definition into the CollectionTarget run-to-collect runs.
-// Backing resources are declared first so component bind maps can reference
-// their handles. Resource ordering edges also travel to the manifest;
-// connector references are resolved by the runtime rather than provisioned.
 export function targetFromBindleDefinition(
 	definition: BindleDefinition,
 	componentHost: {
@@ -210,7 +181,6 @@ export function targetFromBindleDefinition(
 						continue;
 					}
 					const handle = backing.get(edge.to);
-					// Projects are ordering dependencies, not runtime data clients.
 					if (handle && definition.resources[edge.to]?.kind !== "project") {
 						bind[edge.to] = handle;
 					}
@@ -221,8 +191,6 @@ export function targetFromBindleDefinition(
 	};
 }
 
-// Load the project's bindle source and adapt it to a CollectionTarget, or
-// null when no loadable bindle source exists.
 export async function loadProjectCollectionTarget(
 	projectDir: string,
 ): Promise<CollectionTarget | null> {
@@ -230,9 +198,6 @@ export async function loadProjectCollectionTarget(
 	return definition === null ? null : targetFromBindleDefinition(definition);
 }
 
-// Compile the project's TS-source bindle straight to the manifest IR the
-// cloud verbs parse — the same run-to-collect fold the static compile uses,
-// so the hash is identical to `hobo collect` output for the same source.
 export async function compileProjectManifest(
 	projectDir: string,
 ): Promise<ManifestV1 | null> {
