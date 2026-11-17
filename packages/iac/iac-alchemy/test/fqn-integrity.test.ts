@@ -22,7 +22,11 @@ import {
 	safeAlchemyState,
 	uniqueAlchemyFqns,
 } from "../src/state-identity.js";
-import { routeFixture, testOperation } from "./route-fixture.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", {}, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -180,6 +184,7 @@ function fixture(
 	);
 	const options = {
 		stack,
+		stateOwnership: testStateOwnership,
 		route: routeFixture().port,
 		resolveRoute: ({ requestId }: { requestId?: string | undefined }) => ({
 			requestId: requestId ?? "logical-attempt",

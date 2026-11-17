@@ -100,6 +100,21 @@ unsafe state requires a host-controlled, independently verified migration;
 state already overwritten by an earlier collision cannot be reconstructed by
 this check.
 
+`target.stackName` is the physical Alchemy stack name and must match the
+configured `Stack`; `program.stackName` is an opaque HoBo logical identifier
+and may contain `/`. They need not be equal. The adapter requires
+`stateOwnership` with a stable `backendRef`, an `ownershipEpoch` and a trusted
+`verify` callback. Before planning, before provider effects and after provider
+completion, the host must authenticate the exact tenant, logical program and
+declared state backend, physical stack, stage and ownership epoch. It must also
+authenticate the bounded desired resource declaration and its digest against
+the target's actual stack and source, or explicitly authorize its absence for
+a direct stack invocation. The plan digest binds these identities and the
+declaration; changing them cannot reuse an earlier admission.
+The host must verify that `backendRef` identifies the actual configured state
+store; a caller-provided reference or a callback that merely returns `true` is
+not evidence of ownership.
+
 The host must isolate and authenticate the actual state store and its writers,
 including a durable registry of stack and stage ownership. Use
 `alchemyStateScopeKey(stackName, stage)` as the case-folded registry key: for
@@ -108,6 +123,12 @@ logical scopes must never share that key in the same physical store, even if
 the current filesystem happens to be case-sensitive. The host must maintain the
 store's lease or equivalent exclusive fencing throughout each operation; the
 adapter's checks do not repair a compromised or concurrently modified store.
+The verifier must refuse an unrecognized existing scope or changed owner until
+the host independently verifies and records a migration with a new ownership
+epoch. Choosing a different physical name does not migrate existing state.
+The scoped plan digest differs from pre-ownership adapter plans. Reconcile any
+unfinished earlier admission or provider operation before switching to this
+binding; the adapter does not silently reuse or migrate an older receipt.
 
 The host can construct that port with `@hobo/broker`'s
 `createIacFinancialServices`. Pricing is optional in its options. Without it,
@@ -157,8 +178,14 @@ const route = createDirectRoutePort({
 // The trusted host authenticates these facts against its durable operation journal.
 const resolveRoute = async (context: IacRouteContext) =>
   host.resolveIacOperation(context);
+const stateOwnership = {
+  backendRef: "state:production", ownershipEpoch: "ownership:epoch-1",
+  verify: (context: AlchemyStateOwnershipCheck) =>
+    host.verifyAndFenceAlchemyStateOwnership(context),
+};
 const provider = createAlchemyIacProvider({
-  stack, target, runtimeLayer, runtimeDirectory, financial, route, resolveRoute, composite,
+  stack, target, runtimeLayer, runtimeDirectory, financial, route, resolveRoute,
+  stateOwnership, composite,
 });
 const assessment = await provider.assessPricing(program);
 const ranking = rankIacTargets({
@@ -169,7 +196,8 @@ const ranking = rankIacTargets({
 if (!program.operationGeneration) throw new Error("missing operation generation");
 const resolved = await resolveRoute({
   tenantId, deploymentId: program.deploymentId, programId: program.programId,
-  resourceId: program.resourceId, operation: "deploy",
+  resourceId: program.resourceId, logicalStackName: program.stackName, operation: "deploy",
+  declarationDigest: captureAlchemyProgram(program).declarationDigest,
   operationGeneration: program.operationGeneration,
   requestId: "deployment-attempt-1",
 });

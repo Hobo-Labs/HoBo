@@ -6,7 +6,11 @@ import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it } from "vitest";
-import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
+import {
+	alchemyTarget,
+	captureAlchemyProgram,
+	createAlchemyIacProvider,
+} from "../src/index.js";
 import type {
 	FinancialDecision,
 	FinancialPlan,
@@ -17,7 +21,11 @@ import type {
 	IacRouteResolver,
 	UnpricedScopeProof,
 } from "../src/port.js";
-import { routeFixture, testOperation } from "./route-fixture.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", object, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -93,6 +101,7 @@ function fixture(
 	};
 	const provider = createAlchemyIacProvider({
 		stack,
+		stateOwnership: testStateOwnership,
 		composite: {
 			proofRef: "test:no-source",
 			environmentDigest: `sha256:${"e".repeat(64)}`,
@@ -255,7 +264,7 @@ describe("financial admission modes", () => {
 		expect(assessment.plan.operation).toBe("deploy");
 	});
 
-	it("checks and executes the same snapshotted operation", async () => {
+	it("rejects computed operation fields without invoking them", async () => {
 		const f = fixture((id) => admitted(id, "allowed", false));
 		await f.provider.preview(f.program);
 		let actionReads = 0;
@@ -266,9 +275,11 @@ describe("financial admission modes", () => {
 				return actionReads === 1 ? "apply" : "destroy";
 			},
 		};
-		await f.provider.applyWithAdmission(program, "attempt");
-		expect(actionReads).toBe(1);
-		expect(f.applies()).toBe(1);
+		await expect(
+			f.provider.applyWithAdmission(program, "attempt"),
+		).rejects.toMatchObject({ code: "PROGRAM_INVALID" });
+		expect(actionReads).toBe(0);
+		expect(f.applies()).toBe(0);
 	});
 
 	it("rejects malformed wire proofs even though their fields accept protobuf values", async () => {
@@ -421,6 +432,8 @@ describe("financial admission modes", () => {
 			deploymentId: "d",
 			programId: "p",
 			resourceId: "app",
+			logicalStackName: "App",
+			declarationDigest: captureAlchemyProgram(f.program).declarationDigest,
 			operation: "deploy",
 			operationGeneration: "generation-1",
 			requestId: "attempt",

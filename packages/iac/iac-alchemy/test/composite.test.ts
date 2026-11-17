@@ -10,7 +10,11 @@ import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import { registerAlchemySource } from "../src/source-fence.js";
-import { routeFixture, testOperation } from "./route-fixture.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", { artifact: string }, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -126,6 +130,7 @@ function fixture(
 		});
 	const provider = createAlchemyIacProvider({
 		stack,
+		stateOwnership: testStateOwnership,
 		route: routeFixture().port,
 		resolveRoute: ({ requestId }) => ({
 			requestId: requestId ?? "logical-attempt",

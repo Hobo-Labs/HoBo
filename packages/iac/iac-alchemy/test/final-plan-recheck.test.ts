@@ -110,6 +110,11 @@ function fixture(
 	);
 	const provider = createAlchemyIacProvider({
 		stack,
+		stateOwnership: {
+			backendRef: "test:state",
+			ownershipEpoch: "test:epoch",
+			verify: callback,
+		},
 		route: routeFixture().port,
 		resolveRoute: ({ requestId }) => ({
 			requestId: requestId ?? "request",

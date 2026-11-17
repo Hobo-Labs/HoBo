@@ -37,9 +37,13 @@ import type {
 	UnpricedPolicyProof,
 	UnpricedScopeProof,
 } from "./port.js";
-import { captureAlchemyProgram } from "./program-boundary.js";
+import {
+	captureAlchemyProgram,
+	type CapturedAlchemyProgram,
+} from "./program-boundary.js";
 import { captureAlchemySourceRequirements } from "./source-fence.js";
 import {
+	alchemyStateScopeKey,
 	guardAlchemyStack,
 	safeAlchemyFqn,
 	safeAlchemyStateSegment,
@@ -123,6 +127,51 @@ export function alchemyTarget(input: AlchemyTargetInput): Target {
 	return captureAlchemyTarget(input);
 }
 
+/** The host must verify exclusive durable ownership of this actual state backend. */
+export interface AlchemyStateOwnershipCheck {
+	readonly phase: "plan" | "apply" | "complete" | "drift";
+	readonly operation: "deploy" | "destroy";
+	readonly operationGeneration?: string;
+	readonly tenantId: string;
+	readonly targetId: string;
+	readonly sourceDigest: string;
+	readonly inventoryEvidenceRef: string;
+	readonly resources: readonly {
+		readonly resourceId: string;
+		readonly resourceType: string;
+		readonly providerId: string;
+		readonly providerAccountRef: string;
+		readonly productId: string;
+	}[];
+	readonly program: {
+		readonly programId: string;
+		readonly deploymentId: string;
+		readonly resourceId: string;
+		readonly provider: string;
+		readonly driver: string;
+		readonly logicalStackName: string;
+		readonly declarationPresence: "absent" | "present";
+		readonly declarationDigest: string;
+		readonly resource?: object;
+	};
+	readonly state: {
+		readonly backendRef: string;
+		readonly ownershipEpoch: string;
+		readonly stackName: string;
+		readonly stage: string;
+		readonly scopeKey: string;
+		readonly runtimeDirectory: string;
+	};
+}
+
+export interface AlchemyStateOwnership {
+	readonly backendRef: string;
+	readonly ownershipEpoch: string;
+	readonly verify: (
+		input: AlchemyStateOwnershipCheck,
+	) => boolean | Promise<boolean>;
+}
+
 export interface AlchemyIacProviderOptions<
 	Output,
 	Requirements,
@@ -137,6 +186,8 @@ export interface AlchemyIacProviderOptions<
 	/** A host-supplied runtime layer, including any credentials and execution services. */
 	readonly runtimeLayer: Layer.Layer<Alchemist.Services, unknown, never>;
 	readonly runtimeDirectory: string;
+	/** Independently authenticate and fence logical ownership of physical state. */
+	readonly stateOwnership: AlchemyStateOwnership;
 	readonly financial: FinancialPort<Assessment>;
 	/** The host supplies one durable route authority shared by all candidate targets. */
 	readonly route?: IacRoutePort | undefined;
@@ -198,6 +249,15 @@ function name(value: string): boolean {
 	);
 }
 
+function logicalName(value: string, maximum: number): boolean {
+	return (
+		value.length > 0 &&
+		value.length <= maximum &&
+		value.trim() === value &&
+		!/[\p{Cc}]/u.test(value)
+	);
+}
+
 function reservationName(value: string): boolean {
 	return (
 		value.length > 0 &&
@@ -208,6 +268,32 @@ function reservationName(value: string): boolean {
 }
 
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: host configuration crosses the adapter boundary and malformed callbacks must fail before any stack code executes. */
+function captureStateOwnership(
+	input: AlchemyStateOwnership,
+): AlchemyStateOwnership {
+	try {
+		const { backendRef, ownershipEpoch, verify } = input;
+		if (
+			typeof backendRef !== "string" ||
+			!name(backendRef) ||
+			typeof ownershipEpoch !== "string" ||
+			!name(ownershipEpoch) ||
+			typeof verify !== "function"
+		)
+			throw new Error("invalid state owner");
+		return Object.freeze({
+			backendRef,
+			ownershipEpoch,
+			verify: verify.bind(input),
+		});
+	} catch {
+		throw new AlchemyIacError(
+			"STATE_SCOPE_UNVERIFIED",
+			"host state ownership verification is malformed or unavailable",
+		);
+	}
+}
+
 function captureCompositeGuard(
 	input: AlchemyCompositeGuard | undefined,
 ): AlchemyCompositeGuard {
@@ -918,31 +1004,57 @@ export function createAlchemyIacProvider<
 			"a bounded target, complete resource scopes, source digest and absolute runtime directory are required",
 		);
 	}
+	const stateOwnership = captureStateOwnership(options.stateOwnership);
+	const stateScopeKey = alchemyStateScopeKey(target.stackName, target.stage);
+	const state = Object.freeze({
+		backendRef: stateOwnership.backendRef,
+		ownershipEpoch: stateOwnership.ownershipEpoch,
+		stackName: target.stackName,
+		stage: target.stage,
+		scopeKey: stateScopeKey,
+		runtimeDirectory,
+	});
+	const ownershipResources = Object.freeze(
+		target.resources.map((resource) =>
+			Object.freeze({
+				resourceId: resource.resourceId,
+				resourceType: resource.resourceType,
+				providerId: resource.providerId,
+				providerAccountRef: resource.providerAccountRef,
+				productId: resource.productId,
+			}),
+		),
+	);
 	const previews = new Map<string, string>();
 	const claimed = new Map<string, string>();
 	const running = new Set<string>();
 	const unresolved = new Map<string, string | undefined>();
-	const snapshotProgram = (input: IacProgram): IacProgram => {
-		const captured = captureAlchemyProgram(input);
-		if (captured.declarationPresence === "present")
-			throw new AlchemyIacError(
-				"PROGRAM_DECLARATION_UNVERIFIED",
-				"a host authority must authenticate the desired declaration against the configured stack",
-			);
+	const programSnapshots = new WeakMap<IacProgram, CapturedAlchemyProgram>();
+	const snapshotProgram = (program: IacProgram): IacProgram => {
+		const captured = captureAlchemyProgram(program);
+		programSnapshots.set(captured.program, captured);
 		return captured.program;
+	};
+	const capturedProgram = (program: IacProgram): CapturedAlchemyProgram => {
+		const captured = programSnapshots.get(program);
+		if (captured === undefined)
+			throw new AlchemyIacError(
+				"PROGRAM_INVALID",
+				"program snapshot is unavailable",
+			);
+		return captured;
 	};
 	const checkProgram = (program: IacProgram): string => {
 		if (
 			![
-				program.programId,
 				program.deploymentId,
 				program.resourceId,
 				program.provider,
 				program.driver,
-				program.stackName,
 			].every(name) ||
+			!logicalName(program.programId, 401) ||
+			!logicalName(program.stackName, 602) ||
 			program.resourceId !== target.programResourceId ||
-			program.stackName !== target.stackName ||
 			(program.operationGeneration !== undefined &&
 				!name(program.operationGeneration)) ||
 			!["preview", "apply", "destroy"].includes(program.action)
@@ -961,10 +1073,81 @@ export function createAlchemyIacProvider<
 			stackName: program.stackName,
 			operation: program.action === "destroy" ? "destroy" : "deploy",
 			operationGeneration: program.operationGeneration ?? "",
+			declarationDigest: capturedProgram(program).declarationDigest,
 			targetId: target.targetId,
 			tenantId: target.tenantId,
-			declarationDigest: captureAlchemyProgram(program).declarationDigest,
+			stateBackend: state.backendRef,
+			stateScope: state.scopeKey,
+			ownershipEpoch: state.ownershipEpoch,
 		});
+	};
+	const programIdentity = (program: IacProgram) => {
+		const captured = capturedProgram(program);
+		return Object.freeze({
+			programId: program.programId,
+			deploymentId: program.deploymentId,
+			resourceId: program.resourceId,
+			provider: program.provider,
+			driver: program.driver,
+			logicalStackName: program.stackName,
+			declarationPresence: captured.declarationPresence,
+			declarationDigest: captured.declarationDigest,
+		});
+	};
+	const ownershipProgram = (program: IacProgram) =>
+		Object.freeze({
+			...programIdentity(program),
+			...(program.resource === undefined
+				? undefined
+				: { resource: program.resource }),
+		});
+	const scopedPlanDigest = (nativeDigest: string, program: IacProgram) =>
+		digestData({
+			domain: "hobo.alchemy.scoped-plan/v1",
+			nativeDigest,
+			tenantId: target.tenantId,
+			targetId: target.targetId,
+			program: programIdentity(program),
+			backendRef: state.backendRef,
+			scopeKey: state.scopeKey,
+			ownershipEpoch: state.ownershipEpoch,
+		});
+	const verifyStateOwnership = async (
+		program: IacProgram,
+		phase: AlchemyStateOwnershipCheck["phase"],
+	): Promise<boolean> => {
+		try {
+			return (
+				(await stateOwnership.verify(
+					Object.freeze({
+						phase,
+						operation: program.action === "destroy" ? "destroy" : "deploy",
+						...(program.operationGeneration === undefined
+							? undefined
+							: { operationGeneration: program.operationGeneration }),
+						tenantId: target.tenantId,
+						targetId: target.targetId,
+						sourceDigest: target.sourceDigest,
+						inventoryEvidenceRef: target.inventoryEvidenceRef,
+						resources: ownershipResources,
+						program: ownershipProgram(program),
+						state,
+					}),
+				)) === true
+			);
+		} catch {
+			return false;
+		}
+	};
+	const requireStateOwnership = async (
+		program: IacProgram,
+		phase: AlchemyStateOwnershipCheck["phase"],
+	): Promise<void> => {
+		if (!(await verifyStateOwnership(program, phase)))
+			throw new AlchemyIacError(
+				"STATE_SCOPE_UNVERIFIED",
+				"host could not verify ownership of the physical state scope",
+			);
 	};
 	const run = async <A>(
 		effect: Effect.Effect<
@@ -1030,6 +1213,8 @@ export function createAlchemyIacProvider<
 						deploymentId: program.deploymentId,
 						programId: program.programId,
 						resourceId: program.resourceId,
+						logicalStackName: program.stackName,
+						declarationDigest: capturedProgram(program).declarationDigest,
 						operation: program.action === "destroy" ? "destroy" : "deploy",
 						operationGeneration: program.operationGeneration,
 						requestId,
@@ -1081,6 +1266,7 @@ export function createAlchemyIacProvider<
 				"PREVIEW_LIMIT",
 				"provider preview capacity reached",
 			);
+		await requireStateOwnership(stableProgram, "plan");
 		verifyCompositeEnvironment(
 			composite,
 			target,
@@ -1109,11 +1295,11 @@ export function createAlchemyIacProvider<
 			}),
 		);
 		if (!result.ok) throw result.error;
-		previews.set(key, result.inspected.digest);
+		await requireStateOwnership(stableProgram, "plan");
+		const digest = scopedPlanDigest(result.inspected.digest, stableProgram);
+		previews.set(key, digest);
 		return {
-			...financial.assess(
-				financialInputs(result.inspected.digest, stableProgram),
-			),
+			...financial.assess(financialInputs(digest, stableProgram)),
 			diff: {
 				summary: `${result.inspected.changes} planned resource changes`,
 				changes: result.inspected.changes,
@@ -1178,6 +1364,7 @@ export function createAlchemyIacProvider<
 		let result:
 			| { error: unknown }
 			| { outputs: Record<string, string>; admission: HeldFinancialDecision };
+		await requireStateOwnership(program, "plan");
 		verifyCompositeEnvironment(
 			composite,
 			target,
@@ -1201,11 +1388,26 @@ export function createAlchemyIacProvider<
 					} catch (error) {
 						return { error };
 					}
-					if (inspected.digest !== previewDigest)
+					const admittedPlanDigest = scopedPlanDigest(
+						inspected.digest,
+						program,
+					);
+					if (admittedPlanDigest !== previewDigest)
 						return {
 							error: new AlchemyIacError(
 								"PLAN_CHANGED",
 								"the plan changed after preview",
+							),
+						};
+					if (
+						!(yield* Effect.promise(() =>
+							verifyStateOwnership(program, "plan"),
+						))
+					)
+						return {
+							error: new AlchemyIacError(
+								"STATE_SCOPE_UNVERIFIED",
+								"state ownership changed before admission",
 							),
 						};
 					const routeBeforeAdmission = yield* Effect.promise(() =>
@@ -1237,7 +1439,7 @@ export function createAlchemyIacProvider<
 							return {
 								decision: await financial.admit(
 									requestId,
-									financialInputs(inspected.digest, program),
+									financialInputs(admittedPlanDigest, program),
 									checkedExpectation,
 								),
 							};
@@ -1409,7 +1611,7 @@ export function createAlchemyIacProvider<
 							return (
 								(await financial.revalidate(
 									structuredClone(admission),
-									financialInputs(inspected.digest, program),
+									financialInputs(admittedPlanDigest, program),
 								)) === true
 							);
 						} catch {
@@ -1491,6 +1693,21 @@ export function createAlchemyIacProvider<
 							),
 						};
 					}
+					if (
+						!(yield* Effect.promise(() =>
+							verifyStateOwnership(program, "apply"),
+						))
+					) {
+						yield* Effect.promise(() => markUncertain(claimedReservationId));
+						return {
+							error: new AlchemyIacError(
+								"STATE_SCOPE_UNVERIFIED",
+								"state ownership changed after admission; the reservation is retained",
+								admission,
+								claimedReservationId,
+							),
+						};
+					}
 					if (!(yield* verifyAlchemyStateIdentities(plan))) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -1536,6 +1753,21 @@ export function createAlchemyIacProvider<
 								"provider outcome is unknown; the budget reservation is retained",
 								undefined,
 								heldReservation,
+							),
+						};
+					}
+					if (
+						!(yield* Effect.promise(() =>
+							verifyStateOwnership(program, "complete"),
+						))
+					) {
+						yield* Effect.promise(() => markUncertain(claimedReservationId));
+						return {
+							error: new AlchemyIacError(
+								"STATE_SCOPE_UNCERTAIN",
+								"the provider completed but state ownership could not be reverified; the reservation is retained",
+								admission,
+								claimedReservationId,
 							),
 						};
 					}
@@ -1672,6 +1904,7 @@ export function createAlchemyIacProvider<
 			);
 		running.add(fenceKey);
 		try {
+			await requireStateOwnership(stableProgram, "plan");
 			const resolution = await resolveAuthorizedOperation(
 				stableProgram,
 				requestId,
@@ -1844,6 +2077,7 @@ export function createAlchemyIacProvider<
 			checkProgram(stableProgram);
 			const operation =
 				stableProgram.action === "destroy" ? "destroy" : "deploy";
+			await requireStateOwnership(stableProgram, "plan");
 			verifyCompositeEnvironment(composite, target, "plan", operation);
 			// Planning and drift each own a scoped state-store lease; close the
 			// classification plan before starting the independent read-only scan.
@@ -1858,15 +2092,18 @@ export function createAlchemyIacProvider<
 					return inspectAlchemyPlan(plan, target, composite);
 				}),
 			);
+			await requireStateOwnership(stableProgram, "plan");
 			verifyCompositeEnvironment(composite, target, "plan", operation);
 			if (!inspected.revalidateSources())
 				throw new AlchemyIacError(
 					"COMPOSITE_PLAN_UNVERIFIED",
 					"the source classification is no longer authorized",
 				);
+			await requireStateOwnership(stableProgram, "drift");
 			const scan = await run(
 				Alchemist.Drift.scan({ stack, stage: target.stage }),
 			);
+			await requireStateOwnership(stableProgram, "drift");
 			verifyCompositeEnvironment(composite, target, "plan", operation);
 			if (!inspected.revalidateSources())
 				throw new AlchemyIacError(

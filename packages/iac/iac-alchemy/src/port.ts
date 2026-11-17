@@ -160,6 +160,10 @@ export interface IacRouteContext {
 	readonly deploymentId: string;
 	readonly programId: string;
 	readonly resourceId: string;
+	/** Opaque HoBo identity; the physical Alchemy state name is separate. */
+	readonly logicalStackName: string;
+	/** Binds the exact desired declaration, including explicit absence. */
+	readonly declarationDigest: string;
 	readonly operation: "deploy" | "destroy";
 	readonly operationGeneration: string;
 	readonly requestId?: string | undefined;

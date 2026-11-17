@@ -12,6 +12,7 @@ import {
 	createAlchemyIacProvider,
 	type FinancialPlan,
 } from "../src/index.js";
+import { testStateOwnership } from "./route-fixture.js";
 
 type Component = Resource<"Demo.Executable", { main: string }, { id: string }>;
 const Component = Resource<Component>("Demo.Executable");
@@ -49,6 +50,7 @@ function fixture(directory: string) {
 	};
 	const options = {
 		stack,
+		stateOwnership: testStateOwnership,
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: directory,
 		composite,

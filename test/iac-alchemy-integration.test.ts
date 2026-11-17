@@ -34,6 +34,7 @@ import {
 	type AlchemyCompositeEnvironment,
 	type AlchemyPrimitiveMapper,
 	alchemyTarget,
+	captureAlchemyProgram,
 	createAlchemyIacProvider,
 	describeAlchemyPrimitiveSupport,
 	type IacProgram,
@@ -119,6 +120,8 @@ function routeFor(input: IacProgram, requestId: string) {
 		deploymentId: input.deploymentId,
 		programId: input.programId,
 		resourceId: input.resourceId,
+		logicalStackName: input.stackName,
+		declarationDigest: captureAlchemyProgram(input).declarationDigest,
 		operation: input.action === "destroy" ? "destroy" : "deploy",
 		operationGeneration: input.operationGeneration,
 		requestId,
@@ -362,6 +365,7 @@ function setup(
 			item.productId === (options.rivet ? "runner-e2-small" : "sandbox")
 		);
 	};
+	let fixtureOwner: string | undefined;
 	const provider = createAlchemyIacProvider<
 		{},
 		Rivet.Providers | Provider.Provider<Demo>,
@@ -371,6 +375,50 @@ function setup(
 		target,
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(dir, "runtime"),
+		stateOwnership: {
+			backendRef: `test:state:${options.targetId ?? "yard-a"}`,
+			ownershipEpoch: "test:epoch",
+			verify: ({
+				tenantId,
+				targetId,
+				sourceDigest,
+				program: logical,
+				state,
+			}) => {
+				const expectedLogical =
+					logical.programId === "run-1"
+						? logical.logicalStackName === "Demo" &&
+							logical.driver === "external" &&
+							logical.declarationPresence === "absent"
+						: logical.programId === "deployment-a:application" &&
+							logical.logicalStackName ===
+								"tenant-a/deployment-a/application" &&
+							logical.driver === "pulumi" &&
+							logical.declarationPresence === "present" &&
+							JSON.stringify(logical.resource) ===
+								JSON.stringify({
+									name: "application",
+									port: "compute",
+									provider: "sandbox",
+									deps: [],
+								});
+				if (
+					tenantId !== "tenant-a" ||
+					targetId !== (options.targetId ?? "yard-a") ||
+					sourceDigest !== `sha256:${"a".repeat(64)}` ||
+					logical.deploymentId !== "deployment-a" ||
+					logical.resourceId !== "application" ||
+					logical.provider !== "sandbox" ||
+					!expectedLogical ||
+					state.scopeKey !==
+						`${(options.stackName ?? "Demo").toLowerCase()}/test`
+				)
+					return false;
+				const owner = JSON.stringify({ tenantId, program: logical });
+				if (fixtureOwner === undefined) fixtureOwner = owner;
+				return fixtureOwner === owner;
+			},
+		},
 		route,
 		resolveRoute: (context) => {
 			options.onRoute?.(context);
@@ -623,17 +671,10 @@ describe("Alchemy IaC provider against the real library", () => {
 			tenant: "tenant-a",
 			actor: { kind: "user" as const, id: "operator" },
 		};
-		const generated = iacProgramFor(
-			context.deploymentId,
-			resource,
-			"apply",
-			context.tenant,
-		);
 		const routed: IacRouteContext[] = [];
 		const fixture = setup({
 			rivet: true,
 			output: "resource",
-			stackName: generated.stackName,
 			onRoute: (operation) => routed.push(operation),
 		});
 		const store = createRuntimeLocalEventStore({
@@ -1441,7 +1482,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			await fixture.provider.apply(program);
 			const destroy = {
 				...program,
-				programId: "destroy-1",
+				operationGeneration: "generation-2",
 				action: "destroy" as const,
 			};
 			expect((await fixture.provider.preview(destroy)).changes).toBe(1);

@@ -14,6 +14,7 @@ import {
 	type FinancialPlan,
 	type IacProgram,
 } from "../src/index.js";
+import { routeFixture, testOperation } from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", Record<string, never>, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -238,12 +239,12 @@ describe("Alchemy program input boundary", () => {
 			).toThrow("PROGRAM_INVALID");
 	});
 
-	it("refuses a desired declaration before planning until a host authority can authenticate it", async () => {
+	it("refuses a desired declaration before planning when the host cannot authenticate it", async () => {
 		const f = fixture();
 		try {
 			await expect(
 				f.provider.preview({ ...baseProgram(), resource: resource() }),
-			).rejects.toMatchObject({ code: "PROGRAM_DECLARATION_UNVERIFIED" });
+			).rejects.toMatchObject({ code: "STATE_SCOPE_UNVERIFIED" });
 			expect(f.effects()).toEqual([]);
 		} finally {
 			f.cleanup();
@@ -315,6 +316,24 @@ function fixture() {
 	);
 	const provider = createAlchemyIacProvider({
 		stack,
+		stateOwnership: {
+			backendRef: "test:state",
+			ownershipEpoch: "test:epoch",
+			verify: ({ program }) => program.declarationPresence === "absent",
+		},
+		composite: {
+			proofRef: "test:no-source",
+			environmentDigest: `sha256:${"e".repeat(64)}`,
+			sourceRequirements: [],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ effects, sourceClaims }) =>
+				effects.length === 0 && sourceClaims.length === 0,
+		},
+		route: routeFixture().port,
+		resolveRoute: ({ requestId }) => ({
+			requestId: requestId ?? "request",
+			operation: testOperation,
+		}),
 		runtimeLayer: Layer.merge(Alchemist.layer(), providers),
 		runtimeDirectory: directory,
 		target: alchemyTarget({
@@ -349,8 +368,13 @@ function fixture() {
 					message: "",
 					budget: { evaluation: "allowed", reservation: "held" },
 					reservation: { reservationId: `iac:${requestId}` },
+					requestDigest: `sha256:${"b".repeat(64)}`,
+					inventoryHash: `sha256:${"c".repeat(64)}`,
+					modelHash: `sha256:${"d".repeat(64)}`,
+					quoteHash: `sha256:${"e".repeat(64)}`,
 				};
 			},
+			revalidate: () => true,
 			uncertain: () => {},
 		},
 	});

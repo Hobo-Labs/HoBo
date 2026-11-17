@@ -165,10 +165,12 @@ export class AlchemyIacError extends Error {
 			admission?.budget?.reservation === "uncertain";
 		this.executionOutcome =
 			code === "STATE_IDENTITY_UNVERIFIED" ||
+			code === "STATE_SCOPE_UNVERIFIED" ||
 			code === "PLAN_CHANGED_AFTER_ADMISSION" ||
 			code === "PLAN_UNINSPECTABLE_AFTER_ADMISSION"
 				? "not-started"
 				: code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
+						code === "STATE_SCOPE_UNCERTAIN" ||
 						code === "SOURCE_FENCE_UNCERTAIN" ||
 						code === "COMPOSITE_AUTHORIZATION_UNCERTAIN"
 					? "completed"
