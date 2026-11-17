@@ -175,6 +175,9 @@ a budget. `executeRankedIacTargets` can invoke each adapter's
 sharing one durable admission request across the route. It advances only after a
 definitive denial without a reservation. Alternatively, call `apply` on a
 chosen target directly.
+For a policy-authorized unpriced target, `executeUnpricedIacTarget` takes the
+explicitly selected inventory and unavailable pricing, then forwards its
+reviewed expectation and permit to `applyWithAdmission` without a cost rank.
 The adapter replans, refuses changes, obtains host-issued liability evidence,
 and requests admission before applying the exact plan under Alchemy's state
 lease. Financial services include a durable budget authority, a trusted clock,

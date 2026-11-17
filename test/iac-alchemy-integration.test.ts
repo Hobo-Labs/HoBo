@@ -28,6 +28,7 @@ import {
 import { createInMemoryActorHost } from "../packages/data/src/actor-host.js";
 import { createDirectRoutePort } from "../packages/dispatcher/src/iac-route.js";
 import { createSqliteIacRouteAuthority } from "../packages/dispatcher/src/iac-route-sqlite.js";
+import { executeUnpricedIacTarget } from "../packages/dispatcher/src/iac-unpriced-routing.js";
 import {
 	executeRankedIacTargets,
 	rankIacTargets,
@@ -1007,6 +1008,39 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(1);
 			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("routes an explicitly selected unpriced Rivet resource without a cost rank", async () => {
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			authorizeUnpriced: true,
+		});
+		try {
+			const assessed = await fixture.provider.assessPricing(program);
+			const requestId = "unpriced-route";
+			const result = await executeUnpricedIacTarget({
+				authority: fixture.routeAuthority,
+				tenantId: "tenant-a",
+				requestId,
+				operation: routeFor(program, requestId).operation,
+				inventory: assessed.inventory,
+				pricing: assessed.pricing,
+				run: (id, expected, permit) =>
+					fixture.provider.applyWithAdmission(program, id, expected, permit),
+			});
+			expect(result).toMatchObject({
+				status: "selected",
+				targetId: "yard-a",
+				pricing: { status: "unavailable" },
+				budget: { evaluation: "bypassed", reservation: "held" },
+				reservationId: "iac:unpriced-route",
+			});
+			expect(fixture.applied()).toBe(1);
+			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
 		} finally {
 			fixture.authority.close();
 		}
