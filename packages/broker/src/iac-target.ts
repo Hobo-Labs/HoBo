@@ -41,6 +41,7 @@ import {
 	validateHostingQuote,
 } from "./budget-authority.js";
 import type { AsyncBudgetAdmissionAuthority } from "./budget-postgres.js";
+import { validIacPolicyGate } from "./iac-policy-gate.js";
 import type { GateDecision } from "./planes.js";
 
 export type {
@@ -495,7 +496,8 @@ export async function admitIacTarget(
 			throw new Error("malformed policy decision");
 		policy = structuredClone(policy);
 		if (
-			!policy.gate ||
+			Object.keys(policy).length !== 2 ||
+			!validIacPolicyGate(policy.gate) ||
 			!isExactProtoMessage(HostingPolicyProofSchema, policy.proof)
 		)
 			throw new Error("malformed policy decision");
