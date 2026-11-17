@@ -39,7 +39,7 @@ jobs:
         run: node --import tsx scripts/generate-fleet-enrollment-scorecard.mts
       - name: Scorecard must be committed current
         run: git diff --exit-code -- docs/design/fleet-enrollment-scorecard.md
-      - name: Scorecard eval (pass + blocked-on-credentials)
+      - name: Validate scorecard evidence and unresolved status
         run: mise exec -- pnpm exec vitest run test/fleet-enrollment-scorecard.eval.test.ts
 
   strict-store:

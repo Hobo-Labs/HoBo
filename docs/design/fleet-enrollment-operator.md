@@ -55,7 +55,7 @@ External systems do not participate in HoBo's database transaction. A compromise
 
 ## G9 live staging credentials (scorecard blockers)
 
-The scorecard marks G9 live rows `blocked-on-credentials` until authorized staging evidence exists. Do not mark them `pass` from mocks, PACT doubles, or unit tests alone. Provision **test-only** credentials (never production Apps, repos, or ledgers):
+The scorecard marks G9 live rows `not-verified` until the missing strict integrations and authorized staging evidence exist. Do not mark them `pass` from mocks, PACT doubles, or unit tests alone. Provision **test-only** credentials (never production Apps, repos, or ledgers):
 
 | Credential | Purpose |
 | --- | --- |
@@ -70,3 +70,5 @@ The scorecard marks G9 live rows `blocked-on-credentials` until authorized stagi
 | **Staging backup/restore access** (`HOBO_FLEET_G9_BACKUP_RESTORE`) | Operator credentials to run G9 drill #10 without duplicate execution |
 
 Record deployment version, config digest, image digests, GitHub run/job IDs, cluster version, and artifact references when flipping these rows to `pass`. See design Section 18 G9 for the ten required live evidence items.
+
+Run `node --experimental-strip-types scripts/check-fleet-enrollment-readiness.mts` to check for unresolved or unsupported scorecard rows. It currently exits nonzero. A successful scorecard check still requires review of evidence freshness, the release scope, and the live-provider results.
