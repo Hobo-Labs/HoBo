@@ -40,6 +40,10 @@ export type CeremonyEvent =
 			readonly code: string | undefined;
 			readonly lines: readonly string[];
 			readonly text: string;
+			/** A JSON-RPC error, or an error result: never the frontier by itself. */
+			readonly failed: boolean;
+			/** The whole message as the host received it. */
+			readonly raw: string;
 	  }
 	| {
 			readonly kind: "link";
@@ -48,6 +52,7 @@ export type CeremonyEvent =
 			readonly url: string;
 			/** The capture whose call asked for it, if one was in flight. */
 			readonly capture: string | undefined;
+			readonly raw: string;
 	  }
 	| {
 			readonly kind: "form";
@@ -56,6 +61,7 @@ export type CeremonyEvent =
 			readonly message: string;
 			/** Its link fields: prefilled, marked as links (`format: "uri"`). */
 			readonly links: readonly string[];
+			readonly raw: string;
 	  }
 	| {
 			readonly kind: "answer";
@@ -63,7 +69,9 @@ export type CeremonyEvent =
 			readonly action: "accept" | "decline" | "cancel" | "none";
 	  }
 	| { readonly kind: "completed"; readonly elicitationId: string }
-	| { readonly kind: "withdrawn"; readonly requestId: string };
+	| { readonly kind: "withdrawn"; readonly requestId: string }
+	/** Anything else the host received (notifications, other answers). */
+	| { readonly kind: "sent"; readonly raw: string };
 
 /** A line of the wire: who sent it, and the JSON-RPC message. */
 export interface WireMessage {
@@ -102,6 +110,16 @@ const FormPrompt = z.object({
 		.optional(),
 });
 const LinkField = z.object({ format: z.literal("uri"), default: z.string() });
+
+/** The capture a form asks for, by its value field's title (`CEREMONY.captures`). */
+function captureOfFields(form: z.infer<typeof FormPrompt>): string | undefined {
+	const titles = Object.values(form.requestedSchema?.properties ?? {}).map(
+		(field) => field.title,
+	);
+	return Object.entries(CEREMONY.captures).find(([, declared]) =>
+		titles.includes(declared.label),
+	)?.[0];
+}
 
 /** The events in a recorded host ↔ server exchange. */
 export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
@@ -158,6 +176,7 @@ export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
 					elicitationId: url.data.elicitationId,
 					url: url.data.url,
 					capture: inFlightCapture,
+					raw: line.message,
 				});
 			else {
 				const form = FormPrompt.safeParse(message.params);
@@ -165,7 +184,9 @@ export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
 					events.push({
 						kind: "form",
 						requestId: id,
-						capture: inFlightCapture,
+						// The agent's capture call, or, for a form the run asks
+						// itself, the capture whose field it is (by its title).
+						capture: inFlightCapture ?? captureOfFields(form.data),
 						message: form.data.message,
 						links: Object.values(
 							form.data.requestedSchema?.properties ?? {},
@@ -173,6 +194,7 @@ export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
 							const link = LinkField.safeParse(field);
 							return link.success ? [link.data.default] : [];
 						}),
+						raw: line.message,
 					});
 			}
 			continue;
@@ -245,8 +267,15 @@ export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
 				code,
 				lines,
 				text,
+				failed:
+					message.error !== undefined ||
+					(body.success && body.data.isError === true),
+				raw: line.message,
 			});
+			continue;
 		}
+		// Anything else that reached the host: still checked for secrets.
+		events.push({ kind: "sent", raw: line.message });
 	}
 	return events;
 }
@@ -263,8 +292,14 @@ export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
  */
 export const CEREMONY = {
 	captures: {
-		INFISICAL_CLI_SESSION: (url: URL) => url.pathname === "/login",
-		GITHUB_APP_CODE: (url: URL) => url.href.startsWith(APP_HANDOFF_PAGE),
+		INFISICAL_CLI_SESSION: {
+			label: "Infisical session",
+			link: (url: URL) => url.pathname === "/login",
+		},
+		GITHUB_APP_CODE: {
+			label: "GitHub App code",
+			link: (url: URL) => url.href.startsWith(APP_HANDOFF_PAGE),
+		},
 	},
 	awaiting: {
 		HOBO_CD_VERCEL_AWAITING_APPROVAL: (url: URL) =>
@@ -277,9 +312,11 @@ export const CEREMONY = {
 	frontier: (event: CeremonyEvent) =>
 		event.kind === "result" &&
 		(event.tool === "cd" || event.tool === "ci") &&
-		(event.code === undefined ||
-			!/^HOBO_C[ID]_|^SECRET_CAPTURE_/u.test(event.code) ||
-			/PLAN_REJECTED/u.test(event.code)),
+		// A crash (a JSON-RPC error, an error result with no code) is never it.
+		(event.code === undefined
+			? !event.failed
+			: !/^HOBO_C[ID]_|^SECRET_CAPTURE_/u.test(event.code) ||
+				/PLAN_REJECTED/u.test(event.code)),
 } as const;
 
 /** The URLs a text carries, bare or as markdown links. */
@@ -324,7 +361,7 @@ export function ceremonyProperties(
 ): Property<CeremonyEvent>[] {
 	const properties: Property<CeremonyEvent>[] = [];
 	// Every capture's form comes after the owner was shown its link.
-	for (const [capture, matches] of Object.entries(CEREMONY.captures))
+	for (const [capture, { link: matches }] of Object.entries(CEREMONY.captures))
 		properties.push({
 			name: `link before form: ${capture}`,
 			kind: "invariant",
@@ -364,12 +401,13 @@ export function ceremonyProperties(
 			atom(
 				(event) =>
 					event.kind === "result" &&
-					event.code !== undefined &&
+					(event.code !== undefined || event.failed) &&
 					!CEREMONY.frontier(event),
 			),
 			atom(
 				(event) =>
 					event.kind === "result" &&
+					event.code !== undefined &&
 					readOwnerTurn(false, event.lines).kind !== "dead-end",
 			),
 		),
@@ -433,14 +471,12 @@ export function ceremonyProperties(
 			name: "no secret to the host",
 			kind: "invariant",
 			invariant: not(
+				// Everything the host received: text, structured results, a form's
+				// fields and defaults, links, notifications, errors.
 				atom(
 					(event) =>
-						(event.kind === "result" &&
-							secrets.some((secret) => event.text.includes(secret))) ||
-						(event.kind === "form" &&
-							secrets.some((secret) => event.message.includes(secret))) ||
-						(event.kind === "link" &&
-							secrets.some((secret) => event.url.includes(secret))),
+						"raw" in event &&
+						secrets.some((secret) => event.raw.includes(secret)),
 				),
 			),
 		});

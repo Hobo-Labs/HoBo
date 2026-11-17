@@ -641,19 +641,34 @@ async function prepareVercelWithVault(
 				if (approved === undefined) return undefined;
 				if (!approved) return awaiting(link, code);
 				const outcome = await jobs.outcome(key);
-				jobs.forget(key);
-				if (outcome?.state === "done")
-					return ready(
-						store,
-						"created",
-						vault,
-						deps.journalProvisioners,
-						() => true,
-					);
-				if (outcome?.state === "failed")
+				if (outcome?.state === "failed") {
+					jobs.forget(key);
 					return refused(outcome.code, outcome.message, [
 						"Run hobo cd up --hand-off again for a new code.",
 					]);
+				}
+				// Done (or its record already gone, taken by another call): what
+				// the store holds decides, pinned so a connection replaced
+				// meanwhile is caught, never assumed.
+				if (outcome?.state !== "pending") {
+					jobs.forget(key);
+					let current: StoredVercelConnection | undefined;
+					try {
+						current = await readVercelConnection(store);
+					} catch {
+						current = undefined;
+					}
+					if (current !== undefined) {
+						const expected = current;
+						return ready(
+							store,
+							"created",
+							vault,
+							deps.journalProvisioners,
+							(next) => sameVercelConnection(expected, next),
+						);
+					}
+				}
 				return awaiting(link, code);
 			};
 			const job = jobs.status(key);

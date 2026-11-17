@@ -242,6 +242,14 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					`spec ${verdict.holds ? "holds" : "FAILS"}: ${verdict.property}`,
 				);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
+			// Not vacuous: the run's own sign-in form is the capture the link
+			// property holds to.
+			expect(
+				events.some(
+					(event) =>
+						event.kind === "form" && event.capture === "INFISICAL_CLI_SESSION",
+				),
+			).toBe(true);
 		} finally {
 			process.stdout.write(
 				`\nSMOKE TRAIL\n${trail.join("\n")}\nREQUESTS ${world.requests.join(" | ")}\nBLOCKED ${world.blocked.join(", ")}\nSTDERR ${server.stderr().slice(-1500)}\n`,

@@ -106,4 +106,30 @@ describe("SPEC hobo-mcp cold start", { timeout: 120_000 }, () => {
 		child.stdin.end();
 		await exited;
 	});
+
+	it("the full server refuses to start: the entry point ends, it does not linger answering nothing", async () => {
+		// Found in review: initialize was already answered, the full server
+		// refused (a credential refusal), and the process kept reading stdin
+		// with nothing behind it until the host closed it.
+		const child = spawn(
+			process.execPath,
+			["--import", "tsx", "src/bin/hobo-mcp.ts"],
+			{
+				cwd: packageDir,
+				stdio: ["pipe", "pipe", "pipe"],
+				// A proxied run's command: the guard refuses this process's
+				// credentials when the server composes.
+				env: { ...process.env, HOBO_OPENSESAME_CHILD: "1" },
+			},
+		);
+		started.push(child);
+		const exited = new Promise<number | null>((resolve) =>
+			child.once("exit", resolve),
+		);
+		child.stdin.write(
+			`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {} } })}\n`,
+		);
+		// stdin stays open: only the refusal may end the process.
+		expect(await exited).toBe(1);
+	});
 });

@@ -52,9 +52,18 @@ export function composeHoboMcp(options: {
 	// The session exists once the transport starts; prompts go through it.
 	let session: McpStdioSession | undefined;
 	let capture: ReturnType<typeof createOwnerCaptureApp> | undefined;
-	/** The host's forms, when it said at initialize that it shows them. */
+	/**
+	 * The host's forms, when it said at initialize that it shows them and a
+	 * capture would really be one: an MCP Apps host gets HoBo's App, and an
+	 * owner at this machine the local page, neither of which the run's own
+	 * call can show, so the run refuses and the agent's capture shows them.
+	 */
 	const forms = () =>
-		session?.support.formElicitation === true ? session : undefined;
+		session?.support.formElicitation === true &&
+		session.support.apps !== true &&
+		options.remote
+			? session
+			: undefined;
 	const owner = createMcpOwnerChannel({
 		// Every step that needs the owner is a form in their host, asked in
 		// the call that needs it: nothing is relayed through the agent.

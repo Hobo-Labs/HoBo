@@ -25,11 +25,15 @@ const Initialize = z.object({
 		.loose()
 		.optional(),
 });
-/** A successful response (a result, no method) and the request it answers. */
-const Response = z.object({
+/**
+ * The full server's own answer to `initialize`: a result with `serverInfo`.
+ * Only that is dropped, never another response that shares its id (a host
+ * may number a `ping` "1" and an `initialize` 1).
+ */
+const InitializeAnswer = z.object({
 	id: z.union([z.string(), z.number(), z.null()]),
 	method: z.undefined().optional(),
-	result: z.record(z.string(), z.json()),
+	result: z.object({ serverInfo: z.record(z.string(), z.json()) }).loose(),
 });
 
 const parsed = <T>(schema: z.ZodType<T>, line: string): T | undefined => {
@@ -79,7 +83,7 @@ async function main(): Promise<number> {
 			) {
 				const line = pending.slice(0, nl + 1);
 				pending = pending.slice(nl + 1);
-				const response = dropped ? undefined : parsed(Response, line);
+				const response = dropped ? undefined : parsed(InitializeAnswer, line);
 				if (response !== undefined && String(response.id) === answered) {
 					dropped = true;
 					continue;
@@ -89,8 +93,22 @@ async function main(): Promise<number> {
 			done();
 		},
 	});
-	const { serveHoboMcpOn } = await import("../mcp-serve.js");
-	return serveHoboMcpOn({ input: toServer, output: fromServer });
+	try {
+		const { serveHoboMcpOn } = await import("../mcp-serve.js");
+		return await serveHoboMcpOn({ input: toServer, output: fromServer });
+	} catch (error) {
+		// The host was told the server is ready: say why it is not, and end.
+		process.stderr.write(
+			`hobo-mcp: the server did not start: ${error instanceof Error ? error.message : "unknown error"}\n`,
+		);
+		return 1;
+	} finally {
+		// However the full server ended (a refusal, an error, the host's end
+		// of input), nothing is left to answer what still arrives: stop
+		// reading, so the process ends and the host sees it.
+		lines.close();
+		process.stdin.destroy();
+	}
 }
 
 process.exitCode = await main();

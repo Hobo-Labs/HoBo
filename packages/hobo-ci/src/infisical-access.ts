@@ -366,20 +366,34 @@ export async function provisionInfisicalAccess(
 			const { environment } = options.folder;
 			let parent = "/";
 			for (const name of options.folder.path.split("/").filter(Boolean)) {
-				const listed = await call(
-					`listing the folders in ${parent}`,
-					projectFolders,
-					"GET",
-					`/api/v1/folders?${new URLSearchParams({ workspaceId: options.projectId, environment, path: parent })}`,
-				);
-				if (!listed.folders.some((folder) => folder.name === name))
-					await call(
-						`creating the folder ${name} in ${parent}`,
-						z.unknown(),
-						"POST",
-						"/api/v1/folders",
-						{ workspaceId: options.projectId, environment, name, path: parent },
-					);
+				const has = async () =>
+					(
+						await call(
+							`listing the folders in ${parent}`,
+							projectFolders,
+							"GET",
+							`/api/v1/folders?${new URLSearchParams({ workspaceId: options.projectId, environment, path: parent })}`,
+						)
+					).folders.some((folder) => folder.name === name);
+				if (!(await has()))
+					try {
+						await call(
+							`creating the folder ${name} in ${parent}`,
+							z.unknown(),
+							"POST",
+							"/api/v1/folders",
+							{
+								workspaceId: options.projectId,
+								environment,
+								name,
+								path: parent,
+							},
+						);
+					} catch (error) {
+						// Another run made it meanwhile: there now, it is done.
+						if (!(error instanceof InfisicalApiRefusal) || !(await has()))
+							throw error;
+					}
 				parent = `${parent === "/" ? "" : parent}/${name}`;
 			}
 		}

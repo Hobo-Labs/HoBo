@@ -387,7 +387,17 @@ environment variables.
   in a form's text, bare or as markdown, showed in the owner's app as text
   they could neither click nor copy. The spec model's invariant "a form's
   links are fields the owner can open or copy" fails any form that carries
-  a link only in its text, on every smoke and explorer run. Through the MCP server, `cd`'s Vercel
+  a link only in its text, on every smoke and explorer run. The run asks
+  in its own call only where a capture really is a host form (a remote box
+  whose host shows forms and no MCP App); elsewhere it refuses and the
+  agent's capture shows the App or the local page. Vercel's confirmation
+  counts only with Done ticked, and its outcome is read back from the
+  store and pinned, never assumed. The model holds the run's own forms to
+  their links (a form belongs to the capture whose field title it has),
+  checks every message the host receives for secrets, and never counts a
+  crashed call (a JSON-RPC error, an error result with no code) as the
+  frontier. A response to a form already withdrawn is dropped, and the
+  entry point ends when the full server does. Through the MCP server, `cd`'s Vercel
   device grant runs off the request path (the owner channel's jobs) and
   writes the connection to the store when approved (RFC 8628 polling on an
   injectable clock); the call waits on the owner's form and then on the

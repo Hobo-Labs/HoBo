@@ -546,11 +546,42 @@ describe("EVAL owner form reach: the link reaches the owner in the form itself",
 				JSON.stringify(m.params).includes(String(form.id)),
 		);
 		expect(JSON.stringify(withdrawn.params)).toMatch(/No answer within/u);
+		// The owner answers after all: ignored, never answered with an error
+		// (a reply to a reply), and nothing of it is echoed.
+		client.send({
+			jsonrpc: "2.0",
+			id: form.id ?? null,
+			result: { action: "accept", content: { value: COPIED } },
+		});
 		const result = toolResult.parse((await client.answer(mine)).result);
 		expect(result.structuredContent).toMatchObject({
 			code: "SECRET_CAPTURE_NOT_ANSWERED",
 		});
 		await client.close();
+		expect(
+			client.seen.filter((line) =>
+				line.includes(`"id":${JSON.stringify(form.id)}`),
+			),
+		).toHaveLength(1);
+		expect(client.seen.join("\n")).not.toContain(COPIED);
+	});
+
+	it("a confirmation counts only when submitted with Done ticked", async () => {
+		const confirm = (answer: JsonObject | undefined) =>
+			createMcpOwnerChannel({
+				form: async () => answer,
+			}).confirm({ url: SIGN_IN_URL, message: "Approve it, then submit." });
+		expect(await confirm({ action: "accept", content: { done: true } })).toBe(
+			true,
+		);
+		expect(await confirm({ action: "accept", content: { done: false } })).toBe(
+			false,
+		);
+		expect(await confirm({ action: "decline" })).toBe(false);
+		// A host that shows no form: the caller falls back.
+		expect(
+			await createMcpOwnerChannel().confirm({ url: SIGN_IN_URL, message: "" }),
+		).toBeUndefined();
 	});
 
 	it("a value with no link to open (a setting) gets the form at once", async () => {

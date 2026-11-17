@@ -95,7 +95,10 @@ function vercel(script: readonly ("pending" | "slow_down" | "denied")[] = []) {
 	};
 }
 
-function harness(provider: ReturnType<typeof vercel>) {
+function harness(
+	provider: ReturnType<typeof vercel>,
+	confirm?: OwnerChannel["confirm"],
+) {
 	const clock = virtualClock();
 	const jobs = createOwnerJobs();
 	const shown: string[] = [];
@@ -106,6 +109,7 @@ function harness(provider: ReturnType<typeof vercel>) {
 		show: async (url) => {
 			shown.push(url);
 		},
+		...(confirm !== undefined ? { confirm } : undefined),
 		jobs,
 	};
 	const port = createMemorySecretsPort({ id: "memory" });
@@ -262,5 +266,45 @@ describe("SPEC cd up through MCP: Vercel's device grant off the request path", (
 			result: { code: "HOBO_CD_VERCEL_AWAITING_APPROVAL" },
 		});
 		expect(h.shown).toEqual([LINK, LINK]);
+	});
+
+	it("through a form: submitted once approved, the same call ends ready on the stored connection", async () => {
+		const provider = vercel();
+		const asked: string[] = [];
+		const h = harness(provider, async ({ url }) => {
+			asked.push(url);
+			provider.approve();
+			return true;
+		});
+		const outcome = await h.run();
+		expect(outcome.kind).toBe("ready");
+		expect(asked).toEqual([LINK]);
+		expect(h.shown).toEqual([]);
+		expect(await h.port.access("HOBO_CD_VERCEL_TOKEN")).toMatchObject({
+			status: "ok",
+		});
+	});
+
+	it("through a form: submitted but denied on Vercel, the same call ends with Vercel's refusal", async () => {
+		const h = harness(vercel(["denied"]), async () => true);
+		const outcome = await h.run();
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_VERCEL_DEVICE_DENIED" },
+		});
+	});
+
+	it("through a form: closed, the call says it waits, and the next call shows the same link and code again", async () => {
+		const asked: string[] = [];
+		const h = harness(vercel(["pending", "pending"]), async ({ url }) => {
+			asked.push(url);
+			return false;
+		});
+		const first = await h.run();
+		expect(first).toMatchObject({
+			result: { code: "HOBO_CD_VERCEL_AWAITING_APPROVAL" },
+		});
+		await h.run();
+		expect(asked).toEqual([LINK, LINK]);
 	});
 });

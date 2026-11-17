@@ -356,6 +356,8 @@ export function ownerFormWaitMs(env: NodeJS.ProcessEnv): number {
 		.number()
 		.int()
 		.positive()
+		// Node fires a longer timer at once.
+		.max(2_147_483_647)
 		.safeParse(env.HOBO_OWNER_FORM_WAIT_MS);
 	return parsed.success ? parsed.data : 600_000;
 }
@@ -380,8 +382,8 @@ export async function serveMcpStdio(options: {
 		options.output.write(`${JSON.stringify(message)}\n`);
 	const waiting = new Map<string, (answer: JsonValue | undefined) => void>();
 	// Which of the client's requests each of ours was sent for, so a
-	// cancelled tool call withdraws exactly its own prompts (no timers: the
-	// host's cancel is the event).
+	// cancelled tool call withdraws exactly its own prompts (the host's
+	// cancel is the event; the form deadline above is the one timer).
 	const asking = new AsyncLocalStorage<Set<string>>();
 	const askedFor = new Map<string, Set<string>>();
 	let next = 0;
@@ -400,7 +402,7 @@ export async function serveMcpStdio(options: {
 						method: "notifications/cancelled",
 						params: {
 							requestId: id,
-							reason: `No answer within ${Math.round(formDeadlineMs / 60_000)} minutes.`,
+							reason: `No answer within ${formDeadlineMs < 60_000 ? `${Math.ceil(formDeadlineMs / 1000)} second${formDeadlineMs <= 1000 ? "" : "s"}` : `${Math.round(formDeadlineMs / 60_000)} minutes`}.`,
 						},
 					});
 					resolve(undefined);
@@ -460,6 +462,15 @@ export async function serveMcpStdio(options: {
 				resolve?.(parsed.error !== undefined ? undefined : parsed.result);
 				continue;
 			}
+			// A response to nothing open (a form withdrawn at its deadline or
+			// by a cancel, answered late): dropped. It is never handled as a
+			// request, which would send the host a reply to a reply.
+			if (
+				isJsonObject(parsed) &&
+				parsed.method === undefined &&
+				(parsed.result !== undefined || parsed.error !== undefined)
+			)
+				continue;
 			if (isJsonObject(parsed) && parsed.method === "notifications/cancelled") {
 				const target = isJsonObject(parsed.params)
 					? parsed.params.requestId

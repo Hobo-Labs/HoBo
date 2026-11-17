@@ -24,8 +24,11 @@ import { z } from "zod";
 import type { JsonObject, JsonValue } from "./json.js";
 import { RELAY_SECRET_CAPTURE_SPECS } from "./mcp-secret-capture.js";
 
-/** A form the owner submitted (not declined, not closed). */
-const Accepted = z.object({ action: z.literal("accept") });
+/** A confirmation the owner submitted with Done ticked (not declined, closed or unticked). */
+const Accepted = z.object({
+	action: z.literal("accept"),
+	content: z.object({ done: z.literal(true) }).loose(),
+});
 
 /**
  * The owner channel of a ceremony run through the HoBo MCP server (an agent
