@@ -1,11 +1,4 @@
-/**
- * Manifest flattening utilities — shared between the extension host, Vite build
- * scripts, and future standalone backend.
- *
- * Recursively flattens furniture manifest trees into flat asset arrays.
- */
 
-// ── Manifest types ──────────────────────────────────────────
 
 export interface ManifestAsset {
   type: 'asset';
@@ -39,14 +32,12 @@ export interface FurnitureManifest {
   canPlaceOnWalls: boolean;
   canPlaceOnSurfaces: boolean;
   backgroundTiles: number;
-  // If type is 'asset', these fields are present:
   type: 'asset' | 'group';
   file?: string;
   width?: number;
   height?: number;
   footprintW?: number;
   footprintH?: number;
-  // If type is 'group':
   groupType?: string;
   rotationScheme?: string;
   members?: ManifestNode[];
@@ -88,14 +79,9 @@ export interface FurnitureAsset {
   frame?: number;
 }
 
-/**
- * Recursively flatten a manifest node into FurnitureAsset[].
- * Inherited properties flow from root to all leaf assets.
- */
 export function flattenManifest(node: ManifestNode, inherited: InheritedProps): FurnitureAsset[] {
   if (node.type === 'asset') {
     const asset = node as ManifestAsset;
-    // Merge orientation: node-level takes priority, then inherited
     const orientation = asset.orientation ?? inherited.orientation;
     const state = asset.state ?? inherited.state;
     return [
@@ -124,35 +110,28 @@ export function flattenManifest(node: ManifestNode, inherited: InheritedProps): 
     ];
   }
 
-  // Group node
   const group = node as ManifestGroup;
   const results: FurnitureAsset[] = [];
 
   for (const member of group.members) {
-    // Build inherited props for children
     const childProps: InheritedProps = { ...inherited };
 
     if (group.groupType === 'rotation') {
-      // Rotation groups set groupId and pass rotationScheme
       if (group.rotationScheme) {
         childProps.rotationScheme = group.rotationScheme;
       }
     }
 
     if (group.groupType === 'state') {
-      // State groups propagate orientation from the group level
       if (group.orientation) {
         childProps.orientation = group.orientation;
       }
-      // Propagate state from group level if set (for animation groups nested in state)
       if (group.state) {
         childProps.state = group.state;
       }
     }
 
     if (group.groupType === 'animation') {
-      // Animation groups: create animation group ID and propagate state
-      // Use the parent's orientation to build a unique animation group name
       const orient = group.orientation ?? inherited.orientation ?? '';
       const st = group.state ?? inherited.state ?? '';
       childProps.animationGroup = `${inherited.groupId}_${orient}_${st}`.toUpperCase();
@@ -161,7 +140,6 @@ export function flattenManifest(node: ManifestNode, inherited: InheritedProps): 
       }
     }
 
-    // Propagate orientation from group to children (for state groups that have orientation)
     if (group.orientation && !childProps.orientation) {
       childProps.orientation = group.orientation;
     }

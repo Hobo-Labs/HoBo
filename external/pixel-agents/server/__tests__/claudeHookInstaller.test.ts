@@ -28,11 +28,9 @@ describe('claudeHookInstaller', () => {
     try {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     } catch {
-      /* ignore */
     }
   });
 
-  // 1. installHooks adds entries
   it('installHooks adds entries to settings.json', () => {
     installHooks();
     const settings = readSettings();
@@ -43,7 +41,6 @@ describe('claudeHookInstaller', () => {
     expect(hooks['PermissionRequest']).toHaveLength(1);
   });
 
-  // 2. installHooks is idempotent
   it('installHooks is idempotent', () => {
     installHooks();
     installHooks();
@@ -53,18 +50,15 @@ describe('claudeHookInstaller', () => {
     expect(hooks['PermissionRequest']).toHaveLength(1);
   });
 
-  // 3. areHooksInstalled returns true after install
   it('areHooksInstalled returns true after install', () => {
     installHooks();
     expect(areHooksInstalled()).toBe(true);
   });
 
-  // 4. areHooksInstalled returns false before install
   it('areHooksInstalled returns false before install', () => {
     expect(areHooksInstalled()).toBe(false);
   });
 
-  // 5. uninstallHooks removes entries
   it('uninstallHooks removes entries', () => {
     installHooks();
     expect(areHooksInstalled()).toBe(true);
@@ -72,7 +66,6 @@ describe('claudeHookInstaller', () => {
     expect(areHooksInstalled()).toBe(false);
   });
 
-  // 6. uninstallHooks cleans empty hooks object
   it('uninstallHooks cleans empty hooks object', () => {
     installHooks();
     uninstallHooks();
@@ -80,22 +73,18 @@ describe('claudeHookInstaller', () => {
     expect(settings.hooks).toBeUndefined();
   });
 
-  // 7. Handles missing settings.json
   it('handles missing settings.json gracefully', () => {
     expect(() => areHooksInstalled()).not.toThrow();
     expect(areHooksInstalled()).toBe(false);
   });
 
-  // 8. Handles malformed settings.json
   it('handles malformed settings.json gracefully', () => {
     fs.writeFileSync(path.join(tmpBase, '.claude', 'settings.json'), 'not json!!!');
     expect(() => areHooksInstalled()).not.toThrow();
     expect(areHooksInstalled()).toBe(false);
   });
 
-  // 9. copyHookScript copies file
   it('copyHookScript copies to ~/.pixel-agents/hooks/', () => {
-    // Create a mock extension path with dist/hooks/claude-hook.js
     const mockExtPath = path.join(tmpBase, 'mock-ext');
     const hookSrc = path.join(mockExtPath, 'dist', 'hooks');
     fs.mkdirSync(hookSrc, { recursive: true });
@@ -108,9 +97,8 @@ describe('claudeHookInstaller', () => {
     expect(fs.readFileSync(dst, 'utf-8')).toBe('// mock hook script');
   });
 
-  // 10. copyHookScript sets executable permissions (non-Windows)
   it('copyHookScript sets executable permissions', () => {
-    if (process.platform === 'win32') return; // chmod not meaningful on Windows
+    if (process.platform === 'win32') return;
 
     const mockExtPath = path.join(tmpBase, 'mock-ext');
     const hookSrc = path.join(mockExtPath, 'dist', 'hooks');
@@ -121,7 +109,6 @@ describe('claudeHookInstaller', () => {
 
     const dst = path.join(tmpBase, '.pixel-agents', 'hooks', 'claude-hook.js');
     const stat = fs.statSync(dst);
-    // Check owner execute bit
     expect(stat.mode & 0o100).toBeTruthy();
   });
 });

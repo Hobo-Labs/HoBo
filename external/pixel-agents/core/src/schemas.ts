@@ -9,9 +9,7 @@
  * the contract, hence the @public tags.
  */
 
-// ── Agent State ──────────────────────────────────────────────
 
-/** Persisted agent data (survives F5 reload / restart) */
 export interface PersistedAgent {
   id: number;
   sessionId?: string;
@@ -37,9 +35,7 @@ export interface AgentMeta {
   seatId: string | null;
 }
 
-// ── Layout ───────────────────────────────────────────────────
 
-/** Color value for floor/wall/furniture colorization */
 export interface ColorValue {
   h: number;
   s: number;
@@ -48,7 +44,6 @@ export interface ColorValue {
   colorize?: boolean;
 }
 
-/** A placed furniture item in the layout */
 export interface PlacedFurniture {
   type: string;
   uid: string;
@@ -57,7 +52,6 @@ export interface PlacedFurniture {
   color?: ColorValue;
 }
 
-/** Floor color for a specific tile */
 export interface FloorColor {
   tileIndex: number;
   pattern: number;
@@ -81,7 +75,6 @@ export interface OfficeLayout {
   tileColors?: FloorColor[];
 }
 
-// ── Sprites & Assets ─────────────────────────────────────────
 
 /** 2D array of hex color strings: '' = transparent, '#RRGGBB' = opaque, '#RRGGBBAA' = semi-transparent
  *
@@ -113,7 +106,6 @@ export interface FurnitureCatalogEntry {
   frame?: number;
 }
 
-// ── Hook Events ──────────────────────────────────────────────
 
 /** Raw hook event received from any provider's hook script via HTTP server
  *
@@ -125,7 +117,6 @@ export interface HookEvent {
   [key: string]: unknown;
 }
 
-// ── Disposable ───────────────────────────────────────────────
 
 /** Generic disposable pattern (matches VS Code's Disposable)
  *

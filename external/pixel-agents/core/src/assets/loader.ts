@@ -1,10 +1,3 @@
-/**
- * Server-side asset decoders — shared between Vite plugin, extension host,
- * and future standalone backends.
- *
- * Reads PNG files from an assets directory and decodes them into SpriteData
- * format using the shared pngDecoder module.
- */
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -18,7 +11,6 @@ import {
 } from './pngDecoder.js';
 import type { CatalogEntry, CharacterDirectionSprites } from './types.js';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function listSortedPngs(dir: string, pattern: RegExp): { index: number; filename: string }[] {
   if (!fs.existsSync(dir)) return [];
@@ -32,7 +24,6 @@ function listSortedPngs(dir: string, pattern: RegExp): { index: number; filename
   return files.sort((a, b) => a.index - b.index);
 }
 
-// ── Decoders ─────────────────────────────────────────────────────────────────
 
 export function decodeAllCharacters(assetsDir: string): CharacterDirectionSprites[] {
   const charDir = path.join(assetsDir, 'characters');

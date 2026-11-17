@@ -17,36 +17,21 @@ import { HOOK_API_PREFIX, MAX_HOOK_BODY_SIZE } from './constants.js';
 import type { OtelIngestResult } from './providers/otel/otelProvider.js';
 import type { AgentState } from './types.js';
 
-/** Options for creating the HTTP + WebSocket server. */
 export interface HttpServerOptions {
-  /** true = VS Code embedded mode (ephemeral port, no static, quiet logging) */
   embedded: boolean;
-  /** Host to bind to. Default: '127.0.0.1' */
   host?: string;
-  /** Port to listen on. Default: 0 (auto-assign) */
   port?: number;
-  /** Bearer auth token for hook and WebSocket endpoints */
   token: string;
-  /** AgentStateStore for WebSocket broadcast piping */
   store: AgentStateStore;
-  /** Shared agent lifecycle core (for toggle side effects + standalone restore). Optional in embedded mode. */
   runtime?: AgentRuntime;
-  /** Path to SPA dist directory for static serving (standalone only) */
   staticDir?: string;
-  /** Cached assets loaded at startup (standalone only) */
   assetCache?: AssetCache;
-  /** Callback when a hook event is received */
   onHookEvent?: (providerId: string, event: Record<string, unknown>) => void;
-  /** OTel trace ingestion handler. When set, POST /v1/traces is registered.
-   *  Standalone only today (the CLI wires it; the VS Code adapter doesn't). */
   onOtelTraces?: (body: unknown) => OtelIngestResult;
-  /** Invoked when setHooksEnabled is toggled via WebSocket. Standalone installs/uninstalls hooks here. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
-  /** Invoked when an external asset directory is added/removed. Standalone reloads + re-broadcasts assets here. */
   onReloadAssets?: ReloadAssetsSideEffect;
 }
 
-/** Result of createHttpServer(). */
 export interface HttpServerHandle {
   app: FastifyInstance;
   port: number;
@@ -54,12 +39,6 @@ export interface HttpServerHandle {
 
 const startTime = Date.now();
 
-/**
- * Create a Fastify server with hook endpoint, health check, and WebSocket support.
- *
- * All Fastify-specific code lives in this file. The rest of the server layer is
- * framework-agnostic. If Fastify is ever replaced, only this file changes.
- */
 export async function createHttpServer(options: HttpServerOptions): Promise<HttpServerHandle> {
   const app = Fastify({
     logger: !options.embedded,
@@ -69,26 +48,22 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   await app.register(fastifyCors, { origin: true });
   await app.register(fastifyWebsocket);
 
-  // Static SPA serving (standalone mode only)
   if (!options.embedded && options.staticDir) {
     await app.register(fastifyStatic, {
       root: options.staticDir,
       prefix: '/',
     });
-    // HTML5 history fallback: serve index.html for unmatched routes
     app.setNotFoundHandler((_req, reply) => {
       reply.sendFile('index.html');
     });
   }
 
-  // ── Routes ──────────────────────────────────────────────────
 
   registerHealthRoute(app);
   registerHookRoute(app, options);
   registerOtelTracesRoute(app, options);
   registerWebSocketRoute(app, options);
 
-  // ── Listen ──────────────────────────────────────────────────
 
   await app.listen({ host: options.host ?? '127.0.0.1', port: options.port ?? 0 });
   const address = app.server.address();
@@ -97,7 +72,6 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   return { app, port };
 }
 
-// ── Health ──────────────────────────────────────────────────────
 
 function registerHealthRoute(app: FastifyInstance): void {
   app.get('/api/health', async () => ({
@@ -107,7 +81,6 @@ function registerHealthRoute(app: FastifyInstance): void {
   }));
 }
 
-// ── Hook Events ────────────────────────────────────────────────
 
 function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): void {
   app.post<{
@@ -140,16 +113,9 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
   );
 }
 
-// ── OTel Traces ─────────────────────────────────────────────
 
-/** Larger body limit than hooks: real OTLP exports batch many spans. */
-const OTEL_TRACES_BODY_LIMIT = 8 * 1024 * 1024; // 8MB
+const OTEL_TRACES_BODY_LIMIT = 8 * 1024 * 1024;
 
-/**
- * POST /v1/traces — OTLP/JSON trace ingestion. Registered only when the host
- * wired an onOtelTraces handler. Like the standalone WebSocket endpoint, no
- * Bearer auth: the server binds to 127.0.0.1, so only local exporters reach it.
- */
 function registerOtelTracesRoute(app: FastifyInstance, options: HttpServerOptions): void {
   if (!options.onOtelTraces) return;
   const handler = options.onOtelTraces;
@@ -168,13 +134,9 @@ function registerOtelTracesRoute(app: FastifyInstance, options: HttpServerOption
   );
 }
 
-// ── WebSocket ──────────────────────────────────────────────────
 
 function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions): void {
   app.get('/ws', { websocket: true }, (socket, request) => {
-    // In standalone mode (not embedded), skip auth for WebSocket connections.
-    // The server binds to 127.0.0.1, so only local clients can connect.
-    // In embedded mode (VS Code), require Bearer token for security.
     if (options.embedded) {
       const auth = request.headers.authorization ?? '';
       const expected = `Bearer ${options.token}`;
@@ -188,7 +150,6 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
 
     const { store } = options;
 
-    // Pipe store events to WebSocket client
     const onAgentAdded = (id: number, agent: AgentState) => {
       safeSend(socket, {
         type: 'agentCreated',
@@ -215,7 +176,6 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
     store.on('agentRemoved', onAgentRemoved);
     store.on('broadcast', onBroadcast);
 
-    // Handle incoming client messages
     socket.on('message', (data: Buffer | string) => {
       try {
         const msg = JSON.parse(data.toString()) as Record<string, unknown>;
@@ -230,7 +190,6 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
           onReloadAssets: options.onReloadAssets,
         });
       } catch {
-        // Malformed JSON, ignore
       }
     });
 
@@ -242,7 +201,6 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
   });
 }
 
-// ── Auth Helper ────────────────────────────────────────────────
 
 function bearerAuth(expectedToken: string) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
@@ -256,13 +214,11 @@ function bearerAuth(expectedToken: string) {
   };
 }
 
-// ── Utilities ──────────────────────────────────────────────────
 
 function safeSend(
   socket: { send: (data: string) => void; readyState: number },
   message: Record<string, unknown>,
 ): void {
-  // WebSocket.OPEN = 1
   if (socket.readyState === 1) {
     socket.send(JSON.stringify(message));
   }
