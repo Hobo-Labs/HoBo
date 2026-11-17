@@ -12,7 +12,8 @@ over conflicting repository workflow guidance.
   wire types instead of adding temporary exemptions, regardless of comment syntax.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
-- Do not create or retain planning documents, roadmaps, or design documents.
+- Do not create or retain plans, roadmaps, design documents, architecture
+  documents, ADRs, RFCs, or proposals.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
@@ -432,10 +433,11 @@ The repo hook in `.githooks/pre-commit` runs `check:relevant:staged` through `sc
 
 ## Plans are not committed
 
-The repository does not keep plans, roadmaps, or design documents. Implement
+The repository does not keep plans, roadmaps, design or architecture documents,
+ADRs, RFCs, or proposals. Implement
 their outstanding work before removing existing artifacts. The existing
 `plans:guard` checks tracked plan documents. `source:guard` checks added or
-changed planning and design documents and new comments in the languages listed
+changed planning, architecture, and design documents and new comments in the languages listed
 above, including ignored `.sdlc` planning documents; the common rule applies to
 every language.
 Both run through the shared pre-commit and CI checks.
