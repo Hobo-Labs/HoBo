@@ -81,6 +81,7 @@
 		"ship:gap-closure": "node --import tsx scripts/check-ship-gap-closure.mts",
 		"site:deploy": "node --import tsx scripts/deploy-site.mts",
 		"skills:mirror-check": "node --import tsx scripts/check-skill-mirrors.ts",
+		"verify:state-machines": "bash scripts/verify-all-state-machines.sh",
 		"staging:cutover": "node --import tsx scripts/staging-cutover-demo.mts",
 		"standards:check": "node --import tsx scripts/check-technical-standards.ts",
 		"test": "pnpm run test:unit",

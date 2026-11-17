@@ -11,7 +11,11 @@ Thirteen third-party AI-coding tools are wired into this repo for **Claude Code*
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
-The mirrored `verify-budget-policy-routing` skill checks dispatcher reservation histories against real code, a bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. Run it from the repository root with `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing`. The model and proof describe their bounds and assumptions; neither proves implementation refinement or external provider behavior.
+The mirrored subsystem verification skills pair implementation tests with TLA+
+models and, where applicable, mathematical proofs of abstractions. See the
+[state-machine verification index](state-machines.md) for covered behavior,
+the audit queue, assumptions, and `pnpm run verify:state-machines`. These checks
+do not by themselves prove implementation refinement or external effects.
 
 > **Note:** this is *tooling* config, not part of the HoBo product design (`docs/design/`). It was added on request to make the agents productive in this repo.
 
