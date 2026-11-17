@@ -10,6 +10,10 @@ RivetKit 3 runtime dependency.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
+It also checks that a cloud resource actor's durable apply and destroy
+generations reach the Rivet adapter's trusted route resolver unchanged. The
+fixture supplies explicit financial settlement trust and a host classification
+for its source-free test resources.
 
 `mapBindleToAlchemy` accepts a HoBo bindle structurally and a provider-owned
 mapping for each declared primitive. The caller must also assess bindle-wide
