@@ -34,7 +34,7 @@ package data_models
 	free_headroom: number & >=0
 	credits: [...#ReservedCreditConsumptionRecord]
 	rate_units?:        number & >=0
-	concurrency_slots?: int & >=0
+	concurrency_slots?: int & >=0 & <=1
 }
 
 #ReservationRecord: {
@@ -55,12 +55,15 @@ package data_models
 	dispatch_request_hash?: string & =~"^sha256:[a-f0-9]{64}$"
 	decision_input_json?:   string & !=""
 	estimated_cost?:        number & >=0
-	consumption?:           #ReservedConsumptionRecord
-	confirmed_seq?:         #SafeSequence
-	released_seq?:          #SafeSequence
-	provider_usage_seq?:    #SafeSequence
-	started_seq?:           #SafeSequence
-	usage_evidence_ref?:    string & !=""
+	consumption?: #ReservedConsumptionRecord & {
+		free_headroom: <=units
+		rate_units?:   <=units
+	}
+	confirmed_seq?:      #SafeSequence
+	released_seq?:       #SafeSequence
+	provider_usage_seq?: #SafeSequence
+	started_seq?:        #SafeSequence
+	usage_evidence_ref?: string & !=""
 }
 
 #SettlementCommandRecord: {
