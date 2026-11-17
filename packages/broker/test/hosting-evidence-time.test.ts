@@ -176,6 +176,18 @@ describe("hosting financial evidence time", () => {
 		).not.toThrow();
 	});
 
+	it("rejects an earlier spend observation within the same millisecond", () => {
+		const initial = snapshot();
+		initial.observedAt = instant(900);
+		const authority = createBudgetAdmissionAuthority({ snapshot: initial });
+		const next = clone(BudgetLedgerSnapshotSchema, initial);
+		next.observedAt = instant(100);
+		next.spentMicros = 1;
+		expect(() => authority.configure(next, initial.seq, instant(1000))).toThrow(
+			/newer observation/u,
+		);
+	});
+
 	it("compares generated sub-millisecond observations by their exact instant", () => {
 		fc.assert(
 			fc.property(
