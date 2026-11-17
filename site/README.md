@@ -34,7 +34,7 @@ mirroring.
 Site parsers and scripts share `src/lib/json-inspect.ts` for JSON I/O boundaries
 so anti-slop oxlint (`pnpm exec oxlint --deny-warnings site`) stays green:
 named `JsonValue`/`JsonObject` types, tag checks instead of `typeof`, and
-`SAFETY:` comments on remaining type assertions.
+validated values at input boundaries.
 
 ## Working on the site
 
@@ -92,9 +92,8 @@ package's rendered-surface tests for UI changes.
   If the repo is renamed, update `base` in `astro.config.ts` and these links together.
 - **Repository links are chrome-only.** The site header (GitHub icon, top right)
   and footer link to github.com/Tyler-R-Kendrick/HoBo — that is the ONLY sanctioned
-  repo linking. Page *content* stays standalone: never link to repo paths like
-  `docs/design/` from prose — restate what's needed instead. The canonical sources
-  in `docs/design/` inform the content but are not linked.
+  repo linking. Page *content* stays standalone and describes supported behavior
+  directly.
 - **Voice:** playful "homeward bound" theme — the guiding principle is continuous
   migration to the cheapest home that passes policy. Whimsy in the prose, precision in
   the tables and code.

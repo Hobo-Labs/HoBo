@@ -20,7 +20,6 @@ const shikiThemes = {
 	dark: "github-dark-high-contrast",
 } as const;
 
-// The hobits a visitor can meet on the way, in the order they turn up.
 const hobits = ["tuck", "cog", "mags", "pip"];
 ---
 
@@ -28,14 +27,8 @@ const hobits = ["tuck", "cog", "mags", "pip"];
 	title="HoBo — pack your bindle, we'll find your app a home"
 	description="HoBo describes your app once, finds it the cheapest home that passes your policies, and keeps it moving with continuous, zero-drama migrations — across any provider, any mix, or your own metal."
 >
-	{/* Ink's page renders only when no world is chosen; each world brings its
-	    own art and its own opening argument instead. */}
 	<WorldHero />
 
-	{/* Each <section> is a stop on the trail. `data-stop-name` labels it on the
-	    trail marker, `data-stop-sign` (or its badge) is the road sign, and each
-	    card's `data-prop` is the prop that stands for it on the trail. With no
-	    script this is an ordinary page that reads top to bottom. */}
 	<div class="trail-page ink-world" data-trail-page>
 		<div class="trail-stops" data-trail-stops>
 			<section
