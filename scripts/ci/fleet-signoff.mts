@@ -18,6 +18,7 @@ import {
 	type RouteSettings,
 	refusingJobs,
 	routeSettings,
+	type SeenJob,
 	type SlipReading,
 	takingJobs,
 } from "./route-runner.mts";
@@ -27,6 +28,67 @@ import {
 	parseJson,
 	readRunnerRouting,
 } from "./runner-routing.mts";
+
+/** Allow at most 30 seconds of GitHub/operator clock skew, never reversed ordering. */
+export const FLEET_CLOCK_SKEW_MS = 30_000;
+
+type PreciseUtc = Readonly<{ secondMs: number; nanosecond: number }>;
+
+/** GitHub UTC times allow up to nanoseconds; greater precision fails closed. */
+function preciseUtc(value: JsonValue | undefined): PreciseUtc | undefined {
+	const text = asText(value);
+	const match =
+		/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/u.exec(
+			text ?? "",
+		);
+	if (!match?.[1]) return undefined;
+	const secondMs = Date.parse(`${match[1]}Z`);
+	if (
+		!Number.isFinite(secondMs) ||
+		new Date(secondMs).toISOString().slice(0, 19) !== match[1]
+	)
+		return undefined;
+	return { secondMs, nanosecond: Number((match[2] ?? "").padEnd(9, "0")) };
+}
+
+function compareUtc(first: PreciseUtc, second: PreciseUtc): number {
+	return (
+		first.secondMs - second.secondMs || first.nanosecond - second.nanosecond
+	);
+}
+
+function withinClockSkew(value: JsonValue | undefined, nowMs: number): boolean {
+	const timestamp = preciseUtc(value);
+	if (!timestamp) return false;
+	const boundMs = nowMs + FLEET_CLOCK_SKEW_MS;
+	const secondMs = Math.floor(boundMs / 1000) * 1000;
+	return (
+		compareUtc(timestamp, {
+			secondMs,
+			nanosecond: (boundMs - secondMs) * 1_000_000,
+		}) <= 0
+	);
+}
+
+function orderedUtc(
+	first: JsonValue | undefined,
+	second: JsonValue | undefined,
+): boolean {
+	const left = preciseUtc(first);
+	const right = preciseUtc(second);
+	return !!left && !!right && compareUtc(left, right) <= 0;
+}
+
+function validJobChronology(job: SeenJob, nowMs: number): boolean {
+	return (
+		Number.isFinite(job.createdAtMs) &&
+		job.createdAtMs <= nowMs + FLEET_CLOCK_SKEW_MS &&
+		(job.startedAtMs === undefined ||
+			(Number.isFinite(job.startedAtMs) &&
+				job.startedAtMs >= job.createdAtMs &&
+				job.startedAtMs <= nowMs + FLEET_CLOCK_SKEW_MS))
+	);
+}
 
 /** An enabled provider outside the fleet/local/hosted routing labels. */
 export type FleetOverflowMember = Readonly<{
@@ -118,6 +180,8 @@ export async function planFleetVerification(input: {
 			tier: slip.decision.tier,
 			runner: slip.decision.runner,
 		};
+	if (!Number.isFinite(input.nowMs))
+		return { kind: "wait", reason: "availability-unknown" };
 	const fleetLabel =
 		slip.ok && slip.decision.tier === "fleet"
 			? slip.decision.runner
@@ -137,6 +201,11 @@ export async function planFleetVerification(input: {
 	} catch {
 		return { kind: "wait", reason: "availability-unknown" };
 	}
+	const validJobs = queue.jobs.filter((job) =>
+		validJobChronology(job, input.nowMs),
+	);
+	const incompleteQueue = validJobs.length !== queue.jobs.length;
+	queue = { ...queue, jobs: validJobs };
 	const unknown: string[] = [];
 	const providerOutages = new Set(input.providerUnavailable ?? []);
 	// Multi-label jobs are deliberately excluded from normal routing load.
@@ -229,7 +298,10 @@ export async function planFleetVerification(input: {
 		unknownMembers: unknown,
 		localSignoffEnabled: input.localSignoffEnabled,
 	});
-	if (selection.kind !== "runner") return selection;
+	if (selection.kind !== "runner")
+		return incompleteQueue
+			? { kind: "wait", reason: "availability-unknown" }
+			: selection;
 	return {
 		kind: "runner",
 		tier:
@@ -561,25 +633,15 @@ export async function observeFleetVerification(input: {
 		// SAFETY: a successful GitHub API response is parsed as JSON data.
 		return JSON.parse(gh(["api", path])) as JsonValue;
 	};
+	const nowMs = Date.now();
 	let incompleteQueue = false;
 	let uncertainInProgress = false;
 	const readQueuePage = async (path: string): Promise<JsonValue> => {
 		const body = await read(path);
 		const field = path.includes("/jobs?") ? "jobs" : "workflow_runs";
 		const items = asObject(body)?.[field];
-		const validTime = (value: JsonValue | undefined) => {
-			const text = asText(value);
-			if (
-				!text ||
-				!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(text)
-			)
-				return false;
-			const parsed = Date.parse(text);
-			return (
-				Number.isFinite(parsed) &&
-				new Date(parsed).toISOString().slice(0, 19) === text.slice(0, 19)
-			);
-		};
+		const validTime = (value: JsonValue | undefined) =>
+			withinClockSkew(value, nowMs);
 		const validId = (value: JsonValue | undefined) =>
 			Number.isSafeInteger(value) && Number(value) > 0;
 		const statuses = [
@@ -601,7 +663,8 @@ export async function observeFleetVerification(input: {
 					validId(item.id) &&
 					(asText(item.path)?.trim().length ?? 0) > 0 &&
 					validTime(item.created_at) &&
-					validTime(item.updated_at)
+					validTime(item.updated_at) &&
+					orderedUtc(item.created_at, item.updated_at)
 				);
 			const runner = asText(item.runner_name);
 			return (
@@ -616,7 +679,9 @@ export async function observeFleetVerification(input: {
 					!!runner ||
 					["skipped", "cancelled"].includes(asText(item.conclusion) ?? "")) &&
 				(item.started_at === null || validTime(item.started_at)) &&
-				(!runner || validTime(item.started_at))
+				(!runner || validTime(item.started_at)) &&
+				(item.started_at === null ||
+					orderedUtc(item.created_at, item.started_at))
 			);
 		});
 		if (validItems.length !== items.length) incompleteQueue = true;
@@ -645,7 +710,6 @@ export async function observeFleetVerification(input: {
 			return new Response(null, { status: 503 });
 		}
 	};
-	const nowMs = Date.now();
 	const choice = await planFleetVerification({
 		settings,
 		localSignoffEnabled: input.localSignoffEnabled,

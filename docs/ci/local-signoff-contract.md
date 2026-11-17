@@ -83,6 +83,7 @@ evidence; they cannot override a pin, healthy pickup, or failed queue read.
 | Slip read fails | Use queue evidence; if the queue cannot be read, wait |
 | Queue request fails or its response has no usable run or job array | Wait; do not infer that the fleet is down |
 | Individual queue records are malformed or a running job has no runner identity yet | A separately observed healthy runner can still be selected; otherwise wait rather than infer an outage |
+| Queue timestamps are invalid, use more than nine fractional digits, are reversed, or are more than 30 seconds ahead of the local clock | Treat the affected observation as incomplete; valid runner evidence can still win |
 | Inventory is malformed or unsupported, policy is not verified current, or a provider has no availability evidence | Do not infer an outage; wait unless a runner or pin is selected |
 | An enabled provider is independently confirmed unavailable | An assertion for its exact inventory ID counts it unavailable; healthy pickups and pins remain authoritative |
 | A well-formed provider outage assertion names an unknown or disabled member | Do not use it to authorize fallback or suppress runner evidence; report it if no runner is selected |

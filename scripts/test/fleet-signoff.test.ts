@@ -13,6 +13,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
 	executeFleetVerification,
+	FLEET_CLOCK_SKEW_MS,
 	type FleetOverflowMember,
 	observeFleetVerification,
 	planFleetVerification,
@@ -95,6 +96,77 @@ describe("local signoff in the fleet decision", () => {
 			kind: "wait",
 			reason: "no-capacity",
 		});
+	});
+
+	it("quarantines future queues and impossible pickups before deciding availability", async () => {
+		const future = now + FLEET_CLOCK_SKEW_MS + 60_000;
+		const futureQueued = ["hobo", "hobo-local-host", "ubuntu-24.04"].flatMap(
+			(label) =>
+				Array.from(
+					{ length: 4 },
+					(_, index): SeenJob => ({
+						runId: index + 1,
+						labels: [label],
+						createdAtMs: future,
+					}),
+				),
+		);
+		const assertions = {
+			githubUnavailable: true,
+			runnerUnavailable: ["fleet", "local"],
+		};
+		assert.deepEqual(await plan(queue(futureQueued), assertions), {
+			kind: "wait",
+			reason: "availability-unknown",
+		});
+		for (const invalid of [
+			{ ...picked("hobo"), createdAtMs: future, startedAtMs: future + 1_000 },
+			{ ...picked("hobo"), createdAtMs: now - 1_000, startedAtMs: now - 2_000 },
+			{ ...picked("hobo"), createdAtMs: Number.NaN },
+			{ ...picked("hobo"), startedAtMs: Number.POSITIVE_INFINITY },
+		]) {
+			assert.deepEqual(await plan(queue([invalid]), assertions), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			assert.deepEqual(
+				await plan(queue([invalid, picked("ubuntu-24.04")]), assertions),
+				{
+					kind: "runner",
+					tier: "github",
+					runner: "ubuntu-24.04",
+				},
+			);
+		}
+	});
+
+	it("accepts a small forward clock skew and leaves pins authoritative", async () => {
+		const withinSkew = {
+			...picked("hobo"),
+			createdAtMs: now + 2_000,
+			startedAtMs: now + FLEET_CLOCK_SKEW_MS,
+		};
+		assert.deepEqual(await plan(queue([withinSkew])), {
+			kind: "runner",
+			tier: "fleet",
+			runner: "hobo",
+		});
+		const pinned: SlipReading = {
+			ok: true,
+			decision: {
+				tier: "github",
+				runner: "ubuntu-24.04",
+				reason: "pinned",
+				slip: { kind: "used", reason: "pinned", from: "node@abc" },
+			},
+		};
+		assert.deepEqual(
+			await plan(
+				queue([{ ...withinSkew, startedAtMs: now + FLEET_CLOCK_SKEW_MS + 1 }]),
+				{ slip: pinned },
+			),
+			{ kind: "runner", tier: "github", runner: "ubuntu-24.04" },
+		);
 	});
 
 	it("considers enabled overflow labels before local signoff, even when a slip rejects the fleet", async () => {
@@ -1568,6 +1640,9 @@ exec /usr/bin/git "$@"
 				runner_name: "fixture",
 				started_at: at(8),
 			};
+			const subMillisecond = (timestamp: string, digits: string) =>
+				timestamp.replace(/Z$/u, `${digits}Z`);
+			const sharedTime = at(10);
 			for (const invalid of [
 				{ ...jobBase, labels: "hobo" },
 				{ ...jobBase, labels: ["hobo", 42] },
@@ -1581,12 +1656,83 @@ exec /usr/bin/git "$@"
 				{ ...jobBase, started_at: "bad-time" },
 				{ ...jobBase, created_at: "0" },
 				{ ...jobBase, started_at: "2026-02-29T12:00:00Z" },
+				{ ...jobBase, created_at: at(-120), started_at: at(-115) },
+				{ ...jobBase, created_at: at(1), started_at: at(2) },
+				{
+					...jobBase,
+					created_at: subMillisecond(sharedTime, "9"),
+					started_at: subMillisecond(sharedTime, "1"),
+				},
+				{
+					...jobBase,
+					started_at: subMillisecond(jobBase.started_at, "0000000"),
+				},
+				{
+					...jobBase,
+					status: "queued",
+					runner_name: null,
+					started_at: null,
+					created_at: at(-120),
+				},
 			]) {
 				writeFileSync(jobs, JSON.stringify({ jobs: [invalid] }));
 				const result = command({}, runnerFlags);
 				assert.notEqual(result.status, 0);
 				assert.match(result.stdout, /waiting \(availability-unknown\)/u);
 			}
+			const futureQueue = ["hobo", "hobo-local-host", "ubuntu-24.04"].flatMap(
+				(label) =>
+					Array.from({ length: 4 }, () => ({
+						...jobBase,
+						status: "queued",
+						labels: [label],
+						runner_name: null,
+						started_at: null,
+						created_at: at(-120),
+					})),
+			);
+			writeFileSync(jobs, JSON.stringify({ jobs: futureQueue }));
+			const futureRefusal = command({}, runnerFlags);
+			assert.notEqual(futureRefusal.status, 0);
+			assert.match(futureRefusal.stdout, /waiting \(availability-unknown\)/u);
+			const pinnedWithFuture = command(
+				{ HOBO_FLEET_SLIP: pinnedSlip },
+				runnerFlags,
+			);
+			assert.equal(pinnedWithFuture.status, 0, pinnedWithFuture.stderr);
+			assert.match(pinnedWithFuture.stdout, /github runner ubuntu-24\.04/u);
+			writeFileSync(jobs, JSON.stringify({ jobs: [futureQueue[0], jobBase] }));
+			const healthyWithFuture = command({}, runnerFlags);
+			assert.equal(healthyWithFuture.status, 0, healthyWithFuture.stderr);
+			assert.match(healthyWithFuture.stdout, /fleet runner hobo/u);
+			writeFileSync(
+				jobs,
+				JSON.stringify({
+					jobs: [{ ...jobBase, created_at: at(-5), started_at: at(-10) }],
+				}),
+			);
+			const healthyWithClockSkew = command({}, runnerFlags);
+			assert.equal(healthyWithClockSkew.status, 0, healthyWithClockSkew.stderr);
+			assert.match(healthyWithClockSkew.stdout, /fleet runner hobo/u);
+			writeFileSync(
+				jobs,
+				JSON.stringify({
+					jobs: [
+						{
+							...jobBase,
+							created_at: subMillisecond(sharedTime, "000001"),
+							started_at: subMillisecond(sharedTime, "000009"),
+						},
+					],
+				}),
+			);
+			const healthyWithNanoseconds = command({}, runnerFlags);
+			assert.equal(
+				healthyWithNanoseconds.status,
+				0,
+				healthyWithNanoseconds.stderr,
+			);
+			assert.match(healthyWithNanoseconds.stdout, /fleet runner hobo/u);
 			writeFileSync(
 				jobs,
 				JSON.stringify({ jobs: [{ ...jobBase, labels: "hobo" }, jobBase] }),
@@ -1640,6 +1786,13 @@ exec /usr/bin/git "$@"
 				{ ...validRun, created_at: "0" },
 				{ ...validRun, updated_at: "2026-02-29T12:00:00Z" },
 				{ ...validRun, updated_at: null },
+				{ ...validRun, created_at: at(-120), updated_at: at(-115) },
+				{ ...validRun, created_at: at(2), updated_at: at(3) },
+				{
+					...validRun,
+					created_at: subMillisecond(sharedTime, "9"),
+					updated_at: subMillisecond(sharedTime, "1"),
+				},
 			]) {
 				writeFileSync(runs, JSON.stringify({ workflow_runs: [invalid] }));
 				const result = command({}, runnerFlags);
@@ -1660,6 +1813,55 @@ exec /usr/bin/git "$@"
 				healthyWithMalformedRun.stderr,
 			);
 			assert.match(healthyWithMalformedRun.stdout, /fleet runner hobo/u);
+			writeFileSync(
+				runs,
+				JSON.stringify({
+					workflow_runs: [
+						{ ...validRun, id: 124, created_at: at(2), updated_at: at(3) },
+						validRun,
+					],
+				}),
+			);
+			const healthyWithBackwardsRun = command({}, runnerFlags);
+			assert.equal(
+				healthyWithBackwardsRun.status,
+				0,
+				healthyWithBackwardsRun.stderr,
+			);
+			assert.match(healthyWithBackwardsRun.stdout, /fleet runner hobo/u);
+			// Freeze the observer clock so one nanosecond either side of the
+			// 30-second boundary remains deterministic across process scheduling.
+			writeFileSync(runs, JSON.stringify({ workflow_runs: [validRun] }));
+			const actualClock = Date.now;
+			const frozenNow = actualClock();
+			const boundary = new Date(frozenNow + FLEET_CLOCK_SKEW_MS).toISOString();
+			const justBefore = subMillisecond(
+				new Date(frozenNow + FLEET_CLOCK_SKEW_MS - 1).toISOString(),
+				"999999",
+			);
+			const justAfter = subMillisecond(boundary, "000001");
+			const queuedAt = (created_at: string) => ({
+				...jobBase,
+				status: "queued",
+				runner_name: null,
+				started_at: null,
+				created_at,
+			});
+			try {
+				Date.now = () => frozenNow;
+				writeFileSync(jobs, JSON.stringify({ jobs: [queuedAt(justAfter)] }));
+				assert.deepEqual(await silent(["fleet", "local"]), {
+					kind: "wait",
+					reason: "availability-unknown",
+				});
+				for (const valid of [justBefore, boundary]) {
+					writeFileSync(jobs, JSON.stringify({ jobs: [queuedAt(valid)] }));
+					const choice = await silent(["fleet", "local"]);
+					assert.equal(choice.kind, "local-signoff");
+				}
+			} finally {
+				Date.now = actualClock;
+			}
 			const laterJobs = join(root, "later-jobs.json");
 			writeFileSync(
 				runs,
