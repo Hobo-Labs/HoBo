@@ -12,13 +12,16 @@
  *    a missing Yard or credential before writing assertions, and the lane
  *    never silently becomes `in-process`.
  * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
- *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, or
- *    `untilReady` marks it asserted-against; if any is `mocked`, this run
+ *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, `secret`, or
+ *    `data`, `schedule`, `scheduleClock`, or `untilReady` marks it asserted-against;
+ *    if any is `mocked`, this run
  *    cannot claim prod-readiness and the report says so.
  */
 
-import type { Messaging, Queue, VirtualClock } from "@hobo/core";
-import type { QueueEmulator } from "./emulators.js";
+import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
+import type { EngineBinding } from "@hobo/data-core";
+import type { SecretsPort } from "@hobo/identity";
+import type { QueueEmulator, ScheduleEmulator } from "./emulators.js";
 import { TestHarnessError } from "./errors.js";
 import { emptyFidelityCounts } from "./fidelity.js";
 import {
@@ -148,6 +151,20 @@ function buildGraph(
 		}
 		return emulator;
 	}
+	function scheduleEmulator(alias: string): ScheduleEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.schedules.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no schedule emulator`,
+				"use the alias of a schedule resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
 	return Object.freeze({
 		stage,
 		lane,
@@ -200,6 +217,40 @@ function buildGraph(
 			}
 			return emulator.port;
 		},
+		secret(alias: string): SecretsPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.secrets.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no secret emulator`,
+					"use the alias of a secret resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		data(alias: string): EngineBinding {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.data.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no data emulator`,
+					"use the alias of a data resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		schedule(alias: string): SchedulerPort {
+			return scheduleEmulator(alias).port;
+		},
+		scheduleClock(alias: string): VirtualClock | undefined {
+			return scheduleEmulator(alias).clock;
+		},
 		fidelity(): FidelityReport {
 			return buildFidelityReport(handles, asserted);
 		},
@@ -234,6 +285,7 @@ export function createTestHarness(
 
 	const probe = internals.probe ?? createFetchReadinessProbe();
 	const states = new Map<unknown, Promise<HarnessState>>();
+	const destroying = new Map<unknown, Set<Promise<void>>>();
 	let latest: HarnessState | undefined;
 
 	async function ensure(bindle: unknown): Promise<HarnessState> {
@@ -273,11 +325,24 @@ export function createTestHarness(
 		destroy(bindle: unknown): () => Promise<void> {
 			return async () => {
 				const pending = states.get(bindle);
-				if (pending === undefined) return;
-				states.delete(bindle);
-				const state = await pending;
-				if (latest === state) latest = undefined;
-				await destroyInProcess(state.deployment);
+				if (pending !== undefined) {
+					states.delete(bindle);
+					const cleanups = destroying.get(bindle) ?? new Set<Promise<void>>();
+					destroying.set(bindle, cleanups);
+					const cleanup = (async () => {
+						const state = await pending;
+						if (latest === state) latest = undefined;
+						await destroyInProcess(state.deployment);
+					})();
+					cleanups.add(cleanup);
+					try {
+						await cleanup;
+					} finally {
+						cleanups.delete(cleanup);
+						if (cleanups.size === 0) destroying.delete(bindle);
+					}
+				}
+				await Promise.all(destroying.get(bindle) ?? []);
 			};
 		},
 		async untilReady(

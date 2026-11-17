@@ -23,8 +23,8 @@ runner.test("the api answers", async () => {
 });
 ```
 
-Swapping to `node:test` is a two-line change: `import * as runnerModule from
-"node:test"` and `createNodeTestRunnerAdapter(runnerModule)`. Nothing else in
+Swapping to `node:test` is a two-line change: import its module as
+`runnerModule`, then pass it to `createNodeTestRunnerAdapter`. Nothing else in
 the suite moves.
 
 ## HONEST SCOPE
@@ -42,22 +42,19 @@ Read this section before you believe a green suite.
   HTTP crosses the wire;
 - resolves binding values for the whole graph through `runtime-local`'s
   `createLocalBindingResolver`;
-- exposes a separate in-memory `Queue` for each `queue` alias and an in-memory
-  `Messaging` port for each `topic` alias, with their actual fidelity on the
-  handle;
+- exposes isolated local ports for queue, topic, secret, data, and schedule
+  aliases, with their actual fidelity on the handle;
 - tears everything down in reverse dependency order.
 
 What it does **not** do:
 
-- run the deployed artifact on the deployed host — hence handles are labelled
-  `simulated`, never `real`;
-- provide an engine behind `data`, `kv`, `bucket`, `secret`, `auth`, `crypto`,
-  `flag`, `job`, `schedule`, `websocket` or any other unsupported
-  non-HTTP kind. Those get a handle and a `hobo-test://` binding locator and
-  nothing behind them. They are labelled `mocked`. Labelling them `simulated`
-  because an in-memory map *could* back them would be the overclaim, since
-  nothing on `DeployedGraph` exposes such a store;
-- automatically wire `graph.queue()` or `graph.topic()` into an entrypoint.
+- run the deployed artifact on the deployed host; handles in this lane are
+  never labelled `real`;
+- provide an engine behind unsupported kinds such as `kv`, `bucket`, `auth`,
+  `crypto`, `flag`, `job`, and `websocket`. Those get a handle and a
+  `hobo-test://` binding locator and nothing behind them; they are labelled
+  `mocked`;
+- automatically wire local ports from the graph into an entrypoint.
   These are in-process ports, not services listening at the `hobo-test://`
   locator. A test must explicitly inject the port into the code under test;
 - exercise `container` or `wasm-component` resources at all — labelled
@@ -109,7 +106,11 @@ built on both is exercised end to end by `@hobo/testing`.
 
 `graph.queue(alias)` returns the same `@hobo/core` `Queue` interface a
 service can receive in a deployed runtime; `graph.topic(alias)` returns the
-`Messaging` interface. Inject that port into the service under test and use
+`Messaging` interface; `graph.secret(alias)` returns the existing
+`@hobo/identity` `SecretsPort`; `graph.data(alias)` returns the
+`@hobo/data-core` engine SPI backed by an isolated in-memory SQLite engine.
+`graph.schedule(alias)` returns the existing `@hobo/core` `SchedulerPort`.
+Inject the appropriate port into the service under test and use
 the same object to arrange inputs and inspect results. The included CI relay
 test in [`packages/hobo/test/service-emulators.test.ts`](../hobo/test/service-emulators.test.ts)
 passes a signed webhook through the real relay handler to a queue-backed test
@@ -152,9 +153,16 @@ const harness = createTestHarness({
 });
 ```
 
-Both queue and topic factories return `ServiceEmulator<T>`: a typed port, a
+Queue, topic, secret, data and schedule factories return `ServiceEmulator<T>`: a typed port, a
 `simulated` or `mocked` fidelity label, and an optional `close`. Queue
-emulators may also expose a `VirtualClock`. A factory runs once per alias;
+and schedule emulators may also expose a `VirtualClock`; data emulators require `close`.
+The scheduler supports interval schedules only: `graph.scheduleClock(alias)`
+advances virtual time and returns fired timers, but does not run a job handler
+automatically. Cron expressions and deployed scheduler behavior are not emulated.
+The SQLite data port supports the engine's declared dataset, record, and
+other SPI operations, but it is not a remote database connection, a SQL client,
+or a substitute for provider-specific query semantics. In-memory SQLite does
+not expose the schema migration port. A factory runs once per alias;
 it must create isolated state and clean up any resources it creates before
 throwing. On a later startup failure, the harness closes previously returned
 services in reverse dependency order. Teardown attempts every close, reports
@@ -178,6 +186,10 @@ otherwise duplicate code without testing a service contract.
 | HoBo CI relay | `createRelayHandler` with an injected application, as in the service emulator test | A memory-backed application does not prove durable admission |
 | HoBo control API | `createControlApiServer` with a temporary `hoboHome`; optional seeded `@hobo/yard-world` demo | Runs the actual local service and simulator, not a deployed Station |
 | Queue / topic | This harness's `Queue` / `Messaging` port implementations | In-memory, process-local, not a provider protocol or a durability proof |
+| Secrets | `graph.secret(alias)` and `createSecretEmulator()` wrap the identity package's in-memory `SecretsPort` | Test material lives in process memory; use fixture values, not real credentials |
+| Data engine | `graph.data(alias)` and `createDataEmulator()` use SQLite through the shared engine SPI; the emulator runs its conformance suite | Process-local SQLite, no raw SQL or remote database protocol; no schema migration port in memory |
+| Schedule | `graph.schedule(alias)` and `graph.scheduleClock(alias)` use the local scheduler and virtual clock | Interval schedules only; fired timers do not automatically invoke a handler |
+| Flags / experiments / rollout | `@hobo/identity` provides `createContractAssertedHarnessFixtures` and its built-in engines | Direct in-process fixtures, not automatically wired into this graph or a remote flag provider |
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
 | Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
@@ -200,7 +212,8 @@ verification.
   `deploy(bindle)` and `destroy(bindle)` return **thunks**, so they drop
   straight into `beforeAll`/`afterAll`.
 - `DeployedGraph` → `outputs()`, `resource(alias)`, `http(alias)`,
-  `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `fidelity()`.
+  `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `secret(alias)`, `data(alias)`,
+  `schedule(alias)`, `scheduleClock(alias)`, `fidelity()`.
 - `untilReady(target, { attempts = 20, initialDelayMs = 500 })` — bounded
   exponential backoff capped at 5s per wait. Retries propagation-shaped
   failures (404, 408, 425, 429, any 5xx, network throws) and **fails fast on
@@ -268,7 +281,7 @@ outlives the run that earned it.
   including three refusal interactions: `HARNESS_YARD_REQUIRED` (no silent
   downgrade), `HARNESS_READINESS_REJECTED` (a 401 is an answer), and
   `HARNESS_CREDENTIAL_NOT_A_REF` (locators, never values — ADR-0113).
-- `contracts/pacts/service-emulators.pact.json` — queue/topic access,
+- `contracts/pacts/service-emulators.pact.json` — queue/topic/secret access,
   delivery and wrong-kind refusal; verified by
   `test/service-emulators.pact.test.ts` against the harness. Existing
   queue/clock protobuf, CUE, and PACT contracts live with `@hobo/core` and

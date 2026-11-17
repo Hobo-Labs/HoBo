@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
 	createGithubAppTransport,
+	type RelaySecrets,
 	startRelayFromEnvironment,
 } from "@hobo/ci-gh-actions/cli-serve";
 import { parseCiAgentBlock } from "@hobo/ci-gh-actions/project-config";
@@ -30,12 +31,14 @@ import { configuredStructuredMerger } from "./structured-merge.js";
  */
 export async function startRelayWithAgentFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
+	/** In-memory App secrets from the host's trusted vault (see the relay's own startup). */
+	ports: { readonly secrets?: RelaySecrets } = {},
 ): Promise<Awaited<ReturnType<typeof startRelayFromEnvironment>>> {
 	const path = env.HOBO_CI_AGENT_CONFIG;
 	const block = path
 		? parseCiAgentBlock(readFileSync(path, "utf8"))
 		: undefined;
-	if (block === undefined) return startRelayFromEnvironment(env);
+	if (block === undefined) return startRelayFromEnvironment(env, ports);
 	const stateDirectory = env.HOBO_CI_AGENT_DIR;
 	if (!stateDirectory)
 		throw new Error("missing configuration: HOBO_CI_AGENT_DIR");
@@ -57,14 +60,15 @@ export async function startRelayWithAgentFromEnvironment(
 		: undefined;
 	const appId = env.HOBO_CI_GITHUB_APP_ID;
 	const keyFile = env.HOBO_CI_GITHUB_APP_KEY_FILE;
-	if (!appId || !keyFile)
+	const privateKey =
+		ports.secrets?.githubAppPrivateKey ??
+		(keyFile ? readFileSync(keyFile, "utf8") : undefined);
+	if (!appId || privateKey === undefined)
 		throw new Error("missing configuration: HOBO_CI_GITHUB_APP_ID");
-	const github = createGithubAppTransport({
-		appId,
-		privateKey: readFileSync(keyFile, "utf8"),
-	});
+	const github = createGithubAppTransport({ appId, privateKey });
 	let close = () => {};
 	const running = await startRelayFromEnvironment(env, {
+		...ports,
 		github,
 		agent: ({ connections }) => {
 			const agent = createRelayAgent({

@@ -1,4 +1,4 @@
-import { isJsonString, type JsonValue } from "../json.js";
+import { isJsonString } from "../json.js";
 import type {
 	CliContext,
 	CliEnvelope,
@@ -50,18 +50,24 @@ export function renderSuccess(input: {
 		);
 	}
 
+	// A result that did not succeed names its code and every way forward: the
+	// person reading it has nothing else to go on.
+	const next = !envelope.ok
+		? `\n${[envelope.code, ...envelope.remediation.map((line) => `- ${line}`)].join("\n")}\n`
+		: "";
 	return okText(
 		`Command  Status
 ${input.verb.padEnd(8)} ${envelope.status}
 
 ${envelope.message}
-`,
+${next}`,
 		exitCode,
 	);
 }
 
 export function renderError(
 	// A caught binding, which is `unknown`.
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding has no type; it is only narrowed with instanceof and summarized.
 	error: unknown,
 	input: {
 		readonly verb: string | null;
@@ -145,10 +151,12 @@ export function renderError(
 
 // Both of these are handed a caught binding and already narrow it themselves
 // with `instanceof Error ? … : String(error)`.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding, narrowed with instanceof before use.
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding, narrowed with instanceof before use.
 function verboseDiagnostics(error: unknown, verbose: boolean): string {
 	if (!verbose) {
 		return "";

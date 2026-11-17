@@ -9,8 +9,15 @@ import {
 	parseConsumerGroupId,
 	parseIdempotencyKey,
 	parseQueueName,
+	parseScheduleId,
 	parseTopicName,
 } from "@hobo/core";
+import {
+	encodeRecordKey,
+	parseCanonicalRecord,
+	parseDatasetSchema,
+	upsertMutation,
+} from "@hobo/data-core";
 import { expect, it } from "vitest";
 import { createTestHarness, isTestHarnessError } from "../src/index.js";
 import { fakeBindle } from "./fixtures.js";
@@ -34,7 +41,13 @@ it("verifies the service emulator consumer pact against the running harness", as
 	);
 	const harness = createTestHarness();
 	const bindle = fakeBindle({
-		resources: { jobs: { kind: "queue" }, events: { kind: "topic" } },
+		resources: {
+			jobs: { kind: "queue" },
+			events: { kind: "topic" },
+			credentials: { kind: "secret" },
+			orders: { kind: "data" },
+			nightly: { kind: "schedule" },
+		},
 		handlers: {},
 	});
 	const graph = await harness.deploy(bindle)();
@@ -54,6 +67,99 @@ it("verifies the service emulator consumer pact against the running harness", as
 					return { status: 200 };
 				}
 				const body = request.body;
+				if (
+					request.method === "POST" &&
+					request.path === "/schedule/nightly" &&
+					typeof body === "object" &&
+					body !== null &&
+					"interval" in body &&
+					typeof body.interval === "number"
+				) {
+					graph
+						.schedule("nightly")
+						.every(parseScheduleId("nightly"), { everyMs: body.interval });
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("nightly").fidelity,
+							occurrences: graph
+								.scheduleClock("nightly")
+								?.advance(body.interval * 2)
+								.map((fire) => fire.occurrence ?? 0),
+						},
+					};
+				}
+				if (
+					request.method === "POST" &&
+					request.path === "/data/orders" &&
+					typeof body === "object" &&
+					body !== null &&
+					"id" in body &&
+					typeof body.id === "string"
+				) {
+					const data = graph.data("orders");
+					const schema = parseDatasetSchema({
+						name: "orders",
+						keyFields: ["id"],
+						fields: [{ name: "id", type: "string" }],
+						open: false,
+					});
+					await data.datasets.ensureDataset(schema);
+					const record = parseCanonicalRecord(schema, { id: body.id });
+					const key = encodeRecordKey(schema, record);
+					await data.records.write({
+						dataset: "orders",
+						mutations: [upsertMutation("a", key, record)],
+					});
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("orders").fidelity,
+							stored:
+								(await data.records.read({
+									dataset: "orders",
+									tenant: "a",
+									key,
+								})) !== undefined,
+							otherTenantAbsent:
+								(await data.records.read({
+									dataset: "orders",
+									tenant: "b",
+									key,
+								})) === undefined,
+						},
+					};
+				}
+				if (
+					request.method === "POST" &&
+					request.path === "/secret/credentials" &&
+					typeof body === "object" &&
+					body !== null &&
+					"name" in body &&
+					typeof body.name === "string" &&
+					"value" in body &&
+					typeof body.value === "string"
+				) {
+					const secrets = graph.secret("credentials");
+					const written = await secrets.put(body.name, body.value);
+					const accessed = await secrets.accessVersion(
+						body.name,
+						written.versionId,
+					);
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("credentials").fidelity,
+							access: accessed.status,
+							versioned:
+								accessed.status === "ok" &&
+								accessed.versionId === written.versionId,
+							materialInOutputs: JSON.stringify(graph.outputs()).includes(
+								body.value,
+							),
+						},
+					};
+				}
 				if (
 					request.method !== "POST" ||
 					typeof body !== "object" ||

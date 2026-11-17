@@ -42,8 +42,12 @@ export type CdStoreSelection =
 	  }>
 	| Readonly<{ backend: "memory"; simulated: true }>;
 
-// domain-view: one fleet member: its id and the secret store entry holding its connection string.
-export type CdFleetMember = Readonly<{ id: string; urlEntry: string }>;
+// domain-view: one fleet member: its id, the secret store entry holding its connection string, and the vendor plan it runs on (the fleet's cost model for it), when named.
+export type CdFleetMember = Readonly<{
+	id: string;
+	urlEntry: string;
+	plan?: string;
+}>;
 
 // domain-view: parsed artifact-store selection (the ArtifactStoreConfig minus live ports).
 export type CdArtifactSelection =
@@ -105,6 +109,7 @@ function positiveInt(
 }
 
 const MEMBER_ID = /^[a-z][a-z0-9-]{0,39}$/u;
+const MEMBER_PLAN = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 
 /** The URL variable of one fleet member: `neon-eu` reads HOBO_CD_POSTGRES_URL_NEON_EU. */
 export function cdFleetMemberUrlVariable(id: string): string {
@@ -120,7 +125,15 @@ function fleetMembers(
 		.map((id) => id.trim())
 		.filter((id) => id !== "");
 	const members: CdFleetMember[] = [];
-	for (const id of ids) {
+	// `id` or `id:plan` (`neon-eu:neon-claimable`): the plan names the member's cost model.
+	for (const entry of ids) {
+		const [id = "", plan, ...rest] = entry.split(":");
+		if (rest.length > 0 || (plan !== undefined && !MEMBER_PLAN.test(plan)))
+			return composeRefusal(
+				"compose-store-invalid",
+				`${variable} member ${JSON.stringify(entry)} must be id or id:plan, like neon-eu:neon-claimable`,
+				variable,
+			);
 		if (!MEMBER_ID.test(id))
 			return composeRefusal(
 				"compose-store-invalid",
@@ -134,7 +147,9 @@ function fleetMembers(
 				`${urlEntry} is a connection string with a credential; keep it in the secret store, not the environment`,
 				urlEntry,
 			);
-		members.push({ id, urlEntry });
+		members.push(
+			plan === undefined ? { id, urlEntry } : { id, urlEntry, plan },
+		);
 	}
 	return { ok: true, value: members };
 }

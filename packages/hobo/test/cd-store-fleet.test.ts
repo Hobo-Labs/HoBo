@@ -76,12 +76,13 @@ describe.skipIf(ADMIN === undefined)("CD journal on a PostgreSQL fleet", () => {
 					tenant: "local",
 				},
 			);
-			expect(opened.fleet?.()).toEqual({
-				writer: "vendor-a",
-				shortfalls: [
-					"backend failure-domain diversity is unverified; distinct member names do not establish independent vendors.",
-				],
-			});
+			expect(opened.fleet?.().writer).toBe("vendor-a");
+			expect(opened.fleet?.().shortfalls).toEqual(
+				expect.arrayContaining([
+					expect.stringContaining("failure-domain diversity is unverified"),
+					expect.stringContaining("fleet has nowhere to keep them"),
+				]),
+			);
 		} finally {
 			await opened.close();
 		}
@@ -118,7 +119,9 @@ describe.skipIf(ADMIN === undefined)("CD journal on a PostgreSQL fleet", () => {
 			readSecret,
 		);
 		try {
-			expect(opened.fleet?.().shortfalls.join(" ")).toMatch(/witness/);
+			expect(opened.fleet?.().shortfalls.join(" ")).toContain(
+				"2 members cannot keep a majority when one fails",
+			);
 		} finally {
 			await opened.close();
 		}

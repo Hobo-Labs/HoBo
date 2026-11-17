@@ -526,6 +526,15 @@ describe("GithubSimulator", () => {
 			},
 		);
 		expect(manual.status).toBe(302);
+		const logUrl = `${sim.baseUrl}/repos/${REPO}/actions/jobs/${job.id}/logs`;
+		const manualRequest = new Request(logUrl, { redirect: "manual" });
+		expect((await sim.fetch(manualRequest)).status).toBe(302);
+		expect(
+			(await sim.fetch(manualRequest, { redirect: "follow" })).status,
+		).toBe(200);
+		await expect(
+			sim.fetch(new Request(logUrl, { redirect: "error" })),
+		).rejects.toThrow(TypeError);
 
 		const repository = await (await api(sim, `/repos/${REPO}`)).json();
 		expect(repository).toMatchObject({

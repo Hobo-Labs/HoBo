@@ -46,8 +46,9 @@ secret-shaped values, but that heuristic cannot identify every possible secret.
 The browser opener receives only an allowlist of desktop and process-location
 variables; loader hooks and arbitrary application variables are excluded.
 Other CI paths still read credentials from the environment. The store is found through
-the committed locator `.hobo/secret-store.json` (which store, its ids, no
-credential). You sign in on the setup page: an Infisical access token from your
+a locator in the owner's HoBo settings
+(`~/.config/hobo/projects/<project>/secret-store.json`, never the repository:
+which store, its ids, no credential). You sign in on the setup page: an Infisical access token from your
 own `infisical login`, the 1Password desktop app (`OP_ACCOUNT`, unlocked with
 your biometrics), or a Bitwarden Secrets Manager machine account token on the
 US or EU cloud. The sign-in's vault buffer is cleared when setup ends, including
@@ -57,6 +58,9 @@ Infisical machine identity with OIDC Auth (`INFISICAL_IDENTITY_ID` in the
 locator) signs in with the job's own OIDC token. Bitwarden has no workload OIDC
 sign-in, so a relay on Bitwarden reads back with its own machine account
 token, kept by the platform; Infisical stays the default for that reason.
+Selecting the Infisical OAuth application sign-in keeps the store read-only
+even if another credential is available. Selecting the egress proxy sends its
+placeholder rather than a token retained from another sign-in choice.
 The intended relay connection reads credentials with its own workload identity
 (OIDC); it still needs an end-to-end observation with the configured store.
 When updating an existing 1Password item, HoBo preserves its other metadata and
@@ -76,6 +80,18 @@ unimplemented host is refused before opening the store. If a host cannot
 serve the owner's kind, setup names a compatible host instead of creating an
 App that would be refused. An invalid organization login supplied in the
 environment is refused before the store or App page is opened.
+
+## Where `hobo ci up` places the relay
+
+`hobo ci plan` and `hobo ci up --what-if` plan against the relay's own Yards
+(`packages/ci-vercel/deploy/yard.ts`): the Vercel project `hobo-ci` (Functions,
+Queues, Cron Jobs, the Marketplace cache) and the Yards its junction joins (the
+config service's secret projection, the non-Vercel caches). Every relay resource
+places there, whatever providers this machine has registered. `hobo ci up`
+delivers the current branch to the project's preview, as `hobo ci deploy` does,
+with the Vercel connection `hobo cd up` keeps in your secret store; the prepare
+step hands only that connection on, in a trusted vault, and ends the store
+sign-in. Production is `hobo ci deploy --target production --sha <commit>`.
 
 ## Continuity
 
