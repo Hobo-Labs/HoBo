@@ -163,14 +163,14 @@ pnpm run architecture:guard
 pnpm test
 pnpm run standards:check
 pnpm run docs:cli-lint
-pnpm run docs:design-lint
+pnpm run docs:links
 pnpm run docs:coverage
 pnpm run docs:okf
 node --import tsx scripts/validate-sdk-contracts.ts
 node --import tsx scripts/validate-deployment-set-delta.ts
 ```
 
-(`scripts/validate-traceability.ts` is descoped from the blocking gate; traceability is covered by `docs:design-lint` and `konsistent`.)
+The documentation link check validates relative Markdown links and heading anchors in the maintained documentation.
 
 The test runner shards tracked test files into bounded `node --test` batches,
 prints full batch output only on failure, and uses smaller single-worker batches
