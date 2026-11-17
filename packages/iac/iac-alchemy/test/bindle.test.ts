@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { inMemoryState, Resource, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
+import { StackContext } from "alchemy/StackContext";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
@@ -272,9 +273,19 @@ describe("explicit Alchemy primitive mapping", () => {
 		};
 		// SAFETY: intentionally malformed mapper results exercise the runtime contract.
 		const program = mapBindleToAlchemy(one, registry as never);
-		await expect(Effect.runPromise(program)).rejects.toThrow(
-			"MAPPING_INCOMPLETE",
-		);
+		await expect(
+			Effect.runPromise(
+				program.pipe(
+					Effect.provideService(StackContext, {
+						name: "Invalid",
+						stage: "test",
+						resources: {},
+						bindings: {},
+						actions: {},
+					}),
+				),
+			),
+		).rejects.toThrow("MAPPING_INCOMPLETE");
 	});
 
 	it("rejects an unmapped kind, unsupported permission, handler, annotation, dangling edge, or cycle before construction", () => {
