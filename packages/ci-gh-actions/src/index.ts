@@ -624,6 +624,23 @@ export {
 	routingSlipJson,
 } from "./routing-slip.js";
 export {
+	exportRunTrace,
+	finishedRunSpans,
+	jobSpanId,
+	jobSpans,
+	journalRunRoutes,
+	ROUTE_LOOKBACK_MS,
+	ROUTE_READ_LIMIT,
+	RUNNER_WAIT_SPAN_NAME,
+	type RunRoutes,
+	RunTraceIngest,
+	routeForJob,
+	runAttemptSpanId,
+	runAttemptTraceId,
+	runSpan,
+	runTraceSpans,
+} from "./run-trace.js";
+export {
 	type ControllerChild,
 	type ControllerDesired,
 	type ControllerLauncher,
