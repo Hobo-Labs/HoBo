@@ -25,7 +25,7 @@ function app() {
 			other: { kind: "queue" },
 			events: { kind: "topic" },
 			db: { kind: "data" },
-			cache: { kind: "kv" },
+			auth: { kind: "auth" },
 		},
 		handlers: {},
 	});
@@ -66,7 +66,7 @@ describe("in-process service emulators", () => {
 			expect(queue.dequeue(queueName)).toEqual([]);
 			expect(graph.queue("other").dequeue(queueName)).toEqual([]);
 			expect(graph.resource("orders").fidelity).toBe("simulated");
-			expect(graph.resource("cache").fidelity).toBe("mocked");
+			expect(graph.resource("auth").fidelity).toBe("mocked");
 			expect(graph.fidelity().prodReadinessClaimable).toBe(false);
 		} finally {
 			await harness.destroy(bindle)();
