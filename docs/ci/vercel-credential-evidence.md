@@ -1,3 +1,9 @@
+---
+type: Evidence
+title: "Vercel credential evidence"
+description: "Read-only workflow checks for Vercel credential availability."
+---
+
 # Vercel credential evidence
 
 The manually dispatched `HoBo Vercel credential evidence (read-only)` workflow

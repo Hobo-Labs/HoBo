@@ -1,3 +1,9 @@
+---
+type: Evidence
+title: "Hosting evidence observation"
+description: "Read-only workflow checks for hosting evidence."
+---
+
 # Hosting evidence observation
 
 The manually dispatched `HoBo hosting evidence (read-only)` workflow checks
