@@ -1,5 +1,16 @@
 # @hobo/broker
 
+The finite TLA+ models in `model/IacBudget.tla` and
+`../dispatcher/model/IacRouting.tla` check admission, fencing, recovery and
+disclosure invariants under their stated host-trust assumptions. Run both with
+`HOBO_TLA_TOOLS=/path/to/tla2tools-1.8.0.jar node --experimental-strip-types scripts/check-iac-models.ts`
+from the repository root. The tool is available from the
+[TLA+ 1.8.0 release](https://github.com/tlaplus/tlaplus/releases/tag/v1.8.0);
+the runner verifies the pinned jar digest. These abstractions complement the implementation's
+bounded tests; they do not prove the external host or provider implementation.
+The runner also removes representative guards in temporary model copies and
+requires the checker to find counterexamples.
+
 ## Hosting budget admission
 
 `admitIacTarget` applies the same durable authority to a provider-neutral IaC
