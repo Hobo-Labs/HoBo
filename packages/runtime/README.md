@@ -37,3 +37,15 @@ The glossary's "Runtime" entry records the same disambiguation.
 
 `WorkflowFailure` preserves an omitted step or cause as `undefined` rather than
 manufacturing placeholder values.
+
+
+## Durable workflows
+
+Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
+
+`resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
+
+Resuming a completed or failed run returns its recorded terminal outcome without
+calling the workflow or appending another event. New failure records preserve
+the failed step when present; older failure records without a step cannot
+reconstruct that detail.

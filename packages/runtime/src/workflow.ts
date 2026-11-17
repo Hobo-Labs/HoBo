@@ -5,6 +5,8 @@
 // tip. The journal it writes is the same `run.*` shape the existing replay
 // engine (`./replay`) verifies, so a completed run is replay-equivalent.
 
+import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
 	type Capability,
 	type CtxEffects,
@@ -17,6 +19,7 @@ import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
 	isJsonObject,
+	isJsonString,
 	type JsonBag,
 	type JsonValue,
 } from "./json.js";
@@ -106,10 +109,12 @@ export interface WorkflowEngineOptions {
 
 export interface WorkflowEngine {
 	readonly store: EventStoreWriter;
-	/** Fresh run: journals `run.Started`, then executes to completion/failure. */
+	/** Fresh run: atomically claims a new journal before running user steps.
+	 * Supply runId when the host must know the ID before a possible crash. */
 	start<A, R>(
 		def: WorkflowDefinition<A, R>,
 		args: A,
+		options?: { runId?: string },
 	): Promise<WorkflowRunHandle<R>>;
 	/** Resume after a host restart: replays the journal, continues from the tip. */
 	resume<A, R>(
@@ -138,8 +143,6 @@ export function createWorkflowEngine(
 	const tokenBroker = options.tokenBroker ?? DEFAULT_TOKEN_BROKER;
 	const actorHost = options.actorHost;
 
-	let runCounter = 0;
-
 	async function execute<A, R>(
 		def: WorkflowDefinition<A, R>,
 		runId: string,
@@ -148,6 +151,51 @@ export function createWorkflowEngine(
 		const streamId = `run/${runId}`;
 		const journal = await store.readStream(streamId);
 		let seq = journal.at(-1)?.seq ?? 0;
+		const started = journal.find((event) => event.type === "run.Started");
+		if (!started || !isRecord(started.data)) {
+			throw new Error(`missing run.Started for ${runId}`);
+		}
+		if (!isDeepStrictEqual(started.data.args ?? null, cloneAsJson(args))) {
+			throw new Error(`workflow input differs from run.Started for ${runId}`);
+		}
+		if (
+			isJsonString(started.data.workflowName) &&
+			started.data.workflowName !== def.name
+		) {
+			throw new Error(`workflow name differs from run.Started for ${runId}`);
+		}
+		const terminal = [...journal]
+			.reverse()
+			.find(
+				(event) =>
+					event.type === "run.Completed" || event.type === "run.Failed",
+			);
+		if (terminal) {
+			const data = cloneAsJson(terminal.data);
+			if (!isRecord(data)) {
+				throw new Error(`invalid ${terminal.type} for ${runId}`);
+			}
+			if (terminal.type === "run.Completed") {
+				// SAFETY: the journal stores the JSON-normalized workflow result.
+				const result = data.result as R | undefined;
+				return { runId, status: "completed", result, error: undefined };
+			}
+			if (!isJsonString(data.message)) {
+				throw new Error(`invalid run.Failed for ${runId}`);
+			}
+			const failure: NonNullable<WorkflowRunHandle<R>["error"]> = {
+				code: "workflow.failed",
+				message: data.message,
+			};
+			if (isJsonString(data.step)) failure.step = data.step;
+			return {
+				runId,
+				status: "failed",
+				result: undefined,
+				error: failure,
+			};
+		}
+		const runSeed = isJsonString(started.data.seed) ? started.data.seed : seed;
 
 		async function appendEvent<T>(type: string, data: T): Promise<number> {
 			const payload = cloneAsJson(data);
@@ -160,14 +208,10 @@ export function createWorkflowEngine(
 			return seq;
 		}
 
-		if (!journal.some((event) => event.type === "run.Started")) {
-			await appendEvent("run.Started", { seed, args });
-		}
-
 		let stepIndex = 0;
 		let sleepIndex = 0;
 		const deterministic = createDeterministicContext({
-			seed,
+			seed: runSeed,
 			mode: "live",
 			eventKey: `${streamId}:orchestration`,
 		});
@@ -292,7 +336,11 @@ export function createWorkflowEngine(
 			capabilities: def.capabilities,
 			effects,
 		});
-		const ctx: WorkflowContext = Object.freeze({ ...base, runId, seed });
+		const ctx: WorkflowContext = Object.freeze({
+			...base,
+			runId,
+			seed: runSeed,
+		});
 
 		try {
 			const result = await def.run(ctx, args);
@@ -300,16 +348,23 @@ export function createWorkflowEngine(
 			return { runId, status: "completed", result, error: undefined };
 		} catch (error) {
 			if (error instanceof WorkflowFailure) {
-				await appendEvent("run.Failed", { message: error.message });
+				const failureData: JsonBag = {
+					message: error.message,
+				};
+				const failure: NonNullable<WorkflowRunHandle<R>["error"]> = {
+					code: error.code,
+					message: error.message,
+				};
+				if (error.step !== undefined) {
+					failureData.step = error.step;
+					failure.step = error.step;
+				}
+				await appendEvent("run.Failed", failureData);
 				return {
 					runId,
 					status: "failed",
 					result: undefined,
-					error: {
-						code: error.code,
-						message: error.message,
-						...(error.step !== undefined ? { step: error.step } : undefined),
-					},
+					error: failure,
 				};
 			}
 			// Any other throw models an infrastructure crash: the journal keeps the
@@ -320,9 +375,25 @@ export function createWorkflowEngine(
 
 	return {
 		store,
-		async start(def, args) {
-			runCounter += 1;
-			const runId = `run-${runCounter}`;
+		async start(def, args, startOptions) {
+			const runId = startOptions?.runId ?? `run-${randomUUID()}`;
+			if (
+				!isJsonString(runId) ||
+				String(runId) !== runId ||
+				runId.length === 0
+			) {
+				throw new TypeError("workflow runId must be a non-empty string");
+			}
+			const streamId = `run/${runId}`;
+			// Claim the new run before any user step. No shared idempotency key is
+			// used here: two fresh callers must not deduplicate into one run.
+			const started = nextEnvelope(
+				streamId,
+				1,
+				"run.Started",
+				cloneAsJson({ seed, args, workflowName: def.name }),
+			);
+			await recordEffect(store, started, 0);
 			return execute(def, runId, args);
 		},
 		async resume(def, runId, args) {

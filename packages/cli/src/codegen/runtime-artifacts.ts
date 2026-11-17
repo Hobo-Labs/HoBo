@@ -304,7 +304,9 @@ export function createGeneratedRuntime(options: GeneratedRuntimeOptions) {
       const journal = await workflowStore.readStream("run/" + workflowRunId);
       const started = journal.find(event => event.type === "run.Started");
       if (started && canonicalJson(jsonValue(objectValue(started.data).args)) !== canonicalJson(parsedInput)) throw new Error("Workflow runId is already bound to different input");
-      const result = await workflowEngine.resume(definition, workflowRunId, parsedInput);
+      const result = started
+        ? await workflowEngine.resume(definition, workflowRunId, parsedInput)
+        : await workflowEngine.start(definition, parsedInput, { runId: workflowRunId });
       if (result.status !== "completed") throw new Error(result.error?.message ?? "Workflow execution failed");
       return { runId, result: result.result, status: result.status };
     },
