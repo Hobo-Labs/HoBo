@@ -323,6 +323,59 @@ describe("durable core hosting financial authority composition", () => {
 		});
 	});
 
+	it("rejects a future snapshot even when an authority adapter returns it", async () => {
+		const fx = fixture();
+		const future = fx.authority.read(new Date(NOW).toISOString());
+		future.observedAt = "2026-10-29T12:00:00.000000900Z";
+		const port: BudgetAdmissionAuthority = {
+			...fx.authority,
+			read: () => future,
+		};
+		const resolve = fx.bridge(port).resolve;
+		if (!resolve) throw new Error("fixture bridge missing resolver");
+		await expect(
+			resolve({
+				budgetId: "hosting",
+				tenantId: "tenant",
+				bindle: deployment("future-snapshot").bindle,
+				objective: "maximize-credits",
+			}),
+		).rejects.toThrow(/financial evidence/u);
+	});
+
+	it("rejects an invalid entitlement date from an authority adapter", async () => {
+		const initial = snapshot();
+		initial.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "credit",
+				unit: "request",
+				periodId: "period",
+				remainingUnits: 10,
+				observedAt: new Date(NOW).toISOString(),
+				validUntil: new Date(VALID).toISOString(),
+			}),
+		];
+		const fx = fixture(initial);
+		const invalid = fx.authority.read(new Date(NOW).toISOString());
+		const bucket = invalid.entitlements[0];
+		if (!bucket) throw new Error("fixture entitlement missing");
+		bucket.observedAt = "2026-09-31T00:00:00Z";
+		const port: BudgetAdmissionAuthority = {
+			...fx.authority,
+			read: () => invalid,
+		};
+		const resolve = fx.bridge(port).resolve;
+		if (!resolve) throw new Error("fixture bridge missing resolver");
+		await expect(
+			resolve({
+				budgetId: "hosting",
+				tenantId: "tenant",
+				bindle: deployment("invalid-entitlement").bindle,
+				objective: "maximize-credits",
+			}),
+		).rejects.toThrow(/timestamp/u);
+	});
+
 	it("adopts the gateway's hold once and forbids another transition from spending that authorization", async () => {
 		const fx = fixture(),
 			deps = deploymentDeps(fx),

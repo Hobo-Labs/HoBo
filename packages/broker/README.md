@@ -99,7 +99,7 @@ an explicit `Z` or numeric offset. Freshness and observation-history checks
 compare the actual instants, including fractional seconds; different spellings
 of the same instant do not create a newer observation. Previously persisted
 ambiguous or invalid dates need reconciliation before replay. The HoBo hosting
-bridge has additional millisecond-based checks that are outside this model.
+bridge uses the same exact comparisons; its trusted clock is in milliseconds.
 
 The [hosting evidence time skill](../../.agents/skills/verify-hosting-evidence-time/SKILL.md)
 checks freshness and observation ordering. Its freshness model explores 256
@@ -121,6 +121,22 @@ stateDiagram-v2
   s1 --> s4: refuse evidence
   s2 --> s4: refuse evidence
   s3 --> s5: accept evidence
+```
+
+The bridge model checks 16 states. This projection hides eight transitions
+between states with the same label; provider timestamps and the host clock
+remain trusted inputs.
+
+```mermaid
+stateDiagram-v2
+  s0: Entitlement observation is current
+  s1: Entitlement observation is in the future
+  s2: Entitlement evidence accepted
+  s3: Entitlement evidence refused
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: accept evidence
+  s1 --> s3: refuse evidence
 ```
 
 ## Budget signal migration and metered preflight
