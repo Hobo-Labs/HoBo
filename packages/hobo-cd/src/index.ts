@@ -1,3 +1,4 @@
+export { CD_CONTINUITY, cdJournalContinuity } from "./continuity.js";
 export {
 	cdYard,
 	type JunctionCredentials,
@@ -6,6 +7,7 @@ export {
 	vercelYard,
 } from "./junction.js";
 export {
+	CD_SETTINGS,
 	DEFAULT_VERCEL_REDIRECT_URI,
 	type PrepareVercelDeps,
 	prepareVercelConnection,

@@ -9,6 +9,7 @@ import {
 	type IacProgram,
 	type IacProvider,
 } from "@hobo/cloud";
+import { createTrustedVault } from "@hobo/core";
 import { createInMemoryActorHost } from "@hobo/data";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import {
@@ -286,7 +287,79 @@ describe("resolveFamilyProject", () => {
 });
 
 describe("provider junction credentials", () => {
-	it("converges with the up that upWith builds from the prepare step's runtimeEnv", async () => {
+	it("wipes credentials if reporting a prepared step throws", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "from-the-store");
+		const runtime = runtimeWith(recordingIac());
+		const dir = await project();
+		const cli = createHoboCli({
+			commands: {
+				cd: createLifecycleFamilyCommand({
+					family: "cd",
+					resolveProject: () => ({
+						ok: true,
+						projectDir: dir,
+						source: "bundled",
+					}),
+					up: createUpCommand({ runtime }),
+					down: createDownCommand({ runtime }),
+					plan: createPlanCommand({ runtime }),
+					prepare: async () => ({
+						kind: "ready",
+						steps: [
+							{ id: "vercel", outcome: "unchanged", detail: "connected" },
+						],
+						credentials: vault,
+					}),
+				}),
+			},
+		});
+		const result = await cli.run(["cd", "up"], {
+			cwd: tmpdir(),
+			onProgress: () => {
+				throw new Error("progress output unavailable");
+			},
+		});
+		expect(result.exitCode).not.toBe(0);
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("wipes credentials if constructing the convergence command throws", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "from-the-store");
+		const runtime = runtimeWith(recordingIac());
+		const dir = await project();
+		const cli = createHoboCli({
+			commands: {
+				cd: createLifecycleFamilyCommand({
+					family: "cd",
+					resolveProject: () => ({
+						ok: true,
+						projectDir: dir,
+						source: "bundled",
+					}),
+					up: createUpCommand({ runtime }),
+					down: createDownCommand({ runtime }),
+					plan: createPlanCommand({ runtime }),
+					prepare: async () => ({
+						kind: "ready",
+						steps: [],
+						credentials: vault,
+					}),
+					upWith: () => {
+						throw new Error("cannot construct convergence");
+					},
+				}),
+			},
+		});
+		const result = await run(cli, ["cd", "up"]);
+		expect(result.exitCode).not.toBe(0);
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("converges with the up that upWith builds from the prepare step's vault, then wipes it", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "from-the-store");
 		const runtime = runtimeWith(recordingIac());
 		const dir = await project();
 		const seen: string[] = [];
@@ -307,10 +380,10 @@ describe("provider junction credentials", () => {
 						steps: [
 							{ id: "vercel", outcome: "unchanged", detail: "connected" },
 						],
-						runtimeEnv: { VERCEL_TOKEN: "from-the-store" },
+						credentials: vault,
 					}),
-					upWith: (env) => {
-						seen.push(Object.keys(env).join(","));
+					upWith: (credentials) => {
+						seen.push(credentials.names().join(","));
 						return createUpCommand({ runtime });
 					},
 				}),
@@ -319,6 +392,8 @@ describe("provider junction credentials", () => {
 		const up = await run(cli, ["cd", "up"]);
 		expect(up.exitCode).toBe(0);
 		expect(seen).toEqual(["VERCEL_TOKEN"]);
+		// The run's credentials end with the run.
+		expect(vault.names()).toEqual([]);
 		// The credential never reaches the result.
 		expect(JSON.stringify(up.envelope)).not.toContain("from-the-store");
 	});

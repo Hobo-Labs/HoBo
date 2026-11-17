@@ -74,6 +74,7 @@ describe("pulumi CLI engine (3-2)", () => {
 
 	it("fails closed with a typed error when the pulumi binary is missing", async () => {
 		const engine = createPulumiCliAutomationEngine({
+			ephemeralState: true,
 			workDir,
 			pulumiBin: "definitely-not-pulumi-xyz",
 			env: {},
@@ -92,6 +93,7 @@ describe("pulumi CLI engine (3-2)", () => {
 
 	it("plugs into the adapter seam with the pinned version", () => {
 		const engine = createPulumiCliAutomationEngine({
+			ephemeralState: true,
 			workDir,
 			pulumiBin: "definitely-not-pulumi-xyz",
 			env: {},
@@ -106,6 +108,7 @@ describe("pulumi CLI engine (3-2)", () => {
 		expect(() => {
 			void new PulumiEngineUnavailableError(PULUMI_CLI_MISSING, "probe");
 			createPulumiCliAutomationEngine({
+				ephemeralState: true,
 				workDir,
 				pulumiBin: "definitely-not-pulumi-xyz",
 				env: {},

@@ -240,6 +240,14 @@ describe("planWorkflow deploy-like jobs", () => {
 		["an environment mapping", "    environment:\n      name: staging\n"],
 		["write-all permissions", "    permissions: write-all\n"],
 		[
+			"repository write permission",
+			"    permissions:\n      contents: write\n",
+		],
+		[
+			"package publishing permission",
+			"    permissions:\n      packages: write\n      contents: read\n",
+		],
+		[
 			"an id-token permission",
 			"    permissions:\n      contents: read\n      id-token: write\n",
 		],
@@ -263,6 +271,16 @@ describe("planWorkflow deploy-like jobs", () => {
 	])("skips a job with %s", (_what, body) => {
 		expect(ready(body)).toEqual(["job skipped uses_secrets"]);
 		expect(ready(body, { includeSecretJobs: true })).toEqual(["job ready"]);
+	});
+
+	it("does not rewrite a job with a write-scoped token by default", () => {
+		const source = oneJob(
+			"    runs-on: ubuntu-24.04\n    permissions:\n      contents: write\n",
+		);
+		expect(applyWorkflowPlan(FILE, source, ["all"])).toMatchObject({
+			source,
+			changed: [],
+		});
 	});
 
 	it.each([
@@ -306,7 +324,7 @@ jobs:
 	it("counts the workflow's permissions for a job that sets none", () => {
 		const source = `on: push
 permissions:
-  id-token: write
+  contents: write
 jobs:
   inherits:
     runs-on: ubuntu-24.04

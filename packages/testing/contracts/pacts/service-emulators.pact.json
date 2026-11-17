@@ -1,0 +1,39 @@
+{
+	"consumer": { "name": "HoboApplicationTestSuite" },
+	"provider": { "name": "HoboServiceEmulators" },
+	"interactions": [
+		{
+			"description": "a queue resource deduplicates repeated delivery and exposes its fidelity",
+			"request": {
+				"method": "POST",
+				"path": "/queue/jobs",
+				"body": { "key": "delivery-1", "message": "hello" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "fidelity": "simulated", "deduped": true, "message": "hello" }
+			}
+		},
+		{
+			"description": "a topic resource delivers a published message to a consumer group",
+			"request": {
+				"method": "POST",
+				"path": "/topic/events",
+				"body": { "message": "hello" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "fidelity": "simulated", "message": "hello" }
+			}
+		},
+		{
+			"description": "a resource of the wrong kind cannot be used as a queue",
+			"request": { "method": "GET", "path": "/queue/events" },
+			"response": {
+				"status": 409,
+				"body": { "code": "HARNESS_EMULATOR_UNAVAILABLE" }
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}
