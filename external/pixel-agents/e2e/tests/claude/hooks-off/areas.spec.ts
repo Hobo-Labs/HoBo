@@ -7,19 +7,6 @@ import {
 } from '../../../helpers/editor';
 import { buildSeedConfig, buildSeedLayout } from '../../../helpers/layout-seed';
 
-/**
- * Single-folder e2e coverage for Areas.
- *
- * The Areas EDITOR (paint tool, CRUD, folder mapping) is gated on
- * workspaceFolders > 0 (EditorToolbar.tsx) and the Show Areas settings toggle on
- * the same gate (App.tsx), so a single-folder window cannot reach them — those
- * are covered in areas-multiroot.spec.ts. What a single folder CAN verify:
- *   - seeded area data loads into OfficeState (areas + areaTiles round-trip), and
- *   - the seeded showAreas state drives the effective overlay gate, and
- *   - the Areas tool button is correctly hidden without workspace folders.
- * Area overlay/labels are canvas-only, so we assert state, not pixels (the same
- * tradeoff the pets fixture makes).
- */
 
 test.describe('Areas (single-folder)', () => {
   test.describe('seeded area data + show-areas state', () => {
@@ -43,7 +30,6 @@ test.describe('Areas (single-folder)', () => {
 
       narrator.step('layout seeded with one "Engineering" area (two tiles) and showAreas on');
 
-      // Area definitions + painted tiles survive the layout load.
       narrator.step('waiting for the seeded "Engineering" area to load into the office');
       await frame.waitForFunction(
         () => ((window as TestHooksWindow).__pixelAgentsTestHooks?.getAreas?.() ?? []).length === 1,
@@ -59,7 +45,6 @@ test.describe('Areas (single-folder)', () => {
       expect(areaTiles).toContainEqual({ col: 3, row: 2, label: 'Engineering' });
       narrator.check('both painted tiles present — (2,2) and (3,2)');
 
-      // The seeded showAreas:true makes the overlay gate effective.
       const showAreas = await frame.evaluate(
         () => (window as TestHooksWindow).__pixelAgentsTestHooks?.getShowAreas?.() ?? false,
       );
@@ -74,7 +59,6 @@ test.describe('Areas (single-folder)', () => {
     const { frame, narrator } = pixelAgents;
     narrator.step('opening the layout editor with no workspace folders configured');
     await enterEditMode(frame);
-    // Single-folder fixture sends no workspaceFolders → the Areas button is gated off.
     await expect(frame.locator('button[title*="Define folder-bound areas"]')).toHaveCount(0);
     narrator.check('no Areas tool button — the tool is gated on having folders to map');
   });
@@ -93,9 +77,6 @@ test.describe('Areas (single-folder)', () => {
       const { frame, narrator } = pixelAgents;
       narrator.step('opening the seeded layout editor to check the Areas tool gate');
       await enterEditMode(frame);
-      // areasAvailable is now (layout.areas?.length ?? 0) > 0 || <folders>, so a
-      // seeded single-folder layout with areas makes the button visible even
-      // without workspace folders.
       await expect(frame.locator('button[title*="Define folder-bound areas"]')).toHaveCount(1);
       narrator.check('the Areas tool button is visible because the seeded layout has an area');
     });

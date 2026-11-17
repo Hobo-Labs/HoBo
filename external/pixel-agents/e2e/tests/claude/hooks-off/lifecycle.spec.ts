@@ -115,25 +115,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     narrator.check('"npm run stale" never appeared — old file abandoned, id unchanged');
   });
 
-  // Heuristic /resume reassignment at agent startup.
-  //
-  // Scenario: user clicks + Agent → terminal runs `claude --session-id <UUID>`,
-  // but the user immediately types /resume (or aborts and runs claude --resume)
-  // so the session generates a DIFFERENT id and writes to <other-id>.jsonl. The
-  // expected <UUID>.jsonl NEVER materializes (withoutAutoInit models this). The
-  // heuristic in adapters/vscode/agentManager.ts:177-211 polls for the expected
-  // file at 1Hz; when pollCount > 10 and the expected file still doesn't exist,
-  // it scans the project dir for any jsonl modified after agent creation and
-  // reassigns the agent to the newest candidate — hence the replacement landing
-  // at t+11s, just past the >10-poll threshold. Note this is a STARTUP fallback:
-  // there is no grace window in heuristic mode (that's hooks-mode vocabulary),
-  // and no conversation-content continuity is asserted — Pixel Agents tracks
-  // session files, not transcript content.
-  //
-  // Coexists with the /clear content-disambiguation heuristic in
-  // fileWatcher.ts:150-152 (which requires the literal "/clear</command-name>"
-  // substring in the new JSONL to claim it as a /clear file); --resume traffic
-  // doesn't carry that substring so the two heuristics route correctly.
   test('/resume at startup reassigns the same agent via JSONL polling @area:lifecycle', async ({
     pixelAgents,
   }) => {
@@ -528,8 +509,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     await expectNoOverlayWithTexts(panelFrame, [INLINE_TEAMMATE_ROLE], 2_000);
     narrator.check('teammate gone within a second — back to count 1');
 
-    // Stability check (heuristic mode): after the 1s team-config polling
-    // removes the teammate, ensure it stays removed under continued polling.
     narrator.step('holding through an 8s stability window — the teammate must stay gone');
     await panelFrame.waitForTimeout(8_000);
     await expectOverlayCount(panelFrame, 1);
@@ -663,8 +642,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     expect(newAgentId).not.toBe(oldAgentId);
     narrator.check('new character with a NEW id — the dismissed session was not re-adopted');
 
-    // Stability check (heuristic mode): cover several external scanner ticks
-    // (3s interval) to ensure the dismissed JSONL is not re-adopted.
     narrator.step('the dismissed file keeps growing — holding across several 3s scanner ticks');
     await frame.waitForTimeout(8_000);
     await expectNoOverlay(frame, 'Running: npm run old-stale', 2_000);
@@ -683,12 +660,6 @@ test.describe('Hooks OFF / lifecycle', () => {
       hooksEnabled: false,
     });
 
-    // Heuristic-mode mirror of the hooks-on external-background-subagent
-    // case: external session with an Agent tool_use that carries
-    // run_in_background=true but the lead has NO teamName. The regression
-    // case is misrouting this to the teammate path, which would produce an
-    // extra "general-purpose" teammate overlay alongside the basic Subtask
-    // sub-character.
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
@@ -710,10 +681,6 @@ test.describe('Hooks OFF / lifecycle', () => {
         .build(),
     });
 
-    // External scanner runs on a 3s interval, so external adoption is bounded by
-    // ~3s for the JSONL to be picked up + JSONL polling time for the tool_use line.
-    // Bumped timeouts cover scanner phase + polling round under load (first scan
-    // can be skipped if the test setup races the scanner's first tick).
     narrator.step(
       'waiting for the run_in_background Agent to render as a basic Subtask (20s window)',
     );
@@ -724,7 +691,6 @@ test.describe('Hooks OFF / lifecycle', () => {
       '"Subtask: Background basic subtask" renders — no "general-purpose" teammate ghost',
     );
 
-    // Stability check: ensure no late-fire misroutes the subagent as a teammate.
     narrator.step('holding to be sure no late fire misroutes it to the teammate path');
     await frame.waitForTimeout(5_000);
     await expectOverlayCount(frame, 1);
@@ -742,10 +708,6 @@ test.describe('Hooks OFF / lifecycle', () => {
       hooksEnabled: false,
     });
 
-    // Cross-cutting invariant from the manual F5 matrix: when a turn ends
-    // (turn_duration record), all active tool overlays must clear back to "Idle".
-    // The test runs in hooks-off so it exercises the JSONL parser path; a regression
-    // here would leave a ghost "Running: ..." overlay even after the turn ended.
     narrator.step('arranging: a Bash tool, then tool_result + a turn_duration record');
     await arrangeNextClaudeInvocation(
       tmpHome,
@@ -764,39 +726,16 @@ test.describe('Hooks OFF / lifecycle', () => {
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
 
-    // First the active overlay should show the bash command.
     narrator.step('waiting for the active tool overlay');
     await expectOverlayVisible(panelFrame, 'Running: npm test', 8_000);
     narrator.check('"Running: npm test" while the tool is active');
 
-    // After tool_result + turn_duration, the overlay must revert to "Idle".
     narrator.step('after the turn_duration, the overlay must revert to Idle');
     await expectOverlayVisible(panelFrame, 'Idle', 8_000);
     await expectNoOverlay(panelFrame, 'Running: npm test', 2_000);
     narrator.check('overlay back to "Idle" — no ghost "Running: npm test" left behind');
   });
 
-  // Heuristic permission and text-idle timers are cancelled when an agent
-  // is closed via the overlay X.
-  //
-  // Invariant: closing an agent must cancel its in-flight 7s permission and
-  // 5s text-idle heuristic timers. If a timer fires after close and the
-  // extension unconditionally broadcasts `agentToolPermission` (or
-  // `agentStatus: waiting`) for the gone agent, the webview's handler runs
-  // playPermissionSound() / playDoneSound() (see
-  // webview-ui/src/hooks/useExtensionMessages.ts:354 and 341), which our
-  // notificationSound.ts instrumentation records in
-  // window.__pixelAgentsTestHooks.playedSounds.
-  //
-  // Uses EXTERNAL agent (no VS Code terminal) so the Pixel Agents panel
-  // stays at full size, dodging the layout race that breaks
-  // closeAgentFromOverlay after an internal spawn (same close-via-overlay
-  // pattern used by the dismissal-cooldown lifecycle test in this file).
-  //
-  // This catches "hard" leaks (broadcast despite missing agent). "Soft" leaks
-  // (timer fires but its callback no-ops because internal state is gone) are
-  // invisible from the webview — they require extension-host instrumentation
-  // and are out of scope here.
   test('heuristic permission timer is cancelled when an agent is closed via overlay @area:cross-cutting', async ({
     pixelAgents,
   }) => {
@@ -838,7 +777,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     await expectOverlayCount(frame, 0, 8_000);
     narrator.check('agent closed — count 0');
 
-    // Reset AFTER close so only post-close sounds count as leaks.
     narrator.step('resetting the recorded-sounds log so only post-close sounds count');
     await frame.evaluate(() => {
       const w = window as Window & {
@@ -847,8 +785,6 @@ test.describe('Hooks OFF / lifecycle', () => {
       if (w.__pixelAgentsTestHooks) w.__pixelAgentsTestHooks.playedSounds = [];
     });
 
-    // Wait longer than the 7s permission timer + cushion. If a timer leaked,
-    // the broadcast lands during this window.
     narrator.step('waiting out the 7s timer window — a leaked timer would fire a bubble/sound now');
     await frame.waitForTimeout(9_000);
 
@@ -864,18 +800,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     narrator.check('count still 0 and no "permission"/"done" sound recorded — timer was cancelled');
   });
 
-  // Sub-agent permission bubble fires when a sub-agent runs a non-exempt
-  // tool with no follow-up data for ~5s. The heuristic permission timer is
-  // active for sub-agents in hooks-OFF mode (same path as parent agents).
-  //
-  // Trigger sequence:
-  // 1. Parent agent does Task tool_use -> sub-character appears.
-  // 2. A progress record arrives with a sub-agent tool_use for a non-exempt
-  //    tool (Bash). transcriptParser registers the sub-tool and starts the
-  //    permission timer.
-  // 3. ~5s with no further sub-agent data -> permission bubble appears on
-  //    both parent and sub-character (per CLAUDE.md "Sub-agent permission
-  //    detection" note).
   test('sub-agent permission bubble fires on stalled non-exempt sub-tool via heuristic timer @area:cross-cutting', async ({
     pixelAgents,
   }) => {
@@ -920,8 +844,6 @@ test.describe('Hooks OFF / lifecycle', () => {
             },
           },
         })
-        // Hold open WAY past the 5s heuristic permission timer so the bubble
-        // has time to appear before mock-claude exits and the terminal closes.
         .holdOpenFor(15_000)
         .build(),
     );
@@ -931,18 +853,11 @@ test.describe('Hooks OFF / lifecycle', () => {
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
 
-    // Sub-character appears once the Task tool_use is parsed.
     narrator.step('waiting for the Subtask sub-character to appear');
     await expectOverlayCount(panelFrame, 2, 12_000);
     await expectOverlayVisible(panelFrame, 'Subtask: permission subtask');
     narrator.check('"Subtask: permission subtask" on screen — count 2');
 
-    // The "Subtask: permission subtask" overlay above already resolves the
-    // moment the Task tool_use is parsed (scenario t=2s), but the heuristic
-    // permission timer only starts when the sub-tool tool_use lands in the
-    // progress record (scenario t=3s). The timer is PERMISSION_TIMER_DELAY_MS
-    // (7s), and broadcast-to-DOM takes another ~300ms (transport + React
-    // render). So this wait must cover: 1s scenario gap + 7s timer + slop.
     narrator.step('waiting out the 7s permission timer for the stalled sub-tool (~8–10s)');
     await expectOverlayVisible(panelFrame, 'Needs approval', 10_000);
     narrator.check('"Needs approval" bubble fired on the stalled sub-tool');
