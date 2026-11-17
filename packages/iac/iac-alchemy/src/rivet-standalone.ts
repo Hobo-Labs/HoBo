@@ -62,7 +62,11 @@ function name(value: unknown): value is string {
 		!/[\p{Cc}]/u.test(value)
 	);
 }
-/** Validate the real actor registry and host-owned source attestation. */
+/**
+ * Validate the registry and host-owned source attestation. Composition code
+ * must supply a verifier for the actual branded actor; structural checks do
+ * not establish the identity of the actor that will run in the pool.
+ */
 export function bindRivetStandaloneSource<
 	Binding extends RivetStandaloneBinding,
 >(

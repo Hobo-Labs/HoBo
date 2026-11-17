@@ -1,16 +1,16 @@
 import { runInNewContext } from "node:vm";
 import {
 	DURABLE_MESSAGING_LIMITS,
-	durableMessagingOperation,
 	type DurableMessagingOutcome,
+	durableMessagingOperation,
 } from "@hobo/core";
 import { describe, expect, it } from "vitest";
+import { validUnknownEnvelope } from "../src/durable-messaging-conformance.js";
 import {
 	snapshotAudit,
 	snapshotLimits,
 	snapshotMutation,
 } from "../src/durable-messaging-shapes.js";
-import { validUnknownEnvelope } from "../src/durable-messaging-conformance.js";
 
 const limits = snapshotLimits(DURABLE_MESSAGING_LIMITS);
 const message = () => ({
@@ -93,7 +93,9 @@ describe("durable messaging conformance response snapshots", () => {
 		const original = delivery();
 		const result = snapshotMutation("consume", input([original]), limits);
 		original.message.payload[0] = 9;
-		original.message.attributes[0]!.value = "changed";
+		const attribute = original.message.attributes[0];
+		if (!attribute) throw new Error("Missing fixture attribute");
+		attribute.value = "changed";
 		expect(result).toMatchObject({
 			status: "committed",
 			value: [
