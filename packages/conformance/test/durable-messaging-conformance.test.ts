@@ -341,12 +341,22 @@ describe("durable messaging conformance runner", () => {
 		129,
 		1.5,
 		Number.NaN,
+		"128",
+		null,
+		false,
+		undefined,
+		1n,
+		Symbol("invalid-limit"),
 	])("fails invalid provider limit %s rather than calling it a smaller profile", async (invalidNameBytes) => {
 		const dispatch = vi.fn(async () => {
 			throw new Error("unexpected dispatch");
 		});
 		const client: DurableMessaging = {
-			limits: { ...DURABLE_MESSAGING_LIMITS, nameBytes: invalidNameBytes },
+			// SAFETY: deliberately malformed primitive provider data exercises the boundary.
+			limits: {
+				...DURABLE_MESSAGING_LIMITS,
+				nameBytes: invalidNameBytes as number,
+			},
 			ensureTopic: dispatch,
 			ensureSubscription: dispatch,
 			publish: dispatch,
@@ -373,28 +383,42 @@ describe("durable messaging conformance runner", () => {
 	it.each([
 		"accessor",
 		"proxy",
+		"value-proxy",
 	] as const)("keeps %s limits unknown without invoking traps", async (mode) => {
 		let traps = 0;
 		const limits = { ...DURABLE_MESSAGING_LIMITS };
 		const unsafe =
-			mode === "proxy"
-				? new Proxy(limits, {
-						getOwnPropertyDescriptor() {
-							traps++;
-							throw new Error("trap");
-						},
-						getPrototypeOf() {
-							traps++;
-							throw new Error("trap");
-						},
-					})
-				: Object.defineProperty(limits, "nameBytes", {
+			mode === "value-proxy"
+				? Object.defineProperty(limits, "nameBytes", {
 						enumerable: true,
-						get() {
-							traps++;
-							throw new Error("trap");
-						},
-					});
+						value: new Proxy(
+							{},
+							{
+								get() {
+									traps++;
+									throw new Error("trap");
+								},
+							},
+						),
+					})
+				: mode === "proxy"
+					? new Proxy(limits, {
+							getOwnPropertyDescriptor() {
+								traps++;
+								throw new Error("trap");
+							},
+							getPrototypeOf() {
+								traps++;
+								throw new Error("trap");
+							},
+						})
+					: Object.defineProperty(limits, "nameBytes", {
+							enumerable: true,
+							get() {
+								traps++;
+								throw new Error("trap");
+							},
+						});
 		const unexpected = async () => {
 			throw new Error("unexpected dispatch");
 		};

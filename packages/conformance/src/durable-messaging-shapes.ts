@@ -508,6 +508,13 @@ export function snapshotLimits(
 	const limit = (key: keyof DurableMessagingLimits) => {
 		const current = field(value, key);
 		if (
+			current === null ||
+			(typeof current !== "number" &&
+				typeof current !== "object" &&
+				typeof current !== "function")
+		)
+			throw new InvalidProviderLimit(key);
+		if (
 			typeof current === "number" &&
 			(!Number.isSafeInteger(current) ||
 				current <= 0 ||
