@@ -12,7 +12,7 @@
 #   bash scripts/setup-agent-tools.sh --no-skillopt         # skip microsoft/SkillOpt install
 #   bash scripts/setup-agent-tools.sh --help                # usage (no install)
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 usage() {
   cat <<'EOF'
@@ -153,10 +153,12 @@ if have gh; then
   fi
   # Agent-safe local git defaults when run inside a checkout (fail-open outside a repo).
   if [ -e .git ] || git rev-parse --git-dir >/dev/null 2>&1; then
-    git config --local rerere.enabled true 2>/dev/null \
-      && echo "  local rerere.enabled=true" || true
-    git config --local remote.pushDefault origin 2>/dev/null \
-      && echo "  local remote.pushDefault=origin" || true
+    if git config --local rerere.enabled true 2>/dev/null; then
+      echo "  local rerere.enabled=true"
+    fi
+    if git config --local remote.pushDefault origin 2>/dev/null; then
+      echo "  local remote.pushDefault=origin"
+    fi
   fi
   echo "  Docs: https://gh.io/stacks  | agent skill: .agents/skills/gh-stack + sdlc stacked-prs"
 else
