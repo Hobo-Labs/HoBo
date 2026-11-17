@@ -50,17 +50,27 @@ export interface FinancialDecision {
 	code: string;
 	message: string;
 	budget?: { evaluation: string; reservation: string } | undefined;
-	reservation?: { reservationId: string } | undefined;
+	reservation?:
+		| { reservationId: string; unboundedExposure?: boolean }
+		| undefined;
+	requestDigest?: string;
 	inventoryHash?: string;
 	modelHash?: string;
 	quoteHash?: string;
 }
 
-/** A successful apply has established a held reservation. */
-export interface HeldFinancialDecision extends FinancialDecision {
-	budget: { evaluation: "allowed"; reservation: "held" };
-	reservation: { reservationId: string };
-}
+/** An admitted apply explicitly distinguishes a bounded hold from a policy-authorized unbounded exposure. */
+export type HeldFinancialDecision = FinancialDecision &
+	(
+		| {
+				budget: { evaluation: "allowed"; reservation: "held" };
+				reservation: { reservationId: string; unboundedExposure?: false };
+		  }
+		| {
+				budget: { evaluation: "bypassed"; reservation: "held" };
+				reservation: { reservationId: string; unboundedExposure: true };
+		  }
+	);
 
 export interface FinancialExpectation {
 	readonly targetId: string;

@@ -150,6 +150,7 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 		const message = read("message");
 		const budgetInput = read("budget");
 		const reservationInput = read("reservation");
+		const requestDigest = read("requestDigest");
 		const inventoryHash = read("inventoryHash");
 		const modelHash = read("modelHash");
 		const quoteHash = read("quoteHash");
@@ -165,6 +166,8 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 			(code !== "" && !name(code)) ||
 			typeof message !== "string" ||
 			message.length > 4096 ||
+			(requestDigest !== undefined &&
+				(typeof requestDigest !== "string" || requestDigest.length > 200)) ||
 			typeof budgetInput !== "object" ||
 			budgetInput === null ||
 			Array.isArray(budgetInput) ||
@@ -191,6 +194,7 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 		)
 			return undefined;
 		let reservationId: string | undefined;
+		let unboundedExposure: boolean | undefined;
 		if (reservationInput !== undefined) {
 			if (
 				typeof reservationInput !== "object" ||
@@ -210,6 +214,15 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 			)
 				return undefined;
 			reservationId = id.value;
+			const unbounded = Object.getOwnPropertyDescriptor(
+				reservationInput,
+				"unboundedExposure",
+			);
+			if (unbounded !== undefined) {
+				if (!("value" in unbounded) || typeof unbounded.value !== "boolean")
+					return undefined;
+				unboundedExposure = unbounded.value;
+			}
 		}
 		if (
 			status === "denied" &&
@@ -226,8 +239,13 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 			message,
 			budget: { evaluation: evaluation.value, reservation: reservation.value },
 		};
-		if (reservationId !== undefined) result.reservation = { reservationId };
+		if (reservationId !== undefined) {
+			result.reservation = { reservationId };
+			if (unboundedExposure !== undefined)
+				result.reservation.unboundedExposure = unboundedExposure;
+		}
 		if (typeof inventoryHash === "string") result.inventoryHash = inventoryHash;
+		if (typeof requestDigest === "string") result.requestDigest = requestDigest;
 		if (typeof modelHash === "string") result.modelHash = modelHash;
 		if (typeof quoteHash === "string") result.quoteHash = quoteHash;
 		return result;
@@ -595,8 +613,18 @@ export function createAlchemyIacProvider<
 						decision.reservation === undefined ||
 						!reservationName(decision.reservation.reservationId) ||
 						decision.reservation.reservationId !== `iac:${requestId}` ||
-						decision.budget?.evaluation !== "allowed" ||
-						decision.budget.reservation !== "held"
+						decision.budget?.reservation !== "held" ||
+						!(
+							(decision.budget.evaluation === "allowed" &&
+								decision.reservation.unboundedExposure !== true) ||
+							(decision.budget.evaluation === "bypassed" &&
+								decision.reservation.unboundedExposure === true &&
+								/^sha256:[a-f0-9]{64}$/u.test(decision.requestDigest ?? "") &&
+								/^sha256:[a-f0-9]{64}$/u.test(decision.inventoryHash ?? "") &&
+								(decision.modelHash === undefined ||
+									decision.modelHash === "") &&
+								(decision.quoteHash === undefined || decision.quoteHash === ""))
+						)
 					) {
 						const reservationId = decision.reservation?.reservationId;
 						if (reservationId !== undefined && reservationName(reservationId)) {
@@ -688,17 +716,22 @@ export function createAlchemyIacProvider<
 								heldReservation,
 							),
 						};
-					return {
-						outputs,
-						admission: {
-							...decision,
-							budget: {
-								evaluation: "allowed" as const,
-								reservation: "held" as const,
-							},
-							reservation: { reservationId: claimedReservationId },
-						},
-					};
+					const admission: HeldFinancialDecision =
+						decision.budget.evaluation === "bypassed"
+							? {
+									...decision,
+									budget: { evaluation: "bypassed", reservation: "held" },
+									reservation: {
+										reservationId: claimedReservationId,
+										unboundedExposure: true,
+									},
+								}
+							: {
+									...decision,
+									budget: { evaluation: "allowed", reservation: "held" },
+									reservation: { reservationId: claimedReservationId },
+								};
+					return { outputs, admission };
 				}),
 			);
 		} catch (error) {
