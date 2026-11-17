@@ -222,6 +222,59 @@ function captureCompositeGuard(
 		);
 	}
 }
+
+function captureFinancialPort<Assessment extends object>(
+	input: FinancialPort<Assessment>,
+): FinancialPort<Assessment> {
+	try {
+		const { assess, admit, revalidate, uncertain } = input;
+		if (
+			typeof assess !== "function" ||
+			typeof admit !== "function" ||
+			typeof revalidate !== "function" ||
+			typeof uncertain !== "function"
+		)
+			throw new Error("invalid financial port");
+		return Object.freeze({
+			assess: assess.bind(input),
+			admit: admit.bind(input),
+			revalidate: revalidate.bind(input),
+			uncertain: uncertain.bind(input),
+		});
+	} catch {
+		throw new AlchemyIacError(
+			"FINANCIAL_AUTHORITY_UNAVAILABLE",
+			"the trusted financial port is malformed or unavailable",
+		);
+	}
+}
+
+function captureRoutePort(
+	input: IacRoutePort | undefined,
+): IacRoutePort | undefined {
+	if (input === undefined) return undefined;
+	try {
+		const { persistence, consumeAttempt, verifyAttempt, runDirect } = input;
+		if (
+			persistence !== "durable-cas" ||
+			typeof consumeAttempt !== "function" ||
+			typeof verifyAttempt !== "function" ||
+			typeof runDirect !== "function"
+		)
+			throw new Error("invalid route port");
+		return Object.freeze({
+			persistence,
+			consumeAttempt: consumeAttempt.bind(input),
+			verifyAttempt: verifyAttempt.bind(input),
+			runDirect: runDirect.bind(input),
+		});
+	} catch {
+		throw new AlchemyIacError(
+			"ROUTE_AUTHORITY_UNAVAILABLE",
+			"the trusted route port is malformed or unavailable",
+		);
+	}
+}
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: admission receipts cross a provider boundary; inspect own data properties before returning an independent domain value. */
@@ -788,8 +841,12 @@ export function createAlchemyIacProvider<
 	const options = captureAlchemyOptions(inputOptions);
 	const target = captureAlchemyTargetOption(options);
 	const composite = captureCompositeGuard(options.composite);
-	const route = options.route;
+	const route = captureRoutePort(options.route);
+	const financial = captureFinancialPort(options.financial);
 	const resolveRoute = options.resolveRoute;
+	const suppliedStack = options.stack;
+	const runtimeLayer = options.runtimeLayer;
+	const runtimeDirectory = options.runtimeDirectory;
 	if (
 		!safeAlchemyStateSegment(target.stackName) ||
 		!safeAlchemyStateSegment(target.stage) ||
@@ -800,10 +857,10 @@ export function createAlchemyIacProvider<
 			"STATE_IDENTITY_INVALID",
 			"stack, stage, and resource identities must be safe and round-trip through Alchemy state storage",
 		);
-	const stack = guardAlchemyStack(options.stack);
+	const stack = guardAlchemyStack(suppliedStack);
 	if (
-		!isAbsolute(options.runtimeDirectory) ||
-		options.stack.stackName !== target.stackName ||
+		!isAbsolute(runtimeDirectory) ||
+		stack.stackName !== target.stackName ||
 		![
 			target.targetId,
 			target.tenantId,
@@ -889,9 +946,9 @@ export function createAlchemyIacProvider<
 		>,
 	): Promise<A> => {
 		const supplied = Effect.scoped(
-			Effect.provide(effect, options.runtimeLayer).pipe(
+			Effect.provide(effect, runtimeLayer).pipe(
 				Effect.provideService(AlchemyContext, {
-					dotAlchemy: options.runtimeDirectory,
+					dotAlchemy: runtimeDirectory,
 					dev: false,
 					adopt: false,
 				}),
@@ -981,7 +1038,7 @@ export function createAlchemyIacProvider<
 	};
 	const markUncertain = async (reservationId: string): Promise<void> => {
 		try {
-			await options.financial.uncertain(reservationId);
+			await financial.uncertain(reservationId);
 		} catch {
 			/* preserve the durable hold */
 		}
@@ -1027,7 +1084,7 @@ export function createAlchemyIacProvider<
 		if (!result.ok) throw result.error;
 		previews.set(key, result.inspected.digest);
 		return {
-			...options.financial.assess(
+			...financial.assess(
 				financialInputs(result.inspected.digest, stableProgram),
 			),
 			diff: {
@@ -1152,7 +1209,7 @@ export function createAlchemyIacProvider<
 					const admitted = yield* Effect.promise(async () => {
 						try {
 							return {
-								decision: await options.financial.admit(
+								decision: await financial.admit(
 									requestId,
 									financialInputs(inspected.digest, program),
 									checkedExpectation,
@@ -1207,6 +1264,8 @@ export function createAlchemyIacProvider<
 						!(
 							(decision.budget.evaluation === "allowed" &&
 								decision.reservation.unboundedExposure !== true &&
+								decision.unpricedPolicyProof === undefined &&
+								decision.reservation.unpricedScopeProof === undefined &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.requestDigest ?? "") &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.inventoryHash ?? "") &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.modelHash ?? "") &&
@@ -1329,7 +1388,7 @@ export function createAlchemyIacProvider<
 					const confirmed = yield* Effect.promise(async () => {
 						try {
 							return (
-								(await options.financial.revalidate(
+								(await financial.revalidate(
 									structuredClone(admission),
 									financialInputs(inspected.digest, program),
 								)) === true

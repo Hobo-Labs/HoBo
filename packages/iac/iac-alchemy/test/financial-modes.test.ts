@@ -10,6 +10,7 @@ import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import type {
 	FinancialDecision,
 	FinancialPlan,
+	FinancialPort,
 	IacProgram,
 	IacRouteOperation,
 	IacRoutePort,
@@ -71,6 +72,18 @@ function fixture(
 			return { output: "ok" };
 		}),
 	);
+	const financial: FinancialPort<{ plan: FinancialPlan }> = {
+		assess: (plan) => ({ plan }),
+		admit: async (requestId) => {
+			admissions++;
+			// SAFETY: this boundary intentionally tests malformed provider receipts.
+			return decision(requestId) as never;
+		},
+		revalidate,
+		uncertain: (id) => {
+			uncertain.push(id);
+		},
+	};
 	const provider = createAlchemyIacProvider({
 		stack,
 		runtimeLayer: Alchemist.layer(),
@@ -102,21 +115,11 @@ function fixture(
 				},
 			],
 		}),
-		financial: {
-			assess: (plan) => ({ plan }),
-			admit: async (requestId) => {
-				admissions++;
-				// SAFETY: this boundary intentionally tests malformed provider receipts.
-				return decision(requestId) as never;
-			},
-			revalidate,
-			uncertain: (id) => {
-				uncertain.push(id);
-			},
-		},
+		financial,
 	});
 	return {
 		provider,
+		financial,
 		applies: () => applies,
 		admissions: () => admissions,
 		uncertain,
@@ -170,22 +173,25 @@ function admitted(
 		inventoryHash: `sha256:${"c".repeat(64)}`,
 		modelHash: evaluation === "allowed" ? `sha256:${"d".repeat(64)}` : "",
 		quoteHash: evaluation === "allowed" ? `sha256:${"e".repeat(64)}` : "",
-		unpricedPolicyProof: {
-			requestDigest: `sha256:${"b".repeat(64)}`,
-			inventoryHash: `sha256:${"c".repeat(64)}`,
-			identity: {
-				tenantId: "tenant",
-				budgetId: "hosting",
-				periodId: "period",
-				policyRevision: "r1",
-			},
-			policyHash: "sha256:policy",
-			effect: "allow",
-			evidenceRef: "host:policy",
-			obligationsSatisfied: true,
-			observedAt: "2026-01-01T00:00:00Z",
-			validUntil: "2027-01-01T00:00:00Z",
-		},
+		unpricedPolicyProof:
+			evaluation === "bypassed"
+				? {
+						requestDigest: `sha256:${"b".repeat(64)}`,
+						inventoryHash: `sha256:${"c".repeat(64)}`,
+						identity: {
+							tenantId: "tenant",
+							budgetId: "hosting",
+							periodId: "period",
+							policyRevision: "r1",
+						},
+						policyHash: "sha256:policy",
+						effect: "allow",
+						evidenceRef: "host:policy",
+						obligationsSatisfied: true,
+						observedAt: "2026-01-01T00:00:00Z",
+						validUntil: "2027-01-01T00:00:00Z",
+					}
+				: undefined,
 		budget: { evaluation, reservation: "held" },
 		reservation,
 	};
@@ -282,6 +288,45 @@ describe("financial admission modes", () => {
 		});
 		expect(route.calls.direct).toBe(0);
 		expect(f.admissions()).toBe(0);
+	});
+
+	it("cannot replace the trusted route verifier after provider construction", async () => {
+		const route = routeFixture({ verify: () => false });
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		route.port.verifyAttempt = () => true;
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ROUTE_PERMIT_UNVERIFIED",
+			requiresReconciliation: true,
+		});
+		expect(f.admissions()).toBe(0);
+		expect(f.applies()).toBe(0);
+	});
+
+	it("cannot replace the trusted financial verifier after provider construction", async () => {
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			() => false,
+		);
+		f.financial.revalidate = () => true;
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_REVALIDATION_FAILED",
+			reservationId: "iac:attempt",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
 	});
 
 	it("requires the persisted generation before claiming a route", async () => {
@@ -727,6 +772,34 @@ describe("financial admission modes", () => {
 		expect(f.uncertain).toEqual(["iac:attempt"]);
 	});
 
+	it.each([
+		"policy",
+		"scope",
+	] as const)("refuses a priced receipt carrying unpriced %s evidence", async (kind) => {
+		const f = fixture((id) => {
+			const priced = admitted(id, "allowed", false);
+			const bypassed = admitted(id, "bypassed", true);
+			if (kind === "policy")
+				return { ...priced, unpricedPolicyProof: bypassed.unpricedPolicyProof };
+			return {
+				...priced,
+				reservation: {
+					...priced.reservation,
+					unpricedScopeProof: bypassed.reservation.unpricedScopeProof,
+				},
+			};
+		});
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_RECEIPT_INVALID",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
 	it("does not silently replace a ranked priced expectation with a bypassed decision", async () => {
 		const f = fixture((id) => admitted(id, "bypassed", true));
 		await f.provider.preview(f.program);
@@ -867,6 +940,8 @@ describe("financial admission modes", () => {
 	it("refuses an unbounded admission whose policy proof is for another tenant", async () => {
 		const f = fixture((id) => {
 			const decision = admitted(id, "bypassed", true);
+			if (decision.unpricedPolicyProof === undefined)
+				throw new Error("proof fixture missing");
 			decision.unpricedPolicyProof.identity.tenantId = "other";
 			return decision;
 		});

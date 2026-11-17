@@ -201,6 +201,8 @@ policy decision and a signed proof that every scoped provider account is
 exclusively owned until settlement and has no shared entitlements. The trusted
 host must fence policy, scope and credential revocation through provider start:
 the authority's check and an external provider call cannot be one transaction.
+Priced admissions cannot carry unpriced policy or scope evidence; contradictory
+receipts retain their hold and require reconciliation.
 
 All attempts use a shared durable route authority, including direct `apply` and
 `destroy` calls. Configure `route` using `createDirectRoutePort` from
@@ -212,6 +214,8 @@ and atomically consumes that permit before financial admission, then verifies
 the still-active attempt again immediately before provider start. Denial,
 success and uncertainty are durably recorded by the route owner. A lost or
 ambiguous acknowledgment requires reconciliation, not a second attempt.
+The adapter captures the host's route and financial callbacks at construction;
+revocation must be enforced by the host authority's durable state.
 The trusted `resolveRoute` callback authenticates the actual tenant, deployment,
 program, resource, operation and durable orchestrator-issued generation against
 the host's operation journal. It returns a stable request ID and a signed
