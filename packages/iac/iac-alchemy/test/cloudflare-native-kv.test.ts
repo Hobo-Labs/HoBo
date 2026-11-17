@@ -40,7 +40,11 @@ import worker, {
 	neutralApplication,
 } from "./fixtures/cloudflare-kv-app.js";
 import { application as writerApplication } from "./fixtures/cloudflare-kv-writer-app.js";
-import { routeFixture, testOperation } from "./route-fixture.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
 const main = join(
 	dirname(fileURLToPath(import.meta.url)),
@@ -791,6 +795,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				currentStack = stack,
 			) =>
 				createAlchemyIacProvider({
+					stateOwnership: testStateOwnership,
 					stack: currentStack,
 					target: currentTarget,
 					runtimeLayer: Alchemist.layer(),
@@ -1095,6 +1100,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			let retiredAndDrained = false;
 			const updateProvider = (updateScope = updateTarget) =>
 				createAlchemyIacProvider({
+					stateOwnership: testStateOwnership,
 					stack: writerStack,
 					target: updateScope,
 					runtimeLayer: Alchemist.layer(),

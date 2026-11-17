@@ -19,7 +19,11 @@ import {
 } from "../src/cloudflare-native-kv.js";
 import { withCloudflareEventualKv } from "../src/cloudflare-runtime.js";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
-import { routeFixture, testOperation } from "./route-fixture.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
 it("keeps same-named KV resources in different Bindles isolated in one real Alchemy stack", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "hobo-kv-isolation-"));
@@ -151,6 +155,7 @@ it("keeps same-named KV resources in different Bindles isolated in one real Alch
 			],
 		});
 		const provider = createAlchemyIacProvider({
+			stateOwnership: testStateOwnership,
 			stack,
 			target,
 			runtimeLayer: Alchemist.layer(),
