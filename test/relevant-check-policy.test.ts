@@ -84,7 +84,9 @@ function isScriptsLane(check: Check) {
 test("Pixel Agents changes select their own server and webview suites", () => {
 	const selected = (file: string) =>
 		plan([file], { staged: true })
-			.checks.filter((check) => check.command === "npm")
+			.checks.filter(
+				(check) => check.command === "npm" && check.args[2] === "test",
+			)
 			.map((check) => check.args[1]);
 	assert.deepEqual(
 		selected("external/pixel-agents/server/src/agentRuntime.ts"),
@@ -101,6 +103,24 @@ test("Pixel Agents changes select their own server and webview suites", () => {
 		"external/pixel-agents/server",
 		"external/pixel-agents/webview-ui",
 	]);
+	for (const file of [
+		"external/pixel-agents/core/asyncapi.yaml",
+		"external/pixel-agents/core/src/messages.ts",
+		"external/pixel-agents/scripts/generate-messages.ts",
+	]) {
+		assert.deepEqual(selected(file), [
+			"external/pixel-agents/server",
+			"external/pixel-agents/webview-ui",
+		]);
+		assert.ok(
+			plan([file], { staged: true }).checks.some(
+				(check) =>
+					check.command === "npm" &&
+					check.args.join(" ") ===
+						"--prefix external/pixel-agents run test:protocol",
+			),
+		);
+	}
 	assert.deepEqual(selected("external/pixel-agents/README.md"), []);
 });
 

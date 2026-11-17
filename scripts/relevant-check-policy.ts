@@ -626,8 +626,20 @@ export function selectRelevantChecks(
 	const pixelManifestChanged = files.some(
 		(file) => file === "external/pixel-agents/package.json",
 	);
+	const pixelProtocolFiles = new Set([
+		"external/pixel-agents/core/asyncapi.yaml",
+		"external/pixel-agents/core/src/messages.ts",
+		"external/pixel-agents/scripts/generate-messages.ts",
+		"external/pixel-agents/scripts/validate-asyncapi.mjs",
+		"external/pixel-agents/scripts/protocol-check.test.mjs",
+		"external/pixel-agents/.prettierrc.json",
+		"external/pixel-agents/eslint.config.mjs",
+		"external/pixel-agents/eslint-rules/pixel-agents-rules.mjs",
+	]);
+	const pixelProtocolChanged =
+		pixelManifestChanged || files.some((file) => pixelProtocolFiles.has(file));
 	if (
-		pixelManifestChanged ||
+		pixelProtocolChanged ||
 		files.some(
 			(file) =>
 				pixelSource(file, "core") ||
@@ -649,7 +661,7 @@ export function selectRelevantChecks(
 		});
 	}
 	if (
-		pixelManifestChanged ||
+		pixelProtocolChanged ||
 		files.some(
 			(file) => pixelSource(file, "core") || pixelSource(file, "webview-ui"),
 		)
@@ -665,6 +677,14 @@ export function selectRelevantChecks(
 			],
 			reason:
 				"Pixel Agents shared protocol and webview changes must pass their own tests",
+		});
+	}
+	if (pixelProtocolChanged) {
+		checks.push({
+			command: "npm",
+			args: ["--prefix", "external/pixel-agents", "run", "test:protocol"],
+			reason:
+				"Pixel Agents protocol changes must validate the schema and keep generated messages current",
 		});
 	}
 
