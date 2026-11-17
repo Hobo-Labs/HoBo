@@ -1,6 +1,7 @@
 import { create, fromJson, toJson } from "@bufbuild/protobuf";
 import {
 	type QuoteScenario,
+	QuoteScenarioSchema,
 	type QuoteVector,
 	type TargetPricingAvailability,
 	TargetPricingAvailabilitySchema,
@@ -11,7 +12,12 @@ import {
 	type TargetPricingResource,
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard } from "./catalog.js";
-import { isBoundedPricingInput, type JsonValue, stableHash } from "./json.js";
+import {
+	isBoundedPricingInput,
+	isExactProtoMessage,
+	type JsonValue,
+	stableHash,
+} from "./json.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
@@ -63,13 +69,80 @@ export function targetPricingUnavailable(
 export function targetPricingModel(
 	input: TargetPricingModelInput,
 ): TargetPricingAvailability {
+	if (!isBoundedPricingInput(input))
+		throw new TypeError("invalid or unbounded target pricing model");
+	let stable: TargetPricingModelInput;
+	try {
+		stable = structuredClone(input);
+	} catch {
+		throw new TypeError("invalid target pricing model");
+	}
+	if (!validModelInput(stable))
+		throw new TypeError(
+			"target pricing model contains unsupported or malformed data",
+		);
 	return create(TargetPricingAvailabilitySchema, {
 		state: {
 			case: "model",
-			value: { ...input, bindings: [...input.bindings] },
+			value: { ...stable, bindings: [...stable.bindings] },
 		},
 	});
 }
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: developer model objects cross a runtime input boundary before protobuf normalization. */
+function validModelInput(input: TargetPricingModelInput): boolean {
+	const validKeys = <T extends object>(
+		value: T,
+		allowed: readonly string[],
+		typeName: string,
+	) => {
+		const fields = Object.getOwnPropertyDescriptors(value);
+		const metadata = fields.$typeName?.value;
+		const unknown = fields.$unknown?.value;
+		return (
+			(!Object.hasOwn(fields, "$typeName") || metadata === typeName) &&
+			(!Object.hasOwn(fields, "$unknown") ||
+				(Array.isArray(unknown) && unknown.length === 0)) &&
+			Object.keys(fields).every(
+				(key) =>
+					allowed.includes(key) || key === "$typeName" || key === "$unknown",
+			)
+		);
+	};
+	try {
+		return (
+			input !== null &&
+			typeof input === "object" &&
+			validKeys(
+				input,
+				["modelId", "revision", "planDigest", "scenario", "bindings"],
+				"hobo.pricing.v1.TargetPricingModel",
+			) &&
+			typeof input.modelId === "string" &&
+			typeof input.revision === "string" &&
+			typeof input.planDigest === "string" &&
+			Array.isArray(input.bindings) &&
+			input.bindings.every(
+				(binding) =>
+					binding !== null &&
+					typeof binding === "object" &&
+					validKeys(
+						binding,
+						["resourceId", "candidateIndex"],
+						"hobo.pricing.v1.TargetPricingBinding",
+					) &&
+					typeof binding.resourceId === "string" &&
+					Number.isSafeInteger(binding.candidateIndex) &&
+					binding.candidateIndex >= 0 &&
+					binding.candidateIndex <= 0xffff_ffff,
+			) &&
+			isExactProtoMessage(QuoteScenarioSchema, input.scenario)
+		);
+	} catch {
+		return false;
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 export function parseTargetPricingAvailability(
 	input: JsonValue,
@@ -106,6 +179,11 @@ export function quoteTargetPricing(
 		return refuse(
 			"PRICING_INPUT_TOO_LARGE",
 			"pricing input exceeds the bounded data limits",
+		);
+	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, availability))
+		return refuse(
+			"PRICING_MODEL_INVALID",
+			"pricing model contains unsupported or malformed data",
 		);
 	if (
 		!validName(inventory.targetId) ||

@@ -36,6 +36,13 @@ shared credits and commitments are counted once. An unavailable model remains
 explicit through `targetPricingUnavailable`. Inventory completeness and
 developer-supplied usage still need independent verification at admission.
 
+The target model builder validates the bounded generated scenario and binding
+data before protobuf normalization: unknown fields, nonempty unknown wire
+fields, accessors, exotic prototypes and data that would be discarded are
+rejected. Use generated messages or strict JSON parsing, and omit optional
+fields rather than setting them to `undefined`. A malformed declared model is
+an error, never an unavailable-pricing opt-in.
+
 ## Batch 2 surface
 
 `QuoteEngine.quote(scenario)` (also available as `quoteScenario(scenario)`)
