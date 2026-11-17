@@ -1,6 +1,7 @@
-import { create } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import {
 	type ActualCharge,
+	ActualChargeSchema,
 	type Money,
 	MoneySchema,
 	type ReconciliationRecorded,
@@ -17,8 +18,10 @@ import { type FocusImportRejection, importFocusRow } from "./focus-import.js";
 import {
 	type FocusBillingRow,
 	focusBillingRowsToJson,
+	focusBillingRowToJson,
 	type ProviderBillingFetchRequest,
 	type ProviderBillingPort,
+	parseFocusBillingRow,
 	type SyntheticProviderCredentials,
 } from "./provider-port.js";
 
@@ -47,6 +50,7 @@ export type VarianceFact = Readonly<{
 
 export type BillingSyncSnapshot = Readonly<{
 	schema: "hobo.pricing.billing-sync.snapshot/v1";
+	hashVersion: 2;
 	syncAt: string;
 	snapshotHash: string;
 	completeness: "complete" | "partial";
@@ -75,7 +79,6 @@ export type BillingSyncInput = Readonly<{
 	port: ProviderBillingPort;
 	credentials: SyntheticProviderCredentials;
 	knownActualIds?: ReadonlySet<string>;
-	allowPartialSnapshot?: boolean;
 }>;
 
 function reject(
@@ -85,8 +88,19 @@ function reject(
 	return { code, message };
 }
 
+function isUtcTimestamp(value: string): boolean {
+	if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(value))
+		return false;
+	const timestamp = Date.parse(value);
+	return (
+		Number.isFinite(timestamp) &&
+		new Date(timestamp).toISOString().slice(0, 19) === value.slice(0, 19)
+	);
+}
+
 function sumBilled(
 	actuals: readonly ActualCharge[],
+	defaultCurrency: string,
 ): Money | BillingSyncRejection {
 	let currency: string | undefined;
 	let total = parseDecimal("0");
@@ -116,7 +130,7 @@ function sumBilled(
 	}
 	return create(MoneySchema, {
 		decimal: formatDecimal(total),
-		currency: currency ?? "USD",
+		currency: currency ?? defaultCurrency,
 	});
 }
 
@@ -170,6 +184,25 @@ function varianceAgainstQuote(
 export async function runBillingSync(
 	input: BillingSyncInput,
 ): Promise<BillingSyncResult> {
+	const quote = input.quotedIncrementalBilled;
+	if (
+		!/^[A-Z]{3}$/u.test(quote.currency) ||
+		parseDecimal(quote.decimal) === undefined
+	) {
+		return reject("INVALID_SYNC_INPUT", "quoted amount or currency is invalid");
+	}
+	const periodStart = Date.parse(input.periodStart);
+	const periodEnd = Date.parse(input.periodEnd);
+	if (
+		!input.reservationId.trim() ||
+		!input.eventId.trim() ||
+		!isUtcTimestamp(input.syncAt) ||
+		!isUtcTimestamp(input.periodStart) ||
+		!isUtcTimestamp(input.periodEnd) ||
+		periodStart > periodEnd
+	) {
+		return reject("INVALID_SYNC_INPUT", "sync identity or period is invalid");
+	}
 	const fetchRequest: ProviderBillingFetchRequest = {
 		syncAt: input.syncAt,
 		periodStart: input.periodStart,
@@ -180,64 +213,88 @@ export async function runBillingSync(
 	const imported: ActualCharge[] = [];
 	const variances: VarianceFact[] = [];
 	const seen = new Set(input.knownActualIds ?? []);
-	let snapshotCompleteness: "complete" | "partial" = "complete";
+	const snapshotCompleteness = "complete" as const;
 
 	for (const row of rows) {
-		if (row.completeness === "partial" && !input.allowPartialSnapshot) {
+		const parsed = parseFocusBillingRow(focusBillingRowToJson(row));
+		if (parsed === undefined) {
+			return reject("INVALID_SYNC_INPUT", "provider billing row is incomplete");
+		}
+		if (parsed.completeness === "partial") {
 			return reject(
 				"INCOMPLETE_PROVIDER_BILLING",
-				`sync refused partial provider row ${row.providerChargeId}`,
+				`sync refused partial provider row ${parsed.providerChargeId}`,
 			);
 		}
-		if (row.completeness === "partial") {
-			snapshotCompleteness = "partial";
+		const chargeStart = Date.parse(parsed.chargePeriodStart);
+		const chargeEnd = Date.parse(parsed.chargePeriodEnd);
+		if (
+			!isUtcTimestamp(parsed.chargePeriodStart) ||
+			!isUtcTimestamp(parsed.chargePeriodEnd) ||
+			chargeStart > chargeEnd
+		) {
+			return reject("INVALID_SYNC_INPUT", "provider billing period is invalid");
 		}
-		if (seen.has(row.providerChargeId)) {
+		if (!/^[A-Z]{3}$/u.test(parsed.currency)) {
+			return reject(
+				"INVALID_SYNC_INPUT",
+				"provider billing currency is invalid",
+			);
+		}
+		const mapped = importFocusRow(parsed, input.syncAt);
+		if ("code" in mapped) return mapped;
+		if (mapped.billedCost?.currency !== quote.currency) {
+			return reject(
+				"CROSS_CURRENCY",
+				"actual charge and quote currencies differ",
+			);
+		}
+		if (seen.has(parsed.providerChargeId)) {
 			variances.push({
 				kind: "duplicate-suppressed",
-				providerChargeId: row.providerChargeId,
-				currency: row.currency,
+				providerChargeId: parsed.providerChargeId,
+				currency: parsed.currency,
 			});
 			continue;
 		}
-		const mapped = importFocusRow(row, input.syncAt);
-		if ("code" in mapped) return mapped;
 		seen.add(mapped.id);
 		imported.push(mapped);
 	}
 
-	if (snapshotCompleteness === "partial" && !input.allowPartialSnapshot) {
-		return reject(
-			"INCOMPLETE_PROVIDER_BILLING",
-			"snapshot completeness is partial",
-		);
-	}
-
-	const total = sumBilled(imported);
+	const total = sumBilled(imported, quote.currency);
 	if ("code" in total) return total;
 
 	variances.push(
 		...varianceAgainstQuote(total, input.quotedIncrementalBilled, imported),
 	);
 
-	const snapshotBody: JsonValue = {
-		schema: "hobo.pricing.billing-sync.snapshot/v1",
-		syncAt: input.syncAt,
-		completeness: snapshotCompleteness,
-		period: { start: input.periodStart, end: input.periodEnd },
-		importedIds: imported.map((charge) => charge.id).sort(),
-		variances,
-	};
-	const snapshotHash = stableHash(snapshotBody);
+	const actualCharges = imported.map((charge) =>
+		toJson(ActualChargeSchema, charge, { alwaysEmitImplicit: true }),
+	);
 	const reconciliationPayload: JsonValue = {
+		hashVersion: 2,
 		eventId: input.eventId,
 		occurredAt: input.syncAt,
 		reservationId: input.reservationId,
-		actualChargeIds: imported.map((charge) => charge.id).sort(),
+		actualCharges,
 	};
 	const reconciliationHash = stableHash(reconciliationPayload);
+	const snapshotBody: JsonValue = {
+		schema: "hobo.pricing.billing-sync.snapshot/v1",
+		hashVersion: 2,
+		syncAt: input.syncAt,
+		completeness: snapshotCompleteness,
+		period: { start: input.periodStart, end: input.periodEnd },
+		imported: actualCharges,
+		variances,
+		reconciliationHash,
+		eventId: input.eventId,
+		reservationId: input.reservationId,
+	};
+	const snapshotHash = stableHash(snapshotBody);
 
 	const reconciliation = create(ReconciliationRecordedSchema, {
+		hashVersion: 2,
 		eventId: input.eventId,
 		occurredAt: input.syncAt,
 		reservationId: input.reservationId,
@@ -248,6 +305,7 @@ export async function runBillingSync(
 	return {
 		snapshot: {
 			schema: "hobo.pricing.billing-sync.snapshot/v1",
+			hashVersion: 2,
 			syncAt: input.syncAt,
 			snapshotHash,
 			completeness: snapshotCompleteness,

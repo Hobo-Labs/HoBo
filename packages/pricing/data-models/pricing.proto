@@ -526,4 +526,5 @@ message ReconciliationRecorded {
   string reservation_id = 3;
   repeated ActualCharge actual_charges = 4;
   string reconciliation_hash = 5;
+  uint32 hash_version = 6;
 }

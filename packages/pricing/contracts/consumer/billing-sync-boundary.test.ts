@@ -34,15 +34,19 @@ describe("pricing billing sync consumer boundary", () => {
 		const interactions = pact.interactions;
 		if (!Array.isArray(interactions))
 			throw new Error("PACT interactions are missing");
-		expect(interactions).toHaveLength(1);
+		expect(interactions).toHaveLength(2);
 
 		for (const value of interactions) {
 			const interaction = object(value);
+			expect(interaction.type).toBe("Synchronous/Messages");
 			const request = object(interaction.request);
-			const response = object(interaction.response);
-			expect(request.method).toBe("POST");
-			expect(request.path).toBe("/pricing/v1/billing-sync");
-			const body = object(request.body);
+			expect(request.contentType).toBe("application/json");
+			const responses = interaction.response;
+			if (!Array.isArray(responses) || responses.length !== 1)
+				throw new Error("PACT response is missing");
+			const response = object(responses[0]);
+			expect(response.contentType).toBe("application/json");
+			const body = object(request.contents);
 			const rows = body.rows;
 			if (!Array.isArray(rows)) throw new Error("rows missing");
 			const focusRows = rows.map((row) => {
@@ -56,7 +60,7 @@ describe("pricing billing sync consumer boundary", () => {
 				periodStart: String(body.periodStart),
 				periodEnd: String(body.periodEnd),
 				reservationId: String(body.reservationId),
-				eventId: "evt-pact-billing-sync",
+				eventId: String(body.eventId),
 				quotedIncrementalBilled: create(MoneySchema, {
 					decimal: String(quoted.decimal),
 					currency: String(quoted.currency),
@@ -64,19 +68,7 @@ describe("pricing billing sync consumer boundary", () => {
 				port: fixtureProviderPort(focusRows),
 				credentials: createSyntheticProviderCredentials(),
 			});
-			if ("code" in result) {
-				throw new Error(`${result.code}: ${result.message}`);
-			}
-			const expected = object(response.body);
-			expect(result.snapshot.schema).toBe(String(expected.schema));
-			expect(result.snapshot.syncAt).toBe(String(expected.syncAt));
-			expect(result.snapshot.completeness).toBe(String(expected.completeness));
-			expect(result.snapshot.imported).toHaveLength(
-				Number(expected.importedCount),
-			);
-			expect(result.reconciliation.reconciliationHash).toMatch(
-				/^sha256:[0-9a-f]{64}$/,
-			);
+			expect(result).toMatchObject(object(response.contents));
 		}
 	});
 });

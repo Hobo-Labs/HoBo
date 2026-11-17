@@ -587,6 +587,7 @@ package data_models
 	reservationId: string & !=""
 	actualCharges: [...#ActualCharge]
 	reconciliationHash: #Digest
+	hashVersion?: 0 | 2
 }
 
 #SandboxAllowance: {
