@@ -1,17 +1,17 @@
 {
-  "gameUrl": "http://127.0.0.1:34263/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A40673",
-  "apiUrl": "http://127.0.0.1:40673",
+  "gameUrl": "http://127.0.0.1:45379/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A36969",
+  "apiUrl": "http://127.0.0.1:36969",
   "checks": [
     "PASS test seam ready",
     "PASS connection authorized present — conn=1",
     "PASS traffic rate > 0 — traffic=0.4",
     "PASS bootstrap inactive",
     "PASS imgdiff boot — match",
-    "PASS canvas dark ink near Bo — dark=5010",
+    "PASS canvas dark ink near Bo — dark=4976",
     "PASS no console errors",
     "PASS connection bay zone — zone=connectionBay",
     "PASS sheet opens — kind=connection.create",
-    "PASS imgdiff connection bay — match",
+    "PASS imgdiff connection bay — baseline refreshed (RMS=13.39 ≤ 25)",
     "PASS anim harness bo.idle — bo.idle",
     "PASS anim harness bo.walk.east — bo.walk.east",
     "PASS anim harness bo.walk.west — bo.walk.west",
@@ -26,20 +26,20 @@
     "playwright-testing"
   ],
   "recordings": [
-    "/home/codex/.grok/worktrees/repos-hobo/2026-07-27-391c87d8/packages/control-yard/public/shots/recordings/01-yard-loop.mp4",
-    "/home/codex/.grok/worktrees/repos-hobo/2026-07-27-391c87d8/packages/control-yard/public/shots/recordings/02-connection-sheet.mp4",
-    "/home/codex/.grok/worktrees/repos-hobo/2026-07-27-391c87d8/packages/control-yard/public/shots/recordings/03-bo-walk-east-west.mp4",
-    "/home/codex/.grok/worktrees/repos-hobo/2026-07-27-391c87d8/packages/control-yard/public/shots/recordings/04-rail-cost-doctor.mp4"
+    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/01-yard-loop.mp4",
+    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/02-connection-sheet.mp4",
+    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/03-bo-walk-east-west.mp4",
+    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/04-rail-cost-doctor.mp4"
   ],
   "initialState": {
     "scene": "Yard",
     "ready": true,
     "seed": 42,
-    "frameCount": 22,
+    "frameCount": 13,
     "zone": "activeRailTrack",
     "bo": {
-      "x": 248,
-      "y": 569,
+      "x": 224,
+      "y": 582,
       "animationId": "bo.walk.east",
       "facing": "west"
     },
@@ -53,10 +53,10 @@
     "hazards": []
   },
   "pixelSample": {
-    "dark": 5010,
+    "dark": 4976,
     "bo": {
-      "x": 620,
-      "y": 363,
+      "x": 621,
+      "y": 364,
       "animationId": "bo.walk.east",
       "facing": "west"
     }

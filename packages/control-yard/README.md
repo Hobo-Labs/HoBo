@@ -12,6 +12,15 @@ Skills applied from `ref_assets/` builderpack:
 
 ## How to run
 
+Evidence capture uses the repository's Playwright dependency. Install its
+headless Chromium and video encoder with
+`pnpm exec playwright install --only-shell chromium`. It also needs `ffmpeg`,
+`ffprobe`, and `uv` on `PATH` for video conversion, validation, and image
+comparison. To use a system Chromium instead, set `CHROME_PATH` to its
+executable path; Playwright's video encoder is still required
+(`pnpm exec playwright install ffmpeg`). The demo
+serves its [Chewy font](assets/CREDITS.md) locally.
+
 ```bash
 # 1) Asset pipeline (gamedev-assets)
 pnpm --filter @hobo/control-yard run assets:sizes

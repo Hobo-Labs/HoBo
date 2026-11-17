@@ -6,6 +6,11 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
+import {
+	captureErrorsSchema,
+	captureFailureMessages,
+} from "./capture-failures.mts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SHOTS = join(ROOT, "public", "shots");
@@ -55,12 +60,47 @@ if (!existsSync(MANIFEST)) {
 	process.exit(1);
 }
 
-const manifest = JSON.parse(readFileSync(MANIFEST, "utf8")) as {
-	generatedAt?: string;
-	files?: Record<string, { bytes: number; sha256: string }>;
-};
+const manifestSchema = z.object({
+	errors: z.unknown().optional(),
+	files: z
+		.record(z.string(), z.object({ bytes: z.number(), sha256: z.string() }))
+		.optional(),
+});
+const parsedManifest = manifestSchema.safeParse(
+	JSON.parse(readFileSync(MANIFEST, "utf8")),
+);
+if (!parsedManifest.success) {
+	fail("evidence-manifest.json has invalid fields");
+	process.exit(1);
+}
+const manifest = parsedManifest.data;
 
-if (!manifest.files || typeof manifest.files !== "object") {
+// Historical evidence may not have an errors field. When either the manifest
+// or its hashed visual report does record failures, neither may be ignored.
+let reportErrors = captureErrorsSchema.safeParse(undefined);
+const reportPath = join(SHOTS, "visual-report.json");
+if (existsSync(reportPath)) {
+	try {
+		const report = z
+			.object({ errors: z.unknown().optional() })
+			.safeParse(JSON.parse(readFileSync(reportPath, "utf8")));
+		if (!report.success) {
+			fail("visual-report.json is not an object");
+		} else {
+			reportErrors = captureErrorsSchema.safeParse(report.data.errors);
+		}
+	} catch {
+		fail("visual-report.json is not valid JSON");
+	}
+}
+for (const error of captureFailureMessages(
+	captureErrorsSchema.safeParse(manifest.errors),
+	reportErrors,
+)) {
+	fail(error);
+}
+
+if (!manifest.files) {
 	fail("evidence-manifest.json missing files map");
 }
 

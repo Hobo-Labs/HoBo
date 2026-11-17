@@ -28,7 +28,6 @@ import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createControlApiServer } from "@hobo/control-api";
-import { must } from "@hobo/core/total-access";
 import {
 	connectionAuthorize,
 	connectionCreate,
@@ -39,10 +38,10 @@ import {
 	stationRailsPublish,
 	stationUp,
 } from "@hobo/management";
-
-const playwright = await import(
-	"/home/codex/.local/lib/node_modules/playwright/index.mjs"
-);
+import { chromium, type LaunchOptions } from "playwright";
+import { z } from "zod";
+import type { YardTestState } from "../src/test-seam.js";
+import { sampleBoInk } from "./sample-bo-ink.mts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = join(ROOT, "public");
@@ -64,17 +63,18 @@ for (const d of [SHOTS, RECORDINGS, BASELINES, EXP_EVIDENCE]) {
 	mkdirSync(d, { recursive: true });
 }
 
-const MIME: Record<string, string> = {
-	".html": "text/html; charset=utf-8",
-	".js": "text/javascript; charset=utf-8",
-	".css": "text/css; charset=utf-8",
-	".json": "application/json",
-	".png": "image/png",
-	".jpg": "image/jpeg",
-	".jpeg": "image/jpeg",
-	".svg": "image/svg+xml",
-	".gif": "image/gif",
-};
+const MIME = new Map([
+	[".html", "text/html; charset=utf-8"],
+	[".js", "text/javascript; charset=utf-8"],
+	[".css", "text/css; charset=utf-8"],
+	[".json", "application/json"],
+	[".png", "image/png"],
+	[".jpg", "image/jpeg"],
+	[".jpeg", "image/jpeg"],
+	[".svg", "image/svg+xml"],
+	[".ttf", "font/ttf"],
+	[".gif", "image/gif"],
+]);
 
 function staticHandler(base: string) {
 	return (req: IncomingMessage, res: ServerResponse) => {
@@ -94,7 +94,7 @@ function staticHandler(base: string) {
 			}
 			const ext = extname(file);
 			res.writeHead(200, {
-				"content-type": MIME[ext] || "application/octet-stream",
+				"content-type": MIME.get(ext) || "application/octet-stream",
 				"cache-control": "no-store",
 			});
 			res.end(readFileSync(file));
@@ -134,11 +134,7 @@ function webmToMp4(webm: string, mp4: string): void {
 	}
 }
 
-function imgdiff(
-	baseline: string,
-	current: string,
-	out: string,
-): { ok: boolean; detail: string } {
+function imgdiff(baseline: string, current: string, out: string) {
 	if (!existsSync(baseline)) {
 		copyFileSync(current, baseline);
 		return { ok: true, detail: "baseline created" };
@@ -188,11 +184,10 @@ function sleep(ms: number) {
 async function advance(page: import("playwright").Page, n: number) {
 	for (let i = 0; i < n; i++) {
 		await page.evaluate(() => {
-			(
-				window as unknown as {
-					__TEST__: { commands: { advanceFrame: () => void } };
-				}
-			).__TEST__.commands.advanceFrame(16.67);
+			const seam = window.__TEST__;
+			if (!seam || !("sceneKey" in seam))
+				throw new Error("yard test seam is missing");
+			seam.commands.advanceFrame(16.67);
 		});
 	}
 	await page.waitForTimeout(50);
@@ -209,7 +204,9 @@ const pub = stationRailsPublish(ctx, {
 	name: "prod",
 	version: "1.0.0",
 });
-const hash = String((pub.data as { contentHash: string }).contentHash);
+if (!pub.ok || !pub.data)
+	throw new Error(`could not publish rail: ${pub.message}`);
+const hash = String(pub.data.contentHash);
 stationRailsApprove(ctx, { stationId: "station:local", hashOrId: hash });
 stationRailsActivate(ctx, { stationId: "station:local", hashOrId: hash });
 connectionCreate(ctx, {
@@ -235,11 +232,13 @@ const staticSrv = createServer((req, res) => {
 await new Promise<void>((resolve) =>
 	staticSrv.listen(0, "127.0.0.1", () => resolve()),
 );
-const staticAddr = staticSrv.address();
-if (!staticAddr || typeof staticAddr === "string") {
+const staticAddr = z
+	.object({ port: z.number() })
+	.safeParse(staticSrv.address());
+if (!staticAddr.success) {
 	throw new Error("static bind failed");
 }
-const origin = `http://127.0.0.1:${staticAddr.port}`;
+const origin = `http://127.0.0.1:${staticAddr.data.port}`;
 const gameUrl = `${origin}/?test=1&seed=42&api=${encodeURIComponent(api.url)}`;
 const animUrl = `${origin}/anim-test.html`;
 
@@ -247,23 +246,49 @@ console.log("HOBO_HOME", hoboHome);
 console.log("API", api.url);
 console.log("GAME", gameUrl);
 
-const browser = await playwright.chromium.launch({ headless: true });
-const report: Record<string, unknown> = {
+// By default Playwright selects its installed browser for this platform.
+// CHROME_PATH allows an explicit system browser when the caller needs one.
+const chromePath = process.env.CHROME_PATH?.trim();
+const launchOptions: LaunchOptions = { headless: true };
+if (chromePath) launchOptions.executablePath = chromePath;
+const browser = await chromium.launch(launchOptions).catch(async (error) => {
+	// The servers are already listening. A failed launch must not leave the
+	// capture command hanging or its temporary Station data behind.
+	try {
+		await api.close();
+	} finally {
+		await new Promise<void>((resolve) => staticSrv.close(() => resolve()));
+		rmSync(hoboHome, { recursive: true, force: true });
+	}
+	throw error;
+});
+type CaptureReport = {
+	gameUrl: string;
+	apiUrl: string;
+	checks: string[];
+	errors: string[];
+	skillStack: string[];
+	recordings: string[];
+	initialState?: YardTestState;
+	pixelSample?: ReturnType<typeof sampleBoInk>;
+	consoleErrors?: string[];
+};
+const report: CaptureReport = {
 	gameUrl,
 	apiUrl: api.url,
-	checks: [] as string[],
-	errors: [] as string[],
+	checks: [],
+	errors: [],
 	skillStack: ["gamedev-assets", "phaser-gamedev", "playwright-testing"],
-	recordings: [] as string[],
+	recordings: [],
 };
 
 function check(name: string, ok: boolean, detail?: string) {
 	const line = ok
 		? `PASS ${name}${detail ? ` — ${detail}` : ""}`
 		: `FAIL ${name}${detail ? ` — ${detail}` : ""}`;
-	(report.checks as string[]).push(line);
+	report.checks.push(line);
 	console.log(line);
-	if (!ok) (report.errors as string[]).push(line);
+	if (!ok) report.errors.push(line);
 }
 
 const videoDirs: string[] = [];
@@ -309,7 +334,7 @@ async function withRecording(
 		} else {
 			webmToMp4(webmPath, mp4);
 		}
-		(report.recordings as string[]).push(mp4);
+		report.recordings.push(mp4);
 		console.log("recorded", mp4, statSync(mp4).size, "bytes");
 		return mp4;
 	}
@@ -329,42 +354,34 @@ try {
 			page.on("pageerror", (err) => consoleErrors.push(String(err)));
 
 			await page.goto(gameUrl, { waitUntil: "networkidle", timeout: 30000 });
+			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {
+				timeout: 20000,
+			});
 			await page.waitForFunction(
-				() =>
-					(window as unknown as { __TEST__?: { ready?: boolean } }).__TEST__
-						?.ready === true,
-				null,
-				{ timeout: 20000 },
-			);
-			await page.waitForFunction(
-				() =>
-					((window as unknown as { __TEST__?: { frameCount?: number } })
-						.__TEST__?.frameCount ?? 0) >= 8,
+				() => (window.__TEST__?.frameCount ?? 0) >= 8,
 				null,
 				{ timeout: 10000 },
 			);
 
-			const st = await page.evaluate(() =>
-				(
-					window as unknown as { __TEST__: { state: () => unknown } }
-				).__TEST__.state(),
-			);
+			const st = await page.evaluate(() => {
+				const seam = window.__TEST__;
+				if (!seam || !("sceneKey" in seam))
+					throw new Error("yard test seam is missing");
+				return seam.state();
+			});
 			report.initialState = st;
-			check("test seam ready", Boolean((st as { ready: boolean }).ready));
+			check("test seam ready", st.ready);
 			check(
 				"connection authorized present",
-				(st as { connCount: number }).connCount >= 1,
-				`conn=${(st as { connCount: number }).connCount}`,
+				st.connCount >= 1,
+				`conn=${st.connCount}`,
 			);
 			check(
 				"traffic rate > 0",
-				(st as { trafficRate: number }).trafficRate > 0,
-				`traffic=${(st as { trafficRate: number }).trafficRate}`,
+				st.trafficRate > 0,
+				`traffic=${st.trafficRate}`,
 			);
-			check(
-				"bootstrap inactive",
-				(st as { bootstrapActive: boolean }).bootstrapActive === false,
-			);
+			check("bootstrap inactive", st.bootstrapActive === false);
 
 			await page.screenshot({
 				path: join(SHOTS, "01-boot-live.png"),
@@ -387,11 +404,10 @@ try {
 				"activeRailTrack",
 			] as const) {
 				await page.evaluate((z) => {
-					(
-						window as unknown as {
-							__TEST__: { commands: { selectZone: (x: string) => void } };
-						}
-					).__TEST__.commands.selectZone(z);
+					const seam = window.__TEST__;
+					if (!seam || !("sceneKey" in seam))
+						throw new Error("yard test seam is missing");
+					seam.commands.selectZone(z);
 				}, zone);
 				await advance(page, 45);
 				await sleep(400);
@@ -405,29 +421,7 @@ try {
 				.locator("#yard")
 				.screenshot({ path: join(SHOTS, "canvas-only.png") });
 
-			const pixelSample = await page.evaluate(() => {
-				const c = document.getElementById("yard") as HTMLCanvasElement;
-				const ctx = must(c.getContext("2d"), "c.getContext('2d')");
-				const st = (
-					window as unknown as {
-						__TEST__: { state: () => { bo: { x: number; y: number } } };
-					}
-				).__TEST__.state();
-				const x0 = Math.max(0, st.bo.x - 50);
-				const y0 = Math.max(0, st.bo.y - 120);
-				const data = ctx.getImageData(x0, y0, 100, 130).data;
-				let dark = 0;
-				for (let i = 0; i < data.length; i += 4) {
-					if (
-						must(data[i], "data[i]") +
-							must(data[i + 1], "data[i + 1]") +
-							must(data[i + 2], "data[i + 2]") <
-						90
-					)
-						dark++;
-				}
-				return { dark, bo: st.bo };
-			});
+			const pixelSample = await page.evaluate(sampleBoInk);
 			report.pixelSample = pixelSample;
 			check(
 				"canvas dark ink near Bo",
@@ -450,35 +444,23 @@ try {
 		{ width: 1400, height: 920 },
 		async (page) => {
 			await page.goto(gameUrl, { waitUntil: "networkidle", timeout: 30000 });
-			await page.waitForFunction(
-				() =>
-					(window as unknown as { __TEST__?: { ready?: boolean } }).__TEST__
-						?.ready === true,
-				null,
-				{ timeout: 20000 },
-			);
+			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {
+				timeout: 20000,
+			});
 			await page.evaluate(() => {
-				(
-					window as unknown as {
-						__TEST__: { commands: { selectZone: (z: string) => void } };
-					}
-				).__TEST__.commands.selectZone("connectionBay");
+				const seam = window.__TEST__;
+				if (!seam || !("sceneKey" in seam))
+					throw new Error("yard test seam is missing");
+				seam.commands.selectZone("connectionBay");
 			});
 			await advance(page, 80);
 			await sleep(800);
-			const stBay = await page.evaluate(() =>
-				(
-					window as unknown as {
-						__TEST__: {
-							state: () => {
-								zone: string;
-								sheetOpen: boolean;
-								sheetKind: string | null;
-							};
-						};
-					}
-				).__TEST__.state(),
-			);
+			const stBay = await page.evaluate(() => {
+				const seam = window.__TEST__;
+				if (!seam || !("sceneKey" in seam))
+					throw new Error("yard test seam is missing");
+				return seam.state();
+			});
 			check(
 				"connection bay zone",
 				stBay.zone === "connectionBay",
@@ -502,11 +484,10 @@ try {
 				.catch(() => {});
 			await sleep(600);
 			await page.evaluate(() => {
-				(
-					window as unknown as {
-						__TEST__: { commands: { dismissSheet: () => void } };
-					}
-				).__TEST__.commands.dismissSheet();
+				const seam = window.__TEST__;
+				if (!seam || !("sceneKey" in seam))
+					throw new Error("yard test seam is missing");
+				seam.commands.dismissSheet();
 			});
 			await sleep(400);
 		},
@@ -518,49 +499,41 @@ try {
 		{ width: 720, height: 560 },
 		async (page) => {
 			await page.goto(animUrl, { waitUntil: "networkidle", timeout: 30000 });
-			await page.waitForFunction(
-				() =>
-					(window as unknown as { __TEST__?: { ready?: boolean } }).__TEST__
-						?.ready === true,
-				null,
-				{ timeout: 15000 },
-			);
+			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {
+				timeout: 15000,
+			});
 			for (const anim of ["bo.idle", "bo.walk.east", "bo.walk.west"] as const) {
 				await page.evaluate((id) => {
-					(
-						window as unknown as {
-							__TEST__: { commands: { showAnim: (a: string) => void } };
-						}
-					).__TEST__.commands.showAnim(id);
+					const seam = window.__TEST__;
+					if (!seam || !("animId" in seam))
+						throw new Error("animation test seam is missing");
+					seam.commands.showAnim(id);
 				}, anim);
 				// let many frames play for visible motion in video
 				await sleep(anim === "bo.idle" ? 900 : 1600);
 				const path = join(SHOTS, `anim-${anim.replace(/\./g, "-")}.png`);
 				await page.screenshot({ path });
-				const stA = await page.evaluate(() =>
-					(
-						window as unknown as {
-							__TEST__: { state: () => { animId: string } };
-						}
-					).__TEST__.state(),
-				);
+				const stA = await page.evaluate(() => {
+					const seam = window.__TEST__;
+					if (!seam || !("animId" in seam))
+						throw new Error("animation test seam is missing");
+					return seam.state();
+				});
 				check(`anim harness ${anim}`, stA.animId === anim, stA.animId);
 			}
 			// east then west back-to-back for flip proof
 			await page.evaluate(() => {
-				(
-					window as unknown as {
-						__TEST__: { commands: { showAnim: (a: string) => void } };
-					}
-				).__TEST__.commands.showAnim("bo.walk.east");
+				const seam = window.__TEST__;
+				if (!seam || !("animId" in seam))
+					throw new Error("animation test seam is missing");
+				seam.commands.showAnim("bo.walk.east");
 			});
 			await sleep(1200);
 			await page.evaluate(() => {
-				(
-					window as unknown as {
-						__TEST__: { commands: { showAnim: (a: string) => void } };
-					}
-				).__TEST__.commands.showAnim("bo.walk.west");
+				const seam = window.__TEST__;
+				if (!seam || !("animId" in seam))
+					throw new Error("animation test seam is missing");
+				seam.commands.showAnim("bo.walk.west");
 			});
 			await sleep(1200);
 		},
@@ -572,45 +545,30 @@ try {
 		{ width: 1400, height: 920 },
 		async (page) => {
 			await page.goto(gameUrl, { waitUntil: "networkidle", timeout: 30000 });
-			await page.waitForFunction(
-				() =>
-					(window as unknown as { __TEST__?: { ready?: boolean } }).__TEST__
-						?.ready === true,
-				null,
-				{ timeout: 20000 },
-			);
+			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {
+				timeout: 20000,
+			});
 			for (const [zone, shot] of [
 				["policyBoard", "04-policy-board.png"],
 				["costBooth", "03-cost-booth.png"],
 				["errorBunker", "05-error-bunker.png"],
 			] as const) {
 				await page.evaluate((z) => {
-					(
-						window as unknown as {
-							__TEST__: {
-								commands: {
-									dismissSheet: () => void;
-									selectZone: (x: string) => void;
-								};
-							};
-						}
-					).__TEST__.commands.dismissSheet();
-					(
-						window as unknown as {
-							__TEST__: { commands: { selectZone: (x: string) => void } };
-						}
-					).__TEST__.commands.selectZone(z);
+					const seam = window.__TEST__;
+					if (!seam || !("sceneKey" in seam))
+						throw new Error("yard test seam is missing");
+					seam.commands.dismissSheet();
+					seam.commands.selectZone(z);
 				}, zone);
 				await advance(page, 70);
 				await sleep(700);
 				await page.screenshot({ path: join(SHOTS, shot), fullPage: true });
-				const stZ = await page.evaluate(() =>
-					(
-						window as unknown as {
-							__TEST__: { state: () => { zone: string } };
-						}
-					).__TEST__.state(),
-				);
+				const stZ = await page.evaluate(() => {
+					const seam = window.__TEST__;
+					if (!seam || !("sceneKey" in seam))
+						throw new Error("yard test seam is missing");
+					return seam.state();
+				});
 				check(`${zone} zone`, stZ.zone === zone, `zone=${stZ.zone}`);
 			}
 			await page.screenshot({
@@ -622,7 +580,7 @@ try {
 	);
 } catch (err) {
 	const msg = err instanceof Error ? err.message : String(err);
-	(report.errors as string[]).push(msg);
+	report.errors.push(msg);
 	console.error(err);
 } finally {
 	await browser.close();
@@ -660,9 +618,7 @@ for (const rel of evidenceFiles) {
 	if (rel === "evidence-manifest.json") continue;
 	const abs = join(SHOTS, rel);
 	if (!existsSync(abs)) {
-		(report.errors as string[]).push(
-			`missing evidence file after capture: ${rel}`,
-		);
+		report.errors.push(`missing evidence file after capture: ${rel}`);
 		continue;
 	}
 	files[rel] = { bytes: statSync(abs).size, sha256: sha256File(abs) };
@@ -738,7 +694,7 @@ for (const rel of syncList) {
 
 console.log("report", join(SHOTS, "visual-report.json"));
 console.log("manifest", manifestPath);
-if ((report.errors as string[]).length > 0) {
+if (report.errors.length > 0) {
 	console.error("EVIDENCE CAPTURE FAILED");
 	process.exit(1);
 }
