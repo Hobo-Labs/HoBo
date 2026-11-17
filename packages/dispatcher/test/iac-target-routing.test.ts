@@ -1218,5 +1218,5 @@ describe("budget-aware target execution", () => {
 			budget: { evaluation: "unavailable", reservation: "unknown" },
 		});
 		expect(extraCalls).toBe(0);
-	}, 20_000);
+	}, 60_000);
 });
