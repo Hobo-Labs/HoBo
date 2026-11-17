@@ -9,40 +9,89 @@ block its deployment gate.
 
 HoBo's fleet can offer local verification with
 [basecamp/gh-signoff](https://github.com/basecamp/gh-signoff) when no runner
-tier is available. From an up-to-date branch:
+tier is available. After verifying the live policy as described below, run
+from an up-to-date branch:
 
 ```sh
 gh extension install basecamp/gh-signoff
 git fetch origin
 git merge origin/main
 git push
-pnpm ci:attest fleet --local-signoff
+pnpm ci:attest fleet --local-signoff --policy-current
 ```
 
 Run these from the HoBo checkout, with `gh` authenticated for the target
 repository, permission to write commit statuses, and `git user.name` set. The
 last command reads the fleet routing slip and GitHub's queue. It prefers the
-normal fleet, local runner and GitHub-hosted routes. Only when all enabled
-runner tiers are known unavailable does it run local checks and call
-`gh signoff`; unknown availability means wait. If hosted jobs fail before
-queueing, an operator who observed that outage can pass `--github-unavailable`
-alongside `--local-signoff`; a recently observed hosted pickup still wins.
+normal fleet, enabled overflow, local runner and GitHub-hosted routes. It reads
+the routing policy and provider declarations from the committed base, not the
+pull request's unmerged files. Only when all enabled runner tiers are known
+unavailable does it run local checks and call `gh signoff`; unknown availability
+means wait. Before passing `--policy-current`, inspect the live account and
+offers with an account credential authorized for `policy:read`: use the
+authenticated `GET /v1/accounts/self/policy` endpoint on the configured relay,
+or `createCiRelayClient().getPolicy()`. Keep credentials out of shell history
+and output. That response does **not** expose the separately stored desired
+policy, its tenant, or the routing pin.
+
+Also verify the currently effective desired policy from the relay operator's
+authoritative store and the routing policy loaded by the running daemons. The
+desired policy is stored as `ci-policy:<account-id>`; the daemon reads its
+checkout's routing policy at startup. The account endpoint and `hobo ci status`
+or mesh output alone cannot establish those values. Compare the actual enabled
+providers and routing with the enabled base entries for every relevant account
+and environment, including account, tenant, provider identity and kind, runner
+label, execution backend, and pin. An enabled Kubernetes ARC scale set must
+match a live offer with the `gh-actions` backend; an opaque or mismatched
+backend cannot establish current inventory. A disabled base entry does not
+cover an enabled live offer.
+The flag is your assertion that this comparison is current; it does not detect
+policy drift automatically. If any of those values cannot be verified, omit it:
+available runner choices are still reported, but local signoff waits. The exact
+base used for this decision must still match the remote before the local run
+and before signoff.
+
+The coordinator interprets routing and provider inventory, not the complete
+project policy schema. Malformed inventory, unsupported provider references,
+or environment templates leave availability unknown. Unrelated policy fields
+do not establish capacity; the live comparison remains necessary even when the
+inventory is readable.
+
+Enabled Actions overflow labels need current queue evidence: a recent timely
+pickup chooses that runner; a stalled queue or slow pickup counts as refusal;
+an empty queue is unknown. The committed policies of all declared environments
+are considered conservatively. Enabled isolated or sandbox compute has no
+independently observable Actions label here, so its availability remains unknown
+and prevents local signoff until that provider is excluded by verified policy.
+If hosted jobs fail before queueing, an operator who observed that outage can
+pass `--github-unavailable`
+alongside `--local-signoff`; a recent timely hosted pickup still wins.
 An unpinned fleet slip is checked against current queue evidence for its exact
 runner label. A busy-fleet slip permits a young backlog, but still requires a
-recent timely pickup. If the slip cannot be read, the queue rule decides;
-if the queue cannot be read, the command waits. GitHub's separate PR batch
-admission still applies to Actions jobs.
+recent timely pickup. A slip naming an enrolled local runner rejects the fleet
+but does not prove the local runner is available; the queue decides for it.
+An unpinned GitHub slip refuses the fleet but does not rule out a newly enrolled
+local runner; current queue evidence decides local availability. Slips whose
+tier and runner label disagree are ignored.
+If the slip cannot be read, the queue rule decides; if the queue cannot be read,
+the command waits. GitHub's separate PR batch admission still applies to
+Actions jobs.
 The command reports a runner choice but does not dispatch, relabel, cancel, or
 complete an Actions job. A missing container engine leaves container-dependent
-jobs and the PR impact group out of the local signoff.
+jobs out of the local signoff. The PR impact group is currently omitted even
+when Docker is available because its shadow classifier depends on a GitHub
+variable unavailable to the local runner.
 
 These are `signoff/hobo-ci/local/<event>/<job>` commit statuses, not GitHub
 Actions job results. They need GitHub API access and a pushed commit, but no
 Actions runner or relay. They do not satisfy HoBo's existing required Actions
-checks or a merge queue's generated commit by themselves; an administrator
-would need to configure the intended status requirements. See the
+checks or the merge queue's generated commit. Using local evidence to unblock
+merges would require a separately reviewed protection and trust policy bound to
+the commit being merged. See the
 [signed local runs runbook](../ci/RUNNER-QUEUE.md#signed-local-runs-ci-on-your-own-machine)
-for the exact scope, prerequisites, and limitations.
+for the exact scope, prerequisites, and limitations, and the
+[selection contract](../../docs/ci/local-signoff-contract.md) for edge cases
+and validation evidence.
 
 HoBo can dispatch its existing companion workflow to an owned Linux x64 dev
 machine. The machine hosts one job at a time. The persistent service registers

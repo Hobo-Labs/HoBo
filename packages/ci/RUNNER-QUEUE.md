@@ -428,33 +428,51 @@ git push                                         # only now: the run that starts
 | `pnpm ci:attest publish` | Checks the record first, the way a workflow would, against the keys trusted at the record's own base commit, and pushes nothing that would be refused. It then commits the record as `attestations/<tree>.json` on the orphan branch `ci-attestations` and pushes it. It uses git plumbing in a temporary index and pushes from a scratch bare repository that borrows your checkout's objects, so your checkout, index, HEAD and refs, including remote-tracking refs, are not touched. A push that loses a race is rebuilt on the new tip and retried, five times at most. The remote's URL never appears in its output, and credentials in any URL git reports are masked. |
 | `pnpm ci:attest verify` | The same check the workflows make, with git in place of the GitHub API. |
 | `pnpm ci:attest signoff` | After pushing HEAD, verifies this machine's signed record for the current head and the current remote base, then calls `gh signoff` to post one commit status per covered job. This path does not require a runner, a relay, an entry in the base's trusted attestor list, or the `ci-attestations` branch. |
-| `pnpm ci:attest fleet --local-signoff` | Checks the fleet's current routing slip and queue, keeps available runner routes first, and runs local checks followed by `gh signoff` only when all enabled runner tiers are known unavailable. |
+| `pnpm ci:attest fleet --local-signoff --policy-current` | Checks the fleet's current routing slip and queue, keeps available runner routes first, and runs local checks followed by `gh signoff` only when all enabled runner tiers are known unavailable. |
 
 #### Sign off without an Actions runner
 
 The workflow reuse path above still needs a GitHub-hosted machine for its route
-job. To let the fleet decision use local signoff when runners are unavailable,
+job. Before using `--policy-current`, compare enabled live providers, their
+execution backends, and routing with the trusted base in every relevant account
+and environment. An authenticated `GET /v1/accounts/self/policy` (`policy:read`)
+or `createCiRelayClient().getPolicy()` shows account offers, but not the desired
+policy, its tenant, or the routing pin. Obtain those from the relay operator's
+`ci-policy:<account-id>` store and the routing policy loaded by the running
+daemons. An ARC scale set must match a `gh-actions` offer. Status and mesh alone
+do not establish this comparison. If any value is unknown, omit
+`--policy-current` and local signoff waits. The [local guide](../ci-gh-actions/LOCAL-DEVELOPMENT.md#local-signoff-in-fleet-routing)
+describes the comparison in detail.
+
+To let the fleet decision use local signoff when runners are unavailable,
 install the GitHub CLI extension from
 [basecamp/gh-signoff](https://github.com/basecamp/gh-signoff), update the branch,
-push the tested commit, and run the local fleet decision:
+push the tested commit, and run the local fleet decision after that comparison:
 
 ```bash
 gh extension install basecamp/gh-signoff
 git fetch origin && git merge origin/main
 git push
-pnpm ci:attest fleet --local-signoff
+pnpm ci:attest fleet --local-signoff --policy-current
 ```
 
-The command respects the committed pin and a usable routing slip, then uses the
-same pickup and queue limits as runner routing. A known available fleet,
-enrolled local runner, or GitHub-hosted runner stays ahead of local signoff.
+The command respects the committed pin and uses a usable routing slip with the
+same pickup and queue limits as runner routing. A slip naming the local runner
+rejects the fleet but does not by itself prove that the local runner is taking
+jobs; the queue must establish that. A known available fleet, enrolled local
+runner, or GitHub-hosted runner stays ahead of local signoff.
 When no option is observed available, an unknown runner state or failed queue
 read causes `waiting`, not an assumed outage. `--local-signoff` opts this
 invocation into executing the fallback; without it the decision waits when all
-runners are unavailable. For hosted jobs that fail before entering the queue,
+runners are unavailable. The policy assertion does not change runner selection:
+healthy and pinned runners remain selectable without it. It cannot turn an
+unknown provider into an unavailable one or override an
+available runner. The base SHA used to read the policy must still be the tested
+base when checks run and when statuses are published; if it moves, the command
+stops and the operator must update and retry. For hosted jobs that fail before entering the queue,
 an operator who has observed the outage may add `--github-unavailable`; this
-only supplies missing hosted availability and does not displace an observed
-hosted pickup or another available runner. A selected runner is reported;
+only supplies missing hosted availability and does not displace a recent,
+timely hosted pickup or another available runner. A selected runner is reported;
 the existing workflow still owns its own routing. The command never relabels,
 dispatches, cancels, or completes an already queued Actions job.
 
@@ -463,16 +481,42 @@ invoke `pnpm ci:attest signoff` directly. This publishes statuses for that
 record without changing the fleet's runner decision.
 
 `gh` needs authentication with permission to write commit statuses in the
-target repository; `git user.name` must be set. Confirm the repository selected
-by `gh` (`gh repo view`) before publishing. The extension refuses an unpushed
+target repository; `git user.name` must be set. The command verifies that the
+repository selected by `gh` matches the base remote, pins `GH_HOST` and
+`GH_REPO` to that identity, and checks GitHub's live base tip before it calls
+the extension. A mismatch or unavailable identity/base check refuses signoff.
+The extension refuses an unpushed
 commit; this command does not use its force option. A separate
 `pnpm ci:attest signoff --event=merge_group` reports only jobs run for that
 simulated event. `--base=upstream/main` selects another remote branch; signoff
 must be able to read its live tip and refuses when it differs from the tested
 base. The record must match the exact current head and tree, the checkout must
 be clean, its signature must verify with this machine's local key, and each
-reported job must match its workflow definition. A failed retry removes the
-previous local record for that tree.
+reported job must have command evidence for the requested event, including at
+least one command for every matrix shard, and must state that each selected
+step ran individually. Old records without that evidence must be rerun for
+signoff; their existing workflow-reuse verification remains compatible. A
+failed retry removes the previous local record for that tree.
+
+For each job to be signed, the local job description (including skipped steps
+and release-image guards), its full workflow job, and workflow-level settings
+must match the trusted base. A skipped repository-local action must be one of
+the explicitly reviewed actions and neither it nor its listed helpers or
+configuration inputs may differ from the base. The list is maintained in
+`SKIPPED_ACTION_DEPENDENCIES` in `scripts/ci/local-attest.mts`; it covers the
+checkout, preflight, cache and trace actions, including preflight's toolchain
+files, memory and runner-contract helpers, and lockfiles. Unknown local actions
+fail closed. A changed workflow job, job description, skipped action, or listed
+dependency therefore needs normal CI until that change reaches the trusted
+base. A change to another job alone does not disqualify an unchanged job. A job
+depending on GitHub variables, secrets, or the PR number that are unavailable
+locally is also omitted. This currently includes `pr_gate_validation` because
+its shadow classifier uses a repository variable; the related PR impact jobs
+are therefore omitted together, even when Docker is available. The fleet command checks these restrictions
+per job before running and reports omissions; direct `signoff` refuses a record
+containing a disqualified job. To publish other jobs directly, rerun with
+`--skip-job=<id>` for each disqualified job. The PR impact gate's jobs remain
+an all-or-nothing group.
 
 Statuses are named `signoff/hobo-ci/local/<event>/<job>`. For example,
 `signoff/hobo-ci/local/pull_request/ci-guard` reports that job alone. An omitted
@@ -500,7 +544,7 @@ to this repository's workflows.
 - **What is covered.** In `hobo-ci.yml`: `pr_gate_validation`, `workspace_tests` (every shard), `pr_affected`, `pr-offpath`, `artifact-trust`, `ci-guard`, `secret-scan`. In `release-hobo.yml`: `release-contract`, but only when no release image is affected. If `release-oci-affected.mts` reports an image, the local run leaves that job out of the record and it runs in CI as usual.
 - **What is not covered** and still runs in CI: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route job and both gates. The cold dev loop was considered and left out: its own install step narrows `node_modules` to a few packages, which would break the shared checkout the other jobs run in, and its offline copy of a fully installed tree is several gigabytes.
 - **The same commands.** `scripts/ci/attested-jobs.json` holds each covered job's steps as the workflow writes them: the script, the `if:`, the `env:`, in order. The local runner reads only that file, never a workflow. `scripts/test/attested-jobs.test.ts` fails when a workflow job and its description differ in any step. Steps that set up or tidy a CI machine (checkout, preflight, cache restore and save, trace export) are marked `skip` with a reason; every other step runs. When `main` changes a covered job, that test fails on every branch that rebases onto it until the description is updated to match, so a local run never signs for an older version of a job.
-- **Both events in one record.** The run executes each job once as `pull_request` and once as `merge_group`, with each step's own condition deciding. So the merge-group-only steps (the two contract tests and the S0 gate set in `pr_gate_validation`) run too, and one record is valid for both events. A command already passed with identical inputs for the same event is not run twice. Each job's result lists the events it ran for, and the verifier accepts a job only for an event in that list. `--events=merge_group` makes a record that covers the merge group's jobs and nothing for the pull request.
+- **Both events in one record.** The run executes each job once as `pull_request` and once as `merge_group`, with each step's own condition deciding. So the merge-group-only steps (the two contract tests and the S0 gate set in `pr_gate_validation`) run too, and one record is valid for both events. Every selected shell step runs separately, because filesystem and other state can change between identical commands. Each job's result lists the events it ran for, and the verifier accepts a job only for an event in that list. `--events=merge_group` makes a record that covers the merge group's jobs and nothing for the pull request.
 - **The tree it is bound to.** GitHub tests a pull request as a merge of its head into the base. That merge has the head's own tree exactly when the head already contains the base tip, which is why `run` requires it. The run rebuilds that merge commit locally (base first, head second, the head's tree) and points `HEAD` at it for the duration, because the jobs read `HEAD^1` and `HEAD^2`. The index and files do not change, and `HEAD` is put back afterwards, also on Ctrl-C.
 - **How a workflow verifies.** The **Route runners** job checks out `scripts/ci/verify-attestation.mts` and runs it first. It takes the tree of the commit it checked out, reads the event's base commit (`pull_request.base.sha` or `merge_group.base_sha`) and that commit's tree, reads `.hobo/ci-attestors.json` **at that base commit**, and reads `attestations/<tree>.json` on `ci-attestations`, all through the GitHub API with the job's read-only token. The record is accepted only if the signature verifies with a key listed at the base, that key has not expired, and the record names this tree, this base tree and this event. The list at the base is refused whole if any entry's `id` is not its own key's id, if any `expiresAt` is not strict ISO-8601 UTC, or if any entry expires more than 90 days later. Of the record's jobs, only those that ran for this event are reported. **Secret scan** is reported only when the record's `head` and `base` are exactly the event's `pull_request.head.sha` and base sha: it scans commits, and another history (a secret added, then reverted) can end in the same tree. Every other covered job is bound to the tree. The job then outputs `attested` (`true` or `false`) and `attested-jobs` (a JSON array). What it prints is one line: control characters from an API answer or a record are replaced.
 - **It cannot fail a run.** No record, an API error, a bad signature, an expired key, a script that does not start: each is `attested=false`.
