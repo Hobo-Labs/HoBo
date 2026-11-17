@@ -139,6 +139,115 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 
 describe("provider-neutral IaC target budget admission", () => {
 	it.each([
+		"null",
+		"missing-accounts",
+		"unknown-field",
+		"accessor",
+	])("rejects malformed liability evidence (%s) without calling trust or policy", async (kind) => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			let calls = 0;
+			if (kind === "null")
+				Object.defineProperty(request, "evidence", { value: null });
+			if (kind === "missing-accounts")
+				Object.defineProperty(request.evidence, "providerAccounts", {
+					value: undefined,
+					enumerable: true,
+				});
+			if (kind === "unknown-field")
+				Object.defineProperty(
+					request.evidence.providerAccounts[0],
+					"otherLiability",
+					{ value: 100, enumerable: true },
+				);
+			if (kind === "accessor")
+				Object.defineProperty(request.evidence, "extra", {
+					enumerable: true,
+					get: () => {
+						calls++;
+						return 100;
+					},
+				});
+			const deps = dependencies(ledger);
+			expect(
+				await admitIacTarget(
+					{ requestId: "invalid-evidence", ...request },
+					{
+						...deps,
+						verifyLiability: () => {
+							calls++;
+							return true;
+						},
+						authorize: (input) => {
+							calls++;
+							return deps.authorize(input);
+						},
+					},
+				),
+			).toMatchObject({
+				status: "denied",
+				code: "LIABILITY_EVIDENCE_INVALID",
+				budget: { reservation: "not-created" },
+			});
+			expect(calls).toBe(0);
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it.each([
+		"missing-gate",
+		"truthy-obligation",
+		"unknown-proof-field",
+		"accessor",
+	])("rejects malformed policy decisions (%s) before reserving", async (kind) => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			let getters = 0;
+			const result = await admitIacTarget(
+				{ requestId: "invalid-policy", ...fixture() },
+				{
+					...deps,
+					authorize: async (input) => {
+						const policy = await deps.authorize(input);
+						if (kind === "missing-gate")
+							Object.defineProperty(policy, "gate", { value: undefined });
+						if (kind === "truthy-obligation")
+							Object.defineProperty(policy.proof, "obligationsSatisfied", {
+								value: "yes",
+							});
+						if (kind === "unknown-proof-field")
+							Object.defineProperty(policy.proof, "unfulfilledObligation", {
+								value: true,
+								enumerable: true,
+							});
+						if (kind === "accessor")
+							Object.defineProperty(policy, "proof", {
+								enumerable: true,
+								get: () => {
+									getters++;
+									return undefined;
+								},
+							});
+						return policy;
+					},
+				},
+			);
+			expect(result).toMatchObject({
+				status: "denied",
+				code: "POLICY_UNAVAILABLE",
+				budget: { reservation: "not-created" },
+			});
+			expect(getters).toBe(0);
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+	it.each([
 		"surcharge",
 		"length",
 		"undefined",

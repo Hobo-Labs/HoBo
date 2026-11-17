@@ -212,16 +212,24 @@ export async function admitIacTarget(
 		);
 	if (
 		!isBoundedPricingInput(input.inventory) ||
-		!isBoundedPricingInput(input.pricing) ||
-		(input.evidence !== undefined &&
-			(!isBoundedPricingInput(input.evidence) ||
-				input.evidence.providerAccounts.length > 256))
+		!isBoundedPricingInput(input.pricing)
 	)
 		return denial(
 			requestId,
 			targetId,
 			"PRICING_INPUT_TOO_LARGE",
 			"financial input exceeds the bounded data limits",
+		);
+	if (
+		input.evidence !== undefined &&
+		(!isExactProtoMessage(IacTargetLiabilityEvidenceSchema, input.evidence) ||
+			input.evidence.providerAccounts.length > 256)
+	)
+		return denial(
+			requestId,
+			targetId,
+			"LIABILITY_EVIDENCE_INVALID",
+			"liability evidence is malformed or exceeds the bounded data limits",
 		);
 	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, input.pricing))
 		return denial(
@@ -483,6 +491,14 @@ export async function admitIacTarget(
 	}
 	let proof: HostingPolicyProof;
 	try {
+		if (!policy || !isBoundedPricingInput(policy))
+			throw new Error("malformed policy decision");
+		policy = structuredClone(policy);
+		if (
+			!policy.gate ||
+			!isExactProtoMessage(HostingPolicyProofSchema, policy.proof)
+		)
+			throw new Error("malformed policy decision");
 		proof = clone(HostingPolicyProofSchema, policy.proof);
 	} catch {
 		return denial(
@@ -496,7 +512,7 @@ export async function admitIacTarget(
 		(policy.gate?.effect !== "allow" &&
 			policy.gate.effect !== "allow-degraded") ||
 		proof.effect !== policy.gate.effect ||
-		!proof.obligationsSatisfied ||
+		proof.obligationsSatisfied !== true ||
 		!proof.policyHash ||
 		!proof.evidenceRef ||
 		proof.requestDigest !== requestDigest ||
