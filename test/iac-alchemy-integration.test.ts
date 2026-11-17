@@ -30,8 +30,8 @@ import {
 	rankIacTargets,
 } from "../packages/dispatcher/src/iac-target-routing.js";
 import {
-	AlchemyIacError,
 	type AlchemyCompositeEnvironment,
+	AlchemyIacError,
 	type AlchemyPrimitiveMapper,
 	alchemyTarget,
 	captureAlchemyProgram,
@@ -1250,6 +1250,31 @@ describe("Alchemy IaC provider against the real library", () => {
 					budget: { evaluation: "unavailable", reservation: "not-created" },
 				},
 			});
+			expect(fixture.issued()).toBe(0);
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("does not reuse a priced routing assessment across operation generations", async () => {
+		const fixture = setup();
+		try {
+			const first = await fixture.provider.assessPricing(program);
+			const next = { ...program, operationGeneration: "generation-2" };
+			const second = await fixture.provider.assessPricing(next);
+			if (!first.quote.ok || !second.quote.ok)
+				throw new Error("pricing missing");
+			expect(first.quote.inventoryHash).not.toBe(second.quote.inventoryHash);
+			await expect(
+				fixture.provider.applyWithAdmission(next, "stale-generation", {
+					targetId: "yard-a",
+					inventoryHash: first.quote.inventoryHash,
+					modelHash: first.quote.modelHash,
+					quoteHash: first.quote.quote.quoteHash,
+				}),
+			).rejects.toMatchObject({ code: "ROUTE_PERMIT_UNVERIFIED" });
 			expect(fixture.issued()).toBe(0);
 			expect(fixture.applied()).toBe(0);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);

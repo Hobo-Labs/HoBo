@@ -125,7 +125,8 @@ the target's actual stack and source, or explicitly authorize its absence for
 a direct stack invocation. The plan digest binds these identities and the
 declaration and operation generation; changing them cannot reuse an earlier
 assessment or admission. An assessment without a generation is distinct from
-every generated operation.
+every generated operation. Obtain a fresh pricing assessment and routing
+expectation for each generation.
 The host must verify that `backendRef` identifies the actual configured state
 store; a caller-provided reference or a callback that merely returns `true` is
 not evidence of ownership.
