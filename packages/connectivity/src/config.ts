@@ -76,8 +76,12 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 	if (raw === null || raw === undefined || !isJsonObject(raw)) {
 		return DEFAULT_CONNECTIVITY_CONFIG;
 	}
-	const obj = raw as JsonObject;
-	const overlay = (obj.overlay ?? {}) as JsonObject;
+	const obj = raw;
+	const rawOverlay = obj.overlay;
+	if (rawOverlay !== undefined && !isJsonObject(rawOverlay)) {
+		throw new TypeError("overlay must be an object");
+	}
+	const overlay: JsonObject = rawOverlay ?? {};
 	const dns = (obj.dns ?? {}) as JsonObject;
 	const dnsPublic = (dns.public ?? {}) as JsonObject;
 	const naming = (obj.naming ?? {}) as JsonObject;
@@ -176,6 +180,7 @@ function parseProvider(raw: JsonValue | undefined): DnsProviderKind {
 }
 
 function parseOverlay(raw: JsonValue | undefined): OverlayProviderKind {
-	if (raw === "netbird") return "netbird";
-	return "tailscale";
+	if (raw === undefined) return DEFAULT_CONNECTIVITY_CONFIG.overlay.provider;
+	if (raw === "tailscale" || raw === "netbird") return raw;
+	throw new TypeError("overlay.provider must be tailscale or netbird");
 }
