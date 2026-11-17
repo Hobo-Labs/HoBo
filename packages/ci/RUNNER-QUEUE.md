@@ -386,12 +386,12 @@ A workflow run no longer waits on a fleet that is not taking jobs. Every routed 
 - **One test does not run there:** `storage-admission.test.ts` gives a directory to the image's user (uid 1000), which only that user and root may do. A GitHub-hosted machine runs as another user, so that test is skipped there and runs on the fleet.
 - **Container tests run there.** A GitHub-hosted machine has a Docker engine, so the container tests in `@hobo/ci-gh-actions` (the pinned Pact-broker Postgres image among them) run instead of being skipped. They start in separate processes and share one Testcontainers reaper; `test/fixtures/start-container.ts` starts again when a reaper another file left behind is still listed but no longer answering.
 - **The one job that differs there** is the cold dev loop. On the fleet it runs in the worker image with the network disabled. An ARC pod (`hobo-runner-*`) has Docker but neither the worker image nor `sudo`, so it first pulls the content-keyed image from GHCR (`ensure-ci-worker-image.mts --materialize-only`, which is why the job holds `packages: read`) and then runs the same way. A GitHub-hosted machine has no worker image but has `sudo`, so it runs the same commands on a copy of the tree in a network namespace whose only interface is loopback. When GHCR has no image for the content key (a PR that changes the runner image's inputs, or a fork PR that may not pull), a runner with no `sudo` builds the image itself (`ensure-ci-worker-image.mts`, build.sh's 600 s budget; the job allows 20 minutes). A runner that can do none of these fails with an `::error` naming why, instead of `sudo: command not found`.
-- **A signed local run changes the answer.** When the route job verifies one for the tree it checked out, the jobs it covers are skipped and the rest go to `ubuntu-24.04` without reading the queue. See "Signed local runs" below.
+- **A signed local run covers particular jobs.** When the route job verifies one for the tree it checked out, the jobs it covers are skipped; the remaining jobs follow normal batch, slip, pin and queue routing. See "Signed local runs" below.
 - **Always GitHub-hosted:** the route job, and the two required gates (**PR impact gate**, **HoBo release PR gate**). The gates run no repository code and only add up other jobs' results. On the fleet, a superseded run's gate had to find a runner before the next run could start, which held one pull request for 30 minutes.
 - **Not routed:** tag, publish and attest jobs in the release workflows, `ci-deps-publish.yml`, and **CI deps layer (pnpm)** in `hobo-ci.yml`. On a pull request the deps layer job can ask for **`hobo-box`**, the box's own label (the worker code serves it; no ARC pod does), because it builds the image in the box's Docker context: under the shared `hobo` label an ARC pod could take the job and build several GB that no job container reads. Trunk events keep the trunk label. It is opt-in by committed policy: set **`runnerRouting.boxRunner`** to `true` in `.hobo/ci.json` once a `runs-on: hobo-box` job is seen to start on the box; the route job then outputs `box_runner` (`runnerRouting.labels.box`), and without it, or without a route answer, the job asks for `hobo`. No repository variable decides it (ADR-0181). To check, dispatch any job with `runs-on: hobo-box` (or turn the setting on in a pull request and watch its **CI deps layer (pnpm)** job) and confirm its runner is `hobo-<lease-uuid>`. `scripts/lint-actions.ts` requires this expression for any job that runs `deps/build-deps.sh` and allows it for no other. They build or push the fleet's own images. The deps layer job was routed at first; on a GitHub-hosted machine it has no worker image and no box Docker context, and failed before it reached the build for every pull request that touched a deps-image input. Neither gate needs it, so on a slow fleet only that check waits. On main, **Main workspace plan** and **Main full gate** follow the route job and the shards follow the plan's second ask; the plan looks at the deps layer only when it is the box worker, and **Main full gate (finish)** is always GitHub-hosted.
 - **It reads no repository variable about the fleet**: not `HOBO_CI_FLEET_ROUTES` nor any other (rule R2 of [ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-routing-rules)), and the workflow hands the step nothing about what the fleet can take. The route table the relay can publish (above) says what the fleet would choose when the relay is up; this job has to decide when it is not, so it reads the queue.
 - **It asks the relay.** Whether the fleet can take a run is the relay's to decide ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)). The job reads the relay's origin from `.hobo/ci.json` (the default environment's `relayOrigin`) and, on every pass of its decision, sends `GET /v1/fleet/verdicts/{owner}/{repo}` with no credential and a three-second limit. The answer names the fleet labels new work should stay off, each with a reason: `no-node` (no live healthy node serves it) or `no-capacity` (none can admit a job for a reason other than its own running jobs, and no other has a free slot). A named label counts as that backend refusing jobs, at once, and the probe is not waited for. A label the relay does not name changes nothing, and neither does a relay that is not named, fails, or is slow: the queue decides, and the log line says `the relay gave no verdict` and why. A pinned tier does not ask. **Who reports it**: the box's fleet verdict reporter (below), which is off until `HOBO_CI_FLEET_VERDICT_MODE` is set and the box is enrolled; until then the relay answers that nothing is blocked. The mesh's older routing snapshot, a repository variable, is no longer written: the verdict replaced it.
-- **Where it lives:** `scripts/ci/route-runner.mts` (decision, queue reading and the relay verdict client; it loads only `packages/ci/src/fleet-overflow.ts` and reads `.hobo/ci.json`, both of which every routed workflow sparse-checks out), `packages/ci-gh-actions/src/fleet-verdict.ts` (the relay's side of the verdict), `.github/actions/route-runner` (the step), `.github/workflows/fleet-probe.yml` (the probe), `selectFleetBackend` in `packages/ci/src/fleet-overflow.ts` (the order: fleet, ARC, local box, GitHub-hosted), and `scripts/lint-actions.ts` (which labels a workflow may ask for).
+- **Where it lives:** `scripts/ci/route-runner.mts` (decision and queue reading; it loads only `packages/ci/src/fleet-overflow.ts` and reads `.hobo/ci.json`, both of which every routed workflow sparse-checks out), `.github/actions/route-runner` (the step), `.github/workflows/fleet-probe.yml` (the probe), `selectFleetVerification` and `selectFleetBackend` in `packages/ci/src/fleet-overflow.ts` (the runner order and optional local signoff), and `scripts/lint-actions.ts` (which labels a workflow may ask for). The local coordinator uses that same selector; the workflow route can choose only a real runner.
 
 #### The routing slip issuer (box)
 
@@ -427,17 +427,142 @@ git push                                         # only now: the run that starts
 | `pnpm ci:attest run` | Refuses a dirty tree. Fetches the base (`origin/main`, or `--base=`). Refuses a head that does not contain the base tip and says how to fix it. Runs each covered job's commands and writes the signed record to `.hobo/attestations-out/<tree>.json`, with each job's log beside it. If any command fails, or a command rewrote a tracked file, it exits non-zero and signs nothing. Each step gets an allowlisted environment and a scratch `HOME` (below). `--fresh` makes Turbo run every task again instead of replaying its cache. |
 | `pnpm ci:attest publish` | Checks the record first, the way a workflow would, against the keys trusted at the record's own base commit, and pushes nothing that would be refused. It then commits the record as `attestations/<tree>.json` on the orphan branch `ci-attestations` and pushes it. It uses git plumbing in a temporary index and pushes from a scratch bare repository that borrows your checkout's objects, so your checkout, index, HEAD and refs, including remote-tracking refs, are not touched. A push that loses a race is rebuilt on the new tip and retried, five times at most. The remote's URL never appears in its output, and credentials in any URL git reports are masked. |
 | `pnpm ci:attest verify` | The same check the workflows make, with git in place of the GitHub API. |
+| `pnpm ci:attest signoff` | After pushing HEAD, verifies this machine's signed record for the current head and the current remote base, then calls `gh signoff` to post one commit status per covered job. This path does not require a runner, a relay, an entry in the base's trusted attestor list, or the `ci-attestations` branch. |
+| `pnpm ci:attest fleet --local-signoff --policy-current` | Checks the fleet's current routing slip and queue, keeps available runner routes first, and runs local checks followed by `gh signoff` only when all enabled runner tiers are known unavailable. |
+
+#### Sign off without an Actions runner
+
+The workflow reuse path above still needs a GitHub-hosted machine for its route
+job. Before using `--policy-current`, compare enabled live providers, their
+execution backends, and routing with the trusted base in every relevant account
+and environment. An authenticated `GET /v1/accounts/self/policy` (`policy:read`)
+or `createCiRelayClient().getPolicy()` shows account offers, but not the desired
+policy, its tenant, or the routing pin. Obtain those from the relay operator's
+`ci-policy:<account-id>` store and the routing policy loaded by the running
+daemons. An ARC scale set must match a `gh-actions` offer. Status and mesh alone
+do not establish this comparison. If any value is unknown, omit
+`--policy-current` and local signoff waits. The [local guide](../ci-gh-actions/LOCAL-DEVELOPMENT.md#local-signoff-in-fleet-routing)
+describes the comparison in detail.
+
+To let the fleet decision use local signoff when runners are unavailable,
+install the GitHub CLI extension from
+[basecamp/gh-signoff](https://github.com/basecamp/gh-signoff), update the branch,
+push the tested commit, and run the local fleet decision after that comparison:
+
+```bash
+gh extension install basecamp/gh-signoff
+git fetch origin && git merge origin/main
+git push
+pnpm ci:attest fleet --local-signoff --policy-current
+```
+
+The command respects the committed pin and uses a usable routing slip with the
+same pickup and queue limits as runner routing. A fresh healthy fleet pickup
+takes precedence over an unpinned fallback slip. A slip naming the local runner
+does not by itself prove it is taking jobs; the queue must establish that. A
+known available fleet, enrolled local runner, or GitHub-hosted runner stays
+ahead of local signoff.
+When no option is observed available, an unknown runner state or failed queue
+read causes `waiting`, not an assumed outage. `--local-signoff` opts this
+invocation into executing the fallback; without it the decision waits when all
+runners are unavailable. The policy assertion does not change runner selection:
+healthy and pinned runners remain selectable without it. It cannot turn an
+unknown provider into an unavailable one or override an available runner. To
+declare an independently observed provider outage, pass
+`--provider-unavailable=ID` for that exact enabled inventory member, once per
+confirmed outage. Policy providers use `ENV:PROVIDER`, integrations use
+`integration:ID:LABEL`, and external pools use `external-pool:INDEX:LABEL`.
+Unknown or disabled IDs cannot authorize fallback and are reported if no runner
+is selected; malformed or duplicate options are rejected before selection. A
+healthy pickup for that label prevents an outage assertion from enabling
+fallback. Without outage evidence an unobserved provider remains unknown. If the queue is
+silent, a separately confirmed outage of the fleet or an enrolled local runner
+can be supplied with `--runner-unavailable=fleet` or `--runner-unavailable=local`.
+These assertions cannot override a pin, healthy observed pickup, or failed
+queue read. The base SHA used to read the policy must still be the tested
+base when checks run and when statuses are published; if it moves, the command
+stops and the operator must update and retry. For hosted jobs that fail before entering the queue,
+an operator who has observed the outage may add `--github-unavailable`; this
+only supplies missing hosted availability and does not displace an observed
+healthy hosted runner or another available runner. A selected runner is reported;
+the existing workflow still owns its own routing. The command never relabels,
+dispatches, cancels, or completes an already queued Actions job.
+
+For a record already produced by `pnpm ci:attest run`, an operator can also
+invoke `pnpm ci:attest signoff` directly. This publishes statuses for that
+record without changing the fleet's runner decision.
+
+`gh` needs authentication with permission to write commit statuses in the
+target repository; `git user.name` must be set. The command verifies that the
+repository selected by `gh` matches the base remote, pins `GH_HOST` and
+`GH_REPO` to that identity, and checks GitHub's live base tip before it calls
+the extension. A mismatch or unavailable identity/base check refuses signoff.
+The extension refuses an unpushed
+commit; this command does not use its force option. A separate
+`pnpm ci:attest signoff --event=merge_group` reports only jobs run for that
+simulated event. `--base=upstream/main` selects another remote branch; signoff
+must be able to read its live tip and refuses when it differs from the tested
+base. The record must match the exact current head and tree, the checkout must
+be clean, its signature must verify with this machine's local key, and each
+reported job must have command evidence for the requested event, including at
+least one command for every matrix shard, and must state that each selected
+step ran individually. Old records without that evidence must be rerun for
+signoff; their existing workflow-reuse verification remains compatible. A
+failed retry removes the previous local record for that tree.
+
+For each job to be signed, the local job description (including skipped steps
+and release-image guards), its full workflow job, and workflow-level settings
+must match the trusted base. A skipped repository-local action must be one of
+the explicitly reviewed actions and neither it nor its listed helpers or
+configuration inputs may differ from the base. The list is maintained in
+`SKIPPED_ACTION_DEPENDENCIES` in `scripts/ci/local-attest.mts`; it covers the
+checkout, preflight, cache and trace actions, including preflight's toolchain
+files, memory and runner-contract helpers, and lockfiles. Unknown local actions
+fail closed. A changed workflow job, job description, skipped action, or listed
+dependency therefore needs normal CI until that change reaches the trusted
+base. A change to another job alone does not disqualify an unchanged job. A job
+depending on GitHub variables, secrets, or the PR number that are unavailable
+locally is also omitted. This currently includes `pr_gate_validation` because
+its shadow classifier uses a repository variable; the related PR impact jobs
+are therefore omitted together, even when Docker is available. The fleet command checks these restrictions
+per job before running and reports omissions; direct `signoff` refuses a record
+containing a disqualified job. To publish other jobs directly, rerun with
+`--skip-job=<id>` for each disqualified job. The PR impact gate's jobs remain
+an all-or-nothing group.
+
+Statuses are named `signoff/hobo-ci/local/<event>/<job>`. For example,
+`signoff/hobo-ci/local/pull_request/ci-guard` reports that job alone. An omitted
+job gets no success status: in particular, without Docker, the container-backed
+workspace tests and the PR impact group are omitted. A failed `gh` invocation
+may already have posted some of the individual statuses; inspect GitHub before
+retrying. The statuses use the GitHub credential's authority, not the trusted
+attestor list used by workflow reuse. As with `gh signoff` itself, anyone with
+that credential can create them without running checks.
+
+These statuses do not replace the existing required Actions jobs or produce a
+green Actions run. A repository administrator can require selected signoff
+contexts, but existing required checks and merge-queue rules still apply. A
+merge-group status here is attached to the tested PR head and represents a
+local simulation; it is not a status on GitHub's generated merge-group commit.
+Commit statuses do not automatically expire when the base moves, or disappear
+after a failed or partial retry on the same commit. Rebase or merge a new base
+and repeat the run and signoff; inspect existing statuses after any retry before
+relying on them.
+The commands under test run as the same user as the key and local credentials,
+so only run code trusted with that access. For other repositories, run their
+own checks and use `gh signoff` directly; HoBo's `ci:attest` job list is specific
+to this repository's workflows.
 
 - **What is covered.** In `hobo-ci.yml`: `pr_gate_validation`, `workspace_tests` (every shard), `pr_affected`, `pr-offpath`, `artifact-trust`, `ci-guard`, `secret-scan`. In `release-hobo.yml`: `release-contract`, but only when no release image is affected. If `release-oci-affected.mts` reports an image, the local run leaves that job out of the record and it runs in CI as usual.
 - **What is not covered** and still runs in CI: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route job and both gates. The cold dev loop was considered and left out: its own install step narrows `node_modules` to a few packages, which would break the shared checkout the other jobs run in, and its offline copy of a fully installed tree is several gigabytes.
 - **The same commands.** `scripts/ci/attested-jobs.json` holds each covered job's steps as the workflow writes them: the script, the `if:`, the `env:`, in order. The local runner reads only that file, never a workflow. `scripts/test/attested-jobs.test.ts` fails when a workflow job and its description differ in any step. Steps that set up or tidy a CI machine (checkout, preflight, cache restore and save, trace export) are marked `skip` with a reason; every other step runs. When `main` changes a covered job, that test fails on every branch that rebases onto it until the description is updated to match, so a local run never signs for an older version of a job.
-- **Both events in one record.** The run executes each job once as `pull_request` and once as `merge_group`, with each step's own condition deciding. So the merge-group-only steps (the two contract tests and the S0 gate set in `pr_gate_validation`) run too, and one record is valid for both events. A command already passed with identical inputs for the same event is not run twice. Each job's result lists the events it ran for, and the verifier accepts a job only for an event in that list. `--events=merge_group` makes a record that covers the merge group's jobs and nothing for the pull request.
+- **Both events in one record.** The run executes each job once as `pull_request` and once as `merge_group`, with each step's own condition deciding. So the merge-group-only steps (the two contract tests and the S0 gate set in `pr_gate_validation`) run too, and one record is valid for both events. Every selected shell step runs separately, because filesystem and other state can change between identical commands. Each job's result lists the events it ran for, and the verifier accepts a job only for an event in that list. `--events=merge_group` makes a record that covers the merge group's jobs and nothing for the pull request.
 - **The tree it is bound to.** GitHub tests a pull request as a merge of its head into the base. That merge has the head's own tree exactly when the head already contains the base tip, which is why `run` requires it. The run rebuilds that merge commit locally (base first, head second, the head's tree) and points `HEAD` at it for the duration, because the jobs read `HEAD^1` and `HEAD^2`. The index and files do not change, and `HEAD` is put back afterwards, also on Ctrl-C.
 - **How a workflow verifies.** The **Route runners** job checks out `scripts/ci/verify-attestation.mts` and runs it first. It takes the tree of the commit it checked out, reads the event's base commit (`pull_request.base.sha` or `merge_group.base_sha`) and that commit's tree, reads `.hobo/ci-attestors.json` **at that base commit**, and reads `attestations/<tree>.json` on `ci-attestations`, all through the GitHub API with the job's read-only token. The record is accepted only if the signature verifies with a key listed at the base, that key has not expired, and the record names this tree, this base tree and this event. The list at the base is refused whole if any entry's `id` is not its own key's id, if any `expiresAt` is not strict ISO-8601 UTC, or if any entry expires more than 90 days later. Of the record's jobs, only those that ran for this event are reported. **Secret scan** is reported only when the record's `head` and `base` are exactly the event's `pull_request.head.sha` and base sha: it scans commits, and another history (a secret added, then reverted) can end in the same tree. Every other covered job is bound to the tree. The job then outputs `attested` (`true` or `false`) and `attested-jobs` (a JSON array). What it prints is one line: control characters from an API answer or a record are replaced.
 - **It cannot fail a run.** No record, an API error, a bad signature, an expired key, a script that does not start: each is `attested=false`.
 - **Skipping.** Each covered job has a condition that skips it when `needs.route.outputs.attested == 'true'` and its own id is in `attested-jobs`. A skipped job needs no runner at all. `scripts/lint-actions.ts` rejects that condition on a job that is not covered, or naming another job's id.
 - **The gates.** **PR impact gate** needs the route job and accepts a skipped validation, workspace or affected-lanes job only when the route job succeeded and reported that job attested. A failed or cancelled job never passes, and with no attestation its rules are the old ones. **HoBo release PR gate** requires the route job to have succeeded and now accepts a skipped release contract only when the route job reported it attested; before, it accepted any skipped contract. Both gates decide with the same `attested()` shell helper, and `scripts/lint-actions.ts` rejects a gate that waits on a covered job and does not use it unchanged. **CI fabric contract guard** and **Secret scan** are required by name and are satisfied by being skipped, as they already are on `merge_group`.
-- **Routing.** An attested run sends what is left to `ubuntu-24.04` without reading the queue. A pinned `HOBO_CI_ROUTE` still wins, so with `fleet` pinned the uncovered jobs wait for the fleet.
+- **Routing.** An attested run skips only the jobs covered by the verified record. Batch admission, the routing slip, committed pin and queue choose a runner for the remaining jobs as they do for any other run.
 - **Merge groups.** The record matches a merge-group run only when the queue's group commit has the same tree: the pull request is first in the queue and its head already contains the queue's base. Otherwise the tree differs, verification says `attested=false`, and the merge group runs in CI as it does today. Nothing tries to predict a queue tree.
 - **Timing.** A run reads the record when it starts. Publish before you push. A record published later is picked up by re-running the workflow.
 - **Adding a machine.** Run `pnpm ci:attest init-key --note="whose machine"`, add the printed entry to `.hobo/ci-attestors.json`, and merge that change to `main`. The key works only for pull requests whose base already has the entry, so the pull request that adds a key cannot itself be attested with it. Every entry needs an `expiresAt` in ISO-8601 UTC; the default is 30 days out and `--days` takes at most 90, which the verifier enforces too.
