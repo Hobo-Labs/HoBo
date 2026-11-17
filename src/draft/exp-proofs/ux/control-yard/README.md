@@ -58,6 +58,10 @@ See [assets/yard-zones.svg](./assets/yard-zones.svg) for the v0 single-Station l
 
 ## Acceptance
 
+The pixel-village core-loop, browser, scenario, and experience-review gates
+were removed with that package. The criteria in `proof.json` are unverified;
+the remaining Yard tests and captured evidence do not replace those gates.
+
 - Management ops shared with CLI
 - Control API HTTP+SSE from fixtures
 - Bo idle + walk east/west at measured frames; west not mirrored
