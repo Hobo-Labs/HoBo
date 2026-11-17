@@ -203,16 +203,25 @@ verifier that merely accepts the operator's fields does not meet this contract.
 The fence must prevent all old executors, credentials, and already-dispatched
 work from producing future provider effects or financial exposure.
 
+The financial verifier must authenticate the immutable historical mapping from
+every attempted target to every authority and account that could have admitted
+it, including prior configurations. It must query and authenticate all of them
+after the fence. A lookup against one authority, the current configuration, or
+only the selected target cannot establish complete coverage: route attempts do
+not themselves identify their financial authorities.
+
 No-effect recovery requires authoritative proof that every possible reservation
 is settled or released and that no new charge or effect can arise; an empty
-list is valid only when the financial authority proves there are no holds or
+list is valid only when all relevant authorities prove there are no holds or
 liabilities to list. Recovery never releases or settles a reservation. A route that already
 finished denied can use this path only when all recorded attempts are denied
 (or there were no attempts) and the same independent proofs are verified. The
 transaction records one successor request for a new attempt. Already-applied recovery
 records the selected target and exact inventory and either its verified held or
-settled reservation, or a verified `not-applicable` disposition. It never
-creates a retry. Unavailable or conflicting proof leaves the original route
+settled reservation, or a verified `not-applicable` disposition. For
+`not-applicable`, independent evidence must establish that the applied target
+had no liability requiring a reservation. A missing hold or unknown price is
+not that proof. Recovery of a selected target never creates a retry. Unavailable or conflicting proof leaves the original route
 blocked; callers must not infer zero cost from an unavailable pricing model.
 
 The host authorizer must bind the authenticated operator and logical
@@ -240,13 +249,13 @@ if (!snapshot) throw new Error("Unknown route");
 // Host authorities establish the fence before taking either observation.
 const fence = await host.fences.establishPermanentFence(snapshot);
 const provider = await host.provider.observeAfterFence(snapshot, fence);
-const financial = await host.finance.observeAfterFence(snapshot, fence);
+const financial = await host.financialAuthorities.observeAllAfterFence(snapshot, fence);
 const result = await recoverIacRoute({
   store,
   authorize: (claim) => host.authorizeRecovery(authenticatedOperator, claim),
   verifyFence: (input) => host.fences.verifyEvidence(input),
   verifyProvider: (input) => host.provider.verifyEvidence(input),
-  verifyFinancial: (input) => host.finance.verifyEvidence(input),
+  verifyFinancial: (input) => host.financialAuthorities.verifyCompleteEvidence(input),
 }, {
   tenantId, requestId, operationId: snapshot.operationId, operatorId: authenticatedOperator.id,
   expectedVersion: snapshot.version,

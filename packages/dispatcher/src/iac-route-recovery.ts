@@ -97,7 +97,11 @@ export interface IacRouteRecoveryDependencies {
 	readonly verifyProvider: (
 		input: IacRouteRecoveryVerification,
 	) => MaybePromise<boolean>;
-	/** Authenticate complete reservation coverage, its causal fence reference and observation time. */
+	/** Authenticate the immutable historical mapping from every attempted target to every
+	 * financial authority and account that could have admitted it, including prior
+	 * configurations. Prove complete post-fence coverage of all holds and liabilities.
+	 * A selected not-applicable result additionally requires proof that no liability
+	 * required a reservation; absence of a hold or unknown pricing is insufficient. */
 	readonly verifyFinancial: (
 		input: IacRouteRecoveryVerification,
 	) => MaybePromise<boolean>;
