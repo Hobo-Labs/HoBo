@@ -80,14 +80,15 @@ valid and invalid JSON fixtures exercise those constraints.
 pnpm --filter @hobo/pricing run codegen
 pnpm --filter @hobo/pricing run test:schema
 pnpm --filter @hobo/pricing run test:contract:consumer
+pnpm --filter @hobo/pricing run test:contract:provider
 pnpm --filter @hobo/pricing run test
 ```
 
 `corpus/golden-replay-baseline.json` pins a complete quote output. The replay
 test parses its scenario through protobuf JSON, rerates it, and compares the
 stable JSON result, including the deterministic quote hash. The quote-boundary
-PACT is a hand-authored consumer expectation; no live provider accuracy is
-claimed.
+PACT is an in-process consumer expectation verified against the pricing kernel
+and consumed by `@hobo/dispatcher`. It does not establish live provider accuracy.
 
 ## Architecture boundaries
 
