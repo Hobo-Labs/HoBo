@@ -123,6 +123,8 @@ function parseUInt(value: JsonValue | undefined, field: string): number {
 	if (!isJsonNumber(value) || !Number.isInteger(value) || value < 0) {
 		throw new ReplayParseError(`${field} must be a non-negative integer`);
 	}
+	if (!Number.isSafeInteger(value))
+		throw new ReplayParseError(`${field} must be a safe integer`);
 	return value;
 }
 

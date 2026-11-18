@@ -34,17 +34,26 @@ export function assertReplayEqualsLive<S>({
 	fold,
 	initialState,
 	upcast = (event) => event,
-	targetSeq = seqVector(events),
+	targetSeq,
 	seed = "hobo-replay-live",
 	normalize = stableValue,
 	runId = "fold-proof",
 }: AssertReplayEqualsLiveInput<S>): ReplayReport {
 	const capturedEvents = events.map((event) => clone(event));
+	const defaultTarget = seqVector(capturedEvents);
+	const requestedTarget = targetSeq === undefined ? defaultTarget : targetSeq;
 	const capturedTarget = Object.fromEntries(
-		Object.getOwnPropertyNames(targetSeq).map((streamId) => [
-			streamId,
-			must(targetSeq[streamId], `target sequence for ${streamId}`),
-		]),
+		Object.getOwnPropertyNames(requestedTarget).map((streamId) => {
+			const sequence = must(
+				requestedTarget[streamId],
+				`target sequence for ${streamId}`,
+			);
+			if (!Number.isSafeInteger(sequence) || sequence < 0)
+				throw new RangeError(
+					"target sequence must be a non-negative safe integer",
+				);
+			return [streamId, sequence];
+		}),
 	);
 	const eventSlice = capturedEvents.filter((event) =>
 		isAtOrBefore(event, capturedTarget),
@@ -145,6 +154,10 @@ export function runFold<S>({
 export function seqVector(events: EventEnvelope[]): SeqVector {
 	const positions = new Map<string, number>();
 	for (const event of events) {
+		if (!Number.isSafeInteger(event.seq) || event.seq < 0)
+			throw new RangeError(
+				"event sequence must be a non-negative safe integer",
+			);
 		positions.set(
 			event.streamId,
 			Math.max(positions.get(event.streamId) ?? 0, event.seq),
