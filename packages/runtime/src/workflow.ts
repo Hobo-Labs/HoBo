@@ -36,6 +36,7 @@ import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
 	captureWorkflowResult,
+	requireWorkflowRunId,
 } from "./workflow-value.js";
 
 /** Durability primitives are always granted; effect capabilities are declared. */
@@ -380,14 +381,10 @@ export function createWorkflowEngine(
 	return {
 		store,
 		async start(def, args, startOptions) {
-			const runId = startOptions?.runId ?? `run-${randomUUID()}`;
-			if (
-				!isJsonString(runId) ||
-				String(runId) !== runId ||
-				runId.length === 0
-			) {
-				throw new TypeError("workflow runId must be a non-empty string");
-			}
+			const requestedRunId = startOptions?.runId;
+			const runId = requireWorkflowRunId(
+				requestedRunId === undefined ? `run-${randomUUID()}` : requestedRunId,
+			);
 			const input = captureWorkflowInput(args);
 			const streamId = `run/${runId}`;
 			const started = nextEnvelope(
@@ -400,11 +397,13 @@ export function createWorkflowEngine(
 			return execute(def, runId, input);
 		},
 		async resume(def, runId, args) {
+			const id = requireWorkflowRunId(runId);
 			const input = captureWorkflowInput(args);
-			return execute(def, runId, input);
+			return execute(def, id, input);
 		},
 		async journal(runId) {
-			const events = await store.readStream(`run/${runId}`);
+			const id = requireWorkflowRunId(runId);
+			const events = await store.readStream(`run/${id}`);
 			return events.map((event) => ({
 				type: event.type,
 				data: cloneAsJson(event.data),

@@ -8,6 +8,12 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+export function requireWorkflowRunId(runId: string): string {
+	if (Object(runId) === runId || !isJsonString(runId) || runId.length === 0)
+		throw new TypeError("workflow runId must be a non-empty string");
+	return runId;
+}
+
 function isReproducibleJsonValue<T>(value: T, seen: Set<object>): boolean {
 	if (value === null) return true;
 	const object: object = Object(value);

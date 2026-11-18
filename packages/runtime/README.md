@@ -43,6 +43,11 @@ manufacturing placeholder values.
 
 Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
 
+An explicit run ID must be a nonempty primitive string for start, resume and
+journal access. Omitting it on start generates an ID; passing null, a number,
+an empty string or an object is rejected rather than coercing it into a stream
+name. Rejection does not invoke conversion hooks on an object ID.
+
 Workflow input must be an ordinary JSON tree. The engine captures it before
 the first asynchronous operation, so later caller edits do not change the run.
 Unsupported inputs, including `undefined`, non-finite numbers, dates, shared
