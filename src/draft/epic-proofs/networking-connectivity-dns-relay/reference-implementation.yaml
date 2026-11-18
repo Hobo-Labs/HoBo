@@ -7,7 +7,6 @@ linear_url: "https://linear.app/quickdeploy-ai/project/networking-connectivity-d
 branch: "contacttylerkendrick/hobo-sprawl/epic-rollup-networking-connectivity-dns-relay-sprawl-20260629T030358Z-64bf"
 pr_url: "https://github.com/Tyler-R-Kendrick/HoBo/pull/420"
 reference_impl_root: "src/draft/epic-proofs/networking-connectivity-dns-relay"
-ledger: "src/draft/epic-proofs/networking-connectivity-dns-relay/poc-rollup-ledger.md"
 pact_inventory: "src/draft/epic-proofs/networking-connectivity-dns-relay/contracts/pact-inventory.md"
 simulation_command: "npm.cmd --prefix src\\draft\\epic-proofs\\networking-connectivity-dns-relay run simulate"
 last_linear_marker: "EPIC_ROLLUP_COMPLETE"

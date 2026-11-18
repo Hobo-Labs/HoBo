@@ -43,8 +43,6 @@ And no simulated live service call is required
 
 | Path | Purpose |
 |---|---|
-| `poc-rollup-ledger.md` | Disposition of every POC considered for this epic rollup. |
-| `scope-review.md` | Adversarial scope review before implementation. |
 | `reference-implementation.yaml` | Machine-readable manifest for this run. |
 | `contracts/pact-inventory.md` | Contract decisions for each internal and external boundary. |
 | `simulation/` | Deterministic mocked harness for the accepted BDD scenarios. |

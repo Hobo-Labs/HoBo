@@ -62,8 +62,6 @@ npm.cmd --prefix src\draft\epic-proofs\progressive-delivery-harness run simulate
 
 See:
 
-- [scope-review.md](./scope-review.md)
-- [poc-rollup-ledger.md](./poc-rollup-ledger.md)
 - [contracts/pact-inventory.md](./contracts/pact-inventory.md)
 - [simulation/README.md](./simulation/README.md)
 
