@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const IMPLEMENTATION_EXTENSIONS = new Set([
 	".cjs",
@@ -28,6 +29,8 @@ const SOURCE_EXTENSIONS = new Set([
 	".ts",
 	".tsx",
 ]);
+const STRUCTURAL_COMMENT =
+	/@(?:cc_on|jsx|jsxFrag|jsxImportSource|jsxRuntime|license|preserve|ts-(?:check|expect-error|ignore|nocheck)|type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated|vite-ignore)|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)|(?:istanbul|c8|v8)\s+ignore|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*source(?:Mapping)?URL=|<reference\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:/iu;
 const DRAFT_PROOF_KINDS = new Set([
 	"technical-proofs",
 	"exp-proofs",
@@ -479,6 +482,96 @@ function changedFiles(args) {
 	]);
 }
 
+function structuralComments(text) {
+	const scanner = ts.createScanner(
+		ts.ScriptTarget.Latest,
+		false,
+		ts.LanguageVariant.JSX,
+		text,
+	);
+	const comments = [];
+	for (
+		let token = scanner.scan();
+		token !== ts.SyntaxKind.EndOfFileToken;
+		token = scanner.scan()
+	) {
+		if (
+			(token === ts.SyntaxKind.SingleLineCommentTrivia ||
+				token === ts.SyntaxKind.MultiLineCommentTrivia) &&
+			STRUCTURAL_COMMENT.test(scanner.getTokenText())
+		) {
+			comments.push(scanner.getTokenText());
+		}
+	}
+	return comments;
+}
+
+function scriptKind(file) {
+	const extension = path.extname(file).toLowerCase();
+	if (extension === ".jsx") return ts.ScriptKind.JSX;
+	if (extension === ".tsx") return ts.ScriptKind.TSX;
+	if ([".js", ".cjs", ".mjs"].includes(extension)) return ts.ScriptKind.JS;
+	return ts.ScriptKind.TS;
+}
+
+export function hasSameProgramStructure(file, before, after) {
+	const parse = (text) =>
+		ts.createSourceFile(
+			file,
+			text,
+			ts.ScriptTarget.Latest,
+			true,
+			scriptKind(file),
+		);
+	const beforeSource = parse(before);
+	const afterSource = parse(after);
+	if (
+		beforeSource.parseDiagnostics.length ||
+		afterSource.parseDiagnostics.length
+	) {
+		return false;
+	}
+	if (
+		JSON.stringify(structuralComments(before)) !==
+		JSON.stringify(structuralComments(after))
+	) {
+		return false;
+	}
+	const printer = ts.createPrinter({ removeComments: true });
+	return printer.printFile(beforeSource) === printer.printFile(afterSource);
+}
+
+function contentAt(ref, file) {
+	return git(["show", `${ref}:${file}`]);
+}
+
+function structurallyChangedFiles(files, args) {
+	if (args.has("--all")) return files;
+	const baseArg = [...args].find((arg) => arg.startsWith("--base="));
+	const base =
+		baseArg?.slice("--base=".length) ?? process.env.HOBO_ARCHITECTURE_BASE;
+	let beforeRef = "HEAD";
+	if (!args.has("--staged") && base) {
+		const commit = git(["rev-parse", "--verify", `${base}^{commit}`]);
+		beforeRef = git(["merge-base", commit, "HEAD"]);
+	}
+
+	return files.filter((file) => {
+		if (!SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase())) return true;
+		try {
+			const before = contentAt(beforeRef, file);
+			const after = args.has("--staged")
+				? contentAt("", file)
+				: base
+					? contentAt("HEAD", file)
+					: readFileSync(file, "utf8");
+			return !hasSameProgramStructure(file, before, after);
+		} catch {
+			return true;
+		}
+	});
+}
+
 function git(args) {
 	return execFileSync("git", args, {
 		encoding: "utf8",
@@ -570,7 +663,10 @@ function trackedForeignLockfiles() {
 
 async function main() {
 	const args = new Set(process.argv.slice(2));
-	const files = unique([...changedFiles(args), ...trackedForeignLockfiles()]);
+	const files = unique([
+		...structurallyChangedFiles(changedFiles(args), args),
+		...trackedForeignLockfiles(),
+	]);
 	const result = await checkArchitectureGuardrails({ files });
 
 	if (result.problems.length > 0) {
