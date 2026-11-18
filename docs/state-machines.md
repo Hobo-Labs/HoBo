@@ -28,6 +28,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | Yard residency validation | [verify-yard-residency-validation](../.agents/skills/verify-yard-residency-validation/SKILL.md) | Invalid jurisdiction and classification tags cannot become eligible solely because a Yard repeats them, or reach a generation hold or provider effect through the deployment path. |
 | Yard funded admission | [verify-yard-funded-admission](../.agents/skills/verify-yard-funded-admission/SKILL.md) | Policy proof binds quote content, and Yard quotes bind selected work and generation plan; authority and freshness fences retain and reconcile covered exposure. |
 | Yard generation authority | [verify-yard-generation-authority](../.agents/skills/verify-yard-generation-authority/SKILL.md) | Current policy, runtime and connector evidence gate generation; the approved callable is pinned and covered post-effect changes retain exposure. |
+| Yard generation identity and readiness | [verify-yard-generation-state](../.agents/skills/verify-yard-generation-state/SKILL.md) | Exact Yard plans and results stay bound to the requested attempt and Yard; covered unready or foreign signals refuse placement and retain funded exposure. |
 | Yard local hosting | [verify-yard-local-hosting](../.agents/skills/verify-yard-local-hosting/SKILL.md) | Local placement requires bound host policy and zero-liability proof, current context and local runtime requirements; generation needs separate funding in the checked cases. |
 | Bindle runtime inference | [verify-bindles-runtime-inference](../.agents/skills/verify-bindles-runtime-inference/SKILL.md) | Declared and actual dependency runtimes survive inference; ordinary handlers do not invent an OCI or Wasm requirement in the checked cases. |
 | HoBo budget fallback | [verify-hobo-budget-fallback](../.agents/skills/verify-hobo-budget-fallback/SKILL.md) | A required budget prevents local startup or preview after a Yard stub; runtime and flag changes are rechecked before the handoff. |
@@ -112,11 +113,17 @@ The runner checks the pinned TLC jar and reuses or installs the pinned Z3 solver
 
 When covered behavior changes, review the code and its intended policy, update the implementation tests and model, replay counterexamples against code, exercise deliberately broken variants, regenerate affected charts, run the skill, and update its baseline. Keep `.agents/skills/` and `.claude/skills/` byte-for-byte mirrored. Pstack's `/maintain-formal-verification-skill` and `/statechart` describe that workflow.
 
+The Yard generation identity review also reran the affected budget, placement,
+Camp, request and local-hosting skills after deliberately weakening their
+covered guards or proof obligations. Their baselines record the reviewed
+implementation commit; the checks and limitations remain specific to each skill.
+
 ## Open work and proof boundaries
 
 - The historical candidate queue covers only selected source languages and paths and has not been fully classified. CI, CD, cloud providers, stores, examples, integrations, and additional stateful subsystems need further source review and their own checks.
 - Fleet capacity revisions stop at the uint32 wire limit; further changes, including releases, require a future format migration and reconciliation. Delivery fences and observation sequences have the same finite wire limit.
 - Yard Camp selection preserves the requested environment, refuses a foreign or nested Camp ID, and requires an ID for exact selection. It does not yet check the selected Camp's existence, full selection-mode semantics, capability or runtime requirements. Existing quotes or reservations created from a request whose Camp fields were previously discarded may need replacement or reconciliation.
+- Yard generation checks its planned and returned identities, readiness and signal batch before placement. Connector assertions and normalized provider evidence remain trusted, and past mismatched or prematurely accepted attempts may require resource and budget reconciliation.
 - Yard deployment parsing refuses invalid residency tags before quoting or funded generation. The direct generation planner and saga also validate residency, but a valid tag does not establish a supplied plan's authorization, other fields or actual data location.
 - The Yard request codec is not integrated with a deployed remote receiver, and its self-contained digest and version marker are not authentication. Unknown nested Struct and map-entry fields, legacy receivers and the still-incomplete protobuf placement receipt need separate work.
 - Fleet teardown confirmations are trusted controller assertions; provider evidence is not independently checked or recorded by the strict store.

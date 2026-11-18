@@ -122,6 +122,14 @@ export function prepareYardHostingWork(input: YardHostingWorkInput):
 			code: "owner-tenant-mismatch",
 			error: "work owner differs from request owner",
 		};
+	if (
+		request.yard.selectionMode === "exact" &&
+		request.yard.requestedYardId !== input.yardId
+	)
+		return {
+			code: "yard-exact-id-mismatch",
+			error: "quote Yard does not match the exact requested Yard",
+		};
 	if (selectOrGenerateCamp(request, input.yardId) === undefined)
 		return {
 			code: "camp-yard-mismatch",
@@ -246,6 +254,13 @@ export async function resolveBindleDeployment(
 	const appendProviderSignals = (
 		providerId: string,
 		signals: readonly { kind: string; payload: JsonObject }[],
+		expected: {
+			readonly attemptId: string;
+			readonly idempotencyKey: string;
+			readonly yardId: string;
+			readonly runtimeId: string;
+			readonly ownerTenantId: string;
+		},
 	): void => {
 		const resolver =
 			foldRegistry.get(providerId) ??
@@ -254,7 +269,36 @@ export async function resolveBindleDeployment(
 				createDefaultEventStoreFoldResolvers(),
 				"createDefaultEventStoreFoldResolvers()",
 			);
+		const pending: YardEvent[] = [];
+		const allowed = new Set<string>([
+			YARD_EVENTS.GenerationStarted,
+			YARD_EVENTS.GenerationProgressed,
+			YARD_EVENTS.GenerationProvisioned,
+			YARD_EVENTS.GenerationFailed,
+			YARD_EVENTS.GenerationCompensationRequested,
+			YARD_EVENTS.GenerationCompensated,
+			YARD_EVENTS.Registered,
+			YARD_EVENTS.AttestationStarted,
+			YARD_EVENTS.Attested,
+			YARD_EVENTS.Ready,
+			YARD_EVENTS.StatusChanged,
+			YARD_EVENTS.CapacityUpdated,
+			YARD_EVENTS.ProviderSignalNormalized,
+		]);
 		for (const signal of signals) {
+			if (
+				!isJsonObject(signal.payload) ||
+				signal.payload.attemptId !== expected.attemptId ||
+				(signal.payload.idempotencyKey !== undefined &&
+					signal.payload.idempotencyKey !== expected.idempotencyKey) ||
+				(signal.payload.yardId !== undefined &&
+					signal.payload.yardId !== expected.yardId) ||
+				(signal.payload.runtimeId !== undefined &&
+					signal.payload.runtimeId !== expected.runtimeId) ||
+				(signal.payload.ownerTenantId !== undefined &&
+					signal.payload.ownerTenantId !== expected.ownerTenantId)
+			)
+				throw new Error("provider signal does not match the generation plan");
 			const native: ProviderNativeSignal = {
 				providerId,
 				kind: signal.kind,
@@ -262,9 +306,67 @@ export async function resolveBindleDeployment(
 				payload: signal.payload as ProviderNativeSignal["payload"],
 			};
 			for (const event of resolver.normalize(native)) {
-				append(event);
+				const type = event.type;
+				if (!allowed.has(type))
+					throw new Error("provider signal contains a broker-owned event");
+				const data = cloneAsJson(event.data);
+				if (!isJsonObject(data))
+					throw new Error("normalized provider signal data must be an object");
+				for (const [key, value] of [
+					["attemptId", expected.attemptId],
+					["idempotencyKey", expected.idempotencyKey],
+					["yardId", expected.yardId],
+					["expectedYardId", expected.yardId],
+					["providerId", providerId],
+					["runtimeId", expected.runtimeId],
+				] as const) {
+					if (
+						data[key] !== undefined &&
+						data[key] !== "" &&
+						data[key] !== value
+					)
+						throw new Error(`normalized provider signal has mismatched ${key}`);
+				}
+				if (
+					(type === YARD_EVENTS.Ready ||
+						type === YARD_EVENTS.Attested ||
+						type === YARD_EVENTS.AttestationStarted) &&
+					data.yardId !== expected.yardId
+				)
+					throw new Error("normalized provider signal lacks the planned Yard");
+				if (type === YARD_EVENTS.Ready && data.attemptId !== expected.attemptId)
+					throw new Error("ready signal lacks the planned generation attempt");
+				if (type === YARD_EVENTS.StatusChanged && data.status === "ready")
+					throw new Error(
+						"ready status requires an attempt-bound ready signal",
+					);
+				if (type === YARD_EVENTS.Registered) {
+					const yard = data.yard;
+					if (
+						!isJsonObject(yard) ||
+						yard.yardId !== expected.yardId ||
+						yard.ownerTenantId !== expected.ownerTenantId ||
+						yard.providerId !== providerId ||
+						yard.runtimeId !== expected.runtimeId ||
+						yard.status === "ready"
+					)
+						throw new Error(
+							"normalized provider registration does not match the generation plan",
+						);
+				}
+				// The broker owns stream sequencing; keep a private normalized snapshot.
+				pending.push(
+					Object.freeze({
+						type,
+						data: Object.freeze(data),
+						...(event.occurredAt !== undefined
+							? { occurredAt: event.occurredAt }
+							: undefined),
+					}),
+				);
 			}
 		}
+		for (const event of pending) append(event);
 	};
 
 	if (request.schemaVersion !== BINDLE_DEPLOYMENT_REQUEST_SCHEMA) {
@@ -774,6 +876,25 @@ export async function resolveBindleDeployment(
 			);
 		}
 		if (
+			request.yard.selectionMode === "exact" &&
+			request.yard.requestedYardId !== genDecision.plan.expectedYardId
+		) {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "yard-generation-exact-id-mismatch",
+					reasonCodes: ["yard-generation-exact-id-mismatch"],
+				}),
+			);
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-exact-id-mismatch",
+				"generated Yard would not match the exact requested Yard",
+			);
+		}
+		if (
 			selectOrGenerateCamp(request, genDecision.plan.expectedYardId) ===
 			undefined
 		) {
@@ -1047,6 +1168,37 @@ export async function resolveBindleDeployment(
 			);
 		}
 		generationAttemptId = genDecision.plan.attemptId;
+		if (genResult.attemptId !== genDecision.plan.attemptId) {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "yard-generation-attempt-mismatch",
+					reasonCodes: ["yard-generation-attempt-mismatch"],
+				}),
+			);
+			return rejectAfterGeneration(
+				"placement",
+				"yard-generation-attempt-mismatch",
+				"provider returned a different generation attempt",
+			);
+		}
+		if (
+			genResult.yardId &&
+			genResult.yardId !== genDecision.plan.expectedYardId
+		) {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "yard-generation-id-mismatch",
+					reasonCodes: ["yard-generation-id-mismatch"],
+				}),
+			);
+			return rejectAfterGeneration(
+				"placement",
+				"yard-generation-id-mismatch",
+				"provider returned a different Yard than the generation plan",
+			);
+		}
 
 		// Feed the pinned connector's progress signals through the provider fold.
 		try {
@@ -1054,6 +1206,13 @@ export async function resolveBindleDeployment(
 				appendProviderSignals(
 					genDecision.plan.providerId,
 					selectedSignals.call(selectedConnector, genDecision.plan.attemptId),
+					{
+						attemptId: genDecision.plan.attemptId,
+						idempotencyKey: genDecision.plan.idempotencyKey,
+						yardId: genDecision.plan.expectedYardId,
+						runtimeId: genDecision.plan.runtimeId,
+						ownerTenantId,
+					},
 				);
 			}
 		} catch (error) {
@@ -1093,7 +1252,32 @@ export async function resolveBindleDeployment(
 			);
 		}
 
-		// If connector did not emit ready via signals, complete attestation path.
+		// A non-ready result needs a ready signal for this exact attempt and Yard.
+		const readyAttempt =
+			foldState.generationAttempts[genDecision.plan.attemptId];
+		const readySignalMatches =
+			foldState.yards[genResult.yardId]?.status === "ready" &&
+			readyAttempt?.status === "ready" &&
+			readyAttempt.yardId === genDecision.plan.expectedYardId &&
+			readyAttempt.expectedYardId === genDecision.plan.expectedYardId &&
+			readyAttempt.idempotencyKey === genDecision.plan.idempotencyKey &&
+			readyAttempt.providerId === genDecision.plan.providerId &&
+			readyAttempt.runtimeId === genDecision.plan.runtimeId;
+		if (!readySignalMatches && genResult.status !== "ready") {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "yard-generation-not-ready",
+					reasonCodes: ["yard-generation-not-ready"],
+				}),
+			);
+			return rejectAfterGeneration(
+				"placement",
+				"yard-generation-not-ready",
+				"provider has not reported a ready Yard",
+			);
+		}
+		// If the connector reports ready without signals, complete registration.
 		if (
 			!foldState.yards[genResult.yardId]?.status ||
 			foldState.yards[genResult.yardId]?.status !== "ready"

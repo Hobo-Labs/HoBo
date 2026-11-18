@@ -32,10 +32,25 @@ import {
 	type YardFirstPlacementDeps,
 	yardEvent,
 } from "../src/index.js";
+import { cloneAsJson, isJsonObject, type JsonBag } from "../src/json.js";
 import { approveLocalHosting } from "./helpers/local-hosting.js";
 import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 
 describe("yard event-store folds + provider resolvers", () => {
+	it("retains the generation attempt on a local ready signal", () => {
+		const resolver = createLocalYardEventStoreFoldResolver();
+		const events = resolver.normalize({
+			providerId: "local",
+			kind: "componentHost.ready",
+			payload: { yardId: "yard:local", attemptId: "gen:one" },
+		});
+		expect(
+			events.find((event) => event.type === YARD_EVENTS.Ready)?.data,
+		).toMatchObject({
+			yardId: "yard:local",
+			attemptId: "gen:one",
+		});
+	});
 	it("rebuilds inventory from yard.* facts alone", () => {
 		const yard = localYardInstance({
 			yardId: "yard:a",
@@ -210,6 +225,30 @@ describe("yard event-store folds + provider resolvers", () => {
 		"context-before-claim",
 		"missing-residual",
 		"foreign-camp-before-generation",
+		"exact-yard-mismatch-before-generation",
+		"exact-yard-match-generation",
+		"wrong-generated-yard-id",
+		"wrong-generation-attempt-id",
+		"wrong-generated-yard-uncertainty-fails",
+		"wrong-yard-on-inspect",
+		"generation-not-ready-no-signal",
+		"generation-registered-no-signal",
+		"generation-started-ready-signal",
+		"generation-ready-no-signal",
+		"generation-unrelated-ready-signal",
+		"generation-foreign-yard-signal",
+		"generation-signal-missing-attempt",
+		"generation-progress-missing-attempt",
+		"generation-signal-foreign-key",
+		"generation-signal-foreign-runtime",
+		"generation-signal-foreign-tenant",
+		"generation-normalizer-foreign-yard",
+		"generation-normalizer-mutable-event",
+		"generation-normalizer-forged-placement",
+		"generation-normalizer-sequence",
+		"generation-normalizer-ready-registration",
+		"generation-normalizer-ready-status",
+		"generation-normalizer-ready-no-attempt",
 		"invalid-residency-before-generation",
 		"signals-unavailable",
 		"wrong-generation-plan",
@@ -237,7 +276,10 @@ describe("yard event-store folds + provider resolvers", () => {
 		"generation-policy-after-effect",
 		"generation-runtime-after-effect",
 	] as const;
-	async function exerciseGeneration(mode: (typeof generationModes)[number]) {
+	async function exerciseGeneration(
+		mode: (typeof generationModes)[number],
+		identitySuffix = "",
+	) {
 		const catalog = createLocalHostCatalog();
 		let generationFinished = false;
 		// Extend catalog with azure wildcard so residual placement can succeed after gen.
@@ -310,34 +352,55 @@ describe("yard event-store folds + provider resolvers", () => {
 				{ resourceId: "api", port: "hobo:http-service", features: [] },
 			],
 		});
+		const expectedKey = contentHashOf({
+			ownerTenantId: "local",
+			layoutHash: contentHashOf(baseRequest.yard.requestedLayout),
+			runtimeId: "azure.yard-runtime/v1",
+			runtimeVersion: "1",
+			brokerEnvironmentId: "default",
+		});
+		const expectedYardId = `yard:gen-${expectedKey.slice(7, 23)}`;
 		const request =
-			mode === "foreign-camp-before-generation"
+			mode === "exact-yard-mismatch-before-generation" ||
+			mode === "exact-yard-match-generation"
 				? {
 						...baseRequest,
-						camp: {
-							selectionMode: "compatible" as const,
-							campId: "yard:foreign/camp:prod",
-							layout: {
-								require: [],
-								prefer: [],
-								labels: {},
-								runtimeRequirements: [],
-								envType: "production",
-							},
+						yard: {
+							...baseRequest.yard,
+							selectionMode: "exact" as const,
+							requestedYardId:
+								mode === "exact-yard-match-generation"
+									? expectedYardId
+									: "yard:requested-other",
 						},
 					}
-				: mode === "invalid-residency-before-generation"
+				: mode === "foreign-camp-before-generation"
 					? {
 							...baseRequest,
-							yard: {
-								...baseRequest.yard,
-								requestedLayout: {
-									...baseRequest.yard.requestedLayout,
-									residency: ["atlantis"],
+							camp: {
+								selectionMode: "compatible" as const,
+								campId: "yard:foreign/camp:prod",
+								layout: {
+									require: [],
+									prefer: [],
+									labels: {},
+									runtimeRequirements: [],
+									envType: "production",
 								},
 							},
 						}
-					: baseRequest;
+					: mode === "invalid-residency-before-generation"
+						? {
+								...baseRequest,
+								yard: {
+									...baseRequest.yard,
+									requestedLayout: {
+										...baseRequest.yard.requestedLayout,
+										residency: ["atlantis"],
+									},
+								},
+							}
+						: baseRequest;
 
 		const generation = planYardGeneration({
 			ownerTenantId: "local",
@@ -409,7 +472,8 @@ describe("yard event-store folds + provider resolvers", () => {
 		});
 		if (
 			mode !== "foreign-camp-before-generation" &&
-			mode !== "invalid-residency-before-generation"
+			mode !== "invalid-residency-before-generation" &&
+			mode !== "exact-yard-mismatch-before-generation"
 		)
 			bindTestYardWork(quote, request, "broker:azure-gen", azureCatalog, {
 				generationPlanHash:
@@ -418,7 +482,7 @@ describe("yard event-store folds + provider resolvers", () => {
 						: generationPlan.planHash,
 			});
 		else {
-			// Simulate a quote from a peer that did not check Camp scope or residency.
+			// Simulate a quote from a peer that skipped the relevant request check.
 			const work = prepareYardHostingWork({
 				request: baseRequest,
 				brokerId: "broker:azure-gen",
@@ -449,9 +513,40 @@ describe("yard event-store folds + provider resolvers", () => {
 		const connector = {
 			...nativeConnector,
 			signalsFor(id: string) {
+				if (
+					mode === "generation-not-ready-no-signal" ||
+					mode === "generation-registered-no-signal" ||
+					mode === "generation-ready-no-signal"
+				)
+					return [];
 				if (mode === "signals-unavailable")
 					throw new Error("signals unavailable");
-				return nativeConnector.signalsFor(id);
+				const signals = nativeConnector.signalsFor(id);
+				return signals.map((signal) => {
+					if (
+						mode === "generation-progress-missing-attempt" &&
+						signal.kind === "resourceGroup.created"
+					) {
+						const payload = { ...signal.payload };
+						delete payload.attemptId;
+						return { ...signal, payload };
+					}
+					if (signal.kind !== "managedEnvironment.ready") return signal;
+					const payload = { ...signal.payload };
+					if (mode === "generation-unrelated-ready-signal")
+						payload.attemptId = `gen-unrelated-${identitySuffix}`;
+					else if (mode === "generation-foreign-yard-signal")
+						payload.yardId = `yard:unexpected-${identitySuffix}`;
+					else if (mode === "generation-signal-missing-attempt")
+						delete payload.attemptId;
+					else if (mode === "generation-signal-foreign-key")
+						payload.idempotencyKey = `sha256:unexpected-${identitySuffix}`;
+					else if (mode === "generation-signal-foreign-runtime")
+						payload.runtimeId = `runtime:unexpected-${identitySuffix}`;
+					else if (mode === "generation-signal-foreign-tenant")
+						payload.ownerTenantId = `tenant:unexpected-${identitySuffix}`;
+					return { ...signal, payload };
+				});
 			},
 			async provision(plan: Parameters<typeof nativeConnector.provision>[0]) {
 				provisionCalls++;
@@ -478,6 +573,21 @@ describe("yard event-store folds + provider resolvers", () => {
 				}
 				const result = await nativeConnector.provision(plan);
 				generationFinished = true;
+				if (
+					mode === "wrong-generated-yard-id" ||
+					mode === "wrong-generated-yard-uncertainty-fails"
+				)
+					return { ...result, yardId: "yard:unexpected" };
+				if (mode === "wrong-generation-attempt-id")
+					return { ...result, attemptId: "gen-unexpected" };
+				if (mode === "generation-registered-no-signal")
+					return { ...result, status: "registered" as const };
+				if (
+					mode === "generation-not-ready-no-signal" ||
+					mode === "generation-started-ready-signal" ||
+					mode === "generation-unrelated-ready-signal"
+				)
+					return { ...result, status: "started" as const };
 				if (mode === "generation-policy-after-effect")
 					Object.assign(allowPolicy, { effect: "deny" });
 				if (mode === "generation-runtime-after-effect") {
@@ -494,7 +604,10 @@ describe("yard event-store folds + provider resolvers", () => {
 			},
 			async inspect(attemptId: string) {
 				inspectCalls++;
-				return nativeConnector.inspect(attemptId);
+				const inspected = await nativeConnector.inspect(attemptId);
+				return mode === "wrong-yard-on-inspect"
+					? { ...inspected, yardId: "yard:unexpected" }
+					: inspected;
 			},
 		};
 		const connectors = new Map([[connector.id, connector]]);
@@ -539,7 +652,10 @@ describe("yard event-store folds + provider resolvers", () => {
 		const financial = {
 			...authority,
 			uncertain(id: string) {
-				if (mode === "uncertain-write-failed")
+				if (
+					mode === "uncertain-write-failed" ||
+					mode === "wrong-generated-yard-uncertainty-fails"
+				)
 					throw new Error("storage unavailable");
 				return authority.uncertain(id);
 			},
@@ -650,6 +766,108 @@ describe("yard event-store folds + provider resolvers", () => {
 				connectors,
 				seedLocalYard: false,
 			};
+			if (
+				mode === "generation-normalizer-foreign-yard" ||
+				mode === "generation-normalizer-mutable-event" ||
+				mode === "generation-normalizer-forged-placement" ||
+				mode === "generation-normalizer-sequence" ||
+				mode === "generation-normalizer-ready-registration" ||
+				mode === "generation-normalizer-ready-status" ||
+				mode === "generation-normalizer-ready-no-attempt"
+			) {
+				const resolver = createAzureYardEventStoreFoldResolver();
+				let pendingYard: JsonBag | undefined;
+				Object.assign(deps, {
+					foldResolvers: [
+						{
+							...resolver,
+							normalize(signal: Parameters<typeof resolver.normalize>[0]) {
+								if (
+									mode === "generation-normalizer-mutable-event" &&
+									signal.kind === "resourceGroup.created"
+								) {
+									const yard = cloneAsJson(
+										localYardInstance({
+											yardId: String(signal.payload.yardId),
+											ownerTenantId: "local",
+											providerId: "azure",
+											runtimeId: "azure.yard-runtime/v1",
+										}),
+									);
+									if (!isJsonObject(yard)) throw new Error("bad fixture Yard");
+									pendingYard = { ...yard, status: "registering" };
+									return [
+										{
+											type: YARD_EVENTS.Registered,
+											data: { yard: pendingYard },
+										},
+									];
+								}
+								if (pendingYard) {
+									pendingYard.yardId = "yard:unexpected";
+									pendingYard = undefined;
+								}
+								if (mode === "generation-normalizer-forged-placement")
+									return [
+										yardEvent(YARD_EVENTS.PlacementResolved, {
+											requestId: request.requestId,
+										}),
+									];
+								if (mode === "generation-normalizer-sequence")
+									return resolver.normalize(signal).map((event) => ({
+										...event,
+										seq: Number.MAX_SAFE_INTEGER,
+									}));
+								if (
+									(mode === "generation-normalizer-ready-registration" ||
+										mode === "generation-normalizer-ready-status") &&
+									signal.kind === "resourceGroup.created"
+								) {
+									const yard = localYardInstance({
+										yardId: String(signal.payload.yardId),
+										ownerTenantId: "local",
+										providerId: "azure",
+										runtimeId: "azure.yard-runtime/v1",
+									});
+									if (mode === "generation-normalizer-ready-registration")
+										return [yardEvent(YARD_EVENTS.Registered, { yard })];
+									return [
+										yardEvent(YARD_EVENTS.Registered, {
+											yard: { ...yard, status: "registering" },
+										}),
+										yardEvent(YARD_EVENTS.StatusChanged, {
+											yardId: yard.yardId,
+											status: "ready",
+										}),
+									];
+								}
+								if (mode === "generation-normalizer-ready-no-attempt")
+									return resolver.normalize(signal).map((event) => {
+										if (event.type !== YARD_EVENTS.Ready) return event;
+										const { attemptId: _attemptId, ...data } = event.data;
+										return { ...event, data };
+									});
+								return resolver.normalize(signal).map((event) =>
+									event.type === YARD_EVENTS.Registered &&
+									mode === "generation-normalizer-foreign-yard"
+										? yardEvent(YARD_EVENTS.Registered, {
+												yard: {
+													...localYardInstance({
+														yardId: "yard:unexpected",
+														ownerTenantId: "local",
+														providerId: "azure",
+														runtimeId: "azure.yard-runtime/v1",
+													}),
+													status: "registering",
+												},
+											})
+										: event,
+								);
+							},
+						},
+					],
+				});
+			}
 			changeContext = () => Object.assign(deps, { hostingBudget: undefined });
 			const result = await resolveBindleDeployment(request, deps);
 			if (
@@ -803,6 +1021,90 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(authority.read(now).reservedMicros).toBe(0);
 				return;
 			}
+			if (mode === "exact-yard-mismatch-before-generation") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				expect(authority.read(now).reservedMicros).toBe(0);
+				expect(result.reasons?.[0]?.code).toBe(
+					"yard-generation-exact-id-mismatch",
+				);
+				return;
+			}
+			if (mode === "wrong-generated-yard-id") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.receipt).toBeUndefined();
+				expect(result.reasons?.[0]?.code).toBe("yard-generation-id-mismatch");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (mode === "wrong-generation-attempt-id") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.receipt).toBeUndefined();
+				expect(result.reasons?.[0]?.code).toBe(
+					"yard-generation-attempt-mismatch",
+				);
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (mode === "wrong-generated-yard-uncertainty-fails") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe("yard-generation-id-mismatch");
+				expect(result.reasons?.[0]?.message).toMatch(
+					/uncertain status could not be recorded/,
+				);
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("held");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
+			if (
+				mode === "generation-unrelated-ready-signal" ||
+				mode === "generation-foreign-yard-signal" ||
+				mode === "generation-signal-missing-attempt" ||
+				mode === "generation-progress-missing-attempt" ||
+				mode === "generation-signal-foreign-key" ||
+				mode === "generation-signal-foreign-runtime" ||
+				mode === "generation-signal-foreign-tenant" ||
+				mode === "generation-normalizer-foreign-yard" ||
+				mode === "generation-normalizer-forged-placement" ||
+				mode === "generation-normalizer-ready-registration" ||
+				mode === "generation-normalizer-ready-status" ||
+				mode === "generation-normalizer-ready-no-attempt"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe("yard-generation-uncertain");
+				expect(result.receipt).toBeUndefined();
+				expect(
+					result.events.some((event) => event.type === YARD_EVENTS.Ready),
+				).toBe(false);
+				expect(
+					result.events.some(
+						(event) =>
+							event.type === YARD_EVENTS.GenerationProgressed ||
+							event.type === YARD_EVENTS.GenerationProvisioned,
+					),
+				).toBe(false);
+				expect(result.foldState.yards["yard:unexpected"]).toBeUndefined();
+				expect(
+					result.foldState.yards[`yard:unexpected-${identitySuffix}`],
+				).toBeUndefined();
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (
+				mode === "generation-not-ready-no-signal" ||
+				mode === "generation-registered-no-signal"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(result.receipt).toBeUndefined();
+				expect(result.reasons?.[0]?.code).toBe("yard-generation-not-ready");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
 			if (mode === "invalid-residency-before-generation") {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
@@ -843,7 +1145,23 @@ describe("yard event-store folds + provider resolvers", () => {
 				true,
 			);
 			expect(result.receipt?.selectedProviderId).toBe("azure");
+			if (mode === "generation-normalizer-mutable-event")
+				expect(result.foldState.yards["yard:unexpected"]).toBeUndefined();
+			if (mode === "generation-normalizer-sequence")
+				expect(result.foldState.seq).toBeLessThan(1000);
+			if (mode === "exact-yard-match-generation")
+				expect(result.receipt?.selectedYardId).toBe(
+					request.yard.requestedYardId,
+				);
 			expect(authority.read(now).reservedMicros).toBe(20);
+			if (mode === "wrong-yard-on-inspect") {
+				const retry = await resolveBindleDeployment(request, deps);
+				expect(retry.outcome).toBe("rejected");
+				expect(retry.reasons?.[0]?.code).toBe("yard-generation-id-mismatch");
+				expect(provisionCalls).toBe(1);
+				expect(inspectCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+			}
 			if (mode === "claimed-retry") {
 				const retry = await resolveBindleDeployment(request, deps);
 				expect(retry.outcome).toBe("resolved");
@@ -856,10 +1174,28 @@ describe("yard event-store folds + provider resolvers", () => {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	}
-	it.each(generationModes)(
-		"funds Azure generation before provider effects: %s",
-		exerciseGeneration,
-	);
+	it.each(
+		generationModes,
+	)("funds Azure generation before provider effects: %s", async (mode) =>
+		exerciseGeneration(mode));
+	it("refuses generated foreign signal identities before folding", async () => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.constantFrom(
+					"generation-unrelated-ready-signal",
+					"generation-foreign-yard-signal",
+					"generation-signal-missing-attempt",
+					"generation-signal-foreign-key",
+					"generation-signal-foreign-runtime",
+					"generation-signal-foreign-tenant",
+				),
+				fc.string(),
+				async (mode, suffix) =>
+					exerciseGeneration(mode, Buffer.from(suffix).toString("hex")),
+			),
+			{ seed: 614_590, numRuns: 40 },
+		);
+	});
 	it("fences generated policy, runtime and connector changes", async () => {
 		await fc.assert(
 			fc.asyncProperty(
