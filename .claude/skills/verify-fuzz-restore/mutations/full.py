@@ -11,8 +11,8 @@ skill = '.agents/skills/verify-fuzz-restore'
 cases = [
     ('missing-baseline', 'if (pristine) this.replayBaseline = raw;', 'if (pristine) {}'),
     ('ignore-baseline', 'if (this.replayBaseline !== undefined) copy.restore(this.replayBaseline);', ''),
-    ('missing-restore-event', 'else this.append("system", "model.restored", { snapshot: raw });', 'else {}'),
-    ('ignore-restore-event', 'copy.restore(event.payload.snapshot ?? "");', 'copy.note(event.tenantId, event.kind, { ...event.payload });'),
+    ('missing-restore-event', 'else this.#appendEvent("system", "model.restored", { snapshot: raw });', 'else {}'),
+    ('ignore-restore-event', 'copy.restore(event.payload.snapshot ?? "");', 'copy.note(event.tenantId, "ignored.restore", { ...event.payload });'),
     ('reuse-replacement-clock', 'this.clock = pristine ? blob.clock : baseClock + 1;', 'this.clock = pristine ? blob.clock : baseClock;'),
     ('skip-fingerprint', 'candidate.fingerprint() !== blob.fingerprint', 'false'),
     ('accept-duplicate-ids', 'row.id !== id || seen.has(id)', 'row.id !== id'),

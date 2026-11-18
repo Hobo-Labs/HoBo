@@ -9,7 +9,7 @@ description: Verify fuzz-oracle checkpoint revisions across retries and rollback
 
 **Why:** A reused clock can replace a saved checkpoint and make the fuzz oracle report a successful rollback to the wrong historical state.
 
-**Review baseline:** `968e6e0dd289f4f1297bf2eed743847ed04a01f7`.
+**Review baseline:** `8e7a9ed158f6385ba75af64cacb1b9404fd5ef69`.
 
 ## Covered code and checks
 
@@ -52,6 +52,8 @@ With the retry tick removed, a checkpoint, retry and second checkpoint replace t
 The model covers one resource and one tenant, treats stored payloads as a single bit, assumes API-managed snapshots and does not model all event kinds, direct mutation of public maps, arbitrary `restore()` calls, concurrency or persistence. The separate [restore model](../verify-fuzz-restore/SKILL.md) covers the replay baseline and clock advancement for restoring serialized state. The proof is over mathematical integers, not TypeScript refinement or every JavaScript floating-point behavior. Replay and multi-tenant examples are executable tests rather than model-checked claims. This is a testing oracle, not the production control plane.
 
 The related [capability input model](../verify-fuzz-capability-input/SKILL.md) checks verb capture and replay.
+
+The related [event history model](../verify-fuzz-event-history/SKILL.md) checks event ownership and ordered public appends.
 
 ## Keep in sync
 
