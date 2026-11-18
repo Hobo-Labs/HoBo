@@ -9,13 +9,15 @@ description: Verify local component-host event failures and active-call teardown
 
 **Why:** An event may have been written before the sink fails; continuing can make local state diverge further. Tearing down a component while one of its calls is still running can release its tracked state before the call finishes.
 
-**Review baseline:** `08f10bdd76ae758b1130a0714807bce69f7ab5c8`.
+**Review baseline:** `d877cf7fead4a68b2ccc45e755519615a60b4d66`.
 
 ## Covered code and checks
 
 - `packages/runtimes/runtime-local/src/component-host.ts` handles sink uncertainty and reentry, tracks in-flight calls and fences teardown. `src/errors.ts` defines the named refusals.
 - `packages/runtimes/runtime-local/test/component-host-failure.test.ts` checks failure before and after a sink write, promises and thenables, all effectful entry points, callback reentry, completion versus trap handling, overlapping linked and HTTP calls, and release after provider failure. Forty generated identities cover both sink outcomes.
 - The related [component-load skill](../verify-component-load-lifecycle/SKILL.md) checks exclusive and identity-bound loading.
+
+The related [diagnostic snapshot skill](../verify-component-host-diagnostics/SKILL.md) checks lifecycle and event mirror isolation.
 
 From the repository root with dependencies installed, run:
 

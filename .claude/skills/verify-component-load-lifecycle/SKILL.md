@@ -9,7 +9,7 @@ description: Verify exclusive and identity-bound component loads in the local ho
 
 **Why:** Replacing tracked state during a second or reentrant load can lose the first instance's leases and retain state associated with a different instance.
 
-**Review baseline:** `08f10bdd76ae758b1130a0714807bce69f7ab5c8`.
+**Review baseline:** `d877cf7fead4a68b2ccc45e755519615a60b4d66`.
 
 ## Covered code and checks
 
@@ -17,6 +17,8 @@ description: Verify exclusive and identity-bound component loads in the local ho
 - `packages/runtimes/runtime-local/test/component-load-lifecycle.test.ts` checks duplicate and reentrant loads, teardown and reload, failed instantiation followed by retry, identity mismatch and mutation of the input leases. Seed 614620 generates 60 component and lease identities.
 
 - The related [host failure skill](../verify-component-host-failure/SKILL.md) checks sink uncertainty, callback reentry and active-call teardown fencing.
+
+The related [diagnostic snapshot skill](../verify-component-host-diagnostics/SKILL.md) checks lifecycle and event mirror isolation.
 
 From the repository root with dependencies installed, run:
 
