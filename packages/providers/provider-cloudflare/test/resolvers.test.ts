@@ -756,13 +756,35 @@ describe("mutable deltas are applied, immutable drift is only reported", () => {
 	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 	it("r2 sends the jurisdiction as a header on every call", async () => {
 		const fake = fakeTransport(r2Double());
-		await resolverFor(CLOUDFLARE_R2_PRODUCT_ID).reconcile(
+		const outcome = await resolverFor(CLOUDFLARE_R2_PRODUCT_ID).reconcile(
 			request(CLOUDFLARE_R2_PRODUCT_ID, { desired: { jurisdiction: "eu" } }),
 			fake.transport,
 		);
 		for (const call of fake.calls) {
 			expect(call.headers["cf-r2-jurisdiction"]).toBe("eu");
 		}
+		expect(outcome.outputs.residencyEvidence).toMatchObject({
+			providerId: "cloudflare",
+			productId: CLOUDFLARE_R2_PRODUCT_ID,
+			control: "cf-r2-jurisdiction",
+			region: "cloudflare-r2-eu",
+			jurisdictions: ["eu", "eea"],
+			verified: true,
+		});
+	});
+
+	it("r2 rejects unrecognized jurisdiction controls", async () => {
+		const fake = fakeTransport(r2Double());
+		expect(
+			await refusalCode(() =>
+				resolverFor(CLOUDFLARE_R2_PRODUCT_ID).reconcile(
+					request(CLOUDFLARE_R2_PRODUCT_ID, {
+						desired: { jurisdiction: "us" },
+					}),
+					fake.transport,
+				),
+			),
+		).toBe("RESOLVER_PRODUCT_UNSUPPORTED");
 	});
 
 	it("workers upload a multipart body carrying the module source", async () => {

@@ -88,6 +88,12 @@ export {
 	DEFAULT_COLOS,
 } from "./provider.js";
 export {
+	CLOUDFLARE_R2_RESIDENCY_REGIONS,
+	type CloudflareR2ResidencyEvidence,
+	cloudflareR2ResidencyEvidence,
+	isR2Jurisdiction,
+} from "./residency.js";
+export {
 	createR2ObjectClient,
 	type R2Condition,
 	type R2Object,

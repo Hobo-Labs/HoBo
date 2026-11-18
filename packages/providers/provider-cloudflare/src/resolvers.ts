@@ -76,6 +76,10 @@ import {
 	type JsonValue,
 	parseJsonObject,
 } from "./json.js";
+import {
+	cloudflareR2ResidencyEvidence,
+	isR2Jurisdiction,
+} from "./residency.js";
 import { d1, kv, pages, queues, r2, workers } from "./slots.js";
 import {
 	CLOUDFLARE_MAX_RESPONSE_BYTES,
@@ -607,23 +611,43 @@ function createResolver(
 function r2Headers(
 	context: CloudflareResolverContext,
 ): Readonly<Record<string, string>> {
-	const jurisdiction = optionalString(context.desired, "jurisdiction");
+	const jurisdiction = r2Jurisdiction(context);
 	return jurisdiction === undefined
 		? {}
 		: { "cf-r2-jurisdiction": jurisdiction };
+}
+
+function r2Jurisdiction(context: CloudflareResolverContext) {
+	const jurisdiction = optionalString(context.desired, "jurisdiction");
+	if (jurisdiction === undefined) return undefined;
+	if (!isR2Jurisdiction(jurisdiction)) {
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			`${CLOUDFLARE_R2_PRODUCT_ID}: jurisdiction must be eu or fedramp`,
+		);
+	}
+	return jurisdiction;
 }
 
 function r2Path(context: CloudflareResolverContext, suffix = ""): string {
 	return `/accounts/${encodeURIComponent(context.accountId)}/r2/buckets${suffix}`;
 }
 
-function r2Outputs(name: string, record: JsonObject) {
+function r2Outputs(context: CloudflareResolverContext, record: JsonObject) {
 	const location = optionalString(record, "location");
 	const storageClass = optionalString(record, "storage_class");
+	const jurisdiction = r2Jurisdiction(context);
 	return {
-		bucketName: name,
+		bucketName: context.name,
 		...(location !== undefined ? { location } : undefined),
 		...(storageClass !== undefined ? { storageClass } : undefined),
+		...(jurisdiction === undefined
+			? undefined
+			: {
+					residencyEvidence: parseJsonObject(
+						JSON.stringify(cloudflareR2ResidencyEvidence(jurisdiction)),
+					),
+				}),
 	};
 }
 
@@ -676,7 +700,7 @@ const R2_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 		return outcome(
 			settledAction(context),
 			context.name,
-			r2Outputs(context.name, observed),
+			r2Outputs(context, observed),
 			r2Diagnostics(context, observed),
 		);
 	},
@@ -686,7 +710,7 @@ const R2_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 			return outcome(
 				settledAction(context),
 				context.name,
-				r2Outputs(context.name, observed),
+				r2Outputs(context, observed),
 				r2Diagnostics(context, observed),
 			);
 		}
@@ -709,7 +733,7 @@ const R2_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 		return outcome(
 			"create",
 			context.name,
-			r2Outputs(context.name, created),
+			r2Outputs(context, created),
 			r2Diagnostics(context, created),
 		);
 	},

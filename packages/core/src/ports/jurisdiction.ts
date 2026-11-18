@@ -313,6 +313,8 @@ export const REGION_JURISDICTIONS: Readonly<
 	"ap-south": ["in"],
 	uk: ["uk"],
 	"us-gov-west-1": ["us", "us-gov"],
+	"cloudflare-r2-eu": ["eu", "eea"],
+	"cloudflare-r2-fedramp": ["us", "us-gov"],
 	global: ["global"],
 	local: ["global"],
 });
