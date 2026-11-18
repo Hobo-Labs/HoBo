@@ -402,6 +402,16 @@ export async function ownerStore(
 		const check = locator.assertCurrent;
 		const write = <T>(operation: () => Promise<T>): Promise<T> =>
 			locator.runStoreWrite ? locator.runStoreWrite(operation) : operation();
+		const mutate = <T>(operation: () => Promise<T>): Promise<T> =>
+			write(async () => {
+				check();
+				try {
+					return await operation();
+				} catch (error) {
+					locator.markUncertainWrite?.();
+					throw error;
+				}
+			});
 		return {
 			...store,
 			withWriteLock: write,
@@ -410,7 +420,7 @@ export async function ownerStore(
 				kind: port.kind,
 				put: async (name, value) => {
 					check();
-					const result = await write(() => port.put(name, value));
+					const result = await mutate(() => port.put(name, value));
 					check();
 					return result;
 				},
@@ -436,7 +446,7 @@ export async function ownerStore(
 					? {
 							createOnly: async (name: string, value: string) => {
 								check();
-								const result = await write(
+								const result = await mutate(
 									() =>
 										port.createOnly?.(name, value) ??
 										Promise.resolve(undefined),

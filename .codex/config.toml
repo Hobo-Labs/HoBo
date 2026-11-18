@@ -1,10 +1,6 @@
 # Codex CLI — MCP servers for this project.
 #
-# Codex loads this file for trusted projects. For a global fallback, either
-# paste these tables into ~/.codex/config.toml or run:
-#        codex mcp add headroom -- bash scripts/agent-mcp-headroom.sh
-#        codex mcp add gbrain   -- bash scripts/agent-mcp-gbrain.sh
-#        codex mcp add serena   -- bash scripts/agent-mcp-serena.sh
+# Codex loads this file for trusted projects.
 #
 # serena:   semantic code retrieval/editing through language servers, no keys
 #           (scripts/agent-mcp-serena.sh fails closed if binary missing).
@@ -13,6 +9,12 @@
 # gbrain:   knowledge-graph memory via shared launcher (fails closed without binary
 #           or initialized provider). Run `gbrain init`; local Ollama stays local,
 #           while API-key providers receive embedding/query text. See AUTH.md.
+
+[mcp_servers.hobo]
+command = "bash"
+args = ["-c", 'root=$(git rev-parse --show-toplevel) || exit 1; cd "$root" || exit 1; exec node --import tsx packages/hobo/src/bin/hobo-mcp.ts']
+startup_timeout_sec = 30
+tool_timeout_sec = 1800
 
 [mcp_servers.headroom]
 command = "bash"

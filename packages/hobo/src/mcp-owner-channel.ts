@@ -75,6 +75,7 @@ export function createMcpOwnerChannel(
 		readonly form?: (
 			params: JsonObject,
 		) => Promise<JsonValue | undefined> | undefined;
+		readonly canConfirm?: () => boolean;
 		/**
 		 * Open the capture form for a value the waiting run needs now (its
 		 * link in the form); the value the owner submits is deposited here.
@@ -154,7 +155,11 @@ export function createMcpOwnerChannel(
 		epoch = epochs.get(scope) ?? 0,
 	): Pick<
 		OwnerChannel,
-		"openUrl" | "captureSecret" | "holds" | "reserveCaptures"
+		| "openUrl"
+		| "captureSecret"
+		| "holds"
+		| "reserveCaptures"
+		| "requestCaptures"
 	> => ({
 		reserveCaptures: (names) => {
 			sweep();
@@ -163,6 +168,27 @@ export function createMcpOwnerChannel(
 					"The owner session changed. Start this operation again.",
 				);
 			reserve(scope, names);
+		},
+		async requestCaptures(names) {
+			sweep();
+			if ((epochs.get(scope) ?? 0) !== epoch)
+				throw new Error(
+					"The owner session changed. Start this operation again.",
+				);
+			reserve(scope, names);
+			for (const name of names) {
+				const lease = waiting.get(name);
+				if (!lease || lease.scope !== scope) return;
+				if (lease.value === undefined) {
+					const shown = await options.ask?.(name).catch(() => false);
+					if (
+						!shown ||
+						waiting.get(name) !== lease ||
+						lease.value === undefined
+					)
+						return;
+				}
+			}
 		},
 		async openUrl(url, message, name) {
 			sweep();
@@ -203,6 +229,7 @@ export function createMcpOwnerChannel(
 			waiting.get(name)?.value !== undefined,
 	});
 	const owner: McpOwnerChannel = {
+		privateSubprocessAllowed: false,
 		...(options.storeSettings
 			? { storeSettings: options.storeSettings }
 			: undefined),
@@ -246,6 +273,7 @@ export function createMcpOwnerChannel(
 		// code): the host's own link prompt, since no progress line reaches
 		// them through MCP.
 		async show(url, message, jobKey) {
+			if (options.prompt === undefined) return;
 			const elicitationId = `hobo-${randomUUID()}`;
 			prompted.set(jobKey, elicitationId);
 			await options.prompt?.({ mode: "url", elicitationId, url, message });
@@ -266,6 +294,36 @@ export function createMcpOwnerChannel(
 			});
 			if (answer === undefined) return undefined;
 			return Accepted.safeParse(await answer).success;
+		},
+		canConfirm: () => options.canConfirm?.() === true,
+		async choose({ message, choices }) {
+			if (options.canConfirm?.() !== true || choices.length === 0)
+				return undefined;
+			const answer = await options.form?.({
+				message,
+				requestedSchema: {
+					type: "object",
+					properties: {
+						choice: {
+							type: "string",
+							title: "Organization",
+							enum: choices.map((item) => item.value),
+							enumNames: choices.map((item) => item.label),
+						},
+					},
+					required: ["choice"],
+				},
+			});
+			const parsed = z
+				.object({
+					action: z.literal("accept"),
+					content: z.object({ choice: z.string() }),
+				})
+				.safeParse(answer);
+			return parsed.success &&
+				choices.some((item) => item.value === parsed.data.content.choice)
+				? parsed.data.content.choice
+				: undefined;
 		},
 		// Steps that wait on the owner run here, off the request path, for as
 		// long as this server lives; when one ends, the prompt it showed is

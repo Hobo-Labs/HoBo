@@ -1,6 +1,13 @@
 {
   "$comment": "Project-scoped MCP for Cursor. serena/headroom = local zero-key; gbrain = scripts/agent-mcp-gbrain.sh (fails closed with AUTH.md remediation when its binary/provider is missing; local Ollama or API-key provider). See AUTH.md and docs/agent-tooling.md. Setup: bash scripts/setup-agent-tools.sh --help",
   "mcpServers": {
+    "hobo": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "root=$(git rev-parse --show-toplevel) || exit 1; cd \"$root\" || exit 1; exec node --import tsx packages/hobo/src/bin/hobo-mcp.ts"
+      ]
+    },
     "headroom": {
       "command": "bash",
       "args": [

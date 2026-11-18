@@ -54,6 +54,11 @@ describe.skipIf(skipVisualTest)("store selection form", () => {
 			expect(await page.locator('button[type="submit"]').isDisabled()).toBe(
 				true,
 			);
+			expect(
+				await page
+					.locator('button[type="submit"]')
+					.evaluate((button) => getComputedStyle(button).opacity),
+			).toBe("0.45");
 			await page.evaluate(() => {
 				window.addEventListener("message", (event) => {
 					if (event.data?.method === "tools/call")

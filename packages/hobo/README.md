@@ -31,9 +31,9 @@ an uncaught error included (`src/owned-temp-dir.ts`). The `hobo` binary instead 
 persistent data directory under `HOBO_HOME`; `hobo-mcp` and `createComposedHoboCli()`
 use the temporary default. A `dataDir` you pass is yours and is never removed. As entry
 points, the binaries also remove owned temporary directories (and the live Pulumi lane's
-workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT (`removeOwnedDirsOnSignals`). Another
-entry point that composes this CLI in its own process asks for the same removal through
-that export of `src/cli.ts`.
+workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT (`removeOwnedDirsOnSignals`). A host
+that composes this CLI in its own process can opt in to the same removal through that
+export of `src/cli.ts`.
 When nothing else in the process listens for the signal, the directories are removed and
 the signal raised again, so the process still ends by it (status 128+n). When something
 else handles the signal (`hobo serve control` stops gracefully on SIGTERM and SIGINT and
@@ -211,6 +211,14 @@ every child process) selects nothing and the run falls back to the local Yard.
 The resolver plane receives a surrogate (the OpenSesame relaunch below) or a
 credential explicitly supplied by an embedding host. For relay delivery,
 `hobo ci up` passes the owner's store credential in the run's trusted vault.
+
+When a CI or CD identity or session is missing or unverified, run the relevant
+`hobo ci up --hand-off` or `hobo cd up --hand-off` setup ceremony. Use both when
+the deployment needs both families. A CI connection check does not establish
+that the CD connection is ready. Remote agents follow the
+[HoBo deployment skill](../../.agents/skills/hobo-deploy/SKILL.md): before
+opening a form, verify that its owner settings remain private; otherwise report
+the missing capability instead of collecting identifiers or values in chat.
 
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which

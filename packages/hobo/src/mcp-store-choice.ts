@@ -607,6 +607,8 @@ h1{font-size:17px;margin:0 0 12px}.opt{display:block;padding:10px;border:2px sol
 [data-for][hidden]{display:none}
 input[type=text]{width:100%;box-sizing:border-box;padding:8px;border:2px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)}
 button{margin-top:12px;padding:10px 16px;border:2px solid var(--line);border-radius:8px;background:var(--ink);color:var(--paper);font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:not(:disabled){cursor:pointer}
 #say{margin-top:10px;min-height:1.2em}
 </style></head><body>
 <h1>Choose your secret store</h1>

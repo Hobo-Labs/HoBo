@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,11 +36,29 @@ const message = z.record(z.string(), z.json());
 type Message = z.infer<typeof message>;
 
 function startServer(env: NodeJS.ProcessEnv) {
-	const child = spawn(
-		process.execPath,
-		["--import", "tsx", "packages/hobo/src/bin/hobo-mcp.ts"],
-		{ cwd: REPO, env, stdio: ["pipe", "pipe", "pipe"] },
-	);
+	const launcher = z
+		.object({
+			mcpServers: z.object({
+				hobo: z.object({ command: z.string(), args: z.array(z.string()) }),
+			}),
+		})
+		.parse(JSON.parse(readFileSync(path.join(REPO, ".mcp.json"), "utf8")))
+		.mcpServers.hobo;
+	const child = spawn(launcher.command, launcher.args, {
+		cwd: path.join(REPO, "packages/hobo"),
+		env: {
+			...env,
+			CLAUDE_CODE_REMOTE: "",
+			CODESPACES: "",
+			GITPOD_WORKSPACE_ID: "",
+			CODER: "",
+			REMOTE_CONTAINERS: "",
+			DEVCONTAINER: "",
+			CLOUD_SHELL: "",
+			SSH_CONNECTION: "",
+		},
+		stdio: ["pipe", "pipe", "pipe"],
+	});
 	const inbox: Message[] = [];
 	// The whole exchange, both ways, for the spec model's properties.
 	const wire: WireMessage[] = [];
@@ -230,18 +248,17 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
-			// Runtime verification: every property derived from the ceremony's
-			// spec holds on this real run, and it reached the frontier.
 			const events = eventsFromWire(server.wire);
-			const verdicts = [
-				...ceremonyProperties({ secrets: [copied, jwt] }),
-				REACHES_FRONTIER,
-			].map((property) => check(property, events));
+			const verdicts = ceremonyProperties({ secrets: [copied, jwt] }).map(
+				(property) => check(property, events),
+			);
 			for (const verdict of verdicts)
 				trail.push(
 					`spec ${verdict.holds ? "holds" : "FAILS"}: ${verdict.property}`,
 				);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
+			expect(fourth).toContain("HOBO_UP_INCOMPLETE");
+			expect(check(REACHES_FRONTIER, events).holds).toBe(false);
 			// Not vacuous: the run's own sign-in form is the capture the link
 			// property holds to.
 			expect(
@@ -260,11 +277,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 		}
 	}, 120_000);
 
-	it("a form nobody answers: the one cd call ends with the link instead of hanging", async () => {
-		// Derived from the live run: the host took the sign-in form and never
-		// showed it, and cd sat open for the host's whole 30 minutes. With
-		// a deadline (1 ms here; 10 minutes by default) the server withdraws
-		// the form and the call ends with the link, so the agent falls back.
+	it("withdraws an unanswered form without returning its private link", async () => {
 		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
 		const api = await startFakeInfisical("org-1");
 		const world = await startTlsWorld({ "app.infisical.com": api.handle });
@@ -307,15 +320,142 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			);
 			const ended = JSON.stringify(await server.answer(run));
 			expect(ended).toContain("HOBO_CD_INFISICAL_SIGN_IN");
-			expect(ended).toMatch(
-				/HOBO_OWNER_SIGN_IN url=https:\/\/app\.infisical\.com\/login/u,
-			);
-			// The link it ends with is the one the form carried.
+			expect(ended).toContain("retry-setup-when-ready");
+			expect(ended).not.toMatch(/https?:|HOBO_OWNER_SIGN_IN|proj-1/u);
 			const events = eventsFromWire(server.wire);
 			const verdicts = ceremonyProperties({}).map((property) =>
 				check(property, events),
 			);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
+		} finally {
+			server.stop();
+			await world.close();
+			await api.close();
+		}
+	}, 120_000);
+
+	it("reuses the selected owner session for the same project subdirectory", async () => {
+		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
+		const api = await startFakeInfisical("org-1");
+		const world = await startTlsWorld({ "app.infisical.com": api.handle });
+		const project = path.join(REPO, "packages/ci-vercel");
+		const server = startServer({
+			...process.env,
+			XDG_CONFIG_HOME: config,
+			HTTPS_PROXY: world.proxyUrl,
+			https_proxy: world.proxyUrl,
+			HTTP_PROXY: world.proxyUrl,
+			http_proxy: world.proxyUrl,
+			NO_PROXY: "",
+			no_proxy: "",
+			NODE_EXTRA_CA_CERTS: world.caBundle,
+		});
+		try {
+			await server.answer(
+				server.call("initialize", {
+					protocolVersion: "2025-11-25",
+					capabilities: LIVE_HOST,
+				}),
+			);
+			const first = await server.answer(
+				server.tool("cd", { args: ["up", "--hand-off"], cwd: project }),
+			);
+			expect(JSON.stringify(first)).toContain("HOBO_CD_STORE_CHOICE");
+			const choice = server.tool("choose_secret_store", {
+				family: "cd",
+				cwd: project,
+			});
+			const picker = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			server.send({
+				jsonrpc: "2.0",
+				id: picker.id ?? null,
+				result: { action: "accept", content: { store: "infisical" } },
+			});
+			const settings = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			server.send({
+				jsonrpc: "2.0",
+				id: settings.id ?? null,
+				result: {
+					action: "accept",
+					content: { INFISICAL_PROJECT_ID: "synthetic-private-project" },
+				},
+			});
+			const selected = await server.answer(choice);
+			expect(JSON.stringify(selected)).not.toContain(
+				"synthetic-private-project",
+			);
+			const retry = server.tool("cd", {
+				args: ["up", "--hand-off"],
+				cwd: project,
+			});
+			const signIn = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			server.send({
+				jsonrpc: "2.0",
+				id: signIn.id ?? null,
+				result: { action: "decline" },
+			});
+			const result = JSON.stringify(await server.answer(retry));
+			expect(result).toContain("HOBO_CD_INFISICAL_SIGN_IN");
+			expect(result).not.toContain("synthetic-private-project");
+			expect(result).not.toMatch(/https?:/u);
+		} finally {
+			server.stop();
+			await world.close();
+			await api.close();
+		}
+	}, 120_000);
+
+	it("does not expose a sign-in link when the host offers no owner form", async () => {
+		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
+		const api = await startFakeInfisical("org-1");
+		const world = await startTlsWorld({ "app.infisical.com": api.handle });
+		const locator = secretStoreLocatorPath(REPO, { XDG_CONFIG_HOME: config });
+		mkdirSync(path.dirname(locator), { recursive: true });
+		writeFileSync(
+			locator,
+			JSON.stringify({
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "synthetic-private-project",
+			}),
+		);
+		const server = startServer({
+			...process.env,
+			XDG_CONFIG_HOME: config,
+			HTTPS_PROXY: world.proxyUrl,
+			https_proxy: world.proxyUrl,
+			HTTP_PROXY: world.proxyUrl,
+			http_proxy: world.proxyUrl,
+			NO_PROXY: "",
+			no_proxy: "",
+			NODE_EXTRA_CA_CERTS: world.caBundle,
+		});
+		try {
+			await server.answer(
+				server.call("initialize", {
+					protocolVersion: "2025-11-25",
+					capabilities: {},
+				}),
+			);
+			const result = JSON.stringify(
+				await server.answer(
+					server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO }),
+				),
+			);
+			expect(result).toContain("HOBO_MCP_OWNER_FORM_UNAVAILABLE");
+			expect(result).not.toContain("synthetic-private-project");
+			expect(result).not.toMatch(/https?:/u);
+			expect(
+				server.wire
+					.filter((line) => line.to === "host")
+					.map((line) => line.message)
+					.join("\n"),
+			).not.toMatch(/elicitation\/create|synthetic-private-project|https?:/u);
 		} finally {
 			server.stop();
 			await world.close();

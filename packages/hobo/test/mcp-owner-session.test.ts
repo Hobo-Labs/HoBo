@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { createTrustedVault } from "@hobo/core";
 import {
+	captureAll,
 	ownerStore,
 	ownerStoreSessionEnvironment,
 	secretStoreLocatorPath,
@@ -24,6 +25,189 @@ import { loadOwnerDeployCredentials } from "../src/owner-deploy-credentials.js";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("MCP owner store session", () => {
+	it("serializes simultaneous scoped writes while allowing nested transactions", async () => {
+		const mcp = composeHoboMcp({
+			output: new PassThrough(),
+			projectDir: tmpdir(),
+			remote: true,
+		});
+		try {
+			const store = mcp.owner.storeSettingsFor?.("cd", tmpdir());
+			if (!store?.runStoreWrite) throw new Error("No write transaction.");
+			const order: string[] = [];
+			let release: () => void = () => undefined;
+			let started: () => void = () => undefined;
+			const gate = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const entered = new Promise<void>((resolve) => {
+				started = resolve;
+			});
+			const first = store.runStoreWrite(async () => {
+				order.push("first");
+				await store.runStoreWrite?.(async () => {
+					order.push("nested");
+				});
+				started();
+				await gate;
+				order.push("first-done");
+			});
+			await entered;
+			const second = store.runStoreWrite(async () => {
+				order.push("second");
+			});
+			await Promise.resolve();
+			expect(order).toEqual(["first", "nested"]);
+			release();
+			await Promise.all([first, second]);
+			expect(order).toEqual(["first", "nested", "first-done", "second"]);
+		} finally {
+			await mcp.close();
+		}
+	});
+
+	it("blocks the session when a store write may have applied before failing", async () => {
+		const home = await mkdtemp(join(tmpdir(), "hobo-owner-uncertain-"));
+		vi.stubEnv("XDG_CONFIG_HOME", home);
+		const mcp = composeHoboMcp({
+			output: new PassThrough(),
+			projectDir: home,
+			remote: true,
+		});
+		try {
+			const settings = mcp.owner.storeSettingsFor?.("cd", home);
+			const vault = mcp.owner.vaultFor?.("cd", home);
+			if (!settings || !vault) throw new Error("No scoped owner session.");
+			await settings.write({
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "synthetic-project",
+			});
+			vault.put("INFISICAL_TOKEN", "synthetic-sign-in");
+			const memory = createMemorySecretsPort({ id: "memory" });
+			const selected = await ownerStore("cd", vault, {
+				locator: settings,
+				env: {},
+				openStore: async (id) => ({
+					ok: true,
+					store: {
+						id,
+						reference: () => "private",
+						port: {
+							...memory,
+							put: async (name, value) => {
+								await memory.put(name, value);
+								throw new Error("connection lost");
+							},
+						},
+					},
+				}),
+			});
+			if (!selected.opened) throw new Error("Store did not open.");
+			await expect(
+				selected.opened.port.put("SYNTHETIC_SETTING", "fixture"),
+			).rejects.toThrow("connection lost");
+			expect(await memory.access("SYNTHETIC_SETTING")).toMatchObject({
+				status: "ok",
+				material: "fixture",
+			});
+			expect(() => settings.onOwnerChoice?.()).toThrow(/uncertain outcome/u);
+		} finally {
+			await mcp.close();
+			await rm(home, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps an uncertain provider mutation from switching the owner store", async () => {
+		const mcp = composeHoboMcp({
+			output: new PassThrough(),
+			projectDir: tmpdir(),
+			remote: true,
+		});
+		try {
+			const store = mcp.owner.storeSettingsFor?.("cd", tmpdir());
+			if (!store) throw new Error("No scoped owner settings.");
+			store.markUncertainWrite?.();
+			expect(() => store.onOwnerChoice?.()).toThrow(/uncertain outcome/u);
+			await expect(store.read()).rejects.toThrow(/uncertain outcome/u);
+		} finally {
+			await mcp.close();
+		}
+	});
+
+	it("accepts only a choice offered through the private owner form", async () => {
+		const mcp = composeHoboMcp({
+			output: new PassThrough(),
+			projectDir: tmpdir(),
+			remote: true,
+		});
+		try {
+			mcp.session.support = {
+				apps: false,
+				formElicitation: true,
+				urlElicitation: false,
+			};
+			mcp.session.request = vi.fn(async () => ({
+				action: "accept",
+				content: { choice: "private-choice" },
+			}));
+			const choice = await mcp.owner.choose?.({
+				message: "Choose one.",
+				choices: [{ value: "private-choice", label: "Synthetic organization" }],
+			});
+			expect(choice).toBe("private-choice");
+			const invalid = await mcp.owner.choose?.({
+				message: "Choose one.",
+				choices: [{ value: "other-choice", label: "Other" }],
+			});
+			expect(invalid).toBeUndefined();
+		} finally {
+			await mcp.close();
+		}
+	});
+
+	it("collects a multi-field owner handoff privately and starts a fresh request after a decline", async () => {
+		const mcp = composeHoboMcp({
+			output: new PassThrough(),
+			projectDir: tmpdir(),
+			remote: true,
+		});
+		const fields = [
+			{
+				name: "HOBO_CI_GITHUB_OWNER",
+				title: "GitHub owner",
+				instructions: "Owner",
+			},
+			{ name: "HOBO_CI_PUBLIC_URL", title: "Relay URL", instructions: "Relay" },
+		];
+		try {
+			mcp.session.support = {
+				apps: true,
+				formElicitation: true,
+				urlElicitation: false,
+			};
+			const answers = [
+				{ action: "accept", content: { value: "synthetic-owner" } },
+				{ action: "decline" },
+				{ action: "accept", content: { value: "synthetic-owner" } },
+				{ action: "accept", content: { value: "https://synthetic.example" } },
+			];
+			mcp.session.request = vi.fn(async () => answers.shift());
+			const first = mcp.owner.forScope?.("ci", tmpdir());
+			if (!first) throw new Error("No scoped owner channel.");
+			expect(await captureAll(first, fields)).toBeUndefined();
+			expect(mcp.session.request).toHaveBeenCalledTimes(2);
+			const retry = mcp.owner.forScope?.("ci", tmpdir());
+			if (!retry) throw new Error("No scoped owner channel.");
+			expect(await captureAll(retry, fields)).toEqual([
+				"synthetic-owner",
+				"https://synthetic.example",
+			]);
+			expect(mcp.session.request).toHaveBeenCalledTimes(4);
+		} finally {
+			await mcp.close();
+		}
+	});
+
 	it("keeps project and CI/CD selections and sign-ins separate and private", async () => {
 		const home = await mkdtemp(join(tmpdir(), "hobo-owner-session-"));
 		const first = join(home, "first");

@@ -234,7 +234,7 @@ async function saveLink(
 	}
 }
 
-function parseCiArgs(args: readonly string[]) {
+export function parseCiArgs(args: readonly string[]) {
 	return parseArgs({
 		args: [...args],
 		allowPositionals: true,

@@ -1,4 +1,3 @@
-import type { SettingsStore } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
 
 import {
@@ -15,6 +14,7 @@ import {
 import {
 	captureAll,
 	type OwnerChannel,
+	type OwnerSettingsStore,
 	ownerCaptureLine,
 } from "./owner-channel.js";
 import { parseHttpsOrigin, SettingParseError } from "./parsed-values.js";
@@ -38,7 +38,7 @@ export interface EnsureBitwardenSignInOptions {
 	/** Non-secret settings (BWS_SERVER, BWS_ORGANIZATION_ID, BWS_PROJECT_ID). */
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The committed locator: ids and this run's device id are kept there. */
-	readonly locator: SettingsStore;
+	readonly locator: OwnerSettingsStore;
 	readonly fetch: typeof fetch;
 	readonly emit: (line: string) => void;
 	/** A handed-off run (a remote box): the API key may come through the egress proxy. */
@@ -65,6 +65,17 @@ export async function ensureBitwardenSignIn(
 ): Promise<BitwardenSignInRefusal | undefined> {
 	const { vault } = options;
 	const fam = options.family.toUpperCase();
+	let uncertain = false;
+	const markUncertain = () => {
+		uncertain = true;
+		options.locator.markUncertainWrite?.();
+	};
+	const uncertainRefusal = () => ({
+		code: `HOBO_${fam}_STORE_OPERATION_UNCERTAIN`,
+		message:
+			"A store operation may have completed and needs reconciliation before retrying.",
+		remediation: ["Reconcile the store operation before trying setup again."],
+	});
 	const saved = await options.locator.read();
 	const setting = (name: string) =>
 		options.env[name] || saved[name] || undefined;
@@ -81,15 +92,8 @@ export async function ensureBitwardenSignIn(
 		// proxy injects as HTTP Basic client authentication.
 		const clientId = vault.reveal("BW_CLIENTID") ?? setting("BW_CLIENTID");
 		const clientSecret = vault.reveal("BW_CLIENTSECRET");
-		let apiKey: BitwardenSignInKey;
-		if (clientId !== undefined && clientSecret !== undefined)
-			apiKey = parseBitwardenApiKey(clientId, clientSecret);
-		else if (!options.handOff) return undefined;
-		else if (endpoints.selfHosted) {
-			// A self-hosted server reads the key only from the sign-in request's
-			// body, which the session's proxy cannot fill: the owner hands it to
-			// this run through the HoBo MCP App's secret capture instead.
-			const page = bitwardenApiKeyPage(endpoints);
+		const page = bitwardenApiKeyPage(endpoints);
+		const captureApiKey = async () => {
 			const given =
 				options.owner === undefined
 					? undefined
@@ -105,11 +109,23 @@ export async function ensureBitwardenSignIn(
 								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_secret.`,
 							},
 						]);
-			if (given === undefined)
+			if (given === undefined) return undefined;
+			const parsed = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
+			vault.put("BW_CLIENTID", parsed.clientId);
+			vault.put("BW_CLIENTSECRET", parsed.clientSecret);
+			return parsed;
+		};
+		let apiKey: BitwardenSignInKey;
+		if (clientId !== undefined && clientSecret !== undefined)
+			apiKey = parseBitwardenApiKey(clientId, clientSecret);
+		else if (!options.handOff) return undefined;
+		else if (endpoints.selfHosted) {
+			const supplied = await captureApiKey();
+			if (supplied === undefined)
 				return {
 					code: `HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
 					message:
-						"Your self-hosted Bitwarden server reads your personal API key only from the sign-in request itself; hand it to this run once.",
+						"Bitwarden needs your personal API key through the secure owner form.",
 					remediation:
 						options.owner === undefined
 							? [
@@ -123,19 +139,53 @@ export async function ensureBitwardenSignIn(
 									"Then run again: HoBo creates its own access token after the one login request you approve.",
 								],
 				};
-			apiKey = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
+			apiKey = supplied;
 		} else apiKey = { kind: "egress-proxy" };
 		// Called only when the store did not open: a token in hand was refused
 		// (revoked or expired), so the API key replaces it with a new one.
 		vault.drop("BWS_ACCESS_TOKEN");
 		vault.drop("BITWARDEN_ORG_KEY");
-		if (options.silent)
+		const confirm = options.owner?.confirm;
+		const privateApproval =
+			options.silent &&
+			confirm !== undefined &&
+			options.owner?.canConfirm?.() === true;
+		if (options.silent && !privateApproval)
 			return {
 				code: `HOBO_${fam}_HANDOFF_SILENT`,
 				message:
 					"Approving the Bitwarden login request needs progress output. Omit --json and -q, then retry.",
 				remediation: [`Run hobo ${options.family} up without --json or -q.`],
 			};
+		const fetchCurrent: typeof fetch = async (input, init) => {
+			options.locator.assertCurrent?.();
+			const selection = options.locator.selectionSignal;
+			const signal =
+				selection === undefined
+					? init?.signal
+					: init?.signal
+						? AbortSignal.any([selection, init.signal])
+						: selection;
+			const method = (init?.method ?? "GET").toUpperCase();
+			const mutation = method !== "GET" && method !== "HEAD";
+			const perform = async () => {
+				options.locator.assertCurrent?.();
+				try {
+					const response = await options.fetch(
+						input,
+						signal === undefined ? init : { ...init, signal },
+					);
+					options.locator.assertCurrent?.();
+					return response;
+				} catch (error) {
+					if (mutation) markUncertain();
+					throw error;
+				}
+			};
+			return mutation && options.locator.runStoreWrite
+				? options.locator.runStoreWrite(perform)
+				: perform();
+		};
 		const organization = setting("BWS_ORGANIZATION_ID");
 		const project = setting("BWS_PROJECT_ID");
 		// A stable device id: Bitwarden knows the device after its first
@@ -163,14 +213,45 @@ export async function ensureBitwardenSignIn(
 			...(project !== undefined
 				? { projectId: parseBitwardenId("BWS_PROJECT_ID", project) }
 				: undefined),
-			fetch: options.fetch,
+			fetch: fetchCurrent,
 			emit: options.emit,
+			...(options.locator.runStoreWrite !== undefined
+				? { runMutation: options.locator.runStoreWrite }
+				: undefined),
+			markUncertainMutation: markUncertain,
+			...(privateApproval && apiKey.kind === "egress-proxy"
+				? { requestApiKey: captureApiKey }
+				: undefined),
+			...(privateApproval && confirm !== undefined
+				? {
+						approve: async (request) => {
+							options.locator.assertCurrent?.();
+							const accepted = await confirm(request);
+							options.locator.assertCurrent?.();
+							return accepted;
+						},
+					}
+				: undefined),
+			...(privateApproval && options.owner?.choose !== undefined
+				? {
+						chooseOrganization: async (choices) => {
+							options.locator.assertCurrent?.();
+							const chosen = await options.owner?.choose?.({
+								message: "Choose the Bitwarden organization HoBo should use.",
+								choices,
+							});
+							options.locator.assertCurrent?.();
+							return chosen;
+						},
+					}
+				: undefined),
 			...(options.sleep !== undefined ? { sleep: options.sleep } : undefined),
 			...(options.now !== undefined ? { now: options.now } : undefined),
 			...(options.timeoutMs !== undefined
 				? { timeoutMs: options.timeoutMs }
 				: undefined),
 		});
+		if (uncertain) return uncertainRefusal();
 		if (result.kind === "refused") return result;
 		const latest = await options.locator.read();
 		const where = {
@@ -206,6 +287,7 @@ export async function ensureBitwardenSignIn(
 		);
 		return undefined;
 	} catch (error) {
+		if (uncertain) return uncertainRefusal();
 		if (!(error instanceof SettingParseError)) throw error;
 		return {
 			code: `HOBO_${fam}_SETTING_INVALID`,

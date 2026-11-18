@@ -123,7 +123,21 @@ describe("SPEC ceremony model: the derived properties catch the real failures", 
 				"https://vercel.com/oauth/device?user_code=AB-12",
 			]),
 			answer("hobo-2", "accept"),
-			refused(cd.id, "HOBO_PLAN_REJECTED", ["cd-config: no provider"]),
+			toHost({
+				id: cd.id,
+				result: {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								ok: true,
+								code: "HOBO_OK",
+								status: "deployed",
+							}),
+						},
+					],
+				},
+			}),
 		]);
 		for (const verdict of Object.values(result))
 			expect(verdict).toMatchObject({ holds: true });
@@ -194,6 +208,174 @@ describe("SPEC ceremony model: the derived properties catch the real failures", 
 			{ holds: false },
 		);
 		expect(result["no dead end"]).toMatchObject({ holds: false, at: 1 });
+	});
+
+	it("treats an unavailable atomic claim as blocked, not completed or a dead end", () => {
+		const cd = call("cd");
+		const result = verdicts([
+			cd.wire,
+			refused(
+				cd.id,
+				"HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
+				[],
+				"A verified atomic claim store or an existing complete CD journal fleet is required.",
+			),
+		]);
+		expect(result["no dead end"]).toMatchObject({ holds: true });
+		expect(result["eventually: nothing more asked of the owner"]).toMatchObject(
+			{
+				holds: false,
+			},
+		);
+	});
+
+	it.each([
+		"HOBO_MCP_OWNER_FORM_UNAVAILABLE",
+		"HOBO_MCP_OWNER_APPROVAL_UNAVAILABLE",
+		"HOBO_MCP_SETUP_NOT_COMPLETED",
+		"MCP_SCOPE_DENIED",
+		"HOBO_MCP_SETUP_FAILED",
+		"HOBO_MCP_SETUP_RESULT",
+		"HOBO_UP_FAILED",
+		"HOBO_UP_INCOMPLETE",
+	])("does not report %s as a completed ceremony", (code) => {
+		const cd = call("cd");
+		const result = verdicts([cd.wire, refused(cd.id, code, [])]);
+		expect(result["no dead end"]).toMatchObject({ holds: true });
+		expect(result["eventually: nothing more asked of the owner"]).toMatchObject(
+			{
+				holds: false,
+			},
+		);
+	});
+
+	it("does not treat a failed payload with a success code as completion", () => {
+		const cd = call("cd");
+		const result = verdicts([
+			cd.wire,
+			toHost({
+				id: cd.id,
+				result: {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ ok: false, code: "HOBO_OK" }),
+						},
+					],
+				},
+			}),
+		]);
+		expect(result["eventually: nothing more asked of the owner"]).toMatchObject(
+			{
+				holds: false,
+			},
+		);
+	});
+
+	it.each([
+		{ ok: true, code: "HOBO_OK", status: "incomplete" },
+		{ ok: true, code: "HOBO_CI_MANAGED_PREVIEW", status: "ok" },
+		{ ok: true, code: "HOBO_OK" },
+	])("does not accept an inconsistent CD success payload", (payload) => {
+		const cd = call("cd");
+		const result = verdicts([
+			cd.wire,
+			toHost({
+				id: cd.id,
+				result: { content: [{ type: "text", text: JSON.stringify(payload) }] },
+			}),
+		]);
+		expect(result["eventually: nothing more asked of the owner"]).toMatchObject(
+			{ holds: false },
+		);
+	});
+
+	it("does not let an earlier CI preview hide a later denied CD setup", () => {
+		const ci = call("ci");
+		const cd = call("cd");
+		const result = verdicts([
+			ci.wire,
+			toHost({
+				id: ci.id,
+				result: {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								ok: true,
+								code: "HOBO_CI_MANAGED_PREVIEW",
+								status: "ok",
+							}),
+						},
+					],
+				},
+			}),
+			cd.wire,
+			refused(
+				cd.id,
+				"HOBO_CD_VERCEL_DEVICE_DENIED",
+				[],
+				"The owner declined Vercel approval. Retry only if they request it.",
+			),
+		]);
+		expect(result["eventually: nothing more asked of the owner"]).toMatchObject(
+			{ holds: false },
+		);
+	});
+
+	it("does not treat an unfinished later lifecycle call as completed", () => {
+		const ci = call("ci");
+		const cd = call("cd");
+		const result = verdicts([
+			ci.wire,
+			toHost({
+				id: ci.id,
+				result: {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								ok: true,
+								code: "HOBO_CI_MANAGED_PREVIEW",
+								status: "ok",
+							}),
+						},
+					],
+				},
+			}),
+			cd.wire,
+		]);
+		expect(result["eventually: nothing more asked of the owner"]).toMatchObject(
+			{ holds: false },
+		);
+	});
+
+	it("requires every overlapping lifecycle call to complete successfully", () => {
+		const ci = call("ci");
+		const cd = call("cd");
+		const result = verdicts([
+			ci.wire,
+			cd.wire,
+			toHost({
+				id: cd.id,
+				result: {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								ok: true,
+								code: "HOBO_OK",
+								status: "deployed",
+							}),
+						},
+					],
+				},
+			}),
+			refused(ci.id, "HOBO_UP_INCOMPLETE", []),
+		]);
+		expect(result["eventually: nothing more asked of the owner"]).toMatchObject(
+			{ holds: false },
+		);
 	});
 
 	it("catches the live run's failure: a link the agent had to relay in chat", () => {

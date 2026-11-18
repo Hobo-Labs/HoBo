@@ -7,6 +7,9 @@ describe("owner deploy credentials", () => {
 	it("uses the selected store and clears only its temporary copy of the owner session", async () => {
 		const session = createTrustedVault();
 		session.put("BWS_ACCESS_TOKEN", "synthetic-sign-in");
+		session.put("BW_CLIENTID", "synthetic-client");
+		session.put("BW_CLIENTSECRET", "synthetic-secret");
+		session.put("BITWARDEN_ORG_KEY", "synthetic-key");
 		session.put("UNRELATED_SECRET", "do-not-copy");
 		const credentials = createTrustedVault();
 		const port = createMemorySecretsPort({ id: "memory" });
@@ -21,6 +24,9 @@ describe("owner deploy credentials", () => {
 			open: async (vault) => {
 				temporary = vault;
 				expect(vault.reveal("BWS_ACCESS_TOKEN")).toBe("synthetic-sign-in");
+				expect(vault.reveal("BW_CLIENTID")).toBe("synthetic-client");
+				expect(vault.reveal("BW_CLIENTSECRET")).toBe("synthetic-secret");
+				expect(vault.reveal("BITWARDEN_ORG_KEY")).toBe("synthetic-key");
 				expect(vault.has("UNRELATED_SECRET")).toBe(false);
 				return {
 					chosen: true,
