@@ -83,11 +83,13 @@ describe("registering an interval", () => {
 		).not.toThrow();
 	});
 
-	it("omits the start offset when it is not a number", () => {
+	it("rejects a start offset that is not a number", () => {
 		const { port } = fixture();
-		expect(() =>
-			port?.every({ scheduleId: "a", everyMs: 1_000, startAtMs: "soon" }),
-		).not.toThrow();
+		for (const startAtMs of ["soon", null, true]) {
+			expect(() =>
+				port?.every({ scheduleId: "a", everyMs: 1_000, startAtMs }),
+			).toThrow(/startAtMs must be a number/);
+		}
 	});
 });
 
