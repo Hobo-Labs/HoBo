@@ -253,10 +253,14 @@ function isPrivateField(key: string, capture: boolean): boolean {
 		/(?:project|vault|org|organization|identity|account|tenant|connection)(?:id|identifier|reference|ref)$/.test(
 			field,
 		) ||
-		/(?:token|secret|password|credential)$/.test(field) ||
+		/(?:token|secret|password|credential)s?$/.test(field) ||
+		/(?:api|private|access|secret|client|signing|encryption|ssh)keys?(?:id)?$/.test(
+			field,
+		) ||
+		/^(?:authorization|authheader)$/.test(field) ||
 		/^(?:host|guide|server|phrase|clientid)$/.test(field) ||
 		/(?:serverurl|apiurl|connecthost)$/.test(field) ||
-		(capture && /^(?:ref|reference|value)$/.test(field))
+		(capture && /^(?:ref|reference|value|key)$/.test(field))
 	);
 }
 
@@ -264,23 +268,30 @@ function privateFieldsPresent(
 	input: JsonValue | undefined,
 	capture: boolean,
 ): boolean {
-	const visit = (value: JsonValue, depth: number): boolean => {
-		if (depth > 12) return false;
+	const pending: JsonValue[] = input === undefined ? [] : [input];
+	while (pending.length > 0) {
+		const value = pending.pop();
+		if (value === undefined) continue;
 		const string = jsonString.safeParse(value);
 		if (string.success) {
+			const assignment = /^(?:--)?([a-zA-Z_][\w-]*)=(.+)$/u.exec(string.data);
+			if (
+				assignment?.[1] !== undefined &&
+				isPrivateField(assignment[1], capture)
+			)
+				return true;
 			try {
 				const decoded = jsonValue.safeParse(JSON.parse(string.data));
-				return (
-					decoded.success &&
-					decoded.data !== string.data &&
-					visit(decoded.data, depth + 1)
-				);
+				if (decoded.success && decoded.data !== string.data)
+					pending.push(decoded.data);
 			} catch {
-				return (
+				if (
 					capture &&
 					/^\S+ is \w+ \((?!no reference\))[^)]+\)/mu.test(string.data)
-				);
+				)
+					return true;
 			}
+			continue;
 		}
 		const array = jsonArray.safeParse(value);
 		if (array.success) {
@@ -289,12 +300,6 @@ function privateFieldsPresent(
 				if (item === undefined) continue;
 				const text = jsonString.safeParse(item);
 				if (text.success) {
-					const assignment = /^(?:--)?([a-zA-Z_][\w-]*)=(.+)$/u.exec(text.data);
-					if (
-						assignment?.[1] !== undefined &&
-						isPrivateField(assignment[1], capture)
-					)
-						return true;
 					const flag = /^--([a-zA-Z_][\w-]*)$/u.exec(text.data);
 					const next = jsonString.safeParse(array.data[i + 1]);
 					if (
@@ -306,24 +311,24 @@ function privateFieldsPresent(
 					)
 						return true;
 				}
-				if (visit(item, depth + 1)) return true;
+				pending.push(item);
 			}
-			return false;
+			continue;
 		}
 		const object = jsonObject.safeParse(value);
-		if (!object.success) return false;
-		return Object.entries(object.data).some(([key, item]) => {
+		if (!object.success) continue;
+		for (const [key, item] of Object.entries(object.data)) {
 			const text = jsonString.safeParse(item);
 			if (
 				isPrivateField(key, capture) &&
-				text.success &&
-				text.data.trim() !== ""
+				item !== null &&
+				(!text.success || text.data.trim() !== "")
 			)
 				return true;
-			return visit(item, depth + 1);
-		});
-	};
-	return input !== undefined && visit(input, 0);
+			pending.push(item);
+		}
+	}
+	return false;
 }
 
 function isOwnerTool(name: string): boolean {
