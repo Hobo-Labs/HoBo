@@ -31,18 +31,8 @@ const compilerOptions: ts.CompilerOptions = {
 	target: ts.ScriptTarget.ES2022,
 };
 
-// Every case compiles against the same TypeScript libs, @types/node and built
-// @hobo/core and @hobo/runtime declarations (~320 files); only the generated
-// project differs. Parse those once for the file, not once per case.
 const dependencySources = new Map<string, ts.SourceFile>();
 
-/**
- * The compiler's diagnostics for the generated files. The dependencies'
- * declarations are type-checked by their own builds. Checking all of them
- * again, in every case, cost 2-5 s of each case's 10 s budget on a quiet
- * machine and timed cases out when the pre-commit hook runs every package's
- * tests at once.
- */
 function generatedDiagnostics(
 	projectRoot: string,
 	files: readonly string[],
@@ -71,8 +61,6 @@ function generatedDiagnostics(
 }
 
 describe("generated app declarations compile", () => {
-	// The compiled projects live under one directory whose node_modules links
-	// the packages their generated files import.
 	let projects = "";
 	beforeAll(async () => {
 		projects = await mkdtemp(join(tmpdir(), "hobo-codegen-compile-"));
@@ -89,10 +77,7 @@ describe("generated app declarations compile", () => {
 			join(projects, "node_modules/@types"),
 			"dir",
 		);
-		// Work the first case would otherwise pay inside its own budget, once
-		// per worker: codegen loads the training stack (~1,300 modules) on its
-		// first "use training" scan, and the compiler parses the declarations
-		// every case shares.
+
 		await import("ts-autocode-training");
 		const dependencies = join(projects, "dependencies.ts");
 		await writeFile(
