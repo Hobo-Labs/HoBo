@@ -2157,6 +2157,10 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
 
   packages/junctions:
     dependencies:
