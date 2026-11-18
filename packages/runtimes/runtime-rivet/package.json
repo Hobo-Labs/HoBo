@@ -25,6 +25,7 @@
 	},
 	"devDependencies": {
 		"@hobo/conformance": "workspace:*",
+		"@hobo/wit": "workspace:*",
 		"@types/node": ">=24.0.0"
 	},
 	"scripts": {

@@ -11,14 +11,14 @@
 			"why": "builds a real component using the WIT package's tools and sources, then loads core's built messaging limits by a computed file URL"
 		},
 		{
-			"from": "packages/extension-alchemy-rivet/test/rivet-topic-live.test.ts",
+			"from": "packages/extension-alchemy-rivet/test/rivet-topic-live.mjs",
 			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime-rivet#build"],
 			"why": "runs a spawned fixture that loads the adapter and runtime through computed module paths"
 		},
 		{
-			"from": "test/iac-alchemy-integration.test.ts",
-			"needs": ["@hobo/bindles#build", "@hobo/cloud#build", "@hobo/runtime-local#build"],
-			"why": "loads built Bindle, cloud and local runtime modules while exercising real pricing and routing authorities"
+			"from": "packages/runtimes/runtime-rivet/test/durable-topic-jspi-live.test.ts",
+			"needs": ["@hobo/wit#build"],
+			"why": "loads the WIT sources and component tools from the sibling workspace"
 		},
 		{
 			"from": "packages/control-yard/test/evidence-launch.test.ts",
