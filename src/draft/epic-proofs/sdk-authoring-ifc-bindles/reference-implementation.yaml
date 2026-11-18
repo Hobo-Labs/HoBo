@@ -7,7 +7,6 @@ linear_url: "https://linear.app/quickdeploy-ai/project/sdk-and-authoring-ifc-bin
 branch: "contacttylerkendrick/sdk-authoring-ifc-bindles/epic-rollup-883a1938-sprawl-20260629T040428Z-4879"
 pr_url: "https://github.com/Tyler-R-Kendrick/HoBo/pull/422"
 reference_impl_root: "src/draft/epic-proofs/sdk-authoring-ifc-bindles"
-ledger: "src/draft/epic-proofs/sdk-authoring-ifc-bindles/poc-rollup-ledger.md"
 pact_inventory: "src/draft/epic-proofs/sdk-authoring-ifc-bindles/contracts/pact-inventory.md"
 simulation_command: "npm.cmd --prefix src/draft/epic-proofs/sdk-authoring-ifc-bindles run simulate"
 last_linear_marker: "EPIC_ROLLUP_PR"

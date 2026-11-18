@@ -7,7 +7,6 @@ linear_url: "https://linear.app/quickdeploy-ai/project/providers-iac-and-build-a
 branch: "contacttylerkendrick/hobo-sprawl/epic-rollup-providers-iac-build-adapters-sprawl-20260629T060328Z-8a04"
 pr_url: "https://github.com/Tyler-R-Kendrick/HoBo/pull/424"
 reference_impl_root: "src/draft/epic-proofs/providers-iac-build-adapters"
-ledger: "src/draft/epic-proofs/providers-iac-build-adapters/poc-rollup-ledger.md"
 pact_inventory: "src/draft/epic-proofs/providers-iac-build-adapters/contracts/pact-inventory.md"
 simulation_command: "npm.cmd --prefix src/draft/epic-proofs/providers-iac-build-adapters run simulate"
 last_linear_marker: "pr_opened"

@@ -7,7 +7,6 @@ linear_url: "https://linear.app/quickdeploy-ai/project/generation-pipeline-train
 branch: "contacttylerkendrick/generation-pipeline-training-ai-safety/epic-rollup-d19bf007-sprawl-20260629T020127Z-3918"
 pr_url: "https://github.com/Tyler-R-Kendrick/HoBo/pull/413"
 reference_impl_root: "src/draft/epic-proofs/generation-pipeline-training-ai-safety"
-ledger: "src/draft/epic-proofs/generation-pipeline-training-ai-safety/poc-rollup-ledger.md"
 pact_inventory: "src/draft/epic-proofs/generation-pipeline-training-ai-safety/contracts/pact-inventory.md"
 simulation_command: "npm.cmd --prefix src\\draft\\epic-proofs\\generation-pipeline-training-ai-safety run simulate"
 last_linear_marker: "EPIC_ROLLUP_ACTIVE phase=pr_opened"

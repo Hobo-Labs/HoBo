@@ -74,7 +74,6 @@ Feature: V1 vibe example backlog closure
 - `tests/vibe-gap-closure.test.ts`
 - `contracts/consumer/vibe-gap-boundaries.test.ts`
 - `contracts/pact-inventory.md`
-- `poc-rollup-ledger.md`
 - `reference-implementation.yaml`
 
 ## Executable evidence
