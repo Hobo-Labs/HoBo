@@ -15,7 +15,7 @@
     ],
     "stop": [
       {
-        "command": "node --experimental-strip-types scripts/agent-completion-hook.mts cursor",
+        "command": "python3 scripts/agent_completion_hook.py cursor",
         "timeout": 10,
         "loop_limit": null
       }
