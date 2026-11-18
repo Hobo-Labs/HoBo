@@ -48,8 +48,10 @@ function fixedQuantityMissing(
 	const dimension = charge.variant.value.quantityDimension;
 	if (dimension === undefined || dimension.length === 0) return false;
 	if (Object.hasOwn(agreement.quantities, dimension)) return false;
-	return !workloads.some((workload) =>
-		Object.hasOwn(workload.quantities, dimension),
+	return !workloads.some(
+		(workload) =>
+			workload.agreementRef === agreement.id &&
+			Object.hasOwn(workload.quantities, dimension),
 	);
 }
 

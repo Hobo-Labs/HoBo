@@ -550,6 +550,55 @@ describe("declared pricing availability", () => {
 		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
 	});
 
+	it("does not treat another agreement workload quantities as fixed inputs", () => {
+		const incomplete = scenario();
+		const state = incomplete.state;
+		const source = state?.agreements[0];
+		const sourceCard = incomplete.catalog?.rateCards[0];
+		const candidate = incomplete.candidate[0];
+		if (
+			state === undefined ||
+			source === undefined ||
+			sourceCard === undefined ||
+			candidate === undefined
+		) {
+			throw new Error("fixture scenario incomplete");
+		}
+		const agreement = clone(ProviderAgreementSchema, source);
+		agreement.id = "agreement-b";
+		agreement.providerAccountRef = "account-b";
+		for (const entry of agreement.rateSchedule) entry.rateCardId = "card-b";
+		state.agreements.push(agreement);
+		const rateCard = clone(RateCardSchema, sourceCard);
+		rateCard.id = "card-b";
+		rateCard.charges.push(
+			create(ChargeComponentSchema, {
+				base: {
+					id: "seat",
+					selectors: {},
+					fallback: false,
+					invoiceBehavior: "itemized",
+				},
+				variant: {
+					case: "fixed",
+					value: {
+						cadence: "monthly",
+						timing: "advance",
+						amount: { decimal: "10", currency: "USD" },
+						quantityDimension: "seat",
+						proration: "none",
+					},
+				},
+			}),
+		);
+		incomplete.catalog?.rateCards.push(rateCard);
+		candidate.quantities = { seat: "3" };
+		rehashScenario(incomplete);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+	});
+
 	it("does not require a rate card for an unreferenced trialing agreement", () => {
 		const kept = scenario();
 		const state = kept.state;
