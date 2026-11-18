@@ -209,9 +209,12 @@ function isValidSlo(
 	const attainment = data?.attainment;
 	const target = data?.target;
 	const measuredAt = data?.measuredAt;
+	const componentLabel = data?.componentLabel;
 	return (
 		isStringValue(componentId) &&
 		componentId.length > 0 &&
+		(componentLabel === undefined ||
+			(isStringValue(componentLabel) && componentLabel.length > 0)) &&
 		isFiniteNumber(attainment) &&
 		isFiniteNumber(target) &&
 		target > 0 &&
@@ -239,7 +242,9 @@ function applySloMeasured(
 	const date = utcDate(data.measuredAt);
 	const component: ComponentRow = {
 		id: data.componentId,
-		label: data.componentLabel ?? existing?.label ?? data.componentId,
+		label: isLate
+			? (existing?.label ?? data.componentLabel ?? data.componentId)
+			: (data.componentLabel ?? existing?.label ?? data.componentId),
 		status: isLate ? (existing?.status ?? status) : status,
 		lastSignalAt: isLate
 			? (existing?.lastSignalAt ?? data.measuredAt)
