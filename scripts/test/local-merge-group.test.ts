@@ -26,6 +26,8 @@ it("runs and signs the actual merge-group commit against its live base", async (
 		git("config", "user.email", "test@example.invalid");
 		git("config", "core.preloadindex", "false");
 		git("config", "index.threads", "1");
+		git("config", "maintenance.auto", "false");
+		git("config", "gc.auto", "0");
 		writeFileSync(join(root, ".gitignore"), ".hobo/attestations-out/\n");
 		git("add", ".gitignore");
 		git("commit", "--quiet", "-m", "base");
