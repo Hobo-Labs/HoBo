@@ -47,6 +47,8 @@ export {
 	matchDecided,
 	providerApproved,
 	providerRegistered,
+	resourceDefinitionRegistered,
+	resourceDefinitionUpdated,
 	type ResourceDestroyedData,
 	type ResourceDestroyingData,
 	type ResourceFailedData,
@@ -333,6 +335,7 @@ export {
 	type RegistryCatalogRow,
 	type RegistryStreamFold,
 	type ResourceDefinition,
+	providerRegistrationFacts,
 	registerProviderFact,
 	registryCatalogProjection,
 } from "./registry/catalog.js";
