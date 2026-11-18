@@ -273,6 +273,35 @@ describe("diffSchemaIr", () => {
 		]);
 	});
 
+	it.each([
+		"smallserial",
+		"serial2",
+		"serial",
+		"serial4",
+		"bigserial",
+		"serial8",
+	])("adds %s with its implicit sequence default", (type) => {
+		const before = parseSchemaIr(ir([table()]));
+		const after = parseSchemaIr(
+			ir([
+				table({
+					columns: [
+						column(),
+						column({
+							name: "sequence",
+							type,
+							primaryKey: false,
+							unique: false,
+						}),
+					],
+				}),
+			]),
+		);
+		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
+			"expand:add-column:accounts:sequence",
+		]);
+	});
+
 	it("puts a dropped column in contract and marks it destructive", () => {
 		const before = parseSchemaIr(
 			ir([
