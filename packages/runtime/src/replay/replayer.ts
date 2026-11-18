@@ -68,6 +68,7 @@ export async function replayRun<S, A>(
 		throw new TypeError("replay seed must be a string");
 	const streamId = `run/${id}`;
 	const events = await store.readStream(streamId);
+	const recordedVector = seqVector(events);
 	const started = events.find((event) => event.type === "run.Started");
 	if (!started || !isJsonObject(started.data)) {
 		throw new Error(`missing run.Started for ${runId}`);
@@ -252,7 +253,7 @@ export async function replayRun<S, A>(
 
 	const report: ReplayReport = {
 		runId,
-		seqVector: Object.entries(seqVector(events))
+		seqVector: Object.entries(recordedVector)
 			.map(([streamIdEntry, seq]) => ({ streamId: streamIdEntry, seq }))
 			.sort((left, right) => left.streamId.localeCompare(right.streamId)),
 		readSetHash: hashReadSet(events),

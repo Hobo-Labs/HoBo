@@ -10,10 +10,10 @@ skill = '.agents/skills/verify-replay-harness'
 cases = [
     ('event-capture', 'const capturedEvents = events.map((event) => clone(event));', 'const capturedEvents = events;'),
     ('read-set', 'readSetHash: hashReadSet(capturedEvents)', 'readSetHash: hashReadSet(events)'),
-    ('target-capture', 'const capturedTarget = Object.fromEntries(\n\t\tObject.getOwnPropertyNames(targetSeq).map((streamId) => [\n\t\t\tstreamId,\n\t\t\tmust(targetSeq[streamId], `target sequence for ${streamId}`),\n\t\t]),\n\t);', 'const capturedTarget = targetSeq;'),
-    ('target-hidden', 'Object.getOwnPropertyNames(targetSeq)', 'Object.keys(targetSeq)'),
-    ('target-selection', 'isAtOrBefore(event, capturedTarget)', 'isAtOrBefore(event, targetSeq)'),
-    ('target-report', 'seqVector: toSeqVectorEntries(capturedTarget)', 'seqVector: toSeqVectorEntries(targetSeq)'),
+    ('target-capture', 'const capturedTarget = Object.fromEntries(\n\t\tObject.getOwnPropertyNames(requestedTarget).map((streamId) => {\n\t\t\tconst sequence = must(\n\t\t\t\trequestedTarget[streamId],\n\t\t\t\t`target sequence for ${streamId}`,\n\t\t\t);\n\t\t\tif (!Number.isSafeInteger(sequence) || sequence < 0)\n\t\t\t\tthrow new RangeError(\n\t\t\t\t\t"target sequence must be a non-negative safe integer",\n\t\t\t\t);\n\t\t\treturn [streamId, sequence];\n\t\t}),\n\t);', 'const capturedTarget = requestedTarget;'),
+    ('target-hidden', 'Object.getOwnPropertyNames(requestedTarget)', 'Object.keys(requestedTarget)'),
+    ('target-selection', 'isAtOrBefore(event, capturedTarget)', 'isAtOrBefore(event, requestedTarget)'),
+    ('target-report', 'seqVector: toSeqVectorEntries(capturedTarget)', 'seqVector: toSeqVectorEntries(requestedTarget)'),
 ]
 
 for name, before, after in cases:

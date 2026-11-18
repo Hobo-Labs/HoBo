@@ -139,7 +139,10 @@ Replay sequence vectors retain stream IDs such as `__proto__` and
 including non-enumerable ones. The harness captures their values once before
 filtering events and captures the supplied events before running either fold,
 so caller edits during a fold cannot change the reported boundary or read set.
-Event sequence numbers and target values remain trusted inputs.
+Event sequence numbers and target limits must be non-negative safe integers;
+replay refuses an unsafe journal sequence before calling workflow callbacks.
+Replay report parsing also rejects unsafe positions. The values remain trusted
+as observations of the underlying event store.
 
 Within one loaded runtime module, `start` and `resume` refuse another active
 execution with the same run ID and the same `EventStoreWriter` object, even
