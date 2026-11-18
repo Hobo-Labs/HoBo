@@ -102,7 +102,10 @@ describe("agent source policy hook", () => {
 			[".claude/settings.json", "PostToolUse"],
 			[".codex/hooks.json", "PostToolUse"],
 			[".cursor/hooks.json", "afterFileEdit"],
+			[".cursor/hooks.json", "afterShellExecution"],
+			[".cursor/hooks.json", "afterMCPExecution"],
 			[".github/hooks/source-policy.json", "postToolUse"],
+			[".gemini/settings.json", "AfterTool"],
 		] as const) {
 			const config = schema.parse(
 				JSON.parse(readFileSync(join(root, file), "utf8")),
@@ -111,6 +114,30 @@ describe("agent source policy hook", () => {
 				JSON.stringify(config.hooks[event]),
 				/scripts\/agent-source-policy\.mts/u,
 			);
+		}
+	});
+
+	it("runs the common policy after every tool for harnesses with a generic tool event", () => {
+		const schema = z.object({
+			hooks: z.record(
+				z.string(),
+				z.array(z.object({ matcher: z.string().optional() }).passthrough()),
+			),
+		});
+		for (const [file, event] of [
+			[".claude/settings.json", "PostToolUse"],
+			[".codex/hooks.json", "PostToolUse"],
+			[".github/hooks/source-policy.json", "postToolUse"],
+			[".gemini/settings.json", "AfterTool"],
+		] as const) {
+			const config = schema.parse(
+				JSON.parse(readFileSync(join(root, file), "utf8")),
+			);
+			const entry = config.hooks[event]?.find((hook) =>
+				JSON.stringify(hook).includes("scripts/agent-source-policy.mts"),
+			);
+			assert.ok(entry, `${file} must run the shared source policy`);
+			assert.equal(entry.matcher, undefined, `${file} must cover every tool`);
 		}
 	});
 

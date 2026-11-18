@@ -1257,6 +1257,7 @@ jobs:
         .codex
         .cursor
         .devcontainer
+        .gemini
         .githooks
         .github
         .hobo
@@ -1299,6 +1300,7 @@ jobs:
         CONTRIBUTING.md
         DX.md
         GAPS.md
+        GEMINI.md
         LICENSE
         NOTES.md
         PRODUCT.md

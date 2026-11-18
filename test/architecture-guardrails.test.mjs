@@ -288,14 +288,14 @@ test("schema structure detects field changes", () => {
 	);
 });
 
-test("schema structure preserves guard directives", () => {
+test("schema structure ignores architecture metadata comments", () => {
 	assert.equal(
 		hasSameProgramStructure(
 			"demo.proto",
 			'// public-contract:\nsyntax = "proto3";\nmessage Demo {}\n',
 			'syntax = "proto3";\nmessage Demo {}\n',
 		),
-		false,
+		true,
 	);
 });
 
@@ -386,7 +386,9 @@ test("architecture guard normalizes protobuf record suffixes", async () => {
 			"packages/demo/src/demo.ts",
 			[
 				architectureEvidence,
+				"// domain-view:",
 				"export interface CreditLedgerView { readonly seq: number; }",
+				"// parallel-type-allowed:",
 				"export type Dispatch = { readonly type: string };",
 			].join("\n"),
 		);
@@ -425,7 +427,7 @@ test("architecture guard normalizes protobuf record suffixes", async () => {
 				.filter((problem) => problem.code === "parallel-proto-type")
 				.map((problem) => problem.message),
 			[
-				"Import generated types from src/_generated/**_pb.ts or register deliberate domain views in scripts/schema-domain-views.json. Offenders: src/demo.ts:10 CreditLedgerView, src/demo.ts:11 Dispatch",
+				"Import generated types from src/_generated/**_pb.ts or register deliberate domain views in scripts/schema-domain-views.json. Offenders: src/demo.ts:11 CreditLedgerView, src/demo.ts:13 Dispatch",
 			],
 		);
 	});

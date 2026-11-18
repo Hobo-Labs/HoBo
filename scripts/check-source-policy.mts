@@ -71,7 +71,7 @@ const AST_GREP = join(
 	process.platform === "win32" ? "ast-grep.exe" : "ast-grep",
 );
 const DIRECTIVE =
-	/^(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma|buf|go|atlas):|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
+	/^(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma|buf|go|atlas):|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b)/iu;
 const TYPESCRIPT_DIRECTIVE =
 	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?)@ts-(?:check|nocheck|ignore|expect-error)\b/iu;
 const CONCISE_TYPESCRIPT_DIRECTIVE =
@@ -83,10 +83,6 @@ const GENERATED_DIRECTIVE =
 	/^\/\/\s*@generated(?:\s+(?:by|from)\s+[^\r\n]+)?\s*$/u;
 const DEPRECATED_DIRECTIVE = /^\/\*\*\s*@deprecated\s*\*\/$/u;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
-const ARCHITECTURE_DIRECTIVE =
-	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:domain-view|public-contract):/iu;
-const CONCISE_ARCHITECTURE_DIRECTIVE =
-	/^(?:(?:\/\/\/?|#|--)\s*(?:domain-view|public-contract):\s*|\/\*+!?\s*(?:\*\s*)?(?:domain-view|public-contract):\s*\*\/|<!--\s*(?:domain-view|public-contract):\s*-->)$/iu;
 const DEFERRED_TYPE_DIRECTIVE =
 	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)parallel-type-allowed:/iu;
 
@@ -523,8 +519,6 @@ function commentMessage(text: string, first: number): string | undefined {
 	if (first === 1 && text.startsWith("#!")) return undefined;
 	const deferred = DEFERRED.test(text) || DEFERRED_TYPE_DIRECTIVE.test(text);
 	const concise =
-		(!ARCHITECTURE_DIRECTIVE.test(text) ||
-			CONCISE_ARCHITECTURE_DIRECTIVE.test(text)) &&
 		(!TYPESCRIPT_DIRECTIVE.test(text) ||
 			CONCISE_TYPESCRIPT_DIRECTIVE.test(text)) &&
 		!LINT_DIRECTIVE_EXPLANATION.test(text);

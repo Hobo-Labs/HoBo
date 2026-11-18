@@ -4,7 +4,6 @@
     "postToolUse": [
       {
         "type": "command",
-        "matcher": "edit|create|apply_patch",
         "bash": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
         "timeoutSec": 60
       }
