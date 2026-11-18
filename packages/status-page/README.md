@@ -42,6 +42,9 @@ static site is the **read store**, rebuildable from zero. Types follow
   until the schedule arrives. Completed and canceled are terminal states. Rebuild
   older projection snapshots from the event log to recover updates discarded by
   earlier versions.
+- Incidents first seen in an update or resolution retain their lifecycle while a
+  late open supplies the incident's impact. Rebuild older projection snapshots
+  from the event log to recover impact that earlier versions did not backfill.
 - **Render** (`src/render.ts`): pure HTML string renderer, HoBo Rubberhose
   chrome (see `DESIGN.md`), strict inline CSP, `escapeHtml` on every value.
 - **Statuspage-v2 JSON** (`src/statuspage-json.ts`): emits the de-facto
