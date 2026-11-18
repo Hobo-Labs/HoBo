@@ -55,9 +55,16 @@ Dates, non-finite numbers, shared or circular references, accessors, proxies,
 sparse arrays, frozen objects and other values that cannot be faithfully
 replayed are refused. Results are captured before storage waits, so later edits
 to the original do not change the first returned value. An unsupported result
-records a workflow failure; a step result also records a step failure. Convert
-other values to explicit JSON. Values already lost in older journals cannot be
-recovered.
+raises a workflow failure; an unsupported step result also records a step
+failure. If the workflow catches that failure and the host stops before a
+terminal outcome is recorded, this version can run the failed step again on
+resume. Convert other values to explicit JSON. Values already lost in older
+journals cannot be recovered.
+
+The [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md)
+includes statecharts and bounded models for input and result capture. They
+check 18 input states and 15 result states, including edits around journal
+writes and restarts.
 
 `resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
