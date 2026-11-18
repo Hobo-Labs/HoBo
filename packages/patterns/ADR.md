@@ -3,6 +3,10 @@
 **Status:** Accepted  
 **Date:** 2026-08-12
 
+> Historical scope: the Code-specific commands, chat integration, and OpenUI
+> starter described below are absent from this tree. The pattern catalog and
+> its library and `hobo new` entry points remain.
+
 ## Context
 
 HoBo had three template surfaces: `hobo new -t todo|api|agent|fullstack`,
@@ -65,12 +69,11 @@ offline-packaged encoder can be measured without changing call sites.
 
 ## Amendment (2026-11-08: hobo-code leaves main)
 
-`hobo-code` and `@hobo/code` were developed on the
-`feature/hobo-code` branch and are not part of `main`. Decisions 3, 4, 5 and
-6 above name `hobo-code template`, `hobo-code scaffold`, `hobo-code promote`
-and the OpenUI starter; those described that branch. On `main` the catalog is
-reached through `hobo new` and the library API, the OpenUI starter is not in
-the catalog, and apply receipts carry `promotionRef: "caller-promotes"`.
+At that date `hobo-code` and `@hobo/code` were developed on
+`feature/hobo-code`, not `main`. Decisions 3, 4, 5 and 6 above describe that
+former integration. This tree reaches the catalog through `hobo new` and the
+library API; the OpenUI starter is absent, and apply receipts carry
+`promotionRef: "caller-promotes"`.
 
 ## Amendment (2026-11-17: HoBo Code retirement)
 

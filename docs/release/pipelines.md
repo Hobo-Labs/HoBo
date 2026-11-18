@@ -223,7 +223,10 @@ record and caused a later merge to delete the package.
 
 HoBo Code and its release workflow have since been retired from the feature
 branch as well in [#2366](https://github.com/Hobo-Labs/HoBo/pull/2366). The
-preservation-only sync procedure is no longer needed.
+preservation-only sync procedure is no longer needed. `packages/pixel-village`
+was also removed from `main` and is absent from the feature branch. References
+to their commands and integrations in historical architecture records describe
+earlier implementations.
 
 ## Related references
 
