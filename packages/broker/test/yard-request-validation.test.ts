@@ -54,6 +54,15 @@ describe("Yard deployment request validation", () => {
 		}
 	});
 
+	it("uses compatible only when a selection mode is absent", () => {
+		const { selectionMode: _mode, ...yard } = base.yard;
+		const request = parseBindleDeploymentRequest(
+			cloneAsJson({ ...base, yard, camp: { layout: {} } }),
+		);
+		expect(request.yard.selectionMode).toBe("compatible");
+		expect(request.camp?.selectionMode).toBe("compatible");
+	});
+
 	it("refuses malformed constraints instead of dropping them", () => {
 		for (const field of [
 			"regions",
