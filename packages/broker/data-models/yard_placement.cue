@@ -4,6 +4,9 @@ package broker
 
 #YardJsonValue: null | bool | number | string | [...#YardJsonValue] | {[string]: #YardJsonValue}
 
+// ECMAScript String.trim whitespace: preserve nonblank input without normalizing it.
+#CampNonblank: string & !~"^[\\x{0009}-\\x{000D}\\x{0020}\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]*$"
+
 #PlacementLabelEntry: {
 	key:   string
 	value: string
@@ -12,11 +15,11 @@ package broker
 #CampPlacementLayout: {
 	id?:       string
 	env?:      string
-	env_type?: string & !="" & !~"/"
-	require?: [...string]
-	prefer?: [...string]
+	env_type?: #CampNonblank & !~"/"
+	require?: [...#CampNonblank]
+	prefer?: [...#CampNonblank]
 	labels?: {[string]: string}
-	runtime_requirements?: [...string]
+	runtime_requirements?: [...#CampNonblank]
 	canonical_labels?: [...#PlacementLabelEntry]
 }
 
@@ -64,8 +67,11 @@ package broker
 
 #CampPlacementInput: {
 	selection_mode: "exact" | "compatible" | "compatible-or-generate"
-	camp_id?:       string & !=""
+	camp_id?:       #CampNonblank
 	layout:         #CampPlacementLayout
+	if selection_mode == "exact" {
+		camp_id!: #CampNonblank
+	}
 }
 
 #YardInstanceRegistration: {

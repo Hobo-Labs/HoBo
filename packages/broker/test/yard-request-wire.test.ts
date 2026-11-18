@@ -483,6 +483,20 @@ describe("complete Yard placement request wire binding", () => {
 		).toThrow(/spendEstimateUsd/);
 	});
 
+	it("refuses an exact Camp without an ID even when its digest matches", () => {
+		const request = completeRequest();
+		const message = fromWire(encodeBindleDeploymentRequest(request));
+		if (!request.camp || !message.camp) throw new Error("missing Camp");
+		const { campId: _campId, ...camp } = request.camp;
+		message.camp.campId = undefined;
+		message.requestDigest = contentHashOf({ ...request, camp });
+		expect(() =>
+			decodeBindleDeploymentRequest(
+				toBinary(BindleDeploymentRequestSchema, message),
+			),
+		).toThrow(/exact.*campId/i);
+	});
+
 	it("refuses invalid residency even when the digest matches", () => {
 		const request = completeRequest();
 		const message = fromWire(encodeBindleDeploymentRequest(request));
@@ -632,6 +646,108 @@ describe("Yard request CUE contract", () => {
 		const result = vet(document);
 		expect(result.status, result.stderr || result.error?.message).toBe(0);
 	});
+	it("refuses an exact Camp without an ID", () => {
+		const request = completeRequest();
+		const message = fromWire(encodeBindleDeploymentRequest(request));
+		if (!request.camp || !message.camp) throw new Error("missing Camp");
+		const { campId: _campId, ...camp } = request.camp;
+		message.camp.campId = undefined;
+		message.requestDigest = contentHashOf({ ...request, camp });
+		const malformed = JSON.stringify(
+			toJson(BindleDeploymentRequestSchema, message, {
+				alwaysEmitImplicit: true,
+				useProtoFieldName: true,
+			}),
+		);
+		const result = vet(malformed);
+		expect(result.error).toBeUndefined();
+		expect(result.status).not.toBe(0);
+	});
+
+	it("agrees with Camp parser nonblank rules across Unicode and generated inputs", () => {
+		const whitespace = [
+			...Array.from({ length: 5 }, (_, index) =>
+				String.fromCodePoint(9 + index),
+			),
+			" ",
+			"\u00a0",
+			"\u1680",
+			...Array.from({ length: 11 }, (_, index) =>
+				String.fromCodePoint(0x2000 + index),
+			),
+			"\u2028",
+			"\u2029",
+			"\u202f",
+			"\u205f",
+			"\u3000",
+			"\ufeff",
+		];
+		const fields = [
+			"campId",
+			"envType",
+			"require",
+			"prefer",
+			"runtimeRequirements",
+		] as const;
+		function check(field: (typeof fields)[number], value: string) {
+			const request = completeRequest();
+			const message = fromWire(encodeBindleDeploymentRequest(request));
+			if (!request.camp || !message.camp?.layout)
+				throw new Error("missing Camp");
+			const camp =
+				field === "campId"
+					? { ...request.camp, campId: value }
+					: {
+							...request.camp,
+							layout: {
+								...request.camp.layout,
+								[field]: field === "envType" ? value : [value],
+							},
+						};
+			if (field === "campId") message.camp.campId = value;
+			else if (field === "envType") message.camp.layout.envType = value;
+			else if (field === "require") message.camp.layout.require = [value];
+			else if (field === "prefer") message.camp.layout.prefer = [value];
+			else message.camp.layout.runtimeRequirements = [value];
+			message.requestDigest = contentHashOf({ ...request, camp });
+			let parserAccepted = true;
+			try {
+				parseBindleDeploymentRequest(cloneAsJson({ ...request, camp }));
+			} catch {
+				parserAccepted = false;
+			}
+			const encoded = JSON.stringify(
+				toJson(BindleDeploymentRequestSchema, message, {
+					alwaysEmitImplicit: true,
+					useProtoFieldName: true,
+				}),
+			);
+			const result = vet(encoded);
+			expect(result.error).toBeUndefined();
+			expect(
+				result.status === 0,
+				`${field} ${JSON.stringify(value)}: ${result.stderr}`,
+			).toBe(parserAccepted);
+		}
+		for (const field of fields) {
+			for (const value of ["", ...whitespace, "\u0085", "\u180e", " a ", "a/b"])
+				check(field, value);
+		}
+		fc.assert(
+			fc.property(
+				fc.constantFrom(...fields),
+				fc.array(fc.constantFrom(...whitespace), { maxLength: 5 }),
+				fc.boolean(),
+				(field, characters, addText) =>
+					check(field, `${characters.join("")}${addText ? "a" : ""}`),
+			),
+			{ seed: 614_587, numRuns: 40 },
+		);
+		fc.assert(fc.property(fc.constantFrom(...fields), fc.string(), check), {
+			seed: 614_588,
+			numRuns: 80,
+		});
+	}, 30_000);
 	it.each([
 		["missing version", document.replace('"work_binding_version":2,', "")],
 		["missing version 2 properties", missingPropertiesDocument],
