@@ -14,7 +14,6 @@ type ConnectorRegistry = Map<symbol, ConnectorDefinition>;
 type BuilderConnectorRegistry = Map<string, ConnectorBinding>;
 
 function registry(): ConnectorRegistry {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const root = globalThis as typeof globalThis & {
 		[CONNECTOR_REGISTRY]?: ConnectorRegistry;
 	};
@@ -22,7 +21,6 @@ function registry(): ConnectorRegistry {
 	return root[CONNECTOR_REGISTRY];
 }
 
-/** Connector-package authoring helper. Connector packages export this symbol. */
 export function defineConnector<const D extends ConnectorDefinition>(
 	definition: D,
 ): ConnectorSymbol<D> {
@@ -34,16 +32,11 @@ export function defineConnector<const D extends ConnectorDefinition>(
 	if (!definition.id || !definition.origin) {
 		throw new TypeError("connector definition requires id and origin");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const symbol = Symbol.for(
 		`hobo.connector/${definition.id}`,
 	) as ConnectorSymbol<D>;
-	// The freeze widens D back to the base definition layout; the cast is safe
-	// because D extends ConnectorDefinition (exactOptionalPropertyTypes rejects
-	// the generic Readonly<D> otherwise).
 	registry().set(
 		symbol,
-		// SAFETY: assertion required at this I/O or test boundary.
 		Object.freeze({ ...definition }) as ConnectorDefinition,
 	);
 	return symbol;
@@ -58,20 +51,17 @@ export function connectorDefinition<D extends ConnectorDefinition>(
 			"unknown connector symbol; import the package that defines it before declaring the Bindle",
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return definition as D;
 }
 
 function createBinding<D extends ConnectorDefinition>(
 	definition: D,
 ): ConnectorBinding<D> {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const internal = { declaredAllow: [] as string[] };
 	const binding: ConnectorBinding<D> = {
 		kind: "connector",
 		definition,
 		get declaredAllow() {
-			// SAFETY: assertion required at this I/O or test boundary.
 			return internal.declaredAllow as ConnectorBinding<D>["declaredAllow"];
 		},
 		allow(...capabilities) {
@@ -91,19 +81,23 @@ function createBinding<D extends ConnectorDefinition>(
 
 const builderBindings = new WeakMap<object, BuilderConnectorRegistry>();
 
-/** Internal Bindle-builder hook; public app authors only call b.connector(...). */
+export function isConnectorDeclaredBy(
+	builder: BindleBuilder,
+	binding: ConnectorBinding,
+): boolean {
+	return builderBindings.get(builder)?.get(binding.definition?.id) === binding;
+}
+
 export function withConnectorDeclarations<T extends object>(
 	base: T,
 ): T & BindleBuilder {
 	const bindings: BuilderConnectorRegistry = new Map();
-	// SAFETY: assertion required at this I/O or test boundary.
 	const builderBase = {
 		...base,
 		connector<D extends ConnectorDefinition>(symbol: ConnectorSymbol<D>) {
 			const definition = connectorDefinition(symbol);
 			const existing = bindings.get(definition.id);
 			if (existing) {
-				// SAFETY: registry stores ConnectorBinding for the definition id.
 				const reuse = existing as ConnectorBinding<D>;
 				return reuse;
 			}
@@ -112,7 +106,6 @@ export function withConnectorDeclarations<T extends object>(
 			return binding;
 		},
 	};
-	// SAFETY: connector methods are mixed onto the Bindle builder object.
 	const builder = builderBase as T & BindleBuilder;
 	builderBindings.set(builder, bindings);
 	return builder;
