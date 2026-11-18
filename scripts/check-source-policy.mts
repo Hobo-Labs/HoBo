@@ -803,7 +803,11 @@ export function documentViolation(
 		) ||
 		/(?:^|\/)[^/]+[-_](?:design|architecture|roadmap|plan|proposal|adr|rfc)\.mdx?$/iu.test(
 			sourceFile,
-		)
+		) ||
+		/(?:^|\/)(?:gaps?|gap[-_](?:analysis|register)|backlog|poc[-_]rollup[-_]ledger|scope[-_]review|(?:implementation[-_])?handoff(?:[-_]notes)?)\.mdx?$/iu.test(
+			sourceFile,
+		) ||
+		/(?:^|\/)[^/]+[-_]handoff(?:[-_]notes)?\.mdx?$/iu.test(sourceFile)
 	)
 		return "planning, architecture, and design documents are not allowed";
 	const type = frontmatterType(text);
