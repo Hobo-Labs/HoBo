@@ -3156,13 +3156,24 @@ exec /usr/bin/git "$@"
 		assert.doesNotMatch(readFileSync(run.calls, "utf8"), /release-contract/u);
 	});
 
-	it("uses separate contexts for the simulated merge-group event", async () => {
+	it("does not sign the impact gate for a simulated merge-group commit", async () => {
 		const run = await fixture();
+		const result = run.command(["--event=merge_group"]);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /attestation covers no job/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("keeps independent simulated merge-group contexts", async () => {
+		const run = await fixture(true, false, ["release-contract"]);
 		const result = run.command(["--event=merge_group"]);
 		assert.equal(result.status, 0, result.stderr);
 		const calls = readFileSync(run.calls, "utf8");
-		assert.match(calls, /hobo-ci\/local\/merge_group\/workspace_tests/u);
-		assert.doesNotMatch(calls, /pr_affected|pull_request/u);
+		assert.match(calls, /hobo-ci\/local\/merge_group\/release-contract/u);
+		assert.doesNotMatch(
+			calls,
+			/pr_gate_validation|workspace_tests|scripts-tests|pr_affected|pull_request/u,
+		);
 	});
 
 	it("refuses dirty, tampered, stale-base, and wrong-head records before calling gh", async () => {
