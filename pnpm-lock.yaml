@@ -4378,8 +4378,6 @@ importers:
 
   src/draft/technical-proofs/deployment-view-saga-graph-contract: {}
 
-  src/draft/technical-proofs/deterministic-replay-engine: {}
-
   src/draft/technical-proofs/disaster-recovery-failover-contract: {}
 
   src/draft/technical-proofs/dispatcher-maximize-credits-contract: {}

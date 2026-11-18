@@ -25,7 +25,7 @@ This POC does not implement the Reactor, Streamer transport, snapshot store, cro
 
 ## Promotion
 
-S1-12 (HOBO-601) promotes this spike to production at `@hobo/runtime/replay`. Draft POC ahead of merge: `src/draft/technical-proofs/deterministic-replay-engine/`.
+The production implementation is available at `@hobo/runtime/replay`.
 
 ## Verification
 

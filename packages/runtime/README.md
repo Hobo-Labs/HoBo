@@ -15,10 +15,8 @@ deterministic-replay library that backs them.
   is typed in (`JsonValue`, `JsonObject`, `JsonBag`) are exported from the
   root too, so a generated module whose exports infer `Trainable<JsonValue,
   JsonValue>` compiles with `declaration: true`.
-- **Deterministic replay** (`./replay` export) — the replay/divergence/
-  equivalence engine (ADR-0086), promoted from the
-  `deterministic-replay-engine` draft proof (frozen in
-  `scripts/promotions.json`).
+- **Deterministic replay** (`./replay` export) — the replay, divergence,
+  and equivalence engine (ADR-0086).
 
 ## Actors and workflows
 

@@ -1,3 +1,0 @@
-slug: deterministic-replay-engine
-layer: technical
-proof-identity: ok
