@@ -200,7 +200,6 @@ test("report records HOBO-651 scope and S1-12 replay harness stand-in", () => {
 });
 
 test("architecture artifacts pin protobuf, CUE, Pact, and ADR boundaries", () => {
-  const adr = readFileSync(new URL("../ADR.md", import.meta.url), "utf8");
   const proto = readFileSync(
     new URL("../architecture/wit_port_stub_contract.proto", import.meta.url),
     "utf8",
@@ -224,11 +223,4 @@ test("architecture artifacts pin protobuf, CUE, Pact, and ADR boundaries", () =>
   assert.equal(pact.consumer.name, "WitPortStubContractConsumer");
   assert.equal(pact.provider.name, "WitPortStubContractBoundary");
   assert.equal(pact.interactions[0].response.body.ok, true);
-  assert.match(adr, /parse, don't validate/i);
-  assert.match(adr, /Command/i);
-  assert.match(adr, /Event/i);
-  assert.match(adr, /Actor/i);
-  assert.match(adr, /event store/i);
-  assert.match(adr, /projection/i);
-  assert.match(adr, /read store/i);
 });

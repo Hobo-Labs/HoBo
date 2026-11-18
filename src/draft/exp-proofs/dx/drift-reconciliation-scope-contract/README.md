@@ -37,11 +37,9 @@ This proof deliberately does not build provider refresh schedulers, live provide
 ResourceActor runtime changes, autonomous remediation, real cloud mutation, destructive cleanup,
 support ticketing, billing adjustment, or customer notification implementation.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Drift Reconciliation Scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

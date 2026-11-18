@@ -12,11 +12,7 @@
     "epicProofs": [
       "src/draft/epic-proofs/providers-iac-build-adapters"
     ],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/ai-native-agent-auth.md",
-      "docs/design/proofs/hobo-639-provider-azure-full/index.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

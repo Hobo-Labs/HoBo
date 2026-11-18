@@ -11,11 +11,7 @@
     "epicProofs": [
       "src/draft/epic-proofs/control-plane-planner-matching-orchestrator"
     ],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/architecture.md",
-      "docs/design/control-plane.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

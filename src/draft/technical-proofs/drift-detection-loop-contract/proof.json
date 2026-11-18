@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/control-plane-event-schema-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

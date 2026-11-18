@@ -26,11 +26,9 @@ publication, or support ticket automation.
 npm.cmd --prefix src\draft\technical-proofs\upgrade-rollback-dry-run-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the dry-run request/report.
 - `architecture/pacts/` - PACT contract for the dry-run boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

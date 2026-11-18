@@ -22,8 +22,7 @@
       "src/draft/technical-proofs/reads-your-writes-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -89,5 +89,5 @@ AI agents are **first-class principals**, not scripts holding a human's API key:
 
 - [Bindles](/HoBo/primitives/bindles/) · [App Kits](/HoBo/primitives/app-kits/) · [Camps](/HoBo/primitives/camps/) · [Yards](/HoBo/primitives/yards/) · [Junctions](/HoBo/primitives/junctions/) — the primitive references.
 - [Session Replay](/HoBo/reference/session-replay/) — default on every App Kit.
-- [Architecture](/HoBo/architecture/) — the machinery that does the describing, placing, and moving.
+- [System model](/HoBo/system/) — the machinery that does the describing, placing, and moving.
 - [HoBo for agents](/HoBo/agents/) — the agent identity model and MCP surface.

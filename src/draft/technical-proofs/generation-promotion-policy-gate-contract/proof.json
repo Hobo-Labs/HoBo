@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/policy-engine-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

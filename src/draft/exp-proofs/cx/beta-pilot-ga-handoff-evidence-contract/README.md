@@ -27,8 +27,6 @@ pnpm.cmd --dir src\draft\exp-proofs\cx\beta-pilot-ga-handoff-evidence-contract t
 This draft workspace is also registered in `pnpm-lock.yaml` so frozen installs include the package
 importer during local hooks and CI.
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the M4 evidence record.
 - `architecture/pacts/` - PACT contract for the evidence boundary.
-- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

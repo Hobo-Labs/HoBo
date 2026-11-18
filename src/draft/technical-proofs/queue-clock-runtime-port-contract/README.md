@@ -85,11 +85,9 @@ pnpm exec turbo run test --filter ./src/draft/technical-proofs/queue-clock-runti
 ```
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Queue Clock Runtime Port Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

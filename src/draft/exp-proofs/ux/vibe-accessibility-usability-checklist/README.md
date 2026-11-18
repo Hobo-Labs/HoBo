@@ -41,9 +41,7 @@ pnpm.cmd run test:file src/draft/exp-proofs/ux/vibe-accessibility-usability-chec
 | Happy path, blocked path, stale/unknown evidence path, support handoff, accessibility notes, and proof labels are covered. | `scenarios` names the six acceptance paths and their required evidence and safe outcomes. |
 | Scope out remains hard. | `classifyChecklistRequest` rejects product UI remediation, full audit/certification, broad automated suite work, waiver approval, customer data, and unsupported launch claims. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the checklist
   record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.

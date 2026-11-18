@@ -40,8 +40,6 @@ pnpm --prefix src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough test
 | Covers happy path, blocked path, stale/unknown evidence path, support handoff, accessibility notes, and proof-mode labels. | `scenarioPaths`, support handoff, accessibility, and proof-mode tests pin each state. |
 | Scope out remains hard. | `classifyClickableFirstRunWalkthroughRequest` rejects production UI, auth/account/billing, live providers, customer data, and proofless launch claims. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the walkthrough record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.

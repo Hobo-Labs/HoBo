@@ -49,8 +49,6 @@ without waiting on the S2-01 acceptance record merge.
 npm --prefix src/draft/technical-proofs/runtime-postgres-ports test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - [`architecture/`](./architecture) — protobuf + CUE
 - [`architecture/pacts/`](./architecture/pacts) — PACT boundary
-- [`ADR.md`](./ADR.md) — parse-don't-validate and event-flow evidence

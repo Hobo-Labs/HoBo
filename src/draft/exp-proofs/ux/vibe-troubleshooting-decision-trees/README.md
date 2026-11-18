@@ -40,11 +40,9 @@ The workspace lockfile importer list is kept current with this proof package and
 recently landed sibling vibe proof packages so `pnpm install --frozen-lockfile`
 stays clean after rebasing on `origin/main`.
 
-## Architecture Evidence
-
+## Executable evidence
 - Parse, don't validate: raw fixture input parses once into the derived domain
   type `ParsedVibeTroubleshootingDecisionTrees`.
-- `ADR.md` names the troubleshooting command family, event family,
   `TroubleshootingGuideActor`, fixture event-store stream,
   `TroubleshootingGuideProjection` materialized view / projection, read store
   snapshots, and downstream consumers.

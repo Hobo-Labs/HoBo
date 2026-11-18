@@ -49,15 +49,13 @@ migration claims.
 pnpm.cmd --prefix src\draft\exp-proofs\cli-migration-transcript-prototype test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/cli_migration_transcript_prototype.proto` defines the proof
   messages and fixture envelopes.
 - `architecture/cli_migration_transcript_prototype.cue` constrains transcript
   cases, events, phases, and gate behavior.
 - `architecture/pacts/cli_migration_transcript_prototype.pact.json` records the
   design-proof registry consumer contract.
-- `ADR.md` names the command, event, actor, projection, replay, and snapshot
   contracts that keep this POC independent from production migration runtime.
 - Parse, don't validate: fixture input parses once into
   derived domain types, then event-store, materialized view / projection,

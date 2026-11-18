@@ -30,7 +30,6 @@ npm.cmd --prefix src\draft\technical-proofs\post-core-cross-cutting-delta-patter
 
 The package also carries architecture guard evidence for the proof boundary:
 
-- `ADR.md`
 - `contracts/pacts/post-core-delta-pattern.pact.json`
 - `proto/post_core_delta_pattern.proto`
 - `cue/post_core_delta_pattern.cue`

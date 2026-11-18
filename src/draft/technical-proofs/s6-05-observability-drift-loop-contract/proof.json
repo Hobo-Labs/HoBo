@@ -16,10 +16,7 @@
     "epicProofs": [
       "src/draft/epic-proofs/reliability-observability-cost-finops"
     ],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/reliability-observability-cost.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

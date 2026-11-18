@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/delivery-orchestrator-skeleton-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

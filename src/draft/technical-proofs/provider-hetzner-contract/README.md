@@ -32,15 +32,12 @@ npm.cmd --prefix src\draft\technical-proofs\provider-hetzner-contract test
 Relevant design records:
 
 - `docs/design/control-plane.md`: Hetzner seed provider, provider authoring, `realize()` emission, and provider-owned defaults
-- `docs/design/architecture.md`: provider package placement and adapter layering
 - `docs/design/adr/07-portability-extensibility.md#adr-0024`: portability conformance guarantee and seed provider set
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Provider Hetzner Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

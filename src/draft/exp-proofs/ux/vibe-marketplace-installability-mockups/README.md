@@ -16,8 +16,7 @@ Run the focused proof:
 pnpm --dir src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups test
 ```
 
-## Design Alignment
-
+## Executable evidence
 - `docs/design/marketplace-ux.md`: mockups preserve accepted listing states and installability outcomes.
 - `docs/design/marketplace-publisher-trust-evidence.md`: preview and trust wording cannot overstate installability.
 - `docs/design/capability-review-approval.md`: installable, limited-beta, yanked, and review ownership stays with review evidence.

@@ -7,11 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/proofs/hobo-451-threat-model-security-review/README.md",
-      "docs/design/threat-model-security-review.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

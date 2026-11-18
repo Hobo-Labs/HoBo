@@ -20,9 +20,7 @@ bug bounty, CVE workflow, or runtime security engine.
 - Scope creep into live security services, bug bounty commitments, ticketing
   workflows, legal/advisory text, or proofless public claims is rejected.
 
-## Architecture Evidence
-
-- `ADR.md` records the parse, don't validate boundary, derived domain
+## Executable evidence
   types, commands, events, actor, event-store, materialized view/projection,
   snapshot, and read store.
 - `contracts/pacts/security-verification-scope.pact.json` records the PACT

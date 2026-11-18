@@ -20,10 +20,7 @@ Production target: `packages/runtime/` (`@hobo/runtime`) + `packages/events/` fa
 pnpm exec turbo run test --filter ./src/draft/technical-proofs/hobo-runtime-ts-primitives
 ```
 
-## Architecture Evidence
-
-See [`ADR.md`](./ADR.md), [`architecture/`](./architecture), and [`architecture/pacts/`](./architecture/pacts).
-
+## Executable evidence
 ## Event catalog (fixed)
 
 `run.Started` · `run.StepScheduled` · `run.StepCompleted` · `run.StepFailed` · `run.SleepScheduled` ·

@@ -15,11 +15,9 @@ The tests prove refs-only manifest emission, plaintext leak detection, dev-only 
 > `packages/bindles/src/config/`.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Config Secret Schema Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

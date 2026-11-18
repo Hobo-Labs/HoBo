@@ -23,11 +23,9 @@ status-page publication, security attestation, or downstream implementation issu
 pnpm.cmd --dir src\draft\exp-proofs\release-channels-scope test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Release Channels Scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

@@ -27,11 +27,9 @@ pnpm --prefix src/draft/projects/s3-02-hobo-identity test
 pnpm run test:file src/draft/projects/s3-02-hobo-identity/test/acceptance.test.ts
 ```
 
-## Architecture evidence
-
+## Executable evidence
 - `data-models/` — protobuf + CUE constraints for attestation binding, SVID records, identity events
 - `contracts/identity-boundary.pact.json` — Gateway ↔ Identity boundary pact
-- `ADR.md` — parse-don't-validate and identity event evidence
 
 ## Promotion path
 
@@ -40,7 +38,6 @@ Promotes attested-workload SVID flows from
 `packages/identity/` when S3-01 acceptance record merges. Keep draft and production
 trees aligned after promotion.
 
-## Design refs
-
+## Executable evidence
 - [Plan 06 — Agent identity & token broker](../../../docs/design/ai-native-agent-auth.md#plan-06)
 - [ADR-0023 — Key TTL / rotation](../../../docs/design/adr/02-identity-security.md#adr-0023)

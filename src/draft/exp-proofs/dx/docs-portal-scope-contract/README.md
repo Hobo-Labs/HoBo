@@ -31,12 +31,10 @@ The tests prove:
 - excluded UI, CMS, search service, analytics, support automation, security
   intake, hosting, and public-claim scope is rejected by the validator.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Docs Portal
   Scope Contract.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

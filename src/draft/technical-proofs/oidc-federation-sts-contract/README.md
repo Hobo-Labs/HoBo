@@ -50,11 +50,9 @@ credential bounds, static-secret non-use, audit emission, out-of-SVID-scope
 denial, over-broad STS narrowing/flagging, and expired SVID rejection.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Oidc Federation Sts Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

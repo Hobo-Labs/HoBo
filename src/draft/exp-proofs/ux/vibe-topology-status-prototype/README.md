@@ -37,9 +37,7 @@ workspace importer and current main-branch draft importers stay in sync.
 - RBAC appears only as disposition and redaction evidence from fixtures.
 - Provider topology is never traversed live.
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/proto/` records the boundary messages.
 - `architecture/vibe_topology_status_prototype.cue` pins source issue, fixture, projection, freshness, tenant/RBAC, safe-action, proof-mode, and handoff constraints.
 - `architecture/pacts/` gives downstream consumers a Pact-style reference response.
-- `ADR.md` records the experience decision and scope tradeoffs.

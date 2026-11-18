@@ -12,10 +12,7 @@
     "epicProofs": [
       "src/draft/epic-proofs/providers-iac-build-adapters"
     ],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/authoring-resources-wiring.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

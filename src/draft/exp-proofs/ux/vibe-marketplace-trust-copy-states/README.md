@@ -81,7 +81,6 @@ evidence/support paths, support handoff summaries, scope-out enforcement, safe-c
 classification, HOBO-577 quickstart fixture references, and Pact/CUE artifact
 alignment.
 
-## Design Evidence
-
+## Executable evidence
 Branch evidence is summarized in
 [`docs/design/proofs/vibe-marketplace-trust-copy-states/README.md`](../../../../../docs/design/proofs/vibe-marketplace-trust-copy-states/README.md).

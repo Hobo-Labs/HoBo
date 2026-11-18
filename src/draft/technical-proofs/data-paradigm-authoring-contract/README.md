@@ -36,14 +36,12 @@ npm.cmd --prefix src\draft\technical-proofs\data-paradigm-authoring-contract tes
 ```
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Data Paradigm Authoring Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.
 
 ## Testing
 

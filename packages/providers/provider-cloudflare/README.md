@@ -244,8 +244,6 @@ dependency on that adapter. `@hobo/iac-pulumi` is imported **only** from
   pact (manifest publish + hello-bindle realize)
 - `contracts/provider-cloudflare-realize-emission.pact.json` —
   RealizeEmissionBoundary pact (ResourcePlan → IacProgram)
-- `ADR.md` — parse-don't-validate + realize-emission / event-architecture
-  evidence
 
 ## Validation
 

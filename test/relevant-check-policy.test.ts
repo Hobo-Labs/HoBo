@@ -903,7 +903,9 @@ function isOptimizexpLane(check: Check) {
 }
 
 test("global .optimizexp changes select the optimizexp drift lane", () => {
-	const { checks, scopes } = plan([".optimizexp/personas/developer.md"]);
+	const { checks, scopes } = plan([
+		".optimizexp/features/designer-council-consensus/feature.json",
+	]);
 	assert.ok(checks.some(isOptimizexpLane));
 	assert.ok(scopes.includes("optimizexp"));
 });

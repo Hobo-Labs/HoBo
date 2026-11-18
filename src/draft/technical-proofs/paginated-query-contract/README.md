@@ -26,11 +26,9 @@ This package proves the pagination contract only. It does not implement the Reac
 search/vector top-k pagination, tenant policy, or a full `repo`/`view` predicate DSL.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Paginated Query Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

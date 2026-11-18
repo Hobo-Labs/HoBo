@@ -8,8 +8,7 @@ Zero runtime dependencies; no I/O in the core.
 [`@hobo-draft/otel-office`](../../src/draft/projects/otel-office/) (the
 pixel-office observability POC). The draft's server (`server.ts`) and browser
 client were deliberately **not** promoted — serving is owned by the hosting
-service (control-api). The draft remains in place as reference; see its
-`ADR.md` for the design history.
+service (control-api). The draft remains in place as executable reference.
 
 | HoBo primitive | World element | Signal → behavior |
 |---|---|---|

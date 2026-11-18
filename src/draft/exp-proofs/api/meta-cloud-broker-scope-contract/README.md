@@ -20,9 +20,7 @@ replacement, or provider Capability Manifest replacement.
 - Architecture guard evidence exists for the future broker boundary: PACT, protobuf, CUE,
   parse-derived domain types, and event architecture vocabulary.
 
-## Architecture Evidence
-
-- `ADR.md` records the parse, don't validate boundary, derived domain types, commands,
+## Executable evidence
   events, actor, event-store, materialized view/projection, snapshot, and read store.
 - `contracts/pacts/meta-cloud-broker-resolution.pact.json` records the executable PACT contract
   for receipt and rejection outcomes.

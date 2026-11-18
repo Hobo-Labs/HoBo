@@ -30,13 +30,11 @@ capability.
 pnpm.cmd --prefix src\draft\exp-proofs\known-limitations-register-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the limitation
   register.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ARCHITECTURE.md` - parse-don't-validate, parsed domain type, and
   event-architecture evidence.

@@ -22,11 +22,9 @@ The proof covers:
 Scope boundary: this POC does not call a cloud provider, create real VPC/VNet peering, implement cross-provider tiers 3-5, build Junction inference, change Planner ranking/cost objectives, implement egress-cost feedback, or build provider IaC internals. It models the narrow tier-two realization seam those later slices consume.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Tier Two Cross Region Network Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

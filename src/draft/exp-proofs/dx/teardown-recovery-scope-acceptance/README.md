@@ -38,11 +38,9 @@ This proof deliberately does not build provider adapters, live deletes, producti
 runners, restore services, backup/restore execution, upgrade rollback runners, support queues, SLA
 automation, customer notifications, refunds, invoices, chargebacks, or customer-data recovery.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Teardown & Recovery Scope Acceptance.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

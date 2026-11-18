@@ -7,10 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/upgrade-migration-engine.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

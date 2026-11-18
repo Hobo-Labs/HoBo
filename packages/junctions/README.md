@@ -6,7 +6,6 @@ members — and derives the cross-cloud connectivity plane from what their
 manifests declare: a peering tier per member pair, a federated DNS plan, and
 the federation records (trust anchors, signed policy packs, signed registry
 bundles) that ride the same member mechanism. Each yard realizes its own half.
-See [`ADR.md`](./ADR.md).
 
 ## Honest scope
 
@@ -62,5 +61,4 @@ config — parse, don't validate. Wire forms live in
 
 Deriving a plan is a command whose accepted result carries the
 `junction.PlanDerived` event; the composed definition is the snapshot on
-`topology.JunctionComposed`. See [`ADR.md`](./ADR.md) for the package's place
-in the event architecture.
+`topology.JunctionComposed`.

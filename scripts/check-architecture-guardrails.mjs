@@ -626,6 +626,7 @@ function isImplementationFile(file) {
 	if (DOC_ONLY_EXTENSIONS.has(ext)) return false;
 
 	const basename = path.basename(file);
+	if (basename === "proof.json") return false;
 	if (
 		basename === "package.json" ||
 		basename === "pnpm-lock.yaml" ||

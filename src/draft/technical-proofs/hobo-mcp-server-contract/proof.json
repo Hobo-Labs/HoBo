@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/token-broker-skeleton-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

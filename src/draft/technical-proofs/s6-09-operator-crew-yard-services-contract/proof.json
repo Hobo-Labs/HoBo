@@ -8,10 +8,7 @@
     "epicProofs": [
       "src/draft/epic-proofs/operators-sre-crew"
     ],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/operators-sre.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -5,7 +5,7 @@ The champion/challenger promotion gate (ADR-0025 / ADR-0125, IMPL-003).
 `evaluatePromotionGate` decides promote-or-refuse through the three-lens gate:
 conformance green, eval thresholds met over enough samples, and policy allows
 the change. `promotionEventNames` maps the decision to the platform's
-past-tense event names. See [`ADR.md`](./ADR.md).
+past-tense event names.
 
 ## Trajectory capture (OTel / OpenInference span emission)
 

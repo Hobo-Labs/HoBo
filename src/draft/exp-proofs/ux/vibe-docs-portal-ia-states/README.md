@@ -39,12 +39,10 @@ npm.cmd --prefix src\draft\exp-proofs\vibe-docs-portal-ia-states test
 | Happy path, blocked path, stale/unknown evidence path, support handoff, accessibility notes, and proof-mode labels are covered. | `scenarioPaths`, `accessibilityNotes`, and proof-mode validation cover each acceptance state. |
 | Scope out remains hard. | `classifyDocsPortalIaRequest` rejects portal UI, CMS/publishing, search, analytics, final copy, security intake, support tooling, and proofless launch claims. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the IA state
   record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
 - `pnpm-lock.yaml` - workspace importer evidence for frozen-lockfile
   validation of this isolated proof package and adjacent current-main vibe
   proof packages preserved during rebases.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.

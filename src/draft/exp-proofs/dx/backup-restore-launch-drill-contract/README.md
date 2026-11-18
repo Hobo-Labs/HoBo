@@ -34,11 +34,9 @@ pnpm.cmd --dir src\draft\exp-proofs\backup-restore-launch-drill-contract test
 | Gaps route to support, compliance, installation, or release notes. | Gap classifier routes owner handoffs without changing Backup & Restore ownership. |
 | Scope out: no production restore claim without successful drill evidence. | Readiness guard rejects missing drill evidence and live customer data. |
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the launch drill contract.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/runbook-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

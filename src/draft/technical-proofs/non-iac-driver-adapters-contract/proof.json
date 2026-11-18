@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/resource-definition-driver-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

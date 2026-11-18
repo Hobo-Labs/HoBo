@@ -50,8 +50,6 @@ does not publish a binary; source validation and fail-closed tests still run on 
 
 Scoped CI (`componentize.yml`) installs pinned `wasm-tools@1.235.0` for component validation and double-build digest checks.
 
-## Architecture evidence
-
+## Executable evidence
 - `data-models/` — protobuf + CUE constraints
 - `contracts/pacts/` — componentize build boundary pact
-- `ADR.md` — parse/event evidence prose

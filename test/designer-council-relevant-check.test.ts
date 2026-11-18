@@ -9,7 +9,7 @@ function commands(files: string[]): string[] {
 }
 
 for (const file of [
-	".optimizexp/personas/jony-ive.md",
+	".optimizexp/features/designer-council-consensus/feature.json",
 	".optimizexp/bus/entries/council-position.json",
 	".optimizexp/runs/run-1/consensus/review-1/state.json",
 	".agents/skills/optimizexp/harness/lib/design-council.mts",

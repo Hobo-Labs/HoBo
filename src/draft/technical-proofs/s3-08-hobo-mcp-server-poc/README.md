@@ -34,14 +34,12 @@ Production promotion target: `packages/mcp/` once S3-02 (HOBO-628) and S3-04
 pnpm --prefix src/draft/technical-proofs/s3-08-hobo-mcp-server-poc test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.
 
 ## Gates
 

@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/reactor-skeleton-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

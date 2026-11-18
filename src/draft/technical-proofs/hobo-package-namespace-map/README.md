@@ -28,11 +28,9 @@ npm --prefix src/draft/technical-proofs/hobo-package-namespace-map test
   a managed secret resource and the latter is a config-value reference.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Package Namespace Map.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

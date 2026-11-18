@@ -41,9 +41,7 @@ npm.cmd --prefix src\draft\exp-proofs\vibe-plan-review-states test
 | Plan/Diff consumes accepted HOBO-577 fixtures. | `quickstartFixtureRefs` pins source issue, fixture ids, consumer, proof mode, and use notes. |
 | Scope out remains hard. | `classifyPlanReviewRequest` rejects planner/matcher/apply/rollback, live cost/provider credentials, production UI, approval workflow, and proofless launch requests. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the plan
   review state record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.

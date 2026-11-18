@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/policy-gated-flag-flips-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

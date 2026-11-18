@@ -52,11 +52,9 @@ pnpm --prefix src/draft/epic-proofs/gated-live-fix-loop test
 pnpm --prefix src/draft/epic-proofs/gated-live-fix-loop run simulate
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE constraints.
 - `architecture/pacts/` — PACT boundary fixture.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

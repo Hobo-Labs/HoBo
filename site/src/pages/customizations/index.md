@@ -26,4 +26,4 @@ HoBo is ports-and-adapters all the way down. Customize by **registering** confor
 
 ## Related
 
-[Architecture](/HoBo/architecture/) · [Capability map](/HoBo/reference/packages/) · [Trail map](/HoBo/guide/status/)
+[System model](/HoBo/system/) · [Capability map](/HoBo/reference/packages/) · [Trail map](/HoBo/guide/status/)

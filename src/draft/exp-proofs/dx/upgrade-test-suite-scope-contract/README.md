@@ -25,11 +25,9 @@ automation, or any live customer-data or secret-handling behavior.
 corepack pnpm --prefix src\draft\exp-proofs\upgrade-test-suite-scope-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Upgrade Test Suite scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

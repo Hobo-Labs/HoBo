@@ -11,8 +11,6 @@ This is **not**:
 
 It **is** a Camp runtime adapter: overlay-required, operator port private, CAS bucket (`s3`/`gs`/`r2`), one fleet per trust boundary. Bindles still author `actor()`. Workers/Wrangler is a scored Camp escape.
 
-See `ARCHITECTURE.md`.
-
 ## Live lane
 
 Live baremetal / deploy / Worker-module tests require the pinned `celld`

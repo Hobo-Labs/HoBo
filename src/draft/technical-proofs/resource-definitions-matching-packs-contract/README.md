@@ -50,10 +50,8 @@ pnpm --prefix src/draft/technical-proofs/resource-definitions-matching-packs-con
 - `resource-definition-driver-contract` — `createResourceCatalog`
 - `hobo-50-deployment-set-delta` — `foldDeploymentProjections`, `contentAddressDeploymentSet`
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE + PACT boundary evidence
-- `ADR.md` — parse-don't-validate and event-driven Set/Delta notes
 
 ## Scope (out)
 

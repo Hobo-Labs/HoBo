@@ -6,16 +6,14 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/competitors/convex.md",
-      "docs/design/adr/07-portability-extensibility.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",
     "notebook": "notebook.ipynb",
-    "diagrams": ["README.md"],
+    "diagrams": [
+      "README.md"
+    ],
     "bench": "bench"
   },
   "waivers": []

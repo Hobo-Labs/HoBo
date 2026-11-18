@@ -33,11 +33,9 @@ npm.cmd test
 Proof note: `docs/design/proofs/hobo-177-per-app-tenant-routing/README.md`.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Per App Tenant Routing Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

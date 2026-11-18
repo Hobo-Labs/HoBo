@@ -74,11 +74,9 @@ Relevant design records:
 - `docs/design/adr/01-architecture-core.md`: ADR-0006 and ADR-0033
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Resource Definition Driver Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

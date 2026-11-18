@@ -23,11 +23,9 @@ The proof covers:
 Scope boundary: this POC does not call a cloud provider, provision real PrivateLink/PSC/Private Link resources, implement the tier 4 overlay fallback, implement tier 5 public+mTLS, build Junction inference, change Planner ranking/cost objectives, implement egress-cost feedback, or build provider IaC internals. It models the narrow tier-three realization seam those later slices consume.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Tier Three Private Interconnect Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

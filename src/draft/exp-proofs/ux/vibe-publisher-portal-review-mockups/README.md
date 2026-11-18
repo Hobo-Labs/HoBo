@@ -41,11 +41,9 @@ pnpm.cmd --prefix src\draft\exp-proofs\vibe-publisher-portal-review-mockups test
 | Publisher portal mockups reuse the accepted HOBO-577 quickstart source instead of inventing product behavior. | `quickstartFixtureRefs` pins `rlq-define-object-graph-v1`, `rlq-collect-manifest-ir-v1`, `rlq-manage-stale-evidence-v1`, `rlq-recover-snapshot-restore-v1`, and `rlq-recover-scope-out-v1` with publisher-use notes and proof-mode labels. |
 | Scope out remains hard. | `classifyPublisherPortalReviewMockupRequest` rejects publisher services, artifact hosting, payout implementation, scanners, production UI, support automation, customer-data access, and proofless launch claims. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the mockup
   record. CUE uses the same lower-camel field names as the parsed TypeScript
   boundary.
 - `architecture/pacts/` - Pact-style package boundary fixture that parses
   through `parseVibePublisherPortalReviewMockups`.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.

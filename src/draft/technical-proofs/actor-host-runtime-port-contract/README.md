@@ -37,8 +37,6 @@ Excluded:
 pnpm --prefix src/draft/technical-proofs/actor-host-runtime-port-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE for `LeaseInfo`, `ActorEventRecord`, `AppendReceipt`, `ActorStateSnapshot`.
 - `architecture/pacts/actor_host_runtime_port_contract.pact.json` — consumer `@hobo/conformance`, provider `@hobo/runtime-local`.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

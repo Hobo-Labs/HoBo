@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/slo-gated-rollback-analysis-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

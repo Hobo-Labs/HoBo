@@ -23,8 +23,7 @@ and inspection work bounded to durable event facts.
   parity failures cannot be treated as retryable or successful SDK behavior.
 - Effect and XState stay reference inputs, not public dependencies.
 
-## Architecture Guardrail Evidence
-
+## Executable evidence
 This package is a scope contract, not a runtime service, but it still carries
 the repo-standard boundary evidence:
 

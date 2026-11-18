@@ -35,11 +35,9 @@ Pulumi SDK calls, Firecracker execution, or provider cloud APIs.
 pnpm --prefix src/draft/technical-proofs/s2-06-iac-pulumi-automation-adapter test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and per-resource stack evidence.
 
 ## Maintenance
 

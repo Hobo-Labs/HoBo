@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/generation-pipeline-io-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/hobo-policy-ir-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

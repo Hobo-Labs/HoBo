@@ -40,11 +40,9 @@ The acceptance and adversarial checks live in
 `src/draft/technical-proofs/camp-mapping-sugar-compiler/test/camp-mapping-sugar-compiler.test.ts`.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Camp Mapping Sugar Compiler.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

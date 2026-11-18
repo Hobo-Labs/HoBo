@@ -48,4 +48,4 @@ A junction is where the guiding principle gets its full range. Within one camp, 
 ## Where junctions go next
 
 - The vocabulary in one sitting: [Core concepts](/HoBo/guide/concepts/).
-- The machinery that plans cross-cloud moves: [Architecture](/HoBo/architecture/).
+- The machinery that plans cross-cloud moves: [System model](/HoBo/system/).

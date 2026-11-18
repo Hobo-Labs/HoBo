@@ -62,8 +62,7 @@ suite. It proves:
 - alias-derived ledger entries fail closed; and
 - named resource factory arguments stay rejected even when a ledger is present.
 
-## Architecture Evidence
-
+## Executable evidence
 Protobuf data shapes live in [`architecture/`](./architecture). CUE constraints
 bound every protobuf type. The Pact contract under
 [`architecture/pacts/`](./architecture/pacts) records the consumer/provider

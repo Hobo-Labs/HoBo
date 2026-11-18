@@ -21,14 +21,12 @@ The proof covers:
 Scope boundary: this POC does not provision any tier, perform Junction inference, implement Planner objective ranking, or realize provider networking. It only defines and validates the IR that those later slices consume.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Connectivity Tier Ir Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.
 
 ## Gates
 

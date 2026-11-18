@@ -25,8 +25,6 @@ pnpm exec turbo run test --filter ./src/draft/technical-proofs/evals-training-pr
 3. OpenInference spans and live-eval rewards export to tenant OTLP backend
 4. Lint reports missing semantic grounding on invalid `"use training"` sources
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE + PACT for architecture guard
-- `ADR.md` — parse-don't-validate notes
 - `test/acceptance.test.ts` — architecture artifact boundary test pins proto/CUE/Pact/ADR

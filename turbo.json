@@ -92,7 +92,6 @@
         "package.json",
         "vitest.config.ts",
         "test/setup/**",
-        "test/designer-council-personas.test.ts",
         "test/designer-council-relevant-check.test.ts",
         "test/designer-council-sdlc.test.ts",
         "test/draft-artifact-gates.test.ts",

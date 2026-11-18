@@ -31,11 +31,9 @@ proofs.
 pnpm --prefix src/draft/technical-proofs/manifest-resource-intent-bridge-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for the bridge boundary.
 - `architecture/pacts/` — PACT contract for the Planner→FinOps consumer boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

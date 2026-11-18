@@ -29,8 +29,7 @@ pnpm --prefix src/draft/projects/s1-24-conformance-sdk test
 pnpm run test:file src/draft/projects/s1-24-conformance-sdk/test/seeded-drift.test.ts
 ```
 
-## Architecture evidence
-
+## Executable evidence
 - `data-models/sdk_conformance.proto` + `data-models/sdk_conformance.cue`
 - `contracts/pacts/sdk_conformance_report.pact.json`
 - `src/sdk/vectors/semantics-annex.vectors.json` — four HOBO-31 annex vectors

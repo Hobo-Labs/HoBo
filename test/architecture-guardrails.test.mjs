@@ -204,6 +204,23 @@ test("architecture guard ignores docs-only draft package edits", async () => {
 	});
 });
 
+test("architecture guard ignores proof manifest edits", async () => {
+	await withFixture(async (root) => {
+		await write(
+			root,
+			"src/draft/technical-proofs/demo-contract/proof.json",
+			"{}\n",
+		);
+
+		const result = await checkArchitectureGuardrails({
+			root,
+			files: ["src/draft/technical-proofs/demo-contract/proof.json"],
+		});
+
+		assert.deepEqual(result.problems, []);
+	});
+});
+
 const architectureEvidence = [
 	"export type ParsedDemo = { readonly id: string };",
 	"export function parseDemo(input: unknown): ParsedDemo { return { id: String(input) }; }",

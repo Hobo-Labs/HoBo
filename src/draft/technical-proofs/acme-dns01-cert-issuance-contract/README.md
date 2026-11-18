@@ -36,11 +36,9 @@ renewal-failure obligation escalation, live-zone mutation denial, and the
 provider-managed adapter seam.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Acme Dns01 Cert Issuance Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

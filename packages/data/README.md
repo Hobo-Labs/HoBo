@@ -9,7 +9,7 @@ quarantine.
 
 Reuses the `EventEnvelope` and runtime ports from [`@hobo/core`](../core);
 runs against the real `EventStore` (e.g. `@hobo/runtime-local`) rather than
-reinventing a store. See [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+reinventing a store.
 
 ```ts
 import { defineAggregate, defineProjection, createInMemoryActorHost } from "@hobo/data";

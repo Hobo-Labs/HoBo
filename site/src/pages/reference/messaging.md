@@ -71,4 +71,4 @@ Messaging plane diagnostics surface through `doctor` and contract/conformance su
 
 ## Related
 
-[ActorHost](/HoBo/reference/actor-host/) · [Queue](/HoBo/reference/queue/) · [Component hosts](/HoBo/reference/component-hosts/) · [Capability map](/HoBo/reference/packages/) · [CLI](/HoBo/reference/cli/) · [WASM & WIT](/HoBo/architecture/wasm/)
+[ActorHost](/HoBo/reference/actor-host/) · [Queue](/HoBo/reference/queue/) · [Component hosts](/HoBo/reference/component-hosts/) · [Capability map](/HoBo/reference/packages/) · [CLI](/HoBo/reference/cli/) · [WASM & WIT](/HoBo/system/wasm/)

@@ -30,13 +30,11 @@ pnpm run test:file src/draft/technical-proofs/s1-17-usage-permissions-coverage-p
 pnpm run test:file src/draft/technical-proofs/s1-17-usage-permissions-coverage-poc/test/collection-coverage.test.ts
 ```
 
-## Architecture evidence
-
+## Executable evidence
 - `data-models/usage_permissions.proto` + `.cue`
 - `data-models/collection_coverage.proto` + `.cue`
 - `contracts/capability-contract-gate.pact.json`
 - `contracts/collection-coverage-gate.pact.json`
-- `ADR.md`
 
 ## Source proofs promoted
 

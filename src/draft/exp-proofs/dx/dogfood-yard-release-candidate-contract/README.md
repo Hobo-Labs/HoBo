@@ -23,8 +23,6 @@ release-candidate evidence gate that later GA handoff work must consume.
 pnpm --dir src\draft\exp-proofs\dogfood-yard-release-candidate-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the M3 evidence record.
 - `architecture/pacts/` - PACT contract for the evidence boundary.
-- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

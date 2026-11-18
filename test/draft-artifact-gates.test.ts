@@ -61,7 +61,6 @@ async function scaffoldTechnical(
 					technicalProofs: [],
 					epicProofs: [],
 					expProofs: [],
-					designDocs: [],
 				},
 				artifacts: {
 					examples: "examples",
@@ -292,7 +291,6 @@ test("proof backfill records actual proof imports without promoting design docum
 		],
 		epicProofs: [],
 		expProofs: [],
-		designDocs: [],
 	});
 	assert.deepEqual(artifactsFor(workspace, "technical", root).diagrams, []);
 });

@@ -23,8 +23,6 @@ GA handoff issue must consume.
 pnpm.cmd --dir src\draft\exp-proofs\cx\beta-pilot-release-candidate-evidence-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the M3 evidence record.
 - `architecture/pacts/` - PACT contract for the evidence boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

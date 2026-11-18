@@ -44,8 +44,7 @@ The test suite proves:
 - unobserved closure-builder resources fail closed; and
 - scaffolds use the canonical v1 closure-builder sample without pre-v1 syntax.
 
-## Architecture Evidence
-
+## Executable evidence
 Protobuf data shapes live in [`architecture/`](./architecture). CUE constraints
 bound every protobuf type. The Pact contract under
 [`architecture/pacts/`](./architecture/pacts) records the consumer/provider

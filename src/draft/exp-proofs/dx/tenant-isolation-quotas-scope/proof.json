@@ -7,11 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/proofs/hobo-415-tenant-isolation-quotas/README.md",
-      "docs/design/tenant-isolation-quotas.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

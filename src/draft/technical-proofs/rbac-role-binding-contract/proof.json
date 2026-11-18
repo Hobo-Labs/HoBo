@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/hobo-principal-ref-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

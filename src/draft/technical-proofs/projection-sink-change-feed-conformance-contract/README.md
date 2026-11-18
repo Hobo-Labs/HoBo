@@ -14,11 +14,9 @@ The package proves:
 Scope intentionally stops at the contract boundary: no Postgres or Mongo adapter implementation, no Reactor changes, and no provider driver code.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Projection Sink Change Feed Conformance Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

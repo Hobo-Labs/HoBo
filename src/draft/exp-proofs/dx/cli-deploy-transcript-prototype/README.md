@@ -75,11 +75,9 @@ Excluded:
 pnpm.cmd --dir src\draft\exp-proofs\cli-deploy-transcript-prototype test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the transcript prototype.
 - `architecture/pacts/` - Pact contract for the mocked fixture boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

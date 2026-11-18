@@ -32,11 +32,9 @@ customer-visible installability claims without evidence source and owner route.
 npm.cmd --prefix src\draft\exp-proofs\marketplace-ux-scope-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Marketplace UX Scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

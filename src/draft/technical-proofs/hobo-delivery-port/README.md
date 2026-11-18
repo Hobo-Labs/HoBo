@@ -29,11 +29,9 @@ the acceptance tests for event validation, replay, CDEvents round-trip behavior,
 capability warnings, abort failure semantics, and idempotent promotion.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Delivery Port.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

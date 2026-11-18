@@ -40,8 +40,7 @@ The adversarial fixtures fail with stable codes:
 - `supervision.cleanup_not_audited`
 - `supervision.retry_budget_reset`
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
@@ -49,4 +48,3 @@ This package ships the architecture-guard evidence required by
   facts, fixtures, case results, and reports.
 - `architecture/pacts/` — PACT contract for the supervision conformance report
   boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -25,11 +25,9 @@ npm.cmd --prefix src\draft\technical-proofs\hobo-codegen-cli-contract test
 Promoted to draft POC `src/draft/technical-proofs/s0-04-protobuf-cue-codegen/` (HOBO-581 / S0-04); production target is `packages/schema-tools/`.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Codegen Cli Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

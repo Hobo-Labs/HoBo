@@ -20,13 +20,11 @@ Production promotion path: `@hobo/runtime/replay` in `packages/runtime/src/repla
 pnpm --prefix src/draft/technical-proofs/deterministic-replay-engine test
 ```
 
-## Architecture evidence
-
+## Executable evidence
 This package ships architecture-guard evidence for `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/replay_report.proto` + `replay_report.cue` — protobuf records with CUE constraints.
 - `architecture/pacts/replayer_eventstore.pact.json` — replayer consumer ↔ EventStore provider PACT.
-- `ADR.md` — parse-don't-validate derived types and event architecture vocabulary.
 
 **Parse, don't validate:** `parseReplayReport` / `parseReplayDivergence` cross one boundary into parsed domain types.
 

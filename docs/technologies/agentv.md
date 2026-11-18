@@ -39,7 +39,7 @@ consumers import `@agentv/core`).
 ## Relevance to HoBo
 
 - **Adopted behind the platform's eval boundary** as the live-eval grader
-  provider: [`@hobo/provider-agentv`](../../packages/providers/provider-agentv/ADR.md)
+  provider: [`@hobo/provider-agentv`](../../packages/providers/provider-agentv/README.md)
   grades **stored** trajectories (no agent re-run) with `@agentv/core`'s
   deterministic runners plus caller-wired custom/LLM graders, emitting the
   core `TrajectoryReward` (`source: "live-eval"`) and a generated

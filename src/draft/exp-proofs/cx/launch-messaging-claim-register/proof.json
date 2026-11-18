@@ -7,10 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/launch-messaging-claims.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

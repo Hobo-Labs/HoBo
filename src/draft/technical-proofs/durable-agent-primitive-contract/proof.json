@@ -10,10 +10,7 @@
       "src/draft/technical-proofs/token-broker-skeleton-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/ai-native-agent-auth.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

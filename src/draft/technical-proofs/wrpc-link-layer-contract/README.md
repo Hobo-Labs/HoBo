@@ -19,8 +19,6 @@ backpressure taxonomy (HOBO-25), NATS lattice transport (HOBO-27).
 pnpm --prefix src/draft/technical-proofs/wrpc-link-layer-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/wrpc_link.proto` + `architecture/wrpc_link.cue` — protobuf-first event shapes
 - `architecture/pacts/wrpc-membrane.pact.json` — membrane boundary contract
-- `ADR.md` — parse-don't-validate + event architecture evidence

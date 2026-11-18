@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/rbac-role-binding-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -38,8 +38,6 @@ or full WIT codegen. Composes patterns from `wrpc-in-process-link-contract` and
 pnpm --prefix src/draft/technical-proofs/wit-port-stub-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE
 - `architecture/pacts/` — PACT boundary
-- `ADR.md` — parse-don't-validate + event vocabulary

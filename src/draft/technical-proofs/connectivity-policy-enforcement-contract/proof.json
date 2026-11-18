@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/connectivity-tier-ir-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

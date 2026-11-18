@@ -12,8 +12,7 @@
       "src/draft/technical-proofs/runtime-port-conformance-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

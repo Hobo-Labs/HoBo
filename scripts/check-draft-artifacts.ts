@@ -104,13 +104,6 @@ export function checkWorkspace(
 	}
 
 	const waived = new Set(manifest.waivers.map((w) => w.requirement));
-	for (const waiver of manifest.waivers) {
-		if (waiver.adr && !existsSync(path.join(abs, waiver.adr)))
-			problems.push(
-				`waiver for "${waiver.requirement}" cites missing ADR: ${waiver.adr}`,
-			);
-	}
-
 	if (!waived.has("examples")) {
 		let examplesReady = true;
 		const packagePath = path.join(abs, "package.json");

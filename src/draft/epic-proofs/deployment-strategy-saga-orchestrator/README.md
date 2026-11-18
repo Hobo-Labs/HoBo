@@ -40,8 +40,7 @@ pnpm --prefix src/draft/epic-proofs/deployment-strategy-saga-orchestrator test
 pnpm --prefix src/draft/epic-proofs/deployment-strategy-saga-orchestrator run simulate
 ```
 
-## Architecture evidence
-
+## Executable evidence
 - `architecture/deployment_strategy_saga_orchestrator.proto` — protobuf shapes
 - `architecture/deployment_strategy_saga_orchestrator.cue` — CUE constraints
 - `architecture/pacts/deployment_strategy_saga_orchestrator.pact.json` — boundary PACT

@@ -29,13 +29,11 @@ export const proofManifestSchema = z
 				technicalProofs: z.array(repoPath).default([]),
 				epicProofs: z.array(repoPath).default([]),
 				expProofs: z.array(repoPath).default([]),
-				designDocs: z.array(repoPath).default([]),
 			})
 			.default({
 				technicalProofs: [],
 				epicProofs: [],
 				expProofs: [],
-				designDocs: [],
 			}),
 		artifacts: z
 			.object({
@@ -64,7 +62,6 @@ export const proofManifestSchema = z
 						"cascade",
 					]),
 					reason: z.string().min(10),
-					adr: relPath.optional(),
 				}),
 			)
 			.default([]),

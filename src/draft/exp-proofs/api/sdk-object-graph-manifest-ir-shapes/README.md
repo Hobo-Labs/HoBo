@@ -37,15 +37,13 @@ The tests prove:
   execution, and new SDK semantics are rejected as scope creep; and
 - protobuf, CUE, and Pact-style boundary evidence reconcile with the package.
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/sdk_object_graph_manifest_ir_shapes.proto` records the local
   data contract.
 - `architecture/sdk_object_graph_manifest_ir_shapes.cue` constrains the same
   contract.
 - `architecture/pacts/sdk_object_graph_manifest_ir_shapes.pact.json` records the
   mocked proof-registry boundary.
-- `ADR.md` names the experience decision, parse boundary, event vocabulary, and
   alternatives.
 
 ## Scope

@@ -7,8 +7,7 @@
       "src/draft/technical-proofs/slo-as-code-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

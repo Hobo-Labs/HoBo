@@ -35,4 +35,4 @@ description: "Crew SWE: implement, refactor, and repair business and message cod
 
 ## Related
 
-[Generated stack concepts in Architecture](/HoBo/architecture/) · [Shared model](/HoBo/operations/shared-model/) · [UX Designer](/HoBo/operations/ux-designer/)
+[Generated stack system model](/HoBo/system/) · [Shared model](/HoBo/operations/shared-model/) · [UX Designer](/HoBo/operations/ux-designer/)

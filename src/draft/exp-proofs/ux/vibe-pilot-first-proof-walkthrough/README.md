@@ -44,12 +44,10 @@ npm.cmd --prefix src\draft\exp-proofs\vibe-pilot-first-proof-walkthrough test
 | Blockers route to cutline, docs, product UX, support, or engineering. | `blockerRoutes` is an exact parsed route set with owner and safe next action fields. |
 | Scope out remains hard. | `classifyPilotFirstProofWalkthroughRequest` rejects automation, CRM, live customer data, tenant mutation, provider deployment, support tooling, and proofless launch claims. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the walkthrough
   record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.
 - `pnpm-lock.yaml` - workspace importer registration for this proof package and
   the current rebased draft workspace set so `install:check` remains
   deterministic.

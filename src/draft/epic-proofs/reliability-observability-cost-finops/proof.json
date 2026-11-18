@@ -33,8 +33,7 @@
       "src/draft/technical-proofs/trace-context-propagation-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

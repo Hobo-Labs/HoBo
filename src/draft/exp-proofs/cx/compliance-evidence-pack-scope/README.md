@@ -39,11 +39,9 @@ This proof deliberately does not approve legal artifacts, build live compliance 
 support access to production customer data, publish customer-facing compliance claims, or create
 downstream implementation issues before M0 acceptance.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Compliance Evidence Pack Scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

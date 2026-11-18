@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/region-objective-ranking-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

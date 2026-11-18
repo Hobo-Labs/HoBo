@@ -22,8 +22,6 @@ In scope: compile-time triple emission, golden assertion, broker ceiling enforce
 
 Out of scope: production promotion to `packages/identity/`, real IaC program emission (S2-06), wasm host runtime (S1-04). Those remain blocked on upstream slices.
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE contract artifacts.
 - `architecture/pacts/` — PACT boundary fixture.
-- `ADR.md` — parse-don't-validate and triple-effect seam notes.

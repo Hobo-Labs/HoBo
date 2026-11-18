@@ -35,11 +35,9 @@ pnpm --dir src/draft/exp-proofs/cx/compatibility-matrix-scope-contract test
 pnpm exec oxlint src/draft/exp-proofs/cx/compatibility-matrix-scope-contract --deny-warnings
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Compatibility Matrix Scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

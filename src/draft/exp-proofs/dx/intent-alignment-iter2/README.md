@@ -8,7 +8,3 @@ findings with stable IDs, iteration log entry, and REM scaffolding expected by t
 ```bash
 pnpm exec turbo run test --filter ./src/draft/exp-proofs/dx/intent-alignment-iter2
 ```
-
-## Architecture Evidence
-
-See [`ADR.md`](./ADR.md) and [`architecture/`](./architecture/) for protobuf/CUE/PACT gates.
