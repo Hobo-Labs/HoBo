@@ -6,13 +6,17 @@ import { fileURLToPath } from 'node:url';
 const jar = process.env.TLA2TOOLS;
 if (!jar) throw new Error('TLA2TOOLS is required');
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'hobo-quota-admission-model-'));
-const names = ['CheckPresence', 'CheckPolicy', 'CheckQuota', 'CheckReady', 'CheckFinal'];
+const names = ['CheckPresence', 'CheckPolicy', 'CheckQuota', 'CheckReady', 'CheckFinal', 'CheckExecution', 'CheckReserveAck'];
 const cases = [
   ['CheckPresence', 'NoQuotaWithoutAuthority'],
   ['CheckPolicy', 'NoQuotaWithoutPolicy'],
   ['CheckQuota', 'NoQuotaAboveLimit'],
   ['CheckReady', 'ReadyHasEvidence'],
   ['CheckFinal', 'NoProviderWithChangedAuthority'],
+  ['CheckExecution', 'NoProviderWithoutExecution'],
+  ['CheckReserveAck', 'UnknownReservationReported'],
+  ['none', 'LegacyNoBudgetWithoutQuota'],
+  ['none', 'LegacyUncertainRetainsExposure'],
 ] as const;
 try {
   copyFileSync(fileURLToPath(new URL('../models/YardQuotaAdmission.tla', import.meta.url)), path.join(scratch, 'YardQuotaAdmission.tla'));

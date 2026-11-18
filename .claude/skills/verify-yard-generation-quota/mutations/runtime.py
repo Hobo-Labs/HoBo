@@ -20,7 +20,7 @@ cases = [
     ('baseline', [('generation_quota_baseline WHERE owner_tenant_id=?)', 'generation_quota_baseline WHERE owner_tenant_id=? AND 0)')], 'counts baseline and ready Yards'),
     ('ready-evidence', [('const verifyReady = options.verifyReady;', 'const verifyReady = () => true;')], 'serializes capacity'),
     ('ready-tenant-binding', [('claim.ownerTenantId !== request.ownerTenantId ||', 'false ||'), ('current.ownerTenantId !== request.ownerTenantId ||', 'false ||')], 'requires ready evidence to match'),
-    ('retry-plan-binding', [('previous.planHash !== request.planHash ||', 'false ||')], 'binds idempotent retries'),
+    ('retry-plan-binding', [('claim.planHash === request.planHash &&', 'true &&')], 'binds idempotent retries'),
     ('ready-yard-count', [('generation_quota_claims WHERE owner_tenant_id=?) AS count', "generation_quota_claims WHERE owner_tenant_id=? AND status='pending') AS count")], 'counts baseline and ready Yards'),
     ('persistent-database', [('!isJsonString(main?.file) || !nonblank(main.file)', 'false')], 'in-memory SQLite databases disguised'),
     ('fixed-limits', [('request.maxConcurrentGenerations !== maxConcurrentGenerations ||\n\t\t\t\trequest.maxYardsPerTenant !== maxYardsPerTenant', 'false')], 'counts baseline and ready Yards'),

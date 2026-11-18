@@ -448,7 +448,7 @@ all writers must use the same database. Out-of-band Yards, incomplete baseline
 entries, inaccurate readiness attestations, lost database files and deleted Yard
 reconciliation remain outside this authority's guarantees.
 
-The bounded admission projection hides 32 same-state steps. It assumes the
+The bounded admission projection hides 38 same-state steps. It assumes the
 separate quota, policy, budget and provider evidence checks are truthful.
 
 ```mermaid
@@ -460,30 +460,32 @@ stateDiagram-v2
   s4: Host policy denied the request
   s5: Generation quota unavailable
   s6: Generation quota reserved
-  s7: Hosting budget reserved
-  s8: Quota needs reconciliation
-  s9: Unused quota released
-  s10: Quota released, budget needs reconciliation
-  s11: Quota execution fence claimed
-  s12: Provider called
-  s13: Yard readiness verified
-  s14: Outcome needs reconciliation
+  s7: Quota reservation needs reconciliation
+  s8: Hosting budget reserved
+  s9: Quota needs reconciliation
+  s10: Unused quota released
+  s11: Quota released, budget needs reconciliation
+  s12: Quota execution fence claimed
+  s13: Provider called
+  s14: Yard readiness verified
+  s15: Outcome needs reconciliation
   [*] --> s0
   s0 --> s2: refuse without quota authority
   s0 --> s1: check host policy
   s1 --> s4: refuse host policy
   s1 --> s3: approve host policy
   s3 --> s5: refuse exhausted quota
+  s3 --> s7: reconcile unknown quota reservation
   s3 --> s6: reserve generation quota
-  s6 --> s7: reserve hosting budget
-  s6 --> s8: reconcile unverified quota cancellation
-  s6 --> s9: release unused quota
-  s7 --> s10: release unused quota, retain budget for reconciliation
-  s7 --> s11: claim the execution fence
-  s11 --> s12: call the provider
-  s12 --> s14: retain exposure for reconciliation
-  s12 --> s13: verify Yard readiness
-  s11 --> s14: retain exposure for reconciliation
+  s6 --> s8: reserve hosting budget
+  s6 --> s9: reconcile unverified quota cancellation
+  s6 --> s10: release unused quota
+  s8 --> s11: release unused quota, retain budget for reconciliation
+  s8 --> s12: claim the execution fence
+  s12 --> s13: call the provider
+  s13 --> s15: retain exposure for reconciliation
+  s13 --> s14: verify Yard readiness
+  s12 --> s15: retain exposure for reconciliation
 ```
 
 The two-worker claim and cancellation projection hides three same-state
