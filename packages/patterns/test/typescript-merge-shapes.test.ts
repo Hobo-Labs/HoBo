@@ -1,6 +1,8 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import type { BindleDefinition } from "@hobo/bindles";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -23,10 +25,25 @@ function root(source: string): string {
 const read = (dir: string) =>
 	readFileSync(join(dir, "src", "bindle.ts"), "utf8");
 
+async function evaluate(dir: string): Promise<BindleDefinition> {
+	const modulePath = join(dir, "bindle.mjs");
+	writeFileSync(
+		modulePath,
+		read(dir).replace(
+			'"@hobo/bindles"',
+			JSON.stringify(import.meta.resolve("@hobo/bindles")),
+		),
+	);
+	const loaded = (await import(pathToFileURL(modulePath).href)) as {
+		default: BindleDefinition;
+	};
+	return loaded.default;
+}
+
 function apply(
 	dir: string,
 	patternId = "bindle.resource.api",
-	params: Record<string, unknown> = { resourceName: "shop" },
+	params: Record<string, string> = { resourceName: "shop" },
 ) {
 	runCounter += 1;
 	return applyPatternPlan({
@@ -36,7 +53,7 @@ function apply(
 		targetPath: "src/bindle.ts",
 		isolationRunId: `shape-${runCounter}`,
 		params,
-	} as never);
+	});
 }
 
 function bindleFile(
@@ -142,17 +159,17 @@ describe("callback bodies the merge has to read", () => {
 describe("builder-chain merging", () => {
 	const WITH_API = bindleFile(`  const api = b.api();\n  return { api };`);
 
-	it("chains a dependsOn onto the declaration its snippet names", () => {
+	it("adds a dependency to the resource its snippet names", () => {
 		const dir = root(
 			bindleFile(
 				`  const web = b.web();\n  const api = b.api();\n  return { web, api };`,
 			),
 		);
 		apply(dir, "bindle.relationship.depends-on", {});
-		expect(read(dir)).toMatch(/const web = b\.web\(\)\.dependsOn\(/u);
+		expect(read(dir)).toContain("web.dependsOn(api);");
 	});
 
-	it("does not chain the same call twice", () => {
+	it("does not add the same dependency twice", () => {
 		const dir = root(
 			bindleFile(
 				`  const web = b.web();\n  const api = b.api();\n  return { web, api };`,
@@ -162,6 +179,65 @@ describe("builder-chain merging", () => {
 		const once = read(dir);
 		apply(dir, "bindle.relationship.depends-on", {});
 		expect(read(dir)).toBe(once);
+	});
+
+	it("adds distinct dependencies after the referenced resources are initialized", async () => {
+		const dir = root(
+			bindleFile(
+				`  const web = b.web();\n  const api = b.api();\n  const cache = b.kv();\n  return { web, api, cache };`,
+			),
+		);
+		apply(dir, "bindle.relationship.depends-on", {});
+		apply(dir, "bindle.relationship.depends-on", {
+			fromName: "web",
+			toName: "cache",
+		});
+		const once = read(dir);
+		apply(dir, "bindle.relationship.depends-on", {});
+		apply(dir, "bindle.relationship.depends-on", {
+			fromName: "web",
+			toName: "cache",
+		});
+		expect(read(dir)).toBe(once);
+		expect((await evaluate(dir)).edges).toEqual([
+			{ from: "web", to: "api" },
+			{ from: "web", to: "cache" },
+		]);
+	});
+
+	it("retains existing dependencies and adds only missing ones", async () => {
+		const dir = root(
+			bindleFile(
+				`  const products = b.kv();\n  const orders = b.queue();\n  const search = b.kv();\n  const api = b.api().dependsOn(products);\n  api.dependsOn(orders);\n  return { products, orders, search, api };`,
+			),
+		);
+		apply(dir, "bindle.relationship.multiple-dependencies", {
+			fromName: "api",
+			first: "orders",
+			second: "search",
+		});
+		const once = read(dir);
+		apply(dir, "bindle.relationship.multiple-dependencies", {
+			fromName: "api",
+			first: "orders",
+			second: "search",
+		});
+		expect(read(dir)).toBe(once);
+		expect((await evaluate(dir)).edges).toEqual([
+			{ from: "api", to: "products" },
+			{ from: "api", to: "orders" },
+			{ from: "api", to: "search" },
+		]);
+	});
+
+	it("does not mistake matching text for an existing dependency", async () => {
+		const dir = root(
+			bindleFile(
+				`  const description = "web.dependsOn(api)";\n  const api = b.api();\n  const web = b.web();\n  return { web, api };`,
+			),
+		);
+		apply(dir, "bindle.relationship.depends-on", {});
+		expect((await evaluate(dir)).edges).toEqual([{ from: "web", to: "api" }]);
 	});
 
 	it("refuses to chain onto a symbol the file does not declare", () => {
@@ -219,7 +295,7 @@ describe("the merge verifies its own output", () => {
 				targetPath: "src/bindle.ts",
 				isolationRunId: "reparse-check",
 				params: { resourceName: "cache" },
-			} as never),
+			}),
 		).not.toThrow();
 	});
 
