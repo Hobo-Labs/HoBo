@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { visitorCountFromProvider } from "../src/analytics/visitorCount";
 
 describe("visitorCountFromProvider", () => {
-  it("accepts nonnegative safe integers and decimal strings", () => {
+  it("accepts nonnegative safe integers and digit-only strings", () => {
     expect(visitorCountFromProvider(0)).toBe(0);
     expect(visitorCountFromProvider(42)).toBe(42);
     expect(visitorCountFromProvider("17")).toBe(17);

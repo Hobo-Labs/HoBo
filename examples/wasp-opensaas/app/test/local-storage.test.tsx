@@ -15,8 +15,8 @@ describe("useLocalStorage", () => {
   it("reads a new key and resets when the new key is missing", () => {
     localStorage.setItem("first", JSON.stringify("alpha"));
     const { result, rerender } = renderHook(
-      ({ key }) => useLocalStorage(key, "beta", schema),
-      { initialProps: { key: "first" as const } },
+      ({ key }: { key: string }) => useLocalStorage(key, "beta", schema),
+      { initialProps: { key: "first" } },
     );
     act(() => undefined);
     expect(result.current[0]).toBe("alpha");
