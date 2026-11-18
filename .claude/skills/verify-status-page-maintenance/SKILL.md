@@ -9,13 +9,15 @@ description: Verify terminal maintenance outcomes and updates arriving before sc
 
 **Why:** Discarding an early completion can make finished maintenance appear active, and switching between completed and canceled changes the reported outcome after the fact.
 
-**Review baseline:** `367af3bc7c76c0cabf077f2d1e8b0f4ca22658fd`.
+**Review baseline:** `68d4d6dbff597b53447da4a1988717e67b496908`.
 
 ## Covered code and checks
 
 - `packages/status-page/src/types.ts` implements the terminal guard; `src/projection.ts` retains and consumes pending maintenance states and rejects malformed updates. `src/model.ts` uses the resulting lifecycle when applying a maintenance overlay.
 - `packages/status-page/test/maintenance-lifecycle.test.ts` checks all transition pairs and 256 combinations of three updates with the schedule at each position, two independent pending IDs, invalid updates and the rendered result of a late schedule.
 - The related [freshness skill](../verify-status-page-freshness/SKILL.md) covers signal age and budget validation.
+
+The related [incident skill](../verify-status-page-incident/SKILL.md) covers incident lifecycle and late-open backfill.
 
 From the repository root with dependencies installed, run:
 
