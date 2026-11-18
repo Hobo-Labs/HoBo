@@ -114,6 +114,53 @@ describe("endpoint cloud-native providers", () => {
 		expect(served.handlers.size).toBe(0);
 	});
 
+	it.each([
+		["aws", createAwsCloudNativeProvider],
+		["gcp", createGcpCloudNativeProvider],
+		["azure", createAzureCloudNativeProvider],
+		["vercel", createVercelCloudNativeProvider],
+	] as const)("%s keeps requests on the bound origin and returns redirects", async (_id, createProvider) => {
+		const seen: Array<{
+			url: string;
+			key: string | null;
+			redirect: RequestRedirect | undefined;
+		}> = [];
+		const fetchImpl: typeof fetch = async (input, init) => {
+			seen.push({
+				url: String(input),
+				key: new Headers(init?.headers).get("x-api-key"),
+				redirect: init?.redirect,
+			});
+			return new Response(null, {
+				status: 302,
+				headers: { location: "https://attacker.example/collect" },
+			});
+		};
+		const provider = createProvider({ fetchImpl });
+		const served = await provider.servePrivate(
+			serveContext({
+				HOBO_CLOUD_NATIVE_ENDPOINT_ORDERS_API: "https://trusted.example/base",
+			}),
+		);
+		const response = await mustGet(
+			served.handlers,
+			"orders-api",
+		)(
+			new Request("https://internal//attacker.example/collect?q=1", {
+				headers: { "x-api-key": "sentinel" },
+			}),
+		);
+		expect(response.status).toBe(302);
+		expect(seen).toEqual([
+			{
+				url: "https://trusted.example//attacker.example/collect?q=1",
+				key: "sentinel",
+				redirect: "manual",
+			},
+		]);
+		await served.close();
+	});
+
 	it("returns a typed refusal for malformed endpoint bindings", async () => {
 		const provider = createGcpCloudNativeProvider();
 		await expect(

@@ -224,6 +224,94 @@ describe("cloudflare cloud-native provider: remote proxy", () => {
 		]);
 	});
 
+	it("keeps network-path requests on the bound origin", async () => {
+		const seen: Array<{ url: string; authorization: string | null }> = [];
+		const fetchImpl: typeof fetch = async (input, init) => {
+			seen.push({
+				url: String(input),
+				authorization: new Headers(init?.headers).get("authorization"),
+			});
+			return new Response("ok");
+		};
+		const provider = createCloudflareCloudNativeProvider({ fetchImpl });
+		const serve = await provider.servePrivate(
+			serveCtx({
+				bindleEnv: {
+					HOBO_CLOUD_NATIVE_ENDPOINT_API: "https://trusted.example/base",
+				},
+			}),
+		);
+		cleanups.push(() => serve.close());
+		await mustGet(
+			serve.handlers,
+			"api",
+		)(
+			new Request("https://internal//attacker.example/collect?q=1", {
+				headers: { authorization: "Bearer sentinel" },
+			}),
+		);
+		expect(seen).toEqual([
+			{
+				url: "https://trusted.example//attacker.example/collect?q=1",
+				authorization: "Bearer sentinel",
+			},
+		]);
+	});
+
+	it("returns redirects without forwarding private headers to another origin", async () => {
+		let leaked = false;
+		const receiver = createServer((req, res) => {
+			leaked = req.headers["x-api-key"] === "sentinel";
+			res.end("received");
+		});
+		await new Promise<void>((resolve) =>
+			receiver.listen(0, "127.0.0.1", resolve),
+		);
+		cleanups.push(
+			() => new Promise((resolve) => receiver.close(() => resolve())),
+		);
+		const destination = receiver.address();
+		if (!(destination instanceof Object))
+			throw new Error("receiver address missing");
+		const redirector = createServer((_req, res) => {
+			res.writeHead(302, {
+				location: `http://127.0.0.1:${destination.port}/collect`,
+			});
+			res.end();
+		});
+		await new Promise<void>((resolve) =>
+			redirector.listen(0, "127.0.0.1", resolve),
+		);
+		cleanups.push(
+			() => new Promise((resolve) => redirector.close(() => resolve())),
+		);
+		const source = redirector.address();
+		if (!(source instanceof Object))
+			throw new Error("redirector address missing");
+		const provider = createCloudflareCloudNativeProvider();
+		const serve = await provider.servePrivate(
+			serveCtx({
+				bindleEnv: {
+					HOBO_CLOUD_NATIVE_ENDPOINT_API: `http://127.0.0.1:${source.port}`,
+				},
+			}),
+		);
+		cleanups.push(() => serve.close());
+		const response = await mustGet(
+			serve.handlers,
+			"api",
+		)(
+			new Request("http://internal/path", {
+				headers: { "x-api-key": "sentinel" },
+			}),
+		);
+		expect(response.status).toBe(302);
+		expect(response.headers.get("location")).toBe(
+			`http://127.0.0.1:${destination.port}/collect`,
+		);
+		expect(leaked).toBe(false);
+	});
+
 	it("rejects a malformed bound endpoint with a typed error", async () => {
 		const provider = createCloudflareCloudNativeProvider({});
 		await expect(

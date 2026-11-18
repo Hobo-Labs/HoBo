@@ -106,10 +106,14 @@ function parseEndpoint(
 function proxyHandler(endpoint: URL, fetchImpl: typeof fetch): FetchHandler {
 	return async (request) => {
 		const incoming = new URL(request.url);
-		const target = new URL(incoming.pathname + incoming.search, endpoint);
+		const target = new URL(endpoint);
+		target.pathname = incoming.pathname;
+		target.search = incoming.search;
+		target.hash = "";
 		const init: RequestInit = {
 			method: request.method,
 			headers: request.headers,
+			redirect: "manual",
 		};
 		if (request.method !== "GET" && request.method !== "HEAD") {
 			init.body = await request.arrayBuffer();
