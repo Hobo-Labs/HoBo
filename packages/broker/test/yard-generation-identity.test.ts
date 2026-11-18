@@ -14,11 +14,15 @@ function quote(requestedYardId: string | undefined, yardId: string) {
 		selectionMode: "exact" as const,
 		resources: [],
 	};
-	const request = buildDeploymentRequestFromParts(
+	const validRequest = buildDeploymentRequestFromParts({
+		...options,
+		yardId: requestedYardId ?? "yard:placeholder",
+	});
+	const { requestedYardId: _id, ...unnamedYard } = validRequest.yard;
+	const request =
 		requestedYardId === undefined
-			? options
-			: { ...options, yardId: requestedYardId },
-	);
+			? { ...validRequest, yard: unnamedYard }
+			: validRequest;
 	return prepareYardHostingWork({
 		request,
 		brokerId: "broker:test",
@@ -34,9 +38,9 @@ describe("exact Yard quote binding", () => {
 		expect(quote("yard:requested", "yard:other")).toMatchObject({
 			code: "yard-exact-id-mismatch",
 		});
-		expect(quote(undefined, "yard:other")).toMatchObject({
-			code: "yard-exact-id-mismatch",
-		});
+		expect(() => quote(undefined, "yard:other")).toThrow(
+			/exact.*requestedYardId/i,
+		);
 	});
 
 	it("allows a quote for the exact requested Yard", () => {

@@ -20,6 +20,9 @@ schema_original = schema.read_text()
 nonblank = [line for line in schema_original.splitlines(keepends=True) if line.startswith('#CampNonblank:')]
 if len(nonblank) != 1:
     raise RuntimeError('expected one Camp nonblank constraint')
+yard_nonblank = [line for line in schema_original.splitlines(keepends=True) if line.startswith('#YardIdNonblank:')]
+if len(yard_nonblank) != 1:
+    raise RuntimeError('expected one Yard ID nonblank constraint')
 
 cases = [
     ('unknown', 'if (!Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'if (false && !Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'refuses unknown root'),
@@ -34,6 +37,10 @@ cases = [
     ('camp-exact-decoder', 'if (raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)', 'if (false && raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)', 'refuses an exact Camp without an ID even when'),
     ('camp-exact-cue', '\tif selection_mode == "exact" {\n\t\tcamp_id!: #CampNonblank\n\t}\n', '', 'Yard request CUE contract.*refuses an exact Camp without an ID'),
     ('camp-blank-cue', nonblank[0], '#CampNonblank: string\n', 'agrees with Camp parser nonblank'),
+    ('yard-exact-decoder', 'yardRaw.selectionMode === "exact" &&\n\t\tyardRaw.requestedYardId === undefined', 'false && yardRaw.requestedYardId === undefined', 'refuses an exact Yard without an ID even when'),
+    ('yard-blank-decoder', '!yardRaw.requestedYardId.trim()', 'false', 'agrees with the parser on Yard ID presence'),
+    ('yard-exact-cue', '\tif selection_mode == "exact" {\n\t\trequested_yard_id!: #YardIdNonblank\n\t}\n', '', 'Yard request CUE contract.*refuses an exact Yard without an ID'),
+    ('yard-blank-cue', yard_nonblank[0], '#YardIdNonblank: string\n', 'agrees with the parser on Yard ID presence'),
     ('canonical', 'digest !== contentHashOf(raw) || digest !== message.requestDigest', 'digest !== message.requestDigest', 'refuses noncanonical wire fields'),
     ('digest', 'digest !== contentHashOf(raw) || digest !== message.requestDigest', 'digest !== contentHashOf(raw)', 'refuses old, incomplete'),
 ]
@@ -47,7 +54,7 @@ def run(pattern):
 
 try:
     for name, before, after, pattern in cases:
-        target = parser if name in {'residency', 'camp-exact-decoder'} else schema if name in {'camp-exact-cue', 'camp-blank-cue'} else source
+        target = parser if name in {'residency', 'camp-exact-decoder', 'yard-exact-decoder', 'yard-blank-decoder'} else schema if name in {'camp-exact-cue', 'camp-blank-cue', 'yard-exact-cue', 'yard-blank-cue'} else source
         target_original = parser_original if target == parser else schema_original if target == schema else original
         if target_original.count(before) != 1:
             raise RuntimeError(f'{name}: expected exactly one source match')

@@ -7,13 +7,13 @@ description: Verify exact Yard quotes, generation identity, readiness and provid
 
 **Properties:** An exact Yard quote and a generation plan must name the requested Yard. A provider result must belong to the planned attempt and Yard; a non-ready result needs a ready signal bound to both. A malformed or foreign provider signal batch is refused before any of its events are folded. If a rejection follows a provider effect, the hold is marked uncertain or retained with a reconciliation warning if the uncertainty write fails.
 
-**Review baseline:** commit `22a2b1c8bf140b4dedbc90230adf80347612a809`. PASS for the finite models and executable checks below.
+**Review baseline:** commit `ff1ffeb7e381916ca25012f83d2daa56e3f434d3`. PASS for the finite models and executable checks below.
 
 ## Covered code
 
 - `packages/broker/src/yard-placement/deploy.ts`: `prepareYardHostingWork` and `resolveBindleDeployment` check exact Yard identity, generation result identity and readiness, validate and privately capture supported normalized provider events, and retain funded exposure on refusal.
 - `packages/broker/src/yard-placement/event-store-resolvers.ts`: the local ready normalizer retains the generation attempt ID.
-- `packages/broker/test/yard-generation-identity.test.ts`: exact-Yard quote examples and 100 generated mismatches, seed 614589.
+- `packages/broker/test/yard-generation-identity.test.ts`: exact-Yard quote examples, early refusal of a missing exact ID and 100 generated mismatches, seed 614589. The request parser rejects a missing exact ID before the quote check; `verify-yard-request-wire` models that input boundary separately.
 - `packages/broker/test/yard-event-store-folds.test.ts`: funded real SQLite and Azure-connector scenarios, including mismatched results, a retry inspected under the original attempt, missing or foreign signals, mutable/forged normalized events, sequence ownership, missing readiness, and failure to write uncertainty. Forty generated foreign-signal cases use seed 614590.
 
 ## Run

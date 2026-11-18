@@ -497,6 +497,20 @@ describe("complete Yard placement request wire binding", () => {
 		).toThrow(/exact.*campId/i);
 	});
 
+	it("refuses an exact Yard without an ID even when its digest matches", () => {
+		const request = completeRequest();
+		const message = fromWire(encodeBindleDeploymentRequest(request));
+		if (!message.yard) throw new Error("missing Yard");
+		const { requestedYardId: _id, ...yard } = request.yard;
+		message.yard.requestedYardId = undefined;
+		message.requestDigest = contentHashOf({ ...request, yard });
+		expect(() =>
+			decodeBindleDeploymentRequest(
+				toBinary(BindleDeploymentRequestSchema, message),
+			),
+		).toThrow(/exact.*requestedYardId/i);
+	});
+
 	it("refuses invalid residency even when the digest matches", () => {
 		const request = completeRequest();
 		const message = fromWire(encodeBindleDeploymentRequest(request));
@@ -664,6 +678,104 @@ describe("Yard request CUE contract", () => {
 		expect(result.status).not.toBe(0);
 	});
 
+	it("refuses an exact Yard without an ID", () => {
+		const request = completeRequest();
+		const message = fromWire(encodeBindleDeploymentRequest(request));
+		if (!message.yard) throw new Error("missing Yard");
+		const { requestedYardId: _id, ...yard } = request.yard;
+		message.yard.requestedYardId = undefined;
+		message.requestDigest = contentHashOf({ ...request, yard });
+		const malformed = JSON.stringify(
+			toJson(BindleDeploymentRequestSchema, message, {
+				alwaysEmitImplicit: true,
+				useProtoFieldName: true,
+			}),
+		);
+		const result = vet(malformed);
+		expect(result.error).toBeUndefined();
+		expect(result.status).not.toBe(0);
+	});
+
+	it("agrees with the parser on Yard ID presence and nonblank values", () => {
+		const whitespace = [
+			...Array.from({ length: 5 }, (_, index) =>
+				String.fromCodePoint(9 + index),
+			),
+			" ",
+			"\u00a0",
+			"\u1680",
+			...Array.from({ length: 11 }, (_, index) =>
+				String.fromCodePoint(0x2000 + index),
+			),
+			"\u2028",
+			"\u2029",
+			"\u202f",
+			"\u205f",
+			"\u3000",
+			"\ufeff",
+		];
+		const modes = ["exact", "compatible", "compatible-or-generate"] as const;
+		function check(mode: (typeof modes)[number], value: string | undefined) {
+			const request = completeRequest();
+			const message = fromWire(encodeBindleDeploymentRequest(request));
+			if (!message.yard) throw new Error("missing Yard");
+			const { requestedYardId: _id, ...existingYard } = request.yard;
+			const yard = {
+				...existingYard,
+				selectionMode: mode,
+				...(value === undefined ? undefined : { requestedYardId: value }),
+			};
+			message.yard.selectionMode = mode;
+			message.yard.requestedYardId = value;
+			message.requestDigest = contentHashOf({ ...request, yard });
+			let parserAccepted = true;
+			try {
+				parseBindleDeploymentRequest(cloneAsJson({ ...request, yard }));
+			} catch {
+				parserAccepted = false;
+			}
+			// CUE 0.14 rejects a literal U+FEFF in JSON but accepts its escape.
+			const encoded = JSON.stringify(
+				toJson(BindleDeploymentRequestSchema, message, {
+					alwaysEmitImplicit: true,
+					useProtoFieldName: true,
+				}),
+			).replaceAll("\ufeff", "\\ufeff");
+			const result = vet(encoded);
+			expect(result.error).toBeUndefined();
+			expect(
+				result.status === 0,
+				`${mode} ${JSON.stringify(value)}: ${result.stderr}`,
+			).toBe(parserAccepted);
+		}
+		for (const mode of modes) {
+			for (const value of [
+				undefined,
+				"",
+				...whitespace,
+				"\u0085",
+				"\u180e",
+				"\ufeffyard",
+				" yard:one ",
+			])
+				check(mode, value);
+		}
+		fc.assert(
+			fc.property(
+				fc.constantFrom(...modes),
+				fc.array(fc.constantFrom(...whitespace), { maxLength: 5 }),
+				fc.boolean(),
+				(mode, characters, addText) =>
+					check(mode, `${characters.join("")}${addText ? "y" : ""}`),
+			),
+			{ seed: 614_591, numRuns: 40 },
+		);
+		fc.assert(fc.property(fc.constantFrom(...modes), fc.string(), check), {
+			seed: 614_592,
+			numRuns: 80,
+		});
+	}, 45_000);
+
 	it("agrees with Camp parser nonblank rules across Unicode and generated inputs", () => {
 		const whitespace = [
 			...Array.from({ length: 5 }, (_, index) =>
@@ -721,7 +833,7 @@ describe("Yard request CUE contract", () => {
 					alwaysEmitImplicit: true,
 					useProtoFieldName: true,
 				}),
-			);
+			).replaceAll("\ufeff", "\\ufeff");
 			const result = vet(encoded);
 			expect(result.error).toBeUndefined();
 			expect(
