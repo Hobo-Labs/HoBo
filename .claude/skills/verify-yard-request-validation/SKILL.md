@@ -7,7 +7,7 @@ description: Verify that malformed Yard placement requirements and missing estim
 
 **Property:** Placement refuses malformed explicit estimates, selection modes, exact Yard requests without an ID, and Yard, Bindle and Camp constraints before asking a host to authorize work. Dropping a malformed constraint could otherwise route a workload without a restriction the caller intended, such as data residency.
 
-**Review baseline:** commit `3d9ddf95b2738567113427457b47497b5d5750e1`. PASS for the model and executable checks below. Special JSON key preservation and nested immutability are checked separately by `verify-yard-json-constraints`; semantic residency tags and the funded-generation preflight are checked by `verify-yard-residency-validation`. Exact Camp selection without an ID is checked by `verify-yard-camp-binding`.
+**Review baseline:** commit `709ea76715f765cd0d88690bda8dd8fee4f148b8`. PASS for the model and executable checks below. Special JSON key preservation and nested immutability are checked separately by `verify-yard-json-constraints`; semantic residency tags and the funded-generation preflight are checked by `verify-yard-residency-validation`. Exact Camp selection without an ID is checked by `verify-yard-camp-binding`.
 
 ## Covered code
 
