@@ -4,9 +4,9 @@ import {
 } from "./hello-bindle-fixture.mts";
 
 const build = await buildHelloBindleComponent();
-const { runWasmtimeSmoke } = await import("@hobo/componentize");
+const { runContractSmoke } = await import("@hobo/componentize");
 
-const smoke = await runWasmtimeSmoke(build.component, { exportName: "health" });
+const smoke = await runContractSmoke(build.component, { exportName: "health" });
 const expected = "hello-bindle:ok\n";
 if (smoke.stdout !== expected) {
 	console.error(`health export returned ${JSON.stringify(smoke.stdout)}`);

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,7 +17,8 @@ import {
 const SOURCE_DATE_EPOCH = "2026-01-01T00:00:00.000Z";
 const HELLO_BINDLE_ROOT = new URL("./fixtures/hello-bindle", import.meta.url);
 
-const FIXED_BYTES = Uint8Array.from([0xde, 0xad, 0xbe, 0xef, 0x01, 0x02]);
+const FIXED_BYTES = new Uint8Array(REAL_COMPONENT_MIN_BYTES + 1);
+FIXED_BYTES.set([0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00]);
 const FIXED_DIGEST = `sha256:${createHash("sha256").update(FIXED_BYTES).digest("hex")}`;
 
 const tempRoots: string[] = [];
@@ -45,15 +46,18 @@ async function writeSourceRoot(
 interface FixedImpl {
 	impl: RealComponentizeImpl;
 	calls: Array<Parameters<RealComponentizeImpl>>;
+	sources: string[];
 }
 
 function fixedImpl(): FixedImpl {
 	const calls: Array<Parameters<RealComponentizeImpl>> = [];
+	const sources: string[] = [];
 	const impl: RealComponentizeImpl = async (sourcePath, opts) => {
 		calls.push([sourcePath, opts]);
+		sources.push(await readFile(sourcePath, "utf8"));
 		return { component: FIXED_BYTES };
 	};
-	return { impl, calls };
+	return { impl, calls, sources };
 }
 
 describe("createRealComponentize (injected impl)", () => {
@@ -88,8 +92,12 @@ describe("createRealComponentize (injected impl)", () => {
 			"stdio",
 			"http",
 		]);
-		// SOURCE_DATE_EPOCH flows through as pinned epoch seconds — no Date.now.
-		expect(opts?.env).toEqual({ SOURCE_DATE_EPOCH: "1767225600" });
+		expect(opts?.env).toEqual({
+			SOURCE_DATE_EPOCH: "1767225600",
+			XDG_CACHE_HOME: expect.stringMatching(
+				/hobo-real-componentize-.*[/\\]\.cache$/u,
+			),
+		});
 	});
 
 	it("is deterministic: same input twice yields the same digest and metadata", async () => {
@@ -109,6 +117,28 @@ describe("createRealComponentize (injected impl)", () => {
 		expect(second.component.digest).toBe(first.component.digest);
 		expect(second.component.metadata).toBe(first.component.metadata);
 		expect(second.oci).toEqual(first.oci);
+	});
+
+	it("bundles TypeScript syntax and local imports", async () => {
+		const { impl, sources } = fixedImpl();
+		const real = await createRealComponentize({ componentizeImpl: impl });
+		const sourceRoot = await writeSourceRoot(
+			'import { status } from "./status.js";\nexport function health(): string { return status; }\n',
+		);
+		await writeFile(
+			join(sourceRoot, "src/status.ts"),
+			'export const status: string = "hello-bindle:ok";\n',
+			"utf8",
+		);
+
+		await real.componentize({
+			sourceRoot,
+			sourceDateEpoch: SOURCE_DATE_EPOCH,
+		});
+
+		expect(sources[0]).toContain('var status = "hello-bindle:ok";');
+		expect(sources[0]).not.toContain(": string");
+		expect(sources[0]).not.toContain("./status.js");
 	});
 
 	it("fails closed on an invalid sourceDateEpoch", async () => {
@@ -160,7 +190,6 @@ describe("createRealComponentize (toolchain probe)", () => {
 			.catch((caught: ComponentizeToolchainError) => caught);
 		expect(error).toBeInstanceOf(ComponentizeToolchainError);
 		if (error instanceof ComponentizeToolchainError) {
-			// Remediation names the synthetic offline floor.
 			expect(error.remediation).toMatch(/componentizeHelloBindle/);
 			expect(error.remediation).toMatch(/synthetic contract-shaped floor/);
 		}
