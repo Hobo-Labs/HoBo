@@ -1,3 +1,4 @@
+import { CollectionEngineError } from "@hobo/bindles";
 import { isJsonString } from "../json.js";
 import type {
 	CliContext,
@@ -66,6 +67,17 @@ export function renderError(
 		readonly context?: CliContext;
 	},
 ): CliRunResult {
+	if (
+		cause instanceof CollectionEngineError &&
+		cause.code === "HOBO_BINDING_DELIVERY"
+	) {
+		return renderError(
+			new CliError(cause.message, 1, cause.code, [
+				"Use linked bindings for credentials.",
+			]),
+			input,
+		);
+	}
 	if (cause instanceof CliError) {
 		if (input.flags.json) {
 			const envelope: CliEnvelope = {

@@ -27,7 +27,13 @@ export { BindReferenceError } from "./errors.js";
 
 export function data(
 	name: string,
-	options: { paradigm?: string; allow?: readonly string[] } = {},
+	options: {
+		paradigm?: string;
+		allow?: readonly string[];
+		env?: Readonly<Record<string, string>>;
+		connectionString?: string;
+		endpoints?: JsonObject;
+	} = {},
 ): ResourceHandle {
 	assertResourceName(name, "data.name");
 	const paradigm = options.paradigm ?? "relational";
@@ -45,12 +51,20 @@ export function data(
 				port: "hobo:data",
 				paradigm,
 			};
-			if (paradigm !== "project")
+			if (paradigm !== "project") {
 				resource = {
 					...resource,
-					connectionString: `{${name}.connectionString}`,
+					connectionString:
+						options.connectionString ?? `{${name}.connectionString}`,
 				};
-			if (allow?.length) return { ...resource, allow: [...allow] };
+			}
+			if (allow?.length) resource = { ...resource, allow: [...allow] };
+			if (options.env && Object.keys(options.env).length > 0) {
+				resource = { ...resource, env: { ...options.env } };
+			}
+			if (options.endpoints) {
+				resource = { ...resource, endpoints: { ...options.endpoints } };
+			}
 			return resource;
 		},
 	};
@@ -171,7 +185,6 @@ function componentHandle(
 			return found;
 		},
 		manifest() {
-			// ADR-0141: links + typed bindings only — never ConnectionStrings__* ambient grants.
 			const env = { ...this.env };
 			const links: Array<{ import: string; to: string }> = [];
 

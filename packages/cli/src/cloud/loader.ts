@@ -7,9 +7,19 @@ import {
 	type CollectionContext,
 	type CollectionTarget,
 	collectBindleManifest,
+	CollectionEngineError,
+	evaluateBindingDeliveryGate,
 	type ManifestV1,
+	type ProviderAnnotation,
+	readDependencyConfig,
 } from "@hobo/bindles";
-import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
+import {
+	isJsonBoolean,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+} from "../json.js";
 import { BindleImportError } from "../shell/errors.js";
 import {
 	type AppHttpModule,
@@ -142,6 +152,27 @@ const DATA_PARADIGM: DataParadigmMap = {
 	secret: "secret",
 };
 
+function environmentFromAnnotations(
+	annotations: readonly ProviderAnnotation[],
+): Record<string, string> {
+	const entries: Array<[string, string]> = [];
+	for (const annotation of annotations) {
+		const values =
+			annotation.option === "env"
+				? annotation.config
+				: annotation.option === "dependency" && isJsonObject(annotation.config.env)
+					? annotation.config.env
+					: undefined;
+		if (!values) continue;
+		for (const [key, value] of Object.entries(values)) {
+			if (isJsonString(value) || isJsonNumber(value) || isJsonBoolean(value)) {
+				entries.push([key, String(value)]);
+			}
+		}
+	}
+	return Object.fromEntries(entries);
+}
+
 export function targetFromBindleDefinition(
 	definition: BindleDefinition,
 	componentHost: {
@@ -149,6 +180,13 @@ export function targetFromBindleDefinition(
 		readonly version: string;
 	} = DEFAULT_COMPONENT_HOST,
 ): CollectionTarget {
+	const delivery = evaluateBindingDeliveryGate({ definition });
+	if (!delivery.ok) {
+		throw new CollectionEngineError(
+			"HOBO_BINDING_DELIVERY",
+			`${delivery.summary}: ${delivery.reasons.map((reason) => reason.message).join("; ")}`,
+		);
+	}
 	return {
 		bindleId: definition.name,
 		componentHost,
@@ -163,10 +201,21 @@ export function targetFromBindleDefinition(
 					continue;
 				}
 				const paradigm = paradigmFor(record.kind);
-				const options =
-					record.kind === "secret" && record.declaredAllow?.length
-						? { paradigm, allow: [...record.declaredAllow] }
-						: { paradigm };
+				const env = environmentFromAnnotations(record.annotations);
+				const dependency = readDependencyConfig(record.annotations);
+				const options = {
+					paradigm,
+					...(record.kind === "secret" && record.declaredAllow?.length
+						? { allow: [...record.declaredAllow] }
+						: undefined),
+					...(Object.keys(env).length > 0 ? { env } : undefined),
+					...(dependency && isJsonString(dependency.connectionString)
+						? { connectionString: dependency.connectionString }
+						: undefined),
+					...(dependency && isJsonObject(dependency.endpoints)
+						? { endpoints: dependency.endpoints }
+						: undefined),
+				};
 				backing.set(name, collect.data(name, options));
 			}
 
@@ -184,7 +233,11 @@ export function targetFromBindleDefinition(
 						bind[edge.to] = handle;
 					}
 				}
-				collect.service(name, Object.keys(bind).length > 0 ? { bind } : {});
+				const env = environmentFromAnnotations(record.annotations);
+				collect.service(name, {
+					...(Object.keys(bind).length > 0 ? { bind } : undefined),
+					...(Object.keys(env).length > 0 ? { env } : undefined),
+				});
 			}
 		},
 	};
@@ -206,7 +259,13 @@ export async function compileProjectManifest(
 	}
 	try {
 		return collectBindleManifest(target).manifest;
-	} catch {
+	} catch (error) {
+		if (
+			error instanceof CollectionEngineError &&
+			error.code === "HOBO_BINDING_DELIVERY"
+		) {
+			throw error;
+		}
 		return null;
 	}
 }
