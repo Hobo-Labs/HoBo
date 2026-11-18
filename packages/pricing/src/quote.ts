@@ -9,6 +9,7 @@ import {
 	type QuoteScenario,
 	QuoteVectorSchema,
 } from "./_generated/pricing_pb.js";
+import { validateV2BillingPeriods } from "./billing-period.js";
 import { catalogHashOf } from "./catalog.js";
 import {
 	addDecimal,
@@ -19,17 +20,47 @@ import {
 	subtractDecimal,
 } from "./decimal.js";
 import {
+	isBoundedPricingInput,
+	isSupportedPricingRealm,
 	type JsonValue,
 	parseQuoteScenario,
 	quoteVectorToJson,
 	stableHash,
 } from "./json.js";
+import {
+	codeUnitPricingOrder,
+	legacyPricingOrder,
+	type PricingOrder,
+} from "./ordering.js";
 import { type RatedSnapshot, rateSnapshot } from "./rating.js";
-import { PricingFault, stateHashOf, validateScenarioState } from "./state.js";
+import {
+	PricingFault,
+	stateHashOf,
+	validateScenarioState,
+	validateV2FinancialBalances,
+	validateV2FinancialIdentities,
+	validateV2GrantScopes,
+} from "./state.js";
+import {
+	legacyPricingTimeOrder,
+	type PricingTimeOrder,
+	utcPricingTimeOrder,
+	validateV2ScenarioTimes,
+} from "./time-order.js";
 import type { PricingRejectionCode, QuoteResult } from "./types.js";
 
-const RATING_ALGORITHM_VERSION = "pricing-rating/v1";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
+
+function unsupportedRealm(): PricingRejected {
+	return {
+		$typeName: "hobo.pricing.v1.PricingRejected",
+		schema: "hobo.pricing.rejected/v1",
+		code: "PRICING_REALM_UNSUPPORTED",
+		message: "pricing requires an unchanged standard Object.prototype",
+		unpriced: [],
+		rejectedCandidates: [],
+	};
+}
 
 function rejection(
 	code: PricingRejectionCode,
@@ -157,9 +188,84 @@ function validateQuoteOptions(scenario: QuoteScenario): void {
 }
 
 export function quoteScenario(scenario: QuoteScenario): QuoteResult {
+	return quoteWithOrdering(
+		scenario,
+		legacyPricingOrder,
+		legacyPricingTimeOrder,
+		"pricing-rating/v1",
+	);
+}
+
+export function quoteScenarioV2(scenario: QuoteScenario): QuoteResult {
+	return quoteWithOrdering(
+		scenario,
+		codeUnitPricingOrder,
+		utcPricingTimeOrder,
+		"pricing-rating/v2",
+	);
+}
+
+function quoteWithOrdering(
+	scenario: QuoteScenario,
+	order: PricingOrder,
+	timeOrder: PricingTimeOrder,
+	ratingAlgorithmVersion: string,
+): QuoteResult {
+	if (!isSupportedPricingRealm()) return unsupportedRealm();
+	if (!isBoundedPricingInput(scenario))
+		return rejection(
+			"INVALID_PRICING_INPUT",
+			"request is not bounded pricing data",
+		);
 	try {
-		validateScenarioState(scenario);
+		if (timeOrder === utcPricingTimeOrder) validateV2ScenarioTimes(scenario);
+		validateScenarioState(scenario, timeOrder === utcPricingTimeOrder);
+		if (timeOrder === utcPricingTimeOrder) {
+			validateV2FinancialIdentities(scenario.state);
+			if (scenario.state !== undefined) {
+				validateV2FinancialBalances(scenario.state);
+				validateV2GrantScopes(scenario.state);
+			}
+			validateV2BillingPeriods(scenario);
+		}
 		validateQuoteOptions(scenario);
+		if (timeOrder === utcPricingTimeOrder && scenario.action === "destroy") {
+			if (scenario.destroyCancelsAgreement === undefined)
+				throw new PricingFault(
+					"INCOMPLETE_FINANCIAL_STATE",
+					"destroy must explicitly declare whether an agreement is canceled",
+				);
+			if (
+				scenario.destroyCancelsAgreement ||
+				scenario.sourceProviderAgreementIds.length > 0 ||
+				scenario.candidate.some((candidate) => candidate.direction !== "add")
+			)
+				throw new PricingFault(
+					"PRICING_MODEL_UNSUPPORTED",
+					"destroy cancellation and removed-workload costs are not fully modeled",
+				);
+		} else if (
+			timeOrder === utcPricingTimeOrder &&
+			scenario.destroyCancelsAgreement !== undefined
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"destroy cancellation terms require a destroy scenario",
+			);
+		if (
+			timeOrder === utcPricingTimeOrder &&
+			(scenario.action === "rebalance" ||
+				scenario.action === "migrate" ||
+				scenario.action === "cancel" ||
+				scenario.sourceProviderAgreementIds.length > 0 ||
+				scenario.candidate.some(
+					(candidate) => candidate.direction === "remove",
+				))
+		)
+			throw new PricingFault(
+				"PRICING_MODEL_UNSUPPORTED",
+				"source-side changes and their costs are not fully modeled",
+			);
 		const catalog = scenario.catalog;
 		const state = scenario.state;
 		const options = scenario.options;
@@ -181,11 +287,18 @@ export function quoteScenario(scenario: QuoteScenario): QuoteResult {
 				"financial state content does not match its pinned hash",
 			);
 		}
-		const baseline = rateSnapshot(scenario, scenario.baseline);
-		const candidate = rateSnapshot(scenario, [
-			...scenario.baseline,
-			...scenario.candidate,
-		]);
+		const baseline = rateSnapshot(
+			scenario,
+			scenario.baseline,
+			order,
+			timeOrder,
+		);
+		const candidate = rateSnapshot(
+			scenario,
+			[...scenario.baseline, ...scenario.candidate],
+			order,
+			timeOrder,
+		);
 		if (
 			candidate.currency.length === 0 ||
 			candidate.currency !== baseline.currency
@@ -215,7 +328,7 @@ export function quoteScenario(scenario: QuoteScenario): QuoteResult {
 		});
 		const initial = create(QuoteVectorSchema, {
 			schema: "hobo.pricing.quote/v1",
-			ratingAlgorithmVersion: RATING_ALGORITHM_VERSION,
+			ratingAlgorithmVersion,
 			pricingCatalogHash: scenario.pricingCatalogHash,
 			capabilityCatalogHash: EMPTY_CAPABILITY_HASH,
 			stateHash: state.stateHash,
@@ -273,6 +386,7 @@ export function quoteScenario(scenario: QuoteScenario): QuoteResult {
 export const QuoteEngine = Object.freeze({ quote: quoteScenario });
 
 export function quoteScenarioJson(value: JsonValue | undefined): QuoteResult {
+	if (!isSupportedPricingRealm()) return unsupportedRealm();
 	const scenario = value === undefined ? undefined : parseQuoteScenario(value);
 	if (scenario === undefined) {
 		return rejection(
