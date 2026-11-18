@@ -18,7 +18,9 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/runtime-wasm": "workspace:*",
+		"esbuild": "^0.25.0"
 	},
 	"devDependencies": {
 		"@bytecodealliance/componentize-js": "0.21.0",
