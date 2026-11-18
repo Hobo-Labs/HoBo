@@ -606,6 +606,10 @@ export async function runCiRelayDeploy(
 	);
 
 	const sha = text("sha");
+	if (stagedProduction && sha === undefined)
+		return usage(
+			"A staged production deployment requires --sha naming the commit preview already qualified.",
+		);
 	const createProject = values["create-project"] === true;
 	// The Yard's root directory is saved on a project this deploy creates; an
 	// existing project keeps its own unless the command names one.
@@ -979,12 +983,12 @@ export async function runCiRelayDeploy(
 					data: { ...deliveryData },
 				};
 			}
-			const live = commitCheckingProbe(baseProbe, {
-				origin: liveOrigin,
-				commit: sha.toLowerCase(),
-			});
 			let liveReady = false;
 			for (let attempt = 0; attempt < 24; attempt++) {
+				const live = commitCheckingProbe(baseProbe, {
+					origin: liveOrigin,
+					commit: sha.toLowerCase(),
+				});
 				try {
 					const request = (path: string) =>
 						live.transport({
@@ -1001,7 +1005,10 @@ export async function runCiRelayDeploy(
 						health.status === 200 &&
 						ready.status === 200 &&
 						findings.servedCommit === undefined &&
-						findings.healthStatus === undefined
+						findings.healthStatus === undefined &&
+						findings.readyStatus === undefined &&
+						findings.readyzState === undefined &&
+						findings.notReady === undefined
 					) {
 						liveReady = true;
 						break;
