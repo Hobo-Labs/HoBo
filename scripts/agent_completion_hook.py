@@ -207,13 +207,6 @@ NEGATED_REQUEST = re.compile(
     r"\b(?:don't|do not|never|not|shouldn't|mustn't|cannot|can't|won't|"
     r"didn't|did not)(?:\s+\w+){0,4}\s*$"
 )
-NEW_ACTION = re.compile(
-    r"(?:^|[.!?;,]\s*|\b(?:and|then|instead)\s+)"
-    r"(?:(?:and|then|please|now)\s+)*"
-    r"(?:(?:i\s+(?:want|need)\s+you\s+to|(?:can|could)\s+you)\s+)?"
-    r"(?:start|begin|implement|fix|build|create|write|update|delete|remove|"
-    r"run|test|investigate|review|analyze|deploy|make|work)\b"
-)
 
 
 def immediate_stop(prompt):
@@ -238,7 +231,7 @@ def stop_only(prompt):
     text = prompt.casefold().replace("’", "'")
     text = re.sub(r'```[\s\S]*?```|`[^`]*`|"[^"]*"|“[^”]*”', " ", text)
     text = re.sub(r"(?<!\w)'[^'\n]*'(?!\w)", " ", text)
-    if not immediate_stop(prompt) or NEW_ACTION.search(text):
+    if not immediate_stop(prompt):
         return False
     for match in STOP_REQUEST.finditer(text):
         if NEGATED_REQUEST.search(text[max(0, match.start() - 80):match.start()]):
@@ -254,20 +247,30 @@ def stop_only(prompt):
         break
     else:
         return bool(re.fullmatch(r"\s*never\s+mind[.!?\s]*", text))
-    for clause in re.split(r"[.!?;\n]+|\b(?:and|then)\b", remainder):
-        clause = clause.strip(" ,:\t\r")
-        clause = re.sub(r"^(?:please|kindly)\s+", "", clause)
-        if not clause:
+    for segment in re.split(r"[.!?;\n]+|\b(?:and|then|but)\b", remainder):
+        segment = segment.strip(" ,:\t\r")
+        segment = re.sub(r"^(?:please|kindly)\s+", "", segment)
+        if re.match(r"^(?:do not|don't|never)\b", segment):
             continue
-        if re.fullmatch(r"(?:please|now|here|right now|immediately|for now)", clause):
-            continue
-        if re.match(
-            r"^(?:do not|don't|never|explain|tell me|describe|answer|respond|"
-            r"why|what|how|until|while)\b",
-            clause,
-        ):
-            continue
-        return False
+        for clause in segment.split(","):
+            clause = clause.strip(" :\t\r")
+            clause = re.sub(r"^(?:please|kindly)\s+", "", clause)
+            if not clause:
+                continue
+            if re.fullmatch(
+                r"(?:please|now|here|right now|immediately|for now|thanks|thank you|"
+                r"(?:answer|respond)(?: me| here| my question)?)",
+                clause,
+            ):
+                continue
+            if re.match(
+                r"^(?:explain (?:why|what|how)|tell me|why|what|how|"
+                r"do nothing|no more (?:tools|tool calls)|stop using tools|"
+                r"wait for my next message|(?:until|while) i)\b",
+                clause,
+            ):
+                continue
+            return False
     return True
 
 
