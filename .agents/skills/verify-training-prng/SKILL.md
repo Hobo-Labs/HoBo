@@ -9,12 +9,14 @@ description: Verify seeded training generator input validation, replay and abstr
 
 **Why:** Silent seed coercion and state changes during failed calls can make a recorded training run replay a different proposal trajectory.
 
-**Review baseline:** `e81be2dead96d3e1e8930f11bec517753e35e61f`.
+**Review baseline:** `a43e6984d690ce2ee7b4491bce5e28f5da8656de`.
 
 ## Covered code and checks
 
 - `packages/training/src/prng.ts` validates inputs, advances the 32-bit state, mixes each word and implements bounded draws. `src/optimizer.ts` uses the generator to make proposals.
 - `packages/training/test/prng-contract.test.ts` checks invalid inputs and unchanged streams, fixed splitmix32 output vectors for three seeds, and generated sequences for 100 seeds and six bounds. `test/optimizer.test.ts` checks replay at the optimizer level.
+
+The related [trace sink skill](../verify-training-trace-sink/SKILL.md) checks snapshots and draining of optimizer traces.
 
 From the repository root with dependencies installed, run:
 
