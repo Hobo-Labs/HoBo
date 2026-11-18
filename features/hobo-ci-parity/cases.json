@@ -1,0 +1,594 @@
+{
+	"relayRunnerCommit": "43b7c4c",
+	"sitePrefix": "apps/site/src/content/docs/docs/",
+	"cases": [
+		{
+			"id": "R01",
+			"area": "Routing",
+			"claim": "The relay is answered in about a second and bills no minutes",
+			"source": "site/concepts/routing.md",
+			"bar": "Relay mode answers within 5 s of the queued webhook in the simulator; a live run shows zero billed minutes for the relay job",
+			"tiers": ["t2", "t3"],
+			"packages": ["12"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "R02",
+			"area": "Routing",
+			"claim": "A job goes to the first runner in the order that can take it now",
+			"source": "docs/architecture/pick-runner.md",
+			"bar": "Same",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "" }
+		},
+		{
+			"id": "R03",
+			"area": "Routing",
+			"claim": "A runner type the job did not name, or the order leaves out, is never used",
+			"source": "site/concepts/runner-order.mdx",
+			"bar": "Same, and the decision lists it",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "" }
+		},
+		{
+			"id": "R04",
+			"area": "Routing",
+			"claim": "When nothing fits, the relay fails with the reason and the job does not start",
+			"source": "site/concepts/routing.md",
+			"bar": "The relay job fails with the one-sentence reason as an annotation and the dependent job is skipped",
+			"tiers": ["t2", "t3"],
+			"packages": ["11", "12"],
+			"today": { "state": "partial", "note": "the reason exists, no job shows it" }
+		},
+		{
+			"id": "R05",
+			"area": "Routing",
+			"claim": "When machines are only busy the job waits in line; a cancelled job leaves it",
+			"source": "site/concepts/routing.md",
+			"bar": "A `waiting` decision queues the job on the busy step's label; cancelling frees it",
+			"tiers": ["t2"],
+			"packages": ["11", "12"],
+			"today": { "state": "partial", "note": "" }
+		},
+		{
+			"id": "R06",
+			"area": "Routing",
+			"claim": "Public repositories never run on machines",
+			"source": "site/reference/security.md",
+			"bar": "Same, and forks too",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "" }
+		},
+		{
+			"id": "R06b",
+			"area": "Routing",
+			"better": true,
+			"claim": "n/a",
+			"source": "",
+			"bar": "The fleet takes a public repo or a fork's pull request only when it isolates such jobs",
+			"tiers": ["t1", "t2"],
+			"packages": ["12"],
+			"today": { "state": "partial", "note": "passes at T1; T2 owed" }
+		},
+		{
+			"id": "R07",
+			"area": "Routing",
+			"claim": "GitHub-hosted is used while under N% of included minutes, with a two-hour runway",
+			"source": "site/concepts/runner-order.mdx",
+			"bar": "Same on measured usage; unmeasured usage never blocks",
+			"tiers": ["t1", "t2"],
+			"packages": ["08"],
+			"today": { "state": "partial", "note": "rule built, no reader" }
+		},
+		{
+			"id": "R08",
+			"area": "Routing",
+			"claim": "A provider is used while under $X this month",
+			"source": "site/guides/spend-controls.md",
+			"bar": "Same, from the ledger",
+			"tiers": ["t1", "t2"],
+			"packages": ["08"],
+			"today": { "state": "partial", "note": "rule built, no sum" }
+		},
+		{
+			"id": "R09",
+			"area": "Routing",
+			"claim": "A provider that misses three jobs in thirty minutes is skipped, retried with back-off, and can be cleared by hand",
+			"source": "docs/github-app.md",
+			"bar": "Same; the record survives a restart; a command clears it",
+			"tiers": ["t1", "t2"],
+			"packages": ["08"],
+			"today": { "state": "partial", "note": "state machine built, nothing feeds it" }
+		},
+		{
+			"id": "R10",
+			"area": "Routing",
+			"claim": "A job that failed before its own steps, or lost its runner, is retried on the same, another or any runner, at most twice, never twice for one delivery",
+			"source": "site/concepts/routing.md",
+			"bar": "Same",
+			"tiers": ["t2"],
+			"packages": ["15"],
+			"today": { "state": "partial", "note": "classification and policy built" }
+		},
+		{
+			"id": "R11",
+			"area": "Routing",
+			"claim": "`auto` picks a size; a job can have its own size and a runner type to try first",
+			"source": "site/reference/relay-inputs.md",
+			"bar": "Same through relay inputs `size` and `first`",
+			"tiers": ["t1", "t2"],
+			"packages": ["11"],
+			"today": { "state": "partial", "note": "`auto` built" }
+		},
+		{
+			"id": "R12",
+			"area": "Routing",
+			"claim": "Re-running failed jobs routes them again without re-running the relay",
+			"source": "site/concepts/routing.md",
+			"bar": "A re-run of failed jobs returns to its label; `hobo ci rerun --reroute` and the retry policy re-run the relay so it decides again",
+			"tiers": ["t2"],
+			"packages": ["15"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "R13",
+			"area": "Routing",
+			"better": true,
+			"claim": "A sweep rescues relays queued over five minutes, but not one whose webhook never arrived",
+			"source": "docs/architecture/pick-runner.md",
+			"bar": "A relay job whose webhook never arrived is answered within two poll intervals",
+			"tiers": ["t2"],
+			"packages": ["12"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "R14",
+			"area": "Routing",
+			"better": true,
+			"claim": "Matrix jobs and reusable workflows cannot be routed",
+			"source": "site/reference/faq.md",
+			"bar": "One relay output routes a three-leg matrix",
+			"tiers": ["t2", "t3"],
+			"packages": ["11"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "R15",
+			"area": "Routing",
+			"better": true,
+			"claim": "n/a",
+			"source": "",
+			"bar": "Job mode routes a job with no relay reachable",
+			"tiers": ["t3"],
+			"packages": ["11"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "R16",
+			"area": "Routing",
+			"better": true,
+			"claim": "n/a",
+			"source": "",
+			"bar": "With the hosted relay down, a second node answers the relay job",
+			"tiers": ["t2"],
+			"packages": ["12"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "M01",
+			"area": "Machines",
+			"claim": "One command connects a machine; Ctrl-C takes it offline and its jobs go to the next runner with no workflow change",
+			"source": "site/get-started/quickstart.md",
+			"bar": "`hobo ci machine connect` on a clean machine; after it stops, the next decision skips it within 60 s",
+			"tiers": ["t2"],
+			"packages": ["14"],
+			"today": { "state": "partial", "note": "only from a checkout, with a relay" }
+		},
+		{
+			"id": "M02",
+			"area": "Machines",
+			"claim": "Each job gets a fresh one-job runner; the machine needs no permanent runner",
+			"source": "site/runners/self-hosted.mdx",
+			"bar": "Same",
+			"tiers": ["t2"],
+			"packages": ["14"],
+			"today": { "state": "partial", "note": "" }
+		},
+		{
+			"id": "M03",
+			"area": "Machines",
+			"claim": "A machine must hold every label asked for; `self-hosted` means any",
+			"source": "site/concepts/routing.md",
+			"bar": "Same in the choice; job mode names one machine label",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "" }
+		},
+		{
+			"id": "M04",
+			"area": "Machines",
+			"claim": "A machine runs several jobs at once up to its slots",
+			"source": "site/concepts/routing.md",
+			"bar": "Same",
+			"tiers": ["t1", "t2"],
+			"packages": ["07"],
+			"today": { "state": "partial", "note": "rule built" }
+		},
+		{
+			"id": "M05",
+			"area": "Machines",
+			"claim": "A machine can be paused; running jobs finish",
+			"source": "site/reference/cli.md",
+			"bar": "`hobo ci machine pause` and `resume`",
+			"tiers": ["t2"],
+			"packages": ["07"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "M06",
+			"area": "Machines",
+			"claim": "Sharing is only-me or anyone, and \"anyone\" still needs the owner to be able to read the repository",
+			"source": "site/guides/team-machines.md",
+			"bar": "Same",
+			"tiers": ["t1", "t2"],
+			"packages": ["07"],
+			"today": { "state": "partial", "note": "rule built" }
+		},
+		{
+			"id": "M07",
+			"area": "Machines",
+			"better": true,
+			"claim": "A per-job Linux VM on Apple silicon (experimental); otherwise jobs run on the host",
+			"source": "site/reference/security.md",
+			"bar": "A fresh container per job by default on Linux",
+			"tiers": ["t2"],
+			"packages": ["14"],
+			"today": { "state": "partial", "note": "the box does this" }
+		},
+		{
+			"id": "M08",
+			"area": "Machines",
+			"claim": "The machine token rotates on each connect, and a takeover sends an email",
+			"source": "site/reference/security.md",
+			"bar": "A signed advert key per machine and a `machine.taken_over` event",
+			"tiers": ["t2"],
+			"packages": ["07"],
+			"today": { "state": "not-built", "note": "the email is met differently: an event, not a message" }
+		},
+		{
+			"id": "M09",
+			"area": "Machines",
+			"claim": "Removing a machine revokes it at once",
+			"source": "site/reference/security.md",
+			"bar": "`hobo ci machine remove`; the next decision excludes it",
+			"tiers": ["t2"],
+			"packages": ["07"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "M10",
+			"area": "Machines",
+			"claim": "Existing self-hosted runners are added with no change on the machine",
+			"source": "docs/github-app.md",
+			"bar": "`hobo ci runners adopt`",
+			"tiers": ["t2"],
+			"packages": ["09"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "M11",
+			"area": "Machines",
+			"claim": "The runner program is downloaded, checksum-verified and kept current",
+			"source": "README.md",
+			"bar": "Pinned and verified; a version bump is a commit",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "" }
+		},
+		{
+			"id": "M12",
+			"area": "Machines",
+			"claim": "macOS machines take jobs",
+			"source": "site/guides/mac-builds.md",
+			"bar": "A macOS host runs a job",
+			"tiers": ["t2"],
+			"packages": ["22"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "M13",
+			"area": "Machines",
+			"claim": "The one-job credentials are checked before use and the CLI's secrets never reach job steps",
+			"source": "site/runners/self-hosted.mdx",
+			"bar": "Same",
+			"tiers": ["t1"],
+			"packages": ["14"],
+			"today": { "state": "partial", "note": "the environment allow-list exists" }
+		},
+		{
+			"id": "P01",
+			"area": "Providers",
+			"claim": "Seven hosted providers are routable by label, and a label must be the provider's own",
+			"source": "site/runners/providers.mdx",
+			"bar": "Same",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "" }
+		},
+		{
+			"id": "P02",
+			"area": "Providers",
+			"claim": "Real usage is synced from Depot, Namespace and WarpBuild",
+			"source": "apps/site/src/content/changelog/2026-11-13-retries-queueing-and-provider-usage.md",
+			"bar": "Same three, read-only tokens",
+			"tiers": ["t2"],
+			"packages": ["23"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "P03",
+			"area": "Providers",
+			"claim": "Reports recognise a provider from its labels",
+			"source": "site/reference/labels.md",
+			"bar": "Same",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "" }
+		},
+		{
+			"id": "P04",
+			"area": "Providers",
+			"claim": "List prices are dated and per size",
+			"source": "site/runners/providers.mdx",
+			"bar": "Financial models with a source and a date for every routable provider",
+			"tiers": ["t1"],
+			"packages": ["08"],
+			"today": { "state": "partial", "note": "Blacksmith, Depot and Boat priced" }
+		},
+		{
+			"id": "C01",
+			"area": "Checks",
+			"claim": "A pull request title check runs with no runner and no minutes",
+			"source": "site/concepts/optimized-checks.md",
+			"bar": "The relay completes the job; the allowed types are configurable",
+			"tiers": ["t2", "t3"],
+			"packages": ["20"],
+			"today": { "state": "partial", "note": "the rule exists" }
+		},
+		{
+			"id": "C02",
+			"area": "Checks",
+			"claim": "Linters run in a sandbox with one result per tool",
+			"source": "site/concepts/optimized-checks.md",
+			"bar": "Same, in a HoBo sandbox with no network",
+			"tiers": ["t2"],
+			"packages": ["20"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "C03",
+			"area": "Checks",
+			"claim": "The repository config file is strict, and a bad one shows as a failed check",
+			"source": "site/reference/repo-config.md",
+			"bar": "`.hobo/ci.json` is strict already; a broken `runnerOrder` fails the relay job with the parser's sentence",
+			"tiers": ["t1", "t2"],
+			"packages": ["11"],
+			"today": { "state": "partial", "note": "" }
+		},
+		{
+			"id": "I01",
+			"area": "Insights",
+			"claim": "Activity lists each job, where it ran and why, with filters, for 90 days",
+			"source": "site/dashboard/activity.mdx",
+			"bar": "`hobo ci activity`, an MCP tool and the dashboard, from the journal, 90 days",
+			"tiers": ["t2"],
+			"packages": ["05", "19"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "I02",
+			"area": "Insights",
+			"claim": "History shows runs and jobs with step timings, time-outs and superseded runs",
+			"source": "site/dashboard/activity.mdx",
+			"bar": "Same from the journal",
+			"tiers": ["t2"],
+			"packages": ["06"],
+			"today": { "state": "partial", "note": "on demand from GitHub only" }
+		},
+		{
+			"id": "I03",
+			"area": "Insights",
+			"claim": "Usage shows minutes against the included amount, burn, short jobs and what checks saved",
+			"source": "site/dashboard/usage.mdx",
+			"bar": "`hobo ci usage`",
+			"tiers": ["t2"],
+			"packages": ["06", "08"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "I04",
+			"area": "Insights",
+			"claim": "Performance compares workflows, jobs and runners, and each runner against `ubuntu-latest`",
+			"source": "site/dashboard/performance.mdx",
+			"bar": "Same; the reports exist",
+			"tiers": ["t1", "t2"],
+			"packages": ["19"],
+			"today": { "state": "partial", "note": "per-runner line only" }
+		},
+		{
+			"id": "I05",
+			"area": "Insights",
+			"claim": "Nine signals with thresholds, a breakdown and a trend",
+			"source": "site/dashboard/signals.mdx",
+			"bar": "Same; breakdown and trend need stored history",
+			"tiers": ["t1", "t2"],
+			"packages": ["06", "19"],
+			"today": { "state": "partial", "note": "nine signals built" }
+		},
+		{
+			"id": "I06",
+			"area": "Insights",
+			"better": true,
+			"claim": "A failed job shows its step, a log excerpt and whether a re-run will help",
+			"source": "site/reference/mcp.md",
+			"bar": "Same, with no model and the evidence printed",
+			"tiers": ["t1", "t3"],
+			"packages": ["24"],
+			"today": { "state": "built-not-proven", "note": "never run against GitHub" }
+		},
+		{
+			"id": "I07",
+			"area": "Insights",
+			"claim": "One OpenTelemetry trace per run attempt",
+			"source": "site/dashboard/telemetry.md",
+			"bar": "Same",
+			"tiers": ["t2"],
+			"packages": ["16"],
+			"today": { "state": "partial", "note": "relay spans only" }
+		},
+		{
+			"id": "S01",
+			"area": "Surfaces",
+			"claim": "A dashboard with Runners, Router, History, Performance and Signals",
+			"source": "README.md",
+			"bar": "Five read-only views",
+			"tiers": ["t2"],
+			"packages": ["21"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "S02",
+			"area": "Surfaces",
+			"claim": "The CLI reads well for people, has `--json` for agents and is safe to retry",
+			"source": "site/reference/cli.md",
+			"bar": "Every command",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "for the commands built" }
+		},
+		{
+			"id": "S03",
+			"area": "Surfaces",
+			"claim": "`init` plans and applies workflow changes and never commits",
+			"source": "site/get-started/quickstart.md",
+			"bar": "Same, and `--relay` writes relay jobs",
+			"tiers": ["t1"],
+			"packages": ["13"],
+			"today": { "state": "partial", "note": "writes the fleet label only" }
+		},
+		{
+			"id": "S04",
+			"area": "Surfaces",
+			"claim": "A read-only MCP server",
+			"source": "site/reference/mcp.md",
+			"bar": "Tools for the order, a route explanation, activity, signals, job times and failures",
+			"tiers": ["t2"],
+			"packages": ["18"],
+			"today": { "state": "partial", "note": "leases and events only" }
+		},
+		{
+			"id": "S05",
+			"area": "Surfaces",
+			"claim": "Agent skills and a one-prompt setup guide",
+			"source": "site/get-started/agents.md",
+			"bar": "Three skills and a guide",
+			"tiers": ["t1"],
+			"packages": ["10"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "S06",
+			"area": "Surfaces",
+			"claim": "A read API with an OpenAPI description",
+			"source": "site/reference/api.md",
+			"bar": "Same",
+			"tiers": ["t2"],
+			"packages": ["17"],
+			"today": { "state": "partial", "note": "" }
+		},
+		{
+			"id": "S07",
+			"area": "Surfaces",
+			"claim": "An error catalog with stable codes",
+			"source": "site/reference/errors.mdx",
+			"bar": "One generated page",
+			"tiers": ["t1"],
+			"packages": ["10"],
+			"today": { "state": "partial", "note": "codes exist, no page" }
+		},
+		{
+			"id": "S08",
+			"area": "Surfaces",
+			"claim": "Workspaces, roles and membership from GitHub",
+			"source": "site/dashboard/workspaces.md",
+			"bar": "Accounts and scoped tokens",
+			"tiers": [],
+			"packages": [],
+			"today": { "state": "met-differently", "note": "no human roles: access is GitHub membership plus scoped tokens" }
+		},
+		{
+			"id": "S09",
+			"area": "Surfaces",
+			"claim": "A clean way to remove it",
+			"source": "site/dashboard/remove.md",
+			"bar": "`hobo ci init --undo` and a removal page",
+			"tiers": ["t1"],
+			"packages": ["13"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "S10",
+			"area": "Surfaces",
+			"better": true,
+			"claim": "n/a",
+			"source": "",
+			"bar": "A routing change is a reviewed commit; the dashboard's edit opens a pull request",
+			"tiers": ["t2"],
+			"packages": ["21"],
+			"today": { "state": "partial", "note": "the order is committed" }
+		},
+		{
+			"id": "X01",
+			"area": "Security",
+			"claim": "Code, secrets and logs never pass through the gateway",
+			"source": "site/reference/privacy.md",
+			"bar": "The answerer requests no log, secret or repository content",
+			"tiers": ["t2"],
+			"packages": ["12"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "X02",
+			"area": "Security",
+			"claim": "Webhooks are signature-checked",
+			"source": "README.md",
+			"bar": "Same",
+			"tiers": ["t1"],
+			"packages": [],
+			"today": { "state": "pass", "note": "" }
+		},
+		{
+			"id": "X03",
+			"area": "Security",
+			"claim": "The relay never runs code from the job",
+			"source": "docs/architecture/pick-runner.md",
+			"bar": "The answerer reads the job message and completes it; it starts no process",
+			"tiers": ["t2"],
+			"packages": ["12"],
+			"today": { "state": "not-built", "note": "" }
+		},
+		{
+			"id": "X04",
+			"area": "Security",
+			"claim": "Agent access is read-only",
+			"source": "site/reference/mcp.md",
+			"bar": "New MCP tools need only the read scope",
+			"tiers": ["t2"],
+			"packages": ["18"],
+			"today": { "state": "partial", "note": "the existing tools are read-only; the new tools are owed" }
+		}
+	]
+}
