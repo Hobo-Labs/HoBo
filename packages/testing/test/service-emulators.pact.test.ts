@@ -47,6 +47,9 @@ it("verifies the service emulator consumer pact against the running harness", as
 			credentials: { kind: "secret" },
 			orders: { kind: "data" },
 			nightly: { kind: "schedule" },
+			cache: { kind: "kv" },
+			files: { kind: "bucket" },
+			features: { kind: "flag" },
 		},
 		handlers: {},
 	});
@@ -67,6 +70,76 @@ it("verifies the service emulator consumer pact against the running harness", as
 					return { status: 200 };
 				}
 				const body = request.body;
+				if (
+					request.method === "POST" &&
+					request.path === "/flag/features" &&
+					typeof body === "object" &&
+					body !== null &&
+					"key" in body &&
+					typeof body.key === "string"
+				) {
+					const flags = graph.flag("features");
+					flags.define({
+						key: body.key,
+						percentage: 100,
+						metadata: { tenant: "a" },
+					});
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("features").fidelity,
+							enabled: flags.evaluateBoolean(body.key, {
+								targetingKey: "user",
+								tenant: "a",
+							}).value,
+							otherTenantDefault: !flags.evaluateBoolean(body.key, {
+								targetingKey: "user",
+								tenant: "b",
+							}).value,
+						},
+					};
+				}
+				if (
+					request.method === "POST" &&
+					(request.path === "/kv/cache" || request.path === "/bucket/files") &&
+					typeof body === "object" &&
+					body !== null &&
+					"value" in body &&
+					typeof body.value === "string"
+				) {
+					const bytes = new TextEncoder().encode(body.value);
+					if (request.path === "/kv/cache") {
+						const kv = graph.kv("cache");
+						kv.set({ key: "item", value: bytes });
+						return {
+							status: 200,
+							body: {
+								fidelity: graph.resource("cache").fidelity,
+								value: new TextDecoder().decode(kv.get("item")),
+							},
+						};
+					}
+					const bucket = graph.bucket("files");
+					bucket.put(
+						{
+							name: "item",
+							contentType: "text/plain",
+							digest: "fixture",
+							size: BigInt(bytes.length),
+						},
+						bytes,
+					);
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("files").fidelity,
+							size: Number(bucket.get("item")?.size),
+							value: new TextDecoder().decode(
+								graph.bucketInspector("files")?.readBody("item"),
+							),
+						},
+					};
+				}
 				if (
 					request.method === "POST" &&
 					request.path === "/schedule/nightly" &&

@@ -3,8 +3,7 @@
 A relay job is the small job a workflow puts in front of the real one to ask
 which runner it should run on. Its answer is a `runner` output the next job
 reads in `runs-on`. This file describes the seams that answer it; the walk
-itself is in [RUNNER-ORDER.md](RUNNER-ORDER.md) and the decision record is
-ADR-0183 ([`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+itself is in [RUNNER-ORDER.md](RUNNER-ORDER.md).
 
 There are two ways to answer one, over one engine:
 
@@ -72,6 +71,11 @@ conformance function per port (`routeJournalConformance(make)` and so on).
 A conformance function throws a `PortConformanceError` naming the first rule a
 port breaks. The fakes pass their own; a real port's test calls the same
 function with its own factory.
+
+Journal reads are account-scoped, bounded and newest first; a redelivery keeps
+the first event for the same relay job and event type. Machine pause and sharing
+changes reject unknown IDs, while removing an unknown machine is a no-op. An
+unreadable minutes total or missing provider spend entry means unmeasured usage.
 
 ## Answering a relay job
 

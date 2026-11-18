@@ -1,15 +1,4 @@
-/**
- * `hobo ci route`: answer one relay job against the repository's runner
- * order, and show the walk.
- *
- * It reads the committed `runnerOrder` from `.hobo/ci.json` (the default
- * order when there is none), takes the relay's inputs as flags and, when
- * `--facts` names a file, what is true right now: fleet room, machines,
- * minutes used, money spent, tripped runner types. It contacts nothing. With
- * no facts the fleet and machines are absent, which is exactly what a
- * repository that has connected nothing would get.
- */
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { create, toJson } from "@bufbuild/protobuf";
 import {
@@ -37,7 +26,6 @@ export type CiRouteOptions = Readonly<
 	Record<string, string | boolean | readonly string[] | undefined>
 >;
 
-/** The flags `hobo ci route` reads besides one per runner type. */
 export const CI_ROUTE_OPTIONS = ["public", "fork", "event", "facts"] as const;
 
 const PROJECT_FILE = join(".hobo", "ci.json");
@@ -46,7 +34,6 @@ const MAX_FACTS_BYTES = 256 * 1024;
 const stepKey = z.enum(RUNNER_STEP_KEYS);
 const hosted = z.enum(HOSTED_RUNNER_PROVIDERS);
 
-/** What `--facts` holds. Every part is optional: what is left out is unmeasured. */
 const FactsSchema = z
 	.object({
 		fleet: z
@@ -156,7 +143,6 @@ function text(options: CiRouteOptions, name: string): string | undefined {
 		: String(value);
 }
 
-/** One step as a person would say it: `github (under 80% of included minutes)`. */
 function stepText(step: ParsedRunnerOrder["steps"][number]): string {
 	if (step.minutesLimitPercent > 0)
 		return `${step.key} (under ${step.minutesLimitPercent}% of included minutes)`;
@@ -178,15 +164,26 @@ type ReadText = (path: string) => Promise<string | undefined>;
 const readTextFile: ReadText = async (path) => {
 	try {
 		return await readFile(path, "utf8");
-	} catch {
-		return undefined;
+	} catch (cause) {
+		if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+			try {
+				await lstat(path);
+			} catch (statError) {
+				if (
+					statError instanceof Error &&
+					"code" in statError &&
+					statError.code === "ENOENT"
+				)
+					return undefined;
+				throw statError;
+			}
+		}
+		throw cause;
 	}
 };
 
 export async function runCiRoute(input: {
-	/** The repository root. */
 	cwd: string;
-	/** `owner/name`, when it could be read from the remote or was passed. */
 	repository: string | undefined;
 	options: CiRouteOptions;
 	readText?: ReadText;
@@ -203,7 +200,20 @@ export async function runCiRoute(input: {
 		)
 			return usage(`--${key} needs at least one runner label.`);
 
-	const project = await readText(join(input.cwd, PROJECT_FILE));
+	let project: string | undefined;
+	try {
+		project = await readText(join(input.cwd, PROJECT_FILE));
+	} catch {
+		return {
+			ok: false,
+			status: "invalid",
+			code: "HOBO_CI_RUNNER_ORDER_INVALID",
+			message: `cannot read ${PROJECT_FILE}.`,
+			remediation: [
+				`Make ${PROJECT_FILE} readable, or remove it to use the default order.`,
+			],
+		};
+	}
 	const committed = parseCiRunnerOrder(project ?? "{}");
 	if (committed.problem.length > 0)
 		return {
@@ -227,7 +237,12 @@ export async function runCiRoute(input: {
 	let facts = NO_ROUTE_FACTS;
 	const factsPath = text(options, "facts");
 	if (factsPath !== undefined) {
-		const raw = await readText(join(input.cwd, factsPath));
+		let raw: string | undefined;
+		try {
+			raw = await readText(join(input.cwd, factsPath));
+		} catch {
+			return usage(`--facts: cannot read ${factsPath}.`);
+		}
 		if (raw === undefined) return usage(`--facts: cannot read ${factsPath}.`);
 		if (raw.length > MAX_FACTS_BYTES)
 			return usage(`--facts: ${factsPath} is too large.`);

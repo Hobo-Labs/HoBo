@@ -34,7 +34,6 @@ const SETUP: InsightStep = {
 	conclusion: "success",
 };
 
-/** A step name none of the step-name patterns recognise. */
 const PLAIN_STEP = "Run script";
 
 function step(
@@ -60,12 +59,10 @@ function job(partial: Partial<InsightJob> = {}): InsightJob {
 	};
 }
 
-/** A job that failed at a step of the given name. */
 function failedAt(stepName: string): InsightJob {
 	return job({ steps: [SETUP, step(stepName, "failure")] });
 }
 
-/** The diagnosis of a job that failed at an unremarkable step with this log. */
 function diagnoseLog(logTail: string, stepName = PLAIN_STEP): FailureDiagnosis {
 	return diagnoseFailure({ job: failedAt(stepName), logTail });
 }
@@ -167,7 +164,7 @@ describe("logExcerpt", () => {
 			(_, index) => `${String(index).padStart(2, "0")}${"é".repeat(99)}`,
 		);
 		const excerpt = logExcerpt(lines.join("\n"));
-		// Each line is 200 bytes; forty of them and their newlines are 8039 bytes.
+
 		expect(excerpt).toHaveLength(40);
 		expect(excerpt[0]?.slice(0, 2)).toBe("10");
 		expect(excerpt.at(-1)?.slice(0, 2)).toBe("49");

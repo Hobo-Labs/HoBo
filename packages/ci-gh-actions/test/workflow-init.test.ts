@@ -15,7 +15,6 @@ import {
 
 const FILE = ".github/workflows/ci.yml";
 
-/** Each job as `id verdict [reason]`, in file order. */
 function standings(plan: WorkflowPlan): readonly string[] {
 	return plan.jobs.map((job) =>
 		job.reason === undefined
@@ -24,7 +23,6 @@ function standings(plan: WorkflowPlan): readonly string[] {
 	);
 }
 
-/** A workflow with one job, `job`, whose body is `body` (indented four spaces). */
 function oneJob(body: string): string {
 	return `on: push\njobs:\n  job:\n${body}`;
 }
@@ -42,7 +40,6 @@ function onlyJob(source: string, options?: Partial<WorkflowInitOptions>) {
 	return job;
 }
 
-/** The lines of `after` that differ from the same line of `before`. */
 function changedLines(before: string, after: string): readonly string[] {
 	const was = before.split("\n");
 	const now = after.split("\n");
@@ -50,7 +47,6 @@ function changedLines(before: string, after: string): readonly string[] {
 	return now.filter((line, index) => line !== was[index]);
 }
 
-/** What the workflow means, with the `runs-on` of the named jobs set aside. */
 function meaningWithout(source: string, jobs: readonly string[]) {
 	const doc = parseDocument(source);
 	expect(doc.errors).toEqual([]);
@@ -187,7 +183,7 @@ describe("planWorkflow verdicts", () => {
 			reason: undefined,
 			warnings: [],
 		});
-		// A name that is not a string is not reported as one.
+
 		expect(plan.jobs[2]?.name).toBeUndefined();
 		expect(written.get("call")).toBe("");
 		expect(written.get("no-runner")).toBe("");
@@ -447,7 +443,7 @@ describe("planWorkflow options", () => {
 		expect(standings(planOf(source, { fleetLabel: "acme-fleet" }))).toEqual([
 			"job routed",
 		]);
-		// The fleet's own labels stay routed whatever the custom label is.
+
 		expect(
 			standings(
 				planOf(oneJob("    runs-on: hobo-trunk\n"), {
@@ -973,7 +969,6 @@ jobs:
 });
 
 describe("descriptions", () => {
-	/** How many words the sentence has besides the identifier's own. */
 	const wordsBeyond = (text: string, identifier: string) => {
 		const own = new Set(identifier.split("_"));
 		return text

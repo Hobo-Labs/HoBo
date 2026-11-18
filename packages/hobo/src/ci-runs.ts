@@ -35,7 +35,6 @@ export class CiProcessError extends Error {
 	}
 }
 
-/** Run one subprocess (gh or git) and collect its output. */
 export const runCiProcess: CiRunExec = (file, args, options) =>
 	new Promise((resolve, reject) => {
 		execFile(

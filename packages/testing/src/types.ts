@@ -10,8 +10,14 @@
 
 import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
-import type { SecretsPort } from "@hobo/identity";
-import type { ServiceEmulatorFactories } from "./emulators.js";
+import type { FeatureFlagPort, SecretsPort } from "@hobo/identity";
+import type {
+	BlobStorePort,
+	BucketInspector,
+	FlagInspector,
+	KeyValuePort,
+	ServiceEmulatorFactories,
+} from "./emulators.js";
 import type { RunnerAdapter } from "./runner.js";
 
 export const LANES: readonly string[] = Object.freeze([
@@ -68,6 +74,13 @@ export interface DeployedGraph {
 	schedule(alias: string): SchedulerPort;
 	/** The schedule's controllable clock, if the implementation provides one. */
 	scheduleClock(alias: string): VirtualClock | undefined;
+	kv(alias: string): KeyValuePort;
+	bucket(alias: string): BlobStorePort;
+	flag(alias: string): FeatureFlagPort;
+	/** Optional test-only access to local flag events. */
+	flagInspector(alias: string): FlagInspector | undefined;
+	/** Optional test-only access to stored object bodies. */
+	bucketInspector(alias: string): BucketInspector | undefined;
 	fidelity(): FidelityReport;
 }
 

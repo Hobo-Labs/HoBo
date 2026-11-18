@@ -310,7 +310,7 @@ describe("decideRunnerRoute", () => {
 		});
 		expect(reasons(ask(1000, 600))).toEqual(["github:minutes_runway"]);
 		expect(ask(1000, 499).step).toBe("github");
-		// Unmeasured usage never blocks.
+
 		expect(
 			decideRunnerRoute(limited, request({ github: "ubuntu-24.04" })).step,
 		).toBe("github");
