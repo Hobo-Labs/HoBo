@@ -81,3 +81,63 @@ it("returns detached event arrays and records", async () => {
 		{ type: "component.TornDown", componentId: "component" },
 	]);
 });
+
+it("preserves diagnostics across generated edit and teardown sequences", async () => {
+	let seed = 0x45312a7b;
+	const next = () => {
+		seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+		return seed >>> 16;
+	};
+	for (let trial = 0; trial < 60; trial++) {
+		const id = `component-${trial}-${next()}`;
+		const sinkEvents: ComponentHostEvent[] = [];
+		const expectedEvents: ComponentHostEvent[] = [
+			{ type: "component.Loaded", componentId: id, engine: "wasmtime" },
+		];
+		const host = createRuntimeLocalComponentHost({
+			appendEvent(event) {
+				sinkEvents.push(event);
+				if (next() % 2 === 0) event.componentId = "sink-edit";
+			},
+		});
+		let expectedState: "loaded" | "torn-down" = "loaded";
+		host.loadComponent(component(id));
+		for (let step = 0; step < 24; step++) {
+			switch (next() % 5) {
+				case 0: {
+					const lifecycle = host.lifecycle(id);
+					lifecycle.id = "client-edit";
+					lifecycle.state = next() % 2 === 0 ? "loaded" : "torn-down";
+					break;
+				}
+				case 1:
+					for (const event of sinkEvents) event.componentId = "later-sink-edit";
+					break;
+				case 2: {
+					const snapshot = readMirror(host);
+					for (const event of snapshot) event.componentId = "client-edit";
+					snapshot.length = 0;
+					break;
+				}
+				case 3:
+					if (expectedState === "loaded") {
+						await host.teardownComponent(id);
+						expectedState = "torn-down";
+						expectedEvents.push({
+							type: "component.TornDown",
+							componentId: id,
+						});
+					}
+					break;
+				case 4:
+					readMirror(host).push({
+						type: "component.TornDown",
+						componentId: "client-added",
+					});
+					break;
+			}
+			expect(host.lifecycle(id)).toEqual({ id, state: expectedState });
+			expect(readMirror(host)).toEqual(expectedEvents);
+		}
+	}
+});
