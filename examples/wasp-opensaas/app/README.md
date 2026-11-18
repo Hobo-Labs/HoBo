@@ -14,7 +14,7 @@ Built with [Wasp](https://wasp.sh), based on the [Open Saas](https://opensaas.sh
 ### Verification
 
 Run `npm run test:unit` for the local browser-state and payment-boundary tests.
-HoBo `agent:check` uses `npm run ci:test:unit` here because this app is outside the
-pnpm workspace.
+HoBo `agent:check` uses `npm run ci:test:unit` here (`npm install` then vitest) because
+this app is outside the pnpm workspace and its lockfile stays gitignored.
 Run `wasp compile` to check the generated SDK and application types; a running
 PostgreSQL instance is needed to verify that database migrations are current.
