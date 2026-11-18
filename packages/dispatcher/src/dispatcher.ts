@@ -565,6 +565,10 @@ export function createReservationLedger(initialLedgerView) {
 						account.budgetCap,
 						account.spendToDate ?? 0,
 						account.reservedCost ?? 0,
+					) ||
+					moneySumExceeds(
+						[account.spendToDate ?? 0, account.reservedCost ?? 0],
+						account.budgetCap,
 					))
 			)
 				return {
@@ -1304,10 +1308,19 @@ function rankCreditCandidate({
 	const invalidUnitCostOverride =
 		unitCostOverride !== undefined &&
 		!optionalNonNegativeNumber(unitCostOverride);
-	const listUnitCost =
-		unitCostOverride === undefined
-			? credit.listUnitCost
-			: Math.max(unitCostOverride, credit.listUnitCost);
+	let listUnitCost = credit.listUnitCost;
+	if (unitCostOverride !== undefined) {
+		if (
+			!optionalNonNegativeNumber(unitCostOverride) ||
+			!optionalNonNegativeNumber(credit.listUnitCost)
+		) {
+			if (optionalNonNegativeNumber(unitCostOverride)) {
+				listUnitCost = unitCostOverride;
+			}
+		} else {
+			listUnitCost = Math.max(unitCostOverride, credit.listUnitCost);
+		}
+	}
 	const freeUnits = credit.valid
 		? Math.min(
 				units,
@@ -1828,6 +1841,11 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			);
 	}
 	for (const account of ledgerView.accounts) {
+		if (
+			account.reservedCost !== undefined &&
+			!optionalNonNegativeNumber(account.reservedCost)
+		)
+			throw new TypeError("account.reservedCost must be non-negative");
 		const holds = (ledgerView.reservations ?? []).filter(
 			(reservation) =>
 				reservation.providerId === account.providerId &&

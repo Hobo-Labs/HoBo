@@ -79,11 +79,13 @@ describe("hard budget admission", () => {
 		for (const invalid of [
 			account({ budgetCap: -1 }),
 			account({ spendToDate: Number.NaN }),
-			account({ reservedCost: -1 }),
 			account({ freeHeadroom: -1 }),
 		]) {
 			expect(dispatch(snapshot([invalid])).ok).toBe(false);
 		}
+		expect(() => dispatch(snapshot([account({ reservedCost: -1 })]))).toThrow(
+			TypeError,
+		);
 	});
 	it("keeps explicit concurrency and rate limits hard even for paid work", () => {
 		expect(dispatch(snapshot([account({ concurrencyHeadroom: 0 })])).ok).toBe(
@@ -94,6 +96,12 @@ describe("hard budget admission", () => {
 });
 
 describe("reservation financial and occupancy invariants", () => {
+	it("refuses a new hold when spend and reservations already exceed the hard cap", () => {
+		const ledger = createReservationLedger(
+			snapshot([account({ budgetCap: 10, spendToDate: 7, reservedCost: 4 })]),
+		);
+		expect(reserve(ledger, "late", { unitCost: 1 }).ok).toBe(false);
+	});
 	it("prices a reserve hold at the ledger list rate when the caller quotes lower", () => {
 		const ledger = createReservationLedger(
 			snapshot([account({ listUnitCost: 5, budgetCap: 100 })]),
