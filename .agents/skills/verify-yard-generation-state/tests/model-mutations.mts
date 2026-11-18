@@ -1,0 +1,42 @@
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const jar = process.env.TLA2TOOLS;
+if (!jar) throw new Error('TLA2TOOLS is required');
+const scratch = mkdtempSync(path.join(os.tmpdir(), 'hobo-generation-state-model-'));
+const models = [
+  ['YardExactQuote', ['CheckQuote'], [['CheckQuote', 'ExactQuoteBound']]],
+  ['YardGenerationIdentity', ['CheckPlan', 'CheckYard', 'CheckAttempt', 'RecordUncertain', 'ReportFailure'], [
+    ['CheckPlan', 'NoWrongPlanEffect'], ['CheckYard', 'NoWrongYardReceipt'],
+    ['CheckAttempt', 'NoWrongAttemptReceipt'], ['RecordUncertain', 'UncertaintyRecorded'],
+    ['ReportFailure', 'WriteFailureReported'],
+  ]],
+  ['YardGenerationReadiness', ['CheckReady'], [['CheckReady', 'ReadyReceipt']]],
+  ['YardSignalBatch', ['CheckRaw', 'CheckNormalized', 'CheckAllowed', 'Snapshot', 'BrokerSequence', 'AtomicBatch'], [
+    ['CheckRaw', 'NoForeignRaw'], ['CheckNormalized', 'NoInvalidNormalized'],
+    ['CheckAllowed', 'NoBrokerDecision'], ['Snapshot', 'NoInvalidNormalized'],
+    ['BrokerSequence', 'BrokerOwnsSequence'], ['AtomicBatch', 'NoPartialRefusal'],
+  ]],
+] as const;
+try {
+  for (const [model, names, cases] of models) {
+    copyFileSync(fileURLToPath(new URL(`../models/${model}.tla`, import.meta.url)), path.join(scratch, `${model}.tla`));
+    for (const [mutation, invariant] of cases) {
+      const constants = names.map(name => `${name} = ${name === mutation ? 'FALSE' : 'TRUE'}`).join('\n');
+      writeFileSync(path.join(scratch, 'Mutant.cfg'), `CONSTANTS ${constants}\nSPECIFICATION Spec\nINVARIANT ${invariant}\n`);
+      const result = spawnSync('java', ['-XX:+UseParallelGC', '-cp', jar, 'tlc2.TLC', '-workers', '1', '-config', 'Mutant.cfg', `${model}.tla`], { cwd: scratch, encoding: 'utf8' });
+      if (result.error) throw result.error;
+      const output = `${result.stdout}\n${result.stderr}`;
+      if (result.status === 0 || !output.includes(`Invariant ${invariant} is violated`)) {
+        process.stderr.write(output);
+        throw new Error(`expected counterexample for ${model}/${mutation}/${invariant}`);
+      }
+      process.stdout.write(`Expected counterexample: ${model}/${mutation}/${invariant}\n`);
+    }
+  }
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
+}

@@ -331,7 +331,9 @@ these checks cannot detect a change restored between observations or control
 what a remote provider actually does.
 
 The bounded generation identity projection hides 32 same-state steps and assumes
-the other policy, quote and readiness checks succeed.
+the other policy, quote and readiness checks succeed. The [Yard generation
+identity and readiness skill](../../.agents/skills/verify-yard-generation-state/SKILL.md)
+checks these boundaries and the provider signal batch separately.
 
 ```mermaid
 stateDiagram-v2
