@@ -254,3 +254,25 @@ stateDiagram-v2
   Claimed --> ResultUncertain: apply rollback
   ResultUncertain --> ResultRecorded: record result
 ```
+
+The execution-claim model considers two attempts using one rollback key,
+including a lost or mismatched acknowledgement and an unfinished legacy
+claim. Its atomic journal and distinct token assumptions are described in the
+verification skill. TLC explored 74 states and 184 steps; this projection hides
+158 same-label steps, including competing and forged responses.
+
+```mermaid
+stateDiagram-v2
+  s0: Waiting for execution claim
+  s1: Legacy claim requires reconciliation
+  s2: Claim response lost and needs reconciliation
+  s3: Claim response mismatched
+  s4: Execution token recorded
+  s5: Rollback effect started
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: claim response lost
+  s0 --> s3: mismatched response
+  s0 --> s4: claim token
+  s4 --> s5: start rollback effect
+```
