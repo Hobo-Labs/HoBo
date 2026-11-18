@@ -62,8 +62,7 @@ That is an **adapter** conformance claim, not a measurement of Upstash. The
 conformance ref says so in its own text
 (`…@offline-reference-store@2026-08-08`), and the README says it in words.
 
-The adapter deliberately exposes no `advanceTime`: a real endpoint has a real
-clock, and offering one would let the suite "prove" TTL behaviour it never
-observed. The offline harness borrows the *reference server's* clock instead,
-and a test pins the degradation — without a clock the run reports `incomplete`,
-which becomes `unknown` conformance, which selection rejects.
+`advanceTime(ms)` waits on the live endpoint's clock. The offline harness
+injects the reference server's deterministic clock through `wait`. Without a
+time control, the conformance run remains `incomplete` and projects to
+`unknown`.

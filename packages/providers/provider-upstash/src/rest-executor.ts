@@ -1,19 +1,3 @@
-/**
- * The data plane: a `KvRedisExecutor` over the Upstash REST API.
- *
- * This is what makes the conformance claim in the definition mean something.
- * The provider-neutral suite in `@hobo/kv-redis-compatible` emits Redis
- * commands and expects Redis replies; this adapter is the only place that
- * knows those travel as a JSON array in a POST body with a bearer token, and
- * come back as `{"result": …}` or `{"error": "…"}`.
- *
- * `advanceTime` is deliberately not implemented. A real endpoint has a real
- * clock, so the suite's expiry cases are skipped rather than faked, and a
- * skipped case does not substantiate a capability.
- *
- * Source, checked 2026-08-08:
- * https://upstash.com/docs/redis/sdks/ts/getstarted
- */
 import type {
 	KvRedisExecutor,
 	RedisCommand,
@@ -38,27 +22,13 @@ import {
 
 export type UpstashRestExecutorOptions = {
 	readonly transport: UpstashTransport;
-	/** `https://<name>-<id>.upstash.io`, from the parsed create response. */
 	readonly restEndpointUrl: string;
-	/**
-	 * Resolved lazily and never stored.
-	 *
-	 * The executor holds a *function* rather than a token so that custody
-	 * decides when material exists, and so a long-lived executor does not keep
-	 * a plaintext credential alive in a closure any longer than a request.
-	 */
 	readonly resolveToken: () => Promise<string>;
 	readonly policy?: TransportPolicy;
 	readonly userAgent?: string;
+	readonly wait?: (ms: number) => Promise<void>;
 };
 
-/**
- * Narrow the decoded JSON into a reply.
- *
- * Redis replies nest arbitrarily, so this walks the structure instead of
- * asserting a cast. Anything outside the RESP value space — an object, a
- * boolean, a non-finite number — is a contract change, not a value to coerce.
- */
 function parseRedisValue(value: JsonValue, depth = 0): RedisValue {
 	if (depth > 16) {
 		throw new UpstashProviderError(
@@ -89,7 +59,6 @@ function parseRedisValue(value: JsonValue, depth = 0): RedisValue {
 export function parseRestReply(body: string): RedisReply {
 	let decoded: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		decoded = JSON.parse(body) as JsonValue;
 	} catch (cause) {
 		throw new UpstashProviderError(
@@ -108,9 +77,6 @@ export function parseRestReply(body: string): RedisReply {
 	}
 	const envelope = decoded;
 	if (isJsonString(envelope.error)) {
-		// A command-level error (WRONGTYPE, "value is not an integer") is a
-		// legitimate Redis reply, not a driver failure. The suite asserts on
-		// several of them.
 		return { kind: "error", message: envelope.error };
 	}
 	if (!("result" in envelope)) {
@@ -146,14 +112,14 @@ export function createUpstashRestExecutor(
 	const policy = options.policy ?? UPSTASH_DATA_PLANE_POLICY;
 	const transport = createGuardedTransport(options.transport, policy);
 	const userAgent = options.userAgent ?? "hobo-provider-upstash/0.0.1";
+	const wait =
+		options.wait ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
 	return {
 		async execute(command: RedisCommand): Promise<RedisReply> {
 			const [verb] = command;
 			if (!COMMAND_VERB.test(verb)) {
-				// Not a safety boundary — the body is JSON, so there is no
-				// injection to prevent — but a malformed verb is a bug worth
-				// catching before it becomes a confusing provider error.
 				throw new UpstashProviderError(
 					"PROVIDER_CONTRACT_CHANGED",
 					"redis command verb must be a plain identifier",
@@ -177,12 +143,6 @@ export function createUpstashRestExecutor(
 
 			if (response.status === 200) return parseRestReply(response.body);
 			if (response.status === 400) {
-				// Upstash answers a command that fails (WRONGTYPE, NOSCRIPT, a
-				// syntax error) with 400 and the same `{"error": …}` envelope.
-				// That is a Redis error reply, not a transport failure: the
-				// ephemeral-state binding depends on seeing NOSCRIPT as a reply
-				// to fall back from EVALSHA to EVAL. A 400 without that envelope
-				// is still a provider error below.
 				const reply = errorEnvelope(response.body);
 				if (reply !== undefined) return reply;
 			}
@@ -204,6 +164,15 @@ export function createUpstashRestExecutor(
 				method: "POST",
 				body: response.body,
 			});
+		},
+		async advanceTime(ms: number): Promise<void> {
+			if (!Number.isFinite(ms) || ms < 0) {
+				throw new UpstashProviderError(
+					"PROVIDER_CONTRACT_CHANGED",
+					"time advancement must be a finite non-negative duration",
+				);
+			}
+			await wait(ms);
 		},
 	};
 }
