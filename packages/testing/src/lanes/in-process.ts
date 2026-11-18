@@ -191,7 +191,6 @@ async function closeServers(servers: readonly Server[]): Promise<void> {
 		throw new AggregateError(failures, "in-process listener cleanup failed");
 }
 
-/** Startup failed and at least one opened listener could not be cleaned up. */
 export class InProcessStartupCleanupError extends Error {
 	readonly cleanupCause: unknown;
 	readonly #servers: readonly Server[];

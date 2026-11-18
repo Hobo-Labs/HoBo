@@ -181,7 +181,6 @@ export interface CreateTestHarnessInternals {
 	readonly probe?: ReadinessProbe;
 	/** Injectable environment for the ephemeral-camp credential gate. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	/** Injectable in-process lane for testing lifecycle coordination. */
 	readonly deployInProcess?: typeof deployInProcess;
 	readonly destroyInProcess?: typeof destroyInProcess;
 }
@@ -219,7 +218,6 @@ export function createTestHarness(
 		}
 		if (existing?.closeFailure !== undefined) throw existing.closeFailure.cause;
 		if (existing !== undefined) return existing.state;
-		// Publish the entry before invoking user-provided topology or entrypoints.
 		const pending = Promise.resolve().then(async (): Promise<HarnessState> => {
 			if (campTarget !== undefined) await deployEphemeralCamp(campTarget);
 			const deployment = await deployLane(bindle, stage);
