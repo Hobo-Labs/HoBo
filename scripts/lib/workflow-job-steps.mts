@@ -86,9 +86,7 @@ export function workflowJob(text: string, jobId: string): WorkflowJob {
 	const values = asList(shard);
 	const matrix =
 		asText(shard) ??
-		(values?.every(
-			(value) => typeof value === "number" && Number.isInteger(value),
-		)
+		(values?.every((value) => Number.isInteger(value))
 			? `\${{ fromJSON('${JSON.stringify(values)}') }}`
 			: undefined);
 	if (condition !== undefined) job.if = condition;
