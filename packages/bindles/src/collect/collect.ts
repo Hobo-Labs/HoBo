@@ -1,3 +1,4 @@
+import { evaluateBindingDeliveryGate } from "../binding-delivery.js";
 import { isJsonObject, type JsonObject } from "../json.js";
 import {
 	canonicalManifestHash,
@@ -19,26 +20,21 @@ import {
 } from "../wiring/index.js";
 import { type CollectionEvent, createCollectionEvents } from "./events.js";
 
-// Run-to-collect (S1-12b). The static path (compileBindleManifest) enumerates an
-// explicit handle array; run-to-collect instead RUNS the Bindle's components in
-// resource-collection mode — the `define` closure declares resources by calling
-// the collector — then folds the observed handles through the very same
-// compileBindleManifest so the produced manifest IR is byte-identical to the
-// static compile (canonicalManifestHash equal). Two runs of one target are
-// deterministic. No manifest compilation is reinvented here.
-
 export interface ComponentHostDescriptor {
 	readonly kind: string;
 	readonly version: string;
 }
 
-// The collector a Bindle's components receive while running in collection mode.
-// Each factory mirrors a wiring factory, records the handle in declaration
-// order, and returns it so bind maps can reference earlier resources.
 export interface CollectionContext {
 	data(
 		name: string,
-		options?: { paradigm?: string; allow?: readonly string[] },
+		options?: {
+			paradigm?: string;
+			allow?: readonly string[];
+			env?: Readonly<Record<string, string>>;
+			connectionString?: string;
+			endpoints?: JsonObject;
+		},
 	): ResourceHandle;
 	service(
 		name: string,
@@ -61,7 +57,6 @@ export interface CollectionContext {
 export interface CollectionTarget {
 	readonly bindleId: string;
 	readonly componentHost: ComponentHostDescriptor;
-	/** Resource ordering edges; connector references are resolved separately. */
 	readonly dependencies?: readonly BindleEdge[];
 	define(collect: CollectionContext): void;
 }
@@ -85,10 +80,6 @@ export class CollectionEngineError extends Error {
 	}
 }
 
-// Wrap a compiled WiringManifest (schema + resources, no host) into the full
-// manifest IR the rest of HoBo parses — the single seam both the run-to-collect
-// engine and any static-compile comparison flow through, guaranteeing hash
-// parity by construction.
 export function manifestFromWiring(
 	wiring: WiringManifest,
 	componentHost: ComponentHostDescriptor,
@@ -168,6 +159,13 @@ export function collectBindleManifest(
 			}
 		: compiled;
 	const manifest = manifestFromWiring(wiring, target.componentHost);
+	const delivery = evaluateBindingDeliveryGate({ manifest });
+	if (!delivery.ok) {
+		throw new CollectionEngineError(
+			"HOBO_BINDING_DELIVERY",
+			`${delivery.summary}: ${delivery.reasons.map((reason) => reason.message).join("; ")}`,
+		);
+	}
 	const manifestHash = canonicalManifestHash(manifest);
 
 	const resources = Object.keys(manifest.value.resources).sort();
@@ -192,7 +190,6 @@ export function collectBindleManifest(
 function collectBindKeys(manifest: ManifestV1): string[] {
 	const keys: string[] = [];
 	for (const [id, resource] of Object.entries(manifest.value.resources)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const bindings = (resource as { bindings?: JsonObject }).bindings;
 		if (bindings && isJsonObject(bindings)) {
 			for (const alias of Object.keys(bindings)) {

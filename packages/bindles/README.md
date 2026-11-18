@@ -26,6 +26,9 @@ token and private-key names, and values containing URI credentials or
 `password`/`pwd` connection-string fields. Rejections name the affected resource
 or key without returning its value. Use explicit links and bindings for access;
 the gate detects common credential formats rather than every possible secret.
+Structured endpoint metadata is inspected recursively; cyclic or oversized
+metadata is rejected. Authored environment values must be strings, numbers, or
+booleans so collection does not silently discard them.
 
 ## Features · experiments · rollouts (Harness IfC)
 
