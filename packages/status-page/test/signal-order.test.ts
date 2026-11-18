@@ -12,6 +12,7 @@ const sample = (
 	minute: number,
 	label: string,
 	attainment: number,
+	target = 0.99,
 ) =>
 	statusEnvelope(
 		STATUS_SIGNAL_EVENTS.SloMeasured,
@@ -20,7 +21,7 @@ const sample = (
 			componentLabel: label,
 			sloName: "availability",
 			attainment,
-			target: 0.99,
+			target,
 			measuredAt: timestamp(minute),
 		},
 		{ streamId: "status:signals", seq, ts: timestamp(minute), project: "shop" },
@@ -66,7 +67,7 @@ it("uses the last folded measurement when timestamps tie", () => {
 });
 
 it("ignores malformed optional labels without replacing valid measurements", () => {
-	for (const label of [0, false, null, "", [], {}]) {
+	for (const label of [0, false, null, "", [], ["bad"], {}, { length: 1 }]) {
 		const invalid = statusEnvelope(
 			STATUS_SIGNAL_EVENTS.SloMeasured,
 			{
@@ -103,9 +104,16 @@ it("preserves the latest sample over generated measurement orders", () => {
 			minute: next() % 50,
 			label: `trial-${trial}-sample-${index}`,
 			attainment: next() % 2 === 0 ? 1 : 0.5,
+			target: next() % 2 === 0 ? 0.9 : 0.99,
 		}));
 		const events = measurements.map((entry, index) =>
-			sample(index + 1, entry.minute, entry.label, entry.attainment),
+			sample(
+				index + 1,
+				entry.minute,
+				entry.label,
+				entry.attainment,
+				entry.target,
+			),
 		);
 		const expected = measurements.reduce((current, entry) =>
 			entry.minute >= current.minute ? entry : current,
@@ -116,6 +124,7 @@ it("preserves the latest sample over generated measurement orders", () => {
 		expect(component).toMatchObject({
 			label: expected.label,
 			attainment: expected.attainment,
+			target: expected.target,
 			lastSignalAt: timestamp(expected.minute),
 			status: expected.attainment === 1 ? "operational" : "major_outage",
 			history: { "2026-08-17": { samples: 5 } },
