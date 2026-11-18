@@ -266,7 +266,15 @@ describe("yard event-store folds + provider resolvers", () => {
 		"generation-budget-claim-uncertain-commits-then-fails",
 		"generation-budget-claim-uncertain-wrong-binding",
 		"generation-budget-claim-uncertain-stored-mismatch",
+		"generation-budget-claim-uncertain-returned-quote-digest",
+		"generation-budget-claim-uncertain-stored-quote-digest",
+		"generation-budget-claim-uncertain-returned-execution",
+		"generation-budget-claim-uncertain-stored-execution",
+		"generation-budget-claim-uncertain-both-wrong-execution",
+		"generation-budget-claim-uncertain-returned-expected-execution",
+		"generation-budget-claim-uncertain-stored-expected-execution",
 		"generation-budget-claim-cancel-failed",
+		"generation-budget-claim-uncertain-mutable-hold",
 		"generation-quota-claim-fails",
 		"generation-quota-fence-not-stored",
 		"generation-quota-claim-commits-then-fails",
@@ -278,6 +286,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		"wrong-generated-yard-id",
 		"wrong-generation-attempt-id",
 		"wrong-generated-yard-uncertainty-fails",
+		"wrong-generated-yard-uncertainty-both-missing-execution",
 		"wrong-yard-on-inspect",
 		"generation-not-ready-no-signal",
 		"generation-registered-no-signal",
@@ -676,7 +685,8 @@ describe("yard event-store folds + provider resolvers", () => {
 				generationFinished = true;
 				if (
 					mode === "wrong-generated-yard-id" ||
-					mode === "wrong-generated-yard-uncertainty-fails"
+					mode === "wrong-generated-yard-uncertainty-fails" ||
+					mode === "wrong-generated-yard-uncertainty-both-missing-execution"
 				)
 					return { ...result, yardId: "yard:unexpected" };
 				if (mode === "wrong-generation-attempt-id")
@@ -750,6 +760,8 @@ describe("yard event-store folds + provider resolvers", () => {
 				},
 			});
 		}
+		let attemptedExecutionDigest = "";
+		let retainedBudgetHold: ReturnType<typeof authority.reserve> | undefined;
 		const financial = {
 			...authority,
 			uncertain(id: string) {
@@ -771,6 +783,37 @@ describe("yard event-store folds + provider resolvers", () => {
 				}
 				if (mode === "generation-budget-claim-uncertain-wrong-binding")
 					return { ...authority.uncertain(id), quoteId: "wrong-quote" };
+				if (mode === "generation-budget-claim-uncertain-mutable-hold") {
+					if (!retainedBudgetHold)
+						throw new Error("fixture budget hold missing");
+					retainedBudgetHold.quoteId = "mutated-quote";
+					return { ...authority.uncertain(id), quoteId: "mutated-quote" };
+				}
+				if (mode === "generation-budget-claim-uncertain-returned-quote-digest")
+					return {
+						...authority.uncertain(id),
+						quoteDigest: "wrong-quote-digest",
+					};
+				if (mode === "generation-budget-claim-uncertain-returned-execution")
+					return {
+						...authority.uncertain(id),
+						executionDigest: "wrong-execution",
+					};
+				if (mode === "generation-budget-claim-uncertain-both-wrong-execution")
+					return {
+						...authority.uncertain(id),
+						executionDigest: "wrong-execution",
+					};
+				if (
+					mode ===
+					"generation-budget-claim-uncertain-returned-expected-execution"
+				)
+					return {
+						...authority.uncertain(id),
+						executionDigest: attemptedExecutionDigest,
+					};
+				if (mode === "wrong-generated-yard-uncertainty-both-missing-execution")
+					return { ...authority.uncertain(id), executionDigest: "" };
 				return authority.uncertain(id);
 			},
 			lookup(id: string) {
@@ -780,6 +823,11 @@ describe("yard event-store folds + provider resolvers", () => {
 				)
 					throw new Error("storage unavailable");
 				const reservation = authority.lookup(id);
+				if (
+					mode === "generation-budget-claim-uncertain-mutable-hold" &&
+					reservation?.status === "uncertain"
+				)
+					return { ...reservation, quoteId: "mutated-quote" };
 				if (mode === "generation-budget-hold-wrong-binding" && reservation)
 					return { ...reservation, quoteDigest: "wrong-quote-digest" };
 				if (
@@ -793,6 +841,32 @@ describe("yard event-store folds + provider resolvers", () => {
 					reservation?.status === "uncertain"
 				)
 					return { ...reservation, requestDigest: "wrong-request" };
+				if (
+					mode === "generation-budget-claim-uncertain-stored-quote-digest" &&
+					reservation?.status === "uncertain"
+				)
+					return { ...reservation, quoteDigest: "wrong-quote-digest" };
+				if (
+					mode === "generation-budget-claim-uncertain-stored-execution" &&
+					reservation?.status === "uncertain"
+				)
+					return { ...reservation, executionDigest: "wrong-execution" };
+				if (
+					mode === "generation-budget-claim-uncertain-both-wrong-execution" &&
+					reservation?.status === "uncertain"
+				)
+					return { ...reservation, executionDigest: "wrong-execution" };
+				if (
+					mode ===
+						"generation-budget-claim-uncertain-stored-expected-execution" &&
+					reservation?.status === "uncertain"
+				)
+					return { ...reservation, executionDigest: attemptedExecutionDigest };
+				if (
+					mode === "wrong-generated-yard-uncertainty-both-missing-execution" &&
+					reservation?.status === "uncertain"
+				)
+					return { ...reservation, executionDigest: "" };
 				if (mode === "generation-policy-before-claim" && reservation)
 					Object.assign(allowPolicy, { effect: "deny" });
 				if (mode === "changed-plan-before-claim" && reservation)
@@ -801,6 +875,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				return reservation;
 			},
 			claimExecution(input: Parameters<typeof authority.claimExecution>[0]) {
+				attemptedExecutionDigest = input.executionDigest;
 				if (mode === "generation-budget-fence-not-stored") {
 					const held = authority.lookup(input.reservationId);
 					if (!held) throw new Error("fixture budget hold missing");
@@ -813,6 +888,16 @@ describe("yard event-store folds + provider resolvers", () => {
 					mode === "generation-budget-claim-uncertain-commits-then-fails" ||
 					mode === "generation-budget-claim-uncertain-wrong-binding" ||
 					mode === "generation-budget-claim-uncertain-stored-mismatch" ||
+					mode === "generation-budget-claim-uncertain-mutable-hold" ||
+					mode === "generation-budget-claim-uncertain-returned-quote-digest" ||
+					mode === "generation-budget-claim-uncertain-stored-quote-digest" ||
+					mode === "generation-budget-claim-uncertain-returned-execution" ||
+					mode === "generation-budget-claim-uncertain-stored-execution" ||
+					mode === "generation-budget-claim-uncertain-both-wrong-execution" ||
+					mode ===
+						"generation-budget-claim-uncertain-returned-expected-execution" ||
+					mode ===
+						"generation-budget-claim-uncertain-stored-expected-execution" ||
 					mode === "generation-budget-claim-cancel-failed"
 				)
 					throw new Error("budget execution claim acknowledgement lost");
@@ -860,6 +945,10 @@ describe("yard event-store folds + provider resolvers", () => {
 				)
 					throw new Error("budget reservation unavailable");
 				const reservation = authority.reserve(input);
+				if (mode === "generation-budget-claim-uncertain-mutable-hold") {
+					retainedBudgetHold = { ...reservation };
+					return retainedBudgetHold;
+				}
 				if (mode === "generation-budget-reserve-wrong-binding")
 					return { ...reservation, quoteId: "wrong-quote" };
 				if (mode === "generation-budget-commits-then-fails")
@@ -1436,6 +1525,16 @@ describe("yard event-store folds + provider resolvers", () => {
 				mode === "generation-budget-claim-uncertain-commits-then-fails" ||
 				mode === "generation-budget-claim-uncertain-wrong-binding" ||
 				mode === "generation-budget-claim-uncertain-stored-mismatch" ||
+				mode === "generation-budget-claim-uncertain-mutable-hold" ||
+				mode === "generation-budget-claim-uncertain-returned-quote-digest" ||
+				mode === "generation-budget-claim-uncertain-stored-quote-digest" ||
+				mode === "generation-budget-claim-uncertain-returned-execution" ||
+				mode === "generation-budget-claim-uncertain-stored-execution" ||
+				mode === "generation-budget-claim-uncertain-both-wrong-execution" ||
+				mode ===
+					"generation-budget-claim-uncertain-returned-expected-execution" ||
+				mode ===
+					"generation-budget-claim-uncertain-stored-expected-execution" ||
 				mode === "generation-budget-claim-cancel-failed"
 			) {
 				expect(result.outcome).toBe("rejected");
@@ -1473,7 +1572,16 @@ describe("yard event-store folds + provider resolvers", () => {
 					mode === "generation-budget-claim-uncertain-not-stored" ||
 					mode === "generation-budget-claim-uncertain-commits-then-fails" ||
 					mode === "generation-budget-claim-uncertain-wrong-binding" ||
-					mode === "generation-budget-claim-uncertain-stored-mismatch"
+					mode === "generation-budget-claim-uncertain-stored-mismatch" ||
+					mode === "generation-budget-claim-uncertain-mutable-hold" ||
+					mode === "generation-budget-claim-uncertain-returned-quote-digest" ||
+					mode === "generation-budget-claim-uncertain-stored-quote-digest" ||
+					mode === "generation-budget-claim-uncertain-returned-execution" ||
+					mode === "generation-budget-claim-uncertain-stored-execution" ||
+					mode === "generation-budget-claim-uncertain-both-wrong-execution" ||
+					mode ===
+						"generation-budget-claim-uncertain-returned-expected-execution" ||
+					mode === "generation-budget-claim-uncertain-stored-expected-execution"
 				)
 					expect(result.reasons?.[0]?.message).toContain(
 						"uncertain budget status could not be recorded",
@@ -1703,6 +1811,17 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(authority.read(now).reservedMicros).toBe(20);
 				return;
 			}
+			if (mode === "wrong-generated-yard-uncertainty-both-missing-execution") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe("yard-generation-id-mismatch");
+				expect(result.reasons?.[0]?.message).toContain(
+					"uncertain status could not be recorded",
+				);
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
 			if (
 				mode === "generation-unrelated-ready-signal" ||
 				mode === "generation-foreign-yard-signal" ||
@@ -1877,7 +1996,15 @@ describe("yard event-store folds + provider resolvers", () => {
 					"generation-budget-claim-uncertain-commits-then-fails",
 					"generation-budget-claim-uncertain-wrong-binding",
 					"generation-budget-claim-uncertain-stored-mismatch",
+					"generation-budget-claim-uncertain-returned-quote-digest",
+					"generation-budget-claim-uncertain-stored-quote-digest",
+					"generation-budget-claim-uncertain-returned-execution",
+					"generation-budget-claim-uncertain-stored-execution",
+					"generation-budget-claim-uncertain-both-wrong-execution",
+					"generation-budget-claim-uncertain-returned-expected-execution",
+					"generation-budget-claim-uncertain-stored-expected-execution",
 					"generation-budget-claim-cancel-failed",
+					"generation-budget-claim-uncertain-mutable-hold",
 					"generation-quota-claim-fails",
 					"generation-quota-fence-not-stored",
 					"generation-quota-claim-commits-then-fails",

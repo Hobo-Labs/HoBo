@@ -515,6 +515,16 @@ export async function resolveBindleDeployment(
 	};
 	const reservationId = `hosting:${deps.brokerId}:${request.requestId}`;
 	let budgetReservation: BudgetReservation | undefined;
+	let budgetExecutionClaimed = false;
+	let budgetClaimBinding:
+		| {
+				readonly quoteId: string;
+				readonly quoteDigest: string;
+				readonly reservedMicros: number;
+				readonly identityKey: string;
+				readonly executionDigest: string;
+		  }
+		| undefined;
 	let generationBudgetReserveAttempted = false;
 	let hostingQuote: HostingQuote | undefined;
 	let hostingPolicyProof: HostingPolicyProof | undefined;
@@ -522,7 +532,9 @@ export async function resolveBindleDeployment(
 	const markGenerationUncertain = () => {
 		if (!budgetReservation) return true;
 		try {
+			const binding = budgetClaimBinding;
 			if (
+				!binding ||
 				!budgetAuthority ||
 				!budgetUncertain ||
 				!budgetLookup ||
@@ -535,17 +547,19 @@ export async function resolveBindleDeployment(
 				reservation?.status === "uncertain" &&
 				reservation.reservationId === reservationId &&
 				reservation.requestDigest === requestDigest &&
-				reservation.quoteId === budgetReservation?.quoteId &&
-				reservation.reservedMicros === budgetReservation?.reservedMicros &&
+				reservation.quoteId === binding.quoteId &&
+				reservation.quoteDigest === binding.quoteDigest &&
+				reservation.reservedMicros === binding.reservedMicros &&
 				reservation.identity !== undefined &&
-				budgetReservation?.identity !== undefined &&
-				budgetIdentityKey(reservation.identity) ===
-					budgetIdentityKey(budgetReservation.identity);
+				budgetIdentityKey(reservation.identity) === binding.identityKey &&
+				(reservation.executionDigest === binding.executionDigest ||
+					(!budgetExecutionClaimed && reservation.executionDigest === ""));
 			const marked = budgetUncertain.call(budgetAuthority, reservationId);
 			const stored = budgetLookup.call(budgetAuthority, reservationId);
 			return (
 				matches(marked) &&
 				matches(stored) &&
+				marked.executionDigest === stored?.executionDigest &&
 				budgetAuthority.uncertain === budgetUncertain &&
 				budgetAuthority.lookup === budgetLookup &&
 				budgetAuthority.persistence === budgetPersistence
@@ -1179,19 +1193,9 @@ export async function resolveBindleDeployment(
 				return false;
 			}
 		};
-		let budgetExecutionClaimed = false;
 		let budgetExecutionClaimAttempted = false;
 		let budgetAlreadyClaimed = false;
 		let budgetHoldUnverifiable = false;
-		let budgetClaimBinding:
-			| {
-					readonly quoteId: string;
-					readonly quoteDigest: string;
-					readonly reservedMicros: number;
-					readonly identityKey: string;
-					readonly executionDigest: string;
-			  }
-			| undefined;
 		const budgetClaimMatches = (
 			reservation: BudgetReservation | undefined,
 			requireExecution = true,

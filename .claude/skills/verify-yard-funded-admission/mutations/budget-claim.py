@@ -21,6 +21,8 @@ def no_execution(s):
  s,n=re.subn(r'\(!requireExecution \|\|\s*reservation\.executionDigest ===\s*budgetClaimBinding\.executionDigest\)', 'true', s, count=1)
  if n!=1:raise RuntimeError('execution binding guard not found')
  return s
+def no_uncertain_execution(s):
+ return replace(s,'(reservation.executionDigest === binding.executionDigest ||\n\t\t\t\t\t(!budgetExecutionClaimed && reservation.executionDigest === ""))','true')
 cases=[
  ('claim-attempt',lambda s:replace(s,'budgetExecutionClaimAttempted = true;','budgetExecutionClaimAttempted = false;'),'generation-budget-claim-commits-then-fails'),
  ('claim-report',lambda s:replace(s,'budgetExecutionClaimAttempted && !budgetExecutionClaimed','false'),'generation-budget-claim-fails'),
@@ -36,6 +38,11 @@ cases=[
  ('claim-execution',no_execution,'generation-budget-fence-wrong-execution'),
  ('hold-return',lambda s:replace(s,'!budgetClaimMatches(budgetReservation, false) ||','false ||'),'generation-budget-reserve-wrong-binding'),
  ('hold-stored',lambda s:replace(s,'!budgetClaimMatches(previous, false)','false'),'generation-budget-hold-wrong-binding'),
+ ('uncertain-quote-digest',lambda s:replace(s,'reservation.quoteDigest === binding.quoteDigest &&','true &&'),'generation-budget-claim-uncertain-returned-quote-digest'),
+ ('uncertain-snapshot',lambda s:replace(s,'reservation.quoteId === binding.quoteId &&','reservation.quoteId === budgetReservation?.quoteId &&'),'generation-budget-claim-uncertain-mutable-hold'),
+ ('uncertain-execution-domain',no_uncertain_execution,'generation-budget-claim-uncertain-both-wrong-execution'),
+ ('uncertain-execution-agreement',lambda s:replace(s,'marked.executionDigest === stored?.executionDigest &&','true &&'),'generation-budget-claim-uncertain-stored-expected-execution'),
+ ('uncertain-known-claim',lambda s:replace(s,'!budgetExecutionClaimed && reservation.executionDigest === ""','reservation.executionDigest === ""'),'wrong-generated-yard-uncertainty-both-missing-execution'),
 ]
 def run(pattern):
  return subprocess.run(['node',str(repo/'node_modules/vitest/vitest.mjs'),'run','test/yard-event-store-folds.test.ts','--root',str(scratch),'--config',str(config),'--maxWorkers=1','--no-file-parallelism','-t',pattern],cwd=repo,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=180)

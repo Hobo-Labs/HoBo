@@ -616,7 +616,12 @@ authority changes after a provider effect, the hold remains for reconciliation.
 An exact Yard quote must name the requested Yard, and a generation plan for a
 different exact ID is refused before funding. After a provider call, a result
 for another attempt or Yard is refused and the hold is marked uncertain; if
-that write fails, the hold remains and the failure is reported. An in-progress
+that write fails, the hold remains and the failure is reported. The returned
+and stored uncertainty records must match the captured quote, liability and
+budget identity and agree on the execution claim. If a claim response was
+lost, either an unclaimed or matching claimed record is accepted; after a
+confirmed claim, the matching execution digest must remain present. Invalid or
+inconsistent records are reported for reconciliation. An in-progress
 result requires a ready signal bound to the same attempt and Yard. A connector's
 explicit `ready` result is trusted as readiness evidence when no signal exists.
 Provider signal batches must identify the planned attempt and agree with its
@@ -659,8 +664,24 @@ stateDiagram-v2
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
 checks finite abstractions of quote approval, the reservation handoff and
-generation recovery. The quote view hides 12 same-label steps and assumes a
-truthful host and collision-resistant hash.
+generation recovery.
+
+The uncertainty-evidence model checks 144 states and 216 steps. Its projection
+hides 144 same-label steps; it assumes the other reservation fields and the
+recorded uncertainty status are already checked.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking uncertainty evidence
+  s1: Uncertain hold verified
+  s2: Uncertain hold needs reconciliation
+  [*] --> s0
+  s0 --> s1: compare returned and stored evidence
+  s0 --> s2: compare returned and stored evidence
+```
+
+The quote view hides 12 same-label steps and assumes a truthful host and
+collision-resistant hash.
 
 ```mermaid
 stateDiagram-v2

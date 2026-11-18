@@ -18,6 +18,8 @@ def policy_quote(s):
  guard='toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||'
  if s.count(guard)!=2:raise RuntimeError('policy quote guard count changed')
  return s.replace(guard,'',1)
+def no_uncertain_execution(s):
+ return replace(s,'(reservation.executionDigest === binding.executionDigest ||\n\t\t\t\t\t(!budgetExecutionClaimed && reservation.executionDigest === ""))','true')
 cases=[
  ('policy-quote',policy_quote,'yard-funded-quote-race.test.ts'),
  ('claim-attempt',lambda s:replace(s,'budgetExecutionClaimAttempted = true;','budgetExecutionClaimAttempted = false;'),'yard-event-store-folds.test.ts'),
@@ -27,6 +29,11 @@ cases=[
  ('claim-return',lambda s:replace(s,'!budgetClaimMatches(claimed) ||','false ||'),'yard-event-store-folds.test.ts'),
  ('claim-persisted',no_persisted_claim,'yard-event-store-folds.test.ts'),
  ('claim-boundary',no_boundary,'yard-event-store-folds.test.ts'),
+ ('uncertain-quote-digest',lambda s:replace(s,'reservation.quoteDigest === binding.quoteDigest &&','true &&'),'yard-event-store-folds.test.ts'),
+ ('uncertain-snapshot',lambda s:replace(s,'reservation.quoteId === binding.quoteId &&','reservation.quoteId === budgetReservation?.quoteId &&'),'yard-event-store-folds.test.ts'),
+ ('uncertain-execution-domain',no_uncertain_execution,'yard-event-store-folds.test.ts'),
+ ('uncertain-execution-agreement',lambda s:replace(s,'marked.executionDigest === stored?.executionDigest &&','true &&'),'yard-event-store-folds.test.ts'),
+ ('uncertain-known-claim',lambda s:replace(s,'!budgetExecutionClaimed && reservation.executionDigest === ""','reservation.executionDigest === ""'),'yard-event-store-folds.test.ts'),
 ]
 def run(name,mutate,expected):
  parent=Path(tempfile.mkdtemp(prefix=name+'-',dir=out));src=repo/'packages/broker';scratch=parent/'broker'
