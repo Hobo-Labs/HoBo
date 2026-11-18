@@ -1,12 +1,12 @@
 {
 	"schemaVersion": "hobo.deployment-offer/v1",
-	"offerId": "offer/388dcdadc01ccccd10efbd84212967040d043961d8a053a4c38fd17e9a196e27",
+	"offerId": "offer/9637c0da28dc17cef33928198dd59bc99f337c49a3cd5070f64f457b72a9825c",
 	"recipeId": "recipe.cloudflare.claimable-generated-report/v1",
 	"deploymentRef": "junction/recipe-cloudflare-claimable-generated-report-v1",
 	"topologyDigest": "sha256:9608b5ed6f62a60859396f905a03854d4ae1fa215952d17f85a394f6ebc7435c",
-	"resolutionDigest": "sha256:f56535792932b45034834cb6098f2ccadf3beb905b9367d2d7b3ccf96e845dff",
+	"resolutionDigest": "sha256:05dfa01e6f86425338c1318f021e400393ea17ad978c700cb0169b3a98d7aa6f",
 	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
-	"profileRegistryDigest": "sha256:4ad6cb0f734c95599f3863736d8da56eae97f43534e257af11f9ed7beb1480ca",
+	"profileRegistryDigest": "sha256:69afc5e32b8e616647925b138275fe37ca310b8a3df71ba60bba85eb6bc2882e",
 	"placements": [
 		{
 			"placementId": "report",
@@ -81,7 +81,7 @@
 	"signature": {
 		"algorithm": "test.detached-digest/v1",
 		"keyId": "test-key-1",
-		"payloadDigest": "sha256:d5c50ad2b394003b1e4215bd4f1a4ed36ff68e9bc5fabed87c633b96616740ad",
-		"signature": "sig:d5c50ad2b394003b"
+		"payloadDigest": "sha256:5963e0d7a37fd2cddffca512ba6fd624dd7673aa66dad25c5ebc7d8643fc3eb6",
+		"signature": "sig:5963e0d7a37fd2cd"
 	}
 }

@@ -37,6 +37,7 @@ export const capability = Object.freeze({
 
 	kv: Object.freeze({
 		keyValue: "kv.key-value/v1",
+		ephemeralState: "kv.ephemeral-state/v1",
 		redisCompatible: "kv.redis-compatible/v1",
 		valkey: "kv.valkey/v1",
 		durableObject: "kv.durable-object/v1",
