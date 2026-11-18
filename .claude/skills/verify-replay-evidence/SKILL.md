@@ -9,7 +9,7 @@ description: Verify that validated replay reports and divergence records remain 
 
 **Why:** Mutable evidence can describe different replay boundaries or event orders after it has already been checked.
 
-**Review baseline:** `f71262809c8d28edba15917daa1faa4df71c7160`.
+**Review baseline:** `ec2b83f6271c8666531b91d68edd452c96578edd`.
 
 ## Covered code and checks
 

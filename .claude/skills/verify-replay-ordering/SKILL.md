@@ -9,7 +9,7 @@ description: Verify replay canonical ordering, versioned digests, and legacy rep
 
 **Why:** Insertion order or machine locale must not change a new digest, and a digest must not silently be read under a different encoding.
 
-**Review baseline:** `f71262809c8d28edba15917daa1faa4df71c7160`.
+**Review baseline:** `ec2b83f6271c8666531b91d68edd452c96578edd`.
 
 ## Covered code and checks
 

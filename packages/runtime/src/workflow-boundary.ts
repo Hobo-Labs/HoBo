@@ -4,7 +4,14 @@ import {
 	isJsonBoolean,
 	isJsonNumber,
 	isJsonString,
+	type JsonValue,
 } from "./json.js";
+
+export function isNonEmptyPrimitiveString(
+	value: JsonValue | undefined,
+): value is string {
+	return Object(value) !== value && isJsonString(value) && value.length > 0;
+}
 
 export function requireWorkflowRunId(runId: string): string {
 	if (!isJsonString(runId) || String(runId) !== runId || runId.length === 0)

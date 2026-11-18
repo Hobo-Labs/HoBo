@@ -96,7 +96,7 @@ stateDiagram-v2
   s1 --> s4: start execution
 ```
 
-`resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
+`resume` requires an existing `run.Started` and the original JSON-normalized input. Version-three records must contain the input, workflow name and seed; present names and seeds in older records must also be valid. Old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. New definitions and engine seeds require nonempty primitive strings. Start, resume and replay adapters capture the definition's name, callback, tool bindings and capabilities before waiting, although the application callback and its external state remain trusted. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
 `replayRun` requires the recorded input and checks the recorded workflow name and
 seed. Version-three records must contain all three; older records without a name

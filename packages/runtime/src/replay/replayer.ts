@@ -7,6 +7,7 @@ import {
 } from "../json.js";
 import {
 	captureWorkflowInput,
+	isNonEmptyPrimitiveString,
 	requireWorkflowRunId,
 } from "../workflow-boundary.js";
 import { canonicalizationVersion } from "./canonicalization.js";
@@ -72,11 +73,8 @@ export async function replayRun<S, A>(
 		!workflowName
 	)
 		throw new TypeError("workflow name must be a non-empty string");
-	if (
-		suppliedSeed !== undefined &&
-		(!isJsonString(suppliedSeed) || String(suppliedSeed) !== suppliedSeed)
-	)
-		throw new TypeError("replay seed must be a string");
+	if (suppliedSeed !== undefined && !isNonEmptyPrimitiveString(suppliedSeed))
+		throw new TypeError("replay seed must be a non-empty string");
 	const streamId = `run/${id}`;
 	const events = await store.readStream(streamId);
 	const recordedVector = seqVectorForVersion(events, digestVersion);
@@ -106,15 +104,14 @@ export async function replayRun<S, A>(
 		throw new Error(`workflow name differs from run.Started for ${runId}`);
 	const recordedSeed = started.data.seed;
 	if (
-		(recordedSeed !== undefined &&
-			(!isJsonString(recordedSeed) || String(recordedSeed) !== recordedSeed)) ||
+		(recordedSeed !== undefined && !isNonEmptyPrimitiveString(recordedSeed)) ||
 		(version === 3 && recordedSeed === undefined) ||
 		(suppliedSeed !== undefined &&
 			recordedSeed !== undefined &&
 			suppliedSeed !== recordedSeed)
 	)
 		throw new Error(`workflow seed differs from run.Started for ${runId}`);
-	const seed = isJsonString(recordedSeed)
+	const seed = isNonEmptyPrimitiveString(recordedSeed)
 		? recordedSeed
 		: (suppliedSeed ?? `run-${id}`);
 	const tree =
@@ -123,7 +120,7 @@ export async function replayRun<S, A>(
 			: undefined;
 	let treeCursor = 0;
 
-	let state = initialState.call(workflow, input);
+	let state = Function.prototype.call.call(initialState, workflow, input);
 	const stepResults = new Map<string, JsonValue>();
 	const hookResults = new Map<string, JsonValue>();
 	const timerResults = new Map<string, { delayMs: number }>();
@@ -241,7 +238,13 @@ export async function replayRun<S, A>(
 		},
 	};
 
-	state = await execute.call(workflow, ctx, state, input);
+	state = await Function.prototype.call.call(
+		execute,
+		workflow,
+		ctx,
+		state,
+		input,
+	);
 	if (tree) {
 		const remaining = tree[treeCursor];
 		if (remaining) {
