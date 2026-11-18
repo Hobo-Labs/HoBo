@@ -31,9 +31,9 @@ an uncaught error included (`src/owned-temp-dir.ts`). The `hobo` binary instead 
 persistent data directory under `HOBO_HOME`; `hobo-mcp` and `createComposedHoboCli()`
 use the temporary default. A `dataDir` you pass is yours and is never removed. As entry
 points, the binaries also remove owned temporary directories (and the live Pulumi lane's
-workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT (`removeOwnedDirsOnSignals`). Another
-entry point that composes this CLI in its own process asks for the same removal through
-that export of `src/cli.ts`.
+workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT (`removeOwnedDirsOnSignals`). A host
+that composes this CLI in its own process can opt in to the same removal through that
+export of `src/cli.ts`.
 When nothing else in the process listens for the signal, the directories are removed and
 the signal raised again, so the process still ends by it (status 128+n). When something
 else handles the signal (`hobo serve control` stops gracefully on SIGTERM and SIGINT and
