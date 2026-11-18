@@ -14,6 +14,16 @@ export {
 	type ReactiveFact,
 } from "./events.js";
 export {
+	createOptimisticSubscription,
+	type OptimisticAudit,
+	type OptimisticPatch,
+	OptimisticSeqRegressionError,
+	type OptimisticSequence,
+	type OptimisticSubscription,
+	type OptimisticView,
+	parseOptimisticSequence,
+} from "./optimistic-subscription.js";
+export {
 	SUBSCRIPTION_GATEWAY_INTERFACE,
 	SUBSCRIPTION_GATEWAY_PORT,
 } from "./port.js";

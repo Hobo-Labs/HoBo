@@ -37,6 +37,17 @@ Each pushed frame includes `streamSeqs`. A slow reader leaves at most one latest
 snapshot pending while the Reactor retries backpressure; it receives the latest
 state and stream positions when it resumes.
 
+`createOptimisticSubscription` accepts those frames and overlays pending command
+patches on a copy of the authoritative value. Pass each command's expected
+stream positions as `seqFloor`; a frame that reaches every position reconciles
+the patch. Rejecting a command removes its patch and reapplies the remaining
+ones. Patches whose sequence floors are ordered run in that order; otherwise the
+earliest submitted eligible patch runs first. Patch functions must be deterministic and
+free of side effects because they can run again after each frame or rejection.
+The visible `seq` and `streamSeqs` always come from the authoritative frame.
+The subscription rejects regressing frames and keeps its previous state if a
+patch throws while a change is being evaluated. Its audit log is in memory.
+
 `maxBufferedEvents` and `maxTrackedStreams` each default to 10,000. Exceeding a
 limit closes the subscription and rejects pending waits. Closing a subscription
 also rejects pending waits; a failed initial listener or replay cleans up the
