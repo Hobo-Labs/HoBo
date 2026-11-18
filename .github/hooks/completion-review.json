@@ -4,8 +4,8 @@
     "agentStop": [
       {
         "type": "command",
-        "bash": "node --experimental-strip-types scripts/agent-completion-hook.mts",
-        "powershell": "node --experimental-strip-types scripts/agent-completion-hook.mts",
+        "bash": "python3 scripts/agent_completion_hook.py",
+        "powershell": "python scripts/agent_completion_hook.py",
         "cwd": ".",
         "timeoutSec": 10
       }
