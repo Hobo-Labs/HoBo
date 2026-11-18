@@ -1,6 +1,5 @@
 /**
- * Load RivetKit from CJS or ESM. Upstream `require("rivetkit")` is broken
- * (`import.meta` in the published .cjs). Dynamic import works in both.
+ * Load the pinned RivetKit release from CJS or ESM using dynamic import.
  */
 
 export type RivetkitModule = typeof import("rivetkit");
