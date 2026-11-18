@@ -9,7 +9,7 @@ description: Verify exclusive and identity-bound component loads in the local ho
 
 **Why:** Replacing tracked state during a second or reentrant load can lose the first instance's leases and retain state associated with a different instance.
 
-**Review baseline:** `ee1c719008d8dc6e551667256cd7896ab2d52fa9`.
+**Review baseline:** `57a7f0982c4901ca6f9c89b31dee05073fc9b7c5`.
 
 ## Covered code and checks
 

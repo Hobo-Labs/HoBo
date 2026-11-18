@@ -88,6 +88,8 @@ The local-hosting and self-hosted broker integration tests deploy temporary copi
 
 The direct Yard generation residency model checks nine bounded states across planner and saga entry points. Its five-state projection hides four same-label steps and assumes the supplied residency tag remains fixed through the abstract provider call.
 
+The local component-load model checks 78 bounded states for duplicate and reentrant loads, captured leases and engine identity.
+
 The exact Camp selection model checks 28 bounded states across quote and deployment paths. Its seven-state projection hides eight same-label steps and assumes the other admission checks succeed.
 
 The embedded Camp handoff model checks 47 bounded states across input capture, caller edits, broker approval and return. Its six-state projection hides 36 same-label steps and trusts the broker's Camp check.
