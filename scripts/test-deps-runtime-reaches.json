@@ -20,6 +20,16 @@
 			"why": "links packages/bindles into a generated project's node_modules/@hobo, compiles the generated code against its dist/ types and imports it, which imports it by name"
 		},
 		{
+			"from": "packages/cli/test/codegen-resource-aliases.test.ts",
+			"needs": ["@hobo/bindles#build"],
+			"why": "loads packages/bindles/dist/index.js in a generated bindle"
+		},
+		{
+			"from": "packages/cli/test/collect-resource-identities.test.ts",
+			"needs": ["@hobo/bindles#build"],
+			"why": "loads packages/bindles/dist/index.js in a generated bindle"
+		},
+		{
 			"from": "packages/cli/test/typescript-project-codegen-ambient-and-aliases.test.ts",
 			"needs": ["@hobo/core#build", "@hobo/runtime#build"],
 			"why": "links packages/runtime and packages/core by a name it computes into a generated project's node_modules/@hobo, compiles the generated code against their dist/ types and imports it, which imports them by name"
@@ -38,6 +48,11 @@
 			"from": "packages/patterns/test/yard-merge.test.ts",
 			"needs": ["@hobo/camps#build", "@hobo/yards#build"],
 			"why": "links the camps and yards packages into the generated workspace and executes the rendered fragment"
+		},
+		{
+			"from": "src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools/test/codegen-pipeline.test.ts",
+			"needs": ["@hobo/schema-tools#build"],
+			"why": "runs the draft codegen against copied fixture packages; the draft codegen imports generated-typescript from the built production schema-tools package"
 		}
 	]
 }
