@@ -1,8 +1,3 @@
-// The `hobo.freight-manifest/v1` boundary (D2). Parse, don't validate: every
-// manifest that reaches the ledger came through `parseFreightManifest`, which
-// either returns a normalized FreightManifestRecord (subject defaulted,
-// artifacts and provenance in canonical order) or a typed refusal. Any build
-// system writes the same document with `writeFreightManifest`.
 import { createHash } from "node:crypto";
 import { clone, fromJson, isMessage, toJson } from "@bufbuild/protobuf";
 import {
@@ -25,7 +20,6 @@ const BINDLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$/;
 const LABEL_KEY_PATTERN = /^[a-z0-9]([a-z0-9._/-]{0,62}[a-z0-9])?$/;
 const COMMIT_PATTERN = /^[0-9a-f]{7,64}$/;
 const CONTROL_CHARS = /\p{Cc}/u;
-// public-contract: artifact ecosystems a manifest may name (cd.proto ArtifactRef.ecosystem).
 export const ARTIFACT_ECOSYSTEMS = Object.freeze([
 	"oci",
 	"npm",
@@ -44,9 +38,6 @@ const MAX_LABELS = 64;
 const MAX_TEXT = 1024;
 const MAX_MANIFEST_BYTES = 1_048_576;
 
-// Credential shapes that must never enter a record (I9). Matching is a
-// refusal, never a redaction: a record that held a secret cannot be repaired
-// by the ledger, only by the publisher.
 const SECRET_PATTERNS: readonly RegExp[] = [
 	/[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@/i,
 	/\bgh[pousr]_[A-Za-z0-9]{30,}\b/,
@@ -58,7 +49,6 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 	/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
 ];
 
-/** Thrown by `writeFreightManifest` for a manifest the parse boundary would refuse. */
 export class FreightManifestError extends Error {
 	readonly reasons: readonly ReasonRecord[];
 	constructor(reasons: readonly ReasonRecord[]) {
@@ -274,7 +264,6 @@ function byKey<T>(key: (item: T) => string): (a: T, b: T) => number {
 	};
 }
 
-/** Normalized copy: subject defaulted to BINDLE, artifacts by name, provenance by statement digest. */
 function normalize(manifest: FreightManifestRecord): FreightManifestRecord {
 	const copy = clone(FreightManifestRecordSchema, manifest);
 	if (copy.subject === FreightSubject.UNSPECIFIED)
@@ -296,7 +285,6 @@ function checked(
 		: { ok: true, value: normalize(manifest) };
 }
 
-/** Parse an untrusted manifest (bytes, JSON text, or a record) into the canonical form, or refuse. */
 export function parseFreightManifest(
 	input: FreightManifestInput,
 ): Outcome<FreightManifestRecord> {
@@ -307,7 +295,6 @@ export function parseFreightManifest(
 	return decoded.ok ? checked(decoded.value) : decoded;
 }
 
-/** The canonical `hobo.freight-manifest/v1` document (sorted keys, no whitespace). */
 export function writeFreightManifest(
 	manifest: FreightManifestRecord,
 ): Uint8Array {
@@ -318,13 +305,6 @@ export function writeFreightManifest(
 	);
 }
 
-/**
- * Freight id and alias. The id covers what makes Freight *the same bytes for
- * the same declaration*: schema, subject, Bindle, declaration hash, and each
- * artifact's name, kind and digest. Coordinates, labels, source and provenance
- * are recorded metadata, so the same build reached through any ingress path
- * (or a digest-preserving mirror) is one Freight.
- */
 export function freightIdentity(
 	manifest: FreightManifestRecord,
 ): Readonly<{ freightId: FreightId; alias: string }> {
@@ -349,7 +329,6 @@ export function freightIdentity(
 	const hex = createHash("sha256")
 		.update(canonicalJson(identity))
 		.digest("hex");
-	// SAFETY: the brand is minted here, from a sha256 over the canonical identity.
 	const freightId = `sha256:${hex}` as FreightId;
 	return Object.freeze({ freightId, alias: freightAlias(freightId) });
 }

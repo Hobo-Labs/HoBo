@@ -1,11 +1,3 @@
-// D7 lowering: a progressive strategy is lowered per Camp onto the traffic
-// offerings its provider declares, ranked edge.canary → lb.weighted →
-// dns.weighted → inprocess.weighted. The chosen rung (and every rung skipped
-// above it) is recorded in rollout.Lowered. Nothing is ever downgraded
-// silently: a progressive strategy with no realizable rung, or with a fallback
-// that policy forbids, is refused with `progressive-unsupported` (I6).
-//
-// Everything here is pure: no clock, network or RNG (I8).
 import { create } from "@bufbuild/protobuf";
 import type { TrafficRoutingOfferingId } from "@hobo/core";
 import {
@@ -19,7 +11,6 @@ import { CD_RAMP_DEFAULTS, PROGRESSIVE_UNSUPPORTED } from "../events.js";
 import type { CampId, Outcome } from "../ports.js";
 import { reason, refuse } from "./reasons.js";
 
-// public-contract: the D7 traffic rung ladder, best first.
 export const TRAFFIC_LADDER: readonly TrafficRoutingOfferingId[] =
 	Object.freeze([
 		"edge.canary",
@@ -28,26 +19,19 @@ export const TRAFFIC_LADDER: readonly TrafficRoutingOfferingId[] =
 		"inprocess.weighted",
 	]);
 
-// public-contract: obligation kinds the orchestrator honours (set by the gate).
 export const ROLLOUT_OBLIGATIONS = Object.freeze({
-	/** Policy forbids any rung below the first (edge.canary). */
 	noFallback: "rollout.no-fallback",
-	/** Every stage boundary needs an approval through the ApprovalPort. */
 	stageApproval: "rollout.stage-approval",
-	/** Canary capacity must be reserved through the hosting budget authority. */
 	hostingBudget: "hosting-budget",
-	/** Names the experiment an EXPERIMENT rollout holds on (obligation id). */
 	experiment: "experiment",
 } as const);
 
-/** UNSPECIFIED lowers to CANARY: the smallest blast radius, never a silent all-at-once. */
 export function effectiveStrategy(strategy: RolloutStrategy): RolloutStrategy {
 	return strategy === RolloutStrategy.UNSPECIFIED
 		? RolloutStrategy.CANARY
 		: strategy;
 }
 
-/** Strategies that run two versions side by side and so need a traffic rung. */
 export function needsTraffic(strategy: RolloutStrategy): boolean {
 	return (
 		strategy === RolloutStrategy.CANARY ||
@@ -56,7 +40,6 @@ export function needsTraffic(strategy: RolloutStrategy): boolean {
 	);
 }
 
-/** Canary-vs-baseline comparisons are meaningful only while traffic is split. */
 export function cohortAware(
 	strategy: RolloutStrategy,
 	percent: number,
@@ -84,12 +67,6 @@ function defaultsFor(strategy: RolloutStrategy): readonly number[] {
 	return [100];
 }
 
-/**
- * Stage percents for a strategy. Empty input takes CD_RAMP_DEFAULTS. A
- * progressive ramp that stops short of 100 gets a final 100 stage, so every
- * rollout ends fully shifted and verified (an experiment holds at its last
- * split until concluded, then goes to 100).
- */
 export function stagePercentsFor(
 	strategy: RolloutStrategy,
 	requested: readonly number[],
@@ -117,7 +94,6 @@ export function stagePercentsFor(
 	};
 }
 
-/** Lower one Camp: pick the best realizable rung, or record a refusal. */
 export function lowerCamp(
 	input: Readonly<{
 		campId: CampId;

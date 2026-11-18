@@ -1,7 +1,3 @@
-// Pure derivation of a Camp's Station-owned conditions and automatic taints
-// (D19). Inputs are recorded facts and an injected `atMs`; no clock, network
-// or randomness (I8). Agent-reported facts can narrow (a NO_PLACE taint via
-// inconsistent claims) but never add NO_RUN (I19, §10).
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	type CampClaimRecord,
@@ -22,21 +18,16 @@ import type { CampTopology } from "../ports.js";
 import { campJurisdictions } from "./selector.js";
 import { canonicalJson, iso } from "./support.js";
 
-/** Keys of the taints the inventory adds and clears by itself. */
 export const AUTO_TAINTS = Object.freeze({
 	unreachable: "hobo.cd/unreachable",
 	leaseLost: "hobo.cd/lease-lost",
 	credentialInvalid: "hobo.cd/credential-invalid",
 	claimsInconsistent: "hobo.cd/claims-inconsistent",
-	/** NO_RUN added by a Rail-permitted rule; cleared only by an operator. */
 	failed: "hobo.cd/failed",
 });
 
-/** Prefix reserved for automatic taints; operators may not add these keys. */
-// public-contract: reserved taint-key namespace operators may not write (persisted taint keys).
 export const RESERVED_TAINT_PREFIX = "hobo.cd/";
 
-// public-contract: actor recorded as `addedBy` on automatic taints in journaled events.
 export const SYSTEM_ACTOR = "system:cd-inventory";
 
 const AUTO_NO_PLACE = new Set<string>([
@@ -50,7 +41,6 @@ export function isAutomaticNoPlace(key: string): boolean {
 	return AUTO_NO_PLACE.has(key);
 }
 
-/** Condition types the Station derives itself; reports from other sources never set them. */
 export const DERIVED_TYPES: ReadonlySet<CampConditionType> = new Set([
 	CampConditionType.REACHABLE,
 	CampConditionType.LEASED,
@@ -58,21 +48,13 @@ export const DERIVED_TYPES: ReadonlySet<CampConditionType> = new Set([
 	CampConditionType.CLAIMS_CONSISTENT,
 ]);
 
-/**
- * Station-observed activity for one Camp, as epoch ms. Every field is set
- * only by Station-side evidence: reconcile events the Station appended,
- * Station-sourced reports, or SVID issuance and refresh outcomes.
- */
 export type ContactState = Readonly<{
 	lastContactMs?: number | undefined;
 	unreachableReportedMs?: number | undefined;
 	lastLeaseMs?: number | undefined;
 	leaseLostMs?: number | undefined;
-	/** Expiry of the last successfully issued or refreshed SVID. */
 	credentialExpiresMs?: number | undefined;
-	/** Set by a failed refresh; cleared by the next success. */
 	credentialFailedMs?: number | undefined;
-	/** Last credential report of either kind; absent when the Camp holds no SVID (conductor mode). */
 	credentialReportedMs?: number | undefined;
 }>;
 
@@ -164,11 +146,6 @@ function credential(contact: ContactState, atMs: number): Derived | undefined {
 
 const normalize = (value: string): string => value.trim().toLowerCase();
 
-/**
- * Claims that contradict declared topology, as `name=value`, sorted. Claims
- * without a declared counterpart (platform, version, capacity hints) never
- * conflict.
- */
 export function claimConflicts(
 	claims: readonly CampClaimRecord[],
 	topology: CampTopology,
@@ -239,10 +216,6 @@ export function sortTaints(taints: readonly TaintRecord[]): TaintRecord[] {
 	);
 }
 
-/**
- * Independent negative signals: distinct sources currently reporting a FALSE
- * condition. Agent self-reports (RECONCILER) never count.
- */
 export function negativeSignals(
 	conditions: readonly CampConditionRecord[],
 ): ReadonlySet<SignalSource> {
@@ -259,7 +232,6 @@ export function negativeSignals(
 	return sources;
 }
 
-/** True when a Rail rule permits an automatic NO_RUN for these conditions. */
 export function noRunPermitted(
 	conditions: readonly CampConditionRecord[],
 	failover: RailFailoverRecord | undefined,
@@ -280,18 +252,12 @@ export function defaultStatus(topology: CampTopology): CampStatusRecord {
 	});
 }
 
-/** Status equality ignoring `updated_at`. */
 export function sameStatus(a: CampStatusRecord, b: CampStatusRecord): boolean {
 	const strip = (status: CampStatusRecord) =>
 		canonicalJson(toJson(CampStatusRecordSchema, { ...status, updatedAt: "" }));
 	return strip(a) === strip(b);
 }
 
-/**
- * Recompute Station-derived conditions and automatic taints over a status.
- * Reported conditions from other sources, claims, management and manual
- * taints are kept as they are.
- */
 export function deriveStatus(
 	input: Readonly<{
 		previous: CampStatusRecord;

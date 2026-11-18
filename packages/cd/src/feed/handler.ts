@@ -1,21 +1,3 @@
-// The delivery feed (D5, I3, I24): the Station side of agent-mode pull
-// reconciliation, served under `/v1/cd/`. The agent always dials out; the
-// Station never opens a connection to an agent and never holds a target
-// credential. Every route except enrollment and first activation requires a
-// key-bound JWT-SVID plus a single-use DPoP proof, verified by
-// AgentEnrollment.verify (revocation is effective on the next request).
-//
-//   POST enrollments          bootstrap token + public JWK → PENDING / ACCEPTED
-//   POST svid/refresh         DPoP only (activate) or SVID + DPoP (refresh)
-//   POST leases               claim the per-Camp lease
-//   POST leases/renew         renew it (fenced)
-//   POST leases/release       release it (fenced)
-//   GET  feed                 SSE DeliveryFeedFrames after the committed
-//                             checkpoint (or Last-Event-ID); heartbeat;
-//                             long-poll; bounded frames per response
-//   GET  blobs/{digest}       a resolved-set blob referenced by an accepted Camp
-//   POST observations         fenced status report
-//   POST checkpoints          fenced, monotonic checkpoint
 import {
 	fromJson,
 	type JsonValue as PbJsonValue,
@@ -89,11 +71,8 @@ export type DeliveryFeedDeps = CdBase & {
 	readonly inventory: CampInventory;
 	readonly topology: TopologyReader;
 	readonly telemetry?: TelemetrySink;
-	/** SSE heartbeat interval; default CD_DEFAULTS.feedHeartbeatMs. */
 	readonly heartbeatMs?: number;
-	/** Long-poll bound of one feed response; default CD_DEFAULTS.feedLongPollMs. */
 	readonly longPollMs?: number;
-	/** Back-pressure: frames per response; default 64. */
 	readonly maxFramesPerResponse?: number;
 };
 
@@ -154,7 +133,6 @@ export function createDeliveryFeedHandler(
 				`${record.reconcilerId} is not accepted for Camp ${campId}`,
 				campId,
 			);
-		// SAFETY: membership in the accepted Camps was checked above.
 		return { ok: true, value: campId as CampId };
 	}
 
@@ -172,7 +150,6 @@ export function createDeliveryFeedHandler(
 		return camp.ok ? { ok: true, value: true } : camp;
 	}
 
-	// ── Routes ───────────────────────────────────────────────────────────
 	async function enroll(body: WireObject): Promise<FeedResponse> {
 		const token = text(body.token);
 		const publicJwk = body.publicJwk;
@@ -192,7 +169,6 @@ export function createDeliveryFeedHandler(
 			);
 		}
 		const result = await d.enrollment.enroll(
-			// SAFETY: a JSON object from the wire; parsePublicJwk in the enrollment narrows it.
 			{ token, publicJwk: publicJwk as JsonObject, claims },
 			ctxFor({ kind: "agent", id: "bootstrap" }),
 		);
@@ -239,7 +215,6 @@ export function createDeliveryFeedHandler(
 				feedRefusal("request-invalid", "activation needs reconcilerId").reasons,
 			);
 		const activated = await d.enrollment.activate(
-			// SAFETY: the enrollment loads the record by this id or refuses.
 			{ reconcilerId: reconcilerId as ReconcilerId, dpopProof: proof },
 			ctxFor({ kind: "agent", id: `cd-reconciler:${reconcilerId}` }),
 		);
@@ -271,7 +246,6 @@ export function createDeliveryFeedHandler(
 			);
 		const camp = servesCamp(record, campId);
 		if (!camp.ok) return refuse(camp.reasons);
-		// SAFETY: the reconciler id is the authenticated enrollment's.
 		const lease = await journal.claim({
 			reconcilerId: record.reconcilerId as ReconcilerId,
 			campId: camp.value,
@@ -513,7 +487,6 @@ export function createDeliveryFeedHandler(
 			return encoder.encode(encodeFrame(built.position, frameJson(built)));
 		}
 		try {
-			// Nothing newer than the checkpoint exists: re-deliver the current change once per lease.
 			const nothingNewer =
 				input.head === undefined ||
 				(input.after !== undefined && input.head <= input.after);
@@ -574,7 +547,6 @@ export function createDeliveryFeedHandler(
 		}
 	}
 
-	// ── Dispatch ─────────────────────────────────────────────────────────
 	async function route(
 		request: FeedRequest,
 		signal: AbortSignal,

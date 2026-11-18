@@ -1,12 +1,8 @@
-// Selector parsing and matching over declared Camp topology (D20). Selectors
-// read only declared facts (labels, env type, declared Yard regions, ids);
-// observed claims never take part (I19).
 import { type JurisdictionId, jurisdictionsForRegion } from "@hobo/core";
 import type { ReasonRecord, SelectorRecord } from "../_generated/cd_pb.js";
 import type { CampTopology } from "../ports.js";
 import { reason } from "./support.js";
 
-/** A selector whose fields were checked at a parse boundary. */
 export type ParsedSelector = SelectorRecord & {
 	readonly __brand: "cd.ParsedSelector";
 };
@@ -25,10 +21,6 @@ export function isEmptySelector(selector: SelectorRecord | undefined): boolean {
 	);
 }
 
-/**
- * Parse a selector. `bindles` cannot be evaluated against Camp topology, so a
- * selector naming them is refused rather than silently matching nothing.
- */
 export function parseSelector(
 	selector: SelectorRecord | undefined,
 	path: string,
@@ -76,11 +68,9 @@ export function parseSelector(
 		}
 	}
 	if (reasons.length > 0) return { ok: false, reasons };
-	// SAFETY: every field was checked above; the brand records that.
 	return { ok: true, value: selector as ParsedSelector };
 }
 
-/** Jurisdictions of every declared region, sorted and unique. */
 export function campJurisdictions(
 	topology: CampTopology,
 ): readonly JurisdictionId[] {
@@ -92,12 +82,6 @@ export function campJurisdictions(
 	return [...all].sort();
 }
 
-/**
- * True when declared topology satisfies every non-empty selector field (AND
- * across fields). `jurisdictions` needs every declared region to sit in a
- * listed jurisdiction; a Camp with no declared region never matches it.
- * An empty selector matches every Camp.
- */
 export function matchesSelector(
 	selector: SelectorRecord | undefined,
 	topology: CampTopology,

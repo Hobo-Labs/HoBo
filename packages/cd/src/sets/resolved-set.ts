@@ -1,12 +1,3 @@
-// Resolved-set blobs (B3, B4): a Set never inlines its plan in an event. The
-// canonical, secret-free ResolvedDeploymentSet is stored content-addressed in
-// the ArtifactStore and verified on every read.
-//
-// Parse, don't validate: `verifyResolvedSet` and `decodeResolvedSetBlob` are the
-// only constructors of `CanonicalResolvedSet`, the derived type every other
-// function in this module accepts. A value of that type has verified hashes,
-// closed dependencies, no plaintext secrets, and key-order-independent content
-// identity.
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -44,7 +35,6 @@ export { canonicalJson } from "./json.js";
 
 declare const canonicalBrand: unique symbol;
 
-/** A verified ResolvedDeploymentSet in canonical key order. */
 export type CanonicalResolvedSet = ResolvedDeploymentSet & {
 	readonly [canonicalBrand]: "cd.CanonicalResolvedSet";
 };
@@ -148,7 +138,6 @@ function isProgressiveHints<T>(value: T): value is T & ProgressiveHints {
 	);
 }
 
-/** Parse an untrusted resolved-set document into the @hobo/cloud domain type. */
 function parseResolvedDocument(document: JsonValue): ResolvedDeploymentSet {
 	if (!isJsonObject(document))
 		throw invalid("resolved set must be a JSON object");
@@ -258,17 +247,11 @@ function checkDependencies(plan: DeploymentPlan, subject: string): void {
 	}
 }
 
-/** Rebuild in sorted key order so content identity is independent of key order (HOBO-50). */
 function canonicalize(document: ResolvedDeploymentSet): CanonicalResolvedSet {
 	const sorted = parseResolvedDocument(sortDeep(toJsonValue(document)));
-	// SAFETY: brand applied after verification; rebuild recomputes both hashes.
 	return Object.freeze(rebuild(sorted)) as CanonicalResolvedSet;
 }
 
-/**
- * Verify an in-memory resolved set and return it in canonical key order.
- * Order: structure → secret-free → closed dependencies → the producer's own hashes.
- */
 export function verifyResolvedSet(
 	input: ResolvedDeploymentSet,
 ): CanonicalResolvedSet {
@@ -303,7 +286,6 @@ export function encodeResolvedSetBlob(
 
 function parseBlobJson(bytes: Uint8Array, subject: string): JsonValue {
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		return JSON.parse(
 			new TextDecoder("utf-8", { fatal: true }).decode(bytes),
 		) as JsonValue;
@@ -312,7 +294,6 @@ function parseBlobJson(bytes: Uint8Array, subject: string): JsonValue {
 	}
 }
 
-/** Decode a stored blob, refusing any digest/size mismatch before parsing. */
 export function decodeResolvedSetBlob(
 	bytes: Uint8Array,
 	expected: Readonly<{ digest: string; size?: number }>,
@@ -353,11 +334,6 @@ function changeKind(present: { was: boolean; now: boolean }): ChangeKind {
 	return ChangeKind.UPDATE;
 }
 
-/**
- * Resource-level diff between two resolved sets (HOBO-50 add/update/remove),
- * sorted by resource name. A resource is updated when its plan node or its
- * Matching selection changed.
- */
 export function diffResolvedSets(
 	before: ResolvedDeploymentSet | undefined,
 	after: ResolvedDeploymentSet,
@@ -393,7 +369,6 @@ export function diffResolvedSets(
 	return changes;
 }
 
-/** Names present in a resolved set (used to check Delta changes against a base). */
 export function resourceNames(
 	resolved: ResolvedDeploymentSet | undefined,
 ): ReadonlySet<string> {

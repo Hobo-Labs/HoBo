@@ -1,8 +1,3 @@
-// Pure change-window evaluation (D10, I17). FREEZE dominates ALLOW; an
-// unexpired override lifts one window for the Camps it names; rollback is
-// blocked only by a FREEZE that forbids it. Anything that cannot be decided
-// (an unknown window name, a rule that cannot be expanded) closes the window
-// for changes: fail closed.
 import {
 	type ChangeWindowRecord,
 	type ReasonRecord,
@@ -19,20 +14,14 @@ import {
 } from "./rrule.js";
 import { isTimeZone } from "./zoned.js";
 
-// public-contract: Camp label keys a window selector's jurisdiction and Bindle
-// dimensions are read from (WindowEvaluation input carries labels only).
 export const WINDOW_LABELS = Object.freeze({
 	jurisdiction: "hobo.cd/jurisdiction",
 	bindle: "hobo.cd/bindle",
 } as const);
 
-// public-contract: evaluation bounds.
 export const WINDOW_LIMITS = Object.freeze({
-	/** Longest single occurrence. */
 	maxDurationMs: 366 * 86_400_000,
-	/** How far ahead `nextOpenAtMs` searches. */
 	nextOpenHorizonMs: 366 * 86_400_000,
-	/** Occurrences per window considered when searching for the next opening. */
 	maxBoundaryOccurrences: 2_000,
 } as const);
 
@@ -40,7 +29,6 @@ const SLUG = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const TIMESTAMP =
 	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
 
-// domain-view: parse-don't-validate derived type of ChangeWindowRecord (cd.proto) with its rule expanded and durations as numbers.
 export type CompiledWindow = Readonly<{
 	record: ChangeWindowRecord;
 	name: string;
@@ -51,7 +39,6 @@ export type CompiledWindow = Readonly<{
 	selector?: SelectorRecord | undefined;
 }>;
 
-/** An override in force: lifts `window` for `campIds` until `expiresAtMs`. */
 export type ActiveOverride = Readonly<{
 	window: string;
 	campIds: readonly string[];
@@ -67,19 +54,12 @@ export type EvaluationInput = Readonly<{
 	intent: DeltaIntent;
 }>;
 
-/** Epoch ms of an RFC 3339 timestamp, or undefined. */
 export function parseTimestamp(value: string): number | undefined {
 	if (!TIMESTAMP.test(value)) return undefined;
 	const ms = Date.parse(value);
 	return Number.isFinite(ms) ? ms : undefined;
 }
 
-/**
- * Parse a ChangeWindowRecord into its compiled form, reporting every problem
- * at once. Single-occurrence windows use [starts_at, ends_at) (or
- * starts_at + duration_ms); recurring windows use duration_ms, else the
- * length of the first occurrence (ends_at − starts_at).
- */
 export function compileWindow(
 	record: ChangeWindowRecord,
 ): Outcome<CompiledWindow> {
@@ -179,7 +159,6 @@ export function compileWindow(
 	return { ok: true, value: compiled };
 }
 
-/** End of an occurrence containing `atMs`, or undefined when none does. */
 export function activeUntil(
 	window: CompiledWindow,
 	atMs: number,
@@ -195,12 +174,6 @@ export function activeUntil(
 	return end;
 }
 
-/**
- * Does a selector cover the Camp? Every non-empty dimension must match. A
- * dimension the input cannot answer (no jurisdiction or Bindle label) is
- * resolved against the window: it matches for a FREEZE and not for an ALLOW,
- * so uncertainty always narrows what is permitted.
- */
 export function selectorCovers(
 	selector: SelectorRecord | undefined,
 	kind: CompiledWindow["kind"],
@@ -240,14 +213,8 @@ function isEmptySelector(selector: SelectorRecord | undefined): boolean {
 	);
 }
 
-/**
- * Windows that apply to the Camp: those the node names (narrowed by their
- * selector), plus any window with a non-empty selector that covers the Camp.
- * A window with an empty selector applies only where it is named.
- */
 export type ApplicableWindows = Readonly<{
 	applicable: readonly CompiledWindow[];
-	/** Named windows with no definition: treated as closed. */
 	unknown: readonly string[];
 }>;
 
@@ -350,12 +317,10 @@ function boundaries(
 	return [...out].sort((a, b) => a - b);
 }
 
-/** Evaluate the windows that apply to one Camp at one instant for one intent. */
 export function evaluateWindows(
 	windows: ReadonlyMap<string, CompiledWindow>,
 	overrides: readonly ActiveOverride[],
 	input: EvaluationInput,
-	/** Windows the journal holds but cannot decode: closed for every Camp. */
 	unreadable: readonly string[] = [],
 ): WindowEvaluation {
 	const applicableSet = applicableWindows(windows, input);

@@ -1,7 +1,3 @@
-// Pure availability (D4, D21, I13, I16): which Freight a node may receive,
-// through which sources, upstream nodes or approvals, and since when. The
-// controller gathers the facts (qualifications, approvals, env.Promoted times,
-// placement decisions); this module only decides.
 import {
 	Availability,
 	type FreightApprovedRecord,
@@ -15,10 +11,8 @@ import { CD_DEFAULTS } from "../events.js";
 import { effectiveAvailability, isPlaced, subjectOf } from "./graph.js";
 import { ORIGIN_SOURCES } from "./reasons.js";
 
-// public-contract: the `via` entry naming an approval (FreightAvailabilityRecord).
 export const VIA_APPROVAL = "approval" as const;
 
-/** The Camps of a placed node's latest decision, and those in mandatory groups. */
 export type PlacedView = Readonly<{
 	campIds: readonly string[];
 	mandatoryCampIds: readonly string[];
@@ -29,16 +23,13 @@ export type FreightFacts = Readonly<{
 	usable: boolean;
 	qualifications: readonly FreightQualifiedRecord[];
 	approvals: readonly FreightApprovedRecord[];
-	/** Latest env.Promoted time of this Freight per Camp. */
 	promotedAt: ReadonlyMap<string, number>;
 }>;
 
 export type NodeAvailability = Readonly<{
 	via: readonly string[];
 	availableAtMs: number;
-	/** Available through sources or upstream qualification (not only approvals). */
 	lineage: boolean;
-	/** Camps of the node with an unexpired approval for this Freight. */
 	approvedCampIds: readonly string[];
 }>;
 
@@ -48,15 +39,9 @@ export type AvailabilityInput = Readonly<{
 	node: PipelineNodeRecord;
 	nowMs: number;
 	facts: FreightFacts;
-	/** Latest decision per placed node; absent means none recorded. */
 	placed: ReadonlyMap<string, PlacedView>;
 }>;
 
-/**
- * Qualified Camps a quorum needs: the larger of `min_qualified` and
- * `min_qualified_percent` of the decision (default 95%, rounded up). Never
- * below one, so an empty decision qualifies nothing.
- */
 export function quorumThreshold(
 	quorum: QuorumRecord | undefined,
 	total: number,
@@ -74,7 +59,6 @@ function ms(value: string): number | undefined {
 	return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-/** Each Camp of `upstream` whose qualification (plus soak) is complete, with the time it completed. */
 function readyTimes(
 	input: AvailabilityInput,
 	upstream: PipelineNodeRecord,
@@ -101,7 +85,6 @@ function readyTimes(
 	return ready;
 }
 
-/** When `upstream` admits the Freight under `strategy`, or undefined. */
 function admitted(
 	input: AvailabilityInput,
 	upstream: PipelineNodeRecord,
@@ -137,12 +120,6 @@ function nodeDomain(input: AvailabilityInput): readonly string[] {
 		: input.node.campIds;
 }
 
-/**
- * Is the Freight available to the node, and how? Undefined when it is not.
- * Lineage (I16): a source the node takes Freight from, or upstream
- * qualification per the node's strategy plus soak. An unexpired approval
- * makes it available to the approved Camps of the node only.
- */
 export function freightAvailability(
 	input: AvailabilityInput,
 ): NodeAvailability | undefined {

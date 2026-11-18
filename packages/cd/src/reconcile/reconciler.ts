@@ -1,20 +1,3 @@
-// createCampReconciler (D5, I2–I5). One loop per Camp lease `cd:camp:<id>`:
-//
-//   1. claim (or renew) the fenced Camp lease; a held lease backs off with
-//      jitter derived from hash(reconcilerId, camp);
-//   2. read the feed; for the newest change fetch the resolved blob by digest
-//      (a missing blob blocks with a reason);
-//   3. observe first; converge only when the observation does not already
-//      prove the Set (a crash between execute and observe therefore never
-//      repeats a mutation: the resumed pass observes and stops);
-//   4. report status (ReconcileStarted → StatusObserved → Converged /
-//      ReconcileBlocked) and checkpoint only after convergence;
-//   5. without a new change, re-observe periodically: drift is routed by the
-//      DriftPolicy (reconcile, propose, ignore, escalate) with flapping
-//      suppression and an oscillation guard.
-//
-// OBSERVE_ONLY Camps take the read path only; `mutate` is the single call
-// site of Realizer.converge and refuses them (architecture-tested).
 import { clone, create } from "@bufbuild/protobuf";
 import type { PrincipalRef } from "@hobo/core";
 import {
@@ -62,10 +45,8 @@ import {
 	sanitizeObservation,
 } from "./observation.js";
 
-// public-contract: interval between re-observations of a converged Camp.
 export const RECONCILE_OBSERVE_INTERVAL_MS = 60_000 as const;
 
-// public-contract: metric names the reconciler emits through TelemetrySink.
 export const RECONCILE_METRICS = Object.freeze({
 	passes: "hobo.cd.reconcile.passes",
 	duration: "hobo.cd.reconcile.duration",
@@ -85,16 +66,12 @@ export type CampReconcilerDeps = CdBase & {
 	readonly realizer: Realizer;
 	readonly drift: DriftPolicy;
 	readonly telemetry: TelemetrySink;
-	/** DepartureAction for a `depart` Set; default CD_DEFAULTS (ORPHAN_DATA). */
 	readonly departureAction?: (
 		campId: CampId,
 		set: SetRecord,
 	) => DepartureAction | Promise<DepartureAction>;
-	/** Re-observation interval for a Camp with no new change. */
 	readonly observeIntervalMs?: number;
-	/** Remediations of one drift fingerprint before it escalates. */
 	readonly maxRemediations?: number;
-	/** Sleep between `run` passes; injectable for tests. */
 	readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 	readonly principal?: PrincipalRef;
 };
@@ -159,7 +136,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		try {
 			await d.telemetry.metrics(points);
 		} catch {
-			// Telemetry never fails a reconcile pass.
 		}
 	}
 
@@ -253,10 +229,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		}
 	}
 
-	/**
-	 * The only path that calls Realizer.converge. OBSERVE_ONLY Camps are refused
-	 * here, and the lease is re-checked before every mutation (I4).
-	 */
 	async function mutate(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -359,7 +331,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		return observation;
 	}
 
-	/** Handle the newest desired-state change for a leased Camp. */
 	async function apply(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -394,12 +365,9 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 			input,
 		);
 		m.lastObservedAtMs = d.now();
-		// Without a successful observation nothing is applied: an unknown
-		// target state is resolved by observation only (I5).
 		if (observed.status === ReconcileStatus.BLOCKED)
 			return report(lease, observed);
 		if (change.management !== CampManagement.MANAGED) {
-			// OBSERVE_ONLY: read, report and record drift; never apply.
 			const findings = driftFindings(observed);
 			const reported = await report(
 				lease,
@@ -418,8 +386,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 				: checkpoint(lease, change, reported);
 		}
 		const plan = await departure(lease, change, input, observed);
-		// The target already runs this Set but diverged: that is drift, routed
-		// by policy, never a silent re-apply.
 		if (
 			!plan &&
 			observed.setId === change.set.setId &&
@@ -449,7 +415,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		return reported;
 	}
 
-	/** Periodic re-observation of the current Set: drift detection + routing. */
 	async function reobserve(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -485,10 +450,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		return routeDrift(lease, change, input, observed, ctx);
 	}
 
-	/**
-	 * Drift detection and routing for a Camp that runs `change.set`: flapping
-	 * suppression, DriftPolicy routing and the oscillation guard.
-	 */
 	async function routeDrift(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -510,7 +471,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 			return report(lease, observed);
 		}
 		const fingerprint = driftFingerprint(change.set.setId, findings);
-		// Flapping: the same drift as last pass, already handled, emits nothing.
 		if (fingerprint === m.lastDriftFingerprint) return observed;
 		m.lastDriftFingerprint = fingerprint;
 		const detected = reason(
@@ -587,8 +547,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 								),
 							])
 						: after;
-				// A confirmed reconverge makes the same fingerprint new drift next
-				// time (the oscillation guard still bounds remediations).
 				if (remediated.status === ReconcileStatus.CONVERGED)
 					m.lastDriftFingerprint = undefined;
 				return report(lease, remediated);
@@ -730,8 +688,6 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 						await pass(campId, ctx, true);
 					}
 					if (signal.aborted) break;
-					// Wake every service tick: leases renew well inside their TTL and
-					// backed-off Camps are skipped until their retry time.
 					await sleep(CD_DEFAULTS.serviceTickMs, signal);
 				}
 			} finally {

@@ -29,7 +29,6 @@ import {
 } from "../json.js";
 import type { ResourceDefinition } from "../registry/catalog.js";
 
-// Domain views of generated protobuf records. Planning has no external effects.
 export type HostingBudgetSnapshot = Readonly<Omit<BudgetWire, "$typeName">>;
 export type HostingChargeComponent = Readonly<Omit<ComponentWire, "$typeName">>;
 export type HostingProviderCharge = Readonly<
@@ -106,7 +105,6 @@ interface ManifestHostingPolicy {
 	budgetPolicy: BudgetPolicy | undefined;
 }
 
-/** Financial declarations must never disappear into the legacy placement lane. */
 export function manifestHostingPolicy(
 	manifest: ManifestV1,
 ): ManifestHostingPolicy {
@@ -282,7 +280,6 @@ function withoutProtobufMetadata(value: JsonValue): JsonValue {
 	);
 }
 
-/** Stable through protobuf message materialization and event JSON round trips. */
 export function canonicalHostingEvidence<T>(value: T): string {
 	return canonicalJson(withoutProtobufMetadata(cloneAsJson(value)));
 }
@@ -517,7 +514,6 @@ export function createHostingPlanningPass(incoming: HostingPlanningInput) {
 		});
 		requireEvidence(result.ok, `${result.code}: ${result.reason}`);
 	}
-	// Bind identity and unsupported controls before considering any quote.
 	checkPolicy(0, []);
 
 	function claimQuantity(value: Fraction): number {
@@ -640,7 +636,6 @@ export function createHostingPlanningPass(incoming: HostingPlanningInput) {
 				bounded = [ceil(bounded), 1n];
 			}
 
-			// Evaluate alternatives against a private allowance copy. Only commit consumes it.
 			const remaining = new Map(available);
 			const deductions = new Map<string, Fraction>();
 			const entitlementClaims: HostingEntitlementClaim[] = [];
@@ -749,7 +744,6 @@ export function createHostingPlanningPass(incoming: HostingPlanningInput) {
 					);
 				}
 			}
-			// Legacy fixed charges are never discounted by a usage/promo bucket.
 			charge(
 				quote.providerAccountId,
 				sumMoney(usageExpected, quote.fixedCostMicros),
