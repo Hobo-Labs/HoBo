@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { schemathesisAvailable } from "../src/env.js";
 
 const cli = fileURLToPath(new URL("../src/nightly-cli.ts", import.meta.url));
 
@@ -12,6 +11,11 @@ it("runs a real seeded nightly campaign", () => {
 		{
 			cwd: fileURLToPath(new URL("..", import.meta.url)),
 			encoding: "utf8",
+			env: {
+				PATH: process.env.PATH ?? "",
+				LANG: "C.UTF-8",
+				HOBO_FUZZ_DOCKER: "0",
+			},
 			timeout: 60_000,
 		},
 	);
@@ -34,6 +38,11 @@ it.each([
 	const child = spawnSync(process.execPath, ["--import", "tsx", cli, ...args], {
 		cwd: fileURLToPath(new URL("..", import.meta.url)),
 		encoding: "utf8",
+		env: {
+			PATH: process.env.PATH ?? "",
+			LANG: "C.UTF-8",
+			HOBO_FUZZ_DOCKER: "0",
+		},
 		timeout: 60_000,
 	});
 	expect(child.status).not.toBe(0);
@@ -47,6 +56,11 @@ it("accepts the package-manager argument separator", () => {
 		{
 			cwd: fileURLToPath(new URL("..", import.meta.url)),
 			encoding: "utf8",
+			env: {
+				PATH: process.env.PATH ?? "",
+				LANG: "C.UTF-8",
+				HOBO_FUZZ_DOCKER: "0",
+			},
 			timeout: 60_000,
 		},
 	);
@@ -62,7 +76,7 @@ it("fails if the requested API fuzzer is unavailable", () => {
 			cwd: fileURLToPath(new URL("..", import.meta.url)),
 			encoding: "utf8",
 			timeout: 60_000,
-			env: { PATH: "", LANG: "C.UTF-8" },
+			env: { PATH: "", LANG: "C.UTF-8", HOBO_FUZZ_DOCKER: "0" },
 		},
 	);
 	expect(child.status).not.toBe(0);
@@ -70,23 +84,34 @@ it("fails if the requested API fuzzer is unavailable", () => {
 	expect(child.stdout).toBe("");
 });
 
-it.skipIf(!schemathesisAvailable())(
-	"runs the API campaign from the CLI",
-	() => {
-		const child = spawnSync(
-			process.execPath,
-			["--import", "tsx", cli, "--runs", "1", "--seed", "1742", "--api"],
-			{
-				cwd: fileURLToPath(new URL("..", import.meta.url)),
-				encoding: "utf8",
-				timeout: 60_000,
-			},
-		);
-		expect(child.status, child.stderr).toBe(0);
-		const result = JSON.parse(child.stdout);
-		expect(result.api.ran).toBe(true);
-		expect(result.api.passed).toBe(true);
-		expect(result.api.requests).toBeGreaterThan(0);
-	},
-	60_000,
-);
+it("allows a model-only campaign without Docker", () => {
+	const child = spawnSync(
+		process.execPath,
+		["--import", "tsx", cli, "--runs", "1", "--no-docker"],
+		{
+			cwd: fileURLToPath(new URL("..", import.meta.url)),
+			encoding: "utf8",
+			env: { PATH: process.env.PATH ?? "", LANG: "C.UTF-8" },
+			timeout: 60_000,
+		},
+	);
+	expect(child.status, child.stderr).toBe(0);
+	expect(JSON.parse(child.stdout).modelTraces).toBe(1);
+	expect(JSON.parse(child.stdout).docker).toBeUndefined();
+});
+
+it("fails when Docker is required and unavailable", () => {
+	const child = spawnSync(
+		process.execPath,
+		["--import", "tsx", cli, "--runs", "1", "--docker"],
+		{
+			cwd: fileURLToPath(new URL("..", import.meta.url)),
+			encoding: "utf8",
+			env: { PATH: "", LANG: "C.UTF-8", HOBO_FUZZ_DOCKER: "0" },
+			timeout: 60_000,
+		},
+	);
+	expect(child.status).not.toBe(0);
+	expect(child.stderr).toContain("docker");
+	expect(child.stdout).toBe("");
+});

@@ -17,7 +17,9 @@ The in-process API surface is described by
 | `pnpm --filter @hobo/fuzz test` | fast-check properties + harness/API smoke | yes, via Turbo when this package changes |
 | `pnpm run test:property` | bounded fast-check command traces | yes, also when Bindle manifest code changes |
 | `pnpm run test:fuzz` | Jazzer-shaped serialized-input smoke | yes, as part of the package `test` script |
-| `pnpm run test:fuzz:nightly` | runs seeded model, event, policy, and serialized-input campaigns | no |
+| `pnpm run test:fuzz:nightly` | seeded model and parser campaigns plus isolated RESTler and fault injection | no |
+| `pnpm --filter @hobo/fuzz run test:fuzz:api` | require Schemathesis against the loopback simulator and CLI | no |
+| `pnpm --filter @hobo/fuzz run test:fuzz:docker` | require the isolated RESTler and fault-injection campaign | no |
 
 Pass the seed and run count to replay a campaign with the same inputs:
 `-- --seed 1742 --runs 5000`. The command prints the seed and number of
@@ -37,9 +39,25 @@ functions with generated buffers. A long campaign is
 `npx --package=@jazzer.js/core jazzer packages/fuzz/src/jazzer-entry.ts`
 and is reserved for nightly.
 
-Schemathesis runs all API checks against an owned loopback simulator. To require
-it, install Schemathesis 4.33.4 and pass `--api` to the nightly command. The command
-fails if the executable is unavailable or the API checks fail.
+Schemathesis runs all API checks against an owned loopback simulator. Install
+Schemathesis 4.33.4 and pass `--api` to the nightly command. The command fails
+if the executable is unavailable or its checks fail.
+
+The Docker campaign requires a local Docker daemon and builds RESTler from a
+pinned upstream revision. On its first run it downloads pinned container images
+and builds the RESTler image. It starts the control simulator, Toxiproxy,
+PostgreSQL, Redis, and a registry on a private internal network without
+published ports. It exercises latency, bandwidth, timeouts, connection resets,
+network cuts, retry idempotency, registry recovery, and RESTler API coverage.
+The command fails if any required evidence is missing or reports a failure.
+Containers and the network are removed when the campaign finishes or is
+interrupted. Docker configuration and credentials are not passed to the
+campaign containers.
+
+Use `--no-docker` or set `HOBO_FUZZ_DOCKER=0` for the model and parser
+campaigns alone. Pass `--docker` to require Docker even when that environment
+variable is set. Default `agent:check` runs the bounded package tests without
+starting Docker.
 
 ## Invariants
 

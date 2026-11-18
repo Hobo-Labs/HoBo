@@ -14,7 +14,6 @@ concurrency:
 
 jobs:
   property-and-harness:
-    # Hosted Actions runners are disabled until explicitly re-enabled.
     if: ${{ false }}
     name: fast-check and Jazzer smoke
     runs-on: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
@@ -34,13 +33,12 @@ jobs:
         run: pnpm run test:fuzz
 
   docker-gated:
-    # Hosted Actions runners are disabled until explicitly re-enabled.
     if: ${{ false }}
-    name: RESTler Toxiproxy plan
+    name: RESTler and Toxiproxy
     runs-on: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
-      HOBO_FUZZ_DOCKER: "0"
+      HOBO_FUZZ_DOCKER: "1"
     steps:
       - uses: actions/checkout@v4
       - run: corepack enable pnpm
@@ -50,12 +48,10 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Print nightly plan (skip without Docker)
-        run: pnpm run test:fuzz:nightly
-      - name: Optional Schemathesis
+      - name: Install Schemathesis
         run: |
-          if command -v schemathesis >/dev/null 2>&1 && [ -n "${HOBO_FUZZ_API_URL:-}" ]; then
-            schemathesis run "${HOBO_FUZZ_API_URL%/}/v1/openapi.json" --url "$HOBO_FUZZ_API_URL"
-          else
-            echo "schemathesis skipped (binary or HOBO_FUZZ_API_URL missing)"
-          fi
+          python3 -m venv "$RUNNER_TEMP/schemathesis"
+          "$RUNNER_TEMP/schemathesis/bin/pip" install schemathesis==4.33.4
+          printf '%s\n' "$RUNNER_TEMP/schemathesis/bin" >> "$GITHUB_PATH"
+      - name: Run isolated campaigns
+        run: pnpm run test:fuzz:nightly -- --api
