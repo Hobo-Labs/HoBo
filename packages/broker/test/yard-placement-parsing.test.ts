@@ -847,6 +847,7 @@ describe("the generation saga", () => {
 
 	function saga(c: YardGenerationConnector) {
 		return createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[c.id, c]]),
 		});
 	}
@@ -855,7 +856,10 @@ describe("the generation saga", () => {
 		// The saga runs during a deployment; an unregistered connector is a
 		// configuration error that has to surface as a failed attempt with a
 		// code, not as an exception through the request path.
-		const s = createYardGenerationSaga({ connectors: new Map() });
+		const s = createYardGenerationSaga({
+			authorizePlan: () => true,
+			connectors: new Map(),
+		});
 		return s.run(planFor("a")).then((result) => {
 			expect(result.status).toBe("failed");
 			expect(result.failure?.code).toBe("connector-missing");
@@ -972,7 +976,10 @@ describe("the generation saga", () => {
 
 	test("inspect returns undefined for a key that was never run", () => {
 		expect(
-			createYardGenerationSaga({ connectors: new Map() }).inspect("nope"),
+			createYardGenerationSaga({
+				authorizePlan: () => true,
+				connectors: new Map(),
+			}).inspect("nope"),
 		).toBeUndefined();
 	});
 
@@ -990,7 +997,10 @@ describe("the generation saga", () => {
 			},
 		});
 		const connectors = new Map([[c.id, c]]);
-		const s = createYardGenerationSaga({ connectors });
+		const s = createYardGenerationSaga({
+			authorizePlan: () => true,
+			connectors,
+		});
 		await s.run(planFor("a"));
 		connectors.delete(c.id);
 		const result = await s.run(planFor("a"));

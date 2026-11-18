@@ -1271,6 +1271,10 @@ export async function resolveBindleDeployment(
 			},
 		};
 		const saga = createYardGenerationSaga({
+			authorizePlan: (plan) =>
+				generationAuthorityCurrent?.() === true &&
+				contentHashOf(plan) === contentHashOf(genDecision.plan) &&
+				generationAuthorityCurrent?.() === true,
 			connectors: new Map([
 				[genDecision.plan.generatorConnectorId, pinnedConnector],
 			]),

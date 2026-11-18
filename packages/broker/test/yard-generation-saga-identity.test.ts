@@ -82,6 +82,7 @@ describe("Yard generation saga identity and concurrent retries", () => {
 		const inspect = vi.fn(async () => result(plan, "started"));
 		const connector: YardGenerationConnector = { ...base, provision, inspect };
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[base.id, connector]]),
 		});
 		const first = saga.run(plan);
@@ -104,6 +105,7 @@ describe("Yard generation saga identity and concurrent retries", () => {
 			return result(plan, "ready");
 		});
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[base.id, { ...base, provision, inspect }]]),
 		});
 		await expect(saga.run(plan)).rejects.toThrow("provider reply lost");
@@ -123,6 +125,7 @@ describe("Yard generation saga identity and concurrent retries", () => {
 		);
 		const inspect = vi.fn(async () => result(plan, "ready"));
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[base.id, { ...base, provision, inspect }]]),
 		});
 		await saga.run(plan);
@@ -142,6 +145,7 @@ describe("Yard generation saga identity and concurrent retries", () => {
 		});
 		const inspect = vi.fn(async () => result(plan, "started"));
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[base.id, { ...base, provision, inspect }]]),
 		});
 		const first = saga.run(plan);
@@ -157,6 +161,7 @@ describe("Yard generation saga identity and concurrent retries", () => {
 		const { plan, base } = fixture();
 		const providerResult = result(plan, "ready");
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([
 				[base.id, { ...base, provision: async () => providerResult }],
 			]),
@@ -181,6 +186,7 @@ describe("Yard generation saga identity and concurrent retries", () => {
 		);
 		const connector = { ...base, provision: approved };
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[base.id, connector]]),
 		});
 		const pending = saga.run(plan);
@@ -201,6 +207,7 @@ describe("Yard generation saga identity and concurrent retries", () => {
 			return result(received, "ready");
 		});
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[base.id, { ...base, provision }]]),
 		});
 		const pending = saga.run(input);
@@ -218,6 +225,7 @@ describe("Yard generation saga identity and concurrent retries", () => {
 					result(input, "ready"),
 				);
 				const saga = createYardGenerationSaga({
+					authorizePlan: () => true,
 					connectors: new Map([[base.id, { ...base, provision }]]),
 				});
 				await saga.run(plan);
