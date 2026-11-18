@@ -556,6 +556,56 @@ describe("diffSchemaIr", () => {
 		);
 	});
 
+	it("binds the full current and desired schemas even when step names match", () => {
+		const integerColumn = column({
+			name: "amount",
+			type: "integer",
+			nullable: true,
+			primaryKey: false,
+			unique: false,
+		});
+		const before = ir([table()]);
+		const integerTarget = ir([table({ columns: [column(), integerColumn] })]);
+		const textTarget = ir([
+			table({ columns: [column(), { ...integerColumn, type: "text" }] }),
+		]);
+		const integerPlan = diffSchemaIr(before, integerTarget);
+		const textPlan = diffSchemaIr(before, textTarget);
+
+		expect(integerPlan.steps).toEqual(textPlan.steps);
+		expect(integerPlan.digest).not.toBe(textPlan.digest);
+
+		const changedSource = ir([
+			table({ columns: [column({ type: "bigint" })] }),
+		]);
+		const alternateTarget = ir([
+			table({ columns: [column({ type: "bigint" }), integerColumn] }),
+		]);
+		const alternatePlan = diffSchemaIr(changedSource, alternateTarget);
+		expect(alternatePlan.steps).toEqual(integerPlan.steps);
+		expect(alternatePlan.digest).not.toBe(integerPlan.digest);
+	});
+
+	it("normalizes input order before computing the schema-bound digest", () => {
+		const before = ir([]);
+		const columns = [
+			column(),
+			column({
+				name: "label",
+				type: "text",
+				nullable: true,
+				primaryKey: false,
+				unique: false,
+			}),
+		];
+		const forward = diffSchemaIr(before, ir([table({ columns })]));
+		const reversed = diffSchemaIr(
+			before,
+			ir([table({ columns: [...columns].reverse() })]),
+		);
+		expect(reversed).toEqual(forward);
+	});
+
 	it("exposes the canonical differ as a SchemaDiffEngine with no SQL emission", () => {
 		const before = parseSchemaIr(ir([table()]));
 		const after = parseSchemaIr(ir([table(), table({ name: "sessions" })]));

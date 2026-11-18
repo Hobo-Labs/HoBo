@@ -39,6 +39,11 @@ pipeline and no `ctx.bindings` here: nothing in this package intercepts a
 capability access, so enforcement happens where a host calls
 `assertCapabilityPhase` — a host that never calls it is never protected.
 
+The schema-diff plan digest binds the normalized current and desired schemas as
+well as the ordered steps and engine identity. The canonical engine version is
+`2.0.0`: its digests differ from earlier step-only digests, so existing plans
+must be regenerated before comparison or execution.
+
 `ports/schema-diff.ts` (ADR-0160) owns the canonical schema IR and the
 forward-only expand/backfill/contract differ. What it deliberately does **not**
 do: it emits **no SQL** (`CANONICAL_SCHEMA_DIFF_ENGINE` has no `emitSql`; SQL
