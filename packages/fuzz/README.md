@@ -60,5 +60,7 @@ destroy, and replay. Oracles include:
 - restoring a serialized state establishes a replay baseline for a fresh model;
   on an existing model it records a new revision and preserves earlier snapshots
 - malformed snapshots and inconsistent fingerprints are refused before restore
+- capability commands reject unsupported verbs and capture caller-supplied lists
+  so later caller edits do not change the oracle or its replay history
 - interrupt after destroy does not revive a resource
 - apply after destroy recreates instead of leaving a destroyed hole
