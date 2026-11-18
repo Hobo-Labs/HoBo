@@ -1,12 +1,9 @@
 # @hobo/adapter-drizzle PACT inventory
 
-This package is pure: it holds no connection, opens no socket, and shells out to
-nothing. Its one boundary is the `SchemaDiffEngine` port in `@hobo/core`, which
-a migration consumer (`@hobo/trails`) drives. The pact documents that boundary
-in HTTP shape — the shape the contract harness speaks — including the two
-refusals, because a fail-closed answer is part of the contract and not an
-incident.
+The migration boundary is in-process. The contract exercises Drizzle schema
+conversion and SQL generation, the trails migration executor, and the
+PostgreSQL schema-apply port against embedded PostgreSQL.
 
-| Boundary | Consumer | Provider | Protocol | Pact file/test | Provider verification | Mock used | Status |
-|----------|----------|----------|----------|----------------|----------------------|-----------|--------|
-| Schema-diff engine (ingest / diff / emit SQL) | @hobo/trails | @hobo/adapter-drizzle | in-process HTTP-shaped | `pacts/schema-diff-engine.pact.json` | not executed — pure package, behavior covered by `test/engine.test.ts` and `test/ingest.test.ts` | none | documented |
+| Boundary | Consumer | Provider | Protocol | Contract | Verification | Status |
+|----------|----------|----------|----------|----------|--------------|--------|
+| Generated phased migration | @hobo/trails | @hobo/adapter-drizzle | in-process | `pacts/schema-diff-engine.pact.json` | `packages/trails/test/drizzle-migration.test.ts` | verified |
