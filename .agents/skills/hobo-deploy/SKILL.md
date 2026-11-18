@@ -78,8 +78,11 @@ channel as described above; a displayed form alone does not establish privacy.
 
 1. Run `hobo <ci|cd> up --hand-off` through the **HoBo MCP server** (its
    `ci` or `cd` tool with `args: ["up", "--hand-off"]`) only when its
-   owner channel has passed the privacy check above. Run it again the same
-   way after each owner step. If that channel is absent or unverified, run
+   owner channel has passed the privacy check above. Pass the target project
+   directory as `cwd` to both the lifecycle tool and `choose_secret_store`;
+   use the same `cwd` on every retry so the owner session stays scoped to that
+   project. Run it again the same way after each owner step. If that channel
+   is absent or unverified, run
    `hobo <ci|cd> up --hand-off` in the background (never `--json` or
    `-q`: they hide the lines). Capture output in a private temporary session
    file outside the repository and read only sanitized progress and refusal
