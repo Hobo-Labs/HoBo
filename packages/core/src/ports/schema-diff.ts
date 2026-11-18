@@ -16,7 +16,7 @@ export const SCHEMA_IR_CONTRACT = "hobo.schema-ir/v1";
 export const MIGRATION_PLAN_CONTRACT = "hobo.migration-plan/v1";
 
 export const CANONICAL_SCHEMA_DIFF_ENGINE_ID = "hobo-canonical"; // public-contract: differ identity stamped into every plan it produces
-export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "4.0.0";
+export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "5.0.0";
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*$/u;
 const MAX_IDENTIFIER_LENGTH = 63;
@@ -231,7 +231,11 @@ function diffColumns(
 			steps.push(
 				step("expand", "add-column", after.name, { column: column.name }),
 			);
-			if (!column.nullable && column.defaultExpression === undefined) {
+			if (
+				!column.nullable &&
+				column.defaultExpression === undefined &&
+				!hasImplicitSequenceDefault(column.type)
+			) {
 				steps.push(
 					step("backfill", "backfill-column", after.name, {
 						column: column.name,
@@ -255,6 +259,17 @@ function diffColumns(
 			);
 		}
 	}
+}
+
+function hasImplicitSequenceDefault(type: string): boolean {
+	return [
+		"smallserial",
+		"serial2",
+		"serial",
+		"serial4",
+		"bigserial",
+		"serial8",
+	].includes(type.trim().toLowerCase());
 }
 
 function diffColumnAttributes(
