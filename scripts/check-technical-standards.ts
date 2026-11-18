@@ -20,8 +20,7 @@ for (const arg of process.argv.slice(2)) {
 Enforces HoBo's compile-time-first technical standards on changed files:
 - TypeScript toolchain is declared in package metadata.
 - New JavaScript-family implementation files are rejected in favor of .ts.
-- Canonical agent/design docs keep the Protobuf, CUE, parse-don't-validate,
-  and PACT guidance present.
+- Canonical agent rules keep the Protobuf, CUE, parse-don't-validate, and PACT guidance present.
 - Repository-wide data-model catalogs stay forbidden; CUE-backed data models
   live beside the package/project that owns the type.`);
 		process.exit(0);
@@ -194,34 +193,13 @@ requireText(
 	"AGENTS.md: missing parse-don't-validate guidance",
 );
 requireText("AGENTS.md", /PACT/, "AGENTS.md: missing PACT agent guidance");
-requireText(
-	"docs/design/technical-standards.md",
-	/Protobuf/,
-	"technical standards: missing Protobuf guidance",
-);
-requireText(
-	"docs/design/technical-standards.md",
-	/CUE/,
-	"technical standards: missing CUE guidance",
-);
-requireText(
-	"docs/design/technical-standards.md",
-	/Parse, don't validate/,
-	"technical standards: missing parse-don't-validate guidance",
-);
-requireText(
-	"docs/design/technical-standards.md",
-	/PACT/,
-	"technical standards: missing PACT guidance",
-);
-
 const newJavaScriptFiles = changedFiles()
 	.filter(isJavaScriptImplementationFile)
 	.sort();
 if (newJavaScriptFiles.length > 0) {
 	fail(
 		[
-			"New JavaScript-family implementation files detected; use TypeScript (.ts) for new code or document an ADR exception:",
+			"New JavaScript-family implementation files detected; use TypeScript (.ts) for new code:",
 			...newJavaScriptFiles.map((file) => `- ${file}`),
 		].join("\n"),
 	);

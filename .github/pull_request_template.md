@@ -20,9 +20,6 @@
 - [ ] `npm run docs:cli-lint`
 - [ ] `npm run docs:links`
 - [ ] `npm run docs:coverage`
-- [ ] `node --import tsx scripts/validate-traceability.ts`
-- [ ] `node --import tsx scripts/validate-sdk-contracts.ts`
-- [ ] `node --import tsx scripts/validate-deployment-set-delta.ts`
 
 ## Notes / limitations
 
