@@ -32,6 +32,8 @@ package hobo
 	port:     string & !=""
 	provider: string & !=""
 	deps: [...string]
+	readyDeps?: [string & !="", ...string & !=""]
+	completedDeps?: [string & !="", ...string & !=""]
 
 	// No `!= ""` on these three, matching hobo.cloud.v1. See the README:
 	// admitting "" here is a gap, not a decision, and tightening it is a

@@ -140,6 +140,8 @@ export interface ResourceIntent {
 	prefer: string[];
 	negotiation: Negotiation;
 	deps: string[];
+	readyDeps?: string[];
+	completedDeps?: string[];
 	region?: string;
 	objective: string;
 	placement?: PlacementCriteria;
@@ -185,6 +187,8 @@ export type ParsedResourceIntent = {
 	readonly prefer: readonly string[];
 	readonly negotiation: Negotiation;
 	readonly deps: readonly string[];
+	readonly readyDeps?: readonly string[];
+	readonly completedDeps?: readonly string[];
 	readonly region?: string;
 	readonly objective: string;
 	readonly placement?: ParsedPlacementCriteria;
@@ -229,6 +233,8 @@ export type ResourceIntentRecord = {
 	readonly prefer?: readonly string[];
 	readonly negotiation: string;
 	readonly deps?: readonly string[];
+	readonly ready_deps?: readonly string[];
+	readonly completed_deps?: readonly string[];
 	readonly region?: string;
 	readonly objective: string;
 	readonly placement?: PlacementCriteriaRecord;
@@ -255,6 +261,8 @@ const RESOURCE_INTENT_KEYS: readonly string[] = [
 	"prefer",
 	"negotiation",
 	"deps",
+	"readyDeps",
+	"completedDeps",
 	"region",
 	"objective",
 	"placement",
@@ -301,6 +309,8 @@ type DecodeInput = {
 	prefer: UnparsedValue;
 	negotiation: UnparsedValue;
 	deps: UnparsedValue;
+	readyDeps?: UnparsedValue;
+	completedDeps?: UnparsedValue;
 	objective: UnparsedValue;
 	region?: UnparsedValue;
 	placement?: DecodedCriteria;
@@ -564,6 +574,18 @@ export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 		NEGOTIATIONS,
 	);
 	const deps = requireStringList(record.deps, "$.deps");
+	const readyDeps = parseReadinessDependencies(record, "readyDeps", deps);
+	const completedDeps = parseReadinessDependencies(
+		record,
+		"completedDeps",
+		deps,
+	);
+	if (readyDeps?.some((dependency) => completedDeps?.includes(dependency))) {
+		throw new ResourceIntentError(
+			"$.completedDeps",
+			"dependency cannot require both readiness and completion",
+		);
+	}
 	const objective = requireNonEmptyString(record.objective, "$.objective");
 
 	if (deps.includes(name)) {
@@ -606,9 +628,27 @@ export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 		objective,
 	};
 	if (region !== undefined) result.region = region;
+	if (readyDeps !== undefined) result.readyDeps = readyDeps;
+	if (completedDeps !== undefined) result.completedDeps = completedDeps;
 	if (placement !== undefined) result.placement = placement;
 	// SAFETY: every property was parsed above and the unique brand is never observable at runtime.
 	return Object.freeze(result) as ParsedResourceIntent;
+}
+
+function parseReadinessDependencies(
+	record: UnparsedRecord,
+	field: "readyDeps" | "completedDeps",
+	deps: readonly string[],
+): readonly string[] | undefined {
+	if (!(field in record)) return undefined;
+	const values = requireStringList(record[field], `$.${field}`);
+	if (values.length === 0 || values.some((value) => !deps.includes(value))) {
+		throw new ResourceIntentError(
+			`$.${field}`,
+			"must be non-empty and reference declared dependencies",
+		);
+	}
+	return values;
 }
 
 /**
@@ -630,6 +670,9 @@ export function encodeResourceIntent(
 	if (intent.require.length > 0) record.require = [...intent.require];
 	if (intent.prefer.length > 0) record.prefer = [...intent.prefer];
 	if (intent.deps.length > 0) record.deps = [...intent.deps];
+	if (intent.readyDeps !== undefined) record.ready_deps = [...intent.readyDeps];
+	if (intent.completedDeps !== undefined)
+		record.completed_deps = [...intent.completedDeps];
 	if (intent.region !== undefined) record.region = intent.region;
 	if (intent.placement !== undefined)
 		record.placement = encodeCriteria(intent.placement);
@@ -680,6 +723,8 @@ export function decodeResourceIntent<T>(record: T): ParsedResourceIntent {
 		"prefer",
 		"negotiation",
 		"deps",
+		"ready_deps",
+		"completed_deps",
 		"region",
 		"objective",
 		"placement",
@@ -695,6 +740,8 @@ export function decodeResourceIntent<T>(record: T): ParsedResourceIntent {
 		objective: wire.objective,
 	};
 	if ("region" in wire) input.region = wire.region;
+	if ("ready_deps" in wire) input.readyDeps = wire.ready_deps;
+	if ("completed_deps" in wire) input.completedDeps = wire.completed_deps;
 	if ("placement" in wire) input.placement = decodeCriteria(wire.placement);
 	return parseResourceIntent(input);
 }
@@ -775,6 +822,9 @@ export function toResourceIntent(intent: ParsedResourceIntent): ResourceIntent {
 		objective: intent.objective,
 	};
 	if (intent.region !== undefined) result.region = intent.region;
+	if (intent.readyDeps !== undefined) result.readyDeps = [...intent.readyDeps];
+	if (intent.completedDeps !== undefined)
+		result.completedDeps = [...intent.completedDeps];
 	if (intent.placement !== undefined)
 		result.placement = toPlacementCriteria(intent.placement);
 	return result;
