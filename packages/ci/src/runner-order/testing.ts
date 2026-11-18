@@ -1,18 +1,3 @@
-/**
- * In-memory fakes of every runner-order port, and one conformance function
- * per port that each real implementation must pass.
- *
- * A conformance function takes a factory, runs the port's rules against what
- * it makes, and throws a `PortConformanceError` naming the first rule broken.
- * It imports no test framework, so a package's own test calls it:
- *
- *     it("keeps the journal's rules", () =>
- *       routeJournalConformance(() => new SqliteRouteJournal(db)));
- *
- * The fakes pass their own conformance functions (see
- * `test/runner-order-ports.test.ts`), so a later package can test against
- * them before the real port exists.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type MachineAdvert,
@@ -53,7 +38,6 @@ import type {
 import type { HostedRunnerProvider } from "./providers.js";
 import { defineMachineAdvert, defineRunnerRouteEvent } from "./relay-job.js";
 
-/** A port broke one of its rules. The message names the rule. */
 export class PortConformanceError extends Error {
 	override readonly name = "PortConformanceError";
 }
@@ -62,15 +46,13 @@ function rule(ok: boolean, text: string): void {
 	if (!ok) throw new PortConformanceError(text);
 }
 
-/** A relay job message for tests: a private push to `octo/app`, overridable field by field. */
 export function testRelayJobMessage(
 	init: Partial<
 		Omit<RelayJobMessage, "$typeName" | "$unknown" | "inputs" | "steps">
 	> &
 		Readonly<{
-			/** The relay's `with:` inputs as name and value; GitHub only when absent. */
 			inputs?: readonly (readonly [string, string])[];
-			/** The `uses:` of each step of the job. */
+
 			uses?: readonly string[];
 		}> = {},
 ): RelayJobMessage {
@@ -95,7 +77,6 @@ export function testRelayJobMessage(
 	});
 }
 
-/** A route request for tests: a private push to `octo/app` naming only GitHub. */
 export function testRouteRequest(
 	repository = "octo/app",
 	runId = 9001,
@@ -111,7 +92,6 @@ export function testRouteRequest(
 	});
 }
 
-/** A machine advert for tests, owned by user 42 in account `acct-1`. */
 export function testMachineAdvert(
 	init: Partial<Omit<MachineAdvert, "$typeName" | "$unknown">> = {},
 ): MachineAdvert {
@@ -136,12 +116,6 @@ export function testMachineAdvert(
 	);
 }
 
-// --- Runner order source -------------------------------------------------
-
-/**
- * Orders by repository, as the `runnerOrder` JSON text of `.hobo/ci.json`.
- * A repository with none gets the default order.
- */
 export class InMemoryRunnerOrderSource implements RunnerOrderSource {
 	readonly asked: Array<
 		Readonly<{ repository: string; ref: string | undefined }>
@@ -168,10 +142,6 @@ export class InMemoryRunnerOrderSource implements RunnerOrderSource {
 	}
 }
 
-/**
- * A runner order source keeps its rules. `make` receives each repository's
- * `runnerOrder` JSON text, keyed by lower-case `owner/name`.
- */
 export async function runnerOrderSourceConformance(
 	make: (
 		orders: ReadonlyMap<string, string>,
@@ -207,9 +177,6 @@ export async function runnerOrderSourceConformance(
 	);
 }
 
-// --- Route facts source --------------------------------------------------
-
-/** Facts made from each request; nothing measured unless told otherwise. */
 export class InMemoryRouteFactsSource implements RouteFactsSource {
 	readonly asked: Array<
 		Readonly<{ request: RunnerRouteRequest; nowMs: number }>
@@ -227,11 +194,6 @@ export class InMemoryRouteFactsSource implements RouteFactsSource {
 	}
 }
 
-/**
- * A facts source keeps its rules: a repository it knows nothing about still
- * gets facts (a missing measurement never blocks), and every measurement it
- * gives is a real number.
- */
 export async function routeFactsSourceConformance(
 	make: () => RouteFactsSource | Promise<RouteFactsSource>,
 ): Promise<void> {
@@ -251,13 +213,10 @@ export async function routeFactsSourceConformance(
 		rule(machine.busy >= 0 && machine.slots >= 1, "a machine has slots");
 }
 
-// --- Route journal -------------------------------------------------------
-
 function journalKey(event: RunnerRouteEvent): string | undefined {
 	return event.jobId === "" ? undefined : `${event.jobId}\u0000${event.type}`;
 }
 
-/** Entries in memory, newest first on read. */
 export class InMemoryRouteJournal implements RouteJournal {
 	readonly events: RunnerRouteEvent[] = [];
 
@@ -314,7 +273,6 @@ function routeEvent(
 	});
 }
 
-/** A route journal keeps its rules: newest first, scoped, bounded, and a redelivery is one entry. */
 export async function routeJournalConformance(
 	make: () => RouteJournal | Promise<RouteJournal>,
 ): Promise<void> {
@@ -403,9 +361,6 @@ export async function routeJournalConformance(
 	);
 }
 
-// --- Machine registry ----------------------------------------------------
-
-/** Machines in memory. Every change is kept in `changes` for assertions. */
 export class InMemoryMachineRegistry implements MachineRegistry {
 	private readonly machines = new Map<string, MachineAdvert>();
 	readonly changes: Array<
@@ -467,7 +422,6 @@ async function throws(action: () => Promise<void>): Promise<boolean> {
 	}
 }
 
-/** A machine registry keeps its rules: scoped by account, replace on put, pause, share, remove at once. */
 export async function machineRegistryConformance(
 	make: () => MachineRegistry | Promise<MachineRegistry>,
 ): Promise<void> {
@@ -518,9 +472,6 @@ export async function machineRegistryConformance(
 	);
 }
 
-// --- Provider health -----------------------------------------------------
-
-/** Provider health records in memory. */
 export class InMemoryProviderHealthStore implements ProviderHealthStore {
 	private readonly records = new Map<string, ProviderHealth>();
 
@@ -540,7 +491,6 @@ export class InMemoryProviderHealthStore implements ProviderHealthStore {
 	}
 }
 
-/** A provider health store keeps its rules: a new key is healthy, records survive, a trial is let through. */
 export async function providerHealthStoreConformance(
 	make: () => ProviderHealthStore | Promise<ProviderHealthStore>,
 ): Promise<void> {
@@ -572,9 +522,6 @@ export async function providerHealthStoreConformance(
 	);
 }
 
-// --- Billing reads -------------------------------------------------------
-
-/** Minutes by owner; an owner with none is unmeasured. */
 export class InMemoryMinutesReader implements MinutesReader {
 	constructor(
 		private readonly byOwner: ReadonlyMap<string, MinutesUsage> = new Map(),
@@ -585,7 +532,6 @@ export class InMemoryMinutesReader implements MinutesReader {
 	}
 }
 
-/** A minutes reader keeps its rules: an unknown owner is unmeasured or real, never negative. */
 export async function minutesReaderConformance(
 	make: () => MinutesReader | Promise<MinutesReader>,
 ): Promise<void> {
@@ -598,7 +544,6 @@ export async function minutesReaderConformance(
 		);
 }
 
-/** Spend by account; an account with none has nothing measured. */
 export class InMemorySpendReader implements SpendReader {
 	readonly asked: Array<Readonly<{ accountId: string; monthStartMs: number }>> =
 		[];
@@ -618,7 +563,6 @@ export class InMemorySpendReader implements SpendReader {
 	}
 }
 
-/** A spend reader keeps its rules: an unknown account gets a map, every value non-negative. */
 export async function spendReaderConformance(
 	make: () => SpendReader | Promise<SpendReader>,
 ): Promise<void> {
@@ -629,9 +573,6 @@ export async function spendReaderConformance(
 		rule(Number.isFinite(usd) && usd >= 0, "a spend is a non-negative number");
 }
 
-// --- Insight store -------------------------------------------------------
-
-/** Run attempts in memory, keyed by run id and attempt. */
 export class InMemoryInsightStore implements InsightStore {
 	private readonly kept = new Map<string, InsightRun>();
 
@@ -692,7 +633,6 @@ function testRun(
 	};
 }
 
-/** An insight store keeps its rules: replace by attempt, scoped, newest first, bounded, intact. */
 export async function insightStoreConformance(
 	make: () => InsightStore | Promise<InsightStore>,
 ): Promise<void> {

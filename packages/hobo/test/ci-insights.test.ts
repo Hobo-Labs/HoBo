@@ -73,7 +73,6 @@ function run(
 	};
 }
 
-/** A fake `gh api`: answers each path from a table, records what was asked. */
 function github(responses: ReadonlyMap<string, string | CiProcessError>) {
 	const asked: string[] = [];
 	const execFile: CiRunExec = async (file, args, options) => {
@@ -196,7 +195,7 @@ describe("hobo ci signals", () => {
 		expect(message).toContain("ci / test: 40 min in 1");
 		expect(message).toContain("Below that bar: short-jobs (0.7 min).");
 		expect(message).toMatch(/hobo {2}3 jobs {2}started 100%.*passed 67%/u);
-		// The route job is GitHub-hosted on a private repository: billed, and short.
+
 		expect(result.data?.signals).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ id: "queue-waits", occurrences: 1 }),
@@ -369,7 +368,6 @@ describe("hobo ci diagnose", () => {
 						],
 					}),
 				],
-				// The log and the annotations cannot be read: the steps still decide.
 			]),
 		);
 		const result = await insights("diagnose", fake, ["7"]);
@@ -410,6 +408,79 @@ describe("hobo ci diagnose", () => {
 		expect(result.message).toContain("2 more failed job(s) not read.");
 		expect(result.data?.more).toBe(2);
 		expect(fake.asked.filter((path) => path.endsWith("/logs"))).toHaveLength(5);
+	});
+
+	it("finds failed jobs after the first GitHub jobs page", async () => {
+		const successful = Array.from({ length: 100 }, (_, index) =>
+			job(start, {
+				id: index + 1,
+				name: `shard ${index}`,
+				labels: ["hobo"],
+				runner: "hobo-a",
+				conclusion: "success",
+				waitMs: 0,
+				runMs: minute,
+			}),
+		);
+		const failed = job(start, {
+			id: 101,
+			name: "last shard",
+			labels: ["hobo"],
+			runner: "hobo-a",
+			conclusion: "failure",
+			waitMs: 0,
+			runMs: minute,
+		});
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[jobsPath(7), JSON.stringify({ jobs: successful })],
+				[`${jobsPath(7)}&page=2`, JSON.stringify({ jobs: [failed] })],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(fake.asked).toContain(`${jobsPath(7)}&page=2`);
+		expect(result.data?.jobs).toEqual(
+			expect.arrayContaining([expect.objectContaining({ id: 101 })]),
+		);
+		expect(result.message).not.toContain("No job of this run failed");
+	});
+
+	it("does not report a partial jobs list as complete when another page fails", async () => {
+		const jobs = Array.from({ length: 100 }, (_, index) =>
+			job(start, {
+				id: index + 1,
+				name: `shard ${index}`,
+				labels: ["hobo"],
+				conclusion: "success",
+				waitMs: 0,
+				runMs: minute,
+			}),
+		);
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[jobsPath(7), JSON.stringify({ jobs })],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(result.ok).toBe(false);
+		expect(result.message).not.toContain("No job of this run failed");
+	});
+
+	it("reports the job limit instead of silently truncating an oversized attempt", async () => {
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[jobsPath(7), JSON.stringify({ total_count: 1001, jobs: [] })],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(result).toMatchObject({ ok: false, code: "HOBO_CI_JOB_LIMIT" });
+		expect(result.message).toContain("1000");
 	});
 
 	it("says so when there is nothing to diagnose", async () => {

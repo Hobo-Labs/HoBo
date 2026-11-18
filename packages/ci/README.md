@@ -333,6 +333,22 @@ a different source directory/revision while reusing an old ID does not request
 a new run. Relative workspace paths are portable; host absolute paths and
 provider-specific toolchain/environment defaults are not part of this contract.
 
+`@hobo/ci/testing` provides `createScriptedPipelineBackend` for tests of the
+same `PipelineBackend` interface. Supply a backend kind and optional handlers
+for opening a session, running steps, producing artifact bytes, closing, and
+observing final usage. The returned `port` can be passed to `executePipeline`
+or `PipelineScheduler`; `calls` is a copied history of operation names and
+identifiers, and `clear()` resets that history. Each factory call has its own
+history. Its `mocked` fidelity is compatible with HoBo's test-harness
+convention. A session aborts pending work and waits for it to settle before close
+completes, so asynchronous handlers must respond to their abort signal.
+Unscripted steps succeed with empty output; an unscripted artifact is missing.
+
+The scripted backend executes no commands and contacts no provider. Its
+results, artifact bytes, allocation behavior and usage observations are test
+inputs; they do not establish provider compatibility, real cancellation,
+durability or billing finality.
+
 ## Apply routing and budgets
 
 The Node coordinator `PipelineScheduler` from `@hobo/ci/scheduler` uses
@@ -421,6 +437,12 @@ A re-run is only ever called likely to pass for a runner or network failure.
 A failed test with a timing hint is `flaky` with the outlook left `unknown`.
 `hobo ci signals` and `hobo ci diagnose` print these reports from GitHub's
 own run history ([CLI](../hobo/CI.md#signals-and-diagnosis)).
+
+Insight timestamps are epoch milliseconds. Wait and run durations are absent
+when their required timestamps are missing and are clamped at zero when clocks
+are out of order. A completed billed job is charged in whole minutes with a
+one-minute minimum. Runner labels are trimmed and sorted without regard to case
+before reports group them.
 
 ## Persistent platform policy
 
@@ -656,6 +678,6 @@ Native Dagger checks use [`.hobo/dagger.json`](../../.hobo/dagger.json); see [`@
 
 The records, frozen names and ports a relay job is answered through, and
 `answerRelayJob`, the one function job mode and relay mode both call
-(ADR-0183), are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
+are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
 every port and their conformance functions are exported as
 `@hobo/ci/runner-order/testing`.
