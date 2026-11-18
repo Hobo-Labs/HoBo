@@ -12,7 +12,9 @@ import {
 	addAvailable,
 	addUpper,
 	availableCredits,
+	chargeWithinBudget,
 	costForUnits,
+	exposureWithinBudget,
 	moneySumExceeds,
 	remainingMoney,
 	subtractAvailable,
@@ -523,13 +525,25 @@ export function createReservationLedger(initialLedgerView) {
 				: 0;
 			if (
 				account &&
-				(reservedCost > budgetHeadroomFor(account) ||
-					(reservedCost > 0 &&
-						account.budgetCap !== undefined &&
-						moneySumExceeds(
-							[account.spendToDate ?? 0, totalHeld],
-							account.budgetCap,
-						)))
+				account.budgetCap !== undefined &&
+				reservedCost > 0 &&
+				(!optionalNonNegativeNumber(account.budgetCap) ||
+					!optionalNonNegativeNumber(account.spendToDate ?? 0) ||
+					!optionalNonNegativeNumber(account.reservedCost ?? 0) ||
+					!exposureWithinBudget(
+						units,
+						priced.freeUnits,
+						unitCost,
+						switchingCost,
+						estimatedCost,
+						account.budgetCap,
+						account.spendToDate ?? 0,
+						account.reservedCost ?? 0,
+					) ||
+					moneySumExceeds(
+						[account.spendToDate ?? 0, account.reservedCost ?? 0],
+						account.budgetCap,
+					))
 			)
 				return {
 					ok: false as const,
@@ -1276,7 +1290,21 @@ function rankCreditCandidate({
 			: 0;
 	const baseCost = costForUnits(units, freeUnits, listUnitCost, 0);
 	const totalCost = costForUnits(units, freeUnits, listUnitCost, switchingCost);
-	const budgetExceeded = totalCost > credit.budgetHeadroom;
+	const budgetExceeded =
+		account?.budgetCap !== undefined &&
+		optionalNonNegativeNumber(account.budgetCap) &&
+		optionalNonNegativeNumber(account.spendToDate ?? 0) &&
+		optionalNonNegativeNumber(account.reservedCost ?? 0)
+			? !chargeWithinBudget(
+					units,
+					freeUnits,
+					listUnitCost,
+					switchingCost,
+					account.budgetCap,
+					account.spendToDate ?? 0,
+					account.reservedCost ?? 0,
+				)
+			: totalCost > credit.budgetHeadroom;
 	const hardBudgetInvalid =
 		account?.budgetCap !== undefined &&
 		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));

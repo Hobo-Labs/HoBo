@@ -128,3 +128,66 @@ export function moneySumExceeds(
 	);
 	return compareDecimal(sum, decimal(limit)) > 0;
 }
+
+export function chargeWithinBudget(
+	units: number,
+	freeUnits: number,
+	unitCost: number,
+	switchingCost: number,
+	budgetCap: number,
+	spendToDate: number,
+	reservedCost: number,
+): boolean {
+	const paid = maxDecimal(
+		subtractDecimal(decimal(units), decimal(freeUnits)),
+		DECIMAL_ZERO,
+	);
+	const charge = addDecimal(
+		multiplyDecimal(paid, decimal(unitCost)),
+		decimal(switchingCost),
+	);
+	const remaining = maxDecimal(
+		subtractDecimal(
+			subtractDecimal(decimal(budgetCap), decimal(spendToDate)),
+			decimal(reservedCost),
+		),
+		DECIMAL_ZERO,
+	);
+	return compareDecimal(charge, remaining) <= 0;
+}
+
+export function exposureWithinBudget(
+	units: number,
+	freeUnits: number,
+	unitCost: number,
+	switchingCost: number,
+	estimatedCost: number | undefined,
+	budgetCap: number,
+	spendToDate: number,
+	reservedCost: number,
+): boolean {
+	const paid = maxDecimal(
+		subtractDecimal(decimal(units), decimal(freeUnits)),
+		DECIMAL_ZERO,
+	);
+	const fromQuote = addDecimal(
+		multiplyDecimal(paid, decimal(unitCost)),
+		decimal(switchingCost),
+	);
+	let exposure = fromQuote;
+	if (
+		estimatedCost !== undefined &&
+		Number.isFinite(estimatedCost) &&
+		estimatedCost >= 0
+	) {
+		exposure = maxDecimal(exposure, decimal(estimatedCost));
+	}
+	const remaining = maxDecimal(
+		subtractDecimal(
+			subtractDecimal(decimal(budgetCap), decimal(spendToDate)),
+			decimal(reservedCost),
+		),
+		DECIMAL_ZERO,
+	);
+	return compareDecimal(exposure, remaining) <= 0;
+}
