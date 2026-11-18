@@ -108,11 +108,18 @@ async function holds(store: OpenedSecretStore, name: string): Promise<boolean> {
 }
 
 /** Provision what the journal's fleet is missing (see the module comment). */
-export async function prepareJournalFleet(input: {
+export function prepareJournalFleet(input: {
 	readonly store: OpenedSecretStore;
 	readonly provisioners: readonly JournalMemberProvisioner[];
 	readonly whatIf?: boolean;
 }): Promise<JournalFleetStep> {
+	const prepare = () => prepareJournalFleetUnlocked(input);
+	return input.whatIf ? prepare() : withStoreWriteLock(input.store, prepare);
+}
+
+async function prepareJournalFleetUnlocked(
+	input: Parameters<typeof prepareJournalFleet>[0],
+): Promise<JournalFleetStep> {
 	const { store } = input;
 	const settings = familySettings(store, "cd");
 	const saved = await settings.read();
@@ -147,39 +154,37 @@ export async function prepareJournalFleet(input: {
 			outcome: "would-create",
 			detail: `would create ${missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${roster} in ${store.id}`,
 		};
-	await withStoreWriteLock(store, async () => {
-		for (const member of missing) {
-			const provisioner = input.provisioners.find(
-				(candidate) => candidate.plan === member.plan,
+	for (const member of missing) {
+		const provisioner = input.provisioners.find(
+			(candidate) => candidate.plan === member.plan,
+		);
+		if (provisioner === undefined)
+			throw new Error(
+				`no provisioner here creates ${member.plan} databases for ${member.id}`,
 			);
-			if (provisioner === undefined)
-				throw new Error(
-					`no provisioner here creates ${member.plan} databases for ${member.id}`,
-				);
-			const created = await provisioner.create({
-				member: member.id,
-				idempotencyKey: `hobo-cd-journal:${member.id}`,
-				store,
-			});
-			if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
-				throw new Error(
-					`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
-				);
-			if (created.claimUrl !== undefined)
-				await store.port.put(
-					journalMemberClaimEntry(member.id),
-					created.claimUrl,
-				);
-			await store.port.put(
-				journalMemberUrlEntry(member.id),
-				created.connectionString,
-			);
-		}
-		await settings.write({
-			...saved,
-			[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
-			[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
+		const created = await provisioner.create({
+			member: member.id,
+			idempotencyKey: `hobo-cd-journal:${member.id}`,
+			store,
 		});
+		if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
+			throw new Error(
+				`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
+			);
+		if (created.claimUrl !== undefined)
+			await store.port.put(
+				journalMemberClaimEntry(member.id),
+				created.claimUrl,
+			);
+		await store.port.put(
+			journalMemberUrlEntry(member.id),
+			created.connectionString,
+		);
+	}
+	await settings.write({
+		...saved,
+		[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
+		[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
 	});
 	const claims =
 		missing.length > 0

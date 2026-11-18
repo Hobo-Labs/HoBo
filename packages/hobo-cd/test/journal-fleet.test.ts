@@ -22,6 +22,21 @@ function memoryStore(): OpenedSecretStore {
 	};
 }
 
+function serialStore(base: OpenedSecretStore): OpenedSecretStore {
+	let pending: Promise<void> = Promise.resolve();
+	return {
+		...base,
+		withWriteLock: <T>(operation: () => Promise<T>): Promise<T> => {
+			const result = pending.then(operation);
+			pending = result.then(
+				() => undefined,
+				() => undefined,
+			);
+			return result;
+		},
+	};
+}
+
 function fakeNeon(failOn?: string) {
 	const created: string[] = [];
 	const provisioner: JournalMemberProvisioner = {
@@ -126,6 +141,50 @@ describe("prepareJournalFleet", () => {
 				.outcome,
 		).toBe("unchanged");
 		expect(again.created).toEqual([]);
+	});
+
+	it("reads the fleet after acquiring the shared write lock", async () => {
+		const store = serialStore(memoryStore());
+		const neon = fakeNeon();
+		const steps = await Promise.all([
+			prepareJournalFleet({ store, provisioners: [neon.provisioner] }),
+			prepareJournalFleet({ store, provisioners: [neon.provisioner] }),
+		]);
+		expect(steps.map((step) => step.outcome)).toEqual(["created", "unchanged"]);
+		expect(neon.created).toEqual([
+			"journal-1",
+			"journal-2",
+			"journal-3",
+			"journal-witness",
+		]);
+	});
+
+	it("resumes a failed setup after taking the shared write lock", async () => {
+		const store = serialStore(memoryStore());
+		const neon = fakeNeon();
+		let fail = true;
+		const provisioner: JournalMemberProvisioner = {
+			...neon.provisioner,
+			create: async (input) => {
+				if (input.member === "journal-2" && fail) {
+					fail = false;
+					throw new Error("provisioning interrupted");
+				}
+				return neon.provisioner.create(input);
+			},
+		};
+		const results = await Promise.allSettled([
+			prepareJournalFleet({ store, provisioners: [provisioner] }),
+			prepareJournalFleet({ store, provisioners: [provisioner] }),
+		]);
+		expect(results[0]?.status).toBe("rejected");
+		expect(results[1]?.status).toBe("fulfilled");
+		expect(neon.created).toEqual([
+			"journal-1",
+			"journal-2",
+			"journal-3",
+			"journal-witness",
+		]);
 	});
 
 	it("creates nothing under --what-if", async () => {
