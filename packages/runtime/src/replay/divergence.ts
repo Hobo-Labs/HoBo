@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import { cloneAsJson } from "../json.js";
-import { stableStringify } from "./equivalence.js";
-import type { ReplayDivergenceRecord } from "./types.js";
+import { canonicalizationVersion } from "./canonicalization.js";
+import { stableStringifyForVersion } from "./equivalence.js";
+import type {
+	CanonicalizationVersion,
+	ReplayDivergenceRecord,
+} from "./types.js";
 
 export class ReplayDivergenceError extends Error {
 	readonly liveState: unknown;
@@ -18,8 +22,10 @@ export class ReplayDivergenceError extends Error {
 		liveOrder: string[];
 		replayOrder: string[];
 		firstDivergentEventKey?: string;
+		canonicalizationVersion?: CanonicalizationVersion;
 	}) {
 		super("replay/live materialization mismatch");
+		const version = canonicalizationVersion(input.canonicalizationVersion, 2);
 		this.name = "ReplayDivergenceError";
 		this.liveState = input.liveState;
 		this.replayState = input.replayState;
@@ -29,9 +35,10 @@ export class ReplayDivergenceError extends Error {
 			input.firstDivergentEventKey ??
 			findFirstDivergentKey(input.liveOrder, input.replayOrder);
 		this.divergence = {
+			canonicalizationVersion: version,
 			runId: input.runId,
-			liveStateDigest: digest(input.liveState),
-			replayStateDigest: digest(input.replayState),
+			liveStateDigest: digestForVersion(input.liveState, version),
+			replayStateDigest: digestForVersion(input.replayState, version),
 			liveOrder: input.liveOrder,
 			replayOrder: input.replayOrder,
 			firstDivergentEventKey: this.firstDivergentEventKey,
@@ -40,9 +47,16 @@ export class ReplayDivergenceError extends Error {
 }
 
 export function digest<T>(value: T): string {
+	return digestForVersion(value, 2);
+}
+
+export function digestForVersion<T>(
+	value: T,
+	version: CanonicalizationVersion,
+): string {
 	return crypto
 		.createHash("sha256")
-		.update(stableStringify(cloneAsJson(value)))
+		.update(stableStringifyForVersion(cloneAsJson(value), version))
 		.digest("hex");
 }
 
