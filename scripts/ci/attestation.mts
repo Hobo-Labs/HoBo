@@ -39,6 +39,7 @@ export const COVERED_JOBS = [
 	"pr_gate_validation",
 	"workspace_tests",
 	"pr_affected",
+	"scripts-tests",
 	"pr-offpath",
 	"artifact-trust",
 	"ci-guard",
@@ -47,20 +48,17 @@ export const COVERED_JOBS = [
 ] as const;
 export type CoveredJob = (typeof COVERED_JOBS)[number];
 
-/**
- * The jobs the PR impact gate adds up. Each needs the one before it, so they
- * are attested together or not at all.
- */
 export const GATE_JOBS: readonly CoveredJob[] = [
 	"pr_gate_validation",
 	"workspace_tests",
 	"pr_affected",
+	"scripts-tests",
 ];
 
 /** The gate's jobs that run on each event; `pr_affected` is pull-request only. */
 export const GATE_JOBS_BY_EVENT = {
 	pull_request: GATE_JOBS,
-	merge_group: ["pr_gate_validation", "workspace_tests"],
+	merge_group: ["pr_gate_validation", "workspace_tests", "scripts-tests"],
 } satisfies Record<AttestationEvent, readonly CoveredJob[]>;
 
 /**
@@ -72,8 +70,8 @@ export const NEEDS_CONTAINER_ENGINE: readonly CoveredJob[] = [
 	"workspace_tests",
 ];
 
-export const SHADOW_WORKFLOW_BLOB = "dc252ac87927a390b20859e544bec2facd562e98";
-export const SHADOW_PLAN_BLOB = "52d2e041eceb031445f0872433d4d10ed4fa3469";
+export const SHADOW_WORKFLOW_BLOB = "4ee1e5c39a3bad669635efdb6e180ee822c8b0a4";
+export const SHADOW_PLAN_BLOB = "28e26606b042e90b641cc2f6706a6573e0322c1f";
 export const SHADOW_WORKFLOW_PATH = ".github/workflows/hobo-ci.yml";
 export const SHADOW_PLAN_PATH = "scripts/ci/attested-jobs.json";
 export const SHADOW_REQUIRED_PATHS = [
@@ -103,12 +101,10 @@ export const SHADOW_RESOLUTION_PATHS = [
 	"scripts/lib/.gitattributes",
 ] as const;
 
-/**
- * Jobs that examine commits, not a tree: the secret scan reads every commit
- * between the base and the head. Two histories can end in the same tree, so
- * these are accepted only for the exact head and base commits that were run.
- */
-export const COMMIT_BOUND_JOBS: readonly CoveredJob[] = ["secret-scan"];
+export const COMMIT_BOUND_JOBS: readonly CoveredJob[] = [
+	"secret-scan",
+	"scripts-tests",
+];
 
 /** No trust entry may reach further into the future than this. */
 export const MAX_TRUST_DAYS = 90;
@@ -609,10 +605,6 @@ const refused = (reason: string): AttestationVerdict => ({
  * caller reads it there and nowhere else: the list in the tree under test is
  * the pull request's own, and a pull request may not vouch for itself.
  *
- * The jobs reported are those that ran for `event` on a machine able to run
- * them. A job that examines commits (the secret scan) is reported only when
- * `head` and `base`, the event's own commits, are the commits that were run:
- * another history can end in the same tree.
  */
 export function verifyAttestation(input: {
 	envelopeText: string;
@@ -686,6 +678,17 @@ export function verifyAttestation(input: {
 			statement.jobs.includes(job) &&
 			results.get(job)?.events.includes(event) === true,
 	);
+	const scripts = results.get("scripts-tests");
+	if (
+		scripts?.executionMode !== "each-step-v1" ||
+		(scripts.eventChecks?.[event] ?? 0) < 4 ||
+		scripts.commands <
+			Object.values(scripts.eventChecks ?? {}).reduce(
+				(total, count) => total + count,
+				0,
+			)
+	)
+		jobs = jobs.filter((job) => job !== "scripts-tests");
 	if (!statement.environment.dockerEngine)
 		jobs = jobs.filter((job) => !NEEDS_CONTAINER_ENGINE.includes(job));
 	const sameCommits =
