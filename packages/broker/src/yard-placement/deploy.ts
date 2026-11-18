@@ -1619,6 +1619,11 @@ export function parseBindleDeploymentRequest(
 			"spendEstimateUsd must be present, finite, and nonnegative",
 		);
 	if (
+		yardRaw.selectionMode === "exact" &&
+		yardRaw.requestedYardId === undefined
+	)
+		throw new TypeError("exact Yard selection requires requestedYardId");
+	if (
 		yardRaw.requestedYardId !== undefined &&
 		(!isJsonString(yardRaw.requestedYardId) || !yardRaw.requestedYardId.trim())
 	)

@@ -18,6 +18,34 @@ const base = buildDeploymentRequestFromParts({
 });
 
 describe("Yard deployment request validation", () => {
+	it("requires an ID for exact Yard selection before placement", async () => {
+		const { requestedYardId: _id, ...yard } = base.yard;
+		expect(() =>
+			parseBindleDeploymentRequest(cloneAsJson({ ...base, yard })),
+		).toThrow(/exact.*requestedYardId/i);
+		expect(() =>
+			buildDeploymentRequestFromParts({
+				bindleName: "shop",
+				selectionMode: "exact",
+				resources: [],
+			}),
+		).toThrow(/exact.*requestedYardId/i);
+		let authorizations = 0;
+		const result = await resolveBindleDeployment(
+			{ ...base, yard },
+			{
+				brokerId: "broker:test",
+				catalog: createLocalHostCatalog(),
+				authorizeLocalHosting: (context) => {
+					authorizations++;
+					return approveLocalHosting(context);
+				},
+			},
+		);
+		expect(result.reasons?.[0]?.code).toBe("invalid-deployment-request");
+		expect(result.events).toHaveLength(0);
+		expect(authorizations).toBe(0);
+	});
 	it("requires a finite, nonnegative explicit estimate and preserves zero", () => {
 		const { spendEstimateUsd: _estimate, ...missing } = base;
 		for (const amount of [undefined, null, "0", -1, Number.NaN, Infinity]) {

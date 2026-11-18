@@ -178,11 +178,36 @@ complete version 1 requests; a version 1-only receiver must be upgraded before
 using version 2. Older messages without a completeness marker must be rebuilt
 from the original request; an old quote or reservation may need reconciliation.
 
+Exact Yard selection requires a nonblank `requestedYardId`; supplied IDs must
+also be nonblank for other selection modes. The parser, decoder and CUE contract
+refuse an exact request without an ID before placement. Requests previously
+accepted without a Yard ID must be corrected and any related quotes or
+holds reconciled before retrying.
+
 The Yard request CUE contract requires a nonblank Camp ID for exact selection
 and rejects blank Camp IDs, environment types and capability or runtime
 requirements using the same whitespace rules as the parser. Previously accepted
 CUE documents with those invalid Camp fields must be corrected before reuse;
 other request semantics and receiver authorization still require separate checks.
+CUE 0.14's JSON reader rejects a literal U+FEFF inside a JSON string; encode it
+as `\ufeff` when validating such input with CUE. This does not change the ID.
+
+The bounded Yard wire projection hides 18 same-state steps. Acceptance still
+requires the later matching, policy and authorization checks.
+
+```mermaid
+stateDiagram-v2
+  s0: CUE request received
+  s1: Binary request received
+  s2: Valid Yard request accepted
+  s3: Invalid Yard request refused
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: accept the Yard request
+  s0 --> s3: refuse the invalid Yard ID
+  s1 --> s2: accept the Yard request
+  s1 --> s3: refuse the invalid Yard ID
+```
 
 The bounded Camp wire projection hides 54 same-state steps. A request accepted
 here still requires authorization and does not establish that the Camp exists.

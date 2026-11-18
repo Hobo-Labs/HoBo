@@ -5,7 +5,9 @@ package broker
 #YardJsonValue: null | bool | number | string | [...#YardJsonValue] | {[string]: #YardJsonValue}
 
 // ECMAScript String.trim whitespace: preserve nonblank input without normalizing it.
-#CampNonblank: string & !~"^[\\x{0009}-\\x{000D}\\x{0020}\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]*$"
+#PlacementNonblank: string & !~"^[\\x{0009}-\\x{000D}\\x{0020}\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]*$"
+#CampNonblank:      #PlacementNonblank
+#YardIdNonblank:    #PlacementNonblank
 
 #PlacementLabelEntry: {
 	key:   string
@@ -43,11 +45,14 @@ package broker
 #YardPlacementRequest: {
 	request_id:                 string & !=""
 	selection_mode:             "exact" | "compatible" | "compatible-or-generate"
-	requested_yard_id?:         string
+	requested_yard_id?:         #YardIdNonblank
 	requested_shape:            #YardShape
 	bindle_manifest_hash:       string & !=""
 	bindle_requirements_hash:   string & !=""
 	allow_generation_requested: bool
+	if selection_mode == "exact" {
+		requested_yard_id!: #YardIdNonblank
+	}
 }
 
 #BindleRequirements: {
