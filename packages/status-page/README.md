@@ -38,6 +38,10 @@ static site is the **read store**, rebuildable from zero. Types follow
   budget render **delayed/unknown — never stale operational** (ADR-0077 §4).
   A signal dated after `evaluatedAt` is also delayed until the clock reaches it.
   The freshness budget must be a nonnegative safe integer in milliseconds.
+- Maintenance updates received before their schedule are held in the projection
+  until the schedule arrives. Completed and canceled are terminal states. Rebuild
+  older projection snapshots from the event log to recover updates discarded by
+  earlier versions.
 - **Render** (`src/render.ts`): pure HTML string renderer, HoBo Rubberhose
   chrome (see `DESIGN.md`), strict inline CSP, `escapeHtml` on every value.
 - **Statuspage-v2 JSON** (`src/statuspage-json.ts`): emits the de-facto

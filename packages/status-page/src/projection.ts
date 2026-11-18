@@ -30,6 +30,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 	type MaintenanceRecord,
+	type MaintenanceState,
 	type Mutable,
 	worstComponentStatus,
 } from "./types.js";
@@ -62,6 +63,10 @@ export interface StatusPageRow {
 	readonly components: Readonly<Record<string, ComponentRow>>;
 	readonly incidents: Readonly<Record<string, IncidentRecord>>;
 	readonly maintenances: Readonly<Record<string, MaintenanceRecord>>;
+	/** Updates received before their maintenance schedule, consumed on schedule. */
+	readonly pendingMaintenanceStates?: Readonly<
+		Record<string, MaintenanceState>
+	>;
 	readonly published?: {
 		readonly at: string;
 		readonly contentHash: `sha256:${string}`;
@@ -445,14 +450,22 @@ function applyMaintenanceScheduled(
 	) {
 		return touch(base, event, {});
 	}
-	const existing = base.maintenances[data.maintenanceId];
+	const existing = Object.hasOwn(base.maintenances, data.maintenanceId)
+		? base.maintenances[data.maintenanceId]
+		: undefined;
+	const pendingStates = { ...base.pendingMaintenanceStates };
+	const pendingState = Object.hasOwn(pendingStates, data.maintenanceId)
+		? pendingStates[data.maintenanceId]
+		: undefined;
+	delete pendingStates[data.maintenanceId];
+	const { pendingMaintenanceStates: _pending, ...withoutPending } = base;
 	const maintenance: MaintenanceRecord = {
 		id: data.maintenanceId,
 		title:
 			isStringValue(data.title) && data.title.length > 0
 				? data.title
 				: data.maintenanceId,
-		state: existing?.state ?? "scheduled",
+		state: existing?.state ?? pendingState ?? "scheduled",
 		windowStart: data.windowStart,
 		windowEnd: data.windowEnd,
 		affectedComponents: Object.freeze(
@@ -466,9 +479,12 @@ function applyMaintenanceScheduled(
 			? data.expectedImpact
 			: "",
 	};
-	return touch(base, event, {
+	const patch: Mutable<Partial<StatusPageRow>> = {
 		maintenances: { ...base.maintenances, [maintenance.id]: maintenance },
-	});
+	};
+	if (Object.keys(pendingStates).length > 0)
+		patch.pendingMaintenanceStates = pendingStates;
+	return touch(withoutPending, event, patch);
 }
 
 function applyMaintenanceUpdated(
@@ -480,15 +496,29 @@ function applyMaintenanceUpdated(
 	if (!isStringValue(data?.maintenanceId) || data.maintenanceId.length === 0) {
 		return touch(base, event, {});
 	}
-	const existing = base.maintenances[data.maintenanceId];
-	if (!existing) return touch(base, event, {});
 	const next =
 		data.state === "scheduled" ||
 		data.state === "in-progress" ||
 		data.state === "completed" ||
 		data.state === "canceled"
 			? data.state
-			: existing.state;
+			: undefined;
+	if (next === undefined) return touch(base, event, {});
+	const existing = Object.hasOwn(base.maintenances, data.maintenanceId)
+		? base.maintenances[data.maintenanceId]
+		: undefined;
+	if (!existing) {
+		const pendingStates = { ...base.pendingMaintenanceStates };
+		const previous = Object.hasOwn(pendingStates, data.maintenanceId)
+			? (pendingStates[data.maintenanceId] ?? "scheduled")
+			: "scheduled";
+		return touch(base, event, {
+			pendingMaintenanceStates: {
+				...pendingStates,
+				[data.maintenanceId]: advanceMaintenanceState(previous, next),
+			},
+		});
+	}
 	const maintenance: MaintenanceRecord = {
 		...existing,
 		state: advanceMaintenanceState(existing.state, next),
