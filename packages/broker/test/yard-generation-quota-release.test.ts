@@ -50,6 +50,12 @@ describe("durable generation quota cancellation", () => {
 			expect(authority.cancelUnclaimed(a).kind).toBe("cancelled");
 			expect(authority.cancelUnclaimed(a).kind).toBe("existing");
 			expect(authority.lookup(a.idempotencyKey)).toBeUndefined();
+			expect(authority.lookupCancellation(a.idempotencyKey)).toBe(
+				contentHashOf(a),
+			);
+			expect(() =>
+				authority.cancelUnclaimed({ ...a, ownerTenantId: "foreign" }),
+			).toThrow();
 			expect(() => authority.reserve(a)).toThrow(/cancelled/u);
 			expect(() => authority.claimExecution(a)).toThrow();
 			expect(authority.reserve(request("b")).kind).toBe("reserved");

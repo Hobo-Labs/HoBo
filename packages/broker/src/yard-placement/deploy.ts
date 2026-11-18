@@ -983,12 +983,14 @@ export async function resolveBindleDeployment(
 		const quotaMarkReady = quota.markReady;
 		const quotaClaimExecution = quota.claimExecution;
 		const quotaCancelUnclaimed = quota.cancelUnclaimed;
+		const quotaLookupCancellation = quota.lookupCancellation;
 		const quotaMethods = [
 			quotaReserve,
 			quotaLookup,
 			quotaMarkReady,
 			quotaClaimExecution,
 			quotaCancelUnclaimed,
+			quotaLookupCancellation,
 		];
 		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: this host-supplied port must be callable before policy, budget or provider effects.
 		if (!quotaMethods.every((method) => typeof method === "function"))
@@ -1008,6 +1010,7 @@ export async function resolveBindleDeployment(
 			maxConcurrentGenerations: generationPolicy.maxConcurrentGenerations,
 			maxYardsPerTenant: generationPolicy.maxYardsPerTenant,
 		});
+		const quotaRequestDigest = contentHashOf(quotaRequest);
 		const quotaClaimMatches = (claim: YardGenerationQuotaClaim | undefined) =>
 			Boolean(
 				claim &&
@@ -1033,7 +1036,8 @@ export async function resolveBindleDeployment(
 			quota.lookup === quotaLookup &&
 			quota.markReady === quotaMarkReady &&
 			quota.claimExecution === quotaClaimExecution &&
-			quota.cancelUnclaimed === quotaCancelUnclaimed;
+			quota.cancelUnclaimed === quotaCancelUnclaimed &&
+			quota.lookupCancellation === quotaLookupCancellation;
 		let quotaReserved = false;
 		let quotaCreatedByCall = false;
 		let quotaExecutionClaimed = false;
@@ -1272,13 +1276,18 @@ export async function resolveBindleDeployment(
 					if (
 						!cancelled ||
 						(cancelled.kind !== "cancelled" && cancelled.kind !== "existing") ||
+						cancelled.requestDigest !== quotaRequestDigest ||
 						quota.persistence !== "durable-sqlite" ||
 						quota.cancelUnclaimed !== quotaCancelUnclaimed ||
 						quota.lookup !== quotaLookup ||
+						quota.lookupCancellation !== quotaLookupCancellation ||
+						quotaLookupCancellation.call(quota, quotaRequest.idempotencyKey) !==
+							quotaRequestDigest ||
 						quotaLookup.call(quota, quotaRequest.idempotencyKey) !==
 							undefined ||
 						quota.cancelUnclaimed !== quotaCancelUnclaimed ||
-						quota.lookup !== quotaLookup
+						quota.lookup !== quotaLookup ||
+						quota.lookupCancellation !== quotaLookupCancellation
 					)
 						throw new Error("quota cancellation could not be verified");
 				} catch {

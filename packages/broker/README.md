@@ -436,7 +436,8 @@ failure, the broker attempts to cancel a quota reservation it created if no
 execution fence has been claimed. Hosts can call `cancelUnclaimed` for other
 stranded reservations after checking the bound attempt. A cancelled key cannot
 be reused; a new attempt needs a new key. Cancellation fails if an execution
-fence exists, and unverified cancellations require reconciliation. A lost budget
+fence exists, and the broker verifies both the bound cancellation tombstone and
+the missing claim; unverified cancellations require reconciliation. A lost budget
 reservation acknowledgement is reported for reconciliation, and budget holds
 remain separate from quota cancellation.
 

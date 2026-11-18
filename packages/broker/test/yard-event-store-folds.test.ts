@@ -247,9 +247,11 @@ describe("yard event-store folds + provider resolvers", () => {
 		"generation-budget-fails-after-quota",
 		"generation-budget-commits-then-fails",
 		"generation-quota-claim-fails",
+		"generation-quota-fence-not-stored",
 		"generation-quota-claim-commits-then-fails",
 		"generation-quota-cancel-fails",
 		"generation-quota-cancel-not-stored",
+		"generation-quota-cancel-evidence-unavailable",
 		"exact-yard-mismatch-before-generation",
 		"exact-yard-match-generation",
 		"wrong-generated-yard-id",
@@ -767,7 +769,8 @@ describe("yard event-store folds + provider resolvers", () => {
 				if (
 					mode === "generation-budget-fails-after-quota" ||
 					mode === "generation-quota-cancel-fails" ||
-					mode === "generation-quota-cancel-not-stored"
+					mode === "generation-quota-cancel-not-stored" ||
+					mode === "generation-quota-cancel-evidence-unavailable"
 				)
 					throw new Error("budget reservation unavailable");
 				const reservation = authority.reserve(input);
@@ -860,12 +863,21 @@ describe("yard event-store folds + provider resolvers", () => {
 				Object.assign(deps, { generationQuota: quota });
 			if (
 				mode === "generation-quota-claim-fails" ||
-				mode === "generation-quota-claim-commits-then-fails"
+				mode === "generation-quota-claim-commits-then-fails" ||
+				mode === "generation-quota-fence-not-stored"
 			)
 				Object.assign(deps, {
 					generationQuota: {
 						...quota,
 						claimExecution(input: Parameters<typeof quota.claimExecution>[0]) {
+							if (mode === "generation-quota-fence-not-stored") {
+								const claim = quota.lookup(input.idempotencyKey);
+								if (!claim) throw new Error("fixture quota claim missing");
+								return {
+									kind: "claimed" as const,
+									claim: { ...claim, executionClaimed: true },
+								};
+							}
 							if (mode === "generation-quota-claim-commits-then-fails")
 								quota.claimExecution(input);
 							throw new Error("quota claim unavailable");
@@ -879,12 +891,21 @@ describe("yard event-store folds + provider resolvers", () => {
 				Object.assign(deps, {
 					generationQuota: {
 						...quota,
-						cancelUnclaimed() {
+						cancelUnclaimed(
+							input: Parameters<typeof quota.cancelUnclaimed>[0],
+						) {
 							if (mode === "generation-quota-cancel-not-stored")
-								return { kind: "cancelled" as const };
+								return {
+									kind: "cancelled" as const,
+									requestDigest: contentHashOf(input),
+								};
 							throw new Error("quota cancellation unavailable");
 						},
 					},
+				});
+			if (mode === "generation-quota-cancel-evidence-unavailable")
+				Object.assign(deps, {
+					generationQuota: { ...quota, lookupCancellation: () => undefined },
 				});
 			if (mode === "generation-quota-changed-before-provider") {
 				let scheduled = false;
@@ -1221,9 +1242,11 @@ describe("yard event-store folds + provider resolvers", () => {
 				mode === "generation-budget-fails-after-quota" ||
 				mode === "generation-budget-commits-then-fails" ||
 				mode === "generation-quota-claim-fails" ||
+				mode === "generation-quota-fence-not-stored" ||
 				mode === "generation-quota-claim-commits-then-fails" ||
 				mode === "generation-quota-cancel-fails" ||
-				mode === "generation-quota-cancel-not-stored"
+				mode === "generation-quota-cancel-not-stored" ||
+				mode === "generation-quota-cancel-evidence-unavailable"
 			) {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
@@ -1234,11 +1257,22 @@ describe("yard event-store folds + provider resolvers", () => {
 					expect(result.reasons?.[0]?.message).toContain(
 						"quota reservation requires reconciliation",
 					);
+				} else if (mode === "generation-quota-fence-not-stored") {
+					expect(claim?.executionClaimed).toBe(false);
+					expect(authority.lookup(reservationId)?.status).toBe("uncertain");
 				} else if (
 					mode === "generation-quota-cancel-fails" ||
 					mode === "generation-quota-cancel-not-stored"
 				) {
 					expect(claim?.executionClaimed).toBe(false);
+					expect(result.reasons?.[0]?.message).toContain(
+						"quota reservation requires reconciliation",
+					);
+				} else if (mode === "generation-quota-cancel-evidence-unavailable") {
+					expect(claim).toBeUndefined();
+					expect(
+						quota.lookupCancellation(generationPlan.idempotencyKey),
+					).toBeTruthy();
 					expect(result.reasons?.[0]?.message).toContain(
 						"quota reservation requires reconciliation",
 					);
@@ -1575,9 +1609,11 @@ describe("yard event-store folds + provider resolvers", () => {
 					"generation-budget-fails-after-quota",
 					"generation-budget-commits-then-fails",
 					"generation-quota-claim-fails",
+					"generation-quota-fence-not-stored",
 					"generation-quota-claim-commits-then-fails",
 					"generation-quota-cancel-fails",
 					"generation-quota-cancel-not-stored",
+					"generation-quota-cancel-evidence-unavailable",
 				),
 				fc.string(),
 				async (mode, suffix) =>

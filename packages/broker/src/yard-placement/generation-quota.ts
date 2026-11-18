@@ -40,7 +40,9 @@ export interface YardGenerationQuotaAuthority {
 	};
 	cancelUnclaimed(request: YardGenerationQuotaRequest): {
 		readonly kind: "cancelled" | "existing";
+		readonly requestDigest: ContentHash;
 	};
+	lookupCancellation(idempotencyKey: ContentHash): ContentHash | undefined;
 	markReady(input: {
 		readonly idempotencyKey: ContentHash;
 		readonly attemptId: string;
@@ -340,9 +342,25 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 		return Object.freeze(claim);
 	}
 
+	function lookupCancellation(
+		idempotencyKey: ContentHash,
+	): ContentHash | undefined {
+		const row = database
+			.prepare(
+				"SELECT request_digest FROM generation_quota_cancelled WHERE idempotency_key=?",
+			)
+			.get(idempotencyKey);
+		if (!row) return undefined;
+		if (!isJsonString(row.request_digest) || !validHash(row.request_digest))
+			throw new Error("invalid stored generation quota cancellation");
+		// SAFETY: the stored digest has been validated above.
+		return row.request_digest as ContentHash;
+	}
+
 	return {
 		persistence: "durable-sqlite",
 		lookup,
+		lookupCancellation,
 		reserve(input) {
 			const request = structuredClone(input);
 			validateRequest(request);
@@ -472,7 +490,10 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 							"conflict",
 							"cancelled generation quota key belongs to another attempt",
 						);
-					return Object.freeze({ kind: "existing" as const });
+					return Object.freeze({
+						kind: "existing" as const,
+						requestDigest: requestDigest(request),
+					});
 				}
 				const claim = lookup(request.idempotencyKey);
 				if (!claim || !matchesRequest(claim, request))
@@ -497,7 +518,10 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 						)
 						.run(request.idempotencyKey);
 				});
-				return Object.freeze({ kind: "cancelled" as const });
+				return Object.freeze({
+					kind: "cancelled" as const,
+					requestDigest: requestDigest(request),
+				});
 			});
 		},
 		markReady(input) {
