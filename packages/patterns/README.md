@@ -43,6 +43,10 @@ CLI starter bodies live under `patterns/starter/cli/<alias>/project/` and are
 the only source for `hobo new -t todo|api|agent|fullstack`. CLI starter ignore files exclude the local codegen/build lock database, its
 SQLite sidecars and interrupted staging trees so recovery state stays local.
 
+The `fullstack` starter serves a note editor at `/` when run with `hobo dev
+--serve`. Saved notes stay in the local in-memory resource until the app stops.
+The `/app` route returns the current note as JSON.
+
 Atomic snippets live in [`atoms/`](./atoms/README.md) and load with the rest of
 the catalog. Chat emit uses the same trees.
 
