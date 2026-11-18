@@ -70,6 +70,7 @@ export interface YardRuntime {
 	readonly actorHost: GatewayDeps["actorHost"];
 	readonly executor: OrchestratorDeps["executor"];
 	readonly broker: OrchestratorDeps["broker"];
+	readonly observeDependency?: OrchestratorDeps["observeDependency"];
 	readonly registry: PlannerRegistry;
 	readonly hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 	readonly defaultHostingBudgetId?: string;
@@ -325,6 +326,8 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 		executor: runtime.executor,
 		broker: runtime.broker,
 	};
+	if (runtime.observeDependency)
+		orchestratorDeps.observeDependency = runtime.observeDependency;
 
 	function pureplan(
 		bindle: ManifestV1,
@@ -517,6 +520,11 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				resourceId: move.resource,
 				detail: `Cannot move from ${move.from ?? "an unknown provider"} to ${move.to} until the existing resource and any uncertain effects are reconciled.`,
 			}));
+			const waiting = (orchestrated.blockedDependencies ?? []).map((item) => ({
+				type: "dependency.waiting",
+				resourceId: item.resource,
+				detail: `Waiting for ${item.dependency} to become ${item.condition} (observation: ${item.status}).`,
+			}));
 			return {
 				result: {
 					status: orchestrated.status,
@@ -524,7 +532,11 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					planHash: deployResult.planHash,
 					plan: deployResult.plan,
 					provisioned: orchestrated.provisioned,
-					progress: [...progressFrom(orchestrated.events), ...blocked],
+					progress: [
+						...progressFrom(orchestrated.events),
+						...blocked,
+						...waiting,
+					],
 					changes: orchestrated.changes,
 					pruned: orchestrated.pruned,
 				},

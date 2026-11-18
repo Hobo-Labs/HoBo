@@ -22,7 +22,10 @@ completion dependencies in the deployment plan. `runOrchestrator` uses its
 `observeDependency` port to check each condition after provisioning. If an
 observation is missing, pending, or failed, the dependent remains unprovisioned
 and the result names the blocked dependency. Call the orchestrator again after
-the provider's observation changes.
+the provider's observation changes. Configure `YardRuntime.observeDependency`
+for CLI deployments or `OrchestratorRealizerDeps.observeDependency` for
+continuous delivery. Delivery also checks conditions on dependencies realized
+by earlier Sets and includes those conditions in its resource change hash.
 
 SDK `b.secret().allow(...)` declarations lower to `secretRef` and preserve
 their requested `access` and `put` operations as required capabilities. A

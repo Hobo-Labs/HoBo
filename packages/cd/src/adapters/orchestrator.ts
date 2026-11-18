@@ -15,7 +15,9 @@
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
+	collectStream,
 	destroyResource,
+	foldResourceActor,
 	type IacProvider,
 	iacProgramFor,
 	type OrchestratorDeps,
@@ -63,7 +65,7 @@ export type HostAttestor = Readonly<{
 
 export type OrchestratorRealizerDeps = Pick<
 	OrchestratorDeps,
-	"actorHost" | "executor" | "broker"
+	"actorHost" | "executor" | "broker" | "observeDependency"
 > & {
 	/** The realizer's journal: deployment streams and its fenced ledger. */
 	readonly store: EventStore;
@@ -100,13 +102,26 @@ const EMPTY_LEDGER: Ledger = Object.freeze({
 	seq: 0,
 });
 
+interface ResourceHashNode {
+	name: string;
+	port: string;
+	provider: string;
+	deps: string[];
+	readyDeps?: string[];
+	completedDeps?: string[];
+	strategy: string;
+	region: string;
+	productId: string;
+	realizationParameters: ResourcePlan["realizationParameters"];
+}
+
 /** Content hash of one resource node as Matching resolved it. */
 export function resourceNodeHash(
 	resolved: ResolvedDeploymentSet,
 	resource: ResourcePlan,
 ): string {
 	const match = resolved.matches.find((m) => m.resource === resource.name);
-	const body = stableJson({
+	const node: ResourceHashNode = {
 		name: resource.name,
 		port: resource.port,
 		provider: match?.providerId ?? resource.provider,
@@ -115,7 +130,12 @@ export function resourceNodeHash(
 		region: resource.region ?? "",
 		productId: resource.productId ?? "",
 		realizationParameters: resource.realizationParameters ?? {},
-	});
+	};
+	if (resource.readyDeps !== undefined)
+		node.readyDeps = [...resource.readyDeps].sort();
+	if (resource.completedDeps !== undefined)
+		node.completedDeps = [...resource.completedDeps].sort();
+	const body = stableJson(node);
 	return `sha256:${createHash("sha256").update(body).digest("hex")}`;
 }
 
@@ -399,14 +419,74 @@ export function createOrchestratorRealizer(
 			try {
 				if (diff.changed.length > 0) {
 					const changedNames = new Set(diff.changed.map((r) => r.name));
+					for (const dependent of diff.changed) {
+						for (const [condition, names] of [
+							["ready", dependent.readyDeps ?? []],
+							["completed", dependent.completedDeps ?? []],
+						] as const) {
+							for (const name of names) {
+								if (changedNames.has(name)) continue;
+								const entry = ledger.resources[name];
+								if (!entry)
+									return blocked(
+										input,
+										[
+											reason(
+												"realize-blocked",
+												`dependency ${name} is not realized`,
+												dependent.name,
+											),
+										],
+										ledger.setId,
+									);
+								const events = await collectStream(
+									d.store,
+									`deployment:${entry.deploymentId}`,
+								);
+								const snapshot = foldResourceActor(events, {
+									...entry.plan,
+									deploymentId: entry.deploymentId,
+								});
+								const status =
+									snapshot.state === "Provisioned" && d.observeDependency
+										? await d.observeDependency({
+												deploymentId: entry.deploymentId,
+												dependent,
+												dependency: entry.plan,
+												snapshot,
+												condition,
+											})
+										: "unobserved";
+								if (status !== condition)
+									return blocked(
+										input,
+										[
+											reason(
+												"realize-failed",
+												`${dependent.name} is waiting for ${name} to become ${condition} (observation: ${status})`,
+												dependent.name,
+											),
+										],
+										ledger.setId,
+									);
+							}
+						}
+					}
 					const fullResources = new Map(diff.changed.map((r) => [r.name, r]));
-					// Unchanged dependencies are already provisioned by an earlier Set.
-					const subset = diff.changed.map((r) => ({
-						...r,
-						deps: r.deps.filter((dep) => changedNames.has(dep)),
-					}));
-					// Filtering controls scheduling only. Providers still need the full
-					// desired specification, including already-converged dependencies.
+					const subset = diff.changed.map((r) => {
+						const { readyDeps, completedDeps, ...resource } = r;
+						const ready =
+							readyDeps?.filter((dep) => changedNames.has(dep)) ?? [];
+						const completed =
+							completedDeps?.filter((dep) => changedNames.has(dep)) ?? [];
+						const subset: ResourcePlan = {
+							...resource,
+							deps: r.deps.filter((dep) => changedNames.has(dep)),
+						};
+						if (ready.length) subset.readyDeps = ready;
+						if (completed.length) subset.completedDeps = completed;
+						return subset;
+					});
 					const fullSpecExecutor: typeof executor = {
 						run(program, credential, options) {
 							const resource = fullResources.get(program.resourceId);
@@ -419,13 +499,26 @@ export function createOrchestratorRealizer(
 							);
 						},
 					};
+					const observeDependency = d.observeDependency;
+					const orchestrator: OrchestratorDeps = {
+						store: d.store,
+						actorHost: d.actorHost,
+						executor: fullSpecExecutor,
+						broker: d.broker,
+					};
+					if (observeDependency)
+						orchestrator.observeDependency = (request) =>
+							observeDependency({
+								...request,
+								dependent:
+									fullResources.get(request.dependent.name) ??
+									request.dependent,
+								dependency:
+									fullResources.get(request.dependency.name) ??
+									request.dependency,
+							});
 					const result = await runOrchestrator(
-						{
-							store: d.store,
-							actorHost: d.actorHost,
-							executor: fullSpecExecutor,
-							broker: d.broker,
-						},
+						orchestrator,
 						{
 							...input.resolved.plan,
 							resources: subset,
@@ -444,7 +537,7 @@ export function createOrchestratorRealizer(
 									result.status === "waiting"
 										? "realize-failed"
 										: "realize-blocked",
-									`orchestrator ${result.status}${result.compensation ? ` (${result.compensation.status})` : ""}`,
+									`orchestrator ${result.status}${result.compensation ? ` (${result.compensation.status})` : ""}${(result.blockedDependencies ?? []).map((item) => `; ${item.resource} waits for ${item.dependency} ${item.condition} (${item.status})`).join("")}`,
 									input.campId,
 								),
 							],
