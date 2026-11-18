@@ -459,14 +459,22 @@ export function quoteTargetPricing(
 			"joint target quote is incomplete",
 		);
 	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
-	const inventoryProductIds = new Set(
+	const inScopeProductIds = new Set(
 		inventory.resources.map((resource) => resource.productId),
 	);
+	for (const workload of scenario.baseline) {
+		const agreements = state.agreements.filter(
+			(entry) => entry.id === workload.agreementRef,
+		);
+		const agreement = agreements[0];
+		if (agreements.length === 1 && agreement !== undefined)
+			inScopeProductIds.add(agreement.productId);
+	}
 	for (const agreement of state.agreements) {
 		if (agreement.status !== "active") continue;
 		if (
 			agreement.tenantId !== inventory.tenantId ||
-			!inventoryProductIds.has(agreement.productId)
+			!inScopeProductIds.has(agreement.productId)
 		) {
 			continue;
 		}
