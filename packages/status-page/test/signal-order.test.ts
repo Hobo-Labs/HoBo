@@ -67,7 +67,7 @@ it("uses the last folded measurement when timestamps tie", () => {
 });
 
 it("ignores malformed optional labels without replacing valid measurements", () => {
-	for (const label of [0, false, null, "", [], ["bad"], {}, { length: 1 }]) {
+	for (const label of [["bad"], { length: 1 }, 0, false, null, "", [], {}]) {
 		const invalid = statusEnvelope(
 			STATUS_SIGNAL_EVENTS.SloMeasured,
 			{
@@ -91,6 +91,14 @@ it("ignores malformed optional labels without replacing valid measurements", () 
 			history: { "2026-08-17": { worst: "operational", samples: 1 } },
 		});
 	}
+});
+
+it("keeps the newer target when an older sample has a different target", () => {
+	const component = createStatusPageProjection().fold([
+		sample(1, 2, "current", 1, 0.99),
+		sample(2, 1, "old", 0.5, 0.9),
+	]).rows["project:shop"]?.components.web;
+	expect(component?.target).toBe(0.99);
 });
 
 it("preserves the latest sample over generated measurement orders", () => {
