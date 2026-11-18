@@ -54,8 +54,15 @@ import {
 	keyIdOf,
 	MAX_TRUST_DAYS,
 	NEEDS_CONTAINER_ENGINE,
+	omitImpactGroup,
 	parseEnvelope,
 	publicKeyText,
+	SHADOW_PLAN_BLOB,
+	SHADOW_PLAN_PATH,
+	SHADOW_REQUIRED_PATHS,
+	SHADOW_RESOLUTION_PATHS,
+	SHADOW_WORKFLOW_BLOB,
+	SHADOW_WORKFLOW_PATH,
 	sha256Digest,
 	signStatement,
 	type TrustedAttestor,
@@ -368,7 +375,8 @@ export function publishAttestation(input: {
 	beforePush?: (attempt: number) => void;
 }) {
 	const { cwd, envelopeText } = input;
-	const { tree: attestedTree } = parseEnvelope(envelopeText).statement;
+	const statement = parseEnvelope(envelopeText).statement;
+	const { tree: attestedTree } = statement;
 	// The tree becomes a path on the branch; it must be an object id and nothing else.
 	if (!isObjectId(attestedTree))
 		throw new AttestError("the attestation's tree is not a git object id");
@@ -381,6 +389,15 @@ export function publishAttestation(input: {
 		throw new AttestError(
 			`not publishing: no workflow would accept this record (${verdict.reason})`,
 		);
+	if (statement.jobs.includes("pr_gate_validation")) {
+		const problem = shadowPolicyProblem({
+			root: cwd,
+			base: statement.base,
+			head: statement.head,
+			tree: statement.tree,
+		});
+		if (problem) throw new AttestError(`not publishing: ${problem}`);
+	}
 	// By URL, not by name: a push to a named remote also moves that remote's
 	// tracking ref in this repository.
 	let remote = input.remote;
@@ -999,6 +1016,64 @@ class JobFailed extends Error {
 	}
 }
 
+function shadowSkipIn(plan: readonly PlannedJob[]): boolean {
+	return plan.some(
+		(job) =>
+			job.id === "pr_gate_validation" &&
+			job.steps.some(
+				(step) =>
+					step.local === "skip" &&
+					(step.name === "Impact classification (shadow)" ||
+						step.run?.includes("scripts/ci/impact-classifier.mts")),
+			),
+	);
+}
+
+function shadowSkipAt(root: string, commit: string): boolean {
+	try {
+		return shadowSkipIn(
+			parsePlan(git(root, ["show", `${commit}:${SHADOW_PLAN_PATH}`])),
+		);
+	} catch {
+		return false;
+	}
+}
+
+function assertRunTarget(target: RunTarget): void {
+	const ids = [
+		target.head,
+		target.base,
+		target.tree,
+		target.baseTree,
+		target.mergeCommit,
+	];
+	try {
+		if (
+			!ids.every(isObjectId) ||
+			git(target.root, ["rev-parse", "HEAD"]) !== target.head ||
+			git(target.root, ["rev-parse", `${target.head}^{tree}`]) !==
+				target.tree ||
+			git(target.root, ["rev-parse", `${target.base}^{tree}`]) !==
+				target.baseTree ||
+			git(target.root, ["rev-parse", `${target.mergeCommit}^{tree}`]) !==
+				target.tree ||
+			git(target.root, ["show", "-s", "--format=%P", target.mergeCommit]) !==
+				`${target.base} ${target.head}` ||
+			!gitSucceeds(target.root, [
+				"merge-base",
+				"--is-ancestor",
+				target.base,
+				target.head,
+			])
+		)
+			throw new Error("target differs");
+	} catch {
+		throw new AttestError(
+			"the run target is inconsistent with the checked-out commits and merge tree",
+		);
+	}
+}
+
 /**
  * Runs the planned jobs for each event, in the plan's order, and signs the
  * result. Throws, having signed nothing, if a command fails.
@@ -1020,6 +1095,7 @@ export async function runAttestedJobs(input: {
 	const { target, plan, events } = input;
 	const { root } = target;
 	assertUnmodifiedGitGraph(root);
+	assertRunTarget(target);
 	const startedAt = new Date();
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-attest-run-"));
 	const outputDirectory = join(root, OUTPUT_DIRECTORY, target.tree);
@@ -1063,6 +1139,26 @@ export async function runAttestedJobs(input: {
 		for (const id of NEEDS_CONTAINER_ENGINE)
 			notAttested[id] ??=
 				"its tests start containers, and no Docker engine answers here";
+	if (
+		!GATE_JOBS.some((id) => notAttested[id] !== undefined) &&
+		plan.some((job) => job.id === "pr_gate_validation") &&
+		(shadowSkipIn(plan) ||
+			shadowSkipAt(root, target.base) ||
+			shadowSkipAt(root, target.head))
+	) {
+		try {
+			await assertSignoffPolicy({
+				root,
+				base: target.base,
+				head: target.head,
+				plan,
+				jobs: GATE_JOBS,
+			});
+		} catch (cause) {
+			if (!(cause instanceof AttestError)) throw cause;
+			notAttested.pr_gate_validation = cause.message;
+		}
+	}
 	// The PR impact gate takes its jobs together or not at all.
 	const gateGap = GATE_JOBS.find((id) => notAttested[id] !== undefined);
 	if (gateGap)
@@ -1366,16 +1462,24 @@ export function verifyLocally(input: {
 			reason: `${input.baseRef} has no ${ATTESTORS_PATH}`,
 		};
 	}
-	return verifyAttestation({
+	const head = git(root, ["rev-parse", "HEAD"]);
+	const base = git(root, ["rev-parse", `${input.baseRef}^{commit}`]);
+	const tree = git(root, ["rev-parse", "HEAD^{tree}"]);
+	const verdict = verifyAttestation({
 		envelopeText: input.envelopeText,
 		attestorsText,
-		tree: git(root, ["rev-parse", "HEAD^{tree}"]),
+		tree,
 		baseTree: git(root, ["rev-parse", `${input.baseRef}^{tree}`]),
 		event: input.event,
 		nowMs: input.nowMs,
-		head: git(root, ["rev-parse", "HEAD"]),
-		base: git(root, ["rev-parse", `${input.baseRef}^{commit}`]),
+		head,
+		base,
 	});
+	return verdict.attested &&
+		verdict.jobs.includes("pr_gate_validation") &&
+		shadowPolicyProblem({ root, base, head, tree })
+		? omitImpactGroup(verdict)
+		: verdict;
 }
 
 // These are the repository files read or invoked by the omitted composite
@@ -1418,6 +1522,68 @@ const SKIPPED_ACTION_DEPENDENCIES = {
 	],
 	"ci-trace": [".github/actions/ci-trace", "scripts/ci/ci-trace.mts"],
 } satisfies Readonly<Record<string, readonly string[]>>;
+
+function shadowPolicyProblem(input: {
+	root: string;
+	base: string;
+	head: string;
+	tree?: string | undefined;
+}): string | undefined {
+	try {
+		if (
+			(input.tree !== undefined &&
+				git(input.root, ["rev-parse", `${input.head}^{tree}`]) !==
+					input.tree) ||
+			[input.base, input.head].some(
+				(commit) =>
+					git(input.root, ["rev-parse", `${commit}:${SHADOW_PLAN_PATH}`]) !==
+						SHADOW_PLAN_BLOB ||
+					git(input.root, [
+						"rev-parse",
+						`${commit}:${SHADOW_WORKFLOW_PATH}`,
+					]) !== SHADOW_WORKFLOW_BLOB,
+			)
+		)
+			return "the trusted shadow classifier workflow or policy changed";
+		const entriesAt = (commit: string) => {
+			const listing = git(input.root, [
+				"ls-tree",
+				"--full-tree",
+				commit,
+				"--",
+				...SHADOW_REQUIRED_PATHS,
+				...SHADOW_RESOLUTION_PATHS,
+			]);
+			const entries = new Map<string, string>();
+			for (const line of listing.split("\n").filter(Boolean)) {
+				const match = /^(\d{6}) (blob|tree|commit) ([0-9a-f]+)\t(.+)$/u.exec(
+					line,
+				);
+				if (!match || !match[4] || entries.has(match[4]))
+					throw new Error("invalid tree entry");
+				entries.set(match[4], `${match[1]} ${match[2]} ${match[3]}`);
+			}
+			return entries;
+		};
+		const base = entriesAt(input.base);
+		const head = entriesAt(input.head);
+		if (
+			SHADOW_REQUIRED_PATHS.some((path) => {
+				const entry = base.get(path);
+				return (
+					!entry ||
+					!/^100(?:644|755) blob /u.test(entry) ||
+					entry !== head.get(path)
+				);
+			}) ||
+			SHADOW_RESOLUTION_PATHS.some((path) => base.has(path) || head.has(path))
+		)
+			return "a skipped shadow classifier dependency or its resolution changed or is missing at the base, or a path is unreviewed";
+		return undefined;
+	} catch {
+		return "the trusted shadow classifier policy or its dependencies could not be checked";
+	}
+}
 
 function hasUnknownSignoffInputs(job: PlannedJob): boolean {
 	// Omitted steps do not receive these values locally. Job-level
@@ -1480,6 +1646,19 @@ async function assertSignoffPolicy(input: {
 			throw new AttestError(
 				`the workflow job or workflow settings for ${id} changed from the base; signoff refused`,
 			);
+		}
+		if (id === "pr_gate_validation") {
+			const skipped = described.steps.filter(
+				(step) =>
+					step.name === "Impact classification (shadow)" &&
+					step.local === "skip",
+			);
+			if (skipped.length !== 2)
+				throw new AttestError(
+					"the trusted shadow classifier policy does not name both reports; signoff refused",
+				);
+			const problem = shadowPolicyProblem(input);
+			if (problem) throw new AttestError(`${problem}; signoff refused`);
 		}
 		for (const step of described.steps) {
 			if (step.local !== "skip" || !step.uses) continue;
