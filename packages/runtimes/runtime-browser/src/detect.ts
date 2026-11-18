@@ -16,17 +16,10 @@ export function hasOpfs(): boolean {
 export function detectBrowserPersistence(
 	options: BrowserPersistenceDetectOptions,
 ): BrowserPersistenceDetection {
-	const hasWorker = "Worker" in globalThis;
-	if (!hasWorker && process === undefined) {
-		// Node test harness may not define Worker; treat as transient when allowed
-	}
-
 	const opfs = hasOpfs();
 
 	if (opfs) {
-		return {
-			mode: options.multiTab ? "opfs-sahpool" : "opfs-sahpool",
-		};
+		return { mode: "opfs-sahpool" };
 	}
 
 	if (options.allowTransient) {

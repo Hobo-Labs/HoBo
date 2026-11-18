@@ -29,7 +29,6 @@ export interface BrowserStorageOpenOptions {
 	 * When false (default), fail with PERSISTENCE_UNAVAILABLE.
 	 */
 	readonly allowTransient?: boolean;
-	/** Prefer multi-tab VFS when implemented; default single-owner sahpool. */
 	readonly multiTab?: boolean;
 }
 
