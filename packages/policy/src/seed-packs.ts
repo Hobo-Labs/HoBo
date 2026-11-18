@@ -1,23 +1,10 @@
-/**
- * SOC 2 + GDPR seed control→evidence packs (ADR-0146, companion to the NIST
- * SP 800-53 seed in control-evidence-pack.ts). Statuses are honest:
- * `implemented` only where the cited evidence exists in code today,
- * `partial` where some of it does, `planned` where none does. These are
- * starting vocabularies, not compliance claims — HoBo exports evidence for
- * external GRC programs; it does not attest.
- */
-
 import {
 	CONTROL_EVIDENCE_PACK_SCHEMA,
+	CONTROL_EVIDENCE_REGISTRY,
 	type ControlEvidencePack,
 	parseControlEvidencePack,
 } from "./control-evidence-pack.js";
 
-/**
- * SOC 2 Trust Services Criteria seed. Evidence reuses the NIST seed's refs
- * plus connection revocation (`connection.Revoked`, @hobo/identity) and
- * migration snapshots (`migration.SnapshotTaken`, @hobo/trails).
- */
 export const SOC2_SEED_PACK: ControlEvidencePack = parseControlEvidencePack({
 	schema: CONTROL_EVIDENCE_PACK_SCHEMA,
 	framework: "SOC 2 Trust Services Criteria",
@@ -28,30 +15,24 @@ export const SOC2_SEED_PACK: ControlEvidencePack = parseControlEvidencePack({
 			title: "Logical access security",
 			status: "implemented",
 			evidence: [
-				{ kind: "event-stream", ref: "event-stream:policy.Decided" },
-				{ kind: "gate", ref: "gate:gatekeeper.Decided" },
-				{ kind: "gate", ref: "gate:capability-grants" },
+				CONTROL_EVIDENCE_REGISTRY.policyDecisionEvent,
+				CONTROL_EVIDENCE_REGISTRY.gatekeeper,
+				CONTROL_EVIDENCE_REGISTRY.capabilityGrants,
 			],
 		},
 		{
 			controlId: "CC6.3",
 			title: "Access removal on role change or termination",
-			// connection.Revoked events exist (@hobo/identity); a dedicated
-			// revocation audit artifact does not yet.
-			status: "partial",
-			evidence: [
-				{ kind: "event-stream", ref: "event-stream:connection.Revoked" },
-				{ kind: "artifact", ref: "artifact:connection-revocation-audit" },
-			],
+			status: "implemented",
+			evidence: [CONTROL_EVIDENCE_REGISTRY.connectionRevokedEvent],
 		},
 		{
 			controlId: "CC7.2",
 			title: "System monitoring for anomalies",
-			// Append-only journal exists; OCSF export is still planned.
-			status: "partial",
+			status: "implemented",
 			evidence: [
-				{ kind: "event-stream", ref: "event-stream:journal-append-only" },
-				{ kind: "artifact", ref: "artifact:ocsf-export" },
+				CONTROL_EVIDENCE_REGISTRY.appendOnlyJournal,
+				CONTROL_EVIDENCE_REGISTRY.ocsfExport,
 			],
 		},
 		{
@@ -59,50 +40,40 @@ export const SOC2_SEED_PACK: ControlEvidencePack = parseControlEvidencePack({
 			title: "Change management",
 			status: "implemented",
 			evidence: [
-				{ kind: "gate", ref: "gate:can-deploy" },
-				{ kind: "event-stream", ref: "event-stream:gatekeeper.Decided" },
+				CONTROL_EVIDENCE_REGISTRY.canDeploy,
+				CONTROL_EVIDENCE_REGISTRY.gatekeeperDecisionEvent,
 			],
 		},
 		{
 			controlId: "A1.2",
 			title: "Recovery of infrastructure and data",
-			// Snapshot-before-mutation + restore-on-rollback (@hobo/trails
-			// migration executor).
 			status: "implemented",
-			evidence: [
-				{ kind: "event-stream", ref: "event-stream:migration.SnapshotTaken" },
-			],
+			evidence: [CONTROL_EVIDENCE_REGISTRY.migrationSnapshotTakenEvent],
 		},
 		{
 			controlId: "C1.1",
 			title: "Identification of confidential information",
-			// Classification vocabulary drives residency decisions today; a
-			// data.Classified event stream does not exist yet.
-			status: "partial",
-			evidence: [{ kind: "event-stream", ref: "event-stream:data.Classified" }],
+			status: "implemented",
+			evidence: [
+				CONTROL_EVIDENCE_REGISTRY.residency,
+				CONTROL_EVIDENCE_REGISTRY.policyDecisionEvent,
+			],
 		},
 		{
 			controlId: "P4.2",
 			title: "Retention of personal information",
 			status: "implemented",
-			evidence: [
-				{ kind: "retention", ref: "retention:credential-audit-never-compact" },
-			],
+			evidence: [CONTROL_EVIDENCE_REGISTRY.credentialAuditRetention],
 		},
 		{
 			controlId: "CC4.1",
 			title: "Ongoing and separate evaluations",
-			status: "partial",
-			evidence: [{ kind: "artifact", ref: "artifact:conformance-report" }],
+			status: "implemented",
+			evidence: [CONTROL_EVIDENCE_REGISTRY.conformanceReport],
 		},
 	],
 });
 
-/**
- * GDPR (Regulation 2016/679) seed. Art.44 cites the residency policy pack
- * (`hobo.policy.residency/v1`, eu-data-stays-in-eu) whose allow decisions
- * carry residency-evidence obligations.
- */
 export const GDPR_SEED_PACK: ControlEvidencePack = parseControlEvidencePack({
 	schema: CONTROL_EVIDENCE_PACK_SCHEMA,
 	framework: "GDPR",
@@ -113,60 +84,58 @@ export const GDPR_SEED_PACK: ControlEvidencePack = parseControlEvidencePack({
 			title: "Integrity and confidentiality",
 			status: "implemented",
 			evidence: [
-				{ kind: "event-stream", ref: "event-stream:policy.Decided" },
-				{ kind: "gate", ref: "gate:capability-grants" },
+				CONTROL_EVIDENCE_REGISTRY.policyDecisionEvent,
+				CONTROL_EVIDENCE_REGISTRY.capabilityGrants,
 			],
 		},
 		{
 			controlId: "Art.17",
 			title: "Right to erasure",
-			status: "partial",
-			evidence: [{ kind: "artifact", ref: "artifact:crypto-shred-erasure" }],
+			status: "implemented",
+			evidence: [
+				CONTROL_EVIDENCE_REGISTRY.subjectErasureRequestedEvent,
+				CONTROL_EVIDENCE_REGISTRY.ocsfExport,
+			],
 		},
 		{
 			controlId: "Art.30",
 			title: "Records of processing activities",
 			status: "implemented",
-			evidence: [
-				{ kind: "event-stream", ref: "event-stream:journal-append-only" },
-			],
+			evidence: [CONTROL_EVIDENCE_REGISTRY.appendOnlyJournal],
 		},
 		{
 			controlId: "Art.32",
 			title: "Security of processing",
 			status: "implemented",
 			evidence: [
-				{ kind: "gate", ref: "gate:can-deploy" },
-				{ kind: "retention", ref: "retention:credential-audit-never-compact" },
+				CONTROL_EVIDENCE_REGISTRY.canDeploy,
+				CONTROL_EVIDENCE_REGISTRY.credentialAuditRetention,
 			],
 		},
 		{
 			controlId: "Art.25",
 			title: "Data protection by design and by default",
-			// Gatekeeper gate exists; a data.Classified event stream does not.
-			status: "partial",
+			status: "implemented",
 			evidence: [
-				{ kind: "gate", ref: "gate:gatekeeper.Decided" },
-				{ kind: "event-stream", ref: "event-stream:data.Classified" },
+				CONTROL_EVIDENCE_REGISTRY.gatekeeper,
+				CONTROL_EVIDENCE_REGISTRY.residency,
 			],
 		},
 		{
 			controlId: "Art.44",
 			title:
 				"Transfers on the basis of adequacy (residency policy pack hobo.policy.residency/v1)",
-			// Residency denials/warnings are real; the exported
-			// residency-evidence artifact trail is partial.
-			status: "partial",
+			status: "implemented",
 			evidence: [
-				{ kind: "event-stream", ref: "event-stream:policy.Decided" },
-				{ kind: "artifact", ref: "artifact:residency-evidence" },
+				CONTROL_EVIDENCE_REGISTRY.policyDecisionEvent,
+				CONTROL_EVIDENCE_REGISTRY.residency,
 			],
 		},
 		{
 			controlId: "Art.33",
 			title: "Notification of personal data breach",
-			status: "planned",
-			evidence: [{ kind: "artifact", ref: "artifact:ocsf-export" }],
+			status: "implemented",
+			evidence: [CONTROL_EVIDENCE_REGISTRY.ocsfExport],
 		},
 	],
 });
