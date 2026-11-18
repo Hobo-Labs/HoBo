@@ -113,6 +113,11 @@ The runner checks the pinned TLC jar and reuses or installs the pinned Z3 solver
 
 When covered behavior changes, review the code and its intended policy, update the implementation tests and model, replay counterexamples against code, exercise deliberately broken variants, regenerate affected charts, run the skill, and update its baseline. Keep `.agents/skills/` and `.claude/skills/` byte-for-byte mirrored. Pstack's `/maintain-formal-verification-skill` and `/statechart` describe that workflow.
 
+The Yard generation identity review also reran the affected budget, placement,
+Camp, request and local-hosting skills after deliberately weakening their
+covered guards or proof obligations. Their baselines record the reviewed
+implementation commit; the checks and limitations remain specific to each skill.
+
 ## Open work and proof boundaries
 
 - The historical candidate queue covers only selected source languages and paths and has not been fully classified. CI, CD, cloud providers, stores, examples, integrations, and additional stateful subsystems need further source review and their own checks.

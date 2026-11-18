@@ -7,7 +7,7 @@ description: Verify exact associations between Yard resource requests, selected 
 
 **Properties:** Every resource execution unit records exactly the definition selected for that resource, duplicate or malformed resource identities are refused, and later mutation of the caller's resource list cannot change the accepted request. A failure can attach another resource's provider definition, omit the selected definition, or produce ambiguous duplicate execution units.
 
-**Review baseline:** commit `b033962d0ba0eae3b3f3cc6402cd98cb2ee0b905`. PASS for the bounded models, symbolic abstraction and generated tests below. The request parser refuses malformed constraints and estimates before resource placement; `verify-yard-request-validation` checks that boundary separately. `verify-yard-json-constraints` covers special keys and structural property matching, and `verify-yard-residency-validation` covers residency preflight.
+**Review baseline:** commit `22a2b1c8bf140b4dedbc90230adf80347612a809`. PASS for the bounded models, symbolic abstraction and generated tests below. The request parser refuses malformed constraints and estimates before resource placement; `verify-yard-request-validation` checks that boundary separately. `verify-yard-json-constraints` covers special keys and structural property matching, and `verify-yard-residency-validation` covers residency preflight.
 
 ## Covered code
 
