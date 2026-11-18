@@ -13,14 +13,14 @@ cases = [
     ('ignore-baseline', 'if (this.replayBaseline !== undefined) copy.restore(this.replayBaseline);', ''),
     ('missing-restore-event', 'else this.#appendEvent("system", "model.restored", { snapshot: raw });', 'else {}'),
     ('ignore-restore-event', 'copy.restore(event.payload.snapshot ?? "");', 'copy.note(event.tenantId, "ignored.restore", { ...event.payload });'),
-    ('reuse-replacement-clock', 'this.clock = pristine ? blob.clock : baseClock + 1;', 'this.clock = pristine ? blob.clock : baseClock;'),
+    ('reuse-replacement-clock', 'this.#clock = pristine ? blob.clock : baseClock + 1;', 'this.#clock = pristine ? blob.clock : baseClock;'),
     ('skip-fingerprint', 'candidate.fingerprint() !== blob.fingerprint', 'false'),
     ('accept-duplicate-ids', 'row.id !== id || seen.has(id)', 'row.id !== id'),
     ('accept-mismatched-id', 'row.id !== id || seen.has(id)', 'seen.has(id)'),
     ('accept-unknown-verb', '!row.verbs.every(isVerb)', 'false'),
     ('accept-unknown-status', '!isResourceStatus(row.status)', 'false'),
     ('ignore-clock-limit', 'baseClock >= Number.MAX_SAFE_INTEGER', 'false'),
-    ('partial-before-parse', 'const blob = parseSnapshot(raw);', 'this.clock = 0;\n\t\tconst blob = parseSnapshot(raw);'),
+    ('partial-before-parse', 'const blob = parseSnapshot(raw);', 'this.#clock = 0;\n\t\tconst blob = parseSnapshot(raw);'),
 ]
 
 def check(case):

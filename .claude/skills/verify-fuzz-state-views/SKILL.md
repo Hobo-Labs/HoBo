@@ -9,7 +9,7 @@ description: Verify detached fuzz-oracle state and checkpoint read views.
 
 **Why:** A live reference lets a reader alter state without an event, or corrupt a checkpoint before rollback, making the fuzz oracle disagree with its own history.
 
-**Review baseline:** `debe49b6f69f828039511505838366d73e23930e`.
+**Review baseline:** `4c6134326070891e2f4ffe0dea77ca4615da31f4`.
 
 ## Covered code and checks
 
@@ -47,7 +47,9 @@ stateDiagram-v2
 
 Before the fix, callers could clear live maps, edit their rows or overwrite a checkpoint. Real-code property tests reproduce these failures. Six weakened models yield counterexamples for the read paths. Twelve scratch implementation mutations exercise map and nested-record copies, fresh and retry results, lookup, internal tenant restore and interrupt behavior; the restored full skill passes. Z3 proves the abstract detached-view update obligation and finds a counterexample for an aliased view.
 
-The model uses one bit for state and checkpoint content, assumes an apply has completed before its result is read, and does not prove TypeScript refinement, model arbitrary reentrant getters, concurrency or persistence. Direct writes to the public clock and direct calls to `tick()` remain outside this model and can affect replay ordering. Returning map snapshots allocates in proportion to their size. This is an in-memory testing oracle, not production storage.
+The model uses one bit for state and checkpoint content, assumes an apply has completed before its result is read, and does not prove TypeScript refinement, model arbitrary reentrant getters, concurrency or persistence. Public clock changes are covered separately by the [clock replay model](../verify-fuzz-clock-replay/SKILL.md). Returning map snapshots allocates in proportion to their size. This is an in-memory testing oracle, not production storage.
+
+The related [public clock model](../verify-fuzz-clock-replay/SKILL.md) checks direct clock changes and replay.
 
 ## Keep in sync
 
