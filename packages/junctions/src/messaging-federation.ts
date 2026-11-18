@@ -3,10 +3,11 @@
  * Control-plane wiring + identity path; data plane rides overlay connectivity.
  */
 
+import { MESSAGING_EVENTS } from "@hobo/core";
 import type { JunctionDefinition } from "./types.js";
 
 export const JUNCTION_MESSAGING_FEDERATED_EVENT =
-	"messaging.federated" as const;
+	MESSAGING_EVENTS.MessageFederated;
 
 export interface TopicFederationLink {
 	readonly kind: "topic-federation";

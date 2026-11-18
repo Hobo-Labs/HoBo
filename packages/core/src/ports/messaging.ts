@@ -27,6 +27,43 @@ function stringBagFrom(value: JsonObject) {
 export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v1";
 export const MESSAGING_WIT_INTERFACE = "wasi:messaging/messaging@0.2.0";
 
+export const MESSAGING_EVENTS = Object.freeze({
+	TopicCreated: "messaging.TopicCreated",
+	SubscriptionCreated: "messaging.SubscriptionCreated",
+	MessagePublished: "messaging.MessagePublished",
+	PublishDeduplicated: "messaging.PublishDeduplicated",
+	MessageConsumed: "messaging.MessageConsumed",
+	MessageAcknowledged: "messaging.MessageAcknowledged",
+	MessageNacked: "messaging.MessageNacked",
+	MessageDeadLettered: "messaging.MessageDeadLettered",
+	DeliveryPermanentlyFailed: "messaging.DeliveryPermanentlyFailed",
+	MessageFederated: "messaging.MessageFederated",
+} as const);
+
+export type MessagingEventType =
+	(typeof MESSAGING_EVENTS)[keyof typeof MESSAGING_EVENTS];
+
+export const LEGACY_MESSAGING_EVENT_UPCASTS = Object.freeze({
+	"messaging.topic.created": MESSAGING_EVENTS.TopicCreated,
+	"messaging.subscription.created": MESSAGING_EVENTS.SubscriptionCreated,
+	"messaging.published": MESSAGING_EVENTS.MessagePublished,
+	"messaging.published.deduped": MESSAGING_EVENTS.PublishDeduplicated,
+	"messaging.consumed": MESSAGING_EVENTS.MessageConsumed,
+	"messaging.acked": MESSAGING_EVENTS.MessageAcknowledged,
+	"messaging.nacked": MESSAGING_EVENTS.MessageNacked,
+	"messaging.dead_lettered": MESSAGING_EVENTS.MessageDeadLettered,
+	"messaging.delivery.permanent_failure":
+		MESSAGING_EVENTS.DeliveryPermanentlyFailed,
+	"messaging.federated": MESSAGING_EVENTS.MessageFederated,
+} satisfies Readonly<Record<string, MessagingEventType>>);
+
+const CANONICAL_MESSAGING_EVENT_TYPES = new Map<string, MessagingEventType>(
+	Object.values(MESSAGING_EVENTS).map((type) => [type, type]),
+);
+const LEGACY_MESSAGING_EVENT_TYPES = new Map<string, MessagingEventType>(
+	Object.entries(LEGACY_MESSAGING_EVENT_UPCASTS),
+);
+
 export type DeliveryGuarantee =
 	| "at-least-once"
 	| "exactly-once"
@@ -112,17 +149,7 @@ export interface ConsumedMessage<TBody = unknown> {
 }
 
 export interface MessagingEvent {
-	readonly type:
-		| "messaging.topic.created"
-		| "messaging.subscription.created"
-		| "messaging.published"
-		| "messaging.published.deduped"
-		| "messaging.consumed"
-		| "messaging.acked"
-		| "messaging.nacked"
-		| "messaging.dead_lettered"
-		| "messaging.delivery.permanent_failure"
-		| "messaging.federated";
+	readonly type: MessagingEventType;
 	readonly topic: TopicName;
 	readonly messageId?: MessagingMessageId;
 	readonly consumerGroup?: ConsumerGroupId;
@@ -130,6 +157,20 @@ export interface MessagingEvent {
 	readonly reason?: string;
 	readonly at: string;
 	readonly metadata?: Readonly<Record<string, string | number | boolean>>;
+}
+
+export function upcastMessagingEventType(type: string): MessagingEventType {
+	const current = CANONICAL_MESSAGING_EVENT_TYPES.get(type);
+	if (current !== undefined) return current;
+	const upcasted = LEGACY_MESSAGING_EVENT_TYPES.get(type);
+	if (upcasted !== undefined) return upcasted;
+	throw new MessagingParseError("type", "a messaging event type", type);
+}
+
+export function upcastMessagingEvent(
+	event: Omit<MessagingEvent, "type"> & { readonly type: string },
+): MessagingEvent {
+	return deepFreeze({ ...event, type: upcastMessagingEventType(event.type) });
 }
 
 export interface Messaging {
@@ -516,7 +557,7 @@ export function createInMemoryMessaging(
 			if (!topics.has(scoped.name)) {
 				topics.set(scoped.name, scoped);
 				logs.set(scoped.name, []);
-				emit({ type: "messaging.topic.created", topic: scoped.name });
+				emit({ type: MESSAGING_EVENTS.TopicCreated, topic: scoped.name });
 			}
 			return mustGet(topics, scoped.name);
 		},
@@ -543,7 +584,7 @@ export function createInMemoryMessaging(
 			if (!subscriptions.has(key)) {
 				subscriptions.set(key, scoped);
 				emit({
-					type: "messaging.subscription.created",
+					type: MESSAGING_EVENTS.SubscriptionCreated,
 					topic,
 					consumerGroup: group,
 				});
@@ -570,7 +611,7 @@ export function createInMemoryMessaging(
 				);
 				if (prior) {
 					emit({
-						type: "messaging.published.deduped",
+						type: MESSAGING_EVENTS.PublishDeduplicated,
 						topic: physical,
 						messageId: prior.messageId,
 					});
@@ -609,7 +650,11 @@ export function createInMemoryMessaging(
 					result,
 				);
 			}
-			emit({ type: "messaging.published", topic: physical, messageId });
+			emit({
+				type: MESSAGING_EVENTS.MessagePublished,
+				topic: physical,
+				messageId,
+			});
 			return result;
 		},
 
@@ -657,7 +702,7 @@ export function createInMemoryMessaging(
 				});
 				out.push(consumed);
 				emit({
-					type: "messaging.consumed",
+					type: MESSAGING_EVENTS.MessageConsumed,
 					topic: physical,
 					messageId: msg.messageId,
 					consumerGroup: group,
@@ -694,14 +739,14 @@ export function createInMemoryMessaging(
 					if (message.deliveryAttempt >= maxAttempts) {
 						deadLettered += 1;
 						emit({
-							type: "messaging.dead_lettered",
+							type: MESSAGING_EVENTS.MessageDeadLettered,
 							topic: physical,
 							messageId: message.messageId,
 							consumerGroup: group,
 							reason: "max_delivery_attempts",
 						});
 						emit({
-							type: "messaging.delivery.permanent_failure",
+							type: MESSAGING_EVENTS.DeliveryPermanentlyFailed,
 							topic: physical,
 							messageId: message.messageId,
 							consumerGroup: group,
@@ -726,7 +771,7 @@ export function createInMemoryMessaging(
 				cursor.acked.add(messageId);
 				cursor.inflight.delete(messageId);
 				const topic = parseTopicName(key.split("::")[0] ?? "unknown");
-				emit({ type: "messaging.acked", topic, messageId });
+				emit({ type: MESSAGING_EVENTS.MessageAcknowledged, topic, messageId });
 				return;
 			}
 			throw new MessagingDeliveryError(`no inflight message ${messageId}`);
@@ -742,7 +787,7 @@ export function createInMemoryMessaging(
 				cursor.inflight.delete(messageId);
 				const topic = parseTopicName(key.split("::")[0] ?? "unknown");
 				emit({
-					type: "messaging.nacked",
+					type: MESSAGING_EVENTS.MessageNacked,
 					topic,
 					messageId,
 					reason: reason ?? "nack",

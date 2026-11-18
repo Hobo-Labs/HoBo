@@ -1,5 +1,6 @@
 import {
 	createMeteringBus,
+	MESSAGING_EVENTS,
 	parseConsumerGroupId,
 	parseTopicName,
 	type UsageEvent,
@@ -61,8 +62,8 @@ describe("kafka transport path", () => {
 		expect(again).toHaveLength(0);
 
 		const types = bus.events().map((e) => e.type);
-		expect(types).toContain("messaging.published");
-		expect(types).toContain("messaging.acked");
+		expect(types).toContain(MESSAGING_EVENTS.MessagePublished);
+		expect(types).toContain(MESSAGING_EVENTS.MessageAcknowledged);
 	});
 
 	it("requires an explicit live declaration and preserves fidelity in usage events", async () => {

@@ -1,3 +1,4 @@
+import { MESSAGING_EVENTS } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -54,7 +55,7 @@ describe("dapr live DLQ", () => {
 		expect(again).toHaveLength(0);
 
 		const types = bus.events().map((e) => e.type);
-		expect(types).toContain("messaging.dead_lettered");
-		expect(types).toContain("messaging.delivery.permanent_failure");
+		expect(types).toContain(MESSAGING_EVENTS.MessageDeadLettered);
+		expect(types).toContain(MESSAGING_EVENTS.DeliveryPermanentlyFailed);
 	});
 });

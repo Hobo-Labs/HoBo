@@ -515,6 +515,7 @@ export type {
 	Messaging,
 	MessagingCapabilities,
 	MessagingEvent,
+	MessagingEventType,
 	MessagingLeaseId,
 	MessagingMessageId,
 	MessagingSpec,
@@ -529,6 +530,8 @@ export {
 	assertDeliverySupported,
 	createInMemoryMessaging,
 	createPublishResult,
+	LEGACY_MESSAGING_EVENT_UPCASTS,
+	MESSAGING_EVENTS,
 	MESSAGING_PORT_CONTRACT_VERSION,
 	MESSAGING_WIT_INTERFACE,
 	MessagingCapabilityError,
@@ -547,6 +550,8 @@ export {
 	parseTopicSpec,
 	tenantScopedConsumerGroup,
 	tenantScopedTopicName,
+	upcastMessagingEvent,
+	upcastMessagingEventType,
 } from "./ports/messaging.js";
 export type {
 	MeteringBus,

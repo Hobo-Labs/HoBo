@@ -4,6 +4,7 @@ import {
 	createInMemoryMessaging,
 	createUsageEvent,
 	type DeliveryGuarantee,
+	MESSAGING_EVENTS,
 	type Messaging,
 	type MessagingCapabilities,
 	MessagingCapabilityError,
@@ -175,7 +176,7 @@ export function createKafkaMessaging(
 			});
 			await transport.ensureTopic(scoped.name, { partitions: 3 });
 			partitionMap.set(scoped.name, 3);
-			emitLocal({ type: "messaging.topic.created", topic: scoped.name });
+			emitLocal({ type: MESSAGING_EVENTS.TopicCreated, topic: scoped.name });
 			return scoped;
 		},
 
@@ -193,7 +194,7 @@ export function createKafkaMessaging(
 			});
 			subscriptions.set(`${scoped.name}::${topic}::${group}`, scoped);
 			emitLocal({
-				type: "messaging.subscription.created",
+				type: MESSAGING_EVENTS.SubscriptionCreated,
 				topic,
 				consumerGroup: group,
 			});
@@ -230,8 +231,8 @@ export function createKafkaMessaging(
 			});
 			emitLocal({
 				type: produced.deduped
-					? "messaging.published.deduped"
-					: "messaging.published",
+					? MESSAGING_EVENTS.PublishDeduplicated
+					: MESSAGING_EVENTS.MessagePublished,
 				topic: physical,
 				messageId: produced.messageId,
 			});
@@ -282,7 +283,7 @@ export function createKafkaMessaging(
 			});
 			for (const m of mapped) {
 				emitLocal({
-					type: "messaging.consumed",
+					type: MESSAGING_EVENTS.MessageConsumed,
 					topic: physical,
 					messageId: m.messageId,
 					consumerGroup: group,
@@ -336,14 +337,14 @@ export function createKafkaMessaging(
 						);
 						deadLettered += 1;
 						emitLocal({
-							type: "messaging.dead_lettered",
+							type: MESSAGING_EVENTS.MessageDeadLettered,
 							topic: physical,
 							messageId: message.messageId,
 							consumerGroup: group,
 							reason: "max_delivery_attempts",
 						});
 						emitLocal({
-							type: "messaging.delivery.permanent_failure",
+							type: MESSAGING_EVENTS.DeliveryPermanentlyFailed,
 							topic: physical,
 							messageId: message.messageId,
 							consumerGroup: group,
@@ -420,7 +421,7 @@ async function ackAsync(
 	});
 	pendingCommits.delete(key);
 	emitLocal({
-		type: "messaging.acked",
+		type: MESSAGING_EVENTS.MessageAcknowledged,
 		topic: parseTopicName(pending.topic),
 		messageId,
 	});
@@ -447,7 +448,7 @@ async function nackAsync(
 	});
 	pendingCommits.delete(key);
 	emitLocal({
-		type: "messaging.nacked",
+		type: MESSAGING_EVENTS.MessageNacked,
 		topic: parseTopicName(pending.topic),
 		messageId,
 		reason: reason ?? "nack",
