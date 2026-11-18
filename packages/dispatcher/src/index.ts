@@ -9,6 +9,7 @@ export type {
 	DispatchFact,
 	DispatchObjective,
 	DispatchProviderInput,
+	DispatchRequest,
 	DispatchReservation,
 	HysteresisInput,
 	ReservationLedger,
