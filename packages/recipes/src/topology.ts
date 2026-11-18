@@ -1,10 +1,3 @@
-/**
- * The resolved topology a recipe compiles to.
- *
- * Junction ⊃ Yard ⊃ Camp ⊃ placement is the existing hierarchy; nothing here
- * adds a primitive to it. A resource-only Yard carries resources and no Camps,
- * which is a legal shape and not a degenerate one.
- */
 import type {
 	BindlePrimitive,
 	RealizationKind,
@@ -18,10 +11,8 @@ import type { CanonicalValue } from "@hobo/trust";
 
 import type { RecipeId } from "./ids.js";
 
-// public-contract: versions resolved deployment topologies.
 export const RESOLVED_TOPOLOGY_SCHEMA_VERSION = "hobo.resolved-topology/v1";
 
-// parallel-type-allowed: the compiled resource with BindlePrimitive and RealizationKind unions; hobo.recipes.v1.ResolvedResource is the persisted projection the topology digest is taken over.
 export type ResolvedResource = {
 	readonly resourceRef: string;
 	readonly placementId: string;
@@ -34,14 +25,12 @@ export type ResolvedResource = {
 	readonly producesBindingProfiles: readonly string[];
 };
 
-// parallel-type-allowed: the compiled Camp; hobo.recipes.v1.ResolvedCamp is its persisted projection, and this form is produced only by compileRecipe.
 export type ResolvedCamp = {
 	readonly campId: string;
 	readonly campRef: string;
 	readonly resources: readonly ResolvedResource[];
 };
 
-// parallel-type-allowed: the compiled Yard; hobo.recipes.v1.ResolvedYard is its persisted projection, and the resource-only/Camp split is enforced by the parser rather than by the wire type.
 export type ResolvedYard = {
 	readonly yardId: string;
 	readonly yardRef: string;
@@ -50,11 +39,9 @@ export type ResolvedYard = {
 	readonly sponsored: boolean;
 	readonly regions: readonly string[];
 	readonly camps: readonly ResolvedCamp[];
-	/** Resources held directly by a resource-only Yard. */
 	readonly resources: readonly ResolvedResource[];
 };
 
-// parallel-type-allowed: the compiled binding; hobo.recipes.v1.ResolvedBinding is its persisted projection, produced only by the compiler's edge resolution.
 export type ResolvedBinding = {
 	readonly edgeId: string;
 	readonly fromResourceRef: string;
@@ -62,11 +49,9 @@ export type ResolvedBinding = {
 	readonly bindingProfileRef: string;
 	readonly connectivityImplementationId: string;
 	readonly crossYard: boolean;
-	/** True when the primary connectivity choice was not resolvable. */
 	readonly usedFallback: boolean;
 };
 
-// parallel-type-allowed: the compiler's output with a branded RecipeId; hobo.recipes.v1.ResolvedTopology is the persisted projection behind topologyDigest and the golden fixtures.
 export type ResolvedTopology = {
 	readonly schemaVersion: typeof RESOLVED_TOPOLOGY_SCHEMA_VERSION;
 	readonly recipeId: RecipeId;
@@ -126,12 +111,6 @@ function resourceBody(resource: ResolvedResource): CanonicalValue {
 	};
 }
 
-/**
- * The exact bytes the topology digest is taken over.
- *
- * Written out by hand rather than reflected off the value so that adding a
- * field to the topology is a deliberate digest change, never an accidental one.
- */
 export function topologyDigestBody(topology: ResolvedTopology): CanonicalValue {
 	return {
 		schemaVersion: topology.schemaVersion,

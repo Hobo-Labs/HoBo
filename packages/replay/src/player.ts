@@ -1,8 +1,3 @@
-/**
- * Player helpers + OpenUI-friendly component descriptor.
- * Reconstruction uses injectable rrweb-player (or fixture reconstruction in CI).
- */
-
 import {
 	type DebugReplayLevel,
 	type DebugReplayTrack,
@@ -23,11 +18,8 @@ export type DebugTimelineItem = Readonly<{
 export type PlayerPayload = Readonly<{
 	session: SessionRecord;
 	events: readonly RrwebEvent[];
-	/** Read-only metadata projection; observable/diagnostic payloads stay in blobs. */
 	debugTimeline: readonly DebugTimelineItem[];
-	/** OpenUI / Control Yard mount descriptor (read-only). */
 	openUi: OpenUiPlayerDescriptor;
-	/** Deep link for CLI / MCP / Control Yard. */
 	deepLink: string;
 }>;
 
@@ -35,19 +27,14 @@ export type OpenUiPlayerDescriptor = Readonly<{
 	kind: "hobo.replay.player";
 	version: "v1";
 	sessionId: string;
-	/** Side panels. */
 	panels: readonly ("timeline" | "console" | "network" | "errors" | "flags")[];
-	/** Jump targets (error timestamps, etc.). */
 	jumpTargets: readonly Readonly<{ label: string; timestamp: number }>[];
-	/** Control Yard zone id (overlay; CLI remains mutation surface). */
 	controlYardZone: "session-replay";
-	/** Mutations are not allowed from player UI. */
 	mutationSurface: "cli-only";
 	readOnly: true;
 }>;
 
 export type ReplayEngine = {
-	/** Reconstruct DOM from events (browser). Fixture path returns event count. */
 	reconstruct(events: readonly RrwebEvent[]): Readonly<{
 		ok: boolean;
 		eventCount: number;
@@ -75,7 +62,6 @@ export async function loadPlayerPayload(input: {
 	readonly index: SessionIndex;
 	readonly blobs: SessionBlobStore;
 	readonly stationId: string;
-	/** When set, refuse cross-station without federation grant. */
 	readonly requireStationMatch?: boolean;
 	readonly blobRefs?: readonly string[];
 }): Promise<PlayerPayload> {
@@ -97,8 +83,6 @@ export async function loadPlayerPayload(input: {
 	}
 
 	const events: RrwebEvent[] = [];
-	// If explicit blob refs not provided, player consumers typically pass refs
-	// collected during ingest. Dual-fixture tests pass them explicitly.
 	const blobRefs =
 		input.blobRefs ??
 		(await input.index.listChunks(input.sessionId)).map(
@@ -156,9 +140,6 @@ export async function loadPlayerPayload(input: {
 	});
 }
 
-/**
- * Summarize a session for MCP / agent context (no heavy blobs).
- */
 export function summarizeSession(session: SessionRecord): string {
 	const c = session.correlation;
 	const parts = [

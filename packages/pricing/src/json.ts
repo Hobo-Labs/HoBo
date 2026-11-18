@@ -18,7 +18,6 @@ export type JsonObject = Record<string, JsonValue>;
 
 export function parseJson(text: string): JsonValue | undefined {
 	try {
-		// SAFETY: JSON.parse produces only JSON values; message parsers refine them next.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;

@@ -73,5 +73,4 @@ export {
 	migrationCorpusBaseline,
 } from "./upcaster-corpus.js";
 
-// public-contract: the package identity consumers assert in boundary contracts.
 export const HOBO_EVENTS_PACKAGE = "@hobo/events";

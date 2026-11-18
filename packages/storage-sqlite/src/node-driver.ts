@@ -1,8 +1,3 @@
-/**
- * Node.js node:sqlite DatabaseSync adapter.
- * Production callers should use this only behind a serialized storage worker.
- */
-
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -17,7 +12,6 @@ import { isJsonBigInt, isJsonNumber, isJsonString } from "./json.js";
 
 export interface NodeSqliteDriverOptions {
 	readonly path: string;
-	/** Disable extension loading (default true). */
 	readonly disableExtensions?: boolean;
 }
 
@@ -79,7 +73,6 @@ function wrapDatabaseSync(
 				run(...params: SqliteValue[]): SqliteRunResult {
 					const normalized = normalizeParams(params);
 					const raw = stmt.run(...normalized);
-					// SAFETY: node:sqlite run() returns changes + lastInsertRowid.
 					const result: SqliteNativeRunResult = raw;
 					const changes = isJsonBigInt(result.changes)
 						? Number(result.changes)
@@ -93,14 +86,12 @@ function wrapDatabaseSync(
 					const normalized = normalizeParams(params);
 					const row = stmt.get(...normalized);
 					if (row === undefined) return undefined;
-					// SAFETY: sqlite row objects are column maps of SqliteValue.
 					const mapped: SqliteRow = row;
 					return mapped;
 				},
 				all(...params: SqliteValue[]) {
 					const normalized = normalizeParams(params);
 					const rows = stmt.all(...normalized);
-					// SAFETY: sqlite row objects are column maps of SqliteValue.
 					const mapped: SqliteRow[] = rows;
 					return mapped;
 				},
@@ -117,7 +108,6 @@ function wrapDatabaseSync(
 		},
 		pragma(name: string, value?: string | number) {
 			if (value === undefined) {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const row = db.prepare(`PRAGMA ${name}`).get();
 				if (!row) return null;
 				const v = Object.values(row)[0];

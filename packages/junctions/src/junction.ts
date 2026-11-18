@@ -11,10 +11,6 @@ import {
 	JunctionParseError,
 } from "./types.js";
 
-/**
- * Optional per-member manifest declarations. Everything the tier selection
- * uses is declared here or defaulted conservatively; nothing is probed live.
- */
 export interface JunctionMemberManifestInput {
 	readonly region?: string;
 	readonly capabilities?: readonly ConnectivityTierName[];
@@ -28,9 +24,6 @@ export interface JunctionConfig {
 
 const JUNCTION_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
-// The junction never assumes a tier a member did not declare. Members that
-// declare nothing get every tier that needs no dedicated circuit;
-// private-interconnect always requires an explicit declaration.
 const DEFAULT_CAPABILITIES: readonly ConnectivityTierName[] = [
 	"private-network",
 	"cross-region",
@@ -38,11 +31,6 @@ const DEFAULT_CAPABILITIES: readonly ConnectivityTierName[] = [
 	"public-mtls",
 ];
 
-/**
- * Parse member Yards (and optional manifest declarations) into a deep-frozen
- * JunctionDefinition — parse, don't validate. Downstream derivations accept
- * only the parsed value, never raw config.
- */
 export function junction(
 	name: string,
 	config: JunctionConfig,

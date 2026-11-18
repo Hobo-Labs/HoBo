@@ -1,13 +1,3 @@
-/**
- * The declarative conformance suite for Redis-compatible key/value storage.
- *
- * Scope is deliberately narrow. These cases establish command transport, the
- * key/value data types, TTL and expiry, the atomic operations the profile
- * promises, behaviour at a declared payload bound, and the consistency the
- * implementation can actually be held to from a single client. They establish
- * nothing about delivery: no case here can be cited as evidence for a queue or
- * topic profile, and `substantiates` is the machine-readable form of that.
- */
 import type { CommandTemplate, ReplyExpectation } from "./protocol.js";
 
 export const CONFORMANCE_AREAS = [
@@ -21,30 +11,20 @@ export const CONFORMANCE_AREAS = [
 
 export type ConformanceArea = (typeof CONFORMANCE_AREAS)[number];
 
-// parallel-type-allowed: the authored step holds a `CommandTemplate` tuple whose first element is the verb, a constraint proto3's repeated field cannot carry; the proto ConformanceStep is its wire projection.
 export type ConformanceStep = {
 	readonly command: CommandTemplate;
 	readonly expect: ReplyExpectation;
-	/** Milliseconds of implementation time to pass before this step runs. */
 	readonly waitMs?: number;
 };
 
-// parallel-type-allowed: the authored case narrows `profileId` to the two kv profiles as a literal union, which is what keeps a queue profile unrepresentable; the proto ConformanceCase is its wire projection.
 export type ConformanceCase = {
 	readonly id: string;
 	readonly area: ConformanceArea;
-	/** The profile this case is evidence for. Never a queue or topic profile. */
 	readonly profileId: "kv.key-value/v1" | "kv.redis-compatible/v1";
 	readonly title: string;
-	/** Why the case exists, in terms of what breaks without it. */
 	readonly rationale: string;
 	readonly steps: readonly ConformanceStep[];
-	/**
-	 * Structured capability keys this case substantiates when it passes. A
-	 * capability with no passing case is never reported as substantiated.
-	 */
 	readonly substantiates: readonly string[];
-	/** Optional cases never fail a run; they are reported and skipped. */
 	readonly optional?: boolean;
 };
 
@@ -438,19 +418,9 @@ export const KV_REDIS_CONFORMANCE_CASES: readonly ConformanceCase[] = [
 	...CONSISTENCY,
 ];
 
-/**
- * Consistency properties, and whether this suite is willing to assert them.
- *
- * The unasserted entries are the honest part. A single client cannot observe
- * cross-replica linearizability or durability across a failover, so no case
- * here claims them, and a provider that copies this list without adding its
- * own evidence is not permitted to claim them either.
- */
-// parallel-type-allowed: the authored claim makes `conformanceCaseId` present exactly when `asserted` is true, which proto3 cannot express; the proto ConsistencyClaim is its recorded wire projection.
 export type ConsistencyClaim = {
 	readonly key: string;
 	readonly asserted: boolean;
-	/** The case that establishes it, when one exists. */
 	readonly conformanceCaseId?: string;
 	readonly note: string;
 };

@@ -1,17 +1,3 @@
-/**
- * The conformance runner.
- *
- * Three properties matter here, and they are all about not lying:
- *
- * 1. A case that could not run is `skipped`, never `pass`. A missing time
- *    control or an undeclared payload bound reduces what the run establishes;
- *    it never increases it.
- * 2. A run with any skipped required case reports `incomplete`, and
- *    `incomplete` maps to `unknown` conformance, which selection fails closed on.
- * 3. A structured capability is only reported as substantiated when every case
- *    that substantiates it passed. One passing case out of two does not
- *    establish a capability.
- */
 import type { ProfileImplementation } from "@hobo/capability-profiles";
 
 import {
@@ -31,20 +17,14 @@ import {
 	resolveFillSizes,
 } from "./protocol.js";
 
-// public-contract: suite id recorded on every report a catalog reads.
 export const KV_REDIS_CONFORMANCE_SUITE_REF =
 	"conformance.kv.redis-compatible/v1" as const;
 
-/** How the executor reaches the implementation. Substantiates `restTransport`. */
 export const TRANSPORT_KINDS = ["rest", "resp", "in-process"] as const;
 
 export type TransportKind = (typeof TRANSPORT_KINDS)[number];
 
 export type DeclaredLimits = {
-	/**
-	 * The implementation's documented maximum value size. Undeclared means the
-	 * bounded-payload cases cannot run, not that the store is unbounded.
-	 */
 	readonly maxValueBytes?: number;
 };
 
@@ -53,19 +33,16 @@ export type ConformanceRunInput = {
 	readonly transport: TransportKind;
 	readonly cases?: readonly ConformanceCase[];
 	readonly limits?: DeclaredLimits;
-	/** Prefix applied to every `hobo:conf:` key so a live run cannot collide. */
 	readonly keyPrefix?: string;
 	readonly suiteRef?: string;
 };
 
-// parallel-type-allowed: the in-process result keeps `outcome` as a closed "pass" | "fail" union the fold switches on; the proto StepResult is its recorded wire projection.
 export type StepResult = {
 	readonly command: string;
 	readonly outcome: "pass" | "fail";
 	readonly detail: string;
 };
 
-// parallel-type-allowed: the in-process result reuses `ConformanceCase["profileId"]`, so a case and its result cannot drift apart; the proto ConformanceCaseResult is its wire projection.
 export type ConformanceCaseResult = {
 	readonly caseId: string;
 	readonly area: ConformanceArea;
@@ -75,17 +52,11 @@ export type ConformanceCaseResult = {
 	readonly steps: readonly StepResult[];
 };
 
-// parallel-type-allowed: the in-process report types `transport` as the closed TransportKind union the runner switches on to substantiate restTransport; the proto ConformanceReport is its recorded wire projection.
 export type ConformanceReport = {
 	readonly suiteRef: string;
 	readonly transport: TransportKind;
-	/**
-	 * `pass` only when every required case passed. `incomplete` when a required
-	 * case could not run. `fail` when one actually failed.
-	 */
 	readonly outcome: "pass" | "fail" | "incomplete";
 	readonly results: readonly ConformanceCaseResult[];
-	/** Capability keys every substantiating case passed for. */
 	readonly substantiatedCapabilities: readonly string[];
 	readonly failedCaseIds: readonly string[];
 	readonly skippedCaseIds: readonly string[];
@@ -146,8 +117,6 @@ async function runCase(
 	const steps: StepResult[] = [];
 	for (const step of testCase.steps) {
 		if (step.waitMs !== undefined) {
-			// `canRun` already established the control exists.
-			// SAFETY: `await (input.executor.advanceTime as (ms: number) => Promise<void>)(` is required at this I/O or test boundary.
 			await (input.executor.advanceTime as (ms: number) => Promise<void>)(
 				step.waitMs,
 			);
@@ -160,9 +129,6 @@ async function runCase(
 		try {
 			reply = await input.executor.execute(command);
 		} catch (cause) {
-			// A thrown executor is a harness or transport failure, not an error
-			// reply. Conflating the two would let a broken transport "pass" a
-			// case whose expectation is `error`.
 			throw new KvRedisCompatibleError(
 				"CONFORMANCE_EXECUTOR_FAILED",
 				`the executor threw while running ${testCase.id}; an implementation error must be returned as an error reply, not thrown`,
@@ -215,8 +181,6 @@ function substantiated(
 	const keys = [...required.entries()]
 		.filter(([, allPassed]) => allPassed)
 		.map(([capability]) => capability);
-	// `restTransport` is a property of how the run reached the store, not of
-	// any single command, so it is the one capability the cases cannot assert.
 	if (
 		transport === "rest" &&
 		results.every((result) => result.outcome !== "fail")
@@ -278,12 +242,6 @@ export async function runKvRedisConformance(
 	};
 }
 
-/**
- * Turn a report into the profile implementations a product may declare.
- *
- * `incomplete` becomes `unknown` rather than `pass`, and selection treats
- * `unknown` as a hard rejection. That is the intended cost of an incomplete run.
- */
 export function toProfileImplementations(
 	report: ConformanceReport,
 	options: { readonly conformanceRef: string },
@@ -312,16 +270,6 @@ export function toProfileImplementations(
 	];
 }
 
-/**
- * Structured capabilities a product may advertise on the strength of a run.
- *
- * Anything the run did not substantiate is left out entirely rather than set
- * to `false`, because absent fails a required-feature gate while `false` also
- * fails it — and absent is the honest statement of "not established here".
- *
- * `maxValueBytes` is the one numeric key: the bounded-payload cases prove the
- * declared limit is real, so the number is emitted rather than a flag.
- */
 export function toStructuredCapabilities(
 	report: ConformanceReport,
 	options: { readonly limits?: DeclaredLimits } = {},

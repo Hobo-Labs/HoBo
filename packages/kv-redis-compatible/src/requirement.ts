@@ -1,12 +1,3 @@
-/**
- * Authoring helpers for Redis-compatible key/value storage.
- *
- * `redisCompatible.store({ ttl: true })` is a semantic ask. There is no
- * product, provider, region, or account anywhere in this API, and the
- * requirement it returns is the same one a Valkey product or a self-hosted
- * Redis satisfies. That is the whole point: the Bindle author never learns
- * which one was selected.
- */
 import {
 	type CapabilityRequirement,
 	type CapabilityRequirementInput,
@@ -23,7 +14,6 @@ export const KV_REDIS_COMPATIBLE_PROFILE = capability.kv.redisCompatible;
 export const KV_VALKEY_PROFILE = capability.kv.valkey;
 export const KV_EPHEMERAL_STATE_PROFILE = capability.kv.ephemeralState;
 
-/** Runtime models a Bindle may ask its store to be reachable from. */
 export type KvRuntimeRequest = {
 	readonly required?: string;
 	readonly allowed?: readonly string[];
@@ -31,17 +21,11 @@ export type KvRuntimeRequest = {
 };
 
 export type RedisStoreInput = {
-	/** Per-key expiry (`SET ... EX`, `TTL`, `PERSIST`). */
 	readonly ttl?: boolean;
-	/** Atomic `INCR`/`INCRBY` on a counter key. */
 	readonly atomicIncrement?: boolean;
-	/** Atomic create-if-absent (`SET ... NX`), the lock primitive. */
 	readonly atomicCompareAndSet?: boolean;
-	/** Sorted-set commands (`ZADD`, `ZRANGE`, `ZSCORE`). */
 	readonly sortedSets?: boolean;
-	/** An HTTP/REST command transport, for runtimes with no outbound TCP. */
 	readonly restTransport?: boolean;
-	/** Smallest single value the workload must be able to store, in bytes. */
 	readonly minValueBytes?: number;
 	readonly runtime?: KvRuntimeRequest;
 	readonly realization?: CapabilityRequirementInput["realization"];
@@ -62,9 +46,6 @@ const REDIS_FEATURE_KEYS = [
 function booleanFeatures(
 	input: RedisStoreInput,
 ): readonly StructuredFeatureRequirementInput[] {
-	// Explicit `| undefined` on each field: under `exactOptionalPropertyTypes`,
-	// "may be absent" and "may be present and undefined" are different types, and
-	// these are copied straight off an input whose own fields are optional.
 	interface RedisFeatureFlags {
 		ttl?: boolean | undefined;
 		atomicIncrement?: boolean | undefined;
@@ -113,10 +94,6 @@ function valueSizeFeature(
 	];
 }
 
-/**
- * Redis command semantics are the guarantee, not a feature: a product that
- * merely exposes GET/SET over HTTP does not satisfy this profile.
- */
 const REDIS_GUARANTEES: readonly StructuredGuaranteeRequirementInput[] = [
 	{ key: "redisCommandSemantics", operator: "equals", value: true },
 ];
@@ -146,21 +123,12 @@ function buildStoreRequirement(
 	return parseCapabilityRequirement(requirement);
 }
 
-/**
- * Redis-compatible store authoring.
- *
- * Deliberately absent: any way to ask for a queue or a topic. Redis lists and
- * pub/sub exist, but asking for them here would let a `kv` selection satisfy a
- * delivery requirement it has never been conformance-tested against. See
- * {@link ./separation.ts}.
- */
 export const redisCompatible = {
 	store(input: RedisStoreInput = {}): CapabilityRequirement {
 		return buildStoreRequirement(KV_REDIS_COMPATIBLE_PROFILE, input);
 	},
 } as const;
 
-/** Valkey store authoring. Refines the Redis-compatible profile. */
 export const valkey = {
 	store(input: ValkeyStoreInput = {}): CapabilityRequirement {
 		return buildStoreRequirement(KV_VALKEY_PROFILE, input);

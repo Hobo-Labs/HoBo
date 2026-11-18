@@ -6,12 +6,6 @@ import type {
 	TrustAnchorExchange,
 } from "./types.js";
 
-/**
- * Derive the federation records that ride the same member mechanism as
- * connectivity: pairwise trust-anchor exchange, per-member signed policy-pack
- * distribution, and pairwise signed registry-bundle distribution. Records
- * only — realization is each yard's job.
- */
 export function deriveFederationPlan(
 	definition: JunctionDefinition,
 ): JunctionFederationPlan {

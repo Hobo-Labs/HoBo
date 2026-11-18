@@ -1,27 +1,3 @@
-/**
- * HTTP-shaped accessibility surface for Session Replay boundaries (ADR-0137).
- *
- * Every internal integration boundary is reachable here so PACT consumer/provider
- * verification can drive real package code without a live network stack.
- *
- * Path taxonomy (all under /replay/...):
- * - /replay/sessions/:id/chunks          tracker → ingest
- * - /replay/sessions/:id                 player → index get
- * - /replay/sessions                     player/CLI → index list
- * - /replay/sessions/:id/open            player → store open
- * - /replay/sessions/:id/summarize       CLI → service summarize
- * - /replay/privacy/mask                 tracker → privacy
- * - /replay/policy/evaluate              tracker → policy/harness
- * - /replay/access/evaluate              player → PAM access
- * - /replay/retention/apply              service → retention/trails
- * - /replay/metering/record              service → finops metering
- * - /replay/evidence/pack                evidence → service
- * - /replay/correlation/build            tracker → correlation
- * - /replay/events/emit                  service → lifecycle events
- * - /replay/blobs                        ingest → blob store
- * - /replay/bindle/wrap-html             bindle host → bootstrap inject
- * - /replay/doctor                       CLI → doctor
- */
 import { evaluateReplayAccess } from "./access.js";
 import { SESSION_REPLAY_PATH_PREFIX } from "./bindle-integration.js";
 import { injectSessionReplayBootstrap } from "./browser-bootstrap.js";
@@ -66,11 +42,9 @@ export type ReplayHttpResponse = Readonly<{
 }>;
 
 export type ReplayHttpSurface = Readonly<{
-	/** Provider identity for PACT verification. */
 	name: string;
 	handle: (request: ReplayHttpRequest) => Promise<ReplayHttpResponse>;
 	store: DualFixtureStore;
-	/** Enumerate every boundary route for doctor/docs. */
 	listBoundaries: () => readonly ReplayBoundaryDescriptor[];
 }>;
 
@@ -83,7 +57,6 @@ export type ReplayBoundaryDescriptor = Readonly<{
 	internal: boolean;
 }>;
 
-// public-contract: catalog of Session Replay integration boundaries.
 export const REPLAY_BOUNDARIES: readonly ReplayBoundaryDescriptor[] =
 	Object.freeze([
 		Object.freeze({
@@ -219,13 +192,11 @@ export const REPLAY_BOUNDARIES: readonly ReplayBoundaryDescriptor[] =
 export function createReplayHttpSurface(input?: {
 	readonly stationId?: string;
 	readonly store?: DualFixtureStore;
-	/** Provider name presented to PACT verification (default ReplayHttpSurface). */
 	readonly name?: string;
 }): ReplayHttpSurface {
 	const stationId = input?.stationId ?? "station:local";
 	const store = input?.store ?? createMemoryDualFixtures();
 	const service = createReplayService({ stationId, memory: true });
-	// Share the dual-fixture store with the service by overwriting via direct use.
 	const sharedStore = store;
 	const meter = createMemoryMeterSink();
 	const providerName = input?.name ?? "ReplayHttpSurface";
@@ -237,7 +208,6 @@ export function createReplayHttpSurface(input?: {
 		const path = request.path.split("?")[0] ?? request.path;
 		const query = new URL(request.path, "http://replay.local").searchParams;
 
-		// Kill switch for ingest-like routes.
 		const kill =
 			headers["x-hobo-replay"] === "0" || headers["x-hobo-replay"] === "false";
 
@@ -658,9 +628,6 @@ export function createReplayHttpSurface(input?: {
 	});
 }
 
-/**
- * Seed a dual-fixture store with a known session for provider verification.
- */
 export async function seedReplayFixture(
 	store: DualFixtureStore,
 	input?: {

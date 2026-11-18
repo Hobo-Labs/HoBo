@@ -43,5 +43,4 @@ export {
 	JunctionParseError,
 } from "./types.js";
 
-// public-contract: canonical package name consumers assert against in contracts.
 export const HOBO_JUNCTIONS_PACKAGE = "@hobo/junctions";

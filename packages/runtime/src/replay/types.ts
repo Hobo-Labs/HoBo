@@ -15,13 +15,11 @@ export interface EventEnvelope {
 
 export type SeqVector = Record<string, number>;
 
-// domain-view:
 export interface SeqVectorEntry {
 	streamId: string;
 	seq: number;
 }
 
-// domain-view:
 export interface ReplayReport {
 	runId: string;
 	seqVector: readonly SeqVectorEntry[];
