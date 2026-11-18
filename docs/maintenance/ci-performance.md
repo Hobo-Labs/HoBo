@@ -567,7 +567,7 @@ selection and fallback execution. These TypeScript changes add no Protobuf or
 CUE contract. Live observation of the fleet-to-signoff decision and GitHub
 acceptance of these statuses remains separate evidence.
 
-Covered: `pr_gate_validation`, `workspace_tests`, `pr_affected`, `pr-offpath`,
+Covered: `pr_gate_validation`, `workspace_tests`, `pr_affected`, `scripts-tests`, `pr-offpath`,
 `artifact-trust`, `ci-guard` and `secret-scan` in `hobo-ci.yml`, and
 `release-contract` in `release-hobo.yml` when no release image is affected. Not
 covered: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route
