@@ -86,6 +86,7 @@ describe("Rivet durable topic HTTP client", () => {
 			actorName: binding.actorName,
 			semanticDigest: binding.semanticDigest,
 		};
+		const nativeGet = WeakMap.prototype.get;
 		const original = Object.getOwnPropertyDescriptor(WeakMap.prototype, "get");
 		if (original === undefined) throw new Error("WeakMap.get missing");
 		let calls = 0;
@@ -93,12 +94,12 @@ describe("Rivet durable topic HTTP client", () => {
 		try {
 			Object.defineProperty(WeakMap.prototype, "get", {
 				...original,
-				value(this: WeakMap<object, unknown>, key: object) {
+				value<K extends object>(this: WeakMap<K, unknown>, key: K) {
 					if (key === forged) {
 						calls++;
 						return { binding: identity, metadata: { active: true } };
 					}
-					return Reflect.apply(original.value, this, [key]);
+					return nativeGet.call(this, key);
 				},
 			});
 			accepted = isRivetDurableTopicClientFor(forged, identity);

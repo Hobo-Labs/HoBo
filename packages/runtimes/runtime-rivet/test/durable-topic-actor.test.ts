@@ -167,6 +167,7 @@ describe("Rivet durable topic log actor", () => {
 			semanticDigest: f.actor.semanticDigest,
 			mode: "log",
 		};
+		const nativeGet = WeakMap.prototype.get;
 		const original = Object.getOwnPropertyDescriptor(WeakMap.prototype, "get");
 		if (original === undefined) throw new Error("WeakMap.get missing");
 		let calls = 0;
@@ -174,12 +175,12 @@ describe("Rivet durable topic log actor", () => {
 		try {
 			Object.defineProperty(WeakMap.prototype, "get", {
 				...original,
-				value(this: WeakMap<object, unknown>, key: object) {
+				value<K extends object>(this: WeakMap<K, unknown>, key: K) {
 					if (key === forged) {
 						calls++;
 						return identity;
 					}
-					return Reflect.apply(original.value, this, [key]);
+					return nativeGet.call(this, key);
 				},
 			});
 			accepted = isRivetDurableTopicBinding(forged);
@@ -194,11 +195,6 @@ describe("Rivet durable topic log actor", () => {
 		const storage = sqlite();
 		await migrateDurableReceiptJournal(storage.db);
 		const reject = () => Promise.reject(new Error("asynchronous callback"));
-		const badBoolean = reject as unknown as () => boolean;
-		const badScope = reject as unknown as () => {
-			tenant: string;
-			instance: string;
-		};
 		const base: RivetDurableTopicBusOptions = {
 			actorName: "orders",
 			semanticDigest: `sha256:${"a".repeat(64)}`,
@@ -208,13 +204,15 @@ describe("Rivet durable topic log actor", () => {
 			authorizeInstanceScope: () => true,
 			verifyIngress: () => true,
 		};
-		for (const override of [
-			{ verifyIngress: badBoolean },
-			{ resolveScope: badScope },
-			{ authorize: badBoolean },
-			{ authorizeInstanceScope: badBoolean },
-		]) {
-			const actor = createRivetDurableTopicBusActor({ ...base, ...override });
+		for (const field of [
+			"verifyIngress",
+			"resolveScope",
+			"authorize",
+			"authorizeInstanceScope",
+		] as const) {
+			const options = { ...base };
+			Object.defineProperty(options, field, { value: reject, enumerable: true });
+			const actor = createRivetDurableTopicBusActor(options);
 			const response = await actor.handle(
 				{ name: "orders", key: ["tenant"], db: storage.db },
 				new Request("https://actor.test/events", {

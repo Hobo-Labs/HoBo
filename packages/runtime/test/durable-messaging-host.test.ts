@@ -108,16 +108,13 @@ describe("durable messaging WIT host boundary", () => {
 				throw new Error("unexpected constructor read");
 			},
 		});
-		const verify = (() => pending) as unknown as Parameters<
-			typeof createDurableMessagingPortMetadataGrant
-		>[0]["verify"];
-		expect(() =>
-			createDurableMessagingPortMetadataGrant({
-				port,
-				limits: DURABLE_MESSAGING_LIMITS,
-				verify,
-			}),
-		).toThrow();
+		const options = {
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify: () => true,
+		};
+		Object.defineProperty(options, "verify", { value: () => pending });
+		expect(() => createDurableMessagingPortMetadataGrant(options)).toThrow();
 		expect(reads).toBe(0);
 	});
 
@@ -125,6 +122,7 @@ describe("durable messaging WIT host boundary", () => {
 		const { port } = fixture();
 		const grant = Object.freeze({ revoke() {} });
 		const lifecycle = createDurableMessagingLifecycle();
+		const nativeGet = WeakMap.prototype.get;
 		const original = Object.getOwnPropertyDescriptor(WeakMap.prototype, "get");
 		if (original === undefined) throw new Error("WeakMap.get missing");
 		let calls = 0;
@@ -132,12 +130,12 @@ describe("durable messaging WIT host boundary", () => {
 		try {
 			Object.defineProperty(WeakMap.prototype, "get", {
 				...original,
-				value(this: WeakMap<object, unknown>, key: object) {
+				value<K extends object>(this: WeakMap<K, unknown>, key: K) {
 					if (key === grant) {
 						calls++;
 						return { active: true };
 					}
-					return Reflect.apply(original.value, this, [key]);
+					return nativeGet.call(this, key);
 				},
 			});
 			try {

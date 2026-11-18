@@ -199,6 +199,7 @@ describe("Cloudflare R2 Bindle mapping", () => {
 		"rejects and observes an asynchronous R2 %s verifier",
 		async (field) => {
 			const rejected = Promise.reject(new Error("authority unavailable"));
+			// SAFETY: this fixture supplies an asynchronous value to a synchronous callback boundary.
 			const invalid = () => rejected as never;
 			expect(() =>
 				mapBindleToAlchemy(

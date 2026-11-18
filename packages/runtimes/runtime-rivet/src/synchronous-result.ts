@@ -15,17 +15,17 @@ const speciesGetter =
 		? capturedSpecies.get
 		: undefined;
 
-export function synchronousResult(value: unknown): unknown {
+export function synchronousResult<T>(value: T): T {
 	if (isProxy(value) || !isPromise(value)) return value;
 	try {
-		const constructor = descriptor(promisePrototype, "constructor");
+		const constructorDescriptor = descriptor(promisePrototype, "constructor");
 		const species = descriptor(nativePromise, Symbol.species);
 		if (
 			prototype(value) !== promisePrototype ||
 			descriptor(value, "constructor") !== undefined ||
-			constructor === undefined ||
-			!hasOwn(constructor, "value") ||
-			constructor.value !== nativePromise ||
+			constructorDescriptor === undefined ||
+			!hasOwn(constructorDescriptor, "value") ||
+			constructorDescriptor.value !== nativePromise ||
 			species === undefined ||
 			!hasOwn(species, "get") ||
 			speciesGetter === undefined ||

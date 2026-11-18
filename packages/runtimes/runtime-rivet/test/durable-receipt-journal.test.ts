@@ -134,30 +134,31 @@ describe("Rivet actor-local durable receipt journal", () => {
 		const f = open();
 		await migrateDurableReceiptJournal(f.db);
 		const reject = () => Promise.reject(new Error("asynchronous callback"));
-		const authority = reject as unknown as Parameters<typeof runDurableReceiptJournal>[3];
-		const clock = reject as unknown as Parameters<typeof runDurableReceiptJournal>[2];
-		const reducer = reject as unknown as Parameters<typeof runDurableReceiptJournal>[4];
-		for (const [request, timestamp, authorize, execute] of [
-			[input("async-auth"), () => 1_000, authority, () => committed("unused")],
-			[input("async-clock"), clock, allowed, () => committed("unused")],
-			[input("async-reducer"), () => 1_000, allowed, reducer],
-		] as const) {
+		const cases = [
+			{ request: input("async-auth"), now: () => 1_000, authorize: allowed, execute: () => committed("unused") },
+			{ request: input("async-clock"), now: () => 1_000, authorize: allowed, execute: () => committed("unused") },
+			{ request: input("async-reducer"), now: () => 1_000, authorize: allowed, execute: () => committed("unused") },
+		] as const;
+		Object.defineProperty(cases[0], "authorize", { value: reject });
+		Object.defineProperty(cases[1], "now", { value: reject });
+		Object.defineProperty(cases[2], "execute", { value: reject });
+		for (const { request, now, authorize, execute } of cases) {
 			expect(
-				await runDurableReceiptJournal(f.db, request, timestamp, authorize, execute),
+				await runDurableReceiptJournal(f.db, request, now, authorize, execute),
 			).toEqual({ status: "unknown", operation: request.operation });
 		}
 		let calls = 0;
-		const lateAuthority = (() =>
-			++calls === 1 ? true : reject()) as unknown as Parameters<
-			typeof runDurableReceiptJournal
-		>[3];
+		const late = { authorize: () => true };
+		Object.defineProperty(late, "authorize", {
+			value: () => ++calls === 1 ? true : reject(),
+		});
 		const request = input("async-disclosure");
 		expect(
 			await runDurableReceiptJournal(
 				f.db,
 				request,
 				() => 1_000,
-				lateAuthority,
+				late.authorize,
 				() => committed("done"),
 			),
 		).toEqual({ status: "unknown", operation: request.operation });

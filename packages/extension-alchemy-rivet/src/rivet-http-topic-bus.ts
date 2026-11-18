@@ -220,9 +220,11 @@ function clientOptions(input: unknown): RivetDurableTopicClientOptions {
 		authorize: raw.authorize as RivetDurableTopicClientOptions["authorize"],
 		revalidate: raw.revalidate as RivetDurableTopicClientOptions["revalidate"],
 		fetch: raw.fetch as RivetDurableTopicClientOptions["fetch"],
-		...(raw.timeoutMs === undefined ? {} : { timeoutMs: raw.timeoutMs }),
-		...(raw.maxInFlight === undefined ? {} : { maxInFlight: raw.maxInFlight }),
 	};
+	if (typeof raw.timeoutMs === "number")
+		Object.defineProperty(result, "timeoutMs", { value: raw.timeoutMs, enumerable: true });
+	if (typeof raw.maxInFlight === "number")
+		Object.defineProperty(result, "maxInFlight", { value: raw.maxInFlight, enumerable: true });
 	return Object.freeze(result);
 }
 
@@ -272,6 +274,7 @@ function matchesApplication(
 		if (typeof input !== "object" || input === null || isProxy(input))
 			return false;
 		const data = fields(input, ["http", "bus", "client"]);
+		// SAFETY: the private map contains only application records created by this module.
 		const captured = apply(weakGet, applications, [input]) as ReturnType<
 			typeof applications.get
 		>;
@@ -304,6 +307,7 @@ export function createRivetHttpTopicBusApplication(
 		],
 		["authorizationTimeoutMs"],
 	);
+	// SAFETY: the bus brand check refuses unregistered objects before accessing actor fields.
 	if (
 		!name(data.actorName) ||
 		typeof data.bus !== "object" ||
@@ -320,6 +324,7 @@ export function createRivetHttpTopicBusApplication(
 		return invalid(
 			"a branded bus, client options and host authorities are required",
 		);
+	// SAFETY: the preceding guard accepted the private bus brand.
 	const bus = data.bus as RivetDurableTopicBusBinding;
 	const expected = clientOptions(data.clientOptions);
 	if (
@@ -371,6 +376,7 @@ export function createRivetHttpTopicBusApplication(
 			throw new TypeError(
 				"the application must return a synchronous HTTP handler",
 			);
+		// SAFETY: the host factory returned a synchronous non-proxy function.
 		return handler as (request: Request) => Response | Promise<Response>;
 	};
 	const permit = (
@@ -388,16 +394,22 @@ export function createRivetHttpTopicBusApplication(
 				bus: expected.binding,
 			}),
 		]);
-	const http = createRivetHttpActor({
+	const httpOptions = {
 		actorName,
 		entrypoint,
 		verifyEntrypoint: verify,
-		...(data.authorizationTimeoutMs === undefined
-			? {}
-			: { authorizationTimeoutMs: data.authorizationTimeoutMs as number }),
-		authorizationCoverage: "admission-and-response",
+		authorizationCoverage: "admission-and-response" as const,
 		authorize: permit,
-	});
+	};
+	if (data.authorizationTimeoutMs !== undefined) {
+		if (typeof data.authorizationTimeoutMs !== "number")
+			return invalid("the authorization timeout must be a number");
+		Object.defineProperty(httpOptions, "authorizationTimeoutMs", {
+			value: data.authorizationTimeoutMs,
+			enumerable: true,
+		});
+	}
+	const http = createRivetHttpActor(httpOptions);
 	const result = Object.freeze({ http, bus, client });
 	apply(weakSet, applications, [
 		result,
@@ -454,9 +466,11 @@ export function createRivetHttpTopicBusMappers<Requirements>(
 			"a verified application and pool are required",
 		);
 	const application = data.application;
+	// SAFETY: the source parser validates and snapshots this external value.
 	const source = bindRivetHttpSource(
 		data.source as RivetPoolSource<RivetHttpEntrypoint>["source"],
 	);
+	// SAFETY: the multi-pool mapper validates the host capability before use.
 	const pool = Object.freeze({
 		source,
 		poolDigest: data.poolDigest,
