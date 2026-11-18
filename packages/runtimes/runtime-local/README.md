@@ -32,6 +32,35 @@ const host = createRuntimeLocalComponentHost({
 });
 ```
 
+Loading an already loaded or currently loading ID fails with
+`component_already_loaded`; tear down the existing instance before replacing
+it. The host captures requested leases before instantiation and rejects an
+engine result whose ID differs from the requested ID. An instantiation error
+releases the loading claim so the caller can retry.
+
+The component-load model checks 78 bounded states. The projection hides 68
+internal steps that do not change a displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Component absent
+  s1: Component loading
+  s2: Load refused or failed
+  s3: Component loaded
+  s4: Component torn down
+  [*] --> s0
+  s0 --> s1: request load
+  s1 --> s2: instantiation fails or finish instantiation
+  s1 --> s3: finish instantiation
+  s2 --> s1: retry load
+  s3 --> s4: tear down component
+```
+
+The engine and event sink remain trusted. If the event sink throws after state
+has changed, the host cannot determine whether the sink recorded the event;
+the caller must reconcile that ambiguity. Teardown does not wait for in-flight
+invocations.
+
 ## Tests
 
 ```bash

@@ -36,6 +36,7 @@ export function createRuntimeLocalComponentHost(
 
 class RuntimeLocalComponentHost implements ComponentHostPort {
 	#components = new Map<string, ComponentInstance>();
+	#loading = new Set<string>();
 	#providers = new Map<string, ParsedProviderDescriptor>();
 	#links = new Map<string, LinkRecord>();
 	#leases = new Map<string, string[]>();
@@ -60,16 +61,27 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 	}
 
 	loadComponent(component: ParsedComponentDescriptor): ComponentInstance {
-		const instance = this.engine.instantiate(component);
-		this.#components.set(component.id, instance);
-		this.#lifecycle.set(component.id, { id: component.id, state: "loaded" });
-		this.#leases.set(component.id, [...(component.leases ?? [])]);
-		this.#append({
-			type: "component.Loaded",
-			componentId: component.id,
-			engine: "wasmtime",
-		});
-		return instance;
+		const id = component.id;
+		if (this.#components.has(id) || this.#loading.has(id))
+			throw new ComponentHostError("component_already_loaded", id);
+		this.#loading.add(id);
+		try {
+			const leases = [...(component.leases ?? [])];
+			const instance = this.engine.instantiate(component);
+			if (instance.id !== id)
+				throw new ComponentHostError("component_identity_mismatch", id);
+			this.#components.set(id, instance);
+			this.#lifecycle.set(id, { id, state: "loaded" });
+			this.#leases.set(id, leases);
+			this.#append({
+				type: "component.Loaded",
+				componentId: id,
+				engine: "wasmtime",
+			});
+			return instance;
+		} finally {
+			this.#loading.delete(id);
+		}
 	}
 
 	link(
