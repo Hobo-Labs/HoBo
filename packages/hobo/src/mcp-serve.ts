@@ -1,5 +1,14 @@
+import { realpathSync } from "node:fs";
+import path from "node:path";
+import { fileSettingsStore } from "@hobo/connect-ui";
+import { createTrustedVault } from "@hobo/core";
 import type { DeviceClock } from "@hobo/hobo-cd";
-import { applyEgressToProcess, isRemoteBox } from "@hobo/hobo-ci";
+import {
+	applyEgressToProcess,
+	isRemoteBox,
+	scopeRunVault,
+	secretStoreLocatorPath,
+} from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
 
 import { createComposedHoboCli } from "./cli.js";
@@ -64,7 +73,96 @@ export function composeHoboMcp(options: {
 		options.remote
 			? session
 			: undefined;
+	const canonical = (cwd: string) => {
+		const absolute = path.resolve(cwd);
+		try {
+			return realpathSync(absolute);
+		} catch {
+			return absolute;
+		}
+	};
+	const scope = (family: "ci" | "cd", cwd: string) =>
+		`${family}\u0000${canonical(cwd)}`;
+	const sessionSettings = new Map<string, Readonly<Record<string, string>>>();
+	const sessionChoices = new Set<string>();
+	const generations = new Map<string, number>();
+	const selectionControllers = new Map<string, AbortController>();
+	const pendingWrites = new Map<string, number>();
+	const familyVaults = new Map<string, ReturnType<typeof createTrustedVault>>();
+	let closed = false;
+	const storeSettingsFor = (family: "ci" | "cd", cwd: string) => {
+		const key = scope(family, cwd);
+		const generation = generations.get(key) ?? 0;
+		let controller = selectionControllers.get(key);
+		if (!controller) {
+			controller = new AbortController();
+			selectionControllers.set(key, controller);
+		}
+		const assertCurrent = () => {
+			if (closed || (generations.get(key) ?? 0) !== generation)
+				throw new Error(
+					"The owner session changed. Start this operation again.",
+				);
+		};
+		return {
+			assertCurrent,
+			selectionSignal: controller.signal,
+			hasPendingWrites: () => (pendingWrites.get(key) ?? 0) > 0,
+			runStoreWrite: async <T>(write: () => Promise<T>): Promise<T> => {
+				assertCurrent();
+				pendingWrites.set(key, (pendingWrites.get(key) ?? 0) + 1);
+				try {
+					return await write();
+				} finally {
+					const remaining = (pendingWrites.get(key) ?? 1) - 1;
+					if (remaining > 0) pendingWrites.set(key, remaining);
+					else pendingWrites.delete(key);
+				}
+			},
+			hasSessionChoice: () => sessionChoices.has(key),
+			onOwnerChoice: () => {
+				assertCurrent();
+				if ((pendingWrites.get(key) ?? 0) > 0)
+					throw new Error("The selected store is saving a change.");
+				familyVaults.get(key)?.clear();
+				familyVaults.delete(key);
+				controller.abort();
+				selectionControllers.delete(key);
+				owner.cancelScope(family, cwd);
+				sessionChoices.add(key);
+				generations.set(key, generation + 1);
+			},
+			read: async () => {
+				if (closed) return {};
+				assertCurrent();
+				const values =
+					sessionSettings.get(key) ??
+					(await fileSettingsStore(
+						secretStoreLocatorPath(canonical(cwd)),
+					).read());
+				assertCurrent();
+				return values;
+			},
+			write: async (values: Readonly<Record<string, string>>) => {
+				assertCurrent();
+				sessionSettings.set(key, { ...values });
+			},
+		};
+	};
 	const owner = createMcpOwnerChannel({
+		storeSettingsFor,
+		scopeKey: scope,
+		requireScope: true,
+		vaultFor: (family, cwd) => {
+			if (closed) throw new Error("The owner session is closed.");
+			const key = scope(family, cwd);
+			let vault = familyVaults.get(key);
+			if (!vault) {
+				vault = scopeRunVault(createTrustedVault());
+				familyVaults.set(key, vault);
+			}
+			return vault;
+		},
 		// Every step that needs the owner is a form in their host, asked in
 		// the call that needs it: nothing is relayed through the agent.
 		form: (params) =>
@@ -118,7 +216,12 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp());
+	session = createMcpStdioSession(
+		capture,
+		createStoreChoiceApp({
+			locatorFor: (cwd, family) => storeSettingsFor(family, cwd),
+		}),
+	);
 	const ready = capture;
 	return {
 		owner,
@@ -126,6 +229,18 @@ export function composeHoboMcp(options: {
 		session,
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
+			closed = true;
+			sessionSettings.clear();
+			sessionChoices.clear();
+			generations.clear();
+			for (const controller of selectionControllers.values())
+				controller.abort();
+			selectionControllers.clear();
+			pendingWrites.clear();
+			for (const vault of familyVaults.values()) vault.clear();
+			familyVaults.clear();
+			owner.vault?.clear();
+			owner.close();
 			owner.jobs.close();
 			await ready.close();
 		},

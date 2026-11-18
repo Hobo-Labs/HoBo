@@ -84,6 +84,59 @@ describe("ownerKeysFor", () => {
 });
 
 describe("loadOwnerKeys", () => {
+	it("does not disclose a selected store's coordinates when a key is missing", async () => {
+		const port = createMemorySecretsPort({ id: "memory" });
+		const outcome = await loadOwnerKeys({
+			env: {},
+			cwd: tmpdir(),
+			verb: "claim",
+			subcommand: "open",
+			vault: createTrustedVault(),
+			open: async () => ({
+				id: "1password",
+				port,
+				reference: () => "op://private-vault-coordinate/claim-key",
+			}),
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			code: "HOBO_OWNER_KEY_MISSING",
+		});
+		expect(JSON.stringify(outcome)).toContain(CLAIM_ACTION_KEY);
+		expect(JSON.stringify(outcome)).not.toContain("private-vault-coordinate");
+	});
+
+	it("loads retained keys through an owner-selected workload store", async () => {
+		const { store, port } = memoryStore();
+		await port.put(CLAIM_ACTION_KEY, "synthetic-retained-key");
+		const vault = createTrustedVault();
+		let selected = "";
+		const outcome = await loadOwnerKeys({
+			cwd: tmpdir(),
+			verb: "claim",
+			subcommand: "open",
+			vault,
+			env: {
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "fixture-owner-project",
+				INFISICAL_IDENTITY_ID: "fixture-workload-identity",
+				ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.example.test/request",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-workload-token",
+			},
+			ownerStoreDeps: {
+				locator: { read: async () => ({}), write: async () => {} },
+				openStore: async (id) => {
+					selected = id;
+					return { ok: true, store };
+				},
+			},
+		});
+		expect(outcome).toEqual({ kind: "loaded", keys: [CLAIM_ACTION_KEY] });
+		expect(selected).toBe("infisical");
+		expect(vault.reveal(CLAIM_ACTION_KEY)).toBe("synthetic-retained-key");
+		vault.clear();
+	});
+
 	it("does not open the owner store for CI status when retained Pulumi is configured", async () => {
 		let opened = false;
 		const outcome = await loadOwnerKeys({
@@ -214,6 +267,7 @@ describe("loadOwnerKeys", () => {
 			kind: "refused",
 			code: "HOBO_PULUMI_STATE_KEY_MISSING",
 		});
+		expect(JSON.stringify(outcome)).not.toContain("infisical://proj/");
 		// Nothing was made up in its place.
 		expect((await port.access(PULUMI_STATE_KEY)).status).not.toBe("ok");
 	});

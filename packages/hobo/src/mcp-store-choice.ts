@@ -1,5 +1,7 @@
-import type { SettingsStore } from "@hobo/connect-ui";
+import { randomUUID } from "node:crypto";
 import {
+	isOwnerStoreSetting,
+	type OwnerSettingsStore,
 	ownerLocator,
 	parseHttpsOrigin,
 	parseOnePasswordVaultId,
@@ -29,8 +31,6 @@ import {
  * - an **MCP App widget** (`ui://hobo/store-choice`) where the host renders
  *   MCP Apps: the same picker, which records the choice with
  *   `submit_store_choice`;
- * - otherwise, the agent's own picker (`AskUserQuestion`), whose answer the
- *   agent records with `submit_store_choice`.
  *
  * The answer is parsed where it enters and written to the owner's locator in
  * their HoBo settings, never the repository; the next run reads it.
@@ -38,7 +38,7 @@ import {
 
 // public-contract: the MCP tool that asks the owner to choose their secret store.
 export const CHOOSE_SECRET_STORE_TOOL = "choose_secret_store";
-// public-contract: the MCP tool that records the owner's choice (widget or host picker).
+// public-contract: the app-only tool for recording the owner's store choice.
 export const SUBMIT_STORE_CHOICE_TOOL = "submit_store_choice";
 // public-contract: the MCP App resource of the store picker.
 export const STORE_CHOICE_RESOURCE_URI = "ui://hobo/store-choice";
@@ -335,14 +335,32 @@ export function createStoreChoiceApp(
 	options: {
 		readonly cwd?: string;
 		/** Where a project's choice is kept; the owner's HoBo settings by default. */
-		readonly locatorFor?: (cwd: string) => SettingsStore;
+		readonly locatorFor?: (
+			cwd: string,
+			family: "ci" | "cd",
+		) => OwnerSettingsStore;
 	} = {},
 ): StoreChoiceApp {
-	const locatorFor =
+	const locatorFor: (cwd: string, family: "ci" | "cd") => OwnerSettingsStore =
 		options.locatorFor ?? ((cwd: string) => ownerLocator({ cwd }));
+	type ChoiceTicket = {
+		cwd: string;
+		family: "ci" | "cd";
+		key: string;
+		revision: number;
+		locator: OwnerSettingsStore;
+		expires: number;
+	};
+	const revisions = new Map<string, number>();
+	const tickets = new Map<string, ChoiceTicket>();
+	const stale = () =>
+		result(
+			"This store picker is no longer current. Open a new picker for the selected project.",
+			{ status: "stale" },
+			true,
+		);
 	const record = async (
-		cwd: string,
-		family: string,
+		ticket: ChoiceTicket,
 		answer: JsonValue | undefined,
 	): Promise<CallToolResult> => {
 		let choice: StoreChoice;
@@ -357,13 +375,43 @@ export function createStoreChoiceApp(
 			);
 		}
 		const settings = locatorSettings(choice);
-		const locator = locatorFor(cwd);
-		await locator.write({ ...(await locator.read()), ...settings });
+		let previous: Readonly<Record<string, string>>;
+		try {
+			if (
+				(revisions.get(ticket.key) ?? 0) !== ticket.revision ||
+				Date.now() >= ticket.expires
+			)
+				return stale();
+			ticket.locator.assertCurrent?.();
+			previous = await ticket.locator.read();
+			if (
+				(revisions.get(ticket.key) ?? 0) !== ticket.revision ||
+				Date.now() >= ticket.expires
+			)
+				return stale();
+			ticket.locator.assertCurrent?.();
+			ticket.locator.onOwnerChoice?.();
+			revisions.set(ticket.key, ticket.revision + 1);
+		} catch {
+			if (ticket.locator.hasPendingWrites?.())
+				return result(
+					"The selected store is saving a change. Wait until it finishes, then open the picker again.",
+					{ status: "busy" },
+					true,
+				);
+			return stale();
+		}
+		await locatorFor(ticket.cwd, ticket.family).write({
+			...Object.fromEntries(
+				Object.entries(previous).filter(([name]) => !isOwnerStoreSetting(name)),
+			),
+			...settings,
+		});
 		const label =
 			STORE_OPTIONS.find((o) => o.id === choice.store)?.label ?? choice.store;
 		return result(
-			`The owner chose ${label}; it is saved in their HoBo settings. Run hobo ${family} up --hand-off again: it asks for the store's sign-in itself.`,
-			{ status: "chosen", ...settings },
+			`The owner chose ${label}; it is saved in their HoBo settings. Run hobo ${ticket.family} up --hand-off again: it asks for the store's sign-in itself.`,
+			{ status: "chosen", store: choice.store },
 		);
 	};
 
@@ -391,18 +439,31 @@ export function createStoreChoiceApp(
 							}
 						: undefined),
 				},
-				{
-					name: SUBMIT_STORE_CHOICE_TOOL,
-					title: "Record the store choice",
-					description:
-						"Record the owner's answer from the store picker (the MCP App, or the host's own picker). Non-secret ids only.",
-					inputSchema: {
-						type: "object",
-						properties: { ...familyArg, ...STORE_CHOICE_PROPERTIES },
-						required: ["family", "store"],
-						additionalProperties: false,
-					},
-				},
+				...(support.apps
+					? [
+							{
+								name: SUBMIT_STORE_CHOICE_TOOL,
+								title: "Record the store choice (owner form only)",
+								description: "Used by the HoBo owner form, not the agent.",
+								inputSchema: {
+									type: "object",
+									properties: {
+										...familyArg,
+										...STORE_CHOICE_PROPERTIES,
+										choiceTicket: { type: "string" },
+									},
+									required: ["family", "store", "choiceTicket"],
+									additionalProperties: false,
+								},
+								_meta: {
+									ui: {
+										resourceUri: STORE_CHOICE_RESOURCE_URI,
+										visibility: ["app"],
+									},
+								},
+							},
+						]
+					: []),
 			];
 		},
 		resources(support) {
@@ -441,7 +502,31 @@ export function createStoreChoiceApp(
 					? args.cwd
 					: (options.cwd ?? process.cwd());
 			const family = args.family === "ci" ? "ci" : "cd";
-			if (tool === SUBMIT_STORE_CHOICE_TOOL) return record(cwd, family, args);
+			if (tool === SUBMIT_STORE_CHOICE_TOOL) {
+				if (!support.apps)
+					return result(
+						"The secure HoBo owner form is unavailable in this host.",
+						{ status: "secure-form-unavailable" },
+						true,
+					);
+				const id = isJsonString(args.choiceTicket) ? args.choiceTicket : "";
+				const ticket = tickets.get(id);
+				if (!ticket || ticket.family !== family || ticket.cwd !== cwd)
+					return stale();
+				const outcome = await record(ticket, args);
+				if (!outcome.isError || outcome.structuredContent?.status === "stale")
+					tickets.delete(id);
+				return outcome;
+			}
+			const key = `${family}\u0000${cwd}`;
+			const ticket: ChoiceTicket = {
+				cwd,
+				family,
+				key,
+				revision: revisions.get(key) ?? 0,
+				locator: locatorFor(cwd, family),
+				expires: Date.now() + 10 * 60_000,
+			};
 			if (support.formElicitation && request !== undefined) {
 				const unanswered = (action: string) =>
 					result(
@@ -458,7 +543,7 @@ export function createStoreChoiceApp(
 				if (!first.success || first.data.action !== "accept")
 					return unanswered(first.success ? first.data.action : "unanswered");
 				const picked = storeOnly.safeParse(first.data.content);
-				if (!picked.success) return record(cwd, family, undefined);
+				if (!picked.success) return record(ticket, undefined);
 				const store = picked.data.store;
 				const label = STORE_OPTIONS.find((o) => o.id === store)?.label ?? store;
 				// Then only that store's own fields.
@@ -472,23 +557,32 @@ export function createStoreChoiceApp(
 					return unanswered(second.success ? second.data.action : "unanswered");
 				const fields = second.data.content;
 				return record(
-					cwd,
-					family,
+					ticket,
 					isJsonObject(fields) ? { ...fields, store } : { store },
 				);
 			}
-			if (support.apps)
+			if (support.apps) {
+				for (const [id, pending] of tickets)
+					if (pending.expires <= Date.now()) tickets.delete(id);
+				if (tickets.size >= 32)
+					tickets.delete(tickets.keys().next().value ?? "");
+				const id = randomUUID();
+				tickets.set(id, ticket);
 				return {
 					...result(
 						"The store picker is shown to the owner. Their choice is recorded when they submit it; then run the lifecycle again.",
 						{ status: "shown", family },
 					),
-					_meta: { "ui/resourceUri": STORE_CHOICE_RESOURCE_URI },
+					_meta: {
+						"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
+						hoboChoiceTicket: id,
+					},
 				};
+			}
 			return result(
-				`This host renders neither MCP elicitation nor MCP Apps. Ask the owner with your host's own picker (AskUserQuestion), never in prose. Ask the store alone first: ${STORE_OPTIONS.map((o) => `${o.label} (${o.needs})`).join("; ")}. Then ask only the chosen store's own follow-up, never about the others, and record the answer with ${SUBMIT_STORE_CHOICE_TOOL}.`,
+				"This host cannot show the secure HoBo store-selection form. Use a host with MCP elicitation or MCP Apps; do not ask for store coordinates in conversation.",
 				{
-					status: "use-host-picker",
+					status: "secure-form-unavailable",
 					options: STORE_OPTIONS.map((o) => o.label),
 				},
 			);
@@ -510,6 +604,7 @@ export function renderStoreChoiceHtml(): string {
 body{margin:0;padding:16px;font:15px/1.4 system-ui,sans-serif;color:var(--ink);background:var(--paper)}
 h1{font-size:17px;margin:0 0 12px}.opt{display:block;padding:10px;border:2px solid var(--line);border-radius:8px;margin:0 0 8px}
 .opt span{color:var(--muted);font-size:13px}.ids label{display:block;margin:8px 0 2px;font-size:13px}
+[data-for][hidden]{display:none}
 input[type=text]{width:100%;box-sizing:border-box;padding:8px;border:2px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)}
 button{margin-top:12px;padding:10px 16px;border:2px solid var(--line);border-radius:8px;background:var(--ink);color:var(--paper);font-weight:600}
 #say{margin-top:10px;min-height:1.2em}
@@ -522,19 +617,21 @@ button{margin-top:12px;padding:10px 16px;border:2px solid var(--line);border-rad
 <label for="c" data-for="1password">Connect server (https)</label><input type="text" id="c" name="OP_CONNECT_HOST" data-for="1password">
 <label for="b" data-for="bitwarden">Self-hosted server (optional)</label><input type="text" id="b" name="BITWARDEN_SERVER_URL" data-for="bitwarden">
 </div>
-<button type="submit">Use this store</button><div id="say" role="status"></div></form>
+<button type="submit" disabled>Use this store</button><div id="say" role="status"></div></form>
 <script>
 (function(){
-var nextId=1,pending={},family="cd";
+var nextId=1,pending={},family="cd",cwd,choiceTicket,inputReady=false;
 function post(m){window.parent.postMessage(m,"*")}
 function request(method,params){var id=nextId++;post({jsonrpc:"2.0",id:id,method:method,params:params});return new Promise(function(res,rej){pending[id]={res:res,rej:rej}})}
 function notify(method,params){post({jsonrpc:"2.0",method:method,params:params})}
-var f=document.getElementById("f"),say=document.getElementById("say");
+var f=document.getElementById("f"),say=document.getElementById("say"),button=f.querySelector("button");
+function ready(){button.disabled=!(inputReady&&choiceTicket)}
 function show(){var s=(f.querySelector("input[name=store]:checked")||{}).value;
 Array.prototype.forEach.call(document.querySelectorAll("[data-for]"),function(e){e.hidden=e.getAttribute("data-for")!==s});
 notify("ui/notifications/size-changed",{height:Math.ceil(document.documentElement.scrollHeight)})}
 f.addEventListener("change",show);show();
-f.addEventListener("submit",function(e){e.preventDefault();var d=new FormData(f),args={family:family};
+f.addEventListener("submit",function(e){e.preventDefault();if(!inputReady||!choiceTicket)return;var d=new FormData(f),args={family:family,choiceTicket:choiceTicket};
+if(cwd)args.cwd=cwd;
 d.forEach(function(v,k){var t=String(v).trim();var el=f.elements[k];if(t&&(!el||!el.hidden))args[k]=t});
 request("tools/call",{name:"${SUBMIT_STORE_CHOICE_TOOL}",arguments:args}).then(function(r){
 var t=(r&&r.content&&r.content[0]&&r.content[0].text)||"";say.textContent=t;
@@ -542,7 +639,8 @@ if(r&&!r.isError)notify("ui/message",{role:"user",content:[{type:"text",text:"I 
 function(){say.textContent="Not recorded: the request did not complete. Try again."})});
 window.addEventListener("message",function(ev){if(ev.source!==window.parent)return;var m=ev.data;if(!m||m.jsonrpc!=="2.0")return;
 if(m.method===undefined&&m.id!==undefined){var w=pending[m.id];if(!w)return;delete pending[m.id];m.error?w.rej(m.error):w.res(m.result);return}
-if(m.method==="ui/notifications/tool-input"&&m.params&&m.params.arguments&&m.params.arguments.family)family=m.params.arguments.family;
+if(m.method==="ui/notifications/tool-input"&&m.params&&m.params.arguments){if(m.params.arguments.family)family=m.params.arguments.family;if(typeof m.params.arguments.cwd==="string")cwd=m.params.arguments.cwd;inputReady=true;ready()}
+if(m.method==="ui/notifications/tool-result"&&m.params&&m.params._meta&&typeof m.params._meta.hoboChoiceTicket==="string"){choiceTicket=m.params._meta.hoboChoiceTicket;ready()}
 if(m.method==="ui/notifications/host-context-changed"&&m.params&&m.params.theme)document.documentElement.setAttribute("data-theme",m.params.theme);
 if(m.id!==undefined&&(m.method==="ui/resource-teardown"||m.method==="ping"))post({jsonrpc:"2.0",id:m.id,result:{}})});
 request("ui/initialize",{appInfo:{name:"hobo-store-choice",version:"1.0.0"},appCapabilities:{},protocolVersion:"2026-01-26"}).then(function(r){

@@ -20,10 +20,11 @@ import {
 	type GithubAppOwner,
 	validGithubOrganizationLogin,
 } from "./app-hosts.js";
-import type {
-	OpenedSecretStore,
-	SecretStoreId,
-	SecretStoreOpening,
+import {
+	type OpenedSecretStore,
+	type SecretStoreId,
+	type SecretStoreOpening,
+	withStoreWriteLock,
 } from "./secret-stores.js";
 
 // The GitHub provider connection `hobo ci up` makes before it converges: a
@@ -360,18 +361,21 @@ export function createGithubConnectFlow(
 				HOBO_CI_GITHUB_APP_ID: String(conversion.id),
 			} satisfies Readonly<Record<CredentialKey, string>>;
 			const stored: string[] = [];
-			for (const key of GITHUB_APP_CREDENTIAL_KEYS) {
-				try {
-					await store.port.put(key, values[key]);
-					stored.push(key);
-				} catch {
-					return failed(
-						`The ${store.id} write failed after ${stored.length} of ${GITHUB_APP_CREDENTIAL_KEYS.length} entries; the rest were discarded.`,
-						[
-							`Delete the App at ${deleteUrl}, fix access to ${store.id}, and run hobo ci up again.`,
-						],
-					);
-				}
+			const selectedStore = store;
+			try {
+				await withStoreWriteLock(selectedStore, async () => {
+					for (const key of GITHUB_APP_CREDENTIAL_KEYS) {
+						await selectedStore.port.put(key, values[key]);
+						stored.push(key);
+					}
+				});
+			} catch {
+				return failed(
+					`The ${store.id} write failed after ${stored.length} of ${GITHUB_APP_CREDENTIAL_KEYS.length} entries; the rest were discarded.`,
+					[
+						`Delete the App at ${deleteUrl}, fix access to ${store.id}, and run hobo ci up again.`,
+					],
+				);
 			}
 			outcome = "created";
 			return { step: connected(store, conversion.slug) };

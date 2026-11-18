@@ -195,6 +195,7 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 			},
 		});
 		const done = toolResult(await client.answer(pending));
+		expect(JSON.stringify(done)).not.toContain("proj-123");
 		expect(done.isError).toBeUndefined();
 		expect(done.content[0]?.text).toMatch(
 			/chose Infisical.*hobo cd up --hand-off again/su,
@@ -265,11 +266,17 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 			},
 		});
 		await client.init();
-		const tool = toolsSchema
-			.parse((await client.rpc("tools/list")).result)
-			.tools.find((t) => t.name === CHOOSE_SECRET_STORE_TOOL);
+		const tools = toolsSchema.parse(
+			(await client.rpc("tools/list")).result,
+		).tools;
+		const tool = tools.find((t) => t.name === CHOOSE_SECRET_STORE_TOOL);
 		expect(tool?._meta).toMatchObject({
 			ui: { resourceUri: STORE_CHOICE_RESOURCE_URI },
+		});
+		expect(
+			tools.find((t) => t.name === SUBMIT_STORE_CHOICE_TOOL)?._meta,
+		).toMatchObject({
+			ui: { resourceUri: STORE_CHOICE_RESOURCE_URI, visibility: ["app"] },
 		});
 		const page = await client.rpc("resources/read", {
 			uri: STORE_CHOICE_RESOURCE_URI,
@@ -290,7 +297,11 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 		// The widget records the owner's choice.
 		await client.rpc("tools/call", {
 			name: SUBMIT_STORE_CHOICE_TOOL,
-			arguments: { family: "cd", store: "bitwarden" },
+			arguments: {
+				family: "cd",
+				store: "bitwarden",
+				choiceTicket: shown._meta?.hoboChoiceTicket ?? null,
+			},
 		});
 		expect(Object.fromEntries(client.saved)).toEqual({
 			HOBO_SECRET_STORE: "bitwarden",
@@ -298,18 +309,33 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 		await client.close();
 	});
 
-	it("in a host with neither, tells the agent to use its own picker, never prose", async () => {
+	it("refuses a host without a secure owner form", async () => {
 		const client = connect({});
 		await client.init();
+		const tools = toolsSchema.parse(
+			(await client.rpc("tools/list")).result,
+		).tools;
+		expect(tools.some((tool) => tool.name === SUBMIT_STORE_CHOICE_TOOL)).toBe(
+			false,
+		);
+		const direct = toolResult(
+			await client.rpc("tools/call", {
+				name: SUBMIT_STORE_CHOICE_TOOL,
+				arguments: { family: "cd", store: "bitwarden" },
+			}),
+		);
+		expect(direct.isError).toBe(true);
 		const told = toolResult(
 			await client.rpc("tools/call", {
 				name: CHOOSE_SECRET_STORE_TOOL,
 				arguments: { family: "cd" },
 			}),
 		);
-		expect(told.content[0]?.text).toMatch(/AskUserQuestion\), never in prose/u);
+		expect(told.content[0]?.text).toMatch(
+			/do not ask for store coordinates in conversation/u,
+		);
 		expect(told.structuredContent).toMatchObject({
-			status: "use-host-picker",
+			status: "secure-form-unavailable",
 			options: ["Infisical", "1Password", "Bitwarden"],
 		});
 		expect(client.saved.size).toBe(0);

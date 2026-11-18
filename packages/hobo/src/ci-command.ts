@@ -22,6 +22,7 @@ import {
 	type AppHandOffMode,
 	egressFetch,
 	egressFrom,
+	type OwnerChannel,
 	parseAppHandOffMode,
 	REDIRECT_RECEIVER_SETTING,
 	type RedirectReceiver,
@@ -45,6 +46,10 @@ import {
 	CI_DEPLOY_OPTIONS,
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
+import {
+	CI_DEPLOY_MANAGED_OPTIONS,
+	runCiRelayManaged,
+} from "./ci-relay-managed.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
 import { runCiRuns } from "./ci-runs.js";
 import {
@@ -53,6 +58,7 @@ import {
 	SECRET_STORE_ONLY_OPTIONS,
 } from "./ci-secret-store.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
+import type { loadOwnerDeployCredentials } from "./owner-deploy-credentials.js";
 import type { VercelFetch } from "./vercel-client.js";
 
 const execute = promisify(execFile);
@@ -295,6 +301,7 @@ function parseCiArgs(args: readonly string[]) {
 			"create-project": { type: "boolean" },
 			provision: { type: "boolean" },
 			adopt: { type: "boolean" },
+			managed: { type: "boolean" },
 			deadline: { type: "string" },
 			budget: { type: "string" },
 			"owner-id": { type: "string" },
@@ -364,6 +371,13 @@ export function createCiCommand(
 		vercelFetch?: VercelFetch;
 		/** A vault already holding the deploy token (`VERCEL_TOKEN`), read from the store. */
 		deployCredentials?: TrustedVault;
+		ownerSession?: TrustedVault;
+		ownerFor?: (
+			cwd: string,
+		) => Pick<OwnerChannel, "vault" | "storeSettings"> | undefined;
+		ownerSettings?: Parameters<
+			typeof loadOwnerDeployCredentials
+		>[0]["ownerSettings"];
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
 		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
@@ -378,7 +392,7 @@ export function createCiCommand(
 ): CommandModule {
 	return {
 		implemented: true,
-		async run({ args, flags, emitProgress }) {
+		async run({ args, flags, context, emitProgress }) {
 			if (args.length === 0) return { message: CI_HELP };
 			let parsed: ReturnType<typeof parseCiArgs>;
 			try {
@@ -420,8 +434,38 @@ export function createCiCommand(
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
 			if (command === "deploy") {
+				const owner = deps.ownerFor?.(context.cwd);
+				const ownerSession = owner?.vault ?? deps.ownerSession;
+				const ownerSettings = owner?.storeSettings ?? deps.ownerSettings;
 				if (positionals.length !== 1)
 					return usage("hobo ci deploy takes no positional arguments.");
+				if (values.managed === true) {
+					const allowed = new Set<string>(CI_DEPLOY_MANAGED_OPTIONS);
+					const unsupported = Object.entries(values).find(
+						([key, value]) => value !== undefined && !allowed.has(key),
+					);
+					if (unsupported)
+						return usage(
+							`--${unsupported[0]} does not apply to hobo ci deploy --managed.`,
+						);
+					return runCiRelayManaged({
+						cwd: flags.cwd,
+						values,
+						env: deps.env ?? process.env,
+						...(deps.deployCredentials !== undefined
+							? { credentials: deps.deployCredentials }
+							: undefined),
+						...(ownerSession !== undefined ? { ownerSession } : undefined),
+						...(ownerSettings !== undefined ? { ownerSettings } : undefined),
+						...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+						...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+						...(deps.now !== undefined ? { now: deps.now } : undefined),
+						...(deps.hoboHome !== undefined
+							? { home: deps.hoboHome }
+							: undefined),
+						emitProgress,
+					});
+				}
 				if (values.adopt === true) {
 					const adoptable = new Set<string>(CI_DEPLOY_ADOPT_OPTIONS);
 					const other = Object.entries(values).find(
@@ -462,6 +506,8 @@ export function createCiCommand(
 					...(deps.deployCredentials !== undefined
 						? { credentials: deps.deployCredentials }
 						: undefined),
+					...(ownerSession !== undefined ? { ownerSession } : undefined),
+					...(ownerSettings !== undefined ? { ownerSettings } : undefined),
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
 						: undefined),

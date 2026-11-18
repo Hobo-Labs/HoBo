@@ -1,5 +1,8 @@
-import type { OpenedSecretStore } from "@hobo/hobo-ci";
-import { familySettings } from "@hobo/hobo-ci";
+import {
+	familySettings,
+	type OpenedSecretStore,
+	withStoreWriteLock,
+} from "@hobo/hobo-ci";
 
 import { cdJournalContinuity } from "./continuity.js";
 import { CD_JOURNAL_MEMBER_PLANS } from "./fleet-plans.js";
@@ -101,7 +104,7 @@ async function holds(store: OpenedSecretStore, name: string): Promise<boolean> {
 	const read = await store.port.access(name);
 	if (read.status === "ok") return Boolean(read.material);
 	if (read.code === "secret-not-found") return false;
-	throw new Error(`Cannot read ${store.reference(name)}.`);
+	throw new Error(`Cannot read the journal setting ${name}.`);
 }
 
 /** Provision what the journal's fleet is missing (see the module comment). */
@@ -144,42 +147,43 @@ export async function prepareJournalFleet(input: {
 			outcome: "would-create",
 			detail: `would create ${missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${roster} in ${store.id}`,
 		};
-	for (const member of missing) {
-		const provisioner = input.provisioners.find(
-			(candidate) => candidate.plan === member.plan,
-		);
-		if (provisioner === undefined)
-			throw new Error(
-				`no provisioner here creates ${member.plan} databases for ${member.id}`,
+	await withStoreWriteLock(store, async () => {
+		for (const member of missing) {
+			const provisioner = input.provisioners.find(
+				(candidate) => candidate.plan === member.plan,
 			);
-		const created = await provisioner.create({
-			member: member.id,
-			idempotencyKey: `hobo-cd-journal:${member.id}`,
-			store,
-		});
-		if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
-			throw new Error(
-				`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
-			);
-		// The claim link first: a member whose URL is stored is complete.
-		if (created.claimUrl !== undefined)
+			if (provisioner === undefined)
+				throw new Error(
+					`no provisioner here creates ${member.plan} databases for ${member.id}`,
+				);
+			const created = await provisioner.create({
+				member: member.id,
+				idempotencyKey: `hobo-cd-journal:${member.id}`,
+				store,
+			});
+			if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
+				throw new Error(
+					`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
+				);
+			if (created.claimUrl !== undefined)
+				await store.port.put(
+					journalMemberClaimEntry(member.id),
+					created.claimUrl,
+				);
 			await store.port.put(
-				journalMemberClaimEntry(member.id),
-				created.claimUrl,
+				journalMemberUrlEntry(member.id),
+				created.connectionString,
 			);
-		await store.port.put(
-			journalMemberUrlEntry(member.id),
-			created.connectionString,
-		);
-	}
-	await settings.write({
-		...saved,
-		[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
-		[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
+		}
+		await settings.write({
+			...saved,
+			[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
+			[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
+		});
 	});
 	const claims =
 		missing.length > 0
-			? ` Claim each new database to keep it (an unclaimed one expires): the links are in ${store.id} at ${missing.map((member) => store.reference(journalMemberClaimEntry(member.id))).join(", ")}.`
+			? ` Claim each new database to keep it (an unclaimed one expires): the links are in ${store.id} under ${missing.map((member) => journalMemberClaimEntry(member.id)).join(", ")}.`
 			: "";
 	return {
 		id: "cd-journal",

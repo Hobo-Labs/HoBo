@@ -73,8 +73,8 @@ describe("EVAL store choice: a handed-off run asks, never assumes", () => {
 		const all = text(shown, outcome);
 		for (const store of ["infisical", "1password", "bitwarden"])
 			expect(all).toContain(`${store}:`);
-		expect(all).toMatch(/INFISICAL_PROJECT_ID/u);
-		expect(all).toMatch(/OP_VAULT_ID/u);
+		expect(all).toMatch(/secure owner form/u);
+		expect(all).not.toMatch(/INFISICAL_PROJECT_ID|OP_VAULT_ID/u);
 		// Each store says HoBo sets up its own access; nothing by hand.
 		expect(all).not.toMatch(/Create Identity|Issue token|create a token/u);
 		expect(all).not.toMatch(LOOPBACK);

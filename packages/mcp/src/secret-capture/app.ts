@@ -1,33 +1,3 @@
-/**
- * The secret-capture MCP App (MCP Apps extension `io.modelcontextprotocol/ui`,
- * specification 2026-01-26; reference SDK `@modelcontextprotocol/ext-apps`
- * 2.0.4, read 2026-11-12). When a HoBo deployment needs a secret the store
- * does not hold yet, the agent calls `capture_secret`; the owner types the
- * value into a form; the value is sealed in that form, opened in this
- * process, written to the secret store through the injected connector, and
- * dropped. The agent gets a ticket, then a name, `stored: true` and a store
- * reference. Nothing the agent can read ever holds the value.
- *
- * Channels, chosen from what the host negotiated at `initialize`:
- * 1. `mcp-app`: the host supports MCP Apps (`capabilities.extensions
- *    ["io.modelcontextprotocol/ui"].mimeTypes` has `text/html;profile=mcp-app`).
- *    `capture_secret` carries `_meta.ui.resourceUri`; the host renders
- *    `ui://hobo/secret-capture`; the form calls `submit_secret_value`, whose
- *    `_meta.ui.visibility` is `["app"]`, so the host keeps it out of the
- *    model's tool list (spec: "Host MUST NOT include tools in the agent's tool
- *    list when their visibility does not include \"model\""). A host without
- *    MCP Apps is never offered that tool at all.
- * 2. `url-elicitation`: no MCP Apps, but the client declared
- *    `capabilities.elicitation.url` (MCP 2025-11-25). `capture_secret`
- *    answers with `URLElicitationRequiredError` (-32042) naming the loopback
- *    page; the client shows the address and opens it once the owner consents;
- *    `notifications/elicitation/complete` follows the write. Form-mode
- *    elicitation is never used: the spec forbids it for secrets.
- * 3. `loopback-page`: neither. The result names the loopback page and tells
- *    the agent to ask the owner to open it in their own browser. Never a
- *    request to paste the value into the chat.
- */
-
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
 	isJsonObject,
@@ -192,7 +162,6 @@ export type SecretCaptureEventType =
 	| "secret.CaptureExpired"
 	| "secret.CaptureClosed";
 
-/** The audited fact of one step (`#SecretCaptureEvent`): references only. */
 export type SecretCaptureEvent = Readonly<{
 	schemaVersion: typeof SECRET_CAPTURE_EVENTS_SCHEMA_VERSION;
 	type: SecretCaptureEventType;
@@ -269,6 +238,15 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	 * refused.
 	 */
 	handoff?: (secret: CapturedSecret) => Promise<void>;
+	handoffFor?: (name: string) =>
+		| Readonly<{
+				held: () => boolean;
+				receive: (secret: CapturedSecret) => Promise<void>;
+				link: () => Readonly<{ url: string; message: string }> | undefined;
+				cancel: () => void;
+		  }>
+		| undefined;
+	onEnd?: () => void;
 	/**
 	 * Whether a handed-over value is still waiting for its run. A hand-over
 	 * the run has taken is spent: asked for again, the owner gets a new form,
@@ -301,12 +279,14 @@ type Ticket = {
 	readonly openedAtMs: number;
 	readonly expiresAtMs: number;
 	readonly writerClientId: string | undefined;
+	readonly handoff: ReturnType<
+		NonNullable<CreateSecretCaptureAppOptions["handoffFor"]>
+	>;
 	state: TicketState;
 	keys: CaptureKeyPair | undefined;
 	readonly publicKey: CapturePublicKey;
 	tokenDigest: Buffer | undefined;
 	url: string | undefined;
-	ref: string | undefined;
 	attempts: number;
 };
 
@@ -371,7 +351,6 @@ type TicketView = {
 	purpose: string;
 	charset: string;
 	maxBytes: number;
-	ref?: string;
 	key?: CapturePublicKey;
 	url?: string;
 	/** What this host can show the owner, so the agent never guesses. */
@@ -470,7 +449,17 @@ export function createSecretCaptureApp(
 		};
 	}
 
-	function shut(ticket: Ticket, state: TicketState): void {
+	function shut(
+		ticket: Ticket,
+		state: TicketState,
+		cancelHandoff = true,
+	): void {
+		if (
+			cancelHandoff &&
+			ticket.state === "awaiting-owner" &&
+			(state === "closed" || state === "expired")
+		)
+			ticket.handoff?.cancel();
 		ticket.state = state;
 		ticket.keys?.destroy();
 		ticket.keys = undefined;
@@ -506,7 +495,6 @@ export function createSecretCaptureApp(
 			charset: ticket.spec.charset,
 			maxBytes: ticket.spec.maxBytes,
 		};
-		if (ticket.ref !== undefined) shown.ref = ticket.ref;
 		if (open) shown.key = { ...ticket.publicKey };
 		if (open && ticket.url !== undefined) shown.url = ticket.url;
 		return shown;
@@ -597,31 +585,33 @@ export function createSecretCaptureApp(
 			// one, as its own field, prefilled and marked as a link.
 			const said =
 				problem === undefined ? ticket.spec.purpose : `${problem} Try again.`;
-			const answer = parseFormAnswer(
-				await (
-					elicit?.({
-						message: link === undefined ? said : `${link.message} — ${said}`,
-						requestedSchema: {
-							type: "object",
-							properties: {
-								// The link as its own field, never only in the text: an
-								// address in the message showed as text the owner could
-								// neither click nor copy.
-								...(link === undefined
-									? undefined
-									: { link: linkField(link.url, "Link to open") }),
-								value: {
-									type: "string",
-									title: ticket.spec.label,
-									minLength: ticket.spec.minBytes,
-									maxLength: ticket.spec.maxBytes,
-								},
+			const response = await (
+				elicit?.({
+					message: link === undefined ? said : `${link.message} — ${said}`,
+					requestedSchema: {
+						type: "object",
+						properties: {
+							...(link === undefined
+								? undefined
+								: { link: linkField(link.url, "Link to open") }),
+							value: {
+								type: "string",
+								title: ticket.spec.label,
+								minLength: ticket.spec.minBytes,
+								maxLength: ticket.spec.maxBytes,
 							},
-							required: ["value"],
 						},
-					}) ?? Promise.resolve(undefined)
-				).catch(() => undefined),
-			);
+						required: ["value"],
+					},
+				}) ?? Promise.resolve(undefined)
+			).catch(() => undefined);
+			sweep();
+			if (ticket.state !== "awaiting-owner")
+				throw new SecretCaptureError(
+					"SECRET_CAPTURE_CLOSED",
+					`${ticket.spec.name}'s capture is closed.`,
+				);
+			const answer = parseFormAnswer(response);
 			// Withdrawn, not answered: the host cancelled the call that asked.
 			if (answer.action === "unanswered") {
 				shut(ticket, "closed");
@@ -668,7 +658,7 @@ export function createSecretCaptureApp(
 		spec: ParsedSecretCaptureSpec,
 	): Promise<SecretCaptureError | undefined> {
 		if (spec.target === "handoff")
-			return options.handoff === undefined
+			return options.handoff === undefined && options.handoffFor === undefined
 				? new SecretCaptureError(
 						"SECRET_STORE_NOT_CONNECTED",
 						`Nothing in this process is waiting for ${spec.name}.`,
@@ -679,14 +669,14 @@ export function createSecretCaptureApp(
 		if (status.connected === false)
 			return new SecretCaptureError(
 				"SECRET_STORE_NOT_CONNECTED",
-				`No secret store is connected (${status.reason}), so ${spec.name} has nowhere to go.`,
-				status.nextStep,
+				`No secret store is connected, so ${spec.name} has nowhere to go.`,
+				"Use the secure HoBo owner hand-off to open the selected store.",
 			);
 		if (spec.target !== "writer" && !status.writable)
 			return new SecretCaptureError(
 				"SECRET_STORE_WRITER_REQUIRED",
-				`The secret store ${status.storeRef} is connected, but this session may not write to it yet.`,
-				`Call ${CAPTURE_SECRET_TOOL} with name ${status.writerSpec} and writerClientId (the writer identity's Client ID) first; the owner enters its one-use client secret in the same kind of form.`,
+				"The selected secret store is connected, but this session may not write to it yet.",
+				"Use the secure HoBo owner hand-off to authorize the session.",
 			);
 		return undefined;
 	}
@@ -714,16 +704,27 @@ export function createSecretCaptureApp(
 		if (spec.target === "writer" && !CLIENT_ID.test(writerClientId ?? ""))
 			throw new SecretCaptureError(
 				"SECRET_CAPTURE_WRITER_CLIENT_ID_REQUIRED",
-				`${spec.name} needs writerClientId: the Client ID of the writer identity's Universal Auth (an identifier, not a secret).`,
+				"This connection needs authorization through the secure HoBo owner hand-off.",
 			);
 		const refusal = await refuseIfNotWritable(spec);
 		if (refusal !== undefined) {
 			emit("secret.CaptureRefused", { name: spec.name, code: refusal.code });
 			throw refusal;
 		}
+		const handoff =
+			spec.target === "handoff" ? options.handoffFor?.(spec.name) : undefined;
+		if (spec.target === "handoff" && options.handoffFor && !handoff)
+			throw new SecretCaptureError(
+				"SECRET_STORE_NOT_CONNECTED",
+				`Nothing in this process is waiting for ${spec.name}.`,
+				"Run the ceremony that asks for it through this MCP server first.",
+			);
 		const replace = objectAt(args, "replace") === true;
 		const previous = [...tickets.values()]
-			.filter((ticket) => ticket.spec.name === spec.name)
+			.filter(
+				(ticket) =>
+					ticket.spec.name === spec.name && ticket.handoff === handoff,
+			)
 			.at(-1);
 		// A retry after URL elicitation, or a repeated call while the owner is
 		// still typing, gets the same capture back.
@@ -735,11 +736,12 @@ export function createSecretCaptureApp(
 					now() < previous.expiresAtMs &&
 					// A hand-over the run already took is spent: ask afresh.
 					(previous.spec.target !== "handoff" ||
-						options.handoffHeld?.(previous.spec.name) === true)))
+						(previous.handoff?.held() ??
+							options.handoffHeld?.(previous.spec.name)) === true)))
 		)
 			return answerFor(previous, support);
 		if (previous?.state === "awaiting-owner") {
-			shut(previous, "closed");
+			shut(previous, "closed", false);
 			emit("secret.CaptureClosed", ticketFields(previous));
 		}
 		const open = [...tickets.values()].filter(
@@ -773,12 +775,12 @@ export function createSecretCaptureApp(
 			openedAtMs: opened,
 			expiresAtMs: opened + ttlMs,
 			writerClientId: spec.target === "writer" ? writerClientId : undefined,
+			handoff,
 			state: "awaiting-owner",
 			keys,
 			publicKey: keys.publicKey,
 			tokenDigest: undefined,
 			url: undefined,
-			ref: undefined,
 			attempts: 0,
 		};
 		if (channel === "form-elicitation") {
@@ -787,7 +789,9 @@ export function createSecretCaptureApp(
 			// A pending link goes in the form itself: a host may show forms and
 			// no link prompt, and the owner needs the link to have anything to
 			// paste. (`linkShown` is accepted and changes nothing.)
-			const link = options.linkFor?.(spec.name);
+			const link = ticket.handoff
+				? ticket.handoff.link()
+				: options.linkFor?.(spec.name);
 			const result = await askInForm(ticket, link);
 			return {
 				kind: "result",
@@ -824,7 +828,7 @@ export function createSecretCaptureApp(
 					content: [
 						{
 							type: "text",
-							text: `${ticket.spec.name} is ${ticket.state} (${ticket.ref ?? "no reference"}). The value was never shown to you.`,
+							text: `${ticket.spec.name} is ${ticket.state}. The value was never shown to you.`,
 						},
 					],
 					structuredContent: shown,
@@ -921,25 +925,32 @@ export function createSecretCaptureApp(
 		ticket: Ticket,
 		secret: CapturedSecret,
 	): Promise<SecretCaptureToolResult> {
-		let ref: string;
 		let state: "stored" | "authorized";
 		try {
 			if (ticket.spec.target === "writer") {
-				({ ref } = await options.connector.authorizeWriter({
+				await options.connector.authorizeWriter({
 					clientId: ticket.writerClientId ?? "",
 					secret,
-				}));
+				});
 				state = "authorized";
 			} else {
 				const refusal = await refuseIfNotWritable(ticket.spec);
 				if (refusal !== undefined)
 					return failed(ticket, refusal, "secret.CaptureRefused", refusal.code);
+				sweep();
+				if (ticket.state !== "awaiting-owner")
+					return refusalResult(
+						new SecretCaptureError(
+							"SECRET_CAPTURE_CLOSED",
+							`${ticket.spec.name}'s capture is closed.`,
+						),
+						ticket.spec.name,
+					);
 				if (ticket.spec.target === "handoff") {
 					// To the waiting ceremony, in memory; no store, no file.
-					await options.handoff?.(secret);
-					ref = `handoff://${ticket.spec.name}`;
-				} else
-					({ ref } = await options.connector.store(ticket.spec.target, secret));
+					if (ticket.handoff) await ticket.handoff.receive(secret);
+					else await options.handoff?.(secret);
+				} else await options.connector.store(ticket.spec.target, secret);
 				state = "stored";
 			}
 		} catch (error) {
@@ -959,14 +970,10 @@ export function createSecretCaptureApp(
 						);
 			return failed(ticket, refusal, "secret.CaptureRefused", code);
 		}
-		ticket.ref = ref;
 		shut(ticket, state);
 		emit(
 			state === "stored" ? "secret.CaptureStored" : "secret.CaptureAuthorized",
-			{
-				...ticketFields(ticket),
-				ref,
-			},
+			ticketFields(ticket),
 		);
 		if (ticket.channel === "url-elicitation")
 			try {
@@ -980,14 +987,13 @@ export function createSecretCaptureApp(
 			ticketId: ticket.id,
 			name: ticket.spec.name,
 			stored: state === "stored",
-			ref,
 			status: state,
 		};
 		return {
 			content: [
 				{
 					type: "text",
-					text: `${ticket.spec.name} ${state === "stored" ? "stored" : "authorized writes"}: ${ref}.`,
+					text: `${ticket.spec.name} ${state === "stored" ? "stored" : "authorized writes"}.`,
 				},
 			],
 			structuredContent: receipt,
@@ -1039,9 +1045,7 @@ export function createSecretCaptureApp(
 					content: [
 						{
 							type: "text",
-							text: `${ticket.spec.name}: ${ticket.state}${
-								ticket.ref === undefined ? "" : ` (${ticket.ref})`
-							}.`,
+							text: `${ticket.spec.name}: ${ticket.state}.`,
 						},
 					],
 					structuredContent: shown,
@@ -1085,6 +1089,7 @@ export function createSecretCaptureApp(
 				emit("secret.CaptureClosed", ticketFields(ticket));
 				captures += 1;
 			}
+		options.onEnd?.();
 		let writerSession: "ended" | "none" | "unavailable";
 		try {
 			writerSession = await options.connector.endWriterSession();
@@ -1105,7 +1110,7 @@ export function createSecretCaptureApp(
 			const capture: SecretCaptureToolDefinition = {
 				name: CAPTURE_SECRET_TOOL,
 				title: "Capture a deployment secret",
-				description: `Ask the owner for a secret this HoBo deployment needs. The owner types it into a HoBo form; it is encrypted there and written straight to the connected secret store. You never see the value: the result is a ticket, then the entry's name, stored: true and its store reference. Never ask for a secret in the chat. ${writerNames === "" ? "" : `Writes need a writer session first: capture ${writerNames} with writerClientId.`}`,
+				description: `Ask the owner for a secret this HoBo deployment needs. The owner types it into a HoBo form; it is encrypted there and written straight to the connected secret store. The result gives the entry's name and status, never its value or store coordinates. Never ask for a secret in the chat. ${writerNames === "" ? "" : `Writes need an authorized owner session.`}`,
 				inputSchema: {
 					type: "object",
 					properties: {
@@ -1117,7 +1122,7 @@ export function createSecretCaptureApp(
 						writerClientId: {
 							type: "string",
 							description:
-								"For the writer credential only: the writer identity's Universal Auth Client ID (an identifier, not a secret).",
+								"For an already configured writer connection. Do not request identifiers in conversation.",
 						},
 						channel: {
 							type: "string",
@@ -1152,7 +1157,7 @@ export function createSecretCaptureApp(
 				name: SECRET_CAPTURE_STATUS_TOOL,
 				title: "Secret capture status",
 				description:
-					"The state of a capture (awaiting-owner, stored, authorized, expired, closed) and its store reference. Never the value.",
+					"The state of a capture (awaiting-owner, stored, authorized, expired, closed), without its value or store coordinates.",
 				inputSchema: {
 					type: "object",
 					properties: { ticketId: { type: "string" } },
