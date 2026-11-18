@@ -2,7 +2,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse as parseAstro } from "@astrojs/compiler/sync";
 import type { Node as AstroNode } from "@astrojs/compiler/types";
@@ -237,6 +237,7 @@ export function commentsIn(file: string, text: string): Comment[] {
 
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(sourcePath(file)).toLowerCase();
+	if (isDockerfile(sourcePath(file))) return dockerfileComments(file, text);
 	if (extension === ".astro") return astroComments(file, text);
 	if (extension === ".feature") return gherkinComments(file, text);
 	if (extension === ".html") return htmlComments(file, text);
@@ -277,6 +278,111 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 	return kinds.flatMap((kind) =>
 		astGrepMatches(file, text, language, kind).map(matchLocation),
 	);
+}
+
+function isDockerfile(file: string): boolean {
+	const name = basename(file).toLowerCase();
+	return (
+		name === "dockerfile" ||
+		name.startsWith("dockerfile.") ||
+		name.endsWith(".dockerfile")
+	);
+}
+
+function dockerfileComments(file: string, text: string): CommentLocation[] {
+	const lines = text.split(/\r?\n/u);
+	const instructions: string[] = [];
+	const directives = new Set<number>();
+	let directiveHeader = true;
+	let instruction = "";
+	let continuation = false;
+	let escape = "\\";
+	for (const [index, line] of lines.entries()) {
+		const trimmed = line.trim();
+		if (
+			directiveHeader &&
+			/^#\s*(?:syntax|escape|check)\s*=\s*[^\s#]+\s*$/iu.test(trimmed)
+		) {
+			directives.add(index + 1);
+			const configuredEscape = /^#\s*escape\s*=\s*([\\`])\s*$/iu.exec(
+				trimmed,
+			)?.[1];
+			if (configuredEscape) escape = configuredEscape;
+		} else {
+			directiveHeader = false;
+		}
+		if (trimmed.length > 0 && !trimmed.startsWith("#")) {
+			if (!continuation)
+				instruction = /^([a-z]+)/iu.exec(trimmed)?.[1]?.toUpperCase() ?? "";
+			continuation = trimmed.endsWith(escape);
+		}
+		instructions[index] = instruction;
+	}
+	const comments = astGrepMatches(file, text, "bash", "comment")
+		.map(matchLocation)
+		.filter((comment) => {
+			if (directives.has(comment.first)) return false;
+			const line = lines[comment.first - 1] ?? "";
+			return (
+				line.trimStart().startsWith("#") ||
+				instructions[comment.first - 1] === "RUN"
+			);
+		});
+	for (const heredoc of astGrepMatches(
+		file,
+		text,
+		"bash",
+		"heredoc_redirect",
+	)) {
+		const start = heredoc.range.start.line;
+		const end = heredoc.range.end.line;
+		if (instructions[start] !== "RUN" || end <= start + 1) continue;
+		let instructionStart = start;
+		while (
+			instructionStart > 0 &&
+			instructions[instructionStart - 1] === "RUN" &&
+			(lines[instructionStart - 1] ?? "").trimEnd().endsWith(escape)
+		)
+			instructionStart--;
+		const header = lines.slice(instructionStart, start + 1).join(" ");
+		if (!dockerHeredocRunsScript(header)) continue;
+		const body = lines.slice(start + 1, end).join("\n");
+		const language = dockerScriptExtension(body);
+		if (!language) continue;
+		for (const comment of commentLocations(`fragment${language}`, body)) {
+			if (comment.first === 1 && comment.text.startsWith("#!")) continue;
+			comments.push({
+				text: comment.text,
+				first: start + 1 + comment.first,
+				last: start + 1 + comment.last,
+			});
+		}
+	}
+	return comments.sort((left, right) => left.first - right.first);
+}
+
+function dockerHeredocRunsScript(header: string): boolean {
+	const command = header
+		.replace(/^\s*RUN\s+/iu, "")
+		.replace(/<<-?\s*(?:(["'])([^"']+)\1|[a-z_][a-z0-9_.-]*)/iu, "")
+		.replace(/(?:\\|`)\s+/gu, " ")
+		.replace(/(?:^|\s)--[a-z][a-z0-9-]*=(?:"[^"]*"|'[^']*'|[^\s]+)/giu, " ")
+		.trim();
+	return (
+		command.length === 0 ||
+		/^(?:(?:\/usr\/bin\/env\s+)?(?:\/bin\/|\/usr\/bin\/)?(?:ba)?sh)(?:\s+-[a-z]+)*$/iu.test(
+			command,
+		)
+	);
+}
+
+function dockerScriptExtension(body: string): string | undefined {
+	const first = body.split(/\r?\n/u)[0]?.trim() ?? "";
+	if (!first.startsWith("#!")) return ".sh";
+	if (/\bpython(?:\d+(?:\.\d+)?)?\b/iu.test(first)) return ".py";
+	if (/\b(?:node|deno|bun)\b/iu.test(first)) return ".js";
+	if (/(?:^|[\s/])(?:ba)?sh(?:\s|$)/iu.test(first)) return ".sh";
+	return undefined;
 }
 
 function gherkinComments(file: string, text: string): CommentLocation[] {
@@ -602,6 +708,7 @@ const sourceLanguageExtensions = new Map([
 	["toml", ".toml"],
 	["hcl", ".hcl"],
 	["terraform", ".tf"],
+	["dockerfile", ".dockerfile"],
 	["c", ".c"],
 	["cpp", ".cpp"],
 	["c++", ".cpp"],
@@ -938,6 +1045,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			violations.push(...markdownCodeViolations(file, text, added));
 		}
 		const extension = extname(sourceFile).toLowerCase();
+		const dockerfile = isDockerfile(sourceFile);
 		if (extension === ".ipynb") {
 			violations.push(
 				...notebookViolations(
@@ -955,11 +1063,17 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			extension !== ".feature" &&
 			!CODE_EXTENSIONS.has(extension) &&
 			!LEXER_LANGUAGES.has(extension) &&
-			!OTHER_LANGUAGES.has(extension)
+			!OTHER_LANGUAGES.has(extension) &&
+			!dockerfile
 		)
 			continue;
 		const text = contents(mode, file);
-		if (!extension && !file.startsWith(".githooks/") && !text.startsWith("#!"))
+		if (
+			!extension &&
+			!dockerfile &&
+			!file.startsWith(".githooks/") &&
+			!text.startsWith("#!")
+		)
 			continue;
 		const added = changedLines(args, file, text, untracked.includes(file));
 		violations.push(...commentViolations(file, text, added));

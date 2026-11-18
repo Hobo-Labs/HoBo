@@ -752,6 +752,64 @@ e: ##"raw \##(2 + // raw interpolation
 		);
 	});
 
+	it("checks Dockerfile and shell comments without treating copied heredocs as code", () => {
+		const source = [
+			"# syntax=docker/dockerfile:1",
+			"FROM node:24",
+			"ENV NOTE=literal # value",
+			"RUN echo '# literal' # explanation",
+			"COPY <<EOF /config",
+			"# copied content",
+			"EOF",
+			"RUN <<SCRIPT",
+			"#!/bin/sh",
+			"echo '# literal'",
+			"# TODO finish",
+			"SCRIPT",
+			"RUN cat <<DATA > /config",
+			"# generated data",
+			"DATA",
+			"RUN <<PY",
+			"#!/usr/bin/env python3",
+			'text = "# literal"',
+			"# explanation",
+			"PY",
+			"RUN --mount=type=cache,target=/tmp <<BUILD",
+			"# build explanation",
+			"BUILD",
+		].join("\n");
+		for (const file of ["Dockerfile", "Dockerfile.test", "build.dockerfile"]) {
+			assert.deepEqual(
+				commentViolations(
+					file,
+					source,
+					new Set([1, 3, 4, 6, 9, 10, 11, 14, 17, 18, 19, 22]),
+				).map((item) => item.line),
+				[4, 11, 19, 22],
+			);
+		}
+		const repo = fixture();
+		write(repo, "Dockerfile", source);
+		git(repo, "add", "Dockerfile");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /Dockerfile:4:.*self-documenting/u);
+		assert.match(result.stderr, /Dockerfile:11:.*finish deferred work/u);
+		assert.match(result.stderr, /Dockerfile:19:.*self-documenting/u);
+		assert.match(result.stderr, /Dockerfile:22:.*self-documenting/u);
+		const docs = fixture();
+		write(
+			docs,
+			"README.md",
+			"# Example\n```dockerfile\nFROM node:24\n# explanation\n```\n",
+		);
+		git(docs, "add", "README.md");
+		assert.match(
+			guard(docs, "--staged").stderr,
+			/README\.md:4:.*self-documenting/u,
+		);
+	});
+
 	it("handles Rust and Kotlin line and block comments", () => {
 		for (const file of ["example.rs", "example.kt"]) {
 			assert.deepEqual(

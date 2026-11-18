@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1.19
-# Runtime-only release image: mise OCI toolchain base + staged @hobo/hobo app.
 ARG HOBO_TOOLCHAIN_IMAGE=hobo-ci-worker:local
 ARG HOBO_RELEASE_VERSION=dev
 ARG HOBO_RELEASE_REVISION=local
