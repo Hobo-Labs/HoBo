@@ -147,6 +147,26 @@ function migrationAndTerminationTotal(
 	return create(MoneySchema, { decimal: decimalText(total), currency });
 }
 
+function validateV2AgreementAvailability(scenario: QuoteScenario): void {
+	const referenced = new Set(
+		[...scenario.baseline, ...scenario.candidate].map(
+			(workload) => workload.agreementRef,
+		),
+	);
+	for (const agreement of scenario.state?.agreements ?? []) {
+		if (
+			referenced.has(agreement.id) &&
+			agreement.status !== "active" &&
+			agreement.status !== "past-due" &&
+			agreement.status !== "trialing"
+		)
+			throw new PricingFault(
+				"PRICING_AGREEMENT_UNAVAILABLE",
+				`agreement ${agreement.id} is not available for pricing`,
+			);
+	}
+}
+
 function validateQuoteOptions(scenario: QuoteScenario): void {
 	const options = scenario.options;
 	if (
@@ -227,6 +247,7 @@ function quoteWithOrdering(
 				validateV2GrantScopes(scenario.state);
 			}
 			validateV2BillingPeriods(scenario);
+			validateV2AgreementAvailability(scenario);
 		}
 		validateQuoteOptions(scenario);
 		if (timeOrder === utcPricingTimeOrder && scenario.action === "destroy") {
