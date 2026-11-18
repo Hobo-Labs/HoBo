@@ -250,7 +250,14 @@ describe("yard event-store folds + provider resolvers", () => {
 		"generation-budget-commits-then-fails",
 		"generation-budget-fence-not-stored",
 		"generation-budget-fence-wrong-binding",
+		"generation-budget-fence-wrong-quote",
+		"generation-budget-fence-wrong-digest",
+		"generation-budget-fence-wrong-amount",
+		"generation-budget-fence-wrong-identity",
+		"generation-budget-fence-wrong-execution",
 		"generation-budget-fence-changed-before-provider",
+		"generation-budget-hold-wrong-binding",
+		"generation-budget-reserve-wrong-binding",
 		"generation-budget-claim-fails",
 		"generation-budget-claim-commits-then-fails",
 		"generation-budget-claim-uncertain-write-failed",
@@ -773,6 +780,8 @@ describe("yard event-store folds + provider resolvers", () => {
 				)
 					throw new Error("storage unavailable");
 				const reservation = authority.lookup(id);
+				if (mode === "generation-budget-hold-wrong-binding" && reservation)
+					return { ...reservation, quoteDigest: "wrong-quote-digest" };
 				if (
 					mode === "generation-budget-fence-changed-before-provider" &&
 					budgetFenceTampered &&
@@ -810,6 +819,22 @@ describe("yard event-store folds + provider resolvers", () => {
 				const claimed = authority.claimExecution(input);
 				if (mode === "generation-budget-fence-wrong-binding")
 					return { ...claimed, requestDigest: "wrong-request" };
+				if (mode === "generation-budget-fence-wrong-quote")
+					return { ...claimed, quoteId: "wrong-quote" };
+				if (mode === "generation-budget-fence-wrong-digest")
+					return { ...claimed, quoteDigest: "wrong-quote-digest" };
+				if (mode === "generation-budget-fence-wrong-amount")
+					return { ...claimed, reservedMicros: claimed.reservedMicros + 1 };
+				if (mode === "generation-budget-fence-wrong-identity") {
+					if (!claimed.identity)
+						throw new Error("fixture budget identity missing");
+					return {
+						...claimed,
+						identity: { ...claimed.identity, budgetId: "wrong-budget" },
+					};
+				}
+				if (mode === "generation-budget-fence-wrong-execution")
+					return { ...claimed, executionDigest: "wrong-execution" };
 				if (
 					mode === "generation-budget-claim-commits-then-fails" ||
 					mode === "generation-budget-claim-commits-uncertain-write-failed"
@@ -835,6 +860,8 @@ describe("yard event-store folds + provider resolvers", () => {
 				)
 					throw new Error("budget reservation unavailable");
 				const reservation = authority.reserve(input);
+				if (mode === "generation-budget-reserve-wrong-binding")
+					return { ...reservation, quoteId: "wrong-quote" };
 				if (mode === "generation-budget-commits-then-fails")
 					throw new Error("budget reservation acknowledgement lost");
 				if (mode === "cancel-before-claim")
@@ -1372,8 +1399,27 @@ describe("yard event-store folds + provider resolvers", () => {
 				return;
 			}
 			if (
+				mode === "generation-budget-hold-wrong-binding" ||
+				mode === "generation-budget-reserve-wrong-binding"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
+				expect(authority.lookup(reservationId)?.status).toBe("held");
+				expect(authority.lookup(reservationId)?.executionDigest).toBe("");
+				expect(result.reasons?.[0]?.message).toContain(
+					"budget reservation binding is unverified",
+				);
+				return;
+			}
+			if (
 				mode === "generation-budget-fence-not-stored" ||
-				mode === "generation-budget-fence-wrong-binding"
+				mode === "generation-budget-fence-wrong-binding" ||
+				mode === "generation-budget-fence-wrong-quote" ||
+				mode === "generation-budget-fence-wrong-digest" ||
+				mode === "generation-budget-fence-wrong-amount" ||
+				mode === "generation-budget-fence-wrong-identity" ||
+				mode === "generation-budget-fence-wrong-execution"
 			) {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
@@ -1815,7 +1861,14 @@ describe("yard event-store folds + provider resolvers", () => {
 					"generation-budget-commits-then-fails",
 					"generation-budget-fence-not-stored",
 					"generation-budget-fence-wrong-binding",
+					"generation-budget-fence-wrong-quote",
+					"generation-budget-fence-wrong-digest",
+					"generation-budget-fence-wrong-amount",
+					"generation-budget-fence-wrong-identity",
+					"generation-budget-fence-wrong-execution",
 					"generation-budget-fence-changed-before-provider",
+					"generation-budget-hold-wrong-binding",
+					"generation-budget-reserve-wrong-binding",
 					"generation-budget-claim-fails",
 					"generation-budget-claim-commits-then-fails",
 					"generation-budget-claim-uncertain-write-failed",
