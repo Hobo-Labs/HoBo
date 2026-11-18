@@ -316,6 +316,11 @@
       "signature": "inferRequirementsFromResources(resources: Readonly<Record<string, BindleResourceRecord>>): BindleRequirements"
     },
     {
+      "name": "resourceIdentityLedger",
+      "kind": "helper",
+      "signature": "resourceIdentityLedger(definition: BindleDefinition): ResourceIdentityLedger"
+    },
+    {
       "name": "HOBO_BINDLES_PACKAGE",
       "kind": "package-constant",
       "signature": "const HOBO_BINDLES_PACKAGE: \"@hobo/bindles\""

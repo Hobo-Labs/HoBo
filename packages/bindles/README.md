@@ -13,6 +13,16 @@ Use `b.project()` for an infrastructure project that owns or groups other
 resources. It is a deployment dependency, not an HTTP entrypoint; use `b.web()`
 or `b.api()` for the application that serves requests.
 
+Builder resources expose generated IDs that are independent of returned aliases.
+Existing Bindles keep their alias-based deployment IDs. To use generated IDs,
+pass a reviewed `identityLedger` as the third argument to `bindle`. Obtain an
+initial ledger with `resourceIdentityLedger(definition)` and commit it with the
+application. The ledger must map every resource kind and declaration occurrence
+exactly once. Update and review the mapping when declarations of the same kind
+are inserted, removed, or reordered. Enabling generated IDs changes an existing
+Bindle's manifest resource IDs; inspect the resulting deployment plan and
+migrate existing resources before applying it.
+
 The canonical shared budget language is `policy.budgetPolicy` with discriminator
 `hobo.budget-policy/v1`. Parsing uses `@hobo/core`'s typed policy contract and
 rejects unknown controls, unsupported objectives/currencies, malformed funding
