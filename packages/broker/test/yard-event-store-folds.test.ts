@@ -208,6 +208,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		"uncertain-write-failed",
 		"context-before-claim",
 		"missing-residual",
+		"foreign-camp-after-generation",
 		"signals-unavailable",
 		"wrong-generation-plan",
 		"missing-generation-work",
@@ -298,7 +299,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		};
 
 		const nativeConnector = createAzureYardGenerationConnector();
-		const request = buildDeploymentRequestFromParts({
+		const baseRequest = buildDeploymentRequestFromParts({
 			bindleName: "shop",
 			providerId: "azure",
 			selectionMode: "compatible-or-generate",
@@ -307,6 +308,23 @@ describe("yard event-store folds + provider resolvers", () => {
 				{ resourceId: "api", port: "hobo:http-service", features: [] },
 			],
 		});
+		const request =
+			mode === "foreign-camp-after-generation"
+				? {
+						...baseRequest,
+						camp: {
+							selectionMode: "compatible" as const,
+							campId: "yard:foreign/camp:prod",
+							layout: {
+								require: [],
+								prefer: [],
+								labels: {},
+								runtimeRequirements: [],
+								envType: "production",
+							},
+						},
+					}
+				: baseRequest;
 
 		const generation = planYardGeneration({
 			ownerTenantId: "local",
@@ -704,6 +722,14 @@ describe("yard event-store folds + provider resolvers", () => {
 			}
 			if (mode === "missing-residual") {
 				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
+			if (mode === "foreign-camp-after-generation") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe("camp-yard-mismatch");
 				expect(provisionCalls).toBe(1);
 				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
 				expect(authority.read(now).reservedMicros).toBe(20);
