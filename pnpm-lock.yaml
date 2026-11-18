@@ -4248,8 +4248,6 @@ importers:
 
   src/draft/technical-proofs/cli-credential-hardening-contract: {}
 
-  src/draft/technical-proofs/client-optimistic-update-contract: {}
-
   src/draft/technical-proofs/closure-builder-author-flow-contract: {}
 
   src/draft/technical-proofs/closure-builder-manifest-lowering-contract: {}

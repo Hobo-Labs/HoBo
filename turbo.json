@@ -643,7 +643,6 @@
         "src/draft/technical-proofs/capability-enforcement-contract/**",
         "src/draft/technical-proofs/capability-spec-contract/**",
         "src/draft/technical-proofs/cli-credential-hardening-contract/**",
-        "src/draft/technical-proofs/client-optimistic-update-contract/**",
         "src/draft/technical-proofs/credential-audit-projection-contract/**",
         "src/draft/technical-proofs/data-paradigm-authoring-contract/**",
         "src/draft/technical-proofs/deterministic-replay-engine/**",
