@@ -46,7 +46,7 @@ import {
 	type YardGenerationConnector,
 } from "./generation.js";
 import { createYardRuntimeCatalog, localYardInstance } from "./inventory.js";
-import { matchYard } from "./matching.js";
+import { matchYard, parseYardResidencyTag } from "./matching.js";
 import {
 	buildExecutionUnits,
 	composeResolverPins,
@@ -1937,6 +1937,17 @@ function validateRequestedYardLayout(value: JsonValue | undefined): void {
 		],
 		"yard requestedLayout",
 	);
+	if (Array.isArray(value.residency)) {
+		for (const entry of value.residency) {
+			try {
+				parseYardResidencyTag(entry);
+			} catch {
+				throw new TypeError(
+					`yard requestedLayout.residency contains an invalid tag: ${String(entry)}`,
+				);
+			}
+		}
+	}
 	validateConstraintLabels(value.labels, "yard requestedLayout.labels");
 	if (value.properties !== undefined && !isJsonObject(value.properties))
 		throw new TypeError("yard requestedLayout.properties must be an object");

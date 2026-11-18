@@ -4,7 +4,12 @@ import {
 	parseJurisdictionId,
 } from "@hobo/core";
 import { first } from "@hobo/core/total-access";
-import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "../json.js";
 import {
 	type ContentHash,
 	contentHashOf,
@@ -257,14 +262,10 @@ function residencyFailure(
 	entry: string,
 	yard: YardInstanceRegistration,
 ): string | undefined {
-	if (yard.layout.residency.includes(entry)) return undefined;
-	const separator = entry.indexOf(":");
-	const jurisdictionRaw = separator === -1 ? entry : entry.slice(separator + 1);
 	try {
-		if (separator !== -1) {
-			parseDataClassification(entry.slice(0, separator));
-		}
-		const jurisdiction = parseJurisdictionId(jurisdictionRaw);
+		const jurisdiction = parseYardResidencyTag(entry);
+		// A repeated attestation cannot make an unknown residency tag valid.
+		if (yard.layout.residency.includes(entry)) return undefined;
 		if (yard.layout.regions.length === 0) {
 			return `residency-unattested:${entry}`;
 		}
@@ -284,6 +285,17 @@ function residencyFailure(
 	} catch {
 		return `residency-invalid:${entry}`;
 	}
+}
+
+/** Parse the tag before either an attestation or generation can rely on it. */
+export function parseYardResidencyTag(entry: JsonValue | undefined) {
+	if (!isJsonString(entry))
+		throw new TypeError("residency tag must be a string");
+	const separator = entry.indexOf(":");
+	if (separator !== -1) parseDataClassification(entry.slice(0, separator));
+	return parseJurisdictionId(
+		separator === -1 ? entry : entry.slice(separator + 1),
+	);
 }
 
 function compareCandidates(

@@ -483,6 +483,29 @@ describe("complete Yard placement request wire binding", () => {
 		).toThrow(/spendEstimateUsd/);
 	});
 
+	it("refuses invalid residency even when the digest matches", () => {
+		const request = completeRequest();
+		const message = fromWire(encodeBindleDeploymentRequest(request));
+		const layout = message.yard?.[YARD_LAYOUT_FIELD];
+		if (!layout) throw new Error("missing Yard layout");
+		layout.residency = ["atlantis"];
+		message.requestDigest = contentHashOf({
+			...request,
+			yard: {
+				...request.yard,
+				requestedLayout: {
+					...request.yard.requestedLayout,
+					residency: ["atlantis"],
+				},
+			},
+		});
+		expect(() =>
+			decodeBindleDeploymentRequest(
+				toBinary(BindleDeploymentRequestSchema, message),
+			),
+		).toThrow(/invalid tag/);
+	});
+
 	it("refuses noncanonical wire fields even with a matching normalized digest", () => {
 		const request = completeRequest();
 		const message = fromWire(encodeBindleDeploymentRequest(request));
