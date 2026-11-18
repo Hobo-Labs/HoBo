@@ -4,7 +4,6 @@ export {
 	type CompensationResult,
 	runCompensation,
 } from "./compensation.js";
-
 export {
 	changedSinceLastDeployed,
 	classifyResource,
@@ -23,6 +22,10 @@ export {
 	type ResourceChangeAction,
 	recordedResources,
 } from "./desired-state.js";
+export {
+	createHttpDependencyObserver,
+	type HttpDependencyObserverOptions,
+} from "./http-dependency-observer.js";
 export {
 	type BlockedDependency,
 	type DependencyObservationRequest,
