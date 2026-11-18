@@ -23,6 +23,7 @@
 		"testcontainers": "11.8.1"
 	},
 	"devDependencies": {
+    "@pact-foundation/pact": "17.1.4",
 		"@types/node": "^22.15.29",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
