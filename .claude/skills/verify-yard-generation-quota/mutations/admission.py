@@ -23,7 +23,7 @@ cases = [
     ('policy-denied', [('(gate.effect !== "allow" && gate.effect !== "allow-degraded") ||', 'false ||')], 'generation-quota-policy-denied'),
     ('quota-order', [('\t\t\tawait admitHosting(\n\t\t\t\tgenDecision.plan.expectedYardId,', '\t\t\treserveGenerationQuota();\n\t\t\tawait admitHosting(\n\t\t\t\tgenDecision.plan.expectedYardId,')], 'generation-quota-policy-denied'),
     ('quota-reservation', [('beforeReserve();', 'undefined;')], 'funds Azure generation before provider effects: normal'),
-    ('provider-boundary', [('if (generationAuthorityCurrent?.() !== true)', 'if (false)')], 'generation-quota-changed-before-provider'),
+    ('provider-boundary', [('if (generationAuthorityCurrent?.() !== true)', 'if (false)'), ('authorizePlan: (plan) =>\n\t\t\t\tgenerationAuthorityCurrent?.() === true &&\n\t\t\t\tcontentHashOf(plan) === contentHashOf(genDecision.plan) &&\n\t\t\t\tgenerationAuthorityCurrent?.() === true,', 'authorizePlan: (plan) => contentHashOf(plan) === contentHashOf(genDecision.plan),')], 'generation-quota-changed-before-provider'),
 ]
 
 def run(pattern):
