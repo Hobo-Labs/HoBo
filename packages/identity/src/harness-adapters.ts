@@ -17,7 +17,7 @@ import {
 import {
 	FeatureFlagStore as BuiltInStore,
 	type DetailEvaluation,
-	type FeatureFlagStore,
+	type FeatureFlagPort,
 	type FlagEvalContext,
 	type FlagValue,
 } from "./feature-flag-store.js";
@@ -421,7 +421,7 @@ export type MediatedFlagEvaluator = Readonly<{
  * Build a mediated evaluator: prefers built-in store; residual OFREP only when ranked available.
  */
 export function createMediatedFlagEvaluator(options: {
-	readonly store: FeatureFlagStore;
+	readonly store: FeatureFlagPort;
 	readonly residual?: ReturnType<typeof createOfrepResidualBackend>;
 	readonly residualAvailable?: boolean;
 }): MediatedFlagEvaluator {

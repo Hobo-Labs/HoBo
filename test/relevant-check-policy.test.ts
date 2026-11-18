@@ -241,6 +241,24 @@ test("staged relevant checks pass staged mode to standards", () => {
 	assert.equal(check.args.includes("--base=origin/main"), true);
 });
 
+test("all changed scopes select the shared source policy with the correct snapshot", () => {
+	for (const files of [["packages/cli/src/index.ts"], ["docs/usage.md"]]) {
+		const committed = plan(files).checks.find(
+			(check) => check.args[1] === "source:guard",
+		);
+		const staged = plan(files, { staged: true }).checks.find(
+			(check) => check.args[1] === "source:guard",
+		);
+		assert.deepEqual(committed?.args, [
+			"run",
+			"source:guard",
+			"--",
+			"--base=origin/main",
+		]);
+		assert.deepEqual(staged?.args, ["run", "source:guard", "--", "--staged"]);
+	}
+});
+
 test("source changes select the Biome formatting lane", () => {
 	const { checks } = plan(["packages/core/src/index.ts"]);
 
@@ -1013,6 +1031,10 @@ test("a change to anything that guards signed local runs runs those guards", () 
 		"scripts/test/attested-jobs.test.ts",
 		"scripts/test/merge-group-gate.test.ts",
 		"scripts/test/lint-actions-runner.test.ts",
+		"scripts/test/github-pr-target.test.ts",
+		"scripts/test/github-status-permission.test.ts",
+		"scripts/test/github-merge-group.test.ts",
+		"scripts/test/local-merge-group.test.ts",
 	];
 	const runsGuards = (checks: Check[]) => {
 		const tests = checks.find(
@@ -1043,6 +1065,13 @@ test("a change to anything that guards signed local runs runs those guards", () 
 		"scripts/lint-actions.ts",
 		".hobo/ci-attestors.json",
 		"scripts/ci/local-attest.mts",
+		"scripts/ci/github-target.mts",
+		"scripts/ci/github-pr-target.mts",
+		"scripts/ci/github-status-permission.mts",
+		"scripts/ci/github-merge-group.mts",
+		"scripts/test/github-status-permission.test.ts",
+		"scripts/test/github-merge-group.test.ts",
+		"scripts/test/local-merge-group.test.ts",
 		"scripts/test/merge-group-gate.test.ts",
 	]) {
 		for (const overrides of [
