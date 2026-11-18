@@ -145,9 +145,10 @@ Because the request digest now includes Camp fields that were previously
 discarded, a quote created by an older parser may no longer match the request.
 Obtain a new quote and reconcile any existing reservation before retrying.
 
-The bounded Camp constraint projection hides eight same-state steps. It treats
-other authorization and budget decisions as successful and does not establish
-that an accepted Camp exists or meets unmodeled preferences.
+The [Camp constraint skill](../../.agents/skills/verify-yard-camp-constraints/SKILL.md)
+checks this boundary. Its bounded projection hides eight same-state steps. It
+treats other authorization and budget decisions as successful and does not
+establish that an accepted Camp exists or meets unmodeled preferences.
 
 ```mermaid
 stateDiagram-v2
