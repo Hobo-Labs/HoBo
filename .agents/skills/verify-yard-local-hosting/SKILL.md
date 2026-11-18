@@ -7,7 +7,7 @@ description: Verify explicit local-hosting policy, zero-liability proof, current
 
 **Properties:** Local Yard placement without a durable hosting budget requires a host policy decision with fulfilled obligations, an evidence reference, a SHA-256 policy digest, an exact work-binding digest and zero managed-hosting liability. The authority, budget, broker, tenant, catalog, request and selected work must remain current around the callback. A local placement proof cannot authorize Yard generation. The embedded local-process proof only admits locally satisfiable resource-derived and declared runtime requirements, which must remain current at the observed authorization and handoff checks. A failure can run paid work without a financial hold or approve a different host from the one requested.
 
-**Review baseline:** commit `0f016c313c9da23925327bf5b6af8d791a2cc6cc`. PASS for the bounded models, symbolic abstraction and generated tests below. The request parser refuses malformed constraints and estimates before local authorization; `verify-yard-request-validation` checks that boundary separately. `verify-yard-json-constraints` checks structural property matching, and `verify-yard-residency-validation` checks residency preflight before authorization.
+**Review baseline:** commit `38c50b2f1b3dcb19f926900ee8456fbd8b553166`. PASS for the bounded models, symbolic abstraction and generated tests below. The request parser refuses malformed constraints and estimates before local authorization; `verify-yard-request-validation` checks that boundary separately. `verify-yard-json-constraints` checks structural property matching, and `verify-yard-residency-validation` checks residency preflight before authorization.
 
 ## Covered code
 

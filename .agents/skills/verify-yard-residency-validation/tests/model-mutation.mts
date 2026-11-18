@@ -12,6 +12,8 @@ try {
     ['YardResidency', 'EarlyExplicit = TRUE', 'ValidResidency'],
     ['YardResidencyGeneration', 'CheckParse = FALSE', 'NoInvalidHold'],
     ['YardResidencyGeneration', 'CheckParse = FALSE', 'NoInvalidEffect'],
+    ['YardResidencyDirect', 'CheckPlanner = FALSE\nCheckSaga = TRUE', 'NoInvalidPlan'],
+    ['YardResidencyDirect', 'CheckPlanner = TRUE\nCheckSaga = FALSE', 'NoInvalidEffect'],
   ];
   for (const [model, constant, invariant] of cases) {
     copyFileSync(fileURLToPath(new URL(`../models/${model}.tla`, import.meta.url)), path.join(scratch, `${model}.tla`));

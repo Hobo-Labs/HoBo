@@ -46,7 +46,8 @@ import {
 	type YardGenerationConnector,
 } from "./generation.js";
 import { createYardRuntimeCatalog, localYardInstance } from "./inventory.js";
-import { matchYard, parseYardResidencyTag } from "./matching.js";
+import { matchYard } from "./matching.js";
+import { parseYardResidencyTag } from "./residency.js";
 import {
 	buildExecutionUnits,
 	composeResolverPins,

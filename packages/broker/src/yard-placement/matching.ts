@@ -1,15 +1,7 @@
-import {
-	evaluateResidency,
-	parseDataClassification,
-	parseJurisdictionId,
-} from "@hobo/core";
+import { evaluateResidency } from "@hobo/core";
 import { first } from "@hobo/core/total-access";
-import {
-	isJsonObject,
-	isJsonString,
-	type JsonObject,
-	type JsonValue,
-} from "../json.js";
+import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
+import { parseYardResidencyTag } from "./residency.js";
 import {
 	type ContentHash,
 	contentHashOf,
@@ -285,17 +277,6 @@ function residencyFailure(
 	} catch {
 		return `residency-invalid:${entry}`;
 	}
-}
-
-/** Parse the tag before either an attestation or generation can rely on it. */
-export function parseYardResidencyTag(entry: JsonValue | undefined) {
-	if (!isJsonString(entry))
-		throw new TypeError("residency tag must be a string");
-	const separator = entry.indexOf(":");
-	if (separator !== -1) parseDataClassification(entry.slice(0, separator));
-	return parseJurisdictionId(
-		separator === -1 ? entry : entry.slice(separator + 1),
-	);
 }
 
 function compareCandidates(

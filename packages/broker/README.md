@@ -36,8 +36,10 @@ recognized classification. A Yard repeating an invalid tag does not make it
 valid; correct such requests and attestations before retrying. A valid explicit
 attestation is still trusted host evidence, not independent proof of location.
 The Yard deployment request and quote-preparation paths reject invalid tags
-before a generation hold or provider call. The lower-level generation planner
-and saga still trust their supplied layout or plan and need their own guards.
+before a generation hold or provider call. Direct calls to the generation
+planner and saga also reject invalid residency; the saga checks before looking
+up or invoking a connector, including retries. These checks do not establish
+that a supplied plan is authorized or that its other fields are correct.
 Earlier invalid requests may already have triggered generation; reconcile any
 associated provider resources and budget holds before retrying.
 
@@ -69,6 +71,26 @@ stateDiagram-v2
   s0 --> s2: accept a valid tag
   s2 --> s3: reserve generation funding
   s3 --> s4: invoke the Yard provider
+```
+
+The direct-generation projection checks calls through the planner and calls
+that supply a plan to the saga. It hides four same-state steps and abstracts
+the other policy, funding and connector checks.
+
+```mermaid
+stateDiagram-v2
+  s0: Supplied plan received
+  s1: Generation layout received
+  s2: Yard provider invoked
+  s3: Invalid residency refused
+  s4: Valid plan prepared
+  [*] --> s0
+  [*] --> s1
+  s0 --> s3: refuse an invalid plan
+  s0 --> s2: invoke the Yard provider
+  s1 --> s3: refuse an invalid layout
+  s1 --> s4: prepare a valid plan
+  s4 --> s2: invoke the Yard provider
 ```
 
 The [Yard JSON constraint skill](../../.agents/skills/verify-yard-json-constraints/SKILL.md)

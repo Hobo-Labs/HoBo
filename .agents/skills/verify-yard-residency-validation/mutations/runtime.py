@@ -13,13 +13,20 @@ shutil.copytree(repo / 'packages/broker', scratch, ignore=shutil.ignore_patterns
 config = Path(__file__).resolve().parents[1] / 'models/vitest.config.mts'
 matching = scratch / 'src/yard-placement/matching.ts'
 deploy = scratch / 'src/yard-placement/deploy.ts'
-originals = {source: source.read_text() for source in [matching, deploy]}
+generation = scratch / 'src/yard-placement/generation.ts'
+originals = {source: source.read_text() for source in [matching, deploy, generation]}
 check = '\t\tconst jurisdiction = parseYardResidencyTag(entry);'
 cases = [
     ('matching', matching, check, '\t\tif (yard.layout.residency.includes(entry)) return undefined;\n' + check,
      'test/yard-residency-validation.test.ts', 'rejects invalid atlantis even if'),
-    ('generation', deploy, '\t\t\t\tparseYardResidencyTag(entry);', '\t\t\t\t/* omit preflight */',
-     'test/yard-event-store-folds.test.ts', 'invalid-residency-before-generation'),
+    ('request', deploy, '\t\t\t\tparseYardResidencyTag(entry);', '\t\t\t\t/* omit preflight */',
+     'test/yard-residency-validation.test.ts', 'refuses invalid atlantis before preparing a quote'),
+    ('planner', generation, 'if (!hasValidYardResidency(options.requestedLayout))',
+     'if (false && !hasValidYardResidency(options.requestedLayout))',
+     'test/yard-generation-residency.test.ts', 'refuses to plan an invalid tag atlantis'),
+    ('saga', generation, 'if (!hasValidYardResidency(plan.requestedLayout))',
+     'if (false && !hasValidYardResidency(plan.requestedLayout))',
+     'test/yard-generation-residency.test.ts', 'does not call a connector for a self-consistent invalid plan'),
 ]
 
 def run(test_file, pattern):
