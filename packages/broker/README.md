@@ -424,6 +424,29 @@ enforced. Keep generation disabled unless the host enforces those requirements
 separately. The direct planner relies on its caller to establish that no matching
 Yard exists, and the standalone generation saga does not receive policy evidence.
 
+A separate SQLite generation quota authority can reserve a concurrency slot
+and tenant Yard capacity atomically. It binds each key to one plan, counts a
+fixed initial inventory and keeps uncertain claims pending. A trusted verifier
+must accept readiness before the concurrency slot is released; the ready Yard
+continues to count toward the tenant limit. Limits and baseline are fixed for
+the database, and all writers must use the same database. Out-of-band Yards,
+missing baseline entries, inaccurate readiness attestations and lost database
+files are outside its guarantee. This authority is not yet wired into placement,
+and it has no removal or unused-reservation reconciliation operation.
+
+The bounded quota projection follows one of three requests and hides 23
+same-state steps; it assumes atomic storage and trusted baseline and evidence.
+
+```mermaid
+stateDiagram-v2
+  s0: No quota reservation
+  s1: Quota reserved for generation
+  s2: Yard counted as ready
+  [*] --> s0
+  s0 --> s1: reserve generation and Yard capacity
+  s1 --> s2: record verified readiness
+```
+
 Within one saga instance, identical retries share a pending provision or
 inspection; a different plan using the same idempotency key is refused. The
 saga snapshots the submitted plan and returned result. Its lease is in memory:
