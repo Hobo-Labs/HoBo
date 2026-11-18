@@ -11,7 +11,7 @@ import {
 	type TargetPricingModel,
 	type TargetPricingResource,
 } from "./_generated/pricing_pb.js";
-import { resolveRateCard } from "./catalog.js";
+import { tryResolveRateCard } from "./catalog.js";
 import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
@@ -491,12 +491,18 @@ export function quoteTargetPricing(
 			);
 		}
 		const dimensions = new Set(product.meters.map((meter) => meter.dimension));
-		const rateCard = resolveRateCard(
+		const rateCard = tryResolveRateCard(
 			catalog,
 			agreement,
 			scenario.at,
 			scenario.horizon,
 		);
+		if (rateCard === undefined) {
+			return refuse(
+				"TARGET_PRICING_INCOMPLETE",
+				"agreement has no effective rate card",
+			);
+		}
 		const workloadsForAgreement = workloadsAll.filter(
 			(entry) => entry.agreementRef === agreement.id,
 		);

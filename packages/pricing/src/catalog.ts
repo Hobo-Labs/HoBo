@@ -56,6 +56,22 @@ export function resolveAgreement(
 	return match;
 }
 
+export function tryResolveRateCard(
+	catalog: PricingCatalog,
+	agreement: ProviderAgreement,
+	at: string,
+	horizon: string,
+): RateCard | undefined {
+	try {
+		return resolveRateCard(catalog, agreement, at, horizon);
+	} catch (error) {
+		if (error instanceof PricingFault && error.code === "RATE_CARD_NOT_FOUND") {
+			return undefined;
+		}
+		throw error;
+	}
+}
+
 export function resolveRateCard(
 	catalog: PricingCatalog,
 	agreement: ProviderAgreement,

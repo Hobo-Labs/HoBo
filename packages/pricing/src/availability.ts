@@ -7,7 +7,7 @@ import {
 	QuoteScenarioSchema,
 	type QuoteVector,
 } from "./_generated/pricing_pb.js";
-import { resolveRateCard } from "./catalog.js";
+import { tryResolveRateCard } from "./catalog.js";
 import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
@@ -252,12 +252,18 @@ export function quoteAvailablePricing(
 		) {
 			continue;
 		}
-		const rateCard = resolveRateCard(
+		const rateCard = tryResolveRateCard(
 			catalog,
 			agreement,
 			scenario.at,
 			scenario.horizon,
 		);
+		if (rateCard === undefined) {
+			return failed(
+				"PRICING_MODEL_INCOMPLETE",
+				"agreement has no effective rate card",
+			);
+		}
 		const workloadsForAgreement = workloadsAll.filter(
 			(entry) => entry.agreementRef === agreement.id,
 		);
