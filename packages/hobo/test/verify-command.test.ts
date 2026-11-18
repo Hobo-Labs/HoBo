@@ -8,11 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createVerifyCommand } from "../src/verify-command.js";
 
-// `hobo verify` drives the REAL @hobo/contracts Gatekeeper over the project's
-// Bindle. These tests exercise the wired engine end to end: the permissive lane
-// allows and records a decision, a seeded low quota denies with a machine-
-// readable cost reason, a deny policy pack denies with a policy reason, and a
-// missing Bindle is a clean typed error (not a stub).
 
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
@@ -49,11 +44,8 @@ async function withProject(
 
 function runInput(cwd: string) {
 	return {
-		// SAFETY: assertion required at this I/O or test boundary.
 		context: { cwd, projectDir: cwd } as CliContext,
-		// SAFETY: assertion required at this I/O or test boundary.
 		flags: { cwd } as never,
-		// SAFETY: assertion required at this I/O or test boundary.
 		args: [] as readonly string[],
 		verb: "verify",
 		emitProgress: () => {},
@@ -75,12 +67,42 @@ describe("createVerifyCommand", () => {
 				command: "verify",
 				decision: "allow",
 			});
-			// The cost gate saw both resources against the default budget.
 			expect(
-				// SAFETY: assertion required at this I/O or test boundary.
 				(result.data as { costQuota: { requested: number } }).costQuota
 					.requested,
 			).toBe(2);
+		});
+	});
+
+	it("rejects credential-bearing resource configuration without disclosing its value", async () => {
+		await withProject(async (cwd) => {
+			const secret = "fixture-private-value";
+			await writeFile(
+				path.join(cwd, "hobo.bindle.json"),
+				JSON.stringify({
+					...HELLO_BINDLE,
+					resources: {
+						...HELLO_BINDLE.resources,
+						sessions: {
+							...HELLO_BINDLE.resources.sessions,
+							env: { API_KEY: secret },
+						},
+					},
+				}),
+			);
+			const result = await createVerifyCommand().run(runInput(cwd));
+			expect(result.ok).toBe(false);
+			expect(result.code).toBe("HOBO_GATEKEEPER_DENY");
+			expect(result.data).toMatchObject({
+				reasons: [
+					expect.objectContaining({
+						gate: "contracts",
+						code: "binding-delivery:secret-env-key",
+						details: { path: "resources.sessions.env.API_KEY" },
+					}),
+				],
+			});
+			expect(JSON.stringify(result)).not.toContain(secret);
 		});
 	});
 

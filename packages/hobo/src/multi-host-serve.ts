@@ -162,6 +162,14 @@ export async function serveProjectOnHost(options: {
 	const emit = options.emitProgress ?? (() => {});
 	const kind = normalizeComponentHostKind(options.componentHost);
 	const hoboHome = options.hoboHome ?? defaultHoboHome();
+	const definition = await loadBindleDefinition(options.projectDir);
+	if (definition === null) {
+		throw new Error(
+			`no loadable bindle in ${options.projectDir} (need src/bindle.ts or dist/bindle.js)`,
+		);
+	}
+	const bindleEnv = collectBindleEnvInjections(definition);
+
 	const ownedYard =
 		options.yard === undefined ? openBareMetalYard({ hoboHome }) : null;
 	const yardHandle = options.yard ?? must(ownedYard, "ownedYard");
@@ -171,14 +179,6 @@ export async function serveProjectOnHost(options: {
 	emit(
 		`hobo dev: local Yard '${yardHandle.config.name}' Camp component host=${kind}`,
 	);
-
-	const definition = await loadBindleDefinition(options.projectDir);
-	if (definition === null) {
-		ownedYard?.close();
-		throw new Error(
-			`no loadable bindle in ${options.projectDir} (need src/bindle.ts or dist/bindle.js)`,
-		);
-	}
 
 	const topology = composeBareMetalTopology(definition, {
 		yardName: yardHandle.config.name,
@@ -204,36 +204,41 @@ export async function serveProjectOnHost(options: {
 		);
 	}
 
-	const bindleEnv = collectBindleEnvInjections(definition);
-	for (const [name, record] of Object.entries(definition.resources)) {
-		const depConfig = readDependencyConfig(record.annotations);
-		if (depConfig === null && record.kind !== "external") continue;
-		const config = depConfig ?? (record.kind === "external" ? {} : null);
-		if (config === null) continue;
-		const resolved: ResolvedDependency = {};
-		if (isJsonString(config.connectionString)) {
-			resolved.connectionString = config.connectionString;
+	try {
+		for (const [name, record] of Object.entries(definition.resources)) {
+			const depConfig = readDependencyConfig(record.annotations);
+			if (depConfig === null && record.kind !== "external") continue;
+			const config = depConfig ?? (record.kind === "external" ? {} : null);
+			if (config === null) continue;
+			const resolved: ResolvedDependency = {};
+			if (isJsonString(config.connectionString)) {
+				resolved.connectionString = config.connectionString;
+			}
+			if (
+				config.endpoints &&
+				isJsonObject(config.endpoints) &&
+				config.endpoints !== null
+			) {
+				const http = (config.endpoints as JsonObject).http;
+				if (isJsonString(http)) resolved.httpUrl = http;
+			}
+			if (
+				record.kind === "container" ||
+				record.kind === "wasm-component" ||
+				record.kind === "api" ||
+				record.kind === "service"
+			) {
+				resolved.httpUrl =
+					resolved.httpUrl ?? internalMeshBase(definition.name, name);
+			}
+			const discovery = discoveryEnvForDependency(name, config, resolved);
+			Object.assign(bindleEnv, discovery);
 		}
-		if (
-			config.endpoints &&
-			isJsonObject(config.endpoints) &&
-			config.endpoints !== null
-		) {
-			const http = (config.endpoints as JsonObject).http;
-			if (isJsonString(http)) resolved.httpUrl = http;
-		}
-		if (
-			record.kind === "container" ||
-			record.kind === "wasm-component" ||
-			record.kind === "api" ||
-			record.kind === "service"
-		) {
-			resolved.httpUrl =
-				resolved.httpUrl ?? internalMeshBase(definition.name, name);
-		}
-		const discovery = discoveryEnvForDependency(name, config, resolved);
-		Object.assign(bindleEnv, discovery);
+	} catch (error) {
+		ownedYard?.close();
+		throw error;
 	}
+
 	for (const [key, value] of Object.entries(bindleEnv)) {
 		process.env[key] = value;
 	}

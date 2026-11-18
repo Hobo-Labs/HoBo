@@ -139,6 +139,14 @@ export async function serveBindleOnLocalYard(options: {
 	readonly emitProgress?: (message: string) => void;
 }): Promise<LocalYardServeResult> {
 	const emit = options.emitProgress ?? (() => {});
+	const definition = await loadBindleDefinition(options.projectDir);
+	if (definition === null) {
+		throw new Error(
+			`no loadable bindle in ${options.projectDir} (need src/bindle.ts or dist/bindle.js)`,
+		);
+	}
+	const bindleEnv = collectBindleEnvInjections(definition);
+
 	const ownedYard =
 		options.yard === undefined
 			? openBareMetalYard({
@@ -155,14 +163,6 @@ export async function serveBindleOnLocalYard(options: {
 	emit(
 		`hobo dev: local Yard '${yardHandle.config.name}' placing Camp (component host=local, engine=${engineInfo.source} ${engineInfo.version})`,
 	);
-
-	const definition = await loadBindleDefinition(options.projectDir);
-	if (definition === null) {
-		ownedYard?.close();
-		throw new Error(
-			`no loadable bindle in ${options.projectDir} (need src/bindle.ts or dist/bindle.js)`,
-		);
-	}
 
 	const topology = composeBareMetalTopology(definition, {
 		yardName: yardHandle.config.name,
@@ -275,7 +275,6 @@ export async function serveBindleOnLocalYard(options: {
 		emit(`hobo dev: Yard exposed ${entry.kind}:${entry.name} at ${url}`);
 	}
 
-	const bindleEnv = collectBindleEnvInjections(definition);
 	for (const [key, value] of Object.entries(bindleEnv)) {
 		process.env[key] = value;
 	}

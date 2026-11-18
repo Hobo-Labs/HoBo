@@ -1,17 +1,8 @@
-/**
- * Test files that change process-wide state: environment variables, a global
- * such as `fetch`, the working directory, or a vitest mock or spy. They keep
- * vitest's per-file module isolation. Every other hobo test file shares its
- * worker's module graph, so the CLI is composed once per worker instead of
- * once per file (about 105 s of import time across the suite).
- *
- * `test/isolated-test-files.test.ts` fails when a file starts changing that
- * state without being listed here, or stays listed after it stops.
- */
 export const ISOLATED_TEST_FILES = [
 	"test/auth-md-https.test.ts",
 	"test/bare-metal-mesh.test.ts",
 	"test/bare-metal-yard.test.ts",
+	"test/binding-delivery-startup.test.ts",
 	"test/ci-relay-delivery.test.ts",
 	"test/ci-relay-deploy.test.ts",
 	"test/cloudflare-deploy.test.ts",
