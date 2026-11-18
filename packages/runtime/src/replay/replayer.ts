@@ -262,7 +262,7 @@ export async function replayRun<S, A>(
 		}
 	}
 
-	const report: ReplayReport = {
+	const report: ReplayReport = Object.freeze({
 		canonicalizationVersion: digestVersion,
 		runId,
 		seqVector: toSeqVectorEntries(recordedVector, digestVersion),
@@ -270,7 +270,7 @@ export async function replayRun<S, A>(
 		stateDigest: digestForVersion(cloneAsJson(state), digestVersion),
 		mode: "replay",
 		seed,
-	};
+	});
 
 	return { state, report };
 }

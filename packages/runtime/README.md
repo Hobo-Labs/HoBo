@@ -170,6 +170,9 @@ JSON values are accepted. Binary decoding uses a detached copy of the bytes.
 JSON numeric values are checked as received; a number already rounded before
 the adapter receives it cannot be recovered, so use protobuf JSON strings for
 large integer positions. These checks do not authenticate the evidence.
+Replay reports freeze their fields, sequence vectors and entries. Divergence
+records also capture and freeze their order arrays, so later caller changes
+cannot alter the evidence. Their TypeScript fields are readonly.
 
 Within one loaded runtime module, `start` and `resume` refuse another active
 execution with the same run ID and the same `EventStoreWriter` object, even

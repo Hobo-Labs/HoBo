@@ -110,7 +110,7 @@ export function assertReplayEqualsLive<S>({
 		});
 	}
 
-	return {
+	return Object.freeze({
 		canonicalizationVersion: version,
 		runId,
 		seqVector: toSeqVectorEntries(capturedTarget, version),
@@ -121,7 +121,7 @@ export function assertReplayEqualsLive<S>({
 			.digest("hex"),
 		mode: "replay",
 		seed,
-	};
+	});
 }
 
 export interface RunFoldInput<S> {
@@ -393,9 +393,10 @@ export function toSeqVectorEntries(
 	vector: SeqVector,
 	version: CanonicalizationVersion,
 ) {
-	return Object.entries(vector)
+	const entries = Object.entries(vector)
 		.map(([streamId, seq]) => ({ streamId, seq }))
 		.sort((left, right) =>
 			compareCanonicalStrings(left.streamId, right.streamId, version),
 		);
+	return Object.freeze(entries.map((entry) => Object.freeze(entry)));
 }

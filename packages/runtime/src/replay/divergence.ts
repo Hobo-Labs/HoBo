@@ -26,23 +26,25 @@ export class ReplayDivergenceError extends Error {
 	}) {
 		super("replay/live materialization mismatch");
 		const version = canonicalizationVersion(input.canonicalizationVersion, 2);
+		const liveOrder = [...input.liveOrder];
+		const replayOrder = [...input.replayOrder];
 		this.name = "ReplayDivergenceError";
 		this.liveState = input.liveState;
 		this.replayState = input.replayState;
-		this.liveOrder = input.liveOrder;
-		this.replayOrder = input.replayOrder;
+		this.liveOrder = [...liveOrder];
+		this.replayOrder = [...replayOrder];
 		this.firstDivergentEventKey =
 			input.firstDivergentEventKey ??
-			findFirstDivergentKey(input.liveOrder, input.replayOrder);
-		this.divergence = {
+			findFirstDivergentKey(liveOrder, replayOrder);
+		this.divergence = Object.freeze({
 			canonicalizationVersion: version,
 			runId: input.runId,
 			liveStateDigest: digestForVersion(input.liveState, version),
 			replayStateDigest: digestForVersion(input.replayState, version),
-			liveOrder: input.liveOrder,
-			replayOrder: input.replayOrder,
+			liveOrder: Object.freeze(liveOrder),
+			replayOrder: Object.freeze(replayOrder),
 			firstDivergentEventKey: this.firstDivergentEventKey,
-		};
+		});
 	}
 }
 

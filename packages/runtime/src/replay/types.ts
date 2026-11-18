@@ -18,31 +18,31 @@ export type SeqVector = Record<string, number>;
 
 // domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface SeqVectorEntry {
-	streamId: string;
-	seq: number;
+	readonly streamId: string;
+	readonly seq: number;
 }
 
 // domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface ReplayReport {
 	/** Missing in historical records, which used version 1. */
-	canonicalizationVersion?: CanonicalizationVersion;
-	runId: string;
-	seqVector: readonly SeqVectorEntry[];
-	readSetHash: string;
-	stateDigest: string;
-	mode: ReplayMode;
-	seed: string;
+	readonly canonicalizationVersion?: CanonicalizationVersion;
+	readonly runId: string;
+	readonly seqVector: readonly SeqVectorEntry[];
+	readonly readSetHash: string;
+	readonly stateDigest: string;
+	readonly mode: ReplayMode;
+	readonly seed: string;
 }
 
 export interface ReplayDivergenceRecord {
 	/** Missing in historical records, which used version 1. */
-	canonicalizationVersion?: CanonicalizationVersion;
-	runId: string;
-	liveStateDigest: string;
-	replayStateDigest: string;
-	liveOrder: readonly string[];
-	replayOrder: readonly string[];
-	firstDivergentEventKey: string;
+	readonly canonicalizationVersion?: CanonicalizationVersion;
+	readonly runId: string;
+	readonly liveStateDigest: string;
+	readonly replayStateDigest: string;
+	readonly liveOrder: readonly string[];
+	readonly replayOrder: readonly string[];
+	readonly firstDivergentEventKey: string;
 }
 
 export interface DeterministicContext {
