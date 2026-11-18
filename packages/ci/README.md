@@ -681,3 +681,45 @@ The records, frozen names and ports a relay job is answered through, and
 are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
 every port and their conformance functions are exported as
 `@hobo/ci/runner-order/testing`.
+
+## Route journal and activity
+
+The route journal keeps every relay job a node was asked and every answer it
+gave (`runner.route.Requested` and `runner.route.Decided`), so "where did this
+job run, and why" can be read after the run (ADR-0183).
+`SqliteRouteJournal`, exported as `@hobo/ci/runner-order/journal-sqlite`, is
+the `RouteJournal` port on SQLite (ADR-0135):
+
+- It takes the store's existing `DatabaseSync` handle as a constructor
+  argument and adds one `route_journal` table, so the journal sits in the
+  store's one partition with its one writer. It never begins a transaction of
+  its own; each write is one statement.
+- It is append-only. A redelivered event (the same account's same relay
+  job's same event type, held in separate columns under one unique key) keeps
+  the first entry.
+- It keeps entries for 90 days (`ROUTE_JOURNAL_RETENTION_MS`), measured
+  against a clock passed in as `nowMs`. Older entries are hidden from reads at
+  once and deleted on the next write or `prune()`.
+- It passes `routeJournalConformance` from `@hobo/ci/runner-order/testing`
+  when given a clock near the conformance events, such as
+  `{ nowMs: () => 10_000 }`; under the system clock those events are past
+  retention and are dropped on record.
+
+`activityFeed(events, filter)`, exported from `@hobo/ci`, reads journal
+entries back as one entry per relay job: where it went (`runner`, `step`,
+`machineId`), the outcome (`routed`, `waiting`, `none`, or `pending` when it
+was asked and has no answer yet), one sentence saying why, and every step the
+walk passed over in words, including steps the relay named that the order
+leaves out. It is a pure projection, so a feed rebuilt from the stored journal
+equals the one built from the same events as they happened. Like the journal,
+it keeps a job's first answer when the answer is redelivered.
+
+- Filters: `repository` (case ignored), `outcome`, `step` (the order step that
+  took the job), `machineId` and `sinceMs`.
+- Pages run newest first, 50 entries by default and at most 500. A page's
+  `next` cursor is passed back as `after`; it holds its place when newer jobs
+  arrive.
+- `journalActivity(journal, accountId, filter)` reads one account's entries
+  through the `RouteJournal` port, narrowed by repository only (a job asked
+  before `sinceMs` and answered after it keeps its request time), and
+  builds the page from at most `ACTIVITY_JOURNAL_READ_LIMIT` (20,000) of them.

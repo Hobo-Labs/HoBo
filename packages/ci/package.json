@@ -54,6 +54,10 @@
       "types": "./dist/runner-order/testing.d.ts",
       "default": "./dist/runner-order/testing.js"
     },
+    "./runner-order/journal-sqlite": {
+      "types": "./dist/runner-order/journal-sqlite.d.ts",
+      "default": "./dist/runner-order/journal-sqlite.js"
+    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"

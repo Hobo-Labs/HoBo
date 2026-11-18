@@ -106,6 +106,19 @@ export {
 	providerOffer,
 	route,
 } from "./routing.js";
+export {
+	ACTIVITY_JOURNAL_READ_LIMIT,
+	ACTIVITY_OUTCOMES,
+	ACTIVITY_PAGE_MAX,
+	ACTIVITY_PAGE_SIZE,
+	type ActivityCursor,
+	type ActivityEntry,
+	type ActivityFilter,
+	type ActivityOutcome,
+	type ActivityPage,
+	activityFeed,
+	journalActivity,
+} from "./runner-order/activity.js";
 export * from "./runner-order/index.js";
 export {
 	sandboxProxyOnlyUsageQuote,
