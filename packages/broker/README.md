@@ -441,6 +441,11 @@ the missing claim; unverified cancellations require reconciliation. Lost quota
 or budget reservation acknowledgements are reported for reconciliation. A typed
 quota denial must mean the call created no reservation; other errors may have
 committed. Budget holds remain separate from quota cancellation.
+If the budget execution claim loses its acknowledgement, the broker retains
+the hold, attempts to mark it uncertain, and reports the outcome for
+reconciliation. It verifies the returned and stored execution claim against
+the approved quote and rechecks the stored claim at the provider boundary. A
+failure to verify the uncertainty record is also reported.
 
 On upgrade, existing claims are conservatively fenced and already-open older
 writers are refused by SQLite write guards. Limits and baseline remain fixed;
@@ -529,6 +534,33 @@ stateDiagram-v2
   [*] --> s0
   s0 --> s1: reserve generation and Yard capacity
   s1 --> s2: record verified readiness
+```
+
+The bounded budget-claim projection hides 15 same-state steps. It treats
+claim storage and the provider-call boundary as atomic observations.
+
+```mermaid
+stateDiagram-v2
+  s0: Hosting budget reserved
+  s1: Budget execution claim acknowledged
+  s2: Budget claim outcome unknown
+  s3: Quota execution fence claimed
+  s4: Checking quota and budget evidence
+  s5: Provider called
+  s6: Budget execution evidence changed
+  s7: Budget hold marked uncertain
+  s8: Budget uncertainty needs manual recording
+  [*] --> s0
+  s0 --> s1: claim budget execution
+  s0 --> s2: report lost budget claim acknowledgement
+  s1 --> s3: claim quota execution
+  s2 --> s4: release unused quota or retain quota for reconciliation
+  s3 --> s5: call provider
+  s3 --> s6: budget evidence changes
+  s4 --> s7: mark budget uncertain
+  s4 --> s8: report unverified budget uncertainty
+  s6 --> s7: mark budget uncertain
+  s6 --> s8: report unverified budget uncertainty
 ```
 
 Within one saga instance, identical retries share a pending provision or
