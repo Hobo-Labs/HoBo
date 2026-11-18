@@ -219,6 +219,7 @@ NEW_ACTION = re.compile(
 def immediate_stop(prompt):
     text = prompt.casefold().replace("’", "'")
     text = re.sub(r'```[\s\S]*?```|`[^`]*`|"[^"]*"|“[^”]*”', " ", text)
+    text = re.sub(r"(?<!\w)'[^'\n]*'(?!\w)", " ", text)
     for match in STOP_REQUEST.finditer(text):
         if NEGATED_REQUEST.search(text[max(0, match.start() - 80):match.start()]):
             continue
@@ -236,6 +237,7 @@ def immediate_stop(prompt):
 def stop_only(prompt):
     text = prompt.casefold().replace("’", "'")
     text = re.sub(r'```[\s\S]*?```|`[^`]*`|"[^"]*"|“[^”]*”', " ", text)
+    text = re.sub(r"(?<!\w)'[^'\n]*'(?!\w)", " ", text)
     return immediate_stop(prompt) and not NEW_ACTION.search(text)
 
 
