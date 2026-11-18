@@ -27,6 +27,8 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/pricing/src/fixed-charge-coverage.ts",
 			"packages/pricing/src/quote.ts",
 			"packages/broker/model/IacBudget.tla",
+			"packages/broker/model/IacPricedReceipt.tla",
+			"packages/broker/model/IacPricedReceipt.cfg",
 			"packages/broker/src/iac-target.ts",
 			"packages/provider-manifest/src/billing.ts",
 			"scripts/check-iac-models.ts",
