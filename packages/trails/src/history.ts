@@ -1,10 +1,6 @@
-/**
- * Durable applied Trail history per target environment (schema_migrations analog).
- */
 import { createHash } from "node:crypto";
 import type { TrailStep } from "./definition.js";
 
-// public-contract: trail history schema.
 export const TRAIL_HISTORY_SCHEMA = "hobo.trail-history/v1" as const;
 
 export type TrailHistoryEntry = Readonly<{
@@ -14,15 +10,11 @@ export type TrailHistoryEntry = Readonly<{
 	stepId: string;
 	target: string;
 	tenant: string;
-	/** Content checksum of the applied step definition. */
 	checksum: `sha256:${string}`;
 	appliedAt: string;
 	status: "applied" | "baseline" | "repaired";
 }>;
 
-/**
- * In-memory history store (production projects fold trail.HistoryRecorded events).
- */
 export class TrailHistoryStore {
 	private readonly entries: TrailHistoryEntry[] = [];
 
@@ -62,7 +54,6 @@ export class TrailHistoryStore {
 			schemaVersion: TRAIL_HISTORY_SCHEMA,
 			...entry,
 		});
-		// Idempotent: same trail+step+target+tenant+checksum → no-op.
 		const existing = this.entries.find(
 			(e) =>
 				e.trailId === full.trailId &&
@@ -85,14 +76,12 @@ export class TrailHistoryStore {
 		return full;
 	}
 
-	/** Mark existing state as applied without re-running (Sqitch/Flyway baseline). */
 	baseline(
 		entry: Omit<TrailHistoryEntry, "schemaVersion" | "status">,
 	): TrailHistoryEntry {
 		return this.record({ ...entry, status: "baseline" });
 	}
 
-	/** Repair a history row (new checksum after intentional fix). */
 	repair(
 		entry: Omit<TrailHistoryEntry, "schemaVersion" | "status">,
 	): TrailHistoryEntry {

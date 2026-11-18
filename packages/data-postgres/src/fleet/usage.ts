@@ -19,7 +19,6 @@ import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
 import { column, type FleetBackend, parseCount } from "./sql.js";
 
-// The billing period and the units are engine-neutral (`@hobo/backend-fleet`).
 export {
 	type BillingPeriod,
 	billingPeriod,
@@ -27,7 +26,6 @@ export {
 	type FleetUsageUnit,
 } from "@hobo/backend-fleet";
 
-// parallel-type-allowed: the parsed in-process measurement read back through readUsage; the proto PostgresFleetUsage is its wire projection.
 export type PostgresFleetUsage = {
 	readonly period: string;
 	readonly unit: FleetUsageUnit;
@@ -44,7 +42,6 @@ function parseUnit(value: string): FleetUsageUnit {
 	return unit;
 }
 
-/** Add `amount` to a backend's counter for one period and unit. */
 export async function addUsage(
 	backend: FleetBackend,
 	layout: FleetLayout,
@@ -65,7 +62,6 @@ export async function addUsage(
 	);
 }
 
-/** A backend's counters for one period. */
 export async function readUsage(
 	backend: FleetBackend,
 	layout: FleetLayout,
@@ -83,7 +79,6 @@ export async function readUsage(
 	}));
 }
 
-/** The size of the backend's database, the measurement for a storage allowance. */
 export async function measureStorageBytes(
 	backend: FleetBackend,
 ): Promise<number> {
@@ -94,11 +89,9 @@ export async function measureStorageBytes(
 }
 
 export type UsageMeter = {
-	/** Count statements sent to one backend. */
 	record(backendId: string, statements?: number): void;
 	/** Statements counted and not yet written for one backend. */
 	pending(backendId: string): number;
-	/** Write every backend's pending count to that backend, keeping what fails. */
 	flush(
 		backends: readonly FleetBackend[],
 		layout: FleetLayout,
@@ -106,11 +99,6 @@ export type UsageMeter = {
 	): Promise<void>;
 };
 
-/**
- * In-memory statement counters, written out by `flush`. A backend that cannot
- * be reached keeps its count for the next flush; nothing is dropped and
- * nothing is counted twice.
- */
 export function createUsageMeter(): UsageMeter {
 	const counts = new Map<string, number>();
 	return {

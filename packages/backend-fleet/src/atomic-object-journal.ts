@@ -1,6 +1,3 @@
-/** A bounded journal voter whose documents, assignments and seal share one CAS.
- * The hosting provider must separately establish identity, anti-rollback,
- * independent funding and a terminal receipt for every uncertain attempt. */
 import { createHash } from "node:crypto";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import { AtomicObjectJournalStateSchema } from "./_generated/hobo/backend_fleet/atomic_journal/v1/atomic_object_journal_pb.js";
@@ -16,10 +13,6 @@ import type {
 } from "./immutable-journal.js";
 import { isJournalString } from "./json.js";
 
-/** Each operation is one separately funded provider request. `conflict` is a
- * conclusive native conditional-write refusal; an exception means the write
- * may still complete and its financial hold must remain in force. The native
- * version is opaque and must be the version read from the same object. */
 export interface AtomicJournalObject {
 	read(): Promise<Readonly<{ body: string; version: string }> | undefined>;
 	create(body: string): Promise<"created" | "conflict">;
@@ -37,7 +30,6 @@ export interface AtomicObjectJournalOptions {
 	readonly maxEntries: number;
 	readonly maxDocumentBytes: number;
 	readonly maxObjectBytes: number;
-	/** Only conclusive CAS conflicts are retried. */
 	readonly maxConflicts?: number;
 	readonly object: AtomicJournalObject;
 }
@@ -51,7 +43,6 @@ export class AtomicObjectJournalError extends Error {
 const HASH = /^[a-f0-9]{64}$/u;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,255}$/u;
 const ROOT = "0".repeat(64);
-// Keep room to irreversibly seal even when abandoned proposals fill the voter.
 const SEAL_RESERVE_BYTES = 512;
 const hash = (value: string) =>
 	createHash("sha256").update(value).digest("hex");
@@ -72,9 +63,6 @@ const memberKeys = [
 	"incarnation",
 ] as const;
 
-/** A new incarnation must use a newly admitted object. Opening or trying to
- * initialize this format over a split-format object fails closed; migration
- * uses the ordinary independently funded majority-sealed journal rollover. */
 export function createAtomicObjectJournalReplica(
 	options: AtomicObjectJournalOptions,
 ): Readonly<{
@@ -364,8 +352,6 @@ export function createAtomicObjectJournalReplica(
 		},
 		async accept(input) {
 			const proposed = parseFleetAssignment(input);
-			// decode() refuses more than maxEntries + 1 rows, so accepting one more
-			// would leave this voter unreadable and unsealable.
 			if (proposed.epoch > maxEntries + 1)
 				throw new AtomicObjectJournalError("retention-limit");
 			for (let attempt = 0; attempt <= maxConflicts; attempt++) {
@@ -455,8 +441,6 @@ export function createAtomicObjectJournalReplica(
 				outcome = "unknown";
 			}
 			if (outcome === "created") return;
-			// Readback establishes this exact incarnation, including an already
-			// advanced matching initialization after a lost create response.
 			await read();
 		},
 	});

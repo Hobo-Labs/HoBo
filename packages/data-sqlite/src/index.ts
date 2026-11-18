@@ -40,5 +40,4 @@ export {
 	sqliteNativeType,
 } from "./store.js";
 
-// public-contract: package id consumers assert against.
 export const HOBO_DATA_SQLITE_PACKAGE = "@hobo/data-sqlite";

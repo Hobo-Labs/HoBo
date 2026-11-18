@@ -20,7 +20,6 @@ import type {
 
 export type RequiredRuntimeKind = "wasm" | "oci";
 
-// public-contract:
 export const DEPENDENCY_OPTION = "dependency" as const;
 
 export function dependencyAnnotation(config: {

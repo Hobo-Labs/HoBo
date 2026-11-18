@@ -6,7 +6,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: dry-run report schema id consumers pin.
 export const UPGRADE_DRY_RUN_SCHEMA = "hobo.upgrade-rollback-dry-run/v1";
 export const UPGRADE_DRY_RUN_ACTION = "evaluate-upgrade-dry-run";
 export type UpgradeDryRunAction = typeof UPGRADE_DRY_RUN_ACTION;
