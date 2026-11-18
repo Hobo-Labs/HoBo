@@ -248,14 +248,13 @@ export class ControlModel {
 		capabilityId: string,
 		verbs: readonly Verb[],
 	): void {
+		const ownedVerbs = Object.freeze(checkedVerbs(verbs));
 		const existing = this.capabilities.get(capabilityId);
 		if (existing && existing.tenantId !== tenantId) {
 			this.tick();
 			this.append(tenantId, "capability.add-refused", { capabilityId });
 			return;
 		}
-		if (!verbs.every(isVerb)) throw new TypeError("invalid capability verb");
-		const ownedVerbs = Object.freeze([...verbs]);
 		this.tick();
 		this.capabilities.set(capabilityId, {
 			id: capabilityId,
@@ -273,6 +272,7 @@ export class ControlModel {
 		capabilityId: string,
 		keep: readonly Verb[],
 	): void {
+		const ownedKeep = checkedVerbs(keep);
 		const cap = this.capabilities.get(capabilityId);
 		if (!cap) return;
 		if (cap.tenantId !== tenantId) {
@@ -282,7 +282,7 @@ export class ControlModel {
 		}
 		this.tick();
 		const allowed = new Set(cap.verbs);
-		cap.verbs = keep.filter((verb) => allowed.has(verb));
+		cap.verbs = ownedKeep.filter((verb) => allowed.has(verb));
 		this.append(cap.tenantId, "capability.attenuated", {
 			capabilityId,
 			verbs: cap.verbs.join(","),
@@ -597,6 +597,12 @@ function tenantFingerprint(blob: SnapshotBlob, tenantId: string): string {
 
 function isVerb(value: string): value is Verb {
 	return ALL_VERBS.some((verb) => verb === value);
+}
+
+function checkedVerbs(verbs: readonly Verb[]): Verb[] {
+	const owned = [...verbs];
+	if (!owned.every(isVerb)) throw new TypeError("invalid capability verb");
+	return owned;
 }
 
 function parseVerbs(raw: string | undefined): Verb[] {
