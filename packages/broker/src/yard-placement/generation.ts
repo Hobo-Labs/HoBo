@@ -309,6 +309,33 @@ export function createYardGenerationSaga(options: {
 					"generation-authorization-denied",
 					"host authorization denied or changed the generation plan",
 				);
+			// A provider may finish after the host revokes this caller's decision.
+			// Keep its outcome in the saga for later reconciliation, but do not
+			// return the result or provider error to a no-longer-authorized caller.
+			const deliveryPlan = structuredClone(plan);
+			const awaitAuthorized = async (
+				operation: Promise<YardGenerationResult>,
+			): Promise<YardGenerationResult> => {
+				let result: YardGenerationResult;
+				try {
+					result = await operation;
+				} catch (error) {
+					if (!authorized(authorize, deliveryPlan, planDigest))
+						return fail(
+							deliveryPlan,
+							"generation-authorization-denied",
+							"host authorization changed before result delivery",
+						);
+					throw error;
+				}
+				if (!authorized(authorize, deliveryPlan, planDigest))
+					return fail(
+						deliveryPlan,
+						"generation-authorization-denied",
+						"host authorization changed before result delivery",
+					);
+				return result;
+			};
 			const key = plan.idempotencyKey;
 			const existing = attempts.get(key);
 			if (existing && existing.planDigest !== planDigest) {
@@ -319,7 +346,7 @@ export function createYardGenerationSaga(options: {
 				);
 			}
 			const pending = inFlight.get(key);
-			if (pending) return await pending;
+			if (pending) return await awaitAuthorized(pending);
 			if (
 				existing &&
 				(existing.result.status === "ready" ||
@@ -384,7 +411,7 @@ export function createYardGenerationSaga(options: {
 			});
 			inFlight.set(key, operation);
 			try {
-				return await operation;
+				return await awaitAuthorized(operation);
 			} finally {
 				if (inFlight.get(key) === operation) inFlight.delete(key);
 			}

@@ -718,6 +718,33 @@ stateDiagram-v2
   s4 --> s1: host restores approval
 ```
 
+A provider operation can finish after a host revokes a caller’s decision. The
+saga rechecks each waiting caller before returning a result or provider error;
+it retains successful results for later authorized inspection. The result view
+hides 134 same-label steps and assumes a truthful, synchronous host decision.
+
+```mermaid
+stateDiagram-v2
+  s0: Provider call pending
+  s1: Provider outcome uncertain#59; waiting for callers
+  s2: Provider result retained#59; waiting for callers
+  s3: Provider outcome uncertain#59; outcome returned
+  s4: Provider result retained#59; outcome returned
+  s5: Provider outcome uncertain#59; caller refused
+  s6: Provider result retained#59; caller refused
+  [*] --> s0
+  s0 --> s1: provider reply fails#59; retain the started attempt
+  s0 --> s2: provider result is recorded
+  s1 --> s3: return the outcome with current approval
+  s2 --> s4: return the outcome with current approval
+  s1 --> s5: refuse the caller
+  s2 --> s6: refuse the caller
+  s3 --> s5: refuse the caller
+  s4 --> s6: refuse the caller
+  s5 --> s3: return the outcome with current approval
+  s6 --> s4: return the outcome with current approval
+```
+
 Without a budget authority, local placement also requires an
 explicit `authorizeLocalHosting` callback. It approves the exact request,
 catalog, Yard and selected resource placements and returns a bound policy proof
