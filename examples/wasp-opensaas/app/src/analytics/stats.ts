@@ -96,8 +96,8 @@ export const calculateDailyStatsJob: CalculateDailyStatsJob<
       let visitors: number;
       try {
         visitors = visitorCountFromProvider(source.visitors);
-      } catch {
-        throw new Error(`Invalid visitor count for ${source.source}`);
+      } catch (cause) {
+        throw new Error(`Invalid visitor count for ${source.source}`, { cause });
       }
       await context.entities.PageViewSource.upsert({
         where: {

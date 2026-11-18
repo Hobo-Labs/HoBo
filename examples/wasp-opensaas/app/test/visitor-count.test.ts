@@ -24,6 +24,9 @@ describe("visitorCountFromProvider", () => {
       "12.3",
       "1e3",
       Number.MAX_SAFE_INTEGER + 1,
+      "9007199254740993",
+      Number.POSITIVE_INFINITY,
+      Number.NaN,
     ]) {
       expect(() => visitorCountFromProvider(value)).toThrow("Invalid visitor count");
     }

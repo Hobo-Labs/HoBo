@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "ci:test:unit": "node scripts/ensure-vitest-install.mts && npm install --workspaces=false && vitest run --config vitest.config.ts",
+    "ci:test:unit": "node scripts/ensure-vitest-install.mts && npm install --workspaces=false --include=dev && env NODE_ENV=development vitest run --config vitest.config.ts",
     "test:unit": "vitest run --config vitest.config.ts"
   },
   "workspaces": [
@@ -55,6 +55,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "8.3.1",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/express": "^5.0.0",
