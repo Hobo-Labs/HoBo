@@ -23,7 +23,8 @@ with `resourceIdentityLedger(definition)`. The ledger must map every resource ki
 exactly once. Update and review the mapping when declarations of the same kind
 are inserted, removed, or reordered. Enabling generated IDs changes an existing
 Bindle's manifest resource IDs; inspect the resulting deployment plan and
-migrate existing resources before applying it.
+migrate existing resources before applying it. `hobo codegen` also generates
+`ResourceAliases` declarations that map each authoring alias to its ID and kind.
 
 The canonical shared budget language is `policy.budgetPolicy` with discriminator
 `hobo.budget-policy/v1`. Parsing uses `@hobo/core`'s typed policy contract and
