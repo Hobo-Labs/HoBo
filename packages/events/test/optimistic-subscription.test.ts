@@ -1,14 +1,16 @@
-import { parseRunId } from "@hobo/core";
+import { type JsonValue, parseRunId } from "@hobo/core";
 import { createLocalStreamer } from "@hobo/runtime-local";
 import { describe, expect, it } from "vitest";
 import {
 	createOptimisticSubscription,
+	OptimisticSeqRegressionError,
+	parseOptimisticSequence,
+} from "../src/optimistic-subscription.js";
+import {
 	createReactor,
 	defineMaterialization,
 	type MaterializedFrame,
-	OptimisticSeqRegressionError,
-	parseOptimisticSequence,
-} from "../src/index.js";
+} from "../src/reactor.js";
 import { CTX, freshStore } from "./helpers.js";
 
 function frame<T>(value: T, seq: number, streamSeqs: Record<string, number>) {
@@ -25,14 +27,15 @@ describe("optimistic subscriptions", () => {
 			["z", 4],
 		]);
 		expect(Object.isFrozen(parsed)).toBe(true);
-		for (const invalid of [
+		const invalidSequences: JsonValue[] = [
 			null,
 			[],
 			{ " ": 1 },
 			{ a: -1 },
 			{ a: 1.5 },
 			{ a: "1" },
-		])
+		];
+		for (const invalid of invalidSequences)
 			expect(() => parseOptimisticSequence(invalid)).toThrow(TypeError);
 	});
 
@@ -44,7 +47,7 @@ describe("optimistic subscriptions", () => {
 			name: "titles",
 			readSet: ["note.Added"],
 			initialState: [],
-			fold: (state, event) => [...state, String(event.data.title)],
+			fold: (state, event) => [...state, event.type],
 		});
 		const sub = await reactor.subscribe(materialization, {
 			subscriptionId: "sub:notes",
@@ -61,10 +64,10 @@ describe("optimistic subscriptions", () => {
 				client.applyOptimisticPatch({
 					commandId: "add-note",
 					seqFloor: { "note:1": 1 },
-					apply: (notes) => [...notes, "hello"],
+					apply: (notes) => [...notes, "note.Added"],
 				}),
 			).toMatchObject({
-				value: ["hello"],
+				value: ["note.Added"],
 				seq: 0,
 				streamSeqs: {},
 				optimistic: true,
@@ -78,7 +81,7 @@ describe("optimistic subscriptions", () => {
 			const pushed = await reader.next();
 			if (!pushed.value) throw new Error("missing Reactor frame");
 			expect(client.receiveAuthoritativePush(pushed.value.chunk)).toEqual({
-				value: ["hello"],
+				value: ["note.Added"],
 				seq: 1,
 				streamSeqs: { "note:1": 1 },
 				stale: false,
