@@ -78,6 +78,32 @@ function guard(repo: string, ...args: string[]) {
 }
 
 describe("source policy", () => {
+	it("rejects planning titles in ordinary Markdown files", () => {
+		for (const title of [
+			"Implementation Plan: queues",
+			"Queue **Technical Design**",
+			"Design Brief: checkout",
+			"ADR-0123: schema storage",
+			"Roadmap for release",
+		]) {
+			assert.match(
+				documentViolation("README.md", `# ${title}\n`) ?? "",
+				/title/u,
+			);
+		}
+		for (const text of [
+			"# Deployment plans\nOperators can inspect plans.\n",
+			"# Scheduling\n```text\n# Implementation Plan\n```\n",
+			"# Design your dashboard\nSelect a layout.\n",
+		]) {
+			assert.equal(documentViolation("README.md", text), undefined);
+		}
+		const repo = fixture();
+		write(repo, "README.md", "# Implementation Plan: queues\n");
+		git(repo, "add", "README.md");
+		assert.match(guard(repo, "--staged").stderr, /document title/u);
+	});
+
 	it("rejects new identity-only proof artifacts while allowing executable examples", () => {
 		const cases = [
 			["examples/proof-identity.ts", 'console.log("proof-identity: ok");\n'],
