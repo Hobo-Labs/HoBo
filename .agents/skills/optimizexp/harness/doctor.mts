@@ -173,6 +173,7 @@ function main() {
 			root,
 			selection,
 			outDir: args.out || undefined,
+			confirmedSurfaces: (args.confirmedSurfaces || "").split(",").filter(Boolean),
 		});
 	} else {
 		report = runDoctorCheck({
