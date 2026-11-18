@@ -18,7 +18,7 @@ drizzle-kit's.
 |---|---|
 | `ingestDrizzleSchema(moduleExports, options?)` | Structural ingestion of a Drizzle schema module into `{ schema: SchemaIr, impedance }` |
 | `createDrizzleDiffEngine(options?)` | A `SchemaDiffEngine` whose `diff` delegates to core's `diffSchemaIr` and stamps `engineId`/`engineVersion` |
-| `toDataMigrationPlanShape(input)` | Converts a plan + emitted SQL into the shape `@hobo/trails` executes |
+| `toDataMigrationPlan(input)` | Converts a plan and all emitted statements into the phases `@hobo/trails` executes |
 | `DRIZZLE_ENGINE_ID`, `DEFAULT_DRIZZLE_ENGINE_VERSION` | `"drizzle-kit"` and the pinned toolchain version |
 | `DRIZZLE_IMPEDANCE_CODES`, `DrizzleImpedanceFinding` | The closed vocabulary of things the IR could not carry |
 | `DrizzleAdapterError`, `DRIZZLE_ADAPTER_ERROR_CODES` | The one error type this package throws |

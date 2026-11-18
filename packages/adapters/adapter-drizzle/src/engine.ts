@@ -70,19 +70,55 @@ function freezeEmitted(
 	plan: MigrationPlan,
 	emitted: readonly EmittedSqlStatement[],
 ): readonly EmittedSqlStatement[] {
-	const covered = new Set(emitted.map((entry) => stepKey(entry.step)));
+	groupEmittedSql(plan, emitted);
+	return Object.freeze(
+		emitted.map((entry) =>
+			Object.freeze({ step: Object.freeze({ ...entry.step }), sql: entry.sql }),
+		),
+	);
+}
+
+export function groupEmittedSql(
+	plan: MigrationPlan,
+	emitted: readonly EmittedSqlStatement[],
+): ReadonlyMap<string, readonly string[]> {
+	const steps = new Map(plan.steps.map((step) => [stepKey(step), step]));
+	if (steps.size !== plan.steps.length) {
+		throw emissionError("The migration plan contains duplicate steps.");
+	}
+	const grouped = new Map<string, string[]>();
+	for (const entry of emitted) {
+		const key = stepKey(entry.step);
+		const expected = steps.get(key);
+		if (
+			expected === undefined ||
+			entry.step.destructive !== expected.destructive
+		) {
+			throw emissionError(`Emitted SQL refers to an unexpected step: ${key}.`);
+		}
+		if (entry.sql.trim().length === 0) {
+			throw emissionError(`Emitted SQL is empty for step: ${key}.`);
+		}
+		const statements = grouped.get(key) ?? [];
+		statements.push(entry.sql);
+		grouped.set(key, statements);
+	}
 	const missing = plan.steps
-		.filter((step) => !covered.has(stepKey(step)))
+		.filter((step) => !grouped.has(stepKey(step)))
 		.map((step) => stepKey(step));
 	if (missing.length > 0) {
-		throw new DrizzleAdapterError(
-			"SQL_EMISSION_INCOMPLETE",
+		throw emissionError(
 			`The drizzle-kit emitter returned no SQL for ${missing.length} plan step(s): ${missing.join(", ")}.`,
-			"Regenerate the SQL with a drizzle-kit version that understands every step kind in the plan, or narrow the plan before emitting.",
 		);
 	}
-	return Object.freeze(
-		emitted.map((entry) => Object.freeze({ step: entry.step, sql: entry.sql })),
+	return grouped;
+}
+
+function emissionError(message: string): DrizzleAdapterError {
+	return new DrizzleAdapterError(
+		"SQL_EMISSION_INCOMPLETE",
+		message,
+		"Use a compatible drizzle-kit emitSql emitter for every plan step before applying the migration.",
 	);
 }
 

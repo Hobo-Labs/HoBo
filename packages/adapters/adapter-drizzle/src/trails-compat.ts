@@ -1,6 +1,9 @@
 import type { MigrationPlan } from "@hobo/core";
-import { type EmittedSqlStatement, stepKey } from "./engine.js";
-import { DrizzleAdapterError } from "./errors.js";
+import {
+	type EmittedSqlStatement,
+	groupEmittedSql,
+	stepKey,
+} from "./engine.js";
 
 export interface DataMigrationPlanRecord {
 	readonly migrationId: string;
@@ -26,34 +29,17 @@ export interface ToDataMigrationPlanInput {
 export function toDataMigrationPlan(
 	input: ToDataMigrationPlanInput,
 ): DataMigrationPlanRecord {
-	const sqlByStep = new Map<string, string>();
-	for (const statement of input.emitted) {
-		sqlByStep.set(stepKey(statement.step), statement.sql);
-	}
+	const sqlByStep = groupEmittedSql(input.plan, input.emitted);
 
 	const expand: string[] = [];
 	const backfill: string[] = [];
 	const contract: string[] = [];
-	const missing: string[] = [];
-
 	for (const step of input.plan.steps) {
 		const key = stepKey(step);
-		const sql = sqlByStep.get(key);
-		if (sql === undefined) {
-			missing.push(key);
-			continue;
-		}
-		if (step.phase === "expand") expand.push(sql);
-		else if (step.phase === "backfill") backfill.push(sql);
-		else contract.push(sql);
-	}
-
-	if (missing.length > 0) {
-		throw new DrizzleAdapterError(
-			"SQL_EMISSION_INCOMPLETE",
-			`Cannot build a data-migration plan: ${missing.length} step(s) have no emitted SQL: ${missing.join(", ")}.`,
-			"Emit SQL for the whole plan with `createDrizzleDiffEngine({ toolchainPresent: true, emitSql }).emitSql(plan)` before converting it.",
-		);
+		const statements = sqlByStep.get(key) ?? [];
+		if (step.phase === "expand") expand.push(...statements);
+		else if (step.phase === "backfill") backfill.push(...statements);
+		else contract.push(...statements);
 	}
 
 	return Object.freeze({
