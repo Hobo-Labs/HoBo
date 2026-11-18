@@ -2754,7 +2754,9 @@ export async function main(
 					`  the commands left untracked files; remove them before the next run:\n${outcome.leftBehind.map((line) => `    ${line}`).join("\n")}`,
 				);
 			console.log(
-				"For workflow reuse: pnpm ci:attest publish before pushing. For local GitHub statuses: push, then pnpm ci:attest signoff",
+				mergeGroupBranch
+					? "For local GitHub statuses: run pnpm ci:attest signoff with the same --merge-group-ref"
+					: "For workflow reuse: pnpm ci:attest publish before pushing. For local GitHub statuses: push, then pnpm ci:attest signoff",
 			);
 			return 0;
 		} catch (cause) {
