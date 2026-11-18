@@ -4,6 +4,7 @@ import {
 	type ExperimentPort,
 	FeatureFlagStore,
 	Harness,
+	type HarnessOptions,
 	type HarnessPorts,
 	type OpenDeliveryEngine,
 	type OpenExperimentEngine,
@@ -48,6 +49,12 @@ interface CustomExperiment extends ExperimentPort {
 
 declare const customDelivery: CustomDelivery;
 declare const customExperiment: CustomExperiment;
+const structuralOptions: HarnessOptions = {
+	store,
+	delivery: customDelivery,
+	experiment: customExperiment,
+};
+structuralOptions.store.get("fixture");
 const injected = createHarness({
 	store,
 	delivery: customDelivery,
