@@ -1,13 +1,3 @@
-/**
- * Durable subscription leases and checkpoints.
- *
- * A checkpoint is a promise that everything before a position has been
- * processed. Two failures make that promise a lie without throwing anything at
- * the time: a checkpoint written by a holder that no longer owns the
- * partition, and a checkpoint that moves backwards so already-processed events
- * are replayed as new. Both are guarded by the fence, and both are what these
- * assertions are about.
- */
 import { describe, expect, it } from "vitest";
 
 import { createMemoryNodeSqliteDriver, SqliteJournal } from "../src/index.js";
@@ -66,10 +56,7 @@ describe("subscription leases", () => {
 		const j = journal(clock);
 		try {
 			const first = await j.claimSubscription({ ...SUB, holderId: "w1" });
-			// A worker that restarted but kept its identity must be able to resume
-			// immediately; the guard is `heldBy !== holderId`, so re-claiming is
-			// allowed and the fence still advances to invalidate any in-flight
-			// write from the previous incarnation.
+
 			const again = await j.claimSubscription({ ...SUB, holderId: "w1" });
 			expect(again.fenceToken).toBeGreaterThan(first.fenceToken);
 		} finally {
@@ -88,8 +75,7 @@ describe("subscription leases", () => {
 			});
 			clock.advanceMs(1001);
 			const second = await j.claimSubscription({ ...SUB, holderId: "w2" });
-			// The fence is what stops the stalled worker's next checkpoint from
-			// landing — without a bump, the two workers would be indistinguishable.
+
 			expect(second.fenceToken).toBe(first.fenceToken + 1n);
 		} finally {
 			j.close();
@@ -107,8 +93,7 @@ describe("subscription leases", () => {
 				holderId: "w1",
 				fenceToken: lease.fenceToken,
 			});
-			// Renewal extends the window without changing the fence, so work in
-			// flight under that fence stays valid.
+
 			expect(renewed.fenceToken).toBe(lease.fenceToken);
 			expect(Date.parse(renewed.expiresAt)).toBeGreaterThan(
 				Date.parse(lease.expiresAt),
@@ -123,9 +108,7 @@ describe("subscription leases", () => {
 		const j = journal(clock);
 		try {
 			const lease = await j.claimSubscription({ ...SUB, holderId: "w1" });
-			// A worker that was fenced out must not be able to extend a lease it
-			// no longer holds — that would let it keep processing indefinitely
-			// alongside its replacement.
+
 			await expect(
 				j.renewSubscription({
 					...SUB,
@@ -167,9 +150,6 @@ describe("checkpoints", () => {
 		const clock = movableClock();
 		const j = journal(clock);
 		try {
-			// Undefined, not position zero: "never started" and "processed up to
-			// the first event" are different states, and only one of them means a
-			// projector should replay from the beginning.
 			expect(await j.loadCheckpoint(SUB)).toBeUndefined();
 		} finally {
 			j.close();
@@ -188,8 +168,7 @@ describe("checkpoints", () => {
 			});
 			expect(committed.position).toBe(42n);
 			const loaded = await j.loadCheckpoint(SUB);
-			// The position must survive as a bigint. Narrowing it to a number
-			// would silently cap a long-lived partition at 2^53 events.
+
 			expect(loaded?.position).toBe(42n);
 			expect(loaded?.fenceToken).toBe(lease.fenceToken);
 		} finally {
@@ -228,10 +207,7 @@ describe("checkpoints", () => {
 				position: 10n,
 				fenceToken: lease.fenceToken,
 			});
-			// `position < current` is the guard, so equality is permitted. A
-			// worker that crashed after processing but before committing will
-			// re-commit the same position on restart, and refusing that would
-			// wedge it.
+
 			await expect(
 				j.commitCheckpoint({
 					...SUB,
@@ -262,9 +238,6 @@ describe("checkpoints", () => {
 				});
 				expect.unreachable("a regressing checkpoint must be refused");
 			} catch (error) {
-				// Regression means already-processed events are delivered again as
-				// new. For a non-idempotent projector that is double-application,
-				// and nothing downstream would notice.
 				expect((error as { code?: string }).code).toBe("CHECKPOINT_REGRESSION");
 			}
 			expect((await j.loadCheckpoint(SUB))?.position).toBe(20n);
@@ -292,8 +265,6 @@ describe("checkpoints", () => {
 				});
 				expect.unreachable("a fenced-out holder must not checkpoint");
 			} catch (error) {
-				// This is the case the fence exists for: the first worker stalled,
-				// lost the partition, and woke up believing it was still processing.
 				expect((error as { code?: string }).code).toBe("STALE_FENCE");
 			}
 		} finally {
@@ -305,8 +276,6 @@ describe("checkpoints", () => {
 		const clock = movableClock();
 		const j = journal(clock);
 		try {
-			// Committing without ever claiming would let two unclaimed workers
-			// interleave checkpoints with no ownership between them.
 			await expect(
 				j.commitCheckpoint({ ...SUB, position: 1n, fenceToken: 1n }),
 			).rejects.toThrow();
@@ -331,9 +300,7 @@ describe("checkpoints", () => {
 				administrative: true,
 				holderId: "admin",
 			});
-			// A replay is the one legitimate way to move a checkpoint backwards,
-			// which is why it is a separate method requiring `administrative: true`
-			// rather than a flag on the normal commit path.
+
 			expect(reset.position).toBe(0n);
 			expect((await j.loadCheckpoint(SUB))?.position).toBe(0n);
 		} finally {
@@ -351,8 +318,7 @@ describe("checkpoints", () => {
 				administrative: true,
 				holderId: "admin",
 			});
-			// Upsert, not update: an operator seeding a projector's starting
-			// position must not have to run it once first.
+
 			expect(reset.position).toBe(7n);
 			expect(reset.fenceToken).toBe(1n);
 		} finally {
@@ -381,8 +347,7 @@ describe("checkpoints", () => {
 				position: 9n,
 				fenceToken: p1.fenceToken,
 			});
-			// Partitions are processed in parallel by design; a shared checkpoint
-			// would make the slowest one dictate every other one's progress.
+
 			expect((await j.loadCheckpoint(SUB))?.position).toBe(5n);
 			expect(
 				(
