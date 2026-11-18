@@ -41,10 +41,11 @@ capability access, so enforcement happens where a host calls
 
 The schema-diff plan digest binds the normalized current and desired schemas as
 well as the ordered steps and engine identity. The canonical engine version is
-`3.0.0`: its digests differ from earlier versions, so existing plans must be
+`4.0.0`: its digests differ from earlier versions, so existing plans must be
 regenerated before comparison or execution. Replacing an index with the same
 name drops and recreates it in the contract phase; HoBo's PostgreSQL schema port
-applies each phase in one transaction.
+applies each phase in one transaction. A replaced primary key is removed before
+its replacement is added.
 
 `ports/schema-diff.ts` (ADR-0160) owns the canonical schema IR and the
 forward-only expand/backfill/contract differ. What it deliberately does **not**

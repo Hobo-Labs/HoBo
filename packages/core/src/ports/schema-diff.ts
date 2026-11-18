@@ -16,7 +16,7 @@ export const SCHEMA_IR_CONTRACT = "hobo.schema-ir/v1";
 export const MIGRATION_PLAN_CONTRACT = "hobo.migration-plan/v1";
 
 export const CANONICAL_SCHEMA_DIFF_ENGINE_ID = "hobo-canonical"; // public-contract: differ identity stamped into every plan it produces
-export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "3.0.0";
+export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "4.0.0";
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*$/u;
 const MAX_IDENTIFIER_LENGTH = 63;
@@ -196,7 +196,9 @@ export function diffSchemaIr(
 	diffIndexes(normalizedCurrent.tables, normalizedDesired.tables, steps);
 
 	return freezePlan(
-		dedupe(steps).sort(compareSteps),
+		dedupe(steps).sort((left, right) =>
+			compareSteps(left, right, currentTables, desiredTables),
+		),
 		engineId,
 		engineVersion,
 		normalizedCurrent,
@@ -441,11 +443,17 @@ function stepTarget(candidate: MigrationStep): string {
 	return candidate.column ?? candidate.index ?? "";
 }
 
-function compareSteps(left: MigrationStep, right: MigrationStep): number {
+function compareSteps(
+	left: MigrationStep,
+	right: MigrationStep,
+	current: ReadonlyMap<string, SchemaTable>,
+	desired: ReadonlyMap<string, SchemaTable>,
+): number {
 	return (
 		MIGRATION_PHASES.indexOf(left.phase) -
 			MIGRATION_PHASES.indexOf(right.phase) ||
-		contractStepOrder(left) - contractStepOrder(right) ||
+		contractStepOrder(left, current, desired) -
+			contractStepOrder(right, current, desired) ||
 		compare(left.table, right.table) ||
 		MIGRATION_STEP_KINDS.indexOf(left.kind) -
 			MIGRATION_STEP_KINDS.indexOf(right.kind) ||
@@ -453,11 +461,25 @@ function compareSteps(left: MigrationStep, right: MigrationStep): number {
 	);
 }
 
-function contractStepOrder(candidate: MigrationStep): number {
+function contractStepOrder(
+	candidate: MigrationStep,
+	current: ReadonlyMap<string, SchemaTable>,
+	desired: ReadonlyMap<string, SchemaTable>,
+): number {
 	if (candidate.phase !== "contract") return 0;
 	if (candidate.kind === "drop-index") return 0;
-	if (candidate.kind === "add-index") return 2;
-	return 1;
+	if (candidate.kind === "add-index") return 4;
+	if (candidate.kind === "narrow-column" && candidate.column) {
+		const before = current
+			.get(candidate.table)
+			?.columns.find((column) => column.name === candidate.column);
+		const after = desired
+			.get(candidate.table)
+			?.columns.find((column) => column.name === candidate.column);
+		if (before?.primaryKey && !after?.primaryKey) return 1;
+		if (!before?.primaryKey && after?.primaryKey) return 3;
+	}
+	return 2;
 }
 
 function freezePlan(
