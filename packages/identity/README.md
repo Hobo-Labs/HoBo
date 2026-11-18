@@ -111,6 +111,11 @@ client, progressive engines, and HoBo's feature command. `FeatureFlagStore`
 implements it; tests can inject another implementation or use an isolated
 `flag` resource from `@hobo/testing`. This TypeScript port does not claim to
 implement the complete WIT provider contract.
+`DeliveryPort` and `ExperimentPort` describe the rollout and experiment
+boundaries. `createHarness` accepts implementations as `delivery` and
+`experiment`; when omitted, it creates the built-in engines. Injected engines
+that coordinate with feature evaluation should use the same `FeatureFlagPort`
+passed as `store` so their flag changes are visible to the harness.
 Gateway-weighted rollouts emit `domain.RoutingChanged` via
 `applyRolloutToGatewayRouting`. Experiment `analyzeExperiment` /
 `concludeExperiment` use the built-in baseline analysis/export (commercial
@@ -176,7 +181,7 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
   `FeatureFlagStore`, `runSpectrumIdentityCutover` (Plan 50 composition),
   `dualVerifyClaims`, `mintDualAudienceGrant`, `advanceMigrationRamp`,
   `agentActionsForMigrationEvents`, `identity.Migration*` events.
-- Harness: `FeatureFlagPort`, `HoboOpenFeatureProvider`, `HoboFeatureClient`, `createHarness`,
+- Harness: `FeatureFlagPort`, `DeliveryPort`, `ExperimentPort`, `HoboOpenFeatureProvider`, `HoboFeatureClient`, `createHarness`,
   `OpenDeliveryEngine`, `OpenExperimentEngine`, `gateFlagMutation`,
   `createContractAssertedHarnessFixtures`, `enrichEvaluationContext`,
   `selectFeatureFlagBackend`, `flag.*` / `rollout.*` / `experiment.*` events.

@@ -147,6 +147,26 @@ export type DeliveryHealthSignal = Readonly<{
 	guardrailRegressed?: boolean;
 }>;
 
+export interface DeliveryPort {
+	readonly events: readonly RolloutEvent[];
+	list(): readonly RolloutState[];
+	get(id: string): RolloutState | undefined;
+	start(policy: RolloutPolicy): RolloutState;
+	step(rolloutId: string, health?: DeliveryHealthSignal): RolloutState;
+	nextBatch(rolloutId: string): readonly string[];
+	reportOutcomes(
+		rolloutId: string,
+		outcomes: readonly RolloutTargetOutcome[],
+	): RolloutState;
+	grantApproval(rolloutId: string, approver: string): RolloutState;
+	resume(rolloutId: string): RolloutState;
+	rollback(
+		rolloutId: string,
+		reason: Readonly<Record<string, boolean | string>>,
+	): RolloutState;
+	gatewayWeight(rolloutId: string): number;
+}
+
 const EMPTY_TARGETS: readonly string[] = Object.freeze([]);
 
 const EMPTY_STAGED_PROGRESS: StagedRolloutProgress = Object.freeze({
@@ -365,7 +385,7 @@ export function replayRolloutJournal(
  * reportOutcomes, halt on maxFailures, pause at approval barriers, and resume
  * deterministically from the journal.
  */
-export class OpenDeliveryEngine {
+export class OpenDeliveryEngine implements DeliveryPort {
 	readonly events: RolloutEvent[] = [];
 	private seq = 0;
 	private readonly rollouts = new Map<string, RolloutState>();
