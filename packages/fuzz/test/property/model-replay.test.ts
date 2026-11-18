@@ -208,6 +208,15 @@ describe("event history ownership", () => {
 });
 
 describe("oracle state view ownership", () => {
+	it("interrupts the stored resource rather than a detached lookup result", () => {
+		const model = new ControlModel();
+		model.createBindle(TENANT, "b1", "sha256:a");
+		model.apply(TENANT, "b1", "k1");
+		model.interruptApply(TENANT, "k1");
+		expect(model.findByKey(TENANT, "k1")?.status).toBe("failed");
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
 	it("keeps generated state and checkpoints isolated from returned views", () => {
 		fc.assert(
 			fc.property(
