@@ -230,6 +230,7 @@ export interface BitwardenProvisionOptions {
 	readonly projectId?: BitwardenId;
 	readonly fetch: typeof fetch;
 	readonly emit: (line: string) => void;
+	readonly privateOwner?: boolean;
 	readonly approve?: (request: {
 		readonly url: string;
 		readonly message: string;
@@ -390,6 +391,16 @@ export async function provisionBitwardenAccessToken(
 	options: BitwardenProvisionOptions,
 ): Promise<BitwardenProvisionResult> {
 	const fam = options.family.toUpperCase();
+	if (options.privateOwner && options.approve === undefined)
+		return {
+			kind: "refused",
+			code: `HOBO_${fam}_HANDOFF_SILENT`,
+			message:
+				"This session cannot reach the owner through a private approval form.",
+			remediation: [
+				"Run setup when a private owner approval form is available.",
+			],
+		};
 	const server = options.endpoints;
 	const deviceHeaders = {
 		"Device-Type": "25",
@@ -516,6 +527,12 @@ export async function provisionBitwardenAccessToken(
 			);
 			await checkSignIn();
 		}
+		if (!signIn.ok && key.kind === "egress-proxy" && options.privateOwner)
+			throw new ProvisionRefusal(
+				`HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
+				"Bitwarden needs the secure owner form.",
+				["Run again when the owner is ready."],
+			);
 		if (!signIn.ok && key.kind === "egress-proxy") {
 			options.emit(
 				`${OWNER_CREDENTIAL_LINE_PREFIX} host=${identityHost} guide=${bitwardenApiKeyPage(server)} — in Bitwarden: Account settings → Security → Keys → View API key. Give it to the agent's session in its credential form for ${identityHost} as a username and password: username = client_id, password = client_secret; never in chat. This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`,
@@ -540,9 +557,11 @@ export async function provisionBitwardenAccessToken(
 					? "Bitwarden did not accept a personal API key from the session's credential form in time."
 					: `Bitwarden refused the personal API key (HTTP ${signIn.status}).`,
 				[
-					key.kind === "egress-proxy"
-						? `Save your personal API key from ${bitwardenApiKeyPage(server)} in the agent session's credential form for ${identityHost} (username = client_id, password = client_secret), then run again.`
-						: `Enter your personal API key again (${bitwardenApiKeyPage(server)}: Account settings → Security → Keys → View API key) when the run asks for it.`,
+					options.privateOwner
+						? "Run setup again to use the private owner form."
+						: key.kind === "egress-proxy"
+							? `Save your personal API key from ${bitwardenApiKeyPage(server)} in the agent session's credential form for ${identityHost} (username = client_id, password = client_secret), then run again.`
+							: `Enter your personal API key again (${bitwardenApiKeyPage(server)}: Account settings → Security → Keys → View API key) when the run asks for it.`,
 				],
 			);
 		const bearer = tokenResponse.parse(await signIn.json()).access_token;
@@ -569,9 +588,13 @@ export async function provisionBitwardenAccessToken(
 			options.organizationId === undefined &&
 			usable.length > 1 &&
 			options.chooseOrganization !== undefined
-				? await options.chooseOrganization(
-						usable.map((org) => ({ value: org.id, label: org.name })),
-					)
+				? await Promise.resolve()
+						.then(() =>
+							options.chooseOrganization?.(
+								usable.map((org) => ({ value: org.id, label: org.name })),
+							),
+						)
+						.catch(() => undefined)
 				: undefined;
 		const organization =
 			options.organizationId !== undefined
@@ -589,14 +612,20 @@ export async function provisionBitwardenAccessToken(
 					: options.organizationId !== undefined
 						? "BWS_ORGANIZATION_ID is not one of your organizations."
 						: "You belong to more than one organization: choose one.",
-				member.length === 0
+				options.privateOwner
 					? [
-							`Create an organization (a free one is enough) at ${server.vault}/#/create-organization, or ask an admin to confirm your membership, then retry.`,
+							member.length === 0
+								? "Ask an organization admin to confirm your membership, then retry."
+								: "Run setup again and choose the organization in the private owner form.",
 						]
-					: usable.map(
-							(org) =>
-								`BWS_ORGANIZATION_ID=${org.id} — ${org.name} (a non-secret setting)`,
-						),
+					: member.length === 0
+						? [
+								`Create an organization (a free one is enough) at ${server.vault}/#/create-organization, or ask an admin to confirm your membership, then retry.`,
+							]
+						: usable.map(
+								(org) =>
+									`BWS_ORGANIZATION_ID=${org.id} — ${org.name} (a non-secret setting)`,
+							),
 			);
 		const storage =
 			organization.useSecretsManager === true &&
@@ -637,10 +666,14 @@ export async function provisionBitwardenAccessToken(
 		const phrase = fingerprintPhrase(profile.email, pair.spki);
 		const deadline = now() + timeoutMs;
 		if (options.approve !== undefined) {
-			const accepted = await options.approve({
-				url: server.vault,
-				message: `Approve HoBo's Bitwarden login request with fingerprint ${phrase}, then select Done.`,
-			});
+			const accepted = await Promise.resolve()
+				.then(() =>
+					options.approve?.({
+						url: server.vault,
+						message: `Approve HoBo's Bitwarden login request with fingerprint ${phrase}, then select Done.`,
+					}),
+				)
+				.catch(() => undefined);
 			if (accepted !== true)
 				throw new ProvisionRefusal(
 					`HOBO_${fam}_BITWARDEN_APPROVAL_REQUIRED`,
@@ -649,7 +682,7 @@ export async function provisionBitwardenAccessToken(
 				);
 		} else
 			options.emit(
-				`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} server=${new URL(server.vault).host} phrase=${phrase} — open a Bitwarden app signed in to that server (mobile, desktop, browser extension or web vault), approve the login request from "HoBo" whose fingerprint phrase is ${phrase}. ${storage === "vault" ? `This run then keeps its secrets as secure notes in the collection "${BITWARDEN_PROVISIONED_NAME}" of ${organization.name}` : `This run then creates the Secrets Manager project and machine account "${BITWARDEN_PROVISIONED_NAME}" and a one-day access token itself`}, and waits ${Math.round(timeoutMs / 60_000)} minutes.`,
+				`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} server=${new URL(server.vault).host} phrase=${phrase} — open a Bitwarden app signed in to that server (mobile, desktop, browser extension or web vault), approve the login request from "HoBo" whose fingerprint phrase is ${phrase}. ${storage === "vault" ? `This run then keeps its secrets as secure notes in the collection "${BITWARDEN_PROVISIONED_NAME}"` : `This run then creates the Secrets Manager project and machine account "${BITWARDEN_PROVISIONED_NAME}" and a one-day access token itself`}, and waits ${Math.round(timeoutMs / 60_000)} minutes.`,
 			);
 		let approved: z.infer<typeof authResponse> | undefined;
 		while (approved === undefined) {

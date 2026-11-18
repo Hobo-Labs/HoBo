@@ -108,7 +108,7 @@ export async function ensureBitwardenSignIn(
 								title: "Bitwarden API key: client_secret",
 								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_secret.`,
 							},
-						]);
+						]).catch(() => undefined);
 			if (given === undefined) return undefined;
 			const parsed = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
 			vault.put("BW_CLIENTID", parsed.clientId);
@@ -129,11 +129,14 @@ export async function ensureBitwardenSignIn(
 					remediation:
 						options.owner === undefined
 							? [
-									`Run hobo ${options.family} up through the HoBo MCP server (its ci and cd tools): its secret form takes your personal API key (${page}) straight to the run.`,
+									`Run hobo ${options.family} up through the HoBo MCP server to connect using its private owner form.`,
 								]
 							: [
 									...BITWARDEN_API_KEY_CAPTURES.map((name) =>
-										ownerCaptureLine(name, page),
+										ownerCaptureLine(
+											name,
+											"https://bitwarden.com/help/personal-api-key/",
+										),
 									),
 									"In your Bitwarden vault: Account settings → Security → Keys → View API key. Hand over client_id and client_secret in the HoBo MCP App's secret form; they go only to this run.",
 									"Then run again: HoBo creates its own access token after the one login request you approve.",
@@ -147,9 +150,18 @@ export async function ensureBitwardenSignIn(
 		vault.drop("BITWARDEN_ORG_KEY");
 		const confirm = options.owner?.confirm;
 		const privateApproval =
-			options.silent &&
+			(options.handOff || options.silent) &&
 			confirm !== undefined &&
 			options.owner?.canConfirm?.() === true;
+		if (options.handOff && !privateApproval)
+			return {
+				code: `HOBO_${fam}_HANDOFF_SILENT`,
+				message:
+					"This session cannot reach the owner through a private approval form.",
+				remediation: [
+					"Run setup when a private owner approval form is available.",
+				],
+			};
 		if (options.silent && !privateApproval)
 			return {
 				code: `HOBO_${fam}_HANDOFF_SILENT`,
@@ -215,6 +227,7 @@ export async function ensureBitwardenSignIn(
 				: undefined),
 			fetch: fetchCurrent,
 			emit: options.emit,
+			privateOwner: options.handOff,
 			...(options.locator.runStoreWrite !== undefined
 				? { runMutation: options.locator.runStoreWrite }
 				: undefined),
@@ -252,6 +265,7 @@ export async function ensureBitwardenSignIn(
 				: undefined),
 		});
 		if (uncertain) return uncertainRefusal();
+		options.locator.assertCurrent?.();
 		if (result.kind === "refused") return result;
 		const latest = await options.locator.read();
 		const where = {
@@ -270,9 +284,7 @@ export async function ensureBitwardenSignIn(
 				BITWARDEN_STORAGE: "vault",
 				BITWARDEN_COLLECTION_ID: result.collectionId,
 			});
-			options.emit(
-				`The Bitwarden vault is ready: secure notes in the collection "hobo" of organization ${result.organizationId}; this run holds the organization key in memory only.`,
-			);
+			options.emit("The Bitwarden vault is ready for this session.");
 			return undefined;
 		}
 		vault.put("BWS_ACCESS_TOKEN", result.token);
@@ -282,9 +294,7 @@ export async function ensureBitwardenSignIn(
 			BITWARDEN_STORAGE: "secrets-manager",
 			BWS_PROJECT_ID: result.projectId,
 		});
-		options.emit(
-			`Bitwarden Secrets Manager is ready: project and machine account "hobo" in organization ${result.organizationId}, with a one-day access token held in this run's vault.`,
-		);
+		options.emit("Bitwarden Secrets Manager is ready for this session.");
 		return undefined;
 	} catch (error) {
 		if (uncertain) return uncertainRefusal();
