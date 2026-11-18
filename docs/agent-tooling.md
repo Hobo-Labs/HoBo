@@ -222,8 +222,9 @@ A **Rust Token Killer command proxy** that compresses noisy shell-command output
 
 Follow the **hobo-deploy** skill's privacy verification before using any owner
 form. Use the same target project `cwd` for its lifecycle and store-choice
-calls so they address the same temporary owner session. If a verified private
-hand-off is unavailable, report that gap without collecting owner settings.
+calls so they address the same temporary owner session. Keep that `cwd` on
+subsequent retries. If a verified private hand-off is unavailable, report that
+gap without collecting owner settings.
 
 ### headroom — `chopratejas/headroom` (Apache-2.0)
 A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress`, `mcp__headroom__headroom_retrieve`, and `mcp__headroom__headroom_stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy with `headroom proxy --port 8787`, then launch Claude with:
