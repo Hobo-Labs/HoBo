@@ -47,6 +47,10 @@
 			"types": "./dist/rivet-kv-runtime.d.ts",
 			"default": "./dist/rivet-kv-runtime.js"
 		},
+		"./rivet/standalone": {
+			"types": "./dist/rivet-standalone.d.ts",
+			"default": "./dist/rivet-standalone.js"
+		},
 		"./rivet/multi": {
 			"types": "./dist/rivet-multi.d.ts",
 			"default": "./dist/rivet-multi.js"

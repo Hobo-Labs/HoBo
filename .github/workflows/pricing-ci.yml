@@ -12,6 +12,7 @@ on:
       - "packages/conformance/**"
       - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
+      - "packages/extension-alchemy-rivet/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/check-durable-topic-model.ts"
@@ -38,6 +39,7 @@ on:
       - "packages/conformance/**"
       - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
+      - "packages/extension-alchemy-rivet/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/check-durable-topic-model.ts"
@@ -133,6 +135,7 @@ jobs:
             --filter=@hobo/conformance \
             --filter=@hobo/wit \
             --filter=@hobo/iac-alchemy \
+            --filter=@hobo/alchemy-rivet \
             --filter=@hobo/dispatcher \
             --filter=@hobo/events \
             --filter=@hobo/provider-manifest \

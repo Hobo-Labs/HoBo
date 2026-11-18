@@ -44,6 +44,51 @@ describe("validateBoundaryImports", () => {
 	});
 });
 
+describe("provider composition packages", () => {
+	it("allows a composition to depend on adapters without exposing it to core", () => {
+		const extension = "packages/extension-example";
+		const first = "packages/iac/iac-example";
+		const second = "packages/runtimes/runtime-example";
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: extension, to: first }),
+				parseWorkspaceEdge({ from: extension, to: second }),
+			]).errors,
+		).toEqual([]);
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: first, to: second }),
+			]).errors.join("\n"),
+		).toContain("adapters must not import each other");
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: "packages/core", to: extension }),
+			]).errors.join("\n"),
+		).toContain("core must not import HoBo packages");
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: first, to: extension }),
+			]).errors.join("\n"),
+		).toContain("adapters may import only core ports");
+	});
+
+	it("classifies only single-directory, well-formed extension names", () => {
+		expect(classifyPackage("packages/extension-example-2")).toEqual({
+			kind: "package",
+			layer: 3,
+		});
+		for (const path of [
+			"packages/extension-",
+			"packages/extension-Example",
+			"packages/extension-example-",
+			"packages/extension-example--other",
+			"packages/extension-example/other",
+			"packages/extension-example/../core",
+		])
+			expect(classifyPackage(path).kind, path).toBe("unknown");
+	});
+});
+
 describe("detectWorkspaceCycles", () => {
 	it("rejects cli/runtime circular dependencies", () => {
 		const result = detectWorkspaceCycles([
