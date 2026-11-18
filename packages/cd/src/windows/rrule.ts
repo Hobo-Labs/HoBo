@@ -1,8 +1,3 @@
-// The RFC 5545 RRULE subset change windows accept (D10): FREQ
-// DAILY|WEEKLY|MONTHLY|YEARLY with BYDAY, BYMONTHDAY, BYMONTH, BYHOUR,
-// BYMINUTE, INTERVAL, COUNT and UNTIL. Expansion happens in wall-clock time
-// in the window's IANA zone and is then mapped to instants, so a weekly
-// 09:00 window stays at 09:00 local across DST. Pure: no clock, no I/O.
 import type { Outcome } from "../ports.js";
 import { refuse, WINDOW_REASON } from "./reasons.js";
 import {
@@ -18,14 +13,12 @@ import {
 
 export type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
-/** A BYDAY entry: weekday Monday = 0 … Sunday = 6; ordinal 0 means every. */
 export type WeekdaySpec = Readonly<{ weekday: number; ordinal: number }>;
 
 export type Until =
 	| Readonly<{ kind: "instant"; ms: number }>
 	| Readonly<{ kind: "date"; date: CivilDate }>;
 
-// domain-view: parse-don't-validate derived type for the RRULE string field of ChangeWindowRecord (cd.proto); the string is the wire form.
 export type RecurrenceRule = Readonly<{
 	freq: Frequency;
 	interval: number;
@@ -38,18 +31,15 @@ export type RecurrenceRule = Readonly<{
 	byMinute: readonly number[];
 }>;
 
-/** One recurring (or single) series of occurrence starts. */
 export type Series = Readonly<{
 	rule?: RecurrenceRule | undefined;
 	startMs: number;
 	timeZone: string;
 }>;
 
-// public-contract: bounds of the accepted subset.
 export const RRULE_LIMITS = Object.freeze({
 	maxCount: 10_000,
 	maxInterval: 1_000,
-	/** Consecutive periods without an occurrence before expansion gives up. */
 	maxEmptyPeriods: 5_000,
 } as const);
 
@@ -72,7 +62,6 @@ const SUPPORTED = new Set([
 	"BYMINUTE",
 ]);
 
-/** Expansion gave up: the rule matches no instant within the period limit. */
 export class RecurrenceLimitError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -141,11 +130,6 @@ function parseUntil(value: string): Until | undefined {
 	return undefined;
 }
 
-/**
- * Parse the accepted RRULE subset. Every problem is reported at once with a
- * remediation; anything outside the subset (BYSETPOS, WKST, BYSECOND,
- * BYWEEKNO, BYYEARDAY, sub-daily FREQ) is refused, never ignored.
- */
 export function parseRrule(text: string): Outcome<RecurrenceRule> {
 	const problems: string[] = [];
 	const body = text.startsWith("RRULE:") ? text.slice(6) : text;
@@ -266,7 +250,6 @@ function monthDayMatches(
 	);
 }
 
-/** Days of a scope (a month or a year) selected by plain and ordinal BYDAY. */
 function weekdaysIn(
 	scope: readonly CivilDate[],
 	byDay: readonly WeekdaySpec[],
@@ -319,7 +302,6 @@ function mondayOf(date: CivilDate): number {
 	return dayNumber(date) - weekdayOf(date);
 }
 
-/** Candidate civil dates of period k (k counts periods, not intervals). */
 function periodDates(
 	rule: RecurrenceRule,
 	period: number,
@@ -407,13 +389,6 @@ function untilMs(until: Until, timeZone: string): number {
 	);
 }
 
-/**
- * Occurrence starts at or after `fromMs`, ascending. DTSTART is the series
- * start; it counts as an occurrence only when it matches the rule. COUNT
- * counts from DTSTART, so a COUNT rule always expands from the beginning.
- * Throws RecurrenceLimitError when `maxEmptyPeriods` consecutive periods
- * produce nothing (a rule such as BYMONTH=2;BYMONTHDAY=30 that never fires).
- */
 export function* occurrenceStarts(
 	series: Series,
 	fromMs: number,

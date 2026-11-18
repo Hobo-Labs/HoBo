@@ -1,9 +1,3 @@
-// Canary capacity: a canary, blue/green or experiment runs two versions side
-// by side, so the second version's footprint is reserved through the shared
-// hosting budget authority (@hobo/cloud) before any traffic moves. The budget
-// authority stays the one budget ledger (no second one, §12); settlement of the
-// reservation belongs to the hosting transition's SETTLE phase, keyed by the
-// reservation id the rollout ledger records.
 import type {
 	HostingPlanCommitment,
 	SharedHostingBudgetAuthority,
@@ -18,14 +12,12 @@ export interface CanaryCapacity {
 	): Promise<Outcome<Readonly<{ reservationId: string }>>>;
 }
 
-/** The priced commitment of running the candidate beside the stable version on one Camp. */
 export type CanaryQuote = (
 	input: Readonly<{ rolloutId: RolloutId; campId: CampId; percent: number }>,
 ) => Promise<
 	Readonly<{ planHash: string; commitment: HostingPlanCommitment }> | undefined
 >;
 
-/** Deterministic reservation id: one per rollout and Camp, so a retry never double-reserves. */
 export function canaryReservationId(
 	rolloutId: RolloutId,
 	campId: CampId,

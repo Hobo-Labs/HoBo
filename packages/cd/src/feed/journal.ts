@@ -1,9 +1,3 @@
-// Journal side of the delivery feed: per-Camp fenced leases, status reports
-// and checkpoints over the DurableEventStore. Semantics match the in-process
-// transport (WP7): the lease is the durable subscription `cd:camp:<campId>`
-// with partition = Camp and holder = `<reconcilerId>/<holderId>` (I4); reports
-// renew the lease, then append fenced to `cd-camp-status-<id>` (never the
-// spec stream); checkpoints are fenced and monotonic.
 import { createHash } from "node:crypto";
 import { toJson } from "@bufbuild/protobuf";
 import {
@@ -35,7 +29,6 @@ import type {
 } from "../ports.js";
 import { feedRefusal } from "./errors.js";
 
-// public-contract: schema id of reconcile status event bodies (shared with WP7's in-process transport).
 export const RECONCILE_STATUS_SCHEMA = "hobo.cd.reconcile-status/v1" as const;
 
 const MAX_ATTEMPTS = 3;
@@ -57,12 +50,10 @@ function principalFor(reconcilerId: string): PrincipalRef {
 	return { kind: "agent", id: `cd-reconciler:${reconcilerId}` };
 }
 
-/** Status events for one observation, in order (same mapping as WP7). */
 export function statusEventsFor(
 	observation: ReconcileObservationRecord,
 	idempotencyPrefix: string,
 ): readonly EventInput[] {
-	// SAFETY: toJson of a message is always a JSON object.
 	const body = toJson(
 		ReconcileObservationRecordSchema,
 		observation,
@@ -176,7 +167,6 @@ export function createFeedJournal(
 				fenceToken: lease.fence,
 			});
 		} catch {
-			// A lost lease needs no release; expiry frees it.
 		}
 	}
 
@@ -241,7 +231,6 @@ export function createFeedJournal(
 			filter: { streamId: stream },
 		}))
 			last = position;
-		// SAFETY: positions come from the journal.
 		return last as EventPosition;
 	}
 
@@ -285,7 +274,6 @@ export function createFeedJournal(
 		return (await store.loadCheckpoint(subscription(campId)))?.position;
 	}
 
-	/** Position of the last desired-state change on the Camp's spec stream. */
 	async function specHead(campId: string): Promise<EventPosition | undefined> {
 		let head: EventPosition | undefined;
 		let seenSet = false;

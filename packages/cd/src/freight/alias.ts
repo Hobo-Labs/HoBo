@@ -1,9 +1,4 @@
-// Deterministic two-word Freight aliases (D2). The alias is a pure function
-// of the Freight id: the first 32 bits of the digest pick the adjective and
-// the next 32 bits pick the noun. The word lists are append-never wire
-// contract: changing them would rename every recorded Freight.
 
-// public-contract: alias adjectives (order is load-bearing).
 export const ALIAS_ADJECTIVES: readonly string[] = Object.freeze(
 	(
 		"able acid aged airy alert amber ample apt arid ashen avid awake azure balmy bare bold brave breezy brief bright " +
@@ -24,7 +19,6 @@ export const ALIAS_ADJECTIVES: readonly string[] = Object.freeze(
 	).split(" "),
 );
 
-// public-contract: alias nouns (order is load-bearing).
 export const ALIAS_NOUNS: readonly string[] = Object.freeze(
 	(
 		"acorn adder agate albatross alder anchor antelope apple arbor arch arrow aspen aster atlas aurora badger bagel " +
@@ -46,7 +40,6 @@ export const ALIAS_NOUNS: readonly string[] = Object.freeze(
 
 const ID_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
-/** The alias of a Freight id. Throws on a malformed id: ids are parsed before they reach here. */
 export function freightAlias(freightId: string): string {
 	if (!ID_PATTERN.test(freightId))
 		throw new TypeError(`not a Freight id: ${freightId}`);

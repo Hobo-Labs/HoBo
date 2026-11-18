@@ -17,11 +17,6 @@ import {
 } from "./placement.js";
 import { assessCostObjective, classifyPriceQuality } from "./price-quality.js";
 
-// Matching (control-plane.md steps 2-5): resolve a Resource Definition per
-// resource via context-matching, negotiate the provider Capability.satisfies,
-// apply the E19 placement-constraint vocabulary as deterministic hard filters,
-// then rank the survivors by the configured objective with a stable tiebreak.
-// Deterministic — no solver, no LLM.
 
 export interface MatchAccepted {
 	ok: true;
@@ -45,8 +40,6 @@ function marginal(def: ResourceDefinition): number {
 	return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
 }
 
-// Objective ranking: default is min-cost within constraints, then a stable
-// tiebreak on definition id (control-plane.md step 5).
 function rankByObjective(
 	a: ResourceDefinition,
 	b: ResourceDefinition,
@@ -65,8 +58,6 @@ function rankByObjective(
 
 function pickRegion(intent: ResourceIntent, def: ResourceDefinition): string {
 	if (intent.region) return intent.region;
-	// Colocation-neutral deterministic choice: the lexicographically smallest
-	// advertised region (single-provider plans share a region set).
 	const regions = [...def.regions].sort();
 	return regions[0] ?? "";
 }
@@ -76,12 +67,6 @@ export function matchResource(
 	registry: PlannerRegistry,
 	placementContext?: PlacementContext,
 	hosting?: HostingPlanningPass,
-	/**
-	 * Providers that are not answering right now. Routing, not refusal: their
-	 * candidates are rejected (`provider-unavailable`) and the next-ranked
-	 * available candidate wins, so one provider's outage moves the resource to
-	 * the cheapest provider that is up.
-	 */
 	unavailable?: ReadonlySet<string>,
 ): MatchOutcome {
 	const supported =
@@ -102,7 +87,6 @@ export function matchResource(
 		};
 	const context = placementContext ?? emptyPlacementContext();
 	const defs = registry.definitions();
-	// Context-matching by capability class (the resource's `type` -> port).
 	const candidates = defs.filter((def) => def.port === intent.port);
 
 	const accepted: ResourceDefinition[] = [];
@@ -128,7 +112,6 @@ export function matchResource(
 		} else if (verdict.kind === "partial") {
 			lastMissing = verdict.missing;
 			if (intent.negotiation === "prefer") {
-				// Degrade: accept with an implicit PlanWarning (control-plane.md step 3).
 				accepted.push(candidate);
 			} else {
 				rejectedCandidates.push({
@@ -145,8 +128,6 @@ export function matchResource(
 	}
 
 	if (accepted.length === 0 && unavailableHits.length > 0) {
-		// Every provider that could serve this resource is down. Say so: the
-		// cure is another configured provider, not a different capability.
 		const down = [...new Set(unavailableHits)].sort();
 		return {
 			ok: false,
@@ -161,10 +142,6 @@ export function matchResource(
 		};
 	}
 	if (accepted.length === 0) {
-		// Unsatisfiable: emit machine-readable remediation an agent can act on.
-		// First preference: a provider that is INSTALLED but not APPROVED and
-		// advertises the port — approval, not registration, is what's missing
-		// (walkthrough Part 0/2).
 		const heldMatch = registry
 			.held?.()
 			.find((held) => held.ports.includes(intent.port));
@@ -182,7 +159,6 @@ export function matchResource(
 				},
 			};
 		}
-		// Otherwise prefer naming a registered provider that *does* advertise the port.
 		const suggestion = defs.find(
 			(def) =>
 				def.port === intent.port &&
@@ -208,10 +184,6 @@ export function matchResource(
 		return { ok: false, remediation };
 	}
 
-	// E19: placement criteria act as deterministic hard filters between
-	// capability negotiation and objective ranking — the lexicographic
-	// `specificity → priority → objective → definition id` ranking (ADR-0033,
-	// ADR-0088) is untouched among the survivors.
 	const criteria = intent.placement;
 	let survivors = accepted;
 	if (criteria !== undefined) {
@@ -318,7 +290,6 @@ export function matchResource(
 			},
 		};
 	}
-	// SAFETY: `const winner = ranked[0] as ResourceDefinition;` is required at this I/O or test boundary.
 	const winner = ranked[0] as ResourceDefinition;
 	const region =
 		criteria !== undefined
@@ -327,9 +298,6 @@ export function matchResource(
 	const losers = ranked
 		.slice(1)
 		.map((d) => ({ definitionId: d.id, reason: "outranked" }));
-	// Tie attribution (ADR-0088): the winner and runner-up compare equal on
-	// every objective dimension and are separated only by the definition-id
-	// tiebreak — recorded so a winner flip is attributable to a catalog change.
 	const runnerUp = ranked[1];
 	const costObjective =
 		intent.objective === "min-cost" || intent.objective === "cost";

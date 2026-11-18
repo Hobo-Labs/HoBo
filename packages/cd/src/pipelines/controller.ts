@@ -1,8 +1,3 @@
-// `createPipelineController`: the PipelineController port (D4, D21, D24).
-// Commands append to `cd-pipeline-<name>`; queries read one catch-up
-// projection over pipeline, availability, source and promotion facts. `tick`
-// is safe to repeat: every request carries an idempotency key, and keys the
-// journal already holds are not requested again.
 import { clone, create, type JsonValue } from "@bufbuild/protobuf";
 import {
 	AutoPromotion,
@@ -70,7 +65,6 @@ import {
 } from "./graph.js";
 import { PIPELINE_METRIC, PIPELINE_REASON } from "./reasons.js";
 
-/** Station and data subject a placed node's Placement decides for (composed by WP18). */
 export type PlacementContextResolver = (
 	input: Readonly<{ pipeline: PipelineRecord; node: PipelineNodeRecord }>,
 ) => Promise<
@@ -84,19 +78,11 @@ export type PipelineControllerDeps = CdBase & {
 	readonly fanout: FanoutController;
 	readonly topology: TopologyReader;
 	readonly authorizer: CdAuthorizer;
-	/**
-	 * Optional: windows read at request time, so a freeze that begins during a
-	 * tick blocks the requests after it. Without it the promotion gate (which
-	 * always evaluates windows, D10) is the only check.
-	 */
 	readonly windows?: ChangeWindows | undefined;
-	/** Optional: metrics. Telemetry is advisory; the journal is the record. */
 	readonly telemetry?: TelemetrySink | undefined;
-	/** Required to start fan-outs; without it placed nodes never auto-promote (fail closed). */
 	readonly placementContext?: PlacementContextResolver | undefined;
 };
 
-// public-contract: the idempotency key of an auto-promotion request.
 export function pipelineKey(
 	pipeline: string,
 	node: string,
@@ -116,14 +102,12 @@ const TERMINAL = new Set<PromotionState>([
 const PIPELINE_STREAM = /^cd-pipeline-(.+)$/;
 const SOURCE_STREAM = /^cd-source-(.+)$/;
 
-/** Digest of what a pipeline says, independent of who applied it. */
 function pipelineDigest(record: PipelineRecord): string {
 	const copy = clone(PipelineRecordSchema, record);
 	copy.definedBy = "";
 	return digestOf(body(PipelineRecordSchema, copy));
 }
 
-/** An idempotency key carried by a promotion body owned by WP6, read structurally. */
 function idempotencyKeyIn(data: JsonValue | undefined): string | undefined {
 	if (!isJsonObject(data)) return undefined;
 	const direct = data.idempotencyKey ?? data.idempotency_key;
@@ -146,7 +130,6 @@ function newestFirst(a: FreightRecord, b: FreightRecord): number {
 	return a.freightId < b.freightId ? 1 : a.freightId > b.freightId ? -1 : 0;
 }
 
-/** The node's fan-out with every unset field at its CD_DEFAULTS value. */
 export function fanoutWithDefaults(node: PipelineNodeRecord): FanoutRecord {
 	const declared = node.fanout;
 	const out = create(FanoutRecordSchema, declared ?? {});
@@ -158,7 +141,6 @@ export function fanoutWithDefaults(node: PipelineNodeRecord): FanoutRecord {
 		out.progressDeadlineMs = BigInt(CD_DEFAULTS.fanoutProgressDeadlineMs);
 	if (out.maxFailures === 0 && out.maxFailuresPercent === 0)
 		out.maxFailuresPercent = CD_DEFAULTS.fanoutMaxFailuresPercent;
-	// proto3 cannot tell an unset bool from false; the safe default (D21) applies.
 	out.rollbackOnHalt = out.rollbackOnHalt || CD_DEFAULTS.fanoutRollbackOnHalt;
 	return out;
 }
@@ -176,9 +158,7 @@ export function createPipelineController(
 	const recordedAvailability = new Set<string>();
 	const sources = new Set<string>();
 	const requestedKeys = new Set<string>();
-	/** Freight id → Camp id → latest env.Promoted time. */
 	const promotedAt = new Map<string, Map<string, number>>();
-	/** `${pipeline}|${node}` → Freight of the latest env.Promoted. */
 	const currentByNode = new Map<string, string>();
 
 	const metric = (
@@ -277,7 +257,6 @@ export function createPipelineController(
 				subjectOf(freight.manifest.subject) !== subject
 			)
 				continue;
-			// SAFETY: ids in FreightRecord are recorded `sha256:` Freight ids (FreightLedger).
 			const id = freight.freightId as FreightId;
 			const promoted = new Map(promotedAt.get(freight.freightId) ?? []);
 			out.push({
@@ -335,7 +314,6 @@ export function createPipelineController(
 	): Promise<boolean> {
 		if (!deps.windows) return true;
 		for (const target of targets) {
-			// SAFETY: targets are Camp ids from the applied pipeline or a placement decision.
 			const campId = target as CampId;
 			const topology = await deps.topology.camp(campId);
 			const evaluation = await deps.windows.evaluate({
@@ -369,9 +347,7 @@ export function createPipelineController(
 			return;
 		}
 		const promote: PromoteRequest = {
-			// SAFETY: freightId comes from a FreightRecord the ledger returned.
 			freightId: freightId as FreightId,
-			// SAFETY: targets are Camp ids from the applied pipeline or a placement decision.
 			targets: targets.map((target) => target as CampId),
 			idempotencyKey: key,
 			pipeline: pipeline.name,
@@ -435,7 +411,6 @@ export function createPipelineController(
 			{
 				pipeline: pipeline.name,
 				node: node.name,
-				// SAFETY: freightId comes from a FreightRecord the ledger returned.
 				freightId: freightId as FreightId,
 				decision: decision.value,
 				fanout: fanoutWithDefaults(node),
@@ -469,7 +444,6 @@ export function createPipelineController(
 			else await request(pipeline, node, freightId, node.campIds, key, ctx);
 			return;
 		}
-		// Approval only: the bypass covers each approved Camp, one request per Camp.
 		for (const campId of candidate.availability.approvedCampIds)
 			await request(
 				pipeline,
@@ -521,7 +495,6 @@ export function createPipelineController(
 			);
 		}
 		if (!stable) return;
-		// SAFETY: stable is a Freight id the ledger or fan-out controller recorded.
 		if (!(await deps.freight.isUsable(stable as FreightId))) return;
 		const fanouts = isPlaced(node)
 			? await deps.fanout.list({ pipeline: pipeline.name, node: node.name })
@@ -536,14 +509,12 @@ export function createPipelineController(
 		const running = fanouts.filter(
 			(status) => status.state === FanoutState.RUNNING,
 		);
-		// Never converge late entrants onto Freight that is still rolling out.
 		if (running.some((status) => status.freightId === stable)) return;
 		const busy = new Set(
 			running.flatMap((status) => [...status.pending, ...status.inFlight]),
 		);
 		for (const campId of [...new Set(domain)].sort()) {
 			if (settled.has(campId) || busy.has(campId)) continue;
-			// SAFETY: campId comes from the applied pipeline or a recorded placement decision.
 			const history = await deps.promotions.list({ campId: campId as CampId });
 			if (history.some((promotion) => !TERMINAL.has(promotion.state))) continue;
 			if (

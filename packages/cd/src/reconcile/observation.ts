@@ -1,8 +1,3 @@
-// Observation hygiene (D22, D25, I9). A realizer's raw observation is stamped
-// with the reconciler identity and fence, its attributes are trimmed to the
-// bound packs' observe_fields, secret-scanned and bounded to 16 KiB per
-// resource (truncated or dropped with a reason, never silently), retained
-// fields are applied, claims are attributed, and handover outputs are scanned.
 import { createHash } from "node:crypto";
 import { clone, create } from "@bufbuild/protobuf";
 import { type ResolvedDeploymentSet, toSecretFreeOutputs } from "@hobo/cloud";
@@ -36,9 +31,7 @@ function digest(text: string): string {
 	return `sha256:${createHash("sha256").update(text).digest("hex")}`;
 }
 
-/** Replace a secret-looking value with its secretRef; undefined when clean. */
 export function redactSecret(key: string, value: string): string | undefined {
-	// A string value only produces a ref when it was redacted as secret.
 	return toSecretFreeOutputs({ [key]: value }).secretRefs[0];
 }
 
@@ -47,10 +40,6 @@ export type AttributeTrim = Readonly<{
 	reasons: readonly ReasonRecord[];
 }>;
 
-/**
- * Trim one resource's attributes to the declared observe_fields, redact
- * secrets, and bound the total (key + value UTF-8 bytes) to `limitBytes`.
- */
 export function trimAttributes(
 	input: Readonly<{
 		resource: string;
@@ -138,7 +127,6 @@ export type SanitizeInput = Readonly<{
 	resolved?: ResolvedDeploymentSet;
 }>;
 
-/** Stamp and clean a realizer observation before it is reported. */
 export function sanitizeObservation(
 	input: SanitizeInput,
 ): ReconcileObservationRecord {
@@ -191,8 +179,6 @@ export function sanitizeObservation(
 		handover[key] = redacted ?? value;
 	}
 	next.handover = handover;
-	// Status follows the retained-filtered resources: retained-only changes are
-	// not drift, and a "converged" report that still shows drift is drift.
 	const drifted = next.resources.some((resource) => resource.driftKind !== "");
 	if (next.status === ReconcileStatus.DRIFTED && !drifted)
 		next.status = ReconcileStatus.CONVERGED;
@@ -206,7 +192,6 @@ export function sanitizeObservation(
 	return next;
 }
 
-/** A blocked observation that never touched the target. */
 export function blockedObservation(
 	input: Readonly<{
 		campId: string;
@@ -228,7 +213,6 @@ export function blockedObservation(
 	});
 }
 
-/** True when the observation proves the Camp runs `setId` with no drift. */
 export function isConvergedOn(
 	observation: ReconcileObservationRecord,
 	setId: string,

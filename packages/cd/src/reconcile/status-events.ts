@@ -1,14 +1,3 @@
-// Status event mapping (D5). Every report lands on the Camp's status stream
-// `cd-camp-status-<id>`, never on its spec stream, so observations under
-// heavy apply load can never contend with desired-state writes. One pure
-// mapping is shared by every transport (in-process here, HTTP in ./feed):
-//   CONVERGING                 deployment.ReconcileStarted
-//   every observation          deployment.StatusObserved
-//   CONVERGED                  deployment.Converged
-//   BLOCKED                    deployment.ReconcileBlocked
-//   reason drift-detected      resource.DriftDetected
-//   reason drift-proposed      drift.DiffProposed
-//   reason departure-orphaned  camp.Departed
 import { fromJson, type JsonValue, toJson } from "@bufbuild/protobuf";
 import type { EventInput, JsonObject } from "@hobo/core";
 import {
@@ -19,15 +8,11 @@ import {
 import { CD_EVENTS } from "../events.js";
 import { driftFindings } from "./drift.js";
 
-// public-contract: drift event names WP7 appends to the Camp status stream.
-// WP7 names them but CD_EVENTS does not list them; reported
-// to the coordinator as a contract amendment candidate.
 export const RECONCILE_EVENTS = Object.freeze({
 	DriftDetected: "resource.DriftDetected",
 	DiffProposed: "drift.DiffProposed",
 } as const);
 
-// public-contract: schema id of reconcile status event bodies.
 export const RECONCILE_STATUS_SCHEMA = "hobo.cd.reconcile-status/v1" as const;
 
 export type StatusEventType =
@@ -38,7 +23,6 @@ export type StatusEventType =
 	| typeof CD_EVENTS.CampDeparted
 	| (typeof RECONCILE_EVENTS)[keyof typeof RECONCILE_EVENTS];
 
-/** Body of a reconcile status event (`#ReconcileStatusEvent` in reconcile.cue). */
 export type StatusEventDrift = Readonly<{
 	resource: string;
 	driftClass: string;
@@ -86,7 +70,6 @@ export function observationJson(
 	observation: ReconcileObservationRecord,
 ): JsonObject {
 	const json = toJson(ReconcileObservationRecordSchema, observation);
-	// SAFETY: toJson of a message is always a JSON object.
 	return json as JsonObject;
 }
 
@@ -98,7 +81,6 @@ function has(observation: ReconcileObservationRecord, code: string): boolean {
 	return observation.reasons.some((r) => r.code === code);
 }
 
-/** The status-stream events one observation produces, in order. */
 export function statusEventsFor(
 	observation: ReconcileObservationRecord,
 	idempotencyPrefix: string,
