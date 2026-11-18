@@ -782,6 +782,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			},
 		};
 		let authorizationCalls = 0;
+		let quotaReserveCalls = 0;
 		try {
 			const deps: YardFirstPlacementDeps = {
 				brokerId: "broker:azure-gen",
@@ -861,6 +862,16 @@ describe("yard event-store folds + provider resolvers", () => {
 			};
 			if (mode !== "generation-quota-unavailable")
 				Object.assign(deps, { generationQuota: quota });
+			if (mode === "generation-quota-policy-denied")
+				Object.assign(deps, {
+					generationQuota: {
+						...quota,
+						reserve(input: Parameters<typeof quota.reserve>[0]) {
+							quotaReserveCalls++;
+							return quota.reserve(input);
+						},
+					},
+				});
 			if (
 				mode === "generation-quota-claim-fails" ||
 				mode === "generation-quota-claim-commits-then-fails" ||
@@ -1350,6 +1361,7 @@ describe("yard event-store folds + provider resolvers", () => {
 					"hosting-budget-admission-denied",
 				);
 				expect(authorizationCalls).toBe(1);
+				expect(quotaReserveCalls).toBe(0);
 				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)).toBeUndefined();
 				expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
