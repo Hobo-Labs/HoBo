@@ -54,18 +54,17 @@ export function baseShaOf(
 	return sha !== undefined && isObjectId(sha) ? sha : undefined;
 }
 
-/**
- * The head commit of the event, when it has one: the pull request's own tip.
- * A merge group has none that a local run could have seen.
- */
 export function headShaOf(
 	event: string,
 	payload: JsonValue,
 ): string | undefined {
-	if (event !== "pull_request") return undefined;
-	const sha = asText(
-		asObject(asObject(asObject(payload)?.pull_request)?.head)?.sha,
-	);
+	const document = asObject(payload);
+	const sha =
+		event === "pull_request"
+			? asText(asObject(asObject(document?.pull_request)?.head)?.sha)
+			: event === "merge_group"
+				? asText(asObject(document?.merge_group)?.head_sha)
+				: undefined;
 	return sha !== undefined && isObjectId(sha) ? sha : undefined;
 }
 

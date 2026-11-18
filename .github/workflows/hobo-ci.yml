@@ -785,7 +785,7 @@ jobs:
     # passes at once. Waits for the image job as PR impact validation does, so a
     # pull request that changes the image's inputs tests on the image it built.
     needs: [route, ci-runner-image]
-    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"scripts-tests"')) }}
     # Each test file is assigned to exactly one shard. Splitting the lane keeps
     # its watchdog useful even on a busy, smaller self-hosted runner.
     strategy:
@@ -965,8 +965,7 @@ jobs:
               ;;
             *) echo "Unexpected affected-lanes result for $EVENT_NAME: $AFFECTED_RESULT" >&2; exit 1 ;;
           esac
-          # Not a job a signed local run covers (scripts/ci/attestation.mts): it always runs.
-          if [ "${SCRIPTS_RESULT:-}" != "success" ]; then
+          if ! passed "${SCRIPTS_RESULT:-}" scripts-tests; then
             echo "Scripts tests did not succeed: ${SCRIPTS_RESULT:-}" >&2
             exit 1
           fi

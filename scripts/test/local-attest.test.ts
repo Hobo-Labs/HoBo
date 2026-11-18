@@ -631,6 +631,40 @@ async function runIn(
 }
 
 describe("a local run", () => {
+	it("runs all scripts shards and refuses to sign when one fails", async () => {
+		const job = (failure: boolean) => ({
+			id: "scripts-tests",
+			matrix: "${{ fromJSON('[0,1,2,3]') }}",
+			steps: [
+				{
+					local: "run",
+					env: {
+						SHARD: "${{ strategy.job-index }}",
+						TOTAL: "${{ strategy.job-total }}",
+					},
+					run: failure
+						? 'test "$SHARD" != 2; echo "$SHARD/$TOTAL" >> "$RECORD"'
+						: 'echo "$SHARD/$TOTAL" >> "$RECORD"',
+				},
+			],
+		});
+		const passed = await runIn([job(false)], ["pull_request"]);
+		const outcome = await passed.outcome;
+		assert.deepEqual(passed.lines(), ["0/4", "1/4", "2/4", "3/4"]);
+		assert.deepEqual(outcome.envelope.statement.results[0]?.eventChecks, {
+			pull_request: 4,
+		});
+		const failed = await runIn([job(true)], ["pull_request"]);
+		await assert.rejects(failed.outcome, /scripts-tests.*failed/u);
+		assert.deepEqual(failed.lines(), ["0/4", "1/4"]);
+		assert.equal(
+			existsSync(
+				join(failed.repo, OUTPUT_DIRECTORY, `${failed.target.tree}.json`),
+			),
+			false,
+		);
+	});
+
 	it("refuses caller-supplied target commits or merge parents that differ from the signed tree", async () => {
 		const run = await runIn(
 			[{ id: "ci-guard", steps: [{ run: "true", local: "run" }] }],
@@ -1928,20 +1962,26 @@ describe("local gh-signoff", () => {
 		);
 		const executed = await run.outcome;
 		const gateResults: AttestedJobResult[] = hasEngine
-			? ["pr_gate_validation", "workspace_tests", "pr_affected"].map((id) => {
+			? [
+					"pr_gate_validation",
+					"workspace_tests",
+					"pr_affected",
+					"scripts-tests",
+				].map((id) => {
 					const events: AttestationEvent[] =
 						id === "pr_affected"
 							? ["pull_request"]
 							: ["pull_request", "merge_group"];
+					const checks = id === "scripts-tests" ? 4 : 1;
 					return {
 						id,
 						status: "passed",
 						events,
-						commands: events.length,
+						commands: events.length * checks,
 						eventChecks:
 							id === "pr_affected"
-								? { pull_request: 1 }
-								: { pull_request: 1, merge_group: 1 },
+								? { pull_request: checks }
+								: { pull_request: checks, merge_group: checks },
 						executionMode: "each-step-v1",
 						durationMs: 1,
 						logDigest: `sha256:${"f".repeat(64)}`,
@@ -2249,6 +2289,7 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 				"pr_gate_validation",
 				"workspace_tests",
 				"pr_affected",
+				"scripts-tests",
 				"ci-guard",
 				"secret-scan",
 			].map((job) => `hobo-ci/local/pull_request/${job}`),
@@ -2257,7 +2298,7 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			"github.com",
 			"github.com/acme/app",
 		]);
-		assert.match(result.stdout, /posted 5 local signoff/u);
+		assert.match(result.stdout, /posted 6 local signoff/u);
 	});
 
 	it("signs only an exact active merge-group commit and rechecks it around publication", async () => {
@@ -3115,13 +3156,24 @@ exec /usr/bin/git "$@"
 		assert.doesNotMatch(readFileSync(run.calls, "utf8"), /release-contract/u);
 	});
 
-	it("uses separate contexts for the simulated merge-group event", async () => {
+	it("does not sign the impact gate for a simulated merge-group commit", async () => {
 		const run = await fixture();
+		const result = run.command(["--event=merge_group"]);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /attestation covers no job/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("keeps independent simulated merge-group contexts", async () => {
+		const run = await fixture(true, false, ["release-contract"]);
 		const result = run.command(["--event=merge_group"]);
 		assert.equal(result.status, 0, result.stderr);
 		const calls = readFileSync(run.calls, "utf8");
-		assert.match(calls, /hobo-ci\/local\/merge_group\/workspace_tests/u);
-		assert.doesNotMatch(calls, /pr_affected|pull_request/u);
+		assert.match(calls, /hobo-ci\/local\/merge_group\/release-contract/u);
+		assert.doesNotMatch(
+			calls,
+			/pr_gate_validation|workspace_tests|scripts-tests|pr_affected|pull_request/u,
+		);
 	});
 
 	it("refuses dirty, tampered, stale-base, and wrong-head records before calling gh", async () => {
