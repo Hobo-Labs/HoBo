@@ -134,6 +134,10 @@ synchronous code called by the fold. They cannot detect all nondeterminism,
 such as `new Date()` or reads from external state, and callbacks must not make
 the intrinsic properties impossible to restore.
 
+Replay sequence vectors retain stream IDs such as `__proto__` and
+`constructor`; an explicit target vector uses only its own entries. Event
+sequence numbers and the target vector are still trusted inputs to the harness.
+
 Within one loaded runtime module, `start` and `resume` refuse another active
 execution with the same run ID and the same `EventStoreWriter` object, even
 when different engine instances share it. If a parent exits with a durable
