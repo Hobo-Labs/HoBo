@@ -171,7 +171,7 @@ function runnerPod(binding: StrictRunnerPodBinding) {
 		{ name: "HOBO_SLOT_ID", value: binding.slotId },
 		{ name: "HOBO_ACCOUNT_ID", value: binding.accountId },
 		{ name: "HOBO_PROFILE_ID", value: binding.profileId },
-		secretEnv("HOBO_JIT_CONFIG", name, "jit-config"),
+		secretEnv("ACTIONS_RUNNER_INPUT_JITCONFIG", name, "jit-config"),
 		secretEnv("HOBO_BINDING_SECRET", name, "binding-secret"),
 	];
 	const resources = {
@@ -224,7 +224,7 @@ function runnerPod(binding: StrictRunnerPodBinding) {
 				imagePullPolicy: "IfNotPresent",
 				command: ["/opt/actions-runner/run.sh"],
 				workingDir: "/opt/actions-runner",
-				args: ["--jitconfig", "$(HOBO_JIT_CONFIG)"],
+				args: [],
 				env,
 				resources,
 				securityContext: securityContext(),
