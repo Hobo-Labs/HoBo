@@ -70,10 +70,14 @@ const provider = createAlchemyIacProvider({
   financial,
 });
 const assessment = await provider.assessPricing(host.program);
+const providerCoverage = assessment.providerCoverage.providers;
+const budgetBeforeAdmission = assessment.budget;
 const outcome = await provider.applyWithAdmission(host.program);
 ```
 
-The quote scenario must cover the declared inventory and its candidate indexes.
+The coverage report identifies each provider as quoted, unavailable, incomplete,
+or unverified, and identifies the source of a quoted model. The quote scenario
+must cover the declared inventory and its candidate indexes.
 The host must independently verify the scope and liability of its estimate.
 Destroy has its own price scenario; an apply quote is not assumed to cover it.
 To use an unpriced target, omit the pricing models and configure the broker's
