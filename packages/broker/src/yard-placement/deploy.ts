@@ -11,8 +11,8 @@ import {
 	type HostingPolicyProof,
 	HostingPolicyProofSchema,
 	type HostingQuote,
-	hostingQuoteDigest,
 	HostingQuoteSchema,
+	hostingQuoteDigest,
 	validateHostingQuote,
 } from "../budget-authority.js";
 import {
@@ -60,6 +60,7 @@ import {
 	contentHashOf,
 	emptyYardLayout,
 	type LocalHostingProof,
+	parseCampLayout,
 	parseYardLayout,
 	YARD_PLACEMENT_RECEIPT_SCHEMA,
 	type YardGenerationPolicy,
@@ -1189,6 +1190,21 @@ export async function resolveBindleDeployment(
 
 	// Camp placement inside selected yard.
 	const campId = selectOrGenerateCamp(request, yard.yardId);
+	if (campId === undefined) {
+		append(
+			yardEvent(YARD_EVENTS.PlacementRejected, {
+				requestId: request.requestId,
+				code: "camp-yard-mismatch",
+				reasonCodes: ["camp-yard-mismatch"],
+				message: "requested Camp is not a direct child of the selected Yard",
+			}),
+		);
+		return rejectAfterGeneration(
+			"placement",
+			"camp-yard-mismatch",
+			"requested Camp is not a direct child of the selected Yard",
+		);
+	}
 
 	// Resolvers constrained to yard provider (includes event-store slot).
 	let pins: ReturnType<typeof composeResolverPins>["pins"];
@@ -1441,6 +1457,25 @@ export function parseBindleDeploymentRequest(
 			});
 		},
 	);
+	if (raw.camp !== undefined && !isJsonObject(raw.camp))
+		throw new TypeError("camp must be an object");
+	if (isJsonObject(raw.camp)) {
+		if (
+			raw.camp.campId !== undefined &&
+			(!isJsonString(raw.camp.campId) || !raw.camp.campId.trim())
+		)
+			throw new TypeError("campId must be a nonempty string");
+		if (raw.camp.layout !== undefined && !isJsonObject(raw.camp.layout))
+			throw new TypeError("camp layout must be an object");
+		if (isJsonObject(raw.camp.layout)) {
+			const envType = raw.camp.layout.envType;
+			if (
+				envType !== undefined &&
+				(!isJsonString(envType) || !envType.trim() || envType.includes("/"))
+			)
+				throw new TypeError("camp envType must be a nonempty path segment");
+		}
+	}
 
 	return Object.freeze({
 		schemaVersion: BINDLE_DEPLOYMENT_REQUEST_SCHEMA,
@@ -1463,28 +1498,7 @@ export function parseBindleDeploymentRequest(
 						...(isJsonString(raw.camp.campId)
 							? { campId: raw.camp.campId }
 							: undefined),
-						layout: Object.freeze({
-							require: list(
-								isJsonObject(raw.camp.layout)
-									? raw.camp.layout.require
-									: undefined,
-							),
-							prefer: list(
-								isJsonObject(raw.camp.layout)
-									? raw.camp.layout.prefer
-									: undefined,
-							),
-							labels: stringMap(
-								isJsonObject(raw.camp.layout)
-									? raw.camp.layout.labels
-									: undefined,
-							),
-							runtimeRequirements: list(
-								isJsonObject(raw.camp.layout)
-									? raw.camp.layout.runtimeRequirements
-									: undefined,
-							),
-						}),
+						layout: parseCampLayout(raw.camp.layout),
 					}),
 				}
 			: undefined),
@@ -1560,11 +1574,19 @@ export function buildDeploymentRequestFromParts(options: {
 function selectOrGenerateCamp(
 	request: BindleDeploymentRequest,
 	yardId: string,
-): string {
+): string | undefined {
 	if (request.camp?.campId) {
-		return request.camp.campId.includes("/")
-			? request.camp.campId
-			: `${yardId}/${request.camp.campId}`;
+		const campId = request.camp.campId;
+		if (!campId.includes("/"))
+			return campId === "." || campId === ".."
+				? undefined
+				: `${yardId}/${campId}`;
+		const prefix = `${yardId}/`;
+		if (!campId.startsWith(prefix)) return undefined;
+		const child = campId.slice(prefix.length);
+		if (!child.trim() || child.includes("/") || child === "." || child === "..")
+			return undefined;
+		return campId;
 	}
 	const env = request.camp?.layout.envType ?? "dev";
 	return `${yardId}/camp:${env}`;

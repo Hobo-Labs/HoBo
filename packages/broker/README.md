@@ -20,6 +20,16 @@ resource execution unit records the exact definition selected for that resource.
 resource and definition ID pairs; the former parallel ID arrays could not express
 that association reliably.
 
+Camp placement preserves the requested Camp layout, including its environment
+type, in the request used for authorization. Without an explicit Camp ID, the
+selected Yard uses `camp:<envType>`, or `camp:dev` when no environment was
+requested. An explicit ID takes precedence, but a qualified ID must name a
+direct child of the selected Yard; a foreign or malformed ID is refused before
+local hosting authorization. Empty or malformed Camp IDs and environment types
+are refused during parsing. This check does not yet verify that a named Camp
+exists or satisfies its requested capabilities; Camp matching and selection-mode
+enforcement remain separate work.
+
 The [Yard residual placement skill](../../.agents/skills/verify-yard-residual-placement/SKILL.md)
 checks a one-resource abstraction of capability and evidence. This view hides 24
 same-label steps; it assumes the host's catalog evidence is truthful.
