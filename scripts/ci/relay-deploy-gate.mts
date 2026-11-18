@@ -70,7 +70,12 @@ export type GateDecision = Readonly<{ run: boolean; reason: string }>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
 export function relayInputDirs(lockfileText: string): readonly string[] {
-	return [...importerClosure(parseLockfile(lockfileText), [RELAY_PACKAGE_DIR])]
+	return [
+		...importerClosure(parseLockfile(lockfileText), [
+			RELAY_PACKAGE_DIR,
+			"packages/hobo",
+		]),
+	]
 		.filter((dir) => dir !== "." && dir !== "")
 		.sort();
 }

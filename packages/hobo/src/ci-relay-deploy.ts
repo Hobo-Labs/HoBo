@@ -66,6 +66,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { create, toJson } from "@bufbuild/protobuf";
+import { githubActionsJwtSource } from "@hobo/adapter-infisical";
 import {
 	assertNoBindleProviderSelection,
 	type BindleDefinition,
@@ -100,6 +101,7 @@ import {
 	relayCampId,
 } from "./ci-relay-delivery.js";
 import { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
+import { protectedPreviewProbe } from "./ci-relay-preview-probe.js";
 import {
 	type AttachmentResult,
 	describeAttachments,
@@ -190,6 +192,7 @@ export interface CiRelayDeployInput {
 	readonly credentials?: TrustedVault;
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
+	readonly credentialFetch?: typeof fetch;
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
 	// executable `HOBO_VERCEL_CLI` names, or `vercel` on the PATH.
 	readonly runVercelCli?: VercelCliRunner;
@@ -469,6 +472,17 @@ export async function runCiRelayDeploy(
 		return usage(
 			"--target is preview (the default) or production; production is never implied.",
 		);
+	const stagedProduction =
+		target === "production" && env.HOBO_CI_RELAY_STAGED_PRODUCTION === "true";
+	if (stagedProduction && values.wait !== true)
+		return usage("A staged production deployment requires --wait.");
+	if (
+		stagedProduction &&
+		relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL) === undefined
+	)
+		return usage(
+			"A staged production deployment requires HOBO_CI_RELAY_PUBLIC_URL to name the public HTTPS origin.",
+		);
 	// The secret store chosen when the relay was first deployed
 	// (`hobo ci secret-store provision`): its committed coordinates fill the
 	// config-service binding's inputs and name the team, so no repository
@@ -609,6 +623,7 @@ export async function runCiRelayDeploy(
 		projectName: project,
 		target,
 		createMissingProject: createProject,
+		...(stagedProduction ? { stageProduction: true } : undefined),
 		configuration: Object.fromEntries(configuration),
 		gitArtifact: {
 			org,
@@ -707,6 +722,12 @@ export async function runCiRelayDeploy(
 		);
 	const wait = values.wait === true;
 	const origin = RELAY_VERIFY_ORIGIN[target];
+	const protectedPreview =
+		target === "preview" &&
+		wait &&
+		env.HOBO_CI_RELAY_PREVIEW_PROBE_OIDC === "true";
+	if (protectedPreview && sha === undefined)
+		return usage("OIDC preview verification needs --sha <commit>.");
 	if (wait && !HTTPS_ORIGIN.test(env[origin] ?? ""))
 		return refused(
 			"HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
@@ -732,6 +753,9 @@ export async function runCiRelayDeploy(
 						ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
 						ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
 					},
+					...(input.credentialFetch !== undefined
+						? { fetch: input.credentialFetch }
+						: undefined),
 				}),
 			);
 		} catch (error) {
@@ -764,6 +788,7 @@ export async function runCiRelayDeploy(
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 		...(teamId !== undefined && teamId !== "" ? { teamId } : undefined),
 	});
+	let deploymentUrl: string | undefined;
 	// The conductor's Vercel side: the git deployment of the commit the
 	// Freight pins, and its readiness. Failures keep the codes and messages
 	// this command always returned.
@@ -823,6 +848,7 @@ export async function runCiRelayDeploy(
 					outputs = await provider.apply(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
+				if (protectedPreview || stagedProduction) deploymentUrl = outputs.url;
 				return {
 					ok: true,
 					outputs: Object.fromEntries(
@@ -862,22 +888,35 @@ export async function runCiRelayDeploy(
 		return usage(
 			`${definition.name} did not compile to a declaration, so there is nothing to record as Freight.`,
 		);
-	// Production is verified at HOBO_CI_RELAY_URL, the production domain: its
-	// /healthz must name the commit just deployed, so an origin still serving
-	// an older deployment fails verification instead of qualifying this one.
-	const productionOrigin =
-		target === "production" && wait && sha !== undefined
-			? relayOrigin(env.HOBO_CI_RELAY_URL)
-			: undefined;
+	const verifyOrigin =
+		wait && sha !== undefined ? relayOrigin(env[origin]) : undefined;
+	const baseProbe =
+		input.probe ?? createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
+	const previewProbe =
+		(protectedPreview || stagedProduction) && verifyOrigin !== undefined
+			? protectedPreviewProbe({
+					base: baseProbe,
+					placeholderOrigin: verifyOrigin,
+					deploymentUrl: () => deploymentUrl,
+					...(stagedProduction
+						? { paths: ["/healthz", "/readyz"] as const }
+						: undefined),
+					jwt: githubActionsJwtSource({
+						env,
+						...(input.credentialFetch !== undefined
+							? { fetch: input.credentialFetch }
+							: undefined),
+					}),
+				})
+			: baseProbe;
 	const verify =
-		productionOrigin !== undefined && sha !== undefined
+		verifyOrigin !== undefined && sha !== undefined
 			? {
-					origin: productionOrigin,
-					probe: commitCheckingProbe(
-						input.probe ??
-							createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
-						{ origin: productionOrigin, commit: sha.toLowerCase() },
-					),
+					origin: verifyOrigin,
+					probe: commitCheckingProbe(previewProbe, {
+						origin: verifyOrigin,
+						commit: sha.toLowerCase(),
+					}),
 				}
 			: undefined;
 	const delivered = await deliverRelay({
@@ -919,6 +958,63 @@ export async function runCiRelayDeploy(
 			}).map(([key, value]) => [key, withoutToken(value)]),
 		);
 		const promoted = delivered.report.state === "PROMOTED";
+		if (stagedProduction) {
+			const liveOrigin = relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL);
+			if (!promoted || !safe.deploymentId || !liveOrigin || !sha)
+				return refused(
+					"HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+					"The staged production deployment was not qualified; production traffic was not changed.",
+				);
+			try {
+				await client.promoteDeployment(project, safe.deploymentId);
+			} catch (error) {
+				const failed = realizationFailure(
+					error instanceof Error ? error : new Error("promotion failed"),
+					withoutToken,
+				);
+				return {
+					ok: false,
+					code: failed.code,
+					message: failed.message,
+					data: { ...deliveryData },
+				};
+			}
+			const live = commitCheckingProbe(baseProbe, {
+				origin: liveOrigin,
+				commit: sha.toLowerCase(),
+			});
+			let liveReady = false;
+			for (let attempt = 0; attempt < 24; attempt++) {
+				try {
+					const request = (path: string) =>
+						live.transport({
+							method: "GET",
+							url: `${liveOrigin}${path}`,
+							headers: {},
+							timeoutMs: 10_000,
+							maxResponseBytes: 65_536,
+						});
+					const health = await request("/healthz");
+					const ready = await request("/readyz");
+					if (health.status === 200 && ready.status === 200) {
+						liveReady = true;
+						break;
+					}
+				} catch {}
+				if (attempt < 23)
+					await (
+						input.sleep ??
+						((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+					)(5_000);
+			}
+			if (!liveReady)
+				return {
+					ok: false,
+					code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.`,
+					data: { ...deliveryData },
+				};
+		}
 		return {
 			code: "HOBO_CI_DEPLOYED",
 			message: [
@@ -982,13 +1078,17 @@ export async function runCiRelayDeploy(
 			},
 		};
 	}
+	const findings = verify?.probe.findings();
 	const why =
-		verify !== undefined && sha !== undefined
-			? relayVerifyFailure(
-					verify.origin,
-					sha.toLowerCase(),
-					verify.probe.findings(),
-				)
+		verify !== undefined && sha !== undefined && findings !== undefined
+			? target === "preview" && findings.servedCommit !== undefined
+				? {
+						code: "HOBO_CI_DEPLOY_COMMIT_MISMATCH",
+						reason: `${verify.origin}/healthz did not name the preview commit ${sha.toLowerCase()}.`,
+						remediation:
+							"Point the preview verification origin at the deployment of this commit and retry.",
+					}
+				: relayVerifyFailure(verify.origin, sha.toLowerCase(), findings)
 			: undefined;
 	return {
 		ok: false,
