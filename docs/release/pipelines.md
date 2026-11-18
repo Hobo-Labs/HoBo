@@ -215,22 +215,7 @@ The sparse cone remains limited to the workspace members declared by HoBo's sibl
 
 ## Syncing `main` into `feature/hobo-code`
 
-hobo-code (`packages/code`, `@hobo/code`) is developed on the long-lived `feature/hobo-code` branch and is not part of `main` (see the 2026-11-08 amendment to [ADR-0139](../design/adr/03-data-plane.md#adr-0139)). `main` is merged into that branch from time to time so it keeps up with the platform.
-
-The first sync after the removal lands on `main` (#1772) must record the removal as merged without applying it. A plain merge would delete hobo-code from the branch too. `R` is #1772's squash commit on `main`:
-
-```bash
-git switch feature/hobo-code
-git fetch origin
-R=<squash commit of #1772 on main>
-git merge --no-ff "$R^"                    # main up to just before the removal
-git merge -s ours "$R" -m "merge: keep hobo-code across main's removal of it"
-git merge origin/main                      # everything after the removal, as usual
-```
-
-Every later sync is `git merge origin/main`. When a `main` change touches a file the removal rewrote (an ADR, these release docs, `@hobo/patterns`), resolve the conflict so the branch keeps its hobo-code content.
-
-**A sync is pushed as merge commits, or landed from a pull request with "Create a merge commit". It is never squash-merged or rebased.** A squash turns the `-s ours` merge into an ordinary commit, so git no longer records `R` as merged, and the next ordinary sync applies it and deletes hobo-code: a simulated squashed first sync left 1 of the 925 `packages/code` files. A rebase drops the merge commits the same way.
+The former sync procedure preserved `packages/code` on `feature/hobo-code`; that preservation is retired. `packages/code` and `packages/pixel-village` were removed from main, and the feature branch has its own removal. References to their commands and integrations in historical architecture records describe earlier implementations.
 
 ## Related references
 
