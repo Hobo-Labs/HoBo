@@ -243,6 +243,8 @@ export interface YardGenerationSaga {
 
 export function createYardGenerationSaga(options: {
 	readonly connectors: ReadonlyMap<string, YardGenerationConnector>;
+	/** Trusted host decision bound to the complete plan; it must be side-effect free. */
+	readonly authorizePlan?: (plan: YardGenerationPlan) => boolean;
 }): YardGenerationSaga {
 	const attempts = new Map<
 		string,
@@ -270,6 +272,35 @@ export function createYardGenerationSaga(options: {
 				);
 			}
 			const planDigest = contentHashOf(plan);
+			const authorize = options.authorizePlan;
+			if (!authorize)
+				return fail(
+					plan,
+					"generation-authorization-required",
+					"a trusted host authorization is required",
+				);
+			const authorized = () => {
+				try {
+					// The host may retain its argument. Do not expose the private plan
+					// that will subsequently be handed to an asynchronous provider.
+					const decisionPlan = structuredClone(plan);
+					return (
+						options.authorizePlan === authorize &&
+						authorize(decisionPlan) === true &&
+						contentHashOf(decisionPlan) === planDigest &&
+						contentHashOf(plan) === planDigest &&
+						options.authorizePlan === authorize
+					);
+				} catch {
+					return false;
+				}
+			};
+			if (!authorized())
+				return fail(
+					plan,
+					"generation-authorization-denied",
+					"host authorization denied or changed the generation plan",
+				);
 			const key = plan.idempotencyKey;
 			const existing = attempts.get(key);
 			if (existing && existing.planDigest !== planDigest) {
@@ -322,6 +353,12 @@ export function createYardGenerationSaga(options: {
 			// connector that synchronously reenters the saga. Failed calls retain
 			// the started record so a later retry inspects rather than provisions.
 			const operation = Promise.resolve().then(async () => {
+				if (!authorized())
+					return fail(
+						plan,
+						"generation-authorization-denied",
+						"host authorization changed before the provider call",
+					);
 				const result = existing
 					? await inspect.call(connector, plan.attemptId)
 					: await provision.call(connector, plan);

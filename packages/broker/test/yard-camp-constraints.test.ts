@@ -238,6 +238,7 @@ describe("direct generation with nested Camp layouts", () => {
 			},
 		};
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[connector.id, monitored]]),
 		});
 		const result = await saga.run(invalidPlan);
@@ -258,6 +259,7 @@ describe("direct generation with nested Camp layouts", () => {
 			},
 		};
 		const saga = createYardGenerationSaga({
+			authorizePlan: () => true,
 			connectors: new Map([[connector.id, monitored]]),
 		});
 		await saga.run(accepted.plan);
