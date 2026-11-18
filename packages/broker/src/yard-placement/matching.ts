@@ -4,7 +4,7 @@ import {
 	parseJurisdictionId,
 } from "@hobo/core";
 import { first } from "@hobo/core/total-access";
-import type { JsonObject } from "../json.js";
+import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
 import {
 	type ContentHash,
 	contentHashOf,
@@ -204,8 +204,10 @@ function evaluateCandidate(
 		}
 	}
 	for (const [key, value] of Object.entries(layout.properties)) {
-		const actual = yard.layout.properties[key];
-		if (actual !== undefined && actual !== value) {
+		const actual = Object.hasOwn(yard.layout.properties, key)
+			? yard.layout.properties[key]
+			: undefined;
+		if (actual !== undefined && !jsonValuesEqual(actual, value)) {
 			hardFailures.push(`property-mismatch:${key}`);
 		}
 	}
@@ -321,7 +323,7 @@ function countExactLabels(
 ): number {
 	let n = 0;
 	for (const [k, v] of Object.entries(requested)) {
-		if (actual[k] === v) n += 1;
+		if (Object.hasOwn(actual, k) && actual[k] === v) n += 1;
 	}
 	return n;
 }
@@ -332,9 +334,31 @@ function countExactProperties(
 ): number {
 	let n = 0;
 	for (const [k, v] of Object.entries(requested)) {
-		if (actual[k] === v) n += 1;
+		if (Object.hasOwn(actual, k) && jsonValuesEqual(actual[k], v)) n += 1;
 	}
 	return n;
+}
+
+/** Compare JSON values structurally; object insertion order is not meaningful. */
+function jsonValuesEqual(
+	left: JsonValue | undefined,
+	right: JsonValue | undefined,
+): boolean {
+	if (left === right) return true;
+	if (Array.isArray(left) && Array.isArray(right))
+		return (
+			left.length === right.length &&
+			left.every((item, index) => jsonValuesEqual(item, right[index]))
+		);
+	if (!isJsonObject(left) || !isJsonObject(right)) return false;
+	const keys = Object.keys(left);
+	return (
+		keys.length === Object.keys(right).length &&
+		keys.every(
+			(key) =>
+				Object.hasOwn(right, key) && jsonValuesEqual(left[key], right[key]),
+		)
+	);
 }
 
 function decision(

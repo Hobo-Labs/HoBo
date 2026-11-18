@@ -463,14 +463,14 @@ function stringMap(
 	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		return Object.freeze({});
 	}
-	const out: Record<string, string> = {};
+	const entries: Array<[string, string]> = [];
 	// SAFETY: assertion required at this I/O or test boundary.
 	for (const key of Object.keys(value as object).sort()) {
 		// SAFETY: assertion required at this I/O or test boundary.
 		const v = (value as JsonObject)[key];
-		if (isJsonString(v)) out[key] = v;
+		if (isJsonString(v)) entries.push([key, v]);
 	}
-	return Object.freeze(out);
+	return Object.freeze(Object.fromEntries(entries));
 }
 
 function jsonMap(
@@ -479,13 +479,13 @@ function jsonMap(
 	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		return Object.freeze({});
 	}
-	const out: Record<string, JsonValue> = {};
+	const entries: Array<[string, JsonValue]> = [];
 	// SAFETY: assertion required at this I/O or test boundary.
 	for (const key of Object.keys(value as object).sort()) {
 		// SAFETY: assertion required at this I/O or test boundary.
-		out[key] = toJson((value as JsonObject)[key]);
+		entries.push([key, toJson((value as JsonObject)[key])]);
 	}
-	return Object.freeze(out);
+	return Object.freeze(Object.fromEntries(entries));
 }
 
 function toJson(value: JsonValue | undefined): JsonValue {
@@ -497,7 +497,11 @@ function toJson(value: JsonValue | undefined): JsonValue {
 	) {
 		return value;
 	}
-	if (Array.isArray(value)) return value.map(toJson);
+	if (Array.isArray(value)) {
+		const items = value.map(toJson);
+		Object.freeze(items);
+		return items;
+	}
 	if (value && isJsonObject(value)) {
 		return jsonMap(value);
 	}
