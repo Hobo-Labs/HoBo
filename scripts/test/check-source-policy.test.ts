@@ -781,6 +781,7 @@ e: ##"raw \##(2 + // raw interpolation
 			["docs/competitors/gap-analysis.md", "# Gaps"],
 			["src/draft/epic-proofs/example/poc-rollup-ledger.md", "# Rollup"],
 			["src/draft/epic-proofs/example/scope-review.md", "# Scope"],
+			["src/draft/projects/_registry.md", "# Project MVP registry"],
 			["notes/BACKLOG.md", "# Backlog"],
 			["notes/WALK_SHEET_HANDOFF.md", "# Handoff"],
 			["notes/new.md", "---\ntype: Design\n---\n"],

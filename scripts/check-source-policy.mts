@@ -791,6 +791,8 @@ export function documentViolation(
 	)
 		return "planning, architecture, and design documents are not allowed";
 	if (!/\.mdx?$/iu.test(sourceFile)) return undefined;
+	if (/^src\/draft\/(?:[^/]+\/)*_registry\.mdx?$/iu.test(sourceFile))
+		return "planning, architecture, and design documents are not allowed";
 	if (
 		/(?:^|\/)(?:design|designs|plans|roadmaps|architecture|architectures|adr|adrs|rfc|rfcs|proposals|architecture-decision-records)\//iu.test(
 			sourceFile,

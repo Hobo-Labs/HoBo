@@ -4154,8 +4154,6 @@ importers:
 
   src/draft/projects/s0-03-hobo-core: {}
 
-  src/draft/projects/s1-23-hobo-build: {}
-
   src/draft/projects/s1-24-conformance-sdk:
     dependencies:
       '@hobo/conformance':
