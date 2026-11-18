@@ -19,7 +19,12 @@ import type { JsonValue } from "./json.js";
 
 export interface WorkerOperations {
 	open: {
-		input: { partitionId: string; durable: boolean; wasmUrl: string };
+		input: {
+			partitionId: string;
+			durable: boolean;
+			wasmUrl: string;
+			lease?: string;
+		};
 		output: undefined;
 	};
 	append: {

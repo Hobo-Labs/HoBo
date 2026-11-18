@@ -140,7 +140,7 @@ describe("opening a store", () => {
 		withOpfs(true);
 		await expect(
 			createBrowserEventStore({ partitionId: "tenant-a", multiTab: true }),
-		).rejects.toThrow(/Multi-tab storage requires/);
+		).rejects.toThrow(/Multi-tab durable storage requires/);
 	});
 
 	it("refuses when persistence is unavailable and not opted out of", () => {
@@ -201,7 +201,7 @@ describe("opening a store", () => {
 				allowTransient: true,
 				multiTab: true,
 			}),
-		).rejects.toThrow(/Multi-tab storage requires/);
+		).rejects.toThrow(/SharedWorker or Web Locks is unavailable/);
 	});
 });
 

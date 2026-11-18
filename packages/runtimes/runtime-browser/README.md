@@ -5,8 +5,10 @@ worker. With OPFS available, the store uses the `opfs-sahpool` VFS and retains
 events, snapshots, and checkpoints across page reloads. By default each
 partition has one active owner. Pass `multiTab: true` in each tab to coordinate
 access through Web Locks and receive live events through BroadcastChannel.
-Multi-tab stores require OPFS, Web Locks, and BroadcastChannel. Await `close()`
-when a tab no longer needs the store.
+Durable multi-tab stores require OPFS, Web Locks, and BroadcastChannel. When
+`allowTransient` is set, a SharedWorker and Web Locks can instead share an
+in-memory journal until all tabs close it. Await `close()` when a tab no longer
+needs the store.
 
 ```ts
 import { createBrowserEventStore } from "@hobo/runtime-browser";

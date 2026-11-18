@@ -91,9 +91,14 @@ class JournalWorker {
 	>();
 	private failed: Error | undefined;
 
-	constructor(private readonly worker: Worker) {
-		worker.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
-			const message = event.data;
+	constructor(
+		private readonly channel: Worker | MessagePort,
+		host: Worker | SharedWorker,
+		private readonly onFailure: () => void,
+	) {
+		channel.addEventListener("message", (event: Event) => {
+			if (!(event instanceof MessageEvent)) return;
+			const message: WorkerMessage = event.data;
 			if ("type" in message) {
 				const handler = this.handlers.get(message.subscriptionId);
 				if (handler)
@@ -105,15 +110,23 @@ class JournalWorker {
 			this.pending.get(message.id)?.(message);
 			this.pending.delete(message.id);
 		});
-		worker.addEventListener("error", (event) =>
-			this.fail(new Error(event.message || "Browser storage worker failed")),
+		host.addEventListener("error", (event) =>
+			this.fail(
+				new Error(
+					event instanceof ErrorEvent
+						? event.message
+						: "Browser storage worker failed",
+				),
+			),
 		);
-		worker.addEventListener("messageerror", () =>
+		channel.addEventListener("messageerror", () =>
 			this.fail(new Error("Browser storage worker message failed")),
 		);
+		if (channel instanceof MessagePort) channel.start();
 	}
 
 	private fail(error: Error): void {
+		this.onFailure();
 		this.failed = error;
 		for (const [id, finish] of this.pending)
 			finish({
@@ -122,7 +135,8 @@ class JournalWorker {
 				error: { name: error.name, message: error.message },
 			});
 		this.pending.clear();
-		this.worker.terminate();
+		if (this.channel instanceof MessagePort) this.channel.close();
+		else this.channel.terminate();
 	}
 
 	request<K extends WorkerOperation>(
@@ -138,7 +152,7 @@ class JournalWorker {
 				else reject(new Error(`Unexpected storage response for ${op}`));
 			});
 			try {
-				this.worker.postMessage({ id, op, input });
+				this.channel.postMessage({ id, op, input });
 			} catch (error) {
 				this.pending.delete(id);
 				reject(error);
@@ -151,15 +165,60 @@ class JournalWorker {
 	}
 }
 
+async function acquireOwnerLease(): Promise<{
+	name: string;
+	release(): Promise<void>;
+}> {
+	const name = `hobo:transient-owner:${crypto.randomUUID()}`;
+	let releaseHold = () => {};
+	let signalReady = () => {};
+	const ready = new Promise<void>((resolve) => {
+		signalReady = resolve;
+	});
+	const hold = new Promise<void>((resolve) => {
+		releaseHold = resolve;
+	});
+	const done = navigator.locks.request(name, async () => {
+		signalReady();
+		await hold;
+	});
+	await Promise.race([ready, done]);
+	return {
+		name,
+		async release() {
+			releaseHold();
+			await done;
+		},
+	};
+}
+
 export async function openWorkerStore(input: {
 	partitionId: string;
 	mode: BrowserPersistenceMode;
 	wasmUrl: string;
+	shared?: boolean;
 }): Promise<BrowserEventStore> {
+	const lease = input.shared ? await acquireOwnerLease() : undefined;
+	let host: Worker | SharedWorker;
+	try {
+		host = input.shared
+			? new SharedWorker(
+					new URL("./sqlite-shared-memory-worker.js", import.meta.url),
+					{ type: "module", name: `hobo:transient:${input.partitionId}` },
+				)
+			: new Worker(new URL("./sqlite-worker.js", import.meta.url), {
+					type: "module",
+				});
+	} catch (error) {
+		await lease?.release();
+		throw error;
+	}
 	const client = new JournalWorker(
-		new Worker(new URL("./sqlite-worker.js", import.meta.url), {
-			type: "module",
-		}),
+		"port" in host ? host.port : host,
+		host,
+		() => {
+			void lease?.release().catch(() => {});
+		},
 	);
 	let timeout: ReturnType<typeof setTimeout> | undefined;
 	try {
@@ -168,6 +227,7 @@ export async function openWorkerStore(input: {
 				partitionId: input.partitionId,
 				durable: input.mode === "opfs-sahpool",
 				wasmUrl: input.wasmUrl,
+				...(lease ? { lease: lease.name } : undefined),
 			}),
 			new Promise<never>((_resolve, reject) => {
 				timeout = setTimeout(
@@ -179,6 +239,7 @@ export async function openWorkerStore(input: {
 		]);
 	} catch (error) {
 		client.terminate();
+		await lease?.release();
 		throw error;
 	} finally {
 		if (timeout !== undefined) clearTimeout(timeout);
@@ -244,6 +305,7 @@ export async function openWorkerStore(input: {
 				await client.request("close", undefined);
 			} finally {
 				client.terminate();
+				await lease?.release();
 			}
 		},
 	};

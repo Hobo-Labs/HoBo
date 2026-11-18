@@ -46,21 +46,38 @@ export async function createBrowserEventStore(
 		);
 	}
 	if (options.multiTab) {
-		if (
-			detection.mode !== "opfs-sahpool" ||
-			!globalThis.navigator?.locks ||
-			!("BroadcastChannel" in globalThis) ||
-			!("Worker" in globalThis)
-		) {
-			throw new PersistenceUnavailableError(
-				"Multi-tab storage requires OPFS, Web Locks, BroadcastChannel, and workers",
-			);
-		}
-		try {
-			return await openMultiTabStore({
+		const wasmUrl = new URL("./sqlite3.wasm", import.meta.url).href;
+		const transient = () => {
+			if (!("SharedWorker" in globalThis) || !globalThis.navigator?.locks)
+				throw new Error("SharedWorker or Web Locks is unavailable");
+			return openWorkerStore({
 				partitionId: options.partitionId,
-				wasmUrl: new URL("./sqlite3.wasm", import.meta.url).href,
+				mode: "transient-memory",
+				wasmUrl,
+				shared: true,
 			});
+		};
+		try {
+			if (detection.mode === "transient-memory") return await transient();
+			if (
+				!globalThis.navigator?.locks ||
+				!("BroadcastChannel" in globalThis) ||
+				!("Worker" in globalThis)
+			) {
+				if (options.allowTransient) return await transient();
+				throw new Error(
+					"Multi-tab durable storage requires Web Locks, BroadcastChannel, and workers",
+				);
+			}
+			try {
+				return await openMultiTabStore({
+					partitionId: options.partitionId,
+					wasmUrl,
+				});
+			} catch (error) {
+				if (options.allowTransient) return await transient();
+				throw error;
+			}
 		} catch (error) {
 			throw new PersistenceUnavailableError(
 				`Browser storage could not open: ${String(error)}`,
