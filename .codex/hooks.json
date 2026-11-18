@@ -21,6 +21,12 @@
             "command": "[ ! -f \".agents/skills/impeccable/scripts/hook.mjs\" ] || node \".agents/skills/impeccable/scripts/hook.mjs\"",
             "timeout": 30,
             "statusMessage": "Design deep pass"
+          },
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-completion-hook.mts\"",
+            "timeout": 10,
+            "statusMessage": "Reviewing task completion"
           }
         ]
       }
