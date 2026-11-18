@@ -17,6 +17,10 @@ const host = createCloudNativeRuntimeHost({ defaultProvider: "mock" });
 await host.ensure({ hoboHome });
 ```
 
+The mock provider restores an injected environment value when its host closes
+only if the value still matches the injection, preserving later changes made by
+the caller.
+
 ## The FetchHandler mesh contract is the hard seam for remote providers
 
 Every provider — local mock or remote cloud — realizes the same
