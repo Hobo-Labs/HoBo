@@ -18,6 +18,7 @@ import {
 	type JsonValue,
 	stableHash,
 } from "./json.js";
+import { rateCardChargeIncomplete } from "./charge-coverage.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
@@ -480,18 +481,23 @@ export function quoteTargetPricing(
 			scenario.at,
 			scenario.horizon,
 		);
+		const workloadsForAgreement = [...scenario.baseline, ...scenario.candidate].filter(
+			(entry) => entry.agreementRef === row.agreementId,
+		);
 		if (
 			rateCard.charges.length === 0 ||
-			rateCard.charges.some(
-				(charge) =>
-					charge.variant.case === undefined ||
-					(charge.variant.case === "usage" &&
-						!dimensions.has(charge.variant.value.dimension)),
+			rateCard.charges.some((charge) =>
+				rateCardChargeIncomplete(
+					charge,
+					dimensions,
+					agreement,
+					workloadsForAgreement,
+				),
 			)
 		)
 			return refuse(
 				"TARGET_PRICING_INCOMPLETE",
-				"rate-card charges must have declared product meters",
+				"rate-card charges must have declared meters or quantity inputs",
 			);
 	}
 	return {

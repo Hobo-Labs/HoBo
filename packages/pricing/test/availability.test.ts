@@ -1,4 +1,4 @@
-import { clone } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { ChargeComponentSchema } from "../src/_generated/pricing_pb.js";
 import {
@@ -227,6 +227,39 @@ describe("declared pricing availability", () => {
 		egress.base.id = "egress";
 		egress.variant.value.dimension = "egress";
 		card.charges.push(egress);
+		rehashScenario(incomplete);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
+		).toMatchObject({
+			ok: false,
+			code: "PRICING_MODEL_INCOMPLETE",
+		});
+	});
+
+	it("rejects a fixed charge whose quantity dimension is not supplied", () => {
+		const incomplete = scenario();
+		const card = incomplete.catalog?.rateCards[0];
+		if (card === undefined) throw new Error("fixture rate card missing");
+		card.charges.push(
+			create(ChargeComponentSchema, {
+				base: {
+					id: "seat",
+					selectors: {},
+					fallback: false,
+					invoiceBehavior: "itemized",
+				},
+				variant: {
+					case: "fixed",
+					value: {
+						cadence: "monthly",
+						timing: "advance",
+						amount: { decimal: "10", currency: "USD" },
+						quantityDimension: "seat",
+						proration: "none",
+					},
+				},
+			}),
+		);
 		rehashScenario(incomplete);
 		expect(
 			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
