@@ -85,8 +85,8 @@ both modes call. In order, it:
 
 1. Reads the message. One it cannot read still gets a failed answer naming the
    broken rule, so the job is completed rather than left queued.
-2. Gives a job made only of check steps to `deps.checks`, when there is one.
-   Without it, every relay job is routed.
+2. Gives a job containing check steps to `deps.checks`. If no handler answers
+   that job, it fails instead of reporting success for checks that did not run.
 3. Journals `runner.route.Requested`.
 4. Asks the order source for the repository's order at the workflow's ref. A
    broken order is refused with the parser's sentence and no facts are read.

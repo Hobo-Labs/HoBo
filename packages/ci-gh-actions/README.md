@@ -1611,3 +1611,15 @@ The JIT configuration contains the private RSA parameters used to sign session
 token requests; treat them as secrets and do not log them. The in-memory fake
 accepts completions only from the session that took the job and rejects calls
 after the session closes.
+
+## Runner protocol client
+
+[`src/runner-protocol/RUNNER-PROTOCOL.md`](src/runner-protocol/RUNNER-PROTOCOL.md)
+describes `GithubRunnerServiceClient`, the client a relay-mode node uses to
+take a relay job as a one-job runner and complete it with an answer
+(ADR-0183), and `parseJitConfig`, which checks a one-job runner configuration
+before anything signs in with it. It is written from the open-source runner,
+with every field cited, ships off behind `relayJobs.answer`, and is built, not
+proven: no run against GitHub's runner service is linked yet.
+`FakeGithubRunnerService` serves the protocol in memory for tests and the
+GitHub simulator.

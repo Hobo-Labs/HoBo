@@ -34,6 +34,7 @@ import {
 	defineRelayJobAnswer,
 	defineRelayJobMessage,
 	defineRunnerRouteEvent,
+	isRelayCheckStep,
 	type ParsedRelayRecord,
 	type RelayJobOutputName,
 	type RelayMode,
@@ -48,11 +49,8 @@ export type AnswerRelayJobDeps = Readonly<{
 	journal: RouteJournal;
 	nowMs: number;
 	mode: RelayMode;
-
 	node: string;
-
 	accountId: string;
-
 	checks: RelayChecks | undefined;
 }>;
 
@@ -177,6 +175,13 @@ export async function answerRelayJob(
 		if (checked)
 			return defineRelayJobAnswer(clone(RelayJobAnswerSchema, checked));
 	}
+	if (read.steps.some((step) => isRelayCheckStep(step.uses)))
+		return answerFor(
+			read,
+			refusal(
+				"No relay check handler answered this job; its checks did not run.",
+			),
+		);
 	const request = relayRouteRequest(read);
 	await journal(deps, read, request, undefined);
 	const decision = await decide(read, request, deps);

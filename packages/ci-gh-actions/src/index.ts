@@ -687,6 +687,29 @@ export {
 	RunnerOrderDocumentSchema,
 } from "./runner-order-config.js";
 export {
+	GithubRunnerServiceClient,
+	type GithubRunnerServiceOptions,
+	RelayModeOffError,
+	RunnerProtocolError,
+	type RunnerProtocolEvent,
+} from "./runner-protocol/client.js";
+export {
+	agentJobRequestOf,
+	FAKE_BROKER_URL,
+	FAKE_RUN_SERVICE_URL,
+	type FakeCompletion,
+	FakeGithubRunnerService,
+	type FakeRunnerCall,
+	type FakeRunnerRequest,
+	type FakeRunnerServiceOptions,
+} from "./runner-protocol/fake-service.js";
+export {
+	isGithubServiceUrl,
+	type JitConfigExpectation,
+	JitConfigRejection,
+	parseJitConfig,
+} from "./runner-protocol/jit-config.js";
+export {
 	InMemoryRunnerService,
 	type JitCredentials,
 	type JitRunnerSettings,
@@ -697,6 +720,10 @@ export {
 	runnerServiceClientConformance,
 	testJitConfig,
 } from "./runner-protocol/port.js";
+export {
+	RUNNER_PROTOCOL_SOURCE_COMMIT,
+	RUNNER_PROTOCOL_VERSION,
+} from "./runner-protocol/source.js";
 export {
 	GENERIC_RUNNER_LABELS,
 	parseRunnerRouting,
