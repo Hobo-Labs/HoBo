@@ -30,6 +30,11 @@ while dispatch is in progress. `advance` handles synchronous jobs; if a job
 returns a promise, it reports that `advanceAsync` is required after the job has
 started, so the asynchronous work may still finish.
 
+Restoring a queue snapshot clears in-process handler state while retaining each
+lease and its expiry. Once the old runtime has stopped, an in-flight message can
+be retried after its visibility timeout. Queue handlers must tolerate at-least-once
+delivery when a snapshot predates their completed effects.
+
 > **Naming:** `packages/runtimes/*` are concrete **runtime backends** (this
 > package: the local/sqlite substrate). The singular `packages/runtime`
 > (`@hobo/runtime`) is the app-facing **SDK primitives** package — a

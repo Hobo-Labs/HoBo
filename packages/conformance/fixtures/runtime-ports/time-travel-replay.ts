@@ -17,12 +17,8 @@ export interface TimeTravelReplayResult {
 	replayMatchesLive: boolean;
 }
 
-/**
- * Conformance fixture: seeded live run interleaving sleep + cron under advance(),
- * trace replayed via replayClockTrace reproduces identical fire order.
- */
-export function runTimeTravelReplay(
-	createRuntime: CreateRuntimeLocalQueueClock,
+export function runTimeTravelReplay<Snapshot>(
+	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
 	replayClockTrace: ReplayClockTraceFn,
 ): TimeTravelReplayResult {
 	const seed = "time-travel-seed";
