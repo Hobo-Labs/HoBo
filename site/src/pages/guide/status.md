@@ -1,21 +1,21 @@
 ---
 layout: ../../layouts/Docs.astro
-title: The trail map
-description: "Where HoBo actually is on the road: pre-release, what runs today, and the staged journey from local fidelity to multi-cloud."
+title: Current status
+description: "What runs in HoBo today and the limits of the available deployment paths."
 ---
 
-# The trail map
+# Current status
 
-Where is HoBo on the road? Here's the honest itinerary.
+HoBo is pre-release. This page describes the available behavior and its current limits.
 
 | Area | State |
 |---|---|
 | **Product** | **Pre-release.** Not accepting tenants; `@hobo/*` packages are **not published to npm** yet. |
 | **Developer surface** | SDK primitives, the **canonical `hobo` verb set** (source: `packages/cli/src/shell/verbs.ts`), and the MCP surface documented here are **contract-pinned**: specified, validated, and stable to learn against. Product binary: `@hobo/hobo`; shell/factories: `@hobo/cli`. |
-| **Implementation** | Progressing through staged build gates (below). Default deploy is an **in-memory Pulumi stand-in**, not live multi-cloud apply. See "What runs today" and ship targets. |
+| **Implementation** | Default deploy uses an **in-memory Pulumi stand-in**. The local lane and opt-in live lanes have different requirements and outcomes. |
 | **This site** | The canonical public developer documentation — for humans and agents. |
 
-Ship targets stay **pre-release**: OSS public docs (this site), local-first developer tooling after a workspace build, hosted beta later. Default apply is an in-memory Pulumi stand-in. See [Getting started](/HoBo/guide/getting-started/) and [System model](/HoBo/system/) for what a visitor can run without a private repo checkout.
+The public documentation and local-first developer tooling are available from this repository. See [Getting started](/HoBo/guide/getting-started/) and [System model](/HoBo/system/) for the supported local workflow.
 
 ## What runs today
 
@@ -24,7 +24,7 @@ Ship targets stay **pre-release**: OSS public docs (this site), local-first deve
 - **Contract effects + visible resiliency.** `@hobo/contracts` BoundaryContracts may declare **EffectSpec** and **ResilienceProfile**; can-deploy treats effect widening as breaking when declared; Gatekeeper surfaces effect summaries; `@hobo/contract-harness` isolates pure contracts and runs never-retry fault injection. No Effect-TS/Polly/XState public dependency.
 - **Station + pure Conductor.** `@hobo/stations` + `@hobo/broker` — control-plane isolation, Rails, receipts pin `stationId` + `railHash`.
 - **Trails + continuous identity.** `@hobo/trails` recipes and hands-off dual-path identity continuous (`@hobo/identity`); pure identity continuous needs zero Trail authoring. **`hobo login` defaults to fixture/local session material**, not production OIDC/SPIRE.
-- **Live migration & upgrade executors.** `@hobo/trails` ships upgrade preflight/compatibility evidence, a real expand→backfill→contract executor over SQLite (snapshot-before-mutation, compat-gated destructive contract), pooled→siloed zero-loss tenant moves (fence → drain → export/import → checksum-gated reap), and CDC data-dual ports. The `migration.*` event bodies are pinned in `@hobo/events`' append-only golden-replay corpus with an upcaster-totality gate.
+- **Migration & upgrade executors.** `@hobo/trails` ships upgrade preflight/compatibility evidence and an expand→backfill→contract executor with SQLite and PostgreSQL schema ports. The Drizzle adapter generates phased PostgreSQL SQL and requires explicit backfills; integration tests exercise the executor on embedded PostgreSQL. PostgreSQL snapshots reject table features they cannot preserve. The package also provides pooled→siloed tenant moves and CDC data-dual ports. The `migration.*` event bodies are pinned in `@hobo/events`' append-only golden-replay corpus with an upcaster-totality gate.
 - **Budget-driven routing.** `@hobo/dispatcher` (deterministic credit/budget selection, `dispatch.Decided`), `@hobo/broker` budget threshold signals, and the `@hobo/stations` closed routing control loop + progressive health-gated cutover. `pnpm run staging:cutover` rehearses a zero-downtime backend swap on a loopback lane (archived evidence); Vercel/Cloudflare lanes are credential-gated and fail closed.
 - **Jurisdiction & residency.** Typed legal geography in `@hobo/core` (region→jurisdiction catalog, per-tenant residency constraints, fail-closed `evaluateResidency`) with a residency Gatekeeper gate, a residency policy pack, and OSCAL-aligned control→evidence packs in `@hobo/policy`.
 - **Thin SaaS providers.** `@hobo/provider-convex` — honestly-scoped capability classes, typed impedance limits, credential-gated Management API (fails closed without a broker-minted key).
@@ -40,18 +40,6 @@ Ship targets stay **pre-release**: OSS public docs (this site), local-first deve
 - **HoBo CI fleet balancing.** `@hobo/ci` holds dated financial models for twenty-three runner machine classes (the box, a remote ARC scale set, GitHub-hosted, Jog, Boat, Lizard, Depot, Blacksmith, and the sandbox providers Agent37, Modal, Daytona, E2B, Northflank, Freestyle, Blaxel, Cloudflare Sandbox and Runloop), with documented machine limits for the providers read on 2026-11-10, prices a job through `@hobo/pricing` and the Dispatcher, and admits each candidate through the shared budget policy; the box worker reports host health. Publishing the route table is **off by default, and no workflow reads it yet**; label-routed jobs are not counted against the budget; the sandbox providers are modelled **without a host driver**. See [HoBo CI](/HoBo/ci/).
 - **Examples in the repo:** `hello-bindle` (`hobo up` after adapter build), `multi-cloud-shop` (local Yard kv+queue), `durable-agent` (**tests only**, no Bindle), `self-host-yard` (in-process Yard). Pages [Examples](/HoBo/examples/) ship local-bridge apps; browser-WIT hello-world needs local `astro dev`.
 - **Not yet shipped / design-stage:** npm registry publish, full certified multi-cloud provider adapters (fly/aws/azure/gcp production apply paths), Junction package maturity toward S4, production OIDC/SPIRE defaults, and alternate EventStore engines (`runtime-postgres` / Temporal / Restate / Cloudflare DO).
-
-## How the build is staged
-
-One leg at a time:
-
-- **Local toolchain** — hello Bindle through CI with guards green. 
-- **Local fidelity** — offline `hobo dev`, replay equals live. 
-- **First cloud + Yard** — first provider and drift policy. 
-- **Agent autonomy** — scoped agent auth and operator hooks. 
-- **Multi-cloud** — overlays, placement across providers, Junctions. 
-- **Extensibility** — provider generation and forge hooks. 
-- **Production hardening** — HA/DR, canary, FinOps. 
 
 ## What “contract-pinned” means
 
