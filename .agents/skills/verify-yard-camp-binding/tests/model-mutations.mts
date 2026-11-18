@@ -16,6 +16,9 @@ const models = [
     ['PrecheckCamp', 'NoKnownForeignHold'], ['PrecheckCamp', 'NoKnownForeignEffect'],
     ['PostcheckCamp', 'NoForeignReceipt'], ['RecordUncertain', 'MismatchUncertain'],
   ]],
+  ['CampExact', ['CheckExactId'], [
+    ['CheckExactId', 'NoExactSubstitution'], ['CheckExactId', 'NoUnidentifiedExactWork'],
+  ]],
 ] as const;
 try {
   for (const [model, names, cases] of models) {

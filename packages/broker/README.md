@@ -126,18 +126,43 @@ stateDiagram-v2
 ```
 
 Camp placement preserves the requested Camp layout, including its environment
-type, in the request used for authorization. Without an explicit Camp ID, the
-selected Yard uses `camp:<envType>`, or `camp:dev` when no environment was
-requested. An explicit ID takes precedence, but a qualified ID must name a
+type, in the request used for authorization. An `exact` Camp request must name
+a Camp ID; a missing ID is refused before quoting or host authorization. Other
+requests without an ID use `camp:<envType>`, or `camp:dev` when no environment
+was requested. An explicit ID takes precedence, but a qualified ID must name a
 direct child of the selected Yard; a foreign or malformed ID is refused before
 quoting, budget reservation or Yard generation when the planned Yard is known,
 and checked again against the selected Yard before placement. Empty or malformed
 Camp IDs and environment types are refused during parsing. This check does not
 yet verify that a named Camp exists or satisfies its requested capabilities;
-Camp matching and selection-mode enforcement remain separate work.
+full Camp matching and selection-mode enforcement remain separate work.
 Because the request digest now includes Camp fields that were previously
 discarded, a quote created by an older parser may no longer match the request.
 Obtain a new quote and reconcile any existing reservation before retrying.
+
+The [Camp verification skill](../../.agents/skills/verify-yard-camp-binding/SKILL.md)
+models exact selection across quote and deployment paths. This projection hides
+eight same-state steps and assumes the other admission checks succeed.
+
+```mermaid
+stateDiagram-v2
+  s0: Camp request received
+  s1: Camp request accepted
+  s2: Missing exact Camp ID refused
+  s3: Default Camp selected
+  s4: Requested Camp selected
+  s5: Camp work authorized
+  s6: Camp work prepared for quote
+  [*] --> s0
+  s0 --> s1: accept a valid request
+  s0 --> s2: refuse an exact request without an ID
+  s1 --> s3: select the default Camp [when no ID was supplied]
+  s1 --> s4: select the requested Camp [when an ID was supplied]
+  s3 --> s5: authorize the selected Camp
+  s3 --> s6: prepare work for a quote
+  s4 --> s5: authorize the selected Camp
+  s4 --> s6: prepare work for a quote
+```
 
 `encodeBindleDeploymentRequest` and `decodeBindleDeploymentRequest` provide a
 versioned protobuf snapshot of the complete normalized placement request,

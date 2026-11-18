@@ -64,6 +64,9 @@ cases = [
     ('snapshot', 'request = parseBindleDeploymentRequest(cloneAsJson(request));', '/* mutation: use caller input directly */', camp_test, 'keeps the captured environment'),
     ('quote-preflight', quote_guard, '', camp_test, 'refuses to quote a Camp outside'),
     ('generation-preflight', generation_guard, '', generation_test, 'foreign-camp-before-generation'),
+    ('exact-id', 'if (raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)',
+     'if (false && raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)',
+     'test/yard-exact-camp.test.ts', 'does not authorize a default Camp'),
 ]
 
 def run(test_file, pattern):

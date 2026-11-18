@@ -1512,6 +1512,8 @@ export function parseBindleDeploymentRequest(
 	if (raw.camp !== undefined && !isJsonObject(raw.camp))
 		throw new TypeError("camp must be an object");
 	if (isJsonObject(raw.camp)) {
+		if (raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)
+			throw new TypeError("exact Camp selection requires campId");
 		if (
 			raw.camp.campId !== undefined &&
 			(!isJsonString(raw.camp.campId) || !raw.camp.campId.trim())
