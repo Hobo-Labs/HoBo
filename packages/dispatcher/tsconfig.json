@@ -3,11 +3,7 @@
 	"compilerOptions": {
 		"outDir": "dist",
 		"rootDir": "src",
-		"types": ["node"],
-		"strict": false,
-		"noImplicitAny": false,
-		"noUncheckedIndexedAccess": false,
-		"exactOptionalPropertyTypes": false
+		"types": ["node"]
 	},
 	"include": ["src"]
 }
