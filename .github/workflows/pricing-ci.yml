@@ -124,10 +124,6 @@ jobs:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
-      - name: Prepare composition formatting for review
-        run: |
-          pnpm exec biome check --write packages/extension-alchemy-rivet/src/rivet-http-topic-bus.ts packages/extension-alchemy-rivet/test/rivet-http-topic-bus.test.ts packages/extension-alchemy-rivet/model/check-http-topic-bus.mts packages/extension-alchemy-rivet/tsconfig.http-bus-tests.json packages/extension-alchemy-rivet/package.json packages/iac/iac-alchemy/package.json packages/iac/iac-alchemy/src/rivet-composition-support.ts scripts/test/pricing-workflow-model-trigger.test.ts || true
-          node -e 'const fs=require("node:fs"); for(const p of process.argv.slice(1)){const s=fs.readFileSync(p).toString("base64"); for(let i=0;i<s.length;i+=1800) console.log("FORMATFILE|"+p+"|"+(i/1800)+"|"+s.slice(i,i+1800))}' packages/extension-alchemy-rivet/src/rivet-http-topic-bus.ts packages/extension-alchemy-rivet/test/rivet-http-topic-bus.test.ts packages/extension-alchemy-rivet/model/check-http-topic-bus.mts packages/extension-alchemy-rivet/tsconfig.http-bus-tests.json packages/extension-alchemy-rivet/package.json packages/iac/iac-alchemy/package.json packages/iac/iac-alchemy/src/rivet-composition-support.ts scripts/test/pricing-workflow-model-trigger.test.ts
       - name: Build and test pricing integration cone
         run: |
           set -euo pipefail

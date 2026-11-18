@@ -60,7 +60,7 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/iac/iac-alchemy/model/CloudflareGrant.tla",
 			"packages/iac/iac-alchemy/model/CloudflareGrant.cfg",
 			"packages/iac/iac-alchemy/model/check-cloudflare-grants.mts",
-		"packages/extension-alchemy-rivet/model/check-http-topic-bus.mts",
+			"packages/extension-alchemy-rivet/model/check-http-topic-bus.mts",
 			"packages/iac/iac-alchemy/model/check-rivet-http-queue.mts",
 			"packages/iac/iac-alchemy/src/index.ts",
 			"test/iac-alchemy-integration.test.ts",
@@ -115,12 +115,16 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 		assert.ok(words.has(`--filter=${name}`), name);
 	assert.ok(
 		pricingSteps?.some((step) =>
-			asText(asObject(step)?.run)?.includes("pnpm --filter @hobo/wit run wit:check"),
+			asText(asObject(step)?.run)?.includes(
+				"pnpm --filter @hobo/wit run wit:check",
+			),
 		),
 	);
 	assert.ok(
 		pricingSteps?.some((step) =>
-			asText(asObject(step)?.run)?.includes("test/iac-alchemy-integration.test.ts"),
+			asText(asObject(step)?.run)?.includes(
+				"test/iac-alchemy-integration.test.ts",
+			),
 		),
 	);
 	const modelSteps = asList(asObject(jobs?.["pricing-models"])?.steps);
