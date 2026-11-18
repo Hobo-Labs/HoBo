@@ -1,7 +1,3 @@
-/**
- * playwright-testing seam: readiness + serializable state + commands.
- * Never expose raw engine objects.
- */
 import type { YardProjectionSnapshot } from "@hobo/management";
 import type { YardVisualState } from "./entity-state.js";
 import type { ZoneId } from "./layout.js";
@@ -100,7 +96,6 @@ export function createTestSeam(host: YardTestHost): YardTestSeam {
 	return seam;
 }
 
-/** Mulberry32 seeded RNG for deterministic particle placement. */
 export function seededRandom(seed: number): () => number {
 	let t = seed >>> 0;
 	return () => {

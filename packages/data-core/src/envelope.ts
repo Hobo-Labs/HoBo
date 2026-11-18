@@ -1,12 +1,3 @@
-/**
- * The change envelope — the transport record every engine captures into and
- * applies out of (ADR-0177 decision 4).
- *
- * It is a transport record, not an event-log fact. Payload in the log would
- * make the log a custody point for data in flight, so only positions,
- * watermarks, and digests are ever recorded as facts; envelopes pass between
- * a capture port and an apply port and are then gone.
- */
 import type { DataClassification } from "@hobo/core";
 import type { CanonicalRecord, DatasetSchema } from "./canonical.js";
 import { parseCanonicalRecord } from "./canonical.js";
@@ -19,34 +10,23 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: the schema id a change envelope is published under.
 export const CHANGE_ENVELOPE_CONTRACT = "hobo.change-envelope/v1";
 
 export const CHANGE_OPS = ["upsert", "delete"] as const;
 export type ChangeOp = (typeof CHANGE_OPS)[number];
 
-/**
- * An engine-scoped, opaque, totally ordered log position. Only the engine
- * that minted it may interpret it; everyone else stores and returns it.
- */
 export type Position = string;
 
-/** A write an application asks for: the unit the write entry point accepts. */
-// domain-view: parsed mutation; wire form is RecordMutation in data-models/data_core.proto.
 export interface RecordMutation {
-	/** Empty string is "no tenant": a single-tenant or siloed dataset. */
 	readonly tenant: string;
 	readonly key: string;
 	readonly op: ChangeOp;
-	/** Present for `upsert`, absent for `delete`. */
 	readonly record?: CanonicalRecord;
 }
 
-// domain-view: parsed envelope, constructible through parseChangeEnvelope or an engine's capture port; wire form is ChangeEnvelope in data-models/data_core.proto.
 export interface ChangeEnvelope extends RecordMutation {
 	readonly contract: typeof CHANGE_ENVELOPE_CONTRACT;
 	readonly dataset: string;
-	/** Where this change sits in the source's log. */
 	readonly position: Position;
 	readonly schemaVersion: number;
 	readonly classification?: DataClassification;
@@ -57,7 +37,6 @@ function invalid(message: string, field: string): never {
 }
 
 function isChangeOp(value: string): value is ChangeOp {
-	// SAFETY: membership test against the closed tuple of change operations.
 	return (CHANGE_OPS as readonly string[]).includes(value);
 }
 
@@ -73,7 +52,6 @@ export function deleteMutation(tenant: string, key: string): RecordMutation {
 	return Object.freeze({ tenant, key, op: "delete" });
 }
 
-/** Wrap a mutation as the envelope a capture port emits. */
 export function envelopeOf(
 	schema: DatasetSchema,
 	mutation: RecordMutation,
@@ -93,7 +71,6 @@ export function envelopeOf(
 	});
 }
 
-/** The one constructor for an envelope that arrived as JSON. */
 export function parseChangeEnvelope(
 	schema: DatasetSchema,
 	value: JsonValue | undefined,

@@ -1,7 +1,3 @@
-// Past-tense facts the write-model kernel produces about its own actor lifecycle
-// and about projection declarations (data-plane.md event catalog: `actor.*`,
-// `projection.*`). These are plain fact bodies; a runtime wraps them in the shared
-// EventEnvelope. Fence tokens are serialized as strings (bigint is not JSON-safe).
 
 import type { JsonObject } from "./json.js";
 

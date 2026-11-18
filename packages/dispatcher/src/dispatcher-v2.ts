@@ -8,9 +8,7 @@ import {
 	type QuoteVector,
 } from "@hobo/pricing";
 
-// public-contract: consumers pin the dispatcher v2 wire schema by this id.
 export const DISPATCHER_V2_SCHEMA_VERSION = "hobo.dispatcher/v2";
-// public-contract: v2 ranks candidates by incremental billed cost only.
 export const DISPATCHER_V2_OBJECTIVE = "min-incremental-billed" as const;
 
 export type DispatchCategoryV2 = "runner" | "build-machine" | "traffic-backend";

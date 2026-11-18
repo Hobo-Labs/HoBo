@@ -73,11 +73,6 @@ export function parseParams(
 	return out;
 }
 
-/**
- * The rendering to use when nothing else selected one: the explicit default, or
- * the first listed. A pattern with no renderings at all is a malformed pattern,
- * so say that instead of handing back `undefined`.
- */
 function defaultRendering<T extends { readonly isDefault?: boolean }>(
 	renderings: readonly T[],
 ): T[] {

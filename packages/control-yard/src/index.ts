@@ -78,5 +78,4 @@ export {
 	type YardEngine,
 } from "./yard-engine.js";
 
-// public-contract
 export const HOBO_CONTROL_YARD_PACKAGE = "@hobo/control-yard";

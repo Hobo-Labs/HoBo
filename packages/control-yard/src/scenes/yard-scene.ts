@@ -1,10 +1,3 @@
-/**
- * Phaser Yard scene contract + pure bootstrap helpers.
- *
- * Browser hosts that load Phaser 3 call `describeYardSceneLoad` to register
- * spritesheets from the asset index (measure-before-load STOP rule already
- * enforced by assets:validate). Clip names always resolve via stable animation ids.
- */
 
 import {
 	type AssetIndex,
@@ -60,7 +53,6 @@ export type YardLoadManifest = Readonly<{
 	}[];
 }>;
 
-/** Build load manifest from asset index — only path into Phaser loaders. */
 export function describeYardSceneLoad(
 	index: AssetIndex = loadAssetIndex(),
 	assetBaseUrl = "",
@@ -107,7 +99,6 @@ export function describeYardSceneLoad(
 }
 
 function joinAsset(index: AssetIndex, rel: string): string {
-	// Prefer absolute package assets path for node; browser uses assetBaseUrl.
 	try {
 		return sheetAbsolutePath(index, "bo-idle").replace(
 			/bo\/bo-idle\.png$/,
@@ -123,7 +114,6 @@ export function applyLoadManifest(
 	manifest: YardLoadManifest,
 ): void {
 	for (const s of manifest.sheets) {
-		// STOP rule: frame sizes come from measured asset index only.
 		loader.spritesheet(s.key, s.url, {
 			frameWidth: s.frameWidth,
 			frameHeight: s.frameHeight,
@@ -176,7 +166,6 @@ export function yardSceneHud(): YardSceneHud {
 	});
 }
 
-/** Map visual state → which animation id Bo should play (stable id). */
 export function boAnimationForVisual(visual: YardVisualState): string {
 	return visual.bo.animationId;
 }

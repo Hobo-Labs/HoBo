@@ -113,7 +113,6 @@ function manifestIndex(catalog: PatternCatalog): ReadonlyMap<string, string> {
 		...walkNamed(root, "meta.json"),
 	]);
 	for (const file of files) {
-		// SAFETY: loadPatternCatalog validates these manifests before indexing.
 		const raw = JSON.parse(readFileSync(file, "utf8")) as { id?: string };
 		if (raw.id && !index.has(raw.id)) index.set(raw.id, file);
 	}
