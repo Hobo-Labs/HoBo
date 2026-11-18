@@ -81,19 +81,20 @@ stateDiagram-v2
   s1 --> s3: sink confirms
 ```
 
-The call-fence model checks 10 bounded states and hides six same-label steps.
+The call-fence model checks 18 bounded states and hides 12 same-label steps.
 
 ```mermaid
 stateDiagram-v2
   s0: Component ready
   s1: Component torn down
   s2: Component call in progress
-  s3: Call settled
+  s3: Calls settled
   [*] --> s0
   s0 --> s1: tear down component
   s0 --> s2: start call
   s2 --> s3: call settles
   s3 --> s1: tear down component
+  s3 --> s2: start call
 ```
 
 ## Tests

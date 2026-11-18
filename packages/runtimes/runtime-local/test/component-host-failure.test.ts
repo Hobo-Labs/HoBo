@@ -255,6 +255,43 @@ it("refuses teardown while a linked call is in flight and allows it after comple
 	expect(host.lifecycle("first").state).toBe("torn-down");
 });
 
+it("keeps a component fenced until every overlapping call settles", async () => {
+	let finishFirst: (value: string) => void = () => {};
+	let finishSecond: (value: string) => void = () => {};
+	const first = new Promise<string>((resolve) => {
+		finishFirst = resolve;
+	});
+	const second = new Promise<string>((resolve) => {
+		finishSecond = resolve;
+	});
+	let calls = 0;
+	const host = createRuntimeLocalComponentHost({ appendEvent: () => {} });
+	host.registerProvider({
+		id: "provider",
+		exports: { [KV]: { get: () => (++calls === 1 ? first : second) } },
+	});
+	host.loadComponent(component("first"));
+	host.link({
+		componentId: "first",
+		importInterface: KV,
+		providerId: "provider",
+		exportInterface: KV,
+	});
+	const callOne = host.invokeLinkedImport("first", KV, "get");
+	const callTwo = host.invokeLinkedImport("first", KV, "get");
+	try {
+		finishFirst("one");
+		await expect(callOne).resolves.toBe("one");
+		await expect(host.teardownComponent("first")).rejects.toMatchObject({
+			code: "component_busy",
+		});
+	} finally {
+		finishSecond("two");
+		await callTwo;
+	}
+	await expect(host.teardownComponent("first")).resolves.toBeUndefined();
+});
+
 it("fences an active HTTP invocation and releases the fence after it settles", async () => {
 	let finish: (value: HttpResponse) => void = () => {};
 	const pending = new Promise<HttpResponse>((resolve) => {
