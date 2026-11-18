@@ -235,6 +235,7 @@ export interface DrizzleIndexLike {
 	readonly partial: boolean;
 	/** Declared columns keyed with a non-default sort order, nulls order, or operator class. */
 	readonly orderedKeys: readonly string[];
+	readonly options: readonly string[];
 }
 
 /**
@@ -282,7 +283,27 @@ export function readIndexBuilder<T>(value: T): DrizzleIndexLike | undefined {
 		expressionKeys,
 		partial: config.where !== undefined && config.where !== null,
 		orderedKeys: Object.freeze(orderedKeys),
+		options: readIndexOptions(config),
 	});
+}
+
+function readIndexOptions(config: UnknownRecord): readonly string[] {
+	const options: string[] = [];
+	if (config.method !== undefined && config.method !== "btree") {
+		options.push(
+			isJsonString(config.method) ? `USING ${config.method}` : "access method",
+		);
+	}
+	const storage = asRecord(config.with);
+	if (
+		(storage !== undefined && Object.keys(storage).length > 0) ||
+		(storage === undefined && config.with !== undefined && config.with !== null)
+	) {
+		options.push("storage parameters");
+	}
+	if (config.concurrently === true) options.push("CONCURRENTLY");
+	if (config.only === true) options.push("ONLY");
+	return Object.freeze(options);
 }
 
 /**
