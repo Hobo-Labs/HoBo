@@ -98,6 +98,9 @@ it("retains the original locale-sensitive encoding when legacy is requested", ()
 	});
 	expect(report.canonicalizationVersion).toBe(1);
 	expect(report.stateDigest).toBe(digestForVersion(state, 1));
+	const tied = { é: 1, "e\u0301": 2 };
+	expect("é".localeCompare("e\u0301")).toBe(0);
+	expect(stableStringifyForVersion(tied, 1)).not.toBe(stableStringify(tied));
 });
 
 it("is insertion independent for generated Unicode keys and event orders", () => {
@@ -257,10 +260,12 @@ it("rejects invalid or conflicting versions rather than reinterpreting them", as
 });
 
 it("uses the requested version in workflow and divergence reports", async () => {
+	const workflowState = { é: 1, "e\u0301": 2 };
 	const workflow = {
 		name: "version",
-		initialState: () => state,
-		execute: (_ctx: WorkflowReplayContext, current: typeof state) => current,
+		initialState: () => workflowState,
+		execute: (_ctx: WorkflowReplayContext, current: typeof workflowState) =>
+			current,
 	};
 	const reader = {
 		readStream: async () => [
@@ -279,7 +284,7 @@ it("uses the requested version in workflow and divergence reports", async () => 
 			canonicalizationVersion: version,
 		});
 		expect(report.canonicalizationVersion).toBe(version);
-		expect(report.stateDigest).toBe(digestForVersion(state, version));
+		expect(report.stateDigest).toBe(digestForVersion(workflowState, version));
 		const divergence = new ReplayDivergenceError({
 			runId: "run",
 			liveState: state,
@@ -291,4 +296,58 @@ it("uses the requested version in workflow and divergence reports", async () => 
 		expect(divergence.canonicalizationVersion).toBe(version);
 		expect(divergence.liveStateDigest).toBe(digestForVersion(state, version));
 	}
+});
+
+it("carries the requested version into a harness divergence", () => {
+	const events = ["b", "a"].map((streamId) => ({
+		id: streamId,
+		streamId,
+		seq: 1,
+		type: "value",
+		data: null,
+	}));
+	for (const version of [1, 2] as const) {
+		try {
+			assertReplayEqualsLive({
+				events,
+				initialState: "",
+				fold: (current, event) => current + event.streamId,
+				canonicalizationVersion: version,
+			});
+			expect.fail("expected different fold orders to diverge");
+		} catch (error) {
+			if (!(error instanceof ReplayDivergenceError)) throw error;
+			expect(error.divergence.canonicalizationVersion).toBe(version);
+			expect(error.divergence.liveStateDigest).toBe(
+				digestForVersion("ba", version),
+			);
+		}
+	}
+});
+
+it("uses the requested ordering for event and sequence-vector ties", () => {
+	const events = ["é", "e\u0301"].map((streamId) => ({
+		id: streamId,
+		streamId,
+		seq: 1,
+		type: "value",
+		data: null,
+	}));
+	const input = {
+		events,
+		initialState: "",
+		fold: (current: string, event: { streamId: string }) =>
+			current + event.streamId,
+	};
+	const legacy = assertReplayEqualsLive({
+		...input,
+		canonicalizationVersion: 1,
+	});
+	expect(legacy.seqVector.map((entry) => entry.streamId)).toEqual([
+		"é",
+		"e\u0301",
+	]);
+	expect(() =>
+		assertReplayEqualsLive({ ...input, canonicalizationVersion: 2 }),
+	).toThrow(ReplayDivergenceError);
 });
