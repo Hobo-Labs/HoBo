@@ -682,6 +682,7 @@ export function verifyAttestation(input: {
 	if (
 		!scripts ||
 		scripts.executionMode !== "each-step-v1" ||
+		(event === "merge_group" && statement.testedCommit !== input.head) ||
 		(scripts.eventChecks?.[event] ?? 0) < 4 ||
 		scripts.commands <
 			(scripts.eventChecks?.pull_request ?? 0) +
