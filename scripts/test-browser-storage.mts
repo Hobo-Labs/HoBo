@@ -217,6 +217,36 @@ try {
 				transientMode: "transient-memory",
 				transientCount: 0,
 			});
+			const reloadPartition = `reload-test-${Date.now()}`;
+			await page.goto(`http://127.0.0.1:${address.port}/`);
+			await page.evaluate(async (partitionId) => {
+				const entry = "/main.js";
+				const sdk: typeof import("../packages/runtimes/runtime-browser/src/index.js") =
+					await import(entry);
+				const store = await sdk.createBrowserEventStore({ partitionId });
+				await store.append(
+					"reload",
+					[{ type: "note.BeforeReload", data: { text: "survived" } }],
+					{
+						expectedSeq: 0,
+						actor: { kind: "system", id: "browser" },
+						tenant: "t",
+					},
+				);
+				(globalThis as BrowserTestGlobal).hoboTestStore = store;
+			}, reloadPartition);
+			await page.reload();
+			const afterReload = await page.evaluate(async (partitionId) => {
+				const entry = "/main.js";
+				const sdk: typeof import("../packages/runtimes/runtime-browser/src/index.js") =
+					await import(entry);
+				const store = await sdk.createBrowserEventStore({ partitionId });
+				const events = [];
+				for await (const event of store.read("reload")) events.push(event.data);
+				await store.close();
+				return events;
+			}, reloadPartition);
+			assert.deepEqual(afterReload, [{ text: "survived" }]);
 			const first = await context.newPage();
 			const second = await context.newPage();
 			await Promise.all([
