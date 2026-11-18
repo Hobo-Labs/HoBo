@@ -1,10 +1,11 @@
 import { expect, it } from "vitest";
 import {
 	bindle,
-	collectBindleManifest,
 	type CollectionContext,
+	collectBindleManifest,
 	discoveryEnvForDependency,
 	evaluateBindingDeliveryGate,
+	parseManifest,
 } from "../src/index.js";
 
 it("examines source annotations before manifest collection", () => {
@@ -78,7 +79,11 @@ it("never emits a credential-bearing discovery URL", () => {
 });
 
 it("rejects secret-shaped keys and values under ordinary environment names", () => {
-	for (const key of ["SERVICE_TOKEN", "AWS_SECRET_ACCESS_KEY", "AUTHORIZATION"]) {
+	for (const key of [
+		"SERVICE_TOKEN",
+		"AWS_SECRET_ACCESS_KEY",
+		"AUTHORIZATION",
+	]) {
 		const verdict = evaluateBindingDeliveryGate({
 			env: { [key]: "fixture-secret" },
 		});
@@ -116,4 +121,72 @@ it("rejects unsafe collected environments before emitting a manifest", () => {
 	} catch (error) {
 		expect(String(error)).not.toContain("fixture-collect-secret");
 	}
+});
+
+it("rejects credentials in nested authored and collected endpoints", () => {
+	const credential = "fixture-nested-credential";
+	const options = JSON.parse(
+		JSON.stringify({
+			image: "example.test/worker:1",
+			endpoints: {
+				http: { port: 8080, url: `https://user:${credential}@example.test/` },
+			},
+		}),
+	);
+	const definition = bindle("source", (builder) => ({
+		worker: builder.container(options),
+	}));
+	const manifest = parseManifest({
+		schema: "hobo.manifest/v1",
+		componentHost: { kind: "wasmtime", version: "1" },
+		resources: {
+			worker: {
+				type: "component.v1",
+				endpoints: options.endpoints,
+			},
+		},
+	});
+	for (const result of [
+		evaluateBindingDeliveryGate({ definition }),
+		evaluateBindingDeliveryGate({ manifest }),
+	]) {
+		expect(result.ok).toBe(false);
+		expect(JSON.stringify(result)).not.toContain(credential);
+	}
+});
+
+it("accepts ordinary structured endpoints and rejects non-scalar environments", () => {
+	const safe = bindle("source", (builder) => ({
+		worker: builder.container({
+			image: "example.test/worker:1",
+			endpoints: { http: { port: 8080, external: true } },
+		}),
+	}));
+	expect(evaluateBindingDeliveryGate({ definition: safe }).ok).toBe(true);
+	const invalid = bindle("source", (builder) => ({
+		web: builder.web().with({
+			provider: "hobo",
+			option: "env",
+			config: { NESTED: { level: "debug" } },
+		}),
+	}));
+	expect(evaluateBindingDeliveryGate({ definition: invalid })).toMatchObject({
+		ok: false,
+		reasons: [{ code: "invalid-annotation" }],
+	});
+});
+
+it("fails closed for cyclic endpoint metadata", () => {
+	const endpoints = { http: { port: 8080 } };
+	const definition = bindle("source", (builder) => ({
+		worker: builder.container({ image: "example.test/worker:1", endpoints }),
+	}));
+	Object.defineProperty(endpoints.http, "cycle", {
+		value: endpoints,
+		enumerable: true,
+	});
+	expect(evaluateBindingDeliveryGate({ definition })).toMatchObject({
+		ok: false,
+		reasons: [{ code: "invalid-annotation" }],
+	});
 });

@@ -21,7 +21,10 @@ it("retains queue and topic declarations through chained resources", () => {
 	}
 	const definition = bindle("messages", (builder) => {
 		const orders = builder.queue<OrderEvent>().allow("enqueue");
-		const shipments = builder.topic<ShipmentEvent>().dependsOn(orders).allow("publish");
+		const shipments = builder
+			.topic<ShipmentEvent>()
+			.dependsOn(orders)
+			.allow("publish");
 		return { orders, shipments };
 	});
 	expect(definition.resources.orders?.declaredAllow).toEqual(["enqueue"]);

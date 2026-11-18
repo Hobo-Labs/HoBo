@@ -5,9 +5,9 @@ import { pathToFileURL } from "node:url";
 import {
 	type BindleDefinition,
 	type CollectionContext,
+	CollectionEngineError,
 	type CollectionTarget,
 	collectBindleManifest,
-	CollectionEngineError,
 	evaluateBindingDeliveryGate,
 	type ManifestV1,
 	type ProviderAnnotation,
@@ -160,7 +160,8 @@ function environmentFromAnnotations(
 		const values =
 			annotation.option === "env"
 				? annotation.config
-				: annotation.option === "dependency" && isJsonObject(annotation.config.env)
+				: annotation.option === "dependency" &&
+						isJsonObject(annotation.config.env)
 					? annotation.config.env
 					: undefined;
 		if (!values) continue;

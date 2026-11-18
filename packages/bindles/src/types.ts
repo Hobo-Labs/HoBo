@@ -142,15 +142,19 @@ export interface ResourceDescriptor<K extends ResourceKind = ResourceKind> {
 	readonly declaredAllow: readonly string[];
 }
 
-type VerbArgument<K extends ResourceKind, V extends AllowVerbsFor<K>> =
-	K extends "bucket"
-		? V extends "write"
-			? JsonValue | Uint8Array
-			: JsonValue
-		: JsonValue;
+type VerbArgument<
+	K extends ResourceKind,
+	V extends AllowVerbsFor<K>,
+> = K extends "bucket"
+	? V extends "write"
+		? JsonValue | Uint8Array
+		: JsonValue
+	: JsonValue;
 
 type VerbMethodsFor<K extends ResourceKind> = {
-	[V in AllowVerbsFor<K>]: (...args: VerbArgument<K, V>[]) => LoweringDescriptor;
+	[V in AllowVerbsFor<K>]: (
+		...args: VerbArgument<K, V>[]
+	) => LoweringDescriptor;
 };
 
 export type ResourceHandle<K extends ResourceKind, A = never> = {

@@ -20,7 +20,6 @@ import {
 } from "../wiring/index.js";
 import { type CollectionEvent, createCollectionEvents } from "./events.js";
 
-
 export interface ComponentHostDescriptor {
 	readonly kind: string;
 	readonly version: string;

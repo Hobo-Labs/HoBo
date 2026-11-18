@@ -80,15 +80,27 @@ interface ShipmentEvent {
 	trackingNumber: string;
 }
 declare const builder: BindleBuilder;
-const orders = builder.queue<OrderEvent>().allow("enqueue").withReference(builder.kv());
-const shipments = builder.topic<ShipmentEvent>().with().dependsOn(orders).allow("publish");
-type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (
-	<T>() => T extends B ? 1 : 2
-)
-	? true
-	: false;
-const _orderMessage: Equal<BindleResourceMessage<typeof orders>, OrderEvent> = true;
-const _shipmentMessage: Equal<BindleResourceMessage<typeof shipments>, ShipmentEvent> = true;
+const orders = builder
+	.queue<OrderEvent>()
+	.allow("enqueue")
+	.withReference(builder.kv());
+const shipments = builder
+	.topic<ShipmentEvent>()
+	.with()
+	.dependsOn(orders)
+	.allow("publish");
+type Equal<A, B> =
+	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+		? true
+		: false;
+const _orderMessage: Equal<
+	BindleResourceMessage<typeof orders>,
+	OrderEvent
+> = true;
+const _shipmentMessage: Equal<
+	BindleResourceMessage<typeof shipments>,
+	ShipmentEvent
+> = true;
 // @ts-expect-error
 const _wrongMessage: BindleResource<"queue", ShipmentEvent> = orders;
 // @ts-expect-error

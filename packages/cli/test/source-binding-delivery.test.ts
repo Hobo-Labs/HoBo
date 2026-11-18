@@ -19,7 +19,9 @@ it("refuses credentials in authored annotations before collection", () => {
 			config: { API_KEY: secret },
 		}),
 	}));
-	expect(() => targetFromBindleDefinition(definition)).toThrow(/binding.delivery/i);
+	expect(() => targetFromBindleDefinition(definition)).toThrow(
+		/binding.delivery/i,
+	);
 	try {
 		targetFromBindleDefinition(definition);
 	} catch (error) {
@@ -35,7 +37,9 @@ it("keeps safe resource environment values in the collected manifest", () => {
 			config: { LOG_LEVEL: "debug", PORT: 3000 },
 		}),
 	}));
-	const { manifest } = collectBindleManifest(targetFromBindleDefinition(definition));
+	const { manifest } = collectBindleManifest(
+		targetFromBindleDefinition(definition),
+	);
 	expect(manifest.value.resources.web?.env).toEqual({
 		LOG_LEVEL: "debug",
 		PORT: "3000",
@@ -55,13 +59,46 @@ it("keeps safe backing-resource settings and public discovery in the manifest", 
 			endpoints: { http: "https://service.example.test/" },
 		}),
 	}));
-	const { manifest } = collectBindleManifest(targetFromBindleDefinition(definition));
+	const { manifest } = collectBindleManifest(
+		targetFromBindleDefinition(definition),
+	);
 	expect(manifest.value.resources.cache?.env).toEqual({ CACHE_MODE: "shared" });
 	expect(manifest.value.resources.external?.connectionString).toBe(
 		"postgres://db.example.test/app",
 	);
 	expect(manifest.value.resources.external?.endpoints).toEqual({
 		http: "https://service.example.test/",
+	});
+});
+
+it("rejects nested endpoint credentials and retains safe structured endpoints", () => {
+	const credential = "fixture-nested-credential";
+	const unsafeOptions = JSON.parse(
+		JSON.stringify({
+			image: "example.test/worker:1",
+			endpoints: {
+				http: { port: 8080, url: `https://user:${credential}@example.test/` },
+			},
+		}),
+	);
+	const unsafe = bindle("source", (builder) => ({
+		worker: builder.container(unsafeOptions),
+	}));
+	expect(() => targetFromBindleDefinition(unsafe)).toThrow(/binding.delivery/i);
+	try {
+		targetFromBindleDefinition(unsafe);
+	} catch (error) {
+		expect(String(error)).not.toContain(credential);
+	}
+	const safe = bindle("source", (builder) => ({
+		worker: builder.container({
+			image: "example.test/worker:1",
+			endpoints: { http: { port: 8080, external: true } },
+		}),
+	}));
+	const { manifest } = collectBindleManifest(targetFromBindleDefinition(safe));
+	expect(manifest.value.resources.worker?.endpoints).toEqual({
+		http: { port: 8080, external: true },
 	});
 });
 
@@ -109,7 +146,9 @@ it("refuses an unsafe source project through the collect command without leaking
 			ok: false,
 			code: "HOBO_BINDING_DELIVERY",
 		});
-		expect(result.stdout + result.stderr).not.toContain("fixture-collect-secret");
+		expect(result.stdout + result.stderr).not.toContain(
+			"fixture-collect-secret",
+		);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
