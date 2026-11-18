@@ -52,8 +52,6 @@ Delivery frames (site plates):
 | `bo-walk.png` | 6×6 | 160×157 | **50 ms** | **reuse** east |
 | `bo-walk-left.png` | 6×6 | 160×157 | **50 ms** | site west + feet@153 |
 
-Notes: `docs/WALK_SHEET_HANDOFF.md`, `docs/asset-index-learnings.md`.
-
 ## Architecture (phaser-gamedev)
 
 ```
