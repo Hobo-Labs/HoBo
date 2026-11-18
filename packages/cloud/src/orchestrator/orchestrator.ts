@@ -43,6 +43,7 @@ export interface OrchestratorDeps {
 	actorHost: ActorHost;
 	executor: Executor;
 	broker: CredentialBroker;
+	verifyResume?: ResourceActorDeps["verifyResume"];
 }
 
 export interface OrchestratorContext {
@@ -143,6 +144,8 @@ export async function runOrchestrator(
 		executor: deps.executor,
 		broker: deps.broker,
 	};
+	if (deps.verifyResume !== undefined)
+		actorDeps.verifyResume = deps.verifyResume;
 	const reconcileCtx: ReconcileContext = {
 		deploymentId,
 		tenant: ctx.tenant,
@@ -306,12 +309,7 @@ export async function runOrchestrator(
 			};
 		}
 		const compensation = await runCompensation(
-			{
-				store: deps.store,
-				actorHost: deps.actorHost,
-				executor: deps.executor,
-				broker: deps.broker,
-			},
+			actorDeps,
 			plan,
 			deploymentId,
 			triggeringFailure,

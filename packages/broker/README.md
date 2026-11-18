@@ -22,6 +22,61 @@ produce a quote.
 It accepts both the synchronous local authority and the asynchronous shared
 authority, including the PostgreSQL implementation.
 
+Before creating or starting a priced IaC hold without a separately verified
+fence guard, install `iacPricedSettlementTrust` on the budget authority.
+Absent trust denies admission with `budget.settlement-unavailable`; it also
+prevents a previously unclaimed hold from starting. Existing holds remain
+readable for reconciliation, but cannot revalidate for execution until the
+required trust is present. Its synchronous,
+independently enrolled verifier must authenticate the exact tenant, budget,
+reservation, plan, execution, provider accounts, final usage and permanent
+source-retirement evidence. Nonempty references or a caller assertion alone do
+not establish those facts. The verifier receives the original live reservation
+on settlement and journal replay; retain historical verification material.
+Missing, forged, asynchronous or unavailable evidence leaves the hold in place.
+Unclaimed holds may be released only when confirmed unused.
+
+The budget journal and its append authority are trusted host infrastructure.
+Restrict the database and journal writer to the budget authority, and protect
+against rollback or rewriting. Replay checks reservation transitions and
+settlement accounting, but the first priced reservation records quote and
+liability digests rather than the complete authenticated quote evidence; replay
+cannot authenticate an initial event supplied by an arbitrary journal writer.
+Never expose raw journal writes as an admission or recovery API.
+
+When pricing is unavailable, admission denies by default. A host may explicitly
+configure `unpriced.authorize` and an independently enrolled
+`unpricedScopeTrust` on the budget authority to permit a particular request.
+Its policy proof pins the request, inventory, budget identity, revision,
+obligations and validity window. The signed scope proof covers exactly the
+target's provider accounts. A receipt then says `evaluation: "bypassed"`,
+`reservation: "held"` and `unboundedExposure: true`: it states that the
+budget did not bound the cost. It carries no quote or price. It is never a
+zero-cost estimate. `unboundedExposureCount` remains visible through replay.
+Outstanding bounded holds and unbounded holds cannot coexist in one ledger;
+active unbounded holds prevent new bounded admission, including across
+connections sharing that ledger. Unpriced admission also refuses shared
+entitlements.
+
+The host-enrolled scope authority is a necessary trust boundary: it must
+independently authenticate globally canonical account IDs across providers and
+aliases, reject alternate names for the same billable account, and enforce
+exclusive financial ownership across every budget authority and billing period,
+including authorities created later, until source retirement and settlement.
+The ledger cannot independently prove
+that other ledgers or provider accounts obey that contract. Its synchronous
+verifier also authenticates settlement for the exact claim, plan, account
+charges, final usage and permanent source retirement; it is called again during
+journal replay. Keep historical verification material available. Failed,
+unavailable or asynchronous verification preserves the exposure.
+
+The adapter must revalidate the exact claimed receipt and plan immediately
+before provider start, and use a shared route authority across all candidate
+targets to prevent retries from starting a second effect. The host must fence
+scope or policy revocation and provider credentials through provider start;
+an external provider call cannot be atomic with the local ledger. Claims remain
+held for reconciliation after expiry or revocation.
+
 `resolveBindleDeployment` ranks compatible Yards using trusted, normalized,
 whole-request hosting quotes. Capacity is never a substitute for price. A quote
 contains itemized expected cost and a separate conservative liability bound in

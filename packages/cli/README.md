@@ -55,6 +55,8 @@ require the current CD Set to have a converged observation. `--dry-run` and
 `--preview` are aliases for `--what-if` on these two commands. Revision selectors
 and rollback cannot be combined with `--what-if`; rollback restores the prior
 Set exactly and cannot be combined with `--mode`.
+An uncertain provider apply returns `needs-human` immediately and does not
+route the resource to another provider while reconciliation is required.
 
 Subcommand flags: `deploy`, `incident` and `serve` subcommands declare their
 own flags in `src/shell/subcommands.ts` (`DEPLOY_SUBCOMMANDS`,

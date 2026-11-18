@@ -446,7 +446,11 @@ describe("create/destroy cycle", () => {
 		const failing: IacProvider = {
 			...recordingIac(),
 			async apply(program: IacProgram) {
-				if (program.resourceId === "web") throw new Error("web down");
+				if (program.resourceId === "web")
+					throw Object.assign(new Error("web down"), {
+						requiresReconciliation: false,
+						executionOutcome: "not-started",
+					});
 				return {};
 			},
 		};
@@ -542,14 +546,14 @@ describe("deployment modes", () => {
 			"uncertain-update",
 			{ tenant, actor },
 		);
-		expect(update.status).toBe("waiting");
+		expect(update.status).toBe("needs-human");
 		const retried = await runOrchestrator(
 			deps(store, failing),
 			changed,
 			"uncertain-update",
 			{ tenant, actor },
 		);
-		expect(retried.status).toBe("waiting");
+		expect(retried.status).toBe("needs-human");
 		iac.calls.length = 0;
 		const result = await runOrchestrator(
 			deps(store, iac),
@@ -557,8 +561,7 @@ describe("deployment modes", () => {
 			"uncertain-update",
 			{ tenant, actor, mode: "complete" },
 		);
-		expect(result.status).toBe("waiting");
-		expect(result.unprunable).toEqual(["network"]);
+		expect(result.status).toBe("needs-human");
 		expect(iac.calls).toEqual([]);
 	});
 
@@ -682,7 +685,10 @@ describe("deployment modes", () => {
 			async destroy(program) {
 				iac.calls.push(`destroy:${program.resourceId}`);
 				if (program.resourceId === "web")
-					throw new Error("provider unavailable");
+					throw Object.assign(new Error("provider unavailable"), {
+						requiresReconciliation: false,
+						executionOutcome: "not-started",
+					});
 			},
 		};
 		const failed = await runOrchestrator(
@@ -704,7 +710,7 @@ describe("deployment modes", () => {
 
 		iac.calls.length = 0;
 		const retried = await runOrchestrator(
-			deps(store, iac),
+			{ ...deps(store, iac), verifyResume: async () => true },
 			smaller,
 			"prune-failure",
 			{

@@ -11,6 +11,7 @@ import {
 } from "../src/_generated/pricing_pb.js";
 import {
 	createTargetPricingInventory,
+	hashTargetPricingInventory,
 	parseTargetPricingAvailability,
 	quoteTargetPricing,
 	targetPricingModel,
@@ -63,6 +64,29 @@ function modeled() {
 }
 
 describe("whole-target pricing contract", () => {
+	it("hashes complete inventories without requiring a price and refuses incomplete scopes", () => {
+		const target = inventory();
+		const quoted = quoteTargetPricing(target, modeled());
+		const hash = hashTargetPricingInventory(target);
+		expect(hash).toMatch(/^sha256:[a-f0-9]{64}$/u);
+		if (!quoted.ok) throw new Error(quoted.reason);
+		expect(hash).toBe(quoted.inventoryHash);
+		target.complete = false;
+		expect(hashTargetPricingInventory(target)).toBeUndefined();
+	});
+
+	it("does not hash an inventory after dropping unknown resource or scope data", () => {
+		for (const location of ["inventory", "resource"] as const) {
+			const target = inventory();
+			const altered = location === "inventory" ? target : target.resources[0];
+			if (altered === undefined) throw new Error("fixture resource missing");
+			Object.defineProperty(altered, "unmodeledCharge", {
+				value: "100",
+				enumerable: true,
+			});
+			expect(hashTargetPricingInventory(target), location).toBeUndefined();
+		}
+	});
 	it("preserves unknown pricing instead of producing a zero quote", () => {
 		expect(
 			quoteTargetPricing(inventory(), targetPricingUnavailable("no model")),
