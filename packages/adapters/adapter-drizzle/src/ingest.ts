@@ -47,6 +47,13 @@ export interface DrizzleIngestResult {
 	readonly impedance: readonly DrizzleImpedanceFinding[];
 }
 
+const SERIAL_SEQUENCE_COLUMN_TYPES = new Set([
+	"PgSerial",
+	"PgSmallSerial",
+	"PgBigSerial53",
+	"PgBigSerial64",
+]);
+
 export function ingestDrizzleSchema<SchemaModule>(
 	moduleExports: SchemaModule,
 	options?: DrizzleIngestOptions,
@@ -233,6 +240,13 @@ function readDefault(
 	column: DrizzleColumnLike,
 	findings: DrizzleImpedanceFinding[],
 ): string | undefined {
+	if (
+		column.default === undefined &&
+		column.defaultFn === undefined &&
+		column.columnType !== undefined &&
+		SERIAL_SEQUENCE_COLUMN_TYPES.has(column.columnType)
+	)
+		return undefined;
 	if (
 		column.generatedIdentity !== undefined &&
 		column.generatedIdentity !== null &&

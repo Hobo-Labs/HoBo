@@ -78,6 +78,10 @@ throw — a finding is the answer.
 | `DRIZZLE_TABLE_COLUMNS_EMPTY` | A table-shaped export yielded no readable columns, so no table was emitted |
 | `DRIZZLE_TABLE_NAME_DUPLICATE` | Two exports declare the same SQL table; the first by export name wins |
 
+PostgreSQL `serial`, `smallserial`, and `bigserial` carry their implicit
+sequence behavior in the column type. An explicit runtime default function is
+still reported as impedance.
+
 ## Fail closed: SQL emission is gated
 
 `emitSql` requires the drizzle-kit toolchain, which this package does not
