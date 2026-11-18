@@ -119,7 +119,7 @@ describe("endpoint cloud-native providers", () => {
 		["gcp", createGcpCloudNativeProvider],
 		["azure", createAzureCloudNativeProvider],
 		["vercel", createVercelCloudNativeProvider],
-	] as const)("%s keeps requests on the bound origin and returns redirects", async (_id, createProvider) => {
+	] as const)("%s keeps requests on the bound origin and blocks external redirects", async (_id, createProvider) => {
 		const seen: Array<{
 			url: string;
 			key: string | null;
@@ -150,7 +150,8 @@ describe("endpoint cloud-native providers", () => {
 				headers: { "x-api-key": "sentinel" },
 			}),
 		);
-		expect(response.status).toBe(302);
+		expect(response.status).toBe(502);
+		expect(response.headers.get("location")).toBeNull();
 		expect(seen).toEqual([
 			{
 				url: "https://trusted.example//attacker.example/collect?q=1",
@@ -158,6 +159,38 @@ describe("endpoint cloud-native providers", () => {
 				redirect: "manual",
 			},
 		]);
+		await served.close();
+	});
+
+	it.each([
+		["aws", createAwsCloudNativeProvider],
+		["gcp", createGcpCloudNativeProvider],
+		["azure", createAzureCloudNativeProvider],
+		["vercel", createVercelCloudNativeProvider],
+	] as const)("%s preserves bound redirects and conditional responses", async (_id, createProvider) => {
+		const responses = [
+			new Response(null, { status: 302, headers: { location: "/next" } }),
+			new Response(null, { status: 304, headers: { etag: '"fresh"' } }),
+		];
+		const provider = createProvider({
+			fetchImpl: async () => {
+				const response = responses.shift();
+				if (!response) throw new Error("unexpected fetch");
+				return response;
+			},
+		});
+		const served = await provider.servePrivate(
+			serveContext({
+				HOBO_CLOUD_NATIVE_ENDPOINT_ORDERS_API: "https://trusted.example",
+			}),
+		);
+		const handler = mustGet(served.handlers, "orders-api");
+		const redirect = await handler(new Request("https://internal/path"));
+		expect(redirect.status).toBe(302);
+		expect(redirect.headers.get("location")).toBe("/next");
+		const conditional = await handler(new Request("https://internal/path"));
+		expect(conditional.status).toBe(304);
+		expect(conditional.headers.get("etag")).toBe('"fresh"');
 		await served.close();
 	});
 
