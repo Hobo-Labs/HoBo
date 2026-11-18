@@ -7,7 +7,7 @@ description: Verify that unsupported generation effects, unavailable evidence an
 
 **Properties:** The planner refuses unknown and unsupported generation effects, any policy that does not explicitly say approval and attestation are unnecessary, and nonempty or invalid locked-property lists. Through the checked funded deployment path, these refusals precede host authorization, reservation and provider work. A modeled policy with the supported effect, explicit no-approval and no-attestation settings, and an empty property-lock list is not rejected by these checks.
 
-**Review baseline:** commit `709ea76715f765cd0d88690bda8dd8fee4f148b8`. PASS for the bounded model and executable checks below. The separate `verify-yard-generation-saga` skill checks in-process retry coalescing and plan identity.
+**Review baseline:** commit `c292033818cf4b482525e3d9d581874e9ff97385`. PASS for the bounded model and executable checks below. The separate `verify-yard-generation-saga` skill checks in-process retry coalescing and plan identity.
 
 ## Covered code
 

@@ -7,7 +7,7 @@ description: Verify atomic SQLite generation quota reservations, tenant inventor
 
 **Properties:** Within one authority database, a new reservation atomically counts all pending generations and a tenant's initial and claimed Yards before accepting a fixed positive limit. A repeated key is bound to the same attempt, tenant, Yard, plan and limits. Uncertain claims remain pending, and a concurrent slot is released only after a trusted verifier accepts readiness bound to the claim; the Yard remains counted for its tenant. Generated placement requires the authority, checks host policy before reserving quota, and binds the stored claim before budget reservation and again at the actual provider call after asynchronous scheduling.
 
-**Review baseline:** commit `709ea76715f765cd0d88690bda8dd8fee4f148b8`. PASS for the bounded model, integer abstraction and executable checks below.
+**Review baseline:** commit `c292033818cf4b482525e3d9d581874e9ff97385`. PASS for the bounded model, integer abstraction and executable checks below.
 
 ## Covered code
 
