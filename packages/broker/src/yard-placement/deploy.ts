@@ -522,9 +522,34 @@ export async function resolveBindleDeployment(
 	const markGenerationUncertain = () => {
 		if (!budgetReservation) return true;
 		try {
-			if (!budgetAuthority || !budgetUncertain) return false;
-			budgetUncertain.call(budgetAuthority, reservationId);
-			return true;
+			if (
+				!budgetAuthority ||
+				!budgetUncertain ||
+				!budgetLookup ||
+				budgetAuthority.uncertain !== budgetUncertain ||
+				budgetAuthority.lookup !== budgetLookup ||
+				budgetAuthority.persistence !== budgetPersistence
+			)
+				return false;
+			const matches = (reservation: BudgetReservation | undefined) =>
+				reservation?.status === "uncertain" &&
+				reservation.reservationId === reservationId &&
+				reservation.requestDigest === requestDigest &&
+				reservation.quoteId === budgetReservation?.quoteId &&
+				reservation.reservedMicros === budgetReservation?.reservedMicros &&
+				reservation.identity !== undefined &&
+				budgetReservation?.identity !== undefined &&
+				budgetIdentityKey(reservation.identity) ===
+					budgetIdentityKey(budgetReservation.identity);
+			const marked = budgetUncertain.call(budgetAuthority, reservationId);
+			const stored = budgetLookup.call(budgetAuthority, reservationId);
+			return (
+				matches(marked) &&
+				matches(stored) &&
+				budgetAuthority.uncertain === budgetUncertain &&
+				budgetAuthority.lookup === budgetLookup &&
+				budgetAuthority.persistence === budgetPersistence
+			);
 		} catch {
 			return false;
 		}
@@ -1154,7 +1179,66 @@ export async function resolveBindleDeployment(
 				return false;
 			}
 		};
-		generationAuthorityCurrent = () => generationContextCurrent(true);
+		let budgetExecutionClaimed = false;
+		let budgetExecutionClaimAttempted = false;
+		let budgetAlreadyClaimed = false;
+		let budgetHoldUnverifiable = false;
+		let budgetClaimBinding:
+			| {
+					readonly quoteId: string;
+					readonly quoteDigest: string;
+					readonly reservedMicros: number;
+					readonly identityKey: string;
+					readonly executionDigest: string;
+			  }
+			| undefined;
+		const budgetClaimMatches = (
+			reservation: BudgetReservation | undefined,
+			requireExecution = true,
+		) => {
+			try {
+				return Boolean(
+					budgetClaimBinding &&
+						reservation?.status === "held" &&
+						reservation.reservationId === reservationId &&
+						reservation.requestDigest === requestDigest &&
+						reservation.quoteId === budgetClaimBinding.quoteId &&
+						reservation.quoteDigest === budgetClaimBinding.quoteDigest &&
+						reservation.reservedMicros === budgetClaimBinding.reservedMicros &&
+						reservation.identity &&
+						budgetIdentityKey(reservation.identity) ===
+							budgetClaimBinding.identityKey &&
+						(!requireExecution ||
+							reservation.executionDigest ===
+								budgetClaimBinding.executionDigest),
+				);
+			} catch {
+				return false;
+			}
+		};
+		const budgetClaimCurrent = () => {
+			try {
+				if (!budgetExecutionClaimed) return true;
+				return Boolean(
+					budgetAuthority &&
+						budgetLookup &&
+						budgetAuthority.lookup === budgetLookup &&
+						budgetAuthority.persistence === budgetPersistence &&
+						budgetClaimMatches(
+							budgetLookup.call(budgetAuthority, reservationId),
+						) &&
+						budgetAuthority.lookup === budgetLookup &&
+						budgetAuthority.persistence === budgetPersistence,
+				);
+			} catch {
+				return false;
+			}
+		};
+		generationAuthorityCurrent = () =>
+			generationContextCurrent(true) &&
+			budgetClaimCurrent() &&
+			generationContextCurrent(true) &&
+			budgetClaimCurrent();
 		let inspectGenerationOnly = false;
 		generationPlanHash = genDecision.plan.planHash;
 		const planned = placeResourcesUnderYard(
@@ -1213,8 +1297,6 @@ export async function resolveBindleDeployment(
 				);
 			}
 		};
-		let budgetExecutionClaimed = false;
-		let budgetAlreadyClaimed = false;
 		try {
 			await admitHosting(
 				genDecision.plan.expectedYardId,
@@ -1239,20 +1321,50 @@ export async function resolveBindleDeployment(
 				const head = financial.authority.read(now);
 				const previous = financial.authority.lookup(reservationId);
 				budgetAlreadyClaimed = Boolean(previous?.executionDigest);
+				const liabilityBoundMicros = hostingQuote.liabilityBoundMicros;
+				const executionDigest = contentHashOf({
+					kind: "yard-generation",
+					requestDigest,
+					planHash: genDecision.plan.planHash,
+				});
+				if (!head.identity || !isJsonNumber(liabilityBoundMicros)) {
+					budgetHoldUnverifiable = true;
+					throw new Error(
+						"budget identity is unavailable before generation claim",
+					);
+				}
+				budgetClaimBinding = {
+					quoteId: hostingQuote.quoteId,
+					quoteDigest: hostingQuoteDigest(hostingQuote),
+					reservedMicros: liabilityBoundMicros,
+					identityKey: budgetIdentityKey(head.identity),
+					executionDigest,
+				};
+				if (
+					!budgetClaimMatches(budgetReservation, false) ||
+					!budgetClaimMatches(previous, false)
+				) {
+					budgetHoldUnverifiable = true;
+					throw new Error("budget reservation binding could not be verified");
+				}
 				if (!paidContextCurrent() || !generationAuthorityCurrent())
 					throw new Error(
 						"hosting context changed before generation claim; reconcile reservation",
 					);
-				budgetReservation = financial.authority.claimExecution({
+				budgetExecutionClaimAttempted = true;
+				const claimed = financial.authority.claimExecution({
 					reservationId,
 					requestDigest,
-					executionDigest: contentHashOf({
-						kind: "yard-generation",
-						requestDigest,
-						planHash: genDecision.plan.planHash,
-					}),
+					executionDigest,
 					expectedSeq: head.seq,
 				});
+				if (
+					!budgetClaimMatches(claimed) ||
+					!budgetClaimMatches(financial.authority.lookup(reservationId)) ||
+					!paidContextCurrent()
+				)
+					throw new Error("budget execution claim could not be verified");
+				budgetReservation = claimed;
 				budgetExecutionClaimed = true;
 				// A durable claim may wait for a database writer past quote expiry.
 				validateHostingQuote(hostingQuote, financial.now());
@@ -1310,14 +1422,25 @@ export async function resolveBindleDeployment(
 					quotaReconciliation = "; quota reservation requires reconciliation";
 				}
 			}
+			const budgetClaimOutcomeUnknown =
+				budgetExecutionClaimAttempted && !budgetExecutionClaimed;
+			const budgetUncertaintyWriteFailed =
+				budgetExecutionClaimAttempted && !markGenerationUncertain();
 			const budgetReconciliation =
-				budgetExecutionClaimed && !markGenerationUncertain()
+				(budgetHoldUnverifiable
+					? "; budget reservation binding is unverified; reconcile the hold"
+					: "") +
+				(budgetClaimOutcomeUnknown
+					? "; budget execution claim outcome is unknown; reconcile the hold"
+					: "") +
+				(budgetUncertaintyWriteFailed
 					? "; uncertain budget status could not be recorded; reconcile the hold"
-					: generationBudgetReserveAttempted &&
-							!budgetReservation &&
-							!(error instanceof BudgetAdmissionDeniedError)
-						? "; budget reservation outcome is unknown; reconcile the hold"
-						: "";
+					: "") +
+				(generationBudgetReserveAttempted &&
+				!budgetReservation &&
+				!(error instanceof BudgetAdmissionDeniedError)
+					? "; budget reservation outcome is unknown; reconcile the hold"
+					: "");
 			return rejectResult(
 				foldState,
 				emitted,

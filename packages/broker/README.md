@@ -441,6 +441,11 @@ the missing claim; unverified cancellations require reconciliation. Lost quota
 or budget reservation acknowledgements are reported for reconciliation. A typed
 quota denial must mean the call created no reservation; other errors may have
 committed. Budget holds remain separate from quota cancellation.
+If the budget execution claim loses its acknowledgement, the broker retains
+the hold, attempts to mark it uncertain, and reports the outcome for
+reconciliation. It verifies the returned and stored execution claim against
+the approved quote and rechecks the stored claim at the provider boundary. A
+failure to verify the uncertainty record is also reported.
 
 On upgrade, existing claims are conservatively fenced and already-open older
 writers are refused by SQLite write guards. Limits and baseline remain fixed;

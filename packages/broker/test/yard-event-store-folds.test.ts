@@ -248,6 +248,18 @@ describe("yard event-store folds + provider resolvers", () => {
 		"generation-quota-changed-before-provider",
 		"generation-budget-fails-after-quota",
 		"generation-budget-commits-then-fails",
+		"generation-budget-fence-not-stored",
+		"generation-budget-fence-wrong-binding",
+		"generation-budget-fence-changed-before-provider",
+		"generation-budget-claim-fails",
+		"generation-budget-claim-commits-then-fails",
+		"generation-budget-claim-uncertain-write-failed",
+		"generation-budget-claim-commits-uncertain-write-failed",
+		"generation-budget-claim-uncertain-not-stored",
+		"generation-budget-claim-uncertain-commits-then-fails",
+		"generation-budget-claim-uncertain-wrong-binding",
+		"generation-budget-claim-uncertain-stored-mismatch",
+		"generation-budget-claim-cancel-failed",
 		"generation-quota-claim-fails",
 		"generation-quota-fence-not-stored",
 		"generation-quota-claim-commits-then-fails",
@@ -311,6 +323,7 @@ describe("yard event-store folds + provider resolvers", () => {
 	) {
 		const catalog = createLocalHostCatalog();
 		let generationFinished = false;
+		let budgetFenceTampered = false;
 		// Extend catalog with azure wildcard so residual placement can succeed after gen.
 		const azureCatalog = {
 			catalogHash: catalog.catalogHash,
@@ -735,9 +748,22 @@ describe("yard event-store folds + provider resolvers", () => {
 			uncertain(id: string) {
 				if (
 					mode === "uncertain-write-failed" ||
+					mode === "generation-budget-claim-uncertain-write-failed" ||
+					mode === "generation-budget-claim-commits-uncertain-write-failed" ||
 					mode === "wrong-generated-yard-uncertainty-fails"
 				)
 					throw new Error("storage unavailable");
+				if (mode === "generation-budget-claim-uncertain-not-stored") {
+					const held = authority.lookup(id);
+					if (!held) throw new Error("fixture budget hold missing");
+					return { ...held, status: "uncertain" };
+				}
+				if (mode === "generation-budget-claim-uncertain-commits-then-fails") {
+					authority.uncertain(id);
+					throw new Error("uncertainty acknowledgement lost");
+				}
+				if (mode === "generation-budget-claim-uncertain-wrong-binding")
+					return { ...authority.uncertain(id), quoteId: "wrong-quote" };
 				return authority.uncertain(id);
 			},
 			lookup(id: string) {
@@ -747,6 +773,17 @@ describe("yard event-store folds + provider resolvers", () => {
 				)
 					throw new Error("storage unavailable");
 				const reservation = authority.lookup(id);
+				if (
+					mode === "generation-budget-fence-changed-before-provider" &&
+					budgetFenceTampered &&
+					reservation?.status === "held"
+				)
+					return { ...reservation, executionDigest: "" };
+				if (
+					mode === "generation-budget-claim-uncertain-stored-mismatch" &&
+					reservation?.status === "uncertain"
+				)
+					return { ...reservation, requestDigest: "wrong-request" };
 				if (mode === "generation-policy-before-claim" && reservation)
 					Object.assign(allowPolicy, { effect: "deny" });
 				if (mode === "changed-plan-before-claim" && reservation)
@@ -755,7 +792,29 @@ describe("yard event-store folds + provider resolvers", () => {
 				return reservation;
 			},
 			claimExecution(input: Parameters<typeof authority.claimExecution>[0]) {
+				if (mode === "generation-budget-fence-not-stored") {
+					const held = authority.lookup(input.reservationId);
+					if (!held) throw new Error("fixture budget hold missing");
+					return { ...held, executionDigest: input.executionDigest };
+				}
+				if (
+					mode === "generation-budget-claim-fails" ||
+					mode === "generation-budget-claim-uncertain-write-failed" ||
+					mode === "generation-budget-claim-uncertain-not-stored" ||
+					mode === "generation-budget-claim-uncertain-commits-then-fails" ||
+					mode === "generation-budget-claim-uncertain-wrong-binding" ||
+					mode === "generation-budget-claim-uncertain-stored-mismatch" ||
+					mode === "generation-budget-claim-cancel-failed"
+				)
+					throw new Error("budget execution claim acknowledgement lost");
 				const claimed = authority.claimExecution(input);
+				if (mode === "generation-budget-fence-wrong-binding")
+					return { ...claimed, requestDigest: "wrong-request" };
+				if (
+					mode === "generation-budget-claim-commits-then-fails" ||
+					mode === "generation-budget-claim-commits-uncertain-write-failed"
+				)
+					throw new Error("budget execution claim acknowledgement lost");
 				if (mode === "generation-quota-removed-after-claim") changeQuota?.();
 				if (mode === "generation-runtime-after-claim") {
 					const runtime = runtimes.snapshot().runtimes[0];
@@ -913,6 +972,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				});
 			if (
 				mode === "generation-quota-cancel-fails" ||
+				mode === "generation-budget-claim-cancel-failed" ||
 				mode === "generation-quota-cancel-not-stored"
 			)
 				Object.assign(deps, {
@@ -949,6 +1009,27 @@ describe("yard event-store folds + provider resolvers", () => {
 								queueMicrotask(() =>
 									Object.assign(deps, { generationQuota: undefined }),
 								);
+							}
+							return claim;
+						},
+					},
+				});
+			}
+			if (mode === "generation-budget-fence-changed-before-provider") {
+				let scheduled = false;
+				Object.assign(deps, {
+					generationQuota: {
+						...quota,
+						lookup(key: Parameters<typeof quota.lookup>[0]) {
+							const claim = quota.lookup(key);
+							if (
+								!scheduled &&
+								authority.lookup(reservationId)?.executionDigest
+							) {
+								scheduled = true;
+								queueMicrotask(() => {
+									budgetFenceTampered = true;
+								});
 							}
 							return claim;
 						},
@@ -1279,6 +1360,78 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(result.reasons?.[0]?.message).toContain(
 					"quota reservation outcome is unknown",
 				);
+				return;
+			}
+			if (mode === "generation-budget-fence-changed-before-provider") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(
+					quota.lookup(generationPlan.idempotencyKey)?.executionClaimed,
+				).toBe(true);
+				return;
+			}
+			if (
+				mode === "generation-budget-fence-not-stored" ||
+				mode === "generation-budget-fence-wrong-binding"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (
+				mode === "generation-budget-claim-fails" ||
+				mode === "generation-budget-claim-commits-then-fails" ||
+				mode === "generation-budget-claim-uncertain-write-failed" ||
+				mode === "generation-budget-claim-commits-uncertain-write-failed" ||
+				mode === "generation-budget-claim-uncertain-not-stored" ||
+				mode === "generation-budget-claim-uncertain-commits-then-fails" ||
+				mode === "generation-budget-claim-uncertain-wrong-binding" ||
+				mode === "generation-budget-claim-uncertain-stored-mismatch" ||
+				mode === "generation-budget-claim-cancel-failed"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				if (mode === "generation-budget-claim-cancel-failed") {
+					expect(
+						quota.lookup(generationPlan.idempotencyKey)?.executionClaimed,
+					).toBe(false);
+					expect(result.reasons?.[0]?.message).toContain(
+						"quota reservation requires reconciliation",
+					);
+				} else
+					expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
+				const reservation = authority.lookup(reservationId);
+				expect(reservation?.status).toBe(
+					mode === "generation-budget-claim-uncertain-write-failed" ||
+						mode === "generation-budget-claim-commits-uncertain-write-failed" ||
+						mode === "generation-budget-claim-uncertain-not-stored"
+						? "held"
+						: "uncertain",
+				);
+				if (
+					mode === "generation-budget-claim-commits-then-fails" ||
+					mode === "generation-budget-claim-commits-uncertain-write-failed"
+				)
+					expect(reservation?.executionDigest).not.toBe("");
+				else expect(reservation?.executionDigest).toBe("");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				expect(result.reasons?.[0]?.message).toContain(
+					"budget execution claim outcome is unknown",
+				);
+				if (
+					mode === "generation-budget-claim-uncertain-write-failed" ||
+					mode === "generation-budget-claim-commits-uncertain-write-failed" ||
+					mode === "generation-budget-claim-uncertain-not-stored" ||
+					mode === "generation-budget-claim-uncertain-commits-then-fails" ||
+					mode === "generation-budget-claim-uncertain-wrong-binding" ||
+					mode === "generation-budget-claim-uncertain-stored-mismatch"
+				)
+					expect(result.reasons?.[0]?.message).toContain(
+						"uncertain budget status could not be recorded",
+					);
 				return;
 			}
 			if (
@@ -1660,6 +1813,18 @@ describe("yard event-store folds + provider resolvers", () => {
 					"generation-quota-changed-before-provider",
 					"generation-budget-fails-after-quota",
 					"generation-budget-commits-then-fails",
+					"generation-budget-fence-not-stored",
+					"generation-budget-fence-wrong-binding",
+					"generation-budget-fence-changed-before-provider",
+					"generation-budget-claim-fails",
+					"generation-budget-claim-commits-then-fails",
+					"generation-budget-claim-uncertain-write-failed",
+					"generation-budget-claim-commits-uncertain-write-failed",
+					"generation-budget-claim-uncertain-not-stored",
+					"generation-budget-claim-uncertain-commits-then-fails",
+					"generation-budget-claim-uncertain-wrong-binding",
+					"generation-budget-claim-uncertain-stored-mismatch",
+					"generation-budget-claim-cancel-failed",
 					"generation-quota-claim-fails",
 					"generation-quota-fence-not-stored",
 					"generation-quota-claim-commits-then-fails",
