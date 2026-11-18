@@ -1,8 +1,23 @@
 import type {
 	ChargeComponent,
+	Money,
 	ProviderAgreement,
+	Tier,
 	WorkloadDelta,
 } from "./_generated/pricing_pb.js";
+
+function moneyIncomplete(money: Money | undefined): boolean {
+	return (
+		money === undefined ||
+		money.decimal.length === 0 ||
+		money.currency.length === 0
+	);
+}
+
+function tierIncomplete(tier: Tier): boolean {
+	if (tier.from.length === 0) return true;
+	return moneyIncomplete(tier.flatAmount) && moneyIncomplete(tier.unitAmount);
+}
 
 function usagePriceIncomplete(charge: ChargeComponent): boolean {
 	if (charge.variant.case !== "usage") return false;
@@ -20,7 +35,8 @@ function usagePriceIncomplete(charge: ChargeComponent): boolean {
 		);
 	}
 	if (price.case === "graduated" || price.case === "volume") {
-		return price.value.tiers.length === 0;
+		if (price.value.tiers.length === 0) return true;
+		return price.value.tiers.some(tierIncomplete);
 	}
 	return true;
 }

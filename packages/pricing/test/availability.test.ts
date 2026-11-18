@@ -4,6 +4,8 @@ import {
 	ChargeComponentSchema,
 	ProviderAgreementSchema,
 	RateCardSchema,
+	TierSchema,
+	TieredPriceSchema,
 } from "../src/_generated/pricing_pb.js";
 import {
 	developerPricing,
@@ -255,6 +257,33 @@ describe("declared pricing availability", () => {
 		rateCard.id = "empty-card";
 		rateCard.charges = [];
 		incomplete.catalog?.rateCards.push(rateCard);
+		rehashScenario(incomplete);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+	});
+
+	it("rejects graduated usage charges with hollow tiers", () => {
+		const incomplete = scenario();
+		const card = incomplete.catalog?.rateCards[0];
+		const firstCharge = card?.charges[0];
+		if (card === undefined || firstCharge === undefined)
+			throw new Error("fixture charge missing");
+		const tiered = clone(ChargeComponentSchema, firstCharge);
+		if (tiered.variant.case !== "usage" || tiered.base === undefined)
+			throw new Error("fixture usage charge missing");
+		tiered.variant.value.price = {
+			case: "graduated",
+			value: create(TieredPriceSchema, {
+				tiers: [
+					create(TierSchema, {
+						from: "0",
+						flatAmount: { decimal: "", currency: "" },
+					}),
+				],
+			}),
+		};
+		card.charges = [tiered];
 		rehashScenario(incomplete);
 		expect(
 			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
