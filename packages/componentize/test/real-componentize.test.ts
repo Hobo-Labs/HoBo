@@ -13,6 +13,7 @@ import {
 	type RealComponentizeImpl,
 	validateRealWasmComponent,
 } from "../src/index.js";
+import { parseJsonObject } from "../src/json.js";
 
 const SOURCE_DATE_EPOCH = "2026-01-01T00:00:00.000Z";
 const HELLO_BINDLE_ROOT = new URL("./fixtures/hello-bindle", import.meta.url);
@@ -100,7 +101,7 @@ describe("createRealComponentize (injected impl)", () => {
 		});
 	});
 
-	it("is deterministic: same input twice yields the same digest and metadata", async () => {
+	it("returns identical metadata and descriptors when the emitted bytes match", async () => {
 		const { impl } = fixedImpl();
 		const real = await createRealComponentize({ componentizeImpl: impl });
 		const sourceRoot = await writeSourceRoot();
@@ -117,6 +118,47 @@ describe("createRealComponentize (injected impl)", () => {
 		expect(second.component.digest).toBe(first.component.digest);
 		expect(second.component.metadata).toBe(first.component.metadata);
 		expect(second.oci).toEqual(first.oci);
+	});
+
+	it("records the WIT interface contents in the build metadata", async () => {
+		const { impl } = fixedImpl();
+		const sourceRoot = await writeSourceRoot();
+		const firstWit =
+			"package hobo:examples@0.1.0; world hello-bindle { export health: func() -> string; }";
+		const secondWit =
+			"package hobo:examples@0.1.0; world hello-bindle { export health: func() -> string; export version: func() -> string; }";
+		const options = {
+			worldName: "hello-bindle",
+			witWorld: "hobo:examples/hello-bindle@0.1.0",
+		};
+		const firstBuilder = await createRealComponentize({
+			componentizeImpl: impl,
+			wit: { ...options, source: firstWit },
+		});
+		const secondBuilder = await createRealComponentize({
+			componentizeImpl: impl,
+			wit: { ...options, source: secondWit },
+		});
+		const first = await firstBuilder.componentize({
+			sourceRoot,
+			sourceDateEpoch: SOURCE_DATE_EPOCH,
+		});
+		const second = await secondBuilder.componentize({
+			sourceRoot,
+			sourceDateEpoch: SOURCE_DATE_EPOCH,
+		});
+		const firstMetadata = parseJsonObject(first.component.metadata);
+		const secondMetadata = parseJsonObject(second.component.metadata);
+		expect(firstMetadata.sourceDigest).toBe(secondMetadata.sourceDigest);
+		expect(firstMetadata.witDigest).toBe(
+			`sha256:${createHash("sha256").update(firstWit).digest("hex")}`,
+		);
+		expect(secondMetadata.witDigest).toBe(
+			`sha256:${createHash("sha256").update(secondWit).digest("hex")}`,
+		);
+		expect(first.oci.manifest.config.digest).not.toBe(
+			second.oci.manifest.config.digest,
+		);
 	});
 
 	it("bundles TypeScript syntax and local imports", async () => {
@@ -136,9 +178,37 @@ describe("createRealComponentize (injected impl)", () => {
 			sourceDateEpoch: SOURCE_DATE_EPOCH,
 		});
 
-		expect(sources[0]).toContain('var status = "hello-bindle:ok";');
+		expect(sources[0]).toMatch(/var status\s*=\s*"hello-bindle:ok"/u);
 		expect(sources[0]).not.toContain(": string");
 		expect(sources[0]).not.toContain("./status.js");
+	});
+
+	it("uses the same bundled source and metadata in different directories", async () => {
+		const { impl, sources } = fixedImpl();
+		const firstRoot = await writeSourceRoot(
+			'import { status } from "./status.js";\nexport function health(): string { return status; }\n',
+		);
+		const secondRoot = await writeSourceRoot(
+			'import { status } from "./status.js";\nexport function health(): string { return status; }\n',
+		);
+		for (const root of [firstRoot, secondRoot]) {
+			await writeFile(
+				join(root, "src/status.ts"),
+				'export const status: string = "hello-bindle:ok";\n',
+				"utf8",
+			);
+		}
+		const real = await createRealComponentize({ componentizeImpl: impl });
+		const first = await real.componentize({
+			sourceRoot: firstRoot,
+			sourceDateEpoch: SOURCE_DATE_EPOCH,
+		});
+		const second = await real.componentize({
+			sourceRoot: secondRoot,
+			sourceDateEpoch: SOURCE_DATE_EPOCH,
+		});
+		expect(sources[0]).toBe(sources[1]);
+		expect(first.component.metadata).toBe(second.component.metadata);
 	});
 
 	it("fails closed on an invalid sourceDateEpoch", async () => {
@@ -197,7 +267,7 @@ describe("createRealComponentize (toolchain probe)", () => {
 
 	it("reports unavailable when the module lacks a componentize export", async () => {
 		const real = await createRealComponentize({
-			importModule: () => Promise.resolve({ notComponentize: true }),
+			importModule: () => Promise.resolve({}),
 		});
 		expect(real.available).toBe(false);
 	});

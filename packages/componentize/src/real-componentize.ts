@@ -258,6 +258,7 @@ async function runRealComponentize(
 		sourceDateEpoch: input.sourceDateEpoch,
 		entry,
 		sourceDigest: sha256Text(source),
+		witDigest: sha256Text(wit.source),
 		toolchain: PINNED_TOOLCHAIN,
 	});
 
