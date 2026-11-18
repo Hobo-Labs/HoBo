@@ -28,6 +28,19 @@ it("reports a non-enumerable own target used by the fold", () => {
 	expect(report.seqVector).toEqual([{ streamId: "stream", seq: 1 }]);
 });
 
+it("retains non-enumerable target entries with special stream names", () => {
+	const target = Object.defineProperty({}, "__proto__", { value: 1 });
+	const special = { ...event, streamId: "__proto__" };
+	const report = assertReplayEqualsLive({
+		events: [special],
+		targetSeq: target,
+		initialState: 0,
+		fold: (count) => count + 1,
+	});
+	expect(report.stateDigest).toBe(digest(1));
+	expect(report.seqVector).toEqual([{ streamId: "__proto__", seq: 1 }]);
+});
+
 it("keeps the selected target when a fold edits the caller's vector", () => {
 	const target = { stream: 1 };
 	const report = assertReplayEqualsLive({
