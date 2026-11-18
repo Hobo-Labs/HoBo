@@ -4,7 +4,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "test:unit": "vitest run --config vitest.config.ts test/stripe-customer-id.test.ts test/visitor-count.test.ts"
+    "ci:test:unit": "npm ci && vitest run --config vitest.config.ts",
+    "test:unit": "vitest run --config vitest.config.ts"
   },
   "workspaces": [
     ".wasp/out/*",

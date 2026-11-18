@@ -201,9 +201,9 @@ test("Open SaaS example app changes select nested vitest lane", () => {
 	assert.equal(
 		checks.some(
 			(check) =>
-				check.command === "pnpm" &&
+				check.command === "npm" &&
 				check.args.join(" ") ===
-					"--dir examples/wasp-opensaas/app run test:unit",
+					"--prefix examples/wasp-opensaas/app run ci:test:unit",
 		),
 		true,
 	);

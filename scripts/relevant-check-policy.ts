@@ -121,10 +121,16 @@ function defaultImportsTsAutocode(file: string) {
 export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/attestation.test.ts",
 	"scripts/test/verify-attestation.test.ts",
+	"scripts/test/trusted-route.test.ts",
 	"scripts/test/attested-jobs.test.ts",
 	"scripts/test/merge-group-gate.test.ts",
 	"scripts/test/lint-actions-runner.test.ts",
 	"scripts/test/local-attest.test.ts",
+	"scripts/test/fleet-signoff.test.ts",
+	"scripts/test/github-pr-target.test.ts",
+	"scripts/test/github-status-permission.test.ts",
+	"scripts/test/github-merge-group.test.ts",
+	"scripts/test/local-merge-group.test.ts",
 ];
 
 const SIGNED_LOCAL_RUN_GUARDED = new Set([
@@ -136,6 +142,11 @@ const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	"scripts/ci/attestation.mts",
 	"scripts/ci/verify-attestation.mts",
 	"scripts/ci/local-attest.mts",
+	"scripts/ci/fleet-signoff.mts",
+	"scripts/ci/github-pr-target.mts",
+	"scripts/ci/github-target.mts",
+	"scripts/ci/github-status-permission.mts",
+	"scripts/ci/github-merge-group.mts",
 	"scripts/ci/route-runner.mts",
 	// The route script loads it, so it is on the attested path too.
 	"scripts/ci/runner-routing.mts",
@@ -715,10 +726,10 @@ export function selectRelevantChecks(
 		)
 	) {
 		checks.push({
-			command: "pnpm",
-			args: ["--dir", "examples/wasp-opensaas/app", "run", "test:unit"],
+			command: "npm",
+			args: ["--prefix", "examples/wasp-opensaas/app", "run", "ci:test:unit"],
 			reason:
-				"Open SaaS example app changed; run nested vitest lane (not a pnpm workspace)",
+				"Open SaaS example app changed; npm ci + vitest (not a pnpm workspace)",
 		});
 	}
 
