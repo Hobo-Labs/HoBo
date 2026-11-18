@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+	applyResourceIdentityLedger,
 	type BindleDefinition,
 	type CollectionContext,
 	CollectionEngineError,
@@ -11,7 +13,9 @@ import {
 	evaluateBindingDeliveryGate,
 	type ManifestV1,
 	type ProviderAnnotation,
+	type ResourceIdentityLedger,
 	readDependencyConfig,
+	resourceIdentityLedger,
 } from "@hobo/bindles";
 import {
 	isJsonBoolean,
@@ -46,13 +50,41 @@ export const DEFAULT_COMPONENT_HOST = {
 	version: "46.0.1",
 } as const;
 
+export const RESOURCE_IDENTITY_FILE = "hobo.resource-identities.json";
+
+async function withProjectResourceIdentities(
+	projectDir: string,
+	definition: BindleDefinition,
+): Promise<BindleDefinition> {
+	let content: string;
+	try {
+		content = await readFile(
+			path.join(projectDir, RESOURCE_IDENTITY_FILE),
+			"utf8",
+		);
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+			return definition;
+		}
+		throw error;
+	}
+	let ledger: ResourceIdentityLedger;
+	try {
+		ledger = JSON.parse(content) as ResourceIdentityLedger;
+	} catch {
+		throw new TypeError(`invalid ${RESOURCE_IDENTITY_FILE}`);
+	}
+	return applyResourceIdentityLedger(definition, ledger);
+}
+
 export async function loadBindleDefinition(
 	projectDir: string,
 ): Promise<BindleDefinition | null> {
 	for (const candidate of BINDLE_SOURCE_CANDIDATES) {
 		if (candidate === "dist/app.js") {
 			const application = await loadTypeScriptHttpDefinition(projectDir);
-			if (application) return application;
+			if (application)
+				return withProjectResourceIdentities(projectDir, application);
 		}
 		const absolute = path.join(projectDir, candidate);
 		if (!existsSync(absolute)) {
@@ -74,13 +106,14 @@ export async function loadBindleDefinition(
 
 		const definition = module.default ?? module.bindle;
 		if (definition !== undefined && isBindleDefinition(definition))
-			return definition;
+			return withProjectResourceIdentities(projectDir, definition);
 		if (candidate.includes("app.")) {
 			const application = httpDefinitionFromModule(
 				path.basename(projectDir),
 				module,
 			);
-			if (application) return application;
+			if (application)
+				return withProjectResourceIdentities(projectDir, application);
 		}
 	}
 
@@ -232,9 +265,17 @@ export function targetFromBindleDefinition(
 		}
 		return id;
 	};
+	const hasIdentityData = Object.values(definition.resources).every(
+		(record) =>
+			record.generatedId !== undefined &&
+			record.identityOccurrence !== undefined,
+	);
 	return {
 		bindleId: definition.name,
 		componentHost,
+		...(hasIdentityData
+			? { identityLedger: resourceIdentityLedger(definition) }
+			: undefined),
 		dependencies: definition.edges
 			.filter((edge) => !edge.to.startsWith("connector:"))
 			.map((edge) => ({

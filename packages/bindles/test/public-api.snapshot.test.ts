@@ -42,6 +42,7 @@ export function createBindlesPublicApiSnapshot(
 		"DEFAULT_BINDLE_NAME",
 		"inferRequirementsFromResources",
 		"resourceIdentityLedger",
+		"applyResourceIdentityLedger",
 		"HOBO_BINDLES_PACKAGE",
 		"MANIFEST_SCHEMA",
 		"ManifestParseError",
@@ -193,6 +194,12 @@ export function createBindlesPublicApiSnapshot(
 				kind: "helper",
 				signature:
 					"resourceIdentityLedger(definition: BindleDefinition): ResourceIdentityLedger",
+			},
+			{
+				name: "applyResourceIdentityLedger",
+				kind: "helper",
+				signature:
+					"applyResourceIdentityLedger(definition: BindleDefinition, ledger: ResourceIdentityLedger): BindleDefinition",
 			},
 			{
 				name: "HOBO_BINDLES_PACKAGE",

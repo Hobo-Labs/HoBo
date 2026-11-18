@@ -321,6 +321,11 @@
       "signature": "resourceIdentityLedger(definition: BindleDefinition): ResourceIdentityLedger"
     },
     {
+      "name": "applyResourceIdentityLedger",
+      "kind": "helper",
+      "signature": "applyResourceIdentityLedger(definition: BindleDefinition, ledger: ResourceIdentityLedger): BindleDefinition"
+    },
+    {
       "name": "HOBO_BINDLES_PACKAGE",
       "kind": "package-constant",
       "signature": "const HOBO_BINDLES_PACKAGE: \"@hobo/bindles\""

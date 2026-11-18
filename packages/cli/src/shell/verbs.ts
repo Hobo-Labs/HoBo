@@ -716,12 +716,13 @@ Example:
 		return `HoBo collect
 
 Usage:
-  hobo collect [global flags] [--check]
+  hobo collect [global flags] [--check | --init-resource-ids]
 
 Role: ${verb.role}
 ${statusLine}
 Run resource collection over the project Bindle, print the manifest IR, and
 write hobo.manifest.json. Pass --check to compare against the saved manifest.
+Pass --init-resource-ids to create a reviewed resource identity ledger.
 
 Example:
   hobo collect --json

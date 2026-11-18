@@ -140,7 +140,10 @@ export {
 	isPlatformAnnotation,
 	parseBindleRequirements,
 } from "./requirements.js";
-export { resourceIdentityLedger } from "./resource-identity.js";
+export {
+	applyResourceIdentityLedger,
+	resourceIdentityLedger,
+} from "./resource-identity.js";
 export { secretRef } from "./secret-ref.js";
 export { secret } from "./secret-surface.js";
 export {

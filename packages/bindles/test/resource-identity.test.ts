@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { bindle } from "../src/bindle.js";
-import { resourceIdentityLedger } from "../src/resource-identity.js";
+import {
+	applyResourceIdentityLedger,
+	resourceIdentityLedger,
+} from "../src/resource-identity.js";
 import type { ResourceIdentityLedger } from "../src/types.js";
 
 function original() {
@@ -74,6 +77,32 @@ describe("Bindle resource identities", () => {
 			occurrence: 2,
 			generatedId: "res_kv_0001",
 		});
+	});
+
+	it("applies a collected ledger without changing the original definition", () => {
+		const initial = original();
+		const applied = applyResourceIdentityLedger(
+			initial,
+			resourceIdentityLedger(initial),
+		);
+		expect(initial.resources.cache?.stableId).toBe("kv:cache");
+		expect(applied.resources.cache?.stableId).toBe("kv:res_kv_0001");
+		expect(Object.keys(applied.resources)).toEqual(
+			Object.keys(initial.resources),
+		);
+		expect(applied.deploymentIdentity).toBe("generated");
+	});
+
+	it("uses the collected mapping after aliases change", () => {
+		const ledger = resourceIdentityLedger(original());
+		const renamed = bindle("shop", (builder) => {
+			const storage = builder.kv();
+			const service = builder.api().dependsOn(storage);
+			return { service, storage };
+		});
+		const applied = applyResourceIdentityLedger(renamed, ledger);
+		expect(applied.resources.storage?.generatedId).toBe("res_kv_0001");
+		expect(applied.resources.service?.generatedId).toBe("res_api_0001");
 	});
 
 	it("rejects missing, duplicate, foreign, and unused ledger entries", () => {
