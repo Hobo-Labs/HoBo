@@ -8,6 +8,15 @@ slot until it settles.
 Nested calls inherit the parent deadline and may request an earlier deadline;
 they cannot extend it. Concurrent calls keep their deadlines isolated.
 
+The local scheduler supports interval schedules and five- or six-field cron
+expressions. Cron expressions use UTC by default; provider calls can specify an
+IANA time zone. The first occurrence is strictly after registration, and
+advancing virtual time emits every due occurrence. Expression schedules survive
+snapshots and participate in trace replay. The provider derives a stable id from
+the expression and time zone when no `scheduleId` is supplied, so registering
+the same expression again returns the existing schedule. Time-zone behavior
+uses the host's time-zone data.
+
 > **Naming:** `packages/runtimes/*` are concrete **runtime backends** (this
 > package: the local/sqlite substrate). The singular `packages/runtime`
 > (`@hobo/runtime`) is the app-facing **SDK primitives** package — a

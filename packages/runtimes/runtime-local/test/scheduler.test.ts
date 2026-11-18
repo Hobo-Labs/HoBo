@@ -1,9 +1,4 @@
-import {
-	CronExpressionUnsupportedError,
-	type FiredTimer,
-	parseScheduleId,
-	SCHEDULER_PORT,
-} from "@hobo/core";
+import { type FiredTimer, parseScheduleId, SCHEDULER_PORT } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import { createCapabilityLinkTable } from "../src/capability/link-table.js";
@@ -82,7 +77,6 @@ describe("runtime-local hobo:scheduler port", () => {
 			importInterface: SCHEDULER_PORT,
 		});
 
-		// SAFETY: assertion to `(await table.callWithHandle(handle, "every", { scheduleId: "nightly", everyMs: 1_000, })) as { scheduleId: string; dedup` is required at this boundary.
 		const registered = (await table.callWithHandle(handle, "every", {
 			scheduleId: "nightly",
 			everyMs: 1_000,
@@ -90,16 +84,18 @@ describe("runtime-local hobo:scheduler port", () => {
 		expect(registered.scheduleId).toBe("nightly");
 		expect(registered.deduped).toBe(false);
 
-		// The job is live in the local runtime host: virtual time fires it.
 		const fired = runtime.clock.advance(2_000);
 		expect(fired.map((fire) => fire.fireId)).toEqual([
 			"cron:nightly:1",
 			"cron:nightly:2",
 		]);
 
-		// v1 is interval-only: the WIT cron-expression form fails closed.
 		await expect(
 			table.callWithHandle(handle, "cron", { expr: "*/5 * * * *" }),
-		).rejects.toThrow(CronExpressionUnsupportedError);
+		).resolves.toMatchObject({
+			expression: "*/5 * * * *",
+			timezone: "UTC",
+			spec: { tag: "cron", val: { expr: "*/5 * * * *", timezone: "UTC" } },
+		});
 	});
 });

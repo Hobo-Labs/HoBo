@@ -7,7 +7,7 @@ import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_clock_port: GenFile = /*@__PURE__*/
-  fileDesc("ChBjbG9ja19wb3J0LnByb3RvEgxob2JvLmNvcmUudjEisAEKClNsZWVwVGltZXISEAoIdGltZXJfaWQYASABKAkSDgoGcnVuX2lkGAIgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIQCghkZWxheV9tcxgEIAEoAxIXCg9zY2hlZHVsZWRfYXRfbXMYBSABKAMSEgoKZmlyZV9hdF9tcxgGIAEoAxITCgtmaXJlZF9hdF9tcxgHIAEoAxITCgtmaXJlZF9vcmRlchgIIAEoBSJ3CgxDcm9uU2NoZWR1bGUSEwoLc2NoZWR1bGVfaWQYASABKAkSEAoIZXZlcnlfbXMYAiABKAMSEwoLc3RhcnRfYXRfbXMYAyABKAMSFwoPbmV4dF9maXJlX2F0X21zGAQgASgDEhIKCm9jY3VycmVuY2UYBSABKAUiggEKD0Nsb2NrVHJhY2VFbnRyeRIMCgR0eXBlGAEgASgJEgwKBHNlZWQYAiABKAkSDQoFYXRfbXMYAyABKAMSEAoIZGVsdGFfbXMYBCABKAMSDwoHZmlyZV9pZBgFIAEoCRISCgpvY2N1cnJlbmNlGAYgASgFEg0KBW9yZGVyGAcgASgFIosBCg1DbG9ja1NuYXBzaG90EgwKBHNlZWQYASABKAkSDgoGbm93X21zGAIgASgDEigKBnRpbWVycxgDIAMoCzIYLmhvYm8uY29yZS52MS5TbGVlcFRpbWVyEjIKDmNyb25fc2NoZWR1bGVzGAQgAygLMhouaG9iby5jb3JlLnYxLkNyb25TY2hlZHVsZWIGcHJvdG8z");
+  fileDesc("ChBjbG9ja19wb3J0LnByb3RvEgxob2JvLmNvcmUudjEisAEKClNsZWVwVGltZXISEAoIdGltZXJfaWQYASABKAkSDgoGcnVuX2lkGAIgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIQCghkZWxheV9tcxgEIAEoAxIXCg9zY2hlZHVsZWRfYXRfbXMYBSABKAMSEgoKZmlyZV9hdF9tcxgGIAEoAxITCgtmaXJlZF9hdF9tcxgHIAEoAxITCgtmaXJlZF9vcmRlchgIIAEoBSLDAQoMQ3JvblNjaGVkdWxlEhMKC3NjaGVkdWxlX2lkGAEgASgJEhAKCGV2ZXJ5X21zGAIgASgDEhMKC3N0YXJ0X2F0X21zGAMgASgDEhcKD25leHRfZmlyZV9hdF9tcxgEIAEoAxISCgpvY2N1cnJlbmNlGAUgASgFEhcKCmV4cHJlc3Npb24YBiABKAlIAIgBARIVCgh0aW1lem9uZRgHIAEoCUgBiAEBQg0KC19leHByZXNzaW9uQgsKCV90aW1lem9uZSLGAgoPQ2xvY2tUcmFjZUVudHJ5EgwKBHR5cGUYASABKAkSDAoEc2VlZBgCIAEoCRINCgVhdF9tcxgDIAEoAxIQCghkZWx0YV9tcxgEIAEoAxIPCgdmaXJlX2lkGAUgASgJEhIKCm9jY3VycmVuY2UYBiABKAUSDQoFb3JkZXIYByABKAUSFwoKZXhwcmVzc2lvbhgIIAEoCUgAiAEBEhUKCHRpbWV6b25lGAkgASgJSAGIAQESGAoLc2NoZWR1bGVfaWQYCiABKAlIAogBARIYCgtzdGFydF9hdF9tcxgLIAEoA0gDiAEBEhUKCGV2ZXJ5X21zGAwgASgDSASIAQFCDQoLX2V4cHJlc3Npb25CCwoJX3RpbWV6b25lQg4KDF9zY2hlZHVsZV9pZEIOCgxfc3RhcnRfYXRfbXNCCwoJX2V2ZXJ5X21zIosBCg1DbG9ja1NuYXBzaG90EgwKBHNlZWQYASABKAkSDgoGbm93X21zGAIgASgDEigKBnRpbWVycxgDIAMoCzIYLmhvYm8uY29yZS52MS5TbGVlcFRpbWVyEjIKDmNyb25fc2NoZWR1bGVzGAQgAygLMhouaG9iby5jb3JlLnYxLkNyb25TY2hlZHVsZWIGcHJvdG8z");
 
 export type SleepTimer = Message<"hobo.core.v1.SleepTimer"> & {
   timerId: string;
@@ -40,6 +40,10 @@ export type CronSchedule = Message<"hobo.core.v1.CronSchedule"> & {
   nextFireAtMs: bigint;
 
   occurrence: number;
+
+  expression?: string | undefined;
+
+  timezone?: string | undefined;
 };
 
 export const CronScheduleSchema: GenMessage<CronSchedule> = /*@__PURE__*/
@@ -59,6 +63,16 @@ export type ClockTraceEntry = Message<"hobo.core.v1.ClockTraceEntry"> & {
   occurrence: number;
 
   order: number;
+
+  expression?: string | undefined;
+
+  timezone?: string | undefined;
+
+  scheduleId?: string | undefined;
+
+  startAtMs?: bigint | undefined;
+
+  everyMs?: bigint | undefined;
 };
 
 export const ClockTraceEntrySchema: GenMessage<ClockTraceEntry> = /*@__PURE__*/

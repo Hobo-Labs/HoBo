@@ -1,5 +1,6 @@
 import {
-	CronExpressionUnsupportedError,
+	type CronExpressionSchedule,
+	type CronExpressionSpec,
 	type CronSchedule,
 	type FiredTimer,
 	type IntervalCronSpec,
@@ -10,42 +11,39 @@ import {
 	type SchedulerPort,
 	type VirtualClock,
 } from "@hobo/core";
-import { isJsonNumber, isJsonObject, type JsonValue } from "./json.js";
-
-// Local hobo:scheduler port served over the deterministic clock's cron
-// (src/clock.ts) — the D14 delegation seam. A scheduled bindle resource
-// (manifest kind `schedule`, catalog portRef `hobo:scheduler`) registers its
-// interval job through this port; fires ride the clock's `advance` loop so
-// scheduling stays deterministic and replayable.
-//
-// v1 LIMITATION (recorded decision, D14): interval-only (`IntervalCronSpec`).
-// The WIT `cron(expr)` cron-expression form fails closed
-// (`CronExpressionUnsupportedError`) — there is NO cron-expression parser in
-// the repo; adding one is a separate, flagged cost.
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+} from "./json.js";
 
 export type ScheduledJobHandler = (fire: FiredTimer) => void;
 
 export interface LocalScheduler extends SchedulerPort {
-	/** Register an interval job: cron schedule plus a handler run per fire. */
 	registerJob(
 		scheduleId: ScheduleId,
 		spec: IntervalCronSpec,
 		onFire: ScheduledJobHandler,
 	): CronSchedule;
-	/** Advance virtual time, dispatching registered job handlers on cron fires. */
+	registerCronJob(
+		scheduleId: ScheduleId,
+		spec: CronExpressionSpec,
+		onFire: ScheduledJobHandler,
+	): CronExpressionSchedule;
 	advance(deltaMs: number): readonly FiredTimer[];
-	/**
-	 * Provider export table for serving this port to components — the same
-	 * shape `CapabilityLinkTable.registerProvider` / the component host accept
-	 * (see capability/link-table.ts), keyed by the `hobo:scheduler` port token.
-	 */
 	providerExports(): SchedulerProviderExports;
 }
 
 export interface SchedulerProviderExports {
 	readonly [port: string]: {
 		readonly every: (payload: JsonValue) => CronSchedule;
-		readonly cron: (payload: JsonValue) => never;
+		readonly cron: (payload: JsonValue) => CronExpressionSchedule & {
+			readonly spec: {
+				readonly tag: "cron";
+				readonly val: { readonly expr: string; readonly timezone: string };
+			};
+		};
 	};
 }
 
@@ -56,6 +54,12 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 		every(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule {
 			return clock.cron(scheduleId, spec);
 		},
+		cron(
+			scheduleId: ScheduleId,
+			spec: CronExpressionSpec,
+		): CronExpressionSchedule {
+			return clock.cronExpression(scheduleId, spec);
+		},
 
 		registerJob(
 			scheduleId: ScheduleId,
@@ -63,6 +67,11 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 			onFire: ScheduledJobHandler,
 		): CronSchedule {
 			const schedule = clock.cron(scheduleId, spec);
+			jobs.set(schedule.scheduleId, onFire);
+			return schedule;
+		},
+		registerCronJob(scheduleId, spec, onFire) {
+			const schedule = clock.cronExpression(scheduleId, spec);
 			jobs.set(schedule.scheduleId, onFire);
 			return schedule;
 		},
@@ -99,9 +108,31 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 							spec,
 						);
 					},
-					cron: (payload: JsonValue): never => {
-						const expr = isJsonObject(payload) ? payload.expr : undefined;
-						throw new CronExpressionUnsupportedError(String(expr ?? ""));
+					cron: (payload: JsonValue) => {
+						const record = isJsonObject(payload) ? payload : {};
+						const expression = isJsonString(payload) ? payload : record.expr;
+						if (!isJsonString(expression) || expression.trim().length === 0) {
+							throw new TypeError("expr must be a non-empty string");
+						}
+						const timezone = record.timezone ?? "UTC";
+						if (!isJsonString(timezone) || timezone.length === 0) {
+							throw new TypeError("timezone must be a non-empty string");
+						}
+						const generatedId = `cron-expression:${encodeURIComponent(timezone)}:${encodeURIComponent(expression)}`;
+						const id = record.scheduleId ?? record.schedule_id ?? generatedId;
+						if (!isJsonString(id))
+							throw new TypeError("scheduleId must be a string");
+						const schedule = scheduler.cron(parseScheduleId(id), {
+							expression,
+							timezone,
+						});
+						return Object.freeze({
+							...schedule,
+							spec: Object.freeze({
+								tag: "cron" as const,
+								val: Object.freeze({ expr: expression, timezone }),
+							}),
+						});
 					},
 				},
 			};

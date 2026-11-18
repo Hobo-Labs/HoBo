@@ -6,7 +6,13 @@ import {
 	positiveInteger,
 } from "../parse-utils.js";
 import { createPortDescriptor, type PortDescriptor } from "../ports.js";
-import type { CronSchedule, IntervalCronSpec, ScheduleId } from "./clock.js";
+import type {
+	CronExpressionSchedule,
+	CronExpressionSpec,
+	CronSchedule,
+	IntervalCronSpec,
+	ScheduleId,
+} from "./clock.js";
 
 // public-contract: the manifest/catalog port token schedule resources bind to (bindles CATALOG portRef, D14).
 export const SCHEDULER_PORT = "hobo:scheduler";
@@ -23,6 +29,10 @@ export const SCHEDULER_PORT_DESCRIPTOR: PortDescriptor = createPortDescriptor({
 
 export interface SchedulerPort {
 	every(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule;
+	cron(
+		scheduleId: ScheduleId,
+		spec: CronExpressionSpec,
+	): CronExpressionSchedule;
 }
 
 export class SchedulerParseError extends CoreParseError {
@@ -42,9 +52,7 @@ export class CronExpressionUnsupportedError extends Error {
 
 	constructor(expr: string) {
 		super(
-			`hobo:scheduler v1 is interval-only (IntervalCronSpec); cron expression ${JSON.stringify(
-				expr,
-			)} is unsupported — no cron-expression parser exists (D14 recorded decision)`,
+			`Cron expression ${JSON.stringify(expr)} is unsupported by this scheduler`,
 		);
 		this.name = "CronExpressionUnsupportedError";
 	}

@@ -39,13 +39,18 @@ export interface SleepTimerRecord {
 	firedOrder: number | null;
 }
 
-export interface CronScheduleRecord {
+interface CronScheduleRecordBase {
 	scheduleId: string;
-	everyMs: number;
 	startAtMs: number;
 	nextFireAtMs: number;
 	occurrence: number;
 }
+
+export type CronScheduleRecord = CronScheduleRecordBase &
+	(
+		| { everyMs: number; expression?: never; timezone?: never }
+		| { everyMs?: never; expression: string; timezone: string }
+	);
 
 export interface QueueClockStore {
 	version: string;
