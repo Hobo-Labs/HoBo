@@ -20,7 +20,7 @@ export type BindingDeliveryGateResult = Readonly<{
 }>;
 
 const SECRET_KEY_RE =
-	/^(ConnectionStrings__.*|DATABASE_URL|REDIS_URL|MONGO_URL|MYSQL_URL|PGPASSWORD|API_KEY|PASSWORD|SECRET|TOKEN|.*_PASSWORD|.*_SECRET|.*_API_KEY)$/i;
+	/^(ConnectionStrings__.*|DATABASE_URL|REDIS_URL|MONGO_URL|MYSQL_URL|PGPASSWORD|API_KEY|PASSWORD|SECRET|TOKEN|PRIVATE_KEY|.*_PASSWORD|.*_SECRET|.*_API_KEY|.*_TOKEN|.*_PRIVATE_KEY)$/i;
 
 const USERINFO_URI_RE = /^[a-z][a-z0-9+.-]*:\/\/[^/@\s]+@/i;
 
@@ -32,6 +32,7 @@ export function looksLikeSecretEnvValue(value: string): boolean {
 	if (USERINFO_URI_RE.test(value)) return true;
 	if (/\{[^}]+\.connectionString\}/.test(value)) return true;
 	if (/password\s*=/i.test(value) && /[;:]/.test(value)) return true;
+	if (/(?:^|[\s;?&])(?:password|pwd)\s*=/i.test(value)) return true;
 	return false;
 }
 
