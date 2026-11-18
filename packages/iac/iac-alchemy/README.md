@@ -88,6 +88,13 @@ The bounded `model/RivetHttpQueue.tla` checks one HTTP request and one enqueue
 under its stated host authority, fencing and draining assumptions; it does not
 prove those assumptions, the implementation or the provider.
 
+The optional `@hobo/iac-alchemy/cloudflare` entry point maps supported HoBo
+declarations to Alchemy Cloudflare components, including Workers, Vite websites,
+KV namespaces, R2 buckets, queues, D1 databases and Flagship flags. The support
+report distinguishes infrastructure provisioning from implemented runtime
+operations. Resource dependencies, consistency and identity must be validated
+against the exact mapping and independently attested host environment.
+
 The isolation test scans selected shared runtime, Bindle, financial and policy
 packages for literal Alchemy references, including escaped spellings. It does
 not prove the absence of computed references or transitive dependencies.
