@@ -6,6 +6,7 @@ export async function bundleTypeScriptEntry(entryPath: string) {
 		bundle: true,
 		format: "esm",
 		legalComments: "none",
+		minifyWhitespace: true,
 		platform: "neutral",
 		target: "es2022",
 		write: false,
