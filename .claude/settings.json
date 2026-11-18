@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --experimental-strip-types \"${CLAUDE_PROJECT_DIR:-.}/scripts/agent-completion-hook.mts\"",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/agent_completion_hook.py\"",
             "timeout": 10
           }
         ]
