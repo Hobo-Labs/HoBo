@@ -63,6 +63,25 @@ execution fence described above covers shared writer objects only. A journal at
 `Number.MAX_SAFE_INTEGER` cannot accept another event until its sequence format
 is migrated; invalid or exhausted sequences fail before the next step runs.
 
+The local-execution model explores 16 states and 40 steps. Its four-state
+projection hides 16 same-label steps and assumes the attempts share the same
+writer object and loaded runtime module.
+
+```mermaid
+stateDiagram-v2
+  s0: Run available for execution
+  s1: Execution owns local fence
+  s2: Execution has an active command
+  s3: Parent exited while command is pending
+  [*] --> s0
+  s0 --> s1: claim run
+  s1 --> s0: parent exits
+  s1 --> s2: start durable command
+  s2 --> s1: command settles
+  s2 --> s3: parent exits
+  s3 --> s0: command settles
+```
+
 Resuming a completed or failed run returns its recorded terminal outcome without
 calling the workflow or appending another event. For versioned journals, resume
 first validates the command tree and refuses missing completion evidence,
