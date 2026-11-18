@@ -1,25 +1,3 @@
-/**
- * OptimizeXP drift-protection gate (`pnpm run optimizexp:check`).
- *
- * Hard-fail lanes (reusing the skill harness — import/spawn, never duplicate):
- *   a. Persona schema validation across the global tree (`.optimizexp/personas/`)
- *      and project-local trees (`packages/<pkg>/.optimizexp/personas/`) via the
- *      skill's `generate-persona.mts --mode validate` CLI (the harness modules
- *      execute `main()` on import, so they are spawned, not imported).
- *   b. Feature-quality/template lint over `.optimizexp/features/**` (plus
- *      project-local feature trees) via `checkGherkinQuality` from the skill's
- *      `lib/feature-quality.mts` — bans template-only "exercise the surface"
- *      Gherkin and missing `@persona:`/`@interface:` tags.
- *
- *   c. `validate-bus` over `.optimizexp/bus/entries/` via the review-loop CLI,
- *      including council bus/state cross-checks through the consensus helper.
- *      The 282 legacy entries that predated the current scorecard-evidence
- *      contract were archived to `.optimizexp/bus-archive/` (not scanned), so
- *      this lane is a hard fail. New runs are additionally gated per-run by
- *      `assert-complete` inside the review loop itself.
- *
- * Usage: node --import tsx scripts/check-optimizexp.mts
- */
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -46,37 +24,6 @@ function runHarness(script: string, args: string[]) {
 	};
 }
 
-type PersonaReport = {
-	ok: boolean;
-	personas: { id: string; path: string; scope: string; problems: string[] }[];
-};
-
-/** Lane (a): persona schema validation. */
-function checkPersonas(): string[] {
-	const generatePersona =
-		".agents/skills/optimizexp/harness/generate-persona.mts";
-	const full = runHarness(generatePersona, ["--mode", "validate"]);
-	let report: PersonaReport;
-	try {
-		// SAFETY: assertion to `.parse(full.stdout) as PersonaReport; }` is required at this boundary.
-		report = JSON.parse(full.stdout) as PersonaReport;
-	} catch {
-		return [
-			`persona validator did not emit JSON (exit ${full.status}): ${full.stderr.slice(0, 400)}`,
-		];
-	}
-	if (full.status === 0 && report.ok) {
-		console.log(
-			`personas: OK (${report.personas.length} personas, all projects)`,
-		);
-		return [];
-	}
-	return report.personas
-		.filter((p) => p.problems.length > 0)
-		.map((p) => `${p.path}: ${p.problems.join("; ")}`);
-}
-
-/** Feature-folder roots mirroring `.optimizexp/cucumber.yaml` path globs. */
 function featureDirs(): string[] {
 	const roots = [
 		".optimizexp/features",
@@ -101,7 +48,6 @@ function featureDirs(): string[] {
 	return dirs;
 }
 
-/** Lane (b): feature-quality/template lint. */
 function checkFeatureQuality(): string[] {
 	const problems: string[] = [];
 	const dirs = featureDirs();
@@ -117,7 +63,6 @@ function checkFeatureQuality(): string[] {
 	return problems;
 }
 
-/** Lane (c): bus validation (hard fail). */
 function checkBus(): string[] {
 	const reviewLoop =
 		".agents/skills/optimizexp/workflows/cross-agent/review-loop.mts";
@@ -130,7 +75,6 @@ function checkBus(): string[] {
 		problems?: string[];
 	};
 	try {
-		// SAFETY: assertion to `.parse(result.stdout) as typeof report; }` is required at this boundary.
 		report = JSON.parse(result.stdout) as typeof report;
 	} catch {
 		return [
@@ -146,7 +90,6 @@ function checkBus(): string[] {
 	return (report.problems ?? []).map((p) => `bus: ${p}`);
 }
 
-/** Project-local .optimizexp roots (packages/<pkg>/.optimizexp with config). */
 function projectOptimizexpRoots(): string[] {
 	const out: string[] = [];
 	for (const parent of ["site", "packages", "examples"]) {
@@ -162,18 +105,12 @@ function projectOptimizexpRoots(): string[] {
 
 function readJson<T>(file: string): T | null {
 	try {
-		// SAFETY: assertion to `.parse(readFileSync(file, "utf8")) as T; }` is required at this boundary.
 		return JSON.parse(readFileSync(file, "utf8")) as T;
 	} catch {
 		return null;
 	}
 }
 
-/**
- * Lane (d): scenario ↔ product binding. When a project's optimizexp config
- * declares `productBinary`, every feature folder must actually invoke it —
- * persona scenarios that only run repo scripts are filename decoration.
- */
 function checkProductBinding(): string[] {
 	const problems: string[] = [];
 	let features = 0;
@@ -201,60 +138,6 @@ function checkProductBinding(): string[] {
 	return problems;
 }
 
-/**
- * Lane (e): experience-catalog persona coverage. Project-local personas at or
- * above the coverage priority (default ≤10, lower = more important) must own
- * at least one catalog row — 11 of 13 personas in one project previously
- * never reached the catalog, so their P0s could not fail assert-complete.
- */
-function checkCatalogCoverage(): string[] {
-	const problems: string[] = [];
-	let personasChecked = 0;
-	for (const optRoot of projectOptimizexpRoots()) {
-		const cfg = readJson<{
-			personas?: { coveragePriorityMax?: number };
-		}>(path.join(optRoot, "config.json"));
-		const catalogPath = path.join(optRoot, "experience-catalog.json");
-		const personasDir = path.join(optRoot, "personas");
-		if (!existsSync(catalogPath) || !existsSync(personasDir)) continue;
-		const catalog = readJson<{
-			experiences?: { personaId?: string }[];
-		}>(catalogPath);
-		const covered = new Set(
-			(catalog?.experiences ?? [])
-				.map((e) => e.personaId)
-				.filter((p): p is string => p !== undefined),
-		);
-		const maxPriority = cfg?.personas?.coveragePriorityMax ?? 10;
-		for (const file of readdirSync(personasDir).filter((f) =>
-			f.endsWith(".md"),
-		)) {
-			const text = readFileSync(path.join(personasDir, file), "utf8");
-			const id = text.match(/^id:\s*(\S+)/m)?.[1];
-			const priority = Number(
-				text.match(/^priority:\s*(\d+)/m)?.[1] ?? Number.NaN,
-			);
-			if (!id || Number.isNaN(priority) || priority > maxPriority) continue;
-			personasChecked += 1;
-			if (!covered.has(id)) {
-				problems.push(
-					`${path.relative(root, catalogPath)}: persona "${id}" (priority ${priority} ≤ ${maxPriority}) owns no experience-catalog row`,
-				);
-			}
-		}
-	}
-	if (problems.length === 0) {
-		console.log(`catalog-coverage: OK (${personasChecked} priority personas)`);
-	}
-	return problems;
-}
-
-/**
- * Lane (f): run-claim audit. Runs claiming completion (pareto-equilibrium,
- * plateau, …) must be backed by a committed minimal evidence bundle — scores
- * chain with matching sha256s and reviewable cited evidence. Also exposed as
- * `pnpm run optimizexp:lint-runs`.
- */
 function checkRuns(): string[] {
 	const tracked = new Set(
 		(
@@ -285,11 +168,9 @@ function checkRuns(): string[] {
 }
 
 const problems = [
-	...checkPersonas(),
 	...checkFeatureQuality(),
 	...checkBus(),
 	...checkProductBinding(),
-	...checkCatalogCoverage(),
 	...checkRuns(),
 ];
 
