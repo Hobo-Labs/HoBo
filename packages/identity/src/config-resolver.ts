@@ -1,9 +1,8 @@
-/**
- * Schema-driven config resolution orchestration (ADR-0027).
- * Agents receive schemaOnlyView placeholders only.
- */
-
-import type { ConfigSchema, SecretSourceRank } from "./config-types.js";
+import {
+	type ConfigSchema,
+	configSensitivity,
+	type SecretSourceRank,
+} from "./config-types.js";
 import type { JsonObject } from "./json.js";
 import {
 	assertNoPlaintextInEvent,
@@ -19,7 +18,6 @@ import {
 
 export type ConfigResolutionResult = Readonly<{
 	entries: Readonly<Record<string, ResolvedConfigEntry>>;
-	/** Agent-safe: placeholders only. */
 	agentView: Readonly<Record<string, string>>;
 	events: readonly ConfigSecretEvent[];
 }>;
@@ -27,15 +25,11 @@ export type ConfigResolutionResult = Readonly<{
 export type ConfigResolverOptions = Readonly<{
 	tenant: string;
 	schema: ConfigSchema;
-	/** Policy deny-ceiling: which ranks may be used. */
 	allowedSources?: readonly SecretSourceRank[];
 	campValues?: JsonObject;
 	secretsPort?: SecretsPort;
-	/** Bound-resource token mint (SVID brokered). */
 	boundTokens?: Readonly<Record<string, () => Promise<string | undefined>>>;
-	/** Static hatch material keyed by field name (broker-only). */
 	staticMaterials?: Readonly<Record<string, string>>;
-	/** Forbid static-escape even if schema asks (production default often true). */
 	forbidStaticEscape?: boolean;
 	subject?: string;
 }>;
@@ -47,10 +41,6 @@ const DEFAULT_ALLOWED: readonly SecretSourceRank[] = Object.freeze([
 	"static-escape",
 ]);
 
-/**
- * Resolve all schema fields via the ranked ladder. Sensitive material never
- * appears in agentView or events.
- */
 export async function resolveConfigSchema(
 	options: ConfigResolverOptions,
 ): Promise<ConfigResolutionResult> {
@@ -65,18 +55,17 @@ export async function resolveConfigSchema(
 	let seq = 0;
 
 	for (const [name, field] of Object.entries(options.schema.fields)) {
-		if (!allowed.includes(field.source) && field.required) {
-			// Still try lower ranks if preferred is forbidden.
-		}
+		const sensitivity = configSensitivity(field);
 		const result = await resolveConfigEntry({
 			name,
-			sensitive: field.sensitive,
+			sensitive: sensitivity === "sensitive",
+			sensitivity,
 			preferredSource: field.source,
 			allowedSources: allowed,
-			campValue: options.campValues?.[name] ?? field.defaultValue,
+			campValue: ownValue(options.campValues, name) ?? field.defaultValue,
 			secretsPort: options.secretsPort,
-			staticMaterial: options.staticMaterials?.[name],
-			boundToken: options.boundTokens?.[name],
+			staticMaterial: ownValue(options.staticMaterials, name),
+			boundToken: ownValue(options.boundTokens, name),
 		});
 
 		if (result.status === "denied") {
@@ -89,8 +78,14 @@ export async function resolveConfigSchema(
 			continue;
 		}
 
-		entries[name] = result.entry;
-		agentView[name] = result.entry.placeholder;
+		Object.defineProperty(entries, name, {
+			value: result.entry,
+			enumerable: true,
+		});
+		Object.defineProperty(agentView, name, {
+			value: result.entry.placeholder,
+			enumerable: true,
+		});
 
 		seq += 1;
 		const resolvedEvt = createConfigResolvedEvent({
@@ -105,7 +100,7 @@ export async function resolveConfigSchema(
 		assertNoPlaintextInEvent(resolvedEvt);
 		events.push(resolvedEvt);
 
-		if (field.sensitive && result.entry.valueRef) {
+		if (result.entry.sensitive && result.entry.valueRef) {
 			seq += 1;
 			const accessEvt = createSecretAccessedEvent({
 				name,
@@ -126,4 +121,11 @@ export async function resolveConfigSchema(
 		agentView: Object.freeze(agentView),
 		events: Object.freeze(events),
 	});
+}
+
+function ownValue<T>(
+	record: Readonly<Record<string, T>> | undefined,
+	name: string,
+): T | undefined {
+	return record && Object.hasOwn(record, name) ? record[name] : undefined;
 }
