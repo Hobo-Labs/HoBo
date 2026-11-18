@@ -2086,6 +2086,52 @@ describe("provider-neutral IaC target budget admission", () => {
 		},
 	);
 
+	it("keeps the approved quote detached from authority input mutation", async () => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			const wrapped = { ...ledger };
+			wrapped.reserve = (input) => {
+				const receipt = ledger.reserve(input);
+				input.quote.liabilityBoundMicros = 0;
+				return receipt;
+			};
+			deps.authority = wrapped;
+			const decision = await admitIacTarget(
+				{ requestId: "receipt-input-mutation", ...fixture() },
+				deps,
+			);
+			expect(decision).toMatchObject({
+				status: "admitted",
+				quote: { liabilityBoundMicros: 1_500_000 },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("retains the hold when the claimed priced reservation cannot be revalidated", async () => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			const wrapped = { ...ledger, revalidatePriced: () => false };
+			deps.authority = wrapped;
+			const decision = await admitIacTarget(
+				{ requestId: "receipt-revalidation", ...fixture() },
+				deps,
+			);
+			expect(decision).toMatchObject({
+				status: "uncertain",
+				code: "PRICED_EXECUTION_UNVERIFIED",
+				budget: { evaluation: "unavailable", reservation: "held" },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
 	it("claims at most one execution for concurrent identical requests", async () => {
 		const ledger = authority();
 		try {
