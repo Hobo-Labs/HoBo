@@ -1,1 +1,1 @@
-export default { test: { include: ['test/replay/equivalence-cleanup.test.ts', 'test/replay/equivalence.test.ts', 'test/replay/sequence-vector.test.ts', 'test/replay/target-snapshot.test.ts'] } };
+export default { test: { include: ['test/replay/equivalence-cleanup.test.ts', 'test/replay/equivalence.test.ts', 'test/replay/sequence-vector.test.ts', 'test/replay/target-snapshot.test.ts', 'test/replay/sequence-safety.test.ts'] } };
