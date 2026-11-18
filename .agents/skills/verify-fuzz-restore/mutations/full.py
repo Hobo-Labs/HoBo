@@ -9,8 +9,8 @@ import tempfile
 repo = Path(__file__).resolve().parents[4]
 skill = '.agents/skills/verify-fuzz-restore'
 cases = [
-    ('missing-baseline', 'if (pristine) this.replayBaseline = raw;', 'if (pristine) {}'),
-    ('ignore-baseline', 'if (this.replayBaseline !== undefined) copy.restore(this.replayBaseline);', ''),
+    ('missing-baseline', 'if (pristine) this.#replayBaseline = raw;', 'if (pristine) {}'),
+    ('ignore-baseline', 'if (this.#replayBaseline !== undefined) copy.restore(this.#replayBaseline);', ''),
     ('missing-restore-event', 'else this.#appendEvent("system", "model.restored", { snapshot: raw });', 'else {}'),
     ('ignore-restore-event', 'copy.restore(event.payload.snapshot ?? "");', 'copy.note(event.tenantId, "ignored.restore", { ...event.payload });'),
     ('reuse-replacement-clock', 'this.#clock = pristine ? blob.clock : baseClock + 1;', 'this.#clock = pristine ? blob.clock : baseClock;'),
@@ -21,6 +21,8 @@ cases = [
     ('accept-unknown-status', '!isResourceStatus(row.status)', 'false'),
     ('ignore-clock-limit', 'baseClock >= Number.MAX_SAFE_INTEGER', 'false'),
     ('partial-before-parse', 'const blob = parseSnapshot(raw);', 'this.#clock = 0;\n\t\tconst blob = parseSnapshot(raw);'),
+    ('mutable-rollback-target', '#lastRollbackTarget: number | null = null;', 'lastRollbackTarget: number | null = null;'),
+    ('public-replay-baseline', '#replayBaseline: string | undefined;', 'replayBaseline: string | undefined;'),
 ]
 
 def check(case):
@@ -35,7 +37,15 @@ def check(case):
         original = target.read_text()
         if original.count(before) != 1:
             raise RuntimeError(f'{name}: expected one mutation site, found {original.count(before)}')
-        target.write_text(original.replace(before, after, 1))
+        changed = original.replace(before, after, 1)
+        if name == 'mutable-rollback-target':
+            getter = '\tget lastRollbackTarget(): number | null {\n\t\treturn this.#lastRollbackTarget;\n\t}\n\n'
+            if changed.count(getter) != 1:
+                raise RuntimeError(f'{name}: missing getter')
+            changed = changed.replace(getter, '', 1).replace('this.#lastRollbackTarget', 'this.lastRollbackTarget')
+        if name == 'public-replay-baseline':
+            changed = changed.replace('this.#replayBaseline', 'this.replayBaseline')
+        target.write_text(changed)
         env = {**os.environ, 'FUZZ_RESTORE_VERIFY_PACKAGE_ROOT': str(scratch)}
         result = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900)
         output = result.stdout

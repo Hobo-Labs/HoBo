@@ -9,7 +9,7 @@ description: Verify detached fuzz-oracle state and checkpoint read views.
 
 **Why:** A live reference lets a reader alter state without an event, or corrupt a checkpoint before rollback, making the fuzz oracle disagree with its own history.
 
-**Review baseline:** `4c6134326070891e2f4ffe0dea77ca4615da31f4`.
+**Review baseline:** `67ce51ab28e9263259f5e8f5e40f5997f2fa43ff`.
 
 ## Covered code and checks
 
@@ -50,6 +50,8 @@ Before the fix, callers could clear live maps, edit their rows or overwrite a ch
 The model uses one bit for state and checkpoint content, assumes an apply has completed before its result is read, and does not prove TypeScript refinement, model arbitrary reentrant getters, concurrency or persistence. Public clock changes are covered separately by the [clock replay model](../verify-fuzz-clock-replay/SKILL.md). Returning map snapshots allocates in proportion to their size. This is an in-memory testing oracle, not production storage.
 
 The related [public clock model](../verify-fuzz-clock-replay/SKILL.md) checks direct clock changes and replay.
+
+The [restore metadata model](../verify-fuzz-restore/SKILL.md) checks that callers cannot change the rollback target or replay baseline used by restoration.
 
 ## Keep in sync
 
