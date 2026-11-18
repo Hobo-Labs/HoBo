@@ -1112,6 +1112,16 @@ function planningDocumentTitle(text: string): string | undefined {
 	return undefined;
 }
 
+function hasProductBriefStamp(text: string): boolean {
+	return fromMarkdown(text).children.some(
+		(node) =>
+			node.type === "html" &&
+			/^[ \t]*<!--[ \t]*impeccable:product-schema[ \t]+\d+[ \t]*-->[ \t]*$/imu.test(
+				node.value,
+			),
+	);
+}
+
 export function documentViolation(
 	file: string,
 	text: string,
@@ -1126,6 +1136,8 @@ export function documentViolation(
 	)
 		return "planning, architecture, and design documents are not allowed";
 	if (!/\.md(?:x|c)?$/iu.test(sourceFile)) return undefined;
+	if (hasProductBriefStamp(text))
+		return "agent product design briefs are not allowed";
 	const title = planningDocumentTitle(text);
 	if (title) return `document title "${title}" describes prohibited planning`;
 	if (/^src\/draft\/(?:[^/]+\/)*_registry\.md(?:x|c)?$/iu.test(sourceFile))

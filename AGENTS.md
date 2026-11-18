@@ -17,8 +17,8 @@ over conflicting repository workflow guidance.
 - Evidence must exercise real behavior. Do not create identity-only examples,
   no-op benchmarks, synthetic contracts, or fabricated results; replace existing
   scaffolds with executable checks of the behavior they claim to prove.
-- Do not create or retain plans, roadmaps, design documents, architecture
-  documents, ADRs, RFCs, or proposals.
+- Do not create or retain plans, roadmaps, design documents, agent product
+  briefs, architecture documents, ADRs, RFCs, or proposals.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
