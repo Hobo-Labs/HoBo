@@ -16,10 +16,6 @@ type DoctorData = {
 	hint?: string;
 };
 
-/**
- * Fold Station + Connection stores into a single Yard snapshot for the game UI.
- * Never invents occupancy/rail/connection state outside event-sourced services.
- */
 export function projectYardSnapshot(
 	ctx: ManagementContext,
 	input: { stationId?: string; tenant?: string } = {},

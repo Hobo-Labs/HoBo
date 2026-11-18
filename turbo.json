@@ -335,7 +335,6 @@
         "@hobo/provider-convex#build",
         "@hobo/pack-valkey-oci#build",
         "@hobo/pack-postgres-oci#build",
-        "@hobo/control-yard#build",
         "@hobo/hobo#build"
       ],
       "inputs": ["!**/*"],
@@ -875,7 +874,6 @@
         "src/draft/exp-proofs/dx/dogfood-yard-acceptance-contract/**",
         "src/draft/exp-proofs/dx/package-cache-scope-contract/**",
         "src/draft/exp-proofs/dx/svid-cross-tenant-guard-contract/**",
-        "src/draft/exp-proofs/ux/control-yard/**",
         "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode/**",
         "src/draft/projects/s0-03-hobo-core/**",
         "src/draft/projects/s6-06-finops-plane/**",

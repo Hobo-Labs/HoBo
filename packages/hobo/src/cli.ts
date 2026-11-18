@@ -359,7 +359,6 @@ export function createComposedHoboCli(
 			station: createStationCommand(),
 			// Session Replay (DOM/session reconstruction; distinct from event-log replay).
 			replay: createReplayCommand(),
-			// Local control-plane HTTP+SSE for Yard game UI (ADR-0150).
 			serve: createServeControlCommand(),
 			inspect: createInspectCommand({ runtime }),
 			drift: createDriftCommand({ runtime }),

@@ -298,7 +298,7 @@ Product: hobo
 
 ### serve
 - Role: control plane
-- Summary: Local control-plane HTTP+SSE for the Yard game UI
+- Summary: Serve the local control-plane HTTP and SSE API
 - CLI: `hobo serve`
 - MCP tool: `serve`
 - Capability: { port: hobo:mcp, resource: tool:serve, verb: call }

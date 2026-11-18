@@ -2,7 +2,7 @@
 	"name": "@hobo/management",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "Pure Station/Connection/Broker management functions shared by CLI, MCP, and the control-plane game UI.",
+	"description": "Station, connection, and broker management functions shared by the CLI, MCP, and control API.",
 	"type": "module",
 	"files": [
 		"LICENSE",

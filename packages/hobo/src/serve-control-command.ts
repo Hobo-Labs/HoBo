@@ -1,12 +1,3 @@
-/**
- * `hobo serve control` — local control-plane HTTP+SSE for the Yard game UI.
- * Same management surface as CLI/MCP (ADR-0150 / ADR-0111 spirit).
- *
- * `hobo serve cd` — the CD conductor service: tick loop,
- * conductor reconciler, `/v1/cd/` read API + agent delivery feed, health and
- * readiness. `--simulate` is its only fixture path and is labelled.
- */
-
 import type { CommandModule, CommandResult } from "@hobo/cli";
 import { createControlApiServer } from "@hobo/control-api";
 import { defaultHoboHome } from "./bare-metal-yard.js";

@@ -57,14 +57,13 @@ lowest-common-denominator abstraction that hides the provider.
   dependency** for gates or publish (`pnpm run site:deploy`). Checkin gates
   run only through agent hooks / githooks (`pnpm agent:check`); agents must
   not wait on, cancel, or re-request Action runners.
-- A control-plane UI (`@hobo/control-yard`).
 - Design suite, ADRs and traceability under `urn:hobo:requirement:`; proofs under
   `src/draft/`; gates run through `pnpm agent:check`.
 
 ## Capabilities and Constraints
 
 - Active design + executable contract/proof repository with a production
-  `packages/` workspace (144 package manifests).
+  `packages/` workspace.
 - The canonical `hobo` verb set dispatches against the local lane.
 - Live Vercel/Cloudflare paths and `HOBO_PULUMI_LIVE=1` are credential- or
   engine-gated, not default.

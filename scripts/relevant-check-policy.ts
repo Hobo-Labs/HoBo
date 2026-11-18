@@ -231,16 +231,14 @@ export function selectRelevantChecks(
 			!workspaceFor(file),
 	);
 	const uiChanged =
-		touched(["apps/web", "packages/ui", "site", "packages/control-yard"]) ||
+		touched(["apps/web", "packages/ui", "site"]) ||
 		touchedAny([
 			/\.(tsx|jsx|css|astro)$/u,
 			/^scripts\/check-visual-tokens\.mts$/u,
-			/^scripts\/lib\/control-yard-props\.ts$/u,
 		]);
 	const visualTokensChanged =
 		touchedAny([
 			/^scripts\/check-visual-tokens\.mts$/u,
-			/^scripts\/lib\/control-yard-props\.ts$/u,
 			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
 		]) || uiChanged;
 	const behaviorChanged =

@@ -229,7 +229,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/training-pipeline",
 	"packages/ci-guard",
 	"packages/control-api",
-	"packages/control-yard",
 	"packages/management",
 	"packages/replay",
 	"packages/schema-tools",
