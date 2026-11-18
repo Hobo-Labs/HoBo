@@ -1,10 +1,5 @@
 import type { JsonObject, JsonValue } from "../src/json.js";
-import type { DrizzleColumnLike, ExtraConfigBuilder } from "../src/shape.js";
-
-export interface FixtureHost {
-	[key: string]: JsonValue | ExtraConfigBuilder | undefined;
-	[key: symbol]: JsonValue | ExtraConfigBuilder | undefined;
-}
+import type { UnknownRecord } from "../src/shape.js";
 
 export const DRIZZLE_NAME = Symbol.for("drizzle:Name");
 export const DRIZZLE_COLUMNS = Symbol.for("drizzle:Columns");
@@ -29,13 +24,10 @@ export interface ColumnOverrides {
 	readonly isUnique?: boolean;
 	readonly hasDefault?: boolean;
 	readonly default?: JsonValue;
-	readonly defaultFn?: JsonValue;
+	readonly defaultFn?: JsonValue | (() => JsonValue);
 }
 
-export function column(
-	name: string,
-	overrides: ColumnOverrides = {},
-): DrizzleColumnLike {
+export function column(name: string, overrides: ColumnOverrides = {}) {
 	const sqlType = overrides.sqlType ?? "text";
 	return {
 		name,
@@ -55,43 +47,49 @@ export function column(
 	};
 }
 
-export function typelessColumn(name: string): DrizzleColumnLike {
+export function typelessColumn(name: string) {
 	return { name, getSQLType: (): undefined => undefined };
 }
 
 export interface TableOverrides {
 	readonly schema?: string;
 	readonly inlineForeignKeys?: readonly JsonValue[];
-	readonly extraConfigBuilder?: ExtraConfigBuilder;
+	readonly extraConfigBuilder?: (columns: UnknownRecord) => JsonValue | object;
 	readonly extraConfigColumns?: JsonObject;
 }
 
-export function table(
+interface FixtureMetadata<Columns> {
+	[DRIZZLE_NAME]: string;
+	[DRIZZLE_COLUMNS]: Columns;
+	[DRIZZLE_SCHEMA]?: string;
+	[DRIZZLE_PG_INLINE_FOREIGN_KEYS]?: readonly JsonValue[];
+	[DRIZZLE_EXTRA_CONFIG_BUILDER]?: NonNullable<
+		TableOverrides["extraConfigBuilder"]
+	>;
+	[DRIZZLE_EXTRA_CONFIG_COLUMNS]?: JsonObject;
+}
+
+export function table<Columns extends object>(
 	sqlName: string,
-	columns: JsonObject,
+	columns: Columns,
 	overrides: TableOverrides = {},
-): FixtureHost {
-	const built: FixtureHost = {
+) {
+	const metadata: FixtureMetadata<Columns> = {
 		[DRIZZLE_NAME]: sqlName,
 		[DRIZZLE_COLUMNS]: columns,
 	};
-	if (overrides.schema !== undefined) built[DRIZZLE_SCHEMA] = overrides.schema;
-	if (overrides.inlineForeignKeys !== undefined) {
-		built[DRIZZLE_PG_INLINE_FOREIGN_KEYS] = overrides.inlineForeignKeys;
-	}
-	if (overrides.extraConfigBuilder !== undefined) {
-		built[DRIZZLE_EXTRA_CONFIG_BUILDER] = overrides.extraConfigBuilder;
-	}
-	if (overrides.extraConfigColumns !== undefined) {
-		built[DRIZZLE_EXTRA_CONFIG_COLUMNS] = overrides.extraConfigColumns;
-	}
-	for (const [property, value] of Object.entries(columns)) {
-		built[property] = value;
-	}
-	return built;
+	if (overrides.schema !== undefined)
+		metadata[DRIZZLE_SCHEMA] = overrides.schema;
+	if (overrides.inlineForeignKeys !== undefined)
+		metadata[DRIZZLE_PG_INLINE_FOREIGN_KEYS] = overrides.inlineForeignKeys;
+	if (overrides.extraConfigBuilder !== undefined)
+		metadata[DRIZZLE_EXTRA_CONFIG_BUILDER] = overrides.extraConfigBuilder;
+	if (overrides.extraConfigColumns !== undefined)
+		metadata[DRIZZLE_EXTRA_CONFIG_COLUMNS] = overrides.extraConfigColumns;
+	return { ...columns, ...metadata };
 }
 
-export function view(sqlName: string): FixtureHost {
+export function view(sqlName: string) {
 	return {
 		[DRIZZLE_IS_VIEW]: true,
 		[DRIZZLE_NAME]: sqlName,
@@ -101,9 +99,9 @@ export function view(sqlName: string): FixtureHost {
 
 export function indexBuilder(
 	name: string,
-	columns: readonly (string | JsonObject)[],
+	columns: readonly (string | object)[],
 	unique = false,
-): JsonObject {
+) {
 	return { config: { name, columns: [...columns], unique } };
 }
 
@@ -132,7 +130,7 @@ export function indexedColumn(
 	return { name, indexConfig };
 }
 
-export function representativeSchemaModule(): JsonObject {
+export function representativeSchemaModule() {
 	const usersColumns = {
 		id: column("id", {
 			columnType: "PgSerial",
