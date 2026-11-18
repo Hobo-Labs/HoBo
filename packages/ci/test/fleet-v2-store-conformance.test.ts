@@ -641,6 +641,27 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			});
 		});
 
+		it("quarantines the provider scope with a conflicting runner", async () => {
+			const store = current();
+			await store.intake(demand("1", "webhook", "webhook-1"));
+			const first = reservation(parsedKey("1"), "first", 0);
+			await store.reserveCapacity(first.input);
+			await store.transitionRunnerSlot(
+				first.input.slot.id,
+				"reserved",
+				"provisioning",
+			);
+			await store.quarantineRunnerSlot(first.input.slot.id, "provisioning");
+			expect(await store.runnerSlot(first.input.slot.id)).toMatchObject({
+				state: "uncertain",
+			});
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				state: "quarantined",
+				reservedUnits: 1,
+				seq: 2,
+			});
+		});
+
 		it("releases capacity for a definitively released unclaimed slot", async () => {
 			const store = current();
 			await store.intake(demand("1", "webhook", "webhook-1"));

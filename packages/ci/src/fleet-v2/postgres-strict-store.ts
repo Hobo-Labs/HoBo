@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-conditional-empty-object-spread -- PostgreSQL row shape is validated before each cast; conformance tests cover transitions */
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-conditional-empty-object-spread */
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import {
 	clone,
@@ -49,6 +49,7 @@ import {
 	type ParsedStartBindingInput,
 } from "./parse.js";
 import {
+	CAPACITY_GROUP_STATES,
 	type CapacityGroupState,
 	type CiDemandState,
 	type EffectState,
@@ -376,9 +377,10 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 	private async capacityInside(
 		client: PoolClient,
 		id: string,
+		lock = false,
 	): Promise<CapacityGroup | undefined> {
 		const result = await client.query(
-			"SELECT body FROM hobo_ci_fleet_v2_capacity_groups WHERE partition_id=$1 AND id=$2",
+			`SELECT body FROM hobo_ci_fleet_v2_capacity_groups WHERE partition_id=$1 AND id=$2${lock ? " FOR UPDATE" : ""}`,
 			[this.partition, id],
 		);
 		return result.rows[0]
@@ -1049,6 +1051,59 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				slot.id,
 				undefined,
 				slot.incarnationId,
+			);
+			return slot;
+		});
+	}
+
+	quarantineRunnerSlot(
+		id: string,
+		expected: RunnerSlotState,
+	): Promise<RunnerSlot> {
+		return this.tx(async (client) => {
+			const slot = await this.slotInside(client, id, true);
+			if (!slot)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "runner slot not found");
+			if (slot.state !== expected)
+				rejectFleet(
+					FleetRejectionCode.INVALID_TRANSITION,
+					`runner slot expected ${expected}, found ${slot.state}`,
+				);
+			const group = await this.capacityInside(
+				client,
+				slot.capacityGroupId,
+				true,
+			);
+			if (!group)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "capacity group not found");
+			transitionRunnerSlot(expected, "uncertain");
+			transitionCapacityGroup(
+				z.enum(CAPACITY_GROUP_STATES).parse(group.state),
+				"quarantined",
+			);
+			slot.state = "uncertain";
+			group.state = "quarantined";
+			group.seq += 1;
+			await this.saveSlot(client, slot);
+			await this.saveCapacity(client, group);
+			const at = await this.now(client);
+			await this.event(
+				client,
+				FleetEventType.RUNNER_SLOT_TRANSITIONED,
+				at,
+				slot.accountId,
+				"runner-slot",
+				slot.id,
+				undefined,
+				slot.incarnationId,
+			);
+			await this.event(
+				client,
+				FleetEventType.CAPACITY_QUARANTINED,
+				at,
+				group.accountId,
+				"capacity-group",
+				group.id,
 			);
 			return slot;
 		});
