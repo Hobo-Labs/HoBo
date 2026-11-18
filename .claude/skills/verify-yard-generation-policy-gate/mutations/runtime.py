@@ -15,6 +15,8 @@ source = scratch / 'src/yard-placement/generation.ts'
 original = source.read_text()
 approval = 'if (policy.requireApproval !== false)'
 effect = 'if (policy.effect !== "allow-if-no-match")'
+attestation = 'if (policy.requireAttestation !== false)'
+locks = 'if (\n\t\t!Array.isArray(policy.lockedProperties) ||\n\t\tpolicy.lockedProperties.length > 0\n\t)'
 cases = [
     ('approval-plan', approval, 'test/yard-generation-approval.test.ts', 'refuses to plan while approval'),
     ('approval-malformed', approval, 'test/yard-generation-approval.test.ts', 'missing or malformed approval'),
@@ -22,6 +24,12 @@ cases = [
     ('effect-plan', effect, 'test/yard-generation-approval.test.ts', 'unknown effects and unsupported'),
     ('effect-invalid-funded', effect, 'test/yard-event-store-folds.test.ts', 'generation-invalid-effect'),
     ('effect-dedicated-funded', effect, 'test/yard-event-store-folds.test.ts', 'generation-dedicated-unsupported'),
+    ('attestation-plan', attestation, 'test/yard-generation-attestation.test.ts', 'refuses generation requiring unavailable attestation'),
+    ('attestation-malformed', attestation, 'test/yard-generation-attestation.test.ts', 'requires an explicit false attestation'),
+    ('attestation-funded', attestation, 'test/yard-event-store-folds.test.ts', 'generation-attestation-required'),
+    ('locks-plan', locks, 'test/yard-generation-attestation.test.ts', 'refuses unverified locked properties'),
+    ('locks-generated', locks, 'test/yard-generation-attestation.test.ts', 'rejects generated nonempty locked-property lists'),
+    ('locks-funded', locks, 'test/yard-event-store-folds.test.ts', 'generation-locked-properties'),
 ]
 
 def run(test_file, pattern):
