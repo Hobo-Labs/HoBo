@@ -10,8 +10,8 @@ package training_optimizer
 #OptimizerConfig: {
 	engine_id?:           string & !=""
 	seed:                 int & >=0 & <=4294967295
-	max_iterations?:      int & >=1
-	demos_per_candidate?: int & >=1
+	max_iterations?:      int & >=1 & <=4294967295
+	demos_per_candidate?: int & >=1 & <=4294967295
 }
 
 #OptimizerTraceSpan: {

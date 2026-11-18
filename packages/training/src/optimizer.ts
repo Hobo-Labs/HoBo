@@ -43,7 +43,7 @@ export const BUILTIN_TRAINING_ENGINE_ID = "hobo-builtin-opto";
 // public-contract: engine version pinned into every emitted TrainingArtifact.
 export const BUILTIN_TRAINING_ENGINE_VERSION = "0.1.0";
 
-const MAX_SEED = 0xff_ff_ff_ff;
+const MAX_UINT32 = 0xff_ff_ff_ff;
 const DEFAULT_MAX_ITERATIONS = 8;
 const DEFAULT_DEMOS_PER_CANDIDATE = 2;
 
@@ -110,8 +110,13 @@ function parsePositiveInt(
 	fallback: number,
 ): number {
 	if (value === undefined) return fallback;
-	if (!isJsonNumber(value) || !Number.isInteger(value) || value < 1) {
-		fail(path, "integer >= 1", value);
+	if (
+		!isJsonNumber(value) ||
+		!Number.isInteger(value) ||
+		value < 1 ||
+		value > MAX_UINT32
+	) {
+		fail(path, "integer in [1, 4294967295]", value);
 	}
 	return value;
 }
@@ -132,7 +137,7 @@ export function parseOptimizerConfig(value: JsonValue): OptimizerConfig {
 		!isJsonNumber(seed) ||
 		!Number.isInteger(seed) ||
 		seed < 0 ||
-		seed > MAX_SEED
+		seed > MAX_UINT32
 	) {
 		fail("config.seed", "integer in [0, 4294967295]", seed);
 	}
