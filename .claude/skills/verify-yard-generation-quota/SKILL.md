@@ -7,7 +7,7 @@ description: Verify durable Yard quota admission, execution fencing, cancellatio
 
 **Properties:** Within one authority database, admission atomically counts pending generations and a tenant's initial and claimed Yards against fixed positive limits. A repeated key is bound to the attempt, tenant, Yard, plan and limits. A pending reservation can be cancelled only before its durable execution fence is claimed; cancellation leaves a request-bound tombstone and the key cannot be reused. Only the caller that newly claims the fence may provision. A claimed or uncertain attempt remains counted until trusted, bound readiness evidence is verified. Generated placement checks host policy before quota and rechecks the quota authority and persisted fence at the provider boundary.
 
-**Review baseline:** commit `0b8c44da3d9fe7f80ff997e6c77e343d67a938cb`. PASS for the bounded models, integer abstraction and executable checks below.
+**Review baseline:** commit `b79a7d7ab3c7a048c88eba1ab9f2d806ad6a4c6b`. PASS for the bounded models, integer abstraction and executable checks below.
 
 ## Covered code
 

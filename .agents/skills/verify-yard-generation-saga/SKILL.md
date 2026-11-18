@@ -7,7 +7,7 @@ description: Verify in-process Yard generation authorization, retry identity, co
 
 **Properties:** Within one saga instance, a concurrent identical retry shares its pending provider operation, and a different plan using the same idempotency key is refused. A provider sees a snapshot of the submitted plan; cached results do not share mutable provider objects. After a provider call fails, a retry inspects the existing attempt rather than starting a second provision. A trusted host must explicitly approve the plan; the decision is rechecked at the provider boundary and after each in-flight operation finishes and before returning a cached result from `run` or `inspect`, and cannot change the private provider or inspection plan through its callback input.
 
-**Review baseline:** commit `0b8c44da3d9fe7f80ff997e6c77e343d67a938cb`. PASS for the bounded model and executable checks below.
+**Review baseline:** commit `b79a7d7ab3c7a048c88eba1ab9f2d806ad6a4c6b`. PASS for the bounded model and executable checks below.
 
 ## Covered code
 
