@@ -5,11 +5,11 @@ description: Verify durable workflow run identity, replay, and terminal outcomes
 
 # Durable workflow identity and replay
 
-**Properties:** A completed journaled step is reused on resume; a fresh run atomically claims its ID; start and resume capture reproducible input; a resume checks recorded input and workflow identity, uses the recorded seed, and returns a recorded terminal outcome without running the workflow or appending another terminal fact. Journaled step and workflow results are captured before return.
+**Properties:** A completed journaled step is reused on resume; workflow operations validate run IDs; a fresh run atomically claims its ID; start and resume capture reproducible input; a resume checks recorded input and workflow identity, uses the recorded seed, and returns a recorded terminal outcome without running the workflow or appending another terminal fact. Journaled step and workflow results are captured before return.
 
 **Why:** Repeating effects or reusing results for different inputs can corrupt work.
 
-**Review baseline:** `1b298df41b6572986ea1473b2658de52e31353df`.
+**Review baseline:** `bde29f5829f22ea381725a2e23ef3c8c435f4619`.
 
 ## Covered code
 
@@ -19,6 +19,7 @@ description: Verify durable workflow run identity, replay, and terminal outcomes
 - `packages/runtime/src/workflow-value.ts` captures JSON-reproducible workflow inputs and step and workflow results.
 - `packages/runtime/test/authoring/workflow-result-snapshot.test.ts` checks generated results, producer edits during storage, invalid values, stable failures and top-level `undefined`.
 - `packages/runtime/test/authoring/workflow-input-snapshot.test.ts` checks edits during start and resume, unreproducible values, and invalid inputs leaving no claimed journal.
+- `packages/runtime/test/authoring/workflow-id-boundary.test.ts` checks invalid IDs at start, resume and journal access, including a numeric resume while its string-named run is active.
 
 ## Run
 
@@ -28,15 +29,32 @@ From the repository root with workspace dependencies installed:
 bash scripts/verify-state-machine.sh .agents/skills/verify-workflow-replay
 python3 .agents/skills/verify-workflow-replay/mutations/result-snapshot.py
 python3 .agents/skills/verify-workflow-replay/mutations/input-snapshot.py
+python3 .agents/skills/verify-workflow-replay/mutations/run-id-boundary.py
 pnpm --filter @hobo/runtime build
 pnpm --filter @hobo/cli exec vitest run test/generated-runtime-execution.test.ts --maxWorkers=1 --no-file-parallelism
 ```
 
-The first command runs the real-code checks, generated properties, TLC 1.7.4 with the pinned checksum, and Z3 4.15.4. The next two commands check six result and five input variants in isolated copies, then rerun the restored tests. The runner uses `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` if set; otherwise it downloads the jar and installs Z3 in temporary directories. Java 11+, Python, Node with the repo's `tsx`, `curl`, and `sha256sum` are required. Read the TLA+ result with `/statechart` and its view in `models/`.
+The first command runs the real-code checks, generated properties, TLC 1.7.4 with the pinned checksum, and Z3 4.15.4. The next three commands check six result, five input and six run-ID variants in isolated copies, then rerun the restored tests. The runner uses `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` if set; otherwise it downloads the jar and installs Z3 in temporary directories. Java 11+, Python, Node with the repo's `tsx`, `curl`, and `sha256sum` are required. Read the TLA+ result with `/statechart` and its view in `models/`.
 
 ## Scope and evidence
 
 WorkflowReplay bounds one step to two calls and permits crashes before or after its completion fact (17 states). WorkflowRunIds explores two workers, two candidate IDs, preexisting legacy journals, retries, and an atomic empty-stream claim (278 states). WorkflowResume checks input, recorded workflow name, and recorded seed (280 states). WorkflowTerminal explores completed and failed terminal outcomes and repeated resumes (15 states); independent invariants require no subsequent body call, no duplicate terminal fact, and the recorded outcome to be returned.
+
+WorkflowRunIdBoundary explores 16 states and 25 steps for two valid strings, an empty string, a number, a boxed string, null and a proxy. It checks that only valid IDs are admitted, that a coerced value cannot access the same modeled stream, and that validation does not inspect a proxy. Its four-state projection hides 16 same-label steps. Removing the guard or safe check violates these properties; real-code tests reproduce the numeric-alias and proxy-inspection paths. Z3 proves fixed-prefix cancellation for arbitrary strings and the stated abstract guard implications. The model assumes trusted JavaScript intrinsics and truthful primitive-string validation; it does not establish TypeScript refinement, cross-process fencing or global authorization.
+
+```mermaid
+stateDiagram-v2
+  s0: Run ID received
+  s1: Valid run ID accepted
+  s2: Invalid run ID refused
+  s3: Journal accessed
+  [*] --> s0
+  s0 --> s2: validate ID
+  s0 --> s1: validate ID
+  s1 --> s3: access journal
+```
+
+To redraw the run-ID baseline, invoke `<statechart-skill>/scripts/statechart` with `models/WorkflowRunIdBoundary.tla`, `--config models/WorkflowRunIdBoundary.cfg`, `--view models/run-id-boundary-view.mts`, and a fresh `--out` directory.
 
 WorkflowInputSnapshot explores 18 states and 34 steps for start or resume, valid or invalid input, a caller edit, journal binding and execution. It checks that executed input matches the journal and that invalid input is neither recorded on start nor executed. Its five-state projection hides 22 same-label steps, including caller edits. Weakening the input guard or snapshot produces counterexamples; Z3 proves the stated implications over arbitrary abstract strings. The model assumes truthful validation and journal reads, trusted JavaScript intrinsics, a detached capture and no application mutation of its local copy; it does not prove TypeScript refinement or liveness.
 
@@ -79,7 +97,7 @@ stateDiagram-v2
 
 For the mutable-return variant, `/statechart` found the shortest violation: produce a result, capture it, edit the original while storage waits, record the capture, and return the edited original. The delayed-write real-code tests reproduce that path for both a step and a workflow. To redraw the baseline, invoke `<statechart-skill>/scripts/statechart` with `models/WorkflowResultSnapshot.tla`, `--config models/WorkflowResultSnapshot.cfg`, `--view models/result-snapshot-view.mts`, and a fresh `--out` directory.
 
-The generated implementation properties use seeds 614448 and 614449 and 150 examples each. They check successful and failed terminal resumes and races between fresh runs claiming the same ID. Seeds 151942 and 151943 generate 150 JSON results each for terminal and step replay. Input seeds 614606 and 614607 generate 40 caller-edit and 100 ordinary-JSON cases. The generated-app SQLite integration test covers starting and resuming through the generated adapter, including no extra terminal journal entry.
+The generated implementation properties use seeds 614448 and 614449 and 150 examples each. They check successful and failed terminal resumes and races between fresh runs claiming the same ID. Seeds 151942 and 151943 generate 150 JSON results each for terminal and step replay. Input seeds 614606 and 614607 generate 40 caller-edit and 100 ordinary-JSON cases; seed 614605 generates 100 invalid IDs. The generated-app SQLite integration test covers starting and resuming through the generated adapter, including no extra terminal journal entry.
 
 The store must implement atomic expected-sequence compare-and-set. Legacy journals without recorded input are interpreted as null, so prior undefined inputs cannot be recovered. Legacy journals without a workflow name cannot establish workflow identity; legacy journals without a seed use the current engine seed, and old failed events without a step cannot recover that step. Concurrent resumes are not fenced. An external effect can repeat after a crash between the effect and its completion fact; this is not an exactly-once guarantee.
 
