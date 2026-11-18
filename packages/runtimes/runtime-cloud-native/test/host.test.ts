@@ -97,6 +97,50 @@ describe("@hobo/runtime-cloud-native", () => {
 		}
 	});
 
+	it("remembers the injected value if the caller later changes its input map", async () => {
+		const key = "HOBO_TEST_CLOUD_NATIVE_SNAPSHOT";
+		const original = process.env[key];
+		try {
+			process.env[key] = "before";
+			const bindleEnv = { [key]: "injected" };
+			const serve = await createMockCloudNativeProvider().servePrivate({
+				hoboHome: "/tmp",
+				projectDir: "/tmp",
+				bindleEnv,
+				privateComponents: [],
+			});
+			process.env[key] = "changed";
+			bindleEnv[key] = "changed";
+			await serve.close();
+			expect(process.env[key]).toBe("changed");
+		} finally {
+			if (original === undefined) delete process.env[key];
+			else process.env[key] = original;
+		}
+	});
+
+	it("does not restore an environment value again after closing", async () => {
+		const key = "HOBO_TEST_CLOUD_NATIVE_CLOSE_ONCE";
+		const original = process.env[key];
+		try {
+			process.env[key] = "before";
+			const serve = await createMockCloudNativeProvider().servePrivate({
+				hoboHome: "/tmp",
+				projectDir: "/tmp",
+				bindleEnv: { [key]: "injected" },
+				privateComponents: [],
+			});
+			await serve.close();
+			expect(process.env[key]).toBe("before");
+			process.env[key] = "injected";
+			await serve.close();
+			expect(process.env[key]).toBe("injected");
+		} finally {
+			if (original === undefined) delete process.env[key];
+			else process.env[key] = original;
+		}
+	});
+
 	it("stub providers refuse servePrivate", async () => {
 		const host = createCloudNativeRuntimeHost({
 			providers: defaultCloudNativeProviders().filter((p) => p.id === "aws"),

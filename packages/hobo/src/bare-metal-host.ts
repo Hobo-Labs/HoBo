@@ -259,7 +259,10 @@ async function listen(
 						req.url?.startsWith("http://") || req.url?.startsWith("https://")
 							? `${new URL(req.url).pathname}${new URL(req.url).search}`
 							: (req.url ?? "/");
-					const url = new URL(requestPath, `http://${host}:${port}`);
+					const address = server.address();
+					const boundPort =
+						address === null || isJsonString(address) ? port : address.port;
+					const url = new URL(requestPath, `http://${host}:${boundPort}`);
 					const body = Buffer.concat(chunks);
 					const method = req.method ?? "GET";
 					const init: RequestInit = {
