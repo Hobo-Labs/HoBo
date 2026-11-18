@@ -8,6 +8,7 @@ import {
 	AWS_PROVIDER_ID,
 	COST_FACTS,
 	DEFAULT_REGIONS,
+	PROVIDER_TERMS,
 	publishCapabilityManifest,
 } from "./manifest.js";
 import { realizeResourcePlan } from "./realize.js";
@@ -109,6 +110,7 @@ export function createAwsProvider(
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: AWS_PROVIDER_ID,
+				terms: PROVIDER_TERMS,
 				published,
 				capabilities: parseJsonObject(
 					published["/.well-known/capability-manifest/capabilities.json"] ??

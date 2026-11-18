@@ -1,4 +1,10 @@
-import { canonicalJson, sortKeys, stableDigest } from "@hobo/core";
+import {
+	canonicalJson,
+	type ProviderTerms,
+	providerTermsFor,
+	sortKeys,
+	stableDigest,
+} from "@hobo/core";
 
 import {
 	BUILD_MACHINE_CATEGORY,
@@ -9,7 +15,6 @@ import {
 	EXECUTION_HOST_MANIFEST_SCHEMA,
 	type ExecutionHostCategory,
 	type ExecutionHostManifest,
-	type ProviderTerms,
 	RUNNER_CATEGORY,
 } from "@hobo/runner-github";
 
@@ -51,10 +56,8 @@ export const COST_SOURCE: CostProvenance = {
 // public-contract: Depot's terms of service. A login may be used by one person
 // only, so the adapter is only ever pointed at the operator's OWN Depot org
 // (ADR-0129 §1).
-export const PROVIDER_TERMS: ProviderTerms = {
-	url: "https://depot.dev/terms-of-service",
-	reviewedOn: "2026-07-27",
-};
+export const PROVIDER_TERMS: ProviderTerms =
+	providerTermsFor("@hobo/runner-depot");
 
 export const COST_FACTS = {
 	[RUNNER_CATEGORY]: {
@@ -261,6 +264,7 @@ export function publishCapabilityManifest(
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
 		executionHostSchema: EXECUTION_HOST_MANIFEST_SCHEMA,
+		terms: PROVIDER_TERMS,
 		documents,
 	};
 

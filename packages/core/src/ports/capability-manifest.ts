@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "../json.js";
 
 // public-contract: capability-manifest document schema ids (Plan 6 signs).
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
@@ -67,9 +72,19 @@ export function parsePublishedManifest(
 	const auth = JSON.parse(documents[MANIFEST_PATHS.auth] ?? "{}");
 	const cost = JSON.parse(documents[MANIFEST_PATHS.cost] ?? "{}");
 	const errors: string[] = [];
+	const terms = index.terms;
 
 	if (index.manifestSchema !== MANIFEST_SCHEMA) {
 		errors.push(`index.manifestSchema must be ${MANIFEST_SCHEMA}`);
+	}
+	if (
+		!isJsonObject(terms) ||
+		!isJsonString(terms.url) ||
+		!terms.url.startsWith("https://") ||
+		!isJsonString(terms.reviewedOn) ||
+		!/^\d{4}-\d{2}-\d{2}$/u.test(terms.reviewedOn)
+	) {
+		errors.push("index.terms must contain an HTTPS url and reviewedOn date");
 	}
 	if (auth.schema !== AUTH_SCHEMA) {
 		errors.push(`auth.schema must be ${AUTH_SCHEMA}`);

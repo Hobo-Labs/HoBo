@@ -13,6 +13,10 @@ provider:
   homepage: https://aiven.io
   description: Managed Valkey; the relay binds it over RESP with a connection URL.
 
+terms:
+  url: https://aiven.io/terms
+  reviewedOn: 2026-11-18
+
 capabilities:
   regions: [aiven-free]
   mappings:

@@ -4,6 +4,10 @@
     "id": "has-mcp",
     "displayName": "Has MCP"
   },
+  "terms": {
+    "url": "https://has-mcp.example.com/terms",
+    "reviewedOn": "2026-11-18"
+  },
   "api": {
     "specs": [
       {

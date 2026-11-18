@@ -12,6 +12,10 @@ provider:
   homepage: https://turso.tech
   description: libSQL over HTTPS, attached through the Vercel Marketplace.
 
+terms:
+  url: https://turso.tech/terms-of-use
+  reviewedOn: 2026-11-18
+
 capabilities:
   regions: [aws-us-east-1]
   mappings:

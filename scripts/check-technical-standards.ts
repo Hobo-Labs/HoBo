@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { PROVIDER_TERMS_REGISTRY } from "../packages/core/src/provider-terms.ts";
 import { GIT_OUTPUT_MAX_BUFFER } from "./lib/git-output.ts";
 
 type Mode = "worktree" | "staged";
@@ -287,6 +288,50 @@ if (outOfBandBuilds.length > 0) {
 			...outOfBandBuilds.map((entry) => `- ${entry}`),
 		].join("\n"),
 	);
+}
+
+const providerTermsMaxAgeDays = 180;
+const providerTermsNow = Date.now();
+for (const [providerId, terms] of Object.entries(PROVIDER_TERMS_REGISTRY)) {
+	const reviewedAt = Date.parse(`${terms.reviewedOn}T00:00:00.000Z`);
+	const ageDays = (providerTermsNow - reviewedAt) / 86_400_000;
+	if (!terms.url.startsWith("https://")) {
+		fail(`${providerId}: provider terms URL must use HTTPS`);
+	}
+	if (!Number.isFinite(reviewedAt) || ageDays < 0) {
+		fail(`${providerId}: provider terms reviewedOn must be a valid past date`);
+	} else if (ageDays > providerTermsMaxAgeDays) {
+		fail(
+			`${providerId}: provider terms review is ${Math.floor(ageDays)} days old; refresh it within ${providerTermsMaxAgeDays} days`,
+		);
+	}
+}
+
+const capabilityProviderPackages = new Set<string>();
+for (const providerFile of run("git", [
+	"ls-files",
+	"packages/providers/*/src/provider.ts",
+	"packages/providers/*/src/*-provider.ts",
+])
+	.split(/\r?\n/u)
+	.map((line) => line.trim())
+	.filter(Boolean)) {
+	if (!readFileSync(providerFile, "utf8").includes("capabilityManifest"))
+		continue;
+	capabilityProviderPackages.add(providerFile.split("/").slice(0, 3).join("/"));
+}
+for (const packageRoot of capabilityProviderPackages) {
+	const manifest = JSON.parse(
+		readFileSync(`${packageRoot}/package.json`, "utf8"),
+	) as { name?: string };
+	if (
+		manifest.name === undefined ||
+		!(manifest.name in PROVIDER_TERMS_REGISTRY)
+	) {
+		fail(
+			`${packageRoot}: capability provider is missing a provider-terms entry`,
+		);
+	}
 }
 
 if (existsSync("contracts/data-models")) {

@@ -1,3 +1,4 @@
+import { providerTermsFor } from "@hobo/core";
 import { VERCEL_STATIC_DEPLOY_PRODUCT_ID } from "./deployment-resolver.js";
 import {
 	EQUIVALENCE_CLASSES,
@@ -89,6 +90,7 @@ export function createVercelProvider(): CloudProvider {
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: `@hobo/provider-${PROVIDER_TARGET}`,
+				terms: providerTermsFor("@hobo/provider-vercel"),
 				published: {},
 				capabilities: {
 					capabilities: capabilities.map((c) => ({

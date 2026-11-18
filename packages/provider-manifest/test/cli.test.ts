@@ -27,6 +27,10 @@ describe("hobo-provider-manifest", () => {
 			JSON.stringify({
 				schema: "hobo.provider-manifest/v1",
 				provider: { id: "Bad Id", displayName: "Bad" },
+				terms: {
+					url: "https://bad.example.com/terms",
+					reviewedOn: "2026-11-18",
+				},
 			}),
 		);
 		const { code, lines } = invoke("check", file);
@@ -91,6 +95,7 @@ describe("hobo-provider-manifest", () => {
 			[
 				"schema: hobo.provider-manifest/v1",
 				"provider: { id: has-mcp, displayName: Has MCP }",
+				"terms: { url: https://has-mcp.example.com/terms, reviewedOn: 2026-11-18 }",
 				"api:",
 				"  specs:",
 				"    - { id: rest, format: openapi, path: openapi.yaml }",
@@ -116,7 +121,7 @@ describe("hobo-provider-manifest", () => {
 		const dir = mkdtempSync(join(tmpdir(), "provider-manifest-"));
 		const manifest = join(dir, "provider.yaml");
 		const body = (path: string) =>
-			`schema: hobo.provider-manifest/v1\nprovider: { id: p, displayName: P }\napi:\n  specs:\n    - { id: rest, format: openapi, path: ${path} }\n`;
+			`schema: hobo.provider-manifest/v1\nprovider: { id: p, displayName: P }\nterms: { url: https://p.example.com/terms, reviewedOn: 2026-11-18 }\napi:\n  specs:\n    - { id: rest, format: openapi, path: ${path} }\n`;
 		writeFileSync(manifest, body("missing.yaml"));
 		expect(invoke("generate", manifest, join(dir, "out")).code).toBe(1);
 		writeFileSync(join(dir, "v2.yaml"), 'swagger: "2.0"\npaths: {}\n');
@@ -134,7 +139,7 @@ describe("hobo-provider-manifest", () => {
 		const manifest = join(dir, "provider.yaml");
 		writeFileSync(
 			manifest,
-			"schema: hobo.provider-manifest/v1\nprovider: { id: p, displayName: P }\nauth:\n  issuer: https://a.example.com\n  flows:\n    - id: f\n      oidcFederation: { audience: hobo }\n",
+			"schema: hobo.provider-manifest/v1\nprovider: { id: p, displayName: P }\nterms: { url: https://p.example.com/terms, reviewedOn: 2026-11-18 }\nauth:\n  issuer: https://a.example.com\n  flows:\n    - id: f\n      oidcFederation: { audience: hobo }\n",
 		);
 		const { code, lines } = invoke("generate", manifest, join(dir, "out"));
 		expect(code).toBe(0);

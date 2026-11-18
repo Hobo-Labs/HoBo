@@ -4,6 +4,10 @@
     "id": "tiny-host",
     "displayName": "Tiny Host"
   },
+  "terms": {
+    "url": "https://tiny-host.example.com/terms",
+    "reviewedOn": "2026-11-18"
+  },
   "billing": {
     "currency": "USD",
     "version": "2026.11",

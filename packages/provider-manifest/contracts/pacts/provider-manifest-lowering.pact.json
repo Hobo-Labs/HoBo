@@ -20,6 +20,10 @@
             "id": "tiny-llm",
             "displayName": "Tiny LLM"
           },
+          "terms": {
+            "url": "https://tiny-llm.example.com/terms",
+            "reviewedOn": "2026-11-18"
+          },
           "auth": {
             "issuer": "https://auth.tiny-llm.example.com",
             "flows": [
@@ -202,6 +206,10 @@
           "provider": {
             "id": "tiny-llm",
             "displayName": "Tiny LLM"
+          },
+          "terms": {
+            "url": "https://tiny-llm.example.com/terms",
+            "reviewedOn": "2026-11-18"
           },
           "billing": {
             "currency": "USD",

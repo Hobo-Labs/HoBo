@@ -5,6 +5,7 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
+	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import {
@@ -24,6 +25,7 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const GCP_PROVIDER_ID = "@hobo/provider-gcp";
+export const PROVIDER_TERMS = providerTermsFor(GCP_PROVIDER_ID);
 
 export const DEFAULT_REGIONS = ["us-central1", "us-east1", "europe-west1"];
 
@@ -187,6 +189,7 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
+		terms: PROVIDER_TERMS,
 		documents,
 	};
 

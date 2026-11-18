@@ -5,6 +5,7 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
+	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import type { InitialCapabilityPort } from "./equivalence.js";
@@ -20,6 +21,7 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const KUBERNETES_PROVIDER_ID = "@hobo/provider-kubernetes";
+export const PROVIDER_TERMS = providerTermsFor(KUBERNETES_PROVIDER_ID);
 
 export const DEFAULT_REGIONS = ["in-cluster"];
 
@@ -149,6 +151,7 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
+		terms: PROVIDER_TERMS,
 		documents,
 	};
 
