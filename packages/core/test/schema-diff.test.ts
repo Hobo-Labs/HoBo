@@ -190,6 +190,25 @@ describe("parseSchemaIr", () => {
 });
 
 describe("diffSchemaIr", () => {
+	it("adds a replacement primary-key column before assigning its key", () => {
+		const before = parseSchemaIr(ir([table()]));
+		const after = parseSchemaIr(
+			ir([
+				table({
+					columns: [
+						column({ primaryKey: false }),
+						column({ name: "sequence", type: "serial" }),
+					],
+				}),
+			]),
+		);
+		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
+			"expand:add-column:accounts:sequence",
+			"contract:narrow-column:accounts:id",
+			"contract:narrow-column:accounts:sequence",
+		]);
+	});
+
 	it("produces an empty plan for identical schemas", () => {
 		const schema = parseSchemaIr(ir([table()]));
 		const plan = diffSchemaIr(schema, schema);
