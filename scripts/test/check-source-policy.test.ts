@@ -1072,6 +1072,8 @@ e: ##"raw \##(2 + // raw interpolation
 			["notes/BACKLOG.md", "# Backlog"],
 			["notes/WALK_SHEET_HANDOFF.md", "# Handoff"],
 			["notes/new.md", "---\ntype: Design\n---\n"],
+			["PRODUCT.md", "# Product\n\n<!-- impeccable:product-schema 1 -->\n"],
+			["packages/demo/brief.md", "<!-- impeccable:product-schema 12 -->\n"],
 			[".impeccable/design.json", "{}"],
 			["site/.impeccable/surfaces/example.md", "# Example"],
 			["site/.impeccable/surfaces/example.json", "{}"],
@@ -1080,6 +1082,13 @@ e: ##"raw \##(2 + // raw interpolation
 		] as const)
 			assert.ok(documentViolation(file, text), file);
 		assert.equal(documentViolation("docs/usage.md", "# Usage"), undefined);
+		assert.equal(
+			documentViolation(
+				"docs/usage.md",
+				"# Usage\n\n```html\n<!-- impeccable:product-schema 1 -->\n```\n",
+			),
+			undefined,
+		);
 		assert.equal(
 			documentViolation("site/operations/handoffs.md", "# Handoffs"),
 			undefined,
@@ -1170,6 +1179,11 @@ e: ##"raw \##(2 + // raw interpolation
 		write(repo, "packages/example/ARCHITECTURE.md", "# Architecture\n");
 		write(
 			repo,
+			"PRODUCT.md",
+			"# Product\n\n<!-- impeccable:product-schema 1 -->\n",
+		);
+		write(
+			repo,
 			"index.html.tpl",
 			"<script>const value = 1; // explanation\n</script>\n",
 		);
@@ -1183,6 +1197,7 @@ e: ##"raw \##(2 + // raw interpolation
 			"docs/design/example.md.tpl",
 			"docs/ADR-0001.md.tpl",
 			"packages/example/ARCHITECTURE.md",
+			"PRODUCT.md",
 			"index.html.tpl",
 		]) {
 			assert.ok(result.stderr.includes(file), file);
