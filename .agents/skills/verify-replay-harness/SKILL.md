@@ -9,7 +9,7 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 
 **Why:** A failed verification must not change later code’s clock or randomness; an incomplete, changing or imprecise input must not silently omit events or misstate the boundary of a replay check.
 
-**Review baseline:** `4b557b5bef81e47ff9a01e65705dc5ff07dbe5a0`.
+**Review baseline:** `a0e147508ec8b5ef0d8b08e201225453013da6a6`.
 
 ## Covered code and checks
 
@@ -19,6 +19,7 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 - `packages/runtime/test/replay/target-snapshot.test.ts` checks hidden own targets, getters, and caller edits to targets and events; seed 614611 generates 100 target edits.
 - `packages/runtime/test/replay/sequence-vector.test.ts` checks special property names, inherited target entries including the captured target’s prototype, and 150 generated event histories (seed 614610).
 - `packages/runtime/test/replay/equivalence.test.ts` exercises the existing deterministic-fold and divergence checks.
+- The related [ordering skill](../verify-replay-ordering/SKILL.md) checks versioned canonical order and report markers.
 
 From the repository root with dependencies installed, run:
 

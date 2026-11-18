@@ -15,6 +15,7 @@ package architecture_evidence
 	state_digest:  #HexDigest
 	mode:          #ReplayMode
 	seed:          string & !=""
+	canonicalization_version?: 1 | 2
 }
 
 #ReplayDivergence: {
@@ -24,6 +25,7 @@ package architecture_evidence
 	live_order:                 [...string]
 	replay_order:               [...string]
 	first_divergent_event_key:  string & !=""
+	canonicalization_version?: 1 | 2
 
 	// A divergence record whose two digests agree is not a divergence. The
 	// guard used to be `if live == replay { _conflict: "..." }`, which reads

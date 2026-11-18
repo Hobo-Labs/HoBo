@@ -9,12 +9,18 @@ import {
 	captureWorkflowInput,
 	requireWorkflowRunId,
 } from "../workflow-boundary.js";
+import { canonicalizationVersion } from "./canonicalization.js";
 import { readReplayCommandTree } from "./command-tree.js";
 import { createDeterministicContext } from "./context.js";
-import { digest } from "./divergence.js";
-import { hashReadSet, seqVector, stableStringify } from "./equivalence.js";
+import { digestForVersion } from "./divergence.js";
+import {
+	hashReadSet,
+	seqVectorForVersion,
+	stableStringifyForVersion,
+	toSeqVectorEntries,
+} from "./equivalence.js";
 import type { EventStoreReader } from "./store.js";
-import type { ReplayReport } from "./types.js";
+import type { CanonicalizationVersion, ReplayReport } from "./types.js";
 
 export interface WorkflowDefinition<S, A> {
 	name: string;
@@ -35,6 +41,7 @@ export interface WorkflowReplayContext {
 
 export interface ReplayOptions {
 	seed?: string;
+	canonicalizationVersion?: CanonicalizationVersion;
 }
 
 export interface ReplayResult<S> {
@@ -52,6 +59,10 @@ export async function replayRun<S, A>(
 	const id = requireWorkflowRunId(runId);
 	const input = captureWorkflowInput(args);
 	const suppliedSeed = options.seed;
+	const digestVersion = canonicalizationVersion(
+		options.canonicalizationVersion,
+		2,
+	);
 	const workflowName = workflow.name;
 	const initialState = workflow.initialState;
 	const execute = workflow.execute;
@@ -68,7 +79,7 @@ export async function replayRun<S, A>(
 		throw new TypeError("replay seed must be a string");
 	const streamId = `run/${id}`;
 	const events = await store.readStream(streamId);
-	const recordedVector = seqVector(events);
+	const recordedVector = seqVectorForVersion(events, digestVersion);
 	const started = events.find((event) => event.type === "run.Started");
 	if (!started || !isJsonObject(started.data)) {
 		throw new Error(`missing run.Started for ${runId}`);
@@ -252,12 +263,11 @@ export async function replayRun<S, A>(
 	}
 
 	const report: ReplayReport = {
+		canonicalizationVersion: digestVersion,
 		runId,
-		seqVector: Object.entries(recordedVector)
-			.map(([streamIdEntry, seq]) => ({ streamId: streamIdEntry, seq }))
-			.sort((left, right) => left.streamId.localeCompare(right.streamId)),
+		seqVector: toSeqVectorEntries(recordedVector, digestVersion),
 		readSetHash: hashReadSet(events),
-		stateDigest: digest(cloneAsJson(state)),
+		stateDigest: digestForVersion(cloneAsJson(state), digestVersion),
 		mode: "replay",
 		seed,
 	};
@@ -275,5 +285,12 @@ function matchesStep(data: JsonValue, name: string, index: number): boolean {
 }
 
 export function canonicalStateBytes<S>(state: S): string {
-	return stableStringify(cloneAsJson(state));
+	return canonicalStateBytesForVersion(state, 2);
+}
+
+export function canonicalStateBytesForVersion<S>(
+	state: S,
+	version: CanonicalizationVersion,
+): string {
+	return stableStringifyForVersion(cloneAsJson(state), version);
 }

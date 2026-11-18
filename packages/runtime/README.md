@@ -144,6 +144,19 @@ replay refuses an unsafe journal sequence before calling workflow callbacks.
 Replay report parsing also rejects unsafe positions. The values remain trusted
 as observations of the underlying event store.
 
+New replay reports and divergence records carry `canonicalizationVersion: 2`.
+This version uses locale-independent UTF-16 ordering for keys and event
+identifiers, so equivalent JSON objects do not acquire different digests when
+the machine locale or insertion order changes. Compare digests only when their
+canonicalization versions match. Unmarked historical records used version 1;
+`parseReplayReport` and `parseReplayDivergence` interpret the missing marker as
+version 1. To reproduce one, pass `{ canonicalizationVersion: 1 }` to the
+replay operation or use `digestForVersion` / `canonicalStateBytesForVersion`.
+Version 1 uses the current process locale, which must match the original locale
+to reproduce locale-sensitive historical digests. A legacy digest cannot
+reliably reveal which locale produced it. Existing callers of the unversioned
+helpers now receive version 2 results.
+
 Within one loaded runtime module, `start` and `resume` refuse another active
 execution with the same run ID and the same `EventStoreWriter` object, even
 when different engine instances share it. If a parent exits with a durable
