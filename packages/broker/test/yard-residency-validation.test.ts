@@ -7,11 +7,14 @@ import {
 	LOCAL_HOST_PROVIDER_ID,
 	localYardInstance,
 	matchYard,
+	parseBindleDeploymentRequest,
 	parseYardLayout,
+	prepareYardHostingWork,
 	resolveBindleDeployment,
 	YARD_EVENTS,
 	yardEvent,
 } from "../src/index.js";
+import { cloneAsJson } from "../src/json.js";
 import { approveLocalHosting } from "./helpers/local-hosting.js";
 
 const base = buildDeploymentRequestFromParts({
@@ -67,6 +70,27 @@ describe("Yard residency attestation validation", () => {
 			matchYard(item.request.yard, item.inventory, { ownerTenantId: "local" })
 				.outcome,
 		).toBe("existing-yard");
+	});
+
+	it.each([
+		"atlantis",
+		"unknown:eu",
+		"pii:atlantis",
+	])("refuses invalid %s before preparing a quote", (tag) => {
+		const item = input(tag);
+		expect(() =>
+			parseBindleDeploymentRequest(cloneAsJson(item.request)),
+		).toThrow(/invalid tag/);
+		expect(() =>
+			prepareYardHostingWork({
+				request: item.request,
+				brokerId: "broker:test",
+				ownerTenantId: "local",
+				catalog: createLocalHostCatalog(),
+				yardId: item.yard.yardId,
+				providerId: LOCAL_HOST_PROVIDER_ID,
+			}),
+		).toThrow(/invalid tag/);
 	});
 
 	it("rejects generated invalid jurisdiction names even when explicitly asserted", () => {

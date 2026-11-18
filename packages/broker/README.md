@@ -35,6 +35,9 @@ Residency tags must use a recognized jurisdiction and, when present, a
 recognized classification. A Yard repeating an invalid tag does not make it
 valid; correct such requests and attestations before retrying. A valid explicit
 attestation is still trusted host evidence, not independent proof of location.
+The Yard deployment request and quote-preparation paths reject invalid tags
+before a generation hold or provider call. The lower-level generation planner
+and saga still trust their supplied layout or plan and need their own guards.
 
 The [Yard residency validation skill](../../.agents/skills/verify-yard-residency-validation/SKILL.md)
 checks this bounded decision; its projection hides eight same-state steps.

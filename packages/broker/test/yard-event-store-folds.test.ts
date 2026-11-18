@@ -210,6 +210,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		"context-before-claim",
 		"missing-residual",
 		"foreign-camp-before-generation",
+		"invalid-residency-before-generation",
 		"signals-unavailable",
 		"wrong-generation-plan",
 		"missing-generation-work",
@@ -325,7 +326,18 @@ describe("yard event-store folds + provider resolvers", () => {
 							},
 						},
 					}
-				: baseRequest;
+				: mode === "invalid-residency-before-generation"
+					? {
+							...baseRequest,
+							yard: {
+								...baseRequest.yard,
+								requestedLayout: {
+									...baseRequest.yard.requestedLayout,
+									residency: ["atlantis"],
+								},
+							},
+						}
+					: baseRequest;
 
 		const generation = planYardGeneration({
 			ownerTenantId: "local",
@@ -368,7 +380,10 @@ describe("yard event-store folds + provider resolvers", () => {
 			observedAt: "2026-10-29T00:00:00Z",
 			validUntil: "2026-11-01T00:00:00Z",
 		});
-		if (mode !== "foreign-camp-before-generation")
+		if (
+			mode !== "foreign-camp-before-generation" &&
+			mode !== "invalid-residency-before-generation"
+		)
 			bindTestYardWork(quote, request, "broker:azure-gen", azureCatalog, {
 				generationPlanHash:
 					mode === "wrong-generation-plan"
@@ -376,7 +391,7 @@ describe("yard event-store folds + provider resolvers", () => {
 						: generation.plan.planHash,
 			});
 		else {
-			// Simulate an already issued quote from a peer that did not check Camp scope.
+			// Simulate a quote from a peer that did not check Camp scope or residency.
 			const work = prepareYardHostingWork({
 				request: baseRequest,
 				brokerId: "broker:azure-gen",
@@ -757,6 +772,14 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(result.outcome).toBe("rejected");
 				expect(result.reasons?.[0]?.code).toBe("camp-yard-mismatch");
 				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				expect(authority.read(now).reservedMicros).toBe(0);
+				return;
+			}
+			if (mode === "invalid-residency-before-generation") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(result.reasons?.[0]?.code).toBe("invalid-deployment-request");
 				expect(authority.lookup(reservationId)).toBeUndefined();
 				expect(authority.read(now).reservedMicros).toBe(0);
 				return;
