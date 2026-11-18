@@ -77,7 +77,7 @@ describe("standalone Yard generation authorization", () => {
 			connectors: new Map([[connector.id, { ...connector, provision }]]),
 		});
 		expect((await saga.run(plan)).status).toBe("ready");
-		expect(authorizePlan).toHaveBeenCalledTimes(2);
+		expect(authorizePlan).toHaveBeenCalledTimes(3);
 		expect(provision).toHaveBeenCalledTimes(1);
 	});
 
@@ -207,7 +207,7 @@ describe("standalone Yard generation authorization", () => {
 		});
 		expect((await saga.run(plan)).status).toBe("ready");
 		expect(saga.inspect(plan.idempotencyKey)?.status).toBe("ready");
-		expect(seenTenants).toEqual(["tenant", "tenant", "tenant"]);
+		expect(seenTenants).toEqual(["tenant", "tenant", "tenant", "tenant"]);
 	});
 
 	it("enforces the current inspection decision for generated cases", async () => {
@@ -224,6 +224,178 @@ describe("standalone Yard generation authorization", () => {
 				expect(Boolean(saga.inspect(plan.idempotencyKey))).toBe(allowed);
 			}),
 			{ seed: 614_600, numRuns: 40 },
+		);
+	});
+
+	it("does not return an in-flight result to callers whose authorization is revoked", async () => {
+		const { connector, plan } = fixture();
+		let resume = () => {};
+		let started = () => {};
+		const waiting = new Promise<void>((resolve) => {
+			resume = resolve;
+		});
+		const entered = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const provision = vi.fn(async (candidate: YardGenerationPlan) => {
+			started();
+			await waiting;
+			return connector.provision(candidate);
+		});
+		let allowed = true;
+		const saga = createYardGenerationSaga({
+			connectors: new Map([[connector.id, { ...connector, provision }]]),
+			authorizePlan: () => allowed,
+		});
+		const first = saga.run(plan);
+		await entered;
+		const retry = saga.run(plan);
+		allowed = false;
+		resume();
+		const results = await Promise.all([first, retry]);
+		expect(results.map((result) => result.failure?.code)).toEqual([
+			"generation-authorization-denied",
+			"generation-authorization-denied",
+		]);
+		expect(provision).toHaveBeenCalledTimes(1);
+		expect(saga.inspect(plan.idempotencyKey)).toBeUndefined();
+		allowed = true;
+		expect(saga.inspect(plan.idempotencyKey)?.status).toBe("ready");
+	});
+
+	it("does not return a provider error after authorization is revoked", async () => {
+		const { connector, plan } = fixture();
+		let resume = () => {};
+		let started = () => {};
+		const waiting = new Promise<void>((resolve) => {
+			resume = resolve;
+		});
+		const entered = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const provision = vi.fn(async () => {
+			started();
+			await waiting;
+			throw new Error("provider detail");
+		});
+		let allowed = true;
+		const saga = createYardGenerationSaga({
+			connectors: new Map([[connector.id, { ...connector, provision }]]),
+			authorizePlan: () => allowed,
+		});
+		const first = saga.run(plan);
+		await entered;
+		const retry = saga.run(plan);
+		allowed = false;
+		resume();
+		const outcomes = await Promise.allSettled([first, retry]);
+		expect(outcomes.map((outcome) => outcome.status)).toEqual([
+			"fulfilled",
+			"fulfilled",
+		]);
+		const results = outcomes.flatMap((outcome) =>
+			outcome.status === "fulfilled" ? [outcome.value] : [],
+		);
+		expect(results.map((result) => result.failure?.code)).toEqual([
+			"generation-authorization-denied",
+			"generation-authorization-denied",
+		]);
+		allowed = true;
+		expect(saga.inspect(plan.idempotencyKey)?.status).toBe("started");
+	});
+
+	it("checks each waiting caller separately when the provider finishes", async () => {
+		const { connector, plan } = fixture();
+		let resume = () => {};
+		let started = () => {};
+		const waiting = new Promise<void>((resolve) => {
+			resume = resolve;
+		});
+		const entered = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		let completed = false;
+		let deliveries = 0;
+		const provision = vi.fn(async (candidate: YardGenerationPlan) => {
+			started();
+			await waiting;
+			const result = await connector.provision(candidate);
+			completed = true;
+			return result;
+		});
+		const saga = createYardGenerationSaga({
+			connectors: new Map([[connector.id, { ...connector, provision }]]),
+			authorizePlan: () => !completed || ++deliveries === 1,
+		});
+		const first = saga.run(plan);
+		await entered;
+		const retry = saga.run(plan);
+		resume();
+		const results = await Promise.all([first, retry]);
+		expect(results.map((result) => result.status).sort()).toEqual([
+			"failed",
+			"ready",
+		]);
+		expect(deliveries).toBe(2);
+		expect(provision).toHaveBeenCalledTimes(1);
+	});
+
+	it("checks generated provider outcomes and authorization changes for all waiters", async () => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.boolean(),
+				fc.boolean(),
+				fc.boolean(),
+				async (revoked, throws, retry) => {
+					const { connector, plan } = fixture();
+					let resume = () => {};
+					let started = () => {};
+					const waiting = new Promise<void>((resolve) => {
+						resume = resolve;
+					});
+					const entered = new Promise<void>((resolve) => {
+						started = resolve;
+					});
+					let allowed = true;
+					const provision = vi.fn(async (candidate: YardGenerationPlan) => {
+						started();
+						await waiting;
+						if (throws) throw new Error("provider detail");
+						return connector.provision(candidate);
+					});
+					const saga = createYardGenerationSaga({
+						connectors: new Map([[connector.id, { ...connector, provision }]]),
+						authorizePlan: () => allowed,
+					});
+					const first = saga.run(plan);
+					await entered;
+					const requests = retry ? [first, saga.run(plan)] : [first];
+					allowed = !revoked;
+					resume();
+					const outcomes = await Promise.allSettled(requests);
+					for (const outcome of outcomes) {
+						if (revoked) {
+							expect(outcome.status).toBe("fulfilled");
+							if (outcome.status === "fulfilled")
+								expect(outcome.value.failure?.code).toBe(
+									"generation-authorization-denied",
+								);
+						} else if (throws) {
+							expect(outcome.status).toBe("rejected");
+						} else {
+							expect(outcome.status).toBe("fulfilled");
+							if (outcome.status === "fulfilled")
+								expect(outcome.value.status).toBe("ready");
+						}
+					}
+					expect(provision).toHaveBeenCalledTimes(1);
+					allowed = true;
+					expect(saga.inspect(plan.idempotencyKey)?.status).toBe(
+						throws ? "started" : "ready",
+					);
+				},
+			),
+			{ seed: 614_601, numRuns: 32 },
 		);
 	});
 
