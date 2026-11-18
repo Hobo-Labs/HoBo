@@ -93,8 +93,15 @@ describe("@hobo/provider-kafka", () => {
 		const provider = createKafkaProvider({ tenantId: "acme" });
 		const docs = provider.capabilityManifest();
 		const auth = JSON.parse(docs["/.well-known/capability-manifest/auth.json"]);
+		const index = JSON.parse(
+			docs["/.well-known/capability-manifest/index.json"],
+		);
 		expect(auth.staticSecrets).toBe(false);
 		expect(auth.mode).toBe("secretless-first");
+		expect(index.terms).toEqual({
+			url: "https://www.apache.org/licenses/LICENSE-2.0",
+			reviewedOn: "2026-11-18",
+		});
 		const realized = provider.realize({
 			topics: [{ name: "t", partitions: 1, replicationFactor: 1 }],
 		});
