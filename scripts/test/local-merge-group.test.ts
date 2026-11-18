@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "node:test";
 import {
+	gitEnvironment,
 	resolveMergeGroupTarget,
 	runAttestedJobs,
 } from "../ci/local-attest.mts";
@@ -13,11 +14,18 @@ import type { PlannedJob } from "../ci/attested-jobs.mts";
 
 it("runs and signs the actual merge-group commit against its live base", async () => {
 	const root = mkdtempSync(join(tmpdir(), "hobo-merge-group-run-"));
-	const env = {
-		...process.env,
+	const inherited = {
+		GIT_DIR: process.env.GIT_DIR,
+		GIT_INDEX_FILE: process.env.GIT_INDEX_FILE,
+		GIT_WORK_TREE: process.env.GIT_WORK_TREE,
+	};
+	process.env.GIT_DIR = join(root, "unrelated.git");
+	process.env.GIT_INDEX_FILE = join(root, "unrelated-index");
+	process.env.GIT_WORK_TREE = join(root, "unrelated-worktree");
+	const env = gitEnvironment({
 		GIT_CONFIG_GLOBAL: "/dev/null",
 		GIT_CONFIG_NOSYSTEM: "1",
-	};
+	});
 	const git = (...args: string[]) =>
 		execFileSync("git", args, { cwd: root, env, encoding: "utf8" }).trim();
 	try {
@@ -77,6 +85,10 @@ it("runs and signs the actual merge-group commit against its live base", async (
 			/current base as its only parent/u,
 		);
 	} finally {
+		for (const [name, value] of Object.entries(inherited)) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
 		rmSync(root, { recursive: true, force: true });
 	}
 });

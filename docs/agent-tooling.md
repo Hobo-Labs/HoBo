@@ -452,6 +452,8 @@ pnpm v11 build-script security is configured in `pnpm-workspace.yaml`: only `esb
 
 `scripts/run-tests.ts` creates one isolated directory per invocation under the OS temp root, scoped by workspace hash and worker id: `<os-tmp>/hobo-design-tests/<workspace-hash>/<worker-id>/run-*`. Each batch receives its own child temp directory through `TMPDIR`, `TMP`, and `TEMP`, so parallel workers do not share global temp logs or unrelated temp context. Set `HOBO_TEST_TMPDIR` only when a worker needs a different temp base; the runner still creates isolated run and batch children beneath it.
 
+Tests that create Git repositories must clear repository-locating variables such as `GIT_DIR` and `GIT_INDEX_FILE` for fixture subprocesses. Git exports these to hooks, and in a linked worktree they can direct `git init` and `git config` at the active repository. CI fixtures can use `gitEnvironment` from `scripts/ci/local-attest.mts`; the merge-group test exercises inherited Git variables.
+
 The runner does not write batch logs for passing tests. Failed batches keep a bounded output tail in memory; normal runs persist that failure tail to the isolated batch directory, while `--quiet` or `--no-artifacts` keep it off disk and print it only on failure. Use `pnpm run test:fast` for a quiet, no-artifact root smoke lane. Use `pnpm run test:unit:quiet` for the legacy root/draft unit graph with turbo output limited to errors.
 
 ### Fast docs linting
