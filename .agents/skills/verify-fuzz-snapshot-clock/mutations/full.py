@@ -14,7 +14,7 @@ cases = [
     ('retry-without-tick', retry, 'if (existing) {\n\t\t\texisting.applyCount += 1;'),
     ('rollback-without-tick', rollback, 'this.restoreTenant(tenantId, blob);'),
     ('clock-overflow', 'this.clock >= Number.MAX_SAFE_INTEGER', 'this.clock > Number.MAX_SAFE_INTEGER'),
-    ('clock-invalid-integer', '!Number.isSafeInteger(this.clock) ||', 'false ||'),
+    ('clock-invalid-integer', 'tick(): number {\n\t\tif (\n\t\t\t!Number.isSafeInteger(this.clock) ||', 'tick(): number {\n\t\tif (\n\t\t\tfalse ||'),
     ('clock-negative', 'this.clock < 0 ||', 'false ||'),
     ('retry-tick-too-late', retry, 'if (existing) {\n\t\t\texisting.applyCount += 1;\n\t\t\tthis.tick();'),
     ('rollback-tick-too-late', rollback, 'this.restoreTenant(tenantId, blob);\n\t\tthis.tick();'),
