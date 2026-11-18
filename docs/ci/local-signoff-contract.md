@@ -92,7 +92,7 @@ evidence; they cannot override a pin, healthy pickup, or failed queue read.
 | A recent timely pickup names a candidate alongside other runner labels | Keep that candidate unknown for fallback; a multi-label pickup is not proof of a single-label route |
 | More runs or jobs exist outside the sampled pages | The decision is based only on the bounded sample, not a complete inventory; recheck or use independent operational evidence |
 | Local extension is missing or lacks `--commit` | Fail before starting the local run |
-| A GitHub App user token's target installation explicitly has read-only commit statuses | Fail before starting the local run; use a credential that can write commit statuses |
+| An environment-supplied GitHub App user token's target installation explicitly has read-only commit statuses | Fail before starting the local run; use a credential that can write commit statuses |
 | Dirty checkout, base not contained in HEAD, stale remote base, changed HEAD, bad signature, or workflow/description drift | Refuse the relevant run or publication; do not post new success statuses |
 | A local check fails, is interrupted, or changes tracked files | Fail the run; no new signoff is posted. Once a run starts it removes its earlier local record for that tree |
 | Missing container engine or intentionally omitted jobs | Omit affected jobs, including the coupled PR impact group where applicable; do not report those jobs successful |
@@ -140,7 +140,8 @@ prevent a pull request from replacing the verification step.
 
 The extension requires a pushed commit and a credential allowed to write commit
 statuses. The fleet preflight detects an explicitly read-only GitHub App user
-token when GitHub supplies its installation permissions. Other credential types
+token supplied in the environment when GitHub supplies its installation
+permissions. Credentials in the `gh` credential store, other credential types,
 and unavailable installation metadata remain unknown until publication; a
 permission check is not a guarantee that the later write will succeed. These
 statuses use the credential's authority, rather than the
