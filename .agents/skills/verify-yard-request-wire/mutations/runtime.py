@@ -15,6 +15,11 @@ source = scratch / 'src/yard-placement/wire.ts'
 original = source.read_text()
 parser = scratch / 'src/yard-placement/deploy.ts'
 parser_original = parser.read_text()
+schema = scratch / 'data-models/yard_placement.cue'
+schema_original = schema.read_text()
+nonblank = [line for line in schema_original.splitlines(keepends=True) if line.startswith('#CampNonblank:')]
+if len(nonblank) != 1:
+    raise RuntimeError('expected one Camp nonblank constraint')
 
 cases = [
     ('unknown', 'if (!Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'if (false && !Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'refuses unknown root'),
@@ -26,6 +31,9 @@ cases = [
     ('version2-duplicate-labels', 'if (seen.has(entry.key)) throw new TypeError("duplicate placement label");', '', 'rejects incomplete or ambiguous version 2 value encodings'),
     ('version2-property-text', '!isJsonObject(properties) ||\n\t\t\tJSON.stringify(properties) !== yardLayout.propertiesJson', '!isJsonObject(properties)', 'rejects incomplete or ambiguous version 2 value encodings'),
     ('residency', '\t\t\t\tparseYardResidencyTag(entry);', '\t\t\t\t/* omit preflight */', 'refuses invalid residency even when the digest matches'),
+    ('camp-exact-decoder', 'if (raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)', 'if (false && raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)', 'refuses an exact Camp without an ID even when'),
+    ('camp-exact-cue', '\tif selection_mode == "exact" {\n\t\tcamp_id!: #CampNonblank\n\t}\n', '', 'Yard request CUE contract.*refuses an exact Camp without an ID'),
+    ('camp-blank-cue', nonblank[0], '#CampNonblank: string\n', 'agrees with Camp parser nonblank'),
     ('canonical', 'digest !== contentHashOf(raw) || digest !== message.requestDigest', 'digest !== message.requestDigest', 'refuses noncanonical wire fields'),
     ('digest', 'digest !== contentHashOf(raw) || digest !== message.requestDigest', 'digest !== contentHashOf(raw)', 'refuses old, incomplete'),
 ]
@@ -39,8 +47,8 @@ def run(pattern):
 
 try:
     for name, before, after, pattern in cases:
-        target = parser if name == 'residency' else source
-        target_original = parser_original if name == 'residency' else original
+        target = parser if name in {'residency', 'camp-exact-decoder'} else schema if name in {'camp-exact-cue', 'camp-blank-cue'} else source
+        target_original = parser_original if target == parser else schema_original if target == schema else original
         if target_original.count(before) != 1:
             raise RuntimeError(f'{name}: expected exactly one source match')
         control = run(pattern)
@@ -62,5 +70,6 @@ try:
         print(f'Expected real-code failure: {name}', flush=True)
         source.write_text(original)
         parser.write_text(parser_original)
+        schema.write_text(schema_original)
 finally:
     shutil.rmtree(base)
