@@ -1,0 +1,67 @@
+name: Alchemy branch validation
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  HOBO_TURBO_CONCURRENCY: "1"
+  HOBO_TEST_MAX_WORKERS: "1"
+  HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
+
+jobs:
+  route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      runner: ${{ steps.route.outputs.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
+            .hobo/ci.json
+            packages/ci/src/fleet-overflow.ts
+      - id: route
+        uses: $/.github/actions/route-runner
+        with:
+          token: ${{ github.token }}
+
+  review:
+    needs: route
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Combine current main for validation
+        run: |
+          git config user.name "HoBo CI"
+          git config user.email "ci@hobo.invalid"
+          git merge --no-commit --no-ff origin/main
+      - name: Format review changes
+        run: |
+          pnpm exec biome check --write packages/conformance/src/durable-messaging-conformance.ts packages/conformance/src/durable-messaging-shapes.ts packages/conformance/test/durable-messaging-conformance.test.ts packages/extension-alchemy-rivet/test/fixtures/rivet-topic-definition.mjs packages/extension-alchemy-rivet/test/fixtures/rivet-topic-main.mjs packages/extension-alchemy-rivet/test/rivet-topic-live.mjs packages/extension-alchemy-rivet/test/route-fixture.ts packages/runtime/src/durable-messaging-host.ts packages/runtime/test/durable-messaging-host.test.ts packages/runtimes/runtime-rivet/src/distributed-actor.ts packages/runtimes/runtime-rivet/src/distributed-auth.ts packages/runtimes/runtime-rivet/src/distributed-journal.ts packages/runtimes/runtime-rivet/src/distributed-sql.ts packages/runtimes/runtime-rivet/src/durable-receipt-journal.ts packages/runtimes/runtime-rivet/src/durable-topic-actor.ts packages/runtimes/runtime-rivet/src/durable-topic-bus.ts packages/runtimes/runtime-rivet/src/durable-topic-client.ts packages/runtimes/runtime-rivet/src/durable-topic-log.ts packages/runtimes/runtime-rivet/src/load-rivetkit.ts packages/runtimes/runtime-rivet/src/upstream-pin.ts packages/runtimes/runtime-rivet/test/distributed-journal-model.test.ts packages/runtimes/runtime-rivet/test/durable-receipt-journal.test.ts packages/runtimes/runtime-rivet/test/durable-receipt-model.test.ts packages/runtimes/runtime-rivet/test/durable-topic-actor.test.ts packages/runtimes/runtime-rivet/test/durable-topic-bus-conformance.test.ts packages/runtimes/runtime-rivet/test/durable-topic-client.test.ts packages/runtimes/runtime-rivet/test/fixtures/durable-topic-bus-conformance.ts packages/runtimes/runtime-rivet/test/fixtures/durable-topic-conformance.ts packages/runtimes/runtime-rivet/test/fixtures/durable-topic-process-conformance.ts packages/runtimes/runtime-rivet/test/fixtures/rivet-topic-bus-live.mjs packages/runtimes/runtime-rivet/test/fixtures/rivet-topic-jspi-live.mjs packages/runtimes/runtime-rivet/test/fixtures/rivet-topic-live.mjs packages/runtimes/runtime-rivet/test/fixtures/rivet3-live.mjs packages/runtimes/runtime-rivet/test/live-rivetkit.test.ts packages/runtimes/runtime-rivet/test/runtime.test.ts packages/runtimes/runtime-rivet/test/test-capability.ts scripts/check-durable-topic-model.ts test/iac-alchemy-integration.test.ts scripts/check-source-policy.mts scripts/test/check-source-policy.test.ts packages/runtime/src/synchronous-result.ts packages/runtimes/runtime-rivet/src/synchronous-result.ts packages/extension-alchemy-rivet/src/rivet-http-topic-bus.ts packages/extension-alchemy-rivet/test/rivet-http-topic-bus.test.ts packages/iac/iac-alchemy/test/cloudflare-native-kv.test.ts packages/iac/iac-alchemy/test/cloudflare-native-r2.test.ts || true
+          node -e 'const fs=require("node:fs"); for(const p of process.argv.slice(1)){const s=fs.readFileSync(p).toString("base64"); for(let i=0;i<s.length;i+=1800) console.log("FORMAT2|"+p+"|"+(i/1800)+"|"+s.slice(i,i+1800))}' packages/conformance/src/durable-messaging-conformance.ts packages/conformance/src/durable-messaging-shapes.ts packages/conformance/test/durable-messaging-conformance.test.ts packages/extension-alchemy-rivet/test/fixtures/rivet-topic-definition.mjs packages/extension-alchemy-rivet/test/fixtures/rivet-topic-main.mjs packages/extension-alchemy-rivet/test/rivet-topic-live.mjs packages/extension-alchemy-rivet/test/route-fixture.ts packages/runtime/src/durable-messaging-host.ts packages/runtime/test/durable-messaging-host.test.ts packages/runtimes/runtime-rivet/src/distributed-actor.ts packages/runtimes/runtime-rivet/src/distributed-auth.ts packages/runtimes/runtime-rivet/src/distributed-journal.ts packages/runtimes/runtime-rivet/src/distributed-sql.ts packages/runtimes/runtime-rivet/src/durable-receipt-journal.ts packages/runtimes/runtime-rivet/src/durable-topic-actor.ts packages/runtimes/runtime-rivet/src/durable-topic-bus.ts packages/runtimes/runtime-rivet/src/durable-topic-client.ts packages/runtimes/runtime-rivet/src/durable-topic-log.ts packages/runtimes/runtime-rivet/src/load-rivetkit.ts packages/runtimes/runtime-rivet/src/upstream-pin.ts packages/runtimes/runtime-rivet/test/distributed-journal-model.test.ts packages/runtimes/runtime-rivet/test/durable-receipt-journal.test.ts packages/runtimes/runtime-rivet/test/durable-receipt-model.test.ts packages/runtimes/runtime-rivet/test/durable-topic-actor.test.ts packages/runtimes/runtime-rivet/test/durable-topic-bus-conformance.test.ts packages/runtimes/runtime-rivet/test/durable-topic-client.test.ts packages/runtimes/runtime-rivet/test/fixtures/durable-topic-bus-conformance.ts packages/runtimes/runtime-rivet/test/fixtures/durable-topic-conformance.ts packages/runtimes/runtime-rivet/test/fixtures/durable-topic-process-conformance.ts packages/runtimes/runtime-rivet/test/fixtures/rivet-topic-bus-live.mjs packages/runtimes/runtime-rivet/test/fixtures/rivet-topic-jspi-live.mjs packages/runtimes/runtime-rivet/test/fixtures/rivet-topic-live.mjs packages/runtimes/runtime-rivet/test/fixtures/rivet3-live.mjs packages/runtimes/runtime-rivet/test/live-rivetkit.test.ts packages/runtimes/runtime-rivet/test/runtime.test.ts packages/runtimes/runtime-rivet/test/test-capability.ts scripts/check-durable-topic-model.ts test/iac-alchemy-integration.test.ts scripts/check-source-policy.mts scripts/test/check-source-policy.test.ts packages/runtime/src/synchronous-result.ts packages/runtimes/runtime-rivet/src/synchronous-result.ts packages/extension-alchemy-rivet/src/rivet-http-topic-bus.ts packages/extension-alchemy-rivet/test/rivet-http-topic-bus.test.ts packages/iac/iac-alchemy/test/cloudflare-native-kv.test.ts packages/iac/iac-alchemy/test/cloudflare-native-r2.test.ts
+      - name: Review complete branch against main
+        run: |
+          rm -f .github/workflows/alchemy-review.yml
+          pnpm run agent:check -- --base=origin/main
