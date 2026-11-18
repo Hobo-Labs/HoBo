@@ -56,11 +56,15 @@ export function createMockCloudNativeProvider(): CloudNativeHostProvider {
 				handlers.set(component.resourceName, component.handler);
 			}
 			// Apply bindle env for in-process handlers.
-			const previous: Record<string, string | undefined> = {};
+			const previous = new Map<
+				string,
+				{ value: string | undefined; applied: string }
+			>();
 			for (const [key, value] of Object.entries(ctx.bindleEnv ?? {})) {
-				previous[key] = process.env[key];
+				previous.set(key, { value: process.env[key], applied: value });
 				process.env[key] = value;
 			}
+			let closed = false;
 			return {
 				kind: "cloud-native",
 				handlers,
@@ -70,7 +74,10 @@ export function createMockCloudNativeProvider(): CloudNativeHostProvider {
 					details: { provider: "mock" },
 				},
 				close: async () => {
-					for (const [key, value] of Object.entries(previous)) {
+					if (closed) return;
+					closed = true;
+					for (const [key, { value, applied }] of previous) {
+						if (process.env[key] !== applied) continue;
 						if (value === undefined) delete process.env[key];
 						else process.env[key] = value;
 					}
