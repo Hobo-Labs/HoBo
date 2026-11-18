@@ -1,5 +1,11 @@
 # @hobo/runtime-local
 
+In-process wRPC providers receive an `AbortSignal` in their invocation context.
+When a call reaches its deadline, the signal aborts with the same
+`DeadlineExceededError` returned to the caller. Providers should observe the
+signal to stop work promptly; a provider that ignores it retains its in-flight
+slot until it settles.
+
 > **Naming:** `packages/runtimes/*` are concrete **runtime backends** (this
 > package: the local/sqlite substrate). The singular `packages/runtime`
 > (`@hobo/runtime`) is the app-facing **SDK primitives** package — a

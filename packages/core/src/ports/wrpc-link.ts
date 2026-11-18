@@ -27,6 +27,7 @@ export interface TransportInvocation {
 	operation: string;
 	payload: JsonValue;
 	deadline: string | null;
+	signal?: AbortSignal;
 }
 
 export interface WrpcTransport {
