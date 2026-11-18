@@ -9,12 +9,14 @@ description: Verify exclusive and identity-bound component loads in the local ho
 
 **Why:** Replacing tracked state during a second or reentrant load can lose the first instance's leases and retain state associated with a different instance.
 
-**Review baseline:** `57a7f0982c4901ca6f9c89b31dee05073fc9b7c5`.
+**Review baseline:** `08f10bdd76ae758b1130a0714807bce69f7ab5c8`.
 
 ## Covered code and checks
 
 - `packages/runtimes/runtime-local/src/component-host.ts` claims IDs during instantiation, checks duplicate loads and returned IDs, and captures leases; `src/errors.ts` defines the named refusals.
 - `packages/runtimes/runtime-local/test/component-load-lifecycle.test.ts` checks duplicate and reentrant loads, teardown and reload, failed instantiation followed by retry, identity mismatch and mutation of the input leases. Seed 614620 generates 60 component and lease identities.
+
+- The related [host failure skill](../verify-component-host-failure/SKILL.md) checks sink uncertainty, callback reentry and active-call teardown fencing.
 
 From the repository root with dependencies installed, run:
 
@@ -49,7 +51,7 @@ stateDiagram-v2
 
 Previously, a second load silently replaced the first component's tracked leases, a reentrant load could begin before the first completed, and a mismatched engine result was accepted. Real-code checks reproduce each case. Five weakened TLC configurations and two weakened Z3 assumptions yield counterexamples. Z3 proves boolean implications of the abstract guards and identity check, not TypeScript refinement.
 
-The model covers one ID and abstracts engine allocation, links, invocations, callback behavior and teardown races. The engine, descriptor and returned instance remain trusted; mutable instance contents can change after installation. A sink failure after state mutation can leave the event outcome ambiguous and needs reconciliation, and teardown does not wait for in-flight calls. An engine that allocates resources before failing or returning a mismatched ID must clean them up itself. The claim is process-local, and refusing duplicate loads changes previous replacement behavior.
+The model covers one ID and abstracts engine allocation, links, invocations, callback behavior and teardown races. The engine, descriptor and returned instance remain trusted; mutable instance contents can change after installation. A sink failure after state mutation remains ambiguous; the host refuses further effectful operations pending reconciliation. Teardown refuses while tracked calls are active, but cannot cancel already-started effects. An engine that allocates resources before failing or returning a mismatched ID must clean them up itself. The claim is process-local, and refusing duplicate loads changes previous replacement behavior.
 
 ## Keep in sync
 
