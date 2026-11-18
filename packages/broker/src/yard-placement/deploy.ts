@@ -1251,12 +1251,24 @@ export async function resolveBindleDeployment(
 
 		// Pin the actual callable methods so a registry lookup cannot redirect an
 		// already authorized provider operation between the final check and call.
+		const checkProviderBoundary = () => {
+			if (generationAuthorityCurrent?.() !== true)
+				throw new Error(
+					"generation authority changed at the provider boundary",
+				);
+		};
 		const pinnedConnector: YardGenerationConnector = {
 			id: selectedId,
 			kind: selectedKind,
 			plan: (input) => selectedPlan.call(selectedConnector, input),
-			provision: (plan) => selectedProvision.call(selectedConnector, plan),
-			inspect: (id) => selectedInspect.call(selectedConnector, id),
+			provision: (plan) => {
+				checkProviderBoundary();
+				return selectedProvision.call(selectedConnector, plan);
+			},
+			inspect: (id) => {
+				checkProviderBoundary();
+				return selectedInspect.call(selectedConnector, id);
+			},
 		};
 		const saga = createYardGenerationSaga({
 			connectors: new Map([
@@ -1283,7 +1295,11 @@ export async function resolveBindleDeployment(
 				quota,
 				quotaRequest.idempotencyKey,
 			);
-			if (!quotaClaimMatches(currentQuotaClaim) || !quotaMethodsCurrent())
+			if (
+				!quotaClaimMatches(currentQuotaClaim) ||
+				!quotaMethodsCurrent() ||
+				!generationAuthorityCurrent()
+			)
 				throw new Error("generation quota changed before provider operation");
 			if (inspectGenerationOnly || currentQuotaClaim?.status === "ready") {
 				// The claim may have committed before a lost provider acknowledgement.

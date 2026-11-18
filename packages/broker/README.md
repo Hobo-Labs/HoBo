@@ -423,7 +423,8 @@ Generated placement requires a shared durable generation quota authority.
 After host policy approval and before the budget hold, the broker reserves both
 `maxConcurrentGenerations` and `maxYardsPerTenant` capacity for the exact plan.
 A missing authority, exhausted quota, mismatched claim or changed authority
-stops the provider call. A repeated quota claim is inspected rather than
+stops the provider call. Authority is checked again at the actual provider call
+boundary after any asynchronous scheduling. A repeated quota claim is inspected rather than
 provisioned again. The direct planner relies on its caller to establish that no
 matching Yard exists, and the standalone generation saga does not receive
 policy or quota evidence.
@@ -439,7 +440,7 @@ without a budget hold. There is no removal or unused-reservation reconciliation
 operation yet. Reconcile pre-upgrade Yards and uncertain attempts before enabling
 the new authority.
 
-The bounded admission projection hides 16 same-state steps. It assumes the
+The bounded admission projection hides 18 same-state steps. It assumes the
 separate quota, policy, budget and provider evidence checks are truthful.
 
 ```mermaid
@@ -452,9 +453,10 @@ stateDiagram-v2
   s5: Generation quota unavailable
   s6: Generation quota reserved
   s7: Hosting budget reserved
-  s8: Provider called
-  s9: Yard readiness verified
-  s10: Outcome needs reconciliation
+  s8: Quota authority changed before provider
+  s9: Provider called
+  s10: Yard readiness verified
+  s11: Outcome needs reconciliation
   [*] --> s0
   s0 --> s2: refuse without quota authority
   s0 --> s1: check host policy
@@ -463,9 +465,11 @@ stateDiagram-v2
   s3 --> s5: refuse exhausted quota
   s3 --> s6: reserve generation quota
   s6 --> s7: reserve hosting budget
-  s7 --> s8: call the provider
-  s8 --> s10: retain exposure for reconciliation
-  s8 --> s9: verify Yard readiness
+  s7 --> s8: quota authority changes
+  s7 --> s9: call the provider
+  s8 --> s11: retain exposure for reconciliation
+  s9 --> s11: retain exposure for reconciliation
+  s9 --> s10: verify Yard readiness
 ```
 
 The bounded quota projection follows one of three requests and hides 23

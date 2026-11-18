@@ -242,6 +242,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		"generation-quota-policy-denied",
 		"generation-quota-not-durable",
 		"generation-quota-removed-after-claim",
+		"generation-quota-changed-before-provider",
 		"exact-yard-mismatch-before-generation",
 		"exact-yard-match-generation",
 		"wrong-generated-yard-id",
@@ -842,6 +843,27 @@ describe("yard event-store folds + provider resolvers", () => {
 			};
 			if (mode !== "generation-quota-unavailable")
 				Object.assign(deps, { generationQuota: quota });
+			if (mode === "generation-quota-changed-before-provider") {
+				let scheduled = false;
+				Object.assign(deps, {
+					generationQuota: {
+						...quota,
+						lookup(key: Parameters<typeof quota.lookup>[0]) {
+							const claim = quota.lookup(key);
+							if (
+								!scheduled &&
+								authority.lookup(reservationId)?.executionDigest
+							) {
+								scheduled = true;
+								queueMicrotask(() =>
+									Object.assign(deps, { generationQuota: undefined }),
+								);
+							}
+							return claim;
+						},
+					},
+				});
+			}
 			if (mode === "generation-quota-not-durable")
 				Object.assign(deps, {
 					generationQuota: { ...quota, persistence: "volatile" },
@@ -1015,7 +1037,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			if (mode === "generation-lookup-redirect") {
 				expect(redirectedProvisionCalls).toBe(0);
 				expect(result.outcome).toBe("rejected");
-				expect(provisionCalls).toBe(1);
+				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
 				return;
 			}
@@ -1210,7 +1232,10 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
 				return;
 			}
-			if (mode === "generation-quota-removed-after-claim") {
+			if (
+				mode === "generation-quota-removed-after-claim" ||
+				mode === "generation-quota-changed-before-provider"
+			) {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
@@ -1453,6 +1478,7 @@ describe("yard event-store folds + provider resolvers", () => {
 					"generation-quota-ready-not-stored",
 					"generation-quota-policy-denied",
 					"generation-quota-removed-after-claim",
+					"generation-quota-changed-before-provider",
 				),
 				fc.string(),
 				async (mode, suffix) =>
