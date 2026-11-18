@@ -1,7 +1,12 @@
-import type { OverlayNetwork, PolicyEngine } from "@hobo/core";
+import type {
+	OverlayNetwork,
+	OverlayProviderKind,
+	PolicyEngine,
+} from "@hobo/core";
 
 import { createNetbirdOverlay } from "../overlay/netbird.js";
 import { createTailscaleOverlay } from "../overlay/tailscale.js";
+import { createWireguardOverlay } from "../overlay/wireguard.js";
 import {
 	defaultTierForClass,
 	type IsolationClass,
@@ -42,8 +47,19 @@ export interface EnvNetworkIsolationRegistryOptions {
 	readonly defaultTier?: IsolationTier;
 	readonly sharedOverlay?: OverlayNetwork;
 	readonly policy?: PolicyEngine;
-	readonly overlayProvider?: "tailscale" | "netbird";
+	readonly overlayProvider?: OverlayProviderKind;
 	readonly createOverlayForClass?: (cls: IsolationClass) => OverlayNetwork;
+}
+
+function createOverlayNetwork(
+	provider: OverlayProviderKind | undefined,
+	policy: PolicyEngine | undefined,
+): OverlayNetwork {
+	if (provider === "netbird") return createNetbirdOverlay();
+	if (provider === "tailscale") {
+		return createTailscaleOverlay(policy === undefined ? {} : { policy });
+	}
+	return createWireguardOverlay(policy === undefined ? {} : { policy });
 }
 
 export function createEnvNetworkIsolationRegistry(
@@ -51,11 +67,7 @@ export function createEnvNetworkIsolationRegistry(
 ): EnvNetworkIsolationRegistry {
 	const shared =
 		options.sharedOverlay ??
-		(options.overlayProvider === "netbird"
-			? createNetbirdOverlay()
-			: createTailscaleOverlay(
-					options.policy !== undefined ? { policy: options.policy } : {},
-				));
+		createOverlayNetwork(options.overlayProvider, options.policy);
 
 	const planes = new Map<IsolationClass, EnvOverlayPlane>();
 	const controlPlanes = new Map<IsolationClass, EnvControlPlanePartition>();
@@ -64,12 +76,7 @@ export function createEnvNetworkIsolationRegistry(
 		if (options.createOverlayForClass) {
 			return options.createOverlayForClass(cls);
 		}
-		if (options.overlayProvider === "netbird") {
-			return createNetbirdOverlay();
-		}
-		return createTailscaleOverlay(
-			options.policy !== undefined ? { policy: options.policy } : {},
-		);
+		return createOverlayNetwork(options.overlayProvider, options.policy);
 	}
 
 	return {

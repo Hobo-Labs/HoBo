@@ -1,5 +1,6 @@
 import type {
 	OverlayNetwork,
+	OverlayProviderKind,
 	PolicyEngine,
 	Tenant,
 	TenantId,
@@ -9,6 +10,7 @@ import { parseTenantId } from "@hobo/core";
 
 import { createNetbirdOverlay } from "../overlay/netbird.js";
 import { createTailscaleOverlay } from "../overlay/tailscale.js";
+import { createWireguardOverlay } from "../overlay/wireguard.js";
 
 export interface TenantControlPlanePartition {
 	readonly tenantId: TenantId;
@@ -46,7 +48,18 @@ export interface TenantIsolationRegistryOptions {
 	readonly sharedOverlay?: OverlayNetwork;
 	readonly policy?: PolicyEngine;
 	readonly createOverlayForTenant?: (tenant: Tenant) => OverlayNetwork;
-	readonly overlayProvider?: "tailscale" | "netbird";
+	readonly overlayProvider?: OverlayProviderKind;
+}
+
+function createOverlayNetwork(
+	provider: OverlayProviderKind | undefined,
+	policy: PolicyEngine | undefined,
+): OverlayNetwork {
+	if (provider === "netbird") return createNetbirdOverlay();
+	if (provider === "tailscale") {
+		return createTailscaleOverlay(policy === undefined ? {} : { policy });
+	}
+	return createWireguardOverlay(policy === undefined ? {} : { policy });
 }
 
 export function createTenantIsolationRegistry(
@@ -55,11 +68,7 @@ export function createTenantIsolationRegistry(
 	const defaultMode = options.defaultMode ?? "soft";
 	const shared =
 		options.sharedOverlay ??
-		(options.overlayProvider === "netbird"
-			? createNetbirdOverlay()
-			: createTailscaleOverlay(
-					options.policy !== undefined ? { policy: options.policy } : {},
-				));
+		createOverlayNetwork(options.overlayProvider, options.policy);
 
 	const planes = new Map<string, TenantOverlayPlane>();
 	const controlPlanes = new Map<string, TenantControlPlanePartition>();
@@ -68,12 +77,7 @@ export function createTenantIsolationRegistry(
 		if (options.createOverlayForTenant) {
 			return options.createOverlayForTenant(tenant);
 		}
-		if (options.overlayProvider === "netbird") {
-			return createNetbirdOverlay();
-		}
-		return createTailscaleOverlay(
-			options.policy !== undefined ? { policy: options.policy } : {},
-		);
+		return createOverlayNetwork(options.overlayProvider, options.policy);
 	}
 
 	return {

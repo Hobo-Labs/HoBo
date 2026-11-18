@@ -44,7 +44,7 @@ export interface ConnectivityConfig {
 
 export const DEFAULT_CONNECTIVITY_CONFIG: ConnectivityConfig = {
 	overlay: {
-		provider: "tailscale",
+		provider: "wireguard",
 		magicDnsDomains: ["hobo.test", "hobo.internal"],
 		enableFunnel: true,
 	},
@@ -181,6 +181,10 @@ function parseProvider(raw: JsonValue | undefined): DnsProviderKind {
 
 function parseOverlay(raw: JsonValue | undefined): OverlayProviderKind {
 	if (raw === undefined) return DEFAULT_CONNECTIVITY_CONFIG.overlay.provider;
-	if (raw === "tailscale" || raw === "netbird") return raw;
-	throw new TypeError("overlay.provider must be tailscale or netbird");
+	if (raw === "wireguard" || raw === "tailscale" || raw === "netbird") {
+		return raw;
+	}
+	throw new TypeError(
+		"overlay.provider must be wireguard, tailscale, or netbird",
+	);
 }

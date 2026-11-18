@@ -1,6 +1,6 @@
 import type { TenantId } from "./tenant.js";
 
-export type OverlayProviderKind = "tailscale" | "netbird";
+export type OverlayProviderKind = "wireguard" | "tailscale" | "netbird";
 
 export interface OverlayIdentity {
 	readonly nodeId: string;

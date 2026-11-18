@@ -2,7 +2,7 @@
 	"name": "@hobo/connectivity",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "HoBo multi-tenant connectivity foundations: hierarchical naming helpers, overlay (Tailscale/Netbird), pluggable DNS, PolicyEngine, metering, and local named endpoints (portless optional).",
+	"description": "HoBo multi-tenant connectivity foundations: hierarchical naming helpers, WireGuard/Tailscale/Netbird overlays, pluggable DNS, PolicyEngine, metering, and local named endpoints (portless optional).",
 	"type": "module",
 	"files": [
 		"LICENSE",
