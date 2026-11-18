@@ -675,6 +675,25 @@ stateDiagram-v2
   s3 --> s4: admit current generation
 ```
 
+The standalone [generation saga skill](../../.agents/skills/verify-yard-generation-saga/SKILL.md)
+checks that a trusted host approves the plan before dispatch and before a cached
+retry. The host must enforce its own policy, funding and quota requirements.
+This projection hides 47 same-label steps; it abstracts the host decision and
+does not prove provider behavior.
+
+```mermaid
+stateDiagram-v2
+  s0: Generation requested
+  s1: Generation refused
+  s2: Authorized#59; provider call pending
+  s3: Provider called
+  [*] --> s0
+  s0 --> s2: host approves the plan
+  s0 --> s1: host refuses the plan
+  s2 --> s3: call the provider with current approval
+  s2 --> s1: refuse the provider call
+```
+
 Without a budget authority, local placement also requires an
 explicit `authorizeLocalHosting` callback. It approves the exact request,
 catalog, Yard and selected resource placements and returns a bound policy proof
