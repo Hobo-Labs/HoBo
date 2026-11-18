@@ -48,6 +48,24 @@ and `journal`. Omitting the ID on `start` generates one; explicitly passing
 `null`, an empty string, a number, or an object is refused. This keeps the local
 execution-fence key and the journal stream identity consistent.
 
+The run-identity model checks 13 states and 20 steps for a running string ID,
+another string ID and several invalid values. Its projection hides 13
+same-label steps and assumes the two executions share the same local fence.
+
+```mermaid
+stateDiagram-v2
+  s0: Run ID received
+  s1: Distinct run admitted
+  s2: Active run refused
+  s3: Invalid ID refused
+  s4: Distinct run may execute
+  [*] --> s0
+  s0 --> s3: validate and check local fence
+  s0 --> s1: validate and check local fence
+  s0 --> s2: validate and check local fence
+  s1 --> s4: start execution
+```
+
 `resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
 Within one loaded runtime module, `start` and `resume` refuse another active
