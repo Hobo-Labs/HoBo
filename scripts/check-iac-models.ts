@@ -364,6 +364,87 @@ try {
 			throw new Error(`${invariant} witness was not reached`);
 		process.stdout.write(`${invariant}: witness found\n`);
 	}
+
+	const receiptDirectory = join(root, "packages/broker/model");
+	const receiptSource = readFileSync(
+		join(receiptDirectory, "IacPricedReceipt.tla"),
+		"utf8",
+	);
+	const receiptConfig = readFileSync(
+		join(receiptDirectory, "IacPricedReceipt.cfg"),
+		"utf8",
+	);
+	const receiptResult = check(
+		"IacPricedReceipt",
+		receiptDirectory,
+		join(scratch, "IacPricedReceipt"),
+	);
+	process.stdout.write(receiptResult.stdout);
+	process.stderr.write(receiptResult.stderr);
+	if (receiptResult.status !== 0)
+		throw new Error("IacPricedReceipt model checking failed");
+	const receiptMutations = [
+		[
+			'IF reserveMatches THEN "await-claim" ELSE "uncertain-reserve"',
+			'IF TRUE THEN "await-claim" ELSE "uncertain-reserve"',
+		],
+		[
+			'IF claimMatches THEN "await-check" ELSE "uncertain-claim"',
+			'IF TRUE THEN "await-check" ELSE "uncertain-claim"',
+		],
+		[
+			'IF stillHeld THEN "admitted" ELSE "uncertain-revalidation"',
+			'IF TRUE THEN "admitted" ELSE "uncertain-revalidation"',
+		],
+	] as const;
+	for (const [index, [before, after]] of receiptMutations.entries()) {
+		if (receiptSource.split(before).length !== 2)
+			throw new Error("receipt mutation target changed");
+		const isolated = join(scratch, `receipt-mutation-${index}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "IacPricedReceipt.tla"),
+			receiptSource.replace(before, after),
+		);
+		writeFileSync(join(isolated, "IacPricedReceipt.cfg"), receiptConfig);
+		const result = check(
+			"IacPricedReceipt",
+			isolated,
+			join(isolated, "states"),
+		);
+		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
+			throw new Error(
+				"receipt mutation did not produce an invariant counterexample",
+			);
+		process.stdout.write(
+			`IacPricedReceipt mutation ${index + 1}: counterexample found\n`,
+		);
+	}
+	for (const invariant of [
+		"NoAdmission",
+		"NoReserveUncertainty",
+		"NoClaimUncertainty",
+		"NoRevalidationUncertainty",
+	] as const) {
+		const isolated = join(scratch, `receipt-${invariant}`);
+		mkdirSync(isolated);
+		writeFileSync(join(isolated, "IacPricedReceipt.tla"), receiptSource);
+		writeFileSync(
+			join(isolated, "IacPricedReceipt.cfg"),
+			`${receiptConfig}\nINVARIANT ${invariant}\n`,
+		);
+		const result = check(
+			"IacPricedReceipt",
+			isolated,
+			join(isolated, "states"),
+		);
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`${invariant} witness was not reached`);
+		process.stdout.write(`${invariant}: witness found\n`);
+	}
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }
