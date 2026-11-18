@@ -36,6 +36,19 @@ recognized classification. A Yard repeating an invalid tag does not make it
 valid; correct such requests and attestations before retrying. A valid explicit
 attestation is still trusted host evidence, not independent proof of location.
 
+The [Yard residency validation skill](../../.agents/skills/verify-yard-residency-validation/SKILL.md)
+checks this bounded decision; its projection hides eight same-state steps.
+
+```mermaid
+stateDiagram-v2
+  s0: Residency requirement under review
+  s1: Yard meets residency requirement
+  s2: Yard refused for residency
+  [*] --> s0
+  s0 --> s2: refuse invalid or insufficient evidence
+  s0 --> s1: accept valid residency evidence
+```
+
 The [Yard JSON constraint skill](../../.agents/skills/verify-yard-json-constraints/SKILL.md)
 checks a bounded property-matching model. This projection hides three same-state
 steps and retains the existing rule that an undeclared Yard property is unconstrained.
