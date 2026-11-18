@@ -12,6 +12,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./http-topic-bus": {
+			"types": "./dist/rivet-http-topic-bus.d.ts",
+			"default": "./dist/rivet-http-topic-bus.js"
 		}
 	},
 	"dependencies": {
