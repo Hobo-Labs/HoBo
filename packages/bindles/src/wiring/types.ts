@@ -12,7 +12,6 @@ export interface ManifestLink {
 	readonly to: string;
 }
 
-// domain-view: readonly parse-don't-validate view over the generated wire form.
 export interface BindingMeta {
 	readonly port: string;
 	readonly resource: string;
