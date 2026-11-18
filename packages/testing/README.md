@@ -208,6 +208,7 @@ otherwise duplicate code without testing a service contract.
 |---|---|---|
 | HoBo HTTP service | Run its Fetch handler in the harness; use a Pact-derived mock when the consumer needs isolation | Only handlers explicitly provided to a Bindle are served |
 | HoBo CI relay | `createRelayHandler` with an injected application, as in the service emulator test | A memory-backed application does not prove durable admission |
+| HoBo CI pipeline backend | `@hobo/ci/testing` `createScriptedPipelineBackend()` supplies the shared `PipelineBackend` interface | Mocked, scripted results; it executes no commands and does not verify provider behavior or billing finality |
 | HoBo control API | `createControlApiServer` with a temporary `hoboHome`; optional seeded `@hobo/yard-world` demo | Runs the actual local service and simulator, not a deployed Station |
 | HoBo CD notifications | `@hobo/cd/boundary` notification port with an `@hobo/cd/testing` recording CDEvents sink | Exercises CD's local event construction; no webhook or provider behavior |
 | Queue / topic | This harness's `Queue` / `Messaging` port implementations | In-memory, process-local, not a provider protocol or a durability proof |
