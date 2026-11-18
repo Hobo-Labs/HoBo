@@ -16,7 +16,7 @@ export const SCHEMA_IR_CONTRACT = "hobo.schema-ir/v1";
 export const MIGRATION_PLAN_CONTRACT = "hobo.migration-plan/v1";
 
 export const CANONICAL_SCHEMA_DIFF_ENGINE_ID = "hobo-canonical"; // public-contract: differ identity stamped into every plan it produces
-export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "1.0.0"; // public-contract: participates in every plan digest
+export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "2.0.0";
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*$/u;
 const MAX_IDENTIFIER_LENGTH = 63;
@@ -162,22 +162,24 @@ export function diffSchemaIr(
 	desired: SchemaIr,
 	engine?: { id: string; version: string },
 ): MigrationPlan {
-	if (current.dialect !== desired.dialect) {
+	const normalizedCurrent = parseSchemaIr(cloneAsJson(current));
+	const normalizedDesired = parseSchemaIr(cloneAsJson(desired));
+	if (normalizedCurrent.dialect !== normalizedDesired.dialect) {
 		throw new SchemaIrParseError(
 			"diffSchemaIr.dialect",
-			`both schemas in dialect ${current.dialect}`,
-			desired.dialect,
+			`both schemas in dialect ${normalizedCurrent.dialect}`,
+			normalizedDesired.dialect,
 			"diffSchemaIr: refusing to diff across dialects — a cross-dialect plan would be a portability claim this differ cannot make",
 		);
 	}
 	const engineId = engine?.id ?? CANONICAL_SCHEMA_DIFF_ENGINE_ID;
 	const engineVersion = engine?.version ?? CANONICAL_SCHEMA_DIFF_ENGINE_VERSION;
 
-	const currentTables = byName(current.tables);
-	const desiredTables = byName(desired.tables);
+	const currentTables = byName(normalizedCurrent.tables);
+	const desiredTables = byName(normalizedDesired.tables);
 	const steps: MigrationStep[] = [];
 
-	for (const table of desired.tables) {
+	for (const table of normalizedDesired.tables) {
 		const before = currentTables.get(table.name);
 		if (before === undefined) {
 			steps.push(step("expand", "create-table", table.name, {}));
@@ -192,13 +194,19 @@ export function diffSchemaIr(
 		diffIndexes(before, table, steps);
 	}
 
-	for (const table of current.tables) {
+	for (const table of normalizedCurrent.tables) {
 		if (!desiredTables.has(table.name)) {
 			steps.push(step("contract", "drop-table", table.name, {}));
 		}
 	}
 
-	return freezePlan(dedupe(steps).sort(compareSteps), engineId, engineVersion);
+	return freezePlan(
+		dedupe(steps).sort(compareSteps),
+		engineId,
+		engineVersion,
+		normalizedCurrent,
+		normalizedDesired,
+	);
 }
 
 export const CANONICAL_SCHEMA_DIFF_ENGINE: SchemaDiffEngine = Object.freeze({
@@ -437,9 +445,15 @@ function freezePlan(
 	steps: readonly MigrationStep[],
 	engineId: string,
 	engineVersion: string,
+	current: SchemaIr,
+	desired: SchemaIr,
 ): MigrationPlan {
 	const digest = `sha256:${createHash("sha256")
-		.update(canonicalJson(cloneAsJson({ steps, engineId, engineVersion })))
+		.update(
+			canonicalJson(
+				cloneAsJson({ steps, engineId, engineVersion, current, desired }),
+			),
+		)
 		.digest("hex")}`;
 	return deepFreeze({
 		contract: MIGRATION_PLAN_CONTRACT,
