@@ -475,34 +475,34 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			),
 		).toThrow("KV_GRANT_UNVERIFIED");
 	});
-	it.each(["namespace", "grant"] as const)(
-		"rejects and observes an asynchronous KV %s verifier",
-		async (field) => {
-			const rejected = Promise.reject(new Error("authority unavailable"));
-			// SAFETY: this fixture supplies an asynchronous value to a synchronous callback boundary.
-			const invalid = () => rejected as never;
-			expect(() =>
-				mapBindleToAlchemy(
-					application,
-					cloudflareNativeKvBindleMappers({
-						workerModules: { web: main },
-						sourceFence: {
-							sourceDigest: `sha256:${"a".repeat(64)}`,
-							environmentDigest: `sha256:${"b".repeat(64)}`,
-							proofRef: "test:host",
-							verify: () => true,
-						},
-						verifyNamespace: field === "namespace" ? invalid : () => true,
-						verifyGrant: field === "grant" ? invalid : () => true,
-					}),
-					{ assessRequirements: () => ({ status: "supported" }) },
-				),
-			).toThrow(
-				field === "namespace" ? "KV_NAMESPACE_UNVERIFIED" : "KV_GRANT_UNVERIFIED",
-			);
-			await new Promise<void>((resolve) => setImmediate(resolve));
-		},
-	);
+	it.each([
+		"namespace",
+		"grant",
+	] as const)("rejects and observes an asynchronous KV %s verifier", async (field) => {
+		const rejected = Promise.reject(new Error("authority unavailable"));
+		// SAFETY: this fixture supplies an asynchronous value to a synchronous callback boundary.
+		const invalid = () => rejected as never;
+		expect(() =>
+			mapBindleToAlchemy(
+				application,
+				cloudflareNativeKvBindleMappers({
+					workerModules: { web: main },
+					sourceFence: {
+						sourceDigest: `sha256:${"a".repeat(64)}`,
+						environmentDigest: `sha256:${"b".repeat(64)}`,
+						proofRef: "test:host",
+						verify: () => true,
+					},
+					verifyNamespace: field === "namespace" ? invalid : () => true,
+					verifyGrant: field === "grant" ? invalid : () => true,
+				}),
+				{ assessRequirements: () => ({ status: "supported" }) },
+			),
+		).toThrow(
+			field === "namespace" ? "KV_NAMESPACE_UNVERIFIED" : "KV_GRANT_UNVERIFIED",
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
 
 	it("reads binary, empty and missing values through an isolated read-only proxy", async () => {
 		const native = nativeNamespace();

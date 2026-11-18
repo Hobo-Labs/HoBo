@@ -39,7 +39,8 @@ function field(value: unknown, key: string): unknown {
 function optional(value: unknown, key: string): unknown {
 	const descriptor = Object.getOwnPropertyDescriptor(object(value), key);
 	if (descriptor === undefined) return undefined;
-	if (!Object.hasOwn(descriptor, "value")) throw new TypeError("invalid provider field");
+	if (!Object.hasOwn(descriptor, "value"))
+		throw new TypeError("invalid provider field");
 	return descriptor.value;
 }
 

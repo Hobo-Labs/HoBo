@@ -195,29 +195,29 @@ describe("Cloudflare R2 Bindle mapping", () => {
 		}
 	});
 
-	it.each(["bucket", "grant"] as const)(
-		"rejects and observes an asynchronous R2 %s verifier",
-		async (field) => {
-			const rejected = Promise.reject(new Error("authority unavailable"));
-			// SAFETY: this fixture supplies an asynchronous value to a synchronous callback boundary.
-			const invalid = () => rejected as never;
-			expect(() =>
-				mapBindleToAlchemy(
-					application,
-					cloudflareNativeR2BindleMappers({
-						workerModules: { web: main },
-						sourceFence,
-						verifyBucket: field === "bucket" ? invalid : () => true,
-						verifyGrant: field === "grant" ? invalid : () => true,
-					}),
-					{ assessRequirements },
-				),
-			).toThrow(
-				field === "bucket" ? "R2_BUCKET_UNVERIFIED" : "R2_GRANT_UNVERIFIED",
-			);
-			await new Promise<void>((resolve) => setImmediate(resolve));
-		},
-	);
+	it.each([
+		"bucket",
+		"grant",
+	] as const)("rejects and observes an asynchronous R2 %s verifier", async (field) => {
+		const rejected = Promise.reject(new Error("authority unavailable"));
+		// SAFETY: this fixture supplies an asynchronous value to a synchronous callback boundary.
+		const invalid = () => rejected as never;
+		expect(() =>
+			mapBindleToAlchemy(
+				application,
+				cloudflareNativeR2BindleMappers({
+					workerModules: { web: main },
+					sourceFence,
+					verifyBucket: field === "bucket" ? invalid : () => true,
+					verifyGrant: field === "grant" ? invalid : () => true,
+				}),
+				{ assessRequirements },
+			),
+		).toThrow(
+			field === "bucket" ? "R2_BUCKET_UNVERIFIED" : "R2_GRANT_UNVERIFIED",
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
 
 	it("scopes bucket generations and nonreused grant epochs, including A→B→A", () => {
 		const first = cloudflareR2ProxySource("r2-app", "assets", {

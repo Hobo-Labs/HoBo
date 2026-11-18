@@ -47,8 +47,7 @@ it("matches bounded receipt, effect and expiry interleavings in SQLite", async (
 			} catch (error) {
 				try {
 					sql.exec("ROLLBACK");
-				} catch {
-				}
+				} catch {}
 				throw error;
 			}
 		};

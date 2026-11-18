@@ -70,8 +70,7 @@ function open(path = ":memory:") {
 		} catch (error) {
 			try {
 				sql.exec("ROLLBACK");
-			} catch {
-			}
+			} catch {}
 			throw error;
 		} finally {
 			release();
@@ -135,9 +134,24 @@ describe("Rivet actor-local durable receipt journal", () => {
 		await migrateDurableReceiptJournal(f.db);
 		const reject = () => Promise.reject(new Error("asynchronous callback"));
 		const cases = [
-			{ request: input("async-auth"), now: () => 1_000, authorize: allowed, execute: () => committed("unused") },
-			{ request: input("async-clock"), now: () => 1_000, authorize: allowed, execute: () => committed("unused") },
-			{ request: input("async-reducer"), now: () => 1_000, authorize: allowed, execute: () => committed("unused") },
+			{
+				request: input("async-auth"),
+				now: () => 1_000,
+				authorize: allowed,
+				execute: () => committed("unused"),
+			},
+			{
+				request: input("async-clock"),
+				now: () => 1_000,
+				authorize: allowed,
+				execute: () => committed("unused"),
+			},
+			{
+				request: input("async-reducer"),
+				now: () => 1_000,
+				authorize: allowed,
+				execute: () => committed("unused"),
+			},
 		] as const;
 		Object.defineProperty(cases[0], "authorize", { value: reject });
 		Object.defineProperty(cases[1], "now", { value: reject });
@@ -150,7 +164,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		let calls = 0;
 		const late = { authorize: () => true };
 		Object.defineProperty(late, "authorize", {
-			value: () => ++calls === 1 ? true : reject(),
+			value: () => (++calls === 1 ? true : reject()),
 		});
 		const request = input("async-disclosure");
 		expect(

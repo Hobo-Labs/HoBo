@@ -602,8 +602,7 @@ describe("Rivet durable topic HTTP client", () => {
 		const block = () => {
 			entered = true;
 			const until = performance.now() + 600;
-			while (performance.now() < until) {
-			}
+			while (performance.now() < until) {}
 		};
 		const fetch = vi.fn(async () => {
 			throw new Error("must not dispatch");

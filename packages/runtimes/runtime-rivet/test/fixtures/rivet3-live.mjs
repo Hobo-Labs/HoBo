@@ -225,8 +225,7 @@ try {
 		await client.hoboJournal
 			.getOrCreate(["hobo", "tenant", "camp", "orders"])
 			.sleepForTest();
-	} catch {
-	}
+	} catch {}
 	const afterWake = await journal.read("orders");
 	if (
 		afterWake.revision !== 1 ||
@@ -288,8 +287,7 @@ try {
 		throw new Error("cross-actor capability was accepted");
 	try {
 		await sql.sleepForTest();
-	} catch {
-	}
+	} catch {}
 	const sqlPage = await sql.read(
 		authorized(sqlKey, "read", { afterRevision: 1_024, limit: 1 }),
 	);

@@ -1482,8 +1482,7 @@ describe("durable messaging WIT host boundary", () => {
 				lifecycle: createDurableMessagingLifecycle(),
 				authorize: () => {
 					const until = performance.now() + 15;
-					while (performance.now() < until) {
-					}
+					while (performance.now() < until) {}
 					return true;
 				},
 			},

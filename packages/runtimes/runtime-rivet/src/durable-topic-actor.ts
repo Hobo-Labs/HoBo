@@ -95,7 +95,10 @@ const intrinsicApply = Reflect.apply;
 const intrinsicWeakGet = WeakMap.prototype.get;
 const intrinsicWeakSet = WeakMap.prototype.set;
 
-function readPrivate<K extends object, V>(table: WeakMap<K, V>, key: K): V | undefined {
+function readPrivate<K extends object, V>(
+	table: WeakMap<K, V>,
+	key: K,
+): V | undefined {
 	// SAFETY: the private table determines the value type for this key.
 	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
 }
