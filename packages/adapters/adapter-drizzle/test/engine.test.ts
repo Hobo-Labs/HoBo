@@ -30,7 +30,7 @@ const DESIRED = ingestDrizzleSchema(representativeSchemaModule()).schema;
 function echoEmitter(plan: MigrationPlan): readonly EmittedSqlStatement[] {
 	return plan.steps.map((step) => ({
 		step,
-		sql: `-- ${stepKey(step)}`,
+		sql: `SELECT '${stepKey(step)}'`,
 	}));
 }
 

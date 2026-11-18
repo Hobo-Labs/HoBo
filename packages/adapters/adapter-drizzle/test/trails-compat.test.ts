@@ -1,10 +1,6 @@
 import type { MigrationPlan, MigrationStep } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-import {
-	DrizzleAdapterError,
-	stepKey,
-	toDataMigrationPlan,
-} from "../src/index.js";
+import { DrizzleAdapterError, toDataMigrationPlan } from "../src/index.js";
 
 const STEPS: readonly MigrationStep[] = [
 	{
@@ -34,11 +30,20 @@ const PLAN: MigrationPlan = {
 	contract: "hobo.migration-plan/v1",
 	steps: STEPS,
 	engineId: "drizzle-kit",
-	engineVersion: "0.31.1",
+	engineVersion: "0.31.11",
 	digest: "test-digest",
 };
 
-const EMITTED = STEPS.map((step) => ({ step, sql: `-- ${stepKey(step)}` }));
+const STATEMENTS = [
+	'ALTER TABLE "users" ADD COLUMN "nickname" text',
+	'UPDATE "users" SET "nickname" = "handle" WHERE "nickname" IS NULL',
+	'ALTER TABLE "users" DROP COLUMN "handle"',
+] as const;
+const EMITTED = STEPS.map((step, index) => {
+	const sql = STATEMENTS[index];
+	if (sql === undefined) throw new Error("Missing migration statement");
+	return { step, sql };
+});
 
 describe("toDataMigrationPlan", () => {
 	it("buckets emitted SQL into the three phases @hobo/trails executes", () => {
@@ -51,9 +56,9 @@ describe("toDataMigrationPlan", () => {
 
 		expect(plan).toEqual({
 			migrationId: "m-0001",
-			expand: ["-- expand:users:add-column:nickname"],
-			backfill: ["-- backfill:users:backfill-column:nickname"],
-			contract: ["-- contract:users:drop-column:handle"],
+			expand: [STATEMENTS[0]],
+			backfill: [STATEMENTS[1]],
+			contract: [STATEMENTS[2]],
 			verify: { afterBackfill: "select 1 where false" },
 		});
 		expect(Object.isFrozen(plan)).toBe(true);
@@ -64,7 +69,7 @@ describe("toDataMigrationPlan", () => {
 			plan: PLAN,
 			emitted: EMITTED,
 			migrationId: "m-0001",
-			verify: { afterBackfill: "q" },
+			verify: { afterBackfill: "SELECT 1 WHERE FALSE" },
 		});
 
 		expect("afterContract" in plan.verify).toBe(false);
@@ -75,10 +80,13 @@ describe("toDataMigrationPlan", () => {
 			plan: PLAN,
 			emitted: EMITTED,
 			migrationId: "m-0001",
-			verify: { afterBackfill: "q1", afterContract: "q2" },
+			verify: {
+				afterBackfill: "SELECT 1 WHERE FALSE",
+				afterContract: "SELECT 2 WHERE FALSE",
+			},
 		});
 
-		expect(plan.verify.afterContract).toBe("q2");
+		expect(plan.verify.afterContract).toBe("SELECT 2 WHERE FALSE");
 	});
 
 	it("refuses to build a plan when a step has no emitted SQL", () => {
@@ -87,7 +95,7 @@ describe("toDataMigrationPlan", () => {
 				plan: PLAN,
 				emitted: EMITTED.slice(0, 1),
 				migrationId: "m-0001",
-				verify: { afterBackfill: "q" },
+				verify: { afterBackfill: "SELECT 1 WHERE FALSE" },
 			});
 			expect.unreachable("a partially emitted plan must be refused");
 		} catch (error) {

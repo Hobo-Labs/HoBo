@@ -3546,6 +3546,15 @@ importers:
         specifier: workspace:*
         version: link:../identity
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: 0.3.14
+        version: 0.3.14
+      '@hobo/adapter-drizzle':
+        specifier: workspace:*
+        version: link:../adapters/adapter-drizzle
+      '@hobo/data-postgres':
+        specifier: workspace:*
+        version: link:../data-postgres
       '@hobo/data-sqlite':
         specifier: workspace:*
         version: link:../data-sqlite
@@ -3555,6 +3564,9 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      drizzle-orm:
+        specifier: 0.44.7
+        version: 0.44.7(@cloudflare/workers-types@5.20260730.1)(@electric-sql/pglite@0.3.14)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
