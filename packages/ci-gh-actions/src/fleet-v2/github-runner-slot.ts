@@ -16,7 +16,8 @@ export interface RunnerSlotStore {
 	): Promise<RunnerSlot>;
 }
 
-const runnerList = z.strictObject({
+const runnerList = z.object({
+	total_count: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 	runners: z.array(
 		z
 			.strictObject({
@@ -28,9 +29,9 @@ const runnerList = z.strictObject({
 	),
 });
 
-const jitConfiguration = z.strictObject({
+const jitConfiguration = z.object({
 	encoded_jit_config: z.string().min(1),
-	runner: z.strictObject({
+	runner: z.object({
 		id: z.number().int().positive(),
 		name: z.string().min(1),
 	}),
@@ -100,9 +101,10 @@ async function matchingRunners(
 		`/repos/${scope.repository}/actions/runners?name=${encodeURIComponent(runnerName)}&per_page=100`,
 	);
 	if (!response.ok) throw new GithubRunnerSlotError("runner-unavailable");
-	return runnerList
-		.parse(await response.json())
-		.runners.filter((runner) => runner.name === runnerName);
+	const listing = runnerList.parse(await response.json());
+	if (listing.total_count !== listing.runners.length)
+		throw new GithubRunnerSlotError("runner-unavailable");
+	return listing.runners.filter((runner) => runner.name === runnerName);
 }
 
 function runnerMatches(

@@ -1,4 +1,4 @@
-name: Fleet enrollment
+name: Strict fleet runtime
 
 on:
   pull_request:
@@ -8,6 +8,8 @@ on:
       - "docs/design/fleet-enrollment*"
       - "test/fleet-enrollment-scorecard.eval.test.ts"
       - "scripts/generate-fleet-enrollment-scorecard.mts"
+      - "packages/ci-dagger/**"
+      - "packages/providers/provider-kubernetes/**"
       - ".github/workflows/fleet-enrollment.yml"
   workflow_dispatch:
 
@@ -62,11 +64,17 @@ jobs:
         run: |
           test -S /var/run/docker.sock
           docker info >/dev/null
-      - name: Postgres store conformance (8 cases, Testcontainers)
+      - name: PostgreSQL store conformance
         run: |
           mise exec -- pnpm exec turbo run test --filter=@hobo/ci --continue --output-logs=new-only --concurrency=100% -- \
             test/fleet-v2-store-conformance.test.ts --testTimeout=240000
-      - name: Start fence + other fleet-v2 tests
+      - name: GitHub start fence and runner realization
         run: |
           mise exec -- pnpm exec turbo run test --filter=@hobo/ci-gh-actions --continue --output-logs=new-only --concurrency=100% -- \
-            test/fleet-v2-start-fence.test.ts
+            test/fleet-v2-start-fence.test.ts test/fleet-v2-start-fence-handler.test.ts \
+            test/fleet-v2-github-assignment.test.ts test/fleet-v2-github-runner-slot.test.ts \
+            test/fleet-v2-runtime.test.ts
+      - name: Kubernetes and Dagger realization
+        run: |
+          mise exec -- pnpm exec turbo run test --filter=@hobo/provider-kubernetes --filter=@hobo/ci-dagger \
+            --continue --output-logs=new-only --concurrency=100%
