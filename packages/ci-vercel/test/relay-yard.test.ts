@@ -51,6 +51,14 @@ const campOf = (name: string) => {
 };
 
 describe("the relay's Yard", () => {
+	it("disables Vercel git auto-deploy so HoBo CD owns every deployment", () => {
+		// SAFETY: vercel.json is this package's own committed platform configuration.
+		const raw = JSON.parse(text("vercel.json")) as {
+			git?: { deploymentEnabled?: boolean };
+		};
+		expect(raw.git).toEqual({ deploymentEnabled: false });
+	});
+
 	it("is the one place the provider is named, and places the relay in its project", () => {
 		expect(relayYard.kind).toBe("yard");
 		expect(relayYard.name).toBe("hobo-ci-relay");

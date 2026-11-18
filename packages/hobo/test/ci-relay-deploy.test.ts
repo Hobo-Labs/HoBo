@@ -18,6 +18,7 @@ import { type PactLifecycle, pactBackedTransport } from "@hobo/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
+import { RELAY_DEPLOY_REFUSAL } from "../src/ci-relay-deploy.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
 import { RELAY_VERIFY_REFUSAL } from "../src/ci-relay-verify.js";
 import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
@@ -1506,6 +1507,35 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		);
 		expect(result.exitCode, JSON.stringify(result.envelope)).toBe(0);
 		expect(liveHealthAttempts).toBeGreaterThanOrEqual(2);
+	});
+
+	it("refuses production when the job deadline passed before creation", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				...RELAY,
+				"--target",
+				"production",
+				"--sha",
+				SHA,
+				...INPUTS,
+				...SETTING,
+				"--wait",
+				"--deadline",
+				"2020-01-01T00:00:00.000Z",
+			],
+			{
+				fetch,
+				env: { ...env, VERCEL_TOKEN: TOKEN },
+				now: () => Date.parse("2026-01-01T00:00:00.000Z"),
+			},
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
+			message: expect.stringContaining("before production was created"),
+		});
+		expect(sent).toEqual([]);
 	});
 
 	it("refuses staged production without --sha", async () => {

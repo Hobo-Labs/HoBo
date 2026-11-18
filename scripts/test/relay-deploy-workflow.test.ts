@@ -273,6 +273,7 @@ process.exitCode = failed ? 27 : 0;`,
 							GITHUB_STEP_SUMMARY: summary,
 							GITHUB_SHA: "test",
 							GITHUB_REF_NAME: "main",
+							DEPLOY_DEADLINE: "2099-01-01T00:00:00.000Z",
 							FAIL_TARGET: failedTarget,
 							CALLS: calls,
 						},
@@ -316,6 +317,11 @@ process.exitCode = failed ? 27 : 0;`,
 		assert.match(gate, /id: gate/u);
 		assert.match(gate, /relay-deploy-gate\.mts/u);
 		const delivery = step("Deliver the relay through HoBo CD");
+		assert.match(
+			delivery,
+			/DEPLOY_DEADLINE: \$\{\{ steps\.gate\.outputs\.deadline \}\}/u,
+		);
+		assert.match(delivery, /--deadline "\$DEPLOY_DEADLINE"/u);
 		const stepTimeout = Number(/timeout-minutes: (\d+)/u.exec(delivery)?.[1]);
 		assert.ok(stepTimeout > 0 && stepTimeout < jobTimeout);
 		const steps = workflow.slice(

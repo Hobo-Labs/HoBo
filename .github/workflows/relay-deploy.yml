@@ -140,10 +140,14 @@ jobs:
       # Both commands share the CD journal. The preview's placeholder origin
       # is routed to the deployment just created, with a GitHub OIDC header;
       # the Vercel project must trust this workflow for preview access.
+      # Bounded by the gate's deadline (the job's timeout less 3 minutes,
+      # counted from the gate), which hobo enforces before production is
+      # created or promoted. The step timeout is a backstop only.
       - name: Deliver the relay through HoBo CD
         if: steps.gate.outputs.run == 'true'
         timeout-minutes: 17
         env:
+          DEPLOY_DEADLINE: ${{ steps.gate.outputs.deadline }}
           HOBO_HOME: ${{ runner.temp }}/hobo-relay-deploy
           HOBO_CI_RELAY_PREVIEW_URL: https://relay-preview.invalid
           HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true"
@@ -156,7 +160,8 @@ jobs:
             status=0
             node packages/hobo/dist/bin/hobo.js ci deploy \
               --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
-              --target "$target" --wait --json > "$RUNNER_TEMP/relay-${target}.json" || status=$?
+              --target "$target" --wait --deadline "$DEPLOY_DEADLINE" \
+              --json > "$RUNNER_TEMP/relay-${target}.json" || status=$?
             node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${process.argv[2]}: ${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-${target}.json" "$target" | tee -a "$GITHUB_STEP_SUMMARY" || true
             if [ "$status" -ne 0 ]; then exit "$status"; fi
           done

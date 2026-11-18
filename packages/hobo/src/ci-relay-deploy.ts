@@ -145,6 +145,11 @@ import {
 	refusedEnvKeyReason,
 	refusedEnvValueReason,
 } from "./vercel-env-policy.js";
+import { relayAdoptDeadline } from "./ci-relay-adopt.js";
+
+export const RELAY_DEPLOY_REFUSAL = Object.freeze({
+	budgetExhausted: "HOBO_CI_DEPLOY_BUDGET_EXHAUSTED",
+} as const);
 
 // The options of `hobo ci deploy`, as `parseCiArgs` names them.
 export const CI_DEPLOY_OPTIONS = [
@@ -160,6 +165,8 @@ export const CI_DEPLOY_OPTIONS = [
 	"provision",
 	"wait",
 	"dry-run",
+	"deadline",
+	"budget",
 ] as const;
 
 // The ones no other `hobo ci` command takes.
@@ -610,6 +617,20 @@ export async function runCiRelayDeploy(
 		return usage(
 			"A staged production deployment requires --sha naming the commit preview already qualified.",
 		);
+	const clock = input.now ?? Date.now;
+	const parsedDeadline = relayAdoptDeadline(clock(), {
+		deadline: text("deadline"),
+		budget: text("budget"),
+	});
+	if (!parsedDeadline.ok) return usage(parsedDeadline.message);
+	const deadlineAt = parsedDeadline.at;
+	if (clock() >= deadlineAt)
+		return refused(
+			RELAY_DEPLOY_REFUSAL.budgetExhausted,
+			target === "production"
+				? `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production was created.`
+				: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before ${target} started.`,
+		);
 	const createProject = values["create-project"] === true;
 	// The Yard's root directory is saved on a project this deploy creates; an
 	// existing project keeps its own unless the command names one.
@@ -885,8 +906,7 @@ export async function runCiRelayDeploy(
 		},
 	};
 
-	const now = input.now ?? Date.now;
-	const startedAt = now();
+	const startedAt = clock();
 	const declaration = await compileProjectManifest(input.cwd);
 	if (declaration === null)
 		return usage(
@@ -923,6 +943,15 @@ export async function runCiRelayDeploy(
 					}),
 				}
 			: undefined;
+	if (target === "production" && clock() >= deadlineAt)
+		return refused(
+			RELAY_DEPLOY_REFUSAL.budgetExhausted,
+			`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production was created.`,
+		);
+	const waitLimitMs = Math.min(
+		WAIT_LIMIT_MS,
+		Math.max(0, deadlineAt - clock()),
+	);
 	const delivered = await deliverRelay({
 		cwd: input.cwd,
 		env,
@@ -938,7 +967,7 @@ export async function runCiRelayDeploy(
 		},
 		realization,
 		wait,
-		limitMs: WAIT_LIMIT_MS,
+		limitMs: waitLimitMs,
 		intervalMs: WAIT_INTERVAL_MS,
 		...(verify !== undefined
 			? { http: verify.probe.transport }
@@ -968,6 +997,11 @@ export async function runCiRelayDeploy(
 				return refused(
 					"HOBO_CI_DEPLOY_PROMOTION_REFUSED",
 					"The staged production deployment was not qualified; production traffic was not changed.",
+				);
+			if (clock() >= deadlineAt)
+				return refused(
+					RELAY_DEPLOY_REFUSAL.budgetExhausted,
+					`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
 				);
 			try {
 				await client.promoteDeployment(project, safe.deploymentId);
@@ -1071,7 +1105,7 @@ export async function runCiRelayDeploy(
 		const state =
 			delivered.code === "HOBO_CI_DEPLOY_NOT_READY"
 				? (readyState ?? "UNKNOWN")
-				: `${readyState} after ${Math.round((now() - startedAt) / 60_000)} minutes`;
+				: `${readyState} after ${Math.round((clock() - startedAt) / 60_000)} minutes`;
 		const safe = Object.fromEntries(
 			Object.entries({
 				...handover,
