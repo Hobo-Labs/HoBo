@@ -3,6 +3,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createTrustedVault } from "@hobo/core";
 import { createMemorySecretsPort } from "@hobo/identity";
+import {
+	createMemoryNodeSqliteDriver,
+	createNodeSqliteDriver,
+	SqliteJournal,
+} from "@hobo/storage-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadDeliveryFile } from "../src/cd-delivery-module.js";
 import {
@@ -11,6 +16,10 @@ import {
 } from "../src/ci-relay-managed.js";
 import { isJsonString } from "../src/json.js";
 import { createReleaseJournal } from "../src/release-journal.js";
+import {
+	createReleaseReservationAuthority,
+	type ReleaseReservationAuthority,
+} from "../src/release-reservation.js";
 
 const RELAY = resolve(import.meta.dirname, "../../ci-vercel");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -38,6 +47,10 @@ async function harness(
 		wrongProject?: boolean;
 		wrongTeam?: boolean;
 		invalidProjectId?: boolean;
+		noAuthority?: boolean;
+		releaseAuthority?: ReleaseReservationAuthority;
+		asyncSettings?: boolean;
+		asyncDeployment?: boolean;
 	} = {},
 ) {
 	const home = await mkdtemp(join(tmpdir(), "managed-relay-"));
@@ -46,6 +59,7 @@ async function harness(
 	if (!options.store && !options.storeDenied)
 		vault.put("VERCEL_TOKEN", "synthetic-deploy-token");
 	const store = createMemorySecretsPort({ id: "memory" });
+	const reservations = new SqliteJournal(createMemoryNodeSqliteDriver());
 	if (options.store)
 		await store.put("HOBO_CD_VERCEL_TOKEN", "synthetic-deploy-token");
 	const calls: { method: string; path: string; body?: string }[] = [];
@@ -156,16 +170,23 @@ async function harness(
 		)
 			return Response.json(
 				method === "GET" ? { envs: [] } : { created: [], failed: [] },
+				{ status: method !== "GET" && options.asyncSettings ? 202 : 200 },
 			);
 		if (url.pathname === "/v13/deployments" && method === "POST") {
 			const body = JSON.parse(String(init?.body));
-			return Response.json({
-				id: body.target === "production" ? "dpl_new" : "dpl_preview",
-				url:
-					body.target === "production"
-						? "relay-production.vercel.app"
-						: "relay-preview.vercel.app",
-			});
+			return Response.json(
+				{
+					id: body.target === "production" ? "dpl_new" : "dpl_preview",
+					url:
+						body.target === "production"
+							? "relay-production.vercel.app"
+							: "relay-preview.vercel.app",
+				},
+				{
+					status:
+						body.target === "production" && options.asyncDeployment ? 202 : 200,
+				},
+			);
 		}
 		if (url.pathname === "/v13/deployments/dpl_preview")
 			return Response.json({
@@ -228,6 +249,13 @@ async function harness(
 				: undefined),
 		},
 		credentials: vault,
+		...(options.noAuthority
+			? undefined
+			: {
+					releaseAuthority:
+						options.releaseAuthority ??
+						createReleaseReservationAuthority(reservations),
+				}),
 		...(options.store || options.storeDenied
 			? {
 					openOwnerStore: async () => ({
@@ -260,6 +288,7 @@ async function harness(
 		snapshot: async () => ({ dir: RELAY, close: async () => {} }),
 		emitProgress: () => {},
 	});
+	reservations.close();
 	return { result, calls, current };
 }
 
@@ -309,9 +338,15 @@ describe("managed relay delivery through HoBo CD", () => {
 		expect(() => managedRelayRecords(loaded.value)).toThrow(/duplicate/iu);
 	});
 
-	it("builds the pinned source in both Camps and promotes only after verification", async () => {
+	it("refuses production without a shared reservation authority", async () => {
+		const { result, calls } = await harness({ noAuthority: true });
+		expect(result.code).toBe("HOBO_CI_MANAGED_RELEASE_AUTHORITY_REQUIRED");
+		expect(calls.some((call) => call.method === "POST")).toBe(false);
+	});
+
+	it("builds the pinned source in both Camps and retains an accepted promotion", async () => {
 		const { result, calls, current } = await harness();
-		expect(result.code).toBe("HOBO_CI_MANAGED_DEPLOYED");
+		expect(result.ok).toBe(false);
 		expect(current).toBe("dpl_new");
 		const requests = calls.filter(
 			(call) => call.method === "POST" && call.path === "/v13/deployments",
@@ -330,15 +365,72 @@ describe("managed relay delivery through HoBo CD", () => {
 		);
 	});
 
-	it("restores production if the newly promoted relay is unhealthy", async () => {
+	it("blocks another delivery after a pending promotion and journal reopen", async () => {
+		const home = await mkdtemp(join(tmpdir(), "managed-release-fence-"));
+		homes.push(home);
+		const path = join(home, "journal.sqlite");
+		const firstJournal = new SqliteJournal(createNodeSqliteDriver({ path }));
+		const first = await harness({
+			releaseAuthority: createReleaseReservationAuthority(firstJournal),
+		});
+		firstJournal.close();
+		expect(first.result.ok).toBe(false);
+		expect(first.current).toBe("dpl_new");
+		const secondJournal = new SqliteJournal(createNodeSqliteDriver({ path }));
+		try {
+			const second = await harness({
+				releaseAuthority: createReleaseReservationAuthority(secondJournal),
+			});
+			expect(second.result.code).toBe("HOBO_CI_MANAGED_RELEASE_BUSY");
+			expect(second.calls.some((call) => call.method === "POST")).toBe(false);
+		} finally {
+			secondJournal.close();
+		}
+	});
+
+	it.each([
+		{ asyncSettings: true, deployments: 1 },
+		{ asyncDeployment: true, deployments: 2 },
+	])("keeps production reserved after an asynchronous write: %o", async (options) => {
+		const home = await mkdtemp(join(tmpdir(), "managed-release-pending-"));
+		homes.push(home);
+		const path = join(home, "journal.sqlite");
+		const firstJournal = new SqliteJournal(createNodeSqliteDriver({ path }));
+		const first = await harness({
+			...options,
+			releaseAuthority: createReleaseReservationAuthority(firstJournal),
+		});
+		firstJournal.close();
+		expect(first.result.ok).toBe(false);
+		expect(
+			first.calls.filter(
+				(call) => call.method === "POST" && call.path === "/v13/deployments",
+			),
+		).toHaveLength(options.deployments);
+		expect(first.calls.some((call) => call.path.includes("/promote/"))).toBe(
+			false,
+		);
+		const secondJournal = new SqliteJournal(createNodeSqliteDriver({ path }));
+		try {
+			const second = await harness({
+				releaseAuthority: createReleaseReservationAuthority(secondJournal),
+			});
+			expect(second.result.code).toBe("HOBO_CI_MANAGED_RELEASE_BUSY");
+			expect(second.calls.some((call) => call.method === "POST")).toBe(false);
+		} finally {
+			secondJournal.close();
+		}
+	});
+
+	it("does not roll back while the promotion response lacks terminal proof", async () => {
 		const { result, calls, current } = await harness({ unhealthy: true });
 		expect(result.ok).toBe(false);
-		expect(current).toBe("dpl_old");
+		expect(current).toBe("dpl_new");
 		expect(
 			calls.some(
 				(call) => call.path === `/v1/projects/${PROJECT}/rollback/dpl_old`,
 			),
-		).toBe(true);
+		).toBe(false);
 	});
 
 	it("never creates a production deployment when preview fails", async () => {
@@ -366,7 +458,7 @@ describe("managed relay delivery through HoBo CD", () => {
 
 	it("persists the rollback target in GitHub before changing production", async () => {
 		const { result, calls } = await harness({ github: true });
-		expect(result.code).toBe("HOBO_CI_MANAGED_DEPLOYED");
+		expect(result.ok).toBe(false);
 		const reserve = calls.findIndex(
 			(call) =>
 				call.method === "POST" &&
@@ -389,18 +481,18 @@ describe("managed relay delivery through HoBo CD", () => {
 		expect(calls).toEqual([]);
 	});
 
-	it("recovers an already promoted candidate from a prior runner without creating it again", async () => {
+	it("retains an already promoted candidate from a prior runner without dispatching again", async () => {
 		const { result, calls, current } = await harness({
 			github: true,
 			resume: true,
 		});
-		expect(result.code).toBe("HOBO_CI_MANAGED_DEPLOYED");
+		expect(result.code).toBe("HOBO_CI_MANAGED_RECOVERY_FAILED");
 		expect(current).toBe("dpl_new");
 		expect(
 			calls.filter(
 				(call) => call.method === "POST" && call.path === "/v13/deployments",
 			),
-		).toHaveLength(1);
+		).toHaveLength(0);
 		expect(
 			calls.some(
 				(call) => call.path === `/v10/projects/${PROJECT}/promote/dpl_new`,

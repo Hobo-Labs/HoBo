@@ -703,6 +703,11 @@ export async function runCiRelayDeploy(
 		return usage(
 			"hobo ci deploy --target production needs --sha <commit>: production takes exactly the commit preview verified, and a ref alone names no commit.",
 		);
+	if (["production"].includes(target))
+		return refused(
+			"HOBO_CI_DEPLOY_RELEASE_AUTHORITY_REQUIRED",
+			"Production delivery requires the managed release reservation and provider completion checks.",
+		);
 	const wait = values.wait === true;
 	const origin = RELAY_VERIFY_ORIGIN[target];
 	if (wait && !HTTPS_ORIGIN.test(env[origin] ?? ""))

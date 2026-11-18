@@ -65,14 +65,16 @@ function fixture() {
 			}
 			current = deploymentId;
 			if (throwAfterPromote) throw new Error("answer lost");
+			return "settled";
 		},
 		async rollback(deploymentId) {
 			events.push(`rollback:${deploymentId}`);
 			if (delayedRollback) {
 				rollbackAt = time + 20;
-				return;
+				return "pending";
 			}
 			current = deploymentId;
+			return "settled";
 		},
 		async probe() {
 			events.push("probe");
@@ -170,28 +172,79 @@ describe("verified release", () => {
 		expect(f.events.some((event) => event.startsWith("rollback:"))).toBe(false);
 	});
 
-	it("recovers a lost promotion response using the reserved previous deployment", async () => {
+	it("keeps a lost promotion response reserved even when the alias changed", async () => {
 		const f = fixture();
 		f.throwAfterPromote();
 		expect(await f.run()).toEqual({
 			ok: false,
-			code: "promote-failed",
-			rolledBack: true,
+			code: "promotion-uncertain",
+			rolledBack: false,
 		});
-		expect(f.current()).toBe("old");
+		expect(f.current()).toBe("new");
+		expect(f.checkpoint()?.state).toBe("reserved");
+		expect(f.events).not.toContain("rollback:old");
 	});
 
-	it("observes a delayed promotion after a lost response and confirms a delayed rollback", async () => {
+	it("does not roll back after a lost response before a delayed promotion", async () => {
 		const f = fixture();
 		f.delayPromotion();
 		f.delayRollback();
 		expect(await f.run()).toEqual({
 			ok: false,
-			code: "promote-failed",
-			rolledBack: true,
+			code: "promotion-uncertain",
+			rolledBack: false,
 		});
 		expect(f.current()).toBe("old");
-		expect(f.checkpoint()?.state).toBe("rolled-back");
+		expect(f.checkpoint()?.state).toBe("reserved");
+		f.advanceTime(20);
+		expect(await f.provider.current()).toBe("new");
+		expect(await f.run()).toEqual({
+			ok: false,
+			code: "promotion-uncertain",
+			rolledBack: false,
+		});
+		expect(f.events).not.toContain("rollback:old");
+	});
+
+	it("retains the reservation while a rollback remains pending", async () => {
+		const f = fixture();
+		f.setHealthy(false);
+		f.delayRollback();
+		expect(await f.run()).toEqual({
+			ok: false,
+			code: "promotion-uncertain",
+			rolledBack: false,
+		});
+		expect(f.checkpoint()?.state).toBe("reserved");
+	});
+
+	it("does not roll back after the verified checkpoint acknowledgement is lost", async () => {
+		const f = fixture();
+		const journal: ReleaseJournal = {
+			...f.journal,
+			async save(value) {
+				await f.journal.save(value);
+				throw new Error("reply lost");
+			},
+		};
+		let time = 0;
+		expect(
+			await promoteVerifiedRelease({
+				provider: f.provider,
+				journal,
+				deploymentId: "new",
+				commit: COMMIT,
+				deadline: 50,
+				now: () => time,
+				sleep: async (ms) => {
+					time += ms;
+				},
+				intervalMs: 10,
+			}),
+		).toEqual({ ok: false, code: "journal-failed", rolledBack: false });
+		expect(f.checkpoint()?.state).toBe("verified");
+		expect(f.current()).toBe("new");
+		expect(f.events).not.toContain("rollback:old");
 	});
 
 	it("keeps an interrupted reservation when the old deployment is still serving", async () => {
@@ -263,7 +316,7 @@ describe("verified release", () => {
 		expect(f.checkpoint()?.state).toBe("reserved");
 	});
 
-	it("resumes an interrupted promotion and does not repeat a completed release after a manual rollback", async () => {
+	it("keeps an interrupted promotion reserved even when the alias changed", async () => {
 		const f = fixture();
 		f.setCheckpoint({
 			deploymentId: "new",
@@ -272,14 +325,14 @@ describe("verified release", () => {
 			state: "reserved",
 		});
 		f.setCurrent("new");
-		expect((await f.run()).ok).toBe(true);
-		expect(f.events).not.toContain("promote:new");
-		f.setCurrent("old");
 		expect(await f.run()).toEqual({
 			ok: false,
-			code: "concurrent-change",
+			code: "promotion-uncertain",
 			rolledBack: false,
 		});
+		expect(f.events).not.toContain("promote:new");
+		expect(f.events).not.toContain("rollback:old");
+		expect(f.checkpoint()?.state).toBe("reserved");
 	});
 
 	it("refuses an unstaged candidate before any journal or provider mutation", async () => {
