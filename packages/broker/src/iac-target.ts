@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
-import { clone, create, toJson } from "@bufbuild/protobuf";
+import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import {
 	addDecimal,
 	type Consumption,
@@ -35,6 +36,8 @@ import {
 	BudgetAdmissionDeniedError,
 	type BudgetIdentity,
 	BudgetIdentitySchema,
+	type BudgetReservation,
+	BudgetReservationSchema,
 	budgetIdentityKey,
 	type HostingPolicyProof,
 	HostingPolicyProofSchema,
@@ -566,14 +569,19 @@ export async function admitIacTarget(
 			"budget or quote evidence is unavailable",
 		);
 	}
-	const identity = ledger.identity;
-	if (identity === undefined || identity.tenantId !== inventory.tenantId)
+	const ledgerIdentity = ledger.identity;
+	if (
+		ledgerIdentity === undefined ||
+		!isExactProtoMessage(BudgetIdentitySchema, ledgerIdentity) ||
+		ledgerIdentity.tenantId !== inventory.tenantId
+	)
 		return denial(
 			requestId,
 			targetId,
 			"BUDGET_SCOPE_MISMATCH",
 			"the budget does not belong to the target tenant",
 		);
+	const identity = cloneIdentity(ledgerIdentity);
 	let policy: { gate: GateDecision; proof: HostingPolicyProof };
 	try {
 		policy = await deps.authorize({
@@ -629,6 +637,58 @@ export async function admitIacTarget(
 			false,
 		);
 	const reservationId = `iac:${requestId}`;
+	const pricingPin = create(IacPricingPinSchema, {
+		planDigest: inventory.planDigest,
+		inventoryHash: priced.inventoryHash,
+		modelHash: priced.modelHash,
+		quoteHash: priced.quote.quoteHash,
+		evidenceHash,
+		validUntil: quote.validUntil,
+	});
+	const quoteDigest = createHash("sha256")
+		.update(toJsonString(HostingQuoteSchema, quote))
+		.digest("hex");
+	const accountRows = (rows: BudgetReservation["providerAccounts"]) =>
+		rows
+			.map((row) => JSON.stringify([row.providerAccountId, row.liabilityMicros]))
+			.sort();
+	const entitlementRows = (rows: BudgetReservation["entitlementClaims"]) =>
+		rows
+			.map((row) => JSON.stringify([row.bucketId, row.unit, row.units]))
+			.sort();
+	const captureReceipt = (
+		raw: BudgetReservation,
+	): BudgetReservation | undefined => {
+		try {
+			if (!isExactProtoMessage(BudgetReservationSchema, raw)) return undefined;
+			const row = clone(BudgetReservationSchema, raw);
+			if (
+				row.reservationId !== reservationId ||
+				row.requestDigest !== requestDigest ||
+				row.quoteId !== quote.quoteId ||
+				row.quoteDigest !== quoteDigest ||
+				row.financialPlanHash !== financialPlanHash ||
+				row.identity === undefined ||
+				budgetIdentityKey(row.identity) !== budgetIdentityKey(identity) ||
+				row.reservedMicros !== quote.liabilityBoundMicros ||
+				row.actualMicros !== 0 ||
+				row.unboundedExposure ||
+				row.unpricedPolicyProof !== undefined ||
+				row.unpricedScopeProof !== undefined ||
+				row.iacPricingPin === undefined ||
+				toJsonString(IacPricingPinSchema, row.iacPricingPin) !==
+					toJsonString(IacPricingPinSchema, pricingPin) ||
+				JSON.stringify(accountRows(row.providerAccounts)) !==
+					JSON.stringify(accountRows(quote.providerAccounts)) ||
+				JSON.stringify(entitlementRows(row.entitlementClaims)) !==
+					JSON.stringify(entitlementRows(quote.entitlementClaims))
+			)
+				return undefined;
+			return row;
+		} catch {
+			return undefined;
+		}
+	};
 	let reservation: ReturnType<BudgetAdmissionAuthority["reserve"]>;
 	try {
 		validateHostingQuote(quote, deps.now());
@@ -646,16 +706,9 @@ export async function admitIacTarget(
 		reservation = await deps.authority.reserve({
 			reservationId,
 			requestDigest,
-			quote,
-			iacPricingPin: create(IacPricingPinSchema, {
-				planDigest: inventory.planDigest,
-				inventoryHash: priced.inventoryHash,
-				modelHash: priced.modelHash,
-				quoteHash: priced.quote.quoteHash,
-				evidenceHash,
-				validUntil: quote.validUntil,
-			}),
-			identity: ledger.identity,
+			quote: clone(HostingQuoteSchema, quote),
+			iacPricingPin: clone(IacPricingPinSchema, pricingPin),
+			identity: cloneIdentity(identity),
 			expectedSeq: ledger.seq,
 			now: deps.now(),
 		});
@@ -677,6 +730,16 @@ export async function admitIacTarget(
 			requestDigest,
 		);
 	}
+	const capturedReservation = captureReceipt(reservation);
+	if (capturedReservation === undefined)
+		return uncertain(
+			requestId,
+			targetId,
+			"PRICED_RESERVATION_RECEIPT_INVALID",
+			"unknown",
+			requestDigest,
+		);
+	reservation = capturedReservation;
 	if (reservation.status !== "held")
 		return uncertain(
 			requestId,
@@ -713,12 +776,26 @@ export async function admitIacTarget(
 	try {
 		validateHostingQuote(quote, deps.now());
 		const head = await deps.authority.read(deps.now());
-		const claimed = await deps.authority.claimExecution({
-			reservationId,
-			requestDigest,
-			executionDigest,
-			expectedSeq: head.seq,
-		});
+		const claimed = captureReceipt(
+			await deps.authority.claimExecution({
+				reservationId,
+				requestDigest,
+				executionDigest,
+				expectedSeq: head.seq,
+			}),
+		);
+		if (
+			claimed === undefined ||
+			claimed.status !== "held" ||
+			claimed.executionDigest !== executionDigest
+		)
+			return uncertain(
+				requestId,
+				targetId,
+				"PRICED_EXECUTION_RECEIPT_INVALID",
+				"held",
+				requestDigest,
+			);
 		if (claimed.ledgerSeq !== head.seq + 1)
 			return create(IacTargetAdmissionDecisionSchema, {
 				requestId,
@@ -732,6 +809,26 @@ export async function admitIacTarget(
 			});
 		reservation = claimed;
 		validateHostingQuote(quote, deps.now());
+		const stillHeld = await deps.authority.revalidatePriced({
+			reservationId,
+			requestId,
+			targetId,
+			tenantId: inventory.tenantId,
+			requestDigest,
+			planDigest: inventory.planDigest,
+			inventoryHash: priced.inventoryHash,
+			modelHash: priced.modelHash,
+			quoteHash: priced.quote.quoteHash,
+			now: deps.now(),
+		});
+		if (stillHeld !== true)
+			return uncertain(
+				requestId,
+				targetId,
+				"PRICED_EXECUTION_UNVERIFIED",
+				"held",
+				requestDigest,
+			);
 	} catch {
 		return uncertain(
 			requestId,

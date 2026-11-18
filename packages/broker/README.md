@@ -37,6 +37,10 @@ state. An uncertain write or execution claim must be reconciled; it is never
 permission to retry the provider call. The host remains responsible for
 verifying inventory completeness and eventual usage and source-stop evidence.
 Price ranking alone does not create a reservation; admission is the budget gate.
+Reservation and execution acknowledgements must match the exact quote, scope,
+liability bound and pricing pin. Mismatched receipts are reported as uncertain;
+after a claim, the authority must revalidate that the exact hold remains active.
+These checks rely on the host's durable authority and do not prove its behavior.
 Liability evidence must cover each distinct provider-account ID exactly once;
 the input order of those account records does not affect the scope check.
 The admission request accepts only its declared own data fields; unknown fields,
