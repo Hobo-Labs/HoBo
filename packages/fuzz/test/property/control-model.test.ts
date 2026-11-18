@@ -330,8 +330,10 @@ describe("snapshot clock stability", () => {
 		const world = new ControlModel();
 		world.clock = Number.MAX_SAFE_INTEGER - 1;
 		expect(world.tick()).toBe(Number.MAX_SAFE_INTEGER);
+		const history = world.events;
 		expect(() => world.tick()).toThrow("fuzz.model_clock_exhausted");
 		expect(world.clock).toBe(Number.MAX_SAFE_INTEGER);
+		expect(world.events).toEqual(history);
 		for (const invalid of [
 			Number.NaN,
 			Infinity,
@@ -339,9 +341,10 @@ describe("snapshot clock stability", () => {
 			0.5,
 			Number.MAX_SAFE_INTEGER + 1,
 		]) {
-			world.clock = invalid;
-			expect(() => world.tick()).toThrow("fuzz.model_clock_exhausted");
-			expect(Object.is(world.clock, invalid)).toBe(true);
+			expect(() => {
+				world.clock = invalid;
+			}).toThrow("fuzz.invalid_model_clock");
+			expect(world.clock).toBe(Number.MAX_SAFE_INTEGER);
 		}
 	});
 

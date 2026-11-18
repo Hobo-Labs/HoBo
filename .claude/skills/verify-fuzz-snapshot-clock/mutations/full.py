@@ -8,16 +8,16 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[4]
 skill = '.agents/skills/verify-fuzz-snapshot-clock'
-retry = 'if (existing) {\n\t\t\tthis.tick();\n\t\t\texisting.applyCount += 1;'
-rollback = 'this.tick();\n\t\tthis.#restoreTenant(tenantId, blob);'
+retry = 'if (existing) {\n\t\t\tthis.#advanceClock();\n\t\t\texisting.applyCount += 1;'
+rollback = 'this.#advanceClock();\n\t\tthis.#restoreTenant(tenantId, blob);'
 cases = [
     ('retry-without-tick', retry, 'if (existing) {\n\t\t\texisting.applyCount += 1;'),
     ('rollback-without-tick', rollback, 'this.#restoreTenant(tenantId, blob);'),
-    ('clock-overflow', 'this.clock >= Number.MAX_SAFE_INTEGER', 'this.clock > Number.MAX_SAFE_INTEGER'),
-    ('clock-invalid-integer', 'tick(): number {\n\t\tif (\n\t\t\t!Number.isSafeInteger(this.clock) ||', 'tick(): number {\n\t\tif (\n\t\t\tfalse ||'),
-    ('clock-negative', 'this.clock < 0 ||', 'false ||'),
-    ('retry-tick-too-late', retry, 'if (existing) {\n\t\t\texisting.applyCount += 1;\n\t\t\tthis.tick();'),
-    ('rollback-tick-too-late', rollback, 'this.#restoreTenant(tenantId, blob);\n\t\tthis.tick();'),
+    ('clock-overflow', 'this.#clock >= Number.MAX_SAFE_INTEGER', 'this.#clock > Number.MAX_SAFE_INTEGER'),
+    ('clock-invalid-integer', '!Number.isSafeInteger(value) ||', 'false ||'),
+    ('clock-backward-or-negative', 'value < 0 || value < this.#clock', 'false'),
+    ('retry-tick-too-late', retry, 'if (existing) {\n\t\t\texisting.applyCount += 1;\n\t\t\tthis.#advanceClock();'),
+    ('rollback-tick-too-late', rollback, 'this.#restoreTenant(tenantId, blob);\n\t\tthis.#advanceClock();'),
 ]
 
 def check(case):

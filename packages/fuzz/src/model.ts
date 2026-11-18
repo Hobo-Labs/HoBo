@@ -9,6 +9,8 @@ export const FUZZ_INVARIANT_SCHEMA = "hobo.fuzz.invariant-verdict/v1" as const;
 export const FUZZ_TRACE_SCHEMA = "hobo.fuzz.trace/v1" as const;
 
 const REPLAY_OWNED_EVENT_KINDS = new Set([
+	"clock.advanced",
+	"clock.set",
 	"snapshot.taken",
 	"rollback",
 	"model.restored",
@@ -139,7 +141,7 @@ export type ModelCommand =
 	| { kind: "destroy"; tenantId: string; bindleId: string };
 
 export class ControlModel {
-	clock = 0;
+	#clock = 0;
 	#bindles = new Map<string, BindleSlot>();
 	#capabilities = new Map<string, Capability>();
 	#resources = new Map<string, OwnedResource>();
@@ -147,6 +149,19 @@ export class ControlModel {
 	#snapshots = new Map<number, string>();
 	lastRollbackTarget: number | null = null;
 	private replayBaseline: string | undefined;
+
+	get clock(): number {
+		return this.#clock;
+	}
+
+	set clock(value: number) {
+		if (!Number.isSafeInteger(value) || value < 0 || value < this.#clock) {
+			throw new Error("fuzz.invalid_model_clock");
+		}
+		if (value === this.#clock) return;
+		this.#clock = value;
+		this.#appendEvent("system", "clock.set", { value: String(value) });
+	}
 
 	get bindles(): Map<string, BindleSlot> {
 		return new Map([...this.#bindles].map(([id, row]) => [id, { ...row }]));
@@ -177,15 +192,21 @@ export class ControlModel {
 	}
 
 	tick(): number {
+		const next = this.#advanceClock();
+		this.#appendEvent("system", "clock.advanced", {});
+		return next;
+	}
+
+	#advanceClock(): number {
 		if (
-			!Number.isSafeInteger(this.clock) ||
-			this.clock < 0 ||
-			this.clock >= Number.MAX_SAFE_INTEGER
+			!Number.isSafeInteger(this.#clock) ||
+			this.#clock < 0 ||
+			this.#clock >= Number.MAX_SAFE_INTEGER
 		) {
 			throw new Error("fuzz.model_clock_exhausted");
 		}
-		this.clock += 1;
-		return this.clock;
+		this.#clock += 1;
+		return this.#clock;
 	}
 
 	append(
@@ -257,7 +278,7 @@ export class ControlModel {
 		if (!pristine && baseClock >= Number.MAX_SAFE_INTEGER) {
 			throw new Error("fuzz.model_clock_exhausted");
 		}
-		this.clock = pristine ? blob.clock : baseClock + 1;
+		this.#clock = pristine ? blob.clock : baseClock + 1;
 		this.#bindles.clear();
 		this.#capabilities.clear();
 		this.#resources.clear();
@@ -309,14 +330,14 @@ export class ControlModel {
 				row.tenantId !== tenantId,
 		);
 		if ((existing && existing.tenantId !== tenantId) || foreignResource) {
-			this.tick();
+			this.#advanceClock();
 			this.#appendEvent(tenantId, "bindle.create-refused", {
 				bindleId,
 				reason: "owned-by-other-tenant",
 			});
 			return { ok: false, reason: "owned-by-other-tenant" };
 		}
-		const createdAt = this.tick();
+		const createdAt = this.#advanceClock();
 		this.#bindles.set(bindleId, {
 			id: bindleId,
 			tenantId,
@@ -335,11 +356,11 @@ export class ControlModel {
 		const captured = captureVerbs(verbs);
 		const existing = this.#capabilities.get(capabilityId);
 		if (existing && existing.tenantId !== tenantId) {
-			this.tick();
+			this.#advanceClock();
 			this.#appendEvent(tenantId, "capability.add-refused", { capabilityId });
 			return;
 		}
-		this.tick();
+		this.#advanceClock();
 		this.#capabilities.set(capabilityId, {
 			id: capabilityId,
 			tenantId,
@@ -360,13 +381,13 @@ export class ControlModel {
 		const cap = this.#capabilities.get(capabilityId);
 		if (!cap) return;
 		if (cap.tenantId !== tenantId) {
-			this.tick();
+			this.#advanceClock();
 			this.#appendEvent(tenantId, "capability.attenuate-refused", {
 				capabilityId,
 			});
 			return;
 		}
-		this.tick();
+		this.#advanceClock();
 		const allowed = new Set(cap.verbs);
 		cap.verbs = captured.filter((verb) => allowed.has(verb));
 		this.#appendEvent(cap.tenantId, "capability.attenuated", {
@@ -380,7 +401,7 @@ export class ControlModel {
 			throw new Error("fuzz.reserved_event_kind");
 		}
 		const captured = captureEventPayload(payload);
-		this.tick();
+		this.#advanceClock();
 		this.#appendEvent(tenantId, kind, captured);
 	}
 
@@ -392,7 +413,7 @@ export class ControlModel {
 	): OwnedResource {
 		const bindle = this.#bindles.get(bindleId);
 		if (!bindle || bindle.tenantId !== tenantId) {
-			this.tick();
+			this.#advanceClock();
 			this.#appendEvent(tenantId, "resource.apply-refused", {
 				bindleId,
 				idempotencyKey,
@@ -415,7 +436,7 @@ export class ControlModel {
 				row.status !== "destroyed",
 		);
 		if (existing) {
-			this.tick();
+			this.#advanceClock();
 			existing.applyCount += 1;
 			if (opts.fail !== true && existing.status === "failed") {
 				existing.status = "ready";
@@ -431,7 +452,7 @@ export class ControlModel {
 			});
 			return { ...existing };
 		}
-		const createdAt = this.tick();
+		const createdAt = this.#advanceClock();
 		const resource: OwnedResource = {
 			id: `res-${tenantId}-${idempotencyKey}`,
 			tenantId,
@@ -475,7 +496,7 @@ export class ControlModel {
 	interruptApply(tenantId: string, idempotencyKey: string): void {
 		const resource = this.#findByKey(tenantId, idempotencyKey);
 		if (!resource) return;
-		this.tick();
+		this.#advanceClock();
 		resource.status = "failed";
 		this.#appendEvent(tenantId, "resource.interrupted", {
 			id: resource.id,
@@ -486,14 +507,14 @@ export class ControlModel {
 	destroy(tenantId: string, bindleId: string): OpResult {
 		const bindle = this.#bindles.get(bindleId);
 		if (bindle && bindle.tenantId !== tenantId) {
-			this.tick();
+			this.#advanceClock();
 			this.#appendEvent(tenantId, "bindle.destroy-refused", {
 				bindleId,
 				reason: "owned-by-other-tenant",
 			});
 			return { ok: false, reason: "owned-by-other-tenant" };
 		}
-		this.tick();
+		this.#advanceClock();
 		for (const resource of this.#resources.values()) {
 			if (resource.tenantId === tenantId && resource.bindleId === bindleId) {
 				resource.status = "destroyed";
@@ -515,7 +536,7 @@ export class ControlModel {
 		// SAFETY: snapshot values are produced by serialize() in this model.
 		const blob = JSON.parse(shot) as SnapshotBlob;
 		const expected = tenantFingerprint(blob, tenantId);
-		this.tick();
+		this.#advanceClock();
 		this.#restoreTenant(tenantId, blob);
 		this.lastRollbackTarget = targetClock;
 		this.#appendEvent(tenantId, "rollback", { target: String(targetClock) });
@@ -555,7 +576,7 @@ export class ControlModel {
 
 	changeTenant(bindleId: string, toTenantId: string): void {
 		const bindle = this.#bindles.get(bindleId);
-		this.tick();
+		this.#advanceClock();
 		this.#appendEvent(bindle?.tenantId ?? "system", "tenant.change-refused", {
 			bindleId,
 			toTenantId,
@@ -646,7 +667,11 @@ export class ControlModel {
 		const copy = new ControlModel();
 		if (this.replayBaseline !== undefined) copy.restore(this.replayBaseline);
 		for (const event of this.#eventLog) {
-			if (event.kind === "snapshot.taken") {
+			if (event.kind === "clock.advanced") {
+				copy.tick();
+			} else if (event.kind === "clock.set") {
+				copy.clock = Number(event.payload.value);
+			} else if (event.kind === "snapshot.taken") {
 				copy.snapshot();
 			} else if (event.kind === "rollback") {
 				copy.rollback(event.tenantId, Number(event.payload.target));

@@ -33,15 +33,15 @@ def check(case):
             raise RuntimeError(f'{name}: expected one mutation site, found {original.count(before)}')
         changed = original.replace(before, after, 1)
         if name == 'late-add-validation':
-            site = 'this.tick();\n\t\tthis.#capabilities.set(capabilityId, {'
+            site = 'this.#advanceClock();\n\t\tthis.#capabilities.set(capabilityId, {'
             if changed.count(site) != 1:
                 raise RuntimeError(f'{name}: missing insertion site')
-            changed = changed.replace(site, 'this.tick();\n\t\tconst captured = captureVerbs(verbs);\n\t\tthis.#capabilities.set(capabilityId, {', 1)
+            changed = changed.replace(site, 'this.#advanceClock();\n\t\tconst captured = captureVerbs(verbs);\n\t\tthis.#capabilities.set(capabilityId, {', 1)
         if name == 'late-attenuation-validation':
-            site = 'this.tick();\n\t\tconst allowed = new Set(cap.verbs);'
+            site = 'this.#advanceClock();\n\t\tconst allowed = new Set(cap.verbs);'
             if changed.count(site) != 1:
                 raise RuntimeError(f'{name}: missing insertion site')
-            changed = changed.replace(site, 'this.tick();\n\t\tconst captured = captureVerbs(keep);\n\t\tconst allowed = new Set(cap.verbs);', 1)
+            changed = changed.replace(site, 'this.#advanceClock();\n\t\tconst captured = captureVerbs(keep);\n\t\tconst allowed = new Set(cap.verbs);', 1)
         target.write_text(changed)
         env = {**os.environ, 'FUZZ_CAPABILITY_VERIFY_PACKAGE_ROOT': str(scratch)}
         result = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900)

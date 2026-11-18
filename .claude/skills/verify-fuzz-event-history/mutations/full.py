@@ -22,7 +22,7 @@ cases = [
 \t\t\t(value) => value?.constructor === String && Object(value) !== value,
 \t\t)''', 'false'),
     ('skip-object-check', '!payload || Object(payload) !== payload || Array.isArray(payload)', 'false'),
-    ('late-payload-validation', 'const captured = captureEventPayload(payload);\n\t\tthis.tick();', 'this.tick();\n\t\tconst captured = captureEventPayload(payload);'),
+    ('late-payload-validation', 'const captured = captureEventPayload(payload);\n\t\tthis.#advanceClock();', 'this.#advanceClock();\n\t\tconst captured = captureEventPayload(payload);'),
 ]
 
 def check(case):
