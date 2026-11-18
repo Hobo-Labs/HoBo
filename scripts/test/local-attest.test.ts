@@ -658,7 +658,9 @@ describe("a local run", () => {
 		await assert.rejects(failed.outcome, /scripts-tests.*failed/u);
 		assert.deepEqual(failed.lines(), ["0/4", "1/4"]);
 		assert.equal(
-			existsSync(join(failed.repo, OUTPUT_DIRECTORY, `${failed.target.tree}.json`)),
+			existsSync(
+				join(failed.repo, OUTPUT_DIRECTORY, `${failed.target.tree}.json`),
+			),
 			false,
 		);
 	});
