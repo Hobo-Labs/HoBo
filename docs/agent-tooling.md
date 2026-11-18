@@ -140,7 +140,7 @@ node .claude/skills/higgsfield-auth/scripts/hf-auth.mjs login    # device flow, 
 - Restart Claude Code after `login` or a header-changing `refresh`.
 
 ### ponytail — `DietrichGebert/ponytail` (MIT)
-A **minimalist-coding skill**: channels a senior dev who pushes the laziest solution that works — YAGNI (does this need to exist?), standard library before custom code, native platform features before dependencies, one line before fifty. Commands: `/ponytail [lite|full|ultra]`, `/ponytail-review` (review a diff for over-engineering), `/ponytail-audit` (whole-repo bloat scan), `/ponytail-debt` (harvest `ponytail:` shortcut comments into a ledger), `/ponytail-gain`, `/ponytail-help`. **No API keys; no third-party data transmission.** Installed (6 skills) to `.claude/skills/ponytail*` (Claude Code) and `.agents/skills/ponytail*` (Cursor + Codex).
+A **minimalist-coding skill**: prefers the standard library, native platform features, and the smallest complete implementation. Commands: `/ponytail [lite|full|ultra]`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt` (resolve existing shortcut markers), `/ponytail-gain`, and `/ponytail-help`. **No API keys; no third-party data transmission.** Installed (6 skills) to `.claude/skills/ponytail*` and `.agents/skills/ponytail*`.
 - **Invocation-based here, not always-on.** Run `/ponytail` to activate it for a session. (Upstream also supports an always-on plugin install via `/plugin marketplace add DietrichGebert/ponytail` → `/plugin install ponytail@ponytail` in Claude Code; we use the skills route to keep it opt-in and committable, and to avoid stacking a second always-on directive on top of caveman.) Optional global config: `~/.config/ponytail/config.json` or `PONYTAIL_DEFAULT_MODE`.
 
 

@@ -159,10 +159,6 @@ export function createStateBackendConfig(overrides: JsonObject = {}) {
 
 export function createPulumiAutomationAdapter(options: AdapterOptions = {}) {
 	const stateBackend = options.stateBackend ?? createInMemoryStateBackend();
-	// ponytail: the local in-memory engine below is the default backend so this
-	// package stays offline. Swap `options.engine` for a real Pulumi Automation
-	// API engine (pinned to PINNED_PULUMI_AUTOMATION_VERSION) that speaks the same
-	// preview/apply/refresh/destroy shape; nothing else in this adapter changes.
 	const engine =
 		options.engine ?? createInMemoryAutomationEngine({ stateBackend });
 	const pulumiVersion =
@@ -275,10 +271,6 @@ export function createInMemoryStateBackend(options: StateBackendOptions = {}) {
 }
 
 export function createInMemoryAutomationEngine(options: EngineOptions = {}) {
-	// ponytail: local, deterministic stand-in for the Pulumi Automation API. A
-	// production engine would drive `pulumi preview/up/refresh/destroy` against a
-	// per-resource stack; the return shapes below are the contract that swap must
-	// preserve (see runIacBackendConformance).
 	const stateBackend = options.stateBackend ?? createInMemoryStateBackend();
 	let driftStacks = new Map();
 

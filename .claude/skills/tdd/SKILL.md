@@ -42,21 +42,13 @@ RIGHT (vertical):
 
 ## Workflow
 
-### 1. Planning
+### 1. Choose behavior
 
-When exploring the codebase, read `CONTEXT.md` (if it exists) so that test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching.
-
-Before writing any code:
-
-- [ ] Confirm with user what interface changes are needed
-- [ ] Confirm with user which behaviors to test (prioritize)
-- [ ] Identify opportunities for deep modules (small interface, deep implementation) — run the `/codebase-design` skill for the vocabulary and the testability checks
-- [ ] List the behaviors to test (not implementation steps)
-- [ ] Get user approval on the plan
-
-Ask: "What should the public interface look like? Which behaviors are most important to test?"
-
-**You can't test everything.** Confirm with the user exactly which behaviors matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
+Follow `AGENTS.md`. Inspect existing callers, domain vocabulary, and tests. Choose
+the public interface and meaningful behaviors from the request and existing
+contracts. Ask only when a missing answer blocks the work; continue independent
+work while waiting. Do not create a plan or design document. Focus tests on
+observable behavior and material failure cases.
 
 ### 2. Tracer Bullet
 
