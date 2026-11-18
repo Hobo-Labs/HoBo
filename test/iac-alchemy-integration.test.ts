@@ -62,6 +62,7 @@ import {
 	Stack,
 } from "../packages/iac/iac-alchemy/test/imports.js";
 import {
+	cloneScenario,
 	creditState,
 	makeScenario,
 	perUnitCharge,
@@ -139,6 +140,7 @@ function routeFor(input: IacProgram, requestId: string) {
 function setup(
 	options: {
 		withPricing?: boolean;
+		withoutDestroyPricing?: boolean;
 		authorizeUnpriced?: boolean;
 		unpricedPolicy?: "allow" | "deny";
 		failApply?: boolean;
@@ -390,8 +392,16 @@ function setup(
 							: []),
 					],
 				};
+	const destroyScenario = cloneScenario(scenario);
+	destroyScenario.action = "destroy";
+	destroyScenario.destroyCancelsAgreement = false;
+	const destroyPricing =
+		pricing === undefined || options.withoutDestroyPricing
+			? undefined
+			: { ...pricing, modelId: "destroy-terms", scenario: destroyScenario };
 	const financial = createIacFinancialServices({
 		...(pricing === undefined ? undefined : { pricing }),
+		...(destroyPricing === undefined ? undefined : { destroyPricing }),
 		authority,
 		now: () => NOW,
 		...(options.authorizeUnpriced || options.unpricedPolicy !== undefined
@@ -2505,6 +2515,27 @@ describe("Alchemy IaC provider against the real library", () => {
 			await expect(fixture.provider.refresh(program)).rejects.toMatchObject({
 				code: "DRIFT_CHECK_INCOMPLETE",
 			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("refuses a destroy when its separate pricing model is absent", async () => {
+		const fixture = setup({ withoutDestroyPricing: true });
+		try {
+			await fixture.provider.preview(program);
+			await fixture.provider.apply(program);
+			const destroy = {
+				...program,
+				action: "destroy" as const,
+				operationGeneration: "generation-destroy-missing-model",
+			};
+			await fixture.provider.preview(destroy);
+			await expect(fixture.provider.destroy(destroy)).rejects.toMatchObject({
+				code: "PRICING_MODEL_UNSUPPORTED",
+			});
+			expect(fixture.deleted()).toBe(0);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
 			fixture.authority.close();
 		}
