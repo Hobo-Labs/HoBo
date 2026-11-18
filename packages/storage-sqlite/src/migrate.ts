@@ -1,4 +1,7 @@
-import { EventStoreError, UnsupportedSchemaVersionError } from "@hobo/core";
+import {
+	EventStoreError,
+	UnsupportedSchemaVersionError,
+} from "@hobo/core/eventstore";
 import {
 	DEFAULT_METADATA_CODEC,
 	DEFAULT_PAYLOAD_CODEC,
