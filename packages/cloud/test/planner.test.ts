@@ -36,6 +36,74 @@ function registry() {
 }
 
 describe("Planner: hello-bindle golden DeploymentPlan DAG", () => {
+	it("provisions a linked resource before its consumer", () => {
+		const manifest = parseManifest({
+			schema: "hobo.manifest/v1",
+			componentHost: { kind: "wasmtime", version: "1.0.0" },
+			resources: {
+				"a-api": {
+					type: "component.v1",
+					image: "oci://example/api",
+					runtime: "wasm",
+					exports: ["wasi:http/incoming-handler"],
+					links: [{ import: "kv", to: "z-cache" }],
+				},
+				"z-cache": { type: "data.v1", port: "kv" },
+			},
+		});
+		const result = plan(manifest, { deploymentId: "linked" }, registry());
+		if (!result.ok) throw new Error(result.reason);
+		expect(result.plan.dependencyOrder).toEqual(["z-cache", "a-api"]);
+		expect(
+			result.plan.resources.find((resource) => resource.name === "a-api")?.deps,
+		).toEqual(["z-cache"]);
+	});
+
+	it("deduplicates dependencies named by both links and binds", () => {
+		const manifest = parseManifest({
+			schema: "hobo.manifest/v1",
+			componentHost: { kind: "wasmtime", version: "1.0.0" },
+			resources: {
+				api: {
+					type: "component.v1",
+					image: "oci://example/api",
+					runtime: "wasm",
+					exports: ["wasi:http/incoming-handler"],
+					links: [{ import: "kv", to: "cache" }],
+					bind: ["cache"],
+				},
+				cache: { type: "data.v1", port: "kv" },
+			},
+		});
+		const result = plan(manifest, { deploymentId: "duplicate" }, registry());
+		if (!result.ok) throw new Error(result.reason);
+		expect(
+			result.plan.resources.find((resource) => resource.name === "api")?.deps,
+		).toEqual(["cache"]);
+		expect(result.plan.dependencyOrder).toEqual(["cache", "api"]);
+	});
+
+	it("rejects cycles that include a linked resource", () => {
+		const manifest = parseManifest({
+			schema: "hobo.manifest/v1",
+			componentHost: { kind: "wasmtime", version: "1.0.0" },
+			resources: {
+				api: {
+					type: "component.v1",
+					image: "oci://example/api",
+					runtime: "wasm",
+					exports: ["wasi:http/incoming-handler"],
+					links: [{ import: "kv", to: "cache" }],
+				},
+				cache: { type: "data.v1", port: "kv", bind: ["api"] },
+			},
+		});
+		const result = plan(manifest, { deploymentId: "linked-cycle" }, registry());
+		expect(result.ok).toBe(false);
+		if (!result.ok)
+			expect(result.remediations[0]?.code).toBe("dependency.cycle");
+	});
+
 	it("refuses cyclic dependencies instead of inventing a provisioning order", () => {
 		const manifest = parseManifest({
 			schema: "hobo.manifest/v1",
