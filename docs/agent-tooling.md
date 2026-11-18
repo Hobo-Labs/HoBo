@@ -65,39 +65,52 @@ and honest reports of actual blockers.
 [`scripts/agent_completion_hook.py`](../scripts/agent_completion_hook.py)
 reviews completed responses in Claude Code, Codex, Cursor, and Copilot. During
 that review, an agent that identifies a safe, authorized next action records it
-as ready before acting. A stop with that record still present is rejected, even
-after the first continuation. The agent clears the record once no such action
-remains, the user explicitly stops or pauses, or a genuine external blocker
-prevents further useful work. Status questions do not cancel an active task.
+as ready before acting. A stop with that record still present requests another
+continuation. The agent clears the record once no such action remains, the user
+explicitly stops or changes scope, or a genuine external blocker prevents
+further useful work. Status questions do not cancel an active task.
 
-A new human turn clears the old ready record and requests a fresh review, so a
-stop or scope change does not inherit a stale action. If work remains in scope,
-the agent must identify and record it again. Cursor uses its native `stop`
-event and a per-conversation counter; its imported Claude handler is skipped to
-avoid duplicate reviews. Claude Code and Codex use `Stop`; Copilot uses
-`agentStop`. Interrupted and error events are allowed through. A ready record
-continues to request action until cleared or interrupted; host-specific limits
-on stop hooks may also apply.
+A human status message resets the retry allowance without erasing ready work.
+The prompt hook recognizes common, explicit English requests to stop the whole
+task, clears the record, and allows the response without forcing a continuation.
+It handles these phrases conservatively: ambiguous wording and scope changes
+still require the agent to follow the human's instructions and clear an obsolete
+record. Interruptions and Cursor error or abort events also clear pending state.
+
+A ready record can cause three additional reviews followed by one final
+continuation asking the agent to report unresolved work. After repeated stops
+without progress, the guard pauses automatic continuation and retains the
+record; a new human message resets the allowance. This circuit breaker does not
+mean the task is complete. Host-specific limits may apply, and some hosts may
+not display the final hook warning.
+
+Cursor uses native `beforeSubmitPrompt` and `stop` events and a
+per-conversation counter; its imported Claude handler is skipped to avoid
+duplicate reviews. Claude Code and Codex use `UserPromptSubmit` and `Stop`;
+Codex also handles `Interrupt`. Copilot uses `userPromptSubmitted` and
+`agentStop`. Codex requires project-hook trust and review through `/hooks`.
 
 The record is an empty, session-scoped file named by a hash under the OS
-temporary directory; it contains no task text. Its update command fails visibly
-if it cannot write the state. If state storage is unavailable, the initial
-review is still requested when the harness identifies a first stop; later stops
-are allowed and a warning reports that the ready-action check did not run where
-the harness supports warnings. Events without a usable session identity fall
-back to one review. Codex requires project-hook trust and review through `/hooks`.
+temporary directory; it contains no task text. The hook reads the current
+prompt to recognize explicit stops but does not store it or inspect transcripts.
+Its update command carries the hook's state directory so a different shell
+temporary directory cannot silently write elsewhere. Hook events for the same
+session must share that state directory. Updates fail visibly if it is
+unavailable. If state storage is unavailable, the initial review is still
+requested when the harness identifies a first stop; later stops are allowed and
+a warning is emitted where the harness supports it. Events without a usable
+session identity fall back to one review.
 
 The guard enforces a recorded ready action, but it is not an independent proof
 of completion: an agent can fail to record an action or clear the record
 incorrectly. The review asks the agent to act on evidence and never to clear the
-record merely to end a turn. The hook does not inspect the conversation, call a
-model, or use the network. It adds a continuation to reviewed responses, including
-simple answers.
+record merely to end a turn. The hook does not call a model or use the network.
+It adds a continuation to reviewed responses, including simple answers.
 
 The script uses the Python standard library and requires Python 3.8 or later.
 The configured Unix hooks use `python3`; Copilot on Windows uses `python`.
-Other harnesses can pass a compatible stop event as JSON on standard input and
-use the returned `decision` and `reason`, or adapt Cursor's
+Other harnesses can pass compatible prompt and stop events as JSON on standard
+input and use the returned `decision` and `reason`, or adapt Cursor's
 `followup_message` format. A compatible harness needs a reliable continuation
 marker and session identifier.
 
