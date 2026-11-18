@@ -1,6 +1,6 @@
-import { cp, mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadBindleDefinition } from "@hobo/cli";
 import { must } from "@hobo/core/total-access";
@@ -13,6 +13,7 @@ import {
 	resolveBindlePlacement,
 	WASM_SANDBOX_PROVIDER_ID,
 } from "../src/index.js";
+import { temporaryHelloBindle } from "./helpers/temporary-hello-bindle.js";
 
 const helloBindleDir = fileURLToPath(
 	new URL("../../../examples/hello-bindle", import.meta.url),
@@ -120,22 +121,8 @@ describe("embedded broker-runtime", () => {
 	it("hobo up deploys hello-bindle on local yard (broker or yard lane)", async () => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-broker-up-"));
 		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
-		// Keep the fixture inside the workspace so Vitest can transform its TS source.
-		const projectDir = await mkdtemp(
-			join(dirname(helloBindleDir), ".hello-bindle-test-"),
-		);
+		const projectDir = await temporaryHelloBindle(helloBindleDir);
 		cleanups.push(() => rm(projectDir, { recursive: true, force: true }));
-		await cp(helloBindleDir, projectDir, {
-			recursive: true,
-			filter: (source) =>
-				source !== join(helloBindleDir, ".hobo") &&
-				source !== join(helloBindleDir, "node_modules"),
-		});
-		await symlink(
-			join(helloBindleDir, "node_modules"),
-			join(projectDir, "node_modules"),
-			"dir",
-		);
 		const cli = createComposedHoboCli();
 		cleanups.push(async () => {
 			await cli.run(["down", "--json"], { cwd: projectDir });
