@@ -5,12 +5,16 @@ import {
 	isJsonString,
 	type JsonValue,
 } from "../json.js";
+import {
+	captureWorkflowInput,
+	requireWorkflowRunId,
+} from "../workflow-boundary.js";
 import { readReplayCommandTree } from "./command-tree.js";
 import { createDeterministicContext } from "./context.js";
 import { digest } from "./divergence.js";
 import { hashReadSet, seqVector, stableStringify } from "./equivalence.js";
 import type { EventStoreReader } from "./store.js";
-import type { EventEnvelope, ReplayReport } from "./types.js";
+import type { ReplayReport } from "./types.js";
 
 export interface WorkflowDefinition<S, A> {
 	name: string;
@@ -45,16 +49,35 @@ export async function replayRun<S, A>(
 	args: A,
 	options: ReplayOptions = {},
 ): Promise<ReplayResult<S>> {
-	const streamId = `run/${runId}`;
+	const id = requireWorkflowRunId(runId);
+	const input = captureWorkflowInput(args);
+	const suppliedSeed = options.seed;
+	const workflowName = workflow.name;
+	const initialState = workflow.initialState;
+	const execute = workflow.execute;
+	if (
+		!isJsonString(workflowName) ||
+		String(workflowName) !== workflowName ||
+		!workflowName
+	)
+		throw new TypeError("workflow name must be a non-empty string");
+	if (
+		suppliedSeed !== undefined &&
+		(!isJsonString(suppliedSeed) || String(suppliedSeed) !== suppliedSeed)
+	)
+		throw new TypeError("replay seed must be a string");
+	const streamId = `run/${id}`;
 	const events = await store.readStream(streamId);
-	const seed = options.seed ?? readSeed(events) ?? `run-${runId}`;
 	const started = events.find((event) => event.type === "run.Started");
-	if (!started) {
+	if (!started || !isJsonObject(started.data)) {
 		throw new Error(`missing run.Started for ${runId}`);
 	}
-	const version = isJsonObject(started.data)
-		? started.data.commandTreeVersion
-		: undefined;
+	if (
+		!Object.hasOwn(started.data, "args") ||
+		!isDeepStrictEqual(started.data.args, input)
+	)
+		throw new Error(`workflow input differs from run.Started for ${runId}`);
+	const version = started.data.commandTreeVersion;
 	if (
 		version !== undefined &&
 		version !== 1 &&
@@ -63,13 +86,32 @@ export async function replayRun<S, A>(
 	) {
 		throw new Error("unsupported workflow command tree version");
 	}
+	const recordedName = started.data.workflowName;
+	if (
+		(recordedName !== undefined && recordedName !== workflowName) ||
+		(version === 3 && recordedName === undefined)
+	)
+		throw new Error(`workflow name differs from run.Started for ${runId}`);
+	const recordedSeed = started.data.seed;
+	if (
+		(recordedSeed !== undefined &&
+			(!isJsonString(recordedSeed) || String(recordedSeed) !== recordedSeed)) ||
+		(version === 3 && recordedSeed === undefined) ||
+		(suppliedSeed !== undefined &&
+			recordedSeed !== undefined &&
+			suppliedSeed !== recordedSeed)
+	)
+		throw new Error(`workflow seed differs from run.Started for ${runId}`);
+	const seed = isJsonString(recordedSeed)
+		? recordedSeed
+		: (suppliedSeed ?? `run-${id}`);
 	const tree =
 		version === 1 || version === 2 || version === 3
 			? readReplayCommandTree(events, version >= 2, version === 3)
 			: undefined;
 	let treeCursor = 0;
 
-	let state = workflow.initialState(args);
+	let state = initialState.call(workflow, input);
 	const stepResults = new Map<string, JsonValue>();
 	const hookResults = new Map<string, JsonValue>();
 	const timerResults = new Map<string, { delayMs: number }>();
@@ -187,7 +229,7 @@ export async function replayRun<S, A>(
 		},
 	};
 
-	state = await workflow.execute(ctx, state, args);
+	state = await execute.call(workflow, ctx, state, input);
 	if (tree) {
 		const remaining = tree[treeCursor];
 		if (remaining) {
@@ -220,16 +262,6 @@ export async function replayRun<S, A>(
 	};
 
 	return { state, report };
-}
-
-function readSeed(events: EventEnvelope[]): string | undefined {
-	const started = events.find((event) => event.type === "run.Started");
-	if (!started?.data || !isJsonObject(started.data)) {
-		return undefined;
-	}
-	// SAFETY: assertion to `started.data as { seed?: JsonValue }` is required at this boundary.
-	const seed = (started.data as { seed?: JsonValue }).seed;
-	return isJsonString(seed) ? seed : undefined;
 }
 
 function matchesStep(data: JsonValue, name: string, index: number): boolean {

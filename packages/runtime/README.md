@@ -98,6 +98,16 @@ stateDiagram-v2
 
 `resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
+`replayRun` requires the recorded input and checks the recorded workflow name and
+seed. Version-three records must contain all three; older records without a name
+cannot establish workflow identity, and an older record without a seed uses the
+explicit replay seed or the run ID fallback. An explicitly supplied seed must
+match a recorded seed. Replay captures input, options, and callback references
+before waiting for the journal. Workflow callbacks and the journal remain
+trusted; a callback can still read mutable application state. The replay report
+contains the resulting state digest but does not automatically compare it with
+the recorded terminal result.
+
 Within one loaded runtime module, `start` and `resume` refuse another active
 execution with the same run ID and the same `EventStoreWriter` object, even
 when different engine instances share it. If a parent exits with a durable
