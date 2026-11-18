@@ -779,6 +779,37 @@ function isExperiencePlanningArtifact(file: string): boolean {
 	);
 }
 
+type MarkdownTextNode = {
+	readonly type: string;
+	readonly value?: string;
+	readonly alt?: string | null;
+	readonly children?: readonly MarkdownTextNode[];
+};
+
+function markdownText(node: MarkdownTextNode): string {
+	return (
+		node.value ?? node.alt ?? node.children?.map(markdownText).join("") ?? ""
+	);
+}
+
+function planningDocumentTitle(text: string): string | undefined {
+	const heading = fromMarkdown(text).children.find(
+		(node) => node.type === "heading" && node.depth === 1,
+	);
+	if (!heading) return undefined;
+	const title = markdownText(heading).replace(/\s+/gu, " ").trim();
+	if (
+		/^(?:implementation plan|technical design|design document|design brief|architecture document|architecture decision record|roadmap|proposal|adr\b|rfc\b)(?:\s|:|-|$)/iu.test(
+			title,
+		) ||
+		/\b(?:implementation plan|technical design|design document|design brief|architecture document|architecture decision record|project roadmap|delivery roadmap)\b/iu.test(
+			title,
+		)
+	)
+		return title;
+	return undefined;
+}
+
 export function documentViolation(
 	file: string,
 	text: string,
@@ -793,6 +824,8 @@ export function documentViolation(
 	)
 		return "planning, architecture, and design documents are not allowed";
 	if (!/\.mdx?$/iu.test(sourceFile)) return undefined;
+	const title = planningDocumentTitle(text);
+	if (title) return `document title "${title}" describes prohibited planning`;
 	if (/^src\/draft\/(?:[^/]+\/)*_registry\.mdx?$/iu.test(sourceFile))
 		return "planning, architecture, and design documents are not allowed";
 	if (
