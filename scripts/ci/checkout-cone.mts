@@ -55,7 +55,6 @@ export const S0_ROOT_FILES = [
 	"GEMINI.md",
 	"LICENSE",
 	"NOTES.md",
-	"PRODUCT.md",
 	"README.md",
 	"SECURITY.md",
 	"SUPPORT.md",
