@@ -217,6 +217,7 @@ describe("durable Yard generation quota authority", () => {
 		try {
 			const a = request("a");
 			authority.reserve(a);
+			authority.claimExecution(a);
 			for (const changed of [
 				{ attemptId: "wrong" },
 				{ ownerTenantId: "wrong-tenant" },
