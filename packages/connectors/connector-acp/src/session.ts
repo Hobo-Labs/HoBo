@@ -1,4 +1,8 @@
-import { type AgentGuardrailPolicy, evaluateToolPermission } from "./policy.js";
+import {
+	type AgentGuardrailPolicy,
+	evaluateToolPermission,
+	type ToolPermissionUsage,
+} from "./policy.js";
 import type {
 	AcpAgentFactory,
 	AcpPermissionOutcome,
@@ -10,22 +14,17 @@ import type {
 } from "./types.js";
 import { ACP_PROTOCOL, ACP_PROTOCOL_VERSION } from "./types.js";
 
-// public-contract: the structured refusal an agent sees on policy denial.
 export const POLICY_REFUSAL = "hobo.policy-refusal/v1";
 
 export interface GovernedSessionOptions {
-	// The connector target name (the manifest key).
 	readonly connector: string;
-	// The agent adapter — a factory receiving the governed client.
 	readonly agent: AcpAgentFactory;
-	// The SVID-bound, user-delegated agent principal (broker output).
 	readonly principal: AgentPrincipal;
-	// The parsed guardrail policy the permission gate decides against.
 	readonly policy: AgentGuardrailPolicy;
-	// Recorded human approvals keyed by action (require-approval lane).
 	readonly approvals?: Record<string, { approver: string }>;
-	// Receives every past-tense fact for the caller's single-writer actor to
-	// append to the event store.
+	readonly resolveAction?: (request: AcpPermissionRequest) => string;
+	readonly estimateCostUsd?: (request: AcpPermissionRequest) => number;
+	readonly initialUsage?: ToolPermissionUsage;
 	readonly onFact?: (fact: AcpSessionFact) => void;
 	readonly cwd?: string;
 }
@@ -34,27 +33,58 @@ export interface GovernedSessionResult {
 	readonly sessionId: string;
 	readonly stopReason: string;
 	readonly facts: readonly AcpSessionFact[];
+	readonly usage: ToolPermissionUsage;
 }
 
 export interface GovernedSession {
-	// Run one governed prompt turn end to end.
 	prompt(text: string): Promise<GovernedSessionResult>;
-	// Cancel the in-flight turn (the agent must answer pending permission
-	// requests with the cancelled outcome per ACP).
 	cancel(): Promise<void>;
 	readonly sessionId: string;
 }
 
-// Open a governed ACP session: initialize + session/new against the agent,
-// with every subsequent prompt turn audited — prompt, streamed updates,
-// permission requests (decided by the policy gate, deny fails closed and is
-// VISIBLE to the agent as a structured refusal), and the final stop reason
-// all land as past-tense facts.
+interface MutableToolPermissionUsage {
+	currentSpendUsd: number;
+	actionCounts: Record<string, number>;
+}
+
+function mutableUsage(
+	initial: ToolPermissionUsage | undefined,
+): MutableToolPermissionUsage {
+	const currentSpendUsd = initial?.currentSpendUsd ?? 0;
+	if (!Number.isFinite(currentSpendUsd) || currentSpendUsd < 0) {
+		throw new Error(
+			"connector-acp: initialUsage.currentSpendUsd must be non-negative",
+		);
+	}
+	const actionCounts = { ...initial?.actionCounts };
+	for (const [action, count] of Object.entries(actionCounts)) {
+		if (action.length === 0 || !Number.isInteger(count) || count < 0) {
+			throw new Error(
+				"connector-acp: initialUsage.actionCounts must contain non-negative integers",
+			);
+		}
+	}
+	return { currentSpendUsd, actionCounts };
+}
+
+function snapshotUsage(usage: MutableToolPermissionUsage): ToolPermissionUsage {
+	return Object.freeze({
+		currentSpendUsd: usage.currentSpendUsd,
+		actionCounts: Object.freeze({ ...usage.actionCounts }),
+	});
+}
+
 export async function openGovernedSession(
 	options: GovernedSessionOptions,
 ): Promise<GovernedSession> {
+	if (options.policy.spendCapUsd !== null && !options.estimateCostUsd) {
+		throw new Error(
+			"connector-acp: estimateCostUsd is required when spendCapUsd is configured",
+		);
+	}
 	const facts: AcpSessionFact[] = [];
 	let cancelled = false;
+	const usage = mutableUsage(options.initialUsage);
 
 	const record = (fact: AcpSessionFact) => {
 		facts.push(fact);
@@ -67,9 +97,11 @@ export async function openGovernedSession(
 		async requestPermission(
 			params: AcpPermissionRequest,
 		): Promise<{ outcome: AcpPermissionOutcome }> {
-			const action = String(
-				params.toolCall.rawInput?.action ?? params.toolCall.title ?? "",
-			);
+			const action = options.resolveAction
+				? options.resolveAction(params)
+				: String(
+						params.toolCall.rawInput?.action ?? params.toolCall.title ?? "",
+					);
 			record({
 				type: "agent.ToolPermissionRequested",
 				sessionId: params.sessionId,
@@ -77,15 +109,29 @@ export async function openGovernedSession(
 				action,
 			});
 			if (cancelled) {
-				// ACP: a cancelled turn MUST answer pending permission requests
-				// with the cancelled outcome.
 				return { outcome: { outcome: "cancelled" } };
 			}
 			const approval = options.approvals?.[action];
+			const estimatedCostUsd = options.estimateCostUsd?.(params);
 			const decision = evaluateToolPermission(
 				approval === undefined
-					? { action, policy: options.policy }
-					: { action, policy: options.policy, approval },
+					? {
+							action,
+							policy: options.policy,
+							usage,
+							...(estimatedCostUsd === undefined
+								? undefined
+								: { estimatedCostUsd }),
+						}
+					: {
+							action,
+							policy: options.policy,
+							approval,
+							usage,
+							...(estimatedCostUsd === undefined
+								? undefined
+								: { estimatedCostUsd }),
+						},
 			);
 			record({
 				type: "policy.Decided",
@@ -101,14 +147,15 @@ export async function openGovernedSession(
 					option.kind.startsWith("allow"),
 				);
 				if (!allow) {
-					// The agent offered no allow option — fail closed.
-					return refuse(params, "no-allow-option-offered");
+					return refuse(params, action, "no-allow-option-offered");
 				}
+				usage.actionCounts[action] = (usage.actionCounts[action] ?? 0) + 1;
+				usage.currentSpendUsd += estimatedCostUsd ?? 0;
 				return {
 					outcome: { outcome: "selected", optionId: allow.optionId },
 				};
 			}
-			return refuse(params, decision.reasons.join(";"));
+			return refuse(params, action, decision.reasons.join(";"));
 		},
 
 		async sessionUpdate(params: AcpSessionNotification): Promise<void> {
@@ -126,6 +173,7 @@ export async function openGovernedSession(
 
 	function refuse(
 		params: AcpPermissionRequest,
+		action: string,
 		reason: string,
 	): PermissionReply {
 		const reject = params.options.find((option) =>
@@ -135,14 +183,10 @@ export async function openGovernedSession(
 			type: "agent.ToolCallRefused",
 			sessionId: params.sessionId,
 			toolCallId: params.toolCall.toolCallId,
-			action: String(
-				params.toolCall.rawInput?.action ?? params.toolCall.title ?? "",
-			),
+			action,
 			refusal: `${POLICY_REFUSAL}:${reason}`,
 		});
 		if (!reject) {
-			// No reject option offered either — the only fail-closed response
-			// left is the cancelled outcome.
 			return { outcome: { outcome: "cancelled" } };
 		}
 		return { outcome: { outcome: "selected", optionId: reject.optionId } };
@@ -193,6 +237,7 @@ export async function openGovernedSession(
 				sessionId: sessionIdHolder,
 				stopReason: result.stopReason,
 				facts: [...facts],
+				usage: snapshotUsage(usage),
 			};
 		},
 
@@ -218,11 +263,6 @@ export interface ReplayedSessionState {
 	readonly closed: boolean;
 }
 
-/**
- * Rebuild a session's state purely from its recorded facts — the audit
- * acceptance: the governed session is REPLAYABLE from the log with no
- * process memory.
- */
 export function replaySessionFacts(
 	facts: readonly AcpSessionFact[],
 ): ReplayedSessionState {

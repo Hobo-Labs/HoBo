@@ -35,6 +35,13 @@ const guardrails = [
 	},
 ] as const;
 
+const runtimeControls = [
+	"openIssueWorkerSession",
+	"ISSUE_CLAIM_ACTION",
+	"resolveAction",
+	"estimateCostUsd",
+] as const;
+
 export function checkIssueWorkerGuardrails(document: string): string[] {
 	const automation = document.match(
 		/^## Automation prompt\r?\n\r?\n```text\r?\n([\s\S]*?)\r?\n```/mu,
@@ -43,7 +50,12 @@ export function checkIssueWorkerGuardrails(document: string): string[] {
 	if (prompt === undefined) return ["embedded GUARDRAILS block is missing"];
 
 	const lines = new Set(prompt.split(/\r?\n/u));
-	return guardrails
-		.filter(({ text }) => !lines.has(`- ${text}`))
-		.map(({ id }) => `embedded GUARDRAILS block is missing: ${id}`);
+	return [
+		...guardrails
+			.filter(({ text }) => !lines.has(`- ${text}`))
+			.map(({ id }) => `embedded GUARDRAILS block is missing: ${id}`),
+		...runtimeControls
+			.filter((control) => !document.includes(control))
+			.map((control) => `runtime control is missing: ${control}`),
+	];
 }

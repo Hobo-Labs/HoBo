@@ -10,6 +10,13 @@ export {
 	type FixtureAgentOptions,
 } from "./fixture-agent.js";
 export {
+	ISSUE_CLAIM_ACTION,
+	type IssueWorkerPolicyOptions,
+	type IssueWorkerSessionOptions,
+	issueWorkerPolicy,
+	openIssueWorkerSession,
+} from "./issue-worker.js";
+export {
 	type AcpConnectorBinding,
 	type AcpConnectorDeclaration,
 	type AcpConnectorManifestEntry,
@@ -22,6 +29,7 @@ export {
 	type ActionClass,
 	type ActionClassEffect,
 	type ActionClassMap,
+	type ActionQuotaMap,
 	AGENT_GUARDRAILS_SCHEMA,
 	type AgentGuardrailPolicy,
 	classifyActionClass,
@@ -30,6 +38,7 @@ export {
 	type PolicyEffect,
 	parseAgentGuardrailPolicy,
 	type ToolPermissionInput,
+	type ToolPermissionUsage,
 } from "./policy.js";
 export {
 	type AgentSandboxPosture,
@@ -73,5 +82,4 @@ export {
 	type GovernedAcpClient,
 } from "./types.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_CONNECTOR_ACP_PACKAGE = "@hobo/connector-acp";
