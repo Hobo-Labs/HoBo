@@ -7,7 +7,7 @@ description: Verify preservation, immutability and structural matching of Yard J
 
 **Property:** The broker preserves JSON property and label keys without using inherited setters, prevents mutation of the parsed nested values, and matches structured properties by value. Losing a key can remove a placement restriction; comparing object identities can reject two equal requests or rank the wrong Yard.
 
-**Review baseline:** commit `9d61f0f9f1ee151d25d9bc9c887fa61f4c67ea8c`. PASS for the model and executable checks below. Residency tag validation in the same matcher and request parser is checked separately by `verify-yard-residency-validation`.
+**Review baseline:** commit `6771c17c043c776bb4b6d5b14e451d4935eb8b97`. PASS for the model and executable checks below. Residency tag validation in the same matcher and request parser is checked separately by `verify-yard-residency-validation`.
 
 ## Covered code
 
