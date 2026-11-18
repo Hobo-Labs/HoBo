@@ -1,7 +1,3 @@
-/**
- * Shared Yard → Camp serve path for all component hosts
- * (local | wasm | oci | cloud-native).
- */
 
 import { createServer, type Server } from "node:http";
 import { discoveryEnvForDependency, readDependencyConfig } from "@hobo/bindles";
@@ -15,13 +11,11 @@ import type {
 	FetchHandler,
 	HttpRequest,
 	HttpResponse,
-	ParsedComponentDescriptor,
 } from "@hobo/core";
 import { first, must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
 	createRuntimeLocalComponentHost,
-	HTTP_INCOMING_HANDLER,
 } from "@hobo/runtime-local";
 import {
 	type BareMetalServeResult,
@@ -42,6 +36,7 @@ import {
 	normalizeComponentHostKind,
 	openBareMetalYard,
 } from "./bare-metal-yard.js";
+import { createHttpComponentDescriptor } from "./component-http.js";
 import { servePrivateOnHost } from "./host-registry.js";
 import {
 	cloneAsJson,
@@ -92,7 +87,6 @@ async function webRequestToHttp(request: Request): Promise<HttpRequest> {
 	return {
 		method: request.method,
 		path: `${url.pathname}${url.search}`,
-		// SAFETY: assertion required at this I/O or test boundary.
 		headers: [...request.headers.entries()] as [string, string][],
 		body,
 	};
@@ -103,44 +97,6 @@ function httpResponseToWeb(response: HttpResponse): Response {
 		status: response.status,
 		headers: response.headers,
 	});
-}
-
-function componentDescriptor(
-	id: string,
-	handler: FetchHandler,
-): ParsedComponentDescriptor {
-	return {
-		parsed: true,
-		id,
-		imports: [],
-		exports: {
-			[HTTP_INCOMING_HANDLER]: {
-				// SAFETY: the export table is heterogeneous by design -- each
-				// interface has its own argument shape, and `ComponentExport`
-				// describes the table, not this entry. The host reads it back through
-				// the matching handler type (`HttpIncomingHandler` in runtime-local),
-				// so the two-step cast is where that agreement is recorded rather
-				// than a claim that the signatures line up.
-				handle: (async (httpReq: HttpRequest): Promise<HttpResponse> => {
-					const req = httpReq;
-					const webReq = new Request(`http://component.local${req.path}`, {
-						method: req.method,
-						headers: Object.fromEntries(req.headers),
-						...(req.body && req.method !== "GET" && req.method !== "HEAD"
-							? { body: req.body }
-							: undefined),
-					});
-					const webRes = await handler(webReq);
-					return {
-						status: webRes.status,
-						// SAFETY: assertion required at this I/O or test boundary.
-						headers: [...webRes.headers.entries()] as [string, string][],
-						body: await webRes.text(),
-					};
-				}) as unknown as ParsedComponentDescriptor["exports"][string][string],
-			},
-		},
-	};
 }
 
 async function listen(handler: FetchHandler, port: number): Promise<Server> {
@@ -195,9 +151,6 @@ export type MultiHostServeResult = BareMetalServeResult & {
 	};
 };
 
-/**
- * Place a Bindle into a Camp using the selected component host runtime package.
- */
 export async function serveProjectOnHost(options: {
 	readonly projectDir: string;
 	readonly componentHost: ComponentHostKind | string;
@@ -252,7 +205,6 @@ export async function serveProjectOnHost(options: {
 	}
 
 	const bindleEnv = collectBindleEnvInjections(definition);
-	// Aspire-style discovery for external / container / wasm-component deps.
 	for (const [name, record] of Object.entries(definition.resources)) {
 		const depConfig = readDependencyConfig(record.annotations);
 		if (depConfig === null && record.kind !== "external") continue;
@@ -267,11 +219,9 @@ export async function serveProjectOnHost(options: {
 			isJsonObject(config.endpoints) &&
 			config.endpoints !== null
 		) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const http = (config.endpoints as JsonObject).http;
 			if (isJsonString(http)) resolved.httpUrl = http;
 		}
-		// Mesh URL for dependency kinds served on the camp mesh.
 		if (
 			record.kind === "container" ||
 			record.kind === "wasm-component" ||
@@ -298,7 +248,6 @@ export async function serveProjectOnHost(options: {
 			emitProgress: emit,
 			privateEntries: privateEntries.map((entry) => {
 				const moduleOverride = modulePathFromAnnotations(
-					// SAFETY: bindle annotation config is a JSON object at the serve boundary.
 					definition.resources[entry.name]?.annotations as
 						| readonly {
 								readonly option: string;
@@ -354,7 +303,7 @@ export async function serveProjectOnHost(options: {
 	const servers: Server[] = [];
 	let publicIndex = 0;
 	for (const entry of externalEntries) {
-		host.loadComponent(componentDescriptor(entry.name, entry.handler));
+		host.loadComponent(createHttpComponentDescriptor(entry.name, entry.handler, "utf8"));
 		const port = basePort + publicIndex;
 		publicIndex += 1;
 		const url = `http://127.0.0.1:${port}`;
@@ -443,7 +392,6 @@ export async function serveProjectOnHost(options: {
 			try {
 				await host.teardownComponent(entry.name);
 			} catch {
-				// already torn down
 			}
 		}
 		for (const key of Object.keys(serviceDiscovery)) {
