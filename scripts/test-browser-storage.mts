@@ -41,6 +41,14 @@ try {
 			outfile: join(directory, "sqlite-worker.js"),
 			logLevel: "silent",
 		}),
+		build({
+			entryPoints: [join(runtime, "src/sqlite-shared-memory-worker.ts")],
+			bundle: true,
+			platform: "browser",
+			format: "esm",
+			outfile: join(directory, "sqlite-shared-memory-worker.js"),
+			logLevel: "silent",
+		}),
 		copyFile(
 			resolveRuntime.resolve("@sqlite.org/sqlite-wasm/sqlite3.wasm"),
 			join(directory, "sqlite3.wasm"),
@@ -49,6 +57,10 @@ try {
 	const files = new Map([
 		["/main.js", ["main.js", "text/javascript"]],
 		["/sqlite-worker.js", ["sqlite-worker.js", "text/javascript"]],
+		[
+			"/sqlite-shared-memory-worker.js",
+			["sqlite-shared-memory-worker.js", "text/javascript"],
+		],
 		["/sqlite3.wasm", ["sqlite3.wasm", "application/wasm"]],
 	]);
 	const server = createServer(async (request, response) => {
@@ -337,6 +349,90 @@ try {
 				"note.Raced",
 				"note.Updated",
 			]);
+			const memoryFirst = await context.newPage();
+			const memorySecond = await context.newPage();
+			await Promise.all([
+				memoryFirst.goto(`http://127.0.0.1:${address.port}/`),
+				memorySecond.goto(`http://127.0.0.1:${address.port}/`),
+			]);
+			const memoryPartition = `memory-test-${Date.now()}`;
+			for (const tab of [memoryFirst, memorySecond]) {
+				await tab.evaluate(async (partitionId) => {
+					Object.defineProperty(navigator.storage, "getDirectory", {
+						configurable: true,
+						value: undefined,
+					});
+					const entry = "/main.js";
+					const sdk: typeof import("../packages/runtimes/runtime-browser/src/index.js") =
+						await import(entry);
+					const store = await sdk.createBrowserEventStore({
+						partitionId,
+						multiTab: true,
+						allowTransient: true,
+					});
+					if (store.persistenceMode !== "transient-memory")
+						throw new Error("Expected transient memory");
+					const received: string[] = [];
+					const subscription = store.subscribe(
+						{ streamId: "memory" },
+						(event) => {
+							received.push(event.type);
+						},
+					);
+					await subscription.ready;
+					const state = globalThis as BrowserTestGlobal;
+					state.hoboTestStore = store;
+					state.hoboTestEvents = received;
+				}, memoryPartition);
+			}
+			await memorySecond.evaluate(async () => {
+				const store = (globalThis as BrowserTestGlobal).hoboTestStore;
+				await store.append(
+					"memory",
+					[{ type: "note.Memory", data: { text: "shared" } }],
+					{
+						expectedSeq: 0,
+						actor: { kind: "system", id: "browser" },
+						tenant: "t",
+					},
+				);
+			});
+			await Promise.all([
+				memoryFirst.waitForFunction(() =>
+					(globalThis as BrowserTestGlobal).hoboTestEvents.includes(
+						"note.Memory",
+					),
+				),
+				memorySecond.waitForFunction(() =>
+					(globalThis as BrowserTestGlobal).hoboTestEvents.includes(
+						"note.Memory",
+					),
+				),
+			]);
+			await memorySecond.close();
+			const memoryEvents = await memoryFirst.evaluate(async () => {
+				const store = (globalThis as BrowserTestGlobal).hoboTestStore;
+				const events = [];
+				for await (const event of store.read("memory")) events.push(event.data);
+				await store.close();
+				return events;
+			});
+			assert.deepEqual(memoryEvents, [{ text: "shared" }]);
+			const memoryReopened = await memoryFirst.evaluate(async (partitionId) => {
+				const entry = "/main.js";
+				const sdk: typeof import("../packages/runtimes/runtime-browser/src/index.js") =
+					await import(entry);
+				const store = await sdk.createBrowserEventStore({
+					partitionId,
+					multiTab: true,
+					allowTransient: true,
+				});
+				const events = [];
+				for await (const event of store.read("memory")) events.push(event);
+				await store.close();
+				return events.length;
+			}, memoryPartition);
+			assert.equal(memoryReopened, 0);
 			console.log(
 				"Browser OPFS journal persisted data and shared subscriptions across tabs.",
 			);
