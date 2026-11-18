@@ -39,7 +39,16 @@ export function assertReplayEqualsLive<S>({
 	normalize = stableValue,
 	runId = "fold-proof",
 }: AssertReplayEqualsLiveInput<S>): ReplayReport {
-	const eventSlice = events.filter((event) => isAtOrBefore(event, targetSeq));
+	const capturedEvents = events.map((event) => clone(event));
+	const capturedTarget = Object.fromEntries(
+		Object.getOwnPropertyNames(targetSeq).map((streamId) => [
+			streamId,
+			must(targetSeq[streamId], `target sequence for ${streamId}`),
+		]),
+	);
+	const eventSlice = capturedEvents.filter((event) =>
+		isAtOrBefore(event, capturedTarget),
+	);
 	const replayEvents = [...eventSlice].sort(compareCanonicalEventOrder);
 
 	const liveState = runFold({
@@ -81,8 +90,8 @@ export function assertReplayEqualsLive<S>({
 
 	return {
 		runId,
-		seqVector: toSeqVectorEntries(targetSeq),
-		readSetHash: hashReadSet(events),
+		seqVector: toSeqVectorEntries(capturedTarget),
+		readSetHash: hashReadSet(capturedEvents),
 		stateDigest: crypto
 			.createHash("sha256")
 			.update(stableStringify(normalizedReplay))

@@ -41,6 +41,27 @@ it("ignores inherited sequence entries in a supplied target vector", () => {
 	expect(report.stateDigest).toBe(digest(0));
 });
 
+it("ignores inherited entries on the snapshot's object prototype", () => {
+	const key = "sequence_vector_inherited_boundary";
+	const previous = Object.getOwnPropertyDescriptor(Object.prototype, key);
+	try {
+		Object.defineProperty(Object.prototype, key, {
+			value: 10,
+			configurable: true,
+		});
+		const report = assertReplayEqualsLive({
+			events: [event(key, 1)],
+			targetSeq: {},
+			initialState: 0,
+			fold: (count) => count + 1,
+		});
+		expect(report.stateDigest).toBe(digest(0));
+	} finally {
+		if (previous) Object.defineProperty(Object.prototype, key, previous);
+		else Reflect.deleteProperty(Object.prototype, key);
+	}
+});
+
 it("tracks the maximum sequence for arbitrary generated stream names", () => {
 	const stream = fc.oneof(
 		fc.string({ maxLength: 15 }),

@@ -135,8 +135,11 @@ such as `new Date()` or reads from external state, and callbacks must not make
 the intrinsic properties impossible to restore.
 
 Replay sequence vectors retain stream IDs such as `__proto__` and
-`constructor`; an explicit target vector uses only its own entries. Event
-sequence numbers and the target vector are still trusted inputs to the harness.
+`constructor`; an explicit target vector uses only its own string entries,
+including non-enumerable ones. The harness captures their values once before
+filtering events and captures the supplied events before running either fold,
+so caller edits during a fold cannot change the reported boundary or read set.
+Event sequence numbers and target values remain trusted inputs.
 
 Within one loaded runtime module, `start` and `resume` refuse another active
 execution with the same run ID and the same `EventStoreWriter` object, even
