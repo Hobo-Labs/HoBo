@@ -252,18 +252,16 @@ export function quoteAvailablePricing(
 		) {
 			continue;
 		}
-		const rateCard = tryResolveRateCard(
+		const resolved = tryResolveRateCard(
 			catalog,
 			agreement,
 			scenario.at,
 			scenario.horizon,
 		);
-		if (rateCard === undefined) {
-			return failed(
-				"PRICING_MODEL_INCOMPLETE",
-				"agreement has no effective rate card",
-			);
+		if (!resolved.ok) {
+			return failed(resolved.fault.code, resolved.fault.message);
 		}
+		const rateCard = resolved.card;
 		const workloadsForAgreement = workloadsAll.filter(
 			(entry) => entry.agreementRef === agreement.id,
 		);

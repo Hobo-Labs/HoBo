@@ -56,17 +56,21 @@ export function resolveAgreement(
 	return match;
 }
 
+export type ResolvedRateCard =
+	| { readonly ok: true; readonly card: RateCard }
+	| { readonly ok: false; readonly fault: PricingFault };
+
 export function tryResolveRateCard(
 	catalog: PricingCatalog,
 	agreement: ProviderAgreement,
 	at: string,
 	horizon: string,
-): RateCard | undefined {
+): ResolvedRateCard {
 	try {
-		return resolveRateCard(catalog, agreement, at, horizon);
+		return { ok: true, card: resolveRateCard(catalog, agreement, at, horizon) };
 	} catch (error) {
-		if (error instanceof PricingFault && error.code === "RATE_CARD_NOT_FOUND") {
-			return undefined;
+		if (error instanceof PricingFault) {
+			return { ok: false, fault: error };
 		}
 		throw error;
 	}

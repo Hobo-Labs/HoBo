@@ -263,6 +263,18 @@ describe("declared pricing availability", () => {
 		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
 	});
 
+	it("rejects malformed quote intervals without throwing", () => {
+		const broken = scenario();
+		broken.at = "not-a-date";
+		rehashScenario(broken);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, broken)),
+		).toMatchObject({
+			ok: false,
+			code: "INVALID_PRICING_INPUT",
+		});
+	});
+
 	it("rejects graduated usage charges with hollow tiers", () => {
 		const incomplete = scenario();
 		const card = incomplete.catalog?.rateCards[0];
