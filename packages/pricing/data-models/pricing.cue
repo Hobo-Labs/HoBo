@@ -353,7 +353,7 @@ package data_models
 }
 
 #QuoteScenario: {
-	action:             "place" | "dispatch" | "rebalance" | "migrate" | "cancel"
+	action:             "place" | "dispatch" | "rebalance" | "migrate" | "cancel" | "destroy"
 	at:                 #UtcTimestamp
 	horizon:            #UtcTimestamp
 	pricingCatalogHash: #Digest
@@ -363,7 +363,99 @@ package data_models
 	candidate: [...#WorkloadDelta]
 	sourceProviderAgreementIds: [...string & !=""]
 	options:            #QuoteOptions
+	destroyCancelsAgreement?: bool
+	if action == "destroy" {
+		destroyCancelsAgreement: bool
+	}
 	pricingCatalogHash: catalog.catalogHash
+}
+
+#PricingModelScope: {
+	modelId:            string & !=""
+	revision:           string & !=""
+	tenantId:           string & !=""
+	providerId:         string & !=""
+	providerAccountRef: string & !=""
+	productId:          string & !=""
+}
+
+#DeveloperPricingModel: {
+	scope:    #PricingModelScope
+	scenario: #QuoteScenario
+}
+
+#UnavailablePricingModel: {
+	reason: string & !=""
+}
+
+#PricingAvailability: {
+	unavailable?:     #UnavailablePricingModel
+	developerModel?:  #DeveloperPricingModel
+	_exactlyOneState: true & ((unavailable != _|_) != (developerModel != _|_))
+}
+
+#BudgetRoutingDisclosure: {
+	evaluation:  "not-evaluated" | "allowed" | "denied" | "not-applicable" | "unavailable"
+	reservation: "not-created" | "held" | "uncertain" | "settled" | "released"
+	if evaluation == "not-evaluated" {
+		reservation: "not-created"
+	}
+}
+
+#TargetPricingResource: {
+	resourceId:         string & !=""
+	providerId:         string & !=""
+	providerAccountRef: string & !=""
+	productId:          string & !=""
+}
+
+#TargetPricingInventory: {
+	targetId:    string & !=""
+	tenantId:    string & !=""
+	planDigest:  #Digest
+	complete:    bool
+	evidenceRef: string
+	resources: [...#TargetPricingResource] & [_, ...]
+	operation?: "deploy" | "destroy"
+	if complete {evidenceRef: string & !=""}
+	_limit: true & (len(resources) <= 256)
+	_unique: {
+		for i, left in resources
+		for j, right in resources
+		if j > i {"\(i)/\(j)": true & (left.resourceId != right.resourceId)}
+	}
+}
+
+#TargetPricingBinding: {
+	resourceId:     string & !=""
+	candidateIndex: int & >=0 & <256
+}
+
+#TargetPricingModel: {
+	modelId:    string & !=""
+	revision:   string & !=""
+	planDigest: #Digest
+	scenario:   #QuoteScenario
+	bindings: [...#TargetPricingBinding] & [_, ...]
+	_limit:          true & (len(bindings) <= 256)
+	_candidateCount: true & (len(bindings) == len(scenario.candidate))
+	_unique: {
+		for i, left in bindings
+		for j, right in bindings
+		if j > i {
+			"\(i)/\(j)/resource":  true & (left.resourceId != right.resourceId)
+			"\(i)/\(j)/candidate": true & (left.candidateIndex != right.candidateIndex)
+		}
+		for i, binding in bindings {
+			"\(i)/range": true & (binding.candidateIndex < len(scenario.candidate))
+		}
+	}
+}
+
+#TargetPricingAvailability: {
+	unavailable?:     #UnavailablePricingModel
+	model?:           #TargetPricingModel
+	_exactlyOneState: true & ((unavailable != _|_) != (model != _|_))
 }
 
 #QuoteAmounts: {
@@ -433,9 +525,9 @@ package data_models
 }
 
 #PricingRejected: {
-	schema:   "hobo.pricing.rejected/v1"
-	code:     string & =~"^[A-Z][A-Z0-9_]+$"
-	message:  string & !=""
+	schema:  "hobo.pricing.rejected/v1"
+	code:    string & =~"^[A-Z][A-Z0-9_]+$"
+	message: string & !=""
 	unpriced: [...#UnpricedItem]
 	rejectedCandidates: [...#RejectedCandidate]
 }
@@ -590,47 +682,51 @@ package data_models
 }
 
 #SandboxAllowance: {
-	cpuVcpuMs: int & >=0
-	memoryMbMs: int & >=0
-	egressBytes: int & >=0
-	creations: int & >=0
-	proxyBytes: int & >=0
-	proxySessions: int & >=0
+	cpuVcpuMs:          int & >=0
+	memoryMbMs:         int & >=0
+	egressBytes:        int & >=0
+	creations:          int & >=0
+	proxyBytes:         int & >=0
+	proxySessions:      int & >=0
 	proxyControlCalls?: int & >=0
 }
 
 #SandboxPricing: {
-	vcpus: int & >=1 & <=32
-	memoryMb: int & >=1 & <=1048576
-	cpuMicrosPerVcpuHour: int & >=1
-	memoryMicrosPerGbHour: int & >=1
-	creationMicros: int & >=1
-	egressMicrosPerGb: int & >=1
-	maxEgressBytes: int & >=1
-	proxyMicrosPerGb: int & >=1
-	proxyFixedMicros: int & >=1
-	networkHeadroomBytes: int & >=1
-	bootstrapFixedMicros: int & >=1
-	proxyVmRequired?: bool
-	proxyVmVcpus?: int & >=0 & <=32
-	proxyVmMemoryMb?: int & >=0 & <=1048576
-	proxyVmExtraMs?: int & >=0
-	proxyVmNetworkBytes?: int & >=0
+	vcpus:                        int & >=1 & <=32
+	memoryMb:                     int & >=1 & <=1048576
+	cpuMicrosPerVcpuHour:         int & >=1
+	memoryMicrosPerGbHour:        int & >=1
+	creationMicros:               int & >=1
+	egressMicrosPerGb:            int & >=1
+	maxEgressBytes:               int & >=1
+	proxyMicrosPerGb:             int & >=1
+	proxyFixedMicros:             int & >=1
+	networkHeadroomBytes:         int & >=1
+	bootstrapFixedMicros:         int & >=1
+	proxyVmRequired?:             bool
+	proxyVmVcpus?:                int & >=0 & <=32
+	proxyVmMemoryMb?:             int & >=0 & <=1048576
+	proxyVmExtraMs?:              int & >=0
+	proxyVmNetworkBytes?:         int & >=0
 	proxyVmNetworkHeadroomBytes?: int & >=0
-	region?: string
-	proxyControlMaxCalls?: int & >=0
-	proxyControlCallMicros?: int & >=0
-	plan?: "" | "hobby" | "pro" | "enterprise"
+	region?:                      string
+	proxyControlMaxCalls?:        int & >=0
+	proxyControlCallMicros?:      int & >=0
+	plan?:                        "" | "hobby" | "pro" | "enterprise"
 }
 
 #PricingFixture: {
-	catalog:   #PricingCatalog
-	state?:    #FinancialStateView
-	scenario?: #QuoteScenario
-	quote?:    #QuoteVector
+	catalog:             #PricingCatalog
+	state?:              #FinancialStateView
+	scenario?:           #QuoteScenario
+	availability?:       #PricingAvailability
+	routingDisclosure?:  #BudgetRoutingDisclosure
+	targetInventory?:    #TargetPricingInventory
+	targetAvailability?: #TargetPricingAvailability
+	quote?:              #QuoteVector
 	externalQuotes?: [...#ExternalProviderQuote]
 	legacySandboxAllowance?: #SandboxAllowance
-	legacySandboxPricing?: #SandboxPricing
+	legacySandboxPricing?:   #SandboxPricing
 }
 
 #Pricing: #PricingFixture
