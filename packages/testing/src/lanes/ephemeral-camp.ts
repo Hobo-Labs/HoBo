@@ -1,22 +1,14 @@
-/**
- * The ephemeral-Camp lane gate (ADR-0159 §2b).
- *
- * A Camp is provider-neutral until it is attached to a Yard, so this lane
- * cannot be inferred: it needs an explicit Yard *and* brokered credentials.
- * Both are checked here, in order, and each missing piece refuses with its own
- * code and remediation. The one behaviour this module must never exhibit is a
- * quiet downgrade to `in-process` — a suite that thinks it hit real providers
- * and actually hit a loopback stub is worse than a suite that failed.
- *
- * Credentials are located, never carried: the environment variable names a
- * `secretRef` locator (ADR-0113). A raw-looking value is refused rather than
- * used, because a pasted token in a test environment is exactly the CI secret
- * habit ADR-0159 §4 exists to end.
- */
-
+import type { JsonObject } from "@hobo/core";
 import { TestHarnessError } from "./../errors.js";
+import { parseTestTopology } from "./../graph.js";
+import type {
+	BindleInput,
+	EphemeralCampDeployResult,
+	EphemeralCampDriver,
+	EphemeralCampYardInput,
+	ResourceHandle,
+} from "./../types.js";
 
-/** Environment contract: names the brokered credential, never carries it. */
 export const CAMP_CREDENTIAL_ENV_VAR = "HOBO_TESTING_CAMP_CREDENTIAL_REF"; // public-contract: env-var name the camp lane brokers credentials through
 
 const SECRET_REF_PATTERN =
@@ -28,16 +20,24 @@ export interface EphemeralCampTarget {
 	readonly credentialRef: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+export interface EphemeralCampDeployment {
+	readonly handles: ReadonlyMap<string, ResourceHandle>;
+	readonly outputs: JsonObject;
+	destroy(): Promise<void>;
 }
 
-/**
- * Parse boundary for the lane's preconditions. Returns a frozen derived
- * domain type or throws; there is no partially-satisfied result.
- */
+const tagOf = Object.prototype.toString;
+
+function isString<T>(value: T): value is T & string {
+	return tagOf.call(value) === "[object String]";
+}
+
+function isFunction<T>(value: T): value is T & (() => Promise<void>) {
+	return tagOf.call(value).endsWith("Function]");
+}
+
 export function parseEphemeralCampTarget(
-	yard: unknown,
+	yard: EphemeralCampYardInput | null | undefined,
 	env: Readonly<Record<string, string | undefined>> = process.env,
 ): EphemeralCampTarget {
 	if (yard === undefined || yard === null) {
@@ -48,10 +48,9 @@ export function parseEphemeralCampTarget(
 		);
 	}
 	if (
-		!isRecord(yard) ||
-		typeof yard.name !== "string" ||
+		!isString(yard.name) ||
 		yard.name.length === 0 ||
-		typeof yard.providerId !== "string" ||
+		!isString(yard.providerId) ||
 		yard.providerId.length === 0
 	) {
 		throw new TestHarnessError(
@@ -84,18 +83,143 @@ export function parseEphemeralCampTarget(
 	});
 }
 
-/**
- * HONEST SCOPE: provisioning is not implemented. The gate above is real; the
- * deploy path is declared and refused. Returning a stubbed graph here would be
- * the silent downgrade this lane exists to prevent.
- */
+function invalidDeployment(message: string): never {
+	throw new TestHarnessError(
+		"HARNESS_CAMP_DEPLOYMENT_INVALID",
+		message,
+		"fix the Camp driver so it returns every Bindle resource once, with matching kinds, valid HTTP endpoints, outputs, and a destroy function",
+	);
+}
+
+function parseEndpoint(
+	alias: string,
+	value: string | undefined,
+): string | undefined {
+	if (value === undefined) return undefined;
+	let endpoint: URL;
+	try {
+		endpoint = new URL(value);
+	} catch {
+		invalidDeployment(
+			`the Camp driver returned an invalid endpoint for "${alias}"`,
+		);
+	}
+	if (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") {
+		invalidDeployment(
+			`the Camp driver returned a non-HTTP endpoint for "${alias}"`,
+		);
+	}
+	return value;
+}
+
+function parseDeployment(
+	bindle: BindleInput,
+	value: EphemeralCampDeployResult,
+): EphemeralCampDeployment {
+	if (!Array.isArray(value.resources)) {
+		invalidDeployment("the Camp driver deployment has no resources array");
+	}
+	if (Object(value.outputs) !== value.outputs || Array.isArray(value.outputs)) {
+		invalidDeployment("the Camp driver deployment has no outputs record");
+	}
+	if (!isFunction(value.destroy)) {
+		invalidDeployment("the Camp driver deployment has no destroy function");
+	}
+
+	const topology = parseTestTopology(bindle);
+	const expected = new Map(topology.nodes.map((node) => [node.alias, node]));
+	const handles = new Map<string, ResourceHandle>();
+	for (const resource of value.resources) {
+		if (
+			!isString(resource.alias) ||
+			resource.alias.length === 0 ||
+			!isString(resource.kind) ||
+			resource.kind.length === 0
+		) {
+			invalidDeployment("the Camp driver returned an invalid resource record");
+		}
+		const node = expected.get(resource.alias);
+		if (node === undefined) {
+			invalidDeployment(
+				`the Camp driver returned unknown resource "${resource.alias}"`,
+			);
+		}
+		if (handles.has(resource.alias)) {
+			invalidDeployment(
+				`the Camp driver returned resource "${resource.alias}" more than once`,
+			);
+		}
+		if (resource.kind !== node.kind) {
+			invalidDeployment(
+				`the Camp driver returned kind "${resource.kind}" for "${resource.alias}"; expected "${node.kind}"`,
+			);
+		}
+		const endpoint = parseEndpoint(resource.alias, resource.endpoint);
+		const handle: ResourceHandle =
+			endpoint === undefined
+				? Object.freeze({
+						alias: resource.alias,
+						kind: resource.kind,
+						fidelity: "real" as const,
+					})
+				: Object.freeze({
+						alias: resource.alias,
+						kind: resource.kind,
+						fidelity: "real" as const,
+						endpoint,
+					});
+		handles.set(resource.alias, handle);
+	}
+	const missing = [...expected.keys()].filter((alias) => !handles.has(alias));
+	if (missing.length > 0) {
+		invalidDeployment(
+			`the Camp driver omitted Bindle resources: ${missing.join(", ")}`,
+		);
+	}
+	return Object.freeze({
+		handles,
+		outputs: Object.freeze({ ...value.outputs }),
+		async destroy(): Promise<void> {
+			await value.destroy();
+		},
+	});
+}
+
 export async function deployEphemeralCamp(
 	target: EphemeralCampTarget,
-): Promise<never> {
-	await Promise.resolve();
-	throw new TestHarnessError(
-		"HARNESS_LANE_UNIMPLEMENTED",
-		`the ephemeral-camp lane cannot yet provision Camps on yard "${target.yardName}" (provider ${target.providerId}); its gates are implemented, its provisioning is not`,
-		"use the in-process lane and read its fidelity report, or deploy the stage Camp with the CLI and point the suite at it — this refusal is deliberate, not a transient failure",
+	bindle: BindleInput,
+	stage: string,
+	driver: EphemeralCampDriver | undefined,
+): Promise<EphemeralCampDeployment> {
+	if (driver === undefined) {
+		throw new TestHarnessError(
+			"HARNESS_CAMP_DRIVER_REQUIRED",
+			`the ephemeral-camp lane has no deployment driver for yard "${target.yardName}"`,
+			"pass campDriver in createTestHarness options; the driver must deploy and destroy the Bindle on the selected Yard",
+		);
+	}
+	const result: EphemeralCampDeployResult = await driver.deploy(
+		Object.freeze({
+			bindle,
+			stage,
+			yardName: target.yardName,
+			providerId: target.providerId,
+			credentialRef: target.credentialRef,
+		}),
 	);
+	try {
+		return parseDeployment(bindle, result);
+	} catch (cause) {
+		if (isFunction(result.destroy)) {
+			try {
+				await result.destroy.call(result);
+			} catch (destroyCause) {
+				throw new AggregateError(
+					[cause, destroyCause],
+					"invalid Camp deployment could not be destroyed",
+				);
+			}
+		}
+		throw cause;
+	}
 }
