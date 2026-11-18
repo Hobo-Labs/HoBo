@@ -225,6 +225,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		"context-before-claim",
 		"missing-residual",
 		"foreign-camp-before-generation",
+		"unverified-camp-before-generation",
 		"exact-yard-mismatch-before-generation",
 		"exact-yard-match-generation",
 		"wrong-generated-yard-id",
@@ -360,7 +361,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			brokerEnvironmentId: "default",
 		});
 		const expectedYardId = `yard:gen-${expectedKey.slice(7, 23)}`;
-		const request =
+		const preparedRequest =
 			mode === "exact-yard-mismatch-before-generation" ||
 			mode === "exact-yard-match-generation"
 				? {
@@ -401,6 +402,21 @@ describe("yard event-store folds + provider resolvers", () => {
 								},
 							}
 						: baseRequest;
+		const request =
+			mode === "unverified-camp-before-generation"
+				? {
+						...baseRequest,
+						camp: {
+							selectionMode: "compatible" as const,
+							layout: {
+								require: ["special-capability"],
+								prefer: [],
+								labels: {},
+								runtimeRequirements: [],
+							},
+						},
+					}
+				: preparedRequest;
 
 		const generation = planYardGeneration({
 			ownerTenantId: "local",
@@ -472,6 +488,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		});
 		if (
 			mode !== "foreign-camp-before-generation" &&
+			mode !== "unverified-camp-before-generation" &&
 			mode !== "invalid-residency-before-generation" &&
 			mode !== "exact-yard-mismatch-before-generation"
 		)
@@ -1016,6 +1033,15 @@ describe("yard event-store folds + provider resolvers", () => {
 			if (mode === "foreign-camp-before-generation") {
 				expect(result.outcome).toBe("rejected");
 				expect(result.reasons?.[0]?.code).toBe("camp-yard-mismatch");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				expect(authority.read(now).reservedMicros).toBe(0);
+				return;
+			}
+			if (mode === "unverified-camp-before-generation") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe("camp-constraints-unverified");
+				expect(authorizationCalls).toBe(0);
 				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)).toBeUndefined();
 				expect(authority.read(now).reservedMicros).toBe(0);
