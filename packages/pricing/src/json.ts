@@ -22,7 +22,6 @@ import {
 export type JsonValue = ProtobufJsonValue;
 export type JsonObject = Record<string, JsonValue>;
 
-/** Bound work before traversing caller-supplied pricing trees or decoding them. */
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this is the untrusted input boundary; primitive type checks precede bounded traversal and protobuf parsing. */
 export function isBoundedPricingInput<T>(input: T): boolean {
 	let remaining = 25_000;
@@ -77,8 +76,6 @@ export function isBoundedPricingInput<T>(input: T): boolean {
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-/** Reject data protobuf cloning would discard or coerce. Unknown wire fields
- * cannot be rated safely; an empty unknown-field list carries no data. */
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: these values are detached, bounded data inspected at the protobuf input boundary. */
 export function isExactProtoMessage<Desc extends DescMessage>(
 	schema: Desc,
@@ -141,7 +138,6 @@ export function isExactProtoMessage<Desc extends DescMessage>(
 
 export function parseJson(text: string): JsonValue | undefined {
 	try {
-		// SAFETY: JSON.parse produces only JSON values; message parsers refine them next.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;

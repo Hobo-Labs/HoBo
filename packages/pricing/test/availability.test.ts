@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	ChargeComponentSchema,
 	ProviderAgreementSchema,
+	RateCardSchema,
 } from "../src/_generated/pricing_pb.js";
 import {
 	developerPricing,
@@ -237,6 +238,50 @@ describe("declared pricing availability", () => {
 			ok: false,
 			code: "PRICING_MODEL_INCOMPLETE",
 		});
+	});
+
+	it("rejects an empty rate card on an extra in-scope active agreement", () => {
+		const incomplete = scenario();
+		const state = incomplete.state;
+		const source = state?.agreements[0];
+		const sourceCard = incomplete.catalog?.rateCards[0];
+		if (state === undefined || source === undefined || sourceCard === undefined)
+			throw new Error("fixture agreement missing");
+		const agreement = clone(ProviderAgreementSchema, source);
+		agreement.id = "agreement-b";
+		for (const entry of agreement.rateSchedule) entry.rateCardId = "empty-card";
+		state.agreements.push(agreement);
+		const rateCard = clone(RateCardSchema, sourceCard);
+		rateCard.id = "empty-card";
+		rateCard.charges = [];
+		incomplete.catalog?.rateCards.push(rateCard);
+		rehashScenario(incomplete);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+	});
+
+	it("rejects a charge component without a base id", () => {
+		const incomplete = scenario();
+		const card = incomplete.catalog?.rateCards[0];
+		if (card === undefined) throw new Error("fixture rate card missing");
+		card.charges.push(
+			create(ChargeComponentSchema, {
+				variant: {
+					case: "fixed",
+					value: {
+						cadence: "monthly",
+						timing: "advance",
+						amount: { decimal: "10", currency: "USD" },
+						proration: "none",
+					},
+				},
+			}),
+		);
+		rehashScenario(incomplete);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
 	});
 
 	it("rejects fixed charges on active agreements without workloads", () => {

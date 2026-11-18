@@ -13,11 +13,10 @@ import {
 	isExactProtoMessage,
 	type JsonValue,
 } from "./json.js";
-import { rateCardChargeIncomplete } from "./charge-coverage.js";
+import { rateCardChargesIncomplete } from "./charge-coverage.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
-/** The scope is a claim by the model author, not a provider guarantee. */
 export type DeveloperPricingScope = Omit<PricingModelScope, "$typeName">;
 
 export type AvailabilityQuote =
@@ -30,14 +29,12 @@ export type AvailabilityQuote =
 	  }
 	| { readonly ok: false; readonly code: string; readonly reason: string };
 
-/** A target without known terms is not a free target. */
 export function pricingUnavailable(reason: string): PricingAvailability {
 	return create(PricingAvailabilitySchema, {
 		state: { case: "unavailable", value: { reason } },
 	});
 }
 
-/** Decode JSON before inspecting its discriminated availability state. */
 export function parsePricingAvailability(
 	value: JsonValue,
 ): PricingAvailability | undefined {
@@ -49,7 +46,6 @@ export function parsePricingAvailability(
 	}
 }
 
-/** Attach declarative, tenant/account/product-scoped terms to a target. */
 export function developerPricing(
 	scope: DeveloperPricingScope,
 	scenario: QuoteScenario,
@@ -117,11 +113,6 @@ function validName(value: string): boolean {
 	);
 }
 
-/**
- * Rates one declared offering. This checks consistency of the supplied model;
- * only an independently inventoried target can establish completeness of the
- * actual deployment and only the hosting authority can authorize spending.
- */
 export function quoteAvailablePricing(
 	providerId: string,
 	availability: PricingAvailability,
@@ -270,13 +261,11 @@ export function quoteAvailablePricing(
 			(entry) => entry.agreementRef === agreement.id,
 		);
 		if (
-			rateCard.charges.some((charge) =>
-				rateCardChargeIncomplete(
-					charge,
-					meterDimensions,
-					agreement,
-					workloadsForAgreement,
-				),
+			rateCardChargesIncomplete(
+				rateCard.charges,
+				meterDimensions,
+				agreement,
+				workloadsForAgreement,
 			)
 		) {
 			return failed(

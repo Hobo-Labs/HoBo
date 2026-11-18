@@ -18,7 +18,7 @@ import {
 	type JsonValue,
 	stableHash,
 } from "./json.js";
-import { rateCardChargeIncomplete } from "./charge-coverage.js";
+import { rateCardChargesIncomplete } from "./charge-coverage.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
@@ -252,7 +252,6 @@ function refuse(code: string, reason: string): TargetPricingQuote {
 	return { ok: false, code, reason };
 }
 
-/** Quote the complete target jointly so shared credits and commitments are consumed once. */
 export function quoteTargetPricing(
 	inventory: TargetPricingInventory,
 	availability: TargetPricingAvailability,
@@ -491,14 +490,11 @@ export function quoteTargetPricing(
 			(entry) => entry.agreementRef === agreement.id,
 		);
 		if (
-			rateCard.charges.length === 0 ||
-			rateCard.charges.some((charge) =>
-				rateCardChargeIncomplete(
-					charge,
-					dimensions,
-					agreement,
-					workloadsForAgreement,
-				),
+			rateCardChargesIncomplete(
+				rateCard.charges,
+				dimensions,
+				agreement,
+				workloadsForAgreement,
 			)
 		)
 			return refuse(

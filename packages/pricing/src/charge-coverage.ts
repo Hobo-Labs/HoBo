@@ -18,12 +18,25 @@ function fixedQuantityMissing(
 	);
 }
 
+export function rateCardChargesIncomplete(
+	charges: readonly ChargeComponent[],
+	meterDimensions: ReadonlySet<string>,
+	agreement: ProviderAgreement,
+	workloads: readonly WorkloadDelta[],
+): boolean {
+	if (charges.length === 0) return true;
+	return charges.some((charge) =>
+		rateCardChargeIncomplete(charge, meterDimensions, agreement, workloads),
+	);
+}
+
 export function rateCardChargeIncomplete(
 	charge: ChargeComponent,
 	meterDimensions: ReadonlySet<string>,
 	agreement: ProviderAgreement,
 	workloads: readonly WorkloadDelta[],
 ): boolean {
+	if (charge.base === undefined || charge.base.id.length === 0) return true;
 	if (charge.variant.case === undefined) return true;
 	if (charge.variant.case === "usage") {
 		return !meterDimensions.has(charge.variant.value.dimension);
