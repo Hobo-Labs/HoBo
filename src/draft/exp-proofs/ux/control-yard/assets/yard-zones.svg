@@ -15,7 +15,6 @@
   <text x="1100" y="195" text-anchor="middle" font-family="monospace" font-size="14">Cost Booth</text>
   <rect x="40" y="100" width="200" height="140" fill="#fff" stroke="#000" stroke-width="2"/>
   <text x="140" y="175" text-anchor="middle" font-family="monospace" font-size="14">Error Bunker</text>
-  <!-- Bo silhouette mark (monochrome) -->
   <circle cx="190" cy="600" r="18" fill="#000"/>
   <ellipse cx="183" cy="595" rx="4" ry="5" fill="#fff"/>
   <ellipse cx="197" cy="595" rx="4" ry="5" fill="#fff"/>
