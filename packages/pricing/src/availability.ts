@@ -246,6 +246,12 @@ export function quoteAvailablePricing(
 		const measured = new Set(
 			workload.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== workload.usage.length) {
+			return failed(
+				"PRICING_MODEL_INCOMPLETE",
+				"workload usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !measured.has(dimension)) ||
 			[...measured].some((dimension) => !dimensions.includes(dimension))
