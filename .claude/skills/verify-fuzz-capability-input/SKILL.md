@@ -9,7 +9,7 @@ description: Verify fuzz-oracle capability input capture, attenuation and replay
 
 **Why:** An unsupported verb used to appear in live state but disappear on replay; caller-owned arrays could also change live state without an event. Both cases produce false fuzz-oracle divergences.
 
-**Review baseline:** `968e6e0dd289f4f1297bf2eed743847ed04a01f7`.
+**Review baseline:** `8e7a9ed158f6385ba75af64cacb1b9404fd5ef69`.
 
 ## Covered code and checks
 
@@ -50,6 +50,8 @@ stateDiagram-v2
 The pre-fix regression accepted an unsupported verb that replay dropped; a caller edit also changed live state without changing history. Real-code tests reproduce both. Four weakened models yield counterexamples for invalid additions, invalid attenuation, retained input and widened attenuation. Eight scratch implementation mutations exercise the guards, event data, copy, attenuation and validation ordering; the restored full skill passes. Z3 proves abstract set-intersection properties and finds a widening counterexample if the prior set is ignored.
 
 The model represents verbs as sets, bounds the vocabulary and checks one add followed by one attenuation. It does not model list order or duplicates, which are checked by generated tests, nor prove TypeScript refinement, direct mutation of public model maps, arbitrary reentrant getters, event persistence or production authorization. Previously recorded histories containing unsupported verbs can still diverge and may need regeneration. This is an in-memory fuzz oracle.
+
+The related [event history model](../verify-fuzz-event-history/SKILL.md) checks event ownership and ordered public appends.
 
 ## Keep in sync
 

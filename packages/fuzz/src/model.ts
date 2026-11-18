@@ -8,6 +8,18 @@ export const FUZZ_INVARIANT_SCHEMA = "hobo.fuzz.invariant-verdict/v1" as const;
 // public-contract: property-oracle trace schema id
 export const FUZZ_TRACE_SCHEMA = "hobo.fuzz.trace/v1" as const;
 
+const REPLAY_OWNED_EVENT_KINDS = new Set([
+	"snapshot.taken",
+	"rollback",
+	"model.restored",
+	"bindle.created",
+	"capability.added",
+	"capability.attenuated",
+	"resource.applied",
+	"resource.interrupted",
+	"bindle.destroyed",
+]);
+
 export const ALL_VERBS = [
 	"get",
 	"set",
@@ -131,10 +143,17 @@ export class ControlModel {
 	readonly bindles = new Map<string, BindleSlot>();
 	readonly capabilities = new Map<string, Capability>();
 	readonly resources = new Map<string, OwnedResource>();
-	readonly events: ModelEvent[] = [];
+	#eventLog: ModelEvent[] = [];
 	readonly snapshots = new Map<number, string>();
 	lastRollbackTarget: number | null = null;
 	private replayBaseline: string | undefined;
+
+	get events(): ModelEvent[] {
+		return this.#eventLog.map((event) => ({
+			...event,
+			payload: { ...event.payload },
+		}));
+	}
 
 	tick(): number {
 		if (
@@ -153,18 +172,26 @@ export class ControlModel {
 		kind: string,
 		payload: Record<string, string>,
 	): void {
-		this.events.push({
-			seq: this.events.length,
+		this.note(tenantId, kind, payload);
+	}
+
+	#appendEvent(
+		tenantId: string,
+		kind: string,
+		payload: Record<string, string>,
+	): void {
+		this.#eventLog.push({
+			seq: this.#eventLog.length,
 			tenantId,
 			kind,
-			payload,
+			payload: { ...payload },
 		});
 	}
 
 	snapshot(): number {
 		const at = this.clock;
 		this.snapshots.set(at, this.serialize());
-		this.append("system", "snapshot.taken", { at: String(at) });
+		this.#appendEvent("system", "snapshot.taken", { at: String(at) });
 		return at;
 	}
 
@@ -195,7 +222,7 @@ export class ControlModel {
 		}
 		const pristine =
 			this.clock === 0 &&
-			this.events.length === 0 &&
+			this.#eventLog.length === 0 &&
 			this.snapshots.size === 0 &&
 			this.bindles.size === 0 &&
 			this.capabilities.size === 0 &&
@@ -217,7 +244,7 @@ export class ControlModel {
 		for (const [id, row] of blob.capabilities) this.capabilities.set(id, row);
 		for (const [id, row] of blob.resources) this.resources.set(id, row);
 		if (pristine) this.replayBaseline = raw;
-		else this.append("system", "model.restored", { snapshot: raw });
+		else this.#appendEvent("system", "model.restored", { snapshot: raw });
 	}
 
 	fingerprint(tenantId?: string): string {
@@ -262,7 +289,7 @@ export class ControlModel {
 		);
 		if ((existing && existing.tenantId !== tenantId) || foreignResource) {
 			this.tick();
-			this.append(tenantId, "bindle.create-refused", {
+			this.#appendEvent(tenantId, "bindle.create-refused", {
 				bindleId,
 				reason: "owned-by-other-tenant",
 			});
@@ -275,7 +302,7 @@ export class ControlModel {
 			manifestHash,
 			createdAt,
 		});
-		this.append(tenantId, "bindle.created", { bindleId, manifestHash });
+		this.#appendEvent(tenantId, "bindle.created", { bindleId, manifestHash });
 		return { ok: true };
 	}
 
@@ -288,7 +315,7 @@ export class ControlModel {
 		const existing = this.capabilities.get(capabilityId);
 		if (existing && existing.tenantId !== tenantId) {
 			this.tick();
-			this.append(tenantId, "capability.add-refused", { capabilityId });
+			this.#appendEvent(tenantId, "capability.add-refused", { capabilityId });
 			return;
 		}
 		this.tick();
@@ -297,7 +324,7 @@ export class ControlModel {
 			tenantId,
 			verbs: captured,
 		});
-		this.append(tenantId, "capability.added", {
+		this.#appendEvent(tenantId, "capability.added", {
 			capabilityId,
 			verbs: captured.join(","),
 		});
@@ -313,21 +340,27 @@ export class ControlModel {
 		if (!cap) return;
 		if (cap.tenantId !== tenantId) {
 			this.tick();
-			this.append(tenantId, "capability.attenuate-refused", { capabilityId });
+			this.#appendEvent(tenantId, "capability.attenuate-refused", {
+				capabilityId,
+			});
 			return;
 		}
 		this.tick();
 		const allowed = new Set(cap.verbs);
 		cap.verbs = captured.filter((verb) => allowed.has(verb));
-		this.append(cap.tenantId, "capability.attenuated", {
+		this.#appendEvent(cap.tenantId, "capability.attenuated", {
 			capabilityId,
 			verbs: cap.verbs.join(","),
 		});
 	}
 
 	note(tenantId: string, kind: string, payload: Record<string, string>): void {
+		if (REPLAY_OWNED_EVENT_KINDS.has(kind)) {
+			throw new Error("fuzz.reserved_event_kind");
+		}
+		const captured = captureEventPayload(payload);
 		this.tick();
-		this.append(tenantId, kind, payload);
+		this.#appendEvent(tenantId, kind, captured);
 	}
 
 	apply(
@@ -339,7 +372,7 @@ export class ControlModel {
 		const bindle = this.bindles.get(bindleId);
 		if (!bindle || bindle.tenantId !== tenantId) {
 			this.tick();
-			this.append(tenantId, "resource.apply-refused", {
+			this.#appendEvent(tenantId, "resource.apply-refused", {
 				bindleId,
 				idempotencyKey,
 				reason: bindle ? "owned-by-other-tenant" : "missing-bindle",
@@ -368,7 +401,7 @@ export class ControlModel {
 			} else if (opts.fail === true) {
 				existing.status = "failed";
 			}
-			this.append(tenantId, "resource.applied", {
+			this.#appendEvent(tenantId, "resource.applied", {
 				id: existing.id,
 				bindleId: existing.bindleId,
 				idempotencyKey,
@@ -388,7 +421,7 @@ export class ControlModel {
 			applyCount: 1,
 		};
 		this.resources.set(resource.id, resource);
-		this.append(tenantId, "resource.applied", {
+		this.#appendEvent(tenantId, "resource.applied", {
 			id: resource.id,
 			bindleId,
 			idempotencyKey,
@@ -415,7 +448,7 @@ export class ControlModel {
 		if (!resource) return;
 		this.tick();
 		resource.status = "failed";
-		this.append(tenantId, "resource.interrupted", {
+		this.#appendEvent(tenantId, "resource.interrupted", {
 			id: resource.id,
 			idempotencyKey: resource.idempotencyKey,
 		});
@@ -425,7 +458,7 @@ export class ControlModel {
 		const bindle = this.bindles.get(bindleId);
 		if (bindle && bindle.tenantId !== tenantId) {
 			this.tick();
-			this.append(tenantId, "bindle.destroy-refused", {
+			this.#appendEvent(tenantId, "bindle.destroy-refused", {
 				bindleId,
 				reason: "owned-by-other-tenant",
 			});
@@ -437,7 +470,7 @@ export class ControlModel {
 				resource.status = "destroyed";
 			}
 		}
-		this.append(tenantId, "bindle.destroyed", { bindleId });
+		this.#appendEvent(tenantId, "bindle.destroyed", { bindleId });
 		return { ok: true };
 	}
 
@@ -456,7 +489,7 @@ export class ControlModel {
 		this.tick();
 		this.restoreTenant(tenantId, blob);
 		this.lastRollbackTarget = targetClock;
-		this.append(tenantId, "rollback", { target: String(targetClock) });
+		this.#appendEvent(tenantId, "rollback", { target: String(targetClock) });
 		const restored = this.fingerprint(tenantId);
 		const ok = restored === expected;
 		return verdict(
@@ -494,7 +527,7 @@ export class ControlModel {
 	changeTenant(bindleId: string, toTenantId: string): void {
 		const bindle = this.bindles.get(bindleId);
 		this.tick();
-		this.append(bindle?.tenantId ?? "system", "tenant.change-refused", {
+		this.#appendEvent(bindle?.tenantId ?? "system", "tenant.change-refused", {
 			bindleId,
 			toTenantId,
 			reason: "cross-tenant move is fail-closed in the reference model",
@@ -583,7 +616,7 @@ export class ControlModel {
 	replay(): string {
 		const copy = new ControlModel();
 		if (this.replayBaseline !== undefined) copy.restore(this.replayBaseline);
-		for (const event of this.events) {
+		for (const event of this.#eventLog) {
 			if (event.kind === "snapshot.taken") {
 				copy.snapshot();
 			} else if (event.kind === "rollback") {
@@ -699,6 +732,25 @@ function captureVerbs(verbs: readonly Verb[]): Verb[] {
 	if (!Array.isArray(verbs)) throw new Error("fuzz.invalid_verbs");
 	const captured = [...verbs];
 	if (!captured.every(isVerb)) throw new Error("fuzz.invalid_verbs");
+	return captured;
+}
+
+function captureEventPayload(payload: Record<string, string>) {
+	if (!payload || Object(payload) !== payload || Array.isArray(payload)) {
+		throw new Error("fuzz.invalid_event_payload");
+	}
+	const prototype = Object.getPrototypeOf(payload);
+	if (prototype !== Object.prototype && prototype !== null) {
+		throw new Error("fuzz.invalid_event_payload");
+	}
+	const captured = { ...payload };
+	if (
+		!Object.values(captured).every(
+			(value) => value?.constructor === String && Object(value) !== value,
+		)
+	) {
+		throw new Error("fuzz.invalid_event_payload");
+	}
 	return captured;
 }
 

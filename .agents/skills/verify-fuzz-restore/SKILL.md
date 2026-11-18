@@ -9,7 +9,7 @@ description: Verify fuzz-oracle snapshot restoration and replay baselines.
 
 **Why:** Replaying from an empty baseline or reusing an old clock can make a correct restored state look divergent or overwrite a checkpoint. Partially applying malformed input can corrupt the oracle itself.
 
-**Review baseline:** `968e6e0dd289f4f1297bf2eed743847ed04a01f7`.
+**Review baseline:** `8e7a9ed158f6385ba75af64cacb1b9404fd5ef69`.
 
 ## Covered code and checks
 
@@ -49,6 +49,8 @@ Before the fix, a fresh restore replayed from empty state; an existing restore c
 The model abstracts the parser to a valid/invalid flag, the snapshot to one bit, and the history to one replacement. It does not prove that TypeScript refines the model, cover all parser inputs or event kinds, model concurrent mutation, allocation failure or persistence, or establish authenticity. The fingerprint is a deterministic projection: it omits fields and is not a cryptographic integrity guarantee. Legacy snapshots with malformed rows, unsupported verbs or inconsistent fingerprints are now rejected; overwritten checkpoints from earlier versions cannot be recovered by this change. This is an in-memory testing oracle, not a proof of the production control plane.
 
 The related [capability input model](../verify-fuzz-capability-input/SKILL.md) checks verb capture and replay.
+
+The related [event history model](../verify-fuzz-event-history/SKILL.md) checks event ownership and ordered public appends.
 
 ## Keep in sync
 
