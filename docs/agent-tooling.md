@@ -75,7 +75,8 @@ The prompt hook recognizes common, explicit English requests to stop the whole
 task, clears the record, and allows the response without forcing a continuation.
 It handles these phrases conservatively: ambiguous wording and scope changes
 still require the agent to follow the human's instructions and clear an obsolete
-record. Interruptions and Cursor error or abort events also clear pending state.
+record. An interruption or Cursor abort clears pending state; a Cursor error
+preserves ready work for a later turn.
 
 A ready record can cause three additional reviews followed by one final
 continuation asking the agent to report unresolved work. After repeated stops
