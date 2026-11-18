@@ -9,14 +9,14 @@ import {
 } from "./_generated/pricing_pb.js";
 import { tryResolveRateCard } from "./catalog.js";
 import {
+	agreementRequiresRateCardValidation,
+	rateCardChargesIncomplete,
+} from "./charge-coverage.js";
+import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
 	type JsonValue,
 } from "./json.js";
-import {
-	agreementRequiresRateCardValidation,
-	rateCardChargesIncomplete,
-} from "./charge-coverage.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
@@ -242,15 +242,26 @@ export function quoteAvailablePricing(
 		}
 	}
 	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
-	const meterDimensions = new Set(dimensions);
 	for (const agreement of state.agreements) {
 		if (!agreementRequiresRateCardValidation(agreement, workloadsAll)) continue;
+		const products = catalog.products.filter(
+			(product) => product.id === agreement.productId,
+		);
+		const pricedProduct = products[0];
+		if (products.length !== 1 || pricedProduct === undefined) {
+			return failed("PRICING_MODEL_INCOMPLETE", "priced product is missing");
+		}
+		const agreementDimensions = pricedProduct.meters.map(
+			(meter) => meter.dimension,
+		);
 		if (
-			agreement.productId !== scope.productId ||
-			agreement.tenantId !== scope.tenantId ||
-			agreement.providerAccountRef !== scope.providerAccountRef
+			agreementDimensions.some((dimension) => !validName(dimension)) ||
+			new Set(agreementDimensions).size !== agreementDimensions.length
 		) {
-			continue;
+			return failed(
+				"PRICING_MODEL_INCOMPLETE",
+				"the target needs a workload and unambiguous declared meters",
+			);
 		}
 		const resolved = tryResolveRateCard(
 			catalog,
@@ -261,14 +272,13 @@ export function quoteAvailablePricing(
 		if (!resolved.ok) {
 			return failed(resolved.fault.code, resolved.fault.message);
 		}
-		const rateCard = resolved.card;
 		const workloadsForAgreement = workloadsAll.filter(
 			(entry) => entry.agreementRef === agreement.id,
 		);
 		if (
 			rateCardChargesIncomplete(
-				rateCard.charges,
-				meterDimensions,
+				resolved.card.charges,
+				new Set(agreementDimensions),
 				agreement,
 				workloadsForAgreement,
 			)

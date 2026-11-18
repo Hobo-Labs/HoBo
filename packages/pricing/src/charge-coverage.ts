@@ -16,7 +16,7 @@ function moneyIncomplete(money: Money | undefined): boolean {
 
 function tierIncomplete(tier: Tier): boolean {
 	if (tier.from.length === 0) return true;
-	return moneyIncomplete(tier.flatAmount) && moneyIncomplete(tier.unitAmount);
+	return moneyIncomplete(tier.flatAmount) || moneyIncomplete(tier.unitAmount);
 }
 
 function usagePriceIncomplete(charge: ChargeComponent): boolean {
@@ -24,15 +24,13 @@ function usagePriceIncomplete(charge: ChargeComponent): boolean {
 	const price = charge.variant.value.price;
 	if (price.case === undefined) return true;
 	if (price.case === "perUnit") {
-		return price.value.decimal.length === 0 || price.value.currency.length === 0;
+		return (
+			price.value.decimal.length === 0 || price.value.currency.length === 0
+		);
 	}
 	if (price.case === "package") {
 		const amount = price.value.packageAmount;
-		return (
-			amount === undefined ||
-			amount.decimal.length === 0 ||
-			amount.currency.length === 0
-		);
+		return price.value.packageSize.length === 0 || moneyIncomplete(amount);
 	}
 	if (price.case === "graduated" || price.case === "volume") {
 		if (price.value.tiers.length === 0) return true;
@@ -59,7 +57,9 @@ export function agreementRequiresRateCardValidation(
 	agreement: ProviderAgreement,
 	workloads: readonly WorkloadDelta[],
 ): boolean {
-	if (agreement.status === "active") return true;
+	if (agreement.status === "active" || agreement.status === "past-due") {
+		return true;
+	}
 	if (agreement.status === "trialing") {
 		return workloads.some((workload) => workload.agreementRef === agreement.id);
 	}
@@ -112,7 +112,10 @@ export function rateCardChargeIncomplete(
 		);
 	}
 	if (charge.variant.case === "fixed") {
-		return fixedQuantityMissing(charge, agreement, workloads);
+		return (
+			moneyIncomplete(charge.variant.value.amount) ||
+			fixedQuantityMissing(charge, agreement, workloads)
+		);
 	}
-	return false;
+	return true;
 }

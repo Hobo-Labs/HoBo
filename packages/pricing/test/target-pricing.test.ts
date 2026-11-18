@@ -277,6 +277,69 @@ describe("whole-target pricing contract", () => {
 		expect(quoteTargetPricing(inventory(), model).ok).toBe(false);
 	});
 
+	it("rejects an active agreement outside the inventory when its fixed quantity is missing", () => {
+		const model = modeled();
+		if (
+			model.state.case !== "model" ||
+			model.state.value.scenario === undefined
+		) {
+			throw new Error("fixture model missing");
+		}
+		const joint = model.state.value.scenario;
+		const catalog = joint.catalog;
+		const state = joint.state;
+		const sourceCard = catalog?.rateCards[0];
+		const sourceAgreement = state?.agreements[0];
+		const sandboxProduct = catalog?.products[0];
+		if (
+			catalog === undefined ||
+			state === undefined ||
+			sourceCard === undefined ||
+			sourceAgreement === undefined ||
+			sandboxProduct === undefined
+		) {
+			throw new Error("fixture scenario incomplete");
+		}
+		const support = clone(ProviderProductSchema, sandboxProduct);
+		support.id = "support";
+		support.meters = [];
+		catalog.products.push(support);
+		const supportCard = clone(RateCardSchema, sourceCard);
+		supportCard.id = "card-support";
+		supportCard.charges = [
+			create(ChargeComponentSchema, {
+				base: {
+					id: "seat",
+					selectors: {},
+					fallback: false,
+					invoiceBehavior: "itemized",
+				},
+				variant: {
+					case: "fixed",
+					value: {
+						cadence: "monthly",
+						timing: "advance",
+						amount: { decimal: "10", currency: "USD" },
+						quantityDimension: "seat",
+						proration: "none",
+					},
+				},
+			}),
+		];
+		catalog.rateCards.push(supportCard);
+		const supportAgreement = clone(ProviderAgreementSchema, sourceAgreement);
+		supportAgreement.id = "agreement-support";
+		supportAgreement.productId = "support";
+		for (const entry of supportAgreement.rateSchedule)
+			entry.rateCardId = "card-support";
+		state.agreements.push(supportAgreement);
+		rehashScenario(joint);
+		expect(quoteTargetPricing(inventory(), model)).toMatchObject({
+			ok: false,
+			code: "TARGET_PRICING_INCOMPLETE",
+		});
+	});
+
 	it("requires complete measurements for baseline workloads as well as candidates", () => {
 		const model = modeled();
 		if (

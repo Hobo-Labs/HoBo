@@ -13,15 +13,15 @@ import {
 } from "./_generated/pricing_pb.js";
 import { tryResolveRateCard } from "./catalog.js";
 import {
+	agreementRequiresRateCardValidation,
+	rateCardChargesIncomplete,
+} from "./charge-coverage.js";
+import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
 	type JsonValue,
 	stableHash,
 } from "./json.js";
-import {
-	agreementRequiresRateCardValidation,
-	rateCardChargesIncomplete,
-} from "./charge-coverage.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
@@ -462,35 +462,26 @@ export function quoteTargetPricing(
 			"joint target quote is incomplete",
 		);
 	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
-	const inScopeProductIds = new Set(
-		inventory.resources.map((resource) => resource.productId),
-	);
-	for (const workload of scenario.baseline) {
-		const agreements = state.agreements.filter(
-			(entry) => entry.id === workload.agreementRef,
-		);
-		const agreement = agreements[0];
-		if (agreements.length === 1 && agreement !== undefined)
-			inScopeProductIds.add(agreement.productId);
-	}
 	for (const agreement of state.agreements) {
 		if (!agreementRequiresRateCardValidation(agreement, workloadsAll)) continue;
-		if (
-			agreement.tenantId !== inventory.tenantId ||
-			!inScopeProductIds.has(agreement.productId)
-		) {
-			continue;
-		}
-		const product = catalog.products.find(
+		const products = catalog.products.filter(
 			(entry) => entry.id === agreement.productId,
 		);
-		if (product === undefined) {
+		const product = products[0];
+		if (products.length !== 1 || product === undefined) {
+			return refuse("TARGET_PRICING_INCOMPLETE", "priced product is missing");
+		}
+		const meterNames = product.meters.map((meter) => meter.dimension);
+		if (
+			meterNames.some((dimension) => !validName(dimension)) ||
+			new Set(meterNames).size !== meterNames.length
+		) {
 			return refuse(
 				"TARGET_PRICING_INCOMPLETE",
-				"priced product is missing",
+				"rate-card charges must have declared meters or quantity inputs",
 			);
 		}
-		const dimensions = new Set(product.meters.map((meter) => meter.dimension));
+		const dimensions = new Set(meterNames);
 		const resolved = tryResolveRateCard(
 			catalog,
 			agreement,
