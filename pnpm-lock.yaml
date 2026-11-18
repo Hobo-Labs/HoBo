@@ -3264,6 +3264,9 @@ importers:
       '@hobo/storage-sqlite':
         specifier: workspace:*
         version: link:../../storage-sqlite
+      croner:
+        specifier: 10.0.1
+        version: 10.0.1
     devDependencies:
       '@hobo/conformance':
         specifier: workspace:*

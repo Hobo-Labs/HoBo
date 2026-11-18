@@ -24,6 +24,17 @@ export interface IntervalCronSpec {
 	readonly startAtMs?: number;
 }
 
+export interface CronExpressionSpec {
+	readonly expression: string;
+	readonly timezone: string;
+}
+
+export interface CronExpressionSchedule extends CronExpressionSpec {
+	readonly scheduleId: ScheduleId;
+	readonly nextFireAt: IsoInstant;
+	readonly deduped: boolean;
+}
+
 export interface ScheduledTimer {
 	readonly timerId: TimerId;
 	readonly runId: RunId;
@@ -90,6 +101,13 @@ export type ClockTraceEntry =
 			readonly startAtMs: number;
 	  }
 	| {
+			readonly type: "cron.expression-scheduled";
+			readonly scheduleId: string;
+			readonly expression: string;
+			readonly timezone: string;
+			readonly startAtMs: number;
+	  }
+	| {
 			readonly type: "cron.fired";
 			readonly fireId: string;
 			readonly scheduleId: string;
@@ -142,6 +160,10 @@ export interface Clock {
 export interface VirtualClock extends Clock {
 	sleep(runId: RunId, delayMs: number, options: TimerOptions): ScheduledTimer;
 	cron(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule;
+	cronExpression(
+		scheduleId: ScheduleId,
+		spec: CronExpressionSpec,
+	): CronExpressionSchedule;
 	advance(deltaMs: number): readonly FiredTimer[];
 	trace(): readonly ClockTraceEntry[];
 }

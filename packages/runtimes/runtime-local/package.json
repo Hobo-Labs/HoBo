@@ -18,7 +18,8 @@
 	},
 	"dependencies": {
 		"@hobo/core": "workspace:*",
-		"@hobo/storage-sqlite": "workspace:*"
+		"@hobo/storage-sqlite": "workspace:*",
+		"croner": "10.0.1"
 	},
 	"devDependencies": {
 		"@hobo/conformance": "workspace:*",

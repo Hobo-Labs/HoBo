@@ -29,7 +29,7 @@ describe("hobo:scheduler port descriptor", () => {
 		);
 	});
 
-	it("parses interval specs (v1 is interval-only)", () => {
+	it("parses interval specs", () => {
 		expect(parseIntervalCronSpec({ every_ms: 1_000 })).toEqual({
 			everyMs: 1_000,
 		});
@@ -56,10 +56,10 @@ describe("hobo:scheduler port descriptor", () => {
 		}
 	});
 
-	it("fails closed on the WIT cron-expression form", () => {
+	it("describes an unsupported cron expression", () => {
 		const error = new CronExpressionUnsupportedError("*/5 * * * *");
 		expect(error.code).toBe("SCHEDULER_CRON_UNSUPPORTED");
-		expect(error.message).toMatch(/interval-only/);
+		expect(error.message).toMatch(/unsupported/);
 		expect(error.message).toMatch(/\*\/5 \* \* \* \*/);
 	});
 });

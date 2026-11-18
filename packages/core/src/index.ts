@@ -236,6 +236,8 @@ export {
 export type {
 	ClockReplayResult,
 	ClockTraceEntry,
+	CronExpressionSchedule,
+	CronExpressionSpec,
 	CronSchedule,
 	FiredTimer,
 	FireId,
