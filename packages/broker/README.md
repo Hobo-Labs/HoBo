@@ -178,6 +178,29 @@ complete version 1 requests; a version 1-only receiver must be upgraded before
 using version 2. Older messages without a completeness marker must be rebuilt
 from the original request; an old quote or reservation may need reconciliation.
 
+The Yard request CUE contract requires a nonblank Camp ID for exact selection
+and rejects blank Camp IDs, environment types and capability or runtime
+requirements using the same whitespace rules as the parser. Previously accepted
+CUE documents with those invalid Camp fields must be corrected before reuse;
+other request semantics and receiver authorization still require separate checks.
+
+The bounded Camp wire projection hides 54 same-state steps. A request accepted
+here still requires authorization and does not establish that the Camp exists.
+
+```mermaid
+stateDiagram-v2
+  s0: CUE request received
+  s1: Binary request received
+  s2: Invalid Camp request refused
+  s3: Valid Camp request accepted
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: refuse invalid Camp input
+  s0 --> s3: accept valid Camp input
+  s1 --> s2: refuse invalid Camp input
+  s1 --> s3: accept valid Camp input
+```
+
 The embedded digest is an integrity comparison, not a signature: a receiver
 must compare it with independently authenticated quote or authorization data.
 The decoder refuses unknown fields retained by protobuf in ordinary messages;
