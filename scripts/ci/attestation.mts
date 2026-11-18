@@ -486,7 +486,7 @@ function keyId(value: JsonValue | undefined, what: string): string {
 
 function parseStatement(value: JsonValue | undefined): AttestationStatement {
 	const object = required(asObject(value), "statement must be an object");
-	return {
+	const statement = {
 		predicateType: required(
 			asText(object.predicateType),
 			"statement.predicateType is missing",
@@ -495,11 +495,6 @@ function parseStatement(value: JsonValue | undefined): AttestationStatement {
 		baseTree: objectId(object.baseTree, "statement.baseTree"),
 		head: objectId(object.head, "statement.head"),
 		base: objectId(object.base, "statement.base"),
-		...(object.testedCommit === undefined
-			? {}
-			: {
-					testedCommit: objectId(object.testedCommit, "statement.testedCommit"),
-				}),
 		jobs: textList(object.jobs, "statement.jobs"),
 		events: textList(object.events, "statement.events"),
 		startedAt: required(
@@ -516,7 +511,12 @@ function parseStatement(value: JsonValue | undefined): AttestationStatement {
 			asList(object.results),
 			"statement.results must be a list",
 		).map(parseResult),
-	};
+	} satisfies AttestationStatement;
+	if (object.testedCommit !== undefined)
+		Object.assign(statement, {
+			testedCommit: objectId(object.testedCommit, "statement.testedCommit"),
+		});
+	return statement;
 }
 
 type ParsedEnvelope = Readonly<{
