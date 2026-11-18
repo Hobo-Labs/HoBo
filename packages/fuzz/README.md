@@ -53,5 +53,9 @@ destroy, and replay. Oracles include:
 - equivalent manifests share a canonical hash
 - tenant A operations never mutate tenant B
 - rollback restores that tenant's snapshot slice (not the whole world, not just the clock)
+- retry and rollback advance the model clock, so snapshots taken after them do
+  not replace earlier checkpoints at the same clock
+- the model refuses to advance an invalid or exhausted clock without changing
+  its state
 - interrupt after destroy does not revive a resource
 - apply after destroy recreates instead of leaving a destroyed hole
