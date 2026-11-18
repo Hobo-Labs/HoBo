@@ -38,7 +38,9 @@ faking execution:
   public endpoint is bound via
   `bindleEnv["HOBO_CLOUD_NATIVE_ENDPOINT_<RESOURCE>"]` gets a handler that
   proxies the incoming request (method, path, query, headers, body) to that
-  endpoint and relays status + body verbatim. An unbound resource answers
+  endpoint and relays status + body verbatim. The request path cannot change
+  the bound endpoint origin; redirects are returned to the caller rather than
+  followed by the proxy. An unbound resource answers
   `501` with a machine-readable body
   `{ error: "cloudflare-remote-handler-unbound", resource, remediation }` —
   an honest partial realization, never a fake `200`. Isolation reports
