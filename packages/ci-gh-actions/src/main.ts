@@ -9,6 +9,7 @@ import type { StrictFleetStore } from "@hobo/ci/fleet-v2";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { relayInstallAssets } from "./assets.js";
 import { createControlAuthenticator } from "./control-auth.js";
+import { createStrictFleetRuntime } from "./fleet-v2/runtime.js";
 import type { StartFencePolicy } from "./fleet-v2/start-fence-handler.js";
 import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
 import { type JoinedMesh, joinMeshFromEnv } from "./mesh-join.js";
@@ -79,10 +80,21 @@ export async function startRelayFromEnvironment(
 	const assets = relayInstallAssets();
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);
+	let strictFleetRuntime: Awaited<ReturnType<typeof createStrictFleetRuntime>>;
+	try {
+		strictFleetRuntime = ports.strictFleet
+			? undefined
+			: await createStrictFleetRuntime(env, { requirePostgres: !localHttp });
+	} catch (error) {
+		await lock.release();
+		throw error;
+	}
+	const strictFleet = ports.strictFleet ?? strictFleetRuntime;
 	let store: SqliteCiStore;
 	try {
 		store = new SqliteCiStore(database);
 	} catch (error) {
+		await strictFleetRuntime?.close();
 		await lock.release();
 		throw error;
 	}
@@ -137,7 +149,7 @@ export async function startRelayFromEnvironment(
 			}
 		const { service, runtime } = createRelayHost({
 			store,
-			strictFleet: ports.strictFleet,
+			strictFleet,
 			agent,
 			meshNodes: mesh?.node.reports,
 			github:
@@ -177,15 +189,20 @@ export async function startRelayFromEnvironment(
 				stopping ??= (async () => {
 					ready = () => false;
 					await mesh?.stop().catch(() => undefined);
-					const result = await service.stop();
-					if (result.drained) await lock.release();
-					return result;
+					try {
+						const result = await service.stop();
+						if (result.drained) await lock.release();
+						return result;
+					} finally {
+						await strictFleetRuntime?.close();
+					}
 				})();
 				return stopping;
 			},
 		};
 	} catch (error) {
 		store.close();
+		await strictFleetRuntime?.close();
 		await lock.release();
 		throw error;
 	}

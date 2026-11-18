@@ -96,6 +96,12 @@ const deploymentSchema = z.object({
 								items: z.array(z.object({ key: z.string(), path: z.string() })),
 							})
 							.optional(),
+						configMap: z
+							.object({
+								name: z.string(),
+								items: z.array(z.object({ key: z.string(), path: z.string() })),
+							})
+							.optional(),
 						hostPath: z.object({ path: z.string() }).optional(),
 					}),
 				),
@@ -117,7 +123,6 @@ function requireInvariant(condition: boolean, reason: string): void {
 	if (!condition) throw new Error(`deployment invariant: ${reason}`);
 }
 
-/** Checks the shipped partition manifests before a renderer or cluster receives them. */
 export function checkDeployment(input: {
 	compose: string;
 	kubernetes: string;
@@ -272,6 +277,32 @@ export function checkDeployment(input: {
 				entry.valueFrom?.secretKeyRef !== undefined,
 		),
 		"App identity secret binding",
+	);
+	const strictDatabase = container.env.find(
+		(entry) => entry.name === "HOBO_CI_STRICT_FLEET_DATABASE",
+	);
+	requireInvariant(
+		strictDatabase?.valueFrom?.secretKeyRef !== undefined,
+		"strict fleet PostgreSQL secret binding",
+	);
+	const strictPolicies = container.env.find(
+		(entry) => entry.name === "HOBO_CI_STRICT_FLEET_POLICIES_FILE",
+	)?.value;
+	requireInvariant(
+		strictPolicies?.startsWith("/etc/hobo-ci/") === true &&
+			container.volumeMounts.some(
+				(volume) =>
+					volume.mountPath === "/etc/hobo-ci" &&
+					volume.readOnly === true &&
+					pod.volumes.some(
+						(source) =>
+							source.name === volume.name &&
+							source.configMap?.items.some(
+								(item) => `/etc/hobo-ci/${item.path}` === strictPolicies,
+							) === true,
+					),
+			),
+		"strict fleet policy binding",
 	);
 	for (const key of [
 		"HOBO_CI_GITHUB_APP_KEY_FILE",
