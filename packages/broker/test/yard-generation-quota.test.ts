@@ -46,6 +46,7 @@ function markReady(
 	claim: YardGenerationQuotaRequest,
 	evidenceRef = "verified:ready",
 ) {
+	authority.claimExecution(claim);
 	return authority.markReady({
 		idempotencyKey: claim.idempotencyKey,
 		attemptId: claim.attemptId,

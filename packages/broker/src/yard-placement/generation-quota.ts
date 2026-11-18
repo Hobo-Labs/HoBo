@@ -22,6 +22,8 @@ export interface YardGenerationQuotaRequest {
 
 export interface YardGenerationQuotaClaim extends YardGenerationQuotaRequest {
 	readonly status: "pending" | "ready";
+	/** A durable execution fence has been claimed for this attempt. */
+	readonly executionClaimed: boolean;
 	readonly readyEvidenceRef?: string;
 }
 
@@ -32,6 +34,13 @@ export interface YardGenerationQuotaAuthority {
 		readonly claim: YardGenerationQuotaClaim;
 	};
 	lookup(idempotencyKey: ContentHash): YardGenerationQuotaClaim | undefined;
+	claimExecution(request: YardGenerationQuotaRequest): {
+		readonly kind: "claimed" | "existing";
+		readonly claim: YardGenerationQuotaClaim;
+	};
+	cancelUnclaimed(request: YardGenerationQuotaRequest): {
+		readonly kind: "cancelled" | "existing";
+	};
 	markReady(input: {
 		readonly idempotencyKey: ContentHash;
 		readonly attemptId: string;
@@ -90,6 +99,33 @@ function validateRequest(request: YardGenerationQuotaRequest): void {
 		);
 }
 
+function matchesRequest(
+	claim: YardGenerationQuotaClaim,
+	request: YardGenerationQuotaRequest,
+): boolean {
+	return (
+		claim.idempotencyKey === request.idempotencyKey &&
+		claim.attemptId === request.attemptId &&
+		claim.ownerTenantId === request.ownerTenantId &&
+		claim.yardId === request.yardId &&
+		claim.planHash === request.planHash &&
+		claim.maxConcurrentGenerations === request.maxConcurrentGenerations &&
+		claim.maxYardsPerTenant === request.maxYardsPerTenant
+	);
+}
+
+function requestDigest(request: YardGenerationQuotaRequest): ContentHash {
+	return contentHashOf({
+		idempotencyKey: request.idempotencyKey,
+		attemptId: request.attemptId,
+		ownerTenantId: request.ownerTenantId,
+		yardId: request.yardId,
+		planHash: request.planHash,
+		maxConcurrentGenerations: request.maxConcurrentGenerations,
+		maxYardsPerTenant: request.maxYardsPerTenant,
+	});
+}
+
 /**
  * One persistent SQLite authority for a single quota scope. BEGIN IMMEDIATE
  * serializes reservation checks and writes across connections to this file.
@@ -146,11 +182,16 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 	baseline.sort((a, b) =>
 		a.yardId < b.yardId ? -1 : a.yardId > b.yardId ? 1 : 0,
 	);
-	const baselineHash = contentHashOf({
+	const baselineDescriptor = {
 		scopeId: options.scopeId,
 		maxConcurrentGenerations,
 		maxYardsPerTenant,
 		yards: baseline,
+	};
+	const legacyBaselineHash = contentHashOf(baselineDescriptor);
+	const baselineHash = contentHashOf({
+		version: 2,
+		baseline: baselineDescriptor,
 	});
 	const verifyReady = options.verifyReady;
 	const database = new DatabaseSync(options.path);
@@ -163,6 +204,14 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 		} catch (error) {
 			database.exec("ROLLBACK");
 			throw error;
+		}
+	}
+	function writeClaims<T>(operation: () => T): T {
+		database.exec("INSERT INTO generation_quota_write_permit(id) VALUES(1)");
+		try {
+			return operation();
+		} finally {
+			database.exec("DELETE FROM generation_quota_write_permit WHERE id=1");
 		}
 	}
 	try {
@@ -184,15 +233,40 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 					"SELECT scope_id, baseline_hash FROM generation_quota_meta WHERE id=1",
 				)
 				.get();
+			if (
+				meta &&
+				(meta.scope_id !== options.scopeId ||
+					(meta.baseline_hash !== legacyBaselineHash &&
+						meta.baseline_hash !== baselineHash))
+			)
+				throw new YardGenerationQuotaDeniedError(
+					"conflict",
+					"quota scope or initial inventory differs from the stored baseline",
+				);
+			// Transaction-local permits make already-open older writers fail closed.
+			// BEGIN IMMEDIATE prevents another connection from observing a permit.
+			database.exec(
+				"CREATE TABLE IF NOT EXISTS generation_quota_execution (idempotency_key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS generation_quota_cancelled (idempotency_key TEXT PRIMARY KEY, request_digest TEXT NOT NULL); CREATE TABLE IF NOT EXISTS generation_quota_write_permit (id INTEGER PRIMARY KEY CHECK(id=1)); CREATE TRIGGER IF NOT EXISTS generation_quota_guard_insert BEFORE INSERT ON generation_quota_claims WHEN NOT EXISTS(SELECT 1 FROM generation_quota_write_permit WHERE id=1) BEGIN SELECT RAISE(ABORT, 'quota execution fencing required'); END; CREATE TRIGGER IF NOT EXISTS generation_quota_guard_update BEFORE UPDATE ON generation_quota_claims WHEN NOT EXISTS(SELECT 1 FROM generation_quota_write_permit WHERE id=1) BEGIN SELECT RAISE(ABORT, 'quota execution fencing required'); END; CREATE TRIGGER IF NOT EXISTS generation_quota_guard_delete BEFORE DELETE ON generation_quota_claims WHEN NOT EXISTS(SELECT 1 FROM generation_quota_write_permit WHERE id=1) BEGIN SELECT RAISE(ABORT, 'quota execution fencing required'); END",
+			);
+			if (
+				database
+					.prepare("SELECT id FROM generation_quota_write_permit LIMIT 1")
+					.get()
+			)
+				throw new Error("unexpected persistent generation quota write permit");
 			if (meta) {
-				if (
-					meta.scope_id !== options.scopeId ||
-					meta.baseline_hash !== baselineHash
-				)
-					throw new YardGenerationQuotaDeniedError(
-						"conflict",
-						"quota scope or initial inventory differs from the stored baseline",
+				if (meta.baseline_hash === legacyBaselineHash) {
+					// Old pending attempts may already have reached a provider. Fence
+					// every pre-upgrade claim before enabling cancellation.
+					database.exec(
+						"INSERT OR IGNORE INTO generation_quota_execution(idempotency_key) SELECT idempotency_key FROM generation_quota_claims",
 					);
+					database
+						.prepare(
+							"UPDATE generation_quota_meta SET baseline_hash=? WHERE id=1",
+						)
+						.run(baselineHash);
+				}
 				return;
 			}
 			database
@@ -215,7 +289,7 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 	): YardGenerationQuotaClaim | undefined {
 		const row = database
 			.prepare(
-				"SELECT idempotency_key, attempt_id, owner_tenant_id, yard_id, plan_hash, max_concurrent, max_yards, status, ready_evidence_ref FROM generation_quota_claims WHERE idempotency_key=?",
+				"SELECT c.idempotency_key, c.attempt_id, c.owner_tenant_id, c.yard_id, c.plan_hash, c.max_concurrent, c.max_yards, c.status, c.ready_evidence_ref, EXISTS(SELECT 1 FROM generation_quota_execution e WHERE e.idempotency_key=c.idempotency_key) AS execution_claimed FROM generation_quota_claims c WHERE c.idempotency_key=?",
 			)
 			.get(idempotencyKey);
 		if (!row) return undefined;
@@ -236,9 +310,11 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 			!isJsonNumber(row.max_yards) ||
 			!Number.isSafeInteger(row.max_yards) ||
 			row.max_yards <= 0 ||
+			(row.execution_claimed !== 0 && row.execution_claimed !== 1) ||
 			(row.status !== "pending" && row.status !== "ready") ||
 			(row.status === "ready" &&
-				(!isJsonString(row.ready_evidence_ref) ||
+				(row.execution_claimed !== 1 ||
+					!isJsonString(row.ready_evidence_ref) ||
 					!nonblank(row.ready_evidence_ref))) ||
 			(row.status === "pending" && row.ready_evidence_ref !== null)
 		)
@@ -254,6 +330,7 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 			maxConcurrentGenerations: row.max_concurrent,
 			maxYardsPerTenant: row.max_yards,
 			status: row.status,
+			executionClaimed: row.execution_claimed === 1,
 		};
 		if (isJsonString(row.ready_evidence_ref))
 			return Object.freeze({
@@ -278,17 +355,19 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 					"request limits differ from the authority's fixed limits",
 				);
 			return transaction(() => {
+				const cancelled = database
+					.prepare(
+						"SELECT request_digest FROM generation_quota_cancelled WHERE idempotency_key=?",
+					)
+					.get(request.idempotencyKey);
+				if (cancelled)
+					throw new YardGenerationQuotaDeniedError(
+						"conflict",
+						"generation quota key was cancelled and cannot be reused",
+					);
 				const previous = lookup(request.idempotencyKey);
 				if (previous) {
-					if (
-						previous.attemptId !== request.attemptId ||
-						previous.ownerTenantId !== request.ownerTenantId ||
-						previous.yardId !== request.yardId ||
-						previous.planHash !== request.planHash ||
-						previous.maxConcurrentGenerations !==
-							request.maxConcurrentGenerations ||
-						previous.maxYardsPerTenant !== request.maxYardsPerTenant
-					)
+					if (!matchesRequest(previous, request))
 						throw new YardGenerationQuotaDeniedError(
 							"conflict",
 							"generation quota key belongs to another claim",
@@ -332,23 +411,93 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 						"tenant-limit",
 						"tenant Yard limit reached",
 					);
-				database
-					.prepare(
-						"INSERT INTO generation_quota_claims(idempotency_key,attempt_id,owner_tenant_id,yard_id,plan_hash,max_concurrent,max_yards,status) VALUES(?,?,?,?,?,?,?,'pending')",
-					)
-					.run(
-						request.idempotencyKey,
-						request.attemptId,
-						request.ownerTenantId,
-						request.yardId,
-						request.planHash,
-						request.maxConcurrentGenerations,
-						request.maxYardsPerTenant,
-					);
+				writeClaims(() => {
+					database
+						.prepare(
+							"INSERT INTO generation_quota_claims(idempotency_key,attempt_id,owner_tenant_id,yard_id,plan_hash,max_concurrent,max_yards,status) VALUES(?,?,?,?,?,?,?,'pending')",
+						)
+						.run(
+							request.idempotencyKey,
+							request.attemptId,
+							request.ownerTenantId,
+							request.yardId,
+							request.planHash,
+							request.maxConcurrentGenerations,
+							request.maxYardsPerTenant,
+						);
+				});
 				const claim = lookup(request.idempotencyKey);
 				if (!claim)
 					throw new Error("generation quota claim missing after insert");
 				return Object.freeze({ kind: "reserved" as const, claim });
+			});
+		},
+		claimExecution(input) {
+			const request = structuredClone(input);
+			validateRequest(request);
+			return transaction(() => {
+				const claim = lookup(request.idempotencyKey);
+				if (!claim || !matchesRequest(claim, request))
+					throw new YardGenerationQuotaDeniedError(
+						"conflict",
+						"generation quota claim is missing or belongs to another attempt",
+					);
+				if (claim.executionClaimed)
+					return Object.freeze({ kind: "existing" as const, claim });
+				database
+					.prepare(
+						"INSERT INTO generation_quota_execution(idempotency_key) VALUES(?)",
+					)
+					.run(request.idempotencyKey);
+				const claimed = lookup(request.idempotencyKey);
+				if (!claimed?.executionClaimed)
+					throw new Error(
+						"generation quota execution fence missing after claim",
+					);
+				return Object.freeze({ kind: "claimed" as const, claim: claimed });
+			});
+		},
+		cancelUnclaimed(input) {
+			const request = structuredClone(input);
+			validateRequest(request);
+			return transaction(() => {
+				const cancelled = database
+					.prepare(
+						"SELECT request_digest FROM generation_quota_cancelled WHERE idempotency_key=?",
+					)
+					.get(request.idempotencyKey);
+				if (cancelled) {
+					if (cancelled.request_digest !== requestDigest(request))
+						throw new YardGenerationQuotaDeniedError(
+							"conflict",
+							"cancelled generation quota key belongs to another attempt",
+						);
+					return Object.freeze({ kind: "existing" as const });
+				}
+				const claim = lookup(request.idempotencyKey);
+				if (!claim || !matchesRequest(claim, request))
+					throw new YardGenerationQuotaDeniedError(
+						"conflict",
+						"generation quota claim is missing or belongs to another attempt",
+					);
+				if (claim.executionClaimed || claim.status !== "pending")
+					throw new YardGenerationQuotaDeniedError(
+						"conflict",
+						"generation quota execution was already claimed",
+					);
+				database
+					.prepare(
+						"INSERT INTO generation_quota_cancelled(idempotency_key,request_digest) VALUES(?,?)",
+					)
+					.run(request.idempotencyKey, requestDigest(request));
+				writeClaims(() => {
+					database
+						.prepare(
+							"DELETE FROM generation_quota_claims WHERE idempotency_key=?",
+						)
+						.run(request.idempotencyKey);
+				});
+				return Object.freeze({ kind: "cancelled" as const });
 			});
 		},
 		markReady(input) {
@@ -377,6 +526,11 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 					"conflict",
 					"ready evidence does not bind the quota claim",
 				);
+			if (!claim.executionClaimed)
+				throw new YardGenerationQuotaDeniedError(
+					"conflict",
+					"generation quota execution must be claimed before readiness",
+				);
 			if (
 				verifyReady?.(
 					Object.freeze({ claim, evidenceRef: request.evidenceRef }),
@@ -393,7 +547,8 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 					current.attemptId !== request.attemptId ||
 					current.ownerTenantId !== request.ownerTenantId ||
 					current.planHash !== request.planHash ||
-					current.yardId !== request.yardId
+					current.yardId !== request.yardId ||
+					!current.executionClaimed
 				)
 					throw new YardGenerationQuotaDeniedError(
 						"conflict",
@@ -407,11 +562,13 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 						);
 					return current;
 				}
-				database
-					.prepare(
-						"UPDATE generation_quota_claims SET status='ready', ready_evidence_ref=? WHERE idempotency_key=? AND status='pending'",
-					)
-					.run(request.evidenceRef, request.idempotencyKey);
+				writeClaims(() => {
+					database
+						.prepare(
+							"UPDATE generation_quota_claims SET status='ready', ready_evidence_ref=? WHERE idempotency_key=? AND status='pending'",
+						)
+						.run(request.evidenceRef, request.idempotencyKey);
+				});
 				const ready = lookup(request.idempotencyKey);
 				if (!ready || ready.status !== "ready")
 					throw new Error("generation quota readiness update failed");

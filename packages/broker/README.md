@@ -423,22 +423,28 @@ Generated placement requires a shared durable generation quota authority.
 After host policy approval and before the budget hold, the broker reserves both
 `maxConcurrentGenerations` and `maxYardsPerTenant` capacity for the exact plan.
 A missing authority, exhausted quota, mismatched claim or changed authority
-stops the provider call. Authority is checked again at the actual provider call
-boundary after any asynchronous scheduling. A repeated quota claim is inspected rather than
-provisioned again. The direct planner relies on its caller to establish that no
-matching Yard exists, and the standalone generation saga does not receive
-policy or quota evidence.
+stops the provider call. The broker atomically claims a durable execution fence
+before provider work and rechecks authority at the call boundary. Only a newly
+claimed fence may provision; an existing claim is inspected. Custom authorities
+must implement both `claimExecution` and `cancelUnclaimed` with the same atomic
+semantics. The direct planner relies on its caller to establish that no matching
+Yard exists; standalone saga hosts must enforce their own policy and quota.
 
-The SQLite quota authority counts a fixed initial inventory and keeps uncertain
-claims pending. A trusted verifier must accept readiness before the concurrent
-slot is released; the ready Yard continues to count toward the tenant limit.
-Limits and baseline are fixed for the database, and all writers must use the
-same database. Out-of-band Yards, missing baseline entries, inaccurate readiness
-attestations and lost database files are outside its guarantee. Budget and quota
-reservations are separate transactions: a failure between them can retain quota
-without a budget hold. There is no removal or unused-reservation reconciliation
-operation yet. Reconcile pre-upgrade Yards and uncertain attempts before enabling
-the new authority.
+The SQLite authority counts a fixed initial inventory and retains claimed or
+uncertain work until a trusted verifier accepts readiness. On an admission
+failure, the broker attempts to cancel a quota reservation it created if no
+execution fence has been claimed. Hosts can call `cancelUnclaimed` for other
+stranded reservations after checking the bound attempt. A cancelled key cannot
+be reused; a new attempt needs a new key. Cancellation fails if an execution
+fence exists, and unverified cancellations require reconciliation. A lost budget
+reservation acknowledgement is reported for reconciliation, and budget holds
+remain separate from quota cancellation.
+
+On upgrade, existing claims are conservatively fenced and already-open older
+writers are refused by SQLite write guards. Limits and baseline remain fixed;
+all writers must use the same database. Out-of-band Yards, incomplete baseline
+entries, inaccurate readiness attestations, lost database files and deleted Yard
+reconciliation remain outside this authority's guarantees.
 
 The bounded admission projection hides 18 same-state steps. It assumes the
 separate quota, policy, budget and provider evidence checks are truthful.
