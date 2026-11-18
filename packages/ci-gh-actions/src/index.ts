@@ -58,6 +58,15 @@ export {
 	type GithubAssignmentScope,
 } from "./fleet-v2/github-assignment.js";
 export {
+	GithubRunnerSlotError,
+	type GithubRunnerSlotErrorCode,
+	type GithubRunnerSlotResult,
+	type GithubRunnerSlotScope,
+	provisionGithubRunnerSlot,
+	reconcileGithubRunnerSlot,
+	type RunnerSlotStore,
+} from "./fleet-v2/github-runner-slot.js";
+export {
 	createStartFenceHandler,
 	type StartFencePolicy,
 } from "./fleet-v2/start-fence-handler.js";

@@ -36,9 +36,19 @@ const environment = z.object({
 	value: z.string().optional(),
 	valueFrom: z
 		.object({
-			secretKeyRef: z.object({ name: z.string(), key: z.string() }).optional(),
+			secretKeyRef: z
+				.object({
+					name: z.string(),
+					key: z.string(),
+					optional: z.boolean().optional(),
+				})
+				.optional(),
 			configMapKeyRef: z
-				.object({ name: z.string(), key: z.string() })
+				.object({
+					name: z.string(),
+					key: z.string(),
+					optional: z.boolean().optional(),
+				})
 				.optional(),
 		})
 		.optional(),
@@ -96,6 +106,13 @@ const deploymentSchema = z.object({
 								items: z.array(z.object({ key: z.string(), path: z.string() })),
 							})
 							.optional(),
+						configMap: z
+							.object({
+								name: z.string(),
+								optional: z.boolean().optional(),
+								items: z.array(z.object({ key: z.string(), path: z.string() })),
+							})
+							.optional(),
 						hostPath: z.object({ path: z.string() }).optional(),
 					}),
 				),
@@ -117,7 +134,6 @@ function requireInvariant(condition: boolean, reason: string): void {
 	if (!condition) throw new Error(`deployment invariant: ${reason}`);
 }
 
-/** Checks the shipped partition manifests before a renderer or cluster receives them. */
 export function checkDeployment(input: {
 	compose: string;
 	kubernetes: string;
@@ -272,6 +288,71 @@ export function checkDeployment(input: {
 				entry.valueFrom?.secretKeyRef !== undefined,
 		),
 		"App identity secret binding",
+	);
+	const relayConfig = container.env.find(
+		(entry) => entry.name === "HOBO_CI_CONFIG",
+	)?.value;
+	requireInvariant(
+		relayConfig === "/etc/hobo-ci/config.json" &&
+			container.volumeMounts.some(
+				(volume) =>
+					volume.mountPath === "/etc/hobo-ci" &&
+					volume.readOnly === true &&
+					pod.volumes.some(
+						(source) =>
+							source.name === volume.name &&
+							source.configMap?.name === "hobo-ci-config" &&
+							source.configMap.optional !== true &&
+							source.configMap.items.some(
+								(item) =>
+									item.key === "config.json" && item.path === "config.json",
+							),
+					),
+			),
+		"required relay configuration binding",
+	);
+	const strictDatabase = container.env.find(
+		(entry) => entry.name === "HOBO_CI_STRICT_FLEET_DATABASE",
+	)?.valueFrom?.secretKeyRef;
+	requireInvariant(
+		strictDatabase?.name === "hobo-ci-secrets" &&
+			strictDatabase.key === "strict-fleet-database" &&
+			strictDatabase.optional === true,
+		"optional strict fleet PostgreSQL secret binding",
+	);
+	const strictPolicies = container.env.find(
+		(entry) => entry.name === "HOBO_CI_STRICT_FLEET_POLICIES_FILE",
+	)?.valueFrom?.configMapKeyRef;
+	requireInvariant(
+		strictPolicies?.name === "hobo-ci-config" &&
+			strictPolicies.key === "strict-fleet-policies-file" &&
+			strictPolicies.optional === true &&
+			container.volumeMounts.some(
+				(volume) =>
+					volume.mountPath === "/etc/hobo-ci-strict" &&
+					volume.readOnly === true &&
+					pod.volumes.some(
+						(source) =>
+							source.name === volume.name &&
+							source.configMap?.name === "hobo-ci-config" &&
+							source.configMap.optional === true &&
+							source.configMap.items.some(
+								(item) =>
+									item.key === "strict-fleet-policies.json" &&
+									item.path === "strict-fleet-policies.json",
+							),
+					),
+			),
+		"optional strict fleet policy binding",
+	);
+	const strictPartition = container.env.find(
+		(entry) => entry.name === "HOBO_CI_STRICT_FLEET_PARTITION",
+	)?.valueFrom?.configMapKeyRef;
+	requireInvariant(
+		strictPartition?.name === "hobo-ci-config" &&
+			strictPartition.key === "strict-fleet-partition" &&
+			strictPartition.optional === true,
+		"optional strict fleet partition binding",
 	);
 	for (const key of [
 		"HOBO_CI_GITHUB_APP_KEY_FILE",

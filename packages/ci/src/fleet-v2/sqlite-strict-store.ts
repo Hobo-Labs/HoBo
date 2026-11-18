@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-conditional-empty-object-spread -- SQL row shape is validated before each cast; conformance tests cover transitions */
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-conditional-empty-object-spread */
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -46,6 +46,7 @@ import {
 	type ParsedStartBindingInput,
 } from "./parse.js";
 import {
+	CAPACITY_GROUP_STATES,
 	type RunnerSlotState,
 	rejectFleet,
 	transitionCapacityGroup,
@@ -881,6 +882,53 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				slot.id,
 				undefined,
 				slot.incarnationId,
+			);
+			return slot;
+		});
+	}
+
+	quarantineRunnerSlot(
+		id: string,
+		expected: RunnerSlotState,
+	): Promise<RunnerSlot> {
+		return this.tx(() => {
+			const slot = this.slotInside(id);
+			if (!slot)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "runner slot not found");
+			if (slot.state !== expected)
+				rejectFleet(
+					FleetRejectionCode.INVALID_TRANSITION,
+					`runner slot expected ${expected}, found ${slot.state}`,
+				);
+			const group = this.capacityInside(slot.capacityGroupId);
+			if (!group)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "capacity group not found");
+			transitionRunnerSlot(expected, "uncertain");
+			transitionCapacityGroup(
+				z.enum(CAPACITY_GROUP_STATES).parse(group.state),
+				"quarantined",
+			);
+			slot.state = "uncertain";
+			group.state = "quarantined";
+			group.seq += 1;
+			this.saveSlot(slot);
+			this.saveCapacity(group);
+			const at = this.now();
+			this.event(
+				FleetEventType.RUNNER_SLOT_TRANSITIONED,
+				at,
+				slot.accountId,
+				"runner-slot",
+				slot.id,
+				undefined,
+				slot.incarnationId,
+			);
+			this.event(
+				FleetEventType.CAPACITY_QUARANTINED,
+				at,
+				group.accountId,
+				"capacity-group",
+				group.id,
 			);
 			return slot;
 		});

@@ -49,6 +49,15 @@ spec:
             - {name: HOBO_CI_PORT, value: "8787"}
             - {name: HOBO_CI_DB, value: /var/lib/hobo-ci/relay.sqlite}
             - {name: HOBO_CI_CONFIG, value: /etc/hobo-ci/config.json}
+            - name: HOBO_CI_STRICT_FLEET_POLICIES_FILE
+              valueFrom:
+                configMapKeyRef: {name: hobo-ci-config, key: strict-fleet-policies-file, optional: true}
+            - name: HOBO_CI_STRICT_FLEET_DATABASE
+              valueFrom:
+                secretKeyRef: {name: hobo-ci-secrets, key: strict-fleet-database, optional: true}
+            - name: HOBO_CI_STRICT_FLEET_PARTITION
+              valueFrom:
+                configMapKeyRef: {name: hobo-ci-config, key: strict-fleet-partition, optional: true}
             - name: HOBO_CI_PUBLIC_URL
               valueFrom:
                 configMapKeyRef: {name: hobo-ci-config, key: public-url}
@@ -73,6 +82,7 @@ spec:
             - {name: config, mountPath: /etc/hobo-ci, readOnly: true}
             - {name: secrets, mountPath: /run/secrets, readOnly: true}
             - {name: temporary, mountPath: /tmp}
+            - {name: strict-fleet-config, mountPath: /etc/hobo-ci-strict, readOnly: true}
       volumes:
         - name: data
           persistentVolumeClaim: {claimName: hobo-ci-data}
@@ -84,13 +94,19 @@ spec:
         - name: secrets
           secret:
             secretName: hobo-ci-secrets
-            defaultMode: 288 # 0440, written in decimal for YAML 1.1/1.2 parity.
+            defaultMode: 288
             items:
               - {key: private-key.pem, path: github-app-key.pem}
               - {key: webhook-secret, path: webhook-secret}
               - {key: control-tokens.json, path: control-tokens.json}
         - name: temporary
           emptyDir: {medium: Memory, sizeLimit: 16Mi}
+        - name: strict-fleet-config
+          configMap:
+            name: hobo-ci-config
+            optional: true
+            items:
+              - {key: strict-fleet-policies.json, path: strict-fleet-policies.json}
 ---
 apiVersion: v1
 kind: Service

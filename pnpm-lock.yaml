@@ -1010,6 +1010,9 @@ importers:
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -1044,9 +1047,6 @@ importers:
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
-      pg:
-        specifier: 8.22.0
-        version: 8.22.0
       testcontainers:
         specifier: 11.8.1
         version: 11.8.1

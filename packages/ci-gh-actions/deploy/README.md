@@ -304,6 +304,17 @@ kubectl create configmap hobo-ci-config --from-file=config.json=/srv/hobo-ci/con
 kubectl create secret generic hobo-ci-secrets --from-literal=app-id=12345 --from-file=private-key.pem=/srv/hobo-ci/secrets/private-key.pem --from-file=webhook-secret=/srv/hobo-ci/secrets/webhook-secret --from-file=control-tokens.json=/srv/hobo-ci/secrets/control-tokens.json
 ```
 
+Strict fleet mode is optional. To enable it, add `strict-fleet-policies.json`
+and `strict-fleet-policies-file=/etc/hobo-ci-strict/strict-fleet-policies.json`
+to `hobo-ci-config`, and add `strict-fleet-database` to `hobo-ci-secrets` with
+the PostgreSQL connection string. `strict-fleet-partition` is optional and
+defaults to `default`. If only one of the database or policy path is set, the
+relay refuses to start. Existing deployments without either setting continue
+with strict fleet mode disabled. When configured, the relay exposes the strict
+start fence and verifies GitHub assignments, but automatic runner provisioning
+is not yet connected to dispatch. The existing fleet readiness scorecard
+predates these changes and does not establish live production readiness.
+
 Replace the manifest's `hobo-ci-relay:local` image with your tested immutable
 registry digest before applying it:
 
