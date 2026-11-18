@@ -42,7 +42,6 @@ export {
 	queue,
 	rolloutResource,
 	schedule,
-	// secret is dual-exported from secret-surface.ts (resource + field builders)
 	service,
 	topic,
 	ui,
@@ -170,6 +169,7 @@ export type {
 	BindleEdge,
 	BindleRequirements,
 	BindleResource,
+	BindleResourceMessage,
 	BindleResourceRecord,
 	BindleRuntimeContext,
 	ConnectorAuthDefinition,
@@ -211,7 +211,7 @@ export {
 	service as wiringService,
 } from "./wiring/index.js";
 
-// public-contract: package identity used by generated manifests and tooling.
+// public-contract:
 export const HOBO_BINDLES_PACKAGE = "@hobo/bindles";
 
 export type {

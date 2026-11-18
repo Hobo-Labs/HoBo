@@ -36,7 +36,6 @@ import type {
 import { webAppAnnotationFromBinding } from "./webapp.js";
 
 const METADATA_SYMBOL =
-	// SAFETY: assertion required at this I/O or test boundary.
 	(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");
 const COMPONENT_METADATA = Symbol.for("hobo.component.metadata");
 const TRAINABLE_METADATA = Symbol.for("hobo.trainable.metadata");
@@ -47,8 +46,7 @@ type BindingMetadataBag = ComponentBinding & {
 		| undefined;
 };
 
-/** Default name when authors use nameless `bindle((b) => …)`. */
-// public-contract: nameless Bindles compile to this stable manifest name.
+// public-contract:
 export const DEFAULT_BINDLE_NAME = "app";
 
 function isBindingMetadataBag(
@@ -76,11 +74,9 @@ function toHandler(
 ): EntrypointFactory | undefined {
 	if (binding === undefined) return undefined;
 	if (isInstantiableClassBinding(binding)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const Component = binding as new () => BindleHandlerObject;
 		return () => new Component();
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return binding as EntrypointFactory;
 }
 
@@ -96,7 +92,10 @@ interface InternalBindleResource<K extends ResourceKind> {
 	handler: EntrypointFactory | undefined;
 }
 
-type TrackedBindleResource<K extends ResourceKind> = BindleResource<K> & {
+type TrackedBindleResource<
+	K extends ResourceKind,
+	Message = unknown,
+> = BindleResource<K, Message> & {
 	readonly __bindleInternal: InternalBindleResource<K>;
 };
 
@@ -104,10 +103,10 @@ function isConnectorBinding(dep: InternalDependency): dep is ConnectorBinding {
 	return "definition" in dep && dep.kind === "connector";
 }
 
-function createBindleResource<K extends ResourceKind>(
+function createBindleResource<K extends ResourceKind, Message = unknown>(
 	kind: K,
 	handler?: EntrypointFactory,
-): TrackedBindleResource<K> {
+): TrackedBindleResource<K, Message> {
 	const internal: InternalBindleResource<K> = {
 		kind,
 		declaredAllow: [],
@@ -118,16 +117,15 @@ function createBindleResource<K extends ResourceKind>(
 		handler,
 	};
 
-	const resource: TrackedBindleResource<K> = {
+	const resource: TrackedBindleResource<K, Message> = {
 		kind,
 		__bindleInternal: internal,
-		dependsOn(...deps: BindleDependency[]): BindleResource<K> {
+		dependsOn(...deps: BindleDependency[]): BindleResource<K, Message> {
 			for (const dep of deps) {
 				if (dep.kind === "connector") {
 					internal.dependencies.add(dep);
 					continue;
 				}
-				// SAFETY: assertion required at this I/O or test boundary.
 				const tracked = dep as TrackedBindleResource<ResourceKind>;
 				if (tracked.__bindleInternal) {
 					internal.dependencies.add(tracked.__bindleInternal);
@@ -135,22 +133,19 @@ function createBindleResource<K extends ResourceKind>(
 			}
 			return resource;
 		},
-		withReference(...deps: BindleDependency[]): BindleResource<K> {
+		withReference(...deps: BindleDependency[]): BindleResource<K, Message> {
 			return resource.dependsOn(...deps);
 		},
-		allow(...verbs: AllowVerbsFor<K>[]): BindleResource<K> {
+		allow(...verbs: AllowVerbsFor<K>[]): BindleResource<K, Message> {
 			for (const verb of verbs) {
-				// SAFETY: assertion required at this I/O or test boundary.
 				if (!internal.declaredAllow.includes(verb as string)) {
-					// SAFETY: assertion required at this I/O or test boundary.
 					internal.declaredAllow.push(verb as string);
 				}
 			}
 			return resource;
 		},
-		with(...annotations: ProviderAnnotation[]): BindleResource<K> {
+		with(...annotations: ProviderAnnotation[]): BindleResource<K, Message> {
 			for (const annotation of annotations) {
-				// Singleton platform traits: a later .with() replaces, not stacks.
 				if (
 					annotation.option === "session-replay" ||
 					annotation.option === "status-page"
@@ -182,8 +177,10 @@ function createBuilder(): BindleBuilder {
 		},
 		kv: () => createBindleResource("kv"),
 		bucket: () => createBindleResource("bucket"),
-		queue: () => createBindleResource("queue"),
-		topic: () => createBindleResource("topic"),
+		queue: <Message = JsonValue>() =>
+			createBindleResource<"queue", Message>("queue"),
+		topic: <Message = JsonValue>() =>
+			createBindleResource<"topic", Message>("topic"),
 		secret: () => createBindleResource("secret"),
 		data: () => createBindleResource("data"),
 		schedule: () => createBindleResource("schedule"),
@@ -204,17 +201,14 @@ function createBuilder(): BindleBuilder {
 		experiment: () => createBindleResource("experiment"),
 		rollout: () => createBindleResource("rollout"),
 		external: (options: ExternalDependencyOptions = {}) =>
-			// SAFETY: assertion required at this I/O or test boundary.
 			createBindleResource("external").with(
 				externalDependencyAnnotation(options),
 			) as BindleResource<"external">,
 		container: (options: ContainerDependencyOptions) =>
-			// SAFETY: assertion required at this I/O or test boundary.
 			createBindleResource("container").with(
 				containerDependencyAnnotation(options),
 			) as BindleResource<"container">,
 		wasmComponent: (options: WasmComponentDependencyOptions) =>
-			// SAFETY: assertion required at this I/O or test boundary.
 			createBindleResource("wasm-component").with(
 				wasmComponentDependencyAnnotation(options),
 			) as BindleResource<"wasm-component">,
@@ -226,7 +220,6 @@ function toResourceRecord<K extends ResourceKind>(
 	name: string,
 	internal: InternalBindleResource<K>,
 ): BindleResourceRecord<K> {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const stableId = `${internal.kind}:${name}` as `${K}:${string}`;
 	return Object.freeze({
 		kind: internal.kind,
@@ -307,7 +300,6 @@ export function bindle(
 		if (!isJsonString(resourceName) || resourceName.length === 0) {
 			throw new TypeError("bindle resource names must be non-empty strings");
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
 		const tracked = resource as TrackedBindleResource<ResourceKind>;
 		const internal = tracked.__bindleInternal;
 		if (!internal) {
@@ -326,7 +318,6 @@ export function bindle(
 	}
 
 	for (const [resourceName, resource] of Object.entries(built)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const tracked = resource as TrackedBindleResource<ResourceKind>;
 		for (const dep of tracked.__bindleInternal.dependencies) {
 			if (isConnectorBinding(dep)) {
@@ -344,9 +335,6 @@ export function bindle(
 		}
 	}
 
-	// Usage is the source of truth: b.web()/b.service() → http (+ wasm unless
-	// containers force oci), b.container() → container + oci. Explicit
-	// require/runtimes only when the author opts in with a non-empty block.
 	if (isEmptyRequirements(requirements)) {
 		requirements = inferRequirementsFromResources(resources);
 	}
@@ -423,8 +411,6 @@ export function inferRequirementsFromResources(
 				break;
 		}
 	}
-	// OCI containers imply the Camp host; drop default wasm when oci is present
-	// so nameless Bindles with container+service do not force a wasm runtime.
 	if (runtimes.has("oci")) {
 		runtimes.delete("wasm");
 	}
