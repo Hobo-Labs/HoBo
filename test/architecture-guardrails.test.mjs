@@ -6,6 +6,7 @@ import { test } from "vitest";
 
 import {
 	checkArchitectureGuardrails,
+	hasSameProgramStructure,
 	implementationPackageRoots,
 } from "../scripts/check-architecture-guardrails.mjs";
 
@@ -177,6 +178,39 @@ test("implementationPackageRoots ignores barebones examples", () => {
 			"examples/hello-bindle/src/bindle.ts",
 		]),
 		[],
+	);
+});
+
+test("program structure ignores explanatory comment removal", () => {
+	assert.equal(
+		hasSameProgramStructure(
+			"demo.ts",
+			"// Parse the input.\nexport const parse = (value: string) => value.trim();\n",
+			"export const parse = (value: string) => value.trim();\n",
+		),
+		true,
+	);
+});
+
+test("program structure detects executable changes", () => {
+	assert.equal(
+		hasSameProgramStructure(
+			"demo.ts",
+			"export const parse = (value: string) => value.trim();\n",
+			"export const parse = (value: string) => value;\n",
+		),
+		false,
+	);
+});
+
+test("program structure preserves functional comments", () => {
+	assert.equal(
+		hasSameProgramStructure(
+			"demo.ts",
+			"export const value = /* @__PURE__ */ createValue();\n",
+			"export const value = createValue();\n",
+		),
+		false,
 	);
 });
 
