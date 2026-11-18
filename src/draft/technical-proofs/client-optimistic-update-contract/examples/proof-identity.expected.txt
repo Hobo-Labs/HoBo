@@ -1,3 +1,0 @@
-slug: client-optimistic-update-contract
-layer: technical
-proof-identity: ok
