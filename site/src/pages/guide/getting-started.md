@@ -152,7 +152,7 @@ One yard per provider. Multi-region = several camps under one yard. Multi-cloud 
 
 ### Junction: many yards, many clouds
 
-> **Early-stage:** `junction()` authoring and plan derivation ship; each yard still realizes its own half. Full multi-cloud realization is on the [trail map](/HoBo/guide/status/).
+> **Early-stage:** `junction()` authoring and plan derivation ship; each yard still realizes its own half. See [current status](/HoBo/guide/status/) for the limits of multi-cloud realization.
 
 ```ts
 import { junction } from "@hobo/junctions";
