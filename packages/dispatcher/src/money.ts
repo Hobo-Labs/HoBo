@@ -34,7 +34,10 @@ function adjacentFloat64Bits(value: number, direction: "up" | "down"): number {
 	return view.getFloat64(0);
 }
 
-function asNumberConservative(value: Decimal, direction: "up" | "down"): number {
+function asNumberConservative(
+	value: Decimal,
+	direction: "up" | "down",
+): number {
 	const candidate = Number(formatDecimal(value));
 	if (!Number.isFinite(candidate)) return candidate;
 	const comparison = compareDecimal(decimal(candidate), value);
