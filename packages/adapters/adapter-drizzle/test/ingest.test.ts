@@ -4,7 +4,7 @@ import {
 	type DrizzleImpedanceCode,
 	ingestDrizzleSchema,
 } from "../src/index.js";
-import type { JsonObject, JsonValue } from "../src/json.js";
+import type { JsonValue } from "../src/json.js";
 import type { ExtraConfigBuilder } from "../src/shape.js";
 import {
 	column,
@@ -19,7 +19,7 @@ import {
 } from "./fixtures.js";
 import * as schemaModule from "./schema-module.fixture.js";
 
-function codes(module: JsonObject): readonly DrizzleImpedanceCode[] {
+function codes<Module>(module: Module): readonly DrizzleImpedanceCode[] {
 	return ingestDrizzleSchema(module).impedance.map((finding) => finding.code);
 }
 
@@ -99,9 +99,7 @@ describe("ingestDrizzleSchema", () => {
 
 	it("is independent of export declaration order", () => {
 		const forward = representativeSchemaModule();
-		const reversed = Object.fromEntries(
-			Object.entries(forward).reverse(),
-		) as JsonObject;
+		const reversed = Object.fromEntries(Object.entries(forward).reverse());
 
 		expect(JSON.stringify(ingestDrizzleSchema(reversed))).toBe(
 			JSON.stringify(ingestDrizzleSchema(forward)),
@@ -137,7 +135,7 @@ describe("ingestDrizzleSchema", () => {
 		]);
 	});
 
-	const impedanceCases: [string, JsonObject, DrizzleImpedanceCode][] = [
+	const impedanceCases: [string, object, DrizzleImpedanceCode][] = [
 		[
 			"a view export",
 			{
