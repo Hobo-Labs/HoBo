@@ -85,6 +85,10 @@ export function desiredSpecHash(resource: ResourcePlan): DesiredSpecHash {
 		deps: [...resource.deps].sort(),
 	};
 	if (resource.strategy !== undefined) spec.strategy = resource.strategy;
+	if (resource.readyDeps !== undefined)
+		spec.readyDeps = [...resource.readyDeps].sort();
+	if (resource.completedDeps !== undefined)
+		spec.completedDeps = [...resource.completedDeps].sort();
 	if (resource.region !== undefined) spec.region = resource.region;
 	if (resource.productId !== undefined) spec.productId = resource.productId;
 	if (resource.realizationParameters !== undefined)

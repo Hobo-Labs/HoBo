@@ -13,6 +13,8 @@ message ResourceIntent {
   string region = 7;
   string objective = 8;
   PlacementCriteria placement = 9;
+  repeated string ready_deps = 10;
+  repeated string completed_deps = 11;
 }
 
 
@@ -108,6 +110,8 @@ message ResourcePlan {
   string product_id = 8;
   map<string, string> realization_parameters = 9;
   repeated string non_portable_rows = 10;
+  repeated string ready_deps = 11;
+  repeated string completed_deps = 12;
 }
 
 message DeploymentPlan {

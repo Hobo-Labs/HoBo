@@ -17,6 +17,13 @@ bucket implementations can satisfy it without an app selecting a provider.
 SDK key-value, queue and topic declarations likewise keep their distinct
 capabilities without inventing consistency or message-delivery guarantees.
 
+Container `waitFor` and `waitForCompletion` declarations become readiness and
+completion dependencies in the deployment plan. `runOrchestrator` uses its
+`observeDependency` port to check each condition after provisioning. If an
+observation is missing, pending, or failed, the dependent remains unprovisioned
+and the result names the blocked dependency. Call the orchestrator again after
+the provider's observation changes.
+
 SDK `b.secret().allow(...)` declarations lower to `secretRef` and preserve
 their requested `access` and `put` operations as required capabilities. A
 read-only provider cannot satisfy a write request. The SDK/CLI planner tests

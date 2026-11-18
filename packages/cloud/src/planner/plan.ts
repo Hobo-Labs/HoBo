@@ -361,6 +361,12 @@ export function plan(
 			port: intent.port,
 			provider: decision.providerId,
 			deps: intent.deps,
+			...(intent.readyDeps !== undefined
+				? { readyDeps: [...intent.readyDeps] }
+				: undefined),
+			...(intent.completedDeps !== undefined
+				? { completedDeps: [...intent.completedDeps] }
+				: undefined),
 			strategy: "rolling-update",
 			...(bound?.productId !== undefined
 				? { productId: bound.productId }

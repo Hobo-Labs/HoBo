@@ -108,6 +108,8 @@ type ResourcePlanDraft = {
 	port: string;
 	provider: string;
 	deps: readonly string[];
+	readyDeps?: readonly string[];
+	completedDeps?: readonly string[];
 	strategy?: string;
 	region?: string;
 	deploymentId?: string;
@@ -124,6 +126,8 @@ export type ResourcePlan = {
 	readonly port: string;
 	readonly provider: string;
 	readonly deps: readonly string[];
+	readonly readyDeps?: readonly string[];
+	readonly completedDeps?: readonly string[];
 	readonly strategy?: string;
 	readonly region?: string;
 	readonly deploymentId?: string;
@@ -149,6 +153,8 @@ export interface ResourcePlanAuthoring {
 	port: string;
 	provider: string;
 	deps: string[];
+	readyDeps?: readonly string[];
+	completedDeps?: readonly string[];
 	strategy?: string;
 	region?: string;
 	deploymentId?: string;
@@ -207,6 +213,8 @@ const RESOURCE_PLAN_KEYS = [
 	"port",
 	"provider",
 	"deps",
+	"readyDeps",
+	"completedDeps",
 	"strategy",
 	"region",
 	"deploymentId",
@@ -525,6 +533,26 @@ export function parseResourcePlan(
 		);
 	}
 	const deps = stringArray(source.deps, `${path}.deps`, fail, true);
+	const readyDeps = parseReadinessDependencies(
+		source,
+		"readyDeps",
+		deps,
+		path,
+		fail,
+	);
+	const completedDeps = parseReadinessDependencies(
+		source,
+		"completedDeps",
+		deps,
+		path,
+		fail,
+	);
+	if (readyDeps?.some((dependency) => completedDeps?.includes(dependency))) {
+		fail(
+			`${path}.completedDeps`,
+			"dependency cannot require both readiness and completion",
+		);
+	}
 
 	// `strategy`, `region` and `deploymentId` admit "" to match the CUE
 	// constraint they were decomposed from. `productId` does not.
@@ -572,12 +600,36 @@ export function parseResourcePlan(
 		deps,
 	};
 	if (strategy !== undefined) parsed.strategy = strategy;
+	if (readyDeps !== undefined) parsed.readyDeps = readyDeps;
+	if (completedDeps !== undefined) parsed.completedDeps = completedDeps;
 	if (region !== undefined) parsed.region = region;
 	if (deploymentId !== undefined) parsed.deploymentId = deploymentId;
 	if (productId !== undefined) parsed.productId = productId;
 	if (parameters !== undefined) parsed.realizationParameters = parameters;
 	if (rows !== undefined) parsed.nonPortableRows = rows;
 	return freezeResourcePlan(parsed);
+}
+
+function parseReadinessDependencies(
+	source: PlanParseObject,
+	field: "readyDeps" | "completedDeps",
+	deps: readonly string[],
+	path: string,
+	fail: Fail,
+): readonly string[] | undefined {
+	if (!Object.hasOwn(source, field)) return undefined;
+	const values = stringArray(source[field], `${path}.${field}`, fail, false);
+	if (
+		values.length === 0 ||
+		new Set(values).size !== values.length ||
+		values.some((value) => !deps.includes(value))
+	) {
+		fail(
+			`${path}.${field}`,
+			"must be non-empty, unique, and reference declared dependencies",
+		);
+	}
+	return values;
 }
 
 /**
@@ -662,6 +714,9 @@ function resourcePlanJson(resource: ResourcePlan): JsonObject {
 		deps: [...resource.deps],
 	};
 	if (resource.strategy !== undefined) out.strategy = resource.strategy;
+	if (resource.readyDeps !== undefined) out.readyDeps = [...resource.readyDeps];
+	if (resource.completedDeps !== undefined)
+		out.completedDeps = [...resource.completedDeps];
 	if (resource.region !== undefined) out.region = resource.region;
 	if (resource.deploymentId !== undefined)
 		out.deploymentId = resource.deploymentId;

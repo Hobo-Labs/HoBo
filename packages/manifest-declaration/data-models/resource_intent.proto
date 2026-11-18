@@ -62,6 +62,8 @@ message ResourceIntent {
   string objective = 8;
   // Optional placement-constraint vocabulary (E19).
   PlacementCriteria placement = 9;
+  repeated string ready_deps = 10;
+  repeated string completed_deps = 11;
 }
 
 // ---- E19: placement-constraint vocabulary (HoBo-native shapes; semantics
