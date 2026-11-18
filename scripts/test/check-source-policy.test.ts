@@ -666,6 +666,27 @@ e: ##"raw \##(2 + // raw interpolation
 		);
 	});
 
+	it("rejects comments in JSON configuration without flagging strings", () => {
+		for (const extension of ["jsonc", "json5"]) {
+			const repo = fixture();
+			const file = `settings.${extension}`;
+			write(repo, file, '{"url":"https://example.test/a//b"}\n');
+			git(repo, "add", file);
+			assert.equal(guard(repo, "--staged").status, 0);
+			write(
+				repo,
+				file,
+				'{"url":"https://example.test/a//b", /* explanation */ "value":1}\n// TODO finish\n',
+			);
+			assert.match(guard(repo, "--worktree").stderr, /self-documenting/u);
+			git(repo, "add", file);
+			const result = guard(repo, "--staged");
+			assert.equal(result.status, 1);
+			assert.match(result.stderr, /self-documenting/u);
+			assert.match(result.stderr, /finish deferred work/u);
+		}
+	});
+
 	it("handles Rust and Kotlin line and block comments", () => {
 		for (const file of ["example.rs", "example.kt"]) {
 			assert.deepEqual(
