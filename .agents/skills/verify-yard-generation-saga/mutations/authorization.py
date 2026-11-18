@@ -21,16 +21,16 @@ def replace(s, before, after, count=1):
     return s.replace(before, after)
 
 def default_allow(s):
-    s = replace(s, 'const authorize = options.authorizePlan;', 'const authorize = options.authorizePlan ?? (() => true);')
+    s = replace(s, 'const authorize = options.authorizePlan;', 'const authorize = options.authorizePlan ?? (() => true);', 2)
     return replace(s, 'options.authorizePlan === authorize', '(options.authorizePlan === undefined || options.authorizePlan === authorize)', 2)
 
 def first_check(s):
-    needle = 'if (!authorized())'
+    needle = 'if (!authorized(authorize, plan, planDigest))'
     if s.count(needle) != 2: raise RuntimeError('expected two authorization checks')
     return s.replace(needle, 'if (false)', 1)
 
 def boundary_check(s):
-    needle = 'if (!authorized())'
+    needle = 'if (!authorized(authorize, plan, planDigest))'
     if s.count(needle) != 2: raise RuntimeError('expected two authorization checks')
     pos = s.rfind(needle)
     return s[:pos] + s[pos:].replace(needle, 'if (false)', 1)
@@ -43,6 +43,8 @@ cases = [
     ('decision-plan', lambda s: replace(s, 'contentHashOf(decisionPlan) === planDigest &&', ''), 'host decision mutates-plan'),
     ('decision-identity', lambda s: replace(s, 'options.authorizePlan === authorize', 'true', 2), 'host decision replaces-decision'),
     ('isolated-snapshot', lambda s: replace(s, 'const decisionPlan = structuredClone(plan);', 'const decisionPlan = plan;'), 'retained authorization input'),
+    ('inspect-decision', lambda s: replace(s, 'if (\n\t\t\t\t\t!authorize ||\n\t\t\t\t\t!authorized(authorize, attempt.plan, attempt.planDigest)\n\t\t\t\t)', 'if (false)'), 'through inspection after authorization is revoked'),
+    ('inspect-plan-snapshot', lambda s: replace(s, 'const recordedPlan = existing?.plan ?? structuredClone(plan);', 'const recordedPlan = existing?.plan ?? plan;'), "inspection plan separate from the provider"),
 ]
 
 def run(pattern):

@@ -694,6 +694,30 @@ stateDiagram-v2
   s2 --> s1: refuse the provider call
 ```
 
+Inspection of a started or completed saga also requires the current host
+decision. The inspection view hides 36 same-label steps and assumes that the
+host decision is truthful; the recorded plan is isolated from the provider.
+
+```mermaid
+stateDiagram-v2
+  s0: Provider call pending#59; inspection approved
+  s1: Provider result recorded#59; inspection approved
+  s2: Provider call pending#59; inspection refused
+  s3: Provider call pending#59; approved result read
+  s4: Provider result recorded#59; inspection refused
+  s5: Provider result recorded#59; approved result read
+  [*] --> s0
+  s0 --> s1: provider result is recorded
+  s0 --> s2: host revokes approval
+  s0 --> s3: read the approved result
+  s1 --> s4: host revokes approval
+  s1 --> s5: read the approved result
+  s2 --> s0: host restores approval
+  s2 --> s4: provider result is recorded
+  s3 --> s5: provider result is recorded
+  s4 --> s1: host restores approval
+```
+
 Without a budget authority, local placement also requires an
 explicit `authorizeLocalHosting` callback. It approves the exact request,
 catalog, Yard and selected resource placements and returns a bound policy proof
