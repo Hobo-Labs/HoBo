@@ -33,18 +33,11 @@ export function neonJournalProvisioner(
 			// another anonymous database and losing the first credential, so
 			// the claim is kept in the owner's store, made with its atomic
 			// create; a store without one is refused (the error says so).
-			let store: DurableClaimStore;
-			try {
-				store = (
-					claims ??
-					((opened) =>
-						secretStoreClaims(opened, { prefix: "HOBO_CD_JOURNAL_CLAIM_" }))
-				)(owner);
-			} catch (error) {
-				throw new Error(
-					`Cannot provision the CD journal until a durable, atomic, owner-scoped idempotency store is available: ${error instanceof Error ? error.message : String(error)}`,
-				);
-			}
+			const store = (
+				claims ??
+				((opened) =>
+					secretStoreClaims(opened, { prefix: "HOBO_CD_JOURNAL_CLAIM_" }))
+			)(owner);
 			const client = createNeonClient({
 				transport: createFetchTransport({ fetchImpl }),
 				store,
