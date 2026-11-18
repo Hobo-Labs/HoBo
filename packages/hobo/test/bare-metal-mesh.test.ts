@@ -203,20 +203,17 @@ describe("collectBindleEnvInjections", () => {
 		["API_KEY", "fixture-private-value"],
 		["SERVICE_TOKEN", "fixture-private-value"],
 		["SERVICE", "https://user:password@example.test"],
-	])(
-		"rejects secret delivery through %s without disclosing its value",
-		(key, value) => {
-			const bindle = definition([
-				{ option: "env", config: { [key]: value } },
-			]);
-			expect(() => collectBindleEnvInjections(bindle)).toThrow(/binding.delivery/i);
-			try {
-				collectBindleEnvInjections(bindle);
-			} catch (error) {
-				expect(String(error)).not.toContain(value);
-			}
-		},
-	);
+	])("rejects secret delivery through %s without disclosing its value", (key, value) => {
+		const bindle = definition([{ option: "env", config: { [key]: value } }]);
+		expect(() => collectBindleEnvInjections(bindle)).toThrow(
+			/binding.delivery/i,
+		);
+		try {
+			collectBindleEnvInjections(bindle);
+		} catch (error) {
+			expect(String(error)).not.toContain(value);
+		}
+	});
 
 	it("stringifies numbers and booleans", () => {
 		expect(
@@ -226,8 +223,8 @@ describe("collectBindleEnvInjections", () => {
 		).toEqual({ PORT: "8080", DEBUG: "true" });
 	});
 
-	it("skips values that are not scalars", () => {
-		expect(
+	it("rejects values that are not scalars", () => {
+		expect(() =>
 			collectBindleEnvInjections(
 				definition([
 					{
@@ -236,7 +233,9 @@ describe("collectBindleEnvInjections", () => {
 					},
 				]),
 			),
-		).toEqual({ OK: "1" });
+		).toThrow(
+			"environment value at NESTED must be a string, number or boolean",
+		);
 	});
 
 	it("ignores annotations that are not env", () => {
