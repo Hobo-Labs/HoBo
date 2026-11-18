@@ -8,7 +8,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-function isReproducibleJsonResult<T>(value: T, seen: Set<object>): boolean {
+function isReproducibleJsonValue<T>(value: T, seen: Set<object>): boolean {
 	if (value === null) return true;
 	const object: object = Object(value);
 	if (object !== value) {
@@ -58,7 +58,7 @@ function isReproducibleJsonResult<T>(value: T, seen: Set<object>): boolean {
 			!descriptor.configurable
 		)
 			return false;
-		if (!isReproducibleJsonResult(descriptor.value, seen)) return false;
+		if (!isReproducibleJsonValue(descriptor.value, seen)) return false;
 	}
 	return true;
 }
@@ -70,13 +70,25 @@ function faithfullyReproduces<T>(
 	return isDeepStrictEqual(original, captured);
 }
 
+function captureWorkflowValue<T>(value: T): T {
+	if (!isReproducibleJsonValue(value, new Set())) throw new TypeError();
+	const captured = cloneAsJson(value);
+	if (!faithfullyReproduces(value, captured)) throw new TypeError();
+	return captured;
+}
+
+export function captureWorkflowInput<T>(input: T): T {
+	try {
+		return captureWorkflowValue(input);
+	} catch {
+		throw new TypeError("workflow input must be JSON-normalized");
+	}
+}
+
 export function captureWorkflowResult<T>(result: T, step?: string): T {
 	if (result === undefined) return result;
 	try {
-		if (!isReproducibleJsonResult(result, new Set())) throw new TypeError();
-		const captured = cloneAsJson(result);
-		if (!faithfullyReproduces(result, captured)) throw new TypeError();
-		return captured;
+		return captureWorkflowValue(result);
 	} catch {
 		throw new WorkflowFailure(
 			"workflow result must be JSON-normalized",

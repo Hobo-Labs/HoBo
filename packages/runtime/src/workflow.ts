@@ -33,7 +33,10 @@ import {
 } from "./replay/store.js";
 import { runWithRetries } from "./step.js";
 import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
-import { captureWorkflowResult } from "./workflow-result.js";
+import {
+	captureWorkflowInput,
+	captureWorkflowResult,
+} from "./workflow-value.js";
 
 /** Durability primitives are always granted; effect capabilities are declared. */
 const DURABILITY_CAPABILITIES: readonly Capability[] = [
@@ -385,18 +388,20 @@ export function createWorkflowEngine(
 			) {
 				throw new TypeError("workflow runId must be a non-empty string");
 			}
+			const input = captureWorkflowInput(args);
 			const streamId = `run/${runId}`;
 			const started = nextEnvelope(
 				streamId,
 				1,
 				"run.Started",
-				cloneAsJson({ seed, args, workflowName: def.name }),
+				cloneAsJson({ seed, args: input, workflowName: def.name }),
 			);
 			await recordEffect(store, started, 0);
-			return execute(def, runId, args);
+			return execute(def, runId, input);
 		},
 		async resume(def, runId, args) {
-			return execute(def, runId, args);
+			const input = captureWorkflowInput(args);
+			return execute(def, runId, input);
 		},
 		async journal(runId) {
 			const events = await store.readStream(`run/${runId}`);

@@ -43,6 +43,13 @@ manufacturing placeholder values.
 
 Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
 
+Workflow input must be an ordinary JSON tree. The engine captures it before
+the first asynchronous operation, so later caller edits do not change the run.
+Unsupported inputs, including `undefined`, non-finite numbers, dates, shared
+references, proxies, accessors and frozen objects, are rejected before a new
+journal is claimed. Convert them to explicit JSON before starting or resuming.
+Older runs created from such inputs may need application-specific recovery.
+
 Workflow and step results must be ordinary JSON trees or top-level `undefined`.
 Dates, non-finite numbers, shared or circular references, accessors, proxies,
 sparse arrays, frozen objects and other values that cannot be faithfully
