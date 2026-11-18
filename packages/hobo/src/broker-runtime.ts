@@ -489,6 +489,8 @@ export async function resolveBindlePlacement(options: {
 	/** Where a runtime host comes from; defaults to the composition's registry. */
 	readonly runtimeHost?: (kind: ComponentHostKind) => HoboRuntimeHost;
 }): Promise<PlacementResult> {
+	// Startup can invoke caller callbacks; retain the Camp that was requested.
+	const requestedCampId = options.campId;
 	const hoboHome = options.hoboHome ?? defaultHoboHome();
 	const emit = options.emitProgress ?? (() => {});
 	const yardConfig = options.yard ?? loadBareMetalYardConfig(hoboHome) ?? null;
@@ -506,7 +508,7 @@ export async function resolveBindlePlacement(options: {
 		return {
 			outcome: "rejected",
 			brokerId: "uninitialized",
-			campId: options.campId ?? "unplaced",
+			campId: requestedCampId ?? "unplaced",
 			yardName: yardConfig?.name ?? "local",
 			componentHost: yardConfig?.componentHost ?? DEFAULT_COMPONENT_HOST,
 			providerId: "none",
@@ -582,7 +584,7 @@ export async function resolveBindlePlacement(options: {
 		return {
 			outcome: "rejected",
 			brokerId: "uninitialized",
-			campId: options.campId ?? "unplaced",
+			campId: requestedCampId ?? "unplaced",
 			yardName: yardConfig?.name ?? "local",
 			componentHost: yardConfig?.componentHost ?? DEFAULT_COMPONENT_HOST,
 			providerId: "none",
@@ -649,7 +651,7 @@ export async function resolveBindlePlacement(options: {
 		labels: {},
 	};
 
-	const deploymentRequest = buildDeploymentRequestFromParts({
+	const baseRequest = buildDeploymentRequestFromParts({
 		bindleName: options.definition.name,
 		manifestHash:
 			options.workloadDigest ??
@@ -675,6 +677,22 @@ export async function resolveBindlePlacement(options: {
 		ownerTenantId: "local",
 		objective: "min-cost",
 	});
+	const deploymentRequest =
+		requestedCampId === undefined
+			? baseRequest
+			: {
+					...baseRequest,
+					camp: {
+						selectionMode: "exact" as const,
+						campId: requestedCampId,
+						layout: {
+							require: [],
+							prefer: [],
+							labels: {},
+							runtimeRequirements: [],
+						},
+					},
+				};
 
 	emit(
 		`hobo broker-runtime: yard-first placement for bindle:${options.definition.name} → ${yardId}`,
@@ -744,7 +762,7 @@ export async function resolveBindlePlacement(options: {
 		return {
 			outcome: "rejected",
 			brokerId: state.brokerId,
-			campId: options.campId ?? "unplaced",
+			campId: requestedCampId ?? "unplaced",
 			yardName,
 			componentHost: state.preferredComponentHost,
 			providerId: "none",
@@ -778,7 +796,7 @@ export async function resolveBindlePlacement(options: {
 	}
 
 	const receipt = yardFirst.receipt;
-	const campId = options.campId ?? receipt.selectedCampId;
+	const campId = receipt.selectedCampId;
 	const providerId = receipt.selectedProviderId;
 	let componentHost = componentHostForProvider(
 		providerId,

@@ -113,6 +113,31 @@ A network broker is selected only through `--broker`/`--broker-uri`,
 That endpoint can be self-hosted; "remote" describes transport, not a mandatory
 hosted service. There is no automatic fallback to a hosted broker.
 
+When a caller supplies a Camp ID to embedded placement, HoBo captures it before
+startup and sends it to the broker as an exact Camp request. A successful result
+reports the broker receipt's fully qualified Camp ID; a foreign-Yard Camp is
+refused. A rejection reports the original request even if the caller later edits
+its options. A named Camp is not proof that it exists or meets its requirements.
+
+The bounded Camp handoff model hides 36 same-state transitions, including changes
+to the caller's original options. It trusts the broker's Camp check.
+
+```mermaid
+stateDiagram-v2
+  s0: Placement requested
+  s1: Camp request captured
+  s2: Camp request sent to broker
+  s3: Foreign Camp refused and identified
+  s4: Camp approved by broker
+  s5: Authorized Camp returned
+  [*] --> s0
+  s0 --> s1: capture the requested Camp
+  s1 --> s2: send the requested Camp to the broker
+  s2 --> s3: refuse and report the requested Camp
+  s2 --> s4: approve the selected Camp
+  s4 --> s5: return the approved Camp
+```
+
 The embedded zero-fee policy authorizes local-process work only. A Bindle that
 requires an OCI or Wasm execution host needs separate authorization, even when
 the caller requests a local provider. Declared runtimes and runtimes implied by
