@@ -182,13 +182,11 @@ describe("Rivet HTTP application with a durable topic bus", () => {
 
 	it("refuses a rejected asynchronous scope verifier without an unhandled rejection", async () => {
 		const f = fixture();
-		const verifyScope = (() =>
-			Promise.reject(
-				new Error("async verifier"),
-			)) as unknown as RivetHttpTopicBusApplicationOptions["verifyScope"];
-		expect(() =>
-			createRivetHttpTopicBusApplication({ ...f.options, verifyScope }),
-		).toThrow();
+		const options = { ...f.options };
+		Object.defineProperty(options, "verifyScope", {
+			value: () => Promise.reject(new Error("async verifier")),
+		});
+		expect(() => createRivetHttpTopicBusApplication(options)).toThrow();
 		await new Promise((resolve) => setTimeout(resolve, 0));
 	});
 
