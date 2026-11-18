@@ -14,6 +14,8 @@ over conflicting repository workflow guidance.
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
+- HoBo manages deployment of its CI relay. Its Vercel project is intentionally
+  not Git-linked; do not reconnect it or treat the missing link as a defect.
 
 # Agent tooling for this repo
 
