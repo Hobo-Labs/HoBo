@@ -9,7 +9,7 @@ description: Verify fuzz-oracle checkpoint revisions across retries and rollback
 
 **Why:** A reused clock can replace a saved checkpoint and make the fuzz oracle report a successful rollback to the wrong historical state.
 
-**Review baseline:** `6d2f255fd814a966c8cc67515d0a55979cd1e54c`.
+**Review baseline:** `4d47435eb2e692981096dcc56b817298fc4d30b9`.
 
 ## Covered code and checks
 
@@ -49,7 +49,7 @@ stateDiagram-v2
 
 With the retry tick removed, a checkpoint, retry and second checkpoint replace the first value. With the rollback tick removed, two checkpoints followed by rollback and another checkpoint replace the later value. With the limit guard removed, a mutation can reuse the maximum clock. Regression tests reproduce both historical overwrites and the exhaustion failure on real code. Seven scratch mutations exercise missing or delayed ticks and the clock guards; the restored full skill passes. Z3 proves the abstract integer bounds and finds a witness without the limit guard.
 
-The model covers one resource and one tenant, treats stored payloads as a single bit, assumes API-managed snapshots and does not model all event kinds, direct mutation of public maps, arbitrary `restore()` calls, concurrency or persistence. `restore()` on an existing model can rewind its clock and leaves earlier history intact; that separate path is not covered by these guarantees. The proof is over mathematical integers, not TypeScript refinement or every JavaScript floating-point behavior. Replay and multi-tenant examples are executable tests rather than model-checked claims. This is a testing oracle, not the production control plane.
+The model covers one resource and one tenant, treats stored payloads as a single bit, assumes API-managed snapshots and does not model all event kinds, direct mutation of public maps, arbitrary `restore()` calls, concurrency or persistence. The separate [restore model](../verify-fuzz-restore/SKILL.md) covers the replay baseline and clock advancement for restoring serialized state. The proof is over mathematical integers, not TypeScript refinement or every JavaScript floating-point behavior. Replay and multi-tenant examples are executable tests rather than model-checked claims. This is a testing oracle, not the production control plane.
 
 ## Keep in sync
 
