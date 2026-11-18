@@ -21,6 +21,9 @@ export interface PrimitiveDeclaration {
 export interface BindleForAlchemy<Entrypoint, Requirements> {
 	readonly name: string;
 	readonly resources: Readonly<Record<string, PrimitiveDeclaration>>;
+	readonly connectors?: Readonly<
+		Record<string, { readonly kind: "connector" }>
+	>;
 	readonly edges: readonly { readonly from: string; readonly to: string }[];
 	readonly requirements: Requirements;
 	entrypoint(name: string): Entrypoint | undefined;
@@ -50,6 +53,16 @@ export interface AlchemyMappedPrimitive<Entrypoint> {
 export interface AlchemyBindleMapping {
 	readonly primary: Readonly<Record<string, ResourceLike>>;
 	readonly resources: readonly ResourceLike[];
+}
+
+export type AlchemyRequirementsDecision =
+	| { readonly status: "supported" }
+	| { readonly status: "unsupported"; readonly reason: string };
+
+export interface AlchemyBindleOptions<Requirements> {
+	readonly assessRequirements: (
+		requirements: Requirements,
+	) => AlchemyRequirementsDecision;
 }
 
 export interface AlchemyPrimitiveSupport {
@@ -145,7 +158,48 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 	mappers: Readonly<
 		Record<string, AlchemyPrimitiveMapper<Entrypoint, Requirements, Services>>
 	>,
+	options: AlchemyBindleOptions<Requirements>,
 ): Effect.Effect<AlchemyBindleMapping, never, Services> {
+	let unsupportedReason: string | undefined;
+	try {
+		const decision = options.assessRequirements(bindle.requirements);
+		const status = Object.getOwnPropertyDescriptor(decision, "status");
+		if (status === undefined || !("value" in status))
+			throw new Error("invalid requirement decision");
+		if (status.value === "unsupported") {
+			const reason = Object.getOwnPropertyDescriptor(decision, "reason");
+			/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: the provider callback can return malformed data across the adapter boundary. */
+			if (
+				reason === undefined ||
+				!("value" in reason) ||
+				typeof reason.value !== "string" ||
+				!validName(reason.value)
+			)
+				throw new Error("invalid requirement decision");
+			/* oxlint-enable anti-slop/no-runtime-typeof */
+			unsupportedReason = reason.value;
+		} else if (status.value !== "supported") {
+			throw new Error("invalid requirement decision");
+		}
+	} catch {
+		throw new AlchemyIacError(
+			"REQUIREMENTS_ASSESSMENT_FAILED",
+			"provider could not assess bindle requirements",
+		);
+	}
+	if (unsupportedReason !== undefined)
+		throw new AlchemyIacError(
+			"BINDLE_REQUIREMENTS_UNSUPPORTED",
+			unsupportedReason,
+		);
+	if (
+		bindle.connectors !== undefined &&
+		Object.keys(bindle.connectors).length > 0
+	)
+		throw new AlchemyIacError(
+			"BINDLE_CONNECTORS_UNSUPPORTED",
+			"connector authorization and runtime bindings are not mapped",
+		);
 	const entries = Object.entries(bindle.resources);
 	if (
 		!validName(bindle.name) ||

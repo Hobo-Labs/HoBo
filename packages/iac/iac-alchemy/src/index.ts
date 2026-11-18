@@ -39,9 +39,11 @@ export {
 } from "./_generated/alchemy_iac_pb.js";
 export type {
 	AlchemyBindleMapping,
+	AlchemyBindleOptions,
 	AlchemyMappedPrimitive,
 	AlchemyPrimitiveMapper,
 	AlchemyPrimitiveSupport,
+	AlchemyRequirementsDecision,
 	BindleForAlchemy,
 	PrimitiveDeclaration,
 } from "./bindle.js";
