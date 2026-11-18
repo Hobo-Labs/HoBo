@@ -15,6 +15,11 @@ cases = [
     ('release-after-setup-failure', 'lease.finished = true;', 'lease.finished = false;', 2, 'FAIL  test/authoring/workflow-overlap.test.ts >'),
     ('completed-step', 'if (completed && isRecord(completed.data))', 'if (false && completed && isRecord(completed.data))', 1, 'a durably journaled step must not run again on resume'),
     ('terminal-replay', 'if (terminal) {', 'if (false && terminal) {', 1, '/terminal.mts:'),
+    ('id-validation', 'if (!isJsonString(runId) || String(runId) !== runId || runId.length === 0)', 'if (false)', 1, 'FAIL  test/authoring/workflow-id-boundary.test.ts >'),
+    ('start-id', 'const runId = requireWorkflowRunId(\n\t\t\t\trequestedRunId === undefined ? `run-${randomUUID()}` : requestedRunId,\n\t\t\t);', 'const runId = requestedRunId === undefined ? `run-${randomUUID()}` : requestedRunId;', 1, 'FAIL  test/authoring/workflow-id-boundary.test.ts >'),
+    ('resume-id', 'const id = requireWorkflowRunId(runId);', 'const id = runId;', 2, 'FAIL  test/authoring/workflow-id-boundary.test.ts >'),
+    ('journal-id', 'const id = requireWorkflowRunId(runId);', 'const id = runId;', 2, 'FAIL  test/authoring/workflow-id-boundary.test.ts >'),
+    ('null-id-default', 'requestedRunId === undefined ? `run-${randomUUID()}` : requestedRunId,', 'requestedRunId ?? `run-${randomUUID()}`,', 1, 'FAIL  test/authoring/workflow-id-boundary.test.ts >'),
 ]
 
 
@@ -34,7 +39,12 @@ def check(case):
         original = target.read_text()
         if original.count(before) != count:
             raise RuntimeError(f'{name}: expected {count} mutation sites, found {original.count(before)}')
-        target.write_text(original.replace(before, after, 1 if name == 'release-after-setup-failure' else count))
+        if name == 'journal-id':
+            position = original.rfind(before)
+            changed = original[:position] + original[position:].replace(before, after, 1)
+        else:
+            changed = original.replace(before, after, 1 if name in {'release-after-setup-failure', 'resume-id'} else count)
+        target.write_text(changed)
         env = {**os.environ, 'WORKFLOW_VERIFY_PACKAGE_ROOT': str(scratch), 'WORKFLOW_VERIFY_SOURCE': str(target)}
         result = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900)
         output = result.stdout
