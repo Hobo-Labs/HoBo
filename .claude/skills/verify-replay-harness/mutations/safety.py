@@ -28,7 +28,7 @@ for name, filename, before, after in cases:
             raise RuntimeError(f'{name}: expected one mutation site, found {original.count(before)}')
         changed = original.replace(before, after, 1)
         if name == 'replay-before-callback':
-            marker = 'const report: ReplayReport = {'
+            marker = 'const report: ReplayReport = Object.freeze({'
             if changed.count(marker) != 1:
                 raise RuntimeError('replay-before-callback: expected report site')
             changed = changed.replace(marker, 'const recordedVector = seqVectorForVersion(events, digestVersion);\n\t' + marker, 1)

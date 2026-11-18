@@ -40,7 +40,7 @@ export function parseReplayReport(raw: JsonValue): ReplayReport {
 	return Object.freeze({
 		canonicalizationVersion: parseCanonicalizationVersion(source),
 		runId,
-		seqVector: [...seqVector],
+		seqVector: Object.freeze([...seqVector]),
 		readSetHash,
 		stateDigest,
 		mode,
