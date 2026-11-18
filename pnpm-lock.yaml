@@ -1787,6 +1787,9 @@ importers:
         specifier: 11.8.1
         version: 11.8.1
     devDependencies:
+      '@pact-foundation/pact':
+        specifier: 17.1.4
+        version: 17.1.4
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0

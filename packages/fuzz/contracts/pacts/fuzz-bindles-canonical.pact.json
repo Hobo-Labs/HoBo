@@ -1,29 +1,146 @@
 {
-	"consumer": { "name": "hobo-fuzz" },
-	"provider": { "name": "bindles-manifest" },
-	"interactions": [
-		{
-			"description": "equivalent key-shuffled manifests hash identically",
-			"request": {
-				"method": "POST",
-				"path": "/canonical-hash",
-				"headers": { "content-type": "application/json" },
-				"body": {
-					"schema": "hobo.manifest/v1",
-					"componentHost": { "kind": "wasmtime", "version": "1.0.0" },
-					"resources": {
-						"db": { "type": "data.v1", "port": "hobo:data" }
-					}
-				}
-			},
-			"response": {
-				"status": 200,
-				"headers": { "content-type": "application/json" },
-				"body": { "ok": true, "algorithm": "sha256" }
-			}
-		}
-	],
-	"metadata": {
-		"pactSpecification": { "version": "3.0.0" }
-	}
+  "consumer": {
+    "name": "hobo-fuzz"
+  },
+  "provider": {
+    "name": "bindles-manifest"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/Messages",
+      "description": "a manifest hashes to its canonical digest",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "schema": "hobo.manifest/v1",
+            "componentHost": {
+              "kind": "wasmtime",
+              "version": "1.0.0"
+            },
+            "resources": {
+              "db": {
+                "type": "data.v1",
+                "port": "hobo:data",
+                "paradigm": "relational",
+                "allow": [
+                  "query"
+                ]
+              },
+              "api": {
+                "type": "component.v1",
+                "image": "oci://registry.example.com/api@sha256:abc123",
+                "runtime": "wasm",
+                "exports": [
+                  "wasi:http/incoming-handler"
+                ],
+                "links": [
+                  {
+                    "import": "hobo:data",
+                    "to": "db"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "status": "accepted",
+              "hash": "sha256:acf4f90820db93aa89fc9fce5ce1cd42ca7c6efcd12431efb575cb60c773024f"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "a reordered manifest keeps the same digest",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "schema": "hobo.manifest/v1",
+            "componentHost": {
+              "kind": "wasmtime",
+              "version": "1.0.0"
+            },
+            "resources": {
+              "api": {
+                "type": "component.v1",
+                "image": "oci://registry.example.com/api@sha256:abc123",
+                "runtime": "wasm",
+                "exports": [
+                  "wasi:http/incoming-handler"
+                ],
+                "links": [
+                  {
+                    "import": "hobo:data",
+                    "to": "db"
+                  }
+                ]
+              },
+              "db": {
+                "type": "data.v1",
+                "port": "hobo:data",
+                "paradigm": "relational",
+                "allow": [
+                  "query"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "status": "accepted",
+              "hash": "sha256:acf4f90820db93aa89fc9fce5ce1cd42ca7c6efcd12431efb575cb60c773024f"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "an invalid manifest is rejected",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "schema": "hobo.manifest/v1",
+            "resources": {}
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "status": "rejected"
+            }
+          }
+        }
+      ]
+    }
+  ]
 }
