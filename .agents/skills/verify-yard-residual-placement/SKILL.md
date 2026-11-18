@@ -7,7 +7,7 @@ description: Verify capability, region, provider and catalog-price evidence for 
 
 **Properties:** A residual resource is placed only on a full capability match in its Yard provider or an explicitly compatible wildcard, in a region supported by the definition. Eligible catalog entries must have distinct identities, valid nonnegative decimal prices and matching units; the lowest exact marginal price wins with stable ID ties. Catalog evidence changed while resolving resources rejects. A failure can route a resource to an unsupported region, omit required capabilities, misrepresent its provider, or select the wrong catalog price.
 
-**Review baseline:** commit `68c1fd792b8b9cf530293502d62bd4dd616e0a60`. PASS for the bounded models, symbolic abstraction and generated tests below. The request parser now refuses malformed constraints and estimates before matching; `verify-yard-request-validation` checks that boundary separately.
+**Review baseline:** commit `c0ec97c0fa150b2347a039cb5db11218b95ef536`. PASS for the bounded models, symbolic abstraction and generated tests below. The request parser refuses malformed constraints and estimates before matching; `verify-yard-request-validation` checks that boundary separately. `verify-yard-json-constraints` checks structural property matching before this modeled residual placement.
 
 ## Covered code
 

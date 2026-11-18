@@ -6,7 +6,7 @@ import "google/protobuf/struct.proto";
 
 // Wire contracts for Yard-first placement (artifacts, not topology primitives).
 
-// Version 2 carries labels as entries so every JSON string key is preserved.
+// Version 2 carries labels as entries, including inherited-name keys.
 message PlacementLabelEntry {
   string key = 1;
   string value = 2;

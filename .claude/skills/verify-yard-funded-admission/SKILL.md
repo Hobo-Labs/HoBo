@@ -7,7 +7,7 @@ description: Verify funded Yard quote and context fencing, retained holds and se
 
 **Properties:** A funded Yard receipt requires a quote for its selected Yard and provider, an unchanged quote and budget context around policy and reservation, a policy proof bound to the complete quote digest and ID, a quote bound to selected resource work and any generation plan, and a current quote and context through receipt issuance. If evidence changes after the durable reservation, the hold remains for reconciliation. Generation must claim funding under current context; on the covered failures after a provider effect, the original hold is marked uncertain, or a failed uncertainty write is reported while the hold remains. A failure can issue a receipt for different or expired liability, provision without valid funding, or leave a provider effect without identified reconciliation.
 
-**Review baseline:** commit `68c1fd792b8b9cf530293502d62bd4dd616e0a60`. PASS for the bounded models, symbolic abstraction and generated tests below. The request parser now refuses malformed constraints and estimates before this admission flow; `verify-yard-request-validation` checks that boundary separately.
+**Review baseline:** commit `c0ec97c0fa150b2347a039cb5db11218b95ef536`. PASS for the bounded models, symbolic abstraction and generated tests below. The request parser refuses malformed constraints and estimates before this admission flow; `verify-yard-request-validation` checks that boundary separately. `verify-yard-json-constraints` checks structural property matching before admission.
 
 ## Covered code
 

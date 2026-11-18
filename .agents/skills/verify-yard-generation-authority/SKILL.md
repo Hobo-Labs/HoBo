@@ -7,7 +7,7 @@ description: Verify policy, runtime-catalog and connector evidence around funded
 
 **Properties:** Yard generation may claim and invoke a provider only while the selected generation policy, runtime catalog, connector and plan remain current. The provider call uses the approved connector methods even if another lookup changes. If authority changes after a provider effect, the original hold is marked uncertain, or a failed uncertainty write is reported while the hold remains. An unavailable initial runtime catalog returns a rejection before a hold or provider call. A failure can provision against a revoked policy or runtime, send work to another connector, issue a stale receipt or leave exposure unreconciled.
 
-**Review baseline:** commit `68c1fd792b8b9cf530293502d62bd4dd616e0a60`. PASS for the bounded models, symbolic abstraction and real-code tests below. The request parser now refuses malformed constraints and estimates before generation; `verify-yard-request-validation` checks that boundary separately.
+**Review baseline:** commit `c0ec97c0fa150b2347a039cb5db11218b95ef536`. PASS for the bounded models, symbolic abstraction and real-code tests below. The request parser refuses malformed constraints and estimates before generation; `verify-yard-request-validation` checks that boundary separately. `verify-yard-json-constraints` checks structural property matching before this generation flow.
 
 ## Covered code
 
