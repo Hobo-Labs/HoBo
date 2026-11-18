@@ -1,4 +1,7 @@
-import type { CostSignal as CoreCostSignal } from "@hobo/core";
+import type {
+	CapabilityManifest as CoreCapabilityManifest,
+	CostSignal as CoreCostSignal,
+} from "@hobo/core";
 import type { JsonObject } from "./json.js";
 
 export type PortKind = string;
@@ -27,18 +30,12 @@ export type ProviderClient = {
 	providerService: string;
 	bindings: Outputs;
 };
-export type CapabilityManifest = {
-	providerId: string;
-	published: Record<string, string>;
-	capabilities: unknown;
-	auth: unknown;
-	cost: unknown;
-};
+export type CapabilityManifest = CoreCapabilityManifest;
 export type CloudProvider = {
 	id: string;
 	regions: string[];
 	capabilities: Capability[];
-	realize(plan: ResourcePlan): { iac?: unknown; driver?: unknown };
+	realize(plan: ResourcePlan): { iac?: JsonObject; driver?: JsonObject };
 	capabilityManifest(): CapabilityManifest;
 	client(port: PortKind, outputs: Outputs): ProviderClient;
 };

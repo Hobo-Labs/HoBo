@@ -5,6 +5,7 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
+	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import {
@@ -24,6 +25,7 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const AZURE_PROVIDER_ID = "@hobo/provider-azure";
+export const PROVIDER_TERMS = providerTermsFor(AZURE_PROVIDER_ID);
 
 export const DEFAULT_REGIONS = ["eastus", "westus2", "westeurope"];
 
@@ -186,6 +188,7 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
+		terms: PROVIDER_TERMS,
 		documents,
 	};
 

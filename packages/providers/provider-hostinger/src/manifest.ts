@@ -5,6 +5,7 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
+	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import {
@@ -24,6 +25,7 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const HOSTINGER_PROVIDER_ID = "@hobo/provider-hostinger";
+export const PROVIDER_TERMS = providerTermsFor(HOSTINGER_PROVIDER_ID);
 
 // Hostinger's data-centre slugs (Phoenix, Boston, Amsterdam, London, São
 // Paulo, Mumbai, Singapore, Tokyo). Transcribed from the public locations list,
@@ -189,6 +191,7 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
+		terms: PROVIDER_TERMS,
 		documents,
 	};
 

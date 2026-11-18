@@ -1,3 +1,4 @@
+import { providerTermsFor } from "@hobo/core";
 import type { InitialCapabilityPort } from "./equivalence.js";
 import {
 	EQUIVALENCE_CLASSES,
@@ -23,6 +24,7 @@ export const COST_SCHEMA = "hobo.cost/v1";
 
 // public-contract: the provider id every published document carries.
 export const CLOUDFLARE_PROVIDER_ID = "@hobo/provider-cloudflare";
+export const PROVIDER_TERMS = providerTermsFor(CLOUDFLARE_PROVIDER_ID);
 
 // A `type` alias (not an interface) so it keeps an implicit index signature
 // and stays assignable to @hobo/core's `PublishedManifestDocuments`
@@ -165,6 +167,7 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
+		terms: PROVIDER_TERMS,
 		documents,
 	};
 

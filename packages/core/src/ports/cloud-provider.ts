@@ -1,5 +1,6 @@
 import type { JsonObject } from "../json.js";
 import { createPortDescriptor, type PortDescriptor } from "../ports.js";
+import type { ProviderTerms } from "../provider-terms.js";
 
 // public-contract: extension-point id for provider plugins (extension-points.md).
 export const CLOUD_PROVIDER_EXTENSION_POINT = "hobo.cloud-provider/v1";
@@ -50,6 +51,7 @@ export type PublishedManifestDocuments = Record<string, string>;
 
 export interface CapabilityManifest {
 	providerId: string;
+	terms: ProviderTerms;
 	published: PublishedManifestDocuments;
 	capabilities: JsonObject;
 	auth: JsonObject;

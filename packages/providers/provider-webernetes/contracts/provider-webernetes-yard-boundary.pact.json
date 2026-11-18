@@ -43,6 +43,10 @@
 			"response": {
 				"body": {
 					"providerId": "@hobo/provider-webernetes",
+					"terms": {
+						"reviewedOn": "2026-11-18",
+						"url": "https://github.com/Hobo-Labs/HoBo/blob/main/LICENSE"
+					},
 					"published": {},
 					"capabilities": {
 						"capabilities": [

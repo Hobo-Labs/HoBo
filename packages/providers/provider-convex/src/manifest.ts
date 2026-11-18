@@ -5,6 +5,7 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
+	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import {
@@ -25,6 +26,7 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const CONVEX_PROVIDER_ID = "@hobo/provider-convex";
+export const PROVIDER_TERMS = providerTermsFor(CONVEX_PROVIDER_ID);
 
 export const DEFAULT_REGIONS = ["us"];
 
@@ -176,6 +178,7 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
+		terms: PROVIDER_TERMS,
 		documents,
 	};
 

@@ -7,6 +7,7 @@ import {
 	COST_FACTS,
 	DEFAULT_REGIONS,
 	KUBERNETES_PROVIDER_ID,
+	PROVIDER_TERMS,
 	publishCapabilityManifest,
 } from "./manifest.js";
 import { PROVIDER_TARGET } from "./options.js";
@@ -91,6 +92,7 @@ export function createKubernetesProvider(
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: KUBERNETES_PROVIDER_ID,
+				terms: PROVIDER_TERMS,
 				published,
 				capabilities: JSON.parse(
 					published["/.well-known/capability-manifest/capabilities.json"],

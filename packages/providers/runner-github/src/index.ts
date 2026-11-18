@@ -1,3 +1,4 @@
+export type { ProviderTerms } from "@hobo/core";
 export {
 	BUILD_WORKFLOW_DEFAULT,
 	CREDIT_EXHAUSTED,
@@ -56,7 +57,6 @@ export {
 	type GithubRunnerManifestInput,
 	MANIFEST_SCHEMA,
 	PROVIDER_TERMS,
-	type ProviderTerms,
 	type PublishedManifestDocuments,
 	type PublishedManifestParseResult,
 	parseExecutionHostManifest,

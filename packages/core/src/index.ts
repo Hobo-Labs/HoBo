@@ -962,6 +962,11 @@ export type {
 	RuntimePort,
 } from "./ports.js";
 export { createPortDescriptor } from "./ports.js";
+export type { ProviderTerms, ProviderTermsId } from "./provider-terms.js";
+export {
+	PROVIDER_TERMS_REGISTRY,
+	providerTermsFor,
+} from "./provider-terms.js";
 export type { PublicTypeSurfaceResult } from "./surface-guard.js";
 export {
 	assertCoreApiSnapshot,
