@@ -10,8 +10,10 @@ import {
 	TargetPricingInventorySchema,
 	type TargetPricingModel,
 	type TargetPricingResource,
+	type WorkloadDelta,
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard } from "./catalog.js";
+import { hasExplicitFixedChargeCoverage } from "./fixed-charge-coverage.js";
 import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
@@ -455,7 +457,11 @@ export function quoteTargetPricing(
 			"TARGET_PRICING_INCOMPLETE",
 			"every target resource needs exactly one candidate and binding",
 		);
-	const used: { productId: string; agreementId: string }[] = [];
+	const used: {
+		productId: string;
+		agreementId: string;
+		workload: WorkloadDelta;
+	}[] = [];
 	for (const workload of scenario.baseline) {
 		const products = catalog.products.filter(
 			(entry) => entry.id === workload.productRef,
@@ -491,7 +497,7 @@ export function quoteTargetPricing(
 				"TARGET_PRICING_INCOMPLETE",
 				"baseline usage must cover every declared meter without unmodeled dimensions",
 			);
-		used.push({ productId: product.id, agreementId: agreement.id });
+		used.push({ productId: product.id, agreementId: agreement.id, workload });
 	}
 	for (const binding of model.bindings) {
 		const resource = inventory.resources.find(
@@ -548,7 +554,11 @@ export function quoteTargetPricing(
 				"TARGET_PRICING_INCOMPLETE",
 				"candidate usage must cover every declared meter without unmodeled dimensions",
 			);
-		used.push({ productId: product.id, agreementId: agreement.id });
+		used.push({
+			productId: product.id,
+			agreementId: agreement.id,
+			workload: candidate,
+		});
 	}
 	const quote = quoteScenarioV2(scenario);
 	if (!isQuoteVector(quote)) return refuse(quote.code, quote.message);
@@ -588,11 +598,17 @@ export function quoteTargetPricing(
 					charge.variant.case === undefined ||
 					(charge.variant.case === "usage" &&
 						!dimensions.has(charge.variant.value.dimension)),
+			) ||
+			!hasExplicitFixedChargeCoverage(
+				rateCard,
+				agreement,
+				row.workload,
+				dimensions.size > 0,
 			)
 		)
 			return refuse(
 				"TARGET_PRICING_INCOMPLETE",
-				"rate-card charges must have declared product meters",
+				"the rate card needs applicable charges and explicit quantities",
 			);
 	}
 	return {

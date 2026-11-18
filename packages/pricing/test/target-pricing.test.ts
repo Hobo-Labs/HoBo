@@ -10,6 +10,7 @@ import {
 } from "../src/target-pricing.js";
 import {
 	creditState,
+	fixedCharge,
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
@@ -54,7 +55,110 @@ function modeled() {
 	});
 }
 
+function fixedModel(price = "12") {
+	const fixed = makeScenario({
+		charges: [fixedCharge("subscription", price)],
+		meters: [],
+		candidate: [workload("agreement-a", [])],
+	});
+	const charge = fixed.catalog?.rateCards[0]?.charges[0];
+	const candidate = fixed.candidate[0];
+	const agreement = fixed.state?.agreements[0];
+	if (
+		charge?.variant.case !== "fixed" ||
+		candidate === undefined ||
+		agreement === undefined
+	)
+		throw new Error("fixed-price fixture is incomplete");
+	charge.variant.value.quantityDimension = "instance";
+	candidate.quantities.instance = "1";
+	agreement.quantities.instance = "0";
+	rehashScenario(fixed);
+	return fixed;
+}
+
+function fixedTargetModel(fixed: ReturnType<typeof fixedModel>) {
+	return targetPricingModel({
+		modelId: "fixed-terms",
+		revision: "1",
+		planDigest: digest,
+		scenario: fixed,
+		bindings: [{ resourceId: "stack/compute", candidateIndex: 0 }],
+	});
+}
+
 describe("whole-target pricing contract", () => {
+	it.each([
+		"12",
+		"0",
+	])("quotes an explicitly quantified fixed-only target at %s", (price) => {
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(fixedModel(price))),
+		).toMatchObject({
+			ok: true,
+			quote: { incremental: { billed: { decimal: price, currency: "USD" } } },
+		});
+	});
+
+	it.each([
+		"candidate",
+		"agreement",
+	] as const)("rejects a fixed target with no explicit %s quantity", (missing) => {
+		const fixed = fixedModel();
+		const quantities =
+			missing === "candidate"
+				? fixed.candidate[0]?.quantities
+				: fixed.state?.agreements[0]?.quantities;
+		if (quantities === undefined) throw new Error("fixture missing");
+		delete quantities.instance;
+		rehashScenario(fixed);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(fixed)),
+		).toMatchObject({
+			ok: false,
+			code: "TARGET_PRICING_INCOMPLETE",
+		});
+	});
+
+	it("rejects a fixed target whose charge does not match the workload", () => {
+		const fixed = fixedModel();
+		const charge = fixed.catalog?.rateCards[0]?.charges[0];
+		const candidate = fixed.candidate[0];
+		if (charge?.base === undefined || candidate === undefined)
+			throw new Error("fixture missing");
+		charge.base.selectors.region = "west";
+		candidate.attributes.region = "east";
+		rehashScenario(fixed);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(fixed)),
+		).toMatchObject({
+			ok: false,
+			code: "TARGET_PRICING_INCOMPLETE",
+		});
+	});
+
+	it("does not require quantities for an unrelated fixed charge", () => {
+		const metered = scenario();
+		const fixed = fixedModel().catalog?.rateCards[0]?.charges[0];
+		const rateCard = metered.catalog?.rateCards[0];
+		const candidate = metered.candidate[0];
+		if (
+			fixed?.base === undefined ||
+			rateCard === undefined ||
+			candidate === undefined
+		)
+			throw new Error("fixture missing");
+		fixed.base.selectors.region = "west";
+		candidate.attributes.region = "east";
+		rateCard.charges.push(fixed);
+		rehashScenario(metered);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(metered)),
+		).toMatchObject({
+			ok: true,
+			quote: { incremental: { billed: { decimal: "1", currency: "USD" } } },
+		});
+	});
 	it("does not rate a destroy operation as a placement", () => {
 		const target = inventory();
 		target.operation = "destroy";
