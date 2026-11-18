@@ -45,7 +45,8 @@ def check(case):
         runtimes = Path(temp) / 'runtimes'
         runtimes.mkdir()
         (runtimes / 'runtime-local').symlink_to(repo / 'packages/runtimes/runtime-local', target_is_directory=True)
-        target = scratch / 'src/workflow.ts'
+        boundary_cases = {'id-validation', 'input-shape', 'input-aliases', 'input-proxies', 'input-hidden', 'input-readonly', 'input-configurable', 'input-extensible', 'input-symbols'}
+        target = scratch / ('src/workflow-boundary.ts' if name in boundary_cases else 'src/workflow.ts')
         original = target.read_text()
         if original.count(before) != count:
             raise RuntimeError(f'{name}: expected {count} mutation sites, found {original.count(before)}')
@@ -55,7 +56,7 @@ def check(case):
         else:
             changed = original.replace(before, after, 1 if name in {'release-after-setup-failure', 'resume-id', 'start-input-snapshot'} else count)
         target.write_text(changed)
-        env = {**os.environ, 'WORKFLOW_VERIFY_PACKAGE_ROOT': str(scratch), 'WORKFLOW_VERIFY_SOURCE': str(target)}
+        env = {**os.environ, 'WORKFLOW_VERIFY_PACKAGE_ROOT': str(scratch), 'WORKFLOW_VERIFY_SOURCE': str(scratch / 'src/workflow.ts')}
         result = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900)
         output = result.stdout
         if (result.returncode == 0 or expected not in output or 'AssertionError' not in output

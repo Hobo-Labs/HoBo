@@ -104,9 +104,28 @@ cannot establish workflow identity, and an older record without a seed uses the
 explicit replay seed or the run ID fallback. An explicitly supplied seed must
 match a recorded seed. Replay captures input, options, and callback references
 before waiting for the journal. Workflow callbacks and the journal remain
-trusted; a callback can still read mutable application state. The replay report
+trusted; a callback can still read mutable application state, and a matching
+workflow name does not identify a specific code version. The replay report
 contains the resulting state digest but does not automatically compare it with
 the recorded terminal result.
+
+The replay-binding model explores 42 states and 76 steps. This five-state
+projection hides 50 same-label steps, including caller edits, and assumes the
+journal observations and snapshot operations are truthful.
+
+```mermaid
+stateDiagram-v2
+  s0: Replay requested
+  s1: Input and callbacks captured
+  s2: Recorded context refused
+  s3: Recorded context verified
+  s4: Captured workflow replayed
+  [*] --> s0
+  s0 --> s1: capture request
+  s1 --> s2: compare journal context
+  s1 --> s3: compare journal context
+  s3 --> s4: replay captured work
+```
 
 Within one loaded runtime module, `start` and `resume` refuse another active
 execution with the same run ID and the same `EventStoreWriter` object, even
