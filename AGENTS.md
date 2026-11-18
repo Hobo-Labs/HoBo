@@ -258,11 +258,13 @@ Run `pnpm run standards:check` and `pnpm run architecture:guard` for these stand
 
 ## Visual quality
 
-Use the owning surface's implemented tokens and shared components. For visual
-changes, run `pnpm run design:lint`, the affected package's rendered-surface
-tests, and the applicable visual review. The gate checks contrast in the site
-and connection UI palettes directly from their CSS. Status-page and secret
-capture tests cover their rendered tokens and accessibility behavior.
+Preserve the owner-set HoBo Rubberhose identity and Bo artwork. Use the owning
+surface's implemented tokens and shared components, including the site's
+reduced-motion behavior. For visual changes, run `pnpm run design:lint`, the
+affected package's rendered-surface tests, and the applicable visual review.
+The gate checks contrast in the site and connection UI palettes directly from
+their CSS. Status-page and secret capture tests cover their rendered tokens and
+accessibility behavior.
 
 Do not create design documents or use plugin commands that generate them.
 
