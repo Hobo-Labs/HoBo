@@ -127,6 +127,13 @@ stateDiagram-v2
   s3 --> s4: replay captured work
 ```
 
+`assertReplayEqualsLive` synchronously runs a fold with different `Date.now`
+and `Math.random` values, then restores their original property descriptors,
+including if setup or the fold throws. Those temporary overrides affect any
+synchronous code called by the fold. They cannot detect all nondeterminism,
+such as `new Date()` or reads from external state, and callbacks must not make
+the intrinsic properties impossible to restore.
+
 Within one loaded runtime module, `start` and `resume` refuse another active
 execution with the same run ID and the same `EventStoreWriter` object, even
 when different engine instances share it. If a parent exits with a durable

@@ -274,17 +274,32 @@ function withAmbientNondeterminism<T>(
 	{ now, random }: { now: number; random: number },
 	callback: () => T,
 ): T {
-	const originalDateNow = Date.now;
-	const originalMathRandom = Math.random;
-
-	Date.now = () => now;
-	Math.random = () => random;
-
+	const clockDescriptor = Object.getOwnPropertyDescriptor(Date, "now");
+	const randomDescriptor = Object.getOwnPropertyDescriptor(Math, "random");
+	if (
+		!clockDescriptor ||
+		!("value" in clockDescriptor) ||
+		!randomDescriptor ||
+		!("value" in randomDescriptor)
+	)
+		throw new Error(
+			"replay harness requires ordinary clock and random intrinsics",
+		);
+	let clockInstalled = false;
+	let randomInstalled = false;
 	try {
+		Date.now = () => now;
+		clockInstalled = true;
+		Math.random = () => random;
+		randomInstalled = true;
 		return callback();
 	} finally {
-		Date.now = originalDateNow;
-		Math.random = originalMathRandom;
+		try {
+			if (randomInstalled)
+				Object.defineProperty(Math, "random", randomDescriptor);
+		} finally {
+			if (clockInstalled) Object.defineProperty(Date, "now", clockDescriptor);
+		}
 	}
 }
 
