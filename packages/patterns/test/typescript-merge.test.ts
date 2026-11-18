@@ -33,7 +33,7 @@ let runCounter = 0;
 function apply(
 	dir: string,
 	patternId: string,
-	params: Record<string, unknown> = {},
+	params: Record<string, string> = {},
 ) {
 	runCounter += 1;
 	return applyPatternPlan({
@@ -43,7 +43,7 @@ function apply(
 		targetPath: "src/bindle.ts",
 		isolationRunId: `merge-${runCounter}`,
 		params,
-	} as never);
+	});
 }
 
 describe("import merging", () => {
@@ -211,11 +211,9 @@ describe("refusals", () => {
 	it("leaves the file untouched when it refuses", () => {
 		const source = `export const notABindle = 42;\n`;
 		const dir = root(source);
-		try {
-			apply(dir, "bindle.resource.api", { resourceName: "shop" });
-		} catch {
-			// expected
-		}
+		expect(() =>
+			apply(dir, "bindle.resource.api", { resourceName: "shop" }),
+		).toThrow(PatternParseError);
 		expect(read(dir)).toBe(source);
 	});
 
@@ -230,35 +228,22 @@ describe("refusals", () => {
 });
 
 describe("relationship patterns", () => {
-	it("chains a dependency onto an existing resource", () => {
+	it("adds a dependency between existing resources", () => {
 		const dir = root(PLAIN);
 		apply(dir, "bindle.resource.api", { resourceName: "api" });
-		let threw = false;
-		try {
-			apply(dir, "bindle.relationship.depends-on", {
-				resourceName: "api",
-			});
-		} catch {
-			threw = true;
-		}
-		if (!threw) {
-			expect(read(dir)).toMatch(/dependsOn|const api/u);
-		}
+		apply(dir, "bindle.resource.web", { resourceName: "web" });
+		apply(dir, "bindle.relationship.depends-on");
+		expect(read(dir)).toContain("web.dependsOn(api);");
 	});
 
-	it("does not chain the same call twice", () => {
+	it("does not add the same dependency twice", () => {
 		const dir = root(PLAIN);
 		apply(dir, "bindle.resource.api", { resourceName: "api" });
-		try {
-			apply(dir, "bindle.relationship.depends-on", { resourceName: "api" });
-			apply(dir, "bindle.relationship.depends-on", { resourceName: "api" });
-		} catch {
-			// the pattern may not apply to this shape; the duplicate check is
-			// what matters when it does
-		}
-		const text = read(dir);
-		const chained = text.match(/\.dependsOn\(/gu) ?? [];
-		expect(chained.length).toBeLessThanOrEqual(1);
+		apply(dir, "bindle.resource.web", { resourceName: "web" });
+		apply(dir, "bindle.relationship.depends-on");
+		const once = read(dir);
+		apply(dir, "bindle.relationship.depends-on");
+		expect(read(dir)).toBe(once);
 	});
 });
 

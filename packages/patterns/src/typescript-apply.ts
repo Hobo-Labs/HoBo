@@ -93,6 +93,54 @@ function printNode(node: ts.Node, sf: ts.SourceFile): string {
 		.printNode(ts.EmitHint.Unspecified, node, sf);
 }
 
+function existingDependencies(
+	block: ts.Block,
+	initializer: ts.Expression,
+	owner: string,
+	sf: ts.SourceFile,
+): Set<string> {
+	const dependencies = new Set<string>();
+	const addArguments = (call: ts.CallExpression) => {
+		for (const argument of call.arguments) {
+			dependencies.add(printNode(argument, sf));
+		}
+	};
+	let current: ts.Expression = initializer;
+	while (true) {
+		if (
+			ts.isParenthesizedExpression(current) ||
+			ts.isAsExpression(current) ||
+			ts.isNonNullExpression(current)
+		) {
+			current = current.expression;
+			continue;
+		}
+		if (
+			!ts.isCallExpression(current) ||
+			!ts.isPropertyAccessExpression(current.expression)
+		) {
+			break;
+		}
+		if (current.expression.name.text === "dependsOn") addArguments(current);
+		current = current.expression.expression;
+	}
+	for (const statement of block.statements) {
+		if (ts.isReturnStatement(statement)) break;
+		if (!ts.isExpressionStatement(statement)) continue;
+		const expression = statement.expression;
+		if (
+			ts.isCallExpression(expression) &&
+			ts.isPropertyAccessExpression(expression.expression) &&
+			expression.expression.name.text === "dependsOn" &&
+			ts.isIdentifier(expression.expression.expression) &&
+			expression.expression.expression.text === owner
+		) {
+			addArguments(expression);
+		}
+	}
+	return dependencies;
+}
+
 function namedImportsFrom(
 	sf: ts.SourceFile,
 	moduleName: string,
@@ -295,7 +343,7 @@ function applyStructural(previous: string, snippet: string): string {
 				const method = callExpr.expression.name.text;
 				if (method === "dependsOn" || method === "with" || method === "allow") {
 					const printed = printNode(callExpr, extracted.sourceFile);
-					if (next.includes(printed)) continue;
+					if (method !== "dependsOn" && next.includes(printed)) continue;
 					const ownerDecl = block.statements.find((item) => {
 						if (!ts.isVariableStatement(item)) return false;
 						return item.declarationList.declarations.some(
@@ -310,6 +358,26 @@ function applyStructural(previous: string, snippet: string): string {
 					);
 					if (!decl?.initializer) {
 						throw new PatternParseError(`unresolved symbol ${owner}`);
+					}
+					if (method === "dependsOn") {
+						const existing = existingDependencies(
+							block,
+							decl.initializer,
+							owner,
+							sf,
+						);
+						const missing: string[] = [];
+						for (const argument of callExpr.arguments) {
+							const dependency = printNode(argument, extracted.sourceFile);
+							if (!existing.has(dependency)) {
+								existing.add(dependency);
+								missing.push(dependency);
+							}
+						}
+						if (missing.length > 0) {
+							newStatements.push(`${owner}.dependsOn(${missing.join(", ")});`);
+						}
+						continue;
 					}
 					const initText = previous.slice(
 						decl.initializer.getStart(sf),
