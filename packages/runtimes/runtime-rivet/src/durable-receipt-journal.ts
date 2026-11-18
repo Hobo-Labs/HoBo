@@ -8,6 +8,7 @@ import {
 	parseDurableMessagingOperation,
 } from "@hobo/core";
 import type { RawAccess } from "rivetkit/db";
+import { synchronousResult } from "./synchronous-result.js";
 
 // Actor-internal building block, not a messaging provider or a network boundary.
 // The trusted actor and host must authenticate and pin tenant/instance
@@ -29,18 +30,6 @@ import type { RawAccess } from "rivetkit/db";
 // public operation parser to reject extra, accessor-backed or malformed fields.
 // This journal extracts only the two identity fields and is not that boundary.
 // JavaScript function types do not enforce purity or host isolation.
-const intrinsicApply = Reflect.apply;
-const intrinsicPromiseThen = Promise.prototype.then;
-
-function synchronousResult(value: unknown): unknown {
-	if (utilTypes.isPromise(value)) {
-		try {
-			void intrinsicApply(intrinsicPromiseThen, value, [undefined, () => undefined]);
-		} catch {}
-	}
-	return value;
-}
-
 const MAX_REQUEST_BYTES = 131_072;
 const MAX_RECEIPT_BYTES = 262_144;
 const MAX_STATE_BYTES = 4_194_304;

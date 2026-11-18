@@ -1,9 +1,12 @@
 /* oxlint-disable anti-slop/no-object-parameters, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening -- SAFETY: these fixtures deliberately encode malformed external JSON in tests. */
+import { performance } from "node:perf_hooks";
 import { DURABLE_MESSAGING_LIMITS } from "@hobo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
 	createRivetDurableTopicClient,
 	createRivetDurableTopicMetadataGrant,
+	isRivetDurableTopicClientBoundTo,
+	isRivetDurableTopicClientFor,
 	type RivetDurableTopicClientOptions,
 } from "../src/durable-topic-client.js";
 
@@ -114,6 +117,7 @@ describe("Rivet durable topic HTTP client", () => {
 		expect(accepted).toBe(false);
 		expect(reads).toBe(0);
 	});
+
 
 	it("snapshots and signs exact canonical bytes; a lost committed acknowledgement remains unknown and retry is identical", async () => {
 		const message = {
@@ -238,19 +242,61 @@ describe("Rivet durable topic HTTP client", () => {
 		});
 	});
 
-	it("retains exact operation on invalid post-envelope input and rejects invalid envelopes", async () => {
+	it("does not inspect accessors or proxies and rejects invalid operation envelopes", async () => {
+		let getterCalls = 0;
 		const { client, fetch } = fixture(async () => {
 			throw new Error("must not dispatch");
 		});
-		expect(await client.ensureTopic({ operation, topic: "bad\nname" })).toEqual(
-			{ status: "unknown", operation },
-		);
+		const input = {
+			operation,
+			get topic() {
+				getterCalls++;
+				return "orders";
+			},
+		};
+		expect(await client.ensureTopic(input)).toEqual({
+			status: "unknown",
+			operation,
+		});
+		for (const malformed of [
+			{ ...operation, id: "bad" },
+			{ id: "v1.01.abcdefghijklmnop", expiresAtMs: 1 },
+			{
+				id: "v1.9007199254740992.abcdefghijklmnop",
+				expiresAtMs: Number.MAX_SAFE_INTEGER + 1,
+			},
+		]) {
+			expect(
+				await client.ensureTopic({ operation: malformed, topic: "orders" }),
+			).toEqual({
+				status: "rejected",
+				code: "invalid-argument",
+			});
+		}
+		const accessorEnvelope = {
+			get id() {
+				getterCalls++;
+				return "bad";
+			},
+			expiresAtMs: 1,
+		};
 		await expect(
-			client.ensureTopic({
-				operation: { ...operation, id: "bad" },
-				topic: "orders",
-			}),
+			client.ensureTopic({ operation: accessorEnvelope, topic: "orders" }),
 		).rejects.toThrow();
+		await expect(
+			client.ensureTopic(
+				new Proxy(
+					{ operation, topic: "orders" },
+					{
+						get() {
+							getterCalls++;
+							throw new Error("trap");
+						},
+					},
+				),
+			),
+		).rejects.toThrow();
+		expect(getterCalls).toBe(0);
 		expect(fetch).not.toHaveBeenCalled();
 	});
 
@@ -279,6 +325,79 @@ describe("Rivet durable topic HTTP client", () => {
 		expect(await client.events({ afterSequence: 0, limit: 1 })).toEqual(
 			response,
 		);
+	});
+
+	it("accepts full audit pages and delivery batches with maximally escaped valid names", async () => {
+		const topic = '"'.repeat(profile.nameBytes);
+		const group = "\\".repeat(profile.nameBytes);
+		const events = Array.from(
+			{ length: profile.eventPageSize },
+			(_, index) => ({
+				sequence: index + 1,
+				kind: "acknowledged",
+				topic,
+				consumerGroup: group,
+				messageId: topic,
+			}),
+		);
+		const page = {
+			status: "ok",
+			events,
+			firstAvailableSequence: 1,
+			nextAfterSequence: events.length,
+			hasMore: false,
+		};
+		const deliveries = Array.from(
+			{ length: profile.batchSize },
+			(_, index) => ({
+				topic,
+				consumerGroup: group,
+				sequence: index + 1,
+				leaseId: `${group.slice(1)}${index}`,
+				leaseExpiresAtMs: operation.expiresAtMs,
+				deliveryAttempt: 1,
+				message: {
+					id: `${topic.slice(1)}${index}`,
+					subject: topic,
+					payload: Buffer.alloc(profile.payloadBytes, 255).toString("base64"),
+					attributes: [
+						{ key: "a", value: "\0".repeat(profile.attributeBytes - 1) },
+					],
+				},
+				deadLetter: {
+					sourceTopic: group,
+					consumerGroup: group,
+					originalMessageId: topic,
+					originalSequence: index + 1,
+					deliveryAttempt: 1,
+					cause: { kind: "nack", reason: "\0".repeat(profile.reasonBytes) },
+				},
+			}),
+		);
+		const batch = { status: "committed", value: deliveries };
+		expect(Buffer.byteLength(canonical(page))).toBeLessThanOrEqual(262_144);
+		expect(Buffer.byteLength(canonical(batch))).toBeLessThanOrEqual(262_144);
+		const { client } = fixture(
+			async (path) =>
+				new Response(canonical(path === "/events" ? page : batch)),
+		);
+		expect(
+			await client.events({ afterSequence: 0, limit: events.length }),
+		).toEqual(page);
+		const result = await client.consume({
+			operation,
+			topic,
+			consumerGroup: group,
+			maxMessages: profile.batchSize,
+			visibilityTimeoutMs: 100,
+		});
+		expect(result.status).toBe("committed");
+		if (result.status !== "committed") throw new Error("missing deliveries");
+		expect(result.value).toHaveLength(profile.batchSize);
+		expect(result.value[0]?.deadLetter?.cause).toEqual(
+			deliveries[0]?.deadLetter.cause,
+		);
+		expect(result.value[0]?.message.payload).toHaveLength(profile.payloadBytes);
 	});
 	it("does not reread a mutable topic after an authorization await", async () => {
 		let release = () => {};
@@ -444,6 +563,44 @@ describe("Rivet durable topic HTTP client", () => {
 			release();
 			vi.useRealTimers();
 		}
+	});
+
+	it.each([
+		"transport",
+		"authorization",
+	] as const)("prevents dispatch when synchronous %s verification exceeds the monotonic deadline", async (phase) => {
+		let entered = false;
+		const block = () => {
+			entered = true;
+			const until = performance.now() + 600;
+			while (performance.now() < until) {
+				// Intentionally delay the event loop so its timeout cannot fire first.
+			}
+		};
+		const fetch = vi.fn(async () => {
+			throw new Error("must not dispatch");
+		});
+		const client = createRivetDurableTopicClient({
+			binding,
+			metadataGrant: createRivetDurableTopicMetadataGrant(),
+			verifyTransport: () => {
+				if (phase === "transport") block();
+				return true;
+			},
+			authorize: () => {
+				if (phase === "authorization") block();
+				return { "x-hobo-proof": "signed" };
+			},
+			revalidate: () => true,
+			fetch,
+			timeoutMs: 500,
+		});
+		expect(await client.ensureTopic({ operation, topic: "orders" })).toEqual({
+			status: "unknown",
+			operation,
+		});
+		expect(entered).toBe(true);
+		expect(fetch).not.toHaveBeenCalled();
 	});
 
 	it("rejects noncanonical payloads, duplicate leases and contradictory event pages", async () => {
@@ -803,7 +960,7 @@ describe("Rivet durable topic HTTP client", () => {
 				operation,
 			});
 		}
-		expect(fetch).toHaveBeenCalledTimes(4);
+		expect(fetch).toHaveBeenCalledTimes(8);
 	});
 	it("accepts exactly the documented maximum number of response chunks", async () => {
 		let index = 0;
@@ -900,7 +1057,7 @@ describe("Rivet durable topic HTTP client", () => {
 				status: "unknown",
 				operation,
 			});
-		expect(fetch).toHaveBeenCalledTimes(2);
+		expect(fetch).toHaveBeenCalledTimes(4);
 	});
 	it("reads the explicit non-leased retained log and checks its topic, cursor and payload", async () => {
 		let value: object = {
@@ -1114,5 +1271,337 @@ describe("Rivet durable topic HTTP client", () => {
 			operation,
 		});
 		expect(fetch).toHaveBeenCalledTimes(3);
+	});
+	it("forwards bounded malformed requests for a durable terminal rejection, but never trusts a contradictory commit", async () => {
+		let response: object = { status: "rejected", code: "invalid-argument" };
+		const bodies: string[] = [];
+		const { client } = fixture(async (_path, init) => {
+			bodies.push(String(init.body));
+			return new Response(canonical(response));
+		});
+		const invalid = { operation, topic: "bad\nname" };
+		expect(await client.ensureTopic(invalid)).toEqual({
+			status: "rejected",
+			code: "invalid-argument",
+		});
+		expect(await client.ensureTopic(invalid)).toEqual({
+			status: "rejected",
+			code: "invalid-argument",
+		});
+		expect(bodies[0]).toBe(bodies[1]);
+		response = { status: "committed", value: { topic: "bad\nname" } };
+		expect(await client.ensureTopic(invalid)).toEqual({
+			status: "unknown",
+			operation,
+		});
+	});
+
+	it("preserves a prior lost commit when a malformed same-ID replay conflicts", async () => {
+		let original = "";
+		const { client } = fixture(async (_path, init) => {
+			const body = String(init.body);
+			if (original === "") {
+				original = body;
+				throw new Error("lost after commit");
+			}
+			if (body !== original)
+				return new Response(
+					canonical({ status: "rejected", code: "operation-conflict" }),
+				);
+			return new Response(
+				canonical({ status: "committed", value: { topic: "orders" } }),
+			);
+		});
+		expect(await client.ensureTopic({ operation, topic: "orders" })).toEqual({
+			status: "unknown",
+			operation,
+		});
+		expect(await client.ensureTopic({ operation, topic: "bad\nname" })).toEqual(
+			{ status: "rejected", code: "operation-conflict" },
+		);
+		expect(await client.ensureTopic({ operation, topic: "orders" })).toEqual({
+			status: "committed",
+			value: { topic: "orders" },
+		});
+	});
+	it("snapshots bounded invalid payloads before authorization and sends the exact same retry bytes", async () => {
+		let release = () => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const bodies: string[] = [];
+		const { client, authorize } = fixture(async (_path, init) => {
+			bodies.push(String(init.body));
+			return new Response(
+				canonical({ status: "rejected", code: "invalid-argument" }),
+			);
+		});
+		authorize.mockImplementationOnce(async () => {
+			await gate;
+			return { "x-hobo-proof": "signed" };
+		});
+		const message = {
+			id: "m1",
+			subject: "created",
+			payload: new Uint8Array([1, 2]),
+			attributes: [
+				{ key: "same", value: "a" },
+				{ key: "same", value: "b" },
+			],
+		};
+		const pending = client.publish({ operation, topic: "orders", message });
+		message.payload[0] = 9;
+		const first = message.attributes[0];
+		if (first === undefined) throw new Error("missing test attribute");
+		first.value = "changed";
+		release();
+		expect(await pending).toEqual({
+			status: "rejected",
+			code: "invalid-argument",
+		});
+		const retry = {
+			id: "m1",
+			subject: "created",
+			payload: new Uint8Array([1, 2]),
+			attributes: [
+				{ key: "same", value: "a" },
+				{ key: "same", value: "b" },
+			],
+		};
+		expect(
+			await client.publish({ operation, topic: "orders", message: retry }),
+		).toEqual({ status: "rejected", code: "invalid-argument" });
+		expect(bodies[0]).toBe(bodies[1]);
+		expect(bodies[0]).toContain('["bytes","AQI="]');
+		expect(bodies[0]).toContain('"__hobo_invalid_request"');
+	});
+
+	it("does not dispatch unbounded, cyclic, hidden, accessor-backed or proxy input", async () => {
+		let traps = 0;
+		const { client, fetch } = fixture(async () => {
+			throw new Error("must not dispatch");
+		});
+		const cyclic: {
+			id: string;
+			subject: string;
+			payload: Uint8Array;
+			attributes: [];
+			self?: unknown;
+		} = {
+			id: "m1",
+			subject: "created",
+			payload: new Uint8Array(),
+			attributes: [],
+		};
+		cyclic.self = cyclic;
+		const getter = Object.defineProperty(
+			{
+				id: "m1",
+				subject: "created",
+				payload: new Uint8Array(),
+				attributes: [],
+			},
+			"subject",
+			{
+				enumerable: true,
+				get() {
+					traps++;
+					return "created";
+				},
+			},
+		);
+		const hidden = Object.defineProperty(
+			{
+				id: "m1",
+				subject: "created",
+				payload: new Uint8Array(),
+				attributes: [],
+			},
+			"hidden",
+			{ value: "private" },
+		);
+		const proxy = new Proxy(
+			{
+				id: "m1",
+				subject: "created",
+				payload: new Uint8Array(),
+				attributes: [],
+			},
+			{
+				ownKeys() {
+					traps++;
+					throw new Error("trap");
+				},
+			},
+		);
+		for (const message of [cyclic, getter, hidden, proxy]) {
+			expect(
+				await client.publish({ operation, topic: "orders", message }),
+			).toEqual({ status: "unknown", operation });
+		}
+		expect(
+			await client.ensureTopic({ operation, topic: "x".repeat(131_073) }),
+		).toEqual({ status: "unknown", operation });
+		expect(traps).toBe(0);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+	it("marks every invalid wire request and fingerprints string and byte payloads distinctly", async () => {
+		const bodies: string[] = [];
+		const { client } = fixture(async (_path, init) => {
+			const body = String(init.body);
+			bodies.push(body);
+			const decoded = JSON.parse(body);
+			if (!("__hobo_invalid_request" in decoded))
+				return new Response(
+					canonical({
+						status: "committed",
+						value: { messageId: "m1", sequence: 1 },
+					}),
+				);
+			return new Response(
+				canonical({
+					status: "rejected",
+					code:
+						bodies.length === 1 || body === bodies[0]
+							? "invalid-argument"
+							: "operation-conflict",
+				}),
+			);
+		});
+		const base = { id: "m1", subject: "created", attributes: [], extra: true };
+		const first = await client.publish({
+			operation,
+			topic: "orders",
+			// @ts-expect-error The string payload intentionally crosses the untrusted JS boundary.
+			message: { ...base, payload: "AA==" },
+		});
+		expect(first).toEqual({ status: "rejected", code: "invalid-argument" });
+		const second = await client.publish({
+			operation,
+			topic: "orders",
+			message: { ...base, payload: new Uint8Array([0]) },
+		});
+		expect(second).toEqual({ status: "rejected", code: "operation-conflict" });
+		expect(bodies[0]).not.toBe(bodies[1]);
+		expect(bodies[0]).toContain('["string","AA=="]');
+		expect(bodies[1]).toContain('["bytes","AA=="]');
+	});
+	it("matches only a real construction-bound client and its exact host options", () => {
+		let traps = 0;
+		const metadataGrant = createRivetDurableTopicMetadataGrant();
+		const fetch = async () => new Response();
+		const verifyTransport = () => true;
+		const authorize = () => ({ "x-hobo-proof": "signed" });
+		const revalidate = () => true;
+		const configured: RivetDurableTopicClientOptions = {
+			binding,
+			metadataGrant,
+			verifyTransport,
+			authorize,
+			revalidate,
+			fetch,
+			timeoutMs: 123,
+			maxInFlight: 4,
+		};
+		const client = createRivetDurableTopicClient(configured);
+		const identity = {
+			actorName: binding.actorName,
+			semanticDigest: binding.semanticDigest,
+		};
+		expect(isRivetDurableTopicClientFor(client, identity)).toBe(true);
+		expect(isRivetDurableTopicClientBoundTo(client, configured)).toBe(true);
+		expect(isRivetDurableTopicClientFor({ ...client }, identity)).toBe(false);
+		expect(
+			isRivetDurableTopicClientFor(
+				new Proxy(client, {
+					get() {
+						traps++;
+						throw new Error("trap");
+					},
+				}),
+				identity,
+			),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientFor(client, { ...identity, actorName: "other" }),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientFor(client, {
+				...identity,
+				semanticDigest: `sha256:${"b".repeat(64)}`,
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				binding: { ...binding, tenant: "other" },
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				binding: { ...binding, actorKey: ["other"] },
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				binding: { ...binding, limits: { ...profile, batchSize: 3 } },
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				binding: { ...binding, actorCapabilities: fullCapabilities },
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				fetch: async () => new Response(),
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				metadataGrant: createRivetDurableTopicMetadataGrant(),
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				timeoutMs: 124,
+			}),
+		).toBe(false);
+		for (const altered of [
+			{ ...configured, authorize: () => ({ "x-hobo-proof": "different" }) },
+			{ ...configured, revalidate: () => true },
+			{ ...configured, verifyTransport: () => true },
+			{ ...configured, maxInFlight: 5 },
+		])
+			expect(isRivetDurableTopicClientBoundTo(client, altered)).toBe(false);
+		const hostile = new Proxy(configured, {
+			ownKeys() {
+				traps++;
+				throw new Error("trap");
+			},
+		});
+		expect(isRivetDurableTopicClientBoundTo(client, hostile)).toBe(false);
+		const mutableKey = ["tenant", "orders"];
+		const mutableOptions = {
+			...configured,
+			binding: { ...binding, actorKey: mutableKey },
+		};
+		const stable = createRivetDurableTopicClient(mutableOptions);
+		expect(isRivetDurableTopicClientBoundTo(stable, mutableOptions)).toBe(true);
+		mutableKey[0] = "other";
+		expect(isRivetDurableTopicClientBoundTo(stable, mutableOptions)).toBe(
+			false,
+		);
+		expect(isRivetDurableTopicClientFor(stable, identity)).toBe(true);
+		metadataGrant.revoke();
+		expect(isRivetDurableTopicClientFor(client, identity)).toBe(false);
+		expect(isRivetDurableTopicClientBoundTo(client, configured)).toBe(false);
+		expect(traps).toBe(0);
 	});
 });
