@@ -98,6 +98,57 @@ function fixture(overrides: Partial<DurableMessaging> = {}) {
 }
 
 describe("durable messaging WIT host boundary", () => {
+	it("refuses an exotic verifier promise without reading its constructor", () => {
+		const { port } = fixture();
+		let reads = 0;
+		const pending = new Promise(() => {});
+		Object.defineProperty(pending, "constructor", {
+			get() {
+				reads++;
+				throw new Error("unexpected constructor read");
+			},
+		});
+		const verify = (() => pending) as unknown as Parameters<
+			typeof createDurableMessagingPortMetadataGrant
+		>[0]["verify"];
+		expect(() => createDurableMessagingPortMetadataGrant({
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify,
+		})).toThrow();
+		expect(reads).toBe(0);
+	});
+
+	it("does not accept a forged limits grant through substituted WeakMap methods", () => {
+		const { port } = fixture();
+		const grant = Object.freeze({ revoke() {} });
+		const lifecycle = createDurableMessagingLifecycle();
+		const original = Object.getOwnPropertyDescriptor(WeakMap.prototype, "get");
+		if (original === undefined) throw new Error("WeakMap.get missing");
+		let calls = 0;
+		let accepted = false;
+		try {
+			Object.defineProperty(WeakMap.prototype, "get", {
+				...original,
+				value(this: WeakMap<object, unknown>, key: object) {
+					if (key === grant) {
+						calls++;
+						return { active: true };
+					}
+					return Reflect.apply(original.value, this, [key]);
+				},
+			});
+			try {
+				createDurableMessagingWitHost(port, { authorize: () => true, limitsGrant: grant, lifecycle });
+				accepted = true;
+			} catch {}
+		} finally {
+			Object.defineProperty(WeakMap.prototype, "get", original);
+		}
+		expect(accepted).toBe(false);
+		expect(calls).toBe(0);
+	});
+
 	it("rejects accessors even if descriptor values are inherited", () => {
 		const { port } = fixture();
 		let reads = 0;

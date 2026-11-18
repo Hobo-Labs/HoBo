@@ -13,6 +13,18 @@ import {
 	parseDurableMessagingOperation,
 } from "@hobo/core";
 
+const intrinsicApply = Reflect.apply;
+const intrinsicWeakGet = WeakMap.prototype.get;
+const intrinsicWeakSet = WeakMap.prototype.set;
+
+function readPrivate<V>(table: WeakMap<object, V>, key: object): V | undefined {
+	// SAFETY: the private table determines the value type for this key.
+	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
+}
+function writePrivate<V>(table: WeakMap<object, V>, key: object, value: V): void {
+	intrinsicApply(intrinsicWeakSet, table, [key, value]);
+}
+
 const MAX_REQUEST_BYTES = 131_072;
 const MAX_RESPONSE_BYTES = 262_144;
 const MAX_RESPONSE_CHUNKS = 4_096;
@@ -82,7 +94,7 @@ export function createRivetDurableTopicMetadataGrant(): RivetDurableTopicMetadat
 			state.active = false;
 		},
 	});
-	metadataGrants.set(grant, state);
+	writePrivate(metadataGrants, grant, state);
 	return grant;
 }
 
@@ -1141,7 +1153,7 @@ export function isRivetDurableTopicClientFor(
 	try {
 		if (typeof client !== "object" || client === null || types.isProxy(client))
 			return false;
-		const captured = clientConstructions.get(client);
+		const captured = readPrivate(clientConstructions, client);
 		const identity = record(expected, ["actorName", "semanticDigest"]);
 		if (captured === undefined || !captured.metadata.active) return false;
 		return (
@@ -1161,7 +1173,7 @@ export function isRivetDurableTopicClientBoundTo(
 	try {
 		if (typeof client !== "object" || client === null || types.isProxy(client))
 			return false;
-		const captured = clientConstructions.get(client);
+		const captured = readPrivate(clientConstructions, client);
 		if (captured === undefined || !captured.metadata.active) return false;
 		const settings = record(
 			expected,
@@ -1237,7 +1249,7 @@ export function createRivetDurableTopicClient(
 		types.isProxy(settings.metadataGrant)
 	)
 		return invalid();
-	const metadata = metadataGrants.get(settings.metadataGrant);
+	const metadata = readPrivate(metadataGrants, settings.metadataGrant);
 	if (metadata === undefined) return invalid();
 	const timeoutMs =
 		settings.timeoutMs === undefined
@@ -1795,7 +1807,8 @@ export function createRivetDurableTopicClient(
 	// SAFETY: the constructor checked the metadata grant against the private grant registry.
 	const metadataGrant =
 		settings.metadataGrant as RivetDurableTopicMetadataGrant;
-	clientConstructions.set(
+	writePrivate(
+		clientConstructions,
 		client,
 		Object.freeze({
 			binding: scope,

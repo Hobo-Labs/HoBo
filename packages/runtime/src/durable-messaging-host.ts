@@ -13,12 +13,22 @@ import {
 	parseDurableMessagingOperation,
 } from "@hobo/core";
 import type * as Wit from "@hobo/wit/durable-messaging";
+import { synchronousResult } from "./synchronous-result.js";
 
 // These references are captured before component code is invoked. The host
 // must isolate its globals before initialization and for the binding lifetime.
 const intrinsicApply = Reflect.apply;
+const intrinsicWeakGet = WeakMap.prototype.get;
+const intrinsicWeakSet = WeakMap.prototype.set;
+
+function readPrivate<V>(table: WeakMap<object, V>, key: object): V | undefined {
+	// SAFETY: the private table determines the value type for this key.
+	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
+}
+function writePrivate<V>(table: WeakMap<object, V>, key: object, value: V): void {
+	intrinsicApply(intrinsicWeakSet, table, [key, value]);
+}
 const intrinsicBind = Function.prototype.bind;
-const intrinsicPromiseThen = Promise.prototype.then;
 const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
 const intrinsicByteLength = Object.getOwnPropertyDescriptor(
 	typedArrayPrototype,
@@ -715,7 +725,7 @@ export function createDurableMessagingLimitsGrant(): DurableMessagingLimitsGrant
 			state.active = false;
 		},
 	});
-	limitsGrants.set(grant, state);
+	writePrivate(limitsGrants, grant, state);
 	return grant;
 }
 
@@ -765,7 +775,7 @@ export function createDurableMessagingPortMetadataGrant(input: {
 			state.active = false;
 		},
 	});
-	portMetadataGrants.set(grant, state);
+	writePrivate(portMetadataGrants, grant, state);
 	return grant;
 }
 function portMetadataVerified(state: PortMetadataState): boolean {
@@ -774,16 +784,7 @@ function portMetadataVerified(state: PortMetadataState): boolean {
 		const result: unknown = intrinsicApply(state.verify, undefined, [
 			state.claim,
 		]);
-		if (types.isPromise(result)) {
-			// Synchronous metadata disclosure cannot wait for a promise. Observe a
-			// rejected native promise so a mistaken async verifier cannot escape.
-			void intrinsicApply(intrinsicPromiseThen, result, [
-				undefined,
-				() => undefined,
-			]);
-			return false;
-		}
-		return result === true && state.active;
+		return synchronousResult(result) === true && state.active;
 	} catch {
 		return false;
 	}
@@ -814,7 +815,7 @@ export function createDurableMessagingLifecycle(
 	const lifecycle = Object.freeze({
 		kind: "durable-messaging-lifecycle" as const,
 	});
-	lifecycles.set(lifecycle, {
+	writePrivate(lifecycles, lifecycle, {
 		active: 0,
 		maxInFlight,
 		startPending: false,
@@ -859,8 +860,8 @@ export function createDurableMessagingWitHost(
 		types.isProxy(config.lifecycle)
 	)
 		return invalid();
-	const grant = limitsGrants.get(config.limitsGrant);
-	const lifecycle = lifecycles.get(config.lifecycle);
+	const grant = readPrivate(limitsGrants, config.limitsGrant);
+	const lifecycle = readPrivate(lifecycles, config.lifecycle);
 	if (grant === undefined || lifecycle === undefined) return invalid();
 	// SAFETY: the required host capability is a data function; it is invoked with frozen, validated scope facts.
 	const authorize =
@@ -879,7 +880,7 @@ export function createDurableMessagingWitHost(
 			types.isProxy(config.portMetadataGrant)
 		)
 			return invalid();
-		metadata = portMetadataGrants.get(config.portMetadataGrant);
+		metadata = readPrivate(portMetadataGrants, config.portMetadataGrant);
 		if (
 			metadata === undefined ||
 			metadata.claim.port !== port ||
@@ -1359,7 +1360,7 @@ export function createDurableMessagingWitHost(
 			}
 		},
 	});
-	hostLifecycles.set(host, lifecycle);
+	writePrivate(hostLifecycles, host, lifecycle);
 	return host;
 }
 
@@ -1451,7 +1452,7 @@ export async function instantiateDurableMessagingJspi<T>(
 		throw new Error("durable_messaging.jspi_unavailable");
 	if (typeof host !== "object" || host === null || types.isProxy(host))
 		return invalid();
-	const lifecycle = hostLifecycles.get(host);
+	const lifecycle = readPrivate(hostLifecycles, host);
 	if (lifecycle === undefined) return invalid();
 	const settings = record(options, ["component", "verify"], ["timeoutMs"]);
 	const timeoutMs =

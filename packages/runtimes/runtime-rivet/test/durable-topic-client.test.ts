@@ -80,6 +80,32 @@ function fixture(send: (path: string, init: RequestInit) => Promise<Response>) {
 }
 
 describe("Rivet durable topic HTTP client", () => {
+	it("does not accept a forged client through substituted WeakMap methods", () => {
+		const forged = {};
+		const identity = { actorName: binding.actorName, semanticDigest: binding.semanticDigest };
+		const original = Object.getOwnPropertyDescriptor(WeakMap.prototype, "get");
+		if (original === undefined) throw new Error("WeakMap.get missing");
+		let calls = 0;
+		let accepted = false;
+		try {
+			Object.defineProperty(WeakMap.prototype, "get", {
+				...original,
+				value(this: WeakMap<object, unknown>, key: object) {
+					if (key === forged) {
+						calls++;
+						return { binding: identity, metadata: { active: true } };
+					}
+					return Reflect.apply(original.value, this, [key]);
+				},
+			});
+			accepted = isRivetDurableTopicClientFor(forged, identity);
+		} finally {
+			Object.defineProperty(WeakMap.prototype, "get", original);
+		}
+		expect(accepted).toBe(false);
+		expect(calls).toBe(0);
+	});
+
 	it("refuses accessors even when descriptor values are inherited", () => {
 		let reads = 0;
 		const unsafeBinding = {

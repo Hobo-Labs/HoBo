@@ -102,6 +102,11 @@ propagated to the provider's own metadata capability and other processes.
 The verifier is trusted host code, not proof of its own source, and cannot
 replace a held cross-process ownership fence, bounded stream disclosure or an
 independent watchdog for blocked synchronous callbacks.
+A synchronous metadata verifier must not return a promise. An ordinary native
+promise is observed and refused; exotic or proxied promises are refused without
+reading their thenables or constructors. The caller remains responsible for
+handling any rejection from an exotic promise.
+
 The host must isolate the JavaScript realm and its globals before loading the
 bridge and throughout its lifetime; the bridge captures selected intrinsics,
 but does not make an adversarial shared realm safe.

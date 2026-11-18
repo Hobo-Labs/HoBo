@@ -159,6 +159,37 @@ function streamOf(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
 }
 
 describe("Rivet durable topic log actor", () => {
+	it("does not accept a forged actor binding through substituted WeakMap methods", async () => {
+		const f = await fixture();
+		const forged = { ...f.actor };
+		const identity = {
+			database: Reflect.get(f.actor.actor.config, "db"),
+			semanticDigest: f.actor.semanticDigest,
+			mode: "log",
+		};
+		const original = Object.getOwnPropertyDescriptor(WeakMap.prototype, "get");
+		if (original === undefined) throw new Error("WeakMap.get missing");
+		let calls = 0;
+		let accepted = false;
+		try {
+			Object.defineProperty(WeakMap.prototype, "get", {
+				...original,
+				value(this: WeakMap<object, unknown>, key: object) {
+					if (key === forged) {
+						calls++;
+						return identity;
+					}
+					return Reflect.apply(original.value, this, [key]);
+				},
+			});
+			accepted = isRivetDurableTopicBinding(forged);
+		} finally {
+			Object.defineProperty(WeakMap.prototype, "get", original);
+		}
+		expect(accepted).toBe(false);
+		expect(calls).toBe(0);
+	});
+
 	it("refuses rejected asynchronous scope and authorization callbacks", async () => {
 		const storage = sqlite();
 		await migrateDurableReceiptJournal(storage.db);

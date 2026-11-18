@@ -105,6 +105,18 @@ export interface RivetDurableTopicBusOptions extends RivetDurableTopicOptions {
 	 */
 	readonly authorizeInstanceScope: (claim: TopicClaim) => boolean;
 }
+const intrinsicApply = Reflect.apply;
+const intrinsicWeakGet = WeakMap.prototype.get;
+const intrinsicWeakSet = WeakMap.prototype.set;
+
+function readPrivate<V>(table: WeakMap<object, V>, key: object): V | undefined {
+	// SAFETY: the private table determines the value type for this key.
+	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
+}
+function writePrivate<V>(table: WeakMap<object, V>, key: object, value: V): void {
+	intrinsicApply(intrinsicWeakSet, table, [key, value]);
+}
+
 const registered = new WeakMap<
 	object,
 	Readonly<{ database: object; semanticDigest: string; mode: "log" | "bus" }>
@@ -581,7 +593,7 @@ function buildTopicActor(
 					limits: RIVET_DURABLE_TOPIC_BUS_LIMITS,
 					capabilities: RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
 				});
-	registered.set(binding, Object.freeze({ database, semanticDigest, mode }));
+	writePrivate(registered, binding, Object.freeze({ database, semanticDigest, mode }));
 	return binding;
 }
 /** Construct the separately pinned partial retained-log profile. */
@@ -600,7 +612,7 @@ export function createRivetDurableTopicBusActor(
 export function isRivetDurableTopicBinding(
 	binding: RivetDurableTopicBinding,
 ): boolean {
-	const identity = registered.get(binding);
+	const identity = readPrivate(registered, binding);
 	return (
 		identity !== undefined &&
 		identity.mode === "log" &&
@@ -615,7 +627,7 @@ export function isRivetDurableTopicBinding(
 export function isRivetDurableTopicBusBinding(
 	binding: RivetDurableTopicBusBinding,
 ): boolean {
-	const identity = registered.get(binding);
+	const identity = readPrivate(registered, binding);
 	return (
 		identity !== undefined &&
 		identity.mode === "bus" &&
