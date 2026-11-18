@@ -1,5 +1,5 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-object-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-get -- SAFETY: this fixture exercises raw actor HTTP and SQLite boundaries. */
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { durableMessagingOperation } from "@hobo/core";
 import { isStaticActorDefinition } from "rivetkit";
 import type { RawAccess } from "rivetkit/db";
@@ -20,7 +20,7 @@ function sqlite() {
 	const sql = new DatabaseSync(":memory:");
 	opened.push(sql);
 	let tail = Promise.resolve();
-	const execute = async (query: string, ...args: unknown[]) =>
+	const execute = async (query: string, ...args: SQLInputValue[]) =>
 		sql.prepare(query).all(...args);
 	const transaction = async <T>(
 		run: (tx: RawAccess) => Promise<T>,
