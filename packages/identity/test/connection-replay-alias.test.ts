@@ -52,6 +52,7 @@ it("refuses replay that gives one alias to different connection identities", () 
 	expect(() =>
 		ConnectionService.fromEvents([...service.events, aliasCollision], options),
 	).toThrow(/id/i);
+	const eventsBeforeCreate = [...service.events];
 	expect(() =>
 		service.create({
 			provider: "asana",
@@ -61,6 +62,7 @@ it("refuses replay that gives one alias to different connection identities", () 
 			stationId: "station:test",
 		}),
 	).toThrow(/alias/i);
+	expect(service.events).toEqual(eventsBeforeCreate);
 });
 
 it("preserves unambiguous names across generated replayed creations", () => {

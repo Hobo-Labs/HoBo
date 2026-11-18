@@ -195,8 +195,8 @@ reject a new connection when its alias conflicts with an existing ID or alias,
 or its ID conflicts with an existing alias. Existing event logs with those
 collisions require reconciliation before they can be replayed.
 
-The `verify-connection-lifecycle` skill checks that rule with generated
-command and replay histories and a bounded TLA+ model. This chart summarizes
+The `verify-connection-lifecycle` skill checks those rules with generated
+command and replay histories, bounded TLA+ models, and scratch mutations. This chart summarizes
 the model; it is not a live provider trace:
 
 ```mermaid
