@@ -84,6 +84,11 @@ export function createLocalClock(store: QueueClockStore): VirtualClock {
 
 		cron(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule {
 			const id = scheduleId;
+			const everyMs = parseCronEveryMs(spec.everyMs);
+			const requestedStartAtMs =
+				spec.startAtMs === undefined
+					? undefined
+					: normalizeNonNegativeInteger(spec.startAtMs, "spec.startAtMs");
 			const previous = store.cronSchedules.find(
 				(schedule) => schedule.scheduleId === id,
 			);
@@ -91,12 +96,18 @@ export function createLocalClock(store: QueueClockStore): VirtualClock {
 				if (previous.expression !== undefined) {
 					throw new TypeError(`Schedule ${id} already uses a cron expression`);
 				}
+				if (
+					previous.everyMs !== everyMs ||
+					(requestedStartAtMs !== undefined &&
+						previous.startAtMs !== requestedStartAtMs)
+				) {
+					throw new TypeError(`Schedule ${id} already has another recurrence`);
+				}
 				return publicCronSchedule(previous, true);
 			}
 
-			const everyMs = parseCronEveryMs(spec.everyMs);
 			const startAtMs = normalizeNonNegativeInteger(
-				spec.startAtMs ?? store.nowMs + everyMs,
+				requestedStartAtMs ?? store.nowMs + everyMs,
 				"spec.startAtMs",
 			);
 			const schedule: CronScheduleRecord = {

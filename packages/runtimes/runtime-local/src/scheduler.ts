@@ -78,12 +78,21 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 
 		advance(deltaMs: number): readonly FiredTimer[] {
 			const fired = clock.advance(deltaMs);
+			const failures: Error[] = [];
 			for (const fire of fired) {
 				if (fire.kind !== "cron" || fire.scheduleId === undefined) {
 					continue;
 				}
-				jobs.get(fire.scheduleId)?.(fire);
+				try {
+					jobs.get(fire.scheduleId)?.(fire);
+				} catch (error) {
+					failures.push(
+						new Error(`Scheduled job ${fire.fireId} failed`, { cause: error }),
+					);
+				}
 			}
+			if (failures.length > 0)
+				throw new AggregateError(failures, "Scheduled jobs failed");
 			return fired;
 		},
 
@@ -93,9 +102,15 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 					every: (payload: JsonValue): CronSchedule => {
 						const record = isJsonObject(payload) ? payload : {};
 						const everyMs = record.everyMs ?? record.every_ms;
-						const startAtMs = record.startAtMs ?? record.start_at_ms;
+						const startAtMs =
+							record.startAtMs !== undefined
+								? record.startAtMs
+								: record.start_at_ms;
 						if (!isJsonNumber(everyMs)) {
 							throw new TypeError("everyMs must be a number");
+						}
+						if (startAtMs !== undefined && !isJsonNumber(startAtMs)) {
+							throw new TypeError("startAtMs must be a number");
 						}
 						const spec = parseIntervalCronSpec({
 							every_ms: everyMs,

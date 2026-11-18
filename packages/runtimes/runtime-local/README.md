@@ -17,6 +17,12 @@ the expression and time zone when no `scheduleId` is supplied, so registering
 the same expression again returns the existing schedule. Time-zone behavior
 uses the host's time-zone data.
 
+Reusing a schedule id with a different interval, explicit start, expression, or
+time zone is rejected, as is a nonnumeric explicit start. When a job handler
+throws, the scheduler still invokes the other due handlers and then throws an
+`AggregateError` containing each failed fire and its cause. The clock has
+already advanced when this happens.
+
 > **Naming:** `packages/runtimes/*` are concrete **runtime backends** (this
 > package: the local/sqlite substrate). The singular `packages/runtime`
 > (`@hobo/runtime`) is the app-facing **SDK primitives** package — a
