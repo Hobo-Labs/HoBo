@@ -19,6 +19,10 @@ try {
   const baseline = spawnSync('python3', [proof], { env, stdio: 'inherit' });
   if (baseline.error) throw baseline.error;
   if (baseline.status !== 0) throw new Error('budget claim symbolic proof failed');
+  const uncertaintyProof = fileURLToPath(new URL('../proof/uncertainty_binding.py', import.meta.url));
+  const uncertainty = spawnSync('python3', [uncertaintyProof], { env, stdio: 'inherit' });
+  if (uncertainty.error) throw uncertainty.error;
+  if (uncertainty.status !== 0) throw new Error('uncertainty binding symbolic proof failed');
   for (const mutation of ['returned', 'stored', 'boundary', 'reservation', 'request', 'quote', 'quote_digest', 'identity', 'execution', 'amount', 'unknown_stop', 'unknown_report']) {
     const mutant = spawnSync('python3', [proof], { env: { ...env, YARD_BUDGET_CLAIM_PROOF_MUTATION: mutation }, encoding: 'utf8' });
     if (mutant.error) throw mutant.error;

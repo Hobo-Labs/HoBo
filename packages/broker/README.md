@@ -664,8 +664,24 @@ stateDiagram-v2
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
 checks finite abstractions of quote approval, the reservation handoff and
-generation recovery. The quote view hides 12 same-label steps and assumes a
-truthful host and collision-resistant hash.
+generation recovery.
+
+The uncertainty-evidence model checks 144 states and 216 steps. Its projection
+hides 144 same-label steps; it assumes the other reservation fields and the
+recorded uncertainty status are already checked.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking uncertainty evidence
+  s1: Uncertain hold verified
+  s2: Uncertain hold needs reconciliation
+  [*] --> s0
+  s0 --> s1: compare returned and stored evidence
+  s0 --> s2: compare returned and stored evidence
+```
+
+The quote view hides 12 same-label steps and assumes a truthful host and
+collision-resistant hash.
 
 ```mermaid
 stateDiagram-v2
