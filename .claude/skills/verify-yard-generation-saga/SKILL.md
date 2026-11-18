@@ -7,7 +7,7 @@ description: Verify in-process Yard generation retry identity, coalescing and pl
 
 **Properties:** Within one saga instance, a concurrent identical retry shares its pending provider operation, and a different plan using the same idempotency key is refused. A provider sees a snapshot of the submitted plan; cached results do not share mutable provider objects. After a provider call fails, a retry inspects the existing attempt rather than starting a second provision.
 
-**Review baseline:** commit `6771c17c043c776bb4b6d5b14e451d4935eb8b97`. PASS for the bounded model and executable checks below.
+**Review baseline:** commit `14715240c5c93bd1025cab6da83e4fbfbc579d22`. PASS for the bounded model and executable checks below.
 
 ## Covered code
 

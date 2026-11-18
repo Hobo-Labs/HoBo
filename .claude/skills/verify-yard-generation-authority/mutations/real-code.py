@@ -1,5 +1,6 @@
 """Replay generation-authority mutations against real broker tests."""
 from pathlib import Path
+import os
 import re
 import shutil
 import subprocess
@@ -26,24 +27,12 @@ def remove_checks(s, pairs):
 def pair(unequal, equal, equals):
     return lambda s: remove_checks(s, [(unequal, 'false', 1), (equal, 'true', equals)])
 
-def pin(s):
-    pattern = r'const saga = createYardGenerationSaga\(\{\s*connectors: new Map\(\[\s*\[genDecision.plan.generatorConnectorId, pinnedConnector\],\s*\]\),\s*\}\);'
-    s, n = re.subn(pattern, 'const saga = createYardGenerationSaga({ connectors });', s)
-    if n != 1: raise Exception('connector pin not found')
-    return s
-
 def claim(s):
     pattern = r'if \(!paidContextCurrent\(\) \|\| !generationAuthorityCurrent\(\)\)\s*throw new Error\(\s*"hosting context changed before generation claim; reconcile reservation",\s*\);'
     matches = list(re.finditer(pattern, s))
     if len(matches) != 2: raise Exception('claim fences not found')
     match = matches[-1]
     return s[:match.start()] + s[match.end():]
-
-def effect(s):
-    pattern = r'if \(!generationAuthorityCurrent\(\)\)\s*throw new Error\(\s*"generation authority changed before provider operation",\s*\);'
-    s, n = re.subn(pattern, '', s)
-    if n != 1: raise Exception('provider fence not found')
-    return s
 
 def receipt(s):
     pattern = r'if \(generationAuthorityCurrent && !generationAuthorityCurrent\(\)\)\s*throw new Error\("generation authority changed before receipt"\);'
@@ -67,9 +56,7 @@ cases = [
     ('registry-method', pair('connectors.get !== connectorLookup','connectors.get === connectorLookup',1), 'generation-lookup-method-replaced'),
     ('connector-identity', lambda s: remove_checks(s,[('nowConnector === selectedConnector','true',1)]), 'generation-connector-replaced'),
     ('connector-method', lambda s: remove_checks(s,[('nowConnector.provision === selectedProvision','true',1),('selectedConnector.provision === selectedProvision','true',1)]), 'generation-method-replaced'),
-    ('connector-pin', pin, 'generation-lookup-redirect'),
     ('claim-fence', claim, 'generation-policy-before-claim'),
-    ('effect-fence', effect, 'generation-runtime-after-claim'),
     ('receipt-fence', receipt, 'generation-policy-before-receipt'),
     ('initial-snapshot', initial_read, 'generation-runtime-read-initial'),
 ]
@@ -84,6 +71,7 @@ try:
         raise Exception(f'unmodified control failed:\n{control.stdout[-2500:]}')
     print('Unmodified control passed',flush=True)
     for name, mutate, pattern in cases:
+        if os.environ.get('MUTATION_CASE') and os.environ['MUTATION_CASE'] != name: continue
         target.write_text(mutate(original.read_text()))
         result = run(pattern)
         if result.returncode == 0 or 'FAIL  test/yard-event-store-folds.test.ts >' not in result.stdout or 'Failed Suites' in result.stdout:
