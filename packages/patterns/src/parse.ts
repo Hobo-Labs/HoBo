@@ -1,8 +1,3 @@
-// Parse, don't validate: untrusted catalog JSON and CLI queries become
-// parsed derived types (generated PatternManifest / PatternSearchRequest).
-// Search is a command; receipts are events. This package is not an actor host —
-// there is no event-store, materialized view/projection, snapshot, or read store.
-// Catalog files are the source of truth; SQLite is a derived index.
 
 import { create } from "@bufbuild/protobuf";
 

@@ -27,7 +27,6 @@ const TAG_FEATURE = new Map([
 	["hono", "authoring-resource:api"],
 ]);
 
-/** A template parameter as the pattern manifest parser expects it. */
 type AtomParameter = {
 	readonly name: string;
 	readonly kind: string;

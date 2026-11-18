@@ -1,6 +1,3 @@
-// SQLite is a derived index / materialized view / read-store of the catalog.
-// Catalog files remain the source of truth. Search is a command; receipts are
-// events. This package is not an actor host and does not own an event-store.
 
 import {
 	existsSync,
@@ -355,7 +352,6 @@ export function buildPatternIndex(input: {
 		try {
 			driver.rollback();
 		} catch {
-			// ignore rollback after failed transaction
 		}
 		driver.close();
 		if (tmp && existsSync(tmp)) unlinkSync(tmp);

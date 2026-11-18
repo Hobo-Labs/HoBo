@@ -1,5 +1,3 @@
-// Durable ActorHost backed by @hobo/storage-sqlite actor_leases table.
-// In-memory host remains the deterministic default for pure unit tests.
 
 import {
 	type ActorHost,

@@ -1,7 +1,3 @@
-/**
- * Phaser-free Yard engine: projection → visual state + particle pool + cost meter.
- * Phaser scenes (optional browser host) consume this engine; tests never need canvas.
- */
 
 import type { YardProjectionSnapshot } from "@hobo/management";
 import {
@@ -71,7 +67,6 @@ export function createYardEngine(): YardEngine {
 				engine.openSheet = null;
 				return null;
 			}
-			// Rebuild visual with selection; caller re-applies full snap when available.
 			const sheet = sheetForZone(zone, null);
 			engine.openSheet = sheet;
 			return sheet;
@@ -83,7 +78,6 @@ export function createYardEngine(): YardEngine {
 			const next = stepToward(engine.boPos, target, BO_SPEED, dtSec);
 			engine.boPos = { x: next.x, y: next.y };
 
-			// Traffic particle pool — rate ∝ metering.trafficRate
 			const rate = visual.traffic.active ? visual.traffic.rate : 0;
 			const emitBudget = rate * 8 * dtSec;
 			let toEmit = emitBudget;
@@ -135,7 +129,6 @@ export function sheetForZone(
 	}
 }
 
-/** Select zone with full snapshot so sheets get current projection fields. */
 export function selectZoneWithSnapshot(
 	engine: YardEngine,
 	zone: ZoneId,

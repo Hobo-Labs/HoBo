@@ -1,7 +1,3 @@
-/**
- * Yard layout — single source of truth for zone coordinates and depths.
- * Star-Office-UI `layout.js` pattern: no magic numbers in scene logic.
- */
 
 export const YARD_WIDTH = 1280;
 export const YARD_HEIGHT = 720;
@@ -23,7 +19,6 @@ export type ZoneLayout = Readonly<{
 	width: number;
 	height: number;
 	depth: number;
-	/** Anchor for Bo walk target (feet). */
 	anchorX: number;
 	anchorY: number;
 }>;

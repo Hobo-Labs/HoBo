@@ -1,10 +1,3 @@
-/**
- * @hobo/status-page — event-sourced status pages for every HoBo scope.
- *
- * ADR-0077 (per-project status pages), ADR-0078 (availability stays
- * internal), ADR-0086 (replay-safe pure folds), ADR-0145 (platform-applied
- * trait with opt-out). See README.md for the architecture walkthrough.
- */
 
 export {
 	type IncidentOpenedData,

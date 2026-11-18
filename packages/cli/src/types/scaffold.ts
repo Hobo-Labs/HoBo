@@ -77,14 +77,12 @@ export function parseTemplateId(raw: string): ParsedTemplateId {
 	return raw as ParsedTemplateId;
 }
 
-// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export interface ScaffoldRequest {
 	readonly name: ProjectName;
 	readonly template: ParsedTemplateId;
 	readonly force: boolean;
 }
 
-// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export interface ScaffoldResult {
 	readonly projectDir: string;
 	readonly name: ProjectName;

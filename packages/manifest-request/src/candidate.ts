@@ -1,56 +1,3 @@
-/**
- * The request manifest: one catalog offer, as selection sees it.
- *
- * `SelectionCandidate` is the minimal structural view the capability selector
- * gates and ranks — a projection of a Resource Definition rather than the
- * definition itself, so a provider package widens what it already has instead
- * of maintaining a second catalog.
- *
- * Three rules here are the whole point of the package:
- *
- *  - **Parse, don't validate.** `parseSelectionCandidate` takes `unknown` and
- *    returns a branded {@link ParsedSelectionCandidate}, or throws
- *    {@link SelectionCandidateError} naming the field. Nothing downstream
- *    re-checks a value that got past it.
- *  - **Absent is not undefined and is not null.** `evidenceExpiresAtMs` is
- *    optional; absence means "no trust evidence recorded", which fails the
- *    evidence gate closed. An explicit `null` is refused rather than coerced,
- *    because a producer that emits null has made a claim ("this field is
- *    known to be empty") the gate would then silently reinterpret.
- *  - **Canonical form is a set of decisions, not a formatting preference.**
- *    Set-valued fields sort by code point and reject duplicates; the ordered
- *    field (`implementsProfiles`) keeps its order. Two catalogs holding the
- *    same facts therefore encode to the same bytes, which is the only thing
- *    that makes a digest over a candidate comparable across packages.
- *
- * ## Parse, don't validate — the derived types
- *
- * {@link parseSelectionCandidate} is the only way to obtain a
- * {@link ParsedSelectionCandidate}: the branded parsed derived type that says
- * "these bytes were checked". Downstream code holding one never re-checks it.
- * {@link SelectionCandidate} stays structural and unbranded because every
- * provider package authors one as an object literal, and a brand on that type
- * would make those literals unassignable — so the derived type is a refinement
- * of the authoring type rather than a replacement for it.
- * {@link SelectionCandidateRecord} is the third: the wire derived type, in
- * canonical form by construction because {@link toSelectionCandidateRecord}
- * parses before it encodes.
- *
- * ## Where this sits in the control plane
- *
- * A candidate is catalog data carried in the body of a *command*, never the
- * body of an event. A `hobo plan` command hands the Planner actor a catalog
- * snapshot of these rows; the actor selects over them and appends the
- * resulting `match.Decided` and `deployment.Planned` events to the
- * event store. The deployment projection and the plan read store are
- * materialized views folded from those events, and a snapshot of the
- * projection is what a later reader loads instead of replaying the stream. What binds this package
- * to any of it is the digest: `profileCatalogHash` folds the catalog into the
- * signed resolution receipt, which is why the canonical bytes here are a
- * contract rather than a formatting choice. Nothing in this package writes to
- * a stream, owns an actor, or holds state — a manifest package owns a shape
- * and its parse boundary, and nothing else.
- */
 import {
 	BINDLE_RUNTIMES,
 	type BindleRuntime,
@@ -70,12 +17,9 @@ import {
 	type RealizationKind,
 } from "./vocabulary.js";
 
-/** Wire identity of this manifest. Bumped only by a breaking field change. */
-// public-contract: the schema version consumers pin a candidate record to.
 export const SELECTION_CANDIDATE_SCHEMA_VERSION =
 	"hobo.selection-candidate/v1" as const;
 
-/** Every refusal this module raises. The `path` names the offending field. */
 export class SelectionCandidateError extends Error {
 	readonly code = "INVALID_SELECTION_CANDIDATE" as const;
 	readonly path: string;
@@ -87,14 +31,12 @@ export class SelectionCandidateError extends Error {
 	}
 }
 
-/** A structured capability value. Objects are deliberately not admissible. */
 export type StructuredCapabilityValue =
 	| boolean
 	| number
 	| string
 	| readonly string[];
 
-/** A profile implementation claim made by a hosted product or pack. */
 export type ProfileImplementation = {
 	readonly profileId: string;
 	readonly versionRange: string;
@@ -109,14 +51,6 @@ export type CandidateContinuity = {
 	readonly credentials: CredentialContinuity;
 };
 
-/**
- * The minimal structural view selection needs.
- *
- * Structural, not branded: `@hobo/cloud` and every provider package build one
- * as an object literal, and a brand here would make those literals
- * unassignable. {@link parseSelectionCandidate} returns the branded refinement
- * instead, so "this was checked" is expressible without breaking authoring.
- */
 export type SelectionCandidate = {
 	readonly definitionId: string;
 	readonly providerId: string;
@@ -128,7 +62,6 @@ export type SelectionCandidate = {
 	readonly producesBindingProfiles: readonly string[];
 	readonly migrationProfiles: readonly string[];
 	readonly providerClass: ProviderClass;
-	/** Evidence expiry as epoch milliseconds. Absent means no live evidence. */
 	readonly evidenceExpiresAtMs?: number;
 	readonly evidenceSignatureValid: boolean;
 	readonly creatorAuthorityAfterClaim: CreatorAuthorityAfterClaim;
@@ -138,7 +71,6 @@ export type SelectionCandidate = {
 	readonly supportsExport: boolean;
 	readonly supportsRotation: boolean;
 	readonly supportsRevocation: boolean;
-	/** Sponsor exposure in minor currency units. 0 for user-owned/anonymous. */
 	readonly sponsorExposureMinorUnits: number;
 	readonly hasRegisteredDriver: boolean;
 	readonly secretCustodyAvailable: boolean;
@@ -146,13 +78,10 @@ export type SelectionCandidate = {
 
 declare const selectionCandidateBrand: unique symbol;
 
-/** A candidate that has been through {@link parseSelectionCandidate}. */
 export type ParsedSelectionCandidate = SelectionCandidate & {
 	readonly [selectionCandidateBrand]: typeof SELECTION_CANDIDATE_SCHEMA_VERSION;
 };
 
-/** The wire record: snake_case, canonically ordered, digest-ready. */
-// parallel-type-allowed: hand-declared wire form of ProfileImplementationRecord in data-models/selection_candidate.proto; this package has no data-models/buf.yaml, so codegen produces no src/_generated/*_pb.ts to import — replace with the generated type when manifest packages opt into codegen.
 export type ProfileImplementationRecord = {
 	readonly profile_id: string;
 	readonly version_range: string;
@@ -161,14 +90,12 @@ export type ProfileImplementationRecord = {
 	readonly conformance: ConformanceResult;
 };
 
-// parallel-type-allowed: hand-declared wire form of CandidateContinuityRecord; its two continuity vocabularies are distinct closed enums that a generated type would spell as plain strings, so the generated form is a widening until the CUE constraint set is enforced in codegen.
 export type CandidateContinuityRecord = {
 	readonly endpoint: ContinuityGrade;
 	readonly data: ContinuityGrade;
 	readonly credentials: CredentialContinuity;
 };
 
-// parallel-type-allowed: hand-declared wire form of SelectionCandidateRecord; the declaration order of its fields IS the canonical JSON key order a digest is taken over, which is a property this package must state rather than inherit from a generator it does not yet run.
 export type SelectionCandidateRecord = {
 	readonly schema_version: typeof SELECTION_CANDIDATE_SCHEMA_VERSION;
 	readonly definition_id: string;
@@ -195,18 +122,9 @@ export type SelectionCandidateRecord = {
 	readonly secret_custody_available: boolean;
 };
 
-/** Same profile-id syntax `@hobo/capability-profiles` pins. */
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\/v[0-9]+$/u;
 const VERSION_RANGE_PATTERN =
 	/^(?:\*|[><]=?|=|\^|~)?\s*v?[0-9]+(?:\.[0-9]+){0,2}$/u;
-/**
- * Capability keys must not be array-index-shaped.
- *
- * JavaScript reorders integer-like own keys to the front of an object, so a
- * key of `"0"` would move ahead of the sorted keys in the canonical JSON and
- * quietly break byte-identity between two catalogs holding the same facts.
- * Requiring a leading letter is what makes the sort observable on the wire.
- */
 const CAPABILITY_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_.-]*$/u;
 
 const CANDIDATE_FIELDS = [
@@ -266,7 +184,6 @@ const RECORD_FIELDS = [
 	"secret_custody_available",
 ] as const;
 
-/** Code-point order, never the host's collation locale. */
 function compareCodePoints(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -382,7 +299,6 @@ function assertNoDuplicates(values: readonly string[], path: string): void {
 	}
 }
 
-/** A set-valued field: no duplicates, canonically sorted by code point. */
 function parseStringSet(value: unknown, path: string): readonly string[] {
 	const entries = asArray(value, path).map((entry, index) =>
 		asNonEmptyString(entry, `${path}[${index}]`),
@@ -414,14 +330,9 @@ function parseCapabilityValue(
 				`must be a finite number, got ${String(value)}`,
 			);
 		}
-		// -0 serializes as `0`, so keeping it would make the round trip lossy in
-		// the domain object while looking byte-identical on the wire.
 		return Object.is(value, -0) ? 0 : value;
 	}
 	if (Array.isArray(value)) {
-		// A list value keeps its order: it is a value, not a set, and every
-		// operator that reads one (`one-of`, `includes-all`) is order-blind
-		// anyway, so reordering would lose information for no gain.
 		return value.map((entry, index) =>
 			asNonEmptyString(entry, `${path}[${index}]`),
 		);
@@ -497,14 +408,6 @@ function parseImplementation(
 	};
 }
 
-/**
- * Ordered, and never two claims for the same profile.
- *
- * Order is preserved because selection takes the first entry that satisfies a
- * required profile, so the list position decides which realization is chosen.
- * Two claims for one profile are refused for the same reason: the choice
- * between them would rest on position alone, with nothing to appeal to.
- */
 function parseImplementations(
 	value: unknown,
 	path: string,
@@ -533,16 +436,6 @@ function parseContinuity(value: unknown, path: string): CandidateContinuity {
 	};
 }
 
-/**
- * Absent, `null` and `undefined` are three different claims, and only the
- * first is admissible.
- *
- * `exactOptionalPropertyTypes` draws exactly this line in the type system: an
- * optional field and a field that may hold `undefined` are not the same field.
- * A producer that sets the key to `null` or `undefined` has asserted something
- * about the value; omitting the key asserts that no evidence was recorded, and
- * only that spelling reaches the evidence gate as a fail-closed fact.
- */
 function parseEvidenceExpiry(value: unknown, path: string): number {
 	if (value === null) {
 		throw new SelectionCandidateError(
@@ -565,13 +458,6 @@ function parseEvidenceExpiry(value: unknown, path: string): number {
 	return value;
 }
 
-/**
- * Parse-don't-validate boundary for a catalog offer.
- *
- * Unknown fields are refused rather than dropped: a producer that carries a
- * selection-relevant fact this schema does not model would otherwise have it
- * silently deleted from every digest taken downstream.
- */
 export function parseSelectionCandidate(
 	input: unknown,
 ): ParsedSelectionCandidate {
@@ -651,13 +537,6 @@ export function parseSelectionCandidate(
 	return candidate as ParsedSelectionCandidate;
 }
 
-/**
- * Encode to the canonical wire record.
- *
- * Parses first, so the output is canonical whatever the input's array order
- * or key order was. Key insertion order here IS the wire order — the record
- * is what a digest is taken over.
- */
 export function toSelectionCandidateRecord(
 	candidate: SelectionCandidate,
 ): SelectionCandidateRecord {
@@ -699,7 +578,6 @@ export function toSelectionCandidateRecord(
 	};
 }
 
-/** Decode a wire record. Refuses an unrecognized schema version outright. */
 export function fromSelectionCandidateRecord(
 	input: unknown,
 ): ParsedSelectionCandidate {
@@ -761,13 +639,6 @@ export function fromSelectionCandidateRecord(
 	});
 }
 
-/**
- * The bytes a digest is taken over.
- *
- * Digesting itself is the caller's: `@hobo/cloud` folds a candidate into a
- * catalog digest and `@hobo/recipes` into an offer digest, with different
- * surrounding payloads. What they must agree on is this string.
- */
 export function canonicalSelectionCandidateJson(
 	candidate: SelectionCandidate,
 ): string {

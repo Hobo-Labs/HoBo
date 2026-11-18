@@ -1,7 +1,3 @@
-/**
- * BootScene — central asset load from measured asset index.
- * phaser-gamedev: load in preload only; never guess frame sizes.
- */
 import type { AssetIndex } from "../assets-index.js";
 import {
 	animationFrameList,
@@ -14,7 +10,6 @@ export type BootSceneDeps = {
 	assetBaseUrl: string;
 };
 
-/** Pure preload plan — unit-testable without Phaser. */
 export function buildBootLoadPlan(
 	index: AssetIndex,
 	assetBaseUrl: string,

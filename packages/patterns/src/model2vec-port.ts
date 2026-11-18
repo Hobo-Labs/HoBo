@@ -1,4 +1,3 @@
-/** Optional dense encoder. Production default does not load Model2Vec. */
 export type DenseEncoderPort = {
 	readonly id: string;
 	readonly digest: string;

@@ -30,5 +30,4 @@ export * from "./selector.js";
 export * from "./spi.js";
 export * from "./type-mapping.js";
 
-// public-contract: package id consumers assert against.
 export const HOBO_DATA_CORE_PACKAGE = "@hobo/data-core";

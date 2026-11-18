@@ -23,14 +23,12 @@ export interface AgentDocsToolInput {
 	};
 }
 
-// domain-view:
 export interface AgentDocCapability {
 	readonly port: string;
 	readonly resource: string;
 	readonly verb: string;
 }
 
-// domain-view:
 export interface AgentDocEntry {
 	readonly name: string;
 	readonly role: string;
@@ -40,7 +38,6 @@ export interface AgentDocEntry {
 	readonly capability: AgentDocCapability;
 }
 
-// domain-view:
 export interface AgentDocsManifest {
 	readonly schemaVersion: string;
 	readonly generator: string;
@@ -50,7 +47,6 @@ export interface AgentDocsManifest {
 	readonly artifacts: readonly string[];
 }
 
-// domain-view:
 export interface AgentDocsArtifact {
 	readonly path: string;
 	readonly content: string;

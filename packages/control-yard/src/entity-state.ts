@@ -1,7 +1,3 @@
-/**
- * Entity state machines driven only by projection snapshots.
- * UI never invents occupancy/rail/connection state.
- */
 
 import type { YardProjectionSnapshot } from "@hobo/management";
 
@@ -32,7 +28,6 @@ export type GuestVisualState = "offline" | "idle" | "working" | "error";
 export type YardVisualState = Readonly<{
 	bo: {
 		state: BoAnimState;
-		/** Stable animation id from assets_index — never a raw clip filename. */
 		animationId: string;
 		zone: ZoneId;
 		facing: "east" | "west";
@@ -93,7 +88,6 @@ export function deriveYardVisualState(
 	const facing: "east" | "west" =
 		boZone === "connectionBay" || boZone === "costBooth" ? "east" : "west";
 
-	// Site sheets only: idle + walk E/W. Error/occupying still play idle art.
 	const animationId =
 		boState === "walking"
 			? facing === "east"
@@ -213,7 +207,6 @@ function mapConnectionVisual(status: string): ConnectionVisualState {
 	}
 }
 
-/** Frame-rate independent walk step toward zone anchor. */
 export function stepToward(
 	from: { x: number; y: number },
 	to: { x: number; y: number },

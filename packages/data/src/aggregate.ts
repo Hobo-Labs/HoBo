@@ -32,10 +32,6 @@ import {
 } from "./json.js";
 import type { UpcasterRegistry } from "./upcaster.js";
 
-// Emit surface handed to a command: it stages past-tense facts to append. It is
-// the typed, domain-write sibling of an actor signal — no reads, no side effects.
-// stageEffect() records durable side effects for the same transaction as append
-// when the store implements DurableEventStore.commit; decide() stays pure (no I/O).
 export interface EventEmitOptions {
 	v?: number;
 }
@@ -54,9 +50,7 @@ export type Decide<S, C> = (
 export interface AggregateDefinition<S, C> {
 	name: string;
 	initialState: S;
-	// Write-model fold: applied on load to derive authoritative state.
 	evolve: Evolve<S>;
-	// Invariant check + fact production. Throw AggregateInvariantError to reject.
 	decide: Decide<S, C>;
 	upcasters?: UpcasterRegistry;
 }
@@ -73,14 +67,10 @@ export interface CommandContext {
 
 export interface CommandResult<S> {
 	streamId: string;
-	// The seq of the last appended fact — the client advances its subscriptions to
-	// >= this before the write acks (reads-your-writes, wired in @hobo/events).
 	seq: number;
 	state: S;
 	appended: EventEnvelope[];
 	fenceToken: bigint;
-	// Emitted actor.* lifecycle facts for this command (Activated/StateAppended/
-	// Passivated). A durable host persists these; tests assert on them.
 	lifecycle: DataFact[];
 	quarantined: QuarantineRecord[];
 }
@@ -92,9 +82,7 @@ export interface AggregateDeps {
 
 export interface Aggregate<S, C> {
 	readonly name: string;
-	// Load the write-model fold for a stream (authoritative state + next seq).
 	load(store: EventStore, streamId: string): Promise<{ state: S; seq: number }>;
-	// Run a command inside the aggregate's single-writer boundary.
 	execute(
 		deps: AggregateDeps,
 		streamId: string,
@@ -125,7 +113,6 @@ function parseFactType(type: Inspectable): string {
 
 function isDurableEventStore(store: EventStore): store is DurableEventStore {
 	if (!("commit" in store)) return false;
-	// SAFETY: DurableEventStore is the EventStore subtype that exposes commit(); tag check proves it is callable.
 	const commit = (store as DurableEventStore).commit;
 	return hasFunctionTag(commit);
 }
@@ -154,7 +141,6 @@ export function defineAggregate<S, C>(
 
 		async execute(deps, streamId, command, context) {
 			const holderId = context.holderId ?? `${definition.name}:${streamId}`;
-			// Acquire the single-writer lease + fencing token for this aggregate.
 			const lease = deps.actorHost.acquire(streamId, { holderId });
 			const lifecycle: DataFact[] = [
 				createActorActivatedEvent({
@@ -166,11 +152,9 @@ export function defineAggregate<S, C>(
 			let finalSeq = 0;
 
 			try {
-				// Fold to authoritative write-model state at the current seq.
 				const events = await readStream(deps.store, streamId);
 				const outcome = foldEvents(events, foldSpec);
 
-				// Run the command: invariant check against current state + emit.
 				const staged: EventInput[] = [];
 				const stagedEffects: DurableEffectInput[] = [];
 				const emitter: CommandEmitter = {
@@ -200,7 +184,6 @@ export function defineAggregate<S, C>(
 					};
 				}
 
-				// Append under optimistic concurrency + actor fence.
 				const appendOptions: AppendOptions = {
 					expectedSeq: outcome.seq,
 					actor: context.actor,
@@ -245,7 +228,6 @@ export function defineAggregate<S, C>(
 					throw error;
 				}
 
-				// Fold the freshly appended facts onto state to return current value.
 				let state = outcome.state;
 				for (const event of appended) {
 					const upcast = definition.upcasters

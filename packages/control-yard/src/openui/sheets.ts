@@ -1,8 +1,3 @@
-/**
- * Schema-derived generative sheets (OpenUI spirit).
- * Component library is built from management/connection/rail schemas —
- * not free-form LLM chrome. Confirm → pure management functions.
- */
 
 import type {
 	ManagementResult,
@@ -30,7 +25,6 @@ export type GenerativeSheet = Readonly<{
 	title: string;
 	description: string;
 	fields: readonly SheetField[];
-	/** Management path the confirm action must call. */
 	confirmOp:
 		| "connectionCreate"
 		| "connectionAuthorize"
@@ -45,7 +39,6 @@ function field(f: SheetField): SheetField {
 	return Object.freeze(f);
 }
 
-/** OpenUI-style progressive stream of sheet definition chunks. */
 export function* streamSheet(sheet: GenerativeSheet): Generator<{
 	type: "chunk" | "done";
 	text?: string;
@@ -239,7 +232,6 @@ export type SheetConfirmHandlers = Readonly<{
 	doctorSnapshot: () => ManagementResult;
 }>;
 
-/** Confirm a sheet with field values → management op. */
 export function confirmSheet(
 	sheet: GenerativeSheet,
 	values: Record<string, string | number>,
