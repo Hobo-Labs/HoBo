@@ -460,6 +460,35 @@ describe("diffSchemaIr", () => {
 		]);
 	});
 
+	it("removes the old primary key before adding its replacement", () => {
+		const before = ir([
+			table({
+				columns: [
+					column({ name: "z_old" }),
+					column({
+						name: "a_new",
+						nullable: true,
+						primaryKey: false,
+						unique: false,
+					}),
+				],
+			}),
+		]);
+		const after = ir([
+			table({
+				columns: [
+					column({ name: "z_old", primaryKey: false }),
+					column({ name: "a_new", primaryKey: true, unique: false }),
+				],
+			}),
+		]);
+		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
+			"backfill:backfill-column:accounts:a_new",
+			"contract:narrow-column:accounts:z_old",
+			"contract:narrow-column:accounts:a_new",
+		]);
+	});
+
 	it("never emits an inverse step and confines destructive work to contract", () => {
 		const before = parseSchemaIr(
 			ir([
