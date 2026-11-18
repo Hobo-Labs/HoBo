@@ -187,6 +187,12 @@ serialize access to the checkout while running and signing.
 The attestor key's new parent directory is created with mode `0700` or more
 restrictive according to the umask. An existing parent must already deny
 group and other access; the command refuses to change its permissions.
+Keep the key outside the checkout and shared tool directories, including an
+explicit `TMPDIR`. The tests give child commands a separate temporary directory
+so their fixture keys remain private even when the parent sets `TMPDIR`.
+They also isolate inherited Git configuration paths and settings injected by a
+parent `git -c` command, so fixture-local settings remain the values exercised
+by the signoff tests.
 
 Statuses are `signoff/hobo-ci/local/<event>/<job>` on the tested head. They are
 separate from Actions job results, cannot complete queued jobs, and do not by
