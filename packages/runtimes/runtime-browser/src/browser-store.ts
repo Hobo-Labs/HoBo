@@ -16,6 +16,7 @@ import { PersistenceUnavailableError } from "@hobo/core/eventstore";
 import type { SqliteJournal } from "@hobo/storage-sqlite/browser";
 import { detectBrowserPersistence } from "./detect.js";
 import type { JsonValue } from "./json.js";
+import { openMultiTabStore } from "./multi-tab-store.js";
 import type {
 	BrowserPersistenceMode,
 	BrowserStorageOpenOptions,
@@ -45,9 +46,26 @@ export async function createBrowserEventStore(
 		);
 	}
 	if (options.multiTab) {
-		throw new PersistenceUnavailableError(
-			"Concurrent tabs require a shared browser store",
-		);
+		if (
+			detection.mode !== "opfs-sahpool" ||
+			!globalThis.navigator?.locks ||
+			!("BroadcastChannel" in globalThis) ||
+			!("Worker" in globalThis)
+		) {
+			throw new PersistenceUnavailableError(
+				"Multi-tab storage requires OPFS, Web Locks, BroadcastChannel, and workers",
+			);
+		}
+		try {
+			return await openMultiTabStore({
+				partitionId: options.partitionId,
+				wasmUrl: new URL("./sqlite3.wasm", import.meta.url).href,
+			});
+		} catch (error) {
+			throw new PersistenceUnavailableError(
+				`Browser storage could not open: ${String(error)}`,
+			);
+		}
 	}
 
 	if ("Worker" in globalThis) {

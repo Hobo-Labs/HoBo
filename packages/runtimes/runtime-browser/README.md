@@ -2,8 +2,11 @@
 
 `createBrowserEventStore` runs the shared SQLite journal in a dedicated browser
 worker. With OPFS available, the store uses the `opfs-sahpool` VFS and retains
-events, snapshots, and checkpoints across page reloads. Each partition has one
-active owner. Await `close()` before reopening the same partition.
+events, snapshots, and checkpoints across page reloads. By default each
+partition has one active owner. Pass `multiTab: true` in each tab to coordinate
+access through Web Locks and receive live events through BroadcastChannel.
+Multi-tab stores require OPFS, Web Locks, and BroadcastChannel. Await `close()`
+when a tab no longer needs the store.
 
 ```ts
 import { createBrowserEventStore } from "@hobo/runtime-browser";

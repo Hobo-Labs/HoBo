@@ -9,6 +9,11 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 
+type BrowserTestGlobal = typeof globalThis & {
+	hoboTestStore: import("../packages/runtimes/runtime-browser/src/index.js").BrowserEventStore;
+	hoboTestEvents: string[];
+};
+
 const root = fileURLToPath(new URL("..", import.meta.url));
 const runtime = join(root, "packages/runtimes/runtime-browser");
 const directory = await mkdtemp(join(tmpdir(), "hobo-browser-storage-"));
@@ -77,7 +82,8 @@ try {
 			args: ["--no-sandbox"],
 		});
 		try {
-			const page = await browser.newPage();
+			const context = await browser.newContext();
+			const page = await context.newPage();
 			await page.goto(`http://127.0.0.1:${address.port}/`);
 			const result = await page.evaluate(async () => {
 				const entry = "/main.js";
@@ -199,8 +205,140 @@ try {
 				transientMode: "transient-memory",
 				transientCount: 0,
 			});
+			const first = await context.newPage();
+			const second = await context.newPage();
+			await Promise.all([
+				first.goto(`http://127.0.0.1:${address.port}/`),
+				second.goto(`http://127.0.0.1:${address.port}/`),
+			]);
+			const sharedPartition = `shared-test-${Date.now()}`;
+			for (const tab of [first, second]) {
+				await tab.evaluate(async (partitionId) => {
+					const entry = "/main.js";
+					const sdk: typeof import("../packages/runtimes/runtime-browser/src/index.js") =
+						await import(entry);
+					const store = await sdk.createBrowserEventStore({
+						partitionId,
+						multiTab: true,
+					});
+					const received: string[] = [];
+					const subscription = store.subscribe(
+						{ streamId: "shared" },
+						(event) => {
+							received.push(event.type);
+						},
+					);
+					await subscription.ready;
+					const state = globalThis as BrowserTestGlobal;
+					state.hoboTestStore = store;
+					state.hoboTestEvents = received;
+				}, sharedPartition);
+			}
+			await second.evaluate(async () => {
+				const store = (globalThis as BrowserTestGlobal).hoboTestStore;
+				await store.append(
+					"shared",
+					[{ type: "note.Created", data: { text: "both tabs" } }],
+					{
+						expectedSeq: 0,
+						actor: { kind: "system", id: "browser" },
+						tenant: "t",
+					},
+				);
+			});
+			await Promise.all([
+				first.waitForFunction(() =>
+					(globalThis as BrowserTestGlobal).hoboTestEvents.includes(
+						"note.Created",
+					),
+				),
+				second.waitForFunction(() =>
+					(globalThis as BrowserTestGlobal).hoboTestEvents.includes(
+						"note.Created",
+					),
+				),
+			]);
+			const races = await Promise.all(
+				[first, second].map((tab, index) =>
+					tab.evaluate(async (writer) => {
+						const store = (globalThis as BrowserTestGlobal).hoboTestStore;
+						try {
+							await store.append(
+								"shared",
+								[{ type: "note.Raced", data: { writer } }],
+								{
+									expectedSeq: 1,
+									actor: { kind: "system", id: "browser" },
+									tenant: "t",
+								},
+							);
+							return "applied";
+						} catch (error) {
+							return error instanceof Error && "code" in error
+								? String(error.code)
+								: String(error);
+						}
+					}, index),
+				),
+			);
+			assert.deepEqual(races.sort(), [
+				"OPTIMISTIC_SEQUENCE_CONFLICT",
+				"applied",
+			]);
+			await Promise.all([
+				first.waitForFunction(() =>
+					(globalThis as BrowserTestGlobal).hoboTestEvents.includes(
+						"note.Raced",
+					),
+				),
+				second.waitForFunction(() =>
+					(globalThis as BrowserTestGlobal).hoboTestEvents.includes(
+						"note.Raced",
+					),
+				),
+			]);
+			await second.close();
+			const sharedEvents = await first.evaluate(async () => {
+				const store = (globalThis as BrowserTestGlobal).hoboTestStore;
+				await store.append(
+					"shared",
+					[{ type: "note.Updated", data: { text: "first tab" } }],
+					{
+						expectedSeq: 2,
+						actor: { kind: "system", id: "browser" },
+						tenant: "t",
+					},
+				);
+				const events = [];
+				for await (const event of store.read("shared")) events.push(event.data);
+				await store.close();
+				return events;
+			});
+			assert.equal(sharedEvents.length, 3);
+			assert.deepEqual(sharedEvents[0], { text: "both tabs" });
+			assert.deepEqual(sharedEvents[2], { text: "first tab" });
+			const third = await context.newPage();
+			await third.goto(`http://127.0.0.1:${address.port}/`);
+			const reopenedShared = await third.evaluate(async (partitionId) => {
+				const entry = "/main.js";
+				const sdk: typeof import("../packages/runtimes/runtime-browser/src/index.js") =
+					await import(entry);
+				const store = await sdk.createBrowserEventStore({
+					partitionId,
+					multiTab: true,
+				});
+				const events = [];
+				for await (const event of store.read("shared")) events.push(event.type);
+				await store.close();
+				return events;
+			}, sharedPartition);
+			assert.deepEqual(reopenedShared, [
+				"note.Created",
+				"note.Raced",
+				"note.Updated",
+			]);
 			console.log(
-				"Browser OPFS journal persisted events, snapshots and checkpoints across reopen.",
+				"Browser OPFS journal persisted data and shared subscriptions across tabs.",
 			);
 		} finally {
 			await browser.close();
