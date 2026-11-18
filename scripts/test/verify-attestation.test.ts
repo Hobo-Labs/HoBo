@@ -85,20 +85,22 @@ const envelope = signStatement(
 				docker: "29.0.0",
 			},
 		},
-		results: COVERED_JOBS.map((id) => ({
-			id,
-			status: "passed" as const,
-			events: ["pull_request", "merge_group"],
-			commands: id === "scripts-tests" ? 8 : 1,
-			...(id === "scripts-tests"
-				? {
-						eventChecks: { pull_request: 4, merge_group: 4 },
-						executionMode: "each-step-v1" as const,
-					}
-				: {}),
-			durationMs: 1,
-			logDigest: `sha256:${"f".repeat(64)}`,
-		})),
+		results: COVERED_JOBS.map((id) => {
+			const result = {
+				id,
+				status: "passed" as const,
+				events: ["pull_request", "merge_group"],
+				commands: id === "scripts-tests" ? 8 : 1,
+				durationMs: 1,
+				logDigest: `sha256:${"f".repeat(64)}`,
+			};
+			if (id === "scripts-tests")
+				Object.assign(result, {
+					eventChecks: { pull_request: 4, merge_group: 4 },
+					executionMode: "each-step-v1" as const,
+				});
+			return result;
+		}),
 	},
 	privateKey,
 );
