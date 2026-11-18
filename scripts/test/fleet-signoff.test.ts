@@ -1298,7 +1298,8 @@ if [ "\${HOBO_FLEET_OLD_GIT:-0}" = 1 ] && [ "$1" = --no-lazy-fetch ]; then
 fi
 if [ "$1" = hobo-test-advance ]; then
   if [ -f "$tool_dir/change-queue-on-job" ]; then
-    printf '%s\\n' '{"data":{"repository":{"pullRequest":null}}}' > "$HOBO_FLEET_QUEUE"
+    read -r queue_path < "$tool_dir/queue-path"
+    printf '%s\\n' '{"data":{"repository":{"pullRequest":null}}}' > "$queue_path"
   fi
   if [ -f "$tool_dir/close-pr-on-job" ]; then
     touch "$tool_dir/pr-closed"
@@ -2353,6 +2354,7 @@ exec /usr/bin/git "$@"
 			const groupRef = `gh-readonly-queue/main/pr-17-${baseA}`;
 			git(repo, ["push", "--quiet", "origin", `HEAD:refs/heads/${groupRef}`]);
 			const queue = join(root, "merge-queue.json");
+			writeFileSync(join(bin, "queue-path"), `${queue}\n`);
 			const queueData = JSON.stringify({
 				data: {
 					repository: {
@@ -2376,7 +2378,11 @@ exec /usr/bin/git "$@"
 			const groupFlags = ["--fresh", `--merge-group-ref=${groupRef}`];
 			writeFileSync(join(bin, "change-queue-on-job"), "change\n");
 			const movedGroup = command(groupEnv, groupFlags);
-			assert.notEqual(movedGroup.status, 0);
+			assert.notEqual(
+				movedGroup.status,
+				0,
+				`${movedGroup.stdout}\n${movedGroup.stderr}`,
+			);
 			assert.match(
 				movedGroup.stderr,
 				/merge-group entry or its published ref changed/u,
