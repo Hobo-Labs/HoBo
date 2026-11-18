@@ -140,6 +140,7 @@ it("rejects inputs that cannot be reproduced from the JSON journal", async () =>
 		await expect(
 			engine.start(wf, value, { runId: `invalid-${index}` }),
 		).rejects.toThrow("workflow input must be JSON-normalized");
+		expect(await engine.journal(`invalid-${index}`)).toEqual([]);
 		await expect(engine.resume(wf, "missing", value)).rejects.toThrow(
 			"workflow input must be JSON-normalized",
 		);
