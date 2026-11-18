@@ -16,7 +16,11 @@ function moneyIncomplete(money: Money | undefined): boolean {
 
 function tierIncomplete(tier: Tier): boolean {
 	if (tier.from.length === 0) return true;
-	return moneyIncomplete(tier.flatAmount) || moneyIncomplete(tier.unitAmount);
+	const flatComplete =
+		tier.flatAmount !== undefined && !moneyIncomplete(tier.flatAmount);
+	const unitComplete =
+		tier.unitAmount !== undefined && !moneyIncomplete(tier.unitAmount);
+	return !flatComplete && !unitComplete;
 }
 
 function usagePriceIncomplete(charge: ChargeComponent): boolean {

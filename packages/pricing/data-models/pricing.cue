@@ -325,6 +325,7 @@ package data_models
 	periodActuals: [...#ActualCharge]
 	completeness: "complete" | "partial"
 	observations: [...#StateObservation]
+	_agreementTenants: [for a in agreements {a.tenantId & tenantId}]
 	_allowanceTenants: [for a in allowances {a.grant.tenantId & tenantId}]
 	_creditTenants: [for c in credits {c.grant.tenantId & tenantId}]
 	_commitmentTenants: [for c in commitments {c.commitment.tenantId & tenantId}]
