@@ -23,8 +23,14 @@ malformed availability messages and unknown nested fields before rating them.
 This checks the scenario as declared; the model itself cannot prove that every
 billable resource or charge dimension was included. A supplied model is an
 estimate, not a provider-backed spending limit. The current helper handles one
-product/account and rejects a product without declared meters. Hosting admission
-requires independently verified scope, exposure bounds and a durable reservation.
+product/account. A fixed-only product may omit usage meters when a fixed charge
+applies to the workload. If that charge names a quantity dimension, the agreement
+and each workload must explicitly declare that quantity, including zero. An
+existing flat subscription can have a zero incremental quote while its baseline
+cost remains nonzero. Hosting admission requires independently verified scope,
+exposure bounds and a durable reservation.
+`model/IacFixedPricing.tla` checks these coverage decisions for one workload
+and two abstract amounts; it does not prove the TypeScript implementation.
 The protobuf and CUE definitions live in `data-models/pricing.proto` and
 `data-models/pricing.cue`; positive/negative CUE fixtures and
 `test/availability.test.ts` exercise the new boundary.

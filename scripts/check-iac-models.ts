@@ -134,7 +134,11 @@ try {
 			"IacRouting mutation did not produce an invariant counterexample",
 		);
 	process.stdout.write("IacRouting mutation: counterexample found\n");
-	for (const name of ["IacPricingScope", "IacDestroyPricing"]) {
+	for (const name of [
+		"IacPricingScope",
+		"IacDestroyPricing",
+		"IacFixedPricing",
+	]) {
 		const result = check(name, modelDirectory, join(scratch, name));
 		process.stdout.write(result.stdout);
 		process.stderr.write(result.stderr);
@@ -307,6 +311,13 @@ try {
 			"IF present /\\ ScopeMatches",
 			"IF ~present \\/ ScopeMatches",
 		],
+		["IacFixedPricing", "/\\ usagePriced \\/ fixedApplicable", "/\\ TRUE"],
+		[
+			"IacFixedPricing",
+			"/\\ ~fixedApplicable \\/ ~requiresQuantity \\/ (agreementQuantity /\\ workloadQuantity)",
+			"/\\ TRUE",
+		],
+		["IacFixedPricing", 'ELSE "unavailable"', 'ELSE "zero"'],
 	] as const;
 	for (const [index, [name, before, after]] of mutations.entries()) {
 		const source = readFileSync(join(modelDirectory, `${name}.tla`), "utf8");
@@ -328,18 +339,24 @@ try {
 			`${name} mutation ${index + 1}: counterexample found\n`,
 		);
 	}
-	for (const invariant of ["NoPricedHold", "NoUnpricedHold"]) {
+	for (const [name, invariant] of [
+		["IacDestroyPricing", "NoPricedHold"],
+		["IacDestroyPricing", "NoUnpricedHold"],
+		["IacFixedPricing", "NoFixedZero"],
+		["IacFixedPricing", "NoFixedPositive"],
+		["IacFixedPricing", "NoUnavailable"],
+	] as const) {
 		const witness = join(scratch, invariant);
 		mkdirSync(witness);
 		writeFileSync(
-			join(witness, "IacDestroyPricing.tla"),
-			readFileSync(join(modelDirectory, "IacDestroyPricing.tla")),
+			join(witness, `${name}.tla`),
+			readFileSync(join(modelDirectory, `${name}.tla`)),
 		);
 		writeFileSync(
-			join(witness, "IacDestroyPricing.cfg"),
-			`${readFileSync(join(modelDirectory, "IacDestroyPricing.cfg"), "utf8")}\nINVARIANT ${invariant}\n`,
+			join(witness, `${name}.cfg`),
+			`${readFileSync(join(modelDirectory, `${name}.cfg`), "utf8")}\nINVARIANT ${invariant}\n`,
 		);
-		const result = check("IacDestroyPricing", witness, join(witness, "states"));
+		const result = check(name, witness, join(witness, "states"));
 		if (
 			result.status === 0 ||
 			!result.stdout.includes(`Invariant ${invariant} is violated`)

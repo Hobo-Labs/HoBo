@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	commitmentState,
 	creditState,
+	fixedCharge,
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
@@ -178,6 +179,70 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 }
 
 describe("provider-neutral IaC target budget admission", () => {
+	it("reserves a verified liability bound for a fixed-only developer model", async () => {
+		const ledger = authority();
+		try {
+			const { inventory, evidence } = fixture();
+			const scenario = makeScenario({
+				charges: [fixedCharge("instance", "1")],
+				meters: [],
+				candidate: [workload("agreement-a", [])],
+			});
+			const charge = scenario.catalog?.rateCards[0]?.charges[0];
+			const agreement = scenario.state?.agreements[0];
+			const candidate = scenario.candidate[0];
+			if (
+				charge?.variant.case !== "fixed" ||
+				agreement === undefined ||
+				candidate === undefined
+			)
+				throw new Error("fixed-price fixture is incomplete");
+			charge.variant.value.quantityDimension = "instance";
+			agreement.quantities.instance = "0";
+			candidate.quantities.instance = "1";
+			rehashScenario(scenario);
+			const deps = dependencies(ledger);
+			const verifyLiability = vi.fn(deps.verifyLiability);
+			const authorize = vi.fn(deps.authorize);
+			const financial = createIacFinancialServices({
+				...deps,
+				verifyLiability,
+				authorize,
+				pricing: {
+					modelId: "fixed-terms",
+					revision: "1",
+					scenario,
+					bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+				},
+				issueLiability: ({ priced }) => {
+					evidence.inventoryHash = priced.inventoryHash;
+					evidence.modelHash = priced.modelHash;
+					evidence.quoteHash = priced.quote.quoteHash;
+					return evidence;
+				},
+			});
+			const plan = financialPlan(inventory);
+			expect(financial.assess(plan)).toMatchObject({
+				quote: {
+					ok: true,
+					quote: { incremental: { billed: { decimal: "1", currency: "USD" } } },
+				},
+				admissionPath: { kind: "bounded-budget" },
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+			expect(await financial.admit("fixed-priced", plan)).toMatchObject({
+				status: "admitted",
+				budget: { evaluation: "allowed", reservation: "held" },
+			});
+			expect(verifyLiability).toHaveBeenCalledOnce();
+			expect(authorize).toHaveBeenCalledOnce();
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
 	it.each([
 		["missing declaration", "INCOMPLETE_FINANCIAL_STATE"],
 		["cancellation", "PRICING_MODEL_UNSUPPORTED"],

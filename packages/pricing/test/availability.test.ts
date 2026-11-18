@@ -8,6 +8,7 @@ import {
 	quoteAvailablePricing,
 } from "../src/availability.js";
 import {
+	fixedCharge,
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
@@ -29,6 +30,28 @@ function scenario(price = "0.25") {
 		charges: [perUnitCharge("runtime", "minute", price)],
 		candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
 	});
+}
+
+function fixedScenario(price: string) {
+	const fixed = makeScenario({
+		charges: [fixedCharge("subscription", price)],
+		meters: [],
+		candidate: [workload("agreement-a", [])],
+	});
+	const charge = fixed.catalog?.rateCards[0]?.charges[0];
+	const candidate = fixed.candidate[0];
+	const agreement = fixed.state?.agreements[0];
+	if (
+		charge?.variant.case !== "fixed" ||
+		candidate === undefined ||
+		agreement === undefined
+	)
+		throw new Error("fixed-price fixture is incomplete");
+	charge.variant.value.quantityDimension = "instance";
+	candidate.quantities.instance = "1";
+	agreement.quantities.instance = "0";
+	rehashScenario(fixed);
+	return fixed;
 }
 
 describe("declared pricing availability", () => {
@@ -148,6 +171,115 @@ describe("declared pricing availability", () => {
 			revision: "1",
 			quote: { incremental: { billed: { decimal: "1", currency: "USD" } } },
 		});
+	});
+
+	it.each([
+		"12",
+		"0",
+	])("quotes a fixed-only contract with an explicit price of %s", (price) => {
+		const fixed = fixedScenario(price);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, fixed)),
+		).toMatchObject({
+			ok: true,
+			quote: {
+				incremental: { billed: { decimal: price, currency: "USD" } },
+			},
+		});
+	});
+
+	it("recognizes an existing flat subscription as a zero incremental cost", () => {
+		const fixed = fixedScenario("12");
+		const charge = fixed.catalog?.rateCards[0]?.charges[0];
+		if (charge?.variant.case !== "fixed") throw new Error("fixture missing");
+		delete charge.variant.value.quantityDimension;
+		rehashScenario(fixed);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, fixed)),
+		).toMatchObject({
+			ok: true,
+			quote: {
+				baseline: { billed: { decimal: "12", currency: "USD" } },
+				candidate: { billed: { decimal: "12", currency: "USD" } },
+				incremental: { billed: { decimal: "0", currency: "USD" } },
+			},
+		});
+	});
+
+	it.each([
+		"candidate",
+		"agreement",
+	] as const)("rejects a fixed price without an explicit %s quantity", (missing) => {
+		const fixed = fixedScenario("12");
+		const quantities =
+			missing === "candidate"
+				? fixed.candidate[0]?.quantities
+				: fixed.state?.agreements[0]?.quantities;
+		if (quantities === undefined) throw new Error("fixture missing");
+		delete quantities.instance;
+		rehashScenario(fixed);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, fixed)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+	});
+
+	it("rejects a fixed-only model whose charge does not match the workload", () => {
+		const fixed = fixedScenario("12");
+		const charge = fixed.catalog?.rateCards[0]?.charges[0];
+		const candidate = fixed.candidate[0];
+		if (charge?.base === undefined || candidate === undefined)
+			throw new Error("fixture missing");
+		charge.base.selectors.region = "west";
+		candidate.attributes.region = "east";
+		rehashScenario(fixed);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, fixed)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+	});
+
+	it("does not require quantities for a fixed charge that does not apply", () => {
+		const metered = scenario();
+		const fixed = fixedScenario("12").catalog?.rateCards[0]?.charges[0];
+		const rateCard = metered.catalog?.rateCards[0];
+		const candidate = metered.candidate[0];
+		if (
+			fixed?.base === undefined ||
+			rateCard === undefined ||
+			candidate === undefined
+		)
+			throw new Error("fixture missing");
+		fixed.base.selectors.region = "west";
+		candidate.attributes.region = "east";
+		rateCard.charges.push(fixed);
+		rehashScenario(metered);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, metered)),
+		).toMatchObject({
+			ok: true,
+			quote: { incremental: { billed: { decimal: "1", currency: "USD" } } },
+		});
+	});
+
+	it("does not treat an empty fixed-only rate card as a zero price", () => {
+		const missing = makeScenario({
+			charges: [],
+			meters: [],
+			candidate: [workload("agreement-a", [])],
+		});
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, missing)),
+		).toMatchObject({ ok: false });
+	});
+
+	it("rejects a usage charge when no matching meter is declared", () => {
+		const missingMeter = makeScenario({
+			charges: [perUnitCharge("runtime", "minute", "0.25")],
+			meters: [],
+			candidate: [workload("agreement-a", [])],
+		});
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, missingMeter)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
 	});
 
 	it.each([
