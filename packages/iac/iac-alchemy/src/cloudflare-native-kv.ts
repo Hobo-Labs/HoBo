@@ -29,6 +29,7 @@ import {
 	registerAlchemySource,
 	verifyAlchemySourceFence,
 } from "./source-fence.js";
+import { acceptSynchronousTrue } from "./synchronous-result.js";
 
 const hasOwnDescriptor = Object.hasOwn;
 const isProxy = types.isProxy;
@@ -194,7 +195,7 @@ export function cloudflareNativeKvBindleMappers<Requirements>(
 		);
 		const namespaceVerified = () => {
 			try {
-				return verifyNamespace(namespace) === true;
+				return acceptSynchronousTrue(verifyNamespace(namespace));
 			} catch {
 				return false;
 			}
@@ -223,7 +224,7 @@ export function cloudflareNativeKvBindleMappers<Requirements>(
 		});
 		const grantVerified = () => {
 			try {
-				return verifyGrant(grantClaim) === true;
+				return acceptSynchronousTrue(verifyGrant(grantClaim));
 			} catch {
 				return false;
 			}

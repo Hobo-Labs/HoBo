@@ -58,6 +58,14 @@
 		"./rivet/http-queue": {
 			"types": "./dist/rivet-http-queue.d.ts",
 			"default": "./dist/rivet-http-queue.js"
+		},
+		"./cloudflare/kv": {
+			"types": "./dist/cloudflare-native-kv.d.ts",
+			"default": "./dist/cloudflare-native-kv.js"
+		},
+		"./cloudflare/r2": {
+			"types": "./dist/cloudflare-native-r2.d.ts",
+			"default": "./dist/cloudflare-native-r2.js"
 		}
 	},
 	"dependencies": {
