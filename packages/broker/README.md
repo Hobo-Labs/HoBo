@@ -311,9 +311,47 @@ identity and methods before policy approval, then checks them again before claim
 before the provider call and after the operation. It invokes pinned connector
 methods rather than looking up a new implementation at the call boundary. If
 authority changes after a provider effect, the hold remains for reconciliation.
+An exact Yard quote must name the requested Yard, and a generation plan for a
+different exact ID is refused before funding. After a provider call, a result
+for another attempt or Yard is refused and the hold is marked uncertain; if
+that write fails, the hold remains and the failure is reported. An in-progress
+result requires a ready signal bound to the same attempt and Yard. A connector's
+explicit `ready` result is trusted as readiness evidence when no signal exists.
+Provider signal batches must identify the planned attempt and agree with its
+Yard, runtime, tenant and idempotency key when those fields are supplied.
+Normalized registrations and events are checked before the batch is folded;
+broker-owned decisions are refused, event data is privately captured, and
+the broker assigns stream sequence numbers. A normalized ready event must name
+the attempt; registrations and generic status changes cannot assert readiness.
+Connectors emitting signals must include the attempt ID and use supported
+provider event types. Earlier mismatched or prematurely accepted generation
+attempts may need resource and hold reconciliation.
 The host remains responsible for truthful policy, connector and provider facts;
 these checks cannot detect a change restored between observations or control
 what a remote provider actually does.
+
+The bounded generation identity projection hides 32 same-state steps and assumes
+the other policy, quote and readiness checks succeed.
+
+```mermaid
+stateDiagram-v2
+  s0: Yard generation planned
+  s1: Generation plan accepted
+  s2: Wrong exact Yard refused
+  s3: Generation funding held
+  s4: Provider called
+  s5: Matching generation accepted
+  s6: Hold retained with reconciliation warning
+  s7: Hold marked uncertain
+  [*] --> s0
+  s0 --> s1: accept the generation plan
+  s0 --> s2: refuse a different exact Yard
+  s1 --> s3: reserve generation funding
+  s3 --> s4: call the provider
+  s4 --> s6: retain the hold and report the failed write
+  s4 --> s5: accept the provider result
+  s4 --> s7: mark the hold uncertain
+```
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
 checks finite abstractions of quote approval, the reservation handoff and

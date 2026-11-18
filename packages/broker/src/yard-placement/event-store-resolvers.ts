@@ -405,7 +405,12 @@ export function createLocalYardEventStoreFoldResolver(
 							],
 						}),
 					}),
-					yardEvent(YARD_EVENTS.Ready, { yardId }),
+					yardEvent(YARD_EVENTS.Ready, {
+						yardId,
+						...(signal.payload.attemptId
+							? { attemptId: String(signal.payload.attemptId) }
+							: undefined),
+					}),
 				];
 			}
 			return defaultNormalize(signal);
