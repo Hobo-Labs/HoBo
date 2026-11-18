@@ -31,6 +31,7 @@ const BASE = "d".repeat(40);
 const BOTH_EVENTS = [
 	"pr_gate_validation",
 	"workspace_tests",
+	"scripts-tests",
 	"release-contract",
 ];
 
@@ -78,7 +79,13 @@ function statement(
 			events: BOTH_EVENTS.includes(id)
 				? ["pull_request", "merge_group"]
 				: ["pull_request"],
-			commands: 3,
+			commands: id === "scripts-tests" ? 8 : 3,
+			...(id === "scripts-tests"
+				? {
+						eventChecks: { pull_request: 4, merge_group: 4 },
+						executionMode: "each-step-v1" as const,
+					}
+				: {}),
 			durationMs: 1000,
 			logDigest: `sha256:${"f".repeat(64)}`,
 		})),
@@ -159,27 +166,39 @@ describe("verifying an attestation", () => {
 	});
 
 	it("reports for an event only the jobs that ran for it", () => {
-		// A merge group has no head commit a local run could have seen.
 		assert.deepEqual(
 			verify(signed, [signer.entry], { event: "merge_group", head: undefined }),
-			{ attested: true, jobs: BOTH_EVENTS, attestor: signer.entry.id },
+			{ attested: true, jobs: ["release-contract"], attestor: signer.entry.id },
 		);
+		assert.deepEqual(verify(signed, [signer.entry], { event: "merge_group" }), {
+			attested: true,
+			jobs: BOTH_EVENTS,
+			attestor: signer.entry.id,
+		});
 		// A record made for merge groups alone covers the merge group's jobs,
 		// and says nothing about a pull request.
 		const groupOnly = signStatement(
 			{
 				...statement(signer.entry.id, {
-					jobs: ["pr_gate_validation", "workspace_tests"],
+					jobs: ["pr_gate_validation", "workspace_tests", "scripts-tests"],
 					events: ["merge_group"],
 				}),
-				results: ["pr_gate_validation", "workspace_tests"].map((id) => ({
-					id,
-					status: "passed" as const,
-					events: ["merge_group"],
-					commands: 1,
-					durationMs: 1,
-					logDigest: `sha256:${"f".repeat(64)}`,
-				})),
+				results: ["pr_gate_validation", "workspace_tests", "scripts-tests"].map(
+					(id) => ({
+						id,
+						status: "passed" as const,
+						events: ["merge_group"],
+						commands: id === "scripts-tests" ? 4 : 1,
+						...(id === "scripts-tests"
+							? {
+									eventChecks: { merge_group: 4 },
+									executionMode: "each-step-v1" as const,
+								}
+							: {}),
+						durationMs: 1,
+						logDigest: `sha256:${"f".repeat(64)}`,
+					}),
+				),
 			},
 			signer.privateKey,
 		);
@@ -187,7 +206,7 @@ describe("verifying an attestation", () => {
 			verify(groupOnly, [signer.entry], { event: "merge_group" }),
 			{
 				attested: true,
-				jobs: ["pr_gate_validation", "workspace_tests"],
+				jobs: ["pr_gate_validation", "workspace_tests", "scripts-tests"],
 				attestor: signer.entry.id,
 			},
 		);
@@ -227,13 +246,16 @@ describe("verifying an attestation", () => {
 		});
 	});
 
-	it("accepts the secret scan only for the exact commits that were scanned", () => {
-		const others = COVERED_JOBS.filter((job) => job !== "secret-scan");
+	it("accepts history-sensitive evidence only for the exact commits tested", () => {
+		const others = COVERED_JOBS.filter(
+			(job) => job !== "secret-scan" && !GATE_JOBS.includes(job),
+		);
 		const jobsFor = (changes: Parameters<typeof verify>[2]) => {
 			const verdict = verify(signed, [signer.entry], changes);
 			return verdict.attested ? verdict.jobs : [];
 		};
 		assert.ok(jobsFor({}).includes("secret-scan"));
+		assert.ok(jobsFor({}).includes("scripts-tests"));
 		// Another history that ends in the same tree: a secret added, then
 		// reverted. Same tree, same base tree, other commits.
 		for (const changes of [
@@ -245,6 +267,42 @@ describe("verifying an attestation", () => {
 			{ head: BASE, base: HEAD },
 		])
 			assert.deepEqual(jobsFor(changes), others, JSON.stringify(changes));
+	});
+
+	it("refuses the impact gate when scripts evidence omits a shard", () => {
+		for (const changes of [
+			{
+				eventChecks: { pull_request: 3 },
+				executionMode: "each-step-v1" as const,
+			},
+			{
+				eventChecks: { pull_request: 5, merge_group: 5 },
+				executionMode: "each-step-v1" as const,
+			},
+			{ eventChecks: { pull_request: 4 } },
+			{ executionMode: "each-step-v1" as const },
+		]) {
+			const original = statement(signer.entry.id);
+			const incomplete = signStatement(
+				{
+					...original,
+					results: original.results.map((result) => {
+						if (result.id !== "scripts-tests") return result;
+						const {
+							eventChecks: _checks,
+							executionMode: _mode,
+							...rest
+						} = result;
+						return { ...rest, ...changes };
+					}),
+				},
+				signer.privateKey,
+			);
+			const verdict = verify(incomplete, [signer.entry]);
+			assert.equal(verdict.attested, true);
+			if (verdict.attested)
+				assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)));
+		}
 	});
 
 	it("does not accept a job that needs a container engine from a machine without one", () => {
