@@ -720,8 +720,8 @@ Usage:
 
 Role: ${verb.role}
 ${statusLine}
-Run resource collection over the project Bindle and print the manifest IR.
-Pass --check to enforce the golden manifest instead of printing.
+Run resource collection over the project Bindle, print the manifest IR, and
+write hobo.manifest.json. Pass --check to compare against the saved manifest.
 
 Example:
   hobo collect --json

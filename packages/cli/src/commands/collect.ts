@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -14,7 +14,7 @@ import { stubResult } from "../cloud/stub.js";
 import type { JsonObject } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
 
-export const COLLECT_GOLDEN_FILE = "hobo.manifest.json"; // public-contract: golden manifest file name collect writes into the project
+export const COLLECT_GOLDEN_FILE = "hobo.manifest.json";
 
 export interface CollectCommandDeps {
 	readonly target?: CollectionTarget;
@@ -91,6 +91,11 @@ export function createCollectCommand(
 					},
 				};
 			}
+
+			await writeFile(
+				path.join(projectDir, COLLECT_GOLDEN_FILE),
+				`${manifestIr}\n`,
+			);
 
 			return {
 				ok: true,
