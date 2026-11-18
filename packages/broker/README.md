@@ -34,6 +34,23 @@ Because the request digest now includes Camp fields that were previously
 discarded, a quote created by an older parser may no longer match the request.
 Obtain a new quote and reconcile any existing reservation before retrying.
 
+`encodeBindleDeploymentRequest` and `decodeBindleDeploymentRequest` provide a
+versioned protobuf snapshot of the complete normalized placement request,
+including Yard constraints, Bindle requirements, resources and Camp layout.
+They preserve the request digest used for quoting, distinguish a zero estimate
+from a missing one, and reject unsupported, incomplete or inconsistent work.
+An encoder rejects noncanonical requests; use `parseBindleDeploymentRequest`
+first. Older request messages lack the completeness marker and must be rebuilt
+from the original request; an old quote or reservation may need reconciliation.
+
+The embedded digest is an integrity comparison, not a signature: a receiver
+must compare it with independently authenticated quote or authorization data.
+The decoder refuses unknown fields retained by protobuf in ordinary messages;
+the runtime's special handling of nested `google.protobuf.Struct` values is not
+covered by that unknown-field check. These functions are a public codec, not a
+deployed transport or a guarantee that an older receiver enforces the marker.
+The protobuf receipt still omits execution-unit details.
+
 The [Yard Camp binding skill](../../.agents/skills/verify-yard-camp-binding/SKILL.md)
 checks a bounded placement flow. This projection hides 60 same-state steps and
 114 caller-edit steps; it assumes a ready Yard and abstracts host authorization.
