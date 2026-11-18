@@ -28,12 +28,19 @@ export type ResourceLifecycle =
 	| "provisioning"
 	| "provisioned"
 	| "failed"
+	| "reconciliation-required"
 	| "destroying"
 	| "destroyed";
 
 export interface DeploymentViewRow {
 	deploymentId: string;
-	status: "requested" | "planned" | "rejected" | "deployed" | "rolled-back";
+	status:
+		| "requested"
+		| "planned"
+		| "rejected"
+		| "deployed"
+		| "rolled-back"
+		| "needs-human";
 	bindleHash?: string;
 	decisions: DeploymentDecisionRow[];
 	planHash?: string;
@@ -41,6 +48,14 @@ export interface DeploymentViewRow {
 	rejection?: { reason: string; remediations: PlanRemediation[] };
 	// Saga graph: per-resource lifecycle folded from resource.* facts.
 	resources: Record<string, ResourceLifecycle>;
+	reconciliations?: Record<
+		string,
+		{
+			reason: string;
+			operation: "apply" | "destroy" | "unknown";
+			reservationId?: string;
+		}
+	>;
 	rollback?: { reason: string; targetSetId: string };
 	// The principal that owns this deployment. Seeded from the requester on
 	// `deployment.Requested`; rebound by `deployment.Claimed` (anonymous -> account)
@@ -57,9 +72,25 @@ function base(
 	row: DeploymentViewRow | undefined,
 	deploymentId: string,
 ): DeploymentViewRow {
-	return row
-		? { ...row, decisions: [...row.decisions], resources: { ...row.resources } }
-		: { deploymentId, status: "requested", decisions: [], resources: {} };
+	if (row === undefined)
+		return { deploymentId, status: "requested", decisions: [], resources: {} };
+	const copy: DeploymentViewRow = {
+		...row,
+		decisions: [...row.decisions],
+		resources: { ...row.resources },
+	};
+	if (row.reconciliations !== undefined)
+		copy.reconciliations = { ...row.reconciliations };
+	return copy;
+}
+
+function clearReconciliation(row: DeploymentViewRow, resourceId: string): void {
+	if (row.reconciliations?.[resourceId] === undefined) return;
+	delete row.reconciliations[resourceId];
+	if (Object.keys(row.reconciliations).length === 0) {
+		delete row.reconciliations;
+		if (row.status === "needs-human") row.status = "planned";
+	}
 }
 
 export const deploymentViewProjection: Projection<DeploymentViewRow> =
@@ -72,7 +103,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				// SAFETY: `const data = event.data as { deploymentId: string; bindleHash: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; bindleHash: string };
 				const next = base(row, data.deploymentId);
-				next.status = "requested";
+				if (next.reconciliations === undefined) next.status = "requested";
 				next.bindleHash = data.bindleHash;
 				// Seed ownership from the requesting principal (the envelope actor).
 				if (next.owner === undefined && event.actor) {
@@ -90,11 +121,12 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				const next = base(row, data.deploymentId);
 				// The estate already exists: mark it deployed + adopted, each resource
 				// provisioned. No provisioning ran — this records external reality.
-				next.status = "deployed";
+				if (next.reconciliations === undefined) next.status = "deployed";
 				next.bindleHash = data.bindleHash;
 				next.imported = true;
 				for (const resourceId of data.resources) {
-					next.resources[resourceId] = "provisioned";
+					if (next.reconciliations?.[resourceId] === undefined)
+						next.resources[resourceId] = "provisioned";
 				}
 				if (next.owner === undefined && event.actor) {
 					next.owner = { kind: event.actor.kind, id: event.actor.id };
@@ -144,7 +176,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					plan: DeploymentPlan;
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "planned";
+				if (next.reconciliations === undefined) next.status = "planned";
 				next.planHash = data.planHash;
 				next.plan = data.plan;
 				return next;
@@ -157,7 +189,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					remediations: PlanRemediation[];
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "rejected";
+				if (next.reconciliations === undefined) next.status = "rejected";
 				next.rejection = {
 					reason: data.reason,
 					remediations: data.remediations,
@@ -168,7 +200,8 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "provisioning";
+				if (next.reconciliations?.[data.resourceId] === undefined)
+					next.resources[data.resourceId] = "provisioning";
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceProvisioned]: (row, event) => {
@@ -176,20 +209,48 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				next.resources[data.resourceId] = "provisioned";
+				clearReconciliation(next, data.resourceId);
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceFailed]: (row, event) => {
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
-				const data = event.data as { deploymentId: string; resourceId: string };
+				const data = event.data as {
+					deploymentId: string;
+					resourceId: string;
+					reason: string;
+					requiresReconciliation?: boolean;
+					reconciliationOperation?: string;
+					reservationId?: string;
+				};
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "failed";
+				if (data.requiresReconciliation === true) {
+					next.resources[data.resourceId] = "reconciliation-required";
+					next.status = "needs-human";
+					next.reconciliations ??= {};
+					const reconciliation: NonNullable<
+						DeploymentViewRow["reconciliations"]
+					>[string] = {
+						reason: data.reason,
+						operation:
+							data.reconciliationOperation === "apply" ||
+							data.reconciliationOperation === "destroy"
+								? data.reconciliationOperation
+								: "unknown",
+					};
+					if (data.reservationId !== undefined)
+						reconciliation.reservationId = data.reservationId;
+					next.reconciliations[data.resourceId] = reconciliation;
+				} else if (next.reconciliations?.[data.resourceId] === undefined) {
+					next.resources[data.resourceId] = "failed";
+				}
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroying]: (row, event) => {
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "destroying";
+				if (next.reconciliations?.[data.resourceId] === undefined)
+					next.resources[data.resourceId] = "destroying";
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroyed]: (row, event) => {
@@ -197,13 +258,14 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				next.resources[data.resourceId] = "destroyed";
+				clearReconciliation(next, data.resourceId);
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentDeployed]: (row, event) => {
 				// SAFETY: `const data = event.data as { deploymentId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string };
 				const next = base(row, data.deploymentId);
-				next.status = "deployed";
+				if (next.reconciliations === undefined) next.status = "deployed";
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentRolledBack]: (row, event) => {
@@ -214,7 +276,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					targetSetId: string;
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "rolled-back";
+				if (next.reconciliations === undefined) next.status = "rolled-back";
 				next.rollback = { reason: data.reason, targetSetId: data.targetSetId };
 				return next;
 			},

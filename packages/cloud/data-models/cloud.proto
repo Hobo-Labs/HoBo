@@ -255,13 +255,16 @@ message ExecFailedRecord {
   string exec_id = 1;
   string classification = 2;       // "retryable" | "fatal"
   string reason = 3;
+  optional bool requires_reconciliation = 4;
+  optional string reservation_id = 5;
+  optional string reconciliation_operation = 6; // "preview" | "apply" | "destroy"
 }
 
 // The durable ResourceActor FSM snapshot, folded from the resource's own facts.
 message ResourceActorSnapshot {
   string deployment_id = 1;
   string resource_id = 2;
-  string state = 3;                // Pending|Planning|Provisioning|Provisioned|Updating|Failed|Compensating|Destroying|Destroyed
+  string state = 3;                // Pending|Planning|Provisioning|Provisioned|Updating|Failed|ReconciliationRequired|Compensating|Destroying|Destroyed
   uint32 sequence = 4;
   map<string, string> outputs = 5;
   repeated string deps = 6;
@@ -296,6 +299,9 @@ message ResourceFailedRecord {
   string reason = 3;
   string classification = 4;       // "retryable" | "fatal"
   bool crossed_no_go_threshold = 5;
+  optional bool requires_reconciliation = 6;
+  optional string reservation_id = 7;
+  optional string reconciliation_operation = 8; // "apply" | "destroy"
 }
 
 // resource.Destroying: choreographed compensation started for this actor.
@@ -436,7 +442,7 @@ message TopologyNode {
   string port = 4;                 // resource nodes: capability class
   string provider_id = 5;          // resource/yard nodes: backing provider
   string region = 6;
-  string lifecycle = 7;            // resource nodes: provisioning|provisioned|failed|destroying|destroyed
+  string lifecycle = 7;            // resource nodes: provisioning|provisioned|failed|reconciliation-required|destroying|destroyed
 }
 
 message TopologyEdge {

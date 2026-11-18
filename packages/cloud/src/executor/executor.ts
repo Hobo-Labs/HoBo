@@ -94,16 +94,44 @@ export interface ExecResultSucceeded {
 	sandbox: ExecSandboxContext;
 }
 
-export interface ExecResultFailed {
+interface ExecResultFailureBase {
 	status: "failed";
 	execId: string;
 	events: ExecEvent[];
-	classification: "retryable" | "fatal";
 	reason: string;
 	sandbox: ExecSandboxContext;
 }
 
+/** Reconciliation-required failures cannot be retried or compensated. */
+export type ExecResultFailed = ExecResultFailureBase &
+	(
+		| {
+				classification: "retryable" | "fatal";
+				requiresReconciliation?: false;
+				reservationId?: never;
+				reconciliationOperation?: never;
+		  }
+		| {
+				classification: "fatal";
+				requiresReconciliation: true;
+				reservationId?: string;
+				reconciliationOperation: IacProgram["action"];
+		  }
+	);
+
 export type ExecResult = ExecResultSucceeded | ExecResultFailed;
+
+interface ReconciliationMetadata {
+	requiresReconciliation: true;
+	reconciliationOperation: IacProgram["action"];
+	reservationId?: string;
+}
+
+interface ProviderFailure {
+	reason: string;
+	requiresReconciliation: boolean;
+	reservationId?: string;
+}
 
 export interface ExecRunOptions {
 	// An explicitly-injected environment snapshot the sandbox is allowed to see.
@@ -238,6 +266,17 @@ export function createInProcessExecutor(
 				// pipeline step 4: "IaC adapter runs preview then apply … with scoped creds").
 				const diff = await iac.preview(program);
 				push("exec.Diff", { summary: diff.summary, changes: diff.changes });
+				if (program.action === "preview") {
+					push("exec.Succeeded", { outputsHash: hashRef({}) });
+					return {
+						status: "succeeded",
+						execId,
+						events,
+						outputs: {},
+						diff,
+						sandbox,
+					};
+				}
 
 				if (program.action === "destroy") {
 					await iac.destroy(program);
@@ -258,21 +297,59 @@ export function createInProcessExecutor(
 				push("exec.Succeeded", { outputsHash: hashRef(outputs) });
 				return { status: "succeeded", execId, events, outputs, diff, sandbox };
 			} catch (error) {
-				const reason = error instanceof Error ? error.message : String(error);
-				// Provider/apply errors are classified retryable by default; a caller
-				// (the ResourceActor) decides whether the failure crosses the no-go
-				// threshold (control-plane.md reconcile loop step 4).
+				const failure = readProviderFailure(error);
+				const reconciliation: ReconciliationMetadata = {
+					requiresReconciliation: true,
+					reconciliationOperation: program.action,
+				};
+				if (failure.reservationId !== undefined)
+					reconciliation.reservationId = failure.reservationId;
 				return fail(
 					events,
 					push,
 					sandbox,
-					"retryable",
-					`executor.apply_failed: ${reason}`,
+					failure.requiresReconciliation ? "fatal" : "retryable",
+					`executor.apply_failed: ${failure.reason}`,
+					failure.requiresReconciliation ? reconciliation : undefined,
 				);
 			}
 		},
 	};
 }
+
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: provider-thrown values cross an untrusted boundary and may contain throwing accessors. */
+function readProviderFailure(error: unknown): ProviderFailure {
+	try {
+		const reason = (
+			error instanceof Error ? error.message : String(error)
+		).slice(0, 4096);
+		const requiresReconciliation =
+			typeof error === "object" &&
+			error !== null &&
+			"requiresReconciliation" in error &&
+			error.requiresReconciliation === true;
+		const candidateId =
+			typeof error === "object" && error !== null && "reservationId" in error
+				? error.reservationId
+				: undefined;
+		if (
+			typeof candidateId === "string" &&
+			candidateId.length > 0 &&
+			candidateId.length <= 204 &&
+			candidateId.trim() === candidateId &&
+			!/[\p{Cc}]/u.test(candidateId)
+		) {
+			return { reason, requiresReconciliation, reservationId: candidateId };
+		}
+		return { reason, requiresReconciliation };
+	} catch {
+		return {
+			reason: "uninspectable provider failure",
+			requiresReconciliation: true,
+		};
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
 function fail(
 	events: ExecEvent[],
@@ -280,7 +357,20 @@ function fail(
 	sandbox: ExecSandboxContext,
 	classification: "retryable" | "fatal",
 	reason: string,
+	reconciliation?: ReconciliationMetadata,
 ): ExecResultFailed {
+	if (reconciliation !== undefined) {
+		push("exec.Failed", { classification: "fatal", reason, ...reconciliation });
+		return {
+			status: "failed",
+			execId: sandbox.execId,
+			events,
+			classification: "fatal",
+			reason,
+			...reconciliation,
+			sandbox,
+		};
+	}
 	push("exec.Failed", { classification, reason });
 	return {
 		status: "failed",

@@ -171,7 +171,7 @@ package hobo
 // One constraint per new protobuf message in cloud.proto.
 
 #ResourceActorState: "Pending" | "Planning" | "Provisioning" | "Provisioned" |
-	"Updating" | "Failed" | "Compensating" | "Destroying" | "Destroyed"
+	"Updating" | "Failed" | "ReconciliationRequired" | "Compensating" | "Destroying" | "Destroyed"
 
 #IacProgram: {
 	programId:    string & !=""
@@ -213,6 +213,19 @@ package hobo
 	execId:         string & !=""
 	classification: "retryable" | "fatal"
 	reason:         string & !=""
+	requiresReconciliation?: bool
+	reservationId?: string & !=""
+	reconciliationOperation?: "preview" | "apply" | "destroy"
+	if requiresReconciliation == true {
+		classification: "fatal"
+		reconciliationOperation: "preview" | "apply" | "destroy"
+	}
+	if reservationId != _|_ {
+		requiresReconciliation: true
+	}
+	if reconciliationOperation != _|_ {
+		requiresReconciliation: true
+	}
 }
 
 #ResourceActorSnapshot: {
@@ -247,6 +260,20 @@ package hobo
 	reason:                string & !=""
 	classification:        "retryable" | "fatal"
 	crossedNoGoThreshold:  bool
+	requiresReconciliation?: bool
+	reservationId?: string & !=""
+	reconciliationOperation?: "apply" | "destroy"
+	if requiresReconciliation == true {
+		classification: "fatal"
+		crossedNoGoThreshold: false
+		reconciliationOperation: "apply" | "destroy"
+	}
+	if reservationId != _|_ {
+		requiresReconciliation: true
+	}
+	if reconciliationOperation != _|_ {
+		requiresReconciliation: true
+	}
 }
 
 #ResourceDestroyingRecord: {
@@ -374,7 +401,7 @@ package hobo
 	port?:       string
 	providerId?: string
 	region?:     string
-	lifecycle?: "provisioning" | "provisioned" | "failed" | "destroying" | "destroyed"
+	lifecycle?: "provisioning" | "provisioned" | "failed" | "reconciliation-required" | "destroying" | "destroyed"
 }
 
 #TopologyEdge: {

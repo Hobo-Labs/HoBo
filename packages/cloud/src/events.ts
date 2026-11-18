@@ -239,13 +239,29 @@ export function resourceProvisioned(data: ResourceProvisionedData): EventInput {
 	return { type: CLOUD_EVENTS.ResourceProvisioned, data };
 }
 
-export interface ResourceFailedData {
+interface ResourceFailedBase {
 	deploymentId: string;
 	resourceId: string;
 	reason: string;
-	classification: "retryable" | "fatal";
-	crossedNoGoThreshold: boolean;
 }
+
+export type ResourceFailedData = ResourceFailedBase &
+	(
+		| {
+				classification: "retryable" | "fatal";
+				crossedNoGoThreshold: boolean;
+				requiresReconciliation?: false;
+				reservationId?: never;
+				reconciliationOperation?: never;
+		  }
+		| {
+				classification: "fatal";
+				crossedNoGoThreshold: false;
+				requiresReconciliation: true;
+				reservationId?: string;
+				reconciliationOperation: "apply" | "destroy";
+		  }
+	);
 
 export function resourceFailed(data: ResourceFailedData): EventInput {
 	return { type: CLOUD_EVENTS.ResourceFailed, data };
