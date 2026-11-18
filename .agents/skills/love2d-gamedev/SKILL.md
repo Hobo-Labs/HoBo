@@ -13,7 +13,7 @@ Build polished 2D games with LÖVE/Love2D (Lua), including a practical workflow 
 
 | Topic | Read when you need… |
 |-------|---------------------|
-| [Core Architecture](references/core-architecture.md) | Game loop, callbacks, module patterns |
+| [Game Loop](references/game-loop.md) | Callbacks and module patterns |
 | [Project Structure](references/project-structure.md) | File layout, `conf.lua`, distribution |
 | [Graphics & Drawing](references/graphics-drawing.md) | Rendering, transforms, scaling |
 | [Animation](references/animation.md) | Sprite sheets, quads, frame timing |
@@ -37,15 +37,15 @@ Build polished 2D games with LÖVE/Love2D (Lua), including a practical workflow 
 
 ```lua
 function love.load()
-  -- init + load assets
+  player = Player:new()
 end
 
 function love.update(dt)
-  -- game logic
+  player:update(dt)
 end
 
 function love.draw()
-  -- render
+  player:draw()
 end
 ```
 

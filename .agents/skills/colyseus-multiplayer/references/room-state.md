@@ -1,4 +1,4 @@
-# Colyseus Architecture Reference
+# Colyseus Room State
 
 Use this reference when designing room structure, schema state, message handling, matchmaking, or reconnect behavior.
 
@@ -78,11 +78,11 @@ export class MatchRoom extends Room<MatchState> {
 
   update(deltaTime: number) {
     this.state.elapsedMs += deltaTime;
-    // Apply queued intents and advance simulation.
+    this.advanceSimulation(deltaTime);
   }
 
   handleMoveIntent(client: Client, payload: { dx: number; dy: number }) {
-    // Validate and stage input for the next simulation tick.
+    this.queueMove(client.sessionId, payload);
   }
 }
 ```
@@ -179,7 +179,7 @@ Decide these explicitly:
 
 If reconnect behavior is unspecified, the room model is incomplete.
 
-## Architecture Anti-Patterns
+## Failure Patterns
 
 - Mirroring every frontend class with a matching schema class.
 - Sending accepted client positions directly into authoritative state with no validation.

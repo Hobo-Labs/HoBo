@@ -1,4 +1,4 @@
-# Core Architecture
+# Game Loop and Modules
 
 Understanding Love2D's game loop, callbacks, and module system.
 
@@ -6,7 +6,7 @@ Understanding Love2D's game loop, callbacks, and module system.
 
 Love2D manages the main loop internally. You implement callbacks that it calls:
 
-```
+```text
 love.load() → [love.update() → love.draw()] → repeat
 ```
 
@@ -39,10 +39,6 @@ Called every frame before drawing. The `dt` parameter is delta time—seconds si
 
 ```lua
 function love.update(dt)
-    -- dt ≈ 0.016 at 60 FPS
-    -- dt ≈ 0.033 at 30 FPS
-
-    -- 200 pixels per second, regardless of frame rate
     player.x = player.x + 200 * dt
 end
 ```
@@ -55,13 +51,8 @@ Called every frame after update. All rendering happens here.
 
 ```lua
 function love.draw()
-    -- Background first
     love.graphics.draw(backgroundImage, 0, 0)
-
-    -- Game objects
     love.graphics.draw(player.image, player.x, player.y)
-
-    -- UI on top
     love.graphics.print("Score: " .. score, 10, 10)
 end
 ```
@@ -72,31 +63,23 @@ end
 
 ```lua
 function love.keypressed(key, scancode, isrepeat)
-    -- key: the key pressed (e.g., "space", "a", "return")
-    -- isrepeat: true if this is a key repeat event
     if key == "escape" then
         love.event.quit()
     end
-end
-
-function love.keyreleased(key)
-    -- Called when key is released
 end
 ```
 
 **Polling vs Events**:
 ```lua
--- Polling: check every frame (good for continuous actions)
 function love.update(dt)
     if love.keyboard.isDown("left") then
         player.x = player.x - player.speed * dt
     end
 end
 
--- Events: fire once per press (good for discrete actions)
 function love.keypressed(key)
     if key == "space" then
-        player:jump()  -- Jump once per press
+        player:jump()
     end
 end
 ```
@@ -105,73 +88,39 @@ end
 
 ```lua
 function love.mousepressed(x, y, button)
-    -- button: 1 = left, 2 = right, 3 = middle
     if button == 1 then
         player:shoot(x, y)
     end
-end
-
-function love.mousereleased(x, y, button)
-end
-
-function love.mousemoved(x, y, dx, dy)
-    -- dx, dy: movement since last call
-end
-
-function love.wheelmoved(x, y)
-    -- y > 0: scroll up, y < 0: scroll down
 end
 ```
 
 ### Touch (Mobile)
 
-```lua
-function love.touchpressed(id, x, y, dx, dy, pressure)
-    -- id: unique identifier for this finger (multitouch)
-end
-
-function love.touchmoved(id, x, y, dx, dy, pressure)
-end
-
-function love.touchreleased(id, x, y, dx, dy, pressure)
-end
-```
+Love2D exposes `love.touchpressed`, `love.touchmoved`, and `love.touchreleased`; the `id` identifies one touch in a multitouch gesture.
 
 ## Window Callbacks
 
 ```lua
 function love.resize(w, h)
-    -- Called when window is resized
     screenW, screenH = w, h
     repositionUI()
 end
 
 function love.focus(focused)
-    -- focused: true when window gains focus, false when loses
     if not focused then
         pauseGame()
     end
 end
 
-function love.visible(visible)
-    -- visible: true when window is shown, false when hidden
-end
-
 function love.quit()
-    -- Return true to abort quit
     saveGame()
-    return false  -- Allow quit
+    return false
 end
 ```
 
 ## Error Handling
 
-```lua
-function love.errorhandler(msg)
-    -- Custom error screen
-    -- Default shows blue screen with error message
-end
-```
+Override `love.errorhandler(msg)` only when the default error screen is insufficient.
 
 ## The love.run Function
 
@@ -247,8 +196,9 @@ end
 
 Organize code with Lua modules:
 
+`player.lua`:
+
 ```lua
--- player.lua
 local Player = {}
 Player.__index = Player
 
@@ -262,8 +212,9 @@ function Player:draw() end
 return Player
 ```
 
+`main.lua`:
+
 ```lua
--- main.lua
 local Player = require("player")
 
 function love.load()

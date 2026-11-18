@@ -37,7 +37,7 @@ Read these before doing substantial work in the matching area:
 
 | When working on... | Read first |
 |--------------------|------------|
-| Room design, schema modeling, message boundaries, lifecycle hooks, or matchmaker usage | `references/architecture.md` |
+| Room state, schema modeling, message boundaries, lifecycle hooks, or matchmaker usage | `references/room-state.md` |
 | TypeScript client wiring, `Callbacks`, join methods, messages, reconnection, or prediction | `references/client.md` |
 | Code review, design review, or "what should we stop doing?" questions | `references/anti-patterns.md` |
 | Production topology, Vercel frontend plus separate backend, env vars, auth transport, or rollout planning | `references/deployment.md` |
@@ -59,10 +59,10 @@ If the client is not Phaser-based, skip the Phaser reference and keep the render
 
 | Question | Answer | Where to look |
 |----------|--------|---------------|
-| Where should this fact live? | Usually room schema state if reconnects or late joins need it | `references/architecture.md` |
+| Where should this fact live? | Usually room schema state if reconnects or late joins need it | `references/room-state.md` |
 | How should the client react to state changes? | `Callbacks` with `listen`, `onAdd`, and `onRemove` | `references/client.md` |
 | How should players trigger actions? | `room.send(type, payload)` for intent, validated server-side | `references/client.md` |
-| How do we recover from disconnects? | `onDrop()` plus `allowReconnection()` and client reconnect flow | `references/architecture.md` and `references/client.md` |
+| How do we recover from disconnects? | `onDrop()` plus `allowReconnection()` and client reconnect flow | `references/room-state.md` and `references/client.md` |
 | How do we avoid bad multiplayer habits? | Use the anti-pattern checklist during design and review | `references/anti-patterns.md` |
 | How do we host this with a Vercel frontend? | Separate static frontend and always-on realtime backend | `references/deployment.md` |
 | How do we wire Phaser specifically? | Use a thin adapter and scene-safe listener lifecycle | `references/frameworks/phaser.md` |

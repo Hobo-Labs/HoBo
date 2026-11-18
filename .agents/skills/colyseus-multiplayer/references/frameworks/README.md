@@ -58,7 +58,7 @@ When adding `references/frameworks/<name>.md`, cover:
 4. reconnection UX
 5. framework-specific gotchas
 
-Keep shared client/networking guidance in `../client.md`. Keep authoritative architecture in `../architecture.md`.
+Keep shared client/networking guidance in `../client.md`. Keep authoritative room behavior in `../room-state.md`.
 
 ## Common Targets
 
