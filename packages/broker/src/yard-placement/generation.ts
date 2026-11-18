@@ -1,4 +1,5 @@
 import { must } from "@hobo/core/total-access";
+import { hasValidYardResidency } from "./residency.js";
 import {
 	type ContentHash,
 	contentHashOf,
@@ -83,6 +84,13 @@ export function planYardGeneration(options: {
 		return {
 			allowed: false,
 			reason: "yard generation policy denies generation by default",
+			policyId: policy.id,
+		};
+	}
+	if (!hasValidYardResidency(options.requestedLayout)) {
+		return {
+			allowed: false,
+			reason: "requested layout has invalid residency",
 			policyId: policy.id,
 		};
 	}
@@ -200,6 +208,13 @@ export function createYardGenerationSaga(options: {
 
 	return {
 		async run(plan) {
+			if (!hasValidYardResidency(plan.requestedLayout)) {
+				return fail(
+					plan,
+					"invalid-residency",
+					"requested layout has invalid residency",
+				);
+			}
 			const existing = attempts.get(plan.idempotencyKey);
 			if (existing) {
 				if (

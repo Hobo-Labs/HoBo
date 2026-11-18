@@ -341,13 +341,40 @@ describe("yard event-store folds + provider resolvers", () => {
 
 		const generation = planYardGeneration({
 			ownerTenantId: "local",
-			requestedLayout: request.yard.requestedLayout,
+			requestedLayout:
+				mode === "invalid-residency-before-generation"
+					? baseRequest.yard.requestedLayout
+					: request.yard.requestedLayout,
 			runtimeCatalog: runtimes.snapshot(),
 			policy: allowPolicy,
 			allowGenerationRequested: true,
 			attemptId: `gen-${request.requestId}`,
 		});
 		if (!generation.allowed) throw new Error("fixture generation denied");
+		// Reconstruct a self-consistent plan from an older peer that did not
+		// validate residency, so the request preflight is still exercised.
+		const generationPlan = (() => {
+			if (mode !== "invalid-residency-before-generation")
+				return generation.plan;
+			const requestedLayout = request.yard.requestedLayout;
+			const layoutHash = contentHashOf(requestedLayout);
+			const idempotencyKey = contentHashOf({
+				ownerTenantId: "local",
+				layoutHash,
+				runtimeId: generation.runtime.runtimeId,
+				runtimeVersion: generation.runtime.version,
+				brokerEnvironmentId: "default",
+			});
+			const { planHash: _previousHash, ...body } = generation.plan;
+			const oldPlan = {
+				...body,
+				requestedLayout,
+				requestedLayoutHash: layoutHash,
+				idempotencyKey,
+				expectedYardId: `yard:gen-${idempotencyKey.slice(7, 23)}`,
+			};
+			return { ...oldPlan, planHash: contentHashOf(oldPlan) };
+		})();
 		const directory = mkdtempSync(
 			join(tmpdir(), "hobo-funded-yard-generation-"),
 		);
@@ -369,7 +396,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		});
 		const quote = create(HostingQuoteSchema, {
 			quoteId: "azure-generation",
-			yardId: generation.plan.expectedYardId,
+			yardId: generationPlan.expectedYardId,
 			providerId: "azure",
 			ownerTenantId: "local",
 			currency: "USD",
@@ -388,7 +415,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				generationPlanHash:
 					mode === "wrong-generation-plan"
 						? contentHashOf("another-generation")
-						: generation.plan.planHash,
+						: generationPlan.planHash,
 			});
 		else {
 			// Simulate a quote from a peer that did not check Camp scope or residency.
@@ -397,9 +424,9 @@ describe("yard event-store folds + provider resolvers", () => {
 				brokerId: "broker:azure-gen",
 				ownerTenantId: "local",
 				catalog: azureCatalog,
-				yardId: generation.plan.expectedYardId,
+				yardId: generationPlan.expectedYardId,
 				providerId: "azure",
-				generationPlanHash: generation.plan.planHash,
+				generationPlanHash: generationPlan.planHash,
 			});
 			if ("error" in work) throw new Error("generation work fixture failed");
 			quote.workDigest = contentHashOf({
@@ -408,10 +435,10 @@ describe("yard event-store folds + provider resolvers", () => {
 				brokerId: "broker:azure-gen",
 				ownerTenantId: "local",
 				catalogHash: azureCatalog.catalogHash,
-				yardId: generation.plan.expectedYardId,
+				yardId: generationPlan.expectedYardId,
 				providerId: "azure",
 				placements: work.placements,
-				generationPlanHash: generation.plan.planHash,
+				generationPlanHash: generationPlan.planHash,
 			});
 		}
 		if (mode === "missing-generation-work") quote.workDigest = "";
