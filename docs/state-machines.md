@@ -60,6 +60,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | Training trace sink | [verify-training-trace-sink](../.agents/skills/verify-training-trace-sink/SKILL.md) | Recorded spans are detached snapshots and each drain clears the queue. |
 | Training optimizer counts | [verify-training-config](../.agents/skills/verify-training-config/SKILL.md) | Iteration and demonstration counts match the positive `uint32` wire range. |
 | Training optimizer selection | [verify-training-selection](../.agents/skills/verify-training-selection/SKILL.md) | Invalid rewards are refused before tracing; valid runs retain the first highest-scoring proposal. |
+| Training trace batch commit | [verify-training-trace-commit](../.agents/skills/verify-training-trace-commit/SKILL.md) | Failed runs leave queued traces unchanged; successful runs append their batch after candidate validation. |
 | SQLite queue and outbox | [verify-outbox-lease](../.agents/skills/verify-outbox-lease/SKILL.md) | A stale delivery attempt cannot acknowledge a later attempt, even when lease IDs and fences repeat. |
 | Provider connections | [verify-connection-lifecycle](../.agents/skills/verify-connection-lifecycle/SKILL.md) | Revocation is terminal across commands and replay. |
 | Durable workflows | [verify-workflow-replay](../.agents/skills/verify-workflow-replay/SKILL.md) | Starts and resumes capture reproducible JSON input; start, resume, journal access and replay validate string IDs, replay checks recorded context, and shared-writer executions use a local fence. |

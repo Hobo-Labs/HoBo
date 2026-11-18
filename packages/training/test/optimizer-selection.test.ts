@@ -138,3 +138,33 @@ it("keeps the first highest-scoring candidate for generated runs", async () => {
 		expect(payload.winnerDigest).toBe(firstBestDigest);
 	}
 });
+
+it("keeps previously queued traces unchanged when a later run fails", async () => {
+	const config = { seed: 7, maxIterations: 4, demosPerCandidate: 2 };
+	const expectedEngine = createBuiltinTrainingEngine(config);
+	await expectedEngine.optimize(requestFor([0.2, 0.8]));
+	const expected = expectedEngine.drainTraceSpans();
+
+	const engine = createBuiltinTrainingEngine(config);
+	await engine.optimize(requestFor([0.2, 0.8]));
+	const invalid = structuredClone(requestFor([0.2, 0.8]));
+	if (!invalid.rubric) throw new Error("missing test rubric");
+	invalid.rubric.id = "";
+	await expect(engine.optimize(invalid)).rejects.toThrow();
+	expect(engine.drainTraceSpans()).toEqual(expected);
+	expect(engine.drainTraceSpans()).toEqual([]);
+});
+
+it("appends one complete trace batch for each successful run", async () => {
+	const engine = createBuiltinTrainingEngine({
+		seed: 7,
+		maxIterations: 4,
+		demosPerCandidate: 2,
+	});
+	await engine.optimize(requestFor([0.2, 0.8]));
+	await engine.optimize(requestFor([0.2, 0.8]));
+	const spans = engine.drainTraceSpans();
+	expect(spans).toHaveLength(8);
+	expect(spans.slice(0, 4)).toEqual(spans.slice(4));
+	expect(engine.drainTraceSpans()).toEqual([]);
+});

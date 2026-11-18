@@ -52,8 +52,9 @@ providers additionally never receive PII-classified trajectory content).
   label + attributes map, `sha256:` input digest, score, keep/reject
   decision) into the in-memory sink; spans are clockless so seeded runs
   replay byte-identical. Recorded spans and attributes are detached snapshots;
-  draining returns the queued records once and clears the sink. No external
-  tracing dependency.
+  a run adds its trace batch only after its candidate validates, and draining
+  returns the queued records once and clears the sink. No external tracing
+  dependency.
 
 ## Event architecture
 
