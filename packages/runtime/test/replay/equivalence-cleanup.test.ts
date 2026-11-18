@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { expect, it } from "vitest";
 import { assertReplayEqualsLive } from "../../src/replay/equivalence.js";
@@ -9,6 +11,31 @@ const event = {
 	type: "value",
 	data: null,
 };
+
+it("refuses accessor-based intrinsics without invoking them", () => {
+	const clock = Object.getOwnPropertyDescriptor(Date, "now");
+	if (!clock) throw new Error("missing standard intrinsic");
+	let reads = 0;
+	try {
+		Object.defineProperty(Date, "now", {
+			configurable: true,
+			get() {
+				reads++;
+				return clock.value;
+			},
+		});
+		expect(() =>
+			assertReplayEqualsLive({
+				events: [],
+				initialState: null,
+				fold: () => null,
+			}),
+		).toThrow("ordinary clock and random intrinsics");
+		expect(reads).toBe(0);
+	} finally {
+		Object.defineProperty(Date, "now", clock);
+	}
+});
 
 it("restores the clock if installing the random override fails", () => {
 	const clock = Object.getOwnPropertyDescriptor(Date, "now");
@@ -115,4 +142,14 @@ it("restores both intrinsics across generated setup and callback failures", () =
 		),
 		{ seed: 614609, numRuns: 80 },
 	);
+});
+
+it("still restores the clock if restoring random fails", () => {
+	const helper = fileURLToPath(
+		new URL("./helpers/equivalence-unrestorable.ts", import.meta.url),
+	);
+	const child = spawnSync(process.execPath, ["--import", "tsx", helper], {
+		encoding: "utf8",
+	});
+	expect(child.status, child.stderr).toBe(0);
 });
