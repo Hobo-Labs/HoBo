@@ -47,7 +47,9 @@ providers additionally never receive PII-classified trajectory content).
 - **Trace capture** — every step records one span (OpenInference span-kind
   label + attributes map, `sha256:` input digest, score, keep/reject
   decision) into the in-memory sink; spans are clockless so seeded runs
-  replay byte-identical. No external tracing dependency.
+  replay byte-identical. Recorded spans and attributes are detached snapshots;
+  draining returns the queued records once and clears the sink. No external
+  tracing dependency.
 
 ## Event architecture
 
