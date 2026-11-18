@@ -20,6 +20,8 @@ export {
 	type BucketInspector,
 	createBucketEmulator,
 	createDataEmulator,
+	createDeliveryEmulator,
+	createExperimentEmulator,
 	createFlagEmulator,
 	createKeyValueEmulator,
 	createQueueEmulator,

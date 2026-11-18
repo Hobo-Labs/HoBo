@@ -21,7 +21,12 @@
 
 import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
-import type { FeatureFlagPort, SecretsPort } from "@hobo/identity";
+import type {
+	DeliveryPort,
+	ExperimentPort,
+	FeatureFlagPort,
+	SecretsPort,
+} from "@hobo/identity";
 import type {
 	BlobStorePort,
 	BucketEmulator,
@@ -308,6 +313,34 @@ function buildGraph(
 		},
 		flag(alias: string): FeatureFlagPort {
 			return flagEmulator(alias).port;
+		},
+		rollout(alias: string): DeliveryPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.rollouts.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no rollout emulator`,
+					"use the alias of a rollout resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		experiment(alias: string): ExperimentPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.experiments.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no experiment emulator`,
+					"use the alias of an experiment resource in the in-process graph",
+				);
+			}
+			return emulator.port;
 		},
 		flagInspector(alias: string): FlagInspector | undefined {
 			return flagEmulator(alias).inspector;

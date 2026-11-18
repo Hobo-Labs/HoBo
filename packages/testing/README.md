@@ -43,7 +43,7 @@ Read this section before you believe a green suite.
 - resolves binding values for the whole graph through `runtime-local`'s
   `createLocalBindingResolver`;
 - exposes isolated local ports for queue, topic, secret, data, schedule,
-  key-value, bucket, and flag aliases, with their actual fidelity on the handle;
+  key-value, bucket, flag, experiment, and rollout aliases, with their actual fidelity on the handle;
 - tears everything down in reverse dependency order.
 
 What it does **not** do:
@@ -118,6 +118,13 @@ Use `createFlagEmulator({ now })` to control event timestamps; every evaluation
 is recorded by default, and `sampleRate` can be overridden. The optional
 `flagInspector(alias)` exposes a copy of the test event history separately from
 the service port.
+`graph.experiment(alias)` and `graph.rollout(alias)` expose the identity
+package's `ExperimentPort` and `DeliveryPort`. Their default engines each own
+an isolated flag store. To coordinate feature changes across ports, create
+`createExperimentEmulator({ store })` and `createDeliveryEmulator({ store })`
+with the same `FeatureFlagPort` used by the application, and inject them through
+the matching factories. Create a fresh shared store for each deployment. Both
+factories accept `now` to control event timestamps.
 Inject the appropriate port into the service under test and use
 the same object to arrange inputs and inspect results. The included CI relay
 test in [`packages/hobo/test/service-emulators.test.ts`](../hobo/test/service-emulators.test.ts)
@@ -171,7 +178,7 @@ const harness = createTestHarness({
 });
 ```
 
-Queue, topic, secret, data, schedule, key-value, bucket and flag factories return `ServiceEmulator<T>`: a typed port, a
+Queue, topic, secret, data, schedule, key-value, bucket, flag, experiment and rollout factories return `ServiceEmulator<T>`: a typed port, a
 `simulated` or `mocked` fidelity label, and an optional `close`. Queue
 and schedule emulators may also expose a `VirtualClock`; data emulators require `close`.
 The scheduler supports interval schedules only: `graph.scheduleClock(alias)`
@@ -217,7 +224,7 @@ otherwise duplicate code without testing a service contract.
 | Schedule | `graph.schedule(alias)` and `graph.scheduleClock(alias)` use the local scheduler and virtual clock | Interval schedules only; fired timers do not automatically invoke a handler |
 | Key-value / blob metadata | `graph.kv(alias)` and `graph.bucket(alias)` implement generated types from the pinned WASI subsets | Process-local; the pinned blob interface has no body-read operation and does not claim a complete WASI or cloud storage implementation |
 | Flags | `graph.flag(alias)` or `createFlagEmulator()` supplies an isolated `FeatureFlagPort` | In-process flag engine; not a remote provider or a complete WIT implementation |
-| Experiments / rollout | `@hobo/identity` provides `createContractAssertedHarnessFixtures` and its built-in engines | Direct in-process fixtures, not automatically wired into this graph or a remote flag provider |
+| Experiments / rollout | `graph.experiment(alias)` and `graph.rollout(alias)` expose isolated identity ports | In-process engines; flag stores are independent unless explicitly shared, and no remote provider is emulated |
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
 | Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
@@ -260,8 +267,8 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `notify` | `placeholder` | CD's NotificationPort has a recording sink; it is not the catalog's general notify port |
 | `guardrail` | `placeholder` | Use the relevant policy implementation or a contract double |
 | `ui` | `http` | Fetch handlers only; no general UI render/drive port |
-| `experiment` | `fixture` | Identity's local experiment fixture is separate from the graph |
-| `rollout` | `fixture` | Identity's local delivery fixture is separate from the graph |
+| `experiment` | `port` | Isolated local ExperimentPort; a shared flag store must be injected explicitly |
+| `rollout` | `port` | Isolated local DeliveryPort; a shared flag store must be injected explicitly |
 <!-- /resource-emulation-inventory -->
 
 Keep the port or protocol as the authority: derive stateless mocks from the
@@ -281,7 +288,8 @@ verification.
 - `DeployedGraph` → `outputs()`, `resource(alias)`, `http(alias)`,
   `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `secret(alias)`, `data(alias)`,
   `schedule(alias)`, `scheduleClock(alias)`, `kv(alias)`, `bucket(alias)`,
-  `bucketInspector(alias)`, `flag(alias)`, `flagInspector(alias)`, `fidelity()`.
+  `bucketInspector(alias)`, `flag(alias)`, `flagInspector(alias)`, `experiment(alias)`,
+  `rollout(alias)`, `fidelity()`.
 - `untilReady(target, { attempts = 20, initialDelayMs = 500 })` — bounded
   exponential backoff capped at 5s per wait. Retries propagation-shaped
   failures (404, 408, 425, 429, any 5xx, network throws) and **fails fast on

@@ -10,7 +10,12 @@
 
 import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
-import type { FeatureFlagPort, SecretsPort } from "@hobo/identity";
+import type {
+	DeliveryPort,
+	ExperimentPort,
+	FeatureFlagPort,
+	SecretsPort,
+} from "@hobo/identity";
 import type {
 	BlobStorePort,
 	BucketInspector,
@@ -77,6 +82,8 @@ export interface DeployedGraph {
 	kv(alias: string): KeyValuePort;
 	bucket(alias: string): BlobStorePort;
 	flag(alias: string): FeatureFlagPort;
+	rollout(alias: string): DeliveryPort;
+	experiment(alias: string): ExperimentPort;
 	/** Optional test-only access to local flag events. */
 	flagInspector(alias: string): FlagInspector | undefined;
 	/** Optional test-only access to stored object bodies. */
