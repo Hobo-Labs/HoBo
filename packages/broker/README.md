@@ -423,24 +423,32 @@ Generated placement requires a shared durable generation quota authority.
 After host policy approval and before the budget hold, the broker reserves both
 `maxConcurrentGenerations` and `maxYardsPerTenant` capacity for the exact plan.
 A missing authority, exhausted quota, mismatched claim or changed authority
-stops the provider call. Authority is checked again at the actual provider call
-boundary after any asynchronous scheduling. A repeated quota claim is inspected rather than
-provisioned again. The direct planner relies on its caller to establish that no
-matching Yard exists, and the standalone generation saga does not receive
-policy or quota evidence.
+stops the provider call. The broker atomically claims a durable execution fence
+before provider work and rechecks authority at the call boundary. Only a newly
+claimed fence may provision; an existing claim is inspected. Custom authorities
+must implement `claimExecution`, `cancelUnclaimed` and `lookupCancellation`
+with the same atomic semantics and request-bound cancellation evidence. The direct planner relies on its caller to establish that no matching
+Yard exists; standalone saga hosts must enforce their own policy and quota.
 
-The SQLite quota authority counts a fixed initial inventory and keeps uncertain
-claims pending. A trusted verifier must accept readiness before the concurrent
-slot is released; the ready Yard continues to count toward the tenant limit.
-Limits and baseline are fixed for the database, and all writers must use the
-same database. Out-of-band Yards, missing baseline entries, inaccurate readiness
-attestations and lost database files are outside its guarantee. Budget and quota
-reservations are separate transactions: a failure between them can retain quota
-without a budget hold. There is no removal or unused-reservation reconciliation
-operation yet. Reconcile pre-upgrade Yards and uncertain attempts before enabling
-the new authority.
+The SQLite authority counts a fixed initial inventory and retains claimed or
+uncertain work until a trusted verifier accepts readiness. On an admission
+failure, the broker attempts to cancel a quota reservation it created if no
+execution fence has been claimed. Hosts can call `cancelUnclaimed` for other
+stranded reservations after checking the bound attempt. A cancelled key cannot
+be reused; a new attempt needs a new key. Cancellation fails if an execution
+fence exists, and the broker verifies both the bound cancellation tombstone and
+the missing claim; unverified cancellations require reconciliation. Lost quota
+or budget reservation acknowledgements are reported for reconciliation. A typed
+quota denial must mean the call created no reservation; other errors may have
+committed. Budget holds remain separate from quota cancellation.
 
-The bounded admission projection hides 18 same-state steps. It assumes the
+On upgrade, existing claims are conservatively fenced and already-open older
+writers are refused by SQLite write guards. Limits and baseline remain fixed;
+all writers must use the same database. Out-of-band Yards, incomplete baseline
+entries, inaccurate readiness attestations, lost database files and deleted Yard
+reconciliation remain outside this authority's guarantees.
+
+The bounded admission projection hides 38 same-state steps. It assumes the
 separate quota, policy, budget and provider evidence checks are truthful.
 
 ```mermaid
@@ -452,28 +460,66 @@ stateDiagram-v2
   s4: Host policy denied the request
   s5: Generation quota unavailable
   s6: Generation quota reserved
-  s7: Hosting budget reserved
-  s8: Quota authority changed before provider
-  s9: Provider called
-  s10: Yard readiness verified
-  s11: Outcome needs reconciliation
+  s7: Quota reservation needs reconciliation
+  s8: Hosting budget reserved
+  s9: Quota needs reconciliation
+  s10: Unused quota released
+  s11: Quota released, budget needs reconciliation
+  s12: Quota execution fence claimed
+  s13: Provider called
+  s14: Yard readiness verified
+  s15: Outcome needs reconciliation
   [*] --> s0
   s0 --> s2: refuse without quota authority
   s0 --> s1: check host policy
   s1 --> s4: refuse host policy
   s1 --> s3: approve host policy
   s3 --> s5: refuse exhausted quota
+  s3 --> s7: reconcile unknown quota reservation
   s3 --> s6: reserve generation quota
-  s6 --> s7: reserve hosting budget
-  s7 --> s8: quota authority changes
-  s7 --> s9: call the provider
-  s8 --> s11: retain exposure for reconciliation
-  s9 --> s11: retain exposure for reconciliation
-  s9 --> s10: verify Yard readiness
+  s6 --> s8: reserve hosting budget
+  s6 --> s9: reconcile unverified quota cancellation
+  s6 --> s10: release unused quota
+  s8 --> s11: release unused quota, retain budget for reconciliation
+  s8 --> s12: claim the execution fence
+  s12 --> s13: call the provider
+  s13 --> s15: retain exposure for reconciliation
+  s13 --> s14: verify Yard readiness
+  s12 --> s15: retain exposure for reconciliation
+```
+
+The two-worker claim and cancellation projection hides three same-state
+steps. A claimed reservation cannot be cancelled and only the winning caller
+may start provider work.
+
+```mermaid
+stateDiagram-v2
+  s0: Generation quota reserved
+  s1: Unused quota released
+  s2: Execution fence claimed
+  s3: Provider call started, quota retained
+  s4: Yard readiness verified
+  [*] --> s0
+  s0 --> s1: release unused quota
+  s0 --> s2: claim execution for one caller
+  s2 --> s3: call the provider
+  s3 --> s4: verify readiness
+```
+
+The migration projection hides 12 same-state steps and treats the SQLite
+upgrade as atomic. Wrong-scope attempts cannot modify the store.
+
+```mermaid
+stateDiagram-v2
+  s0: Legacy quota store
+  s1: Existing claims fenced, old writers refused
+  [*] --> s0
+  s0 --> s1: fence existing claims and require the new protocol
 ```
 
 The bounded quota projection follows one of three requests and hides 23
-same-state steps; it assumes atomic storage and trusted baseline and evidence.
+same-state steps; it abstracts execution claims and cancellation, and assumes
+atomic storage and trusted baseline and evidence.
 
 ```mermaid
 stateDiagram-v2

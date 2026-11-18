@@ -46,6 +46,7 @@ function markReady(
 	claim: YardGenerationQuotaRequest,
 	evidenceRef = "verified:ready",
 ) {
+	authority.claimExecution(claim);
 	return authority.markReady({
 		idempotencyKey: claim.idempotencyKey,
 		attemptId: claim.attemptId,
@@ -216,6 +217,7 @@ describe("durable Yard generation quota authority", () => {
 		try {
 			const a = request("a");
 			authority.reserve(a);
+			authority.claimExecution(a);
 			for (const changed of [
 				{ attemptId: "wrong" },
 				{ ownerTenantId: "wrong-tenant" },

@@ -4,6 +4,7 @@ import { first } from "@hobo/core/total-access";
 import { compareDecimal, type Decimal, parseDecimal } from "@hobo/pricing";
 import {
 	type BudgetAdmissionAuthority,
+	BudgetAdmissionDeniedError,
 	type BudgetIdentity,
 	BudgetIdentitySchema,
 	type BudgetReservation,
@@ -17,6 +18,7 @@ import {
 } from "../budget-authority.js";
 import {
 	cloneAsJson,
+	isJsonBoolean,
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
@@ -46,10 +48,11 @@ import {
 	planYardGeneration,
 	type YardGenerationConnector,
 } from "./generation.js";
-import type {
-	YardGenerationQuotaAuthority,
-	YardGenerationQuotaClaim,
-	YardGenerationQuotaRequest,
+import {
+	type YardGenerationQuotaAuthority,
+	type YardGenerationQuotaClaim,
+	YardGenerationQuotaDeniedError,
+	type YardGenerationQuotaRequest,
 } from "./generation-quota.js";
 import { createYardRuntimeCatalog, localYardInstance } from "./inventory.js";
 import { matchYard } from "./matching.js";
@@ -512,6 +515,7 @@ export async function resolveBindleDeployment(
 	};
 	const reservationId = `hosting:${deps.brokerId}:${request.requestId}`;
 	let budgetReservation: BudgetReservation | undefined;
+	let generationBudgetReserveAttempted = false;
 	let hostingQuote: HostingQuote | undefined;
 	let hostingPolicyProof: HostingPolicyProof | undefined;
 	let localHostingProof: LocalHostingProof | undefined;
@@ -760,6 +764,7 @@ export async function resolveBindleDeployment(
 					"generation authority changed before budget reservation",
 				);
 		}
+		if (generationPlanHash) generationBudgetReserveAttempted = true;
 		budgetReservation = context.authority.reserve({
 			reservationId,
 			requestDigest,
@@ -977,6 +982,26 @@ export async function resolveBindleDeployment(
 		const quotaReserve = quota.reserve;
 		const quotaLookup = quota.lookup;
 		const quotaMarkReady = quota.markReady;
+		const quotaClaimExecution = quota.claimExecution;
+		const quotaCancelUnclaimed = quota.cancelUnclaimed;
+		const quotaLookupCancellation = quota.lookupCancellation;
+		const quotaMethods = [
+			quotaReserve,
+			quotaLookup,
+			quotaMarkReady,
+			quotaClaimExecution,
+			quotaCancelUnclaimed,
+			quotaLookupCancellation,
+		];
+		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: this host-supplied port must be callable before policy, budget or provider effects.
+		if (!quotaMethods.every((method) => typeof method === "function"))
+			return rejectResult(
+				foldState,
+				emitted,
+				"policy",
+				"yard-generation-quota-unavailable",
+				"generation quota authority lacks execution fencing",
+			);
 		const quotaRequest: YardGenerationQuotaRequest = Object.freeze({
 			idempotencyKey: genDecision.plan.idempotencyKey,
 			attemptId: genDecision.plan.attemptId,
@@ -986,6 +1011,7 @@ export async function resolveBindleDeployment(
 			maxConcurrentGenerations: generationPolicy.maxConcurrentGenerations,
 			maxYardsPerTenant: generationPolicy.maxYardsPerTenant,
 		});
+		const quotaRequestDigest = contentHashOf(quotaRequest);
 		const quotaClaimMatches = (claim: YardGenerationQuotaClaim | undefined) =>
 			Boolean(
 				claim &&
@@ -997,9 +1023,11 @@ export async function resolveBindleDeployment(
 					claim.maxConcurrentGenerations ===
 						quotaRequest.maxConcurrentGenerations &&
 					claim.maxYardsPerTenant === quotaRequest.maxYardsPerTenant &&
+					isJsonBoolean(claim.executionClaimed) &&
 					(claim.status === "pending" || claim.status === "ready") &&
 					(claim.status !== "ready" ||
-						(isJsonString(claim.readyEvidenceRef) &&
+						(claim.executionClaimed &&
+							isJsonString(claim.readyEvidenceRef) &&
 							claim.readyEvidenceRef.trim().length > 0)),
 			);
 		const quotaMethodsCurrent = () =>
@@ -1007,16 +1035,21 @@ export async function resolveBindleDeployment(
 			quota.persistence === "durable-sqlite" &&
 			quota.reserve === quotaReserve &&
 			quota.lookup === quotaLookup &&
-			quota.markReady === quotaMarkReady;
+			quota.markReady === quotaMarkReady &&
+			quota.claimExecution === quotaClaimExecution &&
+			quota.cancelUnclaimed === quotaCancelUnclaimed &&
+			quota.lookupCancellation === quotaLookupCancellation;
 		let quotaReserved = false;
+		let quotaCreatedByCall = false;
+		let quotaExecutionClaimed = false;
+		let quotaReservationOutcomeUnknown = false;
 		const quotaCurrent = () => {
 			try {
+				if (!quotaReserved || !quotaMethodsCurrent()) return false;
+				const claim = quotaLookup.call(quota, quotaRequest.idempotencyKey);
 				return (
-					quotaReserved &&
-					quotaMethodsCurrent() &&
-					quotaClaimMatches(
-						quotaLookup.call(quota, quotaRequest.idempotencyKey),
-					) &&
+					quotaClaimMatches(claim) &&
+					(!quotaExecutionClaimed || claim?.executionClaimed === true) &&
 					quotaMethodsCurrent()
 				);
 			} catch {
@@ -1143,7 +1176,17 @@ export async function resolveBindleDeployment(
 					throw new Error(
 						"generation authority changed before quota reservation",
 					);
-				const reservation = quotaReserve.call(quota, quotaRequest);
+				let reservation: ReturnType<typeof quotaReserve>;
+				quotaReservationOutcomeUnknown = true;
+				try {
+					reservation = quotaReserve.call(quota, quotaRequest);
+				} catch (error) {
+					// A typed denial promises no reservation was written. Other
+					// errors can follow a committed write with a lost response.
+					if (error instanceof YardGenerationQuotaDeniedError)
+						quotaReservationOutcomeUnknown = false;
+					throw error;
+				}
 				if (
 					!reservation ||
 					(reservation.kind !== "reserved" &&
@@ -1153,11 +1196,11 @@ export async function resolveBindleDeployment(
 				)
 					throw new Error("generation quota returned an invalid claim");
 				quotaReserved = true;
+				quotaCreatedByCall = reservation.kind === "reserved";
 				const stored = quotaLookup.call(quota, quotaRequest.idempotencyKey);
 				if (!quotaClaimMatches(stored) || !quotaMethodsCurrent())
 					throw new Error("generation quota claim could not be verified");
-				inspectGenerationOnly =
-					reservation.kind === "existing" || stored?.status === "ready";
+				quotaReservationOutcomeUnknown = false;
 				if (!generationContextCurrent(true))
 					throw new Error(
 						"generation authority changed during quota reservation",
@@ -1170,6 +1213,8 @@ export async function resolveBindleDeployment(
 				);
 			}
 		};
+		let budgetExecutionClaimed = false;
+		let budgetAlreadyClaimed = false;
 		try {
 			await admitHosting(
 				genDecision.plan.expectedYardId,
@@ -1193,8 +1238,7 @@ export async function resolveBindleDeployment(
 				validateHostingQuote(hostingQuote, now);
 				const head = financial.authority.read(now);
 				const previous = financial.authority.lookup(reservationId);
-				inspectGenerationOnly =
-					inspectGenerationOnly || Boolean(previous?.executionDigest);
+				budgetAlreadyClaimed = Boolean(previous?.executionDigest);
 				if (!paidContextCurrent() || !generationAuthorityCurrent())
 					throw new Error(
 						"hosting context changed before generation claim; reconcile reservation",
@@ -1209,6 +1253,7 @@ export async function resolveBindleDeployment(
 					}),
 					expectedSeq: head.seq,
 				});
+				budgetExecutionClaimed = true;
 				// A durable claim may wait for a database writer past quote expiry.
 				validateHostingQuote(hostingQuote, financial.now());
 				if (!paidContextCurrent())
@@ -1216,7 +1261,63 @@ export async function resolveBindleDeployment(
 						"hosting context changed after generation claim; reconcile reservation",
 					);
 			}
+			if (!generationAuthorityCurrent())
+				throw new Error(
+					"generation authority changed before quota execution claim",
+				);
+			const execution = quotaClaimExecution.call(quota, quotaRequest);
+			if (
+				!execution ||
+				(execution.kind !== "claimed" && execution.kind !== "existing") ||
+				!quotaClaimMatches(execution.claim) ||
+				!execution.claim.executionClaimed ||
+				!quotaMethodsCurrent()
+			)
+				throw new Error("generation quota returned an invalid execution claim");
+			quotaExecutionClaimed = true;
+			inspectGenerationOnly =
+				execution.kind === "existing" || budgetAlreadyClaimed;
+			if (!generationAuthorityCurrent())
+				throw new Error(
+					"generation authority changed during quota execution claim",
+				);
 		} catch (error) {
+			let quotaReconciliation = quotaReservationOutcomeUnknown
+				? "; quota reservation outcome is unknown; reconcile the claim"
+				: "";
+			if (quotaCreatedByCall && !quotaExecutionClaimed) {
+				try {
+					const cancelled = quotaCancelUnclaimed.call(quota, quotaRequest);
+					if (
+						!cancelled ||
+						(cancelled.kind !== "cancelled" && cancelled.kind !== "existing") ||
+						cancelled.requestDigest !== quotaRequestDigest ||
+						quota.persistence !== "durable-sqlite" ||
+						quota.cancelUnclaimed !== quotaCancelUnclaimed ||
+						quota.lookup !== quotaLookup ||
+						quota.lookupCancellation !== quotaLookupCancellation ||
+						quotaLookupCancellation.call(quota, quotaRequest.idempotencyKey) !==
+							quotaRequestDigest ||
+						quotaLookup.call(quota, quotaRequest.idempotencyKey) !==
+							undefined ||
+						quota.cancelUnclaimed !== quotaCancelUnclaimed ||
+						quota.lookup !== quotaLookup ||
+						quota.lookupCancellation !== quotaLookupCancellation
+					)
+						throw new Error("quota cancellation could not be verified");
+					quotaReconciliation = "";
+				} catch {
+					quotaReconciliation = "; quota reservation requires reconciliation";
+				}
+			}
+			const budgetReconciliation =
+				budgetExecutionClaimed && !markGenerationUncertain()
+					? "; uncertain budget status could not be recorded; reconcile the hold"
+					: generationBudgetReserveAttempted &&
+							!budgetReservation &&
+							!(error instanceof BudgetAdmissionDeniedError)
+						? "; budget reservation outcome is unknown; reconcile the hold"
+						: "";
 			return rejectResult(
 				foldState,
 				emitted,
@@ -1224,9 +1325,7 @@ export async function resolveBindleDeployment(
 				error instanceof GenerationQuotaAdmissionError
 					? "yard-generation-quota-denied"
 					: "hosting-budget-admission-denied",
-				error instanceof Error
-					? error.message
-					: "hosting budget admission failed",
+				`${error instanceof Error ? error.message : "hosting budget admission failed"}${quotaReconciliation}${budgetReconciliation}`,
 			);
 		}
 
