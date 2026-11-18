@@ -263,7 +263,7 @@ describe("cloudflare cloud-native provider: remote proxy", () => {
 		]);
 	});
 
-	it("returns redirects without forwarding private headers to another origin", async () => {
+	it("blocks redirects outside the bound origin without forwarding private headers", async () => {
 		let leaked = false;
 		const receiver = createServer((req, res) => {
 			leaked = req.headers["x-api-key"] === "sentinel";
@@ -310,11 +310,38 @@ describe("cloudflare cloud-native provider: remote proxy", () => {
 				headers: { "x-api-key": "sentinel" },
 			}),
 		);
-		expect(response.status).toBe(302);
-		expect(response.headers.get("location")).toBe(
-			`http://127.0.0.1:${destination.port}/collect`,
-		);
+		expect(response.status).toBe(502);
+		expect(response.headers.get("location")).toBeNull();
 		expect(leaked).toBe(false);
+	});
+
+	it("preserves redirects within the bound origin and conditional responses", async () => {
+		const responses = [
+			new Response(null, { status: 302, headers: { location: "/next" } }),
+			new Response(null, { status: 304, headers: { etag: '"fresh"' } }),
+		];
+		const provider = createCloudflareCloudNativeProvider({
+			fetchImpl: async () => {
+				const response = responses.shift();
+				if (!response) throw new Error("unexpected fetch");
+				return response;
+			},
+		});
+		const serve = await provider.servePrivate(
+			serveCtx({
+				bindleEnv: {
+					HOBO_CLOUD_NATIVE_ENDPOINT_API: "https://trusted.example",
+				},
+			}),
+		);
+		cleanups.push(() => serve.close());
+		const handler = mustGet(serve.handlers, "api");
+		const redirect = await handler(new Request("https://internal/path"));
+		expect(redirect.status).toBe(302);
+		expect(redirect.headers.get("location")).toBe("/next");
+		const conditional = await handler(new Request("https://internal/path"));
+		expect(conditional.status).toBe(304);
+		expect(conditional.headers.get("etag")).toBe('"fresh"');
 	});
 
 	it("rejects a malformed bound endpoint with a typed error", async () => {
