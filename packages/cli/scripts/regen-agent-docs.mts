@@ -1,14 +1,25 @@
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
-import { writeAgentDocs } from "../src/agent-docs/gate.js";
+import {
+	assertAgentDocsFresh,
+	writeAgentDocs,
+} from "../src/agent-docs/gate.js";
 
-// Regenerates the checked-in agent-docs surface from CANONICAL_VERBS, which is
-// its only source of truth. agent-docs.test.ts drift-gates the result, so this
-// runs whenever the canonical verb list changes.
-const written = await writeAgentDocs(
-	join(dirname(fileURLToPath(import.meta.url)), "..", "agent-docs"),
-);
-for (const path of written) {
-	console.log(`wrote ${path}`);
+const { values } = parseArgs({
+	options: {
+		check: { type: "boolean", default: false },
+		output: { type: "string" },
+	},
+});
+const output = values.output
+	? resolve(values.output)
+	: join(dirname(fileURLToPath(import.meta.url)), "..", "agent-docs");
+
+if (values.check) {
+	await assertAgentDocsFresh(output);
+	console.log(`agent docs are current: ${output}`);
+} else {
+	for (const path of await writeAgentDocs(output)) console.log(`wrote ${path}`);
 }
