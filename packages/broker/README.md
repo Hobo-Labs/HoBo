@@ -31,6 +31,10 @@ Yard JSON properties compare by value, including nested objects and arrays;
 object key order does not affect a match. JSON property and label names are
 preserved even when they match inherited JavaScript names, and nested property
 arrays are frozen in the parsed snapshot.
+Residency tags must use a recognized jurisdiction and, when present, a
+recognized classification. A Yard repeating an invalid tag does not make it
+valid; correct such requests and attestations before retrying. A valid explicit
+attestation is still trusted host evidence, not independent proof of location.
 
 The [Yard JSON constraint skill](../../.agents/skills/verify-yard-json-constraints/SKILL.md)
 checks a bounded property-matching model. This projection hides three same-state

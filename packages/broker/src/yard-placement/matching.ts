@@ -257,7 +257,6 @@ function residencyFailure(
 	entry: string,
 	yard: YardInstanceRegistration,
 ): string | undefined {
-	if (yard.layout.residency.includes(entry)) return undefined;
 	const separator = entry.indexOf(":");
 	const jurisdictionRaw = separator === -1 ? entry : entry.slice(separator + 1);
 	try {
@@ -265,6 +264,8 @@ function residencyFailure(
 			parseDataClassification(entry.slice(0, separator));
 		}
 		const jurisdiction = parseJurisdictionId(jurisdictionRaw);
+		// A repeated attestation cannot make an unknown residency tag valid.
+		if (yard.layout.residency.includes(entry)) return undefined;
 		if (yard.layout.regions.length === 0) {
 			return `residency-unattested:${entry}`;
 		}
