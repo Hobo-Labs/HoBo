@@ -88,6 +88,14 @@ export function planYardGeneration(options: {
 			policyId: policy.id,
 		};
 	}
+	if (policy.effect !== "allow-if-no-match") {
+		return {
+			allowed: false,
+			reason:
+				"generation policy effect is unsupported or requires dedicated Yard evidence",
+			policyId: policy.id,
+		};
+	}
 	if (!hasValidYardResidency(options.requestedLayout)) {
 		return {
 			allowed: false,
@@ -99,6 +107,14 @@ export function planYardGeneration(options: {
 		return {
 			allowed: false,
 			reason: "requested Camp layouts cannot yet be verified",
+			policyId: policy.id,
+		};
+	}
+	if (policy.requireApproval !== false) {
+		return {
+			allowed: false,
+			reason:
+				"generation requires approval, but approval evidence is unavailable",
 			policyId: policy.id,
 		};
 	}
