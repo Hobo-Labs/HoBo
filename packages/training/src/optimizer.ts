@@ -324,6 +324,7 @@ export function createBuiltinTrainingEngine(
 		// OPTO loop: propose -> score -> keep-best. Best score never regresses;
 		// a proposal only replaces the incumbent on a strict improvement.
 		let best: Proposal | undefined;
+		const traceBatch: OptimizerTraceSpan[] = [];
 		for (let iteration = 0; iteration < parsed.maxIterations; iteration += 1) {
 			const proposal = propose(
 				prng,
@@ -333,7 +334,9 @@ export function createBuiltinTrainingEngine(
 			);
 			const kept = best === undefined || proposal.score > best.score;
 			if (kept) best = proposal;
-			sink.record(stepSpan(iteration, proposal, kept ? "kept" : "rejected"));
+			traceBatch.push(
+				stepSpan(iteration, proposal, kept ? "kept" : "rejected"),
+			);
 		}
 		// SAFETY: `const winner = best as Proposal;` is required at this I/O or test boundary.
 		const winner = best as Proposal;
@@ -356,7 +359,7 @@ export function createBuiltinTrainingEngine(
 		// Lower onto the wire candidate through core's parse-don't-validate
 		// constructor so every invariant (provenance hashes, program shape)
 		// holds before the candidate leaves the engine.
-		return parseTrainingCandidate({
+		const candidate = parseTrainingCandidate({
 			id: `opto-${winner.digest.slice("sha256:".length, "sha256:".length + 16)}`,
 			engineId: parsed.engineId,
 			provenance: {
@@ -373,6 +376,8 @@ export function createBuiltinTrainingEngine(
 				programJson,
 			},
 		});
+		for (const span of traceBatch) sink.record(span);
+		return candidate;
 	}
 
 	return {
