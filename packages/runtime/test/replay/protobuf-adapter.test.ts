@@ -5,6 +5,7 @@ import {
 	ReplayDivergenceSchema,
 	ReplayReportSchema,
 } from "../../src/_generated/replay/replay_report_pb.js";
+import type { JsonBag, JsonValue } from "../../src/json.js";
 import {
 	parseReplayDivergenceBinary,
 	parseReplayDivergenceProtoJson,
@@ -201,6 +202,88 @@ it("preserves forward-compatible ordinary unknown binary fields", () => {
 	// Unknown field 100, encoded as a varint, is ignored by protobuf.
 	const bytes = Uint8Array.from([...base, 160, 6, 1]);
 	expect(parseReplayReportBinary(bytes).runId).toBe("run");
+});
+
+it("refuses JSON accessors without invoking them before decoding", () => {
+	let reads = 0;
+	for (const [raw, parse] of [
+		[{ ...report }, parseReplayReportProtoJson],
+		[{ ...divergence }, parseReplayDivergenceProtoJson],
+	] as const) {
+		Object.defineProperty(raw, "canonicalizationVersion", {
+			enumerable: true,
+			get() {
+				reads += 1;
+				return 2;
+			},
+		});
+		expect(() => parse(raw)).toThrow();
+	}
+	expect(reads).toBe(0);
+});
+
+it("accepts frozen JSON data and null-prototype objects", () => {
+	const raw = Object.assign(Object.create(null), report, {
+		canonicalizationVersion: 2,
+		seqVector: Object.freeze([]),
+	});
+	Object.freeze(raw);
+	expect(parseReplayReportProtoJson(raw).canonicalizationVersion).toBe(2);
+});
+
+it("refuses proxies and cycles before inspecting their contents", () => {
+	let traps = 0;
+	const proxy = new Proxy(report, {
+		get() {
+			traps += 1;
+			throw new Error("proxy trap invoked");
+		},
+	});
+	expect(() => parseReplayReportProtoJson(proxy)).toThrow(/prox/i);
+	expect(traps).toBe(0);
+	const cyclic: JsonBag = { ...report };
+	cyclic.loop = cyclic;
+	expect(() => parseReplayReportProtoJson(cyclic)).toThrow(/cycle/i);
+});
+
+it("refuses excessively nested JSON before recursive decoding", () => {
+	let nested: JsonValue = null;
+	for (let level = 0; level < 102; level += 1) nested = [nested];
+	expect(() =>
+		parseReplayReportProtoJson({ ...report, unknown: nested }),
+	).toThrow(/nesting/i);
+});
+
+it("uses the same captured binary bytes for validation and decoding", () => {
+	const original = toBinary(
+		ReplayReportSchema,
+		create(ReplayReportSchema, {
+			...report,
+			seqVector: [{ streamId: "s", seq: 1n }],
+		}),
+	);
+	const prefix = [10, 1, 115, 16, 1];
+	const start = [...original].findIndex((_, index) =>
+		prefix.every((byte, delta) => original[index + delta] === byte),
+	);
+	expect(start).toBeGreaterThanOrEqual(0);
+	const sequenceOffset = start + 4;
+	class MutatingBytes extends Uint8Array {
+		constructor(
+			bytes: Uint8Array,
+			private readonly sequenceOffset: number,
+		) {
+			super(bytes);
+		}
+		override subarray(begin = 0, end = this.length): Uint8Array {
+			const result = Uint8Array.from(Array.from(this).slice(begin, end));
+			this[this.sequenceOffset] = 0;
+			return result;
+		}
+	}
+	const bytes = new MutatingBytes(original, sequenceOffset);
+	expect(parseReplayReportBinary(bytes).seqVector[0]?.seq).toBe(1);
+	expect(bytes[sequenceOffset]).toBe(1);
 });
 
 it("accepts protobuf JSON's quoted representations of known versions", () => {

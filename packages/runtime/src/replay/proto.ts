@@ -17,34 +17,39 @@ import {
 	parseReplayReport,
 	ReplayParseError,
 } from "./parse.js";
+import { captureProtoJson } from "./proto-json.js";
 import type { ReplayDivergenceRecord, ReplayReport } from "./types.js";
 import { checkReplayWire } from "./wire.js";
 
 /** Decode protobuf JSON, including omitted repeated fields and uint64 strings. */
 export function parseReplayReportProtoJson(raw: JsonValue): ReplayReport {
-	checkJsonVersion(raw);
-	checkJsonPositions(raw);
-	return reportFromMessage(fromJson(ReplayReportSchema, raw));
+	const captured = captureProtoJson(raw);
+	checkJsonVersion(captured);
+	checkJsonPositions(captured);
+	return reportFromMessage(fromJson(ReplayReportSchema, captured));
 }
 
 /** Decode the binary protobuf representation into a validated domain report. */
 export function parseReplayReportBinary(bytes: Uint8Array): ReplayReport {
-	checkReplayWire(bytes, "report");
-	return reportFromMessage(fromBinary(ReplayReportSchema, bytes));
+	const captured = new Uint8Array(bytes);
+	checkReplayWire(captured, "report");
+	return reportFromMessage(fromBinary(ReplayReportSchema, captured));
 }
 
 export function parseReplayDivergenceProtoJson(
 	raw: JsonValue,
 ): ReplayDivergenceRecord {
-	checkJsonVersion(raw);
-	return divergenceFromMessage(fromJson(ReplayDivergenceSchema, raw));
+	const captured = captureProtoJson(raw);
+	checkJsonVersion(captured);
+	return divergenceFromMessage(fromJson(ReplayDivergenceSchema, captured));
 }
 
 export function parseReplayDivergenceBinary(
 	bytes: Uint8Array,
 ): ReplayDivergenceRecord {
-	checkReplayWire(bytes, "divergence");
-	return divergenceFromMessage(fromBinary(ReplayDivergenceSchema, bytes));
+	const captured = new Uint8Array(bytes);
+	checkReplayWire(captured, "divergence");
+	return divergenceFromMessage(fromBinary(ReplayDivergenceSchema, captured));
 }
 
 function checkJsonVersion(raw: JsonValue): void {

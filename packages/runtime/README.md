@@ -164,6 +164,9 @@ safe `uint64` sequence positions, and apply the same domain checks as the
 strict parsers. They reject an explicit null or duplicate version marker;
 the binary adapters also reject overflowing varints, duplicate version markers
 and deprecated protobuf groups. Unknown ordinary binary fields remain allowed.
+The adapters capture inputs before validation; JSON accessors, proxies, cycles,
+sparse arrays and nesting deeper than 100 are refused, while frozen ordinary
+JSON values are accepted. Binary decoding uses a detached copy of the bytes.
 JSON numeric values are checked as received; a number already rounded before
 the adapter receives it cannot be recovered, so use protobuf JSON strings for
 large integer positions. These checks do not authenticate the evidence.
