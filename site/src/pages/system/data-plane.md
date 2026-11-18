@@ -71,4 +71,4 @@ Cross-aggregate operations are **eventually consistent** by design. Use sagas/ch
 
 ## Related
 
-[Architecture](/HoBo/architecture/) · [Control plane](/HoBo/architecture/control-plane/) · [Aggregates testing](/HoBo/testing/aggregates/) · [Runtime ports](/HoBo/reference/runtime-ports/)
+[System model](/HoBo/system/) · [Control plane](/HoBo/system/control-plane/) · [Aggregates testing](/HoBo/testing/aggregates/) · [Runtime ports](/HoBo/reference/runtime-ports/)

@@ -34,4 +34,4 @@ HoBo supports a **zero-egress** Yard profile for sovereign and regulated deploym
 
 ## Related
 
-[Security](/HoBo/security/) · [Control plane](/HoBo/architecture/control-plane/) · [CLI](/HoBo/reference/cli/)
+[Security](/HoBo/security/) · [Control plane](/HoBo/system/control-plane/) · [CLI](/HoBo/reference/cli/)

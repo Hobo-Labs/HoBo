@@ -51,4 +51,4 @@ Readers attach with `fromSeq` for **replay-then-live**: catch up stored frames, 
 
 ## Related
 
-[Runtime ports](/HoBo/reference/runtime-ports/) · [Data plane](/HoBo/architecture/data-plane/) · [CLI](/HoBo/reference/cli/)
+[Runtime ports](/HoBo/reference/runtime-ports/) · [Data plane](/HoBo/system/data-plane/) · [CLI](/HoBo/reference/cli/)

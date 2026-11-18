@@ -6,7 +6,7 @@ description: "WIT/WASM Component Model: ports as WIT, apps as components, deny-b
 
 # WASM & WIT surface
 
-HoBo’s portability contract is **WIT/WASM** (Component Model / wasmCloud-shaped). TypeScript is the first reference implementation language, not a requirement for the architecture.
+HoBo’s portability contract is **WIT/WASM** (Component Model / wasmCloud-shaped). TypeScript is the first reference implementation language, not a runtime requirement.
 
 **[App Kits](/HoBo/primitives/app-kits/)** (Bindle-declared `api`/`web`/`service`/… surfaces) compose those ports at authoring time. WIT interfaces are the capability boundary the hosts and providers implement.
 
@@ -43,4 +43,4 @@ WASM capability security sits beside data / compute / credentials / network isol
 
 ## Related
 
-[Architecture](/HoBo/architecture/) · [Messaging, Kafka & Dapr](/HoBo/reference/messaging/) · [Capability map](/HoBo/reference/packages/) · [Security](/HoBo/security/)
+[System model](/HoBo/system/) · [Messaging, Kafka & Dapr](/HoBo/reference/messaging/) · [Capability map](/HoBo/reference/packages/) · [Security](/HoBo/security/)

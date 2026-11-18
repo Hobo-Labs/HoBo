@@ -21,4 +21,4 @@ HoBo is **secure-by-default, zero-trust, defense-in-depth**. This section is the
 
 ## Related
 
-[Architecture](/HoBo/architecture/) · [Roles / DevSecOps](/HoBo/roles/devsecops/) · [Troubleshooting](/HoBo/troubleshooting/)
+[System model](/HoBo/system/) · [Roles / DevSecOps](/HoBo/roles/devsecops/) · [Troubleshooting](/HoBo/troubleshooting/)

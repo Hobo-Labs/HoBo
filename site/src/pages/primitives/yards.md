@@ -54,4 +54,4 @@ HoBo's control plane ships *as a bindle*. Self-hosting is converging that bindle
 
 - Crossing clouds: [Junctions](/HoBo/primitives/junctions/).
 - Environment shapes: [Camps](/HoBo/primitives/camps/).
-- Machinery: [Architecture](/HoBo/architecture/).
+- Machinery: [System model](/HoBo/system/).

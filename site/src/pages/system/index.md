@@ -1,18 +1,18 @@
 ---
 layout: ../../layouts/Docs.astro
-title: Architecture
-description: "HoBo reference architecture: Yard control plane, data plane, event-sourced components, and continuous migration."
+title: System model
+description: "HoBo runtime model: Yard control plane, data plane, event-sourced components, and continuous migration."
 ---
-# Architecture
+# System model
 
 ## In this section
 
 | Page | Topic |
 |---|---|
-| [Data plane](/HoBo/architecture/data-plane/) | Event log, aggregates, projections, SQLite default |
-| [Control plane](/HoBo/architecture/control-plane/) | Yard: plan → gate → converge |
-| [WASM & WIT surface](/HoBo/architecture/wasm/) | Component Model ports & hosts |
-| [Air-gapped & sovereign](/HoBo/architecture/air-gapped/) | Zero-egress profiles |
+| [Data plane](/HoBo/system/data-plane/) | Event log, aggregates, projections, SQLite default |
+| [Control plane](/HoBo/system/control-plane/) | Yard: plan → gate → converge |
+| [WASM & WIT surface](/HoBo/system/wasm/) | Component Model ports & hosts |
+| [Air-gapped & sovereign](/HoBo/system/air-gapped/) | Zero-egress profiles |
 
 A condensed tour of the machinery that packs, places, and — crucially — *keeps re-placing* your app.
 
@@ -22,7 +22,7 @@ A developer (or agent) writes a **Bindle** (app topology) and optionally `camp()
 
 ## Control plane vs data plane
 
-Keeping these separate is a core architectural commitment:
+Keeping these separate is a core system invariant:
 
 - **Control plane (the Yard)** decides *what infrastructure should exist* and makes it exist. Event-sourced, actor-based, multi-tenant — and **never on the critical path** of a running app's request. If the Yard is down, deployed apps keep serving. (They just can't move that day.)
 - **Data plane (the running Bindle)** is your actual app plus the Camp's durable runtime (event store, queues, streams, actors, clock). It uses HoBo's runtime SDK primitives but does not depend on the Yard at request time.

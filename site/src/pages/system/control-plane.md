@@ -52,7 +52,7 @@ One ResourceActor per resource owns reconciliation. Independent subtrees provisi
 
 ## Self-host = hosted
 
-The Yard is itself a Bindle. Bootstrapping a self-host Yard is the same lifecycle as any other app. Air-gapped profiles use signed offline bundles and in-boundary substitutes — see [Air-gapped](/HoBo/architecture/air-gapped/).
+The Yard is itself a Bindle. Bootstrapping a self-host Yard is the same lifecycle as any other app. Air-gapped profiles use signed offline bundles and in-boundary substitutes — see [Air-gapped](/HoBo/system/air-gapped/).
 
 ## Stations
 

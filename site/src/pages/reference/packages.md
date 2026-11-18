@@ -61,4 +61,4 @@ Default durable journal is a **single-owner SQLite** path. Alternate engines and
 
 ## Related
 
-[Architecture](/HoBo/architecture/) · [Component hosts](/HoBo/reference/component-hosts/) · [Runtime ports](/HoBo/reference/runtime-ports/) · [CLI](/HoBo/reference/cli/) · [HoBo CI](/HoBo/ci/)
+[System model](/HoBo/system/) · [Component hosts](/HoBo/reference/component-hosts/) · [Runtime ports](/HoBo/reference/runtime-ports/) · [CLI](/HoBo/reference/cli/) · [HoBo CI](/HoBo/ci/)

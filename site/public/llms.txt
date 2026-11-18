@@ -23,11 +23,11 @@ The full docs dump is at https://tyler-r-kendrick.github.io/HoBo/llms-full.txt.
 
 ## Architecture
 
-- [Architecture overview](https://tyler-r-kendrick.github.io/HoBo/architecture/)
-- [Data plane](https://tyler-r-kendrick.github.io/HoBo/architecture/data-plane/)
-- [Control plane](https://tyler-r-kendrick.github.io/HoBo/architecture/control-plane/)
-- [WASM & WIT surface](https://tyler-r-kendrick.github.io/HoBo/architecture/wasm/)
-- [Air-gapped & sovereign](https://tyler-r-kendrick.github.io/HoBo/architecture/air-gapped/)
+- [Architecture overview](https://tyler-r-kendrick.github.io/HoBo/system/)
+- [Data plane](https://tyler-r-kendrick.github.io/HoBo/system/data-plane/)
+- [Control plane](https://tyler-r-kendrick.github.io/HoBo/system/control-plane/)
+- [WASM & WIT surface](https://tyler-r-kendrick.github.io/HoBo/system/wasm/)
+- [Air-gapped & sovereign](https://tyler-r-kendrick.github.io/HoBo/system/air-gapped/)
 
 ## Security
 

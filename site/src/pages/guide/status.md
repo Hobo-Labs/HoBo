@@ -15,7 +15,7 @@ Where is HoBo on the road? Here's the honest itinerary.
 | **Implementation** | Progressing through staged build gates (below). Default deploy is an **in-memory Pulumi stand-in**, not live multi-cloud apply. See "What runs today" and ship targets. |
 | **This site** | The canonical public developer documentation — for humans and agents. |
 
-Ship targets stay **pre-release**: OSS public docs (this site), local-first developer tooling after a workspace build, hosted beta later. Default apply is an in-memory Pulumi stand-in. See [Getting started](/HoBo/guide/getting-started/) and [Architecture](/HoBo/architecture/) for what a visitor can run without a private repo checkout.
+Ship targets stay **pre-release**: OSS public docs (this site), local-first developer tooling after a workspace build, hosted beta later. Default apply is an in-memory Pulumi stand-in. See [Getting started](/HoBo/guide/getting-started/) and [System model](/HoBo/system/) for what a visitor can run without a private repo checkout.
 
 ## What runs today
 
