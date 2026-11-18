@@ -179,11 +179,8 @@ export function exposureWithinBudget(
 		decimal(switchingCost),
 	);
 	let exposure = fromQuote;
-	if (
-		estimatedCost !== undefined &&
-		Number.isFinite(estimatedCost) &&
-		estimatedCost >= 0
-	) {
+	if (estimatedCost !== undefined) {
+		if (!Number.isFinite(estimatedCost) || estimatedCost < 0) return false;
 		exposure = maxDecimal(exposure, decimal(estimatedCost));
 	}
 	const remaining = maxDecimal(

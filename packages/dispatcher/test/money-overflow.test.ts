@@ -1,6 +1,21 @@
 import { expect, it } from "vitest";
 import { createReservationLedger } from "../src/dispatcher.js";
-import { addAvailable, addUpper, availableCredits } from "../src/money.js";
+import {
+	addAvailable,
+	addUpper,
+	availableCredits,
+	exposureWithinBudget,
+} from "../src/money.js";
+
+it("rejects non-finite estimated exposure during budget admission", () => {
+	expect(
+		exposureWithinBudget(1, 0, 1, 0, Number.NaN, 10, 0, 0),
+	).toBe(false);
+	expect(
+		exposureWithinBudget(1, 0, 1, 0, Number.POSITIVE_INFINITY, 10, 0, 0),
+	).toBe(false);
+	expect(exposureWithinBudget(1, 0, 1, 0, -1, 10, 0, 0)).toBe(false);
+});
 
 it("keeps overflowing available amounts finite without understating liabilities", () => {
 	const largest = Number.MAX_VALUE;

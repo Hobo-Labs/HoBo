@@ -112,6 +112,26 @@ describe("parseCreditLedgerView", () => {
 		expect(parseCreditLedgerView({ ...ledgerView(), seq: 0 }).seq).toBe(0);
 	});
 
+	it("refuses a negative reservedCost while holds are outstanding", () => {
+		expect(() =>
+			parseCreditLedgerView({
+				...ledgerView([account({ reservedCost: -1, budgetCap: 10 })]),
+				reservations: [
+					{
+						reservationId: "hold",
+						providerId: "p1",
+						dimension: "runner.minutes",
+						units: 1,
+						reservedCost: 1,
+						status: "pending",
+						expectedSeq: 0,
+						committedSeq: 1,
+					},
+				],
+			}),
+		).toThrow(/reservedCost must be non-negative/u);
+	});
+
 	it("refuses a missing or non-array accounts field", () => {
 		expect(() =>
 			parseCreditLedgerView({ ...ledgerView(), accounts: undefined }),

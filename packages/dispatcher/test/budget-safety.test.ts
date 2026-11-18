@@ -94,6 +94,14 @@ describe("hard budget admission", () => {
 });
 
 describe("reservation financial and occupancy invariants", () => {
+	it("prices a reserve hold at the ledger list rate when the caller quotes lower", () => {
+		const ledger = createReservationLedger(
+			snapshot([account({ listUnitCost: 5, budgetCap: 100 })]),
+		);
+		const result = reserve(ledger, "floor", { unitCost: 0 });
+		expect(result).toMatchObject({ ok: true, status: "reserved" });
+		expect(result.reservation?.reservedCost).toBe(5);
+	});
 	it("keeps the reservation and its holds unchanged when confirmed spend overflows", () => {
 		for (const budgetCap of [Number.MAX_VALUE, undefined]) {
 			for (const running of [false, true]) {

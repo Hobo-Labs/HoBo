@@ -559,16 +559,12 @@ export function createReservationLedger(initialLedgerView) {
 					!exposureWithinBudget(
 						units,
 						priced.freeUnits,
-						unitCost,
+						priced.listUnitCost,
 						switchingCost,
 						estimatedCost,
 						account.budgetCap,
 						account.spendToDate ?? 0,
 						account.reservedCost ?? 0,
-					) ||
-					moneySumExceeds(
-						[account.spendToDate ?? 0, account.reservedCost ?? 0],
-						account.budgetCap,
 					))
 			)
 				return {
@@ -1305,7 +1301,13 @@ function rankCreditCandidate({
 		candidate.dimension,
 	);
 	const credit = creditFactsFor(account, candidate, ledgerView.asOf);
-	const listUnitCost = unitCostOverride ?? credit.listUnitCost;
+	const invalidUnitCostOverride =
+		unitCostOverride !== undefined &&
+		!optionalNonNegativeNumber(unitCostOverride);
+	const listUnitCost =
+		unitCostOverride === undefined
+			? credit.listUnitCost
+			: Math.max(unitCostOverride, credit.listUnitCost);
 	const freeUnits = credit.valid
 		? Math.min(
 				units,
@@ -1338,8 +1340,9 @@ function rankCreditCandidate({
 				)
 			: totalCost > credit.budgetHeadroom;
 	const hardBudgetInvalid =
-		account?.budgetCap !== undefined &&
-		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));
+		invalidUnitCostOverride ||
+		(account?.budgetCap !== undefined &&
+			(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0)));
 	const capacityExceeded =
 		account !== null &&
 		((account.rateHeadroom !== undefined &&
@@ -1838,17 +1841,21 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			throw new TypeError(
 				"hard budget requires priced outstanding reservations",
 			);
-		if (
-			holds.length > 0 &&
-			optionalNonNegativeNumber(account.reservedCost ?? 0) &&
-			moneySumExceeds(
-				holds.map((hold) => hold.reservedCost ?? 0),
-				account.reservedCost ?? 0,
+		if (holds.length > 0) {
+			if (!optionalNonNegativeNumber(account.reservedCost ?? 0))
+				throw new TypeError(
+					"account reservedCost must be non-negative when holds are outstanding",
+				);
+			if (
+				moneySumExceeds(
+					holds.map((hold) => hold.reservedCost ?? 0),
+					account.reservedCost ?? 0,
+				)
 			)
-		)
-			throw new TypeError(
-				"account reservedCost omits outstanding reservation exposure",
-			);
+				throw new TypeError(
+					"account reservedCost omits outstanding reservation exposure",
+				);
+		}
 	}
 	return clone(ledgerView);
 }
