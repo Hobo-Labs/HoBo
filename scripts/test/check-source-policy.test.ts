@@ -78,6 +78,69 @@ function guard(repo: string, ...args: string[]) {
 }
 
 describe("source policy", () => {
+	it("checks Windows batch comments while preserving quoted and escaped text", () => {
+		const text = [
+			"@echo off",
+			'set "MESSAGE=rem is data & :: is data"',
+			"echo ^& rem is an argument",
+			"echo value ^",
+			"rem remains an argument",
+			"echo value & @rem explanatory comment",
+			":: another comment",
+			"REM SPDX-License-Identifier: MIT",
+			"rem unfinished ^",
+			"TODO implement this",
+		].join("\n");
+		const issues = commentViolations(
+			"fixture.cmd",
+			text,
+			new Set(Array.from({ length: 10 }, (_, index) => index + 1)),
+		);
+		assert.deepEqual(
+			issues.map((issue) => issue.line),
+			[6, 7, 9],
+		);
+		assert.match(issues[2]?.message ?? "", /finish deferred work/u);
+		assert.equal(
+			commentViolations("fixture.cmd", "rem old ^\nnew text\n", new Set([2]))
+				.length,
+			1,
+		);
+		assert.equal(
+			commentViolations("fixture.bat", "@rem explanation\n", new Set([1]))
+				.length,
+			1,
+		);
+		for (const line of [
+			"if defined NAME rem explanation",
+			'if "x"=="y" @rem explanation',
+			"if not defined NAME (echo ok) else rem explanation",
+			"for %%x in (rem value) do rem explanation",
+		])
+			assert.equal(
+				commentViolations("fixture.cmd", line, new Set([1])).length,
+				1,
+				line,
+			);
+		for (const line of [
+			"if defined REM echo rem is data",
+			"for %%x in (rem value) do echo %%x",
+		])
+			assert.equal(
+				commentViolations("fixture.cmd", line, new Set([1])).length,
+				0,
+				line,
+			);
+		const repo = fixture();
+		write(repo, "fixture.cmd", "echo hello & rem explanation\n");
+		write(repo, "guide.md", "```batch\n:: explanation\n```\n");
+		git(repo, "add", "fixture.cmd", "guide.md");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /fixture\.cmd:1:.*self-documenting/u);
+		assert.match(result.stderr, /guide\.md:2:.*self-documenting/u);
+	});
+
 	it("applies Markdown source and planning rules to Cursor rule files", () => {
 		const repo = fixture();
 		const file = ".cursor/rules/example.mdc";
