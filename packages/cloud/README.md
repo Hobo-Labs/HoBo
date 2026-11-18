@@ -34,6 +34,21 @@ That guard also follows resources removed from a later deployment plan.
 Nonterminal resource and deployment events cannot clear an unresolved outcome
 from the actor, deployment view, or topology view during replay.
 
+`resolveResourceReconciliation` records an operator's verified outcome against
+the exact uncertain event. The host authorizes the operator and supplies separate trusted verifiers for
+provider outcome and financial disposition. One verified recovery fact records
+the terminal apply, destroy, or no-effect outcome; unrelated delayed resource
+facts cannot clear an uncertainty. A no-effect resolution requires the
+reservation to be settled or released, or independently verified as absent.
+It restores the last verified resource state and its outputs and spec; if no
+prior state is recorded, the host must independently verify an absence claim.
+Recovery itself never releases or settles funds. The event includes the
+verification references, reservation, and a digest of the complete claim;
+matching retries are idempotent and conflicting evidence is rejected.
+`resource.Reconciled` is a host-owned fact: the event store must restrict its
+writers to trusted control-plane code. An unauthenticated generic event writer
+must not be allowed to append recovery facts directly.
+
 ## Budget-aware hosting placement
 
 `plan(bindle, { deploymentId, objective: "maximize-credits", hostingBudget }, registry)`
