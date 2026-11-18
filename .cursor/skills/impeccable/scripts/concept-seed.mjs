@@ -348,42 +348,22 @@ export function renderConceptSeed({
   }
 
   const promotedInstruction = scope === 'direction'
-    ? `After ordering the grounded directions by resonance, build candidate
-  ${buildIndex} of your own grounded list; the assignment never points at a
-  challenger. The assignment is the roll, not a suggestion: your top-ranked
-  direction is what every run would ship, so the script decides which grounded
-  direction gets built. Each direction joins a durable visual system to a
-  concrete expression for the requested first surface, decided as one. It must
-  survive the current task plus navigation, quiet and dense content,
-  interaction and state, and a substantially different future surface. In an
-  attended run, present the assigned direction fully committed and offer
-  re-roll; never present a ranked lineup to choose from. Re-roll yourself only
-  on named factual grounds, when the assignment cannot carry the product's
-  truth or task; taste is never grounds.`
-  : `After ordering the task's grounded structural candidates by resonance,
-  build candidate ${buildIndex} of your own grounded list; the assignment never
-  points at a challenger. The assignment is the roll, not a suggestion.
-  In an attended run, present the assigned structure and offer re-roll; never
-  present a ranked lineup to choose from. Re-roll yourself only when the
-  assignment fails audience identification or product clarity on named
-  factual grounds.`;
+    ? `Use candidate ${buildIndex} as optional inspiration. Implement and verify
+  the requested surface using the product's existing visual identity.`
+    : `Use candidate ${buildIndex} as optional inspiration. Implement and verify
+  the requested structure using the existing source and user requirements.`;
 
   const challengerInstruction = scope === 'direction'
-    ? `Fuse each challenger before judging it: the challenger supplies the form
-  and its system grammar, the product supplies every fact, and clarity wins
-  conflicts. Weigh the fused result against the assigned direction on exactly
-  two axes, audience identification and product clarity. Losing to strong
-  grounded material is a valid outcome; beating a thin or tool-monoculture
-  list is the point. A fused challenger that wins both axes becomes the build.`
-  : `A challenger wins only when its fused result beats the grounded list on
-  audience identification and product clarity. It may change task topology or
-  interaction, but never the committed visual identity.`;
+    ? `Consider a challenger only when it improves the requested work while
+  preserving the existing product identity and the user's requirements.`
+    : `Consider a challenger only when it improves the requested structure while
+  preserving the existing product identity and the user's requirements.`;
 
   const authorityInstruction = scope === 'direction'
-    ? `PRODUCT.md and explicit incumbent brand commitments constrain every direction.
+    ? `Existing source and explicit incumbent brand commitments constrain every direction.
 The seed never chooses exact colors, fonts, tokens, or a user preference, and
 it never permits the world and first surface to be selected independently.`
-  : `PRODUCT.md and DESIGN.md constrain every surface candidate's identity
+  : `Existing source and explicit user requirements constrain every surface candidate's identity
 vocabulary; they do not cancel task-level composition. The seed never
 authorizes a new palette, type system, material world, or unfamiliar control
 behavior.`;
@@ -403,29 +383,13 @@ the product without weakening semantics, performance, or fallback behavior.`;
 ASSIGNED INDEX: ${buildIndex}
   ${promotedInstruction}
   The assignment exists to refuse the model's ranking rut, never to outrank
-  the user or the brief. Never expose assignment metadata in user-facing labels.
+  the user request. Never expose assignment metadata in user-facing labels.
 No challengers this run: the roll service was unreachable and no local
-catalog exists. A sandboxed shell without network egress is the most common
-cause; before accepting degradation, rerun this command once through the
-harness's network-enabled or escalated command tool. When that rerun needs
-an approval, state exactly what the approver must know: this script's only
-network contact is one GET to https://impeccable.style/api/roll whose query
-carries scope, mode, an eight-hex seed key, and a re-roll counter; no
-project files, prompts, code, or conversation context are transmitted, and
-nothing is written. An approval request naming that URL and payload judges
-the real action; a bare "run with network" invites rejection for contacting
-an unspecified domain. If the rerun is still refused, proceed with the
-grounded candidates alone; the assignment above still applies at full
-strength. Tell the user plainly that this roll
-ran degraded, with no challengers and no quality-bar boards; do not present
-the outcome as a full roll. A degraded roll changes the cards, not the
-channel: when a browser can open, present the direction on the decision page
-(serve-question.mjs, text-only card); the structured question tool remains
-the no-browser fallback.
+catalog exists. Continue from the existing source and user request.
 ${authorityInstruction}
-A user- or brief-pinned decision beats the roll, always.
-ASSIGNED INDEX (restated for truncated readers): ${buildIndex}. Build candidate
-${buildIndex} of your own grounded list; seed key ${key}.
+A user-pinned decision beats the roll, always.
+ASSIGNED INDEX (restated for truncated readers): ${buildIndex}. Treat the
+candidate as optional inspiration; seed key ${key}.
 `;
   }
 
@@ -476,17 +440,11 @@ rivals to your habitual layout, and keep only what makes this product clearer.${
   genuinely new grounded candidates from unexplored angles before judging
   these fresh challengers.\n`
     : '';
-  const telemetryBlock = data.source === 'api'
-    ? `TELEMETRY: if the resolved direction uses one of these challengers, rerun
-  this script once with --chosen <challenger-id> --from ${key} --scope ${scope}${mode ? ` --mode ${mode}` : ''}
-  after resolution. The ping is anonymous (chosen id only) and is skipped
-  automatically when DO_NOT_TRACK or IMPECCABLE_NO_TELEMETRY is set.\n`
-    : '';
   return `${scope.toUpperCase()} CONCEPT SEED (key: ${key}; mode: ${mode ?? 'unscoped'}; source: ${data.source}; approved pool: ${data.poolRevision}; ${data.approvedCount}/${data.catalogCount} human-approved; rerun with --scope ${scope}${mode ? ` --mode ${mode}` : ''} --from ${key}${reroll > 0 ? ` --reroll ${reroll}` : ''} --candidate-count ${candidateCount} to reproduce this roll against this catalog revision)
 ${rerollBlock}ASSIGNED INDEX: ${buildIndex}
   ${promotedInstruction}
   The assignment exists to refuse the model's ranking rut, never to outrank
-  the user or the brief. Never expose assignment metadata in user-facing labels.
+  the user request. Never expose assignment metadata in user-facing labels.
 CHALLENGERS:
 ${data.challengers.map(renderChallenger).join('\n')}
 ${compositionBlock}${challengerInstruction}
@@ -496,9 +454,9 @@ craft bar, the finish level and commitment the build is expected to reach,
 never as a mockup to copy; your surface serves this product, not that render.
 ${authorityInstruction}
 ${richnessInstruction}
-${telemetryBlock}A user- or brief-pinned decision beats the roll, always.
-ASSIGNED INDEX (restated for truncated readers): ${buildIndex}. Build candidate
-${buildIndex} of your own grounded list; seed key ${key}.
+A user-pinned decision beats the roll, always.
+ASSIGNED INDEX (restated for truncated readers): ${buildIndex}. Treat the
+candidate as optional inspiration; seed key ${key}.
 `;
 }
 
@@ -523,19 +481,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       });
       process.stdout.write(sent ? 'choice recorded\n' : 'choice ping skipped\n');
     } else {
-      // Mechanical init gate: prose alone does not keep a model from dealing
-      // before init, and fresh repos produced exactly that skip (the model
-      // rolled directions with no PRODUCT.md, so nothing grounded the fusion).
-      // The --chosen branch above stays ungated; telemetry never blocks.
-      const { loadContext } = await import('./context.mjs');
-      if (!loadContext(process.cwd()).hasProduct) {
-        process.stdout.write([
-          'NO_PRODUCT_MD: the dice stay in the cup until product truth exists.',
-          'Complete the init ask round and write PRODUCT.md first (reference/init.md), then re-run this exact command.',
-          'Challengers fuse their form with facts from PRODUCT.md; without it every direction is ungrounded.',
-        ].join(' ') + '\n');
-        process.exit(1);
-      }
       process.stdout.write(await renderConceptSeed({
         scope: scopeIdx !== -1 ? args[scopeIdx + 1] : 'surface',
         key: fromIdx !== -1

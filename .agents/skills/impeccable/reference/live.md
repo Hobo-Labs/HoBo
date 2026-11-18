@@ -57,7 +57,7 @@ LOOP:
 node .agents/skills/impeccable/scripts/live.mjs
 ```
 
-Output JSON: `{ ok, serverPort, serverToken, pageFiles, roots, hasProduct, product, productPath, hasDesign, design, designPath, hasSurfaceBrief, surfaceBrief }`. `roots` is the resolved root manifest; `projectRoot` mirrors `roots.appRoot`. Use CSS variables, computed styles, and sibling components as evidence for the current implementation. Do not create surface briefs or design documents. Identity preservation is the default; departure requires the user's explicit redesign intent.
+Output JSON: `{ ok, serverPort, serverToken, pageFiles, roots, hasProduct, product, productPath }`. `roots` is the resolved root manifest; `projectRoot` mirrors `roots.appRoot`. Use CSS variables, computed styles, and sibling components as evidence for the current implementation. Do not create surface briefs or design documents. Identity preservation is the default; departure requires the user's explicit redesign intent.
 
 `serverPort`/`serverToken` belong to the small helper HTTP server (`/live.js`, SSE, `/poll`), not your dev server; the page URL is whatever origin serves a `pageFiles` entry.
 
