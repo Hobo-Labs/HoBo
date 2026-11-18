@@ -246,11 +246,15 @@ export function createYardGenerationSaga(options: {
 }): YardGenerationSaga {
 	const attempts = new Map<
 		string,
-		{ plan: YardGenerationPlan; result: YardGenerationResult }
+		{ planDigest: ContentHash; result: YardGenerationResult }
 	>();
+	const inFlight = new Map<string, Promise<YardGenerationResult>>();
 
 	return {
-		async run(plan) {
+		async run(inputPlan) {
+			// Capture the work before any asynchronous provider operation. A caller
+			// retaining its original object cannot change what the connector sees.
+			const plan = structuredClone(inputPlan);
 			if (!hasValidYardResidency(plan.requestedLayout)) {
 				return fail(
 					plan,
@@ -265,22 +269,24 @@ export function createYardGenerationSaga(options: {
 					"requested Camp layouts cannot yet be verified",
 				);
 			}
-			const existing = attempts.get(plan.idempotencyKey);
-			if (existing) {
-				if (
-					existing.result.status === "ready" ||
-					existing.result.status === "failed"
-				) {
-					return existing.result;
-				}
-				// Resume inspect path for in-flight.
-				const connector = options.connectors.get(plan.generatorConnectorId);
-				if (!connector) {
-					return fail(plan, "connector-missing", "generator connector missing");
-				}
-				const inspected = await connector.inspect(plan.attemptId);
-				attempts.set(plan.idempotencyKey, { plan, result: inspected });
-				return inspected;
+			const planDigest = contentHashOf(plan);
+			const key = plan.idempotencyKey;
+			const existing = attempts.get(key);
+			if (existing && existing.planDigest !== planDigest) {
+				return fail(
+					plan,
+					"generation-plan-conflict",
+					"idempotency key belongs to a different generation plan",
+				);
+			}
+			const pending = inFlight.get(key);
+			if (pending) return await pending;
+			if (
+				existing &&
+				(existing.result.status === "ready" ||
+					existing.result.status === "failed")
+			) {
+				return existing.result;
 			}
 
 			const connector = options.connectors.get(plan.generatorConnectorId);
@@ -288,36 +294,70 @@ export function createYardGenerationSaga(options: {
 				const result = fail(
 					plan,
 					"connector-missing",
-					"generator connector not registered",
+					existing
+						? "generator connector missing"
+						: "generator connector not registered",
 				);
-				attempts.set(plan.idempotencyKey, { plan, result });
+				if (!existing) attempts.set(key, { planDigest, result });
 				return result;
 			}
 
-			const started: YardGenerationResult = Object.freeze({
-				attemptId: plan.attemptId,
-				status: "started",
-				externalRefs: Object.freeze({}),
-				outputHash: contentHashOf({
+			if (!existing) {
+				const started: YardGenerationResult = Object.freeze({
 					attemptId: plan.attemptId,
 					status: "started",
-				}),
-			});
-			attempts.set(plan.idempotencyKey, { plan, result: started });
+					externalRefs: Object.freeze({}),
+					outputHash: contentHashOf({
+						attemptId: plan.attemptId,
+						status: "started",
+					}),
+				});
+				attempts.set(key, { planDigest, result: started });
+			}
 
-			const result = await connector.provision(plan);
-			// Never treat provisioned as ready without registration path.
-			const normalized =
-				result.status === "provisioned"
-					? Object.freeze({ ...result, status: "registered" as const })
-					: result;
-			attempts.set(plan.idempotencyKey, { plan, result: normalized });
-			return normalized;
+			const provision = connector.provision;
+			const inspect = connector.inspect;
+
+			// Schedule after publishing the in-flight promise, including for a
+			// connector that synchronously reenters the saga. Failed calls retain
+			// the started record so a later retry inspects rather than provisions.
+			const operation = Promise.resolve().then(async () => {
+				const result = existing
+					? await inspect.call(connector, plan.attemptId)
+					: await provision.call(connector, plan);
+				const normalized = snapshotGenerationResult(result);
+				attempts.set(key, { planDigest, result: normalized });
+				return normalized;
+			});
+			inFlight.set(key, operation);
+			try {
+				return await operation;
+			} finally {
+				if (inFlight.get(key) === operation) inFlight.delete(key);
+			}
 		},
 		inspect(idempotencyKey) {
 			return attempts.get(idempotencyKey)?.result;
 		},
 	};
+}
+
+function snapshotGenerationResult(
+	value: YardGenerationResult,
+): YardGenerationResult {
+	const result = structuredClone(value);
+	// A provisioned Yard is not usable until its registration path completes.
+	const snapshot = {
+		...result,
+		status: result.status === "provisioned" ? "registered" : result.status,
+		externalRefs: Object.freeze(result.externalRefs),
+	};
+	if (result.failure)
+		return Object.freeze({
+			...snapshot,
+			failure: Object.freeze(result.failure),
+		});
+	return Object.freeze(snapshot);
 }
 
 function fail(
