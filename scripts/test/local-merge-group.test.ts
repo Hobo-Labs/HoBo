@@ -1,31 +1,46 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "node:test";
 import {
-	gitEnvironment,
 	resolveMergeGroupTarget,
 	runAttestedJobs,
 } from "../ci/local-attest.mts";
 import type { PlannedJob } from "../ci/attested-jobs.mts";
 
 it("runs and signs the actual merge-group commit against its live base", async () => {
-	const root = mkdtempSync(join(tmpdir(), "hobo-merge-group-run-"));
+	const scratch = mkdtempSync(join(tmpdir(), "hobo-merge-group-run-"));
+	const root = join(scratch, "repo");
+	mkdirSync(root);
 	const inherited = {
+		GIT_CONFIG: process.env.GIT_CONFIG,
 		GIT_DIR: process.env.GIT_DIR,
 		GIT_INDEX_FILE: process.env.GIT_INDEX_FILE,
 		GIT_WORK_TREE: process.env.GIT_WORK_TREE,
 	};
-	process.env.GIT_DIR = join(root, "unrelated.git");
-	process.env.GIT_INDEX_FILE = join(root, "unrelated-index");
-	process.env.GIT_WORK_TREE = join(root, "unrelated-worktree");
-	const env = gitEnvironment({
+	const unrelatedConfig = join(scratch, "unrelated-config");
+	const unrelatedContent = "[fixture]\n\tmarker = unchanged\n";
+	writeFileSync(unrelatedConfig, unrelatedContent);
+	process.env.GIT_CONFIG = unrelatedConfig;
+	process.env.GIT_DIR = join(scratch, "unrelated.git");
+	process.env.GIT_INDEX_FILE = join(scratch, "unrelated-index");
+	process.env.GIT_WORK_TREE = join(scratch, "unrelated-worktree");
+	const env = {
+		...Object.fromEntries(
+			Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+		),
 		GIT_CONFIG_GLOBAL: "/dev/null",
 		GIT_CONFIG_NOSYSTEM: "1",
-	});
+	};
 	const git = (...args: string[]) =>
 		execFileSync("git", args, { cwd: root, env, encoding: "utf8" }).trim();
 	try {
@@ -84,11 +99,12 @@ it("runs and signs the actual merge-group commit against its live base", async (
 			() => resolveMergeGroupTarget({ cwd: root, baseRef: "origin/main" }),
 			/current base as its only parent/u,
 		);
+		assert.equal(readFileSync(unrelatedConfig, "utf8"), unrelatedContent);
 	} finally {
 		for (const [name, value] of Object.entries(inherited)) {
 			if (value === undefined) delete process.env[name];
 			else process.env[name] = value;
 		}
-		rmSync(root, { recursive: true, force: true });
+		rmSync(scratch, { recursive: true, force: true });
 	}
 });
