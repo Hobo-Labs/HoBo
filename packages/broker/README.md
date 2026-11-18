@@ -424,6 +424,30 @@ enforced. Keep generation disabled unless the host enforces those requirements
 separately. The direct planner relies on its caller to establish that no matching
 Yard exists, and the standalone generation saga does not receive policy evidence.
 
+Within one saga instance, identical retries share a pending provision or
+inspection; a different plan using the same idempotency key is refused. The
+saga snapshots the submitted plan and returned result. Its lease is in memory:
+it does not coordinate different processes or survive a restart. A retry with
+a different attempt ID is a different plan and is refused by the existing lease.
+
+The bounded retry projection hides 32 same-state steps and models one saga
+instance and one idempotency key.
+
+```mermaid
+stateDiagram-v2
+  s0: Generation not started
+  s1: Provider call in progress
+  s2: Generation result recorded
+  s3: Provider outcome uncertain
+  s4: Checking the existing attempt
+  [*] --> s0
+  s0 --> s1: start provider work
+  s1 --> s2: record the provider result
+  s1 --> s3: provider reply is lost
+  s3 --> s4: inspect the existing attempt
+  s4 --> s2: record the inspected result
+```
+
 The bounded generation policy projection hides 12 same-state steps and assumes
 the separate quote, budget and connector checks succeed.
 
