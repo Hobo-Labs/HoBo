@@ -82,8 +82,11 @@ The host must independently verify the scope and liability of its estimate.
 Destroy has its own price scenario; an apply quote is not assumed to cover it.
 To use an unpriced target, omit the pricing models and configure the broker's
 explicit unpriced policy and exposure authority. Admission otherwise refuses
-the operation. A quoted assessment reports budget as not evaluated; financial
-admission checks the budget and creates the appropriate hold.
+the operation. An authorized unpriced admission bypasses budget evaluation and
+holds unbounded exposure: on that ledger, bounded admissions are refused until
+the exposure is reconciled, and unpriced admission is refused while a bounded
+reservation is active. A quoted assessment reports budget as not evaluated;
+financial admission checks the budget and creates the appropriate hold.
 
 `mapBindleToAlchemy` accepts provider-owned primitive mappers and assesses the
 Bindle's requirements, operations, annotations, dependencies and entrypoints.
