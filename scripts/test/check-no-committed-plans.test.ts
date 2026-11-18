@@ -26,6 +26,9 @@ describe("plans:guard", () => {
 		expect(planReason("docs/anything/x.md", () => doc(type))).toContain(
 			type.toLowerCase(),
 		);
+		expect(planReason(".cursor/rules/task.mdc", () => doc(type))).toContain(
+			type.toLowerCase(),
+		);
 	});
 
 	it.each([
