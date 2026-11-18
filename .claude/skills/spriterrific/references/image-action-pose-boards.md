@@ -65,7 +65,7 @@ run    8-12 frames, preferably video-derived
 11. If pixel snap is enabled, create one compact comparison sheet: recovered/source -> raw pixel snap output -> chroma-keyed output when applicable -> final 256x256 runtime frame.
 12. Normalize each recovered or snapped pose to 256x256 runtime cells.
 13. Pack runtime frames into 5-column engine sheet.
-14. Write review/index.md with source, before/after comparisons, GIF, and final sheet.
+14. Present the source, before/after comparisons, GIF, and final sheet as review artifacts.
 ```
 
 Hard rule:
