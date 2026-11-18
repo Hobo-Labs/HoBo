@@ -41,6 +41,9 @@ providers additionally never receive PII-classified trajectory content).
   the same seed over the same request replays the identical proposal
   trajectory, trace spans, and winner. Best score never regresses: a
   proposal only replaces the incumbent on a strict improvement.
+  Direct `createSeededPrng` calls require an unsigned 32-bit integer seed;
+  `nextInt` requires a positive safe-integer bound and leaves the stream
+  unchanged when it rejects a bound.
 - **Trace capture** — every step records one span (OpenInference span-kind
   label + attributes map, `sha256:` input digest, score, keep/reject
   decision) into the in-memory sink; spans are clockless so seeded runs
