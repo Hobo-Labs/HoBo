@@ -9,6 +9,8 @@ The Rivet integration is tested against `@alchemy.run/rivet` beta.87 and its
 RivetKit 3 runtime dependency.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
+Run `pnpm --filter @hobo/iac-alchemy lint` to check the adapter's formatting and
+imports before committing changes.
 
 `mapBindleToAlchemy` accepts a HoBo bindle structurally and a provider-owned
 mapping for each declared primitive. Mappings declare their Alchemy resource
@@ -71,7 +73,10 @@ present, is part of preview and execution identity.
 Alchemy beta.87 encodes `/` as `__` in local and bucket state keys, so the
 adapter accepts only portable alphanumeric, dot, hyphen and underscore FQN
 segments whose complete FQN round-trips through that encoding. Stack and stage
-must be single portable path segments. Case-insensitive resource-key collisions
+must be single portable path segments, and the program must name that physical
+stack exactly. Generated logical names containing `/` are refused before
+admission or provider effects until a host-authenticated mapping is available.
+Case-insensitive resource-key collisions
 in one target are rejected. State reads, writes and deletes are checked in each
 plan, destroy and drift scope; a stored row whose own FQN differs from its key,
 an unsafe rename, or an unavailable/inconsistent scan stops execution. FQNs and scope segments
@@ -165,6 +170,14 @@ acknowledgements and failed applies retain exposure and report an uncertain
 outcome. Replay cannot authorize another provider call. Destroy follows the
 same preview and admission sequence. Refresh reports an error if Alchemy skips a
 resource instead of calling the target in sync.
+
+One adapter instance refuses concurrent execution of the same program. Across
+instances or process restarts, the host must use the same stable request ID for
+the same logical attempt so the durable admission authority can recognize a
+replay. A malformed or unreadable admission receipt requires reconciliation:
+the authority may already have reserved funds even if the receipt is unusable.
+An instance also blocks subsequent attempts after any outcome requiring
+reconciliation; the host must resolve the previous attempt before replacing it.
 
 Plan fingerprints are bounded and include inspectable resource inputs,
 bindings, state and source identity. Plans with stack actions, partial
