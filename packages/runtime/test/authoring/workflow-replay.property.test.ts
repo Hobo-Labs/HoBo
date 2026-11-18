@@ -58,15 +58,17 @@ describe("durable workflow histories", () => {
 				const handle = await engine.start(wf, null);
 				const streamId = `run/${handle.runId}`;
 				const events = await engine.store.readStream(streamId);
-				const missing = events.filter(
-					(event) =>
-						!(
-							(event.type === "run.SleepScheduled" ||
-								event.type === "run.SleepCompleted") &&
-							isJsonObject(event.data) &&
-							event.data.index === 1
-						),
-				);
+				const missing = events
+					.filter(
+						(event) =>
+							!(
+								(event.type === "run.SleepScheduled" ||
+									event.type === "run.SleepCompleted") &&
+								isJsonObject(event.data) &&
+								event.data.index === 1
+							),
+					)
+					.map((event, index) => ({ ...event, seq: index + 1 }));
 				const incompleteStore = {
 					...engine.store,
 					readStream: async () => missing,

@@ -53,7 +53,8 @@ describe("workflow sleep completion facts", () => {
 				if (event.type !== "run.Started" || !isJsonObject(event.data))
 					return event;
 				return { ...event, data: { ...event.data, commandTreeVersion: 2 } };
-			});
+			})
+			.map((event, index) => ({ ...event, seq: index + 1 }));
 		await expect(
 			replayRun(
 				{ ...engine.store, readStream: async () => missing },
