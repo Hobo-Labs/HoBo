@@ -46,6 +46,9 @@ static site is the **read store**, rebuildable from zero. Types follow
   while a late first open supplies the impact and any later state. Rebuild older
   projection snapshots from the event log to recover data earlier versions did
   not backfill.
+- Older measurements contribute to history but do not replace the latest
+  component label or status. Malformed optional component labels cause the
+  measurement to be ignored.
 - **Render** (`src/render.ts`): pure HTML string renderer, HoBo Rubberhose
   chrome (see `DESIGN.md`), strict inline CSP, `escapeHtml` on every value.
 - **Statuspage-v2 JSON** (`src/statuspage-json.ts`): emits the de-facto

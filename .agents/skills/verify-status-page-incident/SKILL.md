@@ -9,13 +9,15 @@ description: Verify incident lifecycle and first-open backfill in the status-pag
 
 **Why:** A late open must not leave a critical incident with the placeholder's minor impact, hide a later lifecycle state, or overwrite an outcome reported by earlier events.
 
-**Review baseline:** `68d4d6dbff597b53447da4a1988717e67b496908`.
+**Review baseline:** `95a7be1f89efb73e0062ab7df71d80dc8283d029`.
 
 ## Covered code and checks
 
 - `packages/status-page/src/projection.ts` tracks placeholders awaiting their first open, backfills impact, merges that open's lifecycle, preserves resolution time and consumes the marker. `src/types.ts` defines incident lifecycle ordering; `src/model.ts` overlays the resulting impact on component status.
 - `packages/status-page/test/incident-backfill.test.ts` checks update, public-update and resolved placeholders; all first-open states; resolution timestamps; duplicate opens; separate IDs; and 768 combinations of three updates, three impacts and four first-open positions.
 - The related [maintenance skill](../verify-status-page-maintenance/SKILL.md) covers maintenance outcomes and pre-schedule updates. The [freshness skill](../verify-status-page-freshness/SKILL.md) covers signal age and budget validation.
+
+The related [signal-order skill](../verify-status-page-signal-order/SKILL.md) checks SLO measurement ordering and label validation.
 
 From the repository root with dependencies installed, run:
 
