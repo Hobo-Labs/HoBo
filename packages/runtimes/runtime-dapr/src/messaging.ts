@@ -2,6 +2,7 @@ import {
 	type ConsumedMessage,
 	createInMemoryMessaging,
 	createUsageEvent,
+	MESSAGING_EVENTS,
 	type Messaging,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
@@ -141,7 +142,7 @@ export function createDaprMessaging(
 
 		async ensureTopic(spec) {
 			const name = tenantScopedTopicName(spec.tenantId, spec.name);
-			emit({ type: "messaging.topic.created", topic: name });
+			emit({ type: MESSAGING_EVENTS.TopicCreated, topic: name });
 			return Object.freeze({ ...spec, name });
 		},
 
@@ -158,7 +159,7 @@ export function createDaprMessaging(
 				maxDeliveryAttempts,
 			});
 			emit({
-				type: "messaging.subscription.created",
+				type: MESSAGING_EVENTS.SubscriptionCreated,
 				topic,
 				consumerGroup: group,
 			});
@@ -185,7 +186,7 @@ export function createDaprMessaging(
 			});
 			const messageId = parseMessagingMessageId(id);
 			emit({
-				type: "messaging.published",
+				type: MESSAGING_EVENTS.MessagePublished,
 				topic: physical,
 				messageId,
 			});
@@ -236,7 +237,7 @@ export function createDaprMessaging(
 			});
 			for (const m of batch) {
 				emit({
-					type: "messaging.consumed",
+					type: MESSAGING_EVENTS.MessageConsumed,
 					topic: physical,
 					messageId: m.messageId,
 					consumerGroup: group,
@@ -287,14 +288,14 @@ export function createDaprMessaging(
 						);
 						deadLettered += 1;
 						emit({
-							type: "messaging.dead_lettered",
+							type: MESSAGING_EVENTS.MessageDeadLettered,
 							topic: message.topic,
 							messageId: message.messageId,
 							consumerGroup: group,
 							reason: "max_delivery_attempts",
 						});
 						emit({
-							type: "messaging.delivery.permanent_failure",
+							type: MESSAGING_EVENTS.DeliveryPermanentlyFailed,
 							topic: message.topic,
 							messageId: message.messageId,
 							consumerGroup: group,
@@ -359,7 +360,7 @@ async function doAck(
 	await client.ack(String(messageId), meta.group);
 	pending.delete(key);
 	emit({
-		type: "messaging.acked",
+		type: MESSAGING_EVENTS.MessageAcknowledged,
 		topic: parseTopicName(meta.topic),
 		messageId,
 	});
@@ -380,7 +381,7 @@ async function doNack(
 	await client.nack(String(messageId), meta.group);
 	pending.delete(key);
 	emit({
-		type: "messaging.nacked",
+		type: MESSAGING_EVENTS.MessageNacked,
 		topic: parseTopicName(meta.topic),
 		messageId,
 		reason: reason ?? "nack",

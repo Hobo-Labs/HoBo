@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
 	assertDeliverySupported,
 	createInMemoryMessaging,
+	LEGACY_MESSAGING_EVENT_UPCASTS,
+	MESSAGING_EVENTS,
 	MESSAGING_WIT_INTERFACE,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
@@ -10,6 +12,7 @@ import {
 	parseMessagingSpec,
 	parseTopicSpec,
 	tenantScopedTopicName,
+	upcastMessagingEventType,
 } from "../src/ports/messaging.js";
 import { first } from "../src/total-access.js";
 
@@ -87,9 +90,9 @@ describe("@hobo/core messaging port", () => {
 		expect(again).toHaveLength(0);
 
 		const types = bus.events().map((e) => e.type);
-		expect(types).toContain("messaging.topic.created");
-		expect(types).toContain("messaging.published");
-		expect(types).toContain("messaging.acked");
+		expect(types).toContain(MESSAGING_EVENTS.TopicCreated);
+		expect(types).toContain(MESSAGING_EVENTS.MessagePublished);
+		expect(types).toContain(MESSAGING_EVENTS.MessageAcknowledged);
 	});
 
 	it("dead-letters after max attempts", async () => {
@@ -114,8 +117,30 @@ describe("@hobo/core messaging port", () => {
 		expect(
 			bus
 				.events()
-				.some((e) => e.type === "messaging.delivery.permanent_failure"),
+				.some((e) => e.type === MESSAGING_EVENTS.DeliveryPermanentlyFailed),
 		).toBe(true);
+	});
+
+	it("upcasts every shipped legacy event type", () => {
+		expect(
+			Object.entries(LEGACY_MESSAGING_EVENT_UPCASTS).map(
+				([legacy, current]) => [
+					legacy,
+					upcastMessagingEventType(legacy),
+					current,
+				],
+			),
+		).toEqual(
+			Object.entries(LEGACY_MESSAGING_EVENT_UPCASTS).map(
+				([legacy, current]) => [legacy, current, current],
+			),
+		);
+		for (const current of Object.values(MESSAGING_EVENTS)) {
+			expect(upcastMessagingEventType(current)).toBe(current);
+		}
+		expect(() => upcastMessagingEventType("messaging.Unknown")).toThrow(
+			/type/u,
+		);
 	});
 
 	it("guards unsupported delivery guarantees", () => {
