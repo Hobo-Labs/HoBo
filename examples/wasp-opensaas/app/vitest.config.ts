@@ -6,5 +6,8 @@ export default defineConfig({
     environment: "jsdom",
     env: { NODE_ENV: "development" },
     include: ["test/**/*.test.{ts,tsx}"],
+    exclude: process.env.TEST_DATABASE_URL
+      ? []
+      : ["test/messages.test.ts"],
   },
 });
