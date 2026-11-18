@@ -458,6 +458,23 @@ git push
 pnpm ci:attest fleet --local-signoff --policy-current
 ```
 
+To verify a generated merge-queue commit, use a clean checkout and the live
+queue branch returned by GitHub. For example, with `queue_ref` set to a branch
+such as `gh-readonly-queue/main/pr-123-<base SHA>`:
+
+```bash
+git fetch origin "refs/heads/$queue_ref"
+git switch --detach FETCH_HEAD
+pnpm ci:attest fleet --local-signoff --policy-current --merge-group-ref="$queue_ref"
+```
+
+HoBo verifies the queue entry and its ref before and after the local run and
+around signoff. It accepts a group directly based on the current base and
+waits for a rebuilt group when another queued commit is ahead. A signoff on
+the PR head without this option remains a simulation of the merge-group event.
+These per-job statuses do not themselves replace the repository's required
+Actions checks.
+
 The command respects the committed pin and uses a usable routing slip with the
 same pickup and queue limits as runner routing. A fresh healthy fleet pickup
 takes precedence over an unpinned fallback slip. A slip naming the local runner
