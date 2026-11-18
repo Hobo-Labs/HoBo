@@ -49,6 +49,7 @@ export interface InProcessDeployment {
 
 type FetchLikeHandler = (request: Request) => Response | Promise<Response>;
 
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-returns -- SAFETY: this boundary probes the dynamically supplied Bindle entrypoint and checks each returned callable before invoking it. */
 function resolveFetchHandler(
 	bindle: Record<string, unknown>,
 	alias: string,
@@ -72,6 +73,7 @@ function resolveFetchHandler(
 		? (handler as FetchLikeHandler)
 		: undefined;
 }
+/* oxlint-enable anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-returns */
 
 async function readRequestBody(
 	request: IncomingMessage,
@@ -80,12 +82,14 @@ async function readRequestBody(
 	if (method === "GET" || method === "HEAD") return undefined;
 	const chunks: Buffer[] = [];
 	for await (const chunk of request) {
+		// SAFETY: node:http emits Buffer or encoded string request chunks.
 		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
 	}
 	if (chunks.length === 0) return undefined;
 	return new Blob([Buffer.concat(chunks)]);
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-conditional-empty-object-spread -- SAFETY: node:http supplies string or string-array header values; an absent body must stay omitted. */
 function toWebRequest(
 	incoming: IncomingMessage,
 	origin: string,
@@ -105,6 +109,7 @@ function toWebRequest(
 		...(body !== undefined ? { body } : {}),
 	});
 }
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-conditional-empty-object-spread */
 
 async function writeWebResponse(
 	response: Response,
@@ -126,6 +131,7 @@ async function listen(handler: FetchLikeHandler): Promise<{
 	const server = createServer((incoming, outgoing) => {
 		void (async () => {
 			try {
+				// SAFETY: this server listens on a TCP loopback port, not a Unix socket.
 				const address = server.address() as AddressInfo | null;
 				const origin = `http://127.0.0.1:${address?.port ?? 0}`;
 				const body = await readRequestBody(incoming);
@@ -145,6 +151,7 @@ async function listen(handler: FetchLikeHandler): Promise<{
 			resolve();
 		});
 	});
+	// SAFETY: this server listens on a TCP loopback port, not a Unix socket.
 	const address = server.address() as AddressInfo | null;
 	if (address === null) {
 		server.close();
@@ -157,10 +164,63 @@ async function listen(handler: FetchLikeHandler): Promise<{
 	return { server, endpoint: `http://127.0.0.1:${address.port}` };
 }
 
+async function closeServers(servers: readonly Server[]): Promise<void> {
+	const failures: unknown[] = [];
+	for (const server of servers) {
+		if (!server.listening) continue;
+		try {
+			await new Promise<void>((resolve, reject) => {
+				let closeConnectionsFailure: { cause: unknown } | undefined;
+				server.close((error) => {
+					if (error) reject(error);
+					else if (closeConnectionsFailure)
+						reject(closeConnectionsFailure.cause);
+					else resolve();
+				});
+				try {
+					server.closeAllConnections?.();
+				} catch (cause) {
+					closeConnectionsFailure = { cause };
+				}
+			});
+		} catch (cause) {
+			failures.push(cause);
+		}
+	}
+	if (failures.length > 0)
+		throw new AggregateError(failures, "in-process listener cleanup failed");
+}
+
+export class InProcessStartupCleanupError extends Error {
+	readonly cleanupCause: unknown;
+	readonly #servers: readonly Server[];
+
+	/* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: JavaScript permits throwing any value; both causes are retained as diagnostic evidence. */
+	constructor(
+		startupCause: unknown,
+		cleanupCause: unknown,
+		servers: readonly Server[],
+	) {
+		super("in-process startup failed and listener cleanup is incomplete", {
+			cause: startupCause,
+		});
+		this.name = "InProcessStartupCleanupError";
+		this.cleanupCause = cleanupCause;
+		this.#servers = servers;
+		Object.freeze(this);
+	}
+	/* oxlint-enable anti-slop/no-unknown-parameters */
+
+	async retryCleanup(): Promise<void> {
+		await closeServers(this.#servers);
+	}
+}
+
 /**
  * Boot the collected graph in dependency order. Every handle carries its
  * ADR-0042 fidelity label; nothing is labelled `real`.
  */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-conditional-empty-object-spread -- SAFETY: parseTestTopology validates the Bindle object before the existing entrypoint probe; optional endpoints are deliberately omitted when unavailable. */
 export async function deployInProcess(
 	bindle: unknown,
 	stage: string,
@@ -172,47 +232,58 @@ export async function deployInProcess(
 	const servers = new Map<string, Server>();
 	const bindings: Record<string, Record<string, string>> = {};
 
-	for (const alias of order) {
-		const node = byAlias.get(alias);
-		if (node === undefined) continue;
-		const handler =
-			isHttpServedKind(node.kind) && node.hasEntrypoint
-				? resolveFetchHandler(bindle as Record<string, unknown>, alias)
-				: undefined;
+	try {
+		for (const alias of order) {
+			const node = byAlias.get(alias);
+			if (node === undefined) continue;
+			const handler =
+				isHttpServedKind(node.kind) && node.hasEntrypoint
+					? resolveFetchHandler(bindle as Record<string, unknown>, alias)
+					: undefined;
 
-		let endpoint: string | undefined;
-		if (handler !== undefined) {
-			const opened = await listen(handler);
-			servers.set(alias, opened.server);
-			endpoint = opened.endpoint;
-		}
+			let endpoint: string | undefined;
+			if (handler !== undefined) {
+				const opened = await listen(handler);
+				servers.set(alias, opened.server);
+				endpoint = opened.endpoint;
+			}
 
-		const fidelity = inProcessFidelity(node.kind, endpoint !== undefined);
-		handles.set(
-			alias,
-			Object.freeze({
+			const fidelity = inProcessFidelity(node.kind, endpoint !== undefined);
+			handles.set(
 				alias,
-				kind: node.kind,
+				Object.freeze({
+					alias,
+					kind: node.kind,
+					fidelity,
+					...(endpoint !== undefined ? { endpoint } : {}),
+				}),
+			);
+			bindings[alias] = Object.freeze({
+				locator: `hobo-test://${stage}/${node.kind}/${alias}`,
 				fidelity,
 				...(endpoint !== undefined ? { endpoint } : {}),
-			}),
-		);
-		bindings[alias] = Object.freeze({
-			locator: `hobo-test://${stage}/${node.kind}/${alias}`,
-			fidelity,
-			...(endpoint !== undefined ? { endpoint } : {}),
-		});
-	}
+			});
+		}
 
-	return Object.freeze({
-		stage,
-		topology,
-		handles,
-		bindings: Object.freeze(bindings),
-		resolver: createLocalBindingResolver(bindings),
-		servers,
-	});
+		return Object.freeze({
+			stage,
+			topology,
+			handles,
+			bindings: Object.freeze(bindings),
+			resolver: createLocalBindingResolver(bindings),
+			servers,
+		});
+	} catch (cause) {
+		const opened = [...servers.values()].reverse();
+		try {
+			await closeServers(opened);
+		} catch (cleanupCause) {
+			throw new InProcessStartupCleanupError(cause, cleanupCause, opened);
+		}
+		throw cause;
+	}
 }
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-conditional-empty-object-spread */
 
 /**
  * Tear down in reverse dependency order and report the order walked, so a
@@ -222,15 +293,11 @@ export async function destroyInProcess(
 	deployment: InProcessDeployment,
 ): Promise<readonly string[]> {
 	const order = teardownOrder(deployment.topology);
-	for (const alias of order) {
-		const server = deployment.servers.get(alias);
-		if (server === undefined) continue;
-		await new Promise<void>((resolve) => {
-			server.closeAllConnections?.();
-			server.close(() => {
-				resolve();
-			});
-		});
-	}
+	await closeServers(
+		order.flatMap((alias) => {
+			const server = deployment.servers.get(alias);
+			return server === undefined ? [] : [server];
+		}),
+	);
 	return order;
 }

@@ -75,11 +75,21 @@ conformance failure of the harness itself.
 
 **Deploy caching is memoization, not the event store.** ADR-0159 §3 wants an
 unchanged plan content-hash to make `deploy()` a no-op apply against the
-durable event store. Here `deploy(bindle)` is memoized per bindle for the life
-of the harness object; nothing is persisted between processes.
+durable event store. Here `deploy(bindle)` shares one deployment per bindle
+until it is destroyed; nothing is persisted between processes. Concurrent
+destroy calls share teardown, and a new deploy waits for that teardown to
+finish. If teardown fails, deploy continues to reject until an explicit
+`destroy(bindle)()` retry succeeds.
+If startup fails after opening listeners, the in-process lane closes them before
+reporting the failure. If that cleanup also fails, the harness reports the
+cleanup error and keeps the Bindle fenced until `destroy(bindle)()` successfully
+retries the cleanup.
+The [lifecycle verification skill](../../.agents/skills/verify-testing-harness-lifecycle/SKILL.md)
+records its tests, bounded state models, assumptions, and verification commands,
+including checks that the exposed cleanup failure retains its retry path.
 
-**`createTestHarness` takes an optional second argument** (`{ probe, env }`)
-used to inject the readiness probe and the environment for the credential gate.
+**`createTestHarness` takes an optional second argument** used to inject the
+readiness probe, the credential-gate environment, or the in-process lane.
 It is a test seam for this package's own suites; the documented call form is
 the single-argument one in §1.6 of the harness contract.
 
