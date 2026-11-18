@@ -53,6 +53,22 @@ function fixedQuantityMissing(
 	);
 }
 
+const QUOTABLE_AGREEMENT_STATUSES = new Set([
+	"active",
+	"past-due",
+	"trialing",
+]);
+
+export function referencedAgreementUnquotable(
+	agreement: ProviderAgreement,
+	workloads: readonly WorkloadDelta[],
+): boolean {
+	return (
+		workloads.some((workload) => workload.agreementRef === agreement.id) &&
+		!QUOTABLE_AGREEMENT_STATUSES.has(agreement.status)
+	);
+}
+
 export function agreementRequiresRateCardValidation(
 	agreement: ProviderAgreement,
 	workloads: readonly WorkloadDelta[],

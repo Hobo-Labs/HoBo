@@ -44,7 +44,10 @@ export function isBoundedPricingInput<T>(input: T): boolean {
 			const proto = Object.getPrototypeOf(value);
 			if (!Array.isArray(value) && proto !== Object.prototype && proto !== null)
 				return false;
-			if (Array.isArray(value) && value.length > 1024) return false;
+			if (Array.isArray(value)) {
+				if (proto !== Array.prototype) return false;
+				if (value.length > 1024) return false;
+			}
 			if (Object.getOwnPropertySymbols(value).length !== 0) return false;
 			const properties = Object.getOwnPropertyDescriptors(value);
 			if (Array.isArray(value)) {

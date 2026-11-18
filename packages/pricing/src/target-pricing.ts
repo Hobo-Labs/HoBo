@@ -14,6 +14,7 @@ import {
 import { tryResolveRateCard } from "./catalog.js";
 import {
 	agreementRequiresRateCardValidation,
+	referencedAgreementUnquotable,
 	rateCardChargesIncomplete,
 } from "./charge-coverage.js";
 import {
@@ -475,6 +476,12 @@ export function quoteTargetPricing(
 		);
 	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
 	for (const agreement of state.agreements) {
+		if (referencedAgreementUnquotable(agreement, workloadsAll)) {
+			return refuse(
+				"TARGET_PRICING_INCOMPLETE",
+				"referenced agreement status cannot be priced",
+			);
+		}
 		if (!agreementRequiresRateCardValidation(agreement, workloadsAll)) continue;
 		const products = catalog.products.filter(
 			(entry) => entry.id === agreement.productId,

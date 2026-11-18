@@ -10,6 +10,7 @@ import {
 import { tryResolveRateCard } from "./catalog.js";
 import {
 	agreementRequiresRateCardValidation,
+	referencedAgreementUnquotable,
 	rateCardChargesIncomplete,
 } from "./charge-coverage.js";
 import {
@@ -243,6 +244,12 @@ export function quoteAvailablePricing(
 	}
 	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
 	for (const agreement of state.agreements) {
+		if (referencedAgreementUnquotable(agreement, workloadsAll)) {
+			return failed(
+				"PRICING_MODEL_INCOMPLETE",
+				"referenced agreement status cannot be priced",
+			);
+		}
 		if (!agreementRequiresRateCardValidation(agreement, workloadsAll)) continue;
 		const products = catalog.products.filter(
 			(product) => product.id === agreement.productId,
