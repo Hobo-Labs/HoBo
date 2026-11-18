@@ -44,7 +44,7 @@ export class ComponentizeToolchainError extends Error {
 		);
 		this.name = "ComponentizeToolchainError";
 		this.remediation =
-			`Install the pinned toolchain (pnpm add -D ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs}) ` +
+			`Install ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs} ` +
 			"or drop the real-lane request to use the synthetic contract-shaped floor (componentizeHelloBindle).";
 	}
 }
@@ -173,7 +173,7 @@ async function probeToolchain(
 		const impl: RealComponentizeImpl = async (sourcePath, opts) => {
 			const output = await componentize({
 				sourcePath,
-				witPath: opts.witPath,
+				witWorld: await readFile(join(opts.witPath, "world.wit"), "utf8"),
 				worldName: opts.worldName,
 				disableFeatures: [...opts.disableFeatures],
 				env: { ...opts.env },
@@ -191,7 +191,7 @@ async function probeToolchain(
 
 type ComponentizeJsFunction = (options: {
 	readonly sourcePath: string;
-	readonly witPath: string;
+	readonly witWorld: string;
 	readonly worldName: string;
 	readonly disableFeatures: readonly string[];
 	readonly env: Readonly<Record<string, string>>;
@@ -259,7 +259,12 @@ async function runRealComponentize(
 		entry,
 		sourceDigest: sha256Text(source),
 		witDigest: sha256Text(wit.source),
-		toolchain: PINNED_TOOLCHAIN,
+		toolchain: {
+			componentizeJs:
+				options.componentizeImpl || options.importModule
+					? "provided"
+					: PINNED_TOOLCHAIN.componentizeJs,
+		},
 	});
 
 	const component: WasmComponentArtifact = {
