@@ -92,6 +92,63 @@ test("architecture guard accepts packages with PACT, protobuf, CUE, parsed types
 	});
 });
 
+test("architecture guard accepts service code without an untyped parser boundary", async () => {
+	await withFixture(async (root) => {
+		await write(
+			root,
+			"src/draft/epic-proofs/demo-contract/services/demo.ts",
+			"export function runDemo(): string { return 'ok'; }",
+		);
+		await write(
+			root,
+			"src/draft/epic-proofs/demo-contract/contracts/pacts/demo-boundary.pact.json",
+			JSON.stringify({
+				consumer: { name: "demo-consumer" },
+				provider: { name: "demo-provider" },
+				interactions: [],
+			}),
+		);
+		await write(
+			root,
+			"src/draft/epic-proofs/demo-contract/architecture/demo.proto",
+			'syntax = "proto3";\nmessage Demo {}\n',
+		);
+		await write(
+			root,
+			"src/draft/epic-proofs/demo-contract/architecture/demo.cue",
+			"Demo: {}\n",
+		);
+
+		const result = await checkArchitectureGuardrails({
+			root,
+			files: ["src/draft/epic-proofs/demo-contract/services/demo.ts"],
+		});
+
+		assert.deepEqual(result.problems, []);
+	});
+});
+
+test("architecture guard requires parsing for raw JSON service boundaries", async () => {
+	await withFixture(async (root) => {
+		await write(
+			root,
+			"src/draft/epic-proofs/demo-contract/services/demo.ts",
+			"export function loadDemo(text: string) { return JSON.parse(text); }",
+		);
+
+		const result = await checkArchitectureGuardrails({
+			root,
+			files: ["src/draft/epic-proofs/demo-contract/services/demo.ts"],
+		});
+
+		assert.ok(
+			result.problems.some(
+				(problem) => problem.code === "missing-parse-derived-type",
+			),
+		);
+	});
+});
+
 test("architecture guard requires CUE constraints for every protobuf type", async () => {
 	await withFixture(async (root) => {
 		await write(
