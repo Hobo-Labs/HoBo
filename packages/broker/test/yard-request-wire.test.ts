@@ -28,7 +28,7 @@ import {
 	prepareYardHostingWork,
 	resolveBindleDeployment,
 } from "../src/index.js";
-import { cloneAsJson } from "../src/json.js";
+import { cloneAsJson, parseJsonObject } from "../src/json.js";
 import { approveLocalHosting } from "./helpers/local-hosting.js";
 
 // This name is part of the existing protobuf JSON contract.
@@ -393,6 +393,44 @@ describe("complete Yard placement request wire binding", () => {
 				toBinary(BindleDeploymentRequestSchema, message),
 			),
 		).toEqual(request);
+		if (!message.bindleRequirements) throw new Error("missing requirements");
+		message.bindleRequirements.canonicalLabels.push(
+			create(PlacementLabelEntrySchema, { key: "extra", value: "v2" }),
+		);
+		expect(() =>
+			decodeBindleDeploymentRequest(
+				toBinary(BindleDeploymentRequestSchema, message),
+			),
+		).toThrow(/version 1/);
+	});
+
+	it("refuses version 1 when its map encoding loses a special key", () => {
+		const request = completeRequest();
+		const withSpecial = parseBindleDeploymentRequest(
+			cloneAsJson({
+				...request,
+				bindleRequirements: {
+					...request.bindleRequirements,
+					labels: parseJsonObject('{"__proto__":"prod"}'),
+				},
+			}),
+		);
+		const { yard, ...rest } = withSpecial;
+		const { requestedLayout, ...yardFields } = yard;
+		const message = fromJsonString(
+			BindleDeploymentRequestSchema,
+			JSON.stringify({
+				...rest,
+				yard: { ...yardFields, [YARD_LAYOUT_FIELD]: requestedLayout },
+				workBindingVersion: 1,
+				requestDigest: contentHashOf(withSpecial),
+			}),
+		);
+		expect(() =>
+			decodeBindleDeploymentRequest(
+				toBinary(BindleDeploymentRequestSchema, message),
+			),
+		).toThrow(/digest mismatch/);
 	});
 
 	it("rejects incomplete or ambiguous version 2 value encodings", () => {
@@ -412,9 +450,17 @@ describe("complete Yard placement request wire binding", () => {
 					message.yard[YARD_LAYOUT_FIELD].propertiesJson = '{"x":1,"x":2}';
 			}),
 			change((message) => {
+				const layout = message.yard?.[YARD_LAYOUT_FIELD];
+				if (layout?.propertiesJson !== undefined)
+					layout.propertiesJson = ` ${layout.propertiesJson}`;
+			}),
+			change((message) => {
 				if (message.bindleRequirements)
 					message.bindleRequirements.canonicalLabels.push(
-						create(PlacementLabelEntrySchema, { key: "team", value: "other" }),
+						create(PlacementLabelEntrySchema, {
+							key: "team",
+							value: "payments",
+						}),
 					);
 			}),
 			change((message) => {
