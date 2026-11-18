@@ -162,6 +162,7 @@ export {
 	createHarness,
 	HARNESS_SCHEMA,
 	Harness,
+	type HarnessOptions,
 	type HarnessPorts,
 	type ProgressiveRun,
 } from "./harness-compose.js";
@@ -170,6 +171,7 @@ export {
 	contentHashRollout,
 	DELIVERY_PORT,
 	type DeliveryHealthSignal,
+	type DeliveryPort,
 	OpenDeliveryEngine,
 	ROLLOUT_EVENT_SCHEMA,
 	ROLLOUT_EVENTS,
@@ -192,6 +194,7 @@ export {
 	type ExperimentAssignment,
 	type ExperimentDefinition,
 	type ExperimentEvent,
+	type ExperimentPort,
 	OpenExperimentEngine,
 } from "./harness-experiment.js";
 export {

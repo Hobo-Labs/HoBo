@@ -25,7 +25,7 @@ import type { RolloutPolicy, RolloutState } from "./harness-delivery.js";
 import type {
 	ExperimentAssignment,
 	ExperimentDefinition,
-	OpenExperimentEngine,
+	ExperimentPort,
 } from "./harness-experiment.js";
 import type { JsonObject, JsonValue } from "./json.js";
 
@@ -375,7 +375,7 @@ export function createResidualExperimentAnalysis(options: {
 
 /** Analyze via experiment engine event log (assignments already sticky). */
 export function analyzeExperimentFromEngine(
-	engine: OpenExperimentEngine,
+	engine: ExperimentPort,
 	experimentName: string,
 	analysis: ExperimentAnalysisPort = createBuiltinExperimentAnalysis(),
 ): ExperimentAnalysisResult | null {
