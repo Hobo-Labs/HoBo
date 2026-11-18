@@ -390,7 +390,7 @@ describe("diffSchemaIr", () => {
 		]);
 	});
 
-	it("replaces a redefined index with a contract drop plus an expand add", () => {
+	it("drops and recreates a redefined index in the contract phase", () => {
 		const before = parseSchemaIr(
 			ir([
 				table({
@@ -423,9 +423,40 @@ describe("diffSchemaIr", () => {
 				}),
 			]),
 		);
-		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
-			"expand:add-index:accounts:accounts_email_idx",
+		const plan = diffSchemaIr(before, after);
+		expect(kinds(plan.steps)).toEqual([
 			"contract:drop-index:accounts:accounts_email_idx",
+			"contract:add-index:accounts:accounts_email_idx",
+		]);
+		expect(plan.steps.every((step) => step.destructive)).toBe(true);
+	});
+
+	it("moves an index name after dropping its old table's index", () => {
+		const sharedIndex = index({ name: "shared_idx", columns: ["id"] });
+		const before = ir([table({ name: "z_old", indexes: [sharedIndex] })]);
+		const after = ir([table({ name: "a_new", indexes: [sharedIndex] })]);
+		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
+			"expand:create-table:a_new:",
+			"contract:drop-index:z_old:shared_idx",
+			"contract:drop-table:z_old:",
+			"contract:add-index:a_new:shared_idx",
+		]);
+	});
+
+	it("drops an index before dropping its column", () => {
+		const before = ir([
+			table({
+				columns: [
+					column(),
+					column({ name: "email", primaryKey: false, unique: false }),
+				],
+				indexes: [index()],
+			}),
+		]);
+		const after = ir([table()]);
+		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
+			"contract:drop-index:accounts:accounts_email_idx",
+			"contract:drop-column:accounts:email",
 		]);
 	});
 
