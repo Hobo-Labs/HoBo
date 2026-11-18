@@ -16,6 +16,11 @@
 			"why": "runs a spawned fixture that loads the adapter and runtime through computed module paths"
 		},
 		{
+			"from": "test/iac-alchemy-integration.test.ts",
+			"needs": ["@hobo/bindles#build", "@hobo/cloud#build", "@hobo/runtime-local#build"],
+			"why": "loads built Bindle, cloud and local runtime modules while exercising real pricing and routing authorities"
+		},
+		{
 			"from": "packages/control-yard/test/evidence-launch.test.ts",
 			"stubOnly": true,
 			"reason": "creates a temporary checkout and evidence tree to test symlink handling; it does not load the draft workspace"

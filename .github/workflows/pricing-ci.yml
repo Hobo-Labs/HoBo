@@ -12,6 +12,7 @@ on:
       - "packages/conformance/**"
       - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
+      - "test/iac-alchemy-integration.test.ts"
       - "packages/extension-alchemy-rivet/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
@@ -39,6 +40,7 @@ on:
       - "packages/conformance/**"
       - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
+      - "test/iac-alchemy-integration.test.ts"
       - "packages/extension-alchemy-rivet/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
@@ -141,6 +143,10 @@ jobs:
             --filter=@hobo/provider-manifest \
             --continue \
             --concurrency=1
+      - name: Build Alchemy integration prerequisites
+        run: pnpm exec turbo run build --filter=@hobo/bindles --filter=@hobo/runtime-local --concurrency=1
+      - name: Exercise Alchemy pricing and routing
+        run: pnpm exec vitest run test/iac-alchemy-integration.test.ts
       - name: Check generated messaging component bindings
         run: pnpm --filter @hobo/wit run wit:check
       - name: Consumer contracts (pricing + dispatcher v2)
