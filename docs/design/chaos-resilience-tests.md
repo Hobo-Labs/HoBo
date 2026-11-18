@@ -23,11 +23,6 @@ beta, release-candidate, or GA. It is not the chaos runner, a production fault
 lane, an external chaos-engine adapter, a Golden Suite implementation, an SLO
 engine, an SRE remediation engine, or a release decision.
 
-Property/fuzz discipline (fast-check oracles, Jazzer harnesses, Schemathesis,
-RESTler, Toxiproxy around **simulators**) lives in
-[`fuzzing.md`](./fuzzing.md) and `@hobo/fuzz`. This record stays the chaos
-scope/acceptance surface.
-
 HoBo needs accepted M0 scope before downstream automation, CI lanes, provider
 fault adapters, SRE runbooks, dashboards, support artifacts, or release-cutline
 work can depend on chaos evidence. The accepted record must say who the tests

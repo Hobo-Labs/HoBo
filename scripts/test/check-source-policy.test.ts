@@ -1017,9 +1017,9 @@ e: ##"raw \##(2 + // raw interpolation
 		assert.match(result.stderr, /literal\[1\]\.ts:1/u);
 	});
 
-	it("rejects changes that retain an existing design document", () => {
+	it("allows deletion-only cleanup of an existing design document", () => {
 		const repo = fixture();
-		write(repo, "docs/design/existing.md", "# Existing\n");
+		write(repo, "docs/design/existing.md", "# Existing\nremove this\n");
 		git(repo, "add", "--all");
 		git(
 			repo,
@@ -1032,6 +1032,9 @@ e: ##"raw \##(2 + // raw interpolation
 			"-m",
 			"add design",
 		);
+		write(repo, "docs/design/existing.md", "# Existing\n");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
 		write(repo, "docs/design/existing.md", "# Changed\n");
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 1);

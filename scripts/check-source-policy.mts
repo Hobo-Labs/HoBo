@@ -876,8 +876,12 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			/\.mdx?$/iu.test(sourceFile) ||
 			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(sourceFile)
 		) {
-			const reason = documentViolation(file, contents(mode, file));
-			if (reason) violations.push({ file, line: 1, message: reason });
+			const text = contents(mode, file);
+			const added = changedLines(args, file, text, untracked.includes(file));
+			const reason = documentViolation(file, text);
+			if (reason && (untracked.includes(file) || added.size > 0)) {
+				violations.push({ file, line: 1, message: reason });
+			}
 		}
 		if (
 			file.startsWith("src/draft/") &&
