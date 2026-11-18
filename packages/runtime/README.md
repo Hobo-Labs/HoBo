@@ -43,6 +43,11 @@ manufacturing placeholder values.
 
 Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
 
+An explicit run ID must be a nonempty primitive string for `start`, `resume`,
+and `journal`. Omitting the ID on `start` generates one; explicitly passing
+`null`, an empty string, a number, or an object is refused. This keeps the local
+execution-fence key and the journal stream identity consistent.
+
 `resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
 Within one loaded runtime module, `start` and `resume` refuse another active

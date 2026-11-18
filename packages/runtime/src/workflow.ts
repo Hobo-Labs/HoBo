@@ -159,6 +159,12 @@ const ACTIVE_WORKFLOW_RUNS = new WeakMap<
 	Map<string, WorkflowExecutionLease>
 >();
 
+function requireWorkflowRunId(runId: string): string {
+	if (!isJsonString(runId) || String(runId) !== runId || runId.length === 0)
+		throw new TypeError("workflow runId must be a non-empty string");
+	return runId;
+}
+
 function claimWorkflowExecution(
 	store: EventStoreWriter,
 	runId: string,
@@ -970,14 +976,10 @@ export function createWorkflowEngine(
 	return {
 		store,
 		async start(def, args, startOptions) {
-			const runId = startOptions?.runId ?? `run-${randomUUID()}`;
-			if (
-				!isJsonString(runId) ||
-				String(runId) !== runId ||
-				runId.length === 0
-			) {
-				throw new TypeError("workflow runId must be a non-empty string");
-			}
+			const requestedRunId = startOptions?.runId;
+			const runId = requireWorkflowRunId(
+				requestedRunId === undefined ? `run-${randomUUID()}` : requestedRunId,
+			);
 			const lease = claimWorkflowExecution(store, runId);
 			try {
 				const streamId = `run/${runId}`;
@@ -1002,16 +1004,18 @@ export function createWorkflowEngine(
 			}
 		},
 		async resume(def, runId, args) {
-			const lease = claimWorkflowExecution(store, runId);
+			const id = requireWorkflowRunId(runId);
+			const lease = claimWorkflowExecution(store, id);
 			try {
-				return await execute(def, runId, args, lease);
+				return await execute(def, id, args, lease);
 			} finally {
 				lease.finished = true;
 				lease.releaseIfDrained();
 			}
 		},
 		async journal(runId) {
-			const events = await store.readStream(`run/${runId}`);
+			const id = requireWorkflowRunId(runId);
+			const events = await store.readStream(`run/${id}`);
 			return events.map((event) => ({
 				type: event.type,
 				data: cloneAsJson(event.data),
