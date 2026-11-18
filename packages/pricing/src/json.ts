@@ -136,6 +136,7 @@ export function isExactProtoMessage<Desc extends DescMessage>(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: JSON.parse is bounded by the caller; protobuf parsers refine values next. */
 export function parseJson(text: string): JsonValue | undefined {
 	try {
 		return JSON.parse(text) as JsonValue;
@@ -143,6 +144,7 @@ export function parseJson(text: string): JsonValue | undefined {
 		return undefined;
 	}
 }
+/* oxlint-enable anti-slop/require-safety-comment-for-type-assertion */
 
 export function isJsonObject(
 	value: JsonValue | undefined,

@@ -62,6 +62,7 @@ describe("strict developer target pricing data", () => {
 		}
 	});
 
+	/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- malformed fixtures require boundary casts. */
 	it("returns an explicit rejection for malformed inventories", () => {
 		const { inventory } = fixture();
 		const unavailable = targetPricingUnavailable("no model");
@@ -78,6 +79,7 @@ describe("strict developer target pricing data", () => {
 			});
 		}
 	});
+	/* oxlint-enable anti-slop/require-safety-comment-for-type-assertion */
 
 	it("rejects nested and revoked proxies before invoking their traps", () => {
 		const { inventory, input } = fixture();
