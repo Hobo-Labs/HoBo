@@ -55,6 +55,14 @@ export {
 	type YardGenerationConnector,
 } from "./generation.js";
 export {
+	createSqliteYardGenerationQuotaAuthority,
+	type YardGenerationQuotaAuthority,
+	type YardGenerationQuotaClaim,
+	YardGenerationQuotaDeniedError,
+	type YardGenerationQuotaRequest,
+	type YardQuotaBaselineEntry,
+} from "./generation-quota.js";
+export {
 	createYardInventory,
 	createYardRuntimeCatalog,
 	localYardInstance,
