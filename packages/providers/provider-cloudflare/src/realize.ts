@@ -14,7 +14,8 @@ import {
 	type IacProgram,
 	type IacResource,
 } from "./iac-program.js";
-import type { JsonObject } from "./json.js";
+import { isJsonString, type JsonObject } from "./json.js";
+import { CLOUDFLARE_PROVIDER_ID } from "./manifest.js";
 import type { ResourcePlan } from "./types.js";
 
 // A container/CI image the build machine produces for a realized resource
@@ -30,6 +31,8 @@ const PORT_TO_CLASS = {
 	compute: "web/service",
 	kv: "kv",
 	objectStore: "objectStore",
+	queue: "queue",
+	schedule: "schedule",
 } as const satisfies Record<string, InitialCapabilityPort>;
 
 export type RealizablePort = keyof typeof PORT_TO_CLASS;
@@ -45,6 +48,10 @@ function outputsForClass(resourceClass: string): readonly string[] {
 			return ["namespaceId", "binding"];
 		case "cloudflare:r2-bucket":
 			return ["bucketName", "endpoint", "binding"];
+		case "cloudflare:queue":
+			return ["queueName", "binding"];
+		case "cloudflare:cron-trigger":
+			return ["cron", "binding"];
 		default:
 			return ["binding"];
 	}
@@ -58,6 +65,10 @@ function primaryOutput(resourceClass: string): string {
 			return "namespaceId";
 		case "cloudflare:r2-bucket":
 			return "bucketName";
+		case "cloudflare:queue":
+			return "queueName";
+		case "cloudflare:cron-trigger":
+			return "cron";
 		default:
 			return "binding";
 	}
@@ -91,20 +102,39 @@ export function mergeCloudflareOptions(
 	return merged;
 }
 
-function buildResource(plan: ResourcePlan, withBindRefs: boolean): IacResource {
+function buildResource(
+	plan: ResourcePlan,
+	withBindRefs: boolean,
+	/** Each sibling's resource class, so a binding says what it points at. */
+	classOf: ReadonlyMap<string, string> = new Map(),
+): IacResource {
 	const mapping = resolveEquivalence(plan.port);
 	const resourceClass = mapping.resourceClass;
-	const bindings = (plan.deps ?? []).map((dep) =>
-		withBindRefs
-			? { resource: dep, ref: `\${resources.${dep}.outputs.binding}` }
-			: { providerResourceId: dep },
-	);
+	const bindings = (plan.deps ?? []).map((dep) => {
+		const resourceType = classOf.get(dep);
+		const typed = resourceType === undefined ? undefined : { resourceType };
+		return withBindRefs
+			? {
+					resource: dep,
+					ref: `\${resources.${dep}.outputs.binding}`,
+					...typed,
+				}
+			: { providerResourceId: dep, ...typed };
+	});
 
 	const inputs = {
 		port: plan.port,
 		providerService: mapping.providerService,
 		features: [...mapping.features],
-		options: mergeCloudflareOptions(plan.options),
+		options: {
+			...mergeCloudflareOptions(plan.options),
+			// A schedule's declared cadence (the Bindle's cadence trait, carried
+			// by the plan) is the Cron Trigger's `cron`.
+			...(plan.port === "schedule" &&
+			isJsonString(plan.realizationParameters?.cron)
+				? { cron: plan.realizationParameters.cron }
+				: undefined),
+		},
 		bindings,
 		...(plan.region === undefined ? undefined : { region: plan.region }),
 	};
@@ -167,6 +197,15 @@ export function realizeResourcePlan(plan: ResourcePlan): {
  * Realize a whole DeploymentPlan (multiple resources with bind edges) into one
  * multi-resource IacProgram whose bind references resolve across resources.
  */
+/**
+ * The ids a plan node names Cloudflare by: the planner records the registered
+ * provider (`@hobo/provider-cloudflare`), hand-built plans the short target.
+ */
+const CLOUDFLARE_PLAN_PROVIDERS: ReadonlySet<string> = new Set([
+	CLOUDFLARE_PROVIDER_TARGET,
+	CLOUDFLARE_PROVIDER_ID,
+]);
+
 export function realizeResourcePlans(
 	plans: ResourcePlan[],
 	options: { deploymentId?: string } = {},
@@ -174,7 +213,15 @@ export function realizeResourcePlans(
 	if (plans.length === 0) {
 		throw new Error("cannot realize an empty deployment plan");
 	}
-	const resources = plans.map((plan) => buildResource(plan, true));
+	const classOf = new Map(
+		plans.flatMap((plan) =>
+			CLOUDFLARE_PLAN_PROVIDERS.has(plan.provider) &&
+			isRealizablePort(plan.port)
+				? [[plan.name, resolveEquivalence(plan.port).resourceClass] as const]
+				: [],
+		),
+	);
+	const resources = plans.map((plan) => buildResource(plan, true, classOf));
 	const deploymentId = options.deploymentId ?? "hello-bindle-cloudflare";
 	const first = resources[0];
 	if (first === undefined) {

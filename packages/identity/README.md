@@ -106,6 +106,11 @@ fx.client.getBooleanDetails("example-feature", false);
 Application code **never** imports flagd, Unleash, GrowthBook, LaunchDarkly, or
 Argo. External backends rank behind `hobo:feature-flag` / `hobo:delivery` /
 `hobo:experiment` ports (local-builtin → camp-managed → ofrep-internal → external).
+`FeatureFlagPort` describes the local store boundary used by the OpenFeature
+client, progressive engines, and HoBo's feature command. `FeatureFlagStore`
+implements it; tests can inject another implementation or use an isolated
+`flag` resource from `@hobo/testing`. This TypeScript port does not claim to
+implement the complete WIT provider contract.
 Gateway-weighted rollouts emit `domain.RoutingChanged` via
 `applyRolloutToGatewayRouting`. Experiment `analyzeExperiment` /
 `concludeExperiment` use the built-in baseline analysis/export (commercial
@@ -171,7 +176,7 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
   `FeatureFlagStore`, `runSpectrumIdentityCutover` (Plan 50 composition),
   `dualVerifyClaims`, `mintDualAudienceGrant`, `advanceMigrationRamp`,
   `agentActionsForMigrationEvents`, `identity.Migration*` events.
-- Harness: `HoboOpenFeatureProvider`, `HoboFeatureClient`, `createHarness`,
+- Harness: `FeatureFlagPort`, `HoboOpenFeatureProvider`, `HoboFeatureClient`, `createHarness`,
   `OpenDeliveryEngine`, `OpenExperimentEngine`, `gateFlagMutation`,
   `createContractAssertedHarnessFixtures`, `enrichEvaluationContext`,
   `selectFeatureFlagBackend`, `flag.*` / `rollout.*` / `experiment.*` events.

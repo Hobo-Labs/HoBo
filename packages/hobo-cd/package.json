@@ -24,6 +24,7 @@
 		"@hobo/bindles": "workspace:*",
 		"@hobo/cli": "workspace:*",
 		"@hobo/connect-ui": "workspace:*",
+		"@hobo/core": "workspace:*",
 		"@hobo/data-postgres": "workspace:*",
 		"@hobo/hobo-ci": "workspace:*",
 		"@hobo/junctions": "workspace:*",

@@ -2,7 +2,11 @@
 
 Vercel CloudProvider for HoBo Examples OOB yards.
 
-- Equivalence → default Resource Definitions (`EQUIVALENCE_CLASSES` / `createVercelProvider`)
+- Equivalence → default Resource Definitions (`EQUIVALENCE_CLASSES` / `createVercelProvider`):
+  compute, objectStore, database, kv, **queue** (Vercel Queues, `vercel:queue`: at-least-once
+  delivery to a consumer function of the deployment, with delays) and **schedule** (Vercel Cron Jobs, `vercel:cron-job`:
+  a cron expression in the project's `vercel.json` that calls one of the deployment's
+  own paths with the project's `CRON_SECRET`; realized with that deployment)
 - Matching `satisfies` full|partial|none + typed impedance (`vercelImpedanceFindings`)
 - **Temporary / agent stations via [Vercel Drop](https://vercel.com/docs/drop)** —
   `provisionTemporaryEnvironmentStation()` creates a **new** project from uploaded
@@ -22,6 +26,32 @@ Vercel CloudProvider for HoBo Examples OOB yards.
 ```sh
 pnpm --filter @hobo/provider-vercel test
 ```
+
+### Local Vercel API emulation
+
+`test/emulator.test.ts` runs the project resolver against Vercel Labs'
+[`@emulators/vercel`](https://github.com/vercel-labs/emulate) 0.13.1 and
+`@emulators/core`. It seeds two teams and a project, then checks authorized
+adoption, update, read, deletion, and isolation between teams, as well as
+refusal when authorization is absent. The emulator is invoked
+in-process, after the normal production-host guard, so this lane makes no
+network calls or Vercel account changes. The existing scripted tests still
+cover lost responses, malformed payloads and other failures.
+
+```sh
+pnpm --filter @hobo/provider-vercel exec vitest run test/emulator.test.ts
+```
+
+For interactive API debugging, `npx emulate@0.13.1 --service vercel` starts
+the same Vercel Labs service; see its [endpoint documentation](https://emulate.dev/docs/vercel).
+Point a test client explicitly at its local URL. This does not redirect HoBo's
+production transport or emulate deployed execution. The emulator implements
+project creation at `/v11/projects`, while the resolver uses `/v9/projects`
+without a Git repository. For Git-linked projects the resolver uses `/v11`,
+but emulator 0.13.1 returns the full `owner/repository` in `link.repo` with an
+empty `link.org`, so independent confirmation refuses it. The test checks that
+this failed confirmation does not produce a second project on retry. It does not
+prove successful project creation or behavior against Vercel.
 
 ## `vercel.sponsored-project-transfer/v1`
 
@@ -247,6 +277,16 @@ and deletion are refused.
 Vercel renamed the Edge Config REST surface to `/v1/global-config` (the path
 parameter is still `edgeConfigId`); the product id keeps the `edge-config` name
 the catalog fixes, and the resolver calls the current documented path.
+
+**Schedules and queues are deployment configuration.** Vercel has no API that
+creates a schedule or a queue consumer on its own, and static deployments
+refuse `vercel.json` by design, so `vercel:cron-job` and `vercel:queue`
+placements are executed by a git deployment whose `vercel.json` declares them.
+`vercelPlatformDrift(config, planned)` (`src/platform-config.ts`) holds that
+file to the plan: every queue has a `queue/v2beta` consumer on its topic, every
+scheduled queue has `schedules.<name> = { schedule: <cadence>, topic: <queue> }`,
+and nothing else is scheduled. `hobo ci up` refuses to deliver the relay while
+there is drift (`HOBO_CI_UP_PLATFORM_DRIFT`).
 
 Blob discovery and project connection use the same storage API as Vercel's
 CLI. The resolver requires an explicit team, project ID, region, access mode,

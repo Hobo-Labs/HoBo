@@ -45,7 +45,7 @@ describe("workspace test duration balancing", () => {
 		const plan: TestPlan = {
 			mode: "scoped",
 			full: ["packages/hobo", "packages/core", "packages/ci"],
-			subsets: new Map([["packages/code", ["test/x.test.ts"]]]),
+			subsets: new Map([["packages/ci-gh-actions", ["test/x.test.ts"]]]),
 			skipped: [],
 		};
 		const durations = loadWorkspaceDurations();
@@ -54,7 +54,7 @@ describe("workspace test duration balancing", () => {
 			"packages/hobo",
 			"packages/core",
 			"packages/ci",
-			"packages/code",
+			"packages/ci-gh-actions",
 		];
 		const peak = maxShardLoadSeconds(units, durations, count);
 		assert.ok(

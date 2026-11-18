@@ -36,9 +36,11 @@ audit events stay the caller's (`@hobo/identity`), carrying references only.
 |---|---|
 | Workload token unavailable | `jwt-unavailable`, no request sent |
 | Login refused (400/401/403) | `login-denied`, not retried |
-| 401 on a request | one fresh login, then `unauthorized` |
+| 401 on a read | one fresh login, then `unauthorized` |
+| 401 on a write | `unauthorized`, not replayed |
 | 403 / 404 / 400 / 422 | `forbidden` / `not-found` / `rejected`, not retried |
-| 429, 5xx, transport failure | retried with backoff (`Retry-After` honoured, capped), then `rate-limited` / `unavailable` |
-| 2xx with the wrong shape | `invalid-response` |
+| 429, 5xx, transport failure on a read | retried with backoff (`Retry-After` honoured, capped), then `rate-limited` / `unavailable` |
+| 408, 429, 5xx, or transport failure on a write | `write-uncertain`, not replayed |
+| 2xx with the wrong shape | `invalid-response` on a read; `write-uncertain` on a write |
 | Write held for approval | `approval-required` |
 | Value not viewable by the identity | `value-hidden` |
