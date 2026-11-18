@@ -67,8 +67,12 @@ function cursorState(): CursorState {
 	const prepare = () => {
 		mkdirSync(directory, { recursive: true, mode: 0o700 });
 		const info = lstatSync(directory);
-		if (!info.isDirectory()) throw new Error("Invalid completion state directory");
-		if (typeof uid === "number" && (info.uid !== uid || (info.mode & 0o077) !== 0)) {
+		if (!info.isDirectory())
+			throw new Error("Invalid completion state directory");
+		if (
+			typeof uid === "number" &&
+			(info.uid !== uid || (info.mode & 0o077) !== 0)
+		) {
 			throw new Error("Insecure completion state directory");
 		}
 	};
@@ -96,7 +100,11 @@ function cursorState(): CursorState {
 function main(): void {
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(0, "utf8"));
-		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+		if (
+			typeof parsed !== "object" ||
+			parsed === null ||
+			Array.isArray(parsed)
+		) {
 			process.stdout.write("{}\n");
 			return;
 		}
@@ -108,6 +116,9 @@ function main(): void {
 	}
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+	process.argv[1] &&
+	import.meta.url === pathToFileURL(process.argv[1]).href
+) {
 	main();
 }
