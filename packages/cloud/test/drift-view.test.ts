@@ -1,25 +1,3 @@
-/**
- * Drift as a derived fact.
- *
- * Written before the implementation. The whole claim of HOBO-819 is that HoBo
- * already holds both halves of the comparison — the plan is recorded intent,
- * the resource lifecycle facts are materialized reality — and simply never
- * derives the difference. If that claim is true, drift needs no new state, no
- * new event, and no reconciler: it is a pure function of a DeploymentViewRow.
- *
- * These tests encode the classification rules, and the rules exist to avoid the
- * failure mode this category is known for: false drift. A surface that cries
- * wolf gets ignore-globs bolted on until it hides the real thing. So:
- *
- *   - in-flight is not drift. A resource mid-provision is the plan being
- *     carried out, not a divergence from it.
- *   - the classification keys on typed lifecycle states, never on a field-level
- *     diff of arbitrary payloads (ADR-0136's typed contracts are the better
- *     basis, and field globs are exactly what accumulates into blindness).
- *   - a deployment with no plan yet is `unknown`, not `in-sync`. Reporting
- *     "no drift" for something never planned is the most dangerous answer of
- *     the three.
- */
 import { describe, expect, it } from "vitest";
 import { DEPLOYMENT_PLAN_SCHEMA } from "../src/plan-types.js";
 import type {
@@ -60,8 +38,6 @@ const kinds = (findings: readonly DriftFinding[]) =>
 
 describe("a deployment with no plan", () => {
 	it("is unknown rather than in-sync", () => {
-		// Never say "no drift" about something we have not planned. That reads as
-		// a clean bill of health for a deployment nobody has described.
 		const report = computeDrift(row({ status: "requested" }));
 		expect(report.status).toBe("unknown");
 		expect(report.findings).toEqual([]);
@@ -111,8 +87,6 @@ describe("in-flight work is not drift", () => {
 	});
 
 	it("prefers a real divergence over an in-flight one", () => {
-		// A failure is actionable now; an in-flight resource may still succeed.
-		// Reporting "converging" here would bury the failure until it settles.
 		const report = computeDrift(
 			row({
 				plan: plan("web", "db"),
@@ -149,7 +123,6 @@ describe("planned but absent", () => {
 
 describe("present but unplanned", () => {
 	it("reports a provisioned resource the plan does not declare", () => {
-		// The case that matters most: something exists that nobody asked for.
 		const report = computeDrift(
 			row({
 				plan: plan("web"),
@@ -161,8 +134,6 @@ describe("present but unplanned", () => {
 	});
 
 	it("does not report an unplanned resource that is already destroyed", () => {
-		// Gone is gone. Flagging it forever is precisely the noise that trains
-		// people to stop reading the report.
 		const report = computeDrift(
 			row({
 				plan: plan("web"),
@@ -186,9 +157,6 @@ describe("present but unplanned", () => {
 
 describe("an imported deployment", () => {
 	it("does not treat pre-existing resources as unplanned", () => {
-		// `hobo import` adopts an estate HoBo did not create. Every adopted
-		// resource would otherwise read as drift on the first run, which would
-		// make the feature useless exactly where it is most needed.
 		const report = computeDrift(
 			row({
 				imported: true,
@@ -200,7 +168,6 @@ describe("an imported deployment", () => {
 	});
 
 	it("still reports a planned resource that is absent", () => {
-		// Adoption excuses extra resources, never missing ones.
 		const report = computeDrift(
 			row({ imported: true, plan: plan("web"), resources: {} }),
 		);
@@ -210,8 +177,6 @@ describe("an imported deployment", () => {
 
 describe("a rolled-back deployment", () => {
 	it("is not measured for drift", () => {
-		// Its resources are meant to be gone; comparing them to the plan reports
-		// a divergence that is the intended end state.
 		const report = computeDrift(
 			row({ status: "rolled-back", plan: plan("web"), resources: {} }),
 		);
