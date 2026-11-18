@@ -9,7 +9,9 @@ import {
 	type AgentPrincipal,
 	createFixtureAcpAgent,
 	type FixtureAcpAgent,
+	ISSUE_CLAIM_ACTION,
 	openGovernedSession,
+	openIssueWorkerSession,
 	POLICY_REFUSAL,
 	parseAgentGuardrailPolicy,
 	replaySessionFacts,
@@ -65,8 +67,10 @@ function session(options: {
 				approvals: options.approvals,
 				onFact: (fact) => facts.push(fact),
 			}),
-		// SAFETY: assertion to `fixture as FixtureAcpAgent` is required at this boundary.
-		fixture: () => fixture as FixtureAcpAgent,
+		fixture: () => {
+			assert.ok(fixture);
+			return fixture;
+		},
 	};
 }
 
@@ -106,7 +110,6 @@ describe("governed ACP session (fixture agent, end to end)", () => {
 		const governed = await harness.open();
 		const result = await governed.prompt("drop the database");
 
-		// The agent saw the reject option selected — the pact-recorded outcome.
 		assert.deepEqual(harness.fixture().observed.refusals, [
 			"resource.delete:database",
 		]);
@@ -163,5 +166,50 @@ describe("governed ACP session (fixture agent, end to end)", () => {
 			return result.facts;
 		};
 		assert.deepEqual(await run(), await run());
+	});
+
+	it("enforces issue quota and spending inside the governed host", async () => {
+		let fixture: FixtureAcpAgent | undefined;
+		const governed = await openIssueWorkerSession({
+			connector: "issue-worker",
+			agent: (client) => {
+				fixture = createFixtureAcpAgent(client, {
+					action: ISSUE_CLAIM_ACTION,
+				});
+				return fixture;
+			},
+			principal: PRINCIPAL,
+			resolveAction: () => ISSUE_CLAIM_ACTION,
+			estimateCostUsd: () => 0,
+		});
+
+		const first = await governed.prompt("claim one issue");
+		assert.equal(first.usage.actionCounts[ISSUE_CLAIM_ACTION], 1);
+		await governed.prompt("claim another issue");
+		assert.deepEqual(fixture?.observed.toolRuns, [ISSUE_CLAIM_ACTION]);
+		assert.deepEqual(fixture?.observed.refusals, [ISSUE_CLAIM_ACTION]);
+	});
+
+	it("denies paid issue-worker effects under the zero-spend default", async () => {
+		let fixture: FixtureAcpAgent | undefined;
+		const governed = await openIssueWorkerSession({
+			connector: "issue-worker",
+			agent: (client) => {
+				fixture = createFixtureAcpAgent(client, {
+					action: "github:pull-request:create",
+				});
+				return fixture;
+			},
+			principal: PRINCIPAL,
+			resolveAction: () => "github:pull-request:create",
+			estimateCostUsd: () => 0.01,
+		});
+
+		const result = await governed.prompt("open a pull request");
+		assert.deepEqual(fixture?.observed.toolRuns, []);
+		const decision = result.facts.find(
+			(fact) => fact.type === "policy.Decided",
+		);
+		assert.ok(decision?.reasons.includes("spend-cap-exceeded:0"));
 	});
 });

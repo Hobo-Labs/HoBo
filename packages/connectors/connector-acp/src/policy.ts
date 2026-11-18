@@ -1,21 +1,13 @@
 import {
 	isJsonArray,
+	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonValue,
 } from "./json.js";
 
-// The connector's policy gate, promoted from the s3-07-agent-guardrails
-// draft proof: every agent tool-permission request is classified into an
-// action class and decided against the parsed guardrail policy BEFORE any
-// grant reaches the agent. Deny-ceiling semantics: effects only ever rank
-// DOWN (deny < require-approval < allow); unknown/unparseable inputs fail
-// closed.
-
-// public-contract: the guardrail policy document schema id.
 export const AGENT_GUARDRAILS_SCHEMA = "hobo.agent-guardrails/v1";
 
-// The action classes agent tool calls collapse into (s3-07 taxonomy).
 export const ACTION_CLASSES = [
 	"read",
 	"write",
@@ -26,20 +18,18 @@ export const ACTION_CLASSES = [
 ] as const;
 
 export type ActionClass = (typeof ACTION_CLASSES)[number];
-
 export type ActionClassEffect = "auto-allow" | "require-approval" | "deny";
-
-export type ActionClassMap = {
-	[K in ActionClass]: ActionClassEffect;
-};
-
+export type ActionClassMap = { [K in ActionClass]: ActionClassEffect };
 export type PolicyEffect = "allow" | "require-approval" | "deny";
+export type ActionQuotaMap = Readonly<Record<string, number>>;
 
 export interface AgentGuardrailPolicy {
 	readonly schemaVersion: typeof AGENT_GUARDRAILS_SCHEMA;
 	readonly agentId: string;
 	readonly actionClasses: ActionClassMap;
 	readonly allowedApprovers: readonly string[];
+	readonly spendCapUsd: number | null;
+	readonly actionQuotas: ActionQuotaMap;
 }
 
 export interface PolicyDecision {
@@ -48,8 +38,11 @@ export interface PolicyDecision {
 	readonly reasons: readonly string[];
 }
 
-// Map a raw agent action string onto its class — unknown verbs default to
-// `write` (never silently `read`): fail toward the stricter class.
+export interface ToolPermissionUsage {
+	readonly currentSpendUsd: number;
+	readonly actionCounts: Readonly<Record<string, number>>;
+}
+
 export function classifyActionClass(action: string): ActionClass {
 	const normalized = String(action ?? "").toLowerCase();
 	if (
@@ -65,12 +58,8 @@ export function classifyActionClass(action: string): ActionClass {
 	) {
 		return "deploy";
 	}
-	if (normalized.includes("token")) {
-		return "token";
-	}
-	if (normalized.includes("admin")) {
-		return "admin";
-	}
+	if (normalized.includes("token")) return "token";
+	if (normalized.includes("admin")) return "admin";
 	if (
 		normalized.includes(":get") ||
 		normalized.includes(":list") ||
@@ -83,23 +72,15 @@ export function classifyActionClass(action: string): ActionClass {
 	return "write";
 }
 
-/**
- * Parse-don't-validate boundary for guardrail policies: an untrusted policy
- * document becomes a frozen derived policy or throws — a missing class
- * defaults to `require-approval`, never to allow.
- */
 export function parseAgentGuardrailPolicy(
 	input: JsonValue,
 ): AgentGuardrailPolicy {
-	if (!isJsonObject(input)) {
-		throw new Error("policy must be an object");
-	}
-	const source = input;
-	if (!isJsonString(source.agentId) || source.agentId.length === 0) {
+	if (!isJsonObject(input)) throw new Error("policy must be an object");
+	if (!isJsonString(input.agentId) || input.agentId.length === 0) {
 		throw new Error("policy.agentId must be a non-empty string");
 	}
-	const rawClasses = isJsonObject(source.actionClasses)
-		? source.actionClasses
+	const rawClasses = isJsonObject(input.actionClasses)
+		? input.actionClasses
 		: {};
 	const actionClasses: ActionClassMap = {
 		read: "require-approval",
@@ -122,54 +103,131 @@ export function parseAgentGuardrailPolicy(
 		}
 		actionClasses[actionClass] = effect;
 	}
-	const approvers = isJsonArray(source.allowedApprovers)
-		? source.allowedApprovers.filter(isJsonString)
+	const allowedApprovers = isJsonArray(input.allowedApprovers)
+		? input.allowedApprovers.filter(isJsonString)
 		: [];
+	const spendCapUsd =
+		input.spendCapUsd === undefined || input.spendCapUsd === null
+			? null
+			: nonNegativeNumber(input.spendCapUsd, "policy.spendCapUsd");
+	const actionQuotas = parseActionQuotas(input.actionQuotas);
 
 	return Object.freeze({
 		schemaVersion: AGENT_GUARDRAILS_SCHEMA,
-		agentId: source.agentId,
+		agentId: input.agentId,
 		actionClasses: Object.freeze(actionClasses),
-		allowedApprovers: Object.freeze(approvers),
+		allowedApprovers: Object.freeze(allowedApprovers),
+		spendCapUsd,
+		actionQuotas: Object.freeze(actionQuotas),
 	});
 }
 
 export interface ToolPermissionInput {
 	readonly action: string;
 	readonly policy: AgentGuardrailPolicy;
-	// A recorded human approval for THIS action (require-approval lane).
 	readonly approval?: { readonly approver: string };
+	readonly estimatedCostUsd?: number;
+	readonly usage?: ToolPermissionUsage;
 }
 
-// Decide one tool-permission request. Deny-ceiling: the decision can never
-// rank above what the class effect grants, and anything unresolved fails
-// closed to deny.
 export function evaluateToolPermission(
 	input: ToolPermissionInput,
 ): PolicyDecision {
 	const actionClass = classifyActionClass(input.action);
 	const classEffect = input.policy.actionClasses[actionClass];
-	const reasons: string[] = [`action-class:${actionClass}`];
+	const reasons = [`action-class:${actionClass}`];
 
 	if (classEffect === "deny") {
-		reasons.push("class-effect:deny");
-		return { effect: "deny", actionClass, reasons };
+		return deny(reasons, actionClass, "class-effect:deny");
 	}
+
+	const quota = input.policy.actionQuotas[input.action];
+	if (quota !== undefined) {
+		if (!input.usage) {
+			return deny(reasons, actionClass, "action-quota-usage-missing");
+		}
+		const used = input.usage.actionCounts[input.action] ?? 0;
+		if (used >= quota) {
+			return deny(reasons, actionClass, `action-quota-exhausted:${quota}`);
+		}
+	}
+
+	if (input.policy.spendCapUsd !== null) {
+		const currentSpendUsd = input.usage?.currentSpendUsd;
+		const estimatedCostUsd = input.estimatedCostUsd;
+		if (
+			currentSpendUsd === undefined ||
+			estimatedCostUsd === undefined ||
+			!Number.isFinite(currentSpendUsd) ||
+			!Number.isFinite(estimatedCostUsd) ||
+			currentSpendUsd < 0 ||
+			estimatedCostUsd < 0
+		) {
+			return deny(reasons, actionClass, "spend-usage-or-estimate-missing");
+		}
+		if (currentSpendUsd + estimatedCostUsd > input.policy.spendCapUsd) {
+			return deny(
+				reasons,
+				actionClass,
+				`spend-cap-exceeded:${input.policy.spendCapUsd}`,
+			);
+		}
+	}
+
 	if (classEffect === "auto-allow") {
-		reasons.push("class-effect:auto-allow");
-		return { effect: "allow", actionClass, reasons };
+		return {
+			effect: "allow",
+			actionClass,
+			reasons: [...reasons, "class-effect:auto-allow"],
+		};
 	}
-	// require-approval: an approval from an allowed approver upgrades to
-	// allow; anything else stays below the ceiling and FAILS CLOSED.
 	if (
 		input.approval &&
 		input.policy.allowedApprovers.includes(input.approval.approver)
 	) {
-		reasons.push(`approved-by:${input.approval.approver}`);
-		return { effect: "allow", actionClass, reasons };
+		return {
+			effect: "allow",
+			actionClass,
+			reasons: [...reasons, `approved-by:${input.approval.approver}`],
+		};
 	}
-	reasons.push(
+	return deny(
+		reasons,
+		actionClass,
 		input.approval ? "approver-not-allowed" : "approval-required-and-missing",
 	);
-	return { effect: "deny", actionClass, reasons };
+}
+
+function parseActionQuotas(value: JsonValue | undefined) {
+	if (value === undefined || value === null) return {};
+	if (!isJsonObject(value)) {
+		throw new Error("policy.actionQuotas must be an object");
+	}
+	const quotas: Record<string, number> = {};
+	for (const [action, quota] of Object.entries(value)) {
+		if (action.length === 0) {
+			throw new Error("policy.actionQuotas keys must be non-empty");
+		}
+		const parsed = nonNegativeNumber(quota, `policy.actionQuotas.${action}`);
+		if (!Number.isInteger(parsed)) {
+			throw new Error(`policy.actionQuotas.${action} must be an integer`);
+		}
+		quotas[action] = parsed;
+	}
+	return quotas;
+}
+
+function nonNegativeNumber(value: JsonValue, path: string): number {
+	if (!isJsonNumber(value) || !Number.isFinite(value) || value < 0) {
+		throw new Error(`${path} must be a non-negative number`);
+	}
+	return value;
+}
+
+function deny(
+	reasons: readonly string[],
+	actionClass: ActionClass,
+	reason: string,
+): PolicyDecision {
+	return { effect: "deny", actionClass, reasons: [...reasons, reason] };
 }

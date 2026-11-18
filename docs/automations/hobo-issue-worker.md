@@ -20,15 +20,15 @@ tags: [hobo, automations]
 - **Pull requests:** open as draft, mark ready for review only after verification gates pass
 - **Reporting:** Linear, pull request comments/body, and related repo docs
 
-## Agent-native guardrails
+## Host enforcement
 
-The worker operates as an agent principal and follows `AGENTS.md`. It handles one
-owned issue per run, uses an isolated worktree, preserves unrelated work, and
-never pushes to `main` or merges its own pull request. High-risk effects remain
-subject to the applicable policy decision and approval requirements. Verify
-adversarial cases and fail closed when required checks fail.
-These instructions do not enforce policy or spending limits; the automation
-host must enforce them independently.
+The worker runs through `openIssueWorkerSession` from `@hobo/connector-acp`.
+The host supplies `resolveAction` from its trusted tool registry and calls
+`estimateCostUsd` before every ACP permission decision. Paid effects exceed the
+default zero-dollar cap, deploy effects require a recorded allowed approver,
+destructive/token/admin effects are denied, and `ISSUE_CLAIM_ACTION`
+(`linear:issue:claim`) has a one-per-session quota. Denied effects never reach
+the agent tool and are written to the session fact stream.
 
 ## Automation prompt
 
@@ -74,6 +74,7 @@ STEP 1 — SELECT AND CLAIM EXACTLY ONE ISSUE
 6. Sleep random jitter 0–8 seconds.
 7. Pick randomly among the top ~5 ranked issues.
 8. Claim protocol:
+   - Request host permission with action `linear:issue:claim`.
    - Post Linear comment exactly: "🤖 CLAIM run=<RUN_ID> ts=<iso8601-now>"
    - Assign issue to me and move it to "In Progress".
 9. Verify claim:
