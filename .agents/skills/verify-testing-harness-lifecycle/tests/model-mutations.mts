@@ -10,8 +10,9 @@ const cases = [
   ['TestingHarnessLifecycle', ['PublishFirst', 'FenceRedeploy', 'JoinTeardown'], 'PublishFirst', 'OneInitialStart'],
   ['TestingHarnessLifecycle', ['PublishFirst', 'FenceRedeploy', 'JoinTeardown'], 'FenceRedeploy', 'NoOverlappingStart'],
   ['TestingHarnessLifecycle', ['PublishFirst', 'FenceRedeploy', 'JoinTeardown'], 'JoinTeardown', 'NoEarlyDestroySuccess'],
-  ['TestingStartupCleanup', ['CleanupOpened', 'FenceFailedCleanup'], 'CleanupOpened', 'NoLeakedCleanFailure'],
-  ['TestingStartupCleanup', ['CleanupOpened', 'FenceFailedCleanup'], 'FenceFailedCleanup', 'NoOverlappingListener'],
+  ['TestingStartupCleanup', ['CleanupOpened', 'FenceFailedCleanup', 'ProtectRetry'], 'CleanupOpened', 'NoLeakedCleanFailure'],
+  ['TestingStartupCleanup', ['CleanupOpened', 'FenceFailedCleanup', 'ProtectRetry'], 'FenceFailedCleanup', 'NoOverlappingListener'],
+  ['TestingStartupCleanup', ['CleanupOpened', 'FenceFailedCleanup', 'ProtectRetry'], 'ProtectRetry', 'RetryProtected'],
 ] as const;
 try {
   for (const [model, flags, broken, invariant] of cases) {

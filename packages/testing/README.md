@@ -85,7 +85,8 @@ reporting the failure. If that cleanup also fails, the harness reports the
 cleanup error and keeps the Bindle fenced until `destroy(bindle)()` successfully
 retries the cleanup.
 The [lifecycle verification skill](../../.agents/skills/verify-testing-harness-lifecycle/SKILL.md)
-records its tests, bounded state models, assumptions, and verification commands.
+records its tests, bounded state models, assumptions, and verification commands,
+including checks that the exposed cleanup failure retains its retry path.
 
 **`createTestHarness` takes an optional second argument** used to inject the
 readiness probe, the credential-gate environment, or the in-process lane.

@@ -9,7 +9,7 @@ description: Verify in-process test graph startup, teardown, retry, and redeploy
 
 **Why:** Overlapping local deployments and a prematurely successful destroy can leave a suite using an old listener or leak it after a failed startup.
 
-**Review baseline:** `2e6fdad41370c93197efd2bd54e44e08c0e69aed`.
+**Review baseline:** `38c7ce972e482650988336d25d42f2f86e5117f3`.
 
 ## Covered code and checks
 
@@ -23,7 +23,7 @@ From the repository root with dependencies installed, run:
 bash scripts/verify-state-machine.sh .agents/skills/verify-testing-harness-lifecycle
 ```
 
-The runner checks TLC 1.7.4 and uses Z3 4.15.4. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing installations for offline runs. Java 11+, Python, Node and repository dependencies are required. The following separate command tests nine broken scratch implementations and reruns the restored skill:
+The runner checks TLC 1.7.4 and uses Z3 4.15.4. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing installations for offline runs. Java 11+, Python, Node and repository dependencies are required. The following separate command tests ten broken scratch implementations and reruns the restored skill:
 
 ```sh
 python3 .agents/skills/verify-testing-harness-lifecycle/mutations/full.py
@@ -66,7 +66,7 @@ stateDiagram-v2
   s10 --> s5: teardown completes
 ```
 
-`TestingStartupCleanup` explores nine states and 18 generated states for one listener opened before a failed startup, one possible cleanup failure, and a replacement. It checks that a failed startup reported as clean leaves no listener and that a replacement never overlaps the old listener. The chart hides nine same-label steps.
+`TestingStartupCleanup` explores nine states and 19 generated states for one listener opened before a failed startup, one possible cleanup failure, and a replacement, including an attempt to shadow the cleanup retry on the error instance. It checks that a failed startup reported as clean leaves no listener, that a replacement never overlaps the old listener, and that ordinary instance assignment cannot replace the retry method. The chart hides ten same-label steps.
 
 ```mermaid
 stateDiagram-v2
@@ -85,9 +85,9 @@ stateDiagram-v2
   s4 --> s2: retry cleanup
 ```
 
-The original implementation allowed a second destroy to return and a replacement to start while the first destroy was pending; synchronous reentry could also start twice. It leaked a real listener when a later startup step failed. The tests reproduce those paths. Five weakened models produce counterexamples for early return, overlap, duplicate start, missing startup cleanup, and missing cleanup fencing. Nine scratch implementation mutations exercise those guards and failure paths, and the restored skill passes. Z3 proves an inductive exclusion property for an abstract old/replacement deployment and finds an overlap when its restart guard is removed.
+The original implementation allowed a second destroy to return and a replacement to start while the first destroy was pending; synchronous reentry could also start twice. It leaked a real listener when a later startup step failed. The tests reproduce those paths. Six weakened models produce counterexamples for early return, overlap, duplicate start, missing startup cleanup, missing cleanup fencing, and a mutable cleanup retry. Ten scratch implementation mutations exercise those guards and failure paths, and the restored skill passes. Z3 proves an inductive exclusion property for an abstract old/replacement deployment and finds an overlap when its restart guard is removed.
 
-The models cover one Bindle and bounded callers, listeners and failures. They assume the in-process lane reports successful cleanup only after the operating system closes the listener. They do not prove TypeScript refinement, Node or operating-system behavior, arbitrary outside manipulation of server objects, process crashes, effects within user handlers, cross-process coordination, or the unimplemented ephemeral-Camp lane. A start or cleanup that never settles can keep a Bindle fenced indefinitely; no liveness guarantee is claimed. The Z3 proof is over a Boolean abstraction, not the implementation.
+The models cover one Bindle and bounded callers, listeners and failures. They assume the in-process lane reports successful cleanup only after the operating system closes the listener. They do not prove TypeScript refinement, Node or operating-system behavior, arbitrary outside manipulation of server objects or runtime prototypes, process crashes, effects within user handlers, cross-process coordination, or the unimplemented ephemeral-Camp lane. A start or cleanup that never settles can keep a Bindle fenced indefinitely; no liveness guarantee is claimed. The Z3 proof is over a Boolean abstraction, not the implementation.
 
 ## Keep in sync
 

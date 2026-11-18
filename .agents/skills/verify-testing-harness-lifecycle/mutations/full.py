@@ -15,6 +15,7 @@ cases = [
     ('reentrant-start', 'src/harness.ts', 'const pending = Promise.resolve().then(async (): Promise<HarnessState> => {', 'const pending = (async (): Promise<HarnessState> => {'),
     ('skip-startup-cleanup', 'src/lanes/in-process.ts', 'await closeServers(opened);', 'void opened;'),
     ('drop-startup-fence', 'src/harness.ts', 'if (cause instanceof InProcessStartupCleanupError) {\n\t\t\t\tentry.closeFailure = { cause };', 'if (false && cause instanceof InProcessStartupCleanupError) {\n\t\t\t\tentry.closeFailure = { cause };'),
+    ('mutable-startup-cleanup-error', 'src/lanes/in-process.ts', 'Object.freeze(this);', ''),
     ('ignore-cleanup-error', 'src/lanes/in-process.ts', 'if (failures.length > 0)', 'if (false)'),
     ('forget-teardown-error', 'src/harness.ts', 'entry.closeFailure = { cause };\n\t\t\t\t\t\tthrow cause;', 'throw cause;'),
 ]
