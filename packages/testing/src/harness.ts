@@ -121,9 +121,11 @@ function buildFidelityReport(
 	return Object.freeze({
 		byFidelity: Object.freeze(byFidelity),
 		assertedAgainst: Object.freeze(assertedAgainst),
-		prodReadinessClaimable: assertedAgainst.every(
-			(entry) => entry.fidelity !== "mocked",
-		),
+		prodReadinessClaimable:
+			assertedAgainst.length > 0 &&
+			assertedAgainst.every(
+				(entry) => entry.fidelity === "real" || entry.fidelity === "simulated",
+			),
 	});
 }
 
@@ -216,6 +218,7 @@ function buildGraph(
 			// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: each value comes from the parsed deployment bindings.
 			const record: Record<string, unknown> = {};
 			for (const alias of aliases) {
+				asserted.add(alias);
 				record[alias] = deployment.bindings[alias];
 			}
 			// SAFETY: the caller selects the existing generic outputs view.

@@ -39,21 +39,27 @@ export interface ExposureTrack {
 	readonly variant: string;
 }
 
-export type HarnessPorts = Readonly<{
+export type HarnessPorts<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+> = Readonly<{
 	flags: FeatureFlagPort;
-	delivery: DeliveryPort;
-	experiment: ExperimentPort;
+	delivery: D | OpenDeliveryEngine;
+	experiment: E | OpenExperimentEngine;
 }>;
 
-export interface HarnessOptions {
+export interface HarnessOptions<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+> {
 	readonly store: FeatureFlagPort;
 	readonly now?: () => string;
 	readonly emitOtel?: (span: {
 		readonly name: string;
 		readonly attributes: Readonly<Record<string, string | number | boolean>>;
 	}) => void;
-	readonly delivery?: DeliveryPort;
-	readonly experiment?: ExperimentPort;
+	readonly delivery?: D;
+	readonly experiment?: E;
 	readonly deliveryAdapter?: DeliveryAdapter;
 	readonly analysis?: ExperimentAnalysisPort;
 }
@@ -74,17 +80,20 @@ export type ProgressiveRun = Readonly<{
 /**
  * Coherent progressive-delivery facade over the three ports.
  */
-export class Harness {
+export class Harness<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+> {
 	readonly schemaVersion = HARNESS_SCHEMA;
 	readonly flags: FeatureFlagPort;
-	readonly delivery: DeliveryPort;
-	readonly experiment: ExperimentPort;
+	readonly delivery: D | OpenDeliveryEngine;
+	readonly experiment: E | OpenExperimentEngine;
 	readonly deliveryAdapter: DeliveryAdapter;
 	readonly analysis: ExperimentAnalysisPort;
 	readonly routingEvents: DomainRoutingEvent[] = [];
 	private readonly now: () => string;
 
-	constructor(options: HarnessOptions) {
+	constructor(options: HarnessOptions<D, E>) {
 		this.flags = options.store;
 		this.now = options.now ?? (() => new Date().toISOString());
 		this.delivery =
@@ -107,7 +116,7 @@ export class Harness {
 		this.analysis = options.analysis ?? createBuiltinExperimentAnalysis();
 	}
 
-	ports(): HarnessPorts {
+	ports(): HarnessPorts<D, E> {
 		return Object.freeze({
 			flags: this.flags,
 			delivery: this.delivery,
@@ -217,6 +226,9 @@ export class Harness {
 	}
 }
 
-export function createHarness(options: HarnessOptions): Harness {
+export function createHarness<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+>(options: HarnessOptions<D, E>): Harness<D, E> {
 	return new Harness(options);
 }

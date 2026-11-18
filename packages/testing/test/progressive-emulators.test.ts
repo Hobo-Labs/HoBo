@@ -1,8 +1,13 @@
-import { createHarness, FeatureFlagStore } from "@hobo/identity";
+import {
+	createHarness,
+	type FeatureFlagPort,
+	FeatureFlagStore,
+} from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 import {
 	createDeliveryEmulator,
 	createExperimentEmulator,
+	createFlagEmulator,
 	createTestHarness,
 } from "../src/index.js";
 import { fakeBindle } from "./fixtures.js";
@@ -20,6 +25,148 @@ function app() {
 }
 
 describe("in-process progressive delivery", () => {
+	it("shares a declared flag dependency with an explicitly injected service", async () => {
+		let flags: FeatureFlagPort | undefined;
+		const bindle = fakeBindle({
+			resources: {
+				flags: { kind: "flag" },
+				rollout: { kind: "rollout", dependsOn: ["flags"] },
+				experiment: { kind: "experiment", dependsOn: ["flags"] },
+				web: { kind: "service", dependsOn: ["flags"] },
+			},
+			handlers: {
+				web: () =>
+					new Response(
+						String(
+							flags?.evaluateBoolean("checkout", { targetingKey: "alice" })
+								.value,
+						),
+					),
+			},
+		});
+		const harness = createTestHarness();
+		const graph = await harness.deploy(bindle)();
+		try {
+			flags = graph.flag("flags");
+			flags.define({ key: "checkout", percentage: 0 });
+			const url = graph.http("web").baseUrl;
+			expect(await (await fetch(url)).text()).toBe("false");
+			const rollout = graph.rollout("rollout");
+			const started = rollout.start({
+				name: "checkout",
+				flag: "checkout",
+				stages: [{ percent: 0 }, { percent: 100 }],
+				traffic: "flag-only",
+				autoRollback: true,
+			});
+			rollout.step(started.id);
+			expect(await (await fetch(url)).text()).toBe("true");
+			graph.experiment("experiment").define({
+				name: "new-flow",
+				flag: "new-flow",
+				variants: ["control", "treatment"],
+			});
+			expect(flags.get("new-flow")?.variants).toHaveProperty("treatment");
+		} finally {
+			await harness.destroy(bindle)();
+		}
+	});
+
+	it("rejects ambiguous flag dependencies unless the caller supplies an emulator", async () => {
+		for (const kind of ["rollout", "experiment"] as const) {
+			const bindle = fakeBindle({
+				resources: {
+					a: { kind: "flag" },
+					b: { kind: "flag" },
+					progressive: { kind, dependsOn: ["a", "b"] },
+				},
+				handlers: {},
+			});
+			const defaultHarness = createTestHarness();
+			await expect(defaultHarness.deploy(bindle)()).rejects.toMatchObject({
+				code: "HARNESS_EMULATOR_INVALID",
+			});
+			const overridden = createTestHarness({
+				emulators: {
+					rollout: () => createDeliveryEmulator(),
+					experiment: () => createExperimentEmulator(),
+				},
+			});
+			await overridden.deploy(bindle)();
+			await overridden.destroy(bindle)();
+		}
+	});
+
+	it("carries mocked dependency fidelity into the progressive resource", async () => {
+		for (const kind of ["rollout", "experiment"] as const) {
+			for (const override of [false, true]) {
+				const harness = createTestHarness({
+					emulators: {
+						flag: () => ({ ...createFlagEmulator(), fidelity: "mocked" }),
+						...(override
+							? {
+									rollout: () => createDeliveryEmulator(),
+									experiment: () => createExperimentEmulator(),
+								}
+							: undefined),
+					},
+				});
+				const bindle = fakeBindle({
+					resources: {
+						flags: { kind: "flag" },
+						progressive: { kind, dependsOn: ["flags"] },
+					},
+					handlers: {},
+				});
+				const graph = await harness.deploy(bindle)();
+				try {
+					if (kind === "rollout") graph.rollout("progressive");
+					else graph.experiment("progressive");
+					expect(graph.resource("progressive").fidelity).toBe("mocked");
+					expect(graph.fidelity().prodReadinessClaimable).toBe(false);
+				} finally {
+					await harness.destroy(bindle)();
+				}
+			}
+		}
+		expect(
+			createDeliveryEmulator({ store: new FeatureFlagStore() }).fidelity,
+		).toBe("mocked");
+		expect(
+			createExperimentEmulator({ store: new FeatureFlagStore() }).fidelity,
+		).toBe("mocked");
+	});
+
+	it("does not claim fidelity when a dependency is unresolved", async () => {
+		for (const kind of ["rollout", "experiment"] as const) {
+			for (const override of [false, true]) {
+				const harness = createTestHarness({
+					emulators: override
+						? {
+								rollout: () => createDeliveryEmulator(),
+								experiment: () => createExperimentEmulator(),
+							}
+						: {},
+				});
+				const bindle = fakeBindle({
+					resources: {
+						progressive: { kind, dependsOn: ["missing"] },
+						web: { kind: "service", dependsOn: ["progressive"] },
+					},
+					handlers: { web: () => new Response("ok") },
+				});
+				const graph = await harness.deploy(bindle)();
+				try {
+					expect(graph.resource("progressive").fidelity).toBe("mocked");
+					expect(graph.resource("web").fidelity).toBe("mocked");
+					expect(graph.fidelity().prodReadinessClaimable).toBe(false);
+				} finally {
+					await harness.destroy(bindle)();
+				}
+			}
+		}
+	});
+
 	it("isolates experiment and rollout resources across aliases and deployments", async () => {
 		const harness = createTestHarness();
 		const bindle = app();

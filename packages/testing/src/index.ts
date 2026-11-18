@@ -34,6 +34,7 @@ export {
 	type FlagEmulator,
 	type FlagInspector,
 	type KeyValuePort,
+	type ProgressiveEmulatorOptions,
 	type QueueEmulator,
 	type ScheduleEmulator,
 	type ServiceEmulator,

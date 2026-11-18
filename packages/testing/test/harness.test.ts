@@ -168,7 +168,41 @@ describe("fidelity attestation", () => {
 		try {
 			const report = graph.fidelity();
 			expect(report.assertedAgainst).toEqual([]);
-			expect(report.prodReadinessClaimable).toBe(true);
+			expect(report.prodReadinessClaimable).toBe(false);
+		} finally {
+			await harness.destroy(bindle)();
+		}
+	});
+
+	it("refuses a prod-readiness claim for an unavailable camp-only resource", async () => {
+		const harness = createTestHarness();
+		const bindle = fakeBindle({
+			resources: { container: { kind: "container" } },
+			handlers: {},
+		});
+		const graph = await harness.deploy(bindle)();
+		try {
+			expect(graph.resource("container").fidelity).toBe("camp-only");
+			expect(graph.fidelity().prodReadinessClaimable).toBe(false);
+		} finally {
+			await harness.destroy(bindle)();
+		}
+	});
+
+	it("accounts for every resource exposed by outputs", async () => {
+		const harness = createTestHarness();
+		const bindle = fakeBindle({
+			resources: { flags: { kind: "flag" }, auth: { kind: "auth" } },
+			handlers: {},
+		});
+		const graph = await harness.deploy(bindle)();
+		try {
+			graph.outputs();
+			expect(graph.fidelity().assertedAgainst).toEqual([
+				{ alias: "auth", fidelity: "mocked" },
+				{ alias: "flags", fidelity: "simulated" },
+			]);
+			expect(graph.fidelity().prodReadinessClaimable).toBe(false);
 		} finally {
 			await harness.destroy(bindle)();
 		}

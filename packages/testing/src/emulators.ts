@@ -119,33 +119,37 @@ export function createFlagEmulator(
 	};
 }
 
+export interface ProgressiveEmulatorOptions {
+	readonly store?: FeatureFlagPort;
+	readonly storeFidelity?: "simulated" | "mocked";
+	readonly now?: () => string;
+}
+
 export function createDeliveryEmulator(
-	options: {
-		readonly store?: FeatureFlagPort;
-		readonly now?: () => string;
-	} = {},
+	options: ProgressiveEmulatorOptions = {},
 ): ServiceEmulator<DeliveryPort> {
 	return {
 		port: new OpenDeliveryEngine({
 			store: options.store ?? new FeatureFlagStore(),
 			...(options.now !== undefined ? { now: options.now } : undefined),
 		}),
-		fidelity: "simulated",
+		fidelity:
+			options.storeFidelity ??
+			(options.store === undefined ? "simulated" : "mocked"),
 	};
 }
 
 export function createExperimentEmulator(
-	options: {
-		readonly store?: FeatureFlagPort;
-		readonly now?: () => string;
-	} = {},
+	options: ProgressiveEmulatorOptions = {},
 ): ServiceEmulator<ExperimentPort> {
 	return {
 		port: new OpenExperimentEngine({
 			store: options.store ?? new FeatureFlagStore(),
 			...(options.now !== undefined ? { now: options.now } : undefined),
 		}),
-		fidelity: "simulated",
+		fidelity:
+			options.storeFidelity ??
+			(options.store === undefined ? "simulated" : "mocked"),
 	};
 }
 

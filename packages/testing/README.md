@@ -70,15 +70,18 @@ code. `deploy()` then refuses with `HARNESS_LANE_UNIMPLEMENTED`. It never
 degrades to `in-process`: a suite that believes it hit real providers and
 actually hit a loopback stub is worse than a suite that failed.
 
-**`prodReadinessClaimable` is not a pass/fail flag.** It is false whenever any
-handle the suite reached for was `mocked`. In practice that means most suites
+**`prodReadinessClaimable` is not a pass/fail flag.** It is false before any
+handle is reached for and whenever an asserted handle is `mocked` or
+`camp-only`. In practice that means most suites
 today cannot claim prod-readiness from this lane alone — which is the honest
 answer, not a defect of the harness. A bare green tick over mocked handles is
 the overclaim GAP-026 was filed against, and ADR-0159 calls emitting one a
 conformance failure of the harness itself.
-Its existing rule only rules out asserted `mocked` handles. A true value does
-not establish provider compatibility, durable storage, or production readiness
-for code exercised with simulated services.
+An unresolved, mocked, or camp-only dependency makes dependent handles
+`mocked`, except that camp-only resources retain their own label. Calling
+`outputs()` counts every returned resource as asserted.
+A true value does not establish provider compatibility, durable storage, or
+production readiness for code exercised with simulated services.
 
 **Deploy caching is memoization, not the event store.** ADR-0159 §3 wants an
 unchanged plan content-hash to make `deploy()` a no-op apply against the
@@ -119,12 +122,17 @@ is recorded by default, and `sampleRate` can be overridden. The optional
 `flagInspector(alias)` exposes a copy of the test event history separately from
 the service port.
 `graph.experiment(alias)` and `graph.rollout(alias)` expose the identity
-package's `ExperimentPort` and `DeliveryPort`. Their default engines each own
-an isolated flag store. To coordinate feature changes across ports, create
+package's `ExperimentPort` and `DeliveryPort`. If the resource declares one flag
+dependency, the default engine uses that flag port and inherits its fidelity.
+With no flag dependency it owns an isolated store; multiple flag dependencies
+require an explicit emulator factory. A served application must receive the
+port through its own dependency injection; the graph does not inject service
+ports through the Bindle runtime context.
+
 `createExperimentEmulator({ store })` and `createDeliveryEmulator({ store })`
-with the same `FeatureFlagPort` used by the application, and inject them through
-the matching factories. Create a fresh shared store for each deployment. Both
-factories accept `now` to control event timestamps.
+accept a shared `FeatureFlagPort` and an optional `now` clock. A supplied store
+is treated as `mocked` unless its fidelity is explicitly supplied as
+`storeFidelity`. Create a fresh shared store for each deployment.
 Inject the appropriate port into the service under test and use
 the same object to arrange inputs and inspect results. The included CI relay
 test in [`packages/hobo/test/service-emulators.test.ts`](../hobo/test/service-emulators.test.ts)
@@ -224,7 +232,7 @@ otherwise duplicate code without testing a service contract.
 | Schedule | `graph.schedule(alias)` and `graph.scheduleClock(alias)` use the local scheduler and virtual clock | Interval schedules only; fired timers do not automatically invoke a handler |
 | Key-value / blob metadata | `graph.kv(alias)` and `graph.bucket(alias)` implement generated types from the pinned WASI subsets | Process-local; the pinned blob interface has no body-read operation and does not claim a complete WASI or cloud storage implementation |
 | Flags | `graph.flag(alias)` or `createFlagEmulator()` supplies an isolated `FeatureFlagPort` | In-process flag engine; not a remote provider or a complete WIT implementation |
-| Experiments / rollout | `graph.experiment(alias)` and `graph.rollout(alias)` expose isolated identity ports | In-process engines; flag stores are independent unless explicitly shared, and no remote provider is emulated |
+| Experiments / rollout | `graph.experiment(alias)` and `graph.rollout(alias)` expose identity ports linked to a declared flag dependency | In-process engines; application ports require explicit injection and no remote provider is emulated |
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
 | Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
@@ -267,8 +275,8 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `notify` | `placeholder` | CD's NotificationPort has a recording sink; it is not the catalog's general notify port |
 | `guardrail` | `placeholder` | Use the relevant policy implementation or a contract double |
 | `ui` | `http` | Fetch handlers only; no general UI render/drive port |
-| `experiment` | `port` | Isolated local ExperimentPort; a shared flag store must be injected explicitly |
-| `rollout` | `port` | Isolated local DeliveryPort; a shared flag store must be injected explicitly |
+| `experiment` | `port` | Local ExperimentPort; uses one declared flag dependency when present |
+| `rollout` | `port` | Local DeliveryPort; uses one declared flag dependency when present |
 <!-- /resource-emulation-inventory -->
 
 Keep the port or protocol as the authority: derive stateless mocks from the

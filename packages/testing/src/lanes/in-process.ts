@@ -396,6 +396,9 @@ export async function deployInProcess(
 	const topology = parseTestTopology(bindle);
 	const order = deploymentOrder(topology);
 	const byAlias = new Map(topology.nodes.map((node) => [node.alias, node]));
+	const unresolved = new Set(
+		topology.unresolvedDependencies.map((dependency) => dependency.alias),
+	);
 	const handles = new Map<string, ResourceHandle>();
 	const servers = new Map<string, Server>();
 	const queues = new Map<string, QueueEmulator>();
@@ -422,6 +425,19 @@ export async function deployInProcess(
 		experiments,
 	};
 	const bindings: Record<string, Record<string, string>> = {};
+	const linkedFlag = (alias: string, dependencies: readonly string[]) => {
+		const linked = dependencies.flatMap((dependency) => {
+			const flag = flags.get(dependency);
+			return flag === undefined ? [] : [flag];
+		});
+		if (linked.length > 1)
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_INVALID",
+				`"${alias}" has more than one flag dependency`,
+				"depend on one flag resource or provide an explicit emulator factory",
+			);
+		return linked[0];
+	};
 
 	try {
 		for (const alias of order) {
@@ -475,15 +491,25 @@ export async function deployInProcess(
 				flags.set(alias, emulator);
 				validateEmulator(emulator, alias, "flag");
 			} else if (node.kind === "rollout") {
-				const emulator = await (
-					factories.rollout ?? (() => createDeliveryEmulator())
-				)(context);
+				const flag = factories.rollout
+					? undefined
+					: linkedFlag(alias, node.dependsOn);
+				const emulator = factories.rollout
+					? await factories.rollout(context)
+					: createDeliveryEmulator(
+							flag ? { store: flag.port, storeFidelity: flag.fidelity } : {},
+						);
 				rollouts.set(alias, emulator);
 				validateEmulator(emulator, alias, "rollout");
 			} else if (node.kind === "experiment") {
-				const emulator = await (
-					factories.experiment ?? (() => createExperimentEmulator())
-				)(context);
+				const flag = factories.experiment
+					? undefined
+					: linkedFlag(alias, node.dependsOn);
+				const emulator = factories.experiment
+					? await factories.experiment(context)
+					: createExperimentEmulator(
+							flag ? { store: flag.port, storeFidelity: flag.fidelity } : {},
+						);
 				experiments.set(alias, emulator);
 				validateEmulator(emulator, alias, "experiment");
 			}
@@ -499,7 +525,13 @@ export async function deployInProcess(
 				endpoint = opened.endpoint;
 			}
 
-			const fidelity =
+			const unavailableDependency =
+				unresolved.has(alias) ||
+				node.dependsOn.some((dependency) => {
+					const fidelity = handles.get(dependency)?.fidelity;
+					return fidelity === "mocked" || fidelity === "camp-only";
+				});
+			const ownFidelity =
 				queues.get(alias)?.fidelity ??
 				topics.get(alias)?.fidelity ??
 				secrets.get(alias)?.fidelity ??
@@ -511,6 +543,10 @@ export async function deployInProcess(
 				rollouts.get(alias)?.fidelity ??
 				experiments.get(alias)?.fidelity ??
 				inProcessFidelity(node.kind, endpoint !== undefined);
+			const fidelity =
+				unavailableDependency && ownFidelity !== "camp-only"
+					? "mocked"
+					: ownFidelity;
 			handles.set(
 				alias,
 				Object.freeze({
