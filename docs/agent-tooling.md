@@ -63,30 +63,42 @@ preserves explicit stops and scope changes, real approval and safety boundaries,
 and honest reports of actual blockers.
 
 [`scripts/agent_completion_hook.py`](../scripts/agent_completion_hook.py)
-adds one bounded review before a completed response in Claude Code, Codex,
-Cursor, and Copilot. It asks the model to check the current human request,
-evidence, and remaining work; it does not inspect the conversation, run a model,
-or use the network. The prompt is a reminder, not a new user request. The review
-still depends on the agent's judgment: it cannot establish that the task is done
-or guarantee a correct decision. It adds one continuation to reviewed responses,
-including simple answers. Cursor events marked aborted or error are not resumed;
-other interruptions follow their harness's behavior.
+reviews completed responses in Claude Code, Codex, Cursor, and Copilot. During
+that review, an agent that identifies a safe, authorized next action records it
+as ready before acting. A stop with that record still present is rejected, even
+after the first continuation. The agent clears the record once no such action
+remains, the user explicitly stops or pauses, or a genuine external blocker
+prevents further useful work. Status questions do not cancel an active task.
 
-Claude Code and Codex use their `Stop` event; Copilot uses `agentStop`.
-Cursor uses its native `stop` event and skips the imported Claude handler to
-avoid duplicate reviews. The handler accepts the documented continuation flag
-or loop counter and lets the ensuing continuation finish. For Cursor it keeps a
-counter named by a hash of the conversation ID under the OS temporary directory;
-it stores no prompts or responses. Missing or unsafe state and unrecognized hook
-inputs are allowed through rather than causing an infinite loop. Codex requires
-project-hook trust and review through `/hooks`; if a harness skips a hook, the
-shared rule remains in force.
+A new human turn clears the old ready record and requests a fresh review, so a
+stop or scope change does not inherit a stale action. If work remains in scope,
+the agent must identify and record it again. Cursor uses its native `stop`
+event and a per-conversation counter; its imported Claude handler is skipped to
+avoid duplicate reviews. Claude Code and Codex use `Stop`; Copilot uses
+`agentStop`. Interrupted and error events are allowed through. A ready record
+continues to request action until cleared or interrupted; host-specific limits
+on stop hooks may also apply.
 
-The script uses the Python standard library. The configured Unix hooks require
-`python3` on `PATH`; Copilot on Windows uses `python`. Other harnesses can pass
-their stop event as JSON on standard input and use the returned `decision` and
-`reason`, or adapt the Cursor `followup_message` format. A compatible harness
-must supply a reliable continuation marker to prevent a review loop.
+The record is an empty, session-scoped file named by a hash under the OS
+temporary directory; it contains no task text. Its update command fails visibly
+if it cannot write the state. If state storage is unavailable, the hook allows
+the stop and reports that the ready-action check did not run where the harness
+supports warnings. Events without a usable session identity fall back to one
+review. Codex requires project-hook trust and review through `/hooks`.
+
+The guard enforces a recorded ready action, but it is not an independent proof
+of completion: an agent can fail to record an action or clear the record
+incorrectly. The review asks the agent to act on evidence and never to clear the
+record merely to end a turn. The hook does not inspect the conversation, call a
+model, or use the network. It adds a continuation to reviewed responses, including
+simple answers.
+
+The script uses the Python standard library and requires Python 3.8 or later.
+The configured Unix hooks use `python3`; Copilot on Windows uses `python`.
+Other harnesses can pass a compatible stop event as JSON on standard input and
+use the returned `decision` and `reason`, or adapt Cursor's
+`followup_message` format. A compatible harness needs a reliable continuation
+marker and session identifier.
 
 ## Product implementation guardrails
 
