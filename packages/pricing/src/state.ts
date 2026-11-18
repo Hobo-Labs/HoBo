@@ -225,7 +225,10 @@ export function validateScenarioState(scenario: QuoteScenario): void {
 		}
 	}
 	for (const credit of state.credits) {
-		if (credit.grant !== undefined && credit.grant.tenantId !== state.tenantId) {
+		if (
+			credit.grant !== undefined &&
+			credit.grant.tenantId !== state.tenantId
+		) {
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
 				"credit tenant differs from financial state",

@@ -16,11 +16,7 @@ function moneyIncomplete(money: Money | undefined): boolean {
 
 function tierIncomplete(tier: Tier): boolean {
 	if (tier.from.length === 0) return true;
-	const flatComplete =
-		tier.flatAmount !== undefined && !moneyIncomplete(tier.flatAmount);
-	const unitComplete =
-		tier.unitAmount !== undefined && !moneyIncomplete(tier.unitAmount);
-	return !flatComplete && !unitComplete;
+	return moneyIncomplete(tier.flatAmount) || moneyIncomplete(tier.unitAmount);
 }
 
 function usagePriceIncomplete(charge: ChargeComponent): boolean {
@@ -59,11 +55,7 @@ function fixedQuantityMissing(
 	);
 }
 
-const QUOTABLE_AGREEMENT_STATUSES = new Set([
-	"active",
-	"past-due",
-	"trialing",
-]);
+const QUOTABLE_AGREEMENT_STATUSES = new Set(["active", "past-due", "trialing"]);
 
 export function referencedAgreementUnquotable(
 	agreement: ProviderAgreement,

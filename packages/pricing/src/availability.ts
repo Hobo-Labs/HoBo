@@ -10,8 +10,8 @@ import {
 import { tryResolveRateCard } from "./catalog.js";
 import {
 	agreementRequiresRateCardValidation,
-	referencedAgreementUnquotable,
 	rateCardChargesIncomplete,
+	referencedAgreementUnquotable,
 } from "./charge-coverage.js";
 import {
 	isBoundedPricingInput,
