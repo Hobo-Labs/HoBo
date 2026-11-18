@@ -58,6 +58,7 @@ function statement(
 		baseTree: BASE_TREE,
 		head: HEAD,
 		base: BASE,
+		testedCommit: HEAD,
 		jobs,
 		events: ["pull_request", "merge_group"],
 		startedAt: "2026-11-11T11:00:00.000Z",
@@ -299,6 +300,26 @@ describe("verifying an attestation", () => {
 				signer.privateKey,
 			);
 			const verdict = verify(incomplete, [signer.entry]);
+			assert.equal(verdict.attested, true);
+			if (verdict.attested)
+				assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)));
+		}
+	});
+
+	it("requires execution on the actual merge-group commit", () => {
+		for (const testedCommit of [undefined, "9".repeat(40)]) {
+			const original = statement(signer.entry.id);
+			const { testedCommit: _testedCommit, ...rest } = original;
+			const mismatched = signStatement(
+				{
+					...rest,
+					...(testedCommit ? { testedCommit } : {}),
+				},
+				signer.privateKey,
+			);
+			const verdict = verify(mismatched, [signer.entry], {
+				event: "merge_group",
+			});
 			assert.equal(verdict.attested, true);
 			if (verdict.attested)
 				assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)));
