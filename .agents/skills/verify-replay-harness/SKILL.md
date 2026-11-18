@@ -9,7 +9,7 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 
 **Why:** A failed verification must not change later code’s clock or randomness; an incomplete, changing or imprecise input must not silently omit events or misstate the boundary of a replay check.
 
-**Review baseline:** `ec2b83f6271c8666531b91d68edd452c96578edd`.
+**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
 
 ## Covered code and checks
 
@@ -21,6 +21,8 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 - `packages/runtime/test/replay/equivalence.test.ts` exercises the existing deterministic-fold and divergence checks.
 - The related [ordering skill](../verify-replay-ordering/SKILL.md) checks versioned canonical order and report markers.
 - The related [evidence skill](../verify-replay-evidence/SKILL.md) checks that returned reports remain immutable.
+
+- The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
 
 From the repository root with dependencies installed, run:
 

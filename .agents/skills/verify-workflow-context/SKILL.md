@@ -9,13 +9,15 @@ description: Verify recorded resume context and captured workflow definition bin
 
 **Why:** Missing or changed context can make work run, or a stored result appear valid, under a different workflow or deterministic seed.
 
-**Review baseline:** `ec2b83f6271c8666531b91d68edd452c96578edd`.
+**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
 
 ## Covered code and checks
 
 - `packages/runtime/src/workflow.ts` validates resume context before execution or terminal reuse and captures workflow names, callbacks, tools and capabilities before asynchronous journal work. `workflow-boundary.ts` checks primitive names and seeds. `replay/replayer.ts` validates replay seeds and invokes captured callbacks without reading their mutable `call` properties.
 - `packages/runtime/test/authoring/workflow-context-validation.test.ts` checks missing version-three fields with and without a terminal outcome, malformed legacy fields, old missing-field fallback, invalid new names and seeds, definition and tool changes while storage waits, replay adapter capture and changed callback `call` properties. Seed 614617 generates 50 invalid context and terminal combinations.
 - The broader [workflow replay skill](../verify-workflow-replay/SKILL.md) checks journal recovery, input snapshots, commands, timers and local execution fencing.
+
+- The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
 
 From the repository root with dependencies installed, run:
 

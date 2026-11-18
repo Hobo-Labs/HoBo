@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { cloneAsJson } from "../json.js";
+import { isNonEmptyPrimitiveString } from "../workflow-boundary.js";
 import { canonicalizationVersion } from "./canonicalization.js";
 import { stableStringifyForVersion } from "./equivalence.js";
 import type {
@@ -25,6 +26,8 @@ export class ReplayDivergenceError extends Error {
 		canonicalizationVersion?: CanonicalizationVersion;
 	}) {
 		super("replay/live materialization mismatch");
+		if (!isNonEmptyPrimitiveString(input.runId))
+			throw new TypeError("replay runId must be a non-empty string");
 		const version = canonicalizationVersion(input.canonicalizationVersion, 2);
 		const liveOrder = [...input.liveOrder];
 		const replayOrder = [...input.replayOrder];

@@ -144,6 +144,12 @@ replay refuses an unsafe journal sequence before calling workflow callbacks.
 Replay report parsing also rejects unsafe positions. The values remain trusted
 as observations of the underlying event store.
 
+Stream IDs, report run IDs and seeds must be nonempty primitive strings;
+parsed evidence also requires primitive strings in its other string fields.
+Resume, replay and journal reads refuse records returned for a different
+run's stream before using them. This checks the reader's returned identities;
+it does not authenticate the journal or prove that its contents are complete.
+
 New replay reports and divergence records carry `canonicalizationVersion: 2`.
 This version uses locale-independent UTF-16 ordering for keys and event
 identifiers, so equivalent JSON objects do not acquire different digests when

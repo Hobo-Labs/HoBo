@@ -9,7 +9,7 @@ description: Verify replay report and divergence decoding across protobuf JSON a
 
 **Why:** A decoder that rounds an oversized position, changes the version, or loses an empty vector can misrepresent the evidence for a replay.
 
-**Review baseline:** `f71262809c8d28edba15917daa1faa4df71c7160`.
+**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
 
 ## Covered code and checks
 
@@ -17,6 +17,8 @@ description: Verify replay report and divergence decoding across protobuf JSON a
 - `packages/runtime/data-models/replay/replay_report.proto` and `packages/runtime/src/_generated/replay/replay_report_pb.ts` define the wire representation.
 - `packages/runtime/test/replay/protobuf-adapter.test.ts` uses real generated protobuf messages and checks empty arrays, legacy and current markers, exact zero and maximum-safe positions, unsafe numeric and quoted positions, malformed wire varints, duplicate markers, ordinary unknown fields, frozen data, accessors, cycles, excessive nesting and a changing byte array. Seed 614615 generates 100 safe positions and round-trips each through both wire representations.
 - The related [evidence skill](../verify-replay-evidence/SKILL.md) checks that parsed records cannot be altered afterward.
+
+- The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
 
 From the repository root with dependencies installed, run:
 
