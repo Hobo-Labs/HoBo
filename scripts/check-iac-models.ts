@@ -42,7 +42,11 @@ function check(name: string, directory: string, stateDirectory: string) {
 }
 
 try {
-	for (const name of ["IacPricingScope", "IacDestroyPricing"]) {
+	for (const name of [
+		"IacPricingScope",
+		"IacDestroyPricing",
+		"IacFixedPricing",
+	]) {
 		const result = check(name, modelDirectory, join(scratch, name));
 		process.stdout.write(result.stdout);
 		process.stderr.write(result.stderr);
@@ -94,6 +98,13 @@ try {
 			"IF present /\\ ScopeMatches",
 			"IF ~present \\/ ScopeMatches",
 		],
+		["IacFixedPricing", "/\\ usagePriced \\/ fixedApplicable", "/\\ TRUE"],
+		[
+			"IacFixedPricing",
+			"/\\ ~fixedApplicable \\/ ~requiresQuantity \\/ (agreementQuantity /\\ workloadQuantity)",
+			"/\\ TRUE",
+		],
+		["IacFixedPricing", 'ELSE "unavailable"', 'ELSE "zero"'],
 	] as const;
 	for (const [index, [name, before, after]] of mutations.entries()) {
 		const source = readFileSync(join(modelDirectory, `${name}.tla`), "utf8");
@@ -115,18 +126,24 @@ try {
 			`${name} mutation ${index + 1}: counterexample found\n`,
 		);
 	}
-	for (const invariant of ["NoPricedHold", "NoUnpricedHold"]) {
+	for (const [name, invariant] of [
+		["IacDestroyPricing", "NoPricedHold"],
+		["IacDestroyPricing", "NoUnpricedHold"],
+		["IacFixedPricing", "NoFixedZero"],
+		["IacFixedPricing", "NoFixedPositive"],
+		["IacFixedPricing", "NoUnavailable"],
+	] as const) {
 		const witness = join(scratch, invariant);
 		mkdirSync(witness);
 		writeFileSync(
-			join(witness, "IacDestroyPricing.tla"),
-			readFileSync(join(modelDirectory, "IacDestroyPricing.tla")),
+			join(witness, `${name}.tla`),
+			readFileSync(join(modelDirectory, `${name}.tla`)),
 		);
 		writeFileSync(
-			join(witness, "IacDestroyPricing.cfg"),
-			`${readFileSync(join(modelDirectory, "IacDestroyPricing.cfg"), "utf8")}\nINVARIANT ${invariant}\n`,
+			join(witness, `${name}.cfg`),
+			`${readFileSync(join(modelDirectory, `${name}.cfg`), "utf8")}\nINVARIANT ${invariant}\n`,
 		);
-		const result = check("IacDestroyPricing", witness, join(witness, "states"));
+		const result = check(name, witness, join(witness, "states"));
 		if (
 			result.status === 0 ||
 			!result.stdout.includes(`Invariant ${invariant} is violated`)
@@ -134,6 +151,195 @@ try {
 			throw new Error(`${invariant} witness was not reached`);
 		process.stdout.write(`${invariant}: witness found\n`);
 	}
+	const grantDirectory = join(root, "packages/iac/iac-alchemy/model");
+	const grantSource = readFileSync(
+		join(grantDirectory, "IacGrant.tla"),
+		"utf8",
+	);
+	const grantConfig = readFileSync(
+		join(grantDirectory, "IacGrant.cfg"),
+		"utf8",
+	);
+	const grantResult = check(
+		"IacGrant",
+		grantDirectory,
+		join(scratch, "IacGrant"),
+	);
+	process.stdout.write(grantResult.stdout);
+	process.stderr.write(grantResult.stderr);
+	if (grantResult.status !== 0)
+		throw new Error("IacGrant model checking failed");
+	const expectGrantViolation = (
+		label: string,
+		source: string,
+		config: string,
+		invariant: string,
+	) => {
+		const isolated = join(scratch, `grant-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(join(isolated, "IacGrant.tla"), source);
+		writeFileSync(join(isolated, "IacGrant.cfg"), config);
+		const result = runBoundedTlc(
+			jar,
+			[
+				"-workers",
+				"2",
+				"-metadir",
+				join(isolated, "states"),
+				"-config",
+				"IacGrant.cfg",
+				"IacGrant.tla",
+			],
+			isolated,
+		);
+		assertTlcExited(result);
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`IacGrant ${label} did not violate ${invariant}`);
+		process.stdout.write(
+			`IacGrant ${label}: ${invariant} counterexample found\n`,
+		);
+	};
+	const witnessConfig = (invariant: string) =>
+		`SPECIFICATION Spec\nCONSTANTS MaxEpochs = 3\n          RequestSlots = 1\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`;
+	expectGrantViolation(
+		"A-B-A-witness",
+		grantSource,
+		witnessConfig("AtoBtoAUnreachable"),
+		"AtoBtoAUnreachable",
+	);
+	expectGrantViolation(
+		"timed-out-provider-still-completes",
+		grantSource,
+		witnessConfig("NoTimeoutCompletionAfterRouteFence"),
+		"NoTimeoutCompletionAfterRouteFence",
+	);
+	const grantMutations = [
+		[
+			"fresh-epoch",
+			'/\\ phase[e] = "unused"',
+			'/\\ phase[e] \\in {"unused", "retired"}',
+			"FreshGrantEpochs",
+		],
+		[
+			"route-fence",
+			"/\\ ~routeOpen[current]",
+			"/\\ TRUE",
+			"RetiredRoutesFenced",
+		],
+		[
+			"drain",
+			"/\\ \\A r \\in Requests : requestGeneration[r] # Len(history) \\/\n       ~ledgerPending[r] \\/ Len(history) \\in permanentlyFenced",
+			"/\\ TRUE",
+			"NoRetiredOutstanding",
+		],
+		[
+			"timeout",
+			"TimeoutPending(r) == ledgerPending",
+			"TimeoutPending(r) == [ledgerPending EXCEPT ![r] = FALSE]",
+			"NoRetiredOutstanding",
+		],
+		[
+			"provider-fence",
+			"/\\ requestGeneration[r] \\notin permanentlyFenced",
+			"/\\ TRUE",
+			"NoLateEffect",
+		],
+		[
+			"ownership",
+			"MigrateOwnership ==\n  /\\ owner = 1\n  /\\ current = 0",
+			"MigrateOwnership ==\n  /\\ owner = 1",
+			"CurrentGrantOwnsResource",
+		],
+	] as const;
+	let reusedEpochSource = "";
+	let unfencedRouteSource = "";
+	for (const [label, before, after, invariant] of grantMutations) {
+		if (grantSource.split(before).length !== 2)
+			throw new Error(`IacGrant ${label} mutation target changed`);
+		const mutated = grantSource.replace(before, after);
+		if (label === "fresh-epoch") reusedEpochSource = mutated;
+		if (label === "route-fence") unfencedRouteSource = mutated;
+		expectGrantViolation(label, mutated, grantConfig, invariant);
+	}
+	expectGrantViolation(
+		"A-B-A-stale-request",
+		reusedEpochSource,
+		witnessConfig("StaleAfterAtoBtoA"),
+		"StaleAfterAtoBtoA",
+	);
+	expectGrantViolation(
+		"retired-proxy-remains-reachable",
+		unfencedRouteSource,
+		witnessConfig("NoLateStart"),
+		"NoLateStart",
+	);
+	expectGrantViolation(
+		"old-proxy-after-successor",
+		unfencedRouteSource,
+		witnessConfig("NoOldProxyAfterSuccessor"),
+		"NoOldProxyAfterSuccessor",
+	);
+	if (
+		grantConfig.split("MaxEpochs = 3").length !== 2 ||
+		grantConfig.split("RequestSlots = 1").length !== 2
+	)
+		throw new Error("IacGrant concurrency bounds changed");
+	const concurrencyConfig = grantConfig
+		.replace("MaxEpochs = 3", "MaxEpochs = 2")
+		.replace("RequestSlots = 1", "RequestSlots = 2");
+	const concurrencyDirectory = join(scratch, "grant-two-requests");
+	mkdirSync(concurrencyDirectory);
+	writeFileSync(join(concurrencyDirectory, "IacGrant.tla"), grantSource);
+	writeFileSync(join(concurrencyDirectory, "IacGrant.cfg"), concurrencyConfig);
+	const concurrent = runBoundedTlc(
+		jar,
+		[
+			"-workers",
+			"2",
+			"-metadir",
+			join(concurrencyDirectory, "states"),
+			"-config",
+			"IacGrant.cfg",
+			"IacGrant.tla",
+		],
+		concurrencyDirectory,
+	);
+	assertTlcExited(concurrent);
+	process.stdout.write(concurrent.stdout);
+	process.stderr.write(concurrent.stderr);
+	if (concurrent.status !== 0)
+		throw new Error("IacGrant two-request model checking failed");
+	const allRequests =
+		"/\\ \\A r \\in Requests : requestGeneration[r] # Len(history) \\/\n       ~ledgerPending[r] \\/ Len(history) \\in permanentlyFenced";
+	if (grantSource.split(allRequests).length !== 2)
+		throw new Error("IacGrant all-request drain guard changed");
+	const oneDrained = grantSource.replace(
+		allRequests,
+		allRequests.replace("\\A r", "\\E r"),
+	);
+	expectGrantViolation(
+		"drain-one-of-two",
+		oneDrained,
+		concurrencyConfig,
+		"NoRetiredOutstanding",
+	);
+	const concurrencyWitness = (invariant: string) =>
+		`SPECIFICATION Spec\nCONSTANTS MaxEpochs = 2\n          RequestSlots = 2\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`;
+	expectGrantViolation(
+		"two-concurrent-requests",
+		grantSource,
+		concurrencyWitness("TwoConcurrentRequestsUnreachable"),
+		"TwoConcurrentRequestsUnreachable",
+	);
+	expectGrantViolation(
+		"one-completes-one-still-running",
+		oneDrained,
+		concurrencyWitness("NoPartialConcurrentDrain"),
+		"NoPartialConcurrentDrain",
+	);
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }

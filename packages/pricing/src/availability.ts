@@ -8,6 +8,7 @@ import {
 	type QuoteVector,
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard } from "./catalog.js";
+import { hasExplicitFixedChargeCoverage } from "./fixed-charge-coverage.js";
 import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
@@ -215,14 +216,13 @@ export function quoteAvailablePricing(
 	}
 	const dimensions = product.meters.map((meter) => meter.dimension);
 	if (
-		dimensions.length === 0 ||
 		dimensions.some((dimension) => !validName(dimension)) ||
 		new Set(dimensions).size !== dimensions.length ||
 		scenario.candidate.length === 0
 	) {
 		return failed(
 			"PRICING_MODEL_INCOMPLETE",
-			"the target needs a workload and unambiguous declared meters",
+			"the target needs a workload and unambiguous meter declarations",
 		);
 	}
 	for (const workload of [...scenario.baseline, ...scenario.candidate]) {
@@ -274,15 +274,23 @@ export function quoteAvailablePricing(
 			utcPricingTimeOrder,
 		);
 		if (
+			rateCard.charges.length === 0 ||
 			rateCard.charges.some(
 				(charge) =>
-					charge.variant.case === "usage" &&
-					!dimensions.includes(charge.variant.value.dimension),
+					charge.variant.case === undefined ||
+					(charge.variant.case === "usage" &&
+						!dimensions.includes(charge.variant.value.dimension)),
+			) ||
+			!hasExplicitFixedChargeCoverage(
+				rateCard,
+				agreement,
+				workload,
+				dimensions.length > 0,
 			)
 		) {
 			return failed(
 				"PRICING_MODEL_INCOMPLETE",
-				"a rate-card charge has no declared product meter",
+				"the rate card needs applicable charges and explicit quantities",
 			);
 		}
 	}

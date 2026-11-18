@@ -22,7 +22,9 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 		assert.ok(patterns?.every((pattern) => pattern !== undefined));
 		for (const path of [
 			"packages/pricing/model/IacDestroyPricing.tla",
+			"packages/pricing/model/IacFixedPricing.tla",
 			"packages/pricing/model/IacPricingScope.tla",
+			"packages/pricing/src/fixed-charge-coverage.ts",
 			"packages/pricing/src/quote.ts",
 			"packages/provider-manifest/src/billing.ts",
 			"scripts/check-iac-models.ts",
