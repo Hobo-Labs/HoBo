@@ -23,6 +23,13 @@ throws, the scheduler still invokes the other due handlers and then throws an
 `AggregateError` containing each failed fire and its cause. The clock has
 already advanced when this happens.
 
+Use `scheduler.advanceAsync(deltaMs)` for jobs that return promises. It awaits
+each due job in fire order, continues after failures, and rejects with an
+`AggregateError` once all due jobs have settled. A second advance is rejected
+while dispatch is in progress. `advance` handles synchronous jobs; if a job
+returns a promise, it reports that `advanceAsync` is required after the job has
+started, so the asynchronous work may still finish.
+
 > **Naming:** `packages/runtimes/*` are concrete **runtime backends** (this
 > package: the local/sqlite substrate). The singular `packages/runtime`
 > (`@hobo/runtime`) is the app-facing **SDK primitives** package — a

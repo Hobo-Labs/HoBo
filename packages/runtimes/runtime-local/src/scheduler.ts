@@ -18,7 +18,9 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-export type ScheduledJobHandler = (fire: FiredTimer) => void;
+export type ScheduledJobHandler =
+	| ((fire: FiredTimer) => void)
+	| ((fire: FiredTimer) => PromiseLike<void>);
 
 export interface LocalScheduler extends SchedulerPort {
 	registerJob(
@@ -32,6 +34,7 @@ export interface LocalScheduler extends SchedulerPort {
 		onFire: ScheduledJobHandler,
 	): CronExpressionSchedule;
 	advance(deltaMs: number): readonly FiredTimer[];
+	advanceAsync(deltaMs: number): Promise<readonly FiredTimer[]>;
 	providerExports(): SchedulerProviderExports;
 }
 
@@ -49,6 +52,22 @@ export interface SchedulerProviderExports {
 
 export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 	const jobs = new Map<string, ScheduledJobHandler>();
+	let advancing = false;
+
+	function beginAdvance(): void {
+		if (advancing) throw new Error("scheduler is already advancing");
+		advancing = true;
+	}
+
+	function jobFor(fire: FiredTimer): ScheduledJobHandler | undefined {
+		return fire.kind === "cron" && fire.scheduleId !== undefined
+			? jobs.get(fire.scheduleId)
+			: undefined;
+	}
+
+	function jobFailure(fire: FiredTimer, cause: unknown): Error {
+		return new Error(`Scheduled job ${fire.fireId} failed`, { cause });
+	}
 
 	const scheduler: LocalScheduler = {
 		every(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule {
@@ -77,23 +96,49 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 		},
 
 		advance(deltaMs: number): readonly FiredTimer[] {
-			const fired = clock.advance(deltaMs);
-			const failures: Error[] = [];
-			for (const fire of fired) {
-				if (fire.kind !== "cron" || fire.scheduleId === undefined) {
-					continue;
+			beginAdvance();
+			try {
+				const fired = clock.advance(deltaMs);
+				const failures: Error[] = [];
+				for (const fire of fired) {
+					try {
+						const result = jobFor(fire)?.(fire);
+						if (isPromiseLike(result)) {
+							void Promise.resolve(result).catch(() => {});
+							throw new TypeError(
+								"asynchronous scheduled jobs require advanceAsync",
+							);
+						}
+					} catch (error) {
+						failures.push(jobFailure(fire, error));
+					}
 				}
-				try {
-					jobs.get(fire.scheduleId)?.(fire);
-				} catch (error) {
-					failures.push(
-						new Error(`Scheduled job ${fire.fireId} failed`, { cause: error }),
-					);
-				}
+				if (failures.length > 0)
+					throw new AggregateError(failures, "Scheduled jobs failed");
+				return fired;
+			} finally {
+				advancing = false;
 			}
-			if (failures.length > 0)
-				throw new AggregateError(failures, "Scheduled jobs failed");
-			return fired;
+		},
+
+		async advanceAsync(deltaMs: number): Promise<readonly FiredTimer[]> {
+			beginAdvance();
+			try {
+				const fired = clock.advance(deltaMs);
+				const failures: Error[] = [];
+				for (const fire of fired) {
+					try {
+						await jobFor(fire)?.(fire);
+					} catch (error) {
+						failures.push(jobFailure(fire, error));
+					}
+				}
+				if (failures.length > 0)
+					throw new AggregateError(failures, "Scheduled jobs failed");
+				return fired;
+			} finally {
+				advancing = false;
+			}
 		},
 
 		providerExports() {
@@ -155,4 +200,15 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 	};
 
 	return Object.freeze(scheduler);
+}
+
+function isPromiseLike(
+	value: void | PromiseLike<void>,
+): value is PromiseLike<void> {
+	return (
+		value !== undefined &&
+		value !== null &&
+		Object(value) === value &&
+		value.then instanceof Function
+	);
 }

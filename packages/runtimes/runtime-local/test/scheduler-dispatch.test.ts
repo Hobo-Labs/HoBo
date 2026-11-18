@@ -72,4 +72,103 @@ describe("local scheduler dispatch", () => {
 			"cron:b:3",
 		]);
 	});
+
+	it("awaits asynchronous jobs in fire order and reports failures after dispatch", async () => {
+		const runtime = createRuntimeLocalQueueClock({
+			startInstant: "2030-01-01T00:00:00.000Z",
+		});
+		const scheduler = createLocalScheduler(runtime.clock);
+		const observed: string[] = [];
+		const failure = new Error("asynchronous failure");
+		scheduler.registerJob(
+			parseScheduleId("a"),
+			{ everyMs: 1_000 },
+			async (fire) => {
+				observed.push(`start:${fire.fireId}`);
+				await Promise.resolve();
+				observed.push(`end:${fire.fireId}`);
+				if (fire.occurrence === 1) throw failure;
+			},
+		);
+		scheduler.registerJob(parseScheduleId("b"), { everyMs: 1_000 }, (fire) => {
+			observed.push(fire.fireId);
+		});
+
+		let thrown: unknown;
+		try {
+			await scheduler.advanceAsync(2_000);
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(AggregateError);
+		if (!(thrown instanceof AggregateError))
+			throw new Error("expected failure");
+		expect(thrown.errors).toHaveLength(1);
+		expect(thrown.errors[0]).toMatchObject({
+			message: "Scheduled job cron:a:1 failed",
+			cause: failure,
+		});
+		expect(observed).toEqual([
+			"start:cron:a:1",
+			"end:cron:a:1",
+			"cron:b:1",
+			"start:cron:a:2",
+			"end:cron:a:2",
+			"cron:b:2",
+		]);
+		expect(
+			(await scheduler.advanceAsync(1_000)).map((fire) => fire.fireId),
+		).toEqual(["cron:a:3", "cron:b:3"]);
+	});
+
+	it("rejects overlapping advances until the asynchronous job settles", async () => {
+		const runtime = createRuntimeLocalQueueClock({
+			startInstant: "2030-01-01T00:00:00.000Z",
+		});
+		const scheduler = createLocalScheduler(runtime.clock);
+		let release = () => {};
+		const blocked = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		scheduler.registerJob(
+			parseScheduleId("a"),
+			{ everyMs: 1_000 },
+			() => blocked,
+		);
+		const advancing = scheduler.advanceAsync(1_000);
+		expect(() => scheduler.advance(1_000)).toThrow(/already advancing/);
+		await expect(scheduler.advanceAsync(1_000)).rejects.toThrow(
+			/already advancing/,
+		);
+		release();
+		await expect(advancing).resolves.toHaveLength(1);
+		expect(runtime.clock.now()).toBe("2030-01-01T00:00:01.000Z");
+	});
+
+	it("reports a promise returned to synchronous advance", async () => {
+		const runtime = createRuntimeLocalQueueClock({
+			startInstant: "2030-01-01T00:00:00.000Z",
+		});
+		const scheduler = createLocalScheduler(runtime.clock);
+		scheduler.registerJob(
+			parseScheduleId("a"),
+			{ everyMs: 1_000 },
+			async () => {
+				throw new Error("rejected job");
+			},
+		);
+		let thrown: unknown;
+		try {
+			scheduler.advance(1_000);
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(AggregateError);
+		if (!(thrown instanceof AggregateError))
+			throw new Error("expected failure");
+		expect(thrown.errors[0]?.cause).toEqual(
+			new TypeError("asynchronous scheduled jobs require advanceAsync"),
+		);
+		await Promise.resolve();
+	});
 });
