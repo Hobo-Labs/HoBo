@@ -85,6 +85,11 @@ import {
 	PrHeadVerificationError,
 	verifyPrHead,
 } from "./github-pr-target.mts";
+import {
+	currentMergeGroup,
+	mergeGroupIdentity,
+	type MergeGroupIdentity,
+} from "./github-merge-group.mts";
 import { githubAppStatusIsReadOnly } from "./github-status-permission.mts";
 import { trustedGithubTarget } from "./github-target.mts";
 
@@ -513,8 +518,8 @@ export type RunTarget = Readonly<{
 	baseTree: string;
 	/** `main` for a base of `origin/main`: what `github.base_ref` is on a pull request. */
 	baseBranch: string;
-	/** A commit with the base as first parent, HEAD as second, and HEAD's tree. */
 	mergeCommit: string;
+	mergeGroup?: true;
 }>;
 
 /**
@@ -584,6 +589,34 @@ export function resolveRunTarget(input: {
 		baseTree: git(root, ["rev-parse", `${base}^{tree}`]),
 		baseBranch: input.baseRef.replace(/^[^/]+\//u, ""),
 		mergeCommit,
+	};
+}
+
+export function resolveMergeGroupTarget(input: {
+	cwd: string;
+	baseRef: string;
+}): RunTarget {
+	const root = git(input.cwd, ["rev-parse", "--show-toplevel"]);
+	assertUnmodifiedGitGraph(root);
+	if (git(root, ["status", "--porcelain"]))
+		throw new AttestError(
+			"the working tree is not clean; merge-group signoff refused",
+		);
+	const base = git(root, ["rev-parse", `${input.baseRef}^{commit}`]);
+	const head = git(root, ["rev-parse", "HEAD^{commit}"]);
+	if (head === base || git(root, ["show", "-s", "--format=%P", head]) !== base)
+		throw new AttestError(
+			"the merge-group commit must have the current base as its only parent",
+		);
+	return {
+		root,
+		head,
+		base,
+		tree: git(root, ["rev-parse", `${head}^{tree}`]),
+		baseTree: git(root, ["rev-parse", `${base}^{tree}`]),
+		baseBranch: input.baseRef.replace(/^[^/]+\//u, ""),
+		mergeCommit: head,
+		mergeGroup: true,
 	};
 }
 
@@ -1059,7 +1092,8 @@ function assertRunTarget(target: RunTarget): void {
 			git(target.root, ["rev-parse", `${target.mergeCommit}^{tree}`]) !==
 				target.tree ||
 			git(target.root, ["show", "-s", "--format=%P", target.mergeCommit]) !==
-				`${target.base} ${target.head}` ||
+				(target.mergeGroup ? target.base : `${target.base} ${target.head}`) ||
+			(target.mergeGroup === true && target.mergeCommit !== target.head) ||
 			!gitSucceeds(target.root, [
 				"merge-base",
 				"--is-ancestor",
@@ -1424,6 +1458,7 @@ export async function runAttestedJobs(input: {
 		baseTree: target.baseTree,
 		head: target.head,
 		base: target.base,
+		testedCommit: target.mergeCommit,
 		jobs: results.map((result) => result.id),
 		events: [...events],
 		startedAt: startedAt.toISOString(),
@@ -1797,6 +1832,52 @@ function signoffEnvironment(input: {
 	}
 }
 
+function assertCurrentMergeGroup(input: {
+	root: string;
+	remote: string;
+	baseBranch: string;
+	base: string;
+	head: string;
+	branch: string;
+	prNumber?: number | undefined;
+	githubEnv: NodeJS.ProcessEnv;
+}): MergeGroupIdentity {
+	const identity = mergeGroupIdentity(input);
+	if (
+		!identity ||
+		(input.prNumber !== undefined && identity.pr !== input.prNumber)
+	)
+		throw new AttestError(
+			"the merge-group ref does not match the tested base and pull request",
+		);
+	try {
+		const ref = `refs/heads/${identity.branch}`;
+		const advertised = git(
+			input.root,
+			["ls-remote", "--exit-code", "--heads", input.remote, ref],
+			{
+				env: {
+					GIT_TERMINAL_PROMPT: "0",
+					GIT_ASKPASS: "",
+					SSH_ASKPASS_REQUIRE: "never",
+					GCM_INTERACTIVE: "Never",
+				},
+				timeoutMs: 10_000,
+			},
+		);
+		if (
+			advertised !== `${identity.head}\t${ref}` ||
+			!currentMergeGroup({ cwd: input.root, env: input.githubEnv, identity })
+		)
+			throw new Error("queue entry or ref changed");
+	} catch {
+		throw new AttestError(
+			"the merge-group entry or its published ref changed or could not be verified",
+		);
+	}
+	return identity;
+}
+
 function signoffScratch(root: string, machine: NodeJS.ProcessEnv): string {
 	const candidates = [
 		tmpdir(),
@@ -2159,6 +2240,7 @@ export async function signoffLocalRun(input: {
 	baseRef: string;
 	expectedBase?: string | undefined;
 	prNumber?: number | undefined;
+	mergeGroupBranch?: string | undefined;
 	expectedPublished?: PublishedSignoffHead | undefined;
 	event: AttestationEvent;
 	envelopeText: string;
@@ -2230,6 +2312,13 @@ export async function signoffLocalRun(input: {
 	if (envelope.statement.head !== head)
 		throw new AttestError(
 			"the record is for a different HEAD; run the checks again",
+		);
+	if (
+		input.mergeGroupBranch !== undefined &&
+		(input.event !== "merge_group" || envelope.statement.testedCommit !== head)
+	)
+		throw new AttestError(
+			"the record does not prove execution on the exact merge-group commit; run the checks again",
 		);
 
 	// This is a local, GitHub-credential-backed signoff, not a workflow's
@@ -2307,6 +2396,30 @@ export async function signoffLocalRun(input: {
 		base,
 		env: input.env ?? process.env,
 	});
+	const mergeGroup =
+		input.mergeGroupBranch === undefined
+			? undefined
+			: assertCurrentMergeGroup({
+					root,
+					remote,
+					baseBranch: branch,
+					base,
+					head,
+					branch: input.mergeGroupBranch,
+					prNumber: input.prNumber,
+					githubEnv,
+				});
+	const published = mergeGroup
+		? { kind: "branch" as const, branch: mergeGroup.branch, tip: head }
+		: input.expectedPublished;
+	if (
+		mergeGroup &&
+		input.expectedPublished &&
+		!isDeepStrictEqual(published, input.expectedPublished)
+	)
+		throw new AttestError(
+			"the merge-group proof changed since fleet preflight; run the checks again",
+		);
 	const witness = targetSignoffWitness({
 		root,
 		remote,
@@ -2316,8 +2429,8 @@ export async function signoffLocalRun(input: {
 		baseBranch: branch,
 		env: input.env ?? process.env,
 		githubEnv,
-		prNumber: input.prNumber,
-		expectedPublished: input.expectedPublished,
+		prNumber: mergeGroup ? undefined : input.prNumber,
+		expectedPublished: published,
 	});
 	let failure: AttestError | undefined;
 	let publicationAttempted = false;
@@ -2339,12 +2452,50 @@ export async function signoffLocalRun(input: {
 			published: witness.published,
 		});
 		assertSignoffCheckout(root, head);
+		if (mergeGroup)
+			assertCurrentMergeGroup({
+				root,
+				remote,
+				baseBranch: branch,
+				base,
+				head,
+				branch: mergeGroup.branch,
+				prNumber: mergeGroup.pr,
+				githubEnv: environment,
+			});
 		publicationAttempted = true;
 		execFileSync("gh", ["signoff", "create", "--commit", head, ...contexts], {
 			cwd: witness.cwd,
 			env: environment,
 			stdio: "inherit",
 		});
+		if (mergeGroup) {
+			try {
+				witness.verify();
+				signoffEnvironment({
+					root,
+					remote,
+					branch,
+					base,
+					env: input.env ?? process.env,
+					published: witness.published,
+				});
+				assertCurrentMergeGroup({
+					root,
+					remote,
+					baseBranch: branch,
+					base,
+					head,
+					branch: mergeGroup.branch,
+					prNumber: mergeGroup.pr,
+					githubEnv: environment,
+				});
+			} catch {
+				throw new AttestError(
+					"the merge group changed during publication; some statuses may already have been posted",
+				);
+			}
+		}
 	} catch (cause) {
 		failure =
 			cause instanceof AttestError
@@ -2384,23 +2535,40 @@ function pullRequestOption(args: readonly string[]): number | undefined {
 	return number;
 }
 
+function mergeGroupOption(args: readonly string[]): string | undefined {
+	const values = args.filter(
+		(arg) =>
+			arg === "--merge-group-ref" || arg.startsWith("--merge-group-ref="),
+	);
+	if (values.length === 0) return undefined;
+	if (
+		values.length !== 1 ||
+		!values[0]?.startsWith("--merge-group-ref=") ||
+		values[0] === "--merge-group-ref="
+	)
+		throw new AttestError(
+			"--merge-group-ref must name one current merge-queue branch",
+		);
+	return values[0].slice("--merge-group-ref=".length);
+}
+
 const USAGE = `usage: pnpm ci:attest <command>
 
   init-key [--days=${DEFAULT_TRUST_DAYS}] [--note=TEXT]
       Create this machine's signing key if it has none, and print the public
       entry to add to ${ATTESTORS_PATH} on main.
-  run [--base=origin/main] [--events=pull_request,merge_group] [--skip-job=ID]... [--no-fetch] [--fresh]
+  run [--base=origin/main] [--events=pull_request,merge_group] [--merge-group-ref=BRANCH] [--skip-job=ID]... [--no-fetch] [--fresh]
       Run the covered CI jobs on HEAD and sign the result. --fresh runs every
       Turbo task again instead of replaying a cached result.
   publish [--remote=origin] [--file=PATH]
       Push the signed attestation to the ${ATTESTATION_BRANCH} branch.
   verify [--base=origin/main] [--event=pull_request] [--file=PATH]
       Check an attestation the way the workflows do.
-  signoff [--base=origin/main] [--event=pull_request] [--file=PATH] [--pr=NUMBER]
+  signoff [--base=origin/main] [--event=pull_request] [--merge-group-ref=BRANCH] [--file=PATH] [--pr=NUMBER]
       Post gh-signoff statuses for this machine's covered local jobs on HEAD.
   fleet [--local-signoff] [--github-unavailable] [--policy-current]
         [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]...
-        [--base=origin/main] [--pr=NUMBER] [--fresh]
+        [--base=origin/main] [--pr=NUMBER] [--merge-group-ref=BRANCH] [--fresh]
       Select from fleet availability; opt in to local signoff as a fallback.
       --policy-current asserts, after comparison, that live offers, desired policy and
       daemon routing match the base.
@@ -2459,6 +2627,8 @@ export async function main(
 	}
 	if (command === "run") {
 		const baseRef = option(rest, "base") ?? "origin/main";
+		const mergeGroupBranch = mergeGroupOption(rest);
+		const mergeGroupPr = mergeGroupBranch ? pullRequestOption(rest) : undefined;
 		const remoteBranch = /^([^/]+)\/(.+)$/u.exec(baseRef);
 		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
 		if (
@@ -2480,19 +2650,56 @@ export async function main(
 					`ci:attest: could not fetch ${baseRef}; using it as it is here`,
 				);
 		}
-		const events = (option(rest, "events") ?? ATTESTATION_EVENTS.join(","))
+		const events = (
+			option(rest, "events") ??
+			(mergeGroupBranch ? "merge_group" : ATTESTATION_EVENTS.join(","))
+		)
 			.split(",")
 			.map((name) => {
 				const event = ATTESTATION_EVENTS.find((known) => known === name.trim());
 				if (!event) throw new AttestError(`unknown event: ${name}`);
 				return event;
 			});
-		const target = resolveRunTarget({ cwd: root, baseRef });
+		if (
+			mergeGroupBranch &&
+			(events.length !== 1 || events[0] !== "merge_group")
+		)
+			throw new AttestError(
+				"a merge-group checkout can only verify the merge_group event",
+			);
+		const target = mergeGroupBranch
+			? resolveMergeGroupTarget({ cwd: root, baseRef })
+			: resolveRunTarget({ cwd: root, baseRef });
 		const expectedBase = option(rest, "expected-base");
 		if (expectedBase !== undefined && expectedBase !== target.base)
 			throw new AttestError(
 				"the fleet-observed base changed; local signoff refused",
 			);
+		let mergeGroupRemote: string | undefined;
+		if (mergeGroupBranch) {
+			if (!remoteBranch?.[1] || !remoteBranch[2])
+				throw new AttestError(
+					"--base must name a remote branch, such as origin/main",
+				);
+			mergeGroupRemote = remoteBranch[1];
+			const githubEnv = signoffEnvironment({
+				root,
+				remote: mergeGroupRemote,
+				branch: remoteBranch[2],
+				base: target.base,
+				env,
+			});
+			assertCurrentMergeGroup({
+				root,
+				remote: mergeGroupRemote,
+				baseBranch: remoteBranch[2],
+				base: target.base,
+				head: target.head,
+				branch: mergeGroupBranch,
+				prNumber: mergeGroupPr,
+				githubEnv,
+			});
+		}
 		const plan = loadPlan(join(root, "scripts/ci/attested-jobs.json"));
 		const skipJobs = options(rest, "skip-job");
 		for (const id of skipJobs)
@@ -2512,6 +2719,30 @@ export async function main(
 				fresh: rest.includes("--fresh"),
 				env,
 			});
+			if (mergeGroupBranch && mergeGroupRemote && remoteBranch?.[2]) {
+				try {
+					const githubEnv = signoffEnvironment({
+						root,
+						remote: mergeGroupRemote,
+						branch: remoteBranch[2],
+						base: target.base,
+						env,
+					});
+					assertCurrentMergeGroup({
+						root,
+						remote: mergeGroupRemote,
+						baseBranch: remoteBranch[2],
+						base: target.base,
+						head: target.head,
+						branch: mergeGroupBranch,
+						prNumber: mergeGroupPr,
+						githubEnv,
+					});
+				} catch (cause) {
+					rmSync(outcome.file, { force: true });
+					throw cause;
+				}
+			}
 			const { statement } = outcome.envelope;
 			console.log(
 				`\nci:attest: signed ${outcome.file}\n  tree ${statement.tree}\n  jobs ${statement.jobs.join(", ")}\n  events ${statement.events.join(", ")}\n  took ${Math.round((Date.now() - began) / 1000)} s`,
@@ -2573,13 +2804,16 @@ export async function main(
 	}
 	if (command === "signoff") {
 		const prNumber = pullRequestOption(rest);
+		const mergeGroupBranch = mergeGroupOption(rest);
 		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
 		const file = attestationFile(root, rest);
 		if (!existsSync(file))
 			throw new AttestError(
 				`no local record at ${file}; run: pnpm ci:attest run`,
 			);
-		const name = option(rest, "event") ?? "pull_request";
+		const name =
+			option(rest, "event") ??
+			(mergeGroupBranch ? "merge_group" : "pull_request");
 		const event = ATTESTATION_EVENTS.find((known) => known === name);
 		if (!event) throw new AttestError(`unknown event: ${name}`);
 		const path = keyPathFrom(env);
@@ -2594,6 +2828,7 @@ export async function main(
 			baseRef: option(rest, "base") ?? "origin/main",
 			expectedBase: option(rest, "expected-base"),
 			prNumber,
+			mergeGroupBranch,
 			expectedPublished,
 			event,
 			envelopeText: readFileSync(file, "utf8"),
@@ -2608,10 +2843,12 @@ export async function main(
 	}
 	if (command === "fleet") {
 		const prNumber = pullRequestOption(rest);
+		const mergeGroupBranch = mergeGroupOption(rest);
 		for (const arg of rest)
 			if (
 				!arg.startsWith("--base=") &&
 				!arg.startsWith("--pr=") &&
+				!arg.startsWith("--merge-group-ref=") &&
 				!arg.startsWith("--provider-unavailable=") &&
 				!arg.startsWith("--runner-unavailable=") &&
 				arg !== "--local-signoff" &&
@@ -2706,7 +2943,9 @@ export async function main(
 		const base = option(rest, "base") ?? "origin/main";
 		// Check signoff policy before running potentially expensive local jobs.
 		// Ordinary `run` and workflow-reuse attestations keep their existing rules.
-		const target = resolveRunTarget({ cwd: root, baseRef: base });
+		const target = mergeGroupBranch
+			? resolveMergeGroupTarget({ cwd: root, baseRef: base })
+			: resolveRunTarget({ cwd: root, baseRef: base });
 		if (target.base !== expectedBase)
 			throw new AttestError(
 				"the fleet-observed base changed; local signoff refused",
@@ -2751,6 +2990,18 @@ export async function main(
 			throw new AttestError(
 				"the current GitHub App installation has read-only commit statuses; use an identity with commit-status write access before starting local signoff",
 			);
+		const mergeGroup = mergeGroupBranch
+			? assertCurrentMergeGroup({
+					root,
+					remote,
+					baseBranch: branch,
+					base: target.base,
+					head: target.head,
+					branch: mergeGroupBranch,
+					prNumber,
+					githubEnv,
+				})
+			: undefined;
 		const witness = targetSignoffWitness({
 			root,
 			remote,
@@ -2760,7 +3011,10 @@ export async function main(
 			baseBranch: branch,
 			env,
 			githubEnv,
-			prNumber,
+			prNumber: mergeGroup ? undefined : prNumber,
+			expectedPublished: mergeGroup
+				? { kind: "branch", branch: mergeGroup.branch, tip: target.head }
+				: undefined,
 		});
 		let preflightFailure: AttestError | undefined;
 		try {
@@ -2784,6 +3038,7 @@ export async function main(
 		}
 		finishSignoffWitness(witness, preflightFailure, false);
 		const selectedPr =
+			mergeGroup?.pr ??
 			prNumber ??
 			(witness.published.kind === "pr"
 				? witness.published.proof.prNumber
@@ -2797,7 +3052,13 @@ export async function main(
 						"run",
 						`--base=${base}`,
 						`--expected-base=${expectedBase}`,
-						"--events=pull_request",
+						`--events=${mergeGroup ? "merge_group" : "pull_request"}`,
+						...(mergeGroup
+							? [
+									`--merge-group-ref=${mergeGroup.branch}`,
+									`--pr=${mergeGroup.pr}`,
+								]
+							: []),
 						...omitted.map((id) => `--skip-job=${id}`),
 						...(rest.includes("--fresh") ? ["--fresh"] : []),
 					],
@@ -2809,6 +3070,12 @@ export async function main(
 						"signoff",
 						`--base=${base}`,
 						`--expected-base=${expectedBase}`,
+						...(mergeGroup
+							? [
+									"--event=merge_group",
+									`--merge-group-ref=${mergeGroup.branch}`,
+								]
+							: []),
 						...(selectedPr === undefined ? [] : [`--pr=${selectedPr}`]),
 					],
 					env,
