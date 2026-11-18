@@ -272,8 +272,12 @@ describe("Infisical deployment credential", () => {
 				},
 			});
 			expect(
-				requests.some((url) => url.includes("/api/v4/secrets/VERCEL_TOKEN")),
-				JSON.stringify(ran.envelope),
+				requests.some(
+					(url) =>
+						url.includes("6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7") &&
+						url.includes("/api/v4/secrets/VERCEL_TOKEN"),
+				),
+				JSON.stringify({ envelope: ran.envelope, requests }),
 			).toBe(true);
 			expect(seenAuthorization, JSON.stringify(ran.envelope)).toContain(
 				`Bearer ${TOKEN}`,
