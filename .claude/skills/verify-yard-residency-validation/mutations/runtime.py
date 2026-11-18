@@ -11,29 +11,38 @@ shutil.copytree(repo / 'packages/broker', scratch, ignore=shutil.ignore_patterns
 (scratch / 'node_modules').symlink_to(repo / 'packages/broker/node_modules', target_is_directory=True)
 (scratch / 'tsconfig.json').unlink()
 config = Path(__file__).resolve().parents[1] / 'models/vitest.config.mts'
-source = scratch / 'src/yard-placement/matching.ts'
-original = source.read_text()
-before = '\tconst separator = entry.indexOf(":");'
-after = '\tif (yard.layout.residency.includes(entry)) return undefined;\n' + before
+matching = scratch / 'src/yard-placement/matching.ts'
+deploy = scratch / 'src/yard-placement/deploy.ts'
+originals = {source: source.read_text() for source in [matching, deploy]}
+check = '\t\tconst jurisdiction = parseYardResidencyTag(entry);'
+cases = [
+    ('matching', matching, check, '\t\tif (yard.layout.residency.includes(entry)) return undefined;\n' + check,
+     'test/yard-residency-validation.test.ts', 'rejects invalid atlantis even if'),
+    ('generation', deploy, '\t\t\t\tparseYardResidencyTag(entry);', '\t\t\t\t/* omit preflight */',
+     'test/yard-event-store-folds.test.ts', 'invalid-residency-before-generation'),
+]
 
-def run():
+def run(test_file, pattern):
     return subprocess.run([
         'node', str(repo / 'node_modules/vitest/vitest.mjs'), 'run',
-        'test/yard-residency-validation.test.ts', '--root', str(scratch), '--config', str(config),
-        '--maxWorkers=1', '--no-file-parallelism', '-t', 'does not ask the host to authorize',
+        test_file, '--root', str(scratch), '--config', str(config),
+        '--maxWorkers=1', '--no-file-parallelism', '-t', pattern,
     ], cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=180)
 
 try:
-    if original.count(before) != 1:
-        raise RuntimeError('expected exactly one residency parser location')
-    control = run()
-    if control.returncode != 0 or 'Test Files  1 passed' not in control.stdout:
-        raise RuntimeError(f'control failed: {control.stdout[-5000:]}')
-    print('Control passed', flush=True)
-    source.write_text(original.replace(before, after))
-    result = run()
-    if result.returncode == 0 or 'FAIL  test/yard-residency-validation.test.ts >' not in result.stdout or 'Failed Suites' in result.stdout:
-        raise RuntimeError(f'expected assertion failure missing: {result.stdout[-5000:]}')
-    print('Expected real-code failure: invalid attestation reached authorization', flush=True)
+    for name, source, before, after, test_file, pattern in cases:
+        original = originals[source]
+        if original.count(before) != 1:
+            raise RuntimeError(f'{name}: expected exactly one source location')
+        control = run(test_file, pattern)
+        if control.returncode != 0 or 'Test Files  1 passed' not in control.stdout:
+            raise RuntimeError(f'{name} control failed: {control.stdout[-5000:]}')
+        print(f'Control passed: {name}', flush=True)
+        source.write_text(original.replace(before, after))
+        result = run(test_file, pattern)
+        if result.returncode == 0 or f'FAIL  {test_file} >' not in result.stdout or 'Failed Suites' in result.stdout:
+            raise RuntimeError(f'{name} expected assertion failure missing: {result.stdout[-5000:]}')
+        print(f'Expected real-code failure: {name}', flush=True)
+        source.write_text(original)
 finally:
     shutil.rmtree(base)

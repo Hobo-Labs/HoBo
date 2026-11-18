@@ -38,6 +38,8 @@ attestation is still trusted host evidence, not independent proof of location.
 The Yard deployment request and quote-preparation paths reject invalid tags
 before a generation hold or provider call. The lower-level generation planner
 and saga still trust their supplied layout or plan and need their own guards.
+Earlier invalid requests may already have triggered generation; reconcile any
+associated provider resources and budget holds before retrying.
 
 The [Yard residency validation skill](../../.agents/skills/verify-yard-residency-validation/SKILL.md)
 checks this bounded decision; its projection hides eight same-state steps.
@@ -50,6 +52,23 @@ stateDiagram-v2
   [*] --> s0
   s0 --> s2: refuse invalid or insufficient evidence
   s0 --> s1: accept valid residency evidence
+```
+
+The generation projection hides two same-state steps and assumes the remaining
+funding and policy checks allow the request.
+
+```mermaid
+stateDiagram-v2
+  s0: Residency request received
+  s1: Invalid residency refused
+  s2: Residency accepted for generation
+  s3: Generation funding held
+  s4: Yard generation invoked
+  [*] --> s0
+  s0 --> s1: refuse an invalid tag
+  s0 --> s2: accept a valid tag
+  s2 --> s3: reserve generation funding
+  s3 --> s4: invoke the Yard provider
 ```
 
 The [Yard JSON constraint skill](../../.agents/skills/verify-yard-json-constraints/SKILL.md)
@@ -121,7 +140,7 @@ deployed transport or a guarantee that an older receiver enforces the marker.
 The protobuf receipt still omits execution-unit details.
 
 The [Yard request wire skill](../../.agents/skills/verify-yard-request-wire/SKILL.md)
-checks a bounded model of the codec. This projection hides 90 same-state steps;
+checks a bounded model of the codec. This projection hides 96 same-state steps;
 acceptance means the request can proceed to authorization, not that its sender
 or its claimed digest has been authenticated.
 

@@ -4,12 +4,12 @@ EXTENDS Naturals
 \* Finite request classes supplied to decodeBindleDeploymentRequest.
 \* Rebound has a changed request and a recomputed matching digest: the codec
 \* accepts it because its embedded digest is not an authentication mechanism.
-CONSTANTS CheckUnknown, CheckVersion, CheckAmount, CheckParsedAmount, CheckIdentity,
+CONSTANTS CheckUnknown, CheckVersion, CheckAmount, CheckParsedAmount, CheckParsedResidency, CheckIdentity,
           CheckV1Labels, CheckV2Labels, CheckPropertyText, CheckCanonical, CheckDigest
 Cases == {"valid-v1", "valid-v2", "rebound", "bad-binary", "unknown", "legacy", "unsupported",
           "incomplete", "negative", "bad-mode", "empty-identity", "bad-digest",
           "missing-v2-properties", "mixed-v1-label", "duplicate-v2-label", "mixed-v2-label",
-          "noncanonical-property-text", "noncanonical", "mismatch"}
+          "noncanonical-property-text", "invalid-residency", "noncanonical", "mismatch"}
 VARIABLES requestCase, phase
 vars == <<requestCase, phase>>
 
@@ -43,7 +43,8 @@ ParseDomain == /\ phase = "parse-domain"
                               requestCase = "missing-v2-properties" \/
                               (requestCase = "mixed-v1-label" /\ CheckV1Labels) \/
                               (requestCase \in {"duplicate-v2-label", "mixed-v2-label"} /\ CheckV2Labels) \/
-                              (requestCase = "noncanonical-property-text" /\ CheckPropertyText)
+                              (requestCase = "noncanonical-property-text" /\ CheckPropertyText) \/
+                              (requestCase = "invalid-residency" /\ CheckParsedResidency)
                            THEN "refused" ELSE "compare"
                /\ UNCHANGED requestCase
 Compare == /\ phase = "compare"
@@ -67,6 +68,7 @@ NoEmptyIdentity == phase = "accepted" => requestCase # "empty-identity"
 NoMixedV1Labels == phase = "accepted" => requestCase # "mixed-v1-label"
 NoAmbiguousV2Labels == phase = "accepted" => requestCase \notin {"duplicate-v2-label", "mixed-v2-label"}
 CanonicalPropertyText == phase = "accepted" => requestCase # "noncanonical-property-text"
+ValidResidency == phase = "accepted" => requestCase # "invalid-residency"
 Canonical == phase = "accepted" => requestCase # "noncanonical"
 MatchingDigest == phase = "accepted" => requestCase # "mismatch"
 CompleteAccepted == phase = "refused" => requestCase \notin {"valid-v1", "valid-v2", "rebound"}

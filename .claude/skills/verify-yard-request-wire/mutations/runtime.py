@@ -25,6 +25,7 @@ cases = [
     ('version2-legacy-labels', 'if (Object.keys(legacy).length !== 0)\n\t\tthrow new TypeError("version 2 cannot carry legacy labels");', '', 'rejects incomplete or ambiguous version 2 value encodings'),
     ('version2-duplicate-labels', 'if (seen.has(entry.key)) throw new TypeError("duplicate placement label");', '', 'rejects incomplete or ambiguous version 2 value encodings'),
     ('version2-property-text', '!isJsonObject(properties) ||\n\t\t\tJSON.stringify(properties) !== yardLayout.propertiesJson', '!isJsonObject(properties)', 'rejects incomplete or ambiguous version 2 value encodings'),
+    ('residency', '\t\t\t\tparseYardResidencyTag(entry);', '\t\t\t\t/* omit preflight */', 'refuses invalid residency even when the digest matches'),
     ('canonical', 'digest !== contentHashOf(raw) || digest !== message.requestDigest', 'digest !== message.requestDigest', 'refuses noncanonical wire fields'),
     ('digest', 'digest !== contentHashOf(raw) || digest !== message.requestDigest', 'digest !== contentHashOf(raw)', 'refuses old, incomplete'),
 ]
@@ -38,13 +39,15 @@ def run(pattern):
 
 try:
     for name, before, after, pattern in cases:
-        if original.count(before) != 1:
+        target = parser if name == 'residency' else source
+        target_original = parser_original if name == 'residency' else original
+        if target_original.count(before) != 1:
             raise RuntimeError(f'{name}: expected exactly one source match')
         control = run(pattern)
         if control.returncode != 0 or 'Test Files  1 passed' not in control.stdout:
             raise RuntimeError(f'{name} control failed: {control.stdout[-5000:]}')
         print(f'Control passed: {name}', flush=True)
-        source.write_text(original.replace(before, after))
+        target.write_text(target_original.replace(before, after))
         if name == 'amount':
             redundant = run(pattern)
             if redundant.returncode != 0 or 'Test Files  1 passed' not in redundant.stdout:
