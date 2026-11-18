@@ -31,9 +31,10 @@ export function useLocalStorage<T>(
   }, [key, storedValue]);
 
   const setValue = (value: SetValue<T>) => {
-    setStoredValue((previous) =>
-      typeof value === "function" ? value(previous) : value,
-    );
+    setStoredValue((previous) => {
+      if (value instanceof Function) return value(previous);
+      return value;
+    });
   };
 
   return [storedValue, setValue];
