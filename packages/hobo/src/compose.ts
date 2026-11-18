@@ -208,6 +208,7 @@ export function toRegistrableProvider(
 }
 
 export interface DefaultYardRuntimeOptions {
+	readonly observeDependency?: YardRuntime["observeDependency"];
 	// Durable event-store data directory. Defaults to a fresh OS temp dir
 	// (`hobo-yard-*`; the mocked lane is ephemeral) that this process owns and
 	// removes when it exits, an uncaught error included (owned-temp-dir.ts), so no
@@ -594,7 +595,7 @@ function createYardRuntimeOverStore(
 				environment.CLOUDFLARE_API_TOKEN && environment.CLOUDFLARE_ACCOUNT_ID,
 			) ||
 			Boolean(environment.VERCEL_TOKEN));
-	return {
+	const runtime: YardRuntime = {
 		hostingBudgetRequired,
 		store,
 		actorHost: createInMemoryActorHost(),
@@ -627,6 +628,9 @@ function createYardRuntimeOverStore(
 			base: createRegistryFromProviders([toRegistrableProvider(cloudflare)]),
 		}),
 	};
+	return options.observeDependency
+		? { ...runtime, observeDependency: options.observeDependency }
+		: runtime;
 }
 
 export interface ProductionYardRuntimeOptions

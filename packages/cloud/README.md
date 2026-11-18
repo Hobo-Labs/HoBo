@@ -26,6 +26,23 @@ the provider's observation changes. Configure `YardRuntime.observeDependency`
 for CLI deployments or `OrchestratorRealizerDeps.observeDependency` for
 continuous delivery. Delivery also checks conditions on dependencies realized
 by earlier Sets and includes those conditions in its resource change hash.
+`createHttpDependencyObserver` probes explicitly configured URLs: a successful
+HTTP response satisfies the requested condition, while an unavailable URL,
+non-success response, timeout, or transport error leaves the dependency pending.
+Use distinct endpoints when readiness and job completion have different meanings.
+
+```ts
+const urls = new Map([
+	["db:ready", "https://db.example/ready"],
+	["migration:completed", "https://jobs.example/migration/completed"],
+]);
+const observeDependency = createHttpDependencyObserver({
+	resolveUrl: ({ dependency, condition }) => urls.get(`${dependency.name}:${condition}`),
+});
+```
+
+Pass `observeDependency` to the Yard runtime or delivery realizer. The configured
+endpoints must return success only when their named condition is satisfied.
 
 SDK `b.secret().allow(...)` declarations lower to `secretRef` and preserve
 their requested `access` and `put` operations as required capabilities. A
