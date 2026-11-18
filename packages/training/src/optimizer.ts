@@ -199,6 +199,17 @@ function demoPool(trajectories: readonly Trajectory[]): DemoExample[] {
 		if (reward === undefined) {
 			fail(`request.trajectories.${index}.reward`, "present", reward);
 		}
+		if (
+			!Number.isFinite(reward.score) ||
+			reward.score < 0 ||
+			reward.score > 1
+		) {
+			fail(
+				`request.trajectories.${index}.reward.score`,
+				"number in [0, 1]",
+				reward.score,
+			);
+		}
 		const span =
 			trajectory.spans.find(
 				(candidate) =>

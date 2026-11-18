@@ -46,6 +46,8 @@ providers additionally never receive PII-classified trajectory content).
   unchanged when it rejects a bound.
   Iteration and demonstration counts follow the protobuf's positive `uint32`
   range; callers still need practical resource limits for their workloads.
+  Reward scores are checked as finite values in `[0, 1]` before optimization
+  records any trace spans.
 - **Trace capture** — every step records one span (OpenInference span-kind
   label + attributes map, `sha256:` input digest, score, keep/reject
   decision) into the in-memory sink; spans are clockless so seeded runs
