@@ -57,6 +57,8 @@ destroy, and replay. Oracles include:
   not replace earlier checkpoints at the same clock
 - the model refuses to advance an invalid or exhausted clock without changing
   its state
+- direct ticks and forward clock assignments are recorded for replay, and
+  invalid or backward clock assignments are refused
 - restoring a serialized state establishes a replay baseline for a fresh model;
   on an existing model it records a new revision and preserves earlier snapshots
 - malformed snapshots and inconsistent fingerprints are refused before restore

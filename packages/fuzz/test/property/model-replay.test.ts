@@ -184,6 +184,8 @@ describe("event history ownership", () => {
 		const before = model.serialize();
 		const history = model.events;
 		for (const kind of [
+			"clock.advanced",
+			"clock.set",
 			"snapshot.taken",
 			"rollback",
 			"model.restored",
@@ -204,6 +206,64 @@ describe("event history ownership", () => {
 			expect(model.events).toEqual(history);
 		}
 		expect(model.replay()).toBe(model.fingerprint());
+	});
+});
+
+describe("public clock replay", () => {
+	it("replays a forward clock assignment before a checkpoint", () => {
+		const model = new ControlModel();
+		model.clock = 5;
+		const history = model.events;
+		model.clock = 5;
+		expect(model.events).toEqual(history);
+		const checkpoint = model.snapshot();
+		model.createBindle(TENANT, "b1", "sha256:a");
+		model.rollback(TENANT, checkpoint);
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("replays direct ticks and forward clock assignments across checkpoints", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.integer({ min: 1, max: 4 }), {
+					minLength: 1,
+					maxLength: 8,
+				}),
+				(steps) => {
+					const model = new ControlModel();
+					for (const [index, step] of steps.entries()) {
+						if (index % 2 === 0) model.tick();
+						else model.clock += step;
+						const checkpoint = model.snapshot();
+						model.createBindle(TENANT, `b${index}`, `hash${index}`);
+						model.rollback(TENANT, checkpoint);
+						expect(model.replay()).toBe(model.fingerprint());
+					}
+				},
+			),
+			{ numRuns: 100 },
+		);
+	});
+
+	it("rejects invalid or backward assignments without changing history", () => {
+		const model = new ControlModel();
+		model.clock = 5;
+		const before = model.serialize();
+		const history = model.events;
+		for (const invalid of [
+			-1,
+			4,
+			0.5,
+			Number.NaN,
+			Infinity,
+			Number.MAX_SAFE_INTEGER + 1,
+		]) {
+			expect(() => {
+				model.clock = invalid;
+			}).toThrow("fuzz.invalid_model_clock");
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(history);
+		}
 	});
 });
 

@@ -339,9 +339,10 @@ describe("snapshot clock stability", () => {
 			0.5,
 			Number.MAX_SAFE_INTEGER + 1,
 		]) {
-			world.clock = invalid;
-			expect(() => world.tick()).toThrow("fuzz.model_clock_exhausted");
-			expect(Object.is(world.clock, invalid)).toBe(true);
+			expect(() => {
+				world.clock = invalid;
+			}).toThrow("fuzz.invalid_model_clock");
+			expect(world.clock).toBe(Number.MAX_SAFE_INTEGER);
 		}
 	});
 
