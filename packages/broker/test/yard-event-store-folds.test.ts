@@ -16,6 +16,7 @@ import {
 	createLocalHostCatalog,
 	createLocalYardEventStoreFoldResolver,
 	createSqliteBudgetAdmissionAuthority,
+	createSqliteYardGenerationQuotaAuthority,
 	createYardRuntimeCatalog,
 	DEFAULT_YARD_GENERATION_POLICY,
 	EVENT_STORE_SLOT,
@@ -231,6 +232,16 @@ describe("yard event-store folds + provider resolvers", () => {
 		"generation-dedicated-unsupported",
 		"generation-attestation-required",
 		"generation-locked-properties",
+		"generation-quota-unavailable",
+		"generation-quota-concurrent-full",
+		"generation-quota-tenant-full",
+		"generation-quota-ready-unverified",
+		"generation-quota-claim-mismatch",
+		"generation-quota-ready-not-stored",
+		"generation-quota-replaced",
+		"generation-quota-policy-denied",
+		"generation-quota-not-durable",
+		"generation-quota-removed-after-claim",
 		"exact-yard-mismatch-before-generation",
 		"exact-yard-match-generation",
 		"wrong-generated-yard-id",
@@ -489,6 +500,30 @@ describe("yard event-store folds + provider resolvers", () => {
 				validUntil: "2026-11-01T00:00:00Z",
 			}),
 		});
+		const quota = createSqliteYardGenerationQuotaAuthority({
+			path: join(directory, "generation-quota.sqlite"),
+			scopeId: "generation:test",
+			initialYards:
+				mode === "generation-quota-tenant-full"
+					? Array.from({ length: 5 }, (_, index) => ({
+							yardId: `yard:existing-${index}`,
+							ownerTenantId: "local",
+						}))
+					: [],
+			maxConcurrentGenerations: 1,
+			maxYardsPerTenant: 5,
+			verifyReady: () => mode !== "generation-quota-ready-unverified",
+		});
+		if (mode === "generation-quota-concurrent-full")
+			quota.reserve({
+				idempotencyKey: contentHashOf("other-quota-key"),
+				attemptId: "other-attempt",
+				ownerTenantId: "other-tenant",
+				yardId: "yard:other",
+				planHash: contentHashOf("other-quota-plan"),
+				maxConcurrentGenerations: 1,
+				maxYardsPerTenant: 5,
+			});
 		const quote = create(HostingQuoteSchema, {
 			quoteId: "azure-generation",
 			yardId: generationPlan.expectedYardId,
@@ -543,6 +578,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		let provisionCalls = 0;
 		let inspectCalls = 0;
 		let changeContext: (() => void) | undefined;
+		let changeQuota: (() => void) | undefined;
 		const connector = {
 			...nativeConnector,
 			signalsFor(id: string) {
@@ -708,6 +744,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			},
 			claimExecution(input: Parameters<typeof authority.claimExecution>[0]) {
 				const claimed = authority.claimExecution(input);
+				if (mode === "generation-quota-removed-after-claim") changeQuota?.();
 				if (mode === "generation-runtime-after-claim") {
 					const runtime = runtimes.snapshot().runtimes[0];
 					if (!runtime) throw new Error("runtime fixture missing");
@@ -751,6 +788,8 @@ describe("yard event-store folds + provider resolvers", () => {
 					}
 					if (mode === "generation-runtime-read-unavailable")
 						runtimeReadsAvailable = false;
+					if (mode === "generation-quota-replaced")
+						Object.assign(deps, { generationQuota: { ...quota } });
 					if (mode === "generation-policy-replaced")
 						Object.assign(deps, { generationPolicy: { ...allowPolicy } });
 					if (mode === "generation-registry-replaced")
@@ -779,15 +818,17 @@ describe("yard event-store folds + provider resolvers", () => {
 					}
 					if (mode === "changed-plan-during-policy")
 						runtimePermissions.push("unquoted-permission");
+					const effect =
+						mode === "generation-quota-policy-denied" ? "deny" : "allow";
 					return {
-						gate: { effect: "allow", reasons: [], events: [] },
+						gate: { effect, reasons: [], events: [] },
 						proof: create(HostingPolicyProofSchema, {
 							requestDigest: input.requestDigest,
 							quoteId: input.quote.quoteId,
 							quoteDigest: input.quoteDigest,
 							identity: input.identity,
 							policyHash: "approved-azure-policy",
-							effect: "allow",
+							effect,
 							obligationsSatisfied: true,
 							evidenceRef: "gatekeeper:approved",
 						}),
@@ -799,6 +840,43 @@ describe("yard event-store folds + provider resolvers", () => {
 				connectors,
 				seedLocalYard: false,
 			};
+			if (mode !== "generation-quota-unavailable")
+				Object.assign(deps, { generationQuota: quota });
+			if (mode === "generation-quota-not-durable")
+				Object.assign(deps, {
+					generationQuota: { ...quota, persistence: "volatile" },
+				});
+			if (mode === "generation-quota-claim-mismatch")
+				Object.assign(deps, {
+					generationQuota: {
+						...quota,
+						reserve(input: Parameters<typeof quota.reserve>[0]) {
+							const reservation = quota.reserve(input);
+							return {
+								...reservation,
+								claim: {
+									...reservation.claim,
+									ownerTenantId: `foreign-${identitySuffix}`,
+								},
+							};
+						},
+					},
+				});
+			if (mode === "generation-quota-ready-not-stored")
+				Object.assign(deps, {
+					generationQuota: {
+						...quota,
+						markReady(input: Parameters<typeof quota.markReady>[0]) {
+							const claim = quota.lookup(input.idempotencyKey);
+							if (!claim) throw new Error("fixture quota claim missing");
+							return {
+								...claim,
+								status: "ready" as const,
+								readyEvidenceRef: "forged",
+							};
+						},
+					},
+				});
 			if (
 				mode === "generation-normalizer-foreign-yard" ||
 				mode === "generation-normalizer-mutable-event" ||
@@ -902,6 +980,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				});
 			}
 			changeContext = () => Object.assign(deps, { hostingBudget: undefined });
+			changeQuota = () => Object.assign(deps, { generationQuota: undefined });
 			const result = await resolveBindleDeployment(request, deps);
 			if (
 				mode === "wrong-generation-plan" ||
@@ -971,16 +1050,18 @@ describe("yard event-store folds + provider resolvers", () => {
 				mode === "generation-registry-replaced" ||
 				mode === "generation-runtime-revoked" ||
 				mode === "generation-connector-replaced" ||
-				mode === "generation-method-replaced" ||
-				mode === "generation-policy-before-claim"
+				mode === "generation-method-replaced"
 			) {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
-				expect(authority.lookup(reservationId)?.status).toBe("held");
-				expect(authority.lookup(reservationId)?.executionDigest).toBe("");
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
 				return;
 			}
-			if (mode === "changed-plan-before-claim") {
+			if (
+				mode === "changed-plan-before-claim" ||
+				mode === "generation-policy-before-claim"
+			) {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)?.status).toBe("held");
@@ -990,8 +1071,8 @@ describe("yard event-store folds + provider resolvers", () => {
 			if (mode === "changed-plan-during-policy") {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
-				expect(authority.lookup(reservationId)?.status).toBe("held");
-				expect(authority.lookup(reservationId)?.executionDigest).toBe("");
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
 				return;
 			}
 			if (mode === "changed-work-after-generation") {
@@ -1061,6 +1142,102 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)).toBeUndefined();
 				expect(authority.read(now).reservedMicros).toBe(0);
+				return;
+			}
+			if (
+				mode === "generation-quota-concurrent-full" ||
+				mode === "generation-quota-tenant-full"
+			) {
+				expect({
+					outcome: result.outcome,
+					code: result.reasons?.[0]?.code,
+					authorizationCalls,
+					provisionCalls,
+					reservation: authority.lookup(reservationId)?.status,
+					reservedMicros: authority.read(now).reservedMicros,
+					quotaClaim: quota.lookup(generationPlan.idempotencyKey),
+				}).toEqual({
+					outcome: "rejected",
+					code: "yard-generation-quota-denied",
+					authorizationCalls: 1,
+					provisionCalls: 0,
+					reservation: undefined,
+					reservedMicros: 0,
+					quotaClaim: undefined,
+				});
+				return;
+			}
+			if (mode === "generation-quota-claim-mismatch") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe("yard-generation-quota-denied");
+				expect(authorizationCalls).toBe(1);
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				expect(quota.lookup(generationPlan.idempotencyKey)?.status).toBe(
+					"pending",
+				);
+				return;
+			}
+			if (mode === "generation-quota-replaced") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
+				return;
+			}
+			if (
+				mode === "generation-quota-ready-unverified" ||
+				mode === "generation-quota-ready-not-stored"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe(
+					"yard-generation-quota-uncertain",
+				);
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(quota.lookup(generationPlan.idempotencyKey)?.status).toBe(
+					"pending",
+				);
+				return;
+			}
+			if (mode === "generation-quota-policy-denied") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe(
+					"hosting-budget-admission-denied",
+				);
+				expect(authorizationCalls).toBe(1);
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				expect(quota.lookup(generationPlan.idempotencyKey)).toBeUndefined();
+				return;
+			}
+			if (mode === "generation-quota-removed-after-claim") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(quota.lookup(generationPlan.idempotencyKey)?.status).toBe(
+					"pending",
+				);
+				return;
+			}
+			if (
+				mode === "generation-quota-unavailable" ||
+				mode === "generation-quota-not-durable"
+			) {
+				expect({
+					outcome: result.outcome,
+					code: result.reasons?.[0]?.code,
+					authorizationCalls,
+					provisionCalls,
+					reservation: authority.lookup(reservationId)?.status,
+					reservedMicros: authority.read(now).reservedMicros,
+				}).toEqual({
+					outcome: "rejected",
+					code: "yard-generation-quota-unavailable",
+					authorizationCalls: 0,
+					provisionCalls: 0,
+					reservation: undefined,
+					reservedMicros: 0,
+				});
 				return;
 			}
 			if (
@@ -1203,6 +1380,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			}
 
 			expect(result.outcome).toBe("resolved");
+			expect(quota.lookup(generationPlan.idempotencyKey)?.status).toBe("ready");
 			expect(result.generationAttemptId).toBeTruthy();
 			expect(
 				result.events.some((e) => e.type === YARD_EVENTS.GenerationStarted),
@@ -1236,6 +1414,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(authority.read(now).reservedMicros).toBe(20);
 			}
 		} finally {
+			quota.close();
 			authority.close();
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -1260,6 +1439,26 @@ describe("yard event-store folds + provider resolvers", () => {
 					exerciseGeneration(mode, Buffer.from(suffix).toString("hex")),
 			),
 			{ seed: 614_590, numRuns: 40 },
+		);
+	});
+	it("preserves quota admission across generated failure scenarios", async () => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.constantFrom(
+					"normal",
+					"generation-quota-unavailable",
+					"generation-quota-concurrent-full",
+					"generation-quota-tenant-full",
+					"generation-quota-claim-mismatch",
+					"generation-quota-ready-not-stored",
+					"generation-quota-policy-denied",
+					"generation-quota-removed-after-claim",
+				),
+				fc.string(),
+				async (mode, suffix) =>
+					exerciseGeneration(mode, Buffer.from(suffix).toString("hex")),
+			),
+			{ seed: 614_598, numRuns: 40 },
 		);
 	});
 	it("fences generated policy, runtime and connector changes", async () => {

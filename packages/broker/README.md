@@ -419,20 +419,54 @@ stateDiagram-v2
   s5 --> s6: call the provider
 ```
 
-The `maxConcurrentGenerations` and `maxYardsPerTenant` fields are not yet
-enforced. Keep generation disabled unless the host enforces those requirements
-separately. The direct planner relies on its caller to establish that no matching
-Yard exists, and the standalone generation saga does not receive policy evidence.
+Generated placement requires a shared durable generation quota authority.
+After host policy approval and before the budget hold, the broker reserves both
+`maxConcurrentGenerations` and `maxYardsPerTenant` capacity for the exact plan.
+A missing authority, exhausted quota, mismatched claim or changed authority
+stops the provider call. A repeated quota claim is inspected rather than
+provisioned again. The direct planner relies on its caller to establish that no
+matching Yard exists, and the standalone generation saga does not receive
+policy or quota evidence.
 
-A separate SQLite generation quota authority can reserve a concurrency slot
-and tenant Yard capacity atomically. It binds each key to one plan, counts a
-fixed initial inventory and keeps uncertain claims pending. A trusted verifier
-must accept readiness before the concurrency slot is released; the ready Yard
-continues to count toward the tenant limit. Limits and baseline are fixed for
-the database, and all writers must use the same database. Out-of-band Yards,
-missing baseline entries, inaccurate readiness attestations and lost database
-files are outside its guarantee. This authority is not yet wired into placement,
-and it has no removal or unused-reservation reconciliation operation.
+The SQLite quota authority counts a fixed initial inventory and keeps uncertain
+claims pending. A trusted verifier must accept readiness before the concurrent
+slot is released; the ready Yard continues to count toward the tenant limit.
+Limits and baseline are fixed for the database, and all writers must use the
+same database. Out-of-band Yards, missing baseline entries, inaccurate readiness
+attestations and lost database files are outside its guarantee. Budget and quota
+reservations are separate transactions: a failure between them can retain quota
+without a budget hold. There is no removal or unused-reservation reconciliation
+operation yet. Reconcile pre-upgrade Yards and uncertain attempts before enabling
+the new authority.
+
+The bounded admission projection hides 16 same-state steps. It assumes the
+separate quota, policy, budget and provider evidence checks are truthful.
+
+```mermaid
+stateDiagram-v2
+  s0: Yard generation requested
+  s1: Host policy is being checked
+  s2: Quota authority unavailable
+  s3: Host policy approved the request
+  s4: Host policy denied the request
+  s5: Generation quota unavailable
+  s6: Generation quota reserved
+  s7: Hosting budget reserved
+  s8: Provider called
+  s9: Yard readiness verified
+  s10: Outcome needs reconciliation
+  [*] --> s0
+  s0 --> s2: refuse without quota authority
+  s0 --> s1: check host policy
+  s1 --> s4: refuse host policy
+  s1 --> s3: approve host policy
+  s3 --> s5: refuse exhausted quota
+  s3 --> s6: reserve generation quota
+  s6 --> s7: reserve hosting budget
+  s7 --> s8: call the provider
+  s8 --> s10: retain exposure for reconciliation
+  s8 --> s9: verify Yard readiness
+```
 
 The bounded quota projection follows one of three requests and hides 23
 same-state steps; it assumes atomic storage and trusted baseline and evidence.

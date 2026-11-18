@@ -193,6 +193,23 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 			"review the generation policy and request; approval, attestation, locked properties or dedicated generation need a verified evidence path",
 	},
 	{
+		code: "yard-generation-quota-unavailable",
+		plane: "policy",
+		remediation: "configure a shared durable generation quota authority",
+	},
+	{
+		code: "yard-generation-quota-denied",
+		plane: "policy",
+		remediation:
+			"review the generation and tenant Yard limits and reconcile existing quota claims",
+	},
+	{
+		code: "yard-generation-quota-uncertain",
+		plane: "policy",
+		remediation:
+			"reconcile generation readiness and its retained quota and budget reservations",
+	},
+	{
 		code: "yard-runtime-catalog-unavailable",
 		plane: "placement",
 		remediation:
