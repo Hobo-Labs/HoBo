@@ -9,6 +9,14 @@ export {
 	createCloudflareCloudNativeProvider,
 } from "./cloudflare-provider.js";
 export {
+	CloudNativeEndpointError,
+	createAwsCloudNativeProvider,
+	createAzureCloudNativeProvider,
+	createGcpCloudNativeProvider,
+	createVercelCloudNativeProvider,
+	type EndpointCloudNativeProviderOptions,
+} from "./endpoint-provider.js";
+export {
 	type CloudNativeHostProvider,
 	type CloudNativeProviderId,
 	type CloudNativeRuntimeHostOptions,

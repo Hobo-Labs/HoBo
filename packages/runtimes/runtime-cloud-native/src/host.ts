@@ -8,6 +8,12 @@ import type {
 } from "@hobo/core";
 
 import { createCloudflareCloudNativeProvider } from "./cloudflare-provider.js";
+import {
+	createAwsCloudNativeProvider,
+	createAzureCloudNativeProvider,
+	createGcpCloudNativeProvider,
+	createVercelCloudNativeProvider,
+} from "./endpoint-provider.js";
 
 export type CloudNativeProviderId =
 	| "aws"
@@ -29,10 +35,6 @@ export interface CloudNativeRuntimeHostOptions {
 	readonly defaultProvider?: CloudNativeProviderId;
 }
 
-/**
- * Mock provider for setup/parity tests — runs private components in-process
- * via supplied handlers (same mesh contract as local host).
- */
 export function createMockCloudNativeProvider(): CloudNativeHostProvider {
 	return {
 		id: "mock",
@@ -55,7 +57,6 @@ export function createMockCloudNativeProvider(): CloudNativeHostProvider {
 				}
 				handlers.set(component.resourceName, component.handler);
 			}
-			// Apply bindle env for in-process handlers.
 			const previous: Record<string, string | undefined> = {};
 			for (const [key, value] of Object.entries(ctx.bindleEnv ?? {})) {
 				previous[key] = process.env[key];
@@ -80,37 +81,13 @@ export function createMockCloudNativeProvider(): CloudNativeHostProvider {
 	};
 }
 
-function stubProvider(id: CloudNativeProviderId): CloudNativeHostProvider {
-	return {
-		id,
-		async ensure() {
-			return {
-				kind: "cloud-native",
-				ready: true,
-				notes: [
-					`cloud-native provider '${id}' registered (implementation pending)`,
-				],
-				details: { provider: id, implemented: false },
-			};
-		},
-		async servePrivate() {
-			throw new Error(
-				`HOBO_CLOUD_NATIVE_UNIMPLEMENTED: provider '${id}' is not implemented yet. ` +
-					`Use defaultProvider: "mock" for local parity, or implement @hobo/runtime-cloud-native/${id}.`,
-			);
-		},
-	};
-}
-
 export function defaultCloudNativeProviders(): CloudNativeHostProvider[] {
 	return [
 		createMockCloudNativeProvider(),
-		stubProvider("aws"),
-		stubProvider("gcp"),
-		stubProvider("azure"),
-		stubProvider("vercel"),
-		// REAL provider (credential-gated): options are read presence-only from
-		// the environment; values are never logged.
+		createAwsCloudNativeProvider(),
+		createGcpCloudNativeProvider(),
+		createAzureCloudNativeProvider(),
+		createVercelCloudNativeProvider(),
 		createCloudflareCloudNativeProvider({
 			accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
 			apiToken: process.env.CLOUDFLARE_API_TOKEN,
@@ -118,10 +95,6 @@ export function defaultCloudNativeProviders(): CloudNativeHostProvider[] {
 	];
 }
 
-/**
- * Multi-cloud Camp host registry. Default provider is `mock` for setup tests;
- * real aws/gcp/azure/vercel/cloudflare implementations land later.
- */
 export function createCloudNativeRuntimeHost(
 	options: CloudNativeRuntimeHostOptions = {},
 ): HoboRuntimeHost {
@@ -148,9 +121,6 @@ export function createCloudNativeRuntimeHost(
 			for (const provider of providers) {
 				const result = await provider.ensure(ctx);
 				notes.push(...result.notes.map((n) => `[${provider.id}] ${n}`));
-				// Credential-gated providers fail closed at the provider level, but do
-				// not block registry readiness: the registry's default serving path is
-				// `mock`, and the gate is surfaced honestly in notes + provider details.
 				if (!result.ready && result.details?.credentialGated !== true)
 					ready = false;
 			}
