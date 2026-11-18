@@ -14,6 +14,10 @@ provider:
   homepage: https://vercel.com/docs/vercel-blob
   description: Private Blob store on the relay's own project; OIDC, compare-and-set by ETag.
 
+terms:
+  url: https://vercel.com/legal/terms
+  reviewedOn: 2026-11-18
+
 capabilities:
   regions: [iad1]
   mappings:

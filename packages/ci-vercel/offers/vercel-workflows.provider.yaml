@@ -15,6 +15,10 @@ provider:
   homepage: https://vercel.com/docs/workflows
   description: One durable run per job on Vercel's managed World.
 
+terms:
+  url: https://vercel.com/legal/terms
+  reviewedOn: 2026-11-18
+
 capabilities:
   regions: [iad1]
   mappings:

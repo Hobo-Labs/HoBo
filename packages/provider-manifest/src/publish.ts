@@ -268,10 +268,18 @@ export function toCapabilityManifest(
 	const capabilities = toCapabilitiesDocument(manifest);
 	const auth = toAuthDocument(manifest);
 	const cost = toCostDocument(manifest);
+	if (manifest.terms === undefined) {
+		throw new Error("parsed provider manifest is missing terms");
+	}
+	const terms = {
+		url: manifest.terms.url,
+		reviewedOn: manifest.terms.reviewedOn,
+	};
 	const index = {
 		schema: MANIFEST_INDEX_SCHEMA,
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
+		terms,
 		documents: [
 			{
 				path: MANIFEST_PATHS.capabilities,
@@ -301,5 +309,6 @@ export function toCapabilityManifest(
 		capabilities,
 		auth,
 		cost,
+		terms,
 	};
 }

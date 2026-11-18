@@ -8,7 +8,7 @@ import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_provider_manifest: GenFile = /*@__PURE__*/
-  fileDesc("Chdwcm92aWRlcl9tYW5pZmVzdC5wcm90bxIYaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxIsYCChBQcm92aWRlck1hbmlmZXN0Eg4KBnNjaGVtYRgBIAEoCRI8Cghwcm92aWRlchgCIAEoCzIqLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5Qcm92aWRlcklkZW50aXR5EjMKBGF1dGgYAyABKAsyJS5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQXV0aFNlY3Rpb24SQQoMY2FwYWJpbGl0aWVzGAQgASgLMisuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkNhcGFiaWxpdHlTZWN0aW9uEjkKB2JpbGxpbmcYBSABKAsyKC5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQmlsbGluZ1NlY3Rpb24SMQoDYXBpGAYgASgLMiQuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkFwaVNlY3Rpb24iWwoQUHJvdmlkZXJJZGVudGl0eRIKCgJpZBgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSEAoIaG9tZXBhZ2UYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkiOgoJU291cmNlUmVmEgsKA3VybBgBIAEoCRISCgpjaGVja2VkX2F0GAIgASgJEgwKBG5vdGUYAyABKAkiiQEKC0F1dGhTZWN0aW9uEg4KBmlzc3VlchgBIAEoCRIxCgVmbG93cxgCIAMoCzIiLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5BdXRoRmxvdxIbChNyZXNvdXJjZV9pbmRpY2F0b3JzGAMgAygJEhoKEnRva2VuX2xpZmV0aW1lX3NlYxgEIAEoBSIuCglBdXRoU2NvcGUSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCSKdAwoIQXV0aEZsb3cSCgoCaWQYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSMwoGc2NvcGVzGAMgAygLMiMuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkF1dGhTY29wZRI2CgZvYXV0aDIYCiABKAsyJC5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuT0F1dGgyRmxvd0gAEjcKB2F1dGhfbWQYCyABKAsyJC5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQXV0aE1kRmxvd0gAEkcKD29pZGNfZmVkZXJhdGlvbhgMIAEoCzIsLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5PaWRjRmVkZXJhdGlvbkZsb3dIABI3CgdhcGlfa2V5GA0gASgLMiQuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkFwaUtleUZsb3dIABJACglleHRlbnNpb24YDiABKAsyKy5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuRXh0ZW5zaW9uQXV0aEZsb3dIAEIGCgRmbG93IuwBCgpPQXV0aDJGbG93Eg0KBWdyYW50GAEgASgJEh4KFmF1dGhvcml6YXRpb25fZW5kcG9pbnQYAiABKAkSFgoOdG9rZW5fZW5kcG9pbnQYAyABKAkSJQodZGV2aWNlX2F1dGhvcml6YXRpb25fZW5kcG9pbnQYBCABKAkSFAoMbWV0YWRhdGFfdXJsGAUgASgJEgwKBHBrY2UYBiABKAkSEAoIYXVkaWVuY2UYByABKAkSGwoTY2xpZW50X3JlZ2lzdHJhdGlvbhgIIAEoCRIdChVyZWdpc3RyYXRpb25fZW5kcG9pbnQYCSABKAkiaQoKQXV0aE1kRmxvdxIQCghyZXNvdXJjZRgBIAEoCRIUCgxkb2N1bWVudF91cmwYAiABKAkSHgoWYW5vbnltb3VzX3JlZ2lzdHJhdGlvbhgDIAEoCBITCgtodW1hbl9jbGFpbRgEIAEoCCI4ChJPaWRjRmVkZXJhdGlvbkZsb3cSEAoIYXVkaWVuY2UYASABKAkSEAoIZXhjaGFuZ2UYAiABKAkiPgoKQXBpS2V5RmxvdxIOCgZoZWFkZXIYASABKAkSDgoGcHJlZml4GAIgASgJEhAKCHJvdGF0aW9uGAMgASgJIpkBChFFeHRlbnNpb25BdXRoRmxvdxIMCgR0eXBlGAEgASgJEkcKBnBhcmFtcxgCIAMoCzI3LmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5FeHRlbnNpb25BdXRoRmxvdy5QYXJhbXNFbnRyeRotCgtQYXJhbXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBImMKEUNhcGFiaWxpdHlTZWN0aW9uEg8KB3JlZ2lvbnMYASADKAkSPQoIbWFwcGluZ3MYAiADKAsyKy5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQ2FwYWJpbGl0eU1hcHBpbmciygEKEUNhcGFiaWxpdHlNYXBwaW5nEgoKAmlkGAEgASgJEgwKBHBvcnQYAiABKAkSFgoOcmVzb3VyY2VfY2xhc3MYAyABKAkSGAoQcHJvdmlkZXJfc2VydmljZRgEIAEoCRIQCghmZWF0dXJlcxgFIAMoCRIPCgdyZWdpb25zGAYgAygJEhEKCXN0YWJpbGl0eRgHIAEoCRIPCgd2ZXJzaW9uGAggASgJEhAKCHByb2ZpbGVzGAkgAygJEhAKCHByb2R1Y3RzGAogAygJIq8CCg5CaWxsaW5nU2VjdGlvbhIQCghjdXJyZW5jeRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEhYKDmVmZmVjdGl2ZV9mcm9tGAMgASgJEhwKD2VmZmVjdGl2ZV91bnRpbBgEIAEoCUgAiAEBEjMKBnNvdXJjZRgFIAEoCzIjLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5Tb3VyY2VSZWYSPwoJYmlsbGFibGVzGAYgAygLMiwuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkJpbGxhYmxlRGVmaW5pdGlvbhI6Cghwcm9kdWN0cxgHIAMoCzIoLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5CaWxsaW5nUHJvZHVjdEISChBfZWZmZWN0aXZlX3VudGlsIoICChJCaWxsYWJsZURlZmluaXRpb24SCgoCaWQYASABKAkSEAoIY2F0ZWdvcnkYAiABKAkSDAoEdW5pdBgDIAEoCRITCgthZ2dyZWdhdGlvbhgEIAEoCRIRCglpbmNyZW1lbnQYBSABKAkSEwoLZGVzY3JpcHRpb24YBiABKAkSUAoKYXR0cmlidXRlcxgHIAMoCzI8LmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5CaWxsYWJsZURlZmluaXRpb24uQXR0cmlidXRlc0VudHJ5GjEKD0F0dHJpYnV0ZXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIooCCg5CaWxsaW5nUHJvZHVjdBIKCgJpZBgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSDAoEa2luZBgDIAEoCRIRCgliaWxsYWJsZXMYBCADKAkSNAoFcGxhbnMYBSADKAsyJS5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQmlsbGluZ1BsYW4STAoKYXR0cmlidXRlcxgGIAMoCzI4LmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5CaWxsaW5nUHJvZHVjdC5BdHRyaWJ1dGVzRW50cnkaMQoPQXR0cmlidXRlc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEinQEKC0JpbGxpbmdQbGFuEgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIxCgdjaGFyZ2VzGAMgAygLMiAuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkNoYXJnZRI5CghpbmNsdWRlZBgEIAMoCzInLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5JbmNsdWRlZFVzYWdlItMCCgZDaGFyZ2USCgoCaWQYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSOAoEd2hlbhgDIAMoCzIqLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5DaGFyZ2UuV2hlbkVudHJ5Ej4KCXJlY3VycmluZxgKIAEoCzIpLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5SZWN1cnJpbmdDaGFyZ2VIABI6CgdtZXRlcmVkGAsgASgLMicuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLk1ldGVyZWRDaGFyZ2VIABI8CghleHRlcm5hbBgMIAEoCzIoLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5FeHRlcm5hbENoYXJnZUgAGisKCVdoZW5FbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQgcKBW1vZGVsIlAKD1JlY3VycmluZ0NoYXJnZRIQCghpbnRlcnZhbBgBIAEoCRIOCgZhbW91bnQYAiABKAkSDgoGdGltaW5nGAMgASgJEgsKA3BlchgEIAEoCSL4AQoNTWV0ZXJlZENoYXJnZRIQCghiaWxsYWJsZRgBIAEoCRIOCgZ0aW1pbmcYAiABKAkSFAoKdW5pdF9wcmljZRgDIAEoCUgAEjgKB3BhY2thZ2UYBCABKAsyJS5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuUGFja2FnZVJhdGVIABI3CglncmFkdWF0ZWQYBSABKAsyIi5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuVGllckxpc3RIABI0CgZ2b2x1bWUYBiABKAsyIi5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuVGllckxpc3RIAEIGCgRyYXRlIjkKC1BhY2thZ2VSYXRlEgsKA3BlchgBIAEoCRIOCgZhbW91bnQYAiABKAkSDQoFd2hvbGUYAyABKAgiPQoIVGllckxpc3QSMQoFdGllcnMYASADKAsyIi5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuUmF0ZVRpZXIiTgoIUmF0ZVRpZXISEgoFdXBfdG8YASABKAlIAIgBARISCgp1bml0X3ByaWNlGAIgASgJEhAKCGZsYXRfZmVlGAMgASgJQggKBl91cF90byKUAQoORXh0ZXJuYWxDaGFyZ2USDQoFbW9kZWwYASABKAkSRAoGcGFyYW1zGAIgAygLMjQuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkV4dGVybmFsQ2hhcmdlLlBhcmFtc0VudHJ5Gi0KC1BhcmFtc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiQgoNSW5jbHVkZWRVc2FnZRIQCghiaWxsYWJsZRgBIAEoCRIQCghxdWFudGl0eRgCIAEoCRINCgVyZXNldBgDIAEoCSJ4CgpBcGlTZWN0aW9uEjAKBXNwZWNzGAEgAygLMiEuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkFwaVNwZWMSOAoLbWNwX3NlcnZlcnMYAiADKAsyIy5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuTWNwU2VydmVyInUKB0FwaVNwZWMSCgoCaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEgsKA3VybBgDIAEoCRIMCgRwYXRoGAQgASgJEhAKCGJhc2VfdXJsGAUgASgJEgwKBGF1dGgYBiADKAkSEwoLZGVzY3JpcHRpb24YByABKAkiWgoJTWNwU2VydmVyEgoKAmlkGAEgASgJEgsKA3VybBgCIAEoCRIRCgl0cmFuc3BvcnQYAyABKAkSDAoEYXV0aBgEIAMoCRITCgtkZXNjcmlwdGlvbhgFIAEoCWIGcHJvdG8z");
+  fileDesc("Chdwcm92aWRlcl9tYW5pZmVzdC5wcm90bxIYaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxIv4CChBQcm92aWRlck1hbmlmZXN0Eg4KBnNjaGVtYRgBIAEoCRI8Cghwcm92aWRlchgCIAEoCzIqLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5Qcm92aWRlcklkZW50aXR5EjMKBGF1dGgYAyABKAsyJS5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQXV0aFNlY3Rpb24SQQoMY2FwYWJpbGl0aWVzGAQgASgLMisuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkNhcGFiaWxpdHlTZWN0aW9uEjkKB2JpbGxpbmcYBSABKAsyKC5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQmlsbGluZ1NlY3Rpb24SMQoDYXBpGAYgASgLMiQuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkFwaVNlY3Rpb24SNgoFdGVybXMYByABKAsyJy5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuUHJvdmlkZXJUZXJtcyJbChBQcm92aWRlcklkZW50aXR5EgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIQCghob21lcGFnZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCSIxCg1Qcm92aWRlclRlcm1zEgsKA3VybBgBIAEoCRITCgtyZXZpZXdlZF9vbhgCIAEoCSI6CglTb3VyY2VSZWYSCwoDdXJsGAEgASgJEhIKCmNoZWNrZWRfYXQYAiABKAkSDAoEbm90ZRgDIAEoCSKJAQoLQXV0aFNlY3Rpb24SDgoGaXNzdWVyGAEgASgJEjEKBWZsb3dzGAIgAygLMiIuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkF1dGhGbG93EhsKE3Jlc291cmNlX2luZGljYXRvcnMYAyADKAkSGgoSdG9rZW5fbGlmZXRpbWVfc2VjGAQgASgFIi4KCUF1dGhTY29wZRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJIp0DCghBdXRoRmxvdxIKCgJpZBgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIzCgZzY29wZXMYAyADKAsyIy5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQXV0aFNjb3BlEjYKBm9hdXRoMhgKIAEoCzIkLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5PQXV0aDJGbG93SAASNwoHYXV0aF9tZBgLIAEoCzIkLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5BdXRoTWRGbG93SAASRwoPb2lkY19mZWRlcmF0aW9uGAwgASgLMiwuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLk9pZGNGZWRlcmF0aW9uRmxvd0gAEjcKB2FwaV9rZXkYDSABKAsyJC5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQXBpS2V5Rmxvd0gAEkAKCWV4dGVuc2lvbhgOIAEoCzIrLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5FeHRlbnNpb25BdXRoRmxvd0gAQgYKBGZsb3ci7AEKCk9BdXRoMkZsb3cSDQoFZ3JhbnQYASABKAkSHgoWYXV0aG9yaXphdGlvbl9lbmRwb2ludBgCIAEoCRIWCg50b2tlbl9lbmRwb2ludBgDIAEoCRIlCh1kZXZpY2VfYXV0aG9yaXphdGlvbl9lbmRwb2ludBgEIAEoCRIUCgxtZXRhZGF0YV91cmwYBSABKAkSDAoEcGtjZRgGIAEoCRIQCghhdWRpZW5jZRgHIAEoCRIbChNjbGllbnRfcmVnaXN0cmF0aW9uGAggASgJEh0KFXJlZ2lzdHJhdGlvbl9lbmRwb2ludBgJIAEoCSJpCgpBdXRoTWRGbG93EhAKCHJlc291cmNlGAEgASgJEhQKDGRvY3VtZW50X3VybBgCIAEoCRIeChZhbm9ueW1vdXNfcmVnaXN0cmF0aW9uGAMgASgIEhMKC2h1bWFuX2NsYWltGAQgASgIIjgKEk9pZGNGZWRlcmF0aW9uRmxvdxIQCghhdWRpZW5jZRgBIAEoCRIQCghleGNoYW5nZRgCIAEoCSI+CgpBcGlLZXlGbG93Eg4KBmhlYWRlchgBIAEoCRIOCgZwcmVmaXgYAiABKAkSEAoIcm90YXRpb24YAyABKAkimQEKEUV4dGVuc2lvbkF1dGhGbG93EgwKBHR5cGUYASABKAkSRwoGcGFyYW1zGAIgAygLMjcuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkV4dGVuc2lvbkF1dGhGbG93LlBhcmFtc0VudHJ5Gi0KC1BhcmFtc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiYwoRQ2FwYWJpbGl0eVNlY3Rpb24SDwoHcmVnaW9ucxgBIAMoCRI9CghtYXBwaW5ncxgCIAMoCzIrLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5DYXBhYmlsaXR5TWFwcGluZyLKAQoRQ2FwYWJpbGl0eU1hcHBpbmcSCgoCaWQYASABKAkSDAoEcG9ydBgCIAEoCRIWCg5yZXNvdXJjZV9jbGFzcxgDIAEoCRIYChBwcm92aWRlcl9zZXJ2aWNlGAQgASgJEhAKCGZlYXR1cmVzGAUgAygJEg8KB3JlZ2lvbnMYBiADKAkSEQoJc3RhYmlsaXR5GAcgASgJEg8KB3ZlcnNpb24YCCABKAkSEAoIcHJvZmlsZXMYCSADKAkSEAoIcHJvZHVjdHMYCiADKAkirwIKDkJpbGxpbmdTZWN0aW9uEhAKCGN1cnJlbmN5GAEgASgJEg8KB3ZlcnNpb24YAiABKAkSFgoOZWZmZWN0aXZlX2Zyb20YAyABKAkSHAoPZWZmZWN0aXZlX3VudGlsGAQgASgJSACIAQESMwoGc291cmNlGAUgASgLMiMuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLlNvdXJjZVJlZhI/CgliaWxsYWJsZXMYBiADKAsyLC5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQmlsbGFibGVEZWZpbml0aW9uEjoKCHByb2R1Y3RzGAcgAygLMiguaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkJpbGxpbmdQcm9kdWN0QhIKEF9lZmZlY3RpdmVfdW50aWwiggIKEkJpbGxhYmxlRGVmaW5pdGlvbhIKCgJpZBgBIAEoCRIQCghjYXRlZ29yeRgCIAEoCRIMCgR1bml0GAMgASgJEhMKC2FnZ3JlZ2F0aW9uGAQgASgJEhEKCWluY3JlbWVudBgFIAEoCRITCgtkZXNjcmlwdGlvbhgGIAEoCRJQCgphdHRyaWJ1dGVzGAcgAygLMjwuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkJpbGxhYmxlRGVmaW5pdGlvbi5BdHRyaWJ1dGVzRW50cnkaMQoPQXR0cmlidXRlc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiigIKDkJpbGxpbmdQcm9kdWN0EgoKAmlkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIMCgRraW5kGAMgASgJEhEKCWJpbGxhYmxlcxgEIAMoCRI0CgVwbGFucxgFIAMoCzIlLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5CaWxsaW5nUGxhbhJMCgphdHRyaWJ1dGVzGAYgAygLMjguaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkJpbGxpbmdQcm9kdWN0LkF0dHJpYnV0ZXNFbnRyeRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKdAQoLQmlsbGluZ1BsYW4SCgoCaWQYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEjEKB2NoYXJnZXMYAyADKAsyIC5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQ2hhcmdlEjkKCGluY2x1ZGVkGAQgAygLMicuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkluY2x1ZGVkVXNhZ2Ui0wIKBkNoYXJnZRIKCgJpZBgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRI4CgR3aGVuGAMgAygLMiouaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkNoYXJnZS5XaGVuRW50cnkSPgoJcmVjdXJyaW5nGAogASgLMikuaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLlJlY3VycmluZ0NoYXJnZUgAEjoKB21ldGVyZWQYCyABKAsyJy5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuTWV0ZXJlZENoYXJnZUgAEjwKCGV4dGVybmFsGAwgASgLMiguaG9iby5wcm92aWRlcm1hbmlmZXN0LnYxLkV4dGVybmFsQ2hhcmdlSAAaKwoJV2hlbkVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCBwoFbW9kZWwiUAoPUmVjdXJyaW5nQ2hhcmdlEhAKCGludGVydmFsGAEgASgJEg4KBmFtb3VudBgCIAEoCRIOCgZ0aW1pbmcYAyABKAkSCwoDcGVyGAQgASgJIvgBCg1NZXRlcmVkQ2hhcmdlEhAKCGJpbGxhYmxlGAEgASgJEg4KBnRpbWluZxgCIAEoCRIUCgp1bml0X3ByaWNlGAMgASgJSAASOAoHcGFja2FnZRgEIAEoCzIlLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5QYWNrYWdlUmF0ZUgAEjcKCWdyYWR1YXRlZBgFIAEoCzIiLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5UaWVyTGlzdEgAEjQKBnZvbHVtZRgGIAEoCzIiLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5UaWVyTGlzdEgAQgYKBHJhdGUiOQoLUGFja2FnZVJhdGUSCwoDcGVyGAEgASgJEg4KBmFtb3VudBgCIAEoCRINCgV3aG9sZRgDIAEoCCI9CghUaWVyTGlzdBIxCgV0aWVycxgBIAMoCzIiLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5SYXRlVGllciJOCghSYXRlVGllchISCgV1cF90bxgBIAEoCUgAiAEBEhIKCnVuaXRfcHJpY2UYAiABKAkSEAoIZmxhdF9mZWUYAyABKAlCCAoGX3VwX3RvIpQBCg5FeHRlcm5hbENoYXJnZRINCgVtb2RlbBgBIAEoCRJECgZwYXJhbXMYAiADKAsyNC5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuRXh0ZXJuYWxDaGFyZ2UuUGFyYW1zRW50cnkaLQoLUGFyYW1zRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJCCg1JbmNsdWRlZFVzYWdlEhAKCGJpbGxhYmxlGAEgASgJEhAKCHF1YW50aXR5GAIgASgJEg0KBXJlc2V0GAMgASgJIngKCkFwaVNlY3Rpb24SMAoFc3BlY3MYASADKAsyIS5ob2JvLnByb3ZpZGVybWFuaWZlc3QudjEuQXBpU3BlYxI4CgttY3Bfc2VydmVycxgCIAMoCzIjLmhvYm8ucHJvdmlkZXJtYW5pZmVzdC52MS5NY3BTZXJ2ZXIidQoHQXBpU3BlYxIKCgJpZBgBIAEoCRIOCgZmb3JtYXQYAiABKAkSCwoDdXJsGAMgASgJEgwKBHBhdGgYBCABKAkSEAoIYmFzZV91cmwYBSABKAkSDAoEYXV0aBgGIAMoCRITCgtkZXNjcmlwdGlvbhgHIAEoCSJaCglNY3BTZXJ2ZXISCgoCaWQYASABKAkSCwoDdXJsGAIgASgJEhEKCXRyYW5zcG9ydBgDIAEoCRIMCgRhdXRoGAQgAygJEhMKC2Rlc2NyaXB0aW9uGAUgASgJYgZwcm90bzM");
 
 export type ProviderManifest = Message<"hobo.providermanifest.v1.ProviderManifest"> & {
   schema: string;
@@ -22,6 +22,8 @@ export type ProviderManifest = Message<"hobo.providermanifest.v1.ProviderManifes
   billing?: BillingSection | undefined;
 
   api?: ApiSection | undefined;
+
+  terms?: ProviderTerms | undefined;
 };
 
 export const ProviderManifestSchema: GenMessage<ProviderManifest> = /*@__PURE__*/
@@ -40,6 +42,15 @@ export type ProviderIdentity = Message<"hobo.providermanifest.v1.ProviderIdentit
 export const ProviderIdentitySchema: GenMessage<ProviderIdentity> = /*@__PURE__*/
   messageDesc(file_provider_manifest, 1);
 
+export type ProviderTerms = Message<"hobo.providermanifest.v1.ProviderTerms"> & {
+  url: string;
+
+  reviewedOn: string;
+};
+
+export const ProviderTermsSchema: GenMessage<ProviderTerms> = /*@__PURE__*/
+  messageDesc(file_provider_manifest, 2);
+
 export type SourceRef = Message<"hobo.providermanifest.v1.SourceRef"> & {
   url: string;
 
@@ -49,7 +60,7 @@ export type SourceRef = Message<"hobo.providermanifest.v1.SourceRef"> & {
 };
 
 export const SourceRefSchema: GenMessage<SourceRef> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 2);
+  messageDesc(file_provider_manifest, 3);
 
 export type AuthSection = Message<"hobo.providermanifest.v1.AuthSection"> & {
   issuer: string;
@@ -62,7 +73,7 @@ export type AuthSection = Message<"hobo.providermanifest.v1.AuthSection"> & {
 };
 
 export const AuthSectionSchema: GenMessage<AuthSection> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 3);
+  messageDesc(file_provider_manifest, 4);
 
 export type AuthScope = Message<"hobo.providermanifest.v1.AuthScope"> & {
   name: string;
@@ -71,7 +82,7 @@ export type AuthScope = Message<"hobo.providermanifest.v1.AuthScope"> & {
 };
 
 export const AuthScopeSchema: GenMessage<AuthScope> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 4);
+  messageDesc(file_provider_manifest, 5);
 
 export type AuthFlow = Message<"hobo.providermanifest.v1.AuthFlow"> & {
   id: string;
@@ -99,7 +110,7 @@ export type AuthFlow = Message<"hobo.providermanifest.v1.AuthFlow"> & {
 };
 
 export const AuthFlowSchema: GenMessage<AuthFlow> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 5);
+  messageDesc(file_provider_manifest, 6);
 
 export type OAuth2Flow = Message<"hobo.providermanifest.v1.OAuth2Flow"> & {
   grant: string;
@@ -122,7 +133,7 @@ export type OAuth2Flow = Message<"hobo.providermanifest.v1.OAuth2Flow"> & {
 };
 
 export const OAuth2FlowSchema: GenMessage<OAuth2Flow> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 6);
+  messageDesc(file_provider_manifest, 7);
 
 export type AuthMdFlow = Message<"hobo.providermanifest.v1.AuthMdFlow"> & {
   resource: string;
@@ -135,7 +146,7 @@ export type AuthMdFlow = Message<"hobo.providermanifest.v1.AuthMdFlow"> & {
 };
 
 export const AuthMdFlowSchema: GenMessage<AuthMdFlow> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 7);
+  messageDesc(file_provider_manifest, 8);
 
 export type OidcFederationFlow = Message<"hobo.providermanifest.v1.OidcFederationFlow"> & {
   audience: string;
@@ -144,7 +155,7 @@ export type OidcFederationFlow = Message<"hobo.providermanifest.v1.OidcFederatio
 };
 
 export const OidcFederationFlowSchema: GenMessage<OidcFederationFlow> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 8);
+  messageDesc(file_provider_manifest, 9);
 
 export type ApiKeyFlow = Message<"hobo.providermanifest.v1.ApiKeyFlow"> & {
   header: string;
@@ -155,7 +166,7 @@ export type ApiKeyFlow = Message<"hobo.providermanifest.v1.ApiKeyFlow"> & {
 };
 
 export const ApiKeyFlowSchema: GenMessage<ApiKeyFlow> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 9);
+  messageDesc(file_provider_manifest, 10);
 
 export type ExtensionAuthFlow = Message<"hobo.providermanifest.v1.ExtensionAuthFlow"> & {
   type: string;
@@ -164,7 +175,7 @@ export type ExtensionAuthFlow = Message<"hobo.providermanifest.v1.ExtensionAuthF
 };
 
 export const ExtensionAuthFlowSchema: GenMessage<ExtensionAuthFlow> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 10);
+  messageDesc(file_provider_manifest, 11);
 
 export type CapabilitySection = Message<"hobo.providermanifest.v1.CapabilitySection"> & {
   regions: string[];
@@ -173,7 +184,7 @@ export type CapabilitySection = Message<"hobo.providermanifest.v1.CapabilitySect
 };
 
 export const CapabilitySectionSchema: GenMessage<CapabilitySection> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 11);
+  messageDesc(file_provider_manifest, 12);
 
 export type CapabilityMapping = Message<"hobo.providermanifest.v1.CapabilityMapping"> & {
   id: string;
@@ -198,7 +209,7 @@ export type CapabilityMapping = Message<"hobo.providermanifest.v1.CapabilityMapp
 };
 
 export const CapabilityMappingSchema: GenMessage<CapabilityMapping> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 12);
+  messageDesc(file_provider_manifest, 13);
 
 export type BillingSection = Message<"hobo.providermanifest.v1.BillingSection"> & {
   currency: string;
@@ -217,7 +228,7 @@ export type BillingSection = Message<"hobo.providermanifest.v1.BillingSection"> 
 };
 
 export const BillingSectionSchema: GenMessage<BillingSection> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 13);
+  messageDesc(file_provider_manifest, 14);
 
 export type BillableDefinition = Message<"hobo.providermanifest.v1.BillableDefinition"> & {
   id: string;
@@ -236,7 +247,7 @@ export type BillableDefinition = Message<"hobo.providermanifest.v1.BillableDefin
 };
 
 export const BillableDefinitionSchema: GenMessage<BillableDefinition> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 14);
+  messageDesc(file_provider_manifest, 15);
 
 export type BillingProduct = Message<"hobo.providermanifest.v1.BillingProduct"> & {
   id: string;
@@ -253,7 +264,7 @@ export type BillingProduct = Message<"hobo.providermanifest.v1.BillingProduct"> 
 };
 
 export const BillingProductSchema: GenMessage<BillingProduct> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 15);
+  messageDesc(file_provider_manifest, 16);
 
 export type BillingPlan = Message<"hobo.providermanifest.v1.BillingPlan"> & {
   id: string;
@@ -266,7 +277,7 @@ export type BillingPlan = Message<"hobo.providermanifest.v1.BillingPlan"> & {
 };
 
 export const BillingPlanSchema: GenMessage<BillingPlan> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 16);
+  messageDesc(file_provider_manifest, 17);
 
 export type Charge = Message<"hobo.providermanifest.v1.Charge"> & {
   id: string;
@@ -288,7 +299,7 @@ export type Charge = Message<"hobo.providermanifest.v1.Charge"> & {
 };
 
 export const ChargeSchema: GenMessage<Charge> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 17);
+  messageDesc(file_provider_manifest, 18);
 
 export type RecurringCharge = Message<"hobo.providermanifest.v1.RecurringCharge"> & {
   interval: string;
@@ -301,7 +312,7 @@ export type RecurringCharge = Message<"hobo.providermanifest.v1.RecurringCharge"
 };
 
 export const RecurringChargeSchema: GenMessage<RecurringCharge> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 18);
+  messageDesc(file_provider_manifest, 19);
 
 export type MeteredCharge = Message<"hobo.providermanifest.v1.MeteredCharge"> & {
   billable: string;
@@ -324,7 +335,7 @@ export type MeteredCharge = Message<"hobo.providermanifest.v1.MeteredCharge"> & 
 };
 
 export const MeteredChargeSchema: GenMessage<MeteredCharge> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 19);
+  messageDesc(file_provider_manifest, 20);
 
 export type PackageRate = Message<"hobo.providermanifest.v1.PackageRate"> & {
   per: string;
@@ -335,14 +346,14 @@ export type PackageRate = Message<"hobo.providermanifest.v1.PackageRate"> & {
 };
 
 export const PackageRateSchema: GenMessage<PackageRate> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 20);
+  messageDesc(file_provider_manifest, 21);
 
 export type TierList = Message<"hobo.providermanifest.v1.TierList"> & {
   tiers: RateTier[];
 };
 
 export const TierListSchema: GenMessage<TierList> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 21);
+  messageDesc(file_provider_manifest, 22);
 
 export type RateTier = Message<"hobo.providermanifest.v1.RateTier"> & {
   upTo?: string | undefined;
@@ -353,7 +364,7 @@ export type RateTier = Message<"hobo.providermanifest.v1.RateTier"> & {
 };
 
 export const RateTierSchema: GenMessage<RateTier> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 22);
+  messageDesc(file_provider_manifest, 23);
 
 export type ExternalCharge = Message<"hobo.providermanifest.v1.ExternalCharge"> & {
   model: string;
@@ -362,7 +373,7 @@ export type ExternalCharge = Message<"hobo.providermanifest.v1.ExternalCharge"> 
 };
 
 export const ExternalChargeSchema: GenMessage<ExternalCharge> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 23);
+  messageDesc(file_provider_manifest, 24);
 
 export type IncludedUsage = Message<"hobo.providermanifest.v1.IncludedUsage"> & {
   billable: string;
@@ -373,7 +384,7 @@ export type IncludedUsage = Message<"hobo.providermanifest.v1.IncludedUsage"> & 
 };
 
 export const IncludedUsageSchema: GenMessage<IncludedUsage> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 24);
+  messageDesc(file_provider_manifest, 25);
 
 export type ApiSection = Message<"hobo.providermanifest.v1.ApiSection"> & {
   specs: ApiSpec[];
@@ -382,7 +393,7 @@ export type ApiSection = Message<"hobo.providermanifest.v1.ApiSection"> & {
 };
 
 export const ApiSectionSchema: GenMessage<ApiSection> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 25);
+  messageDesc(file_provider_manifest, 26);
 
 export type ApiSpec = Message<"hobo.providermanifest.v1.ApiSpec"> & {
   id: string;
@@ -401,7 +412,7 @@ export type ApiSpec = Message<"hobo.providermanifest.v1.ApiSpec"> & {
 };
 
 export const ApiSpecSchema: GenMessage<ApiSpec> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 26);
+  messageDesc(file_provider_manifest, 27);
 
 export type McpServer = Message<"hobo.providermanifest.v1.McpServer"> & {
   id: string;
@@ -416,5 +427,5 @@ export type McpServer = Message<"hobo.providermanifest.v1.McpServer"> & {
 };
 
 export const McpServerSchema: GenMessage<McpServer> = /*@__PURE__*/
-  messageDesc(file_provider_manifest, 27);
+  messageDesc(file_provider_manifest, 28);
 

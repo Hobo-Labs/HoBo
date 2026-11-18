@@ -18,11 +18,16 @@ describe("toCapabilityManifest", () => {
 		const parsed = parsePublishedManifest(manifest.published);
 		expect(parsed.errors).toEqual([]);
 		expect(manifest.providerId).toBe("acme-cloud");
+		expect(manifest.terms).toEqual({
+			url: "https://acme-cloud.example.com/terms",
+			reviewedOn: "2026-11-18",
+		});
 	});
 
 	it("indexes each document by the digest of what it published", () => {
 		const manifest = toCapabilityManifest(example());
 		const index = JSON.parse(manifest.published[MANIFEST_PATHS.index] ?? "");
+		expect(index.terms).toEqual(manifest.terms);
 		expect(index.documents).toEqual([
 			expect.objectContaining({
 				path: MANIFEST_PATHS.capabilities,
@@ -118,6 +123,7 @@ describe("providerFromManifest", () => {
 		const manifest = mustParse(`
 schema: hobo.provider-manifest/v1
 provider: { id: twin, displayName: Twin }
+terms: { url: https://twin.example.com/terms, reviewedOn: 2026-11-18 }
 capabilities:
   regions: [r1]
   mappings:

@@ -14,6 +14,10 @@ provider:
   homepage: https://vercel.com/docs/queues
   description: Durable topics with delayed delivery and idempotency keys.
 
+terms:
+  url: https://vercel.com/legal/terms
+  reviewedOn: 2026-11-18
+
 capabilities:
   regions: [iad1]
   mappings:
