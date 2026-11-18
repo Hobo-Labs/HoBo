@@ -134,15 +134,14 @@ export function runFold<S>({
 }
 
 export function seqVector(events: EventEnvelope[]): SeqVector {
-	return stableObject(
-		events.reduce<SeqVector>((position, event) => {
-			position[event.streamId] = Math.max(
-				position[event.streamId] ?? 0,
-				event.seq,
-			);
-			return position;
-		}, {}),
-	);
+	const positions = new Map<string, number>();
+	for (const event of events) {
+		positions.set(
+			event.streamId,
+			Math.max(positions.get(event.streamId) ?? 0, event.seq),
+		);
+	}
+	return stableObject(Object.fromEntries(positions));
 }
 
 export function hashReadSet(events: EventEnvelope[]): string {
@@ -239,7 +238,10 @@ export function stableStringify(value: JsonValue): string {
 }
 
 function isAtOrBefore(event: EventEnvelope, targetSeq: SeqVector): boolean {
-	return event.seq <= (targetSeq[event.streamId] ?? 0);
+	const limit = Object.hasOwn(targetSeq, event.streamId)
+		? targetSeq[event.streamId]
+		: undefined;
+	return event.seq <= (limit ?? 0);
 }
 
 export function eventKey(event: EventEnvelope): string {
