@@ -122,7 +122,7 @@ const REQUIRED_CHECKS = [
 	{
 		code: "parallel-proto-type",
 		message: (evidence) =>
-			`Import generated types from src/_generated/**_pb.ts instead of hand-declaring proto-shaped types; mark deliberate domain views with // domain-view:. Offenders: ${evidence.parallelTypeDeclarations.join(", ")}`,
+			`Import generated types from src/_generated/**_pb.ts or register deliberate domain views in scripts/schema-domain-views.json. Offenders: ${evidence.parallelTypeDeclarations.join(", ")}`,
 		passes: (evidence) => evidence.parallelTypeDeclarations.length === 0,
 	},
 ];
@@ -155,11 +155,12 @@ export async function checkArchitectureGuardrails({
 		(packageRoot) => !frozen.has(packageRoot),
 	);
 	const problems = foreignLockfileProblems(normalizedFiles);
+	const domainViews = registeredDomainViews(root);
 
 	const evidenceByPackage = await Promise.all(
 		packageRoots.map(async (packageRoot) => ({
 			packageRoot,
-			evidence: await collectEvidence(root, packageRoot),
+			evidence: await collectEvidence(root, packageRoot, domainViews),
 		})),
 	);
 
@@ -220,7 +221,7 @@ export function implementationPackageRoots(files) {
 	return unique(roots);
 }
 
-async function collectEvidence(root, packageRoot) {
+async function collectEvidence(root, packageRoot, domainViews) {
 	const absolutePackageRoot = path.join(root, ...packageRoot.split("/"));
 	const files = existsSync(absolutePackageRoot)
 		? await listFiles(absolutePackageRoot, absolutePackageRoot)
@@ -317,10 +318,46 @@ async function collectEvidence(root, packageRoot) {
 		hasMisplacedDataModel,
 		hasContractsPact,
 		parallelTypeDeclarations: parallelTypeDeclarations(
+			packageRoot,
 			typeScriptSources,
 			protoTypes,
+			domainViews,
 		),
 	};
+}
+
+function registeredDomainViews(root) {
+	const file = path.join(root, "scripts", "schema-domain-views.json");
+	if (!existsSync(file)) return new Map();
+	const parsed = JSON.parse(readFileSync(file, "utf8"));
+	if (!isJsonObject(parsed)) {
+		throw new TypeError("scripts/schema-domain-views.json must be an object");
+	}
+	return new Map(
+		Object.entries(parsed).map(([source, names]) => {
+			if (
+				!Array.isArray(names) ||
+				names.some((name) => !isJsonString(name) || name.length === 0)
+			) {
+				throw new TypeError(
+					`scripts/schema-domain-views.json entry ${source} must be a string array`,
+				);
+			}
+			return [normalizePath(source), new Set(names)];
+		}),
+	);
+}
+
+function isJsonObject(value) {
+	return (
+		value !== null &&
+		!Array.isArray(value) &&
+		Object.prototype.toString.call(value) === "[object Object]"
+	);
+}
+
+function isJsonString(value) {
+	return Object.prototype.toString.call(value) === "[object String]";
 }
 
 function hasParseDerivedTypes(sources) {
@@ -375,6 +412,7 @@ function hasEventArchitecture(sources) {
 }
 
 const PARALLEL_TYPE_MARKERS = ["domain-view:", "parallel-type-allowed:"];
+const PROTO_RECORD_SUFFIXES = ["EventData", "Record"];
 
 function hasMarkerAbove(lines, index, marker) {
 	if ((lines[index] ?? "").includes(marker)) return true;
@@ -390,8 +428,22 @@ function hasMarkerAbove(lines, index, marker) {
 	}
 	return false;
 }
-function parallelTypeDeclarations(typeScriptSources, protoTypes) {
+function parallelTypeDeclarations(
+	packageRoot,
+	typeScriptSources,
+	protoTypes,
+	domainViews,
+) {
 	if (protoTypes.size === 0) return [];
+	const normalizedProtoTypes = new Set(
+		[...protoTypes].map((name) =>
+			PROTO_RECORD_SUFFIXES.reduce(
+				(current, suffix) =>
+					current.endsWith(suffix) ? current.slice(0, -suffix.length) : current,
+				name,
+			),
+		),
+	);
 	const offenders = [];
 	for (const { file, contents } of typeScriptSources) {
 		const lines = contents.split(/\r?\n/u);
@@ -400,7 +452,8 @@ function parallelTypeDeclarations(typeScriptSources, protoTypes) {
 				/^\s*(?:export\s+)?(?:interface\s+([A-Za-z_$][\w$]*)[\s<{]|type\s+([A-Za-z_$][\w$]*)(?:<[^>]*>)?\s*=\s*\{)/u,
 			);
 			const name = match?.[1] ?? match?.[2];
-			if (!name || !protoTypes.has(name)) continue;
+			if (!name || !normalizedProtoTypes.has(name)) continue;
+			if (domainViews.get(`${packageRoot}/${file}`)?.has(name)) continue;
 			if (
 				PARALLEL_TYPE_MARKERS.some((marker) =>
 					hasMarkerAbove(lines, index, marker),
