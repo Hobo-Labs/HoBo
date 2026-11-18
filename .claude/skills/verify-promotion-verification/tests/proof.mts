@@ -15,10 +15,12 @@ try {
     if (install.status !== 0) throw new Error(`Z3 installation failed (${install.status ?? 'no exit status'})`);
     env.PYTHONPATH=target;
   }
-  const proof=fileURLToPath(new URL('../proof/binding_induction.py',import.meta.url));
-  const result=spawnSync('python3',[proof],{env,stdio:'inherit'});
-  if (result.error) throw result.error;
-  if (result.status !== 0) process.exitCode=result.status ?? 1;
+  for (const file of ['binding_induction.py', 'execution_owner.py']) {
+    const proof=fileURLToPath(new URL(`../proof/${file}`,import.meta.url));
+    const result=spawnSync('python3',[proof],{env,stdio:'inherit'});
+    if (result.error) throw result.error;
+    if (result.status !== 0) process.exitCode=result.status ?? 1;
+  }
 } finally {
   rmSync(scratch,{recursive:true,force:true});
 }
