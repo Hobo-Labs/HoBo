@@ -106,7 +106,6 @@ describe("durable waiver execution", () => {
 			/base access/,
 		);
 		const denied = createWaiverService({ ...ctx, actorScopes: [] });
-		// The request body already claims resource.delete; host metadata deliberately grants nothing.
 		await expect(denied.request(declaration(), request, pack)).rejects.toThrow(
 			/base access/,
 		);
@@ -378,6 +377,10 @@ describe("isolated chaos execution", () => {
 		).toBe(200);
 		const replayed = await replayChaosExecution(options, options.executionId);
 		expect(replayed.status).toBe("aborted");
+		expect(replayed.events[0]?.data.evidence).toMatchObject({
+			packId: "chaos-budget",
+			packVersion: options.pack.version,
+		});
 		expect(replayed.events.map((event) => event.type)).toEqual([
 			"policy.Decided",
 			"chaos.ExperimentStarted",
