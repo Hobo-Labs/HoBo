@@ -13,15 +13,6 @@ import {
 
 const repository = "Hobo-Labs/HoBo";
 const workflowRef = `${repository}/.github/workflows/vercel-credential-evidence.yml@refs/heads/main`;
-const teamId = "team_BRBUnG6uGhSsVV3EG5GFV3FM";
-const projectId = "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO";
-const projectSchema = z
-	.object({
-		id: z.literal(projectId),
-		accountId: z.literal(teamId),
-		name: z.literal("hobo-ci"),
-	})
-	.passthrough();
 const candidates = [
 	{ name: "VERCEL_TOKEN", env: "HOBO_VERCEL_TOKEN_CANDIDATE" },
 	{ name: "VERCEL_ACCESS_TOKEN", env: "HOBO_VERCEL_ACCESS_TOKEN_CANDIDATE" },
@@ -67,8 +58,23 @@ export function trustedVercelEvidenceContext(
 export async function inspectVercelCredentials(input: {
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly fetch?: typeof globalThis.fetch;
+	readonly scope?: Readonly<{ teamId: string; projectId: string }>;
 }): Promise<VercelCredentialEvidenceReport> {
-	if (!trustedVercelEvidenceContext(input.env)) return unavailable();
+	if (
+		!trustedVercelEvidenceContext(input.env) ||
+		!input.scope ||
+		!/^team_[A-Za-z0-9]+$/u.test(input.scope.teamId) ||
+		!/^prj_[A-Za-z0-9]+$/u.test(input.scope.projectId)
+	)
+		return unavailable();
+	const { teamId, projectId } = input.scope;
+	const projectSchema = z
+		.object({
+			id: z.literal(projectId),
+			accountId: z.literal(teamId),
+			name: z.literal("hobo-ci"),
+		})
+		.passthrough();
 	const transport = createGuardedTransport(
 		createFetchTransport({ fetchImpl: input.fetch ?? fetch }),
 		{

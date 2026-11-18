@@ -349,14 +349,14 @@ export function relayVerifyFailure(
 			code: RELAY_VERIFY_REFUSAL.relayNotConfigured,
 			reason: `${origin}/readyz says the relay is not configured: its config service holds no valid relay configuration yet`,
 			remediation:
-				"Put the relay's configuration in the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md): the GitHub App's credentials go in with hobo ci app create --via-workflow, the owner's entries as its section What the folder holds lists. Re-run this workflow once they are there.",
+				"Complete the HoBo setup ceremony and provide the relay configuration through the owner-selected store before retrying.",
 		};
 	if (findings.readyzState === "config-service-denied")
 		return {
 			code: RELAY_VERIFY_REFUSAL.relayNotReady,
 			reason: `${origin}/readyz says the relay's config service refused its identity`,
 			remediation:
-				"The relay identity named in deploy/secret-store.binding.json must trust this project's Vercel production OIDC tokens (OIDC Auth; packages/ci-vercel/CONFIG-SERVICE.md). hobo ci secret-store verify checks the deploy identity by name.",
+				"The owner-selected relay identity must trust this project's Vercel production OIDC tokens. Complete the HoBo setup ceremony to establish that connection.",
 		};
 	if (findings.readyzState === "config-service-unavailable")
 		return {

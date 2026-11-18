@@ -68,6 +68,29 @@ describe("pinned Git deployment source", () => {
 		).toThrow(/absent/i);
 	});
 
+	it("omits explicitly excluded paths without reading their blobs", () => {
+		const cwd = repository();
+		mkdirSync(join(cwd, "app"));
+		writeFileSync(join(cwd, "app", "main"), "public");
+		symlinkSync("main", join(cwd, "app", "private"));
+		const sha = commit(cwd);
+		const source = readPinnedGitSource({
+			cwd,
+			sha,
+			paths: ["app"],
+			excludePaths: ["app/private"],
+		});
+		expect(source.files.map((file) => file.path)).toEqual(["app/main"]);
+		expect(() =>
+			readPinnedGitSource({
+				cwd,
+				sha,
+				paths: ["app"],
+				excludePaths: ["../outside"],
+			}),
+		).toThrow();
+	});
+
 	it("refuses unpinned revisions, unsafe selections, symlinks, and excessive artifacts", () => {
 		const cwd = repository();
 		writeFileSync(join(cwd, "regular"), "12345");

@@ -1,10 +1,3 @@
-/**
- * The committed binding: where the relay and the deploy workflow find the
- * store once it exists (`packages/ci-vercel/deploy/secret-store.binding.json`).
- * Coordinates only, constrained by `#SecretStoreBinding` in
- * `data-models/secret_store_claim.cue`; a value shaped like a credential
- * cannot be represented.
- */
 import {
 	create,
 	fromJsonString,
@@ -18,7 +11,6 @@ import {
 import { secretStoreError } from "./errors.js";
 import { parseSecretStoreKind, type SecretStoreKind } from "./offers.js";
 
-// public-contract: where `hobo ci secret-store provision` writes the binding, relative to the relay project.
 export const SECRET_STORE_BINDING_FILE = "deploy/secret-store.binding.json";
 
 export type ParsedSecretStoreBinding = Readonly<

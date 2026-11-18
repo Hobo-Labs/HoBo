@@ -15,6 +15,21 @@ import { createReleaseJournal } from "../src/release-journal.js";
 const RELAY = resolve(import.meta.dirname, "../../ci-vercel");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const PROJECT = "prj_relayTest";
+const TEAM = "team_relayTest";
+const PRIVATE_PROJECT = "synthetic-private-project";
+const relayBinding = JSON.stringify({
+	schema: "hobo.ci-relay-binding/v1",
+	teamId: TEAM,
+	projectId: PROJECT,
+	binding: {
+		kind: "infisical",
+		siteUrl: "https://fixture.invalid",
+		projectId: PRIVATE_PROJECT,
+		environment: "prod",
+		secretPath: "/hobo-ci-relay",
+		identityId: "fixture-relay",
+	},
+});
 const homes: string[] = [];
 
 afterEach(async () => {
@@ -38,6 +53,7 @@ async function harness(
 		wrongProject?: boolean;
 		wrongTeam?: boolean;
 		invalidProjectId?: boolean;
+		relayBinding?: "missing" | "mismatch" | "wrongPath";
 	} = {},
 ) {
 	const home = await mkdtemp(join(tmpdir(), "managed-relay-"));
@@ -45,9 +61,22 @@ async function harness(
 	const vault = createTrustedVault();
 	if (!options.store && !options.storeDenied)
 		vault.put("VERCEL_TOKEN", "synthetic-deploy-token");
+	vault.put("VERCEL_TEAM_ID", TEAM);
 	const store = createMemorySecretsPort({ id: "memory" });
-	if (options.store)
+	if (options.store) {
 		await store.put("HOBO_CD_VERCEL_TOKEN", "synthetic-deploy-token");
+		await store.put("HOBO_CD_VERCEL_TEAM_ID", TEAM);
+	}
+	const relayStore = createMemorySecretsPort({ id: "relay-memory" });
+	if (options.relayBinding !== "missing")
+		await relayStore.put(
+			"HOBO_CI_RELAY_RUNTIME_BINDING",
+			options.relayBinding === "mismatch"
+				? relayBinding.replace(PROJECT, "prj_other")
+				: options.relayBinding === "wrongPath"
+					? relayBinding.replace("/hobo-ci-relay", "/other")
+					: relayBinding,
+		);
 	const calls: { method: string; path: string; body?: string }[] = [];
 	let current = options.resume ? "dpl_new" : "dpl_old";
 	const resumeSha =
@@ -240,6 +269,14 @@ async function harness(
 					}),
 				}
 			: undefined),
+		openRelayOwnerStore: async () => ({
+			chosen: true,
+			opened: {
+				id: options.store ?? "infisical",
+				port: relayStore,
+				reference: () => "private-relay-coordinate",
+			},
+		}),
 		fetch: fetcher,
 		home,
 		now: () => time,
@@ -275,6 +312,30 @@ describe("managed relay delivery through HoBo CD", () => {
 		expect(output).not.toContain("private-store-coordinate");
 		expect(output).not.toContain("synthetic-deploy-token");
 		expect(output).not.toContain(PROJECT);
+	});
+
+	it.each([
+		"missing",
+		"mismatch",
+		"wrongPath",
+	] as const)("refuses a %s private relay binding before provider writes", async (relayBinding) => {
+		const { result, calls } = await harness({ relayBinding });
+		expect(result.code).toBe(
+			relayBinding === "missing"
+				? "HOBO_CI_MANAGED_BINDING_REQUIRED"
+				: "HOBO_CI_MANAGED_BINDING_MISMATCH",
+		);
+		expect(calls.some((call) => call.method !== "GET")).toBe(false);
+		expect(JSON.stringify(result)).not.toContain(PRIVATE_PROJECT);
+		expect(JSON.stringify(result)).not.toContain("private-relay-coordinate");
+	});
+
+	it("does not need a production identity to deliver a preview", async () => {
+		const { result } = await harness({
+			previewOnly: true,
+			relayBinding: "missing",
+		});
+		expect(result.code).toBe("HOBO_CI_MANAGED_PREVIEW");
 	});
 
 	it("refuses an unavailable owner connection before contacting Vercel", async () => {
@@ -325,6 +386,11 @@ describe("managed relay delivery through HoBo CD", () => {
 			),
 		).toBe(true);
 		expect(bodies[1]?.autoAssignCustomDomains).toBe(false);
+		expect(bodies[0]?.env.INFISICAL_PROJECT_ID).toBeUndefined();
+		expect(bodies[1]?.env.INFISICAL_PROJECT_ID).toBe(PRIVATE_PROJECT);
+		expect(bodies[1]?.env.INFISICAL_IDENTITY_ID).toBe("fixture-relay");
+		expect(calls.some((call) => call.path.endsWith("/env"))).toBe(false);
+		expect(JSON.stringify(result)).not.toContain(PRIVATE_PROJECT);
 		expect(calls.some((call) => call.path.includes("protection-bypass"))).toBe(
 			false,
 		);

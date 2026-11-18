@@ -106,6 +106,9 @@ describe("CI shell routing", () => {
 			expect(help.stdout).toContain("hobo ci github key-status");
 			expect(help.stdout).toContain("hobo ci deploy");
 			expect(help.stdout).toContain("--target preview|production");
+			expect(help.stdout).toContain("--sha <commit>");
+			expect(help.stdout).not.toContain("--adopt");
+			expect(help.stdout).not.toContain("secret-store.binding.json");
 			expect(help.stdout).not.toContain("hobo ci github-key");
 			expect(help.stdout).toContain("--accept-all-matching-jobs");
 			for (const command of [

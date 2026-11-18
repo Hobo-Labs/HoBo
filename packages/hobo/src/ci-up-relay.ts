@@ -158,6 +158,10 @@ export interface CiRelayUpDeps {
 	readonly ownerSettings?: Parameters<
 		typeof loadOwnerDeployCredentials
 	>[0]["ownerSettings"];
+	readonly relayOwnerSession?: TrustedVault;
+	readonly relayOwnerSettings?: Parameters<
+		typeof runCiRelayManaged
+	>[0]["relayOwnerSettings"];
 	readonly openOwnerStore?: Parameters<
 		typeof loadOwnerDeployCredentials
 	>[0]["open"];
@@ -272,6 +276,15 @@ export function createCiRelayUpCommand(
 					credentials,
 					...(deps.ownerSession
 						? { ownerSession: deps.ownerSession }
+						: undefined),
+					...(deps.ownerSettings
+						? { ownerSettings: deps.ownerSettings }
+						: undefined),
+					...(deps.relayOwnerSession
+						? { relayOwnerSession: deps.relayOwnerSession }
+						: undefined),
+					...(deps.relayOwnerSettings
+						? { relayOwnerSettings: deps.relayOwnerSettings }
 						: undefined),
 					emitProgress: input.emitProgress,
 				});

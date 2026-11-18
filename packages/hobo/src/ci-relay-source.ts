@@ -127,5 +127,6 @@ export function readRelaySource(cwd: string, sha: string): PinnedGitSource {
 		cwd: root,
 		sha,
 		paths: [...RELAY_ROOT_INPUTS, ...optionalPaths, ...directories],
+		excludePaths: ["packages/ci-vercel/deploy/secret-store.binding.json"],
 	});
 }

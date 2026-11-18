@@ -74,6 +74,11 @@ export async function relayCommitSnapshot(
 				.slice(0, tab)
 				.match(/^(100644|100755) blob ([a-f0-9]{40}(?:[a-f0-9]{24})?)$/u);
 			const name = entry.slice(tab + 1);
+			if (
+				name === "deploy/secret-store.binding.json" ||
+				name === "packages/ci-vercel/deploy/secret-store.binding.json"
+			)
+				continue;
 			const parts = name.split("/");
 			if (
 				tab < 0 ||

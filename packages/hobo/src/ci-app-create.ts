@@ -30,7 +30,6 @@ import {
 	type InfisicalClient,
 	InfisicalError,
 	infisicalBindingFromEnv,
-	infisicalSecretRef,
 	oidcAuth,
 	ownerAuthFromEnv,
 	parseInfisicalBinding,
@@ -51,12 +50,9 @@ import {
 	RedirectReceiverError,
 } from "@hobo/hobo-ci";
 import type { SecretsPort } from "@hobo/identity";
+import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
 import { z } from "zod";
 import { openBrowser } from "./ci-github-connect.js";
-import {
-	loadSecretStoreBinding,
-	SecretStoreBindingRefusal,
-} from "./ci-secret-store.js";
 
 /** Entries in deposit order: the App id last, so its presence means complete. */
 export const APP_CREDENTIAL_KEYS = [
@@ -552,12 +548,13 @@ async function storeFirst(input: {
 			} catch {
 				return failed(
 					"HOBO_CI_APP_UNVERIFIED",
-					`The App in your store (id ${appId}) does not match the reviewed configuration (owner ${input.ownerId}, relay ${input.relay}). Check its permissions, events and webhook URL against the prefilled form.`,
+					"The App in the owner-selected store does not match the reviewed configuration. Check its permissions, events and webhook URL through the owner ceremony.",
 				);
 			}
 			return {
-				message: `The GitHub App ${appId} you stored checks out with GitHub; its credentials stay in your store.`,
-				data: { appId, handoff: "store" },
+				message:
+					"The stored GitHub App checks out with GitHub; its credentials stay in the owner-selected store.",
+				data: { handoff: "store" },
 			};
 		}
 		await input.sleep(10_000);
@@ -571,6 +568,11 @@ async function storeFirst(input: {
 export async function runCiAppCreate(
 	options: AppCreateOptions,
 ): Promise<CommandResult> {
+	if (options.viaWorkflow === true)
+		return failed(
+			"HOBO_CI_PRIVATE_HANDOFF_REQUIRED",
+			"The workflow cannot receive the private owner-selected store connection. Complete the HoBo setup ceremony when the private handoff is available.",
+		);
 	const relay = relayOrigin(options.relay);
 	if (!relay)
 		return usage(
@@ -584,12 +586,9 @@ export async function runCiAppCreate(
 	const name = options.name ?? "HoBo CI";
 	if (!name.trim() || name.length > 100)
 		return usage("--name must be 1 to 100 characters.");
-	const viaWorkflow = options.viaWorkflow === true;
-	const resolution: ConfigServiceResolution | undefined = viaWorkflow
-		? undefined
-		: options.configService
-			? { ok: true, service: options.configService }
-			: configServiceFromEnv(options.env, options.fetch);
+	const resolution: ConfigServiceResolution | undefined = options.configService
+		? { ok: true, service: options.configService }
+		: configServiceFromEnv(options.env, options.fetch);
 	if (resolution !== undefined && !resolution.ok)
 		return failed("HOBO_CI_CONFIG_SERVICE_UNCONFIGURED", resolution.message);
 	const service = resolution?.ok === true ? resolution.service : undefined;
@@ -813,8 +812,7 @@ async function convertAndDeposit(options: {
 			"GitHub's manifest conversion failed or its answer could not be read. The App may exist: check https://github.com/settings/apps, delete an App HoBo did not finish, and run the command again.",
 		);
 	}
-	const { id: appId, slug } = conversion;
-	const deleteUrl = `https://github.com/settings/apps/${slug}/advanced`;
+	const { id: appId } = conversion;
 	try {
 		await verifyConvertedGithubApp({
 			appId,
@@ -827,7 +825,7 @@ async function convertAndDeposit(options: {
 	} catch {
 		return failed(
 			"HOBO_CI_APP_UNVERIFIED",
-			`GitHub App ${slug} (id ${appId}) was created but does not match the reviewed configuration (owner ${ownerId}, relay ${relay}); its credentials were not stored and are now discarded. Delete it at ${deleteUrl}.`,
+			"The GitHub App was created but does not match the reviewed configuration; its credentials were not stored and are now discarded. Delete the App in GitHub settings.",
 		);
 	}
 
@@ -875,39 +873,22 @@ async function convertAndDeposit(options: {
 	// Drop the only references to the credentials.
 	for (const key of APP_CREDENTIAL_KEYS) values[key] = "";
 
-	const refs = Object.fromEntries(
-		[...stored].map((key) => [key, infisicalSecretRef(client.binding, key)]),
-	);
 	if (stored.size !== APP_CREDENTIAL_KEYS.length)
 		return {
 			ok: false,
 			code: "HOBO_CI_APP_DEPOSIT_FAILED",
-			message: `GitHub App ${slug} (id ${appId}) was created, but its credentials could not all be stored in Infisical (${lastCode}). Stored: ${
+			message: `The GitHub App was created, but its credentials could not all be stored in Infisical (${lastCode}). Stored: ${
 				stored.size ? [...stored].join(", ") : "none"
-			}. The rest were held only in memory and are now discarded; GitHub's manifest conversion cannot be repeated. Delete the App at ${deleteUrl}, fix Infisical access, and run hobo ci app create again.`,
-			data: { appId, slug, stored: [...stored] },
+			}. The rest were held only in memory and are now discarded; GitHub's manifest conversion cannot be repeated. Delete the App in GitHub settings, fix store access, and run hobo ci app create again.`,
+			data: { stored: [...stored] },
 		};
 	return {
-		message: `GitHub App ${slug} (id ${appId}) created. Its private key, webhook secret, client id and client secret are in Infisical at ${infisicalSecretRef(
-			client.binding,
-			"HOBO_CI_GITHUB_APP_ID",
-		).replace(
-			/\/HOBO_CI_GITHUB_APP_ID$/u,
-			"/",
-		)}; nothing was written to disk. Install it: https://github.com/apps/${slug}/installations/new`,
-		data: { appId, slug, refs },
+		message:
+			"The GitHub App was created and its credentials were stored in the owner-selected service. Open GitHub App settings to complete installation.",
+		data: { stored: [...stored] },
 	};
 }
 
-/**
- * `hobo ci app deposit`: the App-credentials job of the relay deploy workflow.
- * Reads GitHub's one-time manifest code from `HOBO_APP_MANIFEST_CODE`,
- * converts it, checks the App against the reviewed configuration, and writes
- * the credentials into the relay's folder named by the committed binding,
- * signed in as the binding's CI identity (`hobo-ci-writer`, stored in its
- * `deployIdentityId` field) with this job's GitHub OIDC token. No credential
- * is configured anywhere for it.
- */
 export async function runCiAppDeposit(options: {
 	readonly cwd: string;
 	readonly relay: string | undefined;
@@ -916,6 +897,7 @@ export async function runCiAppDeposit(options: {
 	readonly emitProgress: (message: string) => void;
 	readonly fetch?: typeof fetch | undefined;
 	readonly sleep?: ((ms: number) => Promise<void>) | undefined;
+	readonly privateBinding?: ParsedSecretStoreBinding;
 }): Promise<CommandResult> {
 	const relay = relayOrigin(options.relay);
 	if (!relay)
@@ -929,11 +911,11 @@ export async function runCiAppDeposit(options: {
 		);
 	let service: ConfigServiceHandle;
 	try {
-		const store = loadSecretStoreBinding(options.cwd);
+		const store = options.privateBinding;
 		if (store === undefined)
 			return failed(
 				"HOBO_CI_SECRET_STORE_NOT_CONNECTED",
-				"No deploy/secret-store.binding.json: connect the store first (hobo ci secret-store connect).",
+				"A private owner-selected store connection is required; the workflow deposit does not yet receive one.",
 			);
 		const client = createInfisicalClient({
 			binding: parseInfisicalBinding({
@@ -954,12 +936,10 @@ export async function runCiAppDeposit(options: {
 			...(options.fetch !== undefined ? { fetch: options.fetch } : undefined),
 		});
 		service = { client, port: createInfisicalSecretsPort({ client }) };
-	} catch (error) {
+	} catch {
 		return failed(
 			"HOBO_CI_CONFIG_SERVICE_UNCONFIGURED",
-			error instanceof SecretStoreBindingRefusal
-				? error.message
-				: "The committed binding does not name a store this job can sign in to.",
+			"The private connection does not name a store this job can sign in to.",
 		);
 	}
 	return convertAndDeposit({

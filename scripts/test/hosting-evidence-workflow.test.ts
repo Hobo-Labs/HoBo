@@ -14,10 +14,18 @@ import { fileURLToPath } from "node:url";
 import { inspectHostingEvidence } from "../ci/hosting-evidence.mts";
 import { decide, relayInputDirs } from "../ci/relay-deploy-gate.mts";
 
-const bindingText = readFileSync(
-	"packages/ci-vercel/deploy/secret-store.binding.json",
-	"utf8",
-);
+const bindingText = JSON.stringify({
+	kind: "infisical-cloud-attach",
+	endpoint: "https://app.infisical.com",
+	projectId: "fixture-project",
+	environment: "prod",
+	secretPath: "/hobo-ci-relay",
+	relayIdentityId: "fixture-relay",
+	deployIdentityId: "fixture-writer",
+	vercelTeamId: "team_fixture",
+	claimBundleId: "fixture-claim",
+	claimState: "claimed",
+});
 const workflow = readFileSync(".github/workflows/hosting-evidence.yml", "utf8");
 const baseEnv = {
 	GITHUB_ACTIONS: "true",
@@ -326,7 +334,6 @@ describe("trusted-main hosting evidence", () => {
 		assert.equal(
 			decide({
 				event: "push",
-				store: "bound",
 				inputDirs,
 				changed: [
 					".github/workflows/hosting-evidence.yml",
