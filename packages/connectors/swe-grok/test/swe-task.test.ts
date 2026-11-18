@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type AgentPrincipal, replaySessionFacts } from "@hobo/connector-acp";
-import { describe, it } from "vitest";
+import { afterAll, describe, it } from "vitest";
+import { createSweWorkspace } from "../../../../test/setup/swe-workspace.js";
 
 import {
 	createGrokTranscriptAgent,
@@ -28,16 +29,18 @@ const PRINCIPAL: AgentPrincipal = {
 	delegatedBy: { kind: "user", id: "tyler" },
 };
 
+const workspace = createSweWorkspace();
+afterAll(workspace.cleanup);
+
 const TASK = {
 	taskId: "fix-math",
 	instruction: "fix the math bug and run the tests",
-	workspace: "/workspace/fixture-repo",
+	workspace: workspace.directory,
 };
 
 function harness(transcript?: Parameters<typeof createGrokTranscriptAgent>[1]) {
 	let agent: TranscriptAcpAgent | undefined;
 	return {
-		// SAFETY: assertion to `agent as TranscriptAcpAgent` is required at this boundary.
 		agent: () => agent as TranscriptAcpAgent,
 		run: () =>
 			runSweTask({
@@ -62,7 +65,6 @@ describe("swe-grok: governed fixture-repo SWE task (golden-transcript replay lan
 		assert.equal(report.stopReason, recorded.report.stopReason);
 		assert.deepEqual([...report.edits], recorded.report.edits);
 		assert.equal(report.completed, true);
-		// All three tool calls flowed under the SWE posture: read, edit, test.
 		assert.deepEqual(run.agent().observed.granted, [
 			"workspace:read src/math.ts",
 			"workspace:write edit src/math.ts",
@@ -77,13 +79,11 @@ describe("swe-grok: governed fixture-repo SWE task (golden-transcript replay lan
 		assert.equal(replayed.sessionId, report.sessionId);
 		assert.equal(replayed.decisions.length, 3);
 		assert.ok(replayed.closed);
-		// s3-07 acceptance: zero out-of-scope filesystem/network grants.
 		assert.deepEqual(
 			[...sandboxReport.outOfScopeAccess],
 			pact.interactions[0].response.body.sandboxReport.outOfScopeAccess,
 		);
 		assert.equal(sandboxReport.clean, true);
-		// Deterministic replay: identical task, identical facts.
 		assert.deepEqual((await harness().run()).facts, facts);
 	});
 
