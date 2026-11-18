@@ -142,6 +142,22 @@ function nullableStr(
 	return str(value, path);
 }
 
+function onlyKeys(
+	input: JsonObject,
+	allowed: readonly string[],
+	path: string,
+): void {
+	for (const key of Object.keys(input)) {
+		if (!allowed.includes(key)) {
+			throw new UpgradePreflightParseError(
+				`${path}.${key}`,
+				`only fields ${allowed.join(", ")}`,
+				input[key],
+			);
+		}
+	}
+}
+
 function member<T extends string>(
 	value: JsonValue,
 	allowed: ReadonlySet<T>,
@@ -162,6 +178,23 @@ export function parseCompatibilityInputs(
 	path = "compatibilityInputs",
 ): CompatibilityInputs {
 	const input = record(value, path);
+	onlyKeys(
+		input,
+		[
+			"currentVersion",
+			"targetVersion",
+			"deploymentMode",
+			"componentHostPin",
+			"manifestVersion",
+			"contractCompatibility",
+			"dataSchemaPosture",
+			"providerStateDependency",
+			"backupPrerequisite",
+			"rollbackEvidenceRef",
+			"supportHandoffOwner",
+		],
+		path,
+	);
 	return Object.freeze({
 		currentVersion: str(input.currentVersion, `${path}.currentVersion`),
 		targetVersion: str(input.targetVersion, `${path}.targetVersion`),
@@ -207,6 +240,18 @@ export function parseRollbackEvidence(
 	path = "rollbackEvidence",
 ): RollbackEvidence {
 	const input = record(value, path);
+	onlyKeys(
+		input,
+		[
+			"state",
+			"immutableSetRef",
+			"snapshotRef",
+			"restorePrerequisite",
+			"blockedRestoreReason",
+			"escalationOwner",
+		],
+		path,
+	);
 	const state = member(input.state, ROLLBACK_STATES, `${path}.state`);
 	const evidence: RollbackEvidence = {
 		state,
@@ -426,20 +471,168 @@ export interface UpgradeDryRunReport {
 	readonly digest: string;
 }
 
+const MIGRATION_PHASES = new Set<UpgradeDryRunMigrationStep["phase"]>([
+	"expand",
+	"backfill",
+	"contract",
+]);
+
+function list(value: JsonValue, path: string): readonly JsonValue[] {
+	if (!Array.isArray(value)) {
+		throw new UpgradePreflightParseError(path, "array", value);
+	}
+	return value;
+}
+
+function optionalString(value: JsonValue, path: string): string | undefined {
+	return value === undefined ? undefined : str(value, path);
+}
+
+export function parseUpgradeDryRunRequest(
+	value: JsonValue,
+): UpgradeDryRunRequest {
+	const input = record(value, "upgradeDryRun");
+	onlyKeys(
+		input,
+		[
+			"id",
+			"action",
+			"compatibility",
+			"migration",
+			"rollback",
+			"unsupportedPath",
+			"releaseNotes",
+			"support",
+		],
+		"upgradeDryRun",
+	);
+	const action = optionalString(input.action, "requestedAction");
+	if (action !== undefined) assertUpgradeScopeBoundary(action);
+	const migration = record(input.migration, "migration");
+	onlyKeys(migration, ["steps", "failure"], "migration");
+	const steps = list(migration.steps, "migration.steps").map((value, index) => {
+		const path = `migration.steps[${index}]`;
+		const step = record(value, path);
+		onlyKeys(step, ["phase", "summary"], path);
+		return Object.freeze({
+			phase: member(step.phase, MIGRATION_PHASES, `${path}.phase`),
+			summary: str(step.summary, `${path}.summary`),
+		});
+	});
+	const order = [...MIGRATION_PHASES];
+	for (let index = 1; index < steps.length; index += 1) {
+		const previous = steps[index - 1];
+		const current = steps[index];
+		if (
+			previous &&
+			current &&
+			order.indexOf(previous.phase) > order.indexOf(current.phase)
+		) {
+			throw new UpgradePreflightParseError(
+				`migration.steps[${index}].phase`,
+				"phases in expand, backfill, contract order",
+				current.phase,
+			);
+		}
+	}
+	const failure =
+		migration.failure === undefined
+			? undefined
+			: record(migration.failure, "migration.failure");
+	if (failure) onlyKeys(failure, ["phase", "reason"], "migration.failure");
+	const release = record(input.releaseNotes, "releaseNotes");
+	onlyKeys(release, ["requiredInputs", "knownLimitation"], "releaseNotes");
+	const knownLimitation = optionalString(
+		release.knownLimitation,
+		"releaseNotes.knownLimitation",
+	);
+	const support = record(input.support, "support");
+	onlyKeys(
+		support,
+		["owner", "handoff", "nextAction", "escalation"],
+		"support",
+	);
+	const nextAction = optionalString(support.nextAction, "support.nextAction");
+	const escalation = optionalString(support.escalation, "support.escalation");
+	const unsupported =
+		input.unsupportedPath === undefined
+			? undefined
+			: record(input.unsupportedPath, "unsupportedPath");
+	if (unsupported)
+		onlyKeys(unsupported, ["reason", "remediation"], "unsupportedPath");
+	return Object.freeze({
+		id: str(input.id, "id"),
+		...(action === undefined ? undefined : { action: UPGRADE_DRY_RUN_ACTION }),
+		compatibility: parseCompatibilityInputs(
+			input.compatibility,
+			"compatibility",
+		),
+		migration: Object.freeze({
+			steps: Object.freeze(steps),
+			...(failure === undefined
+				? undefined
+				: {
+						failure: Object.freeze({
+							phase: member(
+								failure.phase,
+								MIGRATION_PHASES,
+								"migration.failure.phase",
+							),
+							reason: str(failure.reason, "migration.failure.reason"),
+						}),
+					}),
+		}),
+		rollback: parseRollbackEvidence(input.rollback, "rollback"),
+		...(unsupported === undefined
+			? undefined
+			: {
+					unsupportedPath: Object.freeze({
+						reason: str(unsupported.reason, "unsupportedPath.reason"),
+						remediation: str(
+							unsupported.remediation,
+							"unsupportedPath.remediation",
+						),
+					}),
+				}),
+		releaseNotes: Object.freeze({
+			requiredInputs: Object.freeze(
+				list(release.requiredInputs, "releaseNotes.requiredInputs").map(
+					(entry, index) => str(entry, `releaseNotes.requiredInputs[${index}]`),
+				),
+			),
+			...(knownLimitation === undefined ? undefined : { knownLimitation }),
+		}),
+		support: Object.freeze({
+			owner: str(support.owner, "support.owner"),
+			handoff: str(support.handoff, "support.handoff"),
+			...(nextAction === undefined ? undefined : { nextAction }),
+			...(escalation === undefined ? undefined : { escalation }),
+		}),
+	});
+}
+
 export function evaluateUpgradeDryRun(
 	request: UpgradeDryRunRequest,
 ): UpgradeDryRunReport {
-	assertUpgradeScopeBoundary(
-		request.action === undefined ? UPGRADE_DRY_RUN_ACTION : request.action,
-	);
+	const input = parseUpgradeDryRunRequest(JSON.parse(JSON.stringify(request)));
 	const blockedReasons: string[] = [];
-	if (request.compatibility.contractCompatibility === "unsupported") {
+	if (input.compatibility.contractCompatibility === "unsupported") {
 		blockedReasons.push("contract-compatibility-unsupported");
 	}
-	if (request.compatibility.backupPrerequisite === "required-but-missing") {
+	if (input.compatibility.contractCompatibility === "needs-review") {
+		blockedReasons.push("contract-compatibility-needs-review");
+	}
+	if (input.compatibility.backupPrerequisite === "required-but-missing") {
 		blockedReasons.push("backup-prerequisite-missing");
 	}
-	const failed = request.migration.failure !== undefined;
+	if (
+		input.migration.steps.some((step) => step.phase === "contract") &&
+		(input.rollback.state === "unavailable" ||
+			input.rollback.state === "required-before-execution")
+	) {
+		blockedReasons.push("rollback-evidence-unavailable");
+	}
+	const failed = input.migration.failure !== undefined;
 	const status = failed
 		? "failed"
 		: blockedReasons.length > 0
@@ -447,7 +640,7 @@ export function evaluateUpgradeDryRun(
 			: "passed";
 	return Object.freeze({
 		schema: UPGRADE_DRY_RUN_SCHEMA,
-		fixtureId: request.id,
+		fixtureId: input.id,
 		status,
 		preflight: Object.freeze({
 			status,
@@ -458,16 +651,19 @@ export function evaluateUpgradeDryRun(
 				"rollback",
 			]),
 		}),
-		compatibility: request.compatibility,
-		backupRequirement: request.compatibility.backupPrerequisite,
-		migrationPlan: request.migration,
+		compatibility: input.compatibility,
+		backupRequirement: input.compatibility.backupPrerequisite,
+		migrationPlan:
+			status === "blocked"
+				? Object.freeze({ steps: Object.freeze([]) })
+				: input.migration,
 		blockedReasons: Object.freeze(blockedReasons),
-		rollbackEvidence: request.rollback,
-		releaseNotes: request.releaseNotes,
-		supportHandoff: request.support,
-		unsupportedPath: request.unsupportedPath ?? null,
+		rollbackEvidence: input.rollback,
+		releaseNotes: input.releaseNotes,
+		supportHandoff: input.support,
+		unsupportedPath: input.unsupportedPath ?? null,
 		mutationCommands: Object.freeze([]) as readonly never[],
-		digest: stableDigest(JSON.parse(JSON.stringify(request)) as JsonObject),
+		digest: stableDigest(JSON.parse(JSON.stringify(input)) as JsonObject),
 	});
 }
 

@@ -99,7 +99,10 @@ hobo trails inspect <id>
 
 `evaluateUpgradeDryRun` produces evidence without running migration commands.
 Its optional `action` is `evaluate-upgrade-dry-run`; unknown actions are
-rejected by the scope boundary.
+rejected by the scope boundary. Requests are parsed into immutable evidence;
+unknown fields and invalid or out-of-order migration phases are rejected. Unsupported or
+unreviewed compatibility, a missing required backup, and contract work without
+available rollback evidence produce a blocked report with no migration steps.
 
 ## Data migrations (ADR-0177)
 
