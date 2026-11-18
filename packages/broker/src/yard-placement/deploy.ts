@@ -121,6 +121,11 @@ export function prepareYardHostingWork(input: YardHostingWorkInput):
 			code: "owner-tenant-mismatch",
 			error: "work owner differs from request owner",
 		};
+	if (selectOrGenerateCamp(request, input.yardId) === undefined)
+		return {
+			code: "camp-yard-mismatch",
+			error: "requested Camp is not a direct child of the selected Yard",
+		};
 	const catalogHash = input.catalog.catalogHash;
 	const selected = placeResourcesUnderYard(
 		request,
@@ -765,6 +770,26 @@ export async function resolveBindleDeployment(
 				"policy",
 				"yard-generation-denied",
 				genDecision.reason,
+			);
+		}
+		if (
+			selectOrGenerateCamp(request, genDecision.plan.expectedYardId) ===
+			undefined
+		) {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "camp-yard-mismatch",
+					reasonCodes: ["camp-yard-mismatch"],
+					message: "requested Camp is not a direct child of the planned Yard",
+				}),
+			);
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"camp-yard-mismatch",
+				"requested Camp is not a direct child of the planned Yard",
 			);
 		}
 		const generationPlanCurrent = () => {

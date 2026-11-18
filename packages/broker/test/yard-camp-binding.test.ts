@@ -182,6 +182,18 @@ describe("Yard Camp binding", () => {
 		expect(first.workDigest).not.toBe(second.workDigest);
 	});
 
+	it("refuses to quote a Camp outside the proposed Yard", () => {
+		const result = prepareYardHostingWork({
+			request: request(camp({ campId: "yard:foreign/camp:prod" })),
+			brokerId: "broker:test",
+			ownerTenantId: "local",
+			catalog: createLocalHostCatalog(),
+			yardId,
+			providerId: LOCAL_HOST_PROVIDER_ID,
+		});
+		expect(result).toMatchObject({ code: "camp-yard-mismatch" });
+	});
+
 	it("refuses malformed Camp and environment values instead of defaulting them", () => {
 		for (const requestedCamp of [
 			{ campId: "" },
