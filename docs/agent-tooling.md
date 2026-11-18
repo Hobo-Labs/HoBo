@@ -52,6 +52,40 @@ See [local CI setup, trust, lifecycle and recovery](../packages/ci-gh-actions/LO
 for the `local` provider and `HOBO_CI_LOCAL_*` settings. Persistent host runners use
 `hobo-local-host`; only HoBo's reserved JIT runners use `hobo`.
 
+## Completion review
+
+The outcome-based completion rule in [`AGENTS.md`](../AGENTS.md) applies to
+every harness, including ones without hooks. It requires continued action when
+essential work remains and a safe, authorized next step is available. It also
+preserves explicit stops and scope changes, real approval and safety boundaries,
+and honest reports of actual blockers.
+
+[`scripts/agent_completion_hook.py`](../scripts/agent_completion_hook.py)
+adds one bounded review before a completed response in Claude Code, Codex,
+Cursor, and Copilot. It asks the model to check the current human request,
+evidence, and remaining work; it does not inspect the conversation, run a model,
+or use the network. The prompt is a reminder, not a new user request. The review
+still depends on the agent's judgment: it cannot establish that the task is done
+or guarantee a correct decision. It adds one continuation to reviewed responses,
+including simple answers. Cursor events marked aborted or error are not resumed;
+other interruptions follow their harness's behavior.
+
+Claude Code and Codex use their `Stop` event; Copilot uses `agentStop`.
+Cursor uses its native `stop` event and skips the imported Claude handler to
+avoid duplicate reviews. The handler accepts the documented continuation flag
+or loop counter and lets the ensuing continuation finish. For Cursor it keeps a
+counter named by a hash of the conversation ID under the OS temporary directory;
+it stores no prompts or responses. Missing or unsafe state and unrecognized hook
+inputs are allowed through rather than causing an infinite loop. Codex requires
+project-hook trust and review through `/hooks`; if a harness skips a hook, the
+shared rule remains in force.
+
+The script uses the Python standard library. The configured Unix hooks require
+`python3` on `PATH`; Copilot on Windows uses `python`. Other harnesses can pass
+their stop event as JSON on standard input and use the returned `decision` and
+`reason`, or adapt the Cursor `followup_message` format. A compatible harness
+must supply a reliable continuation marker to prevent a review loop.
+
 ## Product implementation guardrails
 
 Agents implementing HoBo code must follow the canonical architecture rules in [`../AGENTS.md`](../AGENTS.md): every service boundary is pinned by PACT contracts; records, messages, data shapes, and objects are defined in protobuf with CUE constraints; runtime code parses into derived types instead of validating broad values in place; and flows use CQRS, event stores, materialized views, and actors. Actors consume commands, emit events, and coordinate durable state. Query paths use rx-style projections with cached current snapshots and persisted historical snapshots in a read store.
