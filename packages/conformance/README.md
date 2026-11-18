@@ -35,6 +35,9 @@ lifecycle, supervision, cleanup, inspection, and replay helper claims require
 matching resilience vectors. Reports describe only the supplied corpus.
 `encodeSdkConformanceReport` and `decodeSdkConformanceReport` round-trip
 validated reports in protobuf form.
+After changing `data-models/sdk_conformance.proto`, run
+`pnpm --filter @hobo/conformance codegen:sdk`; the package's `test:schema`
+checks that the generated TypeScript matches the schema.
 
 ### `@hobo/conformance/anonymous` — the anonymous/claimable dimension
 
