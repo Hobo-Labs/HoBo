@@ -50,6 +50,10 @@
       "types": "./dist/insights/index.d.ts",
       "default": "./dist/insights/index.js"
     },
+    "./runner-order/testing": {
+      "types": "./dist/runner-order/testing.d.ts",
+      "default": "./dist/runner-order/testing.js"
+    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"

@@ -687,6 +687,17 @@ export {
 	RunnerOrderDocumentSchema,
 } from "./runner-order-config.js";
 export {
+	InMemoryRunnerService,
+	type JitCredentials,
+	type JitRunnerSettings,
+	type ParsedJitConfig,
+	type RunnerServiceClient,
+	type RunnerServiceUnderTest,
+	type RunnerSession,
+	runnerServiceClientConformance,
+	testJitConfig,
+} from "./runner-protocol/port.js";
+export {
 	GENERIC_RUNNER_LABELS,
 	parseRunnerRouting,
 	RUNNER_ROUTING_PINS,

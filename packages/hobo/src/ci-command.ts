@@ -31,6 +31,7 @@ import {
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
+import { type CiCommand, findCiCommand } from "./ci-commands.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
@@ -72,6 +73,27 @@ import { CiSetupUsage } from "./ci-command-errors.js";
 class CiLinkSaveError extends Error {}
 
 export const CI_HELP = verbHelpText("ci", { implemented: true });
+
+export const BUILT_IN_CI_COMMANDS = [
+	"enable",
+	"connect",
+	"status",
+	"list",
+	"ls",
+	"inspect",
+	"logs",
+	"grep",
+	"rerun",
+	"serve",
+	"github",
+	"deploy",
+	"app",
+	"secret-store",
+	"route",
+	"init",
+	"signals",
+	"diagnose",
+] as const;
 
 async function promptOnTerminal(question: string): Promise<string> {
 	const terminal = createInterface({
@@ -429,12 +451,28 @@ export function createCiCommand(
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
+
+		commands?: readonly CiCommand[];
 	} = {},
 ): CommandModule {
 	return {
 		implemented: true,
 		async run({ args, flags, emitProgress }) {
 			if (args.length === 0) return { message: CI_HELP };
+			const first = args[0] ?? "";
+			const tabled = BUILT_IN_CI_COMMANDS.some((name) => name === first)
+				? undefined
+				: findCiCommand(first, deps.commands);
+			if (tabled)
+				return tabled.run({
+					args: args.slice(1),
+					flags,
+					emitProgress,
+					env: deps.env ?? process.env,
+					fetch: deps.fetch ?? fetch,
+					now: deps.now ?? Date.now,
+					localRepository: (repo) => localRepository(deps, flags.cwd, { repo }),
+				});
 			let parsed: ReturnType<typeof parseCiArgs>;
 			try {
 				parsed = parseCiArgs(args);
@@ -455,28 +493,7 @@ export function createCiCommand(
 				? ["connect", ...parsed.positionals.slice(2)]
 				: parsed.positionals;
 			const command = positionals[0] ?? "";
-			if (
-				![
-					"enable",
-					"connect",
-					"status",
-					"list",
-					"ls",
-					"inspect",
-					"logs",
-					"grep",
-					"rerun",
-					"serve",
-					"github",
-					"deploy",
-					"app",
-					"secret-store",
-					"route",
-					"init",
-					"signals",
-					"diagnose",
-				].includes(command)
-			)
+			if (!BUILT_IN_CI_COMMANDS.some((name) => name === command))
 				return usage("Unknown CI command. Run hobo ci --help.");
 			if (command === "init") {
 				const local = await localRepository(deps, flags.cwd, values);
