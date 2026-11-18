@@ -8,11 +8,6 @@ export function hasOpfs(): boolean {
 	return storage !== undefined && storage.getDirectory instanceof Function;
 }
 
-/**
- * Detect browser storage capabilities without assuming OPFS is present.
- * Checked 2026-07-27 against SQLite WASM OPFS guidance:
- * https://sqlite.org/wasm/doc/trunk/persistence.md
- */
 export function detectBrowserPersistence(
 	options: BrowserPersistenceDetectOptions,
 ): BrowserPersistenceDetection {
