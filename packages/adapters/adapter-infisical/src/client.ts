@@ -30,7 +30,7 @@ import {
 	parseInfisicalBinding,
 	parseInfisicalSecretKey,
 } from "./binding.js";
-import { InfisicalError, requestIdOf } from "./errors.js";
+import { InfisicalError } from "./errors.js";
 import {
 	type ParsedSecret,
 	type ParsedSecretName,
@@ -70,11 +70,6 @@ export interface InfisicalClient {
 	getSecret(name: string, version?: number): Promise<ParsedSecret>;
 	/** Update the secret, or create it when it does not exist. */
 	putSecret(name: string, value: string): Promise<{ version: number }>;
-	/**
-	 * Create the secret only if it does not exist: Infisical refuses a key
-	 * that exists (400 or 409) and keeps the original. `undefined` when
-	 * refused.
-	 */
 	createSecret(
 		name: string,
 		value: string,
@@ -148,8 +143,7 @@ function retryAfterMs(response: Response): number | undefined {
 
 /** The adapter error for a non-2xx answer. */
 export function failure(operation: string, answer: Answer): InfisicalError {
-	const reqId = requestIdOf(answer.body);
-	const details = { status: answer.status, reqId };
+	const details = { status: answer.status };
 	switch (answer.status) {
 		case 400:
 		case 422:
@@ -238,9 +232,11 @@ function createInfisicalClientInternal(
 		path: string,
 		headers: Record<string, string>,
 		body: string | undefined,
+		mutation = false,
 	): Promise<Answer> {
 		let last: InfisicalError | undefined;
-		for (let attempt = 1; attempt <= retry.attempts; attempt++) {
+		const attempts = mutation ? 1 : retry.attempts;
+		for (let attempt = 1; attempt <= attempts; attempt++) {
 			let waitMs = Math.min(
 				retry.maxDelayMs,
 				retry.baseDelayMs * 2 ** (attempt - 1),
@@ -263,6 +259,13 @@ function createInfisicalClientInternal(
 					status: response.status,
 					body: await readBody(response),
 				};
+				if (
+					mutation &&
+					(response.status === 408 ||
+						response.status === 429 ||
+						response.status >= 500)
+				)
+					throw new InfisicalError(operation, "write-uncertain");
 				if (response.ok || !RETRYABLE_STATUS.has(response.status))
 					return answer;
 				last = failure(operation, answer);
@@ -270,12 +273,13 @@ function createInfisicalClientInternal(
 				if (hinted !== undefined) waitMs = Math.min(retry.maxDelayMs, hinted);
 			} catch (error) {
 				if (error instanceof InfisicalPlanAdmissionError) throw error;
+				if (mutation) throw new InfisicalError(operation, "write-uncertain");
 				// The cause is not kept: a transport error may quote the request.
 				last = new InfisicalError(operation, "unavailable", {
 					retryable: true,
 				});
 			}
-			if (attempt < retry.attempts) await sleep(waitMs);
+			if (attempt < attempts) await sleep(waitMs);
 		}
 		throw last ?? new InfisicalError(operation, "unavailable");
 	}
@@ -316,7 +320,6 @@ function createInfisicalClientInternal(
 			if (["rejected", "unauthorized", "forbidden"].includes(error.code))
 				throw new InfisicalError("login", "login-denied", {
 					status: answer.status,
-					reqId: error.reqId,
 				});
 			throw error;
 		}
@@ -356,10 +359,12 @@ function createInfisicalClientInternal(
 				path,
 				{ authorization: `Bearer ${token}` },
 				payload,
+				method !== "GET",
 			);
 			if (
 				answer.status === 401 &&
 				round === 0 &&
+				method === "GET" &&
 				auth.method !== "access-token"
 			) {
 				if (cached?.token === token) cached = undefined;
@@ -398,6 +403,21 @@ function createInfisicalClientInternal(
 			if (answer.body === undefined)
 				throw new InfisicalError(operation, "invalid-response");
 			return answer.body;
+		}
+
+		function writtenVersion(operation: string, answer: Answer): number {
+			try {
+				return parseWrittenVersion(operation, ok(operation, answer));
+			} catch (error) {
+				if (
+					error instanceof InfisicalError &&
+					error.code === "approval-required"
+				)
+					throw error;
+				if (answer.status >= 200 && answer.status < 300)
+					throw new InfisicalError(operation, "write-uncertain");
+				throw error;
+			}
 		}
 
 		return {
@@ -512,17 +532,11 @@ function createInfisicalClientInternal(
 				const updated = await request("write secret", "PATCH", target, body);
 				if (updated.status !== 404)
 					return {
-						version: parseWrittenVersion(
-							"write secret",
-							ok("write secret", updated),
-						),
+						version: writtenVersion("write secret", updated),
 					};
 				const created = await request("write secret", "POST", target, body);
 				return {
-					version: parseWrittenVersion(
-						"write secret",
-						ok("write secret", created),
-					),
+					version: writtenVersion("write secret", created),
 				};
 			},
 			async createSecret(name, value) {
@@ -542,13 +556,9 @@ function createInfisicalClientInternal(
 						{ alwaysEmitImplicit: true },
 					),
 				);
-				// Already there: someone else's entry, left as it was.
 				if (created.status === 400 || created.status === 409) return undefined;
 				return {
-					version: parseWrittenVersion(
-						"create secret",
-						ok("create secret", created),
-					),
+					version: writtenVersion("create secret", created),
 				};
 			},
 			signOut() {
