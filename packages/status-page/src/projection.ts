@@ -305,8 +305,12 @@ function applyIncidentOpened(
 		: [];
 	if (existing) {
 		// Idempotent duplicate / late open: backfill fields, never reopen.
+		const mergedState = needsImpact
+			? advanceIncidentState(existing.state, state)
+			: existing.state;
 		const incident: Mutable<IncidentRecord> = {
 			...existing,
+			state: mergedState,
 			impact: needsImpact ? impact : existing.impact,
 			title:
 				existing.title === existing.id && isStringValue(data.title)
@@ -320,7 +324,13 @@ function applyIncidentOpened(
 				Date.parse(event.ts) < Date.parse(existing.openedAt)
 					? event.ts
 					: existing.openedAt,
+			updatedAt:
+				needsImpact && Date.parse(event.ts) > Date.parse(existing.updatedAt)
+					? event.ts
+					: existing.updatedAt,
 		};
+		if (mergedState === "resolved" && incident.resolvedAt === undefined)
+			incident.resolvedAt = event.ts;
 		return finishIncidentOpen(base, event, incident);
 	}
 	const incident: Mutable<IncidentRecord> = {

@@ -17,7 +17,12 @@ const options = (seq: number) => ({
 	ts: timestamp,
 	project: "shop",
 });
-const open = (seq: number, id: string, impact: IncidentImpact) =>
+const open = (
+	seq: number,
+	id: string,
+	impact: IncidentImpact,
+	state: IncidentState = "investigating",
+) =>
 	statusEnvelope(
 		STATUS_SIGNAL_EVENTS.IncidentOpened,
 		{
@@ -25,7 +30,7 @@ const open = (seq: number, id: string, impact: IncidentImpact) =>
 			title: `Incident ${id}`,
 			impact,
 			affectedComponents: ["web"],
-			currentStatus: "investigating",
+			currentStatus: state,
 		},
 		options(seq),
 	);
@@ -198,4 +203,75 @@ it("keeps lifecycle and first-open impact across generated event sequences", () 
 			}
 		}
 	}
+});
+
+it("merges a late first open's state without regressing the lifecycle", () => {
+	const states: IncidentState[] = [
+		"investigating",
+		"identified",
+		"monitoring",
+		"resolved",
+	];
+	for (const previous of states) {
+		for (const opened of states) {
+			const row = createStatusPageProjection().fold([
+				update(1, "INC-1", previous),
+				open(2, "INC-1", "critical", opened),
+			]).rows["project:shop"];
+			const expected =
+				states[Math.max(states.indexOf(previous), states.indexOf(opened))];
+			expect(row?.incidents["INC-1"]?.state).toBe(expected);
+			if (expected === "resolved")
+				expect(row?.incidents["INC-1"]?.resolvedAt).toBe(timestamp);
+		}
+	}
+});
+
+it("accepts all states on the first open and ignores duplicate-open state", () => {
+	const states: IncidentState[] = [
+		"investigating",
+		"identified",
+		"monitoring",
+		"resolved",
+	];
+	for (const state of states) {
+		const row = createStatusPageProjection().fold([
+			open(1, "INC-1", "minor", state),
+			open(2, "INC-1", "critical", "resolved"),
+		]).rows["project:shop"];
+		expect(row?.incidents["INC-1"]?.state).toBe(state);
+		expect(row?.incidents["INC-1"]?.impact).toBe("minor");
+		if (state === "resolved")
+			expect(row?.incidents["INC-1"]?.resolvedAt).toBe(timestamp);
+	}
+});
+
+it("records the resolution time when a late first open advances to resolved", () => {
+	const later = "2026-08-17T12:05:00.000Z";
+	const lateOpen = statusEnvelope(
+		STATUS_SIGNAL_EVENTS.IncidentOpened,
+		{
+			incidentId: "INC-1",
+			title: "Incident INC-1",
+			impact: "critical",
+			affectedComponents: ["web"],
+			currentStatus: "resolved",
+		},
+		{ ...options(2), ts: later },
+	);
+	const advanced = createStatusPageProjection().fold([
+		update(1, "INC-1", "identified"),
+		lateOpen,
+	]).rows["project:shop"]?.incidents["INC-1"];
+	expect(advanced).toMatchObject({
+		state: "resolved",
+		openedAt: timestamp,
+		updatedAt: later,
+		resolvedAt: later,
+	});
+	const alreadyResolved = createStatusPageProjection().fold([
+		resolve(1, "INC-1"),
+		lateOpen,
+	]).rows["project:shop"]?.incidents["INC-1"];
+	expect(alreadyResolved?.resolvedAt).toBe(timestamp);
 });
