@@ -379,6 +379,101 @@ test("architecture guard accepts compliant production packages", async () => {
 	});
 });
 
+test("architecture guard normalizes protobuf record suffixes", async () => {
+	await withFixture(async (root) => {
+		await write(
+			root,
+			"packages/demo/src/demo.ts",
+			[
+				architectureEvidence,
+				"export interface CreditLedgerView { readonly seq: number; }",
+				"export type Dispatch = { readonly type: string };",
+			].join("\n"),
+		);
+		await write(
+			root,
+			"packages/demo/data-models/demo.proto",
+			[
+				'syntax = "proto3";',
+				"message Demo {}",
+				"message CreditLedgerViewRecord {}",
+				"message DispatchEventData {}",
+			].join("\n"),
+		);
+		await write(
+			root,
+			"packages/demo/data-models/demo.cue",
+			"Demo: {}\nCreditLedgerViewRecord: {}\nDispatchEventData: {}\n",
+		);
+		await write(
+			root,
+			"packages/demo/contracts/pacts/demo-boundary.pact.json",
+			JSON.stringify({
+				consumer: { name: "c" },
+				provider: { name: "p" },
+				interactions: [],
+			}),
+		);
+
+		const result = await checkArchitectureGuardrails({
+			root,
+			files: ["packages/demo/src/demo.ts"],
+		});
+
+		assert.deepEqual(
+			result.problems
+				.filter((problem) => problem.code === "parallel-proto-type")
+				.map((problem) => problem.message),
+			[
+				"Import generated types from src/_generated/**_pb.ts or register deliberate domain views in scripts/schema-domain-views.json. Offenders: src/demo.ts:10 CreditLedgerView, src/demo.ts:11 Dispatch",
+			],
+		);
+	});
+});
+
+test("architecture guard accepts registered domain views", async () => {
+	await withFixture(async (root) => {
+		await write(
+			root,
+			"packages/demo/src/demo.ts",
+			`${architectureEvidence}\nexport interface CreditLedgerView { readonly seq: number; }`,
+		);
+		await write(
+			root,
+			"packages/demo/data-models/demo.proto",
+			'syntax = "proto3";\nmessage Demo {}\nmessage CreditLedgerViewRecord {}\n',
+		);
+		await write(
+			root,
+			"packages/demo/data-models/demo.cue",
+			"Demo: {}\nCreditLedgerViewRecord: {}\n",
+		);
+		await write(
+			root,
+			"packages/demo/contracts/pacts/demo-boundary.pact.json",
+			JSON.stringify({
+				consumer: { name: "c" },
+				provider: { name: "p" },
+				interactions: [],
+			}),
+		);
+		await write(
+			root,
+			"scripts/schema-domain-views.json",
+			JSON.stringify({
+				"packages/demo/src/demo.ts": ["CreditLedgerView"],
+			}),
+		);
+
+		const result = await checkArchitectureGuardrails({
+			root,
+			files: ["packages/demo/src/demo.ts"],
+		});
+
+		assert.deepEqual(result.problems, []);
+	});
+});
+
 test("architecture guard does not apply production-only checks to draft packages", async () => {
 	await withFixture(async (root) => {
 		await write(
