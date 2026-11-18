@@ -23,7 +23,8 @@
 		"testcontainers": "11.8.1"
 	},
 	"devDependencies": {
-    "@pact-foundation/pact": "17.1.4",
+		"@jazzer.js/core": "4.0.0",
+		"@pact-foundation/pact": "17.1.4",
 		"@types/node": "^22.15.29",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
@@ -39,6 +40,8 @@
 		"test:fuzz": "vitest run test/harness test/api",
 		"test:fuzz:nightly": "node --import tsx src/nightly-cli.ts",
 		"test:fuzz:api": "node --import tsx test/integration/schemathesis.ts",
-		"test:fuzz:docker": "node --import tsx test/integration/docker.ts"
+		"test:fuzz:docker": "node --import tsx test/integration/docker.ts",
+		"pretest:fuzz:jazzer": "pnpm run build",
+		"test:fuzz:jazzer": "node --import tsx src/jazzer-cli.ts"
 	}
 }

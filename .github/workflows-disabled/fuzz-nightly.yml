@@ -15,7 +15,7 @@ concurrency:
 jobs:
   property-and-harness:
     if: ${{ false }}
-    name: fast-check and Jazzer smoke
+    name: fast-check and Jazzer
     runs-on: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
@@ -31,6 +31,8 @@ jobs:
         run: pnpm run test:property
       - name: Serialized-input harness smoke
         run: pnpm run test:fuzz
+      - name: Coverage-guided Jazzer campaign
+        run: pnpm --filter @hobo/fuzz run test:fuzz:jazzer
 
   docker-gated:
     if: ${{ false }}

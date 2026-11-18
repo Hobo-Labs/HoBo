@@ -20,6 +20,7 @@ The in-process API surface is described by
 | `pnpm run test:fuzz:nightly` | seeded model and parser campaigns plus isolated RESTler and fault injection | no |
 | `pnpm --filter @hobo/fuzz run test:fuzz:api` | require Schemathesis against the loopback simulator and CLI | no |
 | `pnpm --filter @hobo/fuzz run test:fuzz:docker` | require the isolated RESTler and fault-injection campaign | no |
+| `pnpm --filter @hobo/fuzz run test:fuzz:jazzer` | require the seeded native Jazzer campaign | no |
 
 Pass the seed and run count to replay a campaign with the same inputs:
 `-- --seed 1742 --runs 5000`. The command prints the seed and number of
@@ -35,9 +36,8 @@ runs gold + silver on every `/run`.
 
 Jazzer.js is the coverage-guided entry
 [`src/jazzer-entry.ts`](./src/jazzer-entry.ts). PR smoke calls the same
-functions with generated buffers. A long campaign is
-`npx --package=@jazzer.js/core jazzer packages/fuzz/src/jazzer-entry.ts`
-and is reserved for nightly.
+functions with generated buffers. Run the native seeded campaign with
+`pnpm --filter @hobo/fuzz run test:fuzz:jazzer -- --seed 1742 --runs 100000`.
 
 Schemathesis runs all API checks against an owned loopback simulator. Install
 Schemathesis 4.33.4 and pass `--api` to the nightly command. The command fails
