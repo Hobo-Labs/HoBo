@@ -113,7 +113,12 @@ export function lowerManifest(
 			);
 		}
 		const deps = [
-			...new Set([...(resource.bind ?? []), ...readyDeps, ...completedDeps]),
+			...new Set([
+				...(resource.bind ?? []),
+				...(resource.links ?? []).map((link) => link.to),
+				...readyDeps,
+				...completedDeps,
+			]),
 		].sort();
 
 		const intent: ResourceIntent = {
