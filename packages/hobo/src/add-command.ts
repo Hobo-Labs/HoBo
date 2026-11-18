@@ -4,8 +4,8 @@ import {
 	approveProviderFact,
 	collectStream,
 	foldRegistryStream,
+	providerRegistrationFacts,
 	type RegistrableProvider,
-	registerProviderFact,
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
 import { defaultHoboHome } from "./bare-metal-yard.js";
@@ -189,7 +189,7 @@ export function createAddCommand(deps: AddCommandDeps = {}): CommandModule {
 				};
 			}
 
-			const facts = [registerProviderFact(provider)];
+			const facts = providerRegistrationFacts(provider);
 			if (!hold) facts.push(approveProviderFact(provider.id, ADD_ACTOR.id));
 			await runtime.store.append(REGISTRY_STREAM, facts, {
 				expectedSeq: lastSeq,

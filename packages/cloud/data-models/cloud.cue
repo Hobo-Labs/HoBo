@@ -148,6 +148,31 @@ package hobo
 	approvedBy?: string & !=""
 }
 
+#ResourceDefinitionCostRecord: {
+	sku:            string & !=""
+	unit:           string & !=""
+	marginalPrice:  string & !=""
+	pricingStatus?: "unknown" | "estimate" | "verified-zero"
+}
+
+#ResourceDefinitionEventRecord: {
+	id:         string & !=""
+	productId?: string & !=""
+	providerId: string & !=""
+	port:       string & !=""
+	features: [...string]
+	regions: [...string]
+	specificity: uint
+	priority:    uint
+	cost:        #ResourceDefinitionCostRecord
+}
+
+#ResourceDefinitionChanged: {
+	providerId:          string & !=""
+	definition:          #ResourceDefinitionEventRecord
+	manifestIndexDigest: string & =~"^sha256:[0-9a-f]{64}$"
+}
+
 #ResourceActorState: "Pending" | "Planning" | "Provisioning" | "Provisioned" |
 	"Updating" | "Failed" | "Compensating" | "Destroying" | "Destroyed"
 

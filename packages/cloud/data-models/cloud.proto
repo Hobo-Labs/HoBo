@@ -150,6 +150,31 @@ message ProviderApprovedRecord {
   string approved_by = 2;
 }
 
+message ResourceDefinitionCostRecord {
+  string sku = 1;
+  string unit = 2;
+  string marginal_price = 3;
+  optional string pricing_status = 4;
+}
+
+message ResourceDefinitionEventRecord {
+  string id = 1;
+  optional string product_id = 2;
+  string provider_id = 3;
+  string port = 4;
+  repeated string features = 5;
+  repeated string regions = 6;
+  uint32 specificity = 7;
+  uint32 priority = 8;
+  ResourceDefinitionCostRecord cost = 9;
+}
+
+message ResourceDefinitionChanged {
+  string provider_id = 1;
+  ResourceDefinitionEventRecord definition = 2;
+  string manifest_index_digest = 3;
+}
+
 
 message IacProgram {
   string program_id = 1;

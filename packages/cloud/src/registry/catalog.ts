@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 
-import type { EventStore } from "@hobo/core";
+import type { EventInput, EventStore } from "@hobo/core";
 import { defineProjection, type Projection } from "@hobo/data";
 import {
 	CLOUD_EVENTS,
 	providerApproved,
 	providerRegistered,
+	resourceDefinitionRegistered,
+	resourceDefinitionUpdated,
 } from "../events.js";
 import {
 	isJsonNumber,
@@ -248,6 +250,32 @@ export function registerProviderFact(provider: RegistrableProvider) {
 	});
 }
 
+export function providerRegistrationFacts(
+	provider: RegistrableProvider,
+	change: "registered" | "updated" = "registered",
+): EventInput[] {
+	const providerFact = registerProviderFact(provider);
+	const data = providerFact.data as {
+		providerId: string;
+		definitions: JsonObject[];
+		manifestIndexDigest: string;
+	};
+	const createFact =
+		change === "registered"
+			? resourceDefinitionRegistered
+			: resourceDefinitionUpdated;
+	return [
+		providerFact,
+		...data.definitions.map((definition) =>
+			createFact({
+				providerId: data.providerId,
+				definition,
+				manifestIndexDigest: data.manifestIndexDigest,
+			}),
+		),
+	];
+}
+
 // The approval fact: `hobo add` (or the Yard bootstrap) approving a registered
 // provider for Matching.
 export function approveProviderFact(providerId: string, approvedBy?: string) {
@@ -343,6 +371,24 @@ export function foldRegistryStream(
 			const defs = parseRegisteredDefinitions(event.data);
 			const providerId = defs[0]?.providerId;
 			if (providerId !== undefined) installed.set(providerId, defs);
+		} else if (
+			event.type === CLOUD_EVENTS.ResourceDefinitionRegistered ||
+			event.type === CLOUD_EVENTS.ResourceDefinitionUpdated
+		) {
+			const data = isJsonObject(event.data) ? event.data : undefined;
+			const providerId = data?.providerId;
+			const definition = data?.definition;
+			if (!isJsonString(providerId) || !isJsonObject(definition)) continue;
+			const parsed = parseRegisteredDefinitions({
+				providerId,
+				definitions: [definition],
+			})[0];
+			if (parsed === undefined) continue;
+			const existing = installed.get(providerId) ?? [];
+			installed.set(providerId, [
+				...existing.filter((entry) => entry.id !== parsed.id),
+				parsed,
+			]);
 		} else if (event.type === CLOUD_EVENTS.ProviderApproved) {
 			// SAFETY: `const providerId = (event.data as { providerId?: unknown } | undefined)` is required at this I/O or test boundary.
 			const providerId = (event.data as { providerId?: unknown } | undefined)

@@ -27,6 +27,8 @@ export const CLOUD_EVENTS = Object.freeze({
 	// matchable by the Planner (walkthrough Part 0/2: a cloud's "default
 	// providers approved" is a durable fact, not config).
 	ProviderApproved: "provider.Approved",
+	ResourceDefinitionRegistered: "resourcedef.Registered",
+	ResourceDefinitionUpdated: "resourcedef.Updated",
 	ResourcePlanning: "resource.Planning",
 	ResourceProvisioning: "resource.Provisioning",
 	ResourceProvisioned: "resource.Provisioned",
@@ -203,6 +205,22 @@ export function providerApproved(data: {
 	approvedBy?: string;
 }): EventInput {
 	return { type: CLOUD_EVENTS.ProviderApproved, data };
+}
+
+export function resourceDefinitionRegistered(data: {
+	providerId: string;
+	definition: JsonObject;
+	manifestIndexDigest: string;
+}): EventInput {
+	return { type: CLOUD_EVENTS.ResourceDefinitionRegistered, data };
+}
+
+export function resourceDefinitionUpdated(data: {
+	providerId: string;
+	definition: JsonObject;
+	manifestIndexDigest: string;
+}): EventInput {
+	return { type: CLOUD_EVENTS.ResourceDefinitionUpdated, data };
 }
 
 // ---- S2-03a/b: Orchestrator + ResourceActor FSM + Executor facts ----

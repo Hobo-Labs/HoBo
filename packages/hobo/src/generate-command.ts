@@ -2,7 +2,7 @@ import type { CommandModule, YardRuntime } from "@hobo/cli";
 import { DEFAULT_TENANT } from "@hobo/cli";
 import {
 	collectStream,
-	registerProviderFact,
+	providerRegistrationFacts,
 	registryCatalogProjection,
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
@@ -75,10 +75,10 @@ export function createGenerateCommand(
 				};
 			}
 
-			const fact = registerProviderFact(provider);
+			const facts = providerRegistrationFacts(provider);
 			const lastSeq =
 				events.length > 0 ? must(events[events.length - 1]).seq : 0;
-			await runtime.store.append(REGISTRY_STREAM, [fact], {
+			await runtime.store.append(REGISTRY_STREAM, facts, {
 				expectedSeq: lastSeq,
 				actor: GENERATE_ACTOR,
 				tenant: DEFAULT_TENANT,

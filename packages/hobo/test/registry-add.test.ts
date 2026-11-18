@@ -181,11 +181,13 @@ describe("hobo registry add: pricing catalog persistence", () => {
 		const events = await stream(runtime);
 		expect(events.map((event) => event.type)).toEqual([
 			"provider.Registered",
+			"resourcedef.Registered",
+			"resourcedef.Registered",
+			"resourcedef.Registered",
 			"pricing.CatalogRegistered",
 		]);
-		// Same append, so the registration never exists without its prices.
-		expect(events[0]?.seq).toBe(
-			events[1]?.seq === undefined ? -1 : events[1].seq - 1,
+		expect(events.at(-1)?.seq).toBe(
+			events[0]?.seq === undefined ? -1 : events[0].seq + events.length - 1,
 		);
 	});
 
@@ -277,6 +279,7 @@ describe("hobo registry add: pricing catalog persistence", () => {
 		});
 		expect((await stream(runtime)).map((event) => event.type)).toEqual([
 			"provider.Registered",
+			"resourcedef.Registered",
 		]);
 	});
 
@@ -432,6 +435,11 @@ describe("hobo registry add: refreshing when the manifest's prices change", () =
 		expect(result.data.registration).toEqual({ refreshed: true });
 		expect(gpuRate(runtime)).toBe("0.0006");
 		expect(runtime.registry.providers()).toContain("acme-cloud");
+		expect(
+			(await collectStream(runtime.store, REGISTRY_STREAM)).filter(
+				(event) => event.type === "resourcedef.Updated",
+			),
+		).toHaveLength(3);
 	});
 
 	it("appends rather than rewrites, and reads back the latest", async () => {

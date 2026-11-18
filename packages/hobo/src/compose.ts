@@ -77,8 +77,8 @@ import {
 	createRegistryFromProviders,
 	foldRegistryStream,
 	type PlannerRegistry,
+	providerRegistrationFacts,
 	type RegistrableProvider,
-	registerProviderFact,
 	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
 import type {
@@ -733,7 +733,7 @@ export async function bootstrapDefaultProviders(
 	for (const provider of providers) {
 		const facts = [];
 		if (!fold.installed.has(provider.id))
-			facts.push(registerProviderFact(provider));
+			facts.push(...providerRegistrationFacts(provider));
 		if (!fold.approved.has(provider.id))
 			facts.push(approveProviderFact(provider.id, "yard/bootstrap"));
 		if (facts.length === 0) continue;

@@ -6,7 +6,7 @@ import {
 	approveProviderFact,
 	collectStream,
 	foldRegistryStream,
-	registerProviderFact,
+	providerRegistrationFacts,
 	registryCatalogProjection,
 } from "@hobo/cloud";
 import type { JsonValue, PrincipalRef } from "@hobo/core";
@@ -208,12 +208,17 @@ export async function runRegistryAdd(
 					),
 				]
 			: [];
-	const base = registerProviderFact(provider);
-	const registered = {
-		...base,
-		// SAFETY: registerProviderFact builds an object body; the stamp is added.
-		data: { ...(base.data as object), source: MANIFEST_SOURCE },
-	};
+	const baseFacts = providerRegistrationFacts(
+		provider,
+		installed ? "updated" : "registered",
+	);
+	const registeredFacts = baseFacts.map((fact) => ({
+		...fact,
+		data: { ...(fact.data as object), source: MANIFEST_SOURCE },
+	}));
+	const base = baseFacts[0];
+	if (base === undefined)
+		throw new Error("provider registration facts missing");
 	const storedRow = registryCatalogProjection
 		.query(registryCatalogProjection.fold(events))
 		.find((row) => row.providerId === provider.id);
@@ -223,7 +228,7 @@ export async function runRegistryAdd(
 	const registrationChanged =
 		installed && storedRow?.manifestIndexDigest !== newDigest;
 	const refreshFacts = [
-		...(registrationChanged ? [registered] : []),
+		...(registrationChanged ? registeredFacts : []),
 		...catalogFacts,
 	];
 	const pricingCatalog = {
@@ -292,7 +297,7 @@ export async function runRegistryAdd(
 	// at all, so a held provider never exists without the prices it was ranked on.
 	await runtime.store.append(
 		REGISTRY_STREAM,
-		[registered, ...catalogFacts],
+		[...registeredFacts, ...catalogFacts],
 		append,
 	);
 	await runtime.registry.refresh?.();
