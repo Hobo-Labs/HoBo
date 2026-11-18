@@ -84,9 +84,10 @@ it("captures replay input before waiting for the journal", async () => {
 	definition.name = "changed";
 	definition.execute = async () => "changed";
 	release.resolve();
-	const replay = await running;
-	expect(replay.state).toBe("recorded");
-	expect(replay.report.seed).toBe("snapshot-seed");
+	await expect(running).resolves.toMatchObject({
+		state: "recorded",
+		report: { seed: "snapshot-seed" },
+	});
 });
 
 it("captures the initial-state callback before waiting for the journal", async () => {
