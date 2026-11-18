@@ -175,6 +175,44 @@ for (const harness of [".agents", ".claude", ".cursor", ".github"]) {
 				browser,
 				/Create one by running|to refresh the sidecar|init to generate one/u,
 			);
+			const staleness = await import(
+				pathToFileURL(join(scripts, "lib", "staleness.mjs")).href
+			);
+			const legacyProduct = staleness.checkProduct("# Product\n");
+			assert.ok(legacyProduct.length > 0);
+			assert.doesNotMatch(
+				JSON.stringify(legacyProduct),
+				/Offer `init`|by interview/u,
+			);
+			mkdirSync(join(directory, "android"));
+			writeFileSync(join(directory, "android", "build.gradle"), "");
+			const native = staleness.checkNativePlatformEvidence({
+				projectRoot: directory,
+				platform: "web",
+				product: null,
+				productPath: null,
+			});
+			assert.match(native[0].fix, /implemented|implementation/u);
+			assert.doesNotMatch(native[0].fix, /Ask the user|write the value/u);
+			const deep = await import(
+				pathToFileURL(join(scripts, "lib", "staleness-deep.mjs")).href
+			);
+			const workspaces = deep.checkWorkspaces({
+				repoRoot: directory,
+				candidates: [
+					{ name: "example", path: ".", productStatus: "inherited" },
+				],
+				checkNativePlatformEvidence: () => [
+					{ summary: "Native build", fix: "Inspect source" },
+				],
+				extractPlatform: () => null,
+				readFile: () => null,
+			});
+			assert.equal(workspaces.findings.length, 2);
+			assert.doesNotMatch(
+				JSON.stringify(workspaces.findings),
+				/Ask the user|writes a child PRODUCT\.md|its own PRODUCT\.md/u,
+			);
 			const legacyDesign = join(directory, "DESIGN.json");
 			writeFileSync(legacyDesign, '{"schemaVersion":1}\n');
 			writeFileSync(join(directory, "DESIGN.md"), "# Existing design\n");
