@@ -1,12 +1,3 @@
-/**
- * The params a pattern application accepts.
- *
- * `parseApplicationRequest` is the boundary: it takes any scalar — string,
- * number or boolean — and coerces it to a string, and refuses anything else.
- * `applyPatternPlan` and `planPatternApplication` must keep accepting what that
- * parser accepts. Narrowing their declared type to strings would turn a
- * numeric flag a caller passes today into a compile error for no runtime gain.
- */
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -55,8 +46,7 @@ describe("application params", () => {
 			params: { resourceName: "shop", retries: 3, dryRun: false },
 		});
 		expect(receipt.changedFiles).toEqual(["src/bindle.ts"]);
-		// The declared param reaches the rendered output; undeclared scalars
-		// (retries/dryRun) are accepted by the parser and dropped by the plan.
+
 		expect(readFileSync(join(dir, "src", "bindle.ts"), "utf8")).toContain(
 			"const shop = b.api(",
 		);
