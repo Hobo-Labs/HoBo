@@ -8,7 +8,7 @@ Wire shapes live in [`data-models/fuzz.proto`](./data-models/fuzz.proto)
 (documentation-only; no `buf.yaml`) and the Bindle hash boundary is fixtured in
 [`contracts/pacts/fuzz-bindles-canonical.pact.json`](./contracts/pacts/fuzz-bindles-canonical.pact.json).
 The in-process API surface is described by
-[`contracts/openapi/control-sim.v1.yaml`](./contracts/openapi/control-sim.v1.yaml).
+[`contracts/openapi/control-sim.v1.json`](./contracts/openapi/control-sim.v1.json).
 
 ## Lanes
 
@@ -37,10 +37,9 @@ functions with generated buffers. A long campaign is
 `npx --package=@jazzer.js/core jazzer packages/fuzz/src/jazzer-entry.ts`
 and is reserved for nightly.
 
-Schemathesis runs only when the binary is on `PATH` **and**
-`HOBO_FUZZ_API_URL` points at an ephemeral local control plane
-(`@hobo/control-api` serves `GET /v1/openapi.json`). Missing tools skip.
-`HOBO_FUZZ_DOCKER=0` disables Toxiproxy / Testcontainers / RESTler.
+Schemathesis runs all API checks against an owned loopback simulator. To require
+it, install Schemathesis 4.33.4 and pass `--api` to the nightly command. The command
+fails if the executable is unavailable or the API checks fail.
 
 ## Invariants
 

@@ -1,0 +1,601 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "HoBo in-process control-plane simulator",
+    "version": "0.1.0",
+    "description": "Fixture for Schemathesis. Targets the in-memory adapter in @hobo/fuzz, never Azure, AWS, GCP, or paid SaaS. The live local control plane also serves GET /v1/openapi.json from @hobo/control-api.\n"
+  },
+  "paths": {
+    "/v1/bindles": {
+      "post": {
+        "summary": "create bindle",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-hobo-tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "tenant-a"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bindleId",
+                  "manifestHash"
+                ],
+                "properties": {
+                  "bindleId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+                  },
+                  "manifestHash": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              },
+              "example": {
+                "bindleId": "fuzz-app",
+                "manifestHash": "manifest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "413": {
+            "description": "body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "unsupported media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "431": {
+            "description": "headers too large"
+          },
+          "200": {
+            "description": "created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            },
+            "links": {
+              "apply": {
+                "operationId": "applyBindle",
+                "parameters": {
+                  "bindleId": "$response.body#/bindleId",
+                  "x-hobo-tenant": "$response.body#/tenantId"
+                }
+              },
+              "destroy": {
+                "operationId": "destroyBindle",
+                "parameters": {
+                  "bindleId": "$response.body#/bindleId",
+                  "x-hobo-tenant": "$response.body#/tenantId"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflicting bindle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid or polluted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "tenant required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "createBindle"
+      }
+    },
+    "/v1/bindles/{bindleId}/apply": {
+      "post": {
+        "summary": "apply bindle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bindleId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+            },
+            "example": "fuzz-app"
+          },
+          {
+            "in": "header",
+            "name": "x-hobo-tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "tenant-a"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "idempotencyKey"
+                ],
+                "properties": {
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              },
+              "example": {
+                "idempotencyKey": "fuzz-key"
+              }
+            }
+          }
+        },
+        "responses": {
+          "413": {
+            "description": "body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "unsupported media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "431": {
+            "description": "headers too large"
+          },
+          "200": {
+            "description": "applied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Applied"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "missing bindle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "missing idempotency key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "cross-tenant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "applyBindle"
+      }
+    },
+    "/v1/bindles/{bindleId}/destroy": {
+      "post": {
+        "summary": "destroy bindle resources",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bindleId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+            },
+            "example": "fuzz-app"
+          },
+          {
+            "in": "header",
+            "name": "x-hobo-tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "tenant-a"
+          }
+        ],
+        "responses": {
+          "413": {
+            "description": "body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "unsupported media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "431": {
+            "description": "headers too large"
+          },
+          "200": {
+            "description": "destroyed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Destroyed"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "tenant required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "destroyBindle"
+      }
+    },
+    "/v1/tenants/{tenantId}/resources": {
+      "get": {
+        "summary": "list tenant resources",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "tenant-a"
+          },
+          {
+            "in": "header",
+            "name": "x-hobo-tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "tenant-a"
+          }
+        ],
+        "responses": {
+          "413": {
+            "description": "body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "unsupported media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "431": {
+            "description": "headers too large"
+          },
+          "200": {
+            "description": "resources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resources"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "cross-tenant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "listResources"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "code"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "Created": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "bindleId",
+          "tenantId"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "bindleId": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          }
+        }
+      },
+      "Applied": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "id",
+          "idempotencyKey",
+          "status"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "Destroyed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "destroyed"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "destroyed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        }
+      },
+      "Resources": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "resources"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "bindleId",
+                "idempotencyKey",
+                "status"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "bindleId": {
+                  "type": "string"
+                },
+                "idempotencyKey": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
