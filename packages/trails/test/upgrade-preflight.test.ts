@@ -8,6 +8,7 @@ import {
 	evaluateUpgradeDryRun,
 	parseCompatibilityInputs,
 	parseRollbackEvidence,
+	parseUpgradeDryRunRequest,
 	UPGRADE_DRY_RUN_ACTION,
 	UPGRADE_DRY_RUN_FIXTURES,
 	UPGRADE_SCOPE_BOUNDARIES,
@@ -23,7 +24,7 @@ test("compatibility-input matrix covers every upgrade path class with all 11 fie
 		"self-host-yard",
 	]);
 	for (const row of COMPATIBILITY_INPUT_MATRIX) {
-		assert.deepEqual(parseCompatibilityInputs(row), row);
+		assert.deepEqual(parseCompatibilityInputs({ ...row }), row);
 	}
 });
 
@@ -134,4 +135,100 @@ test("dry-run reports are deterministic (stable digest) and carry support handof
 	assert.equal(first.digest, second.digest);
 	assert.equal(first.supportHandoff.owner, "Support Workflow");
 	assert.ok(first.releaseNotes.requiredInputs.length >= 4);
+});
+
+test("unresolved compatibility blocks a dry run without exposing migration steps", () => {
+	for (const compatibility of ["needs-review", "unsupported"] as const) {
+		const request = {
+			...UPGRADE_DRY_RUN_FIXTURES.cleanUpgrade,
+			compatibility: {
+				...UPGRADE_DRY_RUN_FIXTURES.cleanUpgrade.compatibility,
+				contractCompatibility: compatibility,
+			},
+		};
+		const report = evaluateUpgradeDryRun(request);
+		assert.equal(report.status, "blocked");
+		assert.ok(
+			report.blockedReasons.includes(`contract-compatibility-${compatibility}`),
+		);
+		assert.deepEqual(report.migrationPlan.steps, []);
+	}
+});
+
+test("contract work requires available rollback evidence", () => {
+	const request = {
+		...UPGRADE_DRY_RUN_FIXTURES.cleanUpgrade,
+		rollback: {
+			state: "unavailable" as const,
+			immutableSetRef: null,
+			snapshotRef: null,
+			escalationOwner: "Support Workflow",
+		},
+	};
+	const report = evaluateUpgradeDryRun(request);
+	assert.equal(report.status, "blocked");
+	assert.ok(report.blockedReasons.includes("rollback-evidence-unavailable"));
+	assert.deepEqual(report.migrationPlan.steps, []);
+});
+
+test("reports hold an immutable copy of the supplied evidence", () => {
+	const sample = UPGRADE_DRY_RUN_FIXTURES.cleanUpgrade;
+	const steps = [{ phase: "expand" as const, summary: "Add a column" }];
+	const compatibility = { ...sample.compatibility };
+	const rollback = { ...sample.rollback };
+	const requiredInputs = ["rollback-guidance"];
+	const support = { owner: "Support Workflow", handoff: "Share the report" };
+	const report = evaluateUpgradeDryRun({
+		id: "upgrade",
+		compatibility,
+		migration: { steps },
+		rollback,
+		releaseNotes: { requiredInputs },
+		support,
+	});
+	const digest = report.digest;
+	const step = steps[0];
+	if (!step) throw new Error("expected a migration step");
+	step.summary = "changed";
+	compatibility.currentVersion = "changed";
+	rollback.immutableSetRef = "changed";
+	requiredInputs.push("changed");
+	support.handoff = "changed";
+	assert.equal(report.migrationPlan.steps[0]?.summary, "Add a column");
+	assert.equal(
+		report.compatibility.currentVersion,
+		sample.compatibility.currentVersion,
+	);
+	assert.equal(
+		report.rollbackEvidence.immutableSetRef,
+		sample.rollback.immutableSetRef,
+	);
+	assert.deepEqual(report.releaseNotes.requiredInputs, ["rollback-guidance"]);
+	assert.equal(report.supportHandoff.handoff, "Share the report");
+	assert.equal(report.digest, digest);
+	assert.ok(Object.isFrozen(report.migrationPlan.steps[0]));
+});
+
+test("dry-run requests reject invalid or out-of-order migration phases", () => {
+	const request = JSON.parse(
+		JSON.stringify(UPGRADE_DRY_RUN_FIXTURES.cleanUpgrade),
+	);
+	request.migration.steps[0].phase = "unknown";
+	assert.throws(
+		() => parseUpgradeDryRunRequest(request),
+		/migration\.steps\[0\]\.phase/u,
+	);
+	request.migration.steps[0].phase = "contract";
+	assert.throws(
+		() => parseUpgradeDryRunRequest(request),
+		/phases in expand, backfill, contract order/u,
+	);
+});
+
+test("dry-run requests reject fields that would be silently ignored", () => {
+	const request = {
+		...UPGRADE_DRY_RUN_FIXTURES.cleanUpgrade,
+		requestedAction: "execute live migration",
+	};
+	assert.throws(() => evaluateUpgradeDryRun(request), /requestedAction/u);
 });

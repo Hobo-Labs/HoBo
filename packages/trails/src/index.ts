@@ -144,6 +144,7 @@ export {
 	evaluateUpgradeDryRun,
 	parseCompatibilityInputs,
 	parseRollbackEvidence,
+	parseUpgradeDryRunRequest,
 	type RollbackEvidence,
 	type SupportHandoffRecord,
 	stableDigest,
