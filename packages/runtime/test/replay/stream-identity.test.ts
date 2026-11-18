@@ -65,7 +65,63 @@ it("does not inspect an object masquerading as a string", () => {
 		length: 1,
 	};
 	expect(() => parseReplayReport({ ...report, runId: impostor })).toThrow();
+	expect(() => parseReplayReport({ ...report, mode: impostor })).toThrow();
 	expect(reads).toBe(0);
+});
+
+it("uses the captured completed-step result when the original journal changes", async () => {
+	const completed = {
+		id: "done",
+		streamId: "run/context",
+		seq: 3,
+		type: "run.StepCompleted",
+		data: { name: "memo", index: 0, result: { value: "original" } },
+	};
+	const events = [
+		{
+			id: "start",
+			streamId: "run/context",
+			seq: 1,
+			type: "run.Started",
+			data: {
+				args: null,
+				workflowName: "context",
+				seed: "seed",
+				commandTreeVersion: 3,
+			},
+		},
+		{
+			id: "scheduled",
+			streamId: "run/context",
+			seq: 2,
+			type: "run.StepScheduled",
+			data: { name: "memo", index: 0, parentStepIndex: null },
+		},
+		completed,
+	];
+	let effects = 0;
+	const store = {
+		readStream: async () => events,
+		readBySeq: async () => null,
+		append: async () => {},
+	};
+	const workflow = defineWorkflow({
+		name: "context",
+		run: async (ctx) => {
+			completed.data.result.value = "changed";
+			return ctx.step("memo", () => {
+				effects++;
+				return { value: "new" };
+			});
+		},
+	});
+	const result = await createWorkflowEngine({ store }).resume(
+		workflow,
+		"context",
+		null,
+	);
+	expect(result.result).toEqual({ value: "original" });
+	expect(effects).toBe(0);
 });
 
 it("rejects invalid generated report identities and streams before folding", () => {
