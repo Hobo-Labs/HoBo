@@ -188,16 +188,29 @@ def main():
         except (OSError, ValueError, TypeError, OverflowError):
             print("Could not update the completion state.", file=sys.stderr)
             return 1
+    event = None
+    mode = "cursor" if len(sys.argv) > 1 and sys.argv[1] == "cursor" else "shared"
     try:
         event = parse_event(json.load(sys.stdin))
-        mode = (
-            "cursor" if len(sys.argv) > 1 and sys.argv[1] == "cursor" else "shared"
-        )
         result = review_stop(event, mode, CompletionState()) if event else {}
     except OSError:
         result = {
             "systemMessage": "Completion review state is unavailable; the ready-action check did not run."
         }
+        if (
+            event
+            and mode == "shared"
+            and event.conversation_id is None
+            and event.stop_hook_active is False
+        ):
+            result.update(decision="block", reason=COMPLETION_REVIEW)
+        elif (
+            event
+            and mode == "cursor"
+            and event.status == "completed"
+            and event.loop_count == 0
+        ):
+            result["followup_message"] = COMPLETION_REVIEW
     except (ValueError, TypeError, OverflowError):
         result = {}
     print(json.dumps(result))
