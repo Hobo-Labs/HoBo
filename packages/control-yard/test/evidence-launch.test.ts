@@ -713,16 +713,21 @@ it("refuses symlinks in evidence paths before reading or probing", () => {
 
 it("refuses symlinked evidence roots and checkout path components", () => {
 	const packageRoot = resolve(import.meta.dirname, "..");
-	const tempRoot = join(packageRoot, "tmp");
-	mkdirSync(tempRoot, { recursive: true });
-	const scratch = mkdtempSync(join(tempRoot, "yard-evidence-root-test-"));
-	const checkout = join(scratch, "checkout");
-	const fixturePackage = join(checkout, "packages/control-yard");
+	const fixtureScratch = mkdtempSync(
+		join(tmpdir(), "yard-evidence-root-test-"),
+	);
+	const fixtureCheckout = join(fixtureScratch, "checkout");
+	const fixturePackage = join(fixtureCheckout, "packages/control-yard");
 	const scripts = join(fixturePackage, "scripts");
 	const publicDir = join(fixturePackage, "public");
-	const outsidePublic = join(scratch, "outside-public");
+	const outsidePublic = join(fixtureScratch, "outside-public");
 	try {
 		mkdirSync(scripts, { recursive: true });
+		symlinkSync(
+			resolve(packageRoot, "../../node_modules"),
+			join(fixturePackage, "node_modules"),
+			"dir",
+		);
 		for (const script of [
 			"evidence-check.mts",
 			"evidence-validator.mts",
@@ -758,8 +763,11 @@ it("refuses symlinked evidence roots and checkout path components", () => {
 			"evidence directory traverses a symlink",
 		);
 
-		const proofParent = join(checkout, "src/draft/exp-proofs/ux/control-yard");
-		const outsideAssets = join(scratch, "outside-assets");
+		const proofParent = join(
+			fixtureCheckout,
+			"src/draft/exp-proofs/ux/control-yard",
+		);
+		const outsideAssets = join(fixtureScratch, "outside-assets");
 		mkdirSync(proofParent, { recursive: true });
 		cpSync(join(outsidePublic, "shots"), join(outsideAssets, "evidence"), {
 			recursive: true,
@@ -771,7 +779,7 @@ it("refuses symlinked evidence roots and checkout path components", () => {
 			"evidence directory traverses a symlink",
 		);
 	} finally {
-		rmSync(scratch, { recursive: true, force: true });
+		rmSync(fixtureScratch, { recursive: true, force: true });
 	}
 });
 
