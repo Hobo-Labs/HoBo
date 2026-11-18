@@ -79,6 +79,15 @@ The bounded `model/RivetHttpKv.tla` checks one HTTP request and one write under
 the host authority, fencing and draining assumptions described in the model;
 it does not prove those assumptions or the implementation.
 
+`@hobo/iac-alchemy/rivet/http-queue` binds an HTTP application and its asynchronous
+JSON queue actor in one Rivet program. The host must attest the registry, source,
+transport, pool and isolation domain. Admission and response authorization are
+separate decisions; an uncertain queue operation requires reconciliation. This
+does not implement the synchronous HoBo WIT queue or Bindle queue dependencies.
+The bounded `model/RivetHttpQueue.tla` checks one HTTP request and one enqueue
+under its stated host authority, fencing and draining assumptions; it does not
+prove those assumptions, the implementation or the provider.
+
 The isolation test scans selected shared runtime, Bindle, financial and policy
 packages for literal Alchemy references, including escaped spellings. It does
 not prove the absence of computed references or transitive dependencies.
