@@ -238,7 +238,37 @@ def stop_only(prompt):
     text = prompt.casefold().replace("’", "'")
     text = re.sub(r'```[\s\S]*?```|`[^`]*`|"[^"]*"|“[^”]*”', " ", text)
     text = re.sub(r"(?<!\w)'[^'\n]*'(?!\w)", " ", text)
-    return immediate_stop(prompt) and not NEW_ACTION.search(text)
+    if not immediate_stop(prompt) or NEW_ACTION.search(text):
+        return False
+    for match in STOP_REQUEST.finditer(text):
+        if NEGATED_REQUEST.search(text[max(0, match.start() - 80):match.start()]):
+            continue
+        clause = re.split(r"[.!?;\n]", text[match.end():], maxsplit=1)[0]
+        if re.search(
+            r"\b(?:after|once|when|continue|resume|restart)\b|"
+            r"\bkeep\s+(?:working|going)\b",
+            clause,
+        ):
+            continue
+        remainder = text[match.end():]
+        break
+    else:
+        return bool(re.fullmatch(r"\s*never\s+mind[.!?\s]*", text))
+    for clause in re.split(r"[.!?;\n]+|\b(?:and|then)\b", remainder):
+        clause = clause.strip(" ,:\t\r")
+        clause = re.sub(r"^(?:please|kindly)\s+", "", clause)
+        if not clause:
+            continue
+        if re.fullmatch(r"(?:please|now|here|right now|immediately|for now)", clause):
+            continue
+        if re.match(
+            r"^(?:do not|don't|never|explain|tell me|describe|answer|respond|"
+            r"why|what|how|until|while)\b",
+            clause,
+        ):
+            continue
+        return False
+    return True
 
 
 def observe_prompt(event, mode, state):
