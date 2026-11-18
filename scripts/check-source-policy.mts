@@ -34,6 +34,8 @@ const CODE_EXTENSIONS = new Set([
 	".jsx",
 	".mjs",
 	".cjs",
+	".jsonc",
+	".json5",
 ]);
 const LEXER_LANGUAGES = new Map<string, CommentDialect>([
 	[".cue", "cue"],
