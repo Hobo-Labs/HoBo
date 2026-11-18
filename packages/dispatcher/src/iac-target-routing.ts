@@ -9,6 +9,14 @@ import {
 	type TargetPricingAvailability,
 	type TargetPricingInventory,
 } from "@hobo/pricing";
+import {
+	type IacRouteAuthority,
+	type IacRouteController,
+	type IacRouteOperation,
+	type IacRoutePermit,
+	runIacRoute,
+} from "./iac-route.js";
+import { ownDataField, ownDataFields, uninspectable } from "./iac-untrusted.js";
 
 export interface IacPricingCandidate {
 	readonly workloadRef: string;
@@ -39,6 +47,7 @@ export interface IacPricingRanking {
 }
 
 export interface IacPricingRankingResult {
+	readonly tenantId: string;
 	readonly coverage: "complete" | "partial";
 	readonly budget: {
 		readonly evaluation: "not-evaluated";
@@ -99,21 +108,163 @@ export interface IacTargetExecutionResult {
 	readonly executionOutcome?: "completed" | "unknown";
 }
 
-/** Run targets in ranked order, stopping whenever prior execution may exist. */
-export async function executeRankedIacTargets(input: {
+export interface RankedIacExecutionInput {
+	readonly authority: IacRouteAuthority;
+	readonly tenantId: string;
 	readonly requestId: string;
+	readonly operation: IacRouteOperation;
 	readonly ranking: IacPricingRankingResult;
 	readonly candidates: readonly {
 		readonly targetId: string;
 		readonly run: (
 			requestId: string,
 			expected: IacRoutingExpectation,
+			permit: IacRoutePermit,
 		) => Promise<{
 			outputs: Record<string, string>;
 			admission: IacRoutingAdmission;
 		}>;
 	}[];
-}): Promise<IacTargetExecutionResult> {
+}
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this boundary snapshots untrusted input before acquiring an execution claim. */
+function snapshotRankedExecutionInput(
+	input: RankedIacExecutionInput,
+): RankedIacExecutionInput | undefined {
+	try {
+		const fields = ownDataFields(input, [
+			"authority",
+			"tenantId",
+			"requestId",
+			"operation",
+			"ranking",
+			"candidates",
+		]);
+		if (
+			fields === undefined ||
+			typeof fields.tenantId !== "string" ||
+			typeof fields.requestId !== "string" ||
+			!name(fields.tenantId) ||
+			!name(fields.requestId) ||
+			utilTypes.isProxy(fields.candidates) ||
+			!Array.isArray(fields.candidates) ||
+			Object.getPrototypeOf(fields.candidates) !== Array.prototype
+		)
+			return undefined;
+		const length = Object.getOwnPropertyDescriptor(
+			fields.candidates,
+			"length",
+		)?.value;
+		if (
+			typeof length !== "number" ||
+			length > 256 ||
+			Reflect.ownKeys(fields.candidates).length !== length + 1
+		)
+			return undefined;
+		const candidates: RankedIacExecutionInput["candidates"][number][] = [];
+		for (let index = 0; index < length; index++) {
+			const descriptor = Object.getOwnPropertyDescriptor(
+				fields.candidates,
+				String(index),
+			);
+			if (!descriptor?.enumerable || !("value" in descriptor)) return undefined;
+			const candidate = ownDataFields(descriptor.value, ["targetId", "run"]);
+			if (
+				candidate === undefined ||
+				typeof candidate.targetId !== "string" ||
+				!name(candidate.targetId) ||
+				typeof candidate.run !== "function" ||
+				utilTypes.isProxy(candidate.run)
+			)
+				return undefined;
+			// SAFETY: callable host-owned callbacks are captured once and invoked only after the route claim.
+			candidates.push({
+				targetId: candidate.targetId,
+				run: candidate.run as RankedIacExecutionInput["candidates"][number]["run"],
+			});
+		}
+		if (
+			!areBoundedPricingInputs([fields.ranking, fields.operation]) ||
+			!isBoundedPricingInput(fields.ranking) ||
+			!isBoundedPricingInput(fields.operation)
+		)
+			return undefined;
+		// SAFETY: the detached ranking is checked for its control fields below and fully validated after the route claim.
+		const ranking = structuredClone(fields.ranking) as IacPricingRankingResult;
+		if (
+			ranking === null ||
+			typeof ranking !== "object" ||
+			Array.isArray(ranking) ||
+			(ranking.coverage !== "complete" && ranking.coverage !== "partial") ||
+			typeof ranking.tenantId !== "string" ||
+			!Array.isArray(ranking.ranking) ||
+			!Array.isArray(ranking.rejected)
+		)
+			return undefined;
+		// SAFETY: the route layer validates the detached operation and trusted authority before use.
+		return {
+			authority: fields.authority as IacRouteAuthority,
+			tenantId: fields.tenantId,
+			requestId: fields.requestId,
+			operation: structuredClone(fields.operation) as IacRouteOperation,
+			ranking,
+			candidates,
+		};
+	} catch {
+		return undefined;
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
+
+/** Claim the route before examining any target, then stop on every unknown outcome. */
+export async function executeRankedIacTargets(
+	input: RankedIacExecutionInput,
+): Promise<IacTargetExecutionResult> {
+	const unavailable = {
+		evaluation: "unavailable",
+		reservation: "unknown",
+	} as const;
+	const stable = snapshotRankedExecutionInput(input);
+	if (stable === undefined) {
+		return {
+			status: "uncertain",
+			code: "ROUTING_INPUT_UNINSPECTABLE",
+			coverage: "partial",
+			budget: unavailable,
+			attempts: [],
+		};
+	}
+	const result = await runIacRoute({
+		authority: stable.authority,
+		tenantId: stable.tenantId,
+		requestId: stable.requestId,
+		operation: stable.operation,
+		run: async (route) => {
+			const value = await executeClaimedIacTargets(stable, route);
+			const outcome =
+				value.targetId === undefined
+					? { status: value.status }
+					: { status: value.status, targetId: value.targetId };
+			return { value, outcome };
+		},
+	});
+	if (result.status === "executed") return result.value;
+	const blocked: IacTargetExecutionResult = {
+		status: result.status,
+		code: result.code,
+		coverage: stable.ranking.coverage,
+		budget: unavailable,
+		attempts: [],
+	};
+	return result.targetId === undefined
+		? blocked
+		: { ...blocked, targetId: result.targetId };
+}
+
+async function executeClaimedIacTargets(
+	input: RankedIacExecutionInput,
+	route: IacRouteController,
+): Promise<IacTargetExecutionResult> {
 	const attempts: IacRoutingAttempt[] = [];
 	const notEvaluated = {
 		evaluation: "not-evaluated",
@@ -127,6 +278,7 @@ export async function executeRankedIacTargets(input: {
 	let coverage = ranking.coverage;
 	if (
 		!name(input.requestId) ||
+		input.tenantId !== ranking.tenantId ||
 		input.candidates.length > 256 ||
 		ranking.ranking.length > 256
 	)
@@ -190,68 +342,59 @@ export async function executeRankedIacTargets(input: {
 				budget: unknown,
 				attempts,
 			};
+		const permit = await route.beginAttempt({
+			targetId: entry.targetId,
+			inventoryHash: entry.inventoryHash,
+		});
+		if ((await input.authority.verifyAttempt(permit)) !== true)
+			throw new Error("route permit not active");
 		let outputs: Record<string, string> | undefined;
 		let rawAdmission: unknown;
 		let reservationId: string | undefined;
 		let executionOutcome: "completed" | "unknown" | undefined;
 		let failureCode: string | undefined;
 		let runReturned = false;
-		let requiresReconciliation = false;
+		let requiresReconciliation = true;
 		try {
-			const result = await candidate.run(input.requestId, {
-				targetId: entry.targetId,
-				inventoryHash: entry.inventoryHash,
-				modelHash: entry.modelHash,
-				quoteHash: entry.quoteHash,
-			});
+			const result = await candidate.run(
+				input.requestId,
+				{
+					targetId: entry.targetId,
+					inventoryHash: entry.inventoryHash,
+					modelHash: entry.modelHash,
+					quoteHash: entry.quoteHash,
+				},
+				permit,
+			);
 			runReturned = true;
-			rawAdmission = result.admission;
-			outputs = readOutputs(result.outputs);
+			rawAdmission = ownDataField(result, "admission");
+			outputs = readOutputs(ownDataField(result, "outputs"));
 		} catch (error) {
-			/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: thrown provider values are untrusted inputs and must be inspected before use. */
-			try {
-				if (
-					typeof error === "object" &&
-					error !== null &&
-					"requiresReconciliation" in error &&
-					error.requiresReconciliation === true
-				) {
-					requiresReconciliation = true;
-					if (
-						"executionOutcome" in error &&
-						(error.executionOutcome === "completed" ||
-							error.executionOutcome === "unknown")
-					)
-						executionOutcome = error.executionOutcome;
-					if (
-						"code" in error &&
-						typeof error.code === "string" &&
-						name(error.code)
-					)
-						failureCode = error.code;
-				}
-				if (typeof error === "object" && error !== null && "admission" in error)
-					rawAdmission = error.admission;
-				if (
-					typeof error === "object" &&
-					error !== null &&
-					"reservationId" in error &&
-					typeof error.reservationId === "string" &&
-					error.reservationId.length > 0 &&
-					error.reservationId.length <= 204 &&
-					error.reservationId.trim() === error.reservationId &&
-					!/[\p{Cc}]/u.test(error.reservationId)
-				)
-					reservationId = error.reservationId;
-			} catch {
-				// A provider's uninspectable error cannot prove an admission.
-				rawAdmission = undefined;
-				reservationId = undefined;
-				executionOutcome = undefined;
-				failureCode = undefined;
-				requiresReconciliation = true;
-			}
-			/* oxlint-enable anti-slop/no-runtime-typeof */
+			/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns -- SAFETY: thrown provider values are untrusted inputs and must be inspected before use. */
+			const marker = ownDataField(error, "requiresReconciliation");
+			const outcome = ownDataField(error, "executionOutcome");
+			const code = ownDataField(error, "code");
+			rawAdmission = ownDataField(error, "admission");
+			const reservation = ownDataField(error, "reservationId");
+			requiresReconciliation = !(
+				marker === false &&
+				outcome === "not-started" &&
+				code !== uninspectable &&
+				rawAdmission !== uninspectable &&
+				reservation === undefined
+			);
+			if (outcome === "completed" || outcome === "unknown")
+				executionOutcome = outcome;
+			if (typeof code === "string" && name(code)) failureCode = code;
+			if (
+				typeof reservation === "string" &&
+				reservation.length > 0 &&
+				reservation.length <= 204 &&
+				reservation.trim() === reservation &&
+				!/[\p{Cc}]/u.test(reservation)
+			)
+				reservationId = reservation;
+			/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns */
 		}
 		const admission = readAdmission(rawAdmission);
 		/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: validate the parsed provider receipt before making any routing decision. */
@@ -328,6 +471,7 @@ export async function executeRankedIacTargets(input: {
 			(budget.evaluation === "denied" || budget.evaluation === "unavailable") &&
 			budget.reservation === "not-created"
 		) {
+			await route.denyAttempt(permit);
 			if (admission.code === "ROUTING_QUOTE_CHANGED") coverage = "partial";
 			continue;
 		}
@@ -424,10 +568,19 @@ function withExecutionOutcome(
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- SAFETY: these parsers accept untrusted provider results and check each field before returning a bounded domain value. */
 function readAdmission(value: unknown): IacRoutingAdmission | undefined {
 	try {
-		if (typeof value !== "object" || value === null || Array.isArray(value))
-			return undefined;
-		// SAFETY: the preceding checks establish a non-null object; every field is checked below.
-		const row = value as Record<string, unknown>;
+		const row = ownDataFields(value, [
+			"requestId",
+			"targetId",
+			"status",
+			"code",
+			"message",
+			"budget",
+			"reservation",
+			"inventoryHash",
+			"modelHash",
+			"quoteHash",
+		]);
+		if (row === undefined) return undefined;
 		const {
 			requestId,
 			targetId,
@@ -448,26 +601,18 @@ function readAdmission(value: unknown): IacRoutingAdmission | undefined {
 			typeof message !== "string" ||
 			message.length > 4096 ||
 			typeof budget !== "object" ||
-			budget === null ||
-			Array.isArray(budget)
+			budget === null
 		)
 			return undefined;
-		// SAFETY: budget was checked as a non-null object; its fields are checked below.
-		const amounts = budget as Record<string, unknown>;
+		const amounts = ownDataFields(budget, ["evaluation", "reservation"]);
+		if (amounts === undefined) return undefined;
 		const evaluation = amounts.evaluation;
 		const reservationState = amounts.reservation;
 		if (typeof evaluation !== "string" || typeof reservationState !== "string")
 			return undefined;
 		let reserved: { reservationId: string } | undefined;
 		if (reservation !== undefined) {
-			if (
-				typeof reservation !== "object" ||
-				reservation === null ||
-				Array.isArray(reservation)
-			)
-				return undefined;
-			// SAFETY: reservation was checked as a non-null object; the id is checked below.
-			const id = (reservation as Record<string, unknown>).reservationId;
+			const id = ownDataField(reservation, "reservationId");
 			if (typeof id !== "string") return undefined;
 			reserved = { reservationId: id };
 		}
@@ -497,7 +642,12 @@ function readAdmission(value: unknown): IacRoutingAdmission | undefined {
 
 function readOutputs(value: unknown): Record<string, string> | undefined {
 	try {
-		if (typeof value !== "object" || value === null || Array.isArray(value))
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			utilTypes.isProxy(value) ||
+			Array.isArray(value)
+		)
 			return undefined;
 		const prototype = Object.getPrototypeOf(value);
 		if (prototype !== Object.prototype && prototype !== null) return undefined;
@@ -713,8 +863,9 @@ function snapshotRankingRequest(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type */
 
-function invalidRanking(): IacPricingRankingResult {
+function invalidRanking(tenantId: string): IacPricingRankingResult {
 	return {
+		tenantId,
 		coverage: "partial",
 		budget: { evaluation: "not-evaluated", reservation: "not-created" },
 		code: "ROUTING_INPUT_INVALID",
@@ -728,12 +879,12 @@ export function rankIacTargets(
 	input: IacPricingRankingRequest,
 ): IacPricingRankingResult {
 	const request = snapshotRankingRequest(input);
-	if (request === undefined) return invalidRanking();
+	if (request === undefined) return invalidRanking("");
 	try {
 		return rankSnapshot(request);
 	} catch {
 		// Malformed but inert data can still fail a downstream semantic validator.
-		return invalidRanking();
+		return invalidRanking(request.tenantId);
 	}
 }
 
@@ -757,7 +908,7 @@ function rankSnapshot(
 		new Set(request.candidates.map((entry) => entry.inventory.targetId))
 			.size !== request.candidates.length
 	)
-		return invalidRanking();
+		return invalidRanking(request.tenantId);
 	const ranking: IacPricingRanking[] = [];
 	const rejected: IacPricingRankingResult["rejected"] = [];
 	for (const candidate of request.candidates) {
@@ -833,6 +984,7 @@ function rankSnapshot(
 	const ranked = ranking.map((entry, index) => ({ ...entry, rank: index + 1 }));
 	rejected.sort((left, right) => left.targetId.localeCompare(right.targetId));
 	return {
+		tenantId: request.tenantId,
 		coverage: rejected.length === 0 ? "complete" : "partial",
 		budget,
 		ranking: ranked,

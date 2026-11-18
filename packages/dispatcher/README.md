@@ -67,20 +67,81 @@ the remaining comparable candidates. JavaScript must enumerate object keys
 before counting them, which can allocate before these limits apply. The host
 must impose independent process memory and time limits for untrusted input.
 
-`executeRankedIacTargets` accepts that ranking and an execution callback for
-each ranked target. It passes the same request ID and that target's inventory,
-model and quote hashes to every callback, and tries
-the next target only after an explicit denial with no reservation. A replay,
-lost response, malformed receipt or uncertain reservation stops the route.
-The result lists every attempt and its budget disclosure. A contradictory
-denial stops routing. If a matching admission proves a reservation is held but
-the provider cannot return usable outputs, the result remains uncertain and
-reports that hold; it also reports a completed execution when the provider can
-establish one. Callbacks must use
-the request ID with the same durable budget authority so a retry cannot claim
-another target under a different reservation. They must pass the expected
-hashes into admission and check the resulting receipt before any provider
-effect; checking only after the callback returns is too late.
+`executeRankedIacTargets` accepts a tenant, shared route authority, ranking,
+and an execution callback for each ranked target. It supplies a one-use permit
+and the target's inventory, model and quote hashes to each callback. The
+adapter consumes that permit before admission and verifies the active attempt
+again before a provider effect. The next target is tried only after an explicit
+no-effect denial without a reservation is durably recorded. Denial errors must
+explicitly state `requiresReconciliation: false` and
+`executionOutcome: "not-started"`; an omitted or conflicting marker is
+uncertain. A replay, lost
+response, malformed receipt or uncertain reservation stops the route.
+The result lists each attempted target and its budget disclosure. A held
+reservation remains visible when provider outputs are unusable. All callbacks
+for one logical request must use the same route authority, even when they use
+different financial authorities. The host must also establish any shared
+provider-account or entitlement ownership required by its budget authorities.
+
+Priced execution snapshots caller data before the route claim. Denial evidence must
+be own data fields; accessors, proxies, and inherited or uninspectable
+reservation fields keep the result uncertain and stop fallback. A safely
+identified held reservation remains visible if outputs are uninspectable.
+
+Route callback values and direct-route plans must be plain bounded data, with
+at most 100,000 visited nodes, 4,000,000 UTF-16 code units, 4,096 array
+elements, and 1,048,576 code units in a single string. JavaScript resolves a
+callback's promise before the dispatcher can inspect its value, so a thenable
+or proxy can run code during promise assimilation. The host must treat callback
+execution as a trust boundary and provide its own isolation and time limits.
+Authorities and callbacks, including a method callback's original receiver,
+are host-owned capabilities. The host must keep their methods, backend identity,
+credentials and receiver state stable and exclusively fenced throughout a
+route; snapshotting data does not freeze those capabilities or their closures.
+Proxied callback and direct-route inventory hasher functions are rejected
+before a route is claimed.
+
+`runIacRoute` requires a host-issued operation identity and authorization. The
+identity is a SHA-256 digest of the tenant, deployment, resource, action, and a
+durable operation generation assigned by the orchestrator. All retries and
+targets for that generation share the same identity; new intent receives a new
+generation. The host independently authenticates the proof and binds it to the
+actual program and generation. A caller cannot authorize itself by selecting a
+new request or operation ID. The SQLite authority requires a trusted
+`verifyOperation` callback; it pins one current request to each authenticated
+operation and accepts a successor only after verified recovery grants it.
+
+`runIacRoute` records a single durable claim for the tenant and logical request
+before any target, admission policy, or provider is called. It records each
+selected target and inventory before execution, and records a definitive
+no-effect denial before another target can be tried. An existing running or
+uncertain claim stops the route; a finished claim cannot execute again. Use a
+new request ID only after an operator has reconciled any uncertain prior work.
+`inspect` exposes the bounded target/inventory history without claim secrets.
+The attempt permit is a capability: protect it as a credential and verify it
+with the same authority before admitting and starting a provider effect.
+The adapter must atomically consume each permit once before admission; an
+unknown consume acknowledgement cannot be retried. Before upgrading a host from
+an older route authority, stop and fence older executors: legacy permits are
+marked consumed on migration, but an older executable cannot enforce that rule.
+
+The host must authenticate the tenant, restrict access to authority mutation,
+and route *every* entry point for one request through the same durable CAS
+ledger. An independent ledger or an older database restore cannot enforce this
+invariant. `@hobo/dispatcher/sqlite` supplies a persistent, transactionally
+serialized implementation for processes sharing one local SQLite file. It
+rejects SQLite's in-memory URI modes because they cannot retain route claims.
+SQLite
+files on separate machines are independent ledgers; distributed deployments
+must provide a shared transactional implementation of `IacRouteAuthority`.
+Existing route rows created before operation identities must be individually
+bound by an authenticated claim for their original request; new routes for that
+tenant fail closed until every legacy row is bound. Malformed identity inputs
+and inconsistent lineage or active-attempt records fail closed. Transaction
+inputs are copied from own data properties before owner or scope checks, so
+accessors cannot redirect a checked write. Provider and billing
+authorities remain responsible for their own effects and financial holds. Reconciliation requires independent evidence that the old
+source cannot act again before authorizing a new request.
 
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's
 declared currency, using the existing `budgetCap`/`listUnitCost` number units.
