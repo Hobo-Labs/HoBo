@@ -78,6 +78,40 @@ function guard(repo: string, ...args: string[]) {
 }
 
 describe("source policy", () => {
+	it("applies Markdown source and planning rules to Cursor rule files", () => {
+		const repo = fixture();
+		const file = ".cursor/rules/example.mdc";
+		write(
+			repo,
+			file,
+			'---\ndescription: "Example"\n---\n\n```ts\nconst url = "https://example.test"; // explanation\n```\n',
+		);
+		assert.match(
+			guard(repo, "--worktree").stderr,
+			/example\.mdc:6:.*self-documenting/u,
+		);
+		git(repo, "add", file);
+		assert.match(
+			guard(repo, "--staged").stderr,
+			/example\.mdc:6:.*self-documenting/u,
+		);
+		write(
+			repo,
+			file,
+			"---\ndescription: Example\n---\n\n# Implementation Plan: queues\n",
+		);
+		git(repo, "add", file);
+		assert.match(guard(repo, "--staged").stderr, /document title/u);
+		write(repo, file, "---\ntype: Design\n---\n\n# Example\n");
+		git(repo, "add", file);
+		assert.match(guard(repo, "--staged").stderr, /document type/u);
+		write(repo, file, "# Example\n\n```ts\nconst value = 1;\n```\n");
+		git(repo, "add", file);
+		assert.equal(guard(repo, "--staged").status, 0);
+		assert.ok(documentViolation(".cursor/rules/feature-plan.mdc", "# Example"));
+		assert.ok(documentViolation(".cursor/rules/design.mdc.tpl", "# Example"));
+	});
+
 	it("rejects planning titles in ordinary Markdown files", () => {
 		for (const title of [
 			"Implementation Plan: queues",

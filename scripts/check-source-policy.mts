@@ -929,16 +929,16 @@ export function documentViolation(
 	const sourceFile = sourcePath(file);
 	if (
 		isExperiencePlanningArtifact(sourceFile) ||
-		/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/|.*\.mdx?$)/iu.test(
+		/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/|.*\.md(?:x|c)?$)/iu.test(
 			sourceFile,
 		) ||
-		/(?:^|\/)\.sdlc\/.*\.mdx?$/iu.test(sourceFile)
+		/(?:^|\/)\.sdlc\/.*\.md(?:x|c)?$/iu.test(sourceFile)
 	)
 		return "planning, architecture, and design documents are not allowed";
-	if (!/\.mdx?$/iu.test(sourceFile)) return undefined;
+	if (!/\.md(?:x|c)?$/iu.test(sourceFile)) return undefined;
 	const title = planningDocumentTitle(text);
 	if (title) return `document title "${title}" describes prohibited planning`;
-	if (/^src\/draft\/(?:[^/]+\/)*_registry\.mdx?$/iu.test(sourceFile))
+	if (/^src\/draft\/(?:[^/]+\/)*_registry\.md(?:x|c)?$/iu.test(sourceFile))
 		return "planning, architecture, and design documents are not allowed";
 	if (
 		/(?:^|\/)(?:design|designs|plans|roadmaps|architecture|architectures|adr|adrs|rfc|rfcs|proposals|architecture-decision-records)\//iu.test(
@@ -947,16 +947,16 @@ export function documentViolation(
 	)
 		return "planning, architecture, and design documents are not allowed";
 	if (
-		/(?:^|\/)(?:design|architecture|roadmap|proposal|(?:implementation[-_])?plan|(?:architecture[-_])?decision[-_]records?|(?:adr|rfc)(?:[-_][^/]+)?)\.mdx?$/iu.test(
+		/(?:^|\/)(?:design|architecture|roadmap|proposal|(?:implementation[-_])?plan|(?:architecture[-_])?decision[-_]records?|(?:adr|rfc)(?:[-_][^/]+)?)\.md(?:x|c)?$/iu.test(
 			sourceFile,
 		) ||
-		/(?:^|\/)[^/]+[-_](?:design|architecture|roadmap|plan|proposal|adr|rfc)\.mdx?$/iu.test(
+		/(?:^|\/)[^/]+[-_](?:design|architecture|roadmap|plan|proposal|adr|rfc)\.md(?:x|c)?$/iu.test(
 			sourceFile,
 		) ||
-		/(?:^|\/)(?:gaps?|gap[-_](?:analysis|register)|backlog|poc[-_]rollup[-_]ledger|scope[-_]review|(?:implementation[-_])?handoff(?:[-_]notes)?)\.mdx?$/iu.test(
+		/(?:^|\/)(?:gaps?|gap[-_](?:analysis|register)|backlog|poc[-_]rollup[-_]ledger|scope[-_]review|(?:implementation[-_])?handoff(?:[-_]notes)?)\.md(?:x|c)?$/iu.test(
 			sourceFile,
 		) ||
-		/(?:^|\/)[^/]+[-_]handoff(?:[-_]notes)?\.mdx?$/iu.test(sourceFile)
+		/(?:^|\/)[^/]+[-_]handoff(?:[-_]notes)?\.md(?:x|c)?$/iu.test(sourceFile)
 	)
 		return "planning, architecture, and design documents are not allowed";
 	const type = frontmatterType(text);
@@ -1020,7 +1020,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		const sourceFile = sourcePath(file);
 		if (
 			isExperiencePlanningArtifact(sourceFile) ||
-			/\.mdx?$/iu.test(sourceFile) ||
+			/\.md(?:x|c)?$/iu.test(sourceFile) ||
 			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(sourceFile)
 		) {
 			const text = contents(mode, file);
@@ -1039,7 +1039,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			const added = changedLines(args, file, text, untracked.includes(file));
 			violations.push(...proofArtifactViolations(file, text, added));
 		}
-		if (/\.mdx?$/iu.test(sourceFile)) {
+		if (/\.md(?:x|c)?$/iu.test(sourceFile)) {
 			const text = contents(mode, file);
 			const added = changedLines(args, file, text, untracked.includes(file));
 			violations.push(...markdownCodeViolations(file, text, added));
