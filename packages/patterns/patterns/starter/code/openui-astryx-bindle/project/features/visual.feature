@@ -1,6 +1,6 @@
 Feature: Primary visual surface
   OpenUI-generated Bindle UI linked to OpenFeature flag app.visual.primary.
-  Loop: generate → edit → lock → evidence (hobo-code scaffold first paint).
+  Loop: generate → edit → lock → evidence for the OpenUI starter.
 
   @openfeature:app.visual.primary
   Scenario: Primary surface renders with step rail and is lockable

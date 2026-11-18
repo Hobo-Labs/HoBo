@@ -10,15 +10,26 @@ OpenUI catalog template — first paint under `public/`.
 | Layer | What you get |
 |---|---|
 | Visual | Dark shell + step rail (`public/index.html` + `styles.css`) |
-| Flags | Gherkin linked to OpenFeature `app.visual.primary` |
-| Evidence | Playwright + recording + screenshots on pass |
-| Platform | FinOps / Harness / Station — no parallel control plane |
+| Flags | Example Gherkin names OpenFeature `app.visual.primary` |
+| Evidence | Illustrative scenario; no capture runner is included |
+| Platform | FinOps / Harness / Station integration is supplied by the caller |
 
 ## Use the template
 
-Load and render `starter.code.openui-astryx-bindle` through the
-`@hobo/patterns` catalog API. The files here are template inputs and are not
-a standalone `hobo-code` application.
+The catalog's `renderPattern` returns one file for this starter: the default
+snippet, or `src/bindle.ts` when the `project` rendering is selected. It does
+not render the whole project tree. To obtain that tree, copy the files at
+`openUiStarterRoot()` from `@hobo/patterns` into your destination, for example:
+
+```ts
+import { cpSync } from "node:fs";
+import { openUiStarterRoot } from "@hobo/patterns";
+
+cpSync(openUiStarterRoot(), "./my-app", { recursive: true, force: false, errorOnExist: true });
+```
+
+The files are template inputs, not a standalone application. The edit, lock,
+and evidence steps need a caller-provided host.
 
 ## Tokens
 

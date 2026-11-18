@@ -1,18 +1,22 @@
 {
   "schemaVersion": 1,
   "projectId": "cloud",
-  "scannedAt": "2026-07-31T20:12:04.049Z",
+  "scannedAt": "2026-11-17T18:30:36.515Z",
   "productName": "@hobo/cloud",
   "packageDir": "packages/cloud",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "packages/cloud/package.json: no package bin is declared"
+  },
   "binaries": [],
+  "binAssessments": [],
   "defaultEntry": null,
   "nonInteractiveHelp": null,
   "commands": [],
   "interactiveSurfaces": [],
   "requiredJourneys": [
-    "help-discoverability",
-    "happy-critical-path",
-    "failure-actionable"
+    "happy-critical-path"
   ],
   "probes": []
 }

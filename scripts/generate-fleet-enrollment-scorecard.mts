@@ -233,6 +233,13 @@ const notImplementedCount = rows.filter(
 ).length;
 
 const lines = [
+	"---",
+	"type: Scorecard",
+	'title: "Fleet enrollment scorecard"',
+	'description: "Acceptance status and evidence for fleet enrollment requirements."',
+	"tags: [hobo, ci, fleet, enrollment]",
+	"---",
+	"",
 	"# Fleet enrollment scorecard",
 	"",
 	"Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` and `not-implemented` separately from `pass`. The allowed status vocabulary (`pass`, `blocked-on-credentials`, `not-implemented`) is pinned by `test/fleet-enrollment-scorecard.eval.test.ts`.",

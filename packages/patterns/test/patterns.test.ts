@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -19,6 +27,7 @@ import {
 	loadPatternCatalog,
 	ONTOLOGY_ENCODER_ID,
 	openPatternIndex,
+	openUiStarterRoot,
 	PatternParseError,
 	parsePatternManifest,
 	parsePatternQuery,
@@ -147,6 +156,39 @@ describe("@hobo/patterns", () => {
 				params: { resourceName: "../etc" },
 			}),
 		).toThrow(PatternParseError);
+	});
+
+	it("renders a single OpenUI file while exposing the complete template tree", () => {
+		const pattern = catalog.patterns.find(
+			(item) => item.id === "starter.code.openui-astryx-bindle",
+		);
+		assert(pattern);
+		const snippet = renderPattern({ catalog, pattern });
+		expect(snippet.renderingId).toBe("snippet");
+		expect(snippet.files).toHaveLength(1);
+		const project = renderPattern({ catalog, pattern, renderingId: "project" });
+		expect(
+			pattern.renderings.find(
+				(rendering) => rendering.renderingId === "project",
+			)?.outputFiles,
+		).toEqual(["src/bindle.ts"]);
+		expect(project.files.map((file) => file.path)).toEqual(["src/bindle.ts"]);
+		const root = mkdtempSync(join(tmpdir(), "hobo-openui-copy-"));
+		try {
+			const destination = join(root, "app");
+			cpSync(openUiStarterRoot(), destination, {
+				recursive: true,
+				force: false,
+				errorOnExist: true,
+			});
+			expect(existsSync(join(destination, "src/bindle.ts"))).toBe(true);
+			expect(existsSync(join(destination, "public/index.html"))).toBe(true);
+			expect(existsSync(join(destination, "features/visual.feature"))).toBe(
+				true,
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("composes web+api+kv+queue without concatenating blindly", () => {

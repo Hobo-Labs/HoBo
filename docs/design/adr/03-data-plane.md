@@ -711,6 +711,9 @@ In-repo contract: `createHarnessV1` / `createHarnessAgent` (`packages/code/src/a
 - Related: ADR-0130, ADR-0131, ADR-0134, ADR-0044, ADR-0083, ADR-0123, ADR-0128, HOBO-152, HOBO-394
 
 ## ADR-0152
+
+> Historical amendment: The Code template and chat routes described below were removed with `packages/code`.
+
 **Atomic templates + local SQLite hybrid retrieval for zero-inference emission.**
 
 **Status:** Accepted — extends [ADR-0139](#adr-0139) (hobo-code ScaffoldingAgent) and [ADR-0135](03-data-plane-sqlite-default.md) (one-writer SQLite).
@@ -743,6 +746,9 @@ The first ADR-0152 emit path overwrote files in topo order. That made "add a sec
 - A second codegen CLI (HOBO-152 / HOBO-394 stay elevated, not forked).
 
 ## ADR-0153
+
+> Historical amendment: `packages/code` and its template, scaffold, and chat routes below were removed; the `@hobo/patterns` catalog remains.
+
 **Canonical `@hobo/patterns` catalog, ontology-vector retrieval, explicit `template` verb.**
 
 **Status:** Accepted — supersedes ADR-0152 as the source of truth for pattern *bodies*. ADR-0152 chat emit remains for known session phrases.
@@ -771,6 +777,9 @@ The first ADR-0152 emit path overwrote files in topo order. That made "add a sec
 - Related: ADR-0135, ADR-0139, ADR-0152
 
 ## ADR-0154
+
+> Historical amendment: The Code review aggregate described below was removed with `packages/code`.
+
 **Durable HoBo Code review aggregate.**
 
 **Status:** Accepted

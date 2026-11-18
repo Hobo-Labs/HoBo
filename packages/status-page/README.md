@@ -1,8 +1,8 @@
 # @hobo/status-page
 
 Event-sourced status pages for every HoBo scope — the ADR-0077 / Plan 49 §C
-surface. Every deployment already carries OTel observability; this package
-turns those signals into a githubstatus.com-style page **out of the box**:
+surface. This package turns supplied observability signals into a
+githubstatus.com-style page:
 
 - **Station slice** — HoBo control-plane capability surfaces on one Station
   (dashboard, evidence, otlp, evals, … sidecars).
@@ -68,9 +68,9 @@ const app = bindle("shop", (b) => ({
 }));
 ```
 
-Station-side, the status page is a default sidecar (`kind: "sidecar"`,
-`provenance: "default"` — present unless observed absent) served by
-`@hobo/code`'s occupancy fleet; `HOBO_CODE_SIDECARS=0` disables the fleet.
+Station capability components can be projected into a status page. The former
+Code occupancy fleet and its automatic status-page sidecar were removed; a host
+must supply observations and serve the page.
 
 ## Edge cases handled (and tested)
 

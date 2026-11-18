@@ -100,12 +100,16 @@ From `feature.json` `driver` or CLI `--driver`:
 
 | Driver | Behavior |
 |---|---|
-| `cli` | Spawn command; capture stdout/stderr/exit; write replayable `primary.cast` + supporting `terminal.txt` and meta with terminal size |
+| `cli` | Spawn command; capture stdout/stderr/exit as a `primary.txt` transcript plus terminal metadata |
 | `tui` | Like cli plus richer terminal recording: prefer `asciinema` if installed; always store cols/rows for repro |
 | `web` | Prefer Playwright (`playwright` / `@playwright/test` if present); else browser MCP tools if the host exposes them; capture video if context allows, else screenshots |
 | `native` | Computer-use style: invoke configured screenshot/recorder command (`OPTIMIZEXP_NATIVE_CAPTURE` or `--native-cmd`); prefer video |
 
 Drivers are **best-effort adapters**. Missing optional binaries degrade along the evidence fallback chain (`references/evidence.md`) and record `degraded: true` in meta.
+
+CLI capture retains up to 8 MiB from each output stream. If either stream exceeds that limit, the transcript and metadata identify the truncated stream and mark the capture degraded; it cannot be accepted as complete proof. A shell that fails to start or is interrupted is also degraded. TUI replay follows the absolute event times in its asciicast.
+
+CLI, TUI and native capture commands run in the selected project directory by default. A generated command discovered from root scripts retains the repository root; a project catalog command retains its project. Pass `--cwd=root` or `--cwd=project` to choose explicitly. The recorded `repro.cwd` is relative to the repository, and the command inherits the caller's `PATH` without loading a login profile.
 
 ## Step hooks
 

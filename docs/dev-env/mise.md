@@ -1,3 +1,10 @@
+---
+type: Reference
+title: "mise dev environment"
+description: "HoBo tool versions, lockfile, and development environment setup with mise."
+tags: [hobo, development, mise]
+---
+
 # mise dev environment (HoBo)
 
 HoBo provisions **project** tool versions from the repo-root [`mise.toml`](../../mise.toml) and [`mise.lock`](../../mise.lock). Personal shell, editor, and agent preferences live in the separate **[Hobo-Labs/dotfiles](https://github.com/Hobo-Labs/dotfiles)** repository (seed bundle under [`contrib/hobo-dotfiles-seed/`](../../contrib/hobo-dotfiles-seed/) until the org repo is published). Cloud agents and devcontainers call [`scripts/bootstrap-dev.sh`](../../scripts/bootstrap-dev.sh), which installs mise, applies dotfiles, and runs `mise install`.

@@ -8,7 +8,7 @@ tags: [hobo, design]
 # Asset Sourcing Policy for the Control Yard
 
 Governs every visual, audio, and font asset that ships in a HoBo surface. The
-product surfaces (`site/`, `@hobo/control-yard`, and `hobo-code`) use **HoBo
+product surfaces (`site/` and `@hobo/control-yard`) use **HoBo
 Rubberhose** under `site/DESIGN.md` and the owning package design contracts. See
 [ADR-0149](./adr/07-portability-extensibility.md#adr-0149).
 

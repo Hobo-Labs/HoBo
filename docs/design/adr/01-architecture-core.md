@@ -639,6 +639,10 @@ Nine mechanisms independently attach operational behavior to resources/component
 ## ADR-0155
 **Station capabilities as a typed manifest; localhost capability discovery gates `hobo-code init`; hobo-code dev scenarios dogfood `station()` declarations.**
 
+> Historical amendment: the coding harness and its discovery CLI were removed
+> with `packages/code`. Station capability declarations and matching remain in
+> `@hobo/stations`; the Code-specific behavior below describes the former implementation.
+
 ### Context
 ADR-0131 made Station the control-plane occupancy primitive, but "Station capability" stayed prose: PAM is "an optional Station capability / Rail profile" (ADR-0133), Session Replay a "default-supplied Station capability" (ADR-0137), dashboards/Evidence/evals "Station sidecars" — with no type, registry, or manifest behind any of it. Meanwhile hobo-code auto-inited its Station from ad-hoc literals in `bindCodeStation` (in tension with ADR-0131 §7's "no silent durable auto-init"), shipped no `init` verb, and had no way to state what a dev machine must offer before occupancy makes sense: platform-matrix CoW detection was an acknowledged TODO, and ollama/devenv/harness probes existed as disconnected inspections.
 

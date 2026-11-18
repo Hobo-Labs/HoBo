@@ -1,5 +1,11 @@
 # OptimizeXP run summary: `hobo-code`
 
+> **Historical record:** The `packages/code` product was removed. This summary is preserved as a
+> historical record, not evidence of a current capability. The later
+> [re-certification](../20260803-hobo-code-recert/summary.md) found that its
+> iteration scores were not committed and its purported TTY capture used the
+> non-TTY path, so the completeness claims below cannot be audited.
+
 Run: `20260801-hobo-code-optimizexp`  
 Product: `hobo-code` (`packages/code`, project id `code`)  
 Experiences: DX, UX  
