@@ -34,7 +34,7 @@ function object(value: unknown): object {
 
 function field(value: unknown, key: string): unknown {
 	const descriptor = Object.getOwnPropertyDescriptor(object(value), key);
-	if (descriptor === undefined || !("value" in descriptor))
+	if (descriptor === undefined || !Object.hasOwn(descriptor, "value"))
 		throw new TypeError("missing provider field");
 	return descriptor.value;
 }
@@ -42,7 +42,7 @@ function field(value: unknown, key: string): unknown {
 function optional(value: unknown, key: string): unknown {
 	const descriptor = Object.getOwnPropertyDescriptor(object(value), key);
 	if (descriptor === undefined) return undefined;
-	if (!("value" in descriptor)) throw new TypeError("invalid provider field");
+	if (!Object.hasOwn(descriptor, "value")) throw new TypeError("invalid provider field");
 	return descriptor.value;
 }
 
@@ -88,7 +88,7 @@ function list<T>(
 	const result: T[] = [];
 	for (let index = 0; index < length; index++) {
 		const entry = Object.getOwnPropertyDescriptor(value, String(index));
-		if (entry === undefined || !("value" in entry))
+		if (entry === undefined || !Object.hasOwn(entry, "value"))
 			throw new TypeError("invalid provider list entry");
 		result.push(read(entry.value));
 	}
@@ -296,7 +296,7 @@ function extraData(value: unknown, allowed: readonly string[]): boolean {
 		const descriptor = Object.getOwnPropertyDescriptor(record, key);
 		if (
 			descriptor !== undefined &&
-			"value" in descriptor &&
+			Object.hasOwn(descriptor, "value") &&
 			descriptor.value !== undefined &&
 			descriptor.value !== null
 		)
@@ -318,7 +318,7 @@ function observedData(value: unknown): boolean {
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
 		if (
 			descriptor !== undefined &&
-			"value" in descriptor &&
+			Object.hasOwn(descriptor, "value") &&
 			descriptor.value !== undefined &&
 			descriptor.value !== null
 		)
@@ -352,7 +352,7 @@ function exactRecord(value: unknown, keys: readonly string[]): object {
 		const descriptor = Object.getOwnPropertyDescriptor(record, key);
 		if (
 			descriptor === undefined ||
-			!("value" in descriptor) ||
+			!Object.hasOwn(descriptor, "value") ||
 			!descriptor.enumerable
 		)
 			throw new TypeError("invalid uncertainty field");

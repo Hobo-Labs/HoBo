@@ -128,11 +128,22 @@ describe("toolchain lock verification", () => {
 });
 
 describe("forward/reverse surface parity", () => {
+	it("keeps native async messaging out of the existing SDK world", async () => {
+		const { readFile } = await import("node:fs/promises");
+		const wit = await readFile(WIT_PATH, "utf8");
+		expect(wit).not.toContain(
+			"import hobo:durable-messaging/messaging@0.1.0;",
+		);
+		expect(wit).not.toContain(
+			"import hobo:durable-messaging-jspi/messaging@0.1.0;",
+		);
+	});
+
 	it("generates async durable messaging operations and keeps unknown and expired distinct", async () => {
 		const { readFile } = await import("node:fs/promises");
 		const path = join(
 			PACKAGE_ROOT,
-			"src/generated/sdk/interfaces/hobo-durable-messaging-messaging.d.ts",
+			"src/generated/durable-messaging-guest/interfaces/hobo-durable-messaging-messaging.d.ts",
 		);
 		const types = await readFile(path, "utf8");
 		for (const method of [
@@ -172,7 +183,6 @@ describe("forward/reverse surface parity", () => {
 				"hobo:runtime/command@0.1.0",
 				"hobo:runtime/subscribe@0.1.0",
 				"hobo:queue/queue@0.1.0",
-				"hobo:durable-messaging/messaging@0.1.0",
 				"hobo:scheduler/scheduler@0.1.0",
 				"hobo:blob-events/blob-events@0.1.0",
 				"hobo:evidence/evidence@0.1.0",

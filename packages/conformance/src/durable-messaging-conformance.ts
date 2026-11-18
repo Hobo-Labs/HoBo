@@ -130,10 +130,12 @@ export function validUnknownEnvelope(
 		if (
 			Object.getOwnPropertySymbols(value).length !== 0 ||
 			Object.keys(fields).length !== 2 ||
+			!Object.hasOwn(fields, "status") ||
+			!Object.hasOwn(fields, "operation") ||
 			fields.status === undefined ||
 			fields.operation === undefined ||
-			!("value" in fields.status) ||
-			!("value" in fields.operation) ||
+			!Object.hasOwn(fields.status, "value") ||
+			!Object.hasOwn(fields.operation, "value") ||
 			!fields.status.enumerable ||
 			!fields.operation.enumerable ||
 			fields.status.value !== "unknown"
@@ -155,13 +157,13 @@ function ensureExpectedUnknown(
 	if (validUnknownEnvelope(outcome, expected)) return;
 	try {
 		const status = Object.getOwnPropertyDescriptor(outcome, "status");
-		if (status === undefined || !("value" in status))
+		if (status === undefined || !Object.hasOwn(status, "value"))
 			throw new Error("missing status");
 		if (forbidDisclosure) {
 			const value = Object.getOwnPropertyDescriptor(outcome, "value");
 			if (
 				value !== undefined &&
-				"value" in value &&
+				Object.hasOwn(value, "value") &&
 				value.value !== undefined &&
 				value.value !== null
 			)
@@ -171,7 +173,7 @@ function ensureExpectedUnknown(
 			const operation = Object.getOwnPropertyDescriptor(outcome, "operation");
 			if (
 				operation !== undefined &&
-				"value" in operation &&
+				Object.hasOwn(operation, "value") &&
 				operation.value !== null &&
 				typeof operation.value === "object"
 			) {
@@ -181,7 +183,7 @@ function ensureExpectedUnknown(
 				);
 				if (
 					payload !== undefined &&
-					"value" in payload &&
+					Object.hasOwn(payload, "value") &&
 					payload.value !== undefined &&
 					payload.value !== null
 				)
@@ -227,13 +229,13 @@ function ensureDefiniteOutcome(
 ): void {
 	try {
 		const status = Object.getOwnPropertyDescriptor(outcome, "status");
-		if (status === undefined || !("value" in status))
+		if (status === undefined || !Object.hasOwn(status, "value"))
 			throw new Error("missing status");
 		if (status.value === "committed") {
 			const value = Object.getOwnPropertyDescriptor(outcome, "value");
 			if (
 				value === undefined ||
-				!("value" in value) ||
+				!Object.hasOwn(value, "value") ||
 				value.value === undefined ||
 				value.value === null
 			)
@@ -244,7 +246,7 @@ function ensureDefiniteOutcome(
 			const code = Object.getOwnPropertyDescriptor(outcome, "code");
 			if (
 				code === undefined ||
-				!("value" in code) ||
+				!Object.hasOwn(code, "value") ||
 				!rejectionCodes.some((candidate) => candidate === code.value)
 			)
 				throw new Error("invalid rejection");
@@ -272,13 +274,13 @@ function ensureExpiredOrDefinite(
 		const status = Object.getOwnPropertyDescriptor(outcome, "status");
 		if (
 			status !== undefined &&
-			"value" in status &&
+			Object.hasOwn(status, "value") &&
 			status.value === "expired"
 		) {
 			const operation = Object.getOwnPropertyDescriptor(outcome, "operation");
 			if (
 				operation === undefined ||
-				!("value" in operation) ||
+				!Object.hasOwn(operation, "value") ||
 				!sameOperation(operation.value, expected)
 			)
 				throw new DurableMessagingConformanceUnknown(
@@ -336,7 +338,7 @@ async function committed<T>(
 	}
 	if (
 		status === undefined ||
-		!("value" in status) ||
+		!Object.hasOwn(status, "value") ||
 		status.value !== "committed"
 	)
 		throw new DurableMessagingConformanceUnknown(
@@ -344,7 +346,7 @@ async function committed<T>(
 		);
 	if (
 		value === undefined ||
-		!("value" in value) ||
+		!Object.hasOwn(value, "value") ||
 		value.value === undefined ||
 		value.value === null
 	)
@@ -369,7 +371,7 @@ function requireTopicReceipt(
 	}
 	if (
 		topic === undefined ||
-		!("value" in topic) ||
+		!Object.hasOwn(topic, "value") ||
 		typeof topic.value !== "string"
 	)
 		throw new DurableMessagingConformanceUnknown(
@@ -581,11 +583,11 @@ function ensureAuditOutcome(
 ): void {
 	try {
 		const status = Object.getOwnPropertyDescriptor(result, "status");
-		if (status === undefined || !("value" in status))
+		if (status === undefined || !Object.hasOwn(status, "value"))
 			throw new Error("missing status");
 		const field = (key: string) => {
 			const descriptor = Object.getOwnPropertyDescriptor(result, key);
-			if (descriptor === undefined || !("value" in descriptor))
+			if (descriptor === undefined || !Object.hasOwn(descriptor, "value"))
 				throw new Error("missing field");
 			return descriptor.value;
 		};

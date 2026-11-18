@@ -30,6 +30,8 @@ sets of records, variants and operation semantics aligned.
   local test services. These are the vendored interfaces, not the full WASI APIs.
 - `data-models/` — protobuf + CUE records for lock, pins, surfaces, and parity reports.
 
+The durable messaging interfaces are opt-in. Native asynchronous components use `hobo:durable-messaging/messaging@0.1.0`; JSPI-compatible hosts use the distinct `hobo:durable-messaging-jspi/messaging@0.1.0` interface. The pinned component toolchain cannot instantiate native async imports, so neither interface is added to the existing SDK world implicitly.
+
 ## Commands
 
 ```bash
