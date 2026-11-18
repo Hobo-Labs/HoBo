@@ -18,7 +18,10 @@ import {
 	type JsonValue,
 	stableHash,
 } from "./json.js";
-import { rateCardChargesIncomplete } from "./charge-coverage.js";
+import {
+	agreementRequiresRateCardValidation,
+	rateCardChargesIncomplete,
+} from "./charge-coverage.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
@@ -471,7 +474,7 @@ export function quoteTargetPricing(
 			inScopeProductIds.add(agreement.productId);
 	}
 	for (const agreement of state.agreements) {
-		if (agreement.status !== "active") continue;
+		if (!agreementRequiresRateCardValidation(agreement, workloadsAll)) continue;
 		if (
 			agreement.tenantId !== inventory.tenantId ||
 			!inScopeProductIds.has(agreement.productId)

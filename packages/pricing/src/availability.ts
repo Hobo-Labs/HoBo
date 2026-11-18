@@ -13,7 +13,10 @@ import {
 	isExactProtoMessage,
 	type JsonValue,
 } from "./json.js";
-import { rateCardChargesIncomplete } from "./charge-coverage.js";
+import {
+	agreementRequiresRateCardValidation,
+	rateCardChargesIncomplete,
+} from "./charge-coverage.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
@@ -243,7 +246,7 @@ export function quoteAvailablePricing(
 	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
 	const meterDimensions = new Set(dimensions);
 	for (const agreement of state.agreements) {
-		if (agreement.status !== "active") continue;
+		if (!agreementRequiresRateCardValidation(agreement, workloadsAll)) continue;
 		if (
 			agreement.productId !== scope.productId ||
 			agreement.tenantId !== scope.tenantId ||
