@@ -2003,6 +2003,89 @@ describe("provider-neutral IaC target budget admission", () => {
 		}
 	});
 
+	it.each([
+		["reserve", "reservation"],
+		["reserve", "request"],
+		["reserve", "quote"],
+		["reserve", "bound"],
+		["reserve", "account"],
+		["reserve", "pin"],
+		["reserve", "unbounded"],
+		["claim", "reservation"],
+		["claim", "request"],
+		["claim", "quote"],
+		["claim", "bound"],
+		["claim", "account"],
+		["claim", "pin"],
+		["claim", "unbounded"],
+		["claim", "execution"],
+	] as const)(
+		"treats a mismatched %s receipt (%s) as uncertain",
+		async (phase, fault) => {
+			const ledger = authority();
+			try {
+				const deps = dependencies(ledger);
+				const wrapped = { ...ledger };
+				const corrupt = (row: ReturnType<typeof ledger.reserve>) => {
+					switch (fault) {
+						case "reservation":
+							row.reservationId = "different-reservation";
+							break;
+						case "request":
+							row.requestDigest = "different-request";
+							break;
+						case "quote":
+							row.quoteId = "different-quote";
+							break;
+						case "bound":
+							row.reservedMicros = 0;
+							break;
+						case "account":
+							row.providerAccounts = [];
+							break;
+						case "pin":
+							if (!row.iacPricingPin) throw new Error("missing pricing pin");
+							row.iacPricingPin.modelHash = "different-model";
+							break;
+						case "unbounded":
+							row.unboundedExposure = true;
+							break;
+						case "execution":
+							row.executionDigest = "different-execution";
+					}
+					return row;
+				};
+				if (phase === "reserve")
+					wrapped.reserve = (input) => corrupt(ledger.reserve(input));
+				else
+					wrapped.claimExecution = (input) =>
+						corrupt(ledger.claimExecution(input));
+				deps.authority = wrapped;
+				const requestId = `receipt-${phase}-${fault}`;
+				const decision = await admitIacTarget(
+					{ requestId, ...fixture() },
+					deps,
+				);
+				expect(decision).toMatchObject({
+					status: "uncertain",
+					code:
+						phase === "reserve"
+							? "PRICED_RESERVATION_RECEIPT_INVALID"
+							: "PRICED_EXECUTION_RECEIPT_INVALID",
+					budget: {
+						evaluation: "unavailable",
+						reservation: phase === "reserve" ? "unknown" : "held",
+					},
+				});
+				expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+				const stored = ledger.lookup(`iac:${requestId}`);
+				expect(stored?.executionDigest === "").toBe(phase === "reserve");
+			} finally {
+				ledger.close();
+			}
+		},
+	);
+
 	it("claims at most one execution for concurrent identical requests", async () => {
 		const ledger = authority();
 		try {
