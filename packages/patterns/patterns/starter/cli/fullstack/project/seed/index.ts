@@ -24,15 +24,20 @@ interface Resource {
 
 interface HandlerRequest {
 	path: string;
+	method?: string;
+	body?: JsonValue;
 }
 
-interface HandlerResponse {
+interface ResponseData {
+	template: Template;
+	path: string;
+	[key: string]: JsonValue;
+}
+
+export interface HandlerResponse {
 	status: number;
-	body: {
-		template: Template;
-		path: string;
-		[key: string]: JsonValue;
-	};
+	headers?: Record<string, string>;
+	body: ResponseData | string;
 }
 
 interface Handler {
@@ -116,6 +121,9 @@ export function createTestRuntime({
 			request: { path: string; body: { template: Template } },
 		) {
 			const response = await handler.run({ path: request.path });
+			if (!isResponseData(response.body)) {
+				throw new Error("Expected a JSON response");
+			}
 			if (response.body.template !== request.body.template) {
 				throw new Error(
 					`Expected template ${request.body.template}, got ${response.body.template}`,
@@ -123,6 +131,10 @@ export function createTestRuntime({
 			}
 		},
 	};
+}
+
+function isResponseData(body: ResponseData | string): body is ResponseData {
+	return Object.prototype.toString.call(body) === "[object Object]";
 }
 
 function createMemoryStore(kind: string): Store {

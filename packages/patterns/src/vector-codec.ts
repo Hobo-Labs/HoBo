@@ -1,4 +1,3 @@
-
 const CODEC_ID = "f32le-l2";
 
 export type EncodedVector = {

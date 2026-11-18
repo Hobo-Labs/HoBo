@@ -1,4 +1,12 @@
 declare module "@hobo/sdk" {
+	export type HoboJson =
+		| string
+		| number
+		| boolean
+		| null
+		| HoboJson[]
+		| { [key: string]: HoboJson };
+
 	export interface HoboOptions {
 		name: string;
 		template: "todo" | "api" | "agent" | "fullstack";
@@ -6,11 +14,14 @@ declare module "@hobo/sdk" {
 
 	export interface HoboRequest {
 		path: string;
+		method?: string;
+		body?: HoboJson;
 	}
 
 	export interface HoboResponse {
 		status: number;
-		body: Record<string, unknown>;
+		headers?: Record<string, string>;
+		body: { [key: string]: HoboJson } | string;
 	}
 
 	export interface HoboResource<TStore> {

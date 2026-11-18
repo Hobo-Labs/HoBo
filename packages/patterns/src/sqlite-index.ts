@@ -1,4 +1,3 @@
-
 import {
 	existsSync,
 	mkdirSync,
@@ -351,8 +350,7 @@ export function buildPatternIndex(input: {
 	} catch (error) {
 		try {
 			driver.rollback();
-		} catch {
-		}
+		} catch {}
 		driver.close();
 		if (tmp && existsSync(tmp)) unlinkSync(tmp);
 		throw error;
