@@ -92,6 +92,6 @@ pnpm --filter @hobo/control-yard run evidence:check
 - Claiming west walk by flipping east sheet
 - Hand-edited generated codegen outside asset index
 - **Blaming east when west jitters.** East/walk-right is the good plate. West
-  foot plant was unstable; yard re-registers west to east baseline (see
-  `docs/WALK_SHEET_HANDOFF.md`). Do not mirror either sheet. Do not “fix” east.
+  foot plant is re-registered to the east baseline in `assets/assets_index.json`.
+  Do not mirror either sheet. Do not “fix” east.
   If west gait still vibrates after baseline stabilize, delegate redraw of **west**.
