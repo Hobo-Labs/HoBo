@@ -221,11 +221,10 @@ service.
 A catalog owner who needs the stronger claim should re-run the suite against a
 real database and re-sign the ref.
 
-The adapter exposes no `advanceTime`: a real endpoint has a real clock, and
-offering one would let the suite "prove" TTL behaviour it never observed. The
-offline harness borrows the *reference server's* clock instead, and a test pins
-the degradation — with no clock the run reports `incomplete`, which projects to
-`unknown` conformance, which selection rejects.
+`advanceTime(ms)` waits on the live endpoint's clock. Tests inject the reference
+server's deterministic clock through the executor's `wait` option. A harness
+that removes time control still reports `incomplete` and cannot substantiate
+TTL behavior.
 
 Substantiated: `ttl`, `atomicIncrement`, `sortedSets`, `restTransport`,
 `redisCommandSemantics`. Not substantiated and not advertised: `maxValueBytes`.
