@@ -34,6 +34,7 @@ import {
 	readReplayCommandTree,
 } from "./replay/command-tree.js";
 import { createDeterministicContext } from "./replay/context.js";
+import { captureJournalStream } from "./replay/journal-stream.js";
 import { nextEnvelope, recordEffect } from "./replay/recorder.js";
 import type { WorkflowDefinition as ReplayWorkflowDefinition } from "./replay/replayer.js";
 import {
@@ -271,7 +272,10 @@ export function createWorkflowEngine(
 		lease: WorkflowExecutionLease,
 	): Promise<WorkflowRunHandle<R>> {
 		const streamId = `run/${runId}`;
-		const journal = await store.readStream(streamId);
+		const journal = captureJournalStream(
+			await store.readStream(streamId),
+			streamId,
+		);
 		let seq = journal.at(-1)?.seq ?? 0;
 		if (!Number.isSafeInteger(seq) || seq < 0) {
 			throw new Error("invalid workflow journal sequence");
@@ -1059,7 +1063,11 @@ export function createWorkflowEngine(
 		},
 		async journal(runId) {
 			const id = requireWorkflowRunId(runId);
-			const events = await store.readStream(`run/${id}`);
+			const streamId = `run/${id}`;
+			const events = captureJournalStream(
+				await store.readStream(streamId),
+				streamId,
+			);
 			return events.map((event) => ({
 				type: event.type,
 				data: cloneAsJson(event.data),

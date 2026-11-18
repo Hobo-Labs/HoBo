@@ -20,6 +20,7 @@ import {
 	stableStringifyForVersion,
 	toSeqVectorEntries,
 } from "./equivalence.js";
+import { captureJournalStream } from "./journal-stream.js";
 import type { EventStoreReader } from "./store.js";
 import type { CanonicalizationVersion, ReplayReport } from "./types.js";
 
@@ -76,7 +77,10 @@ export async function replayRun<S, A>(
 	if (suppliedSeed !== undefined && !isNonEmptyPrimitiveString(suppliedSeed))
 		throw new TypeError("replay seed must be a non-empty string");
 	const streamId = `run/${id}`;
-	const events = await store.readStream(streamId);
+	const events = captureJournalStream(
+		await store.readStream(streamId),
+		streamId,
+	);
 	const recordedVector = seqVectorForVersion(events, digestVersion);
 	const started = events.find((event) => event.type === "run.Started");
 	if (!started || !isJsonObject(started.data)) {

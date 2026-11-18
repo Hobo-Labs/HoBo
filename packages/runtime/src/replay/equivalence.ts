@@ -7,6 +7,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "../json.js";
+import { isNonEmptyPrimitiveString } from "../workflow-boundary.js";
 import {
 	compareCanonicalStrings,
 	canonicalizationVersion as requireCanonicalizationVersion,
@@ -47,11 +48,17 @@ export function assertReplayEqualsLive<S>({
 	canonicalizationVersion: requestedVersion,
 }: AssertReplayEqualsLiveInput<S>): ReplayReport {
 	const version = requireCanonicalizationVersion(requestedVersion, 2);
+	if (!isNonEmptyPrimitiveString(runId))
+		throw new TypeError("replay runId must be a non-empty string");
+	if (!isNonEmptyPrimitiveString(seed))
+		throw new TypeError("replay seed must be a non-empty string");
 	const capturedEvents = events.map((event) => clone(event));
 	const defaultTarget = seqVectorForVersion(capturedEvents, version);
 	const requestedTarget = targetSeq === undefined ? defaultTarget : targetSeq;
 	const capturedTarget = Object.fromEntries(
 		Object.getOwnPropertyNames(requestedTarget).map((streamId) => {
+			if (!isNonEmptyPrimitiveString(streamId))
+				throw new TypeError("target stream must be a non-empty string");
 			const sequence = must(
 				requestedTarget[streamId],
 				`target sequence for ${streamId}`,
@@ -176,6 +183,8 @@ export function seqVectorForVersion(
 	const version = requireCanonicalizationVersion(requestedVersion);
 	const positions = new Map<string, number>();
 	for (const event of events) {
+		if (!isNonEmptyPrimitiveString(event.streamId))
+			throw new TypeError("event stream must be a non-empty string");
 		if (!Number.isSafeInteger(event.seq) || event.seq < 0)
 			throw new RangeError(
 				"event sequence must be a non-negative safe integer",
@@ -189,7 +198,15 @@ export function seqVectorForVersion(
 }
 
 export function hashReadSet(events: EventEnvelope[]): string {
-	const streams = [...new Set(events.map((event) => event.streamId))].sort();
+	const streams = [
+		...new Set(
+			events.map((event) => {
+				if (!isNonEmptyPrimitiveString(event.streamId))
+					throw new TypeError("event stream must be a non-empty string");
+				return event.streamId;
+			}),
+		),
+	].sort();
 	return crypto
 		.createHash("sha256")
 		.update(JSON.stringify(streams))

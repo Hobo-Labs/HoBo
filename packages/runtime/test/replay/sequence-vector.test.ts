@@ -62,9 +62,9 @@ it("ignores inherited entries on the snapshot's object prototype", () => {
 	}
 });
 
-it("tracks the maximum sequence for arbitrary generated stream names", () => {
+it("tracks the maximum sequence for generated nonempty stream names", () => {
 	const stream = fc.oneof(
-		fc.string({ maxLength: 15 }),
+		fc.string({ minLength: 1, maxLength: 15 }),
 		fc.constantFrom("__proto__", "constructor", "toString", "valueOf"),
 	);
 	fc.assert(

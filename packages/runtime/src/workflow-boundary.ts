@@ -7,10 +7,16 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+export function isPrimitiveString(
+	value: JsonValue | undefined,
+): value is string {
+	return Object(value) !== value && isJsonString(value);
+}
+
 export function isNonEmptyPrimitiveString(
 	value: JsonValue | undefined,
 ): value is string {
-	return Object(value) !== value && isJsonString(value) && value.length > 0;
+	return isPrimitiveString(value) && value.length > 0;
 }
 
 export function requireWorkflowRunId(runId: string): string {
