@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.neon.claimable-sql-sandbox/v1",
 	"topologyDigest": "sha256:fd40788bcc973418fcfb33c4383396b5089a96b9305973e2d9f0ee8ad909e04c",
-	"resolutionDigest": "sha256:3a97c30ea9068aabf579110a6672904479ea940a121c96e74750d6a63a22c317",
+	"resolutionDigest": "sha256:16f13739afbcc0c5ae947bca296424022626562020e2cde72516b29e9afcbb08",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.neon.claimable-sql-sandbox/v1",

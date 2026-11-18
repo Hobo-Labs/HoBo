@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.cloudflare.claimable-webhook-inbox/v1",
 	"topologyDigest": "sha256:32728b322eb88a316df9169ac068ec9fbcd278747769f8635b7f804371b72641",
-	"resolutionDigest": "sha256:70dd9942ca24fd0b34ec319e797a50516abf200efbea42452c9f04f213678f2b",
+	"resolutionDigest": "sha256:36795b70c378bdb2e48c4b43f68c484b02ffb8aecf07fa569df0c16b89b1770d",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.cloudflare.claimable-webhook-inbox/v1",

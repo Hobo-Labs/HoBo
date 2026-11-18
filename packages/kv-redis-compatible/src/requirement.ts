@@ -14,25 +14,14 @@ import {
 	type StructuredFeatureRequirementInput,
 	type StructuredGuaranteeRequirementInput,
 } from "@hobo/capability-profiles";
+import { capability } from "@hobo/core";
 
 import { KvRedisCompatibleError } from "./errors.js";
 
-// public-contract: capability profile id the registry resolves.
-export const KV_KEY_VALUE_PROFILE = "kv.key-value/v1" as const;
-// public-contract: capability profile id the registry resolves.
-export const KV_REDIS_COMPATIBLE_PROFILE = "kv.redis-compatible/v1" as const;
-// public-contract: capability profile id the registry resolves.
-export const KV_VALKEY_PROFILE = "kv.valkey/v1" as const;
-/**
- * Short-lived, loss-tolerant state behind `EphemeralStatePort` (TTL,
- * compare-and-set, increment, locks, a capped ring), refining
- * `kv.key-value/v1`. Satisfied by any binding that passes
- * `EPHEMERAL_STATE_CONFORMANCE_CASES`: every Redis-protocol store through the
- * shared Lua binding, libSQL, and Vercel Blob. The hosted CI relay requires
- * only this profile of its cache (ADR-0179).
- */
-// public-contract: capability profile id the registry resolves.
-export const KV_EPHEMERAL_STATE_PROFILE = "kv.ephemeral-state/v1" as const;
+export const KV_KEY_VALUE_PROFILE = capability.kv.keyValue;
+export const KV_REDIS_COMPATIBLE_PROFILE = capability.kv.redisCompatible;
+export const KV_VALKEY_PROFILE = capability.kv.valkey;
+export const KV_EPHEMERAL_STATE_PROFILE = capability.kv.ephemeralState;
 
 /** Runtime models a Bindle may ask its store to be reachable from. */
 export type KvRuntimeRequest = {
@@ -62,17 +51,6 @@ export type RedisStoreInput = {
 
 export type ValkeyStoreInput = RedisStoreInput;
 
-/**
- * The feature keys this builder is allowed to emit.
- *
- * `ttl`, `atomicIncrement`, `sortedSets`, and `restTransport` are declared by
- * the `kv.*` profile descriptors in `@hobo/capability-profiles`.
- * `atomicCompareAndSet` is not yet in that catalog; it is emitted here because
- * `SET ... NX` is the primitive every distributed lock is built on, and the
- * conformance suite substantiates it. Selection matches structured capability
- * keys directly, so an undeclared key still gates correctly — an implementation
- * that does not advertise it is simply absent, and absent fails a required gate.
- */
 const REDIS_FEATURE_KEYS = [
 	"ttl",
 	"atomicIncrement",
