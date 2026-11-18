@@ -215,7 +215,18 @@ The sparse cone remains limited to the workspace members declared by HoBo's sibl
 
 ## Syncing `main` into `feature/hobo-code`
 
-The former sync procedure preserved `packages/code` on `feature/hobo-code`; that preservation is retired. `packages/code` and `packages/pixel-village` were removed from main, and the feature branch has its own removal. References to their commands and integrations in historical architecture records describe earlier implementations.
+HoBo Code (`packages/code`, `@hobo/code`) was kept on `feature/hobo-code` after
+its removal from `main` in #1772. Its first sync recorded that removal with an
+`-s ours` merge so it would not delete the package on the feature branch.
+Later syncs needed merge commits to preserve that ancestry; squashing lost the
+record and caused a later merge to delete the package.
+
+HoBo Code and its release workflow have since been retired from the feature
+branch as well in [#2366](https://github.com/Hobo-Labs/HoBo/pull/2366). The
+preservation-only sync procedure is no longer needed. `packages/pixel-village`
+was also removed from `main` and is absent from the feature branch. References
+to their commands and integrations in historical architecture records describe
+earlier implementations.
 
 ## Related references
 
