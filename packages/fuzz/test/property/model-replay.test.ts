@@ -218,7 +218,9 @@ describe("oracle state view ownership", () => {
 					model.createBindle(TENANT, "b1", "sha256:a");
 					model.addCapability(TENANT, "c1", verbs);
 					const returned = model.apply(TENANT, "b1", "k1", { fail });
+					const retried = model.apply(TENANT, "b1", "k1", { fail });
 					const checkpoint = model.snapshot();
+					const savedCheckpoint = model.snapshots.get(checkpoint);
 					const before = model.serialize();
 					const history = model.events;
 					const bindles = model.bindles;
@@ -238,12 +240,15 @@ describe("oracle state view ownership", () => {
 					resource.applyCount += 10;
 					found.status = fail ? "ready" : "failed";
 					returned.applyCount += 100;
+					retried.applyCount += 1000;
 					snapshots.set(checkpoint, "corrupt");
 					bindles.clear();
 					capabilities.clear();
 					resources.clear();
 					expect(model.serialize()).toBe(before);
 					expect(model.events).toEqual(history);
+					expect(model.snapshots.get(checkpoint)).toBe(savedCheckpoint);
+					expect("restoreTenant" in model).toBe(false);
 					expect(model.rollback(TENANT, checkpoint).ok).toBe(true);
 					expect(model.replay()).toBe(model.fingerprint());
 				},
