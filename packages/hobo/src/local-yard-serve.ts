@@ -5,10 +5,7 @@ import {
 	createInMemoryMeteringSink,
 	createMeteringBus,
 } from "@hobo/connectivity";
-import type {
-	HttpRequest,
-	HttpResponse,
-} from "@hobo/core";
+import type { HttpRequest, HttpResponse } from "@hobo/core";
 import { first, must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
@@ -33,6 +30,7 @@ import {
 } from "./bare-metal-yard.js";
 import { createHttpComponentDescriptor } from "./component-http.js";
 import { isJsonObject, isJsonString } from "./json.js";
+import { createLocalServeScope } from "./local-serve-scope.js";
 
 export type LocalYardServeResult = BareMetalServeResult & {
 	readonly componentHost: "local";
@@ -155,231 +153,225 @@ export async function serveBindleOnLocalYard(options: {
 						: undefined),
 				})
 			: null;
-	const yardHandle = options.yard ?? must(ownedYard);
-	const basePort =
-		options.port ?? yardHandle.config.defaultPort ?? DEFAULT_DEV_PORT;
-
-	const engineInfo = resolveEngine();
-	emit(
-		`hobo dev: local Yard '${yardHandle.config.name}' placing Camp (component host=local, engine=${engineInfo.source} ${engineInfo.version})`,
-	);
-
-	const topology = composeBareMetalTopology(definition, {
-		yardName: yardHandle.config.name,
-		campEnv: "dev",
-		dataDir: yardHandle.config.dataDir,
-	});
-	const campObject = topology.camps[0];
-	if (campObject === undefined) {
-		ownedYard?.close();
-		throw new Error("Yard topology produced no Camps");
-	}
-	emit(
-		`hobo dev: Camp ${campObject.id} hosts bindle ${definition.name} (provider ${topology.providerId})`,
-	);
-
-	const entrypoints = listServableEntrypoints(definition);
-	if (entrypoints.length === 0) {
-		ownedYard?.close();
-		throw new Error(
-			`bindle ${definition.name} has no api/web entrypoints to serve`,
-		);
-	}
-
-	const componentHost = createRuntimeLocalComponentHost({
-		engine: engineInfo.engine,
-		appendEvent: () => {},
-	});
-	for (const entry of entrypoints) {
-		componentHost.loadComponent(
-			createHttpComponentDescriptor(entry.name, entry.handler, "latin1"),
-		);
-		emit(
-			`hobo dev: component host loaded ${entry.kind}:${entry.name}` +
-				(entry.external ? " (external)" : " (private mesh)"),
-		);
-	}
-
-	const externalEntries = entrypoints.filter((e) => e.external);
-	const privateEntries = entrypoints.filter((e) => !e.external);
-	if (externalEntries.length === 0) {
-		ownedYard?.close();
-		throw new Error(
-			`bindle ${definition.name} has no external endpoint to expose`,
-		);
-	}
-
-	const privateHandlers = new Map<string, FetchHandler>();
-	for (const entry of privateEntries) {
-		const componentId = entry.name;
-		privateHandlers.set(componentId, async (request) => {
-			const httpReq = await webRequestToHttp(request);
-			const httpRes = await componentHost.handleHttp(componentId, httpReq);
-			return httpResponseToWeb(httpRes);
-		});
-	}
-	const uninstallMesh = installInternalMesh(privateHandlers, {
-		bindleName: definition.name,
-	});
-
-	const endpoints: ComponentEndpoint[] = [];
-	const serviceDiscovery: Record<string, string> = {};
-
-	for (const entry of privateEntries) {
-		const url = internalMeshBase(definition.name, entry.name);
-		const key = serviceDiscoveryKey(entry.name);
-		endpoints.push({
-			resourceName: entry.name,
-			kind: entry.kind,
-			url,
-			port: null,
-			external: false,
-			serviceDiscoveryKey: key,
-		});
-		serviceDiscovery[key] = url;
-		process.env[key] = url;
-		emit(`hobo dev: private ${entry.kind}:${entry.name} → ${url} (no TCP)`);
-	}
-
-	const servers: Server[] = [];
-	let publicIndex = 0;
-	for (const entry of externalEntries) {
-		const requestedPort = basePort === 0 ? 0 : basePort + publicIndex;
-		publicIndex += 1;
-		const componentId = entry.name;
-		const publicHandler: FetchHandler = async (request) => {
-			const httpReq = await webRequestToHttp(request);
-			const httpRes = await componentHost.handleHttp(componentId, httpReq);
-			return httpResponseToWeb(httpRes);
-		};
-		const server = await listen(publicHandler, requestedPort);
-		const address = server.address();
-		if (address === null || isJsonString(address)) {
-			await new Promise<void>((resolve) => server.close(() => resolve()));
-			throw new Error(`external ${entry.kind}:${entry.name} has no TCP port`);
-		}
-		const port = address.port;
-		const url = `http://127.0.0.1:${port}`;
-		const key = serviceDiscoveryKey(entry.name);
-		endpoints.push({
-			resourceName: entry.name,
-			kind: entry.kind,
-			url,
-			port,
-			external: true,
-			serviceDiscoveryKey: key,
-		});
-		serviceDiscovery[key] = url;
-		process.env[key] = url;
-		servers.push(server);
-		emit(`hobo dev: Yard exposed ${entry.kind}:${entry.name} at ${url}`);
-	}
-
-	for (const [key, value] of Object.entries(bindleEnv)) {
-		process.env[key] = value;
-	}
-
-	const meteringSink = createInMemoryMeteringSink("local-yard");
-	const metering = createMeteringBus([meteringSink]);
-	const named = await attachNamedEndpoints({
-		app: definition.name,
-		env: "local",
-		sessionId: `local-yard:${campObject.id}`,
-		metering,
-		emitProgress: emit,
-		endpoints: endpoints.map((endpoint) => ({
-			resourceName: endpoint.resourceName,
-			kind: endpoint.kind,
-			backendUrl: endpoint.url,
-			external: endpoint.external,
-			serviceDiscoveryKey: endpoint.serviceDiscoveryKey,
-		})),
-	});
-	for (const [key, value] of Object.entries(named.serviceDiscovery)) {
-		serviceDiscovery[key] = value;
-		process.env[key] = value;
-	}
-
-	emit(
-		`hobo dev: Camp injected discovery [${Object.keys(serviceDiscovery).join(", ")}] ` +
-			`bindle-env [${Object.keys(bindleEnv).join(", ")}]` +
-			(named.primaryNamedUrl ? ` named=${named.primaryNamedUrl}` : ""),
-	);
-
-	const exposedEndpoints = endpoints.filter((e) => e.external);
-	const primary = first(exposedEndpoints);
-	let probe = { status: 0, body: "" };
+	const scope = createLocalServeScope();
+	if (ownedYard !== null) scope.defer(() => ownedYard.close());
 	try {
-		const response = await fetch(`${primary.url}/`);
-		probe = { status: response.status, body: await response.text() };
-	} catch (error) {
-		probe = { status: 0, body: String(error) };
-	}
-	emit(`hobo dev: probe ${primary.url}/ -> ${probe.status}`);
+		const yardHandle = options.yard ?? must(ownedYard);
+		const basePort =
+			options.port ?? yardHandle.config.defaultPort ?? DEFAULT_DEV_PORT;
 
-	let stopped: (() => void) | undefined;
-	const waitUntilStopped = () =>
-		new Promise<void>((resolve) => {
-			stopped = resolve;
-			const onSignal = () => {
-				void close().then(resolve);
-			};
-			process.once("SIGINT", onSignal);
-			process.once("SIGTERM", onSignal);
+		const engineInfo = resolveEngine();
+		emit(
+			`hobo dev: local Yard '${yardHandle.config.name}' placing Camp (component host=local, engine=${engineInfo.source} ${engineInfo.version})`,
+		);
+
+		const topology = composeBareMetalTopology(definition, {
+			yardName: yardHandle.config.name,
+			campEnv: "dev",
+			dataDir: yardHandle.config.dataDir,
 		});
+		const campObject = topology.camps[0];
+		if (campObject === undefined) {
+			throw new Error("Yard topology produced no Camps");
+		}
+		emit(
+			`hobo dev: Camp ${campObject.id} hosts bindle ${definition.name} (provider ${topology.providerId})`,
+		);
 
-	const close = async () => {
-		await Promise.all(
-			servers.map(
-				(server) =>
+		const entrypoints = listServableEntrypoints(definition);
+		if (entrypoints.length === 0) {
+			throw new Error(
+				`bindle ${definition.name} has no api/web entrypoints to serve`,
+			);
+		}
+
+		const componentHost = createRuntimeLocalComponentHost({
+			engine: engineInfo.engine,
+			appendEvent: () => {},
+		});
+		for (const entry of entrypoints) {
+			componentHost.loadComponent(
+				createHttpComponentDescriptor(entry.name, entry.handler, "latin1"),
+			);
+			scope.defer(async () => {
+				try {
+					await componentHost.teardownComponent(entry.name);
+				} catch {}
+			});
+			emit(
+				`hobo dev: component host loaded ${entry.kind}:${entry.name}` +
+					(entry.external ? " (external)" : " (private mesh)"),
+			);
+		}
+
+		const externalEntries = entrypoints.filter((e) => e.external);
+		const privateEntries = entrypoints.filter((e) => !e.external);
+		if (externalEntries.length === 0) {
+			throw new Error(
+				`bindle ${definition.name} has no external endpoint to expose`,
+			);
+		}
+
+		const privateHandlers = new Map<string, FetchHandler>();
+		for (const entry of privateEntries) {
+			const componentId = entry.name;
+			privateHandlers.set(componentId, async (request) => {
+				const httpReq = await webRequestToHttp(request);
+				const httpRes = await componentHost.handleHttp(componentId, httpReq);
+				return httpResponseToWeb(httpRes);
+			});
+		}
+		const uninstallMesh = installInternalMesh(privateHandlers, {
+			bindleName: definition.name,
+		});
+		scope.defer(uninstallMesh);
+
+		const endpoints: ComponentEndpoint[] = [];
+		const serviceDiscovery: Record<string, string> = {};
+
+		for (const entry of privateEntries) {
+			const url = internalMeshBase(definition.name, entry.name);
+			const key = serviceDiscoveryKey(entry.name);
+			endpoints.push({
+				resourceName: entry.name,
+				kind: entry.kind,
+				url,
+				port: null,
+				external: false,
+				serviceDiscoveryKey: key,
+			});
+			serviceDiscovery[key] = url;
+			scope.setEnv(key, url);
+			emit(`hobo dev: private ${entry.kind}:${entry.name} → ${url} (no TCP)`);
+		}
+
+		let publicIndex = 0;
+		for (const entry of externalEntries) {
+			const requestedPort = basePort === 0 ? 0 : basePort + publicIndex;
+			publicIndex += 1;
+			const componentId = entry.name;
+			const publicHandler: FetchHandler = async (request) => {
+				const httpReq = await webRequestToHttp(request);
+				const httpRes = await componentHost.handleHttp(componentId, httpReq);
+				return httpResponseToWeb(httpRes);
+			};
+			const server = await listen(publicHandler, requestedPort);
+			scope.defer(
+				() =>
 					new Promise<void>((resolve, reject) => {
 						server.close((error) => (error ? reject(error) : resolve()));
 					}),
-			),
-		);
-		for (const entry of entrypoints) {
-			try {
-				await componentHost.teardownComponent(entry.name);
-			} catch {
+			);
+			const address = server.address();
+			if (address === null || isJsonString(address)) {
+				throw new Error(`external ${entry.kind}:${entry.name} has no TCP port`);
 			}
+			const port = address.port;
+			const url = `http://127.0.0.1:${port}`;
+			const key = serviceDiscoveryKey(entry.name);
+			endpoints.push({
+				resourceName: entry.name,
+				kind: entry.kind,
+				url,
+				port,
+				external: true,
+				serviceDiscoveryKey: key,
+			});
+			serviceDiscovery[key] = url;
+			scope.setEnv(key, url);
+			emit(`hobo dev: Yard exposed ${entry.kind}:${entry.name} at ${url}`);
 		}
-		uninstallMesh();
-		await named.close();
-		for (const key of Object.keys(serviceDiscovery)) {
-			if (process.env[key] === serviceDiscovery[key]) {
-				delete process.env[key];
-			}
-		}
-		for (const [key, value] of Object.entries(bindleEnv)) {
-			if (process.env[key] === value) {
-				delete process.env[key];
-			}
-		}
-		ownedYard?.close();
-		stopped?.();
-	};
 
-	return {
-		projectDir: options.projectDir,
-		bindleName: definition.name,
-		yard: topology,
-		campId: campObject.id,
-		endpoints,
-		exposedEndpoints,
-		serviceDiscovery,
-		bindleEnv,
-		primaryUrl: primary.url,
-		namedEndpoints: named.namedEndpoints,
-		primaryNamedUrl: named.primaryNamedUrl,
-		probe,
-		close,
-		waitUntilStopped,
-		componentHost: "local",
-		engine: {
-			source: engineInfo.source,
-			version: engineInfo.version,
-		},
-	};
+		for (const [key, value] of Object.entries(bindleEnv)) {
+			scope.setEnv(key, value);
+		}
+
+		const meteringSink = createInMemoryMeteringSink("local-yard");
+		const metering = createMeteringBus([meteringSink]);
+		const named = await attachNamedEndpoints({
+			app: definition.name,
+			processEnv: scope.processEnv(),
+			env: "local",
+			sessionId: `local-yard:${campObject.id}`,
+			metering,
+			emitProgress: emit,
+			endpoints: endpoints.map((endpoint) => ({
+				resourceName: endpoint.resourceName,
+				kind: endpoint.kind,
+				backendUrl: endpoint.url,
+				external: endpoint.external,
+				serviceDiscoveryKey: endpoint.serviceDiscoveryKey,
+			})),
+		});
+		scope.defer(() => named.close());
+		for (const [key, value] of Object.entries(named.serviceDiscovery)) {
+			serviceDiscovery[key] = value;
+			scope.setEnv(key, value);
+		}
+
+		emit(
+			`hobo dev: Camp injected discovery [${Object.keys(serviceDiscovery).join(", ")}] ` +
+				`bindle-env [${Object.keys(bindleEnv).join(", ")}]` +
+				(named.primaryNamedUrl ? ` named=${named.primaryNamedUrl}` : ""),
+		);
+
+		const exposedEndpoints = endpoints.filter((e) => e.external);
+		const primary = first(exposedEndpoints);
+		let probe = { status: 0, body: "" };
+		try {
+			const response = await fetch(`${primary.url}/`);
+			probe = { status: response.status, body: await response.text() };
+		} catch (error) {
+			probe = { status: 0, body: String(error) };
+		}
+		emit(`hobo dev: probe ${primary.url}/ -> ${probe.status}`);
+
+		let stopped: (() => void) | undefined;
+		const waitUntilStopped = () =>
+			new Promise<void>((resolve) => {
+				stopped = resolve;
+				const onSignal = () => {
+					void close().then(resolve);
+				};
+				process.once("SIGINT", onSignal);
+				process.once("SIGTERM", onSignal);
+			});
+
+		const close = async () => {
+			try {
+				await scope.close();
+			} finally {
+				stopped?.();
+			}
+		};
+
+		return {
+			projectDir: options.projectDir,
+			bindleName: definition.name,
+			yard: topology,
+			campId: campObject.id,
+			endpoints,
+			exposedEndpoints,
+			serviceDiscovery,
+			bindleEnv,
+			primaryUrl: primary.url,
+			namedEndpoints: named.namedEndpoints,
+			primaryNamedUrl: named.primaryNamedUrl,
+			probe,
+			close,
+			waitUntilStopped,
+			componentHost: "local",
+			engine: {
+				source: engineInfo.source,
+				version: engineInfo.version,
+			},
+		};
+	} catch (error) {
+		try {
+			await scope.close();
+		} catch {}
+		throw error;
+	}
 }
 
 /** @deprecated */

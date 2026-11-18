@@ -76,6 +76,27 @@ describe("@hobo/runtime-cloud-native", () => {
 		expect(body).toEqual({ message: "howdy, world", greetingPrefix: "howdy" });
 	});
 
+	it("keeps later environment changes when a mock host closes", async () => {
+		const key = "HOBO_TEST_CLOUD_NATIVE_ENV";
+		const original = process.env[key];
+		try {
+			process.env[key] = "before";
+			const provider = createMockCloudNativeProvider();
+			const serve = await provider.servePrivate({
+				hoboHome: "/tmp",
+				projectDir: "/tmp",
+				bindleEnv: { [key]: "injected" },
+				privateComponents: [],
+			});
+			process.env[key] = "changed";
+			await serve.close();
+			expect(process.env[key]).toBe("changed");
+		} finally {
+			if (original === undefined) delete process.env[key];
+			else process.env[key] = original;
+		}
+	});
+
 	it("stub providers refuse servePrivate", async () => {
 		const host = createCloudNativeRuntimeHost({
 			providers: defaultCloudNativeProviders().filter((p) => p.id === "aws"),

@@ -71,6 +71,7 @@ export function createMockCloudNativeProvider(): CloudNativeHostProvider {
 				},
 				close: async () => {
 					for (const [key, value] of Object.entries(previous)) {
+						if (process.env[key] !== ctx.bindleEnv?.[key]) continue;
 						if (value === undefined) delete process.env[key];
 						else process.env[key] = value;
 					}
