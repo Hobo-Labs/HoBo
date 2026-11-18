@@ -141,6 +141,11 @@ export interface CanMigrateGateVerdict {
 	evidence?: JsonObject;
 }
 
+export interface EventUpcasterGateVerdict {
+	ok: boolean;
+	errors: readonly string[];
+}
+
 export interface GatekeeperInput {
 	request: PolicyDecisionRequest;
 	deployedState: DeployedContractState;
@@ -161,6 +166,7 @@ export interface GatekeeperInput {
 	 * path remains available; continuous migration is still Matching-driven).
 	 */
 	canMigrate?: CanMigrateGateVerdict;
+	eventUpcasters?: EventUpcasterGateVerdict;
 	/**
 	 * Optional residency dimension (ADR-0146). When omitted, Gatekeeper does
 	 * not block on residency (the caller had no constraint to evaluate).
@@ -331,6 +337,20 @@ export function evaluateGatekeeper(input: GatekeeperInput): GatekeeperDecision {
 		}
 	}
 
+	let eventUpcastersOk = true;
+	if (input.eventUpcasters) {
+		eventUpcastersOk = input.eventUpcasters.ok;
+		if (!input.eventUpcasters.ok) {
+			for (const error of input.eventUpcasters.errors) {
+				reasons.push({
+					gate: "contracts",
+					code: "event-upcaster-incompatible",
+					message: error,
+				});
+			}
+		}
+	}
+
 	// (g) residency (ADR-0146) — optional precomputed dimension. A residency
 	// conflict is a hard geographic fact: it denies like a broken contract,
 	// with the machine-readable evaluator output carried in the reason.
@@ -362,6 +382,7 @@ export function evaluateGatekeeper(input: GatekeeperInput): GatekeeperDecision {
 			secretlessConfigOk &&
 			bindingDeliveryOk &&
 			canMigrateOk &&
+			eventUpcastersOk &&
 			residencyOk,
 		policyEffect,
 		pendingObligations: pendingObligations.length > 0,

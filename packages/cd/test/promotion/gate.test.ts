@@ -6,6 +6,7 @@ import {
 	type BoundaryContract,
 	createBoundaryContract,
 	definePolicyRule,
+	type EventUpcasterGateVerdict,
 	type PolicyPack,
 } from "@hobo/contracts";
 import { describe, expect, it } from "vitest";
@@ -177,6 +178,7 @@ function setup(
 			candidate: readonly BoundaryContract[];
 		};
 		subject?: PlacementSubject;
+		eventUpcasters?: EventUpcasterGateVerdict;
 	} = {},
 ) {
 	const c = clock(T0);
@@ -229,6 +231,9 @@ function setup(
 		subject: async () =>
 			options.subject ?? { classifications: [], residency: [] },
 		residencyCatalog: { "us-east-1": ["us"], "eu-central-1": ["eu"] },
+		...(options.eventUpcasters === undefined
+			? undefined
+			: { eventUpcasters: options.eventUpcasters }),
 		telemetry,
 	});
 	const freights = new FakeFreight();
@@ -406,6 +411,20 @@ describe("deploy gate (gatekeeper.ts)", () => {
 				)
 			).effect,
 		).toBe("allow");
+	});
+
+	it("refuses deploys when persisted event bodies cannot be upcast", async () => {
+		const s = setup({
+			eventUpcasters: {
+				ok: false,
+				errors: ["orders.Created@v1 replay failed: missing 1->2"],
+			},
+		});
+		const verdict = await s.gate.evaluate(input(s.freights.add("f1")), s.ctx);
+		expect(verdict.effect).toBe("deny");
+		expect(verdict.reasons.map((entry) => entry.code)).toContain(
+			"event-upcaster-incompatible",
+		);
 	});
 
 	it("can-deploy (promoted proof): unknown running versions fail closed when the Camp runs a Set", async () => {

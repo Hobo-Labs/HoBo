@@ -89,6 +89,7 @@ export {
 	type CostQuotaInput,
 	type CostQuotaRecord,
 	evaluateGatekeeper,
+	type EventUpcasterGateVerdict,
 	GATEKEEPER_DECIDED_EVENT,
 	GATEKEEPER_SCHEMA_VERSION,
 	type GatekeeperDecision,
