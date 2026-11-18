@@ -9,13 +9,15 @@ description: Verify detached training trace snapshots and drain behavior.
 
 **Why:** Caller mutations after recording must not rewrite trace evidence or change a previously drained result.
 
-**Review baseline:** `a43e6984d690ce2ee7b4491bce5e28f5da8656de`.
+**Review baseline:** `c66788fc93b3a550f991f7754294b7b4451d9c72`.
 
 ## Covered code and checks
 
 - `packages/training/src/trace-sink.ts` snapshots and freezes recorded spans and attributes and swaps the queue on drain. `src/optimizer.ts` records the optimizer's step spans.
 - `packages/training/test/trace-sink-snapshots.test.ts` checks source and attribute mutations, frozen results, repeated drains and 100 deterministic record/drain sequences with seed `0x55a762d3`. Existing optimizer tests check trace capture and replay.
 - The related [seeded generator skill](../verify-training-prng/SKILL.md) covers deterministic generator inputs and state.
+
+The related [optimizer config skill](../verify-training-config/SKILL.md) checks count bounds and abstract loop progress.
 
 From the repository root with dependencies installed, run:
 

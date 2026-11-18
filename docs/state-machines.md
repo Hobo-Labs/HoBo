@@ -58,6 +58,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | Status-site batch preflight | [verify-status-site-preflight](../.agents/skills/verify-status-site-preflight/SKILL.md) | Invalid or duplicate page slugs are rejected before filesystem changes. |
 | Training seeded generator | [verify-training-prng](../.agents/skills/verify-training-prng/SKILL.md) | Seeds and bounds are validated, and a rejected bound cannot advance the deterministic stream. |
 | Training trace sink | [verify-training-trace-sink](../.agents/skills/verify-training-trace-sink/SKILL.md) | Recorded spans are detached snapshots and each drain clears the queue. |
+| Training optimizer counts | [verify-training-config](../.agents/skills/verify-training-config/SKILL.md) | Iteration and demonstration counts match the positive `uint32` wire range. |
 | SQLite queue and outbox | [verify-outbox-lease](../.agents/skills/verify-outbox-lease/SKILL.md) | A stale delivery attempt cannot acknowledge a later attempt, even when lease IDs and fences repeat. |
 | Provider connections | [verify-connection-lifecycle](../.agents/skills/verify-connection-lifecycle/SKILL.md) | Revocation is terminal across commands and replay. |
 | Durable workflows | [verify-workflow-replay](../.agents/skills/verify-workflow-replay/SKILL.md) | Starts and resumes capture reproducible JSON input; start, resume, journal access and replay validate string IDs, replay checks recorded context, and shared-writer executions use a local fence. |

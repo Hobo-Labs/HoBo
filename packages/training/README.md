@@ -44,6 +44,8 @@ providers additionally never receive PII-classified trajectory content).
   Direct `createSeededPrng` calls require an unsigned 32-bit integer seed;
   `nextInt` requires a positive safe-integer bound and leaves the stream
   unchanged when it rejects a bound.
+  Iteration and demonstration counts follow the protobuf's positive `uint32`
+  range; callers still need practical resource limits for their workloads.
 - **Trace capture** — every step records one span (OpenInference span-kind
   label + attributes map, `sha256:` input digest, score, keep/reject
   decision) into the in-memory sink; spans are clockless so seeded runs
