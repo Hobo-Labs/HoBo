@@ -250,6 +250,15 @@ for (const harness of [".agents", ".claude", ".cursor", ".github"]) {
 					/write DESIGN\.md|persist a snapshot|return a confirmed design brief|create missing PRODUCT\.md|decision card packet/iu,
 				);
 			}
+			const assetProducer = readFileSync(
+				join(skill, "reference", "degraded", "asset-producer.md"),
+				"utf8",
+			);
+			assert.match(assetProducer, /Implement the asset.*working inline/u);
+			assert.doesNotMatch(
+				assetProducer,
+				/approved mock|do not modify implementation code|review folder|adopt only this file/iu,
+			);
 			for (const reference of ["animate", "extract", "optimize", "live"]) {
 				const text = readFileSync(
 					join(skill, "reference", `${reference}.md`),
@@ -285,6 +294,14 @@ test("visual agent definitions follow the common source policy", () => {
 			/write DESIGN\.md|records DESIGN\.md|decision card packet/iu,
 			file,
 		);
+		if (file.includes("asset_producer") || file.includes("asset-producer")) {
+			assert.match(instructions, /Implement the asset.*working inline/u, file);
+			assert.doesNotMatch(
+				instructions,
+				/approved mock|do not modify implementation code|review folder|adopt only this file/iu,
+				file,
+			);
+		}
 	}
 });
 
