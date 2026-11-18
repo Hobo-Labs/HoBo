@@ -199,7 +199,10 @@ export function validateScenarioState(scenario: QuoteScenario): void {
 		);
 	}
 	for (const allowance of state.allowances) {
-		if (allowance.grant?.tenantId !== state.tenantId) {
+		if (
+			allowance.grant !== undefined &&
+			allowance.grant.tenantId !== state.tenantId
+		) {
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
 				"allowance tenant differs from financial state",
@@ -222,7 +225,7 @@ export function validateScenarioState(scenario: QuoteScenario): void {
 		}
 	}
 	for (const credit of state.credits) {
-		if (credit.grant?.tenantId !== state.tenantId) {
+		if (credit.grant !== undefined && credit.grant.tenantId !== state.tenantId) {
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
 				"credit tenant differs from financial state",
@@ -245,7 +248,10 @@ export function validateScenarioState(scenario: QuoteScenario): void {
 		}
 	}
 	for (const commitment of state.commitments) {
-		if (commitment.commitment?.tenantId !== state.tenantId) {
+		if (
+			commitment.commitment !== undefined &&
+			commitment.commitment.tenantId !== state.tenantId
+		) {
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
 				"commitment tenant differs from financial state",

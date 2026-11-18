@@ -379,6 +379,18 @@ export function quoteTargetPricing(
 				"PRICING_MODEL_SCOPE_MISMATCH",
 				"baseline workload does not match its tenant and product agreement",
 			);
+		const resourceMatch = inventory.resources.find(
+			(resource) =>
+				resource.productId === workload.productRef &&
+				resource.providerId === product.providerId &&
+				resource.providerAccountRef === agreement.providerAccountRef,
+		);
+		if (resourceMatch === undefined) {
+			return refuse(
+				"PRICING_MODEL_SCOPE_MISMATCH",
+				"baseline workload must align with target inventory product, provider, and account",
+			);
+		}
 		const dimensions = product.meters.map((meter) => meter.dimension);
 		const measured = new Set(
 			workload.usage.map((measurement) => measurement.dimension),
