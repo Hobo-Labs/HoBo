@@ -104,7 +104,6 @@ export const REQUIRED_SECTIONS = [
 const NON_CAPTURE = new Set([
 	"index.md",
 	"matrix.md",
-	"gap-analysis.md",
 	"metadata-contract.md",
 ]);
 

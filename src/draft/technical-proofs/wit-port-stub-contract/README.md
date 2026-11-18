@@ -7,7 +7,6 @@ schema-valid responses.
 ## Requirements Source
 
 - `urn:hobo:requirement:generated-stack#plan-23` — stub semantics, partial overrides, trace-as-spec
-- `docs/archive/requirements/requirements.md` — **FR-040**, **TR-082**
 - `urn:hobo:decision:adr-0076` — `mock` boundary mode, `stub.Recorded`
 - `urn:hobo:requirement:event-families` — `stub.*` family
 

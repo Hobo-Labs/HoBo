@@ -29,4 +29,4 @@ They win on data DX and can absorb the whole backend. HoBo consumes most of them
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)

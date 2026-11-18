@@ -38,4 +38,4 @@ HoBo's budget-aware provider matching decides cost *before* spend. FinOps tools 
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)

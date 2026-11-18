@@ -43,7 +43,7 @@
           "designRefs": [
             "urn:hobo:requirement:developer-experience#plan-07",
             "urn:hobo:requirement:deployment-dashboard-topology-explorer",
-            "docs/archive/requirements/requirements.md#nfr-016"
+            "NFR-016"
           ],
           "epicFixtureRefs": [
             "src/draft/epic-proofs/cli-mcp-developer-experience",

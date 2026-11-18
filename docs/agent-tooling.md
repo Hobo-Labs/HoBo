@@ -51,7 +51,7 @@ A **plugin** (skills library + methodology), v6.0.3, from the `obra/superpowers-
 
 ### mattpocock/skills — `mattpocock/skills` (MIT)
 A checked-in collection of engineering skills lives in `.claude/skills/` and `.agents/skills/`. The skills cover domain modeling, code structure, diagnosis, testing, and implementation while following the common repository policy. They do not require API keys or generate planning or design documents.
-- Used in this repo to **close competitor gaps** — see [`docs/competitors/gap-analysis.md`](./competitors/gap-analysis.md) and the resulting design work.
+- Use the competitor references to compare implemented behavior with other products.
 
 ### caveman — `JuliusBrussee/caveman` (MIT)
 A **skill + always-on rule** that compresses the agent's **output** (~65–87% fewer tokens) while preserving technical accuracy. Commands: `/caveman [lite|full|ultra|wenyan]`, `/caveman-commit`, `/caveman-review`, `/caveman-compress <file>`, `/caveman-stats`. No API keys. Installed to `.agents/skills/caveman*` (+ `cavecrew`), `.cursor/rules/caveman.mdc` (`alwaysApply: true`), a `## Caveman mode (active)` block in `AGENTS.md`, and (for Claude Code) a global `claude` plugin. Optional env `CAVEMAN_STATUSLINE_SAVINGS=0`.
