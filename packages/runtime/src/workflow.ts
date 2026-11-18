@@ -146,6 +146,46 @@ const DEFAULT_TOKEN_BROKER: TokenBroker = (request: WitTokenRequest) =>
 		ref: `stub://${request.provider}/${request.scope}`,
 	}) satisfies WitTokenHandle;
 
+type WorkflowExecutionLease = {
+	pending: number;
+	finished: boolean;
+	releaseIfDrained(): void;
+};
+
+// Local coordination is keyed by the writer object, not by an underlying
+// database identity. Separate wrappers, workers and processes need host fencing.
+const ACTIVE_WORKFLOW_RUNS = new WeakMap<
+	EventStoreWriter,
+	Map<string, WorkflowExecutionLease>
+>();
+
+function claimWorkflowExecution(
+	store: EventStoreWriter,
+	runId: string,
+): WorkflowExecutionLease {
+	let active = ACTIVE_WORKFLOW_RUNS.get(store);
+	if (!active) {
+		active = new Map();
+		ACTIVE_WORKFLOW_RUNS.set(store, active);
+	}
+	if (active.has(runId))
+		throw new Error(`workflow ${runId} is already executing for this store`);
+	const runs = active;
+	const lease: WorkflowExecutionLease = {
+		pending: 0,
+		finished: false,
+		releaseIfDrained() {
+			if (!lease.finished || lease.pending !== 0) return;
+			if (runs.get(runId) !== lease) return;
+			runs.delete(runId);
+			if (runs.size === 0 && ACTIVE_WORKFLOW_RUNS.get(store) === runs)
+				ACTIVE_WORKFLOW_RUNS.delete(store);
+		},
+	};
+	runs.set(runId, lease);
+	return lease;
+}
+
 export function createWorkflowEngine(
 	options: WorkflowEngineOptions = {},
 ): WorkflowEngine {
@@ -196,6 +236,7 @@ export function createWorkflowEngine(
 		def: WorkflowDefinition<A, R>,
 		runId: string,
 		args: A,
+		lease: WorkflowExecutionLease,
 	): Promise<WorkflowRunHandle<R>> {
 		const streamId = `run/${runId}`;
 		const journal = await store.readStream(streamId);
@@ -534,10 +575,13 @@ export function createWorkflowEngine(
 			const scope = stepScope.getStore() ?? rootScope;
 			requireOpen(scope);
 			scope.pending += 1;
+			lease.pending += 1;
 			try {
 				return await fn(scope);
 			} finally {
 				scope.pending -= 1;
+				lease.pending -= 1;
+				lease.releaseIfDrained();
 			}
 		}
 		async function runInScope<T>(
@@ -934,25 +978,37 @@ export function createWorkflowEngine(
 			) {
 				throw new TypeError("workflow runId must be a non-empty string");
 			}
-			const streamId = `run/${runId}`;
-			// Claim the new run before any user step. No shared idempotency key is
-			// used here: two fresh callers must not deduplicate into one run.
-			const started = nextEnvelope(
-				streamId,
-				1,
-				"run.Started",
-				cloneAsJson({
-					seed,
-					args,
-					workflowName: def.name,
-					commandTreeVersion: 3,
-				}),
-			);
-			await recordEffect(store, started, 0);
-			return execute(def, runId, args);
+			const lease = claimWorkflowExecution(store, runId);
+			try {
+				const streamId = `run/${runId}`;
+				// Claim the new run before any user step. No shared idempotency key is
+				// used here: two fresh callers must not deduplicate into one run.
+				const started = nextEnvelope(
+					streamId,
+					1,
+					"run.Started",
+					cloneAsJson({
+						seed,
+						args,
+						workflowName: def.name,
+						commandTreeVersion: 3,
+					}),
+				);
+				await recordEffect(store, started, 0);
+				return await execute(def, runId, args, lease);
+			} finally {
+				lease.finished = true;
+				lease.releaseIfDrained();
+			}
 		},
 		async resume(def, runId, args) {
-			return execute(def, runId, args);
+			const lease = claimWorkflowExecution(store, runId);
+			try {
+				return await execute(def, runId, args, lease);
+			} finally {
+				lease.finished = true;
+				lease.releaseIfDrained();
+			}
 		},
 		async journal(runId) {
 			const events = await store.readStream(`run/${runId}`);
