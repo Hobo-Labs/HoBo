@@ -43,6 +43,14 @@ manufacturing placeholder values.
 
 Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
 
+Workflow input must round-trip through JSON without changing value or shape.
+The engine captures a detached input before the first asynchronous operation and
+passes that capture to the workflow on start and resume, so later caller edits
+cannot change journal-bound work. Values such as `undefined`, `NaN`, `Date`,
+`BigInt`, maps, or objects with omitted undefined fields are refused; convert
+them to explicit JSON values before starting or resuming a run. Older journals
+created from such inputs may need application-specific recovery.
+
 An explicit run ID must be a nonempty primitive string for `start`, `resume`,
 and `journal`. Omitting the ID on `start` generates one; explicitly passing
 `null`, an empty string, a number, or an object is refused. This keeps the local
