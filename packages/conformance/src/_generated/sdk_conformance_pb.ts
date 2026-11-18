@@ -12,210 +12,210 @@ export const file_sdk_conformance: GenFile = /*@__PURE__*/
   fileDesc("ChVzZGtfY29uZm9ybWFuY2UucHJvdG8SF2hvYm8uY29uZm9ybWFuY2Uuc2RrLnYxIoQBCgtTZGtXaXRFcnJvchILCgN0YWcYASABKAkSFAoHbWVzc2FnZRgCIAEoCUgAiAEBEhgKC2RlYWRsaW5lX21zGAMgASgBSAGIAQESEgoFcmV0cnkYBCABKAlIAogBAUIKCghfbWVzc2FnZUIOCgxfZGVhZGxpbmVfbXNCCAoGX3JldHJ5ImUKDFNka1dpdFJlc3VsdBIiCgJvaxgBIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIxCgNlcnIYAiABKAsyJC5ob2JvLmNvbmZvcm1hbmNlLnNkay52MS5TZGtXaXRFcnJvciJRChVTZGtDYW5jZWxsYXRpb25TaWduYWwSDgoGcmVhc29uGAEgASgJEhgKC2RlYWRsaW5lX21zGAIgASgBSACIAQFCDgoMX2RlYWRsaW5lX21zIpEBChFTZGtDb2xsZWN0aW9uRmFjdBIQCghzZXF1ZW5jZRgBIAEoARIMCgRraW5kGAIgASgJEhEKBG5hbWUYAyABKAlIAIgBARIVCghyZXNvdXJjZRgEIAEoCUgBiAEBEhIKBWV2ZW50GAUgASgJSAKIAQFCBwoFX25hbWVCCwoJX3Jlc291cmNlQggKBl9ldmVudCItChBTZGtFeHBlY3RlZFRocm93EgwKBG5hbWUYASABKAkSCwoDdGFnGAIgASgJIqoDChRTZW1hbnRpY3NBbm5leFZlY3RvchIMCgRuYW1lGAEgASgJEhAKCGNhdGVnb3J5GAIgASgJEhQKDHNwZWNfdmVyc2lvbhgDIAEoCRI1CgZyZXN1bHQYBCABKAsyJS5ob2JvLmNvbmZvcm1hbmNlLnNkay52MS5TZGtXaXRSZXN1bHQSQQoOZXhwZWN0ZWRfdGhyb3cYBSABKAsyKS5ob2JvLmNvbmZvcm1hbmNlLnNkay52MS5TZGtFeHBlY3RlZFRocm93Ej4KBnNpZ25hbBgGIAEoCzIuLmhvYm8uY29uZm9ybWFuY2Uuc2RrLnYxLlNka0NhbmNlbGxhdGlvblNpZ25hbBI3CghleHBlY3RlZBgHIAEoCzIlLmhvYm8uY29uZm9ybWFuY2Uuc2RrLnYxLlNka1dpdFJlc3VsdBI5CgVmYWN0cxgIIAMoCzIqLmhvYm8uY29uZm9ybWFuY2Uuc2RrLnYxLlNka0NvbGxlY3Rpb25GYWN0EhsKDmV4cGVjdGVkX2Vycm9yGAkgASgJSACIAQFCEQoPX2V4cGVjdGVkX2Vycm9yIlgKClNka1dpdENhbGwSEQoJaW50ZXJmYWNlGAEgASgJEhAKCGZ1bmN0aW9uGAIgASgJEiUKBGFyZ3MYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IlAKC1Nka1Jlc291cmNlEgwKBGtpbmQYASABKAkSDAoEbmFtZRgCIAEoCRIlCgVhbGxvdxgDIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZSJCCgpTZGtIYW5kbGVyEhAKCHJlc291cmNlGAEgASgJEg0KBWV2ZW50GAIgASgJEhMKC2V4cG9ydF9uYW1lGAMgASgJIp8BCg1TZGtNYW5pZmVzdElyEg4KBnNjaGVtYRgBIAEoCRIOCgZiaW5kbGUYAiABKAkSNwoJcmVzb3VyY2VzGAMgAygLMiQuaG9iby5jb25mb3JtYW5jZS5zZGsudjEuU2RrUmVzb3VyY2USNQoIaGFuZGxlcnMYBCADKAsyIy5ob2JvLmNvbmZvcm1hbmNlLnNkay52MS5TZGtIYW5kbGVyIpEBCg9TZGtMb3dlclByb2dyYW0SDgoGYmluZGxlGAEgASgJEjcKCXJlc291cmNlcxgCIAMoCzIkLmhvYm8uY29uZm9ybWFuY2Uuc2RrLnYxLlNka1Jlc291cmNlEjUKCGhhbmRsZXJzGAMgAygLMiMuaG9iby5jb25mb3JtYW5jZS5zZGsudjEuU2RrSGFuZGxlciLeAQoPTG93ZXJpbmdGaXh0dXJlEgwKBG5hbWUYASABKAkSOQoHcHJvZ3JhbRgCIAEoCzIoLmhvYm8uY29uZm9ybWFuY2Uuc2RrLnYxLlNka0xvd2VyUHJvZ3JhbRI/ChJleHBlY3RlZF93aXRfY2FsbHMYAyADKAsyIy5ob2JvLmNvbmZvcm1hbmNlLnNkay52MS5TZGtXaXRDYWxsEkEKEWV4cGVjdGVkX21hbmlmZXN0GAQgASgLMiYuaG9iby5jb25mb3JtYW5jZS5zZGsudjEuU2RrTWFuaWZlc3RJciLgAQoQVmVjdG9yQ2FzZVJlc3VsdBIMCgRuYW1lGAEgASgJEhUKCGNhdGVnb3J5GAIgASgJSACIAQESDgoGc3RhdHVzGAMgASgJEhMKBnJlYXNvbhgEIAEoCUgBiAEBEhoKDWV4cGVjdGVkX2pzb24YBSABKAlIAogBARIYCgthY3R1YWxfanNvbhgGIAEoCUgDiAEBEhIKCmRpZmZfcGF0aHMYByADKAlCCwoJX2NhdGVnb3J5QgkKB19yZWFzb25CEAoOX2V4cGVjdGVkX2pzb25CDgoMX2FjdHVhbF9qc29uIpoBCgpMYW5lUmVwb3J0EgwKBGxhbmUYASABKAkSDgoGc3RhdHVzGAIgASgJEh4KEWJvdW5kZWRfYnlfY29ycHVzGAMgASgISACIAQESOAoFY2FzZXMYBCADKAsyKS5ob2JvLmNvbmZvcm1hbmNlLnNkay52MS5WZWN0b3JDYXNlUmVzdWx0QhQKEl9ib3VuZGVkX2J5X2NvcnB1cyK5AQoUU2RrQ29uZm9ybWFuY2VSZXBvcnQSDQoFc3VpdGUYASABKAkSEAoIY29udHJhY3QYAiABKAkSEgoKbGF5ZXJfbmFtZRgDIAEoCRISCgphdXRob3JzaGlwGAQgASgJEg4KBnN0YXR1cxgFIAEoCRIUCgxjb3JwdXNfY2xhaW0YBiABKAkSMgoFbGFuZXMYByADKAsyIy5ob2JvLmNvbmZvcm1hbmNlLnNkay52MS5MYW5lUmVwb3J0InQKE1Nka1Jlc2lsaWVuY2VWZWN0b3ISDAoEbmFtZRgBIAEoCRIlCgVpbnB1dBgCIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIoCghleHBlY3RlZBgDIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZWIGcHJvdG8z", [file_google_protobuf_struct]);
 
 export type SdkWitError = Message<"hobo.conformance.sdk.v1.SdkWitError"> & {
-    tag: string;
+  tag: string;
 
-    message?: string | undefined;
+  message?: string | undefined;
 
-    deadlineMs?: number | undefined;
+  deadlineMs?: number | undefined;
 
-    retry?: string | undefined;
+  retry?: string | undefined;
 };
 
 export const SdkWitErrorSchema: GenMessage<SdkWitError> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 0);
 
 export type SdkWitResult = Message<"hobo.conformance.sdk.v1.SdkWitResult"> & {
-    ok?: Value | undefined;
+  ok?: Value | undefined;
 
-    err?: SdkWitError | undefined;
+  err?: SdkWitError | undefined;
 };
 
 export const SdkWitResultSchema: GenMessage<SdkWitResult> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 1);
 
 export type SdkCancellationSignal = Message<"hobo.conformance.sdk.v1.SdkCancellationSignal"> & {
-    reason: string;
+  reason: string;
 
-    deadlineMs?: number | undefined;
+  deadlineMs?: number | undefined;
 };
 
 export const SdkCancellationSignalSchema: GenMessage<SdkCancellationSignal> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 2);
 
 export type SdkCollectionFact = Message<"hobo.conformance.sdk.v1.SdkCollectionFact"> & {
-    sequence: number;
+  sequence: number;
 
-    kind: string;
+  kind: string;
 
-    name?: string | undefined;
+  name?: string | undefined;
 
-    resource?: string | undefined;
+  resource?: string | undefined;
 
-    event?: string | undefined;
+  event?: string | undefined;
 };
 
 export const SdkCollectionFactSchema: GenMessage<SdkCollectionFact> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 3);
 
 export type SdkExpectedThrow = Message<"hobo.conformance.sdk.v1.SdkExpectedThrow"> & {
-    name: string;
+  name: string;
 
-    tag: string;
+  tag: string;
 };
 
 export const SdkExpectedThrowSchema: GenMessage<SdkExpectedThrow> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 4);
 
 export type SemanticsAnnexVector = Message<"hobo.conformance.sdk.v1.SemanticsAnnexVector"> & {
-    name: string;
+  name: string;
 
-    category: string;
+  category: string;
 
-    specVersion: string;
+  specVersion: string;
 
-    result?: SdkWitResult | undefined;
+  result?: SdkWitResult | undefined;
 
-    expectedThrow?: SdkExpectedThrow | undefined;
+  expectedThrow?: SdkExpectedThrow | undefined;
 
-    signal?: SdkCancellationSignal | undefined;
+  signal?: SdkCancellationSignal | undefined;
 
-    expected?: SdkWitResult | undefined;
+  expected?: SdkWitResult | undefined;
 
-    facts: SdkCollectionFact[];
+  facts: SdkCollectionFact[];
 
-    expectedError?: string | undefined;
+  expectedError?: string | undefined;
 };
 
 export const SemanticsAnnexVectorSchema: GenMessage<SemanticsAnnexVector> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 5);
 
 export type SdkWitCall = Message<"hobo.conformance.sdk.v1.SdkWitCall"> & {
-    interface: string;
+  interface: string;
 
-    function: string;
+  function: string;
 
-    args?: JsonObject | undefined;
+  args?: JsonObject | undefined;
 };
 
 export const SdkWitCallSchema: GenMessage<SdkWitCall> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 6);
 
 export type SdkResource = Message<"hobo.conformance.sdk.v1.SdkResource"> & {
-    kind: string;
+  kind: string;
 
-    name: string;
+  name: string;
 
-    allow?: Value | undefined;
+  allow?: Value | undefined;
 };
 
 export const SdkResourceSchema: GenMessage<SdkResource> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 7);
 
 export type SdkHandler = Message<"hobo.conformance.sdk.v1.SdkHandler"> & {
-    resource: string;
+  resource: string;
 
-    event: string;
+  event: string;
 
-    exportName: string;
+  exportName: string;
 };
 
 export const SdkHandlerSchema: GenMessage<SdkHandler> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 8);
 
 export type SdkManifestIr = Message<"hobo.conformance.sdk.v1.SdkManifestIr"> & {
-    schema: string;
+  schema: string;
 
-    bindle: string;
+  bindle: string;
 
-    resources: SdkResource[];
+  resources: SdkResource[];
 
-    handlers: SdkHandler[];
+  handlers: SdkHandler[];
 };
 
 export const SdkManifestIrSchema: GenMessage<SdkManifestIr> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 9);
 
 export type SdkLowerProgram = Message<"hobo.conformance.sdk.v1.SdkLowerProgram"> & {
-    bindle: string;
+  bindle: string;
 
-    resources: SdkResource[];
+  resources: SdkResource[];
 
-    handlers: SdkHandler[];
+  handlers: SdkHandler[];
 };
 
 export const SdkLowerProgramSchema: GenMessage<SdkLowerProgram> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 10);
 
 export type LoweringFixture = Message<"hobo.conformance.sdk.v1.LoweringFixture"> & {
-    name: string;
+  name: string;
 
-    program?: SdkLowerProgram | undefined;
+  program?: SdkLowerProgram | undefined;
 
-    expectedWitCalls: SdkWitCall[];
+  expectedWitCalls: SdkWitCall[];
 
-    expectedManifest?: SdkManifestIr | undefined;
+  expectedManifest?: SdkManifestIr | undefined;
 };
 
 export const LoweringFixtureSchema: GenMessage<LoweringFixture> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 11);
 
 export type VectorCaseResult = Message<"hobo.conformance.sdk.v1.VectorCaseResult"> & {
-    name: string;
+  name: string;
 
-    category?: string | undefined;
+  category?: string | undefined;
 
-    status: string;
+  status: string;
 
-    reason?: string | undefined;
+  reason?: string | undefined;
 
-    expectedJson?: string | undefined;
+  expectedJson?: string | undefined;
 
-    actualJson?: string | undefined;
+  actualJson?: string | undefined;
 
-    diffPaths: string[];
+  diffPaths: string[];
 };
 
 export const VectorCaseResultSchema: GenMessage<VectorCaseResult> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 12);
 
 export type LaneReport = Message<"hobo.conformance.sdk.v1.LaneReport"> & {
-    lane: string;
+  lane: string;
 
-    status: string;
+  status: string;
 
-    boundedByCorpus?: boolean | undefined;
+  boundedByCorpus?: boolean | undefined;
 
-    cases: VectorCaseResult[];
+  cases: VectorCaseResult[];
 };
 
 export const LaneReportSchema: GenMessage<LaneReport> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 13);
 
 export type SdkConformanceReport = Message<"hobo.conformance.sdk.v1.SdkConformanceReport"> & {
-    suite: string;
+  suite: string;
 
-    contract: string;
+  contract: string;
 
-    layerName: string;
+  layerName: string;
 
-    authorship: string;
+  authorship: string;
 
-    status: string;
+  status: string;
 
-    corpusClaim: string;
+  corpusClaim: string;
 
-    lanes: LaneReport[];
+  lanes: LaneReport[];
 };
 
 export const SdkConformanceReportSchema: GenMessage<SdkConformanceReport> = /*@__PURE__*/
   messageDesc(file_sdk_conformance, 14);
 
 export type SdkResilienceVector = Message<"hobo.conformance.sdk.v1.SdkResilienceVector"> & {
-    name: string;
+  name: string;
 
-    input?: Value | undefined;
+  input?: Value | undefined;
 
-    expected?: Value | undefined;
+  expected?: Value | undefined;
 };
 
 export const SdkResilienceVectorSchema: GenMessage<SdkResilienceVector> = /*@__PURE__*/

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import { GIT_OUTPUT_MAX_BUFFER } from "./lib/git-output.ts";
 
@@ -44,6 +45,32 @@ const relayInput = files.some(
 );
 if (relayInput && generated.every((file) => file === relayAsset))
 	process.exit(0);
+
+const sdkConformanceOutput =
+	"packages/conformance/src/_generated/sdk_conformance_pb.ts";
+if (generated.every((file) => file === sdkConformanceOutput)) {
+	const stagedOutput = spawnSync("git", ["show", `:${sdkConformanceOutput}`], {
+		encoding: "utf8",
+		maxBuffer: GIT_OUTPUT_MAX_BUFFER,
+	});
+	if (
+		stagedOutput.status !== 0 ||
+		stagedOutput.stdout !== readFileSync(sdkConformanceOutput, "utf8")
+	) {
+		console.error("SDK protobuf output differs between the index and worktree");
+		process.exit(1);
+	}
+	const check = spawnSync(
+		process.execPath,
+		["--import", "tsx", "scripts/generate-sdk-conformance.mts", "--check"],
+		{ encoding: "utf8" },
+	);
+	if (check.status === 0) process.exit(0);
+	console.error(
+		check.stderr || "SDK protobuf output does not match its schema",
+	);
+	process.exit(1);
+}
 
 // Catch-up case: output for a schema that landed in an *earlier* commit.
 //
