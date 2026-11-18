@@ -38,11 +38,9 @@ planner, provider adapter, admin UI, Gatekeeper policy, support tooling, release
 provider operation. It records GA handoff evidence and leaves live hosted broker GA proof as an
 explicit post-GA or release-owner decision.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the GA handoff evidence record.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

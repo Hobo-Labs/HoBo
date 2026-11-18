@@ -93,7 +93,6 @@ export function referencesFor(
 		technicalProofs: [...technical].sort(),
 		epicProofs: [...epics].sort(),
 		expProofs: [...exp].sort(),
-		designDocs: [],
 	};
 }
 

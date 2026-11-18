@@ -56,11 +56,9 @@ pnpm exec turbo run test --filter ./src/draft/epic-proofs/s2-stage-gate-first-cl
 node --import tsx src/draft/epic-proofs/s2-stage-gate-first-cloud-yard/scripts/run-stage-gate-drill.ts
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE for drill record shapes.
 - `architecture/pacts/` — PACT boundary for the drill consumer.
-- `ADR.md` — parse-don't-validate and event-architecture vocabulary.
 
 ## Maintenance
 

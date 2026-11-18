@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/signed-artifact-publish-install-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

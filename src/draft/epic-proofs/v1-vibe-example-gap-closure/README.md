@@ -76,13 +76,10 @@ Feature: V1 vibe example backlog closure
 - `contracts/pact-inventory.md`
 - `poc-rollup-ledger.md`
 - `reference-implementation.yaml`
-- `architecture.md`
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the child backlog and evaluation.
 - `architecture/pacts/` - Pact fixture for the package boundary.
-- `architecture.md` - parse-don't-validate and event-architecture evidence.

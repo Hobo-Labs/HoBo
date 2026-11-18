@@ -11,8 +11,7 @@
       "src/draft/technical-proofs/outbound-xaa-token-exchange-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

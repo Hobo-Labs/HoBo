@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/native-log-projection-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

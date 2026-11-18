@@ -22,9 +22,7 @@ import, production tenant mutation, or provider-backed customer launch.
   or sales surfaces, proofless customer-facing claims, and M0-backed production
   launch or go-live claims is rejected.
 
-## Architecture Evidence
-
-- `ARCHITECTURE.md` records the parse, don't validate boundary, derived domain
+## Executable evidence
   types, commands, events, actor, event-store, materialized view/projection,
   snapshot, and read store.
 - `contracts/pacts/customer-onboarding-scope.pact.json` records the PACT

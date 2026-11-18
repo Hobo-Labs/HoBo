@@ -28,8 +28,7 @@ Run the focused proof:
 pnpm --dir src/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard test
 ```
 
-## Design Alignment
-
+## Executable evidence
 - `docs/design/launch-demo-golden-path.md`: reuses the accepted snapshop
   scaffold, local run, inspect, plan, live recording slot, and failure recovery
   command path.

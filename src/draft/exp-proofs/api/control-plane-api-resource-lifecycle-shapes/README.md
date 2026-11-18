@@ -41,13 +41,11 @@ or customer-data path.
 pnpm.cmd --prefix src\draft\exp-proofs\control-plane-api-resource-lifecycle-shapes test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/control_plane_api_resource_lifecycle_shapes.proto` defines the
   boundary data shapes.
 - `architecture/control_plane_api_resource_lifecycle_shapes.cue` constrains the
   lower-camel protobuf JSON shapes consumed by the parser.
 - `architecture/pacts/control_plane_api_resource_lifecycle_shapes.pact.json`
   pins a Pact-style API/MCP parity boundary with the full parsed contract body.
-- `ARCHITECTURE.md` records parse-don't-validate and event architecture
   evidence.

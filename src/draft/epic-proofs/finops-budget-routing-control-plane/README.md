@@ -146,14 +146,12 @@ the observation interval under concurrent validation load.
 - No live billing API, provider API, cloud credential, production IaC, policy
   service, dashboard, or external telemetry backend is called.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by HoBo draft
 packages:
 
 - `architecture/` contains Protobuf data shapes and CUE constraints for the
   router contracts.
 - `contracts/pacts/` contains Pact-style consumer fixtures for each boundary.
-- `architecture.md` records parse-don't-validate and event-architecture evidence.
 - `features/finops-budget-routing-control-plane.feature` records the behavior
   suite in Gherkin form.

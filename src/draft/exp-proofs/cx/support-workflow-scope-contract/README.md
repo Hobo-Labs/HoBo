@@ -36,11 +36,9 @@ This proof deliberately does not build helpdesk software, ticket queue automatio
 UI, status-page publishing, live support staffing, production customer-data access, incident
 command, on-call scheduling, runbook execution, or contractual SLA language.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Support Workflow scope.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

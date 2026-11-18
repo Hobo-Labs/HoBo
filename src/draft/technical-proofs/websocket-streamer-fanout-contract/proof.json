@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/streamer-runtime-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

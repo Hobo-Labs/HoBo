@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/resource-collection-engine-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

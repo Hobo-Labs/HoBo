@@ -11,8 +11,7 @@
       "src/draft/technical-proofs/showback-attribution-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

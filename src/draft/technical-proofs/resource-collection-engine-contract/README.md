@@ -21,8 +21,7 @@ Promotion target: `packages/collector` (`@hobo/collector`) once S1-13 (`@hobo/bi
 pnpm --prefix src/draft/technical-proofs/resource-collection-engine-contract test
 ```
 
-## Architecture evidence
-
+## Executable evidence
 - `architecture/collector.proto` + `architecture/collector.cue` — collection records
 - `architecture/pacts/hobo-collector-hobo-bindles.pact.json` — collector ↔ bindles catalog pact
 

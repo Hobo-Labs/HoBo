@@ -8,10 +8,7 @@
       "src/draft/technical-proofs/dispatcher-maximize-credits-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/adr/01-architecture-core.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

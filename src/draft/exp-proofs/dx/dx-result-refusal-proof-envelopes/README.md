@@ -55,8 +55,7 @@ telemetry, polished launch copy, or visual mockups.
 npm.cmd --prefix src\draft\exp-proofs\dx-result-refusal-proof-envelopes test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/dx_result_refusal_proof_envelopes.proto` defines envelope,
   example, fixture, and claim-classification records.
 - `architecture/dx_result_refusal_proof_envelopes.cue` constrains required
@@ -65,4 +64,3 @@ npm.cmd --prefix src\draft\exp-proofs\dx-result-refusal-proof-envelopes test
   read contract consumed by SDK, CLI JSON, and MCP tool-result examples.
 - The deterministic fixture set carries a stable SHA-256 digest over the
   unsigned fixture payload for downstream transcript/doc reuse.
-- `ADR.md` records the experience decision and alternatives.

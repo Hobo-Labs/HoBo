@@ -47,8 +47,6 @@ consumes.
 pnpm exec turbo run test --filter ./src/draft/technical-proofs/stub-implementation-generation-contract
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/executor-skeleton-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

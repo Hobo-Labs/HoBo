@@ -42,12 +42,10 @@ automation, provider operations, or customer-data handling. It records Dogfood
 handoff evidence for release-owner review and keeps public GA readiness,
 production recovery, SLA, and live hosted-operations claims out of scope.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the GA handoff
   evidence record.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

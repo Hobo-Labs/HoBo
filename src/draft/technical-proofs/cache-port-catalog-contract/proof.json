@@ -5,17 +5,15 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/adr/03-data-plane.md",
-      "docs/design/authoring-resources-wiring.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",
     "notebook": "notebook.ipynb",
     "bench": "bench",
-    "diagrams": ["README.md"]
+    "diagrams": [
+      "README.md"
+    ]
   },
   "waivers": []
 }

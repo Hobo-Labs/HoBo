@@ -7,7 +7,6 @@ pure Planner step from:
   dependency edges, and emit a `DeploymentPlan`.
 - `docs/design/platform-engineering.md`: co-provisioned resources become graph
   nodes with placeholder-wired inputs.
-- `docs/design/architecture.md`: the IfC Collector emits manifest IR consumed
   by the Planner.
 
 ## Contract Surface
@@ -38,11 +37,9 @@ The checks live in
 `src/draft/technical-proofs/planner-dag-skeleton-contract/test/planner.test.ts`.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Planner Dag Skeleton Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

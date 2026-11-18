@@ -7,7 +7,7 @@ a source of truth**; a durable kv is **authoritative**. Folding one into the oth
 "data/caching (`data`/`kv`)" catalog note) was both a catalog gap and a latent parity
 overclaim. This proof makes the difference executable.
 
-## Architecture
+## Implementation
 
 ```mermaid
 flowchart LR

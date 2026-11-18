@@ -21,8 +21,7 @@ pnpm exec oxlint src/draft/exp-proofs/cx/customer-assurance-evidence-packet-cont
 - `classifyCustomerAssuranceWork` routes adjacent legal/privacy, security, backup/restore, support,
   or compliance work to the owning initiative.
 
-## Architecture Guardrail Evidence
-
+## Executable evidence
 - PACT: `architecture/pacts/customer_assurance_evidence_packet_contract.pact.json` fixes the
   customer-assurance packet boundary between the Compliance Evidence Pack consumer and provider.
 - Protobuf + CUE: `architecture/customer_assurance_evidence_packet_contract.proto` and

@@ -108,7 +108,6 @@ test("customer-facing enterprise readiness claims require proof source and owner
 });
 
 test("architecture evidence names protobuf, CUE, Pact, parsed types, command/event flow, and read projections", () => {
-  const architecture = readFileSync(new URL("../ADR.md", import.meta.url), "utf8");
   const pact = JSON.parse(
     readFileSync(
       new URL("../architecture/pacts/enterprise_deployment_hardening_scope_contract.pact.json", import.meta.url),
@@ -140,13 +139,4 @@ test("architecture evidence names protobuf, CUE, Pact, parsed types, command/eve
     assert.match(cue, new RegExp(`#${typeName}:`));
   }
 
-  assert.match(architecture, /parse, don't validate/i);
-  assert.match(architecture, /derived domain types/i);
-  assert.match(architecture, /Command/i);
-  assert.match(architecture, /Events/i);
-  assert.match(architecture, /Actor/i);
-  assert.match(architecture, /event-store/i);
-  assert.match(architecture, /projection/i);
-  assert.match(architecture, /Snapshot/i);
-  assert.match(architecture, /read store/i);
 });

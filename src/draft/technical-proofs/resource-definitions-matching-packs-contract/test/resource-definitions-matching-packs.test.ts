@@ -3,7 +3,7 @@ import { test } from "vitest";
 
 import {
   contentAddressDeploymentSet,
-} from "../../../../../docs/design/proofs/hobo-50-deployment-set-delta/projection-model.ts";
+} from "../src/deployment-set-delta.js";
 import {
   createAwsResourcePack,
   createAzureResourcePack,

@@ -82,8 +82,7 @@ absorbed without changing the bounded CLI/MCP journeys or fail-closed gates.
 
 Operations-manifest changes are absorbed without changing the bounded CLI/MCP journeys or fail-closed gates.
 
-## Architecture Evidence
-
+## Executable evidence
 > **Promotion (S1-20 / HOBO-610):** production CLI shell + `hobo new` live in [`packages/cli`](../../../../packages/cli/). This epic proof still pins CLI↔MCP parity via `contracts/pacts/cli-command-path.pact.json`.
 
 This package ships the architecture-guard evidence required by
@@ -91,7 +90,6 @@ This package ships the architecture-guard evidence required by
 
 - `architecture/` — protobuf data shapes and CUE constraints for Cli Mcp Developer Experience.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

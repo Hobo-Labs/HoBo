@@ -35,11 +35,9 @@ corepack pnpm --prefix src\draft\technical-proofs\closure-builder-author-flow-co
 The package typecheck covers source files plus `test/type-fixtures/`; runtime `node:test` files are
 validated by the same test command through `tsx` without requiring repo-global Node type definitions.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the author-flow corpus boundary.
 - `architecture/pacts/` - PACT contract for the SDK conformance consumer boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

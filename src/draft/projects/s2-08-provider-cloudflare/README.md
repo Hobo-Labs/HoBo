@@ -28,11 +28,9 @@ pnpm --prefix src/draft/projects/s2-08-provider-cloudflare build
 pnpm --prefix src/draft/projects/s2-08-provider-cloudflare test
 ```
 
-## Architecture evidence
-
+## Executable evidence
 - `data-models/` — protobuf + CUE constraints for capability manifest and provider ports
 - `contracts/provider-cloudflare-boundary.pact.json` — ProviderCloudflareBoundary pact
-- `ADR.md` — parse-don't-validate and realize-emission evidence
 
 ## Promotion path
 

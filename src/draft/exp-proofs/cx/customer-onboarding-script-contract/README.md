@@ -27,11 +27,9 @@ live customer data, implement support tooling, or execute a real first deploy.
 pnpm.cmd --prefix src\draft\exp-proofs\cx\customer-onboarding-script-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the script contract.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

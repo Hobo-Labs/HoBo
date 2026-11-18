@@ -7,12 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/dx-sdk-resilience-semantics.md",
-      "docs/design/proofs/hobo-514-dx-sdk-resilience/README.md",
-      "docs/design/sdk-contracts.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

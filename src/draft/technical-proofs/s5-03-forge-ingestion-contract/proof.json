@@ -12,10 +12,7 @@
     "epicProofs": [
       "src/draft/epic-proofs/generation-pipeline-training-ai-safety"
     ],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/generated-stack.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

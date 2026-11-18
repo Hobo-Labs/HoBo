@@ -23,11 +23,9 @@ without importing unmerged S6-03/S6-08 production code.
 pnpm --prefix src/draft/technical-proofs/s6-09-operator-crew-yard-services-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

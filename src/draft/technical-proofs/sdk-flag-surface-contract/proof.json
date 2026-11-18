@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/flag-event-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

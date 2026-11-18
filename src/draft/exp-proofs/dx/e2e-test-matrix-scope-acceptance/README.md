@@ -27,11 +27,9 @@ npm.cmd --prefix src\draft\exp-proofs\e2e-test-matrix-scope-acceptance test
 ```
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for E2e Test Matrix Scope Acceptance.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

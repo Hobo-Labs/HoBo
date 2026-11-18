@@ -40,8 +40,6 @@ quorum-fenced-append assertions.
 pnpm --prefix src/draft/technical-proofs/s6-02-control-plane-ha-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE evidence for quorum append and failover outcomes.
 - `architecture/pacts/` — PACT boundary fixture.
-- `ADR.md` — parse-don't-validate and event-architecture notes.

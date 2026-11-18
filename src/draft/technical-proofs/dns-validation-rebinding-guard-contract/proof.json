@@ -6,10 +6,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/adr/07-portability-extensibility.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

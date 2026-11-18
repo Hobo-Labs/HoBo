@@ -48,8 +48,6 @@ slice those packages consume after S4-05/S4-06 land.
 pnpm --prefix src/draft/technical-proofs/s4-08-portability-conformance-lane-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

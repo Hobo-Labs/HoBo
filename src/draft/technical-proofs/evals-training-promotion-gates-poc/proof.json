@@ -13,8 +13,7 @@
       "src/draft/technical-proofs/training-engine-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

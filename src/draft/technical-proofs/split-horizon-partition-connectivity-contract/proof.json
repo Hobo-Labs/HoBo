@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/cross-camp-routing-policy-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

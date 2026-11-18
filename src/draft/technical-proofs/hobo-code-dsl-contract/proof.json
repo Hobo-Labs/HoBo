@@ -9,8 +9,7 @@
       "src/draft/technical-proofs/sdk-codegen-surface-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

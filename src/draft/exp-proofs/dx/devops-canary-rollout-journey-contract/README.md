@@ -27,11 +27,9 @@ npm.cmd --prefix src\draft\exp-proofs\devops-canary-rollout-journey-contract tes
 - Flapping SLO windows, aborted rollout, and step-1 unhealthy canary paths fail closed.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Devops Canary Rollout Journey Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -3,7 +3,7 @@
 Proves the thin `@hobo/provider-convex` deploy executor + WorkOS AuthKit
 fail-closed preflight used to ship real JamesCowling/swaghaus (ADR-0144).
 
-## Architecture
+## Implementation
 
 ```mermaid
 flowchart LR

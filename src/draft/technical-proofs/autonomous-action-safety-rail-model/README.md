@@ -43,11 +43,9 @@ Class derivation is most-restrictive-wins:
 The operator may update the incident with diagnostics at any time; the rail only gates mutations.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Autonomous Action Safety Rail Model.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

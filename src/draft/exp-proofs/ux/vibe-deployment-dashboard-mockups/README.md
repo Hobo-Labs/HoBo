@@ -41,9 +41,7 @@ npm.cmd --prefix src\draft\exp-proofs\vibe-deployment-dashboard-mockups test
 | Downstream dashboard mockups consume the accepted HOBO-577 quickstart fixtures. | `quickstartFixtureRefs` pins the source issue, accepted fixture ids, proof-mode labels, consuming surfaces, and dashboard-use notes. |
 | Scope out remains hard. | `classifyDashboardMockupRequest` rejects production UI, graph renderer, projection runtime, GraphQL, live provider, RBAC, and proofless launch requests. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the mockup
   record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.

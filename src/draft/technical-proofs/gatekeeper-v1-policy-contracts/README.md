@@ -32,11 +32,9 @@ pnpm --prefix src/draft/technical-proofs/gatekeeper-v1-policy-contracts test
 - Live Yard deploy path wiring (depends on S2-04 planner merge)
 - External policy-engine adapters, attestation networks, feature-flag providers
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints
 - `architecture/pacts/` — PACT contract for the package boundary
-- `ADR.md` — parse-don't-validate and event-architecture evidence

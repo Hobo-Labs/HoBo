@@ -10,8 +10,7 @@
     "expProofs": [
       "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures",
       "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups"
-    ],
-    "designDocs": []
+    ]
   },
   "artifacts": {
     "examples": "examples",

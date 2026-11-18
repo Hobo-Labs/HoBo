@@ -62,11 +62,8 @@ pnpm --prefix src/draft/epic-proofs/governance-planes-s6-08 test
 - The validated capability-indexed discovery proof is included in this rollup; its deterministic simulation contract is unchanged.
 - Consent registry (in-memory fixture)
 
-## Architecture evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE + PACT boundary contract
-- `ADR.md` — parse-don't-validate + event architecture notes
-- `architecture.md` — service boundary map
 
 ## Scope out
 

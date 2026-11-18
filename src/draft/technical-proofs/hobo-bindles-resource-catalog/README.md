@@ -15,11 +15,9 @@ This draft package proves the M0 contract before generated `hobo:sdk` bindings e
 Out of scope for this POC: collection, manifest emission, provider options, topology objects, codegen, and authoring new WIT.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Bindles Resource Catalog.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

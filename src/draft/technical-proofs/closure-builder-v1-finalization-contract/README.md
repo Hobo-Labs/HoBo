@@ -45,8 +45,7 @@ The test suite proves:
   contract and link this finalization proof; and
 - traceability carries both the parent row and the child rows.
 
-## Architecture Evidence
-
+## Executable evidence
 Protobuf data shapes live in [`architecture/`](./architecture). CUE constraints
 bound every protobuf type. The Pact contract under
 [`architecture/pacts/`](./architecture/pacts) records the consumer/provider

@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/local-dev-test-authoring-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

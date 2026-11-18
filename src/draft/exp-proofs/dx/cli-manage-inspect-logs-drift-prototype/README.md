@@ -52,8 +52,7 @@ support tooling, customer data, and dashboard-first run inspector mockups.
 pnpm.cmd --dir src\draft\exp-proofs\cli-manage-inspect-logs-drift-prototype test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
@@ -62,5 +61,4 @@ This package ships the architecture-guard evidence required by
   results.
 - `architecture/pacts/` - Pact-style CLI/MCP parity boundary fixture for the
   parsed transcript prototype.
-- `ADR.md` - parse-don't-validate and event-architecture evidence for this
   independent draft POC.

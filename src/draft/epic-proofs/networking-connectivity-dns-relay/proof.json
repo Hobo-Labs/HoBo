@@ -30,8 +30,7 @@
     "epicProofs": [],
     "expProofs": [
       "src/draft/exp-proofs/api/per-app-tenant-routing-contract"
-    ],
-    "designDocs": []
+    ]
   },
   "artifacts": {
     "examples": "examples",

@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/resilience-semantics-annex"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

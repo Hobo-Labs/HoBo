@@ -52,10 +52,8 @@ pnpm --prefix src/draft/epic-proofs/stage-gate-s3-agent-mcp-brokered-deploy run 
 
 **Out:** production `packages/mcp/`, live S2 cloud, credentialed CI lane wiring (S3-01 acceptance record attachment).
 
-## Architecture evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE for drill records.
-- `architecture.md` — parse-don't-validate and event-architecture notes.
 - `contracts/pact-inventory.md` — boundary inventory.
 
 ## Cascade reconciliation (83d9b5c92)

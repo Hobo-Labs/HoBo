@@ -43,7 +43,6 @@ And no simulated live service call is required
 
 | Path | Purpose |
 |---|---|
-| `architecture.md` | Synthesized epic architecture and service boundary map. |
 | `poc-rollup-ledger.md` | Disposition of every POC considered for this epic rollup. |
 | `scope-review.md` | Adversarial scope review before implementation. |
 | `reference-implementation.yaml` | Machine-readable manifest for this run. |
@@ -88,11 +87,9 @@ Contracts:
 
 Policy fail-closed changes are absorbed without changing deterministic replay or mandatory governance behavior.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Contracts Policy Governance.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `architecture.md` — parse-don't-validate and event-architecture evidence.

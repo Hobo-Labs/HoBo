@@ -35,11 +35,9 @@ port catalog.
 pnpm --prefix src/draft/technical-proofs/s4-03-provider-azure-full-capability-manifest test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE constraints
 - `architecture/pacts/` — PACT boundary contract
-- `ADR.md` — parse-don't-validate and event-architecture evidence
 
 ## Maintenance
 

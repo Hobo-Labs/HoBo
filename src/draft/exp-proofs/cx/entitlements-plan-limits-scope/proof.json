@@ -7,11 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/entitlements-plan-limits.md",
-      "docs/design/proofs/hobo-419-entitlements-plan-limits/README.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

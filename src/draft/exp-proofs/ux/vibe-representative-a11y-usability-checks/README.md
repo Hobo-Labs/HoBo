@@ -37,9 +37,7 @@ pnpm.cmd run test:file src/draft/exp-proofs/ux/vibe-representative-a11y-usabilit
 | Source blocker artifacts are consumed without importing unmerged runtime code. | `sourceIssues` pins HOBO-554 and HOBO-577; `quickstartFixtureRefs` pins accepted quickstart fixture ids and consuming artifacts. |
 | Scope out remains hard. | `classifyRepresentativeCheckRequest` rejects full audits, product UI remediation, automated suite buildout, waiver approval, customer data, and proofless launch claims. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the
   representative check record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.

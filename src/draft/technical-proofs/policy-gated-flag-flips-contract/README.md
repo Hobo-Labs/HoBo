@@ -14,11 +14,9 @@ The proof intentionally stays out of RBAC, policy-engine implementation, SLO sig
 shared rollout auto-revert mechanics.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Policy Gated Flag Flips Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/hobo-contract-ir"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -26,8 +26,7 @@
     "epicProofs": [],
     "expProofs": [
       "src/draft/exp-proofs/dx/data-flywheel-privacy-spike"
-    ],
-    "designDocs": []
+    ]
   },
   "artifacts": {
     "examples": "examples",

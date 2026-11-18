@@ -42,12 +42,10 @@ customer support operations, customer-data access, support impersonation,
 contractual support SLAs, paid support tiers, commercial terms, or public
 response-time guarantees.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the GA handoff
   evidence record.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

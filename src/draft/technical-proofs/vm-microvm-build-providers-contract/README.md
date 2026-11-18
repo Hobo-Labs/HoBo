@@ -34,11 +34,9 @@ npm.cmd --prefix src/draft/technical-proofs/vm-microvm-build-providers-contract 
 ```
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Vm Microvm Build Providers Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

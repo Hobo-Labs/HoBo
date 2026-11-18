@@ -7,7 +7,7 @@ import {
   validateEnvGroup,
   type DeploymentProjectionEvent,
   type ResourceMap,
-} from "./projection-model.js";
+} from "../../../../src/draft/technical-proofs/resource-definitions-matching-packs-contract/src/deployment-set-delta.js";
 
 const baseResources: ResourceMap = {
   "shop.api": {

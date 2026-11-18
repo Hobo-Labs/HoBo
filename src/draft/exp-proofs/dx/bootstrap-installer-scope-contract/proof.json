@@ -7,10 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/bootstrap-installer.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

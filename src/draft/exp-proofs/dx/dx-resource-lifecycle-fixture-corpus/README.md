@@ -63,9 +63,7 @@ The tests prove:
   reauthoring domain facts;
 - scope-out creep fails closed.
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the corpus.
 - `architecture/pacts/` - Pact interaction for the package boundary.
-- `ADR.md` - parse-don't-validate derived type, experience decision, and event
   architecture evidence.

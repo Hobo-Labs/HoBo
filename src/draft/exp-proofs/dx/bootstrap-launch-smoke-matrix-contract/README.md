@@ -20,8 +20,7 @@ pnpm --filter @hobo/bootstrap-launch-smoke-matrix-contract test
 - `classifyBootstrapLaunchSmokeWork` routes adjacent production installer, support, release, Yard,
   provider, and live-deploy work to owning initiatives instead of expanding this issue's scope.
 
-## Architecture Guardrail Evidence
-
+## Executable evidence
 - PACT: `architecture/pacts/bootstrap_launch_smoke_matrix_contract.pact.json` fixes the launch
   smoke matrix boundary between the Bootstrap Installer consumer and release/support handoff
   provider.

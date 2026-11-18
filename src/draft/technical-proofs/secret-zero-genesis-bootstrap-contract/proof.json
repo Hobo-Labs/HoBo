@@ -6,12 +6,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/adr/02-identity-security.md",
-      "docs/design/ai-native-agent-auth.md",
-      "docs/design/security-networking.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/mirror-digest-selection-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

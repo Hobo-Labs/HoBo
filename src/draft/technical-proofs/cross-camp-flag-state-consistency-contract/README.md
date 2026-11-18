@@ -26,11 +26,9 @@ npm.cmd --prefix src\draft\technical-proofs\cross-camp-flag-state-consistency-co
 The tests cover bounded follower labels, catch-up freshness, stale-not-fresh reads, partition-suspected serving, active-active convergence, kill-switch propagation latency, and writer-order rejection.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Cross Camp Flag State Consistency Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

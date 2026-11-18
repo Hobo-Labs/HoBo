@@ -58,7 +58,6 @@ test("adversarial cases fail closed on over-broad tokens, static keys, and prod 
 });
 
 test("architecture artifacts pin protobuf, CUE, Pact, and event-architecture evidence", () => {
-  const architecture = readFileSync(new URL("../architecture.md", import.meta.url), "utf8");
   const proto = readFileSync(
     new URL("../architecture/stage_gate_s3_agent_mcp_brokered_deploy.proto", import.meta.url),
     "utf8",
@@ -76,11 +75,4 @@ test("architecture artifacts pin protobuf, CUE, Pact, and event-architecture evi
   assert.equal(pact.consumer.name, "stage-gate-j2-agent");
   assert.equal(pact.provider.name, "hobo-mcp-s2-sandbox");
   assert.ok(pact.interactions.some((interaction) => interaction.request.tool === "deploy"));
-  assert.match(architecture, /parse, don't validate/i);
-  assert.match(architecture, /Command/i);
-  assert.match(architecture, /Event/i);
-  assert.match(architecture, /Actor/i);
-  assert.match(architecture, /event store/i);
-  assert.match(architecture, /projection/i);
-  assert.match(architecture, /read store/i);
 });

@@ -88,14 +88,12 @@ test("contract artifacts name protobuf, CUE, and Pact fixture boundaries", () =>
 
 test("proof README and contract artifacts exist and preserve scope-out boundaries", () => {
   const packageReadme = readPackageFile("README.md");
-  const packageAdr = readPackageFile("ADR.md");
   const proto = readPackageFile("architecture/sdk_to_cli_golden_path.proto");
   const cue = readPackageFile("architecture/sdk_to_cli_golden_path.cue");
   const pact = JSON.parse(readPackageFile("architecture/pacts/sdk_to_cli_golden_path.pact.json"));
   const proofReadme = readRepoFile("docs/design/proofs/sdk-to-cli-golden-path/README.md");
 
   assert.match(packageReadme, /dx\.lifecycle\.shop-api\.v1/);
-  assert.match(packageAdr, /sdkToCliGoldenPath\.TranscriptAccepted/);
   assert.match(proto, /message SdkToCliGoldenPathRecord/);
   assert.match(cue, /#SdkToCliGoldenPathRecord/);
   assert.equal(pact.interactions[0].response.body.issue, "HOBO-576");

@@ -9,10 +9,7 @@
       "src/draft/technical-proofs/incident-aggregate-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/operators-sre.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

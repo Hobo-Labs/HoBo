@@ -150,7 +150,7 @@ export function createResolutionProofInput(snapshot) {
   });
 }
 
-export function validateArchitectureEvidence({ architecture, proto, cue, pact }) {
+export function validateContractEvidence({ proto, cue, pact }) {
   const errors = [];
   requireMatch(proto, /message BrokerEnvironmentSnapshot/, "proto must define BrokerEnvironmentSnapshot", errors);
   requireMatch(proto, /message ProviderCapabilityPublication/, "proto must define ProviderCapabilityPublication", errors);
@@ -158,16 +158,6 @@ export function validateArchitectureEvidence({ architecture, proto, cue, pact })
   requireMatch(cue, /#BrokerEnvironmentSnapshot:/, "CUE must constrain BrokerEnvironmentSnapshot", errors);
   requireMatch(cue, /#ProviderCapabilityPublication:/, "CUE must constrain ProviderCapabilityPublication", errors);
   requireMatch(cue, /#MappingPublication:/, "CUE must constrain MappingPublication", errors);
-  requireMatch(architecture, /parse, don't validate/i, "architecture must name parse, don't validate", errors);
-  requireMatch(
-    architecture,
-    /ParsedBrokerEnvironmentPublication/,
-    "architecture must name the parsed publication type",
-    errors,
-  );
-  for (const word of ["Command", "Events", "Actor", "event store", "projection", "Snapshot", "read store"]) {
-    requireMatch(architecture, new RegExp(word, "i"), `architecture must name ${word}`, errors);
-  }
   if (pact?.consumer?.name !== "ProviderCatalogPublisher") {
     errors.push("PACT consumer must be ProviderCatalogPublisher");
   }

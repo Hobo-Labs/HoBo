@@ -42,11 +42,9 @@ send customer emails, implement customer communication workflows, build upgrade 
 harnesses, approve support SLAs, or make a GA release decision. It records GA handoff evidence and
 leaves publication, launch decision, and customer communication mechanics to their owning projects.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the GA handoff evidence record.
 - `architecture/pacts/` - PACT contract for the package boundary.
-- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

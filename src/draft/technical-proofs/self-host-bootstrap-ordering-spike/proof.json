@@ -6,10 +6,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/adr/01-architecture-core.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

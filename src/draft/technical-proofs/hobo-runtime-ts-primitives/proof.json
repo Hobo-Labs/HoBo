@@ -10,8 +10,7 @@
       "src/draft/technical-proofs/replay-live-equivalence-poc"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

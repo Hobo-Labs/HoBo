@@ -21,9 +21,7 @@ release gate bypass.
 - Scope creep into scanners, exploit runners, gate bypasses, or legal/advisory
   copy is rejected.
 
-## Architecture Evidence
-
-- `ARCHITECTURE.md` records the parse, don't validate boundary, derived domain
+## Executable evidence
   types, commands, events, actor, event-store, materialized view/projection,
   snapshot, and read store.
 - `contracts/pacts/threat-model-security-review-scope.pact.json` records the

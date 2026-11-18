@@ -15,11 +15,9 @@ It does not implement runtime behavior, provider adapters, or the WIT package.
 > Draft POC retained at `src/draft/projects/s0-03-hobo-core/` for traceability.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Core Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

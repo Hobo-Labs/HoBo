@@ -37,8 +37,6 @@ identity slices.
 pnpm exec turbo run test --filter ./src/draft/technical-proofs/sandboxed-executors-contract
 ```
 
-## Architecture evidence
-
+## Executable evidence
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

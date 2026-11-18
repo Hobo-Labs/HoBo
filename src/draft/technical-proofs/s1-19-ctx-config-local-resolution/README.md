@@ -18,9 +18,7 @@ Production target: `packages/bindles/`, `packages/core/`, `packages/runtime/`,
 pnpm exec turbo run test --filter ./src/draft/technical-proofs/s1-19-ctx-config-local-resolution
 ```
 
-## Architecture Evidence
-
-See [`ADR.md`](./ADR.md), [`architecture/`](./architecture), and [`architecture/pacts/`](./architecture/pacts).
+## Executable evidence
 `pnpm run architecture:guard` passes for this package (protobuf + CUE + PACT + parse-don't-validate + event vocabulary).
 
 ## Event families (fixed)

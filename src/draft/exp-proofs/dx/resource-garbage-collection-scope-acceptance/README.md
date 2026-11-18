@@ -37,11 +37,9 @@ This proof deliberately does not build provider adapters, live sweepers, destruc
 runtime, drift detection, rollback compensation, legal retention policy, billing, ticketing, or
 customer notification implementation.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Resource Garbage Collection Scope Acceptance.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

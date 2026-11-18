@@ -102,4 +102,3 @@ plus Logs/Metrics sections; simulator routes through the same mappers + index
 (parent/child spans emitted on different ticks) and emits gauge metrics and
 varied-severity logs, all seeded-deterministic.
 Tracked gaps (protobuf event model, PACT runner, cucumber features, bench) are
-listed in `ADR.md`; waivers are declared in `proof.json`.

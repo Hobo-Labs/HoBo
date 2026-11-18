@@ -29,11 +29,9 @@ pnpm run test:file src/draft/projects/s0-03-hobo-core/test/core-contract-boundar
 The `core-contract-boundary.contract.test.ts` file uses `node:test` (not Vitest) so
 `pnpm run test:contract:consumer` can execute it through the root contract lane.
 
-## Architecture evidence
-
+## Executable evidence
 - `data-models/` — protobuf + CUE constraints for envelope, manifest, port descriptor
 - `contracts/core-contract-boundary.pact.json` — CoreContractBoundary consumer/provider pact
-- `ADR.md` — parse-don't-validate and event-envelope command/event evidence
 
 ## Promotion path
 

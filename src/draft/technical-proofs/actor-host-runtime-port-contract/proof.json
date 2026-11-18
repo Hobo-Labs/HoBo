@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/camp-eventstore-runtime-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

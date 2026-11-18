@@ -62,7 +62,6 @@ npm.cmd --prefix src\draft\epic-proofs\progressive-delivery-harness run simulate
 
 See:
 
-- [architecture.md](./architecture.md)
 - [scope-review.md](./scope-review.md)
 - [poc-rollup-ledger.md](./poc-rollup-ledger.md)
 - [contracts/pact-inventory.md](./contracts/pact-inventory.md)
@@ -71,14 +70,12 @@ See:
 
 The openexperiment runtime-data and policy-gated flag changes are absorbed without changing assignment, exposure, rollout, or fail-closed gating semantics.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Progressive Delivery Harness.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

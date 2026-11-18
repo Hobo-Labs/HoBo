@@ -28,11 +28,9 @@ The proof covers:
 Scope boundary: this POC does not implement a real TCP tunnel, executor sandbox, provider credentials, SVID issuance, air-gapped disconnected mode, or data-plane connectivity tiers. It defines and tests the branch-sized Relay contract those later slices consume.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Relay Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

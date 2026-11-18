@@ -24,8 +24,6 @@ pnpm run test:contract:consumer
 npm --prefix src/draft/technical-proofs/componentize-artifact-trust-contract test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `data-models/` — protobuf records and CUE constraints for artifact trust shapes.
 - `contracts/pacts/artifact-trust-boundary.pact.json` — PACT for the publish→verify boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -7,11 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/incident-communications.md",
-      "docs/design/proofs/hobo-450-incident-communications/README.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

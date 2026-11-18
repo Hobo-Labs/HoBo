@@ -44,11 +44,9 @@ pnpm.cmd --prefix src\draft\exp-proofs\vibe-role-tutorial-outlines test
 | Happy path, blocked path, stale/unknown evidence path, support handoff, accessibility notes, and proof-mode labels are covered. | `coveragePaths`, outline accessibility notes, proof-mode validation, and HOBO-577 deploy/inspect/recovery fixture checks cover the accepted states and labels. |
 | Scope out remains hard. | `classifyRoleTutorialRequest` rejects final tutorial content, live provider execution, hosted docs implementation, production recordings, customer data, and proofless launch claims. |
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the parsed
   tutorial outline record. CUE uses lower-camel field names matching the
   TypeScript boundary.
 - `architecture/pacts/` - Pact-style package boundary fixture that parses
   through `parseVibeRoleTutorialOutlines`.
-- `ADR.md` - parse-don't-validate and event/projection architecture note.

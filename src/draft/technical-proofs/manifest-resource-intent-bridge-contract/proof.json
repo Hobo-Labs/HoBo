@@ -6,11 +6,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/control-plane.md",
-      "docs/design/finops-budget-routing-control-plane.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

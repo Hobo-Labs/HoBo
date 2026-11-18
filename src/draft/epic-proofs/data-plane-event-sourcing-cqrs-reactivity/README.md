@@ -81,14 +81,12 @@ No live external service, network call, credential, customer data, or production
 
 Projection-consistency, change-feed, reactor, and reads-your-writes changes are absorbed without changing replay, materialization, or read-consistency behavior.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Data Plane Event Sourcing Cqrs Reactivity.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

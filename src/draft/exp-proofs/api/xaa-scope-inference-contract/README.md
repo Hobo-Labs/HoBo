@@ -28,11 +28,9 @@ npm.cmd --prefix src\draft\exp-proofs\xaa-scope-inference-contract test
 The root `npm.cmd test` also discovers this package's Node test suite.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Xaa Scope Inference Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

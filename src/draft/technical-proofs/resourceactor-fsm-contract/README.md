@@ -21,15 +21,12 @@ npm.cmd --prefix src\draft\technical-proofs\resourceactor-fsm-contract test
 Relevant design records:
 
 - `docs/design/control-plane.md`: ResourceActor reconciliation FSM, ActorHost lease, choreography
-- `docs/design/architecture.md`: Orchestrator responsibilities and deploy command path
 - `docs/design/adr/01-architecture-core.md`: ADR-0004 choreography sagas + virtual actors
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Resourceactor Fsm Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

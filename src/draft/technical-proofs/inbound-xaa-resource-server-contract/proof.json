@@ -10,11 +10,7 @@
       "src/draft/technical-proofs/identity-event-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/adr/02-identity-security.md",
-      "docs/design/ai-native-agent-auth.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

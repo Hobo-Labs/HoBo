@@ -59,7 +59,6 @@ test("remapped plan anchors still exist in target design docs", () => {
 });
 
 test("architecture artifacts pin protobuf, CUE, Pact, and ADR boundaries", () => {
-  const adr = fs.readFileSync(new URL("../ADR.md", import.meta.url), "utf8");
   const proto = fs.readFileSync(
     new URL("../architecture/patterns_standards_cross_links.proto", import.meta.url),
     "utf8",
@@ -80,11 +79,4 @@ test("architecture artifacts pin protobuf, CUE, Pact, and ADR boundaries", () =>
   assert.equal(pact.consumer.name, "PatternsStandardsCrossLinksConsumer");
   assert.equal(pact.provider.name, "PatternsStandardsCrossLinksBoundary");
   assert.equal(pact.interactions[0].response.body.schema, "hobo.draft.patterns_standards_cross_links/v1");
-  assert.match(adr, /parse, don't validate/i);
-  assert.match(adr, /Command/i);
-  assert.match(adr, /Event/i);
-  assert.match(adr, /Actor/i);
-  assert.match(adr, /event store/i);
-  assert.match(adr, /projection/i);
-  assert.match(adr, /read store/i);
 });

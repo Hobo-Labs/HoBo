@@ -21,10 +21,8 @@ without waiting for S2-04 Planner production code.
 - Live EventStore, real Pulumi/Terraform executors, drift refresh loop
 - Planner IR ingestion (uses local fixture DeploymentPlan)
 
-## Design refs
-
+## Executable evidence
 - [`docs/design/control-plane.md`](../../../../docs/design/control-plane.md) Plan 04
-- [`docs/design/architecture.md`](../../../../docs/design/architecture.md) request lifecycles
 - Prior proofs: `resourceactor-fsm-contract`, `orchestrator-choreography-skeleton-contract`, `choreographed-compensation-contract`
 
 ## Validation
@@ -34,10 +32,8 @@ pnpm --prefix src/draft/technical-proofs/orchestrator-reconciliation-fsm-contrac
 pnpm run test:file src/draft/technical-proofs/orchestrator-reconciliation-fsm-contract/test/orchestrator-reconciliation-fsm.test.ts
 ```
 
-## Architecture evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE + PACT boundary
-- `ADR.md` — parse-don't-validate and event replay evidence
 
 ## Promotion path
 

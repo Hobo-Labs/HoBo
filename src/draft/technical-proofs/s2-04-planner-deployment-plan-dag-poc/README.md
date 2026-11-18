@@ -35,8 +35,6 @@ shell lands.
 pnpm exec turbo run test --filter ./src/draft/technical-proofs/s2-04-planner-deployment-plan-dag-poc
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` — protobuf + CUE guard evidence
 - `architecture/pacts/` — boundary PACT stub
-- `ADR.md` — parse-don't-validate + event vocabulary

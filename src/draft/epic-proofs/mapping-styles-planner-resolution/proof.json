@@ -13,8 +13,7 @@
       "src/draft/technical-proofs/topology-objects-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

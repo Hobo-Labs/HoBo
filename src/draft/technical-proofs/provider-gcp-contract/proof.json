@@ -10,11 +10,7 @@
       "src/draft/technical-proofs/provider-capability-conformance-suites"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/adr/07-portability-extensibility.md",
-      "docs/design/control-plane.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -12,8 +12,7 @@
     "epicProofs": [
       "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa"
     ],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

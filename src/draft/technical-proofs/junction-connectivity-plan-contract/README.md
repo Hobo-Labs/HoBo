@@ -21,11 +21,9 @@ The proof covers:
 Scope boundary: this POC does not provision tier 3, tier 4, or tier 5 networking, promote DNS, implement Junction trust/policy federation, or implement the provider/Yard control planes. Those slices consume the per-Yard half deliveries produced here.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Junction Connectivity Plan Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

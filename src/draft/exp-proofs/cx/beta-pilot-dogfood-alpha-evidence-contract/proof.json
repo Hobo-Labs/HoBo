@@ -9,8 +9,7 @@
     "epicProofs": [],
     "expProofs": [
       "src/draft/exp-proofs/cx/beta-pilot-feedback-contract"
-    ],
-    "designDocs": []
+    ]
   },
   "artifacts": {
     "examples": "examples",

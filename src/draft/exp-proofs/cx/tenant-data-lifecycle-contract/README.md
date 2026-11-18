@@ -21,8 +21,7 @@ npm.cmd --prefix src\draft\exp-proofs\cx\tenant-data-lifecycle-contract test
 - `classifyTenantDataLifecycleDecision` routes adjacent legal/privacy, security, backup/restore,
   support, provenance, or compliance work to the owning initiative.
 
-## Architecture Guardrail Evidence
-
+## Executable evidence
 - PACT: `architecture/pacts/tenant_data_lifecycle_contract.pact.json` fixes the Compliance Evidence
   Pack consumer and tenant-data-lifecycle provider boundary.
 - Protobuf + CUE: `architecture/tenant_data_lifecycle_contract.proto` and

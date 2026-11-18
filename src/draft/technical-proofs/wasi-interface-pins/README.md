@@ -19,11 +19,9 @@ node --test src\draft\technical-proofs\wasi-interface-pins\test\wasi-pins.test.t
 ```
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Wasi Interface Pins.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

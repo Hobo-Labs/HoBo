@@ -19,11 +19,9 @@ import fixture, and fails closed when the SDK primitive table drifts from WIT or
 a nondeterministic wall-clock/random shape appears in the replay-safe surface.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Runtime Primitives.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

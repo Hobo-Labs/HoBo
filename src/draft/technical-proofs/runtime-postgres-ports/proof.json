@@ -12,11 +12,7 @@
       "src/draft/technical-proofs/streamer-runtime-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/data-plane.md",
-      "docs/design/sdk-api.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

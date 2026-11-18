@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/iac-pulumi-backend-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

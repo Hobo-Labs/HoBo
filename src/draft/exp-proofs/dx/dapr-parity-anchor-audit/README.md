@@ -23,6 +23,6 @@ The tests prove:
 - neither feature rides a bundled ✅ "near 1:1" row;
 - fixture rows that claim ✅ without anchors are rejected.
 
-## Design evidence
+## Executable evidence
 
 Remediation spec: [`GAPS.md`](../../../../../GAPS.md) § `REM-033 (for GAP-025)`.

@@ -62,11 +62,9 @@ providers, customer data, and new command behavior not present in the design doc
 npm.cmd --prefix src\draft\exp-proofs\cli-mcp-parity-resource-lifecycle-contracts test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for operations and result envelopes.
 - `architecture/pacts/` - PACT contract for the CLI/MCP parity boundary.
-- `ADR.md` - parse-don't-validate and event-architecture evidence.

@@ -88,14 +88,12 @@ Outbound XAA token-exchange changes are absorbed without changing credential ord
 No live external service, network call, credential, customer data, or production token is required.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Identity Auth Secrets Cross App Access Xaa.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

@@ -10,8 +10,7 @@
     "epicProofs": [],
     "expProofs": [
       "src/draft/exp-proofs/api/policy-audit-export-contract"
-    ],
-    "designDocs": []
+    ]
   },
   "artifacts": {
     "examples": "examples",

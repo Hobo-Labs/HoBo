@@ -7,11 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/proofs/hobo-441-security-verification/README.md",
-      "docs/design/security-verification.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

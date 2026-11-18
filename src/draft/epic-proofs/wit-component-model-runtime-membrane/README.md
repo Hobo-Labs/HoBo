@@ -52,14 +52,12 @@ What this proves:
 Mocked boundaries and contracts are listed in [contracts/pact-inventory.md](contracts/pact-inventory.md).
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Wit Component Model Runtime Membrane.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

@@ -1,4 +1,4 @@
-# Control Plane Reference Architecture
+# Control Plane Reference Implementation
 
 Epic: Control Plane: Planner, Matching & Orchestrator  
 Linear: 0b863d00-e180-4ad1-a8d8-a58049252a71  
@@ -84,14 +84,12 @@ This is a reference architecture package, not product implementation. It does no
 
 Region-objective ranking changes are absorbed without changing deterministic placement or budget-selection behavior.
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Control Plane Planner Matching Orchestrator.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

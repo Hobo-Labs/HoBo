@@ -8,8 +8,7 @@
       "src/draft/technical-proofs/hobo-remediation-action-contract"
     ],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

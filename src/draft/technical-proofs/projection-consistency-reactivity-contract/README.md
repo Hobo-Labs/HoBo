@@ -16,11 +16,9 @@ This draft package proves HOBO-53: projection contracts carry a tunable consiste
 - `type-fixtures/type-contract.fixture.ts` is compiled by the test suite using TypeScript to prove non-change-feed projections statically expose `reactive: false`.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Projection Consistency Reactivity Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

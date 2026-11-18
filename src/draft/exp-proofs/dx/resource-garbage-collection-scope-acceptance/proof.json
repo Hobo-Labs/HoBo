@@ -7,10 +7,7 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": [],
-    "designDocs": [
-      "docs/design/resource-garbage-collection.md"
-    ]
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",

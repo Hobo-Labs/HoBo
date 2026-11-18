@@ -23,11 +23,9 @@ npm.cmd --prefix src\draft\technical-proofs\projection-lag-consistency-contract 
 The tests cover all acceptance bullets and adversarial cases from HOBO-278.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Projection Lag Consistency Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

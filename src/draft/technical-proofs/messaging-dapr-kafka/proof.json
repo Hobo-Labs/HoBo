@@ -8,14 +8,15 @@
 			"src/draft/technical-proofs/actor-host-runtime-port-contract"
 		],
 		"epicProofs": [],
-		"expProofs": [],
-		"designDocs": []
+		"expProofs": []
 	},
 	"artifacts": {
 		"examples": "examples",
 		"notebook": "notebook.ipynb",
 		"bench": "bench",
-		"diagrams": ["README.md"]
+		"diagrams": [
+			"README.md"
+		]
 	},
 	"waivers": []
 }

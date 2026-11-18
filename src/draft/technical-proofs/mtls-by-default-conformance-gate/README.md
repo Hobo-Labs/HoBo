@@ -28,11 +28,9 @@ npm.cmd --prefix src\draft\technical-proofs\mtls-by-default-conformance-gate tes
 ```
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Mtls By Default Conformance Gate.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

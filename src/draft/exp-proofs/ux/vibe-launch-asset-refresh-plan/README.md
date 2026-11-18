@@ -32,9 +32,7 @@ Out of scope:
 pnpm.cmd --prefix src\draft\exp-proofs\vibe-launch-asset-refresh-plan test
 ```
 
-## Architecture Evidence
-
+## Executable evidence
 - `architecture/` - protobuf data shapes and CUE constraints for the refresh plan.
 - `architecture/pacts/` - Pact interaction for the refresh-plan boundary.
-- `ADR.md` - parse-don't-validate derived type, experience decision, and event architecture
   evidence.

@@ -151,7 +151,6 @@ describe("CredentialAudit projection + NFR-018 retention (HOBO-635)", () => {
   });
 
   it("pins architecture artifacts and satisfies PACT boundary interactions", () => {
-    const adr = readFileSync(new URL("../ADR.md", import.meta.url), "utf8");
     const proto = readFileSync(
       new URL("../architecture/credential_audit_projection_contract.proto", import.meta.url),
       "utf8",
@@ -179,9 +178,6 @@ describe("CredentialAudit projection + NFR-018 retention (HOBO-635)", () => {
     assert.equal(pact.consumer.name, "CredentialAuditProjectionContractConsumer");
     assert.equal(pact.provider.name, "CredentialAuditProjectionContractBoundary");
     assert.ok(pact.interactions.length >= 3);
-    assert.match(adr, /parse, don't validate/i);
-    assert.match(adr, /Event store/i);
-    assert.match(adr, /projection/i);
 
     const { runId, events } = brokeredDeployCredentialTrail({ runId: "run-hello-bindle" });
     const view = snapshotCredentialAuditView(events, { seq: 4 });

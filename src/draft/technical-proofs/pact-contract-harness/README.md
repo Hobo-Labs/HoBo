@@ -49,10 +49,7 @@ pnpm --prefix src/draft/technical-proofs/pact-contract-harness run test:contract
 pnpm --prefix src/draft/technical-proofs/pact-contract-harness run test:contract:provider
 ```
 
-## Architecture Evidence
-
-See [`ADR.md`](./ADR.md) and [`data-models/`](./data-models/) for protobuf/CUE, parse-don't-validate, and event-architecture evidence required by `scripts/check-architecture-guardrails.mjs`.
-
+## Executable evidence
 ## Data models
 
 Protobuf-first shapes live in `data-models/contract-harness.proto`; CUE constraints in `data-models/contract-harness.cue`. TypeScript interfaces mirror the protobuf messages; parity is enforced by `test/pact-parse.test.ts` fixtures.

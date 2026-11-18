@@ -31,11 +31,9 @@ The Stage Gate S0 runner exercises this proof with `SOURCE_DATE_EPOCH=1704067200
 so Windows and CI use the same reproducible timestamp input.
 
 
-## Architecture Evidence
-
+## Executable evidence
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Build Cli Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
-- `ADR.md` — parse-don't-validate and event-architecture evidence.

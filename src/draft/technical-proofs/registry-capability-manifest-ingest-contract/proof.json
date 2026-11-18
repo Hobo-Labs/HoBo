@@ -13,8 +13,7 @@
       "src/draft/epic-proofs/portability-registry-distribution",
       "src/draft/epic-proofs/providers-iac-build-adapters"
     ],
-    "expProofs": [],
-    "designDocs": []
+    "expProofs": []
   },
   "artifacts": {
     "examples": "examples",
