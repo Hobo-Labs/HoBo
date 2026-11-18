@@ -40,7 +40,7 @@ describe("changedDirs", () => {
 					"examples/ci-runner-balancing/src/gate.ts",
 					"examples/ci-runner-balancing/README.md",
 					"examples/hello-bindle/src/api.ts",
-					"docs/design/index.md",
+					"urn:hobo:requirement:index",
 				],
 				"examples",
 			),

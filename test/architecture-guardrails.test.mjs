@@ -239,7 +239,7 @@ test("implementationPackageRoots maps production package paths", () => {
 			"packages/core/src/index.ts",
 			"packages/runtimes/runtime-local/src/index.ts",
 			"examples/hello-bindle/src/main.ts",
-			"docs/design/index.md",
+			"docs/guide/index.md",
 		]),
 		["packages/core", "packages/runtimes/runtime-local"],
 	);
@@ -263,6 +263,39 @@ test("program structure ignores explanatory comment removal", () => {
 			"export const parse = (value: string) => value.trim();\n",
 		),
 		true,
+	);
+});
+
+test("schema structure ignores explanatory comment removal", () => {
+	assert.equal(
+		hasSameProgramStructure(
+			"demo.proto",
+			'syntax = "proto3";\n// Describes the record.\nmessage Demo { string value = 1; }\n',
+			'syntax = "proto3";\nmessage Demo { string value = 1; }\n',
+		),
+		true,
+	);
+});
+
+test("schema structure detects field changes", () => {
+	assert.equal(
+		hasSameProgramStructure(
+			"demo.proto",
+			'syntax = "proto3";\nmessage Demo { string value = 1; }\n',
+			'syntax = "proto3";\nmessage Demo { bytes value = 1; }\n',
+		),
+		false,
+	);
+});
+
+test("schema structure preserves guard directives", () => {
+	assert.equal(
+		hasSameProgramStructure(
+			"demo.proto",
+			'// public-contract:\nsyntax = "proto3";\nmessage Demo {}\n',
+			'syntax = "proto3";\nmessage Demo {}\n',
+		),
+		false,
 	);
 });
 

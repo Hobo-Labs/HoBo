@@ -118,7 +118,7 @@ type VibeAccessibilityChecklist = {
   readonly issue: "HOBO-554";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist";
-  readonly proofPath: "docs/design/proofs/vibe-accessibility-usability-checklist/README.md";
+  readonly proofPath: "urn:hobo:proof:vibe-accessibility-usability-checklist";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly AccessibilityQuickstartFixtureReference[];
   readonly checks: readonly AccessibilityCheck[];
@@ -370,16 +370,16 @@ export const VIBE_ACCESSIBILITY_USABILITY_CHECKLIST: VibeAccessibilityChecklist 
   issue: "HOBO-554",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist",
-  proofPath: "docs/design/proofs/vibe-accessibility-usability-checklist/README.md",
+  proofPath: "urn:hobo:proof:vibe-accessibility-usability-checklist",
   designRefs: [
-    "docs/design/accessibility-usability-launch-baseline.md",
-    "docs/design/workspace-onboarding-ux.md",
-    "docs/design/plan-diff-viewer.md",
-    "docs/design/deployment-dashboard-topology-explorer.md",
-    "docs/design/marketplace-ux.md",
-    "docs/design/publisher-portal.md",
-    "docs/design/support-workflow.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:accessibility-usability-launch-baseline",
+    "urn:hobo:requirement:workspace-onboarding-ux",
+    "urn:hobo:requirement:plan-diff-viewer",
+    "urn:hobo:requirement:deployment-dashboard-topology-explorer",
+    "urn:hobo:requirement:marketplace-ux",
+    "urn:hobo:requirement:publisher-portal",
+    "urn:hobo:requirement:support-workflow",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
   checks: CHECKS,
@@ -480,7 +480,7 @@ export function validateVibeAccessibilityChecklist(
   if (checklist.packagePath !== "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (checklist.proofPath !== "docs/design/proofs/vibe-accessibility-usability-checklist/README.md") {
+  if (checklist.proofPath !== "urn:hobo:proof:vibe-accessibility-usability-checklist") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(checklist.checks.map((check) => check.id), REQUIRED_ACCESSIBILITY_CHECKS)) {

@@ -980,10 +980,6 @@ try {
 		inboxDrainBudgetMs,
 		onInboxDeliveryEvent: (event, fields) => log(event, fields),
 	});
-	// Relay mesh: off unless HOBO_CI_NATS_URL names a server. With it, this
-	// worker advertises its free slots and takes a queued job only on its turn
-	// (see docs/design/ci-relay-mesh.md). It only applies when the worker reads
-	// GitHub's queue itself.
 	const meshSettings =
 		plan.admission === "pull"
 			? meshSettingsFromEnv(process.env, hostname())

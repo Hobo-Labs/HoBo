@@ -2,7 +2,7 @@
 
 Independent draft POC for [HOBO-21](https://linear.app/quickdeploy-ai/issue/HOBO-21) and
 [HOBO-595](https://linear.app/quickdeploy-ai/issue/HOBO-595). Pins the `ActorHost` runtime-port
-behavior from `docs/design/sdk-api.md#plan-02`, `docs/design/data-plane.md#plan-11`,
+behavior from `urn:hobo:requirement:sdk-api#plan-02`, `urn:hobo:requirement:data-plane#plan-11`,
 ADR-0002, and ADR-0053.
 
 ## Contract Surface

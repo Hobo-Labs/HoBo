@@ -43,14 +43,14 @@ test("authoritative dependencies and M1 proof assets are explicit before follow-
   assert.deepEqual(
     ENTERPRISE_DEPLOYMENT_HARDENING_SCOPE.authoritativeDependencies.map((dependency) => dependency.record),
     [
-      "docs/design/bootstrap-installer.md",
-      "docs/design/upgrade-migration-engine.md",
-      "docs/design/backup-restore.md",
-      "docs/design/tenant-isolation-quotas.md",
-      "docs/design/admin-console.md",
-      "docs/design/support-sla-channels.md",
-      "docs/design/security-verification.md",
-      "docs/design/customer-assurance-evidence-packet.md",
+      "urn:hobo:requirement:bootstrap-installer",
+      "urn:hobo:requirement:upgrade-migration-engine",
+      "urn:hobo:requirement:backup-restore",
+      "urn:hobo:requirement:tenant-isolation-quotas",
+      "urn:hobo:requirement:admin-console",
+      "urn:hobo:requirement:support-sla-channels",
+      "urn:hobo:requirement:security-verification",
+      "urn:hobo:requirement:customer-assurance-evidence-packet",
     ],
   );
   assert.deepEqual(

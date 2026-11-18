@@ -186,17 +186,17 @@ export const TENANT_ISOLATION_QUOTAS_SCOPE = Object.freeze({
     },
   ]),
   designRefs: Object.freeze([
-    "docs/design/security-networking.md#plan-50",
-    "docs/design/security-networking.md#plan-12",
-    "docs/design/architecture.md#plan-10",
-    "docs/design/developer-experience.md#plan-49",
+    "urn:hobo:requirement:security-networking#plan-50",
+    "urn:hobo:requirement:security-networking#plan-12",
+    "urn:hobo:requirement:architecture#plan-10",
+    "urn:hobo:requirement:developer-experience#plan-49",
   ]),
   adrRefs: Object.freeze([
-    "docs/design/adr/02-identity-security.md#adr-0039",
-    "docs/design/adr/02-identity-security.md#adr-0074",
-    "docs/design/adr/02-identity-security.md#adr-0077",
-    "docs/design/adr/02-identity-security.md#adr-0079",
-    "docs/design/adr/02-identity-security.md#adr-0080",
+    "urn:hobo:decision:adr-0039",
+    "urn:hobo:decision:adr-0074",
+    "urn:hobo:decision:adr-0077",
+    "urn:hobo:decision:adr-0079",
+    "urn:hobo:decision:adr-0080",
   ]),
   initiativeDependencies: Object.freeze([
     {

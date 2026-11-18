@@ -23,7 +23,7 @@ package vibe_role_tutorial_outlines
 
 #RoleTutorialOutline: {
 	role: #Role
-	walkthroughAnchor: =~"^docs/design/walkthrough\\.md#"
+	walkthroughAnchor: =~"^urn:hobo:requirement:walkthrough#"
 	personaGoal: #NonEmptyString
 	prerequisites: #NonEmptyStringList
 	commandPath: #NonEmptyStringList
@@ -41,7 +41,7 @@ package vibe_role_tutorial_outlines
 	issue: "HOBO-552"
 	phase: "M1"
 	packagePath: "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines"
-	proofPath: "docs/design/proofs/vibe-role-tutorial-outlines/README.md"
+	proofPath: "urn:hobo:proof:vibe-role-tutorial-outlines"
 	designRefs: #NonEmptyStringList
 	roles: [#Role, ...#Role]
 	quickstartFixtureRefs: [#TutorialQuickstartFixtureRef, ...#TutorialQuickstartFixtureRef]

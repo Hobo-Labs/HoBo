@@ -32,7 +32,7 @@ competitor:
 - **Nomad Pack:** a templating/packaging layer for Nomad job specifications: deploy popular apps, reuse internal patterns, and share jobspecs through registries.
 - **Paradigm:** operations-first workload orchestration. Developers or platform teams submit HCL jobspecs; Nomad schedules allocations onto client nodes and manages lifecycle, placement, networking, service registration, and rollout behavior.
 - **Target user:** infrastructure/platform teams that want a lighter-weight alternative or complement to Kubernetes, especially for mixed workloads: Docker, raw executables, Java, QEMU, batch, system jobs, and legacy services.
-- **Relation to HoBo:** direct competition at the **scheduler/runtime/control-plane** layer, especially when paired with Nomad Pack as the reusable app packaging story. It is not an Infrastructure-from-Code platform like Nitric; it is a programmable workload fabric HoBo could either compete with or target as a provider/host adapter (dispositioned accepted-future in [ADR-0106](../design/adr/01-architecture-core.md#adr-0106)).
+- **Relation to HoBo:** direct competition at the **scheduler/runtime/control-plane** layer, especially when paired with Nomad Pack as the reusable app packaging story. It is not an Infrastructure-from-Code platform like Nitric; it is a programmable workload fabric HoBo could either compete with or target as a provider/host adapter (dispositioned accepted-future in [ADR-0106](urn:hobo:decision:adr-0106)).
 
 ## Architecture
 
@@ -77,7 +77,7 @@ primitives, which is why it fits estates Kubernetes does not.
 | `runtime-portability` | Multiple task drivers, so the same scheduler covers heterogeneous workloads |
 | `reconciliation` | Allocation lifecycle and rescheduling |
 
-[`lineage.md`](../design/lineage.md) records Nomad as a **pillar, pivoted**: the heterogeneous
+[`lineage.md`](urn:hobo:requirement:lineage) records Nomad as a **pillar, pivoted**: the heterogeneous
 scheduling and federation intent are taken, realized through the wasmCloud lattice and the
 Junction/Yard/Camp hierarchy rather than through a Nomad cluster.
 
@@ -216,61 +216,61 @@ nomad-pack destroy prometheus
 
 <a id="hobo-mapping"></a>
 
-> For every Nomad/Nomad Pack feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · ↔ = adjacent/composable · 🔜 = planned/iteration hook. HoBo design lives in [`../design/`](../design/index.md). The displacement decision — why self-hosted wasmCloud ([ADR-0031](../design/adr/01-architecture-core.md#adr-0031)) + Matching ([ADR-0033](../design/adr/01-architecture-core.md#adr-0033)) + Dispatcher ([ADR-0071](../design/adr/01-architecture-core.md#adr-0071)) subsume the scheduler pillar, and Nomad's accepted-future deploy-target disposition — is recorded in [ADR-0106](../design/adr/01-architecture-core.md#adr-0106). Rows with no committed design text anchor to an explicit iteration hook, never to a bare status.
+> For every Nomad/Nomad Pack feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · ↔ = adjacent/composable · 🔜 = planned/iteration hook. HoBo design lives in [`../design/`](urn:hobo:requirement:index). The displacement decision — why self-hosted wasmCloud ([ADR-0031](urn:hobo:decision:adr-0031)) + Matching ([ADR-0033](urn:hobo:decision:adr-0033)) + Dispatcher ([ADR-0071](urn:hobo:decision:adr-0071)) subsume the scheduler pillar, and Nomad's accepted-future deploy-target disposition — is recorded in [ADR-0106](urn:hobo:decision:adr-0106). Rows with no committed design text anchor to an explicit iteration hook, never to a bare status.
 
 ### Core model
 
 | Nomad / Nomad Pack              | HoBo equivalent                                                                                       | Status | HoBo doc                                                                                               |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
-| Workload scheduler/orchestrator | Yard/Camp control plane + Planner + runtime adapters schedule Bindles/components to providers         | ✅     | [04](../design/control-plane.md#plan-04), [20](../design/wasm-runtime-wit.md#plan-20)                  |
-| Jobspec HCL                     | `hobo.config.ts` + collected Manifest IR + resource graph                                             | ➕     | [02](../design/sdk-api.md#plan-02), [21](../design/authoring-resources-wiring.md#plan-21)              |
-| Job/group/task hierarchy        | Yard → Camp/environment → Bindle/service/component; links express dependencies                        | ✅     | [20](../design/wasm-runtime-wit.md#plan-20), [21](../design/authoring-resources-wiring.md#plan-21)     |
-| Allocation placement            | Matching selects runtime/resource providers per boundary and records decisions                        | ➕     | [25](../design/platform-engineering.md#plan-25), [04](../design/control-plane.md#plan-04)              |
-| Nomad client drivers            | HoBo runtime providers: wasm component host by default, OCI/container/VM adapters as provider choices | ➕     | [20](../design/wasm-runtime-wit.md#plan-20), [04](../design/control-plane.md#plan-04)                  |
-| Nomad Pack                      | Registry artifacts + Resource Definitions + generated/app templates                                   | ➕     | [21](../design/authoring-resources-wiring.md#plan-21), [25](../design/platform-engineering.md#plan-25) |
+| Workload scheduler/orchestrator | Yard/Camp control plane + Planner + runtime adapters schedule Bindles/components to providers         | ✅     | [04](urn:hobo:requirement:control-plane#plan-04), [20](urn:hobo:requirement:wasm-runtime-wit#plan-20)                  |
+| Jobspec HCL                     | `hobo.config.ts` + collected Manifest IR + resource graph                                             | ➕     | [02](urn:hobo:requirement:sdk-api#plan-02), [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)              |
+| Job/group/task hierarchy        | Yard → Camp/environment → Bindle/service/component; links express dependencies                        | ✅     | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)     |
+| Allocation placement            | Matching selects runtime/resource providers per boundary and records decisions                        | ➕     | [25](urn:hobo:requirement:platform-engineering#plan-25), [04](urn:hobo:requirement:control-plane#plan-04)              |
+| Nomad client drivers            | HoBo runtime providers: wasm component host by default, OCI/container/VM adapters as provider choices | ➕     | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [04](urn:hobo:requirement:control-plane#plan-04)                  |
+| Nomad Pack                      | Registry artifacts + Resource Definitions + generated/app templates                                   | ➕     | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [25](urn:hobo:requirement:platform-engineering#plan-25) |
 
 ### Workload and resource catalog
 
 | Nomad feature                | HoBo equivalent                                                                                                      | Status | HoBo doc                                                                                            |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------- |
-| Service jobs                 | Long-running service components                                                                                      | ✅     | [20](../design/wasm-runtime-wit.md#plan-20)                                                         |
-| Batch jobs                   | `hobo:job` / durable job resource                                                                                    | ✅     | [21](../design/authoring-resources-wiring.md#plan-21), [02](../design/sdk-api.md#plan-02)           |
-| System jobs                  | Yard/operator/system Bindles per Camp/node class                                                                     | 🔜     | [iteration hook](../design/platform-engineering.md#node-placement-and-system-workloads-iteration-hooks) |
-| Periodic jobs                | `hobo:scheduler` + jobs/workflows                                                                                     | ✅     | [21](../design/authoring-resources-wiring.md#plan-21)                                               |
-| Parameterized/dispatch jobs  | Commands/events into actor/workflow/job ports                                                                        | ➕     | [02](../design/sdk-api.md#plan-02), [11](../design/data-plane.md#plan-11)                           |
-| Docker workloads             | OCI fallback/provider adapter                                                                                        | ✅     | [20](../design/wasm-runtime-wit.md#plan-20), [04](../design/control-plane.md#plan-04)               |
-| Raw exec / Java / QEMU       | Host/runtime adapters selected by Matching; OCI/VM adapters designed, raw-exec host adapter not yet designed         | ↔      | [04](../design/control-plane.md#plan-04), [iteration hook](../design/platform-engineering.md#node-placement-and-system-workloads-iteration-hooks) |
-| Dynamic ports/network blocks | `http`/network/domain/dns ports + provider-specific placement constraints                                            | ✅     | [21](../design/authoring-resources-wiring.md#plan-21), [12](../design/security-networking.md#plan-12) |
-| CSI/host volumes             | Blob/data/storage providers; host/volume escape hatches                                                              | ↔      | [21](../design/authoring-resources-wiring.md#plan-21)                                               |
-| Nomad Variables/templates    | `config`/`secret` ports + typed parsed configuration                                                                 | ➕     | [21](../design/authoring-resources-wiring.md#plan-21)                                               |
-| Consul service discovery     | `service`/`http`/mesh provider; could target Consul                                                                  | ↔      | [21](../design/authoring-resources-wiring.md#plan-21)                                               |
-| Vault secrets                | `secret` provider adapter; could target Vault                                                                        | ↔      | [21](../design/authoring-resources-wiring.md#plan-21)                                               |
-| Autoscaler                   | HoBo reliability/cost policies + operator agents                                                                     | ➕     | [05](../design/reliability-observability-cost.md#plan-05), [40](../design/operators-sre.md#plan-40) |
+| Service jobs                 | Long-running service components                                                                                      | ✅     | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20)                                                         |
+| Batch jobs                   | `hobo:job` / durable job resource                                                                                    | ✅     | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [02](urn:hobo:requirement:sdk-api#plan-02)           |
+| System jobs                  | Yard/operator/system Bindles per Camp/node class                                                                     | 🔜     | [iteration hook](urn:hobo:requirement:platform-engineering#node-placement-and-system-workloads-iteration-hooks) |
+| Periodic jobs                | `hobo:scheduler` + jobs/workflows                                                                                     | ✅     | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)                                               |
+| Parameterized/dispatch jobs  | Commands/events into actor/workflow/job ports                                                                        | ➕     | [02](urn:hobo:requirement:sdk-api#plan-02), [11](urn:hobo:requirement:data-plane#plan-11)                           |
+| Docker workloads             | OCI fallback/provider adapter                                                                                        | ✅     | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [04](urn:hobo:requirement:control-plane#plan-04)               |
+| Raw exec / Java / QEMU       | Host/runtime adapters selected by Matching; OCI/VM adapters designed, raw-exec host adapter not yet designed         | ↔      | [04](urn:hobo:requirement:control-plane#plan-04), [iteration hook](urn:hobo:requirement:platform-engineering#node-placement-and-system-workloads-iteration-hooks) |
+| Dynamic ports/network blocks | `http`/network/domain/dns ports + provider-specific placement constraints                                            | ✅     | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [12](urn:hobo:requirement:security-networking#plan-12) |
+| CSI/host volumes             | Blob/data/storage providers; host/volume escape hatches                                                              | ↔      | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)                                               |
+| Nomad Variables/templates    | `config`/`secret` ports + typed parsed configuration                                                                 | ➕     | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)                                               |
+| Consul service discovery     | `service`/`http`/mesh provider; could target Consul                                                                  | ↔      | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)                                               |
+| Vault secrets                | `secret` provider adapter; could target Vault                                                                        | ↔      | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)                                               |
+| Autoscaler                   | HoBo reliability/cost policies + operator agents                                                                     | ➕     | [05](urn:hobo:requirement:reliability-observability-cost#plan-05), [40](urn:hobo:requirement:operators-sre#plan-40) |
 
 ### Operations, security, and rollout
 
 | Nomad feature                     | HoBo equivalent                                                          | Status | HoBo doc                                                                                            |
 | --------------------------------- | ------------------------------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------- |
-| Constraints/affinities/spread     | Context-matching selects Resource Definitions; ADR-0108 covers substrate scheduler hints; the planner now ships a HoBo-native placement-criteria vocabulary (property selectors, affinity/anti-affinity, spread, pickN — `packages/cloud/src/planner/placement.ts`) | ✅     | [25](../design/platform-engineering.md#plan-25), [iteration hook](../design/platform-engineering.md#node-placement-and-system-workloads-iteration-hooks) |
-| Rolling update/canary/auto-revert | Deployment events, progressive delivery gates, rollback/replay           | ✅     | [05](../design/reliability-observability-cost.md#plan-05), [11](../design/data-plane.md#plan-11)    |
-| Service checks + drain lifecycle  | Endpoint Monitor/SRE operators + health projections + policy-gated drain | ➕     | [40](../design/operators-sre.md#plan-40), [05](../design/reliability-observability-cost.md#plan-05) |
-| ACLs/namespaces                   | Project/Yard/Camp RBAC and policy                                        | ✅     | [12](../design/security-networking.md#plan-12)                                                      |
-| Workload Identity JWTs            | Workload + agent identities, SVID-style principals, token broker         | ➕     | [06](../design/ai-native-agent-auth.md#plan-06)                                                     |
-| Vault/Consul auth                 | Secret/service provider adapters behind ports                            | ↔      | [21](../design/authoring-resources-wiring.md#plan-21)                                               |
-| Sentinel policy                   | Policy gates over manifests, deploys, agent actions, and conformance     | ✅     | [12](../design/security-networking.md#plan-12), [46](../design/governance-planes.md#plan-46)        |
-| CLI/API/UI                        | `hobo` CLI, control-plane API, developer/fleet dashboard                 | ✅     | [07](../design/developer-experience.md#plan-07), [04](../design/control-plane.md#plan-04)           |
+| Constraints/affinities/spread     | Context-matching selects Resource Definitions; ADR-0108 covers substrate scheduler hints; the planner now ships a HoBo-native placement-criteria vocabulary (property selectors, affinity/anti-affinity, spread, pickN — `packages/cloud/src/planner/placement.ts`) | ✅     | [25](urn:hobo:requirement:platform-engineering#plan-25), [iteration hook](urn:hobo:requirement:platform-engineering#node-placement-and-system-workloads-iteration-hooks) |
+| Rolling update/canary/auto-revert | Deployment events, progressive delivery gates, rollback/replay           | ✅     | [05](urn:hobo:requirement:reliability-observability-cost#plan-05), [11](urn:hobo:requirement:data-plane#plan-11)    |
+| Service checks + drain lifecycle  | Endpoint Monitor/SRE operators + health projections + policy-gated drain | ➕     | [40](urn:hobo:requirement:operators-sre#plan-40), [05](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| ACLs/namespaces                   | Project/Yard/Camp RBAC and policy                                        | ✅     | [12](urn:hobo:requirement:security-networking#plan-12)                                                      |
+| Workload Identity JWTs            | Workload + agent identities, SVID-style principals, token broker         | ➕     | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06)                                                     |
+| Vault/Consul auth                 | Secret/service provider adapters behind ports                            | ↔      | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)                                               |
+| Sentinel policy                   | Policy gates over manifests, deploys, agent actions, and conformance     | ✅     | [12](urn:hobo:requirement:security-networking#plan-12), [46](urn:hobo:requirement:governance-planes#plan-46)        |
+| CLI/API/UI                        | `hobo` CLI, control-plane API, developer/fleet dashboard                 | ✅     | [07](urn:hobo:requirement:developer-experience#plan-07), [04](urn:hobo:requirement:control-plane#plan-04)           |
 
 ### Where HoBo deliberately exceeds Nomad
 
 | Capability                                                                                                                                                                     | HoBo doc                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| **Infrastructure-from-Code authoring**: resources declared in app code and collected into Manifest IR, not hand-written jobspec-only deployment.                               | [02](../design/sdk-api.md#plan-02), [21](../design/authoring-resources-wiring.md#plan-21)               |
-| **Portable app-resource ports**: databases, buckets, queues, topics, secrets, schedules, jobs, websockets, AI, websites, config, feature flags behind WIT/equivalence classes. | [21](../design/authoring-resources-wiring.md#plan-21), [20](../design/wasm-runtime-wit.md#plan-20)      |
-| **WASM/WASI/WIT-first runtime contract**: providers export WIT interfaces; the membrane is wRPC/component links, not scheduler driver plugins plus ad hoc app protocols.       | [20](../design/wasm-runtime-wit.md#plan-20), [ADR-0069](../design/adr/01-architecture-core.md#adr-0069) |
-| **Event-sourced application runtime**: actors, durable workflows, sagas, materialized projections, replay/time-travel/audit.                                                   | [02](../design/sdk-api.md#plan-02), [11](../design/data-plane.md#plan-11)                               |
-| **Agents as first-class operators/principals**: SRE, Endpoint Monitor, GitOps, Platform Engineer, scoped credentials, MCP/API control, policy-gated changes.                   | [06](../design/ai-native-agent-auth.md#plan-06), [40](../design/operators-sre.md#plan-40)               |
-| **Generated providers and implementations**: Forge/SWE loop can generate adapters, stubs, conformance tests, and implementation code.                                          | [23](../design/generated-stack.md#plan-23)                                                              |
-| **Typed contract gates**: Protobuf/CUE/PACT/WIT conformance for boundaries and resources, beyond HCL template rendering.                                                       | [09](../design/generated-stack.md#plan-09), [21](../design/authoring-resources-wiring.md#plan-21)       |
+| **Infrastructure-from-Code authoring**: resources declared in app code and collected into Manifest IR, not hand-written jobspec-only deployment.                               | [02](urn:hobo:requirement:sdk-api#plan-02), [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)               |
+| **Portable app-resource ports**: databases, buckets, queues, topics, secrets, schedules, jobs, websockets, AI, websites, config, feature flags behind WIT/equivalence classes. | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [20](urn:hobo:requirement:wasm-runtime-wit#plan-20)      |
+| **WASM/WASI/WIT-first runtime contract**: providers export WIT interfaces; the membrane is wRPC/component links, not scheduler driver plugins plus ad hoc app protocols.       | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [ADR-0069](urn:hobo:decision:adr-0069) |
+| **Event-sourced application runtime**: actors, durable workflows, sagas, materialized projections, replay/time-travel/audit.                                                   | [02](urn:hobo:requirement:sdk-api#plan-02), [11](urn:hobo:requirement:data-plane#plan-11)                               |
+| **Agents as first-class operators/principals**: SRE, Endpoint Monitor, GitOps, Platform Engineer, scoped credentials, MCP/API control, policy-gated changes.                   | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [40](urn:hobo:requirement:operators-sre#plan-40)               |
+| **Generated providers and implementations**: Forge/SWE loop can generate adapters, stubs, conformance tests, and implementation code.                                          | [23](urn:hobo:requirement:generated-stack#plan-23)                                                              |
+| **Typed contract gates**: Protobuf/CUE/PACT/WIT conformance for boundaries and resources, beyond HCL template rendering.                                                       | [09](urn:hobo:requirement:generated-stack#plan-09), [21](urn:hobo:requirement:authoring-resources-wiring#plan-21)       |
 
 ### Where Nomad is ahead / pressure on HoBo
 
@@ -322,7 +322,7 @@ nomad-pack destroy prometheus
 
 ## Better-together / integration posture
 
-- **Borrow** — recorded in [`lineage.md`](../design/lineage.md): heterogeneous scheduling and
+- **Borrow** — recorded in [`lineage.md`](urn:hobo:requirement:lineage): heterogeneous scheduling and
   federation intent. Worth adding explicitly — **constraint / affinity / spread as a declarative
   placement vocabulary** is a well-designed language for expressing placement preferences, and HoBo's
   matching inputs would benefit from being that legible.
@@ -347,7 +347,7 @@ nomad-pack destroy prometheus
 
 - [Nomad documentation](https://developer.hashicorp.com/nomad/docs) — jobspec, task drivers, scheduling, constraints, federation, Nomad Pack
 - [hashicorp/nomad](https://github.com/hashicorp/nomad) — source and current licence
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Nomad as a pivoted pillar
+- HoBo-side: [`design/lineage.md`](urn:hobo:requirement:lineage) records Nomad as a pivoted pillar
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current licence terms and post-acquisition roadmap were not

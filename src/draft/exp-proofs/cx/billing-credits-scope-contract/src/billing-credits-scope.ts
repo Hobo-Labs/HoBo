@@ -2,10 +2,10 @@ import { isJsonObject, type JsonValue } from "./json.js";
 export const REQUIRED_BOUNDARIES = ["service", "ux", "security", "support"] as const;
 
 const REQUIRED_DEPENDENCIES = [
-  "docs/design/reliability-observability-cost.md#plan-05",
-  "docs/design/contracts-policy-flags.md#plan-29",
-  "docs/design/governance-planes.md#plan-46",
-  "docs/design/adr/04-governance-verification.md#adr-0039",
+  "urn:hobo:requirement:reliability-observability-cost#plan-05",
+  "urn:hobo:requirement:contracts-policy-flags#plan-29",
+  "urn:hobo:requirement:governance-planes#plan-46",
+  "urn:hobo:decision:adr-0039",
   "HOBO-417",
   "HOBO-489",
   "HOBO-490",
@@ -170,19 +170,19 @@ export const BILLING_CREDITS_SCOPE: BillingCreditsScope = {
   },
   dependencies: [
     {
-      source: "docs/design/reliability-observability-cost.md#plan-05",
+      source: "urn:hobo:requirement:reliability-observability-cost#plan-05",
       reason: "Connects billing and credits to cost, quota, and spend-governance posture without taking runtime enforcement scope.",
     },
     {
-      source: "docs/design/contracts-policy-flags.md#plan-29",
+      source: "urn:hobo:requirement:contracts-policy-flags#plan-29",
       reason: "Pins policy-decision and entitlement boundaries that billing may inform but does not execute in M0.",
     },
     {
-      source: "docs/design/governance-planes.md#plan-46",
+      source: "urn:hobo:requirement:governance-planes#plan-46",
       reason: "Supplies audit, governance, and customer-visible evidence expectations for commercial decisions.",
     },
     {
-      source: "docs/design/adr/04-governance-verification.md#adr-0039",
+      source: "urn:hobo:decision:adr-0039",
       reason: "Records billing, quota, and cost governance as a verified launch concern.",
     },
     {
@@ -266,7 +266,7 @@ export const BILLING_CREDITS_SCOPE: BillingCreditsScope = {
       kind: "commercial-scope-map",
       owner: "Billing & Credits",
       proofMode: "design-record",
-      source: "docs/design/billing-credits.md#commercial-scope-map",
+      source: "urn:hobo:requirement:billing-credits#commercial-scope-map",
       proves: "Trial, paid plan, manual invoice, prepaid credit, correction, suspension, and unsupported commercial states have owners and boundaries.",
     },
     {
@@ -301,7 +301,7 @@ export const BILLING_CREDITS_SCOPE: BillingCreditsScope = {
       kind: "support-and-audit-handoff",
       owner: "Support Workflow",
       proofMode: "support-handoff",
-      source: "docs/design/governance-planes.md#plan-46",
+      source: "urn:hobo:requirement:governance-planes#plan-46",
       proves: "Support receives safe owner routing, evidence references, and audit pointers for billing and credit states.",
     },
   ],

@@ -56,9 +56,9 @@ CI guard `preview-bump-declares-upcaster` rejects preview pin changes lacking th
 
 ## References
 
-- [Plan 20 — WIT interface catalog](../../docs/design/wasm-runtime-wit.md#plan-20)
-- [ADR-0072 — SDK is WIT-first](../../docs/design/adr/01-architecture-core.md#adr-0072)
-- [ADR-0085 — wRPC + WIT baseline](../../docs/design/adr/01-architecture-core.md#adr-0085)
-- [ADR-0024 — exact upstream pins](../../docs/design/adr/07-portability-extensibility.md#adr-0024)
+- [Plan 20 — WIT interface catalog](urn:hobo:requirement:wasm-runtime-wit#plan-20)
+- [ADR-0072 — SDK is WIT-first](urn:hobo:decision:adr-0072)
+- [ADR-0085 — wRPC + WIT baseline](urn:hobo:decision:adr-0085)
+- [ADR-0024 — exact upstream pins](urn:hobo:decision:adr-0024)
 
 Promoted from draft proofs `hobo-wit-toolchain-contract`, `hobo-sdk-aggregate-wit-contract`, `hobo-runtime-primitives`, and `wasi-interface-pins` (HOBO-583, HOBO-590).

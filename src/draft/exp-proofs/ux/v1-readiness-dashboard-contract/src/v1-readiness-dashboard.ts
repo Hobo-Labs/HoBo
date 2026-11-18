@@ -58,8 +58,8 @@ export const v1ReadinessDashboard: V1ReadinessDashboard = {
     "Aggregate release decision evidence so blockers, gaps, risks, owners, and verification age cannot appear green without evidence.",
   sourceRecords: [
     "HOBO-401",
-    "docs/design/v1-readiness-dashboard.md",
-    "docs/design/launch-blocker-taxonomy.md",
+    "urn:hobo:requirement:v1-readiness-dashboard",
+    "urn:hobo:requirement:launch-blocker-taxonomy",
     "src/draft/technical-proofs/v1-cutline-contract/README.md"
   ],
   fields: [

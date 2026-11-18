@@ -1,6 +1,6 @@
 # Technologies — ecosystem reference
 
-> Faithful captures of **concrete tools / libraries / products / engines** in HoBo's ecosystem, each with an analysis of its relevance to the [design suite](../design/index.md). Sibling to [`../standards/`](../standards/index.md) (open specs) and [`../patterns/`](../patterns/index.md) (techniques), and to [`../competitors/`](../competitors/index.md) (head-on/adjacent products). Many of these are candidates to sit **behind a HoBo WIT port as an optional capability provider** rather than being baked into the model — the recurring HoBo stance.
+> Faithful captures of **concrete tools / libraries / products / engines** in HoBo's ecosystem, each with an analysis of its relevance to the [design suite](urn:hobo:requirement:index). Sibling to [`../standards/`](../standards/index.md) (open specs) and [`../patterns/`](../patterns/index.md) (techniques), and to [`../competitors/`](../competitors/index.md) (head-on/adjacent products). Many of these are candidates to sit **behind a HoBo WIT port as an optional capability provider** rather than being baked into the model — the recurring HoBo stance.
 
 ## Per-entry shape
 Each file has: **What it is** · **Key features** (the documentation) · **Relevance to HoBo** (the analysis — validates / informs / adopt-behind-a-port / gap, with Plan/ADR links) · **Sources**.
@@ -27,7 +27,7 @@ Each file has: **What it is** · **Key features** (the documentation) · **Relev
 | **Argo CD** | CNCF-graduated declarative GitOps CD (Application CRD, sync waves); reference target of GitOps publisher mode | [`argo-cd.md`](./argo-cd.md) |
 | **Flux CD** | CNCF-graduated GitOps toolkit (source/kustomize/helm controllers, OCI artifacts) | [`flux-cd.md`](./flux-cd.md) |
 
-> See also: the AI-training trio (Trace · Agent Lightning · DSPy) directly informs HoBo's **`training-engine`** ([ADR-0025](../design/adr/03-data-plane.md#adr-0025)/[Plan 23](../design/generated-stack.md#plan-23)); OPA/Rego and Pact are the canonical **optional providers** behind HoBo's policy ([Plan 29](../design/contracts-policy-flags.md#plan-29)) and contract ([Plan 29](../design/contracts-policy-flags.md#plan-29)) ports.
+> See also: the AI-training trio (Trace · Agent Lightning · DSPy) directly informs HoBo's **`training-engine`** ([ADR-0025](urn:hobo:decision:adr-0025)/[Plan 23](urn:hobo:requirement:generated-stack#plan-23)); OPA/Rego and Pact are the canonical **optional providers** behind HoBo's policy ([Plan 29](urn:hobo:requirement:contracts-policy-flags#plan-29)) and contract ([Plan 29](urn:hobo:requirement:contracts-policy-flags#plan-29)) ports.
 
 ## Sources & fair use
 These are **third-party reference captures**. Each file links its upstream source; factual interface/feature surface is quoted under **fair use for commentary, comparison, and interoperability analysis**, limited to what's needed to map each to HoBo. All trademarks/copyright remain their owners'; nothing here grants rights to that material, and these captures are not part of the HoBo product.

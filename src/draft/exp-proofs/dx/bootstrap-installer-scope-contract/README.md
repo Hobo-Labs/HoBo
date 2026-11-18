@@ -7,7 +7,7 @@ live provisioning, account/auth implementation, first deploy execution, secret
 collection, or uninstall cleanup.
 
 The authoritative design record is
-[`docs/design/bootstrap-installer.md`](../../../../../docs/design/bootstrap-installer.md).
+[`urn:hobo:requirement:bootstrap-installer`](urn:hobo:requirement:bootstrap-installer).
 
 ## Proof
 

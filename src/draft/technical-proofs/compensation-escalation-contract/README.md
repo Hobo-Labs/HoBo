@@ -1,7 +1,7 @@
 # HOBO-315 Compensation Escalation Contract
 
 Independent POC for hardening compensation-of-compensation behavior from
-[Plan 05](../../../../docs/design/reliability-observability-cost.md#plan-05).
+[Plan 05](urn:hobo:requirement:reliability-observability-cost#plan-05).
 
 ## Proof Surface
 

@@ -1,14 +1,14 @@
 # Resilience Semantics Annex POC
 
 Independent POC for HOBO-516, extended by HOBO-518. It turns the DX SDK
-resilience semantics matrix from `docs/design/dx-sdk-resilience-semantics.md`
+resilience semantics matrix from `urn:hobo:requirement:dx-sdk-resilience-semantics`
 into executable facts for the later SDK conformance lane.
 
 ## Requirements Source
 
-- `docs/design/dx-sdk-resilience-semantics.md`: HOBO-515 vocabulary and target
+- `urn:hobo:requirement:dx-sdk-resilience-semantics`: HOBO-515 vocabulary and target
   vectors.
-- `docs/design/sdk-contracts.md`: SDK public-contract map and resilience
+- `urn:hobo:requirement:sdk-contracts`: SDK public-contract map and resilience
   conformance sequencing.
 - `src/draft/technical-proofs/idiom-semantics-annex`: existing HOBO-31 semantics lane.
 - `src/draft/technical-proofs/queue-clock-runtime-port-contract`: deterministic retry timing and

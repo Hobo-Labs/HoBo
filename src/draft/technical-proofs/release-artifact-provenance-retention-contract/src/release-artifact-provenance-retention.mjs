@@ -147,11 +147,11 @@ export const RELEASE_ARTIFACT_PROVENANCE_RETENTION = {
     },
   ],
   dependencies: [
-    "docs/design/sbom-vulnerability-notice-evidence.md",
-    "docs/design/release-notes-upgrade-guide.md",
-    "docs/design/adr/07-portability-extensibility.md#adr-0062",
-    "docs/design/adr/07-portability-extensibility.md#adr-0073",
-    "docs/design/adr/01-architecture-core.md#adr-0085",
+    "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
+    "urn:hobo:requirement:release-notes-upgrade-guide",
+    "urn:hobo:decision:adr-0062",
+    "urn:hobo:decision:adr-0073",
+    "urn:hobo:decision:adr-0085",
   ],
 };
 

@@ -35,11 +35,11 @@ test("M0 launch posture defines supported inputs, prohibited uses, controls, and
   );
 });
 
-test("each supported input names a safety boundary, customer-facing limit, and architecture evidence", () => {
+test("each supported input names a safety boundary, customer-facing limit, and evidence identifier", () => {
   for (const input of AI_GENERATION_LAUNCH_POSTURE.supportedInputs) {
     assert.ok(input.safetyBoundary, `${input.id} missing safetyBoundary`);
     assert.ok(input.customerFacingLimit, `${input.id} missing customerFacingLimit`);
-    assert.match(input.architectureEvidence, /^docs\/design\//);
+    assert.match(input.architectureEvidence, /^urn:hobo:(?:requirement|decision):/);
   }
 });
 

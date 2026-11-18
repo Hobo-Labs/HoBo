@@ -27,7 +27,7 @@ describe("HOBO-560 plan/diff review prototype", () => {
     );
     assert.equal(
       prototype.proofNote,
-      "docs/design/proofs/vibe-plan-diff-review-prototype/README.md",
+      "urn:hobo:proof:vibe-plan-diff-review-prototype",
     );
     assert.deepEqual(
       prototype.goldenFixtures.map((fixture) => fixture.state),

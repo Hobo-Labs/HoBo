@@ -9,8 +9,8 @@ targeted by deterministic Placement, fanned out under a failure budget, and
 failed over only as a governed saga. Rails are delivered like software (INFORM,
 then ENFORCE) and observed continuously as posture.
 
-- Design: [`docs/design/continuous-delivery.md`](../../docs/design/continuous-delivery.md)
-- Decisions D1–D26: [ADR-0182](../../docs/design/adr/01-architecture-core.md#adr-0182)
+- Design: [`urn:hobo:requirement:continuous-delivery`](urn:hobo:requirement:continuous-delivery)
+- Decisions D1–D26: [ADR-0182](urn:hobo:decision:adr-0182)
 - Runbooks: [`docs/runbooks/cd/`](../../docs/runbooks/cd/index.md)
 - Operator surface (`hobo deploy`, `hobo serve cd`, `hobo incident`): `packages/hobo/CD.md`
 

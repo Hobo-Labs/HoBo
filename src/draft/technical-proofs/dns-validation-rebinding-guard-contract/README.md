@@ -1,7 +1,7 @@
 # DNS Validation Rebinding Guard Contract
 
 Independent contract POC for HOBO-193. It hardens the custom-domain validation
-gate from [ADR-0101](../../../../docs/design/adr/07-portability-extensibility.md#adr-0101)
+gate from [ADR-0101](urn:hobo:decision:adr-0101)
 against DNS rebinding, spoofed resolver evidence, sibling-name ACME evidence,
 and validate-to-promote races.
 

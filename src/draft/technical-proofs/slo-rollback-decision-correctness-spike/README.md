@@ -2,7 +2,7 @@
 
 Independent HOBO-356 spike proof. This package replays synthetic good, bad, and missing-data rollout
 signals through the HOBO-342 metric-analysis decision function and records the threshold recommendation
-now captured in [ADR-0104](../../../../docs/design/adr/02-identity-security.md#adr-0104).
+now captured in [ADR-0104](urn:hobo:decision:adr-0104).
 
 ## Recommendation
 

@@ -15,9 +15,9 @@ import "list"
 	issue:                 "HOBO-557"
 	phase:                 "M2"
 	targetPackage:         "src/draft/exp-proofs/ax/role-journey-cli-mcp-transcripts"
-	proofNote:             "docs/design/proofs/role-journey-cli-mcp-transcripts/README.md"
+	proofNote:             "urn:hobo:proof:role-journey-cli-mcp-transcripts"
 	sourceQuickstartIssue: "HOBO-577"
-	sourceQuickstartProof: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+	sourceQuickstartProof: "urn:hobo:proof:resource-lifecycle-quickstart-examples"
 	designRefs:            #NonEmptyStringList
 	scopeOut:              #NonEmptyStringList
 	journeys:              [...#RoleJourney] & list.MinItems(6)

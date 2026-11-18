@@ -12,7 +12,7 @@ bindings.
 - Each resource owns an isolated per-resource Pulumi stack keyed by
   `deploymentId/resourceName` (blast-radius isolation for compensation).
 - State backend config is pluggable (`memory` fixture; production targets Yard
-  object store per `docs/design/control-plane.md` IaC state model).
+  object store per `urn:hobo:requirement:control-plane` IaC state model).
 - Recorded providers-epic fixture (`providers-shop-api-iac-program.json`)
   exercises the `IacProgram` emission pipeline from
   `src/draft/epic-proofs/providers-iac-build-adapters/`.

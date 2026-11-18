@@ -3,7 +3,7 @@
 The Kubernetes-substrate `IacProvider` (HOBO-716): resources are realized as
 Crossplane **CompositeResourceClaims** — reconciliation delegated to k8s
 controllers — selected by Matching whenever a Camp's substrate is Kubernetes
-([control-plane.md §IaC backends](../../../docs/design/control-plane.md)).
+([control-plane.md §IaC backends](urn:hobo:requirement:control-plane)).
 
 ## Model
 

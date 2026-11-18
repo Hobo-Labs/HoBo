@@ -49,7 +49,7 @@ export function createS2StageGateDrillContract(
     provider: CLOUDFLARE_PROVIDER,
     resumeBudgetMs: NFR_009_RESUME_BUDGET_MS,
     credentialedCiLane: "hobo/s2-stage-gate-e2e",
-    acceptanceRecord: "docs/design/stage-2-first-cloud-yard-acceptance.md",
+    acceptanceRecord: "urn:hobo:requirement:stage-2-first-cloud-yard-acceptance",
     ...overrides,
   });
 }

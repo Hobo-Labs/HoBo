@@ -1,6 +1,6 @@
 # HoBo — Competitor references
 
-> Source-backed captures of competing and adjacent products, each with a HoBo parity/mapping section. These ground the design suite ([`../design/`](../design/index.md)) in what already exists.
+> Source-backed captures of competing and adjacent products, each with a HoBo parity/mapping section. These ground the design suite ([`../design/`](urn:hobo:requirement:index)) in what already exists.
 
 This page is **navigation**. The corpus has three layers, and each fact lives in exactly one of them:
 

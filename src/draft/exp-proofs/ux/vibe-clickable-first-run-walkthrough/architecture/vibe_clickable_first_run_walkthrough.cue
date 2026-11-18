@@ -9,14 +9,14 @@ package architecture_evidence
 #VibeClickableFirstRunConsumedActivationRail: {
 	source_issue: "HOBO-540"
 	package_path: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail"
-	proof_path:   "docs/design/proofs/vibe-first-run-activation-rail/README.md"
+	proof_path:   "urn:hobo:proof:vibe-first-run-activation-rail"
 	stages:       [...string]
 }
 
 #VibeClickableFirstRunConsumedWorkspaceProjectStates: {
 	source_issue: "HOBO-541"
 	package_path: "src/draft/exp-proofs/ux/vibe-workspace-project-states"
-	proof_path:   "docs/design/proofs/vibe-workspace-project-states/README.md"
+	proof_path:   "urn:hobo:proof:vibe-workspace-project-states"
 	states:       [...string]
 }
 
@@ -35,7 +35,7 @@ package architecture_evidence
 	clickable_action:        string & !=""
 	snapshop_fixture:        #VibeClickableFirstRunSnapshopFixtureRef
 	proof_mode:              #VibeClickableFirstRunProofMode
-	docs_handoff:            string & !="" & =~"^docs/design/proofs/"
+	docs_handoff:            string & !="" & =~"^urn:hobo:proof:"
 	support_handoff:         string & !=""
 	accessibility_note:      string & !=""
 }
@@ -51,7 +51,7 @@ package architecture_evidence
 	surface:               #HandoffSurface
 	trigger:               string & !=""
 	owner:                 string & !=""
-	evidence_anchor:       string & !="" & =~"^docs/design/proofs/"
+	evidence_anchor:       string & !="" & =~"^urn:hobo:proof:"
 	customer_safe_message: string & !=""
 }
 
@@ -66,7 +66,7 @@ package architecture_evidence
 	issue:                             "HOBO-559"
 	phase:                             "M2"
 	package_path:                      "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough"
-	proof_path:                        "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md"
+	proof_path:                        "urn:hobo:proof:vibe-clickable-first-run-walkthrough"
 	design_refs:                       [...string]
 	consumed_activation_rail:            #VibeClickableFirstRunConsumedActivationRail
 	consumed_workspace_project_states: #VibeClickableFirstRunConsumedWorkspaceProjectStates

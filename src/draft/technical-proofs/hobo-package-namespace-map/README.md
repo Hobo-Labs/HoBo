@@ -1,7 +1,7 @@
 # HoBo Package Namespace Map POC
 
 This POC captures the HOBO-58 namespace decision as executable data. It mirrors
-`docs/design/package-namespaces.md` and gives future boundary lint a concrete
+`urn:hobo:requirement:package-namespaces` and gives future boundary lint a concrete
 shape to adopt when the monorepo package graph exists.
 
 ## Run

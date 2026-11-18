@@ -31,7 +31,7 @@ BoundarySet: {
 }
 
 Dependency: {
-	source: string & =~"^docs/design/"
+	source: string & =~"^urn:hobo:requirement:"
 	reason: string & != ""
 }
 

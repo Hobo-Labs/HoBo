@@ -1,6 +1,6 @@
 # TrafficRouting offerings & custom providers
 
-Portable multi-backend routing intent ([ADR-0143](../../../docs/design/adr/07-portability-extensibility.md#adr-0143)).
+Portable multi-backend routing intent ([ADR-0143](urn:hobo:decision:adr-0143)).
 This document is the extension surface for built-in and custom providers.
 
 ## Offering catalog

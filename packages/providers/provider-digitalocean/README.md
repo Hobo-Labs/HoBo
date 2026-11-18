@@ -175,4 +175,4 @@ is cited to the vendor's documentation with the date it was read. It adds no
 product and does not change the published Capability Manifest; it is read by
 `assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
 has been deployed onto these products from this repository. See
-[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).
+[`urn:hobo:requirement:postgres-backend-catalog`](urn:hobo:requirement:postgres-backend-catalog).

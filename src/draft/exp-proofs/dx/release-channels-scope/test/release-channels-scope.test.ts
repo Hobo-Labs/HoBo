@@ -63,19 +63,19 @@ test("release channel taxonomy and evidence requirements are explicit", () => {
 
 test("M0 dependencies map authoritative design sources and owning initiatives", () => {
   assert.deepEqual(RELEASE_CHANNELS_SCOPE.designRefs, [
-    "docs/design/release-notes-upgrade-guide.md",
-    "docs/design/release-artifact-provenance-retention.md",
-    "docs/design/compatibility-matrix.md",
-    "docs/design/beta-pilot-feedback.md",
-    "docs/design/launch-messaging-claims.md",
-    "docs/design/support-sla-channels.md",
-    "docs/design/public-status-page-incident-communication.md",
+    "urn:hobo:requirement:release-notes-upgrade-guide",
+    "urn:hobo:requirement:release-artifact-provenance-retention",
+    "urn:hobo:requirement:compatibility-matrix",
+    "urn:hobo:requirement:beta-pilot-feedback",
+    "urn:hobo:requirement:launch-messaging-claims",
+    "urn:hobo:requirement:support-sla-channels",
+    "urn:hobo:requirement:public-status-page-incident-communication",
   ]);
   assert.deepEqual(RELEASE_CHANNELS_SCOPE.adrRefs, [
-    "docs/design/adr/07-portability-extensibility.md#adr-0063",
-    "docs/design/adr/07-portability-extensibility.md#adr-0064",
-    "docs/design/adr/07-portability-extensibility.md#adr-0095",
-    "docs/design/adr/07-portability-extensibility.md#adr-0075",
+    "urn:hobo:decision:adr-0063",
+    "urn:hobo:decision:adr-0064",
+    "urn:hobo:decision:adr-0095",
+    "urn:hobo:decision:adr-0075",
   ]);
   assert.deepEqual(
     RELEASE_CHANNELS_SCOPE.initiativeDependencies.map((dependency) => dependency.owner),

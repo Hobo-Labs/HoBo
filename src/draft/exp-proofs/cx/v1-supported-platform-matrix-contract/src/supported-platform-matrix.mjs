@@ -150,23 +150,23 @@ export const V1_SUPPORTED_PLATFORM_MATRIX = {
   ],
   dependencies: [
     {
-      source: "docs/design/release-notes-upgrade-guide.md",
+      source: "urn:hobo:requirement:release-notes-upgrade-guide",
       reason: "Release notes must publish supported install paths, compatibility matrix inputs, and known limitations.",
     },
     {
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
       reason: "Support needs unsupported environment routing and debug evidence.",
     },
     {
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "urn:hobo:requirement:workspace-onboarding-ux",
       reason: "Workspace onboarding owns browser-visible first-run and responsive UX expectations.",
     },
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "CLI, local bootstrap, dashboard, docs, and support-facing DX surfaces consume this matrix.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0082",
+      source: "urn:hobo:decision:adr-0082",
       reason: "Default-on verification evidence prevents unsupported launch claims.",
     },
   ],

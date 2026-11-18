@@ -40,11 +40,11 @@ refusals with `@hobo/yards` error codes.
 
 ## A Yard is a catalog, not an inventory
 
-Rows say what a provider *is able to* allocate ([ADR-0157](../../docs/design/adr/07-portability-extensibility.md#adr-0157)
+Rows say what a provider *is able to* allocate ([ADR-0157](urn:hobo:decision:adr-0157)
 decision 1). Several entries per capability is the normal case — Azure's `web`
 lists Static Web Apps, App Service, Container Apps and AKS — and declaring one
 allocates nothing. Selection among them happens at resolution time under
-[ADR-0151](../../docs/design/adr/07-portability-extensibility.md#adr-0151)'s
+[ADR-0151](urn:hobo:decision:adr-0151)'s
 hard gates and lexicographic ranking, never here.
 
 ## Parity: how far each namespace is proven
@@ -151,7 +151,7 @@ per entry. No prices or free-tier allowances are recorded. Amazon Aurora DSQL
 is recorded in `POSTGRES_BACKEND_EXCLUSIONS` rather than given a provider id,
 because it is PostgreSQL-compatible rather than PostgreSQL. The full table, the
 naming decision and the sources' date are in
-[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+[`urn:hobo:requirement:postgres-backend-catalog`](urn:hobo:requirement:postgres-backend-catalog).
 
 ## Self-hosted PostgreSQL: which registered providers could host it
 
@@ -183,7 +183,7 @@ publish `*_HOST_FORMS`: cited, per-product statements about products
 they already declare, read here unchanged. An `undetermined` is resolved by
 citing the missing facets in that provider's host forms, never by
 special-casing the provider here. Citations per facet are in
-[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+[`urn:hobo:requirement:postgres-backend-catalog`](urn:hobo:requirement:postgres-backend-catalog).
 
 ## HONEST SCOPE
 
@@ -322,7 +322,7 @@ two unrelated jobs, which is a worse surface, not a better one.
 - `station(…)` returns the `StationManifest` that `defineStation` returns — the
   registration record a composition root hands to `station()` in
   `@hobo/stations`. A Station registers Yards; it never parents them
-  ([ADR-0131](../../docs/design/adr/07-portability-extensibility.md)).
+  ([ADR-0131](urn:hobo:decision:07-portability-extensibility)).
 - The Yard builder has exactly `defineYard`'s expressive range. `require`,
   `prefer`, `isolation`, `network`, `properties`, `runtimeId` and
   `resolverDefaults` are Yard fields `defineYard` does not accept either;

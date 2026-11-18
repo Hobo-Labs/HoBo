@@ -1,8 +1,8 @@
 # @hobo/data-mongodb
 
 The MongoDB engine for HoBo's engine-neutral data contract
-([ADR-0177](../../docs/design/adr/03-data-plane.md#adr-0177),
-[design note](../../docs/design/data-engines-continuous-migration.md)): the
+([ADR-0177](urn:hobo:decision:adr-0177),
+[design note](urn:hobo:requirement:data-engines-continuous-migration)): the
 `data.mongodb/v1` profile and the `@hobo/data-core` SPI — datasets, records,
 snapshot, change capture, apply, verify, write fence, retire — over an
 **injected executor**. The runtime package imports no driver and no BSON
@@ -362,7 +362,7 @@ and `snapshot` are paged keyset scans outside a transaction.
 ## Honest limits
 
 The closed impedance list in the declaration (`MONGO_IMPEDANCE_CODES`,
-[ADR-0144](../../docs/design/adr/07-portability-extensibility.md#adr-0144)):
+[ADR-0144](urn:hobo:decision:adr-0144)):
 
 | Code | Limit |
 |---|---|
@@ -491,7 +491,7 @@ which of its outputs are events and which are not.
   old authority refuses every command that does not present it.
 - **Event store** — the `MigrationJournal` the host supplies, in production
   HoBo's durable SQLite-backed **event store**
-  ([ADR-0135](../../docs/design/adr/03-data-plane-sqlite-default.md)). MongoDB is
+  ([ADR-0135](urn:hobo:decision:03-data-plane-sqlite-default)). MongoDB is
   never the event store, and the oplog is not one either: it is MongoDB's own
   log, read through change streams as a capture source and for nothing else.
 - **Projections / materialized views** — a dataset fed by `apply` is a

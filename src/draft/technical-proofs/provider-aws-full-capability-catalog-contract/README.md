@@ -8,7 +8,7 @@ Promotes the AWS provider fixtures from
 and extends the seed
 [`provider-aws-contract`](../provider-aws-contract/README.md) proof to the full
 catalog ports from
-[`authoring-resources-wiring.md`](../../../../docs/design/authoring-resources-wiring.md):
+[`authoring-resources-wiring.md`](urn:hobo:requirement:authoring-resources-wiring):
 
 - `web/service`, `kv`, `bucket`, `queue`, `topic`, `sql`, `secret`
 - equivalence-class mappings and provider-owned default Resource Definitions

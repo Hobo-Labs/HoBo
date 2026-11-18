@@ -30,9 +30,9 @@ competitor:
 > Research date **2026-08-20**.
 >
 > **Disclosure of relationship.** Pulumi is HoBo's default `IacProvider` adapter
-> ([ADR-0006](../design/adr/01-architecture-core.md#adr-0006)), and HoBo's shipped default is
+> ([ADR-0006](urn:hobo:decision:adr-0006)), and HoBo's shipped default is
 > currently an **in-memory stand-in** rather than a live Pulumi integration — see the
-> [live provider matrix](../design/live-provider-matrix.md). This capture is therefore an audit of
+> [live provider matrix](urn:hobo:requirement:live-provider-matrix). This capture is therefore an audit of
 > something HoBo depends on, not only a competitive assessment, and it is written that way.
 
 ## What it is
@@ -214,7 +214,7 @@ State labels follow the research contract.
 - [Pulumi documentation](https://www.pulumi.com/docs/) and [concepts](https://www.pulumi.com/docs/concepts/) — programs, resources, component resources, stacks, state backends, inputs/outputs, providers
 - [pulumi/pulumi](https://github.com/pulumi/pulumi) — engine source, Apache-2.0 licence, Terraform bridge
 - [Pulumi ESC](https://www.pulumi.com/docs/esc/) — environments, secrets and configuration
-- HoBo-side: [ADR-0006](../design/adr/01-architecture-core.md#adr-0006) (pluggable IaC adapters), [live provider matrix](../design/live-provider-matrix.md) (the in-memory default)
+- HoBo-side: [ADR-0006](urn:hobo:decision:adr-0006) (pluggable IaC adapters), [live provider matrix](urn:hobo:requirement:live-provider-matrix) (the in-memory default)
 
 Pulumi Cloud pricing, current provider counts, and the exact set of natively-implemented versus
 bridged providers were not verified in this pass and are not asserted.

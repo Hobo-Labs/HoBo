@@ -124,11 +124,11 @@ test("proof record pins fixture, bindle, gateway routes, and J1 journey", () => 
   assert.equal(validateCliCloudYardPathRecord(record).ok, true);
 });
 
-test("contract artifacts and proof README exist", () => {
+test("contract artifacts and package README exist", () => {
+  const packageReadme = readPackageFile("README.md");
   const proto = readPackageFile("architecture/cli_cloud_yard_path.proto");
   const cue = readPackageFile("architecture/cli_cloud_yard_path.cue");
   const pact = JSON.parse(readPackageFile("architecture/pacts/cli_cloud_yard_path.pact.json"));
-  const proofReadme = readRepoFile("docs/design/proofs/cli-cloud-yard-path/README.md");
 
   assert.match(proto, /message CliCloudYardPathRecord/);
   assert.match(cue, /#CliCloudYardPathRecord/);
@@ -145,14 +145,10 @@ test("contract artifacts and proof README exist", () => {
         interaction.request.path === "/v1/streams/logs/deploy-hello-bindle-001",
     ),
   );
-  assert.match(proofReadme, /HOBO-625/);
-  assert.match(proofReadme, /hello-bindle/);
+  assert.match(packageReadme, /HOBO-625/);
+  assert.match(packageReadme, /hello-bindle/);
 });
 
 function readPackageFile(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-}
-
-function readRepoFile(path: string) {
-  return readFileSync(new URL(`../../../../../../${path}`, import.meta.url), "utf8");
 }

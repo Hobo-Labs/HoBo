@@ -13,7 +13,7 @@ deserialized into types HoBo already runs on:
 | all three | a registrable provider for `hobo registry add` | `providerFromManifest` |
 | `api` | a TypeScript API client, a code-mode MCP server, MCP client config | `generateApiClient`, `generateCodeModeServer`, `generateMcpClientConfig` |
 
-Design: [`docs/design/provider-manifest.md`](../../docs/design/provider-manifest.md),
+Design: [`urn:hobo:requirement:provider-manifest`](urn:hobo:requirement:provider-manifest),
 ADR-0178. A complete worked example is
 [`examples/acme-cloud.provider.yaml`](./examples/acme-cloud.provider.yaml).
 

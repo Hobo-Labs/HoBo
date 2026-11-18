@@ -30,7 +30,7 @@ test("HOBO-546 pins issue, target paths, personas, surfaces, and fixture states"
   );
   assert.equal(
     parsed.proofPath,
-    "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
+    "urn:hobo:proof:vibe-marketplace-installability-mockups",
   );
   assert.deepEqual(parsed.personas, REQUIRED_MARKETPLACE_PERSONAS);
   assert.deepEqual(

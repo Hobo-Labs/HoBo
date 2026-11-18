@@ -20,8 +20,8 @@ npm.cmd --prefix src\draft\technical-proofs\resourceactor-fsm-contract test
 
 Relevant design records:
 
-- `docs/design/control-plane.md`: ResourceActor reconciliation FSM, ActorHost lease, choreography
-- `docs/design/adr/01-architecture-core.md`: ADR-0004 choreography sagas + virtual actors
+- `urn:hobo:requirement:control-plane`: ResourceActor reconciliation FSM, ActorHost lease, choreography
+- `urn:hobo:decision:01-architecture-core`: ADR-0004 choreography sagas + virtual actors
 
 
 ## Executable evidence

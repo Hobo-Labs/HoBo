@@ -71,7 +71,7 @@ export type ControlPlaneApiResourceLifecycleProof = {
   readonly issue: "HOBO-569";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/api/control-plane-api-resource-lifecycle-shapes";
-  readonly proofNote: "docs/design/proofs/control-plane-api-resource-lifecycle-shapes/README.md";
+  readonly proofNote: "urn:hobo:proof:control-plane-api-resource-lifecycle-shapes";
   readonly designRefs: readonly string[];
   readonly operations: readonly ControlPlaneOperationContract[];
   readonly refusalEnvelopes: readonly ControlPlaneRefusalEnvelope[];
@@ -99,18 +99,18 @@ export const CONTROL_PLANE_API_RESOURCE_LIFECYCLE_PROOF = {
   issue: "HOBO-569",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/api/control-plane-api-resource-lifecycle-shapes",
-  proofNote: "docs/design/proofs/control-plane-api-resource-lifecycle-shapes/README.md",
+  proofNote: "urn:hobo:proof:control-plane-api-resource-lifecycle-shapes",
   designRefs: [
-    "docs/design/control-plane.md#plan-04",
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/cli-spec.md",
-    "docs/design/platform-engineering.md#plan-25",
-    "docs/design/authoring-resources-wiring.md#plan-21",
-    "docs/design/contracts-policy-flags.md#plan-29",
-    "docs/design/data-plane.md#plan-11",
-    "docs/design/upgrade-migration-engine.md",
-    "docs/design/adr/03-data-plane.md#adr-0014",
-    "docs/design/adr/02-identity-security.md#adr-0015",
+    "urn:hobo:requirement:control-plane#plan-04",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:cli-spec",
+    "urn:hobo:requirement:platform-engineering#plan-25",
+    "urn:hobo:requirement:authoring-resources-wiring#plan-21",
+    "urn:hobo:requirement:contracts-policy-flags#plan-29",
+    "urn:hobo:requirement:data-plane#plan-11",
+    "urn:hobo:requirement:upgrade-migration-engine",
+    "urn:hobo:decision:adr-0014",
+    "urn:hobo:decision:adr-0015",
   ],
   operations: [
     {
@@ -341,7 +341,7 @@ export function parseControlPlaneApiResourceLifecycleProof(
   );
   assertLiteral(
     contract.proofNote,
-    "docs/design/proofs/control-plane-api-resource-lifecycle-shapes/README.md",
+    "urn:hobo:proof:control-plane-api-resource-lifecycle-shapes",
     "proofNote",
   );
   assertNonEmptyStringArray(contract.designRefs, "designRefs");

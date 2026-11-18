@@ -26,9 +26,9 @@ npm.cmd --prefix src\draft\technical-proofs\delta-set-apply-reconcile-contract t
 
 Relevant design records:
 
-- `docs/design/platform-engineering.md`: Deployment Sets, Deltas, promote, rollback, and incremental deploy
-- `docs/design/control-plane.md`: level-triggered ResourceActor reconciliation and Orchestrator choreography
-- `docs/design/adr/01-architecture-core.md`: ADR-0003 event sourcing and ADR-0028 environment-group atomicity
+- `urn:hobo:requirement:platform-engineering`: Deployment Sets, Deltas, promote, rollback, and incremental deploy
+- `urn:hobo:requirement:control-plane`: level-triggered ResourceActor reconciliation and Orchestrator choreography
+- `urn:hobo:decision:01-architecture-core`: ADR-0003 event sourcing and ADR-0028 environment-group atomicity
 
 
 ## Executable evidence

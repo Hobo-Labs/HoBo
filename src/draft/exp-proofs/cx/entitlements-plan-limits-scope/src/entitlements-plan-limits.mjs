@@ -110,16 +110,16 @@ export const ENTITLEMENTS_PLAN_LIMITS_SCOPE = Object.freeze({
     },
   ]),
   designRefs: Object.freeze([
-    "docs/design/usage-metering.md",
-    "docs/design/billing-launch-policy.md",
-    "docs/design/tenant-isolation-quotas.md",
-    "docs/design/reliability-observability-cost.md#plan-05",
-    "docs/design/security-networking.md#plan-50",
+    "urn:hobo:requirement:usage-metering",
+    "urn:hobo:requirement:billing-launch-policy",
+    "urn:hobo:requirement:tenant-isolation-quotas",
+    "urn:hobo:requirement:reliability-observability-cost#plan-05",
+    "urn:hobo:requirement:security-networking#plan-50",
   ]),
   adrRefs: Object.freeze([
-    "docs/design/adr/02-identity-security.md#adr-0039",
-    "docs/design/adr/02-identity-security.md#adr-0074",
-    "docs/design/adr/07-portability-extensibility.md#adr-0064",
+    "urn:hobo:decision:adr-0039",
+    "urn:hobo:decision:adr-0074",
+    "urn:hobo:decision:adr-0064",
   ]),
   initiativeDependencies: Object.freeze([
     {

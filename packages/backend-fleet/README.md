@@ -4,7 +4,7 @@ A fleet of interchangeable backends of which exactly one is active: which one
 (the assignment register), and when to move (the budget policies). Nothing here
 knows an engine. `@hobo/data-postgres` keeps its register in SQL tables on each
 PostgreSQL backend; the hosted CI relay keeps it in one key of each cache
-through `EphemeralStatePort` ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179),
+through `EphemeralStatePort` ([ADR-0179](urn:hobo:decision:adr-0179),
 phase 4c).
 
 These parts lived in `@hobo/data-postgres` (`src/fleet/`) until phase 4c moved

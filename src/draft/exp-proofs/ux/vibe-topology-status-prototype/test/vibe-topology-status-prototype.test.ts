@@ -29,7 +29,7 @@ describe("HOBO-561 topology/status prototype", () => {
     );
     assert.equal(
       prototype.proofNote,
-      "docs/design/proofs/vibe-topology-status-prototype/README.md",
+      "urn:hobo:proof:vibe-topology-status-prototype",
     );
     assert.deepEqual(
       prototype.surfaces.map((surface) => surface.id),

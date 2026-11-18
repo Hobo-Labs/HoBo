@@ -54,7 +54,7 @@ import "list"
 	issue:         "HOBO-547"
 	phase:         "M1"
 	targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states"
-	proofNote:     "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md"
+	proofNote:     "urn:hobo:proof:vibe-marketplace-trust-copy-states"
 	designRefs:    [...string] & list.MinItems(1)
 	quickstartFixtureRefs: [...#QuickstartRef] & list.MinItems(5)
 	scopeOut: [

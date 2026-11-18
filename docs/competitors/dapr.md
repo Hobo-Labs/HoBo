@@ -64,7 +64,7 @@ The mental model has three pieces:
 
 The mental model is **the same API everywhere, with the implementation swapped by configuration**.
 An application calls "save state"; which store answers is a YAML file. That is the goal HoBo shares,
-and [`lineage.md`](../design/lineage.md) records Dapr as the closest architectural analog.
+and [`lineage.md`](urn:hobo:requirement:lineage) records Dapr as the closest architectural analog.
 
 ## How it competes with HoBo
 
@@ -87,24 +87,24 @@ The portable HTTP/gRPC APIs Dapr exposes; each is backed by one or more swappabl
 
 | # | Building block | What it does | HoBo's nearest port/primitive |
 |---|---|---|---|
-| 1 | **Service invocation** | service→service HTTP/gRPC with discovery, retries, mTLS, tracing | `wasi:http` + SVID mTLS ([Plan 12](../design/security-networking.md#plan-12)) |
-| 2 | **Publish & subscribe** | topic-based messaging, multiple brokers | `wasi:messaging` / `topic()` ([Plan 21](../design/authoring-resources-wiring.md#plan-21)) |
-| 3 | **Workflows** | durable, long-running multi-service processes | `hobo:workflow` / `workflow`+`step` ([Plan 2](../design/sdk-api.md#plan-02)) |
+| 1 | **Service invocation** | service→service HTTP/gRPC with discovery, retries, mTLS, tracing | `wasi:http` + SVID mTLS ([Plan 12](urn:hobo:requirement:security-networking#plan-12)) |
+| 2 | **Publish & subscribe** | topic-based messaging, multiple brokers | `wasi:messaging` / `topic()` ([Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)) |
+| 3 | **Workflows** | durable, long-running multi-service processes | `hobo:workflow` / `workflow`+`step` ([Plan 2](urn:hobo:requirement:sdk-api#plan-02)) |
 | 4 | **State management** | key/value with pluggable stores + consistency | `wasi:keyvalue` / `kv()` |
-| 5 | **Bindings** | input/output connectors to external systems (triggers + outputs) | partial: `hobo:blob-events` + `hobo:scheduler` + handler triggers ([Plan 20](../design/wasm-runtime-wit.md#plan-20), [ADR-0072](../design/adr/01-architecture-core.md#adr-0072)); no unified bindings port — 🔜 |
-| 6 | **Actors** | virtual-actor model, single-threaded, GC'd | `hobo:actor` / Grain ([Plan 2](../design/sdk-api.md#plan-02)) |
-| 7 | **Secrets** | read secrets from cloud/local/K8s stores | `hobo:secrets` / secretless-first ([Plan 20](../design/wasm-runtime-wit.md#plan-20), [Plan 21](../design/authoring-resources-wiring.md#plan-21)) |
-| 8 | **Configuration** | read + subscribe to app config items | `hobo:control/config` / `ctx.config` ([Plan 21](../design/authoring-resources-wiring.md#plan-21)) |
-| 9 | **Distributed lock** | resource locking across instances | actor single-writer lease/fencing for virtual-actor keys only ([Plan 5](../design/reliability-observability-cost.md#plan-05), [Plan 2](../design/sdk-api.md#plan-02)); no standalone lock port — 🔜 |
-| 10 | **Cryptography** | encrypt/decrypt without exposing keys to the app | envelope encryption + KMS ([Plan 12](../design/security-networking.md#plan-12)) |
+| 5 | **Bindings** | input/output connectors to external systems (triggers + outputs) | partial: `hobo:blob-events` + `hobo:scheduler` + handler triggers ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [ADR-0072](urn:hobo:decision:adr-0072)); no unified bindings port — 🔜 |
+| 6 | **Actors** | virtual-actor model, single-threaded, GC'd | `hobo:actor` / Grain ([Plan 2](urn:hobo:requirement:sdk-api#plan-02)) |
+| 7 | **Secrets** | read secrets from cloud/local/K8s stores | `hobo:secrets` / secretless-first ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)) |
+| 8 | **Configuration** | read + subscribe to app config items | `hobo:control/config` / `ctx.config` ([Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)) |
+| 9 | **Distributed lock** | resource locking across instances | actor single-writer lease/fencing for virtual-actor keys only ([Plan 5](urn:hobo:requirement:reliability-observability-cost#plan-05), [Plan 2](urn:hobo:requirement:sdk-api#plan-02)); no standalone lock port — 🔜 |
+| 10 | **Cryptography** | encrypt/decrypt without exposing keys to the app | envelope encryption + KMS ([Plan 12](urn:hobo:requirement:security-networking#plan-12)) |
 | 11 | **Jobs** | schedule/orchestrate batch + maintenance tasks | `hobo:scheduler` / `schedule()` + `hobo:job` |
-| 12 | **Conversation** | call LLMs with prompt caching + PII obfuscation | `"use training"`/`agent()` + training-engine ([Plan 23](../design/generated-stack.md#plan-23)/[ADR-0025](../design/adr/03-data-plane.md#adr-0025)) |
+| 12 | **Conversation** | call LLMs with prompt caching + PII obfuscation | `"use training"`/`agent()` + training-engine ([Plan 23](urn:hobo:requirement:generated-stack#plan-23)/[ADR-0025](urn:hobo:decision:adr-0025)) |
 
-This list is almost a one-to-one match for HoBo's WIT ports + runtime primitives — strong validation that the **ports/adapters spine is the right shape**. The difference is *where the abstraction lives*: Dapr's are **runtime sidecar APIs** (you still provision the backends and run the sidecars); HoBo's are **WIT ports that the control plane both provisions (`realize()`) and serves**, unifying "create the infra" + "use the infra" behind one declaration ([Plan 4](../design/control-plane.md#plan-04)/[Plan 20](../design/wasm-runtime-wit.md#plan-20)).
+This list is almost a one-to-one match for HoBo's WIT ports + runtime primitives — strong validation that the **ports/adapters spine is the right shape**. The difference is *where the abstraction lives*: Dapr's are **runtime sidecar APIs** (you still provision the backends and run the sidecars); HoBo's are **WIT ports that the control plane both provisions (`realize()`) and serves**, unifying "create the infra" + "use the infra" behind one declaration ([Plan 4](urn:hobo:requirement:control-plane#plan-04)/[Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20)).
 
 ### Components — the adapter layer
 
-A **component** implements a building-block API for a concrete backend. Each is declared in **component YAML**: a `type` (e.g. `state.redis`, `pubsub.kafka`, `bindings.aws.s3`), `version`, and `metadata` (connection settings, often referencing a secret). The app calls the building-block API (`/v1.0/state/<store>`); Dapr routes to the configured component. Swapping the backend = changing the component YAML, **no app change** — the same late-binding HoBo gets from **links** ([Plan 20](../design/wasm-runtime-wit.md#plan-20)).
+A **component** implements a building-block API for a concrete backend. Each is declared in **component YAML**: a `type` (e.g. `state.redis`, `pubsub.kafka`, `bindings.aws.s3`), `version`, and `metadata` (connection settings, often referencing a secret). The app calls the building-block API (`/v1.0/state/<store>`); Dapr routes to the configured component. Swapping the backend = changing the component YAML, **no app change** — the same late-binding HoBo gets from **links** ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20)).
 
 Component categories mirror the building blocks: `state`, `pubsub`, `bindings` (input/output), `secretstores`, `configuration`, `lock`, `crypto`, `workflowbackend`, `conversation`, plus **name resolution** (service discovery: mDNS / Kubernetes / Consul) and **middleware** (HTTP pipeline). The catalog is large and community-extensible (a Go interface per category). Source: [docs.dapr.io/concepts/components-concept](https://docs.dapr.io/concepts/components-concept/).
 
@@ -123,7 +123,7 @@ Dapr runs as a **sidecar process** (`daprd`) next to each app instance. The app 
 - **Model cost / policy / contracts / topology** as first-class planes.
 - **Event-source infra changes** or provide an audit/replay of "what changed and why."
 
-This matters for HoBo because Dapr proves the **portable-API + pluggable-adapter** pattern at scale (CNCF-graduated, huge component catalog) — strong validation of HoBo's ports/capability-providers. HoBo's deltas: it pushes the *same* abstraction **up into the control plane** (one `.allow()`-scoped declaration drives provisioning **+** the runtime link **+** the token, [Plan 21](../design/authoring-resources-wiring.md#plan-21)), runs adapters **in-process as wasm components** (no per-app sidecar, [ADR-0031](../design/adr/01-architecture-core.md#adr-0031)), makes the **conformance suite the trust boundary** for adapters (incl. **AI-generated** ones, [Plan 23](../design/generated-stack.md#plan-23)), and **event-sources** every infra + credential fact ([Plan 11](../design/data-plane.md#plan-11)).
+This matters for HoBo because Dapr proves the **portable-API + pluggable-adapter** pattern at scale (CNCF-graduated, huge component catalog) — strong validation of HoBo's ports/capability-providers. HoBo's deltas: it pushes the *same* abstraction **up into the control plane** (one `.allow()`-scoped declaration drives provisioning **+** the runtime link **+** the token, [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)), runs adapters **in-process as wasm components** (no per-app sidecar, [ADR-0031](urn:hobo:decision:adr-0031)), makes the **conformance suite the trust boundary** for adapters (incl. **AI-generated** ones, [Plan 23](urn:hobo:requirement:generated-stack#plan-23)), and **event-sources** every infra + credential fact ([Plan 11](urn:hobo:requirement:data-plane#plan-11)).
 
 ## Architecture
 
@@ -158,15 +158,15 @@ This matters for HoBo because Dapr proves the **portable-API + pluggable-adapter
 State labels follow the research contract: **implemented** = shipped in `packages/`;
 **proof** = draft/proof material; **design-only** = design intent. This capture predates the
 contract; where it says "design-phase", read **design-only** unless labelled otherwise, and see
-the [live provider matrix](../design/live-provider-matrix.md) for HoBo's honest coverage caveats.
+the [live provider matrix](urn:hobo:requirement:live-provider-matrix) for HoBo's honest coverage caveats.
 
 ### what Dapr does *not* do — HoBo's opening
 
 - **No provisioning / infrastructure-from-code.** Dapr abstracts *using* a backend; you still create + own Redis/Kafka/DynamoDB and wire connection settings. There's no `deploy`, no topology graph, no cloud-agnostic provisioning. **This is the biggest gap vs HoBo** (and vs Encore/Nitric).
-- **Sidecar tax + K8s-centric prod.** A sidecar per app instance (latency/memory/lifecycle) and a Kubernetes control plane in production — operational weight HoBo's in-process wasm component-host ([ADR-0031](../design/adr/01-architecture-core.md#adr-0031)) avoids.
+- **Sidecar tax + K8s-centric prod.** A sidecar per app instance (latency/memory/lifecycle) and a Kubernetes control plane in production — operational weight HoBo's in-process wasm component-host ([ADR-0031](urn:hobo:decision:adr-0031)) avoids.
 - **No control-plane planes.** No cost/FinOps, policy/`can-deploy` contracts, or matching/Resource-Definitions layer; governance is left to the platform around it.
-- **No infra event-sourcing / audit-replay.** Dapr traces requests, but doesn't event-source *infra + credential changes* the way HoBo does ([Plan 11](../design/data-plane.md#plan-11)).
-- **Adapters are hand-written.** No AI-generated-adapter pipeline or conformance-as-trust-boundary (HoBo's generation pipeline, [Plan 23](../design/generated-stack.md#plan-23)).
+- **No infra event-sourcing / audit-replay.** Dapr traces requests, but doesn't event-source *infra + credential changes* the way HoBo does ([Plan 11](urn:hobo:requirement:data-plane#plan-11)).
+- **Adapters are hand-written.** No AI-generated-adapter pipeline or conformance-as-trust-boundary (HoBo's generation pipeline, [Plan 23](urn:hobo:requirement:generated-stack#plan-23)).
 
 ## Adversarial critique
 
@@ -203,29 +203,29 @@ the [live provider matrix](../design/live-provider-matrix.md) for HoBo's honest 
 
 | Dapr concept | HoBo equivalent | Notes |
 |---|---|---|
-| **Building block** (portable HTTP/gRPC API) | **WIT port** ([Plan 20](../design/wasm-runtime-wit.md#plan-20)) | ✅ same idea; HoBo's contract is a WIT interface (typed, conformance-tested) rather than an HTTP/gRPC convention |
-| **Component** (swappable adapter + YAML) | **Capability provider + link** ([Plan 4](../design/control-plane.md#plan-04)/[Plan 20](../design/wasm-runtime-wit.md#plan-20)) | ✅ swap-without-code-change; HoBo links are late-bound + capability-scoped by `.allow()` |
-| **Sidecar** (per-app runtime) | **`component-host`** (in-process wasm) default ([ADR-0031](../design/adr/01-architecture-core.md#adr-0031)); optional **`@hobo/runtime-dapr`** Camp runtime ([ADR-0138](../design/adr/01-architecture-core.md#adr-0138)) | ➕ no per-app sidecar tax on the default path; Dapr sidecar is **opt-in** for polyglot/existing-Dapr estates |
+| **Building block** (portable HTTP/gRPC API) | **WIT port** ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20)) | ✅ same idea; HoBo's contract is a WIT interface (typed, conformance-tested) rather than an HTTP/gRPC convention |
+| **Component** (swappable adapter + YAML) | **Capability provider + link** ([Plan 4](urn:hobo:requirement:control-plane#plan-04)/[Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20)) | ✅ swap-without-code-change; HoBo links are late-bound + capability-scoped by `.allow()` |
+| **Sidecar** (per-app runtime) | **`component-host`** (in-process wasm) default ([ADR-0031](urn:hobo:decision:adr-0031)); optional **`@hobo/runtime-dapr`** Camp runtime ([ADR-0138](urn:hobo:decision:adr-0138)) | ➕ no per-app sidecar tax on the default path; Dapr sidecar is **opt-in** for polyglot/existing-Dapr estates |
 | **State / pub/sub / actors / workflow / secrets / config / crypto / jobs** | matching HoBo ports/primitives (12-building-blocks table above, excluding Bindings and Distributed lock) | ✅ near 1:1 for these blocks — validates HoBo's port catalog |
-| **Bindings** (input/output connectors) | partial via `hobo:blob-events`, `hobo:scheduler`, and messaging/handler triggers ([Plan 20](../design/wasm-runtime-wit.md#plan-20), [Plan 21](../design/authoring-resources-wiring.md#plan-21), [ADR-0072](../design/adr/01-architecture-core.md#adr-0072)); no unified bindings port | 🔜 Dapr's catch-all connector surface is adjacent, not yet a first-class HoBo port |
-| **Distributed lock** | ActorHost single-writer lease + fencing for virtual-actor keys ([Plan 5](../design/reliability-observability-cost.md#plan-05), [Plan 2](../design/sdk-api.md#plan-02)); not a general lock/unlock API | 🔜 actor leases cover actor single-writer only; arbitrary resource locks not yet designed |
-| **Conversation** (LLM API) | `agent()` + `"use training"` + training-engine ([Plan 23](../design/generated-stack.md#plan-23)/[ADR-0025](../design/adr/03-data-plane.md#adr-0025)) | ➕ HoBo treats AI as trainable semantic functions + durable agents-as-principals, not just an LLM call |
-| **mTLS via SPIFFE-style identity** | SVID identity + brokered tokens ([Plan 6](../design/ai-native-agent-auth.md#plan-06)/[Plan 12](../design/security-networking.md#plan-12)) | ✅ same SPIFFE lineage; HoBo extends it to agents + end-users as one PrincipalRef ([ADR-0038](../design/adr/02-identity-security.md#adr-0038)) |
-| **Name resolution** (mDNS/K8s/Consul) | identity-based service discovery ([Plan 12](../design/security-networking.md#plan-12)) | ✅ HoBo discovers by SVID/logical name across providers |
-| **Component YAML** | `.allow()` declaration → IAM + link + token (one decl, three effects) ([Plan 21](../design/authoring-resources-wiring.md#plan-21)) | ➕ HoBo unifies grant + wiring + provisioning in one place |
-| **Self-host / Kubernetes** | self-hostable Yard; K8s is *one* execution adapter, not the foundation ([ADR-0001](../design/adr/index.md)) | ➕ HoBo isn't K8s-centric in prod |
-| *(none — Dapr doesn't provision)* | **Provisioning / IfC**: `realize()` + Planner + IaC adapters ([Plan 4](../design/control-plane.md#plan-04)/[Plan 21](../design/authoring-resources-wiring.md#plan-21)) | ➕ HoBo *creates* the infra, not just uses it |
-| *(none)* | **Control-plane planes**: cost ([Plan 5](../design/reliability-observability-cost.md#plan-05)), policy/`can-deploy` ([Plan 29](../design/contracts-policy-flags.md#plan-29)), matching/Resource-Definitions ([Plan 25](../design/platform-engineering.md#plan-25)) | ➕ governance HoBo makes first-class |
-| *(none)* | **Event-sourced infra + credential audit** ([Plan 11](../design/data-plane.md#plan-11)) | ➕ replay/time-travel/"why" for every infra + token change |
-| *(hand-written components)* | **generation pipeline** — AI-generated, conformance-gated adapters ([Plan 23](../design/generated-stack.md#plan-23)) | ➕ adapter breadth without a community bottleneck |
+| **Bindings** (input/output connectors) | partial via `hobo:blob-events`, `hobo:scheduler`, and messaging/handler triggers ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [ADR-0072](urn:hobo:decision:adr-0072)); no unified bindings port | 🔜 Dapr's catch-all connector surface is adjacent, not yet a first-class HoBo port |
+| **Distributed lock** | ActorHost single-writer lease + fencing for virtual-actor keys ([Plan 5](urn:hobo:requirement:reliability-observability-cost#plan-05), [Plan 2](urn:hobo:requirement:sdk-api#plan-02)); not a general lock/unlock API | 🔜 actor leases cover actor single-writer only; arbitrary resource locks not yet designed |
+| **Conversation** (LLM API) | `agent()` + `"use training"` + training-engine ([Plan 23](urn:hobo:requirement:generated-stack#plan-23)/[ADR-0025](urn:hobo:decision:adr-0025)) | ➕ HoBo treats AI as trainable semantic functions + durable agents-as-principals, not just an LLM call |
+| **mTLS via SPIFFE-style identity** | SVID identity + brokered tokens ([Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06)/[Plan 12](urn:hobo:requirement:security-networking#plan-12)) | ✅ same SPIFFE lineage; HoBo extends it to agents + end-users as one PrincipalRef ([ADR-0038](urn:hobo:decision:adr-0038)) |
+| **Name resolution** (mDNS/K8s/Consul) | identity-based service discovery ([Plan 12](urn:hobo:requirement:security-networking#plan-12)) | ✅ HoBo discovers by SVID/logical name across providers |
+| **Component YAML** | `.allow()` declaration → IAM + link + token (one decl, three effects) ([Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)) | ➕ HoBo unifies grant + wiring + provisioning in one place |
+| **Self-host / Kubernetes** | self-hostable Yard; K8s is *one* execution adapter, not the foundation ([ADR-0001](urn:hobo:decision:index)) | ➕ HoBo isn't K8s-centric in prod |
+| *(none — Dapr doesn't provision)* | **Provisioning / IfC**: `realize()` + Planner + IaC adapters ([Plan 4](urn:hobo:requirement:control-plane#plan-04)/[Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)) | ➕ HoBo *creates* the infra, not just uses it |
+| *(none)* | **Control-plane planes**: cost ([Plan 5](urn:hobo:requirement:reliability-observability-cost#plan-05)), policy/`can-deploy` ([Plan 29](urn:hobo:requirement:contracts-policy-flags#plan-29)), matching/Resource-Definitions ([Plan 25](urn:hobo:requirement:platform-engineering#plan-25)) | ➕ governance HoBo makes first-class |
+| *(none)* | **Event-sourced infra + credential audit** ([Plan 11](urn:hobo:requirement:data-plane#plan-11)) | ➕ replay/time-travel/"why" for every infra + token change |
+| *(hand-written components)* | **generation pipeline** — AI-generated, conformance-gated adapters ([Plan 23](urn:hobo:requirement:generated-stack#plan-23)) | ➕ adapter breadth without a community bottleneck |
 
 **The one-line takeaway:** Dapr ≈ HoBo's runtime ports + capability providers, made concrete at the sidecar layer — and nothing above it. HoBo's whole differentiation is the layers Dapr leaves out: provisioning (IfC), the agnostic control plane with cost/policy/contracts/matching, event-sourced audit, agents/end-users as first-class principals, and AI-generated adapters. The closeness of the *runtime* mapping is the strongest external validation that HoBo's ports/adapters foundation is the right one.
 
-**Could Dapr compose with HoBo?** **Yes — supported as an optional Camp runtime** ([ADR-0138](../design/adr/01-architecture-core.md#adr-0138)). Package `@hobo/runtime-dapr` realizes ActorHost + `wasi:messaging` (pub/sub, including `pubsub.kafka`) + partial workflow mapping onto Dapr building blocks when a Camp selects `runtimeRequirements: ["dapr"]`. HoBo still provisions backing services (Kafka, etc.), injects secretless identity (`svidBindingRef`), generates component YAML from Resource Definitions, and keeps Matching/policy/cost/junctions authoritative. **In-process wasm remains the default** ([ADR-0031](../design/adr/01-architecture-core.md#adr-0031)); Dapr is never a replacement of the preferred path. Dapr's component catalog remains a useful reference corpus for AI-generated HoBo capability providers.
+**Could Dapr compose with HoBo?** **Yes — supported as an optional Camp runtime** ([ADR-0138](urn:hobo:decision:adr-0138)). Package `@hobo/runtime-dapr` realizes ActorHost + `wasi:messaging` (pub/sub, including `pubsub.kafka`) + partial workflow mapping onto Dapr building blocks when a Camp selects `runtimeRequirements: ["dapr"]`. HoBo still provisions backing services (Kafka, etc.), injects secretless identity (`svidBindingRef`), generates component YAML from Resource Definitions, and keeps Matching/policy/cost/junctions authoritative. **In-process wasm remains the default** ([ADR-0031](urn:hobo:decision:adr-0031)); Dapr is never a replacement of the preferred path. Dapr's component catalog remains a useful reference corpus for AI-generated HoBo capability providers.
 
 ## Better-together / integration posture
 
-- **Borrow** — recorded in [`lineage.md`](../design/lineage.md): the building-block goal is HoBo's
+- **Borrow** — recorded in [`lineage.md`](urn:hobo:requirement:lineage): the building-block goal is HoBo's
   goal. This capture adds a second borrow worth making explicit — **declarative resiliency policy**
   is a shipped precedent for HoBo's `ResilienceProfile` (ADR-0136).
 - **Standard** — the building-block vocabulary is worth speaking at the boundary.
@@ -250,7 +250,7 @@ the [live provider matrix](../design/live-provider-matrix.md) for HoBo's honest 
 
 - [docs.dapr.io](https://docs.dapr.io/) and [building blocks](https://docs.dapr.io/concepts/building-blocks-concept/) — building blocks, components, sidecar, actors, workflows, resiliency
 - [dapr/dapr](https://github.com/dapr/dapr) — source, CNCF graduated project
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Dapr as the closest architectural analog
+- HoBo-side: [`design/lineage.md`](urn:hobo:requirement:lineage) records Dapr as the closest architectural analog
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current component catalog size and per-building-block maturity were not

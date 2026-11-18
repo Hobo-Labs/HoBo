@@ -1,32 +1,3 @@
-/**
- * Phase-5 staging demo: the budget-pressured zero-downtime backend swap on a
- * real edge — the same control loop + progressive cutover that passes the
- * loopback E2E, with ONLY the adapter binding changed (transparency is proven
- * by swapping adapters, not code).
- *
- * Providers:
- *   --provider=simple      loopback rehearsal (always available; self-hosts
- *                          two HTTP backends and a routing proxy)
- *   --provider=vercel      Vercel Rolling Release canary (credential-gated)
- *   --provider=cloudflare  Cloudflare LB pools (credential-gated)
- *
- * The run drives an external uptime probe (default 1 req/s) against the
- * public URL for the whole swap window, injects `budget.ThresholdCrossed`,
- * ramps 10 → 50 → 100 with a health gate between steps, and requires 100%
- * probe success. Evidence (event trace + probe log + verdict) is archived as
- * JSON for docs/design/live-provider-matrix.md.
- *
- * Credential gates (fail closed, exit 2 — nothing is stubbed or simulated):
- *   vercel:      VERCEL_TOKEN, VERCEL_PROJECT, VERCEL_DEPLOYMENT_A/B,
- *                HOBO_STAGING_PROBE_URL
- *   cloudflare:  CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID,
- *                CLOUDFLARE_ACCOUNT_ID, HOBO_STAGING_BACKEND_A/B,
- *                HOBO_STAGING_PROBE_URL
- *
- * Usage:
- *   node --import tsx scripts/staging-cutover-demo.mts --provider=simple
- *   node --import tsx scripts/staging-cutover-demo.mts --provider=vercel
- */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";

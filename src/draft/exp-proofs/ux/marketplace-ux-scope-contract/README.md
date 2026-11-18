@@ -8,9 +8,9 @@ scope-in, scope-out, service/UX/security/support boundaries, authoritative depen
 initiative dependencies, listing states, installability outcomes, M1 evidence, and follow-up gate.
 
 The durable design record lives in
-[`docs/design/marketplace-ux.md`](../../../../../docs/design/marketplace-ux.md). Branch evidence is
+[`urn:hobo:requirement:marketplace-ux`](urn:hobo:requirement:marketplace-ux). Branch evidence is
 summarized in
-[`docs/design/proofs/hobo-421-marketplace-ux`](../../../../../docs/design/proofs/hobo-421-marketplace-ux/README.md).
+[`urn:hobo:proof:hobo-421-marketplace-ux`](urn:hobo:proof:hobo-421-marketplace-ux).
 
 ## Contract Surface
 

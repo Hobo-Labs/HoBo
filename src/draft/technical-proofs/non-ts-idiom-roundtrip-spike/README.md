@@ -6,12 +6,12 @@ language SDK can claim equivalence with the `hobo:sdk` contract.
 
 ## Requirements Source
 
-- `docs/design/adr/01-architecture-core.md#adr-0072`: WIT-first SDK, reverse extraction, and
+- `urn:hobo:decision:adr-0072`: WIT-first SDK, reverse extraction, and
   semantics-annex boundary.
-- `docs/design/adr/01-architecture-core.md#adr-0091`: this spike decision.
-- `docs/design/wasm-runtime-wit.md#the-sdk-is-provided-through-wit--hobosdk--idiom-layers-adr-0072`:
+- `urn:hobo:decision:adr-0091`: this spike decision.
+- `urn:hobo:requirement:wasm-runtime-wit#the-sdk-is-provided-through-wit--hobosdk--idiom-layers-adr-0072`:
   forward and reverse WIT paths.
-- `docs/design/authoring-resources-wiring.md#plan-21`: run-to-collect and manifest IR.
+- `urn:hobo:requirement:authoring-resources-wiring#plan-21`: run-to-collect and manifest IR.
 - `src/draft/technical-proofs/hobo-sdk-aggregate-wit-contract`: existing reverse-extraction POC.
 - `src/draft/technical-proofs/idiom-layer-lowering-contract`: existing TypeScript lowering-equivalence POC.
 

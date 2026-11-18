@@ -8,8 +8,8 @@ tags: [hobo, proof, finops, ifc]
 # Manifest → ResourceIntent Bridge Contract
 
 HOBO-696 / REM-027 proof for the manifest→ResourceIntent bridge documented in
-[finops-budget-routing-control-plane.md](../../../../docs/design/finops-budget-routing-control-plane.md#ifc-and-hobo-plan-spine)
-and [control-plane.md](../../../../docs/design/control-plane.md#plan-04).
+[finops-budget-routing-control-plane.md](urn:hobo:requirement:finops-budget-routing-control-plane#ifc-and-hobo-plan-spine)
+and [control-plane.md](urn:hobo:requirement:control-plane#plan-04).
 
 ## What This Proves
 

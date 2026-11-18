@@ -79,7 +79,7 @@ test("target package and proof-note paths match the Linear issue contract", () =
   );
   assert.equal(
     DX_RESOURCE_LIFECYCLE_FIXTURE_CORPUS.proofNote,
-    "docs/design/proofs/dx-resource-lifecycle-fixture-corpus/README.md",
+    "urn:hobo:proof:dx-resource-lifecycle-fixture-corpus",
   );
 });
 
@@ -127,8 +127,8 @@ test("parser fails closed on malformed nested raw fixture records", () => {
   const parsed = parseDxResourceLifecycleFixtureCorpus({
     issue: "HOBO-572",
     packagePath: "src/draft/exp-proofs/dx/dx-resource-lifecycle-fixture-corpus",
-    proofNote: "docs/design/proofs/dx-resource-lifecycle-fixture-corpus/README.md",
-    sourceRefs: "docs/design/developer-experience.md#plan-07",
+    proofNote: "urn:hobo:proof:dx-resource-lifecycle-fixture-corpus",
+    sourceRefs: "urn:hobo:requirement:developer-experience#plan-07",
     boundaryContracts: ["protobuf"],
     consumers: ["sdk-compile-consumer"],
     scenarios: [

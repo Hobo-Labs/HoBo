@@ -81,7 +81,7 @@ for deployment. HoBo's wiring model and manifest IR both descend from this desig
 
 ## How it competes with HoBo
 
-Aspire is recorded in [`lineage.md`](../design/lineage.md) as a **pillar**: `WithReference` wiring,
+Aspire is recorded in [`lineage.md`](urn:hobo:requirement:lineage) as a **pillar**: `WithReference` wiring,
 annotations and the manifest IR are taken from here.
 
 | Contested HoBo surface | The contest |
@@ -191,7 +191,7 @@ builder.AddPostgres("pg").WithLifetime(ContainerLifetime.Persistent); // survive
 
 ### Wiring, references & endpoints
 
-`WithReference` is the core wiring verb — and the part HoBo borrowed most directly ([HoBo Plan 21](../design/authoring-resources-wiring.md#plan-21)):
+`WithReference` is the core wiring verb — and the part HoBo borrowed most directly ([HoBo Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)):
 
 ```csharp
 var db  = builder.AddPostgres("pg").AddDatabase("appdata");
@@ -237,7 +237,7 @@ builder.AddProject<Projects.Worker>("worker")
 
 Health checks gate those dependencies — `WaitFor(x)` blocks a dependent until `x` is running and all its health checks pass; `WaitForCompletion` handles run-to-completion jobs like migrations and seeders.
 
-> **HoBo gap (GAP-027):** HoBo's orchestrator gates deploy DAG edges on `resource.Provisioned` only (IaC apply succeeded) — not on running+healthy or one-shot exit 0. Health-gated ordering is an explicit iteration hook in [Plan 4 §Health-gated dependency ordering](../design/control-plane.md#health-gated-dependency-ordering-iteration-hook); the parity tracker marks this row ◐ until that design lands.
+> **HoBo gap (GAP-027):** HoBo's orchestrator gates deploy DAG edges on `resource.Provisioned` only (IaC apply succeeded) — not on running+healthy or one-shot exit 0. Health-gated ordering is an explicit iteration hook in [Plan 4 §Health-gated dependency ordering](urn:hobo:requirement:control-plane#health-gated-dependency-ordering-iteration-hook); the parity tracker marks this row ◐ until that design lands.
 
 ```csharp
 builder.AddProject<Projects.Api>("api").WithHttpHealthCheck("/health");      // GET /health → 200
@@ -353,7 +353,7 @@ The CLI underpins the single-file `apphost.cs` experience (running an AppHost wi
 
 ### Manifest, publishers & deployment
 
-This is HoBo's closest structural analogue ([HoBo Plan 21](../design/authoring-resources-wiring.md#plan-21)). `aspire publish` emits **`aspire-manifest.json`** — a tool-agnostic description of the resolved graph that deployment tooling consumes. Entries carry resource type versions (`project.v1`, `container.v1`, `dockerfile.v0`, `parameter.v0`, `value.v0` for computed outputs, `azure.bicep.v0` for an Azure resource defined by a Bicep template), each with optional `connectionString`, `env`, `bindings`, `volumes`, and `params`/`outputs` for Bicep. Values reference other resources with `{...}` tokens resolved by the deploy tool — `{resource.connectionString}`, `{resource.bindings.<endpoint>.host|port|url}`, `{parameter.value}`:
+This is HoBo's closest structural analogue ([HoBo Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)). `aspire publish` emits **`aspire-manifest.json`** — a tool-agnostic description of the resolved graph that deployment tooling consumes. Entries carry resource type versions (`project.v1`, `container.v1`, `dockerfile.v0`, `parameter.v0`, `value.v0` for computed outputs, `azure.bicep.v0` for an Azure resource defined by a Bicep template), each with optional `connectionString`, `env`, `bindings`, `volumes`, and `params`/`outputs` for Bicep. Values reference other resources with `{...}` tokens resolved by the deploy tool — `{resource.connectionString}`, `{resource.bindings.<endpoint>.host|port|url}`, `{parameter.value}`:
 
 ```json
 {
@@ -407,7 +407,7 @@ The deployment story is the framework's softest spot: the publishers and compute
 
 ### Dashboard, DCP & observability
 
-This runtime/visibility layer is a major part of Aspire's appeal and a reference point for [HoBo Plan 7](../design/developer-experience.md#plan-07), [HoBo Plan 7 § Local dashboard (`hobo dev`)](../design/developer-experience.md#local-dashboard-hobo-dev), [ADR-0111](../design/adr/07-portability-extensibility.md#adr-0111), and [Plan 5](../design/reliability-observability-cost.md#plan-05). Note the scope gap HoBo closes: **Aspire's dashboard is a *local-dev* surface for one AppHost run**, whereas HoBo's **operations dashboard** ([HoBo Plan 49](../design/developer-experience.md#plan-49)) is the **multi-cloud / multi-environment** prod analog (project × environment fleet view), plus per-project **status pages** and an **architecture-availability** estimate (the "march of the 9s") Aspire has no equivalent of. HoBo's **`hobo dev` local dashboard** ([ADR-0111](../design/adr/07-portability-extensibility.md#adr-0111)) explicitly adopts Aspire's per-resource OTLP/logs/traces/metrics/resource-graph pattern via a co-launched local listener — not the Yard Gateway path used for hosted dashboards. **DCP** is Aspire's local orchestrator, written in Go, that the AppHost drives on `aspire run`:
+This runtime/visibility layer is a major part of Aspire's appeal and a reference point for [HoBo Plan 7](urn:hobo:requirement:developer-experience#plan-07), [HoBo Plan 7 § Local dashboard (`hobo dev`)](urn:hobo:requirement:developer-experience#local-dashboard-hobo-dev), [ADR-0111](urn:hobo:decision:adr-0111), and [Plan 5](urn:hobo:requirement:reliability-observability-cost#plan-05). Note the scope gap HoBo closes: **Aspire's dashboard is a *local-dev* surface for one AppHost run**, whereas HoBo's **operations dashboard** ([HoBo Plan 49](urn:hobo:requirement:developer-experience#plan-49)) is the **multi-cloud / multi-environment** prod analog (project × environment fleet view), plus per-project **status pages** and an **architecture-availability** estimate (the "march of the 9s") Aspire has no equivalent of. HoBo's **`hobo dev` local dashboard** ([ADR-0111](urn:hobo:decision:adr-0111)) explicitly adopts Aspire's per-resource OTLP/logs/traces/metrics/resource-graph pattern via a co-launched local listener — not the Yard Gateway path used for hosted dashboards. **DCP** is Aspire's local orchestrator, written in Go, that the AppHost drives on `aspire run`:
 
 - Manages the lifecycle of containers, .NET projects, and executables/processes as a unit.
 - Provides a Kubernetes-style local API (pods/services/configmaps analogues) — but it is *not* Kubernetes and requires none.
@@ -500,60 +500,60 @@ Head-to-head:
 | **Nitric** ([nitric.md](nitric.md)) | broader app composition + OTel + local parity | serverless-first IfC + policy-from-code |
 | **Humanitec** ([humanitec.md](humanitec.md)) | superb local dev, code-first | enterprise Platform Orchestrator: matching, RBAC, governance, hosted |
 
-The net for HoBo: Aspire nails the developer inner loop — code-first wiring, local parity, a manifest IR, and observability — which is why HoBo adopts its wiring + manifest model ([Plan 21](../design/authoring-resources-wiring.md#plan-21)). HoBo then adds what Aspire lacks: a platform-rules/matching layer ([Plan 25](../design/platform-engineering.md#plan-25)), a wasm-first polyglot runtime ([Plan 20](../design/wasm-runtime-wit.md#plan-20)), event-sourced replay/audit ([Plan 11](../design/data-plane.md#plan-11)), agent-native AI generation ([Plan 6](../design/ai-native-agent-auth.md#plan-06)), and a hosted, multi-tenant, governed control plane.
+The net for HoBo: Aspire nails the developer inner loop — code-first wiring, local parity, a manifest IR, and observability — which is why HoBo adopts its wiring + manifest model ([Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)). HoBo then adds what Aspire lacks: a platform-rules/matching layer ([Plan 25](urn:hobo:requirement:platform-engineering#plan-25)), a wasm-first polyglot runtime ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20)), event-sourced replay/audit ([Plan 11](urn:hobo:requirement:data-plane#plan-11)), agent-native AI generation ([Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06)), and a hosted, multi-tenant, governed control plane.
 
 ## Primitive mapping
 
 <a id="hobo-mapping"></a>
 
-For every Aspire feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · ◐ = designed but shallow/deferred · 🔜 = planned. HoBo design lives in [`../design/`](../design/index.md). Aspire directly inspired HoBo's wiring/manifest layer, so parity here is high by design. Rows marked ◐ must anchor to an explicit design gap or iteration hook — never a bare status; health/readiness-gate gaps anchor to the [Plan 4 iteration hook](../design/control-plane.md#health-gated-dependency-ordering-iteration-hook).
+For every Aspire feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · ◐ = designed but shallow/deferred · 🔜 = planned. HoBo design lives in [`../design/`](urn:hobo:requirement:index). Aspire directly inspired HoBo's wiring/manifest layer, so parity here is high by design. Rows marked ◐ must anchor to an explicit design gap or iteration hook — never a bare status; health/readiness-gate gaps anchor to the [Plan 4 iteration hook](urn:hobo:requirement:control-plane#health-gated-dependency-ordering-iteration-hook).
 
 ### Composition & wiring
 
 | Aspire | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| AppHost (`DistributedApplication.CreateBuilder`) | `bindle()` topology + **IfC** resource collection | ✅ | [02](../design/sdk-api.md#plan-02), [21](../design/authoring-resources-wiring.md#plan-21) |
-| `IResource` + capability interfaces | Resources behind **WIT-interface ports** + capability negotiation | ➕ | [20](../design/wasm-runtime-wit.md#plan-20), [24](../design/wasm-runtime-wit.md#plan-20) |
-| `Add*` integration catalog | Resource catalog + capability providers | ✅ | [21](../design/authoring-resources-wiring.md#plan-21), [03](../design/control-plane.md#plan-04) |
-| Hosting vs **client** integrations | Provider `realize` (deploy) vs generated typed clients (`code`) | ✅ | [03](../design/control-plane.md#plan-04), [02](../design/sdk-api.md#plan-02) |
-| `WithReference` / `services__*` / `ConnectionStrings__*` | Aspire-style references + the same env conventions | ✅ | [22](../design/authoring-resources-wiring.md#plan-21) |
-| `ReferenceExpression` / `EndpointReference` / placeholders | Lazy refs + `${resources..outputs}` placeholders | ✅ | [22](../design/authoring-resources-wiring.md#plan-21), [27](../design/platform-engineering.md#plan-25) |
-| `WaitFor` / `WaitForCompletion` (health-gated) | Choreography on `resource.Provisioned` only today; health/readiness-gated DAG edges not yet designed | ◐ | [04](../design/control-plane.md#plan-04), [iteration hook](../design/control-plane.md#health-gated-dependency-ordering-iteration-hook) |
-| Endpoints / proxy / `WithExternalHttpEndpoints` | Endpoint model + ingress in the manifest | ✅ | [22](../design/authoring-resources-wiring.md#plan-21), [13](../design/security-networking.md#plan-12) |
-| Annotations (`IResourceAnnotation`) | Manifest annotations / extensibility metadata | ✅ | [22](../design/authoring-resources-wiring.md#plan-21) |
-| Custom resources/integrations | Custom providers (any wasm language) + AI-generated | ➕ | [03](../design/control-plane.md#plan-04), [23](../design/generated-stack.md#plan-23) |
-| Parameters & secrets | Parameters + brokered secrets (`secrets` port) | ✅ | [02](../design/sdk-api.md#plan-02), [12](../design/security-networking.md#plan-12) |
-| `AddContainer` local run / `ExternalServiceResource` / `AddConnectionString` (BYO) | `addContainer` runs under `hobo dev` (local engine, same env convention); `external` resource = contract-backed stub or `--connect` | ✅ | [ADR-0042](../design/adr/07-portability-extensibility.md#adr-0042), [ADR-0041](../design/adr/07-portability-extensibility.md#adr-0041) |
+| AppHost (`DistributedApplication.CreateBuilder`) | `bindle()` topology + **IfC** resource collection | ✅ | [02](urn:hobo:requirement:sdk-api#plan-02), [21](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| `IResource` + capability interfaces | Resources behind **WIT-interface ports** + capability negotiation | ➕ | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [24](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
+| `Add*` integration catalog | Resource catalog + capability providers | ✅ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [03](urn:hobo:requirement:control-plane#plan-04) |
+| Hosting vs **client** integrations | Provider `realize` (deploy) vs generated typed clients (`code`) | ✅ | [03](urn:hobo:requirement:control-plane#plan-04), [02](urn:hobo:requirement:sdk-api#plan-02) |
+| `WithReference` / `services__*` / `ConnectionStrings__*` | Aspire-style references + the same env conventions | ✅ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| `ReferenceExpression` / `EndpointReference` / placeholders | Lazy refs + `${resources..outputs}` placeholders | ✅ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21), [27](urn:hobo:requirement:platform-engineering#plan-25) |
+| `WaitFor` / `WaitForCompletion` (health-gated) | Choreography on `resource.Provisioned` only today; health/readiness-gated DAG edges not yet designed | ◐ | [04](urn:hobo:requirement:control-plane#plan-04), [iteration hook](urn:hobo:requirement:control-plane#health-gated-dependency-ordering-iteration-hook) |
+| Endpoints / proxy / `WithExternalHttpEndpoints` | Endpoint model + ingress in the manifest | ✅ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21), [13](urn:hobo:requirement:security-networking#plan-12) |
+| Annotations (`IResourceAnnotation`) | Manifest annotations / extensibility metadata | ✅ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Custom resources/integrations | Custom providers (any wasm language) + AI-generated | ➕ | [03](urn:hobo:requirement:control-plane#plan-04), [23](urn:hobo:requirement:generated-stack#plan-23) |
+| Parameters & secrets | Parameters + brokered secrets (`secrets` port) | ✅ | [02](urn:hobo:requirement:sdk-api#plan-02), [12](urn:hobo:requirement:security-networking#plan-12) |
+| `AddContainer` local run / `ExternalServiceResource` / `AddConnectionString` (BYO) | `addContainer` runs under `hobo dev` (local engine, same env convention); `external` resource = contract-backed stub or `--connect` | ✅ | [ADR-0042](urn:hobo:decision:adr-0042), [ADR-0041](urn:hobo:decision:adr-0041) |
 
 ### Runtime, deploy & ops
 
 | Aspire | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| `aspire-manifest.json` (deploy IR) | **manifest IR = Deployment Set** | ✅➕ | [22](../design/authoring-resources-wiring.md#plan-21), [26](../design/platform-engineering.md#plan-25) |
-| Publishers (azd/Compose/K8s/custom) | Publisher targets incl. **GitOps publisher** | ✅ | [22](../design/authoring-resources-wiring.md#plan-21), [28](../design/platform-engineering.md#plan-25) |
-| Compute environments | Camps + **environment types** | ✅ | [26](../design/platform-engineering.md#plan-25) |
-| DCP (local Go orchestrator) | local `runtime-local` host / dev loop; the Yard for hosted | ✅ | [20](../design/wasm-runtime-wit.md#plan-20), [04](../design/control-plane.md#plan-04), [07](../design/developer-experience.md#plan-07) |
-| Aspire Dashboard (resource graph, OTel) | Dashboard: resource graph + run inspector + replay | ➕ | [07](../design/developer-experience.md#plan-07), [14](../design/reliability-observability-cost.md#plan-05) |
-| OpenTelemetry-by-default | OTel + event-sourced traces/replay | ➕ | [14](../design/reliability-observability-cost.md#plan-05), [11](../design/data-plane.md#plan-11) |
-| `Aspire.Hosting.Testing` | Conformance suites + per-port replay; whole-graph in-process harness not yet specified | ◐ | [09](../design/generated-stack.md#plan-09), [whole-graph hook](../design/generated-stack.md#whole-graph-in-process-test-harness-iteration-hook) |
-| `aspire` CLI | `hobo` CLI | ✅ | [15](../design/developer-experience.md#plan-07) |
-| Polyglot (Python/Node/Go/Java/Rust) | **WASM/WASI components** (any language) + OCI fallback | ➕ | [20](../design/wasm-runtime-wit.md#plan-20), [07](../design/developer-experience.md#plan-07) |
-| AI integrations + Copilot-in-dashboard | Agents as principals + MCP + AI generation | ➕ | [06](../design/ai-native-agent-auth.md#plan-06), [23](../design/generated-stack.md#plan-23) |
+| `aspire-manifest.json` (deploy IR) | **manifest IR = Deployment Set** | ✅➕ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21), [26](urn:hobo:requirement:platform-engineering#plan-25) |
+| Publishers (azd/Compose/K8s/custom) | Publisher targets incl. **GitOps publisher** | ✅ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21), [28](urn:hobo:requirement:platform-engineering#plan-25) |
+| Compute environments | Camps + **environment types** | ✅ | [26](urn:hobo:requirement:platform-engineering#plan-25) |
+| DCP (local Go orchestrator) | local `runtime-local` host / dev loop; the Yard for hosted | ✅ | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [04](urn:hobo:requirement:control-plane#plan-04), [07](urn:hobo:requirement:developer-experience#plan-07) |
+| Aspire Dashboard (resource graph, OTel) | Dashboard: resource graph + run inspector + replay | ➕ | [07](urn:hobo:requirement:developer-experience#plan-07), [14](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| OpenTelemetry-by-default | OTel + event-sourced traces/replay | ➕ | [14](urn:hobo:requirement:reliability-observability-cost#plan-05), [11](urn:hobo:requirement:data-plane#plan-11) |
+| `Aspire.Hosting.Testing` | Conformance suites + per-port replay; whole-graph in-process harness not yet specified | ◐ | [09](urn:hobo:requirement:generated-stack#plan-09), [whole-graph hook](urn:hobo:requirement:generated-stack#whole-graph-in-process-test-harness-iteration-hook) |
+| `aspire` CLI | `hobo` CLI | ✅ | [15](urn:hobo:requirement:developer-experience#plan-07) |
+| Polyglot (Python/Node/Go/Java/Rust) | **WASM/WASI components** (any language) + OCI fallback | ➕ | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [07](urn:hobo:requirement:developer-experience#plan-07) |
+| AI integrations + Copilot-in-dashboard | Agents as principals + MCP + AI generation | ➕ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [23](urn:hobo:requirement:generated-stack#plan-23) |
 
 ### Where HoBo deliberately exceeds Aspire
 
 | Capability | HoBo doc |
 |---|---|
-| **Platform-rules / Matching** (per-environment Resource Definitions — Aspire has no equivalent) | [25](../design/platform-engineering.md#plan-25) |
-| **Hosted, multi-tenant, governed control plane** (RBAC/policy/approvals/cost) | [04](../design/control-plane.md#plan-04), [12](../design/security-networking.md#plan-12), [16](../design/reliability-observability-cost.md#plan-05) |
-| **Event-sourced replay / time-travel / DR-as-replay** | [11](../design/data-plane.md#plan-11), [05](../design/reliability-observability-cost.md#plan-05) |
-| **WASM-first polyglot runtime** (vs container/process) | [20](../design/wasm-runtime-wit.md#plan-20) |
-| **Agent-native generation pipeline** generation of providers/implementations/definitions | [06](../design/ai-native-agent-auth.md#plan-06), [23](../design/generated-stack.md#plan-23) |
-| **Stubbable ports** (run before implementations exist) | [23](../design/generated-stack.md#plan-23) |
+| **Platform-rules / Matching** (per-environment Resource Definitions — Aspire has no equivalent) | [25](urn:hobo:requirement:platform-engineering#plan-25) |
+| **Hosted, multi-tenant, governed control plane** (RBAC/policy/approvals/cost) | [04](urn:hobo:requirement:control-plane#plan-04), [12](urn:hobo:requirement:security-networking#plan-12), [16](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| **Event-sourced replay / time-travel / DR-as-replay** | [11](urn:hobo:requirement:data-plane#plan-11), [05](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| **WASM-first polyglot runtime** (vs container/process) | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
+| **Agent-native generation pipeline** generation of providers/implementations/definitions | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [23](urn:hobo:requirement:generated-stack#plan-23) |
+| **Stubbable ports** (run before implementations exist) | [23](urn:hobo:requirement:generated-stack#plan-23) |
 
 ### What HoBo borrows wholesale (credit Aspire)
 
-`WithReference`-style wiring, uniform config for any component/container, annotations as extensibility, and the **manifest as deploy IR** — adopted in [Plan 21](../design/authoring-resources-wiring.md#plan-21). HoBo's contribution is wrapping that ergonomic core in a wasm runtime, a matching/platform layer, event-sourcing, and a governed hosted plane.
+`WithReference`-style wiring, uniform config for any component/container, annotations as extensibility, and the **manifest as deploy IR** — adopted in [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21). HoBo's contribution is wrapping that ergonomic core in a wasm runtime, a matching/platform layer, event-sourcing, and a governed hosted plane.
 
 ## Adversarial critique
 
@@ -589,7 +589,7 @@ draft/proof material; **design-only** = design intent.
 
 ## Better-together / integration posture
 
-- **Borrow** — already recorded in [`lineage.md`](../design/lineage.md): `WithReference` wiring,
+- **Borrow** — already recorded in [`lineage.md`](urn:hobo:requirement:lineage): `WithReference` wiring,
   annotations as the extension mechanism, and the manifest IR. This capture reaffirms all three.
 - **Benchmark** — the local orchestration experience and dashboard set the bar for `hobo dev`.
 - **Integrate** — an Aspire manifest is a plausible *input* to HoBo: the AppHost describes the graph,
@@ -611,7 +611,7 @@ draft/proof material; **design-only** = design intent.
 
 - [Aspire documentation](https://learn.microsoft.com/dotnet/aspire/) — AppHost, resources, `WithReference`, `WaitFor`, integrations, manifest
 - [dotnet/aspire](https://github.com/dotnet/aspire) — source and MIT licence
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Aspire as a pillar influence
+- HoBo-side: [`design/lineage.md`](urn:hobo:requirement:lineage) records Aspire as a pillar influence
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current publisher coverage and version-to-version manifest changes were

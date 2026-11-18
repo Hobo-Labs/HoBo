@@ -19,7 +19,7 @@ describe("vibe plan annotation pseudocode", () => {
 
     assert.equal(contract.issue, "HOBO-543");
     assert.equal(contract.targetPackagePath, "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode");
-    assert.equal(contract.proofNotePath, "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md");
+    assert.equal(contract.proofNotePath, "urn:hobo:proof:vibe-plan-annotation-pseudocode");
     assert.deepEqual(
       contract.annotations.map((annotation) => annotation.case),
       REQUIRED_ANNOTATION_CASES,

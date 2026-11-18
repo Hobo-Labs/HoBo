@@ -1,7 +1,7 @@
 # HOBO-641 Resource Definitions + Matching + Resource Packs Contract
 
 S4-05 draft POC integrating the platform-engineering surface from
-[Plan 25](../../../../docs/design/platform-engineering.md#plan-25):
+[Plan 25](urn:hobo:requirement:platform-engineering#plan-25):
 
 - **Resource Definitions + Matching** — specificity-scored selection with `match.Decided` evidence
 - **Deployment Sets + Deltas** — draft→promote via `delta.Applied` producing immutable content-addressed Sets

@@ -1,7 +1,7 @@
 # Runaway Spend Circuit-Breaker Contract
 
-This independent POC backs HOBO-306, [PLAN-05](../../../../docs/design/reliability-observability-cost.md#plan-05),
-and [ADR-0039](../../../../docs/design/adr/02-identity-security.md#adr-0039). It models the last-resort
+This independent POC backs HOBO-306, [PLAN-05](urn:hobo:requirement:reliability-observability-cost#plan-05),
+and [ADR-0039](urn:hobo:decision:adr-0039). It models the last-resort
 spend circuit-breaker that trips from `MeteringView` spend velocity, emits durable
 `spend.CircuitTripped` / `spend.CircuitReset` facts, and gates spend-incurring actions while the
 breaker is open.

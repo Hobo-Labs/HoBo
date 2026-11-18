@@ -4,8 +4,8 @@ Independent proof for HOBO-41.
 
 This package pins the M0 `DeploymentPlan` / `ResourcePlan` contract from:
 
-- `docs/design/control-plane.md`: Planner emits a content-addressed `DeploymentPlan` DAG.
-- `docs/design/platform-engineering.md`: co-provisioned nodes and output placeholders flow through the graph.
+- `urn:hobo:requirement:control-plane`: Planner emits a content-addressed `DeploymentPlan` DAG.
+- `urn:hobo:requirement:platform-engineering`: co-provisioned nodes and output placeholders flow through the graph.
 
 The proof covers stable plan content addressing, placeholder grammar, `MatchContext`, dependency DAG validation, unresolved placeholder references, and co-provisioned node id collisions.
 

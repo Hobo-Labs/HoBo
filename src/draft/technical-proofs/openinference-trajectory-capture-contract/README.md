@@ -20,7 +20,7 @@ Run:
 npm.cmd --prefix src\draft\technical-proofs\openinference-trajectory-capture-contract test
 ```
 
-Design proof: [HOBO-335 OpenInference trajectory capture](../../../../docs/design/proofs/hobo-335-openinference-trajectory-capture/README.md).
+Design proof: [HOBO-335 OpenInference trajectory capture](urn:hobo:proof:hobo-335-openinference-trajectory-capture).
 
 
 ## Executable evidence

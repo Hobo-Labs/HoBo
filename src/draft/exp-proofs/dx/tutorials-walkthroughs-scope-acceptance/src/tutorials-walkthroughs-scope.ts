@@ -78,27 +78,27 @@ export const TUTORIALS_WALKTHROUGHS_SCOPE = {
   },
   dependencies: [
     {
-      source: "docs/design/walkthrough.md",
+      source: "urn:hobo:requirement:walkthrough",
       reason: "Defines the six-role ideal-state journey that tutorials must consume and make executable.",
     },
     {
-      source: "docs/design/worked-example.md#plan-19",
+      source: "urn:hobo:requirement:worked-example#plan-19",
       reason: "Keeps snapshop as the compact end-to-end example that tutorial paths can reference.",
     },
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "Defines CLI, dashboard, local-dev, and inspection surfaces that tutorial steps exercise.",
     },
     {
-      source: "docs/design/example-apps.md",
+      source: "urn:hobo:requirement:example-apps",
       reason: "Supplies example-app proof modes and fixtures that tutorials can reuse.",
     },
     {
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "urn:hobo:requirement:workspace-onboarding-ux",
       reason: "Defines first-run activation stages and stalled-state handoff inputs consumed by tutorials.",
     },
     {
-      source: "docs/design/adr/07-portability-extensibility.md#adr-0064",
+      source: "urn:hobo:decision:adr-0064",
       reason: "Keeps business mechanics, monetization, and marketing surfaces outside tutorial scope.",
     },
   ],

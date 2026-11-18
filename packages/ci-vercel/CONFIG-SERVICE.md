@@ -1,6 +1,6 @@
 # The relay's config service
 
-Phase 3 of ADR-0179 (`docs/design/adr/hosted-relay-stateless.md`, PR #1887):
+Phase 3 of ADR-0179 (`urn:hobo:decision:hosted-relay-stateless`, PR #1887):
 the hosted relay reads its configuration and secrets from a separate service,
 read-only, and holds no secret to do it. Which service is decided when the
 HoBo deployment runs, not beforehand: HoBo routes `secrets.config-service/v1`
@@ -42,7 +42,7 @@ them; the relay asks for one per login and caches only Infisical's token.
 ## Where the store comes from: chosen at deploy, handed over by claim
 
 There is no one-time owner setup. The ADR-0179 amendment
-[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)
+[Secret store chosen at deploy, provisioned by claim](urn:hobo:decision:hosted-relay-stateless#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)
 replaced the eight-step checklist that stood here: nothing is created by hand,
 nothing lives in Vercel environment secrets, and nothing lives in GitHub
 secrets or variables.
@@ -77,7 +77,7 @@ once their runtime binding lands (the amendments say what is built).
 ### The relay's store today: secretless first
 
 The ADR-0179 amendment
-[Secretless first](../../docs/design/adr/hosted-relay-stateless.md#amendment-secretless-first)
+[Secretless first](urn:hobo:decision:hosted-relay-stateless#amendment-secretless-first)
 narrows the table above for the hosted relay. It deploys to its Vercel
 project `hobo-ci` through Vercel's Git integration (no deploy token), and the
 owner handles no secret value on the default path:
@@ -262,7 +262,7 @@ enrolled box, else GitHub-hosted), so a busy fleet no longer holds the deploy
 and every later one in its concurrency group.
 
 How `VERCEL_TOKEN` gets into the store is a claim step, designed and not built
-(the amendment's [deploy credential](../../docs/design/adr/hosted-relay-stateless.md#the-deploy-credential)
+(the amendment's [deploy credential](urn:hobo:decision:hosted-relay-stateless#the-deploy-credential)
 records why): Vercel offers no flow in which an agent obtains a token for a
 team it does not own, and its claimable deployments cannot target an existing
 project. Until then the owner's own `vercel login` session is the only source,
@@ -320,7 +320,7 @@ needed, with what it approves. Each is a person's act by the vendor's design:
    Settings → Security → *Secure backend access with OIDC federation* → Team).
 3. **Neon, once phase 8 has cut over**, is disconnected (Project → Settings →
    Integrations → Neon). Turso stays: it is a member of the cache fleet on its
-   free plan ([options routed by budget](../../docs/design/hosted-relay-stateless.md#options-routed-by-budget)).
+   free plan ([options routed by budget](urn:hobo:requirement:hosted-relay-stateless#options-routed-by-budget)).
 
 Not provisioned by the workflow, by design: Turso, Vercel Blob and Valkey are
 rows of the Yard's catalog that no Camp chooses. Choosing one is a change to

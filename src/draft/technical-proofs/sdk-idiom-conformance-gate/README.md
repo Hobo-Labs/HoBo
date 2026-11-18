@@ -5,9 +5,9 @@ Independent POC for HOBO-32: a branch-sized `@hobo/conformance/sdk` gate for the
 
 ## Requirements Source
 
-- `docs/design/wasm-runtime-wit.md#plan-20`: SDK parity is proven, not trusted.
-- `docs/design/adr/01-architecture-core.md#adr-0072`: generated bindings plus a thin idiom layer.
-- `docs/design/adr/01-architecture-core.md#adr-0093`: semantics-annex parity is separate from
+- `urn:hobo:requirement:wasm-runtime-wit#plan-20`: SDK parity is proven, not trusted.
+- `urn:hobo:decision:adr-0072`: generated bindings plus a thin idiom layer.
+- `urn:hobo:decision:adr-0093`: semantics-annex parity is separate from
   golden-IR lowering equality.
 - `src/draft/technical-proofs/hobo-sdk-aggregate-wit-contract`: the `hobo:sdk@0.1.0` aggregate contract from HOBO-16.
 - `src/draft/technical-proofs/idiom-layer-lowering-contract`: the HOBO-106 lowering corpus.

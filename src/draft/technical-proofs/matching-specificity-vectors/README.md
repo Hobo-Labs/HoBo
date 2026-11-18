@@ -1,6 +1,6 @@
 # Matching Specificity Vectors
 
-Executable HOBO-55 spike vectors for [ADR-0088](../../../../docs/design/adr/01-architecture-core.md#adr-0088).
+Executable HOBO-55 spike vectors for [ADR-0088](urn:hobo:decision:adr-0088).
 
 This draft package pins the matching comparator that feeds the future HOBO-64 engine:
 

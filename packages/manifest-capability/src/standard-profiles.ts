@@ -52,7 +52,7 @@ function profile(seed: ProfileSeed): CapabilityProfileDescriptor {
 		maturity: seed.maturity ?? "stable",
 		sourceRefs: seed.sourceRefs ?? [
 			hoboSource(
-				"docs/design/adr/07-portability-extensibility.md",
+				"urn:hobo:decision:07-portability-extensibility",
 				"HoBo-owned semantics; no external product defines this profile",
 			),
 		],
@@ -415,7 +415,7 @@ const KV: readonly CapabilityProfileDescriptor[] = [
 		],
 		sourceRefs: [
 			hoboSource(
-				"docs/design/adr/03-data-plane-sqlite-default.md",
+				"urn:hobo:decision:03-data-plane-sqlite-default",
 				"Actor-local journal mirrors ADR-0135 stream-head CAS; not a global EventStore",
 			),
 		],

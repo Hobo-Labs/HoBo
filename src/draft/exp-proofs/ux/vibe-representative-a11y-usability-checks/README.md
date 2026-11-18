@@ -14,8 +14,8 @@ and proof-mode labels.
 - In scope: deterministic representative check fixtures, artifact-to-owner
   routing, quickstart fixture references, scenario paths, proof-mode labels, and
   scope-out guards.
-- Source checklist: `docs/design/proofs/vibe-accessibility-usability-checklist/README.md`.
-- Quickstart dependency: `docs/design/proofs/resource-lifecycle-quickstart-examples/README.md`.
+- Source checklist: `urn:hobo:proof:vibe-accessibility-usability-checklist`.
+- Quickstart dependency: `urn:hobo:proof:resource-lifecycle-quickstart-examples`.
 - Consumed but not owned: product UI remediation, full audit execution,
   automated accessibility suite buildout, launch waiver approval, customer data,
   and public launch claims.

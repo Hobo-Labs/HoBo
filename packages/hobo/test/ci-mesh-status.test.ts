@@ -30,8 +30,8 @@ import {
 	meshReliabilityJournal,
 	meshSettingsFromEnv,
 	meshTrustConfigJson,
-	startRelayFromEnvironment,
 } from "@hobo/ci-gh-actions";
+import { startRelayFromEnvironment } from "@hobo/ci-gh-actions/cli-serve";
 import { parseMeshNodeReports } from "@hobo/ci-gh-actions/client";
 import { createNatsMesh, type NatsMesh } from "@hobo/ci-gh-actions/mesh-nats";
 import { createHoboCli } from "@hobo/cli";

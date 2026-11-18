@@ -328,7 +328,7 @@ blobs in the HoBo artifact store) and promoted `hobo-release/pages-candidate` ->
 on the observed head, moved by compare-and-swap with `GITHUB_TOKEN` (by hand too).
 The journal lives in `HOBO_RELEASE_CD_HOME` (by hand: `HOBO_HOME`, default
 `~/.hobo`), and the `hobo` package must be built.
-See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
+See [release channels](urn:hobo:requirement:release-channels#hobo-releases-through-hobo-cd).
 
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built
 from before saying a site change has shipped. **Agents must not** wait on, cancel, or

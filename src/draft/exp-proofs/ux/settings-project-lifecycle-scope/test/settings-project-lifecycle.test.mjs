@@ -34,11 +34,11 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     SETTINGS_PROJECT_LIFECYCLE_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "docs/design/developer-experience.md#plan-07",
-      "docs/design/architecture.md#plan-10",
-      "docs/design/security-networking.md#plan-50",
-      "docs/design/adr/02-identity-security.md#adr-0077",
-      "docs/design/adr/02-identity-security.md#adr-0074",
+      "urn:hobo:requirement:developer-experience#plan-07",
+      "urn:hobo:requirement:architecture#plan-10",
+      "urn:hobo:requirement:security-networking#plan-50",
+      "urn:hobo:decision:adr-0077",
+      "urn:hobo:decision:adr-0074",
     ],
   );
 });

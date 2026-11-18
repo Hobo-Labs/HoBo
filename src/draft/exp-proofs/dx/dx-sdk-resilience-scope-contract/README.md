@@ -17,8 +17,8 @@ and inspection work bounded to durable event facts.
 - Child issues HOBO-515 through HOBO-520 span M0 through M4 and each carries
   branch-sized scope, scope-out, acceptance, adversarial checks, target files,
   and verification commands.
-- The design record is discoverable from `docs/design/README.md` and
-  `docs/design/sdk-contracts.md`.
+- The design record is discoverable from `urn:hobo:requirement:README` and
+  `urn:hobo:requirement:sdk-contracts`.
 - Denial, cancellation, deadline, replay-derived inspection, and golden-IR
   parity failures cannot be treated as retryable or successful SDK behavior.
 - Effect and XState stay reference inputs, not public dependencies.
@@ -51,6 +51,6 @@ npm.cmd --prefix src\draft\exp-proofs\dx-sdk-resilience-scope-contract test
 
 Related records:
 
-- [DX SDK resilience semantics](../../../../../docs/design/dx-sdk-resilience-semantics.md)
-- [SDK contracts](../../../../../docs/design/sdk-contracts.md)
-- [HOBO-514 proof record](../../../../../docs/design/proofs/hobo-514-dx-sdk-resilience/README.md)
+- [DX SDK resilience semantics](urn:hobo:requirement:dx-sdk-resilience-semantics)
+- [SDK contracts](urn:hobo:requirement:sdk-contracts)
+- [HOBO-514 proof record](urn:hobo:proof:hobo-514-dx-sdk-resilience)

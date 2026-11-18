@@ -69,7 +69,7 @@ package vibe_topology_status_prototype
 	issue:              #Issue
 	phase:              "M2"
 	targetPackage:      "src/draft/exp-proofs/ux/vibe-topology-status-prototype"
-	proofNote:          "docs/design/proofs/vibe-topology-status-prototype/README.md"
+	proofNote:          "urn:hobo:proof:vibe-topology-status-prototype"
 	designRefs:         #NonEmptyStringList
 	sourceDependencies: [...#SourceDependency]
 	quickstartFixtureRefs: [...#QuickstartFixtureRef]

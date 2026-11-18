@@ -30,9 +30,9 @@ npm.cmd --prefix src\draft\technical-proofs\non-iac-driver-adapters-contract tes
 
 Relevant design records:
 
-- `docs/design/platform-engineering.md`: Driver taxonomy, Driver interface, `echo`, `template`,
+- `urn:hobo:requirement:platform-engineering`: Driver taxonomy, Driver interface, `echo`, `template`,
   `container`, `custom-webhook`, scoped Executors, and placeholder outputs
-- `docs/design/control-plane.md`: `IacProvider` as one Driver in the broader taxonomy
+- `urn:hobo:requirement:control-plane`: `IacProvider` as one Driver in the broader taxonomy
 
 
 ## Executable evidence

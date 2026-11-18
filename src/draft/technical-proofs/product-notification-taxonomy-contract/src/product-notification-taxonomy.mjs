@@ -29,11 +29,11 @@ export const PRODUCT_NOTIFICATION_TAXONOMY = {
   goal:
     "Define v1 product lifecycle notification classes, ownership, preference boundaries, and delivery evidence before implementation work can claim customers receive understandable and supportable messages.",
   designRefs: [
-    "docs/design/data-plane.md#plan-11",
-    "docs/design/adr/03-data-plane.md#adr-0059",
-    "docs/design/launch-support-escalation.md",
-    "docs/design/billing-launch-policy.md",
-    "docs/design/workspace-onboarding-ux.md",
+    "urn:hobo:requirement:data-plane#plan-11",
+    "urn:hobo:decision:adr-0059",
+    "urn:hobo:requirement:launch-support-escalation",
+    "urn:hobo:requirement:billing-launch-policy",
+    "urn:hobo:requirement:workspace-onboarding-ux",
   ],
   scopeIn: [
     "Required v1 lifecycle notification classes and owner routing.",

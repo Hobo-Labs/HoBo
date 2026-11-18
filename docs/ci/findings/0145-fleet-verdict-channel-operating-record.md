@@ -12,8 +12,8 @@ been passed yet. Fill in each row's **Measured** cell, with links, as its gate i
 the next.
 
 Design and authority:
-[ADR-0180](../../design/adr/fleet-verdict.md#adr-0180-amendment) and its
-[routing rules amendment](../../design/adr/fleet-verdict.md#adr-0180-rules). Runbooks:
+[ADR-0180](urn:hobo:decision:adr-0180-amendment) and its
+[routing rules amendment](urn:hobo:decision:adr-0180-rules). Runbooks:
 [Fleet verdict operations](../../../packages/ci-vercel/README.md#fleet-verdict-operations). Monitor: the CI health
 monitor, [`docs/ci/health-monitor.md`](../health-monitor.md).
 
@@ -45,7 +45,7 @@ consumer then fell back silently to a default.
   and asks again before shards.
 - **Loud fallbacks** ([CI health monitor](../health-monitor.md)). Every fallback leaves a titled annotation; `ci-health.yml` reads them every two
   hours and opens an issue per breach.
-- **Retirement** ([ADR-0180, Retirement](../../design/adr/fleet-verdict.md#adr-0180-retirement)). The `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` publishers are removed; no
+- **Retirement** ([ADR-0180, Retirement](urn:hobo:decision:adr-0180-retirement)). The `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` publishers are removed; no
   workflow may read a fleet variable (lint).
 - **The smoke check probes the public origin.** `relay-deploy.yml` requires the verdict read at the origin
   `.hobo/ci.json` names to answer a verdict for this repository.

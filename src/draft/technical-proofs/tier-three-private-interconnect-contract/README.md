@@ -4,8 +4,8 @@ Independent proof for HOBO-127.
 
 This package pins the M2 tier-three networking realization contract from:
 
-- `docs/design/security-networking.md`: cross-provider private connectivity uses provider interconnects such as PrivateLink, Private Service Connect, or Private Link when the equivalence class supports it.
-- `docs/design/adr/07-portability-extensibility.md#adr-0043`: the Junction may infer PrivateLink/PSC as the private cross-cloud tier, while each Yard owns its own half.
+- `urn:hobo:requirement:security-networking`: cross-provider private connectivity uses provider interconnects such as PrivateLink, Private Service Connect, or Private Link when the equivalence class supports it.
+- `urn:hobo:decision:adr-0043`: the Junction may infer PrivateLink/PSC as the private cross-cloud tier, while each Yard owns its own half.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and tier enum.
 - `src/draft/technical-proofs/tier-two-cross-region-network-contract`: HOBO-124's deterministic fallback and endpoint-injection shape.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's SVID-keyed mTLS decision contract.

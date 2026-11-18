@@ -40,7 +40,7 @@ competitor:
 | Escape hatches | **HTTP `endpoint`s** + **`.env.lakebed.server`** server env only; no exposed IaC, no arbitrary npm imports (v0) |
 | Onboarding | `npx lakebed new` → `npx lakebed dev`; **anonymous `npx lakebed deploy`** first (zero account) |
 
-Lakebed is a **named head-on competitor** to HoBo as an **AI-native meta-cloud** ([ADR-0064](../design/adr/07-portability-extensibility.md#adr-0064)): it optimizes ruthlessly for agent-authored, instant-on full-stack apps on a closed runtime. HoBo tracks it because vision.md borrows its onboarding and machine-readable-contract ethos while deliberately offering cloud-agnostic ports, durable workflows, and adopt-in-place migration.
+Lakebed is a **named head-on competitor** to HoBo as an **AI-native meta-cloud** ([ADR-0064](urn:hobo:decision:adr-0064)): it optimizes ruthlessly for agent-authored, instant-on full-stack apps on a closed runtime. HoBo tracks it because vision.md borrows its onboarding and machine-readable-contract ethos while deliberately offering cloud-agnostic ports, durable workflows, and adopt-in-place migration.
 
 ## What it is
 
@@ -221,7 +221,7 @@ npx lakebed logs <deploy-id-or-url>
 
 Local inspection is open on localhost. Hosted deploys keep manifests, state, table names, logs, and usage **private by default** unless `--public-inspect` was used.
 
-**Anonymous deploy** is the instant try-it-now path: publish first, claim later when env/outbound fetch is needed — the Lakebed-style instant feel HoBo explicitly matches with `npx hobo up` anonymous deploys ([Plan 7](../design/developer-experience.md#plan-07)).
+**Anonymous deploy** is the instant try-it-now path: publish first, claim later when env/outbound fetch is needed — the Lakebed-style instant feel HoBo explicitly matches with `npx hobo up` anonymous deploys ([Plan 7](urn:hobo:requirement:developer-experience#plan-07)).
 
 ### Auth
 
@@ -292,7 +292,7 @@ Client helpers: `useAuth()`, `SignInWithGoogle`, `signInWithGoogle()`, `signOut(
 - **No self-host parity** — cannot run the production runtime on your own infra (unlike HoBo's Yard-is-a-Bindle model).
 - **No durable workflows / actors / event sourcing** — sync RPC only; no choreography sagas or replayable audit log.
 - **No IaC escape hatch** — cannot drop to Pulumi/Terraform or pin tiers to AWS/GCP/Azure independently.
-- **No adopt-in-place migration** — leaving Lakebed means rewriting off the SDK; HoBo's `hobo import lakebed` targets Capsule→Bindle mapping ([ADR-0041](../design/adr/07-portability-extensibility.md#adr-0041)).
+- **No adopt-in-place migration** — leaving Lakebed means rewriting off the SDK; HoBo's `hobo import lakebed` targets Capsule→Bindle mapping ([ADR-0041](urn:hobo:decision:adr-0041)).
 - **Basic auth only** — guest/Google for end users; no first-class agent principals, MCP control plane, or brokered workload tokens.
 - **V0 platform limits** — no file storage, no arbitrary npm deps, no Node built-ins, local state resets on dev restart.
 - **Alpha maturity** — docs describe v0 constraints explicitly; production hardening (multi-region, enterprise governance) is not surfaced.
@@ -301,24 +301,24 @@ Client helpers: `useAuth()`, `SignInWithGoogle`, `signInWithGoogle()`, `signOut(
 
 <a id="hobo-mapping"></a>
 
-> For every Lakebed feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · 🔜 = planned, see iteration hooks. HoBo design lives in [`../design/`](../design/index.md).
+> For every Lakebed feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · 🔜 = planned, see iteration hooks. HoBo design lives in [`../design/`](urn:hobo:requirement:index).
 
 ### Core model
 
 | Lakebed | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| **Capsule** (one full-stack TS app) | **Bindle** (app topology mapped to any provider mix) | ➕ | [21](../design/authoring-resources-wiring.md#plan-21), [02](../design/sdk-api.md#plan-02) |
-| `capsule({ schema, queries, mutations })` | IfC resources + services behind WIT ports; manifest IR from collection | ➕ | [21](../design/authoring-resources-wiring.md#plan-21), [22](../design/authoring-resources-wiring.md#plan-21) |
-| Closed hosted runtime | **Camps** + pluggable providers; self-hosted **Yard** | ➕ | [04](../design/control-plane.md#plan-04), [ADR-0031](../design/adr/01-architecture-core.md#adr-0031) |
-| Sync RPC queries/mutations | **Actors + durable workflows + choreography sagas** over replayable event store | ➕ | [02](../design/sdk-api.md#plan-02), [11](../design/data-plane.md#plan-11) |
-| `useQuery` / `useMutation` client hooks | `useQuery()` reactive primitive + event-log reactor ([ADR-0050](../design/adr/03-data-plane.md#adr-0050)) | ➕ | [32](../design/data-plane.md#plan-32) |
-| `llms.txt` / agent-readable app contracts | `llms.txt` / `docs.json` for **operations** + **MCP** control surface | ➕ | [06](../design/ai-native-agent-auth.md#plan-06) |
-| Anonymous deploy → claim | Anonymous `npx hobo up` → `hobo claim` | ✅ | [07](../design/developer-experience.md#plan-07) |
-| `npx lakebed dev` instant local | `hobo dev` on `runtime-local` + fidelity matrix | ✅/➕ | [07](../design/developer-experience.md#plan-07), [ADR-0042](../design/adr/07-portability-extensibility.md#adr-0042) |
-| Guest + Google auth | End-user auth via `auth()` port + **agents as first-class principals** | ➕ | [06](../design/ai-native-agent-auth.md#plan-06), [ADR-0038](../design/adr/02-identity-security.md#adr-0038) |
-| `endpoint` HTTP escape hatch | `api` / HTTP actions + ingress/domain ports | ✅ | [21](../design/authoring-resources-wiring.md#plan-21), [ADR-0035](../design/adr/07-portability-extensibility.md#adr-0035) |
-| `.env.lakebed.server` server env | Secretless `ctx.env` via references + brokered tokens per Camp | ➕ | [21](../design/authoring-resources-wiring.md#plan-21) |
-| Runtime inspect (`db`/`logs`/`inspect`) | `hobo inspect` / logs / replay / MCP projections | ➕ | [07](../design/developer-experience.md#plan-07), [14](../design/reliability-observability-cost.md#plan-05) |
+| **Capsule** (one full-stack TS app) | **Bindle** (app topology mapped to any provider mix) | ➕ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [02](urn:hobo:requirement:sdk-api#plan-02) |
+| `capsule({ schema, queries, mutations })` | IfC resources + services behind WIT ports; manifest IR from collection | ➕ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Closed hosted runtime | **Camps** + pluggable providers; self-hosted **Yard** | ➕ | [04](urn:hobo:requirement:control-plane#plan-04), [ADR-0031](urn:hobo:decision:adr-0031) |
+| Sync RPC queries/mutations | **Actors + durable workflows + choreography sagas** over replayable event store | ➕ | [02](urn:hobo:requirement:sdk-api#plan-02), [11](urn:hobo:requirement:data-plane#plan-11) |
+| `useQuery` / `useMutation` client hooks | `useQuery()` reactive primitive + event-log reactor ([ADR-0050](urn:hobo:decision:adr-0050)) | ➕ | [32](urn:hobo:requirement:data-plane#plan-32) |
+| `llms.txt` / agent-readable app contracts | `llms.txt` / `docs.json` for **operations** + **MCP** control surface | ➕ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
+| Anonymous deploy → claim | Anonymous `npx hobo up` → `hobo claim` | ✅ | [07](urn:hobo:requirement:developer-experience#plan-07) |
+| `npx lakebed dev` instant local | `hobo dev` on `runtime-local` + fidelity matrix | ✅/➕ | [07](urn:hobo:requirement:developer-experience#plan-07), [ADR-0042](urn:hobo:decision:adr-0042) |
+| Guest + Google auth | End-user auth via `auth()` port + **agents as first-class principals** | ➕ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [ADR-0038](urn:hobo:decision:adr-0038) |
+| `endpoint` HTTP escape hatch | `api` / HTTP actions + ingress/domain ports | ✅ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [ADR-0035](urn:hobo:decision:adr-0035) |
+| `.env.lakebed.server` server env | Secretless `ctx.env` via references + brokered tokens per Camp | ➕ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Runtime inspect (`db`/`logs`/`inspect`) | `hobo inspect` / logs / replay / MCP projections | ➕ | [07](urn:hobo:requirement:developer-experience#plan-07), [14](urn:hobo:requirement:reliability-observability-cost#plan-05) |
 
 ### Competitive frame (from design suite)
 
@@ -333,17 +333,17 @@ Client helpers: `useAuth()`, `SignInWithGoogle`, `signInWithGoogle()`, `signOut(
 
 ### Where HoBo deliberately exceeds Lakebed
 
-From vision.md's borrow-and-extend list ([Plan 17](../design/vision.md#plan-17)):
+From vision.md's borrow-and-extend list ([Plan 17](urn:hobo:requirement:vision#plan-17)):
 
-- **Machine-readable contracts extended to operations** — Lakebed's `llms.txt` covers app authoring; HoBo publishes `llms.txt` / `docs.json` for *operations* and exposes MCP tools for deploy/inspect/audit ([Plan 6](../design/ai-native-agent-auth.md#plan-06)).
-- **Incremental adoption** — `hobo import lakebed` maps Capsule→Bindle in place ([ADR-0041](../design/adr/07-portability-extensibility.md#adr-0041)); Lakebed offers no strangler-fig path off its runtime.
-- **Cloud-agnostic + self-host** — same Bindle ships to one provider or many; Yard-is-a-Bindle self-host parity ([Plan 4](../design/control-plane.md#plan-04)).
+- **Machine-readable contracts extended to operations** — Lakebed's `llms.txt` covers app authoring; HoBo publishes `llms.txt` / `docs.json` for *operations* and exposes MCP tools for deploy/inspect/audit ([Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06)).
+- **Incremental adoption** — `hobo import lakebed` maps Capsule→Bindle in place ([ADR-0041](urn:hobo:decision:adr-0041)); Lakebed offers no strangler-fig path off its runtime.
+- **Cloud-agnostic + self-host** — same Bindle ships to one provider or many; Yard-is-a-Bindle self-host parity ([Plan 4](urn:hobo:requirement:control-plane#plan-04)).
 - **AI-native operations** — generation pipeline, Operator Agents (the Crew), event-sourced everything — not just agent-readable apps.
 
 ### Open parity items (iteration hooks)
 
 - **Single-runtime simplicity as a DX bar** — Lakebed's one-directory, zero-config capsule is the onboarding benchmark HoBo must match via `hobo dev` + anonymous deploy even while offering more surface area.
-- **Full-stack UI in one artifact** — Lakebed bundles Preact client + server in one capsule; HoBo's UI generation is design.md-driven behind `ui-render` ports ([Plan 23](../design/generated-stack.md#plan-23)) — parity is intentional breadth, not identical shape.
+- **Full-stack UI in one artifact** — Lakebed bundles Preact client + server in one capsule; HoBo's UI generation is design.md-driven behind `ui-render` ports ([Plan 23](urn:hobo:requirement:generated-stack#plan-23)) — parity is intentional breadth, not identical shape.
 - **Capsule→Bindle import mappings** — ADR-0041 names `hobo import lakebed`; detailed field-level mapping conformance is an implementation hook.
 
 ## Sources & provenance
@@ -358,11 +358,11 @@ Primary sources (fetched 2026-07-02):
 
 In-repo characterizations consolidated into this capture (cross-checked, not contradicted):
 
-- `docs/design/vision.md:50` (landscape row) · `docs/design/vision.md:70,80,89,108` (borrows, head-on set, import, risk mitigation)
-- `docs/design/index.md:137-144` (competitive frame table)
-- `docs/design/developer-experience.md:138,155` (local ergonomics, anonymous deploy)
-- `docs/design/ai-native-agent-auth.md:155` (llms.txt ethos)
-- `docs/design/adr/07-portability-extensibility.md#adr-0041` (`hobo import lakebed`)
+- `urn:hobo:requirement:vision:50` (landscape row) · `urn:hobo:requirement:vision:70,80,89,108` (borrows, head-on set, import, risk mitigation)
+- `urn:hobo:requirement:index:137-144` (competitive frame table)
+- `urn:hobo:requirement:developer-experience:138,155` (local ergonomics, anonymous deploy)
+- `urn:hobo:requirement:ai-native-agent-auth:155` (llms.txt ethos)
+- `urn:hobo:decision:adr-0041` (`hobo import lakebed`)
 
 These files are **competitive-research notes** under [`index.md#sources--fair-use`](index.md#sources--fair-use): factual interface excerpts are quoted for commentary and parity comparison; product names and documentation remain Lakebed's property.
 
@@ -376,7 +376,7 @@ State labels follow the research contract.
   different claim from agent-friendly documentation.
 - **Provider-abstract description** (*implemented*) versus a platform-specific capsule.
 - **Honest caveat.** Lakebed ships a running platform; HoBo's provider coverage is partial (see the
-  [live provider matrix](../design/live-provider-matrix.md)).
+  [live provider matrix](urn:hobo:requirement:live-provider-matrix)).
 
 ## Better-together / integration posture
 

@@ -2,7 +2,7 @@
 
 Optional `SecretsPort` adapter (kind `infisical`) for
 [Infisical](https://infisical.com). It is the first binding of the hosted CI
-relay's config service (ADR-0179 (`docs/design/adr/hosted-relay-stateless.md`, from PR #1887)):
+relay's config service (ADR-0179 (`urn:hobo:decision:hosted-relay-stateless`, from PR #1887)):
 the relay reads its configuration and secrets from one Infisical folder, signing
 in with the Vercel OIDC token it already has, so it keeps no secret to fetch its
 secrets.

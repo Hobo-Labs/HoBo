@@ -86,7 +86,7 @@ type VibeFirstCustomerPilotStoryboard = {
   readonly issue: "HOBO-549";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard";
-  readonly proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md";
+  readonly proofPath: "urn:hobo:proof:vibe-first-customer-pilot-storyboard";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly QuickstartFixtureRef[];
   readonly personas: readonly PilotPersona[];
@@ -135,15 +135,15 @@ export const VIBE_FIRST_CUSTOMER_PILOT_STORYBOARD: VibeFirstCustomerPilotStorybo
   issue: "HOBO-549",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard",
-  proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md",
+  proofPath: "urn:hobo:proof:vibe-first-customer-pilot-storyboard",
   designRefs: [
-    "docs/design/customer-onboarding.md",
-    "docs/design/workspace-onboarding-ux.md",
-    "docs/design/beta-pilot-feedback.md",
-    "docs/design/launch-demo-golden-path.md",
-    "docs/design/launch-support-escalation.md",
-    "docs/design/launch-blocker-taxonomy.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:customer-onboarding",
+    "urn:hobo:requirement:workspace-onboarding-ux",
+    "urn:hobo:requirement:beta-pilot-feedback",
+    "urn:hobo:requirement:launch-demo-golden-path",
+    "urn:hobo:requirement:launch-support-escalation",
+    "urn:hobo:requirement:launch-blocker-taxonomy",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   quickstartFixtureRefs: QUICKSTART_REFS,
   personas: REQUIRED_PILOT_STORYBOARD_PERSONAS,
@@ -371,7 +371,7 @@ export function validateVibeFirstCustomerPilotStoryboard(
   if (storyboard.packagePath !== "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (storyboard.proofPath !== "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md") {
+  if (storyboard.proofPath !== "urn:hobo:proof:vibe-first-customer-pilot-storyboard") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(storyboard.personas, REQUIRED_PILOT_STORYBOARD_PERSONAS)) {

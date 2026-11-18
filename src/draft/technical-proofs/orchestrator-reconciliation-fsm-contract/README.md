@@ -22,7 +22,7 @@ without waiting for S2-04 Planner production code.
 - Planner IR ingestion (uses local fixture DeploymentPlan)
 
 ## Executable evidence
-- [`docs/design/control-plane.md`](../../../../docs/design/control-plane.md) Plan 04
+- [`urn:hobo:requirement:control-plane`](urn:hobo:requirement:control-plane) Plan 04
 - Prior proofs: `resourceactor-fsm-contract`, `orchestrator-choreography-skeleton-contract`, `choreographed-compensation-contract`
 
 ## Validation

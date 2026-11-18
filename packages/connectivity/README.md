@@ -5,7 +5,7 @@ Multi-tenant connectivity foundations for HoBo: **DNS-valid hierarchical naming*
 ## TrafficRouting
 
 `TrafficRoutingPort` is the portable multi-backend routing-intent seam from
-[ADR-0143](../../docs/design/adr/07-portability-extensibility.md#adr-0143). It is
+[ADR-0143](urn:hobo:decision:adr-0143). It is
 adjacent to public DNS and overlay exposure: Stations coordinate plans; Junctions
 continue to own Tailscale/overlay configuration.
 

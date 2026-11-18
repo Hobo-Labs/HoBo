@@ -33,7 +33,7 @@ package dx_result_refusal_proof_envelopes
   phase: "M1"
   audience: #Audience
   mocked_boundaries: [...=~"^.+$"] & [_, ...]
-  references: [...=~"^docs/design/.+\\.md$"] & [_, ...]
+  references: [...=~"^urn:hobo:requirement:.+$"] & [_, ...]
   envelopes: [...#DxResultEnvelope]
 }
 

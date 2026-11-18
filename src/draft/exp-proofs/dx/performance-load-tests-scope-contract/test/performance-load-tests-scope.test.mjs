@@ -36,12 +36,12 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     PERFORMANCE_LOAD_TESTS_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "docs/design/reliability-observability-cost.md#plan-05",
-      "docs/design/e2e-test-matrix.md",
-      "docs/design/launch-e2e-persona-matrix.md",
-      "docs/design/pre-launch-outcome-contract.md",
-      "docs/design/adr/02-identity-security.md#adr-0045",
-      "docs/design/adr/02-identity-security.md#adr-0082",
+      "urn:hobo:requirement:reliability-observability-cost#plan-05",
+      "urn:hobo:requirement:e2e-test-matrix",
+      "urn:hobo:requirement:launch-e2e-persona-matrix",
+      "urn:hobo:requirement:pre-launch-outcome-contract",
+      "urn:hobo:decision:adr-0045",
+      "urn:hobo:decision:adr-0082",
     ],
   );
 });

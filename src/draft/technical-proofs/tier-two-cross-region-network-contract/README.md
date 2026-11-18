@@ -4,7 +4,7 @@ Independent proof for HOBO-124.
 
 This package pins the M2 tier-two networking realization contract from:
 
-- `docs/design/security-networking.md`: same-provider cross-region connectivity uses provider backbone + private peering where available.
+- `urn:hobo:requirement:security-networking`: same-provider cross-region connectivity uses provider backbone + private peering where available.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and tier enum.
 - `src/draft/technical-proofs/tier-one-private-network-contract`: HOBO-121's endpoint injection and bind-scoped reachability pattern.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's SVID-keyed mTLS decision contract.

@@ -16,7 +16,7 @@ test("foundations reference architecture proves the bootstrap path with mocked b
       "artifact-build",
       "trust-gate",
       "ci-conformance",
-      "hardening-traceability",
+      "source-policy-hardening",
     ],
   );
 
@@ -45,7 +45,7 @@ test("foundations reference architecture proves the bootstrap path with mocked b
   assert.equal(result.artifactTrust.install.availableToMatching, true);
   assert.equal(result.artifactTrust.install.selectedByMatching, false);
 
-  assert.equal(result.hardening.traceability.plan10.includes("HOBO-1"), true);
+  assert.equal(result.hardening.sourcePolicy.forbidsNarrativeRecords, true);
   assert.equal(result.contracts.missing.length, 0);
 });
 

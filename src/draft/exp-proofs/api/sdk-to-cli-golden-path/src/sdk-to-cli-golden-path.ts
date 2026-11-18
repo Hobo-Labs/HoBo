@@ -1,6 +1,6 @@
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 const FIXTURE_ID = "dx.lifecycle.shop-api.v1";
-const PROOF_NOTE = "docs/design/proofs/sdk-to-cli-golden-path/README.md";
+const PROOF_NOTE = "urn:hobo:proof:sdk-to-cli-golden-path";
 const CONTRACT_ARTIFACTS = {
   protobuf: "architecture/sdk_to_cli_golden_path.proto",
   cue: "architecture/sdk_to_cli_golden_path.cue",
@@ -93,12 +93,12 @@ export function createSdkToCliGoldenPathProof() {
     fixtureId: FIXTURE_ID,
     proofNote: PROOF_NOTE,
     refs: [
-      "docs/design/developer-experience.md#plan-07",
-      "docs/design/sdk-api.md#plan-02",
-      "docs/design/control-plane.md#plan-04",
-      "docs/design/platform-engineering.md#plan-25",
-      "docs/design/data-plane.md#plan-11",
-      "docs/design/contracts-policy-flags.md#plan-29",
+      "urn:hobo:requirement:developer-experience#plan-07",
+      "urn:hobo:requirement:sdk-api#plan-02",
+      "urn:hobo:requirement:control-plane#plan-04",
+      "urn:hobo:requirement:platform-engineering#plan-25",
+      "urn:hobo:requirement:data-plane#plan-11",
+      "urn:hobo:requirement:contracts-policy-flags#plan-29",
     ],
     sdkConsumer: {
       fixtureId: FIXTURE_ID,

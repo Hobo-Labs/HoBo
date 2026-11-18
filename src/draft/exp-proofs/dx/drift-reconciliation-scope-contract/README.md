@@ -4,7 +4,7 @@ Executable M0 proof for HOBO-442, defining Drift Reconciliation scope and accept
 design or implementation work fans out.
 
 The authoritative design record is
-[`docs/design/drift-reconciliation.md`](../../../../docs/design/drift-reconciliation.md).
+[`urn:hobo:requirement:drift-reconciliation`](urn:hobo:requirement:drift-reconciliation).
 
 ## Focused Gate
 

@@ -7,7 +7,7 @@ package vibe_dashboard_freshness_rbac_fixtures
 	issue: "HOBO-545"
 	phase: "M1"
 	targetPackage: "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures"
-	proofNote: "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md"
+	proofNote: "urn:hobo:proof:vibe-dashboard-freshness-rbac-fixtures"
 	designRefs: [...string]
 	proofModeLabels: [...#DashboardProofMode]
 	coveragePaths: [...#DashboardFixtureCoveragePath]

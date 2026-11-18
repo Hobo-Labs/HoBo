@@ -7,9 +7,9 @@ typed, event-sourced port-suite harness under `packages/conformance/`.
 
 ## Requirements Source
 
-- `docs/design/generated-stack.md#plan-09` — `@hobo/conformance` trust boundary
-- `docs/design/adr/01-architecture-core.md#adr-0072` — golden-IR equivalence + replay
-- `docs/design/adr/01-architecture-core.md#adr-0093` — SDK semantics annex lane
+- `urn:hobo:requirement:generated-stack#plan-09` — `@hobo/conformance` trust boundary
+- `urn:hobo:decision:adr-0072` — golden-IR equivalence + replay
+- `urn:hobo:decision:adr-0093` — SDK semantics annex lane
 - `src/draft/technical-proofs/conformance-port-suite-contract/` — reference semantics (HOBO-5)
 
 ## Public API

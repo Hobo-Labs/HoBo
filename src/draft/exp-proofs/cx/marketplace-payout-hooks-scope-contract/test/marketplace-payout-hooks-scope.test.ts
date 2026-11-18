@@ -35,13 +35,13 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     MARKETPLACE_PAYOUT_HOOKS_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "docs/design/marketplace-publisher-trust-evidence.md",
-      "docs/design/capability-review-approval.md",
-      "docs/design/org-catalogs.md",
-      "docs/design/billing-launch-policy.md",
-      "docs/design/tax-currency-receipt-obligations.md",
-      "docs/design/launch-support-escalation.md",
-      "docs/design/adr/07-portability-extensibility.md#adr-0064",
+      "urn:hobo:requirement:marketplace-publisher-trust-evidence",
+      "urn:hobo:requirement:capability-review-approval",
+      "urn:hobo:requirement:org-catalogs",
+      "urn:hobo:requirement:billing-launch-policy",
+      "urn:hobo:requirement:tax-currency-receipt-obligations",
+      "urn:hobo:requirement:launch-support-escalation",
+      "urn:hobo:decision:adr-0064",
     ],
   );
 });

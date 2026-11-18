@@ -21,9 +21,9 @@ npm.cmd --prefix src\draft\technical-proofs\provider-local-zero-infra test
 
 Relevant design records:
 
-- `docs/design/control-plane.md`: provider package authoring, local/container provider, and `realize()` emission
-- `docs/design/generated-stack.md#plan-09`: local-vs-camp conformance tags
-- `docs/design/adr/07-portability-extensibility.md#adr-0042`: local-dev fidelity honesty
+- `urn:hobo:requirement:control-plane`: provider package authoring, local/container provider, and `realize()` emission
+- `urn:hobo:requirement:generated-stack#plan-09`: local-vs-camp conformance tags
+- `urn:hobo:decision:adr-0042`: local-dev fidelity honesty
 
 
 ## Executable evidence

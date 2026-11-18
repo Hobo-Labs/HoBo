@@ -245,7 +245,7 @@ Drivers are the core extension (HTTP PUT/DELETE implementing the driver interfac
 ## How it competes with HoBo
 
 Humanitec is the **direct architectural ancestor** of HoBo's matching layer, and remains its most
-direct competitor on that surface. [`lineage.md`](../design/lineage.md) records it as a
+direct competitor on that surface. [`lineage.md`](urn:hobo:requirement:lineage) records it as a
 pillar-adjacent borrow-source, and this capture does not soften that: the Resource
 Definitions + Matching + Drivers + Sets/Deltas engine is the shape HoBo adopted.
 
@@ -300,65 +300,65 @@ The difference is not the abstraction — HoBo agrees with the abstraction — b
 
 <a id="hobo-mapping"></a>
 
-> For every Humanitec feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · 🔜 = planned/roadmap. HoBo design lives in [`../../design/`](../design/index.md).
+> For every Humanitec feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · 🔜 = planned/roadmap. HoBo design lives in [`../../design/`](urn:hobo:requirement:index).
 
 ### Core engine
 
 | Humanitec | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Dynamic configuration management (Score + Resource Definitions + Matching) | **Resource Definitions + Matching** as the Planner's platform-rules layer; mapping = sugar over default definitions | ✅➕ | [25](../design/platform-engineering.md#plan-25) |
-| Resource Definition | HoBo Resource Definition (**WIT-interface-typed**, auto-generatable) | ➕ | [25](../design/platform-engineering.md#plan-25) |
-| Matching Criteria (specificity scoring) | Same model; the winning definition + score recorded as a **`match.Decided`** event (auditable "why this infra") | ➕ | [25](../design/platform-engineering.md#plan-25), [11](../design/data-plane.md#plan-11) |
-| Resource classes (`standard`/`ha`/…) | Resource `class` as a matching dimension | ✅ | [21](../design/authoring-resources-wiring.md#plan-21) |
-| Resource Graph (DAG, co-provision, outputs) | DeploymentPlan DAG + ResourceActors + manifest links | ✅ | [03](../design/control-plane.md#plan-04), [04](../design/control-plane.md#plan-04) |
-| Drivers (terraform/template/echo/container/custom-webhook) | **Driver taxonomy** generalizing IaC adapters (incl. echo/BYO + webhook) | ✅ | [27](../design/platform-engineering.md#plan-25), [03](../design/control-plane.md#plan-04) |
-| Deployment Sets (immutable) + Deltas (mutable) | **Set = manifest IR**, **Delta = event-sourced diff**; promote/rollback/incremental | ✅➕ | [26](../design/platform-engineering.md#plan-25), [22](../design/authoring-resources-wiring.md#plan-21) |
-| Placeholders (`${resources..outputs}`, `${context.*}`) | Aspire-style lazy refs aligned to this syntax | ✅ | [22](../design/authoring-resources-wiring.md#plan-21) |
-| Score workload spec | HoBo IfC resources + WIT ports; **Score importable** (interop) | ✅➕ | [02](../design/sdk-api.md#plan-02), [21](../design/authoring-resources-wiring.md#plan-21) |
-| Shared / active / implicit resources | Shared resources + ResourceActors + implicit scaffolding | ✅ | [04](../design/control-plane.md#plan-04) |
+| Dynamic configuration management (Score + Resource Definitions + Matching) | **Resource Definitions + Matching** as the Planner's platform-rules layer; mapping = sugar over default definitions | ✅➕ | [25](urn:hobo:requirement:platform-engineering#plan-25) |
+| Resource Definition | HoBo Resource Definition (**WIT-interface-typed**, auto-generatable) | ➕ | [25](urn:hobo:requirement:platform-engineering#plan-25) |
+| Matching Criteria (specificity scoring) | Same model; the winning definition + score recorded as a **`match.Decided`** event (auditable "why this infra") | ➕ | [25](urn:hobo:requirement:platform-engineering#plan-25), [11](urn:hobo:requirement:data-plane#plan-11) |
+| Resource classes (`standard`/`ha`/…) | Resource `class` as a matching dimension | ✅ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Resource Graph (DAG, co-provision, outputs) | DeploymentPlan DAG + ResourceActors + manifest links | ✅ | [03](urn:hobo:requirement:control-plane#plan-04), [04](urn:hobo:requirement:control-plane#plan-04) |
+| Drivers (terraform/template/echo/container/custom-webhook) | **Driver taxonomy** generalizing IaC adapters (incl. echo/BYO + webhook) | ✅ | [27](urn:hobo:requirement:platform-engineering#plan-25), [03](urn:hobo:requirement:control-plane#plan-04) |
+| Deployment Sets (immutable) + Deltas (mutable) | **Set = manifest IR**, **Delta = event-sourced diff**; promote/rollback/incremental | ✅➕ | [26](urn:hobo:requirement:platform-engineering#plan-25), [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Placeholders (`${resources..outputs}`, `${context.*}`) | Aspire-style lazy refs aligned to this syntax | ✅ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Score workload spec | HoBo IfC resources + WIT ports; **Score importable** (interop) | ✅➕ | [02](urn:hobo:requirement:sdk-api#plan-02), [21](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Shared / active / implicit resources | Shared resources + ResourceActors + implicit scaffolding | ✅ | [04](urn:hobo:requirement:control-plane#plan-04) |
 
 ### Environments & lifecycle
 
 | Humanitec | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Applications / Environments / Environment Types | Bindle / **Camp** with **environment type** (matching dimension) | ✅ | [26](../design/platform-engineering.md#plan-25) |
-| Env cloning | Camp `clone-from` | ✅ | [26](../design/platform-engineering.md#plan-25) |
-| Ephemeral / dynamic (per-PR) environments | Ephemeral/preview Camps (auto-TTL) | ✅ | [26](../design/platform-engineering.md#plan-25) |
-| Workload Profiles | **Workload Profiles** (wasm-component/container/serverless/VM) | ✅ | [27](../design/platform-engineering.md#plan-25) |
-| Rollback / incremental deploys | Event-sourced rollback + incremental reconcile | ✅ | [26](../design/platform-engineering.md#plan-25), [04](../design/control-plane.md#plan-04) |
+| Applications / Environments / Environment Types | Bindle / **Camp** with **environment type** (matching dimension) | ✅ | [26](urn:hobo:requirement:platform-engineering#plan-25) |
+| Env cloning | Camp `clone-from` | ✅ | [26](urn:hobo:requirement:platform-engineering#plan-25) |
+| Ephemeral / dynamic (per-PR) environments | Ephemeral/preview Camps (auto-TTL) | ✅ | [26](urn:hobo:requirement:platform-engineering#plan-25) |
+| Workload Profiles | **Workload Profiles** (wasm-component/container/serverless/VM) | ✅ | [27](urn:hobo:requirement:platform-engineering#plan-25) |
+| Rollback / incremental deploys | Event-sourced rollback + incremental reconcile | ✅ | [26](urn:hobo:requirement:platform-engineering#plan-25), [04](urn:hobo:requirement:control-plane#plan-04) |
 
 ### Platform & operations
 
 | Humanitec | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Portal (golden paths, catalogs, scorecards) | HoBo dashboard + resource-graph/matching/delta/pipeline views | ✅ | [07](../design/developer-experience.md#plan-07) |
-| Agent (private-network reverse tunnel) | **HoBo Relay** (outbound-only; Executors run behind it) | ✅ | [28](../design/platform-engineering.md#plan-25), [12](../design/security-networking.md#plan-12), [13](../design/security-networking.md#plan-12) |
-| Operator (secret provisioning) | Provider `secrets` port + brokered tokens | ✅ | [06](../design/ai-native-agent-auth.md#plan-06), [12](../design/security-networking.md#plan-12) |
-| Pipelines (triggers + approval gates) | **Pipelines** atop sagas + policy gates | ✅ | [28](../design/platform-engineering.md#plan-25), [05](../design/reliability-observability-cost.md#plan-05) |
-| GitOps mode (write CRs to Git) | **GitOps publisher** target | ✅ | [28](../design/platform-engineering.md#plan-25), [22](../design/authoring-resources-wiring.md#plan-21) |
-| Resource Packs | **Resource Packs** in the Registry (auto-generatable) | ➕ | [27](../design/platform-engineering.md#plan-25), [06](../design/ai-native-agent-auth.md#plan-06) |
-| RBAC + approvals | ABAC + policy gates | ✅ | [12](../design/security-networking.md#plan-12), [06](../design/ai-native-agent-auth.md#plan-06) |
-| Audit logs (365d, immutable) | Event log **is** the audit log (replayable) | ➕ | [11](../design/data-plane.md#plan-11), [14](../design/reliability-observability-cost.md#plan-05) |
-| Drift detection | Drift loop (heal/propose/ignore) | ✅ | [05](../design/reliability-observability-cost.md#plan-05) |
-| CI/CD integration | CLI/MCP + Pipelines + artifact triggers | ✅ | [15](../design/developer-experience.md#plan-07), [28](../design/platform-engineering.md#plan-25) |
-| MCP (AI agents drive it) | `@hobo/mcp` (agents as first-class principals) | ➕ | [06](../design/ai-native-agent-auth.md#plan-06) |
-| Self-hosted + air-gapped | Self-host = hosted (the Yard is a Bindle) + Agent | ✅ | [04](../design/control-plane.md#plan-04) |
-| IDP "5-plane" framing | HoBo = Integration & Delivery plane orchestrator | ✅ | [00](../design/vision.md#plan-00), [17](../design/vision.md#plan-17) |
+| Portal (golden paths, catalogs, scorecards) | HoBo dashboard + resource-graph/matching/delta/pipeline views | ✅ | [07](urn:hobo:requirement:developer-experience#plan-07) |
+| Agent (private-network reverse tunnel) | **HoBo Relay** (outbound-only; Executors run behind it) | ✅ | [28](urn:hobo:requirement:platform-engineering#plan-25), [12](urn:hobo:requirement:security-networking#plan-12), [13](urn:hobo:requirement:security-networking#plan-12) |
+| Operator (secret provisioning) | Provider `secrets` port + brokered tokens | ✅ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [12](urn:hobo:requirement:security-networking#plan-12) |
+| Pipelines (triggers + approval gates) | **Pipelines** atop sagas + policy gates | ✅ | [28](urn:hobo:requirement:platform-engineering#plan-25), [05](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| GitOps mode (write CRs to Git) | **GitOps publisher** target | ✅ | [28](urn:hobo:requirement:platform-engineering#plan-25), [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Resource Packs | **Resource Packs** in the Registry (auto-generatable) | ➕ | [27](urn:hobo:requirement:platform-engineering#plan-25), [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
+| RBAC + approvals | ABAC + policy gates | ✅ | [12](urn:hobo:requirement:security-networking#plan-12), [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
+| Audit logs (365d, immutable) | Event log **is** the audit log (replayable) | ➕ | [11](urn:hobo:requirement:data-plane#plan-11), [14](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| Drift detection | Drift loop (heal/propose/ignore) | ✅ | [05](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| CI/CD integration | CLI/MCP + Pipelines + artifact triggers | ✅ | [15](urn:hobo:requirement:developer-experience#plan-07), [28](urn:hobo:requirement:platform-engineering#plan-25) |
+| MCP (AI agents drive it) | `@hobo/mcp` (agents as first-class principals) | ➕ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
+| Self-hosted + air-gapped | Self-host = hosted (the Yard is a Bindle) + Agent | ✅ | [04](urn:hobo:requirement:control-plane#plan-04) |
+| IDP "5-plane" framing | HoBo = Integration & Delivery plane orchestrator | ✅ | [00](urn:hobo:requirement:vision#plan-00), [17](urn:hobo:requirement:vision#plan-17) |
 
 ## Where HoBo is stronger or intentionally different
 
 State labels: **implemented** = shipped in `packages/`; **proof** = draft/proof material;
-**design-only** = design intent. See the [live provider matrix](../design/live-provider-matrix.md)
+**design-only** = design intent. See the [live provider matrix](urn:hobo:requirement:live-provider-matrix)
 for HoBo's honest coverage caveats.
 
 | Capability | State | HoBo doc |
 |---|---|---|
-| **Auditable matching** (`match.Decided` events — "why this infra", replayable) | implemented | [25](../design/platform-engineering.md#plan-25), [11](../design/data-plane.md#plan-11) |
-| **WASM-first polyglot runtime** (not K8s-centric) | mixed — wasmCloud host adopted, provider breadth partial | [20](../design/wasm-runtime-wit.md#plan-20) |
-| **Event-sourced replay/time-travel + DR-as-replay** | implemented (ADR-0135) | [11](../design/data-plane.md#plan-11), [05](../design/reliability-observability-cost.md#plan-05) |
-| **AI-generated Resource Definitions, Packs & implementations** (not human-only) | proof | [23](../design/generated-stack.md#plan-23), [06](../design/ai-native-agent-auth.md#plan-06) |
-| **IfC-default simplicity** + mapping-as-sugar (lower learning curve) | implemented | [02](../design/sdk-api.md#plan-02), [25](../design/platform-engineering.md#plan-25) |
-| **OSS core + WIT-standard ports** (less lock-in) | implemented | [17](../design/vision.md#plan-17), [24](../design/wasm-runtime-wit.md#plan-20) |
+| **Auditable matching** (`match.Decided` events — "why this infra", replayable) | implemented | [25](urn:hobo:requirement:platform-engineering#plan-25), [11](urn:hobo:requirement:data-plane#plan-11) |
+| **WASM-first polyglot runtime** (not K8s-centric) | mixed — wasmCloud host adopted, provider breadth partial | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
+| **Event-sourced replay/time-travel + DR-as-replay** | implemented (ADR-0135) | [11](urn:hobo:requirement:data-plane#plan-11), [05](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| **AI-generated Resource Definitions, Packs & implementations** (not human-only) | proof | [23](urn:hobo:requirement:generated-stack#plan-23), [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
+| **IfC-default simplicity** + mapping-as-sugar (lower learning curve) | implemented | [02](urn:hobo:requirement:sdk-api#plan-02), [25](urn:hobo:requirement:platform-engineering#plan-25) |
+| **OSS core + WIT-standard ports** (less lock-in) | implemented | [17](urn:hobo:requirement:vision#plan-17), [24](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
 
 ### Open parity items (iteration hooks)
 
@@ -371,7 +371,7 @@ for HoBo's honest coverage caveats.
 
 - **Borrow** — already done, and worth stating plainly: Resource Definitions + Matching, the Driver
   taxonomy, Deployment Sets/Deltas, and the Agent's outbound-only tunnel are all recorded as
-  borrow-sources in [`lineage.md`](../design/lineage.md). Humanitec is the single largest influence
+  borrow-sources in [`lineage.md`](urn:hobo:requirement:lineage). Humanitec is the single largest influence
   on HoBo's platform-engineering layer.
 - **Displace** — for the buyer who wants an orchestrator, this is the incumbent to unseat, on
   auditability, runtime breadth and openness rather than on the core abstraction.

@@ -6,7 +6,7 @@ message ClosureBuilderV1FinalizationRecord {
   string parent_issue = 1;
   string authoring_package = 2;
   string authoring_model = 3;
-  string canonical_doc_path = 4;
+  string contract_ref = 4;
   repeated ClosureBuilderEvidenceEntry evidence = 5;
 }
 
@@ -14,7 +14,7 @@ message ClosureBuilderEvidenceEntry {
   string issue_id = 1;
   string linear_status = 2;
   string proof_path = 3;
-  string design_path = 4;
+  string evidence_ref = 4;
   string accepted_scope = 5;
 }
 

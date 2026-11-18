@@ -25,7 +25,7 @@
           "issue": "HOBO-558",
           "phase": "M1",
           "targetPackage": "src/draft/exp-proofs/dx/cli-error-refusal-examples",
-          "proofNote": "docs/design/proofs/cli-error-refusal-examples/README.md",
+          "proofNote": "urn:hobo:proof:cli-error-refusal-examples",
           "requiredOperations": ["doctor", "plan", "up", "inspect", "logs", "mcp-action"],
           "acceptedFixtureCorpus": "HOBO-572",
           "acceptedFixturePrefix": "dx.lifecycle.",

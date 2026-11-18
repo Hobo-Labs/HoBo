@@ -249,7 +249,7 @@ different suffix — is refused rather than interpolated into a hostname.
 - A Secrets Manager secret **scheduled for deletion** (DescribeSecret answers
   `DeletedDate`) still holds its name for its recovery window, and AWS refuses
   CreateSecret, UpdateSecret and a second unforced DeleteSecret for it
-  ([ADR-0175](../../../docs/design/adr/07-portability-extensibility.md#adr-0175)).
+  ([ADR-0175](urn:hobo:decision:adr-0175)).
   - `read` reports it with action `delete`, `outputs.deletedDate`, and a
     diagnostic: "scheduled for deletion (DeletedDate <date>)", then what apply
     will do. The date is DescribeSecret's `DeletedDate` as AWS reports it, not
@@ -304,7 +304,7 @@ is cited to the vendor's documentation with the date it was read. It adds no
 product and does not change the published Capability Manifest; it is read by
 `assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
 has been deployed onto these products from this repository. See
-[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).
+[`urn:hobo:requirement:postgres-backend-catalog`](urn:hobo:requirement:postgres-backend-catalog).
 
 ### Virtual machine and block storage (catalog only)
 

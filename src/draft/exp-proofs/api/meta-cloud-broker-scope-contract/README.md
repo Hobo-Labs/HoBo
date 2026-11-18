@@ -43,5 +43,5 @@ npm.cmd run architecture:guard -- --base=origin/main
 
 The proof is also referenced by the design record:
 
-- [Meta-cloud Broker design record](../../../../../docs/design/meta-cloud-broker.md)
-- [HOBO-521 proof record](../../../../../docs/design/proofs/hobo-521-meta-cloud-broker/README.md)
+- [Meta-cloud Broker design record](urn:hobo:requirement:meta-cloud-broker)
+- [HOBO-521 proof record](urn:hobo:proof:hobo-521-meta-cloud-broker)

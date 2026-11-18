@@ -42,6 +42,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const draftRoot = join(here, "..", "..", "..");
+const repoRoot = join(draftRoot, "..", "..");
 
 const CONTRACTS_COVERED = Object.freeze([
   "WorkspaceSkeletonBoundary",
@@ -50,7 +51,7 @@ const CONTRACTS_COVERED = Object.freeze([
   "ComponentizeBuildBoundary",
   "CiFabricBoundary",
   "ArtifactTrustBoundary",
-  "HardeningTraceabilityBoundary",
+  "SourcePolicyBoundary",
 ]);
 
 export async function runFoundationsBuildConformanceSimulation() {
@@ -75,7 +76,7 @@ export async function runFoundationsBuildConformanceSimulation() {
       bdd("artifact-build", "Application developer", "build a deterministic hello-bindle component"),
       bdd("trust-gate", "SecOps reviewer", "verify signed artifacts before Matching can see them"),
       bdd("ci-conformance", "Maintainer", "run PR gates and opt-in hello-bindle E2E without stored secrets"),
-      bdd("hardening-traceability", "Design maintainer", "keep package/API/traceability docs aligned"),
+      bdd("source-policy-hardening", "Maintainer", "enforce package and source policy"),
     ],
     workspace,
     core,
@@ -247,19 +248,20 @@ function runArtifactTrustSlice(componentDigest) {
 }
 
 async function runHardeningSlice() {
-  const traceability = await readFile(join(draftRoot, "..", "..", "docs", "design", "traceability.md"), "utf8");
-  const packageNamespaces = await readFile(join(draftRoot, "..", "..", "docs", "design", "package-namespaces.md"), "utf8");
+  const bindlesIndex = await readFile(join(repoRoot, "packages", "bindles", "src", "index.ts"), "utf8");
+  const sourcePolicy = await readFile(join(repoRoot, "scripts", "check-source-policy.mts"), "utf8");
   return {
     namespace: {
-      secretRefPackage: packageNamespaces.includes("`secretRef`") ? "@hobo/bindles" : "unknown",
+      secretRefPackage: bindlesIndex.includes('export { secretRef } from "./secret-ref.js";') ? "@hobo/bindles" : "unknown",
       bindlesLeakCheck: {
-        ok: packageNamespaces.includes("`@hobo/bindles`") && packageNamespaces.includes("does not re-export topology"),
+        ok: !/from ["']\.\/topology(?:\/|["'])/.test(bindlesIndex),
         errors: [],
       },
     },
-    traceability: {
-      plan10: lineContaining(traceability, "| PLAN-10 |"),
-      adr0005: lineContaining(traceability, "| ADR-0005 |"),
+    sourcePolicy: {
+      forbidsNarrativeRecords:
+        sourcePolicy.includes("documentViolation") &&
+        sourcePolicy.includes("planning, architecture, and design documents are not allowed"),
     },
   };
 }
@@ -326,15 +328,11 @@ function bdd(id, persona, scenario) {
       `  Persona: ${persona}`,
       "",
       `  Scenario: ${scenario}`,
-      "    Given a HoBo design-phase reference implementation",
+      "    Given a HoBo reference implementation",
       "    When the mocked boundary is exercised",
       "    Then the contract, simulation, and fail-closed behavior are observable",
     ].join("\n"),
   };
-}
-
-function lineContaining(text, needle) {
-  return text.split(/\r?\n/).find((line) => line.includes(needle)) ?? "";
 }
 
 function providerManifest() {

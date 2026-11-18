@@ -5,9 +5,9 @@ SVID-authenticated outbound reverse tunnel acceptance.
 
 This package pins the connected-private Relay boundary from:
 
-- `docs/design/platform-engineering.md`: the Relay is an outbound-only TCP 443 reverse tunnel from a customer private network to the Yard, with Executors behind it and work/results flowing over the tunnel.
-- `docs/design/security-networking.md`: the Relay is control-plane traffic, not part of the tenant data-plane connectivity tiers, and one Relay can route multiple private targets by target id.
-- `docs/design/adr/02-identity-security.md#adr-0074`: `relay register` and `relay attach` are governed control-plane actions and must be deny-by-default.
+- `urn:hobo:requirement:platform-engineering`: the Relay is an outbound-only TCP 443 reverse tunnel from a customer private network to the Yard, with Executors behind it and work/results flowing over the tunnel.
+- `urn:hobo:requirement:security-networking`: the Relay is control-plane traffic, not part of the tenant data-plane connectivity tiers, and one Relay can route multiple private targets by target id.
+- `urn:hobo:decision:adr-0074`: `relay register` and `relay attach` are governed control-plane actions and must be deny-by-default.
 - `src/draft/technical-proofs/mtls-data-path-contract`: attach consumes the existing SVID-keyed mTLS data-path evaluator rather than defining a second identity model.
 
 The proof covers:

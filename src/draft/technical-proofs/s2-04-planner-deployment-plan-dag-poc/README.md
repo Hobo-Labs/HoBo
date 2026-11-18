@@ -15,7 +15,7 @@ Linear: [HOBO-619](https://linear.app/quickdeploy-ai/issue/HOBO-619)
 - Emits `deployment.Planned` with per-resource rationale in plan `meta`.
 - Emits `match.Decided` evidence per resolved resource.
 - Fails closed with `deployment.PlanRejected` and a precise reason for
-  unsatisfiable `require` (FR-032, `docs/design/control-plane.md` Plan 04).
+  unsatisfiable `require` (FR-032, `urn:hobo:requirement:control-plane` Plan 04).
 
 Production promotion target: `packages/cloud/src/planner/` after S2-03 Yard
 shell lands.

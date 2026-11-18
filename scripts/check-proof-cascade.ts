@@ -9,6 +9,17 @@ import { commentsIn, commentViolations } from "./check-source-policy.mts";
 import { workspaceForDraftFile } from "./lib/proof-manifest.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
+const PROGRAM_EXTENSIONS = new Set([
+	".cjs",
+	".cts",
+	".js",
+	".mjs",
+	".mts",
+	".ts",
+]);
+const PROSE_EXTENSIONS = new Set([".md", ".mdx", ".txt"]);
+const TRACEABILITY_REFERENCE =
+	/(["'`])(?:docs\/design\/[^"'`\r\n]*|urn:hobo:(?:decision|proof|requirement):[^"'`\r\n]*)\1/gu;
 
 function changedFiles(argv: string[]): string[] {
 	const staged = argv.includes("--staged");
@@ -52,6 +63,57 @@ const notebookSchema = z
 	})
 	.passthrough();
 
+function normalizedProgram(
+	file: string,
+	text: string,
+	normalizeTraceability: boolean,
+): string | undefined {
+	const hasSyntaxError = (source: string) =>
+		(
+			ts.transpileModule(source, { reportDiagnostics: true }).diagnostics ?? []
+		).some((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+	if (hasSyntaxError(text)) return undefined;
+	let normalized = text;
+	for (const comment of [...commentsIn(file, text)].reverse()) {
+		if (/\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu.test(comment.text)) continue;
+		if (
+			/^\/\*\*[\s\S]*?@(?:type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated)\b/iu.test(
+				comment.text,
+			)
+		)
+			continue;
+		const lines = new Set(
+			comment.text.split("\n").map((_, index) => index + 1),
+		);
+		if (
+			commentViolations(file, `${comment.text}\nconst marker = 0;`, lines)
+				.length === 0
+		)
+			continue;
+		const lineBreaks = text
+			.slice(comment.start, comment.end)
+			.replace(/[^\r\n]/gu, "");
+		normalized =
+			normalized.slice(0, comment.start) +
+			(lineBreaks || " ") +
+			normalized.slice(comment.end);
+	}
+	if (normalizeTraceability)
+		normalized = normalized.replace(
+			TRACEABILITY_REFERENCE,
+			'"urn:hobo:traceability"',
+		);
+	if (hasSyntaxError(normalized)) return undefined;
+	const source = ts.createSourceFile(
+		file,
+		normalized,
+		ts.ScriptTarget.Latest,
+		true,
+		file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+	);
+	return ts.createPrinter().printFile(source);
+}
+
 function normalizedNotebook(text: string): string | undefined {
 	let json: ReturnType<typeof JSON.parse>;
 	try {
@@ -72,53 +134,9 @@ function normalizedNotebook(text: string): string | undefined {
 		const source = Array.isArray(cell.source)
 			? cell.source.join("")
 			: cell.source;
-		const diagnostics =
-			ts.transpileModule(source, {
-				reportDiagnostics: true,
-				compilerOptions: { module: ts.ModuleKind.ESNext },
-			}).diagnostics ?? [];
-		if (
-			diagnostics.some(
-				(diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
-			)
-		)
-			return undefined;
-		let normalized = source;
-		for (const comment of [...commentsIn("cell.ts", source)].reverse()) {
-			if (/\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu.test(comment.text)) continue;
-			if (
-				/^\/\*\*[\s\S]*?@(?:type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated)\b/iu.test(
-					comment.text,
-				)
-			)
-				continue;
-			const lines = new Set(
-				comment.text.split("\n").map((_, index) => index + 1),
-			);
-			if (
-				commentViolations(
-					"cell.ts",
-					`${comment.text}\nconst marker = 0;`,
-					lines,
-				).length === 0
-			)
-				continue;
-			const lineBreaks = source
-				.slice(comment.start, comment.end)
-				.replace(/[^\r\n]/gu, "");
-			normalized =
-				normalized.slice(0, comment.start) +
-				(lineBreaks || " ") +
-				normalized.slice(comment.end);
-		}
-		const file = ts.createSourceFile(
-			"cell.ts",
-			normalized,
-			ts.ScriptTarget.Latest,
-			true,
-			ts.ScriptKind.TS,
-		);
-		cell.source = ts.createPrinter().printFile(file);
+		const normalized = normalizedProgram("cell.ts", source, false);
+		if (normalized === undefined) return undefined;
+		cell.source = normalized;
 	}
 	return JSON.stringify(notebook);
 }
@@ -126,6 +144,41 @@ function normalizedNotebook(text: string): string | undefined {
 export function sameNotebookExecution(before: string, after: string): boolean {
 	const left = normalizedNotebook(before);
 	return left !== undefined && left === normalizedNotebook(after);
+}
+
+function normalizedJson(text: string): string | undefined {
+	let value: z.infer<ReturnType<typeof z.json>>;
+	try {
+		value = z.json().parse(JSON.parse(text));
+	} catch {
+		return undefined;
+	}
+	return JSON.stringify(value, (_key, entry) => {
+		const string = z.string().safeParse(entry);
+		return string.success &&
+			/^(?:docs\/design\/|urn:hobo:(?:decision|proof|requirement):)/u.test(
+				string.data,
+			)
+			? "urn:hobo:traceability"
+			: entry;
+	});
+}
+
+export function sameProofExecution(
+	file: string,
+	before: string,
+	after: string,
+): boolean {
+	const extension = path.extname(file).toLowerCase();
+	if (PROSE_EXTENSIONS.has(extension)) return true;
+	if (extension === ".ipynb") return sameNotebookExecution(before, after);
+	if (extension === ".json") {
+		const left = normalizedJson(before);
+		return left !== undefined && left === normalizedJson(after);
+	}
+	if (!PROGRAM_EXTENSIONS.has(extension)) return false;
+	const left = normalizedProgram(file, before, true);
+	return left !== undefined && left === normalizedProgram(file, after, true);
 }
 
 function fileAt(revision: string, file: string): string | undefined {
@@ -154,13 +207,18 @@ function cascadeFiles(files: string[], argv: string[]): string[] {
 			}).trim();
 	const after = staged ? "" : "HEAD";
 	return files.filter((file) => {
-		if (!file.endsWith(".ipynb")) return true;
+		if (PROSE_EXTENSIONS.has(path.extname(file).toLowerCase())) {
+			const workspace = workspaceForDraftFile(file);
+			return Boolean(
+				workspace && /^src\/draft\/(?:epic-proofs|projects)\//u.test(workspace),
+			);
+		}
 		const left = fileAt(before, file);
 		const right = fileAt(after, file);
 		return (
 			left === undefined ||
 			right === undefined ||
-			!sameNotebookExecution(left, right)
+			!sameProofExecution(file, left, right)
 		);
 	});
 }

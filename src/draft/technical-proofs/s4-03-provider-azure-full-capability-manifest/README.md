@@ -17,7 +17,7 @@ port catalog.
 - Equivalence classes mapping bindle ports to Azure resource classes
 - Typed `azureFull.with.*` builders per port
 - `auth.json` with `workload-identity-federation` for keyless brokering
-  ([Plan 06](../../../../docs/design/ai-native-agent-auth.md#plan-06))
+  ([Plan 06](urn:hobo:requirement:ai-native-agent-auth#plan-06))
 - Pulumi realization via `@hobo/iac-pulumi` driver intent
 - Registry ingest seam for S3-04 capability manifest discovery
 - Provider-capability conformance (seed-mapped ports) + extended local checks
@@ -42,4 +42,4 @@ pnpm --prefix src/draft/technical-proofs/s4-03-provider-azure-full-capability-ma
 ## Maintenance
 
 Source issue: HOBO-639. Proof index:
-[`docs/design/proofs/hobo-639-provider-azure-full/index.md`](../../../../docs/design/proofs/hobo-639-provider-azure-full/index.md).
+[`urn:hobo:proof:hobo-639-provider-azure-full`](urn:hobo:proof:hobo-639-provider-azure-full).

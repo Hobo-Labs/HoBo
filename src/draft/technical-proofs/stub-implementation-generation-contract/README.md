@@ -7,8 +7,8 @@ replay-as-tests, bounded repair, and gated promotion.
 
 ## Requirements Source
 
-- [Plan 23](../../../../docs/design/generated-stack.md#plan-23): stub recordings are the specification-by-example oracle; "done" = conformance green + reproduces observed outputs.
-- [Plan 9](../../../../docs/design/generated-stack.md#plan-09): per-interface `@hobo/conformance` is the hard gate.
+- [Plan 23](urn:hobo:requirement:generated-stack#plan-23): stub recordings are the specification-by-example oracle; "done" = conformance green + reproduces observed outputs.
+- [Plan 9](urn:hobo:requirement:generated-stack#plan-09): per-interface `@hobo/conformance` is the hard gate.
 - Promotes the stub-to-implementation slice from
   [`generation-pipeline-training-ai-safety`](../../epic-proofs/generation-pipeline-training-ai-safety/README.md).
 

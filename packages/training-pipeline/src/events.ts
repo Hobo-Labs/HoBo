@@ -3,10 +3,6 @@ import {
 	PromotionOutcome,
 } from "./_generated/promotion_decision_pb.js";
 
-// Event names come from the canonical registry in docs/design/event-families.md
-// (training.*, impl.*, eval.*); they are the contract, not internal magic
-// strings, so each carries a public-contract marker.
-
 // public-contract: training-run promotion fact (event-families.md training.*).
 const TRAINING_PROMOTED = "training.Promoted";
 // public-contract: generated-impl promotion fact (event-families.md impl.*).

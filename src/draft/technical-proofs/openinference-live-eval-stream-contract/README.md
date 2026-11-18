@@ -26,7 +26,7 @@ Run:
 npm.cmd --prefix src\draft\technical-proofs\openinference-live-eval-stream-contract test
 ```
 
-Design proof: [HOBO-296 OpenInference live eval stream](../../../../docs/design/proofs/hobo-296-openinference-live-eval-stream/README.md).
+Design proof: [HOBO-296 OpenInference live eval stream](urn:hobo:proof:hobo-296-openinference-live-eval-stream).
 
 
 ## Executable evidence

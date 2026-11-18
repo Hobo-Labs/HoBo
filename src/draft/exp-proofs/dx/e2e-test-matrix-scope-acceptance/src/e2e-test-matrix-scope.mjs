@@ -79,23 +79,23 @@ export const E2E_TEST_MATRIX_SCOPE = {
   },
   dependencies: [
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "Defines developer dashboard, CLI, local test, sandbox, and verify surfaces that E2E matrix journeys exercise.",
     },
     {
-      source: "docs/design/architecture.md#plan-10",
+      source: "urn:hobo:requirement:architecture#plan-10",
       reason: "Defines monorepo, package, conformance, and examples-as-tests architecture consumed by E2E proof rows.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0082",
+      source: "urn:hobo:decision:adr-0082",
       reason: "Pins Golden Suites as default-on deploy verification with coverage honesty and A2H handoff on failure.",
     },
     {
-      source: "docs/design/launch-e2e-persona-matrix.md",
+      source: "urn:hobo:requirement:launch-e2e-persona-matrix",
       reason: "Provides the downstream launch persona matrix and thresholds that consume this M0 scope boundary.",
     },
     {
-      source: "docs/design/release-notes-upgrade-guide.md",
+      source: "urn:hobo:requirement:release-notes-upgrade-guide",
       reason: "Consumes E2E thresholds and compatibility evidence before customer-facing release claims are written.",
     },
   ],

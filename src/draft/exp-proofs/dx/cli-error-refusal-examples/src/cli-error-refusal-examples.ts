@@ -91,7 +91,7 @@ type CliErrorRefusalCatalog = {
   readonly issue: "HOBO-558";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/dx/cli-error-refusal-examples";
-  readonly proofNote: "docs/design/proofs/cli-error-refusal-examples/README.md";
+  readonly proofNote: "urn:hobo:proof:cli-error-refusal-examples";
   readonly designRefs: readonly string[];
   readonly examples: readonly CliErrorRefusalExample[];
   readonly scopeBoundary: ScopeBoundary;
@@ -102,12 +102,12 @@ export type ParsedCliErrorRefusalCatalog = CliErrorRefusalCatalog & {
 };
 
 const DESIGN_REFS = [
-  "docs/design/developer-experience.md#plan-07",
-  "docs/design/cli-spec.md",
-  "docs/design/sdk-contracts.md",
-  "docs/design/contracts-policy-flags.md#plan-29",
-  "docs/design/platform-engineering.md#plan-25",
-  "docs/design/operators-sre.md#plan-40",
+  "urn:hobo:requirement:developer-experience#plan-07",
+  "urn:hobo:requirement:cli-spec",
+  "urn:hobo:requirement:sdk-contracts",
+  "urn:hobo:requirement:contracts-policy-flags#plan-29",
+  "urn:hobo:requirement:platform-engineering#plan-25",
+  "urn:hobo:requirement:operators-sre#plan-40",
 ] as const;
 
 const ACCEPTED_FIXTURE_FACTS = new Map(
@@ -138,7 +138,7 @@ export const CLI_ERROR_REFUSAL_EXAMPLES = {
   issue: "HOBO-558",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/dx/cli-error-refusal-examples",
-  proofNote: "docs/design/proofs/cli-error-refusal-examples/README.md",
+  proofNote: "urn:hobo:proof:cli-error-refusal-examples",
   designRefs: DESIGN_REFS,
   examples: [
     example({
@@ -456,7 +456,7 @@ export function parseCliErrorRefusalCatalog(
   );
   assertLiteral(
     catalog.proofNote,
-    "docs/design/proofs/cli-error-refusal-examples/README.md",
+    "urn:hobo:proof:cli-error-refusal-examples",
     "proofNote",
   );
   assertNonEmptyStringArray(catalog.designRefs, "designRefs");

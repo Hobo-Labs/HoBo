@@ -33,7 +33,7 @@ its serialized resolver configuration may contain source Yard overrides.
 **rejected at parse** (`Camp must not select a cloud provider`).
 `providerSelection(...)` is a descriptor helper for within-provider mapping /
 tests — not a Yard substitute. Deprecated type fields document migration only
-([design residual note](../../docs/design/devx-devenv-nix.md#design--code-residual-hobocamps)).
+([design residual note](urn:hobo:requirement:devx-devenv-nix#design--code-residual-hobocamps)).
 
 ## Honest scope
 

@@ -477,7 +477,7 @@ function checkLinks(
 	for (const match of text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
 		// SAFETY: assertion to `] as string; if ` is required at this boundary.
 		const target = match[1] as string;
-		if (/^(https?:|mailto:|#)/.test(target)) continue;
+		if (/^(https?:|mailto:|urn:|#)/.test(target)) continue;
 		const [rel] = target.split("#");
 		if (!rel) continue;
 		const resolved = path.resolve(dir, rel);

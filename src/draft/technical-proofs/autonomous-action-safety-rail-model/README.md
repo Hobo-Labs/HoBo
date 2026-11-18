@@ -1,7 +1,7 @@
 # Autonomous Action Safety-Rail Model
 
 This draft is the documentation-only POC for HOBO-263. The accepted decision lives in
-[ADR-0094](../../../../docs/design/adr/02-identity-security.md#adr-0094); this file keeps the spike's
+[ADR-0094](urn:hobo:decision:adr-0094); this file keeps the spike's
 worked scenarios close to the branch evidence without introducing runtime code.
 
 ## Safety Envelope

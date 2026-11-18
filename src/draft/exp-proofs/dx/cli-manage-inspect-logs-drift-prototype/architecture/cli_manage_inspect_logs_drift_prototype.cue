@@ -4,7 +4,7 @@ package cli_manage_inspect_logs_drift
 	issue:         "HOBO-574"
 	phase:         "M2"
 	targetPackage: "src/draft/exp-proofs/dx/cli-manage-inspect-logs-drift-prototype"
-	proofNote:     "docs/design/proofs/cli-manage-inspect-logs-drift-prototype/README.md"
+	proofNote:     "urn:hobo:proof:cli-manage-inspect-logs-drift-prototype"
 	designRefs: [...string]
 	scenes: [...#ManageTranscriptScene]
 	scopeOut: [...string]

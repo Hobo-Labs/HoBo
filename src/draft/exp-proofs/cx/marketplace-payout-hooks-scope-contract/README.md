@@ -7,7 +7,7 @@ providers, settlement, tax documents, revenue-share policy, payout UI, KYC/KYB,
 or money movement.
 
 The authoritative design record is
-[`docs/design/marketplace-payout-hooks.md`](../../../../../docs/design/marketplace-payout-hooks.md).
+[`urn:hobo:requirement:marketplace-payout-hooks`](urn:hobo:requirement:marketplace-payout-hooks).
 
 ## Proof
 

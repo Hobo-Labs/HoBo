@@ -18,11 +18,11 @@
           "issue": "HOBO-540",
           "phase": "M1",
           "targetPackage": "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
-          "proofNote": "docs/design/proofs/vibe-first-run-activation-rail/README.md",
+          "proofNote": "urn:hobo:proof:vibe-first-run-activation-rail",
           "designRefs": [
-            "docs/design/workspace-onboarding-ux.md",
-            "docs/design/outcome-activation-rail.md",
-            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+            "urn:hobo:requirement:workspace-onboarding-ux",
+            "urn:hobo:requirement:outcome-activation-rail",
+            "urn:hobo:proof:resource-lifecycle-quickstart-examples"
           ],
           "scopeOut": [
             "live provider calls",

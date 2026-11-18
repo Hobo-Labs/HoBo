@@ -44,5 +44,5 @@ pnpm.exe run architecture:guard -- --base=origin/main
 
 The proof is also referenced by the design record:
 
-- [Security Verification design record](../../../../../docs/design/security-verification.md)
-- [HOBO-441 proof record](../../../../../docs/design/proofs/hobo-441-security-verification/README.md)
+- [Security Verification design record](urn:hobo:requirement:security-verification)
+- [HOBO-441 proof record](urn:hobo:proof:hobo-441-security-verification)

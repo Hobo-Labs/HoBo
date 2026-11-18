@@ -48,7 +48,7 @@ Post-process options investigated in scope:
 artifact signing / provenance slice (HOBO-7 / HOBO-587) once upstream reproducibility or
 `wasm-tools` canonicalization is available.
 
-Trade-off is explicit in [ADR-0105](../../../../docs/design/adr/01-architecture-core.md#adr-0105);
+Trade-off is explicit in [ADR-0105](urn:hobo:decision:adr-0105);
 this spike does **not** silently accept nondeterminism.
 
 ## Repro command
@@ -71,11 +71,11 @@ When the HOBO-584 draft POC is on the branch, you can also compare against
 ## Acceptance mapping (HOBO-603)
 
 - Root cause documented with repro command (this README + `scripts/repro-nondeterminism.mts`)
-- Decision recorded: relax acceptance with rationale ([ADR-0105](../../../../docs/design/adr/01-architecture-core.md#adr-0105))
+- Decision recorded: relax acceptance with rationale ([ADR-0105](urn:hobo:decision:adr-0105))
 - HOBO-584 acceptance bullets updated via Plan 20 + proof index cross-links
 
 ## References
 
 - [HOBO-584](https://linear.app/quickdeploy-ai/issue/HOBO-584) parent slice
-- [ADR-0085](../../../../docs/design/adr/01-architecture-core.md#adr-0085) toolchain pins
-- [Plan 20](../../../../docs/design/wasm-runtime-wit.md#plan-20) componentize stage gate
+- [ADR-0085](urn:hobo:decision:adr-0085) toolchain pins
+- [Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20) componentize stage gate

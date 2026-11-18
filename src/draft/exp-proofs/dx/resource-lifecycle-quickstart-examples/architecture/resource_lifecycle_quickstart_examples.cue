@@ -49,7 +49,7 @@ import "list"
 	issue:         "HOBO-577"
 	phase:         "M2"
 	targetPackage: "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples"
-	proofNote:     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+	proofNote:     "urn:hobo:proof:resource-lifecycle-quickstart-examples"
 	designRefs:    [...string] & list.MinItems(1)
 	scopeOut: [
 		"marketing copy not backed by transcripts",

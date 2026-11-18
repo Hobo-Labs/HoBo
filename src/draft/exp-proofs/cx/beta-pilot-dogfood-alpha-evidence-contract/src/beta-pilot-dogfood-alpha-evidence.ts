@@ -84,7 +84,7 @@ export const betaPilotDogfoodAlphaEvidence: BetaPilotDogfoodAlphaEvidence = {
   phase: "M1",
   sourceContract: {
     issue: "HOBO-404",
-    path: "docs/design/beta-pilot-feedback.md"
+    path: "urn:hobo:requirement:beta-pilot-feedback"
   },
   requiredIntakeFields: REQUIRED_BETA_INTAKE_FIELDS,
   requiredEvidence: [

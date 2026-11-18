@@ -30,7 +30,7 @@ npm.cmd --prefix src\draft\exp-proofs\per-app-tenant-routing-contract test
 npm.cmd test
 ```
 
-Proof note: `docs/design/proofs/hobo-177-per-app-tenant-routing/README.md`.
+Proof note: `urn:hobo:proof:hobo-177-per-app-tenant-routing`.
 
 
 ## Executable evidence

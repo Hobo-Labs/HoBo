@@ -2,7 +2,7 @@
 
 This draft package makes the HOBO-59 bootstrap decision executable while the runtime remains
 greenfield. The decision itself is recorded in
-[ADR-0092](../../../../docs/design/adr/01-architecture-core.md#adr-0092).
+[ADR-0092](urn:hobo:decision:adr-0092).
 
 The proof models the bootstrap as a bounded state machine:
 

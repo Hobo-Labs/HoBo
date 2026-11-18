@@ -162,7 +162,7 @@ or `@hobo/data-postgres`.
 
 The Bindle says what the relay is; [`deploy/yard.ts`](deploy/yard.ts) says where
 it runs and what may be bound to it there
-([ADR-0157](../../docs/design/adr/07-portability-extensibility.md#adr-0157): the
+([ADR-0157](urn:hobo:decision:adr-0157): the
 Yard is the binding authority). It is the one place the provider is named.
 
 - **Yard `hobo-ci-relay`**: provider `vercel`, region `iad1`, properties
@@ -609,7 +609,7 @@ or `start-failed` (the log's `hobo_ci_relay_init_failed` says more).
 | `VALKEY_URL`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BLOB_STORE_ID` | the config service, optional | members the environment does not bind (an Aiven Valkey URL is stored here) |
 | `HOBO_CI_CACHE_OFFERS_JSON` | the config service or project env, optional | the declared offers, budget caps and switch marks ([below](#the-cache-fleet)) |
 | `HOBO_CI_CACHE_MONTHLY_COMMANDS` | project env, optional | Upstash's allowance in the default offers |
-| `HOBO_CI_FLEET_REPORTERS_JSON` | the config service, optional | the fleet reporters whose signed verdict reports the relay accepts: id, Ed25519 public key, account, labels; at most eight per account ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment)). Unset, every report is refused |
+| `HOBO_CI_FLEET_REPORTERS_JSON` | the config service, optional | the fleet reporters whose signed verdict reports the relay accepts: id, Ed25519 public key, account, labels; at most eight per account ([ADR-0180](urn:hobo:decision:adr-0180-amendment)). Unset, every report is refused |
 | `HOBO_CI_FLEET_VERDICT_SERVING` | the config service, optional | `off` is the fleet verdict kill switch: reads block nothing, reports answer 503 |
 | `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` | the config service, optional | verdict-blocked minutes per label per 24-hour window before the label is served open; 240 |
 | `HOBO_CI_EVENTS_URL`, `HOBO_CI_EVENTS_TENANT` | project env, optional | relay failures as CloudEvents |
@@ -659,7 +659,7 @@ Nothing here has run against Vercel, Upstash, Infisical or GitHub.
 
 ### The cache fleet
 
-ADR-0179 phase 4c ([Options routed by budget](../../docs/design/hosted-relay-stateless.md#options-routed-by-budget)).
+ADR-0179 phase 4c ([Options routed by budget](urn:hobo:requirement:hosted-relay-stateless#options-routed-by-budget)).
 `createCacheFleet` ([`src/cache-fleet.ts`](src/cache-fleet.ts)) puts every
 bound cache behind one `EphemeralStatePort`.
 
@@ -750,7 +750,7 @@ table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-t
   503.
 - **Fleet verdicts** (`src/fleet-verdict-cache.ts`, the verdict store of
   `@hobo/ci-gh-actions` on the cache;
-  [ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment)). Per
+  [ADR-0180](urn:hobo:decision:adr-0180-amendment)). Per
   repository: each enrolled reporter's last signed report until it expires
   (at most 180 seconds), each reporter's `FleetReporterState` for a day after
   its last report (the replay guard), and the `FleetVerdictAllowance` for a
@@ -1071,8 +1071,8 @@ error or its cause is a database refusal, the line also carries its five-charact
 
 ## Fleet verdict operations
 
-The runbooks for the fleet verdict channel ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment) and its
-[routing rules](../../docs/design/adr/fleet-verdict.md#adr-0180-rules)). The box relay
+The runbooks for the fleet verdict channel ([ADR-0180](urn:hobo:decision:adr-0180-amendment) and its
+[routing rules](urn:hobo:decision:adr-0180-rules)). The box relay
 decides whether a fleet label is blocked; this relay keeps signed reports, agrees them and serves the
 verdict at `GET /v1/fleet/verdicts/{owner}/{repo}`. Every gate passed is recorded in
 [finding 145](../../docs/ci/findings/0145-fleet-verdict-channel-operating-record.md).

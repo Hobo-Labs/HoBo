@@ -84,16 +84,16 @@ const VALID_PROOF_MODES = new Set<ProofMode>([
 ]);
 
 const REQUIRED_DEPENDENCIES = [
-  "docs/design/developer-experience.md#plan-07",
-  "docs/design/developer-experience.md#plan-49",
-  "docs/design/data-plane.md#plan-11",
-  "docs/design/contracts-policy-flags.md#plan-29",
-  "docs/design/ai-native-agent-auth.md#plan-06",
-  "docs/design/governance-planes.md#plan-46",
-  "docs/design/adr/02-identity-security.md#adr-0046",
-  "docs/design/adr/02-identity-security.md#adr-0074",
-  "docs/design/adr/02-identity-security.md#adr-0077",
-  "docs/design/adr/03-data-plane.md#adr-0050",
+  "urn:hobo:requirement:developer-experience#plan-07",
+  "urn:hobo:requirement:developer-experience#plan-49",
+  "urn:hobo:requirement:data-plane#plan-11",
+  "urn:hobo:requirement:contracts-policy-flags#plan-29",
+  "urn:hobo:requirement:ai-native-agent-auth#plan-06",
+  "urn:hobo:requirement:governance-planes#plan-46",
+  "urn:hobo:decision:adr-0046",
+  "urn:hobo:decision:adr-0074",
+  "urn:hobo:decision:adr-0077",
+  "urn:hobo:decision:adr-0050",
 ];
 
 const FORBIDDEN_SCOPE_PATTERNS = [
@@ -177,43 +177,43 @@ export const AUDIT_EXPLORER_SCOPE: AuditExplorerScope = {
   },
   dependencies: [
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "Defines dashboard, run inspection, replay, and audit surfaces that Audit Explorer later specializes.",
     },
     {
-      source: "docs/design/developer-experience.md#plan-49",
+      source: "urn:hobo:requirement:developer-experience#plan-49",
       reason: "Defines operations dashboard and status-page projections that must consume the same read-model discipline.",
     },
     {
-      source: "docs/design/data-plane.md#plan-11",
+      source: "urn:hobo:requirement:data-plane#plan-11",
       reason: "Defines event audit trail, identity/auth events, projections, and read models as the source for audit exploration.",
     },
     {
-      source: "docs/design/contracts-policy-flags.md#plan-29",
+      source: "urn:hobo:requirement:contracts-policy-flags#plan-29",
       reason: "Defines policy decisions, control-plane action audit, governance exports, and boundary standards consumed by audit facts.",
     },
     {
-      source: "docs/design/ai-native-agent-auth.md#plan-06",
+      source: "urn:hobo:requirement:ai-native-agent-auth#plan-06",
       reason: "Defines credential audit events for grants, token use, revocation, and delegated agent activity.",
     },
     {
-      source: "docs/design/governance-planes.md#plan-46",
+      source: "urn:hobo:requirement:governance-planes#plan-46",
       reason: "Defines governance evidence and compliance export expectations that Audit Explorer must route to owning initiatives.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0046",
+      source: "urn:hobo:decision:adr-0046",
       reason: "Pins OCSF, trace propagation, boundary standards, and replayable audit envelopes.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0074",
+      source: "urn:hobo:decision:adr-0074",
       reason: "Pins org governance, RBAC, mandatory policy rules, deny ceilings, and audit obligations.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0077",
+      source: "urn:hobo:decision:adr-0077",
       reason: "Pins projects and environments as tenant-first grouping dimensions for dashboard and status surfaces.",
     },
     {
-      source: "docs/design/adr/03-data-plane.md#adr-0050",
+      source: "urn:hobo:decision:adr-0050",
       reason: "Pins event-sourced projections, materialized views, read stores, and replay semantics.",
     },
   ],

@@ -6,12 +6,12 @@ compensation, billing adapter, or spend-breaker work exists.
 
 ## Source Requirements
 
-- [Plan 05: Reliability, observability, and cost](../../../../docs/design/reliability-observability-cost.md#plan-05)
-- [Saga compensation algorithm](../../../../docs/design/reliability-observability-cost.md#saga-compensation-algorithm)
-- [Cost signals](../../../../docs/design/reliability-observability-cost.md#cost-signals-costjson-in-capability-manifest)
-- [Dispatcher cost routing](../../../../docs/design/reliability-observability-cost.md#the-dispatcher-creditbudget-aware-cost-routing)
-- [ADR-0071](../../../../docs/design/adr/01-architecture-core.md#adr-0071)
-- [ADR-0039](../../../../docs/design/adr/02-identity-security.md#adr-0039)
+- [Plan 05: Reliability, observability, and cost](urn:hobo:requirement:reliability-observability-cost#plan-05)
+- [Saga compensation algorithm](urn:hobo:requirement:reliability-observability-cost#saga-compensation-algorithm)
+- [Cost signals](urn:hobo:requirement:reliability-observability-cost#cost-signals-costjson-in-capability-manifest)
+- [Dispatcher cost routing](urn:hobo:requirement:reliability-observability-cost#the-dispatcher-creditbudget-aware-cost-routing)
+- [ADR-0071](urn:hobo:decision:adr-0071)
+- [ADR-0039](urn:hobo:decision:adr-0039)
 
 ## Compensation Invariants
 

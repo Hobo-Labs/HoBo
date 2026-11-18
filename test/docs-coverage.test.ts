@@ -91,7 +91,7 @@ test("docs coverage flags missing community docs and README sections", async () 
 		const problems = checkDocsCoverage(root);
 
 		assert.ok(problems.some((problem) => problem.includes("SECURITY.md")));
-		assert.ok(!problems.some((problem) => problem.includes("docs/design/")));
+		assert.ok(!problems.some((problem) => problem.includes("docs/guide/")));
 		assert.ok(
 			problems.some((problem) =>
 				problem.includes("README must include a repository map"),

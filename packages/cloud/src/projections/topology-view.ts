@@ -4,15 +4,6 @@ import { CLOUD_EVENTS } from "../events.js";
 import type { DeploymentPlan } from "../plan-types.js";
 import type { ResourceLifecycle } from "./deployment-view.js";
 
-// The TopologyView projection (E21): the app-graph
-// read model beside deployment-view, folding the SAME deployment event stream
-// into nodes (bindle, resources, yards) and edges (bindings, placements) —
-// shaped for the designed dashboard TopologyView surface
-// (docs/design/deployment-dashboard-topology-explorer.md). Pure fold,
-// rebuildable from zero; node and edge arrays are kept sorted so a fixed
-// event fixture folds to byte-stable JSON. This is the APP graph — traffic
-// routing stays with @hobo/stations' RoutingTopology.
-
 export type TopologyNodeKind = "bindle" | "resource" | "yard";
 
 // domain-view: parsed app-graph node; wire form is TopologyNode in data-models/cloud.proto.

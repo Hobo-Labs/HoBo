@@ -47,7 +47,7 @@ comma-separated list, the environment's first):
   topology**
   [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
   (Camps `hobo-release/<npm|oci|pages>-<candidate|stable>`, see
-  [release channels](../../docs/design/release-channels.md#hobo-releases-through-hobo-cd)).
+  [release channels](urn:hobo:requirement:release-channels#hobo-releases-through-hobo-cd)).
 - a module or JSON file that exports `rails`: Station Rail declarations
   (`id`, `name`, `version`, `stationId` (empty: this Station),
   `approvedProviders`, `delivery`, `metadata`), each built with

@@ -80,6 +80,17 @@ test("cli package summaries reject retired and unknown pipe-delimited verbs", as
 	);
 });
 
+test("product prose is not parsed as a shell command", async () => {
+	const spec = await loadCliSpec(root);
+	const problems = lintMarkdownContent(
+		"prose.md",
+		"The @hobo/cli failure preceded an @hobo/hobo auth test; the hobo runner recovered.",
+		spec,
+	);
+
+	assert.deepEqual(problems, []);
+});
+
 test("doc checker can scan a focused docs tree", async () => {
 	const tempRoot = await mkdtemp(path.join(tmpdir(), "hobo-cli-docs-"));
 

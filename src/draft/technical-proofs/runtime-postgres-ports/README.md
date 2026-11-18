@@ -2,8 +2,8 @@
 
 Independent draft POC for **HOBO-617** (`@hobo/runtime-postgres`). Implements the
 five Layer-1 runtime ports on PostgreSQL per
-[`docs/design/data-plane.md`](../../../../docs/design/data-plane.md) Plan 11 and
-[`docs/design/sdk-api.md`](../../../../docs/design/sdk-api.md) Layer 1.
+[`urn:hobo:requirement:data-plane`](urn:hobo:requirement:data-plane) Plan 11 and
+[`urn:hobo:requirement:sdk-api`](urn:hobo:requirement:sdk-api) Layer 1.
 
 Production target path: `packages/runtimes/runtime-postgres/`. This draft package
 promotes the data-plane epic proof fixtures into executable postgres durability tests

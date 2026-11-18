@@ -7,11 +7,11 @@ policy decisions without implementing the policy engine itself.
 
 References:
 
-- `docs/design/security-networking.md#plan-12` for connectivity tiers, service-to-service identity,
+- `urn:hobo:requirement:security-networking#plan-12` for connectivity tiers, service-to-service identity,
   and residency-sensitive networking.
-- `docs/design/contracts-policy-flags.md#plan-29` for the policy decision model and deny-ceilings.
-- `docs/design/adr/02-identity-security.md#adr-0060` for data governance and residency obligations.
-- `docs/design/adr/02-identity-security.md#adr-0074` for mandatory policy-rule ceilings.
+- `urn:hobo:requirement:contracts-policy-flags#plan-29` for the policy decision model and deny-ceilings.
+- `urn:hobo:decision:adr-0060` for data governance and residency obligations.
+- `urn:hobo:decision:adr-0074` for mandatory policy-rule ceilings.
 
 The proof covers:
 

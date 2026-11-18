@@ -169,7 +169,7 @@ category: there is no procurement conversation.
   OpenChoreo types with endpoints.
 - **Honest caveat.** OpenChoreo ships a working IDP with a portal and enforced isolation today.
   HoBo's provider breadth is real in design and partial in `packages/` (see the
-  [live provider matrix](../design/live-provider-matrix.md)).
+  [live provider matrix](urn:hobo:requirement:live-provider-matrix)).
 
 ## Adversarial critique
 

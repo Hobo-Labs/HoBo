@@ -4,7 +4,7 @@ Independent proof for HOBO-129.
 
 This package pins the M2 tier-four networking realization contract from:
 
-- `docs/design/security-networking.md`: cross-provider edges without native private peering fall back to a HoBo-managed WireGuard/eBPF overlay mesh.
+- `urn:hobo:requirement:security-networking`: cross-provider edges without native private peering fall back to a HoBo-managed WireGuard/eBPF overlay mesh.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and tier enum.
 - `src/draft/technical-proofs/tier-three-private-interconnect-contract`: HOBO-127's deterministic handoff to tier 4 when no private interconnect is available.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's SVID-keyed mTLS decision contract.

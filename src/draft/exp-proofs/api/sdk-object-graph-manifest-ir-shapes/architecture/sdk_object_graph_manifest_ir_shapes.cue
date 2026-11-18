@@ -54,7 +54,7 @@ package sdk_object_graph_manifest_ir_shapes
 	parent_issue:   "HOBO-566"
 	phase:          "M1"
 	target_package: "src/draft/exp-proofs/api/sdk-object-graph-manifest-ir-shapes"
-	proof_note:     "docs/design/proofs/sdk-object-graph-manifest-ir-shapes/README.md"
+	proof_note:     "urn:hobo:proof:sdk-object-graph-manifest-ir-shapes"
 	design_anchors: [...string]
 	audience:       [#Audience, #Audience, #Audience, ...#Audience]
 	proof_mode_labels: [...#ProofMode]

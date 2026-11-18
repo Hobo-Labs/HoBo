@@ -107,7 +107,7 @@ type VibePublisherPortalReviewMockups = {
   readonly issue: "HOBO-548";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups";
-  readonly proofPath: "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md";
+  readonly proofPath: "urn:hobo:proof:vibe-publisher-portal-review-mockups";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly PublisherPortalQuickstartFixtureReference[];
   readonly personas: readonly PublisherPortalPersona[];
@@ -229,15 +229,15 @@ export const VIBE_PUBLISHER_PORTAL_REVIEW_MOCKUPS: VibePublisherPortalReviewMock
   issue: "HOBO-548",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups",
-  proofPath: "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md",
+  proofPath: "urn:hobo:proof:vibe-publisher-portal-review-mockups",
   designRefs: [
-    "docs/design/publisher-portal.md",
-    "docs/design/capability-review-approval.md",
-    "docs/design/marketplace-publisher-trust-evidence.md",
-    "docs/design/marketplace-payout-hooks.md",
-    "docs/design/org-catalogs.md",
-    "docs/design/launch-support-escalation.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:publisher-portal",
+    "urn:hobo:requirement:capability-review-approval",
+    "urn:hobo:requirement:marketplace-publisher-trust-evidence",
+    "urn:hobo:requirement:marketplace-payout-hooks",
+    "urn:hobo:requirement:org-catalogs",
+    "urn:hobo:requirement:launch-support-escalation",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
   personas: REQUIRED_PUBLISHER_PORTAL_PERSONAS,
@@ -414,7 +414,7 @@ export function validateVibePublisherPortalReviewMockups(
   if (mockups.packagePath !== "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (mockups.proofPath !== "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md") {
+  if (mockups.proofPath !== "urn:hobo:proof:vibe-publisher-portal-review-mockups") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(mockups.personas, REQUIRED_PUBLISHER_PORTAL_PERSONAS)) {

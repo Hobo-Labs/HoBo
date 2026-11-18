@@ -20,7 +20,7 @@ scope creep.
 
 - `src/launch-messaging-claim-register.mjs` exports the register plus validation helpers.
 - `test/launch-messaging-claim-register.test.mjs` is the acceptance contract for HOBO-406.
-- [`../../../../../docs/design/launch-messaging-claims.md`](../../../../../docs/design/launch-messaging-claims.md)
+- [`urn:hobo:requirement:launch-messaging-claims`](urn:hobo:requirement:launch-messaging-claims)
   records the human-readable M0 claim register.
 
 ## Verification

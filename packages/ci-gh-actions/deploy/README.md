@@ -131,7 +131,7 @@ non-secret settings:
 The box's routing settings are not environment variables. The slot split (`slots`, `trunkSlots`,
 `trunkLend`), `prCapWithTrunk`, `mergeGroupLeases`, `capacityVolatilityMb`, `trunkHeadroomFleetDeferMs` and
 `jobAdmission` are committed in the `runnerRouting.box` block of `.hobo/ci.json`, which the daemon reads
-from its own checkout once at start ([ADR-0181](../../../docs/design/adr/routing-slips.md#adr-0181), decision 4).
+from its own checkout once at start ([ADR-0181](urn:hobo:decision:adr-0181), decision 4).
 `HOBO_CI_WORKER_SLOTS`, `HOBO_CI_WORKER_TRUNK_SLOTS`, `HOBO_CI_WORKER_TRUNK_LEND`,
 `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK`, `HOBO_CI_WORKER_MERGE_GROUP_LEASES`, `HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB`,
 `HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`, `HOBO_CI_JOB_ADMISSION`, `HOBO_CI_FLEET_ROUTES` and every

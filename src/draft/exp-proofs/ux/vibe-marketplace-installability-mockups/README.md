@@ -17,10 +17,10 @@ pnpm --dir src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups test
 ```
 
 ## Executable evidence
-- `docs/design/marketplace-ux.md`: mockups preserve accepted listing states and installability outcomes.
-- `docs/design/marketplace-publisher-trust-evidence.md`: preview and trust wording cannot overstate installability.
-- `docs/design/capability-review-approval.md`: installable, limited-beta, yanked, and review ownership stays with review evidence.
-- `docs/design/org-catalogs.md`: workspace visibility and policy-blocked states consume catalog disposition without implementing catalog storage.
+- `urn:hobo:requirement:marketplace-ux`: mockups preserve accepted listing states and installability outcomes.
+- `urn:hobo:requirement:marketplace-publisher-trust-evidence`: preview and trust wording cannot overstate installability.
+- `urn:hobo:requirement:capability-review-approval`: installable, limited-beta, yanked, and review ownership stays with review evidence.
+- `urn:hobo:requirement:org-catalogs`: workspace visibility and policy-blocked states consume catalog disposition without implementing catalog storage.
 - HOBO-577: quickstart fixture ids and proof-mode labels are cited before this proof renders marketplace behavior.
 
 ## Audience And Friction

@@ -25,9 +25,9 @@ npm.cmd --prefix src\draft\technical-proofs\resourceactor-reconcile-loop-contrac
 
 Relevant design records:
 
-- `docs/design/control-plane.md`: ResourceActor reconcile loop and resolution pipeline.
-- `docs/design/adr/01-architecture-core.md`: ADR-0004 virtual actors and ADR-0006 per-resource stacks.
-- `docs/design/platform-engineering.md`: provider/IaC platform boundary carried by PLAN-25.
+- `urn:hobo:requirement:control-plane`: ResourceActor reconcile loop and resolution pipeline.
+- `urn:hobo:decision:01-architecture-core`: ADR-0004 virtual actors and ADR-0006 per-resource stacks.
+- `urn:hobo:requirement:platform-engineering`: provider/IaC platform boundary carried by PLAN-25.
 
 
 ## Executable evidence

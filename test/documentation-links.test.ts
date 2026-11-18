@@ -76,13 +76,13 @@ test("checks links from supported documentation to legacy records", async () => 
 		);
 		await writeFile(
 			path.join(root, "README.md"),
-			"[legacy](./docs/design/absent.md)\n",
+			"[legacy](./docs/guide/absent.md)\n",
 		);
 
 		const { problems } = await checkDocumentationLinks({ root });
 		assert.deepEqual(
 			problems.map(({ file, target }) => ({ file, target })),
-			[{ file: "README.md", target: "./docs/design/absent.md" }],
+			[{ file: "README.md", target: "./docs/guide/absent.md" }],
 		);
 	});
 });

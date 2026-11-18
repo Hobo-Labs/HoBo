@@ -59,7 +59,7 @@ export interface VibeLaunchAssetRefreshPlan {
   schema: "hobo.vibe-launch-asset-refresh-plan/v1";
   issue: "HOBO-556";
   targetPackagePath: "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan";
-  proofNotePath: "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md";
+  proofNotePath: "urn:hobo:proof:vibe-launch-asset-refresh-plan";
   sourceRefs: string[];
   audience: string[];
   assets: LaunchAsset[];
@@ -89,10 +89,10 @@ export const VIBE_LAUNCH_ASSET_REFRESH_PLAN: VibeLaunchAssetRefreshPlan = {
   schema: "hobo.vibe-launch-asset-refresh-plan/v1",
   issue: "HOBO-556",
   targetPackagePath: "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan",
-  proofNotePath: "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md",
+  proofNotePath: "urn:hobo:proof:vibe-launch-asset-refresh-plan",
   sourceRefs: [
-    "docs/design/launch-demo-golden-path.md",
-    "docs/design/launch-messaging-claims.md",
+    "urn:hobo:requirement:launch-demo-golden-path",
+    "urn:hobo:requirement:launch-messaging-claims",
     "src/draft/exp-proofs/dx/launch-demo-golden-path-contract/README.md",
     "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples/README.md",
   ],
@@ -153,7 +153,7 @@ export const VIBE_LAUNCH_ASSET_REFRESH_PLAN: VibeLaunchAssetRefreshPlan = {
       label: "launch demo and messaging docs",
       sourceOwner: "Example Apps",
       proofMode: "reference fixture",
-      evidenceSource: "docs/design/launch-demo-golden-path.md",
+      evidenceSource: "urn:hobo:requirement:launch-demo-golden-path",
       freshnessRule: "Current when acceptance, owner routing, public-claim boundary, and proof-mode vocabulary match the executable proofs.",
       refreshTrigger: "Acceptance, owner, scope, proof note, claim register, or known-limitation boundary changes.",
       validationRoute: "Docs owner updates design records and proof notes in the same branch as asset refresh changes.",
@@ -361,7 +361,7 @@ export function parseLaunchAssetRefreshPlan(input: JsonValue) {
   if (record.targetPackagePath !== "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan") {
     errors.push("target package path must match HOBO-556 acceptance");
   }
-  if (record.proofNotePath !== "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md") {
+  if (record.proofNotePath !== "urn:hobo:proof:vibe-launch-asset-refresh-plan") {
     errors.push("proof note path must match HOBO-556 acceptance");
   }
   if (!Array.isArray(record.assets)) {

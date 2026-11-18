@@ -84,7 +84,7 @@ export const dogfoodYardReleaseCandidateEvidence: DogfoodYardReleaseCandidateEvi
     {
       id: "m0-dogfood-acceptance-record",
       ownerProject: "V1 Dogfood Yard & Hosted Operations",
-      source: "docs/design/dogfood-yard.md#m0-acceptance-record",
+      source: "urn:hobo:requirement:dogfood-yard#m0-acceptance-record",
       proofMode: "design-record",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -92,7 +92,7 @@ export const dogfoodYardReleaseCandidateEvidence: DogfoodYardReleaseCandidateEvi
     {
       id: "m1-dogfood-alpha-cutline",
       ownerProject: "V1 Release Program & Cutline",
-      source: "docs/design/proofs/hobo-454-v1-cutline-dogfood-alpha/index.md",
+      source: "urn:hobo:proof:hobo-454-v1-cutline-dogfood-alpha",
       proofMode: "design-record",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
@@ -100,7 +100,7 @@ export const dogfoodYardReleaseCandidateEvidence: DogfoodYardReleaseCandidateEvi
     {
       id: "release-candidate-scenario-ledger",
       ownerProject: "V1 Dogfood Yard & Hosted Operations",
-      source: "docs/design/dogfood-yard.md#release-candidate-evidence-gate",
+      source: "urn:hobo:requirement:dogfood-yard#release-candidate-evidence-gate",
       proofMode: "mocked-drill",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -108,7 +108,7 @@ export const dogfoodYardReleaseCandidateEvidence: DogfoodYardReleaseCandidateEvi
     {
       id: "support-debug-readiness",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Blockers and accepted risks are recorded.",
@@ -116,7 +116,7 @@ export const dogfoodYardReleaseCandidateEvidence: DogfoodYardReleaseCandidateEvi
     {
       id: "rollback-restore-drill-fixture",
       ownerProject: "Reliability, Observability & Cost (FinOps)",
-      source: "docs/design/reliability-observability-cost.md#plan-05",
+      source: "urn:hobo:requirement:reliability-observability-cost#plan-05",
       proofMode: "reference-fixture",
       status: "accepted-risk",
       acceptanceBullet: "Blockers and accepted risks are recorded.",
@@ -173,21 +173,21 @@ export const dogfoodYardReleaseCandidateEvidence: DogfoodYardReleaseCandidateEvi
       ownerProject: "V1 Release Notes & Upgrade Guide",
       readinessDomain: "documentation",
       cutlineCategory: "v1-blocker.documentation",
-      source: "docs/design/release-notes-upgrade-guide.md",
+      source: "urn:hobo:requirement:release-notes-upgrade-guide",
     },
     {
       id: "support-escalation-rc-language",
       ownerProject: "V1 Launch Support Desk & Escalation",
       readinessDomain: "support",
       cutlineCategory: "v1-blocker.support",
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
     },
     {
       id: "rollback-restore-reliability-signal",
       ownerProject: "Reliability, Observability & Cost (FinOps)",
       readinessDomain: "reliability",
       cutlineCategory: "v1-blocker.operations-readiness",
-      source: "docs/design/reliability-observability-cost.md#plan-05",
+      source: "urn:hobo:requirement:reliability-observability-cost#plan-05",
     },
   ],
   followUps: [

@@ -68,7 +68,7 @@ test("unsupported or risky claims are routed to scope-out or follow-up before pu
     claim: "HoBo is production-ready for every customer workload.",
     state: "implemented",
     evidenceOwner: "launch",
-    evidenceSource: "docs/design/vision.md#plan-17",
+    evidenceSource: "urn:hobo:requirement:vision#plan-17",
     riskRating: "high",
     publicationDisposition: "publish",
   });

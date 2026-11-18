@@ -3,18 +3,6 @@ import { type JunctionDefinition, junction } from "@hobo/junctions";
 import { yard } from "@hobo/yards";
 import { readVercelConnection, type StoredVercelConnection } from "./vercel.js";
 
-// The Vercel provider junction (docs/design/control-plane.md "Yard scope &
-// multi-Yard (the Junction)").
-//
-// Domain and provider boundaries: a Yard holds only what is internal to its
-// provider. The CD project's Yard runs CD itself; Vercel's projects,
-// deployments and functions are internal to a Yard of their own, whose
-// provider is Vercel. Nothing in either is marked external. The junction is
-// how the CD Yard reaches the Vercel Yard, and the connection `hobo cd up`
-// made (the integration's token in the owner's secret store) is what it
-// carries: resolved from the store for one convergence, held in memory,
-// never written to a file, an environment file or a result.
-
 /** The CD project's own Yard: where HoBo.CD runs (the local Station by default). */
 export const cdYard = yard("hobo-cd", {
 	provider: "local",

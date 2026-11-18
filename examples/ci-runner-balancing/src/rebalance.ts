@@ -45,7 +45,6 @@ export interface VariablesWriter extends VariablesReader {
 	set(name: string, value: string): Promise<void>;
 }
 
-/** One event-store append; family names come from docs/design/event-families.md. */
 export interface LedgerEvent {
 	family: string;
 	payload: JsonObject;

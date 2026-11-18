@@ -58,7 +58,7 @@ lowest-common-denominator abstraction that hides the provider.
   run only through agent hooks / githooks (`pnpm agent:check`); agents must
   not wait on, cancel, or re-request Action runners.
 - A control-plane UI (`@hobo/control-yard`).
-- Design suite, ADRs and traceability under `docs/design/`; proofs under
+- Design suite, ADRs and traceability under `urn:hobo:requirement:`; proofs under
   `src/draft/`; gates run through `pnpm agent:check`.
 
 ## Capabilities and Constraints
@@ -82,7 +82,7 @@ lowest-common-denominator abstraction that hides the provider.
   `site/public/parallax/`, plus five generated action sheets in
   `site/public/bo-actions/` (site-only, geometry in `sheets.json`).
 - This identity was once replaced and then restored by owner decision
-  ([ADR-0149](docs/design/adr/07-portability-extensibility.md#adr-0149)). The
+  ([ADR-0149](urn:hobo:decision:adr-0149)). The
   governing rule from that reversal: **an implementation problem is never
   grounds to replace a product identity**, and art is authored as art and
   vendored as assets — never assembled from `rect`/`line` primitives in a

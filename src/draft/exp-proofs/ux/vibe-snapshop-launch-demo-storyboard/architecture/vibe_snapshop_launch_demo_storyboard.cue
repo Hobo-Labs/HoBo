@@ -18,7 +18,7 @@ package vibe_snapshop_launch_demo_storyboard
 	issue: "HOBO-555"
 	phase: "M5"
 	packagePath: "src/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard"
-	proofPath: "docs/design/proofs/vibe-snapshop-launch-demo-storyboard/README.md"
+	proofPath: "urn:hobo:proof:vibe-snapshop-launch-demo-storyboard"
 	designRefs: [...string]
 	proofModes: [...#SnapshopProofMode]
 	quickstartFixtureRefs: [...#SnapshopQuickstartFixtureReference]

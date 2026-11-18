@@ -7,7 +7,7 @@ Dispatcher/CreditLedger routing, provider billing sync, tax, or live customer
 usage.
 
 The authoritative design record is
-[`docs/design/usage-metering.md`](../../../../../docs/design/usage-metering.md).
+[`urn:hobo:requirement:usage-metering`](urn:hobo:requirement:usage-metering).
 
 ## Proof
 

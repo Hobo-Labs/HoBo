@@ -1,19 +1,3 @@
-/**
- * GAPS.md register-lag guard.
- *
- * The intent-alignment register (`GAPS.md`) marks a finding 🧯 ("remediation documented,
- * not applied") until its remediation lands on main, then flips it to ✔. Two findings
- * (GAP-026, DRIFT-009) sat at 🧯 for weeks *after* their content had already landed — the
- * register lagged reality, and nobody noticed because nothing surfaced it. This check lists
- * every register row still at 🧯 so it cannot rot silently: for each, re-run its REM
- * "Acceptance" grep and flip to ✔ if it passes, or confirm it is genuinely still open.
- *
- * Advisory by default (exit 0) — 🧯 is a legitimate intermediate state for a genuinely-open
- * remediation. Pass `--strict` to fail when any 🧯 row exists (useful once a review
- * iteration has closed and no remediation should still be pending).
- *
- * Reference: the traceability gate at docs/design/traceability.md.
- */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";

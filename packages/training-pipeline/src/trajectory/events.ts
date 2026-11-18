@@ -3,11 +3,6 @@ import { createEventEnvelope, diagnosticJson } from "@hobo/core";
 import type { CapturedTrajectory } from "./capture.js";
 import { TrajectoryCaptureParseError } from "./trace-context.js";
 
-// A completed capture rides the existing training.* event family
-// (docs/design/event-families.md) — the same registry promotionEventNames
-// draws training.Promoted / impl.Promoted / eval.GateFailed from — so
-// capture → grade → aggregate → promotion gate is one event-sourced loop.
-
 // public-contract: trajectory-capture past-tense fact riding the training.* family; stored trajectory rides the event log.
 export const TRAINING_TRAJECTORY_CAPTURED = "training.TrajectoryCaptured";
 

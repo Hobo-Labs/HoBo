@@ -1,6 +1,6 @@
 # Cache port (`hobo:cache`) vs durable `kv` — ADR-0118 catalog contract
 
-Pins [ADR-0118](../../../../docs/design/adr/03-data-plane.md#adr-0118): the app-facing
+Pins [ADR-0118](urn:hobo:decision:adr-0118): the app-facing
 `cache(name)` catalog port (`hobo:cache`) is a **distinct contract** from the durable
 `kv(name)` / `wasi:keyvalue` store. A cache is **ephemeral, TTL-first, evictable, and never
 a source of truth**; a durable kv is **authoritative**. Folding one into the other (the prior

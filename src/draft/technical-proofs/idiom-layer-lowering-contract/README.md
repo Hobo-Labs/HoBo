@@ -6,9 +6,9 @@ produce.
 
 ## Requirements Source
 
-- `docs/design/sdk-api.md#plan-02`: WIT-first SDK, Layer 3 topology, Layer 4 runtime primitives.
-- `docs/design/adr/01-architecture-core.md#adr-0069`: thin SDK, no cloud logic.
-- `docs/design/adr/01-architecture-core.md#adr-0072`: generated bindings plus a thin idiom layer,
+- `urn:hobo:requirement:sdk-api#plan-02`: WIT-first SDK, Layer 3 topology, Layer 4 runtime primitives.
+- `urn:hobo:decision:adr-0069`: thin SDK, no cloud logic.
+- `urn:hobo:decision:adr-0072`: generated bindings plus a thin idiom layer,
   lowering-equivalence corpus, semantics annex.
 
 ## What This Proves

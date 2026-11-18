@@ -50,7 +50,7 @@ export type PlanAnnotationPseudocode = {
   issue: "HOBO-543";
   phase: "M1";
   targetPackagePath: "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode";
-  proofNotePath: "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md";
+  proofNotePath: "urn:hobo:proof:vibe-plan-annotation-pseudocode";
   designRefs: string[];
   annotations: PlanAnnotationFixture[];
   contractFixtures: PlanAnnotationContractFixtures;
@@ -65,17 +65,17 @@ export const VIBE_PLAN_ANNOTATION_PSEUDOCODE = {
   issue: "HOBO-543",
   phase: "M1",
   targetPackagePath: "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode",
-  proofNotePath: "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md",
+  proofNotePath: "urn:hobo:proof:vibe-plan-annotation-pseudocode",
   designRefs: [
-    "docs/design/plan-diff-viewer.md",
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/control-plane.md#plan-04",
-    "docs/design/contracts-policy-flags.md#plan-29",
-    "docs/design/reliability-observability-cost.md#plan-05",
-    "docs/design/cli-spec.md",
-    "docs/design/adr/02-identity-security.md#adr-0015",
-    "docs/design/adr/01-architecture-core.md#adr-0033",
-    "docs/design/adr/02-identity-security.md#adr-0045",
+    "urn:hobo:requirement:plan-diff-viewer",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:control-plane#plan-04",
+    "urn:hobo:requirement:contracts-policy-flags#plan-29",
+    "urn:hobo:requirement:reliability-observability-cost#plan-05",
+    "urn:hobo:requirement:cli-spec",
+    "urn:hobo:decision:adr-0015",
+    "urn:hobo:decision:adr-0033",
+    "urn:hobo:decision:adr-0045",
   ],
   annotations: [
     {
@@ -244,7 +244,7 @@ export function evaluatePlanAnnotationPseudocode(input: JsonValue): PlanAnnotati
   if (record.targetPackagePath !== "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode") {
     errors.push("target package path must match HOBO-543 acceptance");
   }
-  if (record.proofNotePath !== "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md") {
+  if (record.proofNotePath !== "urn:hobo:proof:vibe-plan-annotation-pseudocode") {
     errors.push("proof note path must match HOBO-543 acceptance");
   }
   if (!Array.isArray(record.designRefs) || record.designRefs.length === 0) {

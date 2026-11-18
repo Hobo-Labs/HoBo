@@ -10,7 +10,7 @@ holds no state. Engine packages (`@hobo/data-sqlite`, `@hobo/data-postgres`,
 `@hobo/data-mongodb`) derive from it; `@hobo/trails` composes its executors
 into runbooks and consumes their evidence.
 
-Design: [`docs/design/data-engines-continuous-migration.md`](../../docs/design/data-engines-continuous-migration.md).
+Design: [`urn:hobo:requirement:data-engines-continuous-migration`](urn:hobo:requirement:data-engines-continuous-migration).
 
 ## What this package owns
 

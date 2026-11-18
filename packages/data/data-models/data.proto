@@ -2,10 +2,6 @@ syntax = "proto3";
 
 package hobo.data.v1;
 
-// Wire records for the @hobo/data CQRS fold kernel (S1-15a). Design source:
-// docs/design/data-plane.md (Plan 11 + Plan 32). These are the persisted/cached
-// shapes; the runtime EventEnvelope (packages/core) carries the event bodies.
-
 enum ReactivityClass {
   REACTIVITY_CLASS_UNSPECIFIED = 0;
   REACTIVITY_CLASS_REACTIVE = 1;

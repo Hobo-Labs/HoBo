@@ -57,12 +57,12 @@ test("design dependencies reference security, compliance, governance, and scope 
   assert.deepEqual(
     LEGAL_PRIVACY_TERMS_READINESS.dependencies.map((dependency) => dependency.source),
     [
-      "docs/design/security-networking.md#plan-12",
-      "docs/design/governance-planes.md#plan-46",
-      "docs/design/adr/02-identity-security.md#adr-0023",
-      "docs/design/adr/02-identity-security.md#adr-0060",
-      "docs/design/adr/02-identity-security.md#adr-0074",
-      "docs/design/adr/07-portability-extensibility.md#adr-0064",
+      "urn:hobo:requirement:security-networking#plan-12",
+      "urn:hobo:requirement:governance-planes#plan-46",
+      "urn:hobo:decision:adr-0023",
+      "urn:hobo:decision:adr-0060",
+      "urn:hobo:decision:adr-0074",
+      "urn:hobo:decision:adr-0064",
     ],
   );
 });

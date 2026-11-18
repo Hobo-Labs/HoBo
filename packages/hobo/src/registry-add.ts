@@ -81,7 +81,7 @@ export async function runRegistryAdd(
 			message:
 				"hobo registry add needs a provider manifest: `hobo registry add <manifest.yaml>`.",
 			remediation: [
-				"Write a hobo.provider-manifest/v1 document (see docs/design/provider-manifest.md).",
+				"Write a hobo.provider-manifest/v1 document (see urn:hobo:requirement:provider-manifest).",
 			],
 			data: { command: "registry add" },
 		};

@@ -2,11 +2,11 @@
 
 Independent draft POC for **HOBO-657**. Pins quorum event-store replication,
 leader election, actor lease/fencing failover, and provider-resilience controls
-per [`docs/design/reliability-observability-cost.md`](../../../../docs/design/reliability-observability-cost.md#plan-05).
+per [`urn:hobo:requirement:reliability-observability-cost`](urn:hobo:requirement:reliability-observability-cost#plan-05).
 
 ## Requirements Source
 
-- `docs/design/reliability-observability-cost.md#plan-05` — control-plane HA, actor leases + fencing, provider circuit breakers, retry budgets, bulkheads.
+- `urn:hobo:requirement:reliability-observability-cost#plan-05` — control-plane HA, actor leases + fencing, provider circuit breakers, retry budgets, bulkheads.
 - `docs/archive/requirements/requirements.md` — **NFR-009** resume `< 30 s`; 99.9% control-plane availability.
 - `src/draft/epic-proofs/reliability-observability-cost-finops/` — promoted Golden chaos / failover scenarios (consumed, not modified).
 

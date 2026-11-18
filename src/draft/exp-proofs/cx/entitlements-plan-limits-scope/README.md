@@ -28,8 +28,8 @@ npm.cmd --prefix src\draft\exp-proofs\cx\entitlements-plan-limits-scope test
 
 The proof is also referenced by the design record:
 
-- [Entitlements & Plan Limits design record](../../../../../docs/design/entitlements-plan-limits.md)
-- [HOBO-419 proof record](../../../../../docs/design/proofs/hobo-419-entitlements-plan-limits/README.md)
+- [Entitlements & Plan Limits design record](urn:hobo:requirement:entitlements-plan-limits)
+- [HOBO-419 proof record](urn:hobo:proof:hobo-419-entitlements-plan-limits)
 
 
 ## Executable evidence

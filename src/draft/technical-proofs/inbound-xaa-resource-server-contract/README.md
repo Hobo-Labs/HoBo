@@ -2,8 +2,8 @@
 
 HOBO-233 proof package for treating HoBo apps as Cross-App Access (XAA) resource servers.
 
-The package models the inbound side of [PLAN-06](../../../../docs/design/ai-native-agent-auth.md#plan-06)
-and [ADR-0084](../../../../docs/design/adr/02-identity-security.md#adr-0084):
+The package models the inbound side of [PLAN-06](urn:hobo:requirement:ai-native-agent-auth#plan-06)
+and [ADR-0084](urn:hobo:decision:adr-0084):
 
 - accepts a compact ID-JAG assertion for a HoBo app audience and resource;
 - verifies the assertion signature against a configured trusted issuer JWKS;

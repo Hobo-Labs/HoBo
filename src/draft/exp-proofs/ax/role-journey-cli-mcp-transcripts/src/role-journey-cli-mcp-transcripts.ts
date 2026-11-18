@@ -84,9 +84,9 @@ export type RoleJourneyCliMcpTranscripts = {
   readonly issue: "HOBO-557";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/ax/role-journey-cli-mcp-transcripts";
-  readonly proofNote: "docs/design/proofs/role-journey-cli-mcp-transcripts/README.md";
+  readonly proofNote: "urn:hobo:proof:role-journey-cli-mcp-transcripts";
   readonly sourceQuickstartIssue: "HOBO-577";
-  readonly sourceQuickstartProof: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md";
+  readonly sourceQuickstartProof: "urn:hobo:proof:resource-lifecycle-quickstart-examples";
   readonly designRefs: readonly string[];
   readonly scopeOut: readonly string[];
   readonly journeys: readonly RoleJourney[];
@@ -101,16 +101,16 @@ export const ROLE_JOURNEY_CLI_MCP_TRANSCRIPTS = {
   issue: "HOBO-557",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/ax/role-journey-cli-mcp-transcripts",
-  proofNote: "docs/design/proofs/role-journey-cli-mcp-transcripts/README.md",
+  proofNote: "urn:hobo:proof:role-journey-cli-mcp-transcripts",
   sourceQuickstartIssue: "HOBO-577",
-  sourceQuickstartProof: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+  sourceQuickstartProof: "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   designRefs: [
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/cli-spec.md",
-    "docs/design/walkthrough.md",
-    "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
-    "docs/design/proofs/cli-mcp-parity-resource-lifecycle-contracts/README.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:cli-spec",
+    "urn:hobo:requirement:walkthrough",
+    "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix",
+    "urn:hobo:proof:cli-mcp-parity-resource-lifecycle-contracts",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   scopeOut: [
     "production CLI implementation",
@@ -373,13 +373,13 @@ export function parseRoleJourneyCliMcpTranscripts(input: JsonValue): RoleJourney
   );
   assertLiteral(
     input.proofNote,
-    "docs/design/proofs/role-journey-cli-mcp-transcripts/README.md",
+    "urn:hobo:proof:role-journey-cli-mcp-transcripts",
     "proofNote",
   );
   assertLiteral(input.sourceQuickstartIssue, "HOBO-577", "sourceQuickstartIssue");
   assertLiteral(
     input.sourceQuickstartProof,
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
     "sourceQuickstartProof",
   );
   assertNonEmptyStringArray(input.designRefs, "designRefs");

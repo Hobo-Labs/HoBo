@@ -94,7 +94,7 @@ does not fall when their pods idle.
 ## How it competes with HoBo
 
 It does not. This capture exists because HoBo's showback design already models itself on this shape
-([ADR-0039](../design/adr/02-identity-security.md#adr-0039) §3,
+([ADR-0039](urn:hobo:decision:adr-0039) §3,
 [FOCUS/OpenCost standard note](../standards/focus-opencost.md)).
 
 | Contested HoBo surface | The relationship |
@@ -132,9 +132,9 @@ It does not. This capture exists because HoBo's showback design already models i
 
 State labels follow the research contract.
 
-- **Cost at plan time** (*design-only*, [Plan 5](../design/reliability-observability-cost.md#plan-05)).
+- **Cost at plan time** (*design-only*, [Plan 5](urn:hobo:requirement:reliability-observability-cost#plan-05)).
   OpenCost is strictly retrospective; it cannot tell you what a change will cost.
-- **Cost-aware placement** (*design-only*, [ADR-0071](../design/adr/01-architecture-core.md#adr-0071)).
+- **Cost-aware placement** (*design-only*, [ADR-0071](urn:hobo:decision:adr-0071)).
   Measurement never becomes a decision here.
 - **Enforcement** (*design-only*, ADR-0039 §2 budgets and spend caps). OpenCost reports; it does not
   gate.

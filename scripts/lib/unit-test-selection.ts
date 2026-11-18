@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 
 export const ROOT_VITEST_SHARDS = 4;
@@ -46,7 +46,7 @@ export function gitLsFiles(patterns: string[]): string[] {
 	return result.stdout
 		.split(/\r?\n/)
 		.map((line) => line.trim())
-		.filter(Boolean);
+		.filter((file) => file.length > 0 && existsSync(file));
 }
 
 export function isNodeTestSource(source: string, file = "test.ts"): boolean {

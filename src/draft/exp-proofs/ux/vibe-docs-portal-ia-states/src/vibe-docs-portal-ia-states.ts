@@ -113,7 +113,7 @@ type VibeDocsPortalIaStates = {
   readonly issue: "HOBO-551";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states";
-  readonly proofPath: "docs/design/proofs/vibe-docs-portal-ia-states/README.md";
+  readonly proofPath: "urn:hobo:proof:vibe-docs-portal-ia-states";
   readonly designRefs: readonly string[];
   readonly audiencePaths: readonly AudiencePath[];
   readonly contentInventory: readonly ContentInventoryEntry[];
@@ -141,7 +141,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/getting-started/resource-lifecycle",
     audiencePaths: ["app-developer", "docs-maintainer", "release-owner"],
     contentArea: "getting-started",
-    sourceRecord: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    sourceRecord: "urn:hobo:proof:resource-lifecycle-quickstart-examples",
     owner: "Tutorials & Walkthroughs",
     freshnessSignal: {
       status: "fresh",
@@ -161,7 +161,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/api/resource-lifecycle",
     audiencePaths: ["app-developer", "platform-engineer", "docs-maintainer"],
     contentArea: "api-reference",
-    sourceRecord: "docs/design/sdk-contracts.md and docs/design/proofs/control-plane-api-resource-lifecycle-shapes/README.md",
+    sourceRecord: "urn:hobo:requirement:sdk-contracts and urn:hobo:proof:control-plane-api-resource-lifecycle-shapes",
     owner: "CLI, MCP & Developer Experience",
     freshnessSignal: {
       status: "bounded-stale",
@@ -181,7 +181,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/architecture/concepts",
     audiencePaths: ["platform-engineer", "security-reviewer", "docs-maintainer"],
     contentArea: "architecture",
-    sourceRecord: "docs/design/architecture.md and docs/design/developer-experience.md#plan-07",
+    sourceRecord: "urn:hobo:requirement:architecture and urn:hobo:requirement:developer-experience#plan-07",
     owner: "Architecture",
     freshnessSignal: {
       status: "fresh",
@@ -201,7 +201,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/operations/runbooks",
     audiencePaths: ["platform-engineer", "support-operator", "release-owner"],
     contentArea: "operations",
-    sourceRecord: "docs/design/support-debug-tools.md and docs/design/developer-experience.md#plan-07",
+    sourceRecord: "urn:hobo:requirement:support-debug-tools and urn:hobo:requirement:developer-experience#plan-07",
     owner: "Operators & SRE",
     freshnessSignal: {
       status: "unknown",
@@ -221,7 +221,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/troubleshooting",
     audiencePaths: ["app-developer", "support-operator", "docs-maintainer"],
     contentArea: "troubleshooting",
-    sourceRecord: "docs/design/troubleshooting-guides.md",
+    sourceRecord: "urn:hobo:requirement:troubleshooting-guides",
     owner: "Troubleshooting Guides",
     freshnessSignal: {
       status: "bounded-stale",
@@ -241,7 +241,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/releases/upgrade-guide",
     audiencePaths: ["release-owner", "platform-engineer", "support-operator"],
     contentArea: "release-notes",
-    sourceRecord: "docs/design/release-notes-upgrade-guide.md",
+    sourceRecord: "urn:hobo:requirement:release-notes-upgrade-guide",
     owner: "V1 Release Notes & Upgrade Guide",
     freshnessSignal: {
       status: "bounded-stale",
@@ -261,7 +261,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/known-limitations",
     audiencePaths: ["app-developer", "support-operator", "release-owner"],
     contentArea: "known-limitations",
-    sourceRecord: "docs/design/known-limitations-register.md",
+    sourceRecord: "urn:hobo:requirement:known-limitations-register",
     owner: "V1 Release Program & Cutline",
     freshnessSignal: {
       status: "fresh",
@@ -281,7 +281,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/security",
     audiencePaths: ["security-reviewer", "support-operator", "docs-maintainer"],
     contentArea: "security",
-    sourceRecord: "docs/design/security-verification.md",
+    sourceRecord: "urn:hobo:requirement:security-verification",
     owner: "Security Verification",
     freshnessSignal: {
       status: "unknown",
@@ -301,7 +301,7 @@ const CONTENT_INVENTORY: readonly ContentInventoryEntry[] = [
     slug: "/docs/support",
     audiencePaths: ["support-operator", "app-developer", "release-owner"],
     contentArea: "support",
-    sourceRecord: "docs/design/support-sla-channels.md and docs/design/launch-support-escalation.md",
+    sourceRecord: "urn:hobo:requirement:support-sla-channels and urn:hobo:requirement:launch-support-escalation",
     owner: "Support Workflow",
     freshnessSignal: {
       status: "bounded-stale",
@@ -386,18 +386,18 @@ export const VIBE_DOCS_PORTAL_IA_STATES: VibeDocsPortalIaStates = {
   issue: "HOBO-551",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states",
-  proofPath: "docs/design/proofs/vibe-docs-portal-ia-states/README.md",
+  proofPath: "urn:hobo:proof:vibe-docs-portal-ia-states",
   designRefs: [
-    "docs/design/docs-portal.md",
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/release-notes-upgrade-guide.md",
-    "docs/design/known-limitations-register.md",
-    "docs/design/troubleshooting-guides.md",
-    "docs/design/support-sla-channels.md",
-    "docs/design/launch-support-escalation.md",
-    "docs/design/security-verification.md",
-    "docs/design/accessibility-usability-launch-baseline.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:docs-portal",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:release-notes-upgrade-guide",
+    "urn:hobo:requirement:known-limitations-register",
+    "urn:hobo:requirement:troubleshooting-guides",
+    "urn:hobo:requirement:support-sla-channels",
+    "urn:hobo:requirement:launch-support-escalation",
+    "urn:hobo:requirement:security-verification",
+    "urn:hobo:requirement:accessibility-usability-launch-baseline",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   audiencePaths: AUDIENCE_PATHS,
   contentInventory: CONTENT_INVENTORY,
@@ -510,7 +510,7 @@ export function validateVibeDocsPortalIaStates(
   if (states.packagePath !== "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (states.proofPath !== "docs/design/proofs/vibe-docs-portal-ia-states/README.md") {
+  if (states.proofPath !== "urn:hobo:proof:vibe-docs-portal-ia-states") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
 

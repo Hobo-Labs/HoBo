@@ -6,7 +6,7 @@ implementation creep into production upgrade runners, live migrations, rollback 
 restore, provider state rewrites, compatibility UI, release publication, or support automation.
 
 The authoritative design record is
-[`docs/design/upgrade-migration-engine.md`](../../../../../docs/design/upgrade-migration-engine.md).
+[`urn:hobo:requirement:upgrade-migration-engine`](urn:hobo:requirement:upgrade-migration-engine).
 
 ## Proof
 

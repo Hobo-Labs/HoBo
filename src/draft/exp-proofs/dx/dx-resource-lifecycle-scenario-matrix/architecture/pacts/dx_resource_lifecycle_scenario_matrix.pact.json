@@ -26,11 +26,11 @@
           "issue": "HOBO-567",
           "phase": "M1",
           "targetPackage": "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix",
-          "proofNote": "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
+          "proofNote": "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix",
           "designRefs": [
-            "docs/design/developer-experience.md#plan-07",
-            "docs/design/cli-spec.md",
-            "docs/design/control-plane.md#plan-04"
+            "urn:hobo:requirement:developer-experience#plan-07",
+            "urn:hobo:requirement:cli-spec",
+            "urn:hobo:requirement:control-plane#plan-04"
           ],
           "designTerms": [
             "hobo up",
@@ -164,7 +164,7 @@
     },
     "hobo": {
       "issue": "HOBO-567",
-      "proof": "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md"
+      "proof": "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix"
     }
   }
 }

@@ -211,7 +211,7 @@ Realize/IR paths are deterministic and offline. The Management API lane is
 **credential-gated**: without `CONVEX_DEPLOY_KEY` (see
 `describeConvexTarget`) every live call throws `ConvexCredentialsError` —
 fail closed, never a stub. Registered in
-[docs/design/live-provider-matrix.md](../../../docs/design/live-provider-matrix.md).
+[urn:hobo:requirement:live-provider-matrix](urn:hobo:requirement:live-provider-matrix).
 
 ## Hosting budget execution
 

@@ -31,7 +31,7 @@ import "list"
 
 #EvidenceLink: {
 	label:     string & =~"\\S"
-	href:      =~"^docs/design/proofs/[a-z0-9-]+/README\\.md#[a-z0-9-]+$"
+	href:      =~"^urn:hobo:proof:[a-z0-9-]+#[a-z0-9-]+$"
 	fixtureId: =~"^vwp-[a-z0-9-]+-v[0-9]+$"
 	freshness: #Freshness
 	proofMode: #ProofMode
@@ -91,7 +91,7 @@ import "list"
 	issue:         "HOBO-541"
 	phase:         "M1"
 	targetPackage: "src/draft/exp-proofs/ux/vibe-workspace-project-states"
-	proofNote:     "docs/design/proofs/vibe-workspace-project-states/README.md"
+	proofNote:     "urn:hobo:proof:vibe-workspace-project-states"
 	designRefs:    [...string] & list.MinItems(1)
 	scopeOut: [
 		"account service implementation",

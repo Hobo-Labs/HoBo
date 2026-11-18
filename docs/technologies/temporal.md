@@ -35,16 +35,16 @@ SDKs; server under its own license), with Temporal Cloud as the managed offer.
 ## Relevance to HoBo
 
 **Analog / validates — measured against, not adopted.** HoBo's durable
-`workflow`/`step` runtime ([sdk-api](../design/sdk-api.md#plan-02), Layer 4)
+`workflow`/`step` runtime ([sdk-api](urn:hobo:requirement:sdk-api#plan-02), Layer 4)
 credits its *feel* to **Vercel Workflows** (vision.md §borrows), but Temporal
 is the industry benchmark for the underlying mechanism, and HoBo's
-event-sourced substrate ([data-plane](../design/data-plane.md#plan-11),
+event-sourced substrate ([data-plane](urn:hobo:requirement:data-plane#plan-11),
 ADR-0135 durable SQLite journal) is the same replay-from-history idea applied
 platform-wide — control plane included — rather than scoped to workflow
 workers. Named as an analog across
-[architecture](../design/architecture.md#plan-10),
-[reliability](../design/reliability-observability-cost.md#plan-05), and
-[generated-stack](../design/generated-stack.md#plan-23). Divergences kept
+[architecture](urn:hobo:requirement:architecture#plan-10),
+[reliability](urn:hobo:requirement:reliability-observability-cost#plan-05), and
+[generated-stack](urn:hobo:requirement:generated-stack#plan-23). Divergences kept
 honest: HoBo has no separate workflow server — Camps run the runtime in-process
 over the journal; determinism is enforced by the replay gate
 (`packages/runtime/src/replay`, `packages/replay`) and the VirtualClock port

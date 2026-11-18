@@ -1,8 +1,8 @@
 # Gated Live-Fix Loop Reference Implementation
 
 Epic proof for **HOBO-654** (S5-09). Implements the gated live-fix loop from
-[Plan 23](../../../docs/design/generated-stack.md#plan-23) and
-[Plan 05](../../../docs/design/reliability-observability-cost.md#plan-05):
+[Plan 23](urn:hobo:requirement:generated-stack#plan-23) and
+[Plan 05](urn:hobo:requirement:reliability-observability-cost#plan-05):
 risk classification, auto-canary with auto-rollback, trace-to-test retention,
 and event-sourced generation/validation/gate/apply steps.
 

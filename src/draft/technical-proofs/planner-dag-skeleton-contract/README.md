@@ -3,9 +3,9 @@
 This package proves the M1 Planner slice for HOBO-61. It implements the first
 pure Planner step from:
 
-- `docs/design/control-plane.md`: collect manifest resources, build bind/link
+- `urn:hobo:requirement:control-plane`: collect manifest resources, build bind/link
   dependency edges, and emit a `DeploymentPlan`.
-- `docs/design/platform-engineering.md`: co-provisioned resources become graph
+- `urn:hobo:requirement:platform-engineering`: co-provisioned resources become graph
   nodes with placeholder-wired inputs.
   by the Planner.
 

@@ -50,7 +50,7 @@ type VibeTroubleshootingDecisionTrees = {
   readonly issue: "HOBO-553";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-troubleshooting-decision-trees";
-  readonly proofNote: "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md";
+  readonly proofNote: "urn:hobo:proof:vibe-troubleshooting-decision-trees";
   readonly designRefs: readonly string[];
   readonly proofModes: readonly ProofMode[];
   readonly cases: readonly TroubleshootingDecisionCase[];
@@ -65,15 +65,15 @@ export const VIBE_TROUBLESHOOTING_DECISION_TREES: VibeTroubleshootingDecisionTre
   issue: "HOBO-553",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/ux/vibe-troubleshooting-decision-trees",
-  proofNote: "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md",
+  proofNote: "urn:hobo:proof:vibe-troubleshooting-decision-trees",
   designRefs: [
-    "docs/design/troubleshooting-guides.md",
-    "docs/design/proofs/hobo-437-troubleshooting-guides-scope/index.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/launch-support-escalation.md",
-    "docs/design/support-sla-channels.md",
-    "docs/design/known-limitations-register.md",
+    "urn:hobo:requirement:troubleshooting-guides",
+    "urn:hobo:proof:hobo-437-troubleshooting-guides-scope",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:launch-support-escalation",
+    "urn:hobo:requirement:support-sla-channels",
+    "urn:hobo:requirement:known-limitations-register",
   ],
   proofModes: REQUIRED_PROOF_MODES,
   cases: [
@@ -332,7 +332,7 @@ export function parseVibeTroubleshootingDecisionTrees(
   );
   assertLiteral(
     value.proofNote,
-    "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md",
+    "urn:hobo:proof:vibe-troubleshooting-decision-trees",
     "proofNote",
   );
 
@@ -358,7 +358,7 @@ export function parseVibeTroubleshootingDecisionTrees(
     issue: "HOBO-553",
     phase: "M1",
     targetPackage: "src/draft/exp-proofs/ux/vibe-troubleshooting-decision-trees",
-    proofNote: "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md",
+    proofNote: "urn:hobo:proof:vibe-troubleshooting-decision-trees",
     designRefs,
     proofModes,
     cases,

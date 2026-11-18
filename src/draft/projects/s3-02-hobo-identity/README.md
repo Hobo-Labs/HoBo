@@ -39,5 +39,5 @@ Promotes attested-workload SVID flows from
 trees aligned after promotion.
 
 ## Executable evidence
-- [Plan 06 — Agent identity & token broker](../../../docs/design/ai-native-agent-auth.md#plan-06)
-- [ADR-0023 — Key TTL / rotation](../../../docs/design/adr/02-identity-security.md#adr-0023)
+- [Plan 06 — Agent identity & token broker](urn:hobo:requirement:ai-native-agent-auth#plan-06)
+- [ADR-0023 — Key TTL / rotation](urn:hobo:decision:adr-0023)

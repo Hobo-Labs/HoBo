@@ -26,7 +26,7 @@ describe("vibe troubleshooting decision trees", () => {
     );
     assert.equal(
       proof.proofNote,
-      "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md",
+      "urn:hobo:proof:vibe-troubleshooting-decision-trees",
     );
     assert.deepEqual(
       proof.cases.map((entry) => entry.caseId),

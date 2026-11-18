@@ -6,10 +6,10 @@ schema-valid responses.
 
 ## Requirements Source
 
-- `docs/design/generated-stack.md#plan-23` — stub semantics, partial overrides, trace-as-spec
+- `urn:hobo:requirement:generated-stack#plan-23` — stub semantics, partial overrides, trace-as-spec
 - `docs/archive/requirements/requirements.md` — **FR-040**, **TR-082**
-- `docs/design/adr/02-identity-security.md#adr-0076` — `mock` boundary mode, `stub.Recorded`
-- `docs/design/event-families.md` — `stub.*` family
+- `urn:hobo:decision:adr-0076` — `mock` boundary mode, `stub.Recorded`
+- `urn:hobo:requirement:event-families` — `stub.*` family
 
 ## Contract Surface
 

@@ -9,9 +9,9 @@ dependencies, communication surfaces, incident states, template kinds, M1 eviden
 gate.
 
 The durable design record lives in
-[`docs/design/incident-communications.md`](../../../../../docs/design/incident-communications.md). Branch
+[`urn:hobo:requirement:incident-communications`](urn:hobo:requirement:incident-communications). Branch
 evidence is summarized in
-[`docs/design/proofs/hobo-450-incident-communications`](../../../../../docs/design/proofs/hobo-450-incident-communications/README.md).
+[`urn:hobo:proof:hobo-450-incident-communications`](urn:hobo:proof:hobo-450-incident-communications).
 
 ## Contract Surface
 
