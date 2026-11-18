@@ -82,6 +82,14 @@ export function journalFleetLayout(
 }
 
 const entry = (member: JournalFleetMember) => `${member.id}:${member.plan}`;
+const MEMBER_ID = /^[a-z][a-z0-9-]{0,39}$/u;
+
+export class JournalFleetSettingsError extends Error {
+	constructor(reason: "invalid" | "incomplete") {
+		super(`The saved journal fleet is ${reason}.`);
+		this.name = "JournalFleetSettingsError";
+	}
+}
 
 function parseEntries(text: string | undefined): readonly JournalFleetMember[] {
 	return (text ?? "")
@@ -89,9 +97,37 @@ function parseEntries(text: string | undefined): readonly JournalFleetMember[] {
 		.map((part) => part.trim())
 		.filter((part) => part !== "")
 		.map((part) => {
-			const [id = "", plan = ""] = part.split(":");
+			const [id = "", plan = "", ...rest] = part.split(":");
+			if (!MEMBER_ID.test(id) || plan === "" || rest.length > 0)
+				throw new JournalFleetSettingsError("invalid");
 			return { id, plan };
 		});
+}
+
+function checkedLayout(layout: JournalFleetLayout): JournalFleetLayout {
+	const all = [...layout.members, ...layout.witnesses];
+	if (layout.members.length === 0 || layout.witnesses.length === 0)
+		throw new JournalFleetSettingsError("incomplete");
+	if (new Set(all.map((member) => member.id)).size !== all.length)
+		throw new JournalFleetSettingsError("invalid");
+	for (const member of all)
+		if (!Object.hasOwn(CD_JOURNAL_MEMBER_PLANS, member.plan))
+			throw new JournalFleetSettingsError("invalid");
+	return layout;
+}
+
+function savedLayout(
+	settings: Readonly<Record<string, string>>,
+): JournalFleetLayout | undefined {
+	const members = settings[JOURNAL_FLEET_SETTING];
+	const witnesses = settings[JOURNAL_WITNESS_SETTING];
+	if (members === undefined && witnesses === undefined) return undefined;
+	if (members === undefined || witnesses === undefined)
+		throw new JournalFleetSettingsError("incomplete");
+	return checkedLayout({
+		members: parseEntries(members),
+		witnesses: parseEntries(witnesses),
+	});
 }
 
 export type JournalFleetStep = Readonly<{
@@ -123,19 +159,9 @@ async function prepareJournalFleetUnlocked(
 	const { store } = input;
 	const settings = familySettings(store, "cd");
 	const saved = await settings.read();
-	const layout: JournalFleetLayout =
-		saved[JOURNAL_FLEET_SETTING] !== undefined
-			? {
-					members: parseEntries(saved[JOURNAL_FLEET_SETTING]),
-					witnesses: parseEntries(saved[JOURNAL_WITNESS_SETTING]),
-				}
-			: journalFleetLayout(input.provisioners);
+	const layout =
+		savedLayout(saved) ?? checkedLayout(journalFleetLayout(input.provisioners));
 	const all = [...layout.members, ...layout.witnesses];
-	for (const member of all)
-		if (CD_JOURNAL_MEMBER_PLANS[member.plan] === undefined)
-			throw new Error(
-				`fleet member ${member.id} names plan ${member.plan}, which no provisioner here serves`,
-			);
 	const missing: JournalFleetMember[] = [];
 	for (const member of all)
 		if (!(await holds(store, journalMemberUrlEntry(member.id))))
@@ -207,6 +233,7 @@ export async function journalFleetRuntime(store: OpenedSecretStore): Promise<{
 	readonly readSecret: (entry: string) => Promise<string | undefined>;
 }> {
 	const saved = await familySettings(store, "cd").read();
+	savedLayout(saved);
 	return {
 		env: Object.fromEntries(
 			[JOURNAL_FLEET_SETTING, JOURNAL_WITNESS_SETTING].flatMap((name) => {

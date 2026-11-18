@@ -187,6 +187,53 @@ describe("prepareJournalFleet", () => {
 		]);
 	});
 
+	it.each([
+		{ fleet: "", witnesses: "" },
+		{ fleet: "journal-1:neon-claimable", witnesses: undefined },
+		{ fleet: undefined, witnesses: "journal-witness:neon-claimable" },
+		{
+			fleet: "journal-1:neon-claimable:extra",
+			witnesses: "journal-witness:neon-claimable",
+		},
+		{
+			fleet: "Journal-1:neon-claimable",
+			witnesses: "journal-witness:neon-claimable",
+		},
+		{
+			fleet: "journal-1:constructor",
+			witnesses: "journal-witness:neon-claimable",
+		},
+		{
+			fleet: "journal-1:neon-claimable,journal-1:neon-claimable",
+			witnesses: "journal-witness:neon-claimable",
+		},
+		{
+			fleet: "journal-1:neon-claimable",
+			witnesses: "journal-1:neon-claimable",
+		},
+	])("refuses an incomplete or invalid saved fleet", async (fixture) => {
+		const store = memoryStore();
+		const settings: Record<string, string> = {};
+		if (fixture.fleet !== undefined)
+			settings.HOBO_CD_POSTGRES_FLEET = fixture.fleet;
+		if (fixture.witnesses !== undefined)
+			settings.HOBO_CD_POSTGRES_WITNESSES = fixture.witnesses;
+		await familySettings(store, "cd").write(settings);
+		const neon = fakeNeon();
+		for (const whatIf of [true, false])
+			await expect(
+				prepareJournalFleet({
+					store,
+					provisioners: [neon.provisioner],
+					whatIf,
+				}),
+			).rejects.toThrow(/invalid|incomplete/u);
+		await expect(journalFleetRuntime(store)).rejects.toThrow(
+			/invalid|incomplete/u,
+		);
+		expect(neon.created).toEqual([]);
+	});
+
 	it("creates nothing under --what-if", async () => {
 		const store = memoryStore();
 		const neon = fakeNeon();
