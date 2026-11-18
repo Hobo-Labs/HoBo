@@ -119,6 +119,25 @@ export function planYardGeneration(options: {
 		};
 	}
 
+	if (policy.requireAttestation !== false) {
+		return {
+			allowed: false,
+			reason:
+				"generation requires attestation, but attestation evidence is unavailable",
+			policyId: policy.id,
+		};
+	}
+	if (
+		!Array.isArray(policy.lockedProperties) ||
+		policy.lockedProperties.length > 0
+	) {
+		return {
+			allowed: false,
+			reason: "generation locked properties cannot yet be verified",
+			policyId: policy.id,
+		};
+	}
+
 	const providerId = options.requestedLayout.providerId;
 	if (!providerId) {
 		return {

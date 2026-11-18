@@ -36,6 +36,7 @@ function decide(
 		...DEFAULT_YARD_GENERATION_POLICY,
 		effect,
 		requireApproval,
+		requireAttestation: false,
 	};
 	return planYardGeneration({
 		ownerTenantId: "tenant",

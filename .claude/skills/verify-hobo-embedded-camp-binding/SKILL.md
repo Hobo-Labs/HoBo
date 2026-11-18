@@ -7,7 +7,7 @@ description: Verify that HoBo's embedded placement captures the caller's Camp an
 
 **Property:** The embedded placement adapter snapshots the requested Camp before asynchronous startup, sends it to the broker as an exact Camp request, and reports the selected Camp from the broker receipt. A foreign-Yard Camp is refused and its original ID is reported. Otherwise a caller can receive a Camp different from the one the broker approved, including an identity in another Yard.
 
-**Review baseline:** commit `903b90d359ec71d63b6ee0e909ea9b8fe22eb8d0`. PASS for the bounded model and executable checks below.
+**Review baseline:** commit `9d61f0f9f1ee151d25d9bc9c887fa61f4c67ea8c`. PASS for the bounded model and executable checks below.
 
 ## Covered code
 

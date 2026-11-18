@@ -557,6 +557,7 @@ describe("planYardGeneration", () => {
 			...DEFAULT_YARD_GENERATION_POLICY,
 			effect: "allow-if-no-match",
 			requireApproval: false,
+			requireAttestation: false,
 			...overrides,
 		};
 	}

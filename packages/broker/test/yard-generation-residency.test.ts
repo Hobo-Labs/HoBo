@@ -31,6 +31,7 @@ const policy = {
 	...DEFAULT_YARD_GENERATION_POLICY,
 	effect: "allow-if-no-match" as const,
 	requireApproval: false,
+	requireAttestation: false,
 };
 function plan(tag: string) {
 	return planYardGeneration({
