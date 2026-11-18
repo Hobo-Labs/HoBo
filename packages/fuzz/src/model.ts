@@ -284,6 +284,7 @@ export class ControlModel {
 		capabilityId: string,
 		verbs: readonly Verb[],
 	): void {
+		const captured = captureVerbs(verbs);
 		const existing = this.capabilities.get(capabilityId);
 		if (existing && existing.tenantId !== tenantId) {
 			this.tick();
@@ -291,10 +292,14 @@ export class ControlModel {
 			return;
 		}
 		this.tick();
-		this.capabilities.set(capabilityId, { id: capabilityId, tenantId, verbs });
+		this.capabilities.set(capabilityId, {
+			id: capabilityId,
+			tenantId,
+			verbs: captured,
+		});
 		this.append(tenantId, "capability.added", {
 			capabilityId,
-			verbs: verbs.join(","),
+			verbs: captured.join(","),
 		});
 	}
 
@@ -303,6 +308,7 @@ export class ControlModel {
 		capabilityId: string,
 		keep: readonly Verb[],
 	): void {
+		const captured = captureVerbs(keep);
 		const cap = this.capabilities.get(capabilityId);
 		if (!cap) return;
 		if (cap.tenantId !== tenantId) {
@@ -312,7 +318,7 @@ export class ControlModel {
 		}
 		this.tick();
 		const allowed = new Set(cap.verbs);
-		cap.verbs = keep.filter((verb) => allowed.has(verb));
+		cap.verbs = captured.filter((verb) => allowed.has(verb));
 		this.append(cap.tenantId, "capability.attenuated", {
 			capabilityId,
 			verbs: cap.verbs.join(","),
@@ -687,6 +693,13 @@ function isVerb(value: SnapshotJson | undefined): value is Verb {
 	return (
 		value?.constructor === String && ALL_VERBS.some((verb) => verb === value)
 	);
+}
+
+function captureVerbs(verbs: readonly Verb[]): Verb[] {
+	if (!Array.isArray(verbs)) throw new Error("fuzz.invalid_verbs");
+	const captured = [...verbs];
+	if (!captured.every(isVerb)) throw new Error("fuzz.invalid_verbs");
+	return captured;
 }
 
 function isResourceStatus(
