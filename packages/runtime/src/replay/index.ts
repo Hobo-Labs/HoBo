@@ -21,6 +21,12 @@ export {
 	parseReplayReport,
 	ReplayParseError,
 } from "./parse.js";
+export {
+	parseReplayDivergenceBinary,
+	parseReplayDivergenceProtoJson,
+	parseReplayReportBinary,
+	parseReplayReportProtoJson,
+} from "./proto.js";
 export { nextEnvelope, recordEffect } from "./recorder.js";
 export {
 	canonicalStateBytes,
