@@ -88,7 +88,13 @@ const envelope = signStatement(
 			id,
 			status: "passed" as const,
 			events: ["pull_request", "merge_group"],
-			commands: 1,
+			commands: id === "scripts-tests" ? 8 : 1,
+			...(id === "scripts-tests"
+				? {
+						eventChecks: { pull_request: 4, merge_group: 4 },
+						executionMode: "each-step-v1" as const,
+					}
+				: {}),
 			durationMs: 1,
 			logDigest: `sha256:${"f".repeat(64)}`,
 		})),
@@ -192,20 +198,24 @@ describe("the base commit of an event", () => {
 });
 
 describe("the head commit of an event", () => {
-	it("is the pull request's own tip, and nothing for a merge group", () => {
+	it("is the pull request's tip or the exact merge-group head", () => {
 		assert.equal(
 			headShaOf("pull_request", { pull_request: { head: { sha: HEAD_SHA } } }),
 			HEAD_SHA,
 		);
 		assert.equal(
 			headShaOf("merge_group", { merge_group: { head_sha: HEAD_SHA } }),
-			undefined,
+			HEAD_SHA,
 		);
 		assert.equal(
 			headShaOf("pull_request", { pull_request: { head: { sha: "x y" } } }),
 			undefined,
 		);
 		assert.equal(headShaOf("pull_request", {}), undefined);
+		assert.equal(
+			headShaOf("merge_group", { merge_group: { head_sha: "bad" } }),
+			undefined,
+		);
 	});
 });
 
@@ -226,11 +236,16 @@ describe("verifying through the API", () => {
 			jobs: [...COVERED_JOBS],
 			attestor: trusted[0]?.id,
 		});
-		// A merge group names no head commit, so the commit-bound scan is not
-		// reported there (it does not run on merge groups either).
 		assert.deepEqual(await check(api(published).read, "merge_group", "none"), {
 			attested: true,
-			jobs: COVERED_JOBS.filter((job) => job !== "secret-scan"),
+			jobs: COVERED_JOBS.filter(
+				(job) => job !== "secret-scan" && !GATE_JOBS.includes(job),
+			),
+			attestor: trusted[0]?.id,
+		});
+		assert.deepEqual(await check(api(published).read, "merge_group"), {
+			attested: true,
+			jobs: [...COVERED_JOBS],
 			attestor: trusted[0]?.id,
 		});
 	});
@@ -420,7 +435,9 @@ describe("verifying through the API", () => {
 		// The record is for tree T reached by commits HEAD_SHA..BASE_SHA. A
 		// history that adds a secret and then reverts it also ends in T, with a
 		// different head commit: every tree-bound job is covered, the scan is not.
-		const withoutScan = COVERED_JOBS.filter((job) => job !== "secret-scan");
+		const withoutScan = COVERED_JOBS.filter(
+			(job) => job !== "secret-scan" && !GATE_JOBS.includes(job),
+		);
 		const rewritten = await check(
 			api(published).read,
 			"pull_request",
