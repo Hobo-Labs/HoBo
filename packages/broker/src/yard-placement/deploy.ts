@@ -1425,6 +1425,20 @@ export function parseBindleDeploymentRequest(
 	if (!yardRaw || !isJsonObject(yardRaw)) {
 		throw new TypeError("yard placement request required");
 	}
+	if (
+		!isJsonNumber(raw.spendEstimateUsd) ||
+		!Number.isFinite(raw.spendEstimateUsd) ||
+		raw.spendEstimateUsd < 0
+	)
+		throw new TypeError(
+			"spendEstimateUsd must be present, finite, and nonnegative",
+		);
+	if (
+		yardRaw.requestedYardId !== undefined &&
+		(!isJsonString(yardRaw.requestedYardId) || !yardRaw.requestedYardId.trim())
+	)
+		throw new TypeError("requestedYardId must be a nonempty string");
+	validateRequestedYardLayout(yardRaw.requestedLayout);
 	const yard: YardPlacementRequest = Object.freeze({
 		requestId: isJsonString(yardRaw.requestId)
 			? yardRaw.requestId
@@ -1444,8 +1458,20 @@ export function parseBindleDeploymentRequest(
 		allowGenerationRequested: yardRaw.allowGenerationRequested === true,
 	});
 
-	// SAFETY: assertion required at this I/O or test boundary.
-	const reqs = (raw.bindleRequirements ?? {}) as JsonObject;
+	if (
+		raw.bindleRequirements !== undefined &&
+		!isJsonObject(raw.bindleRequirements)
+	)
+		throw new TypeError("bindleRequirements must be an object");
+	const reqs = isJsonObject(raw.bindleRequirements)
+		? raw.bindleRequirements
+		: {};
+	validateConstraintLists(
+		reqs,
+		["require", "prefer", "runtimes"],
+		"bindleRequirements",
+	);
+	validateConstraintLabels(reqs.labels, "bindleRequirements.labels");
 	if (raw.resources !== undefined && !Array.isArray(raw.resources))
 		throw new TypeError("resources must be an array");
 	const resourceIds = new Set<string>();
@@ -1490,16 +1516,7 @@ export function parseBindleDeploymentRequest(
 			(!isJsonString(raw.camp.campId) || !raw.camp.campId.trim())
 		)
 			throw new TypeError("campId must be a nonempty string");
-		if (raw.camp.layout !== undefined && !isJsonObject(raw.camp.layout))
-			throw new TypeError("camp layout must be an object");
-		if (isJsonObject(raw.camp.layout)) {
-			const envType = raw.camp.layout.envType;
-			if (
-				envType !== undefined &&
-				(!isJsonString(envType) || !envType.trim() || envType.includes("/"))
-			)
-				throw new TypeError("camp envType must be a nonempty path segment");
-		}
+		validateRequestedCampLayout(raw.camp.layout, "camp.layout");
 	}
 
 	return Object.freeze({
@@ -1517,9 +1534,7 @@ export function parseBindleDeploymentRequest(
 		...(isJsonObject(raw.camp)
 			? {
 					camp: Object.freeze({
-						selectionMode: parseSelectionMode(
-							raw.camp.selectionMode ?? "compatible",
-						),
+						selectionMode: parseSelectionMode(raw.camp.selectionMode),
 						...(isJsonString(raw.camp.campId)
 							? { campId: raw.camp.campId }
 							: undefined),
@@ -1528,9 +1543,7 @@ export function parseBindleDeploymentRequest(
 				}
 			: undefined),
 		objective: isJsonString(raw.objective) ? raw.objective : "min-cost",
-		spendEstimateUsd: isJsonNumber(raw.spendEstimateUsd)
-			? raw.spendEstimateUsd
-			: 0,
+		spendEstimateUsd: raw.spendEstimateUsd,
 		ownerTenantId: isJsonString(raw.ownerTenantId)
 			? raw.ownerTenantId
 			: "local",
@@ -1843,6 +1856,103 @@ function rejectResult(
 	};
 }
 
+function validateConstraintLists(
+	input: JsonObject,
+	fields: readonly string[],
+	path: string,
+): void {
+	for (const field of fields) {
+		const value = input[field];
+		if (value === undefined) continue;
+		if (
+			!Array.isArray(value) ||
+			value.some((item) => !isJsonString(item) || !item.trim())
+		)
+			throw new TypeError(
+				`${path}.${field} must be an array of nonempty strings`,
+			);
+	}
+}
+
+function validateConstraintLabels(
+	value: JsonValue | undefined,
+	path: string,
+): void {
+	if (value === undefined) return;
+	if (
+		!isJsonObject(value) ||
+		Object.values(value).some((item) => !isJsonString(item))
+	)
+		throw new TypeError(`${path} must be a string map`);
+}
+
+function validateRequestedCampLayout(
+	value: JsonValue | undefined,
+	path: string,
+): void {
+	if (value === undefined) return;
+	if (!isJsonObject(value)) throw new TypeError(`${path} must be an object`);
+	for (const key of ["id", "env"] as const) {
+		if (value[key] !== undefined && !isJsonString(value[key]))
+			throw new TypeError(`${path}.${key} must be a string`);
+	}
+	if (
+		value.envType !== undefined &&
+		(!isJsonString(value.envType) ||
+			!value.envType.trim() ||
+			value.envType.includes("/"))
+	)
+		throw new TypeError("camp envType must be a nonempty path segment");
+	validateConstraintLists(
+		value,
+		["require", "prefer", "runtimeRequirements"],
+		path,
+	);
+	validateConstraintLabels(value.labels, `${path}.labels`);
+}
+
+function validateRequestedYardLayout(value: JsonValue | undefined): void {
+	if (value === undefined) return;
+	if (!isJsonObject(value))
+		throw new TypeError("yard requestedLayout must be an object");
+	for (const key of ["providerId", "runtimeId"] as const) {
+		if (
+			value[key] !== undefined &&
+			(!isJsonString(value[key]) || !value[key].trim())
+		)
+			throw new TypeError(
+				`yard requestedLayout.${key} must be a nonempty string`,
+			);
+	}
+	validateConstraintLists(
+		value,
+		[
+			"regions",
+			"require",
+			"prefer",
+			"residency",
+			"isolation",
+			"network",
+			"componentHosts",
+		],
+		"yard requestedLayout",
+	);
+	validateConstraintLabels(value.labels, "yard requestedLayout.labels");
+	if (value.properties !== undefined && !isJsonObject(value.properties))
+		throw new TypeError("yard requestedLayout.properties must be an object");
+	if (value.camps !== undefined) {
+		if (!Array.isArray(value.camps))
+			throw new TypeError("yard requestedLayout.camps must be an array");
+		for (const camp of value.camps) {
+			if (camp === null || camp === undefined)
+				throw new TypeError(
+					"yard requestedLayout.camps entries must be objects",
+				);
+			validateRequestedCampLayout(camp, "yard requestedLayout.camps entry");
+		}
+	}
+}
+
 function parseSelectionMode(
 	value: JsonValue | undefined,
 ): YardPlacementRequest["selectionMode"] {
@@ -1853,7 +1963,10 @@ function parseSelectionMode(
 	) {
 		return value;
 	}
-	return "compatible";
+	if (value === undefined) return "compatible";
+	throw new TypeError(
+		"selectionMode must be exact, compatible, or compatible-or-generate",
+	);
 }
 
 function asHash(value: JsonValue | undefined): ContentHash {

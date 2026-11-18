@@ -4,7 +4,7 @@ EXTENDS Naturals
 \* Finite request classes supplied to decodeBindleDeploymentRequest.
 \* Rebound has a changed request and a recomputed matching digest: the codec
 \* accepts it because its embedded digest is not an authentication mechanism.
-CONSTANTS CheckUnknown, CheckVersion, CheckAmount, CheckIdentity,
+CONSTANTS CheckUnknown, CheckVersion, CheckAmount, CheckParsedAmount, CheckIdentity,
           CheckCanonical, CheckDigest
 Cases == {"valid", "rebound", "bad-binary", "unknown", "legacy", "incomplete",
           "negative", "bad-mode", "empty-identity", "bad-digest", "noncanonical", "mismatch"}
@@ -34,8 +34,11 @@ InspectIdentity == /\ phase = "identity"
                    /\ phase' = IF requestCase = "empty-identity" /\ CheckIdentity THEN "refused" ELSE "digest-format"
                    /\ UNCHANGED requestCase
 InspectDigestFormat == /\ phase = "digest-format"
-                       /\ phase' = IF requestCase = "bad-digest" THEN "refused" ELSE "compare"
+                       /\ phase' = IF requestCase = "bad-digest" THEN "refused" ELSE "parse-domain"
                        /\ UNCHANGED requestCase
+ParseDomain == /\ phase = "parse-domain"
+               /\ phase' = IF requestCase = "negative" /\ CheckParsedAmount THEN "refused" ELSE "compare"
+               /\ UNCHANGED requestCase
 Compare == /\ phase = "compare"
            /\ phase' = IF (requestCase = "noncanonical" /\ CheckCanonical) \/
                           (requestCase = "mismatch" /\ CheckDigest)
@@ -43,12 +46,12 @@ Compare == /\ phase = "compare"
            /\ UNCHANGED requestCase
 Done == /\ phase \in {"refused", "accepted"} /\ UNCHANGED vars
 Next == Decode \/ InspectUnknown \/ InspectVersion \/ InspectEnvelope \/ InspectAmount \/
-        InspectSelection \/ InspectIdentity \/ InspectDigestFormat \/ Compare \/ Done
+        InspectSelection \/ InspectIdentity \/ InspectDigestFormat \/ ParseDomain \/ Compare \/ Done
 Spec == Init /\ [][Next]_vars
 
 TypeOK == /\ requestCase \in Cases
           /\ phase \in {"binary", "unknown", "version", "envelope", "amount", "selection",
-                       "identity", "digest-format", "compare", "refused", "accepted"}
+                       "identity", "digest-format", "parse-domain", "compare", "refused", "accepted"}
 NoUnknown == phase = "accepted" => requestCase # "unknown"
 NoLegacy == phase = "accepted" => requestCase # "legacy"
 NoInvalidEnvelope == phase = "accepted" => requestCase \notin {"bad-binary", "incomplete", "bad-mode", "bad-digest"}

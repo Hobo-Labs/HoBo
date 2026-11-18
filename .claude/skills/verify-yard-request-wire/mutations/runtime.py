@@ -13,6 +13,8 @@ shutil.copytree(repo / 'packages/broker', scratch, ignore=shutil.ignore_patterns
 config = Path(__file__).resolve().parents[1] / 'models/vitest.config.mts'
 source = scratch / 'src/yard-placement/wire.ts'
 original = source.read_text()
+parser = scratch / 'src/yard-placement/deploy.ts'
+parser_original = parser.read_text()
 
 cases = [
     ('unknown', 'if (!Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'if (false && !Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'refuses unknown root'),
@@ -39,10 +41,19 @@ try:
             raise RuntimeError(f'{name} control failed: {control.stdout[-5000:]}')
         print(f'Control passed: {name}', flush=True)
         source.write_text(original.replace(before, after))
+        if name == 'amount':
+            redundant = run(pattern)
+            if redundant.returncode != 0 or 'Test Files  1 passed' not in redundant.stdout:
+                raise RuntimeError(f'parser amount guard failed: {redundant.stdout[-5000:]}')
+            print('Parser guard independently rejects negative amounts', flush=True)
+            if parser_original.count('raw.spendEstimateUsd < 0') != 1:
+                raise RuntimeError('expected exactly one parser amount guard')
+            parser.write_text(parser_original.replace('raw.spendEstimateUsd < 0', 'false'))
         result = run(pattern)
         if result.returncode == 0 or 'FAIL  test/yard-request-wire.test.ts >' not in result.stdout or 'Failed Suites' in result.stdout:
             raise RuntimeError(f'{name} expected assertion failure missing: {result.stdout[-5000:]}')
         print(f'Expected real-code failure: {name}', flush=True)
         source.write_text(original)
+        parser.write_text(parser_original)
 finally:
     shutil.rmtree(base)
