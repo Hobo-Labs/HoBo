@@ -709,6 +709,19 @@ export function selectRelevantChecks(
 			reason: "agent workflow/eval changed; live evals are manual only",
 		});
 
+	if (
+		files.some((file) =>
+			file.replaceAll("\\", "/").startsWith("examples/wasp-opensaas/app/"),
+		)
+	) {
+		checks.push({
+			command: "pnpm",
+			args: ["--dir", "examples/wasp-opensaas/app", "run", "test:unit"],
+			reason:
+				"Open SaaS example app changed; run nested vitest lane (not a pnpm workspace)",
+		});
+	}
+
 	if (touched(["scripts", "test", "tests"]) || rootConfigChanged) {
 		checks.push({
 			command: "pnpm",

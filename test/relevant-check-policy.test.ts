@@ -193,6 +193,22 @@ test("lockfile importer-only changes do not select all-package Turbo", () => {
 	);
 });
 
+test("Open SaaS example app changes select nested vitest lane", () => {
+	const { checks } = plan([
+		"examples/wasp-opensaas/app/src/analytics/stats.ts",
+	]);
+
+	assert.equal(
+		checks.some(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ") ===
+					"--dir examples/wasp-opensaas/app run test:unit",
+		),
+		true,
+	);
+});
+
 test("--build still selects all-package Turbo", () => {
 	const { checks } = plan(["docs/agent-tooling.md"], { includeBuild: true });
 

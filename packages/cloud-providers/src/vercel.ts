@@ -9,9 +9,10 @@
  * here is an accurate catalog, not a selection made early.
  *
  * SCOPE: part of this catalog is backed by Vercel REST API drivers
- * (`VERCEL_RESOLVED_PRODUCT_IDS`); `vercel.blob/v1` and
- * `vercel.edge-function/v1` have none, for the reasons named in
- * `VERCEL_UNRESOLVED_PRODUCT_IDS`. The opt-in `project()` row is resolved but
+ * (`VERCEL_RESOLVED_PRODUCT_IDS`); `vercel.edge-function/v1` has none,
+ * for the reasons named in `VERCEL_UNRESOLVED_PRODUCT_IDS`. Native Blob
+ * reconciliation requires an approved project, scoped credentials and a
+ * durable mutation journal. The opt-in `project()` row is resolved but
  * absent from the bare `Yard()`, so `providerParity()` measures Vercel against
  * the full five-offering catalog, not the four-offering default. Those
  * drivers are proven against an injected fake transport; a live deploy
