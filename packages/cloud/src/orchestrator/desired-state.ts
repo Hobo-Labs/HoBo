@@ -11,26 +11,6 @@ import { CLOUD_EVENTS } from "../events.js";
 import { isJsonArray, isJsonObject, isJsonString } from "../json.js";
 import type { DeploymentPlan, ResourcePlan } from "../plan-types.js";
 
-// Desired State Reconciliation (control-plane.md "reconcile loop"): `up`
-// declares what should exist, this module compares it with what the durable log
-// records, and the orchestrator applies only the difference. Three properties
-// follow, named the way Pulumi, Terraform and Bicep name them:
-//
-// - **Upsert.** A resource the log has never provisioned is created; one it
-//   provisioned from a different desired spec is updated in place; one it
-//   provisioned from the same spec is left alone.
-// - **Idempotent deployment.** Re-running `up` with an unchanged declaration
-//   appends no fact and calls no provider: the what-if diff is all `no-op`.
-// - **Incremental vs complete mode** (Bicep's terms). In `incremental` mode, the
-//   default, a resource the log provisioned but the declaration no longer names
-//   is kept and reported as `retain`. In `complete` mode it is destroyed, so the
-//   deployment converges to exactly what is declared.
-//
-// A desired spec is identified by `desiredSpecHash`. The hash is recorded on
-// `resource.Provisioning` and `resource.Provisioned`. A Provisioned fact written
-// before hashes existed carries none; its contemporaneous plan supplies the
-// baseline when available. With no recorded plan it is treated as converged.
-
 export type DeploymentMode = "incremental" | "complete";
 
 export const DEPLOYMENT_MODES: readonly DeploymentMode[] = Object.freeze([
@@ -51,12 +31,10 @@ export function parseDeploymentMode(
 
 export type DesiredSpecHash = `sha256:${string}`;
 
-/** The desired spec as hashed: plan JSON, keyed by field name. */
 interface DesiredSpecDocument {
 	[key: string]: PlanJsonValue;
 }
 
-/** Key-sorted JSON: the byte-stable form a desired spec is hashed in. */
 function sorted(value: PlanJsonValue): PlanJsonValue {
 	if (isJsonArray(value)) return value.map(sorted);
 	if (isJsonObject(value)) {
@@ -70,13 +48,6 @@ function sorted(value: PlanJsonValue): PlanJsonValue {
 	return value;
 }
 
-/**
- * The content address of what a resource is declared to be. Everything that
- * changes what the provider builds is in it: port, provider, product,
- * strategy, region, realization parameters and dependencies (sorted, since
- * order carries no meaning). `deploymentId` is not, so the same declaration
- * hashes the same in every Camp.
- */
 export function desiredSpecHash(resource: ResourcePlan): DesiredSpecHash {
 	const spec: DesiredSpecDocument = {
 		name: resource.name,
@@ -106,13 +77,6 @@ const TERMINAL_DEPLOYMENT_FACTS: ReadonlySet<string> = new Set([
 	CLOUD_EVENTS.DeploymentRolledBack,
 ]);
 
-/**
- * The sequence number after which a run's own facts begin: the last
- * `deployment.Deployed` or `deployment.RolledBack`. A no-go failure before it
- * belongs to an earlier `up` that has already been rolled back or superseded,
- * so it must not stop a new `up` from converging. A run that crashed before
- * its terminal fact resumes inside the same epoch and still sees its failure.
- */
 export function currentEpochStart(events: readonly EventEnvelope[]): number {
 	let start = 0;
 	for (const event of events)
@@ -120,7 +84,6 @@ export function currentEpochStart(events: readonly EventEnvelope[]): number {
 	return start;
 }
 
-/** True when the log changed after the last `deployment.Deployed`. */
 export function changedSinceLastDeployed(
 	events: readonly EventEnvelope[],
 ): boolean {
@@ -137,7 +100,6 @@ export function changedSinceLastDeployed(
 	);
 }
 
-/** The recorded state of one resource, folded from its own facts. */
 export interface RecordedResource {
 	readonly resourceId: string;
 	readonly state:
@@ -146,11 +108,8 @@ export interface RecordedResource {
 		| "Failed"
 		| "Destroying"
 		| "Destroyed";
-	/** Hash of the spec it was last provisioned from; absent on legacy facts. */
 	readonly specHash?: string;
-	/** The last plan that declared it, from `deployment.Planned`. */
 	readonly plan?: ResourcePlan;
-	/** Provider that may own it, when established by a provisioning fact or plan. */
 	readonly providerId?: string;
 }
 
@@ -160,7 +119,6 @@ export interface BlockedProviderMove {
 	readonly to: string;
 }
 
-/** Refuse a provider move unless no previous effects exist or ownership agrees. */
 export function blockedProviderMove(
 	previous: RecordedResource | undefined,
 	resource: ResourcePlan,
@@ -169,7 +127,6 @@ export function blockedProviderMove(
 		return undefined;
 	const provider = previous.providerId;
 	if (provider === resource.provider) return undefined;
-	// A legacy hash covers the provider as well as the rest of the declaration.
 	if (provider === undefined && previous.specHash === desiredSpecHash(resource))
 		return undefined;
 	return {
@@ -203,8 +160,6 @@ function plannedResources(event: EventEnvelope): readonly ResourcePlan[] {
 	if (!isJsonObject(event.data)) return [];
 	const plan = event.data.plan;
 	if (!isJsonObject(plan) || !Array.isArray(plan.resources)) return [];
-	// A node that does not parse is skipped: complete mode then reports that
-	// orphan unprunable instead of destroying from a guessed spec.
 	return plan.resources.flatMap((node, index) => {
 		try {
 			const parsed = parseResourcePlan(node, `plan.resources[${index}]`);
@@ -223,7 +178,6 @@ function plannedResources(event: EventEnvelope): readonly ResourcePlan[] {
 	});
 }
 
-/** Every resource the deployment log has ever recorded, by id. */
 export function recordedResources(
 	events: readonly EventEnvelope[],
 ): ReadonlyMap<string, RecordedResource> {
@@ -249,8 +203,6 @@ export function recordedResources(
 							? previous.providerId
 							: undefined
 						: targetProvider;
-				// A failed in-place update can leave either version at the provider.
-				// Do not guess which plan can safely destroy it.
 				const plan =
 					previous !== undefined &&
 					previous.state !== "Destroyed" &&
@@ -281,8 +233,6 @@ export function recordedResources(
 					(eventHash === undefined || desiredSpecHash(candidate) === eventHash)
 						? candidate
 						: undefined;
-				// A legacy fact can be compared with its contemporaneous recorded
-				// plan, without treating every future declaration as unchanged.
 				const specHash =
 					eventHash ?? (plan ? desiredSpecHash(plan) : undefined);
 				const providerId = previous ? previous.providerId : candidate?.provider;
@@ -317,10 +267,6 @@ export function recordedResources(
 	return out;
 }
 
-/**
- * What `up` would do to one resource. `create`, `update` and `delete` change
- * the provider; `no-op` and `retain` do not.
- */
 export type ResourceChangeAction =
 	| "create"
 	| "update"
@@ -331,7 +277,6 @@ export type ResourceChangeAction =
 export interface ResourceChange {
 	readonly resourceId: string;
 	readonly action: ResourceChangeAction;
-	/** Why, in one phrase a person can read in a what-if listing. */
 	readonly reason: string;
 	readonly desiredSpecHash?: DesiredSpecHash;
 	readonly recordedSpecHash?: string;
@@ -339,14 +284,11 @@ export interface ResourceChange {
 
 export interface DeploymentChangeSet {
 	readonly mode: DeploymentMode;
-	/** Declared resources first, in plan order, then undeclared ones by id. */
 	readonly changes: readonly ResourceChange[];
 	readonly summary: Readonly<Record<ResourceChangeAction, number>>;
-	/** True when applying this change set would call no provider. */
 	readonly converged: boolean;
 }
 
-/** Classify one declared resource against what the log recorded for it. */
 export function classifyResource(
 	resource: ResourcePlan,
 	recorded: RecordedResource | undefined,
@@ -401,10 +343,6 @@ export function classifyResource(
 	}
 }
 
-/**
- * The what-if: every change `up` would make, computed from the plan and the
- * log alone. Pure: reads nothing, writes nothing, calls no provider.
- */
 export function planDeploymentChanges(
 	plan: DeploymentPlan,
 	events: readonly EventEnvelope[],
@@ -417,7 +355,6 @@ export function planDeploymentChanges(
 	);
 }
 
-/** Plan against an already-observed resource set, such as a CD Camp. */
 export function planDeploymentChangesFromRecorded(
 	plan: DeploymentPlan,
 	recorded: ReadonlyMap<string, RecordedResource>,
@@ -469,20 +406,11 @@ export function planDeploymentChangesFromRecorded(
 	});
 }
 
-/** Orphans `complete` mode would destroy, and those it cannot. */
 export interface OrphanPrunePlan {
-	/** Dependents before their dependencies: the safe destroy order. */
 	readonly ordered: readonly ResourcePlan[];
-	/** Undeclared resources with no recorded plan (no provider to destroy with). */
 	readonly unknown: readonly string[];
 }
 
-/**
- * Undeclared resources `complete` mode removes, dependents first: a resource
- * is destroyed only after every orphan that depends on it. Orphans whose last
- * plan is unknown cannot be destroyed (the executor needs their provider) and
- * are returned separately so the caller can report them instead of guessing.
- */
 export function orphansToPrune(
 	plan: DeploymentPlan,
 	events: readonly EventEnvelope[],
@@ -500,7 +428,6 @@ export function orphansToPrune(
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const ordered: ResourcePlan[] = [];
 	const visited = new Set<string>();
-	// Reverse topological order over the orphan subgraph.
 	const visit = (resource: ResourcePlan) => {
 		if (visited.has(resource.name)) return;
 		visited.add(resource.name);

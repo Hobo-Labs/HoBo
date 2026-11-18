@@ -18,7 +18,6 @@ import type {
 	OfferingStability,
 } from "./offering-resolution.js";
 
-// public-contract: the realization vocabulary every catalog claim is written in.
 export const DATA_STORE_CLAIM_REALIZATIONS = Object.freeze([
 	"native",
 	"fallback",
@@ -30,7 +29,6 @@ export const DATA_STORE_CLAIM_REALIZATIONS = Object.freeze([
 export type DataStoreClaimRealization =
 	(typeof DATA_STORE_CLAIM_REALIZATIONS)[number];
 
-// public-contract: who operates a catalogued store.
 export const DATA_STORE_MANAGEMENT_MODES = Object.freeze([
 	"managed",
 	"self-hosted",
@@ -38,7 +36,6 @@ export const DATA_STORE_MANAGEMENT_MODES = Object.freeze([
 
 export type DataStoreManagement = (typeof DATA_STORE_MANAGEMENT_MODES)[number];
 
-// public-contract: the stability-basis vocabulary a catalog entry is written in.
 export const DATA_STORE_STABILITY_BASES = Object.freeze([
 	"vendor-stated",
 	"inferred",
@@ -47,14 +44,12 @@ export const DATA_STORE_STABILITY_BASES = Object.freeze([
 export type DataStoreStabilityBasis =
 	(typeof DATA_STORE_STABILITY_BASES)[number];
 
-// domain-view: parse-time evidence reference; wire form is DataStoreClaimSourceRecord in data-models/data_store_catalog.proto.
 export interface DataStoreClaimSource {
 	readonly url: string;
 	readonly checkedAt: string;
 	readonly note: string;
 }
 
-// domain-view: parsed claim with typed ids; wire form is DataStoreCatalogClaimRecord in data-models/data_store_catalog.proto.
 export interface DataStoreCatalogClaim {
 	readonly offering: DataStoreOfferingId;
 	readonly realization: DataStoreClaimRealization;
@@ -65,7 +60,6 @@ export interface DataStoreCatalogClaim {
 	readonly sources: readonly DataStoreClaimSource[];
 }
 
-// domain-view: parsed catalog entry with typed ids; wire form is DataStoreCatalogEntryRecord in data-models/data_store_catalog.proto.
 export interface DataStoreCatalogEntry {
 	readonly provider: DataStoreProvider;
 	readonly vendor: string;

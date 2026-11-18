@@ -1,9 +1,5 @@
 import { createHash } from "node:crypto";
 
-/**
- * Versioned digest of commercial product refs for pricing catalog pinning.
- * Does not alter resource-definition `catalogHashOf` in this module.
- */
 export function commercialProductRefsHash(
 	refs: readonly string[],
 ): `sha256:${string}` {
