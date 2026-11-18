@@ -89,8 +89,6 @@ for (const stream of [engine.stdout, engine.stderr]) {
 }
 const engineDone = once(engine, "exit");
 const callbacks = [];
-// Test-only signatures prove the fixture's exact request/key binding. The
-// fixture does not attest production ingress, crash placement or process fencing.
 const actorName = "hoboTopic";
 const actorKey = ["tenant-a", "orders-instance"];
 const semanticDigest = `sha256:${"a".repeat(64)}`;
@@ -130,7 +128,6 @@ const actorBinding = createRivetDurableTopicActor({
 			timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"))
 		);
 	},
-	// Test-only: this fixture does not prove the gateway's pre-allocation limits.
 	verifyIngress: ({
 		maxRequestBytes,
 		maxChunkBytes,
@@ -185,7 +182,6 @@ try {
 		createRivetDurableTopicClient({
 			binding: bound,
 			metadataGrant: createRivetDurableTopicMetadataGrant(),
-			// Test-only: real deployments need independent gateway and fencing evidence.
 			verifyTransport: (claim) =>
 				claim.fetch === fetch &&
 				claim.maxResponseBytes === 262_144 &&

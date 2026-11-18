@@ -226,7 +226,6 @@ try {
 			.getOrCreate(["hobo", "tenant", "camp", "orders"])
 			.sleepForTest();
 	} catch {
-		// Sleeping can close the request before its acknowledgement arrives.
 	}
 	const afterWake = await journal.read("orders");
 	if (
@@ -290,7 +289,6 @@ try {
 	try {
 		await sql.sleepForTest();
 	} catch {
-		/* sleep can lose its acknowledgement */
 	}
 	const sqlPage = await sql.read(
 		authorized(sqlKey, "read", { afterRevision: 1_024, limit: 1 }),

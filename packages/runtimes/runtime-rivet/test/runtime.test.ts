@@ -76,7 +76,6 @@ describe("@hobo/runtime-rivet", () => {
 			expect(() =>
 				createRivetActorHost({ journal, fidelity: "rivetkit" }),
 			).toThrow(/RivetKit fidelity.*not implemented/i);
-			// Runtime callers can bypass TypeScript, but cannot invent a fidelity.
 			// @ts-expect-error invalid fidelity is intentionally tested
 			expect(() =>
 				createRivetActorHost({ journal, fidelity: "remote" }),

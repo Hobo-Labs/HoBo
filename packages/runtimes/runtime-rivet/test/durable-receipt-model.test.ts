@@ -11,10 +11,6 @@ import {
 	runDurableReceiptJournal,
 } from "../src/durable-receipt-journal.js";
 
-// An independent finite model explores one tenant/instance, two operation IDs,
-// two request fingerprints, injected write/ack failures and a monotonic clock.
-// SQLite atomicity and serial transactions are assumptions of this fixture;
-// this does not prove Rivet ownership, failover or host fencing.
 it("matches bounded receipt, effect and expiry interleavings in SQLite", async () => {
 	const actions = ["a", "conflict", "b", "fail", "lost", "expire"] as const;
 	type Action = (typeof actions)[number];
@@ -52,7 +48,6 @@ it("matches bounded receipt, effect and expiry interleavings in SQLite", async (
 				try {
 					sql.exec("ROLLBACK");
 				} catch {
-					/* a commit may already have succeeded */
 				}
 				throw error;
 			}

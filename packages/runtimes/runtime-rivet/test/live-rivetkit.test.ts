@@ -93,7 +93,6 @@ describe("rivetkit live baremetal", () => {
 				let stdout = "";
 				let stderr = "";
 				let timedOut = false;
-				// The detached group belongs only to this test and its engine.
 				const stopOwnedGroup = () => {
 					try {
 						if (process.platform !== "win32" && child.pid !== undefined)

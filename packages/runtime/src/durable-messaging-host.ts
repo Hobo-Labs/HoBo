@@ -15,8 +15,6 @@ import {
 import type * as Wit from "@hobo/wit/durable-messaging";
 import { synchronousResult } from "./synchronous-result.js";
 
-// These references are captured before component code is invoked. The host
-// must isolate its globals before initialization and for the binding lifetime.
 const intrinsicApply = Reflect.apply;
 const intrinsicWeakGet = WeakMap.prototype.get;
 const intrinsicWeakSet = WeakMap.prototype.set;
@@ -25,7 +23,11 @@ function readPrivate<V>(table: WeakMap<object, V>, key: object): V | undefined {
 	// SAFETY: the private table determines the value type for this key.
 	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
 }
-function writePrivate<V>(table: WeakMap<object, V>, key: object, value: V): void {
+function writePrivate<V>(
+	table: WeakMap<object, V>,
+	key: object,
+	value: V,
+): void {
 	intrinsicApply(intrinsicWeakSet, table, [key, value]);
 }
 const intrinsicBind = Function.prototype.bind;
@@ -40,7 +42,6 @@ const intrinsicBuffer = Object.getOwnPropertyDescriptor(
 )?.get;
 const intrinsicUint8Set = Uint8Array.prototype.set;
 
-/** The JCO-generated host interface for hobo:durable-messaging/messaging. */
 export type DurableMessagingWitHost = Pick<
 	typeof Wit,
 	| "limits"
@@ -54,7 +55,6 @@ export type DurableMessagingWitHost = Pick<
 	| "events"
 >;
 
-// Both component inputs and provider results cross an untrusted data boundary.
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: this host boundary validates each untrusted value before it can enter a port or component. */
 const invalid = (): never => {
 	throw new TypeError("durable_messaging.invalid_boundary_value");
@@ -198,7 +198,6 @@ function operation(value: unknown): DurableMessagingOperation {
 	});
 }
 
-/** Extract a valid immutable operation before classifying any other request data. */
 function requestOperation(value: unknown): DurableMessagingOperation {
 	if (
 		typeof value !== "object" ||
@@ -208,7 +207,11 @@ function requestOperation(value: unknown): DurableMessagingOperation {
 	)
 		return invalid();
 	const field = Object.getOwnPropertyDescriptor(value, "operation");
-	if (field === undefined || !Object.hasOwn(field, "value") || !field.enumerable)
+	if (
+		field === undefined ||
+		!Object.hasOwn(field, "value") ||
+		!field.enumerable
+	)
 		return invalid();
 	return operation(field.value);
 }
@@ -651,7 +654,6 @@ function eventsResult(
 	};
 }
 
-/** Read host capability fields without executing proxy traps or accessors. */
 function portField(
 	port: DurableMessaging,
 	key: keyof DurableMessaging,
@@ -684,15 +686,9 @@ function portMethod<K extends PortMethod>(
 	return intrinsicApply(intrinsicBind, value, [port]) as DurableMessaging[K];
 }
 
-/**
- * Adapt one already-authenticated tenant/instance port to the generated JCO host
- * interface. The host must enforce authorization, a trusted clock and durable
- * provider semantics separately; shape validation cannot establish those facts.
- */
 export interface DurableMessagingAuthorization {
 	readonly phase: "dispatch" | "disclose";
 	readonly method: PortMethod;
-	/** `instance` is required for unfiltered audit pages. */
 	readonly scope:
 		| "instance"
 		| "topic"
@@ -713,7 +709,6 @@ export interface DurableMessagingAuthorization {
 	readonly reason?: string;
 }
 
-/** A local, irreversible metadata grant issued by the trusted host. */
 export interface DurableMessagingLimitsGrant {
 	readonly revoke: () => void;
 }
@@ -729,12 +724,10 @@ export function createDurableMessagingLimitsGrant(): DurableMessagingLimitsGrant
 	return grant;
 }
 
-/** Exact port and detached limits presented to the independently trusted verifier. */
 export interface DurableMessagingPortMetadataClaim {
 	readonly port: DurableMessaging;
 	readonly limits: DurableMessagingLimits;
 }
-/** A permanently revocable capability for an accessor-backed port's metadata. */
 export interface DurableMessagingPortMetadataGrant {
 	readonly revoke: () => void;
 }
@@ -744,11 +737,6 @@ interface PortMetadataState {
 	readonly verify: (claim: DurableMessagingPortMetadataClaim) => boolean;
 }
 const portMetadataGrants = new WeakMap<object, PortMetadataState>();
-/**
- * Bind a detached limits snapshot to one exact port. The trusted host must
- * independently verify the binding, metadata revocation and source/ownership
- * authority; this capability does not establish cross-process fencing.
- */
 export function createDurableMessagingPortMetadataGrant(input: {
 	readonly port: DurableMessaging;
 	readonly limits: DurableMessagingLimits;
@@ -790,7 +778,6 @@ function portMetadataVerified(state: PortMetadataState): boolean {
 	}
 }
 
-/** Per-instance coordination shared by every host binding in this JS process. */
 export interface DurableMessagingLifecycle {
 	readonly kind: "durable-messaging-lifecycle";
 }
@@ -826,17 +813,12 @@ export function createDurableMessagingLifecycle(
 }
 
 export interface DurableMessagingWitHostOptions {
-	/** A host-owned grant for the instance's actual limits; revocation is permanent. */
 	readonly limitsGrant: DurableMessagingLimitsGrant;
-	/** Share one lifecycle across every binding to the authenticated instance. */
 	readonly lifecycle: DurableMessagingLifecycle;
-	/** Required only when the port's limits are accessor-backed. */
 	readonly portMetadataGrant?: DurableMessagingPortMetadataGrant;
-	/** Independently authenticate the bound principal, tenant, instance and scope. */
 	readonly authorize: (
 		request: DurableMessagingAuthorization,
 	) => boolean | Promise<boolean>;
-	/** Maximum time to wait for authorization and provider work (1–300,000 ms). */
 	readonly timeoutMs?: number;
 }
 
@@ -1364,7 +1346,6 @@ export function createDurableMessagingWitHost(
 	return host;
 }
 
-/** Create the named JCO import table for an already authorized host binding. */
 export function createDurableMessagingWitImports(
 	port: DurableMessaging,
 	options: DurableMessagingWitHostOptions,
@@ -1380,7 +1361,6 @@ export function createDurableMessagingWitImports(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
-/** The separate, synchronous component ABI used only with JSPI suspension. */
 // public-contract: the exact opt-in component interface identity authorized by the JSPI host.
 export const DURABLE_MESSAGING_JSPI_INTERFACE =
 	"hobo:durable-messaging-jspi/messaging@0.1.0";
@@ -1391,10 +1371,6 @@ export type DurableMessagingJspiImports = Readonly<{
 	readonly [JSPI_IMPORT_ALIAS]: DurableMessagingWitHost;
 }>;
 
-/**
- * A host-owned JCO artifact. The verifier must bind the factory, its core Wasm
- * modules and complete import list to the independently verified digest.
- */
 export interface DurableMessagingJspiComponent<T> {
 	readonly digest: string;
 	readonly imports: readonly string[];
@@ -1405,12 +1381,10 @@ export interface DurableMessagingJspiComponent<T> {
 
 export interface DurableMessagingJspiOptions<T> {
 	readonly component: DurableMessagingJspiComponent<T>;
-	/** Trusted host verifier; a caller-supplied claim alone is not evidence. */
 	readonly verify: (
 		component: DurableMessagingJspiComponent<T>,
 		host: DurableMessagingWitHost,
 	) => boolean;
-	/** Maximum start duration (1–300,000 ms). */
 	readonly timeoutMs?: number;
 }
 
@@ -1419,7 +1393,6 @@ export type DurableMessagingJspiStart<T> =
 	| { readonly status: "busy" }
 	| { readonly status: "unknown" };
 
-/** True only when this JS realm exposes the two JSPI entry points. */
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this gate inspects optional runtime capabilities and untrusted component metadata before invoking either. */
 export function supportsDurableMessagingJspi(): boolean {
 	if (typeof WebAssembly === "undefined" || types.isProxy(WebAssembly))
@@ -1438,12 +1411,6 @@ export function supportsDurableMessagingJspi(): boolean {
 	);
 }
 
-/**
- * Instantiate a host-verified JCO component through the JSPI ABI. The short
- * alias is given only to that verified factory; it never selects a version by
- * itself. The verifier is responsible for authenticating the complete binary,
- * transpiled factory, imported modules and scope, and keeping them immutable.
- */
 export async function instantiateDurableMessagingJspi<T>(
 	host: DurableMessagingWitHost,
 	options: DurableMessagingJspiOptions<T>,
@@ -1492,7 +1459,6 @@ export async function instantiateDurableMessagingJspi<T>(
 	try {
 		verified = settings.verify(captured, host) === true;
 	} catch {
-		/* refusal */
 	}
 	if (!verified) throw new Error("durable_messaging.jspi_component_unverified");
 	const table = Object.freeze({

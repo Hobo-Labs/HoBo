@@ -114,7 +114,6 @@ async function startWorker(
 			});
 		else item.reject(new Error("invalid worker response"));
 	});
-	// Drain the worker's pipes without retaining unbounded logs.
 	child.stdout?.resume();
 	child.stderr?.resume();
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -200,7 +199,6 @@ async function stopWorker(worker: Worker, allowExited = false): Promise<void> {
 	}
 }
 
-/** Real child process + actor HTTP/SQLite, not a Rivet engine or independent fence. */
 export async function createProcessBusConformanceHost(
 	options: { readonly afterRestartReady?: (pid: number) => Promise<void> } = {},
 ): Promise<RivetMessagingConformanceHost> {

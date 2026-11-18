@@ -13,12 +13,9 @@ import {
 	parseDurableMessagingOperation,
 } from "@hobo/core";
 
-// Snapshot only contract fields. Provider data can be malformed, accessor-backed,
-// cyclic, or mutable. Bounds are checked before traversing or copying collections.
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: provider fields remain unknown until each boundary parser validates them. */
 class ProxyProviderValue extends TypeError {}
 
-/** A primitive numeric limit was safely read and violates its public bound. */
 export class InvalidProviderLimit extends TypeError {
 	constructor(readonly key: keyof DurableMessagingLimits) {
 		super("invalid provider limit");
@@ -136,7 +133,6 @@ function message(
 		typedArrayKind?.call(payload) !== "Uint8Array"
 	)
 		throw new TypeError("invalid provider payload");
-	// Use the intrinsic length and copy; own accessors cannot replace either.
 	const length = typedArrayLength?.call(payload);
 	const buffer = typedArrayBuffer?.call(payload);
 	if (
@@ -281,12 +277,9 @@ type Mutation =
 	| "nack"
 	| "compact";
 
-/** Treat unexpected own data as possible disclosure without retaining it. */
 function extraData(value: unknown, allowed: readonly string[]): boolean {
 	const record = object(value);
 	const keys = Reflect.ownKeys(record);
-	// Reflection itself can allocate before this check; the host memory limit
-	// remains necessary. Never traverse more than this many provider keys.
 	if (keys.length > 32) throw new TypeError("too many provider fields");
 	let extra = false;
 	let disclosed = false;
@@ -328,8 +321,6 @@ function observedData(value: unknown): boolean {
 }
 
 function disclosure<T>(): DurableMessagingOutcome<T> {
-	// This deliberately nonconforming sentinel carries no provider-owned data
-	// and can only trigger the existing disclosure/unknown checks.
 	// oxlint-disable-next-line anti-slop/no-known-value-widening -- SAFETY: the sentinel deliberately represents malformed boundary data.
 	const evidence: unknown = { status: "unknown", value: true };
 	// SAFETY: the caller only uses this malformed sentinel to report disclosure or uncertainty.
@@ -360,7 +351,6 @@ function exactRecord(value: unknown, keys: readonly string[]): object {
 	return record;
 }
 
-/** Preserve disclosure evidence without retaining an attacker-owned value. */
 function uncertain<T>(
 	value: DurableMessagingOutcome<T>,
 	status: "unknown" | "expired",
@@ -431,7 +421,6 @@ function rejection(value: unknown) {
 	return code;
 }
 
-/** Detach provider outcomes while preserving observed disclosure evidence. */
 export function snapshotMutation<T>(
 	kind: Mutation,
 	value: DurableMessagingOutcome<T>,
@@ -449,7 +438,6 @@ export function snapshotMutation<T>(
 		return uncertain(value, status);
 	if (status === "rejected") {
 		if (extraData(record, ["status", "code"])) return disclosure();
-		// Existing outcome checks validate the closed rejection-code set.
 		return { status, code: rejection(field(value, "code")) };
 	}
 	if (status !== "committed") {
@@ -473,7 +461,6 @@ export function snapshotMutation<T>(
 	} as DurableMessagingOutcome<T>;
 }
 
-/** Bound and detach audit pages before interpreting their semantic contents. */
 export function snapshotAudit(
 	value: Awaited<ReturnType<DurableMessaging["events"]>>,
 	limits: DurableMessagingLimits,
@@ -501,7 +488,6 @@ export function snapshotAudit(
 	throw new TypeError("invalid audit outcome");
 }
 
-/** Snapshot and bound all advertised limits before using them to read data. */
 export function snapshotLimits(
 	value: DurableMessagingLimits,
 ): DurableMessagingLimits {

@@ -89,8 +89,6 @@ for (const stream of [engine.stdout, engine.stderr]) {
 }
 const engineDone = once(engine, "exit");
 const callbacks = [];
-// Test-only signatures prove the fixture's exact request/key binding. The
-// fixture does not attest production ingress, crash placement or process fencing.
 const actorName = "hoboTopic";
 const actorKey = ["tenant-a", "orders-instance"];
 const semanticDigest = `sha256:${"a".repeat(64)}`;
@@ -144,7 +142,6 @@ const actorBinding = createRivetDurableTopicBusActor({
 			timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"))
 		);
 	},
-	// Test-only: this fixture does not prove the gateway's pre-allocation limits.
 	verifyIngress: ({
 		maxRequestBytes,
 		maxChunkBytes,
@@ -211,7 +208,6 @@ try {
 		createRivetDurableTopicClient({
 			binding: base,
 			metadataGrant: createRivetDurableTopicMetadataGrant(),
-			// Test-only; deployment ingress, credentials and fencing need host evidence.
 			verifyTransport: (claim) =>
 				claim.fetch === fetch &&
 				claim.maxResponseBytes === 262_144 &&
@@ -433,8 +429,6 @@ try {
 	)
 		throw new Error("expiry DLQ provenance mismatch");
 
-	// Ask the registry to shut down and reopen against the same engine/storage.
-	// Runner exit, actor restart, crash placement, and fencing remain unverified.
 	await stopRegistry();
 	await openRegistry();
 	same(

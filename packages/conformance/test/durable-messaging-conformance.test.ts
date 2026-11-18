@@ -574,7 +574,6 @@ describe("durable messaging conformance runner", () => {
 			close: async () => {
 				const start = Date.now();
 				while (Date.now() - start < 20) {
-					/* intentional event-loop starvation */
 				}
 			},
 		};
@@ -592,7 +591,6 @@ describe("durable messaging conformance runner", () => {
 			async () => {
 				const start = Date.now();
 				while (Date.now() - start < 20) {
-					/* intentional event-loop starvation */
 				}
 				return inertHarness(async () => {
 					connects++;
@@ -616,7 +614,6 @@ describe("durable messaging conformance runner", () => {
 				calls++;
 				const start = Date.now();
 				while (Date.now() - start < 200) {
-					/* intentional event-loop starvation */
 				}
 				return { status: "committed", value: { topic } };
 			},

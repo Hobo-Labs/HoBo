@@ -163,7 +163,6 @@ function plainJson(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
-/** Snapshot bounded plain action data before awaiting an external verifier. */
 export function snapshotDistributedData<T>(value: T): T | undefined {
 	try {
 		const encoded = JSON.stringify(
@@ -258,7 +257,6 @@ function validState(state: DistributedJournalState): boolean {
 	}
 }
 
-/** Return only committed facts, never the lease capability. */
 export function readDistributedJournal(state: DistributedJournalState):
 	| { readonly status: "denied"; readonly code: string }
 	| {
@@ -281,7 +279,6 @@ export function readDistributedJournal(state: DistributedJournalState):
 	};
 }
 
-/** Pure, bounded transition used by the Rivet actor before persisting a result. */
 export function transitionDistributedJournal(
 	state: DistributedJournalState,
 	command: DistributedJournalCommand,

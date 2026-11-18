@@ -25,15 +25,6 @@ const monotonicNow = performance.now.bind(performance);
 
 export type DurableMessagingConformanceCase = (typeof DURABLE_CASES)[number][0];
 
-/**
- * A harness must exercise the actual provider. `restart` must destroy its live
- * process/client and reopen the same durable state; it cannot just return.
- * Faults lose the response before or after the next provider commit while the
- * client cannot determine which occurred. The test clock is independently
- * controlled and nondecreasing, and remains frozen until `advanceMs` is called.
- * Connect returns separately authenticated
- * clients; the two tenant labels must have independent scopes.
- */
 export interface DurableMessagingConformanceHarness {
 	connect(tenant: "tenant-a" | "tenant-b"): Promise<DurableMessaging>;
 	restart(): Promise<void>;
@@ -43,27 +34,16 @@ export interface DurableMessagingConformanceHarness {
 	loseNextMutationResponse(
 		point: "before-commit" | "after-commit",
 	): Promise<void>;
-	/** Inject a raw transport failure after durable commit, before the reply. */
 	loseNextMutationTransport(mode: "throw" | "disconnect"): Promise<void>;
-	/** Force a provably rolled-back DLQ write with a capacity refusal. */
 	rejectNextDeadLetterWrite(): Promise<void>;
-	/** Temporarily prevent resolving a prior receipt for the specified reason. */
 	blockNextReceiptLookup(
 		reason: "revocation" | "capacity" | "unavailable",
 	): Promise<void>;
-	/** Switch ownership; existing clients remain pinned to their old owner. */
 	switchAuthority(mode: "unverified" | "verified-shared"): Promise<void>;
-	/** Hold the next mutation at the indicated point until the test releases it. */
 	holdNextMutation(point: "before-dispatch" | "before-commit"): Promise<{
 		readonly reached: Promise<void>;
 		release(): Promise<void>;
 	}>;
-	/**
-	 * Interpose concurrent requests at the critical read/CAS or commit boundary,
-	 * or observe one request blocked at the provider's serializing lock while
-	 * the other is held. `reached` means that contention was observed, not just
-	 * that both calls were made. This callback alone does not prove provenance.
-	 */
 	holdConcurrentMutations(): Promise<{
 		readonly reached: Promise<void>;
 		release(): Promise<void>;
@@ -72,9 +52,7 @@ export interface DurableMessagingConformanceHarness {
 
 export interface DurableMessagingConformanceReport {
 	readonly contract: typeof DURABLE_MESSAGING_CONFORMANCE;
-	/** A single-case diagnostic is never a full conformance run. */
 	readonly selection: "all" | DurableMessagingConformanceCase;
-	/** These claims require separate evidence from an independent runner. */
 	readonly executionEvidence: {
 		readonly processRestart: "unverified";
 		readonly persistedStoreIdentity: "unverified";
@@ -110,7 +88,6 @@ function sameOperation(
 	}
 }
 
-/** Reject hidden, accessor-backed or inherited data in a privacy-sensitive outcome. */
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof -- SAFETY: this validator checks untrusted provider outcomes without invoking accessors. */
 export function validUnknownEnvelope(
 	value: unknown,
@@ -223,7 +200,6 @@ const rejectionCodes = [
 	"unavailable",
 ] as const;
 
-/** Require a well-formed definite result before asserting a mutation outcome. */
 function ensureDefiniteOutcome(
 	outcome: DurableMessagingOutcome<unknown>,
 ): void {
@@ -259,7 +235,6 @@ function ensureDefiniteOutcome(
 			return;
 		}
 	} catch {
-		/* malformed provider data is uncertain */
 	}
 	throw new DurableMessagingConformanceUnknown(
 		"provider outcome is uncertain or malformed",
@@ -301,7 +276,6 @@ function requireCondition(value: boolean, message: string): void {
 	if (!value) throw new DurableMessagingConformanceFailure(message);
 }
 
-/** Distinguish an invalid provider limit from a valid, smaller test profile. */
 function validateLimits(limits: DurableMessagingLimits): void {
 	// SAFETY: these keys come from the exact frozen limits record.
 	const keys = Object.keys(
@@ -410,7 +384,6 @@ function sameExpectedAttributes(
 	);
 }
 
-/** Compare every field of a delivery receipt, including DLQ provenance. */
 export function sameDurableDelivery(
 	left: DurableMessagingDelivery,
 	right: DurableMessagingDelivery,
@@ -449,7 +422,6 @@ export function sameDurableDelivery(
 	);
 }
 
-/** Settlement receipts identify the exact message incarnation. */
 export function matchesDurableSettlement(
 	receipt: { readonly messageId: string; readonly sequence: number },
 	delivery: DurableMessagingDelivery,
@@ -460,7 +432,6 @@ export function matchesDurableSettlement(
 	);
 }
 
-/** Bind a publish receipt and delivery to the submitted message identity. */
 export function matchesDurablePublication(
 	message: DurableMessagingMessage,
 	receipt: { readonly messageId: string; readonly sequence: number },
@@ -484,7 +455,6 @@ type AuditPage = Extract<
 	Awaited<ReturnType<DurableMessaging["events"]>>,
 	{ status: "ok" }
 >;
-/** Internal consistency check for a page against an independently observed tail. */
 export function validDurableAuditPage(
 	page: AuditPage,
 	after: number,
@@ -533,7 +503,6 @@ function sameAuditPage(left: AuditPage, right: AuditPage): boolean {
 	);
 }
 
-/** Match retained topic-creation events against independently submitted topics. */
 export function matchesTopicAuditEvents(
 	events: readonly AuditPage["events"][number][],
 	topics: readonly string[],
@@ -616,7 +585,6 @@ function ensureAuditOutcome(
 		)
 			return;
 	} catch {
-		/* malformed or unavailable audit data is uncertain */
 	}
 	throw new DurableMessagingConformanceUnknown(
 		"audit response is unavailable or malformed",
@@ -2550,8 +2518,6 @@ async function bounds(harness: DurableMessagingConformanceHarness) {
 	await committed(f.client.ack(acknowledgement(f.next(), retried)));
 }
 
-// The union, execution order and published case names all derive from this
-// single registry. Reject accidental duplicates before executing any case.
 const DURABLE_CASES = [
 	["group-isolation", groupIsolation],
 	["restart", restart],
@@ -2636,9 +2602,6 @@ export const DURABLE_MESSAGING_CONFORMANCE_CASES = Object.freeze(
 if (new Set(DURABLE_MESSAGING_CONFORMANCE_CASES).size !== DURABLE_CASES.length)
 	throw new Error("duplicate durable messaging conformance case");
 
-// A timeout cannot undo an already dispatched operation. These checks prevent
-// late factory/provider completions from dispatching further work; an external
-// host still has to terminate and fence the timed-out execution.
 function guardConformanceHarness(
 	source: DurableMessagingConformanceHarness,
 	cancelled: () => boolean,
@@ -2737,7 +2700,6 @@ function guardConformanceHarness(
 	};
 }
 
-/** Bounded executable cases; a pass is not proof that the harness uses a live provider. */
 export async function runDurableMessagingConformance(
 	create: (
 		name: DurableMessagingConformanceCase,

@@ -11,7 +11,6 @@ import {
 	isStaticActorDefinition,
 } from "rivetkit";
 import { db, type RawAccess } from "rivetkit/db";
-import { synchronousResult } from "./synchronous-result.js";
 import {
 	migrateDurableReceiptJournal,
 	RIVET_DURABLE_JOURNAL_BOUNDS,
@@ -30,6 +29,7 @@ import {
 	readRivetTopicLog,
 	reduceRivetTopicLog,
 } from "./durable-topic-log.js";
+import { synchronousResult } from "./synchronous-result.js";
 
 export interface RivetDurableTopicContext {
 	readonly name: string;
@@ -50,7 +50,6 @@ type TopicClaim = Readonly<
 >;
 export interface RivetDurableTopicBinding {
 	readonly actorName: string;
-	/** Source and configuration digest captured when this actor was constructed. */
 	readonly semanticDigest: string;
 	readonly actor: AnyActorDefinition;
 	readonly handle: (
@@ -73,21 +72,13 @@ export interface RivetDurableTopicBusBinding {
 }
 export interface RivetDurableTopicOptions {
 	readonly actorName: string;
-	/** Host-attested immutable source/dependency/configuration digest. */
 	readonly semanticDigest: string;
-	/** Trusted nondecreasing actor clock shared across owner generations. */
 	readonly now: () => number;
-	/** Host-owned actor-key mapping; caller input never selects tenant or instance. */
 	readonly resolveScope: (input: {
 		readonly actorName: string;
 		readonly actorKey: readonly string[];
 	}) => TopicScope;
-	/** Locally verify a held, current grant for the exact scope, method and bytes. */
 	readonly authorize: (claim: TopicClaim) => boolean;
-	/**
-	 * Independently attest actor-key routing and ingress limits before buffering,
-	 * including process-wide admission/concurrency quotas and preallocation limits.
-	 */
 	readonly verifyIngress: (input: {
 		readonly actorName: string;
 		readonly actorKey: readonly string[];
@@ -98,11 +89,6 @@ export interface RivetDurableTopicOptions {
 	}) => boolean;
 }
 export interface RivetDurableTopicBusOptions extends RivetDurableTopicOptions {
-	/**
-	 * Verify a held grant for the entire authenticated instance, including all
-	 * its topics and DLQ transfers, through transaction and disclosure. This
-	 * profile does not implement per-topic capability isolation.
-	 */
 	readonly authorizeInstanceScope: (claim: TopicClaim) => boolean;
 }
 const intrinsicApply = Reflect.apply;
@@ -113,7 +99,11 @@ function readPrivate<V>(table: WeakMap<object, V>, key: object): V | undefined {
 	// SAFETY: the private table determines the value type for this key.
 	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
 }
-function writePrivate<V>(table: WeakMap<object, V>, key: object, value: V): void {
+function writePrivate<V>(
+	table: WeakMap<object, V>,
+	key: object,
+	value: V,
+): void {
 	intrinsicApply(intrinsicWeakSet, table, [key, value]);
 }
 
@@ -331,13 +321,6 @@ async function readBody(
 	}
 }
 
-/**
- * Create a real RivetKit actor for the explicitly partial retained topic log.
- * A separately controlled host must authenticate/fence source, actor ownership,
- * process watchdog, actor-wide admission/concurrency quotas and the complete
- * ingress/response path, including limits before chunk allocation. The fixed reducer
- * is trusted code isolated from ambient effects; this factory does not attest it.
- */
 function buildTopicActor(
 	options: RivetDurableTopicOptions,
 	mode: "log",
@@ -451,7 +434,9 @@ function buildTopicActor(
 		const check = () => {
 			try {
 				const currentScope = snapshotScope(
-					synchronousResult(resolveScope(Object.freeze({ actorName, actorKey }))),
+					synchronousResult(
+						resolveScope(Object.freeze({ actorName, actorKey })),
+					),
 				);
 				if (
 					!ingressVerified() ||
@@ -480,7 +465,8 @@ function buildTopicActor(
 				};
 				return (
 					synchronousResult(authorize(claim())) === true &&
-					(mode === "log" || synchronousResult(authorizeInstanceScope?.(claim())) === true)
+					(mode === "log" ||
+						synchronousResult(authorizeInstanceScope?.(claim())) === true)
 				);
 			} catch {
 				return false;
@@ -593,22 +579,23 @@ function buildTopicActor(
 					limits: RIVET_DURABLE_TOPIC_BUS_LIMITS,
 					capabilities: RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
 				});
-	writePrivate(registered, binding, Object.freeze({ database, semanticDigest, mode }));
+	writePrivate(
+		registered,
+		binding,
+		Object.freeze({ database, semanticDigest, mode }),
+	);
 	return binding;
 }
-/** Construct the separately pinned partial retained-log profile. */
 export function createRivetDurableTopicActor(
 	options: RivetDurableTopicOptions,
 ): RivetDurableTopicBinding {
 	return buildTopicActor(options, "log");
 }
-/** Construct the separately pinned bus profile with full-instance authority. */
 export function createRivetDurableTopicBusActor(
 	options: RivetDurableTopicBusOptions,
 ): RivetDurableTopicBusBinding {
 	return buildTopicActor(options, "bus");
 }
-/** Check the exact actor, database and handler retained at construction. */
 export function isRivetDurableTopicBinding(
 	binding: RivetDurableTopicBinding,
 ): boolean {
@@ -623,7 +610,6 @@ export function isRivetDurableTopicBinding(
 		binding.actor.config.onRequest === binding.handle
 	);
 }
-/** Check that the exact branded bus actor and reducer remain bound. */
 export function isRivetDurableTopicBusBinding(
 	binding: RivetDurableTopicBusBinding,
 ): boolean {

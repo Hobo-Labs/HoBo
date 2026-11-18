@@ -1,8 +1,6 @@
 import { createRivetDurableTopicActor } from "@hobo/runtime-rivet";
 import { setup } from "rivetkit";
 
-// Test-only callbacks. Production hosts must independently authenticate the
-// actor scope, bounded ingress, source closure and fenced ownership.
 export const events = createRivetDurableTopicActor({
 	actorName: "events",
 	semanticDigest: `sha256:${"d".repeat(64)}`,
