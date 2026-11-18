@@ -37,6 +37,9 @@ export function createRuntimeLocalComponentHost(
 class RuntimeLocalComponentHost implements ComponentHostPort {
 	#components = new Map<string, ComponentInstance>();
 	#loading = new Set<string>();
+	#inFlight = new Map<string, number>();
+	#sinkFailed = false;
+	#emitting = false;
 	#providers = new Map<string, ParsedProviderDescriptor>();
 	#links = new Map<string, LinkRecord>();
 	#leases = new Map<string, string[]>();
@@ -56,11 +59,13 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 	}
 
 	registerProvider(provider: ProviderDescriptor): void {
+		this.#requireAvailable();
 		const parsed = parseProviderDescriptor(provider);
 		this.#providers.set(parsed.id, parsed);
 	}
 
 	loadComponent(component: ParsedComponentDescriptor): ComponentInstance {
+		this.#requireAvailable();
 		const id = component.id;
 		if (this.#components.has(id) || this.#loading.has(id))
 			throw new ComponentHostError("component_already_loaded", id);
@@ -87,6 +92,7 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 	link(
 		request: ParsedLinkRequest | Parameters<typeof parseLinkRequest>[0],
 	): LinkRecord {
+		this.#requireAvailable();
 		const parsed = "parsed" in request ? request : parseLinkRequest(request);
 		const component = this.#requireLoaded(parsed.componentId);
 		const provider = this.#providers.get(parsed.providerId);
@@ -136,6 +142,7 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 		operation: string,
 		payload?: JsonValue,
 	) {
+		this.#requireAvailable();
 		this.#requireLoaded(componentId);
 		const link = this.#links.get(linkKey(componentId, importInterface));
 		if (!link) {
@@ -153,29 +160,36 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 			);
 		}
 
-		this.#append({
-			type: "link.Called",
-			componentId,
-			importInterface,
-			providerId: link.providerId,
-			exportInterface: link.exportInterface,
-			operation,
-			boundaryMode: link.boundaryMode,
-			transport: link.transport,
-		});
-		return implementation(payload ?? null);
+		const release = this.#beginInvocation(componentId);
+		try {
+			this.#append({
+				type: "link.Called",
+				componentId,
+				importInterface,
+				providerId: link.providerId,
+				exportInterface: link.exportInterface,
+				operation,
+				boundaryMode: link.boundaryMode,
+				transport: link.transport,
+			});
+			return await implementation(payload ?? null);
+		} finally {
+			release();
+		}
 	}
 
 	async handleHttp(
 		componentId: string,
 		request: HttpRequest,
 	): Promise<HttpResponse> {
+		this.#requireAvailable();
 		const component = this.#requireLoaded(componentId);
 		const handler = component.exports[HTTP_INCOMING_HANDLER]?.handle;
 		if (!(handler instanceof Function)) {
 			throw new ComponentHostError("http_handler_missing", componentId);
 		}
 
+		const release = this.#beginInvocation(componentId);
 		try {
 			type HttpIncomingHandler = (
 				request: HttpRequest,
@@ -210,6 +224,11 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 			});
 			return response;
 		} catch (error) {
+			if (this.#sinkFailed)
+				throw new ComponentHostError(
+					"event_sink_uncertain",
+					"host requires reconciliation",
+				);
 			const trapped = error instanceof Error ? error : new Error(String(error));
 			this.#append({
 				type: "component.Trapped",
@@ -218,11 +237,16 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 				message: trapped.message,
 			});
 			throw new ComponentTrapError(componentId, trapped);
+		} finally {
+			release();
 		}
 	}
 
 	async teardownComponent(componentId: string): Promise<void> {
+		this.#requireAvailable();
 		this.#requireLoaded(componentId);
+		if ((this.#inFlight.get(componentId) ?? 0) > 0)
+			throw new ComponentHostError("component_busy", componentId);
 		for (const key of Array.from(this.#links.keys())) {
 			if (key.startsWith(`${componentId}\0`)) {
 				this.#links.delete(key);
@@ -280,8 +304,47 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 	}
 
 	#append(event: ComponentHostEvent): void {
-		this.appendEvent(event);
+		this.#requireAvailable();
+		this.#emitting = true;
+		try {
+			const result: unknown = this.appendEvent(event);
+			const returned: { readonly then?: unknown } = Object(result);
+			if (returned === result && returned.then instanceof Function) {
+				void Promise.resolve(result).catch(() => undefined);
+				throw new Error("event sink must be synchronous");
+			}
+		} catch {
+			this.#sinkFailed = true;
+			throw new ComponentHostError(
+				"event_sink_uncertain",
+				"event sink failed; host requires reconciliation",
+			);
+		} finally {
+			this.#emitting = false;
+		}
 		this.#eventMirror.push(event);
+	}
+
+	#requireAvailable(): void {
+		if (this.#sinkFailed)
+			throw new ComponentHostError(
+				"event_sink_uncertain",
+				"host requires reconciliation",
+			);
+		if (this.#emitting)
+			throw new ComponentHostError(
+				"event_sink_reentrant",
+				"event sink cannot call the host",
+			);
+	}
+
+	#beginInvocation(componentId: string): () => void {
+		this.#inFlight.set(componentId, (this.#inFlight.get(componentId) ?? 0) + 1);
+		return () => {
+			const count = this.#inFlight.get(componentId) ?? 0;
+			if (count <= 1) this.#inFlight.delete(componentId);
+			else this.#inFlight.set(componentId, count - 1);
+		};
 	}
 
 	#requireLoaded(componentId: string): ComponentInstance {

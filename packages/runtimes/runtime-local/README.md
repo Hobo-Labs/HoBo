@@ -56,10 +56,46 @@ stateDiagram-v2
   s3 --> s4: tear down component
 ```
 
-The engine and event sink remain trusted. If the event sink throws after state
-has changed, the host cannot determine whether the sink recorded the event;
-the caller must reconcile that ambiguity. Teardown does not wait for in-flight
-invocations.
+The engine and event sink remain trusted. If the event sink throws, the host
+cannot determine whether it recorded the event. The host refuses subsequent
+effectful operations with `event_sink_uncertain`; reconcile the sink and rebuild
+the host before continuing. The sink must be synchronous: returning a promise
+or thenable is also treated as uncertain, and any write already started can
+still finish. Calls already in flight can still finish. The sink cannot reenter
+effectful host methods during an event callback. Teardown refuses
+with `component_busy` while linked or HTTP calls are active; retry it after they
+settle.
+
+The event-sink model checks 66 bounded states; its projection hides 56
+same-label steps.
+
+```mermaid
+stateDiagram-v2
+  s0: Host ready
+  s1: Event being recorded
+  s2: Host awaiting reconciliation
+  s3: Event recorded
+  [*] --> s0
+  s0 --> s1: record event
+  s1 --> s2: sink returns an async result or sink fails
+  s1 --> s3: sink confirms
+```
+
+The call-fence model checks 18 bounded states and hides 12 same-label steps.
+
+```mermaid
+stateDiagram-v2
+  s0: Component ready
+  s1: Component torn down
+  s2: Component call in progress
+  s3: Calls settled
+  [*] --> s0
+  s0 --> s1: tear down component
+  s0 --> s2: start call
+  s2 --> s3: call settles
+  s3 --> s1: tear down component
+  s3 --> s2: start call
+```
 
 ## Tests
 
