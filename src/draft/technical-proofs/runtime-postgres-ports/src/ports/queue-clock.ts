@@ -1,6 +1,15 @@
 import type { Pool } from "pg";
 
-import { createRuntimeLocalQueueClock } from "../../../queue-clock-runtime-port-contract/src/queue-clock-runtime-port.js";
+import {
+  type DequeueOptions,
+  type LeasedMessage,
+  parseActorKey,
+  parseIdempotencyKey,
+  parseLeaseId,
+  parseMessageId,
+  parseQueueName,
+} from "@hobo/core";
+import { createRuntimeLocalQueueClock } from "@hobo/runtime-local";
 import { clone, requireNonEmptyString } from "../postgres/json.js";
 import { type JsonValue } from "../json.js";
 
@@ -51,7 +60,9 @@ function createPostgresQueuePort(pool: Pool, local: LocalQueueClock) {
         };
       }
 
-      const localResult = await local.queue.enqueue(name, body, { idempotencyKey });
+      const localResult = await local.queue.enqueue(parseQueueName(name), body, {
+        idempotencyKey: parseIdempotencyKey(idempotencyKey),
+      });
       await pool.query(
         `INSERT INTO hobo_queue_messages (
            message_id, queue_name, idempotency_key, body, state,
@@ -68,12 +79,12 @@ function createPostgresQueuePort(pool: Pool, local: LocalQueueClock) {
       return localResult;
     },
 
-    async handle(queueName: string, handler: (message: JsonValue) => Promise<void> | void, options = {}) {
-      return local.queue.handle(queueName, handler, options);
+    async handle(queueName: string, handler: (message: LeasedMessage) => Promise<void> | void, options: DequeueOptions = {}) {
+      return local.queue.handle(parseQueueName(queueName), async (message) => handler(message), options);
     },
 
-    async dequeue(queueName: string, options = {}) {
-      return local.queue.dequeue(queueName, options);
+    async dequeue(queueName: string, options: DequeueOptions = {}) {
+      return local.queue.dequeue(parseQueueName(queueName), options);
     },
 
     async complete(messageId: string, leaseId: string) {
@@ -83,11 +94,11 @@ function createPostgresQueuePort(pool: Pool, local: LocalQueueClock) {
          WHERE message_id = $1`,
         [messageId, local.clock.nowMs()],
       );
-      return local.queue.complete(messageId, leaseId);
+      return local.queue.complete(parseMessageId(messageId), parseLeaseId(leaseId));
     },
 
     release(messageId: string, leaseId: string) {
-      return local.queue.release(messageId, leaseId);
+      return local.queue.release(parseMessageId(messageId), parseLeaseId(leaseId));
     },
 
     simulateRedelivery(messageId: string) {
@@ -97,11 +108,13 @@ function createPostgresQueuePort(pool: Pool, local: LocalQueueClock) {
          WHERE message_id = $1`,
         [messageId],
       );
-      return local.queue.simulateRedelivery(messageId);
+      return local.queue.simulateRedelivery(parseMessageId(messageId));
     },
 
     async signal(actorKey: string, msg: JsonValue, options: { idempotencyKey: string }) {
-      return local.queue.signal(actorKey, msg, options);
+      return local.queue.signal(parseActorKey(actorKey), msg, {
+        idempotencyKey: parseIdempotencyKey(options.idempotencyKey),
+      });
     },
   });
 }

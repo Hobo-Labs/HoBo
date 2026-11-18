@@ -16,7 +16,7 @@ Production target: `packages/conformance/src/suites/{runtime-port,component-host
   checkout `replay == live`.
 - Component-host cross-host assertions with manifest host version pins.
 - Seeded violations: broken-fence backend, drifting hosts.
-- Self-contained in-memory port fixtures (no sibling draft imports).
+- The production local queue and clock with in-memory event-store and actor-host fixtures.
 
 ## Verify
 
@@ -27,10 +27,3 @@ pnpm --prefix src/draft/epic-proofs/s1-10-conformance-trust-boundary test
 ## Executable evidence
 Protobuf + CUE under `architecture/`; PACT contracts under `pacts/`.
 Parse boundaries: `src/runtime-port/parse.ts`, `src/component-host/parse.ts`.
-# Cascade reconciliation
-
-The referenced `component-host-conformance-suite` technical proof was refreshed in the latest technical-proof commit; this rollup retains the existing conformance-trust-boundary scope and evidence.
-
-## Cascade reconciliation (83d9b5c92)
-
-The `runtime-port-conformance-contract` technical proof refresh is absorbed without changing runtime-port or component-host conformance evidence.

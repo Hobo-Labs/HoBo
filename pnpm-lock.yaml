@@ -3786,7 +3786,14 @@ importers:
 
   src/draft/epic-proofs/reliability-observability-cost-finops: {}
 
-  src/draft/epic-proofs/s1-10-conformance-trust-boundary: {}
+  src/draft/epic-proofs/s1-10-conformance-trust-boundary:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../../../../packages/runtimes/runtime-local
 
   src/draft/epic-proofs/s2-stage-gate-first-cloud-yard: {}
 
@@ -4953,16 +4960,30 @@ importers:
 
   src/draft/technical-proofs/runtime-local-execution-limits-contract: {}
 
-  src/draft/technical-proofs/runtime-port-conformance-contract: {}
+  src/draft/technical-proofs/runtime-port-conformance-contract:
+    dependencies:
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../../../../packages/runtimes/runtime-local
 
   src/draft/technical-proofs/runtime-postgres-ports:
     dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../../../../packages/runtimes/runtime-local
       pg:
         specifier: ^8.16.0
         version: 8.22.0
       pg-mem:
         specifier: ^3.0.5
         version: 3.0.14
+    devDependencies:
+      '@types/pg':
+        specifier: 8.15.5
+        version: 8.15.5
 
   src/draft/technical-proofs/s0-04-protobuf-cue-codegen:
     devDependencies:

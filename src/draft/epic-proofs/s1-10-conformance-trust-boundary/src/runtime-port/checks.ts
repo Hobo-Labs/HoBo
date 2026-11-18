@@ -1,3 +1,4 @@
+import { parseIdempotencyKey, parseQueueName } from "@hobo/core";
 import { type JsonValue, isJsonObject } from "../json.js";
 import { proveCheckoutDurability } from "./checkout-proof.js";
 import type { RuntimeDurabilityBackend } from "./types.js";
@@ -84,15 +85,17 @@ async function provesEventStoreIdempotency(backend: RuntimeDurabilityBackend) {
 
 async function provesQueueIdempotency(backend: RuntimeDurabilityBackend) {
   const { queue } = backend;
+  const payments = parseQueueName("payments");
+  const charge = parseIdempotencyKey("charge-1");
   const first = await queue.enqueue(
-    "payments",
+    payments,
     { cents: 4200 },
-    { idempotencyKey: "charge-1" },
+    { idempotencyKey: charge },
   );
   const retry = await queue.enqueue(
-    "payments",
+    payments,
     { cents: 4200 },
-    { idempotencyKey: "charge-1" },
+    { idempotencyKey: charge },
   );
 
   return retry.deduped === true && retry.messageId === first.messageId;
