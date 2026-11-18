@@ -1,3 +1,0 @@
-slug: hobo-703-aspire-waitfor-parity-audit
-layer: technical
-proof-identity: ok

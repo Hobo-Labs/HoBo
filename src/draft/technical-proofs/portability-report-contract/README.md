@@ -23,8 +23,8 @@ npm.cmd --prefix src\draft\technical-proofs\portability-report-contract test
 
 Relevant design records:
 
-- `docs/design/adr/07-portability-extensibility.md`: ADR-0024 points 1 and 4, ADR-0041 point 2
-- `docs/design/control-plane.md`: resolution pipeline, `realize()` provider authoring, and
+- `urn:hobo:decision:07-portability-extensibility`: ADR-0024 points 1 and 4, ADR-0041 point 2
+- `urn:hobo:requirement:control-plane`: resolution pipeline, `realize()` provider authoring, and
   adopt-in-place notes
 
 

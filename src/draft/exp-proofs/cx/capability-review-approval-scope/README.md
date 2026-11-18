@@ -8,9 +8,9 @@ personas, scope-in, scope-out, service/UX/security/support boundaries, authorita
 owning initiative dependencies, review states, M1 evidence, and follow-up gate.
 
 The durable design record lives in
-[`docs/design/capability-review-approval.md`](../../../../../docs/design/capability-review-approval.md).
+[`urn:hobo:requirement:capability-review-approval`](urn:hobo:requirement:capability-review-approval).
 Branch evidence is summarized in
-[`docs/design/proofs/hobo-423-capability-review-approval`](../../../../../docs/design/proofs/hobo-423-capability-review-approval/README.md).
+[`urn:hobo:proof:hobo-423-capability-review-approval`](urn:hobo:proof:hobo-423-capability-review-approval).
 
 ## Contract Surface
 

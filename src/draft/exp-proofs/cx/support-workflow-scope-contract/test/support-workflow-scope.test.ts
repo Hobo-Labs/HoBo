@@ -69,10 +69,10 @@ test("owning initiative dependencies and M1 evidence are mapped", () => {
   const { SUPPORT_WORKFLOW_SCOPE } = contract;
 
   assert.ok(
-    SUPPORT_WORKFLOW_SCOPE.designRefs.includes("docs/design/support-sla-channels.md"),
+    SUPPORT_WORKFLOW_SCOPE.designRefs.includes("urn:hobo:requirement:support-sla-channels"),
   );
   assert.ok(
-    SUPPORT_WORKFLOW_SCOPE.designRefs.includes("docs/design/launch-support-escalation.md"),
+    SUPPORT_WORKFLOW_SCOPE.designRefs.includes("urn:hobo:requirement:launch-support-escalation"),
   );
   assert.ok(
     SUPPORT_WORKFLOW_SCOPE.initiativeDependencies.some(

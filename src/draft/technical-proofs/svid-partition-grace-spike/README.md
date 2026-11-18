@@ -5,10 +5,10 @@ production broker HA/cache work in HOBO-287.
 
 ## Source Requirements
 
-- [Plan 06: Agent identity & the token broker](../../../../docs/design/ai-native-agent-auth.md#plan-06)
-- [ADR-0008](../../../../docs/design/adr/02-identity-security.md#adr-0008)
-- [ADR-0047](../../../../docs/design/adr/02-identity-security.md#adr-0047)
-- [ADR-0100](../../../../docs/design/adr/02-identity-security.md#adr-0100)
+- [Plan 06: Agent identity & the token broker](urn:hobo:requirement:ai-native-agent-auth#plan-06)
+- [ADR-0008](urn:hobo:decision:adr-0008)
+- [ADR-0047](urn:hobo:decision:adr-0047)
+- [ADR-0100](urn:hobo:decision:adr-0100)
 - Prior SVID rotation contract: [`src/draft/technical-proofs/svid-auto-rotation-contract`](../svid-auto-rotation-contract)
 
 ## Decision

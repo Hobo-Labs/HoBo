@@ -6,9 +6,9 @@ boundary shape, and guards against implementation creep into portal UI, review
 decisioning, live Registry storage, payouts, billing, or support tooling.
 
 The authoritative design record is
-[`docs/design/publisher-portal.md`](../../../../../docs/design/publisher-portal.md).
+[`urn:hobo:requirement:publisher-portal`](urn:hobo:requirement:publisher-portal).
 Branch evidence is summarized in
-[`docs/design/proofs/hobo-422-publisher-portal`](../../../../../docs/design/proofs/hobo-422-publisher-portal/README.md).
+[`urn:hobo:proof:hobo-422-publisher-portal`](urn:hobo:proof:hobo-422-publisher-portal).
 
 ## Proof
 

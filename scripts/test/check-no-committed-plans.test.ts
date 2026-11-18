@@ -34,7 +34,9 @@ describe("plans:guard", () => {
 		"Review Findings",
 		"Reference",
 	])("allows a document typed %s", (type) => {
-		expect(planReason("docs/design/x.md", () => doc(type))).toBeUndefined();
+		expect(
+			planReason("urn:hobo:requirement:x", () => doc(type)),
+		).toBeUndefined();
 	});
 
 	it("refuses anything in a plans directory, whatever it holds", () => {

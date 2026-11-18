@@ -16,8 +16,8 @@ promotes the near-production draft proof
 - `TokenBroker` — holds one vaulted root credential and mints per-deploy,
   scope-bound, TTL'd tokens for an SVID, emitting `token.Granted` / `token.Used`
   / `token.Revoked`.
-- **Residual secrets backends** ([ADR-0027](../../docs/design/adr/02-identity-security.md#adr-0027) /
-  [ADR-0113](../../docs/design/adr/02-identity-security.md#adr-0113)) — secretless-first
+- **Residual secrets backends** ([ADR-0027](urn:hobo:decision:adr-0027) /
+  [ADR-0113](urn:hobo:decision:adr-0113)) — secretless-first
   ladder is bound-resource → provider-federation → camp-value → static-escape.
   Built-in residual adapters in `@hobo/identity` (never primary identity):
   - **`createMemorySecretsPort`** — default in-memory residual (local Station / fixtures)
@@ -34,18 +34,18 @@ promotes the near-production draft proof
     relay's config service (ADR-0179). Not a default dependency.
 - Every identity and token event carries the never-compact
   `CREDENTIAL_AUDIT_RETENTION` descriptor.
-- **Continuous Identity Migration Plane** ([ADR-0132](../../docs/design/adr/02-identity-security.md#adr-0132))
+- **Continuous Identity Migration Plane** ([ADR-0132](urn:hobo:decision:adr-0132))
   — dual-path PrincipalRef continuity when adapters, residency, spectrum, or
   Yard placement change. **Nothing is required in the Bindle** for continuous
   migration: Matching + policy activate dual mode; progressive ramp uses
-  existing Harness cohort flags; dual fixtures extend [ADR-0070](../../docs/design/adr/02-identity-security.md#adr-0070)
+  existing Harness cohort flags; dual fixtures extend [ADR-0070](urn:hobo:decision:adr-0070)
   for offline `hobo dev` / tests. Observe with `hobo identity status` /
   `hobo identity inspect <id>` and `hobo doctor`. Composed into **HoBo Trails**
-  ([ADR-0134](../../docs/design/adr/02-identity-security.md#adr-0134),
+  ([ADR-0134](urn:hobo:decision:adr-0134),
   `@hobo/trails`) as the platform recipe `identity.continuous` — pure identity
   continuous cases still require **zero Trail authoring**.
-- **The Harness** ([ADR-0083](../../docs/design/adr/02-identity-security.md#adr-0083) /
-  [ADR-0044](../../docs/design/adr/02-identity-security.md#adr-0044)) — progressive
+- **The Harness** ([ADR-0083](urn:hobo:decision:adr-0083) /
+  [ADR-0044](urn:hobo:decision:adr-0044)) — progressive
   delivery as a native plane: single `FeatureFlagStore` (shared with identity
   migration cohorts — **no parallel store**), OpenFeature-only app API
   (`HoboOpenFeatureProvider` / `HoboFeatureClient`), OpenDelivery staged

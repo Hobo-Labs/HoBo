@@ -4,8 +4,8 @@ Independent proof for HOBO-94.
 
 This package pins the M0 Yard topology / connectivity-manifest contract from:
 
-- `docs/design/security-networking.md#plan-12`: the Junction infers cross-Yard connectivity from member Yard manifests.
-- `docs/design/adr/07-portability-extensibility.md#adr-0043`: the Junction folds Yard manifests and emits each Yard its own half without shared mutable state.
+- `urn:hobo:requirement:security-networking#plan-12`: the Junction infers cross-Yard connectivity from member Yard manifests.
+- `urn:hobo:decision:adr-0043`: the Junction folds Yard manifests and emits each Yard its own half without shared mutable state.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: the HOBO-89 `ConnectivityTier` values consumed by cross-Yard links.
 
 The proof covers:

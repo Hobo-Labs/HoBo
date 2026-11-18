@@ -48,7 +48,7 @@ package architecture_evidence
 	issue:                   "HOBO-550"
 	phase:                   "M1"
 	packagePath:             "src/draft/exp-proofs/ux/vibe-support-workflow-mockups"
-	proofPath:               "docs/design/proofs/vibe-support-workflow-mockups/README.md"
+	proofPath:               "urn:hobo:proof:vibe-support-workflow-mockups"
 	designRefs:              #NonEmptyStringList
 	quickstartFixtureRefs:   [#VibeSupportWorkflowQuickstartFixtureReference, ...#VibeSupportWorkflowQuickstartFixtureReference]
 	personas:                #NonEmptyStringList

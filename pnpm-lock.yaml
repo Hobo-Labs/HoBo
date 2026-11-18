@@ -3824,8 +3824,6 @@ importers:
 
   src/draft/exp-proofs/ax/cli-mcp-parity-resource-lifecycle-contracts: {}
 
-  src/draft/exp-proofs/ax/rem-030-crew-mcp-autonomy-limitation: {}
-
   src/draft/exp-proofs/ax/role-journey-cli-mcp-transcripts: {}
 
   src/draft/exp-proofs/cx/ai-generation-launch-posture-contract: {}
@@ -3932,8 +3930,6 @@ importers:
 
   src/draft/exp-proofs/cx/workspace-activation-telemetry-contract: {}
 
-  src/draft/exp-proofs/dx/adr-0064-ui-generation-citation-contract: {}
-
   src/draft/exp-proofs/dx/app-dev-journey-contract: {}
 
   src/draft/exp-proofs/dx/artifact-store-scope-contract: {}
@@ -3966,8 +3962,6 @@ importers:
       '@hobo/convex':
         specifier: workspace:*
         version: link:../../../../../packages/convex
-
-  src/draft/exp-proofs/dx/dapr-parity-anchor-audit: {}
 
   src/draft/exp-proofs/dx/data-flywheel-privacy-spike: {}
 
@@ -4012,8 +4006,6 @@ importers:
   src/draft/exp-proofs/dx/gitops-ci-journey-contract: {}
 
   src/draft/exp-proofs/dx/inline-budget-authoring: {}
-
-  src/draft/exp-proofs/dx/intent-alignment-iter2: {}
 
   src/draft/exp-proofs/dx/launch-demo-golden-path-contract: {}
 
@@ -4180,8 +4172,6 @@ importers:
   src/draft/technical-proofs/anonymous-preview-path-contract: {}
 
   src/draft/technical-proofs/artifact-repo-port-contract: {}
-
-  src/draft/technical-proofs/aspire-hosting-testing-tracker-contract: {}
 
   src/draft/technical-proofs/auth-flag-readset-contract: {}
 
@@ -4496,10 +4486,6 @@ importers:
   src/draft/technical-proofs/guardrail-policy-gate-contract: {}
 
   src/draft/technical-proofs/hobo-612-dev-local-loop-poc: {}
-
-  src/draft/technical-proofs/hobo-700-runtime-code-mutation-pattern-adr-contract: {}
-
-  src/draft/technical-proofs/hobo-703-aspire-waitfor-parity-audit: {}
 
   src/draft/technical-proofs/hobo-add-install-verification-contract: {}
 
@@ -4825,8 +4811,6 @@ importers:
 
   src/draft/technical-proofs/partial-realize-rollback-contract: {}
 
-  src/draft/technical-proofs/patterns-standards-cross-links: {}
-
   src/draft/technical-proofs/persona-operating-profile-contract: {}
 
   src/draft/technical-proofs/planner-dag-skeleton-contract: {}
@@ -4852,8 +4836,6 @@ importers:
   src/draft/technical-proofs/portability-report-contract: {}
 
   src/draft/technical-proofs/portability-swap-equivalent-contract: {}
-
-  src/draft/technical-proofs/post-core-cross-cutting-delta-pattern: {}
 
   src/draft/technical-proofs/preview-ephemeral-environments-contract: {}
 
@@ -4932,8 +4914,6 @@ importers:
   src/draft/technical-proofs/release-artifact-provenance-retention-contract: {}
 
   src/draft/technical-proofs/reliability-sla-rollup-contract: {}
-
-  src/draft/technical-proofs/rem-038-stage6-notify-separation: {}
 
   src/draft/technical-proofs/remediation-safety-gate-contract: {}
 

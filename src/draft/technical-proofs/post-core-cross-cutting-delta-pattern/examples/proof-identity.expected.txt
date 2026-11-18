@@ -1,3 +1,0 @@
-slug: post-core-cross-cutting-delta-pattern
-layer: technical
-proof-identity: ok

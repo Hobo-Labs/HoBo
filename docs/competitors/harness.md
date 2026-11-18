@@ -162,7 +162,7 @@ run HoBo *inside* a Harness pipeline stage.
 - **No per-module licensing wall** — the whole surface is one open codebase.
 - **Honest caveat.** Harness is a shipping enterprise platform with an eleven-figure customer base;
   HoBo's packages are not published to npm and its default Pulumi path is an in-memory stand-in (see
-  the [live provider matrix](../design/live-provider-matrix.md)). The comparison is architectural.
+  the [live provider matrix](urn:hobo:requirement:live-provider-matrix)). The comparison is architectural.
 
 ## Adversarial critique
 
@@ -215,7 +215,7 @@ and belong in their own implementation issues, per the research contract.
 
 ## HoBo.CD update (2026-11-12)
 
-HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182), [continuous-delivery.md](../design/continuous-delivery.md)), and took specific ideas
+HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0182](urn:hobo:decision:adr-0182), [continuous-delivery.md](urn:hobo:requirement:continuous-delivery)), and took specific ideas
 from Harness CD; the competitor research itself was not re-run.
 
 - **Taken:** Continuous Verification's structure (thresholds, canary versus baseline, fail on no

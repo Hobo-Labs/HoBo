@@ -38,13 +38,13 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     PLAN_DIFF_VIEWER_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "docs/design/developer-experience.md#plan-07",
-      "docs/design/control-plane.md#plan-04",
-      "docs/design/platform-engineering.md#plan-25",
-      "docs/design/reliability-observability-cost.md#plan-05",
-      "docs/design/contracts-policy-flags.md#plan-29",
-      "docs/design/adr/01-architecture-core.md#adr-0033",
-      "docs/design/adr/07-portability-extensibility.md#adr-0064",
+      "urn:hobo:requirement:developer-experience#plan-07",
+      "urn:hobo:requirement:control-plane#plan-04",
+      "urn:hobo:requirement:platform-engineering#plan-25",
+      "urn:hobo:requirement:reliability-observability-cost#plan-05",
+      "urn:hobo:requirement:contracts-policy-flags#plan-29",
+      "urn:hobo:decision:adr-0033",
+      "urn:hobo:decision:adr-0064",
     ],
   );
 });

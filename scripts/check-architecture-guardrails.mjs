@@ -29,6 +29,7 @@ const SOURCE_EXTENSIONS = new Set([
 	".ts",
 	".tsx",
 ]);
+const LEXICAL_STRUCTURE_EXTENSIONS = new Set([".cue", ".proto", ".wit"]);
 const SOURCE_DIRECTORIES = new Set(["services", "src"]);
 const STRUCTURAL_COMMENT =
 	/@(?:cc_on|jsx|jsxFrag|jsxImportSource|jsxRuntime|license|preserve|ts-(?:check|expect-error|ignore|nocheck)|type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated|vite-ignore)|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)|(?:istanbul|c8|v8)\s+ignore|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*source(?:Mapping)?URL=|<reference\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:/iu;
@@ -523,7 +524,34 @@ function scriptKind(file) {
 	return ts.ScriptKind.TS;
 }
 
+function lexicalTokens(text) {
+	const scanner = ts.createScanner(
+		ts.ScriptTarget.Latest,
+		true,
+		ts.LanguageVariant.Standard,
+		text,
+	);
+	const tokens = [];
+	for (
+		let token = scanner.scan();
+		token !== ts.SyntaxKind.EndOfFileToken;
+		token = scanner.scan()
+	) {
+		tokens.push([token, scanner.getTokenText()]);
+	}
+	return tokens;
+}
+
 export function hasSameProgramStructure(file, before, after) {
+	const extension = path.extname(file).toLowerCase();
+	if (LEXICAL_STRUCTURE_EXTENSIONS.has(extension)) {
+		return (
+			JSON.stringify(structuralComments(before)) ===
+				JSON.stringify(structuralComments(after)) &&
+			JSON.stringify(lexicalTokens(before)) ===
+				JSON.stringify(lexicalTokens(after))
+		);
+	}
 	const parse = (text) =>
 		ts.createSourceFile(
 			file,
@@ -566,7 +594,12 @@ function structurallyChangedFiles(files, args) {
 	}
 
 	return files.filter((file) => {
-		if (!SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase())) return true;
+		const extension = path.extname(file).toLowerCase();
+		if (
+			!SOURCE_EXTENSIONS.has(extension) &&
+			!LEXICAL_STRUCTURE_EXTENSIONS.has(extension)
+		)
+			return true;
 		try {
 			const before = contentAt(beforeRef, file);
 			const after = args.has("--staged")

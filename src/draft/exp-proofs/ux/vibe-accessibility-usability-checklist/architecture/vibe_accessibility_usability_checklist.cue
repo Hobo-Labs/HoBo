@@ -42,7 +42,7 @@ package vibe_accessibility_usability_checklist
 	issue:       "HOBO-554"
 	phase:       "M1"
 	packagePath: "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist"
-	proofPath:   "docs/design/proofs/vibe-accessibility-usability-checklist/README.md"
+	proofPath:   "urn:hobo:proof:vibe-accessibility-usability-checklist"
 	designRefs: [...string]
 	quickstartFixtureRefs: [#AccessibilityQuickstartFixtureReference, ...#AccessibilityQuickstartFixtureReference]
 	checks:           [...#AccessibilityCheck]

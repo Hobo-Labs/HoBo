@@ -11,8 +11,8 @@ command factories). Prefer `@hobo/hobo` for end-user CLI use.
 
 **Dual-bin / install story:** the composed product bin is `@hobo/hobo`. Treat
 this package as the shell/factories dependency, not as a second product CLI.
-Ship and publish policy: [ADR-0140](../../docs/design/adr/07-portability-extensibility.md#adr-0140) and
-[`docs/design/launch-ship-targets.md`](../../docs/design/launch-ship-targets.md).
+Ship and publish policy: [ADR-0140](urn:hobo:decision:adr-0140) and
+[`urn:hobo:requirement:launch-ship-targets`](urn:hobo:requirement:launch-ship-targets).
 
 Promotes:
 

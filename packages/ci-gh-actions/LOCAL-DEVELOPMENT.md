@@ -67,7 +67,7 @@ same directory. The report says what `status` shows under `mesh`: one slot
 under `hobo-local-host` (free while a runner waits for a job), free memory and
 disk, and the share of its sessions whose runner ran to its own exit. With
 `HOBO_CI_NATS_URL` set it also advertises that, signed, to the
-[relay mesh](../../docs/design/ci-relay-mesh.md), where the relay's node list
+[relay mesh](urn:hobo:requirement:ci-relay-mesh), where the relay's node list
 and `hobo ci status` show it beside the box workers; `HOBO_CI_MESH_NODE_ID`
 names it (default `local-<host name>`). Without `HOBO_CI_NATS_URL` nothing is
 sent anywhere, and `status` and `hobo ci status` still answer from the file,

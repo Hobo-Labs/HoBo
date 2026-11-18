@@ -149,7 +149,7 @@ export interface VibePlanDiffReviewPrototype {
   readonly issue: "HOBO-560";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype";
-  readonly proofNote: "docs/design/proofs/vibe-plan-diff-review-prototype/README.md";
+  readonly proofNote: "urn:hobo:proof:vibe-plan-diff-review-prototype";
   readonly designRefs: readonly string[];
   readonly sourceDependencies: readonly PlanDiffSourceDependency[];
   readonly quickstartFixtureRefs: readonly PlanDiffQuickstartFixtureRef[];
@@ -333,7 +333,7 @@ export function resolvePlanDiffDependencies(): readonly PlanDiffSourceDependency
       issue: "HOBO-577",
       title: "Vibe resource lifecycle quickstart examples",
       status: "accepted",
-      evidence: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+      evidence: "urn:hobo:proof:resource-lifecycle-quickstart-examples",
     },
   ];
 }
@@ -342,13 +342,13 @@ export const VIBE_PLAN_DIFF_REVIEW_PROTOTYPE = {
   issue: "HOBO-560",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype",
-  proofNote: "docs/design/proofs/vibe-plan-diff-review-prototype/README.md",
+  proofNote: "urn:hobo:proof:vibe-plan-diff-review-prototype",
   designRefs: [
-    "docs/design/plan-diff-viewer.md",
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/proofs/vibe-plan-review-states/README.md",
-    "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:plan-diff-viewer",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:proof:vibe-plan-review-states",
+    "urn:hobo:proof:vibe-plan-annotation-pseudocode",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   sourceDependencies: resolvePlanDiffDependencies(),
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
@@ -408,7 +408,7 @@ export function parseVibePlanDiffReviewPrototype(value: JsonValue): VibePlanDiff
   );
   expectLiteral(
     prototype.proofNote,
-    "docs/design/proofs/vibe-plan-diff-review-prototype/README.md",
+    "urn:hobo:proof:vibe-plan-diff-review-prototype",
     "proofNote",
   );
 

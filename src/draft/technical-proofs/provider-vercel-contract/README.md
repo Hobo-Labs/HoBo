@@ -29,10 +29,10 @@ npm.cmd --prefix src\draft\technical-proofs\provider-vercel-contract test
 
 Design refs:
 
-- `docs/design/control-plane.md`: Vercel seed provider row, CloudProvider shape,
+- `urn:hobo:requirement:control-plane`: Vercel seed provider row, CloudProvider shape,
   `realize()` pipeline, IaC adapters, provider authoring.
   surface convention.
-- `docs/design/adr/07-portability-extensibility.md#adr-0024`: portability
+- `urn:hobo:decision:adr-0024`: portability
   conformance and PortabilityReport gate.
 
 

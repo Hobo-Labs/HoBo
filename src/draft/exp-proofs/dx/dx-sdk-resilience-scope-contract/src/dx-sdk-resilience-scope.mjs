@@ -56,9 +56,9 @@ export const DX_SDK_RESILIENCE_SCOPE_CONTRACT = Object.freeze({
   goal:
     "Pin the SDK-facing resilience semantics vocabulary, child issue matrix, initiative linkage, and guardrails before SDK helper or conformance work fans out.",
   designRefs: Object.freeze([
-    "docs/design/README.md",
-    "docs/design/dx-sdk-resilience-semantics.md",
-    "docs/design/sdk-contracts.md",
+    "urn:hobo:requirement:README",
+    "urn:hobo:requirement:dx-sdk-resilience-semantics",
+    "urn:hobo:requirement:sdk-contracts",
   ]),
   initiatives: REQUIRED_INITIATIVES,
   vocabulary: REQUIRED_VOCABULARY,
@@ -87,7 +87,7 @@ export const DX_SDK_RESILIENCE_SCOPE_CONTRACT = Object.freeze({
       phase: "M0",
       title: "Define DX SDK resilience semantics vocabulary and acceptance matrix",
       statusAtClaim: "Done",
-      targetPath: "docs/design/dx-sdk-resilience-semantics.md",
+      targetPath: "urn:hobo:requirement:dx-sdk-resilience-semantics",
       verificationCommands: Object.freeze([
         "npm.cmd run docs:design-lint",
         "node scripts\\validate-sdk-contracts.mjs",
@@ -289,9 +289,9 @@ export function validateDxSdkResilienceScope(contract) {
   }
 
   for (const ref of [
-    "docs/design/README.md",
-    "docs/design/dx-sdk-resilience-semantics.md",
-    "docs/design/sdk-contracts.md",
+    "urn:hobo:requirement:README",
+    "urn:hobo:requirement:dx-sdk-resilience-semantics",
+    "urn:hobo:requirement:sdk-contracts",
   ]) {
     if (!contract.designRefs?.includes(ref)) {
       errors.push(`Missing design ref: ${ref}`);

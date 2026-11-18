@@ -1,3 +1,0 @@
-slug: patterns-standards-cross-links
-layer: technical
-proof-identity: ok

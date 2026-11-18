@@ -147,7 +147,7 @@ visual graph" can buy that today.
 - **Runs with no vendor plane** (*implemented*) — local and browser runtimes.
 - **Honest caveat.** Massdriver provisions real cloud resources through mature IaC engines today;
   HoBo's default Pulumi path is an in-memory stand-in (see the
-  [live provider matrix](../design/live-provider-matrix.md)).
+  [live provider matrix](urn:hobo:requirement:live-provider-matrix)).
 
 ## Adversarial critique
 

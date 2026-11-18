@@ -40,9 +40,9 @@ export async function runLatticeTransportConformance() {
     schema: LATTICE_TRANSPORT_CONTRACT_VERSION,
     issue: "HOBO-27",
     refs: Object.freeze([
-      "docs/design/wasm-runtime-wit.md#plan-20",
-      "docs/design/adr/01-architecture-core.md#adr-0031",
-      "docs/design/adr/01-architecture-core.md#adr-0069",
+      "urn:hobo:requirement:wasm-runtime-wit#plan-20",
+      "urn:hobo:decision:adr-0031",
+      "urn:hobo:decision:adr-0069",
     ]),
     supportedTransports: Object.freeze(["in-process", "nats-jetstream-lattice"]),
     assertions: Object.freeze(assertions),

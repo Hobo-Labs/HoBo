@@ -83,7 +83,7 @@ test("cross-project dependencies are reflected in release cutline domains", asyn
       ownerProject: "V1 Launch Support Desk & Escalation",
       readinessDomain: "support",
       cutlineCategory: "support",
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
     },
   ];
 

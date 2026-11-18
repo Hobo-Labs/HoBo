@@ -133,7 +133,7 @@ afterthought.
 - **Fail-closed residency** (*implemented*, ADR-0146) — and OpenStack is precisely where those
   decisions land, which makes it a strategically important target rather than a rival.
 - **Honest caveat.** HoBo has no OpenStack provider shipped today; see the
-  [live provider matrix](../design/live-provider-matrix.md).
+  [live provider matrix](urn:hobo:requirement:live-provider-matrix).
 
 ## Adversarial critique
 

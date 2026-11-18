@@ -215,7 +215,7 @@ The sparse cone remains limited to the workspace members declared by HoBo's sibl
 
 ## Syncing `main` into `feature/hobo-code`
 
-hobo-code (`packages/code`, `@hobo/code`) is developed on the long-lived `feature/hobo-code` branch and is not part of `main` (see the 2026-11-08 amendment to [ADR-0139](../design/adr/03-data-plane.md#adr-0139)). `main` is merged into that branch from time to time so it keeps up with the platform.
+hobo-code (`packages/code`, `@hobo/code`) is developed on the long-lived `feature/hobo-code` branch and is not part of `main` (see the 2026-11-08 amendment to [ADR-0139](urn:hobo:decision:adr-0139)). `main` is merged into that branch from time to time so it keeps up with the platform.
 
 The first sync after the removal lands on `main` (#1772) must record the removal as merged without applying it. A plain merge would delete hobo-code from the branch too. `R` is #1772's squash commit on `main`:
 
@@ -234,5 +234,5 @@ Every later sync is `git merge origin/main`. When a `main` change touches a file
 
 ## Related references
 
-- [npm publish allowlist](../design/npm-publish-allowlist.md)
+- [npm publish allowlist](urn:hobo:requirement:npm-publish-allowlist)
 - [HoBo runner queue troubleshooting](../../packages/ci/RUNNER-QUEUE.md)

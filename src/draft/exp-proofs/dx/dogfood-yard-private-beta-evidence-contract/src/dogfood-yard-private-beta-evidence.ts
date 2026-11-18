@@ -211,7 +211,7 @@ export const DOGFOOD_YARD_PRIVATE_BETA_EVIDENCE: DogfoodPrivateBetaEvidence = Ob
     evidence(
       "m0-dogfood-yard-scope",
       "V1 Dogfood Yard & Hosted Operations",
-      "docs/design/dogfood-yard.md",
+      "urn:hobo:requirement:dogfood-yard",
       "M0 Dogfood Yard personas, scenarios, evidence channels, and owner boundaries are accepted.",
     ),
     evidence(
@@ -223,19 +223,19 @@ export const DOGFOOD_YARD_PRIVATE_BETA_EVIDENCE: DogfoodPrivateBetaEvidence = Ob
     evidence(
       "telemetry-channel-review",
       "Reliability, Observability & Cost (FinOps)",
-      "docs/design/reliability-observability-cost.md#plan-05",
+      "urn:hobo:requirement:reliability-observability-cost#plan-05",
       "Logs, traces, status views, support/debug bundles, and rollback signals have owners, redaction, and private-beta use.",
     ),
     evidence(
       "beta-blocker-risk-register",
       "V1 Release Program & Cutline",
-      "docs/design/launch-blocker-taxonomy.md",
+      "urn:hobo:requirement:launch-blocker-taxonomy",
       "Private beta blockers and accepted risks are recorded with owners, dispositions, and revisit points.",
     ),
     evidence(
       "cross-project-cutline-sync",
       "V1 Release Program & Cutline",
-      "docs/design/traceability.md",
+      "urn:hobo:requirement:traceability",
       "Dogfood, support, release notes, bootstrap, reliability, and broker handoffs remain reflected in the release cutline.",
     ),
   ]),
@@ -408,16 +408,16 @@ export const DOGFOOD_YARD_PRIVATE_BETA_EVIDENCE: DogfoodPrivateBetaEvidence = Ob
     "Do not promote private beta evidence to release-candidate, GA, or public support readiness claims.",
   ]),
   designRefs: Object.freeze([
-    "docs/design/dogfood-yard.md",
-    "docs/design/reliability-observability-cost.md#plan-05",
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/operators-sre.md#plan-40",
-    "docs/design/launch-blocker-taxonomy.md",
+    "urn:hobo:requirement:dogfood-yard",
+    "urn:hobo:requirement:reliability-observability-cost#plan-05",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:operators-sre#plan-40",
+    "urn:hobo:requirement:launch-blocker-taxonomy",
   ]),
   adrRefs: Object.freeze([
-    "docs/design/adr/01-architecture-core.md#adr-0092",
-    "docs/design/adr/02-identity-security.md#adr-0082",
-    "docs/design/adr/03-data-plane.md#adr-0058",
+    "urn:hobo:decision:adr-0092",
+    "urn:hobo:decision:adr-0082",
+    "urn:hobo:decision:adr-0058",
   ]),
 });
 

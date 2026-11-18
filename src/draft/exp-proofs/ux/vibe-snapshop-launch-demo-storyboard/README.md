@@ -29,12 +29,12 @@ pnpm --dir src/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard test
 ```
 
 ## Executable evidence
-- `docs/design/launch-demo-golden-path.md`: reuses the accepted snapshop
+- `urn:hobo:requirement:launch-demo-golden-path`: reuses the accepted snapshop
   scaffold, local run, inspect, plan, live recording slot, and failure recovery
   command path.
-- `docs/design/launch-messaging-claims.md`: keeps public claims blocked unless
+- `urn:hobo:requirement:launch-messaging-claims`: keeps public claims blocked unless
   live evidence exists in the recording manifest.
-- `docs/design/known-limitations-register.md`: routes stale, simulated,
+- `urn:hobo:requirement:known-limitations-register`: routes stale, simulated,
   unsupported, and reference-fixture states through limitation wording.
 - HOBO-577: consumes accepted quickstart fixture ids and proof-mode labels
   before creating launch-demo assets. The fixture set is

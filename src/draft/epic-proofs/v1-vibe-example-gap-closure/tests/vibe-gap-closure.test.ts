@@ -24,7 +24,7 @@ test("HOBO-539 fixture closes the parent acceptance over DX backbone and child a
 test("every child issue targets exp proof and proof note paths", () => {
   for (const issue of VIBE_GAP_CLOSURE_BACKLOG.childIssues) {
     assert.match(issue.targetPackagePath, /^src\/draft\/exp-proofs\/(dx|ux|cx|ax|api)\/[a-z0-9-]+$/);
-    assert.match(issue.proofNotePath, /^docs\/design\/proofs\/hobo-\d+-[a-z0-9-]+\/README\.md$/);
+    assert.match(issue.proofNotePath, /^urn:hobo:proof:hobo-\d+-[a-z0-9-]+$/);
     assert.equal(issue.artifactSlices.length > 0, true);
   }
 });

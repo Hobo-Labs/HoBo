@@ -1,7 +1,7 @@
 # Governance Planes S6-08 — Stage-6 Evidence Rollup
 
 Independent draft POC for **HOBO-663**. Productionizes the four Stage-6
-governance evidence items from `docs/design/governance-planes.md` (Plan 46) as
+governance evidence items from `urn:hobo:requirement:governance-planes` (Plan 46) as
 one runnable reference architecture. Promotes scenarios from
 `src/draft/epic-proofs/contracts-policy-governance/` and the AI-safety gates of
 `src/draft/epic-proofs/generation-pipeline-training-ai-safety/` without

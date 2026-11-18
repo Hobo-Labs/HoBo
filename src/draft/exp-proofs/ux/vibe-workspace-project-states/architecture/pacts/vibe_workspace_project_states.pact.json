@@ -26,11 +26,11 @@
           "issue": "HOBO-541",
           "phase": "M1",
           "targetPackage": "src/draft/exp-proofs/ux/vibe-workspace-project-states",
-          "proofNote": "docs/design/proofs/vibe-workspace-project-states/README.md",
+          "proofNote": "urn:hobo:proof:vibe-workspace-project-states",
           "designRefs": [
-            "docs/design/workspace-onboarding-ux.md",
-            "docs/design/outcome-activation-rail.md",
-            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+            "urn:hobo:requirement:workspace-onboarding-ux",
+            "urn:hobo:requirement:outcome-activation-rail",
+            "urn:hobo:proof:resource-lifecycle-quickstart-examples"
           ],
           "scopeOut": [
             "account service implementation",
@@ -91,7 +91,7 @@
               },
               "evidenceLink": {
                 "label": "resource lifecycle define fixture",
-                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#fixture-ids",
+                "href": "urn:hobo:proof:resource-lifecycle-quickstart-examples#fixture-ids",
                 "fixtureId": "vwp-empty-v1",
                 "freshness": "current",
                 "proofMode": "reference fixture"
@@ -166,7 +166,7 @@
               },
               "evidenceLink": {
                 "label": "plan preview fixture",
-                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#acceptance-evidence",
+                "href": "urn:hobo:proof:resource-lifecycle-quickstart-examples#acceptance-evidence",
                 "fixtureId": "vwp-ready-v1",
                 "freshness": "current",
                 "proofMode": "simulated"
@@ -241,7 +241,7 @@
               },
               "evidenceLink": {
                 "label": "provider approval or Gatekeeper refusal fixture",
-                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#acceptance-evidence",
+                "href": "urn:hobo:proof:resource-lifecycle-quickstart-examples#acceptance-evidence",
                 "fixtureId": "vwp-blocked-v1",
                 "freshness": "current",
                 "proofMode": "reference fixture"
@@ -316,7 +316,7 @@
               },
               "evidenceLink": {
                 "label": "snapshot or rollback preview fixture",
-                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#fixture-ids",
+                "href": "urn:hobo:proof:resource-lifecycle-quickstart-examples#fixture-ids",
                 "fixtureId": "vwp-recovering-v1",
                 "freshness": "stale",
                 "proofMode": "reference fixture"
@@ -391,7 +391,7 @@
               },
               "evidenceLink": {
                 "label": "unknown-evidence support bundle fixture",
-                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#acceptance-evidence",
+                "href": "urn:hobo:proof:resource-lifecycle-quickstart-examples#acceptance-evidence",
                 "fixtureId": "vwp-failed-v1",
                 "freshness": "unknown",
                 "proofMode": "scope-out"
@@ -466,7 +466,7 @@
               },
               "evidenceLink": {
                 "label": "accepted value evidence link",
-                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#verification",
+                "href": "urn:hobo:proof:resource-lifecycle-quickstart-examples#verification",
                 "fixtureId": "vwp-value-proven-v1",
                 "freshness": "future-live-gated",
                 "proofMode": "live"
@@ -524,7 +524,7 @@
     },
     "hobo": {
       "issue": "HOBO-541",
-      "proof": "docs/design/proofs/vibe-workspace-project-states/README.md"
+      "proof": "urn:hobo:proof:vibe-workspace-project-states"
     }
   }
 }

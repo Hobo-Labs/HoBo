@@ -7,14 +7,14 @@ equivalent TypeScript Bindle, emits L2 SDK stubs through the checked-in
 
 ## Requirements Source
 
-- `docs/design/authoring-resources-wiring.md#plan-21`: Hobo Code DSL,
+- `urn:hobo:requirement:authoring-resources-wiring#plan-21`: Hobo Code DSL,
   two-level authoring, stable canonical AST, no host imports or collection-time
   side effects.
-- `docs/design/adr/01-architecture-core.md#adr-0049`: Hobo Code is the
+- `urn:hobo:decision:adr-0049`: Hobo Code is the
   configuration + code DSL and adds no runtime semantics beyond the shared IR.
-- `docs/design/adr/01-architecture-core.md#adr-0037`: codegen emits checked-in
+- `urn:hobo:decision:adr-0037`: codegen emits checked-in
   `_generated/` artifacts and `codegen --check` fails on drift.
-- `docs/design/sdk-api.md#plan-02`: typed bindings and generated code are the
+- `urn:hobo:requirement:sdk-api#plan-02`: typed bindings and generated code are the
   authoring contract for resource bindings, steps, and workflows.
 
 ## What This Proves

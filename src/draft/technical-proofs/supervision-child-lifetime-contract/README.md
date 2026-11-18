@@ -1,7 +1,7 @@
 # Supervision Child Lifetime Contract
 
 Independent proof for HOBO-519. It extends the DX SDK resilience semantics work
-from `docs/design/dx-sdk-resilience-semantics.md` and composes with the
+from `urn:hobo:requirement:dx-sdk-resilience-semantics` and composes with the
 HOBO-516 `resilience-semantics-annex` instead of replacing it.
 
 ## Contract

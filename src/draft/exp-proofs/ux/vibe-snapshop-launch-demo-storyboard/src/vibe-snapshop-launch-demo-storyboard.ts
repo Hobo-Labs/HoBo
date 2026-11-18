@@ -106,7 +106,7 @@ export type VibeSnapshopLaunchDemoStoryboard = {
   readonly issue: "HOBO-555";
   readonly phase: "M5";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard";
-  readonly proofPath: "docs/design/proofs/vibe-snapshop-launch-demo-storyboard/README.md";
+  readonly proofPath: "urn:hobo:proof:vibe-snapshop-launch-demo-storyboard";
   readonly designRefs: readonly string[];
   readonly proofModes: readonly SnapshopProofMode[];
   readonly quickstartFixtureRefs: readonly SnapshopQuickstartFixtureReference[];
@@ -271,16 +271,16 @@ const STORYBOARD_STEPS: readonly SnapshopStoryboardStep[] = [
 const ASSET_MAP: readonly SnapshopAssetMapEntry[] = [
   {
     kind: "screenshots",
-    source: "docs/design/launch-demo-golden-path.md#required-assets",
+    source: "urn:hobo:requirement:launch-demo-golden-path#required-assets",
     owner: "V1 Launch Site, Messaging & Demo Assets",
     proofMode: "live",
     refreshTrigger: "Any screen, command wording, output, or proof-mode label changes.",
-    validationRoute: "docs/design/proofs/vibe-snapshop-launch-demo-storyboard/README.md#asset-map",
+    validationRoute: "urn:hobo:proof:vibe-snapshop-launch-demo-storyboard#asset-map",
     staleDowngrade: "Downgrade to reference fixture until refreshed live screenshots exist.",
   },
   {
     kind: "recording-manifest",
-    source: "docs/design/launch-messaging-claims.md#required-demo-assets",
+    source: "urn:hobo:requirement:launch-messaging-claims#required-demo-assets",
     owner: "V1 Launch Site, Messaging & Demo Assets",
     proofMode: "live",
     refreshTrigger: "Any live preview, expected output, simulated marker, or recording slot changes.",
@@ -289,7 +289,7 @@ const ASSET_MAP: readonly SnapshopAssetMapEntry[] = [
   },
   {
     kind: "command-transcript",
-    source: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    source: "urn:hobo:proof:resource-lifecycle-quickstart-examples",
     owner: "Example Apps",
     proofMode: "reference fixture",
     refreshTrigger: "Any command path, CLI wording, fixture output, or safe-claim boundary changes.",
@@ -307,7 +307,7 @@ const ASSET_MAP: readonly SnapshopAssetMapEntry[] = [
   },
   {
     kind: "docs",
-    source: "docs/design/launch-demo-golden-path.md",
+    source: "urn:hobo:requirement:launch-demo-golden-path",
     owner: "Example Apps",
     proofMode: "reference fixture",
     refreshTrigger: "Any acceptance, owner, scope, proof mode, or public-claim boundary changes.",
@@ -320,12 +320,12 @@ export const VIBE_SNAPSHOP_LAUNCH_DEMO_STORYBOARD: VibeSnapshopLaunchDemoStorybo
   issue: "HOBO-555",
   phase: "M5",
   packagePath: "src/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard",
-  proofPath: "docs/design/proofs/vibe-snapshop-launch-demo-storyboard/README.md",
+  proofPath: "urn:hobo:proof:vibe-snapshop-launch-demo-storyboard",
   designRefs: [
-    "docs/design/launch-demo-golden-path.md",
-    "docs/design/launch-messaging-claims.md",
-    "docs/design/known-limitations-register.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:launch-demo-golden-path",
+    "urn:hobo:requirement:launch-messaging-claims",
+    "urn:hobo:requirement:known-limitations-register",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   proofModes: REQUIRED_SNAPSHOP_PROOF_MODES,
   quickstartFixtureRefs: QUICKSTART_REFS,

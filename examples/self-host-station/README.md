@@ -1,7 +1,7 @@
 # Self-host Station (real composition)
 
 Station is the hard control-plane isolation boundary a Conductor occupies
-([ADR-0131](../../docs/design/adr/01-architecture-core.md#adr-0131)).
+([ADR-0131](urn:hobo:decision:adr-0131)).
 App topology remains Bindle ⊂ Camp ⊂ Yard ⊂ Junction — Station does **not**
 contain Yards.
 

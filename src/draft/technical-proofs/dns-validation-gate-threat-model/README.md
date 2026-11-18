@@ -1,7 +1,7 @@
 # DNS validation-gate threat model spike
 
 Independent spike for HOBO-189. It records the DNS validation-gate threat model
-behind [ADR-0101](../../../../docs/design/adr/07-portability-extensibility.md#adr-0101)
+behind [ADR-0101](urn:hobo:decision:adr-0101)
 as executable requirements before HOBO-142 implements the concrete checks.
 
 ## Recommendation

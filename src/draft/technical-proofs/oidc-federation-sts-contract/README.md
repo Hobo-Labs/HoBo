@@ -1,9 +1,9 @@
 # HoBo OIDC Federation STS Contract POC
 
 This draft pins the HOBO-110 provider STS exchange slice for
-[Plan 6](../../../../docs/design/ai-native-agent-auth.md#plan-06),
-[ADR-0008](../../../../docs/design/adr/02-identity-security.md#adr-0008), and
-[ADR-0027](../../../../docs/design/adr/02-identity-security.md#adr-0027). It turns
+[Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06),
+[ADR-0008](urn:hobo:decision:adr-0008), and
+[ADR-0027](urn:hobo:decision:adr-0027). It turns
 the HOBO-84 broker dispatch seam into an executable OIDC-federation exchange
 contract for AWS `AssumeRoleWithWebIdentity`, GCP Workload Identity Federation,
 and Azure federated credentials.

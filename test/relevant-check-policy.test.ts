@@ -892,7 +892,7 @@ test("editing cucumber.yaml trips the behavior lane", () => {
 });
 
 test("unrelated docs edits do not trip the behavior lane", () => {
-	const { checks } = plan(["docs/design/vision.md"]);
+	const { checks } = plan(["docs/guide/vision.md"]);
 	assert.ok(!checks.some(isBehaviorLane));
 });
 
@@ -1202,7 +1202,7 @@ test("a change to anything that guards signed local runs runs those guards", () 
 			);
 	}
 	for (const file of [
-		"docs/design/index.md",
+		"docs/guide/index.md",
 		"packages/core/src/index.ts",
 		".github/workflows/pricing-ci.yml",
 		".hobo/ci.json",

@@ -6,10 +6,10 @@ Matching/Dispatcher logic, `.raw`, `@hobo/vector`, or `@hobo/graph`.
 
 ## Requirements Source
 
-- `docs/design/data-plane.md#plan-32`: opt-in paradigm packages lower to `hobo:projection`.
-- `docs/design/adr/03-data-plane.md#adr-0081`: paradigm packages carry portability honesty and
+- `urn:hobo:requirement:data-plane#plan-32`: opt-in paradigm packages lower to `hobo:projection`.
+- `urn:hobo:decision:adr-0081`: paradigm packages carry portability honesty and
   canonical WIT schema sharing without silent cross-paradigm swaps.
-- `docs/design/adr/01-architecture-core.md#adr-0072`: SDK idiom layers stay thin and lower to the
+- `urn:hobo:decision:adr-0072`: SDK idiom layers stay thin and lower to the
   same WIT bindings and manifest IR.
 
 ## What This Proves

@@ -131,7 +131,7 @@ export type MarketplaceTrustCopyStates = {
   readonly issue: "HOBO-547";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states";
-  readonly proofNote: "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md";
+  readonly proofNote: "urn:hobo:proof:vibe-marketplace-trust-copy-states";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly MarketplaceTrustQuickstartFixtureReference[];
   readonly scopeOut: readonly string[];
@@ -158,7 +158,7 @@ export const MARKETPLACE_TRUST_COPY_SCENARIOS = [
     proofMode: "reference-fixture",
     audience: "app developer",
     ownerRoute: "Marketplace Publisher Trust Evidence",
-    evidenceSource: "docs/design/marketplace-publisher-trust-evidence.md",
+    evidenceSource: "urn:hobo:requirement:marketplace-publisher-trust-evidence",
     safeClaim: "Preview listings are visible only with explicit missing-evidence limits.",
     copy: {
       headline: "Preview listing",
@@ -175,7 +175,7 @@ export const MARKETPLACE_TRUST_COPY_SCENARIOS = [
     proofMode: "live",
     audience: "workspace administrator",
     ownerRoute: "Capability Review & Approval",
-    evidenceSource: "docs/design/capability-review-approval.md",
+    evidenceSource: "urn:hobo:requirement:capability-review-approval",
     safeClaim: "Installable wording is allowed only when provenance, conformance, security review, catalog, and policy evidence are linked.",
     copy: {
       headline: "Installable with linked evidence",
@@ -192,7 +192,7 @@ export const MARKETPLACE_TRUST_COPY_SCENARIOS = [
     proofMode: "simulated",
     audience: "workspace administrator",
     ownerRoute: "Org Catalogs",
-    evidenceSource: "docs/design/org-catalogs.md",
+    evidenceSource: "urn:hobo:requirement:org-catalogs",
     safeClaim: "Policy-blocked listings name the catalog or policy evidence that prevents new use.",
     copy: {
       headline: "Blocked for this workspace",
@@ -209,7 +209,7 @@ export const MARKETPLACE_TRUST_COPY_SCENARIOS = [
     proofMode: "reference-fixture",
     audience: "app developer",
     ownerRoute: "Registry Distribution",
-    evidenceSource: "docs/design/adr/07-portability-extensibility.md#adr-0062",
+    evidenceSource: "urn:hobo:decision:adr-0062",
     safeClaim: "Deprecated listings remain visible only for existing-use and migration guidance.",
     copy: {
       headline: "Deprecated listing",
@@ -226,7 +226,7 @@ export const MARKETPLACE_TRUST_COPY_SCENARIOS = [
     proofMode: "simulated",
     audience: "support operator",
     ownerRoute: "Support Workflow",
-    evidenceSource: "docs/design/support-workflow.md",
+    evidenceSource: "urn:hobo:requirement:support-workflow",
     safeClaim: "Yanked listings are removed from new selection and route customers to support or migration guidance.",
     copy: {
       headline: "Yanked from new selection",
@@ -243,7 +243,7 @@ export const MARKETPLACE_TRUST_COPY_SCENARIOS = [
     proofMode: "scope-out",
     audience: "marketplace operator",
     ownerRoute: "Marketplace UX",
-    evidenceSource: "docs/design/marketplace-ux.md",
+    evidenceSource: "urn:hobo:requirement:marketplace-ux",
     safeClaim: "Hidden listings are not visible until required review, trust, catalog, or policy evidence exists.",
     copy: {
       headline: "Listing hidden",
@@ -301,18 +301,18 @@ export const MARKETPLACE_TRUST_COPY_STATES = {
   issue: "HOBO-547",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states",
-  proofNote: "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
+  proofNote: "urn:hobo:proof:vibe-marketplace-trust-copy-states",
   designRefs: [
-    "docs/design/marketplace-ux.md",
-    "docs/design/marketplace-publisher-trust-evidence.md",
-    "docs/design/capability-review-approval.md",
-    "docs/design/org-catalogs.md",
-    "docs/design/support-workflow.md",
-    "docs/design/accessibility-usability-launch-baseline.md",
-    "docs/design/launch-messaging-claims.md",
-    "docs/design/adr/07-portability-extensibility.md#adr-0062",
-    "docs/design/adr/02-identity-security.md#adr-0074",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:marketplace-ux",
+    "urn:hobo:requirement:marketplace-publisher-trust-evidence",
+    "urn:hobo:requirement:capability-review-approval",
+    "urn:hobo:requirement:org-catalogs",
+    "urn:hobo:requirement:support-workflow",
+    "urn:hobo:requirement:accessibility-usability-launch-baseline",
+    "urn:hobo:requirement:launch-messaging-claims",
+    "urn:hobo:decision:adr-0062",
+    "urn:hobo:decision:adr-0074",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
   scopeOut: [
@@ -413,7 +413,7 @@ export function parseMarketplaceTrustCopyStates(proof: JsonValue): MarketplaceTr
   );
   assertLiteral(
     proof.proofNote,
-    "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
+    "urn:hobo:proof:vibe-marketplace-trust-copy-states",
     "proofNote",
   );
   assertNonEmptyStringArray(proof.designRefs, "designRefs");

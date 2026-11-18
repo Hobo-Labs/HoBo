@@ -26,32 +26,32 @@
           "issue": "HOBO-562",
           "phase": "M2",
           "targetPackage": "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype",
-          "proofNote": "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md",
+          "proofNote": "urn:hobo:proof:vibe-marketplace-discovery-prototype",
           "designRefs": [
-            "docs/design/marketplace-ux.md",
-            "docs/design/org-catalogs.md",
-            "docs/design/capability-review-approval.md",
-            "docs/design/marketplace-publisher-trust-evidence.md",
-            "docs/design/support-workflow.md",
-            "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
-            "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
-            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+            "urn:hobo:requirement:marketplace-ux",
+            "urn:hobo:requirement:org-catalogs",
+            "urn:hobo:requirement:capability-review-approval",
+            "urn:hobo:requirement:marketplace-publisher-trust-evidence",
+            "urn:hobo:requirement:support-workflow",
+            "urn:hobo:proof:vibe-marketplace-installability-mockups",
+            "urn:hobo:proof:vibe-marketplace-trust-copy-states",
+            "urn:hobo:proof:resource-lifecycle-quickstart-examples"
           ],
           "sourceIssues": [
             {
               "issue": "HOBO-546",
               "packagePath": "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
-              "proofPath": "docs/design/proofs/vibe-marketplace-installability-mockups/README.md"
+              "proofPath": "urn:hobo:proof:vibe-marketplace-installability-mockups"
             },
             {
               "issue": "HOBO-547",
               "packagePath": "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states",
-              "proofPath": "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md"
+              "proofPath": "urn:hobo:proof:vibe-marketplace-trust-copy-states"
             },
             {
               "issue": "HOBO-577",
               "packagePath": "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples",
-              "proofPath": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+              "proofPath": "urn:hobo:proof:resource-lifecycle-quickstart-examples"
             }
           ],
           "catalog": [

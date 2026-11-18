@@ -39,7 +39,7 @@ ecosystems (Helm, Terraform modules, OCI artifacts generally) won distribution.
 ## Relevance to HoBo
 
 **Lessons-only** (pinned by
-[ADR-0144](../design/adr/07-portability-extensibility.md#adr-0144): CNAB
+[ADR-0144](urn:hobo:decision:adr-0144): CNAB
 contributes signed multi-artifact packaging lessons; CNAB bundles are a
 non-goal as HoBo's resource model). The lessons and where they already live:
 

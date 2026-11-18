@@ -72,7 +72,7 @@ test("cross-project dependencies are reflected in release cutline domains", asyn
       ownerProject: "V1 Beta Pilot & Feedback Loop",
       readinessDomain: "productization",
       cutlineCategory: "productization",
-      source: "docs/design/beta-pilot-feedback.md",
+      source: "urn:hobo:requirement:beta-pilot-feedback",
     },
   ];
 

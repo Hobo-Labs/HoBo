@@ -68,23 +68,23 @@ export const EXAMPLE_APPS_SCOPE = {
   },
   dependencies: [
     {
-      source: "docs/design/worked-example.md#plan-19",
+      source: "urn:hobo:requirement:worked-example#plan-19",
       reason: "Keeps snapshop as the compressed end-to-end product story.",
     },
     {
-      source: "docs/design/walkthrough.md",
+      source: "urn:hobo:requirement:walkthrough",
       reason: "Defines the six-role example lifecycle and shared snapshop app.",
     },
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "Defines scaffold, dev, up, inspect, logs, and onboarding command behavior.",
     },
     {
-      source: "docs/design/authoring-resources-wiring.md#plan-21",
+      source: "urn:hobo:requirement:authoring-resources-wiring#plan-21",
       reason: "Defines resource collection, manifest IR, and inferred permissions used by examples.",
     },
     {
-      source: "docs/design/adr/07-portability-extensibility.md#adr-0064",
+      source: "urn:hobo:decision:adr-0064",
       reason: "Keeps product UI generation and business mechanics out of Example Apps scope.",
     },
   ],

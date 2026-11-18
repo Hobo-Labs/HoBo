@@ -74,27 +74,27 @@ export const ORGANIZATION_WORKSPACE_MODEL = {
   },
   dependencies: [
     {
-      source: "docs/design/architecture.md#plan-10",
+      source: "urn:hobo:requirement:architecture#plan-10",
       reason: "Defines project/package architecture and the existing scope vocabulary that productized workspaces must not replace.",
     },
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "Defines dashboard, status, CLI, inspect, and project-facing developer surfaces that consume workspace/project nouns.",
     },
     {
-      source: "docs/design/security-networking.md#plan-50",
+      source: "urn:hobo:requirement:security-networking#plan-50",
       reason: "Defines app-tenant and tenant-routing boundaries that the workspace model must route to, not implement.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0074",
+      source: "urn:hobo:decision:adr-0074",
       reason: "Pins org governance, RBAC, mandatory rules, and control-plane action taxonomy as security-owned scope.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0079",
+      source: "urn:hobo:decision:adr-0079",
       reason: "Pins app multi-tenancy as a separate model consumed by product workspaces.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0080",
+      source: "urn:hobo:decision:adr-0080",
       reason: "Pins tenant isolation conformance and prevents workspace scope from making unsupported isolation claims.",
     },
   ],
@@ -230,8 +230,8 @@ export function validateOrganizationWorkspaceModel(model) {
   }
 
   for (const dependency of model.dependencies ?? []) {
-    if (!dependency.source?.startsWith("docs/design/") || !dependency.reason) {
-      errors.push(`dependency ${dependency.source ?? "<missing>"} must cite design source and reason`);
+    if (!/^urn:hobo:(?:requirement|decision):/.test(dependency.source ?? "") || !dependency.reason) {
+      errors.push(`dependency ${dependency.source ?? "<missing>"} must cite evidence source and reason`);
     }
   }
 

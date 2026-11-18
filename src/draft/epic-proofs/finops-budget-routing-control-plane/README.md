@@ -1,6 +1,6 @@
 # FinOps Budget Routing Control Plane
 
-Design: [`docs/design/finops-budget-routing-control-plane.md`](../../../../docs/design/finops-budget-routing-control-plane.md)
+Design: [`urn:hobo:requirement:finops-budget-routing-control-plane`](urn:hobo:requirement:finops-budget-routing-control-plane)
 
 This epic proof composes existing HoBo FinOps, policy, control-plane, and
 adapter evidence into a standards-first budget routing control plane. It is not

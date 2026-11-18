@@ -7,7 +7,7 @@ Manifest scope `policy` metadata survives parsing and canonical serialization. B
 limits and contract-effect/resilience references therefore participate in the manifest
 hash; removing or changing them changes the deployment input. Malformed policy objects
 are rejected. Financial enforcement belongs to the hosting planner and shared authority
-([budgeted hosting transitions](../../docs/design/hosting-budget-transitions.md)).
+([budgeted hosting transitions](urn:hobo:requirement:hosting-budget-transitions)).
 
 Use `b.project()` for an infrastructure project that owns or groups other
 resources. It is a deployment dependency, not an HTTP entrypoint; use `b.web()`
@@ -73,8 +73,8 @@ export const canary = rollout({
 ```
 
 Runtime evaluation and progressive composition live in `@hobo/identity`
-(`FeatureFlagStore`, `createHarness`) — see [ADR-0044](../../docs/design/adr/02-identity-security.md#adr-0044)
-and [ADR-0083](../../docs/design/adr/02-identity-security.md#adr-0083).
+(`FeatureFlagStore`, `createHarness`) — see [ADR-0044](urn:hobo:decision:adr-0044)
+and [ADR-0083](urn:hobo:decision:adr-0083).
 
 ## Parse, don't validate
 

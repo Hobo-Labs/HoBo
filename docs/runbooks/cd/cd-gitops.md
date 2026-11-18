@@ -10,7 +10,7 @@ tags: [hobo, cd, runbook, cd-gitops]
 Argo CD and Flux publishing through a Git host. This page is assembled from the **Runbook** section of `packages/cd-gitops/README.md`,
 which stays the source of truth; update that section and re-assemble. The
 symptom index is [index.md](./index.md); the design is
-[continuous-delivery.md](../../design/continuous-delivery.md).
+[continuous-delivery.md](urn:hobo:requirement:continuous-delivery).
 
 ## Procedures
 

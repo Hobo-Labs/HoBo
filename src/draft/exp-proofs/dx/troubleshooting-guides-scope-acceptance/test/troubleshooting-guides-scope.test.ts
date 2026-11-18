@@ -40,13 +40,13 @@ test("M0 scope record maps owning initiative dependencies and design sources", (
   assert.deepEqual(
     TROUBLESHOOTING_GUIDES_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "docs/design/developer-experience.md#plan-07",
-      "docs/design/walkthrough.md",
-      "docs/design/launch-support-escalation.md",
-      "docs/design/support-sla-channels.md",
-      "docs/design/incident-communications.md",
-      "docs/design/public-status-page-incident-communication.md",
-      "docs/design/adr/07-portability-extensibility.md#adr-0064",
+      "urn:hobo:requirement:developer-experience#plan-07",
+      "urn:hobo:requirement:walkthrough",
+      "urn:hobo:requirement:launch-support-escalation",
+      "urn:hobo:requirement:support-sla-channels",
+      "urn:hobo:requirement:incident-communications",
+      "urn:hobo:requirement:public-status-page-incident-communication",
+      "urn:hobo:decision:adr-0064",
     ],
   );
 

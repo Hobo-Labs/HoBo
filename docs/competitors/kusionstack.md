@@ -168,7 +168,7 @@ the most serious free alternative to HoBo's core.
 - **Runs without Kubernetes** (*implemented*) — local and browser runtimes.
 - **Honest caveat.** KusionStack ships a working generate/apply pipeline against Kubernetes and
   Terraform-backed modules; HoBo's default Pulumi path is an in-memory stand-in (see the
-  [live provider matrix](../design/live-provider-matrix.md)). On shipped provisioning, Kusion is
+  [live provider matrix](urn:hobo:requirement:live-provider-matrix)). On shipped provisioning, Kusion is
   ahead.
 
 ## Adversarial critique

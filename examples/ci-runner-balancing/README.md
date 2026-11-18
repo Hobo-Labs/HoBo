@@ -17,7 +17,7 @@ and rebalancing is nothing more than patching that repository variable. The
 dispatcher picks the target provider by **(a) reported usage against each
 provider's budget envelope, then (b) declared billable cost — optimizing free
 credits before realtime billing starts** (the `maximize-credits` objective,
-[ADR-0071](../../docs/design/adr/01-architecture-core.md#adr-0071)).
+[ADR-0071](urn:hobo:decision:adr-0071)).
 
 The implementation is repurposed from QuickDeployAI's
 `monorepo/apps/ci-routing-control-plane` (reactive variable-patching router,
@@ -200,7 +200,7 @@ HoBo routes its own CI through this example: every non-matrix Linux job in
 the CLI on a daily schedule (plan always; apply when `VARS_ADMIN_TOKEN` is
 configured). The rebalance controller itself stays pinned to `ubuntu-latest`
 so it can never be stranded by the variable it manages. See
-[`docs/design/ci-runner-balancing-example.md`](../../docs/design/ci-runner-balancing-example.md)
+[`urn:hobo:requirement:ci-runner-balancing-example`](urn:hobo:requirement:ci-runner-balancing-example)
 for the full dogfood record and rollout posture.
 
 ## How this maps to HoBo's architecture
@@ -230,7 +230,7 @@ variable-write service boundaries are pinned by the executable PACTs in
 ## Scope boundary
 
 This is a reference example, not a hosted service with an SLA
-([example-apps](../../docs/design/example-apps.md) proof modes: contract
+([example-apps](urn:hobo:requirement:example-apps) proof modes: contract
 tests + reference fixtures + a simulated live lane). It does not implement
 billing (HoBo charges no money, ADR-0064), provider SDK integrations beyond
 declared usage, reservation-CAS double-spend protection

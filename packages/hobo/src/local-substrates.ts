@@ -790,26 +790,6 @@ interface SubstrateBinding {
 	readonly fidelity: SeedFidelity;
 }
 
-/**
- * What each non-process substrate is allowed to claim it hosts, and at what
- * ADR-0042 fidelity. The fidelity assignments are the load-bearing honesty in
- * this module, so each one states its reason:
- *
- * - **wasm → `simulated`.** `runtime-local` does not execute real `.wasm` bytes
- *   today (see `docs/design/yard-bindings.md`); the in-process lane boots the
- *   collected graph with simulated resources. A wasmtime binary on the box does
- *   not change what *HoBo* executes, so `real` would be an overclaim.
- * - **oci / lxc / nspawn / firecracker → `camp-only`.** HoBo has no local
- *   launcher that places a workload into a container or microVM on this
- *   machine: `@hobo/runtime-oci` schedules through kubectl against a cluster,
- *   and there is no LXC/nspawn/Firecracker placement path at all. The substrate
- *   is genuinely available on the box, but satisfying the profile needs a Camp,
- *   which is exactly what `camp-only` means.
- *
- * `process` and `wsl2` are absent from this table on purpose: both reuse
- * `seedLocalhostYard()`'s rows, which carry their own already-audited
- * fidelities (a Node HTTP server is `real`, an in-memory queue is `simulated`).
- */
 const SUBSTRATE_BINDINGS = deepFreeze({
 	firecracker: [
 		{

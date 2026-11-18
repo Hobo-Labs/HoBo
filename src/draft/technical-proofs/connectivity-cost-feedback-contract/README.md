@@ -4,7 +4,7 @@ Independent proof for HOBO-172.
 
 This package pins the M4 networking feedback seam from:
 
-- `docs/design/security-networking.md`: egress, cost, and latency feedback to the Planner.
+- `urn:hobo:requirement:security-networking`: egress, cost, and latency feedback to the Planner.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and tier enum.
 - `src/draft/technical-proofs/tier-three-private-interconnect-contract`: HOBO-127's tier-three cross-provider private edge proof.
 

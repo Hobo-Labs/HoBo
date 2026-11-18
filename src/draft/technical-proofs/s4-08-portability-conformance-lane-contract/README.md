@@ -10,7 +10,7 @@ NFR-020 agnostic-core boundary lint, centered on the `examples/multi-cloud-shop`
   `camp()`/`yard()` mapping varies.
 - `docs/archive/requirements/requirements.md` **NFR-020**: agnostic core never imports a
   provider/adapter package; enforced at build time.
-- `docs/design/adr/07-portability-extensibility.md#adr-0024`: gated portability over declared
+- `urn:hobo:decision:adr-0024`: gated portability over declared
   non-portable surface; `multi-cloud-shop` E2E proves identical topology + bindings.
 - `src/draft/epic-proofs/portability-registry-distribution/`: portability registry evidence
   promoted by this lane.

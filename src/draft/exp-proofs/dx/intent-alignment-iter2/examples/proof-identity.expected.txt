@@ -1,3 +1,0 @@
-slug: intent-alignment-iter2
-layer: exp
-proof-identity: ok

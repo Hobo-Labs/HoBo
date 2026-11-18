@@ -7,7 +7,7 @@ heal/propose/ignore surfaced via `hobo drift` and MCP `get_drift`/`heal`).
 Promotes observability and drift scenarios from
 [`reliability-observability-cost-finops`](../../epic-proofs/reliability-observability-cost-finops/README.md)
 into an independent draft POC per
-[`docs/design/reliability-observability-cost.md`](../../../../docs/design/reliability-observability-cost.md)
+[`urn:hobo:requirement:reliability-observability-cost`](urn:hobo:requirement:reliability-observability-cost)
 Plan 05.
 
 ## What This Proves

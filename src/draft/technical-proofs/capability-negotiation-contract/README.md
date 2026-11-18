@@ -1,9 +1,9 @@
 # HOBO-78 Capability Negotiation Contract
 
 This draft package proves the M2 capability-negotiation seam from
-[Plan 04](../../../../docs/design/control-plane.md#plan-04),
-[Plan 25](../../../../docs/design/platform-engineering.md#plan-25), and
-[ADR-0033](../../../../docs/design/adr/01-architecture-core.md#adr-0033).
+[Plan 04](urn:hobo:requirement:control-plane#plan-04),
+[Plan 25](urn:hobo:requirement:platform-engineering#plan-25), and
+[ADR-0033](urn:hobo:decision:adr-0033).
 
 ## Contract Surface
 

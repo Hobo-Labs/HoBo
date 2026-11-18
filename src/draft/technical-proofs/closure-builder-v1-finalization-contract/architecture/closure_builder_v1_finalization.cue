@@ -4,7 +4,7 @@ package closure_builder_v1_finalization
 	parent_issue: "HOBO-531"
 	authoring_package: "@hobo/bindles"
 	authoring_model: "closure-builder"
-	canonical_doc_path: "docs/design/closure-builder-public-api.md"
+	contract_ref: "urn:hobo:requirement:closure-builder-public-api"
 	evidence: [...#ClosureBuilderEvidenceEntry]
 }
 
@@ -12,7 +12,7 @@ package closure_builder_v1_finalization
 	issue_id: =~"^HOBO-(532|533|534|535|536|537|538)$"
 	linear_status: "Done"
 	proof_path: =~"^src/draft/.+"
-	design_path: =~"^docs/design/.+"
+	evidence_ref: =~"^urn:hobo:(requirement|proof):.+"
 	accepted_scope: =~"^[^\\n]{8,}$"
 }
 

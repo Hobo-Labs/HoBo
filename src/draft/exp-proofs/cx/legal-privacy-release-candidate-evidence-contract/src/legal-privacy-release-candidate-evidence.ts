@@ -136,42 +136,42 @@ export const legalPrivacyReleaseCandidateEvidence: LegalPrivacyReleaseCandidateE
     {
       id: "privacy-release-candidate-review",
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
-      evidenceSource: "docs/design/legal-privacy-terms-readiness.md#m3-release-candidate-evidence-gate",
+      evidenceSource: "urn:hobo:requirement:legal-privacy-terms-readiness#m3-release-candidate-evidence-gate",
       proves: "Release-candidate privacy posture names telemetry purpose, retention posture, customer messaging, data class boundaries, and beta-to-RC limitations.",
       status: "accepted"
     },
     {
       id: "terms-release-candidate-limitation",
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
-      evidenceSource: "docs/design/legal-privacy-terms-readiness.md#m3-release-candidate-evidence-gate",
+      evidenceSource: "urn:hobo:requirement:legal-privacy-terms-readiness#m3-release-candidate-evidence-gate",
       proves: "Release-candidate terms posture is a reviewable limitation and does not claim paid GA, final DPA, final privacy-policy, or regional legal approval.",
       status: "accepted"
     },
     {
       id: "subprocessor-provider-release-candidate-register",
       ownerProject: "Customer Assurance Evidence Packet",
-      evidenceSource: "docs/design/customer-assurance-evidence-packet.md",
+      evidenceSource: "urn:hobo:requirement:customer-assurance-evidence-packet",
       proves: "Subprocessor, provider, unsupported, optional, mocked, and still-unconfirmed services are visible before release-candidate customer assurance claims.",
       status: "accepted"
     },
     {
       id: "data-retention-telemetry-release-candidate-boundary",
       ownerProject: "Compliance Evidence Pack",
-      evidenceSource: "docs/design/tenant-data-lifecycle.md",
+      evidenceSource: "urn:hobo:requirement:tenant-data-lifecycle",
       proves: "Data retention, export/deletion, telemetry, and support-access boundaries are reflected before release-candidate workflows touch customer data.",
       status: "accepted"
     },
     {
       id: "customer-assurance-legal-support-handoff",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      evidenceSource: "docs/design/support-sla-channels.md",
+      evidenceSource: "urn:hobo:requirement:support-sla-channels",
       proves: "Legal/privacy customer-assurance and support questions route to owners without inventing unsupported SLA, compliance, or DPA promises.",
       status: "accepted"
     },
     {
       id: "release-candidate-risk-register",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/go-no-go-decision-record.md",
+      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record",
       proves: "Legal/privacy blockers, accepted risks, mitigations, launch notes, and revisit dates are reflected in the release-candidate cutline.",
       status: "accepted"
     }

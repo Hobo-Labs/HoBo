@@ -9,7 +9,7 @@ package architecture_evidence
 #VibePilotFirstProofConsumedStoryboard: {
 	source_issue: "HOBO-549"
 	package_path: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard"
-	proof_path:   "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md"
+	proof_path:   "urn:hobo:proof:vibe-first-customer-pilot-storyboard"
 	stages:       [...#PilotStage]
 }
 
@@ -51,7 +51,7 @@ package architecture_evidence
 	issue:                    "HOBO-563"
 	phase:                    "M2"
 	package_path:             "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough"
-	proof_path:               "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md"
+	proof_path:               "urn:hobo:proof:vibe-pilot-first-proof-walkthrough"
 	design_refs:              [...string]
 	consumed_storyboard:      #VibePilotFirstProofConsumedStoryboard
 	steps:                    [...#VibePilotFirstProofWalkthroughStep]

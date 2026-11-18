@@ -27,8 +27,8 @@ npm.cmd --prefix src\draft\exp-proofs\tenant-isolation-quotas-scope test
 
 The proof is also referenced by the design record:
 
-- [Tenant Isolation & Quotas design record](../../../../../docs/design/tenant-isolation-quotas.md)
-- [HOBO-415 proof record](../../../../../docs/design/proofs/hobo-415-tenant-isolation-quotas/README.md)
+- [Tenant Isolation & Quotas design record](urn:hobo:requirement:tenant-isolation-quotas)
+- [HOBO-415 proof record](urn:hobo:proof:hobo-415-tenant-isolation-quotas)
 
 
 ## Executable evidence

@@ -434,7 +434,6 @@ export {
 	LOCAL_RUNNER_MESH_REPORT,
 	type LocalRunnerSessionObserver,
 } from "./local-runner.js";
-export { startRelayFromEnvironment } from "./main.js";
 export {
 	effectiveParallelLaunchSlots,
 	logMainShardAdmissionHold,

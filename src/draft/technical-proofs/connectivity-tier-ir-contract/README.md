@@ -4,8 +4,8 @@ Independent proof for HOBO-89.
 
 This package pins the M0 connectivity-tier contract from:
 
-- `docs/design/security-networking.md`: logical connectivity from `bind` and the five planner-selected data-plane tiers.
-- `docs/design/adr/02-identity-security.md#adr-0023`: zero-trust posture, every hop authenticated and authorized by workload identity.
+- `urn:hobo:requirement:security-networking`: logical connectivity from `bind` and the five planner-selected data-plane tiers.
+- `urn:hobo:decision:adr-0023`: zero-trust posture, every hop authenticated and authorized by workload identity.
 
 The proof covers:
 

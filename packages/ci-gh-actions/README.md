@@ -103,7 +103,7 @@ With pull admission, `hobo ci serve` feeds the Node service's inbox from
 `createGithubJobPoller` (`src/isolated-worker/github-job-poller.ts`), the same
 poller the box worker runs; there is no second poller.
 
-Under [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) the Vercel host keeps no durable state: its store is a cache store over `kv.redis-compatible/v1` (TTL, compare-and-set, increment), intake a Vercel Queue keyed by the delivery id, and lease steps delayed queue messages; config and secrets are read-only from a config service ([design](../../docs/design/hosted-relay-stateless.md)). `PostgresCiStore` and the box worker's Postgres option were removed in its phase 7.
+Under [ADR-0179](urn:hobo:decision:adr-0179) the Vercel host keeps no durable state: its store is a cache store over `kv.redis-compatible/v1` (TTL, compare-and-set, increment), intake a Vercel Queue keyed by the delivery id, and lease steps delayed queue messages; config and secrets are read-only from a config service ([design](urn:hobo:requirement:hosted-relay-stateless)). `PostgresCiStore` and the box worker's Postgres option were removed in its phase 7.
 
 The Node service adds two things of its own to the shared handler: a cached
 readiness probe that also gates admission (`admitWhenReady`: while the probe
@@ -168,7 +168,7 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `/engines/gh-actions/…` | The same routes as the root |
 | `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
 | `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
-| `GET`, `PUT /v1/fleet/verdicts/{owner}/{repo}` | The fleet verdict runner routing asks for ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)): read by anyone (no query string; the agreed verdict of every reporter enrolled for the repository's account, less any label whose daily allowance is spent), reported by an enrolled reporter's Ed25519 signature (`X-HoBo-Reporter`, `X-HoBo-Sequence`, `X-HoBo-Issued-At`, `X-HoBo-Signature`; no bearer). A refusal names its `reason`: `bad-request`, `unknown-reporter`, `bad-signature`, `clock-skew`, `replayed`, `not-found` or `invalid-report`. Handed to the host's control plane |
+| `GET`, `PUT /v1/fleet/verdicts/{owner}/{repo}` | The fleet verdict runner routing asks for ([ADR-0180](urn:hobo:decision:adr-0180)): read by anyone (no query string; the agreed verdict of every reporter enrolled for the repository's account, less any label whose daily allowance is spent), reported by an enrolled reporter's Ed25519 signature (`X-HoBo-Reporter`, `X-HoBo-Sequence`, `X-HoBo-Issued-At`, `X-HoBo-Signature`; no bearer). A refusal names its `reason`: `bad-request`, `unknown-reporter`, `bad-signature`, `clock-skew`, `replayed`, `not-found` or `invalid-report`. Handed to the host's control plane |
 | `GET /v1/fleet/reporters/{owner}/{repo}` | Each enrolled reporter's state and liveness and each label's allowance (`FleetReporterStatusList`), for a GitHub Actions OIDC token from a workflow of that repository (audience: the relay's origin; any event). Handed to the host's control plane |
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
 | `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
@@ -903,7 +903,7 @@ Admission budgets do not migrate or terminate a running GitHub job mid-step.
 Several box workers can share one queue with no central relay. Each reads GitHub's queue itself;
 NATS carries their advertisements and makes "one worker starts this job" exact. Without NATS they
 still agree by ranking, so NATS being down costs a duplicate runner start, not a stopped queue.
-The design is in [CI Relay Mesh](../../docs/design/ci-relay-mesh.md); settings and behaviour are in
+The design is in [CI Relay Mesh](urn:hobo:requirement:ci-relay-mesh); settings and behaviour are in
 the [runner queue runbook](../ci/RUNNER-QUEUE.md).
 
 **Try it on one machine.** No NATS needed for the first command:
@@ -964,7 +964,7 @@ pnpm --filter @hobo/ci-gh-actions run mesh:trust require on           # rank lis
 A signature shows which key wrote an advertisement. It does not attest what software the node runs,
 and a node's figures remain its own word. Whoever can write the mesh's NATS config bucket decides
 whom the mesh trusts. The limits are in
-[the design](../../docs/design/ci-relay-mesh.md#trust-whose-advertisement-is-this).
+[the design](urn:hobo:requirement:ci-relay-mesh#trust-whose-advertisement-is-this).
 
 **Records.** The advertisement (`MeshAdvert`), the trusted set, a node's reliability record, the node
 report and the routing snapshot are protobuf messages in `data-models/mesh.proto`, constrained in
@@ -1311,13 +1311,13 @@ GitHub relay, runner authorization and account routing remain in this package.
 ## Relay cache store
 
 `@hobo/ci-gh-actions/relay-cache` is the hosted relay's store without a
-database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179),
-[design](../../docs/design/hosted-relay-stateless.md)), phase 4a: everything
+database ([ADR-0179](urn:hobo:decision:adr-0179),
+[design](urn:hobo:requirement:hosted-relay-stateless)), phase 4a: everything
 the hosted relay needs from its store (`HostedRelayStore`, `HostedInboxStore`,
 the read paths of `HostedControlStore`, `IsolatedWorkerStore`, the MCP
 `RelayMcpStore`, and `@hobo/ci-vercel`'s sandbox lease and proxy-quota paths),
 kept as short-lived state behind `EphemeralStatePort` from `@hobo/core`
-([Relay ephemeral state](../../docs/design/relay-ephemeral-state.md)). Since
+([Relay ephemeral state](urn:hobo:requirement:relay-ephemeral-state)). Since
 phase 4b it is the hosted relay's store: `@hobo/ci-vercel`'s stateless
 composition builds it ([The stateless relay](../ci-vercel/README.md#the-stateless-relay)).
 `PostgresCiStore`, which it replaced, was removed in phase 7.

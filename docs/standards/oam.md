@@ -40,13 +40,13 @@ KubeVela, and wadm reuses the manifest shape for wasmCloud lattices
 
 **Align-our-model (vocabulary) + render-at-the-boundary (wadm); never the
 model.** Pinned by
-[ADR-0144](../design/adr/07-portability-extensibility.md#adr-0144) (concept
+[ADR-0144](urn:hobo:decision:adr-0144) (concept
 map; "OAM remains a wadm render target only") and ADR-0108 (manifest IR →
 wadm/OAM application manifest; `scaling {min,max}` → spreadscaler; wadm's
 link trait ≈ manifest `bind`, per
 [competitors/wasmcloud](../competitors/wasmcloud.md#primitive-mapping)). The
 concept mapping, now including HoBo's first-class Trait
-([ADR-0145](../design/adr/01-architecture-core.md#adr-0145)):
+([ADR-0145](urn:hobo:decision:adr-0145)):
 
 | OAM | HoBo |
 |---|---|
@@ -61,7 +61,7 @@ Divergence kept honest: OAM binds to Kubernetes CRDs and static YAML
 composition; HoBo's Application analog is executable TypeScript lowered to a
 typed IR, selection is scored Matching with an auditable `match.Decided`, and
 the whole model rides an event-sourced control plane. The vision matrix row
-([vision](../design/vision.md#plan-17)) scores Score/KubeVela/OAM as
+([vision](urn:hobo:requirement:vision#plan-17)) scores Score/KubeVela/OAM as
 k8s-centric with no AI-native surface.
 
 ## Sources

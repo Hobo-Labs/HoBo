@@ -10,12 +10,12 @@ const REQUIRED_DOMAINS = [
 ];
 
 const REQUIRED_DEPENDENCIES = [
-  "docs/design/security-networking.md#plan-12",
-  "docs/design/governance-planes.md#plan-46",
-  "docs/design/adr/02-identity-security.md#adr-0023",
-  "docs/design/adr/02-identity-security.md#adr-0060",
-  "docs/design/adr/02-identity-security.md#adr-0074",
-  "docs/design/adr/07-portability-extensibility.md#adr-0064",
+  "urn:hobo:requirement:security-networking#plan-12",
+  "urn:hobo:requirement:governance-planes#plan-46",
+  "urn:hobo:decision:adr-0023",
+  "urn:hobo:decision:adr-0060",
+  "urn:hobo:decision:adr-0074",
+  "urn:hobo:decision:adr-0064",
 ];
 
 const IMPLEMENTATION_PHASES = new Set(["M1", "M2", "M3", "M4"]);

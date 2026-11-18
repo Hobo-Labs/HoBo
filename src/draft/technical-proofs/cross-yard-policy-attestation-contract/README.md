@@ -1,9 +1,9 @@
 # Cross-Yard Policy Attestation Contract
 
 Independent POC for HOBO-196. The contract models the detective assurance loop
-from [PLAN-29](../../../../docs/design/contracts-policy-flags.md#plan-29),
-[ADR-0043](../../../../docs/design/adr/07-portability-extensibility.md#adr-0043),
-and [ADR-0074](../../../../docs/design/adr/02-identity-security.md#adr-0074):
+from [PLAN-29](urn:hobo:requirement:contracts-policy-flags#plan-29),
+[ADR-0043](urn:hobo:decision:adr-0043),
+and [ADR-0074](urn:hobo:decision:adr-0074):
 each Yard ships signed policy decision logs plus a signed policy-engine build
 attestation, then central reconciliation decides whether that Yard remains
 inside the shared policy guarantee.

@@ -5,8 +5,8 @@ Atomic copyable patterns live in [`packages/patterns`](../packages/patterns/READ
 `examples/*` are HoBo's reference example apps: runnable, production-grade
 packages that make the product story inspectable without becoming a hidden
 implementation lane (scope and proof modes:
-[`docs/design/example-apps.md`](../docs/design/example-apps.md)). Examples are
-tests — they double as CI fixtures ([`architecture.md`](../docs/design/architecture.md#plan-10))
+[`urn:hobo:requirement:example-apps`](urn:hobo:requirement:example-apps)). Examples are
+tests — they double as CI fixtures ([`architecture.md`](urn:hobo:requirement:architecture#plan-10))
 — and every example is a production package under the architecture guard:
 protobuf + CUE in `data-models/`, generated runtime types in
 `src/_generated/`, executable PACTs in `contracts/`, parse-don't-validate

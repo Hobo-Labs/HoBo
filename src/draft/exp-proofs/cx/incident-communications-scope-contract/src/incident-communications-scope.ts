@@ -1,13 +1,13 @@
 export const REQUIRED_BOUNDARIES = ["service", "ux", "security", "support"] as const;
 
 export const REQUIRED_DEPENDENCY_TARGETS = [
-  "docs/design/launch-support-escalation.md",
-  "docs/design/public-status-page-incident-communication.md",
-  "docs/design/support-sla-channels.md",
-  "docs/design/product-notifications-lifecycle.md",
-  "docs/design/launch-messaging-claims.md",
-  "docs/design/adr/02-identity-security.md#adr-0045",
-  "docs/design/adr/03-data-plane.md#adr-0058",
+  "urn:hobo:requirement:launch-support-escalation",
+  "urn:hobo:requirement:public-status-page-incident-communication",
+  "urn:hobo:requirement:support-sla-channels",
+  "urn:hobo:requirement:product-notifications-lifecycle",
+  "urn:hobo:requirement:launch-messaging-claims",
+  "urn:hobo:decision:adr-0045",
+  "urn:hobo:decision:adr-0058",
 ] as const;
 
 type Phase = "M0" | "M1" | "M2" | "M3" | "M4";
@@ -170,31 +170,31 @@ export const INCIDENT_COMMUNICATIONS_SCOPE = {
   ],
   dependencies: [
     {
-      target: "docs/design/launch-support-escalation.md",
+      target: "urn:hobo:requirement:launch-support-escalation",
       reason: "Defines incident communication templates, escalation handoffs, and launch support gap routing consumed by this scope.",
     },
     {
-      target: "docs/design/public-status-page-incident-communication.md",
+      target: "urn:hobo:requirement:public-status-page-incident-communication",
       reason: "Defines public status-page component taxonomy, incident states, maintenance notices, update cadence, and publication boundaries.",
     },
     {
-      target: "docs/design/support-sla-channels.md",
+      target: "urn:hobo:requirement:support-sla-channels",
       reason: "Defines support channel coverage, response-target language, unsupported request routing, and owner signoff boundaries.",
     },
     {
-      target: "docs/design/product-notifications-lifecycle.md",
+      target: "urn:hobo:requirement:product-notifications-lifecycle",
       reason: "Defines product lifecycle notification classes, preference/delivery evidence, and notification ownership boundaries.",
     },
     {
-      target: "docs/design/launch-messaging-claims.md",
+      target: "urn:hobo:requirement:launch-messaging-claims",
       reason: "Defines launch claims, limitation copy, evidence owners, and publication review requirements.",
     },
     {
-      target: "docs/design/adr/02-identity-security.md#adr-0045",
+      target: "urn:hobo:decision:adr-0045",
       reason: "Pins SLO-as-code, alerting, and rollback calibration as reliability-owned sources for incident facts.",
     },
     {
-      target: "docs/design/adr/03-data-plane.md#adr-0058",
+      target: "urn:hobo:decision:adr-0058",
       reason: "Pins SRE incident management, runbooks, diagnosis, and gated remediation as operator-owned inputs.",
     },
   ],
@@ -236,42 +236,42 @@ export const INCIDENT_COMMUNICATIONS_SCOPE = {
       kind: "incident-state-fixture",
       boundary: "service",
       owner: "incident-commander",
-      source: "docs/design/incident-communications.md#incident-state-vocabulary",
+      source: "urn:hobo:requirement:incident-communications#incident-state-vocabulary",
       proves: "Later services can distinguish candidate, investigating, identified, monitoring, resolved, and follow-up states.",
     },
     {
       kind: "template-schema-fixture",
       boundary: "service",
       owner: "incident-commander",
-      source: "docs/design/incident-communications.md#template-kinds",
+      source: "urn:hobo:requirement:incident-communications#template-kinds",
       proves: "Every communication template has communication_id and redaction-gated required fields.",
     },
     {
       kind: "customer-copy-review",
       boundary: "ux",
       owner: "release-owner",
-      source: "docs/design/incident-communications.md#communication-surfaces",
+      source: "urn:hobo:requirement:incident-communications#communication-surfaces",
       proves: "Customer-visible status, named-customer, support, launch-room, and release-note surfaces have distinct copy boundaries.",
     },
     {
       kind: "redaction-approval-fixture",
       boundary: "security",
       owner: "security-compliance-reviewer",
-      source: "docs/design/incident-communications.md#publication-gate",
+      source: "urn:hobo:requirement:incident-communications#publication-gate",
       proves: "Customer-visible communication requires evidence, redaction approval, and no customer data leakage.",
     },
     {
       kind: "support-handoff-register",
       boundary: "support",
       owner: "support-lead",
-      source: "docs/design/incident-communications.md#owning-initiative-dependencies",
+      source: "urn:hobo:requirement:incident-communications#owning-initiative-dependencies",
       proves: "Support receives handoff context without ticket automation, SLA enforcement, or queue mutation.",
     },
     {
       kind: "scope-boundary-register",
       boundary: "support",
       owner: "release-owner",
-      source: "docs/design/incident-communications.md#scope-out-and-non-goals",
+      source: "urn:hobo:requirement:incident-communications#scope-out-and-non-goals",
       proves: "Live notification dispatch, status-page implementation, ticket automation, runbook execution, SLA promises, and customer data remain out.",
     },
   ],

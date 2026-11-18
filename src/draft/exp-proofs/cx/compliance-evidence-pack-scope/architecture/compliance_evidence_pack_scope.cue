@@ -8,7 +8,7 @@ package architecture_evidence
 #ComplianceEvidencePackScopeSection: {
 	id:                       string & !=""
 	owner_project:            string & !=""
-	source_record:            string & =~"^docs/design/.+\\.md$"
+	source_record:            string & =~"^urn:hobo:requirement:.+$"
 	beta_readiness:           #ComplianceEvidencePackScopeReadiness
 	ga_readiness:             #ComplianceEvidencePackScopeReadiness
 	blocker_route:            string & !=""

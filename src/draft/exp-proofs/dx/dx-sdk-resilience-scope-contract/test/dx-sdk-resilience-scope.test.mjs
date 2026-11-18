@@ -24,13 +24,13 @@ test("HOBO-514 parent scope has concrete M0 acceptance, design refs, and initiat
     "Developer Authoring & Agent Entry Points",
     "HoBo v1 Release Readiness",
   ]);
-  assert.ok(DX_SDK_RESILIENCE_SCOPE_CONTRACT.designRefs.includes("docs/design/README.md"));
+  assert.ok(DX_SDK_RESILIENCE_SCOPE_CONTRACT.designRefs.includes("urn:hobo:requirement:README"));
   assert.ok(
     DX_SDK_RESILIENCE_SCOPE_CONTRACT.designRefs.includes(
-      "docs/design/dx-sdk-resilience-semantics.md",
+      "urn:hobo:requirement:dx-sdk-resilience-semantics",
     ),
   );
-  assert.ok(DX_SDK_RESILIENCE_SCOPE_CONTRACT.designRefs.includes("docs/design/sdk-contracts.md"));
+  assert.ok(DX_SDK_RESILIENCE_SCOPE_CONTRACT.designRefs.includes("urn:hobo:requirement:sdk-contracts"));
 });
 
 test("child issue matrix spans M0 through M4 and carries branch-sized context", () => {

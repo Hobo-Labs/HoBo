@@ -85,7 +85,7 @@ sidecar with its own lease journal: local SQLite at
 `<HOBO_HOME>/ci/serve/worker.sqlite` (override `HOBO_CI_WORKER_DB`) that polls
 GitHub for `runs-on: hobo` jobs. `"store": { "kind": "sqlite" }` is the only
 store kind; the shared Postgres store was removed with the hosted relay's
-database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179)).
+database ([ADR-0179](urn:hobo:decision:adr-0179)).
 Graceful shutdown on SIGINT/SIGTERM.
 
 When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
@@ -390,7 +390,7 @@ exercised against fakes only.
 
 The relay's config/secret store is not set up by hand and lives in no Vercel
 or GitHub secret or variable (ADR-0179 amendment
-[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
+[Secret store chosen at deploy, provisioned by claim](urn:hobo:decision:hosted-relay-stateless#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
 HoBo routes `secrets.config-service/v1` when the deployment runs, provisions
 the store, and hands it to the owner through a HoBo claim:
 
@@ -426,7 +426,7 @@ Agents drive this through the [`hobo-deploy`](../../.claude/skills/hobo-deploy/S
 
 For the hosted relay the requirement is a secrets manager the relay reads
 with workload identity
-([amendment](../../docs/design/adr/hosted-relay-stateless.md#amendment-secretless-first));
+([amendment](urn:hobo:decision:hosted-relay-stateless#amendment-secretless-first));
 today that is Infisical (OIDC Auth). 1Password and Bitwarden offers are
 listed with `runtimeAuth: "stored-token"` and never chosen for the relay's
 runtime store. The `hobo-deploy` skill walks the owner through the

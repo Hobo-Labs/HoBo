@@ -46,5 +46,5 @@ pnpm.cmd run architecture:guard -- --base=origin/main
 
 The proof is referenced by the design record:
 
-- [Threat Model & Security Review design record](../../../../../docs/design/threat-model-security-review.md)
-- [HOBO-451 proof record](../../../../../docs/design/proofs/hobo-451-threat-model-security-review/README.md)
+- [Threat Model & Security Review design record](urn:hobo:requirement:threat-model-security-review)
+- [HOBO-451 proof record](urn:hobo:proof:hobo-451-threat-model-security-review)

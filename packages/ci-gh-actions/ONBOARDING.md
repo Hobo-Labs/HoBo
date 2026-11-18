@@ -1,7 +1,7 @@
 # Hosted GitHub App onboarding
 
 The hosted relay keeps no database
-([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179)) and does
+([ADR-0179](urn:hobo:decision:adr-0179)) and does
 not create the GitHub App: `hobo ci` creates it through GitHub's manifest flow
 and writes its credentials to the relay's config service, which the relay only
 reads ([Config service](../ci-vercel/CONFIG-SERVICE.md)). The relay's

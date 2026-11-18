@@ -168,11 +168,11 @@ function governanceTraceabilityFixture() {
     records: {
       "PLAN-29": {
         issueIds: ["HOBO-146", "HOBO-175", "HOBO-183", "HOBO-187", "HOBO-227"],
-        proof: "docs/design/proofs/hobo-227-governance-conformance/README.md",
+        proof: "urn:hobo:proof:hobo-227-governance-conformance",
       },
       "PLAN-46": {
         issueIds: ["HOBO-183", "HOBO-227"],
-        proof: "docs/design/proofs/hobo-227-governance-conformance/README.md",
+        proof: "urn:hobo:proof:hobo-227-governance-conformance",
       },
       "ADR-0015": {
         issueIds: ["HOBO-146", "HOBO-227"],

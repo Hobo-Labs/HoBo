@@ -28,7 +28,7 @@ launch claims without evidence.
 - CUE constraints: `architecture/vibe_troubleshooting_decision_trees.cue`
 - Pact-style fixture: `architecture/pacts/vibe_troubleshooting_decision_trees.pact.json`
 - Executable acceptance: `test/vibe-troubleshooting-decision-trees.test.ts`
-- Design proof note: `docs/design/proofs/vibe-troubleshooting-decision-trees/README.md`
+- Design proof note: `urn:hobo:proof:vibe-troubleshooting-decision-trees`
 
 ## Verification
 

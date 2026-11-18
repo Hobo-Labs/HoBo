@@ -1,20 +1,3 @@
-// HoBo's own release train as delivery-as-code (docs/design/release-channels.md).
-//
-// One Yard, `hobo-release`, with a candidate and a stable Camp per artifact
-// family. Every CD command reads it as topology:
-//   hobo deploy camp list --yard release/hobo-release.delivery.ts
-//   hobo deploy pipeline apply --file release/hobo-release.delivery.ts
-// Each Camp is realized by the catalogued resolver of its provider
-// (packages/hobo/src/provider-hosting-catalog.ts, "Resolver realizers"). The
-// labels bind where a Camp publishes and which credential locator it may use;
-// what it publishes (artifacts by digest, tags, dist-tag, commit message) is
-// the Freight's. Locators are names, never values: `env://GITHUB_TOKEN` is the
-// workflow's token, resolved at call time by the CD host and never recorded.
-//
-// The repository defaults to Hobo-Labs/HoBo; GITHUB_REPOSITORY (set on every
-// Actions run) names it on a fork, so Pages and GHCR follow the repository the
-// workflow runs in, exactly as the workflow steps they replace did.
-
 const repository = process.env.GITHUB_REPOSITORY?.trim() || "Hobo-Labs/HoBo";
 
 const RELEASE_YARD = "hobo-release";

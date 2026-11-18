@@ -4,9 +4,9 @@ Independent proof for HOBO-117.
 
 This package pins the M0 data-path mTLS contract from:
 
-- `docs/design/security-networking.md`: service identities use SVIDs shaped as `spiffe://<tenant>/<bindle>/<resource>`, mTLS is default across every connectivity tier, and Identity owns certificate issuance/rotation.
-- `docs/design/adr/02-identity-security.md#adr-0008`: SVIDs are short-lived workload identities consumed by downstream seams.
-- `docs/design/adr/02-identity-security.md#adr-0023`: zero-trust means every hop authenticates and authorizes by workload identity, not network position.
+- `urn:hobo:requirement:security-networking`: service identities use SVIDs shaped as `spiffe://<tenant>/<bindle>/<resource>`, mTLS is default across every connectivity tier, and Identity owns certificate issuance/rotation.
+- `urn:hobo:decision:adr-0008`: SVIDs are short-lived workload identities consumed by downstream seams.
+- `urn:hobo:decision:adr-0023`: zero-trust means every hop authenticates and authorizes by workload identity, not network position.
 
 The parser accepts both SPIFFE forms present in the current design record:
 `spiffe://<tenant>/<bindle>/<resource>` for the per-tenant trust-domain contract

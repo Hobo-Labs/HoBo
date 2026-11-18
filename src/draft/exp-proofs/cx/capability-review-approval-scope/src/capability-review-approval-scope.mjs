@@ -90,23 +90,23 @@ export const CAPABILITY_REVIEW_APPROVAL_SCOPE = {
   },
   dependencies: [
     {
-      source: "docs/design/marketplace-publisher-trust-evidence.md",
+      source: "urn:hobo:requirement:marketplace-publisher-trust-evidence",
       reason: "Defines publisher trust tiers, required review evidence, unsupported claims, and customer-visible launch limitations consumed by this M0 scope.",
     },
     {
-      source: "docs/design/sbom-vulnerability-notice-evidence.md",
+      source: "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
       reason: "Defines SBOM, vulnerability, provenance, and notice evidence classes for marketplace/capability bundles.",
     },
     {
-      source: "docs/design/adr/07-portability-extensibility.md#adr-0062",
+      source: "urn:hobo:decision:adr-0062",
       reason: "Pins Registry distribution as signed, certified artifacts rather than ad hoc marketplace installability.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0074",
+      source: "urn:hobo:decision:adr-0074",
       reason: "Pins org governance and mandatory policy as dependencies for approval decisions without implementing policy enforcement here.",
     },
     {
-      source: "docs/design/adr/07-portability-extensibility.md#adr-0075",
+      source: "urn:hobo:decision:adr-0075",
       reason: "Defines interface stability tiers and capability-spec evidence consumed by review decisions.",
     },
     {
@@ -207,28 +207,28 @@ export const CAPABILITY_REVIEW_APPROVAL_SCOPE = {
       kind: "review-queue-state-model",
       owner: "marketplace operator",
       proofMode: "design-record",
-      source: "docs/design/capability-review-approval.md#review-queue-states",
+      source: "urn:hobo:requirement:capability-review-approval#review-queue-states",
       proves: "Review states and allowed transitions are explicit before service implementation begins.",
     },
     {
       kind: "approval-policy-matrix",
       owner: "marketplace operator",
       proofMode: "reference-fixture",
-      source: "docs/design/capability-review-approval.md#approval-outcomes",
+      source: "urn:hobo:requirement:capability-review-approval#approval-outcomes",
       proves: "Limited-beta, installable, rejected, yanked, and escalated outcomes map to owners and customer wording.",
     },
     {
       kind: "trust-tier-evidence-fixture",
       owner: "publisher owner",
       proofMode: "contract-test",
-      source: "docs/design/marketplace-publisher-trust-evidence.md",
+      source: "urn:hobo:requirement:marketplace-publisher-trust-evidence",
       proves: "Publisher identity, provenance, conformance, security review, deprecation/yank, and warnings are present.",
     },
     {
       kind: "security-conformance-checklist",
       owner: "security reviewer",
       proofMode: "security-review",
-      source: "docs/design/sbom-vulnerability-notice-evidence.md",
+      source: "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
       proves: "Installability claims are blocked until security and conformance evidence exists.",
     },
     {
@@ -295,11 +295,11 @@ export function validateCapabilityReviewApprovalScope(scope) {
   }
 
   const requiredSources = [
-    "docs/design/marketplace-publisher-trust-evidence.md",
-    "docs/design/sbom-vulnerability-notice-evidence.md",
-    "docs/design/adr/07-portability-extensibility.md#adr-0062",
-    "docs/design/adr/02-identity-security.md#adr-0074",
-    "docs/design/adr/07-portability-extensibility.md#adr-0075",
+    "urn:hobo:requirement:marketplace-publisher-trust-evidence",
+    "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
+    "urn:hobo:decision:adr-0062",
+    "urn:hobo:decision:adr-0074",
+    "urn:hobo:decision:adr-0075",
     "src/draft/technical-proofs/curated-catalog-policy-contract/README.md",
     "src/draft/technical-proofs/trust-tier-policy-contract/README.md",
   ];

@@ -10,7 +10,7 @@ stay downstream of accepted quickstart and envelope evidence instead of inventin
 - `src/vibe-gap-closure.ts` contains a deterministic child issue matrix for HOBO-540 through
   HOBO-565 plus the corrected DX backbone graph for HOBO-566 through HOBO-577.
 - Tests prove each child targets `src/draft/exp-proofs/<slug>` and
-  `docs/design/proofs/<issue-slug>/README.md`.
+  `urn:hobo:proof:<issue-slug>`.
 - Tests prove the DX backbone keeps `dx-first`, `api`, `sdk`, `cli`, and `contract` label coverage
   across CLI, MCP & Developer Experience slices.
 - Tests prove M1 shape slices block M2 deploy/manage/migrate transcript work before HOBO-577

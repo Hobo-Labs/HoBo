@@ -1,7 +1,7 @@
 # Dispatcher Reservation Hardening Contract POC
 
 Independent HOBO-379 hardening harness for the Dispatcher reservation seam from
-[ADR-0071](../../../../docs/design/adr/01-architecture-core.md#adr-0071).
+[ADR-0071](urn:hobo:decision:adr-0071).
 
 ## What This Proves
 

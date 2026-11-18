@@ -110,27 +110,27 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
   },
   dependencies: [
     {
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "urn:hobo:requirement:workspace-onboarding-ux",
       reason: "Defines first-run activation stages, stalled states, and support handoff fields consumed by pilot scripts.",
     },
     {
-      source: "docs/design/example-apps.md",
+      source: "urn:hobo:requirement:example-apps",
       reason: "Supplies accepted sample-app proof modes when a pilot chooses a sample project instead of a real project.",
     },
     {
-      source: "docs/design/beta-pilot-feedback.md",
+      source: "urn:hobo:requirement:beta-pilot-feedback",
       reason: "Defines comparable feedback intake and release-candidate exit rules for private-beta evidence.",
     },
     {
-      source: "docs/design/launch-demo-golden-path.md",
+      source: "urn:hobo:requirement:launch-demo-golden-path",
       reason: "Keeps launch demo assets separate from customer onboarding while reusing proof-mode language.",
     },
     {
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
       reason: "Defines support escalation language that the script may hand off to without creating support tooling.",
     },
     {
-      source: "docs/design/launch-blocker-taxonomy.md",
+      source: "urn:hobo:requirement:launch-blocker-taxonomy",
       reason: "Supplies blocker, high-risk non-blocker, launch-note, and post-GA follow-up classes for pilot outcomes.",
     },
   ],
@@ -173,7 +173,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Confirm pilot persona, consent, support window, workspace invite, and success definition before exposure.",
       expectedEvidence: "Pilot intake record with persona, consent, support owner, and target workflow.",
       proofMode: "design-record",
-      source: "docs/design/customer-onboarding.md#script-stages",
+      source: "urn:hobo:requirement:customer-onboarding#script-stages",
     },
     {
       id: "workspace-setup",
@@ -181,7 +181,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Create or join the workspace, confirm organization/project context, and record the first blocked or ready state.",
       expectedEvidence: "Workspace setup note with owner, state, missing prerequisite, and safe next action.",
       proofMode: "reference-fixture",
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "urn:hobo:requirement:workspace-onboarding-ux",
     },
     {
       id: "project-choice",
@@ -189,7 +189,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Choose the accepted sample path or a customer-owned project and record why the choice is supportable.",
       expectedEvidence: "Sample-or-real project decision with proof mode, data boundary, and unsupported-state note.",
       proofMode: "design-record",
-      source: "docs/design/example-apps.md",
+      source: "urn:hobo:requirement:example-apps",
     },
     {
       id: "first-deploy",
@@ -197,7 +197,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Attempt the first deploy path only inside accepted proof boundaries and record command/output evidence or refusal.",
       expectedEvidence: "First deploy evidence link, refusal, or blocker category with proof mode.",
       proofMode: "reference-fixture",
-      source: "docs/design/launch-demo-golden-path.md",
+      source: "urn:hobo:requirement:launch-demo-golden-path",
     },
     {
       id: "failure-recovery",
@@ -205,7 +205,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "If blocked, capture the stage, blocker category, safe retry/remediation, owner, and unsupported-state label.",
       expectedEvidence: "Recovery note with blocker category, owner, safe next action, and escalation threshold.",
       proofMode: "support-handoff",
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
     },
     {
       id: "support-handoff",
@@ -213,7 +213,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Handoff unresolved blockers with consented evidence, customer-safe summary, owner, and expected response path.",
       expectedEvidence: "Support handoff record with severity, owner, evidence link, and customer-safe message.",
       proofMode: "support-handoff",
-      source: "docs/design/support-sla-channels.md",
+      source: "urn:hobo:requirement:support-sla-channels",
     },
     {
       id: "feedback-capture",
@@ -221,7 +221,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Capture outcome, time-to-first-success, unresolved risks, blocker classes, and route each note to an owning project.",
       expectedEvidence: "Feedback record routed to cutline, docs, product UX, support, or engineering follow-up.",
       proofMode: "feedback-record",
-      source: "docs/design/beta-pilot-feedback.md",
+      source: "urn:hobo:requirement:beta-pilot-feedback",
     },
   ],
   successCriteria: [

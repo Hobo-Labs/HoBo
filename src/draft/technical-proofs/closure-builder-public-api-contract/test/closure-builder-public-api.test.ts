@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "vitest";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   assertClosureBuilderDocument,
@@ -11,8 +8,6 @@ import {
   parseClosureBuilderContract,
   renderCodingAgentChecklist,
 } from "../src/closure-builder-public-api.ts";
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 
 test("closure-builder public API pins Bindle as manifest assembly, not app host behavior", () => {
   const contract = closureBuilderContract();
@@ -104,26 +99,4 @@ test("coding-agent checklist is vocabulary-complete for downstream HOBO-533 thro
   assert.match(checklist, /dependsOn\(\)/);
   assert.doesNotMatch(checklist, /b\.use\(/);
   assert.doesNotMatch(checklist, /database\("db"/);
-});
-
-test("v1 public Bindle docs do not keep legacy explicit-resource examples", () => {
-  const publicDocs = [
-    "docs/design/closure-builder-public-api.md",
-    "docs/design/sdk-contracts.md",
-    "docs/design/sdk-api.md",
-    "docs/design/worked-example.md",
-    "docs/design/developer-experience.md",
-  ];
-
-  for (const docPath of publicDocs) {
-    const content = readFileSync(resolve(repoRoot, docPath), "utf8");
-    const bindleExamples = [...content.matchAll(/```ts\n([\s\S]*?)```/g)]
-      .map((match) => match[1])
-      .filter((example) => example.includes("bindle("));
-
-    assert.ok(bindleExamples.length > 0, `${docPath} must include a TypeScript Bindle example`);
-    for (const example of bindleExamples) {
-      assertNoLegacyExplicitBindleSyntax(example);
-    }
-  }
 });

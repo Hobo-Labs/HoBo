@@ -3,7 +3,7 @@
 Independent HOBO-694 proof for `hobo dev` local multi-service orchestration.
 
 The contract models dependency-gated startup for the annotation classes pinned in
-[Plan 7](../../docs/design/developer-experience.md#the-inner-loop-hobo-dev) without
+[Plan 7](urn:hobo:requirement:developer-experience#the-inner-loop-hobo-dev) without
 implementing the runtime-local engine, container engine, or CLI watch loop.
 
 It proves:

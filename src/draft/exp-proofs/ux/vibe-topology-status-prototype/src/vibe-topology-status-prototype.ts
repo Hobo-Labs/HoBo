@@ -141,7 +141,7 @@ export interface VibeTopologyStatusPrototype {
   readonly issue: "HOBO-561";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-topology-status-prototype";
-  readonly proofNote: "docs/design/proofs/vibe-topology-status-prototype/README.md";
+  readonly proofNote: "urn:hobo:proof:vibe-topology-status-prototype";
   readonly designRefs: readonly string[];
   readonly sourceDependencies: readonly TopologyStatusSourceDependency[];
   readonly quickstartFixtureRefs: readonly TopologyStatusQuickstartFixtureRef[];
@@ -253,14 +253,14 @@ export const VIBE_TOPOLOGY_STATUS_PROTOTYPE = {
   issue: "HOBO-561",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/ux/vibe-topology-status-prototype",
-  proofNote: "docs/design/proofs/vibe-topology-status-prototype/README.md",
+  proofNote: "urn:hobo:proof:vibe-topology-status-prototype",
   designRefs: [
-    "docs/design/deployment-dashboard-topology-explorer.md",
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/data-plane.md#plan-32",
-    "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md",
-    "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md",
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:requirement:deployment-dashboard-topology-explorer",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:data-plane#plan-32",
+    "urn:hobo:proof:vibe-deployment-dashboard-mockups",
+    "urn:hobo:proof:vibe-dashboard-freshness-rbac-fixtures",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   ],
   sourceDependencies: resolveTopologyStatusDependencies(),
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
@@ -457,7 +457,7 @@ export function resolveTopologyStatusDependencies(): readonly TopologyStatusSour
       issue: "HOBO-577",
       title: "Vibe resource lifecycle quickstart examples",
       status: "accepted",
-      evidence: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+      evidence: "urn:hobo:proof:resource-lifecycle-quickstart-examples",
     },
   ];
 }
@@ -473,7 +473,7 @@ export function parseVibeTopologyStatusPrototype(value: JsonValue): VibeTopology
   );
   expectLiteral(
     prototype.proofNote,
-    "docs/design/proofs/vibe-topology-status-prototype/README.md",
+    "urn:hobo:proof:vibe-topology-status-prototype",
     "proofNote",
   );
 

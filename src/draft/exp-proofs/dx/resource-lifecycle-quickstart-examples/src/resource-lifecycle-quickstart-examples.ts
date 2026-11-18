@@ -73,7 +73,7 @@ export type ResourceLifecycleQuickstartExamples = {
   readonly issue: "HOBO-577";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples";
-  readonly proofNote: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md";
+  readonly proofNote: "urn:hobo:proof:resource-lifecycle-quickstart-examples";
   readonly designRefs: readonly string[];
   readonly scopeOut: readonly string[];
   readonly safeClaims: readonly string[];
@@ -100,15 +100,15 @@ export const RESOURCE_LIFECYCLE_QUICKSTART_EXAMPLES = {
   issue: "HOBO-577",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples",
-  proofNote: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+  proofNote: "urn:hobo:proof:resource-lifecycle-quickstart-examples",
   designRefs: [
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/sdk-api.md#plan-02",
-    "docs/design/control-plane.md#plan-04",
-    "docs/design/platform-engineering.md#plan-25",
-    "docs/design/data-plane.md#plan-32",
-    "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
-    "docs/design/proofs/cli-mcp-parity-resource-lifecycle-contracts/README.md",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:sdk-api#plan-02",
+    "urn:hobo:requirement:control-plane#plan-04",
+    "urn:hobo:requirement:platform-engineering#plan-25",
+    "urn:hobo:requirement:data-plane#plan-32",
+    "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix",
+    "urn:hobo:proof:cli-mcp-parity-resource-lifecycle-contracts",
   ],
   scopeOut: standardScopeOut,
   safeClaims: [
@@ -577,7 +577,7 @@ export function parseResourceLifecycleQuickstartExamples(
   );
   assertLiteral(
     quickstart.proofNote,
-    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
     "proofNote",
   );
   assertNonEmptyStringArray(quickstart.designRefs, "designRefs");

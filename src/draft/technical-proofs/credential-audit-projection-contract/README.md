@@ -1,9 +1,9 @@
 # CredentialAudit Projection Contract POC
 
 Independent POC for HOBO-635. Pins the M1 `CredentialAudit` projection from
-[Plan 05](../../../docs/design/reliability-observability-cost.md#plan-05) and
+[Plan 05](urn:hobo:requirement:reliability-observability-cost#plan-05) and
 the NFR-018 / TR-052 never-compacted audit retention floor from
-[ADR-0023](../../../docs/design/adr/02-identity-security.md#adr-0023) without
+[ADR-0023](urn:hobo:decision:adr-0023) without
 implementing production `packages/cloud/` wiring, SIEM export, or live Gateway/MCP
 servers.
 

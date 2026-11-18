@@ -12,13 +12,13 @@ const VALID_PROOF_MODES = new Set([
 ]);
 
 const REQUIRED_DEPENDENCIES = [
-  "docs/design/organization-workspace-model.md",
-  "docs/design/settings-project-lifecycle.md",
-  "docs/design/tenant-isolation-quotas.md",
-  "docs/design/developer-experience.md#plan-07",
-  "docs/design/security-networking.md#plan-12",
-  "docs/design/adr/02-identity-security.md#adr-0074",
-  "docs/design/adr/02-identity-security.md#adr-0077",
+  "urn:hobo:requirement:organization-workspace-model",
+  "urn:hobo:requirement:settings-project-lifecycle",
+  "urn:hobo:requirement:tenant-isolation-quotas",
+  "urn:hobo:requirement:developer-experience#plan-07",
+  "urn:hobo:requirement:security-networking#plan-12",
+  "urn:hobo:decision:adr-0074",
+  "urn:hobo:decision:adr-0077",
 ];
 
 const FORBIDDEN_SCOPE_PATTERNS = [
@@ -91,31 +91,31 @@ export const MEMBER_RBAC_ADMINISTRATION_SCOPE = {
   },
   dependencies: [
     {
-      source: "docs/design/organization-workspace-model.md",
+      source: "urn:hobo:requirement:organization-workspace-model",
       reason: "Supplies the account, organization, workspace, project, tenant, and environment vocabulary that RBAC must not replace.",
     },
     {
-      source: "docs/design/settings-project-lifecycle.md",
+      source: "urn:hobo:requirement:settings-project-lifecycle",
       reason: "Defines project ownership and lifecycle actions that later role authority must govern.",
     },
     {
-      source: "docs/design/tenant-isolation-quotas.md",
+      source: "urn:hobo:requirement:tenant-isolation-quotas",
       reason: "Defines tenant and quota boundaries that member/admin permissions can expose but not enforce in this issue.",
     },
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "Defines dashboard and developer surfaces that consume project-scoped governance and role visibility.",
     },
     {
-      source: "docs/design/security-networking.md#plan-12",
+      source: "urn:hobo:requirement:security-networking#plan-12",
       reason: "Defines platform tenancy, zero-trust posture, and org governance over HoBo's control-plane surface.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0074",
+      source: "urn:hobo:decision:adr-0074",
       reason: "Pins RBAC, mandatory policy rules, deny ceilings, SSO/SCIM role binding, and audit obligations as the owning decision.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0077",
+      source: "urn:hobo:decision:adr-0077",
       reason: "Pins project and environment as rollup and authorization dimensions for role-scoped operations surfaces.",
     },
   ],

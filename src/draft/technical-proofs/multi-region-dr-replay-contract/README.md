@@ -47,7 +47,7 @@ pnpm --prefix src/draft/technical-proofs/multi-region-dr-replay-contract test
 
 ## References
 
-- [reliability-observability-cost.md Plan 05](../../../docs/design/reliability-observability-cost.md#plan-05)
-- [control-plane.md Plan 04](../../../docs/design/control-plane.md#plan-04)
+- [reliability-observability-cost.md Plan 05](urn:hobo:requirement:reliability-observability-cost#plan-05)
+- [control-plane.md Plan 04](urn:hobo:requirement:control-plane#plan-04)
 - Promoted scenarios: `src/draft/epic-proofs/reliability-observability-cost-finops/`,
   `src/draft/technical-proofs/disaster-recovery-failover-contract/`

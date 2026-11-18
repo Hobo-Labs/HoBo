@@ -22,7 +22,7 @@ Run:
 npm.cmd --prefix src\draft\technical-proofs\training-data-poisoning-guard-contract test
 ```
 
-Design proof: [HOBO-358 training data poisoning guard](../../../../docs/design/proofs/hobo-358-training-data-poisoning/README.md).
+Design proof: [HOBO-358 training data poisoning guard](urn:hobo:proof:hobo-358-training-data-poisoning).
 
 
 ## Executable evidence

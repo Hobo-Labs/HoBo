@@ -3,7 +3,7 @@
 Independent POC for HOBO-276.
 
 This package models the read-only SRE diagnose step from
-[Plan 40](../../../../docs/design/operators-sre.md#plan-40): an opened Incident is
+[Plan 40](urn:hobo:requirement:operators-sre#plan-40): an opened Incident is
 diagnosed by executing runbook `diagnose` reads against projections, then
 emitting `incident.RootCauseIdentified` when evidence is sufficient.
 

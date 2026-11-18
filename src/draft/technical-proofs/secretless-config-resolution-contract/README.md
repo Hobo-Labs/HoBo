@@ -2,8 +2,8 @@
 
 Independent POC for HOBO-222. It composes the existing config schema,
 identity-event, and OIDC federation draft contracts into a narrow runtime
-resolver for the [Plan 21](../../../../docs/design/authoring-resources-wiring.md#plan-21)
-secretless-first ladder from [ADR-0027](../../../../docs/design/adr/02-identity-security.md#adr-0027).
+resolver for the [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)
+secretless-first ladder from [ADR-0027](urn:hobo:decision:adr-0027).
 
 > **Promotion note (S1-19 / HOBO-609):** local-Camp resolution + redaction-at-capture draft POC at
 > `src/draft/technical-proofs/s1-19-ctx-config-local-resolution/`. Production target:

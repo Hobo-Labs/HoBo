@@ -35,20 +35,20 @@ the flagship adopter; GRC tooling increasingly imports/exports it.
 ## Relevance to HoBo
 
 **Align-our-model + emit-at-the-boundary; never a schema dependency**
-([ADR-0144](../design/adr/07-portability-extensibility.md#adr-0144) posture;
+([ADR-0144](urn:hobo:decision:adr-0144) posture;
 decision recorded in
-[ADR-0146](../design/adr/02-identity-security.md#adr-0146)). The mapping:
+[ADR-0146](urn:hobo:decision:adr-0146)). The mapping:
 
 | OSCAL | HoBo |
 |---|---|
 | Component definition + control-implementation | **Control→evidence pack** (`hobo.control-evidence-pack/v1`, `@hobo/policy`): controls cite evidence refs (`event-stream:` / `gate:` / `artifact:` / `retention:`) with honest per-control status |
 | Catalog / profile | The named framework + version on the pack (e.g. NIST SP 800-53 rev5 seed); catalogs stay external — HoBo never re-publishes them |
-| Assessment results / evidence | The evidence sources themselves: `policy.Decided`, `gatekeeper.Decided`, never-compact credential audit ([ADR-0023](../design/adr/02-identity-security.md#adr-0023)), OCSF export ([`./ocsf.md`](./ocsf.md), [ADR-0046](../design/adr/02-identity-security.md#adr-0046)), SBOM/provenance, crypto-shred records — exported for external GRC/assessor tooling |
+| Assessment results / evidence | The evidence sources themselves: `policy.Decided`, `gatekeeper.Decided`, never-compact credential audit ([ADR-0023](urn:hobo:decision:adr-0023)), OCSF export ([`./ocsf.md`](./ocsf.md), [ADR-0046](urn:hobo:decision:adr-0046)), SBOM/provenance, crypto-shred records — exported for external GRC/assessor tooling |
 | POA&M | `evaluateControlCoverage` missing-control output — the computable gap list |
 
 Boundary kept honest: HoBo **exports evidence; it does not attest**
-([governance-planes](../design/governance-planes.md) scope;
-[compliance-evidence-pack](../design/compliance-evidence-pack.md) forbids
+([governance-planes](urn:hobo:requirement:governance-planes) scope;
+[compliance-evidence-pack](urn:hobo:requirement:compliance-evidence-pack) forbids
 certification claims). An OSCAL-JSON emitter for component definitions /
 assessment evidence is a natural boundary artifact when an adopter's GRC
 pipeline wants it — an iteration hook, not a commitment.

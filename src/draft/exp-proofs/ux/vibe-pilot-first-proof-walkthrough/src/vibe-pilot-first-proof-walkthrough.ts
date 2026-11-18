@@ -32,7 +32,7 @@ type PilotFirstProofMode = (typeof REQUIRED_PILOT_FIRST_PROOF_PROOF_MODES)[numbe
 type ConsumedStoryboard = {
   readonly sourceIssue: "HOBO-549";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard";
-  readonly proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md";
+  readonly proofPath: "urn:hobo:proof:vibe-first-customer-pilot-storyboard";
   readonly stages: readonly PilotStage[];
 };
 
@@ -79,7 +79,7 @@ type VibePilotFirstProofWalkthrough = {
   readonly issue: "HOBO-563";
   readonly phase: "M2";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough";
-  readonly proofPath: "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md";
+  readonly proofPath: "urn:hobo:proof:vibe-pilot-first-proof-walkthrough";
   readonly designRefs: readonly string[];
   readonly consumedStoryboard: ConsumedStoryboard;
   readonly steps: readonly WalkthroughStep[];
@@ -100,19 +100,19 @@ export const VIBE_PILOT_FIRST_PROOF_WALKTHROUGH: VibePilotFirstProofWalkthrough 
   issue: "HOBO-563",
   phase: "M2",
   packagePath: "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough",
-  proofPath: "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md",
+  proofPath: "urn:hobo:proof:vibe-pilot-first-proof-walkthrough",
   designRefs: [
-    "docs/design/customer-onboarding.md",
-    "docs/design/workspace-onboarding-ux.md",
-    "docs/design/support-workflow.md",
-    "docs/design/beta-pilot-feedback.md",
-    "docs/design/launch-blocker-taxonomy.md",
-    "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md",
+    "urn:hobo:requirement:customer-onboarding",
+    "urn:hobo:requirement:workspace-onboarding-ux",
+    "urn:hobo:requirement:support-workflow",
+    "urn:hobo:requirement:beta-pilot-feedback",
+    "urn:hobo:requirement:launch-blocker-taxonomy",
+    "urn:hobo:proof:vibe-first-customer-pilot-storyboard",
   ],
   consumedStoryboard: {
     sourceIssue: "HOBO-549",
     packagePath: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard",
-    proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md",
+    proofPath: "urn:hobo:proof:vibe-first-customer-pilot-storyboard",
     stages: REQUIRED_PILOT_STORYBOARD_STAGES,
   },
   steps: [
@@ -260,7 +260,7 @@ export const VIBE_PILOT_FIRST_PROOF_WALKTHROUGH: VibePilotFirstProofWalkthrough 
   supportHandoffEvidence: {
     severity: "SEV3 pilot workflow blocked",
     redactionState: "customer-safe redacted evidence only",
-    evidenceLink: "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md",
+    evidenceLink: "urn:hobo:proof:vibe-pilot-first-proof-walkthrough",
     nextUpdateCondition: "support updates customer when owner route accepts evidence or blocker status changes",
   },
   accessibilityNotes: [
@@ -331,7 +331,7 @@ export function validateVibePilotFirstProofWalkthrough(
   if (walkthrough.packagePath !== "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (walkthrough.proofPath !== "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md") {
+  if (walkthrough.proofPath !== "urn:hobo:proof:vibe-pilot-first-proof-walkthrough") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
 
@@ -361,7 +361,7 @@ function validateConsumedStoryboard(
   if (consumed.packagePath !== "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard") {
     errors.push({ code: "wrong-consumed-package", message: "HOBO-549 package path drifted" });
   }
-  if (consumed.proofPath !== "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md") {
+  if (consumed.proofPath !== "urn:hobo:proof:vibe-first-customer-pilot-storyboard") {
     errors.push({ code: "wrong-consumed-proof", message: "HOBO-549 proof path drifted" });
   }
   if (!arraysEqual(consumed.stages, REQUIRED_PILOT_STORYBOARD_STAGES)) {

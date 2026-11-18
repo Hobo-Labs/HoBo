@@ -91,7 +91,7 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
     {
       id: "claim-register-publication-rules",
       ownerProject: "V1 Launch Site, Messaging & Demo Assets",
-      source: "docs/design/launch-messaging-claims.md#evidence-required-for-publication",
+      source: "urn:hobo:requirement:launch-messaging-claims#evidence-required-for-publication",
       proofMode: "design-record",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -99,7 +99,7 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
     {
       id: "private-beta-launch-site-evidence",
       ownerProject: "V1 Launch Site, Messaging & Demo Assets",
-      source: "HOBO-465 / docs/design/launch-messaging-claims.md#private-beta-evidence-gate",
+      source: "HOBO-465 / urn:hobo:requirement:launch-messaging-claims#private-beta-evidence-gate",
       proofMode: "issue-state",
       status: "accepted",
       acceptanceBullet: "Blockers and accepted risks are recorded.",
@@ -107,7 +107,7 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
     {
       id: "golden-path-demo-assets",
       ownerProject: "Example Apps",
-      source: "docs/design/launch-demo-golden-path.md#required-assets",
+      source: "urn:hobo:requirement:launch-demo-golden-path#required-assets",
       proofMode: "reference-fixture",
       status: "accepted-risk",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -115,7 +115,7 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
     {
       id: "release-candidate-cutline",
       ownerProject: "V1 Release Program & Cutline",
-      source: "docs/design/go-no-go-decision-record.md#m3-release-candidate-evidence-gate",
+      source: "urn:hobo:requirement:go-no-go-decision-record#m3-release-candidate-evidence-gate",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
@@ -123,7 +123,7 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
     {
       id: "release-notes-known-limitations",
       ownerProject: "V1 Release Notes & Upgrade Guide",
-      source: "docs/design/release-notes-upgrade-guide.md#outline",
+      source: "urn:hobo:requirement:release-notes-upgrade-guide#outline",
       proofMode: "design-record",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
@@ -131,7 +131,7 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
     {
       id: "support-legal-handoff",
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
-      source: "docs/design/legal-privacy-terms-readiness.md",
+      source: "urn:hobo:requirement:legal-privacy-terms-readiness",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "The parent HoBo v1 Release Readiness initiative status is updated if this gate changes launch risk.",
@@ -181,21 +181,21 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
       ownerProject: "V1 Launch Site, Messaging & Demo Assets",
       readinessDomain: "documentation",
       cutlineCategory: "v1-blocker.documentation",
-      source: "docs/design/launch-messaging-claims.md#evidence-required-for-publication",
+      source: "urn:hobo:requirement:launch-messaging-claims#evidence-required-for-publication",
     },
     {
       id: "demo-asset-productization",
       ownerProject: "Example Apps",
       readinessDomain: "productization",
       cutlineCategory: "v1-blocker.productization",
-      source: "docs/design/launch-demo-golden-path.md#required-assets",
+      source: "urn:hobo:requirement:launch-demo-golden-path#required-assets",
     },
     {
       id: "dogfood-operations-evidence",
       ownerProject: "V1 Dogfood Yard & Hosted Operations",
       readinessDomain: "operations-readiness",
       cutlineCategory: "v1-blocker.operations-readiness",
-      source: "docs/design/dogfood-yard.md",
+      source: "urn:hobo:requirement:dogfood-yard",
     },
     {
       id: "release-owner-cutline",
@@ -209,14 +209,14 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
       readinessDomain: "legal",
       cutlineCategory: "v1-blocker.legal",
-      source: "docs/design/legal-privacy-terms-readiness.md",
+      source: "urn:hobo:requirement:legal-privacy-terms-readiness",
     },
     {
       id: "support-route-for-unsupported-claims",
       ownerProject: "V1 Launch Support Desk & Escalation",
       readinessDomain: "support",
       cutlineCategory: "v1-blocker.support",
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
     },
   ],
   followUps: [

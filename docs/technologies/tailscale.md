@@ -38,7 +38,7 @@ self-hosted coordination-server alternative; Netbird the OSS product analog.
 ## Relevance to HoBo
 
 **Opt-in managed-mesh adapter (behind the `mesh` port).** ADR-0122
-([portability-extensibility](../design/adr/07-portability-extensibility.md#adr-0122))
+([portability-extensibility](urn:hobo:decision:adr-0122))
 selects **WireGuard as the portable default floor**; Tailscale is one of the
 opt-in, only-registered-considered managed-mesh adapters (Netbird as the
 self-hosted alternative; Headscale noted for sovereign Yards) — selection is
@@ -48,7 +48,7 @@ has no WireGuard-floor adapter yet — tracked as a GAPS.md finding. The **Funne
 traffic-routing adapter (`packages/connectivity/src/traffic-routing/funnel.ts`)
 declares `overlay.funnel` / `overlay.funnel.multi` offerings in the ADR-0143
 fallback ladder. Junction overlay realization
-([security-networking](../design/security-networking.md#plan-12)) composes the
+([security-networking](urn:hobo:requirement:security-networking#plan-12)) composes the
 same substrate. What HoBo borrows conceptually: **identity-keyed networking**
 (nodes join by identity, not address — congruent with SPIFFE workload
 identity), **policy-as-reviewable-file** (congruent with policy packs), and

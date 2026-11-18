@@ -21,7 +21,7 @@ TypeScript through the pinned jco/`componentize-js` toolchain. Toolchain version
 pins in `PINNED_TOOLCHAIN` document intended real-pipeline targets; the real
 pipeline remains deferred (see ship remediation residual **H-E3b**
 and known limitation rows in
-[`docs/design/known-limitations-register.md`](../../docs/design/known-limitations-register.md)).
+[`urn:hobo:requirement:known-limitations-register`](urn:hobo:requirement:known-limitations-register)).
 
 Do not market `@hobo/componentize` output as a portable production WASM membrane
 until a real componentize path lands.
@@ -47,5 +47,5 @@ owned by the consuming packages (`@hobo/cli`, `@hobo/stage-gate`, `@hobo/hobo`),
 
 `@hobo/componentize` is monorepo-internal at `0.0.1` and **not published to npm**
 as a supported external toolchain. Ship-target context:
-[`docs/design/launch-ship-targets.md`](../../docs/design/launch-ship-targets.md),
-[ADR-0139](../../docs/design/adr/07-portability-extensibility.md#adr-0139).
+[`urn:hobo:requirement:launch-ship-targets`](urn:hobo:requirement:launch-ship-targets),
+[ADR-0139](urn:hobo:decision:adr-0139).

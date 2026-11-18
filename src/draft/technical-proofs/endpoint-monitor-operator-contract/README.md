@@ -3,7 +3,7 @@
 Independent POC for HOBO-272.
 
 This package models the Endpoint Monitor slice from
-[Plan 40](../../../../docs/design/operators-sre.md#plan-40): synthetic probe and
+[Plan 40](urn:hobo:requirement:operators-sre#plan-40): synthetic probe and
 drift signals are read by a built-in operator principal, SLO burn and alert
 facts are emitted, and the resulting SRE-facing signal composes with the
 existing SRE skeleton.

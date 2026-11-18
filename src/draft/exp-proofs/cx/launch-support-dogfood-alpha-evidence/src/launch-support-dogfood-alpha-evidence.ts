@@ -44,7 +44,7 @@ export const launchSupportDogfoodAlphaEvidence = Object.freeze({
     {
       id: "support-model-record",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
       proves:
         "M0 launch support severity, responder, communication, and gap-routing matrix is accepted for dogfood/alpha use.",
       acceptanceStatus: "accepted",
@@ -52,7 +52,7 @@ export const launchSupportDogfoodAlphaEvidence = Object.freeze({
     {
       id: "sev0-sev1-drill",
       ownerProject: "Operator Agents, SRE & Incident Response",
-      source: "docs/design/launch-support-escalation.md#severity-matrix",
+      source: "urn:hobo:requirement:launch-support-escalation#severity-matrix",
       proves:
         "SEV0 and SEV1 support handoff drills name incident commander, operators/SRE owner, customer communication gate, and evidence source.",
       acceptanceStatus: "accepted",
@@ -60,7 +60,7 @@ export const launchSupportDogfoodAlphaEvidence = Object.freeze({
     {
       id: "alpha-known-limitation-faq",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      source: "docs/design/support-sla-channels.md#support-channels-and-hours",
+      source: "urn:hobo:requirement:support-sla-channels#support-channels-and-hours",
       proves:
         "Alpha support FAQ covers support window, unsupported request routing, and known limitation wording before public claim promotion.",
       acceptanceStatus: "missing-follow-up",
@@ -70,7 +70,7 @@ export const launchSupportDogfoodAlphaEvidence = Object.freeze({
     {
       id: "redaction-communication-sample",
       ownerProject: "Incident Communications",
-      source: "docs/design/incident-communications.md",
+      source: "urn:hobo:requirement:incident-communications",
       proves:
         "Customer-safe incident update sample uses redaction gate and incident evidence before support or status-page publication.",
       acceptanceStatus: "accepted",
@@ -78,7 +78,7 @@ export const launchSupportDogfoodAlphaEvidence = Object.freeze({
     {
       id: "debug-access-fixture",
       ownerProject: "Reliability, Observability & Cost Controls",
-      source: "docs/design/launch-support-escalation.md#support-and-debug-prerequisites",
+      source: "urn:hobo:requirement:launch-support-escalation#support-and-debug-prerequisites",
       proves:
         "Support debug access fixture names scoped metrics, logs, traces, tenant context, and evidence boundaries without exposing secrets.",
       acceptanceStatus: "accepted",
@@ -86,7 +86,7 @@ export const launchSupportDogfoodAlphaEvidence = Object.freeze({
     {
       id: "cutline-risk-export",
       ownerProject: "V1 Release Program & Cutline",
-      source: "docs/design/launch-blocker-taxonomy.md#source-routing",
+      source: "urn:hobo:requirement:launch-blocker-taxonomy#source-routing",
       proves:
         "Support findings export into cutline decisions as launch blocker, accepted risk, launch note, or post-GA follow-up.",
       acceptanceStatus: "accepted",
@@ -127,37 +127,37 @@ export const launchSupportDogfoodAlphaEvidence = Object.freeze({
   dependencies: Object.freeze([
     {
       ownerProject: "V1 Release Program & Cutline",
-      cutlineRef: "docs/design/launch-blocker-taxonomy.md#source-routing",
+      cutlineRef: "urn:hobo:requirement:launch-blocker-taxonomy#source-routing",
       requiredForM1: true,
       consumes: "Support finding classifications and parent initiative risk summary.",
     },
     {
       ownerProject: "Incident Communications",
-      cutlineRef: "docs/design/incident-communications.md",
+      cutlineRef: "urn:hobo:requirement:incident-communications",
       requiredForM1: true,
       consumes: "Customer-safe message redaction, incident facts, and update handoff evidence.",
     },
     {
       ownerProject: "Support Workflow",
-      cutlineRef: "docs/design/support-sla-channels.md",
+      cutlineRef: "urn:hobo:requirement:support-sla-channels",
       requiredForM1: true,
       consumes: "Support channels, unsupported request classes, and SLA language boundary.",
     },
     {
       ownerProject: "V1 Beta Pilot & Feedback Loop",
-      cutlineRef: "docs/design/beta-pilot-feedback.md#triage-routes",
+      cutlineRef: "urn:hobo:requirement:beta-pilot-feedback#triage-routes",
       requiredForM1: true,
       consumes: "Beta feedback routed to support as support path or escalation gaps.",
     },
     {
       ownerProject: "Reliability, Observability & Cost Controls",
-      cutlineRef: "docs/design/launch-support-escalation.md#support-and-debug-prerequisites",
+      cutlineRef: "urn:hobo:requirement:launch-support-escalation#support-and-debug-prerequisites",
       requiredForM1: true,
       consumes: "Scoped observability evidence needed by support first responders.",
     },
     {
       ownerProject: "Operator Agents, SRE & Incident Response",
-      cutlineRef: "docs/design/operators-sre.md#plan-40",
+      cutlineRef: "urn:hobo:requirement:operators-sre#plan-40",
       requiredForM1: true,
       consumes: "Incident command, runbook, on-call, hobo:notify, and escalation handoff evidence.",
     },

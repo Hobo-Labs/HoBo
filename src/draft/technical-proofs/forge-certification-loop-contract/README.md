@@ -1,7 +1,7 @@
 # Forge Certification Loop Contract POC
 
 Independent POC for HOBO-649 (S5-04). It pins the Forge certification loop from
-Plan 23 (`docs/design/generated-stack.md#plan-23`): run candidate providers
+Plan 23 (`urn:hobo:requirement:generated-stack#plan-23`): run candidate providers
 inside the S2-07 no-egress executor sandbox against per-interface conformance
 suites (S5-02 shape), feed validation failures into a bounded repair cycle,
 and event-source every validate/repair/gate step.

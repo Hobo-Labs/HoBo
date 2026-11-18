@@ -73,7 +73,7 @@ test("cross-project dependencies are reflected in release cutline domains", asyn
       ownerProject: "V1 Launch Site, Messaging & Demo Assets",
       readinessDomain: "productization",
       cutlineCategory: "productization",
-      source: "docs/design/launch-messaging-claims.md",
+      source: "urn:hobo:requirement:launch-messaging-claims",
     },
   ];
 

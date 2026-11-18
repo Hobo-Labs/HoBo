@@ -144,7 +144,7 @@ the buyer in Kubernetes; HoBo's is more general and less proven.
 - **Event-sourced control plane with replay** (*implemented*, ADR-0135).
 - **Honest caveat.** Porter ships real multi-cloud provisioning with excellent credential hygiene
   today; HoBo's identity port is thinner and its default Pulumi path is an in-memory stand-in (see
-  the [live provider matrix](../design/live-provider-matrix.md)).
+  the [live provider matrix](urn:hobo:requirement:live-provider-matrix)).
 
 ## Adversarial critique
 

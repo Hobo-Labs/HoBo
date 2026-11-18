@@ -31,8 +31,8 @@ npm.cmd --prefix src\draft\technical-proofs\provider-hetzner-contract test
 
 Relevant design records:
 
-- `docs/design/control-plane.md`: Hetzner seed provider, provider authoring, `realize()` emission, and provider-owned defaults
-- `docs/design/adr/07-portability-extensibility.md#adr-0024`: portability conformance guarantee and seed provider set
+- `urn:hobo:requirement:control-plane`: Hetzner seed provider, provider authoring, `realize()` emission, and provider-owned defaults
+- `urn:hobo:decision:adr-0024`: portability conformance guarantee and seed provider set
 
 
 ## Executable evidence

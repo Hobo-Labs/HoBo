@@ -5,7 +5,7 @@ Independent POC for HOBO-267. It pins the M0 classifier that maps documented SRE
 ## Contract Surface
 
 - `classifyFailureSignal(signal)` returns `{ failureClass, strategy, decisionBranch, action }`.
-- Every documented class from `docs/design/operators-sre.md` is represented in `failureTaxonomyEntries`.
+- Every documented class from `urn:hobo:requirement:operators-sre` is represented in `failureTaxonomyEntries`.
 - Unknown signals fail closed to `escalate`.
 - Ambiguous matches choose the most restrictive branch: `escalate` over `propose` over `auto-fix`.
 - `requiresHuman` signals short-circuit to escalation before taxonomy matching.

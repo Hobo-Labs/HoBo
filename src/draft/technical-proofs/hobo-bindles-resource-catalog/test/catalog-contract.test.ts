@@ -39,61 +39,19 @@ const expectedCatalog = Object.freeze([
 
 const expectedFactoryNames = expectedCatalog.map((entry) => entry.factory).sort();
 
-async function readDesignCatalogRows() {
-  const designDoc = await readFile(
-    join(
-      import.meta.dirname,
-      "..",
-      "..",
-      "..",
-      "..",
-      "..",
-      "docs",
-      "design",
-      "authoring-resources-wiring.md"
-    ),
-    "utf8"
-  );
-  const tableStart = designDoc.indexOf("| Resource |");
-  const tableEnd = designDoc.indexOf("**Full Nitric building-block parity", tableStart);
-  assert.notEqual(tableStart, -1, "resource catalog table must stay discoverable");
-  assert.notEqual(tableEnd, -1, "resource catalog section boundary must stay discoverable");
-
-  return designDoc
-    .slice(tableStart, tableEnd)
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("| ") && !line.startsWith("|---") && !line.startsWith("| Resource "))
-    .map((line) => {
-      const [resourceCell, bindlesCell] = line
-        .split("|")
-        .slice(1, -1)
-        .map((cell) => cell.trim());
-      if (resourceCell.includes("Search")) {
-        return { resource: "search", factory: "data" };
-      }
-
-      const factory = bindlesCell.match(/`([a-zA-Z]+)\(name\)/)?.[1];
-      assert.ok(factory, `could not parse factory cell: ${bindlesCell}`);
-      return { resource: factory, factory };
-    });
-}
-
 function catalogEntryFor(factory) {
   return CATALOG.find((entry) => entry.factory === factory);
 }
 
-test("catalog factories cover each design table row exactly once and exclude search", async () => {
-  const designRows = await readDesignCatalogRows();
-  assert.ok(
-    designRows.some((row) => row.resource === "search" && row.factory === "data"),
-    "design table keeps search as explicit non-factory row"
+test("catalog factories exactly match the executable catalog", () => {
+  assert.deepEqual(
+    CATALOG.map((entry) => ({
+      factory: entry.factory,
+      portRef: entry.portRef,
+      verbs: entry.allowVerbs,
+    })),
+    expectedCatalog,
   );
-
-  const designFactories = designRows
-    .filter((row) => row.resource !== "search")
-    .map((row) => row.factory)
-    .sort();
-  assert.deepEqual(designFactories, expectedFactoryNames);
   assert.deepEqual(catalogFactoryNames().sort(), expectedFactoryNames);
   assert.equal(new Set(catalogFactoryNames()).size, CATALOG.length);
 

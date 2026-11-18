@@ -312,18 +312,18 @@ Gaps relative to HoBo's scope:
 
 | InsForge surface | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Postgres database, migrations, pgvector | `sql`/data-model/data-migration/search/vector ports and paradigm packages | parity/further | [Plan 21](../design/authoring-resources-wiring.md#plan-21), [Plan 32](../design/data-plane.md#plan-32) |
-| Tables as REST/SDK APIs | generated WIT clients, typed service APIs, query/search surfaces | further | [Plan 2](../design/sdk-api.md#plan-02), [ADR-0037](../design/adr/01-architecture-core.md#adr-0037) |
-| JWT + Postgres RLS | `hobo:auth`, unified principals, policy plane, `.allow()` | parity/further | [Plan 6](../design/ai-native-agent-auth.md#plan-06), [Plan 29](../design/contracts-policy-flags.md#plan-29) |
-| S3-compatible storage | `wasi:blobstore` / storage capability providers | parity | [Plan 21](../design/authoring-resources-wiring.md#plan-21), [Plan 20](../design/wasm-runtime-wit.md#plan-20) |
-| Realtime channels, presence, webhook fan-out | `Streamer`, reactive query model, event projections, `notify`/webhook-out | parity/further | [Plan 32](../design/data-plane.md#plan-32), [Plan 21](../design/authoring-resources-wiring.md#plan-21) |
-| Deno edge functions | wasm components/services, OCI fallback, schedules/triggers | further | [Plan 20](../design/wasm-runtime-wit.md#plan-20), [Plan 2](../design/sdk-api.md#plan-02) |
-| Custom Compute containers | OCI container fallback and long-running worker resources | parity | [Plan 20](../design/wasm-runtime-wit.md#plan-20), [Plan 25](../design/platform-engineering.md#plan-25) |
-| Sites via Vercel | `web()` resource / frontend hosting capability | adjacent | [Plan 21](../design/authoring-resources-wiring.md#plan-21) |
-| Model Gateway | `model`/`embed`/AI capability with cost, policy, and secretless routing | parity/further | [Plan 23](../design/generated-stack.md#plan-23), [Plan 46](../design/governance-planes.md#plan-46) |
-| Messaging | `notify` port | parity | [Plan 21](../design/authoring-resources-wiring.md#plan-21) |
-| Payments | app integration/resource pack; not HoBo core platform scope | adjacent | [ADR-0064](../design/adr/07-portability-extensibility.md#adr-0064) |
-| Analytics/PostHog | observability/product analytics provider; HoBo run inspector and telemetry are platform-facing | adjacent | [Plan 5](../design/reliability-observability-cost.md#plan-05), [Plan 49](../design/developer-experience.md#plan-49) |
+| Postgres database, migrations, pgvector | `sql`/data-model/data-migration/search/vector ports and paradigm packages | parity/further | [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [Plan 32](urn:hobo:requirement:data-plane#plan-32) |
+| Tables as REST/SDK APIs | generated WIT clients, typed service APIs, query/search surfaces | further | [Plan 2](urn:hobo:requirement:sdk-api#plan-02), [ADR-0037](urn:hobo:decision:adr-0037) |
+| JWT + Postgres RLS | `hobo:auth`, unified principals, policy plane, `.allow()` | parity/further | [Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06), [Plan 29](urn:hobo:requirement:contracts-policy-flags#plan-29) |
+| S3-compatible storage | `wasi:blobstore` / storage capability providers | parity | [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
+| Realtime channels, presence, webhook fan-out | `Streamer`, reactive query model, event projections, `notify`/webhook-out | parity/further | [Plan 32](urn:hobo:requirement:data-plane#plan-32), [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Deno edge functions | wasm components/services, OCI fallback, schedules/triggers | further | [Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [Plan 2](urn:hobo:requirement:sdk-api#plan-02) |
+| Custom Compute containers | OCI container fallback and long-running worker resources | parity | [Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [Plan 25](urn:hobo:requirement:platform-engineering#plan-25) |
+| Sites via Vercel | `web()` resource / frontend hosting capability | adjacent | [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Model Gateway | `model`/`embed`/AI capability with cost, policy, and secretless routing | parity/further | [Plan 23](urn:hobo:requirement:generated-stack#plan-23), [Plan 46](urn:hobo:requirement:governance-planes#plan-46) |
+| Messaging | `notify` port | parity | [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Payments | app integration/resource pack; not HoBo core platform scope | adjacent | [ADR-0064](urn:hobo:decision:adr-0064) |
+| Analytics/PostHog | observability/product analytics provider; HoBo run inspector and telemetry are platform-facing | adjacent | [Plan 5](urn:hobo:requirement:reliability-observability-cost#plan-05), [Plan 49](urn:hobo:requirement:developer-experience#plan-49) |
 
 ### Agent and operations surfaces
 

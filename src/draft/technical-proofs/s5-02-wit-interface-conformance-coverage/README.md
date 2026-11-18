@@ -6,9 +6,9 @@ unless every claimed interface passes.
 
 ## Requirements Source
 
-- `docs/design/generated-stack.md#plan-09`: `@hobo/conformance` is the trust
+- `urn:hobo:requirement:generated-stack#plan-09`: `@hobo/conformance` is the trust
   boundary; conformance is **per WIT interface** and gates provider listing.
-- `docs/design/adr/03-data-plane.md#adr-0010`: generated providers certify only
+- `urn:hobo:decision:adr-0010`: generated providers certify only
   by satisfying the target WIT port and conformance suite.
 - `src/draft/epic-proofs/foundations-build-conformance-harness/`: conformance
   evidence matrix (suite required before adapter trust).

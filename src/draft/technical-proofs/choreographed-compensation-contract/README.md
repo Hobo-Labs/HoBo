@@ -26,8 +26,8 @@ npm.cmd --prefix src\draft\technical-proofs\choreographed-compensation-contract 
 
 Relevant design records:
 
-- `docs/design/control-plane.md`: choreography compensation in Plan 04
-- `docs/design/adr/01-architecture-core.md`: ADR-0004
+- `urn:hobo:requirement:control-plane`: choreography compensation in Plan 04
+- `urn:hobo:decision:01-architecture-core`: ADR-0004
 - `docs/implementation-plan.md`: HOBO-109 wiring under Control Plane
 
 

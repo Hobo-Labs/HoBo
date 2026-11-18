@@ -35,15 +35,15 @@ test("M0 record maps dependencies to authoritative docs, release, support, and s
   assert.deepEqual(
     DOCS_PORTAL_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "docs/design/developer-experience.md#plan-07",
-      "docs/design/release-notes-upgrade-guide.md",
-      "docs/design/compatibility-matrix.md",
-      "docs/design/launch-messaging-claims.md",
-      "docs/design/support-sla-channels.md",
-      "docs/design/launch-support-escalation.md",
-      "docs/design/security-verification.md",
-      "docs/design/accessibility-usability-launch-baseline.md",
-      "docs/design/adr/02-identity-security.md#adr-0082",
+      "urn:hobo:requirement:developer-experience#plan-07",
+      "urn:hobo:requirement:release-notes-upgrade-guide",
+      "urn:hobo:requirement:compatibility-matrix",
+      "urn:hobo:requirement:launch-messaging-claims",
+      "urn:hobo:requirement:support-sla-channels",
+      "urn:hobo:requirement:launch-support-escalation",
+      "urn:hobo:requirement:security-verification",
+      "urn:hobo:requirement:accessibility-usability-launch-baseline",
+      "urn:hobo:decision:adr-0082",
     ],
   );
 });

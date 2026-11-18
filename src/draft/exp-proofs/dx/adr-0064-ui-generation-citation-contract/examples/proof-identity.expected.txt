@@ -1,3 +1,0 @@
-slug: adr-0064-ui-generation-citation-contract
-layer: exp
-proof-identity: ok

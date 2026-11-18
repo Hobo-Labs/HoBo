@@ -46,5 +46,5 @@ pnpm.cmd run architecture:guard -- --base=origin/main
 
 The proof is also referenced by the design records:
 
-- [Customer Onboarding design record](../../../../docs/design/customer-onboarding.md)
-- [HOBO-449 proof record](../../../../docs/design/proofs/hobo-449-customer-onboarding-scope/README.md)
+- [Customer Onboarding design record](urn:hobo:requirement:customer-onboarding)
+- [HOBO-449 proof record](urn:hobo:proof:hobo-449-customer-onboarding-scope)

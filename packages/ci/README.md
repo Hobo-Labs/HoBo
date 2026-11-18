@@ -148,7 +148,7 @@ and a SQLite journal written before the index existed. The relay's MCP server is
 
 `SqliteCiStore` (`@hobo/ci/sqlite`) is the durable lease store: one file, one
 writer, used by `hobo ci serve` and the box worker. The hosted relay keeps no
-durable state ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179));
+durable state ([ADR-0179](urn:hobo:decision:adr-0179));
 its store is the [cache store](../ci-gh-actions/README.md#relay-cache-store) in
 `@hobo/ci-gh-actions`. The PostgreSQL store (`PostgresCiStore`), its schema and
 migrations were removed in phase 7 of that design. The rules below hold for
@@ -510,7 +510,7 @@ are pure functions; the box worker in `@hobo/ci-gh-actions` calls them when `HOB
 
 A signature says which key wrote an advertisement, not what software the node runs. The design, its
 failure table, the trust model's limits and the remaining increments are in
-[CI Relay Mesh](../../docs/design/ci-relay-mesh.md).
+[CI Relay Mesh](urn:hobo:requirement:ci-relay-mesh).
 
 ## HoBo's own builds as Freight
 

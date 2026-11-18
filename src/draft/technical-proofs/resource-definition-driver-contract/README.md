@@ -67,11 +67,11 @@ npm.cmd --prefix src\draft\technical-proofs\resource-definition-driver-contract 
 
 Relevant design records:
 
-- `docs/design/platform-engineering.md`: Resource Definition shape, matching dimensions, mapping
+- `urn:hobo:requirement:platform-engineering`: Resource Definition shape, matching dimensions, mapping
   sugar, driver taxonomy, co-provisioning
-- `docs/design/control-plane.md`: Planner resolves one Resource Definition per resource and
+- `urn:hobo:requirement:control-plane`: Planner resolves one Resource Definition per resource and
   providers ship default definitions through equivalence + `realize()`
-- `docs/design/adr/01-architecture-core.md`: ADR-0006 and ADR-0033
+- `urn:hobo:decision:01-architecture-core`: ADR-0006 and ADR-0033
 
 
 ## Executable evidence

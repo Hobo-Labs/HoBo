@@ -261,7 +261,7 @@ A half-set pair is an error that names the missing variable; a URL off the
 `*.upstash.io` data plane is refused without being echoed; the token is read
 at call time. Which pair the Vercel Marketplace integration injects, and how
 the relay falls back to a self-hosted Valkey, is in
-[`docs/design/relay-ephemeral-state.md`](../../../docs/design/relay-ephemeral-state.md).
+[`urn:hobo:requirement:relay-ephemeral-state`](urn:hobo:requirement:relay-ephemeral-state).
 
 **Failed commands are replies.** Upstash answers a failed command with HTTP
 400 and `{"error": "..."}`. The executor returns that as an error reply rather

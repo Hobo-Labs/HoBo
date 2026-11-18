@@ -74,23 +74,23 @@ export const SETTINGS_PROJECT_LIFECYCLE_SCOPE = {
   },
   dependencies: [
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "Defines dashboard and project-facing developer experience surfaces that consume settings/lifecycle state.",
     },
     {
-      source: "docs/design/architecture.md#plan-10",
+      source: "urn:hobo:requirement:architecture#plan-10",
       reason: "Defines repository and control-plane shape that settings/project records must fit without adding runtime implementation.",
     },
     {
-      source: "docs/design/security-networking.md#plan-50",
+      source: "urn:hobo:requirement:security-networking#plan-50",
       reason: "Defines tenant isolation concerns consumed as boundaries, not implemented inside this M0 scope.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0077",
+      source: "urn:hobo:decision:adr-0077",
       reason: "Projects and environments are grouping dimensions for operations dashboards and status surfaces.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0074",
+      source: "urn:hobo:decision:adr-0074",
       reason: "Org governance and RBAC are mandatory dependencies, but enforcement is out of this issue.",
     },
   ],
@@ -241,11 +241,11 @@ export function validateSettingsProjectLifecycleScope(scope) {
   }
 
   const requiredSources = [
-    "docs/design/developer-experience.md#plan-07",
-    "docs/design/architecture.md#plan-10",
-    "docs/design/security-networking.md#plan-50",
-    "docs/design/adr/02-identity-security.md#adr-0077",
-    "docs/design/adr/02-identity-security.md#adr-0074",
+    "urn:hobo:requirement:developer-experience#plan-07",
+    "urn:hobo:requirement:architecture#plan-10",
+    "urn:hobo:requirement:security-networking#plan-50",
+    "urn:hobo:decision:adr-0077",
+    "urn:hobo:decision:adr-0074",
   ];
   const sources = (scope.dependencies ?? []).map((dependency) => dependency.source);
   if (JSON.stringify(sources) !== JSON.stringify(requiredSources)) {

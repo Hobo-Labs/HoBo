@@ -91,7 +91,7 @@ export const launchSupportReleaseCandidateEvidence: LaunchSupportReleaseCandidat
     {
       id: "private-beta-support-baseline",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      source: "HOBO-467 / docs/design/launch-support-escalation.md#m2-private-beta-evidence",
+      source: "HOBO-467 / urn:hobo:requirement:launch-support-escalation#m2-private-beta-evidence",
       proofMode: "issue-state",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -99,7 +99,7 @@ export const launchSupportReleaseCandidateEvidence: LaunchSupportReleaseCandidat
     {
       id: "release-candidate-support-drill",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      source: "docs/design/launch-support-escalation.md#m3-release-candidate-evidence",
+      source: "urn:hobo:requirement:launch-support-escalation#m3-release-candidate-evidence",
       proofMode: "support-drill",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -107,7 +107,7 @@ export const launchSupportReleaseCandidateEvidence: LaunchSupportReleaseCandidat
     {
       id: "incident-command-handoff-rehearsal",
       ownerProject: "Operators/SRE",
-      source: "docs/design/operators-sre.md#plan-40",
+      source: "urn:hobo:requirement:operators-sre#plan-40",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
@@ -115,7 +115,7 @@ export const launchSupportReleaseCandidateEvidence: LaunchSupportReleaseCandidat
     {
       id: "customer-update-redaction-rehearsal",
       ownerProject: "Public Status Page & Incident Communication",
-      source: "docs/design/public-status-page-incident-communication.md",
+      source: "urn:hobo:requirement:public-status-page-incident-communication",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
@@ -123,7 +123,7 @@ export const launchSupportReleaseCandidateEvidence: LaunchSupportReleaseCandidat
     {
       id: "security-sensitive-support-route",
       ownerProject: "Security Verification",
-      source: "docs/design/security-verification.md",
+      source: "urn:hobo:requirement:security-verification",
       proofMode: "design-record",
       status: "accepted",
       acceptanceBullet: "Blockers and accepted risks are recorded.",
@@ -174,28 +174,28 @@ export const launchSupportReleaseCandidateEvidence: LaunchSupportReleaseCandidat
       ownerProject: "V1 Launch Support Desk & Escalation",
       readinessDomain: "support",
       cutlineCategory: "v1-blocker.support",
-      source: "docs/design/launch-support-escalation.md#m3-release-candidate-evidence",
+      source: "urn:hobo:requirement:launch-support-escalation#m3-release-candidate-evidence",
     },
     {
       id: "incident-command-rehearsal",
       ownerProject: "Operators/SRE",
       readinessDomain: "operations-readiness",
       cutlineCategory: "v1-blocker.operations-readiness",
-      source: "docs/design/operators-sre.md#plan-40",
+      source: "urn:hobo:requirement:operators-sre#plan-40",
     },
     {
       id: "customer-update-language",
       ownerProject: "V1 Release Notes & Upgrade Guide",
       readinessDomain: "documentation",
       cutlineCategory: "v1-blocker.documentation",
-      source: "docs/design/release-notes-upgrade-guide.md",
+      source: "urn:hobo:requirement:release-notes-upgrade-guide",
     },
     {
       id: "security-route-review",
       ownerProject: "Security Verification",
       readinessDomain: "security",
       cutlineCategory: "v1-blocker.security",
-      source: "docs/design/security-verification.md",
+      source: "urn:hobo:requirement:security-verification",
     },
     {
       id: "release-owner-signoff",

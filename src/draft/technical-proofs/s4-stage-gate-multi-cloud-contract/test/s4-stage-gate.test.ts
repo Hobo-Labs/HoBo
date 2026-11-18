@@ -139,6 +139,6 @@ test("credentialed camp-tagged drill lane emits green fixture report", () => {
   assert.equal(run.ok, true);
   assert.equal(run.fixture, "examples/multi-cloud-shop");
   assert.deepEqual(run.providers, ["aws", "azure"]);
-  assert.equal(run.acceptanceRecord, "docs/design/proofs/s4-01-stage-gate-acceptance");
+  assert.equal(run.acceptanceRecord, "urn:hobo:proof:s4-01-stage-gate-acceptance");
   assert.equal(run.report.events[0].type, "s4StageGate.DrillPassed");
 });

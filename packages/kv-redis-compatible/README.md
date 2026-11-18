@@ -195,7 +195,7 @@ Nothing above the executor changes, so moving a caller from a hosted REST
 store to a Valkey on a box is a configuration change, not a code change.
 Valkey needs nothing beyond `requirepass`; the scripts use no command newer
 than Redis 5. The relay's selection order and the hosted environment names are
-in [`docs/design/relay-ephemeral-state.md`](../../docs/design/relay-ephemeral-state.md).
+in [`urn:hobo:requirement:relay-ephemeral-state`](urn:hobo:requirement:relay-ephemeral-state).
 
 ### Metering
 

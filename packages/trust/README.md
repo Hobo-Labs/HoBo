@@ -71,7 +71,7 @@ unselectable product means no `DeploymentOffer` is ever built, so no acceptance
 is recorded and no provisioning command is issued. Once an offer is accepted,
 the trust evidence refs and the bundle digest travel in `BrokerRequest.guest`
 and are pinned into the signed `ResolutionReceipt`
-([ADR-0151](../../docs/design/adr/07-portability-extensibility.md#adr-0151)).
+([ADR-0151](urn:hobo:decision:adr-0151)).
 Downstream, the claim coordinator **actor** in `@hobo/claims` emits the
 `claim.*` **events** (`ClaimItemStarted`, `OwnershipVerified`,
 `GuestLeaseExpired`, …) that the host appends to the durable **event store**;

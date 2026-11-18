@@ -4,7 +4,7 @@ Independent proof for HOBO-121.
 
 This package pins the M1 tier-one networking realization contract from:
 
-- `docs/design/security-networking.md`: `bind` edges derive endpoint resolution, least-privilege network authorization, and same-provider same-region native private networking.
+- `urn:hobo:requirement:security-networking`: `bind` edges derive endpoint resolution, least-privilege network authorization, and same-provider same-region native private networking.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and tier enum.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's SVID-keyed mTLS decision contract.
 

@@ -87,18 +87,18 @@ const VALID_PROOF_MODES = new Set<ProofMode>([
 ]);
 
 const REQUIRED_DEPENDENCIES = [
-  "docs/design/developer-experience.md#plan-07",
-  "docs/design/developer-experience.md#plan-49",
-  "docs/design/workspace-activation-telemetry-contract.md",
-  "docs/design/admin-console.md",
-  "docs/design/audit-explorer.md",
-  "docs/design/support-sla-channels.md",
-  "docs/design/launch-support-escalation.md",
-  "docs/design/operators-sre.md#plan-40",
-  "docs/design/data-plane.md#plan-11",
-  "docs/design/adr/02-identity-security.md#adr-0074",
-  "docs/design/adr/03-data-plane.md#adr-0050",
-  "docs/design/adr/03-data-plane.md#adr-0058",
+  "urn:hobo:requirement:developer-experience#plan-07",
+  "urn:hobo:requirement:developer-experience#plan-49",
+  "urn:hobo:requirement:workspace-activation-telemetry-contract",
+  "urn:hobo:requirement:admin-console",
+  "urn:hobo:requirement:audit-explorer",
+  "urn:hobo:requirement:support-sla-channels",
+  "urn:hobo:requirement:launch-support-escalation",
+  "urn:hobo:requirement:operators-sre#plan-40",
+  "urn:hobo:requirement:data-plane#plan-11",
+  "urn:hobo:decision:adr-0074",
+  "urn:hobo:decision:adr-0050",
+  "urn:hobo:decision:adr-0058",
 ];
 
 const REQUIRED_DIAGNOSTIC_FIELDS = ["tenant", "project", "environment", "correlation-id"];
@@ -193,51 +193,51 @@ export const SUPPORT_DEBUG_TOOLS_SCOPE: SupportDebugToolsScope = {
   },
   dependencies: [
     {
-      source: "docs/design/developer-experience.md#plan-07",
+      source: "urn:hobo:requirement:developer-experience#plan-07",
       reason: "Defines inspect, logs, run inspector, dashboard, and CLI/MCP views that support diagnostics later consume.",
     },
     {
-      source: "docs/design/developer-experience.md#plan-49",
+      source: "urn:hobo:requirement:developer-experience#plan-49",
       reason: "Defines operations dashboard, project/environment grouping, status surfaces, and incident/status projection discipline.",
     },
     {
-      source: "docs/design/workspace-activation-telemetry-contract.md",
+      source: "urn:hobo:requirement:workspace-activation-telemetry-contract",
       reason: "Names first failure recovered as a Support & Debug Tools product question and recovery use.",
     },
     {
-      source: "docs/design/admin-console.md",
+      source: "urn:hobo:requirement:admin-console",
       reason: "Defines admin-visible project, environment, entitlement, support, and security context consumed by support diagnostics.",
     },
     {
-      source: "docs/design/audit-explorer.md",
+      source: "urn:hobo:requirement:audit-explorer",
       reason: "Defines audit facts, tenant-first filters, redaction, export evidence, and support handoff context.",
     },
     {
-      source: "docs/design/support-sla-channels.md",
+      source: "urn:hobo:requirement:support-sla-channels",
       reason: "Defines support channels, response language, unsupported request routing, and support workflow boundaries.",
     },
     {
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
       reason: "Defines severity routing, incident communication templates, support/debug prerequisites, and gap routing.",
     },
     {
-      source: "docs/design/operators-sre.md#plan-40",
+      source: "urn:hobo:requirement:operators-sre#plan-40",
       reason: "Defines incident management, runbooks, operator agents, and autonomous-action boundaries.",
     },
     {
-      source: "docs/design/data-plane.md#plan-11",
+      source: "urn:hobo:requirement:data-plane#plan-11",
       reason: "Defines event audit trail, projections, replay, and materialized views used by diagnostic bundles.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0074",
+      source: "urn:hobo:decision:adr-0074",
       reason: "Pins org governance, RBAC, mandatory policy rules, deny ceilings, and audit obligations.",
     },
     {
-      source: "docs/design/adr/03-data-plane.md#adr-0050",
+      source: "urn:hobo:decision:adr-0050",
       reason: "Pins event-sourced projections, materialized views, read stores, and replay semantics.",
     },
     {
-      source: "docs/design/adr/03-data-plane.md#adr-0058",
+      source: "urn:hobo:decision:adr-0058",
       reason: "Pins incidents, runbooks, self-healing decisions, and SRE handoff semantics.",
     },
   ],

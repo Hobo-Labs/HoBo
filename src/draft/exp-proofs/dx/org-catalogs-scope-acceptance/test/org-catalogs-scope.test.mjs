@@ -30,17 +30,17 @@ test("M0 record states goal, personas, scope, non-goals, and boundaries", () => 
 
 test("M0 dependencies map authoritative design sources and owning initiatives", () => {
   assert.ok(
-    ORG_CATALOGS_SCOPE.designRefs.includes("docs/design/organization-workspace-model.md"),
+    ORG_CATALOGS_SCOPE.designRefs.includes("urn:hobo:requirement:organization-workspace-model"),
   );
-  assert.ok(ORG_CATALOGS_SCOPE.designRefs.includes("docs/design/walkthrough.md"));
+  assert.ok(ORG_CATALOGS_SCOPE.designRefs.includes("urn:hobo:requirement:walkthrough"));
   assert.ok(
     ORG_CATALOGS_SCOPE.adrRefs.includes(
-      "docs/design/adr/07-portability-extensibility.md#adr-0062",
+      "urn:hobo:decision:adr-0062",
     ),
   );
   assert.ok(
     ORG_CATALOGS_SCOPE.adrRefs.includes(
-      "docs/design/adr/02-identity-security.md#adr-0074",
+      "urn:hobo:decision:adr-0074",
     ),
   );
   assert.ok(

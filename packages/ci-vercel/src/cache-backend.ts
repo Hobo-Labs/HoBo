@@ -1,20 +1,3 @@
-/**
- * The hosted relay's cache backends: every one the deployment binds, opened
- * and metered in the units each one bills (ADR-0179;
- * [Relay ephemeral state](../../../docs/design/relay-ephemeral-state.md)).
- *
- * Only variable names are read here and logged; a value (a URL that carries a
- * password, a REST or database token) goes straight to its client and nowhere
- * else, not even into an error message.
- *
- * Which of them is active is not decided here: `cache-fleet.ts` reads it from
- * the fleet's assignment register and routes every call to it (phase 4c).
- * This file only answers which backends exist, in a fixed configured order
- * (Upstash REST, Valkey, Redis, Turso, Vercel Blob), and opens them. The
- * in-memory engine is a member only off Vercel and only when nothing else is
- * bound: a deployed relay with no cache refuses to start rather than keep
- * state each instance forgets.
- */
 import type { FleetUsageUnit } from "@hobo/backend-fleet";
 import type { EphemeralStatePort } from "@hobo/core";
 import {

@@ -1,17 +1,5 @@
 import type { YardBinding } from "./binding.js";
 
-// Domain and provider boundaries (docs/design/control-plane.md "Yard scope &
-// multi-Yard (the Junction)").
-//
-// A Yard holds only what is internal to its provider. Nothing in a Yard is
-// marked external: a service another vendor runs belongs to a Yard of its own
-// (whose provider is that vendor), and the two Yards are joined by a junction.
-// The one exception is a service the Yard's provider manages on our behalf —
-// a Marketplace resource the provider provisions, bills and attaches
-// (`<provider>.marketplace/v1`), such as Neon, Supabase or Upstash attached
-// through the Vercel Marketplace. That service is the provider's to run, so it
-// is internal to the provider's Yard.
-
 /** Connectivity a provider uses for services it runs on our behalf. */
 export function providerManagedConnectivity(providerId: string): string {
 	return `${providerKey(providerId)}.marketplace/v1`;

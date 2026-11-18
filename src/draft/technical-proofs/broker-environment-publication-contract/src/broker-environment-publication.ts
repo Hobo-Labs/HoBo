@@ -51,8 +51,8 @@ const DEFAULT_APPROVAL = {
 const DEFAULT_PROVENANCE = {
   sourceIssue: "HOBO-526",
   sourceRefs: [
-    "docs/design/platform-engineering.md",
-    "docs/design/meta-cloud-broker.md",
+    "urn:hobo:requirement:platform-engineering",
+    "urn:hobo:requirement:meta-cloud-broker",
     "src/draft/provider-capability-manifest-contract",
     "src/draft/provider-default-definitions-contract",
   ],

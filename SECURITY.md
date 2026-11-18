@@ -26,7 +26,7 @@ Prefer **private** disclosure. Do not open a public GitHub issue for an active v
 
 Do not include live secrets, exploitable credentials, private tenant data, or full exploit chains in public issues, pull requests, commit messages, logs, or screenshots. Redact tokens and rotate anything that may have leaked.
 
-This policy does **not** publish maintainer email addresses or API tokens. Residual ship/security process blockers that require humans (counsel, production OIDC, staffed support) are tracked in [`docs/design/instances/residual-human-blockers-2026-07-30.md`](./docs/design/instances/residual-human-blockers-2026-07-30.md) — that ledger is not a vulnerability inbox.
+This policy does **not** publish maintainer email addresses or API tokens. Residual ship/security process blockers that require humans (counsel, production OIDC, staffed support) are tracked in [`urn:hobo:requirement:instances/residual-human-blockers-2026-07-30`](urn:hobo:requirement:instances/residual-human-blockers-2026-07-30) — that ledger is not a vulnerability inbox.
 
 ## Disclosure expectations
 

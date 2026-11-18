@@ -1,9 +1,5 @@
 package hobo
 
-// CUE constraints for the @hobo/mcp wire records (S3-01/S3-02). One constraint
-// definition per protobuf message/enum in mcp.proto. Design source:
-// docs/design/ai-native-agent-auth.md §6.4 + ADR-0023 item 3.
-
 #McpToolDecisionEffect: "allow" | "deny"
 
 #McpCapabilityScope: {

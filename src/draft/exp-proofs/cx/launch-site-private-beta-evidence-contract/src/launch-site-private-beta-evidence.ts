@@ -73,14 +73,14 @@ export const launchSitePrivateBetaEvidence = {
     {
       id: "claim-register",
       ownerProject: "V1 Launch Site, Messaging & Demo Assets",
-      evidenceSource: "docs/design/launch-messaging-claims.md",
+      evidenceSource: "urn:hobo:requirement:launch-messaging-claims",
       proves: "Launch claims retain evidence owner, evidence source, risk, state, and disposition before private beta publication.",
       status: "accepted"
     },
     {
       id: "golden-path-demo",
       ownerProject: "Example Apps",
-      evidenceSource: "docs/design/launch-demo-golden-path.md",
+      evidenceSource: "urn:hobo:requirement:launch-demo-golden-path",
       proves: "Snapshop demo command path and proof modes are available for private beta launch assets.",
       status: "accepted"
     },
@@ -101,7 +101,7 @@ export const launchSitePrivateBetaEvidence = {
     {
       id: "legal-support-handoff",
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
-      evidenceSource: "docs/design/legal-privacy-terms-readiness.md",
+      evidenceSource: "urn:hobo:requirement:legal-privacy-terms-readiness",
       proves: "Customer-facing communications align with legal/privacy, support, limitations, and release owner boundaries.",
       status: "accepted"
     }

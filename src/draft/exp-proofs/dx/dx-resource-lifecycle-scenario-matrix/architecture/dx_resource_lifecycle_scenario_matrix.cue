@@ -25,7 +25,7 @@ import "list"
 	issue:          "HOBO-567"
 	phase:          "M1"
 	targetPackage:  "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix"
-	proofNote:      "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md"
+	proofNote:      "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix"
 	designRefs:     [...string] & list.MinItems(1)
 	designTerms:    [...string] & list.MinItems(1)
 	scopeOut: [

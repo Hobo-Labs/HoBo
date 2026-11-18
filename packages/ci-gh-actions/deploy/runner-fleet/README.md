@@ -3,7 +3,7 @@
 HoBo's self-hosted GitHub Actions runner hosts (the box worker, mesh nodes and
 local runners serving `hobo`, `hobo-trunk` and `hobo-local-host`) are Camps
 that `@hobo/cd` manages, the same way any Bindle's Camps are
-([continuous delivery](../../../../docs/design/continuous-delivery.md),
+([continuous delivery](urn:hobo:requirement:continuous-delivery),
 [`hobo deploy`](../../../hobo/CD.md)). Job routing does not change: which label
 a job asks for and which host takes it are still decided by the route job and
 the relay ([runner queue](../../../ci/RUNNER-QUEUE.md)). CD decides which

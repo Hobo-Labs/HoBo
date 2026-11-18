@@ -60,7 +60,7 @@ export interface VibeChildIssue {
   phase: VibeChildPhase;
   estimate: 3 | 5;
   targetPackagePath: `src/draft/exp-proofs/${string}`;
-  proofNotePath: `docs/design/proofs/${string}/README.md`;
+  proofNotePath: `urn:hobo:proof:${string}`;
   artifactSlices: string[];
   requiredScenarios: string[];
   proofModes: string[];
@@ -89,7 +89,7 @@ export interface VibeDxSliceIssue {
   estimate: 3 | 5 | 8;
   labels: string[];
   targetPackagePath: `src/draft/exp-proofs/${string}`;
-  proofNotePath: `docs/design/proofs/${string}/README.md`;
+  proofNotePath: `urn:hobo:proof:${string}`;
   blockedBy: string[];
   blocks: string[];
   lifecycleCoverage: string[];
@@ -379,108 +379,108 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-540", "first-run activation rail mockups and state model", "Workspace & Onboarding UX", "M1", 3, [
       "mockups",
       "state model",
-    ], ["docs/design/workspace-onboarding-ux.md", "docs/design/outcome-activation-rail.md"]),
+    ], ["urn:hobo:requirement:workspace-onboarding-ux", "urn:hobo:requirement:outcome-activation-rail"]),
     child("HOBO-541", "workspace/project empty, blocked, recovery, and value-proof states", "Workspace & Onboarding UX", "M1", 3, [
       "mockups",
       "state model",
-    ], ["docs/design/workspace-onboarding-ux.md"]),
+    ], ["urn:hobo:requirement:workspace-onboarding-ux"]),
     child("HOBO-542", "plan review mockups for safe, blocked, destructive, stale, and unknown evidence", "Plan/Diff Viewer", "M1", 3, [
       "mockups",
       "wireframes",
-    ], ["docs/design/plan-diff-viewer.md"]),
+    ], ["urn:hobo:requirement:plan-diff-viewer"]),
     child("HOBO-543", "policy, cost, capacity, and approval annotation pseudocode", "Plan/Diff Viewer", "M1", 3, [
       "pseudocode",
       "fixtures",
-    ], ["docs/design/plan-diff-viewer.md", "docs/design/contracts-policy-flags.md#plan-29"]),
+    ], ["urn:hobo:requirement:plan-diff-viewer", "urn:hobo:requirement:contracts-policy-flags#plan-29"]),
     child("HOBO-544", "deployment timeline, topology graph, run inspector, and health rollup mockups", "Deployment Dashboard & Topology Explorer", "M1", 3, [
       "mockups",
       "wireframes",
-    ], ["docs/design/deployment-dashboard-topology-explorer.md", "docs/design/developer-experience.md#plan-07"]),
+    ], ["urn:hobo:requirement:deployment-dashboard-topology-explorer", "urn:hobo:requirement:developer-experience#plan-07"]),
     child("HOBO-545", "projection freshness, tenant/RBAC, and support handoff fixtures", "Deployment Dashboard & Topology Explorer", "M1", 3, [
       "fixtures",
       "state model",
-    ], ["docs/design/deployment-dashboard-topology-explorer.md", "docs/design/data-plane.md#plan-32"]),
+    ], ["urn:hobo:requirement:deployment-dashboard-topology-explorer", "urn:hobo:requirement:data-plane#plan-32"]),
     child("HOBO-546", "browse/search/detail/installability mockups", "Marketplace UX", "M1", 3, [
       "mockups",
       "wireframes",
-    ], ["docs/design/marketplace-ux.md"]),
+    ], ["urn:hobo:requirement:marketplace-ux"]),
     child("HOBO-547", "trust warning, org-catalog filter, deprecation, and yank copy states", "Marketplace UX", "M1", 3, [
       "copy states",
       "fixtures",
-    ], ["docs/design/marketplace-ux.md", "docs/design/org-catalogs.md"]),
+    ], ["urn:hobo:requirement:marketplace-ux", "urn:hobo:requirement:org-catalogs"]),
     child("HOBO-548", "publisher submission, evidence upload, review, rejection, and yank remediation mockups", "Publisher Portal", "M1", 3, [
       "mockups",
       "wireframes",
-    ], ["docs/design/publisher-portal.md", "docs/design/marketplace-publisher-trust-evidence.md"]),
+    ], ["urn:hobo:requirement:publisher-portal", "urn:hobo:requirement:marketplace-publisher-trust-evidence"]),
     child("HOBO-549", "first-customer pilot storyboard and script artifacts", "Customer Onboarding", "M1", 3, [
       "storyboard",
       "script",
-    ], ["docs/design/customer-onboarding.md"]),
+    ], ["urn:hobo:requirement:customer-onboarding"]),
     child("HOBO-550", "support intake, triage, owner-route, and customer update mockups", "Support Workflow", "M1", 3, [
       "mockups",
       "wireframes",
-    ], ["docs/design/support-workflow.md", "docs/design/launch-support-escalation.md"]),
+    ], ["urn:hobo:requirement:support-workflow", "urn:hobo:requirement:launch-support-escalation"]),
     child("HOBO-551", "docs IA, audience paths, search metadata, and stale-content states", "Docs Portal", "M1", 3, [
       "fixtures",
       "state model",
-    ], ["docs/design/docs-portal.md"]),
+    ], ["urn:hobo:requirement:docs-portal"]),
     child("HOBO-552", "app developer, platform engineer, GitOps, SecOps, DevOps, and SRE tutorial outlines", "Tutorials & Walkthroughs", "M1", 3, [
       "tutorial outline",
       "fixtures",
-    ], ["docs/design/tutorials-walkthroughs.md", "docs/design/walkthrough.md"]),
+    ], ["urn:hobo:requirement:tutorials-walkthroughs", "urn:hobo:requirement:walkthrough"]),
     child("HOBO-553", "diagnostic decision trees for install, auth, plan, deploy, policy, and support failures", "Troubleshooting Guides", "M1", 3, [
       "decision trees",
       "fixtures",
-    ], ["docs/design/troubleshooting-guides.md", "docs/design/support-debug-tools.md"]),
+    ], ["urn:hobo:requirement:troubleshooting-guides", "urn:hobo:requirement:support-debug-tools"]),
     child("HOBO-554", "accessibility/usability acceptance checklist for every vibe artifact", "Accessibility & Usability Quality", "M1", 3, [
       "acceptance checklist",
       "representative checks",
-    ], ["docs/design/accessibility-usability-launch-baseline.md"]),
+    ], ["urn:hobo:requirement:accessibility-usability-launch-baseline"]),
     child("HOBO-555", "snapshot launch demo storyboard and proof-mode asset map", "V1 Launch Site, Messaging & Demo Assets", "M5", 3, [
       "storyboard",
       "asset map",
-    ], ["docs/design/launch-demo-golden-path.md", "docs/design/launch-messaging-claims.md"]),
+    ], ["urn:hobo:requirement:launch-demo-golden-path", "urn:hobo:requirement:launch-messaging-claims"]),
     child("HOBO-556", "screenshot, recording manifest, command transcript, and fixture refresh plan", "V1 Launch Site, Messaging & Demo Assets", "M5", 3, [
       "recording manifest",
       "transcript",
       "fixtures",
-    ], ["docs/design/launch-demo-golden-path.md", "docs/design/launch-messaging-claims.md"]),
+    ], ["urn:hobo:requirement:launch-demo-golden-path", "urn:hobo:requirement:launch-messaging-claims"]),
     child("HOBO-557", "CLI transcript and MCP tool pseudocode examples for six role journeys", "CLI, MCP & Developer Experience", "M1", 3, [
       "transcript",
       "pseudocode",
-    ], ["docs/design/cli-spec.md", "docs/design/developer-experience.md#plan-07", "docs/design/walkthrough.md"]),
+    ], ["urn:hobo:requirement:cli-spec", "urn:hobo:requirement:developer-experience#plan-07", "urn:hobo:requirement:walkthrough"]),
     child("HOBO-558", "error/refusal UX examples for doctor, plan, up, inspect, logs, and MCP actions", "CLI, MCP & Developer Experience", "M1", 3, [
       "copy states",
       "fixtures",
-    ], ["docs/design/cli-spec.md", "docs/design/troubleshooting-guides.md"]),
+    ], ["urn:hobo:requirement:cli-spec", "urn:hobo:requirement:troubleshooting-guides"]),
     child("HOBO-559", "clickable first-run walkthrough with snapshot fixtures", "Workspace & Onboarding UX", "M2", 5, [
       "clickable prototype",
       "fixtures",
-    ], ["docs/design/workspace-onboarding-ux.md", "docs/design/worked-example.md#plan-19"]),
+    ], ["urn:hobo:requirement:workspace-onboarding-ux", "urn:hobo:requirement:worked-example#plan-19"]),
     child("HOBO-560", "deterministic plan/diff review prototype over golden fixtures", "Plan/Diff Viewer", "M2", 5, [
       "reference prototype",
       "fixtures",
-    ], ["docs/design/plan-diff-viewer.md"]),
+    ], ["urn:hobo:requirement:plan-diff-viewer"]),
     child("HOBO-561", "topology/status prototype over projection snapshots", "Deployment Dashboard & Topology Explorer", "M2", 5, [
       "reference prototype",
       "fixtures",
-    ], ["docs/design/deployment-dashboard-topology-explorer.md", "docs/design/data-plane.md#plan-32"]),
+    ], ["urn:hobo:requirement:deployment-dashboard-topology-explorer", "urn:hobo:requirement:data-plane#plan-32"]),
     child("HOBO-562", "deterministic marketplace discovery and install-intent prototype", "Marketplace UX", "M2", 5, [
       "reference prototype",
       "fixtures",
-    ], ["docs/design/marketplace-ux.md", "docs/design/org-catalogs.md"]),
+    ], ["urn:hobo:requirement:marketplace-ux", "urn:hobo:requirement:org-catalogs"]),
     child("HOBO-563", "pilot workspace-to-first-proof walkthrough with blocker routing", "Customer Onboarding", "M2", 5, [
       "clickable prototype",
       "fixtures",
-    ], ["docs/design/customer-onboarding.md", "docs/design/workspace-onboarding-ux.md"]),
+    ], ["urn:hobo:requirement:customer-onboarding", "urn:hobo:requirement:workspace-onboarding-ux"]),
     child("HOBO-564", "support case prototype with redacted evidence pack", "Support Workflow", "M2", 5, [
       "reference prototype",
       "fixtures",
-    ], ["docs/design/support-workflow.md", "docs/design/support-debug-tools.md"]),
+    ], ["urn:hobo:requirement:support-workflow", "urn:hobo:requirement:support-debug-tools"]),
     child("HOBO-565", "representative keyboard, screen-reader, responsive, contrast, and copy checks", "Accessibility & Usability Quality", "M2", 5, [
       "representative checks",
       "fixtures",
-    ], ["docs/design/accessibility-usability-launch-baseline.md"]),
+    ], ["urn:hobo:requirement:accessibility-usability-launch-baseline"]),
   ],
 };
 
@@ -508,8 +508,8 @@ export function evaluateVibeGapClosure(backlog: VibeGapClosureBacklog = VIBE_GAP
     if (!issue.targetPackagePath.startsWith("src/draft/exp-proofs/")) {
       violations.push(`${issue.id} must target src/draft/exp-proofs/<type>/<slug>`);
     }
-    if (!issue.proofNotePath.startsWith(`docs/design/proofs/${issue.id.toLowerCase()}-`)) {
-      violations.push(`${issue.id} proof note must live under docs/design/proofs/<issue-slug>/`);
+    if (!issue.proofNotePath.startsWith(`urn:hobo:proof:${issue.id.toLowerCase()}-`)) {
+      violations.push(`${issue.id} proof note must live under urn:hobo:proof:<issue-slug>/`);
     }
     if (issue.artifactSlices.length === 0 || issue.artifactSlices.some((slice) => !ALLOWED_ARTIFACTS.has(slice))) {
       violations.push(`${issue.id} must target branch-sized artifact slices`);
@@ -634,8 +634,8 @@ export function evaluateDxBackboneGraph(graph: VibeDxBackboneGraph = DX_BACKBONE
     if (!issue.targetPackagePath.startsWith("src/draft/exp-proofs/")) {
       violations.push(`${issue.id} must target src/draft/exp-proofs/<type>/<slug>`);
     }
-    if (!issue.proofNotePath.startsWith("docs/design/proofs/")) {
-      violations.push(`${issue.id} proof note must live under docs/design/proofs/<slug>/README.md`);
+    if (!issue.proofNotePath.startsWith("urn:hobo:proof:")) {
+      violations.push(`${issue.id} proof note must live under urn:hobo:proof:<slug>`);
     }
     for (const mode of REQUIRED_PROOF_MODES) {
       if (!issue.proofModes.includes(mode)) {
@@ -733,7 +733,7 @@ function child(
     phase,
     estimate,
     targetPackagePath: `src/draft/exp-proofs/ux/${packageSlug}`,
-    proofNotePath: `docs/design/proofs/${issueSlug}/README.md`,
+    proofNotePath: `urn:hobo:proof:${issueSlug}`,
     artifactSlices,
     requiredScenarios: [...REQUIRED_CHILD_SCENARIOS],
     proofModes: [...REQUIRED_PROOF_MODES],
@@ -769,7 +769,7 @@ function dxSlice(
     estimate,
     labels,
     targetPackagePath: `src/draft/exp-proofs/dx/${packageSlug}`,
-    proofNotePath: `docs/design/proofs/${packageSlug}/README.md`,
+    proofNotePath: `urn:hobo:proof:${packageSlug}`,
     blockedBy,
     blocks,
     lifecycleCoverage,

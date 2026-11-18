@@ -116,7 +116,7 @@ The **HoBo Broker**: the policy-governed authority that actually brokers
 Bindle/Camp/Yard/Junction placements **across providers**, spins resources up
 and down, and hands accepted work to delivery — based on the configured
 policies the broker itself maintains. It is the runtime counterpart of the
-[Meta-cloud Broker design](../../docs/design/hobo-broker.md); the Meta-cloud
+[Meta-cloud Broker design](urn:hobo:requirement:hobo-broker); the Meta-cloud
 Broker artifact vocabulary (Contract Manifest → Resolution Receipt /
 Resolution Rejection) is preserved here as the receipt/rejection wire shapes.
 

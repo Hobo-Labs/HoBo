@@ -18,19 +18,19 @@
           "parentIssue": "HOBO-531",
           "authoringPackage": "@hobo/bindles",
           "authoringModel": "closure-builder",
-          "canonicalDocPath": "docs/design/closure-builder-public-api.md",
+          "contractRef": "urn:hobo:requirement:closure-builder-public-api",
           "evidence": [
             {
               "issueId": "HOBO-532",
               "linearStatus": "Done",
               "proofPath": "src/draft/closure-builder-public-api-contract/README.md",
-              "designPath": "docs/design/closure-builder-public-api.md"
+              "evidenceRef": "urn:hobo:requirement:closure-builder-public-api"
             },
             {
               "issueId": "HOBO-537",
               "linearStatus": "Done",
               "proofPath": "src/draft/closure-builder-author-flow-contract/README.md",
-              "designPath": "docs/design/worked-example.md"
+              "evidenceRef": "urn:hobo:requirement:worked-example"
             }
           ]
         }

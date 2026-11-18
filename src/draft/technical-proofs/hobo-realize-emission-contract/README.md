@@ -19,10 +19,10 @@ npm.cmd --prefix src\draft\technical-proofs\hobo-realize-emission-contract test
 
 Relevant design records:
 
-- `docs/design/control-plane.md`: provider `realize(plan): { iac; build? }`, adapter families,
+- `urn:hobo:requirement:control-plane`: provider `realize(plan): { iac; build? }`, adapter families,
   resolution pipeline, provider authoring
-- `docs/design/platform-engineering.md`: co-provisioning, placeholders, drivers
-- `docs/design/adr/01-architecture-core.md`: ADR-0005 and ADR-0006
+- `urn:hobo:requirement:platform-engineering`: co-provisioning, placeholders, drivers
+- `urn:hobo:decision:01-architecture-core`: ADR-0005 and ADR-0006
 
 
 ## Executable evidence

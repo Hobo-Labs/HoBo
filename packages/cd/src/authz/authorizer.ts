@@ -318,6 +318,11 @@ export function createCdAuthorizer(d: CdAuthorizerDeps): CdDecisionAuthorizer {
 			policyIds = [...evaluation.decision.evidence.policyIds];
 			inputHash = evaluation.decision.evidence.inputHash;
 			violations = evaluation.decision.violations;
+			policyError = violations.some(
+				(violation) =>
+					isText(violation) &&
+					violation.startsWith("policy-rule-evaluation-failed:"),
+			);
 		} catch (error) {
 			policyError = true;
 			effect = "deny";

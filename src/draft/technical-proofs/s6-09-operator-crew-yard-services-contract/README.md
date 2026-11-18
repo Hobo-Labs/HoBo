@@ -2,7 +2,7 @@
 
 Draft contract proof for **HOBO-664**. Models the built-in Operator Crew
 (SRE, Endpoint Monitor, GitOps, Platform Engineer) as event-sourced Yard
-services per [Plan 40](../../../../docs/design/operators-sre.md#plan-40).
+services per [Plan 40](urn:hobo:requirement:operators-sre#plan-40).
 
 Promotes scenarios from
 [`operators-sre-crew`](../../epic-proofs/operators-sre-crew/README.md)

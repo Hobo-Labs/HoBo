@@ -2,13 +2,6 @@ syntax = "proto3";
 
 package hobo.contracts.v1;
 
-// Wire records for @hobo/contracts (S2-07): the Contract IR + can-deploy
-// compatibility engine + the composed Gatekeeper. Design source:
-// docs/design/contracts-policy-flags.md (Plan 29). These are the persisted /
-// exchanged shapes; the TypeScript surface in src/ follows parse-don't-validate,
-// narrowing these wire forms into derived domain types built only by the
-// package's constructors. See contracts.cue for one CUE constraint per type.
-
 // Contract lifecycle mode (declared -> inferred -> observed -> promoted).
 enum ContractMode {
   CONTRACT_MODE_UNSPECIFIED = 0;

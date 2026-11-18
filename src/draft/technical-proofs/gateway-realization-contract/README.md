@@ -27,7 +27,7 @@ npm.cmd --prefix src\draft\technical-proofs\gateway-realization-contract test
 npm.cmd test
 ```
 
-Proof note: `docs/design/proofs/hobo-138-gateway-realization/README.md`.
+Proof note: `urn:hobo:proof:hobo-138-gateway-realization`.
 
 
 ## Executable evidence

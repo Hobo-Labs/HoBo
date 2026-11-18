@@ -130,11 +130,11 @@ export type ParsedCliMcpParityContract = CliMcpParityContract & {
 };
 
 const SOURCE_REFS = [
-  "docs/design/developer-experience.md#plan-07",
-  "docs/design/sdk-api.md#plan-02",
-  "docs/design/control-plane.md#plan-04",
-  "docs/design/platform-engineering.md#plan-25",
-  "docs/design/data-plane.md#plan-32",
+  "urn:hobo:requirement:developer-experience#plan-07",
+  "urn:hobo:requirement:sdk-api#plan-02",
+  "urn:hobo:requirement:control-plane#plan-04",
+  "urn:hobo:requirement:platform-engineering#plan-25",
+  "urn:hobo:requirement:data-plane#plan-32",
 ] as const;
 
 export const CLI_MCP_PARITY_CONTRACT: CliMcpParityContract = {

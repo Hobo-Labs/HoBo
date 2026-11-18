@@ -74,7 +74,7 @@ describe("the relay deploy gate", () => {
 			true,
 		);
 		assert.equal(
-			touchesRelay(["docs/design/index.md", "site/src/x.ts"], inputDirs),
+			touchesRelay(["urn:hobo:requirement:index", "site/src/x.ts"], inputDirs),
 			false,
 		);
 		// A sibling directory sharing a prefix is not an input.

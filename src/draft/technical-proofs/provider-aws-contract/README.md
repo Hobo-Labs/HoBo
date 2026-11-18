@@ -1,8 +1,8 @@
 # HOBO-153 AWS Provider Contract POC
 
 This draft package proves the `@hobo/provider-aws` contract slice for
-[PLAN-04](../../../../docs/design/control-plane.md#plan-04) and
-[ADR-0024](../../../../docs/design/adr/07-portability-extensibility.md#adr-0024).
+[PLAN-04](urn:hobo:requirement:control-plane#plan-04) and
+[ADR-0024](urn:hobo:decision:adr-0024).
 
 It covers the seed AWS provider surface:
 

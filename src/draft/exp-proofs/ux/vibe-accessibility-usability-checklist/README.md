@@ -13,7 +13,7 @@ using customer data, or making unsupported launch claims.
 
 - In scope: checklist records, required check fixtures, surface-to-owner matrix,
   scenario paths, proof-mode labels, accepted-risk routes, and scope-out guards.
-- Source baseline: `docs/design/accessibility-usability-launch-baseline.md`.
+- Source baseline: `urn:hobo:requirement:accessibility-usability-launch-baseline`.
 - Quickstart dependency: `quickstartFixtureRefs` pins the accepted HOBO-577
   fixture ids and proof-mode labels each launch surface consumes before this
   checklist can treat a vibe artifact as useful evidence.

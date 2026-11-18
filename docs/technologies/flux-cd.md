@@ -42,7 +42,7 @@ lessons for HoBo: **OCI artifacts as the delivery channel with signature
 verification** — congruent with HoBo's Registry listings, signed offline
 bundles (`hobo registry import`, ADR-0036) and OCI-digest addressing — and the
 **controller-toolkit decomposition**, congruent with HoBo's grain-based
-control-plane services ([control-plane](../design/control-plane.md#plan-04))
+control-plane services ([control-plane](urn:hobo:requirement:control-plane#plan-04))
 where reconciliation is choreographed by events rather than one orchestrator.
 Divergence kept honest: HoBo reconciles from its event journal, not from Git;
 Flux's write-back image automation has no HoBo analog (promotion is a

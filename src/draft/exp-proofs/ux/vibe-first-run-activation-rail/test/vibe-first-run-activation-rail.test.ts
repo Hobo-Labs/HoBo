@@ -19,7 +19,7 @@ describe("vibe first-run activation rail", () => {
 
     assert.equal(rail.issue, "HOBO-540");
     assert.equal(rail.targetPackage, "src/draft/exp-proofs/ux/vibe-first-run-activation-rail");
-    assert.equal(rail.proofNote, "docs/design/proofs/vibe-first-run-activation-rail/README.md");
+    assert.equal(rail.proofNote, "urn:hobo:proof:vibe-first-run-activation-rail");
     assert.deepEqual(
       rail.wireframes.map((wireframe) => wireframe.entryPoint),
       ACTIVATION_RAIL_ENTRY_POINTS,

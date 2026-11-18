@@ -3,7 +3,7 @@
 Independent POC for HOBO-270.
 
 This package models the first SRE operator loop from
-[Plan 40](../../../../docs/design/operators-sre.md#plan-40): subscribed operational
+[Plan 40](urn:hobo:requirement:operators-sre#plan-40): subscribed operational
 signals enter the built-in SRE service, a `crew.AgentDispatched` fact is emitted,
 and correlated signals open one `incident.Opened` aggregate event.
 

@@ -36,11 +36,11 @@ project) adds canary/blue-green strategies.
 **Informs — the reference rendering target for GitOps publisher mode.** HoBo's
 default deploy path is not GitOps (the event-sourced control plane is the
 source of truth; ADR-0121), but **GitOps publisher mode**
-([platform-engineering](../design/platform-engineering.md#plan-25) §GitOps,
+([platform-engineering](urn:hobo:requirement:platform-engineering#plan-25) §GitOps,
 [patterns/gitops-runbook-promotion](../patterns/gitops-runbook-promotion.md),
 [standards/opengitops](../standards/opengitops.md)) renders Deployment Sets
 into a Git repo an Argo CD instance can own, and the HoBo Broker's
-`broker_delivery_argocd` flag ([hobo-broker](../design/hobo-broker.md))
+`broker_delivery_argocd` flag ([hobo-broker](urn:hobo:requirement:hobo-broker))
 renders `Application` documents directly. What HoBo borrows: **immutable
 desired-state artifacts under review** (mirrored as immutable Deployment Sets
 + Deltas), **ordered gated sync** (mirrored by stage-gate + Gatekeeper rather

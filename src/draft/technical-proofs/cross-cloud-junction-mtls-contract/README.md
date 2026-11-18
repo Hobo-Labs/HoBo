@@ -41,8 +41,8 @@ This POC does not ship `packages/junctions/` production code, live AWS/Azure net
 - `architecture/pacts/` — PACT boundary contract
 
 ## Executable evidence
-- [Plan 12 — Security & connectivity](../../../docs/design/security-networking.md#plan-12)
-- [ADR-0043 — Junction federation](../../../docs/design/adr/07-portability-extensibility.md#adr-0043)
+- [Plan 12 — Security & connectivity](urn:hobo:requirement:security-networking#plan-12)
+- [ADR-0043 — Junction federation](urn:hobo:decision:adr-0043)
 
 ## Maintenance
 

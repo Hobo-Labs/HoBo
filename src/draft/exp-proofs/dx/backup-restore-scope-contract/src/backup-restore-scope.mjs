@@ -89,27 +89,27 @@ export const BACKUP_RESTORE_SCOPE = {
   },
   dependencies: [
     {
-      source: "docs/design/reliability-observability-cost.md#plan-05",
+      source: "urn:hobo:requirement:reliability-observability-cost#plan-05",
       reason: "Defines reliability, HA, SLO, and operational-readiness language consumed by backup/restore evidence.",
     },
     {
-      source: "docs/design/data-plane.md#plan-11",
+      source: "urn:hobo:requirement:data-plane#plan-11",
       reason: "Defines event-log, replay, and projection behavior that restore evidence must not overclaim.",
     },
     {
-      source: "docs/design/provenance-retention.md",
+      source: "urn:hobo:requirement:provenance-retention",
       reason: "Defines artifact retention and audit evidence that must be distinguished from product backups.",
     },
     {
-      source: "docs/design/bootstrap-installer.md",
+      source: "urn:hobo:requirement:bootstrap-installer",
       reason: "Defines SaaS, self-host, and local/dev setup modes whose recovery paths need later drill evidence.",
     },
     {
-      source: "docs/design/launch-support-escalation.md",
+      source: "urn:hobo:requirement:launch-support-escalation",
       reason: "Defines support escalation and communication surfaces that consume failed backup/restore handoffs.",
     },
     {
-      source: "docs/design/adr/02-identity-security.md#adr-0082",
+      source: "urn:hobo:decision:adr-0082",
       reason: "Pins Golden Suites as launch evidence gates; backup/restore drills feed that readiness lane.",
     },
   ],
@@ -202,42 +202,42 @@ export const BACKUP_RESTORE_SCOPE = {
       kind: "backup-source-inventory",
       owner: "platform engineer",
       proofMode: "design-record",
-      source: "docs/design/backup-restore.md#backup-source-inventory",
+      source: "urn:hobo:requirement:backup-restore#backup-source-inventory",
       proves: "Each accepted backup source names owner, restore target, customer visibility, and excluded implementation scope.",
     },
     {
       kind: "restore-path-matrix",
       owner: "sre operator",
       proofMode: "recovery-matrix",
-      source: "docs/design/backup-restore.md#restore-path-matrix",
+      source: "urn:hobo:requirement:backup-restore#restore-path-matrix",
       proves: "SaaS, self-host, and local/dev restore paths name target, evidence source, unsupported states, and owner.",
     },
     {
       kind: "rpo-rto-drill-fixture",
       owner: "sre operator",
       proofMode: "drill-fixture",
-      source: "docs/design/backup-restore.md#evidence-required-for-m1",
+      source: "urn:hobo:requirement:backup-restore#evidence-required-for-m1",
       proves: "M1 drill can measure RPO/RTO with deterministic fixture input, output, and pass/fail rules.",
     },
     {
       kind: "failure-mode-recovery-register",
       owner: "support engineer",
       proofMode: "contract-test",
-      source: "docs/design/backup-restore.md#failure-mode-and-recovery-register",
+      source: "urn:hobo:requirement:backup-restore#failure-mode-and-recovery-register",
       proves: "Missing, stale, corrupt, partial, denied, and unsupported recovery states route safely.",
     },
     {
       kind: "support-compliance-handoff",
       owner: "security/compliance reviewer",
       proofMode: "support-handoff",
-      source: "docs/design/backup-restore.md#owning-initiative-dependencies",
+      source: "urn:hobo:requirement:backup-restore#owning-initiative-dependencies",
       proves: "Support and compliance can consume backup/restore limitations without approving final claims.",
     },
     {
       kind: "rollback-cleanup-boundary",
       owner: "platform engineer",
       proofMode: "security-review",
-      source: "docs/design/backup-restore.md#scope-out-and-non-goals",
+      source: "urn:hobo:requirement:backup-restore#scope-out-and-non-goals",
       proves: "Rollback, migration, cleanup, scheduler, storage, and live restore work stay in owning follow-up issues.",
     },
   ],
@@ -311,12 +311,12 @@ export function validateBackupRestoreScope(scope) {
   }
 
   const requiredSources = [
-    "docs/design/reliability-observability-cost.md#plan-05",
-    "docs/design/data-plane.md#plan-11",
-    "docs/design/provenance-retention.md",
-    "docs/design/bootstrap-installer.md",
-    "docs/design/launch-support-escalation.md",
-    "docs/design/adr/02-identity-security.md#adr-0082",
+    "urn:hobo:requirement:reliability-observability-cost#plan-05",
+    "urn:hobo:requirement:data-plane#plan-11",
+    "urn:hobo:requirement:provenance-retention",
+    "urn:hobo:requirement:bootstrap-installer",
+    "urn:hobo:requirement:launch-support-escalation",
+    "urn:hobo:decision:adr-0082",
   ];
   const sources = (scope.dependencies ?? []).map((dependency) => dependency.source);
   if (JSON.stringify(sources) !== JSON.stringify(requiredSources)) {

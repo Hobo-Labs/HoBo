@@ -58,9 +58,9 @@ export const v1Cutline = {
       blockerCategory: "v1-blocker.reference-architecture",
       evidenceRequired: ["v1 in-scope list", "v1 out-of-scope list", "owner map"],
       citations: [
-        "docs/design/README.md#scope",
-        "docs/design/adr/07-portability-extensibility.md#adr-0063",
-        "docs/design/adr/07-portability-extensibility.md#adr-0064"
+        "urn:hobo:requirement:README#scope",
+        "urn:hobo:decision:adr-0063",
+        "urn:hobo:decision:adr-0064"
       ]
     },
     {
@@ -71,9 +71,9 @@ export const v1Cutline = {
       blockerCategory: "v1-blocker.productization",
       evidenceRequired: ["accepted M0 scope", "contract proof path", "explicit unsupported states"],
       citations: [
-        "docs/design/architecture.md#plan-10",
-        "docs/design/developer-experience.md#plan-07",
-        "docs/design/worked-example.md#plan-19"
+        "urn:hobo:requirement:architecture#plan-10",
+        "urn:hobo:requirement:developer-experience#plan-07",
+        "urn:hobo:requirement:worked-example#plan-19"
       ]
     },
     {
@@ -84,9 +84,9 @@ export const v1Cutline = {
       blockerCategory: "v1-blocker.support",
       evidenceRequired: ["severity routing", "first responder path", "support/debug prerequisites"],
       citations: [
-        "docs/design/developer-experience.md#plan-07",
-        "docs/design/operators-sre.md#plan-40",
-        "docs/design/adr/03-data-plane.md#adr-0058"
+        "urn:hobo:requirement:developer-experience#plan-07",
+        "urn:hobo:requirement:operators-sre#plan-40",
+        "urn:hobo:decision:adr-0058"
       ]
     },
     {
@@ -97,9 +97,9 @@ export const v1Cutline = {
       blockerCategory: "v1-blocker.legal-privacy",
       evidenceRequired: ["owner or owning project", "release blocker vs limitation label", "evidence source"],
       citations: [
-        "docs/design/governance-planes.md#plan-46",
-        "docs/design/adr/02-identity-security.md#adr-0060",
-        "docs/design/adr/02-identity-security.md#adr-0080"
+        "urn:hobo:requirement:governance-planes#plan-46",
+        "urn:hobo:decision:adr-0060",
+        "urn:hobo:decision:adr-0080"
       ]
     },
     {
@@ -110,9 +110,9 @@ export const v1Cutline = {
       blockerCategory: "v1-blocker.documentation",
       evidenceRequired: ["source-of-truth owner", "known limitation text", "upgrade and rollback outline"],
       citations: [
-        "docs/design/developer-experience.md#plan-07",
-        "docs/design/platform-engineering.md#plan-25",
-        "docs/design/adr/07-portability-extensibility.md#adr-0062"
+        "urn:hobo:requirement:developer-experience#plan-07",
+        "urn:hobo:requirement:platform-engineering#plan-25",
+        "urn:hobo:decision:adr-0062"
       ]
     },
     {
@@ -123,9 +123,9 @@ export const v1Cutline = {
       blockerCategory: "v1-blocker.operations-readiness",
       evidenceRequired: ["scenario fixture", "telemetry evidence", "rollback or recovery path"],
       citations: [
-        "docs/design/reliability-observability-cost.md#plan-05",
-        "docs/design/platform-engineering.md#plan-25",
-        "docs/design/adr/02-identity-security.md#adr-0082"
+        "urn:hobo:requirement:reliability-observability-cost#plan-05",
+        "urn:hobo:requirement:platform-engineering#plan-25",
+        "urn:hobo:decision:adr-0082"
       ]
     }
   ],
@@ -135,8 +135,8 @@ export const v1Cutline = {
       decision: "Do not implement provider, runtime, dashboard, identity, billing, support, or operations capability work in the cutline issue.",
       postV1Disposition: "Create or claim execution issues only after the owning M0 acceptance is approved.",
       citations: [
-        "docs/design/README.md#scope",
-        "docs/design/adr/07-portability-extensibility.md#adr-0063"
+        "urn:hobo:requirement:README#scope",
+        "urn:hobo:decision:adr-0063"
       ]
     },
     {
@@ -144,8 +144,8 @@ export const v1Cutline = {
       decision: "Do not create M1-M4 execution tasks before M0 cutline criteria and owner boundaries are accepted.",
       postV1Disposition: "Fan-out is deferred until M0 scope acceptance is recorded.",
       citations: [
-        "docs/design/architecture.md#plan-10",
-        "docs/design/adr/07-portability-extensibility.md#adr-0018"
+        "urn:hobo:requirement:architecture#plan-10",
+        "urn:hobo:decision:adr-0018"
       ]
     },
     {
@@ -153,8 +153,8 @@ export const v1Cutline = {
       decision: "Do not draft final terms, privacy notices, DPA language, or compliance claims without the legal owner supplying or approving text.",
       postV1Disposition: "Track as legal/privacy readiness blocker or explicit launch limitation.",
       citations: [
-        "docs/design/governance-planes.md#plan-46",
-        "docs/design/adr/02-identity-security.md#adr-0060"
+        "urn:hobo:requirement:governance-planes#plan-46",
+        "urn:hobo:decision:adr-0060"
       ]
     },
     {
@@ -162,8 +162,8 @@ export const v1Cutline = {
       decision: "Do not use live customer data or promise production operational proof from dogfood-only fixtures.",
       postV1Disposition: "Require beta/GA evidence before customer-facing claim promotion.",
       citations: [
-        "docs/design/adr/02-identity-security.md#adr-0080",
-        "docs/design/adr/02-identity-security.md#adr-0082"
+        "urn:hobo:decision:adr-0080",
+        "urn:hobo:decision:adr-0082"
       ]
     },
     {
@@ -171,9 +171,9 @@ export const v1Cutline = {
       decision: "Do not publish capability, security, support, legal, or compliance claims that lack a source evidence owner.",
       postV1Disposition: "Move to launch limitation, beta-only caveat, or release-blocker queue.",
       citations: [
-        "docs/design/vision.md#plan-17",
-        "docs/design/governance-planes.md#plan-46",
-        "docs/design/adr/02-identity-security.md#adr-0061"
+        "urn:hobo:requirement:vision#plan-17",
+        "urn:hobo:requirement:governance-planes#plan-46",
+        "urn:hobo:decision:adr-0061"
       ]
     },
     {
@@ -181,9 +181,9 @@ export const v1Cutline = {
       decision: "Do not claim restore, rollback, or upgrade safety without a deterministic drill or dry-run evidence path.",
       postV1Disposition: "Block GA claim or mark beta limitation until evidence is attached.",
       citations: [
-        "docs/design/reliability-observability-cost.md#plan-05",
-        "docs/design/adr/02-identity-security.md#adr-0047",
-        "docs/design/adr/07-portability-extensibility.md#adr-0042"
+        "urn:hobo:requirement:reliability-observability-cost#plan-05",
+        "urn:hobo:decision:adr-0047",
+        "urn:hobo:decision:adr-0042"
       ]
     }
   ],
@@ -256,28 +256,28 @@ export const v1CutlineDogfoodAlphaEvidence = {
     {
       id: "dogfood-alpha-outcome",
       ownerProject: "V1 Dogfood Yard & Hosted Operations",
-      evidenceSource: "docs/design/dogfood-yard.md",
+      evidenceSource: "urn:hobo:requirement:dogfood-yard",
       proves: "Dogfood and alpha outcome evidence can feed the release cutline without becoming GA proof.",
       status: "accepted"
     },
     {
       id: "blocker-delta",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/launch-blocker-taxonomy.md",
+      evidenceSource: "urn:hobo:requirement:launch-blocker-taxonomy",
       proves: "New, resolved, downgraded, or removed blockers are classified with launch action.",
       status: "accepted"
     },
     {
       id: "accepted-risk-register",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/go-no-go-decision-record.md",
+      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record",
       proves: "Accepted risks have owner, mitigation, launch note or follow-up, and revisit date.",
       status: "accepted"
     },
     {
       id: "cross-project-handoff",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/launch-messaging-claims.md",
+      evidenceSource: "urn:hobo:requirement:launch-messaging-claims",
       proves: "Release notes, support, legal/privacy, dogfood, and launch messaging inputs stay reflected in the cutline.",
       status: "accepted"
     }
@@ -366,28 +366,28 @@ export const v1CutlinePrivateBetaEvidence = {
     {
       id: "private-beta-go-no-go",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/go-no-go-decision-record.md",
+      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record",
       proves: "Private-beta decisions name decision inputs, allowed outcomes, accepted-risk owners, and revisit dates.",
       status: "accepted"
     },
     {
       id: "blocker-delta",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/launch-blocker-taxonomy.md",
+      evidenceSource: "urn:hobo:requirement:launch-blocker-taxonomy",
       proves: "Private-beta blockers and high-risk non-blockers are classified without bypassing required gates.",
       status: "accepted"
     },
     {
       id: "accepted-risk-register",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/go-no-go-decision-record.md",
+      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record",
       proves: "Accepted private-beta risks name owner, mitigation, launch note or follow-up, and revisit date.",
       status: "accepted"
     },
     {
       id: "cross-project-handoff",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/release-notes-upgrade-guide.md",
+      evidenceSource: "urn:hobo:requirement:release-notes-upgrade-guide",
       proves: "Release notes, support, legal/privacy, dogfood, and beta-pilot evidence owners are reflected in the cutline.",
       status: "accepted"
     }
@@ -521,35 +521,35 @@ export const v1CutlineReleaseCandidateEvidence = {
     {
       id: "release-candidate-go-no-go",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/go-no-go-decision-record.md",
+      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record",
       proves: "Release-candidate decisions name inputs, allowed outcomes, blocker deltas, accepted-risk owners, and revisit dates.",
       status: "accepted"
     },
     {
       id: "blocker-delta",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/launch-blocker-taxonomy.md",
+      evidenceSource: "urn:hobo:requirement:launch-blocker-taxonomy",
       proves: "M3 blockers, high-risk non-blockers, launch notes, and post-GA follow-ups are classified without waiving gates.",
       status: "accepted"
     },
     {
       id: "accepted-risk-register",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/go-no-go-decision-record.md#risk-acceptance-rules",
+      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record#risk-acceptance-rules",
       proves: "Accepted release-candidate risks carry owner, mitigation, launch note or follow-up, and revisit date.",
       status: "accepted"
     },
     {
       id: "cross-project-handoff",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/launch-messaging-claims.md",
+      evidenceSource: "urn:hobo:requirement:launch-messaging-claims",
       proves: "Release notes, support, legal/privacy, dogfood operations, launch-site messaging, and beta feedback consume only owner-mapped evidence.",
       status: "accepted"
     },
     {
       id: "release-notes-readiness",
       ownerProject: "V1 Release Notes & Upgrade Guide",
-      evidenceSource: "docs/design/release-notes-upgrade-guide.md",
+      evidenceSource: "urn:hobo:requirement:release-notes-upgrade-guide",
       proves: "Release notes consume release-candidate evidence without drafting final notes or promoting GA claims.",
       status: "accepted"
     }
@@ -676,56 +676,56 @@ export const v1CutlineGaHandoffEvidence = {
     {
       id: "ga-go-no-go",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/go-no-go-decision-record.md#gate-workflow",
+      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record#gate-workflow",
       proves: "GA decisions consume signed launch checklist, support handoff, legal/privacy posture, blocker delta, and evidence links.",
       status: "accepted"
     },
     {
       id: "signed-launch-checklist",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/v1-readiness-dashboard.md#required-fields",
+      evidenceSource: "urn:hobo:requirement:v1-readiness-dashboard#required-fields",
       proves: "Release readiness fields name owners, evidence links, blockers, accepted risks, and last verification state before a GA decision.",
       status: "accepted"
     },
     {
       id: "support-handoff",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      evidenceSource: "docs/design/support-sla-channels.md#support-sla-language",
+      evidenceSource: "urn:hobo:requirement:support-sla-channels#support-sla-language",
       proves: "Support handoff language, severity routing, launch-room limits, and release-cutline escalation remain owner-scoped.",
       status: "accepted"
     },
     {
       id: "legal-privacy-posture",
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
-      evidenceSource: "docs/design/proofs/hobo-478-legal-privacy-ga-handoff/index.md",
+      evidenceSource: "urn:hobo:proof:hobo-478-legal-privacy-ga-handoff",
       proves: "Legal/privacy GA handoff evidence is accepted without drafting legal text or expanding compliance claims.",
       status: "accepted"
     },
     {
       id: "blocker-delta",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/launch-blocker-taxonomy.md",
+      evidenceSource: "urn:hobo:requirement:launch-blocker-taxonomy",
       proves: "GA blockers, high-risk non-blockers, launch notes, and post-GA follow-ups are classified without waiving gates.",
       status: "accepted"
     },
     {
       id: "accepted-risk-register",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/go-no-go-decision-record.md#risk-acceptance-rules",
+      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record#risk-acceptance-rules",
       proves: "Accepted GA risks carry owner, mitigation, launch note or follow-up, revisit date, and supporting evidence.",
       status: "accepted"
     },
     {
       id: "cross-project-handoff",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/traceability.md",
+      evidenceSource: "urn:hobo:requirement:traceability",
       proves: "Release notes, support, legal/privacy, dogfood operations, launch-site messaging, and beta-pilot owner lanes stay reflected in the cutline.",
       status: "accepted"
     },
     {
       id: "readiness-dashboard-refresh",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "docs/design/v1-readiness-dashboard.md#source-of-truth-rules",
+      evidenceSource: "urn:hobo:requirement:v1-readiness-dashboard#source-of-truth-rules",
       proves: "Readiness dashboard status fails closed on missing evidence, unknown blockers, absent owners, or stale verification.",
       status: "accepted"
     }
@@ -874,7 +874,7 @@ export function validateV1Cutline(record) {
       errors.push(`scope-out item ${item.id ?? "<missing>"} must have id, decision, and postV1Disposition`);
     }
     if (!Array.isArray(item.citations) || item.citations.length === 0) {
-      errors.push(`${item.id ?? "<missing>"} must cite design docs or ADRs`);
+      errors.push(`${item.id ?? "<missing>"} must cite evidence identifiers`);
     }
   }
 

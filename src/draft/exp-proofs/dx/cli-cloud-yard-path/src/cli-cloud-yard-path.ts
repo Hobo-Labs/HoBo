@@ -1,7 +1,7 @@
 import { isJsonObject, type JsonObject } from "./json.js";
 export const FIXTURE_ID = "dx.lifecycle.hello-bindle.v1" as const;
 export const BINDLE = "examples/hello-bindle" as const;
-export const PROOF_NOTE = "docs/design/proofs/cli-cloud-yard-path/README.md" as const;
+export const PROOF_NOTE = "urn:hobo:proof:cli-cloud-yard-path" as const;
 
 export const GATEWAY_ROUTES = [
   "POST /v1/auth/login",

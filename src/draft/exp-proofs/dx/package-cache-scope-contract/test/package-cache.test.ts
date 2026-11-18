@@ -30,20 +30,20 @@ test("M0 record states goal, personas, scope, non-goals, and boundaries", () => 
 
 test("dependencies map authoritative design sources and owning initiatives", () => {
   assert.deepEqual(PACKAGE_CACHE_SCOPE.designRefs, [
-    "docs/design/package-namespaces.md",
-    "docs/design/release-artifact-provenance-retention.md",
-    "docs/design/sbom-vulnerability-notice-evidence.md",
-    "docs/design/bootstrap-installer.md",
-    "docs/design/compatibility-matrix.md",
-    "docs/design/security-verification.md",
-    "docs/design/support-sla-channels.md",
-    "docs/design/tenant-data-lifecycle.md",
+    "urn:hobo:requirement:package-namespaces",
+    "urn:hobo:requirement:release-artifact-provenance-retention",
+    "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
+    "urn:hobo:requirement:bootstrap-installer",
+    "urn:hobo:requirement:compatibility-matrix",
+    "urn:hobo:requirement:security-verification",
+    "urn:hobo:requirement:support-sla-channels",
+    "urn:hobo:requirement:tenant-data-lifecycle",
   ]);
   assert.deepEqual(PACKAGE_CACHE_SCOPE.adrRefs, [
-    "docs/design/adr/07-portability-extensibility.md#adr-0062",
-    "docs/design/adr/07-portability-extensibility.md#adr-0095",
-    "docs/design/adr/02-identity-security.md#adr-0023",
-    "docs/design/adr/02-identity-security.md#adr-0082",
+    "urn:hobo:decision:adr-0062",
+    "urn:hobo:decision:adr-0095",
+    "urn:hobo:decision:adr-0023",
+    "urn:hobo:decision:adr-0082",
   ]);
   assert.deepEqual(
     PACKAGE_CACHE_SCOPE.initiativeDependencies.map((dependency) => dependency.owner),

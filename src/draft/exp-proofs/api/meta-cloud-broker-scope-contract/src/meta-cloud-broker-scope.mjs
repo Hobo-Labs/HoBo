@@ -58,11 +58,11 @@ export const META_CLOUD_BROKER_SCOPE = Object.freeze({
     "Define Meta-cloud Broker M0 scope so Contract Manifests, approved Broker Environments, Resolution Receipts, Resolution Rejections, and authority boundaries are accepted before broker runtime or Yard integration work begins.",
   sourceRefs: Object.freeze([
     "Linear HOBO-521 issue body",
-    "docs/design/architecture.md",
-    "docs/design/control-plane.md",
-    "docs/design/platform-engineering.md",
-    "docs/design/contracts-policy-flags.md",
-    "docs/design/glossary.md",
+    "urn:hobo:requirement:architecture",
+    "urn:hobo:requirement:control-plane",
+    "urn:hobo:requirement:platform-engineering",
+    "urn:hobo:requirement:contracts-policy-flags",
+    "urn:hobo:requirement:glossary",
   ]),
   missingRefs: Object.freeze([
     {
@@ -208,11 +208,11 @@ export const META_CLOUD_BROKER_SCOPE = Object.freeze({
     },
   ]),
   designRefs: Object.freeze([
-    "docs/design/architecture.md",
-    "docs/design/control-plane.md",
-    "docs/design/platform-engineering.md",
-    "docs/design/contracts-policy-flags.md",
-    "docs/design/glossary.md",
+    "urn:hobo:requirement:architecture",
+    "urn:hobo:requirement:control-plane",
+    "urn:hobo:requirement:platform-engineering",
+    "urn:hobo:requirement:contracts-policy-flags",
+    "urn:hobo:requirement:glossary",
   ]),
   initiativeDependencies: Object.freeze([
     {

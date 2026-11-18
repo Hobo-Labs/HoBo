@@ -28,4 +28,4 @@ Contracts:
 - `contracts/pacts/componentize-build-boundary.pact.json`
 - `contracts/pacts/ci-fabric-boundary.pact.json`
 - `contracts/pacts/artifact-trust-boundary.pact.json`
-- `contracts/pacts/hardening-traceability-boundary.pact.json`
+- `contracts/pacts/source-policy-boundary.pact.json`

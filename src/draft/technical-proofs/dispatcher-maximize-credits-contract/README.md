@@ -1,7 +1,7 @@
 # Dispatcher Maximize-Credits Contract POC
 
 Independent POC for HOBO-363, HOBO-286, and HOBO-379. It pins the M2 Dispatcher ranking contract from
-[ADR-0071](../../../../docs/design/adr/01-architecture-core.md#adr-0071) for placement and CI/build
+[ADR-0071](urn:hobo:decision:adr-0071) for placement and CI/build
 dispatch decisions that consume a pinned `CreditLedgerView@seq`.
 
 ## What This Proves

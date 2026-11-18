@@ -1,3 +1,0 @@
-syntax = "proto3";
-package hobo.draft.adr_0064_ui_generation_citation_contract;
-message ProofIdentity { string slug = 1; string layer = 2; }

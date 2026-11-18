@@ -12,7 +12,7 @@ import "list"
 #SourceIssue: {
 	issue:       "HOBO-546" | "HOBO-547" | "HOBO-577"
 	packagePath: string & =~"^src/draft/exp-proofs/"
-	proofPath:   string & =~"^docs/design/proofs/"
+	proofPath:   string & =~"^urn:hobo:proof:"
 }
 
 #SourceMockup: {
@@ -61,7 +61,7 @@ import "list"
 	issue:         "HOBO-562"
 	phase:         "M2"
 	targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype"
-	proofNote:     "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md"
+	proofNote:     "urn:hobo:proof:vibe-marketplace-discovery-prototype"
 	designRefs:    [...string] & list.MinItems(1)
 	sourceIssues:  [...#SourceIssue] & list.MinItems(3)
 	catalog:       [...#CatalogFixture] & list.MinItems(6)

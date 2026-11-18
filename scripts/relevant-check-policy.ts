@@ -265,22 +265,12 @@ export function selectRelevantChecks(
 			/(^|\/)(prompts?|agent-evals?)(\/|$)/iu,
 			/\.(?:prompt|eval)\.(?:ts|md|json)$/iu,
 		]);
-	const deploymentDeltaChanged =
-		touched(["docs/design/proofs/hobo-50-deployment-set-delta"]) ||
-		touchedAny([/^scripts\/validate-deployment-set-delta\.ts$/u]);
 	const optimizexpChanged = touchedAny([
 		/(^|\/)\.optimizexp(\/|$)/u,
 		/^\.(agents|claude)\/skills\/optimizexp(\/|$)/u,
 		/^\.(agents|claude)\/skills\/sdlc(\/|$)/u,
 		/^scripts\/check-optimizexp\.mts$/u,
 	]);
-	const traceabilityChanged =
-		touched(["docs/design/proofs"]) ||
-		touchedAny([
-			/^docs\/design\/(?:traceability|index)\.md$/u,
-			/^docs\/design\/adr\//u,
-			/^scripts\/validate-traceability\.ts$/u,
-		]);
 
 	const checks: Check[] = [];
 	checks.push({
@@ -850,18 +840,6 @@ export function selectRelevantChecks(
 		});
 	}
 
-	if (traceabilityChanged)
-		checks.push({
-			command: "node",
-			args: ["--import", "tsx", "scripts/validate-traceability.ts"],
-			reason: "traceability evidence changed",
-		});
-	if (deploymentDeltaChanged)
-		checks.push({
-			command: "node",
-			args: ["--import", "tsx", "scripts/validate-deployment-set-delta.ts"],
-			reason: "deployment delta proof changed",
-		});
 	if (optimizexpChanged)
 		checks.push({
 			command: "pnpm",

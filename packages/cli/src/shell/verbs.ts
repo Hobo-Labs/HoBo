@@ -4,7 +4,7 @@ export interface Verb {
 	readonly summary: string;
 }
 
-export const CANONICAL_VERBS: readonly Verb[] = [
+export const CANONICAL_VERBS = [
 	{
 		name: "up",
 		role: "lifecycle",
@@ -222,6 +222,77 @@ export const CANONICAL_VERBS: readonly Verb[] = [
 		role: "SRE",
 		summary: "Execute or replay incident runbooks",
 	},
+] as const satisfies readonly Verb[];
+
+export const CLI_IMPLEMENTATION_REFERENCES = {
+	up: [
+		"HOBO-130",
+		"HOBO-164",
+		"HOBO-198",
+		"HOBO-203",
+		"HOBO-208",
+		"HOBO-213",
+		"HOBO-219",
+		"HOBO-224",
+	],
+	down: ["HOBO-132"],
+	dev: ["HOBO-122", "HOBO-190", "HOBO-198", "HOBO-392", "HOBO-612"],
+	new: ["HOBO-118", "HOBO-198"],
+	login: ["HOBO-136", "HOBO-184"],
+	connection: ["ADR-0131"],
+	identity: ["ADR-0132"],
+	trails: ["ADR-0134"],
+	access: ["ADR-0133"],
+	feature: ["ADR-0044", "ADR-0083"],
+	deploy: ["ADR-0083", "ADR-0008", "ADR-0182"],
+	ci: ["ADR-0071", "ADR-0083"],
+	cd: ["ADR-0182"],
+	incident: ["ADR-0082", "ADR-0094", "ADR-0076", "ADR-0182"],
+	claim: ["HOBO-136", "HOBO-164", "ADR-0151"],
+	recipes: ["ADR-0151"],
+	offer: ["ADR-0151"],
+	plan: ["HOBO-125", "HOBO-203", "HOBO-208"],
+	verify: ["HOBO-146", "HOBO-227"],
+	"can-deploy": ["HOBO-123", "HOBO-146"],
+	inspect: ["HOBO-140", "HOBO-216"],
+	logs: ["HOBO-143", "HOBO-216"],
+	doctor: ["HOBO-147", "HOBO-184", "HOBO-190"],
+	messaging: ["ADR-0138"],
+	codegen: ["HOBO-152"],
+	build: ["HOBO-156"],
+	collect: ["HOBO-160"],
+	stub: ["HOBO-160", "HOBO-392"],
+	drift: ["HOBO-216", "HOBO-369"],
+	add: ["HOBO-362", "HOBO-365"],
+	registry: ["HOBO-350", "HOBO-383"],
+	import: ["HOBO-225", "HOBO-369"],
+	generate: ["HOBO-207", "HOBO-348"],
+	sandbox: ["HOBO-190", "HOBO-392"],
+	test: ["HOBO-190", "HOBO-392"],
+	attest: ["HOBO-175", "HOBO-196", "HOBO-282"],
+	erase: ["HOBO-295"],
+	broker: ["HOBO-521", "HOBO-525", "HOBO-528", "HOBO-529"],
+	yard: ["ADR-0131"],
+	station: ["ADR-0131"],
+	serve: ["ADR-0150"],
+	replay: ["ADR-0137"],
+	derivative: ["HOBO-36", "HOBO-336", "HOBO-386"],
+	runbook: ["HOBO-260", "HOBO-285"],
+} as const satisfies Record<
+	(typeof CANONICAL_VERBS)[number]["name"],
+	readonly string[]
+>;
+
+export const RETIRED_CLI_ALIASES = [
+	{ name: "destroy", replacement: "down" },
+	{ name: "ship", replacement: "up" },
+	{ name: "teardown", replacement: "down" },
+	{ name: "rollback", replacement: "up --rollback" },
+	{ name: "promote", replacement: "up --to <revision>" },
+	{ name: "forge", replacement: "build" },
+	{ name: "train", replacement: "up" },
+	{ name: "crew", replacement: "inspect" },
+	{ name: "fleet", replacement: "inspect" },
 ] as const;
 
 export const GLOBAL_FLAGS = [
@@ -233,9 +304,11 @@ export const GLOBAL_FLAGS = [
 	"--help",
 ] as const;
 
-export const verbNames = new Set(CANONICAL_VERBS.map((verb) => verb.name));
+export const verbNames = new Set<string>(
+	CANONICAL_VERBS.map((verb) => verb.name),
+);
 
-export const projectScopedVerbs = new Set(
+export const projectScopedVerbs = new Set<string>(
 	CANONICAL_VERBS.map((verb) => verb.name).filter(
 		(verb) =>
 			![

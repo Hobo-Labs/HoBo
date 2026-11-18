@@ -67,7 +67,7 @@ journal and two SQLite authority connections. It covers admission races, shared
 free allocation, tampering, restart, reservation adoption and final settlement.
 The wire contracts and CUE/PACT fixtures live with `@hobo/cloud` and
 `@hobo/broker`; these offline tests do not verify a live provider API. See the
-[hosting transition design](../../docs/design/hosting-budget-transitions.md).
+[hosting transition design](urn:hobo:requirement:hosting-budget-transitions).
 
 `createProductionYardRuntime` is the async production composition. It requires a
 caller-owned persistent directory and trusted clock. `configureHosting` receives
@@ -454,7 +454,7 @@ Requests to https://api.vercel.com:
      always: one deployment, built by Vercel from the commit
 ```
 
-**Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](../../docs/design/adr/02-identity-security.md#adr-0170)).**
+**Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](urn:hobo:decision:adr-0170)).**
 The composed `hobo` then relaunches itself once, before composing anything, as
 `opensesame dev --agent --schema <generated> run -- <this invocation>` (through
 [`@hobo/adapter-opensesame`](../adapters/adapter-opensesame/README.md)), reading
@@ -565,7 +565,7 @@ because nothing was probed.
 |---|---|---|
 | `process` | seed rows (`real` / `simulated`) | reuses `seedLocalhostYard()`, whose labels are already audited (Node HTTP server `real`, in-memory queue `simulated`) |
 | `wsl2` | seed rows (`real` / `simulated`) | detected from *inside* the guest, so hosting is the same in-process Node executor as `yard:local` |
-| `wasm` | `simulated` | `runtime-local` does not execute real `.wasm` bytes today ([`docs/design/yard-bindings.md`](../../docs/design/yard-bindings.md)); a `wasmtime` binary on the box does not change what HoBo executes |
+| `wasm` | `simulated` | `runtime-local` does not execute real `.wasm` bytes today ([`urn:hobo:requirement:yard-bindings`](urn:hobo:requirement:yard-bindings)); a `wasmtime` binary on the box does not change what HoBo executes |
 | `oci` | `camp-only` | `@hobo/runtime-oci` schedules through kubectl against a cluster; there is no path that places a workload into the local daemon |
 | `lxc`, `nspawn`, `firecracker` | `camp-only` | the substrate is genuinely on the box, but HoBo has no local placement path — satisfying the profile needs a Camp |
 

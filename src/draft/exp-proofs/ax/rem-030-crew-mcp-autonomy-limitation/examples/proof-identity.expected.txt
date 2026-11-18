@@ -1,3 +1,0 @@
-slug: rem-030-crew-mcp-autonomy-limitation
-layer: exp
-proof-identity: ok

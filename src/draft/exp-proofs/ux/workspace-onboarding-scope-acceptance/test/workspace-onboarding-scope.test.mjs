@@ -38,12 +38,12 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     WORKSPACE_ONBOARDING_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "docs/design/vision.md#plan-17",
-      "docs/design/developer-experience.md#plan-07",
-      "docs/design/walkthrough.md",
-      "docs/design/worked-example.md#plan-19",
-      "docs/design/example-apps.md",
-      "docs/design/adr/07-portability-extensibility.md#adr-0064",
+      "urn:hobo:requirement:vision#plan-17",
+      "urn:hobo:requirement:developer-experience#plan-07",
+      "urn:hobo:requirement:walkthrough",
+      "urn:hobo:requirement:worked-example#plan-19",
+      "urn:hobo:requirement:example-apps",
+      "urn:hobo:decision:adr-0064",
     ],
   );
 });

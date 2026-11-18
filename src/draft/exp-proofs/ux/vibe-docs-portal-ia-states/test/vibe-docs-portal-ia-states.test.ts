@@ -20,7 +20,7 @@ test("HOBO-551 docs portal IA proof pins issue, package path, proof path, and co
 
   assert.equal(parsed.issue, "HOBO-551");
   assert.equal(parsed.packagePath, "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states");
-  assert.equal(parsed.proofPath, "docs/design/proofs/vibe-docs-portal-ia-states/README.md");
+  assert.equal(parsed.proofPath, "urn:hobo:proof:vibe-docs-portal-ia-states");
   assert.deepEqual(
     VIBE_DOCS_PORTAL_IA_STATES.contentInventory.map((entry) => entry.contentArea),
     REQUIRED_DOCS_PORTAL_CONTENT_AREAS,
@@ -46,7 +46,7 @@ test("content inventory and search metadata name source, owner, freshness, proof
   for (const entry of VIBE_DOCS_PORTAL_IA_STATES.contentInventory) {
     assert.match(entry.title, /\w/);
     assert.match(entry.slug, /^\/docs/);
-    assert.match(entry.sourceRecord, /docs\/design|proofs\//);
+    assert.match(entry.sourceRecord, /^urn:hobo:(?:proof|requirement):/);
     assert.match(entry.owner, /\w/);
     assert.ok(REQUIRED_DOCS_PORTAL_FRESHNESS_STATUSES.includes(entry.freshnessSignal.status));
     assert.match(entry.freshnessSignal.signal, /\w/);

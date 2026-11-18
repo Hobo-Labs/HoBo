@@ -3,7 +3,7 @@
 Authoring topology for **Yard** — the provider-scoped control surface that holds
 Camps, policy, placement intent, and **capability binding rows** in the
 Bindle ⊂ Camp ⊂ **Yard** ⊂ Junction model
-([ADR-0026](../../docs/design/adr/01-architecture-core.md#adr-0026)).
+([ADR-0026](urn:hobo:decision:adr-0026)).
 
 This package is **thin by design**: topology objects and shape export, not the
 full hosted control plane. Runtime composition lives in `@hobo/cloud` / `@hobo/hobo`
