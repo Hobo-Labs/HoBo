@@ -102,7 +102,6 @@ Connectivity details: [`packages/connectivity/README.md`](./packages/connectivit
 | [`scripts/`](./scripts/) | Repo gates and tooling (architecture guard, standards/docs checks, staging cutover demo, codegen). |
 | [`docs/`](./docs/index.md) | OKF bundle root for HoBo docs; `index.md` files provide directory listings and concept docs carry OKF frontmatter. |
 | [`src/draft/`](./src/draft/) | Executable draft taxonomy: `technical-proofs/`, `exp-proofs/`, `epic-proofs/`, and `projects/`. These are draft fixtures, not a production product. |
-| [`GAPS.md`](./GAPS.md) | Long-running intent-alignment gap review register (Nomad × Aspire × Nitric × FinOps × agent-native); findings append per iteration. |
 | [`docs/competitors/`](./docs/competitors/index.md) | Competitive analysis and positioning notes. |
 | [`docs/standards/`](./docs/standards/index.md), [`docs/technologies/`](./docs/technologies/index.md), [`docs/patterns/`](./docs/patterns/index.md) | Reference material for the implemented platform. |
 | [`AGENTS.md`](./AGENTS.md), [`docs/agent-tooling.md`](./docs/agent-tooling.md) | Repo-level agent instructions and local agent-tooling reference. |

@@ -5,7 +5,7 @@
 			"proof": "src/draft/technical-proofs/deterministic-replay-engine/src",
 			"promotedTo": "packages/runtime/src/replay",
 			"status": "frozen",
-			"note": "Promoted with typing/format hardening; the package copy is canonical (GAPS.md IMPL-005).",
+			"note": "Promoted with typing and format hardening; the package copy is canonical.",
 			"digests": {
 				"context.ts": "sha256:48a51b61ccb05ea48594807606df36302afb85b66c0dbfc3745434a0b6b5496c",
 				"divergence.ts": "sha256:a8c77f88bcb0efd871a4ed901b727b9d1f920d998fd08d376bdddb50dd000da2",
@@ -43,14 +43,25 @@
 		{
 			"proof": "src/draft/technical-proofs/hobo-componentize/src",
 			"promotedTo": "packages/componentize/src",
-			"status": "reference",
-			"note": "Partial promotion (S0 scope, ADR-0105): oci/smoke/sources modules are S1+ scope and stay in the proof as reference (GAPS.md IMPL-006)."
+			"status": "frozen",
+			"note": "Component build, OCI descriptors, source inventory, and runtime smoke are implemented in the package.",
+			"digests": {
+				"componentize.ts": "sha256:a907df20ef246cd9d35f23011da65406bdfbf29a090b0e59da832b7125c98d99",
+				"index.ts": "sha256:7b7eb825b6acd53dec165b56a2a9a4684725bc1fd3bbcba3bfed921560b5cc26",
+				"json.ts": "sha256:afd8557797ca73ff8fa7cae6b134549d5fd6865a1c40c0a17c41f22d5aacb9fe",
+				"oci.ts": "sha256:52047e1eda40ae50855f6d98c496de6d829f331587f059873790276fbff2464e",
+				"parse.ts": "sha256:6e5b739dbaf029fafc38a796afe03528b64be957103e288db62f6bb6ba8f9b66",
+				"smoke.ts": "sha256:2fa36c9501c56d5b323f693b19e32a774a637593b0c54be62ea5865b0e7cc466",
+				"sources.ts": "sha256:a6e8a3cc5c9209368c35bffe0eaeed7881adb22b2583641d026a17f7a3c233de",
+				"types.ts": "sha256:2cb1900a6dccc02fa378ca91dadcb1033b6a6a8fe6556c1d3131a4cc8de2cd23",
+				"validate.ts": "sha256:e2b83681acde19f43dd8e5176128ead8b8f09728526a8c7cf5769f8a7a9ea1dd"
+			}
 		},
 		{
 			"proof": "src/draft/technical-proofs/hobo-codegen-cli-contract/src",
 			"promotedTo": "packages/cli/src/codegen",
 			"status": "frozen",
-			"note": "HOBO-152 promotion: project codegen engine typed and split (types/engine/tree/fixture/run-codegen), injectable CodegenEngine; the CLI and build gate no longer dynamic-import the proof (GAPS.md IMPL-004).",
+			"note": "The CLI and build gate use the production project codegen engine.",
 			"digests": {
 				"codegen-cli-contract.ts": "sha256:c7503ccf1a86cfdff67728d3084c9bf293cc3ba8c2f379fc4ada2bb7c967e438",
 				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"

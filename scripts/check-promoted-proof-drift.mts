@@ -1,18 +1,3 @@
-/**
- * Promoted-proof drift guard.
- *
- * packages/* are promoted from src/draft proofs; once promoted, the package
- * copy is canonical and the proof is FROZEN — further edits belong in the
- * package (AGENTS.md "Draft-proof promotion policy"). Before this guard the
- * two copies silently diverged (the deterministic-replay-engine proof and
- * packages/runtime/src/replay drifted apart with nothing noticing —
- * GAPS.md IMPL-005).
- *
- * scripts/promotions.json is the ledger: each entry pins a frozen proof's
- * files to sha256 digests and names the package that superseded it. This
- * check fails when a frozen file changed or disappeared. Refresh digests
- * deliberately with `--update` when a proof is re-frozen.
- */
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
