@@ -5,23 +5,41 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		providerService: "Vercel Web",
 		features: ["http", "static", "managed"],
 	},
+	project: {
+		port: "project",
+		resourceClass: "vercel:project",
+		providerService: "Vercel Project",
+		features: ["managed"],
+	},
 	objectStore: {
 		port: "objectStore",
 		resourceClass: "vercel:blob",
 		providerService: "Vercel Blob",
-		features: ["durable"],
-	},
-	"database/postgres": {
-		port: "database",
-		resourceClass: "vercel:neon-postgres",
-		providerService: "Neon (marketplace)",
-		features: ["postgres", "managed", "integration-backed"],
+		features: ["durable", "read", "write", "delete"],
 	},
 	kv: {
 		port: "kv",
 		resourceClass: "vercel:edge-config",
-		providerService: "Edge Config / Upstash",
-		features: ["key-value", "edge", "integration-backed"],
+		providerService: "Vercel Edge Config",
+		features: ["key-value", "edge"],
+	},
+	// Vercel Queues: at-least-once delivery to a function of the deployment
+	// (a queue consumer route), with delayed sends.
+	queue: {
+		port: "queue",
+		resourceClass: "vercel:queue",
+		providerService: "Vercel Queues",
+		features: ["queue", "at-least-once", "delay", "managed"],
+	},
+	// Vercel Cron Jobs: a cron expression in the project's `vercel.json` that
+	// calls one of the deployment's own paths (`crons[].path`) on the schedule,
+	// with the project's CRON_SECRET as bearer. Realized with the deployment
+	// that carries the path; nothing is provisioned beside it.
+	schedule: {
+		port: "schedule",
+		resourceClass: "vercel:cron-job",
+		providerService: "Vercel Cron Jobs",
+		features: ["cron", "http-trigger", "managed"],
 	},
 } as const);
 
@@ -33,9 +51,11 @@ export type InitialCapabilityPort = keyof typeof EQUIVALENCE_CLASSES;
 // The package's own test asserts `Object.isFrozen` for exactly that reason.
 export const INITIAL_CAPABILITY_PORTS = Object.freeze([
 	"web/service",
+	"project",
 	"objectStore",
-	"database/postgres",
 	"kv",
+	"queue",
+	"schedule",
 ] as const satisfies readonly InitialCapabilityPort[]);
 
 export function equivalenceForPort(port: InitialCapabilityPort) {
