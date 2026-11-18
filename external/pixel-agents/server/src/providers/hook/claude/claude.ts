@@ -16,7 +16,6 @@ import {
 import { claudeTeamProvider } from './claudeTeamProvider.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from './constants.js';
 
-
 export function formatToolStatus(toolName: string, input?: unknown): string {
   const inp = (input ?? {}) as Record<string, unknown>;
   const base = (p: unknown) => (typeof p === 'string' ? path.basename(p) : '');
@@ -65,7 +64,6 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
   }
 }
 
-
 function getSessionDirs(workspacePath: string): string[] {
   const dirName = normalizeProjectPath(workspacePath);
   const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
@@ -79,13 +77,12 @@ function getSessionDirs(workspacePath: string): string[] {
       const match = fs.readdirSync(projectsRoot).find((c) => c.toLowerCase() === lowerDirName);
       if (match) return [path.join(projectsRoot, match)];
     }
-  } catch {
-  }
+  } catch {}
 
   return [projectDir];
 }
 
-function buildLaunchCommand(
+export function buildLaunchCommand(
   sessionId: string,
   cwd: string,
   opts?: { bypassPermissions?: boolean },
@@ -98,7 +95,6 @@ function buildLaunchCommand(
 function getAllSessionRoots(): string[] {
   return [path.join(os.homedir(), '.claude', 'projects')];
 }
-
 
 function normalizeHookEvent(
   raw: Record<string, unknown>,
@@ -209,7 +205,6 @@ function normalizeHookEvent(
   }
 }
 
-
 function installHooks(_serverUrl: string, _authToken: string): Promise<void> {
   installerInstallHooks();
   return Promise.resolve();
@@ -223,7 +218,6 @@ function uninstallHooks(): Promise<void> {
 function areHooksInstalled(): Promise<boolean> {
   return Promise.resolve(installerAreHooksInstalled());
 }
-
 
 export const claudeProvider: HookProvider = {
   kind: 'hook',
