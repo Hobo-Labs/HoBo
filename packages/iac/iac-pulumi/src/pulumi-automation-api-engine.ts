@@ -66,9 +66,9 @@ interface AutomationStackLike {
 	preview(): Promise<{
 		changeSummary?: Record<string, number>;
 	}>;
-	up(): Promise<UpResult>;
-	refresh(): Promise<RefreshResult>;
-	destroy(): Promise<DestroyResult>;
+	up(): Promise<UpResult | void>;
+	refresh(): Promise<RefreshResult | void>;
+	destroy(): Promise<DestroyResult | void>;
 	outputs(): Promise<Record<string, { value: unknown }>>;
 }
 
