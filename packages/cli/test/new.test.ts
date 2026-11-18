@@ -57,7 +57,6 @@ describe("hobo new scaffold", () => {
 			expect(result.exitCode).toBe(0);
 			expect(result.stderr).toBe("");
 
-			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
 			const envelope = JSON.parse(result.stdout) as {
 				ok: boolean;
 				verb: string;
@@ -88,8 +87,6 @@ describe("hobo new scaffold", () => {
 				await assertFile(projectDir, relativePath);
 			}
 
-			// That the api project's own tests and typecheck pass is asserted, with
-			// every other template, in "creates all four templates" below.
 			const report = await validateScaffoldProject(projectDir);
 			expect(report.ok).toBe(true);
 		});
@@ -144,34 +141,29 @@ describe("hobo new scaffold", () => {
 		});
 	});
 
-	// Spawns tsc + node --test for all four templates; slow on cold CI runners.
-	it(
-		"creates all four templates as runnable SDK project stubs",
-		{ timeout: 120_000 },
-		async () => {
-			await withScratch(async (cwd) => {
-				expect(VALID_TEMPLATES).toEqual(["todo", "api", "agent", "fullstack"]);
+	it("creates all four templates as runnable SDK project stubs", {
+		timeout: 120_000,
+	}, async () => {
+		await withScratch(async (cwd) => {
+			expect(VALID_TEMPLATES).toEqual(["todo", "api", "agent", "fullstack"]);
 
-				for (const template of VALID_TEMPLATES) {
-					const { projectDir, createdFiles } = await scaffoldHoboProject({
-						cwd,
-						// SAFETY: `name: `sample-${template}` as never,` is required at this I/O or test boundary.
-						name: `sample-${template}` as never,
-						template,
-					});
+			for (const template of VALID_TEMPLATES) {
+				const { projectDir, createdFiles } = await scaffoldHoboProject({
+					cwd,
+					name: parseProjectName(`sample-${template}`),
+					template: parseTemplateId(template),
+				});
 
-					expect(createdFiles).toEqual(expectedCreatedFiles);
+				expect(createdFiles).toEqual(expectedCreatedFiles);
 
-					const report = await validateScaffoldProject(projectDir);
-					expect(report.ok).toBe(true);
-					expect(report.template).toBe(template);
-					assertGeneratedProjectRuns(projectDir);
-					assertGeneratedProjectTypechecks(projectDir);
-				}
-			});
-		},
-		30_000,
-	);
+				const report = await validateScaffoldProject(projectDir);
+				expect(report.ok).toBe(true);
+				expect(report.template).toBe(template);
+				assertGeneratedProjectRuns(projectDir);
+				assertGeneratedProjectTypechecks(projectDir);
+			}
+		});
+	});
 
 	it("prints exact next steps for human output", async () => {
 		await withScratch(async (cwd) => {
@@ -223,7 +215,6 @@ describe("hobo new scaffold", () => {
 			expect(result.exitCode).toBe(2);
 			expect(result.stderr).toBe("");
 
-			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
 			const envelope = JSON.parse(result.stdout) as {
 				ok: boolean;
 				code: string;
@@ -291,7 +282,6 @@ describe("hobo new scaffold", () => {
 				"coverage/\n.hobo/\n.hobo-codegen.lock\n.hobo-codegen.lock-*\n.hobo-codegen-*\nnode_modules/\ndist/\n",
 			);
 
-			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
 			const envelope = JSON.parse(result.stdout) as {
 				data: { createdFiles: string[] };
 			};
@@ -301,15 +291,6 @@ describe("hobo new scaffold", () => {
 	});
 });
 
-/**
- * What the subprocess actually said.
- *
- * `expect(result.status).toBe(0)` alone reports "expected 1 to be +0" and
- * throws away the compiler diagnostics or the failing test output that explain
- * it — which turns a scaffold regression into a guessing game. The scaffold is
- * generated, so the failure is never visible in a diff either; the subprocess
- * output is the only evidence there is.
- */
 function subprocessReport(
 	label: string,
 	result: { readonly stdout?: string; readonly stderr?: string },
@@ -356,24 +337,6 @@ function assertGeneratedProjectTypechecks(projectDir: string) {
 	);
 }
 
-/**
- * Where `tsc` actually is, asked of Node rather than guessed from the cwd.
- *
- * This used to be `path.resolve(process.cwd(), "..", "..", "node_modules", …)`,
- * which encodes two assumptions that are both wrong often enough to matter: that
- * the process cwd is this package's directory (it is when `pnpm --filter` runs
- * the suite, and is not when vitest is pointed here with `--root` from the
- * workspace root), and that `typescript` is hoisted to exactly two levels up
- * (pnpm's layout is not a promise). When either slipped, the spawn failed with
- * `MODULE_NOT_FOUND` for a path like `/home/node_modules/typescript/bin/tsc`
- * and the assertion reported it as `expected 1 to be +0` — a scaffold
- * regression indistinguishable from a broken test path.
- *
- * Resolving `typescript/package.json` and walking to its `bin/tsc` uses the
- * same algorithm the runtime uses, so it is correct from any cwd and any
- * hoisting depth. `package.json` is the entry to ask for because it is exported
- * by convention even when a package restricts its `exports` map.
- */
 function typescriptCliPath() {
 	const require = createRequire(import.meta.url);
 	return path.join(
