@@ -237,6 +237,37 @@ describe("createRealComponentize (injected impl)", () => {
 });
 
 describe("createRealComponentize (toolchain probe)", () => {
+	it("passes the interface contents directly to the installed compiler", async () => {
+		const witSource =
+			"package hobo:examples@0.1.0; world hello-bindle { export health: func() -> string; }";
+		const calls: Array<{ witWorld: string; witPath?: string }> = [];
+		const real = await createRealComponentize({
+			importModule: () =>
+				Promise.resolve({
+					componentize: (options: { witWorld: string; witPath?: string }) => {
+						calls.push(options);
+						return Promise.resolve({ component: FIXED_BYTES });
+					},
+				}),
+			wit: {
+				source: witSource,
+				worldName: "hello-bindle",
+				witWorld: "hobo:examples/hello-bindle@0.1.0",
+			},
+		});
+		const result = await real.componentize({
+			sourceRoot: await writeSourceRoot(),
+			sourceDateEpoch: SOURCE_DATE_EPOCH,
+		});
+
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.witWorld).toBe(witSource);
+		expect(calls[0]).not.toHaveProperty("witPath");
+		expect(parseJsonObject(result.component.metadata).toolchain).toEqual({
+			componentizeJs: "provided",
+		});
+	});
+
 	it("reports unavailable and throws the typed error when the import fails", async () => {
 		const real = await createRealComponentize({
 			importModule: () => Promise.reject(new Error("MODULE_NOT_FOUND")),

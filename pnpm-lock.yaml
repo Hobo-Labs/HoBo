@@ -1316,6 +1316,9 @@ importers:
 
   packages/componentize:
     dependencies:
+      '@bytecodealliance/componentize-js':
+        specifier: 0.21.0
+        version: 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
@@ -1326,9 +1329,6 @@ importers:
         specifier: ^0.25.0
         version: 0.25.12
     devDependencies:
-      '@bytecodealliance/componentize-js':
-        specifier: 0.21.0
-        version: 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
       '@types/node':
         specifier: ^22.15.0
         version: 22.20.0
