@@ -1,4 +1,5 @@
 # Control API PACT
 
-Consumer: `@hobo/control-yard` (game UI + OpenUI sheets).  
+Consumer: `@hobo/hobo` (the composed control-plane service).
+
 Provider: `@hobo/control-api` over `@hobo/management`.

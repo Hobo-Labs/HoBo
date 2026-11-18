@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import postcss, { type Rule } from "postcss";
-import { controlYardPropViolations } from "./lib/control-yard-props.js";
 
 type Source = { path: string; css: string };
 
@@ -143,12 +142,6 @@ function main(): number {
 		...checkVisualTokens(
 			source("site/src/styles/global.css"),
 			source("packages/connect-ui/src/client/styles.css"),
-		),
-		...controlYardPropViolations(
-			readFileSync(
-				join(root, "packages/control-yard/public/yard-game.js"),
-				"utf8",
-			),
 		),
 	];
 	for (const error of errors) console.error(error);

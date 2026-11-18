@@ -6,7 +6,7 @@ Shared by:
 
 - `hobo station` / `hobo connection` CLI
 - MCP control tools
-- `@hobo/control-api` (local HTTP + SSE for the Yard game UI)
+- `@hobo/control-api` (local HTTP and SSE)
 
 ## Usage
 

@@ -5,7 +5,6 @@ import {
 	checkVisualTokens,
 	contrastRatio,
 } from "../scripts/check-visual-tokens.mts";
-import { controlYardPropViolations } from "../scripts/lib/control-yard-props.js";
 import { selectRelevantChecks } from "../scripts/relevant-check-policy.js";
 
 const site = {
@@ -65,22 +64,6 @@ test("the gate reports unreadable, missing, and ambiguous tokens", () => {
 	);
 });
 
-test("yard props render indexed images without canvas primitives", () => {
-	const yard = readFileSync(
-		"packages/control-yard/public/yard-game.js",
-		"utf8",
-	);
-	assert.deepEqual(controlYardPropViolations(yard), []);
-	const invalid = yard.replace(
-		"function drawCostMeter(v) {",
-		"function drawCostMeter(v) { ctx.fillRect(0, 0, 1, 1);",
-	);
-	assert.match(
-		controlYardPropViolations(invalid).join("\n"),
-		/drawCostMeter.*ctx\.fillRect/u,
-	);
-});
-
 test("the relevant check selects source-based visual validation for UI changes", () => {
 	const checksFor = (file: string) =>
 		selectRelevantChecks({ files: [file], base: "origin/main" }).checks;
@@ -91,11 +74,6 @@ test("the relevant check selects source-based visual validation for UI changes",
 	);
 	assert.ok(
 		checksFor("scripts/check-visual-tokens.mts").some(
-			(check) => check.args.join(" ") === "run design:lint",
-		),
-	);
-	assert.ok(
-		checksFor("packages/control-yard/public/yard-game.js").some(
 			(check) => check.args.join(" ") === "run design:lint",
 		),
 	);
