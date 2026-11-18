@@ -41,11 +41,12 @@ import {
 	type EventStoreWriter,
 } from "./replay/store.js";
 import { runWithRetries } from "./step.js";
+import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
+	isNonEmptyPrimitiveString,
 	requireWorkflowRunId,
 } from "./workflow-boundary.js";
-import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 
 /** Durability primitives are always granted; effect capabilities are declared. */
 const DURABILITY_CAPABILITIES: readonly Capability[] = [
@@ -79,11 +80,12 @@ export interface DefineWorkflowInput<A, R> {
 export function defineWorkflow<A, R>(
 	input: DefineWorkflowInput<A, R>,
 ): WorkflowDefinition<A, R> {
-	if (!input.name) {
+	const name = input.name;
+	if (!isNonEmptyPrimitiveString(name)) {
 		throw new TypeError("workflow name must be a non-empty string");
 	}
 	return Object.freeze({
-		name: input.name,
+		name,
 		// SAFETY: assertion to ` Set([ ...DURABILITY_CAPABILITIES, ...(input.capabilities ?? []), ]) as ReadonlySet<Capability>, ` is required at this boundary.
 		capabilities: new Set([
 			...DURABILITY_CAPABILITIES,
@@ -91,6 +93,29 @@ export function defineWorkflow<A, R>(
 		]) as ReadonlySet<Capability>,
 		tools: Object.freeze({ ...input.tools }),
 		run: input.run,
+	});
+}
+
+function captureWorkflowDefinition<A, R>(
+	definition: WorkflowDefinition<A, R>,
+): WorkflowDefinition<A, R> {
+	const name = definition.name;
+	if (!isNonEmptyPrimitiveString(name))
+		throw new TypeError("workflow name must be a non-empty string");
+	const run = definition.run;
+	try {
+		Function.prototype.toString.call(run);
+	} catch {
+		throw new TypeError("workflow run must be callable");
+	}
+	const capabilities = new Set(definition.capabilities);
+	const tools = Object.freeze({ ...definition.tools });
+	return Object.freeze({
+		name,
+		capabilities,
+		tools,
+		run: (ctx: WorkflowContext, args: A) =>
+			Function.prototype.call.call(run, definition, ctx, args),
 	});
 }
 
@@ -194,7 +219,10 @@ export function createWorkflowEngine(
 	options: WorkflowEngineOptions = {},
 ): WorkflowEngine {
 	const store = options.store ?? createInMemoryEventStore();
-	const seed = options.seed ?? "hobo-runtime-authoring-seed";
+	const seed =
+		options.seed === undefined ? "hobo-runtime-authoring-seed" : options.seed;
+	if (!isNonEmptyPrimitiveString(seed))
+		throw new TypeError("workflow seed must be a non-empty string");
 	const tokenBroker = options.tokenBroker ?? DEFAULT_TOKEN_BROKER;
 	const actorHost = options.actorHost;
 	const wait =
@@ -252,15 +280,6 @@ export function createWorkflowEngine(
 		if (!started || !isRecord(started.data)) {
 			throw new Error(`missing run.Started for ${runId}`);
 		}
-		if (!isDeepStrictEqual(started.data.args ?? null, cloneAsJson(args))) {
-			throw new Error(`workflow input differs from run.Started for ${runId}`);
-		}
-		if (
-			isJsonString(started.data.workflowName) &&
-			started.data.workflowName !== def.name
-		) {
-			throw new Error(`workflow name differs from run.Started for ${runId}`);
-		}
 		const version = started.data.commandTreeVersion;
 		if (
 			version !== undefined &&
@@ -269,6 +288,29 @@ export function createWorkflowEngine(
 			version !== 3
 		) {
 			throw new Error("unsupported workflow command tree version");
+		}
+		const hasArgs = Object.hasOwn(started.data, "args");
+		const recordedArgs = hasArgs ? started.data.args : null;
+		if (
+			(version === 3 && !hasArgs) ||
+			!isDeepStrictEqual(recordedArgs, cloneAsJson(args))
+		) {
+			throw new Error(`workflow input differs from run.Started for ${runId}`);
+		}
+		const recordedName = started.data.workflowName;
+		if (
+			(version === 3 && recordedName === undefined) ||
+			(recordedName !== undefined &&
+				(!isNonEmptyPrimitiveString(recordedName) || recordedName !== def.name))
+		) {
+			throw new Error(`workflow name differs from run.Started for ${runId}`);
+		}
+		const recordedSeed = started.data.seed;
+		if (
+			(version === 3 && recordedSeed === undefined) ||
+			(recordedSeed !== undefined && !isNonEmptyPrimitiveString(recordedSeed))
+		) {
+			throw new Error(`workflow seed differs from run.Started for ${runId}`);
 		}
 		const terminal = [...journal]
 			.reverse()
@@ -304,7 +346,7 @@ export function createWorkflowEngine(
 				error: failure,
 			};
 		}
-		const runSeed = isJsonString(started.data.seed) ? started.data.seed : seed;
+		const runSeed = recordedSeed === undefined ? seed : recordedSeed;
 		const rootCommands =
 			version === 2 || version === 3
 				? readReplayCommandTree(journal, true, version === 3)
@@ -980,6 +1022,7 @@ export function createWorkflowEngine(
 			);
 			const lease = claimWorkflowExecution(store, runId);
 			try {
+				const definition = captureWorkflowDefinition(def);
 				const input = captureWorkflowInput(args);
 				const streamId = `run/${runId}`;
 				// Claim the new run before any user step. No shared idempotency key is
@@ -991,12 +1034,12 @@ export function createWorkflowEngine(
 					cloneAsJson({
 						seed,
 						args: input,
-						workflowName: def.name,
+						workflowName: definition.name,
 						commandTreeVersion: 3,
 					}),
 				);
 				await recordEffect(store, started, 0);
-				return await execute(def, runId, input, lease);
+				return await execute(definition, runId, input, lease);
 			} finally {
 				lease.finished = true;
 				lease.releaseIfDrained();
@@ -1006,8 +1049,9 @@ export function createWorkflowEngine(
 			const id = requireWorkflowRunId(runId);
 			const lease = claimWorkflowExecution(store, id);
 			try {
+				const definition = captureWorkflowDefinition(def);
 				const input = captureWorkflowInput(args);
-				return await execute(def, id, input, lease);
+				return await execute(definition, id, input, lease);
 			} finally {
 				lease.finished = true;
 				lease.releaseIfDrained();
@@ -1022,12 +1066,13 @@ export function createWorkflowEngine(
 			}));
 		},
 		toReplayDefinition(def) {
+			const definition = captureWorkflowDefinition(def);
 			return {
-				name: def.name,
+				name: definition.name,
 				initialState: () => null,
 				execute: async (rctx, _state, args) => {
 					const replayCtx = createRuntimeContext({
-						capabilities: def.capabilities,
+						capabilities: definition.capabilities,
 						effects: {
 							step: <T>(name: string, fn: () => Promise<T> | T) =>
 								rctx.step<T>(name, fn),
@@ -1041,7 +1086,7 @@ export function createWorkflowEngine(
 							token: tokenBroker,
 							async tool(name, input) {
 								return rctx.step(`tool:${name}`, () => {
-									const impl = def.tools[name];
+									const impl = definition.tools[name];
 									if (!impl) {
 										throw new Error(`tool ${name} is not registered`);
 									}
@@ -1055,7 +1100,7 @@ export function createWorkflowEngine(
 						runId: rctx.runId,
 						seed: rctx.seed,
 					});
-					return def.run(ctx, args);
+					return definition.run(ctx, args);
 				},
 			};
 		},
