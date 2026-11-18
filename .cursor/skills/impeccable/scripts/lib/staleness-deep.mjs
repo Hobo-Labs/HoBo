@@ -339,8 +339,7 @@ export function checkWorkspaces({ repoRoot, candidates = [], checkNativePlatform
             : 'has a PRODUCT.md'
         } that resolves to web, but the workspace itself carries native build files. ${entry.summary}`,
         fix: candidate.productStatus === 'inherited'
-          ? `Give \`${candidate.path}\` its own PRODUCT.md with the right \`## Platform\`. `
-            + 'An inherited record cannot describe two platforms at once.'
+          ? `Use the implemented sources in \`${candidate.path}\` to choose the matching platform guidance.`
           : entry.fix,
       }));
     }
@@ -356,8 +355,7 @@ export function checkWorkspaces({ repoRoot, candidates = [], checkNativePlatform
       summary: `${inherited.length} of ${workspaces.length} workspace(s) inherit the repo-root PRODUCT.md: `
         + `${inherited.map((entry) => `\`${entry.path}\``).join(', ')}. Inheritance is intended; whether one `
         + 'record truthfully describes these apps is not something this check can tell.',
-      fix: 'Ask the user whether the inherited record describes each app. Where it does not, `init` in that '
-        + 'workspace writes a child PRODUCT.md that overrides it.',
+      fix: 'Use each workspace\'s implemented source and explicit requirements for context.',
     }));
   }
 

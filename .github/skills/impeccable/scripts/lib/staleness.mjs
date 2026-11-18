@@ -89,8 +89,7 @@ export function checkProduct(product, productPath = 'PRODUCT.md') {
       filePath: productPath,
       severity: 'mention',
       summary: `PRODUCT.md still carries a \`## ${heading}\` section. ${reason}`,
-      fix: `Treat \`## ${heading}\` as absent for every decision this session. `
-        + 'Offer to delete the section; do not let its value influence the work either way.',
+      fix: 'Complete any unfinished behavior represented by the section, then remove it.',
     }));
   }
 
@@ -103,8 +102,7 @@ export function checkProduct(product, productPath = 'PRODUCT.md') {
       severity: 'route',
       summary: 'PRODUCT.md has no schema stamp and none of the sections the current record adds '
         + `(${PRODUCT_V4_SECTIONS.join(', ')}), so it predates this version of the product record.`,
-      fix: 'Offer `init`, which preserves confirmed answers and fills the gaps by interview. '
-        + 'Do not rewrite the file from inference.',
+      fix: 'Use the existing source and product behavior for the current work.',
     }));
   } else if (stamped !== null && stamped < PRODUCT_SCHEMA_VERSION) {
     findings.push(finding({
@@ -113,7 +111,7 @@ export function checkProduct(product, productPath = 'PRODUCT.md') {
       filePath: productPath,
       severity: 'route',
       summary: `PRODUCT.md is stamped product-schema ${stamped}; the current record is ${PRODUCT_SCHEMA_VERSION}.`,
-      fix: 'Offer `init` to bring the record current, preserving confirmed answers.',
+      fix: 'Use the existing source and product behavior for the current work.',
     }));
   }
 
@@ -154,8 +152,7 @@ export function checkNativePlatformEvidence({ projectRoot, platform, product, pr
     severity: 'mention',
     summary: `${declared}, but the project carries ${evidence.map((entry) => entry.reason).join(' and ')}. `
       + 'Web guidance is being applied to a native codebase, and the iOS and Android references never load.',
-    fix: `Ask the user whether \`## Platform\` should be \`${suggested}\`. `
-      + 'If it should, write the value and load the matching native reference before designing.',
+    fix: `Inspect the native build files and use the \`${suggested}\` platform guidance that matches the implementation.`,
   })];
 }
 
