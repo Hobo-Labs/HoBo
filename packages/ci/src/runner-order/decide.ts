@@ -1,29 +1,3 @@
-/**
- * The walk: one relay job's question answered against a runner order.
- *
- * The order is walked top to bottom and the job takes the first step that can
- * run it now. A step is passed over, with a recorded reason, when the relay
- * did not name it, when a rule forbids it (a public repository on someone's
- * machine, a limit that has been reached, a runner type that stopped
- * starting jobs) or when it has nothing free.
- *
- * What happens when no step takes the job depends on why:
- *
- * - A hosted runner type passed over only for being unhealthy takes the job
- *   after all. A slow runner beats no runner.
- * - Otherwise, a step that would have taken the job but is busy (a full
- *   machine, a full fleet) is waited on: the job is given that step's label
- *   and queues on GitHub, as it would on any self-hosted runner.
- * - Otherwise nothing can take it, and the answer is a reason. The relay job
- *   fails with that reason instead of leaving a job queued for a runner that
- *   will never come.
- *
- * The answer is a `RunnerRouteDecision` record: where the job goes, and every
- * step that was passed over on the way, so "why did this run there" can be
- * read back later without replaying anything.
- *
- * Pure functions: no clock, network or store.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type RunnerOrderStep,
@@ -80,45 +54,29 @@ export const RUNNER_SKIP_REASONS = [
 ] as const;
 export type RunnerSkipReason = (typeof RUNNER_SKIP_REASONS)[number];
 
-/** What the HoBo fleet can do for this repository right now. */
 export type FleetState = Readonly<{
-	/** The fleet serves this repository. */
 	enabled: boolean;
-	/** It has room for one more job now. */
 	taking: boolean;
-	/**
-	 * Every job gets a machine nothing else shares, discarded afterwards, and
-	 * the owner has acknowledged running untrusted code there. Required for a
-	 * public repository or a fork's pull request.
-	 */
 	isolated: boolean;
 }>;
 
-/** A job being run again after a failure outside its own steps. */
 export type RouteRetry = Readonly<{
 	target: RunnerRetryTarget;
 	failedStep: RunnerStepKey | undefined;
 	failedMachineId: string | undefined;
 }>;
 
-/** Everything the walk needs to know that the order and the relay do not say. */
 export type RouteFacts = Readonly<{
 	fleet: FleetState | undefined;
 	machines: readonly MachineCandidate[];
-	/** The account's Actions minutes. Absent when not measured. */
 	minutes: MinutesUsage | undefined;
-	/** US dollars spent this month, per hosted provider. A missing entry is unmeasured. */
 	spendUsd: ReadonlyMap<HostedRunnerProvider, number>;
-	/** Runner types currently tripped, as `providerHealthKey` values. */
 	unhealthy: ReadonlySet<string>;
-	/** Providers the owner has turned on for public repositories at the provider. */
 	publicOptIn: ReadonlySet<HostedRunnerProvider>;
-	/** One job told to try a runner type first. */
 	first: RunnerStepKey | undefined;
 	retry: RouteRetry | undefined;
 }>;
 
-/** Facts for a repository about which nothing has been measured. */
 export const NO_ROUTE_FACTS: RouteFacts = {
 	fleet: undefined,
 	machines: [],
@@ -142,9 +100,7 @@ type StepResult =
 			kind: "skip";
 			reason: RunnerSkipReason;
 			detail: string;
-			/** The step would have taken the job but is busy: its label can be waited on. */
 			busy: Target | undefined;
-			/** The step was passed over only for being unhealthy. */
 			unhealthy: Target | undefined;
 	  }>;
 
@@ -164,7 +120,6 @@ function take(step: RunnerStepKey, runner: string, machineId = ""): StepResult {
 
 type OneLabel = Readonly<{ label: string }> | Readonly<{ refused: StepResult }>;
 
-/** The one label a step that takes a single label was given, or the reason there is none. */
 function singleLabel(labels: readonly string[]): OneLabel {
 	if (isUnresolvedAuto(labels)) return { refused: skip("no_size") };
 	const label = labels[0];
@@ -288,7 +243,6 @@ function skipRecord(
 	});
 }
 
-/** The labels each step was given, with `auto` turned into the order's size. */
 export function effectiveRelayInputs(
 	order: ParsedRunnerOrder,
 	request: RunnerRouteRequest,
@@ -298,7 +252,6 @@ export function effectiveRelayInputs(
 	return resolveAutoInputs(inputs, orderAutoSize(order), request.runId);
 }
 
-/** Steps the relay named that the order leaves out. They are never tried. */
 function namedButNotOrdered(
 	order: ParsedRunnerOrder,
 	request: RunnerRouteRequest,
@@ -335,7 +288,6 @@ const SKIP_TEXT: ReadonlyMap<RunnerSkipReason, string> = new Map<
 	["machine_full", "every machine is busy"],
 ]);
 
-/** One passed-over step as a clause: `github: the included-minutes limit is reached (…)`. */
 export function describeSkip(skipped: RunnerRouteSkip): string {
 	const text =
 		SKIP_TEXT.get(
@@ -347,10 +299,6 @@ export function describeSkip(skipped: RunnerRouteSkip): string {
 		: `${skipped.key}: ${text}`;
 }
 
-/**
- * Why nothing took the job, as one sentence a person can act on. Steps the
- * relay simply did not name are left out unless they are all there is.
- */
 export function noRunnerReason(
 	skipped: readonly RunnerRouteSkip[],
 	notInOrder: readonly string[],
@@ -368,10 +316,6 @@ export function noRunnerReason(
 	return `No runner available. ${why}.${outside}`;
 }
 
-/**
- * Answer one relay job. `order` is the account's or the repository's runner
- * order, `request` what the relay asked, `facts` what is known right now.
- */
 export function decideRunnerRoute(
 	order: ParsedRunnerOrder,
 	request: RunnerRouteRequest,
@@ -438,7 +382,6 @@ export function decideRunnerRoute(
 	});
 }
 
-/** One line for a log or a job summary: where the job goes, or why nowhere. */
 export function describeDecision(decision: RunnerRouteDecision): string {
 	if (decision.outcome === "none") return decision.reason;
 	const where = `${decision.runner} (${decision.step})`;

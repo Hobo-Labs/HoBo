@@ -779,10 +779,11 @@ with the parser's own sentence.
 
 `parseCiRunnerOrder(json)` reads the block: the committed order, or the
 default (`fleet`, `machine`, `github`) when the file has none. A block that
-is there but broken is not silently replaced; the result carries `problem`
-and `source: "default"`, so a caller can refuse to route on an order nobody
-wrote. `hobo ci route` walks the order for one job and shows every step
-passed over. Nothing in the relay reads `runnerOrder` yet.
+is there but broken, or a project document that is not a JSON object, is not
+silently replaced; the result carries `problem` and `source: "default"`, so a
+caller can refuse to route on an order nobody wrote. `hobo ci route` walks the
+order for one job and shows every step passed over. Nothing in the relay reads
+`runnerOrder` yet.
 
 ### Moving workflow jobs to the fleet
 
@@ -1588,9 +1589,8 @@ estimate of about 25 assumed one command per ring append and no routing reads.
 
 ## Relay job seams
 
-A relay job (ADR-0183, [`packages/ci/RELAY-JOB.md`](../ci/RELAY-JOB.md)) is
-answered by `answerRelayJob` from `@hobo/ci`. This package holds the two seams
-on its GitHub side:
+A [relay job](../ci/RELAY-JOB.md) is answered by `answerRelayJob` from
+`@hobo/ci`. This package holds the two seams on its GitHub side:
 
 - [`src/runner-protocol/port.ts`](src/runner-protocol/port.ts): the runner
   protocol a relay-mode node answers over. `RunnerServiceClient.open` signs in
@@ -1606,3 +1606,8 @@ on its GitHub side:
   one `fetch` for REST, billing and the runner service, `queueJob`, `deliver`
   (webhooks to a handler), `advance` (its clock), `dropNextWebhook`, and reads
   of its runners and jobs.
+
+The JIT configuration contains the private RSA parameters used to sign session
+token requests; treat them as secrets and do not log them. The in-memory fake
+accepts completions only from the session that took the job and rejects calls
+after the session closes.

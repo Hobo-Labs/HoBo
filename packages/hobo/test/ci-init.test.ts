@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createHoboCli } from "@hobo/cli";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCiCommand } from "../src/ci-command.js";
+import { runCiInit } from "../src/ci-init.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -51,7 +52,6 @@ jobs:
     uses: ./.github/workflows/publish.yml
 `;
 
-/** A repository root holding the given workflow files. */
 async function repository(
 	workflows: Readonly<Record<string, string>> = {
 		"ci.yml": CI,
@@ -136,10 +136,60 @@ describe("hobo ci init", () => {
 			).replace("runs-on: ubuntu-24.04 # pinned", "runs-on: hobo # pinned"),
 		);
 		expect(await workflow("release.yaml")).toBe(RELEASE);
-		// A second run finds nothing left to do.
+
 		const again = await init("--apply", "all");
 		expect(again.envelope.data.changed).toEqual([]);
 		expect(await workflow("ci.yml")).toBe(after);
+	});
+
+	it("does not overwrite a workflow edited after it was planned", async () => {
+		const edited = `${CI}\n# another edit\n`;
+		let contents = CI;
+		let reads = 0;
+		let writes = 0;
+		const result = await runCiInit({
+			cwd: "/repo",
+			args: [],
+			options: { apply: "test" },
+			files: {
+				list: async () => ["ci.yml"],
+				read: async () => {
+					if (++reads === 2) contents = edited;
+					return contents;
+				},
+				write: async (_path, text) => {
+					writes++;
+					contents = text;
+				},
+			},
+		});
+		expect(writes).toBe(0);
+		expect(contents).toBe(edited);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain("changed since it was planned");
+	});
+
+	it("does not recreate a workflow that disappears after planning", async () => {
+		let reads = 0;
+		let writes = 0;
+		const result = await runCiInit({
+			cwd: "/repo",
+			args: [],
+			options: { apply: "test" },
+			files: {
+				list: async () => ["ci.yml"],
+				read: async () => {
+					if (++reads > 1) throw new Error("removed");
+					return CI;
+				},
+				write: async () => {
+					writes++;
+				},
+			},
+		});
+		expect(writes).toBe(0);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain("cannot be read");
 	});
 
 	it("applies named jobs, by id or by file:id, and says what it refused", async () => {
