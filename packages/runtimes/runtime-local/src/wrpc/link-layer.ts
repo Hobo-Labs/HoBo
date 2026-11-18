@@ -9,6 +9,7 @@ import {
 	type ProviderRegistration,
 	parseInterfaceId,
 	parseWireVersion,
+	type TransportInvocation,
 	WireVersionIncompatibleError,
 	type WrpcLinkPort,
 	type WrpcTransport,
@@ -34,24 +35,30 @@ function raceDeadline<T>(
 	deadlineMs: number,
 	clock: LinkClock,
 	makeError: (observedNowMs: number) => DeadlineExceededError,
+	abort: AbortController,
 ): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
 		let settled = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
+		const fail = (error: RuntimeMembraneError) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			abort.abort(error);
+			reject(error);
+		};
 		const schedule = () => {
 			if (settled) return;
 			let observedNowMs: number;
 			try {
 				observedNowMs = checkedNow(clock);
-			} catch (error) {
-				settled = true;
-				reject(error);
+			} catch {
+				fail(new RuntimeMembraneError("fatal", "wrpc.invalid_clock"));
 				return;
 			}
 			const remaining = deadlineMs - observedNowMs;
 			if (remaining <= 0) {
-				settled = true;
-				reject(makeError(observedNowMs));
+				fail(makeError(observedNowMs));
 				return;
 			}
 			timer = setTimeout(schedule, Math.min(remaining, MAX_TIMER_MS));
@@ -60,18 +67,18 @@ function raceDeadline<T>(
 		schedule();
 		const finish = (complete: () => void) => {
 			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
 			try {
 				const observedNowMs = checkedNow(clock);
 				if (observedNowMs >= deadlineMs) {
-					reject(makeError(observedNowMs));
+					fail(makeError(observedNowMs));
 					return;
 				}
-			} catch (error) {
-				reject(error);
+			} catch {
+				fail(new RuntimeMembraneError("fatal", "wrpc.invalid_clock"));
 				return;
 			}
+			settled = true;
+			clearTimeout(timer);
 			complete();
 		};
 		work.then(
@@ -313,21 +320,24 @@ export function createWrpcLinkLayer(options: {
 			}
 
 			inFlight.set(providerId, current + 1);
+			const abort = new AbortController();
 			const release = () => {
 				const remaining = (inFlight.get(providerId) ?? 1) - 1;
 				if (remaining === 0) inFlight.delete(providerId);
 				else inFlight.set(providerId, remaining);
 			};
 			let invocation: Promise<JsonValue>;
+			const transportInvocation: TransportInvocation = {
+				link,
+				operation,
+				payload,
+				deadline: deadlineIso,
+			};
+			if (transport.kind === "in-process") {
+				transportInvocation.signal = abort.signal;
+			}
 			try {
-				invocation = Promise.resolve(
-					transport.invoke({
-						link,
-						operation,
-						payload,
-						deadline: deadlineIso,
-					}),
-				);
+				invocation = Promise.resolve(transport.invoke(transportInvocation));
 			} catch (error) {
 				release();
 				throw error;
@@ -349,6 +359,7 @@ export function createWrpcLinkLayer(options: {
 									deadlineMs,
 									observedNowMs,
 								}),
+							abort,
 						)
 					: await tracked;
 
