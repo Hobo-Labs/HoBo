@@ -500,7 +500,7 @@ describe("source policy", () => {
 		);
 	});
 
-	it("allows concise architecture directives and rejects explanations or deferred type exemptions", () => {
+	it("rejects architecture metadata comments and deferred type exemptions", () => {
 		const text = [
 			"// domain-view:",
 			"// public-contract:",
@@ -518,9 +518,9 @@ describe("source policy", () => {
 		);
 		assert.deepEqual(
 			violations.map((item) => item.line),
-			[4, 5, 6, 7, 8],
+			[1, 2, 3, 4, 5, 6, 7, 8],
 		);
-		assert.match(violations[2]?.message ?? "", /finish deferred work/u);
+		assert.match(violations[5]?.message ?? "", /finish deferred work/u);
 		assert.equal(
 			commentViolations(
 				"x.ts",

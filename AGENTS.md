@@ -8,9 +8,8 @@ over conflicting repository workflow guidance.
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
   dynamic imports. Include only arguments consumed by the tool, without
-  explanations. Use `// domain-view:` and `// public-contract:` without explanatory
-  text when the architecture checks require them; complete parallel wire types
-  instead of adding temporary exemptions, regardless of comment syntax. Tracked
+  explanations. Register deliberate domain views in `scripts/schema-domain-views.json`;
+  complete parallel wire types instead of adding temporary exemptions. Tracked
   generated and vendored code follows the same rule; update its generator or
   maintained source while preserving required notices.
 - Complete unfinished work when it is found. Do not hide it by deleting its
@@ -25,8 +24,8 @@ over conflicting repository workflow guidance.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
 
-Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
-and Copilot. Standalone documentation comments follow the same rule. Run
+Agent tool hooks run the common source policy for Claude Code, Codex, Cursor,
+Copilot, and Gemini. Standalone documentation comments follow the same rule. Run
 `pnpm run source:guard -- --worktree` when checking manually, including ignored
 agent artifacts in nested projects;
 the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
@@ -35,7 +34,7 @@ Kotlin, C#, Ruby, Lua, Swift, and Gherkin, including source templates, notebook 
 
 # Agent tooling for this repo
 
-This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub Copilot CLI** for Superpowers) with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
+This repo is wired for **Claude Code**, **Cursor**, **Codex**, **GitHub Copilot**, and **Gemini** with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
 
 | Tool | Type | What it does | Invoke |
 |---|---|---|---|

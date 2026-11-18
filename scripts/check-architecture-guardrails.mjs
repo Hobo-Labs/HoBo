@@ -32,7 +32,7 @@ const SOURCE_EXTENSIONS = new Set([
 const LEXICAL_STRUCTURE_EXTENSIONS = new Set([".cue", ".proto", ".wit"]);
 const SOURCE_DIRECTORIES = new Set(["services", "src"]);
 const STRUCTURAL_COMMENT =
-	/@(?:cc_on|jsx|jsxFrag|jsxImportSource|jsxRuntime|license|preserve|ts-(?:check|expect-error|ignore|nocheck)|type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated|vite-ignore)|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)|(?:istanbul|c8|v8)\s+ignore|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*source(?:Mapping)?URL=|<reference\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:/iu;
+	/@(?:cc_on|jsx|jsxFrag|jsxImportSource|jsxRuntime|license|preserve|ts-(?:check|expect-error|ignore|nocheck)|type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated|vite-ignore)|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)|(?:istanbul|c8|v8)\s+ignore|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*source(?:Mapping)?URL=|<reference\b|SPDX-License-Identifier:|copyright\b/iu;
 const DRAFT_PROOF_KINDS = new Set([
 	"technical-proofs",
 	"exp-proofs",
@@ -411,23 +411,8 @@ function hasEventArchitecture(sources) {
 	return deterministicModel || completeRuntime;
 }
 
-const PARALLEL_TYPE_MARKERS = ["domain-view:", "parallel-type-allowed:"];
 const PROTO_RECORD_SUFFIXES = ["EventData", "Record"];
 
-function hasMarkerAbove(lines, index, marker) {
-	if ((lines[index] ?? "").includes(marker)) return true;
-	for (let above = index - 1; above >= 0; above -= 1) {
-		const text = (lines[above] ?? "").trim();
-		const isComment =
-			text.startsWith("//") ||
-			text.startsWith("*") ||
-			text.startsWith("/*") ||
-			text.endsWith("*/");
-		if (!isComment) return false;
-		if (text.includes(marker)) return true;
-	}
-	return false;
-}
 function parallelTypeDeclarations(
 	packageRoot,
 	typeScriptSources,
@@ -454,13 +439,6 @@ function parallelTypeDeclarations(
 			const name = match?.[1] ?? match?.[2];
 			if (!name || !normalizedProtoTypes.has(name)) continue;
 			if (domainViews.get(`${packageRoot}/${file}`)?.has(name)) continue;
-			if (
-				PARALLEL_TYPE_MARKERS.some((marker) =>
-					hasMarkerAbove(lines, index, marker),
-				)
-			) {
-				continue;
-			}
 			offenders.push(`${file}:${index + 1} ${name}`);
 		}
 	}
