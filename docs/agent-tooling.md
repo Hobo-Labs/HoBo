@@ -81,10 +81,11 @@ on stop hooks may also apply.
 
 The record is an empty, session-scoped file named by a hash under the OS
 temporary directory; it contains no task text. Its update command fails visibly
-if it cannot write the state. If state storage is unavailable, the hook allows
-the stop and reports that the ready-action check did not run where the harness
-supports warnings. Events without a usable session identity fall back to one
-review. Codex requires project-hook trust and review through `/hooks`.
+if it cannot write the state. If state storage is unavailable, the initial
+review is still requested when the harness identifies a first stop; later stops
+are allowed and a warning reports that the ready-action check did not run where
+the harness supports warnings. Events without a usable session identity fall
+back to one review. Codex requires project-hook trust and review through `/hooks`.
 
 The guard enforces a recorded ready action, but it is not an independent proof
 of completion: an agent can fail to record an action or clear the record
