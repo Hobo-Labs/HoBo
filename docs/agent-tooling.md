@@ -80,9 +80,9 @@ inputs are allowed through rather than causing an infinite loop. Codex requires
 project-hook trust and review through `/hooks`; if a harness skips a hook, the
 shared rule remains in force.
 
-The script uses the Python standard library and requires Python 3. Other harnesses
-can pass their
-stop event as JSON on standard input and use the returned `decision` and
+The script uses the Python standard library. The configured Unix hooks require
+`python3` on `PATH`; Copilot on Windows uses `python`. Other harnesses can pass
+their stop event as JSON on standard input and use the returned `decision` and
 `reason`, or adapt the Cursor `followup_message` format. A compatible harness
 must supply a reliable continuation marker to prevent a review loop.
 
