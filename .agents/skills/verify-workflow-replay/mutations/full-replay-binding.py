@@ -41,7 +41,7 @@ def check(case):
             raise RuntimeError(f'{name}: expected one mutation site, found {original.count(before)}')
         changed = original.replace(before, after, 1)
         if name == 'seed-snapshot':
-            read = 'const events = await store.readStream(streamId);'
+            read = 'const events = captureJournalStream(\n\t\tawait store.readStream(streamId),\n\t\tstreamId,\n\t);'
             if changed.count(read) != 1:
                 raise RuntimeError('seed-snapshot: expected one read site')
             changed = changed.replace(read, read + '\n\tsuppliedSeed = options.seed;', 1)

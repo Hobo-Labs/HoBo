@@ -9,13 +9,15 @@ description: Verify that validated replay reports and divergence records remain 
 
 **Why:** Mutable evidence can describe different replay boundaries or event orders after it has already been checked.
 
-**Review baseline:** `ec2b83f6271c8666531b91d68edd452c96578edd`.
+**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
 
 ## Covered code and checks
 
 - `packages/runtime/src/replay/parse.ts` copies and freezes parsed vectors, entries and divergence orders. `equivalence.ts` and `replayer.ts` return frozen reports; `divergence.ts` detaches and freezes the divergence record's order arrays. `types.ts` exposes readonly evidence fields.
 - `packages/runtime/src/replay/proto.ts` uses the same domain parser for protobuf JSON and binary reports.
 - `packages/runtime/test/replay/evidence-immutability.test.ts` checks direct, protobuf, harness and workflow report entry points and divergence records. It attempts to edit the input, report, vector, entries and orders. Seed 614616 generates 100 stream/position cases.
+
+- The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
 
 From the repository root with dependencies installed, run:
 

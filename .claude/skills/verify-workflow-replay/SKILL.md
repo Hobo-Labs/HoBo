@@ -9,7 +9,7 @@ description: Verify durable workflow identity, sleep deadlines and replay, and t
 
 **Why:** Repeating effects or reusing results for different inputs can corrupt work.
 
-**Review baseline:** `ec2b83f6271c8666531b91d68edd452c96578edd`.
+**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
 
 ## Covered code
 
@@ -37,6 +37,8 @@ description: Verify durable workflow identity, sleep deadlines and replay, and t
 - `packages/runtime/test/authoring/workflow-input-snapshot.test.ts` checks caller edits after start and resume, input changes while the initial append waits, refusal of aliases, cycles, proxies and nonstandard property descriptors without invoking getters, and acceptance of generated ordinary JSON trees.
 
 ## Run
+
+- The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
 
 From the repository root with workspace dependencies installed:
 
