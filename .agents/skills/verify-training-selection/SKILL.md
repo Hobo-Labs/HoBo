@@ -9,13 +9,15 @@ description: Verify reward admission and keep-best selection in the training opt
 
 **Why:** Invalid rewards can corrupt selection and traces, while replacing a better candidate or a tied first winner makes replayed results disagree with the recorded trajectory.
 
-**Review baseline:** `6a7ecb7b0431ab6a8582eb6fd901d34c3b50e549`.
+**Review baseline:** `783afc988b682ee6de6bf97df6ada2b4bba5a14b`.
 
 ## Covered code and checks
 
 - `packages/training/src/optimizer.ts` validates rewards, generates and scores proposals, keeps the incumbent and emits the winning artifact and traces. `src/trace-sink.ts` stores the traces; core's `parseOptimizeRequest` also checks reward ranges for parsed requests.
 - `packages/training/test/optimizer-selection.test.ts` checks invalid rewards before tracing, all-tie behavior and 80 deterministic generated runs against recorded decisions and winner payloads. Existing optimizer tests cover candidate shape and normal replay.
 - Related skills cover [configuration](../verify-training-config/SKILL.md), the [seeded generator](../verify-training-prng/SKILL.md) and [trace snapshots](../verify-training-trace-sink/SKILL.md).
+
+The related [trace commit skill](../verify-training-trace-commit/SKILL.md) checks when a run publishes its trace batch.
 
 From the repository root with dependencies installed, run:
 

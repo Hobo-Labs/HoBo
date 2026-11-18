@@ -9,7 +9,7 @@ description: Verify detached training trace snapshots and drain behavior.
 
 **Why:** Caller mutations after recording must not rewrite trace evidence or change a previously drained result.
 
-**Review baseline:** `6a7ecb7b0431ab6a8582eb6fd901d34c3b50e549`.
+**Review baseline:** `783afc988b682ee6de6bf97df6ada2b4bba5a14b`.
 
 ## Covered code and checks
 
@@ -20,6 +20,8 @@ description: Verify detached training trace snapshots and drain behavior.
 The related [optimizer config skill](../verify-training-config/SKILL.md) checks count bounds and abstract loop progress.
 
 The related [selection skill](../verify-training-selection/SKILL.md) checks reward admission and keep-best behavior.
+
+The related [trace commit skill](../verify-training-trace-commit/SKILL.md) checks when a run publishes its trace batch.
 
 From the repository root with dependencies installed, run:
 
