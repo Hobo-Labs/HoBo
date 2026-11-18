@@ -52,7 +52,6 @@ export const S0_ROOT_FILES = [
 	"CODE_OF_CONDUCT.md",
 	"CONTRIBUTING.md",
 	"DX.md",
-	"GAPS.md",
 	"GEMINI.md",
 	"LICENSE",
 	"NOTES.md",

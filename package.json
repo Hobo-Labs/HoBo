@@ -36,7 +36,6 @@
 		"docs:links": "node --import tsx scripts/check-documentation-links.ts",
 		"docs:findings": "node --import tsx scripts/docs-findings-index.mts",
 		"docs:okf": "node --import tsx scripts/check-okf-docs.mts",
-		"docs:register-check": "node --import tsx scripts/check-gaps-register-lag.ts",
 		"docs:site-nav": "node --import tsx scripts/check-site-nav.mts",
 		"doctor": "node --experimental-strip-types scripts/dx-preflight.mts doctor",
 		"draft:artifacts": "node --import tsx scripts/check-draft-artifacts.ts",
