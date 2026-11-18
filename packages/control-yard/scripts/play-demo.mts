@@ -21,7 +21,6 @@ import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createControlApiServer } from "@hobo/control-api";
-import { chromium, type Page } from "playwright";
 import {
 	connectionAuthorize,
 	connectionCreate,
@@ -32,6 +31,8 @@ import {
 	stationRailsPublish,
 	stationUp,
 } from "@hobo/management";
+import { chromium, type Page } from "playwright";
+import { comparePngFiles } from "../../../scripts/lib/png-diff.js";
 
 type YardState = {
 	ready: boolean;
@@ -84,10 +85,6 @@ const SHOTS = join(PUBLIC, "shots");
 const RECORDINGS = join(SHOTS, "recordings");
 const BASELINES = join(SHOTS, "baselines");
 const REPO_ROOT = join(ROOT, "..", "..");
-const IMGDIFF = join(
-	REPO_ROOT,
-	".agents/skills/playwright-testing/scripts/imgdiff.py",
-);
 const EXP_EVIDENCE = join(
 	REPO_ROOT,
 	"src/draft/exp-proofs/ux/control-yard/assets/evidence",
@@ -173,33 +170,10 @@ function imgdiff(baseline: string, current: string, out: string): ImageDiff {
 		copyFileSync(current, baseline);
 		return { ok: true, detail: "baseline created" };
 	}
-	const r = spawnSync(
-		"uv",
-		[
-			"run",
-			"--with",
-			"pillow",
-			"python",
-			IMGDIFF,
-			baseline,
-			current,
-			"--out",
-			out,
-			"--max-rms",
-			"12.0",
-		],
-		{ encoding: "utf8" },
-	);
-	if (r.status === 0) return { ok: true, detail: "match" };
-	const detail = (r.stdout || r.stderr || `exit ${r.status}`)
-		.trim()
-		.slice(0, 240);
-	if (/Pillow is required|ModuleNotFoundError/i.test(detail)) {
-		return { ok: true, detail: `imgdiff skipped (deps): ${detail}` };
-	}
-
-	const rmsMatch = detail.match(/RMS=([0-9.]+)/i);
-	const rms = rmsMatch ? Number(rmsMatch[1]) : NaN;
+	const comparison = comparePngFiles(baseline, current, out);
+	if (!comparison.comparable) return { ok: false, detail: comparison.detail };
+	const { rms } = comparison;
+	if (rms <= 12) return { ok: true, detail: `match (RMS=${rms.toFixed(2)})` };
 	if (Number.isFinite(rms) && rms <= 25) {
 		copyFileSync(current, baseline);
 		return {
@@ -207,7 +181,7 @@ function imgdiff(baseline: string, current: string, out: string): ImageDiff {
 			detail: `baseline refreshed (RMS=${rms.toFixed(2)} ≤ 25)`,
 		};
 	}
-	return { ok: false, detail };
+	return { ok: false, detail: `RMS=${rms.toFixed(2)} exceeds 12.00` };
 }
 
 function sleep(ms: number) {

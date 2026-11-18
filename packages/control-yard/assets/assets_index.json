@@ -47,6 +47,46 @@
       "path": "chrome/connection-bay.png",
       "width": 32,
       "height": 32
+    },
+    "train": {
+      "path": "landmarks/train.png",
+      "width": 422,
+      "height": 319
+    },
+    "handcar": {
+      "path": "landmarks/handcar.png",
+      "width": 408,
+      "height": 347
+    },
+    "signpost": {
+      "path": "landmarks/signpost.png",
+      "width": 197,
+      "height": 420
+    },
+    "switchboard": {
+      "path": "landmarks/switchboard.png",
+      "width": 323,
+      "height": 409
+    },
+    "depot": {
+      "path": "landmarks/depot.png",
+      "width": 366,
+      "height": 339
+    },
+    "shack": {
+      "path": "landmarks/shack.png",
+      "width": 422,
+      "height": 380
+    },
+    "company-gate": {
+      "path": "landmarks/company-gate.png",
+      "width": 513,
+      "height": 420
+    },
+    "toolbox": {
+      "path": "landmarks/toolbox.png",
+      "width": 388,
+      "height": 371
     }
   },
   "spritesheets": {

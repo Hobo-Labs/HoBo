@@ -1,12 +1,8 @@
-/**
- * Asset index ↔ disk coverage + measured frame dimension check.
- * STOP rule: measure PNG before trusting load.spritesheet config.
- */
-
 import { strict as assert } from "node:assert";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { controlYardPropViolations } from "../../../scripts/lib/control-yard-props.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ASSETS = join(ROOT, "assets");
@@ -25,9 +21,8 @@ type Sheet = {
 	animations: Record<string, { frames: number[] | "all"; id: string }>;
 };
 
-function readPngSize(path: string): { width: number; height: number } {
+function readPngSize(path: string) {
 	const buf = readFileSync(path);
-	// PNG IHDR: signature 8 + len 4 + "IHDR" 4 + width/height big-endian
 	assert.equal(buf.toString("ascii", 1, 4), "PNG");
 	const width = buf.readUInt32BE(16);
 	const height = buf.readUInt32BE(20);
@@ -83,7 +78,6 @@ for (const [id, sheet] of Object.entries(index.spritesheets)) {
 	}
 }
 
-// West sheet must not be a mirror of east — both files must exist distinctly.
 const east = index.spritesheets["bo-walk-east"];
 const west = index.spritesheets["bo-walk-west"];
 if (east && west) {
@@ -118,6 +112,12 @@ for (const [animId, ref] of Object.entries(index.animationIds)) {
 			`animationIds ${animId} missing anim ${ref.animation} on ${ref.sheet}`,
 		);
 	}
+}
+
+for (const violation of controlYardPropViolations(
+	readFileSync(join(ROOT, "public/yard-game.js"), "utf8"),
+)) {
+	fail(violation);
 }
 
 if (errors > 0) {

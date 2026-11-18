@@ -1,7 +1,3 @@
-/**
- * Fail if required Playwright screenshots + MP4s are missing/too small,
- * or digests in evidence-manifest.json do not match disk.
- */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -23,6 +19,7 @@ const REQUIRED: {
 	{ path: "03-cost-booth.png", minBytes: 2048, kind: "png" },
 	{ path: "04-policy-board.png", minBytes: 2048, kind: "png" },
 	{ path: "05-error-bunker.png", minBytes: 2048, kind: "png" },
+	{ path: "06-after-actions.png", minBytes: 2048, kind: "png" },
 	{ path: "07-walk.png", minBytes: 2048, kind: "png" },
 	{ path: "canvas-only.png", minBytes: 2048, kind: "png" },
 	{ path: "anim-bo-idle.png", minBytes: 2048, kind: "png" },
@@ -60,7 +57,7 @@ const manifest = JSON.parse(readFileSync(MANIFEST, "utf8")) as {
 	files?: Record<string, { bytes: number; sha256: string }>;
 };
 
-if (!manifest.files || typeof manifest.files !== "object") {
+if (!manifest.files) {
 	fail("evidence-manifest.json missing files map");
 }
 
@@ -79,7 +76,6 @@ for (const req of REQUIRED) {
 		console.log(`OK  ${req.path} (${st.size} bytes)`);
 	}
 	const dig = sha256(abs);
-	// Strict digest for all files except the manifest itself (self-hash chicken/egg).
 	if (req.path === "evidence-manifest.json") continue;
 	const entry = manifest.files?.[req.path];
 	if (!entry) {
@@ -93,7 +89,6 @@ for (const req of REQUIRED) {
 	}
 }
 
-// MP4 structural check via ffprobe when available
 for (const req of REQUIRED.filter((r) => r.kind === "mp4")) {
 	const abs = join(SHOTS, req.path);
 	if (!existsSync(abs)) continue;

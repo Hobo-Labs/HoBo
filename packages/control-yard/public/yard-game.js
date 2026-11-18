@@ -1,13 +1,6 @@
-/**
- * Playable HoBo Yard (canvas).
- * Loads measured Bo sheets from /assets; drives zones from control-api projections.
- * Clip metadata from assets_index.json — no hard-coded frame sizes in draw paths.
- */
-
 const params = new URLSearchParams(location.search);
 const API = params.get("api") || "http://127.0.0.1:8790";
 const ASSET_BASE = params.get("assets") || "/assets";
-/** playwright-testing deterministic mode: ?test=1&seed=42 */
 const TEST_MODE = params.has("test");
 const TEST_SEED = Number(params.get("seed") || "42") || 42;
 
@@ -25,22 +18,15 @@ if (TEST_MODE) {
 	Math.random = () => rng();
 }
 
-/** @type {any} */
 let assetIndex = null;
-/** @type {Record<string, HTMLImageElement>} */
 const images = {};
-/** @type {any} */
 let snap = null;
-/** @type {any} */
 let visual = null;
 
-const canvas = /** @type {HTMLCanvasElement} */ (
-	document.getElementById("yard")
-);
+const canvas = document.getElementById("yard");
 const ctx = canvas.getContext("2d");
 if (!ctx) throw new Error("2d context required");
 
-// Layout mirrors packages/control-yard/src/layout.ts (single SoT values).
 const LAYOUT = {
 	width: 1280,
 	height: 720,
@@ -177,8 +163,8 @@ async function bootAssets() {
 	for (const sheet of Object.values(assetIndex.spritesheets)) {
 		images[sheet.id] = await loadImage(sheet.path);
 	}
-	for (const img of Object.values(assetIndex.images)) {
-		images[img.id] = await loadImage(img.path);
+	for (const [id, image] of Object.entries(assetIndex.images)) {
+		images[id] = await loadImage(image.path);
 	}
 	for (const optional of [
 		"trail.png",
@@ -188,9 +174,7 @@ async function bootAssets() {
 	]) {
 		try {
 			images[optional] = await loadImage(optional);
-		} catch {
-			/* optional plates may be missing */
-		}
+		} catch {}
 	}
 }
 
@@ -217,10 +201,8 @@ function drawSheetFrame(sheetId, frameIndex, dx, dy, scale = 0.55) {
 	const sy = sheet.margin + row * (sheet.frameHeight + sheet.spacing);
 	const dw = sheet.frameWidth * scale;
 	const dh = sheet.frameHeight * scale;
-	// Pixel art: never bilinear-filter Bo (phaser-gamedev / pixel STOP rule).
 	const prev = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
-	// origin feet-baseline (0.5, 1)
 	ctx.drawImage(
 		img,
 		sx,
@@ -263,7 +245,6 @@ function deriveVisual(s) {
 			zone = "connectionBay";
 		else zone = "platformRest";
 	}
-	// Reuse good site sheets only: idle (bounce/blink) + walk E/W. No invented work/error art.
 	const boState =
 		zone === "activeRailTrack" && occupyMode === "occupying"
 			? "walking"
@@ -699,7 +680,6 @@ function drawBackground() {
 	ctx.fillStyle = "#ffffff";
 	ctx.fillRect(0, 0, LAYOUT.width, LAYOUT.height);
 
-	// faint horizon rule
 	ctx.strokeStyle = "#e3e2de";
 	ctx.lineWidth = 1;
 	ctx.beginPath();
@@ -710,14 +690,12 @@ function drawBackground() {
 	const prevSmooth = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
 
-	// distant poles (rim silhouettes — site plate)
 	if (images["poles.png"]) {
 		ctx.globalAlpha = 0.55;
 		ctx.drawImage(images["poles.png"], 0, 80, LAYOUT.width, 320);
 		ctx.globalAlpha = 1;
 	}
 
-	// trail band behind Bo (ink line-art plate)
 	if (images["trail.png"]) {
 		ctx.globalAlpha = 1;
 		ctx.drawImage(
@@ -729,7 +707,6 @@ function drawBackground() {
 		);
 	}
 
-	// paper ground strip under feet
 	ctx.fillStyle = "#ffffff";
 	ctx.fillRect(
 		0,
@@ -752,7 +729,6 @@ function drawBackground() {
 	ctx.imageSmoothingEnabled = prevSmooth;
 }
 
-/** Near bank plate draws after Bo so he stands on the trail. */
 function drawTrailFront() {
 	if (!images["trail-front.png"]) return;
 	const prevSmooth = ctx.imageSmoothingEnabled;
@@ -773,7 +749,6 @@ function drawZone(z, opts = {}) {
 	const active = opts.active;
 	const hot = opts.hot;
 	ctx.save();
-	// sticker card: paper fill, thick ink rim, hard offset shadow
 	ctx.fillStyle = "rgba(16,16,16,0.12)";
 	ctx.fillRect(z.x + 3, z.y + 3, z.width, z.height);
 	ctx.fillStyle = hot ? "#f2f1ec" : "#ffffff";
@@ -782,7 +757,6 @@ function drawZone(z, opts = {}) {
 	ctx.lineWidth = active || hot ? 3 : 2;
 	ctx.strokeRect(z.x + 0.5, z.y + 0.5, z.width - 1, z.height - 1);
 	if (active) {
-		// inner rail
 		ctx.strokeStyle = "#101010";
 		ctx.lineWidth = 1;
 		ctx.strokeRect(z.x + 4.5, z.y + 4.5, z.width - 9, z.height - 9);
@@ -793,55 +767,41 @@ function drawZone(z, opts = {}) {
 	ctx.restore();
 }
 
+function drawIndexedImage(id, x, y, width, height, alpha = 1) {
+	const image = images[id];
+	if (!image) return;
+	ctx.save();
+	ctx.globalAlpha = alpha;
+	ctx.drawImage(image, x, y, width, height);
+	ctx.restore();
+}
+
 function drawRailTrack(v) {
 	const z = LAYOUT.zones.activeRailTrack;
 	const lit =
 		Boolean(snap?.occupancy?.activeRailHash) &&
 		snap?.occupyMode === "occupying";
-	// ink ties on paper — no yellow SaaS glow
-	ctx.fillStyle = lit ? "#101010" : "#4a4a46";
-	ctx.fillRect(z.x, z.y + 20, z.width, 28);
-	ctx.strokeStyle = lit ? "#101010" : "#6e6d68";
-	ctx.lineWidth = 2;
-	for (let x = z.x + 10; x < z.x + z.width; x += 36) {
-		ctx.beginPath();
-		ctx.moveTo(x, z.y + 18);
-		ctx.lineTo(x + 16, z.y + 50);
-		ctx.stroke();
-	}
-	if (lit) {
-		// paper highlight dashes on active rail
-		ctx.strokeStyle = "#ffffff";
-		ctx.lineWidth = 2;
-		ctx.setLineDash([10, 10]);
-		ctx.beginPath();
-		ctx.moveTo(z.x + 8, z.y + 34);
-		ctx.lineTo(z.x + z.width - 8, z.y + 34);
-		ctx.stroke();
-		ctx.setLineDash([]);
-	}
-	// rail plaques
+	drawIndexedImage(
+		lit ? "train" : "handcar",
+		z.x + z.width / 2 - 74,
+		z.y - 18,
+		148,
+		112,
+		lit ? 1 : 0.68,
+	);
 	const rails = v?.rails || [];
 	rails.slice(0, 5).forEach((r, i) => {
-		const px = LAYOUT.zones.policyBoard.x + 16 + i * 60;
-		const py = LAYOUT.zones.policyBoard.y + 40;
-		// ink/paper plaques — go for active, ink for draft/approved, no SaaS blue
-		const color =
+		const px = LAYOUT.zones.policyBoard.x + 24 + i * 56;
+		const py = LAYOUT.zones.policyBoard.y + 36;
+		drawIndexedImage("signpost", px, py, 30, 64, 0.86);
+		ctx.fillStyle =
 			r.activationStatus === "active"
 				? "#14672c"
 				: r.activationStatus === "approved"
 					? "#101010"
-					: r.activationStatus === "draft"
-						? "#4a4a46"
-						: "#6e6d68";
-		ctx.fillStyle = color;
-		ctx.fillRect(px, py, 48, 28);
-		ctx.strokeStyle = "#101010";
-		ctx.lineWidth = 2;
-		ctx.strokeRect(px, py, 48, 28);
-		ctx.fillStyle = "#ffffff";
+					: "#6e6d68";
 		ctx.font = "700 9px system-ui, sans-serif";
-		ctx.fillText(r.activationStatus.slice(0, 6), px + 4, py + 18);
+		ctx.fillText(r.activationStatus.slice(0, 6), px - 2, py + 76);
 	});
 }
 
@@ -854,31 +814,19 @@ function drawConnectionBays(v) {
 		const bx = z.x + 24 + (i % 3) * 80;
 		const by = z.y + 40 + Math.floor(i / 3) * 70;
 		const visual = c?.visual || "closed";
-		const fill =
+		const alpha =
 			visual === "authorized"
-				? "#14672c"
+				? 1
 				: visual === "pending"
-					? "#101010"
+					? 0.78
 					: visual === "revoked"
-						? "#c5301c"
-						: "#444";
-		ctx.fillStyle = fill;
-		ctx.fillRect(bx, by, 56, 48);
-		ctx.strokeStyle = "#111";
-		ctx.lineWidth = 2;
-		ctx.strokeRect(bx, by, 56, 48);
-		// door split
-		ctx.beginPath();
-		ctx.moveTo(bx + 28, by);
-		ctx.lineTo(bx + 28, by + 48);
-		ctx.stroke();
-		if (images["connection-bay"]) {
-			ctx.drawImage(images["connection-bay"], bx + 12, by + 8, 32, 32);
-		}
+						? 0.52
+						: 0.38;
+		drawIndexedImage("company-gate", bx, by, 62, 52, alpha);
 		if (c) {
-			ctx.fillStyle = "#fff";
+			ctx.fillStyle = visual === "revoked" ? "#c5301c" : "#101010";
 			ctx.font = "9px monospace";
-			ctx.fillText((c.alias || c.provider || "?").slice(0, 7), bx + 4, by + 44);
+			ctx.fillText((c.alias || c.provider || "?").slice(0, 7), bx + 4, by + 62);
 		}
 	}
 }
@@ -887,35 +835,30 @@ function drawCostMeter(v) {
 	const m = LAYOUT.costMeter;
 	const fill = v?.cost?.fill ?? 0;
 	const heat = v?.cost?.heat ?? 0;
-	ctx.fillStyle = "#ffffff";
-	ctx.fillRect(m.x, m.y, m.width, m.height);
-	ctx.strokeStyle = "#101010";
-	ctx.lineWidth = 2;
-	ctx.strokeRect(m.x, m.y, m.width, m.height);
+	drawIndexedImage("depot", m.x + 34, m.y + 8, 92, 86);
 	ctx.fillStyle = heat > 0.8 ? "#c5301c" : "#14672c";
-	ctx.fillRect(m.x + 2, m.y + 2, (m.width - 4) * fill, m.height - 4);
-	ctx.fillStyle = "#101010";
 	ctx.font = "700 11px system-ui, sans-serif";
-	ctx.fillText(`fare ${(fill * 100).toFixed(0)}%`, m.x, m.y - 6);
+	ctx.fillText(`fare ${(fill * 100).toFixed(0)}%`, m.x + 48, m.y + 102);
 }
 
 function drawErrorBunker(v) {
 	const z = LAYOUT.zones.errorBunker;
 	const active = (v?.doctor?.hazards?.length ?? 0) > 0;
+	drawIndexedImage("shack", z.x + 42, z.y + 28, 116, 104, active ? 1 : 0.58);
 	if (active) {
-		ctx.fillStyle = "rgba(120,20,20,0.25)";
-		ctx.fillRect(z.x, z.y, z.width, z.height);
+		drawIndexedImage("toolbox", z.x + 6, z.y + 70, 52, 50);
 		ctx.fillStyle = "#6b1d1d";
 		ctx.font = "11px monospace";
 		const hazards = v.doctor.hazards.slice(0, 3);
 		for (const [i, h] of hazards.entries()) {
-			ctx.fillText(h.slice(0, 22), z.x + 8, z.y + 40 + i * 14);
+			ctx.fillText(h.slice(0, 22), z.x + 8, z.y + 36 + i * 14);
 		}
 	}
 }
 
 function drawBootstrap(v) {
 	const z = LAYOUT.zones.bootstrapDesk;
+	drawIndexedImage("switchboard", z.x + 50, z.y + 28, 80, 102, 0.82);
 	if (v?.bootstrapActive) {
 		ctx.fillStyle = "#6a5a20";
 		ctx.font = "11px monospace";
@@ -924,10 +867,8 @@ function drawBootstrap(v) {
 }
 
 function drawParticles(dt) {
-	// playwright-testing: disable particles in test mode for stable screenshots
 	if (TEST_MODE) return;
 	const rate = visual?.traffic?.active ? visual.traffic.rate : 0;
-	// Keep a few cars visible even at modest rates so the yard reads "alive".
 	let budget = Math.max(rate > 0 ? 2 * dt : 0, rate * 14 * dt);
 	const em = LAYOUT.trafficEmitter;
 	for (const p of state.particles) {
@@ -942,19 +883,12 @@ function drawParticles(dt) {
 			budget -= 1;
 		}
 		if (p.alive) {
-			// larger cargo boxes on the lit track
-			ctx.fillStyle = "#111";
-			ctx.fillRect(p.x, p.y, 12, 10);
-			ctx.fillStyle = "#fff";
-			ctx.fillRect(p.x + 2, p.y + 2, 8, 6);
-			ctx.fillStyle = "#111";
-			ctx.fillRect(p.x + 3, p.y + 3, 6, 4);
+			drawIndexedImage("cargo-particle", p.x, p.y, 12, 12);
 		}
 	}
 }
 
 function drawBo(dt) {
-	// move toward target
 	const speed = 180;
 	const dx = state.target.x - state.bo.x;
 	const dy = state.target.y - state.bo.y;
@@ -963,7 +897,6 @@ function drawBo(dt) {
 	if (dist > step) {
 		state.bo.x += (dx / dist) * step;
 		state.bo.y += (dy / dist) * step;
-		// prefer walk anim while moving
 		if (Math.abs(dx) >= Math.abs(dy)) {
 			state.animId = dx >= 0 ? "bo.walk.east" : "bo.walk.west";
 		}
@@ -982,11 +915,9 @@ function drawBo(dt) {
 			state.frame = (state.frame + 1) % frames.length;
 		}
 	} else {
-		// freeze on first frame for deterministic screenshots
 		state.frame = 0;
 	}
 	const frameIndex = frames[state.frame] ?? 0;
-	// never mirror west — use dedicated sheet
 	drawSheetFrame(
 		sheet.id,
 		frameIndex,
@@ -1017,7 +948,6 @@ function drawBo(dt) {
 }
 
 function drawHudOverlay() {
-	// sticker caption card
 	ctx.fillStyle = "rgba(16,16,16,0.12)";
 	ctx.fillRect(19, 19, 300, 52);
 	ctx.fillStyle = "#ffffff";
@@ -1035,7 +965,6 @@ function drawHudOverlay() {
 
 let last = performance.now();
 let frameCount = 0;
-/** Fixed dt in test mode for deterministic movement. */
 const FIXED_DT = 1 / 60;
 
 function frame(now) {
@@ -1058,7 +987,6 @@ function frame(now) {
 	drawErrorBunker(visual);
 	drawBootstrap(visual);
 	drawParticles(dt);
-	// guest agents near bay
 	if (
 		visual?.connections?.some((c) => c.visual === "authorized") &&
 		images["guest-swe-claude"]
@@ -1082,7 +1010,6 @@ function frame(now) {
 	drawTrailFront();
 	drawHudOverlay();
 	if (window.__TEST__ && !window.__TEST__.ready && state.ready && snap) {
-		// first interactive frame after assets + projection
 		if (frameCount >= 2) {
 			window.__TEST__.ready = true;
 			document.body.dataset.testReady = "1";
@@ -1091,7 +1018,6 @@ function frame(now) {
 	requestAnimationFrame(frame);
 }
 
-// input
 canvas.addEventListener("click", (ev) => {
 	const rect = canvas.getBoundingClientRect();
 	const scaleX = canvas.width / rect.width;
@@ -1131,7 +1057,6 @@ function selectZoneById(zone) {
 	document.body.dataset.lastClickZone = zone;
 }
 
-// playwright-testing seam (stable, serializable — no engine objects)
 window.__TEST__ = {
 	ready: false,
 	seed: TEST_MODE ? TEST_SEED : null,
@@ -1181,12 +1106,10 @@ window.__TEST__ = {
 		dismissSheet: () => closeSheet(),
 		runAction: (action) => runAction(action),
 		advanceFrame: (dtMs = 16.67) => {
-			// force one logic tick without waiting for rAF
 			const dt = dtMs / 1000;
 			frameCount += 1;
 			window.__TEST__.frameCount = frameCount;
 			if (state.ready) {
-				// only advance bo position (draw still via rAF)
 				const speed = 180;
 				const dx = state.target.x - state.bo.x;
 				const dy = state.target.y - state.bo.y;
@@ -1204,7 +1127,6 @@ window.__TEST__ = {
 	},
 };
 
-// boot
 (async () => {
 	try {
 		await bootAssets();
@@ -1212,16 +1134,12 @@ window.__TEST__ = {
 		document.body.dataset.assetsReady = "1";
 		el.status.textContent = "assets ready · contacting API…";
 		await refreshSnapshot();
-		// if no station, auto-init for demo friendliness (skip in pure test when API pre-seeded)
 		if (!TEST_MODE && (state.lastError || !snap)) {
 			try {
 				await runAction("init");
 				await runAction("up");
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
-		// quieter polling in test mode
 		setInterval(() => void refreshSnapshot(), TEST_MODE ? 2000 : 800);
 		requestAnimationFrame(frame);
 	} catch (err) {
@@ -1230,7 +1148,6 @@ window.__TEST__ = {
 	}
 })();
 
-// legacy alias
 window.__HOBO_YARD__ = {
 	get state() {
 		return state;

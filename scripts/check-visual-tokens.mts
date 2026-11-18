@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import postcss, { type Rule } from "postcss";
+import { controlYardPropViolations } from "./lib/control-yard-props.js";
 
 type Source = { path: string; css: string };
 
@@ -138,13 +139,21 @@ function main(): number {
 		path,
 		css: readFileSync(join(root, path), "utf8"),
 	});
-	const errors = checkVisualTokens(
-		source("site/src/styles/global.css"),
-		source("packages/connect-ui/src/client/styles.css"),
-	);
+	const errors = [
+		...checkVisualTokens(
+			source("site/src/styles/global.css"),
+			source("packages/connect-ui/src/client/styles.css"),
+		),
+		...controlYardPropViolations(
+			readFileSync(
+				join(root, "packages/control-yard/public/yard-game.js"),
+				"utf8",
+			),
+		),
+	];
 	for (const error of errors) console.error(error);
 	if (errors.length) return 1;
-	console.log("visual token contrast checks passed");
+	console.log("visual policy checks passed");
 	return 0;
 }
 
