@@ -49,7 +49,6 @@ export type AssetIndex = Readonly<{
 		artBible?: string;
 		notes?: readonly string[];
 	}>;
-	/** gamedev-assets v2 categories */
 	backgrounds?: Readonly<Record<string, ImageDef>>;
 	images?: Readonly<Record<string, ImageDef>>;
 	spritesheets: Readonly<Record<string, SpritesheetDef>>;
@@ -63,17 +62,20 @@ export function assetsRoot(): string {
 	return join(HERE, "..", "assets");
 }
 
+export function parseAssetIndex(serialized: string): AssetIndex {
+	return JSON.parse(serialized) as AssetIndex;
+}
+
 export function loadAssetIndex(indexPath?: string): AssetIndex {
 	const path = indexPath ?? join(assetsRoot(), "assets_index.json");
-	const raw = JSON.parse(readFileSync(path, "utf8")) as AssetIndex;
+	const raw = parseAssetIndex(readFileSync(path, "utf8"));
 	return Object.freeze(raw);
 }
 
-/** Resolve stable animation id → sheet + clip metadata. Never hard-code clip names. */
 export function resolveAnimation(
 	index: AssetIndex,
 	animationId: string,
-): { sheet: SpritesheetDef; animation: AnimationDef } {
+) {
 	const ref = index.animationIds[animationId];
 	if (!ref) throw new Error(`unknown animation id: ${animationId}`);
 	const sheet = index.spritesheets[ref.sheet];
@@ -97,10 +99,7 @@ export function sheetAbsolutePath(
 	return join(root, sheet.path);
 }
 
-export function expectedSheetPixelSize(sheet: SpritesheetDef): {
-	width: number;
-	height: number;
-} {
+export function expectedSheetPixelSize(sheet: SpritesheetDef) {
 	const width =
 		sheet.columns * sheet.frameWidth +
 		sheet.margin * 2 +
@@ -127,7 +126,6 @@ export function animationFrameList(
 	return [...animation.frames];
 }
 
-/** Phaser loader configs measured from index (STOP rule). */
 export function phaserSpritesheetConfigs(
 	index: AssetIndex,
 	assetBaseUrl = "",
@@ -151,7 +149,6 @@ export function phaserSpritesheetConfigs(
 	}));
 }
 
-/** All PNG paths for coverage / preload. */
 export function allAssetPaths(index: AssetIndex): string[] {
 	const paths: string[] = [];
 	for (const b of Object.values(index.backgrounds ?? {})) paths.push(b.path);

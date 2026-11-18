@@ -1,17 +1,17 @@
 {
-  "gameUrl": "http://127.0.0.1:45099/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A46303",
-  "apiUrl": "http://127.0.0.1:46303",
+  "gameUrl": "http://127.0.0.1:32873/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A45507",
+  "apiUrl": "http://127.0.0.1:45507",
   "checks": [
     "PASS test seam ready",
     "PASS connection authorized present — conn=1",
     "PASS traffic rate > 0 — traffic=0.4",
     "PASS bootstrap inactive",
-    "PASS imgdiff boot — baseline refreshed (RMS=18.44 ≤ 25)",
-    "PASS canvas dark ink near Bo — dark=5795",
+    "PASS imgdiff boot — match (RMS=7.35)",
+    "PASS canvas dark ink near Bo — dark=4424",
     "PASS no console errors",
     "PASS connection bay zone — zone=connectionBay",
     "PASS sheet opens — kind=connection.create",
-    "PASS imgdiff connection bay — baseline refreshed (RMS=19.37 ≤ 25)",
+    "PASS imgdiff connection bay — match (RMS=7.87)",
     "PASS anim harness bo.idle — bo.idle",
     "PASS anim harness bo.walk.east — bo.walk.east",
     "PASS anim harness bo.walk.west — bo.walk.west",
@@ -35,11 +35,11 @@
     "scene": "Yard",
     "ready": true,
     "seed": 42,
-    "frameCount": 18,
+    "frameCount": 9,
     "zone": "activeRailTrack",
     "bo": {
-      "x": 238,
-      "y": 575,
+      "x": 214,
+      "y": 587,
       "animationId": "bo.walk.east",
       "facing": "west"
     },
@@ -53,11 +53,11 @@
     "hazards": []
   },
   "pixelSample": {
-    "dark": 5795,
+    "dark": 4424,
     "bo": {
-      "x": 640,
+      "x": 638,
       "y": 360,
-      "animationId": "bo.walk.west",
+      "animationId": "bo.walk.east",
       "facing": "west"
     }
   },
