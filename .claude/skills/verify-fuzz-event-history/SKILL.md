@@ -9,7 +9,7 @@ description: Verify ownership, ordering and replay of fuzz-oracle event history.
 
 **Why:** Mutable event references, an uncounted append or a note that impersonates a replay-owned event can make the oracle reconstruct a different history from the one it recorded.
 
-**Review baseline:** `8e7a9ed158f6385ba75af64cacb1b9404fd5ef69`.
+**Review baseline:** `debe49b6f69f828039511505838366d73e23930e`.
 
 ## Covered code and checks
 
@@ -47,7 +47,9 @@ stateDiagram-v2
 
 Before the fix, changing the supplied payload or returned history changed the stored event; a direct append could desynchronize snapshot clocks, and a free-form replay-owned event could make replay change state. Real-code regressions reproduce these failures. Five weakened models yield counterexamples for kind and payload guards, input and view copies, and append ordering. Eight scratch implementation mutations exercise the corresponding checks; the restored full skill passes. Z3 checks abstract revision accounting and finds a mismatch when one live tick is omitted.
 
-The model covers one event and represents its payload as a bit. It does not prove TypeScript refinement, cover every replay event, model direct mutation of the other public model maps, arbitrary reentrant getters, concurrent access, process failure or persistent stores. The replay-owned name set must stay synchronized with the replay dispatcher. Public appends now advance the clock, reject replay-owned names and require plain string-valued payloads; edits to a returned history snapshot no longer edit the model. This is an in-memory testing oracle, not the production event store.
+The model covers one event and represents its payload as a bit. It does not prove TypeScript refinement, cover every replay event, model direct writes to the public clock, arbitrary reentrant getters, concurrent access, process failure or persistent stores. The replay-owned name set must stay synchronized with the replay dispatcher. Public appends now advance the clock, reject replay-owned names and require plain string-valued payloads; edits to a returned history snapshot no longer edit the model. This is an in-memory testing oracle, not the production event store.
+
+The related [state-view model](../verify-fuzz-state-views/SKILL.md) checks detached read results and checkpoints.
 
 ## Keep in sync
 

@@ -33,10 +33,10 @@ def check(case):
             raise RuntimeError(f'{name}: expected one mutation site, found {original.count(before)}')
         changed = original.replace(before, after, 1)
         if name == 'late-add-validation':
-            site = 'this.tick();\n\t\tthis.capabilities.set(capabilityId, {'
+            site = 'this.tick();\n\t\tthis.#capabilities.set(capabilityId, {'
             if changed.count(site) != 1:
                 raise RuntimeError(f'{name}: missing insertion site')
-            changed = changed.replace(site, 'this.tick();\n\t\tconst captured = captureVerbs(verbs);\n\t\tthis.capabilities.set(capabilityId, {', 1)
+            changed = changed.replace(site, 'this.tick();\n\t\tconst captured = captureVerbs(verbs);\n\t\tthis.#capabilities.set(capabilityId, {', 1)
         if name == 'late-attenuation-validation':
             site = 'this.tick();\n\t\tconst allowed = new Set(cap.verbs);'
             if changed.count(site) != 1:

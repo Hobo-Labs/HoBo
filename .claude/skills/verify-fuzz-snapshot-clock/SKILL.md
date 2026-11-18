@@ -9,7 +9,7 @@ description: Verify fuzz-oracle checkpoint revisions across retries and rollback
 
 **Why:** A reused clock can replace a saved checkpoint and make the fuzz oracle report a successful rollback to the wrong historical state.
 
-**Review baseline:** `8e7a9ed158f6385ba75af64cacb1b9404fd5ef69`.
+**Review baseline:** `debe49b6f69f828039511505838366d73e23930e`.
 
 ## Covered code and checks
 
@@ -49,11 +49,13 @@ stateDiagram-v2
 
 With the retry tick removed, a checkpoint, retry and second checkpoint replace the first value. With the rollback tick removed, two checkpoints followed by rollback and another checkpoint replace the later value. With the limit guard removed, a mutation can reuse the maximum clock. Regression tests reproduce both historical overwrites and the exhaustion failure on real code. Seven scratch mutations exercise missing or delayed ticks and the clock guards; the restored full skill passes. Z3 proves the abstract integer bounds and finds a witness without the limit guard.
 
-The model covers one resource and one tenant, treats stored payloads as a single bit, assumes API-managed snapshots and does not model all event kinds, direct mutation of public maps, arbitrary `restore()` calls, concurrency or persistence. The separate [restore model](../verify-fuzz-restore/SKILL.md) covers the replay baseline and clock advancement for restoring serialized state. The proof is over mathematical integers, not TypeScript refinement or every JavaScript floating-point behavior. Replay and multi-tenant examples are executable tests rather than model-checked claims. This is a testing oracle, not the production control plane.
+The model covers one resource and one tenant, treats stored payloads as a single bit, assumes API-managed snapshots and does not model all event kinds, direct writes to the public clock, arbitrary `restore()` calls, concurrency or persistence. The separate [restore model](../verify-fuzz-restore/SKILL.md) covers the replay baseline and clock advancement for restoring serialized state. The proof is over mathematical integers, not TypeScript refinement or every JavaScript floating-point behavior. Replay and multi-tenant examples are executable tests rather than model-checked claims. This is a testing oracle, not the production control plane.
 
 The related [capability input model](../verify-fuzz-capability-input/SKILL.md) checks verb capture and replay.
 
 The related [event history model](../verify-fuzz-event-history/SKILL.md) checks event ownership and ordered public appends.
+
+The related [state-view model](../verify-fuzz-state-views/SKILL.md) checks detached read results and checkpoints.
 
 ## Keep in sync
 

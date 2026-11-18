@@ -9,7 +9,7 @@ description: Verify fuzz-oracle snapshot restoration and replay baselines.
 
 **Why:** Replaying from an empty baseline or reusing an old clock can make a correct restored state look divergent or overwrite a checkpoint. Partially applying malformed input can corrupt the oracle itself.
 
-**Review baseline:** `8e7a9ed158f6385ba75af64cacb1b9404fd5ef69`.
+**Review baseline:** `debe49b6f69f828039511505838366d73e23930e`.
 
 ## Covered code and checks
 
@@ -51,6 +51,8 @@ The model abstracts the parser to a valid/invalid flag, the snapshot to one bit,
 The related [capability input model](../verify-fuzz-capability-input/SKILL.md) checks verb capture and replay.
 
 The related [event history model](../verify-fuzz-event-history/SKILL.md) checks event ownership and ordered public appends.
+
+The related [state-view model](../verify-fuzz-state-views/SKILL.md) checks detached read results and checkpoints.
 
 ## Keep in sync
 
