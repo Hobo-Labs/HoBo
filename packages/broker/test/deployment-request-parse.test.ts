@@ -57,6 +57,7 @@ const request = (overrides: RequestOverrides = {}) => ({
 	schemaVersion: SCHEMA,
 	requestId: "req-1",
 	bindleName: "shop",
+	spendEstimateUsd: 0,
 	yard: { selectionMode: "compatible" },
 	resources,
 	...overrides,

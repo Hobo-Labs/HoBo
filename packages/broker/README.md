@@ -20,6 +20,14 @@ resource execution unit records the exact definition selected for that resource.
 resource and definition ID pairs; the former parallel ID arrays could not express
 that association reliably.
 
+Deployment requests must include a finite nonnegative `spendEstimateUsd`; an
+explicit zero remains distinct from a missing estimate and does not replace a
+host's bound zero-liability proof. Supplied selection modes, Yard and Camp
+constraint lists, and Bindle requirement lists and labels must be well formed.
+Malformed values are refused instead of being discarded and weakening placement
+requirements. Callers that previously omitted the estimate must supply it
+explicitly before retrying; recompute any affected request digest and quote.
+
 Camp placement preserves the requested Camp layout, including its environment
 type, in the request used for authorization. Without an explicit Camp ID, the
 selected Yard uses `camp:<envType>`, or `camp:dev` when no environment was
