@@ -12,6 +12,13 @@ lock and capped-ring helpers; bindings in `@hobo/kv-redis-compatible` and
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
+`readThroughCache` reads a string from an `EphemeralStatePort`, loads a missing
+value from the supplied source, and caches a present result for the requested
+TTL. Missing values are not cached. Cache and source errors propagate to the
+caller; the source remains authoritative after expiration or eviction. Cached
+values can be stale until they expire or are deleted, and deletion does not
+cancel a source read already in progress.
+
 ## Residency evaluation
 
 `evaluateResidency` checks the requested region against the configured jurisdiction
@@ -61,9 +68,8 @@ mis-described; the type-widening lattice is a small documented set
 `char→varchar→text`, plus parameter growth like `varchar(32)→varchar(64)`) and
 every conversion outside it is classified as a **narrowing** — conservative on
 purpose, because calling an unknown conversion safe is how an expand phase
-loses data. Redefining an index in place (same name, different columns or
-uniqueness) yields both an `expand` add and a `contract` drop of that name; the
-differ does not model index renames, so distinct names are expected.
+loses data. The differ does not model index renames, so distinct names are
+treated as a drop and an add.
 
 ## Data-store vocabulary, catalog records and self-hosting
 

@@ -177,6 +177,7 @@ export {
 	parseBudgetPolicyDocumentJson,
 	parseBudgetPolicyJson,
 } from "./ports/budget-policy.js";
+export { readThroughCache } from "./ports/cache-aside.js";
 export type { CampTier } from "./ports/camp-tier.js";
 export {
 	CAMP_TIER_EGRESS,
