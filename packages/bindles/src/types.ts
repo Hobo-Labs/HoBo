@@ -246,6 +246,8 @@ export interface BindleResourceRecord<K extends ResourceKind = ResourceKind> {
 	readonly kind: K;
 	readonly name: string;
 	readonly stableId: `${K}:${string}`;
+	readonly generatedId?: string;
+	readonly identityOccurrence?: number;
 	readonly declaredAllow: readonly string[];
 	readonly annotations: readonly ProviderAnnotation[];
 	readonly dependsOn: readonly string[];
@@ -260,6 +262,7 @@ export interface BindleResource<
 	Message = unknown,
 > {
 	readonly kind: K;
+	readonly generatedId: string;
 	readonly [bindleMessageType]?: Message;
 	dependsOn(...deps: BindleDependency[]): BindleResource<K, Message>;
 	withReference(...deps: BindleDependency[]): BindleResource<K, Message>;
@@ -283,11 +286,27 @@ export interface BindleRequirements {
 
 export interface BindleDefinition {
 	readonly name: string;
+	readonly deploymentIdentity?: "generated";
 	readonly resources: Readonly<Record<string, BindleResourceRecord>>;
 	readonly connectors?: Readonly<Record<string, BindleConnectorRecord>>;
 	readonly edges: readonly BindleEdge[];
 	readonly requirements: BindleRequirements;
 	entrypoint(name: string): BindleEntrypoint | undefined;
+}
+
+export interface ResourceIdentityEntry {
+	readonly kind: ResourceKind;
+	readonly occurrence: number;
+	readonly generatedId: string;
+}
+
+export interface ResourceIdentityLedger {
+	readonly bindleName: string;
+	readonly entries: readonly ResourceIdentityEntry[];
+}
+
+export interface BindleOptions {
+	readonly identityLedger: ResourceIdentityLedger;
 }
 
 export type DeclaredComponent = new () => object;

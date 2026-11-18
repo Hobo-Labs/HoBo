@@ -43,12 +43,15 @@ package data_models
 	declared_allow: [...string]
 	annotations:    [...#ProviderAnnotation]
 	depends_on:     [...string]
+	generated_id?:       string & !=""
+	identity_occurrence?: int & >0
 }
 
 #BindleGraph: {
 	name:      string & !=""
 	resources: [string]: #BindleResourceRecord
 	edges:     [...#BindleEdge]
+	deployment_identity?: "generated"
 }
 
 #KvAllowVerb: "get" | "set" | "delete"

@@ -188,12 +188,59 @@ export function targetFromBindleDefinition(
 			`${delivery.summary}: ${delivery.reasons.map((reason) => reason.message).join("; ")}`,
 		);
 	}
+	if (
+		definition.deploymentIdentity !== undefined &&
+		definition.deploymentIdentity !== "generated"
+	) {
+		throw new CollectionEngineError(
+			"HOBO_RESOURCE_IDENTITY_INVALID",
+			"unknown Bindle deployment identity mode",
+		);
+	}
+	const resourceIds = new Map<string, string>();
+	const allocatedIds = new Set<string>();
+	for (const [alias, record] of Object.entries(definition.resources)) {
+		const id =
+			definition.deploymentIdentity === "generated"
+				? record.generatedId
+				: alias;
+		const prefix = `res_${record.kind.replaceAll("-", "_")}_`;
+		const validGenerated =
+			id?.startsWith(prefix) &&
+			/^\d{4,}$/u.test(id.slice(prefix.length)) &&
+			Number(id.slice(prefix.length)) > 0;
+		if (
+			!id ||
+			allocatedIds.has(id) ||
+			(definition.deploymentIdentity === "generated" && !validGenerated)
+		) {
+			throw new CollectionEngineError(
+				"HOBO_RESOURCE_IDENTITY_INVALID",
+				`invalid resource identity for ${alias}`,
+			);
+		}
+		resourceIds.set(alias, id);
+		allocatedIds.add(id);
+	}
+	const resourceId = (alias: string): string => {
+		const id = resourceIds.get(alias);
+		if (!id) {
+			throw new CollectionEngineError(
+				"HOBO_RESOURCE_IDENTITY_INVALID",
+				`unknown resource ${alias}`,
+			);
+		}
+		return id;
+	};
 	return {
 		bindleId: definition.name,
 		componentHost,
-		dependencies: definition.edges.filter(
-			(edge) => !edge.to.startsWith("connector:"),
-		),
+		dependencies: definition.edges
+			.filter((edge) => !edge.to.startsWith("connector:"))
+			.map((edge) => ({
+				from: resourceId(edge.from),
+				to: resourceId(edge.to),
+			})),
 		define(collect: CollectionContext): void {
 			const backing = new Map<string, ReturnType<CollectionContext["data"]>>();
 
@@ -217,7 +264,7 @@ export function targetFromBindleDefinition(
 						? { endpoints: dependency.endpoints }
 						: undefined),
 				};
-				backing.set(name, collect.data(name, options));
+				backing.set(name, collect.data(resourceId(name), options));
 			}
 
 			for (const [name, record] of Object.entries(definition.resources)) {
@@ -235,7 +282,7 @@ export function targetFromBindleDefinition(
 					}
 				}
 				const env = environmentFromAnnotations(record.annotations);
-				collect.service(name, {
+				collect.service(resourceId(name), {
 					...(Object.keys(bind).length > 0 ? { bind } : undefined),
 					...(Object.keys(env).length > 0 ? { env } : undefined),
 				});

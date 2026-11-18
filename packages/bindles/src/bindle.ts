@@ -19,6 +19,10 @@ import {
 	assertNoBindleProviderSelection,
 	parseBindleRequirements,
 } from "./requirements.js";
+import {
+	createResourceIdentityAllocator,
+	type ResourceIdentity,
+} from "./resource-identity.js";
 import { defaultAppKitSessionReplayAnnotation } from "./session-replay.js";
 import type {
 	AllowVerbsFor,
@@ -28,6 +32,7 @@ import type {
 	BindleEdge,
 	BindleEntrypoint,
 	BindleHandlerObject,
+	BindleOptions,
 	BindleRequirements,
 	BindleResource,
 	BindleResourceRecord,
@@ -36,6 +41,7 @@ import type {
 	ContainerDependencyOptions,
 	ExternalDependencyOptions,
 	ProviderAnnotation,
+	ResourceIdentityLedger,
 	ResourceKind,
 	WasmComponentDependencyOptions,
 } from "./types.js";
@@ -94,6 +100,7 @@ type InternalDependency =
 
 interface InternalBindleResource<K extends ResourceKind> {
 	readonly kind: K;
+	readonly identity: ResourceIdentity;
 	declaredAllow: string[];
 	annotations: ProviderAnnotation[];
 	dependencies: Set<InternalDependency>;
@@ -107,10 +114,12 @@ function isConnectorBinding(dep: InternalDependency): dep is ConnectorBinding {
 function createBindleResource<K extends ResourceKind, Message = unknown>(
 	kind: K,
 	owned: Map<object, InternalBindleResource<ResourceKind>>,
+	identity: ResourceIdentity,
 	handler?: EntrypointFactory,
 ): BindleResource<K, Message> {
 	const internal: InternalBindleResource<K> = {
 		kind,
+		identity,
 		declaredAllow: [],
 		annotations: isAppKitKind(kind)
 			? [defaultAppKitSessionReplayAnnotation()]
@@ -120,6 +129,7 @@ function createBindleResource<K extends ResourceKind, Message = unknown>(
 	};
 	const resource: BindleResource<K, Message> = {
 		kind,
+		generatedId: identity.generatedId,
 		dependsOn(...deps: BindleDependency[]): BindleResource<K, Message> {
 			for (const dep of deps) {
 				if (!isJsonObject(dep)) {
@@ -170,12 +180,22 @@ function createBindleResource<K extends ResourceKind, Message = unknown>(
 	return Object.freeze(resource);
 }
 
-function createBuilder() {
+function createBuilder(
+	name: string,
+	ledger: ResourceIdentityLedger | undefined,
+) {
 	const owned = new Map<object, InternalBindleResource<ResourceKind>>();
+	const identities = createResourceIdentityAllocator(name, ledger);
 	const createResource = <K extends ResourceKind, Message = unknown>(
 		kind: K,
 		handler?: EntrypointFactory,
-	) => createBindleResource<K, Message>(kind, owned, handler);
+	) =>
+		createBindleResource<K, Message>(
+			kind,
+			owned,
+			identities.allocate(kind),
+			handler,
+		);
 	const createUnbound = <K extends ResourceKind>(
 		kind: K,
 		args: readonly never[],
@@ -247,7 +267,11 @@ function createBuilder() {
 				wasmComponentDependencyAnnotation(options),
 			) as BindleResource<"wasm-component">,
 	};
-	return { builder: Object.freeze(withConnectorDeclarations(base)), owned };
+	return {
+		builder: Object.freeze(withConnectorDeclarations(base)),
+		owned,
+		identities,
+	};
 }
 
 function assertNoFactoryArguments(kind: ResourceKind, args: readonly never[]) {
@@ -261,9 +285,11 @@ function assertNoFactoryArguments(kind: ResourceKind, args: readonly never[]) {
 function toResourceRecord<K extends ResourceKind>(
 	name: string,
 	internal: InternalBindleResource<K>,
+	generated: boolean,
 ): BindleResourceRecord<K> {
-	const stableId = `${internal.kind}:${name}` as `${K}:${string}`;
-	return Object.freeze({
+	const stableId =
+		`${internal.kind}:${generated ? internal.identity.generatedId : name}` as `${K}:${string}`;
+	const record: BindleResourceRecord<K> = {
 		kind: internal.kind,
 		name,
 		stableId,
@@ -276,7 +302,18 @@ function toResourceRecord<K extends ResourceKind>(
 				isConnectorBinding(dep) ? `connector:${dep.definition.id}` : dep.kind,
 			),
 		),
+	};
+	Object.defineProperties(record, {
+		generatedId: {
+			value: internal.identity.generatedId,
+			enumerable: generated,
+		},
+		identityOccurrence: {
+			value: internal.identity.occurrence,
+			enumerable: generated,
+		},
 	});
+	return Object.freeze(record);
 }
 
 export function bindle(
@@ -285,11 +322,13 @@ export function bindle(
 export function bindle(
 	name: string,
 	build: (builder: BindleBuilder) => Record<string, BindleResource>,
+	options?: BindleOptions,
 ): BindleDefinition;
 export function bindle(
 	name: string,
 	requirements: Partial<BindleRequirements> | JsonObject,
 	build: (builder: BindleBuilder) => Record<string, BindleResource>,
+	options?: BindleOptions,
 ): BindleDefinition;
 export function bindle(
 	nameOrBuild:
@@ -299,12 +338,16 @@ export function bindle(
 		| ((builder: BindleBuilder) => Record<string, BindleResource>)
 		| Partial<BindleRequirements>
 		| JsonObject,
-	maybeBuild?: (builder: BindleBuilder) => Record<string, BindleResource>,
+	maybeBuildOrOptions?:
+		| ((builder: BindleBuilder) => Record<string, BindleResource>)
+		| BindleOptions,
+	maybeOptions?: BindleOptions,
 ): BindleDefinition {
 	const nameless = nameOrBuild instanceof Function;
 	let name: string;
 	let build: (builder: BindleBuilder) => Record<string, BindleResource>;
 	let requirementsInput: JsonValue | Partial<BindleRequirements> = {};
+	let options: BindleOptions | undefined;
 
 	if (nameless) {
 		name = DEFAULT_BINDLE_NAME;
@@ -316,18 +359,32 @@ export function bindle(
 		name = nameOrBuild;
 		if (buildOrRequirements instanceof Function) {
 			build = buildOrRequirements;
+			if (maybeBuildOrOptions instanceof Function) {
+				throw new TypeError("bindle options must be an object");
+			}
+			options = maybeBuildOrOptions;
 		} else {
 			requirementsInput = buildOrRequirements ?? {};
-			if (!(maybeBuild instanceof Function)) {
+			if (!(maybeBuildOrOptions instanceof Function)) {
 				throw new TypeError("bindle requires a builder function");
 			}
-			build = maybeBuild;
+			build = maybeBuildOrOptions;
+			options = maybeOptions;
 		}
 	}
 
 	let requirements = parseBindleRequirements(requirementsInput);
-	const { builder, owned } = createBuilder();
+	if (options !== undefined && options.identityLedger === undefined) {
+		throw new TypeError(
+			"bindle identity options require a resource identity ledger",
+		);
+	}
+	const { builder, owned, identities } = createBuilder(
+		name,
+		options?.identityLedger,
+	);
 	const built = build(builder);
+	identities.assertComplete();
 	const connectors = connectorRecordsForBuilder(builder);
 	const resourceByName = new Map<
 		InternalBindleResource<ResourceKind>,
@@ -359,11 +416,29 @@ export function bindle(
 		}
 		stableIds.add(stableId);
 		resourceByName.set(internal, resourceName);
-		resources[resourceName] = toResourceRecord(resourceName, internal);
-		if (internal.handler) handlers.set(resourceName, internal.handler);
+		resources[resourceName] = toResourceRecord(
+			resourceName,
+			internal,
+			options !== undefined,
+		);
+		if (internal.handler) {
+			handlers.set(resourceName, internal.handler);
+			if (options)
+				handlers.set(internal.identity.generatedId, internal.handler);
+		}
 	}
 	if (resourceByName.size !== owned.size) {
 		throw new TypeError("bindle build must return every declared resource");
+	}
+	if (options) {
+		for (const [alias, record] of Object.entries(resources)) {
+			const id = record.generatedId;
+			if (id && id !== alias && Object.hasOwn(resources, id)) {
+				throw new TypeError(
+					`resource alias "${id}" conflicts with a generated ID`,
+				);
+			}
+		}
 	}
 
 	for (const [resource, resourceName] of resourceByName) {
@@ -398,6 +473,7 @@ export function bindle(
 
 	const definition: BindleDefinition = {
 		name,
+		...(options ? { deploymentIdentity: "generated" as const } : undefined),
 		resources: Object.freeze(resources),
 		...(Object.keys(connectors).length > 0 ? { connectors } : undefined),
 		edges: Object.freeze(edges),

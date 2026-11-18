@@ -43,10 +43,13 @@ message BindleResourceRecord {
   repeated string declared_allow = 4;
   repeated ProviderAnnotation annotations = 5;
   repeated string depends_on = 6;
+  string generated_id = 7;
+  uint32 identity_occurrence = 8;
 }
 
 message BindleGraph {
   string name = 1;
   map<string, BindleResourceRecord> resources = 2;
   repeated BindleEdge edges = 3;
+  string deployment_identity = 4;
 }

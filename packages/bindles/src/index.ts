@@ -140,6 +140,7 @@ export {
 	isPlatformAnnotation,
 	parseBindleRequirements,
 } from "./requirements.js";
+export { resourceIdentityLedger } from "./resource-identity.js";
 export { secretRef } from "./secret-ref.js";
 export { secret } from "./secret-surface.js";
 export {
@@ -163,6 +164,7 @@ export type {
 	BindleDefinition,
 	BindleDependency,
 	BindleEdge,
+	BindleOptions,
 	BindleRequirements,
 	BindleResource,
 	BindleResourceMessage,
@@ -180,6 +182,8 @@ export type {
 	ResourceCatalogEntry,
 	ResourceDescriptor,
 	ResourceHandle,
+	ResourceIdentityEntry,
+	ResourceIdentityLedger,
 	ResourceKind,
 	SecretRef,
 	WasmComponentDependencyOptions,
