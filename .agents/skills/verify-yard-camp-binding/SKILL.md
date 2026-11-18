@@ -7,7 +7,7 @@ description: Verify that Yard-first placement preserves the requested Camp envir
 
 **Property:** Yard-first placement snapshots the requested Camp environment, preserves an explicit Camp identity, and issues a placement only for a direct child of the selected Yard after host authorization. A known foreign Camp is refused before a quote or generation hold and provider effect. An exact Camp request requires an ID before quoting or authorization. Malformed environment and Camp input is refused. Otherwise an exact request can silently select a default Camp, a receipt can name a Camp in another Yard, or an unnecessary Yard can be provisioned.
 
-**Review baseline:** commit `92c291c26b58af86b169c0fb51aa6211f7c0f775`. PASS for the models, symbolic obligations and real-code checks below. Special JSON key preservation is checked separately by `verify-yard-json-constraints`, and residency preflight by `verify-yard-residency-validation`. The separate `verify-yard-camp-constraints` skill checks refusal of unverified Camp and nested-layout constraints.
+**Review baseline:** commit `903b90d359ec71d63b6ee0e909ea9b8fe22eb8d0`. PASS for the models, symbolic obligations and real-code checks below. Special JSON key preservation is checked separately by `verify-yard-json-constraints`, and residency preflight by `verify-yard-residency-validation`. The separate `verify-yard-camp-constraints` skill checks refusal of unverified Camp and nested-layout constraints.
 
 ## Covered code
 
