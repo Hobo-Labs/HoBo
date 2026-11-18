@@ -510,25 +510,6 @@ export function createRoutingControlLoop(
 				],
 				facts,
 			};
-		const topologyEligibility = topology.costRouting;
-		if (
-			topologyEligibility !== "stateless" &&
-			topologyEligibility !== "active-active-eventual" &&
-			topologyEligibility !== "pinned-with-replica"
-		) {
-			const reasons = [
-				{
-					code: "cost-routing-ineligible",
-					message:
-						"cost routing requires explicit stateless or replica-safe topology evidence",
-				},
-			];
-			emit(facts, {
-				type: ROUTING_LOOP_EVENTS.ReplanDenied,
-				data: { service: state.service, reasons },
-			});
-			return { action: "denied", reasons, facts };
-		}
 		const incumbentEligible = decision.ranking.some(
 			(c: { providerId: string; eligible?: boolean }) =>
 				c.providerId === state.incumbentBackendId && c.eligible !== false,
@@ -544,6 +525,7 @@ export function createRoutingControlLoop(
 			},
 			...constraints,
 			policyDecision: options.policyDecision,
+			purpose: "cost",
 			now,
 			planId: `plan:${topology.service}:${topology.stationId}:r${state.revision + 1}`,
 			weightStrategy: "static",
@@ -835,6 +817,7 @@ export function createRoutingControlLoop(
 			const checked = synthesizeRoutingPlan({
 				topology: currentTopology,
 				policyDecision: options.policyDecision,
+				purpose: "cost",
 				...currentConstraints,
 				planId: state.pendingPlanId,
 				now: clock(),

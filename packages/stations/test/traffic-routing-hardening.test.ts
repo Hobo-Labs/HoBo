@@ -578,6 +578,28 @@ test("single-writer and undeclared topologies cannot price-reroute", async () =>
 		assert.equal(plans.length, 0);
 	}
 });
+test("a single-writer backend prevents a price-reroute", async () => {
+	const { plans, port } = trackingPort();
+	const loop = createRoutingControlLoop({
+		...loopOptions(),
+		topology: {
+			...topology,
+			backends: topology.backends.map((backend) =>
+				backend.id === "b"
+					? { ...backend, costRouting: "single-writer" as const }
+					: backend,
+			),
+		},
+		port,
+	});
+	const result = await loop.handleSignal(signal);
+	assert.equal(result.action, "denied");
+	assert.equal(
+		result.action === "denied" && result.reasons[0]?.code,
+		"cost-routing-ineligible",
+	);
+	assert.equal(plans.length, 0);
+});
 test("budget shifts require durable financial supervisor capabilities", async () => {
 	const { plans, port } = trackingPort();
 	const loop = createRoutingControlLoop({
