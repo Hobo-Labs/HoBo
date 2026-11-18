@@ -1,45 +1,31 @@
 # `@hobo/runtime-browser`
 
-Browser-hosted SQLite EventStore / runtime journal adapter.
+`createBrowserEventStore` runs the shared SQLite journal in a dedicated browser
+worker. With OPFS available, the store uses the `opfs-sahpool` VFS and retains
+events, snapshots, and checkpoints across page reloads. Each partition has one
+active owner. Await `close()` before reopening the same partition.
 
-## Design
+```ts
+import { createBrowserEventStore } from "@hobo/runtime-browser";
 
-- SQLite WASM runs in a **dedicated module Worker** (never on the UI thread).
-- Default durable mode uses **OPFS + `opfs-sahpool`** for single-owner partitions.
-- OPFS absence: explicit `PersistenceUnavailableError` when durable mode is
-  required; optional transient in-memory mode when the caller opts in.
-- Does **not** copy native `journal_mode=WAL` blindly; journal/locking follows
-  the selected OPFS VFS constraints.
-- Shared schema/migration/commit semantics live in `@hobo/storage-sqlite`.
+const store = await createBrowserEventStore({ partitionId: "my-project" });
+await store.append("notes:1", [{ type: "note.Saved", data: { text: "Hello" } }], {
+  expectedSeq: 0,
+  actor: { kind: "system", id: "browser" },
+  tenant: "my-project",
+});
+await store.close();
+```
 
-## Dependency
+When durable storage cannot open, the factory throws
+`PersistenceUnavailableError`. Pass `allowTransient: true` to permit an
+in-memory fallback; its contents are lost when the store closes. The reported
+`persistenceMode` identifies the mode actually opened.
 
-Optional peer: `@sqlite.org/sqlite-wasm` (Apache-2.0; license-gated).
+The package build places `sqlite3.wasm` beside the compiled worker. Browser
+bundlers must include the worker module and that asset alongside the app bundle.
+The default VFS does not require cross-origin isolation.
 
-**Honesty rule:** `persistenceMode: "opfs-sahpool"` is only returned after a real
-OPFS-backed journal open. When OPFS/WASM cannot open and `allowTransient` is
-false, the factory throws `PersistenceUnavailableError` — it never pretends
-memory is durable. Unit tests use `allowTransient: true` for semantic coverage.
-
-## Support matrix
-
-| Capability | Behavior |
-|---|---|
-| OPFS + Worker | Durable default (`opfs-sahpool`) |
-| No OPFS, `allowTransient` | In-memory partition (lost on reload) |
-| No OPFS, durable required | `PERSISTENCE_UNAVAILABLE` |
-| Multi-tab concurrent writers | Not default; explicit multi-tab mode only |
-| SharedArrayBuffer / COOP/COEP | Not required for default sahpool path |
-
-## Architecture rules
-
-Parse, don't validate: storage RPC frames from the OPFS worker are parsed once
-into derived types (`BrowserStorageRpcRequest`/`Response`, persistence status)
-before the event store consumes them; invalid frames are unrepresentable past
-the boundary.
-
-Event architecture: the browser event store accepts append commands, emits
-events through the storage actor, and serves reads from projections over
-materialized views; current state is cached in snapshots and historical
-snapshots persist in the OPFS read store when a real OPFS backend is
-available (the runtime fails closed otherwise).
+Run `pnpm run test:browser-storage` from the repository root to exercise a real
+Chromium worker and OPFS store, including reopening events, snapshots, and
+checkpoints. Set `HOBO_CHROMIUM_PATH` when Chromium is not at the default path.
