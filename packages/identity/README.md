@@ -190,6 +190,11 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
 
 Provider connection revocation is terminal. Authorizing or marking a revoked connection for reauthorization is rejected; create a new connection instead. Replay also ignores late authorization, health, rotation, and duplicate creation facts that would revive the revoked connection.
 
+Connection IDs and aliases share the lookup namespace. Creation and replay
+reject a new connection when its alias conflicts with an existing ID or alias,
+or its ID conflicts with an existing alias. Existing event logs with those
+collisions require reconciliation before they can be replayed.
+
 The `verify-connection-lifecycle` skill checks that rule with generated
 command and replay histories and a bounded TLA+ model. This chart summarizes
 the model; it is not a live provider trace:
