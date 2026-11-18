@@ -12,7 +12,7 @@ cases = [
     ('legacy-order', 'src/replay/canonicalization.ts', 'if (version === 1) return left.localeCompare(right);', 'if (version === 1) return left < right ? -1 : left > right ? 1 : 0;'),
     ('unknown-version', 'src/replay/canonicalization.ts', 'if (value === 1 || value === 2) return value;', 'if (value === 1 || value === 2 || value === 3) return value;'),
     ('legacy-default', 'src/replay/parse.ts', 'if (version === undefined) return 1;', 'if (version === undefined) return 2;'),
-    ('report-marker', 'src/replay/equivalence.ts', '\treturn {\n\t\tcanonicalizationVersion: version,\n\t\trunId,', '\treturn {\n\t\trunId,'),
+    ('report-marker', 'src/replay/equivalence.ts', '\treturn Object.freeze({\n\t\tcanonicalizationVersion: version,\n\t\trunId,', '\treturn Object.freeze({\n\t\trunId,'),
     ('workflow-marker', 'src/replay/replayer.ts', 'canonicalizationVersion: digestVersion,', 'canonicalizationVersion: 2,'),
     ('divergence-marker', 'src/replay/divergence.ts', 'canonicalizationVersion: version,', 'canonicalizationVersion: 2,'),
     ('workflow-digest', 'src/replay/replayer.ts', 'stateDigest: digestForVersion(cloneAsJson(state), digestVersion)', 'stateDigest: digestForVersion(cloneAsJson(state), 2)'),

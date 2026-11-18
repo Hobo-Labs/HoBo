@@ -9,13 +9,14 @@ description: Verify replay canonical ordering, versioned digests, and legacy rep
 
 **Why:** Insertion order or machine locale must not change a new digest, and a digest must not silently be read under a different encoding.
 
-**Review baseline:** `a0e147508ec8b5ef0d8b08e201225453013da6a6`.
+**Review baseline:** `f71262809c8d28edba15917daa1faa4df71c7160`.
 
 ## Covered code and checks
 
 - `packages/runtime/src/replay/canonicalization.ts`, `equivalence.ts`, `divergence.ts` and `replayer.ts` choose ordering, validate versions, compute digests and attach version markers. `parse.ts` interprets report and divergence markers.
 - `packages/runtime/data-models/replay/replay_report.proto`, its generated TypeScript and matching CUE schema carry an optional marker, so historical wire records remain readable.
 - `packages/runtime/test/replay/ordering-version.test.ts` checks locale and Unicode ties in actual code, legacy and current report digests, event and vector ordering, unsupported and conflicting versions, callback compatibility, and version-marker protobuf binary round trips. Seed 614614 generates 150 permutations. The cross-process check uses English and Swedish Node locales; version 1 intentionally differs while version 2 agrees.
+- The related [evidence skill](../verify-replay-evidence/SKILL.md) checks that returned report markers and positions remain immutable.
 
 From the repository root with dependencies installed, run:
 

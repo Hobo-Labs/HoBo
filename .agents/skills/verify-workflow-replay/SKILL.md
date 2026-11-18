@@ -9,13 +9,14 @@ description: Verify durable workflow identity, sleep deadlines and replay, and t
 
 **Why:** Repeating effects or reusing results for different inputs can corrupt work.
 
-**Review baseline:** `a0e147508ec8b5ef0d8b08e201225453013da6a6`.
+**Review baseline:** `f71262809c8d28edba15917daa1faa4df71c7160`.
 
 ## Covered code
 
 - `packages/runtime/src/workflow.ts`, `workflow-boundary.ts` and `packages/runtime/src/replay/store.ts` implement the engine, shared input boundary and replay store contract.
 - `packages/runtime/src/replay/replayer.ts` and `command-tree.ts` check ordered root commands and parent/child outcomes in versioned journals; legacy journals use the flat replay path.
 - The related [ordering skill](../verify-replay-ordering/SKILL.md) checks how replay reports record canonicalization versions and digests.
+- The related [evidence skill](../verify-replay-evidence/SKILL.md) checks immutability of returned reports.
 - `packages/cli/src/codegen/runtime-artifacts.ts` starts a new generated workflow when its journal is empty and resumes an existing one. The generated-runtime integration test exercises a real SQLite journal across reopening.
 - `packages/runtime/test/authoring/workflow-replay.property.test.ts` generates terminal outcomes and concurrent fresh-ID claims against the real engine.
 - `packages/runtime/test/authoring/workflow-sleep.test.ts` checks waiting, recovery, legacy rebasing, invalid deadlines, timer limits, and a reopened SQLite journal.
