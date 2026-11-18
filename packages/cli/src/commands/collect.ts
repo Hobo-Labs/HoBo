@@ -11,6 +11,7 @@ import {
 } from "@hobo/bindles";
 
 import { RESOURCE_IDENTITY_FILE } from "../cloud/loader.js";
+import { missingProjectBindle } from "../cloud/manifest.js";
 import { stubResult } from "../cloud/stub.js";
 import type { JsonObject } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
@@ -34,7 +35,9 @@ export function createCollectCommand(
 			const target =
 				deps.target ?? (await deps.resolveTarget?.(projectDir)) ?? null;
 			if (!target) {
-				return stubResult("collect");
+				return deps.resolveTarget
+					? missingProjectBindle("collect", projectDir, { sourceOnly: true })
+					: stubResult("collect");
 			}
 			if (flags.initResourceIds) {
 				if (flags.check || !target.identityLedger) {

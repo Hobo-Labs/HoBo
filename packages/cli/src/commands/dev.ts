@@ -1,4 +1,8 @@
-import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
+import {
+	deploymentIdFor,
+	loadProjectManifest,
+	missingProjectBindle,
+} from "../cloud/manifest.js";
 import { stubResult } from "../cloud/stub.js";
 import {
 	bootLocalCamp,
@@ -170,7 +174,7 @@ export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 
 			const bindle = await loadProjectManifest(projectDir);
 			if (!bindle) {
-				return stubResult("dev");
+				return missingProjectBindle("dev", projectDir);
 			}
 
 			const deploymentId = deploymentIdFor(projectDir);
