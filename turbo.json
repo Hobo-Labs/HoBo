@@ -645,7 +645,6 @@
         "src/draft/technical-proofs/cli-credential-hardening-contract/**",
         "src/draft/technical-proofs/credential-audit-projection-contract/**",
         "src/draft/technical-proofs/data-paradigm-authoring-contract/**",
-        "src/draft/technical-proofs/deterministic-replay-engine/**",
         "src/draft/technical-proofs/disaster-recovery-failover-contract/**",
         "src/draft/technical-proofs/dns-validation-gate-threat-model/**",
         "src/draft/technical-proofs/drift-detection-loop-contract/**",
