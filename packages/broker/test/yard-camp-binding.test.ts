@@ -53,10 +53,10 @@ describe("Yard Camp binding", () => {
 					id: "payments",
 					env: "blue",
 					envType: "production",
-					require: ["secure"],
-					prefer: ["fast"],
-					labels: { team: "billing" },
-					runtimeRequirements: ["node"],
+					require: [],
+					prefer: [],
+					labels: {},
+					runtimeRequirements: [],
 				},
 			}),
 		);
@@ -74,6 +74,21 @@ describe("Yard Camp binding", () => {
 		expect(result.outcome).toBe("resolved");
 		expect(result.receipt?.selectedCampId).toBe(`${yardId}/camp:production`);
 		expect(approvedDigest).toBe(contentHashOf(parsed));
+	});
+
+	it("preserves other Camp requirements when parsing", () => {
+		const layout = {
+			id: "payments",
+			env: "blue",
+			envType: "production",
+			require: ["secure"],
+			prefer: ["fast"],
+			labels: { team: "billing" },
+			runtimeRequirements: ["node"],
+		};
+		expect(
+			parseBindleDeploymentRequest(request(camp({ layout }))).camp?.layout,
+		).toEqual(layout);
 	});
 
 	it("keeps an explicit Camp inside the selected Yard and honors its precedence", async () => {
