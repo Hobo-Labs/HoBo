@@ -101,6 +101,8 @@ evidence; they cannot override a pin, healthy pickup, or failed queue read.
 | Older base, changed workflow or local plan, classifier dependency or resolution input, or incomplete GitHub tree response | Omit the coupled PR impact group; independently covered jobs remain eligible. A record that claims the unverified group cannot be published |
 | GitHub status write fails partway through | Report failure; some individual statuses may already exist. Inspect GitHub before retrying |
 | Base moves or a retry fails on the same SHA | Existing GitHub statuses do not automatically expire or disappear. Update the branch, rerun, and inspect old statuses |
+| A merge-queue entry is removed, retargeted, or assigned a different base or head | Refuse its local run or signoff; remove a newly written run record when the entry changes during execution |
+| A merge-group ref is not the first squash commit directly on the current base | Refuse it; wait for that group to be rebuilt on the current base |
 
 The queue observation reads a single page of recent runs and one page per
 selected run, with bounded lookups and timeouts. An old queued job eventually
@@ -188,8 +190,16 @@ group and other access; the command refuses to change its permissions.
 Statuses are `signoff/hobo-ci/local/<event>/<job>` on the tested head. They are
 separate from Actions job results, cannot complete queued jobs, and do not by
 themselves satisfy HoBo's existing required checks or merge-queue policy. A
-`merge_group` signoff on a PR head represents a local simulation, not a status
-on GitHub's generated merge-group commit. No branch-protection rule is changed.
+`merge_group` signoff on a PR head represents a local simulation. To verify a
+GitHub-generated group commit itself, fetch the live `gh-readonly-queue/<base>/pr-<number>-<base SHA>`
+branch, check out its head, and pass `--merge-group-ref=<branch>` to `run` and
+`signoff`, or to the opted-in `fleet` command. The run binds its record to the
+exact commit it executed. HoBo checks the published ref and GitHub's current
+queue entry before and after the run and again around status publication. This
+path currently accepts only a squash commit whose sole parent is the current
+base; later groups stacked on another queued commit must wait for a rebuilt
+group. A removed or changed group cannot authorize a new signoff. No
+branch-protection rule is changed.
 
 ## Evidence and live boundary
 
