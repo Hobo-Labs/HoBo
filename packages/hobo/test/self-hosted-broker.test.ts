@@ -1,12 +1,40 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHoboCli } from "@hobo/cli";
 import { describe, expect, it } from "vitest";
 import { initBareMetalYard } from "../src/bare-metal-yard.js";
 import { resolveBrokerTarget } from "../src/broker-target.js";
 import { createBrokerAwareUpCommand } from "../src/broker-up-command.js";
+
+const helloBindleDir = fileURLToPath(
+	new URL("../../../examples/hello-bindle", import.meta.url),
+);
+
+async function temporaryHelloBindle(): Promise<string> {
+	// Vitest transforms the example's TypeScript when the copy is in the workspace.
+	const projectDir = await mkdtemp(
+		join(dirname(helloBindleDir), ".hello-bindle-test-"),
+	);
+	try {
+		await cp(helloBindleDir, projectDir, {
+			recursive: true,
+			filter: (source) =>
+				source !== join(helloBindleDir, ".hobo") &&
+				source !== join(helloBindleDir, "node_modules"),
+		});
+		await symlink(
+			join(helloBindleDir, "node_modules"),
+			join(projectDir, "node_modules"),
+			"dir",
+		);
+		return projectDir;
+	} catch (error) {
+		await rm(projectDir, { recursive: true, force: true });
+		throw error;
+	}
+}
 
 describe("self-hosted broker without hosted services", () => {
 	it.each([
@@ -17,7 +45,9 @@ describe("self-hosted broker without hosted services", () => {
 		flags,
 	}) => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-self-hosted-"));
+		let projectDir: string | undefined;
 		try {
+			projectDir = await temporaryHelloBindle();
 			initBareMetalYard({ hoboHome, componentHost: "local" });
 			let remoteCalls = 0;
 			const cli = createHoboCli({
@@ -39,11 +69,7 @@ describe("self-hosted broker without hosted services", () => {
 			});
 			const result = await cli.run(
 				["up", ...flags, "--home", hoboHome, "--json"],
-				{
-					cwd: fileURLToPath(
-						new URL("../../../examples/hello-bindle", import.meta.url),
-					),
-				},
+				{ cwd: projectDir },
 			);
 			expect(result.exitCode, result.stdout).toBe(0);
 			expect(JSON.parse(result.stdout)).toMatchObject({
@@ -56,6 +82,7 @@ describe("self-hosted broker without hosted services", () => {
 			});
 			expect(remoteCalls).toBe(0);
 		} finally {
+			if (projectDir) await rm(projectDir, { recursive: true, force: true });
 			await rm(hoboHome, { recursive: true, force: true });
 		}
 	});
@@ -72,7 +99,9 @@ describe("self-hosted broker without hosted services", () => {
 		ttlSeconds,
 	}) => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-self-hosted-ttl-"));
+		let projectDir: string | undefined;
 		try {
+			projectDir = await temporaryHelloBindle();
 			initBareMetalYard({ hoboHome, componentHost: "local" });
 			const asked: number[] = [];
 			const cli = createHoboCli({
@@ -90,13 +119,12 @@ describe("self-hosted broker without hosted services", () => {
 			const result = await cli.run(
 				["up", ...flags, "--home", hoboHome, "--json"],
 				{
-					cwd: fileURLToPath(
-						new URL("../../../examples/hello-bindle", import.meta.url),
-					),
+					cwd: projectDir,
 				},
 			);
 			expect(asked, result.stdout).toEqual([ttlSeconds]);
 		} finally {
+			if (projectDir) await rm(projectDir, { recursive: true, force: true });
 			await rm(hoboHome, { recursive: true, force: true });
 		}
 	});
