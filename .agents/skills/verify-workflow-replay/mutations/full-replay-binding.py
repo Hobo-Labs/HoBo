@@ -17,9 +17,9 @@ cases = [
     ('name-snapshot', 'recordedName !== workflowName', 'recordedName !== workflow.name'),
     ('seed-match', 'suppliedSeed !== undefined &&\n\t\t\trecordedSeed !== undefined &&\n\t\t\tsuppliedSeed !== recordedSeed', 'false'),
     ('seed-present', 'version === 3 && recordedSeed === undefined', 'false'),
-    ('seed-valid', 'recordedSeed !== undefined &&\n\t\t\t(!isJsonString(recordedSeed) || String(recordedSeed) !== recordedSeed)', 'false'),
-    ('initial-callback', 'initialState.call(workflow, input)', 'workflow.initialState(input)'),
-    ('execute-callback', 'execute.call(workflow, ctx, state, input)', 'workflow.execute(ctx, state, input)'),
+    ('seed-valid', 'recordedSeed !== undefined && !isNonEmptyPrimitiveString(recordedSeed)', 'false'),
+    ('initial-callback', 'Function.prototype.call.call(initialState, workflow, input)', 'workflow.initialState(input)'),
+    ('execute-callback', 'Function.prototype.call.call(\n\t\texecute,\n\t\tworkflow,\n\t\tctx,\n\t\tstate,\n\t\tinput,\n\t)', 'workflow.execute(ctx, state, input)'),
     ('seed-snapshot', 'const suppliedSeed = options.seed;', 'let suppliedSeed = options.seed;'),
 ]
 

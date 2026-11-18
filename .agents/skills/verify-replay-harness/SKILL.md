@@ -9,7 +9,7 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 
 **Why:** A failed verification must not change later code’s clock or randomness; an incomplete, changing or imprecise input must not silently omit events or misstate the boundary of a replay check.
 
-**Review baseline:** `f71262809c8d28edba15917daa1faa4df71c7160`.
+**Review baseline:** `ec2b83f6271c8666531b91d68edd452c96578edd`.
 
 ## Covered code and checks
 
