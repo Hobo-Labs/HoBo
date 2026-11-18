@@ -1,15 +1,3 @@
-/**
- * A very small TypeScript declaration reader: given source text and the name of
- * an exported `interface` or object-`type`, return its top-level fields and
- * whether each is optional.
- *
- * This exists so the parity and projection tests read the *real* source files
- * from disk rather than a transcription of them. It is deliberately not a
- * general parser — it handles the declaration style these four files are
- * written in, and throws loudly on anything it does not understand, because a
- * reader that silently returns an empty field list would turn every assertion
- * built on it into a tautology.
- */
 export type DeclaredField = {
 	readonly name: string;
 	readonly optional: boolean;
@@ -43,7 +31,6 @@ function bodyOf(source: string, name: string): string {
 	throw new Error(`declaration ${name} is not brace-balanced`);
 }
 
-/** Strip block and line comments so a commented-out field is not read as one. */
 function stripComments(source: string): string {
 	return source
 		.replace(/\/\*[\s\S]*?\*\//gu, "")
@@ -65,7 +52,7 @@ export function declaredFields(
 		if (text === "") return;
 		const match = /^(?:readonly\s+)?([A-Za-z_$][\w$]*)(\??)\s*:/u.exec(text);
 		if (match === null) return;
-		// SAFETY: the capture group is present because the regex matched this line.
+
 		fields.push({ name: match[1] as string, optional: match[2] === "?" });
 	};
 
