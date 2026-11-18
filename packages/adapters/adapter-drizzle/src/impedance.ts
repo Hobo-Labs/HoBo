@@ -29,6 +29,7 @@ export const DRIZZLE_IMPEDANCE_CODES = Object.freeze([
 	"DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE",
 	/** An index key has a non-default sort order, nulls order, or operator class; the index is ingested without it. */
 	"DRIZZLE_INDEX_KEY_ORDER_UNREPRESENTABLE",
+	"DRIZZLE_INDEX_OPTIONS_UNREPRESENTABLE",
 	/** An index has a `WHERE` predicate (partial index); the index is ingested without it. */
 	"DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE",
 	/** Columns carry a non-postgres dialect marker; this adapter ingests postgres only. */

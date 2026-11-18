@@ -338,6 +338,12 @@ function readIndexes<T>(
 				detail: `Index "${read.name}" of table "${table}" keys ${read.orderedKeys.map((key) => `"${key}"`).join(", ")} with a non-default sort order, nulls order, or operator class; the canonical IR carries the columns but not how they are ordered.`,
 			});
 		}
+		if (read.options.length > 0) {
+			findings.push({
+				code: "DRIZZLE_INDEX_OPTIONS_UNREPRESENTABLE",
+				detail: `Index "${read.name}" of table "${table}" uses ${read.options.join(", ")}; the canonical IR carries the columns but not these options.`,
+			});
+		}
 		indexes.push(
 			Object.freeze({
 				name: read.name,

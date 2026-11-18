@@ -68,6 +68,7 @@ throw — a finding is the answer.
 | `DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE` | An index keys on a SQL expression; the IR indexes declared columns only, so the index is **not ingested** |
 | `DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE` | A partial index; it is ingested on its columns, without the `WHERE` predicate |
 | `DRIZZLE_INDEX_KEY_ORDER_UNREPRESENTABLE` | An index key has a non-default sort order, nulls order or operator class; the index is ingested without it |
+| `DRIZZLE_INDEX_OPTIONS_UNREPRESENTABLE` | An index has a non-default access method, storage parameters, `CONCURRENTLY`, or `ONLY`; the index is ingested without those options |
 | `DRIZZLE_COLUMN_UNRECOGNIZED` | A value in the column map is not a column descriptor |
 | `DRIZZLE_COLUMN_TYPE_UNREADABLE` | A column exposed no readable SQL type |
 | `DRIZZLE_NON_POSTGRES_TABLE` | A column carries a MySQL/SQLite/SingleStore type; this adapter ingests postgres only |
@@ -147,9 +148,8 @@ exactly which engine version produced the SQL that ran.
   SQL for such an index has no plan step to bind it to and must say where it put
   it; `@hobo/ci` binds it to the owning table's `create-table` step and records
   that in its migration journal.
-- **Index access method, storage parameters and `CONCURRENTLY` are not read.**
-  An index declared `USING gin` is ingested as an index on its columns with no
-  finding. That is a silent loss this package still has.
+- **Index access method, storage parameters, `CONCURRENTLY`, and `ONLY` are not
+  represented in the IR.** The adapter reports these options as impedance.
 - **Column ordinal position is not represented.** Columns are sorted by name for
   determinism, so a plan says nothing about physical column order.
 - **Postgres only.** `dialect` accepts `"postgres"`; anything else is refused
