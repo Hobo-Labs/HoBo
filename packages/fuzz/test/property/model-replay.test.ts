@@ -9,6 +9,7 @@
  * a real event-sourced aggregate unrecoverable — and it is silent, because
  * both halves keep working on their own.
  */
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { dockerAvailable, schemathesisAvailable } from "../../src/env.js";
 import { ALL_VERBS, ControlModel } from "../../src/model.js";
@@ -199,6 +200,138 @@ describe("command dispatch", () => {
 });
 
 describe("serialize / restore", () => {
+	it("starts replay from a restored baseline and retains it through later operations", () => {
+		const source = new ControlModel();
+		source.createBindle(TENANT, "b1", "sha256:a");
+		source.apply(TENANT, "b1", "k1");
+		const restored = new ControlModel();
+		restored.restore(source.serialize());
+		expect(restored.clock).toBe(source.clock);
+		expect(restored.replay()).toBe(restored.fingerprint());
+		const checkpoint = restored.snapshot();
+		restored.apply(TENANT, "b1", "k1", { fail: true });
+		expect(restored.replay()).toBe(restored.fingerprint());
+		restored.rollback(TENANT, checkpoint);
+		expect(restored.replay()).toBe(restored.fingerprint());
+	});
+
+	it("restores into an existing history at a new clock and replays the replacement", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.boolean(), { minLength: 1, maxLength: 8 }),
+				(failures) => {
+					const source = new ControlModel();
+					source.createBindle(TENANT, "new", "sha256:new");
+					source.apply(TENANT, "new", "new-key");
+					for (const fail of failures)
+						source.apply(TENANT, "new", "new-key", { fail });
+					const model = new ControlModel();
+					model.createBindle(TENANT, "old", "sha256:old");
+					const oldCheckpoint = model.snapshot();
+					const oldClock = model.clock;
+					model.restore(source.serialize());
+					expect(model.clock).toBeGreaterThan(Math.max(oldClock, source.clock));
+					expect(model.fingerprint()).toBe(source.fingerprint());
+					expect(model.replay()).toBe(model.fingerprint());
+					const newCheckpoint = model.snapshot();
+					expect(newCheckpoint).toBeGreaterThan(oldCheckpoint);
+					model.rollback(TENANT, oldCheckpoint);
+					expect(model.bindles.has("old")).toBe(true);
+					expect(model.replay()).toBe(model.fingerprint());
+					model.rollback(TENANT, newCheckpoint);
+					expect(model.fingerprint()).toBe(source.fingerprint());
+					expect(model.replay()).toBe(model.fingerprint());
+				},
+			),
+			{ numRuns: 100 },
+		);
+	});
+
+	it("does not partially replace a model for a malformed or exhausted restore", () => {
+		const model = new ControlModel();
+		model.createBindle(TENANT, "old", "sha256:old");
+		model.snapshot();
+		const before = model.serialize();
+		const events = structuredClone(model.events);
+		const snapshots = [...model.snapshots];
+		const empty = {
+			clock: 0,
+			fingerprint: "##",
+			bindles: [],
+			capabilities: [],
+			resources: [],
+		};
+		const malformed = [
+			"not-json",
+			JSON.stringify({ ...empty, clock: -1 }),
+			JSON.stringify({ ...empty, capabilities: null }),
+			JSON.stringify({ ...empty, bindles: [["b1", { id: "b1" }]] }),
+			JSON.stringify({
+				...empty,
+				fingerprint: "#c1:unknown#",
+				capabilities: [
+					["c1", { id: "c1", tenantId: TENANT, verbs: ["unknown"] }],
+				],
+			}),
+			JSON.stringify({ ...empty, fingerprint: "incorrect" }),
+			JSON.stringify({
+				...empty,
+				fingerprint: "different:h##",
+				bindles: [
+					[
+						"x",
+						{
+							id: "different",
+							tenantId: TENANT,
+							manifestHash: "h",
+							createdAt: 0,
+						},
+					],
+				],
+			}),
+			JSON.stringify({
+				...empty,
+				fingerprint: "x:h##",
+				bindles: Array.from({ length: 2 }, () => [
+					"x",
+					{ id: "x", tenantId: TENANT, manifestHash: "h", createdAt: 0 },
+				]),
+			}),
+			JSON.stringify({
+				...empty,
+				fingerprint: "##k:r:unknown",
+				resources: [
+					[
+						"r",
+						{
+							id: "r",
+							tenantId: TENANT,
+							bindleId: "b",
+							idempotencyKey: "k",
+							createdAt: 0,
+							status: "unknown",
+							applyCount: 1,
+						},
+					],
+				],
+			}),
+		];
+		for (const raw of malformed) {
+			expect(() => model.restore(raw)).toThrow("fuzz.invalid_snapshot");
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(events);
+			expect([...model.snapshots]).toEqual(snapshots);
+		}
+		const exhausted = new ControlModel();
+		exhausted.clock = Number.MAX_SAFE_INTEGER;
+		expect(() => model.restore(exhausted.serialize())).toThrow(
+			"fuzz.model_clock_exhausted",
+		);
+		expect(model.serialize()).toBe(before);
+		expect(model.events).toEqual(events);
+		expect([...model.snapshots]).toEqual(snapshots);
+	});
+
 	it("round-trips to the same fingerprint", () => {
 		const model = new ControlModel();
 		model.createBindle(TENANT, "b1", "sha256:a");

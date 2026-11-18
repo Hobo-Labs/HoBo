@@ -134,6 +134,7 @@ export class ControlModel {
 	readonly events: ModelEvent[] = [];
 	readonly snapshots = new Map<number, string>();
 	lastRollbackTarget: number | null = null;
+	private replayBaseline: string | undefined;
 
 	tick(): number {
 		if (
@@ -182,19 +183,41 @@ export class ControlModel {
 	}
 
 	restore(raw: string): void {
-		// SAFETY: snapshots are written by serialize() using the SnapshotBlob shape.
-		const blob = JSON.parse(raw) as SnapshotBlob;
-		this.clock = blob.clock;
+		// Parse and verify detached rows before changing the live model.
+		const blob = parseSnapshot(raw);
+		const candidate = new ControlModel();
+		for (const [id, row] of blob.bindles) candidate.bindles.set(id, row);
+		for (const [id, row] of blob.capabilities)
+			candidate.capabilities.set(id, row);
+		for (const [id, row] of blob.resources) candidate.resources.set(id, row);
+		if (candidate.fingerprint() !== blob.fingerprint) {
+			throw new Error("fuzz.invalid_snapshot");
+		}
+		const pristine =
+			this.clock === 0 &&
+			this.events.length === 0 &&
+			this.snapshots.size === 0 &&
+			this.bindles.size === 0 &&
+			this.capabilities.size === 0 &&
+			this.resources.size === 0 &&
+			this.lastRollbackTarget === null &&
+			this.replayBaseline === undefined;
+		if (!Number.isSafeInteger(this.clock) || this.clock < 0) {
+			throw new Error("fuzz.model_clock_exhausted");
+		}
+		const baseClock = Math.max(this.clock, blob.clock);
+		if (!pristine && baseClock >= Number.MAX_SAFE_INTEGER) {
+			throw new Error("fuzz.model_clock_exhausted");
+		}
+		this.clock = pristine ? blob.clock : baseClock + 1;
 		this.bindles.clear();
 		this.capabilities.clear();
 		this.resources.clear();
 		for (const [id, row] of blob.bindles) this.bindles.set(id, row);
-		for (const [id, row] of blob.capabilities) {
-			this.capabilities.set(id, { ...row, verbs: [...row.verbs] });
-		}
-		for (const [id, row] of blob.resources) {
-			this.resources.set(id, { ...row });
-		}
+		for (const [id, row] of blob.capabilities) this.capabilities.set(id, row);
+		for (const [id, row] of blob.resources) this.resources.set(id, row);
+		if (pristine) this.replayBaseline = raw;
+		else this.append("system", "model.restored", { snapshot: raw });
 	}
 
 	fingerprint(tenantId?: string): string {
@@ -553,11 +576,14 @@ export class ControlModel {
 
 	replay(): string {
 		const copy = new ControlModel();
+		if (this.replayBaseline !== undefined) copy.restore(this.replayBaseline);
 		for (const event of this.events) {
 			if (event.kind === "snapshot.taken") {
 				copy.snapshot();
 			} else if (event.kind === "rollback") {
 				copy.rollback(event.tenantId, Number(event.payload.target));
+			} else if (event.kind === "model.restored") {
+				copy.restore(event.payload.snapshot ?? "");
 			} else if (event.kind === "bindle.created") {
 				copy.createBindle(
 					event.tenantId,
@@ -597,6 +623,128 @@ export class ControlModel {
 		}
 		return copy.fingerprint();
 	}
+}
+
+function invalidSnapshot(): never {
+	throw new Error("fuzz.invalid_snapshot");
+}
+
+type SnapshotJson =
+	| null
+	| boolean
+	| number
+	| string
+	| SnapshotJson[]
+	| { [key: string]: SnapshotJson };
+type SnapshotObject = { [key: string]: SnapshotJson };
+
+function snapshotRecord(value: SnapshotJson | undefined): SnapshotObject {
+	if (
+		value === null ||
+		value === undefined ||
+		Object(value) !== value ||
+		Array.isArray(value)
+	) {
+		return invalidSnapshot();
+	}
+	// SAFETY: JSON objects are the only non-array object values in SnapshotJson.
+	return value as SnapshotObject;
+}
+
+function snapshotString(value: SnapshotJson | undefined): string {
+	if (value?.constructor !== String) return invalidSnapshot();
+	// SAFETY: JSON has no boxed strings; constructor identity selects a string.
+	return value as string;
+}
+
+function snapshotInteger(value: SnapshotJson | undefined): number {
+	if (value?.constructor !== Number) return invalidSnapshot();
+	// SAFETY: JSON has no boxed numbers; constructor identity selects a number.
+	const number = value as number;
+	if (!Number.isSafeInteger(number) || number < 0) {
+		return invalidSnapshot();
+	}
+	return number;
+}
+
+function snapshotRows<T extends { id: string }>(
+	value: SnapshotJson | undefined,
+	parseRow: (row: SnapshotObject) => T,
+): Array<[string, T]> {
+	if (!Array.isArray(value)) return invalidSnapshot();
+	const seen = new Set<string>();
+	return value.map((entry): [string, T] => {
+		if (!Array.isArray(entry) || entry.length !== 2) return invalidSnapshot();
+		const id = snapshotString(entry[0]);
+		const row = parseRow(snapshotRecord(entry[1]));
+		if (row.id !== id || seen.has(id)) return invalidSnapshot();
+		seen.add(id);
+		return [id, row];
+	});
+}
+
+function isVerb(value: SnapshotJson | undefined): value is Verb {
+	return (
+		value?.constructor === String && ALL_VERBS.some((verb) => verb === value)
+	);
+}
+
+function isResourceStatus(
+	value: SnapshotJson | undefined,
+): value is ResourceStatus {
+	return (
+		value === "desired" ||
+		value === "applying" ||
+		value === "ready" ||
+		value === "failed" ||
+		value === "destroyed"
+	);
+}
+
+function parseSnapshot(raw: string): SnapshotBlob {
+	let input: SnapshotJson;
+	try {
+		// SAFETY: JSON.parse produces a value in the SnapshotJson union.
+		input = JSON.parse(raw) as SnapshotJson;
+	} catch {
+		return invalidSnapshot();
+	}
+	const value = snapshotRecord(input);
+	const bindles = snapshotRows(value.bindles, (row) => ({
+		id: snapshotString(row.id),
+		tenantId: snapshotString(row.tenantId),
+		manifestHash: snapshotString(row.manifestHash),
+		createdAt: snapshotInteger(row.createdAt),
+	}));
+	const capabilities = snapshotRows(value.capabilities, (row) => {
+		if (!Array.isArray(row.verbs) || !row.verbs.every(isVerb)) {
+			return invalidSnapshot();
+		}
+		return {
+			id: snapshotString(row.id),
+			tenantId: snapshotString(row.tenantId),
+			verbs: [...row.verbs],
+		};
+	});
+	const resources = snapshotRows(value.resources, (row): OwnedResource => {
+		if (!isResourceStatus(row.status)) return invalidSnapshot();
+		return {
+			id: snapshotString(row.id),
+			tenantId: snapshotString(row.tenantId),
+			bindleId: snapshotString(row.bindleId),
+			idempotencyKey: snapshotString(row.idempotencyKey),
+			createdAt: snapshotInteger(row.createdAt),
+			status: row.status,
+			applyCount: snapshotInteger(row.applyCount),
+		};
+	});
+	return {
+		clock: snapshotInteger(value.clock),
+		fingerprint: snapshotString(value.fingerprint),
+		bindles,
+		capabilities,
+		resources,
+	};
 }
 
 function tenantFingerprint(blob: SnapshotBlob, tenantId: string): string {
