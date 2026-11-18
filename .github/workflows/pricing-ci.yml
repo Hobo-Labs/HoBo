@@ -8,6 +8,7 @@ on:
       - "packages/cloud/**"
       - "packages/core/**"
       - "packages/runtime/**"
+      - "packages/runtimes/runtime-rivet/**"
       - "packages/conformance/**"
       - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
@@ -32,6 +33,7 @@ on:
       - "packages/cloud/**"
       - "packages/core/**"
       - "packages/runtime/**"
+      - "packages/runtimes/runtime-rivet/**"
       - "packages/conformance/**"
       - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
@@ -125,6 +127,7 @@ jobs:
             --filter=@hobo/cloud \
             --filter=@hobo/core \
             --filter=@hobo/runtime \
+            --filter=@hobo/runtime-rivet \
             --filter=@hobo/conformance \
             --filter=@hobo/wit \
             --filter=@hobo/iac-alchemy \
