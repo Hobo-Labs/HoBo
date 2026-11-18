@@ -29,14 +29,14 @@ export type QueueClockConformanceReport = {
 	readonly assertions: Record<QueueClockAssertionName, "pass" | "fail">;
 };
 
-export type CreateRuntimeLocalQueueClock = (options?: {
+export type CreateRuntimeLocalQueueClock<Snapshot = JsonValue> = (options?: {
 	seed?: string;
 	startInstant?: string;
-	snapshot?: JsonValue;
+	snapshot?: Snapshot;
 }) => {
 	queue: Queue;
 	clock: VirtualClock;
-	snapshot(): JsonValue;
+	snapshot(): Snapshot;
 };
 
 export type ReplayClockTraceFn = (
@@ -49,16 +49,22 @@ export type QueueClockConformanceOptions = {
 	replayClockTrace: ReplayClockTraceFn;
 };
 
-export async function runQueueClockConformance(
-	createRuntime: CreateRuntimeLocalQueueClock,
+export async function runQueueClockConformance<Snapshot>(
+	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
 	options: QueueClockConformanceOptions,
 ): Promise<QueueClockConformanceReport> {
 	if (!(createRuntime instanceof Function)) {
 		throw new TypeError("createRuntime must be a function");
 	}
 
-	// SAFETY: assertion to `{} as Record<QueueClockAssertionName, "pass" | "fail">` is required at this boundary.
-	const assertions = {} as Record<QueueClockAssertionName, "pass" | "fail">;
+	const assertions: QueueClockConformanceReport["assertions"] = {
+		queueIdempotencyKeyDedup: "fail",
+		atLeastOnceRetry: "fail",
+		redeliveryDedup: "fail",
+		durableTimerRestart: "fail",
+		durableCronRestart: "fail",
+		seededClockReplay: "fail",
+	};
 
 	const runAssertion = async (
 		name: QueueClockAssertionName,
@@ -97,8 +103,8 @@ export async function runQueueClockConformance(
 	};
 }
 
-async function provesQueueIdempotencyKeyDedup(
-	createRuntime: CreateRuntimeLocalQueueClock,
+async function provesQueueIdempotencyKeyDedup<Snapshot>(
+	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
 ): Promise<boolean> {
 	const runtime = createRuntime();
 	const queue = parseQueueName("jobs");
@@ -116,8 +122,8 @@ async function provesQueueIdempotencyKeyDedup(
 	return retry.deduped === true && retry.messageId === first.messageId;
 }
 
-async function provesAtLeastOnceRetry(
-	createRuntime: CreateRuntimeLocalQueueClock,
+async function provesAtLeastOnceRetry<Snapshot>(
+	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
 ): Promise<boolean> {
 	const runtime = createRuntime();
 	const queue = parseQueueName("jobs");
@@ -128,22 +134,24 @@ async function provesAtLeastOnceRetry(
 		{ idempotencyKey: key },
 	);
 	let attempts = 0;
-	try {
-		await runtime.queue.handle(queue, async () => {
+	const failed = await runtime.queue
+		.handle(queue, async () => {
 			attempts += 1;
 			throw new Error("transient");
-		});
-	} catch {
-		// Expected retry path.
-	}
+		})
+		.then(
+			() => false,
+			() => true,
+		);
+	if (!failed) return false;
 	await runtime.queue.handle(queue, async () => {
 		attempts += 1;
 	});
 	return attempts === 2;
 }
 
-async function provesRedeliveryDedup(
-	createRuntime: CreateRuntimeLocalQueueClock,
+async function provesRedeliveryDedup<Snapshot>(
+	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
 ): Promise<boolean> {
 	const runtime = createRuntime();
 	const queue = parseQueueName("jobs");
@@ -164,8 +172,8 @@ async function provesRedeliveryDedup(
 	return effects.length === 1;
 }
 
-function provesDurableTimerRestart(
-	createRuntime: CreateRuntimeLocalQueueClock,
+function provesDurableTimerRestart<Snapshot>(
+	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
 ): boolean {
 	const runtime = createRuntime({
 		seed: "timer-restart",
@@ -185,8 +193,8 @@ function provesDurableTimerRestart(
 	);
 }
 
-function provesDurableCronRestart(
-	createRuntime: CreateRuntimeLocalQueueClock,
+function provesDurableCronRestart<Snapshot>(
+	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
 ): boolean {
 	const runtime = createRuntime({
 		seed: "cron-restart",
@@ -203,8 +211,8 @@ function provesDurableCronRestart(
 	);
 }
 
-function provesSeededClockReplay(
-	createRuntime: CreateRuntimeLocalQueueClock,
+function provesSeededClockReplay<Snapshot>(
+	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
 	replayClockTrace: ReplayClockTraceFn,
 ): boolean {
 	const runtime = createRuntime({

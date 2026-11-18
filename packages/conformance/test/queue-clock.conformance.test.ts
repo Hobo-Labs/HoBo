@@ -35,6 +35,31 @@ describe("@hobo/conformance Queue + Clock suite", () => {
 		});
 	});
 
+	it("reports a failed retry assertion when a queue swallows handler errors", async () => {
+		const createSwallowingRuntime = (
+			options?: Parameters<typeof createRuntimeLocalQueueClock>[0],
+		) => {
+			const runtime = createRuntimeLocalQueueClock(options);
+			return {
+				...runtime,
+				queue: {
+					...runtime.queue,
+					async handle(...args: Parameters<typeof runtime.queue.handle>) {
+						try {
+							return await runtime.queue.handle(...args);
+						} catch {
+							return { handled: [], deduped: [] };
+						}
+					},
+				},
+			};
+		};
+		const report = await runQueueClockConformance(createSwallowingRuntime, {
+			replayClockTrace,
+		});
+		expect(report.assertions.atLeastOnceRetry).toBe("fail");
+	});
+
 	it("redelivery-after-crash fixture keeps effect count at 1 across snapshot restore", async () => {
 		const result = await runRedeliveryAfterCrash(createRuntimeLocalQueueClock);
 

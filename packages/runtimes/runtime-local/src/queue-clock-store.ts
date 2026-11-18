@@ -166,6 +166,10 @@ export function normalizeStore(
 				`snapshot seed mismatch: expected ${snapshot.seed}, got ${options.seed}`,
 			);
 		}
+		const queues = snapshot.queues ?? {};
+		for (const queue of Object.values(queues)) {
+			for (const message of queue.messages) message.processing = false;
+		}
 		return {
 			version: QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION,
 			seed: requireNonEmptyString(snapshot.seed, "snapshot.seed"),
@@ -186,7 +190,7 @@ export function normalizeStore(
 				snapshot.nextFireSeq,
 				"snapshot.nextFireSeq",
 			),
-			queues: snapshot.queues ?? {},
+			queues,
 			timers: snapshot.timers ?? [],
 			cronSchedules: snapshot.cronSchedules ?? [],
 			trace: snapshot.trace ?? [],

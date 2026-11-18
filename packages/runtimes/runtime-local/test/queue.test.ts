@@ -2,6 +2,8 @@ import { runQueueClockConformance } from "@hobo/conformance";
 import {
 	parseActorKey,
 	parseIdempotencyKey,
+	parseLeaseId,
+	parseMessageId,
 	parseQueueName,
 	QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION,
 	QueueLeaseLostError,
@@ -90,9 +92,13 @@ describe("createRuntimeLocalQueueClock queue", () => {
 		const runtime = createRuntimeLocalQueueClock();
 		const queue = parseQueueName("payments");
 		const key = parseIdempotencyKey("charge-active");
-		await runtime.queue.enqueue(queue, { cents: 500 }, { idempotencyKey: key });
+		const enqueued = await runtime.queue.enqueue(
+			queue,
+			{ cents: 500 },
+			{ idempotencyKey: key },
+		);
 		const effects: string[] = [];
-		let finishHandler: (() => void) | undefined;
+		let finishHandler!: () => void;
 
 		const inFlight = runtime.queue.handle(
 			queue,
@@ -110,15 +116,55 @@ describe("createRuntimeLocalQueueClock queue", () => {
 			[],
 		);
 
-		finishHandler?.();
+		finishHandler();
 		await inFlight;
-		// SAFETY: assertion to `"msg-1" as never` is required at this boundary.
-		runtime.queue.simulateRedelivery("msg-1" as never);
+		runtime.queue.simulateRedelivery(enqueued.messageId);
 		await runtime.queue.handle(queue, async (message) => {
 			effects.push(`charged:${message.idempotencyKey}`);
 		});
 
 		expect(effects).toEqual([`charged:${key}`]);
+	});
+
+	it("retries a snapshotted in-flight message after its lease expires", async () => {
+		const runtime = createRuntimeLocalQueueClock();
+		const queue = parseQueueName("jobs");
+		const enqueued = await runtime.queue.enqueue(
+			queue,
+			{ task: "work" },
+			{
+				idempotencyKey: parseIdempotencyKey("job-in-flight"),
+			},
+		);
+		let finishHandler!: () => void;
+		const inFlight = runtime.queue.handle(
+			queue,
+			async () => {
+				await new Promise<void>((resolve) => {
+					finishHandler = resolve;
+				});
+			},
+			{ visibilityTimeoutMs: 100 },
+		);
+		const snapshot = runtime.snapshot();
+		expect(snapshot.queues.jobs?.messages[0]?.processing).toBe(true);
+		finishHandler();
+		await inFlight;
+
+		const restored = createRuntimeLocalQueueClock({ snapshot });
+		expect(restored.snapshot().queues.jobs?.messages[0]?.processing).toBe(
+			false,
+		);
+		expect(snapshot.queues.jobs?.messages[0]?.processing).toBe(true);
+		restored.clock.advance(99);
+		expect(restored.queue.dequeue(queue)).toEqual([]);
+		restored.clock.advance(1);
+		const attempts: number[] = [];
+		const handled = await restored.queue.handle(queue, async (message) => {
+			attempts.push(message.deliveryAttempt);
+		});
+		expect(handled).toEqual({ handled: [enqueued.messageId], deduped: [] });
+		expect(attempts).toEqual([2]);
 	});
 
 	it("signal enqueues actor messages with idempotent delivery", async () => {
@@ -151,8 +197,10 @@ describe("createRuntimeLocalQueueClock queue", () => {
 	it("throws QueueLeaseLostError on unknown message complete", () => {
 		const runtime = createRuntimeLocalQueueClock();
 		expect(() =>
-			// SAFETY: assertion to `"lease-1" as never` is required at this boundary.
-			runtime.queue.complete("msg-missing" as never, "lease-1" as never),
+			runtime.queue.complete(
+				parseMessageId("msg-missing"),
+				parseLeaseId("lease-1"),
+			),
 		).toThrow(QueueLeaseLostError);
 	});
 });
