@@ -219,6 +219,8 @@ that the CD connection is ready. Remote agents follow the
 [HoBo deployment skill](../../.agents/skills/hobo-deploy/SKILL.md): before
 opening a form, verify that its owner settings remain private; otherwise report
 the missing capability instead of collecting identifiers or values in chat.
+The transcript audit flags known private fields in nested owner-tool inputs and
+results, including API keys and numeric identifiers, without printing their values.
 
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which

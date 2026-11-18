@@ -19,6 +19,11 @@ import {
 	type JsonValue,
 } from "../ci/attestation.mts";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import {
+	gitLsFiles,
+	readShard,
+	selectShard,
+} from "../lib/unit-test-selection.ts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 // The scope step's git commands must act on the temporary repositories below,
@@ -177,7 +182,10 @@ describe("the scripts lane is a pull-request gate", () => {
 		// Not a job a signed local run stands in for: it always runs.
 		assert.doesNotMatch(scripts.if, /attested/u);
 		const lane = step(scripts, LANE);
-		assert.equal(lane.run.trim(), "pnpm run test:scripts");
+		assert.equal(
+			lane.run.trim(),
+			'pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"',
+		);
 		assert.equal(lane.if, "steps.scope.outputs.run == 'true'");
 		// The pinned toolchain (Node 24 from mise.toml) is in place first:
 		// under Node 22 pnpm prints an engine warning into turbo's JSON.
@@ -186,6 +194,38 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.ok(preflight >= 0, "the job runs ci-runner-preflight");
 		assert.ok(preflight < names.indexOf(LANE));
 		assert.ok(names.indexOf(SCOPE) < names.indexOf(LANE));
+	});
+
+	it("runs all scripts test files once across the required matrix", () => {
+		const source = asObject(jobs?.["scripts-tests"]);
+		const strategy = asObject(source?.strategy);
+		assert.equal(strategy?.["fail-fast"], false);
+		const matrix = asObject(strategy?.matrix);
+		const shards = asList(matrix?.shard);
+		assert.ok(shards);
+		assert.deepEqual(shards, [0, 1, 2, 3]);
+		const steps = asList(source?.steps) ?? [];
+		const lane = steps.map(asObject).find((entry) => entry?.name === LANE);
+		const env = asObject(lane?.env);
+		assert.equal(env?.SHARD, "${{ strategy.job-index }}");
+		assert.equal(env?.SHARD_TOTAL, "${{ strategy.job-total }}");
+		const files = gitLsFiles(["scripts/test/*.test.ts"]).sort();
+		assert.ok(files.length > 0);
+		const partitions = shards.map((_, index) => {
+			const shard = readShard([`--shard=${index}/${shards.length}`]);
+			assert.ok(shard);
+			return selectShard(files, shard);
+		});
+		assert.ok(partitions.every((partition) => partition.length > 0));
+		assert.deepEqual(partitions.flat().sort(), files);
+		const trace = steps
+			.map(asObject)
+			.find((entry) => entry?.name === "CI trace");
+		assert.equal(asObject(trace?.with)?.disambiguator, "${{ matrix.shard }}");
+		const save = steps
+			.map(asObject)
+			.find((entry) => entry?.name === "Save Turbo cache");
+		assert.match(asText(save?.if) ?? "", /matrix\.shard == 0/u);
 	});
 
 	it("builds what every package a scripts test imports depends on, before the lane", () => {

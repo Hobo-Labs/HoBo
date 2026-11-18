@@ -92,13 +92,17 @@ evidence; they cannot override a pin, healthy pickup, or failed queue read.
 | A recent timely pickup names a candidate alongside other runner labels | Keep that candidate unknown for fallback; a multi-label pickup is not proof of a single-label route |
 | More runs or jobs exist outside the sampled pages | The decision is based only on the bounded sample, not a complete inventory; recheck or use independent operational evidence |
 | Local extension is missing or lacks `--commit` | Fail before starting the local run |
+| An environment-supplied GitHub App user token's target installation explicitly has read-only commit statuses | Fail before starting the local run; use a credential that can write commit statuses |
 | Dirty checkout, base not contained in HEAD, stale remote base, changed HEAD, bad signature, or workflow/description drift | Refuse the relevant run or publication; do not post new success statuses |
 | A local check fails, is interrupted, or changes tracked files | Fail the run; no new signoff is posted. Once a run starts it removes its earlier local record for that tree |
 | Missing container engine or intentionally omitted jobs | Omit affected jobs, including the coupled PR impact group where applicable; do not report those jobs successful |
 | Unknown GitHub values, a changed skipped action or helper, or no command executed for a job/event/shard | Omit or refuse the affected job; never claim coverage from a skipped check |
-| A record predates per-event, individually executed command evidence | Rerun it before direct signoff; existing workflow-reuse verification remains compatible |
+| A record predates per-event, individually executed command evidence | Rerun it before direct signoff; workflow reuse can still accept independent jobs and accepts the PR impact group only with the reviewed shadow policy and dependencies |
+| Older base, changed workflow or local plan, classifier dependency or resolution input, or incomplete GitHub tree response | Omit the coupled PR impact group; independently covered jobs remain eligible. A record that claims the unverified group cannot be published |
 | GitHub status write fails partway through | Report failure; some individual statuses may already exist. Inspect GitHub before retrying |
 | Base moves or a retry fails on the same SHA | Existing GitHub statuses do not automatically expire or disappear. Update the branch, rerun, and inspect old statuses |
+| A merge-queue entry is removed, retargeted, or assigned a different base or head | Refuse its local run or signoff; remove a newly written run record when the entry changes during execution |
+| A merge-group ref is not the first squash commit directly on the current base | Refuse it; wait for that group to be rebuilt on the current base |
 
 The queue observation reads a single page of recent runs and one page per
 selected run, with bounded lookups and timeouts. An old queued job eventually
@@ -111,14 +115,74 @@ the current live remote base and requested event, and equality between each
 reported job, its workflow, and the trusted base policy. It verifies that the
 GitHub target matches the base remote and that GitHub's live base matches the
 tested base. Commands are executed individually, including repeated commands;
-Turbo may still reuse its own cache unless `--fresh` is specified. The current
-PR impact group is omitted because its shadow classifier depends on a GitHub
-variable unavailable locally, even when a container engine is available.
+Turbo may still reuse its own cache unless `--fresh` is specified. The two
+shadow-classification steps are report-only and are omitted locally. Before
+signing the PR impact group, HoBo checks the trusted workflow wiring and refuses
+if the classifier or its imports are missing, symlinked, or changed. It also
+refuses tracked pnpm hooks, module trees, patches, and other unreviewed
+dependency-resolution paths, even when unchanged; these can refer to code
+outside their own path. The exact reviewed workflow and local-plan blobs must
+already be present at both the tested base and head. Changes to either file
+require reviewing and updating these pins. Workflow reuse verifies the base and
+tested trees through the GitHub API. Missing, truncated, or invalid tree
+responses cause the group to run in Actions; independently covered jobs remain
+eligible. Old records with an earlier base likewise lose only that group, even
+if their local run executed the classifiers. The checks assume the local and
+CI toolchains and installed dependencies are trusted. A missing container
+engine still omits the coupled PR impact group.
+
+The `hobo-ci` and `release-hobo` route jobs load their route action and
+attestation verifier from a separate checkout of the event's base commit. The
+verifier still inspects the tested checkout's tree. A missing base verifier
+fails closed. The workflow definitions themselves come from the tested event;
+a protected required workflow or review of workflow changes is still needed to
+prevent a pull request from replacing the verification step.
+
 The extension requires a pushed commit and a credential allowed to write commit
-statuses. These statuses use the credential's authority, rather than the
+statuses. The fleet preflight detects an explicitly read-only GitHub App user
+token supplied in the environment when GitHub supplies its installation
+permissions. Credentials in the `gh` credential store, other credential types,
+and unavailable installation metadata remain unknown until publication; a
+permission check is not a guarantee that the later write will succeed. These
+statuses use the credential's authority, rather than the
 base-branch trust list used for workflow-reuse attestations. Local commands run
 with the invoking user's authority, so only run trusted code. Serialize local
 runs in a checkout and inspect statuses after an interrupted publication.
+The scripts test runner limits each Vitest run with `HOBO_TEST_RUN_TIMEOUT_MS`,
+reports the signal when Vitest is killed, and warns when host suspension
+makes the wall clock diverge substantially from the monotonic clock.
+
+Before signoff, HoBo verifies the tested commit against a live branch on the
+verified target remote: it must be that branch's tip, or an ancestor of a live
+tip already known locally. Fetch the target branch if its newer tip is not
+known locally. Ancestor proof requires Git 2.45 or newer so missing objects
+cannot be fetched implicitly; older Git can still sign an exact branch tip or a
+verified pull request head. Alternatively, an open same-repository or fork pull request can
+prove its exact current head against the tested base. The coordinator can
+discover the PR from the current branch or accept `--pr=NUMBER`, including in
+a detached checkout. Inaccessible, closed, moved or retargeted PRs are refused;
+repository identity and the live head branch are checked independently. HoBo
+rechecks the complete PR proof, base, target and checkout before invoking the
+extension in a private temporary Git view; it neither changes the checkout's
+refs nor forces signoff. These checks and publication cannot be atomic: a PR or
+branch can move afterward, and a status stays on the tested SHA. See the
+[PR-head contract](pr-head-target.md) for the proof and refusal cases.
+If listing all target branches fails, HoBo can still use an independently
+verified open PR; the tested base must remain reachable and unchanged. Fleet
+preflight retains its original branch or PR proof through the run, so adding an
+unrelated branch does not change the chosen proof, while moving or deleting the
+chosen branch still refuses publication. A failed final GitHub branch read
+identifies the selected-branch check separately from a changed or unreadable base.
+
+The tested SHA must identify Git's original objects and parent graph. Local
+runs and signoff refuse replacement refs or nonempty graft metadata, including
+grafts shared by linked worktrees. HoBo's own Git subprocesses ignore
+caller-provided replacement and graft overrides. Workflow steps do not receive
+those variables unless they explicitly declare them, and conflicting declared
+values are refused. HoBo checks for graph metadata after each local step as
+well as before the run and publication. These checks are not a sandbox: trusted
+commands or concurrent processes can make transient changes within a step, so
+serialize access to the checkout while running and signing.
 
 The attestor key's new parent directory is created with mode `0700` or more
 restrictive according to the umask. An existing parent must already deny
@@ -127,8 +191,16 @@ group and other access; the command refuses to change its permissions.
 Statuses are `signoff/hobo-ci/local/<event>/<job>` on the tested head. They are
 separate from Actions job results, cannot complete queued jobs, and do not by
 themselves satisfy HoBo's existing required checks or merge-queue policy. A
-`merge_group` signoff on a PR head represents a local simulation, not a status
-on GitHub's generated merge-group commit. No branch-protection rule is changed.
+`merge_group` signoff on a PR head represents a local simulation. To verify a
+GitHub-generated group commit itself, fetch the live `gh-readonly-queue/<base>/pr-<number>-<base SHA>`
+branch, check out its head, and pass `--merge-group-ref=<branch>` to `run` and
+`signoff`, or to the opted-in `fleet` command. The run binds its record to the
+exact commit it executed. HoBo checks the published ref and GitHub's current
+queue entry before and after the run and again around status publication. This
+path currently accepts only a squash commit whose sole parent is the current
+base; later groups stacked on another queued commit must wait for a rebuilt
+group. A removed or changed group cannot authorize a new signoff. No
+branch-protection rule is changed.
 
 ## Evidence and live boundary
 

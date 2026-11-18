@@ -34,7 +34,8 @@ pnpm --filter @hobo/control-yard run evidence:check
 ```
 
 Synced into this proof at `assets/evidence/` (PNGs + `recordings/*.mp4` +
-`evidence-manifest.json`). See `AGENTS.md`.
+`evidence-manifest.json`). The check validates both this copy and the package
+copy. See `AGENTS.md`.
 
 ## How to run locally
 

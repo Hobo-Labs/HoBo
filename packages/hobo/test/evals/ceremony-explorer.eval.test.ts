@@ -80,6 +80,7 @@ function virtualClock() {
 
 async function runSchedule(schedule: Schedule) {
 	const api = await startFakeInfisical("org-1");
+	api.seedJournalFleet();
 	const vercel = fakeVercel();
 	const neon = fakeNeon();
 	const world = await startTlsWorld({

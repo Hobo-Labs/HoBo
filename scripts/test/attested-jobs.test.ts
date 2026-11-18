@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
@@ -7,6 +8,10 @@ import {
 	asText,
 	COVERED_JOBS,
 	GATE_JOBS,
+	SHADOW_PLAN_BLOB,
+	SHADOW_PLAN_PATH,
+	SHADOW_WORKFLOW_BLOB,
+	SHADOW_WORKFLOW_PATH,
 } from "../ci/attestation.mts";
 import {
 	conditionHolds,
@@ -27,6 +32,23 @@ const skipWhenAttested = (job: string) =>
 	`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
 
 describe("the description of the covered jobs", () => {
+	it("pins the workflow and plan reviewed for the shadow skips", () => {
+		for (const [path, expected] of [
+			[SHADOW_PLAN_PATH, SHADOW_PLAN_BLOB],
+			[SHADOW_WORKFLOW_PATH, SHADOW_WORKFLOW_BLOB],
+		] as const) {
+			const bytes = readFileSync(path);
+			const oid = createHash("sha1")
+				.update(`blob ${bytes.length}\0`)
+				.update(bytes)
+				.digest("hex");
+			assert.equal(
+				oid,
+				expected,
+				`${path} changed: review the shadow skip policy before updating its pin`,
+			);
+		}
+	});
 	it("describes exactly the covered jobs, the gate's first and in order", () => {
 		assert.deepEqual(
 			plan.map((job) => job.id),
@@ -78,14 +100,16 @@ describe("the description of the covered jobs", () => {
 			}
 	});
 
-	it("only leaves out CI machine setup, hosted routing, or image pipeline steps", () => {
+	it("only leaves out CI setup, report-only classification, routing, or image pipeline steps", () => {
 		const left = plan.flatMap((job) =>
 			job.steps
 				.filter((step) => step.local === "skip" && step.run !== undefined)
 				.map((step) => `${job.id}: ${step.name}`),
 		);
 		assert.deepEqual(left, [
+			"pr_gate_validation: Impact classification (shadow)",
 			"pr_gate_validation: Route the merge-group shard batch",
+			"pr_gate_validation: Impact classification (shadow)",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
 			"pr_affected: Prune Turbo cache",
@@ -95,6 +119,28 @@ describe("the description of the covered jobs", () => {
 			"release-contract: Clean up OCI build artifacts",
 			"release-contract: Prune Turbo cache",
 		]);
+	});
+
+	it("omits both report-only classifiers while leaving the gate checks executable", () => {
+		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		assert.ok(gate);
+		const reports = gate.steps.filter(
+			(step) => step.name === "Impact classification (shadow)",
+		);
+		assert.equal(reports.length, 2);
+		for (const step of reports) {
+			assert.equal(step.local, "skip");
+			assert.equal(step.continueOnError, true);
+			assert.equal(step.id, undefined);
+			assert.match(step.reason ?? "", /report-only/u);
+		}
+		for (const name of [
+			"Code format gate",
+			"Relevant checks only",
+			"S0 gate set",
+		]) {
+			assert.equal(gate.steps.find((step) => step.name === name)?.local, "run");
+		}
 	});
 
 	it("does not cover the release contract once a release image is affected", () => {
@@ -186,13 +232,9 @@ describe("skipping a covered job in the workflows", () => {
 	it("checks for an attestation in the route job of each workflow with a covered job", () => {
 		for (const path of workflows) {
 			const text = readFileSync(path, "utf8");
-			const route = text.slice(
-				text.indexOf("\n  route:\n"),
-				text.indexOf(
-					"\n  ",
-					text.indexOf("uses: $/.github/actions/route-runner"),
-				),
-			);
+			const route =
+				text.match(/\n  route:\n[\s\S]*?(?=\n  [A-Za-z0-9_-]+:\n|$)/u)?.[0] ??
+				"";
 			for (const needed of [
 				"scripts/ci/attestation.mts",
 				"scripts/ci/verify-attestation.mts",

@@ -103,7 +103,8 @@
 						"HOBO_IMPACT_GATE": "${{ vars.HOBO_IMPACT_GATE || 'shadow' }}"
 					},
 					"continueOnError": true,
-					"local": "run"
+					"local": "skip",
+					"reason": "report-only shadow classification does not select or gate the checks a local run executes"
 				},
 				{
 					"name": "DCO sign-off check",
@@ -170,7 +171,8 @@
 						"HOBO_IMPACT_GATE": "${{ vars.HOBO_IMPACT_GATE || 'shadow' }}"
 					},
 					"continueOnError": true,
-					"local": "run"
+					"local": "skip",
+					"reason": "report-only shadow classification does not select or gate the checks a local run executes"
 				},
 				{
 					"name": "S0 gate set",

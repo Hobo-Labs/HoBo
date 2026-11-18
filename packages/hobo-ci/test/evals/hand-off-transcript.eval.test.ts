@@ -18,6 +18,9 @@ type Question = {
 	header: string;
 	options: { label: string; description: string }[];
 };
+type NestedSettings =
+	| { readonly projectId: string }
+	| { readonly child: NestedSettings };
 const toolUse = (
 	id: string,
 	name: string,
@@ -29,6 +32,13 @@ const toolUse = (
 		family?: string;
 		INFISICAL_PROJECT_ID?: string;
 		args?: readonly string[];
+		apiKey?: string;
+		api_key?: string;
+		privateKey?: string;
+		credentials?: { readonly value: string };
+		projectId?: number;
+		nested?: NestedSettings;
+		assignment?: string;
 	} = {},
 ) => ({
 	type: "tool_use" as const,
@@ -421,6 +431,41 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 				expect.objectContaining({ rule: "private-owner-exposure" }),
 			);
 			expect(JSON.stringify(findings)).not.toContain(fixture);
+		}
+	});
+
+	it("finds keys, numeric identifiers and deeply nested settings without echoing them", () => {
+		const fixture = "private-fixture-value";
+		let nested: NestedSettings = { projectId: fixture };
+		for (let i = 0; i < 20; i += 1) nested = { child: nested };
+		for (const input of [
+			{ apiKey: fixture },
+			{ api_key: fixture },
+			{ privateKey: fixture },
+			{ credentials: { value: fixture } },
+			{ projectId: 123456 },
+			{ nested },
+			{ args: ["up", "--api-key", fixture] },
+			{ assignment: `API_KEY=${fixture}` },
+		]) {
+			for (const output of [false, true]) {
+				const events = parseClaudeTranscript(
+					jsonl([
+						user("go"),
+						assistant([toolUse("run", "mcp__hobo__ci", output ? {} : input)]),
+						user([
+							toolResult("run", output ? JSON.stringify(input) : "stopped"),
+						]),
+						assistant([text("Stopped.")]),
+					]),
+				);
+				const findings = auditHandOff(events);
+				expect(findings).toContainEqual(
+					expect.objectContaining({ rule: "private-owner-exposure" }),
+				);
+				expect(JSON.stringify(findings)).not.toContain(fixture);
+				expect(JSON.stringify(findings)).not.toContain("123456");
+			}
 		}
 	});
 

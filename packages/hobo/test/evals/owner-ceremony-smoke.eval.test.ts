@@ -1,5 +1,11 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +21,10 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { startFakeInfisical } from "./support/fake-infisical-api.js";
+import {
+	copiedSession,
+	startFakeInfisical,
+} from "./support/fake-infisical-api.js";
 import { fakeNeon, fakeVercel } from "./support/fake-providers.js";
 import { startTlsWorld } from "./support/tls-world.js";
 
@@ -120,12 +129,13 @@ function startServer(env: NodeJS.ProcessEnv) {
 }
 
 describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
-	it("cd up in one call: every owner step a form carrying its link, nothing relayed", async () => {
+	it("cd up with an existing journal: every owner step is a private form", async () => {
 		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
 		// The providers at their real hostnames, behind an inspecting proxy
 		// that trusts only its own CA: real-internet egress, or egress that
 		// bypasses the proxy, fails instead of passing silently.
 		const api = await startFakeInfisical("org-1");
+		api.seedJournalFleet();
 		const vercel = fakeVercel();
 		const neon = fakeNeon();
 		const world = await startTlsWorld({
@@ -239,7 +249,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			// Every provider call went through the box's proxy: a call that
 			// bypassed it (Node's global fetch ignores HTTPS_PROXY) would reach
 			// the internet directly, or fail on an enterprise network.
-			expect(world.requests).toContainEqual(
+			expect(world.requests).not.toContainEqual(
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
 			);
 			// Nothing more is asked of the owner: no sign-in, approval, store or
@@ -274,6 +284,86 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			server.stop();
 			await world.close();
 			await api.close();
+		}
+	}, 120_000);
+
+	it("refuses a fresh journal without an atomic claim before contacting Neon", async () => {
+		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
+		const api = await startFakeInfisical("org-1");
+		const vercel = fakeVercel();
+		const neon = fakeNeon();
+		const world = await startTlsWorld({
+			"app.infisical.com": api.handle,
+			"api.vercel.com": vercel.handle,
+			"neon.new": neon.handle,
+		});
+		const locator = secretStoreLocatorPath(REPO, { XDG_CONFIG_HOME: config });
+		mkdirSync(path.dirname(locator), { recursive: true });
+		writeFileSync(
+			locator,
+			JSON.stringify({
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "proj-1",
+			}),
+		);
+		const server = startServer({
+			...process.env,
+			XDG_CONFIG_HOME: config,
+			CLAUDE_CODE_REMOTE: "true",
+			HTTPS_PROXY: world.proxyUrl,
+			https_proxy: world.proxyUrl,
+			HTTP_PROXY: world.proxyUrl,
+			http_proxy: world.proxyUrl,
+			NO_PROXY: "",
+			no_proxy: "",
+			NODE_EXTRA_CA_CERTS: world.caBundle,
+		});
+		try {
+			await server.answer(
+				server.call("initialize", {
+					protocolVersion: "2025-11-25",
+					capabilities: LIVE_HOST,
+				}),
+			);
+			const run = server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO });
+			const signIn = await server.next((m) => m.method === "elicitation/create");
+			const jwt = api.signIn();
+			const copied = copiedSession(jwt);
+			server.send({
+				jsonrpc: "2.0",
+				id: signIn.id ?? null,
+				result: { action: "accept", content: { value: copied } },
+			});
+			const approval = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			const form = z
+				.object({
+					requestedSchema: z.object({
+						properties: z.object({ link: z.object({ default: z.string() }) }),
+					}),
+				})
+				.parse(approval.params);
+			server.send({
+				jsonrpc: "2.0",
+				id: approval.id ?? null,
+				result: { action: "accept", content: { done: true } },
+			});
+			vercel.approve(form.requestedSchema.properties.link.default);
+			const response = JSON.stringify(await server.answer(run));
+			expect(response).toContain("HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE");
+			expect(response).toContain("atomic-claim-store-required");
+			for (const privateValue of [copied, jwt, "proj-1"])
+				expect(response).not.toContain(privateValue);
+			expect(world.blocked).toEqual([]);
+			expect(world.requests).not.toContainEqual(
+				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
+			);
+		} finally {
+			server.stop();
+			await world.close();
+			await api.close();
+			rmSync(config, { recursive: true, force: true });
 		}
 	}, 120_000);
 
