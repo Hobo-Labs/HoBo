@@ -1047,6 +1047,7 @@ export function runDoctorSnapshot(input: {
 	root?: string;
 	selection?: ProjectSelection;
 	outDir?: string;
+	confirmedSurfaces?: string[];
 }): DoctorReport {
 	const root = input.root ?? repoRoot();
 	const selection = input.selection ?? resolveProjects("all", root);
@@ -1057,7 +1058,7 @@ export function runDoctorSnapshot(input: {
 		path.join(globalOptimizexpRoot(root), "snapshots", `doctor-${stamp}`);
 	ensureDir(outDir);
 
-	const check = runDoctorCheck({ root, selection, deepFeatures: true });
+	const check = runDoctorCheck({ root, selection, deepFeatures: true, confirmedSurfaces: input.confirmedSurfaces });
 	writeFileSync(
 		path.join(outDir, "doctor-report.json"),
 		`${JSON.stringify(check, null, 2)}\n`,
