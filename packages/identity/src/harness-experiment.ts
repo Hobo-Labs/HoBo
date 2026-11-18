@@ -52,10 +52,34 @@ export type ExperimentAssignment = Readonly<{
 	assignedAt: string;
 }>;
 
+export interface ExperimentPort {
+	readonly events: readonly ExperimentEvent[];
+	define(definition: ExperimentDefinition): ExperimentDefinition;
+	assign(
+		experimentName: string,
+		context: FlagEvalContext,
+	): ExperimentAssignment;
+	expose(experimentName: string, context: FlagEvalContext): void;
+	evaluateAndExpose(
+		experimentName: string,
+		context: FlagEvalContext,
+	): ExperimentAssignment;
+	conclude(
+		experimentName: string,
+		verdict: "ship" | "do-not-ship" | "inconclusive",
+		reason?: string,
+	): void;
+	getAssignment(
+		experimentName: string,
+		subjectKey: string,
+	): ExperimentAssignment | undefined;
+	list(): readonly ExperimentDefinition[];
+}
+
 /**
  * Built-in experiment engine: sticky assignment + exposure tracking + OTEL-shaped hooks.
  */
-export class OpenExperimentEngine {
+export class OpenExperimentEngine implements ExperimentPort {
 	readonly events: ExperimentEvent[] = [];
 	private seq = 0;
 	private readonly defs = new Map<string, ExperimentDefinition>();
