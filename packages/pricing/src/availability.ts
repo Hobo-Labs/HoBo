@@ -8,7 +8,10 @@ import {
 	type QuoteVector,
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard } from "./catalog.js";
-import { hasExplicitFixedChargeCoverage } from "./fixed-charge-coverage.js";
+import {
+	hasExplicitFixedChargeCoverage,
+	hasExplicitUnreferencedFixedCoverage,
+} from "./fixed-charge-coverage.js";
 import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
@@ -257,6 +260,19 @@ export function quoteAvailablePricing(
 	}
 	const quote = quoteScenarioV2(scenario);
 	if (!isQuoteVector(quote)) return failed(quote.code, quote.message);
+	if (
+		!hasExplicitUnreferencedFixedCoverage(
+			catalog,
+			state.agreements,
+			[...scenario.baseline, ...scenario.candidate],
+			scenario.at,
+			scenario.horizon,
+		)
+	)
+		return failed(
+			"PRICING_MODEL_INCOMPLETE",
+			"an active agreement is missing a fixed-charge quantity",
+		);
 	for (const workload of [...scenario.baseline, ...scenario.candidate]) {
 		const agreement = state.agreements.find(
 			(entry) => entry.id === workload.agreementRef,
