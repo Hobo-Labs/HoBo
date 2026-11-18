@@ -29,6 +29,8 @@ export type ComponentHostErrorCode =
 	| "operation_not_found"
 	| "http_handler_missing"
 	| "component_not_loaded"
+	| "component_already_loaded"
+	| "component_identity_mismatch"
 	| "invalid_interface_id"
 	| "component_id_required"
 	| "provider_id_required"
