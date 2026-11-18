@@ -1,6 +1,9 @@
 import { clone, create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { ChargeComponentSchema } from "../src/_generated/pricing_pb.js";
+import {
+	ChargeComponentSchema,
+	ProviderAgreementSchema,
+} from "../src/_generated/pricing_pb.js";
 import {
 	developerPricing,
 	parsePricingAvailability,
@@ -227,6 +230,47 @@ describe("declared pricing availability", () => {
 		egress.base.id = "egress";
 		egress.variant.value.dimension = "egress";
 		card.charges.push(egress);
+		rehashScenario(incomplete);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
+		).toMatchObject({
+			ok: false,
+			code: "PRICING_MODEL_INCOMPLETE",
+		});
+	});
+
+	it("rejects fixed charges on active agreements without workloads", () => {
+		const incomplete = scenario();
+		const state = incomplete.state;
+		const card = incomplete.catalog?.rateCards[0];
+		if (state === undefined || card === undefined)
+			throw new Error("fixture state or rate card missing");
+		card.charges.push(
+			create(ChargeComponentSchema, {
+				base: {
+					id: "seat",
+					selectors: {},
+					fallback: false,
+					invoiceBehavior: "itemized",
+				},
+				variant: {
+					case: "fixed",
+					value: {
+						cadence: "monthly",
+						timing: "advance",
+						amount: { decimal: "10", currency: "USD" },
+						quantityDimension: "seat",
+						proration: "none",
+					},
+				},
+			}),
+		);
+		state.agreements.push(
+			clone(ProviderAgreementSchema, {
+				...state.agreements[0],
+				id: "agreement-b",
+			}),
+		);
 		rehashScenario(incomplete);
 		expect(
 			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),

@@ -249,28 +249,26 @@ export function quoteAvailablePricing(
 	}
 	const quote = quoteScenario(scenario);
 	if (!isQuoteVector(quote)) return failed(quote.code, quote.message);
-	// The rating kernel iterates product meters. A rate-card charge whose
-	// dimension is absent from that list would otherwise be silently skipped.
-	for (const workload of [...scenario.baseline, ...scenario.candidate]) {
-		const agreement = state.agreements.find(
-			(entry) => entry.id === workload.agreementRef,
-		);
-		if (agreement === undefined)
-			return failed(
-				"PRICING_MODEL_INCOMPLETE",
-				"workload agreement is missing",
-			);
+	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
+	const meterDimensions = new Set(dimensions);
+	for (const agreement of state.agreements) {
+		if (agreement.status !== "active") continue;
+		if (
+			agreement.productId !== scope.productId ||
+			agreement.tenantId !== scope.tenantId ||
+			agreement.providerAccountRef !== scope.providerAccountRef
+		) {
+			continue;
+		}
 		const rateCard = resolveRateCard(
 			catalog,
 			agreement,
 			scenario.at,
 			scenario.horizon,
 		);
-		const meterDimensions = new Set(dimensions);
-		const workloadsForAgreement = [
-			...scenario.baseline,
-			...scenario.candidate,
-		].filter((entry) => entry.agreementRef === workload.agreementRef);
+		const workloadsForAgreement = workloadsAll.filter(
+			(entry) => entry.agreementRef === agreement.id,
+		);
 		if (
 			rateCard.charges.some((charge) =>
 				rateCardChargeIncomplete(

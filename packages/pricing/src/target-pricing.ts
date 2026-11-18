@@ -356,7 +356,6 @@ export function quoteTargetPricing(
 			"TARGET_PRICING_INCOMPLETE",
 			"every target resource needs exactly one candidate and binding",
 		);
-	const used: { productId: string; agreementId: string }[] = [];
 	for (const workload of scenario.baseline) {
 		const products = catalog.products.filter(
 			(entry) => entry.id === workload.productRef,
@@ -392,7 +391,6 @@ export function quoteTargetPricing(
 				"TARGET_PRICING_INCOMPLETE",
 				"baseline usage must cover every declared meter without unmodeled dimensions",
 			);
-		used.push({ productId: product.id, agreementId: agreement.id });
 	}
 	for (const binding of model.bindings) {
 		const resource = inventory.resources.find(
@@ -449,7 +447,6 @@ export function quoteTargetPricing(
 				"TARGET_PRICING_INCOMPLETE",
 				"candidate usage must cover every declared meter without unmodeled dimensions",
 			);
-		used.push({ productId: product.id, agreementId: agreement.id });
 	}
 	const quote = quoteScenario(scenario);
 	if (!isQuoteVector(quote)) return refuse(quote.code, quote.message);
@@ -462,18 +459,27 @@ export function quoteTargetPricing(
 			"TARGET_PRICING_INCOMPLETE",
 			"joint target quote is incomplete",
 		);
-	for (const row of used) {
+	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
+	const inventoryProductIds = new Set(
+		inventory.resources.map((resource) => resource.productId),
+	);
+	for (const agreement of state.agreements) {
+		if (agreement.status !== "active") continue;
+		if (
+			agreement.tenantId !== inventory.tenantId ||
+			!inventoryProductIds.has(agreement.productId)
+		) {
+			continue;
+		}
 		const product = catalog.products.find(
-			(entry) => entry.id === row.productId,
+			(entry) => entry.id === agreement.productId,
 		);
-		const agreement = state.agreements.find(
-			(entry) => entry.id === row.agreementId,
-		);
-		if (product === undefined || agreement === undefined)
+		if (product === undefined) {
 			return refuse(
 				"TARGET_PRICING_INCOMPLETE",
-				"priced product or agreement is missing",
+				"priced product is missing",
 			);
+		}
 		const dimensions = new Set(product.meters.map((meter) => meter.dimension));
 		const rateCard = resolveRateCard(
 			catalog,
@@ -481,8 +487,8 @@ export function quoteTargetPricing(
 			scenario.at,
 			scenario.horizon,
 		);
-		const workloadsForAgreement = [...scenario.baseline, ...scenario.candidate].filter(
-			(entry) => entry.agreementRef === row.agreementId,
+		const workloadsForAgreement = workloadsAll.filter(
+			(entry) => entry.agreementRef === agreement.id,
 		);
 		if (
 			rateCard.charges.length === 0 ||
