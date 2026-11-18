@@ -333,6 +333,22 @@ a different source directory/revision while reusing an old ID does not request
 a new run. Relative workspace paths are portable; host absolute paths and
 provider-specific toolchain/environment defaults are not part of this contract.
 
+`@hobo/ci/testing` provides `createScriptedPipelineBackend` for tests of the
+same `PipelineBackend` interface. Supply a backend kind and optional handlers
+for opening a session, running steps, producing artifact bytes, closing, and
+observing final usage. The returned `port` can be passed to `executePipeline`
+or `PipelineScheduler`; `calls` is a copied history of operation names and
+identifiers, and `clear()` resets that history. Each factory call has its own
+history. Its `mocked` fidelity is compatible with HoBo's test-harness
+convention. A session aborts pending work and waits for it to settle before close
+completes, so asynchronous handlers must respond to their abort signal.
+Unscripted steps succeed with empty output; an unscripted artifact is missing.
+
+The scripted backend executes no commands and contacts no provider. Its
+results, artifact bytes, allocation behavior and usage observations are test
+inputs; they do not establish provider compatibility, real cancellation,
+durability or billing finality.
+
 ## Apply routing and budgets
 
 The Node coordinator `PipelineScheduler` from `@hobo/ci/scheduler` uses

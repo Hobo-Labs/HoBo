@@ -575,6 +575,12 @@ describe("discovery evidence boundaries", () => {
 			const doctor = fileURLToPath(new URL("../doctor.mts", import.meta.url));
 			const repaired = spawnSync(process.execPath, [doctor, "repair", "--project", "hobo", "--only", "build-surface-map,build-catalog", "--json", `--confirm-surface-current=${confirmation}`], { cwd: root, encoding: "utf8" });
 			assert.ok(!JSON.parse(repaired.stdout).findings.some((finding: { message: string }) => /confirm-surface-current/.test(finding.message)));
+			const snapshot = (name: string, flags: string[]) => spawnSync(process.execPath, [doctor, "snapshot", "--project", "hobo", "--out", path.join(root, name), "--json", ...flags], { cwd: root, encoding: "utf8" });
+			const unconfirmedSnapshot = snapshot("snapshot-unconfirmed", []);
+			assert.ok(JSON.parse(unconfirmedSnapshot.stdout).findings.some((finding: { message: string }) => /confirm-surface-current/.test(finding.message)));
+			const confirmedSnapshot = snapshot("snapshot-confirmed", [`--confirm-surface-current=${confirmation}`]);
+			assert.ok(!JSON.parse(confirmedSnapshot.stdout).findings.some((finding: { message: string }) => /confirm-surface-current/.test(finding.message)));
+			assert.ok(!JSON.parse(readFileSync(path.join(root, "snapshot-confirmed/doctor-report.json"), "utf8")).findings.some((finding: { message: string }) => /confirm-surface-current/.test(finding.message)));
 			const generate = fileURLToPath(new URL("../generate-feature.mts", import.meta.url));
 			const args = [generate, "--mode", "from-catalog", "--project", "hobo", "--personas", "developer", "--force-low-quality", `--confirm-surface-current=${confirmation}`];
 			const generated = spawnSync(process.execPath, args, { cwd: root, encoding: "utf8" });
@@ -586,6 +592,9 @@ describe("discovery evidence boundaries", () => {
 			const refused = spawnSync(process.execPath, args, { cwd: root, encoding: "utf8" });
 			assert.equal(refused.status, 2);
 			assert.match(refused.stderr, /outside primary-bin scope/);
+			writeFileSync(path.join(dir, "bin/hobo.mjs"), 'console.log("changed");\n');
+			const staleSnapshot = snapshot("snapshot-stale", [`--confirm-surface-current=${confirmation}`]);
+			assert.ok(JSON.parse(staleSnapshot.stdout).findings.some((finding: { message: string }) => /executable changed/.test(finding.message)));
 		});
 	});
 
