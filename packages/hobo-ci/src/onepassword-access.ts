@@ -1,6 +1,4 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
@@ -9,26 +7,11 @@ import {
 	ownerCaptureLine,
 } from "./owner-channel.js";
 import {
-	type CommandEnv,
 	ensureStoreCli,
 	type RunCommand,
 	type StoreCli,
 	StoreCliInstallError,
 } from "./store-cli.js";
-
-/**
- * Connect 1Password with as little manual provisioning as 1Password allows.
- *
- * 1. Its CLI (`op`): found on the machine, else installed from 1Password's
- *    official download into HoBo's tools directory.
- * 2. A session: an existing `op` session is used as it is; otherwise the
- *    owner signs in once with `op signin`, which their 1Password app
- *    approves.
- * 3. HoBo's own service account, created with the CLI: scoped to the one
- *    vault (read and write), expiring in a day. 1Password has no OIDC sign-in
- *    for service accounts (its Credential Broker serves CI workloads), so a
- *    short-lived, vault-scoped account is the least standing credential.
- */
 
 // public-contract: the 1Password CLI release HoBo installs.
 export const ONE_PASSWORD_CLI_VERSION = "2.30.3";
@@ -76,7 +59,7 @@ export function onePasswordCli(platform: Platform): StoreCli {
 export interface OnePasswordAccessOptions {
 	readonly family: "ci" | "cd";
 	readonly vaultId: string;
-	readonly run: RunCommand;
+	readonly run?: RunCommand;
 	readonly which: (bin: string) => Promise<string | undefined>;
 	readonly toolsDir: string;
 	readonly emit: (line: string) => void;
@@ -86,18 +69,9 @@ export interface OnePasswordAccessOptions {
 	readonly exists?: (file: string) => boolean;
 	/** How to reach an owner who is not at this machine (a remote dev box). */
 	readonly owner?: OwnerChannel;
-	/** The account's sign-in address; 1Password's US cloud by default. */
-	readonly signInAddress?: string;
-	/** Where a remote sign-in keeps its throwaway CLI config (tests). */
-	readonly tempDir?: () => Promise<string>;
 }
 
-// public-contract: the capture names a remote 1Password sign-in hands to the waiting run.
-export const ONE_PASSWORD_SIGN_IN_CAPTURES = [
-	"ONEPASSWORD_EMAIL",
-	"ONEPASSWORD_SECRET_KEY",
-	"ONEPASSWORD_PASSWORD",
-] as const;
+export const ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE = "OP_SERVICE_ACCOUNT_TOKEN";
 
 export type OnePasswordAccess =
 	| { readonly kind: "ready"; readonly token: string }
@@ -125,31 +99,48 @@ export async function provisionOnePasswordAccess(
 	const cli = onePasswordCli(options.platform ?? currentPlatform());
 	const exists = options.exists ?? existsSync;
 	const remote = !options.interactive;
-	if (
-		remote &&
-		options.owner !== undefined &&
-		options.owner.privateSubprocessAllowed !== true
-	)
-		return refused(
-			"PRIVATE_PROCESS_UNAVAILABLE",
-			"This session cannot provision a 1Password connection without exposing owner settings to subprocess arguments.",
-			[
-				"Use an already-connected 1Password session or a private owner setup environment.",
-			],
-		);
-	if (remote && options.owner === undefined)
-		return refused(
-			"SIGN_IN",
-			"1Password needs you to sign in once, and this run has no way to reach you for it.",
-			[
-				"Run hobo up through the HoBo MCP server (its cd and ci tools): its secret form takes your 1Password sign-in straight to this run.",
-			],
-		);
+	if (remote) {
+		if (options.owner === undefined)
+			return refused(
+				"SIGN_IN",
+				"1Password needs a private owner sign-in for this session.",
+				[
+					"Run through the HoBo MCP server to connect an existing 1Password service account in the private owner form.",
+				],
+			);
+		const given = await captureAll(options.owner, [
+			{
+				name: ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
+				title: "existing 1Password token",
+				instructions:
+					"Use an existing vault-scoped service account for this session.",
+			},
+		]).catch(() => undefined);
+		const token = given?.[0];
+		if (!token)
+			return refused(
+				"SIGN_IN",
+				"1Password needs an existing service account for this session.",
+				[
+					ownerCaptureLine(
+						ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
+						"https://www.1password.dev/service-accounts/security",
+					),
+					"Use the private owner form to connect an existing service account.",
+				],
+			);
+		return { kind: "ready", token };
+	}
+	const run = options.run;
+	if (run === undefined)
+		return refused("CLI_INSTALL", "The 1Password CLI runner is unavailable.", [
+			"Retry with a working local 1Password CLI integration.",
+		]);
 	let op: string;
 	try {
 		op = (
 			await ensureStoreCli(cli, {
-				run: options.run,
+				run,
 				which: options.which,
 				toolsDir: options.toolsDir,
 				exists,
@@ -161,114 +152,30 @@ export async function provisionOnePasswordAccess(
 			"Run again: HoBo installs the 1Password CLI into its own tools directory.",
 		]);
 	}
-	const signedIn = async () => (await options.run(op, ["whoami"])).code === 0;
-	if (await signedIn()) return createServiceAccount(op, []);
-	if (!remote) {
-		options.emit("Signing in to 1Password: approve it in your 1Password app.");
-		const signin = await options.run(op, ["signin"], { interactive: true });
-		if (signin.code !== 0 || !(await signedIn()))
-			return refused("SIGN_IN", "Signing in to 1Password did not complete.", [
-				"Run again and approve the sign-in in your 1Password app.",
-			]);
-		return createServiceAccount(op, []);
-	}
-	// A remote box: no 1Password app here to approve a sign-in. The owner
-	// hands their sign-in to this run through the HoBo MCP App's secret
-	// form; the CLI signs in with it in a throwaway configuration, HoBo
-	// creates its own service account, and the configuration is deleted.
-	const address = options.signInAddress ?? "my.1password.com";
-	const guide = `https://${address}/profile`;
-	const askAgain = (message: string) =>
-		refused("SIGN_IN", message, [
-			...ONE_PASSWORD_SIGN_IN_CAPTURES.map((name) =>
-				ownerCaptureLine(name, guide),
-			),
-			`Hand over your 1Password sign-in for ${address} in the HoBo MCP App's secret form: your email, your Secret Key (in your 1Password app: your account → Secret Key, or your Emergency Kit) and your password. They go only to this run, which uses them once and keeps nothing.`,
-			"Then run again: HoBo creates its own service account for the vault.",
+	const signedIn = async () => (await run(op, ["whoami"])).code === 0;
+	if (await signedIn()) return createServiceAccount(op, run);
+	options.emit("Signing in to 1Password: approve it in your 1Password app.");
+	const signin = await run(op, ["signin"], { interactive: true });
+	if (signin.code !== 0 || !(await signedIn()))
+		return refused("SIGN_IN", "Signing in to 1Password did not complete.", [
+			"Run again and approve the sign-in in your 1Password app.",
 		]);
-	const owner = options.owner;
-	const given =
-		owner === undefined
-			? undefined
-			: await captureAll(owner, [
-					{
-						name: "ONEPASSWORD_EMAIL",
-						title: "1Password email",
-						instructions: `The email you sign in to ${address} with.`,
-					},
-					{
-						name: "ONEPASSWORD_SECRET_KEY",
-						title: "1Password Secret Key",
-						instructions:
-							"Your Secret Key (A3-…): in your 1Password app, your account details, or your Emergency Kit.",
-					},
-					{
-						name: "ONEPASSWORD_PASSWORD",
-						title: "1Password password",
-						instructions: "Your 1Password account password.",
-					},
-				]);
-	if (given === undefined)
-		return askAgain(
-			"1Password needs you to sign in once; from a remote box there is no 1Password app here to approve it.",
-		);
-	const [email = "", secretKey = "", password = ""] = given;
-	const configDir = await (
-		options.tempDir ?? (() => mkdtemp(path.join(tmpdir(), "hobo-op-")))
-	)();
-	try {
-		const config: CommandEnv = [["OP_CONFIG_DIR", configDir]];
-		const added = await options.run(
-			op,
-			[
-				"account",
-				"add",
-				"--address",
-				address,
-				"--email",
-				email,
-				"--shorthand",
-				"hobo",
-				"--signin",
-				"--raw",
-			],
-			{
-				env: [...config, ["OP_SECRET_KEY", secretKey]],
-				input: `${password}\n`,
-			},
-		);
-		const session = added.stdout.trim();
-		if (added.code !== 0 || session === "")
-			return askAgain(
-				"1Password did not accept that sign-in. Check the email, Secret Key and password (an account with two-step verification also needs its one-time code, which this sign-in cannot take).",
-			);
-		return await createServiceAccount(op, [
-			...config,
-			["OP_SESSION_hobo", session],
-		]);
-	} finally {
-		await rm(configDir, { recursive: true, force: true });
-	}
+	return createServiceAccount(op, run);
 
 	async function createServiceAccount(
 		op: string,
-		env: CommandEnv,
+		execute: RunCommand,
 	): Promise<OnePasswordAccess> {
-		const account = await options.run(
-			op,
-			[
-				"service-account",
-				"create",
-				`hobo-${options.family}`,
-				"--vault",
-				`${options.vaultId}:read_items,write_items`,
-				"--expires-in",
-				"24h",
-				"--raw",
-				...(env.length > 0 ? ["--account", "hobo"] : []),
-			],
-			env.length > 0 ? { env } : undefined,
-		);
+		const account = await execute(op, [
+			"service-account",
+			"create",
+			`hobo-${options.family}`,
+			"--vault",
+			`${options.vaultId}:read_items,write_items`,
+			"--expires-in",
+			"24h",
+			"--raw",
+		]);
 		const token = account.stdout.trim();
 		if (account.code !== 0 || token === "")
 			return refused(

@@ -63,6 +63,12 @@ even if another credential is available. Selecting the egress proxy sends its
 placeholder rather than a token retained from another sign-in choice.
 The intended relay connection reads credentials with its own workload identity
 (OIDC); it still needs an end-to-end observation with the configured store.
+For a remote owner hand-off, an existing 1Password service account can be
+connected through the private owner form. Its credential stays in the scoped
+owner session and is used by the in-process SDK; the remote path does not run
+the 1Password CLI with owner information in its arguments. Local owner-terminal
+setup continues to use the owner's CLI session.
+
 When updating an existing 1Password item, HoBo preserves its other metadata and
 refuses the update if the item changed since it was read. Displayed 1Password
 references point to the item's `password` field.

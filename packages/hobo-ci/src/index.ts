@@ -105,7 +105,7 @@ export {
 export {
 	currentPlatform,
 	ONE_PASSWORD_CLI_VERSION,
-	ONE_PASSWORD_SIGN_IN_CAPTURES,
+	ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
 	type OnePasswordAccess,
 	type OnePasswordAccessOptions,
 	onePasswordCli,

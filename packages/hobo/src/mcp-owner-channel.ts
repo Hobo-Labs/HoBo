@@ -7,7 +7,7 @@ import {
 	createOwnerJobs,
 	GITHUB_APP_CODE_CAPTURE,
 	INFISICAL_CLI_SESSION_CAPTURE,
-	ONE_PASSWORD_SIGN_IN_CAPTURES,
+	ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
 	type OwnerChannel,
 	type OwnerJobs,
 } from "@hobo/hobo-ci";
@@ -229,7 +229,6 @@ export function createMcpOwnerChannel(
 			waiting.get(name)?.value !== undefined,
 	});
 	const owner: McpOwnerChannel = {
-		privateSubprocessAllowed: false,
 		...(options.storeSettings
 			? { storeSettings: options.storeSettings }
 			: undefined),
@@ -399,22 +398,10 @@ export const OWNER_HANDOFF_SPECS: readonly ParsedSecretCaptureSpec[] =
 			{ minBytes: 20, maxBytes: 256, pattern: "^[A-Za-z0-9]{20,}$" },
 		),
 		handoff(
-			ONE_PASSWORD_SIGN_IN_CAPTURES[0],
-			"1Password email",
-			"The email you sign in to 1Password with.",
-			{ minBytes: 3, maxBytes: 254, pattern: "^[^@\\s]+@[^@\\s]+$" },
-		),
-		handoff(
-			ONE_PASSWORD_SIGN_IN_CAPTURES[1],
-			"1Password Secret Key",
-			"Starts with A3-: in your 1Password app or Emergency Kit.",
-			{ minBytes: 20, maxBytes: 64, pattern: "^A3-[A-Z0-9-]{20,60}$" },
-		),
-		handoff(
-			ONE_PASSWORD_SIGN_IN_CAPTURES[2],
-			"1Password password",
-			"Used once to sign in; never stored.",
-			{ minBytes: 1, maxBytes: 1024, pattern: "" },
+			ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
+			"existing 1Password token",
+			"Use an existing vault-scoped credential for this session.",
+			{ minBytes: 1, maxBytes: 16384, pattern: "" },
 		),
 		handoff(
 			"HOBO_CI_PUBLIC_URL",

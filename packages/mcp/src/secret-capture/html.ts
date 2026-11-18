@@ -148,6 +148,7 @@ code {
   border-radius: 4px;
   padding: 0 4px;
 }
+code.handoff-label { font: inherit; background: transparent; border: 0; padding: 0; }
 label { display: block; margin: 0 0 8px; font-weight: 700; }
 input, textarea {
   display: block;
@@ -222,7 +223,8 @@ const SCRIPT = `(function () {
     ticket = next;
     el("capture-label").textContent = next.label || next.name;
     el("capture-purpose").textContent = next.purpose || "";
-    el("capture-name").textContent = next.name;
+    el("capture-name").textContent = next.target === "handoff" ? (next.label || next.name) : next.name;
+    el("capture-name").classList.toggle("handoff-label", next.target === "handoff");
     el("capture-waiting").hidden = true;
     // A hand-over goes only to the run waiting for it, never to a store.
     var handoff = next.target === "handoff";

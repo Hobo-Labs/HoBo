@@ -56,6 +56,9 @@ ticket's state; `end_secret_capture {}` closes open tickets and
 ends the writer session. The resource is `text/html;profile=mcp-app` with
 empty CSP domain lists.
 
+The form labels an owner hand-off with its human-readable label. A secret
+destined for a store is labelled with its stored name.
+
 **Channels.** The host's `initialize` capabilities decide: an MCP Apps host
 renders the form; a client with `elicitation.url` gets
 `URLElicitationRequiredError` (-32042) naming a `127.0.0.1` page this process
