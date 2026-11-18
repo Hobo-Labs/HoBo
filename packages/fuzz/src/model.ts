@@ -140,13 +140,34 @@ export type ModelCommand =
 
 export class ControlModel {
 	clock = 0;
-	readonly bindles = new Map<string, BindleSlot>();
-	readonly capabilities = new Map<string, Capability>();
-	readonly resources = new Map<string, OwnedResource>();
+	#bindles = new Map<string, BindleSlot>();
+	#capabilities = new Map<string, Capability>();
+	#resources = new Map<string, OwnedResource>();
 	#eventLog: ModelEvent[] = [];
-	readonly snapshots = new Map<number, string>();
+	#snapshots = new Map<number, string>();
 	lastRollbackTarget: number | null = null;
 	private replayBaseline: string | undefined;
+
+	get bindles(): Map<string, BindleSlot> {
+		return new Map([...this.#bindles].map(([id, row]) => [id, { ...row }]));
+	}
+
+	get capabilities(): Map<string, Capability> {
+		return new Map(
+			[...this.#capabilities].map(([id, row]) => [
+				id,
+				{ ...row, verbs: [...row.verbs] },
+			]),
+		);
+	}
+
+	get resources(): Map<string, OwnedResource> {
+		return new Map([...this.#resources].map(([id, row]) => [id, { ...row }]));
+	}
+
+	get snapshots(): Map<number, string> {
+		return new Map(this.#snapshots);
+	}
 
 	get events(): ModelEvent[] {
 		return this.#eventLog.map((event) => ({
@@ -190,7 +211,7 @@ export class ControlModel {
 
 	snapshot(): number {
 		const at = this.clock;
-		this.snapshots.set(at, this.serialize());
+		this.#snapshots.set(at, this.serialize());
 		this.#appendEvent("system", "snapshot.taken", { at: String(at) });
 		return at;
 	}
@@ -199,9 +220,9 @@ export class ControlModel {
 		const blob: SnapshotBlob = {
 			clock: this.clock,
 			fingerprint: this.fingerprint(),
-			bindles: [...this.bindles.entries()],
-			capabilities: [...this.capabilities.entries()],
-			resources: [...this.resources.entries()].map(([id, row]) => [
+			bindles: [...this.#bindles.entries()],
+			capabilities: [...this.#capabilities.entries()],
+			resources: [...this.#resources.entries()].map(([id, row]) => [
 				id,
 				{ ...row },
 			]),
@@ -213,20 +234,20 @@ export class ControlModel {
 		// Parse and verify detached rows before changing the live model.
 		const blob = parseSnapshot(raw);
 		const candidate = new ControlModel();
-		for (const [id, row] of blob.bindles) candidate.bindles.set(id, row);
+		for (const [id, row] of blob.bindles) candidate.#bindles.set(id, row);
 		for (const [id, row] of blob.capabilities)
-			candidate.capabilities.set(id, row);
-		for (const [id, row] of blob.resources) candidate.resources.set(id, row);
+			candidate.#capabilities.set(id, row);
+		for (const [id, row] of blob.resources) candidate.#resources.set(id, row);
 		if (candidate.fingerprint() !== blob.fingerprint) {
 			throw new Error("fuzz.invalid_snapshot");
 		}
 		const pristine =
 			this.clock === 0 &&
 			this.#eventLog.length === 0 &&
-			this.snapshots.size === 0 &&
-			this.bindles.size === 0 &&
-			this.capabilities.size === 0 &&
-			this.resources.size === 0 &&
+			this.#snapshots.size === 0 &&
+			this.#bindles.size === 0 &&
+			this.#capabilities.size === 0 &&
+			this.#resources.size === 0 &&
 			this.lastRollbackTarget === null &&
 			this.replayBaseline === undefined;
 		if (!Number.isSafeInteger(this.clock) || this.clock < 0) {
@@ -237,26 +258,26 @@ export class ControlModel {
 			throw new Error("fuzz.model_clock_exhausted");
 		}
 		this.clock = pristine ? blob.clock : baseClock + 1;
-		this.bindles.clear();
-		this.capabilities.clear();
-		this.resources.clear();
-		for (const [id, row] of blob.bindles) this.bindles.set(id, row);
-		for (const [id, row] of blob.capabilities) this.capabilities.set(id, row);
-		for (const [id, row] of blob.resources) this.resources.set(id, row);
+		this.#bindles.clear();
+		this.#capabilities.clear();
+		this.#resources.clear();
+		for (const [id, row] of blob.bindles) this.#bindles.set(id, row);
+		for (const [id, row] of blob.capabilities) this.#capabilities.set(id, row);
+		for (const [id, row] of blob.resources) this.#resources.set(id, row);
 		if (pristine) this.replayBaseline = raw;
 		else this.#appendEvent("system", "model.restored", { snapshot: raw });
 	}
 
 	fingerprint(tenantId?: string): string {
-		const bindles = [...this.bindles.values()]
+		const bindles = [...this.#bindles.values()]
 			.filter((row) => tenantId === undefined || row.tenantId === tenantId)
 			.map((row) => `${row.id}:${row.manifestHash}`)
 			.sort();
-		const caps = [...this.capabilities.values()]
+		const caps = [...this.#capabilities.values()]
 			.filter((row) => tenantId === undefined || row.tenantId === tenantId)
 			.map((row) => `${row.id}:${[...row.verbs].sort().join(",")}`)
 			.sort();
-		const resources = [...this.resources.values()]
+		const resources = [...this.#resources.values()]
 			.filter(
 				(row) =>
 					row.status !== "destroyed" &&
@@ -268,7 +289,7 @@ export class ControlModel {
 	}
 
 	ownedCount(tenantId?: string): number {
-		return [...this.resources.values()].filter(
+		return [...this.#resources.values()].filter(
 			(row) =>
 				row.status !== "destroyed" &&
 				(tenantId === undefined || row.tenantId === tenantId),
@@ -280,8 +301,8 @@ export class ControlModel {
 		bindleId: string,
 		manifestHash: string,
 	): OpResult {
-		const existing = this.bindles.get(bindleId);
-		const foreignResource = [...this.resources.values()].some(
+		const existing = this.#bindles.get(bindleId);
+		const foreignResource = [...this.#resources.values()].some(
 			(row) =>
 				row.bindleId === bindleId &&
 				row.status !== "destroyed" &&
@@ -296,7 +317,7 @@ export class ControlModel {
 			return { ok: false, reason: "owned-by-other-tenant" };
 		}
 		const createdAt = this.tick();
-		this.bindles.set(bindleId, {
+		this.#bindles.set(bindleId, {
 			id: bindleId,
 			tenantId,
 			manifestHash,
@@ -312,14 +333,14 @@ export class ControlModel {
 		verbs: readonly Verb[],
 	): void {
 		const captured = captureVerbs(verbs);
-		const existing = this.capabilities.get(capabilityId);
+		const existing = this.#capabilities.get(capabilityId);
 		if (existing && existing.tenantId !== tenantId) {
 			this.tick();
 			this.#appendEvent(tenantId, "capability.add-refused", { capabilityId });
 			return;
 		}
 		this.tick();
-		this.capabilities.set(capabilityId, {
+		this.#capabilities.set(capabilityId, {
 			id: capabilityId,
 			tenantId,
 			verbs: captured,
@@ -336,7 +357,7 @@ export class ControlModel {
 		keep: readonly Verb[],
 	): void {
 		const captured = captureVerbs(keep);
-		const cap = this.capabilities.get(capabilityId);
+		const cap = this.#capabilities.get(capabilityId);
 		if (!cap) return;
 		if (cap.tenantId !== tenantId) {
 			this.tick();
@@ -369,7 +390,7 @@ export class ControlModel {
 		idempotencyKey: string,
 		opts: { fail?: boolean } = {},
 	): OwnedResource {
-		const bindle = this.bindles.get(bindleId);
+		const bindle = this.#bindles.get(bindleId);
 		if (!bindle || bindle.tenantId !== tenantId) {
 			this.tick();
 			this.#appendEvent(tenantId, "resource.apply-refused", {
@@ -387,7 +408,7 @@ export class ControlModel {
 				applyCount: 0,
 			};
 		}
-		const existing = [...this.resources.values()].find(
+		const existing = [...this.#resources.values()].find(
 			(row) =>
 				row.idempotencyKey === idempotencyKey &&
 				row.tenantId === tenantId &&
@@ -408,7 +429,7 @@ export class ControlModel {
 				retry: "true",
 				status: existing.status,
 			});
-			return existing;
+			return { ...existing };
 		}
 		const createdAt = this.tick();
 		const resource: OwnedResource = {
@@ -420,7 +441,7 @@ export class ControlModel {
 			status: opts.fail === true ? "failed" : "ready",
 			applyCount: 1,
 		};
-		this.resources.set(resource.id, resource);
+		this.#resources.set(resource.id, resource);
 		this.#appendEvent(tenantId, "resource.applied", {
 			id: resource.id,
 			bindleId,
@@ -428,14 +449,22 @@ export class ControlModel {
 			retry: "false",
 			status: resource.status,
 		});
-		return resource;
+		return { ...resource };
 	}
 
 	findByKey(
 		tenantId: string,
 		idempotencyKey: string,
 	): OwnedResource | undefined {
-		return [...this.resources.values()].find(
+		const resource = this.#findByKey(tenantId, idempotencyKey);
+		return resource ? { ...resource } : undefined;
+	}
+
+	#findByKey(
+		tenantId: string,
+		idempotencyKey: string,
+	): OwnedResource | undefined {
+		return [...this.#resources.values()].find(
 			(row) =>
 				row.tenantId === tenantId &&
 				row.status !== "destroyed" &&
@@ -444,7 +473,7 @@ export class ControlModel {
 	}
 
 	interruptApply(tenantId: string, idempotencyKey: string): void {
-		const resource = this.findByKey(tenantId, idempotencyKey);
+		const resource = this.#findByKey(tenantId, idempotencyKey);
 		if (!resource) return;
 		this.tick();
 		resource.status = "failed";
@@ -455,7 +484,7 @@ export class ControlModel {
 	}
 
 	destroy(tenantId: string, bindleId: string): OpResult {
-		const bindle = this.bindles.get(bindleId);
+		const bindle = this.#bindles.get(bindleId);
 		if (bindle && bindle.tenantId !== tenantId) {
 			this.tick();
 			this.#appendEvent(tenantId, "bindle.destroy-refused", {
@@ -465,7 +494,7 @@ export class ControlModel {
 			return { ok: false, reason: "owned-by-other-tenant" };
 		}
 		this.tick();
-		for (const resource of this.resources.values()) {
+		for (const resource of this.#resources.values()) {
 			if (resource.tenantId === tenantId && resource.bindleId === bindleId) {
 				resource.status = "destroyed";
 			}
@@ -475,7 +504,7 @@ export class ControlModel {
 	}
 
 	rollback(tenantId: string, targetClock: number): InvariantVerdict {
-		const shot = this.snapshots.get(targetClock);
+		const shot = this.#snapshots.get(targetClock);
 		if (shot === undefined) {
 			return verdict(
 				"rollback-not-newer",
@@ -487,7 +516,7 @@ export class ControlModel {
 		const blob = JSON.parse(shot) as SnapshotBlob;
 		const expected = tenantFingerprint(blob, tenantId);
 		this.tick();
-		this.restoreTenant(tenantId, blob);
+		this.#restoreTenant(tenantId, blob);
 		this.lastRollbackTarget = targetClock;
 		this.#appendEvent(tenantId, "rollback", { target: String(targetClock) });
 		const restored = this.fingerprint(tenantId);
@@ -501,31 +530,31 @@ export class ControlModel {
 		);
 	}
 
-	restoreTenant(tenantId: string, blob: SnapshotBlob): void {
-		for (const [id, row] of this.bindles.entries()) {
-			if (row.tenantId === tenantId) this.bindles.delete(id);
+	#restoreTenant(tenantId: string, blob: SnapshotBlob): void {
+		for (const [id, row] of this.#bindles.entries()) {
+			if (row.tenantId === tenantId) this.#bindles.delete(id);
 		}
-		for (const [id, row] of this.capabilities.entries()) {
-			if (row.tenantId === tenantId) this.capabilities.delete(id);
+		for (const [id, row] of this.#capabilities.entries()) {
+			if (row.tenantId === tenantId) this.#capabilities.delete(id);
 		}
-		for (const [id, row] of this.resources.entries()) {
-			if (row.tenantId === tenantId) this.resources.delete(id);
+		for (const [id, row] of this.#resources.entries()) {
+			if (row.tenantId === tenantId) this.#resources.delete(id);
 		}
 		for (const [id, row] of blob.bindles) {
-			if (row.tenantId === tenantId) this.bindles.set(id, row);
+			if (row.tenantId === tenantId) this.#bindles.set(id, row);
 		}
 		for (const [id, row] of blob.capabilities) {
 			if (row.tenantId === tenantId) {
-				this.capabilities.set(id, { ...row, verbs: [...row.verbs] });
+				this.#capabilities.set(id, { ...row, verbs: [...row.verbs] });
 			}
 		}
 		for (const [id, row] of blob.resources) {
-			if (row.tenantId === tenantId) this.resources.set(id, { ...row });
+			if (row.tenantId === tenantId) this.#resources.set(id, { ...row });
 		}
 	}
 
 	changeTenant(bindleId: string, toTenantId: string): void {
-		const bindle = this.bindles.get(bindleId);
+		const bindle = this.#bindles.get(bindleId);
 		this.tick();
 		this.#appendEvent(bindle?.tenantId ?? "system", "tenant.change-refused", {
 			bindleId,
@@ -603,7 +632,7 @@ export class ControlModel {
 			case "rollback": {
 				const target =
 					command.targetClock ??
-					[...this.snapshots.keys()].sort((a, b) => a - b)[0];
+					[...this.#snapshots.keys()].sort((a, b) => a - b)[0];
 				if (target === undefined) return undefined;
 				return this.rollback(command.tenantId, target);
 			}
@@ -835,7 +864,9 @@ export function verdict(
 
 export function checkInvariants(world: ControlModel): InvariantVerdict[] {
 	const byKey = new Map<string, OwnedResource[]>();
-	for (const resource of world.resources.values()) {
+	const resources = [...world.resources.values()];
+	const bindles = world.bindles;
+	for (const resource of resources) {
 		if (resource.status === "destroyed") continue;
 		const key = `${resource.tenantId}:${resource.idempotencyKey}`;
 		const bag = byKey.get(key) ?? [];
@@ -845,9 +876,9 @@ export function checkInvariants(world: ControlModel): InvariantVerdict[] {
 	const dup = [...byKey.values()].find((bag) => bag.length > 1);
 	const replayed = world.replay();
 	const live = world.fingerprint();
-	const crossed = [...world.resources.values()].find((resource) => {
+	const crossed = resources.find((resource) => {
 		if (resource.status === "destroyed") return false;
-		const bindle = world.bindles.get(resource.bindleId);
+		const bindle = bindles.get(resource.bindleId);
 		return Boolean(bindle && bindle.tenantId !== resource.tenantId);
 	});
 

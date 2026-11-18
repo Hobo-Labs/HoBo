@@ -207,6 +207,66 @@ describe("event history ownership", () => {
 	});
 });
 
+describe("oracle state view ownership", () => {
+	it("interrupts the stored resource rather than a detached lookup result", () => {
+		const model = new ControlModel();
+		model.createBindle(TENANT, "b1", "sha256:a");
+		model.apply(TENANT, "b1", "k1");
+		model.interruptApply(TENANT, "k1");
+		expect(model.findByKey(TENANT, "k1")?.status).toBe("failed");
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("keeps generated state and checkpoints isolated from returned views", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.constantFrom(...ALL_VERBS), { maxLength: 8 }),
+				fc.boolean(),
+				(verbs, fail) => {
+					const model = new ControlModel();
+					model.createBindle(TENANT, "b1", "sha256:a");
+					model.addCapability(TENANT, "c1", verbs);
+					const returned = model.apply(TENANT, "b1", "k1", { fail });
+					const retried = model.apply(TENANT, "b1", "k1", { fail });
+					const checkpoint = model.snapshot();
+					const savedCheckpoint = model.snapshots.get(checkpoint);
+					const before = model.serialize();
+					const history = model.events;
+					const bindles = model.bindles;
+					const capabilities = model.capabilities;
+					const resources = model.resources;
+					const snapshots = model.snapshots;
+					const slot = bindles.get("b1");
+					const capability = capabilities.get("c1");
+					const resource = resources.get(returned.id);
+					const found = model.findByKey(TENANT, "k1");
+					if (!slot || !capability || !resource || !found)
+						throw new Error("missing state");
+					// SAFETY: these edits deliberately mutate returned snapshots.
+					(slot as { manifestHash: string }).manifestHash = "changed";
+					// SAFETY: this exercises a runtime caller mutating a readonly list.
+					(capability.verbs as string[]).push("query");
+					resource.applyCount += 10;
+					found.status = fail ? "ready" : "failed";
+					returned.applyCount += 100;
+					retried.applyCount += 1000;
+					snapshots.set(checkpoint, "corrupt");
+					bindles.clear();
+					capabilities.clear();
+					resources.clear();
+					expect(model.serialize()).toBe(before);
+					expect(model.events).toEqual(history);
+					expect(model.snapshots.get(checkpoint)).toBe(savedCheckpoint);
+					expect("restoreTenant" in model).toBe(false);
+					expect(model.rollback(TENANT, checkpoint).ok).toBe(true);
+					expect(model.replay()).toBe(model.fingerprint());
+				},
+			),
+			{ numRuns: 100 },
+		);
+	});
+});
+
 describe("command dispatch", () => {
 	function drive(model: ControlModel, commands: unknown[]) {
 		for (const command of commands) {

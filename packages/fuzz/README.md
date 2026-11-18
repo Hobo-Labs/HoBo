@@ -64,5 +64,7 @@ destroy, and replay. Oracles include:
   so later caller edits do not change the oracle or its replay history
 - public event appends advance the clock, replay-owned event kinds cannot be
   emitted as free-form notes, and event history reads return detached snapshots
+- resource, capability, bindle and checkpoint reads return detached views;
+  editing them does not change the oracle's live state
 - interrupt after destroy does not revive a resource
 - apply after destroy recreates instead of leaving a destroyed hole
