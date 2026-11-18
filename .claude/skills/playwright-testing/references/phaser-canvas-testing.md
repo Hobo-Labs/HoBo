@@ -17,32 +17,31 @@ Common nondeterminism sources:
 When `?test=1` query param (or build-time flag) is enabled:
 
 ```javascript
-// In game initialization
-const isTestMode = new URLSearchParams(window.location.search).has('test');
+const params = new URLSearchParams(window.location.search);
+const isTestMode = params.has('test');
 
 if (isTestMode) {
-  // 1. Seed RNG
-  const seed = parseInt(params.get('seed')) || 12345;
-  Math.random = seededRandom(seed);
+  const seed = Number.parseInt(params.get('seed') ?? '', 10) || 12345;
+  const random = new Phaser.Math.RandomDataGenerator([String(seed)]);
+  Math.random = () => random.frac();
 
-  // 2. Fixed timestep
   game.loop.targetFps = 60;
-  game.loop.forceSetTimeOut = true; // Consistent frame timing
+  game.loop.forceSetTimeOut = true;
 
-  // 3. Disable visual noise
   disableCameraShake();
   disableParticles();
   disableScreenFlash();
 
-  // 4. Ensure assets preloaded before interaction
   await preloadAllAssets();
 }
 ```
 
 ## Implementing the Test Seam
 
+Set readiness only after preload, the first scene's creation, and its first
+render. The game supplies the state readers and seed function used below.
+
 ```javascript
-// Add to your game's boot or create phase
 window.__TEST__ = {
   ready: false,
   seed: null,
@@ -60,17 +59,13 @@ window.__TEST__ = {
   commands: {
     reset: () => game.scene.start('MainMenu'),
     seed: (n) => { seedRNG(n); window.__TEST__.seed = n; },
-    skipIntro: () => game.scene.start('Gameplay'),
-    advanceFrame: () => game.loop.step(16.67)
-  }
+    skipIntro: () => game.scene.start('Gameplay')
+  },
+  markReady: () => { window.__TEST__.ready = true; }
 };
 
-// Set ready after:
-// 1. Preload completed
-// 2. First scene created
-// 3. First render tick occurred
-game.events.on('ready', () => {
-  window.__TEST__.ready = true;
+game.events.on('postrender', () => {
+  window.__TEST__.frameCount += 1;
 });
 ```
 
@@ -104,7 +99,6 @@ Before comparing screenshots:
 
 3. **Wait for stable frame:**
    ```javascript
-   // Via browser_evaluate
    () => window.__TEST__.ready && window.__TEST__.frameCount >= 10
    ```
 
@@ -138,7 +132,6 @@ const config = {
   physics: {
     default: 'arcade',
     arcade: {
-      // Fixed timestep for deterministic physics
       fps: 60,
       timeScale: 1
     }
@@ -149,15 +142,12 @@ const config = {
 ### Seeding Phaser's RNG
 
 ```javascript
-// Phaser has built-in seeded random
 const rnd = new Phaser.Math.RandomDataGenerator([seed.toString()]);
-// Use rnd.frac(), rnd.between(), etc. instead of Math.random()
 ```
 
 ### Waiting for Asset Load
 
 ```javascript
-// In preload scene
 this.load.on('complete', () => {
   window.__TEST__.assetsLoaded = true;
 });
@@ -166,8 +156,6 @@ this.load.on('complete', () => {
 ### Exposing Entity State Safely
 
 ```javascript
-// Don't expose: this.player (Sprite instance)
-// Do expose:
 window.__TEST__.state = () => ({
   player: {
     x: Math.round(this.player.x),
