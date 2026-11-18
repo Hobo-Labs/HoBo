@@ -42,10 +42,12 @@ Developer-supplied single-offering and whole-target models use
 `pricing-rating/v2`, which orders identifiers by UTF-16 code units instead of
 locale collation. The version is included in the quote and its hash. Callers
 must use the same algorithm for their baseline entitlement calculation.
-`quoteScenario` and `quoteScenarioJson` retain the earlier v1 behavior for
-existing replay and contract consumers; `quoteScenarioV2` is the explicit
-deterministic entry point. Reassess and reconcile any outstanding reservations
-before changing the algorithm used for an existing financial operation.
+`quoteScenario` and `quoteScenarioJson` retain the v1 ordering and rating
+formula, but added input, tenancy, product and selector checks can reject
+historical v1 inputs. Exact historical replay requires the original
+implementation. `quoteScenarioV2` is the explicit deterministic entry point
+for new target pricing. Reassess and reconcile outstanding reservations before
+changing the algorithm used for an existing financial operation.
 V2 validates supplied UTC timestamps to millisecond precision and orders rate
 schedules, grant expiries and latest measurements by instant. It rejects invalid
 calendar dates, finer precision, and conflicting latest measurements at the same
@@ -99,8 +101,9 @@ those claims to ledger micros.
 V2 refuses rebalancing, migration and cancellation scenarios, candidate
 removals, and source agreement references until source-side obligations, fees
 and any allowed refunds can be included in the amounts used for routing and
-budget admission. A cancellation denied by policy remains denied. V1 retains
-its existing behavior for replay.
+budget admission. A cancellation denied by policy remains denied. For inputs
+that it accepts, V1 retains its former source-action calculation; it is not
+sufficient for new budget admission.
 Whole-target pricing requires a separate `action: "destroy"` scenario for a
 destroy operation. It must explicitly set `destroyCancelsAgreement: false`,
 have no source agreement IDs, and represent all destroy charges as added

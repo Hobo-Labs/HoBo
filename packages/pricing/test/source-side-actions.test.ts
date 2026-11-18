@@ -64,7 +64,7 @@ describe("source-side pricing actions", () => {
 		});
 	});
 
-	it("rates explicit non-canceling destroy costs without changing v1 replay", () => {
+	it("rates explicit non-canceling destroy costs while v1 rejects destroy", () => {
 		const scenario = Object.assign(
 			makeScenario({
 				charges: [perUnitCharge("teardown", "minute", "0.25")],

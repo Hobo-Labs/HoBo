@@ -38,6 +38,13 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 	}
 	const jobs = asObject(workflow.jobs);
 	const pricingSteps = asList(asObject(jobs?.["pricing-gate"])?.steps);
+	assert.ok(
+		pricingSteps?.some((step) =>
+			asText(asObject(step)?.run)?.includes(
+				"scripts/test/pricing-workflow-model-trigger.test.ts",
+			),
+		),
+	);
 	const testStep = pricingSteps
 		?.map((step) => asText(asObject(step)?.run))
 		.find((run) => run?.includes("pnpm exec turbo run build test"));
