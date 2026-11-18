@@ -34,6 +34,10 @@ Rejected, stale, partial, unpriced, or cross-currency quotes fail closed and
 never fall back to list price. `DispatchCostQuote` omits the advisory
 `allocatedEffective` field. A fixed-fixture SHA-256 golden pins an existing v1 decision; the numeric safety corrections below can change v1 decisions for edge cases.
 
+Overflowing available balances are capped at the largest finite number;
+reservations or settlements that cannot be represented leave the ledger and
+existing holds unchanged.
+
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's
 declared currency, using the existing `budgetCap`/`listUnitCost` number units.
 `reserve({ expectedSeq, reservationId, providerId, dimension, units, unitCost?,

@@ -39,7 +39,8 @@ function asNumberConservative(
 	direction: "up" | "down",
 ): number {
 	const candidate = Number(formatDecimal(value));
-	if (!Number.isFinite(candidate)) return candidate;
+	if (!Number.isFinite(candidate))
+		return direction === "down" ? Number.MAX_VALUE : candidate;
 	const comparison = compareDecimal(decimal(candidate), value);
 	if (direction === "up" && comparison < 0)
 		return adjacentFloat64Bits(candidate, "up");

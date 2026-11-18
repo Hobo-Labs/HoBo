@@ -520,9 +520,35 @@ export function createReservationLedger(initialLedgerView) {
 					ledgerView: clone(current),
 				};
 			const reservedCost = Math.max(priced.totalCost, estimatedCost);
+			if (!Number.isFinite(reservedCost))
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: "reservation-overflow",
+					reservationId,
+					providerId,
+					dimension,
+					ledgerView: clone(current),
+				};
 			const totalHeld = account
 				? addUpper(account.reservedCost ?? 0, reservedCost)
 				: 0;
+			const totalUnits = account
+				? addUpper(account.reservedUnits ?? 0, units)
+				: 0;
+			if (
+				account &&
+				(!Number.isFinite(totalHeld) || !Number.isFinite(totalUnits))
+			)
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: "reservation-overflow",
+					reservationId,
+					providerId,
+					dimension,
+					ledgerView: clone(current),
+				};
 			if (
 				account &&
 				account.budgetCap !== undefined &&
@@ -570,7 +596,7 @@ export function createReservationLedger(initialLedgerView) {
 					consumption.concurrencySlots = 1;
 				}
 				account.reservedCost = totalHeld;
-				account.reservedUnits = addUpper(account.reservedUnits ?? 0, units);
+				account.reservedUnits = totalUnits;
 			}
 			const committedSeq = next.seq + 1;
 			const reservation: DispatchReservation = {
@@ -745,11 +771,19 @@ export function createReservationLedger(initialLedgerView) {
 				reservation.dimension,
 			);
 			if (account) {
+				const totalSpent = addUpper(account.spendToDate ?? 0, actualCost);
+				if (!Number.isFinite(totalSpent))
+					return {
+						ok: false as const,
+						status: "settlement-overflow",
+						reservationId,
+						ledgerView: clone(current),
+					};
 				account.reservedCost = subtractUpper(
 					account.reservedCost ?? 0,
 					reservation.reservedCost ?? 0,
 				);
-				account.spendToDate = addUpper(account.spendToDate ?? 0, actualCost);
+				account.spendToDate = totalSpent;
 				account.reservedUnits = subtractUpper(
 					account.reservedUnits ?? 0,
 					reservation.units,
