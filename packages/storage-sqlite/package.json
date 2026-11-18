@@ -36,6 +36,6 @@
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run",
 		"test:contract:consumer": "vitest run contracts/consumer",
-		"test:contract:provider": "vitest run --passWithNoTests contracts/provider"
+		"test:contract:provider": "vitest run contracts/provider"
 	}
 }
