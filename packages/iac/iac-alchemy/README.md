@@ -88,6 +88,12 @@ The bounded `model/RivetHttpQueue.tla` checks one HTTP request and one enqueue
 under its stated host authority, fencing and draining assumptions; it does not
 prove those assumptions, the implementation or the provider.
 
+The separate optional `@hobo/alchemy-rivet` composition package maps the
+Rivet retained-log and asynchronous topic-bus actors to Alchemy
+`Rivet.DurableObject` resources. Its capability profiles distinguish the two;
+neither implements the legacy synchronous topic ABI. Host-owned source, pool,
+storage and authorization evidence is required for both.
+
 The optional `@hobo/iac-alchemy/cloudflare` entry point maps supported HoBo
 declarations to Alchemy Cloudflare components, including Workers, Vite websites,
 KV namespaces, R2 buckets, queues, D1 databases and Flagship flags. The support
