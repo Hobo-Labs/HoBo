@@ -1,20 +1,3 @@
-/**
- * The drizzle-kit schema-diff engine.
- *
- * HoBo keeps ownership of the plan: `diff` delegates to the canonical
- * `diffSchemaIr` in `@hobo/core` and stamps this engine's id and version onto
- * the result. The stamp is not decoration — `engineVersion` participates in the
- * plan digest, so upgrading the toolchain changes the digest and therefore
- * shows up as a visible plan change instead of silent SQL drift (ADR-0160).
- *
- * SQL emission is the other half, and it is gated. This package does not bundle
- * drizzle-kit, so it cannot render SQL on its own; `emitSql` refuses with
- * `TOOLCHAIN_UNAVAILABLE` unless the host both declares the toolchain present
- * and wires an emitter. It never approximates, and it never silently returns
- * nothing — a half-emitted migration applied to a real database is worse than a
- * refusal a human can act on.
- */
-
 import {
 	diffSchemaIr,
 	type MigrationPlan,
@@ -24,31 +7,22 @@ import {
 } from "@hobo/core";
 import { DrizzleAdapterError } from "./errors.js";
 
-export const DRIZZLE_ENGINE_ID = "drizzle-kit"; // public-contract: engine identity stamped into every migration plan
+export const DRIZZLE_ENGINE_ID = "drizzle-kit";
 
-/**
- * The drizzle-kit release this adapter's ingestion shape-reading was written
- * against. Hosts that run a different drizzle-kit MUST pass `version` so the
- * plan digest reflects the toolchain that will actually render the SQL.
- */
-export const DEFAULT_DRIZZLE_ENGINE_VERSION = "0.31.1"; // public-contract: participates in the plan digest, per the note above
+export const DEFAULT_DRIZZLE_ENGINE_VERSION = "0.31.1";
 
 export interface EmittedSqlStatement {
 	readonly step: MigrationStep;
 	readonly sql: string;
 }
 
-/** Supplied by a host that owns a real drizzle-kit install. */
 export type DrizzleSqlEmitter = (
 	plan: MigrationPlan,
 ) => readonly EmittedSqlStatement[];
 
 export interface DrizzleDiffEngineOptions {
-	/** Pinned engine version; participates in the plan digest. */
 	readonly version?: string;
-	/** Whether the drizzle-kit toolchain is available to this process. */
 	readonly toolchainPresent?: boolean;
-	/** The emitter the declared toolchain exposes. Required for SQL emission. */
 	readonly emitSql?: DrizzleSqlEmitter;
 }
 
@@ -92,11 +66,6 @@ export function createDrizzleDiffEngine(
 	});
 }
 
-/**
- * Every step must come back with SQL. A shorter result would mean part of the
- * plan silently never runs, which is exactly the drift this port exists to
- * prevent, so an incomplete emission is refused rather than returned.
- */
 function freezeEmitted(
 	plan: MigrationPlan,
 	emitted: readonly EmittedSqlStatement[],

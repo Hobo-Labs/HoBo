@@ -1,10 +1,5 @@
-/**
- * Narrow progressive ramp port used by TrailRunner.
- * Wraps Harness FeatureFlagStore internally so public .d.ts never names identity types.
- */
 import { FeatureFlagStore } from "@hobo/identity";
 
-/** Trails-owned progressive flag port (no foreign package types). */
 export type ProgressiveFlagPort = {
 	define(input: {
 		readonly key: string;
@@ -15,10 +10,6 @@ export type ProgressiveFlagPort = {
 	}): void;
 };
 
-/**
- * Create an internal progressive flag store backed by Harness FeatureFlagStore.
- * Return type is Trails-owned so declarations stay sealed.
- */
 export function createProgressiveFlagPort(
 	now: () => string,
 ): ProgressiveFlagPort {

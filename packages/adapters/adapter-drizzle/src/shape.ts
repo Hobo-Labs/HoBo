@@ -1,21 +1,3 @@
-/**
- * Structural recognition of Drizzle ORM values.
- *
- * This package deliberately does **not** depend on `drizzle-orm`. A HoBo
- * adapter that pulled the ORM into the dependency graph would make every
- * consumer of the schema-diff port carry an ORM they may not use, and would
- * pin the ORM's major version into HoBo's own release train. Instead the
- * adapter reads the shape Drizzle actually publishes on its objects: the
- * `Symbol.for("drizzle:*")` well-known symbols and the plain properties of a
- * column descriptor. Those symbols are the ORM's cross-instance contract —
- * they are registry symbols precisely so that separately-installed copies of
- * `drizzle-orm` interoperate — which makes them the honest thing to match on.
- *
- * Everything here is a predicate or a reader. Nothing throws: an unreadable
- * value is reported to the caller, which turns it into an impedance finding.
- */
-
-/** Well-known Drizzle registry symbols (see `Table.Symbol` in `drizzle-orm`). */
 import {
 	isJsonBoolean,
 	isJsonObject,
@@ -35,14 +17,8 @@ export const DRIZZLE_EXTRA_CONFIG_BUILDER_SYMBOL = Symbol.for(
 export const DRIZZLE_SCHEMA_SYMBOL = Symbol.for("drizzle:Schema");
 export const DRIZZLE_IS_VIEW_SYMBOL = Symbol.for("drizzle:IsDrizzleView");
 
-/**
- * Inline foreign keys are stored under a dialect-prefixed symbol
- * (`drizzle:PgInlineForeignKeys`, `drizzle:MySqlInlineForeignKeys`, …), so the
- * reader matches by description suffix rather than by an exact symbol.
- */
 const INLINE_FOREIGN_KEYS_SUFFIX = "InlineForeignKeys";
 
-/** Column type prefixes that identify a non-postgres Drizzle dialect. */
 const NON_POSTGRES_COLUMN_PREFIXES = Object.freeze([
 	"MySql",
 	"SQLite",
@@ -52,7 +28,6 @@ const NON_POSTGRES_COLUMN_PREFIXES = Object.freeze([
 export type UnknownRecord = JsonObject;
 export type ExtraConfigBuilder = (columns: UnknownRecord) => JsonValue;
 
-/** Host object published by drizzle-orm (string and well-known symbol keys). */
 export interface DrizzleHost {
 	readonly [key: string]: JsonValue | undefined;
 }
@@ -61,7 +36,6 @@ interface SymbolBag {
 	[key: symbol]: JsonValue | ExtraConfigBuilder | undefined;
 }
 
-/** Narrows to an indexable object without asserting anything about its keys. */
 export function asRecord<T>(value: T): UnknownRecord | undefined {
 	return isJsonObject(value) ? value : undefined;
 }
@@ -71,7 +45,6 @@ function symbolValue<T>(
 	symbol: symbol,
 ): JsonValue | ExtraConfigBuilder | undefined {
 	if (value === null || value === undefined) return undefined;
-	// SAFETY: drizzle hosts carry well-known registry symbols at this boundary.
 	const bag: SymbolBag = value as never;
 	return bag[symbol];
 }
@@ -80,18 +53,15 @@ function ownSymbolsOf<T>(value: T): readonly symbol[] {
 	const seen: symbol[] = [];
 	let cursor: object | null = null;
 	if (value !== null && value !== undefined) {
-		// SAFETY: drizzle hosts are objects walked for registry symbols.
 		cursor = value as never;
 	}
 	while (cursor !== null && cursor !== Object.prototype) {
 		seen.push(...Object.getOwnPropertySymbols(cursor));
-		// SAFETY: prototype walk stays on object hosts at this drizzle boundary.
 		cursor = Object.getPrototypeOf(cursor) as object | null;
 	}
 	return seen;
 }
 
-/** A Drizzle table publishes both a SQL name and a column map under registry symbols. */
 export function isDrizzleTable<T>(value: T): value is T & DrizzleHost {
 	if (!isJsonObject(value)) return false;
 	if (symbolValue(value, DRIZZLE_IS_VIEW_SYMBOL) === true) return false;
@@ -112,7 +82,6 @@ export function tableName<T>(table: T): string {
 	return isJsonString(name) ? name : "";
 }
 
-/** The non-default postgres schema a table is bound to, when it declares one. */
 export function tableSchema<T>(table: T): string | undefined {
 	const schema = symbolValue(table, DRIZZLE_SCHEMA_SYMBOL);
 	return isJsonString(schema) && schema.length > 0 ? schema : undefined;
@@ -134,11 +103,9 @@ export function extraConfigBuilder<T>(
 ): ExtraConfigBuilder | undefined {
 	const builder = symbolValue(table, DRIZZLE_EXTRA_CONFIG_BUILDER_SYMBOL);
 	if (!(builder instanceof Function)) return undefined;
-	// SAFETY: extra-config builder is the ExtraConfigBuilder callback at this boundary.
 	return builder as ExtraConfigBuilder;
 }
 
-/** True when the table carries at least one inline foreign key under any dialect symbol. */
 export function hasInlineForeignKeys<T>(table: T): boolean {
 	for (const symbol of ownSymbolsOf(table)) {
 		if (symbol.description?.endsWith(INLINE_FOREIGN_KEYS_SUFFIX) !== true) {
@@ -163,7 +130,6 @@ export interface DrizzleColumnLike {
 	readonly getSQLType?: () => JsonValue;
 }
 
-/** A column descriptor is anything with a SQL name plus one readable type source. */
 export function isDrizzleColumn<T>(value: T): value is T & DrizzleColumnLike {
 	const record = asRecord(value);
 	if (record === undefined) return false;
@@ -177,12 +143,6 @@ export function isDrizzleColumn<T>(value: T): value is T & DrizzleColumnLike {
 	);
 }
 
-/**
- * Reads the SQL type in the order Drizzle itself would: the rendered SQL type
- * first (it carries length/precision), then the class discriminator, then the
- * coarse JS data type. `getSQLType` is invoked defensively — it is third-party
- * code and a throw here must become a finding, not a crash.
- */
 export function readColumnSqlType(
 	column: DrizzleColumnLike,
 ): string | undefined {
@@ -207,7 +167,6 @@ function renderedSqlType(column: DrizzleColumnLike): string | undefined {
 	}
 }
 
-/** `PgVarchar` → `varchar`; unknown classes degrade to their lowercased name. */
 function normalizeColumnType(columnType: string): string {
 	const withoutDialect = columnType.replace(
 		/^(Pg|MySql|SQLite|SingleStore)/u,
@@ -229,27 +188,12 @@ export interface DrizzleIndexLike {
 	readonly name: string;
 	readonly columns: readonly string[];
 	readonly unique: boolean;
-	/** Key entries that are SQL expressions rather than declared columns. */
 	readonly expressionKeys: number;
-	/** True when the builder carries a `WHERE` predicate (a partial index). */
 	readonly partial: boolean;
-	/** Declared columns keyed with a non-default sort order, nulls order, or operator class. */
 	readonly orderedKeys: readonly string[];
 	readonly options: readonly string[];
 }
 
-/**
- * Reads an entry returned by a table's extra-config callback. Drizzle index and
- * unique-constraint builders park their state on a `config` property carrying a
- * name, the key entries, and (for indexes) a `unique` flag. Anything that does
- * not present all three is refused so the caller can record it as impedance.
- *
- * A key entry is either a declared column (a string, or an object with a
- * `name`) or a SQL expression (Drizzle's `SQL` object, recognised by its
- * `queryChunks`). Expressions, a `where` predicate, and per-key ordering are
- * reported alongside the columns rather than dropped: the canonical IR cannot
- * carry them, and the caller turns each into an impedance finding.
- */
 export function readIndexBuilder<T>(value: T): DrizzleIndexLike | undefined {
 	const builder = asRecord(value);
 	const config = asRecord(builder?.config);
@@ -306,10 +250,6 @@ function readIndexOptions(config: UnknownRecord): readonly string[] {
 	return Object.freeze(options);
 }
 
-/**
- * Drizzle stamps every indexed column with `{ order: "asc", nulls: "last" }`.
- * Anything else, or an operator class, changes the index the database builds.
- */
 function hasKeyOptions(indexConfig: UnknownRecord | undefined): boolean {
 	if (indexConfig === undefined) return false;
 	const { order, nulls, opClass } = indexConfig;

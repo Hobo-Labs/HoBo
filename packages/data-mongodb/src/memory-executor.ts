@@ -1,33 +1,3 @@
-/**
- * An in-memory `MongoExecutor`.
- *
- * It exists so the whole binding — every port, the conformance kit, the
- * cross-engine runs — can be exercised with no server. It is faithful where
- * faithfulness is what a test would otherwise miss:
- *
- * - values come back the way a driver returns them, not the way they were
- *   sent: a Decimal128 prints in scientific notation when a server would, a
- *   double is re-printed, and text with an unpaired surrogate comes back as
- *   U+FFFD — so a binding that failed to refuse it is caught offline;
- * - `_id` order is BSON order (UTF-8 bytes, not UTF-16 code units);
- * - a `$jsonSchema` validator is enforced, and a keyword this executor does
- *   not implement is an error rather than a silent pass;
- * - a write that changes nothing emits no change event;
- * - a document of 16 MiB or more is refused with code 10334;
- * - a transaction commits all of its writes and events at once, or none, and
- *   its events carry one transaction identity;
- * - transactions interleave. Each reads the snapshot taken at its first
- *   statement, so it does not see a commit made after that; a write to a
- *   document another transaction changed is a write conflict that aborts and
- *   reruns the body; and a commit is never instant — it takes one turn of the
- *   event loop, during which the transaction is still open. That last point
- *   is what lets a race be lost offline: a writer that read "not fenced" is
- *   still in flight when a fence that does not wait returns.
- *
- * A single operation outside a transaction is atomic and immediate. The
- * executor does not model nesting limits, the oplog window, or transaction
- * size and lifetime limits. It is not a store anyone should keep data in.
- */
 import { formatDecimal128 } from "./decimal.js";
 import { MONGO_SERVER_CODES, MongoCommandError } from "./errors.js";
 import type {
@@ -65,17 +35,13 @@ import {
 
 const BAD_VALUE = 2;
 const TOKEN_PATTERN = /^82[0-9A-F]{16}$/u;
-/** The official driver refuses a document at this size; a server one byte later. */
 const MAX_DOCUMENT_BYTES = 16 * 1024 * 1024;
 
 function refuse(code: number, codeName: string): never {
 	throw new MongoCommandError({ code, codeName });
 }
 
-// ── values as a server returns them ─────────────────────────────────────────
-
 function storedText(text: string): string {
-	// What UTF-8 encoding does to an unpaired surrogate: U+FFFD.
 	return Buffer.from(text, "utf8").toString("utf8");
 }
 
@@ -103,7 +69,6 @@ function storedWrapper(value: MongoDocument, type: MongoBsonType): MongoValue {
 	return value;
 }
 
-/** The value a driver would hand back after storing this one. */
 function stored(value: MongoValue): MongoValue {
 	if (value === null || isJsonBoolean(value)) return value;
 	if (isJsonString(value)) return storedText(value);
@@ -125,7 +90,6 @@ function stored(value: MongoValue): MongoValue {
 	);
 }
 
-/** Bytes a stored value occupies in BSON, without its element header. */
 function bsonSize(value: MongoValue): number {
 	if (value === null) return 0;
 	if (isJsonBoolean(value)) return 1;
@@ -167,8 +131,6 @@ function storedDocument(document: MongoDocument): MongoDocument {
 	}
 	return freezeJson(value);
 }
-
-// ── BSON comparison order, for the types an `_id` can be ────────────────────
 
 const TYPE_RANK: Readonly<Record<MongoBsonType, number>> = Object.freeze({
 	minKey: 0,
@@ -250,12 +212,9 @@ function dateNumber(value: MongoValue): number {
 	return isJsonObject(value) ? numberOf(value.$date ?? null) : Number.NaN;
 }
 
-/** Identity of an `_id`: field order is significant, as it is in BSON. */
 function slotOf(id: MongoValue): string {
 	return JSON.stringify(id);
 }
-
-// ── the `$jsonSchema` subset ────────────────────────────────────────────────
 
 const RULE_KEYWORDS = new Set([
 	"bsonType",
@@ -274,7 +233,6 @@ function stringList(value: MongoValue | undefined): readonly string[] {
 function satisfies(value: MongoValue, rule: MongoValue): boolean {
 	if (!isJsonObject(rule)) return refuse(BAD_VALUE, "FailedToParse");
 	for (const keyword of Object.keys(rule)) {
-		// Under-validating silently would make this executor more permissive
 		// than a server; an unimplemented keyword is refused instead.
 		if (!RULE_KEYWORDS.has(keyword)) refuse(BAD_VALUE, "FailedToParse");
 	}
@@ -315,14 +273,10 @@ function assertValid(
 	}
 }
 
-// ── state ───────────────────────────────────────────────────────────────────
-
 interface Collection {
 	validator: MongoDocument | undefined;
 	changeImages: boolean;
-	/** Replaced, never mutated, by a commit: a snapshot is a reference to it. */
 	documents: ReadonlyMap<string, MongoDocument>;
-	/** The commit that last changed each slot. */
 	readonly changedAt: Map<string, number>;
 }
 
@@ -330,7 +284,6 @@ interface LoggedChange {
 	readonly sequence: number;
 	readonly collection: string;
 	readonly operation: string;
-	/** Absent for an event that is not about one document. */
 	readonly id?: MongoValue;
 	readonly document?: MongoDocument;
 	readonly transaction?: string;
@@ -338,26 +291,19 @@ interface LoggedChange {
 
 type PendingChange = Omit<LoggedChange, "sequence" | "transaction">;
 
-/** One open multi-document transaction. */
 interface OpenTransaction {
-	/** The identity its change events carry. */
 	readonly identity: string;
-	/** Collections it has read or written. */
 	readonly touched: Set<string>;
-	/** Settles when it has committed or aborted. */
 	readonly finished: Promise<void>;
 	finish(): void;
-	/** Set when a write lost a conflict: the body is rerun after `settled`. */
 	conflict?: WriteConflict;
 }
 
 interface WriteConflict {
 	readonly error: MongoCommandError;
-	/** What to wait for before the rerun, when the winner is still open. */
 	readonly settled?: Promise<void>;
 }
 
-/** An auto-committed write found its document held by an open transaction. */
 class HeldByTransaction extends Error {
 	readonly settled: Promise<void>;
 
@@ -367,17 +313,12 @@ class HeldByTransaction extends Error {
 	}
 }
 
-/**
- * Reads over staged writes, and the one step that makes them durable. Every
- * method is synchronous, so a unit used and committed in one step is atomic.
- */
 interface UnitOfWork {
 	find(request: MongoFindRequest): MongoFindResult;
 	bulkWrite(request: MongoBulkWriteRequest): MongoBulkWriteResult;
 	commit(): void;
 }
 
-/** Writes staged by one unit of work; `undefined` marks a deleted slot. */
 type Overlay = Map<string, Map<string, MongoDocument | undefined>>;
 
 interface WriteTally {
@@ -417,7 +358,6 @@ function valueAt(root: MongoValue, path: string): MongoValue | undefined {
 	return current;
 }
 
-/** An event with no document key — a drop, an invalidate — always matches. */
 function keyMatches(
 	id: MongoValue | undefined,
 	where: MongoKeyMatch | undefined,
@@ -429,7 +369,6 @@ function keyMatches(
 	);
 }
 
-/** One turn of the event loop: how long a commit takes here. */
 function commitLatency(): Promise<void> {
 	return new Promise((resolve) => {
 		setImmediate(resolve);
@@ -444,16 +383,7 @@ function openTransaction(identity: string): OpenTransaction {
 	return { identity, touched: new Set(), finished, finish: () => finish() };
 }
 
-/**
- * The in-memory executor, with the one thing a client holding its own
- * connection can do that the port cannot ask for.
- */
 export interface MemoryMongoExecutor extends MongoExecutor {
-	/**
-	 * Drop a collection behind the binding's back. The stream reports a `drop`
-	 * and then an `invalidate`, neither about any one document, exactly as a
-	 * server does.
-	 */
 	dropCollection(collection: string): Promise<void>;
 }
 
@@ -461,7 +391,6 @@ export function createMemoryMongoExecutor(): MemoryMongoExecutor {
 	const collections = new Map<string, Collection>();
 	const log: LoggedChange[] = [];
 	const open = new Set<OpenTransaction>();
-	/** Which open transaction has a staged write to each slot. */
 	const held = new Map<string, Map<string, OpenTransaction>>();
 	let sequence = 0;
 	let commits = 0;
@@ -470,7 +399,6 @@ export function createMemoryMongoExecutor(): MemoryMongoExecutor {
 	const collection = (name: string): Collection => {
 		const existing = collections.get(name);
 		if (existing !== undefined) return existing;
-		// MongoDB creates a collection on first write, with default options.
 		const created: Collection = {
 			validator: undefined,
 			changeImages: false,
@@ -490,12 +418,6 @@ export function createMemoryMongoExecutor(): MemoryMongoExecutor {
 		});
 	};
 
-	/**
-	 * A unit of work: reads see its own staged writes over a base. Inside a
-	 * transaction the base is the snapshot taken at the first statement;
-	 * outside one it is the committed state, and the unit lives for one
-	 * synchronous step.
-	 */
 	const unit = (owner?: OpenTransaction): UnitOfWork => {
 		const overlay: Overlay = new Map();
 		const pending: PendingChange[] = [];
@@ -531,11 +453,9 @@ export function createMemoryMongoExecutor(): MemoryMongoExecutor {
 			return merged;
 		};
 
-		/** Take the slot for this unit, or lose to whoever changed it first. */
 		const claim = (name: string, slot: string): void => {
 			const holder = held.get(name)?.get(slot);
 			if (owner === undefined) {
-				// A server makes this write wait for the transaction to end.
 				if (holder !== undefined) throw new HeldByTransaction(holder.finished);
 				return;
 			}
@@ -646,7 +566,6 @@ export function createMemoryMongoExecutor(): MemoryMongoExecutor {
 				return;
 			}
 			result.replaced += 1;
-			// An identical replacement is a no-op: no oplog entry, no event.
 			if (JSON.stringify(existing) === JSON.stringify(document)) return;
 			stage(name, slot, document);
 			pending.push({ collection: name, operation: "replace", id, document });
@@ -688,11 +607,6 @@ export function createMemoryMongoExecutor(): MemoryMongoExecutor {
 		};
 	};
 
-	/**
-	 * One auto-committed write, as a write outside a transaction is. It is
-	 * applied and committed in one synchronous step, so nothing interleaves
-	 * with it; it waits only for a transaction that holds one of its documents.
-	 */
 	const write = async (
 		request: MongoBulkWriteRequest,
 	): Promise<MongoBulkWriteResult> => {
@@ -704,8 +618,6 @@ export function createMemoryMongoExecutor(): MemoryMongoExecutor {
 				return result;
 			} catch (cause) {
 				if (!(cause instanceof HeldByTransaction)) {
-					// An ordered bulk write outside a transaction keeps the
-					// operations that ran before the one that was refused.
 					work.commit();
 					throw cause;
 				}
@@ -738,19 +650,15 @@ export function createMemoryMongoExecutor(): MemoryMongoExecutor {
 			};
 			try {
 				const result = await body(session);
-				// A body that swallowed a write conflict still cannot commit.
 				if (current.conflict !== undefined) throw current.conflict.error;
 				await commitLatency();
 				work.commit();
 				return result;
 			} catch (cause) {
-				// Any other error aborts the transaction and is rethrown as is.
 				if (cause !== current.conflict?.error) throw cause;
 			} finally {
 				close(current);
 			}
-			// A transient conflict reruns the body, as a driver would, once the
-			// transaction it lost to is out of the way.
 			await current.conflict?.settled;
 		}
 	};
