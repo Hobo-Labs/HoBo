@@ -33,6 +33,7 @@ import {
 } from "./replay/store.js";
 import { runWithRetries } from "./step.js";
 import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
+import { captureWorkflowResult } from "./workflow-result.js";
 
 /** Durability primitives are always granted; effect capabilities are declared. */
 const DURABILITY_CAPABILITIES: readonly Capability[] = [
@@ -109,8 +110,6 @@ export interface WorkflowEngineOptions {
 
 export interface WorkflowEngine {
 	readonly store: EventStoreWriter;
-	/** Fresh run: atomically claims a new journal before running user steps.
-	 * Supply runId when the host must know the ID before a possible crash. */
 	start<A, R>(
 		def: WorkflowDefinition<A, R>,
 		args: A,
@@ -241,7 +240,8 @@ export function createWorkflowEngine(
 				}
 				await appendEvent("run.StepScheduled", { name, index });
 				try {
-					const result = await runWithRetries(name, fn, opts ?? {});
+					const value = await runWithRetries(name, fn, opts ?? {});
+					const result = captureWorkflowResult(value, name);
 					await appendEvent("run.StepCompleted", { name, index, result });
 					return result;
 				} catch (error) {
@@ -343,7 +343,8 @@ export function createWorkflowEngine(
 		});
 
 		try {
-			const result = await def.run(ctx, args);
+			const value = await def.run(ctx, args);
+			const result = captureWorkflowResult(value);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
 		} catch (error) {
@@ -385,8 +386,6 @@ export function createWorkflowEngine(
 				throw new TypeError("workflow runId must be a non-empty string");
 			}
 			const streamId = `run/${runId}`;
-			// Claim the new run before any user step. No shared idempotency key is
-			// used here: two fresh callers must not deduplicate into one run.
 			const started = nextEnvelope(
 				streamId,
 				1,
