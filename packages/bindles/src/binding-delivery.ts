@@ -23,6 +23,7 @@ const SECRET_KEY_RE =
 	/^(ConnectionStrings__.*|DATABASE_URL|REDIS_URL|MONGO_URL|MYSQL_URL|PGPASSWORD|API_KEY|PASSWORD|SECRET|TOKEN|.*_PASSWORD|.*_SECRET|.*_API_KEY)$/i;
 
 const USERINFO_URI_RE = /^[a-z][a-z0-9+.-]*:\/\/[^/@\s]+@/i;
+const CONNECTION_REFERENCE_RE = /^\{[A-Za-z][A-Za-z0-9_-]*\.connectionString\}$/;
 
 export function isForbiddenSecretEnvKey(key: string): boolean {
 	return SECRET_KEY_RE.test(key);
@@ -93,6 +94,7 @@ export function evaluateBindingDeliveryGate(input: {
 			if (resource.env) checkMap(resource.env, `resources.${id}.env`);
 			if (
 				resource.connectionString &&
+				!CONNECTION_REFERENCE_RE.test(resource.connectionString) &&
 				looksLikeSecretEnvValue(resource.connectionString)
 			) {
 				reasons.push({
