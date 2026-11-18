@@ -85,6 +85,7 @@ import {
 	PrHeadVerificationError,
 	verifyPrHead,
 } from "./github-pr-target.mts";
+import { githubAppStatusIsReadOnly } from "./github-status-permission.mts";
 import { trustedGithubTarget } from "./github-target.mts";
 
 export const DEFAULT_KEY_PATH = join(
@@ -2746,6 +2747,10 @@ export async function main(
 			base: target.base,
 			env,
 		});
+		if (githubAppStatusIsReadOnly({ cwd: root, env: githubEnv }))
+			throw new AttestError(
+				"the current GitHub App installation has read-only commit statuses; use an identity with commit-status write access before starting local signoff",
+			);
 		const witness = targetSignoffWitness({
 			root,
 			remote,
