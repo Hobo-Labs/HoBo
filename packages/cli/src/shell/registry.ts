@@ -20,6 +20,7 @@ export interface CommandRunInput {
 		readonly strategy: string | null;
 		readonly target: string | null;
 		readonly check: boolean;
+		readonly initResourceIds?: boolean;
 		readonly last: boolean;
 		readonly offline: boolean;
 		readonly template: string | null;

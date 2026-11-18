@@ -7,7 +7,7 @@ import {
 	type ManifestV1,
 	parseManifest,
 } from "../manifest/index.js";
-import type { BindleEdge } from "../types.js";
+import type { BindleEdge, ResourceIdentityLedger } from "../types.js";
 import {
 	addContainer,
 	type ComponentHandle,
@@ -57,6 +57,7 @@ export interface CollectionContext {
 export interface CollectionTarget {
 	readonly bindleId: string;
 	readonly componentHost: ComponentHostDescriptor;
+	readonly identityLedger?: ResourceIdentityLedger;
 	readonly dependencies?: readonly BindleEdge[];
 	define(collect: CollectionContext): void;
 }

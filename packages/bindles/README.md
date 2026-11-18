@@ -14,10 +14,12 @@ resources. It is a deployment dependency, not an HTTP entrypoint; use `b.web()`
 or `b.api()` for the application that serves requests.
 
 Builder resources expose generated IDs that are independent of returned aliases.
-Existing Bindles keep their alias-based deployment IDs. To use generated IDs,
-pass a reviewed `identityLedger` as the third argument to `bindle`. Obtain an
-initial ledger with `resourceIdentityLedger(definition)` and commit it with the
-application. The ledger must map every resource kind and declaration occurrence
+Existing Bindles keep their alias-based deployment IDs. Run
+`hobo collect --init-resource-ids` to create `hobo.resource-identities.json`,
+then review and commit it with the application. Collection and deployment use
+the reviewed mapping when the file exists. Library callers may instead pass an
+`identityLedger` as the third argument to `bindle` and obtain an initial ledger
+with `resourceIdentityLedger(definition)`. The ledger must map every resource kind and declaration occurrence
 exactly once. Update and review the mapping when declarations of the same kind
 are inserted, removed, or reordered. Enabling generated IDs changes an existing
 Bindle's manifest resource IDs; inspect the resulting deployment plan and

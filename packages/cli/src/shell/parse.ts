@@ -25,6 +25,7 @@ export interface CliFlags {
 	readonly strategy: string | null;
 	readonly target: string | null;
 	readonly check: boolean;
+	readonly initResourceIds?: boolean;
 	readonly last: boolean;
 	readonly offline: boolean;
 	readonly template: string | null;
@@ -90,6 +91,7 @@ export function parseArgv(
 		strategy: null,
 		target: null,
 		check: false,
+		initResourceIds: false,
 		last: false,
 		offline: false,
 		template: null,
@@ -331,6 +333,12 @@ function parseOption(
 		case "--check":
 			flags.check = true;
 			return index;
+		case "--init-resource-ids":
+			if (verb === "collect") {
+				flags.initResourceIds = true;
+				return index;
+			}
+			throw unknownOption(token, verb);
 		case "--last":
 			flags.last = true;
 			return index;

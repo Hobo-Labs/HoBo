@@ -1,4 +1,4 @@
-import { isJsonString } from "./json.js";
+import { isJsonObject, isJsonString } from "./json.js";
 import {
 	type BindleDefinition,
 	CATALOG_ROWS,
@@ -20,7 +20,11 @@ export function createResourceIdentityAllocator(
 	const usedIds = new Set<string>();
 	const counts = new Map<ResourceKind, number>();
 	if (ledger !== undefined) {
-		if (ledger.bindleName !== bindleName || !Array.isArray(ledger.entries)) {
+		if (
+			!isJsonObject(ledger) ||
+			ledger.bindleName !== bindleName ||
+			!Array.isArray(ledger.entries)
+		) {
 			throw new TypeError("resource identity ledger must match the Bindle");
 		}
 		for (const entry of ledger.entries) {
@@ -101,4 +105,64 @@ export function resourceIdentityLedger(
 		bindleName: definition.name,
 		entries: Object.freeze(entries),
 	});
+}
+
+export function applyResourceIdentityLedger(
+	definition: BindleDefinition,
+	ledger: ResourceIdentityLedger,
+): BindleDefinition {
+	const allocator = createResourceIdentityAllocator(definition.name, ledger);
+	const records = Object.entries(definition.resources).sort(
+		([, left], [, right]) =>
+			left.kind.localeCompare(right.kind) ||
+			(left.identityOccurrence ?? 0) - (right.identityOccurrence ?? 0),
+	);
+	const ids = new Map<string, string>();
+	const identities = new Map<string, ResourceIdentity>();
+	for (const [alias, record] of records) {
+		const identity = allocator.allocate(record.kind);
+		if (record.identityOccurrence !== identity.occurrence) {
+			throw new TypeError(`resource ${alias} lacks declaration identity data`);
+		}
+		if (
+			definition.deploymentIdentity === "generated" &&
+			record.generatedId !== identity.generatedId
+		) {
+			throw new TypeError(`resource identity ledger conflicts with ${alias}`);
+		}
+		if (
+			identity.generatedId !== alias &&
+			Object.hasOwn(definition.resources, identity.generatedId)
+		) {
+			throw new TypeError(
+				`resource alias "${identity.generatedId}" conflicts with a generated ID`,
+			);
+		}
+		ids.set(identity.generatedId, alias);
+		identities.set(alias, identity);
+	}
+	allocator.assertComplete();
+	const resources: Record<string, BindleDefinition["resources"][string]> = {};
+	for (const [alias, record] of Object.entries(definition.resources)) {
+		const identity = identities.get(alias);
+		if (!identity)
+			throw new TypeError(`resource identity is missing for ${alias}`);
+		resources[alias] = Object.freeze({
+			...record,
+			stableId: `${record.kind}:${identity.generatedId}`,
+			generatedId: identity.generatedId,
+			identityOccurrence: identity.occurrence,
+		});
+	}
+	const result: BindleDefinition = {
+		...definition,
+		deploymentIdentity: "generated",
+		resources: Object.freeze(resources),
+		entrypoint: (name) =>
+			definition.entrypoint instanceof Function
+				? definition.entrypoint(ids.get(name) ?? name)
+				: undefined,
+	};
+	Object.defineProperty(result, "entrypoint", { enumerable: false });
+	return Object.freeze(result);
 }
