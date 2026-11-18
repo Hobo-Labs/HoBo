@@ -136,11 +136,11 @@ describe("choosing a mode", () => {
 });
 
 describe("opening a store", () => {
-	it("refuses a concurrent-tab request for a single-owner OPFS pool", async () => {
+	it("requires browser coordination for a concurrent-tab store", async () => {
 		withOpfs(true);
 		await expect(
 			createBrowserEventStore({ partitionId: "tenant-a", multiTab: true }),
-		).rejects.toThrow(/shared browser store/);
+		).rejects.toThrow(/Multi-tab storage requires/);
 	});
 
 	it("refuses when persistence is unavailable and not opted out of", () => {
@@ -201,7 +201,7 @@ describe("opening a store", () => {
 				allowTransient: true,
 				multiTab: true,
 			}),
-		).rejects.toThrow(/shared browser store/);
+		).rejects.toThrow(/Multi-tab storage requires/);
 	});
 });
 
