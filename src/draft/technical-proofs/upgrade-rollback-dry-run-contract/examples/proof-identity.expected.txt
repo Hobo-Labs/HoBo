@@ -1,3 +1,0 @@
-slug: upgrade-rollback-dry-run-contract
-layer: technical
-proof-identity: ok

@@ -5125,8 +5125,6 @@ importers:
 
   src/draft/technical-proofs/trust-tier-policy-contract: {}
 
-  src/draft/technical-proofs/upgrade-rollback-dry-run-contract: {}
-
   src/draft/technical-proofs/usage-inferred-permissions-contract: {}
 
   src/draft/technical-proofs/usage-to-invoice-reconciliation-contract: {}

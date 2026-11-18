@@ -507,7 +507,6 @@
         "src/draft/technical-proofs/stuck-rollout-convergence-contract/**",
         "src/draft/technical-proofs/telemetry-envelope-contract/**",
         "src/draft/technical-proofs/training-data-poisoning-guard-contract/**",
-        "src/draft/technical-proofs/upgrade-rollback-dry-run-contract/**",
         "src/draft/technical-proofs/websocket-preview-wit-contract/**",
         "src/draft/technical-proofs/yard-domain-validation-contract/**",
         "src/draft/technical-proofs/yard-identity-issuer-contract/**",
