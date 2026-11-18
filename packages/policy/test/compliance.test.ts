@@ -1,13 +1,13 @@
-// ADR-0146: the residency policy pack (eu-data-stays-in-eu made real) and
-// control→evidence packs with coverage evaluation (ADR-0060 §4 realized).
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import {
 	CONTROL_EVIDENCE_PACK_SCHEMA,
+	CONTROL_EVIDENCE_REGISTRY,
 	evaluateControlCoverage,
 	NIST_800_53_SEED_PACK,
 	parseControlEvidencePack,
+	resolveControlEvidenceRef,
 } from "../src/control-evidence-pack.js";
 import {
 	POLICY_IR_SCHEMA_VERSION,
@@ -70,7 +70,6 @@ test("a clean verdict allows and carries residency evidence obligations", () => 
 		},
 	});
 	assert.equal(decision.effect, "allow");
-	// SAFETY: assertion required at this I/O or test boundary.
 	const obligation = decision.obligations[0] as {
 		kind: string;
 		jurisdictions: string[];
@@ -96,29 +95,46 @@ test("control-evidence pack parses fail closed", () => {
 			}),
 		/at least one evidence ref/u,
 	);
+	assert.throws(
+		() =>
+			parseControlEvidencePack({
+				schema: CONTROL_EVIDENCE_PACK_SCHEMA,
+				framework: "X",
+				version: "1",
+				controls: [
+					{
+						controlId: "A",
+						title: "a",
+						status: "implemented",
+						evidence: [{ kind: "artifact", ref: "artifact:invented" }],
+					},
+				],
+			}),
+		/not registered/u,
+	);
 });
 
-test("coverage: seed pack is fully covered by the real evidence set; planned controls never count", () => {
-	const evidence = [
-		"event-stream:policy.Decided",
-		"gate:gatekeeper.Decided",
-		"gate:capability-grants",
-		"event-stream:journal-append-only",
-		"retention:credential-audit-never-compact",
-		"gate:can-deploy",
-		"event-stream:gatekeeper.Decided",
-		"artifact:conformance-report",
-		"artifact:cyclonedx-sbom",
-		"artifact:crypto-shred-erasure",
-		"artifact:ocsf-export",
-	];
-	const report = evaluateControlCoverage(NIST_800_53_SEED_PACK, evidence);
+const REGISTERED_EVIDENCE = Object.values(CONTROL_EVIDENCE_REGISTRY).map(
+	(entry) => entry.ref,
+);
+
+test("the evidence registry binds every canonical ref to an owner and source", () => {
+	for (const entry of Object.values(CONTROL_EVIDENCE_REGISTRY)) {
+		assert.equal(resolveControlEvidenceRef(entry.ref), entry);
+		assert.notEqual(entry.owner, "");
+		assert.notEqual(entry.binding, "");
+	}
+	assert.equal(resolveControlEvidenceRef("artifact:invented"), undefined);
+});
+
+test("coverage: the NIST seed pack resolves completely", () => {
+	const report = evaluateControlCoverage(
+		NIST_800_53_SEED_PACK,
+		REGISTERED_EVIDENCE,
+	);
 	assert.equal(report.total, 9);
-	// AU-6 is status:planned — evidence presence cannot satisfy it.
-	assert.equal(report.satisfied, 8);
-	assert.deepEqual(report.missing, [
-		{ controlId: "AU-6", missingRefs: ["status:planned"] },
-	]);
+	assert.equal(report.satisfied, 9);
+	assert.deepEqual(report.missing, []);
 });
 
 test("coverage: missing evidence is named per control", () => {
@@ -127,62 +143,30 @@ test("coverage: missing evidence is named per control", () => {
 	]);
 	const ac3 = report.missing.find((entry) => entry.controlId === "AC-3");
 	assert.ok(ac3);
-	assert.deepEqual(ac3.missingRefs, ["gate:gatekeeper.Decided"]);
+	assert.deepEqual(ac3.missingRefs, ["gate:gatekeeper"]);
 	assert.ok(report.coverage < 0.2);
 });
 
-test("SOC 2 seed pack: honest coverage against today's real evidence set", () => {
-	// Refs that exist in code today: policy/gatekeeper decisions, capability
-	// grants, connection.Revoked (@hobo/identity), append-only journal,
-	// can-deploy, migration.SnapshotTaken (@hobo/trails), retention,
-	// conformance report. NOT present: revocation audit artifact, OCSF
-	// export, data.Classified.
-	const evidence = [
-		"event-stream:policy.Decided",
-		"gate:gatekeeper.Decided",
-		"gate:capability-grants",
-		"event-stream:connection.Revoked",
-		"event-stream:journal-append-only",
-		"gate:can-deploy",
-		"event-stream:gatekeeper.Decided",
-		"event-stream:migration.SnapshotTaken",
-		"retention:credential-audit-never-compact",
-		"artifact:conformance-report",
-	];
-	const report = evaluateControlCoverage(SOC2_SEED_PACK, evidence);
+test("SOC 2 seed pack resolves completely", () => {
+	const report = evaluateControlCoverage(SOC2_SEED_PACK, REGISTERED_EVIDENCE);
 	assert.equal(report.framework, "SOC 2 Trust Services Criteria");
 	assert.equal(report.total, 8);
-	assert.equal(report.satisfied, 5);
-	assert.deepEqual(report.missing.map((entry) => entry.controlId).sort(), [
-		"C1.1",
-		"CC6.3",
-		"CC7.2",
-	]);
-	const cc63 = report.missing.find((entry) => entry.controlId === "CC6.3");
-	assert.deepEqual(cc63?.missingRefs, ["artifact:connection-revocation-audit"]);
+	assert.equal(report.satisfied, 8);
+	assert.deepEqual(report.missing, []);
 });
 
-test("GDPR seed pack: coverage names the by-design gap; breach notification stays planned", () => {
-	const evidence = [
-		"event-stream:policy.Decided",
-		"gate:capability-grants",
-		"artifact:crypto-shred-erasure",
-		"event-stream:journal-append-only",
-		"gate:can-deploy",
-		"retention:credential-audit-never-compact",
-		"gate:gatekeeper.Decided",
-		"artifact:residency-evidence",
-		"artifact:ocsf-export",
-	];
-	const report = evaluateControlCoverage(GDPR_SEED_PACK, evidence);
+test("GDPR seed pack resolves completely", () => {
+	const report = evaluateControlCoverage(GDPR_SEED_PACK, REGISTERED_EVIDENCE);
 	assert.equal(report.total, 7);
-	// Art.25 misses data.Classified; Art.33 is status:planned — evidence
-	// presence cannot satisfy it.
-	assert.equal(report.satisfied, 5);
-	const art25 = report.missing.find((entry) => entry.controlId === "Art.25");
-	assert.deepEqual(art25?.missingRefs, ["event-stream:data.Classified"]);
-	const art33 = report.missing.find((entry) => entry.controlId === "Art.33");
-	assert.deepEqual(art33?.missingRefs, ["status:planned"]);
+	assert.equal(report.satisfied, 7);
+	assert.deepEqual(report.missing, []);
+});
+
+test("coverage rejects caller-invented evidence refs", () => {
+	assert.throws(
+		() => evaluateControlCoverage(NIST_800_53_SEED_PACK, ["artifact:invented"]),
+		/not registered/u,
+	);
 });
 
 test("seed packs parsed at module load are frozen and schema-pinned", () => {

@@ -20,7 +20,7 @@ package policy
 	control_id: string & !=""
 	title:      string & !=""
 	evidence: [...#ControlEvidenceRefRecord] & [_, ...]
-	status: "implemented" | "partial" | "planned"
+	status: "implemented"
 }
 
 #ControlEvidencePackRecord: {

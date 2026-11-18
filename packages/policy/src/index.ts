@@ -19,6 +19,7 @@ export {
 } from "./community-flux-policy-pack.js";
 export {
 	CONTROL_EVIDENCE_PACK_SCHEMA,
+	CONTROL_EVIDENCE_REGISTRY,
 	type ControlCoverageReport,
 	type ControlEvidenceKind,
 	type ControlEvidencePack,
@@ -29,6 +30,8 @@ export {
 	evaluateControlCoverage,
 	NIST_800_53_SEED_PACK,
 	parseControlEvidencePack,
+	type RegisteredControlEvidence,
+	resolveControlEvidenceRef,
 } from "./control-evidence-pack.js";
 export {
 	DEFAULT_MESSAGING_POLICY_PACK,
