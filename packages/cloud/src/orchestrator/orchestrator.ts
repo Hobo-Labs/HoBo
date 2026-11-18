@@ -29,19 +29,35 @@ import {
 	reconcileResource,
 } from "./resource-actor.js";
 
-// The Orchestrator (control-plane.md "Choreography over orchestration"): given a
-// DeploymentPlan DAG it activates ResourceActors; each self-activates when all its
-// dependencies' `resource.Provisioned` facts are present (edge-triggered by
-// events, level-triggered by this resync loop). When every actor reaches
-// Provisioned it drives `deployment.Deployed`. There is no central step-by-step
-// coordinator — ordering is the dependency DAG, realized by choreography. A
-// no-go failure hands off to choreographed compensation (compensation.ts).
-
 export interface OrchestratorDeps {
 	store: EventStore;
 	actorHost: ActorHost;
 	executor: Executor;
 	broker: CredentialBroker;
+	observeDependency?: (
+		input: DependencyObservationRequest,
+	) => Promise<DependencyObservationStatus>;
+}
+
+export type DependencyObservationStatus =
+	| "ready"
+	| "completed"
+	| "pending"
+	| "failed";
+
+export interface DependencyObservationRequest {
+	readonly deploymentId: string;
+	readonly dependent: ResourcePlan;
+	readonly dependency: ResourcePlan;
+	readonly snapshot: ResourceActorSnapshot;
+	readonly condition: "ready" | "completed";
+}
+
+export interface BlockedDependency {
+	readonly resource: string;
+	readonly dependency: string;
+	readonly condition: "ready" | "completed";
+	readonly status: DependencyObservationStatus | "unobserved";
 }
 
 export interface OrchestratorContext {
@@ -79,6 +95,7 @@ export interface OrchestratorResult {
 	unprunable: string[];
 	/** Provider changes refused until the prior resource's effects are reconciled. */
 	blockedProviderMoves?: readonly BlockedProviderMove[];
+	blockedDependencies?: readonly BlockedDependency[];
 }
 
 function streamId(deploymentId: string): string {
@@ -110,25 +127,46 @@ function resourceStates(
 	return states;
 }
 
-function depsProvisioned(
+async function dependenciesReady(
 	resource: ResourcePlan,
 	snapshots: Map<string, ResourceActorSnapshot>,
 	resources: Map<string, ResourcePlan>,
-): boolean {
-	return resource.deps.every((dep) => {
+	deploymentId: string,
+	observe: OrchestratorDeps["observeDependency"],
+	blocked: BlockedDependency[],
+): Promise<boolean> {
+	for (const dep of resource.deps) {
 		const snapshot = snapshots.get(dep);
 		const desired = resources.get(dep);
-		return (
-			snapshot !== undefined &&
-			desired !== undefined &&
-			isConverged(snapshot, desired)
-		);
-	});
+		if (!snapshot || !desired || !isConverged(snapshot, desired)) return false;
+		const condition = resource.readyDeps?.includes(dep)
+			? "ready"
+			: resource.completedDeps?.includes(dep)
+				? "completed"
+				: undefined;
+		if (!condition) continue;
+		const status = observe
+			? await observe({
+					deploymentId,
+					dependent: resource,
+					dependency: desired,
+					snapshot,
+					condition,
+				})
+			: "unobserved";
+		if (status !== condition) {
+			blocked.push({
+				resource: resource.name,
+				dependency: dep,
+				condition,
+				status,
+			});
+			return false;
+		}
+	}
+	return true;
 }
 
-// Run the choreography to convergence: reconcile any resource whose deps are all
-// Provisioned, re-folding the durable log each pass (level-triggered). Safe to
-// re-invoke against a partially-written stream — that is the crash-resume path.
 export async function runOrchestrator(
 	deps: OrchestratorDeps,
 	plan: DeploymentPlan,
@@ -187,13 +225,29 @@ export async function runOrchestrator(
 	const resources = new Map(
 		plan.resources.map((resource) => [resource.name, resource]),
 	);
+	for (const resource of plan.resources) {
+		const readiness = [
+			...(resource.readyDeps ?? []),
+			...(resource.completedDeps ?? []),
+		];
+		if (
+			new Set(readiness).size !== readiness.length ||
+			readiness.some((dependency) => !resource.deps.includes(dependency))
+		) {
+			throw new TypeError(
+				`resource ${resource.name} has invalid readiness dependencies`,
+			);
+		}
+	}
 	// Each resource is applied at most once per run: a retryable failure is
 	// reported as `waiting`, not retried in a hot loop.
 	const attempted = new Set<string>();
 	let lateBlocked: BlockedProviderMove | undefined;
+	let blockedDependencies: BlockedDependency[] = [];
 
 	while (progressed) {
 		progressed = false;
+		blockedDependencies = [];
 		const events = await collectStream(deps.store, stream);
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
 
@@ -218,7 +272,17 @@ export async function runOrchestrator(
 			if (snapshot && isConverged(snapshot, resource)) continue;
 			if (snapshot?.state === "Destroying") continue;
 			if (attempted.has(resource.name)) continue;
-			if (!depsProvisioned(resource, snapshots, resources)) continue;
+			if (
+				!(await dependenciesReady(
+					resource,
+					snapshots,
+					resources,
+					deploymentId,
+					deps.observeDependency,
+					blockedDependencies,
+				))
+			)
+				continue;
 			attempted.add(resource.name);
 
 			const outcome = await reconcileResource(
@@ -419,6 +483,7 @@ export async function runOrchestrator(
 		changes,
 		pruned,
 		unprunable: [...unprunable].sort(),
+		...(blockedDependencies.length > 0 ? { blockedDependencies } : undefined),
 	};
 }
 

@@ -7,6 +7,8 @@ package hobo
 	prefer: [...string]
 	negotiation: "require" | "prefer"
 	deps: [...string]
+	readyDeps?: [string & !="", ...string & !=""]
+	completedDeps?: [string & !="", ...string & !=""]
 	region?:    string
 	objective:  string & !=""
 	placement?: #PlacementCriteria
@@ -100,6 +102,8 @@ package hobo
 	port:     string & !=""
 	provider: string & !=""
 	deps: [...string]
+	readyDeps?: [string & !="", ...string & !=""]
+	completedDeps?: [string & !="", ...string & !=""]
 	strategy?:     string
 	region?:       string
 	deploymentId?: string

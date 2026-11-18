@@ -24,6 +24,9 @@ export {
 	recordedResources,
 } from "./desired-state.js";
 export {
+	type BlockedDependency,
+	type DependencyObservationRequest,
+	type DependencyObservationStatus,
 	type OrchestratorContext,
 	type OrchestratorDeps,
 	type OrchestratorResult,

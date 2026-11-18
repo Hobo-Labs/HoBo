@@ -1,20 +1,13 @@
 import type { ManifestV1 } from "@hobo/bindles";
 
+import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
 import type { ResourceIntent } from "./plan-types.js";
-
-// Planner step 0 (control-plane.md): lower each `hobo.manifest/v1` resource node
-// to a provider-neutral ResourceIntent (capability class + required features +
-// bind-edge deps + routing objective). Provider names, SKUs, and regions enter
-// only later, after matching — this stage is deliberately provider-agnostic.
 
 export interface LowerOptions {
 	objective?: string;
 	region?: string;
 }
 
-// Capability-class + required-feature mapping per manifest resource shape. The
-// required features are the agnostic port contract; a provider Capability must
-// satisfy them (control-plane.md "capability negotiation").
 const DATA_PORT_RULES: ReadonlyArray<{
 	match: (port: string) => boolean;
 	capabilityPort: string;
@@ -34,19 +27,12 @@ interface LoweredDataPort {
 }
 
 function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
-	// A provider-owned project groups resources; it does not serve HTTP itself.
 	if ((port === "hobo:data" || port === "data") && paradigm === "project")
 		return { capabilityPort: "project", require: [] };
-	// The Bindle SDK's collection adapter records backing resources as data.v1
-	// and preserves the requested kind in `paradigm`. A bucket must therefore
-	// reach the object-storage planner port even though its wire port is the
-	// generic `hobo:data` collector port.
 	if ((port === "hobo:data" || port === "data") && paradigm === "object")
 		return { capabilityPort: "objectStore", require: ["durable"] };
 	if ((port === "hobo:data" || port === "data") && paradigm === "secret")
 		return { capabilityPort: "secretRef", require: [] };
-	// An SDK key-value declaration does not assert eventual consistency.
-	// Let its explicit capability requirements select the required guarantees.
 	if ((port === "hobo:data" || port === "data") && paradigm === "key-value")
 		return { capabilityPort: "kv", require: [] };
 	if ((port === "hobo:data" || port === "data") && paradigm === "queue")
@@ -58,9 +44,6 @@ function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
 			return { capabilityPort: rule.capabilityPort, require: rule.require };
 		}
 	}
-	// Unmapped ports pass through their bare token (e.g. `hobo:database` ->
-	// `database`); no seed provider advertises them, so matching rejects with
-	// remediation — exactly the agent-self-correction path.
 	const bare = port.includes(":") ? (port.split(":").pop() ?? port) : port;
 	return { capabilityPort: bare, require: [] };
 }
@@ -73,7 +56,6 @@ export function lowerManifest(
 	const resources = manifest.value.resources;
 	const intents: ResourceIntent[] = [];
 
-	// Deterministic order: sort resource ids so the plan DAG is byte-stable.
 	for (const name of Object.keys(resources).sort()) {
 		const resource = resources[name];
 		if (!resource) continue;
@@ -105,8 +87,34 @@ export function lowerManifest(
 				require = [];
 		}
 
-		// bind edges (control-plane.md step 1: collect `bind` edges into the DAG).
-		const deps = Array.isArray(resource.bind) ? [...resource.bind].sort() : [];
+		if (
+			resource.annotations !== undefined &&
+			!isJsonObject(resource.annotations)
+		) {
+			throw new Error(`resource ${name} annotations must be an object`);
+		}
+		const readyDeps = readinessDependencies(
+			name,
+			resource.annotations,
+			"waitFor",
+			"ready",
+			resources,
+		);
+		const completedDeps = readinessDependencies(
+			name,
+			resource.annotations,
+			"waitForCompletion",
+			"completed",
+			resources,
+		);
+		if (readyDeps.some((dependency) => completedDeps.includes(dependency))) {
+			throw new Error(
+				`resource ${name} cannot require both readiness and completion for one dependency`,
+			);
+		}
+		const deps = [
+			...new Set([...(resource.bind ?? []), ...readyDeps, ...completedDeps]),
+		].sort();
 
 		const intent: ResourceIntent = {
 			name,
@@ -117,9 +125,39 @@ export function lowerManifest(
 			deps,
 			objective,
 		};
+		if (readyDeps.length > 0) intent.readyDeps = readyDeps;
+		if (completedDeps.length > 0) intent.completedDeps = completedDeps;
 		if (options.region !== undefined) intent.region = options.region;
 		intents.push(intent);
 	}
 
 	return intents;
+}
+
+function readinessDependencies(
+	name: string,
+	annotations: JsonObject | undefined,
+	field: "waitFor" | "waitForCompletion",
+	condition: "ready" | "completed",
+	resources: ManifestV1["value"]["resources"],
+): string[] {
+	const input = annotations?.[field];
+	if (input === undefined) return [];
+	if (!Array.isArray(input))
+		throw new Error(`resource ${name} ${field} must be an array`);
+	const result: string[] = [];
+	for (const entry of input) {
+		if (
+			!isJsonObject(entry) ||
+			!isJsonString(entry.to) ||
+			entry.until !== condition ||
+			entry.to === name ||
+			!Object.hasOwn(resources, entry.to) ||
+			result.includes(entry.to)
+		) {
+			throw new Error(`resource ${name} has an invalid ${field} dependency`);
+		}
+		result.push(entry.to);
+	}
+	return result.sort();
 }
