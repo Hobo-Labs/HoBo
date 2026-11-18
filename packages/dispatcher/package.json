@@ -25,6 +25,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {
