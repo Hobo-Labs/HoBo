@@ -32,7 +32,6 @@ HoBo favors compile-time feedback over runtime error discovery. New production-f
 - Every integration boundary needs a consumer-driven contract: SDK ↔ runtime, runtime ↔ provider adapter, control plane ↔ data plane, CLI ↔ daemon/API, event producer ↔ projection consumer, generated plugin ↔ host, and HoBo ↔ external service.
 - Use PACT-style contract testing for those boundaries. HoBo's Contract IR can import/export PACT, OpenAPI, AsyncAPI, and Protobuf artifacts, but consumer/provider compatibility must be exercised before deploy and recorded as proof material.
 - Prefer contract, conformance, typecheck, and CUE evaluation gates before runtime integration tests. Runtime tests remain necessary for behavior, determinism, and provider realism, but they should not be the first place schema or invariant drift appears.
-- Property-based and coverage-guided fuzzing live in `@hobo/fuzz` ([fuzzing.md](./fuzzing.md)). **fast-check** is the primary framework for lifecycle/authority/canonicalization oracles over in-memory adapters. **Jazzer.js** is reserved for untrusted serialized input. **Schemathesis** may run against an ephemeral local OpenAPI surface in PRs (skip if missing). **RESTler**, **Toxiproxy**, and **Testcontainers** are nightly and docker-gated. Never point these tools at live Azure, AWS, GCP, or paid SaaS. Default `agent:check` must stay fast: bounded `numRuns`, no long Jazzer campaigns, no Docker.
 
 ## Enforcement
 

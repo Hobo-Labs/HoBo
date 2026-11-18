@@ -5,7 +5,8 @@ control-plane invariants. The package drives in-memory adapters and provider
 simulators. It never calls Azure, AWS, GCP, or paid SaaS.
 
 Wire shapes live in [`data-models/fuzz.proto`](./data-models/fuzz.proto)
-(documentation-only; no `buf.yaml`) and the Bindle hash boundary is fixtured in
+(documentation-only; no `buf.yaml`) and native Pact message interactions verify
+the Bindle hash boundary in
 [`contracts/pacts/fuzz-bindles-canonical.pact.json`](./contracts/pacts/fuzz-bindles-canonical.pact.json).
 The in-process API surface is described by
 [`contracts/openapi/control-sim.v1.json`](./contracts/openapi/control-sim.v1.json).

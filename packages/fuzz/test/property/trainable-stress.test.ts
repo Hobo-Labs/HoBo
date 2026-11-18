@@ -16,7 +16,6 @@ describe("trainable gold/silver stress", () => {
 		const wide = Object.fromEntries(
 			Array.from({ length: 80 }, (_, i) => [`k${i}`, i]),
 		);
-		// SAFETY: this fixture intentionally models a JSON object for pollution testing.
 		const parsed = JSON.parse('{"__proto__":{"admin":true}}') as FuzzValue;
 		expect(() =>
 			fuzzTrainable(
@@ -43,10 +42,7 @@ describe("trainable gold/silver stress", () => {
 		const fn = (input: FuzzValue) => {
 			const text =
 				input && Object(input) === input && "text" in input
-					? String(
-							// SAFETY: the object branch establishes a property-bearing input.
-							(input as { text?: unknown }).text ?? "",
-						)
+					? String((input as { text?: unknown }).text ?? "")
 					: "";
 			return { label: text.includes("invoice") ? "billing" : "other" };
 		};

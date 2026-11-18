@@ -30,13 +30,17 @@ test("architecture guard rejects implementation packages without contract and st
 	await withFixture(async (root) => {
 		await write(
 			root,
-			"src/draft/technical-proofs/demo-contract/src/demo.mjs",
-			"export const ok = true;\n",
+			"src/draft/technical-proofs/demo-contract/src/demo.ts",
+			[
+				"export function parseDemo(input: unknown): unknown { return input; }",
+				"export type DemoCommand = { kind: string };",
+				"export interface DemoEvent { readonly kind: string; }",
+			].join("\n"),
 		);
 
 		const result = await checkArchitectureGuardrails({
 			root,
-			files: ["src/draft/technical-proofs/demo-contract/src/demo.mjs"],
+			files: ["src/draft/technical-proofs/demo-contract/src/demo.ts"],
 		});
 
 		assert.deepEqual(
@@ -56,8 +60,8 @@ test("architecture guard accepts packages with PACT, protobuf, CUE, parsed types
 	await withFixture(async (root) => {
 		await write(
 			root,
-			"src/draft/technical-proofs/demo-contract/src/demo.mjs",
-			"export const ok = true;\n",
+			"src/draft/technical-proofs/demo-contract/src/demo.ts",
+			architectureEvidence,
 		);
 		await write(
 			root,
@@ -78,22 +82,9 @@ test("architecture guard accepts packages with PACT, protobuf, CUE, parsed types
 			"src/draft/technical-proofs/demo-contract/proto/demo.cue",
 			"Demo: {}\n",
 		);
-		await write(
-			root,
-			"src/draft/technical-proofs/demo-contract/architecture.md",
-			[
-				"# Demo Architecture",
-				"",
-				"Parse, don't validate: constructors return derived parsed types after protobuf and CUE constraints pass.",
-				"The CQRS actor consumes commands, emits events, and appends to the event store.",
-				"A materialized view exposes rx-style projection streams with cached snapshots.",
-				"Historical snapshots persist in the read store.",
-			].join("\n"),
-		);
-
 		const result = await checkArchitectureGuardrails({
 			root,
-			files: ["src/draft/technical-proofs/demo-contract/src/demo.mjs"],
+			files: ["src/draft/technical-proofs/demo-contract/src/demo.ts"],
 		});
 
 		assert.deepEqual(result.problems, []);
@@ -104,8 +95,8 @@ test("architecture guard requires CUE constraints for every protobuf type", asyn
 	await withFixture(async (root) => {
 		await write(
 			root,
-			"src/draft/technical-proofs/demo-contract/src/demo.mjs",
-			"export const ok = true;\n",
+			"src/draft/technical-proofs/demo-contract/src/demo.ts",
+			architectureEvidence,
 		);
 		await write(
 			root,
@@ -126,22 +117,9 @@ test("architecture guard requires CUE constraints for every protobuf type", asyn
 			"src/draft/technical-proofs/demo-contract/proto/demo.cue",
 			"Demo: {}\n",
 		);
-		await write(
-			root,
-			"src/draft/technical-proofs/demo-contract/architecture.md",
-			[
-				"# Demo Architecture",
-				"",
-				"Parse, don't validate: constructors return derived parsed types after protobuf and CUE constraints pass.",
-				"The CQRS actor consumes commands, emits events, and appends to the event store.",
-				"A materialized view exposes rx-style projection streams with cached snapshots.",
-				"Historical snapshots persist in the read store.",
-			].join("\n"),
-		);
-
 		const result = await checkArchitectureGuardrails({
 			root,
-			files: ["src/draft/technical-proofs/demo-contract/src/demo.mjs"],
+			files: ["src/draft/technical-proofs/demo-contract/src/demo.ts"],
 		});
 
 		assert.deepEqual(
@@ -169,12 +147,15 @@ test("architecture guard ignores docs-only draft package edits", async () => {
 });
 
 const architectureEvidence = [
-	"# Demo Architecture",
-	"",
-	"Parse, don't validate: constructors return derived parsed types after protobuf and CUE constraints pass.",
-	"The CQRS actor consumes commands, emits events, and appends to the event store.",
-	"A materialized view exposes rx-style projection streams with cached snapshots.",
-	"Historical snapshots persist in the read store.",
+	"export type ParsedDemo = { readonly id: string };",
+	"export function parseDemo(input: unknown): ParsedDemo { return { id: String(input) }; }",
+	"export type DemoCommand = { readonly kind: string };",
+	"export interface DemoEvent { readonly kind: string; }",
+	"export interface DemoSnapshot { readonly revision: number; }",
+	"export class DemoModel {",
+	"  snapshot(): DemoSnapshot { return { revision: 1 }; }",
+	"  replay(): ParsedDemo { return { id: 'demo' }; }",
+	"}",
 ].join("\n");
 
 test("implementationPackageRoots maps production package paths", () => {
@@ -201,11 +182,7 @@ test("implementationPackageRoots ignores barebones examples", () => {
 
 test("architecture guard rejects production packages with misplaced data models and contracts", async () => {
 	await withFixture(async (root) => {
-		await write(
-			root,
-			"packages/demo/src/demo.ts",
-			"export const demo = true;\n",
-		);
+		await write(root, "packages/demo/src/demo.ts", architectureEvidence);
 		await write(
 			root,
 			"packages/demo/proto/demo.proto",
@@ -236,11 +213,7 @@ test("architecture guard rejects production packages with misplaced data models 
 
 test("architecture guard accepts compliant production packages", async () => {
 	await withFixture(async (root) => {
-		await write(
-			root,
-			"packages/demo/src/demo.ts",
-			"export const demo = true;\n",
-		);
+		await write(root, "packages/demo/src/demo.ts", architectureEvidence);
 		await write(
 			root,
 			"packages/demo/data-models/demo.proto",
@@ -256,8 +229,6 @@ test("architecture guard accepts compliant production packages", async () => {
 				interactions: [],
 			}),
 		);
-		await write(root, "packages/demo/ARCHITECTURE.md", architectureEvidence);
-
 		const result = await checkArchitectureGuardrails({
 			root,
 			files: ["packages/demo/src/demo.ts"],
@@ -271,8 +242,8 @@ test("architecture guard does not apply production-only checks to draft packages
 	await withFixture(async (root) => {
 		await write(
 			root,
-			"src/draft/technical-proofs/demo-contract/src/demo.mjs",
-			"export const ok = true;\n",
+			"src/draft/technical-proofs/demo-contract/src/demo.ts",
+			architectureEvidence,
 		);
 		await write(
 			root,
@@ -293,15 +264,9 @@ test("architecture guard does not apply production-only checks to draft packages
 			"src/draft/technical-proofs/demo-contract/proto/demo.cue",
 			"Demo: {}\n",
 		);
-		await write(
-			root,
-			"src/draft/technical-proofs/demo-contract/architecture.md",
-			architectureEvidence,
-		);
-
 		const result = await checkArchitectureGuardrails({
 			root,
-			files: ["src/draft/technical-proofs/demo-contract/src/demo.mjs"],
+			files: ["src/draft/technical-proofs/demo-contract/src/demo.ts"],
 		});
 
 		const codes = result.problems.map((problem) => problem.code);

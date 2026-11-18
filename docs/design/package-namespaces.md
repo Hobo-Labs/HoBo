@@ -94,7 +94,6 @@ backs ADR-0087 and gives docs, generators, and boundary lint one table to check.
 | Component host: multi-cloud registry (`componentHost=cloud-native`) | `@hobo/runtime-cloud-native` | Camp hosts | Mock provider for parity; cloud providers stubbed until certified. |
 | MCP server (tool surface parity with CLI verbs) | `@hobo/mcp` | agents | Deny-by-default auth; same canonical verb registry as CLI. |
 | Port/provider conformance suites | `@hobo/conformance` | adapters + CI | Certifies engines/providers claiming a port. |
-| Property oracles, Jazzer harnesses, Schemathesis/RESTler wrappers | `@hobo/fuzz` | CI + tests | OSS-Fuzz-style control-plane invariants over simulators; never live clouds ([fuzzing.md](./fuzzing.md)). |
 | PACT harness (inventory/mock/verify/subset) | `@hobo/contract-harness` | tests | Contract fixtures and verification tooling. |
 | Provider-text redaction (shared credential shapes, detectors, `createProviderRedactor`, `KEPT_LOCATOR`) | `@hobo/provider-redaction` | providers + packs + guards | Leaf: imports no HoBo package. Kept out of `@hobo/core` so a shape change runs the suites that redact ([provider-redaction.md](./provider-redaction.md)). |
 | Linear-time and redaction test harness (`/linear-time`, `/linear-sweep`, `/redaction-differential`) | `@hobo/redaction-test-harness` | tests only (devDependency) | Leaf with no dependencies, apart from `@hobo/contract-harness` so a change to it plans only the suites that redact ([provider-redaction.md](./provider-redaction.md)). |

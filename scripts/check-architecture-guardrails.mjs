@@ -18,6 +18,16 @@ const IMPLEMENTATION_EXTENSIONS = new Set([
 ]);
 
 const DOC_ONLY_EXTENSIONS = new Set([".md", ".mdx", ".txt"]);
+const SOURCE_EXTENSIONS = new Set([
+	".cjs",
+	".cts",
+	".js",
+	".jsx",
+	".mjs",
+	".mts",
+	".ts",
+	".tsx",
+]);
 const DRAFT_PROOF_KINDS = new Set([
 	"technical-proofs",
 	"exp-proofs",
@@ -29,7 +39,6 @@ const TEXT_EXTENSIONS = new Set([
 	".cue",
 	".js",
 	".json",
-	".md",
 	".mjs",
 	".mts",
 	".proto",
@@ -96,14 +105,13 @@ const REQUIRED_CHECKS = [
 	},
 	{
 		code: "missing-parse-derived-type",
-		message:
-			"Document or implement parse-don't-validate derived types for constrained values.",
+		message: "Parser boundaries must return explicit derived domain types.",
 		passes: (evidence) => evidence.hasParseDerivedTypes,
 	},
 	{
 		code: "missing-event-architecture",
 		message:
-			"Name command/event, actor, event-store, materialized-view/projection, snapshot, and read-store behavior.",
+			"Stateful command/event code must expose actor, event-store, projection, snapshot, and read-store symbols or a deterministic snapshot/replay model.",
 		passes: (evidence) => evidence.hasEventArchitecture,
 	},
 	{
@@ -212,7 +220,7 @@ async function collectEvidence(root, packageRoot) {
 	const files = existsSync(absolutePackageRoot)
 		? await listFiles(absolutePackageRoot, absolutePackageRoot)
 		: [];
-	const text = [];
+	const implementationSources = [];
 	const typeScriptSources = [];
 	const protoTypes = new Set();
 	const cueTexts = [];
@@ -270,7 +278,13 @@ async function collectEvidence(root, packageRoot) {
 				path.join(absolutePackageRoot, file),
 				"utf8",
 			);
-			text.push(contents);
+			if (
+				SOURCE_EXTENSIONS.has(ext) &&
+				normalized.startsWith("src/") &&
+				!/(^|\/)_generated(\/|$)/.test(normalized)
+			) {
+				implementationSources.push({ file: normalized, contents });
+			}
 			if (
 				ext === ".ts" &&
 				normalized.startsWith("src/") &&
@@ -281,7 +295,6 @@ async function collectEvidence(root, packageRoot) {
 		}
 	}
 
-	const combinedText = text.join("\n");
 	const combinedCueText = cueTexts.join("\n");
 
 	return {
@@ -292,17 +305,8 @@ async function collectEvidence(root, packageRoot) {
 			[...protoTypes].every((typeName) =>
 				cueDefinesType(combinedCueText, typeName),
 			),
-		hasParseDerivedTypes:
-			/parse,?\s+don['’]?t\s+validate/i.test(combinedText) &&
-			/\b(derived|parsed)\s+(?:domain\s+)?types?\b/i.test(combinedText),
-		hasEventArchitecture:
-			/\bcommand/i.test(combinedText) &&
-			/\bevents?\b/i.test(combinedText) &&
-			/\bactors?\b/i.test(combinedText) &&
-			/\bevent[-\s]?stores?\b/i.test(combinedText) &&
-			/\b(materialized\s+views?|projections?)\b/i.test(combinedText) &&
-			/\bsnapshots?\b/i.test(combinedText) &&
-			/\bread\s+stores?\b/i.test(combinedText),
+		hasParseDerivedTypes: hasParseDerivedTypes(implementationSources),
+		hasEventArchitecture: hasEventArchitecture(implementationSources),
 		hasDataModelsProto,
 		hasDataModelsCue,
 		hasMisplacedDataModel,
@@ -312,6 +316,59 @@ async function collectEvidence(root, packageRoot) {
 			protoTypes,
 		),
 	};
+}
+
+function hasParseDerivedTypes(sources) {
+	const declarations = sources.flatMap(({ contents }) => [
+		...contents.matchAll(
+			/\bexport\s+(?:async\s+)?function\s+(?:parse|decode|deserialize)[A-Z_$][\w$]*\s*\([^)]*\)\s*(?::\s*([^={\n]+))?/gu,
+		),
+	]);
+	if (declarations.length === 0) return false;
+	return declarations.every((declaration) => {
+		const result = declaration[1]?.trim();
+		return Boolean(
+			result &&
+				!/^(?:any|boolean|number|object|string|symbol|unknown|void)(?:\s|\[|\||$)/u.test(
+					result,
+				),
+		);
+	});
+}
+
+function hasEventArchitecture(sources) {
+	const text = sources.map(({ contents }) => contents).join("\n");
+	const declaration = (suffix) =>
+		new RegExp(
+			`\\b(?:class|interface|type)\\s+[A-Za-z_$][\\w$]*${suffix}\\b`,
+			"u",
+		).test(text);
+	const command = declaration("Command");
+	const event = declaration("Event");
+	const snapshot =
+		declaration("Snapshot") || /\bsnapshot\s*\([^)]*\)\s*[{;]/u.test(text);
+	const replay = /\breplay\s*\([^)]*\)\s*(?::\s*[^={;\n]+)?\s*[{;]/u.test(text);
+	const hasStatefulSurface =
+		command ||
+		event ||
+		snapshot ||
+		replay ||
+		declaration("Actor") ||
+		declaration("EventStore") ||
+		declaration("Projection") ||
+		declaration("MaterializedView") ||
+		declaration("ReadStore");
+	if (!hasStatefulSurface) return false;
+	const deterministicModel = command && event && snapshot && replay;
+	const completeRuntime =
+		command &&
+		event &&
+		declaration("Actor") &&
+		declaration("EventStore") &&
+		(declaration("Projection") || declaration("MaterializedView")) &&
+		snapshot &&
+		declaration("ReadStore");
+	return deterministicModel || completeRuntime;
 }
 
 const PARALLEL_TYPE_MARKERS = ["domain-view:", "parallel-type-allowed:"];
