@@ -34,7 +34,6 @@ import {
 import { createHttpComponentDescriptor } from "./component-http.js";
 import { isJsonObject, isJsonString } from "./json.js";
 
-
 export type LocalYardServeResult = BareMetalServeResult & {
 	readonly componentHost: "local";
 	readonly engine: {
@@ -192,7 +191,9 @@ export async function serveBindleOnLocalYard(options: {
 		appendEvent: () => {},
 	});
 	for (const entry of entrypoints) {
-		componentHost.loadComponent(createHttpComponentDescriptor(entry.name, entry.handler, "latin1"));
+		componentHost.loadComponent(
+			createHttpComponentDescriptor(entry.name, entry.handler, "latin1"),
+		);
 		emit(
 			`hobo dev: component host loaded ${entry.kind}:${entry.name}` +
 				(entry.external ? " (external)" : " (private mesh)"),

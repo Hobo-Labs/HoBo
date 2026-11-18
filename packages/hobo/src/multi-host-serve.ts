@@ -303,7 +303,9 @@ export async function serveProjectOnHost(options: {
 	const servers: Server[] = [];
 	let publicIndex = 0;
 	for (const entry of externalEntries) {
-		host.loadComponent(createHttpComponentDescriptor(entry.name, entry.handler, "utf8"));
+		host.loadComponent(
+			createHttpComponentDescriptor(entry.name, entry.handler, "utf8"),
+		);
 		const port = basePort + publicIndex;
 		publicIndex += 1;
 		const url = `http://127.0.0.1:${port}`;
