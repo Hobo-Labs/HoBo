@@ -62,5 +62,7 @@ destroy, and replay. Oracles include:
 - malformed snapshots and inconsistent fingerprints are refused before restore
 - capability commands reject unsupported verbs and capture caller-supplied lists
   so later caller edits do not change the oracle or its replay history
+- public event appends advance the clock, replay-owned event kinds cannot be
+  emitted as free-form notes, and event history reads return detached snapshots
 - interrupt after destroy does not revive a resource
 - apply after destroy recreates instead of leaving a destroyed hole

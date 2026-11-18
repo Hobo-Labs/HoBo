@@ -124,6 +124,89 @@ describe("replay reproduces the live fingerprint", () => {
 	});
 });
 
+describe("event history ownership", () => {
+	it("captures event payloads and returns detached history snapshots", () => {
+		fc.assert(
+			fc.property(fc.string({ maxLength: 40 }), (detail) => {
+				const model = new ControlModel();
+				const payload = { detail };
+				model.note(TENANT, "audit.observed", payload);
+				payload.detail = "changed by caller";
+				const view = model.events;
+				const event = view[0];
+				if (!event) throw new Error("missing event");
+				expect(event.payload.detail).toBe(detail);
+				// SAFETY: the test mutates a returned snapshot to verify isolation.
+				(event.payload as Record<string, string>).detail = "changed in view";
+				view.splice(0, view.length);
+				expect(model.events).toHaveLength(1);
+				expect(model.events[0]?.payload.detail).toBe(detail);
+				expect(model.replay()).toBe(model.fingerprint());
+			}),
+			{ numRuns: 100 },
+		);
+	});
+
+	it("orders a public custom append with later snapshots and rollback", () => {
+		const model = new ControlModel();
+		model.append(TENANT, "audit.observed", { detail: "before snapshot" });
+		expect(model.clock).toBe(1);
+		const checkpoint = model.snapshot();
+		model.createBindle(TENANT, "later", "sha256:a");
+		model.rollback(TENANT, checkpoint);
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("rejects non-string payloads before changing state or history", () => {
+		const model = new ControlModel();
+		const before = model.serialize();
+		// SAFETY: these cases deliberately cross the typed event boundary.
+		for (const invalid of [
+			null,
+			[],
+			{ detail: { nested: true } },
+			{ detail: 3 },
+		] as never[]) {
+			expect(() => model.note(TENANT, "audit.observed", invalid)).toThrow(
+				"fuzz.invalid_event_payload",
+			);
+			expect(() => model.append(TENANT, "audit.observed", invalid)).toThrow(
+				"fuzz.invalid_event_payload",
+			);
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual([]);
+		}
+	});
+
+	it("rejects replay-owned event kinds as free-form notes or appends", () => {
+		const model = new ControlModel();
+		model.createBindle(TENANT, "existing", "sha256:a");
+		const before = model.serialize();
+		const history = model.events;
+		for (const kind of [
+			"snapshot.taken",
+			"rollback",
+			"model.restored",
+			"bindle.created",
+			"capability.added",
+			"capability.attenuated",
+			"resource.applied",
+			"resource.interrupted",
+			"bindle.destroyed",
+		]) {
+			expect(() => model.note(TENANT, kind, {})).toThrow(
+				"fuzz.reserved_event_kind",
+			);
+			expect(() => model.append(TENANT, kind, {})).toThrow(
+				"fuzz.reserved_event_kind",
+			);
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(history);
+		}
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+});
+
 describe("command dispatch", () => {
 	function drive(model: ControlModel, commands: unknown[]) {
 		for (const command of commands) {
