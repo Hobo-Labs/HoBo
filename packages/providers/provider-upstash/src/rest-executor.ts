@@ -105,6 +105,7 @@ function errorEnvelope(body: string): RedisReply | undefined {
 }
 
 const COMMAND_VERB = /^[A-Za-z][A-Za-z0-9._-]{0,31}$/u;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export function createUpstashRestExecutor(
 	options: UpstashRestExecutorOptions,
@@ -166,13 +167,18 @@ export function createUpstashRestExecutor(
 			});
 		},
 		async advanceTime(ms: number): Promise<void> {
-			if (!Number.isFinite(ms) || ms < 0) {
+			if (!Number.isFinite(ms) || ms < 0 || ms > Number.MAX_SAFE_INTEGER) {
 				throw new UpstashProviderError(
 					"PROVIDER_CONTRACT_CHANGED",
-					"time advancement must be a finite non-negative duration",
+					"time advancement must be a finite non-negative safe duration",
 				);
 			}
-			await wait(ms);
+			let remaining = ms;
+			do {
+				const delay = Math.min(remaining, MAX_TIMER_DELAY_MS);
+				await wait(delay);
+				remaining -= delay;
+			} while (remaining > 0);
 		},
 	};
 }
