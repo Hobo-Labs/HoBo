@@ -54,7 +54,14 @@ and before signoff.
 The GitHub repository selected by `gh` must match the base remote. In a fork
 checkout, set `GH_REPO` to the base repository (for example,
 `GH_REPO=github.com/Hobo-Labs/HoBo`) and use `--base=upstream/main` when that
-is the intended remote branch.
+is the intended remote branch. The tested commit must be reachable from a live
+branch on that base remote, or be the exact current head of an open pull request
+against the tested base. Fork and same-repository pull requests are supported
+when their head repository and branch are readable. The coordinator discovers
+the pull request from the current branch, or accepts `--pr=123` (also useful in
+a detached checkout). If a target branch has advanced, fetch it so its tip is
+known locally. An inaccessible, closed, moved, or retargeted pull request is
+refused. A status remains on the tested commit if the pull request later moves.
 
 The coordinator interprets routing and provider inventory, not the complete
 project policy schema. Malformed inventory, unsupported provider references,

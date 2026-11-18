@@ -119,6 +119,41 @@ statuses. These statuses use the credential's authority, rather than the
 base-branch trust list used for workflow-reuse attestations. Local commands run
 with the invoking user's authority, so only run trusted code. Serialize local
 runs in a checkout and inspect statuses after an interrupted publication.
+The scripts test runner limits each Vitest run with `HOBO_TEST_RUN_TIMEOUT_MS`,
+reports the signal when Vitest is killed, and warns when host suspension
+makes the wall clock diverge substantially from the monotonic clock.
+
+Before signoff, HoBo verifies the tested commit against a live branch on the
+verified target remote: it must be that branch's tip, or an ancestor of a live
+tip already known locally. Fetch the target branch if its newer tip is not
+known locally. Ancestor proof requires Git 2.45 or newer so missing objects
+cannot be fetched implicitly; older Git can still sign an exact branch tip or a
+verified pull request head. Alternatively, an open same-repository or fork pull request can
+prove its exact current head against the tested base. The coordinator can
+discover the PR from the current branch or accept `--pr=NUMBER`, including in
+a detached checkout. Inaccessible, closed, moved or retargeted PRs are refused;
+repository identity and the live head branch are checked independently. HoBo
+rechecks the complete PR proof, base, target and checkout before invoking the
+extension in a private temporary Git view; it neither changes the checkout's
+refs nor forces signoff. These checks and publication cannot be atomic: a PR or
+branch can move afterward, and a status stays on the tested SHA. See the
+[PR-head contract](pr-head-target.md) for the proof and refusal cases.
+If listing all target branches fails, HoBo can still use an independently
+verified open PR; the tested base must remain reachable and unchanged. Fleet
+preflight retains its original branch or PR proof through the run, so adding an
+unrelated branch does not change the chosen proof, while moving or deleting the
+chosen branch still refuses publication. A failed final GitHub branch read
+identifies the selected-branch check separately from a changed or unreadable base.
+
+The tested SHA must identify Git's original objects and parent graph. Local
+runs and signoff refuse replacement refs or nonempty graft metadata, including
+grafts shared by linked worktrees. HoBo's own Git subprocesses ignore
+caller-provided replacement and graft overrides. Workflow steps do not receive
+those variables unless they explicitly declare them, and conflicting declared
+values are refused. HoBo checks for graph metadata after each local step as
+well as before the run and publication. These checks are not a sandbox: trusted
+commands or concurrent processes can make transient changes within a step, so
+serialize access to the checkout while running and signing.
 
 The attestor key's new parent directory is created with mode `0700` or more
 restrictive according to the umask. An existing parent must already deny

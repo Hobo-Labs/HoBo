@@ -209,7 +209,7 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` with `classMb` and `learned`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class and job name.
 
-The daemon computes each job's heap from its admitted memory class and injects `NODE_OPTIONS=--max-old-space-size=<heap>` at container creation, so every Node process inherits it and no workflow-level value overrides it. `ci-runner-preflight` also runs `scripts/ci/memory-env.mts` before install (heap math lives in `packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts` so preflight does not load worker peak history). It reads the job cgroup limit and writes the non-blocked **`HOBO_NODE_OPTIONS`** (never `NODE_OPTIONS` through `$GITHUB_ENV`), **`HOBO_TURBO_CONCURRENCY=1`**, and the repo-owned `HOBO_TEST_MAX_WORKERS`. After a 768 MiB native/non-heap allowance, workers are `max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`; each Node process receives `min(3072, floor((limit - 768) / (workers + 1)))` MiB of heap. Thus `(workers + 1) × heap + 768 <= limit`: the turbo/Vitest parent and every worker fit the same container budget instead of each receiving an independent full-size heap.
+The daemon computes each job's heap from its admitted memory class and injects `NODE_OPTIONS=--max-old-space-size=<heap>` at container creation. `ci-runner-preflight` also runs `scripts/ci/memory-env.mts` before install (heap math lives in `packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts` so preflight does not load worker peak history). It reads the job cgroup limit and writes the non-blocked **`HOBO_NODE_OPTIONS`** (never `NODE_OPTIONS` through `$GITHUB_ENV`), **`HOBO_TURBO_CONCURRENCY=1`**, and the repo-owned `HOBO_TEST_MAX_WORKERS`. After a 768 MiB native/non-heap allowance, workers are `max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`; the selected heap is `min(3072, floor((limit - 768) / (workers + 1)))` MiB. The budget `(workers + 1) × heap + 768 <= limit` covers the planned parent and file workers when they inherit that heap setting. Some test launchers deliberately sanitize `NODE_OPTIONS`, and tests may spawn their own processes, so this is not a guarantee of peak memory usage.
 
 The memory-class re-export is blank-line separated from the memory-peaks import for Biome `organizeImports`.
 
@@ -220,6 +220,8 @@ The memory-class re-export is blank-line separated from the memory-peaks import 
 | `heavy` | 6144 MiB | 1344 MiB | 3 |
 
 Configs resolve the smaller of their own cap and this value; CI does not export `VITEST_MAX_WORKERS`, which Vitest would apply after config resolution and after `fileParallelism: false`, overriding correctness-critical single-worker pins. Workflows retain a conservative 1-worker/1024 MiB fallback if preflight is skipped. The Main full gate's `check:all` step also sets **`HOBO_RELEVANT_CHECK_CONCURRENCY=1`**. If `test:unit` ends with exit 1 and no Vitest summary, look for `run-tests: vitest was killed by <SIGNAL>` in the log.
+
+The required Scripts tests lane assigns tracked test files to four deterministic shards for pull requests and merge groups. Each shard uses the configured worker cap for both Vitest and concurrent `node:test` files; subprocesses started inside a test are not counted by that cap. The PR impact gate requires every shard to succeed. With one available runner, the shards queue for it and run separately rather than assuming four machines are available.
 
 **Disk and inode admission:** before each reservation, the daemon samples bytes and inodes on Docker's data root and the work root. Above 85% for either resource it runs the full non-pnpm GC described above at most once per 60 seconds, then samples again; decisions within that interval still use a fresh sample. Above 95% after pruning, the job waits and `hobo_ci_inode_pressure` is logged once per episode. A dispatch pass stops calling storage admission after its first refusal because pressure is host-wide. A trunk-label storage refusal blocks lower ranks and records `hobo_ci_trunk_wait` with `reason: "storage"`. Each admitted job reserves **bytes and inodes** from a **storage class** (`default`, `release_trunk` for Pages/npm/GHCR publish, `runner_image` for OCI gate builds); learned peaks from retired workdirs blend with class caps like memory admission. Defaults without peaks: **200000** workdir plus **170000** container inodes and class byte caps (release trunk **18 GiB** workroot + **6 GiB** container growth). Reservations on the same device add together; consumption since the oldest live grant reduces the outstanding estimate. If free space or inodes minus outstanding growth cannot fit the new job, the same rate-limited GC/recheck runs before the daemon waits and logs `hobo_ci_disk_reserve_wait` or `hobo_ci_inode_reserve_wait` once per episode. Grants without an active lease expire after a 60-second grace, and failed lease reservations release immediately. A live job's directory is never retired or deleted. See [finding 25](../../docs/ci/findings/0025-inode-exhaustion-made-pr-installs-fail-with-enospc.md), [finding 58](../../docs/ci/findings/0058-two-concurrent-jobs-exhausted-inodes-mid-run.md), [finding 68](../../docs/ci/findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md), and [finding 90](../../docs/ci/findings/0090-release-enospc-byte-admission.md).
 
@@ -497,8 +499,18 @@ target repository; `git user.name` must be set. The command verifies that the
 repository selected by `gh` matches the base remote, pins `GH_HOST` and
 `GH_REPO` to that identity, and checks GitHub's live base tip before it calls
 the extension. A mismatch or unavailable identity/base check refuses signoff.
-The extension refuses an unpushed
-commit; this command does not use its force option. A separate
+The tested head must also be reachable from a live branch on that remote, or be
+the exact current head of an open PR against the tested base. Same-repository
+and readable fork heads are supported; pass `--pr=123` when the PR cannot be
+discovered from the current branch, including a detached checkout. A narrow
+fetch is supported: fetch a target branch if its newer tip is not present
+locally. Proving ancestry from a newer tip requires Git 2.45 or newer; older Git
+can still use an exact target-branch tip or a verified PR head. Fleet checks
+publication before running local jobs, and signoff
+rechecks the branch or PR, base and checkout before publishing. These reads are
+not atomic with the status write. The command does not use the extension's
+force option. Replacement refs or nonempty Git graft metadata cause attestation
+to refuse; remove those local graph overrides or use a clean clone. A separate
 `pnpm ci:attest signoff --event=merge_group` reports only jobs run for that
 simulated event. `--base=upstream/main` selects another remote branch; signoff
 must be able to read its live tip and refuses when it differs from the tested

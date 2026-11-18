@@ -13,8 +13,8 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { devNull, tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -36,6 +36,7 @@ import {
 	ensureAttestorKey,
 	GIT_LOCATION_VARIABLES,
 	git,
+	gitEnvironment,
 	OUTPUT_DIRECTORY,
 	PUBLISH_ATTEMPTS,
 	parseCommandFile,
@@ -43,6 +44,7 @@ import {
 	resolveRunTarget,
 	runAttestedJobs,
 	scrubRemote,
+	signoffLocalRun,
 	stepEnvironment,
 	trustEntryFor,
 	verifyLocally,
@@ -75,6 +77,14 @@ const IDENTITY = [
 	"-c",
 	"commit.gpgsign=false",
 ];
+
+const supportsNoLazyFetch = () =>
+	spawnSync("git", ["--no-lazy-fetch", "--version"], { stdio: "ignore" })
+		.status === 0;
+const unprovedHeadMessage = () =>
+	supportsNoLazyFetch()
+		? /not verifiably on a branch of origin/u
+		: /Git 2\.45 or newer/u;
 
 function commit(repo: string, files: Readonly<Record<string, string>>): string {
 	for (const [name, text] of Object.entries(files)) {
@@ -123,6 +133,17 @@ describe("git commands", () => {
 		assert.equal(git(outer, ["rev-parse", "HEAD"]), outerHead);
 		assert.deepEqual(readFileSync(join(outer, ".git", "index")), outerIndex);
 		assert.equal(git(outer, ["status", "--porcelain"]), "");
+	});
+
+	it("disables caller-supplied replacement and graft overrides", () => {
+		const environment = gitEnvironment({
+			GIT_NO_REPLACE_OBJECTS: "0",
+			GIT_GRAFT_FILE: "/tmp/untrusted-grafts",
+			GIT_REPLACE_REF_BASE: "refs/other/",
+		});
+		assert.equal(environment.GIT_NO_REPLACE_OBJECTS, "1");
+		assert.equal(environment.GIT_GRAFT_FILE, devNull);
+		assert.equal(environment.GIT_REPLACE_REF_BASE, undefined);
 	});
 });
 
@@ -179,6 +200,53 @@ describe("the attestor key", () => {
 		// A similarly named sibling is not inside the checkout.
 		assert.doesNotThrow(() =>
 			assertKeyApart(join(`${checkout}-sibling`, "key.pem"), checkout, {}),
+		);
+	});
+
+	it("rejects keys inside explicitly configured tool directories", () => {
+		const checkout = directory("key-configured-checkout");
+		const shared = directory("key-configured-cache");
+		for (const name of [
+			"CARGO_HOME",
+			"RUSTUP_HOME",
+			"PNPM_HOME",
+			"COREPACK_HOME",
+			"GOCACHE",
+			"GOMODCACHE",
+			"TURBO_CACHE_DIR",
+			"MISE_DATA_DIR",
+			"npm_config_cache",
+			"npm_config_store_dir",
+			"TMPDIR",
+		]) {
+			assert.throws(
+				() =>
+					assertKeyApart(join(shared, "key.pem"), checkout, { [name]: shared }),
+				/signing key is inside/u,
+				name,
+			);
+		}
+		assert.throws(
+			() =>
+				assertKeyApart(join(shared, "key.pem"), checkout, {
+					GOPATH: [checkout, shared].join(delimiter),
+				}),
+			/signing key is inside/u,
+		);
+	});
+
+	it("resolves relative tool paths from the job directory", () => {
+		const parent = directory("relative-tool-path");
+		const checkout = join(parent, "repo");
+		const shared = join(parent, "cache");
+		mkdirSync(checkout);
+		mkdirSync(shared);
+		assert.throws(
+			() =>
+				assertKeyApart(join(shared, "key.pem"), checkout, {
+					CARGO_HOME: "../cache",
+				}),
+			/signing key is inside/u,
 		);
 	});
 
@@ -560,6 +628,139 @@ async function runIn(
 }
 
 describe("a local run", () => {
+	it("keeps undeclared Git graph variables out of workflow steps", async () => {
+		const run = await runIn(
+			[
+				{
+					id: "ci-guard",
+					steps: [
+						{
+							local: "run",
+							run: 'if [ -z "${GIT_GRAFT_FILE+x}${GIT_NO_REPLACE_OBJECTS+x}${GIT_REPLACE_REF_BASE+x}" ]; then echo normal >> "$RECORD"; else echo changed >> "$RECORD"; fi',
+						},
+					],
+				},
+			],
+			["pull_request"],
+			[],
+			false,
+			{
+				env: {
+					GIT_GRAFT_FILE: "/tmp/untrusted-grafts",
+					GIT_NO_REPLACE_OBJECTS: "0",
+					GIT_REPLACE_REF_BASE: "refs/other/",
+				},
+			},
+		);
+		await run.outcome;
+		assert.deepEqual(run.lines(), ["normal"]);
+	});
+
+	it("honors safe Git graph variables explicitly declared by a workflow", async () => {
+		const run = await runIn(
+			[
+				{
+					id: "ci-guard",
+					env: { GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: devNull },
+					steps: [
+						{
+							local: "run",
+							run: 'echo "$GIT_NO_REPLACE_OBJECTS:$GIT_GRAFT_FILE" >> "$RECORD"',
+						},
+					],
+				},
+			],
+			["pull_request"],
+		);
+		await run.outcome;
+		assert.deepEqual(run.lines(), [`1:${devNull}`]);
+	});
+
+	it("refuses a workflow that declares different Git graph semantics", async () => {
+		const run = await runIn(
+			[
+				{
+					id: "ci-guard",
+					env: {
+						GIT_NO_REPLACE_OBJECTS: "0",
+						GIT_GRAFT_FILE: "/tmp/untrusted-grafts",
+					},
+					steps: [
+						{
+							local: "run",
+							run: 'printf "%s:%s\\n" "$GIT_NO_REPLACE_OBJECTS" "$GIT_GRAFT_FILE" >> "$RECORD"',
+						},
+					],
+				},
+			],
+			["pull_request"],
+		);
+		await assert.rejects(
+			run.outcome,
+			/workflow changes Git object or graph semantics/u,
+		);
+	});
+
+	it("refuses graph overrides exported for a later workflow step", async () => {
+		const run = await runIn(
+			[
+				{
+					id: "ci-guard",
+					steps: [
+						{
+							local: "run",
+							run: 'echo "GIT_NO_REPLACE_OBJECTS=0" >> "$GITHUB_ENV"',
+						},
+						{ local: "run", run: "echo should-not-run" },
+					],
+				},
+			],
+			["pull_request"],
+		);
+		await assert.rejects(
+			run.outcome,
+			/workflow changes Git object or graph semantics/u,
+		);
+	});
+
+	it("does not sign when a job creates a replacement ref", async () => {
+		const run = await runIn(
+			[
+				{
+					id: "ci-guard",
+					steps: [
+						{
+							local: "run",
+							run: 'git update-ref "refs/replace/$(git rev-parse HEAD^2)" "$(git rev-parse HEAD^1)"',
+						},
+					],
+				},
+			],
+			["pull_request"],
+		);
+		await assert.rejects(run.outcome, /replacement refs are present/u);
+	});
+
+	it("refuses a replacement ref before a later step can remove it", async () => {
+		const run = await runIn(
+			[
+				{
+					id: "ci-guard",
+					steps: [
+						{
+							local: "run",
+							run: 'echo first >> "$RECORD"; git update-ref "refs/replace/$(git rev-parse HEAD^2)" "$(git rev-parse HEAD^1)"',
+						},
+						{ local: "run", run: 'echo second >> "$RECORD"' },
+					],
+				},
+			],
+			["pull_request"],
+		);
+		await assert.rejects(run.outcome, /replacement refs are present/u);
+		assert.deepEqual(run.lines(), ["first"]);
+	});
+
 	it("runs each job's commands for each event, signs them, and leaves the checkout as it was", async () => {
 		const run = await runIn(passingPlan);
 		const { envelope, file, notAttested } = await run.outcome;
@@ -1158,6 +1359,9 @@ describe("the environment a step starts from", () => {
 			HOBO_CI_ATTESTOR_KEY: "/home/dev/key.pem",
 			HOBO_TEST_POSTGRES_URL: "postgres://u:p@h/db",
 			GIT_ASKPASS: "/bin/askpass",
+			GIT_NO_REPLACE_OBJECTS: "0",
+			GIT_GRAFT_FILE: "/tmp/untrusted-grafts",
+			GIT_REPLACE_REF_BASE: "refs/other/",
 			GIT_CONFIG_COUNT: "1",
 			GIT_CONFIG_KEY_0: "credential.helper",
 			GIT_CONFIG_VALUE_0: "store",
@@ -1184,12 +1388,16 @@ describe("the environment a step starts from", () => {
 				XDG_CACHE_HOME: "/big/cache",
 				CARGO_HOME: "/opt/cargo",
 				PNPM_HOME: "/opt/pnpm",
+				npm_config_cache: "/opt/npm-cache",
+				npm_config_store_dir: "/opt/pnpm-store",
 			},
 			home,
 		);
 		assert.equal(environment.XDG_CACHE_HOME, "/big/cache");
 		assert.equal(environment.CARGO_HOME, "/opt/cargo");
 		assert.equal(environment.PNPM_HOME, "/opt/pnpm");
+		assert.equal(environment.npm_config_cache, "/opt/npm-cache");
+		assert.equal(environment.npm_config_store_dir, "/opt/pnpm-store");
 	});
 
 	it("refuses a signing key kept where the commands under test are pointed", () => {
@@ -1395,6 +1603,36 @@ describe("local gh-signoff", () => {
 			},
 		);
 		const bin = directory("signoff-bin");
+		const prDir = directory("signoff-pr");
+		const baseRepo = {
+			id: 1,
+			name: "app",
+			full_name: "acme/app",
+			owner: { login: "acme" },
+		};
+		const forkRepo = {
+			id: 2,
+			name: "app",
+			full_name: "contributor/app",
+			owner: { login: "contributor" },
+		};
+		const baseSha = git(run.repo, ["rev-parse", "refs/remotes/origin/main"]);
+		const pull = (headRepo: typeof baseRepo) => ({
+			number: 17,
+			state: "open",
+			base: { ref: "main", sha: baseSha, repo: baseRepo },
+			head: { ref: "topic", sha: run.head, repo: headRepo },
+		});
+		for (const [name, value] of Object.entries({
+			"pull.json": pull(forkRepo),
+			"same-pull.json": pull(baseRepo),
+			"closed.json": { ...pull(forkRepo), state: "closed" },
+			"base.json": baseRepo,
+			"base-branch.json": { name: "main", commit: { sha: baseSha } },
+			"fork.json": forkRepo,
+			"branch.json": { name: "topic", commit: { sha: run.head } },
+		}))
+			writeFileSync(join(prDir, name), JSON.stringify(value));
 		writeFileSync(
 			join(bin, "gh"),
 			`#!/bin/sh
@@ -1408,14 +1646,52 @@ if [ "$1" = repo ]; then
   printf '{"nameWithOwner":"%s","url":"https://%s/%s"}\\n' "$name" "$host" "$name"
   exit 0
 fi
+if [ "$1" = pr ]; then
+  printf '%s\n' "$*" >> "$HOBO_SIGNOFF_TEST_REPO_CALLS"
+  [ "\${HOBO_SIGNOFF_TEST_PR:-0}" = 1 ] || exit 1
+  echo 17; exit 0
+fi
+if [ "$1" = api ] && [ "$2" = --hostname ]; then
+  [ "\${HOBO_SIGNOFF_TEST_PR:-0}" = 1 ] || exit 1
+  case "$4" in
+    'repos/{owner}/{repo}/pulls/17')
+      count=0
+      [ ! -f "$HOBO_SIGNOFF_PR_DIR/count" ] || read -r count < "$HOBO_SIGNOFF_PR_DIR/count"
+      count=$((count + 1)); printf '%s\n' "$count" > "$HOBO_SIGNOFF_PR_DIR/count"
+      if [ -n "\${HOBO_SIGNOFF_PR_DIRTY_AT:-}" ] && [ "$count" -eq "$HOBO_SIGNOFF_PR_DIRTY_AT" ]; then touch "$HOBO_SIGNOFF_TEST_REPO_DIR/changed-during-proof"; fi
+      if [ -n "\${HOBO_SIGNOFF_PR_CLOSE_AT:-}" ] && [ "$count" -ge "$HOBO_SIGNOFF_PR_CLOSE_AT" ]; then cat "$HOBO_SIGNOFF_PR_DIR/closed.json"
+      elif [ "\${HOBO_SIGNOFF_PR_SAME:-0}" = 1 ]; then cat "$HOBO_SIGNOFF_PR_DIR/same-pull.json"
+      else cat "$HOBO_SIGNOFF_PR_DIR/pull.json"; fi ;;
+    'repos/{owner}/{repo}/branches/main') cat "$HOBO_SIGNOFF_PR_DIR/base-branch.json" ;;
+    'repos/{owner}/{repo}'|'repos/acme/app') cat "$HOBO_SIGNOFF_PR_DIR/base.json" ;;
+    'repos/contributor/app') cat "$HOBO_SIGNOFF_PR_DIR/fork.json" ;;
+    'repos/contributor/app/branches/topic'|'repos/acme/app/branches/topic') cat "$HOBO_SIGNOFF_PR_DIR/branch.json" ;;
+    *) exit 1 ;;
+  esac
+  exit 0
+fi
 if [ "$1" = api ]; then
   printf '%s\n' "$@" >> "$HOBO_SIGNOFF_TEST_API_CALLS"
   if [ "\${HOBO_SIGNOFF_TEST_API_FAIL:-0}" = 1 ]; then exit 1; fi
+  case "$2" in
+    */branches/topic)
+      if [ "\${HOBO_SIGNOFF_TEST_HEAD_FAIL:-0}" = 1 ]; then exit 1; fi
+      printf '%s\\n' "$HOBO_SIGNOFF_TEST_GH_HEAD"; exit 0 ;;
+  esac
   if [ -n "\${HOBO_SIGNOFF_TEST_GH_BASE:-}" ]; then printf '%s\\n' "$HOBO_SIGNOFF_TEST_GH_BASE"; else git rev-parse refs/remotes/origin/main; fi
   exit 0
 fi
+if [ "\${HOBO_SIGNOFF_REQUIRE_REMOTE_REF:-0}" = 1 ] && [ -z "$(git branch -r --contains "$4")" ]; then
+  echo 'commit is not on a remote-tracking ref' >&2
+  exit 1
+fi
+if [ "\${HOBO_SIGNOFF_REQUIRE_REMOTE_REF:-0}" = 1 ]; then
+  printf '%s\\n' "$PWD" > "$HOBO_SIGNOFF_TEST_CWD"
+  printf '%s\\n%s\\n' "$(git config user.name)" "$(git config signoff.url)" > "$HOBO_SIGNOFF_TEST_CONFIG"
+fi
 printf '%s\\n' "$@" > "$HOBO_SIGNOFF_TEST_CALLS"
 printf '%s\\n%s\\n' "$GH_HOST" "$GH_REPO" > "$HOBO_SIGNOFF_TEST_ENV"
+if [ "\${HOBO_SIGNOFF_BREAK_CLEANUP:-0}" = 1 ]; then chmod 000 objects/info; fi
 exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 `,
 			{ mode: 0o755 },
@@ -1424,8 +1700,28 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 		const ghEnv = join(directory("signoff-env"), "env");
 		const repoCalls = join(directory("signoff-repo-calls"), "calls");
 		const apiCalls = join(directory("signoff-api-calls"), "calls");
-		const command = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) =>
-			spawnSync(
+		const signoffCwd = join(directory("signoff-cwd"), "cwd");
+		const signoffConfig = join(directory("signoff-config"), "config");
+		const environment = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
+			...process.env,
+			PATH: `${bin}:${process.env.PATH ?? ""}`,
+			GH_HOST: "github.com",
+			GH_REPO: "acme/app",
+			HOBO_CI_ATTESTOR_KEY: key,
+			HOBO_SIGNOFF_TEST_CALLS: calls,
+			HOBO_SIGNOFF_TEST_ENV: ghEnv,
+			HOBO_SIGNOFF_TEST_REPO_CALLS: repoCalls,
+			HOBO_SIGNOFF_TEST_API_CALLS: apiCalls,
+			HOBO_SIGNOFF_TEST_GH_HEAD: run.head,
+			HOBO_SIGNOFF_TEST_CWD: signoffCwd,
+			HOBO_SIGNOFF_TEST_CONFIG: signoffConfig,
+			HOBO_SIGNOFF_PR_DIR: prDir,
+			HOBO_SIGNOFF_TEST_REPO_DIR: run.repo,
+			...extra,
+		});
+		const command = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) => {
+			rmSync(join(prDir, "count"), { force: true });
+			return spawnSync(
 				process.execPath,
 				[
 					"--experimental-strip-types",
@@ -1437,20 +1733,10 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 				{
 					cwd: run.repo,
 					encoding: "utf8",
-					env: {
-						...process.env,
-						PATH: `${bin}:${process.env.PATH ?? ""}`,
-						GH_HOST: "github.com",
-						GH_REPO: "acme/app",
-						HOBO_CI_ATTESTOR_KEY: key,
-						HOBO_SIGNOFF_TEST_CALLS: calls,
-						HOBO_SIGNOFF_TEST_ENV: ghEnv,
-						HOBO_SIGNOFF_TEST_REPO_CALLS: repoCalls,
-						HOBO_SIGNOFF_TEST_API_CALLS: apiCalls,
-						...extra,
-					},
+					env: environment(extra),
 				},
 			);
+		};
 		return {
 			...run,
 			...outcome,
@@ -1458,7 +1744,11 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			ghEnv,
 			repoCalls,
 			apiCalls,
+			signoffCwd,
+			signoffConfig,
 			bin,
+			prDir,
+			environment,
 			command,
 		};
 	}
@@ -1477,7 +1767,10 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			run.file,
 			JSON.stringify(signStatement(statement, run.privateKey)),
 		);
-		return run.command([`--file=${run.file}`]);
+		git(run.repo, ["push", "--quiet", "origin", "HEAD:refs/heads/topic"]);
+		return run.command([`--file=${run.file}`], {
+			HOBO_SIGNOFF_TEST_GH_HEAD: head,
+		});
 	}
 
 	it("posts only the passed pull-request jobs for the exact pushed head", async () => {
@@ -1502,6 +1795,752 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			"github.com/acme/app",
 		]);
 		assert.match(result.stdout, /posted 5 local signoff/u);
+	});
+
+	it("signs a pushed head with a narrow fetch configuration without changing the checkout refs", async () => {
+		const run = await fixture(false);
+		git(run.repo, ["config", "user.name", "Narrow User"]);
+		git(run.repo, ["config", "signoff.url", "https://example.invalid/run/1"]);
+		git(run.repo, [
+			"config",
+			"--replace-all",
+			"remote.origin.fetch",
+			"+refs/heads/main:refs/remotes/origin/main",
+		]);
+		git(run.repo, ["update-ref", "-d", "refs/remotes/origin/topic"]);
+		const before = git(run.repo, [
+			"for-each-ref",
+			"--format=%(refname) %(objectname)",
+			"refs/remotes",
+		]);
+		assert.equal(git(run.repo, ["branch", "-r", "--contains", run.head]), "");
+		const result = run.command([], { HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1" });
+		assert.equal(result.status, 0, result.stderr);
+		assert.doesNotMatch(result.stderr, /info\/grafts is deprecated/u);
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/pull_request\/ci-guard/u,
+		);
+		assert.deepEqual(
+			readFileSync(run.signoffConfig, "utf8").trim().split("\n"),
+			["Narrow User", "https://example.invalid/run/1"],
+		);
+		const signoffCwd = readFileSync(run.signoffCwd, "utf8").trim();
+		assert.notEqual(signoffCwd, run.repo);
+		assert.equal(existsSync(signoffCwd), false);
+		assert.equal(
+			git(run.repo, [
+				"for-each-ref",
+				"--format=%(refname) %(objectname)",
+				"refs/remotes",
+			]),
+			before,
+		);
+	});
+
+	it("signs a verified fork PR head without a target branch or tracking ref", async () => {
+		const run = await fixture(false);
+		git(run.repo, ["push", "--quiet", "origin", ":refs/heads/topic"]);
+		git(run.repo, ["update-ref", "-d", "refs/remotes/origin/topic"]);
+		const before = git(run.repo, ["show-ref"]);
+		const result = run.command([], {
+			HOBO_SIGNOFF_TEST_PR: "1",
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		});
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/pull_request\/ci-guard/u,
+		);
+		assert.match(readFileSync(run.repoCalls, "utf8"), /pr view/u);
+		assert.equal(git(run.repo, ["show-ref"]), before);
+		assert.equal(
+			existsSync(readFileSync(run.signoffCwd, "utf8").trim()),
+			false,
+		);
+	});
+
+	it("uses a verified PR when listing all remote branches fails", async () => {
+		const run = await fixture(false);
+		const wrapper = directory("git-unavailable-branch-list");
+		writeFileSync(
+			join(wrapper, "git"),
+			`#!/bin/sh
+if [ "$1" = ls-remote ] && [ "$2" = --heads ]; then exit 1; fi
+exec /usr/bin/git "$@"
+`,
+			{ mode: 0o755 },
+		);
+		const env = {
+			PATH: `${wrapper}:${run.bin}:${process.env.PATH ?? ""}`,
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		};
+		const refused = run.command([], env);
+		assert.notEqual(refused.status, 0);
+		assert.match(refused.stderr, /could not list.*pull request/u);
+		assert.equal(existsSync(run.calls), false);
+		const result = run.command([], { ...env, HOBO_SIGNOFF_TEST_PR: "1" });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/pull_request\/ci-guard/u,
+		);
+	});
+
+	it("keeps the fleet's branch proof when another branch gains the same head", async () => {
+		const run = await fixture(false);
+		const remote = git(run.repo, ["remote", "get-url", "origin"]);
+		const sign = () =>
+			signoffLocalRun({
+				cwd: run.repo,
+				baseRef: "origin/main",
+				event: "pull_request",
+				envelopeText: readFileSync(run.file, "utf8"),
+				privateKey: run.privateKey,
+				nowMs: Date.now(),
+				env: run.environment({ HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1" }),
+				expectedPublished: { kind: "branch", branch: "topic", tip: run.head },
+			});
+		git(remote, ["update-ref", "refs/heads/a-alias", run.head]);
+		await sign();
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/pull_request\/ci-guard/u,
+		);
+		rmSync(run.calls);
+		git(remote, ["update-ref", "refs/heads/topic", run.target.base]);
+		await assert.rejects(sign(), /pushed head, base or checkout changed/u);
+		assert.equal(existsSync(run.calls), false);
+		git(remote, ["update-ref", "-d", "refs/heads/topic"]);
+		await assert.rejects(sign(), /pushed head, base or checkout changed/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("rechecks a pinned ancestor and requires a Git version that cannot lazy fetch", async () => {
+		const run = await fixture(false);
+		const descendant = git(run.repo, [
+			...IDENTITY,
+			"commit-tree",
+			`${run.head}^{tree}`,
+			"-p",
+			run.head,
+			"-m",
+			"descendant",
+		]);
+		git(run.repo, [
+			"push",
+			"--quiet",
+			"origin",
+			`${descendant}:refs/heads/topic`,
+		]);
+		const remote = git(run.repo, ["remote", "get-url", "origin"]);
+		git(remote, ["update-ref", "refs/heads/a-alias", run.head]);
+		const sign = (tip: string, extra: NodeJS.ProcessEnv = {}) =>
+			signoffLocalRun({
+				cwd: run.repo,
+				baseRef: "origin/main",
+				event: "pull_request",
+				envelopeText: readFileSync(run.file, "utf8"),
+				privateKey: run.privateKey,
+				nowMs: Date.now(),
+				env: run.environment({
+					HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+					HOBO_SIGNOFF_TEST_GH_HEAD: tip,
+					...extra,
+				}),
+				expectedPublished: { kind: "branch", branch: "topic", tip },
+			});
+		if (supportsNoLazyFetch()) {
+			await sign(descendant);
+			rmSync(run.calls);
+		} else {
+			await assert.rejects(sign(descendant), /Git 2\.45 or newer/u);
+			assert.equal(existsSync(run.calls), false);
+		}
+		const wrapper = directory("git-old-pinned-ancestor");
+		writeFileSync(
+			join(wrapper, "git"),
+			`#!/bin/sh
+if [ "$1" = --no-lazy-fetch ]; then exit 1; fi
+exec /usr/bin/git "$@"
+`,
+			{ mode: 0o755 },
+		);
+		const oldGit = { PATH: `${wrapper}:${run.bin}:${process.env.PATH ?? ""}` };
+		const previousPath = process.env.PATH;
+		process.env.PATH = oldGit.PATH;
+		try {
+			await assert.rejects(sign(descendant, oldGit), /Git 2\.45 or newer/u);
+			assert.equal(existsSync(run.calls), false);
+			git(remote, ["update-ref", "refs/heads/topic", run.head]);
+			await sign(run.head, oldGit);
+			assert.equal(existsSync(run.calls), true);
+		} finally {
+			if (previousPath === undefined) delete process.env.PATH;
+			else process.env.PATH = previousPath;
+		}
+	});
+
+	it("refuses malformed or conflicting fleet branch proofs", async () => {
+		const run = await fixture(false);
+		const input = {
+			cwd: run.repo,
+			baseRef: "origin/main",
+			event: "pull_request" as const,
+			envelopeText: readFileSync(run.file, "utf8"),
+			privateKey: run.privateKey,
+			nowMs: Date.now(),
+			env: run.environment(),
+		};
+		await assert.rejects(
+			signoffLocalRun({
+				...input,
+				expectedPublished: {
+					kind: "branch",
+					branch: "bad..ref",
+					tip: run.head,
+				},
+			}),
+			/invalid fleet preflight proof/u,
+		);
+		await assert.rejects(
+			signoffLocalRun({
+				...input,
+				expectedPublished: {
+					kind: "branch",
+					branch: "topic",
+					tip: "not-a-sha",
+				},
+			}),
+			/invalid fleet preflight proof/u,
+		);
+		await assert.rejects(
+			signoffLocalRun({
+				...input,
+				prNumber: 17,
+				expectedPublished: { kind: "branch", branch: "topic", tip: run.head },
+			}),
+			/invalid fleet preflight proof/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("honors an explicit PR for detached and same-repository heads", async () => {
+		const fork = await fixture(false);
+		git(fork.repo, ["push", "--quiet", "origin", ":refs/heads/topic"]);
+		git(fork.repo, ["checkout", "--quiet", "--detach"]);
+		const detached = fork.command(["--pr=17"], {
+			HOBO_SIGNOFF_TEST_PR: "1",
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		});
+		assert.equal(detached.status, 0, detached.stderr);
+		assert.doesNotMatch(readFileSync(fork.repoCalls, "utf8"), /pr view/u);
+		const same = await fixture(false);
+		const result = same.command(["--pr=17"], {
+			HOBO_SIGNOFF_TEST_PR: "1",
+			HOBO_SIGNOFF_PR_SAME: "1",
+		});
+		assert.equal(result.status, 0, result.stderr);
+	});
+
+	it("refuses a changed or explicitly wrong PR before posting", async () => {
+		const changed = await fixture(false);
+		git(changed.repo, ["push", "--quiet", "origin", ":refs/heads/topic"]);
+		const closed = changed.command(["--pr=17"], {
+			HOBO_SIGNOFF_TEST_PR: "1",
+			HOBO_SIGNOFF_PR_CLOSE_AT: "3",
+		});
+		assert.notEqual(closed.status, 0);
+		assert.match(
+			closed.stderr,
+			/pull request.*changed|pull request.*verified/u,
+		);
+		assert.equal(existsSync(changed.calls), false);
+		const wrong = await fixture(false);
+		const result = wrong.command(["--pr=99"], { HOBO_SIGNOFF_TEST_PR: "1" });
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /pull request/u);
+		assert.equal(existsSync(wrong.calls), false);
+	});
+
+	it("rejects invalid or repeated PR options before publication", async () => {
+		const run = await fixture(false);
+		for (const args of [
+			["--pr"],
+			["--pr=0"],
+			["--pr=1", "--pr=2"],
+			["--pr=1.5"],
+			["--pr=9007199254740992"],
+		]) {
+			const result = run.command(args);
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /--pr must be specified once/u);
+		}
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a checkout changed during the final PR verification", async () => {
+		const run = await fixture(false);
+		const result = run.command(["--pr=17"], {
+			HOBO_SIGNOFF_TEST_PR: "1",
+			HOBO_SIGNOFF_PR_DIRTY_AT: "4",
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /checkout changed before signoff/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("does not sign an unpushed head with a narrow fetch configuration", async () => {
+		const run = await fixture(false);
+		git(run.repo, [
+			"config",
+			"--replace-all",
+			"remote.origin.fetch",
+			"+refs/heads/main:refs/remotes/origin/main",
+		]);
+		git(run.repo, ["push", "--quiet", "origin", ":refs/heads/topic"]);
+		git(run.repo, ["update-ref", "-d", "refs/remotes/origin/topic"]);
+		const result = run.command([], { HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1" });
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, unprovedHeadMessage());
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a clean-looking checkout whose HEAD has a replacement tree", async () => {
+		const run = await fixture(false);
+		const replacement = commit(run.repo, {
+			"replacement.txt": "different tree\n",
+		});
+		git(run.repo, ["reset", "--hard", run.head]);
+		const rawEnv = { ...process.env };
+		delete rawEnv.GIT_NO_REPLACE_OBJECTS;
+		delete rawEnv.GIT_GRAFT_FILE;
+		const raw = (args: string[]) => {
+			const result = spawnSync("git", args, {
+				cwd: run.repo,
+				env: rawEnv,
+				encoding: "utf8",
+			});
+			assert.equal(result.status, 0, result.stderr);
+			return result.stdout.trim();
+		};
+		raw(["replace", run.head, replacement]);
+		git(run.repo, ["pack-refs", "--all"]);
+		raw(["reset", "--hard", run.head]);
+		assert.equal(raw(["status", "--porcelain"]), "");
+		assert.notEqual(git(run.repo, ["status", "--porcelain"]), "");
+		assert.throws(
+			() => resolveRunTarget({ cwd: run.repo, baseRef: "origin/main" }),
+			/replacement refs are present/u,
+		);
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /replacement refs are present/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses graft metadata from the common directory of a linked worktree", async () => {
+		const run = await fixture(false);
+		const common = git(run.repo, [
+			"rev-parse",
+			"--path-format=absolute",
+			"--git-common-dir",
+		]);
+		mkdirSync(join(common, "info"), { recursive: true });
+		writeFileSync(join(common, "info", "grafts"), `${run.head}\n`);
+		assert.throws(
+			() => resolveRunTarget({ cwd: run.repo, baseRef: "origin/main" }),
+			/graft metadata is present/u,
+		);
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /graft metadata is present/u);
+		assert.equal(existsSync(run.calls), false);
+		const linked = join(directory("graft-worktree"), "checkout");
+		git(run.repo, ["worktree", "add", "--quiet", "--detach", linked, run.head]);
+		assert.throws(
+			() => resolveRunTarget({ cwd: linked, baseRef: "origin/main" }),
+			/graft metadata is present/u,
+		);
+	});
+
+	it("accepts a tested head that is an ancestor of a known live target tip", async (t) => {
+		if (!supportsNoLazyFetch()) {
+			t.skip("Git before 2.45 cannot prove ancestry without lazy fetching");
+			return;
+		}
+		const run = await fixture(false);
+		const descendant = git(run.repo, [
+			...IDENTITY,
+			"commit-tree",
+			"HEAD^{tree}",
+			"-p",
+			run.head,
+			"-m",
+			"advanced remote",
+		]);
+		git(run.repo, [
+			"push",
+			"--quiet",
+			"origin",
+			`${descendant}:refs/heads/topic`,
+		]);
+		git(run.repo, [
+			"config",
+			"--replace-all",
+			"remote.origin.fetch",
+			"+refs/heads/main:refs/remotes/origin/main",
+		]);
+		git(run.repo, ["update-ref", "-d", "refs/remotes/origin/topic"]);
+		git(run.repo, ["fetch", "--quiet", "origin", "topic"]);
+		git(run.repo, ["fetch", "--quiet", "origin", "main"]);
+		const result = run.command([], {
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+			HOBO_SIGNOFF_TEST_GH_HEAD: descendant,
+		});
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/pull_request\/ci-guard/u,
+		);
+	});
+
+	it("supports old Git for exact heads and PRs, but refuses unsafe ancestry", async () => {
+		const useOldGit = (run: Awaited<ReturnType<typeof fixture>>) => {
+			writeFileSync(
+				join(run.bin, "git"),
+				'#!/bin/sh\nif [ "$1" = --no-lazy-fetch ]; then exit 129; fi\nexec /usr/bin/git "$@"\n',
+				{ mode: 0o755 },
+			);
+		};
+		const exact = await fixture(false);
+		useOldGit(exact);
+		const exactResult = exact.command([], {
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		});
+		assert.equal(exactResult.status, 0, exactResult.stderr);
+
+		const ancestor = await fixture(false);
+		const descendant = git(ancestor.repo, [
+			...IDENTITY,
+			"commit-tree",
+			"HEAD^{tree}",
+			"-p",
+			ancestor.head,
+			"-m",
+			"advanced remote",
+		]);
+		git(ancestor.repo, [
+			"push",
+			"--quiet",
+			"origin",
+			`${descendant}:refs/heads/topic`,
+		]);
+		useOldGit(ancestor);
+		const refused = ancestor.command([], {
+			HOBO_SIGNOFF_TEST_GH_HEAD: descendant,
+		});
+		assert.notEqual(refused.status, 0);
+		assert.match(refused.stderr, /Git 2\.45 or newer/u);
+		assert.equal(existsSync(ancestor.calls), false);
+		const verifiedPr = ancestor.command([], {
+			HOBO_SIGNOFF_TEST_GH_HEAD: descendant,
+			HOBO_SIGNOFF_TEST_PR: "1",
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		});
+		assert.equal(verifiedPr.status, 0, verifiedPr.stderr);
+	});
+
+	it("does not lazily fetch an unknown branch tip from a partial clone", async (t) => {
+		if (!supportsNoLazyFetch()) {
+			t.skip("Git before 2.45 cannot run the guarded ancestry probe");
+			return;
+		}
+		const run = await fixture(false);
+		const remote = git(run.repo, ["remote", "get-url", "origin"]);
+		git(remote, ["config", "uploadpack.allowFilter", "true"]);
+		git(run.repo, ["config", "remote.origin.promisor", "true"]);
+		git(run.repo, ["config", "remote.origin.partialclonefilter", "blob:none"]);
+		git(run.repo, ["update-ref", "-d", "refs/remotes/origin/topic"]);
+		const parent = directory("partial-writer");
+		const writer = join(parent, "writer");
+		git(parent, ["clone", "--quiet", "--branch", "topic", remote, writer]);
+		const descendant = commit(writer, { "advanced.txt": "remote only\n" });
+		git(writer, ["push", "--quiet", "origin", "HEAD:refs/heads/topic"]);
+		const objectState = () =>
+			git(run.repo, ["--no-lazy-fetch", "cat-file", "--batch-check"], {
+				input: `${descendant}\n`,
+				env: { GIT_NO_LAZY_FETCH: "1" },
+			});
+		assert.equal(objectState(), `${descendant} missing`);
+		const result = run.command([], { HOBO_SIGNOFF_TEST_GH_HEAD: descendant });
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /not verifiably on a branch of origin/u);
+		assert.equal(existsSync(run.calls), false);
+		assert.equal(objectState(), `${descendant} missing`);
+		git(run.repo, ["fetch", "--quiet", "origin", "topic"]);
+		const fetched = run.command([], {
+			HOBO_SIGNOFF_TEST_GH_HEAD: descendant,
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		});
+		assert.equal(fetched.status, 0, fetched.stderr);
+	});
+
+	it("does not trust a stale ref or a different remote when the target lacks HEAD", async () => {
+		const run = await fixture(false);
+		git(run.repo, ["push", "--quiet", "origin", ":refs/heads/topic"]);
+		git(run.repo, ["update-ref", "refs/remotes/origin/topic", run.head]);
+		const other = directory("signoff-other-remote");
+		git(other, ["init", "--bare", "--quiet"]);
+		git(run.repo, ["remote", "add", "other", other]);
+		git(run.repo, ["push", "--quiet", "other", "HEAD:refs/heads/topic"]);
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, unprovedHeadMessage());
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("does not infer ancestry from an unrelated branch with a missing parent", async () => {
+		const run = await fixture(false);
+		const remote = git(run.repo, ["remote", "get-url", "origin"]);
+		const tree = git(run.repo, ["rev-parse", "HEAD^{tree}"]);
+		const raw = [
+			`tree ${tree}`,
+			`parent ${"f".repeat(40)}`,
+			"author Fixture <fixture@example.invalid> 1700000000 +0000",
+			"committer Fixture <fixture@example.invalid> 1700000000 +0000",
+			"",
+			"unrelated incomplete branch",
+			"",
+		].join("\n");
+		const args = ["hash-object", "-t", "commit", "-w", "--stdin"];
+		const unrelated = git(run.repo, args, { input: raw });
+		assert.equal(git(remote, args, { input: raw }), unrelated);
+		git(remote, ["update-ref", "refs/heads/topic", unrelated]);
+		git(run.repo, ["update-ref", "refs/remotes/origin/topic", unrelated]);
+		const result = run.command([], { HOBO_SIGNOFF_TEST_GH_HEAD: unrelated });
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, unprovedHeadMessage());
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("preserves Git config whitespace for the extension to validate", async () => {
+		const run = await fixture(false);
+		git(run.repo, ["config", "user.name", "  Narrow User  "]);
+		git(run.repo, [
+			"config",
+			"signoff.url",
+			"  https://example.invalid/run/1  ",
+		]);
+		const result = run.command([], { HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1" });
+		assert.equal(result.status, 0, result.stderr);
+		assert.deepEqual(
+			readFileSync(run.signoffConfig, "utf8").split("\n").slice(0, 2),
+			["  Narrow User  ", "  https://example.invalid/run/1  "],
+		);
+	});
+
+	it("uses the same relative PATH for validation and publication", async () => {
+		const run = await fixture(false);
+		const gitLog = join(directory("relative-git-log"), "calls");
+		writeFileSync(
+			join(run.bin, "git"),
+			'#!/bin/sh\nprintf "%s|%s\\n" "$PWD" "$*" >> "$HOBO_SIGNOFF_GIT_LOG"\nexec /usr/bin/git "$@"\n',
+			{ mode: 0o755 },
+		);
+		const link = join(run.repo, ".hobo", "attestations-out", "relative-bin");
+		symlinkSync(run.bin, link, "dir");
+		const result = run.command([], {
+			PATH: `.hobo/attestations-out/relative-bin${delimiter}/usr/bin${delimiter}/bin`,
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+			HOBO_SIGNOFF_GIT_LOG: gitLog,
+		});
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/pull_request\/ci-guard/u,
+		);
+		assert.match(
+			readFileSync(gitLog, "utf8"),
+			/hobo-signoff-git-[^|]+\|init --bare --quiet/u,
+		);
+	});
+
+	it("does not use a temporary parent inside the checkout", async () => {
+		const run = await fixture(false);
+		const result = run.command([], {
+			TMPDIR: run.repo,
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		});
+		assert.equal(result.status, 0, result.stderr);
+		const used = readFileSync(run.signoffCwd, "utf8").trim();
+		assert.equal(used.startsWith(`${run.repo}/`), false);
+		assert.equal(existsSync(used), false);
+	});
+
+	it("does not put the temporary Git view in a shared tool cache", async () => {
+		const run = await fixture(false);
+		const shared = directory("shared-cache");
+		const result = run.command([], {
+			TMPDIR: shared,
+			XDG_CACHE_HOME: shared,
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		});
+		assert.equal(result.status, 0, result.stderr);
+		const used = readFileSync(run.signoffCwd, "utf8").trim();
+		assert.equal(used.startsWith(`${shared}/`), false);
+		assert.equal(existsSync(used), false);
+	});
+
+	it("refuses when GitHub does not confirm the witnessed target branch", async () => {
+		const run = await fixture(false);
+		const result = run.command([], {
+			HOBO_SIGNOFF_TEST_GH_HEAD: run.target.base,
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/selected published branch changed or could not be verified/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+		const inaccessible = run.command([], { HOBO_SIGNOFF_TEST_HEAD_FAIL: "1" });
+		assert.notEqual(inaccessible.status, 0);
+		assert.match(
+			inaccessible.stderr,
+			/selected published branch changed or could not be verified/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a remote branch that changes before a narrow-fetch signoff", async () => {
+		const run = await fixture(false);
+		git(run.repo, [
+			"config",
+			"--replace-all",
+			"remote.origin.fetch",
+			"+refs/heads/main:refs/remotes/origin/main",
+		]);
+		git(run.repo, ["update-ref", "-d", "refs/remotes/origin/topic"]);
+		const wrapper = directory("git-moving-head");
+		writeFileSync(
+			join(wrapper, "git"),
+			`#!/bin/sh
+if [ "$1" = ls-remote ] && [ "$2" = --exit-code ] && [ "$5" = refs/heads/topic ]; then
+  exit 1
+fi
+exec /usr/bin/git "$@"
+`,
+			{ mode: 0o755 },
+		);
+		const result = run.command([], {
+			PATH: `${wrapper}:${run.bin}:${process.env.PATH ?? ""}`,
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/pushed head, base or checkout changed before signoff/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a base that changes while preparing the target witness", async () => {
+		const run = await fixture(false);
+		const wrapper = directory("git-moving-base");
+		const marker = join(wrapper, "base-seen");
+		writeFileSync(
+			join(wrapper, "git"),
+			`#!/bin/sh
+if [ "$1" = ls-remote ] && [ "$2" = --exit-code ] && [ "$5" = refs/heads/main ]; then
+  if [ -e "$HOBO_SIGNOFF_BASE_SEEN" ]; then exit 1; fi
+  : > "$HOBO_SIGNOFF_BASE_SEEN"
+fi
+exec /usr/bin/git "$@"
+`,
+			{ mode: 0o755 },
+		);
+		const result = run.command([], {
+			PATH: `${wrapper}:${run.bin}:${process.env.PATH ?? ""}`,
+			HOBO_SIGNOFF_BASE_SEEN: marker,
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/pushed head, base or checkout changed before signoff/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("removes the isolated Git view when narrow-fetch publication fails", async () => {
+		const run = await fixture(false);
+		git(run.repo, [
+			"config",
+			"--replace-all",
+			"remote.origin.fetch",
+			"+refs/heads/main:refs/remotes/origin/main",
+		]);
+		git(run.repo, ["update-ref", "-d", "refs/remotes/origin/topic"]);
+		const before = git(run.repo, [
+			"for-each-ref",
+			"--format=%(refname) %(objectname)",
+			"refs/remotes",
+		]);
+		const result = run.command([], {
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+			HOBO_SIGNOFF_TEST_EXIT: "1",
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /Some statuses may already have been posted/u);
+		assert.equal(
+			existsSync(readFileSync(run.signoffCwd, "utf8").trim()),
+			false,
+		);
+		assert.equal(
+			git(run.repo, [
+				"for-each-ref",
+				"--format=%(refname) %(objectname)",
+				"refs/remotes",
+			]),
+			before,
+		);
+	});
+
+	it("reports possible publication when the isolated Git view cannot be removed", async () => {
+		const run = await fixture(false);
+		const result = run.command([], {
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+			HOBO_SIGNOFF_BREAK_CLEANUP: "1",
+		});
+		const scratch = readFileSync(run.signoffCwd, "utf8").trim();
+		try {
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /could not remove temporary Git view/u);
+			assert.match(
+				result.stderr,
+				/some statuses may already have been posted/u,
+			);
+		} finally {
+			chmodSync(join(scratch, "objects", "info"), 0o700);
+			rmSync(scratch, { recursive: true, force: true });
+		}
+	});
+
+	it("preserves the publication failure when cleanup also fails", async () => {
+		const run = await fixture(false);
+		const result = run.command([], {
+			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+			HOBO_SIGNOFF_BREAK_CLEANUP: "1",
+			HOBO_SIGNOFF_TEST_EXIT: "1",
+		});
+		const scratch = readFileSync(run.signoffCwd, "utf8").trim();
+		try {
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /gh-signoff failed/u);
+			assert.match(result.stderr, /could not remove temporary Git view/u);
+		} finally {
+			chmodSync(join(scratch, "objects", "info"), 0o700);
+			rmSync(scratch, { recursive: true, force: true });
+		}
 	});
 
 	it("reports only jobs a machine without Docker could actually cover", async () => {
