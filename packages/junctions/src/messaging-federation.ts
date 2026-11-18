@@ -1,8 +1,3 @@
-/**
- * Cross-Yard topic / actor-signal federation plan via Junctions (ADR-0138).
- * Control-plane wiring + identity path; data plane rides overlay connectivity.
- */
-
 import { MESSAGING_EVENTS } from "@hobo/core";
 import type { JunctionDefinition } from "./types.js";
 
@@ -15,9 +10,7 @@ export interface TopicFederationLink {
 	readonly fromYard: string;
 	readonly toYard: string;
 	readonly delivery: "at-least-once";
-	/** Identity path: SVID audience for cross-yard publish. */
 	readonly identityAudience: string;
-	/** Overlay / connectivity edge used for data plane. */
 	readonly connectivityEdgeId: string;
 }
 
@@ -38,16 +31,10 @@ export interface JunctionMessagingFederationPlan {
 
 export interface DeriveMessagingFederationInput {
 	readonly definition: JunctionDefinition;
-	/** Logical topic names to federate across all member yards. */
 	readonly topics?: readonly string[];
-	/** Actor types whose signals may cross yards. */
 	readonly actorTypes?: readonly string[];
 }
 
-/**
- * Pure derivation: pairwise topic + actor-signal federation records.
- * Realization uses existing junction connectivity halves + secretless identity.
- */
 export function deriveMessagingFederationPlan(
 	input: DeriveMessagingFederationInput,
 ): JunctionMessagingFederationPlan {

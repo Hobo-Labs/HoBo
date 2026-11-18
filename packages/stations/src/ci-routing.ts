@@ -12,7 +12,6 @@ import {
 	ciBudgetSignalUpdate,
 } from "@hobo/ci";
 
-/** The account-scoped relay client implements this port without a Station dependency. */
 export interface CiBudgetRoutingClient {
 	getPolicy(): Promise<AccountState>;
 	getSignalState?(): Promise<AccountState>;
@@ -32,9 +31,7 @@ export interface CiBudgetRoutingOutcome {
 }
 
 export interface CiBudgetRoutingBridge {
-	/** Deliver the Broker fact's {type,data}; retry a revision conflict from the journal. */
 	accept(serializedBrokerFact: string): Promise<CiBudgetRoutingOutcome>;
-	/** Apply a changed routing profile to the already persisted signal state. */
 	reconcile(): Promise<CiBudgetRoutingOutcome>;
 }
 
@@ -51,10 +48,6 @@ function uniqueOfferIds(ids: readonly string[]): readonly string[] {
 	return Object.freeze([...ids]);
 }
 
-/** Translate tenant-scoped Broker budget transitions into durable CI eligibility.
- * Monetary snapshots and active leases remain owned by the relay. Profile changes
- * affect future admissions; they never move or repeat an already admitted job.
- */
 export function createCiBudgetRoutingBridge(options: {
 	policy: CiBudgetRoutingPolicyInput;
 	client: CiBudgetRoutingClient;
@@ -169,8 +162,6 @@ export function createCiBudgetRoutingBridge(options: {
 		},
 		async reconcile() {
 			const { account, revision } = await state();
-			// Scoped eligibility is derived by the relay from its desired policy.
-			// Publishing observations cannot rewrite provider enablement or trust.
 			if (policy.budgetPolicy) return { changed: false, revision };
 			return eligibility(account)
 				? write(account, revision)

@@ -11,11 +11,6 @@ function deterministicId(prefix: string, parts: readonly string[]): string {
 	return `${prefix}:${parts.join(":")}`;
 }
 
-/**
- * Stage one durable effect inside the caller's commit transaction, with the
- * same identities and dedupe rules as `@hobo/storage-sqlite`: a retried
- * commit returns the existing effect with `deduped: true`.
- */
 export async function stageEffect(
 	client: PgClientLike,
 	s: string,

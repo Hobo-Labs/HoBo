@@ -161,7 +161,6 @@ export {
 	STATION_SCHEMA_VERSION,
 } from "./types.js";
 
-// public-contract: stable package identity for Station integrations and diagnostics.
 export const HOBO_STATIONS_PACKAGE = "@hobo/stations";
 
 export {

@@ -1,30 +1,10 @@
-/**
- * Golden-replay corpus + upcaster-totality gate (ADR-0032 / data-plane
- * Plan 9-11). Canonical home of the promoted `event-body-upcaster-gate`
- * draft proof.
- *
- * The corpus pins one real encoded body per (event type, version) ever
- * shipped, append-only. CI replays every entry through the current upcaster
- * chain; a body that cannot be lifted to the current version fails the gate —
- * and with it `can-deploy`. Adding a version bump without extending the
- * corpus is itself a gate failure (coverage check).
- */
 import { createHash } from "node:crypto";
 
-// public-contract: gate report schema id.
 export const EVENT_BODY_UPCASTER_GATE_SCHEMA =
 	"hobo.event-body-upcaster-gate/v1";
-// public-contract: corpus entry schema id.
 export const CORPUS_ENTRY_SCHEMA = "hobo.golden-replay-corpus-entry/v1";
-// public-contract: corpus baseline schema id.
 export const CORPUS_BASELINE_SCHEMA = "hobo.golden-replay-corpus-baseline/v1";
 
-/**
- * What a field holds. `string` and `u32` are scalars. `bool` is a flag;
- * `strings` a list of strings (`repeated string`); `json` a JSON object,
- * carried on the wire as its canonical text — the form for a small
- * structured value whose members the contract does not pin one by one.
- */
 export type EventFieldType = "string" | "u32" | "bool" | "strings" | "json";
 
 export interface EventFieldSpec {
@@ -40,7 +20,6 @@ export interface EventBodySchema {
 	readonly fields: readonly EventFieldSpec[];
 }
 
-/** A JSON value, as a `json` field holds it. */
 export type EventJsonValue =
 	| string
 	| number
@@ -63,7 +42,6 @@ export interface EventBodyUpcaster {
 	readonly type: string;
 	readonly from: number;
 	readonly to: number;
-	/** Why the semantic change needs an upcaster (review evidence). */
 	readonly reason: string;
 	readonly upcast: (body: EventBody) => EventBody;
 }
@@ -171,7 +149,6 @@ export function boolField(
 	});
 }
 
-/** A list of strings. An empty list is absent on the wire, as in proto3. */
 export function stringsField(
 	name: string,
 	tag: number,
@@ -185,7 +162,6 @@ export function stringsField(
 	});
 }
 
-/** A JSON object, carried as its canonical text. */
 export function jsonField(
 	name: string,
 	tag: number,
@@ -199,7 +175,6 @@ export function jsonField(
 	});
 }
 
-/** Encode + pin a real body as an append-only corpus entry. */
 export function createCorpusEntry(
 	schema: EventBodySchema,
 	id: string,
@@ -230,10 +205,6 @@ export function createCorpusBaseline(
 	});
 }
 
-/**
- * The can-deploy gate: corpus coverage per shipped version, append-only
- * baseline, total upcaster chain, upcaster purity, and full golden replay.
- */
 export function runCanDeployUpcasterGate(
 	contract: EventEvolutionContract,
 	options: { readonly baselineCorpus?: CorpusBaseline } = {},
@@ -251,7 +222,6 @@ export function runCanDeployUpcasterGate(
 	);
 	const corpus = contract.goldenCorpus ?? [];
 
-	// Coverage: every shipped version has a pinned body.
 	for (const schema of schemas) {
 		const hasEntry = corpus.some(
 			(entry) =>
@@ -264,7 +234,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	// Append-only: baseline entries may never vanish or change digest.
 	if (options.baselineCorpus) {
 		const current = new Map(
 			corpus.map((entry) => [corpusKey(entry), entry.bodyDigest]),
@@ -285,7 +254,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	// Totality: every version below current has exactly the next-step upcaster.
 	for (const schema of schemas) {
 		if (schema.version >= contract.currentVersion) continue;
 		const expectedTo = schema.version + 1;
@@ -297,7 +265,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	// Purity: same input twice → same output; output validates against target.
 	for (const upcaster of upcastersByFrom.values()) {
 		const sourceSchema = schemasByVersion.get(upcaster.from);
 		const targetSchema = schemasByVersion.get(upcaster.to);
@@ -340,7 +307,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	// Golden replay: every pinned body must lift to the current version.
 	for (const entry of corpus) {
 		try {
 			replays.push(
@@ -441,7 +407,6 @@ export function validateEventBody(
 	if (!body || Object(body) !== body || Array.isArray(body)) {
 		return { ok: false, errors: ["event body must be an object"] };
 	}
-	// SAFETY: the preceding guard excludes null, primitives, and arrays.
 	const record = body as EventBody;
 	const declared = new Set(schema.fields.map((field) => field.name));
 	for (const field of schema.fields) {
@@ -453,7 +418,6 @@ export function validateEventBody(
 		}
 		if (
 			field.type === "u32" &&
-			// SAFETY: Number.isInteger proves this schema-declared value is numeric.
 			(!Number.isInteger(value) || Number(value) < 0)
 		) {
 			errors.push(`${field.name} must be a non-negative integer`);
@@ -496,7 +460,6 @@ export function encodeEventBody(
 		const value = body[field.name];
 		if (value === undefined) continue;
 		if (field.type === "string") {
-			// SAFETY: schema validation immediately above accepts only string values here.
 			const bytes = Buffer.from(value as string, "utf8");
 			chunks.push(
 				encodeVarint((field.tag << 3) | 2),
@@ -510,7 +473,6 @@ export function encodeEventBody(
 			continue;
 		}
 		if (field.type === "strings") {
-			// SAFETY: schema validation immediately above accepts only string lists here.
 			for (const item of value as readonly string[]) {
 				const bytes = Buffer.from(item, "utf8");
 				chunks.push(
@@ -522,7 +484,6 @@ export function encodeEventBody(
 			continue;
 		}
 		if (field.type === "json") {
-			// SAFETY: schema validation immediately above accepts only JSON objects here.
 			const bytes = Buffer.from(
 				canonicalJson(value as EventJsonObject),
 				"utf8",
@@ -534,7 +495,6 @@ export function encodeEventBody(
 			);
 			continue;
 		}
-		// SAFETY: schema validation immediately above accepts only u32 values here.
 		chunks.push(encodeVarint(field.tag << 3), encodeVarint(value as number));
 	}
 	return Buffer.concat(chunks);
@@ -582,7 +542,6 @@ export function decodeEventBody(schema: EventBodySchema, bytes: Buffer) {
 			).toString("utf8");
 			offset += length.value;
 			if (field.type === "json") {
-				// SAFETY: a json field's wire form is the canonical text of a JSON object, checked by the validator after decoding.
 				decoded[field.name] = JSON.parse(text) as EventJsonObject;
 				continue;
 			}
@@ -618,7 +577,6 @@ function readVarint(bytes: Buffer, startOffset: number) {
 	let value = 0;
 	let shift = 0;
 	for (let offset = startOffset; offset < bytes.length; offset += 1) {
-		// SAFETY: the loop bound guarantees a byte exists at this offset.
 		const byte = bytes[offset] as number;
 		value += (byte & 0x7f) * 2 ** shift;
 		if ((byte & 0x80) === 0) {
@@ -657,7 +615,6 @@ function message(error: ThrownValue): string {
 }
 
 function deepClone<T>(value: T): T {
-	// SAFETY: JSON round-tripping preserves the caller's cloneable T shape.
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 
@@ -675,7 +632,6 @@ function canonicalJson(value: CanonicalValue): string {
 		return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
 	}
 	if (value && Object(value) === value) {
-		// SAFETY: the object branch guarantees an object suitable for keyed traversal.
 		const record = value as { readonly [key: string]: CanonicalValue };
 		return `{${Object.keys(record)
 			.sort()

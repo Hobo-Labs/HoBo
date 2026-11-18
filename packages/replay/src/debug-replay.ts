@@ -14,10 +14,8 @@ import {
 	type SessionRecord,
 } from "./types.js";
 
-// public-contract: synchronized debug event wire discriminator.
 export const DEBUG_REPLAY_SCHEMA_VERSION = "hobo.debug-replay/v1" as const;
 export const DEBUG_REPLAY_EVENT_TYPE = -1 as const;
-// public-contract: process-level debug replay detail override.
 export const DEBUG_REPLAY_LEVEL_ENV = "HOBO_REPLAY_LEVEL" as const;
 
 export const DEBUG_REPLAY_TRACKS = Object.freeze([
@@ -138,7 +136,6 @@ export function isDebugTrackEnvelope(
 	);
 }
 
-/** Persist synchronized agent-debug tracks through the existing replay ports. */
 export function createDebugReplayRecorder(input: {
 	readonly correlation: SessionCorrelation;
 	readonly store: SessionBlobStore;

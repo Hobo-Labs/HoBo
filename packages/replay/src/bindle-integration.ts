@@ -1,11 +1,3 @@
-/**
- * Deep Bindle integration: every **App Kit** is Session-Replay capable by
- * default (ADR-0137). App Kits (api, web, service, ui, websocket, job,
- * wasm-component) are the Bindle authoring term for entrypoint-bearing surfaces
- * — prefer this over "membrane types". Hosts wrap HTTP App Kit fetch handlers
- * so HTML responses get a privacy-first tracker bootstrap and
- * `/__hobo/replay/*` serves ingest.
- */
 import {
 	type BrowserBootstrapConfig,
 	injectSessionReplayBootstrap,
@@ -25,12 +17,9 @@ import {
 	type SessionRecord,
 } from "./types.js";
 
-// public-contract: annotation option auto-attached to Bindle `web` resources.
 export const SESSION_REPLAY_OPTION = "session-replay" as const;
-// public-contract: HTTP path prefix for ingest/list/open on Bindle hosts.
 export const SESSION_REPLAY_PATH_PREFIX = "/__hobo/replay" as const;
 
-/** App Kit kinds that receive Session Replay by default (mirrors @hobo/bindles). */
 export const REPLAYABLE_APP_KIT_KINDS = Object.freeze([
 	"api",
 	"web",
@@ -44,9 +33,7 @@ export const REPLAYABLE_APP_KIT_KINDS = Object.freeze([
 export type ReplayableAppKitKind = (typeof REPLAYABLE_APP_KIT_KINDS)[number];
 
 export type SessionReplayAnnotationConfig = Readonly<{
-	/** Default true for App Kits. Explicit false opts out. */
 	enabled?: boolean;
-	/** Production sampling 0..1 when progressive. */
 	sampleRate?: number;
 }>;
 
@@ -69,7 +56,6 @@ export type BindleDefinitionLike = Readonly<{
 
 export type BindleSessionReplayPlan = Readonly<{
 	bindleName: string;
-	/** True when at least one replayable surface exists and policy allows. */
 	enabled: boolean;
 	reason:
 		| "bindle-kit-default-on"
@@ -86,15 +72,10 @@ export type BindleSessionReplayPlan = Readonly<{
 		| "effect-isolated";
 	flagKey: typeof REPLAY_FLAG_KEY;
 	killEnv: typeof REPLAY_ENV_KILL;
-	/** Resource names that should wrap handlers (web by default). */
 	resourceNames: readonly string[];
 	pathPrefix: typeof SESSION_REPLAY_PATH_PREFIX;
 }>;
 
-/**
- * Annotation factories for Bindle `.with(sessionReplayAnnotation(...))`.
- * Prefer auto-default; use `{ enabled: false }` to opt a web resource out.
- */
 export function sessionReplayAnnotation(
 	config: SessionReplayAnnotationConfig = {},
 ): BindleAnnotationLike {
@@ -133,19 +114,12 @@ export function isReplayableAppKitKind(
 	return (REPLAYABLE_APP_KIT_KINDS as readonly string[]).includes(kind);
 }
 
-/**
- * Every App Kit is replayable by default. Explicit annotation can disable.
- * Infra Kits (kv, bucket, queue, …) are not entrypoint hosts — not replayable
- * unless explicitly annotated on.
- */
 export function isResourceReplayable(record: BindleResourceLike): boolean {
 	const ann = readSessionReplayAnnotation(record.annotations);
 	if (ann !== undefined && ann.enabled === false) return false;
 	if (isReplayableAppKitKind(record.kind)) {
-		// Default-on for all App Kits unless opted out.
 		return true;
 	}
-	// Infra Kits: only when explicitly annotated on.
 	return ann?.enabled === true;
 }
 
@@ -194,10 +168,8 @@ export type WrapBindleWebHandlerOptions = Readonly<{
 	resourceName: string;
 	stationId?: string;
 	env?: Readonly<Record<string, string | undefined>>;
-	/** Shared store across resources of one serve process. */
 	store?: DualFixtureStore;
 	isolationClass?: string;
-	/** Force enable/disable regardless of env (tests). */
 	enabled?: boolean;
 }>;
 
@@ -209,13 +181,6 @@ export type SessionReplayHostSurface = Readonly<{
 	listSessions: () => Promise<readonly SessionRecord[]>;
 }>;
 
-/**
- * Wrap a Bindle HTTP entrypoint so that:
- * 1. `/__hobo/replay/*` handles ingest/list/get
- * 2. HTML responses receive the Session Replay bootstrap script
- *
- * Non-HTML JSON APIs pass through unchanged (except the reserved path prefix).
- */
 export function wrapBindleWebHandler(
 	inner: FetchHandler,
 	options: WrapBindleWebHandlerOptions,
@@ -286,9 +251,6 @@ export function wrapBindleWebHandler(
 	});
 }
 
-/**
- * Apply Session Replay wrap to every replayable resource in a Bindle serve set.
- */
 export function applySessionReplayToEntrypoints<
 	T extends {
 		readonly name: string;
@@ -422,7 +384,6 @@ async function handleReplayControlPlane(
 			summary: `bindle=${ctx.bindleName} resource=${ctx.resourceName}`,
 		});
 		await ctx.store.index.upsert(record);
-		// Lifecycle metadata only — blob ref, not events stream.
 		createReplayEvent(REPLAY_EVENTS.ChunkIngested, {
 			sessionId,
 			stationId: ctx.stationId,
@@ -466,7 +427,6 @@ async function handleReplayControlPlane(
 	return json(404, { ok: false, code: "REPLAY_UNKNOWN_ROUTE" });
 }
 
-/** Default annotation attached to every Bindle web resource. */
 export function defaultWebSessionReplayAnnotation(): BindleAnnotationLike {
 	return sessionReplayAnnotation({ enabled: true });
 }

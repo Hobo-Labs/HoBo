@@ -1,5 +1,3 @@
-// Decimal quantities arrive as protobuf JSON numbers. Retain their decimal
-// representation until the final integer-microdollar ceiling is calculated.
 function decimalParts(value: number) {
 	if (!Number.isFinite(value) || value < 0)
 		throw new Error("invalid allocation quantity");
@@ -11,9 +9,6 @@ function decimalParts(value: number) {
 	};
 }
 
-// A protobuf double must round-trip through JSON without claiming more free
-// allocation than the exact decimal remainder. Descend representable values
-// only when the serialized decimal would exceed that remainder.
 function decimalAtMost(units: bigint, scale: number): number {
 	let value = Number(`${units}e-${scale}`);
 	for (;;) {
@@ -30,7 +25,6 @@ function decimalAtMost(units: bigint, scale: number): number {
 	}
 }
 
-/** Convert base allocation units without rounding a persisted result upward. */
 export function divideDecimalAtMost(value: number, divisor: number): number {
 	if (
 		!Number.isFinite(value) ||
@@ -58,7 +52,6 @@ export function divideDecimalAtMost(value: number, divisor: number): number {
 	}
 }
 
-/** Exact decimal accounting, internal to CI reservation and settlement. */
 export function allocationQuote(
 	available: number,
 	consumed: readonly number[],
@@ -83,8 +76,6 @@ export function allocationQuote(
 	const reservedUnits = freeUnits < bound ? freeUnits : bound;
 	const free = decimalAtMost(freeUnits, scale);
 	const reservedFree = decimalAtMost(reservedUnits, scale);
-	// Charge against the value we actually persist, not a more generous
-	// unrepresentable fraction that would disappear on serialization.
 	const persisted = decimalParts(reservedFree);
 	const chargeScale = Math.max(scale, persisted.scale);
 	const factor = 10n ** BigInt(chargeScale - scale);

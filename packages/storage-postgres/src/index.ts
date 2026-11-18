@@ -67,5 +67,4 @@ export {
 	type StoreTelemetrySink,
 } from "./telemetry.js";
 
-// public-contract: the package identity consumers and tooling assert.
 export const HOBO_STORAGE_POSTGRES_PACKAGE = "@hobo/storage-postgres";

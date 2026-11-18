@@ -1,7 +1,3 @@
-/**
- * Correlation helpers: continuous identity, Station/Yard/Camp, Trails, Harness,
- * and control-plane event IDs — without free-text PII.
- */
 import {
 	type IsolationClass,
 	parseSessionCorrelation,
@@ -38,9 +34,6 @@ export function buildCorrelation(input: CorrelationInput): SessionCorrelation {
 	});
 }
 
-/**
- * Attach OpenFeature / Harness flag exposures observed during the session.
- */
 export function withHarnessExposures(
 	correlation: SessionCorrelation,
 	flagKeys: readonly string[],
@@ -52,9 +45,6 @@ export function withHarnessExposures(
 	});
 }
 
-/**
- * Link a control-plane incident / error so agents can jump session ↔ event log.
- */
 export function withErrorLink(
 	correlation: SessionCorrelation,
 	errorId: string,
@@ -71,9 +61,6 @@ export function withErrorLink(
 	});
 }
 
-/**
- * Link a Trail cutover / migration run for investigation context.
- */
 export function withTrail(
 	correlation: SessionCorrelation,
 	trailId: string,
