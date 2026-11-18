@@ -147,6 +147,10 @@ export {
 	type TailscaleApiOptions,
 	type TailscaleSplitDnsMap,
 } from "./overlay/tailscale-api.js";
+export {
+	createWireguardOverlay,
+	type WireguardRunner,
+} from "./overlay/wireguard.js";
 export * from "./pam/index.js";
 export {
 	createOpaPolicyEngine,

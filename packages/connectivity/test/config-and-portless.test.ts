@@ -44,9 +44,9 @@ describe("parseConnectivityConfig: totality", () => {
 describe("parseConnectivityConfig: overlay", () => {
 	test("uses the default for an omitted provider and accepts supported providers", () => {
 		expect(parseConnectivityConfig({ overlay: {} }).overlay.provider).toBe(
-			"tailscale",
+			"wireguard",
 		);
-		for (const provider of ["tailscale", "netbird"]) {
+		for (const provider of ["wireguard", "tailscale", "netbird"]) {
 			expect(
 				parseConnectivityConfig({ overlay: { provider } }).overlay.provider,
 			).toBe(provider);
@@ -54,9 +54,9 @@ describe("parseConnectivityConfig: overlay", () => {
 	});
 
 	test("rejects invalid providers and malformed overlay sections", () => {
-		for (const provider of ["wireguard", "", "unknown", 42, null]) {
+		for (const provider of ["", "unknown", 42, null]) {
 			expect(() => parseConnectivityConfig({ overlay: { provider } })).toThrow(
-				"overlay.provider must be tailscale or netbird",
+				"overlay.provider must be wireguard, tailscale, or netbird",
 			);
 		}
 		for (const overlay of [null, "tailscale", 42, []]) {

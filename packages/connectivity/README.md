@@ -98,7 +98,7 @@ MCP discovers them via `hobo inspect` (`data.namedEndpoints` / `primaryNamedUrl`
 
 ### 3. Overlay mode (junction / laptop)
 
-`parseConnectivityConfig` defaults an omitted overlay provider to Tailscale and accepts `tailscale` or `netbird`. It rejects malformed overlay sections and unsupported provider values.
+`parseConnectivityConfig` defaults an omitted overlay provider to WireGuard and accepts `wireguard`, `tailscale`, or `netbird`. It rejects malformed overlay sections and unsupported provider values.
 
 ```ts
 import {

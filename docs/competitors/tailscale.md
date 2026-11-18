@@ -152,9 +152,8 @@ State labels follow the research contract.
   is useful for connectivity and dangerous for jurisdiction — the two need to be reasoned about
   separately.
 - **Honest caveat.** On everything Tailscale actually does, Tailscale is better, and HoBo depends on
-  it rather than competing with it. The one caveat that matters is the shipped
-  `@hobo/connectivity` default: it currently selects the Tailscale adapter with no WireGuard-floor
-  adapter present, which contradicts ADR-0122's stated floor and is tracked as a GAPS.md finding.
+  it rather than competing with it. HoBo's portable default remains the shipped WireGuard adapter;
+  Tailscale is an opt-in managed control plane.
 
 ## Adversarial critique
 
@@ -201,9 +200,8 @@ State labels follow the research contract.
 2. **An overlay hides geography, and HoBo must not let it hide jurisdiction.** Fail-closed residency
    evaluation (ADR-0146) has to be independent of the network layer, because the network layer is
    designed to make location irrelevant.
-3. **The shipped default contradicts the stated floor.** ADR-0122 names WireGuard as the portable
-   default; `@hobo/connectivity` ships defaulting to the Tailscale adapter with no floor adapter.
-   Recorded here as a live inconsistency, not a footnote.
+3. **Keep the portable floor independent.** `@hobo/connectivity` defaults to WireGuard and treats
+   Tailscale as an opt-in managed adapter.
 4. **Bound your own control plane's authority.** Tailnet lock is a vendor voluntarily limiting what
    it can do to a customer's network. HoBo, which asks to make placement decisions on a customer's
    behalf, has a stronger obligation to offer the same kind of constraint and currently offers none.
