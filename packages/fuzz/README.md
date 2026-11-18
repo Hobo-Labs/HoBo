@@ -25,6 +25,9 @@ Pass the seed and run count to replay a campaign with the same inputs:
 `-- --seed 1742 --runs 5000`. The command prints the seed and number of
 cases completed in each campaign.
 
+The reference model rejects unknown capability verbs and sparse verb arrays during
+creation and attenuation before changing its clock, state, or event history.
+
 Trainable gold/silver: `fuzzTrainable(fn, seeds)` runs seed-holds,
 determinism, fail-closed, pollution, and bound checks against a live
 `"use training"` function. Outputs may be circular, bigint, `Date`, or
