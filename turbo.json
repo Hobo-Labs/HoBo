@@ -987,7 +987,6 @@
         "src/draft/technical-proofs/oidc-federation-sts-contract/**",
         "src/draft/technical-proofs/on-call-escalation-contract/**",
         "src/draft/technical-proofs/projection-lag-consistency-contract/**",
-        "src/draft/technical-proofs/queue-clock-runtime-port-contract/**",
         "src/draft/technical-proofs/rbac-role-binding-contract/**",
         "src/draft/technical-proofs/remediation-safety-gate-contract/**",
         "src/draft/technical-proofs/runbook-execution-engine-contract/**",

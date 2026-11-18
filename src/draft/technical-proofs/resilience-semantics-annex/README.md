@@ -11,7 +11,7 @@ into executable facts for the later SDK conformance lane.
 - `urn:hobo:requirement:sdk-contracts`: SDK public-contract map and resilience
   conformance sequencing.
 - `src/draft/technical-proofs/idiom-semantics-annex`: existing HOBO-31 semantics lane.
-- `src/draft/technical-proofs/queue-clock-runtime-port-contract`: deterministic retry timing and
+- `packages/runtimes/runtime-local`: deterministic retry timing and
   clock facts.
 - `src/draft/technical-proofs/runtime-local-execution-limits-contract`: interruption, cleanup,
   and audit-fact shape.

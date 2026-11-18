@@ -4,7 +4,7 @@ import type {
 import type {
   createRuntimeLocalEventStore,
 } from "../fixtures/eventstore-port.js";
-import type { createRuntimeLocalQueueClock } from "../fixtures/queue-clock-port.js";
+import type { createRuntimeLocalQueueClock } from "@hobo/runtime-local";
 
 export const RUNTIME_PORT_CONFORMANCE_VERSION =
   "hobo.runtime-port-conformance/v1";

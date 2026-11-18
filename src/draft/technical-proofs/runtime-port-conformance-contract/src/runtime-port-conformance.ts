@@ -4,7 +4,7 @@ import {
 } from "../../camp-eventstore-runtime-port-contract/src/camp-eventstore-runtime-port.js";
 import {
   createRuntimeLocalQueueClock,
-} from "../../queue-clock-runtime-port-contract/src/queue-clock-runtime-port.js";
+} from "@hobo/runtime-local";
 import {
   createInMemoryActorHost,
 } from "../../actor-host-runtime-port-contract/src/actor-host-runtime-port.js";

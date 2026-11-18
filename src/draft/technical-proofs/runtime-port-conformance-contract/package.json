@@ -4,5 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest run --root ."
+  },
+  "dependencies": {
+    "@hobo/runtime-local": "workspace:*"
   }
 }
