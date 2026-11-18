@@ -179,8 +179,7 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);
 		assert.match(scripts.if, /github\.event_name == 'merge_group'/u);
-		// Not a job a signed local run stands in for: it always runs.
-		assert.doesNotMatch(scripts.if, /attested/u);
+		assert.match(scripts.if, /attested-jobs.*scripts-tests/u);
 		const lane = step(scripts, LANE);
 		assert.equal(
 			lane.run.trim(),
@@ -306,7 +305,7 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.match(gate.if, /always\(\)/u);
 	});
 
-	it("fails the gate unless the scripts job succeeded, attested or not", () => {
+	it("accepts scripts success or a complete verified local run", () => {
 		const script = step(gate, GATE_STEP).run;
 		const passing = {
 			VALIDATION_RESULT: "success",
@@ -353,14 +352,44 @@ describe("the scripts lane is a pull-request gate", () => {
 							SCRIPTS_RESULT: result,
 						},
 					});
+					const expected =
+						result === "success" ||
+						(result === "skipped" && others === attestedAll);
 					assert.equal(
 						run.status === 0,
-						result === "success",
+						expected,
 						`${event} ${JSON.stringify(others)} scripts=${result}: ${run.stderr}`,
 					);
-					if (result !== "success")
+					if (!expected)
 						assert.match(run.stderr, /Scripts tests did not succeed/u);
 				}
 			}
+	});
+
+	it("rejects a skipped scripts job without its own verified evidence", () => {
+		const script = step(gate, GATE_STEP).run;
+		for (const [route, attested, jobs] of [
+			["failure", "true", '["scripts-tests"]'],
+			["success", "false", '["scripts-tests"]'],
+			["success", "true", '["workspace_tests"]'],
+			["success", "true", '["scripts-tests-extra"]'],
+		] as const) {
+			const run = spawnSync("bash", ["-c", script], {
+				encoding: "utf8",
+				env: {
+					...process.env,
+					EVENT_NAME: "pull_request",
+					VALIDATION_RESULT: "success",
+					WORKSPACE_RESULT: "success",
+					AFFECTED_RESULT: "success",
+					SCRIPTS_RESULT: "skipped",
+					ROUTE_RESULT: route,
+					ATTESTED: attested,
+					ATTESTED_JOBS: jobs,
+				},
+			});
+			assert.notEqual(run.status, 0);
+			assert.match(run.stderr, /Scripts tests did not succeed/u);
+		}
 	});
 });
