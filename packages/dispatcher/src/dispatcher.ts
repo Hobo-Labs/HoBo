@@ -963,8 +963,6 @@ export function decideAndReserveDispatch(request) {
 		const dimension =
 			selectedRecord?.dimension ??
 			CATEGORY_DIMENSIONS[decision.dispatchEvent.data.category];
-		// Selection prefers the account's price over the registry fallback. Pass
-		// that same price to reserve so the two stages price the same exposure.
 		const accountPrice = findLedgerAccount(
 			ledgerView,
 			decision.selectedProvider,
@@ -1365,8 +1363,6 @@ function rankCreditCandidate({
 		rationale,
 		decisionVector: [
 			eligible ? 0 : 1,
-			// All candidates share the same requested units. Comparing total cost
-			// preserves sub-precision distinctions lost in the displayed rate.
 			totalCost,
 			expiryScore,
 			-concurrencyScore,
