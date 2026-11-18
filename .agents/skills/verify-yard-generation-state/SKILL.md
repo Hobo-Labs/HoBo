@@ -7,7 +7,7 @@ description: Verify exact Yard quotes, generation identity, readiness and provid
 
 **Properties:** An exact Yard quote and a generation plan must name the requested Yard. A provider result must belong to the planned attempt and Yard; a non-ready result needs a ready signal bound to both. A malformed or foreign provider signal batch is refused before any of its events are folded. If a rejection follows a provider effect, the hold is marked uncertain or retained with a reconciliation warning if the uncertainty write fails.
 
-**Review baseline:** commit `ff1ffeb7e381916ca25012f83d2daa56e3f434d3`. PASS for the finite models and executable checks below.
+**Review baseline:** commit `92c291c26b58af86b169c0fb51aa6211f7c0f775`. PASS for the finite models and executable checks below.
 
 ## Covered code
 
