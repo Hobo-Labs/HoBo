@@ -128,6 +128,9 @@ export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/local-attest.test.ts",
 	"scripts/test/fleet-signoff.test.ts",
 	"scripts/test/github-pr-target.test.ts",
+	"scripts/test/github-status-permission.test.ts",
+	"scripts/test/github-merge-group.test.ts",
+	"scripts/test/local-merge-group.test.ts",
 ];
 
 const SIGNED_LOCAL_RUN_GUARDED = new Set([
@@ -142,6 +145,8 @@ const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	"scripts/ci/fleet-signoff.mts",
 	"scripts/ci/github-pr-target.mts",
 	"scripts/ci/github-target.mts",
+	"scripts/ci/github-status-permission.mts",
+	"scripts/ci/github-merge-group.mts",
 	"scripts/ci/route-runner.mts",
 	// The route script loads it, so it is on the attested path too.
 	"scripts/ci/runner-routing.mts",

@@ -229,6 +229,7 @@ export type AttestationStatement = Readonly<{
 	/** The tested commit and its base. Jobs that examine commits are bound to these. */
 	head: string;
 	base: string;
+	testedCommit?: string;
 	jobs: readonly string[];
 	events: readonly string[];
 	startedAt: string;
@@ -485,7 +486,7 @@ function keyId(value: JsonValue | undefined, what: string): string {
 
 function parseStatement(value: JsonValue | undefined): AttestationStatement {
 	const object = required(asObject(value), "statement must be an object");
-	return {
+	const statement = {
 		predicateType: required(
 			asText(object.predicateType),
 			"statement.predicateType is missing",
@@ -510,7 +511,12 @@ function parseStatement(value: JsonValue | undefined): AttestationStatement {
 			asList(object.results),
 			"statement.results must be a list",
 		).map(parseResult),
-	};
+	} satisfies AttestationStatement;
+	if (object.testedCommit !== undefined)
+		Object.assign(statement, {
+			testedCommit: objectId(object.testedCommit, "statement.testedCommit"),
+		});
+	return statement;
 }
 
 type ParsedEnvelope = Readonly<{

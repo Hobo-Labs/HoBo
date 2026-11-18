@@ -1239,6 +1239,10 @@ if [ "$1" = api ] && [ "$2" = 'user/installations?per_page=100' ]; then
   [ -n "\${HOBO_STATUS_INSTALLATIONS:-}" ] || exit 1
   printf '%s\\n' "$HOBO_STATUS_INSTALLATIONS"; exit 0
 fi
+if [ "$1" = api ] && [ "$2" = graphql ]; then
+  [ -n "\${HOBO_FLEET_QUEUE:-}" ] || exit 1
+  cat "$HOBO_FLEET_QUEUE"; exit 0
+fi
 if [ "$1" = pr ]; then
   [ -n "\${HOBO_FLEET_PR_DIR:-}" ] || exit 1
   echo 17; exit 0
@@ -1261,6 +1265,7 @@ if [ "$1" = api ] && [ "$2" = --hostname ]; then
 fi
 case "$2" in
   'repos/{owner}/{repo}/branches/main') git rev-parse refs/remotes/origin/main ;;
+  */branches/gh-readonly-queue%2F*) printf '%s\\n' "$HOBO_FLEET_GROUP_HEAD" ;;
   'repos/{owner}/{repo}/branches/feature') git --git-dir="$HOBO_FLEET_REMOTE" rev-parse refs/heads/feature ;;
   */git/ref/hobo/routing-slip)
     [ -n "\${HOBO_FLEET_SLIP:-}" ] || exit 1
@@ -1292,6 +1297,10 @@ if [ "\${HOBO_FLEET_OLD_GIT:-0}" = 1 ] && [ "$1" = --no-lazy-fetch ]; then
   exit 129
 fi
 if [ "$1" = hobo-test-advance ]; then
+  if [ -f "$tool_dir/change-queue-on-job" ]; then
+    read -r queue_path < "$tool_dir/queue-path"
+    printf '%s\\n' '{"data":{"repository":{"pullRequest":null}}}' > "$queue_path"
+  fi
   if [ -f "$tool_dir/close-pr-on-job" ]; then
     touch "$tool_dir/pr-closed"
   fi
@@ -2337,6 +2346,62 @@ exec /usr/bin/git "$@"
 					`signoff create --commit ${head} hobo-ci/local/pull_request/ci-guard`,
 				),
 			);
+
+			const callsBeforeGroup = readFileSync(calls, "utf8");
+			git(repo, ["switch", "--quiet", "--detach", baseA]);
+			git(repo, ["cherry-pick", head]);
+			const groupHead = git(repo, ["rev-parse", "HEAD"]).toString().trim();
+			const groupRef = `gh-readonly-queue/main/pr-17-${baseA}`;
+			git(repo, ["push", "--quiet", "origin", `HEAD:refs/heads/${groupRef}`]);
+			const queue = join(root, "merge-queue.json");
+			writeFileSync(join(bin, "queue-path"), `${queue}\n`);
+			const queueData = JSON.stringify({
+				data: {
+					repository: {
+						pullRequest: {
+							state: "OPEN",
+							baseRefName: "main",
+							mergeQueueEntry: {
+								state: "AWAITING_CHECKS",
+								baseCommit: { oid: baseA },
+								headCommit: { oid: groupHead },
+							},
+						},
+					},
+				},
+			});
+			writeFileSync(queue, queueData);
+			const groupEnv = {
+				HOBO_FLEET_QUEUE: queue,
+				HOBO_FLEET_GROUP_HEAD: groupHead,
+			};
+			const groupFlags = ["--fresh", `--merge-group-ref=${groupRef}`];
+			writeFileSync(join(bin, "change-queue-on-job"), "change\n");
+			const movedGroup = command(groupEnv, groupFlags);
+			assert.notEqual(
+				movedGroup.status,
+				0,
+				`${movedGroup.stdout}\n${movedGroup.stderr}`,
+			);
+			assert.match(
+				movedGroup.stderr,
+				/merge-group entry or its published ref changed/u,
+			);
+			assert.doesNotMatch(
+				readFileSync(calls, "utf8"),
+				/signoff create.*merge_group/u,
+			);
+			rmSync(join(bin, "change-queue-on-job"));
+			writeFileSync(queue, queueData);
+			const groupSuccess = command(groupEnv, groupFlags);
+			assert.equal(groupSuccess.status, 0, groupSuccess.stderr);
+			assert.ok(
+				readFileSync(calls, "utf8").includes(
+					`signoff create --commit ${groupHead} hobo-ci/local/merge_group/ci-guard`,
+				),
+			);
+			writeFileSync(calls, callsBeforeGroup);
+			git(repo, ["switch", "--quiet", "feature"]);
 
 			const prDir = join(root, "pr-fixture");
 			mkdirSync(prDir);

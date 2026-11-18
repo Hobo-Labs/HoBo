@@ -2032,6 +2032,16 @@ if [ "$1" = pr ]; then
   [ "\${HOBO_SIGNOFF_TEST_PR:-0}" = 1 ] || exit 1
   echo 17; exit 0
 fi
+if [ "$1" = api ] && [ "$2" = graphql ]; then
+  [ -n "\${HOBO_SIGNOFF_QUEUE:-}" ] || exit 1
+  count=0
+  [ ! -f "$HOBO_SIGNOFF_PR_DIR/queue-count" ] || read -r count < "$HOBO_SIGNOFF_PR_DIR/queue-count"
+  count=$((count + 1)); printf '%s\\n' "$count" > "$HOBO_SIGNOFF_PR_DIR/queue-count"
+  if [ -n "\${HOBO_SIGNOFF_QUEUE_CHANGE_AT:-}" ] && [ "$count" -ge "$HOBO_SIGNOFF_QUEUE_CHANGE_AT" ]; then
+    printf '%s\\n' '{"data":{"repository":{"pullRequest":null}}}'
+  else cat "$HOBO_SIGNOFF_QUEUE"; fi
+  exit 0
+fi
 if [ "$1" = api ] && [ "$2" = --hostname ]; then
   [ "\${HOBO_SIGNOFF_TEST_PR:-0}" = 1 ] || exit 1
   case "$4" in
@@ -2055,6 +2065,7 @@ if [ "$1" = api ]; then
   printf '%s\n' "$@" >> "$HOBO_SIGNOFF_TEST_API_CALLS"
   if [ "\${HOBO_SIGNOFF_TEST_API_FAIL:-0}" = 1 ]; then exit 1; fi
   case "$2" in
+    */branches/gh-readonly-queue%2F*) printf '%s\\n' "$HOBO_SIGNOFF_TEST_GH_HEAD"; exit 0 ;;
     */branches/topic)
       if [ "\${HOBO_SIGNOFF_TEST_HEAD_FAIL:-0}" = 1 ]; then exit 1; fi
       printf '%s\\n' "$HOBO_SIGNOFF_TEST_GH_HEAD"; exit 0 ;;
@@ -2102,6 +2113,7 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 		});
 		const command = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) => {
 			rmSync(join(prDir, "count"), { force: true });
+			rmSync(join(prDir, "queue-count"), { force: true });
 			return spawnSync(
 				process.execPath,
 				[
@@ -2246,6 +2258,72 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			"github.com/acme/app",
 		]);
 		assert.match(result.stdout, /posted 5 local signoff/u);
+	});
+
+	it("signs only an exact active merge-group commit and rechecks it around publication", async () => {
+		const run = await fixture();
+		const base = git(run.repo, ["rev-parse", "refs/remotes/origin/main"]);
+		const group = `gh-readonly-queue/main/pr-17-${base}`;
+		git(run.repo, ["push", "--quiet", "origin", `HEAD:refs/heads/${group}`]);
+		const queue = join(run.prDir, "queue.json");
+		writeFileSync(
+			queue,
+			JSON.stringify({
+				data: {
+					repository: {
+						pullRequest: {
+							state: "OPEN",
+							baseRefName: "main",
+							mergeQueueEntry: {
+								state: "AWAITING_CHECKS",
+								baseCommit: { oid: base },
+								headCommit: { oid: run.head },
+							},
+						},
+					},
+				},
+			}),
+		);
+		const args = [`--merge-group-ref=${group}`, "--pr=17"];
+		const rejected = run.command(args, { HOBO_SIGNOFF_QUEUE: queue });
+		assert.notEqual(rejected.status, 0);
+		assert.match(
+			rejected.stderr,
+			/does not prove execution on the exact merge-group commit/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+		const statement = { ...run.envelope.statement, testedCommit: run.head };
+		writeFileSync(
+			run.file,
+			JSON.stringify(signStatement(statement, run.privateKey)),
+		);
+		const stale = run.command(args, {
+			HOBO_SIGNOFF_QUEUE: queue,
+			HOBO_SIGNOFF_QUEUE_CHANGE_AT: "2",
+		});
+		assert.notEqual(stale.status, 0);
+		assert.match(
+			stale.stderr,
+			/merge-group entry or its published ref changed/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+		const result = run.command(args, { HOBO_SIGNOFF_QUEUE: queue });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			readFileSync(run.calls, "utf8"),
+			/hobo-ci\/local\/merge_group\/pr_gate_validation/u,
+		);
+		rmSync(run.calls);
+		const during = run.command(args, {
+			HOBO_SIGNOFF_QUEUE: queue,
+			HOBO_SIGNOFF_QUEUE_CHANGE_AT: "3",
+		});
+		assert.notEqual(during.status, 0);
+		assert.match(
+			during.stderr,
+			/changed during publication; some statuses may already have been posted/u,
+		);
+		assert.equal(existsSync(run.calls), true);
 	});
 
 	it("signs a pushed head with a narrow fetch configuration without changing the checkout refs", async () => {

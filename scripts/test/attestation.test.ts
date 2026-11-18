@@ -318,6 +318,7 @@ describe("verifying an attestation", () => {
 			{ ...signed.statement, jobs: [...signed.statement.jobs].slice(1) },
 			{ ...signed.statement, tree: "9".repeat(40) },
 			{ ...signed.statement, head: "9".repeat(40) },
+			{ ...signed.statement, testedCommit: "9".repeat(40) },
 			{ ...signed.statement, finishedAt: "2026-11-11T11:31:00.000Z" },
 			{
 				...signed.statement,
