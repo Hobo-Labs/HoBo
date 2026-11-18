@@ -9,7 +9,7 @@ description: Verify visible workflow journal structure before resume and replay.
 
 **Why:** An omitted interior record, repeated start, extra record after the outcome, or unknown current-format runtime fact can make a damaged journal look authoritative.
 
-**Review baseline:** `5b5d1dfbb6b16f5ec58741e25ea6538f3a7e167a`.
+**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
 
 ## Covered code and checks
 

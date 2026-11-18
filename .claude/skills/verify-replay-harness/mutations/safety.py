@@ -28,6 +28,13 @@ for name, filename, before, after in cases:
             raise RuntimeError(f'{name}: expected one mutation site, found {original.count(before)}')
         changed = original.replace(before, after, 1)
         if name == 'replay-before-callback':
+            history_guard = 'validateJournalHistory(events);'
+            if changed.count(history_guard) != 1:
+                raise RuntimeError('replay-before-callback: expected history validation site')
+            # Either early guard independently refuses an unsafe journal. Remove
+            # both to exercise the before-callback property rather than a
+            # redundant individual implementation check.
+            changed = changed.replace(history_guard, '', 1)
             marker = 'const report: ReplayReport = Object.freeze({'
             if changed.count(marker) != 1:
                 raise RuntimeError('replay-before-callback: expected report site')

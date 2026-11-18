@@ -9,7 +9,7 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 
 **Why:** A failed verification must not change later code’s clock or randomness; an incomplete, changing or imprecise input must not silently omit events or misstate the boundary of a replay check.
 
-**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
+**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
 
 ## Covered code and checks
 
@@ -24,6 +24,8 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 
 - The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
 
+- The related [journal history skill](../verify-workflow-journal-history/SKILL.md) checks visible sequence, start and terminal structure before resume and replay.
+
 From the repository root with dependencies installed, run:
 
 ```sh
@@ -34,7 +36,7 @@ python3 .agents/skills/verify-replay-harness/mutations/snapshot.py
 python3 .agents/skills/verify-replay-harness/mutations/safety.py
 ```
 
-The runner checks the pinned TLC 1.7.4 jar and uses Z3 4.15.4. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing installations for offline runs. The mutation commands check five cleanup, two vector, six snapshot and five numeric-safety broken scratch implementations with the full skill and rerun the restored code. Java 11+, Python, Node, and the repository dependencies are required.
+The runner checks the pinned TLC 1.7.4 jar and uses Z3 4.15.4. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing installations for offline runs. The mutation commands check five cleanup, two vector, six snapshot and five numeric-safety broken scratch implementations with the full skill and rerun the restored code. The replay-before-callback variant removes both independent early sequence checks; removing either alone remains guarded by the other. Java 11+, Python, Node, and the repository dependencies are required.
 
 ## Model and evidence
 

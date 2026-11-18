@@ -9,7 +9,7 @@ description: Verify replay canonical ordering, versioned digests, and legacy rep
 
 **Why:** Insertion order or machine locale must not change a new digest, and a digest must not silently be read under a different encoding.
 
-**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
+**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
 
 ## Covered code and checks
 
@@ -19,6 +19,8 @@ description: Verify replay canonical ordering, versioned digests, and legacy rep
 - The related [evidence skill](../verify-replay-evidence/SKILL.md) checks that returned report markers and positions remain immutable.
 
 - The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
+
+- The related [journal history skill](../verify-workflow-journal-history/SKILL.md) checks visible sequence, start and terminal structure before resume and replay.
 
 From the repository root with dependencies installed, run:
 
