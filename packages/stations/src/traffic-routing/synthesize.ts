@@ -9,20 +9,22 @@ import {
 } from "@hobo/core";
 import { cloneAsJson } from "../json.js";
 
+export type CostRoutingClass =
+	| "stateless"
+	| "active-active-eventual"
+	| "pinned-with-replica"
+	| "single-writer";
+
 export type RoutingTopology = Readonly<{
 	service: string;
 	tenantId: TenantId;
 	stationId?: string;
 	railHash?: `sha256:${string}`;
-	/** Explicit cost-routing eligibility; single-writer resources cannot move by price. */
-	costRouting?:
-		| "stateless"
-		| "active-active-eventual"
-		| "pinned-with-replica"
-		| "single-writer";
+	costRouting?: CostRoutingClass;
 	backends: readonly Readonly<{
 		id: string;
 		service: string;
+		costRouting?: CostRoutingClass;
 		locationHints?: readonly string[];
 		endpoint?: string;
 		weight?: number;
@@ -36,6 +38,7 @@ export type RoutingSynthesisDenial = Readonly<{
 		| "policy-denied"
 		| "policy-context-mismatch"
 		| "policy-obligations-unsatisfied"
+		| "cost-routing-ineligible"
 		| "availability-unsatisfied";
 	message: string;
 }>;
@@ -50,13 +53,9 @@ export function synthesizeRoutingPlan(
 		availability?: MinAvailabilitySpec;
 		resiliency?: ResiliencySpec;
 		policyDecision: PolicyDecision;
+		purpose?: "routing" | "cost";
 		now?: string;
 		planId?: string;
-		/**
-		 * Default "prefer-healthy". Pass "static" when the caller has already
-		 * folded health into explicit weights (e.g. the control loop's swap
-		 * plans) so weight-only providers can realize the plan in full.
-		 */
 		weightStrategy?: RoutingWeightStrategy;
 	}>,
 ): RoutingSynthesisResult {
@@ -88,6 +87,22 @@ export function synthesizeRoutingPlan(
 			"policy-obligations-unsatisfied",
 			"routing policy obligations require explicit satisfaction evidence",
 		);
+	}
+	if (input.purpose === "cost") {
+		const ineligible = input.topology.backends.filter(
+			(backend) =>
+				(input.topology.costRouting !== undefined &&
+					!eligibleForCostRouting(input.topology.costRouting)) ||
+				!eligibleForCostRouting(
+					backend.costRouting ?? input.topology.costRouting,
+				),
+		);
+		if (ineligible.length > 0) {
+			return deny(
+				"cost-routing-ineligible",
+				`cost routing requires replica-safe evidence for: ${ineligible.map((backend) => backend.id).join(", ")}`,
+			);
+		}
 	}
 
 	const candidates = input.topology.backends.filter(
@@ -145,6 +160,14 @@ export function synthesizeRoutingPlan(
 			}),
 		),
 	});
+}
+
+function eligibleForCostRouting(value: CostRoutingClass | undefined): boolean {
+	return (
+		value === "stateless" ||
+		value === "active-active-eventual" ||
+		value === "pinned-with-replica"
+	);
 }
 
 function deny(

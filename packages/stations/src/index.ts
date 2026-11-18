@@ -139,6 +139,7 @@ export {
 	topologyWithObservations,
 } from "./traffic-routing/observations.js";
 export {
+	type CostRoutingClass,
 	type RoutingSynthesisDenial,
 	type RoutingSynthesisResult,
 	type RoutingTopology,
