@@ -16,6 +16,7 @@ export {
 export {
 	createOptimisticSubscription,
 	type OptimisticAudit,
+	type OptimisticFrame,
 	type OptimisticPatch,
 	OptimisticSeqRegressionError,
 	type OptimisticSequence,

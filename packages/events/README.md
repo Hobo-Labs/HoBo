@@ -46,7 +46,8 @@ earliest submitted eligible patch runs first. Patch functions must be determinis
 free of side effects because they can run again after each frame or rejection.
 The visible `seq` and `streamSeqs` always come from the authoritative frame.
 The subscription rejects regressing frames and keeps its previous state if a
-patch throws while a change is being evaluated. Its audit log is in memory.
+patch throws while a change is being evaluated. It also preserves an optional
+`stale` flag from the authoritative frame. Its audit log is in memory.
 
 `maxBufferedEvents` and `maxTrackedStreams` each default to 10,000. Exceeding a
 limit closes the subscription and rejects pending waits. Closing a subscription

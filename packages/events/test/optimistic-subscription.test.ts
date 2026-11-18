@@ -208,4 +208,29 @@ describe("optimistic subscriptions", () => {
 			}),
 		).toThrow(/at least one stream/);
 	});
+
+	it("preserves authoritative freshness across reconciliation", () => {
+		const client = createOptimisticSubscription({
+			subscriptionId: "sub:freshness",
+			initial: { ...frame("old", 1, { note: 1 }), stale: true },
+		});
+		expect(client.current()).toMatchObject({ stale: true, optimistic: false });
+		client.applyOptimisticPatch({
+			commandId: "edit",
+			seqFloor: { note: 2 },
+			apply: () => "new",
+		});
+		expect(
+			client.receiveAuthoritativePush({
+				...frame("new", 2, { note: 2 }),
+				stale: true,
+			}),
+		).toMatchObject({ stale: true, optimistic: false });
+		expect(
+			client.receiveAuthoritativePush(frame("new", 2, { note: 2 })),
+		).toMatchObject({
+			stale: false,
+			optimistic: false,
+		});
+	});
 });

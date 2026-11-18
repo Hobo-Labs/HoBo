@@ -9,6 +9,10 @@ export interface OptimisticPatch<T> {
 	readonly apply: (value: T) => T;
 }
 
+export interface OptimisticFrame<T> extends MaterializedFrame<T> {
+	readonly stale?: boolean;
+}
+
 export interface OptimisticView<T> extends MaterializedFrame<T> {
 	readonly stale: boolean;
 	readonly optimistic: boolean;
@@ -36,7 +40,7 @@ export type OptimisticAudit =
 export interface OptimisticSubscription<T> {
 	current(): OptimisticView<T>;
 	applyOptimisticPatch(patch: OptimisticPatch<T>): OptimisticView<T>;
-	receiveAuthoritativePush(frame: MaterializedFrame<T>): OptimisticView<T>;
+	receiveAuthoritativePush(frame: OptimisticFrame<T>): OptimisticView<T>;
 	rejectCommand(commandId: string, reason?: string): OptimisticView<T>;
 	auditLog(): readonly OptimisticAudit[];
 }
@@ -57,7 +61,7 @@ export class OptimisticSeqRegressionError extends Error {
 
 export function createOptimisticSubscription<T>(options: {
 	readonly subscriptionId: string;
-	readonly initial: MaterializedFrame<T>;
+	readonly initial: OptimisticFrame<T>;
 }): OptimisticSubscription<T> {
 	const subscriptionId = nonEmpty(options.subscriptionId, "subscriptionId");
 	let authoritative = normalizeFrame(options.initial);
@@ -93,7 +97,7 @@ export function createOptimisticSubscription<T>(options: {
 			audit.push({ type: "optimistic.Applied", commandId, seqFloor });
 			return view;
 		},
-		receiveAuthoritativePush(frame: MaterializedFrame<T>): OptimisticView<T> {
+		receiveAuthoritativePush(frame: OptimisticFrame<T>): OptimisticView<T> {
 			const next = normalizeFrame(frame);
 			assertProgress(subscriptionId, authoritative, next);
 			const reconciled = pending.filter((patch) =>
@@ -129,8 +133,10 @@ export function createOptimisticSubscription<T>(options: {
 	});
 }
 
+type AuthoritativeFrame<T> = MaterializedFrame<T> & { readonly stale: boolean };
+
 function project<T>(
-	frame: MaterializedFrame<T>,
+	frame: AuthoritativeFrame<T>,
 	patches: readonly OptimisticPatch<T>[],
 ): OptimisticView<T> {
 	const ordered = orderPatches(patches);
@@ -140,7 +146,7 @@ function project<T>(
 		value,
 		seq: frame.seq,
 		streamSeqs: frame.streamSeqs,
-		stale: ordered.length > 0,
+		stale: frame.stale || ordered.length > 0,
 		optimistic: ordered.length > 0,
 		pendingCommands: Object.freeze(ordered.map((patch) => patch.commandId)),
 	});
@@ -193,13 +199,20 @@ function isSatisfied(
 	});
 }
 
-function normalizeFrame<T>(frame: MaterializedFrame<T>): MaterializedFrame<T> {
+function normalizeFrame<T>(frame: OptimisticFrame<T>): AuthoritativeFrame<T> {
 	if (!Number.isSafeInteger(frame.seq) || frame.seq < 0)
 		throw new TypeError("frame.seq must be a non-negative safe integer");
+	if (
+		frame.stale !== undefined &&
+		frame.stale !== true &&
+		frame.stale !== false
+	)
+		throw new TypeError("frame.stale must be a boolean");
 	return Object.freeze({
 		value: structuredClone(frame.value),
 		seq: frame.seq,
 		streamSeqs: parseOptimisticSequence(frame.streamSeqs),
+		stale: frame.stale ?? false,
 	});
 }
 
