@@ -10,6 +10,8 @@
 		"test/budget-integration.test.ts",
 		"test/core-isolation.test.ts",
 		"test/rivet-mapping.test.ts",
+		"test/rivet-queue-alchemy.test.ts",
+		"test/rivet-queue-source-boundary.test.ts",
 		"test/rivet-support-report.test.ts",
 		"test/support-limitations.test.ts",
 		"test/support-report.test.ts"

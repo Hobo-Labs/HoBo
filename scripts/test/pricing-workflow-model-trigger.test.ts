@@ -24,13 +24,16 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/pricing/model/IacDestroyPricing.tla",
 			"packages/pricing/model/IacFixedPricing.tla",
 			"packages/pricing/model/IacPricingScope.tla",
-			"packages/pricing/src/fixed-charge-coverage.ts",
 			"packages/pricing/src/quote.ts",
+			"packages/pricing/src/fixed-charge-coverage.ts",
 			"packages/broker/model/IacBudget.tla",
 			"packages/broker/src/iac-target.ts",
 			"packages/cloud/model/IacTransitions.tla",
 			"packages/cloud/src/orchestrator/recovery.ts",
 			"packages/iac/iac-alchemy/model/IacGrant.tla",
+			"packages/iac/iac-alchemy/model/RivetQueue.tla",
+			"packages/iac/iac-alchemy/model/RivetQueue.cfg",
+			"packages/iac/iac-alchemy/model/check-rivet-queue.mts",
 			"packages/iac/iac-alchemy/src/index.ts",
 			"packages/dispatcher/model/IacRouting.tla",
 			"packages/dispatcher/src/iac-target-routing.ts",
@@ -74,6 +77,7 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 	for (const checker of [
 		"scripts/test/bounded-tlc.test.ts",
 		"scripts/check-iac-models.ts",
+		"packages/iac/iac-alchemy/model/check-rivet-queue.mts",
 	])
 		assert.ok(
 			modelSteps?.some((step) =>

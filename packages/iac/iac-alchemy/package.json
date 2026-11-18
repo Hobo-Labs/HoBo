@@ -22,6 +22,14 @@
 		"./rivet/runtime": {
 			"types": "./dist/rivet-runtime.d.ts",
 			"default": "./dist/rivet-runtime.js"
+		},
+		"./rivet/queue": {
+			"types": "./dist/rivet-queue.d.ts",
+			"default": "./dist/rivet-queue.js"
+		},
+		"./rivet/queue/runtime": {
+			"types": "./dist/rivet-queue-runtime.d.ts",
+			"default": "./dist/rivet-queue-runtime.js"
 		}
 	},
 	"dependencies": {
