@@ -8,6 +8,7 @@ import {
 import {
 	buildDeploymentRequestFromParts,
 	parseBindleDeploymentRequest,
+	prepareYardHostingWork,
 	resolveBindleDeployment,
 } from "../src/yard-placement/deploy.js";
 import {
@@ -133,6 +134,37 @@ describe("Yard Camp binding", () => {
 		});
 		expect(result.outcome).toBe("resolved");
 		expect(result.receipt?.selectedCampId).toBe(`${yardId}/camp:production`);
+	});
+
+	it("binds the Camp environment into the quoted work digest", () => {
+		const production = request(camp());
+		const staging: BindleDeploymentRequest = {
+			...production,
+			camp: camp({
+				layout: {
+					require: [],
+					prefer: [],
+					labels: {},
+					runtimeRequirements: [],
+					envType: "staging",
+				},
+			}),
+		};
+		const catalog = createLocalHostCatalog();
+		const quoteWork = (input: BindleDeploymentRequest) =>
+			prepareYardHostingWork({
+				request: input,
+				brokerId: "broker:test",
+				ownerTenantId: "local",
+				catalog,
+				yardId,
+				providerId: LOCAL_HOST_PROVIDER_ID,
+			});
+		const first = quoteWork(production);
+		const second = quoteWork(staging);
+		if ("error" in first || "error" in second)
+			throw new Error("work planning failed");
+		expect(first.workDigest).not.toBe(second.workDigest);
 	});
 
 	it("refuses malformed Camp and environment values instead of defaulting them", () => {

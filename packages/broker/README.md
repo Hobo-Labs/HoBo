@@ -29,6 +29,9 @@ local hosting authorization. Empty or malformed Camp IDs and environment types
 are refused during parsing. This check does not yet verify that a named Camp
 exists or satisfies its requested capabilities; Camp matching and selection-mode
 enforcement remain separate work.
+Because the request digest now includes Camp fields that were previously
+discarded, a quote created by an older parser may no longer match the request.
+Obtain a new quote and reconcile any existing reservation before retrying.
 
 The [Yard residual placement skill](../../.agents/skills/verify-yard-residual-placement/SKILL.md)
 checks a one-resource abstraction of capability and evidence. This view hides 24
