@@ -97,7 +97,9 @@ host's job; this package projects and renders.
 - Incidents referencing unregistered components still render.
 - Public publishes recompute the banner from public components only, and
   refuse an empty allowlist.
-- Site writer rejects slug traversal and duplicate slugs.
+- Site writer validates all slugs before touching the filesystem, including
+  traversal and duplicate checks. Later filesystem failures can leave partial
+  output and require a retry or cleanup.
 
 ## Honest scope
 
