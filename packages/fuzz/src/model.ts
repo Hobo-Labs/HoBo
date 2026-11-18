@@ -147,8 +147,12 @@ export class ControlModel {
 	#resources = new Map<string, OwnedResource>();
 	#eventLog: ModelEvent[] = [];
 	#snapshots = new Map<number, string>();
-	lastRollbackTarget: number | null = null;
-	private replayBaseline: string | undefined;
+	#lastRollbackTarget: number | null = null;
+	#replayBaseline: string | undefined;
+
+	get lastRollbackTarget(): number | null {
+		return this.#lastRollbackTarget;
+	}
 
 	get clock(): number {
 		return this.#clock;
@@ -269,8 +273,8 @@ export class ControlModel {
 			this.#bindles.size === 0 &&
 			this.#capabilities.size === 0 &&
 			this.#resources.size === 0 &&
-			this.lastRollbackTarget === null &&
-			this.replayBaseline === undefined;
+			this.#lastRollbackTarget === null &&
+			this.#replayBaseline === undefined;
 		if (!Number.isSafeInteger(this.clock) || this.clock < 0) {
 			throw new Error("fuzz.model_clock_exhausted");
 		}
@@ -285,7 +289,7 @@ export class ControlModel {
 		for (const [id, row] of blob.bindles) this.#bindles.set(id, row);
 		for (const [id, row] of blob.capabilities) this.#capabilities.set(id, row);
 		for (const [id, row] of blob.resources) this.#resources.set(id, row);
-		if (pristine) this.replayBaseline = raw;
+		if (pristine) this.#replayBaseline = raw;
 		else this.#appendEvent("system", "model.restored", { snapshot: raw });
 	}
 
@@ -538,7 +542,7 @@ export class ControlModel {
 		const expected = tenantFingerprint(blob, tenantId);
 		this.#advanceClock();
 		this.#restoreTenant(tenantId, blob);
-		this.lastRollbackTarget = targetClock;
+		this.#lastRollbackTarget = targetClock;
 		this.#appendEvent(tenantId, "rollback", { target: String(targetClock) });
 		const restored = this.fingerprint(tenantId);
 		const ok = restored === expected;
@@ -665,7 +669,7 @@ export class ControlModel {
 
 	replay(): string {
 		const copy = new ControlModel();
-		if (this.replayBaseline !== undefined) copy.restore(this.replayBaseline);
+		if (this.#replayBaseline !== undefined) copy.restore(this.#replayBaseline);
 		for (const event of this.#eventLog) {
 			if (event.kind === "clock.advanced") {
 				copy.tick();
