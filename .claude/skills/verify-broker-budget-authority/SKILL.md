@@ -9,7 +9,7 @@ description: Verify quote authorization, hosting budget admission, execution cla
 
 **Why:** A missing hold or lost journal entry can fund multiple provider operations with the same money, while a premature release can leave running work unaccounted for.
 
-**Review baseline:** commit `2a3a383c304d96e1a0306a89c43838f1bfd80059`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
+**Review baseline:** commit `a9c02ab220cd3b795e7e835f866ae21baf5c608d`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
 
 ## Covered code
 

@@ -7,7 +7,7 @@ description: Verify capability, region, provider and catalog-price evidence for 
 
 **Properties:** A residual resource is placed only on a full capability match in its Yard provider or an explicitly compatible wildcard, in a region supported by the definition. Eligible catalog entries must have distinct identities, valid nonnegative decimal prices and matching units; the lowest exact marginal price wins with stable ID ties. Catalog evidence changed while resolving resources rejects. A failure can route a resource to an unsupported region, omit required capabilities, misrepresent its provider, or select the wrong catalog price.
 
-**Review baseline:** commit `2a3a383c304d96e1a0306a89c43838f1bfd80059`. PASS for the bounded models, symbolic abstraction and generated tests below.
+**Review baseline:** commit `a9c02ab220cd3b795e7e835f866ae21baf5c608d`. PASS for the bounded models, symbolic abstraction and generated tests below.
 
 ## Covered code
 
@@ -30,7 +30,7 @@ The shared runner checks the pinned TLC 1.7.4 jar and Z3 4.15.4. Set `TLA2TOOLS`
 
 `YardResidualRanking` explores 256 states for two candidates, two abstract prices, validity, units, unique IDs and tie order. It checks valid and comparable prices, distinct identities, minimum price and stable ties. Its three-state projection hides 128 same-label steps. Z3 checks the same ordering obligations for two arbitrary nonnegative exact-real prices and the stated Boolean guards; it assumes correct parsing. Nine weakened model guards and five weakened proof guards produce counterexamples. Real-code tests reproduce partial and false wildcard matches, unsupported regions, provider and cross-resource mutations, changed or incomparable prices and duplicate IDs.
 
-This compares individual marginal prices only. Equal units do not prove equal quantities, currency, complete workloads or whole-request optimality. The host's catalog hash, capability callbacks and pricing evidence remain trust boundaries; this does not detect a change restored between checks or one made after placement returns. Local hosting authorization and funded quote, content and context fences are checked separately by `verify-yard-local-hosting` and `verify-yard-funded-admission`. The funded-admission skill checks quote-to-work binding separately. This skill does not prove the outer broker receipt or execution path, TypeScript refinement or liveness.
+This compares individual marginal prices only. Equal units do not prove equal quantities, currency, complete workloads or whole-request optimality. The host's catalog hash, capability callbacks and pricing evidence remain trust boundaries; this does not detect a change restored between checks or one made after placement returns. Camp input and Yard containment are checked separately by `verify-yard-camp-binding`. Local hosting authorization and funded quote, content and context fences are checked separately by `verify-yard-local-hosting` and `verify-yard-funded-admission`. The funded-admission skill checks quote-to-work binding separately. This skill does not prove the outer broker receipt or execution path, TypeScript refinement or liveness.
 
 For an implementation mutation, copy `packages/broker` to a scratch package with linked `node_modules`, set `BROKER_YARD_RESIDUAL_VERIFY_PACKAGE_ROOT`, and allow a partial capability verdict or replace exact comparison with floating point. The real-code checks must fail. Restore the source and rerun the unmodified skill.
 
