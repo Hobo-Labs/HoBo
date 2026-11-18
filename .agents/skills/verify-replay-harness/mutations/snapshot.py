@@ -1,0 +1,43 @@
+"""Exercise replay input snapshots against broken scratch implementations."""
+from pathlib import Path
+import os
+import shutil
+import subprocess
+import tempfile
+
+repo = Path(__file__).resolve().parents[4]
+skill = '.agents/skills/verify-replay-harness'
+cases = [
+    ('event-capture', 'const capturedEvents = events.map((event) => clone(event));', 'const capturedEvents = events;'),
+    ('read-set', 'readSetHash: hashReadSet(capturedEvents)', 'readSetHash: hashReadSet(events)'),
+    ('target-capture', 'const capturedTarget = Object.fromEntries(\n\t\tObject.getOwnPropertyNames(targetSeq).map((streamId) => [\n\t\t\tstreamId,\n\t\t\tmust(targetSeq[streamId], `target sequence for ${streamId}`),\n\t\t]),\n\t);', 'const capturedTarget = targetSeq;'),
+    ('target-hidden', 'Object.getOwnPropertyNames(targetSeq)', 'Object.keys(targetSeq)'),
+    ('target-selection', 'isAtOrBefore(event, capturedTarget)', 'isAtOrBefore(event, targetSeq)'),
+    ('target-report', 'seqVector: toSeqVectorEntries(capturedTarget)', 'seqVector: toSeqVectorEntries(targetSeq)'),
+]
+
+for name, before, after in cases:
+    with tempfile.TemporaryDirectory(prefix='hobo-replay-snapshot-mutant-') as temp:
+        scratch = Path(temp) / 'runtime'
+        source = repo / 'packages/runtime'
+        shutil.copytree(source, scratch, ignore=shutil.ignore_patterns('node_modules', 'dist', '.turbo', 'coverage'))
+        (scratch / 'node_modules').symlink_to(source / 'node_modules', target_is_directory=True)
+        (scratch / 'tsconfig.json').unlink()
+        target = scratch / 'src/replay/equivalence.ts'
+        original = target.read_text()
+        if original.count(before) != 1:
+            raise RuntimeError(f'{name}: expected one mutation site, found {original.count(before)}')
+        target.write_text(original.replace(before, after, 1))
+        env = {**os.environ, 'REPLAY_HARNESS_VERIFY_PACKAGE_ROOT': str(scratch)}
+        result = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=600)
+        output = result.stdout
+        if (result.returncode == 0 or 'FAIL  test/replay/target-snapshot.test.ts >' not in output
+                or 'AssertionError' not in output or 'Failed Suites' in output
+                or 'Parsing or semantic analysis failed' in output):
+            raise RuntimeError(f'{name}: expected a real-code assertion failure:\n{output[:10000]}\n...\n{output[-3000:]}')
+        print(f'Expected full-skill real-code failure: {name}', flush=True)
+
+restored = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, timeout=600)
+if restored.returncode:
+    raise SystemExit(f'restored skill failed: {restored.returncode}')
+print('Restored full skill passed', flush=True)

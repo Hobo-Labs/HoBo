@@ -1,21 +1,22 @@
 ---
 name: verify-replay-harness
-description: Verify temporary-global cleanup and sequence-vector boundaries when changing the replay equivalence harness.
+description: Verify temporary-global cleanup, sequence boundaries and input snapshots when changing the replay equivalence harness.
 ---
 
 # Replay equivalence harness
 
-**Property:** Once the synchronous replay check finishes or throws, every installed clock or random override whose original descriptor can be restored is restored; failure to restore random does not prevent the clock restoration attempt. Sequence vectors retain each stream’s maximum, including prototype-like names, and explicit target vectors include only their own entries.
+**Property:** Once the synchronous replay check finishes or throws, every installed clock or random override whose original descriptor can be restored is restored; failure to restore random does not prevent the clock restoration attempt. Sequence vectors retain each stream’s maximum, including prototype-like names, explicit target vectors include only their own entries, and both folds and the report use captured event and target inputs.
 
-**Why:** A failed verification must not change later code’s clock or randomness; an incomplete sequence vector must not silently omit events from a replay check.
+**Why:** A failed verification must not change later code’s clock or randomness; an incomplete or changing input must not silently omit events or misstate the boundary of a replay check.
 
-**Review baseline:** `1a195ec9f7b9c5d7f85ebf37dced34f3931edeb9`.
+**Review baseline:** `3f5e96beeb04088f2dfb905beacad2b0dade2ef7`.
 
 ## Covered code and checks
 
 - `packages/runtime/src/replay/equivalence.ts` installs and restores temporary globals and computes sequence vectors and target boundaries used by `assertReplayEqualsLive`.
 - `packages/runtime/test/replay/equivalence-cleanup.test.ts` checks nonwritable setup, accessor refusal, callback exceptions and changed descriptors. Seed 614609 generates 80 setup and callback-failure combinations. A child process deliberately makes the random descriptor unrestorable and checks the independent clock cleanup without permanently modifying the test process.
-- `packages/runtime/test/replay/sequence-vector.test.ts` checks special property names, inherited target entries and 150 generated event histories (seed 614610).
+- `packages/runtime/test/replay/target-snapshot.test.ts` checks hidden own targets, getters, and caller edits to targets and events; seed 614611 generates 100 target edits.
+- `packages/runtime/test/replay/sequence-vector.test.ts` checks special property names, inherited target entries including the captured target’s prototype, and 150 generated event histories (seed 614610).
 - `packages/runtime/test/replay/equivalence.test.ts` exercises the existing deterministic-fold and divergence checks.
 
 From the repository root with dependencies installed, run:
@@ -24,9 +25,10 @@ From the repository root with dependencies installed, run:
 bash scripts/verify-state-machine.sh .agents/skills/verify-replay-harness
 python3 .agents/skills/verify-replay-harness/mutations/full.py
 python3 .agents/skills/verify-replay-harness/mutations/vector.py
+python3 .agents/skills/verify-replay-harness/mutations/snapshot.py
 ```
 
-The runner checks the pinned TLC 1.7.4 jar and uses Z3 4.15.4. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing installations for offline runs. The mutation commands check five cleanup and two vector broken scratch implementations with the full skill and rerun the restored code. Java 11+, Python, Node, and the repository dependencies are required.
+The runner checks the pinned TLC 1.7.4 jar and uses Z3 4.15.4. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing installations for offline runs. The mutation commands check five cleanup, two vector and six snapshot broken scratch implementations with the full skill and rerun the restored code. Java 11+, Python, Node, and the repository dependencies are required.
 
 ## Model and evidence
 
@@ -67,8 +69,36 @@ stateDiagram-v2
   s2 --> s3: record a stream sequence
 ```
 
+`ReplayTargetSnapshot` explores 12 states and 22 steps for an own target entry, including a hidden entry and a caller edit. It requires inclusion of that entry and equality between the selected and reported boundary; its four-state projection hides 14 same-state steps. `ReplayEventSnapshot` explores eight states and 15 steps for one event and an edit between folds, requiring the replay and read-set observations to match the live capture; its five-state projection hides nine same-state steps. Weakening either capture or either report guard yields four TLC counterexamples; Z3 checks the corresponding abstract equalities over arbitrary strings and four weakened-guard counterexamples. The event model abstracts a changed read-set identity, not a cryptographic proof: the read-set hash covers stream names, not event contents. Both models assume faithful synchronous snapshots and do not establish TypeScript refinement, accessor behavior during capture, callback purity or liveness.
+
+```mermaid
+stateDiagram-v2
+  s0: Target received
+  s1: Target captured
+  s2: Events selected
+  s3: Captured target reported
+  [*] --> s0
+  s0 --> s1: capture own target entries
+  s1 --> s2: select events
+  s2 --> s3: report captured boundary
+```
+
+```mermaid
+stateDiagram-v2
+  s0: Event history received
+  s1: Event history captured
+  s2: Live fold completed
+  s3: Replay fold completed
+  s4: Captured read set reported
+  [*] --> s0
+  s0 --> s1: capture events
+  s1 --> s2: run live fold
+  s2 --> s3: run replay fold
+  s3 --> s4: report captured read set
+```
+
 The model assumes ordinary data-property intrinsics, indivisible installation and restoration steps, and truthful classifications of whether each descriptor can be restored. A callback that makes a property nonconfigurable can prevent its restoration; the other cleanup is still attempted. The harness temporarily changes process-global functions while synchronous callbacks run. It tests only selected ambient nondeterminism and does not detect every source, such as `new Date()` or external state. The model does not establish implementation refinement, callback purity, other workers' behavior or liveness.
 
 ## Keep in sync
 
-Inspect changes to the covered code and tests since the baseline, including uncommitted changes. Replay counterexamples against the real code, rerun the verification and both mutation commands, and advance the baseline only after the model and implementation agree. Use `/maintain-formal-verification-skill` for that review.
+Inspect changes to the covered code and tests since the baseline, including uncommitted changes. Replay counterexamples against the real code, rerun the verification and all mutation commands, and advance the baseline only after the model and implementation agree. Use `/maintain-formal-verification-skill` for that review.
