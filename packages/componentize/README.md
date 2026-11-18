@@ -34,6 +34,15 @@ skew or nondeterminism) and returns parsed, derived types — `WasmComponentArti
 re-parses artifact bytes and contract metadata before any consumer uses them. Wire forms live in
 `data-models/componentize.proto` with CUE constraints alongside.
 
+Both component builders and the CLI container builder accept a nonnegative whole
+number of Unix seconds up to `8640000000000`, a four-digit-year ISO calendar
+date, or an ISO date and time with an explicit `Z` or numeric offset. The time
+may include seconds with up to three fractional digits. Fractional seconds are
+rounded down when passed to the toolchain. Ambiguous local times, impossible
+calendar dates, pre-epoch times and larger values are rejected before the build.
+Existing configurations using those previously accepted forms need an explicit,
+valid timestamp.
+
 ## Position in the event architecture
 
 This package is a pure, deterministic build function: it hosts no actor, appends nothing to an
