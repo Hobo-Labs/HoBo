@@ -19,7 +19,7 @@ import type {
 	SubscriptionCheckpoint,
 	SubscriptionId,
 	SubscriptionLease,
-} from "@hobo/core";
+} from "@hobo/core/eventstore";
 import {
 	CheckpointRegressionError,
 	EVENTSTORE_LIMITS,
@@ -33,7 +33,7 @@ import {
 	parseSubscriptionId,
 	SnapshotAheadError,
 	StaleFenceError,
-} from "@hobo/core";
+} from "@hobo/core/eventstore";
 import {
 	DEFAULT_METADATA_CODEC,
 	DEFAULT_PAYLOAD_CODEC,
