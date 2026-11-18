@@ -1160,21 +1160,35 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			}
 			return vercel.fetch(url, init);
 		};
+		const publicOrigin = "https://public.example.test";
+		let liveHealthCommit = SHA;
 		const probe: HttpTransport = async (request) => {
+			const url = new URL(request.url);
 			const stage = request.url.startsWith(
 				"https://hobo-ci-git-main.example.vercel.app/",
 			);
 			if (stage) {
-				events.push(`staged:${new URL(request.url).pathname}`);
+				events.push(`staged:${url.pathname}`);
 				expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
 					"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
 				);
 			}
+			if (url.origin === publicOrigin) {
+				events.push(`live:${url.pathname}`);
+			}
 			return {
-				status: stage && request.url.endsWith("/readyz") ? readyStatus : 200,
+				status:
+					stage && request.url.endsWith("/readyz")
+						? readyStatus
+						: url.origin === publicOrigin && request.url.endsWith("/readyz")
+							? readyStatus
+							: 200,
 				headers: {},
 				body: request.url.endsWith("/healthz")
-					? JSON.stringify({ commit: SHA })
+					? JSON.stringify({
+							commit:
+								url.origin === publicOrigin ? liveHealthCommit : SHA,
+						})
 					: JSON.stringify({ ready: readyStatus === 200 }),
 			};
 		};
@@ -1239,10 +1253,130 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			expect(events.indexOf("promote")).toBeGreaterThan(
 				events.indexOf("staged:/readyz"),
 			);
+			expect(events).toContain("live:/healthz");
+			expect(events).toContain("live:/readyz");
 		} else {
 			expect(result.exitCode).not.toBe(0);
 			expect(events).not.toContain("promote");
 		}
+	});
+
+	it("refuses success when the public origin still serves another commit", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const preview = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env,
+				hoboHome: home,
+				probe: healthyRelay().http,
+				...clock,
+			},
+		);
+		expect(preview.exitCode).toBe(0);
+		const vercel = scriptedVercel(["READY"]);
+		const events: string[] = [];
+		const fetch: VercelFetch = async (url, init) => {
+			if (url.includes("/v9/projects/hobo-ci")) {
+				return {
+					ok: true,
+					status: 200,
+					text: async () => '{"id":"prj_relay"}',
+					json: async () => ({ id: "prj_relay" }),
+				};
+			}
+			if (url.includes("/promote/")) {
+				events.push("promote");
+				return {
+					ok: true,
+					status: 202,
+					text: async () => "{}",
+					json: async () => ({}),
+				};
+			}
+			return vercel.fetch(url, init);
+		};
+		const publicOrigin = "https://public.example.test";
+		const probe: HttpTransport = async (request) => {
+			const url = new URL(request.url);
+			if (request.url.startsWith("https://hobo-ci-git-main.example.vercel.app/"))
+				return {
+					status: 200,
+					headers: {},
+					body: request.url.endsWith("/healthz")
+						? JSON.stringify({ commit: SHA })
+						: JSON.stringify({ ready: true }),
+				};
+			if (url.origin === publicOrigin) {
+				events.push(`live:${url.pathname}`);
+			}
+			return {
+				status: 200,
+				headers: {},
+				body: request.url.endsWith("/healthz")
+					? JSON.stringify({ commit: "stale00000000000000000000000000000000" })
+					: JSON.stringify({ ready: true }),
+			};
+		};
+		const credentialFetch: typeof globalThis.fetch = async (input) => {
+			const url = String(input);
+			if (url.includes("token.actions.example.test"))
+				return Response.json({
+					value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+				});
+			if (url.endsWith("/api/v1/auth/oidc-auth/login"))
+				return Response.json({
+					accessToken: "synthetic-infisical-token",
+					expiresIn: 3600,
+					accessTokenMaxTTL: 3600,
+					tokenType: "Bearer",
+				});
+			if (url.includes("/api/v4/secrets/VERCEL_TOKEN"))
+				return Response.json({
+					secret: {
+						secretKey: "VERCEL_TOKEN",
+						secretValue: TOKEN,
+						version: 1,
+						type: "shared",
+						environment: "prod",
+						secretPath: "/",
+					},
+				});
+			return Response.json({}, { status: 404 });
+		};
+		const result = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch,
+				credentialFetch,
+				hoboHome: home,
+				probe,
+				...clock,
+				env: {
+					...env,
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "true",
+					HOBO_CI_RELAY_PUBLIC_URL: publicOrigin,
+					ACTIONS_ID_TOKEN_REQUEST_URL:
+						"https://token.actions.example.test/token",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+				},
+			},
+		);
+		expect(result.exitCode).toBe(1);
+		expect(result.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+		});
+		expect(events).toContain("promote");
+		expect(events).toContain("live:/healthz");
 	});
 
 	it("needs --sha for production: a ref alone names no commit to qualify", async () => {

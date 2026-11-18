@@ -996,11 +996,19 @@ export async function runCiRelayDeploy(
 						});
 					const health = await request("/healthz");
 					const ready = await request("/readyz");
-					if (health.status === 200 && ready.status === 200) {
+					const findings = live.findings();
+					if (
+						health.status === 200 &&
+						ready.status === 200 &&
+						findings.servedCommit === undefined &&
+						findings.healthStatus === undefined
+					) {
 						liveReady = true;
 						break;
 					}
-				} catch {}
+				} catch {
+					void 0;
+				}
 				if (attempt < 23)
 					await (
 						input.sleep ??
