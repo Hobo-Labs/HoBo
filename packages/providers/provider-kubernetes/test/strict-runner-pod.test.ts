@@ -206,7 +206,7 @@ describe("strict runner Pod client", () => {
 		expect(runner).toMatchObject({
 			command: ["/opt/actions-runner/run.sh"],
 			workingDir: "/opt/actions-runner",
-			args: ["--jitconfig", "$(HOBO_JIT_CONFIG)"],
+			args: [],
 			volumeMounts: expect.arrayContaining([
 				{ name: "hook", mountPath: "/opt/hobo/hooks", readOnly: true },
 				{ name: "runner-home", mountPath: "/opt/actions-runner" },
@@ -216,6 +216,9 @@ describe("strict runner Pod client", () => {
 		});
 		const env = array(runner.env).map(record);
 		expect(env).toContainEqual({ name: "HOME", value: "/tmp" });
+		expect(env).toContainEqual(
+			expect.objectContaining({ name: "ACTIONS_RUNNER_INPUT_JITCONFIG" }),
+		);
 		const references = env
 			.filter((item) => item.valueFrom)
 			.map((item) => record(record(item.valueFrom).secretKeyRef));
