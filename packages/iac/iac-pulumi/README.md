@@ -1,9 +1,6 @@
 # @hobo/iac-pulumi
 
-Production Infrastructure-as-Code backend for HoBo built on the Pulumi Automation
-API. S2-05 promotes the near-production draft proof
-(`src/draft/technical-proofs/s2-06-iac-pulumi-automation-adapter/`) into
-`packages/iac/iac-pulumi/`.
+Infrastructure-as-Code backend for HoBo built on the Pulumi Automation API.
 
 The adapter satisfies the `IacProvider` port with a per-resource stack model:
 each resource in an `IacProgram` gets its own Pulumi stack
@@ -31,6 +28,11 @@ today, all pinned to `PINNED_PULUMI_AUTOMATION_VERSION` (`3.130.0`):
 - **CLI** (`createPulumiCliAutomationEngine`) — drives the pinned `pulumi` binary
   directly; kept for the `HOBO_PULUMI_BIN` test seam and as an explicit opt-in.
   Invalid preview JSON fails dirty so apply cannot mistake it for a clean plan.
+
+The local Automation API test runs a real Pulumi preview with an isolated state
+directory and automatic provider installation disabled. It verifies that preview
+reaches the engine and reports the missing provider plugin; it does not provision
+or verify a cloud provider.
 
 The composed runtime's live lane (`HOBO_PULUMI_LIVE=1`, see `@hobo/hobo`
 `compose.ts`) defaults to the Automation API engine; `HOBO_PULUMI_LIVE_ENGINE=cli`
