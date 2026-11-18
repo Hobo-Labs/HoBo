@@ -1994,12 +1994,12 @@ function stringMap(
 	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		return Object.freeze({});
 	}
-	const out: Record<string, string> = {};
+	const entries: Array<[string, string]> = [];
 	// SAFETY: assertion required at this I/O or test boundary.
 	for (const k of Object.keys(value as object).sort()) {
 		// SAFETY: assertion required at this I/O or test boundary.
 		const v = (value as JsonObject)[k];
-		if (isJsonString(v)) out[k] = v;
+		if (isJsonString(v)) entries.push([k, v]);
 	}
-	return Object.freeze(out);
+	return Object.freeze(Object.fromEntries(entries));
 }

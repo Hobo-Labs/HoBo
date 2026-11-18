@@ -27,6 +27,26 @@ constraint lists, and Bindle requirement lists and labels must be well formed.
 Malformed values are refused instead of being discarded and weakening placement
 requirements. Callers that previously omitted the estimate must supply it
 explicitly before retrying; recompute any affected request digest and quote.
+Yard JSON properties compare by value, including nested objects and arrays;
+object key order does not affect a match. JSON property and label names are
+preserved even when they match inherited JavaScript names, and nested property
+arrays are frozen in the parsed snapshot.
+
+The [Yard JSON constraint skill](../../.agents/skills/verify-yard-json-constraints/SKILL.md)
+checks a bounded property-matching model. This projection hides three same-state
+steps and retains the existing rule that an undeclared Yard property is unconstrained.
+
+```mermaid
+stateDiagram-v2
+  s0: Placement properties received
+  s1: Properties captured
+  s2: Yard property conflicts
+  s3: Yard property compatible
+  [*] --> s0
+  s0 --> s1: capture properties and labels
+  s1 --> s2: refuse different properties
+  s1 --> s3: accept equal or unconstrained properties
+```
 
 The [Yard request validation skill](../../.agents/skills/verify-yard-request-validation/SKILL.md)
 checks a bounded model of parsing before host authorization. The projection
@@ -64,7 +84,12 @@ including Yard constraints, Bindle requirements, resources and Camp layout.
 They preserve the request digest used for quoting, distinguish a zero estimate
 from a missing one, and reject unsupported, incomplete or inconsistent work.
 An encoder rejects noncanonical requests; use `parseBindleDeploymentRequest`
-first. Older request messages lack the completeness marker and must be rebuilt
+first. The encoder emits version 2, which carries labels as explicit entries and
+Yard properties as JSON object text so special keys are not lost by protobuf
+map handling. Version 2 property text must match `JSON.stringify` of the parsed
+object, and duplicate label entries are refused. The decoder also accepts
+complete version 1 requests; a version 1-only receiver must be upgraded before
+using version 2. Older messages without a completeness marker must be rebuilt
 from the original request; an old quote or reservation may need reconciliation.
 
 The embedded digest is an integrity comparison, not a signature: a receiver
@@ -76,7 +101,7 @@ deployed transport or a guarantee that an older receiver enforces the marker.
 The protobuf receipt still omits execution-unit details.
 
 The [Yard request wire skill](../../.agents/skills/verify-yard-request-wire/SKILL.md)
-checks a bounded model of the codec. This projection hides 51 same-state steps;
+checks a bounded model of the codec. This projection hides 90 same-state steps;
 acceptance means the request can proceed to authorization, not that its sender
 or its claimed digest has been authenticated.
 

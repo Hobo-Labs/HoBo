@@ -4,6 +4,11 @@ package broker
 
 #YardJsonValue: null | bool | number | string | [...#YardJsonValue] | {[string]: #YardJsonValue}
 
+#PlacementLabelEntry: {
+	key:   string
+	value: string
+}
+
 #CampPlacementLayout: {
 	id?:       string
 	env?:      string
@@ -12,6 +17,7 @@ package broker
 	prefer?: [...string]
 	labels?: {[string]: string}
 	runtime_requirements?: [...string]
+	canonical_labels?: [...#PlacementLabelEntry]
 }
 
 #YardShape: {
@@ -27,6 +33,8 @@ package broker
 	component_hosts?: [...string]
 	properties?: {[string]: #YardJsonValue}
 	camps?: [...#CampPlacementLayout]
+	canonical_labels?: [...#PlacementLabelEntry]
+	properties_json?: string
 }
 
 #YardPlacementRequest: {
@@ -44,6 +52,7 @@ package broker
 	prefer?: [...string]
 	runtimes?: [...string]
 	labels?: {[string]: string}
+	canonical_labels?: [...#PlacementLabelEntry]
 }
 
 #YardResourceRequest: {
@@ -100,8 +109,11 @@ package broker
 	bindle_requirements: #BindleRequirements
 	resources?: [...#YardResourceRequest]
 	camp?:                 #CampPlacementInput
-	work_binding_version!: 1
+	work_binding_version!: 1 | 2
 	request_digest:        string & =~"^sha256:[0-9a-f]{64}$"
+	if work_binding_version == 2 {
+		yard: requested_shape: properties_json!: string
+	}
 }
 
 #YardPlacementReceipt: {

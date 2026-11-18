@@ -5,9 +5,11 @@ EXTENDS Naturals
 \* Rebound has a changed request and a recomputed matching digest: the codec
 \* accepts it because its embedded digest is not an authentication mechanism.
 CONSTANTS CheckUnknown, CheckVersion, CheckAmount, CheckParsedAmount, CheckIdentity,
-          CheckCanonical, CheckDigest
-Cases == {"valid", "rebound", "bad-binary", "unknown", "legacy", "incomplete",
-          "negative", "bad-mode", "empty-identity", "bad-digest", "noncanonical", "mismatch"}
+          CheckV1Labels, CheckV2Labels, CheckPropertyText, CheckCanonical, CheckDigest
+Cases == {"valid-v1", "valid-v2", "rebound", "bad-binary", "unknown", "legacy", "unsupported",
+          "incomplete", "negative", "bad-mode", "empty-identity", "bad-digest",
+          "missing-v2-properties", "mixed-v1-label", "duplicate-v2-label", "mixed-v2-label",
+          "noncanonical-property-text", "noncanonical", "mismatch"}
 VARIABLES requestCase, phase
 vars == <<requestCase, phase>>
 
@@ -19,7 +21,7 @@ InspectUnknown == /\ phase = "unknown"
                   /\ phase' = IF requestCase = "unknown" /\ CheckUnknown THEN "refused" ELSE "version"
                   /\ UNCHANGED requestCase
 InspectVersion == /\ phase = "version"
-                  /\ phase' = IF requestCase = "legacy" /\ CheckVersion THEN "refused" ELSE "envelope"
+                  /\ phase' = IF requestCase \in {"legacy", "unsupported"} /\ CheckVersion THEN "refused" ELSE "envelope"
                   /\ UNCHANGED requestCase
 InspectEnvelope == /\ phase = "envelope"
                    /\ phase' = IF requestCase = "incomplete" THEN "refused" ELSE "amount"
@@ -37,7 +39,12 @@ InspectDigestFormat == /\ phase = "digest-format"
                        /\ phase' = IF requestCase = "bad-digest" THEN "refused" ELSE "parse-domain"
                        /\ UNCHANGED requestCase
 ParseDomain == /\ phase = "parse-domain"
-               /\ phase' = IF requestCase = "negative" /\ CheckParsedAmount THEN "refused" ELSE "compare"
+               /\ phase' = IF (requestCase = "negative" /\ CheckParsedAmount) \/
+                              requestCase = "missing-v2-properties" \/
+                              (requestCase = "mixed-v1-label" /\ CheckV1Labels) \/
+                              (requestCase \in {"duplicate-v2-label", "mixed-v2-label"} /\ CheckV2Labels) \/
+                              (requestCase = "noncanonical-property-text" /\ CheckPropertyText)
+                           THEN "refused" ELSE "compare"
                /\ UNCHANGED requestCase
 Compare == /\ phase = "compare"
            /\ phase' = IF (requestCase = "noncanonical" /\ CheckCanonical) \/
@@ -53,11 +60,14 @@ TypeOK == /\ requestCase \in Cases
           /\ phase \in {"binary", "unknown", "version", "envelope", "amount", "selection",
                        "identity", "digest-format", "parse-domain", "compare", "refused", "accepted"}
 NoUnknown == phase = "accepted" => requestCase # "unknown"
-NoLegacy == phase = "accepted" => requestCase # "legacy"
-NoInvalidEnvelope == phase = "accepted" => requestCase \notin {"bad-binary", "incomplete", "bad-mode", "bad-digest"}
+NoLegacy == phase = "accepted" => requestCase \notin {"legacy", "unsupported"}
+NoInvalidEnvelope == phase = "accepted" => requestCase \notin {"bad-binary", "incomplete", "bad-mode", "bad-digest", "missing-v2-properties"}
 NoNegative == phase = "accepted" => requestCase # "negative"
 NoEmptyIdentity == phase = "accepted" => requestCase # "empty-identity"
+NoMixedV1Labels == phase = "accepted" => requestCase # "mixed-v1-label"
+NoAmbiguousV2Labels == phase = "accepted" => requestCase \notin {"duplicate-v2-label", "mixed-v2-label"}
+CanonicalPropertyText == phase = "accepted" => requestCase # "noncanonical-property-text"
 Canonical == phase = "accepted" => requestCase # "noncanonical"
 MatchingDigest == phase = "accepted" => requestCase # "mismatch"
-CompleteAccepted == phase = "refused" => requestCase \notin {"valid", "rebound"}
+CompleteAccepted == phase = "refused" => requestCase \notin {"valid-v1", "valid-v2", "rebound"}
 =============================================================================

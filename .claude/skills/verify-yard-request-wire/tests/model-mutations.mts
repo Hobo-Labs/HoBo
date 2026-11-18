@@ -7,12 +7,15 @@ import { fileURLToPath } from 'node:url';
 const jar = process.env.TLA2TOOLS;
 if (!jar) throw new Error('TLA2TOOLS is required');
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'hobo-wire-model-'));
-const names = ['CheckUnknown', 'CheckVersion', 'CheckAmount', 'CheckParsedAmount', 'CheckIdentity', 'CheckCanonical', 'CheckDigest'];
+const names = ['CheckUnknown', 'CheckVersion', 'CheckAmount', 'CheckParsedAmount', 'CheckIdentity', 'CheckV1Labels', 'CheckV2Labels', 'CheckPropertyText', 'CheckCanonical', 'CheckDigest'];
 const cases = [
   [['CheckUnknown'], 'NoUnknown'],
   [['CheckVersion'], 'NoLegacy'],
   [['CheckAmount', 'CheckParsedAmount'], 'NoNegative'],
   [['CheckIdentity'], 'NoEmptyIdentity'],
+  [['CheckV1Labels'], 'NoMixedV1Labels'],
+  [['CheckV2Labels'], 'NoAmbiguousV2Labels'],
+  [['CheckPropertyText'], 'CanonicalPropertyText'],
   [['CheckCanonical'], 'Canonical'],
   [['CheckDigest'], 'MatchingDigest'],
 ] as const;

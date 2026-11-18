@@ -18,9 +18,13 @@ parser_original = parser.read_text()
 
 cases = [
     ('unknown', 'if (!Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'if (false && !Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'refuses unknown root'),
-    ('version', 'if (message.workBindingVersion !== WORK_BINDING_VERSION)', 'if (false && message.workBindingVersion !== WORK_BINDING_VERSION)', 'refuses a complete request with an unsupported version'),
+    ('version', 'message.workBindingVersion !== 1 &&\n\t\tmessage.workBindingVersion !== WORK_BINDING_VERSION', 'false', 'refuses a complete request with an unsupported version'),
     ('amount', 'message.spendEstimateUsd < 0', 'false', 'refuses a negative estimate even'),
     ('tenant', '!message.ownerTenantId || !message.objective || !message.yard.requestId', '!message.objective || !message.yard.requestId', 'refuses an empty tenant'),
+    ('version1-labels', 'if (entries.length !== 0)\n\t\t\tthrow new TypeError("version 1 cannot carry version 2 labels");', '', 'continues to decode complete version 1 requests'),
+    ('version2-legacy-labels', 'if (Object.keys(legacy).length !== 0)\n\t\tthrow new TypeError("version 2 cannot carry legacy labels");', '', 'rejects incomplete or ambiguous version 2 value encodings'),
+    ('version2-duplicate-labels', 'if (seen.has(entry.key)) throw new TypeError("duplicate placement label");', '', 'rejects incomplete or ambiguous version 2 value encodings'),
+    ('version2-property-text', '!isJsonObject(properties) ||\n\t\t\tJSON.stringify(properties) !== yardLayout.propertiesJson', '!isJsonObject(properties)', 'rejects incomplete or ambiguous version 2 value encodings'),
     ('canonical', 'digest !== contentHashOf(raw) || digest !== message.requestDigest', 'digest !== message.requestDigest', 'refuses noncanonical wire fields'),
     ('digest', 'digest !== contentHashOf(raw) || digest !== message.requestDigest', 'digest !== contentHashOf(raw)', 'refuses old, incomplete'),
 ]
