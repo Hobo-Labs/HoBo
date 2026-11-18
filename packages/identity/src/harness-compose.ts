@@ -5,7 +5,11 @@
  *
  * Event-sourced; auto-rollback is a durable obligation shape (policy.Decided-compatible).
  */
-import type { FeatureFlagPort, FlagEvalContext } from "./feature-flag-store.js";
+import type {
+	FeatureFlagPort,
+	FlagEvalContext,
+	FlagValue,
+} from "./feature-flag-store.js";
 import {
 	applyRolloutToGatewayRouting,
 	type DomainRoutingEvent,
@@ -25,11 +29,13 @@ import {
 	OpenDeliveryEngine,
 	type RolloutPolicy,
 	type RolloutState,
+	validateRolloutPolicy,
 } from "./harness-delivery.js";
 import {
 	type ExperimentDefinition,
 	type ExperimentPort,
 	OpenExperimentEngine,
+	validateExperimentDefinition,
 } from "./harness-experiment.js";
 
 // public-contract: harness facade schema.
@@ -49,8 +55,8 @@ export type HarnessPorts<
 }>;
 
 export interface HarnessOptions<
-	D extends DeliveryPort = OpenDeliveryEngine,
-	E extends ExperimentPort = OpenExperimentEngine,
+	D extends DeliveryPort = DeliveryPort,
+	E extends ExperimentPort = ExperimentPort,
 > {
 	readonly store: FeatureFlagPort;
 	readonly now?: () => string;
@@ -132,20 +138,47 @@ export class Harness<
 		readonly rollout: RolloutPolicy;
 		readonly experiment?: ExperimentDefinition;
 	}): ProgressiveRun {
-		// Ensure flag defined dark then stage-0
-		if (!this.flags.get(input.rollout.flag)) {
-			this.flags.define({
-				key: input.rollout.flag,
-				percentage: 0,
-				enabled: true,
-				state: "ENABLED",
-				defaultValue: false,
-			});
-		}
+		if (input.experiment && input.experiment.flag !== input.rollout.flag)
+			throw Object.assign(
+				new Error("rollout and experiment must use the same flag"),
+				{ code: "experiment-rollout-flag-mismatch" },
+			);
+		validateRolloutPolicy(input.rollout);
 		if (input.experiment) {
-			this.experiment.define(input.experiment);
+			validateExperimentDefinition(input.experiment);
+			this.experiment.validateDefinition?.(input.experiment);
 		}
-		const state = this.delivery.start(input.rollout);
+		let state: RolloutState;
+		try {
+			if (!this.flags.get(input.rollout.flag)) {
+				this.flags.define({
+					key: input.rollout.flag,
+					percentage: 0,
+					enabled: true,
+					state: "ENABLED",
+					defaultValue: false,
+				});
+			}
+			if (input.experiment) {
+				this.experiment.define(input.experiment);
+			}
+			state = this.delivery.start(input.rollout);
+		} catch (error) {
+			const allocationFailure =
+				error instanceof Error &&
+				"code" in error &&
+				error.code === "experiment-allocation-reconcile-required";
+			throw Object.assign(
+				new Error(
+					"progressive start may have partially changed state; reconcile before retrying",
+				),
+				{
+					code: allocationFailure
+						? "experiment-allocation-reconcile-required"
+						: "progressive-start-reconcile-required",
+				},
+			);
+		}
 		void this.deliveryAdapter.startRemote(input.rollout);
 		return this.toRun(state, input.experiment?.name);
 	}
@@ -164,8 +197,16 @@ export class Harness<
 	trackExposure(
 		experimentName: string,
 		context: FlagEvalContext,
+		defaultValue?: FlagValue,
 	): ExposureTrack {
-		const a = this.experiment.evaluateAndExpose(experimentName, context);
+		const a =
+			defaultValue === undefined
+				? this.experiment.evaluateAndExpose(experimentName, context)
+				: this.experiment.evaluateAndExpose(
+						experimentName,
+						context,
+						defaultValue,
+					);
 		return { variant: a.variant };
 	}
 

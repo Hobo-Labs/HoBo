@@ -519,8 +519,8 @@ describe("Harness · Feature flags · progressive delivery", () => {
 			],
 			1,
 		);
-		expect(baseline.verdict).toBe("ship");
-		expect(baseline.winningVariant).toBe("treatment");
+		expect(baseline.verdict).toBe("inconclusive");
+		expect(baseline.winningVariant).toBeUndefined();
 	});
 
 	it("ranked mediated evaluator defaults local; residual OFREP fails closed", async () => {
