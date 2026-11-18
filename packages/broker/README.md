@@ -134,11 +134,44 @@ direct child of the selected Yard; a foreign or malformed ID is refused before
 quoting, budget reservation or Yard generation when the planned Yard is known,
 and checked again against the selected Yard before placement. Empty or malformed
 Camp IDs and environment types are refused during parsing. This check does not
-yet verify that a named Camp exists or satisfies its requested capabilities;
-full Camp matching and selection-mode enforcement remain separate work.
+yet verify that a named Camp exists, its environment or selection-mode
+semantics. Until Camp matching is implemented, quote preparation and placement
+refuse nonempty Camp capability, runtime or label requirements and nested Camp
+layouts in a Yard request with `camp-constraints-unverified`. Direct Yard
+matching and generation also refuse nested Camp layouts. Existing work accepted
+with these requirements may need reconciliation; preserving a requirement in a
+digest alone does not establish that it was met.
 Because the request digest now includes Camp fields that were previously
 discarded, a quote created by an older parser may no longer match the request.
 Obtain a new quote and reconcile any existing reservation before retrying.
+
+The [Camp constraint skill](../../.agents/skills/verify-yard-camp-constraints/SKILL.md)
+checks this boundary. Its bounded projection hides eight same-state steps. It
+treats other authorization and budget decisions as successful and does not
+establish that an accepted Camp exists or meets unmodeled preferences.
+
+```mermaid
+stateDiagram-v2
+  s0: Deployment requested
+  s1: Quote requested
+  s2: Deployment requirements checked
+  s3: Quote requirements checked
+  s4: Unverified Camp requirements refused
+  s5: Host authorized placement
+  s6: Quote prepared
+  s7: Budget held for generation
+  s8: Provider called
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: continue without unverified requirements
+  s1 --> s3: continue without unverified requirements
+  s0 --> s4: refuse unverified requirements
+  s1 --> s4: refuse unverified requirements
+  s2 --> s5: authorize the placement
+  s3 --> s6: prepare a quote
+  s5 --> s7: hold the generation budget
+  s7 --> s8: call the provider
+```
 
 The [Camp verification skill](../../.agents/skills/verify-yard-camp-binding/SKILL.md)
 models exact selection across quote and deployment paths. This projection hides

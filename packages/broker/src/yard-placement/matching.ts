@@ -1,6 +1,7 @@
 import { evaluateResidency } from "@hobo/core";
 import { first } from "@hobo/core/total-access";
 import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
+import { hasUnverifiedYardCamps } from "./camp-constraints.js";
 import { parseYardResidencyTag } from "./residency.js";
 import {
 	type ContentHash,
@@ -34,6 +35,11 @@ export function matchYard(
 ): YardMatchDecision {
 	// SAFETY: assertion required at this I/O or test boundary.
 	const layoutHash = contentHashOf(request.requestedLayout) as ContentHash;
+	if (hasUnverifiedYardCamps(request.requestedLayout))
+		return decision(request, layoutHash, inventory, [], options, {
+			outcome: "rejected",
+			rationale: "requested Camp layouts cannot yet be verified",
+		});
 	const candidates: YardCandidateDecision[] = inventory.yards
 		.map((yard) => {
 			const candidate = evaluateCandidate(yard, request, {
@@ -391,6 +397,7 @@ export function layoutSubsetCompatible(
 	actual: YardLayout,
 	capabilities: readonly string[],
 ): boolean {
+	if (hasUnverifiedYardCamps(requested)) return false;
 	if (requested.providerId && actual.providerId !== requested.providerId) {
 		return false;
 	}

@@ -1,4 +1,5 @@
 import { must } from "@hobo/core/total-access";
+import { hasUnverifiedYardCamps } from "./camp-constraints.js";
 import { hasValidYardResidency } from "./residency.js";
 import {
 	type ContentHash,
@@ -91,6 +92,13 @@ export function planYardGeneration(options: {
 		return {
 			allowed: false,
 			reason: "requested layout has invalid residency",
+			policyId: policy.id,
+		};
+	}
+	if (hasUnverifiedYardCamps(options.requestedLayout)) {
+		return {
+			allowed: false,
+			reason: "requested Camp layouts cannot yet be verified",
 			policyId: policy.id,
 		};
 	}
@@ -213,6 +221,13 @@ export function createYardGenerationSaga(options: {
 					plan,
 					"invalid-residency",
 					"requested layout has invalid residency",
+				);
+			}
+			if (hasUnverifiedYardCamps(plan.requestedLayout)) {
+				return fail(
+					plan,
+					"camp-constraints-unverified",
+					"requested Camp layouts cannot yet be verified",
 				);
 			}
 			const existing = attempts.get(plan.idempotencyKey);

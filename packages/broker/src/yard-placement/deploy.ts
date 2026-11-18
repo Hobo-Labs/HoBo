@@ -25,6 +25,7 @@ import {
 } from "../json.js";
 import type { GateDecision } from "../planes.js";
 import type { BrokerCatalog, PlacementDecision } from "../types.js";
+import { hasUnverifiedCampConstraints } from "./camp-constraints.js";
 import { defaultYardGenerationConnectors } from "./connectors.js";
 import {
 	createDefaultEventStoreFoldResolvers,
@@ -117,6 +118,11 @@ export function prepareYardHostingWork(input: YardHostingWorkInput):
 	  }
 	| { readonly error: string; readonly code: string } {
 	const request = parseBindleDeploymentRequest(cloneAsJson(input.request));
+	if (hasUnverifiedCampConstraints(request))
+		return {
+			code: "camp-constraints-unverified",
+			error: "Camp requirements cannot yet be verified for this work",
+		};
 	if (request.ownerTenantId && request.ownerTenantId !== input.ownerTenantId)
 		return {
 			code: "owner-tenant-mismatch",
@@ -392,6 +398,14 @@ export async function resolveBindleDeployment(
 			error instanceof Error ? error.message : "invalid deployment request",
 		);
 	}
+	if (hasUnverifiedCampConstraints(request))
+		return rejectResult(
+			foldState,
+			emitted,
+			"placement",
+			"camp-constraints-unverified",
+			"Camp requirements cannot yet be verified for this work",
+		);
 
 	const ownerTenantId = request.ownerTenantId || deps.ownerTenantId || "local";
 	if (deps.ownerTenantId && deps.ownerTenantId !== ownerTenantId)

@@ -7,7 +7,7 @@ description: Verify the complete, versioned Yard placement request codec and its
 
 **Property:** A decoded placement request is accepted only after its supported version, required inputs, amount, selection, identity, canonical representation and embedded digest agree; unknown fields retained by protobuf in ordinary messages are refused. The CUE contract and domain parser both refuse a missing exact Yard or Camp ID, a blank supplied ID, and a blank Camp environment type or requirement entry. A loss or alteration of resource, Camp or Yard requirements could otherwise make the request being authorized differ from the work the sender described.
 
-**Review baseline:** commit `ff1ffeb7e381916ca25012f83d2daa56e3f434d3`. PASS for the models and executable checks below. Broker authorization for exact Camp selection is checked separately by `verify-yard-camp-binding`.
+**Review baseline:** commit `92c291c26b58af86b169c0fb51aa6211f7c0f775`. PASS for the models and executable checks below. Broker authorization for exact Camp selection is checked separately by `verify-yard-camp-binding`.
 
 ## Covered code
 

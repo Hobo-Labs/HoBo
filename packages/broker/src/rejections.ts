@@ -181,6 +181,12 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 		remediation: "restore complete, stable hosting quote evidence",
 	},
 	{
+		code: "camp-constraints-unverified",
+		plane: "placement",
+		remediation:
+			"implement and verify Camp capability, runtime, label and nested-layout matching before retrying",
+	},
+	{
 		code: "yard-runtime-catalog-unavailable",
 		plane: "placement",
 		remediation:
