@@ -7,7 +7,7 @@ per [`urn:hobo:requirement:reliability-observability-cost`](urn:hobo:requirement
 ## Requirements Source
 
 - `urn:hobo:requirement:reliability-observability-cost#plan-05` — control-plane HA, actor leases + fencing, provider circuit breakers, retry budgets, bulkheads.
-- `docs/archive/requirements/requirements.md` — **NFR-009** resume `< 30 s`; 99.9% control-plane availability.
+- The simulated failover target is resume in under 30 seconds with 99.9% availability.
 - `src/draft/epic-proofs/reliability-observability-cost-finops/` — promoted Golden chaos / failover scenarios (consumed, not modified).
 
 ## Contract Surface

@@ -39,8 +39,6 @@ pnpm --prefix src/draft/epic-proofs/stage-6-acceptance-gate run simulate
 
 ## References
 
-- [requirements.md Release criteria Stage 6](../../../../docs/archive/requirements/requirements.md)
-- [roadmap.md Stage 6](../../../../docs/archive/roadmap.md)
 - [ADR-0063](urn:hobo:decision:adr-0063) keep-prior-gates-green
 - Blocker seams (Done): [multi-region-dr-replay-contract](../../technical-proofs/multi-region-dr-replay-contract/README.md) (HOBO-659), [full-dashboard-projection-views-contract](../../exp-proofs/ux/full-dashboard-projection-views-contract/README.md) (HOBO-662), [s6-09-operator-crew-yard-services-contract](../../technical-proofs/s6-09-operator-crew-yard-services-contract/README.md) (HOBO-664)
 - Proof note: [`urn:hobo:proof:hobo-665-stage-6-acceptance-gate`](urn:hobo:proof:hobo-665-stage-6-acceptance-gate)

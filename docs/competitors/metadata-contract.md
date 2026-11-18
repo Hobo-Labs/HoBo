@@ -14,8 +14,7 @@ tags: [hobo, competitors, contract]
 This contract exists so that competitor research can be written **once**, in one canonical document per
 product, while category pages, the cross-category matrix, and the freshness ledger are **derived views**
 that never duplicate the research. It is the stable base the rest of the corpus builds on: category
-indexes ([`categories/`](categories/index.md)), the [matrix](matrix.md), and the
-[gap analysis](gap-analysis.md).
+indexes ([`categories/`](categories/index.md)) and the [matrix](matrix.md).
 
 The research obligations themselves — the twelve required sections, evidence rules, and the standard
 capability matrix — come from the **HoBo Competitive Research Contract** (Linear project document).

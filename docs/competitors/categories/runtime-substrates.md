@@ -39,4 +39,4 @@ Some of these HoBo adopts (wasmCloud), some it targets, and some genuinely compe
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)

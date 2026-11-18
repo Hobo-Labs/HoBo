@@ -30,4 +30,4 @@ HoBo's connectivity and identity ports must be credible against dedicated produc
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)

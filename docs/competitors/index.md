@@ -8,7 +8,7 @@ This page is **navigation**. The corpus has three layers, and each fact lives in
 | ----- | ----- | ------------- |
 | Canonical capture | `docs/competitors/<slug>.md` | All research on one product. One file per product, no matter how many categories it belongs to. |
 | Category index | [`categories/`](categories/index.md) | Category boundary, why HoBo competes there, and one standardized comparison row per member. No research. |
-| Derived views | [`matrix.md`](matrix.md) · [`gap-analysis.md`](gap-analysis.md) | Generated cross-category matrix and freshness ledger; cross-competitor synthesis. |
+| Derived views | [`matrix.md`](matrix.md) | Generated cross-category matrix and freshness ledger. |
 
 Membership, aliases, posture and freshness are declared once, in each capture's `competitor:` front matter, and validated by `pnpm run docs:competitors`. The schema and canonical path rules are normative in [`metadata-contract.md`](metadata-contract.md).
 
@@ -248,7 +248,6 @@ Some entries are **cohort** captures (`anon-container-hosts`, `wasm-hosts`, `fin
 
 HoBo mappings distinguish **implemented** behaviour in `packages/` from **proof/draft** and **design-only** intent. A category row may never imply parity the repository does not have.
 
-➡️ **Cross-competitor [gap analysis](./gap-analysis.md)** — synthesis of where HoBo's design leads, matches, or falls short, with prioritized gaps and recommended design moves.
 
 ## Sources & fair use
 

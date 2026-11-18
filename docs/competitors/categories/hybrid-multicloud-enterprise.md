@@ -44,4 +44,4 @@ These systems already sell the multicloud promise to enterprises. HoBo competes 
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)
