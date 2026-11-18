@@ -1,26 +1,3 @@
-/**
- * HoBo CD views for the yard world. Pure, zero-dependency.
- *
- * CD spans follow the OTel CI/CD semantic conventions and carry HoBo topology
- * as SPAN attributes (one CD service delivers to many Camps), so:
- *   - `mapTracePayload` lifts span-level `hobo.camp.id` into a per-Camp
- *     resource (`liftCdTopology` in otel-mapper.ts), so each delivery task
- *     lands in its Camp room as an `actor` character `<service>@<camp>`.
- *   - `parseCdSpans` is the parse boundary for CD spans (parse, don't
- *     validate): only spans with `cicd.pipeline.run.id` become `CdSpan`.
- *   - `freightTimeline` and `pipelineGraph` are model views (projections) over
- *     parsed CD spans: where each Freight went, when, with what result; and
- *     which pipeline nodes Freight flows between.
- *   - `fleetView` and `complianceHeatmap` are projections over the
- *     `hobo.cd.camp.*` and `hobo.cd.compliance.noncompliant_ratio` gauges:
- *     Camps by condition and taint, and noncompliance by Rail and control.
- *   - `renderPromotionTrace` runs a CD trace through the mapper and reducer
- *     and returns the world plus both views — the yard-world rendering of a
- *     promotion.
- *
- * Attribute keys mirror `@hobo/cd/telemetry` (`semconv.ts`); they are copied,
- * not imported, because this package depends on nothing.
- */
 import {
 	type AgentEvent,
 	applyEvent,
@@ -34,7 +11,6 @@ import {
 	type OtlpTraceRequest,
 } from "./otel-mapper.js";
 
-/** CD attribute keys (OTel CI/CD semconv + HoBo), mirrored from @hobo/cd. */
 export const CD_SPAN_ATTR = Object.freeze({
 	pipelineName: "cicd.pipeline.name",
 	runId: "cicd.pipeline.run.id",
@@ -51,14 +27,12 @@ export const CD_SPAN_ATTR = Object.freeze({
 	node: "hobo.cd.pipeline.node",
 } as const);
 
-/** CD metric names consumed by the fleet views. */
 export const CD_FLEET_METRICS = Object.freeze({
 	campCondition: "hobo.cd.camp.condition",
 	campTaint: "hobo.cd.camp.taint",
 	noncompliantRatio: "hobo.cd.compliance.noncompliant_ratio",
 } as const);
 
-/** The INFORM noncompliance budget (R12); above it a heatmap cell breaches. */
 export const COMPLIANCE_WATCH_RATIO = 0.02;
 
 export type CdResult =
@@ -81,11 +55,9 @@ const RESULTS: ReadonlySet<string> = new Set([
 
 function result(value: string | undefined): CdResult {
 	if (value === undefined || !RESULTS.has(value)) return "pending";
-	// SAFETY: membership in RESULTS was checked on the line above.
 	return value as CdResult;
 }
 
-/** A parsed CD span: a pipeline run (`taskName` empty) or a task run. */
 export interface CdSpan {
 	traceId: string;
 	spanId: string;
@@ -110,7 +82,6 @@ function nanoToMs(value: string | number | undefined): number {
 	return Number.isFinite(n) ? Math.floor(n / 1_000_000) : 0;
 }
 
-/** Parse boundary: OTLP/JSON → CD spans. Non-CD spans are ignored. */
 export function parseCdSpans(payload: OtlpTraceRequest): CdSpan[] {
 	const out: CdSpan[] = [];
 	for (const rs of payload.resourceSpans ?? []) {
@@ -149,7 +120,6 @@ export function parseCdSpans(payload: OtlpTraceRequest): CdSpan[] {
 	return out;
 }
 
-/** One delivery of one Freight to one Camp. */
 export interface FreightTimelineEntry {
 	freightId: string;
 	runId: string;
@@ -177,13 +147,11 @@ function byTime(a: FreightTimelineEntry, b: FreightTimelineEntry): number {
 	);
 }
 
-/** Freight → its deliveries (task runs), oldest first. Deterministic. */
 export function freightTimeline(spans: readonly CdSpan[]): FreightTimeline[] {
 	const groups = new Map<string, Map<string, FreightTimelineEntry>>();
 	for (const s of spans) {
 		if (s.taskName === "" || s.freightId === "" || s.campId === "") continue;
 		const entries = groups.get(s.freightId) ?? new Map();
-		// One entry per task run; a later report of the same run replaces it.
 		entries.set(`${s.runId}\u0000${s.campId}`, {
 			freightId: s.freightId,
 			runId: s.runId,
@@ -217,7 +185,6 @@ export interface PipelineGraphNode {
 export interface PipelineGraphEdge {
 	from: string;
 	to: string;
-	/** Distinct Freight seen moving along this edge. */
 	freightCount: number;
 }
 
@@ -227,11 +194,6 @@ export interface PipelineGraph {
 	edges: PipelineGraphEdge[];
 }
 
-/**
- * Pipeline → node graph observed from task runs. A node is the span's
- * pipeline node (else its environment); an edge joins consecutive nodes a
- * Freight reached, in time order.
- */
 export function pipelineGraph(spans: readonly CdSpan[]): PipelineGraph[] {
 	const pipelines = new Map<string, FreightTimelineEntry[]>();
 	for (const timeline of freightTimeline(spans))
@@ -308,11 +270,6 @@ export interface PromotionTraceRendering {
 	graph: PipelineGraph[];
 }
 
-/**
- * Render a CD trace: lift topology, map and reduce it into a world (starting
- * from `world`, default empty), and project the Freight timeline and pipeline
- * graph. Pure apart from structured cloning in the reducer.
- */
 export function renderPromotionTrace(
 	payload: OtlpTraceRequest,
 	now: number,
@@ -331,20 +288,15 @@ export function renderPromotionTrace(
 	};
 }
 
-// ── Fleet views (metrics) ─────────────────────────────────────────────────
-
 export interface FleetCampRow {
 	campId: string;
-	/** condition → status (`true` | `false` | `unknown`). */
 	conditions: Record<string, string>;
 	taints: { key: string; effect: string }[];
 }
 
 export interface FleetView {
 	camps: FleetCampRow[];
-	/** condition → status → Camp ids. */
 	byCondition: Record<string, Record<string, string[]>>;
-	/** taint effect → Camp ids. */
 	byTaint: Record<string, string[]>;
 	untainted: string[];
 }
@@ -379,7 +331,6 @@ function gaugePoints(payload: OtlpMetricsRequest, name: string) {
 	return out;
 }
 
-/** Camps by condition and taint, from `hobo.cd.camp.*` gauges. */
 export function fleetView(payload: OtlpMetricsRequest): FleetView {
 	const rows = new Map<string, FleetCampRow>();
 	const row = (campId: string): FleetCampRow => {
@@ -443,7 +394,6 @@ export interface ComplianceCell {
 
 export interface ComplianceHeatmap {
 	rails: string[];
-	/** `*` (overall) first, then controls alphabetically. */
 	controls: string[];
 	cells: ComplianceCell[];
 }
@@ -453,7 +403,6 @@ export function heatBand(ratio: number): HeatBand {
 	return ratio <= COMPLIANCE_WATCH_RATIO ? "watch" : "breach";
 }
 
-/** Noncompliance by Rail × control, latest point per cell. */
 export function complianceHeatmap(
 	payload: OtlpMetricsRequest,
 ): ComplianceHeatmap {

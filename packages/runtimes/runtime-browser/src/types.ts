@@ -22,12 +22,7 @@ export interface BrowserPersistenceDetection {
 }
 
 export interface BrowserStorageOpenOptions {
-	/** Logical partition name (maps to OPFS file name). */
 	readonly partitionId: string;
-	/**
-	 * When true and OPFS is missing, open an in-memory store.
-	 * When false (default), fail with PERSISTENCE_UNAVAILABLE.
-	 */
 	readonly allowTransient?: boolean;
 	readonly multiTab?: boolean;
 }
