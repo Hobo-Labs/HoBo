@@ -396,7 +396,7 @@ test("docs-only changes do not select the konsistent structural lane", () => {
 });
 
 test("draft aggregate folders without package metadata do not select workspace tests", () => {
-	const { checks, workspaces } = plan(["src/draft/epic-proofs/_registry.md"], {
+	const { checks, workspaces } = plan(["src/draft/epic-proofs/AGENTS.md"], {
 		workspacePackageExists: () => false,
 	});
 
