@@ -11,15 +11,31 @@ test("cold-start provider generation certifies only after sandbox validation, re
   assert.equal(result.coldStart.finalValidation.traceReplay.status, "passed");
   assert.equal(result.coldStart.repair.outcome, "validated");
   assert.equal(result.coldStart.certification.ok, true);
-  assert.deepEqual(result.coldStart.stageResults.map((stage) => stage.stage), [
-    "request",
-    "scaffold",
-    "fill",
-    "repair",
-    "certify",
+  assert.deepEqual(result.coldStart.generatedProvider.connection, {
+    connected: true,
+  });
+  assert.deepEqual(result.coldStart.generatedProvider.query, {
+    rows: [],
+    sql: "select 1",
+  });
+  assert.deepEqual(result.coldStart.generatedProvider.calls, [
+    "connect",
+    "query:select 1",
+    "destroy",
   ]);
+  assert.equal(result.coldStart.generatedProvider.fillMode, "hinted");
+  assert.deepEqual(result.coldStart.generatedProvider.claimedCapabilities, [
+    "database",
+  ]);
+  assert.deepEqual(
+    result.coldStart.stageResults.map((stage) => stage.stage),
+    ["request", "scaffold", "fill", "repair", "certify"],
+  );
   assert.equal(result.safety.certifiable.effect, "allow");
-  assert.equal(result.materials.sanitized.materials[0].trustBoundary, "untrusted_user_material");
+  assert.equal(
+    result.materials.sanitized.materials[0].trustBoundary,
+    "untrusted_user_material",
+  );
   assert.equal(result.sandbox.egressAttempts, 0);
 });
 
@@ -30,7 +46,10 @@ test("training loop captures trajectories, screens OPTO candidates, and promotes
   assert.equal(result.training.optimizer.outcome, "ready-for-gate");
   assert.equal(result.training.liveEval.outcome, "gate-passed");
   assert.equal(result.training.poisoning.outcome, "trusted-for-promotion");
-  assert.equal(result.training.privacy.optimizerPayload.rawPayloadsIncluded, false);
+  assert.equal(
+    result.training.privacy.optimizerPayload.rawPayloadsIncluded,
+    false,
+  );
   assert.equal(result.training.promotion.outcome, "promoted");
 });
 
@@ -47,6 +66,12 @@ test("cross-layer propagation keeps generated regions synchronized across the st
   const result = await runGenerationPipelineTrainingSafetySimulation();
 
   assert.equal(result.crossLayer.outcome, "propagated");
-  assert.deepEqual(result.crossLayer.layers, ["data", "business", "message", "intelligence", "ui"]);
+  assert.deepEqual(result.crossLayer.layers, [
+    "data",
+    "business",
+    "message",
+    "intelligence",
+    "ui",
+  ]);
   assert.equal(result.crossLayer.driftDetected, false);
 });

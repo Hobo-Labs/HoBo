@@ -1,7 +1,3 @@
-/**
- * Gate-executed identity example for s5-03-forge-ingestion-contract.
- * Asserts proof.json matches folder layer/slug — honest, unforgeable via stdout.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

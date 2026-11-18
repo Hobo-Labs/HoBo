@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { buildLaunchCommand, claudeProvider } from '../src/providers/hook/claude/claude.js';
 
 describe('claudeProvider', () => {
   describe('identity', () => {
@@ -29,6 +29,22 @@ describe('claudeProvider', () => {
     it('has a linked TeamProvider', () => {
       expect(claudeProvider.team).toBeDefined();
       expect(claudeProvider.team?.providerId).toBe('claude');
+    });
+  });
+
+  describe('launch command', () => {
+    it('starts the requested session in the selected directory', () => {
+      expect(buildLaunchCommand('session-1', '/work/project')).toEqual({
+        command: 'claude',
+        args: ['--session-id', 'session-1'],
+        env: { PWD: '/work/project' },
+      });
+    });
+
+    it('adds the explicit permission bypass flag', () => {
+      expect(
+        buildLaunchCommand('session-1', '/work/project', { bypassPermissions: true }).args,
+      ).toEqual(['--session-id', 'session-1', '--dangerously-skip-permissions']);
     });
   });
 

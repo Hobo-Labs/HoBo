@@ -29,6 +29,7 @@ const SOURCE_EXTENSIONS = new Set([
 	".ts",
 	".tsx",
 ]);
+const SOURCE_DIRECTORIES = new Set(["services", "src"]);
 const STRUCTURAL_COMMENT =
 	/@(?:cc_on|jsx|jsxFrag|jsxImportSource|jsxRuntime|license|preserve|ts-(?:check|expect-error|ignore|nocheck)|type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated|vite-ignore)|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)|(?:istanbul|c8|v8)\s+ignore|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*source(?:Mapping)?URL=|<reference\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:/iu;
 const DRAFT_PROOF_KINDS = new Set([
@@ -283,14 +284,14 @@ async function collectEvidence(root, packageRoot) {
 			);
 			if (
 				SOURCE_EXTENSIONS.has(ext) &&
-				normalized.startsWith("src/") &&
+				isSourceLocation(normalized) &&
 				!/(^|\/)_generated(\/|$)/.test(normalized)
 			) {
 				implementationSources.push({ file: normalized, contents });
 			}
 			if (
 				ext === ".ts" &&
-				normalized.startsWith("src/") &&
+				isSourceLocation(normalized) &&
 				!/(^|\/)_generated(\/|$)/.test(normalized)
 			) {
 				typeScriptSources.push({ file: normalized, contents });
@@ -327,7 +328,11 @@ function hasParseDerivedTypes(sources) {
 			/\bexport\s+(?:async\s+)?function\s+(?:parse|decode|deserialize)[A-Z_$][\w$]*\s*\([^)]*\)\s*(?::\s*([^={\n]+))?/gu,
 		),
 	]);
-	if (declarations.length === 0) return false;
+	if (declarations.length === 0) {
+		return !sources.some(({ contents }) =>
+			/\bJSON\.parse\s*\(|\brequest\.json\s*\(|:\s*unknown\b/u.test(contents),
+		);
+	}
 	return declarations.some((declaration) => {
 		const result = declaration[1]?.trim();
 		return Boolean(
@@ -337,6 +342,10 @@ function hasParseDerivedTypes(sources) {
 				),
 		);
 	});
+}
+
+function isSourceLocation(file) {
+	return SOURCE_DIRECTORIES.has(file.split("/", 1)[0]);
 }
 
 function hasEventArchitecture(sources) {

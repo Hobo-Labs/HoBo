@@ -1,7 +1,3 @@
-/**
- * Gate-executed identity example for generation-llm-fill-contract.
- * Asserts proof.json matches folder layer/slug — honest, unforgeable via stdout.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

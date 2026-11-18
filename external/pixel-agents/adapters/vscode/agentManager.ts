@@ -14,6 +14,7 @@ import {
 } from '../../server/src/fileWatcher.js';
 import { loadLayout } from '../../server/src/layoutPersistence.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
+import { buildLaunchCommand } from '../../server/src/providers/hook/claude/claude.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
 import type { AgentState, PersistedAgent } from '../../server/src/types.js';
@@ -59,10 +60,7 @@ export async function launchNewTerminal(
   }
 
   const sessionId = crypto.randomUUID();
-  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
-  if (!launch) {
-    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
-  }
+  const launch = buildLaunchCommand(sessionId, cwd, { bypassPermissions });
   terminal.sendText([launch.command, ...launch.args].join(' '));
 
   const projectDir = getProjectDirPath(cwd);
@@ -195,11 +193,9 @@ export async function launchNewTerminal(
               persistAgents,
             );
           }
-        } catch {
-        }
+        } catch {}
       }
-    } catch {
-    }
+    } catch {}
   }, JSONL_POLL_INTERVAL_MS);
   jsonlPollTimers.set(id, pollTimer);
 }
@@ -396,13 +392,11 @@ export function restoreAgents(
                 permissionTimers,
               );
             }
-          } catch {
-          }
+          } catch {}
         }, JSONL_POLL_INTERVAL_MS);
         jsonlPollTimers.set(p.id, pollTimer);
       }
-    } catch {
-    }
+    } catch {}
   }
 
   if (justRestoredTerminalIds.length > 0) {
