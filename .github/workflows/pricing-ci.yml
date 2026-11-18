@@ -196,3 +196,29 @@ jobs:
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-http-queue.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-cloudflare-grants.mts
           node --experimental-strip-types packages/extension-alchemy-rivet/model/check-http-topic-bus.mts
+
+  stack-review:
+    name: Validate complete Alchemy stack
+    needs: route
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Combine current main
+        run: |
+          git config user.name "HoBo CI"
+          git config user.email "ci@hobo.invalid"
+          git merge --no-commit --no-ff origin/main
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Run complete branch check
+        env:
+          HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
+        run: pnpm run agent:check -- --base=origin/main
