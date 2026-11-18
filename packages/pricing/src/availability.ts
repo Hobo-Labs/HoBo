@@ -241,8 +241,6 @@ export function quoteAvailablePricing(
 			);
 		}
 	}
-	const quote = quoteScenario(scenario);
-	if (!isQuoteVector(quote)) return failed(quote.code, quote.message);
 	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
 	const meterDimensions = new Set(dimensions);
 	for (const agreement of state.agreements) {
@@ -277,6 +275,8 @@ export function quoteAvailablePricing(
 			);
 		}
 	}
+	const quote = quoteScenario(scenario);
+	if (!isQuoteVector(quote)) return failed(quote.code, quote.message);
 	if (
 		quote.unpriced.length > 0 ||
 		quote.eligibility?.eligible !== true ||

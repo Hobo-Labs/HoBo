@@ -278,7 +278,7 @@ describe("declared pricing availability", () => {
 				tiers: [
 					create(TierSchema, {
 						from: "0",
-						flatAmount: { decimal: "", currency: "" },
+						unitAmount: { decimal: "", currency: "USD" },
 					}),
 				],
 			}),
