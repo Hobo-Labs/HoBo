@@ -99,7 +99,6 @@ describe("ingestDrizzleSchema", () => {
 
 	it("is independent of export declaration order", () => {
 		const forward = representativeSchemaModule();
-		// SAFETY: assertion to `Object.fromEntries( Object.entries(forward).reverse(), ) as JsonObject` is required at this boundary.
 		const reversed = Object.fromEntries(
 			Object.entries(forward).reverse(),
 		) as JsonObject;
@@ -440,7 +439,6 @@ describe("ingestDrizzleSchema", () => {
 		[
 			"null in place of a module",
 			() => {
-				// SAFETY: invalid ingest input is a null module at this refusal case.
 				ingestDrizzleSchema(null as never);
 			},
 			"DRIZZLE_INGEST_INPUT_INVALID",
@@ -448,7 +446,6 @@ describe("ingestDrizzleSchema", () => {
 		[
 			"a string in place of a module",
 			() => {
-				// SAFETY: invalid ingest input is a string module at this refusal case.
 				ingestDrizzleSchema("schema" as never);
 			},
 			"DRIZZLE_INGEST_INPUT_INVALID",
@@ -456,7 +453,6 @@ describe("ingestDrizzleSchema", () => {
 		[
 			"a non-postgres dialect",
 			() => {
-				// SAFETY: unsupported dialect is refused at this ingest boundary.
 				ingestDrizzleSchema({}, { dialect: "mysql" as never });
 			},
 			"DRIZZLE_DIALECT_UNSUPPORTED",
@@ -469,12 +465,10 @@ describe("ingestDrizzleSchema", () => {
 
 	it("carries remediation text on every refusal", () => {
 		try {
-			// SAFETY: assertion to `undefined as never` is required at this boundary.
 			ingestDrizzleSchema(undefined as never);
 			expect.unreachable("ingestDrizzleSchema should refuse a non-object");
 		} catch (error) {
 			expect(error).toBeInstanceOf(DrizzleAdapterError);
-			// SAFETY: assertion to `error as DrizzleAdapterError` is required at this boundary.
 			expect((error as DrizzleAdapterError).remediation.length).toBeGreaterThan(
 				0,
 			);

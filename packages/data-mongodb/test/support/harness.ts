@@ -1,5 +1,3 @@
-// Shared pieces of the conformance lanes: the fixed instant, the failure
-// formatter, and the harness that gives every case its own in-memory store.
 import type {
 	EngineBinding,
 	EngineConformanceReport,
@@ -14,7 +12,6 @@ import {
 
 export const NOW = "2026-11-10T00:00:00.000Z";
 
-/** Per-case results that did not pass, one per line, for an assert message. */
 export function failures(report: EngineConformanceReport): string {
 	return report.results
 		.filter((result) => result.status !== "pass")
@@ -22,7 +19,6 @@ export function failures(report: EngineConformanceReport): string {
 		.join("\n");
 }
 
-/** `pass=…, fail=…` — the per-status counts of a report. */
 export function tally(report: EngineConformanceReport): string {
 	const counts = new Map<string, number>();
 	for (const result of report.results) {
@@ -36,16 +32,13 @@ export function tally(report: EngineConformanceReport): string {
 
 export interface MemoryHarnessOptions {
 	readonly capture?: boolean;
-	/** Wrap each fresh executor, e.g. to observe or to interfere. */
 	readonly wrap?: (executor: MongoExecutor) => MongoExecutor;
 }
 
-/** A fresh in-memory executor behind every binding. */
 export function memoryHarness(
 	options: MemoryHarnessOptions = {},
 ): EngineHarness {
 	return {
-		// What MongoDB does not hold and declares: see the declaration.
 		declaredLimits: MONGO_CONFORMANCE_DECLARED_LIMITS,
 		create(): EngineBinding {
 			const executor = createMemoryMongoExecutor();

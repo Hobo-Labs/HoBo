@@ -1,6 +1,3 @@
-// Shared support for the engine-binding lanes. Nothing here runs unless a
-// test calls it; the live helpers are only reached when
-// HOBO_TEST_POSTGRES_URL names a real server.
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import {
@@ -30,7 +27,6 @@ import {
 
 export const NOW = "2026-11-10T00:00:00.000Z";
 
-/** The live lane's connection string; absent where no lane provides a database. */
 export const LIVE_URL = process.env.HOBO_TEST_POSTGRES_URL;
 
 export function failures(results: readonly EngineConformanceResult[]): string {
@@ -40,7 +36,6 @@ export function failures(results: readonly EngineConformanceResult[]): string {
 		.join("\n");
 }
 
-/** One field of every canonical type, plus a nullable of each awkward one. */
 export const EVERY_TYPE_SCHEMA: DatasetSchema = parseDatasetSchema({
 	name: "hobo_fixture_orders",
 	version: 3,
@@ -80,34 +75,19 @@ export const EVERY_TYPE_RECORD = Object.freeze({
 	},
 });
 
-/**
- * A pool sized for the concurrency lane. The caller ends it. Test files run in
- * parallel against one server other suites share, so a file that needs fewer
- * sessions asks for fewer.
- */
 export function livePool(max = 12): pg.Pool {
 	const pool = new pg.Pool({ connectionString: LIVE_URL, max });
-	// An idle client dropped by the server is not a test failure.
 	pool.on("error", () => {});
 	return pool;
 }
 
-/** The one namespace with a fixed name; declared here because the leak check below needs it. */
 const FIXTURE_NAMESPACE = "hobo_fixture_capture";
 
 let namespaceCounter = 0;
-// Random, not derived from the clock and the process id: two test files can
-// start in the same millisecond, and a worker thread shares its parent's pid.
 const RUN_ID = randomUUID().replaceAll("-", "").slice(0, 12);
 
-/**
- * Every namespace this test file has used. Each test file gets its own copy
- * of this module, so this is exactly the set of namespaces whose server
- * objects this file — and nobody else — could have created.
- */
 const OWN_NAMESPACES = new Set<string>();
 
-/** A namespace no other binding in this run, or any other run, uses. */
 export function freshNamespace(): string {
 	namespaceCounter += 1;
 	const namespace = `hobo_t_${RUN_ID}_${namespaceCounter}`;
@@ -115,22 +95,15 @@ export function freshNamespace(): string {
 	return namespace;
 }
 
-/** The connection string of another database on the live server. */
 export function liveUrlFor(database: string): string {
 	const url = new URL(LIVE_URL ?? "");
 	url.pathname = `/${database}`;
 	return url.toString();
 }
 
-/**
- * A second database on the live server, for a native transfer to land in:
- * logical replication needs the same schema-qualified table name on both
- * sides, so the target has to be another database.
- */
 export interface CompanionDatabase {
 	readonly name: string;
 	readonly pool: pg.Pool;
-	/** End the pool and drop the database. */
 	drop(admin: pg.Pool): Promise<void>;
 }
 
@@ -153,17 +126,11 @@ export async function createCompanionDatabase(
 	};
 }
 
-/**
- * A well-formed write-ahead-log location past `head`: 4 GiB further on, which
- * no test run writes. Positions are opaque to the conformance kit, so the
- * harness is what makes one.
- */
 export function postgresPositionPastHead(head: string): string {
 	const ahead = parseLsn(head) + (1n << 32n);
 	return `${(ahead >> 32n).toString(16).toUpperCase()}/${(ahead & 0xffff_ffffn).toString(16).toUpperCase()}`;
 }
 
-/** Where a conformance run sends the raw error of a case that failed. */
 export function conformanceFailureSink(): (
 	caseId: string,
 	error: Error,
@@ -187,19 +154,12 @@ export function conformanceFailureSink(): (
 
 export interface LiveHarness extends EngineHarness {
 	readonly executor: PostgresExecutor;
-	/** A binding in its own namespace, dropped on close. */
 	open(options?: {
 		readonly namespace?: string;
 		readonly capture?: boolean;
 	}): PostgresEngine;
 }
 
-/**
- * One namespace per binding, so no two conformance cases can collide. Given a
- * companion database, the harness can also stage a native pair: one namespace
- * name, in the live database and in the companion, with the companion's
- * binding told how its server reaches the live one.
- */
 export function postgresHarness(
 	pool: pg.Pool,
 	companion?: CompanionDatabase,
@@ -226,8 +186,6 @@ export function postgresHarness(
 		schemaFixture: POSTGRES_SCHEMA_FIXTURE,
 		positionPastHead: postgresPositionPastHead,
 		create: () => open(),
-		// A second binding on the same namespace. Not ephemeral: the first
-		// binding owns the namespace and drops it.
 		attach(binding: EngineBinding): EngineBinding {
 			const first = opened.get(binding);
 			if (first === undefined) {
@@ -261,30 +219,15 @@ export function postgresHarness(
 	};
 }
 
-/** Note a namespace a test named itself, so the leak check covers it. */
 export function claimNamespace(namespace: string): string {
 	OWN_NAMESPACES.add(namespace);
 	return namespace;
 }
 
-/**
- * Replication slots, publications and subscriptions left behind by this test
- * file — and only by this test file.
- *
- * Slot names are cluster-wide and other suites, and other processes, share
- * the server, so counting every `hobo_s_%` slot would fail one suite for
- * another's work in progress. Every name this package derives starts with a
- * digest of the database and the namespace that own it; the check lists the
- * objects carrying the digests of the namespaces this file used, in each of
- * the databases it used. It is still strict: one object of its own is a leak.
- */
 export async function leftoverCaptureObjects(
 	...pools: readonly pg.Pool[]
 ): Promise<readonly string[]> {
 	const first = pools[0];
-	// The fixture namespace has one name for every run (see below). While
-	// another run is recording into it, its slot is that run's work in
-	// progress and not this file's leak, so the count waits its turn.
 	if (first !== undefined && OWN_NAMESPACES.has(FIXTURE_NAMESPACE)) {
 		return withFixtureLock(first, () => listCaptureObjects(pools));
 	}
@@ -307,7 +250,6 @@ async function listCaptureObjects(
 		const slotPrefixes = prefixes.map((prefix) => prefix.slot);
 		const publicationPrefixes = prefixes.map((prefix) => prefix.publication);
 		const subscriptionPrefixes = namespaces.map(nativeSubscriptionPrefix);
-		// Every prefix of one kind has the same length; compare on that.
 		const slots = await pool.query(
 			"SELECT slot_name::text AS name FROM pg_replication_slots WHERE left(slot_name::text, $2::integer) = ANY($1::text[])",
 			[slotPrefixes, slotPrefixes[0]?.length ?? 0],
@@ -331,20 +273,8 @@ async function listCaptureObjects(
 	return found;
 }
 
-// ── the recorded pgoutput scenario ──────────────────────────────────────────
-
-// public-contract: namespace the recorded pgoutput fixture was captured in; the bytes carry it.
 export const PGOUTPUT_FIXTURE_NAMESPACE = FIXTURE_NAMESPACE;
 
-/**
- * Run `body` holding the server-wide lock on the fixture namespace.
- *
- * Every other namespace a test uses is random, so two runs against one server
- * never meet. The fixture's cannot be: the recorded bytes carry its name. Two
- * runs recording at once would drop each other's tables and slot, and each
- * would count the other's as a leak. A session advisory lock, held on one
- * connection for as long as `body` runs, takes them in turn.
- */
 async function withFixtureLock<T>(
 	pool: pg.Pool,
 	body: () => Promise<T>,
@@ -364,27 +294,14 @@ async function withFixtureLock<T>(
 		session.release();
 	}
 }
-// public-contract: subscription name used to record the pgoutput fixture.
 export const PGOUTPUT_FIXTURE_SUBSCRIPTION = "fixture_reader";
 
-/** A value long enough to be stored out of line once compression is off. */
 export const LARGE_NOTE = Array.from(
 	{ length: 60 },
 	(_, index) =>
 		`chunk-${String(index).padStart(4, "0")}-abcdefghijklmnopqrstuvwxyz`,
 ).join("|");
 
-/**
- * Drive a fixed sequence of writes against a live server and return the raw
- * `pgoutput` messages it emitted, as hex. This is how the checked-in fixture
- * was recorded, and the live lane re-runs it to prove the fixture still
- * describes what a real server sends.
- *
- * Some steps go around the binding on purpose — a key-changing UPDATE, an
- * UPDATE that leaves a large value untouched, a full replica identity, a
- * TRUNCATE with the guard disabled — because those are exactly the messages
- * a binding-only workload never produces and a decoder still has to survive.
- */
 export function recordPgOutputScenario(
 	pool: pg.Pool,
 ): Promise<readonly string[]> {
@@ -408,7 +325,6 @@ async function recordScenario(pool: pg.Pool): Promise<readonly string[]> {
 		const schema = EVERY_TYPE_SCHEMA;
 		const table = `${quoteIdentifier(namespace)}.${quoteIdentifier(schema.name)}`;
 		await engine.datasets.ensureDataset(schema);
-		// Store `note` out of line without compression, so a modest value is
 		// enough to exercise the unchanged-value placeholder.
 		await pool.query(
 			`ALTER TABLE ${table} ALTER COLUMN note SET STORAGE EXTERNAL`,
@@ -425,11 +341,8 @@ async function recordScenario(pool: pg.Pool): Promise<readonly string[]> {
 				dataset: schema.name,
 				mutations: mutations.map(upsertOf),
 			});
-		// 1. insert through the binding: every canonical type.
 		await write([{ tenant: "", overrides: {} }]);
-		// 2. update through the binding.
 		await write([{ tenant: "", overrides: { qty: "-9223372036854775808" } }]);
-		// 3. one transaction, three changes, two tenants, with NULLs.
 		await engine.records.write({
 			dataset: schema.name,
 			mutations: [
@@ -441,18 +354,15 @@ async function recordScenario(pool: pg.Pool): Promise<readonly string[]> {
 				{ tenant: "tenant-a", key: '["order-3"]', op: "delete" },
 			],
 		});
-		// 4. a write to another table: the server sends nothing for it.
 		await pool.query(
 			`CREATE TABLE ${quoteIdentifier(namespace)}.unrelated (x integer)`,
 		);
 		await pool.query(
 			`INSERT INTO ${quoteIdentifier(namespace)}.unrelated VALUES (1)`,
 		);
-		// 5. a native key-changing update: old key image, then the new row.
 		await pool.query(
 			`UPDATE ${table} SET id = 'order-2-moved' WHERE tenant_id = 'tenant-b' AND id = 'order-2'`,
 		);
-		// 6. a large out-of-line value, then a native update that leaves it
 		//    untouched: the new row carries a placeholder instead of the value.
 		await write([
 			{ tenant: "", overrides: { id: "order-4", note: LARGE_NOTE } },
@@ -460,7 +370,6 @@ async function recordScenario(pool: pg.Pool): Promise<readonly string[]> {
 		await pool.query(
 			`UPDATE ${table} SET qty = 41 WHERE tenant_id = '' AND id = 'order-4'`,
 		);
-		// 7. full replica identity: the old image now carries every column.
 		await pool.query(`ALTER TABLE ${table} REPLICA IDENTITY FULL`);
 		await pool.query(
 			`UPDATE ${table} SET qty = 42 WHERE tenant_id = '' AND id = 'order-4'`,
@@ -469,12 +378,10 @@ async function recordScenario(pool: pg.Pool): Promise<readonly string[]> {
 			`DELETE FROM ${table} WHERE tenant_id = '' AND id = 'order-4'`,
 		);
 		await pool.query(`ALTER TABLE ${table} REPLICA IDENTITY DEFAULT`);
-		// 8. delete through the binding: key image only.
 		await engine.records.write({
 			dataset: schema.name,
 			mutations: [{ tenant: "", key: '["order-1"]', op: "delete" }],
 		});
-		// 9. a truncate, possible only with the guard disabled.
 		await pool.query(
 			`ALTER TABLE ${table} DISABLE TRIGGER hobo_truncate_guard`,
 		);
@@ -523,7 +430,6 @@ function upsertOf(input: ScenarioUpsert) {
 	};
 }
 
-/** The fixture file's contents: where the bytes came from, and the bytes. */
 export interface RecordedPgOutput {
 	readonly recordedFrom: string;
 	readonly scenario: string;
@@ -540,11 +446,6 @@ function plain(tuple: PgOutputTuple | undefined) {
 	);
 }
 
-/**
- * What a message stream means, with everything that differs between two
- * recordings of the same scenario (positions, transaction ids, object ids,
- * commit times) left out.
- */
 export function summarizePgOutput(messages: readonly string[]) {
 	const decoded = decodePgOutputTransactions(
 		messages.map((hex) => Buffer.from(hex, "hex")),

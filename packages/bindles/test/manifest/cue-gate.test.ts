@@ -65,7 +65,6 @@ function vetFixture(cueBin: string, fixturePath: string): number {
 		);
 		return 0;
 	} catch (error) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const status = (error as NodeJS.ErrnoException & { status?: number })
 			.status;
 		return isJsonNumber(status) ? status : 1;

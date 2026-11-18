@@ -1,10 +1,3 @@
-/**
- * Which platforms the CUE auto-download claims to support.
- *
- * Archive selection is tested directly with explicit host values. Unsupported
- * hosts fail before `ensureCueBinary` can reach its network download path, and
- * supported hosts produce the archive names published by CUE.
- */
 import { describe, expect, it } from "vitest";
 
 import { cueArchiveName } from "../src/cue.js";

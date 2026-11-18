@@ -1,12 +1,3 @@
-/**
- * Replays `contracts/ephemeral-assignment-replica.pact.json` from both sides.
- *
- * Consumer: the replica, driven through its scenario against a port that
- * answers from the pact, must send exactly the pact's calls and reach the
- * expected outcomes. Provider: the in-memory ephemeral-state binding (the
- * shared Redis-protocol binding over the in-memory engine, with a fixed
- * incarnation and clock) must answer every call with the pact's response.
- */
 import { parseEphemeralKey, parseEphemeralTtlMs } from "@hobo/core";
 import { createMemoryEphemeralState } from "@hobo/kv-redis-compatible";
 import { describe, expect, it } from "vitest";

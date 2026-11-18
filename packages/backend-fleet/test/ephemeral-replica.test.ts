@@ -1,8 +1,3 @@
-/**
- * The assignment register kept on ephemeral-state stores: the replica's local
- * rules, atomicity per backend, TTL, and what a lost or expired log does to
- * the register's safety.
- */
 import {
 	createEphemeralRing,
 	EPHEMERAL_STATE_MAX_TTL_MS,
@@ -62,7 +57,6 @@ describe("one replica's rules", () => {
 		for (let epoch = 1; epoch <= 5; epoch += 1)
 			expect(await replica.accept(entry(epoch, "c0"))).toBe("accepted");
 		expect((await replica.read()).map((row) => row.epoch)).toEqual([3, 4, 5]);
-		// Epoch 1 was held and dropped: which entry it was is no longer known.
 		expect(await replica.accept(entry(1, "c0"))).toBe("conflict");
 		expect(await replica.accept(entry(6, "c0"))).toBe("accepted");
 	});
@@ -195,7 +189,6 @@ describe("the register on cache replicas", () => {
 	});
 });
 
-/** Read and insist on `current`; return its entry. */
 async function current(
 	register: Parameters<typeof readCurrentAssignment>[0],
 ): Promise<FleetAssignment> {
@@ -218,7 +211,6 @@ describe("a lost or expired log on a minority", () => {
 		fleet.backend("c2").down = false;
 		fleet.backend("c0").down = true;
 		fleet.backend("c1").wipe();
-		// Two reachable, empty replicas cannot tell a new key from this lost vote.
 		expect(await readCurrentAssignment(fleet.register)).toMatchObject({
 			status: "empty",
 			silent: ["c0"],
@@ -290,7 +282,6 @@ describe("a lost or expired log on a minority", () => {
 		expect(assignmentKey(await current(fleet.register))).toBe(
 			assignmentKey(before),
 		);
-		// The proposer first brings c2 up from the entries c0 and c1 still hold.
 		const next = await proposeAssignment(fleet.register, {
 			expectedEpoch: 2,
 			value: writer("c2"),
@@ -318,7 +309,6 @@ describe("a lost or expired log on a minority", () => {
 		expect(assignmentKey(await current(fleet.register))).toBe(
 			assignmentKey(before),
 		);
-		// The next decision needs the two members that still hold the log.
 		const next = await proposeAssignment(fleet.register, {
 			expectedEpoch: before.epoch,
 			value: writer("c2"),
@@ -326,7 +316,6 @@ describe("a lost or expired log on a minority", () => {
 			nowMs: 10,
 		});
 		expect(next).toMatchObject({ status: "decided", holders: ["c2", "c0"] });
-		// Rejoin: proven current by c0 and c2, so c1 is seeded with it.
 		expect(await rejoinAssignmentReplicas(fleet.register)).toEqual([
 			{ replica: "c1", outcome: "seeded" },
 		]);
@@ -334,7 +323,6 @@ describe("a lost or expired log on a minority", () => {
 		expect(seededEntry && assignmentKey(seededEntry)).toBe(
 			next.status === "decided" ? assignmentKey(next.assignment) : "",
 		);
-		// From there it takes the next epoch like any member.
 		const after = await proposeAssignment(fleet.register, {
 			expectedEpoch: before.epoch + 1,
 			value: writer("c1"),
@@ -356,7 +344,6 @@ describe("a lost or expired log on a minority", () => {
 		expect(assignmentKey(await current(fleet.register))).toBe(
 			assignmentKey(before),
 		);
-		// The refresh tick keeps the others alive; c2 is rejoined.
 		for (const replica of fleet.replicas) await replica.refresh();
 		expect(await rejoinAssignmentReplicas(fleet.register)).toEqual([
 			{ replica: "c2", outcome: "seeded" },
@@ -377,7 +364,6 @@ describe("a lost or expired log on a minority", () => {
 	it("fails closed when a bare majority's member loses the entry before repair", async () => {
 		const fleet = cacheFleet(3);
 		await bootstrapAssignment(fleet.register, "c0");
-		// Epoch 2 reaches c0 and c1 only.
 		fleet.backend("c2").down = true;
 		await proposeAssignment(fleet.register, {
 			expectedEpoch: 1,
@@ -387,24 +373,15 @@ describe("a lost or expired log on a minority", () => {
 		});
 		fleet.backend("c2").down = false;
 		fleet.backend("c1").wipe();
-		// One holder of epoch 2 is visible: not proven, so no answer.
 		expect((await readCurrentAssignment(fleet.register)).status).toBe(
 			"undecided",
 		);
-		// Completion re-decides the same entry rather than inventing another.
 		const completed = await completeAssignment(fleet.register);
 		expect(completed).toMatchObject({ status: "current" });
 		if (completed.status === "current")
 			expect(completed.assignment).toMatchObject({ epoch: 2, active: "c1" });
 	});
 
-	/**
-	 * Random runs: stale proposers, completions, members going silent, and
-	 * logs lost on a minority, but only after repair has copied the current
-	 * entry everywhere (the precondition the replica documents). Every entry
-	 * ever read as current is recorded per epoch: no epoch may ever resolve to
-	 * two entries, and the current epoch never goes back.
-	 */
 	it("never resolves two entries for one epoch", async () => {
 		let wipes = 0;
 		for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
@@ -450,7 +427,6 @@ describe("a lost or expired log on a minority", () => {
 					if (repaired.status === "current" && repaired.holders.length === size)
 						lostSinceRepair = 0;
 				} else if (lostSinceRepair < Math.floor(size / 2)) {
-					// Lose a log only when every member holds the current entry.
 					for (const backend of fleet.backends) backend.down = false;
 					const now = resolveAssignment(
 						ids,
