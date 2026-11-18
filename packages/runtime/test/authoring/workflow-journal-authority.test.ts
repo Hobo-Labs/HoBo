@@ -60,9 +60,9 @@ describe("workflow journal authority", () => {
 		const engine = createWorkflowEngine();
 		const live = await engine.start(wf, null);
 		const events = await engine.store.readStream(`run/${live.runId}`);
-		const damaged = events.filter(
-			(event) => event.type !== "run.SleepCompleted",
-		);
+		const damaged = events
+			.filter((event) => event.type !== "run.SleepCompleted")
+			.map((event, index) => ({ ...event, seq: index + 1 }));
 		const reader = { ...engine.store, readStream: async () => damaged };
 		await expect(
 			createWorkflowEngine({ store: reader }).resume(wf, live.runId, null),

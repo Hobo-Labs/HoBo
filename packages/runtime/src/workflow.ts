@@ -34,6 +34,10 @@ import {
 	readReplayCommandTree,
 } from "./replay/command-tree.js";
 import { createDeterministicContext } from "./replay/context.js";
+import {
+	validateCurrentJournalTypes,
+	validateJournalHistory,
+} from "./replay/journal-history.js";
 import { captureJournalStream } from "./replay/journal-stream.js";
 import { nextEnvelope, recordEffect } from "./replay/recorder.js";
 import type { WorkflowDefinition as ReplayWorkflowDefinition } from "./replay/replayer.js";
@@ -276,6 +280,7 @@ export function createWorkflowEngine(
 			await store.readStream(streamId),
 			streamId,
 		);
+		validateJournalHistory(journal);
 		let seq = journal.at(-1)?.seq ?? 0;
 		if (!Number.isSafeInteger(seq) || seq < 0) {
 			throw new Error("invalid workflow journal sequence");
@@ -293,6 +298,7 @@ export function createWorkflowEngine(
 		) {
 			throw new Error("unsupported workflow command tree version");
 		}
+		if (version === 3) validateCurrentJournalTypes(journal);
 		const hasArgs = Object.hasOwn(started.data, "args");
 		const recordedArgs = hasArgs ? started.data.args : null;
 		if (

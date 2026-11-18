@@ -20,6 +20,10 @@ import {
 	stableStringifyForVersion,
 	toSeqVectorEntries,
 } from "./equivalence.js";
+import {
+	validateCurrentJournalTypes,
+	validateJournalHistory,
+} from "./journal-history.js";
 import { captureJournalStream } from "./journal-stream.js";
 import type { EventStoreReader } from "./store.js";
 import type { CanonicalizationVersion, ReplayReport } from "./types.js";
@@ -81,6 +85,7 @@ export async function replayRun<S, A>(
 		await store.readStream(streamId),
 		streamId,
 	);
+	validateJournalHistory(events);
 	const recordedVector = seqVectorForVersion(events, digestVersion);
 	const started = events.find((event) => event.type === "run.Started");
 	if (!started || !isJsonObject(started.data)) {
@@ -100,6 +105,7 @@ export async function replayRun<S, A>(
 	) {
 		throw new Error("unsupported workflow command tree version");
 	}
+	if (version === 3) validateCurrentJournalTypes(events);
 	const recordedName = started.data.workflowName;
 	if (
 		(recordedName !== undefined && recordedName !== workflowName) ||

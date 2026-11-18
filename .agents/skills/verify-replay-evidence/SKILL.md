@@ -9,7 +9,7 @@ description: Verify that validated replay reports and divergence records remain 
 
 **Why:** Mutable evidence can describe different replay boundaries or event orders after it has already been checked.
 
-**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
+**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
 
 ## Covered code and checks
 
@@ -18,6 +18,8 @@ description: Verify that validated replay reports and divergence records remain 
 - `packages/runtime/test/replay/evidence-immutability.test.ts` checks direct, protobuf, harness and workflow report entry points and divergence records. It attempts to edit the input, report, vector, entries and orders. Seed 614616 generates 100 stream/position cases.
 
 - The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
+
+- The related [journal history skill](../verify-workflow-journal-history/SKILL.md) checks visible sequence, start and terminal structure before resume and replay.
 
 From the repository root with dependencies installed, run:
 

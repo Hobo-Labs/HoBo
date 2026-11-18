@@ -218,12 +218,30 @@ stateDiagram-v2
 ```
 
 Resuming a completed or failed run returns its recorded terminal outcome without
-calling the workflow or appending another event. For versioned journals, resume
-first validates the command tree and refuses missing completion evidence,
-duplicate terminal outcomes, and records after the terminal outcome. Unknown
-command-tree versions are refused. New failure records preserve the failed step
-when present; older failure records without a step cannot reconstruct that
-detail.
+calling the workflow or appending another event. Before execution or replay,
+all journal versions must start with exactly one `run.Started`, have contiguous
+safe-integer sequences beginning at one, and have no record after a terminal
+outcome. Current version-three journals also reject unknown reserved `run.*`
+records. Versioned journals validate the command tree and refuse missing
+completion evidence. Unknown command-tree versions are refused. New failure
+records preserve the failed step when present; older failure records without a
+step cannot reconstruct that detail. A damaged history may need reconciliation;
+`journal()` remains available to inspect it when the stream identity matches.
+
+The journal-history model checks 298 bounded states. This projection hides 144
+internal steps that do not change a displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Journal received
+  s1: History validated
+  s2: Damaged history refused
+  s3: History used
+  [*] --> s0
+  s0 --> s2: check visible history
+  s0 --> s1: check visible history
+  s1 --> s3: resume or replay
+```
 
 Application `ctx.emit` event types cannot begin with `run.`; those names belong
 to the workflow engine. New journals include command identity in each emitted
@@ -236,8 +254,10 @@ command value for recovery. Older journals do not identify emitted commands,
 so an event can be repeated when they resume.
 
 The journal and its writer are trusted: records written by older versions or by
-another writer cannot be authenticated retroactively. Legacy unversioned
-journals retain their previous resume checks.
+another writer cannot be authenticated retroactively. A truncated tail or
+records that a reader has removed and renumbered cannot be detected from the
+visible prefix alone. Legacy unversioned journals retain their previous command
+checks in addition to the structural checks above.
 
 The event-recovery model explores five distinct states. Its projection hides one
 internal transition that does not change the displayed state.

@@ -9,7 +9,7 @@ description: Verify recorded resume context and captured workflow definition bin
 
 **Why:** Missing or changed context can make work run, or a stored result appear valid, under a different workflow or deterministic seed.
 
-**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
+**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
 
 ## Covered code and checks
 
@@ -18,6 +18,8 @@ description: Verify recorded resume context and captured workflow definition bin
 - The broader [workflow replay skill](../verify-workflow-replay/SKILL.md) checks journal recovery, input snapshots, commands, timers and local execution fencing.
 
 - The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.
+
+- The related [journal history skill](../verify-workflow-journal-history/SKILL.md) checks visible sequence, start and terminal structure before resume and replay.
 
 From the repository root with dependencies installed, run:
 

@@ -9,13 +9,15 @@ description: Verify primitive replay identifiers and workflow journal stream bin
 
 **Why:** Boxed strings can disguise duplicate stream names, and a reader returning another run's events can make work or a stored outcome appear to belong to the wrong run.
 
-**Review baseline:** `555ff3fbd916e158daec16cb00d559810c800fe6`.
+**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
 
 ## Covered code and checks
 
 - `packages/runtime/src/workflow-boundary.ts` classifies primitive strings. `replay/parse.ts` rejects nonprimitive evidence strings; `replay/equivalence.ts` validates report and stream identities, and `replay/divergence.ts` validates divergence run IDs.
 - `packages/runtime/src/replay/journal-stream.ts` captures journal events and checks their stream IDs. `workflow.ts` and `replay/replayer.ts` use that capture before resume, terminal reuse, replay or journal reads.
 - `packages/runtime/test/replay/stream-identity.test.ts` checks boxed and impostor strings, empty IDs, foreign start and terminal records, direct report construction and journal changes during replay and resume. Seed 614618 samples 100 special and Unicode stream names.
+
+- The related [journal history skill](../verify-workflow-journal-history/SKILL.md) checks visible sequence, start and terminal structure before resume and replay.
 
 From the repository root with dependencies installed, run:
 
