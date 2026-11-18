@@ -226,6 +226,9 @@ describe("yard event-store folds + provider resolvers", () => {
 		"missing-residual",
 		"foreign-camp-before-generation",
 		"unverified-camp-before-generation",
+		"generation-approval-required",
+		"generation-invalid-effect",
+		"generation-dedicated-unsupported",
 		"exact-yard-mismatch-before-generation",
 		"exact-yard-match-generation",
 		"wrong-generated-yard-id",
@@ -454,6 +457,12 @@ describe("yard event-store folds + provider resolvers", () => {
 			};
 			return { ...oldPlan, planHash: contentHashOf(oldPlan) };
 		})();
+		if (mode === "generation-approval-required")
+			Object.assign(allowPolicy, { requireApproval: true });
+		if (mode === "generation-invalid-effect")
+			Object.assign(allowPolicy, { effect: "allow" });
+		if (mode === "generation-dedicated-unsupported")
+			Object.assign(allowPolicy, { effect: "require-dedicated" });
 		const directory = mkdtempSync(
 			join(tmpdir(), "hobo-funded-yard-generation-"),
 		);
@@ -1045,6 +1054,28 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)).toBeUndefined();
 				expect(authority.read(now).reservedMicros).toBe(0);
+				return;
+			}
+			if (
+				mode === "generation-approval-required" ||
+				mode === "generation-invalid-effect" ||
+				mode === "generation-dedicated-unsupported"
+			) {
+				expect({
+					outcome: result.outcome,
+					code: result.reasons?.[0]?.code,
+					authorizationCalls,
+					provisionCalls,
+					reservation: authority.lookup(reservationId)?.status,
+					reservedMicros: authority.read(now).reservedMicros,
+				}).toEqual({
+					outcome: "rejected",
+					code: "yard-generation-denied",
+					authorizationCalls: 0,
+					provisionCalls: 0,
+					reservation: undefined,
+					reservedMicros: 0,
+				});
 				return;
 			}
 			if (mode === "exact-yard-mismatch-before-generation") {

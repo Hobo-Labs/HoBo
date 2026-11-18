@@ -180,6 +180,7 @@ describe("direct generation with nested Camp layouts", () => {
 	const policy = {
 		...DEFAULT_YARD_GENERATION_POLICY,
 		effect: "allow-if-no-match" as const,
+		requireApproval: false,
 	};
 	const decide = (requestedLayout: ReturnType<typeof parseYardLayout>) =>
 		planYardGeneration({

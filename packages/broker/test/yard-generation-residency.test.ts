@@ -30,6 +30,7 @@ runtimes.register({
 const policy = {
 	...DEFAULT_YARD_GENERATION_POLICY,
 	effect: "allow-if-no-match" as const,
+	requireApproval: false,
 };
 function plan(tag: string) {
 	return planYardGeneration({

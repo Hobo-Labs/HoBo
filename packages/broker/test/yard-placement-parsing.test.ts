@@ -553,7 +553,12 @@ describe("planYardGeneration", () => {
 	function policy(
 		overrides: Partial<YardGenerationPolicy> = {},
 	): YardGenerationPolicy {
-		return { ...DEFAULT_YARD_GENERATION_POLICY, effect: "allow", ...overrides };
+		return {
+			...DEFAULT_YARD_GENERATION_POLICY,
+			effect: "allow-if-no-match",
+			requireApproval: false,
+			...overrides,
+		};
 	}
 
 	function catalogWith(

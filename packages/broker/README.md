@@ -387,6 +387,39 @@ and digest before obtaining a quote; generated Yards also supply the planned
 `generationPlanHash`. The policy callback receives the bound placements and
 both digests. Legacy Yard quotes without a work digest are refused. If selected
 work changes after a provider effect, the hold is retained for reconciliation.
+Yard generation accepts only the `allow-if-no-match` policy effect with
+`requireApproval: false`. A policy requiring approval is refused because no
+approval-evidence path is wired; unknown effects and `require-dedicated` are
+also refused until dedicated-Yard evidence can be checked. Older attempts that
+ran despite those policies may need resource and hold reconciliation.
+
+Other generation policy fields are not yet enforced by this planner:
+`maxConcurrentGenerations`, `maxYardsPerTenant`, `requireAttestation` and
+`lockedProperties`. Keep generation disabled unless the host enforces those
+requirements separately. The direct planner also relies on its caller to
+establish that no matching Yard exists.
+
+The bounded generation policy projection hides 12 same-state steps and assumes
+the separate quote, budget and connector checks succeed.
+
+```mermaid
+stateDiagram-v2
+  s0: Yard generation requested
+  s1: Unavailable approval refused
+  s2: Unsupported generation effect refused
+  s3: Generation policy accepted
+  s4: Host authorized generation
+  s5: Generation budget held
+  s6: Provider called
+  [*] --> s0
+  s0 --> s1: refuse without approval
+  s0 --> s3: accept the generation policy
+  s0 --> s2: refuse the policy effect
+  s3 --> s4: authorize generation
+  s4 --> s5: hold the generation budget
+  s5 --> s6: call the provider
+```
+
 The broker snapshots generation policy, runtime registration and connector
 identity and methods before policy approval, then checks them again before claim,
 before the provider call and after the operation. It invokes pinned connector
