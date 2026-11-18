@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1.19
-# SDK artifact carrier — staged allowlisted package tarballs.
 ARG HOBO_TOOLCHAIN_IMAGE=hobo-ci-worker:local
 ARG HOBO_RELEASE_VERSION=dev
 ARG HOBO_RELEASE_REVISION=local
