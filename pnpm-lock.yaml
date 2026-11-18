@@ -520,13 +520,19 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      drizzle-kit:
+        specifier: 0.31.11
+        version: 0.31.11
+      drizzle-orm:
+        specifier: 0.44.7
+        version: 0.44.7(@cloudflare/workers-types@5.20260730.1)(@electric-sql/pglite@0.3.14)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: 0.3.14
+        version: 0.3.14
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
-      drizzle-orm:
-        specifier: 0.44.7
-        version: 0.44.7(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -3273,7 +3279,7 @@ importers:
         version: 2.3.10
       rivetkit:
         specifier: 2.3.10
-        version: 2.3.10(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0)
+        version: 2.3.10(@cloudflare/workers-types@5.20260730.1)(@electric-sql/pglite@0.3.14)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0)
     devDependencies:
       '@types/node':
         specifier: '>=24.0.0'
@@ -6331,6 +6337,9 @@ packages:
   '@earendil-works/pi-tui@1.5.2':
     resolution: {integrity: sha512-WK8ih+c88GWizaB79y7Pq3PV7ySf5VI1pZ1i/6aBBjDOAiG2EE3ojKjl+pxQqLfyQGnzHYu4VfakOBJgumuoyw==}
     engines: {node: '>=22.19.0'}
+
+  '@electric-sql/pglite@0.3.14':
+    resolution: {integrity: sha512-3DB258dhqdsArOI1fIt7cb9RpUOgcDg5hXWVgVHAeqVQ/qxtFy605QKs4gx6mFq3jWsSPqDN8TgSEsqC3OfV9Q==}
 
   '@emmetio/abbreviation@2.3.3':
     resolution: {integrity: sha512-mgv58UrU3rh4YgbE/TzgLQwJ3pFsHHhCLqY20aJq+9comytTXUDNGG/SMtSeMJdkpxgXSXunBGLD8Boka3JyVA==}
@@ -18667,8 +18676,7 @@ snapshots:
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 
-  '@drizzle-team/brocli@0.10.2':
-    optional: true
+  '@drizzle-team/brocli@0.10.2': {}
 
   '@earendil-works/pi-agent-core@1.5.2(@aws-sdk/credential-provider-node@3.972.96)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@smithy/signature-v4@5.7.5)(undici@8.12.3)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
@@ -18786,6 +18794,8 @@ snapshots:
       marked: 18.0.11
       marked-cjk-friendly: 0.1.2(marked@18.0.11)
 
+  '@electric-sql/pglite@0.3.14': {}
+
   '@emmetio/abbreviation@2.3.3':
     dependencies:
       '@emmetio/scanner': 1.0.4
@@ -18829,13 +18839,11 @@ snapshots:
     dependencies:
       esbuild: 0.18.20
       source-map-support: 0.5.21
-    optional: true
 
   '@esbuild-kit/esm-loader@2.6.5':
     dependencies:
       '@esbuild-kit/core-utils': 3.3.2
       get-tsconfig: 4.14.1
-    optional: true
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true
@@ -24540,11 +24548,11 @@ snapshots:
       '@esbuild-kit/esm-loader': 2.6.5
       esbuild: 0.25.12
       tsx: 4.22.4
-    optional: true
 
-  drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1):
+  drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260730.1)(@electric-sql/pglite@0.3.14)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260730.1
+      '@electric-sql/pglite': 0.3.14
       '@libsql/client': 0.18.0
       '@opentelemetry/api': 1.9.1
       '@types/pg': 8.15.5
@@ -24780,7 +24788,6 @@ snapshots:
       '@esbuild/win32-arm64': 0.18.20
       '@esbuild/win32-ia32': 0.18.20
       '@esbuild/win32-x64': 0.18.20
-    optional: true
 
   esbuild@0.25.12:
     optionalDependencies:
@@ -28365,7 +28372,7 @@ snapshots:
       hash-base: 3.1.2
       inherits: 2.0.4
 
-  rivetkit@2.3.10(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0):
+  rivetkit@2.3.10(@cloudflare/workers-types@5.20260730.1)(@electric-sql/pglite@0.3.14)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0):
     dependencies:
       '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
       '@rivet-dev/agent-os-core': 0.1.1
@@ -28379,7 +28386,7 @@ snapshots:
       '@rivetkit/virtual-websocket': 2.3.10
       '@rivetkit/workflow-engine': 2.3.10
       cbor-x: 1.6.5
-      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
+      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20260730.1)(@electric-sql/pglite@0.3.14)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
       hono: 4.12.27
       invariant: 2.2.4
       p-retry: 6.2.1

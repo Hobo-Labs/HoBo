@@ -122,8 +122,8 @@ describe("emitSql toolchain gate", () => {
 	});
 
 	const remediationCases: [string, boolean, string][] = [
-		["absent toolchain", false, "install drizzle-kit"],
-		["declared toolchain, no emitter", true, "does not bundle drizzle-kit"],
+		["absent toolchain", false, "bundled asynchronous"],
+		["declared toolchain, no emitter", true, "no synchronous"],
 	];
 
 	it.each(
