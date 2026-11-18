@@ -2,6 +2,18 @@ package broker
 
 // CUE constraints for yard_placement.proto wire forms.
 
+#YardJsonValue: null | bool | number | string | [...#YardJsonValue] | {[string]: #YardJsonValue}
+
+#CampPlacementLayout: {
+	id?:       string
+	env?:      string
+	env_type?: string & !="" & !~"/"
+	require?: [...string]
+	prefer?: [...string]
+	labels?: {[string]: string}
+	runtime_requirements?: [...string]
+}
+
 #YardShape: {
 	provider_id?: string
 	runtime_id?:  string
@@ -9,16 +21,42 @@ package broker
 	require: [...string]
 	prefer: [...string]
 	labels?: {[string]: string}
+	residency?: [...string]
+	isolation?: [...string]
+	network?: [...string]
+	component_hosts?: [...string]
+	properties?: {[string]: #YardJsonValue}
+	camps?: [...#CampPlacementLayout]
 }
 
 #YardPlacementRequest: {
 	request_id:                 string & !=""
-	selection_mode:             string & !=""
+	selection_mode:             "exact" | "compatible" | "compatible-or-generate"
 	requested_yard_id?:         string
 	requested_shape:            #YardShape
 	bindle_manifest_hash:       string & !=""
 	bindle_requirements_hash:   string & !=""
 	allow_generation_requested: bool
+}
+
+#BindleRequirements: {
+	require?: [...string]
+	prefer?: [...string]
+	runtimes?: [...string]
+	labels?: {[string]: string}
+}
+
+#YardResourceRequest: {
+	resource_id: string & !=""
+	port:        string & !=""
+	features?: [...string & !=""]
+	region?: string & !=""
+}
+
+#CampPlacementInput: {
+	selection_mode: "exact" | "compatible" | "compatible-or-generate"
+	camp_id?:       string & !=""
+	layout:         #CampPlacementLayout
 }
 
 #YardInstanceRegistration: {
@@ -51,14 +89,19 @@ package broker
 }
 
 #BindleDeploymentRequest: {
-	schema_version:     string & !=""
-	request_id:         string & !=""
-	bindle_name:        string & !=""
-	manifest_hash:      string & !=""
-	yard:               #YardPlacementRequest
-	objective:          string & !=""
-	spend_estimate_usd: number
-	owner_tenant_id:    string & !=""
+	schema_version:      string & !=""
+	request_id:          string & !=""
+	bindle_name:         string & !=""
+	manifest_hash:       string & !=""
+	yard:                #YardPlacementRequest
+	objective:           string & !=""
+	spend_estimate_usd:  number & >=0
+	owner_tenant_id:     string & !=""
+	bindle_requirements: #BindleRequirements
+	resources?: [...#YardResourceRequest]
+	camp?:                 #CampPlacementInput
+	work_binding_version!: 1
+	request_digest:        string & =~"^sha256:[0-9a-f]{64}$"
 }
 
 #YardPlacementReceipt: {

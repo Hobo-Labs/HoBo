@@ -2,7 +2,19 @@ syntax = "proto3";
 
 package hobo.broker.yard.v1;
 
+import "google/protobuf/struct.proto";
+
 // Wire contracts for Yard-first placement (artifacts, not topology primitives).
+
+message CampPlacementLayout {
+  optional string id = 1;
+  optional string env = 2;
+  optional string env_type = 3;
+  repeated string require = 4;
+  repeated string prefer = 5;
+  map<string, string> labels = 6;
+  repeated string runtime_requirements = 7;
+}
 
 message YardShape {
   string provider_id = 1;
@@ -11,17 +23,43 @@ message YardShape {
   repeated string require = 4;
   repeated string prefer = 5;
   map<string, string> labels = 6;
+  repeated string residency = 7;
+  repeated string isolation = 8;
+  repeated string network = 9;
+  repeated string component_hosts = 10;
+  google.protobuf.Struct properties = 11;
+  repeated CampPlacementLayout camps = 12;
 }
 
 message YardPlacementRequest {
   string request_id = 1;
   // exact | compatible | compatible-or-generate
   string selection_mode = 2;
-  string requested_yard_id = 3;
+  optional string requested_yard_id = 3;
   YardShape requested_shape = 4;
   string bindle_manifest_hash = 5;
   string bindle_requirements_hash = 6;
   bool allow_generation_requested = 7;
+}
+
+message BindleRequirements {
+  repeated string require = 1;
+  repeated string prefer = 2;
+  repeated string runtimes = 3;
+  map<string, string> labels = 4;
+}
+
+message YardResourceRequest {
+  string resource_id = 1;
+  string port = 2;
+  repeated string features = 3;
+  optional string region = 4;
+}
+
+message CampPlacementInput {
+  string selection_mode = 1;
+  optional string camp_id = 2;
+  CampPlacementLayout layout = 3;
 }
 
 message YardInstanceRegistration {
@@ -62,8 +100,15 @@ message BindleDeploymentRequest {
   string manifest_hash = 4;
   YardPlacementRequest yard = 5;
   string objective = 6;
-  double spend_estimate_usd = 7;
+  optional double spend_estimate_usd = 7;
   string owner_tenant_id = 8;
+  BindleRequirements bindle_requirements = 9;
+  repeated YardResourceRequest resources = 10;
+  CampPlacementInput camp = 11;
+  // Version 1 marks a complete placement snapshot, including empty lists.
+  optional uint32 work_binding_version = 12;
+  // SHA-256 of the canonical domain request; this is not a signature.
+  string request_digest = 13;
 }
 
 message YardPlacementReceipt {

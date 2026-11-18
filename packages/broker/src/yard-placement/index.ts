@@ -107,3 +107,7 @@ export {
 	type YardRuntimeRegistration,
 	type YardSelectionMode,
 } from "./types.js";
+export {
+	decodeBindleDeploymentRequest,
+	encodeBindleDeploymentRequest,
+} from "./wire.js";
