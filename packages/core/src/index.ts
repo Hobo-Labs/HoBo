@@ -24,6 +24,13 @@ export {
 	inferCapabilityUsage,
 	parseCapabilityGrant,
 } from "./capability/index.js";
+export type {
+	AgentConfigFieldInput,
+	AgentConfigFieldView,
+	AgentConfigSchemaInput,
+	AgentConfigSchemaView,
+} from "./config-schema-view.js";
+export { createAgentConfigSchemaView } from "./config-schema-view.js";
 export type { Container } from "./container.js";
 export { createContainer } from "./container.js";
 export type {

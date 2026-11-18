@@ -92,7 +92,6 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`launch-e2e-persona-matrix.md`](./launch-e2e-persona-matrix.md) | Productization M0 contract for launch e2e persona journeys and pass/fail thresholds | — |
 | [`wasm-runtime-wit.md`](./wasm-runtime-wit.md#plan-20) | WASM/WASI runtime & WIT interface reference | 20 |
 | [`authoring-resources-wiring.md`](./authoring-resources-wiring.md#plan-21) | Authoring: resource catalog, wiring/manifest, config & the Hobo Code DSL | 21 |
-| [`twelve-factor-under-hobo.md`](./twelve-factor-under-hobo.md) | 12-factor under HoBo: links + config capability, not password-in-env (ADR-0141/0142) | — |
 | [`platform-engineering.md`](./platform-engineering.md#plan-25) | Platform engineering: Matching, environments, drivers/packs, Relay/GitOps/pipelines | 25 |
 | [`contracts-policy-flags.md`](./contracts-policy-flags.md#plan-29) | Contracts & compatibility, the policy plane & feature flags | 29 |
 | [`generated-stack.md`](./generated-stack.md#plan-23) | AI generation, the generated stack, patchability & verification/testing | 23, 09 |

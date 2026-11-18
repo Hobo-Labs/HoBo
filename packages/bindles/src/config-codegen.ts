@@ -1,6 +1,5 @@
 import type { ConfigFieldDef, ConfigSchema } from "./config-schema.js";
 import { sensitivityForField } from "./config-sensitivity.js";
-import type { JsonObject } from "./json.js";
 
 const RESERVED_IDENTIFIERS = new Set([
 	"await",
@@ -121,23 +120,4 @@ export function generateCtxConfigSource(
 	}
 	lines.push("");
 	return lines.join("\n");
-}
-
-export type GeneratedAgentConfigView = Readonly<Record<string, string>>;
-
-export function materializeAgentConfigView(
-	schema: ConfigSchema,
-	values: JsonObject,
-): GeneratedAgentConfigView {
-	const entries: Array<[string, string]> = [];
-	for (const [name, field] of Object.entries(schema.fields)) {
-		if (sensitivityForField(field) !== "public") {
-			entries.push([name, `[REDACTED:${field.source}:${name}]`]);
-			continue;
-		}
-		const value = Object.hasOwn(values, name) ? values[name] : undefined;
-		const resolved = value ?? field.defaultValue;
-		if (resolved !== undefined) entries.push([name, String(resolved)]);
-	}
-	return Object.freeze(Object.fromEntries(entries));
 }

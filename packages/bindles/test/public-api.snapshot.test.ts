@@ -83,7 +83,6 @@ export function createBindlesPublicApiSnapshot(
 		"parseBindleRequirements",
 		"connectionRef",
 		"requireConnection",
-		// ADR-0027 secretless-first config schema surface
 		"config",
 		"envField",
 		"fromBinding",
@@ -93,35 +92,27 @@ export function createBindlesPublicApiSnapshot(
 		"sourceRankIndex",
 		"assertSourceAllowed",
 		"generateCtxConfigSource",
-		"materializeAgentConfigView",
 		"evaluateSecretlessConfigGate",
-		// ADR-0141 binding-delivery membrane
 		"evaluateBindingDeliveryGate",
 		"isForbiddenSecretEnvKey",
 		"looksLikeSecretEnvValue",
-		// Domain and provider boundaries: a Yard holds nothing external
 		"externalBoundaryViolations",
-		// ADR-0142 classification
 		"CONFIG_SENSITIVITY",
 		"sensitivityForField",
-		// Harness / feature flags IfC (ADR-0044 / ADR-0083)
 		"BINDLE_FEATURES_SCHEMA",
 		"declareExperiment",
 		"features",
 		"featureSpecsToStoreInputs",
 		"rollout",
 		"rolloutResource",
-		// Session Replay default supply on App Kits (ADR-0137)
 		"sessionReplay",
 		"SESSION_REPLAY_OPTION",
 		"isSessionReplayAnnotation",
 		"defaultAppKitSessionReplayAnnotation",
-		// Status page platform trait, read-side default-on (ADR-0077 / ADR-0145)
 		"statusPage",
 		"STATUS_PAGE_OPTION",
 		"isStatusPageAnnotation",
 		"readStatusPageConfig",
-		// App Kit taxonomy (prefer over "membrane types" at Bindle layer)
 		"APP_KIT_KINDS",
 		"HTTP_APP_KIT_KINDS",
 		"INFRA_KIT_KINDS",
@@ -348,26 +339,18 @@ export function createBindlesPublicApiSnapshot(
 			{
 				name: "envField",
 				kind: "config-schema",
-				signature:
-					"envField: { string(); boolean(); int(); json() } // typed non-secret fields",
+				signature: "envField: { string(); boolean(); int(); json() }",
 			},
 			{
 				name: "secretField",
 				kind: "config-schema",
-				signature:
-					"secretField: { string() } // sensitive field builders; prefer secret.string()",
+				signature: "secretField: { string() }",
 			},
 			{
 				name: "generateCtxConfigSource",
 				kind: "config-codegen",
 				signature:
 					"generateCtxConfigSource(schema: ConfigSchema, options?): string",
-			},
-			{
-				name: "materializeAgentConfigView",
-				kind: "config-codegen",
-				signature:
-					"materializeAgentConfigView(schema: ConfigSchema, values): GeneratedAgentConfigView",
 			},
 			{
 				name: "evaluateSecretlessConfigGate",
@@ -622,7 +605,6 @@ describe("public API snapshot", () => {
 	});
 
 	it("fails when an internal provider symbol leaks into exports", () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const polluted = createBindlesPublicApiSnapshot({
 			...bindles,
 			AwsRdsInternalOptions: Object.freeze({}),

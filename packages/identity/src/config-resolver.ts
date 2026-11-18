@@ -1,4 +1,8 @@
 import {
+	type AgentConfigSchemaView,
+	createAgentConfigSchemaView,
+} from "@hobo/core";
+import {
 	type ConfigSchema,
 	configSensitivity,
 	type SecretSourceRank,
@@ -18,7 +22,7 @@ import {
 
 export type ConfigResolutionResult = Readonly<{
 	entries: Readonly<Record<string, ResolvedConfigEntry>>;
-	agentView: Readonly<Record<string, string>>;
+	agentView: AgentConfigSchemaView;
 	events: readonly ConfigSecretEvent[];
 }>;
 
@@ -50,7 +54,6 @@ export async function resolveConfigSchema(
 	}
 
 	const entries: Record<string, ResolvedConfigEntry> = {};
-	const agentView: Record<string, string> = {};
 	const events: ConfigSecretEvent[] = [];
 	let seq = 0;
 
@@ -82,11 +85,6 @@ export async function resolveConfigSchema(
 			value: result.entry,
 			enumerable: true,
 		});
-		Object.defineProperty(agentView, name, {
-			value: result.entry.placeholder,
-			enumerable: true,
-		});
-
 		seq += 1;
 		const resolvedEvt = createConfigResolvedEvent({
 			name,
@@ -118,7 +116,7 @@ export async function resolveConfigSchema(
 
 	return Object.freeze({
 		entries: Object.freeze(entries),
-		agentView: Object.freeze(agentView),
+		agentView: createAgentConfigSchemaView(options.schema),
 		events: Object.freeze(events),
 	});
 }

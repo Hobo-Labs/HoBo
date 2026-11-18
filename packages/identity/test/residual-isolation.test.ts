@@ -7,19 +7,20 @@ import {
 	createMemorySecretsPort,
 	resolveConfigSchema,
 } from "../src/index.js";
+import { isJsonObject, parseJsonObject } from "../src/json.js";
 
-/**
- * Residual secrets discipline (ADR-0142): memory default; OpenBao not a
- * default identity dependency; agent surfaces stay free of residual material.
- */
 describe("residual secrets isolation", () => {
 	it("identity package does not depend on adapter-openbao", () => {
-		// SAFETY: assertion to `JSON.parse( readFileSync(new URL("../package.json", import.meta.url), "utf8"), ) as { dependencies?: Record<string, stri` is required at this boundary.
-		const pkg = JSON.parse(
+		const pkg = parseJsonObject(
 			readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-		) as { dependencies?: Record<string, string> };
-		expect(pkg.dependencies?.["@hobo/adapter-openbao"]).toBeUndefined();
-		expect(JSON.stringify(pkg.dependencies ?? {})).not.toMatch(/openbao/i);
+		);
+		const dependencies = pkg.dependencies;
+		expect(isJsonObject(dependencies)).toBe(true);
+		if (!isJsonObject(dependencies)) {
+			throw new TypeError("package dependencies must be an object");
+		}
+		expect(dependencies["@hobo/adapter-openbao"]).toBeUndefined();
+		expect(JSON.stringify(dependencies)).not.toMatch(/openbao/i);
 	});
 
 	it("local station residual defaults to memory", () => {
@@ -59,7 +60,7 @@ describe("residual secrets isolation", () => {
 			secretsPort: port,
 			forbidStaticEscape: true,
 		});
-		expect(resolved.agentView.LEGACY).toMatch(/REDACTED/);
+		expect(resolved.agentView.fields.LEGACY?.sensitivity).toBe("sensitive");
 		const blob = JSON.stringify({
 			agentView: resolved.agentView,
 			events: resolved.events,

@@ -73,11 +73,7 @@ export {
 	type SecretlessConfigGateInput,
 	type SecretlessConfigGateResult,
 } from "./config-can-deploy.js";
-export {
-	type GeneratedAgentConfigView,
-	generateCtxConfigSource,
-	materializeAgentConfigView,
-} from "./config-codegen.js";
+export { generateCtxConfigSource } from "./config-codegen.js";
 export {
 	assertSourceAllowed,
 	type ConfigFieldDef,

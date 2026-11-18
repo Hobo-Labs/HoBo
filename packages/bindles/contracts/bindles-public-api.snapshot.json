@@ -453,22 +453,17 @@
     {
       "name": "envField",
       "kind": "config-schema",
-      "signature": "envField: { string(); boolean(); int(); json() } // typed non-secret fields"
+      "signature": "envField: { string(); boolean(); int(); json() }"
     },
     {
       "name": "secretField",
       "kind": "config-schema",
-      "signature": "secretField: { string() } // sensitive field builders; prefer secret.string()"
+      "signature": "secretField: { string() }"
     },
     {
       "name": "generateCtxConfigSource",
       "kind": "config-codegen",
       "signature": "generateCtxConfigSource(schema: ConfigSchema, options?): string"
-    },
-    {
-      "name": "materializeAgentConfigView",
-      "kind": "config-codegen",
-      "signature": "materializeAgentConfigView(schema: ConfigSchema, values): GeneratedAgentConfigView"
     },
     {
       "name": "evaluateSecretlessConfigGate",
