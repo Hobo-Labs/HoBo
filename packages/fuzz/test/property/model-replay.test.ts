@@ -403,6 +403,32 @@ describe("command dispatch", () => {
 });
 
 describe("serialize / restore", () => {
+	it("keeps rollback metadata read-only and preserves restore replay", () => {
+		const source = new ControlModel();
+		source.createBindle(TENANT, "b1", "sha256:a");
+		const model = new ControlModel();
+		expect(model.lastRollbackTarget).toBeNull();
+		expect(() => Object.assign(model, { lastRollbackTarget: 99 })).toThrow(
+			TypeError,
+		);
+		model.restore(source.serialize());
+		const checkpoint = model.snapshot();
+		model.createBindle(TENANT, "later", "sha256:b");
+		model.rollback(TENANT, checkpoint);
+		expect(model.lastRollbackTarget).toBe(checkpoint);
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("does not expose its replay baseline as writable instance data", () => {
+		const source = new ControlModel();
+		source.createBindle(TENANT, "b1", "sha256:a");
+		const model = new ControlModel();
+		model.restore(source.serialize());
+		expect("replayBaseline" in model).toBe(false);
+		Object.assign(model, { replayBaseline: "invalid" });
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
 	it("starts replay from a restored baseline and retains it through later operations", () => {
 		const source = new ControlModel();
 		source.createBindle(TENANT, "b1", "sha256:a");

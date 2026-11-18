@@ -68,5 +68,6 @@ destroy, and replay. Oracles include:
   emitted as free-form notes, and event history reads return detached snapshots
 - resource, capability, bindle and checkpoint reads return detached views;
   editing them does not change the oracle's live state
+- rollback metadata is read-only, and the replay baseline is internal
 - interrupt after destroy does not revive a resource
 - apply after destroy recreates instead of leaving a destroyed hole

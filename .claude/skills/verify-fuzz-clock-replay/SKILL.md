@@ -9,7 +9,7 @@ description: Verify public fuzz-oracle clock changes survive replay.
 
 **Why:** An unrecorded direct clock change makes replay take a snapshot at a different revision, so a later rollback can restore a different state.
 
-**Review baseline:** `4c6134326070891e2f4ffe0dea77ca4615da31f4`.
+**Review baseline:** `67ce51ab28e9263259f5e8f5e40f5997f2fa43ff`.
 
 ## Covered code and checks
 
@@ -52,6 +52,8 @@ stateDiagram-v2
 Before the fix, `tick()`, snapshot, create and rollback could leave replay with a resource that live state removed. A generated real-code test reproduces the sequence; a separate test covers forward assignment. Five weakened models yield counterexamples for assignment guards, recording and replaying each clock change. Eleven scratch implementation mutations exercise event recording, replay, validation, exhaustion ordering and reserved names; the restored full skill passes. Z3 checks abstract integer assignment bounds and provides a rewind witness without a guard.
 
 The model uses one clock change and one abstract resource, and treats event recording and replay as atomic. It does not prove TypeScript refinement, model arbitrary reflection or reentrant getters, allocation failure, concurrency, or persistence. Safe-integer exhaustion and internal retry/rollback clocks are covered separately by the snapshot-clock skill. Histories created before this change did not record direct clock operations and may need regeneration. This is an in-memory testing oracle, not production persistence.
+
+The [restore metadata model](../verify-fuzz-restore/SKILL.md) checks that callers cannot change the rollback target or replay baseline used by restoration.
 
 ## Keep in sync
 

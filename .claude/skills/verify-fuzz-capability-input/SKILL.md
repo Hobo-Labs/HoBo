@@ -9,7 +9,7 @@ description: Verify fuzz-oracle capability input capture, attenuation and replay
 
 **Why:** An unsupported verb used to appear in live state but disappear on replay; caller-owned arrays could also change live state without an event. Both cases produce false fuzz-oracle divergences.
 
-**Review baseline:** `4c6134326070891e2f4ffe0dea77ca4615da31f4`.
+**Review baseline:** `67ce51ab28e9263259f5e8f5e40f5997f2fa43ff`.
 
 ## Covered code and checks
 
@@ -56,6 +56,8 @@ The related [event history model](../verify-fuzz-event-history/SKILL.md) checks 
 The related [state-view model](../verify-fuzz-state-views/SKILL.md) checks detached read results and checkpoints.
 
 The related [public clock model](../verify-fuzz-clock-replay/SKILL.md) checks direct clock changes and replay.
+
+The [restore metadata model](../verify-fuzz-restore/SKILL.md) checks that callers cannot change the rollback target or replay baseline used by restoration.
 
 ## Keep in sync
 
