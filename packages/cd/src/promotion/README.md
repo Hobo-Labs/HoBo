@@ -108,18 +108,28 @@ retries also compare their recorded inputs and return the persisted expiry.
 This binding does not fence concurrent executions of the same request.
 CUE constraints: [`data-models/promotion.cue`](../../data-models/promotion.cue).
 
-New rollbacks claim a separate `cd-rollback-claim-<rollback-id>` stream before
-effects. Its metadata binds the Camp, reason, requested Set, and current Set;
-the result stores the request fingerprint. Conflicting requests using the same
-key are refused. If the current Set has changed since the claim, a retry is
-refused for reconciliation instead of attempting another rollback. A historical
-rollback without a fingerprint cannot safely establish its original target
-Set, so its retry is refused; inspect the previous result before using a new
-key. The rollback rechecks its base before preparing the Delta; the desired
-state port must atomically enforce that base through apply. A claim does not
-fence concurrent retries of the same rollback or prove that a failed result
-append left no external effects. Rail effects and other effects that do not
-change the current Set need separate reconciliation.
+New rollbacks snapshot their inputs and claim a separate
+`cd-rollback-claim-<rollback-id>` stream before effects. The claim binds the
+Camp, reason, requested Set, and current Set; the result stores the request
+fingerprint. Conflicting requests using the same key are refused. A second
+durable claim binds a unique execution token to that request and Set. Only the
+attempt that observes its own returned and stored token may start rollback
+effects, including Rail restoration. An overlapping retry sees a conflict, or
+returns the recorded result if it has finished. This requires an atomic,
+durable event store that preserves claim metadata and unique tokens; upgrade
+or stop all old promotion workers before relying on this protocol, since an
+old worker does not honor the execution claim.
+
+A claim whose result is unknown must be inspected and reconciled before new
+work. A crash, lost acknowledgement, denied operation after the execution
+claim, or result-append failure can leave such a claim even when no effect
+occurred. An unfinished legacy claim predating execution fencing is also
+refused; completed historical results are returned only when their binding
+can be matched. A changed current Set is refused for reconciliation. The
+rollback rechecks its base before preparing a Delta, and the desired-state
+port must atomically enforce that base through apply. Different rollback keys,
+other concurrent Camp changes, external provider behavior, and recovery of an
+effect whose result was not recorded require separate coordination.
 
 ## Parse, don't validate
 
@@ -233,8 +243,8 @@ stateDiagram-v2
 
 The rollback-retry model assumes the effect changes the current Set and the
 check and effect are atomic. TLC explored five states and nine steps; five
-same-label steps are hidden. Rail effects and concurrent reads need additional
-fencing.
+same-label steps are hidden. The separate execution claim covers overlapping
+attempts using one rollback key; the model below does not represent that claim.
 
 ```mermaid
 stateDiagram-v2

@@ -5,6 +5,7 @@
 // environment group back (D12). Every step is a recorded fact, so `tick`
 // resumes any promotion from its journal after a crash.
 import { create } from "@bufbuild/protobuf";
+import { randomUUID } from "node:crypto";
 import {
 	createResolvedDeploymentSet,
 	DEPLOYMENT_PLAN_SCHEMA,
@@ -16,7 +17,7 @@ import type {
 	EventPosition,
 	ReadAllOptions,
 } from "@hobo/core";
-import { defineSaga } from "@hobo/events";
+import { createSagaStepEmittedEvent, defineSaga } from "@hobo/events";
 import {
 	type DeltaRecord,
 	DeltaRecordSchema,
@@ -108,6 +109,7 @@ import {
 	type PromotionView,
 	recordOf,
 	SAGA_FACT,
+	sagaIdOf,
 	STEP,
 	type StepName,
 	startedFact,
@@ -2035,7 +2037,8 @@ export function createPromotionService(
 		},
 
 		async rollback(input, ctx) {
-			if (input.idempotencyKey === "")
+			const request = Object.freeze({ ...input });
+			if (request.idempotencyKey === "")
 				return {
 					ok: false,
 					reasons: [
@@ -2043,17 +2046,17 @@ export function createPromotionService(
 							PROMOTION_REASON.invalidRequest,
 							"a rollback needs an idempotency key",
 							"Pass a stable idempotency key.",
-							input.campId,
+							request.campId,
 						),
 					],
 				};
-			const rollbackId = rollbackIdFor(d.tenant, input.idempotencyKey);
+			const rollbackId = rollbackIdFor(d.tenant, request.idempotencyKey);
 			const fingerprint = `sha256:${sha256Hex(
 				canonicalJson({
 					version: 1,
-					campId: input.campId,
-					reason: input.reason,
-					toSetId: input.toSetId ?? "",
+					campId: request.campId,
+					reason: request.reason,
+					toSetId: request.toSetId ?? "",
 				}),
 			)}`;
 			const differentRequest = (): Outcome<PromotionRecord> => ({
@@ -2061,7 +2064,7 @@ export function createPromotionService(
 				reasons: [
 					reason(
 						PROMOTION_REASON.idempotencyReused,
-						`idempotency key ${input.idempotencyKey} cannot be matched to this rollback`,
+						`idempotency key ${request.idempotencyKey} cannot be matched to this rollback`,
 						"Inspect the prior rollback and use a new key for different work.",
 						rollbackId,
 					),
@@ -2075,9 +2078,9 @@ export function createPromotionService(
 			const authz = await d.authorizer.authorize(
 				"rollback",
 				{
-					campId: input.campId,
-					reason: input.reason,
-					toSetId: input.toSetId ?? "",
+					campId: request.campId,
+					reason: request.reason,
+					toSetId: request.toSetId ?? "",
 				},
 				ctx,
 			);
@@ -2090,14 +2093,14 @@ export function createPromotionService(
 							PROMOTION_REASON.unauthorized,
 							`${principalName(ctx.principal)} may only propose a rollback`,
 							"Ask an operator with the rollback grant to run it (ADR-0094).",
-							input.campId,
+							request.campId,
 						),
 					],
 				};
 			// Bind the request before any rollback effect. A competing writer may
 			// have claimed the stream after our first lookup; read its binding.
 			const claimStream = `cd-rollback-claim-${rollbackId}`;
-			const initial = await d.desired.current(input.campId);
+			const initial = await d.desired.current(request.campId);
 			try {
 				await d.store.append(
 					claimStream,
@@ -2109,6 +2112,7 @@ export function createPromotionService(
 								idempotencyKey: "rollback:started",
 								rollbackRequestFingerprint: fingerprint,
 								rollbackBaseSetId: initial?.setId ?? "",
+								rollbackExecutionProtocol: 2,
 							},
 						},
 					],
@@ -2136,7 +2140,19 @@ export function createPromotionService(
 				};
 			if (reservation.meta?.rollbackRequestFingerprint !== fingerprint)
 				return differentRequest();
-			const current = await d.desired.current(input.campId);
+			if (reservation.meta?.rollbackExecutionProtocol !== 2)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`rollback ${rollbackId} predates execution fencing`,
+							"Inspect and reconcile the previous rollback before starting new work.",
+							rollbackId,
+						),
+					],
+				};
+			const current = await d.desired.current(request.campId);
 			if (reservation.meta?.rollbackBaseSetId !== (current?.setId ?? "")) {
 				const completed = await load(rollbackId);
 				if (completed?.trigger.meta?.rollbackRequestFingerprint === fingerprint)
@@ -2148,7 +2164,7 @@ export function createPromotionService(
 							PROMOTION_REASON.journalConflict,
 							`the current Set changed after rollback ${rollbackId} was claimed`,
 							"Inspect and reconcile the previous rollback before starting new work.",
-							input.campId,
+							request.campId,
 						),
 					],
 				};
@@ -2158,12 +2174,13 @@ export function createPromotionService(
 				.reverse()
 				.find(
 					(v) =>
-						!v.rolledBack && v.camps.get(input.campId)?.steps.has(STEP.applied),
+						!v.rolledBack &&
+						v.camps.get(request.campId)?.steps.has(STEP.applied),
 				);
-			const progress = latest?.camps.get(input.campId);
+			const progress = latest?.camps.get(request.campId);
 			// D11: never roll back past a completed Trails contract.
 			for (const v of all) {
-				const p = v.camps.get(input.campId);
+				const p = v.camps.get(request.campId);
 				const contracted = p?.steps.get(STEP.contracted)?.handle;
 				if (contracted && p?.steps.get(STEP.applied)?.handle === current?.setId)
 					return {
@@ -2171,9 +2188,9 @@ export function createPromotionService(
 						reasons: [
 							reason(
 								PROMOTION_REASON.rollbackPastContract,
-								`Camp ${input.campId} completed Trails contract of migration ${contracted}; the predecessor Set expects the old data shape`,
+								`Camp ${request.campId} completed Trails contract of migration ${contracted}; the predecessor Set expects the old data shape`,
 								`Run the compensating Trails expand for migration ${contracted} (re-add the contracted shape), then roll back.`,
-								input.campId,
+								request.campId,
 							),
 						],
 					};
@@ -2183,8 +2200,78 @@ export function createPromotionService(
 			const freight = latest
 				? await d.freight.get(asFreight(latest.request.freightId))
 				: undefined;
-			if (latest && progress && freight && isRail(freight) && !input.toSetId) {
-				const restored = await restoreCamp(latest, progress, input.reason, ctx);
+			// Only the writer whose unique token is durably claimed may start an
+			// external rollback effect. A retry cannot infer an unfinished claim is
+			// unused, even when the current Set has not changed (for example Rail).
+			const executionToken = randomUUID();
+			const executionFact = createSagaStepEmittedEvent({
+				sagaId: sagaIdOf(rollbackId),
+				step: `${request.campId}|rollback-execution-claimed`,
+				emittedType: "rollback execution claimed",
+			});
+			const matchesExecution = (event: EventEnvelope | undefined) =>
+				event?.type === SAGA_FACT.stepEmitted &&
+				event.meta?.idempotencyKey === "rollback:execution" &&
+				event.meta?.rollbackExecutionProtocol === 2 &&
+				event.meta?.rollbackRequestFingerprint === fingerprint &&
+				event.meta?.rollbackBaseSetId === reservation.meta?.rollbackBaseSetId &&
+				event.meta?.rollbackExecutionToken === executionToken;
+			let executionVerified = false;
+			try {
+				const claimed = await appendOnce({
+					store: d.store,
+					streamId: claimStream,
+					type: SAGA_FACT.stepEmitted,
+					data: toJsonValue(executionFact.data),
+					idempotencyKey: "rollback:execution",
+					meta: {
+						rollbackExecutionProtocol: 2,
+						rollbackRequestFingerprint: fingerprint,
+						rollbackBaseSetId: current?.setId ?? "",
+						rollbackExecutionToken: executionToken,
+					},
+					tenant: d.tenant,
+					actor: ctx.principal,
+				});
+				const stored = (await readStream(d.store, claimStream)).filter(
+					(event) => event.meta?.idempotencyKey === "rollback:execution",
+				);
+				executionVerified =
+					stored.length === 1 &&
+					matchesExecution(claimed) &&
+					matchesExecution(stored[0]);
+			} catch {
+				// A lost acknowledgement or unreadable claim cannot authorize effects.
+			}
+			if (!executionVerified) {
+				const completed = await load(rollbackId);
+				if (completed?.trigger.meta?.rollbackRequestFingerprint === fingerprint)
+					return { ok: true, value: recordOf(completed.view) };
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`rollback ${rollbackId} execution is claimed or cannot be verified`,
+							"Inspect and reconcile the prior attempt before starting new work.",
+							rollbackId,
+						),
+					],
+				};
+			}
+			if (
+				latest &&
+				progress &&
+				freight &&
+				isRail(freight) &&
+				!request.toSetId
+			) {
+				const restored = await restoreCamp(
+					latest,
+					progress,
+					request.reason,
+					ctx,
+				);
 				if (!restored.ok) return restored;
 				restoredFreight = latest.request.freightId;
 			} else {
@@ -2192,14 +2279,14 @@ export function createPromotionService(
 					const rolloutId = progress.steps.get(STEP.rollout)?.handle;
 					if (rolloutId)
 						await d.rollouts.rollback(
-							{ rolloutId: asRollout(rolloutId), reason: input.reason },
+							{ rolloutId: asRollout(rolloutId), reason: request.reason },
 							ctx,
 						);
 				}
 				const restored = await rollbackSet(
-					input.campId,
+					request.campId,
 					current?.setId ?? "",
-					input.toSetId,
+					request.toSetId,
 					rollbackId,
 					ctx,
 					true,
@@ -2211,22 +2298,22 @@ export function createPromotionService(
 			if (latest && progress && progress.terminal === undefined) {
 				await appendStep(
 					latest,
-					input.campId,
+					request.campId,
 					STEP.compensated,
 					`rollback ${rollbackId}`,
 					ctx,
 				);
 				await appendOutcome(
 					latest,
-					input.campId,
+					request.campId,
 					CD_EVENTS.EnvPromoteRejected,
 					PromotionState.FAILED,
 					[
 						reason(
 							PROMOTION_REASON.compensated,
-							`rolled back by ${principalName(ctx.principal)}: ${input.reason}`,
+							`rolled back by ${principalName(ctx.principal)}: ${request.reason}`,
 							"Promote again when the cause is fixed.",
-							input.campId,
+							request.campId,
 						),
 					],
 					ctx,
@@ -2236,18 +2323,18 @@ export function createPromotionService(
 				schemaVersion: PROMOTION_SCHEMA,
 				promotionId: rollbackId,
 				freightId: restoredFreight,
-				targetCampIds: [input.campId],
+				targetCampIds: [request.campId],
 				state: PromotionState.ROLLED_BACK,
 				requestedBy: principalName(ctx.principal),
 				requestedAt: iso(ctx.now()),
-				idempotencyKey: input.idempotencyKey,
+				idempotencyKey: request.idempotencyKey,
 				gateDecisionId,
 				reasons: [
 					reason(
 						"rollback",
-						input.reason,
+						request.reason,
 						"Promote again when the cause is fixed.",
-						input.campId,
+						request.campId,
 					),
 				],
 				subject:
@@ -2281,7 +2368,7 @@ export function createPromotionService(
 				return differentRequest();
 			const persisted = await load(rollbackId);
 			if (!persisted) return differentRequest();
-			metric(PROMOTION_METRIC.rolledBack, ctx.now(), { camp: input.campId });
+			metric(PROMOTION_METRIC.rolledBack, ctx.now(), { camp: request.campId });
 			return { ok: true, value: recordOf(persisted.view) };
 		},
 
