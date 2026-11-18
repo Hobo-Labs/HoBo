@@ -186,8 +186,11 @@ export function toStatusPageModel(
 			component?.lastSignalAt !== undefined
 				? Date.parse(component.lastSignalAt)
 				: Number.NaN;
+		const signalAgeMs = evaluatedAtMs - lastSignalMs;
 		const fresh =
-			!Number.isNaN(lastSignalMs) && evaluatedAtMs - lastSignalMs <= budgetMs;
+			Number.isFinite(signalAgeMs) &&
+			signalAgeMs >= 0 &&
+			signalAgeMs <= budgetMs;
 		const delayed = !fresh;
 		if (delayed) staleComponentIds.push(id);
 		let status: ComponentStatus = fresh

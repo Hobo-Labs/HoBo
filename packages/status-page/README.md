@@ -36,6 +36,7 @@ static site is the **read store**, rebuildable from zero. Types follow
 - **Evaluation** (`src/model.ts`): wall-clock enters exactly once, as an
   explicit `evaluatedAt`. Components without a signal inside the freshness
   budget render **delayed/unknown — never stale operational** (ADR-0077 §4).
+  A signal dated after `evaluatedAt` is also delayed until the clock reaches it.
 - **Render** (`src/render.ts`): pure HTML string renderer, HoBo Rubberhose
   chrome (see `DESIGN.md`), strict inline CSP, `escapeHtml` on every value.
 - **Statuspage-v2 JSON** (`src/statuspage-json.ts`): emits the de-facto
