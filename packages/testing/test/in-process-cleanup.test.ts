@@ -68,6 +68,11 @@ it("fences a failed startup until listener cleanup can be retried", async () => 
 		expect(failure).toBeInstanceOf(InProcessStartupCleanupError);
 		expect(failure.cause).toBe(startupFailure);
 		expect(listening.mock.instances[0]?.listening).toBe(true);
+		try {
+			Object.assign(failure, { retryCleanup: async () => {} });
+		} catch (cause) {
+			expect(cause).toBeInstanceOf(TypeError);
+		}
 		await expect(harness.deploy(bindle)()).rejects.toBe(failure);
 		await harness.destroy(bindle)();
 		expect(listening.mock.instances[0]?.listening).toBe(false);

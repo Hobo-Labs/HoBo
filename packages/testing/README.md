@@ -81,8 +81,9 @@ destroy calls share teardown, and a new deploy waits for that teardown to
 finish. If teardown fails, deploy continues to reject until an explicit
 `destroy(bindle)()` retry succeeds.
 If startup fails after opening listeners, the in-process lane closes them before
-reporting the failure. If that cleanup also fails, the harness keeps the Bindle
-fenced until `destroy(bindle)()` successfully retries the cleanup.
+reporting the failure. If that cleanup also fails, the harness reports the
+cleanup error and keeps the Bindle fenced until `destroy(bindle)()` successfully
+retries the cleanup.
 The [lifecycle verification skill](../../.agents/skills/verify-testing-harness-lifecycle/SKILL.md)
 records its tests, bounded state models, assumptions, and verification commands.
 

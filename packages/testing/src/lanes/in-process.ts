@@ -207,6 +207,7 @@ export class InProcessStartupCleanupError extends Error {
 		this.name = "InProcessStartupCleanupError";
 		this.cleanupCause = cleanupCause;
 		this.#servers = servers;
+		Object.freeze(this);
 	}
 	/* oxlint-enable anti-slop/no-unknown-parameters */
 
