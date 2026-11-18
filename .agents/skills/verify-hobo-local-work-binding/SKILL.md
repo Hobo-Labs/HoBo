@@ -7,7 +7,7 @@ description: Verify that HoBo's local placement and worker execute the exact pro
 
 **Property:** Local placement and execution use a content-addressed copy whose exact selected bytes and read/execute modes hash to the digest the Yard approved. The persistent worker verifies that copy before serving. A failure can authorize one Bindle and execute another after a working-tree edit or stale module-cache read.
 
-**Review baseline:** commit `fcb3f335f037aa2c0097d50e8741a972947734d1`. PASS for the bounded model, symbolic abstraction, generated tests, lifecycle tests and implementation mutations below.
+**Review baseline:** commit `798ccc7f9460ef070d757431a708f42eef31b703`. PASS for the bounded model, symbolic abstraction, generated tests, lifecycle tests and implementation mutations below. `verify-hobo-embedded-camp-binding` checks the embedded Camp handoff separately.
 
 ## Covered code
 
