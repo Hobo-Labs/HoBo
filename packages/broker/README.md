@@ -51,6 +51,30 @@ covered by that unknown-field check. These functions are a public codec, not a
 deployed transport or a guarantee that an older receiver enforces the marker.
 The protobuf receipt still omits execution-unit details.
 
+The [Yard request wire skill](../../.agents/skills/verify-yard-request-wire/SKILL.md)
+checks a bounded model of the codec. This projection hides 47 same-state steps;
+acceptance means the request can proceed to authorization, not that its sender
+or its claimed digest has been authenticated.
+
+```mermaid
+stateDiagram-v2
+  s0: Placement request received
+  s1: Placement request refused
+  s2: Wire fields under review
+  s3: Work snapshot under review
+  s4: Request digest under review
+  s5: Placement request accepted for authorization
+  [*] --> s0
+  s0 --> s1: refuse unreadable bytes
+  s0 --> s2: read the request
+  s2 --> s1: refuse unknown fields or refuse an unsupported version
+  s2 --> s3: inspect the work snapshot
+  s3 --> s1: refuse missing work or refuse an invalid amount or refuse an invalid selection or refuse a missing identity
+  s3 --> s4: inspect the digest
+  s4 --> s1: refuse an invalid digest or refuse inconsistent work
+  s4 --> s5: accept the request for authorization
+```
+
 The [Yard Camp binding skill](../../.agents/skills/verify-yard-camp-binding/SKILL.md)
 checks a bounded placement flow. This projection hides 60 same-state steps and
 114 caller-edit steps; it assumes a ready Yard and abstracts host authorization.
