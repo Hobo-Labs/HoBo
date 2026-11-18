@@ -105,6 +105,21 @@ describe("source policy", () => {
 		);
 	});
 
+	it("accepts type assertion safety annotations while rejecting deferred markers", () => {
+		const text = [
+			"// SAFETY: the value was checked at the boundary",
+			"const value = input as string;",
+			"// SAFETY: TODO validate this later",
+			"const other = input as string;",
+			"// ordinary explanatory comment",
+			"const last = input;",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1, 3, 5])).map((item) => item.line),
+			[3, 5],
+		);
+	});
+
 	it("checks added lines inside an existing multiline comment", () => {
 		const text = "/* existing\nnew explanation\n*/\nexport const value = 1;\n";
 		assert.equal(commentViolations("x.ts", text, new Set([2])).length, 1);
@@ -187,7 +202,6 @@ describe("source policy", () => {
 		assert.match(result.stderr, /generated\/handwritten\.ts:1/u);
 		assert.doesNotMatch(result.stderr, /generated\/sdk\/bindings\.d\.ts/u);
 	});
-
 
 	it("checks the staged snapshot rather than the working tree", () => {
 		const repo = fixture();

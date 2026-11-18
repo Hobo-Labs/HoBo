@@ -8,8 +8,8 @@ import { migrateDurableReceiptJournal } from "../src/durable-receipt-journal.js"
 import {
 	createRivetDurableTopicActor,
 	createRivetDurableTopicBusActor,
-	type RivetDurableTopicBusOptions,
 	isRivetDurableTopicBinding,
+	type RivetDurableTopicBusOptions,
 } from "../src/durable-topic-actor.js";
 
 const opened: DatabaseSync[] = [];
@@ -195,7 +195,10 @@ describe("Rivet durable topic log actor", () => {
 		await migrateDurableReceiptJournal(storage.db);
 		const reject = () => Promise.reject(new Error("asynchronous callback"));
 		const badBoolean = reject as unknown as () => boolean;
-		const badScope = reject as unknown as () => { tenant: string; instance: string };
+		const badScope = reject as unknown as () => {
+			tenant: string;
+			instance: string;
+		};
 		const base: RivetDurableTopicBusOptions = {
 			actorName: "orders",
 			semanticDigest: `sha256:${"a".repeat(64)}`,
@@ -445,10 +448,6 @@ describe("Rivet durable topic log actor", () => {
 
 	it("preserves all in-profile attribute keys and bounds maximum request, log and audit pages", async () => {
 		const f = await fixture();
-		// Every UTF-8 input byte expands to at most six JSON bytes, each attribute
-		// contributes at most 64 structural bytes, and base64 expands by 4/3.
-		// These conservative limits include all partial-log JSON fields, array
-		// separators, safe-integer sequences and 4096 extra envelope bytes.
 		const limits = f.actor.limits;
 		const encodedName = limits.nameBytes * 6 + 2;
 		const encodedAttributes =

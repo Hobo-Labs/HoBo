@@ -10,30 +10,9 @@ import {
 import type { RawAccess } from "rivetkit/db";
 import { synchronousResult } from "./synchronous-result.js";
 
-// Actor-internal building block, not a messaging provider or a network boundary.
-// The trusted actor and host must authenticate and pin tenant/instance
-// authority through response delivery, validate and canonicalize transport
-// inputs, isolate the fixed reducer from ambient effects, and fence old owners.
-// The verifier must independently attest the complete executable/dependency
-// closure and behavior-affecting configuration for the tenant, instance and
-// generation; an arbitrary digest alone is not evidence. It must fail closed
-// if that environment changes or cannot be verified, including across failover.
-// The actor database is trusted, exclusive to its authenticated owner and
-// independently size-limited by the host. SQL size projections alone cannot
-// bound SQLite work on arbitrary corruption. This is not a tamper-proof ledger:
-// valid-looking row edits and deletions cannot be detected by schema checks.
-// Migration requires authenticated state transfer and fencing old owners.
-// A synchronous verifier, reducer or SQLite call may block the actor thread.
-// The host must provide an independent watchdog/process boundary and bounded
-// transport/database inputs; the finite model tests do not prove liveness.
-// Before calling this internal journal, the bounded transport must apply the
-// public operation parser to reject extra, accessor-backed or malformed fields.
-// This journal extracts only the two identity fields and is not that boundary.
-// JavaScript function types do not enforce purity or host isolation.
 const MAX_REQUEST_BYTES = 131_072;
 const MAX_RECEIPT_BYTES = 262_144;
 const MAX_STATE_BYTES = 4_194_304;
-/** Actor-local wire/state ceilings; item-count limits alone do not imply these. */
 export const RIVET_DURABLE_JOURNAL_BOUNDS = Object.freeze({
 	requestBytes: MAX_REQUEST_BYTES,
 	receiptBytes: MAX_RECEIPT_BYTES,
@@ -84,12 +63,10 @@ type JournalInput = {
 	readonly operation: DurableMessagingOperation;
 	readonly scope: Scope;
 	readonly method: string;
-	/** Authenticated immutable digest of reducer semantics and state schema. */
 	readonly semanticDigest: string;
 	readonly request: Uint8Array;
 };
 
-/** Installs journal state into the same actor-local database as business state. */
 export async function migrateDurableReceiptJournal(
 	database: RawAccess,
 ): Promise<void> {
@@ -158,14 +135,6 @@ function parsedDecision(status: unknown, value: unknown): Decision | undefined {
 }
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
-/**
- * Serialize a state transition and its receipt in one transaction. The fixed,
- * trusted actor reducer is synchronous and receives no database capability;
- * its state and decision are captured before any further database await.
- * Actor code and its host must prohibit ambient or detached effects separately.
- * Any transaction or reducer failure returns unknown. Callers must separately
- * validate returned receipt contents at the transport boundary.
- */
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: persisted SQLite rows and reducer outputs are validated before use. */
 export async function runDurableReceiptJournal(
 	database: RawAccess,
@@ -289,8 +258,6 @@ export async function runDurableReceiptJournal(
 			operation,
 		});
 		if (synchronousResult(authorized(authority)) !== true) return uncertain();
-		// The host supplies the digest independently of the client and keeps the
-		// corresponding source and reducer fenced for this actor generation.
 		pinnedSemanticDigest = semanticDigest;
 	} catch {
 		return uncertain();

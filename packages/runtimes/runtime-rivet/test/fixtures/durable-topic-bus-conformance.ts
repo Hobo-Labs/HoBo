@@ -71,9 +71,6 @@ const matches = (actual: string | null, expected: string) =>
 	/^[a-f0-9]{64}$/u.test(actual) &&
 	timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
 
-/** Real bus reducer/client over actor HTTP and independent per-tenant SQLite stores.
- * OS process/fault/ownership controls not implemented by this fixture fail closed.
- */
 export async function createSqliteBusConformanceHost(): Promise<RivetMessagingConformanceHost> {
 	return createSqliteBusConformanceHostWithStorage({});
 }
@@ -114,7 +111,6 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 				claim.headers.get("x-hobo-instance-proof"),
 				signFixtureClaim(claim, "instance"),
 			),
-		// Test-only assertions; no independent ingress or host-fencing evidence.
 		verifyIngress: ({
 			maxRequestBytes,
 			maxChunkBytes,

@@ -21,7 +21,11 @@ function readPrivate<V>(table: WeakMap<object, V>, key: object): V | undefined {
 	// SAFETY: the private table determines the value type for this key.
 	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
 }
-function writePrivate<V>(table: WeakMap<object, V>, key: object, value: V): void {
+function writePrivate<V>(
+	table: WeakMap<object, V>,
+	key: object,
+	value: V,
+): void {
 	intrinsicApply(intrinsicWeakSet, table, [key, value]);
 }
 
@@ -43,7 +47,6 @@ const METHODS = [
 ] as const;
 type TopicMethod = (typeof METHODS)[number];
 
-/** Capabilities independently attested for the bound actor, not inferred by this client. */
 export interface RivetDurableTopicCapabilities {
 	readonly topicCreation: boolean;
 	readonly publish: boolean;
@@ -57,7 +60,6 @@ export interface RivetDurableTopicCapabilities {
 	readonly legacyWit: boolean;
 }
 
-/** A host-authenticated binding to one exclusive, durable Rivet actor. */
 export interface RivetDurableTopicClientBinding {
 	readonly actorName: string;
 	readonly actorKey: readonly string[];
@@ -68,7 +70,6 @@ export interface RivetDurableTopicClientBinding {
 	readonly actorCapabilities: RivetDurableTopicCapabilities;
 }
 
-/** Facts to authenticate at the host and independently at the actor boundary. */
 export interface RivetDurableTopicRequest {
 	readonly actorName: string;
 	readonly actorKey: readonly string[];
@@ -82,7 +83,6 @@ export interface RivetDurableTopicRequest {
 	readonly requestBase64: string;
 }
 
-/** A host-issued metadata capability, revoked permanently for this client generation. */
 export interface RivetDurableTopicMetadataGrant {
 	readonly revoke: () => void;
 }
@@ -98,7 +98,6 @@ export function createRivetDurableTopicMetadataGrant(): RivetDurableTopicMetadat
 	return grant;
 }
 
-/** Host evidence for the exact transport and independently bounded ingress. */
 export interface RivetDurableTopicTransportClaim {
 	readonly phase: "dispatch" | "disclose";
 	readonly binding: RivetDurableTopicClientBinding;
@@ -111,7 +110,6 @@ export interface RivetDurableTopicTransportClaim {
 	readonly responseBase64?: string;
 }
 
-/** A retained log row carries no lease or acknowledgement authority. */
 export interface RivetDurableTopicLogMessage extends DurableMessagingMessage {
 	readonly topic: string;
 	readonly sequence: number;
@@ -134,10 +132,8 @@ export type RivetDurableTopicLogOutcome =
 			readonly code: DurableMessagingRejectionCode;
 	  };
 
-/** Durable operations remain callable so the actor can durably reject unsupported ones. */
 export interface RivetDurableTopicClient extends DurableMessaging {
 	readonly actorCapabilities: RivetDurableTopicCapabilities;
-	/** Read the retained log without acquiring a lease or acknowledging delivery. */
 	readRetainedLog(input: {
 		readonly topic: string;
 		readonly afterSequence: number;
@@ -147,22 +143,18 @@ export interface RivetDurableTopicClient extends DurableMessaging {
 
 export interface RivetDurableTopicClientOptions {
 	readonly binding: RivetDurableTopicClientBinding;
-	/** Independently attest actor routing, fencing and pre-allocation stream limits. */
 	readonly verifyTransport: (
 		claim: RivetDurableTopicTransportClaim,
 	) => Promise<boolean> | boolean;
 	readonly metadataGrant: RivetDurableTopicMetadataGrant;
-	/** Issue credentials bound to the exact actor key, scope, method and request bytes. */
 	readonly authorize: (
 		request: RivetDurableTopicRequest,
 	) =>
 		| Promise<Readonly<Record<string, string>>>
 		| Readonly<Record<string, string>>;
-	/** Check the current principal, binding and authenticated raw response before disclosure. */
 	readonly revalidate: (
 		request: RivetDurableTopicRequest & { readonly responseBase64: string },
 	) => Promise<boolean> | boolean;
-	/** Trusted host adapter to the bound Rivet actor handle's fetch method. */
 	readonly fetch: (path: string, init: RequestInit) => Promise<Response>;
 	readonly timeoutMs?: number;
 	readonly maxInFlight?: number;
@@ -181,7 +173,6 @@ interface ClientConstruction {
 }
 const clientConstructions = new WeakMap<object, ClientConstruction>();
 
-// This boundary receives untrusted application and actor data.
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: each input is validated and bounded before use or disclosure. */
 function invalid(): never {
 	throw new TypeError("rivet_topic.invalid_boundary_value");
@@ -317,12 +308,15 @@ function requestOperation(value: unknown): DurableMessagingOperation {
 	)
 		return invalid();
 	const field = Object.getOwnPropertyDescriptor(value, "operation");
-	if (field === undefined || !Object.hasOwn(field, "value") || !field.enumerable)
+	if (
+		field === undefined ||
+		!Object.hasOwn(field, "value") ||
+		!field.enumerable
+	)
 		return invalid();
 	return operation(field.value);
 }
 
-/** A plain, data-only envelope with primitive fields can be disproved locally. */
 function permanentlyMalformedOperation(value: unknown): boolean {
 	try {
 		if (
@@ -333,7 +327,11 @@ function permanentlyMalformedOperation(value: unknown): boolean {
 		)
 			return false;
 		const field = Object.getOwnPropertyDescriptor(value, "operation");
-		if (field === undefined || !Object.hasOwn(field, "value") || !field.enumerable)
+		if (
+			field === undefined ||
+			!Object.hasOwn(field, "value") ||
+			!field.enumerable
+		)
 			return false;
 		const envelope = record(field.value, ["id", "expiresAtMs"]);
 		if (
@@ -365,7 +363,6 @@ type InvalidEnvelope = {
 	readonly __hobo_invalid_request: InvalidSnapshot;
 };
 
-/** Preserve a bounded, type-tagged invalid request behind a guaranteed-invalid wire field. */
 function wireFallback(
 	input: unknown,
 	op: DurableMessagingOperation,
@@ -498,12 +495,6 @@ function limits(value: unknown): DurableMessagingLimits {
 			1,
 		),
 	});
-	// Attribute values and reasons may contain controls, whose JSON encoding can
-	// expand each UTF-8 byte to six ASCII bytes. Names reject controls and lone
-	// surrogates: only quotes and backslashes expand, to at most two bytes each.
-	// The delivery includes eight names (including the lease and DLQ provenance),
-	// and an audit event includes three. The fixed terms cover JSON syntax,
-	// numbers, attribute entries, and the containing envelope.
 	const payload = 4 * Math.ceil(cap.payloadBytes / 3);
 	const request =
 		payload +
@@ -606,7 +597,6 @@ function decodedMessage(value: unknown, cap: DurableMessagingLimits) {
 	);
 	return { ...captured, payload: new Uint8Array(binary) };
 }
-/** Deterministic JSON with bounded depth and node count; no value has custom serialization. */
 function canonical(
 	value: unknown,
 	budget = { nodes: 100_000 },
@@ -1046,7 +1036,11 @@ function headers(value: unknown): Headers {
 		)
 			return invalid();
 		const field = Object.getOwnPropertyDescriptor(value, key);
-		if (field === undefined || !Object.hasOwn(field, "value") || !field.enumerable)
+		if (
+			field === undefined ||
+			!Object.hasOwn(field, "value") ||
+			!field.enumerable
+		)
 			return invalid();
 		const val = text(field.value, 4096, false);
 		length += key.length + val.length;
@@ -1072,7 +1066,6 @@ async function cancelResponse(response: Response): Promise<void> {
 		const stream: ReadableStream<Uint8Array> | null = getter.call(response);
 		if (stream !== null) await stream.cancel();
 	} catch {
-		/* the host must separately fence a transport that cannot be cancelled */
 	}
 }
 async function responseBytes(
@@ -1145,7 +1138,6 @@ async function responseBytes(
 	return result;
 }
 
-/** Compare the private factory binding; this check is not host authorization. */
 export function isRivetDurableTopicClientFor(
 	client: unknown,
 	expected: { readonly actorName: string; readonly semanticDigest: string },
@@ -1165,7 +1157,6 @@ export function isRivetDurableTopicClientFor(
 	}
 }
 
-/** Compare complete captured options with values independently held by the host. */
 export function isRivetDurableTopicClientBoundTo(
 	client: unknown,
 	expected: RivetDurableTopicClientOptions,
@@ -1210,12 +1201,6 @@ export function isRivetDurableTopicClientBoundTo(
 	}
 }
 
-/**
- * Build a client for one host-attested Rivet HTTP actor binding. The host must
- * authenticate the exact actor key, principal, semantic digest and raw bytes on
- * both sides, enforce exclusive journal ownership, and fence every in-flight
- * call through disclosure. An arbitrary fetch callback is not that authority.
- */
 export function createRivetDurableTopicClient(
 	options: RivetDurableTopicClientOptions,
 ): RivetDurableTopicClient {

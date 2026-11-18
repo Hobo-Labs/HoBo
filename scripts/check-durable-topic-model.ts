@@ -38,7 +38,6 @@ function check(
 	expectedViolation?: string,
 ): void {
 	const directory = join(scratch, label);
-	// Each TLC run receives its own model and state directory.
 	mkdirSync(directory);
 	writeFileSync(join(directory, "DurableTopic.tla"), modelSource);
 	writeFileSync(join(directory, "DurableTopic.cfg"), modelConfig);

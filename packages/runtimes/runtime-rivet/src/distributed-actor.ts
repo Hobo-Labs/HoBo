@@ -262,7 +262,6 @@ function readSnapshot(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof */
 
-/** Shared lease and journal client. Credentials must be scoped by the host. */
 export function createRivetDistributedJournal(
 	namespace: RivetJournalNamespace,
 	scope: {

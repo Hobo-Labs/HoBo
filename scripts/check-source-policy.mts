@@ -40,7 +40,7 @@ const AST_GREP = join(
 const GENERATED_OR_VENDOR =
 	/^(?:external\/|tools\/oxlint\/anti-slop\/|packages\/wit\/src\/generated\/.*\.d\.ts$)|(?:^|\/)(?:_generated|dist|node_modules)\//u;
 const DIRECTIVE =
-	/^(?:\/\/\/\s*|\/\/\s*|\/\*+\s*(?:\*\s*)?|#\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
+	/^(?:\/\/\/\s*|\/\/\s*|\/\*+\s*(?:\*\s*)?|#\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:|SAFETY\s*:)/iu;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
 
 function git(args: string[]): string {

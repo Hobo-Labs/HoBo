@@ -71,7 +71,6 @@ function open(path = ":memory:") {
 			try {
 				sql.exec("ROLLBACK");
 			} catch {
-				/* commit may already have completed */
 			}
 			throw error;
 		} finally {

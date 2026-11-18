@@ -111,11 +111,13 @@ describe("durable messaging WIT host boundary", () => {
 		const verify = (() => pending) as unknown as Parameters<
 			typeof createDurableMessagingPortMetadataGrant
 		>[0]["verify"];
-		expect(() => createDurableMessagingPortMetadataGrant({
-			port,
-			limits: DURABLE_MESSAGING_LIMITS,
-			verify,
-		})).toThrow();
+		expect(() =>
+			createDurableMessagingPortMetadataGrant({
+				port,
+				limits: DURABLE_MESSAGING_LIMITS,
+				verify,
+			}),
+		).toThrow();
 		expect(reads).toBe(0);
 	});
 
@@ -139,7 +141,11 @@ describe("durable messaging WIT host boundary", () => {
 				},
 			});
 			try {
-				createDurableMessagingWitHost(port, { authorize: () => true, limitsGrant: grant, lifecycle });
+				createDurableMessagingWitHost(port, {
+					authorize: () => true,
+					limitsGrant: grant,
+					lifecycle,
+				});
 				accepted = true;
 			} catch {}
 		} finally {
@@ -1479,7 +1485,6 @@ describe("durable messaging WIT host boundary", () => {
 				authorize: () => {
 					const until = performance.now() + 15;
 					while (performance.now() < until) {
-						/* deliberately delay the event loop */
 					}
 					return true;
 				},

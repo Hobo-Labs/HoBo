@@ -82,7 +82,10 @@ function fixture(send: (path: string, init: RequestInit) => Promise<Response>) {
 describe("Rivet durable topic HTTP client", () => {
 	it("does not accept a forged client through substituted WeakMap methods", () => {
 		const forged = {};
-		const identity = { actorName: binding.actorName, semanticDigest: binding.semanticDigest };
+		const identity = {
+			actorName: binding.actorName,
+			semanticDigest: binding.semanticDigest,
+		};
 		const original = Object.getOwnPropertyDescriptor(WeakMap.prototype, "get");
 		if (original === undefined) throw new Error("WeakMap.get missing");
 		let calls = 0;
@@ -143,7 +146,6 @@ describe("Rivet durable topic HTTP client", () => {
 		expect(accepted).toBe(false);
 		expect(reads).toBe(0);
 	});
-
 
 	it("snapshots and signs exact canonical bytes; a lost committed acknowledgement remains unknown and retry is identical", async () => {
 		const message = {
@@ -600,7 +602,6 @@ describe("Rivet durable topic HTTP client", () => {
 			entered = true;
 			const until = performance.now() + 600;
 			while (performance.now() < until) {
-				// Intentionally delay the event loop so its timeout cannot fire first.
 			}
 		};
 		const fetch = vi.fn(async () => {

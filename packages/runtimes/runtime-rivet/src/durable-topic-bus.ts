@@ -1,7 +1,6 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type -- SAFETY: persisted and incoming JSON are parsed and bounded before use. */
 import { DURABLE_MESSAGING_LIMITS } from "@hobo/core";
 
-/** Bounded message-bus profile. State and receipts share an atomic journal. */
 export const RIVET_DURABLE_TOPIC_BUS_LIMITS = Object.freeze({
 	...DURABLE_MESSAGING_LIMITS,
 	payloadBytes: 8_192,
@@ -756,7 +755,6 @@ function transfer(
 	return { id, sequence };
 }
 
-/** Execute one bounded bus transition; the journal commits its result and receipt together. */
 export function reduceRivetTopicBus(
 	prior: string | undefined,
 	method: string,
@@ -1158,7 +1156,6 @@ export function reduceRivetTopicBus(
 		throw error;
 	}
 }
-/** A bounded, non-leased log read; consumers own checkpoints and effects. */
 export function readRivetTopicBusLog(
 	prior: string | undefined,
 	input: unknown,
@@ -1201,7 +1198,6 @@ export function readRivetTopicBusLog(
 	};
 }
 
-/** Core-compatible read-only audit pagination and explicit retention gaps. */
 export function readRivetTopicBusAudit(
 	prior: string | undefined,
 	input: unknown,

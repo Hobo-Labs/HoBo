@@ -1,7 +1,6 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type -- SAFETY: persisted and incoming JSON are parsed and bounded before use. */
 import { DURABLE_MESSAGING_LIMITS } from "@hobo/core";
 
-/** Explicitly partial async topic-log profile; it is not a HoBo message bus. */
 export const RIVET_DURABLE_TOPIC_LOG_LIMITS = Object.freeze({
 	...DURABLE_MESSAGING_LIMITS,
 	payloadBytes: 8_192,
@@ -316,7 +315,6 @@ function rejected(code: Reject): Reduction {
 	return { status: "rejected", code };
 }
 
-/** Apply only the explicitly advertised log operations; all group operations refuse. */
 export function reduceRivetTopicLog(
 	prior: string | undefined,
 	method: string,
@@ -419,7 +417,6 @@ export function reduceRivetTopicLog(
 	return rejected("unsupported");
 }
 
-/** A bounded, non-leased log read; consumers own checkpoints and effects. */
 export function readRivetTopicLog(prior: string | undefined, input: unknown) {
 	const state = stateFromJson(prior);
 	if (
@@ -459,7 +456,6 @@ export function readRivetTopicLog(prior: string | undefined, input: unknown) {
 	};
 }
 
-/** Core-compatible read-only audit pagination and explicit retention gaps. */
 export function readRivetTopicAudit(prior: string | undefined, input: unknown) {
 	const state = stateFromJson(prior);
 	if (

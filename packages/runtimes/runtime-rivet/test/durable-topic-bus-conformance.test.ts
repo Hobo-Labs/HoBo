@@ -8,8 +8,6 @@ import { runRivetMessagingConformance } from "./fixtures/durable-topic-conforman
 it("runs supported generic cases against the real bus actor and SQLite", {
 	timeout: 120_000,
 }, async () => {
-	// Refuse unavailable controls before any work starts. A registry reopen is
-	// not a process restart and this fixture has no commit or owner-fence hooks.
 	const supported = new Set([
 		"group-isolation",
 		"lease-receipt-replay",

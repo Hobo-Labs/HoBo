@@ -10,7 +10,6 @@ import {
 	type RivetDurableTopicClientOptions,
 } from "../../src/durable-topic-client.js";
 
-/** Host controls must drive the real process, durable actor and requested faults. */
 export interface RivetMessagingConformanceHost {
 	open(
 		tenant: "tenant-a" | "tenant-b",
@@ -33,12 +32,6 @@ function requireFull(client: RivetDurableTopicClient): void {
 		throw new Error("Rivet actor does not advertise a complete durable bus");
 }
 
-/**
- * Construct the generic suite against independently supplied host controls.
- * This cannot prove the host really restarted a process, isolated tenants,
- * injected a fault at commit, or fenced prior owners. The suite's evidence
- * remains unverified until an independent runner attests those claims.
- */
 export async function createRivetMessagingConformanceHarness(
 	host: RivetMessagingConformanceHost,
 ): Promise<DurableMessagingConformanceHarness> {
@@ -133,7 +126,6 @@ export async function createRivetMessagingConformanceHarness(
 	};
 }
 
-/** Run bounded generic scenarios; results retain the generic runner's unverified evidence. */
 export async function runRivetMessagingConformance(
 	createHost: (
 		name: DurableMessagingConformanceCase,

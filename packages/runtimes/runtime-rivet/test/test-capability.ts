@@ -1,6 +1,5 @@
 import type { RivetSignedCapability } from "../src/distributed-auth.js";
 
-/** Only for fake transport tests; the real engine test uses an Ed25519 issuer. */
 export function testCapability(): RivetSignedCapability {
 	return {
 		version: 1,
