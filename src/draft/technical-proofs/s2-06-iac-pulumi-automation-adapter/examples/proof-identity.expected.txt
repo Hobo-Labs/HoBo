@@ -1,3 +1,0 @@
-slug: s2-06-iac-pulumi-automation-adapter
-layer: technical
-proof-identity: ok

@@ -760,7 +760,6 @@
         "src/draft/technical-proofs/provider-options-pattern-contract/**",
         "src/draft/technical-proofs/relational-projection-sink-contract/**",
         "src/draft/technical-proofs/resource-collection-engine-contract/**",
-        "src/draft/technical-proofs/s2-06-iac-pulumi-automation-adapter/**",
         "src/draft/technical-proofs/search-extension-packages-contract/**",
         "src/draft/technical-proofs/slo-gated-rollback-analysis-contract/**",
         "src/draft/technical-proofs/static-key-escape-hatch-contract/**",

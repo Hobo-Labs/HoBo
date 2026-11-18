@@ -4975,8 +4975,6 @@ importers:
 
   src/draft/technical-proofs/s2-04-planner-deployment-plan-dag-poc: {}
 
-  src/draft/technical-proofs/s2-06-iac-pulumi-automation-adapter: {}
-
   src/draft/technical-proofs/s3-05-allow-triple-effects-poc: {}
 
   src/draft/technical-proofs/s3-07-agent-guardrails-contract: {}

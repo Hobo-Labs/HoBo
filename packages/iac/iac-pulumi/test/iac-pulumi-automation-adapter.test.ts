@@ -32,7 +32,10 @@ async function loadProvidersFixtureProgram() {
 
 describe("S2-05 @hobo/iac-pulumi Automation API adapter", () => {
 	it("Given a trivial IacProgram, When preview/apply/refresh/destroy round-trip, Then typed outputs and bindings return", async () => {
-		const adapter = createPulumiAutomationAdapter();
+		const stateBackend = createInMemoryStateBackend();
+		const adapter = createPulumiAutomationAdapter({
+			engine: createInMemoryAutomationEngine({ stateBackend }),
+		});
 		const program = createTrivialIacProgram();
 
 		const preview = await adapter.preview(program);
@@ -72,6 +75,9 @@ describe("S2-05 @hobo/iac-pulumi Automation API adapter", () => {
 
 		assert.equal(destroy.resources.hello.status, "destroyed");
 		assert.deepEqual(destroy.stackOutputs, {});
+		assert.deepEqual(stateBackend.snapshot(), {
+			"trivial-demo/hello": { resources: {} },
+		});
 	});
 
 	it("Given providers epic recorded fixture, When adapter runs, Then per-resource stacks isolate blast radius", async () => {
