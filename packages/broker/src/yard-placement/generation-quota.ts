@@ -29,6 +29,8 @@ export interface YardGenerationQuotaClaim extends YardGenerationQuotaRequest {
 
 export interface YardGenerationQuotaAuthority {
 	readonly persistence: "durable-sqlite";
+	/** A typed denial means this call did not create a reservation. An untyped
+	 * error may follow a committed write whose acknowledgement was lost. */
 	reserve(request: YardGenerationQuotaRequest): {
 		readonly kind: "reserved" | "existing";
 		readonly claim: YardGenerationQuotaClaim;

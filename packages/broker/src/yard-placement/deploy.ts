@@ -48,10 +48,11 @@ import {
 	planYardGeneration,
 	type YardGenerationConnector,
 } from "./generation.js";
-import type {
-	YardGenerationQuotaAuthority,
-	YardGenerationQuotaClaim,
-	YardGenerationQuotaRequest,
+import {
+	type YardGenerationQuotaAuthority,
+	type YardGenerationQuotaClaim,
+	YardGenerationQuotaDeniedError,
+	type YardGenerationQuotaRequest,
 } from "./generation-quota.js";
 import { createYardRuntimeCatalog, localYardInstance } from "./inventory.js";
 import { matchYard } from "./matching.js";
@@ -1041,6 +1042,7 @@ export async function resolveBindleDeployment(
 		let quotaReserved = false;
 		let quotaCreatedByCall = false;
 		let quotaExecutionClaimed = false;
+		let quotaReservationOutcomeUnknown = false;
 		const quotaCurrent = () => {
 			try {
 				if (!quotaReserved || !quotaMethodsCurrent()) return false;
@@ -1174,7 +1176,17 @@ export async function resolveBindleDeployment(
 					throw new Error(
 						"generation authority changed before quota reservation",
 					);
-				const reservation = quotaReserve.call(quota, quotaRequest);
+				let reservation: ReturnType<typeof quotaReserve>;
+				quotaReservationOutcomeUnknown = true;
+				try {
+					reservation = quotaReserve.call(quota, quotaRequest);
+				} catch (error) {
+					// A typed denial promises no reservation was written. Other
+					// errors can follow a committed write with a lost response.
+					if (error instanceof YardGenerationQuotaDeniedError)
+						quotaReservationOutcomeUnknown = false;
+					throw error;
+				}
 				if (
 					!reservation ||
 					(reservation.kind !== "reserved" &&
@@ -1188,6 +1200,7 @@ export async function resolveBindleDeployment(
 				const stored = quotaLookup.call(quota, quotaRequest.idempotencyKey);
 				if (!quotaClaimMatches(stored) || !quotaMethodsCurrent())
 					throw new Error("generation quota claim could not be verified");
+				quotaReservationOutcomeUnknown = false;
 				if (!generationContextCurrent(true))
 					throw new Error(
 						"generation authority changed during quota reservation",
@@ -1269,7 +1282,9 @@ export async function resolveBindleDeployment(
 					"generation authority changed during quota execution claim",
 				);
 		} catch (error) {
-			let quotaReconciliation = "";
+			let quotaReconciliation = quotaReservationOutcomeUnknown
+				? "; quota reservation outcome is unknown; reconcile the claim"
+				: "";
 			if (quotaCreatedByCall && !quotaExecutionClaimed) {
 				try {
 					const cancelled = quotaCancelUnclaimed.call(quota, quotaRequest);
@@ -1290,6 +1305,7 @@ export async function resolveBindleDeployment(
 						quota.lookupCancellation !== quotaLookupCancellation
 					)
 						throw new Error("quota cancellation could not be verified");
+					quotaReconciliation = "";
 				} catch {
 					quotaReconciliation = "; quota reservation requires reconciliation";
 				}

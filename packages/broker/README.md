@@ -426,8 +426,8 @@ A missing authority, exhausted quota, mismatched claim or changed authority
 stops the provider call. The broker atomically claims a durable execution fence
 before provider work and rechecks authority at the call boundary. Only a newly
 claimed fence may provision; an existing claim is inspected. Custom authorities
-must implement both `claimExecution` and `cancelUnclaimed` with the same atomic
-semantics. The direct planner relies on its caller to establish that no matching
+must implement `claimExecution`, `cancelUnclaimed` and `lookupCancellation`
+with the same atomic semantics and request-bound cancellation evidence. The direct planner relies on its caller to establish that no matching
 Yard exists; standalone saga hosts must enforce their own policy and quota.
 
 The SQLite authority counts a fixed initial inventory and retains claimed or
@@ -437,9 +437,10 @@ execution fence has been claimed. Hosts can call `cancelUnclaimed` for other
 stranded reservations after checking the bound attempt. A cancelled key cannot
 be reused; a new attempt needs a new key. Cancellation fails if an execution
 fence exists, and the broker verifies both the bound cancellation tombstone and
-the missing claim; unverified cancellations require reconciliation. A lost budget
-reservation acknowledgement is reported for reconciliation, and budget holds
-remain separate from quota cancellation.
+the missing claim; unverified cancellations require reconciliation. Lost quota
+or budget reservation acknowledgements are reported for reconciliation. A typed
+quota denial must mean the call created no reservation; other errors may have
+committed. Budget holds remain separate from quota cancellation.
 
 On upgrade, existing claims are conservatively fenced and already-open older
 writers are refused by SQLite write guards. Limits and baseline remain fixed;
@@ -447,7 +448,7 @@ all writers must use the same database. Out-of-band Yards, incomplete baseline
 entries, inaccurate readiness attestations, lost database files and deleted Yard
 reconciliation remain outside this authority's guarantees.
 
-The bounded admission projection hides 18 same-state steps. It assumes the
+The bounded admission projection hides 32 same-state steps. It assumes the
 separate quota, policy, budget and provider evidence checks are truthful.
 
 ```mermaid
@@ -460,10 +461,13 @@ stateDiagram-v2
   s5: Generation quota unavailable
   s6: Generation quota reserved
   s7: Hosting budget reserved
-  s8: Quota authority changed before provider
-  s9: Provider called
-  s10: Yard readiness verified
-  s11: Outcome needs reconciliation
+  s8: Quota needs reconciliation
+  s9: Unused quota released
+  s10: Quota released, budget needs reconciliation
+  s11: Quota execution fence claimed
+  s12: Provider called
+  s13: Yard readiness verified
+  s14: Outcome needs reconciliation
   [*] --> s0
   s0 --> s2: refuse without quota authority
   s0 --> s1: check host policy
@@ -472,15 +476,48 @@ stateDiagram-v2
   s3 --> s5: refuse exhausted quota
   s3 --> s6: reserve generation quota
   s6 --> s7: reserve hosting budget
-  s7 --> s8: quota authority changes
-  s7 --> s9: call the provider
-  s8 --> s11: retain exposure for reconciliation
-  s9 --> s11: retain exposure for reconciliation
-  s9 --> s10: verify Yard readiness
+  s6 --> s8: reconcile unverified quota cancellation
+  s6 --> s9: release unused quota
+  s7 --> s10: release unused quota, retain budget for reconciliation
+  s7 --> s11: claim the execution fence
+  s11 --> s12: call the provider
+  s12 --> s14: retain exposure for reconciliation
+  s12 --> s13: verify Yard readiness
+  s11 --> s14: retain exposure for reconciliation
+```
+
+The two-worker claim and cancellation projection hides three same-state
+steps. A claimed reservation cannot be cancelled and only the winning caller
+may start provider work.
+
+```mermaid
+stateDiagram-v2
+  s0: Generation quota reserved
+  s1: Unused quota released
+  s2: Execution fence claimed
+  s3: Provider call started, quota retained
+  s4: Yard readiness verified
+  [*] --> s0
+  s0 --> s1: release unused quota
+  s0 --> s2: claim execution for one caller
+  s2 --> s3: call the provider
+  s3 --> s4: verify readiness
+```
+
+The migration projection hides 12 same-state steps and treats the SQLite
+upgrade as atomic. Wrong-scope attempts cannot modify the store.
+
+```mermaid
+stateDiagram-v2
+  s0: Legacy quota store
+  s1: Existing claims fenced, old writers refused
+  [*] --> s0
+  s0 --> s1: fence existing claims and require the new protocol
 ```
 
 The bounded quota projection follows one of three requests and hides 23
-same-state steps; it assumes atomic storage and trusted baseline and evidence.
+same-state steps; it abstracts execution claims and cancellation, and assumes
+atomic storage and trusted baseline and evidence.
 
 ```mermaid
 stateDiagram-v2
