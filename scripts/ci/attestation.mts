@@ -229,6 +229,7 @@ export type AttestationStatement = Readonly<{
 	/** The tested commit and its base. Jobs that examine commits are bound to these. */
 	head: string;
 	base: string;
+	testedCommit?: string;
 	jobs: readonly string[];
 	events: readonly string[];
 	startedAt: string;
@@ -494,6 +495,11 @@ function parseStatement(value: JsonValue | undefined): AttestationStatement {
 		baseTree: objectId(object.baseTree, "statement.baseTree"),
 		head: objectId(object.head, "statement.head"),
 		base: objectId(object.base, "statement.base"),
+		...(object.testedCommit === undefined
+			? {}
+			: {
+					testedCommit: objectId(object.testedCommit, "statement.testedCommit"),
+				}),
 		jobs: textList(object.jobs, "statement.jobs"),
 		events: textList(object.events, "statement.events"),
 		startedAt: required(
