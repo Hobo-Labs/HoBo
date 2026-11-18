@@ -1,7 +1,3 @@
-/**
- * Encapsulation gate: published Trails .d.ts must never import foreign packages.
- * Consumers only see Trails-owned types/DTOs.
- */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +17,6 @@ describe("Trails public surface is sealed", () => {
 		const leaks: string[] = [];
 		for (const file of files) {
 			const content = readFileSync(join(distDir, file), "utf8");
-			// Absolute package imports in declarations = public surface leak.
 			const matches = content.match(
 				/from\s+["'](@hobo\/[^"']+|[^./][^"']*)["']/g,
 			);
@@ -30,7 +25,6 @@ describe("Trails public surface is sealed", () => {
 					leaks.push(`${file}: ${m}`);
 				}
 			}
-			// Also catch import type { X } from "@hobo/..."
 			if (/import\s+.*from\s+["']@hobo\//.test(content)) {
 				leaks.push(`${file}: contains @hobo/ import`);
 			}

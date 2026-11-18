@@ -1,11 +1,3 @@
-/**
- * The assignment register, checked without a database.
- *
- * The scenario tests pin the rules one at a time. The randomized test then runs
- * concurrent proposers, completers and an occasional operator override against
- * replicas that go down and come back, under a seeded scheduler, and checks the
- * invariants after every single step from outside the system.
- */
 import { describe, expect, it } from "vitest";
 import {
 	type AssignmentReply,
@@ -70,7 +62,6 @@ describe("majority", () => {
 	});
 
 	it("gives an even fleet no more tolerance than the odd fleet below it", () => {
-		// Two backends tolerate no failure; four tolerate one, like three.
 		expect(2 - fleetMajority(2)).toBe(0);
 		expect(4 - fleetMajority(4)).toBe(3 - fleetMajority(3));
 	});
@@ -347,10 +338,6 @@ describe("completing and overriding", () => {
 	});
 });
 
-/**
- * One seeded run. Returns what happened so the suite can also assert that the
- * runs were not trivially idle.
- */
 async function explore(seed: number) {
 	const scheduler = new Scheduler(seed);
 	const size = 2 + scheduler.pick(4);
@@ -373,7 +360,6 @@ async function explore(seed: number) {
 		writer(`b${scheduler.pick(size)}`);
 
 	const check = () => {
-		// Throws when two different entries are decided for one epoch.
 		const decided = decidedEntries(replicas);
 		for (const [epoch, assignment] of decided) {
 			const key = assignmentKey(assignment);
@@ -443,7 +429,6 @@ async function explore(seed: number) {
 			}
 			if (view.status !== "current" && view.status !== "empty") continue;
 			const seen = view.status === "current" ? view.assignment.epoch : 0;
-			// Sometimes act on a deliberately old view, as a slow caller would.
 			const expectedEpoch =
 				scheduler.random() < 0.25 ? Math.max(0, seen - 1) : seen;
 			const decidedBy = `p${index}-${round}`;
@@ -475,7 +460,6 @@ async function explore(seed: number) {
 		step,
 	);
 
-	// Quiescence: everything returns, and one completer runs alone.
 	live = false;
 	for (const replica of replicas) replica.up = true;
 	let settled = await completeAssignment(register);
@@ -517,12 +501,10 @@ describe("randomized interleavings", () => {
 			overridden += run.overridden ? 1 : 0;
 			steps += run.steps;
 		}
-		// The runs must have exercised what they claim to check.
 		expect(decisions).toBeGreaterThan(1000);
 		expect(outages).toBeGreaterThan(1500);
 		expect(staleAttempts).toBeGreaterThan(300);
 		expect(steps).toBeGreaterThan(100_000);
-		// A split that needs an operator is possible and must stay rare.
 		expect(overridden).toBeLessThan(40);
 	}, 120_000);
 });

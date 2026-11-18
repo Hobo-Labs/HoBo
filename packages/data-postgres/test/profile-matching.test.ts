@@ -1,12 +1,3 @@
-/**
- * The gate that matters: a relational database is not a PostgreSQL database.
- * Every case is a line in `profile-matching.cases.jsonl`.
- *
- * Candidates are shaped like real products but constructed locally — this
- * package must never import a provider, and a test that did would make the
- * provider-neutrality claim untestable. A case names a candidate, or patches
- * one, so the shapes stay here and the scenarios stay data.
- */
 import {
 	createCapabilityProfileRegistry,
 	type SelectionCandidate,
@@ -37,7 +28,6 @@ const policy: TrustPolicy = {
 	sponsorBudgetMinorUnits: 0,
 };
 
-/** The guarantees every conformant Postgres product asserts. */
 const GUARANTEED = Object.fromEntries(
 	POSTGRES_REQUIRED_GUARANTEE_KEYS.map((key) => [key, true]),
 );
@@ -69,7 +59,6 @@ function candidate(
 		providerId: string;
 	},
 ): SelectionCandidate {
-	// SAFETY: this fixture supplies every required SelectionCandidate field below.
 	return {
 		implementsProfiles: [
 			{
@@ -105,11 +94,9 @@ function candidate(
 		hasRegisteredDriver: true,
 		secretCustodyAvailable: true,
 		...overrides,
-		// SAFETY: this fixture supplies every required SelectionCandidate field above.
 	} as SelectionCandidate;
 }
 
-/** Neon Claimable Postgres: real Postgres, pooled, exportable. */
 const neon = candidate({
 	definitionId: "neon.claimable-postgres/v1",
 	providerId: "neon",
@@ -125,13 +112,11 @@ const neon = candidate({
 	],
 });
 
-/** Prisma's create-db temporary Postgres. Never declares `extensions`. */
 const prisma = candidate({
 	definitionId: "prisma.claimable-postgres/v1",
 	providerId: "prisma",
 });
 
-/** A D1 / SQLite-class product: relational, transactional, not PostgreSQL. */
 const sqlite = candidate({
 	definitionId: "cloudflare.temporary-d1/v1",
 	providerId: "cloudflare",
@@ -170,12 +155,7 @@ type CandidateSpec =
 	| {
 			readonly definitionId: string;
 			readonly providerId: string;
-			/** Merged over the base capability set, or over a named candidate's. */
 			readonly from?: keyof typeof NAMED;
-			/**
-			 * Start from the bare guarantees instead of the full base set, for a
-			 * product that speaks Postgres but has never proven a migration tool.
-			 */
 			readonly guaranteesOnly?: boolean;
 			readonly structuredCapabilities?: Readonly<
 				Record<string, StructuredCapabilityValue>
@@ -183,7 +163,6 @@ type CandidateSpec =
 	  };
 
 const resolve = (spec: CandidateSpec): SelectionCandidate => {
-	// SAFETY: named fixture keys are the only keys in NAMED; object specs have definitionId.
 	const named = NAMED[spec as keyof typeof NAMED];
 	if (named !== undefined) return named;
 	return candidate({
@@ -208,7 +187,6 @@ describeConcern("postgres profile matching", {
 			readonly candidates: readonly CandidateSpec[];
 		}) => {
 			const outcome = selectCapabilityImplementation({
-				// SAFETY: JSONL scenarios intentionally exercise the runtime authoring boundary.
 				requirement: postgres.database(ask.options as never),
 				registry,
 				candidates: ask.candidates.map(resolve),
@@ -223,13 +201,9 @@ describeConcern("postgres profile matching", {
 					.sort(),
 			};
 		},
-		/** The parsed requirement, for the authoring-order and refusal lanes. */
 		requirement: (options?: ScenarioOptions) =>
-			// SAFETY: JSONL scenarios intentionally exercise the runtime authoring boundary.
 			JSON.stringify(postgres.database(options as never)),
-		/** Authoring order must not change the requirement. */
 		isOrderIndependent: (a: ScenarioOptions, b: ScenarioOptions) =>
-			// SAFETY: JSONL scenarios intentionally exercise the runtime authoring boundary.
 			JSON.stringify(postgres.database(a as never)) ===
 			JSON.stringify(postgres.database(b as never)),
 	}),

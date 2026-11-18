@@ -1,8 +1,3 @@
-/**
- * The suite has to be usable offline, which means every case is data and every
- * side effect is injected. These tests run the whole suite with fake executors
- * and never open a socket.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -114,8 +109,6 @@ describe("planning", () => {
 	});
 
 	it("skips a case whose dependency is not applicable rather than failing it", () => {
-		// Claims constraint enforcement but never claims DDL, so there is no
-		// way to build the table the constraint case needs.
 		const plan = planPostgresConformance({
 			postgresWireProtocol: true,
 			constraints: true,
@@ -211,8 +204,6 @@ describe("running", () => {
 			executors: allExecutors,
 			nowMs: NOW,
 		});
-		// No applicable cases means no evidence, and no evidence is not a pass
-		// anywhere it matters: the guarantees themselves fail the selection gate.
 		expect(report.results).toHaveLength(0);
 		expect(report.outcome).toBe("pass");
 		expect(report.skipped.length).toBe(postgresConformanceSuite.cases.length);

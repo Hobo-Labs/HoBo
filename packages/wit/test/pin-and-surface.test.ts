@@ -1,23 +1,3 @@
-/**
- * Interface pins, lock parsing, and surface parity.
- *
- * The WIT layer is where HoBo's component contracts stop being a claim and
- * start being checkable, so its refusals are the point:
- *
- * **A pin is fully qualified or it is not a pin.** Namespace, package,
- * interface, an exact three-part version, and a stability tier — all five, or
- * the parse fails. A pin missing its version would resolve to whatever happened
- * to be vendored, which is the opposite of pinning.
- *
- * **The lock's schema, package and canonical generator are fixed values.** They
- * are not defaults with an override; a lock naming a different generator
- * describes a different toolchain, and accepting it would let two machines
- * produce different bindings from the same lock.
- *
- * **Parity is symmetric and drift is enumerated.** `compareSurfaces` reports
- * *what* drifted rather than a boolean, because "the component does not match
- * its contract" is unactionable without the list.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -92,7 +72,6 @@ describe("parseInterfacePin", () => {
 	});
 
 	it("rejects a pin with no stability tier", () => {
-		// Stability is what tells a consumer whether the interface may move.
 		expect(() => parseInterfacePin("wasi:http/incoming-handler@0.2.0")).toThrow(
 			/wit\.pin\.invalid/u,
 		);
@@ -105,8 +84,6 @@ describe("parseInterfacePin", () => {
 	});
 
 	it("rejects a pin with no version", () => {
-		// A pin without a version resolves to whatever happened to be vendored,
-		// which is the opposite of pinning.
 		expect(() =>
 			parseInterfacePin("wasi:http/incoming-handler@stable"),
 		).toThrow(/wit\.pin\.invalid/u);
@@ -139,8 +116,6 @@ describe("parseInterfacePin", () => {
 		"WASI:http/h@0.2.0@stable",
 		"wasi:HTTP/h@0.2.0@stable",
 	])("rejects the uppercase pin %s", (raw) => {
-		// One canonical spelling, so two lockfiles cannot pin the same
-		// interface under two names.
 		expect(() => parseInterfacePin(raw)).toThrow(/wit\.pin\.invalid/u);
 	});
 
@@ -151,15 +126,12 @@ describe("parseInterfacePin", () => {
 
 describe("interfaceRefFromPin and vendorFileName", () => {
 	it("builds a reference without the stability tier", () => {
-		// The reference addresses the interface; stability is metadata about it.
 		expect(interfaceRefFromPin(parseInterfacePin(PIN))).toBe(
 			"wasi:http/incoming-handler@0.2.0",
 		);
 	});
 
 	it("takes the vendor file name from the pin's recorded path", () => {
-		// It is the basename of `path`, not something derived from the id — a
-		// pin parsed from an id alone has no path yet, so it has no file name.
 		expect(
 			vendorFileName({
 				...parseInterfacePin(PIN),
@@ -193,8 +165,6 @@ describe("parseToolchainLock", () => {
 	});
 
 	it("rejects a lock naming a different canonical generator", () => {
-		// A lock naming another generator describes another toolchain; accepting
-		// it would let two machines produce different bindings from one lock.
 		expect(() =>
 			parseToolchainLock(
 				lock({
@@ -240,7 +210,6 @@ describe("parseToolchainLock", () => {
 	});
 
 	it("rejects an empty guard string", () => {
-		// A blank guard is a guard nobody can act on.
 		expect(() => parseToolchainLock(lock({ guards: [""] }))).toThrow(
 			/guard must be non-empty/u,
 		);
@@ -273,14 +242,12 @@ describe("extractWitContract", () => {
 	});
 
 	it("rejects a source with no world declaration", () => {
-		// A package with no world declares no surface to compare against.
 		expect(() => extractWitContract("package hobo:sdk@0.1.0;\n")).toThrow(
 			/wit\.surface\.missing_world/u,
 		);
 	});
 
 	it("rejects a source with no package declaration", () => {
-		// Without a package the surface cannot be addressed at all.
 		expect(() => extractWitContract("world sdk {\n}\n")).toThrow(
 			/wit\.surface\.missing_package/u,
 		);
@@ -302,15 +269,12 @@ describe("compareSurfaces", () => {
 	});
 
 	it("reports an import the component does not have", () => {
-		// "Does not match" without the list is unactionable.
 		const report = compareSurfaces(surface(["wasi:io/streams"]), surface([]));
 		expect(report.parity).toBe("drifted");
 		expect(report.driftedImports).toContain("wasi:io/streams");
 	});
 
 	it("reports an import the component has but the contract does not declare", () => {
-		// An undeclared import is the more dangerous direction: the component
-		// reaches for something its contract never promised it would.
 		const report = compareSurfaces(surface([]), surface(["wasi:sockets/tcp"]));
 		expect(report.driftedImports).toContain("wasi:sockets/tcp");
 	});
@@ -342,7 +306,6 @@ describe("compareSurfaces", () => {
 	});
 
 	it("is symmetric in its verdict", () => {
-		// Parity is a property of the pair, not of which side was asked first.
 		const a = surface(["wasi:io/streams"]);
 		const b = surface([]);
 		expect(compareSurfaces(a, b).parity).toBe(compareSurfaces(b, a).parity);
@@ -365,8 +328,6 @@ describe("digestSource", () => {
 	});
 
 	it("differs on whitespace, since a vendored file is byte-pinned", () => {
-		// The digest guards the exact bytes that were reviewed, not an
-		// equivalent-looking file.
 		expect(digestSource("a b")).not.toBe(digestSource("a  b"));
 	});
 });

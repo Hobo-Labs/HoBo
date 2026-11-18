@@ -1,10 +1,3 @@
-// Real records moving between two real, different engines: SQLite files and a
-// live PostgreSQL server, in both directions, through the canonical hub.
-//
-// The conformance kit's pattern cases are the proof: zero loss with writes
-// arriving between every phase, one write authority, resume after a crash at
-// every phase boundary, a lossless soak rollback, a rollback that cannot
-// resurrect an erased subject, and a pooled-to-silo tenant move.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,18 +22,14 @@ import {
 	postgresHarness,
 } from "./engine-support.js";
 
-/** Skipped by an engine whose declaration states no record bound. */
 const SIZE_CASE_ID = "records.oversize-record-refuses-the-batch";
 
-/** One SQLite file per binding, each in its own temp directory. */
 function sqliteHarness(): EngineHarness {
 	const dirs = new Map<EngineBinding, string>();
 	const file = (dir: string): string => path.join(dir, "store.db");
 	return {
 		schemaFixture: SQLITE_SCHEMA_FIXTURE,
-		// Names SQLite keeps for itself; a dataset must never land on one.
 		reservedDatasetNames: ["sqlite_sequence", "sqlite_master"],
-		// A SQLite position is a journal sequence.
 		positionPastHead: (head) => String(Number(head) + 1_000_000),
 		create() {
 			const dir = mkdtempSync(path.join(tmpdir(), "hobo-cross-engine-"));
@@ -51,7 +40,6 @@ function sqliteHarness(): EngineHarness {
 			dirs.set(binding, dir);
 			return binding;
 		},
-		// A second connection to the same file.
 		attach(binding) {
 			const dir = dirs.get(binding);
 			if (dir === undefined) {
@@ -75,9 +63,6 @@ describe.skipIf(!LIVE_URL)("SQLite ↔ PostgreSQL — live, cross-engine", () =>
 	});
 
 	afterAll(async () => {
-		// A leaked slot pins WAL forever; the lane fails if one of this file's
-		// outlives it. Other suites share the server, so only the objects of
-		// the namespaces this file used are counted.
 		const leftovers = await leftoverCaptureObjects(pool);
 		await pool.end();
 		assert.deepEqual(leftovers, []);
@@ -118,8 +103,6 @@ describe.skipIf(!LIVE_URL)("SQLite ↔ PostgreSQL — live, cross-engine", () =>
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "postgres");
-		// PostgreSQL states no record bound, and a native fast path exists
-		// only within one engine.
 		assert.deepEqual(report.skipped, [
 			SIZE_CASE_ID,
 			...NATIVE_CONFORMANCE_CASE_IDS,
