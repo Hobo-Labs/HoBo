@@ -113,12 +113,23 @@ describe("the description of the covered jobs", () => {
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
 			"pr_affected: Prune Turbo cache",
+			"scripts-tests: Prune Turbo cache",
 			"pr-offpath: Prune Turbo cache",
 			"release-contract: Ensure worker toolchain image",
 			"release-contract: Build affected images + live OCI config contract",
 			"release-contract: Clean up OCI build artifacts",
 			"release-contract: Prune Turbo cache",
 		]);
+	});
+
+	it("runs every scripts test shard locally", () => {
+		const scripts = plan.find((job) => job.id === "scripts-tests");
+		assert.ok(scripts);
+		assert.equal(scripts.matrix, "${{ fromJSON('[0,1,2,3]') }}");
+		assert.equal(
+			scripts.steps.find((step) => step.name === "Scripts tests")?.local,
+			"run",
+		);
 	});
 
 	it("omits both report-only classifiers while leaving the gate checks executable", () => {
