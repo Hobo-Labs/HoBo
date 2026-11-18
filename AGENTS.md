@@ -28,7 +28,7 @@ Agent tool hooks run the common source policy for Claude Code, Codex, Cursor,
 Copilot, and Gemini. Standalone documentation comments follow the same rule. Run
 `pnpm run source:guard -- --worktree` when checking manually, including ignored
 agent artifacts in nested projects;
-the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
+the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Windows batch, Python,
 CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
 Kotlin, C#, Ruby, Lua, Swift, and Gherkin, including source templates, notebook code cells, and Markdown code examples; the same rule applies to every other language.
 

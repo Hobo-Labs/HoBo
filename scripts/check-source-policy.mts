@@ -37,6 +37,7 @@ const CODE_EXTENSIONS = new Set([
 	".jsonc",
 	".json5",
 ]);
+const BATCH_EXTENSIONS = new Set([".bat", ".cmd"]);
 const LEXER_LANGUAGES = new Map<string, CommentDialect>([
 	[".cue", "cue"],
 	[".proto", "proto"],
@@ -76,7 +77,7 @@ const AST_GREP = join(
 	process.platform === "win32" ? "ast-grep.exe" : "ast-grep",
 );
 const DIRECTIVE =
-	/^(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma|buf|go|atlas):|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b)/iu;
+	/^(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*|@?rem\s+|::\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma|buf|go|atlas):|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b)/iu;
 const TYPESCRIPT_DIRECTIVE =
 	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?)@ts-(?:check|nocheck|ignore|expect-error)\b/iu;
 const CONCISE_TYPESCRIPT_DIRECTIVE =
@@ -238,6 +239,7 @@ export function commentsIn(file: string, text: string): Comment[] {
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(sourcePath(file)).toLowerCase();
 	if (isDockerfile(sourcePath(file))) return dockerfileComments(file, text);
+	if (BATCH_EXTENSIONS.has(extension)) return batchComments(text);
 	if (extension === ".astro") return astroComments(file, text);
 	if (extension === ".feature") return gherkinComments(file, text);
 	if (extension === ".html") return htmlComments(file, text);
@@ -278,6 +280,104 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 	return kinds.flatMap((kind) =>
 		astGrepMatches(file, text, language, kind).map(matchLocation),
 	);
+}
+
+function batchComments(text: string): CommentLocation[] {
+	const lines = text.split(/\r?\n/u);
+	const comments: CommentLocation[] = [];
+	let continued = false;
+	let commandStart = true;
+	let quoted = false;
+	let forCommand = false;
+	let forSetDepth = 0;
+	let forAwaitingBody = false;
+	for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+		if (!continued) {
+			commandStart = forSetDepth === 0;
+			quoted = false;
+			if (forSetDepth === 0) {
+				forCommand = false;
+				forAwaitingBody = false;
+			}
+		}
+		continued = false;
+		const line = lines[lineNumber] ?? "";
+		for (let index = 0; index < line.length; index++) {
+			const character = line[index];
+			if (commandStart && !quoted) {
+				if (character === " " || character === "\t" || character === "@")
+					continue;
+				const rest = line.slice(index);
+				const condition = batchIfPrefix(rest);
+				if (condition > 0) {
+					index += condition - 1;
+					continue;
+				}
+				if (/^else(?=\s|$)/iu.test(rest)) {
+					index += 3;
+					continue;
+				}
+				if (/^for(?=\s)/iu.test(rest)) forCommand = true;
+				if (/^(?:rem(?:\s|$)|::)/iu.test(line.slice(index))) {
+					const first = lineNumber + 1;
+					let comment = line.slice(index);
+					while (
+						hasBatchContinuation(lines[lineNumber] ?? "") &&
+						lineNumber + 1 < lines.length
+					) {
+						lineNumber++;
+						comment += `\n${lines[lineNumber] ?? ""}`;
+					}
+					comments.push({ first, last: lineNumber + 1, text: comment });
+					break;
+				}
+				commandStart = false;
+			}
+			if (character === "^" && !quoted) {
+				if (index === line.length - 1) continued = true;
+				else index++;
+				continue;
+			}
+			if (character === '"') quoted = !quoted;
+			else if (!quoted && forCommand && character === "(") {
+				forSetDepth++;
+				commandStart = false;
+			} else if (!quoted && forSetDepth > 0 && character === ")") {
+				forSetDepth--;
+				forAwaitingBody = forSetDepth === 0;
+			} else if (
+				!quoted &&
+				forAwaitingBody &&
+				(index === 0 || /\s/u.test(line[index - 1] ?? "")) &&
+				/^do(?=\s|\(|$)/iu.test(line.slice(index))
+			) {
+				index++;
+				forCommand = false;
+				forAwaitingBody = false;
+				commandStart = true;
+			} else if (
+				!quoted &&
+				forSetDepth === 0 &&
+				character &&
+				"&|()".includes(character)
+			)
+				commandStart = true;
+		}
+	}
+	return comments;
+}
+
+function batchIfPrefix(text: string): number {
+	return (
+		/^if\s+(?:\/i\s+)?(?:not\s+)?(?:(?:defined|exist|errorlevel|cmdextversion)\s+(?:"[^"]*"|\S+)|(?:"[^"]*"|\S+?)\s*(?:==|\s(?:equ|neq|lss|leq|gtr|geq)\s)\s*(?:"[^"]*"|\S+))\s+/iu.exec(
+			text,
+		)?.[0].length ?? 0
+	);
+}
+
+function hasBatchContinuation(line: string): boolean {
+	const carets = /\^+$/u.exec(line)?.[0].length ?? 0;
+	return carets % 2 === 1;
 }
 
 function isDockerfile(file: string): boolean {
@@ -686,6 +786,9 @@ const sourceLanguageExtensions = new Map([
 	["bash", ".sh"],
 	["shell", ".sh"],
 	["sh", ".sh"],
+	["batch", ".cmd"],
+	["bat", ".bat"],
+	["cmd", ".cmd"],
 	["rust", ".rs"],
 	["rs", ".rs"],
 	["go", ".go"],
@@ -1061,6 +1164,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			!file.startsWith(".githooks/") &&
 			extension !== ".astro" &&
 			extension !== ".feature" &&
+			!BATCH_EXTENSIONS.has(extension) &&
 			!CODE_EXTENSIONS.has(extension) &&
 			!LEXER_LANGUAGES.has(extension) &&
 			!OTHER_LANGUAGES.has(extension) &&
