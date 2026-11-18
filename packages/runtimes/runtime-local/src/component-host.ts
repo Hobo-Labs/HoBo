@@ -259,12 +259,10 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 	}
 
 	lifecycle(componentId: string) {
-		return (
-			this.#lifecycle.get(componentId) ?? {
-				id: componentId,
-				state: "missing" as const,
-			}
-		);
+		const lifecycle = this.#lifecycle.get(componentId);
+		return lifecycle
+			? { ...lifecycle }
+			: { id: componentId, state: "missing" as const };
 	}
 
 	activeLeases(): string[] {
@@ -300,11 +298,12 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 	}
 
 	eventMirror(): readonly ComponentHostEvent[] {
-		return this.#eventMirror;
+		return this.#eventMirror.map((event) => ({ ...event }));
 	}
 
 	#append(event: ComponentHostEvent): void {
 		this.#requireAvailable();
+		const mirrorEvent = { ...event };
 		this.#emitting = true;
 		try {
 			const result: unknown = this.appendEvent(event);
@@ -322,7 +321,7 @@ class RuntimeLocalComponentHost implements ComponentHostPort {
 		} finally {
 			this.#emitting = false;
 		}
-		this.#eventMirror.push(event);
+		this.#eventMirror.push(mirrorEvent);
 	}
 
 	#requireAvailable(): void {

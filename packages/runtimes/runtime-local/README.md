@@ -9,6 +9,10 @@ Wasmtime-based runtime-local **component host** for HoBo S1. Loads descriptor-de
 guest components, routes WIT imports through a deny-by-default **link table**, and
 appends `component.*` / `link.*` events to an injected event-log sink.
 
+Lifecycle reads and the host's runtime event mirror return detached snapshots. A
+sink may retain or change the event it receives without changing the mirror.
+The mirror is a local diagnostic view, not a substitute for the event-log sink.
+
 ## Scope
 
 **In:** component lifecycle, in-process link table, **wRPC in-process link layer**
