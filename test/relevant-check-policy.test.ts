@@ -1032,6 +1032,9 @@ test("a change to anything that guards signed local runs runs those guards", () 
 		"scripts/test/merge-group-gate.test.ts",
 		"scripts/test/lint-actions-runner.test.ts",
 		"scripts/test/github-pr-target.test.ts",
+		"scripts/test/github-status-permission.test.ts",
+		"scripts/test/github-merge-group.test.ts",
+		"scripts/test/local-merge-group.test.ts",
 	];
 	const runsGuards = (checks: Check[]) => {
 		const tests = checks.find(
@@ -1064,6 +1067,11 @@ test("a change to anything that guards signed local runs runs those guards", () 
 		"scripts/ci/local-attest.mts",
 		"scripts/ci/github-target.mts",
 		"scripts/ci/github-pr-target.mts",
+		"scripts/ci/github-status-permission.mts",
+		"scripts/ci/github-merge-group.mts",
+		"scripts/test/github-status-permission.test.ts",
+		"scripts/test/github-merge-group.test.ts",
+		"scripts/test/local-merge-group.test.ts",
 		"scripts/test/merge-group-gate.test.ts",
 	]) {
 		for (const overrides of [
