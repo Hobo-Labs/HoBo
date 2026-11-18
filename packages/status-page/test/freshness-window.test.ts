@@ -65,3 +65,28 @@ it("maintains freshness for generated clock offsets and budgets", () => {
 		expect(page.components[0]?.status).toBe(fresh ? "operational" : "unknown");
 	}
 });
+
+it("rejects freshness budgets outside the nonnegative safe integer contract", () => {
+	for (const budget of [
+		Number.POSITIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+		Number.NaN,
+		-1,
+		0.5,
+		Number.MAX_SAFE_INTEGER + 1,
+	]) {
+		expect(() =>
+			toStatusPageModel(row, {
+				scope,
+				evaluatedAt: measuredAt,
+				freshnessBudgetMs: budget,
+			}),
+		).toThrow(/freshnessBudgetMs/);
+	}
+	const zeroBudget = toStatusPageModel(row, {
+		scope,
+		evaluatedAt: measuredAt,
+		freshnessBudgetMs: 0,
+	});
+	expect(zeroBudget.components[0]?.status).toBe("operational");
+});

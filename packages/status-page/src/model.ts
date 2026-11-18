@@ -135,6 +135,11 @@ export function toStatusPageModel(
 		);
 	}
 	const budgetMs = options.freshnessBudgetMs ?? DEFAULT_FRESHNESS_BUDGET_MS;
+	if (!Number.isSafeInteger(budgetMs) || budgetMs < 0) {
+		throw new RangeError(
+			"freshnessBudgetMs must be a nonnegative safe integer",
+		);
+	}
 	const recentWindowMs =
 		options.recentIncidentWindowMs ?? DEFAULT_RECENT_INCIDENT_WINDOW_MS;
 	const declared = new Map<string, ComponentSpec>(
