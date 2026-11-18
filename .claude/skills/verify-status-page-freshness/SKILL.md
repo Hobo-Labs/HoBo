@@ -9,12 +9,15 @@ description: Verify time-window freshness and budget validation for status-page 
 
 **Why:** A future-dated or expired healthy measurement must not make an unavailable or unobservable component look healthy; an infinite or malformed budget must not silently disable the freshness boundary.
 
-**Review baseline:** `cf444774d823c3d19afd55674b1994c4b42d3ec8`.
+**Review baseline:** `95a7be1f89efb73e0062ab7df71d80dc8283d029`.
 
 ## Covered code and checks
 
 - `packages/status-page/src/model.ts` validates `freshnessBudgetMs`, derives signal age from `evaluatedAt` and `lastSignalAt`, and applies incident and maintenance overlays. `packages/status-page/data-models/status_page.cue` declares a nonnegative integer freshness budget.
+- `packages/status-page/src/projection.ts` supplies the measurements used by the real-code freshness checks.
 - `packages/status-page/test/freshness-window.test.ts` checks future, exact start, exact end and expired boundaries; malformed budgets; and 300 deterministic clock-offset and budget pairs from seed `0x7b10cafe`. Existing model tests exercise stale signals and incident overlays.
+
+The related [signal-order skill](../verify-status-page-signal-order/SKILL.md) checks SLO measurement ordering and label validation.
 
 From the repository root with dependencies installed, run:
 

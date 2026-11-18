@@ -9,7 +9,7 @@ description: Verify terminal maintenance outcomes and updates arriving before sc
 
 **Why:** Discarding an early completion can make finished maintenance appear active, and switching between completed and canceled changes the reported outcome after the fact.
 
-**Review baseline:** `68d4d6dbff597b53447da4a1988717e67b496908`.
+**Review baseline:** `95a7be1f89efb73e0062ab7df71d80dc8283d029`.
 
 ## Covered code and checks
 
@@ -18,6 +18,8 @@ description: Verify terminal maintenance outcomes and updates arriving before sc
 - The related [freshness skill](../verify-status-page-freshness/SKILL.md) covers signal age and budget validation.
 
 The related [incident skill](../verify-status-page-incident/SKILL.md) covers incident lifecycle and late-open backfill.
+
+The related [signal-order skill](../verify-status-page-signal-order/SKILL.md) checks SLO measurement ordering and label validation.
 
 From the repository root with dependencies installed, run:
 
