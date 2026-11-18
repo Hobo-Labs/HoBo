@@ -10,7 +10,21 @@ describe("visitorCountFromProvider", () => {
   });
 
   it("rejects coerced invalid shapes", () => {
-    for (const value of [null, undefined, "", "  ", true, false, [], {}, 3.5, -1, "12.3", "1e3"]) {
+    for (const value of [
+      null,
+      undefined,
+      "",
+      "  ",
+      true,
+      false,
+      [],
+      {},
+      3.5,
+      -1,
+      "12.3",
+      "1e3",
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
       expect(() => visitorCountFromProvider(value)).toThrow("Invalid visitor count");
     }
   });

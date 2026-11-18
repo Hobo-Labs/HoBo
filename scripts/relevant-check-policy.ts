@@ -729,7 +729,7 @@ export function selectRelevantChecks(
 			command: "npm",
 			args: ["--prefix", "examples/wasp-opensaas/app", "run", "ci:test:unit"],
 			reason:
-				"Open SaaS example app changed; npm install + vitest (not a pnpm workspace)",
+				"Open SaaS example app changed; npm install --workspaces=false + vitest (not a pnpm workspace)",
 		});
 	}
 

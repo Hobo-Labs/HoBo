@@ -1,7 +1,11 @@
 import * as z from "zod";
 
 const visitorCountSchema = z.union([
-  z.number().int().nonnegative(),
+  z
+    .number()
+    .int()
+    .nonnegative()
+    .refine(Number.isSafeInteger, { message: "Invalid visitor count" }),
   z
     .string()
     .trim()
