@@ -43,13 +43,23 @@ manufacturing placeholder values.
 
 Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
 
-`resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
+`resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
+
+Within one loaded runtime module, `start` and `resume` refuse another active
+execution with the same run ID and the same `EventStoreWriter` object, even
+when different engine instances share it. If a parent exits with a durable
+command still running, the local fence remains until that command settles;
+an indefinitely pending command therefore keeps the run unavailable in that
+process. Different writer objects, workers and processes still require
+host-side fencing, even if they address the same database. Direct effects
+outside the tracked workflow commands are not covered.
 
 Within one execution, journal appends are serialized even when workflow steps
 run concurrently. If an append fails or its result is uncertain, later appends
 in that execution fail with the same error; use a fresh `resume` to reread the
 durable journal. An effect already authorized before the failure may still be
-running, and separate executions are not fenced by this queue. A journal at
+running, and separate executions are not fenced by this queue. The local
+execution fence described above covers shared writer objects only. A journal at
 `Number.MAX_SAFE_INTEGER` cannot accept another event until its sequence format
 is migrated; invalid or exhausted sequences fail before the next step runs.
 
@@ -186,7 +196,8 @@ default. Tests and other hosts can supply `clock` and `wait` to the workflow
 engine; the clock must report accurate nonnegative integer milliseconds and
 the waiter must eventually return. The host must arrange recovery and call
 `resume`: this engine does not automatically discover or wake stopped runs.
-Concurrent resumes still require host-side fencing.
+Concurrent resumes through separate writers or processes require host-side
+fencing.
 
 The sleep-completion model explores 12 distinct states. Its projection hides nine
 clock and other transitions that do not change the displayed state.
