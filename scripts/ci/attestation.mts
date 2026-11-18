@@ -680,13 +680,12 @@ export function verifyAttestation(input: {
 	);
 	const scripts = results.get("scripts-tests");
 	if (
-		scripts?.executionMode !== "each-step-v1" ||
+		!scripts ||
+		scripts.executionMode !== "each-step-v1" ||
 		(scripts.eventChecks?.[event] ?? 0) < 4 ||
 		scripts.commands <
-			Object.values(scripts.eventChecks ?? {}).reduce(
-				(total, count) => total + count,
-				0,
-			)
+			(scripts.eventChecks?.pull_request ?? 0) +
+				(scripts.eventChecks?.merge_group ?? 0)
 	)
 		jobs = jobs.filter((job) => job !== "scripts-tests");
 	if (!statement.environment.dockerEngine)
