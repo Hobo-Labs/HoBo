@@ -93,16 +93,7 @@
 				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
 			}
 		},
-		{
-			"proof": "src/draft/technical-proofs/upgrade-rollback-dry-run-contract/src",
-			"promotedTo": "packages/trails/src/upgrade-preflight.ts",
-			"status": "frozen",
-			"note": "HOBO-499 M1 promotion: typed 11-field compatibility inputs, dry-run contract + four fixtures, rollback-evidence parser, scope-boundary register with fail-closed guard.",
-			"digests": {
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba",
-				"upgrade-rollback-dry-run.ts": "sha256:846377abf9222051b48ee5fa08457fea80f253073f0625bd0c370ccbfbb1acd7"
-			}
-		},
+
 		{
 			"proof": "src/draft/technical-proofs/event-body-upcaster-gate/src",
 			"promotedTo": "packages/events/src/upcaster.ts",

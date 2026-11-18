@@ -106,6 +106,10 @@ test("dry-run fixtures produce the promoted decisions: passed / blocked / failed
 	assert.equal(clean.status, "passed");
 	assert.deepEqual(clean.blockedReasons, []);
 	assert.deepEqual(clean.mutationCommands, []);
+	assert.deepEqual(
+		clean.migrationPlan.steps.map((step) => step.phase),
+		["expand", "backfill", "contract"],
+	);
 
 	const blocked = evaluateUpgradeDryRun(
 		UPGRADE_DRY_RUN_FIXTURES.blockedUpgrade,
@@ -115,18 +119,39 @@ test("dry-run fixtures produce the promoted decisions: passed / blocked / failed
 		blocked.blockedReasons.includes("contract-compatibility-unsupported"),
 	);
 	assert.ok(blocked.unsupportedPath);
+	assert.equal(
+		blocked.unsupportedPath.reason,
+		"component-host-pin-below-floor",
+	);
+	assert.equal(blocked.supportHandoff.nextAction, "route-to-upgrade-support");
 
 	const failed = evaluateUpgradeDryRun(
 		UPGRADE_DRY_RUN_FIXTURES.failedMigration,
 	);
 	assert.equal(failed.status, "failed");
+	assert.equal(
+		failed.migrationPlan.failure?.reason,
+		"contract-phase-would-drop-active-column",
+	);
 	assert.equal(failed.rollbackEvidence.state, "required-before-execution");
+	assert.equal(
+		failed.rollbackEvidence.restorePrerequisite,
+		"pre-migration-snapshot",
+	);
+	assert.equal(
+		failed.supportHandoff.escalation,
+		"release-owner-and-data-plane",
+	);
 
 	const rollbackReady = evaluateUpgradeDryRun(
 		UPGRADE_DRY_RUN_FIXTURES.rollbackReady,
 	);
 	assert.equal(rollbackReady.status, "passed");
 	assert.equal(rollbackReady.rollbackEvidence.state, "recoverable");
+	assert.equal(
+		rollbackReady.rollbackEvidence.snapshotRef,
+		"snapshot:local-dev:pre-upgrade-1.0.0",
+	);
 });
 
 test("dry-run reports are deterministic (stable digest) and carry support handoff", () => {
