@@ -75,6 +75,10 @@ export interface StrictFleetStore {
 		next: RunnerSlotState,
 		externalRunnerId?: string,
 	): Promise<RunnerSlot>;
+	quarantineRunnerSlot(
+		id: string,
+		expected: RunnerSlotState,
+	): Promise<RunnerSlot>;
 	claimEffect(input: EffectClaimInput): Promise<WorkerDelivery>;
 	renewEffectDelivery(
 		input: EffectFenceInput & { leaseMs: number },
