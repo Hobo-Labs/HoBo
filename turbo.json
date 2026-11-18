@@ -794,7 +794,6 @@
         "src/draft/exp-proofs/cx/legal-privacy-private-beta-evidence-contract/**",
         "src/draft/exp-proofs/cx/marketplace-payout-hooks-scope-contract/**",
         "src/draft/exp-proofs/cx/usage-metering-scope-contract/**",
-        "src/draft/exp-proofs/dx/dx-sdk-resilience-scope-contract/**",
         "src/draft/exp-proofs/dx/performance-load-tests-scope-contract/**",
         "src/draft/exp-proofs/dx/session-replay-local-path/**",
         "src/draft/exp-proofs/dx/tenant-isolation-quotas-scope/**",

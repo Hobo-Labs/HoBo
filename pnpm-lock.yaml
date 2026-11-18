@@ -3999,8 +3999,6 @@ importers:
 
   src/draft/exp-proofs/dx/dx-result-refusal-proof-envelopes: {}
 
-  src/draft/exp-proofs/dx/dx-sdk-resilience-scope-contract: {}
-
   src/draft/exp-proofs/dx/e2e-test-matrix-scope-acceptance: {}
 
   src/draft/exp-proofs/dx/enterprise-deployment-hardening-scope-contract: {}

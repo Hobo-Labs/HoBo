@@ -1,3 +1,0 @@
-slug: dx-sdk-resilience-scope-contract
-layer: exp
-proof-identity: ok
