@@ -615,6 +615,31 @@ test("staged test-only package changes run vitest on package-relative paths", ()
 	assert.equal(turboTestSelects(checks, "packages/rift"), false);
 });
 
+test("narrow staged workspace tests build their package and dependencies first", () => {
+	const { checks } = plan(["packages/rift/test/rift.test.ts"], {
+		staged: true,
+	});
+	const build = checks.findIndex(
+		(check) =>
+			check.args.slice(0, 4).join(" ") === "exec turbo run build" &&
+			check.args.includes("--filter=./packages/rift"),
+	);
+	const testRun = checks.findIndex(narrowVitestCheck);
+	assert.ok(build >= 0);
+	assert.equal(checks[build]?.serial, true);
+	assert.ok(testRun > build);
+});
+
+test("staged tests preserve package-specific test and pretest commands", () => {
+	for (const workspace of ["packages/cli", "packages/broker"]) {
+		const { checks } = plan([`${workspace}/test/example.test.ts`], {
+			staged: true,
+		});
+		assert.equal(turboTestSelects(checks, workspace), true, workspace);
+		assert.equal(checks.some(narrowVitestCheck), false, workspace);
+	}
+});
+
 test("examples package source changes select architecture guard and workspace tests", () => {
 	const { checks, workspaces } = plan(["examples/hello-bindle/src/main.ts"], {
 		workspacePackageExists: () => true,
