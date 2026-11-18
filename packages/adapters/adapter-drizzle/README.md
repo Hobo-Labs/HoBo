@@ -90,6 +90,11 @@ emitter. A partial emission (fewer statements than plan steps) is refused with
 package: an approximated migration is a defect that only surfaces against a
 production database.
 
+When an index definition changes or its name moves to another table, the plan
+places the old index drop and the new index creation in the contract phase, in
+that order. The emitter must supply SQL for both steps. HoBo's PostgreSQL schema
+port applies the phase as a transaction, so a failed creation rolls back the drop.
+
 ## Parse, don't validate
 
 `ingestDrizzleSchema` is this package's single parse boundary. It accepts an

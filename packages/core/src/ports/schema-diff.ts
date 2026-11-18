@@ -16,7 +16,7 @@ export const SCHEMA_IR_CONTRACT = "hobo.schema-ir/v1";
 export const MIGRATION_PLAN_CONTRACT = "hobo.migration-plan/v1";
 
 export const CANONICAL_SCHEMA_DIFF_ENGINE_ID = "hobo-canonical"; // public-contract: differ identity stamped into every plan it produces
-export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "2.0.0";
+export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "3.0.0";
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*$/u;
 const MAX_IDENTIFIER_LENGTH = 63;
@@ -183,15 +183,9 @@ export function diffSchemaIr(
 		const before = currentTables.get(table.name);
 		if (before === undefined) {
 			steps.push(step("expand", "create-table", table.name, {}));
-			for (const index of table.indexes) {
-				steps.push(
-					step("expand", "add-index", table.name, { index: index.name }),
-				);
-			}
 			continue;
 		}
 		diffColumns(before, table, steps);
-		diffIndexes(before, table, steps);
 	}
 
 	for (const table of normalizedCurrent.tables) {
@@ -199,6 +193,7 @@ export function diffSchemaIr(
 			steps.push(step("contract", "drop-table", table.name, {}));
 		}
 	}
+	diffIndexes(normalizedCurrent.tables, normalizedDesired.tables, steps);
 
 	return freezePlan(
 		dedupe(steps).sort(compareSteps),
@@ -296,30 +291,46 @@ function diffColumnAttributes(
 }
 
 function diffIndexes(
-	before: SchemaTable,
-	after: SchemaTable,
+	before: readonly SchemaTable[],
+	after: readonly SchemaTable[],
 	steps: MigrationStep[],
 ): void {
-	const beforeIndexes = byName(before.indexes);
-	const afterIndexes = byName(after.indexes);
+	const beforeIndexes = indexesByName(before);
+	const afterIndexes = indexesByName(after);
+	const remainingTables = byName(after);
 
-	for (const index of after.indexes) {
-		const previous = beforeIndexes.get(index.name);
-		if (previous === undefined || !sameIndexLayout(previous, index)) {
+	for (const [name, next] of afterIndexes) {
+		const previous = beforeIndexes.get(name);
+		if (previous === undefined) {
+			steps.push(step("expand", "add-index", next.table, { index: name }));
+		} else if (
+			previous.table !== next.table ||
+			!sameIndexLayout(previous.index, next.index)
+		) {
 			steps.push(
-				step("expand", "add-index", after.name, { index: index.name }),
+				step("contract", "drop-index", previous.table, { index: name }),
+				step("contract", "add-index", next.table, { index: name }),
 			);
 		}
 	}
 
-	for (const index of before.indexes) {
-		const next = afterIndexes.get(index.name);
-		if (next === undefined || !sameIndexLayout(index, next)) {
+	for (const [name, previous] of beforeIndexes) {
+		if (!afterIndexes.has(name) && remainingTables.has(previous.table)) {
 			steps.push(
-				step("contract", "drop-index", after.name, { index: index.name }),
+				step("contract", "drop-index", previous.table, { index: name }),
 			);
 		}
 	}
+}
+
+function indexesByName(
+	tables: readonly SchemaTable[],
+): Map<string, { table: string; index: SchemaIndex }> {
+	return new Map(
+		tables.flatMap((table) =>
+			table.indexes.map((index) => [index.name, { table: table.name, index }]),
+		),
+	);
 }
 
 function sameIndexLayout(left: SchemaIndex, right: SchemaIndex): boolean {
@@ -434,11 +445,19 @@ function compareSteps(left: MigrationStep, right: MigrationStep): number {
 	return (
 		MIGRATION_PHASES.indexOf(left.phase) -
 			MIGRATION_PHASES.indexOf(right.phase) ||
+		contractStepOrder(left) - contractStepOrder(right) ||
 		compare(left.table, right.table) ||
 		MIGRATION_STEP_KINDS.indexOf(left.kind) -
 			MIGRATION_STEP_KINDS.indexOf(right.kind) ||
 		compare(stepTarget(left), stepTarget(right))
 	);
+}
+
+function contractStepOrder(candidate: MigrationStep): number {
+	if (candidate.phase !== "contract") return 0;
+	if (candidate.kind === "drop-index") return 0;
+	if (candidate.kind === "add-index") return 2;
+	return 1;
 }
 
 function freezePlan(

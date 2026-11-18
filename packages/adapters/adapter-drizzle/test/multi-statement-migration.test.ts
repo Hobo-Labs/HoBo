@@ -1,4 +1,11 @@
-import type { MigrationPlan, MigrationStep } from "@hobo/core";
+import { DatabaseSync } from "node:sqlite";
+import {
+	diffSchemaIr,
+	type MigrationPlan,
+	type MigrationStep,
+	SCHEMA_IR_CONTRACT,
+	type SchemaIr,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	createDrizzleDiffEngine,
@@ -29,6 +36,72 @@ const plan: MigrationPlan = {
 const verify = { afterBackfill: "SELECT 1" };
 
 describe("migration statements", () => {
+	it("orders a replacement index's drop and creation in the contract phase", () => {
+		const table = {
+			name: "users",
+			columns: [
+				{
+					name: "email",
+					type: "text",
+					nullable: true,
+					primaryKey: false,
+					unique: false,
+				},
+			],
+			indexes: [{ name: "users_email_idx", columns: ["email"], unique: false }],
+		};
+		const before: SchemaIr = {
+			contract: SCHEMA_IR_CONTRACT,
+			dialect: "postgres",
+			tables: [table],
+		};
+		const after = {
+			...before,
+			tables: [
+				{
+					...table,
+					indexes: [
+						{ name: "users_email_idx", columns: ["email"], unique: true },
+					],
+				},
+			],
+		};
+		const plan = diffSchemaIr(before, after);
+		const drop = plan.steps.find((step) => step.kind === "drop-index");
+		const add = plan.steps.find((step) => step.kind === "add-index");
+		if (!drop || !add) throw new Error("replacement index steps missing");
+		const result = toDataMigrationPlan({
+			plan,
+			migrationId: "replace-index",
+			verify,
+			emitted: [
+				{
+					step: add,
+					sql: "CREATE UNIQUE INDEX users_email_idx ON users (email)",
+				},
+				{ step: drop, sql: "DROP INDEX users_email_idx" },
+			],
+		});
+		expect(result.expand).toEqual([]);
+		expect(result.contract).toEqual([
+			"DROP INDEX users_email_idx",
+			"CREATE UNIQUE INDEX users_email_idx ON users (email)",
+		]);
+		const db = new DatabaseSync(":memory:");
+		try {
+			db.exec("CREATE TABLE users (email text)");
+			db.exec("CREATE INDEX users_email_idx ON users (email)");
+			db.exec("BEGIN");
+			for (const statement of result.contract) db.exec(statement);
+			db.exec("COMMIT");
+			expect(db.prepare("PRAGMA index_list('users')").all()).toMatchObject([
+				{ name: "users_email_idx", unique: 1 },
+			]);
+		} finally {
+			db.close();
+		}
+	});
+
 	it("preserves every statement in step and phase order", () => {
 		const result = toDataMigrationPlan({
 			plan,
