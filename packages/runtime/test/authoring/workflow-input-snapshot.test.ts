@@ -11,6 +11,10 @@ function deferred() {
 	return { promise, resolve };
 }
 
+interface CyclicInput {
+	self?: CyclicInput;
+}
+
 it.each([
 	"start",
 	"resume",
@@ -146,4 +150,132 @@ it("rejects inputs that cannot be reproduced from the JSON journal", async () =>
 		);
 	}
 	expect(calls).toBe(0);
+});
+
+it("refuses shared references and cycles before any workflow work", async () => {
+	const shared = { count: 1 };
+	const cycle: CyclicInput = {};
+	cycle.self = cycle;
+	const engine = createWorkflowEngine();
+	let calls = 0;
+	const wf = defineWorkflow({
+		name: "input-references",
+		run: () => {
+			calls++;
+			return null;
+		},
+	});
+	for (const [index, value] of [
+		{ left: shared, right: shared },
+		cycle,
+	].entries()) {
+		await expect(
+			engine.start(wf, value, { runId: `references-${index}` }),
+		).rejects.toThrow("workflow input must be JSON-normalized");
+		expect(await engine.journal(`references-${index}`)).toEqual([]);
+	}
+	expect(calls).toBe(0);
+});
+
+it("refuses hidden properties, accessors and nonstandard descriptors", async () => {
+	let getterCalls = 0;
+	const hidden = Object.defineProperty({}, "secret", {
+		value: 1,
+		writable: true,
+		configurable: true,
+	});
+	const getter = Object.defineProperty({}, "value", {
+		enumerable: true,
+		get() {
+			getterCalls++;
+			return 1;
+		},
+	});
+	const hiddenToJson = Object.defineProperty({}, "toJSON", {
+		get() {
+			getterCalls++;
+			return () => ({});
+		},
+	});
+	const symbol = { [Symbol("hidden")]: 1 };
+	const hiddenSymbol = Object.defineProperty({}, Symbol("hidden"), {
+		value: 1,
+		writable: true,
+		configurable: true,
+	});
+	const readonly = Object.defineProperty({}, "value", {
+		value: 1,
+		enumerable: true,
+		configurable: true,
+		writable: false,
+	});
+	const nonconfigurable = Object.defineProperty({}, "value", {
+		value: 1,
+		enumerable: true,
+		writable: true,
+	});
+	const sparse = Array(2);
+	const extended = Object.assign([1], { extra: true });
+	const values = [
+		hidden,
+		getter,
+		hiddenToJson,
+		symbol,
+		hiddenSymbol,
+		readonly,
+		nonconfigurable,
+		Object.freeze({ value: 1 }),
+		Object.preventExtensions({ value: 1 }),
+		sparse,
+		extended,
+	];
+	const wf = defineWorkflow({ name: "input-descriptors", run: () => null });
+	const engine = createWorkflowEngine();
+	for (const [index, value] of values.entries()) {
+		await expect(
+			engine.start(wf, value, { runId: `descriptors-${index}` }),
+		).rejects.toThrow("workflow input must be JSON-normalized");
+		expect(await engine.journal(`descriptors-${index}`)).toEqual([]);
+	}
+	expect(getterCalls).toBe(0);
+});
+
+it("rejects proxies without invoking traps", async () => {
+	let traps = 0;
+	const proxy = new Proxy(
+		{ value: 1 },
+		{
+			get() {
+				traps++;
+				return 1;
+			},
+		},
+	);
+	const wf = defineWorkflow({ name: "input-proxy", run: () => null });
+	const engine = createWorkflowEngine();
+	await expect(engine.start(wf, proxy, { runId: "proxy" })).rejects.toThrow(
+		"workflow input must be JSON-normalized",
+	);
+	expect(traps).toBe(0);
+	expect(await engine.journal("proxy")).toEqual([]);
+});
+
+it("accepts ordinary generated JSON trees including special property names", async () => {
+	const wf = defineWorkflow({
+		name: "json-input",
+		run: (_ctx, value) => value,
+	});
+	await fc.assert(
+		fc.asyncProperty(fc.jsonValue({ maxDepth: 3 }), async (generated) => {
+			// JSON parsing supplies ordinary descriptors and normalizes negative zero.
+			const input = JSON.parse(JSON.stringify(generated));
+			const result = await createWorkflowEngine().start(wf, input);
+			expect(result.result).toEqual(input);
+		}),
+		{ seed: 614607, numRuns: 100 },
+	);
+	const special = JSON.parse('{"__proto__":{"nested":1},"constructor":[]}');
+	expect((await createWorkflowEngine().start(wf, special)).result).toEqual(
+		special,
+	);
 });

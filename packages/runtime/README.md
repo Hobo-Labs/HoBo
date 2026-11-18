@@ -43,13 +43,35 @@ manufacturing placeholder values.
 
 Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
 
-Workflow input must round-trip through JSON without changing value or shape.
-The engine captures a detached input before the first asynchronous operation and
-passes that capture to the workflow on start and resume, so later caller edits
-cannot change journal-bound work. Values such as `undefined`, `NaN`, `Date`,
-`BigInt`, maps, or objects with omitted undefined fields are refused; convert
-them to explicit JSON values before starting or resuming a run. Older journals
-created from such inputs may need application-specific recovery.
+Workflow input must be an ordinary JSON tree. The engine captures a detached
+input before the first asynchronous operation and passes that capture to the
+workflow on start and resume, so later caller edits cannot change journal-bound
+work. Values such as `undefined`, `NaN`, `-0`, `Date`, `BigInt`, maps, shared
+or circular references, sparse arrays, proxies, accessors, hidden properties,
+and frozen or non-extensible objects are refused. Objects and arrays must have
+their standard prototypes and ordinary writable, enumerable, configurable data
+properties; arrays must have only their indexed elements. Validation inspects
+properties without invoking getters. Convert other inputs to explicit JSON values
+before starting or resuming a run. Older journals created from those inputs may
+need application-specific recovery.
+
+The input-capture model explores 18 states and 34 steps. This five-state
+projection hides 22 same-label steps, including caller edits, and assumes the
+JSON conversion and equality check correctly identify reproducible values.
+
+```mermaid
+stateDiagram-v2
+  s0: Workflow input received
+  s1: Input captured
+  s2: Unreplayable input refused
+  s3: Journal bound to input
+  s4: Captured work executed
+  [*] --> s0
+  s0 --> s2: capture and validate input
+  s0 --> s1: capture and validate input
+  s1 --> s3: bind or read journal input
+  s3 --> s4: execute captured input
+```
 
 An explicit run ID must be a nonempty primitive string for `start`, `resume`,
 and `journal`. Omitting the ID on `start` generates one; explicitly passing
