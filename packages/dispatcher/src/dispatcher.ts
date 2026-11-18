@@ -1841,11 +1841,6 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			);
 	}
 	for (const account of ledgerView.accounts) {
-		if (
-			account.reservedCost !== undefined &&
-			!optionalNonNegativeNumber(account.reservedCost)
-		)
-			throw new TypeError("account.reservedCost must be non-negative");
 		const holds = (ledgerView.reservations ?? []).filter(
 			(reservation) =>
 				reservation.providerId === account.providerId &&

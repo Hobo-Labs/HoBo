@@ -8,9 +8,7 @@ import {
 } from "../src/money.js";
 
 it("rejects non-finite estimated exposure during budget admission", () => {
-	expect(
-		exposureWithinBudget(1, 0, 1, 0, Number.NaN, 10, 0, 0),
-	).toBe(false);
+	expect(exposureWithinBudget(1, 0, 1, 0, Number.NaN, 10, 0, 0)).toBe(false);
 	expect(
 		exposureWithinBudget(1, 0, 1, 0, Number.POSITIVE_INFINITY, 10, 0, 0),
 	).toBe(false);

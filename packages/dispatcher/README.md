@@ -47,7 +47,9 @@ all-in total; it cannot lower the modelled exposure. A caller must supply the
 appropriate account and authoritative quote, including the unit price when it differs from the account list price: missing accounts retain the
 legacy unconstrained selection behavior and do not establish a budget guarantee.
 The combined selection-and-reservation helper uses the account price for both
-steps when present, falling back to the registry price.
+steps when present, falling back to the registry price. A reserve-time
+`unitCost` quote may raise modelled exposure but cannot undercut the account
+`listUnitCost` when pricing the hold.
 
 Pending reservations debit free allowance and rate headroom, occupy one
 concurrency slot, and hold paid exposure. `release` restores those quantities

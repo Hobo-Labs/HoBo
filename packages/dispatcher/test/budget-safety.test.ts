@@ -79,13 +79,11 @@ describe("hard budget admission", () => {
 		for (const invalid of [
 			account({ budgetCap: -1 }),
 			account({ spendToDate: Number.NaN }),
+			account({ reservedCost: -1 }),
 			account({ freeHeadroom: -1 }),
 		]) {
 			expect(dispatch(snapshot([invalid])).ok).toBe(false);
 		}
-		expect(() => dispatch(snapshot([account({ reservedCost: -1 })]))).toThrow(
-			TypeError,
-		);
 	});
 	it("keeps explicit concurrency and rate limits hard even for paid work", () => {
 		expect(dispatch(snapshot([account({ concurrencyHeadroom: 0 })])).ok).toBe(
