@@ -20,6 +20,63 @@ resource execution unit records the exact definition selected for that resource.
 resource and definition ID pairs; the former parallel ID arrays could not express
 that association reliably.
 
+Camp placement preserves the requested Camp layout, including its environment
+type, in the request used for authorization. Without an explicit Camp ID, the
+selected Yard uses `camp:<envType>`, or `camp:dev` when no environment was
+requested. An explicit ID takes precedence, but a qualified ID must name a
+direct child of the selected Yard; a foreign or malformed ID is refused before
+quoting, budget reservation or Yard generation when the planned Yard is known,
+and checked again against the selected Yard before placement. Empty or malformed
+Camp IDs and environment types are refused during parsing. This check does not
+yet verify that a named Camp exists or satisfies its requested capabilities;
+Camp matching and selection-mode enforcement remain separate work.
+Because the request digest now includes Camp fields that were previously
+discarded, a quote created by an older parser may no longer match the request.
+Obtain a new quote and reconcile any existing reservation before retrying.
+
+The [Yard Camp binding skill](../../.agents/skills/verify-yard-camp-binding/SKILL.md)
+checks a bounded placement flow. This projection hides 60 same-state steps and
+114 caller-edit steps; it assumes a ready Yard and abstracts host authorization.
+
+```mermaid
+stateDiagram-v2
+  s0: Camp placement requested
+  s1: Placement refused
+  s2: Yard selected#59; Camp under review
+  s3: Camp selected inside Yard
+  s4: Local hosting approved
+  s5: Placement receipt issued
+  [*] --> s0
+  s0 --> s1: refuse an invalid environment
+  s0 --> s2: capture the requested Camp
+  s2 --> s1: refuse a Camp outside the Yard
+  s2 --> s3: select the requested Camp
+  s3 --> s1: hosting policy refuses
+  s3 --> s4: hosting policy approves
+  s4 --> s5: issue the placement receipt
+```
+
+The generation model checks 14 states and hides four same-state steps. It
+assumes a successful uncertainty write after a provider effect.
+
+```mermaid
+stateDiagram-v2
+  s0: Planned Yard and Camp are checked
+  s1: Placement refused before generation
+  s2: Camp fits the planned Yard
+  s3: Funding is held for generation
+  s4: Generated Yard is checked
+  s5: Placement receipt issued
+  s6: Placement refused#59; hold needs reconciliation
+  [*] --> s0
+  s0 --> s1: refuse a foreign Camp
+  s0 --> s2: accept the planned Camp
+  s2 --> s3: reserve the budget
+  s3 --> s4: generate the Yard
+  s4 --> s6: refuse a changed Yard
+  s4 --> s5: issue placement
+```
+
 The [Yard residual placement skill](../../.agents/skills/verify-yard-residual-placement/SKILL.md)
 checks a one-resource abstraction of capability and evidence. This view hides 24
 same-label steps; it assumes the host's catalog evidence is truthful.

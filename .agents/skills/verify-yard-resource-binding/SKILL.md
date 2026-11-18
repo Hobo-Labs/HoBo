@@ -7,7 +7,7 @@ description: Verify exact associations between Yard resource requests, selected 
 
 **Properties:** Every resource execution unit records exactly the definition selected for that resource, duplicate or malformed resource identities are refused, and later mutation of the caller's resource list cannot change the accepted request. A failure can attach another resource's provider definition, omit the selected definition, or produce ambiguous duplicate execution units.
 
-**Review baseline:** commit `2a3a383c304d96e1a0306a89c43838f1bfd80059`. PASS for the bounded models, symbolic abstraction and generated tests below.
+**Review baseline:** commit `a9c02ab220cd3b795e7e835f866ae21baf5c608d`. PASS for the bounded models, symbolic abstraction and generated tests below.
 
 ## Covered code
 
@@ -29,7 +29,7 @@ The shared runner checks the pinned TLC 1.7.4 jar and Z3 4.15.4. Set `TLA2TOOLS`
 
 Z3 checks two arbitrary resource and definition IDs under a unique-resource premise and a private snapshot. Separate non-vacuity witnesses and three broken proof variants exercise association, uniqueness and snapshot premises. Six implementation mutations reproduce substring matching, wrong-definition assignment, duplicate parser and unit admission, missing identity validation and a missing input snapshot. The full skill is also run on a broken scratch implementation and then restored.
 
-The models abstract catalog selection as an already chosen association and do not prove capability matching, actual provider execution, atomic persistence or TypeScript refinement. They cover the copied resource list, not mutable host callbacks or every nested request field. The Yard protobuf and CUE request/receipt do not yet carry these resource and execution-unit fields; the model does not establish a wire round trip. `verify-yard-local-hosting` checks local host authorization, and `verify-yard-funded-admission` checks funded quote-to-work and context fences separately; the outer broker receipt requires separate work.
+The models abstract catalog selection as an already chosen association and do not prove capability matching, actual provider execution, atomic persistence or TypeScript refinement. They cover the copied resource list, not mutable host callbacks or every nested request field. Camp parsing and the new preflight refusals precede residual binding; `verify-yard-camp-binding` checks them separately. The Yard protobuf and CUE request/receipt do not yet carry these resource and execution-unit fields; the model does not establish a wire round trip. `verify-yard-local-hosting` checks local host authorization, and `verify-yard-funded-admission` checks funded quote-to-work and context fences separately; the outer broker receipt requires separate work.
 
 For implementation mutation, copy `packages/broker` to a scratch package with linked `node_modules`, set `BROKER_YARD_BINDING_VERIFY_PACKAGE_ROOT`, and replace the direct definition association with substring filtering. The real-code tests must fail. Restore the source and rerun the unmodified skill.
 

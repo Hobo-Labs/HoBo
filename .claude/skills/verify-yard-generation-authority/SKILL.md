@@ -7,13 +7,13 @@ description: Verify policy, runtime-catalog and connector evidence around funded
 
 **Properties:** Yard generation may claim and invoke a provider only while the selected generation policy, runtime catalog, connector and plan remain current. The provider call uses the approved connector methods even if another lookup changes. If authority changes after a provider effect, the original hold is marked uncertain, or a failed uncertainty write is reported while the hold remains. An unavailable initial runtime catalog returns a rejection before a hold or provider call. A failure can provision against a revoked policy or runtime, send work to another connector, issue a stale receipt or leave exposure unreconciled.
 
-**Review baseline:** commit `2a3a383c304d96e1a0306a89c43838f1bfd80059`. PASS for the bounded models, symbolic abstraction and real-code tests below.
+**Review baseline:** commit `a9c02ab220cd3b795e7e835f866ae21baf5c608d`. PASS for the bounded models, symbolic abstraction and real-code tests below.
 
 ## Covered code
 
 - `packages/broker/src/yard-placement/deploy.ts` snapshots generation policy, runtime catalog and connector identity and methods, checks them around the policy callback, claim, provider effect and receipt, pins the selected methods for the saga and inspection, and retains or marks the original hold on the covered failures.
 - `packages/broker/src/yard-placement/generation.ts` plans a generation and invokes the supplied connector; `packages/broker/src/rejections.ts` describes unavailable runtime and uncertain-generation outcomes.
-- `packages/broker/test/yard-event-store-folds.test.ts` uses a real SQLite authority and a real generation connector to exercise changed or replaced policy, runtime, catalog reader, registry, connector and method before and after a claim or provider effect. It checks an unavailable initial catalog, a redirected lookup, and a policy change during the final receipt authorization. It also runs 80 generated combinations (seed 614528). Yard placement and event-store resolver tests exercise integration.
+- `packages/broker/test/yard-event-store-folds.test.ts` uses a real SQLite authority and a real generation connector to exercise changed or replaced policy, runtime, catalog reader, registry, connector and method before and after a claim or provider effect. It checks an unavailable initial catalog, a redirected lookup, a policy change during final receipt authorization, and a foreign Camp refused before funding or provisioning. It also runs 80 generated combinations (seed 614528). Yard placement and event-store resolver tests exercise integration. `verify-yard-camp-binding` models Camp preflight separately.
 
 ## Run
 

@@ -26,13 +26,14 @@ import {
 	LOCAL_HOST_PROVIDER_ID,
 	localYardInstance,
 	planYardGeneration,
+	prepareYardHostingWork,
 	resolveBindleDeployment,
 	YARD_EVENTS,
 	type YardFirstPlacementDeps,
 	yardEvent,
 } from "../src/index.js";
-import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 import { approveLocalHosting } from "./helpers/local-hosting.js";
+import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 
 describe("yard event-store folds + provider resolvers", () => {
 	it("rebuilds inventory from yard.* facts alone", () => {
@@ -208,6 +209,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		"uncertain-write-failed",
 		"context-before-claim",
 		"missing-residual",
+		"foreign-camp-before-generation",
 		"signals-unavailable",
 		"wrong-generation-plan",
 		"missing-generation-work",
@@ -298,7 +300,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		};
 
 		const nativeConnector = createAzureYardGenerationConnector();
-		const request = buildDeploymentRequestFromParts({
+		const baseRequest = buildDeploymentRequestFromParts({
 			bindleName: "shop",
 			providerId: "azure",
 			selectionMode: "compatible-or-generate",
@@ -307,6 +309,23 @@ describe("yard event-store folds + provider resolvers", () => {
 				{ resourceId: "api", port: "hobo:http-service", features: [] },
 			],
 		});
+		const request =
+			mode === "foreign-camp-before-generation"
+				? {
+						...baseRequest,
+						camp: {
+							selectionMode: "compatible" as const,
+							campId: "yard:foreign/camp:prod",
+							layout: {
+								require: [],
+								prefer: [],
+								labels: {},
+								runtimeRequirements: [],
+								envType: "production",
+							},
+						},
+					}
+				: baseRequest;
 
 		const generation = planYardGeneration({
 			ownerTenantId: "local",
@@ -349,12 +368,37 @@ describe("yard event-store folds + provider resolvers", () => {
 			observedAt: "2026-10-29T00:00:00Z",
 			validUntil: "2026-11-01T00:00:00Z",
 		});
-		bindTestYardWork(quote, request, "broker:azure-gen", azureCatalog, {
-			generationPlanHash:
-				mode === "wrong-generation-plan"
-					? contentHashOf("another-generation")
-					: generation.plan.planHash,
-		});
+		if (mode !== "foreign-camp-before-generation")
+			bindTestYardWork(quote, request, "broker:azure-gen", azureCatalog, {
+				generationPlanHash:
+					mode === "wrong-generation-plan"
+						? contentHashOf("another-generation")
+						: generation.plan.planHash,
+			});
+		else {
+			// Simulate an already issued quote from a peer that did not check Camp scope.
+			const work = prepareYardHostingWork({
+				request: baseRequest,
+				brokerId: "broker:azure-gen",
+				ownerTenantId: "local",
+				catalog: azureCatalog,
+				yardId: generation.plan.expectedYardId,
+				providerId: "azure",
+				generationPlanHash: generation.plan.planHash,
+			});
+			if ("error" in work) throw new Error("generation work fixture failed");
+			quote.workDigest = contentHashOf({
+				schemaVersion: "hobo.yard-hosting-work/v1",
+				requestDigest: quote.requestDigest,
+				brokerId: "broker:azure-gen",
+				ownerTenantId: "local",
+				catalogHash: azureCatalog.catalogHash,
+				yardId: generation.plan.expectedYardId,
+				providerId: "azure",
+				placements: work.placements,
+				generationPlanHash: generation.plan.planHash,
+			});
+		}
 		if (mode === "missing-generation-work") quote.workDigest = "";
 		const reservationId = `hosting:broker:azure-gen:${request.requestId}`;
 		let provisionCalls = 0;
@@ -707,6 +751,14 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(provisionCalls).toBe(1);
 				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
 				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
+			if (mode === "foreign-camp-before-generation") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe("camp-yard-mismatch");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				expect(authority.read(now).reservedMicros).toBe(0);
 				return;
 			}
 			if (mode === "signals-unavailable") {
