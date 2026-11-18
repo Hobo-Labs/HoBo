@@ -32,10 +32,13 @@ describe("release checkpoint journal", () => {
 		const root = await home();
 		const first = createReleaseJournal(root, "prj_test", "dpl_new");
 		const second = createReleaseJournal(root, "prj_test", "dpl_new");
-		expect(await first.reserve(initial)).toEqual(initial);
+		expect(await first.reserve(initial)).toEqual({
+			checkpoint: initial,
+			created: true,
+		});
 		expect(
 			await second.reserve({ ...initial, previousDeploymentId: "dpl_other" }),
-		).toEqual(initial);
+		).toEqual({ checkpoint: initial, created: false });
 		await expect(
 			second.save({
 				...initial,
@@ -63,6 +66,23 @@ describe("release checkpoint journal", () => {
 		await symlink(outside, file);
 		await expect(journal.load()).rejects.toThrow();
 		expect(await readFile(outside, "utf8")).toBe("untouched");
+	});
+
+	it("allows at most one simultaneous caller to create a reservation", async () => {
+		const root = await home();
+		const journals = [
+			createReleaseJournal(root, "prj_test", "dpl_new"),
+			createReleaseJournal(root, "prj_test", "dpl_new"),
+		];
+		const outcomes = await Promise.allSettled(
+			journals.map((journal) => journal.reserve(initial)),
+		);
+		expect(
+			outcomes.filter(
+				(outcome) => outcome.status === "fulfilled" && outcome.value.created,
+			),
+		).toHaveLength(1);
+		expect(await journals[0]?.load()).toEqual(initial);
 	});
 
 	it("finds a prior unfinished release and refuses ambiguous or corrupt history", async () => {

@@ -14,7 +14,7 @@ const reservation = {
 	state: "reserved" as const,
 };
 
-function fixture() {
+function fixture(createdResponseId = 42) {
 	const deployments: {
 		id: number;
 		sha: string;
@@ -64,7 +64,10 @@ function fixture() {
 				payload: input.payload,
 			};
 			deployments.push(record);
-			return Response.json(record, { status: 201 });
+			return Response.json(
+				{ ...record, id: createdResponseId },
+				{ status: 201 },
+			);
 		}
 		if (method === "POST" && url.pathname.endsWith("/statuses")) {
 			const status = JSON.parse(body ?? "{}");
@@ -96,10 +99,17 @@ describe("GitHub release checkpoints", () => {
 		const f = fixture();
 		const first = f.journal();
 		expect(await first.load()).toBeUndefined();
-		expect(await first.reserve(reservation)).toEqual(reservation);
+		expect(await first.reserve(reservation)).toEqual({
+			checkpoint: reservation,
+			created: true,
+		});
 		expect(await f.pending()).toEqual(reservation);
 		const restarted = f.journal();
 		expect(await restarted.load()).toEqual(reservation);
+		expect(await restarted.reserve(reservation)).toEqual({
+			checkpoint: reservation,
+			created: false,
+		});
 		await restarted.save({ ...reservation, state: "verified" });
 		expect(await first.load()).toEqual({ ...reservation, state: "verified" });
 		expect(await f.pending()).toBeUndefined();
@@ -120,6 +130,13 @@ describe("GitHub release checkpoints", () => {
 		if (!existing) throw new Error("Expected the reserved checkpoint.");
 		f.deployments.push(existing);
 		await expect(f.journal().load()).rejects.toThrow(/ambiguous/u);
+	});
+
+	it("does not claim a reservation when the creation receipt names another record", async () => {
+		const f = fixture(43);
+		await expect(f.journal().reserve(reservation)).rejects.toThrow(
+			/not confirmed/u,
+		);
 	});
 
 	it("rejects an invalid rollback target before creating a checkpoint", async () => {

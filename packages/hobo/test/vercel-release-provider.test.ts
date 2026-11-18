@@ -55,8 +55,9 @@ describe("Vercel release provider", () => {
 				return checkpoint;
 			},
 			async reserve(value) {
-				checkpoint ??= value;
-				return checkpoint;
+				if (checkpoint) return { checkpoint, created: false };
+				checkpoint = value;
+				return { checkpoint, created: true };
 			},
 			async save(value) {
 				checkpoint = value;

@@ -301,7 +301,7 @@ export function createGithubReleaseJournal(
 			)
 				throw new Error("Invalid GitHub release reservation.");
 			const existing = await find();
-			if (existing) return existing.value;
+			if (existing) return { checkpoint: existing.value, created: false };
 			const body = JSON.stringify({
 				ref: input.commit,
 				environment,
@@ -316,14 +316,21 @@ export function createGithubReleaseJournal(
 					commit: value.commit,
 				},
 			});
-			await readBoundedJsonResponse(await request("POST", "", body));
+			const created = await readBoundedJsonResponse(
+				await request("POST", "", body),
+			);
 			const saved = await find();
 			if (
+				!object(created) ||
+				typeof created.id !== "number" ||
+				!Number.isSafeInteger(created.id) ||
+				created.id <= 0 ||
 				!saved ||
+				saved.id !== created.id ||
 				saved.value.previousDeploymentId !== value.previousDeploymentId
 			)
 				throw new Error("The GitHub release reservation was not confirmed.");
-			return saved.value;
+			return { checkpoint: saved.value, created: true };
 		},
 		async save(value) {
 			const saved = await find();

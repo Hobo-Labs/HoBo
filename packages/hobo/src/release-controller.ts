@@ -24,7 +24,10 @@ export interface ReleaseCheckpoint {
 export interface ReleaseJournal {
 	load(): Promise<ReleaseCheckpoint | undefined>;
 
-	reserve(checkpoint: ReleaseCheckpoint): Promise<ReleaseCheckpoint>;
+	reserve(checkpoint: ReleaseCheckpoint): Promise<{
+		readonly checkpoint: ReleaseCheckpoint;
+		readonly created: boolean;
+	}>;
 	save(checkpoint: ReleaseCheckpoint): Promise<void>;
 }
 
@@ -37,6 +40,7 @@ export type ReleaseOutcome =
 				| "journal-failed"
 				| "concurrent-change"
 				| "promote-failed"
+				| "promotion-uncertain"
 				| "verification-failed"
 				| "rollback-failed";
 			rolledBack: boolean;
@@ -102,13 +106,14 @@ export async function promoteVerifiedRelease(input: {
 		if (checkpoint === undefined) {
 			if (current === "" || current === deploymentId)
 				return fail("candidate-invalid");
-			checkpoint = await journal.reserve({
+			const reserved = await journal.reserve({
 				deploymentId,
 				previousDeploymentId: current,
 				commit,
 				state: "reserved",
 			});
-			newReservation = true;
+			checkpoint = reserved.checkpoint;
+			newReservation = reserved.created;
 		}
 		if (
 			checkpoint.deploymentId !== deploymentId ||
@@ -140,7 +145,7 @@ export async function promoteVerifiedRelease(input: {
 	): Promise<ReleaseOutcome> => {
 		try {
 			const owner = await provider.current();
-			if (owner === previous) return fail(reason);
+			if (owner === previous) return fail("promotion-uncertain");
 			if (owner !== deploymentId) return fail("concurrent-change");
 			await provider.rollback(previous);
 			let confirmed = false;

@@ -162,7 +162,7 @@ export function createReleaseJournal(
 			try {
 				await write(file, value);
 				await syncDirectory();
-				return value;
+				return { checkpoint: value, created: true };
 			} catch (error) {
 				if (
 					!(error instanceof Error) ||
@@ -173,7 +173,7 @@ export function createReleaseJournal(
 				const existing = await load();
 				if (existing === undefined)
 					throw new Error("Release reservation disappeared.");
-				return existing;
+				return { checkpoint: existing, created: false };
 			}
 		},
 		async save(value) {

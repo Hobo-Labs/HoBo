@@ -17,6 +17,7 @@ function fixture() {
 	let replaceDuringProbe = false;
 	let throwAfterPromote = false;
 	let delayedPromotion = false;
+	let promotionDelay = 20;
 	let delayedRollback = false;
 	let promotionAt: number | undefined;
 	let rollbackAt: number | undefined;
@@ -29,8 +30,9 @@ function fixture() {
 			if (checkpoint === undefined) {
 				events.push("journal:reserved");
 				checkpoint = value;
+				return { checkpoint, created: true };
 			}
-			return checkpoint;
+			return { checkpoint, created: false };
 		},
 		async save(value) {
 			events.push(`journal:${value.state}`);
@@ -58,7 +60,7 @@ function fixture() {
 		async promote(deploymentId) {
 			events.push(`promote:${deploymentId}`);
 			if (delayedPromotion) {
-				promotionAt = time + 20;
+				promotionAt = time + promotionDelay;
 				throw new Error("answer lost before alias changed");
 			}
 			current = deploymentId;
@@ -102,8 +104,12 @@ function fixture() {
 		throwAfterPromote() {
 			throwAfterPromote = true;
 		},
-		delayPromotion() {
+		delayPromotion(delay = 20) {
 			delayedPromotion = true;
+			promotionDelay = delay;
+		},
+		advanceTime(ms: number) {
+			time += ms;
 		},
 		delayRollback() {
 			delayedRollback = true;
@@ -198,12 +204,63 @@ describe("verified release", () => {
 		});
 		expect(await f.run()).toEqual({
 			ok: false,
-			code: "verification-failed",
+			code: "promotion-uncertain",
 			rolledBack: false,
 		});
 		expect(f.checkpoint()?.state).toBe("reserved");
 		expect(f.events).not.toContain("promote:new");
 		expect(f.events).not.toContain("rollback:old");
+	});
+
+	it("retains an uncertain checkpoint when a promotion may arrive after the deadline", async () => {
+		const f = fixture();
+		f.delayPromotion(100);
+		expect(await f.run()).toEqual({
+			ok: false,
+			code: "promotion-uncertain",
+			rolledBack: false,
+		});
+		expect(f.checkpoint()?.state).toBe("reserved");
+		f.advanceTime(100);
+		expect(await f.provider.current()).toBe("new");
+		expect(f.events.filter((event) => event === "promote:new")).toHaveLength(1);
+	});
+
+	it("does not promote a reservation created after its initial read", async () => {
+		const f = fixture();
+		await f.journal.reserve({
+			deploymentId: "new",
+			previousDeploymentId: "old",
+			commit: COMMIT,
+			state: "reserved",
+		});
+		const journal: ReleaseJournal = {
+			...f.journal,
+			async load() {
+				return undefined;
+			},
+		};
+		let time = 0;
+		expect(
+			await promoteVerifiedRelease({
+				provider: f.provider,
+				journal,
+				deploymentId: "new",
+				commit: COMMIT,
+				deadline: 50,
+				now: () => time,
+				sleep: async (ms) => {
+					time += ms;
+				},
+				intervalMs: 10,
+			}),
+		).toEqual({
+			ok: false,
+			code: "promotion-uncertain",
+			rolledBack: false,
+		});
+		expect(f.events).not.toContain("promote:new");
+		expect(f.checkpoint()?.state).toBe("reserved");
 	});
 
 	it("resumes an interrupted promotion and does not repeat a completed release after a manual rollback", async () => {
