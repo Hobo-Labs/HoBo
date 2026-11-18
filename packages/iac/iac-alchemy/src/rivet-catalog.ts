@@ -13,7 +13,7 @@ const RIVET_GAPS: Readonly<Record<string, string>> = Object.freeze({
 	api: "No attested Rivet API source was supplied.",
 	web: "No attested Rivet web source was supplied.",
 	service: "No attested Rivet service source was supplied.",
-	kv: "The synchronous HoBo WASI store and Rivet Bindle dependencies are not bound.",
+	kv: "The standalone asynchronous Rivet key-value actor does not bind the synchronous HoBo WASI store or Rivet Bindle dependencies.",
 	bucket:
 		"The HoBo blobstore, object metadata, blob events and presigned URLs are not bound to a Rivet Bindle.",
 	queue:

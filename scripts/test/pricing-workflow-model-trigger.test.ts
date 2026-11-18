@@ -34,6 +34,9 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/iac/iac-alchemy/model/RivetQueue.tla",
 			"packages/iac/iac-alchemy/model/RivetQueue.cfg",
 			"packages/iac/iac-alchemy/model/check-rivet-queue.mts",
+			"packages/iac/iac-alchemy/model/RivetKv.tla",
+			"packages/iac/iac-alchemy/model/RivetKv.cfg",
+			"packages/iac/iac-alchemy/model/check-rivet-kv.mts",
 			"packages/iac/iac-alchemy/src/index.ts",
 			"packages/dispatcher/model/IacRouting.tla",
 			"packages/dispatcher/src/iac-target-routing.ts",
@@ -78,6 +81,7 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 		"scripts/test/bounded-tlc.test.ts",
 		"scripts/check-iac-models.ts",
 		"packages/iac/iac-alchemy/model/check-rivet-queue.mts",
+		"packages/iac/iac-alchemy/model/check-rivet-kv.mts",
 	])
 		assert.ok(
 			modelSteps?.some((step) =>

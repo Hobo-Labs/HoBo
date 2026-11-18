@@ -161,3 +161,4 @@ jobs:
         run: |
           node --experimental-strip-types scripts/check-iac-models.ts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-queue.mts
+          node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-kv.mts
