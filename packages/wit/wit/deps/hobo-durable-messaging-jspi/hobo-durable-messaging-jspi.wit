@@ -1,0 +1,292 @@
+package hobo:durable-messaging-jspi@0.1.0;
+
+/// Compatibility ABI for JSPI hosts; methods suspend via the host, while
+/// the native async component interface remains independently versioned.
+
+/// Durable messaging outcomes are explicit. The host must authenticate the
+/// tenant and preserve committed and rejected receipts through operation expiry.
+/// stability: experimental
+interface messaging {
+  record messaging-limits {
+    name-bytes: u32,
+    reason-bytes: u32,
+    payload-bytes: u32,
+    attribute-count: u32,
+    attribute-bytes: u32,
+    batch-size: u32,
+    lease-ms: u64,
+    operation-window-ms: u64,
+    delivery-attempts: u32,
+    retained-messages: u32,
+    retained-receipts: u32,
+    retained-events: u32,
+    topics: u32,
+    subscriptions: u32,
+    event-page-size: u32,
+  }
+
+  record operation {
+    id: string,
+    expires-at-ms: u64,
+  }
+
+  enum rejection-code {
+    invalid-argument,
+    unauthorized,
+    not-found,
+    unsupported,
+    operation-conflict,
+    message-conflict,
+    subscription-conflict,
+    retention-blocked,
+    lease-lost,
+    capacity-exceeded,
+    unavailable,
+  }
+
+  record attribute {
+    key: string,
+    value: string,
+  }
+
+  record message {
+    id: string,
+    subject: string,
+    payload: list<u8>,
+    attributes: list<attribute>,
+  }
+
+  variant dead-letter-cause {
+    nack(string),
+    lease-expired,
+  }
+
+  record dead-letter {
+    source-topic: string,
+    consumer-group: string,
+    original-message-id: string,
+    original-sequence: u64,
+    delivery-attempt: u32,
+    cause: dead-letter-cause,
+  }
+
+  record delivery {
+    message: message,
+    sequence: u64,
+    topic: string,
+    consumer-group: string,
+    lease-id: string,
+    lease-expires-at-ms: u64,
+    delivery-attempt: u32,
+    dead-letter: option<dead-letter>,
+  }
+
+  enum start-at {
+    earliest,
+    latest,
+  }
+
+  record subscription {
+    topic: string,
+    consumer-group: string,
+    dead-letter-topic: string,
+    max-delivery-attempts: u32,
+    start-at: start-at,
+  }
+
+  record topic-request {
+    operation: operation,
+    topic: string,
+  }
+
+  record subscription-request {
+    operation: operation,
+    subscription: subscription,
+  }
+
+  record publish-request {
+    operation: operation,
+    topic: string,
+    message: message,
+  }
+
+  record consume-request {
+    operation: operation,
+    topic: string,
+    consumer-group: string,
+    max-messages: u32,
+    visibility-timeout-ms: u64,
+  }
+
+  record acknowledgement-request {
+    operation: operation,
+    topic: string,
+    consumer-group: string,
+    message-id: string,
+    sequence: u64,
+    lease-id: string,
+  }
+
+  record rejection-request {
+    operation: operation,
+    topic: string,
+    consumer-group: string,
+    message-id: string,
+    sequence: u64,
+    lease-id: string,
+    reason: string,
+  }
+
+  record compaction-request {
+    operation: operation,
+    topic: string,
+    through-sequence: u64,
+  }
+
+  record topic-receipt {
+    topic: string,
+  }
+
+  record message-receipt {
+    message-id: string,
+    sequence: u64,
+  }
+
+  record publish-receipt {
+    message-id: string,
+    sequence: u64,
+  }
+
+  record subscription-receipt {
+    subscription: subscription,
+    first-available-sequence: u64,
+    history-truncated: bool,
+  }
+
+  record compaction-receipt {
+    topic: string,
+    first-available-sequence: u64,
+    removed-messages: u32,
+  }
+
+  record dead-letter-receipt {
+    message-id: string,
+    sequence: u64,
+    dead-letter-message-id: string,
+    dead-letter-sequence: u64,
+  }
+
+  variant topic-outcome {
+    committed(topic-receipt),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant subscription-outcome {
+    committed(subscription-receipt),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant message-outcome {
+    committed(message-receipt),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant publish-outcome {
+    committed(publish-receipt),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant consume-outcome {
+    committed(list<delivery>),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant nack-receipt {
+    released(message-receipt),
+    dead-lettered(dead-letter-receipt),
+  }
+
+  variant nack-outcome {
+    committed(nack-receipt),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant compaction-outcome {
+    committed(compaction-receipt),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  enum event-kind {
+    topic-created,
+    subscription-created,
+    published,
+    leased,
+    acknowledged,
+    released,
+    dead-lettered,
+    compacted,
+  }
+
+  record event {
+    sequence: u64,
+    kind: event-kind,
+    topic: string,
+    message-id: option<string>,
+    consumer-group: option<string>,
+  }
+
+  record event-request {
+    after-sequence: u64,
+    limit: u32,
+  }
+
+  record event-page {
+    events: list<event>,
+    first-available-sequence: u64,
+    next-after-sequence: u64,
+    has-more: bool,
+  }
+
+  record event-gap {
+    first-available-sequence: u64,
+    latest-sequence: u64,
+  }
+
+  variant event-outcome {
+    ok(event-page),
+    gap(event-gap),
+    rejected(rejection-code),
+  }
+
+  limits: func() -> messaging-limits;
+  ensure-topic: func(input: topic-request) -> topic-outcome;
+  ensure-subscription: func(input: subscription-request) -> subscription-outcome;
+  publish: func(input: publish-request) -> publish-outcome;
+  consume: func(input: consume-request) -> consume-outcome;
+  ack: func(input: acknowledgement-request) -> message-outcome;
+  nack: func(input: rejection-request) -> nack-outcome;
+  compact: func(input: compaction-request) -> compaction-outcome;
+  events: func(input: event-request) -> event-outcome;
+}
+
+world durable-messaging-jspi-guest {
+  import messaging;
+}
+
+world durable-messaging-jspi-provider {
+  export messaging;
+}
