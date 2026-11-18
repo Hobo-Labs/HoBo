@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { externalBoundaryRefusal } from "../cloud/boundaries.js";
-import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
+import {
+	deploymentIdFor,
+	loadProjectManifest,
+	missingProjectBindle,
+} from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
 import type { DeployConfig } from "../cloud/yard-client.js";
@@ -64,7 +68,7 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 			const projectDir = context.projectDir ?? context.cwd;
 			const bindle = await loadProjectManifest(projectDir);
 			if (!bindle) {
-				return stubResult("up");
+				return missingProjectBindle("up", projectDir);
 			}
 
 			const boundary = await externalBoundaryRefusal(projectDir, "up");
