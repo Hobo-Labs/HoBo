@@ -1,10 +1,11 @@
-import { MESSAGING_WIT_INTERFACE } from "@hobo/core";
+import { MESSAGING_WIT_INTERFACE, providerTermsFor } from "@hobo/core";
 
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
 export const CAPABILITIES_SCHEMA = "hobo.capabilities/v1";
 export const AUTH_SCHEMA = "hobo.provider-auth/v1";
 export const COST_SCHEMA = "hobo.cost/v1";
 export const KAFKA_PROVIDER_ID = "@hobo/provider-kafka";
+export const PROVIDER_TERMS = providerTermsFor(KAFKA_PROVIDER_ID);
 
 export interface PublishedManifestDocuments {
 	"/.well-known/capability-manifest/index.json": string;
@@ -22,6 +23,7 @@ export function publishCapabilityManifest(
 		"/.well-known/capability-manifest/index.json": JSON.stringify({
 			schema: MANIFEST_SCHEMA,
 			providerId,
+			terms: PROVIDER_TERMS,
 			ports: ["topic", "queue"],
 			witExports: [MESSAGING_WIT_INTERFACE, "hobo:queue/queue@0.1.0"],
 			regions,
