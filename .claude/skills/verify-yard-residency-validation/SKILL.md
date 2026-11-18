@@ -7,7 +7,7 @@ description: Verify residency tags before Yard matching, request admission and d
 
 **Property:** A Yard is eligible for a residency requirement only if the requested jurisdiction and optional data classification are recognized, even when the Yard repeats the same tag. The deployment request is checked before quoting, a generation hold or a provider call. Direct generation planning refuses invalid tags, and the saga refuses an invalid plan before consulting an attempt or invoking a connector. Otherwise a malformed restriction can reach host authorization or cause unnecessary Yard generation.
 
-**Review baseline:** commit `38c50b2f1b3dcb19f926900ee8456fbd8b553166`. PASS for the models and executable checks below.
+**Review baseline:** commit `b033962d0ba0eae3b3f3cc6402cd98cb2ee0b905`. PASS for the models and executable checks below.
 
 ## Covered code
 
