@@ -5,17 +5,12 @@ import {
 	createInMemoryMeteringSink,
 	createMeteringBus,
 } from "@hobo/connectivity";
-import type {
-	HttpRequest,
-	HttpResponse,
-	ParsedComponentDescriptor,
-} from "@hobo/core";
+import type { HttpRequest, HttpResponse } from "@hobo/core";
 import { first, must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
 	createRuntimeLocalComponentHost,
 	createWasmtimeCliEngine,
-	HTTP_INCOMING_HANDLER,
 } from "@hobo/runtime-local";
 import {
 	type BareMetalServeResult,
@@ -33,24 +28,10 @@ import {
 	DEFAULT_DEV_PORT,
 	openBareMetalYard,
 } from "./bare-metal-yard.js";
+import { createHttpComponentDescriptor } from "./component-http.js";
 import { isJsonObject, isJsonString } from "./json.js";
 
-// Serve a Bindle on a **local Yard** (glossary):
-//   Yard  = provider-specific control plane (what `hobo yard init` installs)
-//   Camp  = provider-specific placement target (here: dev-local)
-//   Component host = Camp capability that executes components (Wasmtime-shaped)
-//
-// This path is the default local Yard realization:
-//   - composes a real Camp under the local Yard
-//   - external components only open public TCP (default: web)
-//   - private components (default: api) on <bindle>.hobo.internal/<name> only
-//   - services__* + bindle env injection
-//
-// Process-local mesh is intentional (not sealed isolation). For isolate-per-
-// component privacy with real Wasmtime sandboxes, use componentHost=isolated-wasm.
-
 export type LocalYardServeResult = BareMetalServeResult & {
-	/** Camp component-host backend used for this serve. */
 	readonly componentHost: "local";
 	readonly engine: {
 		readonly source: "cli" | "in-process";
@@ -85,7 +66,6 @@ async function webRequestToHttp(request: Request): Promise<HttpRequest> {
 	return {
 		method: request.method,
 		path: `${url.pathname}${url.search}`,
-		// SAFETY: assertion required at this I/O or test boundary.
 		headers: [...request.headers.entries()] as [string, string][],
 		body,
 	};
@@ -96,44 +76,6 @@ function httpResponseToWeb(response: HttpResponse): Response {
 		status: response.status,
 		headers: Object.fromEntries(response.headers),
 	});
-}
-
-function componentDescriptor(
-	id: string,
-	handler: FetchHandler,
-): ParsedComponentDescriptor {
-	return {
-		parsed: true,
-		id,
-		imports: [],
-		exports: {
-			[HTTP_INCOMING_HANDLER]: {
-				// SAFETY: the export table is heterogeneous by design -- each
-				// interface has its own argument shape, and `ComponentExport`
-				// describes the table, not this entry. The host reads it back through
-				// the matching handler type (`HttpIncomingHandler` in runtime-local),
-				// so the two-step cast is where that agreement is recorded rather
-				// than a claim that the signatures line up.
-				handle: (async (httpReq: HttpRequest): Promise<HttpResponse> => {
-					const req = httpReq;
-					const webReq = new Request(`http://component.local${req.path}`, {
-						method: req.method,
-						headers: Object.fromEntries(req.headers),
-						...(req.body && req.method !== "GET" && req.method !== "HEAD"
-							? { body: req.body }
-							: undefined),
-					});
-					const webRes = await handler(webReq);
-					return {
-						status: webRes.status,
-						// SAFETY: assertion required at this I/O or test boundary.
-						headers: [...webRes.headers.entries()] as [string, string][],
-						body: Buffer.from(await webRes.arrayBuffer()).toString("latin1"),
-					};
-				}) as unknown as ParsedComponentDescriptor["exports"][string][string],
-			},
-		},
-	};
 }
 
 async function listen(
@@ -161,7 +103,6 @@ async function listen(
 					const method = req.method ?? "GET";
 					const init: RequestInit = {
 						method,
-						// SAFETY: assertion required at this I/O or test boundary.
 						headers: req.headers as HeadersInit,
 					};
 					if (!["GET", "HEAD"].includes(method) && body.length > 0) {
@@ -187,10 +128,6 @@ async function listen(
 	return server;
 }
 
-/**
- * Place a Bindle into a Camp on the local Yard and serve it.
- * Yard = control plane; Camp = placement; Component host = execution.
- */
 export async function serveBindleOnLocalYard(options: {
 	readonly projectDir: string;
 	readonly yard?: BareMetalYard;
@@ -246,13 +183,14 @@ export async function serveBindleOnLocalYard(options: {
 		);
 	}
 
-	// Component host is a Camp capability (glossary), not the Yard itself.
 	const componentHost = createRuntimeLocalComponentHost({
 		engine: engineInfo.engine,
 		appendEvent: () => {},
 	});
 	for (const entry of entrypoints) {
-		componentHost.loadComponent(componentDescriptor(entry.name, entry.handler));
+		componentHost.loadComponent(
+			createHttpComponentDescriptor(entry.name, entry.handler, "latin1"),
+		);
 		emit(
 			`hobo dev: component host loaded ${entry.kind}:${entry.name}` +
 				(entry.external ? " (external)" : " (private mesh)"),
@@ -355,7 +293,6 @@ export async function serveBindleOnLocalYard(options: {
 			serviceDiscoveryKey: endpoint.serviceDiscoveryKey,
 		})),
 	});
-	// Overlay named discovery keys onto services__* (prefer named when portless).
 	for (const [key, value] of Object.entries(named.serviceDiscovery)) {
 		serviceDiscovery[key] = value;
 		process.env[key] = value;
@@ -401,9 +338,7 @@ export async function serveBindleOnLocalYard(options: {
 		for (const entry of entrypoints) {
 			try {
 				await componentHost.teardownComponent(entry.name);
-			} catch {
-				// already torn down
-			}
+			} catch {}
 		}
 		uninstallMesh();
 		await named.close();
@@ -444,6 +379,6 @@ export async function serveBindleOnLocalYard(options: {
 	};
 }
 
-/** @deprecated alias — prefer serveBindleOnLocalYard */
+/** @deprecated */
 export const serveProjectOnLocalCamp = serveBindleOnLocalYard;
 export type LocalCampServeResult = LocalYardServeResult;
