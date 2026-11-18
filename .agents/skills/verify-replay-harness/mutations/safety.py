@@ -11,8 +11,8 @@ cases = [
     ('event-guard', 'src/replay/equivalence.ts', 'if (!Number.isSafeInteger(event.seq) || event.seq < 0)', 'if (false)'),
     ('target-guard', 'src/replay/equivalence.ts', 'if (!Number.isSafeInteger(sequence) || sequence < 0)', 'if (false)'),
     ('parse-guard', 'src/replay/parse.ts', 'if (!Number.isSafeInteger(value))', 'if (false)'),
-    ('explicit-event-validation', 'src/replay/equivalence.ts', 'const defaultTarget = seqVector(capturedEvents);', 'const defaultTarget = targetSeq === undefined ? seqVector(capturedEvents) : {};'),
-    ('replay-before-callback', 'src/replay/replayer.ts', 'const recordedVector = seqVector(events);', ''),
+    ('explicit-event-validation', 'src/replay/equivalence.ts', 'const defaultTarget = seqVectorForVersion(capturedEvents, version);', 'const defaultTarget = targetSeq === undefined ? seqVectorForVersion(capturedEvents, version) : {};'),
+    ('replay-before-callback', 'src/replay/replayer.ts', 'const recordedVector = seqVectorForVersion(events, digestVersion);', ''),
 ]
 
 for name, filename, before, after in cases:
@@ -31,7 +31,7 @@ for name, filename, before, after in cases:
             marker = 'const report: ReplayReport = {'
             if changed.count(marker) != 1:
                 raise RuntimeError('replay-before-callback: expected report site')
-            changed = changed.replace(marker, 'const recordedVector = seqVector(events);\n\t' + marker, 1)
+            changed = changed.replace(marker, 'const recordedVector = seqVectorForVersion(events, digestVersion);\n\t' + marker, 1)
         target.write_text(changed)
         env = {**os.environ, 'REPLAY_HARNESS_VERIFY_PACKAGE_ROOT': str(scratch)}
         result = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=600)
