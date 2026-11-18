@@ -20,6 +20,16 @@ cases = [
     ('resume-id', 'const id = requireWorkflowRunId(runId);', 'const id = runId;', 2, 'FAIL  test/authoring/workflow-id-boundary.test.ts >'),
     ('journal-id', 'const id = requireWorkflowRunId(runId);', 'const id = runId;', 2, 'FAIL  test/authoring/workflow-id-boundary.test.ts >'),
     ('null-id-default', 'requestedRunId === undefined ? `run-${randomUUID()}` : requestedRunId,', 'requestedRunId ?? `run-${randomUUID()}`,', 1, 'FAIL  test/authoring/workflow-id-boundary.test.ts >'),
+    ('start-input-snapshot', 'const input = captureWorkflowInput(args);', 'const input = args;', 2, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('resume-input-snapshot', 'const input = captureWorkflowInput(args);', 'const input = args;', 2, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('input-shape', 'if (!isReproducibleJsonInput(args, new Set()))', 'if (false)', 1, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('input-aliases', 'types.isProxy(object) || seen.has(object)', 'types.isProxy(object)', 1, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('input-proxies', 'types.isProxy(object) || seen.has(object)', 'seen.has(object)', 1, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('input-hidden', '!descriptor.enumerable ||\n\t\t\t!descriptor.writable ||\n\t\t\t!descriptor.configurable', '!descriptor.writable ||\n\t\t\t!descriptor.configurable', 1, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('input-readonly', '!descriptor.enumerable ||\n\t\t\t!descriptor.writable ||\n\t\t\t!descriptor.configurable', '!descriptor.enumerable ||\n\t\t\t!descriptor.configurable', 1, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('input-configurable', '!descriptor.enumerable ||\n\t\t\t!descriptor.writable ||\n\t\t\t!descriptor.configurable', '!descriptor.enumerable ||\n\t\t\t!descriptor.writable', 1, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('input-extensible', '!Object.isExtensible(object) ||', 'false ||', 1, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
+    ('input-symbols', 'Object.getOwnPropertySymbols(object).length !== 0', 'false', 1, 'FAIL  test/authoring/workflow-input-snapshot.test.ts >'),
 ]
 
 
@@ -39,11 +49,11 @@ def check(case):
         original = target.read_text()
         if original.count(before) != count:
             raise RuntimeError(f'{name}: expected {count} mutation sites, found {original.count(before)}')
-        if name == 'journal-id':
+        if name in {'journal-id', 'resume-input-snapshot'}:
             position = original.rfind(before)
             changed = original[:position] + original[position:].replace(before, after, 1)
         else:
-            changed = original.replace(before, after, 1 if name in {'release-after-setup-failure', 'resume-id'} else count)
+            changed = original.replace(before, after, 1 if name in {'release-after-setup-failure', 'resume-id', 'start-input-snapshot'} else count)
         target.write_text(changed)
         env = {**os.environ, 'WORKFLOW_VERIFY_PACKAGE_ROOT': str(scratch), 'WORKFLOW_VERIFY_SOURCE': str(target)}
         result = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900)
@@ -54,7 +64,7 @@ def check(case):
         print(f'Expected full-skill real-code failure: {name}', flush=True)
 
 
-with ThreadPoolExecutor(max_workers=2) as pool:
+with ThreadPoolExecutor(max_workers=int(os.environ.get('WORKFLOW_MUTATION_WORKERS', '2'))) as pool:
     futures = [pool.submit(check, case) for case in cases]
     for future in as_completed(futures):
         future.result()

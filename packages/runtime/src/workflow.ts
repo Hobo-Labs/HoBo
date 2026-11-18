@@ -7,7 +7,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, types } from "node:util";
 import {
 	type Capability,
 	type CtxEffects,
@@ -19,6 +19,7 @@ import {
 import { WorkflowExecutionAborted, WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
+	isJsonBoolean,
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
@@ -121,13 +122,13 @@ export interface WorkflowEngineOptions {
 export interface WorkflowEngine {
 	readonly store: EventStoreWriter;
 	/** Fresh run: atomically claims a new journal before running user steps.
-	 * Supply runId when the host must know the ID before a possible crash. */
+	 * Input must round-trip as JSON. Supply runId for crash recovery. */
 	start<A, R>(
 		def: WorkflowDefinition<A, R>,
 		args: A,
 		options?: { runId?: string },
 	): Promise<WorkflowRunHandle<R>>;
-	/** Resume after a host restart: replays the journal, continues from the tip. */
+	/** Resume after a host restart with the same JSON-normalized input. */
 	resume<A, R>(
 		def: WorkflowDefinition<A, R>,
 		runId: string,
@@ -163,6 +164,77 @@ function requireWorkflowRunId(runId: string): string {
 	if (!isJsonString(runId) || String(runId) !== runId || runId.length === 0)
 		throw new TypeError("workflow runId must be a non-empty string");
 	return runId;
+}
+
+// JSON cannot preserve aliasing, accessors, prototypes or property attributes.
+// Inspect descriptors before serialization so validation does not call getters.
+function isReproducibleJsonInput<T>(value: T, seen: Set<object>): boolean {
+	if (value === null) return true;
+	const object: object = Object(value);
+	if (object !== value) {
+		return (
+			isJsonString(value) ||
+			isJsonBoolean(value) ||
+			(isJsonNumber(value) && Number.isFinite(value) && !Object.is(value, -0))
+		);
+	}
+	if (types.isProxy(object) || seen.has(object)) return false;
+	seen.add(object);
+	const array = Array.isArray(value);
+	if (
+		Object.getPrototypeOf(object) !==
+			(array ? Array.prototype : Object.prototype) ||
+		!Object.isExtensible(object) ||
+		Object.getOwnPropertySymbols(object).length !== 0
+	)
+		return false;
+	const names = Object.getOwnPropertyNames(object);
+	if (array && names.length !== value.length + 1) return false;
+	for (const name of names) {
+		const descriptor = Object.getOwnPropertyDescriptor(object, name);
+		if (!descriptor || !("value" in descriptor)) return false;
+		if (array && name === "length") {
+			if (
+				!descriptor.writable ||
+				descriptor.enumerable ||
+				descriptor.configurable
+			)
+				return false;
+			continue;
+		}
+		if (array) {
+			const index = Number(name);
+			if (
+				!Number.isSafeInteger(index) ||
+				index < 0 ||
+				index >= value.length ||
+				String(index) !== name
+			)
+				return false;
+		}
+		if (
+			!descriptor.enumerable ||
+			!descriptor.writable ||
+			!descriptor.configurable
+		)
+			return false;
+		if (!isReproducibleJsonInput(descriptor.value, seen)) return false;
+	}
+	return true;
+}
+
+function captureWorkflowInput<A>(args: A): A {
+	try {
+		if (!isReproducibleJsonInput(args, new Set()))
+			throw new TypeError("workflow input must be JSON-normalized");
+		const captured = cloneAsJson(args);
+		if (!isDeepStrictEqual(args, captured))
+			throw new TypeError("workflow input must be JSON-normalized");
+		// SAFETY: equality checks the original value against its detached JSON snapshot.
+		return captured as A;
+	} catch {
+		throw new TypeError("workflow input must be JSON-normalized");
+	}
 }
 
 function claimWorkflowExecution(
@@ -982,6 +1054,7 @@ export function createWorkflowEngine(
 			);
 			const lease = claimWorkflowExecution(store, runId);
 			try {
+				const input = captureWorkflowInput(args);
 				const streamId = `run/${runId}`;
 				// Claim the new run before any user step. No shared idempotency key is
 				// used here: two fresh callers must not deduplicate into one run.
@@ -991,13 +1064,13 @@ export function createWorkflowEngine(
 					"run.Started",
 					cloneAsJson({
 						seed,
-						args,
+						args: input,
 						workflowName: def.name,
 						commandTreeVersion: 3,
 					}),
 				);
 				await recordEffect(store, started, 0);
-				return await execute(def, runId, args, lease);
+				return await execute(def, runId, input, lease);
 			} finally {
 				lease.finished = true;
 				lease.releaseIfDrained();
@@ -1007,7 +1080,8 @@ export function createWorkflowEngine(
 			const id = requireWorkflowRunId(runId);
 			const lease = claimWorkflowExecution(store, id);
 			try {
-				return await execute(def, id, args, lease);
+				const input = captureWorkflowInput(args);
+				return await execute(def, id, input, lease);
 			} finally {
 				lease.finished = true;
 				lease.releaseIfDrained();
