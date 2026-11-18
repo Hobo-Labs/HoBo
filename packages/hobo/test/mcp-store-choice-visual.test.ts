@@ -3,14 +3,20 @@ import { chromium } from "playwright";
 import { describe, expect, it } from "vitest";
 import { renderStoreChoiceHtml } from "../src/mcp-store-choice.js";
 
+const usePlaywrightManagedHeadlessShell =
+	process.env.PLAYWRIGHT_BROWSERS_PATH !== undefined;
 const executable = [chromium.executablePath(), "/usr/bin/chromium"].find(
 	(path) => existsSync(path),
 );
+const skipVisualTest =
+	!usePlaywrightManagedHeadlessShell && executable === undefined;
 
-describe.skipIf(executable === undefined)("store selection form", () => {
+describe.skipIf(skipVisualTest)("store selection form", () => {
 	it("shows only the selected store's fields without overflowing mobile", async () => {
 		const browser = await chromium.launch({
-			executablePath: executable,
+			executablePath: usePlaywrightManagedHeadlessShell
+				? undefined
+				: executable,
 			headless: true,
 			args: ["--no-sandbox"],
 		});
@@ -32,11 +38,13 @@ describe.skipIf(executable === undefined)("store selection form", () => {
 		} finally {
 			await browser.close();
 		}
-	});
+	}, 60_000);
 
 	it("submits the project received from the host with the selected store", async () => {
 		const browser = await chromium.launch({
-			executablePath: executable,
+			executablePath: usePlaywrightManagedHeadlessShell
+				? undefined
+				: executable,
 			headless: true,
 			args: ["--no-sandbox"],
 		});
@@ -93,5 +101,5 @@ describe.skipIf(executable === undefined)("store selection form", () => {
 		} finally {
 			await browser.close();
 		}
-	});
+	}, 60_000);
 });
