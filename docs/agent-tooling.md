@@ -24,6 +24,18 @@ Third-party AI-coding tools are wired into this repo for **Claude Code**, **Curs
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
+Generated command tests use the caller's environment. For pnpm scripts, select the checkout's pinned pnpm version and a writable package store.
+
+Project exploration and generation, capture, doctor, initialization, surveys, evidence posting, and review workflows check their implicit `.optimizexp` write scopes for links and other unsafe entries. Evidence posting validates all scenario files before posting any comment, including in dry runs, and formats paths and transcripts as literal evidence. It refers to videos and larger files by their committed paths; it does not upload or compress them. When a feature ID exists in multiple projects, select one with `--project` before posting. These checks assume paths stay stable during the operation; explicitly selected output destinations and commands the operator asks the harness to run remain the operator's responsibility.
+
+Explore can opt into `--primary-bin-only` when a package has other executables that the catalog cannot assess. Its output and doctor report identify the narrower scope, and catalog validation rejects other surfaces. Doctor repair creates missing maps and catalogs without running binaries; it reports malformed saved records and preserves existing observations and catalogs for inspection.
+
+Feature planning and scaffolding preserve existing drafts unless `--force` is given. Catalog generation plans pending drafts before requiring their rubber-duck review; `--force-low-quality` explicitly permits an unreviewed scaffold. Project catalog commands run in the selected project. Evidence posting reports failure if any requested comment fails, and named missing features fail validation.
+
+Capture records the command's selected working directory and respects the caller's tool path. Artifact validation compares the manifest, metadata and current file digest; pending evidence may be posted for review, but only an accepted, matching review can support scoring.
+
+CLI output is bounded to 8 MiB per stream; truncated or interrupted captures are marked degraded and cannot support a complete review. A deliberate negative review revokes acceptance, while invalid inputs and artifact mismatches leave the previous review intact. Terminal replay uses recorded event times and safely embeds captured output.
+
 > **Note:** this is *tooling* config, not part of the HoBo product design (`docs/design/`). It was added on request to make the agents productive in this repo.
 
 For `sdlc --finish`, run the local staged check before each commit, then follow
