@@ -69,6 +69,7 @@ const envelope = signStatement(
 		baseTree: BASE_TREE,
 		head: HEAD_SHA,
 		base: BASE_SHA,
+		testedCommit: HEAD_SHA,
 		jobs: [...COVERED_JOBS],
 		events: ["pull_request", "merge_group"],
 		startedAt: "2026-11-11T11:00:00.000Z",
