@@ -248,9 +248,33 @@ export function createYardGenerationSaga(options: {
 }): YardGenerationSaga {
 	const attempts = new Map<
 		string,
-		{ planDigest: ContentHash; result: YardGenerationResult }
+		{
+			planDigest: ContentHash;
+			plan: YardGenerationPlan;
+			result: YardGenerationResult;
+		}
 	>();
 	const inFlight = new Map<string, Promise<YardGenerationResult>>();
+	const authorized = (
+		authorize: (plan: YardGenerationPlan) => boolean,
+		plan: YardGenerationPlan,
+		planDigest: ContentHash,
+	) => {
+		try {
+			// The host may retain its argument. Do not expose the private plan
+			// that will subsequently be handed to an asynchronous provider.
+			const decisionPlan = structuredClone(plan);
+			return (
+				options.authorizePlan === authorize &&
+				authorize(decisionPlan) === true &&
+				contentHashOf(decisionPlan) === planDigest &&
+				contentHashOf(plan) === planDigest &&
+				options.authorizePlan === authorize
+			);
+		} catch {
+			return false;
+		}
+	};
 
 	return {
 		async run(inputPlan) {
@@ -279,23 +303,7 @@ export function createYardGenerationSaga(options: {
 					"generation-authorization-required",
 					"a trusted host authorization is required",
 				);
-			const authorized = () => {
-				try {
-					// The host may retain its argument. Do not expose the private plan
-					// that will subsequently be handed to an asynchronous provider.
-					const decisionPlan = structuredClone(plan);
-					return (
-						options.authorizePlan === authorize &&
-						authorize(decisionPlan) === true &&
-						contentHashOf(decisionPlan) === planDigest &&
-						contentHashOf(plan) === planDigest &&
-						options.authorizePlan === authorize
-					);
-				} catch {
-					return false;
-				}
-			};
-			if (!authorized())
+			if (!authorized(authorize, plan, planDigest))
 				return fail(
 					plan,
 					"generation-authorization-denied",
@@ -319,6 +327,9 @@ export function createYardGenerationSaga(options: {
 			) {
 				return existing.result;
 			}
+			// Keep authorization evidence apart from both the original caller and
+			// the provider, which may retain or modify its own plan argument.
+			const recordedPlan = existing?.plan ?? structuredClone(plan);
 
 			const connector = options.connectors.get(plan.generatorConnectorId);
 			if (!connector) {
@@ -329,7 +340,8 @@ export function createYardGenerationSaga(options: {
 						? "generator connector missing"
 						: "generator connector not registered",
 				);
-				if (!existing) attempts.set(key, { planDigest, result });
+				if (!existing)
+					attempts.set(key, { planDigest, plan: recordedPlan, result });
 				return result;
 			}
 
@@ -343,7 +355,7 @@ export function createYardGenerationSaga(options: {
 						status: "started",
 					}),
 				});
-				attempts.set(key, { planDigest, result: started });
+				attempts.set(key, { planDigest, plan: recordedPlan, result: started });
 			}
 
 			const provision = connector.provision;
@@ -353,7 +365,7 @@ export function createYardGenerationSaga(options: {
 			// connector that synchronously reenters the saga. Failed calls retain
 			// the started record so a later retry inspects rather than provisions.
 			const operation = Promise.resolve().then(async () => {
-				if (!authorized())
+				if (!authorized(authorize, plan, planDigest))
 					return fail(
 						plan,
 						"generation-authorization-denied",
@@ -363,7 +375,11 @@ export function createYardGenerationSaga(options: {
 					? await inspect.call(connector, plan.attemptId)
 					: await provision.call(connector, plan);
 				const normalized = snapshotGenerationResult(result);
-				attempts.set(key, { planDigest, result: normalized });
+				attempts.set(key, {
+					planDigest,
+					plan: recordedPlan,
+					result: normalized,
+				});
 				return normalized;
 			});
 			inFlight.set(key, operation);
@@ -374,7 +390,19 @@ export function createYardGenerationSaga(options: {
 			}
 		},
 		inspect(idempotencyKey) {
-			return attempts.get(idempotencyKey)?.result;
+			const attempt = attempts.get(idempotencyKey);
+			if (!attempt) return undefined;
+			try {
+				const authorize = options.authorizePlan;
+				if (
+					!authorize ||
+					!authorized(authorize, attempt.plan, attempt.planDigest)
+				)
+					return undefined;
+				return attempt.result;
+			} catch {
+				return undefined;
+			}
 		},
 	};
 }

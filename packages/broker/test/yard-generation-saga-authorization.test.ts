@@ -89,9 +89,9 @@ describe("standalone Yard generation authorization", () => {
 	] as const)("does not call the provider when the host decision %s", async (mode) => {
 		const { connector, plan } = fixture();
 		const provision = vi.fn(connector.provision.bind(connector));
-			const options = {
+		const options = {
 			connectors: new Map([[connector.id, { ...connector, provision }]]),
-				authorizePlan(candidate: YardGenerationPlan): boolean {
+			authorizePlan(candidate: YardGenerationPlan): boolean {
 				if (mode === "denied") return false;
 				if (mode === "throws") throw new Error("decision unavailable");
 				if (mode === "mutates-plan")
@@ -100,11 +100,12 @@ describe("standalone Yard generation authorization", () => {
 				return true;
 			},
 		};
-			const saga = createYardGenerationSaga(options);
-			const result = await saga.run(plan);
+		const saga = createYardGenerationSaga(options);
+		const result = await saga.run(plan);
 		expect(result.failure?.code).toBe("generation-authorization-denied");
 		expect(provision).not.toHaveBeenCalled();
-			expect(saga.inspect(plan.idempotencyKey)).toBeUndefined();
+		options.authorizePlan = () => true;
+		expect(saga.inspect(plan.idempotencyKey)).toBeUndefined();
 	});
 
 	it("rechecks a revoked decision at the provider boundary", async () => {
@@ -125,6 +126,7 @@ describe("standalone Yard generation authorization", () => {
 		const result = await saga.run(plan);
 		expect(result.failure?.code).toBe("generation-authorization-denied");
 		expect(provision).not.toHaveBeenCalled();
+		allowed = true;
 		expect(saga.inspect(plan.idempotencyKey)?.status).toBe("started");
 	});
 
@@ -142,6 +144,87 @@ describe("standalone Yard generation authorization", () => {
 			"generation-authorization-denied",
 		);
 		expect(provision).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not expose a cached result through inspection after authorization is revoked", async () => {
+		const { connector, plan } = fixture();
+		let allowed = true;
+		const saga = createYardGenerationSaga({
+			connectors: new Map([[connector.id, connector]]),
+			authorizePlan: () => allowed,
+		});
+		expect((await saga.run(plan)).status).toBe("ready");
+		allowed = false;
+		expect(saga.inspect(plan.idempotencyKey)).toBeUndefined();
+		allowed = true;
+		expect(saga.inspect(plan.idempotencyKey)?.status).toBe("ready");
+	});
+
+	it.each([
+		"throws",
+		"mutates-plan",
+		"replaces-decision",
+	] as const)("refuses inspection when its host decision %s", async (mode) => {
+		const { connector, plan } = fixture();
+		const options = {
+			connectors: new Map([[connector.id, connector]]),
+			authorizePlan: (_candidate: YardGenerationPlan): boolean => true,
+		};
+		const saga = createYardGenerationSaga(options);
+		expect((await saga.run(plan)).status).toBe("ready");
+		options.authorizePlan = (candidate) => {
+			if (mode === "throws") throw new Error("decision unavailable");
+			if (mode === "mutates-plan")
+				Object.assign(candidate.inputs, { ownerTenantId: "other" });
+			if (mode === "replaces-decision") options.authorizePlan = () => true;
+			return true;
+		};
+		expect(saga.inspect(plan.idempotencyKey)).toBeUndefined();
+		options.authorizePlan = () => true;
+		expect(saga.inspect(plan.idempotencyKey)?.status).toBe("ready");
+	});
+
+	it("keeps the inspection plan separate from the provider's input", async () => {
+		const { connector, plan } = fixture();
+		const seenTenants: string[] = [];
+		const saga = createYardGenerationSaga({
+			connectors: new Map([
+				[
+					connector.id,
+					{
+						...connector,
+						async provision(received: YardGenerationPlan) {
+							Object.assign(received.inputs, { ownerTenantId: "other" });
+							return connector.provision(received);
+						},
+					},
+				],
+			]),
+			authorizePlan(candidate) {
+				seenTenants.push(String(candidate.inputs.ownerTenantId));
+				return candidate.inputs.ownerTenantId === "tenant";
+			},
+		});
+		expect((await saga.run(plan)).status).toBe("ready");
+		expect(saga.inspect(plan.idempotencyKey)?.status).toBe("ready");
+		expect(seenTenants).toEqual(["tenant", "tenant", "tenant"]);
+	});
+
+	it("enforces the current inspection decision for generated cases", async () => {
+		await fc.assert(
+			fc.asyncProperty(fc.boolean(), async (allowed) => {
+				const { connector, plan } = fixture();
+				let current = true;
+				const saga = createYardGenerationSaga({
+					connectors: new Map([[connector.id, connector]]),
+					authorizePlan: () => current,
+				});
+				await saga.run(plan);
+				current = allowed;
+				expect(Boolean(saga.inspect(plan.idempotencyKey))).toBe(allowed);
+			}),
+			{ seed: 614_600, numRuns: 40 },
+		);
 	});
 
 	it("does not expose the provider's plan to a retained authorization input", async () => {
