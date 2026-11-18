@@ -9,18 +9,7 @@ export function useLocalStorage<T>(
   schema: ZodType<T>,
 ): [T, (value: SetValue<T>) => void] {
   const storageRead = useRef(false);
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    if (!globalThis.window) {
-      return initialValue;
-    }
-    storageRead.current = true;
-    try {
-      const item = window.localStorage.getItem(key);
-      return item === null ? initialValue : schema.parse(JSON.parse(item));
-    } catch {
-      return initialValue;
-    }
-  });
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
 
   useEffect(() => {
     storageRead.current = false;
@@ -36,6 +25,7 @@ export function useLocalStorage<T>(
       try {
         const item = window.localStorage.getItem(key);
         if (item === null) {
+          setStoredValue(initialValue);
           return;
         }
         setStoredValue(schema.parse(JSON.parse(item)));

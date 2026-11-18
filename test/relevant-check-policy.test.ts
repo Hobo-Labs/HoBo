@@ -193,34 +193,33 @@ test("lockfile importer-only changes do not select all-package Turbo", () => {
 	);
 });
 
-test("Open SaaS example app changes select nested vitest lane", () => {
-	const { checks } = plan([
+test("Open SaaS vitest lane tracks implementation inputs only", () => {
+	const npmLane = (checks: ReturnType<typeof plan>["checks"]) =>
+		checks.some(
+			(check) =>
+				check.command === "npm" &&
+				check.args.join(" ") ===
+					"--prefix examples/wasp-opensaas/app run ci:test:unit",
+		);
+
+	const triggers = [
 		"examples/wasp-opensaas/app/src/analytics/stats.ts",
-	]);
+		"examples/wasp-opensaas/app/test/color-mode.test.tsx",
+		"examples/wasp-opensaas/app/scripts/ensure-vitest-install.mts",
+		"examples/wasp-opensaas/app/package.json",
+		"examples/wasp-opensaas/app/vitest.config.ts",
+	];
+	for (const file of triggers) {
+		assert.equal(npmLane(plan([file]).checks), true, file);
+	}
 
-	assert.equal(
-		checks.some(
-			(check) =>
-				check.command === "npm" &&
-				check.args.join(" ") ===
-					"--prefix examples/wasp-opensaas/app run ci:test:unit",
-		),
-		true,
-	);
-});
-
-test("Open SaaS README-only changes skip nested vitest lane", () => {
-	const { checks } = plan(["examples/wasp-opensaas/app/README.md"]);
-
-	assert.equal(
-		checks.some(
-			(check) =>
-				check.command === "npm" &&
-				check.args.join(" ") ===
-					"--prefix examples/wasp-opensaas/app run ci:test:unit",
-		),
-		false,
-	);
+	const negatives = [
+		"examples/wasp-opensaas/app/README.md",
+		"examples/wasp-opensaas/app/docs/note.md",
+	];
+	for (const file of negatives) {
+		assert.equal(npmLane(plan([file]).checks), false, file);
+	}
 });
 
 test("--build still selects all-package Turbo", () => {
