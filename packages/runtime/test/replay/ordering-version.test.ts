@@ -339,6 +339,9 @@ it("uses the requested ordering for event and sequence-vector ties", () => {
 		fold: (current: string, event: { streamId: string }) =>
 			current + event.streamId,
 	};
+	expect(() =>
+		assertReplayEqualsLive({ ...input, canonicalizationVersion: 1 }),
+	).not.toThrow();
 	const legacy = assertReplayEqualsLive({
 		...input,
 		canonicalizationVersion: 1,
