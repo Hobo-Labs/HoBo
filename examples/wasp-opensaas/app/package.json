@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "ci:test:unit": "node scripts/ensure-vitest-install.mts && npm install --workspaces=false --include=dev && env NODE_ENV=development vitest run --config vitest.config.ts",
+    "ci:test:unit": "node scripts/ensure-vitest-install.mts && npm install --workspaces=false --include=dev --no-package-lock && vitest run --config vitest.config.ts",
     "test:unit": "vitest run --config vitest.config.ts"
   },
   "workspaces": [

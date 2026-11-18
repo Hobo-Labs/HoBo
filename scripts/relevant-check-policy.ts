@@ -720,16 +720,22 @@ export function selectRelevantChecks(
 			reason: "agent workflow/eval changed; live evals are manual only",
 		});
 
-	if (
-		files.some((file) =>
-			file.replaceAll("\\", "/").startsWith("examples/wasp-opensaas/app/"),
-		)
-	) {
+	const openSaasVitestInputs = (file: string) => {
+		const normalized = file.replaceAll("\\", "/");
+		return (
+			normalized.startsWith("examples/wasp-opensaas/app/src/") ||
+			normalized.startsWith("examples/wasp-opensaas/app/test/") ||
+			normalized.startsWith("examples/wasp-opensaas/app/scripts/") ||
+			normalized === "examples/wasp-opensaas/app/package.json" ||
+			normalized === "examples/wasp-opensaas/app/vitest.config.ts"
+		);
+	};
+	if (files.some(openSaasVitestInputs)) {
 		checks.push({
 			command: "npm",
 			args: ["--prefix", "examples/wasp-opensaas/app", "run", "ci:test:unit"],
 			reason:
-				"Open SaaS example app changed; npm install --workspaces=false + vitest (not a pnpm workspace)",
+				"Open SaaS example app source/tests changed; npm ci:test:unit lane (not a pnpm workspace)",
 		});
 	}
 

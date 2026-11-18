@@ -23,6 +23,10 @@ export function useLocalStorage<T>(
   });
 
   useEffect(() => {
+    storageRead.current = false;
+  }, [key]);
+
+  useEffect(() => {
     if (!globalThis.window) {
       return;
     }
@@ -31,11 +35,17 @@ export function useLocalStorage<T>(
       storageRead.current = true;
       try {
         const item = window.localStorage.getItem(key);
-        if (item !== null) {
-          setStoredValue(schema.parse(JSON.parse(item)));
+        if (item === null) {
+          return;
         }
+        setStoredValue(schema.parse(JSON.parse(item)));
       } catch {
-        return;
+        setStoredValue(initialValue);
+        try {
+          window.localStorage.setItem(key, JSON.stringify(initialValue));
+        } catch {
+          return;
+        }
       }
       return;
     }
@@ -48,7 +58,7 @@ export function useLocalStorage<T>(
     } catch (error) {
       console.warn("Unable to save preference", error);
     }
-  }, [key, storedValue, schema]);
+  }, [key, storedValue, schema, initialValue]);
 
   return [storedValue, setStoredValue];
 }

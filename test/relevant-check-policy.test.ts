@@ -209,6 +209,20 @@ test("Open SaaS example app changes select nested vitest lane", () => {
 	);
 });
 
+test("Open SaaS README-only changes skip nested vitest lane", () => {
+	const { checks } = plan(["examples/wasp-opensaas/app/README.md"]);
+
+	assert.equal(
+		checks.some(
+			(check) =>
+				check.command === "npm" &&
+				check.args.join(" ") ===
+					"--prefix examples/wasp-opensaas/app run ci:test:unit",
+		),
+		false,
+	);
+});
+
 test("--build still selects all-package Turbo", () => {
 	const { checks } = plan(["docs/agent-tooling.md"], { includeBuild: true });
 
