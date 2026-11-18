@@ -157,7 +157,7 @@ registry fact; Matching folds the registry materialized view and records
 `match.Decided`; the single-writer ResourceActor dispatches realization; and
 `normalizeHetznerYardSignal` folds native server and network signals into
 `yard.*` events. Read stores rebuild from the log, so no snapshot here is
-load-bearing. See [`ADR.md`](./ADR.md) for the full command/event walk.
+load-bearing.
 
 ## API surface reached
 

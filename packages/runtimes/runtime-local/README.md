@@ -38,11 +38,6 @@ const host = createRuntimeLocalComponentHost({
 pnpm --filter @hobo/runtime-local test
 ```
 
-## Architecture evidence
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for protobuf/CUE contracts, PACT boundary,
-parse-don't-validate parsers, and event-sourced state naming.
-
 Promoted from `src/draft/technical-proofs/runtime-local-component-host` in S1-02
 (HOBO-591). wRPC link layer promoted in S1-03 (HOBO-592 / PR #784). Capability
 enforcement promoted from `src/draft/technical-proofs/capability-enforcement-contract`

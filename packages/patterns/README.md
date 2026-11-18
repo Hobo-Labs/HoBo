@@ -7,7 +7,7 @@ are structural effects. Fixtures live beside patterns and prove parse/render
 behavior only.
 
 Zero LLM tokens on every search, render and apply. Receipts record
-`llmCalls = 0`. See [ADR.md](./ADR.md).
+`llmCalls = 0`.
 
 ## Terms
 

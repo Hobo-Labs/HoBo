@@ -14,9 +14,6 @@ by the caller's SVID scope (deny-by-default), with inert tool output.
 
 - `src/secret-capture/` — the secret-capture MCP App (below).
 
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) and
-[`ai-native-agent-auth.md`](../../docs/design/ai-native-agent-auth.md) §6.4.
-
 ## Scripts
 
 - `pnpm --filter @hobo/mcp run build` — `tsc`

@@ -204,10 +204,6 @@ pnpm --filter @hobo/hobo test   # local yard parity still offline
 | DNS `managedBy: hobo` + gateway | CNAME upsert + usage event |
 | Cross-tenant policy | Deny + `policy.evaluate` usage event |
 
-## Architecture
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for Mermaid diagrams covering local named mode, overlay mode, pluggable DNS, and multi-tenant / policy / metering foundations.
-
 ## Next-step surfaces (landed)
 
 | Surface | How |

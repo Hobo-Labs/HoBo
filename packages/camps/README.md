@@ -5,8 +5,7 @@ descriptors (`resolutionPrecedenceFor`), and offline `resolveLocalBindings` for
 local Camp development. A Camp is **provider-neutral until attached to a Yard**;
 the **Yard owns provider selection**, and the Camp **infers** provider from that
 Yard (or from Yard placement policy). Camps do not own Bindles and do not select
-cloud providers. Camps can move between Yards via Trails. See [`ADR.md`](./ADR.md)
-and the [yard-first-placement ADR](../../docs/design/adr/yard-first-placement.md).
+cloud providers. Camps can move between Yards via Trails.
 
 Give a Camp a `logicalId` to identify it across independently declared Yard
 placements. Its `id` identifies the current placement, and the Yard determines

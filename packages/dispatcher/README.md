@@ -79,5 +79,4 @@ release never makes an expired grant eligible again. Expiry only releases a
 reservation: execution owners must stop or fence work before returning its
 remaining financial exposure to the pool.
 
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
-[`contracts/`](./contracts) for the v1 and v2 PACT boundaries.
+See [`contracts/`](./contracts) for the v1 and v2 PACT boundaries.

@@ -301,7 +301,7 @@ the anonymous dimension (`data-models/anonymous_conformance.proto` +
 
 HoBo.CI sibling SDKs (`ci`, `ci-gh-actions`, `ci-dagger`, `ci-cf`) are registered
 as application-layer packages in the boundary classifier. They compose the existing
-Dispatcher without provider-layer exceptions; see `../ci/ADR.md`.
+Dispatcher without provider-layer exceptions.
 
 `@hobo/ci-ado` and the existing `@hobo/ci-vercel` transport are registered alongside
 the other CI application SDKs at layer 3;

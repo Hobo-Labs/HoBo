@@ -342,7 +342,7 @@ trailers.
   printed, and put far more untrusted text in front of a model.
 
 [PRIOR-ART.md](PRIOR-ART.md) sets these against what other merge queues and
-conflict resolvers do. [ADR.md](ADR.md) records the design decisions.
+conflict resolvers do.
 
 ## Layout
 
