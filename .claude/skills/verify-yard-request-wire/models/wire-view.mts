@@ -8,6 +8,7 @@ export const state = v => ({
   selection: 'Work snapshot under review',
   identity: 'Work snapshot under review',
   'digest-format': 'Request digest under review',
+  'parse-domain': 'Request digest under review',
   compare: 'Request digest under review',
   refused: 'Placement request refused',
   accepted: 'Placement request accepted for authorization',
@@ -21,6 +22,7 @@ export const step = (action, from, to) => ({
   InspectSelection: to.phase === 'refused' ? 'refuse an invalid selection' : 'inspect the identity',
   InspectIdentity: to.phase === 'refused' ? 'refuse a missing identity' : 'inspect the digest',
   InspectDigestFormat: to.phase === 'refused' ? 'refuse an invalid digest' : 'compare the work',
+  ParseDomain: to.phase === 'refused' ? 'refuse invalid parsed work' : 'compare the work',
   Compare: to.phase === 'refused' ? 'refuse inconsistent work' : 'accept the request for authorization',
   Done: 'finish',
 })[action] ?? null;

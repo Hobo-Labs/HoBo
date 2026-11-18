@@ -9,7 +9,7 @@ description: Verify quote authorization, hosting budget admission, execution cla
 
 **Why:** A missing hold or lost journal entry can fund multiple provider operations with the same money, while a premature release can leave running work unaccounted for.
 
-**Review baseline:** commit `a9c02ab220cd3b795e7e835f866ae21baf5c608d`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
+**Review baseline:** commit `68c1fd792b8b9cf530293502d62bd4dd616e0a60`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below. The Yard request parser now refuses malformed constraints and estimates before admission; `verify-yard-request-validation` checks that boundary separately.
 
 ## Covered code
 

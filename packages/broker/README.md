@@ -28,6 +28,22 @@ Malformed values are refused instead of being discarded and weakening placement
 requirements. Callers that previously omitted the estimate must supply it
 explicitly before retrying; recompute any affected request digest and quote.
 
+The [Yard request validation skill](../../.agents/skills/verify-yard-request-validation/SKILL.md)
+checks a bounded model of parsing before host authorization. The projection
+hides 11 same-state steps and abstracts matching and policy decisions.
+
+```mermaid
+stateDiagram-v2
+  s0: Placement request received
+  s1: Invalid request refused
+  s2: Valid request captured
+  s3: Captured request sent for host authorization
+  [*] --> s0
+  s0 --> s1: refuse malformed requirements
+  s0 --> s2: capture the requirements
+  s2 --> s3: ask the host to authorize placement
+```
+
 Camp placement preserves the requested Camp layout, including its environment
 type, in the request used for authorization. Without an explicit Camp ID, the
 selected Yard uses `camp:<envType>`, or `camp:dev` when no environment was
@@ -60,7 +76,7 @@ deployed transport or a guarantee that an older receiver enforces the marker.
 The protobuf receipt still omits execution-unit details.
 
 The [Yard request wire skill](../../.agents/skills/verify-yard-request-wire/SKILL.md)
-checks a bounded model of the codec. This projection hides 47 same-state steps;
+checks a bounded model of the codec. This projection hides 51 same-state steps;
 acceptance means the request can proceed to authorization, not that its sender
 or its claimed digest has been authenticated.
 

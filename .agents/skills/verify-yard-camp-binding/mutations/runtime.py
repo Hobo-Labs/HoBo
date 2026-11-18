@@ -19,14 +19,13 @@ def replace(before, after):
         raise RuntimeError(f'expected exactly one source match: {before!r}')
     return original.replace(before, after)
 
-validation = '''\t\tif (isJsonObject(raw.camp.layout)) {
-\t\t\tconst envType = raw.camp.layout.envType;
-\t\t\tif (
-\t\t\t\tenvType !== undefined &&
-\t\t\t\t(!isJsonString(envType) || !envType.trim() || envType.includes("/"))
-\t\t\t)
-\t\t\t\tthrow new TypeError("camp envType must be a nonempty path segment");
-\t\t}
+validation = '''\tif (
+\t\tvalue.envType !== undefined &&
+\t\t(!isJsonString(value.envType) ||
+\t\t\t!value.envType.trim() ||
+\t\t\tvalue.envType.includes("/"))
+\t)
+\t\tthrow new TypeError("camp envType must be a nonempty path segment");
 '''
 quote_guard = '''\tif (selectOrGenerateCamp(request, input.yardId) === undefined)
 \t\treturn {
