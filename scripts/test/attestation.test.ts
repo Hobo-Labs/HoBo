@@ -74,22 +74,24 @@ function statement(
 				docker: "29.0.0",
 			},
 		},
-		results: jobs.map((id) => ({
-			id,
-			status: "passed" as const,
-			events: BOTH_EVENTS.includes(id)
-				? ["pull_request", "merge_group"]
-				: ["pull_request"],
-			commands: id === "scripts-tests" ? 8 : 3,
-			...(id === "scripts-tests"
-				? {
-						eventChecks: { pull_request: 4, merge_group: 4 },
-						executionMode: "each-step-v1" as const,
-					}
-				: {}),
-			durationMs: 1000,
-			logDigest: `sha256:${"f".repeat(64)}`,
-		})),
+		results: jobs.map((id) => {
+			const result = {
+				id,
+				status: "passed" as const,
+				events: BOTH_EVENTS.includes(id)
+					? ["pull_request", "merge_group"]
+					: ["pull_request"],
+				commands: id === "scripts-tests" ? 8 : 3,
+				durationMs: 1000,
+				logDigest: `sha256:${"f".repeat(64)}`,
+			};
+			if (id === "scripts-tests")
+				Object.assign(result, {
+					eventChecks: { pull_request: 4, merge_group: 4 },
+					executionMode: "each-step-v1" as const,
+				});
+			return result;
+		}),
 		...changes,
 	};
 }
@@ -185,20 +187,22 @@ describe("verifying an attestation", () => {
 					events: ["merge_group"],
 				}),
 				results: ["pr_gate_validation", "workspace_tests", "scripts-tests"].map(
-					(id) => ({
-						id,
-						status: "passed" as const,
-						events: ["merge_group"],
-						commands: id === "scripts-tests" ? 4 : 1,
-						...(id === "scripts-tests"
-							? {
-									eventChecks: { merge_group: 4 },
-									executionMode: "each-step-v1" as const,
-								}
-							: {}),
-						durationMs: 1,
-						logDigest: `sha256:${"f".repeat(64)}`,
-					}),
+					(id) => {
+						const result = {
+							id,
+							status: "passed" as const,
+							events: ["merge_group"],
+							commands: id === "scripts-tests" ? 4 : 1,
+							durationMs: 1,
+							logDigest: `sha256:${"f".repeat(64)}`,
+						};
+						if (id === "scripts-tests")
+							Object.assign(result, {
+								eventChecks: { merge_group: 4 },
+								executionMode: "each-step-v1" as const,
+							});
+						return result;
+					},
 				),
 			},
 			signer.privateKey,
@@ -310,13 +314,8 @@ describe("verifying an attestation", () => {
 		for (const testedCommit of [undefined, "9".repeat(40)]) {
 			const original = statement(signer.entry.id);
 			const { testedCommit: _testedCommit, ...rest } = original;
-			const mismatched = signStatement(
-				{
-					...rest,
-					...(testedCommit ? { testedCommit } : {}),
-				},
-				signer.privateKey,
-			);
+			if (testedCommit) Object.assign(rest, { testedCommit });
+			const mismatched = signStatement(rest, signer.privateKey);
 			const verdict = verify(mismatched, [signer.entry], {
 				event: "merge_group",
 			});
