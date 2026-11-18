@@ -713,6 +713,45 @@ e: ##"raw \##(2 + // raw interpolation
 		}
 	});
 
+	it("checks Terraform comments and preserves HCL strings and heredocs", () => {
+		const source = [
+			'url = "https://example.test/#data"',
+			"script = <<-END",
+			"# heredoc content",
+			"END",
+			'value = "${1 + /* explanation */ 2}"',
+			"# TODO finish",
+		].join("\n");
+		for (const extension of ["hcl", "tf", "tfvars"]) {
+			assert.deepEqual(
+				commentViolations(
+					`module.${extension}`,
+					source,
+					new Set([1, 2, 3, 4, 5, 6]),
+				).map((item) => item.line),
+				[5, 6],
+			);
+		}
+		const repo = fixture();
+		write(repo, "main.tf", source);
+		git(repo, "add", "main.tf");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /main\.tf:5:.*self-documenting/u);
+		assert.match(result.stderr, /main\.tf:6:.*finish deferred work/u);
+		const docs = fixture();
+		write(
+			docs,
+			"README.md",
+			"# Example\n```terraform\nvalue = 1 # explanation\n```\n",
+		);
+		git(docs, "add", "README.md");
+		assert.match(
+			guard(docs, "--staged").stderr,
+			/README\.md:3:.*self-documenting/u,
+		);
+	});
+
 	it("handles Rust and Kotlin line and block comments", () => {
 		for (const file of ["example.rs", "example.kt"]) {
 			assert.deepEqual(

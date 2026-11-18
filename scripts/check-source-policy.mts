@@ -66,6 +66,9 @@ const OTHER_LANGUAGES = new Map([
 	[".py", "python"],
 	[".css", "css"],
 	[".html", "html"],
+	[".hcl", "hcl"],
+	[".tf", "hcl"],
+	[".tfvars", "hcl"],
 ]);
 const require = createRequire(import.meta.url);
 const AST_GREP = join(
@@ -597,6 +600,8 @@ const sourceLanguageExtensions = new Map([
 	["wit", ".wit"],
 	["prisma", ".prisma"],
 	["toml", ".toml"],
+	["hcl", ".hcl"],
+	["terraform", ".tf"],
 	["c", ".c"],
 	["cpp", ".cpp"],
 	["c++", ".cpp"],
