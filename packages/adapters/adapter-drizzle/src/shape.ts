@@ -127,6 +127,8 @@ export interface DrizzleColumnLike {
 	readonly hasDefault?: boolean;
 	readonly default?: JsonValue;
 	readonly defaultFn?: JsonValue;
+	readonly generated?: JsonValue;
+	readonly generatedIdentity?: JsonValue;
 	readonly getSQLType?: () => JsonValue;
 }
 

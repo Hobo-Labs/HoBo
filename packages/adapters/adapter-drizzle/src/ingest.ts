@@ -202,6 +202,21 @@ function readColumn(
 	findings: DrizzleImpedanceFinding[],
 ): SchemaColumn {
 	const primaryKey = column.primary === true;
+	if (column.generated !== undefined && column.generated !== null) {
+		findings.push({
+			code: "DRIZZLE_COLUMN_GENERATED_UNREPRESENTABLE",
+			detail: `Column "${column.name}" of table "${table}" is generated; the canonical IR carries its type but not its generation expression.`,
+		});
+	}
+	if (
+		column.generatedIdentity !== undefined &&
+		column.generatedIdentity !== null
+	) {
+		findings.push({
+			code: "DRIZZLE_COLUMN_IDENTITY_UNREPRESENTABLE",
+			detail: `Column "${column.name}" of table "${table}" is an identity column; the canonical IR carries its type but not its identity generation.`,
+		});
+	}
 	const defaultExpression = readDefault(table, column, findings);
 	return Object.freeze({
 		name: column.name,
@@ -218,6 +233,13 @@ function readDefault(
 	column: DrizzleColumnLike,
 	findings: DrizzleImpedanceFinding[],
 ): string | undefined {
+	if (
+		column.generatedIdentity !== undefined &&
+		column.generatedIdentity !== null &&
+		column.default === undefined &&
+		column.defaultFn === undefined
+	)
+		return undefined;
 	const hasDefault = column.hasDefault === true || column.default !== undefined;
 	if (!hasDefault) return undefined;
 	if (column.defaultFn instanceof Function) {

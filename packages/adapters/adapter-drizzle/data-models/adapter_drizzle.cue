@@ -9,7 +9,9 @@ package adapter_drizzle
 // when the toolchain is present — that cross-field rule is the whole point of
 // the gate, expressed where it cannot be forgotten.
 
-#DrizzleImpedanceCode: "DRIZZLE_COLUMN_UNRECOGNIZED" |
+#DrizzleImpedanceCode: "DRIZZLE_COLUMN_GENERATED_UNREPRESENTABLE" |
+	"DRIZZLE_COLUMN_IDENTITY_UNREPRESENTABLE" |
+	"DRIZZLE_COLUMN_UNRECOGNIZED" |
 	"DRIZZLE_COLUMN_TYPE_UNREADABLE" |
 	"DRIZZLE_DEFAULT_UNREPRESENTABLE" |
 	"DRIZZLE_EXPORT_UNRECOGNIZED" |

@@ -70,6 +70,8 @@ throw — a finding is the answer.
 | `DRIZZLE_INDEX_KEY_ORDER_UNREPRESENTABLE` | An index key has a non-default sort order, nulls order or operator class; the index is ingested without it |
 | `DRIZZLE_INDEX_OPTIONS_UNREPRESENTABLE` | An index has a non-default access method, storage parameters, `CONCURRENTLY`, or `ONLY`; the index is ingested without those options |
 | `DRIZZLE_COLUMN_UNRECOGNIZED` | A value in the column map is not a column descriptor |
+| `DRIZZLE_COLUMN_GENERATED_UNREPRESENTABLE` | A generated column is ingested without its generation expression |
+| `DRIZZLE_COLUMN_IDENTITY_UNREPRESENTABLE` | An identity column is ingested without its identity generation |
 | `DRIZZLE_COLUMN_TYPE_UNREADABLE` | A column exposed no readable SQL type |
 | `DRIZZLE_NON_POSTGRES_TABLE` | A column carries a MySQL/SQLite/SingleStore type; this adapter ingests postgres only |
 | `DRIZZLE_DEFAULT_UNREPRESENTABLE` | The default is a SQL expression or a runtime function, not a literal |
@@ -133,7 +135,7 @@ exactly which engine version produced the SQL that ran.
   intended failure mode, but it is a failure mode.
 - **The IR is narrower than Drizzle.** Foreign keys, check constraints,
   composite primary keys, table-level unique constraints, expression indexes,
-  partial-index predicates, index key ordering, generated columns, enums, views,
+  partial-index predicates, index key ordering, generated and identity columns, enums, views,
   sequences, partitioning, and non-default postgres schemas have no
   representation in `SchemaIr` and therefore are **not diffed**. They appear as
   impedance findings when detected. A plan from this engine is not a complete
