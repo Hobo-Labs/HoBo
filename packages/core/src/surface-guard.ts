@@ -2,7 +2,7 @@ import { EnvelopeParseError } from "./errors.js";
 import type { JsonValue } from "./json.js";
 import { cloneJson, deepFreeze, expectObject } from "./parse-utils.js";
 
-// public-contract: pins the serialized @hobo/core API snapshot schema.
+// public-contract:
 export const CORE_SCHEMA_VERSION = "hobo.core/v1";
 
 export const CORE_API_SNAPSHOT = deepFreeze({
@@ -25,6 +25,11 @@ export const CORE_API_SNAPSHOT = deepFreeze({
 		"parseCapabilityManifestBundle",
 		"createPortDescriptor",
 		"createContainer",
+		"AgentConfigFieldInput",
+		"AgentConfigFieldView",
+		"AgentConfigSchemaInput",
+		"AgentConfigSchemaView",
+		"createAgentConfigSchemaView",
 		"assertCoreApiSnapshot",
 		"validatePublicTypeSurface",
 		"CORE_API_SNAPSHOT",

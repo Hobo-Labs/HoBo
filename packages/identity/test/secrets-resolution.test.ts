@@ -106,11 +106,11 @@ describe("secretless resolution ladder", () => {
 			},
 			forbidStaticEscape: true,
 		});
-		expect(resolved.agentView.LOG_LEVEL).toBe("debug");
-		expect(resolved.agentView.DB_URL).toMatch(/REDACTED/);
-		expect(resolved.agentView.API_KEY).toMatch(/REDACTED/);
-		expect(JSON.stringify(resolved.agentView)).not.toContain(
-			"real-secret-value-xyz",
+		expect(resolved.agentView.fields.LOG_LEVEL?.sensitivity).toBe("public");
+		expect(resolved.agentView.fields.DB_URL?.sensitivity).toBe("sensitive");
+		expect(resolved.agentView.fields.API_KEY?.sensitivity).toBe("sensitive");
+		expect(JSON.stringify(resolved.agentView)).not.toMatch(
+			/debug|real-secret-value-xyz/,
 		);
 		expect(resolved.entries.LOG_LEVEL?.sensitivity).toBe("public");
 		expect(resolved.entries.DB_URL?.sensitivity).toBe("sensitive");
@@ -214,8 +214,8 @@ describe("secretless resolution ladder", () => {
 			forbidStaticEscape: fixtures.forbidStaticEscape,
 			allowedSources: fixtures.allowedSources,
 		});
-		expect(resolved.agentView.DB_URL).toMatch(/REDACTED/);
-		expect(resolved.agentView.API_KEY).toMatch(/REDACTED/);
+		expect(resolved.agentView.fields.DB_URL?.sensitivity).toBe("sensitive");
+		expect(resolved.agentView.fields.API_KEY?.sensitivity).toBe("sensitive");
 		expect(JSON.stringify(resolved.agentView)).not.toContain(
 			"seeded-only-in-broker",
 		);
@@ -283,11 +283,6 @@ describe("secretless resolution ladder", () => {
 		expect(file.schemaVersion).toBe("hobo.local-config-override/v1");
 		const plain = decryptLocalOverrides(file, "dev-pass");
 		expect(plain.LOG_LEVEL).toBe("debug");
-		// Two different refusals live behind this call — "key not in the
-		// non-sensitive allowlist" and "this value looks like a secret" — and
-		// the previous `/sensitive|not in non-sensitive/i` matched either, so
-		// it could not say which one fired. `API_KEY` *is* allowlisted here, so
-		// the branch under test is the looks-sensitive one; pin its code.
 		let sensitiveRefusal: unknown;
 		try {
 			encryptLocalOverrides({
@@ -299,15 +294,13 @@ describe("secretless resolution ladder", () => {
 			sensitiveRefusal = cause;
 		}
 		expect(sensitiveRefusal).toBeInstanceOf(Error);
-		// SAFETY: assertion to `itiveRefusal as { code?: unknown }).co` is required at this boundary.
-		expect((sensitiveRefusal as { code?: unknown }).code).toBe(
-			"override-looks-sensitive",
-		);
-		// SAFETY: assertion to `itiveRefusal as Error).me` is required at this boundary.
-		expect((sensitiveRefusal as Error).message).toBe(
+		expect(sensitiveRefusal).toHaveProperty("code", "override-looks-sensitive");
+		if (!(sensitiveRefusal instanceof Error)) {
+			throw new TypeError("expected local override refusal");
+		}
+		expect(sensitiveRefusal.message).toBe(
 			"local override API_KEY looks sensitive; only non-secret config allowed",
 		);
-		// The neighbouring branch, so the two can never be confused again.
 		expect(() =>
 			encryptLocalOverrides({
 				values: { LOG_LEVEL: "debug" },

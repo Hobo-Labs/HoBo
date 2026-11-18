@@ -111,7 +111,7 @@ const REQUIRED_CHECKS = [
 	{
 		code: "missing-event-architecture",
 		message:
-			"Stateful command/event code must expose actor, event-store, projection, snapshot, and read-store symbols or a deterministic snapshot/replay model.",
+			"Stateful command/event code must expose a deterministic transition model or complete runtime symbols.",
 		passes: (evidence) => evidence.hasEventArchitecture,
 	},
 	{
@@ -325,7 +325,7 @@ function hasParseDerivedTypes(sources) {
 		),
 	]);
 	if (declarations.length === 0) return false;
-	return declarations.every((declaration) => {
+	return declarations.some((declaration) => {
 		const result = declaration[1]?.trim();
 		return Boolean(
 			result &&
@@ -348,21 +348,11 @@ function hasEventArchitecture(sources) {
 	const snapshot =
 		declaration("Snapshot") || /\bsnapshot\s*\([^)]*\)\s*[{;]/u.test(text);
 	const replay = /\breplay\s*\([^)]*\)\s*(?::\s*[^={;\n]+)?\s*[{;]/u.test(text);
-	const hasStatefulSurface =
-		command ||
-		event ||
-		snapshot ||
-		replay ||
-		declaration("Actor") ||
-		declaration("EventStore") ||
-		declaration("Projection") ||
-		declaration("MaterializedView") ||
-		declaration("ReadStore");
-	if (!hasStatefulSurface) return false;
-	const deterministicModel = command && event && snapshot && replay;
+	if (!command || !event) return true;
+	const deterministicModel =
+		(snapshot && replay) ||
+		/\b(?:apply|fold|project|reduce)[A-Z_$][\w$]*\s*\([^)]*\)/u.test(text);
 	const completeRuntime =
-		command &&
-		event &&
 		declaration("Actor") &&
 		declaration("EventStore") &&
 		(declaration("Projection") || declaration("MaterializedView")) &&

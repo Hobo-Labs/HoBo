@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+	type AgentConfigSchemaView,
+	createAgentConfigSchemaView,
+} from "@hobo/core";
 import type { ConfigSensitivity } from "./config-sensitivity.js";
 import { sensitivityForField } from "./config-sensitivity.js";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
@@ -225,54 +229,8 @@ export function config(
 	});
 }
 
-export function schemaOnlyView(schema: ConfigSchema): Readonly<{
-	schemaVersion: string;
-	schemaHash: string;
-	fields: Readonly<
-		Record<
-			string,
-			{
-				type: string;
-				required: boolean;
-				sensitive: boolean;
-				sensitivity: ConfigSensitivity;
-				source: string;
-				docs?: string;
-			}
-		>
-	>;
-}> {
-	const fields: Record<
-		string,
-		{
-			type: string;
-			required: boolean;
-			sensitive: boolean;
-			sensitivity: ConfigSensitivity;
-			source: string;
-			docs?: string;
-		}
-	> = {};
-	for (const [name, f] of Object.entries(schema.fields)) {
-		Object.defineProperty(fields, name, {
-			value: {
-				type: f.type,
-				required: f.required,
-				sensitive: sensitivityForField(f) === "sensitive",
-				sensitivity: sensitivityForField(f),
-				source: f.source,
-				...(f.docs !== undefined ? { docs: f.docs } : undefined),
-			},
-			enumerable: true,
-			writable: true,
-			configurable: true,
-		});
-	}
-	return Object.freeze({
-		schemaVersion: schema.schemaVersion,
-		schemaHash: schema.schemaHash,
-		fields: Object.freeze(fields),
-	});
+export function schemaOnlyView(schema: ConfigSchema): AgentConfigSchemaView {
+	return createAgentConfigSchemaView(schema);
 }
 
 export function sourceRankIndex(source: SecretSourceRank): number {

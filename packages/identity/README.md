@@ -150,11 +150,13 @@ svc.start({
 // JIT link keeps both adapters valid until cutover (ADR-0100 grace patterns).
 ```
 
-## Deferred: keyless provider-STS exchange (S3-03)
+## Keyless provider-STS exchange
 
-The broker returns a deterministic fixture-scoped token derived inside the
-vault. The real keyless OIDC-federation / provider-STS token exchange is a later
-item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
+`TokenBroker` prefers a configured `ProviderStsExchange`, mints a short-lived
+OIDC assertion scoped to the attested workload, and exchanges it for a narrowed
+provider credential. `createInMemoryProviderStsExchange` supplies deterministic
+offline and test behavior. Vault-derived credentials remain the bounded fallback
+when federation is unavailable.
 
 ## Exports
 

@@ -5,7 +5,6 @@ import {
 	env,
 	evaluateSecretlessConfigGate,
 	generateCtxConfigSource,
-	materializeAgentConfigView,
 	schemaOnlyView,
 	sensitivityForField,
 } from "../src/index.js";
@@ -27,20 +26,16 @@ it("preserves prototype-named fields through schema, hash, and agent views", () 
 	const schemaView = schemaOnlyView(schema);
 	expect(Object.hasOwn(schemaView.fields, "__proto__")).toBe(true);
 	expect(Object.getPrototypeOf(schemaView.fields)).toBe(Object.prototype);
-	const values = JSON.parse(
-		'{"__proto__":"first","constructor":"second","odd-name":"third"}',
-	);
-	const view = materializeAgentConfigView(schema, values);
-	expect(Object.hasOwn(view, "__proto__")).toBe(true);
-	expect(Object.getOwnPropertyDescriptor(view, "__proto__")?.value).toBe(
-		"first",
-	);
-	expect(view.constructor).toBe("second");
-	expect(view["odd-name"]).toBe("third");
-	expect(Object.getPrototypeOf(view)).toBe(Object.prototype);
+	const prototypeField = Object.entries(schemaView.fields).find(
+		([name]) => name === "__proto__",
+	)?.[1];
+	expect(prototypeField?.type).toBe("string");
+	expect(schemaView.fields.constructor.type).toBe("string");
+	expect(schemaView.fields["odd-name"]?.type).toBe("string");
+	expect(Object.isFrozen(prototypeField)).toBe(true);
 });
 
-it("never exposes internal or sensitive values to an agent", () => {
+it("never exposes config values or author text to an agent", () => {
 	const field = {
 		kind: "config-field",
 		type: "string",
@@ -49,23 +44,27 @@ it("never exposes internal or sensitive values to an agent", () => {
 		source: "bound-resource",
 	} as const;
 	const schema = config({
-		internal: { ...field, sensitivity: "internal" },
+		internal: {
+			...field,
+			sensitivity: "internal",
+			defaultValue: "private-value",
+			docs: "internal instructions",
+		},
 		secret: { ...field, sensitivity: "sensitive" },
 		conflict: { ...field, sensitive: true, sensitivity: "public" },
-		public: { ...field, sensitivity: "public" },
+		public: {
+			...field,
+			sensitivity: "public",
+			defaultValue: "public-value",
+		},
 	});
-	const view = materializeAgentConfigView(schema, {
-		internal: "private-value",
-		secret: "sensitive-value",
-		conflict: "conflicting-value",
-		public: "public-value",
-	});
-	expect(view.internal).toMatch(/^\[REDACTED:/);
-	expect(view.secret).toMatch(/^\[REDACTED:/);
-	expect(view.conflict).toMatch(/^\[REDACTED:/);
-	expect(view.public).toBe("public-value");
+	const view = schemaOnlyView(schema);
+	expect(view.fields.internal?.sensitivity).toBe("internal");
+	expect(view.fields.secret?.sensitivity).toBe("sensitive");
+	expect(view.fields.conflict?.sensitivity).toBe("sensitive");
+	expect(view.fields.public?.sensitivity).toBe("public");
 	expect(JSON.stringify(view)).not.toMatch(
-		/private-value|sensitive-value|conflicting-value/,
+		/private-value|sensitive-value|conflicting-value|public-value|internal instructions/,
 	);
 	expect(sensitivityForField({ sensitive: true, sensitivity: "public" })).toBe(
 		"sensitive",

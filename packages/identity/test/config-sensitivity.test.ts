@@ -31,7 +31,7 @@ it("keeps internal values out of agent views and event payloads", async () => {
 	});
 	expect(result.entries.internal?.sensitivity).toBe("internal");
 	expect(result.entries.internal?.value).toBe("private-value");
-	expect(result.agentView.internal).toMatch(/^\[REDACTED:/);
+	expect(result.agentView.fields.internal?.sensitivity).toBe("internal");
 	expect(result.events[0]?.data.sensitivity).toBe("internal");
 	expect(JSON.stringify(result.agentView)).not.toContain("private-value");
 	expect(JSON.stringify(result.events)).not.toContain("private-value");
@@ -62,11 +62,8 @@ it("treats explicit and conflicting sensitivity as secret and audits access", as
 	expect(result.entries.explicit?.value).toBeUndefined();
 	expect(result.entries.conflict?.sensitivity).toBe("sensitive");
 	expect(result.entries.conflict?.value).toBeUndefined();
-	expect(
-		Object.values(result.agentView).every((value) =>
-			value.startsWith("[REDACTED:"),
-		),
-	).toBe(true);
+	expect(result.agentView.fields.explicit?.sensitivity).toBe("sensitive");
+	expect(result.agentView.fields.conflict?.sensitivity).toBe("sensitive");
 	expect(
 		result.events.filter((event) => event.type === "secret.Accessed"),
 	).toHaveLength(2);
@@ -88,11 +85,13 @@ it("resolves prototype-named fields only from own entries", async () => {
 		campValues: values,
 	});
 	expect(Object.hasOwn(result.entries, "__proto__")).toBe(true);
-	expect(Object.hasOwn(result.agentView, "__proto__")).toBe(true);
-	expect(
-		Object.getOwnPropertyDescriptor(result.agentView, "__proto__")?.value,
-	).toBe("first");
-	expect(result.agentView.constructor).toBe("second");
+	expect(Object.hasOwn(result.agentView.fields, "__proto__")).toBe(true);
+	const prototypeField = Object.entries(result.agentView.fields).find(
+		([name]) => name === "__proto__",
+	)?.[1];
+	expect(prototypeField?.sensitivity).toBe("public");
+	expect(result.agentView.fields.constructor.sensitivity).toBe("public");
+	expect(JSON.stringify(result.agentView)).not.toMatch(/first|second/);
 	const missing = schema({
 		constructor: { ...field, source: "bound-resource" },
 	});
@@ -135,7 +134,7 @@ it("keeps internal bound tokens out of agent views while retaining the runtime v
 	});
 	expect(result.entries.internal?.value).toBe("runtime-token");
 	expect(result.entries.internal?.sensitivity).toBe("internal");
-	expect(result.agentView.internal).toMatch(/^\[REDACTED:/);
+	expect(result.agentView.fields.internal?.sensitivity).toBe("internal");
 	expect(JSON.stringify(result.agentView)).not.toContain("runtime-token");
 	expect(JSON.stringify(result.events)).not.toContain("runtime-token");
 });
