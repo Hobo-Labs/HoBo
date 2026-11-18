@@ -12,6 +12,13 @@
         "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/ensure-hooks-path.sh\" >/dev/null 2>&1; exit 0",
         "timeout": 10
       }
+    ],
+    "stop": [
+      {
+        "command": "node --experimental-strip-types scripts/agent-completion-hook.mts cursor",
+        "timeout": 10,
+        "loop_limit": null
+      }
     ]
   }
 }
