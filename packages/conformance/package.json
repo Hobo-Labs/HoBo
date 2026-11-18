@@ -12,6 +12,10 @@
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
 		},
+		"./sdk": {
+			"types": "./dist/sdk/index.d.ts",
+			"default": "./dist/sdk/index.js"
+		},
 		"./runtime-port": {
 			"types": "./dist/suites/runtime-port/index.d.ts",
 			"default": "./dist/suites/runtime-port/index.js"
@@ -40,6 +44,7 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",

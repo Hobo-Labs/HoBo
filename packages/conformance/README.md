@@ -25,6 +25,17 @@ typed, event-sourced port-suite harness under `packages/conformance/`.
   `@hobo/runtime-local` lives in
   `test/runtime-local-eventstore.conformance.test.ts` (dev-only edge to the adapter).
 
+### `@hobo/conformance/sdk`
+
+`runSdkIdiomConformance` executes a supplied adapter against a lowering corpus
+and semantics vectors, then reports idiom-layer, authorship, and coverage
+results. When resilience vectors are supplied, the adapter executes each one
+and its actual result is compared with the expected result. Retry, deadline,
+lifecycle, supervision, cleanup, inspection, and replay helper claims require
+matching resilience vectors. Reports describe only the supplied corpus.
+`encodeSdkConformanceReport` and `decodeSdkConformanceReport` round-trip
+validated reports in protobuf form.
+
 ### `@hobo/conformance/anonymous` — the anonymous/claimable dimension
 
 - `BOOTSTRAP_CONFORMANCE_SUITE`, `CLAIM_CONFORMANCE_SUITE`,
