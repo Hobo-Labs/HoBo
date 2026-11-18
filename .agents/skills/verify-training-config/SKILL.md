@@ -9,13 +9,15 @@ description: Verify training optimizer count bounds and bounded-loop progress.
 
 **Why:** Values outside the wire contract cannot be faithfully represented, and sufficiently large JavaScript integers can stop increasing when incremented.
 
-**Review baseline:** `c66788fc93b3a550f991f7754294b7b4451d9c72`.
+**Review baseline:** `6a7ecb7b0431ab6a8582eb6fd901d34c3b50e549`.
 
 ## Covered code and checks
 
 - `packages/training/src/optimizer.ts` parses both count fields and runs the iteration loop. `data-models/training_optimizer.proto` specifies `uint32` fields; `data-models/training_optimizer.cue` constrains them to the same positive range.
 - `packages/training/test/optimizer-config-bounds.test.ts` checks both field boundaries, typed error paths and 100 generated values on either side of the upper bound without executing oversized optimizations. Existing optimizer tests cover defaults and normal runs.
 - The related [seeded generator skill](../verify-training-prng/SKILL.md) checks generator contracts, and the [trace sink skill](../verify-training-trace-sink/SKILL.md) checks recorded trace snapshots.
+
+The related [selection skill](../verify-training-selection/SKILL.md) checks reward admission and keep-best behavior.
 
 From the repository root with dependencies installed, run:
 

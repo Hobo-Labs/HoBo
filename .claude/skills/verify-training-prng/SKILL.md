@@ -9,7 +9,7 @@ description: Verify seeded training generator input validation, replay and abstr
 
 **Why:** Silent seed coercion and state changes during failed calls can make a recorded training run replay a different proposal trajectory.
 
-**Review baseline:** `c66788fc93b3a550f991f7754294b7b4451d9c72`.
+**Review baseline:** `6a7ecb7b0431ab6a8582eb6fd901d34c3b50e549`.
 
 ## Covered code and checks
 
@@ -19,6 +19,8 @@ description: Verify seeded training generator input validation, replay and abstr
 The related [trace sink skill](../verify-training-trace-sink/SKILL.md) checks snapshots and draining of optimizer traces.
 
 The related [optimizer config skill](../verify-training-config/SKILL.md) checks count bounds and abstract loop progress.
+
+The related [selection skill](../verify-training-selection/SKILL.md) checks reward admission and keep-best behavior.
 
 From the repository root with dependencies installed, run:
 
