@@ -116,6 +116,42 @@ async function project(): Promise<string> {
 }
 
 describe("availability-aware up", () => {
+	it("reports readiness waits and resumes with the configured observer", async () => {
+		const applied: string[] = [];
+		let ready = false;
+		const client = createYardClient({
+			...runtimeWith(new Set(), applied),
+			observeDependency: async () => (ready ? "ready" : "pending"),
+		});
+		const bindle = parseManifest({
+			...DB_ONLY,
+			resources: {
+				db: { type: "data.v1", port: "sql" },
+				api: {
+					type: "data.v1",
+					port: "sql",
+					annotations: { waitFor: [{ to: "db", until: "ready" }] },
+				},
+			},
+		});
+		const options = {
+			deploymentId: "readiness",
+			session: createFixtureSession(),
+		};
+		const waiting = await client.up(bindle, options);
+		expect(waiting.status).toBe("waiting");
+		if (waiting.status === "rejected") throw new Error(waiting.reason);
+		expect(waiting.progress).toContainEqual({
+			type: "dependency.waiting",
+			resourceId: "api",
+			detail: "Waiting for db to become ready (observation: pending).",
+		});
+		expect(applied).toEqual(["db@neon"]);
+		ready = true;
+		expect((await client.up(bindle, options)).status).toBe("deployed");
+		expect(applied).toEqual(["db@neon", "api@neon"]);
+	});
+
 	it("deploys on the cheapest provider when it answers", async () => {
 		const applied: string[] = [];
 		const cli = createHoboCli({

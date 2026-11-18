@@ -7,6 +7,7 @@ import {
 	createInProcessExecutor,
 	type IacProgram,
 	type IacProvider,
+	type OrchestratorDeps,
 } from "@hobo/cloud";
 import type { ActorLease, ActorLeaseHost, FenceToken } from "@hobo/core";
 import { createFixtureHostAttestor } from "@hobo/identity";
@@ -16,6 +17,7 @@ import {
 	createOrchestratorRealizer,
 	diffGraph,
 	ORCHESTRATOR_LEDGER,
+	type OrchestratorRealizerDeps,
 } from "../../src/adapters/orchestrator.js";
 import type { RealizeInput } from "../../src/ports.js";
 import {
@@ -73,12 +75,17 @@ function actorHost(): ActorLeaseHost {
 	};
 }
 
-function harness(opts: { badAttestor?: boolean } = {}) {
+function harness(
+	opts: {
+		badAttestor?: boolean;
+		observeDependency?: OrchestratorDeps["observeDependency"];
+	} = {},
+) {
 	const clock = createClock();
 	const store = createFakeStore(clock);
 	const { iac, calls, programs, drift } = countingIac();
 	const attestor = createFixtureHostAttestor({ hostId: "host-a" });
-	const realizer = createOrchestratorRealizer({
+	const realizerDeps: OrchestratorRealizerDeps = {
 		store,
 		tenant: "acme",
 		actorHost: actorHost(),
@@ -90,7 +97,10 @@ function harness(opts: { badAttestor?: boolean } = {}) {
 		hostId: "host-a",
 		refresh: iac,
 		now: clock.now,
-	});
+	};
+	if (opts.observeDependency)
+		realizerDeps.observeDependency = opts.observeDependency;
+	const realizer = createOrchestratorRealizer(realizerDeps);
 	const input = (
 		resources: Parameters<typeof resolvedFor>[1],
 		n: number,
@@ -124,6 +134,91 @@ const API_V1 = { name: "api", port: "compute", version: "1", deps: ["db"] };
 const DB_V1 = { name: "db", port: "database", version: "1" };
 
 describe("createOrchestratorRealizer", () => {
+	it("readiness waits for changed dependencies and resumes after observation", async () => {
+		let ready = false;
+		const h = harness({
+			observeDependency: async () => (ready ? "ready" : "pending"),
+		});
+		const dependent = { ...API_V1, readyDeps: ["db"] };
+		const input = h.input([DB_V1, dependent], 1);
+		const pending = await h.realizer.converge(input, h.ctx);
+		expect(pending.status).toBe(ReconcileStatus.BLOCKED);
+		expect(pending.reasons[0]?.message).toContain(
+			"api waits for db ready (pending)",
+		);
+		expect(h.calls).toEqual(["apply:db"]);
+		ready = true;
+		const done = await h.realizer.converge(input, h.ctx);
+		expect(done.status).toBe(ReconcileStatus.CONVERGED);
+		expect(h.calls).toEqual(["apply:db", "apply:api"]);
+	});
+
+	it("readiness checks unchanged dependencies against their original deployment", async () => {
+		let ready = false;
+		const observations: string[] = [];
+		const h = harness({
+			observeDependency: async ({ deploymentId, snapshot }) => {
+				observations.push(
+					`${deploymentId}:${snapshot.resourceId}:${snapshot.state}`,
+				);
+				return ready ? "ready" : "pending";
+			},
+		});
+		await h.realizer.converge(h.input([DB_V1, API_V1], 1), h.ctx);
+		h.calls.length = 0;
+		const input = h.input([DB_V1, { ...API_V1, readyDeps: ["db"] }], 2);
+		const pending = await h.realizer.converge(input, h.ctx);
+		expect(pending.status).toBe(ReconcileStatus.BLOCKED);
+		expect(pending.reasons[0]?.message).toContain("api is waiting for db");
+		expect(observations[0]).toContain("set_campgraph00000001:db:Provisioned");
+		expect(h.calls).toEqual([]);
+		ready = true;
+		const done = await h.realizer.converge(input, h.ctx);
+		expect(done.status).toBe(ReconcileStatus.CONVERGED);
+		expect(h.calls).toEqual(["apply:api"]);
+		expect(h.programs.at(-1)?.resource?.readyDeps).toEqual(["db"]);
+	});
+
+	it("readiness refuses unchanged dependencies without an observer", async () => {
+		const h = harness();
+		await h.realizer.converge(h.input([DB_V1, API_V1], 1), h.ctx);
+		h.calls.length = 0;
+		const result = await h.realizer.converge(
+			h.input([DB_V1, { ...API_V1, completedDeps: ["db"] }], 2),
+			h.ctx,
+		);
+		expect(result.status).toBe(ReconcileStatus.BLOCKED);
+		expect(result.reasons[0]?.message).toContain("unobserved");
+		expect(h.calls).toEqual([]);
+	});
+
+	it("readiness observers receive full plans when only part of a graph changes", async () => {
+		const requests: string[][] = [];
+		const h = harness({
+			observeDependency: async ({ dependent, dependency, condition }) => {
+				requests.push([...dependent.deps, ...dependency.deps]);
+				return condition;
+			},
+		});
+		const cache = { name: "cache", port: "database", version: "1" };
+		const db = { ...DB_V1, deps: ["cache"] };
+		const api = { ...API_V1, deps: ["db", "cache"] };
+		await h.realizer.converge(h.input([cache, db, api], 1), h.ctx);
+		const result = await h.realizer.converge(
+			h.input(
+				[
+					cache,
+					{ ...db, version: "2" },
+					{ ...api, version: "2", completedDeps: ["db"] },
+				],
+				2,
+			),
+			h.ctx,
+		);
+		expect(result.status).toBe(ReconcileStatus.CONVERGED);
+		expect(requests).toEqual([["db", "cache", "cache"]]);
+	});
+
 	it("only changed nodes reconcile", async () => {
 		const h = harness();
 		const first = await h.realizer.converge(h.input([DB_V1, API_V1], 1), h.ctx);
