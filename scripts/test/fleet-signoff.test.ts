@@ -1235,6 +1235,10 @@ if [ "$1" = signoff ] && [ "$2" = --help ]; then
   echo --commit; exit 0
 fi
 if [ "$1" = signoff ] && [ "$2" = create ]; then exit 0; fi
+if [ "$1" = api ] && [ "$2" = 'user/installations?per_page=100' ]; then
+  [ -n "\${HOBO_STATUS_INSTALLATIONS:-}" ] || exit 1
+  printf '%s\\n' "$HOBO_STATUS_INSTALLATIONS"; exit 0
+fi
 if [ "$1" = pr ]; then
   [ -n "\${HOBO_FLEET_PR_DIR:-}" ] || exit 1
   echo 17; exit 0
@@ -2291,6 +2295,23 @@ exec /usr/bin/git "$@"
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
 			git(remote, ["update-ref", "refs/heads/main", baseA]);
 			git(repo, ["update-ref", "refs/remotes/origin/main", baseA]);
+			const readOnly = command(
+				{
+					GH_TOKEN: "ghu_fixture",
+					HOBO_STATUS_INSTALLATIONS: JSON.stringify({
+						owner: "acme",
+						statuses: "read",
+					}),
+				},
+				["--fresh"],
+			);
+			assert.notEqual(readOnly.status, 0);
+			assert.match(readOnly.stderr, /read-only commit statuses/u);
+			assert.doesNotMatch(
+				readOnly.stdout,
+				/running the local signoff fallback/u,
+			);
+			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
 			// The trusted workflow actually executes and fails, so no status is posted.
 			writeFileSync(join(bin, "fail-job"), "fail\n");
 			const executedFailure = command({}, ["--fresh"]);
