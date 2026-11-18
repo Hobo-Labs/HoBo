@@ -58,13 +58,13 @@ What it does **not** do:
   `camp-only`;
 - contact a provider, broker a credential, or write to `.hobo/`.
 
-**The `ephemeral-camp` lane's gates are implemented; its provisioning is not.**
-`createTestHarness({ lane: "ephemeral-camp", yard })` really does require an
-explicit Yard and a brokered credential locator in
-`HOBO_TESTING_CAMP_CREDENTIAL_REF`, and refuses each missing piece with its own
-code. `deploy()` then refuses with `HARNESS_LANE_UNIMPLEMENTED`. It never
-degrades to `in-process`: a suite that believes it hit real providers and
-actually hit a loopback stub is worse than a suite that failed.
+**The `ephemeral-camp` lane deploys through a Camp driver.**
+`createTestHarness({ lane: "ephemeral-camp", yard, campDriver })` requires an
+explicit Yard, a brokered credential locator in
+`HOBO_TESTING_CAMP_CREDENTIAL_REF`, and a driver that deploys and destroys the
+Bindle on that Yard. Driver results must contain every Bindle resource once,
+with matching kinds and valid HTTP endpoints. Every returned handle is
+labelled `real`; an invalid result is destroyed and refused.
 
 **`prodReadinessClaimable` is not a pass/fail flag.** It is false whenever any
 handle the suite reached for was `mocked`. In practice that means most suites
@@ -111,9 +111,9 @@ built on both is exercised end to end by `@hobo/testing`.
   `detectRunner`, `requireRunner`, `bindHarnessLifecycle`. Detection is
   environment-based and **fails closed** — `HARNESS_RUNNER_UNDETECTED` with
   remediation rather than a guess at hook names.
-- Lane primitives, exported so a suite can assert on them directly:
-  `deployInProcess`, `destroyInProcess` (returns the teardown order it walked),
-  `parseEphemeralCampTarget`, `deployEphemeralCamp`.
+- Lane primitives: `deployInProcess`, `destroyInProcess`,
+  `parseEphemeralCampTarget`, `deployEphemeralCamp`, and the
+  `EphemeralCampDriver` contract.
 - Graph primitives: `parseTestTopology`, `deploymentOrder`, `teardownOrder`.
 - Fidelity: `FIDELITIES`, `inProcessFidelity`, `CAMP_ONLY_KINDS`,
   `HTTP_SERVED_KINDS`, `emptyFidelityCounts`.

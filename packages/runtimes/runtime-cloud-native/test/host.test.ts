@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 describe("@hobo/runtime-cloud-native", () => {
-	it("registers mock + cloud provider stubs", () => {
+	it("registers mock and cloud providers", () => {
 		const ids = defaultCloudNativeProviders().map((p) => p.id);
 		expect(ids).toEqual(
 			expect.arrayContaining([
@@ -76,17 +76,20 @@ describe("@hobo/runtime-cloud-native", () => {
 		expect(body).toEqual({ message: "howdy, world", greetingPrefix: "howdy" });
 	});
 
-	it("stub providers refuse servePrivate", async () => {
+	it("remote providers return bound-endpoint handlers", async () => {
 		const host = createCloudNativeRuntimeHost({
 			providers: defaultCloudNativeProviders().filter((p) => p.id === "aws"),
 			defaultProvider: "aws",
 		});
-		await expect(
-			host.servePrivate({
-				hoboHome: "/tmp",
-				projectDir: "/tmp",
-				privateComponents: [],
-			}),
-		).rejects.toThrow(/HOBO_CLOUD_NATIVE_UNIMPLEMENTED/);
+		const result = await host.servePrivate({
+			hoboHome: "/tmp",
+			projectDir: "/tmp",
+			privateComponents: [{ resourceName: "api", projectDir: "/tmp" }],
+		});
+		cleanups.push(() => result.close());
+		expect(
+			(await mustGet(result.handlers, "api")(new Request("http://internal/")))
+				.status,
+		).toBe(501);
 	});
 });

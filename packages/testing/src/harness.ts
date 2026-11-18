@@ -1,33 +1,11 @@
-/**
- * `createTestHarness` — the out-of-box app harness (ADR-0159, GAP-026).
- *
- * Deploy the collected topology, assert against it, tear it down. The surface
- * is plain async/await and typed results: no Effect-TS, no Polly, no XState on
- * the public surface (ADR-0136).
- *
- * Two decisions here carry the unit's honesty:
- *
- * 1. Lane selection is fail-closed. `in-process` is the default; choosing
- *    `ephemeral-camp` runs its gates at construction so an author learns about
- *    a missing Yard or credential before writing assertions, and the lane
- *    never silently becomes `in-process`.
- * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
- *    handle through `resource(alias)`, `http(alias)`, or `untilReady(alias)`
- *    marks it asserted-against; if any of those handles is `mocked`, this run
- *    cannot claim prod-readiness and the report says so.
- */
-
+import type { JsonObject, JsonValue } from "@hobo/core";
 import { TestHarnessError } from "./errors.js";
 import { emptyFidelityCounts } from "./fidelity.js";
 import {
 	deployEphemeralCamp,
 	parseEphemeralCampTarget,
 } from "./lanes/ephemeral-camp.js";
-import {
-	deployInProcess,
-	destroyInProcess,
-	type InProcessDeployment,
-} from "./lanes/in-process.js";
+import { deployInProcess, destroyInProcess } from "./lanes/in-process.js";
 import {
 	createFetchReadinessProbe,
 	type ReadinessProbe,
@@ -36,6 +14,7 @@ import {
 } from "./readiness.js";
 import { parseRunnerAdapter, requireRunner } from "./runner.js";
 import {
+	type BindleInput,
 	DEFAULT_LANE,
 	DEFAULT_STAGE,
 	type DeployedGraph,
@@ -49,9 +28,9 @@ import {
 
 const STAGE_PATTERN = /^[a-z][a-z0-9-]*$/u;
 
-function parseLane(value: unknown): Lane {
+function parseLane(value: Lane | undefined): Lane {
 	if (value === undefined) return DEFAULT_LANE;
-	if (typeof value !== "string" || !LANES.includes(value)) {
+	if (!LANES.includes(value)) {
 		throw new TestHarnessError(
 			"HARNESS_LANE_INVALID",
 			`unknown harness lane ${JSON.stringify(value)}`,
@@ -61,9 +40,9 @@ function parseLane(value: unknown): Lane {
 	return value as Lane;
 }
 
-function parseStage(value: unknown): string {
+function parseStage(value: string | undefined): string {
 	if (value === undefined) return DEFAULT_STAGE;
-	if (typeof value !== "string" || !STAGE_PATTERN.test(value)) {
+	if (!STAGE_PATTERN.test(value)) {
 		throw new TestHarnessError(
 			"HARNESS_STAGE_INVALID",
 			`stage ${JSON.stringify(value)} is not a lowercase slug`,
@@ -73,13 +52,10 @@ function parseStage(value: unknown): string {
 	return value;
 }
 
-function isResourceHandle(value: unknown): value is ResourceHandle {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		typeof (value as ResourceHandle).alias === "string" &&
-		typeof (value as ResourceHandle).fidelity === "string"
-	);
+function isResourceHandle(
+	value: string | ResourceHandle,
+): value is ResourceHandle {
+	return Object(value) === value;
 }
 
 function buildFidelityReport(
@@ -107,9 +83,15 @@ function buildFidelityReport(
 
 interface HarnessState {
 	readonly graph: DeployedGraph;
-	readonly deployment: InProcessDeployment;
+	readonly deployment: HarnessDeployment;
 	readonly handles: ReadonlyMap<string, ResourceHandle>;
 	readonly asserted: Set<string>;
+}
+
+interface HarnessDeployment {
+	readonly handles: ReadonlyMap<string, ResourceHandle>;
+	readonly outputs: JsonObject;
+	destroy(): Promise<void>;
 }
 
 function unknownAlias(alias: string, known: readonly string[]): never {
@@ -125,7 +107,7 @@ function unknownAlias(alias: string, known: readonly string[]): never {
 function buildGraph(
 	stage: string,
 	lane: Lane,
-	deployment: InProcessDeployment,
+	deployment: HarnessDeployment,
 	asserted: Set<string>,
 ): DeployedGraph {
 	const handles = deployment.handles;
@@ -133,12 +115,13 @@ function buildGraph(
 	return Object.freeze({
 		stage,
 		lane,
-		outputs<T = Record<string, unknown>>(): T {
-			const record: Record<string, unknown> = {};
+		outputs<T extends JsonObject = JsonObject>(): T {
+			const outputs: Record<string, JsonValue> = {};
 			for (const alias of aliases) {
-				record[alias] = deployment.bindings[alias];
+				const output = deployment.outputs[alias];
+				if (output !== undefined) outputs[alias] = output;
 			}
-			return Object.freeze(record) as T;
+			return Object.freeze(outputs) as T;
 		},
 		resource(alias: string): ResourceHandle {
 			const handle = handles.get(alias);
@@ -166,9 +149,7 @@ function buildGraph(
 }
 
 export interface CreateTestHarnessInternals {
-	/** Injectable readiness probe; defaults to the platform `fetch`. */
 	readonly probe?: ReadinessProbe;
-	/** Injectable environment for the ephemeral-camp credential gate. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
@@ -180,8 +161,6 @@ export function createTestHarness(
 	const stage = parseStage(options.stage);
 	const env = internals.env ?? process.env;
 
-	// A supplied adapter is parsed; otherwise the active runner must be
-	// detectable. Guessing hook names produces a suite that never deploys.
 	if (options.runner !== undefined) parseRunnerAdapter(options.runner);
 	else requireRunner(env);
 
@@ -191,15 +170,28 @@ export function createTestHarness(
 			: undefined;
 
 	const probe = internals.probe ?? createFetchReadinessProbe();
-	const states = new Map<unknown, Promise<HarnessState>>();
+	const states = new Map<BindleInput, Promise<HarnessState>>();
 	let latest: HarnessState | undefined;
 
-	async function ensure(bindle: unknown): Promise<HarnessState> {
+	async function deployLane(bindle: BindleInput): Promise<HarnessDeployment> {
+		if (campTarget !== undefined) {
+			return deployEphemeralCamp(campTarget, bindle, stage, options.campDriver);
+		}
+		const deployment = await deployInProcess(bindle, stage);
+		return Object.freeze({
+			handles: deployment.handles,
+			outputs: deployment.bindings,
+			async destroy(): Promise<void> {
+				await destroyInProcess(deployment);
+			},
+		});
+	}
+
+	async function ensure(bindle: BindleInput): Promise<HarnessState> {
 		const existing = states.get(bindle);
 		if (existing !== undefined) return existing;
 		const pending = (async (): Promise<HarnessState> => {
-			if (campTarget !== undefined) await deployEphemeralCamp(campTarget);
-			const deployment = await deployInProcess(bindle, stage);
+			const deployment = await deployLane(bindle);
 			const asserted = new Set<string>();
 			const state: HarnessState = {
 				graph: buildGraph(stage, lane, deployment, asserted),
@@ -220,17 +212,17 @@ export function createTestHarness(
 	}
 
 	return Object.freeze({
-		deploy(bindle: unknown): () => Promise<DeployedGraph> {
+		deploy(bindle: BindleInput): () => Promise<DeployedGraph> {
 			return async () => (await ensure(bindle)).graph;
 		},
-		destroy(bindle: unknown): () => Promise<void> {
+		destroy(bindle: BindleInput): () => Promise<void> {
 			return async () => {
 				const pending = states.get(bindle);
 				if (pending === undefined) return;
 				states.delete(bindle);
 				const state = await pending;
 				if (latest === state) latest = undefined;
-				await destroyInProcess(state.deployment);
+				await state.deployment.destroy();
 			};
 		},
 		async untilReady(
@@ -265,17 +257,13 @@ export function createTestHarness(
 	}
 }
 
-/**
- * The two-line runner swap's payoff: wire deploy/destroy into whichever
- * runner's lifecycle hooks the suite is using.
- */
 export function bindHarnessLifecycle(
 	runner: {
-		readonly beforeAll: (fn: () => Promise<void>) => unknown;
-		readonly afterAll: (fn: () => Promise<void>) => unknown;
+		readonly beforeAll: (fn: () => Promise<void>) => void;
+		readonly afterAll: (fn: () => Promise<void>) => void;
 	},
 	harness: TestHarness,
-	bindle: unknown,
+	bindle: BindleInput,
 ): void {
 	const deploy = harness.deploy(bindle);
 	const destroy = harness.destroy(bindle);

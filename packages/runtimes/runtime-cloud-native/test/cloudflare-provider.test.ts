@@ -30,7 +30,6 @@ const serveCtx = (
 });
 
 function activeTokenFetch(calls: { url: string; init?: RequestInit }[]) {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return (async (input: URL | RequestInfo, init?: RequestInit) => {
 		calls.push({ url: String(input), ...(init ? { init } : undefined) });
 		return Response.json({
@@ -138,7 +137,6 @@ describe("cloudflare cloud-native provider: token verify (injected fetch)", () =
 	it("throws a typed error on an inactive token", async () => {
 		const provider = createCloudflareCloudNativeProvider({
 			...credentials,
-			// SAFETY: assertion required at this I/O or test boundary.
 			fetchImpl: (async () =>
 				Response.json({
 					success: true,
@@ -156,7 +154,6 @@ describe("cloudflare cloud-native provider: token verify (injected fetch)", () =
 	it("throws a typed error on a malformed payload", async () => {
 		const provider = createCloudflareCloudNativeProvider({
 			...credentials,
-			// SAFETY: assertion required at this I/O or test boundary.
 			fetchImpl: (async () => Response.json({ nope: 1 })) as typeof fetch,
 		});
 		await expect(provider.ensure(ensureCtx)).rejects.toThrow(
@@ -167,7 +164,6 @@ describe("cloudflare cloud-native provider: token verify (injected fetch)", () =
 	it("throws a typed error with remediation on a non-ok response", async () => {
 		const provider = createCloudflareCloudNativeProvider({
 			...credentials,
-			// SAFETY: assertion required at this I/O or test boundary.
 			fetchImpl: (async () =>
 				new Response("nope", { status: 403 })) as typeof fetch,
 		});
@@ -201,7 +197,6 @@ describe("cloudflare cloud-native provider: remote proxy", () => {
 		cleanups.push(
 			() => new Promise((resolve) => server.close(() => resolve())),
 		);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const { port } = server.address() as AddressInfo;
 
 		const provider = createCloudflareCloudNativeProvider({});
@@ -227,6 +222,121 @@ describe("cloudflare cloud-native provider: remote proxy", () => {
 		expect(seen).toEqual([
 			{ method: "POST", url: "/things/1?q=yes", body: "ping" },
 		]);
+	});
+
+	it("keeps network-path requests on the bound origin", async () => {
+		const seen: Array<{ url: string; authorization: string | null }> = [];
+		const fetchImpl: typeof fetch = async (input, init) => {
+			seen.push({
+				url: String(input),
+				authorization: new Headers(init?.headers).get("authorization"),
+			});
+			return new Response("ok");
+		};
+		const provider = createCloudflareCloudNativeProvider({ fetchImpl });
+		const serve = await provider.servePrivate(
+			serveCtx({
+				bindleEnv: {
+					HOBO_CLOUD_NATIVE_ENDPOINT_API: "https://trusted.example/base",
+				},
+			}),
+		);
+		cleanups.push(() => serve.close());
+		await mustGet(
+			serve.handlers,
+			"api",
+		)(
+			new Request("https://internal//attacker.example/collect?q=1", {
+				headers: { authorization: "Bearer sentinel" },
+			}),
+		);
+		expect(seen).toEqual([
+			{
+				url: "https://trusted.example//attacker.example/collect?q=1",
+				authorization: "Bearer sentinel",
+			},
+		]);
+	});
+
+	it("blocks redirects outside the bound origin without forwarding private headers", async () => {
+		let leaked = false;
+		const receiver = createServer((req, res) => {
+			leaked = req.headers["x-api-key"] === "sentinel";
+			res.end("received");
+		});
+		await new Promise<void>((resolve) =>
+			receiver.listen(0, "127.0.0.1", resolve),
+		);
+		cleanups.push(
+			() => new Promise((resolve) => receiver.close(() => resolve())),
+		);
+		const destination = receiver.address();
+		if (!(destination instanceof Object))
+			throw new Error("receiver address missing");
+		const redirector = createServer((_req, res) => {
+			res.writeHead(302, {
+				location: `http://127.0.0.1:${destination.port}/collect`,
+			});
+			res.end();
+		});
+		await new Promise<void>((resolve) =>
+			redirector.listen(0, "127.0.0.1", resolve),
+		);
+		cleanups.push(
+			() => new Promise((resolve) => redirector.close(() => resolve())),
+		);
+		const source = redirector.address();
+		if (!(source instanceof Object))
+			throw new Error("redirector address missing");
+		const provider = createCloudflareCloudNativeProvider();
+		const serve = await provider.servePrivate(
+			serveCtx({
+				bindleEnv: {
+					HOBO_CLOUD_NATIVE_ENDPOINT_API: `http://127.0.0.1:${source.port}`,
+				},
+			}),
+		);
+		cleanups.push(() => serve.close());
+		const response = await mustGet(
+			serve.handlers,
+			"api",
+		)(
+			new Request("http://internal/path", {
+				headers: { "x-api-key": "sentinel" },
+			}),
+		);
+		expect(response.status).toBe(502);
+		expect(response.headers.get("location")).toBeNull();
+		expect(leaked).toBe(false);
+	});
+
+	it("preserves redirects within the bound origin and conditional responses", async () => {
+		const responses = [
+			new Response(null, { status: 302, headers: { location: "/next" } }),
+			new Response(null, { status: 304, headers: { etag: '"fresh"' } }),
+		];
+		const provider = createCloudflareCloudNativeProvider({
+			fetchImpl: async () => {
+				const response = responses.shift();
+				if (!response) throw new Error("unexpected fetch");
+				return response;
+			},
+		});
+		const serve = await provider.servePrivate(
+			serveCtx({
+				bindleEnv: {
+					HOBO_CLOUD_NATIVE_ENDPOINT_API: "https://trusted.example",
+				},
+			}),
+		);
+		cleanups.push(() => serve.close());
+		const handler = mustGet(serve.handlers, "api");
+		const redirect = await handler(new Request("https://internal/path"));
+		expect(redirect.status).toBe(302);
+		expect(redirect.headers.get("location")).toBe("/next");
+		const conditional = await handler(new Request("https://internal/path"));
+		expect(conditional.status).toBe(304);
+		expect(conditional.headers.get("etag")).toBe('"fresh"');
 	});
 
 	it("rejects a malformed bound endpoint with a typed error", async () => {
@@ -259,12 +369,9 @@ describe("default registry with the real cloudflare entry", () => {
 			(p) => p.id === "cloudflare",
 		);
 		if (!cloudflare) throw new Error("cloudflare provider missing");
-		// No credentials in this environment: fail closed, implemented: true.
 		const result = await cloudflare.ensure(ensureCtx);
 		expect(result.details?.implemented).toBe(true);
 		expect(result.details?.credentialGated).toBe(true);
-		// servePrivate no longer throws HOBO_CLOUD_NATIVE_UNIMPLEMENTED: it
-		// realizes the mesh contract with honest 501 handlers.
 		const serve = await cloudflare.servePrivate(serveCtx());
 		cleanups.push(() => serve.close());
 		expect(
@@ -278,13 +385,19 @@ describe("default registry with the real cloudflare entry", () => {
 		"gcp",
 		"azure",
 		"vercel",
-	])("stub provider '%s' still throws HOBO_CLOUD_NATIVE_UNIMPLEMENTED", async (id) => {
+	])("provider '%s' realizes the remote endpoint contract", async (id) => {
 		const host = createCloudNativeRuntimeHost({
 			providers: defaultCloudNativeProviders().filter((p) => p.id === id),
 			defaultProvider: id,
 		});
-		await expect(host.servePrivate(serveCtx())).rejects.toThrow(
-			/HOBO_CLOUD_NATIVE_UNIMPLEMENTED/,
+		const serve = await host.servePrivate(serveCtx());
+		cleanups.push(() => serve.close());
+		expect(
+			(await mustGet(serve.handlers, "api")(new Request("http://internal/")))
+				.status,
+		).toBe(501);
+		expect(serve.isolation.details).toEqual(
+			expect.objectContaining({ mode: "remote-proxy" }),
 		);
 	});
 

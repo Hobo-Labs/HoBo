@@ -1,28 +1,3 @@
-/**
- * Runner adapters behind a two-line import swap (ADR-0159 §1).
- *
- * The harness itself is runner-agnostic — `deploy`/`destroy` are plain thunks.
- * What differs between Vitest and `node:test` is only the lifecycle hook
- * names (`beforeAll`/`afterAll` vs `before`/`after`), so an adapter is a thin
- * renaming over the module the suite already imported:
- *
- * ```ts
- * import * as runnerModule from "vitest";                       // line 1
- * const runner = createVitestRunnerAdapter(runnerModule);        // line 2
- * ```
- *
- * ```ts
- * import * as runnerModule from "node:test";                     // line 1
- * const runner = createNodeTestRunnerAdapter(runnerModule);      // line 2
- * ```
- *
- * The adapter is *supplied*, never imported by this package: `vitest` is a dev
- * dependency and importing it outside a Vitest run throws. Detection is
- * therefore environment-based and fails closed — an undetected runner refuses
- * with remediation rather than guessing, because a guess that picks the wrong
- * hook names produces a suite that silently never deploys anything.
- */
-
 import { TestHarnessError } from "./errors.js";
 
 export const TEST_RUNNERS: readonly string[] = Object.freeze([
@@ -111,7 +86,6 @@ export function createNodeTestRunnerAdapter(
 	});
 }
 
-/** Validates an author-supplied adapter; parse boundary for `options.runner`. */
 export function parseRunnerAdapter(value: unknown): RunnerAdapter {
 	const candidate = value as Partial<RunnerAdapter> | null | undefined;
 	if (candidate === null || typeof candidate !== "object") {
@@ -142,12 +116,6 @@ export function parseRunnerAdapter(value: unknown): RunnerAdapter {
 
 export type RunnerEnvironment = Readonly<Record<string, string | undefined>>;
 
-/**
- * Environment-only detection: Vitest sets `VITEST`/`VITEST_WORKER_ID` in every
- * worker, `node:test` sets `NODE_TEST_CONTEXT`. Reading only the environment
- * (never a global) keeps detection injectable, which is what makes the
- * fail-closed path testable from inside a runner.
- */
 export function detectRunner(
 	env: RunnerEnvironment = process.env,
 ): TestRunnerId | null {
@@ -162,7 +130,6 @@ export function detectRunner(
 	return null;
 }
 
-/** Fails closed with remediation when no runner is detected. */
 export function requireRunner(
 	env: RunnerEnvironment = process.env,
 ): TestRunnerId {

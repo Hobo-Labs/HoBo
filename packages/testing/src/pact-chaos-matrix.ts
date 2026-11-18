@@ -1,21 +1,3 @@
-/**
- * Every failure state, not just the interesting one.
- *
- * `runChaosConformance` faults one call — the write — because that is where
- * duplication hides. That is the best single scenario and about a fifth of the
- * surface: dying on the lookup, during teardown, or twice in a row never runs.
- * This sweeps every fault at every call index, then adds the two shapes an
- * index sweep cannot express (a fault during the recovery, and during teardown).
- *
- * It asserts two properties, both computed from the pact:
- *
- *  - **Convergence** — a retry lands exactly one resource, with a stable
- *    identity, without destroying anything.
- *  - **Fidelity** — every request sent while recovering still matches the
- *    contract. Recovery takes branches the happy path never takes, so a driver
- *    can converge while talking nonsense; that ships as a 400 on the first real
- *    retry, and only a fidelity check catches it here.
- */
 import type { HttpTransport } from "@hobo/core";
 
 import { CHAOS_FAULTS, type ChaosFault, chaosTransport } from "./chaos.js";
@@ -26,47 +8,23 @@ import {
 	type PactWorld,
 } from "./pact-chaos.js";
 
-/**
- * Faults that reach the provider and corrupt only the response — the write
- * landed, the client never learned. Everything else aborts first.
- *
- * The matrix never consults this to decide what to expect; it reads the world's
- * real state via `writeLanded`. Exported so callers can assert the two agree:
- * disagreement means chaos stopped passing writes through, which is harness rot.
- */
 export const WRITE_REACHING_FAULTS: readonly ChaosFault[] = Object.freeze([
 	"truncated-body",
 	"malformed-body",
 ]);
 
-export type PactChaosScenarioKind =
-	/** One fault, then a clean retry. */
-	| "single"
-	/** A fault on the retry as well, then a clean third attempt. */
-	| "double"
-	/** Converge cleanly, then fault the teardown and retry it. */
-	| "teardown";
+export type PactChaosScenarioKind = "single" | "double" | "teardown";
 
 export interface PactChaosRun {
-	/** The convergent operation: upsert, apply, reconcile. May reject. */
 	readonly converge: () => Promise<void>;
-	/** What the provider holds now. Length is the convergence assertion. */
 	readonly observe: () => Promise<readonly unknown[]>;
-	/** Teardown, if the driver has one. Enables the teardown scenarios. */
 	readonly remove?: () => Promise<void>;
 }
 
 export interface PactChaosSubject {
-	/** Names the driver in failure output. */
 	readonly label: string;
 	readonly lifecycle: PactLifecycle;
-	/** Builds a fresh world for one scenario. */
 	readonly world: (lifecycle: PactLifecycle) => PactWorld;
-	/**
-	 * Binds the driver to a transport the runner already wrapped in chaos. The
-	 * runner owns the wrapping because faults are indexed by call number across
-	 * the whole scenario; self-wrapping would restart that count.
-	 */
 	readonly bind: (bound: {
 		readonly transport: HttpTransport;
 		readonly fetchImpl: typeof fetch;
@@ -78,9 +36,7 @@ export interface PactChaosScenarioResult {
 	readonly kind: PactChaosScenarioKind;
 	readonly fault: ChaosFault;
 	readonly at: number;
-	/** Did the faulted attempt reject, or return despite the fault? */
 	readonly firstRejected: boolean;
-	/** Did the write reach the provider before the fault fired? */
 	readonly writeLanded: boolean;
 	readonly createsBeforeRetry: number;
 	readonly createsAfterRetry: number;
@@ -90,7 +46,6 @@ export interface PactChaosScenarioResult {
 	readonly violations: readonly string[];
 }
 
-/** How many calls the driver makes with nothing going wrong. */
 export async function baselineCallCount(
 	subject: PactChaosSubject,
 ): Promise<number> {
@@ -103,13 +58,6 @@ export async function baselineCallCount(
 	return world.calls.length;
 }
 
-/**
- * Every fault at every call index, plus double-fault and teardown.
- *
- * All six faults, not just the five ambiguous ones. A 429 is unambiguous for
- * the *provider*, but a driver that treats it as fatal — or retries it into a
- * duplicate — should fail here rather than in production.
- */
 export async function runPactChaosMatrix(
 	subject: PactChaosSubject,
 ): Promise<readonly PactChaosScenarioResult[]> {
@@ -121,8 +69,6 @@ export async function runPactChaosMatrix(
 			results.push(await runSingle(subject, fault, at));
 		}
 		results.push(await runDouble(subject, fault, callCount));
-		// Teardown indices count from the start of the teardown: a read-then-delete
-		// driver makes the delete its call 1, and call 0 is the lookup.
 		for (const at of [0, 1]) {
 			const teardown = await runTeardown(subject, fault, at);
 			if (teardown) results.push(teardown);
@@ -132,16 +78,12 @@ export async function runPactChaosMatrix(
 	return results;
 }
 
-/** Faults one call, retries clean, and asks whether the world converged. */
 async function runSingle(
 	subject: PactChaosSubject,
 	fault: ChaosFault,
 	at: number,
 ): Promise<PactChaosScenarioResult> {
 	const world = subject.world(subject.lifecycle);
-	// Every call goes through chaos, including the retry's — gating per attempt
-	// would desync chaos's call counter from the world's. Only the scheduled
-	// index faults; the rest pass straight through.
 	const seen: DriverObservation = {
 		createsAfterFailedRead: 0,
 		createsAfterKnownPresent: 0,
@@ -174,16 +116,6 @@ async function runSingle(
 	});
 }
 
-/**
- * The scenario an index sweep cannot reach: the recovery itself fails. A driver
- * that caches "I looked and it was absent" converges under one fault and
- * duplicates under two.
- *
- * The second fault goes on the call after the write — the recovery's first call
- * for a read-then-write driver. For one that keeps calling after its write it
- * lands inside attempt 1 instead; still a real two-fault run, and `at` is
- * reported so either way it is reproducible.
- */
 async function runDouble(
 	subject: PactChaosSubject,
 	fault: ChaosFault,
@@ -207,7 +139,7 @@ async function runDouble(
 	const writeLanded = world.state() === subject.lifecycle.created;
 	const createsBeforeRetry = world.countCreates();
 
-	await rejected(run.converge); // the second, also-faulted attempt
+	await rejected(run.converge);
 	const retryRejected = await rejected(run.converge);
 	const observed = await run.observe().catch(() => []);
 
@@ -227,15 +159,6 @@ async function runDouble(
 	});
 }
 
-/**
- * Converge cleanly, then fault the teardown. "Already gone is success" is the
- * delete-side twin of read-or-create, and it decides whether a failed
- * `hobo down` can be re-run or needs hand cleanup.
- *
- * Teardown gets its own chaos transport so the fault index counts from the
- * start of teardown — the preceding converge makes a driver-dependent number
- * of calls, so an absolute index would land differently per subject.
- */
 async function runTeardown(
 	subject: PactChaosSubject,
 	fault: ChaosFault,
@@ -298,23 +221,11 @@ async function runTeardown(
 	};
 }
 
-/**
- * What the driver actually experienced, seen from outside the chaos wrapper.
- * It cannot live on the world: chaos answers aborted calls itself, so a
- * world-side counter would read zero for exactly the scenarios that matter.
- */
 interface DriverObservation {
-	/** Create-shaped calls issued when the last answer the driver got was an error. */
 	createsAfterFailedRead: number;
-	/** Create-shaped calls issued when the last answer showed the resource present. */
 	createsAfterKnownPresent: number;
 }
 
-/**
- * One indirection so a scenario can swap which transport is live between
- * phases while the driver stays bound to a single object, and so every
- * request/response pair the driver saw can be classified.
- */
 function bound(
 	active: () => HttpTransport,
 	lifecycle: PactLifecycle,
@@ -336,9 +247,6 @@ function bound(
 			lastShowedPresent = !lastFailed && showsPresent(response.body);
 			return response;
 		} catch (error) {
-			// A thrown transport error is the strongest form of "you did not learn
-			// anything" — treated the same as a 5xx for the purpose of deciding
-			// whether a following create was justified.
 			lastFailed = true;
 			lastShowedPresent = false;
 			throw error;
@@ -347,11 +255,6 @@ function bound(
 	return { transport, fetchImpl: fetchFromTransport(transport) };
 }
 
-/**
- * Did this body show the driver a resource that already exists? Deliberately
- * shallow — any non-empty array anywhere. Provider-agnostic on purpose, so one
- * rule covers every subject whatever the envelope is called.
- */
 function showsPresent(body: string): boolean {
 	let parsed: unknown;
 	try {
@@ -417,9 +320,6 @@ function finish(input: {
 			"the retry reported success but the provider holds nothing — the driver believes it converged and it did not",
 		);
 	}
-	// Duplication rules only mean anything when the provider mints the id. With
-	// a client-supplied one a repeated write lands on the same resource, so it
-	// is correct recovery — convergence is still checked above, by count/state.
 	const canDuplicate = subject.lifecycle.identity !== "client-supplied";
 	if (
 		canDuplicate &&
@@ -467,7 +367,6 @@ function finish(input: {
 	};
 }
 
-/** Every violation across a matrix, formatted for one assertion. */
 export function pactChaosViolations(
 	results: readonly PactChaosScenarioResult[],
 ): readonly string[] {
