@@ -18,7 +18,9 @@
 		"@hobo/bindles": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/policy": "workspace:*",
-		"fast-check": "^4.3.0"
+		"fast-check": "^4.3.0",
+		"esbuild": "0.28.1",
+		"testcontainers": "11.8.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
@@ -34,6 +36,8 @@
 		"pretest:property": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test:property": "vitest run test/property",
 		"test:fuzz": "vitest run test/harness test/api",
-		"test:fuzz:nightly": "node --import tsx src/nightly-cli.ts"
+		"test:fuzz:nightly": "node --import tsx src/nightly-cli.ts",
+		"test:fuzz:api": "node --import tsx test/integration/schemathesis.ts",
+		"test:fuzz:docker": "node --import tsx test/integration/docker.ts"
 	}
 }

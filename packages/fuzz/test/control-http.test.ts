@@ -1,6 +1,8 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 import { createControlFuzzServer } from "../src/control-http.js";
-import { schemathesisAvailable } from "../src/env.js";
 import { hasPrototypePollution } from "../src/manifest.js";
 import { assertLocalSchema, runSchemathesis } from "../src/schemathesis.js";
 
@@ -124,9 +126,14 @@ it("rejects external schema locations at every depth", () => {
 });
 
 it("reports an unavailable Schemathesis executable without sending a request", async () => {
-	expect(
-		await runSchemathesis({ binary: "/nonexistent/hobo-schemathesis" }),
-	).toEqual({ ran: false, reason: "schemathesis executable unavailable" });
+	const directory = await mkdtemp(join(tmpdir(), "hobo-missing-schemathesis-"));
+	try {
+		expect(
+			await runSchemathesis({ binary: join(directory, "schemathesis") }),
+		).toEqual({ ran: false, reason: "schemathesis executable unavailable" });
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
 });
 
 it.each([
@@ -137,21 +144,3 @@ it.each([
 ])("rejects invalid tool limits", async (options) => {
 	await expect(runSchemathesis(options)).rejects.toThrow();
 });
-
-it.skipIf(!schemathesisAvailable())(
-	"runs Schemathesis with all checks against the owned loopback target",
-	async () => {
-		const result = await runSchemathesis({ seconds: 20, seed: 1742 });
-		expect(result.ran).toBe(true);
-		expect(result.passed, result.reason).toBe(true);
-		expect(result.status, result.reason).toBe(0);
-		expect(result.requests).toBeGreaterThan(0);
-		expect(result.operations).toEqual([
-			"applyBindle",
-			"createBindle",
-			"destroyBindle",
-			"listResources",
-		]);
-	},
-	45_000,
-);
