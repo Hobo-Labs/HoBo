@@ -7,7 +7,7 @@ description: Verify that unimplemented Camp capability, runtime, label and neste
 
 **Properties:** A request with Camp capability, runtime or label requirements, or nested Camp layouts in the requested Yard, is refused before quote preparation, host authorization, budget reservation or provider work. Direct Yard matching, layout comparison, generation planning and saga execution also refuse nested Camp layouts. A request without these unverified requirements can proceed to its other checks.
 
-**Review baseline:** commit `6771c17c043c776bb4b6d5b14e451d4935eb8b97`. PASS for the bounded models and executable checks below. The separate `verify-yard-generation-policy-gate` skill checks unsupported generation effects, unavailable approval or attestation, and property locks.
+**Review baseline:** commit `14715240c5c93bd1025cab6da83e4fbfbc579d22`. PASS for the bounded models and executable checks below. The separate `verify-yard-generation-policy-gate` skill checks unsupported generation effects, unavailable approval or attestation, and property locks.
 
 ## Covered code
 

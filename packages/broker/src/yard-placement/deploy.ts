@@ -46,6 +46,11 @@ import {
 	planYardGeneration,
 	type YardGenerationConnector,
 } from "./generation.js";
+import type {
+	YardGenerationQuotaAuthority,
+	YardGenerationQuotaClaim,
+	YardGenerationQuotaRequest,
+} from "./generation-quota.js";
 import { createYardRuntimeCatalog, localYardInstance } from "./inventory.js";
 import { matchYard } from "./matching.js";
 import { parseYardResidencyTag } from "./residency.js";
@@ -81,6 +86,8 @@ export interface LocalHostingAuthorizationContext {
 	readonly placements: readonly Readonly<PlacementDecision>[];
 	readonly bindingDigest: ContentHash;
 }
+
+class GenerationQuotaAdmissionError extends Error {}
 
 /** Inputs a host uses to quote the exact resource work a Yard will execute. */
 export interface YardHostingWorkInput {
@@ -175,6 +182,8 @@ export interface YardFirstPlacementDeps {
 	readonly ownerTenantId?: string;
 	readonly runtimeCatalog?: ReturnType<typeof createYardRuntimeCatalog>;
 	readonly generationPolicy?: YardGenerationPolicy;
+	/** Shared durable generation and tenant-Yard capacity authority. */
+	readonly generationQuota?: YardGenerationQuotaAuthority;
 	readonly connectors?: ReadonlyMap<string, YardGenerationConnector>;
 	/** Seed a ready local yard when inventory is empty (zero-config path). */
 	readonly seedLocalYard?: boolean;
@@ -418,6 +427,7 @@ export async function resolveBindleDeployment(
 		);
 	const runtimeCatalogInput = deps.runtimeCatalog;
 	const generationPolicyInput = deps.generationPolicy;
+	const generationQuotaInput = deps.generationQuota;
 	const connectorsInput = deps.connectors;
 	const runtimeCatalog = runtimeCatalogInput ?? createYardRuntimeCatalog();
 	const requestDigest = contentHashOf(request);
@@ -585,6 +595,8 @@ export async function resolveBindleDeployment(
 		providerId: string,
 		placements?: readonly PlacementDecision[],
 		generationPlanHash?: ContentHash,
+		beforeReserve?: () => void,
+		generationCurrent?: () => boolean,
 	): Promise<void> {
 		const context = deps.hostingBudget;
 		if (context !== hostingBudget)
@@ -727,10 +739,27 @@ export async function resolveBindleDeployment(
 		const expectedProof = toJsonString(HostingPolicyProofSchema, policyProof);
 		const reservedQuote = clone(HostingQuoteSchema, quote);
 		const reservedIdentity = clone(BudgetIdentitySchema, ledger.identity);
-		const reserveNow = context.now();
+		let reserveNow = context.now();
 		if (!paidContextCurrent())
 			throw new Error("hosting context changed before reservation");
 		validateHostingQuote(quote, reserveNow);
+		if (beforeReserve) {
+			beforeReserve();
+			if (
+				!paidContextCurrent() ||
+				toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||
+				toJsonString(BudgetIdentitySchema, policyIdentity) !==
+					expectedIdentity ||
+				toJsonString(HostingPolicyProofSchema, proof) !== expectedProof
+			)
+				throw new Error("hosting evidence changed during quota reservation");
+			reserveNow = context.now();
+			validateHostingQuote(quote, reserveNow);
+			if (!generationCurrent?.() || !paidContextCurrent())
+				throw new Error(
+					"generation authority changed before budget reservation",
+				);
+		}
 		budgetReservation = context.authority.reserve({
 			reservationId,
 			requestDigest,
@@ -928,6 +957,72 @@ export async function resolveBindleDeployment(
 				"requested Camp is not a direct child of the planned Yard",
 			);
 		}
+		if (!hostingBudget)
+			return rejectResult(
+				foldState,
+				emitted,
+				"billing",
+				"hosting-budget-admission-denied",
+				"Yard generation requires a durable hosting budget",
+			);
+		const quota = generationQuotaInput;
+		if (!quota || quota.persistence !== "durable-sqlite")
+			return rejectResult(
+				foldState,
+				emitted,
+				"policy",
+				"yard-generation-quota-unavailable",
+				"a shared durable generation quota authority is required",
+			);
+		const quotaReserve = quota.reserve;
+		const quotaLookup = quota.lookup;
+		const quotaMarkReady = quota.markReady;
+		const quotaRequest: YardGenerationQuotaRequest = Object.freeze({
+			idempotencyKey: genDecision.plan.idempotencyKey,
+			attemptId: genDecision.plan.attemptId,
+			ownerTenantId,
+			yardId: genDecision.plan.expectedYardId,
+			planHash: genDecision.plan.planHash,
+			maxConcurrentGenerations: generationPolicy.maxConcurrentGenerations,
+			maxYardsPerTenant: generationPolicy.maxYardsPerTenant,
+		});
+		const quotaClaimMatches = (claim: YardGenerationQuotaClaim | undefined) =>
+			Boolean(
+				claim &&
+					claim.idempotencyKey === quotaRequest.idempotencyKey &&
+					claim.attemptId === quotaRequest.attemptId &&
+					claim.ownerTenantId === quotaRequest.ownerTenantId &&
+					claim.yardId === quotaRequest.yardId &&
+					claim.planHash === quotaRequest.planHash &&
+					claim.maxConcurrentGenerations ===
+						quotaRequest.maxConcurrentGenerations &&
+					claim.maxYardsPerTenant === quotaRequest.maxYardsPerTenant &&
+					(claim.status === "pending" || claim.status === "ready") &&
+					(claim.status !== "ready" ||
+						(isJsonString(claim.readyEvidenceRef) &&
+							claim.readyEvidenceRef.trim().length > 0)),
+			);
+		const quotaMethodsCurrent = () =>
+			deps.generationQuota === quota &&
+			quota.persistence === "durable-sqlite" &&
+			quota.reserve === quotaReserve &&
+			quota.lookup === quotaLookup &&
+			quota.markReady === quotaMarkReady;
+		let quotaReserved = false;
+		const quotaCurrent = () => {
+			try {
+				return (
+					quotaReserved &&
+					quotaMethodsCurrent() &&
+					quotaClaimMatches(
+						quotaLookup.call(quota, quotaRequest.idempotencyKey),
+					) &&
+					quotaMethodsCurrent()
+				);
+			} catch {
+				return false;
+			}
+		};
 		const generationPlanCurrent = () => {
 			try {
 				const { planHash, ...planBody } = genDecision.plan;
@@ -975,9 +1070,10 @@ export async function resolveBindleDeployment(
 				) => readonly { kind: string; payload: JsonObject }[];
 			}
 		).signalsFor;
-		generationAuthorityCurrent = () => {
+		const generationContextCurrent = (requireQuota: boolean) => {
 			try {
 				if (
+					!(requireQuota ? quotaCurrent() : quotaMethodsCurrent()) ||
 					deps.generationPolicy !== generationPolicyInput ||
 					deps.runtimeCatalog !== runtimeCatalogInput ||
 					deps.connectors !== connectorsInput ||
@@ -1018,12 +1114,14 @@ export async function resolveBindleDeployment(
 					connectors.get === connectorLookup &&
 					contentHashOf(generationPolicy) === generationPolicyDigest &&
 					selectedConnector.provision === selectedProvision &&
-					selectedConnector.inspect === selectedInspect
+					selectedConnector.inspect === selectedInspect &&
+					(requireQuota ? quotaCurrent() : quotaMethodsCurrent())
 				);
 			} catch {
 				return false;
 			}
 		};
+		generationAuthorityCurrent = () => generationContextCurrent(true);
 		let inspectGenerationOnly = false;
 		generationPlanHash = genDecision.plan.planHash;
 		const planned = placeResourcesUnderYard(
@@ -1039,12 +1137,47 @@ export async function resolveBindleDeployment(
 				planned.code,
 				planned.error,
 			);
+		const reserveGenerationQuota = () => {
+			try {
+				if (!generationContextCurrent(false))
+					throw new Error(
+						"generation authority changed before quota reservation",
+					);
+				const reservation = quotaReserve.call(quota, quotaRequest);
+				if (
+					!reservation ||
+					(reservation.kind !== "reserved" &&
+						reservation.kind !== "existing") ||
+					!quotaClaimMatches(reservation.claim) ||
+					!quotaMethodsCurrent()
+				)
+					throw new Error("generation quota returned an invalid claim");
+				quotaReserved = true;
+				const stored = quotaLookup.call(quota, quotaRequest.idempotencyKey);
+				if (!quotaClaimMatches(stored) || !quotaMethodsCurrent())
+					throw new Error("generation quota claim could not be verified");
+				inspectGenerationOnly =
+					reservation.kind === "existing" || stored?.status === "ready";
+				if (!generationContextCurrent(true))
+					throw new Error(
+						"generation authority changed during quota reservation",
+					);
+			} catch (error) {
+				throw new GenerationQuotaAdmissionError(
+					error instanceof Error
+						? error.message
+						: "generation quota reservation failed",
+				);
+			}
+		};
 		try {
 			await admitHosting(
 				genDecision.plan.expectedYardId,
 				genDecision.plan.providerId,
 				planned.decisions,
 				generationPlanHash,
+				reserveGenerationQuota,
+				generationAuthorityCurrent,
 			);
 			if (!generationAuthorityCurrent())
 				throw new Error(
@@ -1060,7 +1193,8 @@ export async function resolveBindleDeployment(
 				validateHostingQuote(hostingQuote, now);
 				const head = financial.authority.read(now);
 				const previous = financial.authority.lookup(reservationId);
-				inspectGenerationOnly = Boolean(previous?.executionDigest);
+				inspectGenerationOnly =
+					inspectGenerationOnly || Boolean(previous?.executionDigest);
 				if (!paidContextCurrent() || !generationAuthorityCurrent())
 					throw new Error(
 						"hosting context changed before generation claim; reconcile reservation",
@@ -1086,8 +1220,10 @@ export async function resolveBindleDeployment(
 			return rejectResult(
 				foldState,
 				emitted,
-				"billing",
-				"hosting-budget-admission-denied",
+				error instanceof GenerationQuotaAdmissionError ? "policy" : "billing",
+				error instanceof GenerationQuotaAdmissionError
+					? "yard-generation-quota-denied"
+					: "hosting-budget-admission-denied",
 				error instanceof Error
 					? error.message
 					: "hosting budget admission failed",
@@ -1115,12 +1251,24 @@ export async function resolveBindleDeployment(
 
 		// Pin the actual callable methods so a registry lookup cannot redirect an
 		// already authorized provider operation between the final check and call.
+		const checkProviderBoundary = () => {
+			if (generationAuthorityCurrent?.() !== true)
+				throw new Error(
+					"generation authority changed at the provider boundary",
+				);
+		};
 		const pinnedConnector: YardGenerationConnector = {
 			id: selectedId,
 			kind: selectedKind,
 			plan: (input) => selectedPlan.call(selectedConnector, input),
-			provision: (plan) => selectedProvision.call(selectedConnector, plan),
-			inspect: (id) => selectedInspect.call(selectedConnector, id),
+			provision: (plan) => {
+				checkProviderBoundary();
+				return selectedProvision.call(selectedConnector, plan);
+			},
+			inspect: (id) => {
+				checkProviderBoundary();
+				return selectedInspect.call(selectedConnector, id);
+			},
 		};
 		const saga = createYardGenerationSaga({
 			connectors: new Map([
@@ -1143,7 +1291,17 @@ export async function resolveBindleDeployment(
 				throw new Error(
 					"generation authority changed before provider operation",
 				);
-			if (inspectGenerationOnly) {
+			const currentQuotaClaim = quotaLookup.call(
+				quota,
+				quotaRequest.idempotencyKey,
+			);
+			if (
+				!quotaClaimMatches(currentQuotaClaim) ||
+				!quotaMethodsCurrent() ||
+				!generationAuthorityCurrent()
+			)
+				throw new Error("generation quota changed before provider operation");
+			if (inspectGenerationOnly || currentQuotaClaim?.status === "ready") {
 				// The claim may have committed before a lost provider acknowledgement.
 				// Reopening a saga must inspect that operation rather than provision again.
 				genResult = await selectedInspect.call(
@@ -1318,6 +1476,43 @@ export async function resolveBindleDeployment(
 					yardId: genResult.yardId,
 					attemptId: genDecision.plan.attemptId,
 				}),
+			);
+		}
+
+		try {
+			if (!quotaCurrent() || !generationAuthorityCurrent())
+				throw new Error(
+					"generation quota changed before readiness was recorded",
+				);
+			const current = quotaLookup.call(quota, quotaRequest.idempotencyKey);
+			const ready =
+				current?.status === "ready"
+					? current
+					: quotaMarkReady.call(quota, {
+							idempotencyKey: quotaRequest.idempotencyKey,
+							attemptId: quotaRequest.attemptId,
+							ownerTenantId: quotaRequest.ownerTenantId,
+							planHash: quotaRequest.planHash,
+							yardId: quotaRequest.yardId,
+							evidenceRef: genResult.outputHash,
+						});
+			const storedReady = quotaLookup.call(quota, quotaRequest.idempotencyKey);
+			if (
+				!quotaClaimMatches(ready) ||
+				ready.status !== "ready" ||
+				!quotaClaimMatches(storedReady) ||
+				storedReady?.status !== "ready" ||
+				storedReady.readyEvidenceRef !== ready.readyEvidenceRef ||
+				!quotaCurrent()
+			)
+				throw new Error("generation quota readiness could not be verified");
+		} catch (error) {
+			return rejectAfterGeneration(
+				"policy",
+				"yard-generation-quota-uncertain",
+				error instanceof Error
+					? error.message
+					: "generation quota readiness unavailable",
 			);
 		}
 

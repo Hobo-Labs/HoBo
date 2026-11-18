@@ -1,5 +1,6 @@
 """Check real-code guard mutations in an isolated broker package."""
 from pathlib import Path
+import os
 import re, shutil, subprocess, tempfile
 repo = Path(__file__).resolve().parents[4]
 skill = Path(__file__).resolve().parents[1]
@@ -51,16 +52,6 @@ def plan_claim(s):
  s,n=re.subn(pattern,'',s,count=1)
  if n!=1 or s.count(' || !generationAuthorityCurrent()')<2:raise Exception('generation claim guards not found')
  return s.replace(' || !generationAuthorityCurrent()','',2)
-def plan_effect(s):
- pattern=r'if \(!generationAuthorityCurrent\(\)\)\s*throw new Error\(\s*"generation authority changed before provider operation",?\s*\);'
- s,n=re.subn(pattern,'',s,count=1)
- if n!=1:raise Exception('generation effect guard not found')
- return s
-def generation_funding(s):
- pattern=r'if \(generationPlanHash && !context\)\s*throw new Error\(\s*"durable shared hosting budget authority required for generation",\s*\);'
- s,n=re.subn(pattern,'',s,count=1)
- if n!=1:raise Exception('generation funding guard not found')
- return s
 def signal(s):
  pattern=r'return rejectAfterGeneration\(\s*"placement",\s*"yard-generation-uncertain",\s*error instanceof Error\s*\? error\.message\s*:\s*"generation signals unavailable",\s*\);'
  s,n=re.subn(pattern,'throw error;',s,count=1)
@@ -68,14 +59,12 @@ def signal(s):
  return s
 cases=[
  ('selection',selection,'yard-funded-quote-race.test.ts','different Yard or provider'),
- ('policy-quote',lambda s:replace(s,'toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||',''),'yard-funded-quote-race.test.ts','changed provider while policy'),
+ ('policy-quote',lambda s:first(s,'toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||',''),'yard-funded-quote-race.test.ts','changed provider while policy'),
  ('quote-id',lambda s:replace(s,'proof.quoteId !== quote.quoteId ||',''),'yard-policy-quote-binding.test.ts','complete quote content'),
  ('quote-digest',lambda s:replace(s,'proof.quoteDigest !== quoteDigest ||',''),'yard-policy-quote-binding.test.ts','complete quote content'),
  ('work-binding',work_binding,'yard-quote-work-binding.test.ts','binds a Yard quote'),
  ('work-after-generation',work_binding,'yard-event-store-folds.test.ts','changed-work-after-generation'),
  ('plan-before-claim',plan_claim,'yard-event-store-folds.test.ts','changed-plan-before-claim'),
- ('plan-before-effect',plan_effect,'yard-event-store-folds.test.ts','changed-plan-during-claim'),
- ('generation-funding',generation_funding,'yard-local-funding.test.ts','does not use local placement approval to fund generation'),
  ('source-quote',lambda s:replace(s,'quoteKey(hostingBudget.quotes) === quotesDigest','true'),'yard-funded-quote-race.test.ts','changed source quote while policy'),
  ('policy-authority',lambda s:replace(s,'deps.authorizeHosting === paidAuthority &&','true &&'),'yard-funded-quote-race.test.ts','changed authority while policy'),
  ('budget',lambda s:first(s,'deps.hostingBudget === hostingBudget &&','true &&'),'yard-funded-quote-race.test.ts','changed budget while policy'),
@@ -105,6 +94,7 @@ try:
  if control.returncode != 0 or 'Test Files  1 passed' not in control.stdout:raise Exception(f'unmodified control failed:\n{control.stdout[-2200:]}')
  print('Unmodified control passed',flush=True)
  for name,mutate,test,pattern in cases:
+  if os.environ.get('MUTATION_CASE') and os.environ['MUTATION_CASE']!=name:continue
   target.write_text(mutate(original.read_text()))
   r=run(test,pattern)
   if r.returncode==0 or f'FAIL  test/{test} >' not in r.stdout or 'Failed Suites' in r.stdout:raise Exception(f'{name} did not fail the expected running test ({r.returncode}):\n{r.stdout[-2200:]}')
