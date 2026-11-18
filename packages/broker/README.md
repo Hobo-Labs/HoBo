@@ -393,11 +393,36 @@ approval-evidence path is wired; unknown effects and `require-dedicated` are
 also refused until dedicated-Yard evidence can be checked. Older attempts that
 ran despite those policies may need resource and hold reconciliation.
 
-Other generation policy fields are not yet enforced by this planner:
-`maxConcurrentGenerations`, `maxYardsPerTenant`, `requireAttestation` and
-`lockedProperties`. Keep generation disabled unless the host enforces those
-requirements separately. The direct planner also relies on its caller to
-establish that no matching Yard exists.
+The planner also refuses policies requiring attestation and nonempty locked
+properties until their evidence can be verified. It requires an explicit
+`requireAttestation: false` and an empty `lockedProperties` array. Previously
+accepted generation may need reconciliation.
+
+The bounded evidence projection hides nine same-state steps and assumes the
+other policy, quote, budget and connector checks succeed.
+
+```mermaid
+stateDiagram-v2
+  s0: Yard generation requested
+  s1: Unavailable attestation refused
+  s2: Unverified property locks refused
+  s3: Generation policy accepted
+  s4: Host authorized generation
+  s5: Generation budget held
+  s6: Provider called
+  [*] --> s0
+  s0 --> s1: refuse without attestation
+  s0 --> s2: refuse unverified property locks
+  s0 --> s3: accept the generation policy
+  s3 --> s4: authorize generation
+  s4 --> s5: hold the generation budget
+  s5 --> s6: call the provider
+```
+
+The `maxConcurrentGenerations` and `maxYardsPerTenant` fields are not yet
+enforced. Keep generation disabled unless the host enforces those requirements
+separately. The direct planner relies on its caller to establish that no matching
+Yard exists, and the standalone generation saga does not receive policy evidence.
 
 The bounded generation policy projection hides 12 same-state steps and assumes
 the separate quote, budget and connector checks succeed.

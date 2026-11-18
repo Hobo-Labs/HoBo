@@ -229,6 +229,8 @@ describe("yard event-store folds + provider resolvers", () => {
 		"generation-approval-required",
 		"generation-invalid-effect",
 		"generation-dedicated-unsupported",
+		"generation-attestation-required",
+		"generation-locked-properties",
 		"exact-yard-mismatch-before-generation",
 		"exact-yard-match-generation",
 		"wrong-generated-yard-id",
@@ -344,6 +346,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			maxConcurrentGenerations: 1,
 			maxYardsPerTenant: 5,
 			requireApproval: false,
+			requireAttestation: false,
 		};
 
 		const nativeConnector = createAzureYardGenerationConnector();
@@ -463,6 +466,10 @@ describe("yard event-store folds + provider resolvers", () => {
 			Object.assign(allowPolicy, { effect: "allow" });
 		if (mode === "generation-dedicated-unsupported")
 			Object.assign(allowPolicy, { effect: "require-dedicated" });
+		if (mode === "generation-attestation-required")
+			Object.assign(allowPolicy, { requireAttestation: true });
+		if (mode === "generation-locked-properties")
+			Object.assign(allowPolicy, { lockedProperties: ["region"] });
 		const directory = mkdtempSync(
 			join(tmpdir(), "hobo-funded-yard-generation-"),
 		);
@@ -1059,7 +1066,9 @@ describe("yard event-store folds + provider resolvers", () => {
 			if (
 				mode === "generation-approval-required" ||
 				mode === "generation-invalid-effect" ||
-				mode === "generation-dedicated-unsupported"
+				mode === "generation-dedicated-unsupported" ||
+				mode === "generation-attestation-required" ||
+				mode === "generation-locked-properties"
 			) {
 				expect({
 					outcome: result.outcome,

@@ -190,7 +190,7 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 		code: "yard-generation-denied",
 		plane: "policy",
 		remediation:
-			"review the generation policy and request; approval-required or dedicated generation needs a verified evidence path",
+			"review the generation policy and request; approval, attestation, locked properties or dedicated generation need a verified evidence path",
 	},
 	{
 		code: "yard-runtime-catalog-unavailable",

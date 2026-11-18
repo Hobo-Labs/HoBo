@@ -277,6 +277,7 @@ describe("explicit local hosting authority", () => {
 			maxConcurrentGenerations: 1,
 			maxYardsPerTenant: 1,
 			requireApproval: false,
+			requireAttestation: false,
 		};
 		const req = buildDeploymentRequestFromParts({
 			bindleName: "shop",
