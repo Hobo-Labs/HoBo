@@ -78,6 +78,52 @@ function guard(repo: string, ...args: string[]) {
 }
 
 describe("source policy", () => {
+	it("checks SVG and XML comments while preserving CDATA and attribute text", () => {
+		const svg = [
+			'<?xml version="1.0"?>',
+			'<svg xmlns="http://www.w3.org/2000/svg">',
+			'  <text data-label="&lt;!-- literal --&gt;">Example</text>',
+			"  <desc><![CDATA[<!-- literal text -->]]></desc>",
+			"  <!-- explanatory markup -->",
+			"  <style><![CDATA[",
+			'    text::after { content: "/* literal */"; } /* style explanation */',
+			"  ]]></style>",
+			"  <script><![CDATA[",
+			'    const value = "// literal"; // script explanation',
+			"  ]]></script>",
+			"</svg>",
+		].join("\n");
+		const added = new Set(Array.from({ length: 12 }, (_, index) => index + 1));
+		for (const file of ["example.svg", "example.xml", "example.xhtml.tpl"]) {
+			assert.deepEqual(
+				commentViolations(file, svg, added).map((issue) => issue.line),
+				[5, 7, 10],
+				file,
+			);
+		}
+		const namespaced = [
+			'<svg:svg xmlns:svg="http://www.w3.org/2000/svg">',
+			"  <svg:script><![CDATA[",
+			"    // explanatory script",
+			"  ]]></svg:script>",
+			"</svg:svg>",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("namespaced.svg", namespaced, added).map(
+				(issue) => issue.line,
+			),
+			[3],
+		);
+		const repo = fixture();
+		write(repo, "icon.svg", svg);
+		write(repo, "guide.md", "```xml\n<root><!-- explanation --></root>\n```\n");
+		git(repo, "add", "icon.svg", "guide.md");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /icon\.svg:5:.*self-documenting/u);
+		assert.match(result.stderr, /guide\.md:2:.*self-documenting/u);
+	});
+
 	it("checks Windows batch comments while preserving quoted and escaped text", () => {
 		const text = [
 			"@echo off",

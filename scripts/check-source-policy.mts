@@ -38,6 +38,7 @@ const CODE_EXTENSIONS = new Set([
 	".json5",
 ]);
 const BATCH_EXTENSIONS = new Set([".bat", ".cmd"]);
+const XML_EXTENSIONS = new Set([".svg", ".xml", ".xhtml"]);
 const LEXER_LANGUAGES = new Map<string, CommentDialect>([
 	[".cue", "cue"],
 	[".proto", "proto"],
@@ -243,6 +244,7 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 	if (extension === ".astro") return astroComments(file, text);
 	if (extension === ".feature") return gherkinComments(file, text);
 	if (extension === ".html") return htmlComments(file, text);
+	if (XML_EXTENSIONS.has(extension)) return xmlComments(file, text);
 	const lexicalLanguage = LEXER_LANGUAGES.get(extension);
 	if (lexicalLanguage) {
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
@@ -551,6 +553,88 @@ function htmlAttribute(
 		: undefined;
 }
 
+function xmlComments(file: string, text: string): CommentLocation[] {
+	const masked = text.split("");
+	let rawElement: { name: "script" | "style"; start: number } | undefined;
+	const embedded: CommentLocation[] = [];
+	const hide = (start: number, end: number) => {
+		for (let index = start; index < end; index += 1) {
+			if (masked[index] !== "\n" && masked[index] !== "\r") masked[index] = " ";
+		}
+	};
+	for (let index = 0; index < text.length; ) {
+		if (text.startsWith("<!--", index)) {
+			const end = text.indexOf("-->", index + 4);
+			if (end < 0) throw new Error(`unterminated XML comment in ${file}`);
+			index = end + 3;
+		} else if (text.startsWith("<![CDATA[", index)) {
+			const end = text.indexOf("]]>", index + 9);
+			if (end < 0) throw new Error(`unterminated XML CDATA in ${file}`);
+			if (rawElement) {
+				hide(index, index + 9);
+				hide(end, end + 3);
+			} else hide(index, end + 3);
+			index = end + 3;
+		} else if (text.startsWith("<?", index)) {
+			const end = text.indexOf("?>", index + 2);
+			if (end < 0) throw new Error(`unterminated XML instruction in ${file}`);
+			hide(index, end + 2);
+			index = end + 2;
+		} else if (text[index] === "<") {
+			const end = xmlTagEnd(file, text, index);
+			const tag = text.slice(index, end);
+			const match = /^<\s*(\/?)\s*(?:[\w.-]+:)?(script|style)(?=[\s/>])/iu.exec(
+				tag,
+			);
+			if (match) {
+				const name = match[2]?.toLowerCase();
+				if (match[1] === "/" && rawElement?.name === name) {
+					const first = text.slice(0, rawElement.start).split("\n").length;
+					const fragment = masked.slice(rawElement.start, index).join("");
+					const extension = name === "script" ? ".ts" : ".css";
+					for (const comment of commentLocations(
+						`fragment${extension}`,
+						fragment,
+					)) {
+						embedded.push({
+							...comment,
+							first: first + comment.first - 1,
+							last: first + comment.last - 1,
+						});
+					}
+					hide(rawElement.start, index);
+					rawElement = undefined;
+				} else if (
+					match[1] !== "/" &&
+					!tag.endsWith("/>") &&
+					(name === "script" || name === "style")
+				) {
+					rawElement = { name, start: end };
+				}
+			}
+			index = end;
+		} else index += 1;
+	}
+	return [...htmlComments(file, masked.join("")), ...embedded].sort(
+		(left, right) => left.first - right.first,
+	);
+}
+
+function xmlTagEnd(file: string, text: string, start: number): number {
+	let quote = "";
+	let subsetDepth = 0;
+	for (let index = start + 1; index < text.length; index += 1) {
+		const character = text[index];
+		if (quote) {
+			if (character === quote) quote = "";
+		} else if (character === '"' || character === "'") quote = character;
+		else if (character === "[") subsetDepth += 1;
+		else if (character === "]") subsetDepth -= 1;
+		else if (character === ">" && subsetDepth <= 0) return index + 1;
+	}
+	throw new Error(`unterminated XML tag in ${file}`);
+}
+
 function htmlComments(file: string, text: string): CommentLocation[] {
 	const attributes = astGrepMatches(file, text, "html", "attribute");
 	const found = astGrepMatches(file, text, "html", "comment")
@@ -802,6 +886,9 @@ const sourceLanguageExtensions = new Map([
 	["jsonc", ".js"],
 	["css", ".css"],
 	["html", ".html"],
+	["svg", ".svg"],
+	["xml", ".xml"],
+	["xhtml", ".xhtml"],
 	["astro", ".astro"],
 	["cue", ".cue"],
 	["proto", ".proto"],
@@ -1165,6 +1252,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			extension !== ".astro" &&
 			extension !== ".feature" &&
 			!BATCH_EXTENSIONS.has(extension) &&
+			!XML_EXTENSIONS.has(extension) &&
 			!CODE_EXTENSIONS.has(extension) &&
 			!LEXER_LANGUAGES.has(extension) &&
 			!OTHER_LANGUAGES.has(extension) &&
