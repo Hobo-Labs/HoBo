@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
 	type ComponentRegistration,
 	type EstablishedLink,
@@ -29,6 +30,10 @@ export interface LinkClock {
 
 const DEFAULT_LINK_CLOCK: LinkClock = { nowMs: () => Date.now() };
 const MAX_TIMER_MS = 2_147_483_647;
+const activeDeadline = new AsyncLocalStorage<{
+	readonly iso: string;
+	readonly milliseconds: number;
+}>();
 
 function raceDeadline<T>(
 	work: Promise<T>,
@@ -287,9 +292,17 @@ export function createWrpcLinkLayer(options: {
 				});
 			}
 
-			const deadlineIso = options.deadline ?? null;
-			const deadlineMs =
+			let deadlineIso = options.deadline ?? null;
+			let deadlineMs =
 				deadlineIso === null ? null : parseDeadlineMs(deadlineIso);
+			const parent = activeDeadline.getStore();
+			if (
+				parent &&
+				(deadlineMs === null || parent.milliseconds <= deadlineMs)
+			) {
+				deadlineIso = parent.iso;
+				deadlineMs = parent.milliseconds;
+			}
 			const startedAtMs = deadlineMs === null ? null : checkedNow(clock);
 			if (
 				deadlineIso !== null &&
@@ -337,7 +350,15 @@ export function createWrpcLinkLayer(options: {
 				transportInvocation.signal = abort.signal;
 			}
 			try {
-				invocation = Promise.resolve(transport.invoke(transportInvocation));
+				const invoke = () => transport.invoke(transportInvocation);
+				invocation = Promise.resolve(
+					deadlineIso !== null && deadlineMs !== null
+						? activeDeadline.run(
+								{ iso: deadlineIso, milliseconds: deadlineMs },
+								invoke,
+							)
+						: invoke(),
+				);
 			} catch (error) {
 				release();
 				throw error;

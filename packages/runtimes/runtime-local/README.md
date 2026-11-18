@@ -5,6 +5,8 @@ When a call reaches its deadline, the signal aborts with the same
 `DeadlineExceededError` returned to the caller. Providers should observe the
 signal to stop work promptly; a provider that ignores it retains its in-flight
 slot until it settles.
+Nested calls inherit the parent deadline and may request an earlier deadline;
+they cannot extend it. Concurrent calls keep their deadlines isolated.
 
 > **Naming:** `packages/runtimes/*` are concrete **runtime backends** (this
 > package: the local/sqlite substrate). The singular `packages/runtime`
