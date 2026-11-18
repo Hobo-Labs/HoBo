@@ -136,6 +136,13 @@ export class ControlModel {
 	lastRollbackTarget: number | null = null;
 
 	tick(): number {
+		if (
+			!Number.isSafeInteger(this.clock) ||
+			this.clock < 0 ||
+			this.clock >= Number.MAX_SAFE_INTEGER
+		) {
+			throw new Error("fuzz.model_clock_exhausted");
+		}
 		this.clock += 1;
 		return this.clock;
 	}
@@ -325,6 +332,7 @@ export class ControlModel {
 				row.status !== "destroyed",
 		);
 		if (existing) {
+			this.tick();
 			existing.applyCount += 1;
 			if (opts.fail !== true && existing.status === "failed") {
 				existing.status = "ready";
@@ -416,6 +424,7 @@ export class ControlModel {
 		// SAFETY: snapshot values are produced by serialize() in this model.
 		const blob = JSON.parse(shot) as SnapshotBlob;
 		const expected = tenantFingerprint(blob, tenantId);
+		this.tick();
 		this.restoreTenant(tenantId, blob);
 		this.lastRollbackTarget = targetClock;
 		this.append(tenantId, "rollback", { target: String(targetClock) });

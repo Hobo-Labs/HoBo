@@ -275,3 +275,90 @@ describe("control-plane reference model", () => {
 		expect(world.replay()).toBe(world.fingerprint());
 	});
 });
+
+describe("snapshot clock stability", () => {
+	it("keeps historical checkpoints across retries and rollbacks", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.boolean(), { minLength: 1, maxLength: 12 }),
+				(failures) => {
+					const world = new ControlModel();
+					world.createBindle("tenant-a", "bindle-1", "h1");
+					world.apply("tenant-a", "bindle-1", "k1");
+					const snapshots = [
+						{ at: world.snapshot(), status: "ready", count: 1 },
+					];
+					for (const fail of failures) {
+						const resource = world.apply("tenant-a", "bindle-1", "k1", {
+							fail,
+						});
+						const at = world.snapshot();
+						expect(at).toBeGreaterThan(snapshots.at(-1)?.at ?? -1);
+						snapshots.push({
+							at,
+							status: resource.status,
+							count: resource.applyCount,
+						});
+					}
+					for (const checkpoint of snapshots) {
+						expect(world.rollback("tenant-a", checkpoint.at).ok).toBe(true);
+						const restored = world.findByKey("tenant-a", "k1");
+						expect(restored?.status).toBe(checkpoint.status);
+						expect(restored?.applyCount).toBe(checkpoint.count);
+						expect(world.replay()).toBe(world.fingerprint());
+					}
+				},
+			),
+			{ numRuns: 100 },
+		);
+	});
+
+	it("gives a post-rollback checkpoint its own clock", () => {
+		const world = new ControlModel();
+		const empty = world.snapshot();
+		world.createBindle("tenant-a", "bindle-1", "h1");
+		const created = world.snapshot();
+		world.rollback("tenant-a", empty);
+		const rolledBack = world.snapshot();
+		expect(rolledBack).toBeGreaterThan(created);
+		world.rollback("tenant-a", created);
+		expect(world.bindles.has("bindle-1")).toBe(true);
+		expect(world.replay()).toBe(world.fingerprint());
+	});
+
+	it("refuses a clock increment that cannot stay exact", () => {
+		const world = new ControlModel();
+		world.clock = Number.MAX_SAFE_INTEGER - 1;
+		expect(world.tick()).toBe(Number.MAX_SAFE_INTEGER);
+		expect(() => world.tick()).toThrow("fuzz.model_clock_exhausted");
+		expect(world.clock).toBe(Number.MAX_SAFE_INTEGER);
+		for (const invalid of [
+			Number.NaN,
+			Infinity,
+			-1,
+			0.5,
+			Number.MAX_SAFE_INTEGER + 1,
+		]) {
+			world.clock = invalid;
+			expect(() => world.tick()).toThrow("fuzz.model_clock_exhausted");
+			expect(Object.is(world.clock, invalid)).toBe(true);
+		}
+	});
+
+	it("does not change resources when retry or rollback exhausts the clock", () => {
+		const world = new ControlModel();
+		world.createBindle("tenant-a", "bindle-1", "h1");
+		world.apply("tenant-a", "bindle-1", "k1");
+		const checkpoint = world.snapshot();
+		world.apply("tenant-a", "bindle-1", "k1", { fail: true });
+		world.clock = Number.MAX_SAFE_INTEGER;
+		const before = world.serialize();
+		expect(() => world.apply("tenant-a", "bindle-1", "k1")).toThrow(
+			"fuzz.model_clock_exhausted",
+		);
+		expect(() => world.rollback("tenant-a", checkpoint)).toThrow(
+			"fuzz.model_clock_exhausted",
+		);
+		expect(world.serialize()).toBe(before);
+	});
+});
