@@ -23,6 +23,12 @@ export {
 	ingestDrizzleSchema,
 } from "./ingest.js";
 export {
+	type DrizzleMigrationArtifact,
+	type DrizzleSchemaExports,
+	type GenerateDrizzleMigrationInput,
+	generateDrizzleMigration,
+} from "./sql.js";
+export {
 	type DataMigrationPlanRecord,
 	type ToDataMigrationPlanInput,
 	toDataMigrationPlan,

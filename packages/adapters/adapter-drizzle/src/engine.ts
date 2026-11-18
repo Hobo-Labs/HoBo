@@ -9,7 +9,7 @@ import { DrizzleAdapterError } from "./errors.js";
 
 export const DRIZZLE_ENGINE_ID = "drizzle-kit";
 
-export const DEFAULT_DRIZZLE_ENGINE_VERSION = "0.31.1";
+export const DEFAULT_DRIZZLE_ENGINE_VERSION = "0.31.11";
 
 export interface EmittedSqlStatement {
 	readonly step: MigrationStep;
@@ -27,10 +27,10 @@ export interface DrizzleDiffEngineOptions {
 }
 
 const TOOLCHAIN_ABSENT_REMEDIATION =
-	"Install drizzle-kit in the deploying environment, then construct the engine with `createDrizzleDiffEngine({ toolchainPresent: true, emitSql })`. Until then, apply the migration plan through a schema-apply port that renders its own SQL.";
+	"Use the bundled asynchronous `generateDrizzleMigration` API, or declare a host toolchain with `createDrizzleDiffEngine({ toolchainPresent: true, emitSql })`.";
 
 const EMITTER_MISSING_REMEDIATION =
-	"`toolchainPresent: true` was declared but no `emitSql` emitter was wired. @hobo/adapter-drizzle does not bundle drizzle-kit, so the host must pass the emitter its drizzle-kit install provides.";
+	"`toolchainPresent: true` was declared but no synchronous `emitSql` emitter was wired. Supply a host emitter or use `generateDrizzleMigration`.";
 
 export function createDrizzleDiffEngine(
 	options?: DrizzleDiffEngineOptions,
@@ -50,7 +50,7 @@ export function createDrizzleDiffEngine(
 			if (!toolchainPresent) {
 				throw new DrizzleAdapterError(
 					"TOOLCHAIN_UNAVAILABLE",
-					"SQL emission requires the drizzle-kit toolchain, which is not present.",
+					"Synchronous SQL emission requires a declared host toolchain.",
 					TOOLCHAIN_ABSENT_REMEDIATION,
 				);
 			}
