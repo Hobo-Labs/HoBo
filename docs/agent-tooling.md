@@ -281,13 +281,14 @@ A **semantic-code MCP server**: it gives coding agents IDE-like symbol search, r
 A **Rust Token Killer command proxy** that compresses noisy shell-command output before it reaches coding agents. It is local, uses no API keys, and supports direct use (`rtk git status`, `rtk pnpm test:file <file>`, `rtk gain`) plus hook initialization for Claude Code/Copilot (`rtk init -g`), Codex (`rtk init -g --codex`), and Cursor (`rtk init -g --agent cursor`). The setup script installs it in the common/devcontainer layer when possible (existing `rtk`, Homebrew, Cargo, then upstream install script) and initializes hooks only in the selected agent-specific layer.
 
 ### hobo — HoBo's own MCP server (this repo)
-`.mcp.json` runs it from source (`node --import tsx packages/hobo/src/bin/hobo-mcp.ts`; no keys). Besides the CLI verbs it offers the owner-facing experiences used by the **hobo-deploy** skill, including secret capture and **`choose_secret_store`** for a handed-off `hobo ci|cd up`. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings.
+`.mcp.json` runs it from source (`node --import tsx packages/hobo/src/bin/hobo-mcp.ts`; no keys). It exposes the CLI verbs and secret capture used by the **hobo-deploy** skill. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings.
 
-Follow the **hobo-deploy** skill's privacy verification before using any owner
-form. Use the same target project `cwd` for its lifecycle and store-choice
-calls so they address the same temporary owner session. Keep that `cwd` on
-subsequent retries. If a verified private hand-off is unavailable, report that
-gap without collecting owner settings.
+Store selection through **`choose_secret_store`** is temporarily unavailable
+until HoBo supports a verified, scoped owner session. Do not collect store
+identifiers in chat or tool arguments. Follow the **hobo-deploy** skill's
+privacy verification before using any owner form. When a verified private
+hand-off is available, use the same target project `cwd` throughout the
+ceremony; otherwise report the missing capability without collecting settings.
 
 ### headroom — `chopratejas/headroom` (Apache-2.0)
 A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress`, `mcp__headroom__headroom_retrieve`, and `mcp__headroom__headroom_stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy with `headroom proxy --port 8787`, then launch Claude with:
