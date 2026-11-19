@@ -54,6 +54,12 @@ export interface Streamer {
 	createRun<TChunk = unknown>(options?: {
 		runId?: RunId;
 	}): StreamerRunHandle<TChunk>;
+	start<TChunk = unknown>(
+		workflow: (
+			context: Pick<StreamerRunHandle<TChunk>, "runId" | "getWritable">,
+		) => void | PromiseLike<void>,
+		options?: { runId?: RunId },
+	): StreamerRunHandle<TChunk>;
 	getRun<TChunk = unknown>(runId: RunId): StreamerRunHandle<TChunk>;
 	teardownRun(runId: RunId, reason?: string): StreamerRunResult;
 }

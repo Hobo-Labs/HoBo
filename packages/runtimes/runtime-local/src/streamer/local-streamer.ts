@@ -47,8 +47,14 @@ export function createLocalStreamer(
 
 	const streamer: Streamer = {
 		createRun<TChunk = unknown>(runOptions: { runId?: RunId } = {}) {
-			const runId =
-				runOptions.runId ?? parseRunId(`${runIdPrefix}-${nextRunCounter++}`);
+			let runId: RunId;
+			if (runOptions.runId === undefined) {
+				do {
+					runId = parseRunId(`${runIdPrefix}-${nextRunCounter++}`);
+				} while (runs.has(runId));
+			} else {
+				runId = parseRunId(runOptions.runId);
+			}
 			if (runs.has(runId)) {
 				throw new Error(`streamer run already exists: ${runId}`);
 			}
@@ -60,6 +66,41 @@ export function createLocalStreamer(
 			});
 			runs.set(runId, journal as FrameJournal<unknown>);
 			return toRunHandle(journal);
+		},
+		start<TChunk = unknown>(
+			workflow: (
+				context: Pick<StreamerRunHandle<TChunk>, "runId" | "getWritable">,
+			) => void | PromiseLike<void>,
+			runOptions: { runId?: RunId } = {},
+		) {
+			if (!(workflow instanceof Function)) {
+				throw new TypeError("workflow must be a function");
+			}
+			const run = streamer.createRun<TChunk>(runOptions);
+			const journal = getJournal(runs, run.runId);
+			function close(status: "completed" | "failed", reason: string): void {
+				journal.close(
+					createStreamerRunResult({ runId: run.runId, status, reason }),
+				);
+				if (runs.get(run.runId) === journal) runs.delete(run.runId);
+			}
+			void Promise.resolve()
+				.then(() =>
+					workflow({ runId: run.runId, getWritable: run.getWritable }),
+				)
+				.then(
+					() => close("completed", "workflow completed"),
+					(error) => {
+						let reason = "workflow failed";
+						try {
+							const detail =
+								error instanceof Error ? error.message : String(error);
+							if (detail.trim().length > 0) reason = detail;
+						} catch {}
+						close("failed", reason);
+					},
+				);
+			return run;
 		},
 		getRun<TChunk = unknown>(runId: RunId) {
 			const journal = getJournal(runs, runId) as FrameJournal<TChunk>;
@@ -75,9 +116,9 @@ export function createLocalStreamer(
 				status: "closed",
 				reason,
 			});
-			journal.close(result);
+			const closed = journal.close(result);
 			runs.delete(runId);
-			return result;
+			return closed;
 		},
 	};
 

@@ -23,7 +23,11 @@ Snapshots live in the host process and do not survive its restart.
 The local streamer retains at most `bufferLimit` frames per run. Active readers
 apply backpressure before an unread frame is discarded. A reader that requests
 an older, evicted sequence receives `StreamerHistoryExpiredError` with the
-first available sequence.
+first available sequence. `start` runs a workflow asynchronously and closes its
+stream when the workflow completes or fails. Finished runs leave the streamer's
+registry; the returned handle can still drain retained frames and observe the
+result. Tearing down an active run closes its stream but does not cancel the
+workflow.
 
 The local scheduler supports interval schedules and five- or six-field cron
 expressions. Cron expressions use the specified IANA time zone, while the
