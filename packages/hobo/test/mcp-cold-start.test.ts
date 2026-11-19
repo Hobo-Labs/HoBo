@@ -184,6 +184,9 @@ describe("SPEC hobo-mcp cold start", { timeout: 120_000 }, () => {
 		expect((await answerTo(1)).result).toMatchObject({
 			protocolVersion: "2025-11-25",
 			capabilities: { tools: {}, resources: {} },
+			instructions: expect.stringMatching(
+				/On initial connection.*private owner setup/u,
+			),
 			serverInfo: { name: "hobo-mcp" },
 		});
 		expect(seen.some((message) => message.id === 2)).toBe(false);

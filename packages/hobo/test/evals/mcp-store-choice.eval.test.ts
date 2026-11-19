@@ -150,12 +150,12 @@ describe("owner store choice over raw MCP stdio", () => {
 				content: [
 					{
 						type: "text",
-						text: "Store selection cannot continue in this HoBo session until a verified private owner hand-off is available. Retry the HoBo setup ceremony once it is available.",
+						text: "Private owner store selection is not yet available in this HoBo MCP implementation. This tool cannot establish an owner store session.",
 					},
 				],
 				structuredContent: {
 					status: "secure-form-unavailable",
-					reason: "owner-channel-unverified",
+					reason: "owner-setup-unavailable",
 				},
 			});
 			const submitted = await client.rpc("tools/call", {
@@ -172,7 +172,7 @@ describe("owner store choice over raw MCP stdio", () => {
 				isError: true,
 				structuredContent: {
 					status: "secure-form-unavailable",
-					reason: "owner-channel-unverified",
+					reason: "owner-setup-unavailable",
 				},
 			});
 			const resources = await client.rpc("resources/list");
