@@ -35,6 +35,10 @@ import {
 	localHttpHealthCheck,
 	waitForLocalHttpHealth,
 } from "./local-health.js";
+import {
+	registerLocalLogResources,
+	withLocalResource,
+} from "./local-resource-logs.js";
 import { listServableEntrypointFactories } from "./servable-entrypoints.js";
 
 export type LocalYardServeResult = BareMetalServeResult & {
@@ -218,6 +222,7 @@ export async function serveBindleOnLocalYard(options: {
 			`bindle ${definition.name} has no external endpoint to expose`,
 		);
 	}
+	registerLocalLogResources(entrypoints.map((entry) => entry.name));
 	const replayEnv = { ...process.env };
 	const replay = applySessionReplayToEntrypoints([], definition, {
 		env: replayEnv,
@@ -254,7 +259,9 @@ export async function serveBindleOnLocalYard(options: {
 			);
 			for (const name of [...loaded].reverse()) {
 				try {
-					await componentHost.teardownComponent(name);
+					await withLocalResource(name, () =>
+						componentHost.teardownComponent(name),
+					);
 				} catch {}
 			}
 			uninstallMesh();
@@ -314,7 +321,9 @@ export async function serveBindleOnLocalYard(options: {
 					`local component ${entry.name} requires ${missing.to}, which did not start`,
 				);
 			}
-			const handler = entry.createHandler();
+			const handler = withLocalResource(entry.name, () =>
+				entry.createHandler(),
+			);
 			if (handler === null) return;
 			const wrapped = first(
 				applySessionReplayToEntrypoints(
@@ -331,19 +340,22 @@ export async function serveBindleOnLocalYard(options: {
 				).entrypoints,
 			);
 			loaded.push(entry.name);
-			componentHost.loadComponent(
-				createHttpComponentDescriptor(entry.name, wrapped.handler, "latin1"),
+			withLocalResource(entry.name, () =>
+				componentHost.loadComponent(
+					createHttpComponentDescriptor(entry.name, wrapped.handler, "latin1"),
+				),
 			);
 			emit(
 				`hobo dev: component host loaded ${entry.kind}:${entry.name}` +
 					(entry.external ? " (external)" : " (private mesh)"),
 			);
 			const componentId = entry.name;
-			const componentHandler: FetchHandler = async (request) => {
-				const httpReq = await webRequestToHttp(request);
-				const httpRes = await componentHost.handleHttp(componentId, httpReq);
-				return httpResponseToWeb(httpRes);
-			};
+			const componentHandler: FetchHandler = (request) =>
+				withLocalResource(entry.name, async () => {
+					const httpReq = await webRequestToHttp(request);
+					const httpRes = await componentHost.handleHttp(componentId, httpReq);
+					return httpResponseToWeb(httpRes);
+				});
 			let url: string;
 			let port: number | null = null;
 			if (entry.external) {

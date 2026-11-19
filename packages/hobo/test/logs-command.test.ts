@@ -18,6 +18,10 @@ import {
 	startLocalDeployment,
 } from "../src/local-deployment.js";
 import { localDeploymentLogPath } from "../src/local-deployment-log.js";
+import {
+	localLogResourcesPath,
+	localResourceLogPath,
+} from "../src/local-resource-logs.js";
 import { createLogsCommand } from "../src/logs-command.js";
 
 const directories: string[] = [];
@@ -104,6 +108,54 @@ it("accepts a line limit and rejects invalid streaming options", async () => {
 		expect(result.exitCode).toBe(2);
 	}
 });
+
+it("follows only the requested resource", async () => {
+	const project = await temporaryProject();
+	await writeFile(join(project, "hobo.bindle.json"), "{}\n");
+	await mkdir(join(project, ".hobo", "resource-logs"), { recursive: true });
+	await writeFile(
+		localLogResourcesPath(project),
+		JSON.stringify({ names: ["api", "web"] }),
+	);
+	await writeFile(localResourceLogPath(project, "api"), "api-first\n");
+	await writeFile(localResourceLogPath(project, "web"), "web-first\n");
+	const controller = new AbortController();
+	const seen: string[] = [];
+	let initialSeen = () => {};
+	const initialReady = new Promise<void>((resolve) => {
+		initialSeen = resolve;
+	});
+	const shell = createHoboCli({
+		commands: {
+			logs: createLogsCommand({
+				signal: controller.signal,
+				pollIntervalMs: 10,
+			}),
+		},
+	});
+	const running = shell.run(["logs", "api", "--follow", "--json"], {
+		cwd: project,
+		onProgress: (line) => {
+			seen.push(line);
+			const record = JSON.parse(line);
+			if (record.message === "api-first") initialSeen();
+			if (record.message === "api-second") controller.abort();
+		},
+	});
+	try {
+		await initialReady;
+		await appendFile(localResourceLogPath(project, "web"), "web-second\n");
+		await appendFile(localResourceLogPath(project, "api"), "api-second\n");
+		expect((await running).exitCode).toBe(0);
+		expect(seen.map((line) => JSON.parse(line))).toEqual([
+			{ type: "log", resource: "api", message: "api-first" },
+			{ type: "log", resource: "api", message: "api-second" },
+		]);
+	} finally {
+		controller.abort();
+		await running;
+	}
+}, 10_000);
 
 it("follows complete lines across UTF-8 fragments and log rotation", async () => {
 	const project = await temporaryProject();
@@ -238,10 +290,18 @@ it("reads the running deployment's application output and component events", asy
 	await writeFile(
 		join(project, "src/bindle.mjs"),
 		`import { bindle } from ${JSON.stringify(bindles)};
-export default bindle("logs-app", b => ({ web: b.web(() => request => {
-  console.log("actual-app-request", new URL(request.url).pathname);
-  return new Response("actual app");
-}) }));
+export default bindle("logs-app", b => {
+  const api = b.api(() => request => {
+    console.error("actual-api-request", new URL(request.url).pathname);
+    return new Response("api");
+  });
+  const web = b.web(() => async request => {
+    console.log("actual-app-request", new URL(request.url).pathname);
+    await fetch(process.env.services__api__http__0 + "/real-api");
+    return new Response("actual app");
+  }).dependsOn(api);
+  return { web, api };
+});
 `,
 	);
 	initBareMetalYard({ hoboHome, componentHost: "local" });
@@ -277,6 +337,68 @@ export default bindle("logs-app", b => ({ web: b.web(() => request => {
 				expect.stringContaining('"type":"component.Invoked"'),
 			]),
 		);
+		const web = await shell.run(["logs", "web", "--json"], { cwd: project });
+		const api = await shell.run(["logs", "api", "--json"], { cwd: project });
+		const webRecords = web.stdout
+			.trimEnd()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		const apiRecords = api.stdout
+			.trimEnd()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(webRecords).toContainEqual({
+			type: "log",
+			resource: "web",
+			message: "actual-app-request /real-activity",
+		});
+		expect(apiRecords).toContainEqual({
+			type: "log",
+			resource: "api",
+			message: "actual-api-request /real-api",
+		});
+		expect(
+			webRecords.some((record) =>
+				record.message.includes("actual-api-request"),
+			),
+		).toBe(false);
+		expect(
+			apiRecords.some((record) =>
+				record.message.includes("actual-app-request"),
+			),
+		).toBe(false);
+		const missing = await shell.run(["logs", "missing", "--json"], {
+			cwd: project,
+		});
+		expect(missing.exitCode).toBe(2);
+		expect(JSON.parse(missing.stdout).message).toContain(
+			"Unknown local log resource",
+		);
+		const cue =
+			process.env.HOBO_CUE_BIN ||
+			fileURLToPath(
+				new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+			);
+		const schema = fileURLToPath(
+			new URL("../data-models/composition.cue", import.meta.url),
+		);
+		const recordFile = join(project, "resource-record.json");
+		await writeFile(
+			recordFile,
+			JSON.stringify(
+				apiRecords.find((record) =>
+					record.message.includes("actual-api-request"),
+				),
+			),
+		);
+		execFileSync(cue, ["vet", schema, recordFile, "-d", "#LocalLogRecord"]);
+		execFileSync(cue, [
+			"vet",
+			schema,
+			localLogResourcesPath(project),
+			"-d",
+			"#LocalLogResources",
+		]);
 	} finally {
 		if (started) {
 			const down = await shell.run(["down", "--json"], { cwd: project });

@@ -1,20 +1,52 @@
-import { open } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
+import { fromJsonString } from "@bufbuild/protobuf";
+import { LocalLogResourcesSchema } from "./_generated/composition_pb.js";
+import {
+	localLogResourcesPath,
+	localResourceLogPath,
+} from "./local-resource-logs.js";
 
 const MAX_LOG_BYTES = 1_048_576;
 const READ_SIZE = 65_536;
 
 type LogCursor = Readonly<{ device: number; inode: number; offset: number }>;
 
-export function localDeploymentLogPath(projectDir: string): string {
-	return join(resolve(projectDir), ".hobo", "local-deployment.log");
+export function localDeploymentLogPath(
+	projectDir: string,
+	resource?: string,
+): string {
+	return resource === undefined
+		? join(resolve(projectDir), ".hobo", "local-deployment.log")
+		: localResourceLogPath(projectDir, resource);
 }
 
-async function openLog(projectDir: string) {
+export async function localLogResourceNames(
+	projectDir: string,
+): Promise<readonly string[]> {
 	try {
-		return await open(localDeploymentLogPath(projectDir), "r");
+		const record = fromJsonString(
+			LocalLogResourcesSchema,
+			await readFile(localLogResourcesPath(projectDir), "utf8"),
+		);
+		if (
+			record.names.some((name) => name.length === 0) ||
+			new Set(record.names).size !== record.names.length
+		)
+			throw new Error("invalid local log resource list");
+		return record.names;
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT")
+			return [];
+		throw error;
+	}
+}
+
+async function openLog(projectDir: string, resource?: string) {
+	try {
+		return await open(localDeploymentLogPath(projectDir, resource), "r");
 	} catch (error) {
 		if (error instanceof Error && "code" in error && error.code === "ENOENT")
 			return null;
@@ -22,8 +54,12 @@ async function openLog(projectDir: string) {
 	}
 }
 
-export async function readLocalDeploymentLog(projectDir: string, limit = 200) {
-	const file = await openLog(projectDir);
+export async function readLocalDeploymentLog(
+	projectDir: string,
+	limit = 200,
+	resource?: string,
+) {
+	const file = await openLog(projectDir, resource);
 	if (!file)
 		return {
 			exists: false,
@@ -73,6 +109,7 @@ export async function readLocalDeploymentLog(projectDir: string, limit = 200) {
 
 export async function followLocalDeploymentLog(options: {
 	readonly projectDir: string;
+	readonly resource?: string | undefined;
 	readonly cursor: LogCursor | null;
 	readonly signal: AbortSignal;
 	readonly onLine: (line: string) => void;
@@ -83,7 +120,7 @@ export async function followLocalDeploymentLog(options: {
 	let decoder = new StringDecoder("utf8");
 	let partial = "";
 	while (!options.signal.aborted) {
-		const file = await openLog(options.projectDir);
+		const file = await openLog(options.projectDir, options.resource);
 		if (file) {
 			try {
 				const { dev, ino, size } = await file.stat();

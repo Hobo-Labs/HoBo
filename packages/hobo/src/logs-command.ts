@@ -4,6 +4,7 @@ import { LocalLogRecordSchema } from "./_generated/composition_pb.js";
 import { isJsonString } from "./json.js";
 import {
 	followLocalDeploymentLog,
+	localLogResourceNames,
 	readLocalDeploymentLog,
 } from "./local-deployment-log.js";
 
@@ -20,8 +21,9 @@ function usage(message: string): CommandResult {
 export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 	return {
 		run: async ({ context, flags, args, emitProgress }) => {
-			if (args.length > 0)
-				return usage("hobo logs takes no positional arguments.");
+			if (args.length > 1)
+				return usage("hobo logs accepts at most one resource name.");
+			const resource = args[0];
 			const linesLimit = flags.subcommandOptions?.lines;
 			const tailLimit = flags.subcommandOptions?.tail;
 			if (linesLimit !== undefined && tailLimit !== undefined)
@@ -39,9 +41,15 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 			if (follow && flags.quiet)
 				return usage("--follow cannot be combined with -q.");
 			const projectDir = context.projectDir ?? context.cwd;
+			if (
+				resource !== undefined &&
+				!(await localLogResourceNames(projectDir)).includes(resource)
+			)
+				return usage(`Unknown local log resource: ${resource}`);
 			const log = await (deps.readLog ?? readLocalDeploymentLog)(
 				projectDir,
 				limit,
+				resource,
 			);
 			if (!follow)
 				return {
@@ -50,7 +58,9 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 					code: "HOBO_OK",
 					message: log.exists
 						? log.lines.join("\n")
-						: "No local deployment logs found. Run hobo up to start a deployment.",
+						: resource === undefined
+							? "No local deployment logs found. Run hobo up to start a deployment."
+							: `No logs for local resource ${resource}.`,
 					data: {
 						command: "logs",
 						projectDir,
@@ -58,7 +68,11 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 						records: log.lines.map((message) =>
 							toJson(
 								LocalLogRecordSchema,
-								create(LocalLogRecordSchema, { type: "log", message }),
+								create(LocalLogRecordSchema, {
+									type: "log",
+									message,
+									resource,
+								}),
 							),
 						),
 						truncated: log.truncated,
@@ -71,7 +85,11 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 						? JSON.stringify(
 								toJson(
 									LocalLogRecordSchema,
-									create(LocalLogRecordSchema, { type: "log", message }),
+									create(LocalLogRecordSchema, {
+										type: "log",
+										message,
+										resource,
+									}),
 								),
 							)
 						: message,
@@ -100,6 +118,7 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 			try {
 				await followLocalDeploymentLog({
 					projectDir,
+					resource,
 					cursor: log.cursor,
 					signal: deps.signal ?? controller.signal,
 					onLine: emitLine,
