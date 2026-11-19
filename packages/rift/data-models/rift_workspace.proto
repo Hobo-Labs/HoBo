@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.rift.v1;
 
-// Which copy-on-write primitive this machine can actually provide.
-// Ordered best-first; `hardlink` sits below `overlayfs` deliberately, because
-// it does not isolate in-place writes.
 enum CowTier {
   COW_TIER_UNSPECIFIED = 0;
   COW_TIER_REFLINK = 1;
@@ -13,18 +10,13 @@ enum CowTier {
   COW_TIER_COPY = 4;
 }
 
-// Result of probing the host. Reported by `hobo-rift capability`.
 message Capability {
   CowTier tier = 1;
   repeated CowTier available = 2;
-  // Human-readable justification; always populated.
   string reason = 3;
-  // False for hardlink: an append or `sed -i` reaches the source.
   bool isolates_in_place_writes = 4;
 }
 
-// A virtual worktree. `upper`/`work` are set only for the overlayfs tier,
-// whose `path` exists solely inside a mount namespace.
 message WorkspaceRecord {
   string name = 1;
   string path = 2;
@@ -50,7 +42,6 @@ message WorkspaceRemoved {
   string name = 2;
 }
 
-// Journal events. The registry is a fold of these, never a primary write.
 message WorkspaceEvent {
   oneof event {
     RootInitialized root_initialized = 1;
@@ -59,8 +50,8 @@ message WorkspaceEvent {
   }
 }
 
-// Materialized view projected from the journal; persisted as a snapshot.
 message Registry {
   string root = 1;
   repeated WorkspaceRecord workspaces = 2;
+  uint32 event_count = 3;
 }
