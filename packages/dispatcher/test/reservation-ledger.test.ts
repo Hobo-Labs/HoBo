@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	createDispatcherRegistry,
 	createReservationLedger,
 	DISPATCH_EVENTS,
+	decideAndReserveDispatch,
 	parseCreditLedgerView,
 } from "../src/dispatcher.js";
 import type { JsonValue } from "../src/json.js";
@@ -505,11 +507,28 @@ describe("expire", () => {
 		expect(ledger.expire({ now: "2099-01-01T00:00:00.000Z" }).released).toBe(0);
 	});
 
-	it("never expires a confirmed or already-released reservation", () => {
+	it("keeps a confirmed reservation spent after its deadline", () => {
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:01.000Z" });
 		ledger.confirm({ reservationId: "r-1" });
-		expect(ledger.expire({ now: "2026-06-27T00:00:00.000Z" }).released).toBe(0);
+		expect(ledger.expire({ now: "2026-06-27T00:00:02.000Z" }).released).toBe(0);
+		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(90);
+	});
+
+	it("refuses a late confirmation after expiration without spending restored credit", () => {
+		const ledger = createReservationLedger(ledgerView([account()]));
+		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:01.000Z" });
+		ledger.expire({ now: "2026-06-27T00:00:02.000Z" });
+		const result = ledger.confirm({
+			reservationId: "r-1",
+			providerUsageSeq: 777,
+		});
+		expect(result.ok).toBe(false);
+		expect(result.status).toBe("not-confirmable");
+		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(100);
+		expect(ledger.events().at(-1)?.type).toBe(
+			DISPATCH_EVENTS.ReservationExpired,
+		);
 	});
 
 	it("restores headroom for each expired reservation", () => {
@@ -563,6 +582,71 @@ describe("expire", () => {
 		expect(() => ledger.expire({})).toThrow(/must be a non-empty string/u);
 		expect(() => ledger.expire(null)).toThrow(/request must be an object/u);
 	});
+});
+
+it("re-ranks a burst of dispatches from the same stale credit snapshot", () => {
+	const registry = createDispatcherRegistry([
+		{
+			id: "free",
+			providerId: "free",
+			category: "runner",
+			registered: true,
+			dimension: "runner.minutes",
+			listUnitCost: 0.04,
+		},
+		{
+			id: "paid",
+			providerId: "paid",
+			category: "runner",
+			registered: true,
+			dimension: "runner.minutes",
+			listUnitCost: 0.01,
+		},
+	]);
+	const ledger = createReservationLedger(
+		ledgerView([
+			account({
+				providerId: "free",
+				freeHeadroom: 2,
+				listUnitCost: 0.04,
+				credits: [
+					{
+						creditId: "free-credit",
+						freeHeadroom: 2,
+						expiresAt: "2026-07-01T00:00:00.000Z",
+					},
+				],
+			}),
+			account({ providerId: "paid", freeHeadroom: 0, listUnitCost: 0.01 }),
+		]),
+	);
+	const staleSnapshot = ledger.snapshot();
+	const decisions = Array.from({ length: 5 }, (_, index) =>
+		decideAndReserveDispatch({
+			registry,
+			category: "runner",
+			dispatchId: `burst-${index}`,
+			units: 1,
+			ledgerView: staleSnapshot,
+			reservationLedger: ledger,
+		}),
+	);
+	expect(decisions.map((decision) => decision.selectedProvider)).toEqual([
+		"free",
+		"free",
+		"paid",
+		"paid",
+		"paid",
+	]);
+	expect(
+		ledger.snapshot().accounts.find((entry) => entry.providerId === "free")
+			?.freeHeadroom,
+	).toBe(0);
+	expect(
+		ledger
+			.snapshot()
+			.reservations?.filter((entry) => entry.providerId === "free"),
+	).toHaveLength(2);
 });
 
 describe("snapshot and events", () => {
