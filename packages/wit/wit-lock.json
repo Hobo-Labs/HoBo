@@ -132,16 +132,6 @@
       "sha256": "sha256:72966da0fb2118685d590a5cac96bf9648350230e0ecef575913de0513924352"
     },
     {
-      "id": "wasi:messaging/messaging@0.2.0@preview",
-      "namespace": "wasi",
-      "package_name": "messaging",
-      "interface_name": "messaging",
-      "version": "0.2.0",
-      "stability": "preview",
-      "path": "wit/deps/wasi-messaging-messaging.wit",
-      "sha256": "sha256:2fffe459c0e4a254d366ce58b835198fbb0ae9a221b5e324c0d2a35b076e5df7"
-    },
-    {
       "id": "wasi:random/random@0.2.0@preview",
       "namespace": "wasi",
       "package_name": "random",

@@ -561,7 +561,6 @@ export {
 	createInMemoryMessaging,
 	createPublishResult,
 	MESSAGING_PORT_CONTRACT_VERSION,
-	MESSAGING_WIT_INTERFACE,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
 	MessagingDeliveryExhaustedError,

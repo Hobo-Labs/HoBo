@@ -2,7 +2,7 @@
 
 First-class **Kafka** (and Kafka-compatible: Redpanda, MSK, Confluent, Azure Event Hubs Kafka protocol) capability provider for HoBo.
 
-Exports **`wasi:messaging`** (and aligned **`hobo:queue`** pull semantics) so Bindle `topic()` / queue authoring stays backend-agnostic. Credentials are **secretless-first** (`fromBinding` / federation / `secretRef` — never plaintext in Resource Definitions).
+Provides a TypeScript `Messaging` client. The provider does not implement the native asynchronous `hobo:durable-messaging` or `hobo:queue` component interfaces and does not advertise those WIT exports. Credentials are **secretless-first** (`fromBinding` / federation / `secretRef` — never plaintext in Resource Definitions).
 
 See [ADR-0138](../../../docs/design/adr/01-architecture-core.md#adr-0138).
 
@@ -54,12 +54,8 @@ const bus = createKafkaMessaging({
 
 ## Authoring
 
-App code uses ports only:
-
-```ts
-import { topic } from "@hobo/bindles";
-const events = topic("user-created").allow("publish");
-```
+Bindle `topic()` requires the native asynchronous durable messaging interface.
+Kafka's TypeScript client cannot currently satisfy that component dependency.
 
 ## Local path
 

@@ -88,7 +88,7 @@ describe("Rivet source-aware primitive capabilities", () => {
 			"byte-and-attribute",
 		);
 		expect(rows.find((row) => row.kind === "topic")?.reason).toContain(
-			"synchronous HoBo Bindle and WIT topic",
+			"No verified Rivet durable topic mapping",
 		);
 		expect(
 			rows.find((row) => row.kind === "topic")?.unsupportedOperations,

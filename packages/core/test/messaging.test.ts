@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	assertDeliverySupported,
 	createInMemoryMessaging,
-	MESSAGING_WIT_INTERFACE,
 	MessagingDeliveryExhaustedError,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
@@ -19,10 +18,6 @@ import { parseTenantId } from "../src/ports/tenant.js";
 import { first } from "../src/total-access.js";
 
 describe("@hobo/core messaging port", () => {
-	it("pins wasi:messaging interface ref", () => {
-		expect(MESSAGING_WIT_INTERFACE).toBe("wasi:messaging/messaging@0.2.0");
-	});
-
 	it("parses topic + messaging specs", () => {
 		const topic = parseTopicSpec({
 			name: "orders",

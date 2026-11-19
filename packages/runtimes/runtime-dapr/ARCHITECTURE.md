@@ -22,7 +22,7 @@ Parse, don't validate: derived domain types (`DaprRuntimeConfig`, `DaprComponent
 
 ```
 Bindle (topic + defineActor)
-        │  ports only (wasi:messaging, hobo:runtime/actor)
+        │  TypeScript messaging client and hobo:runtime/actor
         ▼
 Camp runtimeRequirements includes "dapr"
         │
