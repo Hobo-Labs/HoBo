@@ -188,22 +188,31 @@ function readDecimal(value: string): Decimal | undefined {
 	return parseDecimal(value);
 }
 
-/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: liability values cross the protobuf boundary as double (provider accounts) or int64 (maximum); discriminate them without coercing or converting unvalidated input. */
-function liabilityMicros(
-	value: bigint | number | undefined,
-): number | undefined {
-	if (typeof value === "bigint") {
-		if (value < 0n || value > MAX_SAFE) return undefined;
-		return Number(value);
-	}
-	// Number.isSafeInteger rejects NaN, infinities, fractions and integers
-	// beyond the safe range, so only exact micros reach callers (and any
-	// BigInt conversion they perform on the result).
-	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
-		return undefined;
-	return value;
+function exactMaximumMicros(maximumMicros: bigint): number | undefined {
+	return maximumMicros >= 0n && maximumMicros <= MAX_SAFE
+		? Number(maximumMicros)
+		: undefined;
 }
-/* oxlint-enable anti-slop/no-runtime-typeof */
+
+function exactProviderAccountMicros(
+	liabilityMicros: number,
+): number | undefined {
+	return Number.isSafeInteger(liabilityMicros) && liabilityMicros >= 0
+		? liabilityMicros
+		: undefined;
+}
+
+function totalProviderAccountMicros(
+	accounts: IacTargetLiabilityEvidence["providerAccounts"],
+): bigint | undefined {
+	let totalMicros = 0n;
+	for (const account of accounts) {
+		const micros = exactProviderAccountMicros(account.liabilityMicros);
+		if (micros === undefined) return undefined;
+		totalMicros += BigInt(micros);
+	}
+	return totalMicros;
+}
 
 function denial(
 	requestId: string,
@@ -375,7 +384,7 @@ export async function admitIacTarget(
 	const maximumMicros =
 		evidence === undefined
 			? undefined
-			: liabilityMicros(evidence.maximumMicros);
+			: exactMaximumMicros(evidence.maximumMicros);
 	if (
 		evidence === undefined ||
 		!safeName(evidence.evidenceRef) ||
@@ -406,19 +415,12 @@ export async function admitIacTarget(
 	const accounts = [...evidence.providerAccounts].sort((left, right) =>
 		compareIdentifier(left.providerAccountId, right.providerAccountId),
 	);
-	const accountMicros = accounts.map((account) =>
-		liabilityMicros(account.liabilityMicros),
-	);
 	if (
 		accounts.length !== expectedAccounts.length ||
 		accounts.some(
-			(account, index) =>
-				account.providerAccountId !== expectedAccounts[index] ||
-				accountMicros[index] === undefined,
+			(account, index) => account.providerAccountId !== expectedAccounts[index],
 		) ||
-		// Reached only when every captured account amount validated above.
-		accountMicros.reduce((sum, micros) => sum + BigInt(micros!), 0n) !==
-			BigInt(maximumMicros)
+		totalProviderAccountMicros(accounts) !== BigInt(maximumMicros)
 	)
 		return denial(
 			requestId,
