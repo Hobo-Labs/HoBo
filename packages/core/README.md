@@ -175,6 +175,9 @@ Malformed evaluation contexts and measurement collections or records return a
 refusal. Measurement keys, units and optional targets must satisfy the same
 shape rules as policy constraints. This validates the supplied evidence's
 shape; the caller remains responsible for authenticating its source.
+Scope identifiers and metric targets reject unpaired Unicode surrogates so
+protobuf encoding cannot silently change them. Target length is measured in
+Unicode code points, matching the authored CUE contract.
 
 The model's user-facing projection collapses internal checks into the following
 flow. It hides 128 same-label transitions from 256 explored steps.
