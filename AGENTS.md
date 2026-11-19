@@ -136,7 +136,7 @@ Prefer changes inside one package, app, feature folder, or test folder.
 ### Portable SQLite EventStore / durable actor journal (ADR-0135)
 
 - SQLite is the **default durable engine** behind HoBo-owned ports — **not** the public portability boundary. Managed stores remain adapters.
-- Package map: `@hobo/core` (`EventStore` / `DurableEventStore`, positions, fences, errors) · `@hobo/storage-sqlite` (schema v2, migrations, `SqliteJournal`, codecs) · `@hobo/runtime-local` (Node `node:sqlite` + storage worker) · `@hobo/runtime-browser` (WASM/OPFS policy; fail-closed without real OPFS) · WIT `hobo:storage@0.1.0`.
+- Package map: `@hobo/core` (`EventStore` / `DurableEventStore`, positions, fences, errors) · `@hobo/storage-sqlite` (current schema, `SqliteJournal`, codecs) · `@hobo/runtime-local` (Node `node:sqlite` + storage worker) · `@hobo/runtime-browser` (WASM/OPFS policy; fail-closed without real OPFS) · WIT `hobo:storage@0.1.0`.
 - **One SQLite partition, one active writer.** Scale by partitions; never multi-writer WAL over shared NFS/SMB.
 - Stream revision via **stream-head row** (not `COUNT(*)`); append CAS + `fenceToken`/`owner_epoch` inside one write transaction; database-local `global_position` for catch-up (not domain envelope identity).
 - Durable commit can stage queue / actor-signal / timer / cron / outbox effects atomically with domain events; network I/O stays **outside** the SQLite transaction.
@@ -159,7 +159,7 @@ Prefer changes inside one package, app, feature folder, or test folder.
 - Continuous Identity Migration (ADR-0132): dual-path PrincipalRef continuity is Matching/policy-driven with **zero required Bindle config**; dual fixtures extend ADR-0070 offline; observe via `hobo identity status` / `hobo doctor`; never invent a parallel IdP or Bindle migration DSL.
 - HoBo Trails (ADR-0134, `@hobo/trails`): app-owned continuous migration recipes (schema/data dual, junction rebind, cutover) that **compose** continuous identity as `identity.continuous`. Pure identity continuous still requires **zero Trail authoring**. Observe via `hobo trails status|plan|inspect`; progressive via existing Harness; do not invent parallel progressive/ETL planes.
 - **Live migration executors** (`@hobo/trails`): upgrade preflight/compatibility evidence (`upgrade-preflight.ts`, fail-closed scope-boundary guard), expand→backfill→contract over a real SQLite store (`migration-executor.ts`, snapshot-before-mutation, compat-gated destructive contract), pooled→siloed zero-loss tenant move (`tenant-move-port.ts`: fence → drain → export/import → checksum-gated reap), live CDC data-dual ports. Emit the `migration.*` event family only.
-- **Event-body evolution gate** (`@hobo/events`): bumping any pinned event body (e.g. `migration.*`) **requires** a total upcaster plus an append-only entry in `packages/events/corpus/golden-replay-baseline.json`; corpus coverage, purity, and append-only violations fail the test lane. Never edit or delete pinned corpus entries.
+- **Event bodies** (`@hobo/events`): change current contracts directly and update their producers, consumers, and executable corpus together.
 - **Jurisdiction & residency** (ADR-0146): legal geography is typed in `@hobo/core` (`ports/jurisdiction.ts`) — `evaluateResidency` is pure and **fail-closed** (unmapped region = conflict); tenants carry `residency` constraints; Gatekeeper reports a `residency` gate. Compliance rules ride `@hobo/policy` (residency pack, control→evidence packs). Never bypass with untyped region strings.
 - Residual classical credentials: `@hobo/connectivity` secretless connector plugins (postgres/tcp/mysql/redis + registry); isolation tiers; workload dials named endpoints only — never receives material.
 - WIT: `hobo:secrets@0.1.0` under `@hobo/wit` (experimental); bridge with `asHoboSecretsStore`.
@@ -303,9 +303,9 @@ them.
 
 `pnpm run build` covers `./packages/**` — every nested package, not just direct
 children of `packages/`. `pnpm run test` / `test:unit` is one turbo graph over
-exactly the legacy root `test/` and `src/draft/**` Vitest set: four root shards
+exactly the root `test/` and `src/draft/**` Vitest set: four root shards
 and nine draft shards hashed by proof package directory, with a shared turbo
-dependency on the builds the legacy pretest supplied. Production `packages/**` suites stay in Workspace
+dependency on their builds. Production `packages/**` suites stay in Workspace
 tests, and `scripts/test/` stays in `test:scripts`. An unchanged unit run pays
 only turbo's hashing and log replay.
 
@@ -718,11 +718,11 @@ Non-negotiables for either lane:
 
 `pnpm run test:all` runs every package suite the way its own package intends —
 with that package's environment, setup files and process isolation. `pnpm run
-test:unit` is the S0 lane for exactly the legacy root/draft Vitest set; it does
+test:unit` is the S0 lane for exactly the root/draft Vitest set; it does
 not run production package suites or `scripts/test/`. Per-package `test:unit`
 scripts remain the narrower affected-PR lane where they exist.
 `scripts/test/unit-test-coverage.test.ts` requires exact equality between the
-legacy selection and the root/draft shard union, rejecting extras as well as
+root/draft selection and the shard union, rejecting extras as well as
 missing files.
 
 `test:smoke` and `test:file` share one command (`vitest run --no-isolate`) and
