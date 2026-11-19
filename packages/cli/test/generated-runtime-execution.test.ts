@@ -179,7 +179,7 @@ assert.equal((await runWorkflow("a/b","one","c")).result,"one:first");
 assert.equal((await runWorkflow("a","two","b/c")).result,"two:second");
 const legacyStream = "run/generated/tenant-a/project-a/support/a%2Fb/legacy-args";
 await store.append(legacyStream,[
-  {type:"run.Started",v:1,data:{seed:"legacy",workflowName:"a/b"}},
+  {type:"run.Started",v:1,data:{seed:"legacy",workflowName:"a/b",args:null}},
   {type:"run.Completed",v:1,data:{result:"from-journal"}},
 ],{expectedSeq:0,actor:{kind:"service",id:"legacy"},tenant:"tenant-a",project:"project-a"});
 assert.equal((await runWorkflow("a/b",null,"legacy-args")).result,"from-journal");

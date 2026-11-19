@@ -500,10 +500,7 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/legacy-no-args",
 				seq: 1,
 				type: "run.Started",
-				data: {
-					seed: "legacy-no-args",
-					workflowName: "legacy-no-args",
-				},
+				data: { seed: "legacy-no-args" },
 			},
 			0,
 		);
