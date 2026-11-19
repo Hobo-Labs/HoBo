@@ -187,6 +187,48 @@ export function createWorkflowEngine(
 		) {
 			throw new Error(`workflow name differs from run.Started for ${runId}`);
 		}
+		const stepOutcomeCounts = new Map<
+			string,
+			{ completed: number; failed: number }
+		>();
+		for (const event of journal) {
+			if (event.type === "run.StepCompleted") {
+				if (!isRecord(event.data)) {
+					throw new Error(`invalid run.StepCompleted for ${runId}`);
+				}
+				const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+				const key = `${fact.name}:${fact.index}`;
+				const counts = stepOutcomeCounts.get(key) ?? {
+					completed: 0,
+					failed: 0,
+				};
+				counts.completed += 1;
+				stepOutcomeCounts.set(key, counts);
+			} else if (event.type === "run.StepFailed") {
+				if (!isRecord(event.data)) {
+					throw new Error(`invalid run.StepFailed for ${runId}`);
+				}
+				const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+				const key = `${fact.name}:${fact.index}`;
+				const counts = stepOutcomeCounts.get(key) ?? {
+					completed: 0,
+					failed: 0,
+				};
+				counts.failed += 1;
+				stepOutcomeCounts.set(key, counts);
+			}
+		}
+		for (const counts of stepOutcomeCounts.values()) {
+			if (counts.completed > 1) {
+				throw new Error(`duplicate run.StepCompleted for ${runId}`);
+			}
+			if (counts.failed > 1) {
+				throw new Error(`duplicate run.StepFailed for ${runId}`);
+			}
+			if (counts.completed > 0 && counts.failed > 0) {
+				throw new Error(`conflicting step outcomes for ${runId}`);
+			}
+		}
 		const terminals = journal.filter(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
 		);
@@ -239,14 +281,6 @@ export function createWorkflowEngine(
 			eventKey: `${streamId}:orchestration`,
 		});
 
-		for (const event of journal) {
-			if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-				parseRunStepCompletedFact(cloneAsJson(event.data));
-			} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-				parseRunStepFailedFact(cloneAsJson(event.data));
-			}
-		}
-
 		const stepOutcomesFor = (name: string, index: number) => {
 			const completed: typeof journal = [];
 			const failed: typeof journal = [];
@@ -271,15 +305,6 @@ export function createWorkflowEngine(
 				const index = stepIndex;
 				stepIndex += 1;
 				const { completed, failed } = stepOutcomesFor(name, index);
-				if (completed.length > 1) {
-					throw new Error(`duplicate run.StepCompleted for ${runId}`);
-				}
-				if (failed.length > 1) {
-					throw new Error(`duplicate run.StepFailed for ${runId}`);
-				}
-				if (completed.length > 0 && failed.length > 0) {
-					throw new Error(`conflicting step outcomes for ${runId}`);
-				}
 				const completedEvent = completed[0];
 				if (completedEvent && isRecord(completedEvent.data)) {
 					return replayStepCompletedResult<T>(

@@ -596,6 +596,103 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
+	it("rejects run.StepFailed with non-record data before running", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/bad-step-failed-shape",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-step-failed-shape",
+					workflowName: "bad-step-failed-shape",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/bad-step-failed-shape",
+				seq: 2,
+				type: "run.StepFailed",
+				data: "not-a-record",
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "bad-step-failed-shape",
+			async run(ctx) {
+				await ctx.step("work", () => ({}));
+				return "done";
+			},
+		});
+		await expect(
+			engine.resume(wf, "bad-step-failed-shape", {}),
+		).rejects.toThrow(/invalid run.StepFailed/);
+	});
+
+	it("rejects corrupt step journals even when a terminal fact exists", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/terminal-with-bad-step";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "terminal-with-bad-step",
+					workflowName: "terminal-with-bad-step",
+				},
+			},
+			0,
+		);
+		const completed = { name: "work", index: 0, result: { ok: true } };
+		await engine.store.append(
+			{
+				id: "step-1",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "step-2",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "terminal",
+				streamId,
+				seq: 4,
+				type: "run.Completed",
+				data: { result: { ok: true } },
+			},
+			3,
+		);
+		const wf = defineWorkflow({
+			name: "terminal-with-bad-step",
+			run() {
+				return { ok: true };
+			},
+		});
+		await expect(engine.resume(wf, "terminal-with-bad-step", {})).rejects.toThrow(
+			/duplicate run.StepCompleted/,
+		);
+	});
+
 	it("rejects run.StepCompleted with wrong-typed index", async () => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(
