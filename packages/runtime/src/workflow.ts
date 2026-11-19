@@ -158,21 +158,26 @@ export function createWorkflowEngine(
 		if (!started || !isRecord(started.data)) {
 			throw new Error(`missing run.Started for ${runId}`);
 		}
-		if (!isDeepStrictEqual(started.data.args ?? null, cloneAsJson(args))) {
+		const journalArgs = started.data.args ?? null;
+		const input = captureWorkflowInput(args);
+		if (!isDeepStrictEqual(journalArgs, cloneAsJson(input))) {
 			throw new Error(`workflow input differs from run.Started for ${runId}`);
 		}
+		const runArgs = input;
 		if (
 			isJsonString(started.data.workflowName) &&
 			started.data.workflowName !== def.name
 		) {
 			throw new Error(`workflow name differs from run.Started for ${runId}`);
 		}
-		const terminal = [...journal]
-			.reverse()
-			.find(
-				(event) =>
-					event.type === "run.Completed" || event.type === "run.Failed",
-			);
+		const terminals = journal.filter(
+			(event) =>
+				event.type === "run.Completed" || event.type === "run.Failed",
+		);
+		if (terminals.length > 1) {
+			throw new Error(`duplicate terminal facts for ${runId}`);
+		}
+		const terminal = terminals[0];
 		if (terminal) {
 			const data = cloneAsJson(terminal.data);
 			if (!isRecord(data)) {
@@ -347,7 +352,7 @@ export function createWorkflowEngine(
 		});
 
 		try {
-			const value = await def.run(ctx, args);
+			const value = await def.run(ctx, runArgs);
 			const result = captureWorkflowResult(value);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
