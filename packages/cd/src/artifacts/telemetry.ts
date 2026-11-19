@@ -1,10 +1,5 @@
-// Metrics for the artifact store, verifier and provenance verifier. The
-// journal is the record; telemetry is advisory, so a failing sink never fails
-// a command. Attributes carry codes, backends and ecosystems — never
-// coordinates with credentials, headers or bodies.
 import type { OtelAttributes, TelemetrySink } from "../ports.js";
 
-// public-contract: metric names WP3 emits through TelemetrySink.
 export const ARTIFACT_METRICS = Object.freeze({
 	stored: "hobo.cd.artifact.stored",
 	storedBytes: "hobo.cd.artifact.stored.bytes",
