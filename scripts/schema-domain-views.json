@@ -25,6 +25,7 @@
   "packages/broker/src/signing.ts": ["ResolutionSignature"],
   "packages/broker/src/types.ts": ["BillingPolicy","BrokerPolicySet","BrokerRequest","ConnectorConfig","DeliveryPublisher","PlacementDecision","PlacementPolicy","RejectionReason","ResolutionReceipt","ResolutionRejection","ResourceRequirement","ScaleDirective","TopologyScope"],
   "packages/broker/src/yard-placement/types.ts": ["BindleDeploymentRequest","YardInstanceRegistration","YardInventorySnapshot","YardPlacementReceipt","YardPlacementRequest","YardRuntimeRegistration"],
+  "packages/camps/src/camp.ts": ["ParsedLegacyCampMappings"],
   "packages/camps/src/types.ts": ["ProviderSelection"],
   "packages/cd/src/ports.ts": ["HealthSamplePoint","HealthSamples"],
   "packages/capability-matrix/src/candidate.ts": ["CandidateUnavailability","CapabilityMatrixCandidate"],

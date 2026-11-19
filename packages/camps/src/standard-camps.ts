@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, unicorn/no-useless-fallback-in-spread -- SAFETY: standardCamps preserves its public string input validation and optional label omission contract. */
+/* oxlint-disable anti-slop/no-runtime-typeof, unicorn/no-useless-fallback-in-spread */
 import { CAMP_TIERS, type CampTier, DEFAULT_CAMP_TIERS } from "@hobo/core";
 
 import { camp } from "./camp.js";

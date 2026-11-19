@@ -16,3 +16,27 @@ package data_models
 	provider_id:      string & !=""
 	resolution_order: #ResolutionOrder
 }
+
+#JsonValue: null | bool | number | string | [...#JsonValue] | {[string]: #JsonValue}
+
+#LegacyCampMappingSelector: {
+	resourceKind?: string
+	resourceName?: string
+	portRef?:      string
+	labels?: {[string]: string}
+}
+
+#LegacyCampMappingRule: {
+	selector:      #LegacyCampMappingSelector
+	definitionId?: string
+	resolverId?:   string
+	className?:    string
+	require: [...string]
+	prefer: [...string]
+	properties: {[string]: #JsonValue}
+}
+
+#ParsedLegacyCampMappings: {
+	resourceMappings: [...#LegacyCampMappingRule]
+	deprecation: string & !=""
+}

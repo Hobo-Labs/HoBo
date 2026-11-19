@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these are the established legacy provider-selection and public CampShape compatibility contracts. */
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names, anti-slop/require-safety-comment-for-type-assertion */
 export const TOPOLOGY_CONTRACT_VERSION = "hobo.topology-objects/v1" as const;
 
 export type JsonValue =
@@ -9,10 +9,7 @@ export type JsonValue =
 	| readonly JsonValue[]
 	| Readonly<{ readonly [key: string]: JsonValue }>;
 
-/**
- * @deprecated Legacy provider selection used only by compatibility parsers.
- * Provider ownership lives on Yard; camps no longer author provider IDs.
- */
+/** @deprecated */
 export interface ProviderSelection {
 	readonly kind: "provider-selection";
 	readonly providerId: string;
@@ -83,20 +80,15 @@ export interface CampConfig {
 	readonly resolverConfig?: Partial<PrimitiveResolverConfig>;
 	readonly resourceMappings?: readonly ResourceMappingRule[];
 	readonly runtimeRequirements?: readonly string[];
-	/**
-	 * @deprecated Camps no longer own Bindles. Rejected at parse with migration error.
-	 */
+	/** @deprecated */
 	readonly bindle?: unknown;
-	/**
-	 * @deprecated Provider selection belongs on Yard. Rejected unless used via
-	 * legacy attach helper with an enclosing Yard.
-	 */
+	/** @deprecated */
 	readonly defaultProvider?: ProviderSelection;
 	/** @deprecated */
 	readonly tiers?: Readonly<Record<string, ProviderSelection>>;
 	/** @deprecated */
 	readonly bindings?: Readonly<Record<string, ProviderSelection>>;
-	/** @deprecated runtime backends are Camp substrate requirements, not owned providers */
+	/** @deprecated */
 	readonly runtime?: unknown;
 }
 
