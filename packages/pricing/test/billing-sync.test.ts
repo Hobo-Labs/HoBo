@@ -382,3 +382,23 @@ it("binds snapshot and reconciliation hashes to charge contents", async () => {
 		original.reconciliation.reconciliationHash,
 	);
 });
+
+it("produces the same reconciliation regardless of provider row order", async () => {
+	const [usage, adjustment] = fixture.completeRows;
+	if (!usage || !adjustment) throw new Error("fixture requires two charges");
+	const first = await sync({
+		port: fixtureProviderPort([usage, usage, adjustment]),
+	});
+	const reordered = await sync({
+		port: fixtureProviderPort([adjustment, usage, usage]),
+	});
+	if ("code" in first || "code" in reordered) throw new Error("sync failed");
+	expect(reordered.snapshot.snapshotHash).toBe(first.snapshot.snapshotHash);
+	expect(reordered.reconciliation.reconciliationHash).toBe(
+		first.reconciliation.reconciliationHash,
+	);
+	expect(reordered.snapshot.variances).toEqual(first.snapshot.variances);
+	expect(first.reconciliation.actualCharges.map((charge) => charge.id)).toEqual(
+		[adjustment.providerChargeId, usage.providerChargeId],
+	);
+});
