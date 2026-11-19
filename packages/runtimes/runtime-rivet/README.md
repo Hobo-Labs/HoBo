@@ -205,3 +205,5 @@ reports its supported cases individually and leaves unavailable fault, race and
 profile cases unknown. This exercises a local process boundary, not a Rivet
 engine crash, production ingress, distributed ownership or independently
 verified fault placement.
+
+Synchronous actor and journal authorities must return synchronously. Ordinary native promise rejections are observed and refused. Exotic or proxied promises are refused without reading their thenables or constructors; the caller remains responsible for handling any rejection from an exotic promise.
