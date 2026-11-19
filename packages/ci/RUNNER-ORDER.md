@@ -30,7 +30,7 @@ calls `decideRunnerRoute(order, request, facts)`.
 | --- | --- | --- |
 | `fleet` | The HoBo isolated fleet: a one-job runner in a fresh container or sandbox | The fleet label (`hobo`, `hobo-trunk`) |
 | `machine` | A connected workstation, or a self-hosted runner registered before HoBo was | The machine's own label |
-| `github` | GitHub-hosted runners | A GitHub label such as `ubuntu-24.04` |
+| `github` | GitHub-hosted runners | A recognised GitHub-hosted label such as `ubuntu-24.04`; `self-hosted` and arbitrary labels are refused on every path, including public repositories and forks |
 | `blacksmith`, `depot`, `namespace`, `warpbuild`, `ubicloud`, `boat`, `runs-on` | That provider's runners, brought by the provider's own GitHub App | One of the provider's labels |
 
 Each step appears once. `github` may appear twice, once with a minutes limit

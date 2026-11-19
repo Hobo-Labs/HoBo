@@ -203,6 +203,65 @@ function valueUnder(
 	return follow(workflow.doc, writtenUnder(map, key));
 }
 
+function mergeSources(workflow: Workflow, map: YAMLMap): readonly YAMLMap[] {
+	const merged = follow(workflow.doc, writtenUnder(map, "<<"));
+	if (isMap(merged)) return [merged];
+	if (!isSeq(merged)) return [];
+	return merged.items.flatMap((item) => {
+		const source = follow(workflow.doc, isNode(item) ? item : undefined);
+		return isMap(source) ? [source] : [];
+	});
+}
+
+function effectivePairs(
+	workflow: Workflow,
+	map: YAMLMap,
+	seen = new Set<YAMLMap>(),
+): readonly Pair[] {
+	if (seen.has(map)) return [];
+	seen.add(map);
+	const inherited = mergeSources(workflow, map).flatMap((source) =>
+		effectivePairs(workflow, source, seen),
+	);
+	const pairs: Pair[] = [];
+	const keys = new Set<unknown>();
+	for (const pair of [...map.items, ...inherited]) {
+		if (isScalar(pair.key)) {
+			if (pair.key.value === "<<" || keys.has(pair.key.value)) continue;
+			keys.add(pair.key.value);
+		}
+		pairs.push(pair);
+	}
+	return pairs;
+}
+
+function effectivePairOf(
+	workflow: Workflow,
+	map: YAMLMap,
+	key: string,
+): Pair | undefined {
+	return effectivePairs(workflow, map).find(
+		(pair) => isScalar(pair.key) && pair.key.value === key,
+	);
+}
+
+function effectiveWrittenUnder(
+	workflow: Workflow,
+	map: YAMLMap,
+	key: string,
+): Node | undefined {
+	const value = effectivePairOf(workflow, map, key)?.value;
+	return isNode(value) ? value : undefined;
+}
+
+function effectiveValueUnder(
+	workflow: Workflow,
+	map: YAMLMap,
+	key: string,
+): Value | undefined {
+	return follow(workflow.doc, effectiveWrittenUnder(workflow, map, key));
+}
+
 function stringOf(node: Node | undefined): string | undefined {
 	if (!isScalar(node)) return undefined;
 	if (node.type === "BLOCK_FOLDED" || node.type === "BLOCK_LITERAL") {
@@ -246,11 +305,11 @@ function namesSecret(text: string): boolean {
 }
 
 function grantsDeployPermissions(workflow: Workflow, holder: YAMLMap): boolean {
-	const permissions = valueUnder(workflow, holder, "permissions");
+	const permissions = effectiveValueUnder(workflow, holder, "permissions");
 	if (stringOf(permissions) === "write-all") return true;
 	return (
 		isMap(permissions) &&
-		permissions.items.some(
+		effectivePairs(workflow, permissions).some(
 			(pair) =>
 				stringOf(
 					follow(workflow.doc, isNode(pair.value) ? pair.value : undefined),
@@ -260,12 +319,15 @@ function grantsDeployPermissions(workflow: Workflow, holder: YAMLMap): boolean {
 }
 
 function isDeployLike(workflow: Workflow, job: YAMLMap): boolean {
-	if (pairOf(job, "environment") !== undefined) return true;
-	if (stringOf(valueUnder(workflow, job, "secrets")) === "inherit") return true;
+	if (effectivePairOf(workflow, job, "environment") !== undefined) return true;
+	if (stringOf(effectiveValueUnder(workflow, job, "secrets")) === "inherit")
+		return true;
 	const permissionsHolder =
-		pairOf(job, "permissions") !== undefined ? job : workflow.root;
+		effectivePairOf(workflow, job, "permissions") !== undefined
+			? job
+			: workflow.root;
 	if (grantsDeployPermissions(workflow, permissionsHolder)) return true;
-	const workflowEnv = writtenUnder(workflow.root, "env");
+	const workflowEnv = effectiveWrittenUnder(workflow, workflow.root, "env");
 	return [
 		...reachableText(workflow, job),
 		...(workflowEnv === undefined ? [] : reachableText(workflow, workflowEnv)),

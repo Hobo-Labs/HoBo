@@ -314,12 +314,14 @@ runner: jobs, share started, median wait, median and p90 run time, share
 passed. Job lists are paged up to 1,000 jobs per attempt; an unreadable page
 or a larger attempt is reported as an error instead of a partial result.
 `diagnose` reads a run's failed jobs (five at most), the last 256 KiB of
-each log and the annotations of the check run identified by `check_run_url`,
-and prints the first failed step, what kind of failure it looks like, whether
-a re-run is likely to help, and the log lines leading up to the last error. A
-log, annotation, or check-run identity read failure fails the command rather
-than producing a partial diagnosis. The rules are fixed pattern tables in
-`@hobo/ci/insights`; no log text leaves the machine.
+each log and every annotation page of the check run identified by
+`check_run_url`, and prints the first failed step, what kind of failure it
+looks like, whether a re-run is likely to help, and the log lines leading up to
+the last error. A log, annotation, or check-run identity read failure fails the
+command rather than producing a partial diagnosis. If the GitHub CLI truncates
+a log, the diagnosis says it may be incomplete and sets `logTruncated` on that
+job's JSON result. The rules are fixed pattern tables in `@hobo/ci/insights`;
+no log text leaves the machine.
 
 ## Route a job against the runner order
 

@@ -28,6 +28,7 @@ import {
 } from "./order.js";
 import {
 	type HostedRunnerProvider,
+	isGithubHostedLabel,
 	isProviderLabel,
 	RUNNER_PROVIDER_CATALOG,
 	RUNNER_STEP_KEYS,
@@ -191,6 +192,7 @@ function githubStep(
 	const one = singleLabel(labels);
 	if ("refused" in one) return one.refused;
 	const { label } = one;
+	if (!isGithubHostedLabel(label)) return skip("not_provider_label", label);
 	if (step.minutesLimitPercent > 0) {
 		const verdict = minutesVerdict(step.minutesLimitPercent, facts.minutes);
 		if (!verdict.allowed) return skip(verdict.reason, verdict.detail);

@@ -97,11 +97,15 @@ export function parseCiRunnerOrder(json: string): CommittedRunnerOrder {
 		};
 	if (envelope.data.runnerOrder === undefined) return missing;
 	const committed = JSON.stringify(envelope.data.runnerOrder);
-	const problem = orderProblem(committed);
-	if (problem.length > 0)
+	const parsed = RunnerOrderDocumentSchema.safeParse(envelope.data.runnerOrder);
+	if (!parsed.success) {
+		const problem =
+			orderProblem(committed) ||
+			parsed.error.issues.map((issue) => issue.message).join("; ");
 		return { order: undefined, source: "invalid", problem };
+	}
 	return {
-		order: parseRunnerOrder(committed),
+		order: parseRunnerOrder(JSON.stringify(parsed.data)),
 		source: "committed",
 		problem: "",
 	};

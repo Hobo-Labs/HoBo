@@ -31,6 +31,8 @@ const LOG_TAIL_BYTES = 256 * 1024;
 const PRINTED_EXCERPT_LINES = 12;
 const JOBS_PER_PAGE = 100;
 const MAX_JOBS_PER_ATTEMPT = 1_000;
+const ANNOTATIONS_PER_PAGE = 100;
+const MAX_ANNOTATION_PAGES = 10;
 
 class InsightUsage extends Error {}
 class InsightJobsLimit extends Error {}
@@ -360,15 +362,15 @@ export async function runCiInsights(input: {
 	delete env.HOBO_CI_ACCOUNT_TOKEN;
 	delete env.HOBO_CI_ACCOUNT_TOKEN_FILE;
 	const repo = `repos/${input.repository}`;
+	const apiResult = (path: string, maxBuffer = 16 * 1024 * 1024) =>
+		exec("gh", ["api", path], {
+			cwd: input.cwd,
+			timeout: 30_000,
+			maxBuffer,
+			env,
+		});
 	const api = async (path: string, maxBuffer = 16 * 1024 * 1024) =>
-		(
-			await exec("gh", ["api", path], {
-				cwd: input.cwd,
-				timeout: 30_000,
-				maxBuffer,
-				env,
-			})
-		).stdout;
+		(await apiResult(path, maxBuffer)).stdout;
 	const jobsOf = async (
 		run: GithubRun,
 		attempt: number,
@@ -510,25 +512,38 @@ export async function runCiInsights(input: {
 			job: string;
 			id: number;
 			runner: string;
+			logTruncated: boolean;
 			diagnosis: FailureDiagnosis;
 			summary: string;
 		}[] = [];
 		for (const job of failed.slice(0, MAX_DIAGNOSED_JOBS)) {
 			if (job.checkRunId === undefined)
 				throw new Error(`GitHub returned no check-run ID for job ${job.id}`);
-			const logTail = (await api(`${repo}/actions/jobs/${job.id}/logs`)).slice(
-				-LOG_TAIL_BYTES,
-			);
-			const annotations = AnnotationsSchema.parse(
-				JSON.parse(
-					await api(`${repo}/check-runs/${job.checkRunId}/annotations`),
-				),
-			).flatMap((annotation) => annotation.message ?? []);
+			const log = await apiResult(`${repo}/actions/jobs/${job.id}/logs`);
+			const logTail = log.stdout.slice(-LOG_TAIL_BYTES);
+			const annotations: string[] = [];
+			for (let page = 1; page <= MAX_ANNOTATION_PAGES; page++) {
+				const suffix = page === 1 ? "" : `&page=${page}`;
+				const batch = AnnotationsSchema.parse(
+					JSON.parse(
+						await api(
+							`${repo}/check-runs/${job.checkRunId}/annotations?per_page=${ANNOTATIONS_PER_PAGE}${suffix}`,
+						),
+					),
+				);
+				annotations.push(
+					...batch.flatMap((annotation) => annotation.message ?? []),
+				);
+				if (batch.length < ANNOTATIONS_PER_PAGE) break;
+				if (page === MAX_ANNOTATION_PAGES)
+					throw new Error("GitHub returned too many check-run annotations");
+			}
 			const diagnosis = diagnoseFailure({ job, logTail, annotations });
 			diagnosed.push({
 				job: job.name,
 				id: job.id,
 				runner: job.runnerName ?? job.labels.join(", "),
+				logTruncated: log.truncated === true,
 				diagnosis,
 				summary: summarizeDiagnosis(diagnosis),
 			});
@@ -543,6 +558,9 @@ export async function runCiInsights(input: {
 							"",
 							`${entry.job}  (${entry.runner || "no runner"})`,
 							`  ${entry.summary}`,
+							...(entry.logTruncated
+								? ["  Log output was truncated; diagnosis may be incomplete."]
+								: []),
 							...entry.diagnosis.excerpt
 								.slice(-PRINTED_EXCERPT_LINES)
 								.map((line) => `    ${line}`),

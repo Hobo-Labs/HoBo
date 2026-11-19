@@ -119,7 +119,7 @@
       "description": "read the annotations of the failed job's check run",
       "request": {
         "method": "GET",
-        "path": "repos/acme/app/check-runs/710/annotations"
+        "path": "repos/acme/app/check-runs/710/annotations?per_page=100"
       },
       "response": {
         "status": 200,

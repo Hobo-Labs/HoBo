@@ -68,6 +68,26 @@ describe("committed runner order", () => {
 		expect(parseCiRunnerOrder(project('"fleet-first"')).problem).not.toBe("");
 	});
 
+	it.each([
+		"null",
+		'{"steps":null}',
+		'{"steps":[{"key":"github","minutesLimitPercent":null}]}',
+		'{"steps":[{"key":"github","minutesLimitPercent":0}]}',
+		'{"steps":[{"key":"depot","spendLimitUsd":null}]}',
+		'{"steps":[{"key":"depot","spendLimitUsd":0}]}',
+		'{"steps":[{"key":"github"}],"autoSizeVcpus":0}',
+		'{"steps":[{"key":"github"}],"retry":null}',
+		'{"steps":[{"key":"github"}],"retry":{"runner":"any","max":0}}',
+	])("applies the editor schema to null and zero values: %s", (order) => {
+		const parsed = parseCiRunnerOrder(project(order));
+		expect(parsed.source).toBe("invalid");
+		expect(parsed.order).toBeUndefined();
+		expect(parsed.problem).not.toBe("");
+		expect(
+			RunnerOrderDocumentSchema.safeParse(JSON.parse(order)).success,
+		).toBe(false);
+	});
+
 	it("never throws or supplies a fallback order for a file that is not JSON", () => {
 		expect(parseCiRunnerOrder("{not json")).toEqual({
 			order: undefined,

@@ -760,7 +760,8 @@ Like `runnerRouting`, it is committed configuration, so no variable carries
 it. The record and its rules are `RunnerOrder` in
 [`@hobo/ci`](../ci/RUNNER-ORDER.md); `RunnerOrderDocumentSchema` describes the
 block for the editor schema and fails the project parse on a broken order
-with the parser's own sentence.
+with the parser's own sentence. `parseCiRunnerOrder` applies that same schema,
+so null fields and zero limits or sizes cannot bypass the editor contract.
 
 ```json
 {
@@ -797,8 +798,11 @@ label is kept as a trailing comment, and applying twice changes nothing. A job
 whose `runs-on` cannot be changed alone (it sits behind a YAML anchor) is
 refused rather than changed in two places; a merged `runs-on` is skipped.
 Multiline `run` blocks count for package-install warnings, and passing the
-whole `secrets` context marks a job deploy-like. Jobs that route others
-directly, through a matrix, or through reusable-workflow inputs stay put.
+whole `secrets` context marks a job deploy-like. Deploy checks read effective
+YAML merge keys too: merged environments, inherited secrets, write permissions
+and secret-bearing workflow environment values cannot make a job look ready.
+Jobs that route others directly, through a matrix, or through reusable-workflow
+inputs stay put.
 Applying also reads the result back and returns the original unless selected
 jobs are routed and every unselected job plan is unchanged. Both are pure;
 `hobo ci init` is the command over them

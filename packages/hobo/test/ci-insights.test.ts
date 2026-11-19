@@ -85,7 +85,7 @@ function github(responses: ReadonlyMap<string, string | CiProcessError>) {
 		const answer = responses.get(path);
 		if (answer === undefined && path.endsWith("/logs"))
 			return { stdout: "", stderr: "" };
-		if (answer === undefined && path.endsWith("/annotations"))
+		if (answer === undefined && path.endsWith("/annotations?per_page=100"))
 			return { stdout: "[]", stderr: "" };
 		if (answer === undefined) throw new CiProcessError("failed", "gh", 404);
 		if (answer instanceof CiProcessError) throw answer;
@@ -323,7 +323,7 @@ describe("hobo ci diagnose", () => {
 				],
 				["repos/acme/app/actions/jobs/71/logs", log],
 				[
-					"repos/acme/app/check-runs/1071/annotations",
+					"repos/acme/app/check-runs/1071/annotations?per_page=100",
 					JSON.stringify([{ message: "Process completed with exit code 2." }]),
 				],
 			]),
@@ -349,6 +349,83 @@ describe("hobo ci diagnose", () => {
 				},
 			],
 		});
+	});
+
+	it("reads annotations after the first page", async () => {
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[
+					jobsPath(7),
+					JSON.stringify({
+						jobs: [
+							job(start, {
+								id: 71,
+								name: "check",
+								labels: ["hobo"],
+								conclusion: "failure",
+								waitMs: 0,
+								runMs: minute,
+							}),
+						],
+					}),
+				],
+				[
+					"repos/acme/app/check-runs/1071/annotations?per_page=100",
+					JSON.stringify(Array.from({ length: 100 }, () => ({ message: null }))),
+				],
+				[
+					"repos/acme/app/check-runs/1071/annotations?per_page=100&page=2",
+					JSON.stringify([
+						{ message: "src/index.ts(3,7): error TS2322: type mismatch" },
+					]),
+				],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(fake.asked).toContain(
+			"repos/acme/app/check-runs/1071/annotations?per_page=100&page=2",
+		);
+		expect(result.data?.jobs?.[0]?.diagnosis).toMatchObject({
+			kind: "build",
+			evidence: ["src/index.ts(3,7): error TS2322: type mismatch"],
+		});
+	});
+
+	it("surfaces a truncated job log in the diagnosis", async () => {
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[
+					jobsPath(7),
+					JSON.stringify({
+						jobs: [
+							job(start, {
+								id: 71,
+								name: "test",
+								labels: ["hobo"],
+								conclusion: "failure",
+								waitMs: 0,
+								runMs: minute,
+							}),
+						],
+					}),
+				],
+			]),
+		);
+		const execFile: CiRunExec = async (file, args, options) => {
+			const result = await fake.execFile(file, args, options);
+			return (args[1] ?? "").endsWith("/logs")
+				? { ...result, truncated: true }
+				: result;
+		};
+		const result = await insights("diagnose", { ...fake, execFile }, ["7"]);
+		expect(result.message).toContain(
+			"Log output was truncated; diagnosis may be incomplete.",
+		);
+		expect(result.data?.jobs?.[0]?.logTruncated).toBe(true);
 	});
 
 	it("calls a job that never reached a step a runner problem worth re-running", async () => {
@@ -495,7 +572,7 @@ describe("hobo ci diagnose", () => {
 		const path =
 			resource === "logs"
 				? "repos/acme/app/actions/jobs/71/logs"
-				: "repos/acme/app/check-runs/1071/annotations";
+				: "repos/acme/app/check-runs/1071/annotations?per_page=100";
 		const fake = github(
 			new Map<string, string | CiProcessError>([
 				["repos/acme/app", repository],

@@ -381,6 +381,27 @@ describe("decideRunnerRoute", () => {
 		expect(many.outcome).toBe("none");
 	});
 
+	it.each([
+		["self-hosted", { private: false }],
+		["self-hosted", { fork: true }],
+		["department-runner", { private: false }],
+		["department-runner", { fork: true }],
+		["department-runner", {}],
+	])("refuses GitHub routing to %s for %j", (label, extra) => {
+		const decision = decideRunnerRoute(
+			order({ key: "github" }),
+			request({ github: label }, extra),
+		);
+		expect(decision.outcome).toBe("none");
+		expect(decision.skipped).toEqual([
+			expect.objectContaining({
+				key: "github",
+				reason: "not_provider_label",
+				detail: label,
+			}),
+		]);
+	});
+
 	it("keeps providers off public repositories unless allowed or opted in", () => {
 		const hosted = order(
 			{ key: "depot" },

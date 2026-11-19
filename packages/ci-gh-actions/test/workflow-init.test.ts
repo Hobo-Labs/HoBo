@@ -353,6 +353,61 @@ jobs:
 			"test ready",
 		]);
 	});
+
+	it.each([
+		[
+			"an environment",
+			"    <<: &deploy\n      environment: production\n",
+		],
+		["inherited secrets", "    <<: &deploy\n      secrets: inherit\n"],
+		[
+			"write permissions",
+			"    <<: &deploy\n      permissions:\n        contents: write\n",
+		],
+		[
+			"nested write permissions",
+			"    permissions:\n      <<: &write\n        contents: write\n",
+		],
+		[
+			"a secret in merged env",
+			"    <<: &deploy\n      env:\n        TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n",
+		],
+	])("skips a job with %s behind a YAML merge key", (_what, body) => {
+		expect(ready(body)).toEqual(["job skipped uses_secrets"]);
+		expect(ready(body, { includeSecretJobs: true })).toEqual(["job ready"]);
+	});
+
+	it.each(["permissions", "env"])(
+		"counts workflow %s behind a YAML merge key",
+		(key) => {
+			const value =
+				key === "permissions"
+					? "contents: write"
+					: "TOKEN: ${{ secrets.DEPLOY_TOKEN }}";
+			const source = `on: push
+defaults: &defaults
+  ${key}:
+    ${value}
+<<: *defaults
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+`;
+			expect(standings(planOf(source))).toEqual([
+				"test skipped uses_secrets",
+			]);
+		},
+	);
+
+	it("lets a direct permissions mapping override a merged one", () => {
+		const source = oneJob(`    runs-on: ubuntu-24.04
+    <<: &deploy
+      permissions: write-all
+    permissions:
+      contents: read
+`);
+		expect(standings(planOf(source))).toEqual(["job ready"]);
+	});
 });
 
 describe("planWorkflow warnings", () => {
