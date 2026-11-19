@@ -271,10 +271,16 @@ describe("startConnectPage", () => {
 			assetsDir: "dist/client",
 		});
 		const view = await (await fetch(`${page.url}view`)).json();
-		const confirm = view.view?.actions?.find(
-			(entry: { action: string }) => entry.action === "connect.start",
-		)?.confirm;
-		expect(confirm).toMatch(/GitHub/);
+		expect(view.step).toBe("create-github-app");
+		expect(view.spec?.root).toBeTruthy();
+		expect(view.view?.actions).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					action: "connect.start",
+					confirm: expect.stringMatching(/GitHub/u),
+				}),
+			]),
+		);
 	});
 
 	function githubFlow(): ConnectFlow {
