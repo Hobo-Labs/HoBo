@@ -362,7 +362,6 @@ export type {
 export {
 	DATA_STORE_ENGINES,
 	DATA_STORE_OFFERING_IDS,
-	DATA_STORE_PROVIDER_FAMILIES,
 	DATA_STORE_PROVIDERS,
 	DATA_STORE_RESOURCE_CLASS,
 	DataStoreOfferingParseError,
@@ -555,7 +554,6 @@ export {
 	assertDeliverySupported,
 	createInMemoryMessaging,
 	createPublishResult,
-	LEGACY_MESSAGING_EVENT_UPCASTS,
 	MESSAGING_EVENTS,
 	MESSAGING_PORT_CONTRACT_VERSION,
 	MESSAGING_WIT_INTERFACE,
@@ -575,8 +573,6 @@ export {
 	parseTopicSpec,
 	tenantScopedConsumerGroup,
 	tenantScopedTopicName,
-	upcastMessagingEvent,
-	upcastMessagingEventType,
 } from "./ports/messaging.js";
 export type {
 	MeteringBus,

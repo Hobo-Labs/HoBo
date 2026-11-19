@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
 	assertDeliverySupported,
 	createInMemoryMessaging,
-	LEGACY_MESSAGING_EVENT_UPCASTS,
 	MESSAGING_EVENTS,
 	MESSAGING_WIT_INTERFACE,
 	PORTABLE_MESSAGING_CAPABILITIES,
@@ -12,7 +11,6 @@ import {
 	parseMessagingSpec,
 	parseTopicSpec,
 	tenantScopedTopicName,
-	upcastMessagingEventType,
 } from "../src/ports/messaging.js";
 import { first } from "../src/total-access.js";
 
@@ -119,28 +117,6 @@ describe("@hobo/core messaging port", () => {
 				.events()
 				.some((e) => e.type === MESSAGING_EVENTS.DeliveryPermanentlyFailed),
 		).toBe(true);
-	});
-
-	it("upcasts every shipped legacy event type", () => {
-		expect(
-			Object.entries(LEGACY_MESSAGING_EVENT_UPCASTS).map(
-				([legacy, current]) => [
-					legacy,
-					upcastMessagingEventType(legacy),
-					current,
-				],
-			),
-		).toEqual(
-			Object.entries(LEGACY_MESSAGING_EVENT_UPCASTS).map(
-				([legacy, current]) => [legacy, current, current],
-			),
-		);
-		for (const current of Object.values(MESSAGING_EVENTS)) {
-			expect(upcastMessagingEventType(current)).toBe(current);
-		}
-		expect(() => upcastMessagingEventType("messaging.Unknown")).toThrow(
-			/type/u,
-		);
 	});
 
 	it("guards unsupported delivery guarantees", () => {

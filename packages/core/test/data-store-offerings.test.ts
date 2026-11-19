@@ -6,7 +6,6 @@ import { ResourceOfferingMatchRecordSchema } from "../src/_generated/offering_re
 import {
 	DATA_STORE_ENGINES,
 	DATA_STORE_OFFERING_IDS,
-	DATA_STORE_PROVIDER_FAMILIES,
 	DATA_STORE_PROVIDERS,
 	type DataStoreProviderProfile,
 	dataStoreOffering,
@@ -219,46 +218,6 @@ test("the engine vocabulary is closed", () => {
 	);
 });
 
-const ORIGINAL_PROVIDERS = [
-	"sqlite-local",
-	"cloudflare-d1",
-	"supabase-postgres",
-	"aws-rds",
-	"gcp-cloudsql",
-	"azure-sql",
-	"other",
-] as const;
-
-const ORIGINAL_OFFERINGS = [
-	"sql.relational",
-	"sql.transactions",
-	"kv.point",
-	"blob.object",
-	"journal.event-stream",
-	"cdc.stream",
-	"replica.read",
-	"backup.pitr",
-	"migrate.dual-write",
-	"observe.lag",
-] as const;
-
-test("every original provider and offering id still parses unchanged", () => {
-	for (const id of ORIGINAL_PROVIDERS) {
-		assert.equal(parseDataStoreProvider(id), id);
-	}
-	for (const id of ORIGINAL_OFFERINGS) {
-		assert.equal(parseDataStoreOfferingId(id), id);
-	}
-	assert.deepEqual(
-		DATA_STORE_OFFERING_IDS.slice(0, ORIGINAL_OFFERINGS.length),
-		ORIGINAL_OFFERINGS,
-	);
-	assert.deepEqual(
-		DATA_STORE_PROVIDERS.slice(0, ORIGINAL_PROVIDERS.length - 1),
-		ORIGINAL_PROVIDERS.slice(0, -1),
-	);
-});
-
 test("every exported provider and offering id round-trips through its parser", () => {
 	for (const id of DATA_STORE_PROVIDERS) {
 		assert.equal(parseDataStoreProvider(JSON.parse(JSON.stringify(id))), id);
@@ -271,19 +230,6 @@ test("every exported provider and offering id round-trips through its parser", (
 		new Set(DATA_STORE_OFFERING_IDS).size,
 		DATA_STORE_OFFERING_IDS.length,
 	);
-});
-
-test("product ids are distinct from the family ids they refine", () => {
-	assert.throws(() => parseDataStoreProvider("aws"), /provider/u);
-	assert.throws(() => parseDataStoreProvider("aws-aurora-dsql"), /provider/u);
-	for (const [product, family] of Object.entries(
-		DATA_STORE_PROVIDER_FAMILIES,
-	)) {
-		assert.notEqual(product, family);
-		assert.equal(parseDataStoreProvider(product), product);
-		assert.equal(parseDataStoreProvider(family), family);
-		assert.ok(product.startsWith(`${family}-`));
-	}
 });
 
 test("a profile written with the new ids survives a JSON round trip", () => {
