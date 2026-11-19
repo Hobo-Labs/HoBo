@@ -1,6 +1,5 @@
 export * from "./_generated/ci_pb.js";
 export * from "./_generated/policy_pb.js";
-export { allocationQuote } from "./accounting.js";
 export { parseConfiguration, positiveId } from "./config.js";
 export {
 	accountEventPage,

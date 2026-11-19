@@ -1004,6 +1004,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/pricing':
+        specifier: workspace:*
+        version: link:../pricing
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../provider-redaction

@@ -1,4 +1,4 @@
-import { divideDecimalAtMost } from "./accounting.js";
+import { divideDecimalAtMost } from "@hobo/pricing";
 
 export function providerFreeRunnerMinutes(input: {
 	provider: "blacksmith" | "depot";
