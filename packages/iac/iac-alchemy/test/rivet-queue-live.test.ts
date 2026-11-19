@@ -22,7 +22,13 @@ it("plans a real Alchemy PoolHost and runs its queue entrypoint in a standalone 
 		}>((resolve, reject) => {
 			const child = spawn(process.execPath, ["--import", loader, fixture], {
 				cwd: directory,
-				env: { PATH: process.env.PATH, NODE_ENV: "test" },
+				env: {
+					PATH: process.env.PATH,
+					NODE_ENV: "test",
+					TOKIO_WORKER_THREADS: "2",
+					NODE_OPTIONS: "--v8-pool-size=1",
+					UV_THREADPOOL_SIZE: "1",
+				},
 				detached: process.platform !== "win32",
 			});
 			let output = "";

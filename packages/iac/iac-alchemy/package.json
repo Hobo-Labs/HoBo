@@ -38,6 +38,14 @@
 		"./rivet/kv/runtime": {
 			"types": "./dist/rivet-kv-runtime.d.ts",
 			"default": "./dist/rivet-kv-runtime.js"
+		},
+		"./rivet/multi": {
+			"types": "./dist/rivet-multi.d.ts",
+			"default": "./dist/rivet-multi.js"
+		},
+		"./rivet/http-kv": {
+			"types": "./dist/rivet-http-kv.d.ts",
+			"default": "./dist/rivet-http-kv.js"
 		}
 	},
 	"dependencies": {
@@ -73,7 +81,7 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.capability-tests.json",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.http-kv-tests.json && tsc --noEmit -p tsconfig.capability-tests.json",
 		"test": "vitest run",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}

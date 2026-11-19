@@ -39,6 +39,9 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/iac/iac-alchemy/model/RivetKv.tla",
 			"packages/iac/iac-alchemy/model/RivetKv.cfg",
 			"packages/iac/iac-alchemy/model/check-rivet-kv.mts",
+			"packages/iac/iac-alchemy/model/RivetHttpKv.tla",
+			"packages/iac/iac-alchemy/model/RivetHttpKv.cfg",
+			"packages/iac/iac-alchemy/model/check-rivet-http-kv.mts",
 			"packages/iac/iac-alchemy/src/index.ts",
 			"packages/dispatcher/model/IacRouting.tla",
 			"packages/dispatcher/src/iac-target-routing.ts",
@@ -79,11 +82,21 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 	])
 		assert.ok(words.has(`--filter=${name}`), name);
 	const modelSteps = asList(asObject(jobs?.["pricing-models"])?.steps);
+	const modelCheck = modelSteps
+		?.map(asObject)
+		.find(
+			(step) => asText(step?.name) === "Verify tool digest and check models",
+		);
+	assert.equal(
+		asText(asObject(modelCheck?.env)?.JAVA_TOOL_OPTIONS),
+		"-XX:ActiveProcessorCount=2",
+	);
 	for (const checker of [
 		"scripts/test/bounded-tlc.test.ts",
 		"scripts/check-iac-models.ts",
 		"packages/iac/iac-alchemy/model/check-rivet-queue.mts",
 		"packages/iac/iac-alchemy/model/check-rivet-kv.mts",
+		"packages/iac/iac-alchemy/model/check-rivet-http-kv.mts",
 	])
 		assert.ok(
 			modelSteps?.some((step) =>
