@@ -353,8 +353,15 @@ async function openComposedCdRuntime(
 					stationId: config.stationId,
 					importModule,
 				});
-	if (!declared.ok)
-		return refusal(declared.code, declared.message, declared.remediation);
+	if (!declared.ok) {
+		const message = {
+			"cd-topology-unreadable": "A CD topology file could not be read.",
+			"cd-topology-invalid": "A CD topology declaration is invalid.",
+			"cd-topology-station-mismatch":
+				"A CD topology Camp belongs to another Station.",
+		}[declared.code];
+		return refusal(declared.code, message, declared.remediation);
+	}
 	const declaredRails =
 		files.length === 0
 			? ({ ok: true, value: [] } as const)
@@ -366,7 +373,7 @@ async function openComposedCdRuntime(
 	if (!declaredRails.ok)
 		return refusal(
 			declaredRails.code,
-			declaredRails.message,
+			"A CD Rail declaration could not be read or validated.",
 			declaredRails.remediation,
 		);
 	let declaredTopology: TopologyReader;
@@ -377,7 +384,11 @@ async function openComposedCdRuntime(
 		]);
 	} catch (error) {
 		if (error instanceof TopologyConflictError)
-			return refusal(error.code, error.message, error.remediation);
+			return refusal(
+				error.code,
+				"A CD Camp is declared by more than one topology source.",
+				error.remediation,
+			);
 		throw error;
 	}
 	const now = options.now ?? (() => Date.now());
@@ -429,7 +440,16 @@ async function openComposedCdRuntime(
 		declaredRails.value,
 	);
 	if (!rails.ok) {
-		return rails;
+		return {
+			ok: false,
+			reasons: rails.reasons.map((reason) =>
+				create(ReasonRecordSchema, {
+					code: reason.code,
+					message: "The CD topology declares conflicting Rails.",
+					remediation: reason.remediation,
+				}),
+			),
+		};
 	}
 	const railCatalog = rails.value;
 	const policyPack = options.policyPack ?? createCdBaselinePack();
@@ -449,9 +469,7 @@ async function openComposedCdRuntime(
 	) {
 		return refusal(
 			"cd-conductor-conflict",
-			`the topology declares publication Camps (${catalogCamps
-				.map((camp) => camp.campId)
-				.join(", ")}) and a Kubernetes fleet: both need the conductor realizer`,
+			"Publication Camps and a Kubernetes fleet both need the conductor realizer.",
 			"Open publication Camps (--yard) and the Kubernetes fleet (HOBO_CD_KUBE_*) in separate hobo deploy runs, or compose one conductor through options.realizers.",
 		);
 	}
@@ -1392,10 +1410,10 @@ async function openKubeFleet(
 				...(topology ? { topology } : undefined),
 			},
 		};
-	} catch (error) {
+	} catch {
 		return refusal(
 			"cd-kube-fleet-invalid",
-			error instanceof Error ? error.message : String(error),
+			"The Kubernetes fleet could not be read or initialized.",
 			"Fix the HOBO_CD_KUBE_FLEET file: one of ocm|karmada realizer records, and optionally clusterProfiles (see packages/hobo/CD.md).",
 		);
 	}

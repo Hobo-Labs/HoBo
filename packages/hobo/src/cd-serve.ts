@@ -31,9 +31,14 @@ export async function startCdServer(
 	try {
 		const { cd, config } = runtime;
 		const refusals: string[] = [];
-		const managed: CampId[] = (await cd.topology.camps())
-			.filter((camp) => camp.management !== CampManagement.OBSERVE_ONLY)
-			.map((camp) => camp.campId);
+		let managed: CampId[];
+		try {
+			managed = (await cd.topology.camps())
+				.filter((camp) => camp.management !== CampManagement.OBSERVE_ONLY)
+				.map((camp) => camp.campId);
+		} catch {
+			throw new Error("The CD service topology could not be read.");
+		}
 		const reconcilers = [];
 		if (managed.length > 0) {
 			try {
