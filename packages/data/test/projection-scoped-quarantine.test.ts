@@ -71,6 +71,7 @@ it("persists projection-specific quarantine separately from the source and resum
 		expect(result.snapshot).toEqual({
 			projection: "items",
 			seq: 3,
+			streamSequences: { items: 3 },
 			rows: { items: { count: 2 } },
 		});
 		expect(result.quarantined).toEqual([

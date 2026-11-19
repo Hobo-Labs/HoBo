@@ -26,6 +26,7 @@ message ProjectionCheckpointRecord {
   repeated string index_hints = 7;
   repeated string read_set = 8;
   ReactivityClass reactivity_class = 9;
+  map<string, double> stream_sequences = 10;
 }
 
 message QuarantineRecord {
