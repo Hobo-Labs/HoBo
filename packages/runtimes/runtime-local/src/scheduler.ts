@@ -146,11 +146,15 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 				[SCHEDULER_PORT]: {
 					every: (payload: JsonValue): CronSchedule => {
 						const record = isJsonObject(payload) ? payload : {};
-						const everyMs = record.everyMs ?? record.every_ms;
-						const startAtMs =
-							record.startAtMs !== undefined
-								? record.startAtMs
-								: record.start_at_ms;
+						if (
+							Object.keys(record).some(
+								(key) => !["scheduleId", "everyMs", "startAtMs"].includes(key),
+							)
+						) {
+							throw new TypeError("invalid interval schedule fields");
+						}
+						const everyMs = record.everyMs;
+						const startAtMs = record.startAtMs;
 						if (!isJsonNumber(everyMs)) {
 							throw new TypeError("everyMs must be a number");
 						}
@@ -158,10 +162,8 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 							throw new TypeError("startAtMs must be a number");
 						}
 						const spec = parseIntervalCronSpec({
-							every_ms: everyMs,
-							...(isJsonNumber(startAtMs)
-								? { start_at_ms: startAtMs }
-								: undefined),
+							everyMs,
+							...(isJsonNumber(startAtMs) ? { startAtMs } : undefined),
 						});
 						return scheduler.every(
 							parseScheduleId(String(record.scheduleId ?? "")),
@@ -170,6 +172,13 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 					},
 					cron: (payload: JsonValue) => {
 						const record = isJsonObject(payload) ? payload : {};
+						if (
+							Object.keys(record).some(
+								(key) => !["expr", "timezone", "scheduleId"].includes(key),
+							)
+						) {
+							throw new TypeError("invalid cron schedule fields");
+						}
 						const expression = isJsonString(payload) ? payload : record.expr;
 						if (!isJsonString(expression) || expression.trim().length === 0) {
 							throw new TypeError("expr must be a non-empty string");
@@ -179,7 +188,7 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 							throw new TypeError("timezone must be a non-empty string");
 						}
 						const generatedId = `cron-expression:${encodeURIComponent(timezone)}:${encodeURIComponent(expression)}`;
-						const id = record.scheduleId ?? record.schedule_id ?? generatedId;
+						const id = record.scheduleId ?? generatedId;
 						if (!isJsonString(id))
 							throw new TypeError("scheduleId must be a string");
 						const schedule = scheduler.cron(parseScheduleId(id), {
