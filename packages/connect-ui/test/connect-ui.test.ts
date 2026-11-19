@@ -13,6 +13,7 @@ import {
 	isRenderableConnectSpec,
 	startConnectPage,
 } from "../src/index.js";
+import { stepView } from "../src/view.js";
 
 // The connect page: every step renders a valid spec from HoBo's own catalog,
 // composition degrades to the deterministic page instead of failing, and the
@@ -96,6 +97,29 @@ describe("deterministicConnectSpec", () => {
 		expect(spec.elements[spec.root]?.type).toBe("Card");
 	});
 
+	it("masks secret configure fields and never echoes their values in the spec", () => {
+		const step: ConnectStep = {
+			kind: "configure",
+			provider: "github",
+			title: "GitHub settings",
+			reason: "HoBo needs these values to continue.",
+			fields: [
+				{
+					name: "private_key",
+					label: "Private key",
+					kind: "secret",
+					required: true,
+					value: "must-not-show",
+				},
+			],
+			submitConfirm: "Submits the GitHub settings, including the secret you entered.",
+		};
+		const spec = deterministicConnectSpec(step);
+		const serialized = JSON.stringify(spec);
+		expect(serialized).not.toContain("must-not-show");
+		expect(serialized).toContain('"type":"password"');
+	});
+
 	it("puts the recommended OIDC store first and binds each choice to the flow action", () => {
 		const spec = deterministicConnectSpec(STORE_STEP);
 		const buttons = Object.values(spec.elements).filter(
@@ -104,6 +128,33 @@ describe("deterministicConnectSpec", () => {
 		expect(buttons[0]?.props).toMatchObject({ variant: "primary" });
 		expect(JSON.stringify(buttons[0]?.on)).toContain('"store":"infisical"');
 		expect(JSON.stringify(buttons)).toContain('"store":"1password"');
+	});
+});
+
+describe("stepView", () => {
+	it("requires person confirmation before provider handoff and configure submit", () => {
+		expect(
+			stepView(APP_STEP).actions.find(
+				(action) => action.action === "connect.start",
+			)?.confirm,
+		).toMatch(/GitHub/);
+		expect(
+			stepView({
+				kind: "configure",
+				provider: "github",
+				title: "Settings",
+				reason: "Needed",
+				fields: [
+					{
+						name: "token",
+						label: "Token",
+						kind: "secret",
+						required: true,
+					},
+				],
+				submitConfirm: "Submits secrets to continue.",
+			}).actions.find((action) => action.action === "connect.submit")?.confirm,
+		).toBeTruthy();
 	});
 });
 
