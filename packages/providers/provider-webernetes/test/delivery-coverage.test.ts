@@ -24,12 +24,13 @@ import {
 
 const FLOOR: TrafficRoutingProviderProfile = {
 	provider: "other",
-	offerings: [offering("inprocess.weighted", { features: ["fallback-floor"] })],
+	offerings: [],
 	fallbacks: ["inprocess.weighted"],
 };
-const ALL_ABSENT = PORTABLE_TRAFFIC_OFFERING_IDS.filter(
-	(id) => id !== "inprocess.weighted",
-).map((offeringId) => ({ offeringId, reason: "not offered" }));
+const ALL_ABSENT = PORTABLE_TRAFFIC_OFFERING_IDS.map((offeringId) => ({
+	offeringId,
+	reason: "not offered natively",
+}));
 
 function coverage(
 	overrides: Partial<Parameters<typeof defineHostingCoverage>[0]> = {},
@@ -83,7 +84,8 @@ describe("I14 hosting coverage document", () => {
 		expect(doc.resolvedProductIds).toEqual(["example.a/v1", "example.b/v1"]);
 		expect(Object.isFrozen(doc)).toBe(true);
 		expect(Object.isFrozen(doc.traffic.absent)).toBe(true);
-		expect(doc.traffic.offerings).toEqual(["inprocess.weighted"]);
+		expect(doc.traffic.offerings).toEqual([]);
+		expect(doc.traffic.fallbacks).toEqual(["inprocess.weighted"]);
 	});
 	it("refuses a product that is both resolved and refused", () => {
 		expect(() =>
@@ -111,17 +113,34 @@ describe("I14 hosting coverage document", () => {
 	it("refuses an offering declared both present and absent", () => {
 		expect(() =>
 			coverage({
-				absent: [
-					...ALL_ABSENT,
-					{ offeringId: "inprocess.weighted", reason: "contradiction" },
-				],
+				profile: {
+					...FLOOR,
+					offerings: [offering("inprocess.weighted")],
+					fallbacks: [],
+				},
+				absent: ALL_ABSENT,
 			}),
 		).toThrow(/both present and absent/u);
 	});
-	it("refuses a fallback the provider does not realize", () => {
+	it("refuses a fallback also declared native", () => {
 		expect(() =>
-			coverage({ profile: { ...FLOOR, fallbacks: ["dns.weighted"] } }),
-		).toThrow(/fallback dns.weighted/u);
+			coverage({
+				profile: { ...FLOOR, offerings: [offering("inprocess.weighted")] },
+				absent: ALL_ABSENT.filter(
+					(item) => item.offeringId !== "inprocess.weighted",
+				),
+			}),
+		).toThrow(/fallback inprocess.weighted is also a native offering/u);
+	});
+	it("refuses duplicate fallbacks", () => {
+		expect(() =>
+			coverage({
+				profile: {
+					...FLOOR,
+					fallbacks: ["inprocess.weighted", "inprocess.weighted"],
+				},
+			}),
+		).toThrow(/fallback is listed twice/u);
 	});
 	it("refuses a profile that fails the core parse boundary", () => {
 		expect(() =>

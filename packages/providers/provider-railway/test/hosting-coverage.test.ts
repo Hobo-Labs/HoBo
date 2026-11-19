@@ -104,8 +104,11 @@ describe("Railway traffic routing profile (I14, ADR-0144)", () => {
 	it("declares only the in-process floor; every other offering is absent with a reason", () => {
 		expect(
 			RAILWAY_TRAFFIC_ROUTING_PROFILE.offerings.map((entry) => entry.id),
-		).toEqual(["inprocess.weighted"]);
-		expect(RAILWAY_TRAFFIC_ROUTING_ABSENT).toHaveLength(16);
+		).toEqual([]);
+		expect(RAILWAY_TRAFFIC_ROUTING_PROFILE.fallbacks).toEqual([
+			"inprocess.weighted",
+		]);
+		expect(RAILWAY_TRAFFIC_ROUTING_ABSENT).toHaveLength(17);
 		expect(RAILWAY_HOSTING_COVERAGE.traffic.absent).toEqual(
 			RAILWAY_TRAFFIC_ROUTING_ABSENT,
 		);
@@ -122,7 +125,13 @@ describe("Railway traffic routing profile (I14, ADR-0144)", () => {
 				features: ["inprocess.weighted"],
 				negotiation: "require",
 			}).kind,
-		).toBe("full");
+		).toBe("none");
+		expect(
+			matchTrafficRoutingOfferings(RAILWAY_TRAFFIC_ROUTING_PROFILE, {
+				features: ["inprocess.weighted"],
+				negotiation: "prefer",
+			}),
+		).toMatchObject({ kind: "partial", fallbacks: ["inprocess.weighted"] });
 	});
 });
 
@@ -167,9 +176,18 @@ describe("Railway hosting coverage (I14)", () => {
 describe("Railway hosting coverage wire contract (protobuf + CUE)", () => {
 	it("round-trips through the generated HostingCoverage protobuf", () => {
 		const wire = JSON.parse(JSON.stringify(RAILWAY_HOSTING_COVERAGE));
+		const message = fromJson(HostingCoverageSchema, wire);
 		expect(
-			toJson(HostingCoverageSchema, fromJson(HostingCoverageSchema, wire)),
+			toJson(HostingCoverageSchema, message, { alwaysEmitImplicit: true }),
 		).toEqual(wire);
+		const minimal = toJson(HostingCoverageSchema, message);
+		expect(() =>
+			cueVet(
+				"hosting_coverage.cue",
+				"#HostingCoverage",
+				JSON.stringify(minimal),
+			),
+		).not.toThrow();
 	});
 	it("satisfies #HostingCoverage with actual CUE", () => {
 		expect(() =>

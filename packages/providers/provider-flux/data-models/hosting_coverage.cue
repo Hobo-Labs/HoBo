@@ -1,4 +1,3 @@
-// CUE constraints for hosting_coverage.proto (ADR-0182 I14).
 package hobo
 
 import "list"
@@ -23,18 +22,16 @@ import "list"
 }
 
 #HostingCoverage: {
-	contract:           "hobo.provider-hosting-coverage/v1"
-	providerId:         "flux"
+	contract:   "hobo.provider-hosting-coverage/v1"
+	providerId: "flux"
 	resolvedProductIds: [...#CoverageProductId] & list.UniqueItems()
 	unresolved: [...#UnresolvedHostingProduct]
-	traffic:    #TrafficCoverage
+	traffic: #TrafficCoverage
 }
 
 #TrafficCoverage: {
 	kind: "simple" | "cloudflare" | "funnel" | "vercel" | "lakebed" | "other"
-	// At least the portable floor or a native offering: never nothing.
-	offerings: [#TrafficOfferingId, ...#TrafficOfferingId] & list.UniqueItems()
+	offerings: *([]) | ([...#TrafficOfferingId] & list.UniqueItems())
 	fallbacks: [...#TrafficOfferingId]
-	// Present plus absent is the whole portable vocabulary (17 ids).
 	absent: [...#AbsentTrafficOffering] & list.MinItems(17-len(offerings)) & list.MaxItems(17-len(offerings))
 }
