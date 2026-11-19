@@ -12,6 +12,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./http-topic-bus": {
+			"types": "./dist/rivet-http-topic-bus.d.ts",
+			"default": "./dist/rivet-http-topic-bus.js"
 		}
 	},
 	"dependencies": {
@@ -38,7 +42,7 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts && tsc --noEmit -p tsconfig.http-bus-tests.json",
 		"test": "vitest run"
 	}
 }
