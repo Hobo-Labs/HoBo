@@ -4197,8 +4197,6 @@ importers:
 
   src/draft/technical-proofs/autonomous-drift-remediation-contract: {}
 
-  src/draft/technical-proofs/availability-view-contract: {}
-
   src/draft/technical-proofs/bind-reference-wiring-contract: {}
 
   src/draft/technical-proofs/bindles-api-freeze-contract: {}

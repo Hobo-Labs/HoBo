@@ -796,7 +796,6 @@
         "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures/**",
         "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan/**",
         "src/draft/projects/s1-24-conformance-sdk/**",
-        "src/draft/technical-proofs/availability-view-contract/**",
         "src/draft/technical-proofs/closure-builder-v1-finalization-contract/**",
         "src/draft/technical-proofs/container-fallback-wiring-parity-contract/**",
         "src/draft/technical-proofs/control-plane-action-taxonomy-contract/**",

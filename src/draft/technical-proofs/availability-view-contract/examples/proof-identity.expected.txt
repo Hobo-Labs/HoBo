@@ -1,3 +1,0 @@
-slug: availability-view-contract
-layer: technical
-proof-identity: ok
