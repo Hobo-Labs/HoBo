@@ -86,27 +86,27 @@ describe("designer council pure protocol", () => {
 		assert.throws(() => aggregateVotes(Object.fromEntries(COUNCIL_PERSONAS.slice(1).map((id) => [id, "yay"])), []));
 	});
 
-	it("detects design relevance and accepts only justified internal exemptions", () => {
-		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/cli/src/help.ts"] }).required, true);
-		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/contracts/data-models/boundary.proto"], exemption: { code: "internal-no-public-behavior", justification: "This cannot exempt a public contract boundary." } }).required, true);
-		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], acceptanceTags: ["ux"] }).required, true);
-		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], explicitlyRequested: true }).required, true);
-		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], priorCouncilCycle: true }).required, true);
+	it("requires visual review without treating technical contracts as visual design", () => {
+		const exemption = { code: "no-visual-design-change" as const, justification: "The test contracts and package documentation have no visual interface change." };
 		assert.deepEqual(
-			evaluateDesignRelevance({
-				changedPaths: ["src/internal/cache.ts"],
-				exemption: { code: "internal-no-public-behavior", justification: "Private cache rename; exported behavior and errors unchanged." },
-			}),
-			{
-				required: false,
-				reasons: [],
-				exemptionAccepted: true,
-			},
+			evaluateDesignRelevance({ changedPaths: ["packages/testing/README.md", "packages/testing/data-models/test_harness.cue", "packages/testing/data-models/test_harness.proto", "packages/testing/contracts/pacts/app-test-harness.pact.json", "packages/control-yard/data-models/control_yard.proto", "packages/control-yard/contracts/pacts/control-yard-ui.pact.json", "packages/control-yard/package.json", "packages/control-yard/docs/asset-index-learnings.md", "site/README.md", ".optimizexp/features/agent-check-staged/feature.json"], exemption }),
+			{ required: false, reasons: [], exemptionAccepted: true },
 		);
-		assert.equal(
-			evaluateDesignRelevance({ changedPaths: ["site/src/page.tsx"], exemption: { code: "internal-no-public-behavior", justification: "internal" } }).required,
-			true,
-		);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["site/src/page.tsx"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/shared/assets/logo.svg"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/control-yard/contracts/example.png"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["site/DESIGN.md"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/control-yard/assets/bo/bo-idle.png"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/control-yard/src/scenes/yard-scene.ts"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/control-yard/public/yard-game.js"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/shared/assets/type.woff2"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], acceptanceTags: ["ux"], exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], explicitlyRequested: true, exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], priorCouncilCycle: true, exemption }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], exemption: { code: "no-visual-design-change", justification: "short" } }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], exemption: { code: "internal-no-public-behavior", justification: "Private cache rename; exported behavior and errors unchanged." } }).required, false);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["packages/testing/data-models/test_harness.proto"], exemption: { code: "internal-no-public-behavior", justification: "Private cache rename; exported behavior and errors unchanged." } }).required, true);
+		assert.equal(evaluateDesignRelevance({ changedPaths: ["src/internal/cache.ts"], acceptanceTags: ["dx"], exemption: { code: "internal-no-public-behavior", justification: "Private cache rename; exported behavior and errors unchanged." } }).required, true);
 	});
 
 	it("never lets billing-only CI waive current unanimous consensus", () => {

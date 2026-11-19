@@ -196,14 +196,17 @@ export function aggregateVotes(
 }
 
 const DESIGN_PATH = /(^|\/)(site|apps?|web|ui|tui|cli|docs?|sdk|api|config|onboarding|examples?|brand|motion|components?|design-tokens|contracts?|data-models)(\/|$)|(^|\/)\.optimizexp\/features\/|(^|\/)(README|DESIGN)\.md$|(^|\/)(public-api|api|errors?)\.[cm]?[jt]sx?$|\.(tsx|css|mdx|proto|cue|wit)$/i;
-const DESIGN_TAGS = new Set(["ux", "dx", "design", "brand", "accessibility", "journey", "interaction"]);
+const VISUAL_SURFACE_PATH = /(^|\/)(site|web|ui|tui|frontend|dashboard|control-yard|screens|brand|motion|components?|design-tokens)(\/|$)/i;
+const VISUAL_FILE_PATH = /(^|\/)DESIGN\.md$|\.(tsx|jsx|html|vue|svelte|svg|png|jpe?g|gif|webp|avif|apng|ico|tiff?|woff2?|ttf|otf|eot|mp4|webm|mov|css|scss|sass|less|mdx)$/i;
+const TECHNICAL_PATH = /(^|\/)(contracts?|data-models)(\/|$)|(^|\/)(package\.json|tsconfig(?:\.[^/]*)?\.json)$|\.md$/i;
+const DESIGN_TAGS = new Set(["ux", "design", "brand", "accessibility", "journey", "interaction"]);
 
 export type DesignRelevanceInput = {
 	changedPaths: string[];
 	acceptanceTags?: string[];
 	explicitlyRequested?: boolean;
 	priorCouncilCycle?: boolean;
-	exemption?: { code: "internal-no-public-behavior"; justification: string };
+	exemption?: { code: "no-visual-design-change" | "internal-no-public-behavior"; justification: string };
 };
 
 export function evaluateDesignRelevance(input: DesignRelevanceInput): {
@@ -212,11 +215,18 @@ export function evaluateDesignRelevance(input: DesignRelevanceInput): {
 	exemptionAccepted: boolean;
 } {
 	const reasons: string[] = [];
-	if (input.changedPaths.some((file) => DESIGN_PATH.test(file))) reasons.push("design-relevant-path");
+	if (input.changedPaths.some((file) =>
+		VISUAL_FILE_PATH.test(file) ||
+		(VISUAL_SURFACE_PATH.test(file) && !TECHNICAL_PATH.test(file)))) reasons.push("design-relevant-path");
 	if ((input.acceptanceTags ?? []).some((tag) => DESIGN_TAGS.has(tag.toLowerCase()))) reasons.push("design-relevant-acceptance-tag");
 	if (input.explicitlyRequested) reasons.push("explicit-designer-review");
 	if (input.priorCouncilCycle) reasons.push("prior-council-cycle");
-	const exemptionAccepted = reasons.length === 0 && input.exemption?.code === "internal-no-public-behavior" && input.exemption.justification.trim().length >= 20;
+	const exemptionAccepted = reasons.length === 0 &&
+		(input.exemption?.code === "no-visual-design-change" ||
+			(input.exemption?.code === "internal-no-public-behavior" &&
+				!input.changedPaths.some((file) => DESIGN_PATH.test(file)) &&
+				!(input.acceptanceTags ?? []).some((tag) => tag.toLowerCase() === "dx"))) &&
+		typeof input.exemption.justification === "string" && input.exemption.justification.trim().length >= 20;
 	return { required: reasons.length > 0 || !exemptionAccepted, reasons, exemptionAccepted };
 }
 

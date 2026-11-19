@@ -1244,7 +1244,7 @@ function validateRequiredDesignerConsensus(
 			acceptanceTags,
 			explicitlyRequested,
 			priorCouncilCycle,
-			exemption: exemption as { code: "internal-no-public-behavior"; justification: string },
+			exemption: exemption as { code: "no-visual-design-change" | "internal-no-public-behavior"; justification: string },
 		});
 		if (decision.required || !decision.exemptionAccepted) return ["designer_consensus_exemption_rejected"];
 		const baseSha = typeof config.baseSha === "string" ? config.baseSha.trim() : "";
