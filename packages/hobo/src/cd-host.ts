@@ -115,9 +115,12 @@ function passSucceededCampIds(data: unknown): readonly CampId[] | undefined {
 	for (const [key, value] of Object.entries(data)) {
 		if (key !== "campIds") continue;
 		if (!Array.isArray(value)) return undefined;
-		if (!value.every((entry) => typeof entry === "string" && entry.length > 0))
-			return undefined;
-		return value as CampId[];
+		const ids: CampId[] = [];
+		for (const entry of value) {
+			if (typeof entry !== "string" || entry.length === 0) return undefined;
+			ids.push(entry);
+		}
+		return ids;
 	}
 	return undefined;
 }
@@ -341,7 +344,10 @@ export async function composeCdHost(
 			.catch(() => undefined);
 	}
 
-	async function runPass(signal: AbortSignal): Promise<CdPassReport> {
+	async function runPass(
+		signal: AbortSignal,
+		allowRecord: () => boolean,
+	): Promise<CdPassReport> {
 		if (signal.aborted) throw abortErrorOf(signal);
 		const fleet = await claimFleetPass();
 		if (!fleet.held)
@@ -391,20 +397,26 @@ export async function composeCdHost(
 					}
 				}
 			if (signal.aborted) throw abortErrorOf(signal);
-			const tick = await service.tick();
-			if (signal.aborted) throw abortErrorOf(signal);
-			const passCounts =
+			const reconcilesOk =
 				refusals.length === 0 &&
-				(camps.length === 0 || managed.length > 0) &&
+				managed.length > 0 &&
 				reconciled.length === managed.length &&
-				reconciled.every((entry) => entry.ok) &&
-				tick.store;
-			if (passCounts) {
+				reconciled.every((entry) => entry.ok);
+			const tick = reconcilesOk ? await service.tick() : undefined;
+			if (signal.aborted) throw abortErrorOf(signal);
+			const passCounts = reconcilesOk && tick !== undefined && tick.store;
+			if (passCounts && allowRecord()) {
 				if (signal.aborted) throw abortErrorOf(signal);
 				await recordSuccessfulPass(managed);
 			}
 			return Object.freeze({
-				tick,
+				tick:
+					tick ??
+					Object.freeze({
+						atMs: runtime.ctx.now(),
+						store: storeHealthy(),
+						steps: Object.freeze([]),
+					}),
 				reconciled: Object.freeze(reconciled),
 				skipped: false,
 			});
@@ -441,13 +453,17 @@ export async function composeCdHost(
 								once: true,
 							});
 					});
-		const running = runPass(signal);
+		let recordPassOutcome = true;
+		const running = runPass(signal, () => recordPassOutcome);
 		void running.catch(() => undefined);
 		const racers: Promise<CdPassReport>[] = [running, deadlineRejection];
 		if (abortRejection !== undefined) racers.push(abortRejection);
 		const bounded = (async (): Promise<CdPassReport> => {
 			try {
 				return await Promise.race(racers);
+			} catch (error) {
+				if (deadline.aborted) recordPassOutcome = false;
+				throw error;
 			} finally {
 				if (onExternalAbort !== undefined)
 					external?.removeEventListener("abort", onExternalAbort);

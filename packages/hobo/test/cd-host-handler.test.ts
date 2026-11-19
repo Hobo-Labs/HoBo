@@ -357,6 +357,47 @@ describe("composeCdHost", () => {
 		});
 	});
 
+	it("does not record a successful pass after the caller hits the deadline", async () => {
+		await withRuntime(async (runtime) => {
+			let releaseGate = () => {};
+			const gate = new Promise<void>((resolve) => {
+				releaseGate = resolve;
+			});
+			let entered = 0;
+			const slow: TestRuntime = {
+				...runtime,
+				conductor: () =>
+					fakeReconciler(async () => {
+						entered += 1;
+						await gate;
+						return { reasons: [], status: 0 } as never;
+					}),
+			};
+			const host = await composeCdHost({
+				runtime: slow,
+				holderId: "test-deadline-no-record",
+				readiness: "composed",
+				passDeadlineMs: 30,
+			});
+			const ghost = host.pass();
+			await new Promise((resolve) => setTimeout(resolve, 40));
+			await expect(ghost).rejects.toThrow("cd pass deadline exceeded");
+			releaseGate();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const recorded: unknown[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				recorded.push(event.data);
+			expect(recorded).toEqual([]);
+			const ready = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(ready.status).toBe(503);
+		});
+	});
+
 	it("bounds a pass by its deadline and frees the slot once the bounded pass settles", async () => {
 		await withRuntime(async (runtime) => {
 			const signals: (AbortSignal | undefined)[] = [];
