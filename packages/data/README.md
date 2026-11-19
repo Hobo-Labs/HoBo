@@ -61,6 +61,13 @@ events. `rebuildFromZero` remains read-only and reports fold failures directly.
 Malformed quarantine records stop the fold or rebuild; they are not ignored or
 turned into another quarantine record.
 
+`aggregate.inspectQuarantines(store, streamId)` and
+`projection.inspectQuarantines(sourceEvents, quarantineRecords)` test recorded
+events against the current fold using cloned state. A finding identifies an
+event that needs an explicit reprocessing decision. Inspection appends no
+events, and replay continues to skip the recorded event. The fold callbacks
+run during inspection and must not perform side effects.
+
 Aggregate and projection definitions may provide `classifyFailure(error, event)`
 to return `"deterministic"` or `"transient"`. Transient failures are rethrown
 without recording quarantine, so the caller can retry. Other fold failures are

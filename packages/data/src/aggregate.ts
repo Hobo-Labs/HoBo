@@ -12,7 +12,10 @@ import type {
 } from "@hobo/core";
 import { EVENTSTORE_LIMITS, parseDurableEffect } from "@hobo/core";
 
-import { AggregateQuarantinedEventDataSchema } from "./_generated/data_pb.js";
+import {
+	AggregateQuarantinedEventDataSchema,
+	type QuarantineReprocessFinding,
+} from "./_generated/data_pb.js";
 import type { ActorHost } from "./actor-host.js";
 import {
 	AggregateConflictError,
@@ -41,6 +44,11 @@ import {
 	isJsonString,
 	type JsonObject,
 } from "./json.js";
+import {
+	parseAggregateQuarantine,
+	parseEventStoreQuarantine,
+	quarantineSequence,
+} from "./quarantine-facts.js";
 import type { UpcasterRegistry } from "./upcaster.js";
 
 export interface EventEmitOptions {
@@ -96,6 +104,10 @@ export interface AggregateDeps {
 export interface Aggregate<S, C> {
 	readonly name: string;
 	load(store: EventStore, streamId: string): Promise<{ state: S; seq: number }>;
+	inspectQuarantines(
+		store: EventStore,
+		streamId: string,
+	): Promise<QuarantineReprocessFinding[]>;
 	execute(
 		deps: AggregateDeps,
 		streamId: string,
@@ -157,6 +169,54 @@ export function defineAggregate<S, C>(
 		name: definition.name,
 
 		load,
+
+		async inspectQuarantines(store, streamId) {
+			const events = await readStream(store, streamId);
+			const bySeq = new Map(events.map((event) => [event.seq, event]));
+			for (const record of events) {
+				if (record.type === AGGREGATE_QUARANTINE_EVENT) {
+					const data = parseAggregateQuarantine(record);
+					if (data.fold !== definition.name) continue;
+					const target = bySeq.get(quarantineSequence(data.offendingSeq));
+					if (
+						!target ||
+						target.type === AGGREGATE_QUARANTINE_EVENT ||
+						target.type.endsWith(".Quarantined") ||
+						target.id !== data.offendingEventId ||
+						target.type !== data.offendingType ||
+						target.seq >= record.seq
+					) {
+						throw new Error(
+							"aggregate quarantine target does not match the source event",
+						);
+					}
+				} else if (record.type.endsWith(".Quarantined")) {
+					const data = parseEventStoreQuarantine(record);
+					const target = bySeq.get(quarantineSequence(data.offendingSeq));
+					if (
+						!target ||
+						target.type === AGGREGATE_QUARANTINE_EVENT ||
+						target.type.endsWith(".Quarantined") ||
+						target.seq >= record.seq ||
+						(data.offendingType && data.offendingType !== target.type) ||
+						(record.meta?.quarantines !== undefined &&
+							record.meta.quarantines !== target.id)
+					) {
+						throw new Error(
+							"event-store quarantine target does not match the source event",
+						);
+					}
+				}
+			}
+			const outcome = foldEvents(events, {
+				...foldSpec,
+				inspectQuarantines: true,
+			});
+			if (outcome.quarantined.length > 0) {
+				throw new UnpersistedQuarantineError(streamId, outcome.quarantined);
+			}
+			return outcome.reprocessCandidates ?? [];
+		},
 
 		async execute(deps, streamId, command, context) {
 			const holderId = context.holderId ?? `${definition.name}:${streamId}`;

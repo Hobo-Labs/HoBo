@@ -3,6 +3,8 @@ export {
 	QuarantineFindingSchema,
 	type QuarantineReport,
 	QuarantineReportSchema,
+	type QuarantineReprocessFinding,
+	QuarantineReprocessFindingSchema,
 } from "./_generated/data_pb.js";
 export {
 	type ActorHost,

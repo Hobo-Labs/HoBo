@@ -75,6 +75,15 @@ package hobo
 	}
 }
 
+#QuarantineReprocessFinding: {
+	code:             "event-log.quarantine-reprocess-policy-required"
+	sourceStreamId:   string & !=""
+	offendingSeq:     =~"^[1-9][0-9]*$"
+	offendingEventId: string & !=""
+	fold:             string & !=""
+	foldKind:         "aggregate" | "projection"
+}
+
 #UpcasterRegistration: {
 	type:        =~"^[a-z][a-z0-9]*\\.[A-Z][A-Za-z0-9]*$"
 	fromVersion: int & >=1

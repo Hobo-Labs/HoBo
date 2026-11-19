@@ -1,10 +1,26 @@
-import { fromJsonString } from "@bufbuild/protobuf";
+import { create, fromJsonString } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import {
 	AggregateQuarantinedEventDataSchema,
 	EventStoreQuarantinedEventDataSchema,
 	ProjectionQuarantinedEventDataSchema,
+	QuarantineReprocessFindingSchema,
 } from "./_generated/data_pb.js";
+
+export function quarantineReprocessFinding(
+	event: EventEnvelope,
+	fold: string,
+	foldKind: "aggregate" | "projection",
+) {
+	return create(QuarantineReprocessFindingSchema, {
+		code: "event-log.quarantine-reprocess-policy-required",
+		sourceStreamId: event.streamId,
+		offendingSeq: BigInt(event.seq),
+		offendingEventId: event.id,
+		fold,
+		foldKind,
+	});
+}
 
 export function quarantineSequence(value: bigint): number {
 	const sequence = Number(value);

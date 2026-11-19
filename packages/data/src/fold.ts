@@ -1,8 +1,10 @@
 import type { EventEnvelope, QuarantineRecord } from "@hobo/core";
+import type { QuarantineReprocessFinding } from "./_generated/data_pb.js";
 
 import {
 	parseAggregateQuarantine,
 	parseEventStoreQuarantine,
+	quarantineReprocessFinding,
 	quarantineSequence,
 } from "./quarantine-facts.js";
 import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
@@ -20,12 +22,14 @@ export interface FoldSpec<S> {
 	evolve: Evolve<S>;
 	upcasters?: UpcasterRegistry;
 	classifyFailure?: FoldFailureClassifier;
+	inspectQuarantines?: boolean;
 }
 
 export interface FoldOutcome<S> {
 	state: S;
 	seq: number;
 	quarantined: QuarantineRecord[];
+	reprocessCandidates?: QuarantineReprocessFinding[];
 }
 
 function clone<T>(value: T): T {
@@ -75,6 +79,9 @@ export function foldEvents<S>(
 	events: Iterable<EventEnvelope>,
 	spec: FoldSpec<S>,
 ): FoldOutcome<S> {
+	if (spec.inspectQuarantines && !spec.name) {
+		throw new TypeError("a fold name is required to inspect quarantines");
+	}
 	const materialized = [...events];
 
 	const quarantinedSeqs = new Set<number>();
@@ -96,10 +103,26 @@ export function foldEvents<S>(
 		0,
 	);
 	const quarantined: QuarantineRecord[] = [];
+	const reprocessCandidates: QuarantineReprocessFinding[] = [];
 
 	for (const event of materialized) {
 		seq = Math.max(seq, event.seq);
-		if (isQuarantineFact(event) || quarantinedSeqs.has(event.seq)) continue;
+		if (isQuarantineFact(event)) continue;
+		if (quarantinedSeqs.has(event.seq)) {
+			if (spec.inspectQuarantines && spec.name) {
+				let processable = false;
+				try {
+					const upcast = spec.upcasters ? spec.upcasters.upcast(event) : event;
+					clone(spec.evolve(clone(state), Object.freeze(clone(upcast))));
+					processable = true;
+				} catch {}
+				if (processable)
+					reprocessCandidates.push(
+						quarantineReprocessFinding(event, spec.name, "aggregate"),
+					);
+			}
+			continue;
+		}
 
 		try {
 			const upcast = spec.upcasters ? spec.upcasters.upcast(event) : event;
@@ -119,5 +142,10 @@ export function foldEvents<S>(
 		}
 	}
 
-	return { state: clone(state), seq, quarantined };
+	return {
+		state: clone(state),
+		seq,
+		quarantined,
+		...(spec.inspectQuarantines ? { reprocessCandidates } : undefined),
+	};
 }
