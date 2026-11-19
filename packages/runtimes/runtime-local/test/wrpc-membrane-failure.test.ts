@@ -197,6 +197,38 @@ describe("membrane failure semantics (S1-23)", () => {
 		expect(classifyToRuntimeError(new Error("boom")).tag).toBe("fatal");
 	});
 
+	it.each([
+		null,
+		undefined,
+		false,
+		42,
+		"offline",
+	])("classifies the thrown value %s as fatal", (value) => {
+		expect(classifyToRuntimeError(value).tag).toBe("fatal");
+	});
+
+	it("classifies a thrown value that cannot be converted to a string", () => {
+		const value = {
+			toString() {
+				throw new Error("no string representation");
+			},
+		};
+		expect(classifyToRuntimeError(value)).toEqual({
+			tag: "fatal",
+			val: "unknown",
+		});
+	});
+
+	it("recognizes metadata on non-Error thrown objects", () => {
+		expect(classifyToRuntimeError({ code: "deadline-exceeded" }).tag).toBe(
+			"cancelled",
+		);
+		expect(classifyToRuntimeError({ status: 503 }).tag).toBe("retryable");
+		expect(classifyToRuntimeError({ ambiguousCommit: true }).tag).toBe(
+			"ambiguous-commit",
+		);
+	});
+
 	it("every typed membrane error lowers to the WIT runtime-error variant shape", () => {
 		const errors: RuntimeMembraneError[] = [
 			new DeadlineExceededError({
