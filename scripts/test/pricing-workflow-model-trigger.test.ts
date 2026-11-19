@@ -30,6 +30,8 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/broker/model/IacPricedReceipt.tla",
 			"packages/broker/model/IacPricedReceipt.cfg",
 			"packages/broker/src/iac-target.ts",
+			"packages/cloud/model/IacTransitions.tla",
+			"packages/cloud/src/orchestrator/recovery.ts",
 			"packages/dispatcher/model/IacRouting.tla",
 			"packages/dispatcher/src/iac-target-routing.ts",
 			"packages/provider-manifest/src/billing.ts",
@@ -61,6 +63,7 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 	for (const name of [
 		"@hobo/pricing",
 		"@hobo/broker",
+		"@hobo/cloud",
 		"@hobo/dispatcher",
 		"@hobo/events",
 		"@hobo/provider-manifest",
