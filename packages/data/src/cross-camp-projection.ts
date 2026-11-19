@@ -39,6 +39,7 @@ export interface CrossCampProjectionOptions<Row> {
 	readonly tenant: string;
 	readonly actor: PrincipalRef;
 	readonly maxStalenessMs: number;
+	readonly replicaReadClass?: "bounded-staleness" | "eventual";
 	readonly nowMs: () => number;
 	readonly maxBatchEvents?: number;
 }
@@ -82,6 +83,7 @@ interface ReplicaState {
 	readonly checkedAtMs: number | null;
 	readonly lagged: boolean;
 	readonly boundMs: number | null;
+	readonly readClass: "bounded-staleness" | "eventual" | null;
 }
 
 export function createCrossCampProjection<Row>(
@@ -103,12 +105,18 @@ export function createCrossCampProjection<Row>(
 	if (options.owner === options.replica)
 		throw new TypeError("owner and replica stores must differ");
 	integer(options.maxStalenessMs, "maxStalenessMs");
+	const replicaReadClass = options.replicaReadClass ?? "bounded-staleness";
+	if (
+		replicaReadClass !== "bounded-staleness" &&
+		replicaReadClass !== "eventual"
+	)
+		throw new TypeError("unsupported replica read class");
 	const maxBatchEvents =
-		options.maxBatchEvents ?? EVENTSTORE_LIMITS.maxBatchEvents - 1;
+		options.maxBatchEvents ?? EVENTSTORE_LIMITS.maxBatchEvents - 2;
 	if (
 		!Number.isSafeInteger(maxBatchEvents) ||
 		maxBatchEvents < 1 ||
-		maxBatchEvents >= EVENTSTORE_LIMITS.maxBatchEvents
+		maxBatchEvents > EVENTSTORE_LIMITS.maxBatchEvents - 2
 	)
 		throw new TypeError("maxBatchEvents exceeds the event-store batch limit");
 
@@ -143,12 +151,16 @@ export function createCrossCampProjection<Row>(
 		let checkedAtMs: number | null = null;
 		let lagged = false;
 		let boundMs: number | null = null;
+		let readClass: "bounded-staleness" | "eventual" | null = null;
 		let pending = false;
+		let recoveryPending = false;
 		for await (const record of options.replica.read(options.replicaStreamId)) {
 			if (record.seq !== replicaSeq + 1)
 				throw new Error("replica stream has a sequence gap");
 			if (record.tenant !== options.tenant)
 				throw new Error("replica stream has an unexpected tenant");
+			if (recoveryPending && record.type !== RECOVERED)
+				throw new Error("replica checkpoint is missing its recovery event");
 			replicaSeq = record.seq;
 			if (record.type === CONFIGURED) {
 				const data = fromJsonString(
@@ -160,10 +172,13 @@ export function createCrossCampProjection<Row>(
 					data.projection !== options.projection.name ||
 					data.ownerCampId !== options.ownerCampId ||
 					data.replicaCampId !== options.replicaCampId ||
-					data.sourceStreamId !== (options.sourceStreamId ?? "")
+					data.sourceStreamId !== (options.sourceStreamId ?? "") ||
+					(data.readClass !== "bounded-staleness" &&
+						data.readClass !== "eventual")
 				)
 					throw new Error("replica contains an invalid configuration");
 				boundMs = safeNumber(data.boundMs, "boundMs");
+				readClass = data.readClass;
 			} else if (record.type === REPLICATED) {
 				if (boundMs === null)
 					throw new Error("replica configuration is missing");
@@ -200,7 +215,10 @@ export function createCrossCampProjection<Row>(
 					);
 				if (checkedAtMs !== null && checked < checkedAtMs)
 					throw new Error("replica checkpoint clock moved backward");
-				if (data.caughtUp) checkedAtMs = checked;
+				if (data.caughtUp) {
+					checkedAtMs = checked;
+					recoveryPending = lagged;
+				}
 				pending = false;
 			} else if (record.type === LAGGED || record.type === RECOVERED) {
 				if (boundMs === null)
@@ -218,16 +236,22 @@ export function createCrossCampProjection<Row>(
 				)
 					throw new Error("replica contains an invalid lag transition");
 				lagged = record.type === LAGGED;
+				recoveryPending = false;
 			} else {
 				throw new Error(`unexpected replica event ${record.type}`);
 			}
 		}
-		if (pending) throw new Error("replica contains an incomplete batch");
-		return { replicaSeq, events, checkedAtMs, lagged, boundMs };
+		if (pending || recoveryPending)
+			throw new Error("replica contains an incomplete batch");
+		return { replicaSeq, events, checkedAtMs, lagged, boundMs, readClass };
 	}
 
 	async function configure(state: ReplicaState): Promise<boolean> {
-		if (state.boundMs === options.maxStalenessMs) return true;
+		if (
+			state.boundMs === options.maxStalenessMs &&
+			state.readClass === replicaReadClass
+		)
+			return true;
 		try {
 			await options.replica.append(
 				options.replicaStreamId,
@@ -242,6 +266,7 @@ export function createCrossCampProjection<Row>(
 								replicaCampId: options.replicaCampId,
 								sourceStreamId: options.sourceStreamId ?? "",
 								boundMs: BigInt(options.maxStalenessMs),
+								readClass: replicaReadClass,
 							}),
 							{ alwaysEmitImplicit: true },
 						),
@@ -260,9 +285,31 @@ export function createCrossCampProjection<Row>(
 		return false;
 	}
 
+	function lagEvent(
+		lagged: boolean,
+		sourcePosition: bigint,
+		observedLagMs: number,
+	): EventInput {
+		return {
+			type: lagged ? LAGGED : RECOVERED,
+			data: toJson(
+				CrossCampProjectionLagDataSchema,
+				create(CrossCampProjectionLagDataSchema, {
+					projection: options.projection.name,
+					ownerCampId: options.ownerCampId,
+					replicaCampId: options.replicaCampId,
+					sourcePosition,
+					boundMs: BigInt(options.maxStalenessMs),
+					observedLagMs: BigInt(observedLagMs),
+				}),
+				{ alwaysEmitImplicit: true },
+			),
+		};
+	}
+
 	async function view(
 		initial: ReplicaState,
-		readClass: "bounded-staleness" | "eventual" = "bounded-staleness",
+		readClass: "bounded-staleness" | "eventual" = replicaReadClass,
 	): Promise<CrossCampProjectionView<Row>> {
 		let state = initial;
 		for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -283,21 +330,11 @@ export function createCrossCampProjection<Row>(
 						: "within-bound";
 			const lagged = status === "exceeds-bound";
 			if (observedLagMs !== null && lagged !== state.lagged) {
-				const event: EventInput = {
-					type: lagged ? LAGGED : RECOVERED,
-					data: toJson(
-						CrossCampProjectionLagDataSchema,
-						create(CrossCampProjectionLagDataSchema, {
-							projection: options.projection.name,
-							ownerCampId: options.ownerCampId,
-							replicaCampId: options.replicaCampId,
-							sourcePosition: state.events.at(-1)?.position ?? 0n,
-							boundMs: BigInt(options.maxStalenessMs),
-							observedLagMs: BigInt(observedLagMs),
-						}),
-						{ alwaysEmitImplicit: true },
-					),
-				};
+				const event = lagEvent(
+					lagged,
+					state.events.at(-1)?.position ?? 0n,
+					observedLagMs,
+				);
 				try {
 					await options.replica.append(options.replicaStreamId, [event], {
 						expectedSeq: state.replicaSeq,
@@ -389,6 +426,10 @@ export function createCrossCampProjection<Row>(
 					{ alwaysEmitImplicit: true },
 				),
 			});
+			if (caughtUp && state.lagged)
+				records.push(
+					lagEvent(false, events.at(-1)?.position ?? last?.position ?? 0n, 0),
+				);
 			try {
 				await options.replica.append(options.replicaStreamId, records, {
 					expectedSeq: state.replicaSeq,
@@ -406,8 +447,9 @@ export function createCrossCampProjection<Row>(
 					replicaSeq: state.replicaSeq + records.length,
 					events: [...state.events, ...events],
 					checkedAtMs: caughtUp ? checkedAtMs : state.checkedAtMs,
-					lagged: state.lagged,
+					lagged: caughtUp ? false : state.lagged,
 					boundMs: state.boundMs,
+					readClass: state.readClass,
 				}),
 			};
 		}
@@ -453,7 +495,7 @@ export function createCrossCampProjection<Row>(
 	return Object.freeze({
 		replicate,
 		async read(
-			readClass: "bounded-staleness" | "eventual" = "bounded-staleness",
+			readClass: "bounded-staleness" | "eventual" = replicaReadClass,
 		): Promise<CrossCampProjectionView<Row>> {
 			if (readClass !== "bounded-staleness" && readClass !== "eventual")
 				throw new TypeError("unsupported replica read class");

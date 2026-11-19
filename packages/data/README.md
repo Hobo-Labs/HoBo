@@ -114,14 +114,17 @@ staleness inside that store. Reads record `projection.ReplicaLagged` and
 do not repeat a transition, including after restart. Read or subscribe to that
 stream to observe the transitions; reads detect lag while replication is idle.
 
-`read()` labels a replica view as bounded-staleness; `read("eventual")` labels
-it as eventual. Both report the observed staleness. After `append`, pass the
+`read()` labels a replica view as bounded-staleness by default; set
+`replicaReadClass` to `"eventual"` or pass a read class to `read()` to select
+eventual reads. Both report the observed staleness. After `append`, pass the
 returned event to `readSession(event)` to read from the owner and confirm that
 the write is present. A session read fails if the owner read cannot observe it.
 Replica reads do not offer strong consistency.
-Each replica records its projection, Camps, source, and staleness bound in its
-event stream. Changing the bound records the new configuration; changing the
-projection, Camps, or source requires a different replica stream.
+Each replica records its projection, Camps, source, staleness bound, and default
+read class in its event stream. Changing the bound or default read class records
+the new configuration; changing the projection, Camps, or source requires a
+different replica stream. `hobo doctor` reports supported read classes and
+flags a replica that has exceeded its bound without recording a lag signal.
 
 ## Paginated event views
 

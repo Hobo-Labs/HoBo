@@ -3,9 +3,15 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { toJson } from "@bufbuild/protobuf";
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createCrossCampProjection, defineProjection } from "../src/index.js";
+import {
+	createCrossCampProjection,
+	defineProjection,
+	ProjectionReplicaReportSchema,
+	readProjectionReplicaReport,
+} from "../src/index.js";
 
 const actor = { kind: "user", id: "operator" } as const;
 const append = { actor, tenant: "workspace", expectedSeq: 0 };
@@ -349,8 +355,12 @@ describe("cross-camp projection replication", () => {
 		const updated = createCrossCampProjection({
 			...f.options,
 			maxStalenessMs: 300,
+			replicaReadClass: "eventual",
 		});
-		expect((await updated.read()).staleness.status).toBe("within-bound");
+		expect(await updated.read()).toMatchObject({
+			staleness: { status: "within-bound" },
+			evidence: { readClass: "eventual" },
+		});
 		const configurations = [];
 		for await (const event of f.replica.read("replica:tickets")) {
 			if (event.type === "projection.ReplicaConfigured")
@@ -362,17 +372,212 @@ describe("cross-camp projection replication", () => {
 				ownerCampId: "camp-east",
 				replicaCampId: "camp-west",
 				boundMs: "100",
+				readClass: "bounded-staleness",
 			},
 			{
 				projection: "tickets",
 				ownerCampId: "camp-east",
 				replicaCampId: "camp-west",
 				boundMs: "300",
+				readClass: "eventual",
 			},
 		]);
 		await expect(
 			createCrossCampProjection({ ...f.options, ownerCampId: "other" }).read(),
 		).rejects.toThrow("invalid configuration");
+		expect(() =>
+			createCrossCampProjection({
+				...f.options,
+				replicaReadClass: "strong" as never,
+			}),
+		).toThrow("unsupported replica read class");
+		expect(
+			(
+				await readProjectionReplicaReport({
+					store: f.replica,
+					tenant: "workspace",
+					nowMs: f.options.nowMs,
+				})
+			).replicas[0],
+		).toMatchObject({ defaultReadClass: "eventual", boundMs: 300n });
+	});
+
+	it("commits a caught-up checkpoint and recovery in one append", async () => {
+		const f = fixture();
+		const batches: string[][] = [];
+		let rejectRecovery = false;
+		const replica = {
+			...f.replica,
+			async append(...args: Parameters<typeof f.replica.append>) {
+				batches.push(args[1].map((event) => event.type));
+				if (
+					rejectRecovery &&
+					args[1].some((event) => event.type === "projection.ReplicaRecovered")
+				)
+					throw new Error("write interrupted");
+				return f.replica.append(...args);
+			},
+		};
+		const runtime = createCrossCampProjection({ ...f.options, replica });
+		await runtime.replicate();
+		f.setNow(1200);
+		await runtime.read();
+		f.setNow(1300);
+		rejectRecovery = true;
+		await expect(runtime.replicate()).rejects.toThrow("write interrupted");
+		expect(
+			(
+				await readProjectionReplicaReport({
+					store: f.replica,
+					tenant: "workspace",
+					nowMs: f.options.nowMs,
+				})
+			).replicas[0],
+		).toMatchObject({ checkedAtMs: 1000n, lagSignalActive: true });
+		rejectRecovery = false;
+		await runtime.replicate();
+		expect(batches.at(-1)).toEqual([
+			"projection.ReplicationChecked",
+			"projection.ReplicaRecovered",
+		]);
+		f.setNow(1500);
+		const report = await readProjectionReplicaReport({
+			store: f.replica,
+			tenant: "workspace",
+			nowMs: f.options.nowMs,
+		});
+		expect(report.replicas[0]).toMatchObject({ missingLagSignal: true });
+	});
+
+	it("reports read classes and detects a lagging replica without a lag signal", async () => {
+		const f = fixture();
+		const runtime = createCrossCampProjection(f.options);
+		const report = () =>
+			readProjectionReplicaReport({
+				store: f.replica,
+				tenant: "workspace",
+				nowMs: f.options.nowMs,
+			});
+		await runtime.read();
+		const unknown = await report();
+		expect(unknown.replicas[0]).toMatchObject({
+			stalenessStatus: "unknown",
+			missingLagSignal: false,
+		});
+		await runtime.replicate();
+		expect((await report()).replicas[0]).toMatchObject({
+			projection: "tickets",
+			replicaStreamId: "replica:tickets",
+			boundMs: 100n,
+			defaultReadClass: "bounded-staleness",
+			checkedAtMs: 1000n,
+			observedLagMs: 0n,
+			stalenessStatus: "within-bound",
+			lagSignalActive: false,
+			supportedReads: [
+				{ source: "owner", readClass: "session" },
+				{ source: "replica", readClass: "bounded-staleness" },
+				{ source: "replica", readClass: "eventual" },
+			],
+		});
+		f.setNow(1200);
+		const missing = await report();
+		expect(missing.replicas[0]).toMatchObject({
+			stalenessStatus: "exceeds-bound",
+			observedLagMs: 200n,
+			lagSignalActive: false,
+			missingLagSignal: true,
+		});
+		await runtime.read();
+		const active = await report();
+		expect(active.replicas[0]).toMatchObject({
+			lagSignalActive: true,
+			missingLagSignal: false,
+		});
+		f.setNow(1300);
+		await runtime.replicate();
+		const recovered = await report();
+		expect(recovered.replicas[0]).toMatchObject({
+			stalenessStatus: "within-bound",
+			lagSignalActive: false,
+			missingLagSignal: false,
+		});
+		const directory = mkdtempSync(join(tmpdir(), "hobo-projection-report-"));
+		try {
+			const schema = fileURLToPath(
+				new URL("../data-models/data.cue", import.meta.url),
+			);
+			const cue =
+				process.env.HOBO_CUE_BIN ||
+				fileURLToPath(
+					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+				);
+			const path = join(directory, "report.json");
+			for (const snapshot of [unknown, missing, active, recovered]) {
+				writeFileSync(
+					path,
+					JSON.stringify(
+						toJson(ProjectionReplicaReportSchema, snapshot, {
+							alwaysEmitImplicit: true,
+						}),
+					),
+				);
+				execFileSync(cue, [
+					"vet",
+					schema,
+					path,
+					"-d",
+					"#ProjectionReplicaReport",
+				]);
+			}
+			const inaccurate = JSON.stringify(
+				toJson(ProjectionReplicaReportSchema, missing, {
+					alwaysEmitImplicit: true,
+				}),
+			).replace('"missingLagSignal":true', '"missingLagSignal":false');
+			writeFileSync(path, inaccurate);
+			expect(() =>
+				execFileSync(
+					cue,
+					["vet", schema, path, "-d", "#ProjectionReplicaReport"],
+					{ stdio: "pipe" },
+				),
+			).toThrow();
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("does not present an incomplete scan or a future checkpoint as a healthy report", async () => {
+		const f = fixture();
+		await createCrossCampProjection(f.options).replicate();
+		await createCrossCampProjection({
+			...f.options,
+			maxStalenessMs: 200,
+		}).read();
+		await expect(
+			readProjectionReplicaReport({
+				store: f.replica,
+				tenant: "workspace",
+				maxConfigurations: 1,
+			}),
+		).rejects.toThrow("scan limit exceeded");
+		await expect(
+			readProjectionReplicaReport({
+				store: f.replica,
+				tenant: "workspace",
+				nowMs: () => 999,
+			}),
+		).rejects.toThrow("clock moved backward");
+		expect(
+			(
+				await readProjectionReplicaReport({
+					store: f.replica,
+					tenant: "other",
+					nowMs: f.options.nowMs,
+				})
+			).replicas,
+		).toEqual([]);
 	});
 
 	it("stores replica and lag records accepted by their CUE contracts", async () => {

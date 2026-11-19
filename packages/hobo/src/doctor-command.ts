@@ -21,6 +21,7 @@ import {
 import { loadHoboProfile } from "./hobo-profile.js";
 import { isJsonString } from "./json.js";
 import { buildMessagingDoctorSection } from "./messaging-doctor.js";
+import { projectionDiagnostics } from "./projection-diagnostics.js";
 import { quarantineDiagnostics } from "./quarantine-diagnostics.js";
 
 interface StationDoctorReport {
@@ -200,6 +201,34 @@ export function createDoctorCommand(
 			const messaging = buildMessagingDoctorSection(env);
 			remediation.push(...messaging.remediation);
 
+			const projections = await projectionDiagnostics(deps.store, trailTenant);
+			if (projections.available) {
+				for (const replica of projections.report.replicas) {
+					for (const read of replica.supportedReads) {
+						const staleness =
+							read.source === "replica"
+								? `, ${replica.stalenessStatus}${replica.observedLagMs === undefined ? "" : ` (${replica.observedLagMs}ms / ${replica.boundMs}ms)`}`
+								: "";
+						emitProgress(
+							`projection ${replica.projection} ${read.source}/${read.readClass}${staleness}`,
+						);
+					}
+					if (replica.missingLagSignal) {
+						emitProgress(
+							`projection ${replica.projection} has exceeded its lag bound without a lag signal.`,
+						);
+						remediation.push(
+							`Inspect replica ${replica.replicaStreamId} and its lag reporting.`,
+						);
+					}
+				}
+			} else if (deps.store) {
+				emitProgress(`Projection report unavailable: ${projections.reason}`);
+				remediation.push(
+					"Inspect the projection report failure and rerun hobo doctor.",
+				);
+			}
+
 			const quarantine = await quarantineDiagnostics(deps.store, trailTenant);
 			if (quarantine.available) {
 				if (
@@ -246,6 +275,9 @@ export function createDoctorCommand(
 					trails: trailsReport,
 					bindingDelivery: bindingDelivery.report,
 					messaging: messaging.report,
+					projections: projections.available
+						? { available: true, report: projections.json }
+						: projections,
 					quarantine: quarantine.available
 						? { available: true, report: quarantine.json }
 						: quarantine,

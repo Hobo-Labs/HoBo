@@ -194,6 +194,7 @@ import "list"
 	replicaCampId:  string & !=""
 	sourceStreamId: string
 	boundMs:        =~"^[0-9]+$"
+	readClass:      "bounded-staleness" | "eventual"
 }
 
 #CrossCampProjectionLagData: {
@@ -210,6 +211,42 @@ import "list"
 	readClass: "session" | "bounded-staleness" | "eventual"
 	if source == "owner" {readClass: "session"}
 	if source == "replica" {readClass: "bounded-staleness" | "eventual"}
+}
+
+#ProjectionReplicaObservation: {
+	projection:       string & !=""
+	ownerCampId:      string & !=""
+	replicaCampId:    string & !=""
+	replicaStreamId:  string & !=""
+	sourceStreamId:   string
+	sourcePosition:   =~"^[0-9]+$"
+	boundMs:          =~"^[0-9]+$"
+	stalenessStatus:  "unknown" | "within-bound" | "exceeds-bound"
+	checkedAtMs?:     =~"^[0-9]+$"
+	observedLagMs?:   =~"^[0-9]+$"
+	lagSignalActive:  bool
+	missingLagSignal: bool
+	supportedReads: [#ProjectionReadEvidence, ...#ProjectionReadEvidence]
+	defaultReadClass: "bounded-staleness" | "eventual"
+	if stalenessStatus == "unknown" {
+		checkedAtMs?:   _|_
+		observedLagMs?: _|_
+	}
+	if stalenessStatus != "unknown" {
+		checkedAtMs:   =~"^[0-9]+$"
+		observedLagMs: =~"^[0-9]+$"
+	}
+	if missingLagSignal {
+		stalenessStatus: "exceeds-bound"
+		lagSignalActive: false
+	}
+	if stalenessStatus == "exceeds-bound" && !lagSignalActive {
+		missingLagSignal: true
+	}
+}
+
+#ProjectionReplicaReport: {
+	replicas: [...#ProjectionReplicaObservation]
 }
 
 #PaginatedChangeData: {
