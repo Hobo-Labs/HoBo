@@ -332,6 +332,14 @@ export function decideRunnerRoute(
 	request: RunnerRouteRequest,
 	facts: RouteFacts = NO_ROUTE_FACTS,
 ): RunnerRouteDecision {
+	if (request.fork === undefined)
+		return create(RunnerRouteDecisionSchema, {
+			outcome: "none",
+			reason:
+				"No runner available. The fork fact is required: RunnerRouteRequest.fork is unset, so whether the run comes from a fork is unknown and routing cannot be decided safely.",
+			skipped: [],
+			notInOrder: [],
+		});
 	const inputs = effectiveRelayInputs(order, request);
 	const walked = retryOrder(
 		preferFirst(order, facts.first),

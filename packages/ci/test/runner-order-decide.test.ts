@@ -186,6 +186,30 @@ describe("decideRunnerRoute", () => {
 		expect(reasons(fork)).toContain("machine:fork_pull_request");
 	});
 
+	it("fails closed when the fork fact is missing", () => {
+		const missingFork = create(RunnerRouteRequestSchema, {
+			repository: "acme/app",
+			private: true,
+			event: "pull_request",
+			runId: 9001n,
+			runAttempt: 1,
+			job: "relay-test",
+			actorId: "42",
+			triggeringActorId: "42",
+			inputs: [{ key: "machine", labels: ["self-hosted"] }],
+		});
+		expect(missingFork.fork).toBeUndefined();
+		const decision = decideRunnerRoute(
+			DEFAULT_RUNNER_ORDER,
+			missingFork,
+			facts({ machines: [machine()] }),
+		);
+		expect(decision.outcome).toBe("none");
+		expect(decision.reason).toContain("fork");
+		expect(decision.reason).toContain("required");
+		expect(decision.skipped).toEqual([]);
+	});
+
 	it("lets only an isolated fleet take untrusted code", () => {
 		const ask = (
 			isolated: boolean,
@@ -311,9 +335,16 @@ describe("decideRunnerRoute", () => {
 		expect(reasons(ask(1000, 301))).toEqual(["github:minutes_runway"]);
 		expect(ask(1000, 300).step).toBe("github");
 
-		expect(
-			decideRunnerRoute(limited, request({ github: "ubuntu-24.04" })).step,
-		).toBe("github");
+		const unknown = decideRunnerRoute(
+			limited,
+			request({ github: "ubuntu-24.04" }),
+		);
+		expect(unknown.outcome).toBe("none");
+		expect(unknown.skipped[0]).toMatchObject({
+			key: "github",
+			reason: "minutes_limit",
+			detail: "minutes usage is unknown; the limit is 80%",
+		});
 	});
 
 	it("uses the unlimited github step after the limited one refuses", () => {
@@ -351,7 +382,13 @@ describe("decideRunnerRoute", () => {
 				}),
 			);
 		expect(ask(99.99).step).toBe("blacksmith");
-		expect(ask(undefined).step).toBe("blacksmith");
+		const unknown = ask(undefined);
+		expect(unknown.step).toBe("github");
+		expect(unknown.skipped[0]).toMatchObject({
+			key: "blacksmith",
+			reason: "spend_limit",
+			detail: "spend is unknown; the limit is $100",
+		});
 		const over = ask(100);
 		expect(over.step).toBe("github");
 		expect(over.skipped[0]?.detail).toBe("$100.00 of $100 spent this month");

@@ -174,8 +174,13 @@ describe("chooseMachine", () => {
 });
 
 describe("limits", () => {
-	it("allows only unmeasured usage when the plan includes nothing", () => {
-		expect(minutesVerdict(80, undefined)).toEqual({ allowed: true });
+	it("blocks a limited step when minutes usage is unknown", () => {
+		expect(minutesVerdict(80, undefined)).toEqual({
+			allowed: false,
+			reason: "minutes_limit",
+			detail: "minutes usage is unknown; the limit is 80%",
+		});
+		expect(minutesVerdict(0, undefined)).toEqual({ allowed: true });
 		expect(
 			minutesVerdict(80, { usedMinutes: 10, includedMinutes: 0 }),
 		).toMatchObject({ allowed: false, reason: "minutes_limit" });
@@ -215,7 +220,12 @@ describe("limits", () => {
 	});
 
 	it("refuses a provider at its monthly spend, not before", () => {
-		expect(spendVerdict(50, undefined)).toEqual({ allowed: true });
+		expect(spendVerdict(50, undefined)).toEqual({
+			allowed: false,
+			reason: "spend_limit",
+			detail: "spend is unknown; the limit is $50",
+		});
+		expect(spendVerdict(0, undefined)).toEqual({ allowed: true });
 		expect(spendVerdict(50, 49.99)).toEqual({ allowed: true });
 		expect(spendVerdict(50, 50)).toEqual({
 			allowed: false,

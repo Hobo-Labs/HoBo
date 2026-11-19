@@ -96,11 +96,12 @@ Steps are tried top to bottom. A step is passed over, with a reason, when:
 | `machine_paused` | The machines that would take it are paused |
 | `machine_full` | The machines that would take it are all busy |
 
-These limits are best-effort routing preferences, not billing enforcement.
-Missing minutes or spend measurements do not block a step, because a billing
-read failure must not stop CI. A provided minutes measurement with no included
-minutes denies the limited step; otherwise a measured limit or runway refusal
-is enforced by the walk.
+These limits are routing preferences, not billing enforcement. When a
+step sets a minutes or spend limit, a missing minutes or spend measurement
+blocks that step (fail closed): unknown usage is not treated as under the
+limit. Steps without a limit are unaffected by a missing measurement. A
+provided minutes measurement with no included minutes denies the limited
+step; otherwise a measured limit or runway refusal is enforced by the walk.
 
 ## When no step takes the job
 
