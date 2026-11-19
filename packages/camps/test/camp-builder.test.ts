@@ -6,7 +6,7 @@ import {
 	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
 	CAMP_MIGRATION_CODE,
 	camp,
-	campToShape,
+	campToContract,
 	parseLegacyCampMappings,
 	withResolvers,
 } from "../src/camp.js";
@@ -388,17 +388,17 @@ describe("resolver pins", () => {
 	});
 });
 
-describe("the public shape", () => {
+describe("the public contract", () => {
 	it("strips the yard namespace back off the id", () => {
 		const attached = attachCampToYard(camp("checkout"), {
 			yardId: "acme",
 			providerId: "aws",
 		});
-		expect(campToShape(attached).id).toBe("checkout");
+		expect(campToContract(attached).id).toBe("checkout");
 	});
 
 	it("leaves an unattached id alone", () => {
-		expect(campToShape(camp("checkout")).id).toBe("checkout");
+		expect(campToContract(camp("checkout")).id).toBe("checkout");
 	});
 
 	it("does not expose the derived provider", () => {
@@ -406,13 +406,13 @@ describe("the public shape", () => {
 			yardId: "acme",
 			providerId: "aws",
 		});
-		const shape = campToShape(attached) as Record<string, unknown>;
-		expect(shape.derivedProviderId).toBeUndefined();
-		expect(shape.resolverConfig).toBeUndefined();
+		const contract = campToContract(attached) as Record<string, unknown>;
+		expect(contract.derivedProviderId).toBeUndefined();
+		expect(contract.resolverConfig).toBeUndefined();
 	});
 
 	it("is frozen", () => {
-		expect(Object.isFrozen(campToShape(camp("c")))).toBe(true);
+		expect(Object.isFrozen(campToContract(camp("c")))).toBe(true);
 	});
 });
 
