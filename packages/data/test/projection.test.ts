@@ -114,10 +114,45 @@ describe("defineProjection read-model fold", () => {
 		);
 		expect(snapshot.rows.a?.status).toBe("confirmed");
 		expect(snapshot.rows.b?.status).toBe("placed");
+		const append = (row: string[] | undefined, event: EventEnvelope) => [
+			...(row ?? []),
+			`${event.streamId}:${event.seq}`,
+		];
+		const ordered = defineProjection({
+			name: "interleaved-orders",
+			key: () => "all",
+			on: {
+				"order.Placed": append,
+				"order.Confirmed": append,
+				"order.Noted": append,
+			},
+		}).fold(events);
+		expect(ordered.rows.all).toEqual(
+			events.map((event) => `${event.streamId}:${event.seq}`),
+		);
 		const firstEvent = events[0];
 		if (!firstEvent) throw new Error("event fixture is empty");
 		expect(() => orderView.fold([{ ...firstEvent, seq: Number.NaN }])).toThrow(
 			/safe sequence/,
+		);
+	});
+
+	it("folds an out-of-order stream by sequence and rejects duplicates", async () => {
+		const s = store();
+		await seedFixture(s);
+		const events: EventEnvelope[] = [];
+		for await (const event of s.read("order:1001")) events.push(event);
+		const placed = events[0];
+		const confirmed = events[1];
+		const nextOrder = events[2];
+		if (!placed || !confirmed || !nextOrder)
+			throw new Error("fixture is incomplete");
+		const snapshot = orderView.fold([confirmed, placed, nextOrder]);
+		expect(snapshot.rows["1001"]?.status).toBe("confirmed");
+		expect(snapshot.rows["1002"]?.status).toBe("placed");
+		expect(snapshot.streamSequences).toEqual({ "order:1001": 3 });
+		expect(() => orderView.fold([placed, placed])).toThrow(
+			/duplicate sequence/,
 		);
 	});
 
