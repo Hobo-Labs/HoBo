@@ -9,7 +9,10 @@ Quotable == {"active", "past-due", "trialing"}
 VARIABLES status, referenced, decision
 vars == <<status, referenced, decision>>
 
-NeedsRejection == referenced /\ status \notin Quotable
+NeedsRejection ==
+  status = "unknown" \/
+  (status = "trialing" /\ ~referenced) \/
+  (referenced /\ status \notin Quotable)
 
 Init ==
   /\ status \in Statuses
@@ -30,9 +33,16 @@ TypeOK ==
 
 InactiveReferenceCannotContinue ==
   decision = "continue" /\ referenced => status \in Quotable
-UnrelatedAgreementDoesNotBlock == decision = "unavailable" => referenced
-QuotableStatusDoesNotBlock == decision = "unavailable" => status \notin Quotable
+UnrelatedInactiveDoesNotBlock ==
+  decision = "unavailable" /\ ~referenced => status \in {"unknown", "trialing"}
+ReferencedQuotableDoesNotBlock ==
+  decision = "unavailable" /\ referenced => status \notin Quotable
+UnknownStatusCannotContinue == decision = "continue" => status # "unknown"
+UnreferencedTrialCannotContinue ==
+  decision = "continue" /\ status = "trialing" => referenced
 
 AgreementNoUnavailable == decision # "unavailable"
 AgreementNoContinuation == decision # "continue"
+NoUnknownStatusRejection == ~(decision = "unavailable" /\ status = "unknown" /\ ~referenced)
+NoUnreferencedTrialRejection == ~(decision = "unavailable" /\ status = "trialing" /\ ~referenced)
 =============================================================================

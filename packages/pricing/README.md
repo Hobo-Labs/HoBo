@@ -59,10 +59,12 @@ schedules, grant expiries and latest measurements by instant. It rejects invalid
 calendar dates, finer precision, and conflicting latest measurements at the same
 instant. If different rate cards start at the same selected instant, it rejects
 that ambiguity as well; input order cannot silently select a cheaper value.
-V2 also rejects a baseline or candidate that references a suspended, cancelled
-or unknown-status provider agreement with `PRICING_AGREEMENT_UNAVAILABLE`.
-Active and past-due agreements remain quotable; trial agreements still require
-the applicable new-agreement permission. An unrelated inactive agreement does
+V2 rejects a baseline or candidate that references a suspended or cancelled
+provider agreement with `PRICING_AGREEMENT_UNAVAILABLE`. It also rejects any
+agreement with an unknown status and an unreferenced trial agreement, because
+their baseline liability cannot be determined. Active and past-due agreements
+remain quotable; referenced trial agreements still require the applicable
+new-agreement permission. An unrelated suspended or cancelled agreement does
 not by itself prevent a quote. The legacy V1 behavior is unchanged.
 `model/IacAgreementStatus.tla` checks this decision over one agreement and six
 abstract statuses; it does not prove the TypeScript implementation or the

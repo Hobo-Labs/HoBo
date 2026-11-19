@@ -155,15 +155,26 @@ function validateV2AgreementAvailability(scenario: QuoteScenario): void {
 		),
 	);
 	for (const agreement of scenario.state?.agreements ?? []) {
-		if (
-			referenced.has(agreement.id) &&
-			!hasV2BaselineCharges(agreement.status) &&
-			agreement.status !== "trialing"
-		)
+		const used = referenced.has(agreement.id);
+		if (hasV2BaselineCharges(agreement.status)) continue;
+		if (agreement.status === "trialing") {
+			if (used) continue;
+			throw new PricingFault(
+				"PRICING_AGREEMENT_UNAVAILABLE",
+				`trial agreement ${agreement.id} needs an explicit workload to determine its liability`,
+			);
+		}
+		if (agreement.status === "suspended" || agreement.status === "cancelled") {
+			if (!used) continue;
 			throw new PricingFault(
 				"PRICING_AGREEMENT_UNAVAILABLE",
 				`agreement ${agreement.id} is not available for pricing`,
 			);
+		}
+		throw new PricingFault(
+			"PRICING_AGREEMENT_UNAVAILABLE",
+			`agreement ${agreement.id} has an unrecognized status`,
+		);
 	}
 }
 

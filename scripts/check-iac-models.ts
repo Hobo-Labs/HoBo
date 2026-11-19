@@ -147,6 +147,8 @@ try {
 	for (const [name, invariant] of [
 		["IacAgreementStatus", "AgreementNoUnavailable"],
 		["IacAgreementStatus", "AgreementNoContinuation"],
+		["IacAgreementStatus", "NoUnknownStatusRejection"],
+		["IacAgreementStatus", "NoUnreferencedTrialRejection"],
 		["IacSharedFixedQuantity", "NoMissingQuantity"],
 		["IacSharedFixedQuantity", "NoUnknownSelector"],
 		["IacSharedFixedQuantity", "NoExplicitZeroQuote"],
