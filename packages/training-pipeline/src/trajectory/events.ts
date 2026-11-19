@@ -3,29 +3,19 @@ import { createEventEnvelope, diagnosticJson } from "@hobo/core";
 import type { CapturedTrajectory } from "./capture.js";
 import { TrajectoryCaptureParseError } from "./trace-context.js";
 
-// public-contract: trajectory-capture past-tense fact riding the training.* family; stored trajectory rides the event log.
 export const TRAINING_TRAJECTORY_CAPTURED = "training.TrajectoryCaptured";
 
 export interface TrajectoryCapturedEventOptions {
 	readonly eventId: string;
 	readonly seq: number;
-	/** ISO-8601 event timestamp. */
 	readonly ts: string;
 	readonly actor: PrincipalRef;
-	/** Defaults to the trajectory's run tenant. */
 	readonly tenant?: string;
-	/** Defaults to `training:<runId>`. */
 	readonly streamId?: string;
 	readonly correlationId?: string;
 	readonly causationId?: string;
 }
 
-/**
- * Wraps a captured trajectory in the platform EventEnvelope as a
- * `training.TrajectoryCaptured` fact: the proto-JSON wire form of the
- * trajectory (plus its provenance hash) is the event data, and the W3C
- * traceparent rides `meta` so the event joins the same trace as the run.
- */
 export function trajectoryCapturedEvent(
 	captured: CapturedTrajectory,
 	options: TrajectoryCapturedEventOptions,
@@ -52,12 +42,8 @@ export function trajectoryCapturedEvent(
 			trajectory: captured.trajectoryJson,
 		},
 		meta: { traceparent: captured.trajectory.traceparent },
-		...(options.correlationId === undefined
-			? {}
-			: { correlationId: options.correlationId }),
-		...(options.causationId === undefined
-			? {}
-			: { causationId: options.causationId }),
+		correlationId: options.correlationId,
+		causationId: options.causationId,
 	};
 	return createEventEnvelope(envelope);
 }
