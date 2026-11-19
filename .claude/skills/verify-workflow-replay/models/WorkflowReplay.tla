@@ -1,51 +1,51 @@
 ------------------------ MODULE WorkflowReplay ------------------------
 EXTENDS Naturals
 CONSTANT MaxCalls
-VARIABLES phase, journaled, calls, replayedAfterJournal
-vars == <<phase, journaled, calls, replayedAfterJournal>>
+VARIABLES phase, journaled, calls, journaledCalls
+vars == <<phase, journaled, calls, journaledCalls>>
 
 Init == /\ phase = "idle"
         /\ journaled = FALSE
         /\ calls = 0
-        /\ replayedAfterJournal = FALSE
+        /\ journaledCalls = 0
 
 Start == /\ phase = "idle"
          /\ phase' = "running"
-         /\ UNCHANGED <<journaled, calls, replayedAfterJournal>>
+         /\ UNCHANGED <<journaled, calls, journaledCalls>>
 
 RunStep == /\ phase = "running"
            /\ IF journaled
                  THEN /\ phase' = "done"
-                      /\ UNCHANGED <<journaled, calls, replayedAfterJournal>>
+                      /\ UNCHANGED <<journaled, calls, journaledCalls>>
                  ELSE /\ calls < MaxCalls
                       /\ phase' = "effect-returned"
                       /\ calls' = calls + 1
-                      /\ replayedAfterJournal' = (replayedAfterJournal \/ journaled)
-                      /\ UNCHANGED journaled
+                      /\ UNCHANGED <<journaled, journaledCalls>>
 
 JournalResult == /\ phase = "effect-returned"
                  /\ phase' = "recorded"
                  /\ journaled' = TRUE
-                 /\ UNCHANGED <<calls, replayedAfterJournal>>
+                 /\ journaledCalls' = calls
+                 /\ UNCHANGED calls
 
 Finish == /\ phase = "recorded"
           /\ phase' = "done"
-          /\ UNCHANGED <<journaled, calls, replayedAfterJournal>>
+          /\ UNCHANGED <<journaled, calls, journaledCalls>>
 
 Crash == /\ phase \in {"running", "effect-returned", "recorded"}
          /\ phase' = "crashed"
-         /\ UNCHANGED <<journaled, calls, replayedAfterJournal>>
+         /\ UNCHANGED <<journaled, calls, journaledCalls>>
 
 Restart == /\ phase = "crashed"
            /\ phase' = "running"
-           /\ UNCHANGED <<journaled, calls, replayedAfterJournal>>
+           /\ UNCHANGED <<journaled, calls, journaledCalls>>
 
 Done == /\ phase = "done" /\ UNCHANGED vars
 Next == Start \/ RunStep \/ JournalResult \/ Finish \/ Crash \/ Restart \/ Done
 Spec == Init /\ [][Next]_vars
-NoJournaledReexecution == ~replayedAfterJournal
+NoJournaledReexecution == journaled => calls = journaledCalls
 TypeOK == /\ phase \in {"idle", "running", "effect-returned", "recorded", "crashed", "done"}
           /\ journaled \in BOOLEAN
           /\ calls \in 0..MaxCalls
-          /\ replayedAfterJournal \in BOOLEAN
+          /\ journaledCalls \in 0..MaxCalls
 =============================================================================
