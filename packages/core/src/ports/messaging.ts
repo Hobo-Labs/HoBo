@@ -131,6 +131,7 @@ export interface MessagingEvent {
 		| "messaging.nacked"
 		| "messaging.dead_lettered"
 		| "messaging.delivery.permanent_failure"
+		| "messaging.delivery.exhausted"
 		| "messaging.federated";
 	readonly topic: TopicName;
 	readonly messageId?: MessagingMessageId;
@@ -205,7 +206,7 @@ export const PORTABLE_MESSAGING_CAPABILITIES: MessagingCapabilities =
 		transactionalProduce: false,
 		idempotentProduce: false,
 		schemaRegistry: false,
-		deadLetter: true,
+		deadLetter: false,
 		partitionAware: false,
 		crossYardFederation: false,
 	});
@@ -230,6 +231,18 @@ export class MessagingDeliveryError extends Error {
 	}
 }
 
+export class MessagingDeliveryExhaustedError extends Error {
+	readonly code = "MESSAGING_DELIVERY_EXHAUSTED" as const;
+	constructor(
+		readonly delivery: ConsumedMessage,
+		readonly unprocessed: readonly ConsumedMessage[],
+		readonly handled: number,
+	) {
+		super("Delivery attempts exhausted; the message remains unsettled");
+		this.name = "MessagingDeliveryExhaustedError";
+	}
+}
+
 export class MessagingSettlementCommittedError extends Error {
 	readonly code = "MESSAGING_SETTLEMENT_COMMITTED" as const;
 	constructor(
@@ -250,6 +263,16 @@ export class MessagingCapabilityError extends Error {
 		super(message);
 		this.name = "MessagingCapabilityError";
 	}
+}
+
+export function assertDeadLetterSupported(
+	capabilities: MessagingCapabilities,
+	spec: { readonly deadLetterTopic?: TopicName },
+): void {
+	if (spec.deadLetterTopic !== undefined && !capabilities.deadLetter)
+		throw new MessagingCapabilityError(
+			"backend cannot transfer messages to a dead-letter topic",
+		);
 }
 
 const DELIVERY_SET = new Set<DeliveryGuarantee>([
@@ -516,6 +539,10 @@ interface GroupCursor {
 export function createInMemoryMessaging(
 	options: InMemoryMessagingOptions = {},
 ): Messaging {
+	if (options.capabilities?.deadLetter === true)
+		throw new MessagingCapabilityError(
+			"in-memory messaging cannot transfer messages to a dead-letter topic",
+		);
 	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = (options.tenantId ?? "local") as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
@@ -570,6 +597,7 @@ export function createInMemoryMessaging(
 		capabilities,
 
 		async ensureTopic(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const scoped: TopicSpec = deepFreeze({
 				...spec,
 				name: tenantScopedTopicName(spec.tenantId, spec.name),
@@ -583,6 +611,7 @@ export function createInMemoryMessaging(
 		},
 
 		async ensureSubscription(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const topic = tenantScopedTopicName(spec.tenantId, spec.topic);
 			const group = tenantScopedConsumerGroup(
 				spec.tenantId,
@@ -739,7 +768,6 @@ export function createInMemoryMessaging(
 				...consumeOptions,
 			});
 			let handled = 0;
-			let deadLettered = 0;
 			const physical = tenantScopedTopicName(tenantId, topic);
 			const group = tenantScopedConsumerGroup(tenantId, consumerGroup);
 			const sub = [...subscriptions.values()].find(
@@ -747,40 +775,37 @@ export function createInMemoryMessaging(
 			);
 			const maxAttempts = sub?.maxDeliveryAttempts ?? 5;
 
-			for (const message of batch) {
+			for (const [index, message] of batch.entries()) {
+				const exhausted = (): never => {
+					emit({
+						type: "messaging.delivery.exhausted",
+						topic: physical,
+						messageId: message.messageId,
+						consumerGroup: group,
+						reason: "max_delivery_attempts",
+					});
+					throw new MessagingDeliveryExhaustedError(
+						message,
+						Object.freeze(batch.slice(index + 1)),
+						handled,
+					);
+				};
+				if (message.deliveryAttempt > maxAttempts) exhausted();
 				try {
 					await handler(message);
 				} catch (err) {
-					if (message.deliveryAttempt >= maxAttempts) {
-						await messaging.ack(message.messageId, message.leaseId);
-						deadLettered += 1;
-						emit({
-							type: "messaging.dead_lettered",
-							topic: physical,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-						emit({
-							type: "messaging.delivery.permanent_failure",
-							topic: physical,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-					} else {
-						await messaging.nack(
-							message.messageId,
-							message.leaseId,
-							err instanceof Error ? err.message : String(err),
-						);
-					}
+					if (message.deliveryAttempt >= maxAttempts) exhausted();
+					await messaging.nack(
+						message.messageId,
+						message.leaseId,
+						err instanceof Error ? err.message : String(err),
+					);
 					continue;
 				}
 				await messaging.ack(message.messageId, message.leaseId);
 				handled += 1;
 			}
-			return { handled, deadLettered };
+			return { handled, deadLettered: 0 };
 		},
 
 		async ack(messageId, leaseId) {

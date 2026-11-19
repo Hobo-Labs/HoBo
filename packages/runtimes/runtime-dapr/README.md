@@ -45,6 +45,15 @@ the adapter instance. `settlementTimeoutMs` sets a positive deadline of at most
 30 seconds. The sidecar interface does not carry a provider lease token, so the
 host must provide any cross-process fencing and recovery its deployment needs.
 
+The adapter reports `deadLetter: false` and rejects dead-letter topic
+configuration. When a subscription handler exhausts its attempts, `subscribe`
+throws `MessagingDeliveryExhaustedError` without acknowledging that delivery.
+The error includes the lease, the number already handled, and the remaining
+leased messages in the batch. The host must decide how to recover or transfer
+them; an expired lease can allow redelivery.
+Attempt limits depend on the sidecar supplying a durable, accurate delivery
+count; the adapter does not persist that count across sidecar restarts.
+
 - **self-hosted:** `dapr run` / local daprd (`HOBO_DAPR_ENDPOINT`)
 - **kubernetes:** sidecar injector annotations (control-plane emits; this package generates component YAML)
 

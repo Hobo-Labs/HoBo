@@ -29,6 +29,15 @@ deadline. A timeout or transport failure leaves the outcome unknown and blocks
 another settlement for that delivery in this adapter instance. The broker
 transport and host remain responsible for cross-process fencing and recovery.
 
+The adapter reports `deadLetter: false` and rejects dead-letter topic
+configuration. If a subscription handler exhausts its delivery attempts,
+`subscribe` throws `MessagingDeliveryExhaustedError` without acknowledging
+the failed delivery. The error includes its lease, the number already handled,
+and any remaining leased messages in the batch. The host must decide how to
+recover or transfer them; a lease may expire and allow redelivery.
+Attempt limits depend on the transport supplying a durable, accurate delivery
+count; the adapter does not persist that count across transport restarts.
+
 ```ts
 import {
   createKafkaMessaging,
