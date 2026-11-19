@@ -123,19 +123,18 @@ it("§12 Phase 5 dedupes provider charge ids and appends reconciliation hash", a
 		reservationId: "reservation-1",
 		eventId: "evt-reconcile-3",
 		quotedIncrementalBilled: quotedIncremental("1.25"),
-		port: fixtureProviderPort([completeRow, fixture.duplicateRow]),
+		port: fixtureProviderPort([completeRow, completeRow]),
 		credentials: createSyntheticProviderCredentials(),
-		knownActualIds: new Set(["prov-charge-usage-1"]),
 	});
 	expect("code" in result).toBe(false);
 	if ("code" in result) return;
-	expect(result.snapshot.imported).toHaveLength(0);
+	expect(result.snapshot.imported).toHaveLength(1);
 	expect(
 		result.snapshot.variances.filter(
 			(fact) => fact.kind === "duplicate-suppressed",
 		),
-	).toHaveLength(2);
-	expect(result.reconciliation.actualCharges).toHaveLength(0);
+	).toHaveLength(1);
+	expect(result.reconciliation.actualCharges).toHaveLength(1);
 });
 
 it("§12 Phase 5 records negative adjustment variance without rewriting history", async () => {
@@ -264,10 +263,90 @@ it("rejects invalid dates, quotes, and incomplete duplicate rows", async () => {
 	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
 	await expect(
 		sync({
-			knownActualIds: new Set([row.providerChargeId]),
-			port: fixtureProviderPort([{ ...row, chargeId: "" }]),
+			port: fixtureProviderPort([row, { ...row, chargeId: "" }]),
 		}),
 	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
+});
+
+it("reconciles retries against all previously recorded charges", async () => {
+	const first = await sync();
+	if ("code" in first) throw new Error(first.message);
+	const repeated = await sync({
+		syncAt: "2026-02-02T12:00:00Z",
+		knownActualCharges: first.reconciliation.actualCharges,
+	});
+	if ("code" in repeated) throw new Error(repeated.message);
+	expect(repeated.reconciliation.actualCharges).toHaveLength(0);
+	expect(
+		repeated.snapshot.variances.filter(
+			(fact) => fact.kind === "duplicate-suppressed",
+		),
+	).toHaveLength(2);
+	expect(
+		repeated.snapshot.variances.some(
+			(fact) => fact.kind === "billed-vs-quoted",
+		),
+	).toBe(false);
+});
+
+it("includes earlier charges when reconciling a later adjustment", async () => {
+	const [usage, adjustment] = fixture.completeRows;
+	if (!usage || !adjustment) throw new Error("fixture requires two charges");
+	const first = await sync({ port: fixtureProviderPort([usage]) });
+	if ("code" in first) throw new Error(first.message);
+	const next = await sync({
+		knownActualCharges: first.reconciliation.actualCharges,
+		port: fixtureProviderPort([adjustment]),
+	});
+	if ("code" in next) throw new Error(next.message);
+	expect(next.reconciliation.actualCharges.map((charge) => charge.id)).toEqual([
+		adjustment.providerChargeId,
+	]);
+	expect(
+		next.snapshot.variances.some((fact) => fact.kind === "billed-vs-quoted"),
+	).toBe(false);
+	expect(
+		next.snapshot.variances.some((fact) => fact.kind === "negative-adjustment"),
+	).toBe(true);
+});
+
+it("rejects a provider charge ID reused with different contents", async () => {
+	const [usage] = fixture.completeRows;
+	if (!usage) throw new Error("fixture requires a charge");
+	await expect(
+		sync({ port: fixtureProviderPort([usage, fixture.duplicateRow]) }),
+	).resolves.toMatchObject({
+		code: "DUPLICATE_PROVIDER_CHARGE",
+	});
+	const first = await sync({ port: fixtureProviderPort([usage]) });
+	if ("code" in first) throw new Error(first.message);
+	await expect(
+		sync({
+			knownActualCharges: first.reconciliation.actualCharges,
+			port: fixtureProviderPort([{ ...usage, billedCostDecimal: "9" }]),
+		}),
+	).resolves.toMatchObject({ code: "DUPLICATE_PROVIDER_CHARGE" });
+});
+
+it("rejects repeated or cross-currency prior charges", async () => {
+	const first = await sync();
+	if ("code" in first) throw new Error(first.message);
+	const [charge] = first.reconciliation.actualCharges;
+	if (!charge) throw new Error("fixture requires a charge");
+	await expect(
+		sync({ knownActualCharges: [charge, charge] }),
+	).resolves.toMatchObject({
+		code: "DUPLICATE_PROVIDER_CHARGE",
+	});
+	await expect(
+		sync({
+			knownActualCharges: [charge],
+			quotedIncrementalBilled: create(MoneySchema, {
+				decimal: "1",
+				currency: "EUR",
+			}),
+		}),
+	).resolves.toMatchObject({ code: "CROSS_CURRENCY" });
 });
 
 it("binds snapshot and reconciliation hashes to charge contents", async () => {
