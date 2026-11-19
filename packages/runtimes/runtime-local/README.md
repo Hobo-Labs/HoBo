@@ -46,6 +46,10 @@ while dispatch is in progress. `advance` handles synchronous jobs; if a job
 returns a promise, it reports that `advanceAsync` is required after the job has
 started, so the asynchronous work may still finish.
 
+When a queue batch handler fails, the runtime releases the remaining messages
+whose leases it still owns. It checks each lease before invoking the handler and
+leaves a lease held by another consumer untouched.
+
 Restoring a queue snapshot clears in-process handler state while retaining each
 lease and its expiry. Once the old runtime has stopped, an in-flight message can
 be retried after its visibility timeout. Queue handlers must tolerate at-least-once
