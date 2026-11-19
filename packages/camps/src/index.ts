@@ -1,10 +1,11 @@
-/* oxlint-disable anti-slop/no-shape-in-symbol-names -- SAFETY: CampShape and campToShape are established public compatibility names. */
+/* oxlint-disable anti-slop/no-shape-in-symbol-names */
 export {
 	attachCampToYard,
 	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
 	CAMP_MIGRATION_CODE,
 	camp,
 	campToShape,
+	type ParsedLegacyCampMappings,
 	parseLegacyCampMappings,
 	withResolvers,
 } from "./camp.js";

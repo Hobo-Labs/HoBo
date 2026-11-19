@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: manifest sorting is a local JSON compatibility boundary and token resolution is guarded by the wiring manifest contract. */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type */
 import { createHash } from "node:crypto";
 
 import { LAZY_TOKEN_PATTERN, type WiringManifest } from "@hobo/bindles/wiring";
