@@ -2,7 +2,8 @@ import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import { RolloutStrategy } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
-import type { FanoutId, PromoteRequest } from "../../src/ports.js";
+import { fanoutIdFor } from "../../src/fanout/controller.js";
+import type { PromoteRequest } from "../../src/ports.js";
 import { PROMOTION_REASON } from "../../src/promotion/index.js";
 import { resolvedFor } from "./doubles.js";
 import { harness } from "./harness.js";
@@ -23,8 +24,10 @@ function changedRequest(base: PromoteRequest, field: string): PromoteRequest {
 		case "proposal":
 			return { ...base, proposal: true };
 		case "fanout":
-			// SAFETY: test fixture fan-out identifiers are literal strings.
-			return { ...base, fanoutId: "other-fanout" as FanoutId };
+			return {
+				...base,
+				fanoutId: fanoutIdFor("acme", "pipe", "node", "other"),
+			};
 		default:
 			throw new Error(`unknown field ${field}`);
 	}
