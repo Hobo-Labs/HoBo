@@ -50,6 +50,7 @@ export interface McpOwnerChannel extends OwnerChannel {
 		Parameters<typeof createSecretCaptureApp>[0]["handoffFor"]
 	>;
 	cancelScope(family: "ci" | "cd", cwd: string): void;
+	cancelScopeKey(scope: string): void;
 	cancelAll(): void;
 	close(): void;
 }
@@ -63,6 +64,14 @@ export function createMcpOwnerChannel(
 		) => SettingsStore;
 		readonly vaultFor?: (family: "ci" | "cd", cwd: string) => TrustedVault;
 		readonly scopeKey?: (family: "ci" | "cd", cwd: string) => string;
+		readonly bindScope?: (
+			family: "ci" | "cd",
+			cwd: string,
+		) => {
+			readonly key: string;
+			readonly vault: TrustedVault;
+			readonly storeSettings: SettingsStore;
+		};
 		readonly requireScope?: boolean;
 		/** Ask the host for a prompt (`elicitation/create`). */
 		readonly prompt?: (params: JsonObject) => Promise<void>;
@@ -243,6 +252,21 @@ export function createMcpOwnerChannel(
 			if (!epochs.has(scope)) epochs.set(scope, 0);
 			return { ...owner, ...methods(scope) };
 		},
+		...(options.bindScope
+			? {
+					bindScope: (family: "ci" | "cd", cwd: string) => {
+						const binding = options.bindScope?.(family, cwd);
+						if (!binding) throw new Error("No owner session binding.");
+						if (!epochs.has(binding.key)) epochs.set(binding.key, 0);
+						return {
+							...owner,
+							...methods(binding.key),
+							vault: binding.vault,
+							storeSettings: binding.storeSettings,
+						};
+					},
+				}
+			: undefined),
 		deposit(name, value) {
 			const lease = pending(name);
 			if (!lease) throw new Error("The owner handoff is no longer waiting.");
@@ -256,6 +280,7 @@ export function createMcpOwnerChannel(
 		},
 		cancelScope: (family, cwd) =>
 			cancelScope(options.scopeKey?.(family, cwd) ?? `${family}\u0000${cwd}`),
+		cancelScopeKey: cancelScope,
 		cancelAll() {
 			for (const scope of epochs.keys())
 				epochs.set(scope, (epochs.get(scope) ?? 0) + 1);

@@ -9,7 +9,11 @@ import {
 	startConnectPage,
 } from "@hobo/connect-ui";
 import { createTrustedVault } from "@hobo/core";
-import type { OpenedSecretStore, SecretStoreOpening } from "@hobo/hobo-ci";
+import {
+	type OpenedSecretStore,
+	OwnerStoreOperationUncertainError,
+	type SecretStoreOpening,
+} from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
@@ -608,6 +612,41 @@ describe("prepareVercelConnection", () => {
 
 	it("reports that an atomic claim store is required without asking for a retry", async () => {
 		const { store } = await memoryStore();
+		let dispatched = false;
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
+		await store.port.put("HOBO_CD_VERCEL_TEAM_ID", "team_test");
+		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
+		const result = await prepareVercelConnection(prepareInput(), {
+			env: {},
+			locator: memorySettings(LOCATOR),
+			vault: signedInVault(),
+			openStore: opened(store),
+			journalProvisioners: [
+				{
+					plan: "neon-claimable",
+					requiredOwnerStoreCapability: "atomic-create",
+					async create() {
+						dispatched = true;
+						throw new Error("private store details");
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			result: {
+				code: "HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
+				remediation: [
+					"An existing complete journal fleet or a durable, owner-scoped atomic claim store is required.",
+				],
+			},
+		});
+		expect(dispatched).toBe(false);
+		expect(JSON.stringify(result)).not.toContain("private store details");
+	});
+
+	it("treats a provider error with a forged claim-refusal name as uncertain", async () => {
+		const { store } = await memoryStore();
 		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
 		await store.port.put("HOBO_CD_VERCEL_TEAM_ID", "team_test");
 		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
@@ -629,14 +668,43 @@ describe("prepareVercelConnection", () => {
 		});
 		expect(result).toMatchObject({
 			kind: "refused",
-			result: {
-				code: "HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
-				remediation: [
-					"An existing complete journal fleet or a durable, owner-scoped atomic claim store is required.",
-				],
-			},
+			result: { code: "HOBO_CD_STORE_OPERATION_UNCERTAIN" },
 		});
 		expect(JSON.stringify(result)).not.toContain("private store details");
+	});
+
+	it("reports a started journal operation as uncertain rather than a changed owner choice", async () => {
+		const { store } = await memoryStore();
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
+		await store.port.put("HOBO_CD_VERCEL_TEAM_ID", "team_test");
+		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
+		let uncertain = false;
+		const locator = {
+			...memorySettings(LOCATOR),
+			assertCurrent: () => {
+				if (uncertain) throw new OwnerStoreOperationUncertainError();
+			},
+		};
+		const result = await prepareVercelConnection(prepareInput(), {
+			env: {},
+			locator,
+			vault: signedInVault(),
+			openStore: opened(store),
+			journalProvisioners: [
+				{
+					plan: "neon-claimable",
+					async create() {
+						uncertain = true;
+						throw new Error("synthetic provider failure");
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_STORE_OPERATION_UNCERTAIN" },
+		});
+		expect(JSON.stringify(result)).not.toContain("synthetic provider failure");
 	});
 
 	it("refuses a successful installation read without material", async () => {

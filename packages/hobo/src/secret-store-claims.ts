@@ -1,4 +1,8 @@
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
+import {
+	ClaimStoreUnavailableError,
+	supportsAtomicOwnerClaim,
+} from "@hobo/hobo-ci/owner-store-errors";
 import type { IdempotencyRecord, IdempotencyStore } from "@hobo/provider-neon";
 import { z } from "zod";
 
@@ -32,14 +36,7 @@ const Attempt = z
 /** The longest run of failed attempts read before giving up on an intent. */
 const MAX_ATTEMPTS = 64;
 
-export class ClaimStoreUnavailableError extends Error {
-	constructor() {
-		super(
-			"A durable, owner-scoped store with verified atomic creation or an existing complete journal fleet is required.",
-		);
-		this.name = "ClaimStoreUnavailableError";
-	}
-}
+export { ClaimStoreUnavailableError } from "@hobo/hobo-ci/owner-store-errors";
 
 /** The idempotency store, marked durable for callers that require one. */
 export type DurableClaimStore = IdempotencyStore & {
@@ -59,7 +56,7 @@ export function secretStoreClaims(
 	const createOnly = store.port.createOnly?.bind(store.port);
 	if (
 		createOnly === undefined ||
-		(store.port.kind === "memory-fixture" && options.allowFixture !== true)
+		!supportsAtomicOwnerClaim(store, options.allowFixture)
 	)
 		throw new ClaimStoreUnavailableError();
 

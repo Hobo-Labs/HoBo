@@ -18,6 +18,10 @@
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
 		},
+		"./owner-store-errors": {
+			"types": "./dist/owner-store-errors.d.ts",
+			"default": "./dist/owner-store-errors.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"dependencies": {

@@ -1,7 +1,10 @@
 import {
+	ClaimStoreUnavailableError,
 	familySettings,
 	type OpenedSecretStore,
-	withStoreWriteLock,
+	OwnerStoreOperationUncertainError,
+	supportsAtomicOwnerClaim,
+	withPreparedStoreWriteLock,
 } from "@hobo/hobo-ci";
 
 import { cdJournalContinuity } from "./continuity.js";
@@ -34,6 +37,7 @@ export const JOURNAL_WITNESS_SETTING = "HOBO_CD_POSTGRES_WITNESSES";
 export interface JournalMemberProvisioner {
 	/** The member plan (`CD_JOURNAL_MEMBER_PLANS`) its databases run on. */
 	readonly plan: string;
+	readonly requiredOwnerStoreCapability?: "atomic-create";
 	create(input: {
 		readonly member: string;
 		/** Stable for this member of this fleet: a retry adopts, never duplicates. */
@@ -115,72 +119,126 @@ export async function prepareJournalFleet(input: {
 }): Promise<JournalFleetStep> {
 	const { store } = input;
 	const settings = familySettings(store, "cd");
-	const saved = await settings.read();
-	const layout: JournalFleetLayout =
-		saved[JOURNAL_FLEET_SETTING] !== undefined
-			? {
-					members: parseEntries(saved[JOURNAL_FLEET_SETTING]),
-					witnesses: parseEntries(saved[JOURNAL_WITNESS_SETTING]),
-				}
-			: journalFleetLayout(input.provisioners);
-	const all = [...layout.members, ...layout.witnesses];
-	for (const member of all)
-		if (CD_JOURNAL_MEMBER_PLANS[member.plan] === undefined)
-			throw new Error(
-				`fleet member ${member.id} names plan ${member.plan}, which no provisioner here serves`,
-			);
-	const missing: JournalFleetMember[] = [];
-	for (const member of all)
-		if (!(await holds(store, journalMemberUrlEntry(member.id))))
-			missing.push(member);
-	const roster = `${layout.members.map(entry).join(", ")}; witness ${layout.witnesses.map(entry).join(", ")}`;
-	const unchangedSettings = saved[JOURNAL_FLEET_SETTING] !== undefined;
-	if (missing.length === 0 && unchangedSettings)
+	const inspect = async () => {
+		const saved = await settings.read();
+		const layout: JournalFleetLayout =
+			saved[JOURNAL_FLEET_SETTING] !== undefined
+				? {
+						members: parseEntries(saved[JOURNAL_FLEET_SETTING]),
+						witnesses: parseEntries(saved[JOURNAL_WITNESS_SETTING]),
+					}
+				: journalFleetLayout(input.provisioners);
+		const all = [...layout.members, ...layout.witnesses];
+		for (const member of all)
+			if (CD_JOURNAL_MEMBER_PLANS[member.plan] === undefined)
+				throw new Error(
+					`fleet member ${member.id} names plan ${member.plan}, which no provisioner here serves`,
+				);
+		const missing: JournalFleetMember[] = [];
+		for (const member of all)
+			if (!(await holds(store, journalMemberUrlEntry(member.id))))
+				missing.push(member);
+		return {
+			saved,
+			layout,
+			missing,
+			roster: `${layout.members.map(entry).join(", ")}; witness ${layout.witnesses.map(entry).join(", ")}`,
+			unchangedSettings: saved[JOURNAL_FLEET_SETTING] !== undefined,
+		};
+	};
+	const initial = await inspect();
+	if (initial.missing.length === 0 && initial.unchangedSettings)
 		return {
 			id: "cd-journal",
 			outcome: "unchanged",
-			detail: `fleet ${roster}; connection strings in ${store.id}`,
+			detail: `fleet ${initial.roster}; connection strings in ${store.id}`,
 		};
 	if (input.whatIf)
 		return {
 			id: "cd-journal",
 			outcome: "would-create",
-			detail: `would create ${missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${roster} in ${store.id}`,
+			detail: `would create ${initial.missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${initial.roster} in ${store.id}`,
 		};
-	await withStoreWriteLock(store, async () => {
-		for (const member of missing) {
-			const provisioner = input.provisioners.find(
-				(candidate) => candidate.plan === member.plan,
-			);
-			if (provisioner === undefined)
-				throw new Error(
-					`no provisioner here creates ${member.plan} databases for ${member.id}`,
+	type FleetState = Awaited<ReturnType<typeof inspect>>;
+	type FleetWrite = {
+		readonly state: FleetState;
+		readonly operations: readonly {
+			readonly member: JournalFleetMember;
+			readonly provisioner: JournalMemberProvisioner;
+		}[];
+	};
+	type FleetOutcome = {
+		readonly kind: "unchanged" | "completed";
+		readonly state: FleetState;
+	};
+	const outcome = await withPreparedStoreWriteLock<FleetWrite, FleetOutcome>(
+		store,
+		async () => {
+			const state = await inspect();
+			if (state.missing.length === 0 && state.unchangedSettings)
+				return {
+					kind: "completed",
+					result: { kind: "unchanged", state } as const,
+				} as const;
+			const operations = state.missing.map((member) => {
+				const provisioner = input.provisioners.find(
+					(candidate) => candidate.plan === member.plan,
 				);
-			const created = await provisioner.create({
-				member: member.id,
-				idempotencyKey: `hobo-cd-journal:${member.id}`,
-				store,
+				if (provisioner === undefined)
+					throw new Error(
+						`no provisioner here creates ${member.plan} databases for ${member.id}`,
+					);
+				if (
+					provisioner.requiredOwnerStoreCapability === "atomic-create" &&
+					!supportsAtomicOwnerClaim(store)
+				)
+					throw new ClaimStoreUnavailableError();
+				return { member, provisioner };
 			});
-			if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
-				throw new Error(
-					`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
-				);
-			if (created.claimUrl !== undefined)
-				await store.port.put(
-					journalMemberClaimEntry(member.id),
-					created.claimUrl,
-				);
-			await store.port.put(
-				journalMemberUrlEntry(member.id),
-				created.connectionString,
-			);
-		}
-		await settings.write({
-			...saved,
-			[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
-			[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
-		});
-	});
+			return { kind: "write", value: { state, operations } } as const;
+		},
+		async ({ state, operations }) => {
+			try {
+				for (const { member, provisioner } of operations) {
+					const created = await provisioner.create({
+						member: member.id,
+						idempotencyKey: `hobo-cd-journal:${member.id}`,
+						store,
+					});
+					if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
+						throw new Error(
+							`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
+						);
+					if (created.claimUrl !== undefined)
+						await store.port.put(
+							journalMemberClaimEntry(member.id),
+							created.claimUrl,
+						);
+					await store.port.put(
+						journalMemberUrlEntry(member.id),
+						created.connectionString,
+					);
+				}
+				await settings.write({
+					...state.saved,
+					[JOURNAL_FLEET_SETTING]: state.layout.members.map(entry).join(","),
+					[JOURNAL_WITNESS_SETTING]: state.layout.witnesses
+						.map(entry)
+						.join(","),
+				});
+				return { kind: "completed", state } as const;
+			} catch {
+				throw new OwnerStoreOperationUncertainError();
+			}
+		},
+	);
+	const { missing, roster } = outcome.state;
+	if (outcome.kind === "unchanged")
+		return {
+			id: "cd-journal",
+			outcome: "unchanged",
+			detail: `fleet ${roster}; connection strings in ${store.id}`,
+		};
 	const claims =
 		missing.length > 0
 			? ` Claim each new database to keep it (an unclaimed one expires): the links are in ${store.id} under ${missing.map((member) => journalMemberClaimEntry(member.id)).join(", ")}.`

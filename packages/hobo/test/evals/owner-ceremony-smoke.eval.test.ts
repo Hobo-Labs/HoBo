@@ -45,6 +45,8 @@ const message = z.record(z.string(), z.json());
 type Message = z.infer<typeof message>;
 
 function startServer(env: NodeJS.ProcessEnv) {
+	const config = env.XDG_CONFIG_HOME;
+	if (!config) throw new Error("A synthetic config directory is required.");
 	const launcher = z
 		.object({
 			mcpServers: z.object({
@@ -57,6 +59,7 @@ function startServer(env: NodeJS.ProcessEnv) {
 		cwd: path.join(REPO, "packages/hobo"),
 		env: {
 			...env,
+			XDG_STATE_HOME: path.join(config, "state"),
 			CLAUDE_CODE_REMOTE: "",
 			CODESPACES: "",
 			GITPOD_WORKSPACE_ID: "",
@@ -73,10 +76,12 @@ function startServer(env: NodeJS.ProcessEnv) {
 	const wire: WireMessage[] = [];
 	const waiters: (() => void)[] = [];
 	let buffer = "";
-	let stderr = "";
-	child.stderr.on("data", (c: Buffer) => {
-		stderr += c.toString();
+	let exited = false;
+	child.on("exit", () => {
+		exited = true;
+		for (const wake of waiters.splice(0)) wake();
 	});
+	child.stderr.resume();
 	child.stdout.on("data", (chunk: Buffer) => {
 		buffer += chunk.toString();
 		let nl = buffer.indexOf("\n");
@@ -96,8 +101,32 @@ function startServer(env: NodeJS.ProcessEnv) {
 			const at = inbox.findIndex(match);
 			const [found] = at === -1 ? [] : inbox.splice(at, 1);
 			if (found !== undefined) return found;
+			if (exited) throw new Error("The synthetic MCP server exited early.");
 			await new Promise<void>((resolve) => waiters.push(resolve));
 		}
+	};
+	const expectEvent = async (mine: number, match: (m: Message) => boolean) => {
+		const event = await next(
+			(m) => match(m) || (m.id === mine && m.method === undefined),
+		);
+		if (event.id !== mine || event.method !== undefined) return event;
+		const response = z
+			.object({
+				result: z.object({ content: z.array(z.object({ text: z.string() })) }),
+			})
+			.safeParse(event);
+		let code = "unrecognized";
+		if (response.success) {
+			try {
+				const envelope = z
+					.object({ code: z.string().regex(/^(?:HOBO|MCP)_[A-Z0-9_]+$/u) })
+					.safeParse(
+						JSON.parse(response.data.result.content[0]?.text ?? "null"),
+					);
+				if (envelope.success) code = envelope.data.code;
+			} catch {}
+		}
+		throw new Error(`The synthetic owner step returned early: ${code}.`);
 	};
 	let id = 0;
 	const send = (m: Message) => {
@@ -114,10 +143,10 @@ function startServer(env: NodeJS.ProcessEnv) {
 		next((m) => m.id === mine && m.method === undefined);
 	return {
 		next,
+		expectEvent,
 		send,
 		call,
 		answer,
-		stderr: () => stderr,
 		wire,
 		tool: (name: string, args: Message) =>
 			call("tools/call", { name, arguments: args }),
@@ -165,13 +194,6 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			NODE_EXTRA_CA_CERTS: world.caBundle,
 		});
 		const trail: string[] = [];
-		// Each step as it happens: a stalled step is visible, not lost.
-		const push = trail.push.bind(trail);
-		trail.push = (...items: string[]) => {
-			for (const item of items)
-				process.stderr.write(`SMOKE ${item.slice(0, 600)}\n`);
-			return push(...items);
-		};
 		try {
 			await server.answer(
 				server.call("initialize", {
@@ -190,7 +212,8 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				}),
 			});
 			// 1. The sign-in form: Infisical's link, then the paste field.
-			const signInForm = await server.next(
+			const signInForm = await server.expectEvent(
+				run,
 				(m) => m.method === "elicitation/create",
 			);
 			const signIn = formParams.parse(signInForm.params);
@@ -221,7 +244,8 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			});
 			// 2. The run provisions through Infisical's API, opens the store and
 			// starts Vercel's device grant: its link and code in the next form.
-			const vercelForm = await server.next(
+			const vercelForm = await server.expectEvent(
+				run,
 				(m) => m.method === "elicitation/create",
 			);
 			const approve = formParams.parse(vercelForm.params);
@@ -279,11 +303,12 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			).toBe(true);
 		} finally {
 			process.stdout.write(
-				`\nSMOKE TRAIL\n${trail.join("\n")}\nREQUESTS ${world.requests.join(" | ")}\nBLOCKED ${world.blocked.join(", ")}\nSTDERR ${server.stderr().slice(-1500)}\n`,
+				`SMOKE steps=${trail.length} requests=${world.requests.length} blocked=${world.blocked.length}\n`,
 			);
 			server.stop();
 			await world.close();
 			await api.close();
+			rmSync(config, { recursive: true, force: true });
 		}
 	}, 120_000);
 
@@ -326,7 +351,10 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				}),
 			);
 			const run = server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO });
-			const signIn = await server.next((m) => m.method === "elicitation/create");
+			const signIn = await server.expectEvent(
+				run,
+				(m) => m.method === "elicitation/create",
+			);
 			const jwt = api.signIn();
 			const copied = copiedSession(jwt);
 			server.send({
@@ -334,7 +362,8 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				id: signIn.id ?? null,
 				result: { action: "accept", content: { value: copied } },
 			});
-			const approval = await server.next(
+			const approval = await server.expectEvent(
+				run,
 				(m) => m.method === "elicitation/create",
 			);
 			const form = z
@@ -353,8 +382,21 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			const response = JSON.stringify(await server.answer(run));
 			expect(response).toContain("HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE");
 			expect(response).toContain("atomic-claim-store-required");
+			const retryId = server.tool("cd", {
+				args: ["up", "--hand-off"],
+				cwd: REPO,
+			});
+			const retryEvent = await server.next(
+				(m) =>
+					m.method === "elicitation/create" ||
+					(m.id === retryId && m.method === undefined),
+			);
+			expect(retryEvent.method).toBeUndefined();
+			const retry = JSON.stringify(retryEvent);
+			expect(retry).toContain("HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE");
 			for (const privateValue of [copied, jwt, "proj-1"])
-				expect(response).not.toContain(privateValue);
+				for (const result of [response, retry])
+					expect(result).not.toContain(privateValue);
 			expect(world.blocked).toEqual([]);
 			expect(world.requests).not.toContainEqual(
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
@@ -401,9 +443,13 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				}),
 			);
 			const run = server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO });
-			const form = await server.next((m) => m.method === "elicitation/create");
+			const form = await server.expectEvent(
+				run,
+				(m) => m.method === "elicitation/create",
+			);
 			// Never answered: withdrawn, and the call ends.
-			await server.next(
+			await server.expectEvent(
+				run,
 				(m) =>
 					m.method === "notifications/cancelled" &&
 					JSON.stringify(m.params).includes(String(form.id)),
@@ -421,6 +467,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			server.stop();
 			await world.close();
 			await api.close();
+			rmSync(config, { recursive: true, force: true });
 		}
 	}, 120_000);
 
@@ -455,7 +502,8 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				family: "cd",
 				cwd: project,
 			});
-			const picker = await server.next(
+			const picker = await server.expectEvent(
+				choice,
 				(m) => m.method === "elicitation/create",
 			);
 			server.send({
@@ -463,7 +511,8 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				id: picker.id ?? null,
 				result: { action: "accept", content: { store: "infisical" } },
 			});
-			const settings = await server.next(
+			const settings = await server.expectEvent(
+				choice,
 				(m) => m.method === "elicitation/create",
 			);
 			server.send({
@@ -482,7 +531,8 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				args: ["up", "--hand-off"],
 				cwd: project,
 			});
-			const signIn = await server.next(
+			const signIn = await server.expectEvent(
+				retry,
 				(m) => m.method === "elicitation/create",
 			);
 			server.send({
@@ -498,6 +548,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			server.stop();
 			await world.close();
 			await api.close();
+			rmSync(config, { recursive: true, force: true });
 		}
 	}, 120_000);
 
@@ -550,6 +601,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			server.stop();
 			await world.close();
 			await api.close();
+			rmSync(config, { recursive: true, force: true });
 		}
 	}, 120_000);
 
