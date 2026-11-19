@@ -543,7 +543,6 @@ export function createWorkflowEngine(
 				if (scheduled !== undefined && scheduled !== name) {
 					rejectStepName();
 				}
-				unconsumedScheduledSteps.delete(index);
 				const recorded = stepRecordedAtIndex(index);
 				if (recorded.completed && recorded.completed.name !== name) {
 					rejectStepName();
@@ -558,6 +557,7 @@ export function createWorkflowEngine(
 						snapshotJournalData(completedEvent.data),
 					);
 					unconsumedOutcomes.delete(index);
+					unconsumedScheduledSteps.delete(index);
 					return result;
 				}
 				const failedEvent = failed[0];
@@ -566,6 +566,7 @@ export function createWorkflowEngine(
 						snapshotJournalData(failedEvent.data),
 					);
 					unconsumedOutcomes.delete(index);
+					unconsumedScheduledSteps.delete(index);
 					throw new WorkflowFailure(stepFailed.message, {
 						step: stepFailed.name,
 					});
@@ -574,6 +575,7 @@ export function createWorkflowEngine(
 					await appendEvent("run.StepScheduled", { name, index });
 					scheduledSteps.set(index, name);
 				}
+				unconsumedScheduledSteps.delete(index);
 				assertReplayConsistent();
 				try {
 					const value = await runWithRetries(name, fn, opts ?? {});
@@ -610,7 +612,6 @@ export function createWorkflowEngine(
 					unconsumedScheduledSleeps.delete(index);
 					return;
 				}
-				unconsumedScheduledSleeps.delete(index);
 				if (
 					!Number.isSafeInteger(normalizedDurationMs) ||
 					normalizedDurationMs < 0
@@ -636,6 +637,7 @@ export function createWorkflowEngine(
 					recorded.label = sleepOptions.label;
 				}
 				sleepFacts.set(index, recorded);
+				unconsumedScheduledSleeps.delete(index);
 			},
 			async emit(type, data) {
 				assertReplayConsistent();
