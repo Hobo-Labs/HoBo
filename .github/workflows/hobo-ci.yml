@@ -912,6 +912,10 @@ jobs:
     if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     permissions:
       contents: read
     steps:
@@ -921,6 +925,12 @@ jobs:
           clean: false
           persist-credentials: false
       - uses: $/.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: $/.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
         with:
           distribution: temurin
@@ -948,7 +958,9 @@ jobs:
           --output-logs=new-only
       - name: Check state machines
         timeout-minutes: 20
-        run: pnpm run verify:state-machines
+        env:
+          FORMAL_SHARD: ${{ matrix.shard }}
+        run: pnpm run verify:state-machines -- "--shard=${FORMAL_SHARD}/4"
 
   pr-gate:
     name: PR impact gate
