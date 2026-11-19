@@ -8,6 +8,12 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+export function requireWorkflowRunId(runId: string): string {
+	if (Object(runId) === runId || !isJsonString(runId) || runId.length === 0)
+		throw new TypeError("workflow runId must be a non-empty string");
+	return runId;
+}
+
 function isReproducibleJsonValue<T>(value: T, seen: Set<object>): boolean {
 	if (value === null) return true;
 	const object: object = Object(value);
@@ -95,4 +101,19 @@ export function captureWorkflowResult<T>(result: T, step?: string): T {
 			step === undefined ? {} : { step },
 		);
 	}
+}
+
+export function readJournaledWorkflowResult(
+	result: JsonValue | undefined,
+): JsonValue | undefined {
+	if (result === undefined) return undefined;
+	return captureWorkflowValue(result);
+}
+
+export function terminalCompletedHandleResult<R>(
+	journaled: JsonValue | undefined,
+): R | undefined {
+	if (journaled === undefined) return undefined;
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: journaled payloads are re-validated through readJournaledWorkflowResult.
+	return journaled as R;
 }
