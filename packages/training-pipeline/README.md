@@ -25,6 +25,18 @@ and every span handle exposes the `traceparent` to hand downstream.
 
 Finished spans leave through the `SpanExporterPort`;
 `createInMemorySpanExporter` collects them for tests and assembly.
+`createOtlpSpanExporter({ endpoint })` sends them as OTLP/HTTP JSON to the
+specified trace endpoint. The exporter buffers spans in memory until `flush()`
+or `shutdown()` is called. Configure `maxBatchSize`, `maxBufferedSpans`,
+`timeoutMs`, resource attributes, and request headers when needed. A full
+buffer makes span completion fail so the caller can flush and retry it.
+`shutdown()` stops accepting spans and flushes; after a delivery failure,
+call `flush()` to retry the retained batch. Delivery can occur more than once
+if the collector accepts a request whose response is lost. If the collector
+reports partial success, `flush()` throws `OtlpPartialSuccessError` with its
+rejected count; the batch is not resent because the response does not identify
+which spans were accepted. Captured input, output, and other span attributes
+are included in the export.
 `assembleTrajectory` (or `capture.toTrajectory`) lowers the span records to
 the generated `Trajectory` wire shape (`@hobo/core`
 `data-models/training_engine.proto`) and re-ingests them through core's
@@ -33,11 +45,6 @@ the generated `Trajectory` wire shape (`@hobo/core`
 is a closed loop. `trajectoryCapturedEvent` wraps the result as a
 `training.TrajectoryCaptured` fact riding the same `training.*` family as
 `promotionEventNames`, with the trajectory's traceparent on `meta`.
-
-Honest scope: this package emits span *records* through a port — no OTel SDK
-dependency and no bundled network exporter. A real OTLP/OpenInference exporter
-(Phoenix, Tempo, Datadog, ...) is an adapter someone wires to
-`SpanExporterPort` later.
 
 ## Honest scope
 

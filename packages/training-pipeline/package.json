@@ -24,14 +24,14 @@
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"zod": "^4.1.13"
 	},
 	"devDependencies": {
 		"@pact-foundation/pact": "17.1.4",
 		"@types/node": "^22.15.3",
 		"tsx": "^4.20.3",
 		"typescript": "^6.0.3",
-		"vitest": "^4.1.9",
-		"zod": "^4.1.13"
+		"vitest": "^4.1.9"
 	}
 }

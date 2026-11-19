@@ -184,6 +184,7 @@
   "packages/testing/src/types.ts": ["DeployedGraph","FidelityReport","ResourceHandle"],
   "packages/trails/src/migration-executor.ts": ["CompatGateEvidence"],
   "packages/trails/src/upgrade-preflight.ts": ["CompatibilityInputs","RollbackEvidence"],
+  "packages/training-pipeline/src/trajectory/capture.ts": ["CapturedSpan","SpanStatus"],
   "packages/training/src/optimizer.ts": ["OptimizerConfig"],
   "packages/training/src/trace-sink.ts": ["OptimizerTraceSpan"],
   "packages/trust/src/evaluate.ts": ["TrustReason","TrustVerdict"],
