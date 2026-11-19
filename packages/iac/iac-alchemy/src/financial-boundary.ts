@@ -205,7 +205,10 @@ const entitlement: Check = (value) =>
 			unit: named,
 			units: nonnegative,
 			kind: (item) =>
-				item === "" || item === "allowance" || item === "credit" || item === "commitment",
+				item === "" ||
+				item === "allowance" ||
+				item === "credit" ||
+				item === "commitment",
 		},
 		["bucketId", "unit", "units"],
 	);
@@ -435,11 +438,8 @@ export function validFinancialMetadata(
 				sumAndUnique(accountRows, "providerAccountId", "liabilityMicros") !==
 					bound) ||
 			!isArray(entitlementRows) ||
-			sumAndUnique(
-				entitlementRows,
-				["kind", "bucketId", "unit"],
-				"units",
-			) === undefined ||
+			sumAndUnique(entitlementRows, ["kind", "bucketId", "unit"], "units") ===
+				undefined ||
 			typeof observedAt !== "string" ||
 			typeof validUntil !== "string" ||
 			!Number.isFinite(Date.parse(observedAt)) ||
