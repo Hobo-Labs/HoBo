@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
 	ProviderHandlerStore,
 	parseInterfaceId,
@@ -82,6 +84,18 @@ function fastLink() {
 const soon = (ms: number) => new Date(Date.now() + ms).toISOString();
 
 describe("a deadline that expires", () => {
+	it("keeps the process alive until a hung provider reaches its deadline", () => {
+		const fixture = fileURLToPath(
+			new URL("./fixtures/deadline-process.mjs", import.meta.url),
+		);
+		const child = spawnSync(process.execPath, [fixture], {
+			encoding: "utf8",
+			timeout: 10_000,
+		});
+		expect(child.status, child.stderr).toBe(0);
+		expect(child.stdout).toBe("deadline-exceeded");
+	});
+
 	it("releases the caller with a typed error", async () => {
 		const { link, release } = blockingLink();
 		const call = link.callImport("api", KV, "get", {}, { deadline: soon(20) });

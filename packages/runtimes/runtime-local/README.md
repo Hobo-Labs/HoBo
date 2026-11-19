@@ -4,7 +4,8 @@ In-process wRPC providers receive an `AbortSignal` in their invocation context.
 When a call reaches its deadline, the signal aborts with the same
 `DeadlineExceededError` returned to the caller. Providers should observe the
 signal to stop work promptly; a provider that ignores it retains its in-flight
-slot until it settles.
+slot until it settles. A pending deadline keeps a standalone Node process alive
+until the call completes or the deadline expires.
 Nested calls inherit the parent deadline and may request an earlier deadline;
 they cannot extend it. Concurrent calls keep their deadlines isolated.
 

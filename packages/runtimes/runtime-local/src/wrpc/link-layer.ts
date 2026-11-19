@@ -67,7 +67,6 @@ function raceDeadline<T>(
 				return;
 			}
 			timer = setTimeout(schedule, Math.min(remaining, MAX_TIMER_MS));
-			if (isJsonObject(timer) && timer.unref instanceof Function) timer.unref();
 		};
 		schedule();
 		const finish = (complete: () => void) => {

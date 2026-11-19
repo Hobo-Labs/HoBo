@@ -1,9 +1,10 @@
+import assert from "node:assert/strict";
 import {
 	ProviderHandlerStore,
 	parseInterfaceId,
 	parseWireVersion,
 } from "@hobo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	AmbiguousCommitError,
 	classifyToRuntimeError,
@@ -14,7 +15,7 @@ import {
 	MembraneBackpressureError,
 	type RuntimeMembraneError,
 } from "../src/index.js";
-import { isJsonString, type JsonValue } from "../src/json.js";
+import { isJsonObject, isJsonString, type JsonValue } from "../src/json.js";
 
 const KV = parseInterfaceId("wasi:keyvalue/store@0.2.0");
 const FUTURE_DEADLINE = "2999-01-01T00:00:00.000Z";
@@ -70,7 +71,12 @@ function createLayer(
 describe("membrane failure semantics (S1-23)", () => {
 	it("a fast call under its deadline still succeeds", async () => {
 		const layer = createLayer({
-			get: ({ key }: { key: string }) => ({ value: `stored:${key}` }),
+			get: (payload) => {
+				if (!isJsonObject(payload) || !isJsonString(payload.key)) {
+					throw new Error("key required");
+				}
+				return { value: `stored:${payload.key}` };
+			},
 		});
 
 		const result = await layer.callImport(
@@ -87,15 +93,9 @@ describe("membrane failure semantics (S1-23)", () => {
 		expect(layer.events.at(-1)?.type).toBe("link.Called");
 	});
 
-	it("a slow provider past the deadline is cancelled with a typed deadline-exceeded (cancelled)", async () => {
-		const layer = createLayer({
-			// Never resolves within the budget: a real 200ms delay against an
-			// already-elapsed deadline (remaining budget 0).
-			get: async () => {
-				await new Promise((resolve) => setTimeout(resolve, 200));
-				return { value: "too-late" };
-			},
-		});
+	it("rejects an already-expired deadline without invoking the provider", async () => {
+		const get = vi.fn(async () => ({ value: "too-late" }));
+		const layer = createLayer({ get });
 
 		let caught: unknown;
 		try {
@@ -112,11 +112,10 @@ describe("membrane failure semantics (S1-23)", () => {
 			caught = error;
 		}
 
-		expect(caught).toBeInstanceOf(DeadlineExceededError);
-		// SAFETY: assertion to `caught as DeadlineExceededError` is required at this boundary.
-		expect((caught as DeadlineExceededError).kind).toBe("cancelled");
+		assert.ok(caught instanceof DeadlineExceededError);
+		expect(caught.kind).toBe("cancelled");
+		expect(get).not.toHaveBeenCalled();
 		expect(classifyToRuntimeError(caught).tag).toBe("cancelled");
-		// The failed call is not recorded as a completed link.Called.
 		expect(layer.events.some((event) => event.type === "link.Called")).toBe(
 			false,
 		);
@@ -137,7 +136,6 @@ describe("membrane failure semantics (S1-23)", () => {
 			{ maxInFlight: 1 },
 		);
 
-		// Occupy the single in-flight slot (call stays pending on the gate).
 		const first = layer.callImport("api", KV, "get", { key: "a" });
 
 		let caught: unknown;
@@ -147,11 +145,9 @@ describe("membrane failure semantics (S1-23)", () => {
 			caught = error;
 		}
 
-		expect(caught).toBeInstanceOf(MembraneBackpressureError);
-		// SAFETY: assertion to `caught as MembraneBackpressureError` is required at this boundary.
-		expect((caught as MembraneBackpressureError).kind).toBe("retryable");
-		// SAFETY: assertion to `caught as MembraneBackpressureError` is required at this boundary.
-		expect((caught as MembraneBackpressureError).retryable).toBe(true);
+		assert.ok(caught instanceof MembraneBackpressureError);
+		expect(caught.kind).toBe("retryable");
+		expect(caught.retryable).toBe(true);
 		expect(classifyToRuntimeError(caught).tag).toBe("retryable");
 
 		release?.();
@@ -160,7 +156,6 @@ describe("membrane failure semantics (S1-23)", () => {
 
 	it("a mid-call crash with unknown commit surfaces an explicit ambiguous-commit", async () => {
 		const layer = createLayer({
-			// The provider severs mid-call after possibly applying the effect.
 			put: () => {
 				throw new AmbiguousCommitError({
 					providerId: "local-kv",
@@ -178,23 +173,27 @@ describe("membrane failure semantics (S1-23)", () => {
 			caught = error;
 		}
 
-		expect(caught).toBeInstanceOf(AmbiguousCommitError);
-		// SAFETY: assertion to `caught as AmbiguousCommitError` is required at this boundary.
-		expect((caught as AmbiguousCommitError).kind).toBe("ambiguous-commit");
-		// SAFETY: assertion to `caught as AmbiguousCommitError` is required at this boundary.
-		expect((caught as AmbiguousCommitError).ambiguousCommit).toBe(true);
+		assert.ok(caught instanceof AmbiguousCommitError);
+		expect(caught.kind).toBe("ambiguous-commit");
+		expect(caught.ambiguousCommit).toBe(true);
 		expect(classifyToRuntimeError(caught).tag).toBe("ambiguous-commit");
 	});
 
 	it("classifies every failure onto a WIT runtime-error kind, failing closed to fatal", () => {
-		expect(classifyToRuntimeError({ code: "version-incompatible" }).tag).toBe(
-			"version-incompatible",
-		);
-		expect(classifyToRuntimeError({ status: 503 }).tag).toBe("retryable");
-		expect(classifyToRuntimeError({ ambiguousCommit: true }).tag).toBe(
-			"ambiguous-commit",
-		);
-		// An unrecognized error is fatal — never optimistically retried.
+		expect(
+			classifyToRuntimeError(
+				Object.assign(new Error("wire"), { code: "version-incompatible" }),
+			).tag,
+		).toBe("version-incompatible");
+		expect(
+			classifyToRuntimeError(Object.assign(new Error("busy"), { status: 503 }))
+				.tag,
+		).toBe("retryable");
+		expect(
+			classifyToRuntimeError(
+				Object.assign(new Error("unknown result"), { ambiguousCommit: true }),
+			).tag,
+		).toBe("ambiguous-commit");
 		expect(classifyToRuntimeError(new Error("boom")).tag).toBe("fatal");
 	});
 
