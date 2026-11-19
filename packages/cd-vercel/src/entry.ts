@@ -7,8 +7,8 @@ import type { CdHost } from "@hobo/hobo/cd-platform";
 import { composeVercelCdHost, memoizedCdHost } from "./compose.js";
 import {
 	CdStoreBindingError,
-	cdStoreCoordinates,
 	openCdStore,
+	readCdStoreCoordinates,
 } from "./store.js";
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -215,7 +215,7 @@ export const loadCdHost = memoizedCdHost(() =>
 	composeVercelCdHost({
 		env: process.env,
 		cwd: process.cwd(),
-		open: () => openCdStore(cdStoreCoordinates(process.env)),
+		open: () => openCdStore(readCdStoreCoordinates()),
 	}),
 );
 

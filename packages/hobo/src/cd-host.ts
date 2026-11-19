@@ -86,6 +86,15 @@ function isString(value: unknown): value is string {
 	return typeof value === "string";
 }
 
+function passSucceededAtMs(data: unknown): number | undefined {
+	if (data === null || typeof data !== "object") return undefined;
+	for (const [key, value] of Object.entries(data)) {
+		if (key !== "atMs") continue;
+		return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	}
+	return undefined;
+}
+
 function refusalCodeOf(error: unknown): string {
 	if (
 		error instanceof Error &&
@@ -207,14 +216,9 @@ export async function composeCdHost(
 			let atMs: number | undefined;
 			for await (const event of runtime.store.read(HOST_PASS_STREAM, fromSeq)) {
 				if (event.type !== HOST_PASS_SUCCEEDED) continue;
-				// SAFETY: host.PassSucceeded bodies are written here with a numeric atMs field only.
-				const record = event.data as { atMs?: unknown } | undefined;
-				if (
-					record !== undefined &&
-					typeof record.atMs === "number" &&
-					Number.isFinite(record.atMs)
-				) {
-					atMs = record.atMs;
+				const recorded = passSucceededAtMs(event.data);
+				if (recorded !== undefined) {
+					atMs = recorded;
 					continue;
 				}
 				const parsed = Date.parse(event.ts);
