@@ -39,6 +39,11 @@ const result = await orders.execute(
 
 `result.seq` is the client's reads-your-writes watermark.
 
+An aggregate command may stage durable effects with `emitter.stageEffect`.
+The event store must support atomic commits; otherwise the command raises
+`DurableEffectUnavailableError` before its events are appended. Successful
+commands return the store's effect receipts in `result.effects`.
+
 When an aggregate fold rejects an event, `execute` records an
 `aggregate.QuarantineRecorded` fact before running the command, or immediately
 after appending an event emitted by that command. The fact names the original

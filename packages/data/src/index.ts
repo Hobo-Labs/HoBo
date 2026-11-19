@@ -33,6 +33,7 @@ export {
 } from "./cross-camp-projection.js";
 export {
 	AggregateStaleFenceError,
+	DurableEffectUnavailableError,
 	type ErrorSignal,
 	isOptimisticConflict,
 	isStaleFenceError,

@@ -53,6 +53,14 @@ export class ProjectionWriteError extends Error {
 	}
 }
 
+export class DurableEffectUnavailableError extends Error {
+	readonly code = "DURABLE_EFFECT_UNAVAILABLE" as const;
+	constructor() {
+		super("aggregate effects require a durable event store");
+		this.name = "DurableEffectUnavailableError";
+	}
+}
+
 export class UnpersistedQuarantineError extends Error {
 	readonly code = "UNPERSISTED_QUARANTINE" as const;
 	constructor(
