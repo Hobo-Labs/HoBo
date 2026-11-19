@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { createCrossCampProjection, defineProjection } from "@hobo/data";
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 import { expect, it } from "vitest";
-import { projectionDiagnostics } from "../src/projection-diagnostics.js";
+import {
+	buildProjectionDoctorSection,
+	projectionDiagnostics,
+} from "../src/projection-diagnostics.js";
 
 it("reports replica consistency and missing lag signals from the local journal", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "hobo-projection-doctor-"));
@@ -33,12 +36,14 @@ it("reports replica consistency and missing lag signals from the local journal",
 			nowMs: () => 1000,
 		});
 		await runtime.replicate();
-		const diagnostic = await projectionDiagnostics(
+		const progress: string[] = [];
+		const section = await buildProjectionDoctorSection(
 			replica,
 			"workspace",
+			(message) => progress.push(message),
 			() => 1200,
 		);
-		expect(diagnostic).toMatchObject({
+		expect(section.diagnostic).toMatchObject({
 			available: true,
 			json: {
 				replicas: [
@@ -50,6 +55,17 @@ it("reports replica consistency and missing lag signals from the local journal",
 				],
 			},
 		});
+		expect(progress).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining("tickets owner/session"),
+				expect.stringContaining("tickets replica/bounded-staleness"),
+				expect.stringContaining("tickets replica/eventual"),
+				expect.stringContaining("without a lag signal"),
+			]),
+		);
+		expect(section.remediation).toContain(
+			"Inspect replica replica:tickets and its lag reporting.",
+		);
 		expect(await projectionDiagnostics(undefined, "workspace")).toMatchObject({
 			available: false,
 		});
