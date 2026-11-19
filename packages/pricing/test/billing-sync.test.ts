@@ -268,6 +268,21 @@ it("rejects invalid dates, quotes, and incomplete duplicate rows", async () => {
 	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
 });
 
+it.each([
+	{ chargePeriodStart: "2025-12-31T23:59:59Z" },
+	{ chargePeriodEnd: "2026-02-01T00:00:00Z" },
+	{
+		chargePeriodStart: "2025-12-31T23:59:59Z",
+		chargePeriodEnd: "2026-02-01T00:00:00Z",
+	},
+])("rejects a provider charge outside the requested period", async (period) => {
+	const [row] = fixture.completeRows;
+	if (!row) throw new Error("fixture requires a charge");
+	await expect(
+		sync({ port: fixtureProviderPort([{ ...row, ...period }]) }),
+	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
+});
+
 it("reconciles retries against all previously recorded charges", async () => {
 	const first = await sync();
 	if ("code" in first) throw new Error(first.message);
