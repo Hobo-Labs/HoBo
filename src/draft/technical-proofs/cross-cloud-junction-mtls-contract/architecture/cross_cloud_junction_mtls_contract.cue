@@ -1,3 +1,4 @@
+// CUE constraints for every protobuf type in this package's schema.
 
 package architecture_evidence
 

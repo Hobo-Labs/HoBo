@@ -25,6 +25,10 @@ function resolveEstimateUsd(input: BillingAuthorizationInput): number {
 	return input.quoteIncrementalUsd ?? input.spendEstimateUsd ?? Number.NaN;
 }
 
+/**
+ * Authorizes placement spend using a pricing quote when present, otherwise the
+ * legacy spend estimate path.
+ */
 export function authorizeBillingSpend(
 	input: BillingAuthorizationInput,
 ): BillingAuthorizationResult {

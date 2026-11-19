@@ -184,6 +184,7 @@ describe("mapClaimsToPrincipal", () => {
 			mapClaimsToPrincipal(claims({ groups: ["engineering"] }));
 			throw new Error("expected a refusal");
 		} catch (error) {
+			// SAFETY: assertion to `error as BetterAuthClaimsError` is required at this boundary.
 			const refusal = error as BetterAuthClaimsError;
 			expect(refusal.name).toBe("BetterAuthClaimsError");
 			for (const key of BETTER_AUTH_ACCEPTED_CLAIM_KEYS) {
