@@ -1,8 +1,3 @@
-// @hobo/sdk — the operator SDK (ADR-0072 naming: this package is the
-// operator/self-host authoring surface; the WIT contract stays `hobo:sdk`).
-// Thin factories over existing engines plus frozen, parse-validated
-// greenfield declarations.
-
 export {
 	type ChaosDeclaration,
 	type ChaosInjection,
@@ -69,7 +64,6 @@ export {
 } from "./schema.js";
 export { type WaiverDeclaration, type WaiverSpec, waiver } from "./waiver.js";
 
-// public-contract: package id consumers assert against.
 export const HOBO_SDK_PACKAGE = "@hobo/sdk";
 
 export type * from "./provider-runner-execution.js";
