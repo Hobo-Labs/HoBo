@@ -226,7 +226,8 @@ server's deterministic clock through the executor's `wait` option. A harness
 that removes time control still reports `incomplete` and cannot substantiate
 TTL behavior.
 
-Substantiated: `ttl`, `atomicIncrement`, `sortedSets`, `restTransport`,
+Substantiated by the offline adapter tests: `ttl`, `atomicIncrement`,
+`atomicCompareAndSet`, `sortedSets`, `restTransport`,
 `redisCommandSemantics`. Not substantiated and not advertised: `maxValueBytes`.
 
 ## Ephemeral state over REST
