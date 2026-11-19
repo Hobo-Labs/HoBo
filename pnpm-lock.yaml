@@ -4901,8 +4901,6 @@ importers:
 
   src/draft/technical-proofs/reactor-skeleton-contract: {}
 
-  src/draft/technical-proofs/reads-your-writes-contract: {}
-
   src/draft/technical-proofs/region-objective-ranking-contract: {}
 
   src/draft/technical-proofs/registry-artifact-descriptor-contract: {}
