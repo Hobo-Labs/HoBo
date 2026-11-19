@@ -111,4 +111,36 @@ describe("composeCdHost", () => {
 			expect(tick.steps.length).toBeGreaterThan(0);
 		});
 	});
+
+	it("refuses pass without ticking when the conductor did not compose", async () => {
+		await withRuntime(async (runtime) => {
+			const refusing = {
+				...runtime,
+				conductor: () => {
+					throw new Error("conductor refused");
+				},
+			};
+			const host = await composeCdHost({
+				runtime: refusing,
+				holderId: "test-refused",
+				readiness: "composed",
+			});
+			expect(host.refusals).toContain("conductor refused");
+			await expect(host.pass()).rejects.toThrow("conductor refused");
+		});
+	});
+
+	it("runs only one pass at a time", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-flight",
+				readiness: "composed",
+			});
+			const first = host.pass();
+			const second = host.pass();
+			expect(first).toBe(second);
+			await first;
+		});
+	});
 });

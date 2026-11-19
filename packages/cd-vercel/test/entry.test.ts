@@ -9,6 +9,7 @@ import {
 	CdStoreBindingError,
 	composeVercelCdHost,
 	createCdHttpEntry,
+	incomingRequestPath,
 	journalFleetEnvProvisioned,
 	memoizedCdHost,
 	parseCdStoreCoordinates,
@@ -35,6 +36,16 @@ const failing = (code: string) => async (): Promise<CdHost> => {
 };
 
 describe("the CD function's HTTP entry", () => {
+	it("uses the original URL path when Vercel rewrites to the function", () => {
+		const path = incomingRequestPath({
+			url: "/api/cd",
+			headers: {
+				"x-vercel-original-url": "https://hobo-cd.vercel.app/v1/cd/freight?x=1",
+			},
+		} as never);
+		expect(path).toBe("/v1/cd/freight?x=1");
+	});
+
 	it("answers /healthz with the build's commit without composing CD", async () => {
 		let composed = 0;
 		const origin = await serve(

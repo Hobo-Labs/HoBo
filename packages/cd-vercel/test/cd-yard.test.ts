@@ -29,6 +29,10 @@ const PlatformConfig = z.object({
 		z.string(),
 		z.object({ schedule: z.string(), topic: z.string() }),
 	),
+	rewrites: z
+		.array(z.object({ source: z.string(), destination: z.string() }))
+		.optional(),
+	routes: z.array(z.unknown()).optional(),
 });
 const platform = PlatformConfig.parse(JSON.parse(text("vercel.json")));
 
@@ -73,6 +77,16 @@ describe("HoBo.CD on Vercel: Yard, platform and Bindle agree", () => {
 		expect(profiles).toContain(capability.api.http);
 		expect(profiles).toContain(capability.service.scheduled);
 		expect(profiles).not.toContain(capability.data.postgres);
+	});
+
+	it("rewrites public probes and the CD mount to the HTTP entry", () => {
+		expect(platform.routes).toBeUndefined();
+		expect(platform.rewrites).toEqual([
+			{ source: "/healthz", destination: "/api/cd" },
+			{ source: "/readyz", destination: "/api/cd" },
+			{ source: "/v1/cd", destination: "/api/cd" },
+			{ source: "/v1/cd/:path*", destination: "/api/cd" },
+		]);
 	});
 
 	it("keeps the declaration out of what the functions import", () => {

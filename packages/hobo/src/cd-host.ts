@@ -109,13 +109,25 @@ export async function composeCdHost(
 					simulated: config.simulate,
 					refusals,
 				});
-			if (!path.startsWith(api.pathPrefix))
-				return cdJson(404, { ok: false, code: "not-found" });
+			const prefix = api.pathPrefix;
+			const onMount =
+				path === prefix ||
+				path === prefix.replace(/\/$/u, "") ||
+				path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
+			if (!onMount) return cdJson(404, { ok: false, code: "not-found" });
 			return api.handle(request, signal);
 		},
-		async pass() {
-			const reconciled = [];
+		pass: singleFlight(async () => {
+			const reconciled: {
+				campId: CampId;
+				ok: boolean;
+				detail: string;
+			}[] = [];
 			const [reconciler] = reconcilers;
+			if (managed.length > 0 && reconciler === undefined) {
+				const detail = refusals[0] ?? "cd conductor did not compose";
+				throw new Error(detail);
+			}
 			if (reconciler !== undefined)
 				for (const campId of managed) {
 					try {
@@ -138,6 +150,19 @@ export async function composeCdHost(
 					}
 				}
 			return { tick: await service.tick(), reconciled };
-		},
+		}),
 	});
+}
+
+function singleFlight<T>(run: () => Promise<T>): () => Promise<T> {
+	let inFlight: Promise<T> | undefined;
+	return () => {
+		if (inFlight) return inFlight;
+		const current = run();
+		const tracked = current.finally(() => {
+			if (inFlight === tracked) inFlight = undefined;
+		});
+		inFlight = tracked;
+		return tracked;
+	};
 }
