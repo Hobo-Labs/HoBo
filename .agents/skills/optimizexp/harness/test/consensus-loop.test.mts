@@ -325,6 +325,21 @@ describe("designer consensus CLI", () => {
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
+	it("relevance mode accepts a justified nonvisual technical contract", () => {
+		const root = seedRepo();
+		try {
+			const file = path.join(root, "relevance.json");
+			writeFileSync(file, JSON.stringify({
+				changedPaths: ["packages/testing/README.md", "packages/testing/data-models/test_harness.cue"],
+				exemption: { code: "no-visual-design-change", justification: "The package contract and documentation add no visual interface." },
+			}));
+			const result = run(root, ["--mode", "relevance", "--input", file]);
+			assert.equal(result.code, 0, result.output);
+			assert.equal(result.json.required, false);
+			assert.equal(result.json.exemptionAccepted, true);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
+
 	it("derives nonzero council relevance from a public boundary path", () => {
 		const root = seedRepo();
 		try {
