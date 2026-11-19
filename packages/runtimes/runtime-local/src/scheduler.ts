@@ -148,22 +148,30 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 						const record = isJsonObject(payload) ? payload : {};
 						if (
 							Object.keys(record).some(
-								(key) => !["scheduleId", "everyMs", "startAtMs"].includes(key),
+								(key) =>
+									!["scheduleId", "everyMs", "startAtMs", "jitterMs"].includes(
+										key,
+									),
 							)
 						) {
 							throw new TypeError("invalid interval schedule fields");
 						}
 						const everyMs = record.everyMs;
 						const startAtMs = record.startAtMs;
+						const jitterMs = record.jitterMs;
 						if (!isJsonNumber(everyMs)) {
 							throw new TypeError("everyMs must be a number");
 						}
 						if (startAtMs !== undefined && !isJsonNumber(startAtMs)) {
 							throw new TypeError("startAtMs must be a number");
 						}
+						if (jitterMs !== undefined && !isJsonNumber(jitterMs)) {
+							throw new TypeError("jitterMs must be a number");
+						}
 						const spec = parseIntervalCronSpec({
 							everyMs,
 							...(isJsonNumber(startAtMs) ? { startAtMs } : undefined),
+							...(isJsonNumber(jitterMs) ? { jitterMs } : undefined),
 						});
 						return scheduler.every(
 							parseScheduleId(String(record.scheduleId ?? "")),

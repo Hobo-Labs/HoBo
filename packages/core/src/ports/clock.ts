@@ -22,6 +22,7 @@ export interface TimerOptions {
 export interface IntervalCronSpec {
 	readonly everyMs: number;
 	readonly startAtMs?: number;
+	readonly jitterMs?: number;
 }
 
 export interface CronExpressionSpec {
@@ -98,6 +99,7 @@ export type ClockTraceEntry =
 			readonly scheduleId: string;
 			readonly everyMs: number;
 			readonly startAtMs: number;
+			readonly jitterMs: number;
 	  }
 	| {
 			readonly type: "cron.expression-scheduled";

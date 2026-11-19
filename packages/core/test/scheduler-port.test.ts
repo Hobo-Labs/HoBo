@@ -37,6 +37,10 @@ describe("hobo:scheduler port descriptor", () => {
 			everyMs: 500,
 			startAtMs: 0,
 		});
+		expect(parseIntervalCronSpec({ everyMs: 500, jitterMs: 25 })).toEqual({
+			everyMs: 500,
+			jitterMs: 25,
+		});
 	});
 
 	it("rejects non-positive intervals and negative starts", () => {
@@ -46,6 +50,15 @@ describe("hobo:scheduler port descriptor", () => {
 		expect(() =>
 			parseIntervalCronSpec({ everyMs: 1_000, startAtMs: -1 }),
 		).toThrow(SchedulerParseError);
+		for (const jitterMs of [-1, 1_000, Number.NaN]) {
+			expect(() => parseIntervalCronSpec({ everyMs: 1_000, jitterMs })).toThrow(
+				SchedulerParseError,
+			);
+		}
+		const extraField = { everyMs: 1_000, unexpected: true };
+		expect(() => parseIntervalCronSpec(extraField)).toThrow(
+			SchedulerParseError,
+		);
 		try {
 			parseIntervalCronSpec({ everyMs: -5 });
 			expect.unreachable();

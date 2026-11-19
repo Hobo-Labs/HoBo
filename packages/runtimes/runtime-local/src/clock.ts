@@ -4,9 +4,9 @@ import {
 	type CronSchedule,
 	type FiredTimer,
 	type IntervalCronSpec,
-	parseCronEveryMs,
 	parseDelayMs,
 	parseFireId,
+	parseIntervalCronSpec,
 	parseIsoInstant,
 	parseRunId,
 	parseScheduleId,
@@ -84,11 +84,13 @@ export function createLocalClock(store: QueueClockStore): VirtualClock {
 
 		cron(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule {
 			const id = scheduleId;
-			const everyMs = parseCronEveryMs(spec.everyMs);
+			const interval = parseIntervalCronSpec(spec);
+			const everyMs = interval.everyMs;
+			const jitterMs = interval.jitterMs ?? 0;
 			const requestedStartAtMs =
-				spec.startAtMs === undefined
+				interval.startAtMs === undefined
 					? undefined
-					: normalizeNonNegativeInteger(spec.startAtMs, "spec.startAtMs");
+					: normalizeNonNegativeInteger(interval.startAtMs, "spec.startAtMs");
 			const previous = store.cronSchedules.find(
 				(schedule) => schedule.scheduleId === id,
 			);
@@ -98,6 +100,7 @@ export function createLocalClock(store: QueueClockStore): VirtualClock {
 				}
 				if (
 					previous.everyMs !== everyMs ||
+					previous.jitterMs !== jitterMs ||
 					(requestedStartAtMs !== undefined &&
 						previous.startAtMs !== requestedStartAtMs)
 				) {
@@ -113,8 +116,16 @@ export function createLocalClock(store: QueueClockStore): VirtualClock {
 			const schedule: CronScheduleRecord = {
 				scheduleId: id,
 				everyMs,
+				jitterMs,
 				startAtMs,
-				nextFireAtMs: startAtMs,
+				nextFireAtMs: intervalFireAt(
+					store.seed,
+					id,
+					startAtMs,
+					everyMs,
+					jitterMs,
+					0,
+				),
 				occurrence: 0,
 			};
 			store.cronSchedules.push(schedule);
@@ -123,6 +134,7 @@ export function createLocalClock(store: QueueClockStore): VirtualClock {
 				scheduleId: id,
 				everyMs,
 				startAtMs,
+				jitterMs,
 			});
 
 			return publicCronSchedule(schedule, false);
@@ -240,8 +252,8 @@ function nextDueFire(store: QueueClockStore): DueFire | undefined {
 }
 
 function fireDue(store: QueueClockStore, due: DueFire): FiredTimer {
-	const order = store.nextFireSeq++;
 	if (due.kind === "sleep") {
+		const order = store.nextFireSeq++;
 		due.timer.firedAtMs = due.fireAtMs;
 		due.timer.firedOrder = order;
 		const fired = Object.freeze({
@@ -274,7 +286,15 @@ function fireDue(store: QueueClockStore, due: DueFire): FiredTimer {
 					due.schedule.timezone,
 					fireAtMs,
 				)
-			: fireAtMs + due.schedule.everyMs;
+			: intervalFireAt(
+					store.seed,
+					due.schedule.scheduleId,
+					due.schedule.startAtMs,
+					due.schedule.everyMs,
+					due.schedule.jitterMs,
+					due.schedule.occurrence + 1,
+				);
+	const order = store.nextFireSeq++;
 	due.schedule.occurrence += 1;
 	const occurrence = due.schedule.occurrence;
 	due.schedule.nextFireAtMs = nextFireAtMs;
@@ -295,6 +315,31 @@ function fireDue(store: QueueClockStore, due: DueFire): FiredTimer {
 		order,
 	});
 	return fired;
+}
+
+function intervalFireAt(
+	seed: string,
+	scheduleId: string,
+	startAtMs: number,
+	everyMs: number,
+	jitterMs: number,
+	occurrence: number,
+): number {
+	let hash = 14695981039346656037n;
+	for (const character of JSON.stringify([seed, scheduleId, occurrence])) {
+		hash = BigInt.asUintN(
+			64,
+			(hash ^ BigInt(character.codePointAt(0) ?? 0)) * 1099511628211n,
+		);
+	}
+	const offset = Number(hash % (BigInt(jitterMs) + 1n));
+	const atMs = startAtMs + occurrence * everyMs + offset;
+	if (!Number.isSafeInteger(atMs) || atMs > 8_640_000_000_000_000) {
+		throw new RangeError(
+			"schedule fire time is outside the supported clock range",
+		);
+	}
+	return atMs;
 }
 
 function publicSleepTimer(

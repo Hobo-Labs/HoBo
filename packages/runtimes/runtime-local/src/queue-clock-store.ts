@@ -47,8 +47,18 @@ interface CronScheduleRecordBase {
 
 export type CronScheduleRecord = CronScheduleRecordBase &
 	(
-		| { everyMs: number; expression?: never; timezone?: never }
-		| { everyMs?: never; expression: string; timezone: string }
+		| {
+				everyMs: number;
+				jitterMs: number;
+				expression?: never;
+				timezone?: never;
+		  }
+		| {
+				everyMs?: never;
+				jitterMs?: never;
+				expression: string;
+				timezone: string;
+		  }
 	);
 
 export interface QueueClockStore {
@@ -171,6 +181,20 @@ export function normalizeStore(
 		] as const) {
 			if (!Array.isArray(value)) {
 				throw new TypeError(`snapshot.${name} must be an array`);
+			}
+		}
+		for (const schedule of snapshot.cronSchedules) {
+			if (schedule.everyMs !== undefined) {
+				const everyMs = normalizePositiveInteger(
+					schedule.everyMs,
+					"schedule.everyMs",
+				);
+				const jitterMs = normalizeNonNegativeInteger(
+					schedule.jitterMs,
+					"schedule.jitterMs",
+				);
+				if (jitterMs >= everyMs)
+					throw new TypeError("schedule.jitterMs must be less than everyMs");
 			}
 		}
 		if (options.seed !== undefined && options.seed !== snapshot.seed) {

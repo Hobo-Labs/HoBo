@@ -29,8 +29,13 @@ the expression and time zone when no `scheduleId` is supplied, so registering
 the same expression again returns the existing schedule. Time-zone behavior
 uses the host's time-zone data.
 
+Interval schedules may set `jitterMs` to a nonnegative value smaller than the
+interval. Each occurrence is delayed by up to that amount, with a deterministic
+offset derived from the clock seed, schedule id, and occurrence. The offsets
+survive snapshots and are reproduced when the trace is replayed.
+
 Reusing a schedule id with a different interval, explicit start, expression, or
-time zone is rejected, as is a nonnumeric explicit start. When a job handler
+time zone or jitter is rejected, as is a nonnumeric explicit start. When a job handler
 throws, the scheduler still invokes the other due handlers and then throws an
 `AggregateError` containing each failed fire and its cause. The clock has
 already advanced when this happens.
