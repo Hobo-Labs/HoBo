@@ -11,7 +11,7 @@
 
 /** A third-party secret store the flow can deposit into. */
 export interface SecretStoreOption {
-	readonly id: "infisical" | "1password" | "bitwarden";
+	readonly id: "infisical" | "1password" | "bitwarden" | "yard";
 	readonly label: string;
 	/** How a workload reads it back without a stored secret. */
 	readonly signIn: "oidc" | "service-account";
