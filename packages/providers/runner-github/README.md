@@ -24,6 +24,14 @@ as a `dispatch.Decided` fact. GitHub declares its real list price
 wins while free headroom remains and loses to the cheapest remaining
 registered host once exhausted.
 
+`projectBuildCosts` applies ordered, sequenced `build.CacheHitObserved` facts
+to a ledger snapshot for one build ID. It estimates a provider's cost from the
+latest observed metered units divided by that build's estimated units and the
+provider's declared unit price. Pass the same build ID when selecting a host;
+the projection rejects observations without a positive estimate and rejects
+stale sequences. Free headroom is measured in metered units. The estimate is
+based on the last measurement and does not guarantee the cost of a later run.
+
 ## Lanes
 
 - **Replay lane (default):** the `fetch` transport is injected; tests

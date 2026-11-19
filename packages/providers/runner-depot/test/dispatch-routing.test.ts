@@ -4,9 +4,11 @@ import {
 	CATEGORY_SKUS,
 	createExecutionHostRegistry,
 	createGithubActionsClient,
+	createGithubBuildMachineProvider,
 	createGithubRunnerProvider,
 	GITHUB_RUNNER_PROVIDER_ID,
 	type GithubFetch,
+	projectBuildCosts,
 	selectExecutionHost,
 } from "@hobo/runner-github";
 import { describe, it } from "vitest";
@@ -16,12 +18,8 @@ import {
 	createDepotClient,
 	createDepotRunnerProvider,
 	DEPOT_PROVIDER_ID,
+	type CacheHitFact,
 } from "../src/index.js";
-
-// Acceptance (HOBO-720): Dispatcher routing across github/blacksmith/depot
-// picks per declared effective cost; dispatch.Decided explains each pick
-// (ADR-0071). A warm-cache Depot build can outrank a "free"-exhausted cold
-// GitHub build once the CreditLedgerView folds observed cache facts.
 
 const noopFetch: GithubFetch = async () => ({
 	ok: true,
@@ -47,7 +45,7 @@ function depotClient() {
 			ok: true,
 			status: 200,
 			text: async () => "",
-			json: async () => ({}),
+			json: async () => ({ build_id: "build-1", build_token: "test-token" }),
 		}),
 	});
 }
@@ -84,8 +82,6 @@ describe("Dispatcher routing across the M3 trio (ADR-0071)", () => {
 			runnerRegistry(),
 		);
 
-		// blacksmith and depot tie on list price (0.004) — deterministic
-		// provider-id tie-break picks blacksmith; github's 0.006 ranks last.
 		assert.equal(decision.selectedProvider, BLACKSMITH_PROVIDER_ID);
 		assert.equal(decision.dispatchDecided.data.candidates.length, 3);
 		const costs = Object.fromEntries(
@@ -98,32 +94,54 @@ describe("Dispatcher routing across the M3 trio (ADR-0071)", () => {
 		assert.equal(costs[GITHUB_RUNNER_PROVIDER_ID], 0.006);
 	});
 
-	it("a warm-cache Depot build outranks a free-exhausted cold GitHub build", () => {
+	it("routes a repeated build using the recorded Depot metering estimate", async () => {
 		const SKU = CATEGORY_SKUS["build-machine"];
+		const facts: CacheHitFact[] = [];
+		const depot = createDepotBuildMachineProvider({
+			client: depotClient(),
+			registry: "registry.depot.dev/hobo-builds",
+			executor: {
+				async execute() {
+					return {
+						digest: `sha256:${"a".repeat(64)}`,
+						cacheHitRatio: 0.9,
+						meteredUnits: 1,
+					};
+				},
+			},
+			onFact: (fact) => facts.push(fact),
+		});
 		const registry = createExecutionHostRegistry([
-			createDepotBuildMachineProvider({
-				client: depotClient(),
-				registry: "registry.depot.dev/hobo-builds",
+			depot,
+			createGithubBuildMachineProvider({
+				client: githubClient(),
+				owner: "hobo",
 			}),
 		]);
-		// The CreditLedgerView folds observed build.CacheHitObserved facts into
-		// an effective per-unit cost for depot: 0.04 list * (1 - 0.9 hit) = 0.004
-		// — cheaper than dispatching the cold build anywhere at list price.
+		await depot.execute({ buildId: "checkout", estimatedUnits: 10 });
+		const observed = facts[0];
+		assert.ok(observed);
+		const ledgerView = projectBuildCosts(
+			{
+				seq: 11,
+				balanceHash: "sha256:test",
+				balances: {
+					[DEPOT_PROVIDER_ID]: { [SKU]: { freeHeadroom: 0 } },
+					[GITHUB_RUNNER_PROVIDER_ID]: { [SKU]: { freeHeadroom: 0 } },
+				},
+			},
+			registry,
+			"checkout",
+			[{ ...observed, seq: 12 }],
+		);
 		const decision = selectExecutionHost(
 			{
 				category: "build-machine",
 				dispatchId: "d-warm",
+				buildId: "checkout",
 				objective: "maximize-credits",
 				units: 10,
-				ledgerView: {
-					seq: 12,
-					balanceHash: "sha256:test",
-					balances: {
-						[DEPOT_PROVIDER_ID]: {
-							[SKU]: { freeHeadroom: 0, marginalUnitCost: 0.004 },
-						},
-					},
-				},
+				ledgerView,
 			},
 			registry,
 		);
@@ -133,6 +151,40 @@ describe("Dispatcher routing across the M3 trio (ADR-0071)", () => {
 			decision.dispatchDecided.data.candidates[0]?.effectiveMarginalCost,
 			0.004,
 		);
+		assert.equal(decision.candidates.length, 2);
+		assert.equal(decision.candidates[1]?.providerId, GITHUB_RUNNER_PROVIDER_ID);
+		assert.equal(decision.candidates[1]?.effectiveMarginalCost, 0.006);
+		assert.equal(decision.dispatchDecided.data.ledgerInput.seq, 12);
+		assert.equal(
+			decision.dispatchDecided.data.ledgerInput.balanceHash,
+			ledgerView.balanceHash,
+		);
+	});
+
+	it("rejects invalid executor measurements without debiting the budget", async () => {
+		const budget = { remainingUnits: 10 };
+		const facts: CacheHitFact[] = [];
+		const depot = createDepotBuildMachineProvider({
+			client: depotClient(),
+			registry: "registry.depot.dev/hobo-builds",
+			creditBudget: budget,
+			executor: {
+				async execute() {
+					return {
+						digest: `sha256:${"a".repeat(64)}`,
+						cacheHitRatio: 0.5,
+						meteredUnits: -1,
+					};
+				},
+			},
+			onFact: (fact) => facts.push(fact),
+		});
+		await assert.rejects(
+			depot.execute({ buildId: "checkout", estimatedUnits: 10 }),
+			/measurements/,
+		);
+		assert.equal(budget.remainingUnits, 10);
+		assert.deepEqual(facts, []);
 	});
 
 	it("all three manifests register cleanly in one execution-host registry (conformance)", () => {

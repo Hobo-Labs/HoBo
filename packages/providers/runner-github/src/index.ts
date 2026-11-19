@@ -12,6 +12,7 @@ export {
 	type GithubRunnerCatalogEntry,
 } from "./catalog-entry.js";
 export {
+	type BuildCostObservation,
 	type CreditLedgerView,
 	createExecutionHostRegistry,
 	DISPATCH_DECIDED,
@@ -24,6 +25,7 @@ export {
 	type ExecutionHostRegistry,
 	emptyLedgerView,
 	OBJECTIVES,
+	projectBuildCosts,
 	selectExecutionHost,
 } from "./dispatch.js";
 export {
@@ -91,5 +93,4 @@ export {
 	type RunnerResult,
 } from "./types.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_RUNNER_GITHUB_PACKAGE = "@hobo/runner-github";
