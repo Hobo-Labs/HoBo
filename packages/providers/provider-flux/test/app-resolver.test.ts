@@ -387,8 +387,23 @@ describe("Flux traffic profile and coverage (I14)", () => {
 		).toEqual(FLUX_TRAFFIC_ROUTING_PROFILE);
 		expect(
 			FLUX_TRAFFIC_ROUTING_PROFILE.offerings.map((entry) => entry.id),
-		).toEqual(["inprocess.weighted"]);
-		expect(FLUX_TRAFFIC_ROUTING_ABSENT).toHaveLength(16);
+		).toEqual([]);
+		expect(FLUX_TRAFFIC_ROUTING_PROFILE.fallbacks).toEqual([
+			"inprocess.weighted",
+		]);
+		expect(FLUX_TRAFFIC_ROUTING_ABSENT).toHaveLength(17);
+		expect(
+			matchTrafficRoutingOfferings(FLUX_TRAFFIC_ROUTING_PROFILE, {
+				features: ["inprocess.weighted"],
+				negotiation: "require",
+			}).kind,
+		).toBe("none");
+		expect(
+			matchTrafficRoutingOfferings(FLUX_TRAFFIC_ROUTING_PROFILE, {
+				features: ["inprocess.weighted"],
+				negotiation: "prefer",
+			}),
+		).toMatchObject({ kind: "partial", fallbacks: ["inprocess.weighted"] });
 	});
 	it("a required weighted load balancer is refused (I6)", () => {
 		expect(

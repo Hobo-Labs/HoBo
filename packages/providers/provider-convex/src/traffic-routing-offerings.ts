@@ -1,23 +1,10 @@
-import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
+import type { TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
-/**
- * Convex TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
- *
- * A Convex deployment is one backend at one URL; code pushes replace it in
- * place. Convex offers no weighted split, canary, header/path routing or DNS
- * steering between deployments. What remains is the portable in-process
- * floor: the client chooses which deployment URL to talk to. `provider` is
- * `other`: the core union has no Convex member.
- */
 export const CONVEX_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "other",
-		offerings: Object.freeze([
-			offering("inprocess.weighted", {
-				features: ["fallback-floor", "client-selects-deployment-url"],
-			}),
-		]),
+		offerings: Object.freeze([]),
 		fallbacks: Object.freeze(["inprocess.weighted"] as const),
 	});
 
@@ -26,7 +13,6 @@ const ONE_URL =
 const NO_DNS =
 	"Convex deployment URLs are Convex-owned names with no tenant DNS steering";
 
-/** Offerings Convex cannot realize, declared absent rather than preview. */
 export const CONVEX_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 	Object.freeze(
 		(
@@ -37,6 +23,10 @@ export const CONVEX_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 				["edge.canary", ONE_URL],
 				["edge.header", ONE_URL],
 				["edge.path", ONE_URL],
+				[
+					"inprocess.weighted",
+					"The in-process router is a portable Station fallback, not a native provider offering",
+				],
 				["lb.health", ONE_URL],
 				["lb.lifecycle", ONE_URL],
 				["lb.locality", ONE_URL],
