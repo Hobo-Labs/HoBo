@@ -1181,8 +1181,8 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			throw new Error(
 				"vercel-client: project read returned an invalid identity",
 			);
-		// SAFETY: project id was narrowed by the prj_ regex above; spread fields stay JsonObject.
-		return projectData as JsonObject & { id: string };
+		const id = projectData.id;
+		return { ...projectData, id };
 	};
 	return {
 		getDeployment: readDeployment,
