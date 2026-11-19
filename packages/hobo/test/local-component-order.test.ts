@@ -417,3 +417,51 @@ it("rejects an invalid health check before starting any component", async () => 
 	).rejects.toThrow(/invalid HTTP health check/);
 	expect(process.env.HOBO_TEST_API_STARTED).toBe("no");
 });
+
+it("starts independent components while another waits for readiness", async () => {
+	const directory =
+		await project(`export default bindle("parallel-start-app", b => {
+  const slow = b.web(() => () => new Response("ready", { status: process.env.HOBO_TEST_FAST_STARTED === "yes" ? 200 : 503 }))
+    .with({ provider: "hobo", option: "health", config: { type: "http", path: "/ready", intervalMs: 10, timeoutMs: 300 } });
+  const fast = b.web(() => { process.env.HOBO_TEST_FAST_STARTED = "yes"; return () => new Response("fast"); });
+  return { slow, fast };
+});`);
+	const hoboHome = join(directory, "home");
+	initBareMetalYard({ hoboHome, componentHost: "local" });
+	vi.stubEnv("HOBO_PORTLESS", "0");
+	vi.stubEnv("HOBO_TEST_FAST_STARTED", "no");
+	const running = await serveBindleOnLocalYard({
+		projectDir: directory,
+		hoboHome,
+		port: 0,
+	});
+	try {
+		expect(process.env.HOBO_TEST_FAST_STARTED).toBe("yes");
+		expect(running.endpoints.map((endpoint) => endpoint.resourceName)).toEqual([
+			"slow",
+			"fast",
+		]);
+	} finally {
+		await running.close();
+	}
+});
+
+it("cancels other readiness waits when an independent component fails", async () => {
+	const directory =
+		await project(`export default bindle("parallel-failure-app", b => {
+  const hung = b.web(() => () => new Promise(() => {}))
+    .with({ provider: "hobo", option: "health", config: { type: "http", path: "/ready", intervalMs: 10, timeoutMs: 5000 } });
+  const failing = b.web(() => () => new Response("unhealthy", { status: 503 }))
+    .with({ provider: "hobo", option: "health", config: { type: "http", path: "/ready", intervalMs: 10, timeoutMs: 120 } });
+  return { hung, failing };
+});`);
+	const hoboHome = join(directory, "home");
+	initBareMetalYard({ hoboHome, componentHost: "local" });
+	const previousFetch = globalThis.fetch;
+	const start = performance.now();
+	await expect(
+		serveBindleOnLocalYard({ projectDir: directory, hoboHome, port: 0 }),
+	).rejects.toThrow(/failing.*health.*timed out/i);
+	expect(performance.now() - start).toBeLessThan(2_000);
+	expect(globalThis.fetch).toBe(previousFetch);
+});

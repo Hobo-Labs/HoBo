@@ -290,8 +290,19 @@ export async function serveBindleOnLocalYard(options: {
 		for (const [key, value] of Object.entries(bindleEnv)) {
 			setEnv(key, value);
 		}
+		const startupAbort = new AbortController();
+		const order = new Map(
+			entrypoints.map((entry, index) => [entry.name, index]),
+		);
+		const publicPorts = new Map<string, number>();
 		let publicIndex = 0;
 		for (const entry of entrypoints) {
+			if (!entry.external) continue;
+			publicPorts.set(entry.name, basePort === 0 ? 0 : basePort + publicIndex);
+			publicIndex += 1;
+		}
+		const startEntry = async (entry: (typeof entrypoints)[number]) => {
+			startupAbort.signal.throwIfAborted();
 			const missing = definition.edges.find(
 				(edge) =>
 					edge.from === entry.name &&
@@ -304,7 +315,7 @@ export async function serveBindleOnLocalYard(options: {
 				);
 			}
 			const handler = entry.createHandler();
-			if (handler === null) continue;
+			if (handler === null) return;
 			const wrapped = first(
 				applySessionReplayToEntrypoints(
 					[
@@ -336,10 +347,12 @@ export async function serveBindleOnLocalYard(options: {
 			let url: string;
 			let port: number | null = null;
 			if (entry.external) {
-				const requestedPort = basePort === 0 ? 0 : basePort + publicIndex;
-				publicIndex += 1;
-				const server = await listen(componentHandler, requestedPort);
+				const server = await listen(
+					componentHandler,
+					must(publicPorts.get(entry.name)),
+				);
 				servers.push(server);
+				startupAbort.signal.throwIfAborted();
 				const address = server.address();
 				if (address === null || isJsonString(address)) {
 					throw new Error(
@@ -365,7 +378,12 @@ export async function serveBindleOnLocalYard(options: {
 			});
 			const health = healthChecks.get(entry.name);
 			if (health) {
-				await waitForLocalHttpHealth(entry.name, url, health);
+				await waitForLocalHttpHealth(
+					entry.name,
+					url,
+					health,
+					startupAbort.signal,
+				);
 				emit(
 					`hobo dev: ${entry.kind}:${entry.name} passed its HTTP health check`,
 				);
@@ -373,7 +391,36 @@ export async function serveBindleOnLocalYard(options: {
 			serviceDiscovery[key] = url;
 			setEnv(key, url);
 			started.add(entry.name);
+		};
+		const tasks = new Map<string, Promise<void>>();
+		let failed = false;
+		let startupFailure: unknown;
+		for (const entry of entrypoints) {
+			const dependencies = definition.edges
+				.filter(
+					(edge) => edge.from === entry.name && candidateNames.has(edge.to),
+				)
+				.map((edge) => must(tasks.get(edge.to)));
+			const task = Promise.all(dependencies)
+				.then(() => startEntry(entry))
+				.catch((error) => {
+					const failure =
+						error instanceof Error ? error : new Error(String(error));
+					if (!failed) {
+						failed = true;
+						startupFailure = failure;
+						startupAbort.abort(failure);
+					}
+					throw failure;
+				});
+			tasks.set(entry.name, task);
 		}
+		await Promise.allSettled(tasks.values());
+		if (failed) throw startupFailure;
+		endpoints.sort(
+			(a, b) =>
+				must(order.get(a.resourceName)) - must(order.get(b.resourceName)),
+		);
 		const exposedEndpoints = endpoints.filter((entry) => entry.external);
 		if (exposedEndpoints.length === 0) {
 			throw new Error(

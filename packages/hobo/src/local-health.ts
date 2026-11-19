@@ -52,10 +52,16 @@ export function localHttpHealthCheck(
 	return { path, intervalMs, timeoutMs };
 }
 
-async function probe(url: string, timeoutMs: number): Promise<boolean> {
+async function probe(
+	url: string,
+	timeoutMs: number,
+	signal: AbortSignal,
+): Promise<boolean> {
 	const abort = new AbortController();
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let cancel = () => {};
 	try {
+		signal.throwIfAborted();
 		return await Promise.race([
 			fetch(url, { signal: abort.signal }).then(async (response) => {
 				await response.body?.cancel();
@@ -67,10 +73,20 @@ async function probe(url: string, timeoutMs: number): Promise<boolean> {
 					resolve(false);
 				}, timeoutMs);
 			}),
+			new Promise<boolean>((_resolve, reject) => {
+				cancel = () => {
+					abort.abort();
+					reject(signal.reason);
+				};
+				signal.addEventListener("abort", cancel, { once: true });
+				if (signal.aborted) cancel();
+			}),
 		]);
 	} catch {
+		signal.throwIfAborted();
 		return false;
 	} finally {
+		signal.removeEventListener("abort", cancel);
 		if (timer) clearTimeout(timer);
 		abort.abort();
 	}
@@ -80,17 +96,20 @@ export async function waitForLocalHttpHealth(
 	resourceName: string,
 	baseUrl: string,
 	check: LocalHttpHealthCheck,
+	signal: AbortSignal,
 ): Promise<void> {
 	const deadline = performance.now() + check.timeoutMs;
 	while (true) {
+		signal.throwIfAborted();
 		const remaining = deadline - performance.now();
 		if (remaining <= 0) {
 			throw new Error(
 				`local component ${resourceName} HTTP health check timed out`,
 			);
 		}
-		if (await probe(`${baseUrl}${check.path}`, remaining)) return;
+		if (await probe(`${baseUrl}${check.path}`, remaining, signal)) return;
 		const next = deadline - performance.now();
-		if (next > 0) await delay(Math.min(check.intervalMs, next));
+		if (next > 0)
+			await delay(Math.min(check.intervalMs, next), undefined, { signal });
 	}
 }
