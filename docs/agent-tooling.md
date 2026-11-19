@@ -14,8 +14,10 @@ languages listed in [`AGENTS.md`](../AGENTS.md) and on added or changed planning
 or design documents, including `.impeccable/design.json` and
 `.impeccable/surfaces/`. Compiler and tool directives stay allowed, including
 `//go:` directives, `cue:generate`, buf lint and breaking ignores, and Atlas
-schema directives. It reads the staged content for commits and the PR diff for
-CI; it does not inspect unchanged content.
+schema directives. SQL comments use `--` and `/* ... */`; `#` remains an
+operator character so PostgreSQL JSON operators are not parsed as MySQL-style
+comments. It reads the staged content for commits and the PR diff for CI; it
+does not inspect unchanged content.
 For renamed files, it compares against the original path so existing comments
 remain allowed while newly added comments are checked. During a staged merge it
 compares against every parent, so content inherited unchanged from either side

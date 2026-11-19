@@ -74,10 +74,7 @@ export function lexComments(
 		let index = start;
 		let parentheses = interpolation ? 1 : 0;
 		while (index < text.length) {
-			if (
-				text.startsWith(line, index) ||
-				(dialect === "sql" && text[index] === "#")
-			) {
+			if (text.startsWith(line, index)) {
 				const end = text.indexOf("\n", index);
 				const stop = end < 0 ? text.length : end;
 				comments.push({

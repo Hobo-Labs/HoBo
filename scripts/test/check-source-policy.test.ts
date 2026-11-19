@@ -219,12 +219,12 @@ f: /* TODO: remove block */`;
 			[1, 2],
 		);
 		const sql =
-			"SELECT 'it''s -- data # data', $$-- data # data$$; -- explanation\n/* explanation */\n# explanation";
+			"SELECT 'it''s -- data # data', $$-- data # data$$; -- explanation\n/* explanation */";
 		assert.deepEqual(
-			commentViolations("x.sql", sql, new Set([1, 2, 3])).map(
+			commentViolations("x.sql", sql, new Set([1, 2])).map(
 				(item) => item.line,
 			),
-			[1, 2, 3],
+			[1, 2],
 		);
 		assert.deepEqual(
 			commentViolations(
@@ -242,6 +242,14 @@ f: /* TODO: remove block */`;
 					message: "make the code self-documenting instead of adding a comment",
 				},
 			],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.sql",
+				"SELECT payload #>> '{a}' FROM events;",
+				new Set([1]),
+			),
+			[],
 		);
 		const toml = `a = '# data' # explanation\nb = """\n# data\n""" # explanation`;
 		assert.deepEqual(
