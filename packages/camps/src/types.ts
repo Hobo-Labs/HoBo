@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names, anti-slop/require-safety-comment-for-type-assertion */
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion */
 export const TOPOLOGY_CONTRACT_VERSION = "hobo.topology-objects/v1" as const;
 
 export type JsonValue =
@@ -102,9 +102,6 @@ export interface CampContract {
 	readonly labels: Readonly<Record<string, string>>;
 	readonly runtimeRequirements: readonly string[];
 }
-
-/** @deprecated */
-export type CampShape = CampContract;
 
 export const EMPTY_RESOLVER_CONFIG: PrimitiveResolverConfig = Object.freeze({
 	require: Object.freeze([] as string[]),

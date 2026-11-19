@@ -1,11 +1,10 @@
-/* oxlint-disable anti-slop/no-shape-in-symbol-names, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-conditional-empty-object-spread, anti-slop/no-known-value-widening, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-conditional-empty-object-spread, anti-slop/no-known-value-widening, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type */
 import { type CampTier, isCampTier } from "@hobo/core";
 import { must } from "@hobo/core/total-access";
 import {
 	type Camp,
 	type CampConfig,
 	type CampContract,
-	type CampShape,
 	EMPTY_RESOLVER_CONFIG,
 	type JsonValue,
 	type PrimitiveResolverConfig,
@@ -285,11 +284,6 @@ export function campToContract(campObject: Camp): CampContract {
 		runtimeRequirements: campObject.runtimeRequirements,
 	};
 	return deepFreeze(contract);
-}
-
-/** @deprecated */
-export function campToShape(campObject: Camp): CampShape {
-	return campToContract(campObject);
 }
 
 export function withResolvers(

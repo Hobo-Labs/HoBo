@@ -7,7 +7,7 @@ import {
 	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
 	CAMP_MIGRATION_CODE,
 	camp,
-	campToShape,
+	campToContract,
 	parseLegacyCampMappings,
 	providerSelection,
 	withResolvers,
@@ -637,12 +637,12 @@ describe("withResolvers", () => {
 	});
 });
 
-describe("campToShape", () => {
-	it("reduces a Camp to its portable shape", () => {
-		const shape = campToShape(
+describe("campToContract", () => {
+	it("reduces a Camp to its portable contract", () => {
+		const contract = campToContract(
 			camp("prod", { require: ["a"], labels: { team: "core" } }),
 		);
-		expect(shape).toEqual({
+		expect(contract).toEqual({
 			id: "prod",
 			env: "prod",
 			envType: "production",
@@ -651,9 +651,9 @@ describe("campToShape", () => {
 			labels: { team: "core" },
 			runtimeRequirements: [],
 		});
-		expect(Object.hasOwn(shape, "derivedProviderId")).toBe(false);
-		expect(Object.hasOwn(shape, "resolverConfig")).toBe(false);
-		expect(Object.isFrozen(shape)).toBe(true);
+		expect(Object.hasOwn(contract, "derivedProviderId")).toBe(false);
+		expect(Object.hasOwn(contract, "resolverConfig")).toBe(false);
+		expect(Object.isFrozen(contract)).toBe(true);
 	});
 
 	it("uses the local id for an attached Camp", () => {
@@ -661,8 +661,8 @@ describe("campToShape", () => {
 			yardId: "eu",
 			providerId: "aws",
 		});
-		expect(campToShape(attached).id).toBe("prod");
-		expect(campToShape(attached).logicalId).toBe("eu/eu/prod");
+		expect(campToContract(attached).id).toBe("prod");
+		expect(campToContract(attached).logicalId).toBe("eu/eu/prod");
 	});
 });
 

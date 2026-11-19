@@ -6,7 +6,7 @@ import {
 	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
 	CAMP_MIGRATION_CODE,
 	camp,
-	campToShape,
+	campToContract,
 	parseLegacyCampMappings,
 	withResolvers,
 } from "../src/camp.js";
@@ -421,9 +421,9 @@ describe("parseLegacyCampMappings", () => {
 	});
 });
 
-describe("campToShape", () => {
+describe("campToContract", () => {
 	it("keeps the local id for an unattached Camp", () => {
-		expect(campToShape(camp("prod")).id).toBe("prod");
+		expect(campToContract(camp("prod")).id).toBe("prod");
 	});
 
 	it("strips the yard prefix from an attached Camp", () => {
@@ -431,28 +431,28 @@ describe("campToShape", () => {
 			yardId: "y1",
 			providerId: "aws",
 		});
-		expect(campToShape(attached).id).toBe("prod");
+		expect(campToContract(attached).id).toBe("prod");
 	});
 
 	it("carries env, envType and the canonical lists", () => {
-		const shape = campToShape(camp("prod", { require: ["a"] }));
-		expect(shape).toMatchObject({
+		const contract = campToContract(camp("prod", { require: ["a"] }));
+		expect(contract).toMatchObject({
 			env: "prod",
 			envType: "production",
 			require: ["a"],
 		});
 	});
 
-	it("does not leak the derived provider into the shape", () => {
+	it("does not leak the derived provider into the contract", () => {
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "y1",
 			providerId: "aws",
 		});
-		expect(campToShape(attached)).not.toHaveProperty("derivedProviderId");
+		expect(campToContract(attached)).not.toHaveProperty("derivedProviderId");
 	});
 
-	it("freezes the shape", () => {
-		expect(Object.isFrozen(campToShape(camp("prod")))).toBe(true);
+	it("freezes the contract", () => {
+		expect(Object.isFrozen(campToContract(camp("prod")))).toBe(true);
 	});
 });
 
