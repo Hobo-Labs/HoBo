@@ -245,6 +245,9 @@ describe("Rivet actor event replay", () => {
 			expect(journal.readFacts(streamId).map((event) => event.eventId)).toEqual(
 				["other"],
 			);
+			expect(journal.loadCommand(streamId, "a")?.status).toBe(
+				"failed-terminal",
+			);
 		} finally {
 			journal.close();
 		}

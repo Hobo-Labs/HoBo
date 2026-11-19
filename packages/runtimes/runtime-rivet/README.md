@@ -46,7 +46,7 @@ const accepted = bundle.actors.accept({
 
 ## Event replay
 
-Actor commands append their original payloads so the same fold can rebuild state after a restart. Commits compare against the revision that was actually replayed; a concurrent append raises a stale-revision error.
+Actor commands append their original payloads so the same fold can rebuild state after a restart. Each command requires its declared `expectedRevision` to match the revision replayed at commit. A stale command receives a durable `failed-terminal` receipt and does not block later commands. The commit receipt is stored with the facts and outbox rows, so a restart can finish a committed command without applying it again.
 
 Older actor journals may contain folded state in event payloads. When the matching committed inbox entry identifies the original command payload and only one interpretation is valid, replay recovers it automatically. If both interpretations are valid but produce different states, replay stops with an ambiguous-payload error. Set `legacyEventPayloads: "command"` when those records are known to contain folded state, or `legacyEventPayloads: "event"` when they are original event payloads. Both `createRivetActorHost` and `createRivetRuntimeHost` accept the option. Folds must be deterministic and free of side effects.
 
