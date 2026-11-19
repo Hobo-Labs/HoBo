@@ -1,10 +1,10 @@
 ---
 layout: ../../layouts/Docs.astro
-title: Schema & migrations
-description: "SQLite user_version, streams/events/effects tables, codecs, legacy migration, and fail-closed integrity checks."
+title: Journal schema
+description: "SQLite journal initialization, tables, codecs, and integrity checks."
 ---
 
-# Schema & migrations
+# Journal schema
 
 Default durable journal schema lives in **SQLite storage engine**. Engines may differ physically; **semantics** (stream heads, positions, fencing, staged effects) must pass conformance.
 
@@ -12,12 +12,13 @@ Default durable journal schema lives in **SQLite storage engine**. Engines may d
 
 | Constant | Meaning |
 |---|---|
-| `SCHEMA_VERSION` | Current (v2) |
-| `LEGACY_SCHEMA_VERSION` | Prior on-disk (v1) |
+| `SCHEMA_VERSION` | Current journal schema format |
 
-`PRAGMA user_version` must match code. Opening a **newer** DB with older code → `UNSUPPORTED_SCHEMA_VERSION` (fail closed).
+`PRAGMA user_version` must match the journal's schema. A mismatched version is
+rejected with `UNSUPPORTED_SCHEMA_VERSION`. An unstamped database containing
+objects or a database with altered journal tables or indexes is rejected.
 
-## Core tables (v2 conceptual)
+## Core tables
 
 | Table | Role |
 |---|---|
@@ -35,14 +36,13 @@ Native single-owner partitions use WAL-friendly settings with **`synchronous=FUL
 
 ## Codecs
 
-Event payloads encode via versioned codecs. Unknown codec → `UNSUPPORTED_CODEC`. Upcasters live in the data plane, not as silent rewrite of historical bytes without policy.
+Event payloads encode via codecs. Unknown codec → `UNSUPPORTED_CODEC`.
 
-## Migration rules
+## Initialization
 
-1. Forward-only migrations; no destructive “fix by deleting the file” in production paths.
-2. Legacy streams get `owner_epoch = 0` until first fenced write.
-3. Integrity checks: contiguous seq, head matches last event, positions monotonic — failures → `STREAM_INTEGRITY` / `MIGRATION_FAILURE`.
-4. Tests: [Migration fixtures](/HoBo/testing/migration/).
+The journal creates its schema in one transaction. Reopening verifies the
+stored table and index definitions. Incompatible databases are left intact.
+`assertIntegrity` checks SQLite integrity and foreign keys.
 
 ## What apps must not do
 

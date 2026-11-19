@@ -3,11 +3,9 @@ export {
 	DEFAULT_PAYLOAD_CODEC,
 	DEFAULT_STATE_CODEC,
 	decodeJson,
-	decodeLegacyJsonText,
 	decodeMetadata,
 	decodePayload,
 	encodeJson,
-	encodeLegacyJsonText,
 	encodeMetadata,
 	encodePayload,
 	type PayloadCodec,
@@ -32,14 +30,6 @@ export {
 	type StreamHead,
 } from "./journal.js";
 export {
-	assertIntegrity,
-	installLegacyV1Fixture,
-	MigrationFailureError,
-	type MigrationReport,
-	migrateToCurrent,
-	StreamIntegrityError,
-} from "./migrate.js";
-export {
 	createMemoryNodeSqliteDriver,
 	createNodeSqliteDriver,
 	type NodeSqliteDriverOptions,
@@ -58,11 +48,13 @@ export {
 	quorumEventStoreIdentity,
 } from "./quorum-eventstore.js";
 export {
-	LEGACY_SCHEMA_VERSION,
-	LEGACY_V1_SCHEMA_SQL,
 	NATIVE_PRAGMAS,
-	SCHEMA_V2_SQL,
+	SCHEMA_SQL,
 	SCHEMA_VERSION,
 } from "./schema.js";
+export {
+	assertIntegrity,
+	initializeJournalSchema,
+} from "./schema-initialization.js";
 
 export const HOBO_STORAGE_SQLITE_PACKAGE = "@hobo/storage-sqlite";

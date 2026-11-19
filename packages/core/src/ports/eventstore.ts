@@ -386,8 +386,7 @@ export type EventStoreErrorCode =
 	| "SNAPSHOT_AHEAD"
 	| "STORAGE_WORKER_TERMINATED"
 	| "STORAGE_WORKER_PROTOCOL_MISMATCH"
-	| "INVALID_INPUT"
-	| "STREAM_INTEGRITY";
+	| "INVALID_INPUT";
 
 export class EventStoreError extends Error {
 	readonly code: EventStoreErrorCode;

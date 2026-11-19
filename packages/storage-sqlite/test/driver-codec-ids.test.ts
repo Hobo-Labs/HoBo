@@ -17,11 +17,9 @@ import {
 	DEFAULT_PAYLOAD_CODEC,
 	DEFAULT_STATE_CODEC,
 	decodeJson,
-	decodeLegacyJsonText,
 	decodeMetadata,
 	decodePayload,
 	encodeJson,
-	encodeLegacyJsonText,
 	encodeMetadata,
 	encodePayload,
 	type PayloadCodec,
@@ -192,17 +190,10 @@ describe("payload codecs", () => {
 
 	it("encodes undefined as null rather than as nothing", () => {
 		expect(decodeJson(encodeJson(undefined))).toBeNull();
-		expect(encodeLegacyJsonText(undefined)).toBe("null");
 	});
 
 	it("decodes an empty byte string as null", () => {
 		expect(decodeJson(new Uint8Array())).toBeNull();
-	});
-
-	it("round-trips legacy TEXT columns", () => {
-		expect(decodeLegacyJsonText(encodeLegacyJsonText({ a: 1 }))).toEqual({
-			a: 1,
-		});
 	});
 
 	it("passes protobuf-v1 payloads through untouched", () => {

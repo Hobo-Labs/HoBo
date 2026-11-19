@@ -65,15 +65,14 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
-import { migrateToCurrent } from "./migrate.js";
 import { NATIVE_PRAGMAS } from "./schema.js";
+import { initializeJournalSchema } from "./schema-initialization.js";
 
 export interface JournalOpenOptions {
 	readonly clock?: Clock;
 	readonly partitionId?: string;
 	/** Apply native WAL/FULL pragmas (default true for node drivers). */
 	readonly nativePragmas?: boolean;
-	readonly now?: string;
 }
 
 export interface ParsedEventInput {
@@ -129,6 +128,7 @@ export class SqliteJournal {
 		this.db = db;
 		this.partitionId = options.partitionId ?? "default";
 		this.clock = options.clock ?? { now: () => new Date().toISOString() };
+		initializeJournalSchema(this.db);
 
 		if (options.nativePragmas !== false && db.kind === "node") {
 			this.db.exec(`PRAGMA journal_mode = ${NATIVE_PRAGMAS.journal_mode}`);
@@ -144,7 +144,6 @@ export class SqliteJournal {
 			}
 		}
 
-		migrateToCurrent(this.db, { now: options.now ?? this.clock.now() });
 		// A deterministic clock can restart at the same instant after reopen.
 		// Seed from durable state, then check under the append transaction so
 		// independent handles and clock rewinds cannot reuse an existing ID.

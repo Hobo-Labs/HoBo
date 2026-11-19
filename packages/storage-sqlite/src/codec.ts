@@ -33,14 +33,6 @@ export function decodeJson(bytes: Uint8Array): JsonValue {
 	return parseJsonValue(text);
 }
 
-export function encodeLegacyJsonText<T>(value: T): string {
-	return JSON.stringify(value ?? null);
-}
-
-export function decodeLegacyJsonText(text: string): JsonValue {
-	return parseJsonValue(text);
-}
-
 export type DecodedPayload = JsonValue | Uint8Array;
 
 export function encodePayload<T>(codec: PayloadCodec, value: T): Uint8Array {
