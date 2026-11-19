@@ -106,6 +106,7 @@ copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
 `isolatedOwnerFetch(env, options)` sends each request in a child process. It
 buffers the response before resolving and defaults to a 1 MiB response limit;
 `maxResponseBytes` can select a limit from zero through 32 MiB for a consumer.
+Request bodies over 32 MiB are refused before the child starts.
 It isolates request diagnostics from the parent process; it is not connected to
 a verified production owner session. Requests require HTTPS, and automatic
 redirects stay within the original origin so credential headers do not cross
