@@ -1,13 +1,7 @@
-/**
- * A three-way merge result as alternating settled text and conflict regions.
- * The agent only ever supplies text for a region; settled text is copied
- * through untouched, so a resolution cannot change a line git already merged.
- */
 export type MergeSegment =
 	| Readonly<{ kind: "text"; text: string }>
 	| Readonly<{
 			kind: "conflict";
-			/** Position among the file's conflict regions, from zero. */
 			id: number;
 			ours: string;
 			base: string;
@@ -24,16 +18,10 @@ const MARKERS = ["<", "|", "=", ">"] as const;
 type Marker = (typeof MARKERS)[number];
 type Side = "ours" | "base" | "theirs";
 
-/** Lines with their terminators kept, so joining them reproduces the input. */
 function lines(text: string): string[] {
 	return text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
 }
 
-/**
- * A marker length no input line can be mistaken for: one more than the
- * longest run of a marker character that starts a line in any side, and at
- * least git's default of seven.
- */
 export function markerSizeFor(sides: readonly string[]): number {
 	let longest = 6;
 	for (const side of sides)
@@ -51,16 +39,11 @@ function markerOf(line: string, size: number): Marker | undefined {
 	const first = line.charAt(0);
 	const marker = MARKERS.find((candidate) => candidate === first);
 	if (!marker || !line.startsWith(marker.repeat(size))) return undefined;
-	// A longer run is file content; a label follows a space.
 	const rest = line.slice(size).replace(/\r?\n$/, "");
 	if (rest === "" || (marker !== "=" && rest.startsWith(" "))) return marker;
 	return undefined;
 }
 
-/**
- * Split `git merge-file --diff3` output (markers of `size` characters) into
- * segments. Markers out of order, or a region left open, are refused.
- */
 export function parseMergeSegments(
 	merged: string,
 	size: number,
@@ -69,7 +52,6 @@ export function parseMergeSegments(
 	let settled = "";
 	let side: Side | undefined;
 	let region = { ours: "", base: "", theirs: "" };
-	// The side a marker must close, and the side it opens.
 	const closes = {
 		"<": undefined,
 		"|": "ours",
@@ -108,10 +90,8 @@ export function parseMergeSegments(
 	return Object.freeze(segments);
 }
 
-/** The settled lines on each side of a region. */
 export type RegionContext = Readonly<{ before: string; after: string }>;
 
-/** The text an engine sees around a region: the nearest settled lines. */
 export function regionContext(
 	segments: readonly MergeSegment[],
 	index: number,
@@ -132,25 +112,17 @@ export function regionContext(
 	};
 }
 
-/** Why an engine's text for one region was refused. Fixed codes, never text. */
 export type RegionRefusal =
 	| "conflict-marker"
 	| "oversized-resolution"
 	| "repeated-context";
 
-/** The lines of a text that have anything but whitespace, without terminators. */
 function contentLines(text: string): string[] {
 	return lines(text)
 		.map((line) => line.replace(/\r?\n$/, ""))
 		.filter((line) => line.trim() !== "");
 }
 
-/**
- * Whether a resolution repeats the settled line next to its region. git's
- * zdiff3 moves lines both sides share out of a region, and a model told about
- * them as context sometimes writes them again; the file then has the line
- * twice. A line either side itself starts or ends with is not a repeat.
- */
 function repeatsContext(
 	region: Extract<MergeSegment, { kind: "conflict" }>,
 	resolution: string,
@@ -170,18 +142,12 @@ function repeatsContext(
 	);
 }
 
-/**
- * Check one region's replacement and fit it to the file: the region's line
- * ending style, and a final newline when both sides ended with one.
- */
 export function fitRegionResolution(
 	region: Extract<MergeSegment, { kind: "conflict" }>,
 	resolution: string,
-	/** The settled text around the region, to catch a repeat of it. */
 	context: RegionContext = { before: "", after: "" },
 ): { text: string } | { refusal: RegionRefusal } {
 	const sides = region.ours + region.theirs;
-	// Room to combine both sides and add glue; not room for unrelated code.
 	if (resolution.length > 2 * sides.length + 4096)
 		return { refusal: "oversized-resolution" };
 	if (/^(?:<{7,}|>{7,}|\|{7,})(?: |\r?$)/m.test(resolution))
@@ -197,7 +163,6 @@ export function fitRegionResolution(
 	return { text: fitted };
 }
 
-/** Rebuild the file: settled text as it was, each region replaced by its text. */
 export function composeMerged(
 	segments: readonly MergeSegment[],
 	resolutions: ReadonlyMap<number, string>,
@@ -212,11 +177,6 @@ export function composeMerged(
 		.join("");
 }
 
-/**
- * The text each region had in a file built from these segments, found by
- * matching the settled text around it. Undefined when the file no longer
- * has that shape, or when two regions touch and cannot be told apart.
- */
 export function regionTexts(
 	segments: readonly MergeSegment[],
 	file: string,
