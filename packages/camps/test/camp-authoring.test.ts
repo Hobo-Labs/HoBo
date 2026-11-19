@@ -1,25 +1,4 @@
-/**
- * Camp authoring, and the two things a Camp is forbidden to do.
- *
- * `camp.test.ts` covers the shape; this covers the refusals and the
- * canonicalization, which are where the topology model is actually enforced.
- *
- * **A Camp does not own a Bindle and does not choose a provider.** Both are
- * refused with their own error code and a remediation naming the correct call,
- * because the failure they prevent is architectural: a Camp that pinned a
- * provider would make the Bindle→Camp→Yard layering a suggestion rather than a
- * rule, and the whole portability story rests on it being a rule.
- *
- * **`envType` is inferred; `tier` never is.** That asymmetry is deliberate and
- * documented in the source, and it is worth pinning precisely because it looks
- * like an inconsistency someone would "fix": inferring tier from a name would
- * make a Camp called `data-migration` silently a data-tier segment.
- *
- * Canonicalization — sorted, de-duplicated lists and sorted labels — is what
- * lets two Camps written in different orders hash the same, so it is asserted
- * rather than assumed.
- */
-/* oxlint-disable anti-slop/no-shape-in-symbol-names, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test helpers intentionally inspect controlled Camp compatibility fixtures. */
+/* oxlint-disable anti-slop/no-shape-in-symbol-names, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -75,7 +54,6 @@ describe("a Camp may not own a Bindle", () => {
 	});
 
 	it("names the correct call in the remediation", () => {
-		// An architectural refusal without the alternative is a dead end.
 		try {
 			camp("prod", { bindle: {} } as never);
 		} catch (error) {
@@ -92,8 +70,6 @@ describe("a Camp may not select a provider", () => {
 		"tiers",
 		"bindings",
 	])("refuses %s in the config", (key) => {
-		// The layering the whole portability story rests on: a Camp that
-		// pinned a provider would make Bindle→Camp→Yard a suggestion.
 		expect(codeOf(() => camp("prod", { [key]: {} } as never))).toBe(
 			CAMP_MIGRATION_CODE,
 		);
@@ -110,7 +86,6 @@ describe("a Camp may not select a provider", () => {
 	});
 
 	it("refuses a provider-shaped label", () => {
-		// The same rule, one level down: a label is not an escape hatch.
 		expect(
 			codeOf(() => camp("prod", { labels: { provider: "aws" } } as never)),
 		).toBe(CAMP_MIGRATION_CODE);
@@ -188,8 +163,6 @@ describe("tier is never inferred", () => {
 	});
 
 	it("does not infer a tier from the Camp's name", () => {
-		// The documented asymmetry with envType, and the reason for it: a Camp
-		// called "data-migration" must not silently become a data-tier segment.
 		expect(camp("data-migration")).not.toHaveProperty("tier");
 	});
 
@@ -210,7 +183,6 @@ describe("tier is never inferred", () => {
 
 describe("canonicalization", () => {
 	it("sorts and de-duplicates the require list", () => {
-		// Two Camps written in different orders must hash the same.
 		expect(camp("prod", { require: ["b", "a", "b"] }).require).toEqual([
 			"a",
 			"b",
@@ -283,7 +255,6 @@ describe("attachCampToYard", () => {
 	});
 
 	it("derives the provider from the yard", () => {
-		// Derived, never chosen — which is the whole point of attachment.
 		expect(
 			attachCampToYard(camp("prod"), { yardId: "y1", providerId: "aws" })
 				.derivedProviderId,
@@ -365,7 +336,6 @@ describe("parseLegacyCampMappings", () => {
 	});
 
 	it("refuses a mapping naming a different provider", () => {
-		// Accepting it would let a Camp override its Yard by the back door.
 		expect(
 			codeOf(() =>
 				parseLegacyCampMappings(
@@ -435,7 +405,6 @@ describe("parseLegacyCampMappings", () => {
 	});
 
 	it("returns a deprecation note explaining what was stripped", () => {
-		// Silence would let the legacy form look supported.
 		expect(parseLegacyCampMappings({}, "aws").deprecation).toMatch(
 			/stripped from canonical camp/u,
 		);
@@ -458,7 +427,6 @@ describe("campToShape", () => {
 	});
 
 	it("strips the yard prefix from an attached Camp", () => {
-		// A shape is Yard-relative, so carrying the Yard id would double it.
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "y1",
 			providerId: "aws",
@@ -476,8 +444,6 @@ describe("campToShape", () => {
 	});
 
 	it("does not leak the derived provider into the shape", () => {
-		// A shape is the provider-neutral projection; including the derivation
-		// would put provider detail back where it was refused.
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "y1",
 			providerId: "aws",

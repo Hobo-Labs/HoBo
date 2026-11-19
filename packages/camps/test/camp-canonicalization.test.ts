@@ -1,17 +1,5 @@
-/**
- * Camp authoring: canonicalization, the provider-neutrality guards, and Yard
- * attachment.
- *
- * A Camp exists to be placeable on any provider. Every guard here stops the
- * same class of failure: a Camp that names a provider, an account, or a region
- * still builds and still deploys — on exactly one provider — and nobody finds
- * out until a migration. The canonicalization assertions guard the other
- * silent failure: two authors writing the same Camp producing two different
- * identities, and therefore two different placement receipts.
- */
-
 import { CAMP_TIERS } from "@hobo/core";
-/* oxlint-disable anti-slop/no-shape-in-symbol-names, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type -- SAFETY: test helpers intentionally inspect controlled canonicalization fixtures. */
+/* oxlint-disable anti-slop/no-shape-in-symbol-names, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -30,15 +18,11 @@ function codeOf(error: unknown): string | undefined {
 	return (error as { code?: string }).code;
 }
 
-/** Assert the refusal carries the migration code callers branch on. */
 function expectMigrationRefusal(run: () => unknown, match: RegExp): void {
 	try {
 		run();
 	} catch (error) {
 		expect((error as Error).message).toMatch(match);
-		// The code is what a codemod and the CLI's remediation hint key on. A
-		// bare TypeError would satisfy `toThrow()` and tell an author nothing
-		// about how to migrate.
 		expect(codeOf(error)).toBe(CAMP_MIGRATION_CODE);
 		return;
 	}
@@ -49,9 +33,6 @@ describe("camp() — identity and naming", () => {
 	it("builds a frozen Camp stamped with the topology contract version", () => {
 		const result = camp("prod");
 		expect(result.kind).toBe("camp");
-		// The contract version is how a reader of a stored topology knows which
-		// shape it is looking at; omitting it would make an old topology
-		// indistinguishable from a current one.
 		expect(result.contract).toBe(TOPOLOGY_CONTRACT_VERSION);
 		expect(Object.isFrozen(result)).toBe(true);
 		expect(Object.isFrozen(result.require)).toBe(true);
@@ -59,9 +40,6 @@ describe("camp() — identity and naming", () => {
 	});
 
 	it("takes the last path segment of a slashed name as the env", () => {
-		// A Camp authored as `acme/prod` is the `prod` Camp; keeping the whole
-		// string as the env would make `envType` inference fail and produce a
-		// Camp whose id contains a separator that Yard attachment then adds again.
 		const result = camp("acme/prod");
 		expect(result.env).toBe("prod");
 		expect(result.id).toBe("prod");
@@ -69,8 +47,6 @@ describe("camp() — identity and naming", () => {
 	});
 
 	it("keeps id and name identical", () => {
-		// They are the same string by construction. A consumer that displays one
-		// and keys on the other must not be able to see them diverge.
 		const result = camp("staging");
 		expect(result.id).toBe(result.name);
 	});
@@ -85,17 +61,12 @@ describe("camp() — identity and naming", () => {
 		expect(() => camp("prod", "prod" as never)).toThrowError(
 			/camp config must be an object/u,
 		);
-		// Arrays are objects to `typeof`; treating one as a config would read
-		// every option as undefined and silently produce a default Camp.
 		expect(() => camp("prod", [] as never)).toThrowError(
 			/camp config must be an object/u,
 		);
 	});
 
 	it("strips a legacy -<provider> display suffix from the id", () => {
-		// The suffix was a display convention, not identity. Leaving it in would
-		// make `prod-aws` and `prod-azure` two different Camps that are actually
-		// the same segment placed twice.
 		for (const provider of [
 			"local",
 			"aws",
@@ -111,9 +82,6 @@ describe("camp() — identity and naming", () => {
 	});
 
 	it("keeps a name that is only a provider word", () => {
-		// `camp("local")` is a legitimate Camp named for a local environment.
-		// Stripping it would leave an empty id, so the whole-match case is
-		// deliberately preserved.
 		expect(camp("local").id).toBe("local");
 		expect(camp("aws").id).toBe("aws");
 	});
@@ -139,16 +107,11 @@ describe("camp() — envType", () => {
 			["local", "development"],
 		];
 		for (const [env, expected] of cases) {
-			// Inference exists for backwards compatibility only. Getting it wrong
-			// would mislabel a production Camp as development, and envType is what
-			// policy packs gate on.
 			expect(camp(env).envType, env).toBe(expected);
 		}
 	});
 
 	it("falls back to the env name for anything it does not recognize", () => {
-		// Not "unknown" and not "development": an unrecognized env keeps its own
-		// name so a policy pack can still match on it exactly.
 		expect(camp("canary").envType).toBe("canary");
 	});
 
@@ -156,8 +119,6 @@ describe("camp() — envType", () => {
 		expect(camp("canary", { envType: "production" }).envType).toBe(
 			"production",
 		);
-		// An empty string is not an override — it falls back to inference rather
-		// than producing a Camp with no envType at all.
 		expect(camp("prod", { envType: "" }).envType).toBe("production");
 		expect(camp("prod", { envType: 7 as never }).envType).toBe("production");
 	});
@@ -165,8 +126,6 @@ describe("camp() — envType", () => {
 
 describe("camp() — tier", () => {
 	it("accepts every named tier and omits the field when absent", () => {
-		// `CAMP_TIERS` is a frozen record, not an array — the values are the
-		// wire form and appear in Camp ids.
 		for (const tier of Object.values(CAMP_TIERS)) {
 			expect(camp("prod", { tier }).tier, tier).toBe(tier);
 		}
@@ -177,16 +136,10 @@ describe("camp() — tier", () => {
 			"untrusted",
 			"ops",
 		]);
-		// Absent, not null: a Camp that segments on some other axis has no tier,
-		// and a null would read as a tier value to anything doing a key check.
 		expect(Object.hasOwn(camp("prod"), "tier")).toBe(false);
 	});
 
 	it("refuses an unknown tier rather than inferring one", () => {
-		// The module states this explicitly: envType is inferred from the name
-		// for compatibility, but repeating that trick for tier would make a Camp
-		// called "data-migration" silently a data-tier segment — and tier drives
-		// network segmentation.
 		try {
 			camp("prod", { tier: "database" as never });
 			expect.unreachable("an unknown tier must be refused");
@@ -205,8 +158,6 @@ describe("camp() — provider neutrality", () => {
 			camp("prod", { bindle: {} } as never);
 			expect.unreachable("a Camp must not own a Bindle");
 		} catch (error) {
-			// Ownership belongs on the deployment request. A Camp that owned one
-			// would make the Bindle undeployable to a second Camp.
 			expect(codeOf(error)).toBe(CAMP_BINDLE_OWNERSHIP_FORBIDDEN);
 			expect((error as { remediation?: string }).remediation).toMatch(
 				/deploy\(bindle/u,
@@ -248,11 +199,6 @@ describe("camp() — provider neutrality", () => {
 			"resourceGroup",
 			"SUBSCRIPTIONID",
 		]) {
-			// `subscriptionId`/`resourceGroup` are Azure, `projectId` is GCP,
-			// `accountId` is AWS and Cloudflare. A Camp carrying any of them is no
-			// longer placeable anywhere else — which is the leak this module
-			// exists to prevent, and which `@hobo/bindles` already refuses for the
-			// same key set.
 			expectMigrationRefusal(
 				() =>
 					camp("prod", {
@@ -266,9 +212,6 @@ describe("camp() — provider neutrality", () => {
 	});
 
 	it("drops resolverId from properties instead of refusing it", () => {
-		// It is a first-class field on the rule, so an author who spelled it as a
-		// property gets the field they meant rather than an error — and the
-		// property does not shadow it.
 		const result = camp("prod", {
 			resourceMappings: [
 				{
@@ -301,16 +244,11 @@ describe("camp() — canonicalization", () => {
 			require: ["b", "a", "b", "", "c"],
 			prefer: ["z", "y", "y"],
 		} as never);
-		// Canonical order is what makes two authors who listed the same
-		// capabilities differently produce the same Camp — and therefore the same
-		// placement receipt.
 		expect(result.require).toEqual(["a", "b", "c"]);
 		expect(result.prefer).toEqual(["y", "z"]);
 	});
 
 	it("ignores a non-array require or prefer rather than throwing", () => {
-		// Tolerated because these arrive from hand-written topology files; the
-		// canonical empty list is a safer read than a crash mid-parse.
 		const result = camp("prod", { require: "a", prefer: 7 } as never);
 		expect(result.require).toEqual([]);
 		expect(result.prefer).toEqual([]);
@@ -360,10 +298,6 @@ describe("camp() — runtime requirements", () => {
 	});
 
 	it("falls back to the literal 'runtime' for a descriptor it cannot read", () => {
-		// Pinning the fallback rather than assuming it throws. A descriptor with
-		// no `id` yields the placeholder `"runtime"`, which will not match any
-		// real runtime capability — so the Camp fails placement loudly rather
-		// than being placed on an arbitrary runtime.
 		expect(
 			camp("prod", { runtime: { name: "node" } } as never).runtimeRequirements,
 		).toEqual(["runtime"]);
@@ -406,8 +340,6 @@ describe("camp() — resolver config", () => {
 
 	it("refuses a pin missing either half", () => {
 		for (const pin of [{ slot: "kv" }, { resolverId: "sqlite" }, {}, null]) {
-			// A pin with no resolverId pins nothing; a pin with no slot pins
-			// everything. Both are silently wrong at resolution time.
 			expect(() =>
 				camp("prod", { resolverConfig: { pins: [pin] } } as never),
 			).toThrowError(/resolver pin requires slot and resolverId/u);
@@ -415,8 +347,6 @@ describe("camp() — resolver config", () => {
 	});
 
 	it("refuses two pins for the same slot", () => {
-		// Last-writer-wins would make resolution depend on authoring order, which
-		// is exactly what the rest of this module works to eliminate.
 		expect(() =>
 			camp("prod", {
 				resolverConfig: {
@@ -476,8 +406,6 @@ describe("camp() — resource mappings", () => {
 		const rule = camp("prod", {
 			resourceMappings: [{ selector: {} }],
 		} as never).resourceMappings[0];
-		// Absent rather than undefined-valued, so a serialized topology does not
-		// carry keys the author never wrote.
 		expect(Object.hasOwn(rule ?? {}, "definitionId")).toBe(false);
 		expect(Object.hasOwn(rule ?? {}, "className")).toBe(false);
 	});
@@ -523,8 +451,6 @@ describe("attachCampToYard", () => {
 			yardId: "eu",
 			providerId: "aws",
 		});
-		// Canonical identity is `<yardId>/<campId>` so the same Camp attached to
-		// two Yards is two distinct placements rather than one ambiguous one.
 		expect(attached.id).toBe("eu/prod");
 		expect(attached.name).toBe("eu/prod");
 		expect(attached.derivedProviderId).toBe("aws");
@@ -605,14 +531,9 @@ describe("attachCampToYard", () => {
 				labels: { region: "eu" },
 			},
 		} as never);
-		// The Yard is the more specific scope, so its pin for a slot replaces the
-		// Camp's rather than duplicating it — a duplicate would trip the
-		// duplicate-slot guard and make a legitimate attachment impossible.
 		expect(attached.resolverConfig.pins).toEqual([
 			{ slot: "kv", resolverId: "dynamo" },
 		]);
-		// Capability lists union rather than replace: both scopes' requirements
-		// have to hold.
 		expect(attached.resolverConfig.require).toEqual(["a", "b"]);
 		expect(attached.resolverConfig.properties.shared).toBe("yard");
 		expect(attached.resolverConfig.properties.campOnly).toBe("1");
@@ -651,8 +572,6 @@ describe("attachCampToYard", () => {
 			yardId: "eu",
 			providerId: "aws",
 		});
-		// Absent means "no opinion", not "clear them" — otherwise attaching a
-		// Camp would silently drop its own resource mappings.
 		expect(attached.resourceMappings).toEqual(base.resourceMappings);
 	});
 
@@ -700,8 +619,6 @@ describe("withResolvers", () => {
 		const base = camp("prod", {
 			resolverConfig: { pins: [{ slot: "kv", resolverId: "sqlite" }] },
 		} as never);
-		// Same reason as the parse-time guard: silently overriding would make
-		// resolution depend on which call happened last.
 		expect(() => withResolvers(base, { kv: "redis" })).toThrowError(
 			/duplicate resolver pin slot: kv/u,
 		);
@@ -716,8 +633,6 @@ describe("withResolvers", () => {
 	it("leaves the original Camp untouched", () => {
 		const base = camp("prod");
 		withResolvers(base, { kv: "sqlite" });
-		// The input is frozen, so a mutating implementation would throw in strict
-		// mode — but this pins the intent rather than relying on the freeze.
 		expect(base.resolverConfig.pins).toEqual([]);
 	});
 });
@@ -736,8 +651,6 @@ describe("campToShape", () => {
 			labels: { team: "core" },
 			runtimeRequirements: [],
 		});
-		// No provider, no Yard, no resolver config: the shape is what travels to
-		// a different topology, so anything placement-specific must not be in it.
 		expect(Object.hasOwn(shape, "derivedProviderId")).toBe(false);
 		expect(Object.hasOwn(shape, "resolverConfig")).toBe(false);
 		expect(Object.isFrozen(shape)).toBe(true);
@@ -748,8 +661,6 @@ describe("campToShape", () => {
 			yardId: "eu",
 			providerId: "aws",
 		});
-		// `eu/prod` is an identity within one topology. Carrying it into a shape
-		// would make the shape unusable in a topology with a different Yard.
 		expect(campToShape(attached).id).toBe("prod");
 		expect(campToShape(attached).logicalId).toBe("eu/eu/prod");
 	});
@@ -769,9 +680,6 @@ describe("parseLegacyCampMappings", () => {
 			"aws",
 		);
 		const selectors = result.resourceMappings.map((rule) => rule.selector);
-		// Bindings key on resource *name*, tiers on resource *kind*, and the
-		// default on nothing at all — three different match scopes that would
-		// silently collapse if any were mapped onto the wrong selector field.
 		expect(selectors).toEqual([
 			{ resourceName: "db" },
 			{ resourceKind: "kv" },
@@ -789,8 +697,6 @@ describe("parseLegacyCampMappings", () => {
 			{ bindings: { db: sel("rds") } },
 			"aws",
 		);
-		// The whole point of the compatibility path: accept the legacy shape and
-		// emit a canonical Camp that names no provider.
 		expect(JSON.stringify(result.resourceMappings)).not.toContain("aws");
 		expect(result.deprecation).toMatch(/stripped from canonical camp/u);
 	});
@@ -801,9 +707,6 @@ describe("parseLegacyCampMappings", () => {
 			{ tiers: { kv: providerSelection("gcp") } },
 			{ bindings: { db: providerSelection("gcp") } },
 		]) {
-			// Accepting it would let a legacy topology place one resource on a
-			// provider the Yard does not use — which is the state this migration
-			// exists to make unrepresentable.
 			expectMigrationRefusal(
 				() => parseLegacyCampMappings(input, "aws"),
 				/!= yard provider aws/u,
@@ -816,9 +719,6 @@ describe("parseLegacyCampMappings", () => {
 	});
 
 	it("omits a default rule when the default selection has no selector", () => {
-		// `providerSelection` defaults the selector to "default", so this is the
-		// shape a hand-written legacy object takes. Pinning that a falsy selector
-		// produces no catch-all rule rather than one with an empty resolverId.
 		const result = parseLegacyCampMappings(
 			{ defaultProvider: { providerId: "aws", selector: "" } as never },
 			"aws",
@@ -858,8 +758,6 @@ describe("providerSelection", () => {
 		expect(Object.keys(selection.options.a as Record<string, unknown>)).toEqual(
 			["c", "d"],
 		);
-		// Deep freeze so a selection handed to two Yards cannot be mutated by one
-		// of them after the fact.
 		expect(Object.isFrozen(selection)).toBe(true);
 		expect(Object.isFrozen(selection.options)).toBe(true);
 		expect(Object.isFrozen(selection.options.a)).toBe(true);
@@ -878,16 +776,12 @@ describe("providerSelection", () => {
 		expect(() => providerSelection("aws", "")).toThrowError(
 			/selector must be a non-empty string/u,
 		);
-		// Arrays are objects to `typeof`; accepting one would produce a selection
-		// whose options serialize as a list and match nothing.
 		expect(() => providerSelection("aws", "rds", [] as never)).toThrowError(
 			/options must be an object/u,
 		);
 	});
 
 	it("preserves array option values in order", () => {
-		// Only object keys are sorted. Arrays carry meaning in their order, so
-		// sorting them would change what the option says.
 		expect(
 			providerSelection("aws", "rds", { zones: ["c", "a", "b"] }).options.zones,
 		).toEqual(["c", "a", "b"]);
