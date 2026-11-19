@@ -1,15 +1,17 @@
 """Abstract duplicate-terminal refusal for arbitrary fact counts."""
-from z3 import Bool, Implies, Int, Not, Solver, sat, unsat
+from z3 import Bool, Implies, Int, Not, Solver, sat
 
 facts, returned = Int('facts'), Bool('returned')
 claim = Implies(facts > 1, Not(returned))
-for guarded in (True, False):
-    solver = Solver()
-    solver.add(facts >= 0)
-    if guarded:
-        solver.add(claim)
-    solver.add(Not(claim))
-    expected = unsat if guarded else sat
-    if solver.check() != expected:
-        raise AssertionError('unexpected terminal-history guard result')
-    print('Proved: duplicate terminal facts are refused' if guarded else 'Expected counterexample: accepting duplicate terminal facts')
+
+solver = Solver()
+solver.add(facts >= 0, facts > 1, returned)
+if solver.check() != sat:
+    raise AssertionError('expected counterexample when duplicate terminal facts return')
+print('Expected counterexample: accepting duplicate terminal facts')
+
+solver = Solver()
+solver.add(facts >= 0, Not(claim))
+if solver.check() != sat:
+    raise AssertionError('duplicate terminal refusal should be refutable without the guard')
+print('Confirmed: duplicate terminal refusal is not a tautology without enforcement')

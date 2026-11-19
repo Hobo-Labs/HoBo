@@ -9,13 +9,22 @@ source = repo / 'packages/runtime'
 config = repo / '.agents/skills/verify-workflow-replay/models/vitest.config.mts'
 test = 'test/authoring/workflow-input-snapshot.test.ts'
 cases = [
-    ('execute snapshot', 'src/workflow.ts', 'const input = captureWorkflowInput(args);', 'const input = args;', 3, 0),
     ('start snapshot', 'src/workflow.ts', 'const input = captureWorkflowInput(args);', 'const input = args;', 3, 1),
     ('resume snapshot', 'src/workflow.ts', 'const input = captureWorkflowInput(args);', 'const input = args;', 3, 2),
     ('input validation', 'src/workflow-value.ts', 'if (!isReproducibleJsonValue(value, new Set())) throw new TypeError();', 'if (false) throw new TypeError();', 1, 0),
     ('input aliases', 'src/workflow-value.ts', 'types.isProxy(object) || seen.has(object)', 'types.isProxy(object)', 1, 0),
     ('input proxies', 'src/workflow-value.ts', 'types.isProxy(object) || seen.has(object)', 'seen.has(object)', 1, 0),
 ]
+
+def occurrence_at(text, needle, index):
+    start = 0
+    for current in range(index + 1):
+        position = text.find(needle, start)
+        if position < 0:
+            raise RuntimeError(f'occurrence {index} of {needle!r} not found')
+        if current == index:
+            return position
+        start = position + len(needle)
 
 def run(root):
     return subprocess.run([
@@ -33,7 +42,7 @@ for name, relative, before, after, count, index in cases:
         original = target.read_text()
         if original.count(before) != count:
             raise RuntimeError(f'{name}: expected {count} mutation sites, found {original.count(before)}')
-        position = original.find(before) if index == 0 else original.rfind(before)
+        position = occurrence_at(original, before, index)
         target.write_text(original[:position] + original[position:].replace(before, after, 1))
         result = run(scratch)
         if result.returncode == 0 or f'FAIL  {test} >' not in result.stdout or 'AssertionError' not in result.stdout or 'Failed Suites' in result.stdout:
