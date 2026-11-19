@@ -30,6 +30,21 @@ export function renderSuccess(input: {
 	if (input.verb === "logs" && envelope.ok && envelope.data.followed === true)
 		return okText("", exitCode);
 
+	if (
+		input.flags.json &&
+		input.verb === "logs" &&
+		envelope.ok &&
+		Array.isArray(envelope.data.records)
+	) {
+		const records = envelope.data.records.map((record) =>
+			JSON.stringify(record),
+		);
+		return okText(
+			records.length > 0 ? `${records.join("\n")}\n` : "",
+			exitCode,
+		);
+	}
+
 	if (input.flags.json) {
 		return okText(`${JSON.stringify(envelope)}\n`, exitCode);
 	}
