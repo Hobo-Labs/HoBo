@@ -1,9 +1,11 @@
+import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { WorkflowFailure } from "../../src/errors.js";
 import { isJsonNumber, isJsonObject } from "../../src/json.js";
 
 import { replayRun } from "../../src/replay/replayer.js";
 import { createWorkflowEngine, defineWorkflow } from "../../src/workflow.js";
+import { readJournaledWorkflowResult } from "../../src/workflow-value.js";
 
 interface OrderState {
 	reserved: boolean;
@@ -1008,6 +1010,492 @@ describe("durable workflow: journal, restart, replay", () => {
 		await expect(engine.resume(wf, "gapped", {})).rejects.toThrow(
 			/gapped step journal/,
 		);
+	});
+
+	it("rejects a scheduled-only hole below a later step outcome", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/scheduled-hole";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "scheduled-hole",
+					workflowName: "scheduled-hole",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "hole", index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "later",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "later", index: 1, result: "done" },
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "scheduled-hole",
+			async run(ctx) {
+				runs += 1;
+				await ctx.step("hole", () => "first");
+				return ctx.step("later", () => "done");
+			},
+		});
+		await expect(engine.resume(wf, "scheduled-hole", {})).rejects.toThrow(
+			/gapped step journal/,
+		);
+		expect(runs).toBe(0);
+		expect(await engine.journal("scheduled-hole")).toHaveLength(3);
+	});
+
+	it("rejects a schedule above the open journal tip", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/orphan-schedule";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "orphan-schedule",
+					workflowName: "orphan-schedule",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done-0",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "first", index: 0, result: "ok" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "open",
+				streamId,
+				seq: 3,
+				type: "run.StepScheduled",
+				data: { name: "second", index: 1 },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled-2",
+				streamId,
+				seq: 4,
+				type: "run.StepScheduled",
+				data: { name: "third", index: 2 },
+			},
+			3,
+		);
+		await engine.store.append(
+			{
+				id: "done-2",
+				streamId,
+				seq: 5,
+				type: "run.StepCompleted",
+				data: { name: "third", index: 2, result: "later" },
+			},
+			4,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "orphan-schedule",
+			async run(ctx) {
+				runs += 1;
+				await ctx.step("first", () => "ok");
+				await ctx.step("second", () => "open");
+				return ctx.step("third", () => "later");
+			},
+		});
+		await expect(engine.resume(wf, "orphan-schedule", {})).rejects.toThrow(
+			/invalid step journal/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it("resumes a single open scheduled tip without scheduling it again", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/open-tip";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "open-tip",
+					workflowName: "open-tip",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "work", index: 0 },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "open-tip",
+			run: (ctx) =>
+				ctx.step("work", () => {
+					runs += 1;
+					return "done";
+				}),
+		});
+		const first = await engine.resume(wf, "open-tip", {});
+		expect(first.result).toBe("done");
+		expect(runs).toBe(1);
+		const schedules = (await engine.journal("open-tip")).filter(
+			(event) => event.type === "run.StepScheduled",
+		);
+		expect(schedules).toHaveLength(1);
+		expect((await engine.resume(wf, "open-tip", {})).result).toBe("done");
+		expect(runs).toBe(1);
+		expect(
+			(await engine.journal("open-tip")).filter(
+				(event) => event.type === "run.StepScheduled",
+			),
+		).toHaveLength(1);
+	});
+
+	it("rejects duplicate schedules at the same index", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/dup-schedule";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-schedule",
+					workflowName: "dup-schedule",
+				},
+			},
+			0,
+		);
+		const scheduled = { name: "work", index: 0 };
+		await engine.store.append(
+			{
+				id: "scheduled-1",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: scheduled,
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled-2",
+				streamId,
+				seq: 3,
+				type: "run.StepScheduled",
+				data: scheduled,
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "dup-schedule",
+			run(ctx) {
+				runs += 1;
+				return ctx.step("work", () => "done");
+			},
+		});
+		await expect(engine.resume(wf, "dup-schedule", {})).rejects.toThrow(
+			/duplicate run\.StepScheduled/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it("rejects a scheduled step index above 1000000", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/scheduled-bound";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "scheduled-bound",
+					workflowName: "scheduled-bound",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "too-high", index: 1_000_001 },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "scheduled-bound",
+			run(ctx) {
+				runs += 1;
+				return ctx.step("too-high", () => "nope");
+			},
+		});
+		await expect(engine.resume(wf, "scheduled-bound", {})).rejects.toThrow(
+			/invalid run\.StepScheduled|invalid step journal/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it.each([
+		["negative zero", -0],
+		["sparse array", Array(2)],
+		["nested negative zero", { n: -0 }],
+		["nested sparse array", { items: Array(2) }],
+	])("rejects %s in journaled run.Started", async (_label, args) => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/bad-started-value",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args,
+					seed: "bad-started-value",
+					workflowName: "bad-started-value",
+				},
+			},
+			0,
+		);
+		const wf = defineWorkflow({
+			name: "bad-started-value",
+			run: () => "live",
+		});
+		await expect(engine.resume(wf, "bad-started-value", null)).rejects.toThrow(
+			/invalid run\.Started/,
+		);
+	});
+
+	it.each([
+		["negative zero", -0],
+		["sparse array", Array(2)],
+		["nested negative zero", { n: -0 }],
+		["nested sparse array", { items: Array(2) }],
+	])("rejects %s in a journaled step result", async (_label, result) => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/bad-step-result";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-step-result",
+					workflowName: "bad-step-result",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "read", index: 0, result },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "bad-step-result",
+			run: (ctx) => ctx.step("read", () => "live"),
+		});
+		await expect(engine.resume(wf, "bad-step-result", {})).rejects.toThrow(
+			TypeError,
+		);
+		await expect(engine.resume(wf, "bad-step-result", {})).rejects.toThrow(
+			/invalid run\.StepCompleted|JSON-normalized/,
+		);
+	});
+
+	it("rejects sparse arrays and negative zero when reading a journaled value", () => {
+		for (const value of [Array(2), -0, { n: -0 }, { items: Array(2) }]) {
+			let caught: unknown;
+			try {
+				readJournaledWorkflowResult(value);
+			} catch (error) {
+				caught = error;
+			}
+			expect(caught).toBeInstanceOf(TypeError);
+			if (!(caught instanceof TypeError)) {
+				throw new Error("expected TypeError");
+			}
+			expect(caught.message.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("rethrows a replay failure from now and random without drawing", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/replay-clock";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "replay-clock",
+					workflowName: "replay-clock",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "replay-clock",
+			async run(ctx) {
+				const createHash = crypto.createHash;
+				let hashes = 0;
+				crypto.createHash = (algorithm, options) => {
+					hashes += 1;
+					return createHash(algorithm, options);
+				};
+				try {
+					const before = hashes;
+					ctx.random("probe");
+					expect(hashes).toBeGreaterThan(before);
+					const drawn = hashes;
+					let caught: unknown;
+					try {
+						await ctx.sleep(20);
+					} catch (error) {
+						caught = error;
+					}
+					expect(caught).toBeInstanceOf(Error);
+					let nowError: unknown;
+					let randomError: unknown;
+					try {
+						ctx.now();
+					} catch (error) {
+						nowError = error;
+					}
+					try {
+						ctx.random("after");
+					} catch (error) {
+						randomError = error;
+					}
+					expect(nowError).toBe(caught);
+					expect(randomError).toBe(caught);
+					expect(hashes).toBe(drawn);
+					throw caught;
+				} finally {
+					crypto.createHash = createHash;
+				}
+			},
+		});
+		await expect(engine.resume(wf, "replay-clock", {})).rejects.toThrow(
+			/sleep schedule diverged/,
+		);
+		expect(await engine.journal("replay-clock")).toHaveLength(2);
+	});
+
+	it.each([
+		null,
+		"nope",
+		{ delayMs: "10", index: 0 },
+		{ delayMs: 10 },
+		{ delayMs: 10, index: 0, extra: true },
+		{ delayMs: 10, index: 1_000_001 },
+	])("rejects invalid run.SleepScheduled %j", async (data) => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/bad-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-sleep",
+					workflowName: "bad-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data,
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "bad-sleep",
+			async run(ctx) {
+				runs += 1;
+				await ctx.sleep(10);
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "bad-sleep", {})).rejects.toThrow(
+			/invalid run\.SleepScheduled/,
+		);
+		expect(runs).toBe(0);
+		expect(await engine.journal("bad-sleep")).toHaveLength(2);
 	});
 
 	it("rejects events recorded after a terminal fact", async () => {

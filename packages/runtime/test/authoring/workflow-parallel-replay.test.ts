@@ -13,7 +13,7 @@ function deferred() {
 	return { promise, resolve };
 }
 
-it("resumes an earlier in-flight step after a later parallel step completed", async () => {
+it("rejects a scheduled hole below a later completed parallel step", async () => {
 	const base = createInMemoryEventStore();
 	const laterRecorded = deferred();
 	const releaseEarlier = deferred();
@@ -85,17 +85,19 @@ it("resumes an earlier in-flight step after a later parallel step completed", as
 			"parallel-replay",
 			null,
 		),
-	).rejects.toThrow(/step name differs from journal/);
+	).rejects.toThrow(/gapped step journal|invalid step journal/);
 	expect(await recoveredStore.readStream("run/parallel-replay")).toEqual(saved);
 	expect(unexpectedEffects).toBe(0);
 
-	const resumed = await createWorkflowEngine({ store: recoveredStore }).resume(
-		wf,
-		"parallel-replay",
-		null,
-	);
-	expect(resumed.result).toEqual(["earlier", "later"]);
-	expect(earlierCalls).toBe(2);
+	await expect(
+		createWorkflowEngine({ store: recoveredStore }).resume(
+			wf,
+			"parallel-replay",
+			null,
+		),
+	).rejects.toThrow(/gapped step journal|invalid step journal/);
+	expect(await recoveredStore.readStream("run/parallel-replay")).toEqual(saved);
+	expect(earlierCalls).toBe(1);
 	expect(laterCalls).toBe(1);
 });
 
@@ -145,6 +147,15 @@ it("replays generated scheduled gaps without repeating recorded effects", async 
 						return values;
 					},
 				});
+				const openAt = recorded.findIndex((completed) => !completed);
+				const contiguous = openAt === -1 || openAt === recorded.length - 1;
+				if (!contiguous) {
+					await expect(
+						createWorkflowEngine({ store }).resume(wf, "generated-gaps", null),
+					).rejects.toThrow(/gapped step journal|invalid step journal/);
+					expect(calls).toEqual(recorded.map(() => 0));
+					return;
+				}
 				const result = await createWorkflowEngine({ store }).resume(
 					wf,
 					"generated-gaps",

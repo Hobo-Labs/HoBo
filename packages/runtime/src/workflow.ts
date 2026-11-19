@@ -35,10 +35,12 @@ import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
 	captureWorkflowResult,
+	type ParsedRunSleepScheduled,
 	type ParsedRunStepCompleted,
 	type ParsedRunStepFailed,
 	parseRunCompletedFact,
 	parseRunFailedFact,
+	parseRunSleepScheduledFact,
 	parseRunStartedFact,
 	parseRunStepCompletedFact,
 	parseRunStepFailedFact,
@@ -154,22 +156,65 @@ function listStepOutcomeIndices(
 	const indices: number[] = [];
 	for (const event of journal) {
 		if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-			const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+			const fact = parseRunStepCompletedFact(event.data);
 			indices.push(fact.index);
 		} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-			const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+			const fact = parseRunStepFailedFact(event.data);
 			indices.push(fact.index);
 		}
 	}
 	return indices;
 }
 
-function maxStepOutcomeIndex(indices: number[]): number {
-	let max = -1;
-	for (const index of indices) {
-		if (index > max) max = index;
+function isBoundedStepIndex(index: number): boolean {
+	return Number.isSafeInteger(index) && index >= 0 && index <= 1_000_000;
+}
+
+function assertContiguousStepJournal(
+	runId: string,
+	scheduledSteps: ReadonlyMap<number, string>,
+	outcomeIndices: ReadonlySet<number>,
+): void {
+	let maxOutcome = -1;
+	for (const index of outcomeIndices) {
+		if (!isBoundedStepIndex(index)) {
+			throw new Error(`invalid step journal for ${runId}`);
+		}
+		if (index > maxOutcome) maxOutcome = index;
 	}
-	return max;
+	const open: number[] = [];
+	for (const index of scheduledSteps.keys()) {
+		if (!isBoundedStepIndex(index)) {
+			throw new Error(`invalid step journal for ${runId}`);
+		}
+		if (!outcomeIndices.has(index)) open.push(index);
+	}
+	if (open.length > 1) {
+		throw new Error(`invalid step journal for ${runId}`);
+	}
+	let tip = maxOutcome + 1;
+	if (open.length === 1) {
+		const openTip = open[0];
+		if (openTip === undefined) {
+			throw new Error(`invalid step journal for ${runId}`);
+		}
+		tip = openTip;
+	}
+	for (let index = 0; index < tip; index += 1) {
+		if (!outcomeIndices.has(index)) {
+			throw new Error(`gapped step journal for ${runId}`);
+		}
+	}
+	for (const index of scheduledSteps.keys()) {
+		if (index > tip) {
+			throw new Error(`invalid step journal for ${runId}`);
+		}
+	}
+	for (const index of outcomeIndices) {
+		if (index >= tip) {
+			throw new Error(`gapped step journal for ${runId}`);
+		}
+	}
 }
 
 export function createWorkflowEngine(
@@ -217,10 +262,13 @@ export function createWorkflowEngine(
 		const scheduledSteps = new Map<number, string>();
 		for (const event of journal) {
 			if (event.type !== "run.StepScheduled") continue;
-			const fact = parseRunStepScheduledFact(cloneAsJson(event.data));
+			const fact = parseRunStepScheduledFact(event.data);
 			const previous = scheduledSteps.get(fact.index);
 			if (previous !== undefined && previous !== fact.name) {
 				throw new Error(`step name differs from journal for ${runId}`);
+			}
+			if (previous !== undefined) {
+				throw new Error(`duplicate run.StepScheduled for ${runId}`);
 			}
 			scheduledSteps.set(fact.index, fact.name);
 		}
@@ -233,7 +281,7 @@ export function createWorkflowEngine(
 				if (!isRecord(event.data)) {
 					throw new Error(`invalid run.StepCompleted for ${runId}`);
 				}
-				const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+				const fact = parseRunStepCompletedFact(event.data);
 				const scheduled = scheduledSteps.get(fact.index);
 				if (scheduled !== undefined && scheduled !== fact.name) {
 					throw new Error(`step name differs from journal for ${runId}`);
@@ -249,7 +297,7 @@ export function createWorkflowEngine(
 				if (!isRecord(event.data)) {
 					throw new Error(`invalid run.StepFailed for ${runId}`);
 				}
-				const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+				const fact = parseRunStepFailedFact(event.data);
 				const scheduled = scheduledSteps.get(fact.index);
 				if (scheduled !== undefined && scheduled !== fact.name) {
 					throw new Error(`step name differs from journal for ${runId}`);
@@ -276,20 +324,11 @@ export function createWorkflowEngine(
 		}
 		const journaledOutcomeIndices = listStepOutcomeIndices(journal);
 		const unconsumedOutcomes = new Set(journaledOutcomeIndices);
-		if (journaledOutcomeIndices.length > 0) {
-			const outcomeIndexSet = new Set(journaledOutcomeIndices);
-			const maxOutcomeIndex = maxStepOutcomeIndex(journaledOutcomeIndices);
-			if (
-				!Number.isSafeInteger(maxOutcomeIndex) ||
-				maxOutcomeIndex > 1_000_000
-			) {
-				throw new Error(`invalid step journal for ${runId}`);
-			}
-			for (let index = 0; index < maxOutcomeIndex; index += 1) {
-				if (!outcomeIndexSet.has(index) && !scheduledSteps.has(index)) {
-					throw new Error(`gapped step journal for ${runId}`);
-				}
-			}
+		assertContiguousStepJournal(runId, scheduledSteps, unconsumedOutcomes);
+		const sleepFacts: ParsedRunSleepScheduled[] = [];
+		for (const event of journal) {
+			if (event.type !== "run.SleepScheduled") continue;
+			sleepFacts.push(parseRunSleepScheduledFact(event.data));
 		}
 		const terminals = journal.filter(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
@@ -383,10 +422,10 @@ export function createWorkflowEngine(
 			let failed: ParsedRunStepFailed | undefined;
 			for (const event of journal) {
 				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-					const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+					const fact = parseRunStepCompletedFact(event.data);
 					if (fact.index === index) completed = fact;
 				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-					const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+					const fact = parseRunStepFailedFact(event.data);
 					if (fact.index === index) failed = fact;
 				}
 			}
@@ -398,10 +437,10 @@ export function createWorkflowEngine(
 			const failed: typeof journal = [];
 			for (const event of journal) {
 				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-					const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+					const fact = parseRunStepCompletedFact(event.data);
 					if (fact.name === name && fact.index === index) completed.push(event);
 				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-					const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+					const fact = parseRunStepFailedFact(event.data);
 					if (fact.name === name && fact.index === index) failed.push(event);
 				}
 			}
@@ -431,23 +470,22 @@ export function createWorkflowEngine(
 				const { completed, failed } = stepOutcomesFor(name, index);
 				const completedEvent = completed[0];
 				if (completedEvent && isRecord(completedEvent.data)) {
-					const result = replayStepCompletedResult<T>(
-						cloneAsJson(completedEvent.data),
-					);
+					const result = replayStepCompletedResult<T>(completedEvent.data);
 					unconsumedOutcomes.delete(index);
 					return result;
 				}
 				const failedEvent = failed[0];
 				if (failedEvent && isRecord(failedEvent.data)) {
-					const stepFailed = parseRunStepFailedFact(
-						cloneAsJson(failedEvent.data),
-					);
+					const stepFailed = parseRunStepFailedFact(failedEvent.data);
 					unconsumedOutcomes.delete(index);
 					throw new WorkflowFailure(stepFailed.message, {
 						step: stepFailed.name,
 					});
 				}
-				await appendEvent("run.StepScheduled", { name, index });
+				if (scheduled === undefined) {
+					await appendEvent("run.StepScheduled", { name, index });
+					scheduledSteps.set(index, name);
+				}
 				assertReplayConsistent();
 				try {
 					const value = await runWithRetries(name, fn, opts ?? {});
@@ -469,14 +507,9 @@ export function createWorkflowEngine(
 				assertReplayConsistent();
 				const index = sleepIndex;
 				sleepIndex += 1;
-				const scheduled = journal.find(
-					(event) =>
-						event.type === "run.SleepScheduled" &&
-						isRecord(event.data) &&
-						event.data.index === index,
-				);
-				if (scheduled && isRecord(scheduled.data)) {
-					if (scheduled.data.delayMs !== durationMs) {
+				const scheduled = sleepFacts.find((fact) => fact.index === index);
+				if (scheduled) {
+					if (scheduled.delayMs !== durationMs) {
 						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
 					}
 					return;
@@ -486,13 +519,27 @@ export function createWorkflowEngine(
 					data.label = sleepOptions.label;
 				}
 				await appendEvent("run.SleepScheduled", data);
+				const recorded: ParsedRunSleepScheduled = {
+					delayMs: durationMs,
+					index,
+				};
+				if (sleepOptions?.label !== undefined) {
+					recorded.label = sleepOptions.label;
+				}
+				sleepFacts.push(recorded);
 			},
 			async emit(type, data) {
 				assertReplayConsistent();
 				return appendEvent(type, data ?? null);
 			},
-			now: () => deterministic.now(),
-			random: (label) => deterministic.random(label),
+			now: () => {
+				assertReplayConsistent();
+				return deterministic.now();
+			},
+			random: (label) => {
+				assertReplayConsistent();
+				return deterministic.random(label);
+			},
 			token(request) {
 				assertReplayConsistent();
 				return tokenBroker(request);

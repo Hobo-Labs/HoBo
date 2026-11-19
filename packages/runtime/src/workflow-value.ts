@@ -13,9 +13,17 @@ import {
 function isStoredJsonValue(value: JsonValue): boolean {
 	if (value === null) return true;
 	if (isJsonString(value) || isJsonBoolean(value)) return true;
-	if (isJsonNumber(value)) return Number.isFinite(value);
-	if (isJsonArray(value))
-		return value.every((entry) => isStoredJsonValue(entry));
+	if (isJsonNumber(value))
+		return Number.isFinite(value) && !Object.is(value, -0);
+	if (isJsonArray(value)) {
+		if (Object.getOwnPropertyNames(value).length !== value.length + 1)
+			return false;
+		for (let index = 0; index < value.length; index += 1) {
+			const entry = value[index];
+			if (entry === undefined || !isStoredJsonValue(entry)) return false;
+		}
+		return true;
+	}
 	if (isJsonObject(value)) {
 		return Object.keys(value).every((key) => {
 			const entry = value[key];
@@ -23,6 +31,16 @@ function isStoredJsonValue(value: JsonValue): boolean {
 		});
 	}
 	return false;
+}
+
+function isBoundedJournalIndex(value: JsonValue | undefined): value is number {
+	return (
+		isJsonNumber(value) &&
+		Number.isSafeInteger(value) &&
+		value >= 0 &&
+		value <= 1_000_000 &&
+		!Object.is(value, -0)
+	);
 }
 
 export type ParsedRunStarted = {
@@ -98,13 +116,44 @@ export function parseRunStepScheduledFact(
 	}
 	if (!isJsonString(data.name))
 		throw new TypeError("invalid run.StepScheduled");
-	if (
-		!isJsonNumber(data.index) ||
-		!Number.isSafeInteger(data.index) ||
-		data.index < 0
-	)
+	if (!isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.StepScheduled");
 	return { name: data.name, index: data.index };
+}
+
+export type ParsedRunSleepScheduled = {
+	delayMs: number;
+	index: number;
+	label?: string;
+};
+
+export function parseRunSleepScheduledFact(
+	data: JsonValue,
+): ParsedRunSleepScheduled {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.SleepScheduled");
+	const allowed = new Set(["delayMs", "index", "label"]);
+	for (const key of Object.keys(data)) {
+		if (!allowed.has(key)) throw new TypeError("invalid run.SleepScheduled");
+	}
+	if (
+		!("delayMs" in data) ||
+		!isJsonNumber(data.delayMs) ||
+		!Number.isFinite(data.delayMs) ||
+		Object.is(data.delayMs, -0)
+	)
+		throw new TypeError("invalid run.SleepScheduled");
+	if (!("index" in data) || !isBoundedJournalIndex(data.index))
+		throw new TypeError("invalid run.SleepScheduled");
+	const parsed: ParsedRunSleepScheduled = {
+		delayMs: data.delayMs,
+		index: data.index,
+	};
+	if ("label" in data) {
+		if (!isJsonString(data.label))
+			throw new TypeError("invalid run.SleepScheduled");
+		parsed.label = data.label;
+	}
+	return parsed;
 }
 
 export function parseRunStepFailedFact(data: JsonValue): ParsedRunStepFailed {
@@ -272,9 +321,11 @@ function faithfullyReproduces<T>(
 }
 
 function captureWorkflowValue<T>(value: T): T {
-	if (!isReproducibleJsonValue(value, new Set())) throw new TypeError();
+	if (!isReproducibleJsonValue(value, new Set()))
+		throw new TypeError("workflow value must be JSON-normalized");
 	const captured = cloneAsJson(value);
-	if (!faithfullyReproduces(value, captured)) throw new TypeError();
+	if (!faithfullyReproduces(value, captured))
+		throw new TypeError("workflow value must be JSON-normalized");
 	return captured;
 }
 
