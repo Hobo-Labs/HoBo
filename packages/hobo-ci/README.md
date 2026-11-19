@@ -106,6 +106,17 @@ copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
 `isolatedOwnerFetch(env, options)` sends each request in a child process. It
 buffers the response before resolving and defaults to a 1 MiB response limit;
 `maxResponseBytes` can select a limit from zero through 32 MiB for a consumer.
+It isolates request diagnostics from the parent process; it is not connected to
+a verified production owner session. Requests require HTTPS, and automatic
+redirects stay within the original origin so credential headers do not cross
+origins. A caller can inspect a redirect with `redirect: "manual"`. For local
+synthetic tests only, `allowInsecureLoopback` permits HTTP to the literal
+loopback address `127.0.0.1` or `::1` without a proxy, with redirects limited
+to that same origin. An HTTPS request cannot be downgraded to HTTP.
+Configured proxies with URL credentials must use HTTPS, even when a bypass
+list is present; unauthenticated HTTP CONNECT proxies remain supported. Each
+private request permits at most 32 proxy connection attempts; exhaustion after
+dispatch has an uncertain outcome.
 Oversized responses and cancellation after dispatch fail with an uncertain
 outcome. Pass an `AbortSignal` to cancel a slow response. The child uses the
 parent's effective trust roots and the selected extra CA bundle without

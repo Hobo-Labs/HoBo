@@ -49,6 +49,7 @@ export const ownerRequest = z.object({
 	]),
 	body: z.string().max(OWNER_MESSAGE_LIMIT).nullable(),
 	maxResponseBytes: z.number().int().min(0).max(OWNER_BODY_LIMIT),
+	allowInsecureLoopback: z.boolean(),
 	trustedCertificates: ownerTrustCertificates,
 	egress: z.object({
 		proxy: z.string().max(16384).optional(),

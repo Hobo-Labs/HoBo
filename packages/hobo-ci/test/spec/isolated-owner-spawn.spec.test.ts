@@ -188,7 +188,7 @@ it("sanitizes synchronous launch failures and keeps request data out of argument
 	});
 	const send = createIsolatedOwnerFetch(
 		{
-			HTTPS_PROXY: `http://fixture:${marker}@127.0.0.1:8888`,
+			HTTPS_PROXY: `https://fixture:${marker}@127.0.0.1:8888`,
 		},
 		launch,
 	);

@@ -6,6 +6,10 @@ import {
 	PrivateOwnerRequestError,
 } from "./isolated-owner-errors.js";
 import {
+	assertPrivateOwnerProxy,
+	isolatedOwnerOrigin,
+} from "./isolated-owner-origin.js";
+import {
 	OWNER_BODY_LIMIT,
 	OWNER_DEFAULT_RESPONSE_LIMIT,
 	OWNER_MESSAGE_LIMIT,
@@ -37,6 +41,7 @@ export type PrivateOwnerChildLauncher = (input: {
 
 export interface IsolatedOwnerFetchOptions {
 	readonly maxResponseBytes?: number;
+	readonly allowInsecureLoopback?: boolean;
 }
 
 const OWNER_PHASE_TIMEOUT_MS = 120_000;
@@ -184,6 +189,12 @@ export function createIsolatedOwnerFetch(
 		try {
 			request = new Request(input, init);
 			cancellation = request.signal;
+			assertPrivateOwnerProxy(egress.proxy);
+			isolatedOwnerOrigin(
+				request.url,
+				options?.allowInsecureLoopback === true,
+				egress.proxy !== undefined,
+			);
 			body = await requestBody(request, preparationDeadline);
 			trustedCertificates = [...defaultCaCertificates()];
 			maxResponseBytes =
@@ -209,6 +220,7 @@ export function createIsolatedOwnerFetch(
 			referrerPolicy: request.referrerPolicy,
 			body,
 			maxResponseBytes,
+			allowInsecureLoopback: options?.allowInsecureLoopback === true,
 			trustedCertificates,
 			egress: {
 				...(egress.proxy ? { proxy: egress.proxy } : undefined),

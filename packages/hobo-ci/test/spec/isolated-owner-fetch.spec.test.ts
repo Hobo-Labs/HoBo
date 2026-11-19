@@ -29,6 +29,8 @@ import {
 } from "../../src/isolated-owner-wire.js";
 
 const marker = "fixture-private-transport-value";
+const fixtureOwnerFetch: typeof isolatedOwnerFetch = (env, options) =>
+	isolatedOwnerFetch(env, { ...options, allowInsecureLoopback: true });
 const socketAddress = z.object({
 	port: z.number().int().positive().max(65535),
 });
@@ -46,7 +48,7 @@ describe("isolated owner fetch", () => {
 		);
 		const address = socketAddress.parse(server.address());
 		try {
-			const error = await isolatedOwnerFetch({})(
+			const error = await fixtureOwnerFetch({})(
 				`http://127.0.0.1:${address.port}/${marker}`,
 				{
 					method: "POST",
@@ -78,7 +80,7 @@ describe("isolated owner fetch", () => {
 		const address = socketAddress.parse(server.address());
 		try {
 			await expect(
-				isolatedOwnerFetch({})(`http://127.0.0.1:${address.port}/${marker}`, {
+				fixtureOwnerFetch({})(`http://127.0.0.1:${address.port}/${marker}`, {
 					signal: AbortSignal.timeout(15_000),
 				}),
 			).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
@@ -111,23 +113,23 @@ describe("isolated owner fetch", () => {
 		const url = `http://127.0.0.1:${address.port}/`;
 		try {
 			await expect(
-				isolatedOwnerFetch({}, { maxResponseBytes: 4 })(url),
+				fixtureOwnerFetch({}, { maxResponseBytes: 4 })(url),
 			).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
 			expect(
 				await (
-					await isolatedOwnerFetch({}, { maxResponseBytes: 12 })(url)
+					await fixtureOwnerFetch({}, { maxResponseBytes: 12 })(url)
 				).text(),
 			).toBe("fixture-body");
 			expect(
 				await (
-					await isolatedOwnerFetch(
+					await fixtureOwnerFetch(
 						{},
 						{ maxResponseBytes: 12 },
 					)(`${url}compressed`)
 				).text(),
 			).toBe("fixture-body");
 			await expect(
-				isolatedOwnerFetch({}, { maxResponseBytes: -1 })(url),
+				fixtureOwnerFetch({}, { maxResponseBytes: -1 })(url),
 			).rejects.toBeInstanceOf(PrivateOwnerRequestError);
 			expect(requests).toBe(3);
 		} finally {
@@ -157,7 +159,7 @@ describe("isolated owner fetch", () => {
 		const address = socketAddress.parse(server.address());
 		const controller = new AbortController();
 		try {
-			const pending = isolatedOwnerFetch({})(
+			const pending = fixtureOwnerFetch({})(
 				`http://127.0.0.1:${address.port}/`,
 				{
 					signal: controller.signal,
@@ -196,12 +198,12 @@ describe("isolated owner fetch", () => {
 		const address = socketAddress.parse(server.address());
 		try {
 			await expect(
-				isolatedOwnerFetch({})(`http://127.0.0.1:${address.port}/${marker}`, {
+				fixtureOwnerFetch({})(`http://127.0.0.1:${address.port}/${marker}`, {
 					redirect: "error",
 				}),
 			).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
 			expect(redirected).toBe(false);
-			const failure = await isolatedOwnerFetch({
+			const failure = await fixtureOwnerFetch({
 				SSL_CERT_FILE: `/fixture/${marker}`,
 			})(`http://127.0.0.1:${address.port}/`).catch((error) => error);
 			expect(failure).toBeInstanceOf(PrivateOwnerDispatchError);
@@ -227,7 +229,7 @@ describe("isolated owner fetch", () => {
 		const address = socketAddress.parse(server.address());
 		const origin = `http://127.0.0.1:${address.port}`;
 		try {
-			const send = isolatedOwnerFetch({});
+			const send = fixtureOwnerFetch({});
 			const response = await send(`${origin}/first`);
 			const copy = response.clone();
 			for (const result of [response, copy]) {
@@ -276,7 +278,7 @@ describe("isolated owner fetch", () => {
 		};
 		try {
 			const expected = await fetch(url, options);
-			const actual = await isolatedOwnerFetch({})(url, options);
+			const actual = await fixtureOwnerFetch({})(url, options);
 			expect(await expected.text()).toBe(marker);
 			expect(await actual.text()).toBe(marker);
 			expect(headers[0]).toEqual({
@@ -285,7 +287,7 @@ describe("isolated owner fetch", () => {
 			});
 			expect(headers[1]).toEqual(headers[0]);
 			await expect(
-				isolatedOwnerFetch({})(url, {
+				fixtureOwnerFetch({})(url, {
 					integrity: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 				}),
 			).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
@@ -320,61 +322,88 @@ describe("isolated owner fetch", () => {
 			],
 			{ stdio: "ignore" },
 		);
-		const server = createHttpsServer(
-			{ key: readFileSync(key), cert: readFileSync(cert) },
-			(_request, response) => response.end("fixture-ok"),
-		);
+		const tls = { key: readFileSync(key), cert: readFileSync(cert) };
+		const server = createHttpsServer(tls, (request, response) => {
+			if (request.url === "/redirect") {
+				response.writeHead(307, { location: "https://127.0.0.1:1/" });
+				response.end();
+				return;
+			}
+			response.end("fixture-ok");
+		});
 		const proxy = createServer();
+		const secureProxy = createHttpsServer(tls);
 		let connects = 0;
 		const proxyAuth: (string | undefined)[] = [];
-		proxy.on("connect", (request, socket, head) => {
-			connects += 1;
-			proxyAuth.push(request.headers["proxy-authorization"]);
-			const address = socketAddress.parse(server.address());
-			const upstream = connect(address.port, "127.0.0.1", () => {
-				socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-				if (head.length) upstream.write(head);
-				socket.pipe(upstream).pipe(socket);
+		for (const proxyServer of [proxy, secureProxy])
+			proxyServer.on("connect", (request, socket, head) => {
+				connects += 1;
+				proxyAuth.push(request.headers["proxy-authorization"]);
+				const address = socketAddress.parse(server.address());
+				const upstream = connect(address.port, "127.0.0.1", () => {
+					socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+					if (head.length) upstream.write(head);
+					socket.pipe(upstream).pipe(socket);
+				});
+				upstream.on("error", () => socket.destroy());
+				socket.on("error", () => upstream.destroy());
 			});
-			upstream.on("error", () => socket.destroy());
-			socket.on("error", () => upstream.destroy());
-		});
 		await new Promise<void>((resolve) =>
 			server.listen(0, "127.0.0.1", resolve),
 		);
 		await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+		await new Promise<void>((resolve) =>
+			secureProxy.listen(0, "127.0.0.1", resolve),
+		);
 		const serverAddress = socketAddress.parse(server.address());
 		const proxyAddress = socketAddress.parse(proxy.address());
 		const url = `https://127.0.0.1:${serverAddress.port}/`;
-		const proxyUrl = `http://fixture-user:${marker}@127.0.0.1:${proxyAddress.port}`;
+		const secureProxyAddress = socketAddress.parse(secureProxy.address());
+		const proxyUrl = `http://127.0.0.1:${proxyAddress.port}`;
+		const secureProxyUrl = `https://fixture-user:${marker}@127.0.0.1:${secureProxyAddress.port}`;
 		try {
 			for (const env of [
 				{ SSL_CERT_FILE: cert },
 				{ HTTPS_PROXY: proxyUrl, SSL_CERT_FILE: cert },
-				{ HTTPS_PROXY: proxyUrl, NO_PROXY: "127.0.0.1", SSL_CERT_FILE: cert },
+				{ HTTPS_PROXY: secureProxyUrl, SSL_CERT_FILE: cert },
+				{
+					HTTPS_PROXY: secureProxyUrl,
+					NO_PROXY: "127.0.0.1",
+					SSL_CERT_FILE: cert,
+				},
 			]) {
-				const response = await isolatedOwnerFetch(env)(url, {
+				const response = await fixtureOwnerFetch(env)(url, {
 					signal: AbortSignal.timeout(15_000),
 				});
 				expect(await response.text()).toBe("fixture-ok");
 			}
-			expect(connects).toBe(1);
+			await expect(
+				fixtureOwnerFetch({ HTTPS_PROXY: proxyUrl, SSL_CERT_FILE: cert })(
+					`${url}redirect`,
+					{ headers: { "x-fixture-credential": marker } },
+				),
+			).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
+			expect(connects).toBe(3);
 			expect(proxyAuth).toEqual([
+				undefined,
 				`Basic ${Buffer.from(`fixture-user:${marker}`).toString("base64")}`,
+				undefined,
 			]);
 		} finally {
 			server.closeAllConnections();
 			proxy.closeAllConnections();
+			secureProxy.closeAllConnections();
 			await Promise.all([
 				new Promise<void>((resolve) => server.close(() => resolve())),
 				new Promise<void>((resolve) => proxy.close(() => resolve())),
+				new Promise<void>((resolve) => secureProxy.close(() => resolve())),
 			]);
 			rmSync(dir, { recursive: true, force: true });
 		}
 	}, 60_000);
 
 	it("rejects oversized request bodies before starting a private request", async () => {
-		const send = isolatedOwnerFetch({});
+		const send = fixtureOwnerFetch({});
 		await expect(
 			send("https://fixture.invalid", {
 				method: "POST",
@@ -528,7 +557,7 @@ describe("isolated owner fetch", () => {
 		];
 		try {
 			for (const channel of channels) subscribe(channel, earlyListener);
-			const pending = isolatedOwnerFetch({})(
+			const pending = fixtureOwnerFetch({})(
 				`http://127.0.0.1:${address.port}/${marker}`,
 				{
 					method: "POST",
@@ -567,7 +596,7 @@ describe("isolated owner fetch", () => {
 		const prior = process.env.NODE_OPTIONS;
 		process.env.NODE_OPTIONS = `--require=${preload}`;
 		try {
-			const send = isolatedOwnerFetch({});
+			const send = fixtureOwnerFetch({});
 			const server = createServer((_request, response) => {
 				response.statusCode = 401;
 				response.end(marker);
@@ -607,7 +636,7 @@ describe("isolated owner fetch", () => {
 		const address = socketAddress.parse(server.address());
 		const controller = new AbortController();
 		try {
-			const pending = isolatedOwnerFetch({})(
+			const pending = fixtureOwnerFetch({})(
 				`http://127.0.0.1:${address.port}/${marker}`,
 				{
 					method: "POST",

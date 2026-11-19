@@ -2,11 +2,14 @@ import { readFileSync } from "node:fs";
 import * as tls from "node:tls";
 import {
 	Agent,
+	buildConnector,
+	Client,
 	Dispatcher,
 	EnvHttpProxyAgent,
 	setGlobalDispatcher,
 } from "undici";
 
+import { OWNER_PROXY_CONNECTION_LIMIT } from "./isolated-owner-origin.js";
 import { type ProxyUrl, parseProxyUrl } from "./parsed-values.js";
 import { withoutSecretEnv } from "./secret-custody.js";
 
@@ -75,6 +78,7 @@ export function egressFrom(
 function egressDispatcher(
 	egress: Egress,
 	trustedCertificates?: readonly string[],
+	proxyConnectionLimit?: number,
 ): Agent | EnvHttpProxyAgent | undefined {
 	const tls =
 		egress.caFile === undefined && trustedCertificates === undefined
@@ -96,10 +100,44 @@ function egressDispatcher(
 				// An absent bypass list is an empty snapshot, not permission to
 				// inherit a different NO_PROXY from the ambient process.
 				noProxy: egress.noProxy ?? "",
+				...(proxyConnectionLimit === undefined
+					? undefined
+					: {
+							clientFactory: limitedProxyClientFactory(
+								tls,
+								proxyConnectionLimit,
+							),
+						}),
 				...(tls !== undefined
 					? { connect: tls, requestTls: tls, proxyTls: tls }
 					: undefined),
 			});
+}
+
+function limitedProxyClientFactory(
+	tls: Parameters<typeof buildConnector>[0],
+	limit: number,
+): (origin: URL) => Client {
+	const connect = buildConnector(tls ?? {});
+	let attempts = 0;
+	return (origin) => {
+		let client: Client;
+		client = new Client(origin, {
+			connect(options, callback) {
+				if (attempts >= limit) {
+					const error = new Error(
+						"Private owner proxy connection limit reached.",
+					);
+					void client.destroy(error).catch(() => undefined);
+					callback(error, null);
+					return;
+				}
+				attempts += 1;
+				connect(options, callback);
+			},
+		});
+		return client;
+	};
 }
 
 function egressDefaultCaCertificates(): readonly string[] {
@@ -115,18 +153,62 @@ export function egressFetch(
 	egress: Egress,
 	trustedCertificates?: readonly string[],
 ): typeof fetch {
-	const dispatcher = egressDispatcher(egress, trustedCertificates);
+	return fetchWithDispatcher(egressDispatcher(egress, trustedCertificates));
+}
+
+export function isolatedOwnerEgressFetch(
+	egress: Egress,
+	trustedCertificates: readonly string[],
+	allowedOrigin: string,
+): typeof fetch {
+	const target =
+		egressDispatcher(
+			egress,
+			trustedCertificates,
+			OWNER_PROXY_CONNECTION_LIMIT,
+		) ?? new Agent();
+	return fetchWithDispatcher(new OriginDispatcher(target, allowedOrigin));
+}
+
+function fetchWithDispatcher(dispatcher: Dispatcher | undefined): typeof fetch {
 	if (dispatcher === undefined) return fetch;
 	// Node's fetch is undici's and takes its dispatcher as a request option.
 	return (input, init) => {
 		const routed: RequestInit & {
-			readonly dispatcher: Agent | EnvHttpProxyAgent;
+			readonly dispatcher: Dispatcher;
 		} = {
 			...init,
 			dispatcher,
 		};
 		return fetch(input, routed);
 	};
+}
+
+class OriginDispatcher extends Dispatcher {
+	readonly #inner: Dispatcher;
+	readonly #allowedOrigin: string;
+	constructor(inner: Dispatcher, allowedOrigin: string) {
+		super();
+		this.#inner = inner;
+		this.#allowedOrigin = allowedOrigin;
+	}
+	override dispatch(
+		options: Dispatcher.DispatchOptions,
+		handler: Dispatcher.DispatchHandler,
+	): boolean {
+		if (
+			options.origin === undefined ||
+			new URL(options.origin).origin !== this.#allowedOrigin
+		)
+			throw new Error("Private owner redirect was refused.");
+		return this.#inner.dispatch(options, handler);
+	}
+	override async close(): Promise<void> {
+		await this.#inner.close();
+	}
+	override async destroy(): Promise<void> {
+		await this.#inner.destroy();
+	}
 }
 
 /**

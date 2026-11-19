@@ -1,4 +1,8 @@
-import { egressFetch } from "./egress.js";
+import { isolatedOwnerEgressFetch } from "./egress.js";
+import {
+	assertPrivateOwnerProxy,
+	isolatedOwnerOrigin,
+} from "./isolated-owner-origin.js";
 import { OWNER_MESSAGE_LIMIT, ownerRequest } from "./isolated-owner-wire.js";
 import { parseProxyUrl } from "./parsed-values.js";
 
@@ -31,24 +35,31 @@ async function run(): Promise<void> {
 		noProxy: parsed.egress.noProxy,
 		caFile: parsed.egress.caFile,
 	};
-	const response = await egressFetch(route, parsed.trustedCertificates)(
+	assertPrivateOwnerProxy(route.proxy);
+	const origin = isolatedOwnerOrigin(
 		parsed.url,
-		{
-			method: parsed.method,
-			headers: parsed.headers,
-			redirect: parsed.redirect,
-			cache: parsed.cache,
-			credentials: parsed.credentials,
-			integrity: parsed.integrity,
-			keepalive: parsed.keepalive,
-			mode: parsed.mode,
-			referrer: parsed.referrer,
-			referrerPolicy: parsed.referrerPolicy,
-			...(parsed.body !== null
-				? { body: new Uint8Array(Buffer.from(parsed.body, "base64")) }
-				: undefined),
-		},
+		parsed.allowInsecureLoopback,
+		route.proxy !== undefined,
 	);
+	const response = await isolatedOwnerEgressFetch(
+		route,
+		parsed.trustedCertificates,
+		origin,
+	)(parsed.url, {
+		method: parsed.method,
+		headers: parsed.headers,
+		redirect: parsed.redirect,
+		cache: parsed.cache,
+		credentials: parsed.credentials,
+		integrity: parsed.integrity,
+		keepalive: parsed.keepalive,
+		mode: parsed.mode,
+		referrer: parsed.referrer,
+		referrerPolicy: parsed.referrerPolicy,
+		...(parsed.body !== null
+			? { body: new Uint8Array(Buffer.from(parsed.body, "base64")) }
+			: undefined),
+	});
 	const reader = response.body?.getReader();
 	const chunks: Uint8Array[] = [];
 	let size = 0;
