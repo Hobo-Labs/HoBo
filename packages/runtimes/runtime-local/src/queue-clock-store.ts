@@ -10,7 +10,6 @@ import {
 	isJsonObject,
 	isJsonString,
 	type JsonValue,
-	parseJsonValue,
 } from "./json.js";
 
 export interface QueueMessageRecord {
@@ -129,14 +128,7 @@ export function normalizeNonNegativeInteger(
 }
 
 export function cloneStore<T>(value: T): T {
-	if (value === undefined) {
-		return value;
-	}
-	if (structuredClone instanceof Function) {
-		return structuredClone(value);
-	}
-	const cloned = parseJsonValue(JSON.stringify(value));
-	return cloned as T;
+	return structuredClone(value);
 }
 
 function deepFreeze<T>(value: T): T {
@@ -159,15 +151,38 @@ export function appendTrace(
 export function normalizeStore(
 	options: RuntimeLocalQueueClockOptions = {},
 ): QueueClockStore {
-	if (options.snapshot) {
+	if (options.snapshot !== undefined) {
 		const snapshot = cloneStore(options.snapshot);
+		if (!isJsonObject(snapshot)) {
+			throw new TypeError("snapshot must be an object");
+		}
+		if (snapshot.version !== QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION) {
+			throw new TypeError(
+				"snapshot.version does not match the queue-clock contract",
+			);
+		}
+		if (!isJsonObject(snapshot.queues)) {
+			throw new TypeError("snapshot.queues must be an object");
+		}
+		for (const [name, value] of [
+			["timers", snapshot.timers],
+			["cronSchedules", snapshot.cronSchedules],
+			["trace", snapshot.trace],
+		] as const) {
+			if (!Array.isArray(value)) {
+				throw new TypeError(`snapshot.${name} must be an array`);
+			}
+		}
 		if (options.seed !== undefined && options.seed !== snapshot.seed) {
 			throw new NondeterministicClockError(
 				`snapshot seed mismatch: expected ${snapshot.seed}, got ${options.seed}`,
 			);
 		}
-		const queues = snapshot.queues ?? {};
+		const queues = snapshot.queues;
 		for (const queue of Object.values(queues)) {
+			if (!isJsonObject(queue) || !Array.isArray(queue.messages)) {
+				throw new TypeError("snapshot queue must contain messages");
+			}
 			for (const message of queue.messages) message.processing = false;
 		}
 		return {
@@ -191,9 +206,9 @@ export function normalizeStore(
 				"snapshot.nextFireSeq",
 			),
 			queues,
-			timers: snapshot.timers ?? [],
-			cronSchedules: snapshot.cronSchedules ?? [],
-			trace: snapshot.trace ?? [],
+			timers: snapshot.timers,
+			cronSchedules: snapshot.cronSchedules,
+			trace: snapshot.trace,
 		};
 	}
 

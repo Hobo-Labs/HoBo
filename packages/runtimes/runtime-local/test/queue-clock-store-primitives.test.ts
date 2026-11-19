@@ -1,6 +1,7 @@
 import { NondeterministicClockError, QueueLeaseLostError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
+import type { JsonValue } from "../src/json.js";
 import {
 	appendTrace,
 	cloneStore,
@@ -16,7 +17,7 @@ import {
 	snapshotStore,
 } from "../src/queue-clock-store.js";
 
-function message(overrides: Record<string, unknown> = {}) {
+function message(overrides: Record<string, JsonValue> = {}) {
 	return {
 		messageId: "m-1",
 		state: "pending",
@@ -101,10 +102,7 @@ describe("appendTrace", () => {
 		const store = normalizeStore();
 		const event = { type: "clock.tick", atMs: 1 } as never;
 		appendTrace(store, event);
-		const appended = store.trace[store.trace.length - 1] as Record<
-			string,
-			unknown
-		>;
+		const appended = store.trace[store.trace.length - 1];
 		expect(appended).not.toBe(event);
 		expect(Object.isFrozen(appended)).toBe(true);
 	});
@@ -134,8 +132,9 @@ describe("normalizeStore — fresh", () => {
 			startInstant: "2026-01-01T00:00:00.000Z",
 		});
 		expect(store.trace).toHaveLength(1);
-		const first = store.trace[0] as Record<string, unknown>;
-		expect(first.type).toBe("clock.started");
+		const first = store.trace[0];
+		if (!first || first.type !== "clock.started")
+			throw new Error("missing clock start");
 		expect(first.seed).toBe("s");
 		expect(first.atMs).toBe(Date.parse("2026-01-01T00:00:00.000Z"));
 		expect(first.at).toBeDefined();
@@ -224,24 +223,29 @@ describe("normalizeStore — from a snapshot", () => {
 		).toBe(0);
 	});
 
-	it("defaults the collections a snapshot omits", () => {
-		const snapshot = {
-			...base(),
-			queues: undefined,
-			timers: undefined,
-			cronSchedules: undefined,
-			trace: undefined,
-		} as never;
-		const restored = normalizeStore({ snapshot });
-		expect(restored.queues).toEqual({});
-		expect(restored.timers).toEqual([]);
-		expect(restored.cronSchedules).toEqual([]);
-		expect(restored.trace).toEqual([]);
+	it("requires every snapshot collection", () => {
+		for (const field of ["queues", "timers", "cronSchedules", "trace"]) {
+			const snapshot = { ...base(), [field]: undefined } as never;
+			expect(() => normalizeStore({ snapshot })).toThrow(`snapshot.${field}`);
+		}
 	});
 
-	it("stamps the current contract version rather than the snapshot's", () => {
+	it("rejects an invalid snapshot instead of creating a fresh store", () => {
+		expect(() => normalizeStore({ snapshot: null as never })).toThrow(
+			"snapshot must be an object",
+		);
+	});
+
+	it("requires the current snapshot contract", () => {
 		const snapshot = { ...base(), version: "ancient" } as never;
-		expect(normalizeStore({ snapshot }).version).toBe(normalizeStore().version);
+		expect(() => normalizeStore({ snapshot })).toThrow("snapshot.version");
+	});
+
+	it("requires each saved queue to contain its messages", () => {
+		const snapshot = { ...base(), queues: { jobs: { name: "jobs" } } } as never;
+		expect(() => normalizeStore({ snapshot })).toThrow(
+			"snapshot queue must contain messages",
+		);
 	});
 });
 
