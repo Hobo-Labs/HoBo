@@ -22,17 +22,10 @@
       "topic": "hobo-cd"
     }
   },
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/cd",
-      "transforms": [
-        {
-          "type": "request.path",
-          "op": "set",
-          "args": "/$1"
-        }
-      ]
-    }
+  "rewrites": [
+    { "source": "/healthz", "destination": "/api/cd" },
+    { "source": "/readyz", "destination": "/api/cd" },
+    { "source": "/v1/cd", "destination": "/api/cd" },
+    { "source": "/v1/cd/:path*", "destination": "/api/cd" }
   ]
 }

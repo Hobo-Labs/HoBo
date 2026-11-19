@@ -13,6 +13,31 @@ import {
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
+function headerValue(
+	headers: IncomingMessage["headers"],
+	name: string,
+): string | undefined {
+	const value = headers[name];
+	if (value === undefined) return undefined;
+	return Array.isArray(value) ? (value[0] ?? undefined) : value;
+}
+
+export function incomingRequestPath(request: IncomingMessage): string {
+	const original = headerValue(request.headers, "x-vercel-original-url");
+	if (original !== undefined && original.length > 0) {
+		try {
+			const parsed = new URL(original, "http://hobo-cd.local");
+			return `${parsed.pathname}${parsed.search}`;
+		} catch {
+			return original.startsWith("/") ? original : `/${original}`;
+		}
+	}
+	const invokePath = headerValue(request.headers, "x-vercel-invoke-path");
+	if (invokePath !== undefined && invokePath.length > 0)
+		return invokePath.startsWith("/") ? invokePath : `/${invokePath}`;
+	return request.url ?? "/";
+}
+
 async function readBody(request: IncomingMessage): Promise<Uint8Array> {
 	const chunks: Buffer[] = [];
 	let size = 0;
@@ -88,7 +113,8 @@ export function createCdHttpEntry(
 		request: IncomingMessage,
 		response: ServerResponse,
 	): Promise<void> => {
-		const path = (request.url ?? "/").split("?")[0] ?? "/";
+		const incoming = incomingRequestPath(request);
+		const path = incoming.split("?")[0] ?? "/";
 		if (request.method === "GET" && path === "/healthz") {
 			sendJson(response, 200, { ok: true, commit });
 			return;
@@ -115,7 +141,7 @@ export function createCdHttpEntry(
 		try {
 			const feed: FeedRequest = {
 				method: request.method ?? "GET",
-				path: request.url ?? path,
+				path: incoming,
 				headers: headersOf(request),
 				body: await readBody(request),
 			};
