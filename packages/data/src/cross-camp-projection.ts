@@ -15,6 +15,7 @@ import {
 } from "@hobo/core";
 import {
 	CrossCampProjectionLagDataSchema,
+	ProjectionReplicaConfiguredDataSchema,
 	ProjectionReplicatedEventDataSchema,
 	ProjectionReplicationCheckedDataSchema,
 } from "./_generated/data_pb.js";
@@ -23,6 +24,7 @@ import type { Projection, ProjectionSnapshot } from "./projection.js";
 
 const REPLICATED = "projection.EventReplicated";
 const CHECKED = "projection.ReplicationChecked";
+const CONFIGURED = "projection.ReplicaConfigured";
 const LAGGED = "projection.ReplicaLagged";
 const RECOVERED = "projection.ReplicaRecovered";
 
@@ -79,12 +81,14 @@ interface ReplicaState {
 	readonly events: Array<{ position: bigint; event: EventEnvelope }>;
 	readonly checkedAtMs: number | null;
 	readonly lagged: boolean;
+	readonly boundMs: number | null;
 }
 
 export function createCrossCampProjection<Row>(
 	options: CrossCampProjectionOptions<Row>,
 ) {
 	for (const [name, value] of [
+		["projection name", options.projection.name],
 		["ownerCampId", options.ownerCampId],
 		["replicaCampId", options.replicaCampId],
 		["replicaStreamId", options.replicaStreamId],
@@ -138,6 +142,7 @@ export function createCrossCampProjection<Row>(
 		let replicaSeq = 0;
 		let checkedAtMs: number | null = null;
 		let lagged = false;
+		let boundMs: number | null = null;
 		let pending = false;
 		for await (const record of options.replica.read(options.replicaStreamId)) {
 			if (record.seq !== replicaSeq + 1)
@@ -145,7 +150,23 @@ export function createCrossCampProjection<Row>(
 			if (record.tenant !== options.tenant)
 				throw new Error("replica stream has an unexpected tenant");
 			replicaSeq = record.seq;
-			if (record.type === REPLICATED) {
+			if (record.type === CONFIGURED) {
+				const data = fromJsonString(
+					ProjectionReplicaConfiguredDataSchema,
+					JSON.stringify(record.data),
+				);
+				if (
+					pending ||
+					data.projection !== options.projection.name ||
+					data.ownerCampId !== options.ownerCampId ||
+					data.replicaCampId !== options.replicaCampId ||
+					data.sourceStreamId !== (options.sourceStreamId ?? "")
+				)
+					throw new Error("replica contains an invalid configuration");
+				boundMs = safeNumber(data.boundMs, "boundMs");
+			} else if (record.type === REPLICATED) {
+				if (boundMs === null)
+					throw new Error("replica configuration is missing");
 				const data = fromJsonString(
 					ProjectionReplicatedEventDataSchema,
 					JSON.stringify(record.data),
@@ -163,6 +184,8 @@ export function createCrossCampProjection<Row>(
 				events.push({ position: data.sourcePosition, event });
 				pending = true;
 			} else if (record.type === CHECKED) {
+				if (boundMs === null)
+					throw new Error("replica configuration is missing");
 				const data = fromJsonString(
 					ProjectionReplicationCheckedDataSchema,
 					JSON.stringify(record.data),
@@ -180,6 +203,8 @@ export function createCrossCampProjection<Row>(
 				if (data.caughtUp) checkedAtMs = checked;
 				pending = false;
 			} else if (record.type === LAGGED || record.type === RECOVERED) {
+				if (boundMs === null)
+					throw new Error("replica configuration is missing");
 				const data = fromJsonString(
 					CrossCampProjectionLagDataSchema,
 					JSON.stringify(record.data),
@@ -198,7 +223,41 @@ export function createCrossCampProjection<Row>(
 			}
 		}
 		if (pending) throw new Error("replica contains an incomplete batch");
-		return { replicaSeq, events, checkedAtMs, lagged };
+		return { replicaSeq, events, checkedAtMs, lagged, boundMs };
+	}
+
+	async function configure(state: ReplicaState): Promise<boolean> {
+		if (state.boundMs === options.maxStalenessMs) return true;
+		try {
+			await options.replica.append(
+				options.replicaStreamId,
+				[
+					{
+						type: CONFIGURED,
+						data: toJson(
+							ProjectionReplicaConfiguredDataSchema,
+							create(ProjectionReplicaConfiguredDataSchema, {
+								projection: options.projection.name,
+								ownerCampId: options.ownerCampId,
+								replicaCampId: options.replicaCampId,
+								sourceStreamId: options.sourceStreamId ?? "",
+								boundMs: BigInt(options.maxStalenessMs),
+							}),
+							{ alwaysEmitImplicit: true },
+						),
+					},
+				],
+				{
+					expectedSeq: state.replicaSeq,
+					actor: options.actor,
+					tenant: options.tenant,
+				},
+			);
+		} catch (error) {
+			if (!(error instanceof Error) || !isOptimisticConflict(error))
+				throw error;
+		}
+		return false;
 	}
 
 	async function view(
@@ -207,6 +266,10 @@ export function createCrossCampProjection<Row>(
 	): Promise<CrossCampProjectionView<Row>> {
 		let state = initial;
 		for (let attempt = 0; attempt < 8; attempt += 1) {
+			if (!(await configure(state))) {
+				state = await loadReplica();
+				continue;
+			}
 			const now = integer(options.nowMs(), "nowMs");
 			const checked = state.checkedAtMs;
 			if (checked !== null && now < checked)
@@ -270,6 +333,7 @@ export function createCrossCampProjection<Row>(
 	async function replicate(): Promise<CrossCampReplicationResult<Row>> {
 		for (let attempt = 0; attempt < 8; attempt += 1) {
 			const state = await loadReplica();
+			if (!(await configure(state))) continue;
 			const checkedAtMs = integer(options.nowMs(), "nowMs");
 			if (state.checkedAtMs !== null && checkedAtMs < state.checkedAtMs)
 				throw new Error("replica clock moved backward");
@@ -343,6 +407,7 @@ export function createCrossCampProjection<Row>(
 					events: [...state.events, ...events],
 					checkedAtMs: caughtUp ? checkedAtMs : state.checkedAtMs,
 					lagged: state.lagged,
+					boundMs: state.boundMs,
 				}),
 			};
 		}

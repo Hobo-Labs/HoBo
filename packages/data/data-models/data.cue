@@ -188,6 +188,14 @@ import "list"
 	caughtUp:       bool
 }
 
+#ProjectionReplicaConfiguredData: {
+	projection:     string & !=""
+	ownerCampId:    string & !=""
+	replicaCampId:  string & !=""
+	sourceStreamId: string
+	boundMs:        =~"^[0-9]+$"
+}
+
 #CrossCampProjectionLagData: {
 	projection:     string & !=""
 	ownerCampId:    string & !=""

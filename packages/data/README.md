@@ -119,6 +119,9 @@ it as eventual. Both report the observed staleness. After `append`, pass the
 returned event to `readSession(event)` to read from the owner and confirm that
 the write is present. A session read fails if the owner read cannot observe it.
 Replica reads do not offer strong consistency.
+Each replica records its projection, Camps, source, and staleness bound in its
+event stream. Changing the bound records the new configuration; changing the
+projection, Camps, or source requires a different replica stream.
 
 ## Paginated event views
 
