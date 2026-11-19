@@ -7,11 +7,13 @@ over conflicting repository workflow guidance.
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
-  dynamic imports. Include only arguments consumed by the tool, without
-  explanations. Register deliberate domain views in `scripts/schema-domain-views.json`;
+  dynamic imports, and include only arguments consumed by the tool. Preserve
+  input comments inside functions and methods marked for training, and in their
+  executable fixtures. Register deliberate domain views in `scripts/schema-domain-views.json`;
   complete parallel wire types instead of adding temporary exemptions. Tracked
   generated and vendored code follows the same rule; update its generator or
-  maintained source while preserving required notices.
+  maintained source while preserving required notices. Independent submodules
+  follow their own rules unless work on them is explicitly requested.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
 - Change HoBo APIs and internal formats directly. Update their callers, schemas,
