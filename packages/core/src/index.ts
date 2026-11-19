@@ -6,6 +6,7 @@ export {
 	BudgetPolicyRecordSchema,
 	BudgetScopeIdentityRecordSchema,
 } from "./_generated/budget_policy_pb.js";
+export { SloDefinitionRecordSchema } from "./_generated/slo_pb.js";
 export { WrpcCallEventSchema } from "./_generated/wrpc_call_pb.js";
 export { WrpcLinkManifestSchema } from "./_generated/wrpc_link_manifest_pb.js";
 export type {
@@ -768,6 +769,28 @@ export {
 	SELF_HOST_FEATURE_TOKENS,
 	SELF_HOST_FORMS,
 } from "./ports/self-hosted-data-store.js";
+export type {
+	SloBudgetingMethod,
+	SloBurnThreshold,
+	SloCalendar,
+	SloDefinition,
+	SloDuration,
+	SloMetadata,
+	SloObjective,
+	SloSpec,
+	SloTelemetry,
+	SloTimeWindow,
+} from "./ports/slo.js";
+export {
+	hashSloDefinition,
+	OPEN_SLO_API_VERSION,
+	parseSloDefinition,
+	parseSloDuration,
+	SLO_SCHEMA,
+	SloDefinitionError,
+	serializeSloDefinition,
+	sloDurationMs,
+} from "./ports/slo.js";
 export type {
 	RunId,
 	Seq,

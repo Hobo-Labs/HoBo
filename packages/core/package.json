@@ -44,6 +44,7 @@
 		"fast-check": "^4.3.0"
 	},
 	"dependencies": {
-		"@bufbuild/protobuf": "2.12.1"
+		"@bufbuild/protobuf": "2.12.1",
+		"@js-temporal/polyfill": "0.5.1"
 	}
 }
