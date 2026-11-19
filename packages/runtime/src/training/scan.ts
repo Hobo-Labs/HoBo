@@ -18,10 +18,14 @@ export function scanDeclaredTrainables(
 
 export function generateDeclaredRegistrations(
 	declared: DeclaredTrainableClass,
-	_source: { readonly file?: string } = {},
+	source: { readonly file?: string } = {},
 ): string {
 	return emitRegistrations(declared, {
 		runtimeModule: "@hobo/runtime",
-		header: ["// @generated"],
+		header: [
+			source.file === undefined
+				? "// @generated"
+				: `// @generated from ${source.file}`,
+		],
 	});
 }

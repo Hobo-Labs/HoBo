@@ -30,9 +30,9 @@ export async function writeFixtureProject(
 		join(projectRoot, layout.sources.scanDir, "rank.ts"),
 		`export async function rankFeed(input: { items: string[] }): Promise<{ ranked: string[] }> {\n` +
 			`  "use training";\n` +
+			`  // Rank feed items; stable sort as the initial implementation.\n` +
 			`  return { ranked: [...input.items].sort() };\n` +
-			`}\n` +
-			`rankFeed.trainingIntent = "Rank feed items; stable sort as the initial implementation.";\n`,
+			`}\n`,
 	);
 }
 

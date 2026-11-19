@@ -142,16 +142,9 @@ function artifactDemos(
 async function serveStub(
 	entry: MutableRecord,
 	input: JsonValue,
+	demos: readonly TrainingExample[],
 ): Promise<JsonValue> {
 	const key = canonical(input);
-	const demos = artifactDemos(entry.artifact);
-	for (const demo of demos) {
-		if (canonical(cloneAsJson(demo.input)) === key) {
-			const output = cloneAsJson(demo.output);
-			record(entry, { input, output, served: "matched-demo" });
-			return output;
-		}
-	}
 	const examples = entry.options.contract.examples ?? [];
 	for (const example of examples) {
 		if (canonical(cloneAsJson(example.input)) === key) {
@@ -199,8 +192,20 @@ function register(
 	const entry: MutableRecord = partial as never;
 
 	const callable = async (input: JsonValue): Promise<JsonValue> => {
+		const demos = artifactDemos(entry.artifact);
+		if (demos.length > 0) {
+			const key = canonical(input);
+			const demo = demos.find(
+				(candidate) => canonical(cloneAsJson(candidate.input)) === key,
+			);
+			if (demo) {
+				const output = cloneAsJson(demo.output);
+				record(entry, { input, output, served: "matched-demo" });
+				return output;
+			}
+		}
 		if (entry.baseline === null) {
-			return serveStub(entry, input);
+			return serveStub(entry, input, demos);
 		}
 		const output = await entry.baseline(input);
 		record(entry, { input, output, served: "body" });
@@ -280,7 +285,7 @@ training.infer = function infer<I, O>(
 	}
 	const options: TrainingOptions = {
 		intent:
-			overrides.intent ?? fn.trainingIntent ?? inferIntent(methodRef, source),
+			overrides.intent ?? inferIntent(methodRef, source, fn.trainingIntent),
 		contract: (overrides.contract ?? {
 			ref: `inferred://${methodRef}`,
 		}) as TrainingContract,
@@ -296,12 +301,17 @@ training.infer = function infer<I, O>(
 	}) as never;
 };
 
-function inferIntent(methodRef: string, source: string): string {
+function inferIntent(
+	methodRef: string,
+	source: string,
+	structuredIntent: string | undefined,
+): string {
 	const comment = source.match(
 		/["']use training["'];?\s*(?:\/\/\s*(.+)|\/\*\*?\s*([\s\S]*?)\*\/)/,
 	);
 	const text = (comment?.[1] ?? comment?.[2])?.replace(/\s*\*\s*/g, " ").trim();
 	if (text) return text;
+	if (structuredIntent !== undefined) return structuredIntent;
 	return `Inferred: implement ${methodRef} to reproduce and improve its recorded behavior.`;
 }
 

@@ -272,13 +272,10 @@ test("generateDeclaredRegistrations emits a grounded, runnable defineGrounding",
 	const [declared] = scanDeclaredTrainables(AMBIENT);
 	assert.ok(declared);
 	const generated = generateDeclaredRegistrations(declared);
-	assert.deepEqual(
-		generated.split("\n").filter((line) => line.trimStart().startsWith("//")),
-		["// @generated"],
-	);
-	assert.equal(
+	assert.match(generated, /^\/\/ @generated$/mu);
+	assert.match(
 		generateDeclaredRegistrations(declared, { file: "src/program.ts" }),
-		generated,
+		/^\/\/ @generated from src\/program\.ts$/mu,
 	);
 	assert.match(generated, /defineGrounding\(/);
 	assert.match(generated, /"methodRef": "Program\.trainableMethod"/);

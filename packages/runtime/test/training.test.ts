@@ -386,6 +386,18 @@ test("marker form: training.infer grounds a bare use-training function", async (
 		...artifactFor("rankFeed"),
 	});
 	assert.ok(getAppliedArtifact("rankFeed"));
+	assert.deepEqual(await ranked({ subject: "billing question" }), {
+		category: "billing",
+	});
+	assert.deepEqual(await ranked({ subject: "unseen" }), { category: "UNSEEN" });
+	applyTrainingArtifact("rankFeed", null);
+	assert.deepEqual(await ranked({ subject: "billing question" }), {
+		category: "BILLING QUESTION",
+	});
+	assert.deepEqual(
+		getTrainable("rankFeed")?.calls.map((call) => call.served),
+		["body", "matched-demo", "body", "body"],
+	);
 });
 
 test("marker form: infer requires the directive and honors overrides", () => {
@@ -434,22 +446,31 @@ test("marker form: structured intent and explicit overrides take precedence", as
 	);
 });
 
-test("marker form: legacy leading comments remain valid intent", () => {
+test.each([
+	[
+		"line",
+		"// One-paragraph summary; no blame, no internal names.",
+		"One-paragraph summary; no blame, no internal names.",
+	],
+	[
+		"block",
+		"/* Summarize the ticket subject. */",
+		"Summarize the ticket subject.",
+	],
+])("marker form: %s comments provide training intent", (_kind, comment, intent) => {
 	const source = [
 		"async function summarize(input) {",
 		'  "use training";',
-		"  // One-paragraph summary; no blame, no internal names.",
+		`  ${comment}`,
 		"  return { category: input.subject };",
 		"}",
 	].join("\n");
-	const summarize: (input: Ticket) => Promise<Classification> = runInNewContext(
-		`(${source})`,
-	);
+	const summarize: ((input: Ticket) => Promise<Classification>) & {
+		trainingIntent?: string;
+	} = runInNewContext(`(${source})`);
+	summarize.trainingIntent = "Secondary structured intent.";
 	training.infer(summarize);
-	assert.equal(
-		getTrainable("summarize")?.fact.intent,
-		"One-paragraph summary; no blame, no internal names.",
-	);
+	assert.equal(getTrainable("summarize")?.fact.intent, intent);
 });
 
 test("rubric is optional: declaration grounds with intent + shape alone", () => {
