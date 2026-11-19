@@ -196,7 +196,7 @@ export function parseRunSleepScheduledFact(
 		index: data.index,
 	};
 	if (Object.hasOwn(data, "label")) {
-		if (!isJsonString(data.label))
+		if (data.label === undefined || !isJsonString(data.label))
 			throw new TypeError("invalid run.SleepScheduled");
 		parsed.label = data.label;
 	}

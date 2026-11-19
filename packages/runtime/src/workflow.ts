@@ -540,10 +540,10 @@ export function createWorkflowEngine(
 					rejectReplay(`invalid step journal for ${runId}`);
 				}
 				const scheduled = scheduledSteps.get(index);
-				unconsumedScheduledSteps.delete(index);
 				if (scheduled !== undefined && scheduled !== name) {
 					rejectStepName();
 				}
+				unconsumedScheduledSteps.delete(index);
 				const recorded = stepRecordedAtIndex(index);
 				if (recorded.completed && recorded.completed.name !== name) {
 					rejectStepName();
@@ -600,7 +600,6 @@ export function createWorkflowEngine(
 				}
 				const normalizedDurationMs = Object.is(durationMs, -0) ? 0 : durationMs;
 				const scheduled = sleepFacts.get(index);
-				unconsumedScheduledSleeps.delete(index);
 				if (scheduled) {
 					if (
 						scheduled.delayMs !== normalizedDurationMs ||
@@ -608,8 +607,10 @@ export function createWorkflowEngine(
 					) {
 						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
 					}
+					unconsumedScheduledSleeps.delete(index);
 					return;
 				}
+				unconsumedScheduledSleeps.delete(index);
 				if (
 					!Number.isSafeInteger(normalizedDurationMs) ||
 					normalizedDurationMs < 0
