@@ -553,3 +553,47 @@ other fourteen portable offerings are declared absent with a reason
 | `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.edge-function/v1` | functions ship inside a deployment | deliver them with the project deployment |
 | a canary is lowered to `inprocess.weighted` | Rolling Releases were not realizable for the plan | check the two mapped deployment ids; the rung is recorded (`rollout.Lowered`) |
 | no `hobo.cd.resolver.*` metrics | the registry was built without `metrics` and `nowMs` | pass both; a sink without a clock is refused |
+
+## Deployment test emulator
+
+`@hobo/provider-vercel/testing` exports `createVercelDeploymentEmulator` for
+in-process tests. Give it a synthetic team and token and the Vercel Labs
+emulator's `app.fetch` as `projectFetch`, then seed the same project identity in
+both fixtures. It exposes both `fetch` and HoBo's `HttpTransport`, backed by the
+same isolated state. The adapter forwards project lookup and file uploads to the
+Labs emulator and supplies the deployment behavior that emulator does not yet
+model. It never chooses a network transport itself; `projectFetch` must be an
+in-process emulator, not the real provider.
+The `HttpTransport` uses HoBo's bounded fetch adapter and forwards its abort
+signal to `projectFetch`. An upstream operation that ignores cancellation can
+still have an uncertain outcome; delayed responses do not update the overlay.
+The emulator bounds request bodies and its `fetch` responses to 32 MiB.
+
+The supported slice uploads content addressed by SHA-1, creates file-based preview
+or staged production deployments, reads and lists them, serves the saved source
+bytes from synthetic deployment origins, and changes an existing production
+alias. `seedDeployment`, `seedAlias`, `setState`, and `failNext` let tests model
+an earlier deployment, build completion, and a response lost before or after an
+operation. A staged production deployment receives no production alias until an
+explicit alias operation. Preview deployments cannot be promoted by this model;
+Vercel can rebuild previews with production settings, which the emulator does
+not simulate. It does not require or create a Git-connected project.
+
+This is a deterministic test double, not evidence of Vercel behavior: it does
+not unpack source archives, build source, execute functions, model billing or
+real credentials, enforce provider permissions, reproduce timing or eventual
+consistency, or implement all Vercel APIs. Automatic production domain
+assignment, Git-source creation, and unrecognized routes are refused. Reserved
+source-archive paths are refused unless the opaque seam below is enabled. File
+and alias state is process-local and is not durable. A synthetic lost response does not prove that
+a real provider request is terminal. `test/deployment-emulator.test.ts`
+exercises the HoBo resolver through the shared transport and the staged
+upload/alias flow.
+
+For tests of the source uploader, `opaqueSourceArchives: true` accepts exactly
+one `.vercel/source.tgz.part1` reference whose uploaded bytes, SHA-1 and size
+match. `readOpaqueArchive` returns a copy of those opaque bytes. The emulator
+does not extract or validate the archive and returns 501 for its application
+paths. A test can call `setSyntheticResponses` to supply explicitly synthetic
+responses, such as health endpoints, for a staged archive deployment; those
+responses are test fixtures, not evidence of an extracted or built application.
