@@ -106,6 +106,8 @@ pnpm run install:check
 
 Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin` by default. Set `MISE_INSTALL_PATH` to an absolute executable path to install or find mise elsewhere. Bootstrap prefers that exact executable, even if its filename differs from `mise`, and adds its parent directory to `PATH`.
 
+The bootstrap and retry tests use local installer fixtures and a temporary home.
+
 ## Hermetic CI runner (`mise oci`)
 
 Self-hosted **`runs-on: hobo`** jobs use a container built from this repo’s **`mise.toml` / `mise.lock`**, not workflow tool installers:
