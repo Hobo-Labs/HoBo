@@ -212,7 +212,8 @@ Windows system root when needed, and an explicit Git discovery ceiling when
 configured. Owner-session values are not inherited. Global and system Git
 configuration are disabled, so a `safe.directory` exception defined only there
 does not apply; read the repository as its owner or make it accessible without
-that exception.
+that exception. The synthetic environment-isolation and missing-object tests
+currently skip Windows; that platform's behavior remains unverified.
 
 ```ts
 // hobo.delivery.ts
