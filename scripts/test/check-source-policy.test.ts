@@ -382,9 +382,9 @@ describe("source policy", () => {
 		assert.match(result.stderr, /literal\[1\]\.ts:1/u);
 	});
 
-	it("rejects changes that retain an existing design document", () => {
+	it("allows removing text from an existing design document but rejects additions", () => {
 		const repo = fixture();
-		write(repo, "docs/design/existing.md", "# Existing\n");
+		write(repo, "docs/design/existing.md", "# Existing\nOld content\n");
 		git(repo, "add", "--all");
 		git(
 			repo,
@@ -397,12 +397,22 @@ describe("source policy", () => {
 			"-m",
 			"add design",
 		);
+		write(repo, "docs/design/existing.md", "# Existing\n");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
 		write(repo, "docs/design/existing.md", "# Changed\n");
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 1);
 		unlinkSync(join(repo, "docs/design/existing.md"));
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 0);
+	});
+
+	it("rejects a new empty design document", () => {
+		const repo = fixture();
+		write(repo, "docs/design/empty.md", "");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 1);
 	});
 
 	it("allows tracked planning documents to be removed before staging", () => {
