@@ -22,6 +22,7 @@
 		"croner": "10.0.1"
 	},
 	"devDependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/conformance": "workspace:*",
 		"@types/node": ">=24.0.0"
 	},

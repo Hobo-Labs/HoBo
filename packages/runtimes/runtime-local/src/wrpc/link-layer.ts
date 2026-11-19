@@ -201,6 +201,19 @@ export function createWrpcLinkLayer(options: {
 			store.register(provider);
 		},
 
+		manifestIr() {
+			return {
+				schema: "hobo.manifest.wrpc-links/v1",
+				links: [...links.values()].map((link) => ({
+					componentId: link.componentId,
+					importInterface: link.importInterface,
+					providerId: link.providerId,
+					exportInterface: link.exportInterface,
+					wire: { ...link.negotiatedWire },
+				})),
+			};
+		},
+
 		establishLink(request: LinkRequest): EstablishedLink {
 			const component = components.get(request.componentId);
 			if (!component) {

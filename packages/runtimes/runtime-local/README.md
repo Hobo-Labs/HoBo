@@ -57,6 +57,10 @@ CLI version gate).
 **Out:** wRPC cross-process transport, fuel/epoch limits, real `.wasm` byte execution,
 OCI/wasmCloud adapters, conformance suite, grant inference from manifests.
 
+`WrpcLinkPort.manifestIr()` returns a snapshot of established links and their
+negotiated wire versions. Re-establishing a component import replaces its entry;
+the snapshot contains no entry for a link that failed to establish.
+
 ## Usage
 
 ```ts

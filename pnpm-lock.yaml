@@ -3255,6 +3255,9 @@ importers:
         specifier: 10.0.1
         version: 10.0.1
     devDependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
       '@hobo/conformance':
         specifier: workspace:*
         version: link:../../conformance
