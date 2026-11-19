@@ -21,6 +21,10 @@ const cases = [
           /\ UNCHANGED <<phase, calls, terminalCalls, terminalFacts, savedOutcome>>`, String.raw`/\ resumes' = resumes + 1 /\ returnedOutcome' = savedOutcome /\ terminalFacts' = terminalFacts + 1
           /\ UNCHANGED <<phase, calls, terminalCalls, savedOutcome>>`, 'NoDuplicateTerminalFact', ''],
   ['WorkflowTerminal', String.raw`returnedOutcome' = savedOutcome`, String.raw`returnedOutcome' = "none"`, 'ResumeReturnsRecorded', ''],
+  ['WorkflowStepJournal', String.raw`FinishFailed == /\ phase = "finishing-failure"
+                /\ phase' = IF EnforceConsumption /\ consumed <= maxIndex`, String.raw`FinishFailed == /\ phase = "finishing-failure"
+                /\ phase' = IF FALSE /\ consumed <= maxIndex`, 'NoUnconsumedTerminal', 'CONSTANTS EnforceConsumption = TRUE\n          RejectPostFailure = TRUE'],
+  ['WorkflowStepJournal', String.raw`IF RejectPostFailure`, String.raw`IF FALSE`, 'PostFailureHistoryRefused', 'CONSTANTS EnforceConsumption = TRUE\n          RejectPostFailure = TRUE'],
 ] as const;
 try {
   for (const [model, before, after, invariant, constants] of cases) {

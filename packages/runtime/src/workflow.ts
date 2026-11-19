@@ -244,7 +244,10 @@ export function createWorkflowEngine(
 		if (journaledOutcomeIndices.length > 0) {
 			const outcomeIndexSet = new Set(journaledOutcomeIndices);
 			const maxOutcomeIndex = Math.max(...journaledOutcomeIndices);
-			if (!Number.isSafeInteger(maxOutcomeIndex) || maxOutcomeIndex > 1_000_000) {
+			if (
+				!Number.isSafeInteger(maxOutcomeIndex) ||
+				maxOutcomeIndex > 1_000_000
+			) {
 				throw new Error(`invalid step journal for ${runId}`);
 			}
 			for (let index = 0; index < maxOutcomeIndex; index += 1) {
@@ -257,6 +260,16 @@ export function createWorkflowEngine(
 			journaledOutcomeIndices.length > 0
 				? Math.max(...journaledOutcomeIndices)
 				: -1;
+		const failedOutcomeIndices = journal
+			.filter(
+				(event) => event.type === "run.StepFailed" && isRecord(event.data),
+			)
+			.map((event) => parseRunStepFailedFact(cloneAsJson(event.data)).index);
+		if (
+			failedOutcomeIndices.some((index) => index < maxJournaledOutcomeIndex)
+		) {
+			throw new Error(`step outcome follows failure for ${runId}`);
+		}
 		const terminals = journal.filter(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
 		);
@@ -480,10 +493,7 @@ export function createWorkflowEngine(
 
 		try {
 			const value = await def.run(ctx, runArgs);
-			if (
-				maxJournaledOutcomeIndex >= 0 &&
-				stepIndex <= maxJournaledOutcomeIndex
-			) {
+			if (stepIndex <= maxJournaledOutcomeIndex) {
 				throw new Error(`unconsumed step outcome for ${runId}`);
 			}
 			const result = captureWorkflowResult(value);
@@ -491,6 +501,9 @@ export function createWorkflowEngine(
 			return { runId, status: "completed", result, error: undefined };
 		} catch (error) {
 			if (error instanceof WorkflowFailure) {
+				if (stepIndex <= maxJournaledOutcomeIndex) {
+					throw new Error(`unconsumed step outcome for ${runId}`);
+				}
 				const failureData: JsonBag = {
 					message: error.message,
 				};

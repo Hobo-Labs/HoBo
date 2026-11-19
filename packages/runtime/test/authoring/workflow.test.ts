@@ -1100,4 +1100,89 @@ describe("durable workflow: journal, restart, replay", () => {
 			/unconsumed step outcome/,
 		);
 	});
+
+	it("refuses run.Failed when a journaled step outcome was not consumed", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/unconsumed-failure",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "unconsumed-failure-seed",
+					workflowName: "unconsumed-failure",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/unconsumed-failure",
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "later", index: 0, result: "ok" },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "unconsumed-failure",
+			run() {
+				throw new WorkflowFailure("early failure");
+			},
+		});
+		await expect(engine.resume(wf, "unconsumed-failure", {})).rejects.toThrow(
+			/unconsumed step outcome/,
+		);
+		expect(await engine.journal("unconsumed-failure")).toHaveLength(2);
+	});
+
+	it("rejects a step outcome after a failed step", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/outcome-after-failure",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "outcome-after-failure-seed",
+					workflowName: "outcome-after-failure",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/outcome-after-failure",
+				seq: 2,
+				type: "run.StepFailed",
+				data: { name: "first", index: 0, message: "boom" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/outcome-after-failure",
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "later", index: 1, result: "impossible" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "outcome-after-failure",
+			run(ctx) {
+				return ctx.step("first", () => "nope");
+			},
+		});
+		await expect(
+			engine.resume(wf, "outcome-after-failure", {}),
+		).rejects.toThrow(/step outcome follows failure/);
+	});
 });

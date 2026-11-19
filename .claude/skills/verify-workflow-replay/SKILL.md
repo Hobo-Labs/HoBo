@@ -5,11 +5,11 @@ description: Verify durable workflow run identity, replay, and terminal outcomes
 
 # Durable workflow identity and replay
 
-**Properties:** A completed journaled step is reused on resume; workflow operations validate run IDs; a fresh run atomically claims its ID; start and resume capture reproducible input; a resume checks recorded input and workflow identity, uses the recorded seed, refuses duplicate terminal facts, and returns a recorded terminal outcome without running the workflow or appending another terminal fact. Journaled step and workflow results are captured before return.
+**Properties:** A completed journaled step is reused on resume; workflow operations validate run IDs; a fresh run atomically claims its ID; start and resume capture reproducible input; a resume checks recorded input and workflow identity, uses the recorded seed, refuses duplicate terminal facts, and returns a recorded terminal outcome without running the workflow or appending another terminal fact. Journaled step and workflow results are captured before return. A terminal fact is not appended while recorded step outcomes remain unconsumed, and no outcome may follow a failed step.
 
 **Why:** Repeating effects or reusing results for different inputs can corrupt work.
 
-**Review baseline:** `345e5230fc2766adcafb154239492349cff1c5d3`.
+**Review baseline:** `ee94e75947e49b47b4a04e5bc8021eb908a91ef7`.
 
 ## Covered code
 
@@ -59,6 +59,26 @@ stateDiagram-v2
 ```
 
 Read this model with `/statechart` using the terminal-history view in `models/`.
+
+WorkflowStepJournal explores bounded histories of up to three step outcomes, including a failed outcome at any position, early body success or failure, and terminal recording. It requires every journaled outcome to be consumed before either terminal is recorded and refuses histories containing an outcome after a failed step. Removing either guard yields a TLC counterexample; Z3 proves the corresponding integer implications and exhibits counterexamples without the guards. Real-code tests reproduce both paths and verify that refusal does not append a terminal fact. The model treats parsing and index uniqueness as established preconditions, bounds the history, and does not prove storage authenticity, TypeScript refinement, or liveness.
+
+```mermaid
+stateDiagram-v2
+  s0: Journal read
+  s1: Replaying workflow
+  s2: Workflow returned or failed
+  s3: Inconsistent journal refused
+  s4: Terminal recorded
+  [*] --> s0
+  s0 --> s3: reject outcome after failure
+  s0 --> s1: validate outcome history
+  s1 --> s1: consume recorded outcome
+  s1 --> s2: workflow returns or fails
+  s2 --> s3: reject unconsumed outcome
+  s2 --> s4: record terminal
+```
+
+Read this model with `/statechart` using the step-journal view in `models/`.
 
 WorkflowRunIdBoundary explores 16 states and 25 steps for two valid strings, an empty string, a number, a boxed string, null and a proxy. It checks that only valid IDs are admitted, that a coerced value cannot access the same modeled stream, and that validation does not inspect a proxy. Its four-state projection hides 16 same-label steps. Removing the guard or safe check violates these properties; real-code tests reproduce the numeric-alias and proxy-inspection paths. Z3 proves fixed-prefix cancellation for arbitrary strings and finds counterexamples when run-ID guards are removed. The model assumes trusted JavaScript intrinsics and truthful primitive-string validation; it does not establish TypeScript refinement, cross-process fencing or global authorization.
 
