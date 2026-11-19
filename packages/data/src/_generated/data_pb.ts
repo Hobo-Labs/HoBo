@@ -7,7 +7,7 @@ import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_data: GenFile = /*@__PURE__*/
-  fileDesc("CgpkYXRhLnByb3RvEgxob2JvLmRhdGEudjEidAoXQWdncmVnYXRlU25hcHNob3RSZWNvcmQSEQoJc3RyZWFtX2lkGAEgASgJEgsKA3NlcRgCIAEoBBITCgtmZW5jZV90b2tlbhgDIAEoCRISCgpzdGF0ZV9qc29uGAQgASgJEhAKCHNhdmVkX2F0GAUgASgJImIKGlByb2plY3Rpb25DaGVja3BvaW50UmVjb3JkEhIKCnByb2plY3Rpb24YASABKAkSCwoDc2VxGAIgASgEEhEKCXJvd3NfanNvbhgDIAEoCRIQCghzYXZlZF9hdBgEIAEoCSJfChBRdWFyYW50aW5lUmVjb3JkEhUKDW9mZmVuZGluZ19zZXEYASABKAQSFgoOcXVhcmFudGluZV9zZXEYAiABKAQSDAoEdHlwZRgDIAEoCRIOCgZyZWFzb24YBCABKAkiTgoUVXBjYXN0ZXJSZWdpc3RyYXRpb24SDAoEdHlwZRgBIAEoCRIUCgxmcm9tX3ZlcnNpb24YAiABKA0SEgoKdG9fdmVyc2lvbhgDIAEoDSJPChJBY3RvckFjdGl2YXRlZERhdGESEQoJc3RyZWFtX2lkGAEgASgJEhEKCWhvbGRlcl9pZBgCIAEoCRITCgtmZW5jZV90b2tlbhgDIAEoCSJNChZBY3RvclN0YXRlQXBwZW5kZWREYXRhEhEKCXN0cmVhbV9pZBgBIAEoCRILCgNzZXEYAiABKAQSEwoLZmVuY2VfdG9rZW4YAyABKAkiNQoTQWN0b3JQYXNzaXZhdGVkRGF0YRIRCglzdHJlYW1faWQYASABKAkSCwoDc2VxGAIgASgEIncKFlByb2plY3Rpb25EZWNsYXJlZERhdGESEgoKcHJvamVjdGlvbhgBIAEoCRIQCghyZWFkX3NldBgCIAMoCRI3ChByZWFjdGl2aXR5X2NsYXNzGAMgASgOMh0uaG9iby5kYXRhLnYxLlJlYWN0aXZpdHlDbGFzcyJKChRQcm9qZWN0aW9uTGFnZ2VkRGF0YRISCgpwcm9qZWN0aW9uGAEgASgJEg8KB2xhZ19zZXEYAiABKAQSDQoFYm91bmQYAyABKAQiSgoZUHJvamVjdGlvblNpbmtSZWJvdW5kRGF0YRISCgpwcm9qZWN0aW9uGAEgASgJEhkKEW1hdGNoX2RlY2lkZWRfcmVmGAIgASgJIkwKHVByb2plY3Rpb25SZXBsaWNhdGVkRXZlbnREYXRhEhIKCmV2ZW50X2pzb24YASABKAkSFwoPc291cmNlX3Bvc2l0aW9uGAIgASgEIn8KIFByb2plY3Rpb25SZXBsaWNhdGlvbkNoZWNrZWREYXRhEhgKEHNvdXJjZV9zdHJlYW1faWQYASABKAkSFwoPc291cmNlX3Bvc2l0aW9uGAIgASgEEhUKDWNoZWNrZWRfYXRfbXMYAyABKAQSEQoJY2F1Z2h0X3VwGAQgASgIIqcBCh1Dcm9zc0NhbXBQcm9qZWN0aW9uTGFnZ2VkRGF0YRISCgpwcm9qZWN0aW9uGAEgASgJEhUKDW93bmVyX2NhbXBfaWQYAiABKAkSFwoPcmVwbGljYV9jYW1wX2lkGAMgASgJEhcKD3NvdXJjZV9wb3NpdGlvbhgEIAEoBBIQCghib3VuZF9tcxgFIAEoBBIXCg9vYnNlcnZlZF9sYWdfbXMYBiABKAQqdQoPUmVhY3Rpdml0eUNsYXNzEiAKHFJFQUNUSVZJVFlfQ0xBU1NfVU5TUEVDSUZJRUQQABIdChlSRUFDVElWSVRZX0NMQVNTX1JFQUNUSVZFEAESIQodUkVBQ1RJVklUWV9DTEFTU19OT05fUkVBQ1RJVkUQAmIGcHJvdG8z");
+  fileDesc("CgpkYXRhLnByb3RvEgxob2JvLmRhdGEudjEidAoXQWdncmVnYXRlU25hcHNob3RSZWNvcmQSEQoJc3RyZWFtX2lkGAEgASgJEgsKA3NlcRgCIAEoBBITCgtmZW5jZV90b2tlbhgDIAEoCRISCgpzdGF0ZV9qc29uGAQgASgJEhAKCHNhdmVkX2F0GAUgASgJImIKGlByb2plY3Rpb25DaGVja3BvaW50UmVjb3JkEhIKCnByb2plY3Rpb24YASABKAkSCwoDc2VxGAIgASgEEhEKCXJvd3NfanNvbhgDIAEoCRIQCghzYXZlZF9hdBgEIAEoCSJfChBRdWFyYW50aW5lUmVjb3JkEhUKDW9mZmVuZGluZ19zZXEYASABKAQSFgoOcXVhcmFudGluZV9zZXEYAiABKAQSDAoEdHlwZRgDIAEoCRIOCgZyZWFzb24YBCABKAkimwEKHUFnZ3JlZ2F0ZVF1YXJhbnRpbmVkRXZlbnREYXRhEhUKDW9mZmVuZGluZ19zZXEYASABKAQSFgoOb2ZmZW5kaW5nX3R5cGUYAiABKAkSGgoSb2ZmZW5kaW5nX2V2ZW50X2lkGAMgASgJEgwKBGZvbGQYBCABKAkSEQoJZm9sZF9raW5kGAUgASgJEg4KBnJlYXNvbhgGIAEoCSJOChRVcGNhc3RlclJlZ2lzdHJhdGlvbhIMCgR0eXBlGAEgASgJEhQKDGZyb21fdmVyc2lvbhgCIAEoDRISCgp0b192ZXJzaW9uGAMgASgNIk8KEkFjdG9yQWN0aXZhdGVkRGF0YRIRCglzdHJlYW1faWQYASABKAkSEQoJaG9sZGVyX2lkGAIgASgJEhMKC2ZlbmNlX3Rva2VuGAMgASgJIk0KFkFjdG9yU3RhdGVBcHBlbmRlZERhdGESEQoJc3RyZWFtX2lkGAEgASgJEgsKA3NlcRgCIAEoBBITCgtmZW5jZV90b2tlbhgDIAEoCSI1ChNBY3RvclBhc3NpdmF0ZWREYXRhEhEKCXN0cmVhbV9pZBgBIAEoCRILCgNzZXEYAiABKAQidwoWUHJvamVjdGlvbkRlY2xhcmVkRGF0YRISCgpwcm9qZWN0aW9uGAEgASgJEhAKCHJlYWRfc2V0GAIgAygJEjcKEHJlYWN0aXZpdHlfY2xhc3MYAyABKA4yHS5ob2JvLmRhdGEudjEuUmVhY3Rpdml0eUNsYXNzIkoKFFByb2plY3Rpb25MYWdnZWREYXRhEhIKCnByb2plY3Rpb24YASABKAkSDwoHbGFnX3NlcRgCIAEoBBINCgVib3VuZBgDIAEoBCJKChlQcm9qZWN0aW9uU2lua1JlYm91bmREYXRhEhIKCnByb2plY3Rpb24YASABKAkSGQoRbWF0Y2hfZGVjaWRlZF9yZWYYAiABKAkiTAodUHJvamVjdGlvblJlcGxpY2F0ZWRFdmVudERhdGESEgoKZXZlbnRfanNvbhgBIAEoCRIXCg9zb3VyY2VfcG9zaXRpb24YAiABKAQifwogUHJvamVjdGlvblJlcGxpY2F0aW9uQ2hlY2tlZERhdGESGAoQc291cmNlX3N0cmVhbV9pZBgBIAEoCRIXCg9zb3VyY2VfcG9zaXRpb24YAiABKAQSFQoNY2hlY2tlZF9hdF9tcxgDIAEoBBIRCgljYXVnaHRfdXAYBCABKAgipwEKHUNyb3NzQ2FtcFByb2plY3Rpb25MYWdnZWREYXRhEhIKCnByb2plY3Rpb24YASABKAkSFQoNb3duZXJfY2FtcF9pZBgCIAEoCRIXCg9yZXBsaWNhX2NhbXBfaWQYAyABKAkSFwoPc291cmNlX3Bvc2l0aW9uGAQgASgEEhAKCGJvdW5kX21zGAUgASgEEhcKD29ic2VydmVkX2xhZ19tcxgGIAEoBCp1Cg9SZWFjdGl2aXR5Q2xhc3MSIAocUkVBQ1RJVklUWV9DTEFTU19VTlNQRUNJRklFRBAAEh0KGVJFQUNUSVZJVFlfQ0xBU1NfUkVBQ1RJVkUQARIhCh1SRUFDVElWSVRZX0NMQVNTX05PTl9SRUFDVElWRRACYgZwcm90bzM");
 
 export type AggregateSnapshotRecord = Message<"hobo.data.v1.AggregateSnapshotRecord"> & {
   streamId: string;
@@ -50,6 +50,23 @@ export type QuarantineRecord = Message<"hobo.data.v1.QuarantineRecord"> & {
 export const QuarantineRecordSchema: GenMessage<QuarantineRecord> = /*@__PURE__*/
   messageDesc(file_data, 2);
 
+export type AggregateQuarantinedEventData = Message<"hobo.data.v1.AggregateQuarantinedEventData"> & {
+  offendingSeq: bigint;
+
+  offendingType: string;
+
+  offendingEventId: string;
+
+  fold: string;
+
+  foldKind: string;
+
+  reason: string;
+};
+
+export const AggregateQuarantinedEventDataSchema: GenMessage<AggregateQuarantinedEventData> = /*@__PURE__*/
+  messageDesc(file_data, 3);
+
 export type UpcasterRegistration = Message<"hobo.data.v1.UpcasterRegistration"> & {
   type: string;
 
@@ -59,7 +76,7 @@ export type UpcasterRegistration = Message<"hobo.data.v1.UpcasterRegistration"> 
 };
 
 export const UpcasterRegistrationSchema: GenMessage<UpcasterRegistration> = /*@__PURE__*/
-  messageDesc(file_data, 3);
+  messageDesc(file_data, 4);
 
 export type ActorActivatedData = Message<"hobo.data.v1.ActorActivatedData"> & {
   streamId: string;
@@ -70,7 +87,7 @@ export type ActorActivatedData = Message<"hobo.data.v1.ActorActivatedData"> & {
 };
 
 export const ActorActivatedDataSchema: GenMessage<ActorActivatedData> = /*@__PURE__*/
-  messageDesc(file_data, 4);
+  messageDesc(file_data, 5);
 
 export type ActorStateAppendedData = Message<"hobo.data.v1.ActorStateAppendedData"> & {
   streamId: string;
@@ -81,7 +98,7 @@ export type ActorStateAppendedData = Message<"hobo.data.v1.ActorStateAppendedDat
 };
 
 export const ActorStateAppendedDataSchema: GenMessage<ActorStateAppendedData> = /*@__PURE__*/
-  messageDesc(file_data, 5);
+  messageDesc(file_data, 6);
 
 export type ActorPassivatedData = Message<"hobo.data.v1.ActorPassivatedData"> & {
   streamId: string;
@@ -90,7 +107,7 @@ export type ActorPassivatedData = Message<"hobo.data.v1.ActorPassivatedData"> & 
 };
 
 export const ActorPassivatedDataSchema: GenMessage<ActorPassivatedData> = /*@__PURE__*/
-  messageDesc(file_data, 6);
+  messageDesc(file_data, 7);
 
 export type ProjectionDeclaredData = Message<"hobo.data.v1.ProjectionDeclaredData"> & {
   projection: string;
@@ -101,7 +118,7 @@ export type ProjectionDeclaredData = Message<"hobo.data.v1.ProjectionDeclaredDat
 };
 
 export const ProjectionDeclaredDataSchema: GenMessage<ProjectionDeclaredData> = /*@__PURE__*/
-  messageDesc(file_data, 7);
+  messageDesc(file_data, 8);
 
 export type ProjectionLaggedData = Message<"hobo.data.v1.ProjectionLaggedData"> & {
   projection: string;
@@ -112,7 +129,7 @@ export type ProjectionLaggedData = Message<"hobo.data.v1.ProjectionLaggedData"> 
 };
 
 export const ProjectionLaggedDataSchema: GenMessage<ProjectionLaggedData> = /*@__PURE__*/
-  messageDesc(file_data, 8);
+  messageDesc(file_data, 9);
 
 export type ProjectionSinkReboundData = Message<"hobo.data.v1.ProjectionSinkReboundData"> & {
   projection: string;
@@ -121,7 +138,7 @@ export type ProjectionSinkReboundData = Message<"hobo.data.v1.ProjectionSinkRebo
 };
 
 export const ProjectionSinkReboundDataSchema: GenMessage<ProjectionSinkReboundData> = /*@__PURE__*/
-  messageDesc(file_data, 9);
+  messageDesc(file_data, 10);
 
 export type ProjectionReplicatedEventData = Message<"hobo.data.v1.ProjectionReplicatedEventData"> & {
   eventJson: string;
@@ -130,7 +147,7 @@ export type ProjectionReplicatedEventData = Message<"hobo.data.v1.ProjectionRepl
 };
 
 export const ProjectionReplicatedEventDataSchema: GenMessage<ProjectionReplicatedEventData> = /*@__PURE__*/
-  messageDesc(file_data, 10);
+  messageDesc(file_data, 11);
 
 export type ProjectionReplicationCheckedData = Message<"hobo.data.v1.ProjectionReplicationCheckedData"> & {
   sourceStreamId: string;
@@ -143,7 +160,7 @@ export type ProjectionReplicationCheckedData = Message<"hobo.data.v1.ProjectionR
 };
 
 export const ProjectionReplicationCheckedDataSchema: GenMessage<ProjectionReplicationCheckedData> = /*@__PURE__*/
-  messageDesc(file_data, 11);
+  messageDesc(file_data, 12);
 
 export type CrossCampProjectionLaggedData = Message<"hobo.data.v1.CrossCampProjectionLaggedData"> & {
   projection: string;
@@ -160,7 +177,7 @@ export type CrossCampProjectionLaggedData = Message<"hobo.data.v1.CrossCampProje
 };
 
 export const CrossCampProjectionLaggedDataSchema: GenMessage<CrossCampProjectionLaggedData> = /*@__PURE__*/
-  messageDesc(file_data, 12);
+  messageDesc(file_data, 13);
 
 export enum ReactivityClass {
   UNSPECIFIED = 0,

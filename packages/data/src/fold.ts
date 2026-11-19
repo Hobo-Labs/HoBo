@@ -1,11 +1,14 @@
+import { fromJsonString } from "@bufbuild/protobuf";
 import type { EventEnvelope, QuarantineRecord } from "@hobo/core";
 
+import { AggregateQuarantinedEventDataSchema } from "./_generated/data_pb.js";
 import { parseOffendingSeq } from "./json.js";
 import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
 
 export type Evolve<S> = (state: S, event: EventEnvelope) => S;
 
 export interface FoldSpec<S> {
+	name?: string;
 	initialState: S;
 	evolve: Evolve<S>;
 	upcasters?: UpcasterRegistry;
@@ -22,8 +25,27 @@ function clone<T>(value: T): T {
 	return structuredClone(value);
 }
 
+export const AGGREGATE_QUARANTINE_EVENT = "aggregate.QuarantineRecorded";
+
 function isQuarantineFact(event: EventEnvelope): boolean {
-	return event.type.endsWith(".Quarantined");
+	return (
+		event.type.endsWith(".Quarantined") ||
+		event.type === AGGREGATE_QUARANTINE_EVENT
+	);
+}
+
+function quarantineApplies(
+	event: EventEnvelope,
+	name: string | undefined,
+): boolean {
+	if (event.type !== AGGREGATE_QUARANTINE_EVENT) return true;
+	const data = fromJsonString(
+		AggregateQuarantinedEventDataSchema,
+		JSON.stringify(event.data),
+	);
+	return (
+		name !== undefined && data.fold === name && data.foldKind === "aggregate"
+	);
 }
 
 export function foldEvents<S>(
@@ -34,7 +56,7 @@ export function foldEvents<S>(
 
 	const quarantinedSeqs = new Set<number>();
 	for (const event of materialized) {
-		if (isQuarantineFact(event)) {
+		if (isQuarantineFact(event) && quarantineApplies(event, spec.name)) {
 			const offending = parseOffendingSeq(event.data);
 			if (offending !== undefined) quarantinedSeqs.add(offending);
 		}
@@ -46,6 +68,10 @@ export function foldEvents<S>(
 
 	let state = clone(spec.initialState);
 	let seq = 0;
+	let nextQuarantineSeq = materialized.reduce(
+		(head, event) => Math.max(head, event.seq),
+		0,
+	);
 	const quarantined: QuarantineRecord[] = [];
 
 	for (const event of materialized) {
@@ -60,7 +86,7 @@ export function foldEvents<S>(
 			quarantinedSeqs.add(event.seq);
 			quarantined.push({
 				offendingSeq: event.seq,
-				quarantineSeq: seq + 1,
+				quarantineSeq: ++nextQuarantineSeq,
 				type: `${event.type.split(".")[0] ?? "event"}.Quarantined`,
 				reason: cause instanceof Error ? cause.message : String(cause),
 			});

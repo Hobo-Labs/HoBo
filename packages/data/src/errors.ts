@@ -1,4 +1,4 @@
-
+import type { QuarantineRecord } from "@hobo/core";
 import { type ErrorSignal, isJsonString } from "./json.js";
 
 export type { ErrorSignal } from "./json.js";
@@ -50,6 +50,17 @@ export class ProjectionWriteError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = "ProjectionWriteError";
+	}
+}
+
+export class UnpersistedQuarantineError extends Error {
+	readonly code = "UNPERSISTED_QUARANTINE" as const;
+	constructor(
+		readonly streamId: string,
+		readonly quarantined: readonly QuarantineRecord[],
+	) {
+		super(`aggregate stream ${streamId} has events requiring quarantine`);
+		this.name = "UnpersistedQuarantineError";
 	}
 }
 

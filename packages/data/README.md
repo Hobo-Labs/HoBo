@@ -39,6 +39,14 @@ const result = await orders.execute(
 
 `result.seq` is the client's reads-your-writes watermark.
 
+When an aggregate fold rejects an event, `execute` records an
+`aggregate.QuarantineRecorded` fact before running the command. The fact names
+the original event and the affected aggregate fold; other folds can still
+process that event. Replays of the same aggregate skip the recorded event even
+if its implementation changes. `load` raises `UnpersistedQuarantineError` when
+it encounters an unrecorded failure; execute a command to record it under the
+aggregate lease.
+
 `createCrossCampProjection` copies an owner's ordered event stream into an
 independent replica event store and folds the copied events with the same
 projection. It can read all streams for a tenant or a named source stream.
