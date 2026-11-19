@@ -41,7 +41,7 @@ export const VERCEL_BLOB_PRODUCT_ID = "vercel.blob/v1";
 export const VERCEL_EDGE_CONFIG_PRODUCT_ID = "vercel.edge-config/v1";
 
 // public-contract: capability profiles these offerings claim to satisfy.
-export const VERCEL_PROJECT_PROFILE = "provider.project/v1";
+export const VERCEL_PROJECT_PROFILE = "web.project/v1";
 // public-contract: hosted-web capability profile advertised by the static deployment slot.
 export const VERCEL_STATIC_DEPLOY_PROFILE = "web.hosted/v1";
 export type VercelStaticDeploySlotOptions = { readonly projectId?: string };
@@ -67,6 +67,7 @@ export type VercelProjectSlotOptions = {
 	readonly framework?: string;
 	readonly rootDirectory?: string;
 	readonly buildCommand?: string;
+	readonly installCommand?: string;
 	readonly outputDirectory?: string;
 };
 
@@ -77,9 +78,13 @@ export type VercelEdgeFunctionSlotOptions = {
 	readonly regions?: readonly string[];
 };
 
-/** Blob store settings. `access` mirrors the documented store access level. */
+/** Blob store settings; the hosting supervisor supplies its operation ID. */
 export type VercelBlobSlotOptions = {
 	readonly access?: "public" | "private";
+	readonly store?: string;
+	readonly region?: string;
+	readonly projectId?: string;
+	readonly environments?: readonly ("production" | "preview" | "development")[];
 };
 
 /** Edge Config (now the Global Config REST family) settings. */

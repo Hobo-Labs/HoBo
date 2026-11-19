@@ -93,8 +93,19 @@ jobs:
             scripts/ci/verify-attestation.mts
             scripts/ci/merge-queue-reuse.mts
             packages/ci/src/fleet-overflow.ts
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.sha }}
+          path: .ci-trusted
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
       - id: route
-        uses: $/.github/actions/route-runner
+        uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
           route: ${{ inputs.route || 'auto' }}
@@ -774,7 +785,13 @@ jobs:
     # passes at once. Waits for the image job as PR impact validation does, so a
     # pull request that changes the image's inputs tests on the image it built.
     needs: [route, ci-runner-image]
-    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"scripts-tests"')) }}
+    # Each test file is assigned to exactly one shard. Splitting the lane keeps
+    # its watchdog useful even on a busy, smaller self-hosted runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # Build (6) and lane (12) step limits plus checkout and install fit the
     # 20-minute job limit (scripts/test/workflow-job-timeouts.test.ts).
@@ -865,22 +882,29 @@ jobs:
           --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: Scripts tests
         if: steps.scope.outputs.run == 'true'
-        # The lane took 4m37s on a GitHub-hosted runner and about 4.5 min locally.
+        # The unsharded lane exceeded its 10-minute watchdog on a busy fleet
+        # runner. All shards are required by the PR impact gate.
         timeout-minutes: 12
-        run: pnpm run test:scripts
+        env:
+          SHARD: ${{ strategy.job-index }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+        run: pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        # Matrix children share the same cache key; only one saves it.
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
         uses: $/.github/actions/ci-trace
+        with:
+          disambiguator: ${{ matrix.shard }}
 
   pr-gate:
     name: PR impact gate
@@ -941,8 +965,7 @@ jobs:
               ;;
             *) echo "Unexpected affected-lanes result for $EVENT_NAME: $AFFECTED_RESULT" >&2; exit 1 ;;
           esac
-          # Not a job a signed local run covers (scripts/ci/attestation.mts): it always runs.
-          if [ "${SCRIPTS_RESULT:-}" != "success" ]; then
+          if ! passed "${SCRIPTS_RESULT:-}" scripts-tests; then
             echo "Scripts tests did not succeed: ${SCRIPTS_RESULT:-}" >&2
             exit 1
           fi

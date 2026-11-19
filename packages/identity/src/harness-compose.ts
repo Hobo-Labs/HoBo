@@ -5,10 +5,7 @@
  *
  * Event-sourced; auto-rollback is a durable obligation shape (policy.Decided-compatible).
  */
-import type {
-	FeatureFlagStore,
-	FlagEvalContext,
-} from "./feature-flag-store.js";
+import type { FeatureFlagPort, FlagEvalContext } from "./feature-flag-store.js";
 import {
 	applyRolloutToGatewayRouting,
 	type DomainRoutingEvent,
@@ -24,12 +21,14 @@ import {
 } from "./harness-adapters.js";
 import {
 	type DeliveryHealthSignal,
+	type DeliveryPort,
 	OpenDeliveryEngine,
 	type RolloutPolicy,
 	type RolloutState,
 } from "./harness-delivery.js";
 import {
 	type ExperimentDefinition,
+	type ExperimentPort,
 	OpenExperimentEngine,
 } from "./harness-experiment.js";
 
@@ -40,11 +39,30 @@ export interface ExposureTrack {
 	readonly variant: string;
 }
 
-export type HarnessPorts = Readonly<{
-	flags: FeatureFlagStore;
-	delivery: OpenDeliveryEngine;
-	experiment: OpenExperimentEngine;
+export type HarnessPorts<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+> = Readonly<{
+	flags: FeatureFlagPort;
+	delivery: D | OpenDeliveryEngine;
+	experiment: E | OpenExperimentEngine;
 }>;
+
+export interface HarnessOptions<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+> {
+	readonly store: FeatureFlagPort;
+	readonly now?: () => string;
+	readonly emitOtel?: (span: {
+		readonly name: string;
+		readonly attributes: Readonly<Record<string, string | number | boolean>>;
+	}) => void;
+	readonly delivery?: D;
+	readonly experiment?: E;
+	readonly deliveryAdapter?: DeliveryAdapter;
+	readonly analysis?: ExperimentAnalysisPort;
+}
 
 export type ProgressiveRun = Readonly<{
 	rolloutId: string;
@@ -62,45 +80,43 @@ export type ProgressiveRun = Readonly<{
 /**
  * Coherent progressive-delivery facade over the three ports.
  */
-export class Harness {
+export class Harness<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+> {
 	readonly schemaVersion = HARNESS_SCHEMA;
-	readonly flags: FeatureFlagStore;
-	readonly delivery: OpenDeliveryEngine;
-	readonly experiment: OpenExperimentEngine;
+	readonly flags: FeatureFlagPort;
+	readonly delivery: D | OpenDeliveryEngine;
+	readonly experiment: E | OpenExperimentEngine;
 	readonly deliveryAdapter: DeliveryAdapter;
 	readonly analysis: ExperimentAnalysisPort;
 	readonly routingEvents: DomainRoutingEvent[] = [];
 	private readonly now: () => string;
 
-	constructor(options: {
-		readonly store: FeatureFlagStore;
-		readonly now?: () => string;
-		readonly emitOtel?: (span: {
-			readonly name: string;
-			readonly attributes: Readonly<Record<string, string | number | boolean>>;
-		}) => void;
-		readonly deliveryAdapter?: DeliveryAdapter;
-		readonly analysis?: ExperimentAnalysisPort;
-	}) {
+	constructor(options: HarnessOptions<D, E>) {
 		this.flags = options.store;
 		this.now = options.now ?? (() => new Date().toISOString());
-		this.delivery = new OpenDeliveryEngine({
-			store: options.store,
-			...(options.now !== undefined ? { now: options.now } : undefined),
-		});
-		this.experiment = new OpenExperimentEngine({
-			store: options.store,
-			...(options.now !== undefined ? { now: options.now } : undefined),
-			...(options.emitOtel !== undefined
-				? { emitOtel: options.emitOtel }
-				: undefined),
-		});
+		this.delivery =
+			options.delivery ??
+			new OpenDeliveryEngine({
+				store: options.store,
+				...(options.now !== undefined ? { now: options.now } : undefined),
+			});
+		this.experiment =
+			options.experiment ??
+			new OpenExperimentEngine({
+				store: options.store,
+				...(options.now !== undefined ? { now: options.now } : undefined),
+				...(options.emitOtel !== undefined
+					? { emitOtel: options.emitOtel }
+					: undefined),
+			});
 		this.deliveryAdapter =
 			options.deliveryAdapter ?? createBuiltinDeliveryAdapter();
 		this.analysis = options.analysis ?? createBuiltinExperimentAnalysis();
 	}
 
-	ports(): HarnessPorts {
+	ports(): HarnessPorts<D, E> {
 		return Object.freeze({
 			flags: this.flags,
 			delivery: this.delivery,
@@ -210,15 +226,9 @@ export class Harness {
 	}
 }
 
-export function createHarness(options: {
-	readonly store: FeatureFlagStore;
-	readonly now?: () => string;
-	readonly emitOtel?: (span: {
-		readonly name: string;
-		readonly attributes: Readonly<Record<string, string | number | boolean>>;
-	}) => void;
-	readonly deliveryAdapter?: DeliveryAdapter;
-	readonly analysis?: ExperimentAnalysisPort;
-}): Harness {
+export function createHarness<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+>(options: HarnessOptions<D, E>): Harness<D, E> {
 	return new Harness(options);
 }

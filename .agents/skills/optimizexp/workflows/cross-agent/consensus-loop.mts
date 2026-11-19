@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { normalizeCliOptions } from "../../harness/lib/cli-options.mts";
+import { assertSafeOptimizexpWriteScopes } from "../../harness/lib/write-containment.mts";
 import {
 	COUNCIL_PERSONAS,
 	CouncilProtocolError,
@@ -153,7 +155,7 @@ function withLock<T>(file: string, action: () => T): T {
 }
 
 function reviewDir(root: string, runId: string, reviewId: string): string {
-	if (!/^[a-zA-Z0-9._-]+$/.test(runId) || !/^[a-zA-Z0-9._-]+$/.test(reviewId)) throw new CouncilProtocolError("unsafe-id", "runId/reviewId may contain only letters, numbers, dot, underscore, and hyphen");
+	if (!/^[a-zA-Z0-9._-]+$/.test(runId) || !/^[a-zA-Z0-9._-]+$/.test(reviewId) || [".", ".."].includes(runId) || [".", ".."].includes(reviewId)) throw new CouncilProtocolError("unsafe-id", "runId/reviewId must be safe path segments using letters, numbers, dot, underscore, and hyphen");
 	return path.join(root, ".optimizexp", "runs", runId, "consensus", reviewId);
 }
 
@@ -1023,8 +1025,16 @@ function help(): Json {
 
 export function runConsensusCommand(argv: string[]): { exitCode: number; output: Json } {
 	try {
-		const args = parseArgs(argv);
+		const input = normalizeCliOptions(argv, {
+			values: ["--mode", "--root", "--run", "--review", "--base-sha", "--head-sha", "--base-ref", "--proposal", "--proposal-digest", "--entry", "--input", "--max-turns", "--persona", "--reason", "--result"],
+			flags: ["--help", "-h"],
+		});
+		if (input.error || input.positionals.length) throw new CouncilProtocolError("cli-argument", input.error ?? `unexpected argument ${input.positionals[0]}`);
+		const args = parseArgs(input.argv);
 		const root = repoRoot(args.root);
+		if (["init", "append", "decide", "block", "close"].includes(args.mode ?? "")) {
+			assertSafeOptimizexpWriteScopes(root, [""]);
+		}
 		let output: Json;
 		switch (args.mode) {
 			case "help": output = help(); break;

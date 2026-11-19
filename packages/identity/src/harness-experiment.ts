@@ -7,7 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { must } from "@hobo/core/total-access";
 import {
 	bucket,
-	type FeatureFlagStore,
+	type FeatureFlagPort,
 	type FlagEvalContext,
 } from "./feature-flag-store.js";
 import type { JsonObject } from "./json.js";
@@ -52,16 +52,40 @@ export type ExperimentAssignment = Readonly<{
 	assignedAt: string;
 }>;
 
+export interface ExperimentPort {
+	readonly events: readonly ExperimentEvent[];
+	define(definition: ExperimentDefinition): ExperimentDefinition;
+	assign(
+		experimentName: string,
+		context: FlagEvalContext,
+	): ExperimentAssignment;
+	expose(experimentName: string, context: FlagEvalContext): void;
+	evaluateAndExpose(
+		experimentName: string,
+		context: FlagEvalContext,
+	): ExperimentAssignment;
+	conclude(
+		experimentName: string,
+		verdict: "ship" | "do-not-ship" | "inconclusive",
+		reason?: string,
+	): void;
+	getAssignment(
+		experimentName: string,
+		subjectKey: string,
+	): ExperimentAssignment | undefined;
+	list(): readonly ExperimentDefinition[];
+}
+
 /**
  * Built-in experiment engine: sticky assignment + exposure tracking + OTEL-shaped hooks.
  */
-export class OpenExperimentEngine {
+export class OpenExperimentEngine implements ExperimentPort {
 	readonly events: ExperimentEvent[] = [];
 	private seq = 0;
 	private readonly defs = new Map<string, ExperimentDefinition>();
 	private readonly assignments = new Map<string, ExperimentAssignment>();
 	private readonly now: () => string;
-	private readonly store: FeatureFlagStore;
+	private readonly store: FeatureFlagPort;
 	/** OTEL-shaped emission hook (no hard OTEL dependency). */
 	private readonly emitOtel?: (span: {
 		readonly name: string;
@@ -69,7 +93,7 @@ export class OpenExperimentEngine {
 	}) => void;
 
 	constructor(options: {
-		readonly store: FeatureFlagStore;
+		readonly store: FeatureFlagPort;
 		readonly now?: () => string;
 		readonly emitOtel?: (span: {
 			readonly name: string;

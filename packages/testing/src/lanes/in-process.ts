@@ -12,11 +12,13 @@
  *
  * WHAT THIS DOES NOT EXECUTE. `runtime-local` does not execute real `.wasm`
  * component bytes today, so nothing here is the deployed artifact on the
- * deployed host — hence `simulated`, never `real`. Data, kv, bucket, queue,
- * topic, secret, auth and the rest get a handle and a binding locator and
- * nothing behind them: they are labelled `mocked`. `container` and
- * `wasm-component` are labelled `camp-only`. No provider is contacted, no
- * credential is brokered, no `.hobo/` state is written.
+ * deployed host — hence `simulated`, never `real`. Queue, topic, secret, data,
+ * schedule, kv, bucket and flag resources expose local port implementations.
+ * Auth and the rest get only a handle and a binding locator: they are labelled
+ * `mocked`.
+ * `container` and `wasm-component` are labelled `camp-only`. Built-in
+ * emulators contact no provider, broker no credentials and write no `.hobo/`
+ * state. Caller-supplied factories run their own code.
  */
 
 import {
@@ -26,8 +28,28 @@ import {
 	type ServerResponse,
 } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { BindingResolverPort } from "@hobo/core";
+import type { BindingResolverPort, Messaging } from "@hobo/core";
+import type { EngineBinding } from "@hobo/data-core";
+import type { SecretsPort } from "@hobo/identity";
 import { createLocalBindingResolver } from "@hobo/runtime-local";
+import {
+	type BucketEmulator,
+	createBucketEmulator,
+	createDataEmulator,
+	createFlagEmulator,
+	createKeyValueEmulator,
+	createQueueEmulator,
+	createScheduleEmulator,
+	createSecretEmulator,
+	createTopicEmulator,
+	type DataEmulator,
+	type FlagEmulator,
+	type KeyValuePort,
+	type QueueEmulator,
+	type ScheduleEmulator,
+	type ServiceEmulator,
+	type ServiceEmulatorFactories,
+} from "./../emulators.js";
 import { TestHarnessError } from "./../errors.js";
 import { inProcessFidelity, isHttpServedKind } from "./../fidelity.js";
 import {
@@ -45,15 +67,25 @@ export interface InProcessDeployment {
 	readonly bindings: Readonly<Record<string, Readonly<Record<string, string>>>>;
 	readonly resolver: BindingResolverPort;
 	readonly servers: ReadonlyMap<string, Server>;
+	readonly queues: ReadonlyMap<string, QueueEmulator>;
+	readonly topics: ReadonlyMap<string, ServiceEmulator<Messaging>>;
+	readonly secrets: ReadonlyMap<string, ServiceEmulator<SecretsPort>>;
+	readonly data: ReadonlyMap<string, DataEmulator>;
+	readonly schedules: ReadonlyMap<string, ScheduleEmulator>;
+	readonly kv: ReadonlyMap<string, ServiceEmulator<KeyValuePort>>;
+	readonly buckets: ReadonlyMap<string, BucketEmulator>;
+	readonly flags: ReadonlyMap<string, FlagEmulator>;
 }
 
 type FetchLikeHandler = (request: Request) => Response | Promise<Response>;
 
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the collected Bindle entrypoint is an untyped application boundary; each callable is checked before it is invoked. */
 function resolveFetchHandler(
-	bindle: Record<string, unknown>,
+	bindle: unknown,
 	alias: string,
 ): FetchLikeHandler | undefined {
-	const entrypoint = bindle.entrypoint;
+	if (typeof bindle !== "object" || bindle === null) return undefined;
+	const entrypoint = (bindle as Record<string, unknown>).entrypoint;
 	if (typeof entrypoint !== "function") return undefined;
 	let factory: unknown;
 	try {
@@ -72,6 +104,7 @@ function resolveFetchHandler(
 		? (handler as FetchLikeHandler)
 		: undefined;
 }
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion */
 
 async function readRequestBody(
 	request: IncomingMessage,
@@ -80,6 +113,7 @@ async function readRequestBody(
 	if (method === "GET" || method === "HEAD") return undefined;
 	const chunks: Buffer[] = [];
 	for await (const chunk of request) {
+		// SAFETY: Node's IncomingMessage stream yields Buffer or string chunks.
 		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
 	}
 	if (chunks.length === 0) return undefined;
@@ -93,6 +127,7 @@ function toWebRequest(
 ): Request {
 	const headers = new Headers();
 	for (const [key, value] of Object.entries(incoming.headers)) {
+		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: Node headers are strings or string arrays at this HTTP boundary.
 		if (typeof value === "string") headers.set(key, value);
 		else if (Array.isArray(value))
 			for (const item of value) headers.append(key, item);
@@ -102,7 +137,7 @@ function toWebRequest(
 	return new Request(url, {
 		method,
 		headers,
-		...(body !== undefined ? { body } : {}),
+		...(body !== undefined ? { body } : undefined),
 	});
 }
 
@@ -126,6 +161,7 @@ async function listen(handler: FetchLikeHandler): Promise<{
 	const server = createServer((incoming, outgoing) => {
 		void (async () => {
 			try {
+				// SAFETY: this listener is opened on a TCP host and port below.
 				const address = server.address() as AddressInfo | null;
 				const origin = `http://127.0.0.1:${address?.port ?? 0}`;
 				const body = await readRequestBody(incoming);
@@ -145,6 +181,7 @@ async function listen(handler: FetchLikeHandler): Promise<{
 			resolve();
 		});
 	});
+	// SAFETY: this listener was opened on a TCP host and port.
 	const address = server.address() as AddressInfo | null;
 	if (address === null) {
 		server.close();
@@ -157,51 +194,302 @@ async function listen(handler: FetchLikeHandler): Promise<{
 	return { server, endpoint: `http://127.0.0.1:${address.port}` };
 }
 
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this is the parse boundary for untyped JavaScript factory results; it checks the port, clock, close and fidelity before exposure. */
+function validateFactories(value: unknown): void {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		Array.isArray(value) ||
+		("queue" in value &&
+			value.queue !== undefined &&
+			typeof value.queue !== "function") ||
+		("topic" in value &&
+			value.topic !== undefined &&
+			typeof value.topic !== "function") ||
+		("secret" in value &&
+			value.secret !== undefined &&
+			typeof value.secret !== "function") ||
+		("data" in value &&
+			value.data !== undefined &&
+			typeof value.data !== "function") ||
+		("schedule" in value &&
+			value.schedule !== undefined &&
+			typeof value.schedule !== "function") ||
+		("kv" in value &&
+			value.kv !== undefined &&
+			typeof value.kv !== "function") ||
+		("bucket" in value &&
+			value.bucket !== undefined &&
+			typeof value.bucket !== "function") ||
+		("flag" in value &&
+			value.flag !== undefined &&
+			typeof value.flag !== "function")
+	) {
+		throw new TestHarnessError(
+			"HARNESS_EMULATOR_INVALID",
+			"the emulator overrides are not service factories",
+			"provide emulator factories as functions, or omit the overrides",
+		);
+	}
+}
+
+function validateEmulator(
+	value: unknown,
+	alias: string,
+	kind:
+		| "queue"
+		| "topic"
+		| "secret"
+		| "data"
+		| "schedule"
+		| "kv"
+		| "bucket"
+		| "flag",
+): void {
+	const record =
+		typeof value === "object" && value !== null ? value : undefined;
+	const service = record as Record<string, unknown> | undefined;
+	const port = service?.port;
+	const portRecord =
+		typeof port === "object" && port !== null
+			? (port as Record<string, unknown>)
+			: undefined;
+	const methods =
+		kind === "queue"
+			? [
+					"enqueue",
+					"dequeue",
+					"handle",
+					"complete",
+					"release",
+					"simulateRedelivery",
+					"signal",
+				]
+			: kind === "topic"
+				? [
+						"ensureTopic",
+						"ensureSubscription",
+						"publish",
+						"consume",
+						"subscribe",
+						"ack",
+						"nack",
+						"events",
+					]
+				: kind === "secret"
+					? ["put", "access", "accessVersion", "listVersions"]
+					: kind === "data"
+						? ["close"]
+						: kind === "schedule"
+							? ["every"]
+							: kind === "kv"
+								? ["get", "set", "delete", "exists"]
+								: kind === "bucket"
+									? ["get", "put", "delete"]
+									: [
+											"list",
+											"get",
+											"define",
+											"loadDefinitions",
+											"evaluateBoolean",
+											"evaluate",
+											"activateKillSwitch",
+											"clearKillSwitch",
+											"archive",
+										];
+	const datasets = portRecord?.datasets;
+	const records = portRecord?.records;
+	const hasMethods = (candidate: unknown, names: readonly string[]) =>
+		typeof candidate === "object" &&
+		candidate !== null &&
+		names.every(
+			(name) =>
+				typeof (candidate as Record<string, unknown>)[name] === "function",
+		);
+	const clock = service?.clock;
+	const clockRecord =
+		typeof clock === "object" && clock !== null
+			? (clock as Record<string, unknown>)
+			: undefined;
+	if (
+		(service?.fidelity !== "simulated" && service?.fidelity !== "mocked") ||
+		(service.close !== undefined && typeof service.close !== "function") ||
+		portRecord === undefined ||
+		methods.some((method) => typeof portRecord[method] !== "function") ||
+		(kind === "topic" &&
+			(typeof portRecord.backend !== "string" ||
+				typeof portRecord.capabilities !== "object" ||
+				portRecord.capabilities === null)) ||
+		(kind === "secret" &&
+			(typeof portRecord.id !== "string" ||
+				typeof portRecord.kind !== "string")) ||
+		(kind === "data" &&
+			(typeof service.close !== "function" ||
+				typeof portRecord.declaration !== "object" ||
+				portRecord.declaration === null ||
+				!hasMethods(datasets, ["ensureDataset", "describeDataset"]) ||
+				!hasMethods(records, ["write", "read"]))) ||
+		(kind === "bucket" &&
+			service.inspector !== undefined &&
+			!hasMethods(service.inspector, ["readBody"])) ||
+		(kind === "flag" &&
+			(typeof portRecord.rulesetSeq !== "number" ||
+				(service.inspector !== undefined &&
+					!hasMethods(service.inspector, ["events"])))) ||
+		((kind === "queue" || kind === "schedule") &&
+			clock !== undefined &&
+			(clockRecord === undefined ||
+				["now", "nowMs", "sleep", "cron", "advance", "trace"].some(
+					(method) => typeof clockRecord[method] !== "function",
+				)))
+	) {
+		throw new TestHarnessError(
+			"HARNESS_EMULATOR_INVALID",
+			`the ${kind} emulator for "${alias}" does not implement its port or declare its fidelity`,
+			`return a ${kind} emulator with its complete HoBo port and fidelity "simulated" or "mocked"`,
+		);
+	}
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion */
+
 /**
  * Boot the collected graph in dependency order. Every handle carries its
  * ADR-0042 fidelity label; nothing is labelled `real`.
  */
+/* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: parseTestTopology checks the collected Bindle before deployment. */
 export async function deployInProcess(
 	bindle: unknown,
 	stage: string,
+	factories: ServiceEmulatorFactories = {},
 ): Promise<InProcessDeployment> {
+	validateFactories(factories);
 	const topology = parseTestTopology(bindle);
 	const order = deploymentOrder(topology);
 	const byAlias = new Map(topology.nodes.map((node) => [node.alias, node]));
 	const handles = new Map<string, ResourceHandle>();
 	const servers = new Map<string, Server>();
+	const queues = new Map<string, QueueEmulator>();
+	const topics = new Map<string, ServiceEmulator<Messaging>>();
+	const secrets = new Map<string, ServiceEmulator<SecretsPort>>();
+	const data = new Map<string, DataEmulator>();
+	const schedules = new Map<string, ScheduleEmulator>();
+	const kv = new Map<string, ServiceEmulator<KeyValuePort>>();
+	const buckets = new Map<string, BucketEmulator>();
+	const flags = new Map<string, FlagEmulator>();
+	const resources = {
+		servers,
+		queues,
+		topics,
+		secrets,
+		data,
+		schedules,
+		kv,
+		buckets,
+		flags,
+	};
 	const bindings: Record<string, Record<string, string>> = {};
 
-	for (const alias of order) {
-		const node = byAlias.get(alias);
-		if (node === undefined) continue;
-		const handler =
-			isHttpServedKind(node.kind) && node.hasEntrypoint
-				? resolveFetchHandler(bindle as Record<string, unknown>, alias)
-				: undefined;
+	try {
+		for (const alias of order) {
+			const node = byAlias.get(alias);
+			if (node === undefined) continue;
+			const context = Object.freeze({ alias, stage });
+			if (node.kind === "queue") {
+				const emulator = await (factories.queue ?? createQueueEmulator)(
+					context,
+				);
+				queues.set(alias, emulator);
+				validateEmulator(emulator, alias, "queue");
+			} else if (node.kind === "topic") {
+				const emulator = await (
+					factories.topic ?? (() => createTopicEmulator())
+				)(context);
+				topics.set(alias, emulator);
+				validateEmulator(emulator, alias, "topic");
+			} else if (node.kind === "secret") {
+				const emulator = await (factories.secret ?? createSecretEmulator)(
+					context,
+				);
+				secrets.set(alias, emulator);
+				validateEmulator(emulator, alias, "secret");
+			} else if (node.kind === "data") {
+				const emulator = await (factories.data ?? createDataEmulator)(context);
+				data.set(alias, emulator);
+				validateEmulator(emulator, alias, "data");
+			} else if (node.kind === "schedule") {
+				const emulator = await (factories.schedule ?? createScheduleEmulator)(
+					context,
+				);
+				schedules.set(alias, emulator);
+				validateEmulator(emulator, alias, "schedule");
+			} else if (node.kind === "kv") {
+				const emulator = await (factories.kv ?? createKeyValueEmulator)(
+					context,
+				);
+				kv.set(alias, emulator);
+				validateEmulator(emulator, alias, "kv");
+			} else if (node.kind === "bucket") {
+				const emulator = await (factories.bucket ?? createBucketEmulator)(
+					context,
+				);
+				buckets.set(alias, emulator);
+				validateEmulator(emulator, alias, "bucket");
+			} else if (node.kind === "flag") {
+				const emulator = await (factories.flag ?? (() => createFlagEmulator()))(
+					context,
+				);
+				flags.set(alias, emulator);
+				validateEmulator(emulator, alias, "flag");
+			}
+			const handler =
+				isHttpServedKind(node.kind) && node.hasEntrypoint
+					? resolveFetchHandler(bindle, alias)
+					: undefined;
 
-		let endpoint: string | undefined;
-		if (handler !== undefined) {
-			const opened = await listen(handler);
-			servers.set(alias, opened.server);
-			endpoint = opened.endpoint;
-		}
+			let endpoint: string | undefined;
+			if (handler !== undefined) {
+				const opened = await listen(handler);
+				servers.set(alias, opened.server);
+				endpoint = opened.endpoint;
+			}
 
-		const fidelity = inProcessFidelity(node.kind, endpoint !== undefined);
-		handles.set(
-			alias,
-			Object.freeze({
+			const fidelity =
+				queues.get(alias)?.fidelity ??
+				topics.get(alias)?.fidelity ??
+				secrets.get(alias)?.fidelity ??
+				data.get(alias)?.fidelity ??
+				schedules.get(alias)?.fidelity ??
+				kv.get(alias)?.fidelity ??
+				buckets.get(alias)?.fidelity ??
+				flags.get(alias)?.fidelity ??
+				inProcessFidelity(node.kind, endpoint !== undefined);
+			handles.set(
 				alias,
-				kind: node.kind,
+				Object.freeze({
+					alias,
+					kind: node.kind,
+					fidelity,
+					...(endpoint !== undefined ? { endpoint } : undefined),
+				}),
+			);
+			bindings[alias] = Object.freeze({
+				locator: `hobo-test://${stage}/${node.kind}/${alias}`,
 				fidelity,
-				...(endpoint !== undefined ? { endpoint } : {}),
-			}),
+				...(endpoint !== undefined ? { endpoint } : undefined),
+			});
+		}
+	} catch (cause) {
+		const cleanupErrors = await closeResources(
+			order.slice().reverse(),
+			resources,
 		);
-		bindings[alias] = Object.freeze({
-			locator: `hobo-test://${stage}/${node.kind}/${alias}`,
-			fidelity,
-			...(endpoint !== undefined ? { endpoint } : {}),
-		});
+		if (cleanupErrors.length > 0) {
+			throw new AggregateError(
+				[cause, ...cleanupErrors],
+				"deployment failed and cleanup also failed",
+			);
+		}
+		throw cause;
 	}
 
 	return Object.freeze({
@@ -210,9 +498,10 @@ export async function deployInProcess(
 		handles,
 		bindings: Object.freeze(bindings),
 		resolver: createLocalBindingResolver(bindings),
-		servers,
+		...resources,
 	});
 }
+/* oxlint-enable anti-slop/no-unknown-parameters */
 
 /**
  * Tear down in reverse dependency order and report the order walked, so a
@@ -221,16 +510,84 @@ export async function deployInProcess(
 export async function destroyInProcess(
 	deployment: InProcessDeployment,
 ): Promise<readonly string[]> {
-	const order = teardownOrder(deployment.topology);
+	const existing = teardownRuns.get(deployment);
+	if (existing !== undefined) return existing;
+	const pending = (async () => {
+		const order = teardownOrder(deployment.topology);
+		const errors = await closeResources(order, deployment);
+		if (errors.length > 0)
+			throw new AggregateError(errors, "emulator teardown failed");
+		return order;
+	})();
+	teardownRuns.set(deployment, pending);
+	return pending;
+}
+
+const teardownRuns = new WeakMap<
+	InProcessDeployment,
+	Promise<readonly string[]>
+>();
+
+async function closeResources(
+	order: readonly string[],
+	resources: Pick<
+		InProcessDeployment,
+		| "servers"
+		| "queues"
+		| "topics"
+		| "secrets"
+		| "data"
+		| "schedules"
+		| "kv"
+		| "buckets"
+		| "flags"
+	>,
+): Promise<unknown[]> {
+	const errors: unknown[] = [];
+	const {
+		servers,
+		queues,
+		topics,
+		secrets,
+		data,
+		schedules,
+		kv,
+		buckets,
+		flags,
+	} = resources;
 	for (const alias of order) {
-		const server = deployment.servers.get(alias);
-		if (server === undefined) continue;
-		await new Promise<void>((resolve) => {
-			server.closeAllConnections?.();
-			server.close(() => {
-				resolve();
-			});
-		});
+		const server = servers.get(alias);
+		const emulator =
+			queues.get(alias) ??
+			topics.get(alias) ??
+			secrets.get(alias) ??
+			data.get(alias) ??
+			schedules.get(alias) ??
+			kv.get(alias) ??
+			buckets.get(alias) ??
+			flags.get(alias);
+		try {
+			if (server?.listening) {
+				await new Promise<void>((resolve, reject) => {
+					server.closeAllConnections?.();
+					server.close((error) => (error ? reject(error) : resolve()));
+				});
+			}
+		} catch (error) {
+			errors.push(error);
+		}
+		try {
+			// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: cleanup also handles an invalid JavaScript factory result.
+			if (typeof emulator?.close === "function") await emulator.close();
+			else {
+				// Invalid data factories can still hand us an open engine.
+				const binding: EngineBinding | undefined = data.get(alias)?.port;
+				// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the invalid factory result has not passed port validation.
+				if (typeof binding?.close === "function") await binding.close();
+			}
+		} catch (error) {
+			errors.push(error);
+		}
 	}
-	return order;
+	return errors;
 }
