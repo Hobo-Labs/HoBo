@@ -34,6 +34,8 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/cloud/src/orchestrator/recovery.ts",
 			"packages/core/src/ports/durable-messaging.ts",
 			"packages/core/test/durable-messaging-model.test.ts",
+			"packages/wit/wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
+			"packages/wit/wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
 			"packages/iac/iac-alchemy/model/IacGrant.tla",
 			"packages/iac/iac-alchemy/model/RivetQueue.tla",
 			"packages/iac/iac-alchemy/model/RivetQueue.cfg",
@@ -84,12 +86,20 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 		"@hobo/broker",
 		"@hobo/cloud",
 		"@hobo/core",
+		"@hobo/wit",
 		"@hobo/iac-alchemy",
 		"@hobo/dispatcher",
 		"@hobo/events",
 		"@hobo/provider-manifest",
 	])
 		assert.ok(words.has(`--filter=${name}`), name);
+	assert.ok(
+		pricingSteps?.some((step) =>
+			asText(asObject(step)?.run)?.includes(
+				"pnpm --filter @hobo/wit run wit:check",
+			),
+		),
+	);
 	const modelSteps = asList(asObject(jobs?.["pricing-models"])?.steps);
 	const modelCheck = modelSteps
 		?.map(asObject)

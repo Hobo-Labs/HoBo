@@ -31,6 +31,7 @@ const JCO_PATH = join(
 const HOBO_DEP_DIRS = [
 	"hobo-runtime",
 	"hobo-queue",
+	"hobo-durable-messaging",
 	"hobo-scheduler",
 	"hobo-blob-events",
 	"hobo-evidence",
@@ -58,6 +59,28 @@ export const GENERATION_TARGETS = [
 		witPath: "wit/deps/hobo-queue/hobo-queue.wit",
 		worldName: "queue-provider",
 		outSubdir: "queue-provider",
+	},
+	{
+		witPath: "wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
+		worldName: "durable-messaging-guest",
+		outSubdir: "durable-messaging-guest",
+	},
+	{
+		witPath: "wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
+		worldName: "durable-messaging-provider",
+		outSubdir: "durable-messaging-provider",
+	},
+	{
+		witPath:
+			"wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
+		worldName: "durable-messaging-jspi-guest",
+		outSubdir: "durable-messaging-jspi-guest",
+	},
+	{
+		witPath:
+			"wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
+		worldName: "durable-messaging-jspi-provider",
+		outSubdir: "durable-messaging-jspi-provider",
 	},
 	{
 		witPath: "wit/deps/hobo-scheduler/hobo-scheduler.wit",

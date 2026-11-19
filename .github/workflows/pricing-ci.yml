@@ -7,6 +7,7 @@ on:
       - "packages/broker/**"
       - "packages/cloud/**"
       - "packages/core/**"
+      - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
@@ -28,6 +29,7 @@ on:
       - "packages/broker/**"
       - "packages/cloud/**"
       - "packages/core/**"
+      - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
@@ -118,12 +120,15 @@ jobs:
             --filter=@hobo/broker \
             --filter=@hobo/cloud \
             --filter=@hobo/core \
+            --filter=@hobo/wit \
             --filter=@hobo/iac-alchemy \
             --filter=@hobo/dispatcher \
             --filter=@hobo/events \
             --filter=@hobo/provider-manifest \
             --continue \
             --concurrency=1
+      - name: Check generated messaging component bindings
+        run: pnpm --filter @hobo/wit run wit:check
       - name: Consumer contracts (pricing + dispatcher v2)
         run: |
           pnpm --filter @hobo/pricing run test:contract:consumer
