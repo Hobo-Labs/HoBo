@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
-import type { ActorHost } from "@hobo/data";
+import { type ActorHost, isOptimisticConflict } from "@hobo/data";
 import { emit } from "@hobo/events";
 import {
 	CLOUD_EVENTS,
@@ -416,19 +416,40 @@ export async function destroyResource(
 				});
 				return { kind: "failed", snapshot, reason: result.reason };
 			}
-			const emitted = await emit(
-				deps.store,
-				stream,
-				[
-					resourceDestroyed({
+			let recorded = false;
+			for (let attempt = 0; attempt < 8; attempt += 1) {
+				try {
+					await emit(
+						deps.store,
+						stream,
+						[
+							resourceDestroyed({
+								deploymentId: ctx.deploymentId,
+								resourceId: resource.name,
+								finalStateHash: finalStateHash(resource.name),
+							}),
+						],
+						{ expectedSeq: lastSeq, ...appendOpts },
+					);
+					recorded = true;
+					break;
+				} catch (error) {
+					if (!(error instanceof Error) || !isOptimisticConflict(error))
+						throw error;
+					events = await collectStream(deps.store, stream);
+					snapshot = foldResourceActor(events, {
+						...resource,
 						deploymentId: ctx.deploymentId,
-						resourceId: resource.name,
-						finalStateHash: finalStateHash(resource.name),
-					}),
-				],
-				{ expectedSeq: lastSeq, ...appendOpts },
-			);
-			lastSeq = emitted.seq;
+					});
+					if (snapshot.state === "Destroyed")
+						return { kind: "converged", snapshot };
+					lastSeq = events.at(-1)?.seq ?? 0;
+				}
+			}
+			if (!recorded)
+				throw new Error(
+					"deployment remained busy while recording resource destruction",
+				);
 			events = await collectStream(deps.store, stream);
 			snapshot = foldResourceActor(events, {
 				...resource,
