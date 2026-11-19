@@ -6,13 +6,11 @@ export interface ProviderStub {
 	handle(request: PactRequest): PactResponse | Promise<PactResponse>;
 }
 
-// domain-view: readonly verification outcome; data-models/contract-harness.proto InteractionFailure is its wire form.
 export interface InteractionFailure {
 	readonly description: string;
 	readonly reason: string;
 }
 
-// domain-view: readonly verification outcome aggregate; data-models/contract-harness.proto VerificationReport is its wire form.
 export interface VerificationReport {
 	readonly providerName: string;
 	readonly ok: boolean;
