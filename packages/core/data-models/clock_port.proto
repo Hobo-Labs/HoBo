@@ -48,3 +48,26 @@ message ClockSnapshot {
   repeated SleepTimer timers = 3;
   repeated CronSchedule cron_schedules = 4;
 }
+
+message SchedulerEverySpec {
+  uint64 every_ms = 1;
+  optional uint64 start_at_ms = 2;
+  optional uint64 jitter_ms = 3;
+}
+
+message SchedulerCronSpec {
+  string expr = 1;
+  string timezone = 2;
+}
+
+message SchedulerTriggerSpec {
+  oneof kind {
+    SchedulerEverySpec every = 1;
+    SchedulerCronSpec cron = 2;
+  }
+}
+
+message SchedulerReference {
+  string schedule_id = 1;
+  SchedulerTriggerSpec spec = 2;
+}

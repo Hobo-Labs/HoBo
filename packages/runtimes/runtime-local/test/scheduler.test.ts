@@ -78,23 +78,20 @@ describe("runtime-local hobo:scheduler port", () => {
 		});
 
 		const registered = (await table.callWithHandle(handle, "every", {
-			scheduleId: "nightly",
 			everyMs: 1_000,
-		})) as { scheduleId: string; deduped: boolean };
-		expect(registered.scheduleId).toBe("nightly");
-		expect(registered.deduped).toBe(false);
+		})) as { scheduleId: string; spec: { tag: string } };
+		expect(registered.scheduleId).toBe("scheduler:1");
+		expect(registered.spec.tag).toBe("every");
 
 		const fired = runtime.clock.advance(2_000);
 		expect(fired.map((fire) => fire.fireId)).toEqual([
-			"cron:nightly:1",
-			"cron:nightly:2",
+			"cron:scheduler:1:1",
+			"cron:scheduler:1:2",
 		]);
 
 		await expect(
-			table.callWithHandle(handle, "cron", { expr: "*/5 * * * *" }),
+			table.callWithHandle(handle, "cron", "*/5 * * * *"),
 		).resolves.toMatchObject({
-			expression: "*/5 * * * *",
-			timezone: "UTC",
 			spec: { tag: "cron", val: { expr: "*/5 * * * *", timezone: "UTC" } },
 		});
 	});

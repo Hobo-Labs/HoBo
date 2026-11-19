@@ -1,3 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { type FiredTimer, parseScheduleId, SCHEDULER_PORT } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
@@ -24,6 +29,55 @@ describe("the export table", () => {
 		]);
 	});
 
+	it("allocates distinct references across schedules and restarts", () => {
+		const { port, runtime, scheduler } = fixture();
+		if (!port) throw new Error("scheduler port missing");
+		scheduler.every(parseScheduleId("scheduler:1"), { everyMs: 500 });
+		const first = port.every({ everyMs: 1_000 });
+		const second = port.cron("*/5 * * * *");
+		expect([first.scheduleId, second.scheduleId]).toEqual([
+			"scheduler:2",
+			"scheduler:3",
+		]);
+		const restored = createRuntimeLocalQueueClock({
+			snapshot: runtime.snapshot(),
+		});
+		const restoredPort = createLocalScheduler(restored.clock).providerExports()[
+			SCHEDULER_PORT
+		];
+		expect(restoredPort?.every({ everyMs: 1_000 }).scheduleId).toBe(
+			"scheduler:4",
+		);
+	});
+
+	it("emits interval and cron references accepted by their schema", () => {
+		const { port } = fixture();
+		if (!port) throw new Error("scheduler port missing");
+		const directory = mkdtempSync(join(tmpdir(), "hobo-schedule-reference-"));
+		try {
+			const schema = fileURLToPath(
+				new URL("../../../core/data-models/clock_port.cue", import.meta.url),
+			);
+			const input = join(directory, "reference.json");
+			for (const reference of [
+				port.every({ everyMs: 1_000, jitterMs: 200 }),
+				port.cron("*/5 * * * *"),
+			]) {
+				writeFileSync(input, JSON.stringify(reference));
+				const result = spawnSync(
+					"cue",
+					["vet", schema, input, "-d", "#SchedulerReference"],
+					{
+						encoding: "utf8",
+					},
+				);
+				expect(result.status, result.stderr).toBe(0);
+			}
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
 	it("offers both WIT operations", () => {
 		expect(Object.keys(fixture().port ?? {}).sort()).toStrictEqual([
 			"cron",
@@ -33,21 +87,21 @@ describe("the export table", () => {
 });
 
 describe("registering an interval", () => {
-	it("registers an interval by schedule id", () => {
+	it("returns a reference containing the registered interval", () => {
 		const { port } = fixture();
-		expect(
-			port?.every({ scheduleId: "nightly", everyMs: 1_000 }).scheduleId,
-		).toBe(parseScheduleId("nightly"));
+		expect(port?.every({ everyMs: 1_000 })).toEqual({
+			scheduleId: "scheduler:1",
+			spec: { tag: "every", val: { everyMs: 1_000 } },
+		});
 	});
 
 	it("registers a job that actually fires on the clock", () => {
 		const { port, scheduler } = fixture();
 		const fires: FiredTimer[] = [];
-		port?.every({ scheduleId: "nightly", everyMs: 1_000 });
-		scheduler.registerJob(
-			parseScheduleId("nightly"),
-			{ everyMs: 1_000 },
-			(fire) => fires.push(fire),
+		const reference = port?.every({ everyMs: 1_000 });
+		if (!reference) throw new Error("scheduler port missing");
+		scheduler.registerJob(reference.scheduleId, { everyMs: 1_000 }, (fire) =>
+			fires.push(fire),
 		);
 		scheduler.advance(3_000);
 		expect(fires.length).toBeGreaterThan(0);
@@ -55,43 +109,35 @@ describe("registering an interval", () => {
 
 	it("accepts a start offset", () => {
 		const { port } = fixture();
-		expect(() =>
-			port?.every({ scheduleId: "a", everyMs: 1_000, startAtMs: 500 }),
-		).not.toThrow();
+		expect(() => port?.every({ everyMs: 1_000, startAtMs: 500 })).not.toThrow();
 	});
 
 	it("rejects a start offset that is not a number", () => {
 		const { port } = fixture();
 		for (const startAtMs of ["soon", null, true]) {
-			expect(() =>
-				port?.every({ scheduleId: "a", everyMs: 1_000, startAtMs }),
-			).toThrow(/startAtMs must be a number/);
+			expect(() => port?.every({ everyMs: 1_000, startAtMs })).toThrow(
+				/startAtMs must be a number/,
+			);
 		}
 	});
 });
 
 describe("intervals the port refuses", () => {
 	it("refuses a missing interval", () => {
-		expect(() => fixture().port?.every({ scheduleId: "a" })).toThrow(
-			/everyMs must be a number/,
-		);
+		expect(() => fixture().port?.every({})).toThrow(/everyMs must be a number/);
 	});
 
 	it("refuses an interval sent as a string", () => {
-		expect(() =>
-			fixture().port?.every({ scheduleId: "a", everyMs: "1000" }),
-		).toThrow(TypeError);
+		expect(() => fixture().port?.every({ everyMs: "1000" })).toThrow(TypeError);
 	});
 
 	it("refuses a null interval", () => {
-		expect(() =>
-			fixture().port?.every({ scheduleId: "a", everyMs: null }),
-		).toThrow(TypeError);
+		expect(() => fixture().port?.every({ everyMs: null })).toThrow(TypeError);
 	});
 
 	it("rejects unrecognized interval fields", () => {
 		expect(() =>
-			fixture().port?.every({ scheduleId: "a", everyMs: 1_000, unexpected: 5 }),
+			fixture().port?.every({ everyMs: 1_000, unexpected: 5 }),
 		).toThrow("invalid interval schedule fields");
 	});
 
@@ -100,22 +146,17 @@ describe("intervals the port refuses", () => {
 			expect(() => fixture().port?.every(payload)).toThrow(TypeError);
 		}
 	});
-
-	it("refuses an empty schedule id", () => {
-		expect(() => fixture().port?.every({ everyMs: 1_000 })).toThrow();
-	});
 });
 
 describe("cron expressions", () => {
 	it("registers the WIT expression", () => {
 		expect(fixture().port?.cron("0 3 * * *")).toMatchObject({
-			expression: "0 3 * * *",
-			timezone: "UTC",
+			spec: { tag: "cron", val: { expr: "0 3 * * *", timezone: "UTC" } },
 		});
 	});
 
 	it("rejects malformed expressions", () => {
-		expect(() => fixture().port?.cron({ expr: "not cron" })).toThrow(TypeError);
+		expect(() => fixture().port?.cron("not cron")).toThrow(TypeError);
 	});
 
 	it("refuses when no expression was given", () => {

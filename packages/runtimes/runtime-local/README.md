@@ -21,13 +21,12 @@ snapshot key (the fold function by default) and equivalent initial state.
 Snapshots live in the host process and do not survive its restart.
 
 The local scheduler supports interval schedules and five- or six-field cron
-expressions. Cron expressions use UTC by default; provider calls can specify an
-IANA time zone. The first occurrence is strictly after registration, and
+expressions. Cron expressions use the specified IANA time zone, while the
+provider's `cron` operation uses UTC. The first occurrence is strictly after registration, and
 advancing virtual time emits every due occurrence. Expression schedules survive
-snapshots and participate in trace replay. The provider derives a stable id from
-the expression and time zone when no `scheduleId` is supplied, so registering
-the same expression again returns the existing schedule. Time-zone behavior
-uses the host's time-zone data.
+snapshots and participate in trace replay. Each provider registration returns a
+new schedule id, including repeated registrations with the same specification.
+Time-zone behavior uses the host's time-zone data.
 
 Interval schedules may set `jitterMs` to a nonnegative value smaller than the
 interval. Each occurrence is delayed by up to that amount, with a deterministic

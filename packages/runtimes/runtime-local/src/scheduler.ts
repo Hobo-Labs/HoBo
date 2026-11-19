@@ -40,8 +40,19 @@ export interface LocalScheduler extends SchedulerPort {
 
 export interface SchedulerProviderExports {
 	readonly [port: string]: {
-		readonly every: (payload: JsonValue) => CronSchedule;
-		readonly cron: (payload: JsonValue) => CronExpressionSchedule & {
+		readonly every: (payload: JsonValue) => {
+			readonly scheduleId: ScheduleId;
+			readonly spec: {
+				readonly tag: "every";
+				readonly val: {
+					readonly everyMs: number;
+					readonly startAtMs?: number;
+					readonly jitterMs?: number;
+				};
+			};
+		};
+		readonly cron: (payload: JsonValue) => {
+			readonly scheduleId: ScheduleId;
 			readonly spec: {
 				readonly tag: "cron";
 				readonly val: { readonly expr: string; readonly timezone: string };
@@ -53,6 +64,22 @@ export interface SchedulerProviderExports {
 export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 	const jobs = new Map<string, ScheduledJobHandler>();
 	let advancing = false;
+
+	function nextProviderScheduleId(): ScheduleId {
+		const registered = new Set(
+			clock
+				.trace()
+				.flatMap((entry) =>
+					entry.type === "cron.scheduled" ||
+					entry.type === "cron.expression-scheduled"
+						? [entry.scheduleId]
+						: [],
+				),
+		);
+		let sequence = 1;
+		while (registered.has(`scheduler:${sequence}`)) sequence += 1;
+		return parseScheduleId(`scheduler:${sequence}`);
+	}
 
 	function beginAdvance(): void {
 		if (advancing) throw new Error("scheduler is already advancing");
@@ -144,14 +171,11 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 		providerExports() {
 			return {
 				[SCHEDULER_PORT]: {
-					every: (payload: JsonValue): CronSchedule => {
+					every: (payload: JsonValue) => {
 						const record = isJsonObject(payload) ? payload : {};
 						if (
 							Object.keys(record).some(
-								(key) =>
-									!["scheduleId", "everyMs", "startAtMs", "jitterMs"].includes(
-										key,
-									),
+								(key) => !["everyMs", "startAtMs", "jitterMs"].includes(key),
 							)
 						) {
 							throw new TypeError("invalid interval schedule fields");
@@ -173,41 +197,25 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 							...(isJsonNumber(startAtMs) ? { startAtMs } : undefined),
 							...(isJsonNumber(jitterMs) ? { jitterMs } : undefined),
 						});
-						return scheduler.every(
-							parseScheduleId(String(record.scheduleId ?? "")),
-							spec,
-						);
+						const schedule = scheduler.every(nextProviderScheduleId(), spec);
+						return Object.freeze({
+							scheduleId: schedule.scheduleId,
+							spec: Object.freeze({ tag: "every" as const, val: spec }),
+						});
 					},
 					cron: (payload: JsonValue) => {
-						const record = isJsonObject(payload) ? payload : {};
-						if (
-							Object.keys(record).some(
-								(key) => !["expr", "timezone", "scheduleId"].includes(key),
-							)
-						) {
-							throw new TypeError("invalid cron schedule fields");
-						}
-						const expression = isJsonString(payload) ? payload : record.expr;
-						if (!isJsonString(expression) || expression.trim().length === 0) {
+						if (!isJsonString(payload) || payload.trim().length === 0) {
 							throw new TypeError("expr must be a non-empty string");
 						}
-						const timezone = record.timezone ?? "UTC";
-						if (!isJsonString(timezone) || timezone.length === 0) {
-							throw new TypeError("timezone must be a non-empty string");
-						}
-						const generatedId = `cron-expression:${encodeURIComponent(timezone)}:${encodeURIComponent(expression)}`;
-						const id = record.scheduleId ?? generatedId;
-						if (!isJsonString(id))
-							throw new TypeError("scheduleId must be a string");
-						const schedule = scheduler.cron(parseScheduleId(id), {
-							expression,
-							timezone,
+						const schedule = scheduler.cron(nextProviderScheduleId(), {
+							expression: payload,
+							timezone: "UTC",
 						});
 						return Object.freeze({
-							...schedule,
+							scheduleId: schedule.scheduleId,
 							spec: Object.freeze({
 								tag: "cron" as const,
-								val: Object.freeze({ expr: expression, timezone }),
+								val: Object.freeze({ expr: payload, timezone: "UTC" }),
 							}),
 						});
 					},

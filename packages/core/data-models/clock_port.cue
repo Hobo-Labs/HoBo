@@ -46,3 +46,27 @@ package data_models
 	seed:   string & !=""
 	now_ms: int & >=0
 }
+
+#SchedulerEverySpec: {
+	everyMs:    int & >0 & <=9007199254740991
+	startAtMs?: int & >=0 & <=9007199254740991
+	jitterMs?:  int & >=0 & <everyMs
+}
+
+#SchedulerCronSpec: {
+	expr:     string & !=""
+	timezone: string & !=""
+}
+
+#SchedulerTriggerSpec: {
+	tag: "every"
+	val: #SchedulerEverySpec
+} | {
+	tag: "cron"
+	val: #SchedulerCronSpec
+}
+
+#SchedulerReference: {
+	scheduleId: string & !=""
+	spec:       #SchedulerTriggerSpec
+}
