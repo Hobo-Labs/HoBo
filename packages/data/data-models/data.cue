@@ -14,11 +14,12 @@ import "list"
 
 #ProjectionCheckpointRecord: {
 	projection: string & !=""
-	seq:        int & >=0
+	seq:        =~"^(0|[1-9][0-9]*)$"
 	rowsJson:   string
 	savedAt:    string & !=""
 	readSet?: [...string & !=""]
-	reactivityClass?: #ReactivityClass
+	reactivityClass?: "REACTIVITY_CLASS_REACTIVE" | "REACTIVITY_CLASS_NON_REACTIVE"
+	streamSequences?: [string]: int & >=0 & <=9007199254740991
 	{
 		readModel?:  _|_
 		rowSchema?:  _|_

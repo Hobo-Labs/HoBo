@@ -43,6 +43,10 @@ Projection definitions may provide a `rowSchema` with its WIT record name and
 fields, plus `indexHints` for consumers. The read-model name is derived from
 the schema unless explicitly supplied, in which case it must match. Declaration
 facts and snapshots retain this metadata; index hints do not create indexes.
+Projection snapshots also report `streamSequences`, the highest sequence
+observed in each source stream, including events outside the read set. The
+scalar `seq` is the highest of those values, not a global journal position;
+neither value proves that an arbitrary input contained every earlier event.
 
 An aggregate command may stage durable effects with `emitter.stageEffect`.
 The event store must support atomic commits; otherwise the command raises

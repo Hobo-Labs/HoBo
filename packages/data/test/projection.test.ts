@@ -88,6 +88,39 @@ describe("defineProjection read-model fold", () => {
 		});
 	});
 
+	it("tracks a separate observed sequence for every source stream", async () => {
+		const s = store();
+		await s.append(
+			"orders:a",
+			[
+				{ type: "order.Placed", data: { orderId: "a", totalCents: 100 } },
+				{ type: "order.Confirmed", data: { orderId: "a" } },
+				{ type: "order.Noted", data: { orderId: "a" } },
+			],
+			{ expectedSeq: 0, actor, tenant: "tenant-a" },
+		);
+		await s.append(
+			"orders:b",
+			[{ type: "order.Placed", data: { orderId: "b", totalCents: 200 } }],
+			{ expectedSeq: 0, actor, tenant: "tenant-a" },
+		);
+		const events: EventEnvelope[] = [];
+		for await (const event of s.read("orders:b")) events.push(event);
+		for await (const event of s.read("orders:a")) events.push(event);
+		const snapshot = orderView.fold(events);
+		expect(snapshot.streamSequences).toEqual({ "orders:a": 3, "orders:b": 1 });
+		expect(orderView.snapshot(snapshot).streamSequences).toEqual(
+			snapshot.streamSequences,
+		);
+		expect(snapshot.rows.a?.status).toBe("confirmed");
+		expect(snapshot.rows.b?.status).toBe("placed");
+		const firstEvent = events[0];
+		if (!firstEvent) throw new Error("event fixture is empty");
+		expect(() => orderView.fold([{ ...firstEvent, seq: Number.NaN }])).toThrow(
+			/safe sequence/,
+		);
+	});
+
 	it("cannot mutate the write model — the fold is read-only by construction", async () => {
 		const s = store();
 		await seedFixture(s);

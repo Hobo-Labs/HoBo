@@ -60,6 +60,7 @@ export interface ProjectionDefinition<Row> {
 export interface ProjectionSnapshot<Row> {
 	projection: string;
 	seq: number;
+	streamSequences: Readonly<Record<string, number>>;
 	rows: Record<string, Row>;
 	readModel?: string;
 	rowSchema?: ProjectionRowSchema;
@@ -239,10 +240,24 @@ export function defineProjection<Row>(
 		}
 
 		let seq = 0;
+		const streamSequences = new Map<string, number>();
 		const failures: Array<{ event: EventEnvelope; reason: string }> = [];
 		const reprocessCandidates: QuarantineReprocessFinding[] = [];
 		for (const event of materialized) {
+			if (
+				!event.streamId ||
+				!Number.isSafeInteger(event.seq) ||
+				event.seq < 0
+			) {
+				throw new TypeError(
+					"projection events require a stream and a non-negative safe sequence",
+				);
+			}
 			seq = Math.max(seq, event.seq);
+			streamSequences.set(
+				event.streamId,
+				Math.max(streamSequences.get(event.streamId) ?? 0, event.seq),
+			);
 			if (isQuarantineFact(event) || event.type === PROJECTION_QUARANTINE_EVENT)
 				continue;
 			const quarantined =
@@ -294,6 +309,9 @@ export function defineProjection<Row>(
 		const snapshot: ProjectionSnapshot<Row> = {
 			projection: definition.name,
 			seq,
+			streamSequences: Object.fromEntries(
+				[...streamSequences].sort(([a], [b]) => a.localeCompare(b)),
+			),
 			rows,
 		};
 		if (metadata) {
