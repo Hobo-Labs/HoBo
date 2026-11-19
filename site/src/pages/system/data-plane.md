@@ -53,9 +53,9 @@ Details: [EventStore reference](/HoBo/reference/eventstore/) · [Durability test
 
 Default reads are **subscriptions** over materializations (**replay-then-live**). GraphQL facades and point lookups are escape hatches over the same models. Session consistency is the usual default; stronger/weaker levels are entity-configurable.
 
-## Upcasters & quarantine
+## Quarantine
 
-Event bodies evolve via forward-only upcasters. The runtime can record a
+The runtime can record a
 stream-wide `*.Quarantined` fact, while aggregate and projection rebuilds can
 record fold-specific quarantine decisions. A projection's
 `rebuildWithQuarantine` writes its decisions to a separate stream; other folds

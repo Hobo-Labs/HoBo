@@ -19,7 +19,6 @@ export {
 	emptyGreetingReadModel,
 	foldLive,
 	helloBindleFold,
-	helloBindleUpcast,
 	parseReplayCorpus,
 	REPLAY_CORPUS_SEED,
 } from "./corpus/replay.js";

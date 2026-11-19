@@ -95,22 +95,6 @@ describe("equivalence harness", () => {
 			}),
 		).toThrow(ReplayDivergenceError);
 	});
-
-	it("catches impure upcasters", () => {
-		const events = [event("ticket", 1, "ticket.delta", { cents: 1 }, 1)];
-
-		expect(() =>
-			assertReplayEqualsLive({
-				events,
-				initialState: emptyLedger(),
-				fold: deterministicLedgerFold,
-				upcast: (currentEvent) => ({
-					...currentEvent,
-					data: { cents: Math.random() },
-				}),
-			}),
-		).toThrow(ReplayDivergenceError);
-	});
 });
 
 function deterministicLedgerFold(

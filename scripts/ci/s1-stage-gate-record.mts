@@ -30,8 +30,7 @@ const checks: readonly GateCheck[] = [
 		checkId: "replay-equals-live",
 		command:
 			"pnpm --filter @hobo/conformance exec vitest run test/replay-corpus.test.ts",
-		criterion:
-			"replay corpus rebuilds from zero and byte-equals live, including the upcaster case",
+		criterion: "replay corpus rebuilds from zero and byte-equals live",
 		reportRef: "packages/conformance/corpus/replay",
 	},
 ];

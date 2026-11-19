@@ -1,0 +1,99 @@
+{
+	"id": "hello-bindle-repeated-greetings",
+	"description": "repeated greetings in one ordered stream",
+	"seed": "hobo.s1-16.hello-bindle",
+	"events": [
+		{
+			"id": "01KDVDNA000W8ZSG5YTZE586KS",
+			"streamId": "greeting:repeated",
+			"seq": 1,
+			"type": "greeting.Requested",
+			"v": 1,
+			"ts": "2026-01-01T00:00:00.000Z",
+			"data": {
+				"name": "HoBo"
+			}
+		},
+		{
+			"id": "01KDVDNAZ840VBYEFMHNET0SYA",
+			"streamId": "greeting:repeated",
+			"seq": 2,
+			"type": "greeting.Served",
+			"v": 1,
+			"ts": "2026-01-01T00:00:01.000Z",
+			"data": {
+				"name": "HoBo",
+				"message": "hello, HoBo"
+			}
+		},
+		{
+			"id": "01KDVDNBYGD1JMJ16MKS9R8WJ1",
+			"streamId": "greeting:repeated",
+			"seq": 3,
+			"type": "greeting.Requested",
+			"v": 1,
+			"ts": "2026-01-01T00:00:02.000Z",
+			"data": {
+				"name": "world"
+			}
+		},
+		{
+			"id": "01KDVDNCXRC7HEBSBYKCVQM9W0",
+			"streamId": "greeting:repeated",
+			"seq": 4,
+			"type": "greeting.Served",
+			"v": 1,
+			"ts": "2026-01-01T00:00:03.000Z",
+			"data": {
+				"name": "world",
+				"message": "hello, world"
+			}
+		},
+		{
+			"id": "01KDVDNDX0MN52QXPXHMXTHGNB",
+			"streamId": "greeting:repeated",
+			"seq": 5,
+			"type": "greeting.Requested",
+			"v": 1,
+			"ts": "2026-01-01T00:00:04.000Z",
+			"data": {
+				"name": "HoBo"
+			}
+		},
+		{
+			"id": "01KDVDNEW8A5KEVYB375F3TFM4",
+			"streamId": "greeting:repeated",
+			"seq": 6,
+			"type": "greeting.Served",
+			"v": 1,
+			"ts": "2026-01-01T00:00:05.000Z",
+			"data": {
+				"name": "HoBo",
+				"message": "hello, HoBo"
+			}
+		}
+	],
+	"expected": {
+		"state": {
+			"served": [
+				{
+					"name": "HoBo",
+					"message": "hello, HoBo"
+				},
+				{
+					"name": "world",
+					"message": "hello, world"
+				},
+				{
+					"name": "HoBo",
+					"message": "hello, HoBo"
+				}
+			],
+			"count": 3,
+			"seq": {
+				"greeting:repeated": 6
+			}
+		},
+		"stateDigest": "76e868c3bb1bee1d64fba6f20d902314c97536abf246f56437bc0bb343b3029e"
+	}
+}
