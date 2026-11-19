@@ -9,11 +9,20 @@ over conflicting repository workflow guidance.
   directives consumed by compilers or tools.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
+- Before ending an action request, compare the current user goal with the
+  actual result and evidence. Continue any known, safe, authorized action that
+  advances essential unfinished work; a partial merge, a failed approach,
+  passing subtask, or report of next steps is not completion. Consider available
+  alternatives and independent work before reporting a blocker. Respect the
+  latest explicit stop, pause, cancellation, scope change, and real permission
+  or safety boundary; do not invent work or repeat futile attempts.
 - Do not create or retain planning documents, roadmaps, or design documents.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
+- HoBo manages deployment of its CI relay. Its Vercel project is intentionally
+  not Git-linked; do not reconnect it or treat the missing link as a defect.
 
 # Agent tooling for this repo
 

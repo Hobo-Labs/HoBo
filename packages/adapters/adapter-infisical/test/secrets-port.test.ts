@@ -97,34 +97,14 @@ describe("the infisical SecretsPort", () => {
 	});
 });
 
-describe("the infisical SecretsPort's create-only (a provisioning claim)", () => {
-	// Infisical refuses to create a key that already exists (400, the original
-	// kept). createOnly relies on that refusal and reads the entry back, so
-	// it reports `created` only when the stored value is its own: of two
-	// concurrent claims for one name, at most one is told it won.
-	it("creates an absent entry, and refuses one that exists without touching it", async () => {
-		const deploy = port("deploy-id");
-		expect(await deploy.createOnly?.("HOBO_CLAIM_A", "first")).toMatchObject({
-			created: true,
+it("does not advertise unverified atomic creation for cloud or self-hosted servers", () => {
+	for (const siteUrl of [server.url, "https://app.infisical.com"]) {
+		const deploy = createInfisicalSecretsPort({
+			client: createInfisicalClient({
+				binding: parseInfisicalBinding({ siteUrl, ...scope }),
+				auth: oidcAuth({ identityId: "deploy-id", jwt: async () => JWT }),
+			}),
 		});
-		expect(await deploy.createOnly?.("HOBO_CLAIM_A", "second")).toEqual({
-			created: false,
-		});
-		expect(await deploy.access("HOBO_CLAIM_A")).toMatchObject({
-			status: "ok",
-			material: "first",
-		});
-	});
-
-	it("of concurrent claims for one name, exactly one wins", async () => {
-		const deploy = port("deploy-id");
-		const results = await Promise.all(
-			["a", "b", "c", "d"].map((value) =>
-				deploy.createOnly?.("HOBO_CLAIM_RACE", value),
-			),
-		);
-		expect(results.filter((result) => result?.created === true)).toHaveLength(
-			1,
-		);
-	});
+		expect(deploy.createOnly).toBeUndefined();
+	}
 });

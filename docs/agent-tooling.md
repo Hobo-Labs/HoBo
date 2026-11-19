@@ -24,6 +24,8 @@ Third-party AI-coding tools are wired into this repo for **Claude Code**, **Curs
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
+The mirrored `verify-budget-policy-routing` skill checks dispatcher reservation histories against real code, a bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. Run it from the repository root with `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing`. The model and proof describe their bounds and assumptions; neither proves implementation refinement or external provider behavior. The Z3 script treats settled cost above the reserved hold as outside that inductive cap (aligned with truthful overrun recording at confirm).
+
 Generated command tests use the caller's environment. For pnpm scripts, select the checkout's pinned pnpm version and a writable package store.
 
 Project exploration and generation, capture, doctor, initialization, surveys, evidence posting, and review workflows check their implicit `.optimizexp` write scopes for links and other unsafe entries. Evidence posting validates all scenario files before posting any comment, including in dry runs, and formats paths and transcripts as literal evidence. It refers to videos and larger files by their committed paths; it does not upload or compress them. When a feature ID exists in multiple projects, select one with `--project` before posting. These checks assume paths stay stable during the operation; explicitly selected output destinations and commands the operator asks the harness to run remain the operator's responsibility.
@@ -51,6 +53,67 @@ credentials/configuration leave it waiting while offline checks remain usable.
 See [local CI setup, trust, lifecycle and recovery](../packages/ci-gh-actions/LOCAL-DEVELOPMENT.md)
 for the `local` provider and `HOBO_CI_LOCAL_*` settings. Persistent host runners use
 `hobo-local-host`; only HoBo's reserved JIT runners use `hobo`.
+
+## Completion review
+
+The outcome-based completion rule in [`AGENTS.md`](../AGENTS.md) applies to
+every harness, including ones without hooks. It requires continued action when
+essential work remains and a safe, authorized next step is available. It also
+preserves explicit stops and scope changes, real approval and safety boundaries,
+and honest reports of actual blockers.
+
+[`scripts/agent_completion_hook.py`](../scripts/agent_completion_hook.py)
+reviews completed responses in Claude Code, Codex, Cursor, and Copilot. During
+that review, an agent that identifies a safe, authorized next action records it
+as ready before acting. A stop with that record still present requests another
+continuation. The agent clears the record once no such action remains, the user
+explicitly stops or changes scope, or a genuine external blocker prevents
+further useful work. Status questions do not cancel an active task.
+
+A human status message resets the retry allowance without erasing ready work.
+The prompt hook recognizes common, explicit English requests to stop the whole
+task, clears the record, and allows the response without forcing a continuation.
+It handles these phrases conservatively: ambiguous wording and scope changes
+still require the agent to follow the human's instructions and clear an obsolete
+record. An interruption or Cursor abort clears pending state; a Cursor error
+preserves ready work for a later turn.
+
+A ready record can cause three additional reviews followed by one final
+continuation asking the agent to report unresolved work. After repeated stops
+without progress, the guard pauses automatic continuation and retains the
+record; a new human message resets the allowance. This circuit breaker does not
+mean the task is complete. Host-specific limits may apply, and some hosts may
+not display the final hook warning.
+
+Cursor uses native `beforeSubmitPrompt` and `stop` events and a
+per-conversation counter; its imported Claude handler is skipped to avoid
+duplicate reviews. Claude Code and Codex use `UserPromptSubmit` and `Stop`;
+Codex also handles `Interrupt`. Copilot uses `userPromptSubmitted` and
+`agentStop`. Codex requires project-hook trust and review through `/hooks`.
+
+The record is an empty, session-scoped file named by a hash under the OS
+temporary directory; it contains no task text. The hook reads the current
+prompt to recognize explicit stops but does not store it or inspect transcripts.
+Its update command carries the hook's state directory so a different shell
+temporary directory cannot silently write elsewhere. Hook events for the same
+session must share that state directory. Updates fail visibly if it is
+unavailable. If state storage is unavailable, the initial review is still
+requested when the harness identifies a first stop; later stops are allowed and
+a warning is emitted where the harness supports it. Events without a usable
+session identity fall back to one review.
+
+The guard enforces a recorded ready action, but it is not an independent proof
+of completion: an agent can fail to record an action or clear the record
+incorrectly. The review asks the agent to act on evidence and never to clear the
+record merely to end a turn. The hook does not call a model or use the network.
+It adds a continuation to reviewed responses, including simple answers.
+
+The script uses the Python standard library and requires Python 3.8 or later.
+The configured Unix hooks use `python3`; Copilot on Windows uses `python`.
+Other harnesses can pass compatible prompt and stop events as JSON on standard
+input and use the returned `decision` and `reason`, or adapt Cursor's
+`followup_message` format. A compatible harness needs a reliable continuation
+marker and session identifier.
 
 ## Product implementation guardrails
 
@@ -218,7 +281,13 @@ A **semantic-code MCP server**: it gives coding agents IDE-like symbol search, r
 A **Rust Token Killer command proxy** that compresses noisy shell-command output before it reaches coding agents. It is local, uses no API keys, and supports direct use (`rtk git status`, `rtk pnpm test:file <file>`, `rtk gain`) plus hook initialization for Claude Code/Copilot (`rtk init -g`), Codex (`rtk init -g --codex`), and Cursor (`rtk init -g --agent cursor`). The setup script installs it in the common/devcontainer layer when possible (existing `rtk`, Homebrew, Cargo, then upstream install script) and initializes hooks only in the selected agent-specific layer.
 
 ### hobo — HoBo's own MCP server (this repo)
-`.mcp.json` runs it from source (`node --import tsx packages/hobo/src/bin/hobo-mcp.ts`; no keys). Besides the CLI verbs it serves the owner-facing experiences the **hobo-deploy** skill relies on: the secret-capture MCP App, and **`choose_secret_store`**, the secret-store picker a handed-off `hobo ci|cd up` needs (`HOBO_*_STORE_CHOICE`). It asks the store alone first, then only the chosen store's own non-secret fields (never another store's), as a form elicitation where the client supports MCP elicitation, an MCP App widget where the host renders MCP Apps, and otherwise tells the agent to use its own picker and record the answer with `submit_store_choice`. The answer goes to the owner's HoBo settings, never the repository. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript: every owner-facing line must get a structured ask, re-issued after an interruption, never a question in prose.
+`.mcp.json` runs it from source (`node --import tsx packages/hobo/src/bin/hobo-mcp.ts`; no keys). Besides the CLI verbs it offers the owner-facing experiences used by the **hobo-deploy** skill, including secret capture and **`choose_secret_store`** for a handed-off `hobo ci|cd up`. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings.
+
+Follow the **hobo-deploy** skill's privacy verification before using any owner
+form. Use the same target project `cwd` for its lifecycle and store-choice
+calls so they address the same temporary owner session. Keep that `cwd` on
+subsequent retries. If a verified private hand-off is unavailable, report that
+gap without collecting owner settings.
 
 ### headroom — `chopratejas/headroom` (Apache-2.0)
 A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress`, `mcp__headroom__headroom_retrieve`, and `mcp__headroom__headroom_stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy with `headroom proxy --port 8787`, then launch Claude with:
@@ -445,6 +514,8 @@ pnpm v11 build-script security is configured in `pnpm-workspace.yaml`: only `esb
 ### Isolated test temp/log directories
 
 `scripts/run-tests.ts` creates one isolated directory per invocation under the OS temp root, scoped by workspace hash and worker id: `<os-tmp>/hobo-design-tests/<workspace-hash>/<worker-id>/run-*`. Each batch receives its own child temp directory through `TMPDIR`, `TMP`, and `TEMP`, so parallel workers do not share global temp logs or unrelated temp context. Set `HOBO_TEST_TMPDIR` only when a worker needs a different temp base; the runner still creates isolated run and batch children beneath it.
+
+Tests that create Git repositories must clear inherited `GIT_*` variables before supplying fixture-specific overrides. Variables such as `GIT_DIR`, `GIT_INDEX_FILE`, and `GIT_CONFIG` can direct `git init` or `git config` at an unrelated repository or configuration file. Git exports repository-location variables to hooks, so the merge-group test exercises these inherited values.
 
 The runner does not write batch logs for passing tests. Failed batches keep a bounded output tail in memory; normal runs persist that failure tail to the isolated batch directory, while `--quiet` or `--no-artifacts` keep it off disk and print it only on failure. Use `pnpm run test:fast` for a quiet, no-artifact root smoke lane. Use `pnpm run test:unit:quiet` for the legacy root/draft unit graph with turbo output limited to errors.
 

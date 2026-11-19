@@ -10,6 +10,8 @@ Yard and `vercel.json` from the selected commit, then delivers that same tree.
 It refuses if that tree cannot be inspected, contains symlinks or submodules,
 exceeds 5,000 files or 32 MiB, or cannot load its installed dependencies. These
 limits apply to the relay project's committed files, not the working tree.
+HoBo manages this deployment; the Vercel project is intentionally not linked
+to Git for automatic deployment.
 
 ## Connect once
 

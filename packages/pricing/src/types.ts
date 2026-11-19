@@ -5,12 +5,14 @@ import type { PricingRejected, QuoteVector } from "./_generated/pricing_pb.js";
 export type QuoteResult = QuoteVector | PricingRejected;
 
 export type PricingRejectionCode =
+	| "PRICING_REALM_UNSUPPORTED"
 	| "INVALID_PRICING_INPUT"
 	| "INCOMPLETE_FINANCIAL_STATE"
 	| "STALE_OBSERVATION"
 	| "CATALOG_HASH_MISMATCH"
 	| "STATE_HASH_MISMATCH"
 	| "UNKNOWN_AGREEMENT"
+	| "PRICING_AGREEMENT_UNAVAILABLE"
 	| "NEW_AGREEMENT_DENIED"
 	| "CANCELLATION_DENIED"
 	| "RATE_CARD_NOT_FOUND"

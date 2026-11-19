@@ -1100,8 +1100,6 @@ export async function main(
 		? ""
 		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
 	const now = io.now ?? Date.now;
-	// These PR workflows route independent jobs and, for hobo-ci, up to eight
-	// shards. One recent pickup cannot prove that this whole batch fits.
 	// Preserve explicit pins; a missing or malformed policy is not an auto pin.
 	if (
 		event === "pull_request" &&

@@ -177,6 +177,14 @@ async function journalStep(
 	try {
 		return [await prepareJournalFleet({ store, provisioners, whatIf })];
 	} catch (error) {
+		if (error instanceof Error && error.name === "ClaimStoreUnavailableError")
+			return refused(
+				"HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
+				"The selected store cannot safely guard new CD journal members.",
+				[
+					"An existing complete journal fleet or a durable, owner-scoped atomic claim store is required.",
+				],
+			);
 		return refused(
 			"HOBO_CD_JOURNAL_NOT_PROVISIONED",
 			`The CD journal's fleet could not be provisioned: ${error instanceof Error ? error.message : String(error)}`,

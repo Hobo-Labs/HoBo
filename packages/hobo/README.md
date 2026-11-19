@@ -212,6 +212,16 @@ The resolver plane receives a surrogate (the OpenSesame relaunch below) or a
 credential explicitly supplied by an embedding host. For relay delivery,
 `hobo ci up` passes the owner's store credential in the run's trusted vault.
 
+When a CI or CD identity or session is missing or unverified, run the relevant
+`hobo ci up --hand-off` or `hobo cd up --hand-off` setup ceremony. Use both when
+the deployment needs both families. A CI connection check does not establish
+that the CD connection is ready. Remote agents follow the
+[HoBo deployment skill](../../.agents/skills/hobo-deploy/SKILL.md): before
+opening a form, verify that its owner settings remain private; otherwise report
+the missing capability instead of collecting identifiers or values in chat.
+The transcript audit flags known private fields in nested owner-tool inputs and
+results, including API keys and numeric identifiers, without printing their values.
+
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which
 `selectIacProvider` never picks) deploys first, with one
