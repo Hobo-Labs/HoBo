@@ -18,7 +18,6 @@ import {
 import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
-	isJsonNumber,
 	isJsonObject,
 	type JsonBag,
 	type JsonValue,
@@ -233,14 +232,8 @@ export function createWorkflowEngine(
 			}
 		}
 		const journaledOutcomeIndices: number[] = [];
-		const journaledScheduledIndices: number[] = [];
 		for (const event of journal) {
-			if (event.type === "run.StepScheduled" && isRecord(event.data)) {
-				const index = event.data.index;
-				if (isJsonNumber(index) && Number.isInteger(index) && index >= 0) {
-					journaledScheduledIndices.push(index);
-				}
-			} else if (event.type === "run.StepCompleted" && isRecord(event.data)) {
+			if (event.type === "run.StepCompleted" && isRecord(event.data)) {
 				const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
 				journaledOutcomeIndices.push(fact.index);
 			} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
@@ -248,16 +241,14 @@ export function createWorkflowEngine(
 				journaledOutcomeIndices.push(fact.index);
 			}
 		}
-		const journaledStepMarkers = [
-			...journaledOutcomeIndices,
-			...journaledScheduledIndices,
-		];
-		if (journaledStepMarkers.length > 0) {
+		if (journaledOutcomeIndices.length > 0) {
 			const outcomeIndexSet = new Set(journaledOutcomeIndices);
-			const scheduledIndexSet = new Set(journaledScheduledIndices);
-			const maxIndex = Math.max(...journaledStepMarkers);
-			for (let index = 0; index < maxIndex; index += 1) {
-				if (!outcomeIndexSet.has(index) && !scheduledIndexSet.has(index)) {
+			const maxOutcomeIndex = Math.max(...journaledOutcomeIndices);
+			if (!Number.isSafeInteger(maxOutcomeIndex) || maxOutcomeIndex > 1_000_000) {
+				throw new Error(`invalid step journal for ${runId}`);
+			}
+			for (let index = 0; index < maxOutcomeIndex; index += 1) {
+				if (!outcomeIndexSet.has(index)) {
 					throw new Error(`gapped step journal for ${runId}`);
 				}
 			}
@@ -274,6 +265,12 @@ export function createWorkflowEngine(
 		}
 		const terminal = terminals[0];
 		if (terminal) {
+			if (
+				terminal.type === "run.Completed" &&
+				journal.some((event) => event.type === "run.StepFailed")
+			) {
+				throw new Error(`conflicting completed terminal for ${runId}`);
+			}
 			const data = cloneAsJson(terminal.data);
 			if (!isRecord(data)) {
 				throw new Error(`invalid ${terminal.type} for ${runId}`);

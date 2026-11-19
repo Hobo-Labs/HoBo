@@ -1007,6 +1007,53 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
+	it("rejects completed terminal when the journal still records a step failure", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/conflict-terminal",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "conflict-terminal-seed",
+					workflowName: "conflict-terminal",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/conflict-terminal",
+				seq: 2,
+				type: "run.StepFailed",
+				data: { name: "s", index: 0, message: "boom" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/conflict-terminal",
+				seq: 3,
+				type: "run.Completed",
+				data: { result: "nope" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "conflict-terminal",
+			run() {
+				return "live";
+			},
+		});
+		await expect(engine.resume(wf, "conflict-terminal", {})).rejects.toThrow(
+			/conflicting completed terminal/,
+		);
+	});
+
 	it("refuses run.Completed when a journaled step outcome was not consumed", async () => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(
