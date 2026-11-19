@@ -46,42 +46,6 @@ export const ROLLOUT_LEDGER = Object.freeze({
 	engineCommanded: "rollout.EngineCommanded",
 } as const);
 
-export type RolloutLedgerType = Exclude<
-	(typeof ROLLOUT_LEDGER)[keyof typeof ROLLOUT_LEDGER],
-	(rolloutId: string) => string
->;
-
-const RENAMED: Readonly<Record<string, RolloutLedgerType>> = Object.freeze({
-	Started: ROLLOUT_LEDGER.started,
-	ApprovalRequested: ROLLOUT_LEDGER.approvalRequested,
-});
-
-const { stream: _stream, ...LEDGER_TYPES } = ROLLOUT_LEDGER;
-const CURRENT: ReadonlySet<string> = new Set(Object.values(LEDGER_TYPES));
-
-const LEGACY_PREFIXES = ["cd.rollout.", "cdrollout."] as const;
-
-export function ledgerType(type: string): RolloutLedgerType | undefined {
-	if (CURRENT.has(type))
-		return type as RolloutLedgerType;
-	for (const prefix of LEGACY_PREFIXES) {
-		if (!type.startsWith(prefix)) continue;
-		const fact = type.slice(prefix.length);
-		const renamed = RENAMED[fact];
-		if (renamed) return renamed;
-		const current = `rollout.${fact}`;
-		return CURRENT.has(current) ? (current as RolloutLedgerType) : undefined;
-	}
-	return undefined;
-}
-
-export function ledgerSpellings(type: RolloutLedgerType): readonly string[] {
-	const fact =
-		Object.entries(RENAMED).find(([, current]) => current === type)?.[0] ??
-		type.slice("rollout.".length);
-	return [type, ...LEGACY_PREFIXES.map((prefix) => `${prefix}${fact}`)];
-}
-
 export type ShiftPhase = "stage" | "rollback";
 export type VerificationPhase = "idle" | "stage";
 export type FinishedStatus = "promoted" | "rolled-back" | "failed";
@@ -192,7 +156,6 @@ function verdictOf(value: JsonValue | undefined): VerificationVerdict {
 export function verdictName(verdict: VerificationVerdict): string {
 	return `VERIFICATION_VERDICT_${VerificationVerdict[verdict]}`;
 }
-
 
 export function loweredBody(
 	input: Readonly<{
@@ -355,7 +318,6 @@ export const bodies = Object.freeze({
 	}),
 });
 
-
 function decodeLowered(
 	data: JsonObject,
 	rolloutId: RolloutId,
@@ -444,7 +406,7 @@ function step(
 	const campId = text(data.campId);
 	const stageIndex = num(data.stageIndex) ?? 0;
 	const next = ((): RolloutLedgerState => {
-		switch (ledgerType(event.type)) {
+		switch (event.type) {
 			case ROLLOUT_LEDGER.started:
 				return { ...state, startedAtMs: atMs };
 			case ROLLOUT_LEDGER.capacityReserved: {

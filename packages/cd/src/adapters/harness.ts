@@ -1,16 +1,3 @@
-// RolloutEngine over the Harness OpenDeliveryEngine (D8: its staged records are
-// the only rollout state machine). A RolloutPlanRecord lowers to a staged
-// RolloutPolicy: one stage per stage percent, each with the target Camps as
-// ordered target groups (one Camp per group, so a stage exposes one Camp at a
-// time — the smallest blast radius) and maxFailures 0.
-//
-// OpenDeliveryEngine keeps its journal in memory and mints random internal
-// ids, so this adapter makes it durable and deterministic: every command
-// (start / advance / hold / rollback) is appended to `cd-rollout-engine-<id>`
-// BEFORE it is applied, and an engine is rebuilt after a restart by replaying
-// those commands into a fresh OpenDeliveryEngine whose clock reads the recorded
-// command times. The internal id never leaves this module; callers only see
-// the plan's rollout id (I8).
 import {
 	fromJson,
 	type JsonObject,
@@ -41,13 +28,10 @@ import type {
 	RolloutSnapshot,
 	RolloutStatus,
 } from "../ports.js";
-import { ledgerType, ROLLOUT_LEDGER } from "../rollout/journal.js";
+import { ROLLOUT_LEDGER } from "../rollout/journal.js";
 import { jsonOf, objectOf, text } from "../rollout/json.js";
 import { reason } from "../rollout/reasons.js";
 
-// public-contract: the engine command ledger (private to this adapter). Its
-// type is the rollout ledger's `rollout.EngineCommanded`; the legacy
-// `cd.rollout.EngineCommanded` is upcast on read (rollout/journal ledgerType).
 export const HARNESS_LEDGER = Object.freeze({
 	stream: (rolloutId: string) => `cd-rollout-engine-${rolloutId}`,
 	commanded: ROLLOUT_LEDGER.engineCommanded,
@@ -55,11 +39,6 @@ export const HARNESS_LEDGER = Object.freeze({
 
 export type HarnessRolloutEngineDeps = CdBase &
 	Readonly<{
-		/**
-		 * OpenFeature flag store the ramp mirrors its percent into (flag
-		 * `cd.rollout.<id>`): exposure within a version (D7). Defaults to a
-		 * store per rollout.
-		 */
 		flags?: FeatureFlagStore;
 	}>;
 
@@ -82,15 +61,11 @@ type Instance = {
 	seq: number;
 };
 
-/** The staged policy for a plan: Camps as ordered target groups per stage. */
 export function rolloutPolicy(plan: RolloutPlanRecord): RolloutPolicy {
 	return {
 		name: plan.rolloutId,
 		flag: `cd.rollout.${plan.rolloutId}`,
-		// Traffic moves only through Station cutover (D8); the flag carries the
-		// ramp for in-version exposure. Never "gateway-weighted" (C5).
 		traffic: "flag-only",
-		// The orchestrator decides rollback from verification; never a health guess.
 		autoRollback: false,
 		stages: plan.stagePercents.map((percent) => ({
 			percent,
@@ -209,7 +184,6 @@ function engineReasons(
 	return [];
 }
 
-/** True when an advance for this Camp would change the engine (it is pending in the current group). */
 function pending(instance: Instance, campId: string): boolean {
 	return instance.engine.nextBatch(instance.internalId).includes(campId);
 }
@@ -279,7 +253,7 @@ export function createHarnessRolloutEngine(
 		const instance = fresh();
 		for (const event of events) {
 			instance.seq = event.seq;
-			if (ledgerType(event.type) !== HARNESS_LEDGER.commanded) continue;
+			if (event.type !== HARNESS_LEDGER.commanded) continue;
 			const command = decodeCommand(jsonOf(event.data));
 			if (command) apply(instance, command);
 		}
@@ -302,7 +276,6 @@ export function createHarnessRolloutEngine(
 			);
 			instance.seq = result.appended.at(-1)?.seq ?? instance.seq;
 		} catch (error) {
-			// Another writer moved the stream: drop the cache; the next call rebuilds from the journal.
 			instances.delete(rolloutId);
 			throw error;
 		}
@@ -313,7 +286,6 @@ export function createHarnessRolloutEngine(
 		const state = instance.engine.get(instance.internalId);
 		if (!state)
 			return {
-				// SAFETY: echo of the caller's rollout id.
 				rolloutId: rolloutId as RolloutId,
 				status: "failed",
 				stageIndex: 0,
@@ -326,7 +298,6 @@ export function createHarnessRolloutEngine(
 			state.status === "running" || state.status === "awaiting_approval";
 		const hold = live ? instance.hold : undefined;
 		return {
-			// SAFETY: echo of the caller's rollout id.
 			rolloutId: rolloutId as RolloutId,
 			status: hold ? holdStatus(hold) : STATUS[state.status],
 			stageIndex: state.stageIndex,
@@ -356,7 +327,6 @@ export function createHarnessRolloutEngine(
 
 	function unknown(rolloutId: string): RolloutSnapshot {
 		return {
-			// SAFETY: echo of the caller's rollout id.
 			rolloutId: rolloutId as RolloutId,
 			status: "failed",
 			stageIndex: 0,

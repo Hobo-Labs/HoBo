@@ -51,7 +51,6 @@ import {
 	bodies,
 	type CampStageState,
 	foldRollout,
-	ledgerSpellings,
 	loweredBody,
 	ROLLOUT_LEDGER,
 	type RolloutLedgerState,
@@ -1465,13 +1464,12 @@ export function createRolloutOrchestrator(
 		async tick(ctx) {
 			const ids = new Set<RolloutId>();
 			const prefix = ROLLOUT_LEDGER.stream("");
-			for (const type of ledgerSpellings(ROLLOUT_LEDGER.started))
-				for await (const entry of d.store.readAll({
-					tenant: d.tenant,
-					filter: { type },
-				}))
-					if (entry.event.streamId.startsWith(prefix))
-						ids.add(entry.event.streamId.slice(prefix.length) as RolloutId);
+			for await (const entry of d.store.readAll({
+				tenant: d.tenant,
+				filter: { type: ROLLOUT_LEDGER.started },
+			}))
+				if (entry.event.streamId.startsWith(prefix))
+					ids.add(entry.event.streamId.slice(prefix.length) as RolloutId);
 			for (const rolloutId of [...ids].sort()) {
 				if (terminal.has(rolloutId)) continue;
 				try {
