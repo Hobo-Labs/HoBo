@@ -57,6 +57,18 @@ decisions for one key, two payloads, at most two leases and three clock values.
 It assumes atomic transactions and a trusted clock; it does not prove the
 TypeScript implementation, host callbacks or provider behavior.
 
+`@hobo/iac-alchemy/rivet/kv` provides an opt-in asynchronous byte-preserving
+key-value actor mapped to Alchemy's Rivet `DurableObject`. It supports get, set,
+delete and exists, with bounded keys, values and storage. Its exported
+`RIVET_ASYNC_KV_CAPABILITIES` reports missing operations, including listing,
+compare-and-set, TTL and watches. It has no durable idempotency or automatic
+retries; an uncertain write requires reconciliation. The host supplies the
+source, pool and ingress authorities and enforces single dispatch. This is not
+yet the synchronous HoBo WASI store or a Bindle storage dependency.
+The finite `model/RivetKv.tla` checks one set or delete, a lost reply, late
+commit and fenced retirement. It assumes an independently effective host fence
+and does not prove the implementation, host callbacks or provider behavior.
+
 The isolation test scans selected shared runtime, Bindle, financial and policy
 packages for literal Alchemy references, including escaped spellings. It does
 not prove the absence of computed references or transitive dependencies.
