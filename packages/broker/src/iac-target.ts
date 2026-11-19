@@ -677,11 +677,12 @@ export async function admitIacTarget(
 		validateHostingQuote(quote, deps.now());
 		head = await deps.authority.read(deps.now());
 	} catch {
-		return denial(
+		return uncertain(
 			requestId,
 			targetId,
-			"BUDGET_AUTHORITY_UNAVAILABLE",
-			"budget or quote evidence is unavailable",
+			"EXECUTION_CLAIM_UNCERTAIN",
+			"held",
+			requestDigest,
 		);
 	}
 	let claimed: BudgetReservation;
@@ -722,8 +723,21 @@ export async function admitIacTarget(
 			reservation: claimed,
 			quote,
 		});
+	let ledgerAfterClaim: ReturnType<BudgetAdmissionAuthority["read"]>;
+	try {
+		ledgerAfterClaim = await deps.authority.read(deps.now());
+	} catch {
+		return uncertain(
+			requestId,
+			targetId,
+			"EXECUTION_CLAIM_UNCERTAIN",
+			"held",
+			requestDigest,
+		);
+	}
 	if (
 		claimed.ledgerSeq !== head.seq + 1 ||
+		claimed.ledgerSeq !== ledgerAfterClaim.seq ||
 		claimed.status !== "held" ||
 		!reservationMatchesQuote(claimed, claimedMatch)
 	)
@@ -738,11 +752,12 @@ export async function admitIacTarget(
 	try {
 		validateHostingQuote(quote, deps.now());
 	} catch {
-		return denial(
+		return uncertain(
 			requestId,
 			targetId,
-			"BUDGET_AUTHORITY_UNAVAILABLE",
-			"budget or quote evidence is unavailable",
+			"EXECUTION_CLAIM_UNCERTAIN",
+			"held",
+			requestDigest,
 		);
 	}
 	return create(IacTargetAdmissionDecisionSchema, {
