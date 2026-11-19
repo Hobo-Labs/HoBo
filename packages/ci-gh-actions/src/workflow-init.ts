@@ -334,6 +334,79 @@ function isDeployLike(workflow: Workflow, job: YAMLMap): boolean {
 	].some(namesSecret);
 }
 
+function needsJobId(node: Node | undefined): string | undefined {
+	if (!isScalar(node)) return undefined;
+	const source = node.source?.trim();
+	if (source !== undefined && source.length > 0) return source;
+	if (node.type === "QUOTE_SINGLE" || node.type === "QUOTE_DOUBLE") {
+		const quoted = String(node.value ?? "").trim();
+		return quoted.length > 0 ? quoted : undefined;
+	}
+	return undefined;
+}
+
+function needsJobIds(workflow: Workflow, job: YAMLMap): readonly string[] {
+	const needs = effectiveValueUnder(workflow, job, "needs");
+	if (needs === undefined) return [];
+	if (isScalar(needs)) {
+		const id = needsJobId(needs);
+		return id === undefined ? [] : [id];
+	}
+	if (isSeq(needs)) {
+		return needs.items.flatMap((item) => {
+			const id = needsJobId(isNode(item) ? item : undefined);
+			return id === undefined ? [] : [id];
+		});
+	}
+	if (isMap(needs)) {
+		return needs.items.flatMap((pair) => {
+			if (!isScalar(pair.key)) return [];
+			const id = pair.key.source?.trim() ?? String(pair.key.value ?? "").trim();
+			return id.length === 0 ? [] : [id];
+		});
+	}
+	return [];
+}
+
+function referencesNeedsOutputs(text: string, jobId: string): boolean {
+	const escaped = jobId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+	return new RegExp(
+		`\\bneeds\\s*(?:\\.\\s*${escaped}(?![\\w-])|\\[\\s*(['"])${escaped}\\1\\s*\\])\\s*\\.\\s*outputs\\b`,
+		"iu",
+	).test(text);
+}
+
+type WorkflowJobEntry = Readonly<{ id: string; job: YAMLMap }>;
+
+function computeSecretJobIds(
+	workflow: Workflow,
+	entries: readonly WorkflowJobEntry[],
+): ReadonlySet<string> {
+	const secret = new Set<string>();
+	for (const { id, job } of entries) {
+		if (isDeployLike(workflow, job)) secret.add(id);
+	}
+	let grew = true;
+	while (grew) {
+		grew = false;
+		for (const { id, job } of entries) {
+			if (secret.has(id)) continue;
+			const needs = needsJobIds(workflow, job);
+			if (needs.some((need) => secret.has(need))) {
+				secret.add(id);
+				grew = true;
+				continue;
+			}
+			const text = reachableText(workflow, job).join("\n");
+			if ([...secret].some((upstream) => referencesNeedsOutputs(text, upstream))) {
+				secret.add(id);
+				grew = true;
+			}
+		}
+	}
+	return secret;
+}
+
 function readRunsOn(workflow: Workflow, job: YAMLMap): RunsOn {
 	const node = valueUnder(workflow, job, "runs-on");
 	if (node === undefined) return ABSENT;
@@ -396,6 +469,7 @@ function standingOf(
 	workflow: Workflow,
 	job: YAMLMap,
 	runsOn: RunsOn,
+	usesSecrets: boolean,
 ): Standing {
 	if (pairOf(job, "uses") !== undefined) return skipped("reusable_workflow");
 	if (runsOn.form === "absent") return skipped("no_runs_on");
@@ -411,7 +485,7 @@ function standingOf(
 	}
 	const standing = labelStanding(runsOn.label, workflow.settings);
 	if (standing.verdict !== "ready") return standing;
-	if (!workflow.settings.includeSecretJobs && isDeployLike(workflow, job)) {
+	if (!workflow.settings.includeSecretJobs && usesSecrets) {
 		return skipped("uses_secrets");
 	}
 	return READY;
@@ -571,6 +645,7 @@ function inspectJob(
 	workflow: Workflow,
 	id: string,
 	entry: Node | undefined,
+	usesSecrets: boolean,
 ): InspectedJob {
 	const job = follow(workflow.doc, entry);
 	if (entry === undefined || !isMap(job)) {
@@ -590,7 +665,7 @@ function inspectJob(
 		};
 	}
 	const runsOn = readRunsOn(workflow, job);
-	const standing = standingOf(workflow, job, runsOn);
+	const standing = standingOf(workflow, job, runsOn, usesSecrets);
 	const label = runsOn.label ?? "";
 	const indirectRouting = indirectRoutingOf(workflow, job, runsOn);
 	const plan: WorkflowJobPlan = {
@@ -648,11 +723,25 @@ function readWorkflow(
 		jobsShared: isAlias(writtenJobs) || isAnchored(jobs),
 		settings,
 	};
+	const entries = jobs.items.flatMap((pair) => {
+		const id = isScalar(pair.key) ? pair.key.source : undefined;
+		if (id === undefined) return [];
+		const entry = isNode(pair.value) ? pair.value : undefined;
+		const job = follow(workflow.doc, entry);
+		if (!isMap(job)) return [];
+		return [{ id, job }] satisfies WorkflowJobEntry[];
+	});
+	const secretJobIds = computeSecretJobIds(workflow, entries);
 	const inspected = jobs.items.flatMap((pair) => {
 		const id = isScalar(pair.key) ? pair.key.source : undefined;
 		if (id === undefined) return [];
 		return [
-			inspectJob(workflow, id, isNode(pair.value) ? pair.value : undefined),
+			inspectJob(
+				workflow,
+				id,
+				isNode(pair.value) ? pair.value : undefined,
+				secretJobIds.has(id),
+			),
 		];
 	});
 	return {

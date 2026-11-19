@@ -340,6 +340,31 @@ jobs:
 		]);
 	});
 
+	it("skips a job that only consumes outputs from a secret-bearing upstream", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - id: token
+        run: echo "value=1" >> "$GITHUB_OUTPUT"
+        env:
+          TOKEN: \${{ secrets.PUBLISH_TOKEN }}
+  ship:
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.publish.outputs.value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+		expect(
+			applyWorkflowPlan(FILE, source, ["all"]).changed,
+		).toHaveLength(0);
+	});
+
 	it("counts a secret in the workflow's env for every job", () => {
 		const source = `on: push
 env:
