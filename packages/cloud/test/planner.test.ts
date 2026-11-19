@@ -1,5 +1,9 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fromJson } from "@bufbuild/protobuf";
 import { type ManifestV1, parseManifest } from "@hobo/bindles";
 import {
 	createCloudflareProvider,
@@ -9,10 +13,10 @@ import { describe, expect, it } from "vitest";
 import {
 	canonicalPlanJson,
 	createRegistryFromProviders,
-	type DeploymentPlan,
 	hashDeploymentPlan,
 	plan,
 } from "../src/index.js";
+import { MatchDecidedSchema } from "../src/_generated/cloud_pb.js";
 import { type JsonValue, parseJsonValue } from "../src/json.js";
 
 const HELLO_BINDLE_PLAN_HASH =
@@ -33,6 +37,37 @@ function helloBindle(): ManifestV1 {
 
 function registry() {
 	return createRegistryFromProviders([createCloudflareProvider()]);
+}
+
+function checkCue(schema: string, json: string) {
+	const directory = mkdtempSync(join(tmpdir(), "hobo-planner-contract-"));
+	try {
+		const input = join(directory, "record.json");
+		writeFileSync(input, json);
+		const cue =
+			process.env.HOBO_CUE_BIN ??
+			fileURLToPath(
+				new URL(
+					`../../../.tools/cue/v0.14.0/${process.platform === "win32" ? "cue.exe" : "cue"}`,
+					import.meta.url,
+				),
+			);
+		const checked = spawnSync(
+			cue,
+			[
+				"vet",
+				"-d",
+				schema,
+				fileURLToPath(new URL("../data-models/cloud.cue", import.meta.url)),
+				input,
+			],
+			{ encoding: "utf8" },
+		);
+		if (checked.error) throw checked.error;
+		return checked;
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
 }
 
 describe("Planner: hello-bindle golden DeploymentPlan DAG", () => {
@@ -139,14 +174,11 @@ describe("Planner: hello-bindle golden DeploymentPlan DAG", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 
-		// SAFETY: `const golden = fixture("golden-plan.json") as DeploymentPlan;` is required at this I/O or test boundary.
-		const golden = fixture("golden-plan.json") as DeploymentPlan;
-		expect(JSON.parse(canonicalPlanJson(result.plan))).toEqual(
-			JSON.parse(canonicalPlanJson(golden)),
+		expect(parseJsonValue(canonicalPlanJson(result.plan))).toEqual(
+			fixture("golden-plan.json"),
 		);
 		expect(result.planHash).toBe(HELLO_BINDLE_PLAN_HASH);
-		// The hash is over the canonical form, so the committed fixture re-hashes equal.
-		expect(hashDeploymentPlan(golden)).toBe(HELLO_BINDLE_PLAN_HASH);
+		expect(hashDeploymentPlan(result.plan)).toBe(HELLO_BINDLE_PLAN_HASH);
 	});
 
 	it("is deterministic: two independent runs are byte-identical", () => {
@@ -171,23 +203,46 @@ describe("Planner: hello-bindle golden DeploymentPlan DAG", () => {
 		for (const decision of result.decisions) {
 			expect(decision.providerId).toBe("@hobo/provider-cloudflare");
 			expect(decision.deploymentId).toBe("hb-1");
-			expect(decision.catalogHash).toBe(reg.catalogHash);
 			expect(decision.winner).toBe(
 				`@hobo/provider-cloudflare.${decision.port}`,
 			);
-			// Canonical shape (ADR-0033/0088): ranking (winner first), structured
-			// rejections mirroring the deprecated flat list, tie flag, and the
-			// catalog content-hash alias staying in lockstep.
 			expect(decision.ranking[0]?.providerId).toBe("@hobo/provider-cloudflare");
-			expect(decision.rejectedCandidates.map((r) => r.definitionId)).toEqual(
-				decision.rejected,
-			);
 			for (const rejectedCandidate of decision.rejectedCandidates) {
 				expect(rejectedCandidate.reason.length).toBeGreaterThan(0);
 			}
 			expect(decision.tie === true || decision.tie === false).toBe(true);
 			expect(decision.catalogContentHash).toBe(reg.catalogHash);
 		}
+	});
+
+	it("accepts emitted match decisions in the CUE and protobuf contracts", () => {
+		const base = registry();
+		const compute = base
+			.definitions()
+			.find((definition) => definition.port === "compute");
+		if (!compute) throw new Error("missing compute definition");
+		const competing = { ...compute, id: `${compute.id}-alternative` };
+		const result = plan(
+			helloBindle(),
+			{ deploymentId: "contract" },
+			{
+				...base,
+				definitions: () => [...base.definitions(), competing],
+			},
+		);
+		if (!result.ok) throw new Error(result.reason);
+		const decision = result.decisions.find(
+			(entry) => entry.rejectedCandidates.length > 0,
+		);
+		if (!decision) throw new Error("missing competing candidate");
+		const json = JSON.stringify(decision);
+		const record = fromJson(MatchDecidedSchema, parseJsonValue(json));
+		expect(
+			record.rejectedCandidates.map((entry) => entry.definitionId),
+		).toEqual(decision.rejectedCandidates.map((entry) => entry.definitionId));
+		expect(record.catalogContentHash).toBe(decision.catalogContentHash);
+		const checked = checkCue("#MatchDecided", json);
+		expect(checked.status, checked.stderr).toBe(0);
 	});
 
 	it("realizes the golden plan into a previewable Cloudflare Pulumi program", () => {
@@ -225,5 +280,17 @@ describe("Planner: unsatisfiable resource -> deployment.PlanRejected", () => {
 		expect(remediation.requiredPort).toBe("database");
 		expect(remediation.suggestedProvider).toBeUndefined();
 		expect(remediation.remediation).toContain("register a provider");
+		const body = {
+			deploymentId: result.deploymentId,
+			reason: result.reason,
+			remediations: result.remediations,
+		};
+		const checked = checkCue("#DeploymentPlanRejected", JSON.stringify(body));
+		expect(checked.status, checked.stderr).toBe(0);
+		const empty = checkCue(
+			"#DeploymentPlanRejected",
+			JSON.stringify({ ...body, remediations: [] }),
+		);
+		expect(empty.status).toBe(1);
 	});
 });

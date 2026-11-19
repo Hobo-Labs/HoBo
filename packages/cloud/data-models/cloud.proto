@@ -84,19 +84,17 @@ message MatchDecided {
   string provider_id = 4;
   string port = 5;
   uint32 specificity = 6;
-  repeated string rejected = 7;
-  string objective = 8;
-  string region = 9;
-  string rationale = 10;
-  string catalog_hash = 11;
-  repeated RankedCandidate ranking = 12;
-  repeated RejectedCandidate rejected_candidates = 13;
-  bool tie = 14;
-  string catalog_content_hash = 15;
-  string product_id = 16;
-  repeated string applied_rows = 17;
-  map<string, string> realization_parameters = 18;
-  repeated string non_portable_rows = 19;
+  string objective = 7;
+  string region = 8;
+  string rationale = 9;
+  repeated RankedCandidate ranking = 10;
+  repeated RejectedCandidate rejected_candidates = 11;
+  bool tie = 12;
+  string catalog_content_hash = 13;
+  string product_id = 14;
+  repeated string applied_rows = 15;
+  map<string, string> realization_parameters = 16;
+  repeated string non_portable_rows = 17;
 }
 
 message ResourcePlan {

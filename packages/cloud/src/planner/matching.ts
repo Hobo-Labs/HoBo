@@ -324,7 +324,6 @@ export function matchResource(
 		providerId: winner.providerId,
 		port: winner.port,
 		specificity: winner.specificity,
-		rejected: allRejected.map((entry) => entry.definitionId),
 		rejectedCandidates: allRejected,
 		ranking: ranked.map((d) => ({
 			definitionId: d.id,
@@ -341,7 +340,6 @@ export function matchResource(
 				: intent.objective === "min-cost" || intent.objective === "cost"
 					? "min-cost within constraints; stable tiebreak=definition-id"
 					: `objective=${intent.objective}; stable tiebreak=definition-id`,
-		catalogHash: registry.catalogHash,
 		catalogContentHash: registry.catalogHash,
 	};
 	if (region) decision.region = region;

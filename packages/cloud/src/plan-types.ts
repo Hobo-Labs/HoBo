@@ -58,16 +58,12 @@ export interface MatchDecided {
 	providerId: string;
 	port: string;
 	specificity: number;
-	/** @deprecated */
-	rejected: string[];
 	rejectedCandidates: RejectedCandidate[];
 	ranking: RankedCandidate[];
 	tie: boolean;
 	objective: string;
 	region?: string;
 	rationale: string;
-	/** @deprecated */
-	catalogHash: string;
 	catalogContentHash: string;
 	productId?: string;
 	appliedRows?: readonly string[];
