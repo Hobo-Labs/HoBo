@@ -1,36 +1,3 @@
-/**
- * A temporary directory a process makes for itself and removes on every way
- * out a handler can reach. The default runtime keeps its throwaway event store
- * in one (`hobo-yard-*`), and the live Pulumi lane, without HOBO_PULUMI_WORKDIR,
- * its programs and state (`hobo-pulumi-live-*`); both were left in TMPDIR by
- * every run.
- *
- * - `ownedTempDir`, safe in any process: the directory is removed on the `exit`
- *   event, which a normal end and an uncaught error both reach. It touches no
- *   signal: a library does not decide how its host ends.
- * - `removeOwnedDirsOnSignals`, for a process's entry point only (`hobo`,
- *   `hobo-mcp`, and any shell that loads the composition in its own process,
- *   through the export in cli.ts): also on SIGTERM, SIGHUP, SIGINT and
- *   SIGQUIT. When nothing else in the process listens for the signal, every
- *   owned directory is removed and the signal raised again with these handlers
- *   off, so the process still ends by it (status 128+n), as it would have.
- *   When something else listens (a server's graceful stop), that handler
- *   decides how the process ends, and `exit` removes the directories then.
- *   These handlers run before any other listener, so they also count one
- *   installed before them. Run after it, they missed a `once` handler, which
- *   is removed before it is called: a shell may install its own before it
- *   loads the composition. Each handler knows its own signal: one emitted with
- *   `process.emit` carries no name. It does nothing in a worker thread, which
- *   shares its pid with the whole process.
- *
- * Installed by the library, the signal handlers ended hosts that never asked
- * for them: the hobo suite's serve-control test emits SIGINT to its own
- * handlers, and in a vitest worker thread that composed a default runtime the
- * handler took the emit for a signal and killed the whole runner.
- *
- * What no handler can reach: SIGKILL, and a crash of the process itself.
- */
-
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,7 +10,6 @@ const ENDING_SIGNALS: readonly NodeJS.Signals[] = [
 	"SIGQUIT",
 ];
 
-/** The part of a process the directories' removal is tied to. `process` is one. */
 export interface DirOwner {
 	readonly pid: number;
 	on(event: "exit", listener: () => void): void;
@@ -56,9 +22,7 @@ export interface DirOwner {
 function removeDir(dir: string): void {
 	try {
 		rmSync(dir, { recursive: true, force: true });
-	} catch {
-		// Best effort while the process ends: a throw here would skip the exit listeners after this one.
-	}
+	} catch {}
 }
 
 function removeAll(dirs: Set<string>): void {
@@ -66,9 +30,7 @@ function removeAll(dirs: Set<string>): void {
 	dirs.clear();
 }
 
-/** Each owner's directories, removed by one `exit` listener. */
 const owned = new WeakMap<DirOwner, Set<string>>();
-/** Owners whose entry point asked for the signal handlers, and has them now. */
 const signalled = new WeakSet<DirOwner>();
 
 function dirsOf(owner: DirOwner): Set<string> {
@@ -80,7 +42,6 @@ function dirsOf(owner: DirOwner): Set<string> {
 	return dirs;
 }
 
-/** Make `<TMPDIR>/<prefix>XXXXXX`, removed when `owner` exits; returns its path. */
 export function ownedTempDir(
 	prefix: string,
 	owner: DirOwner = process,
@@ -90,11 +51,6 @@ export function ownedTempDir(
 	return dir;
 }
 
-/**
- * For a process's entry point: remove every directory `owner` owns, made before
- * or after this call, on SIGTERM, SIGHUP, SIGINT and SIGQUIT too, then raise the
- * signal again. One set of handlers per owner, however often it is called.
- */
 export function removeOwnedDirsOnSignals(owner: DirOwner = process): void {
 	if (!isMainThread || signalled.has(owner)) return;
 	signalled.add(owner);
