@@ -77,6 +77,7 @@ test("the relevant check selects source-based visual validation for UI changes",
 });
 
 test("design:lint runs the visual token gate instead of the retired design-md checker", () => {
+	// SAFETY: package.json is a committed repo file; scripts values are strings.
 	const root = JSON.parse(readFileSync("package.json", "utf8")) as {
 		scripts: Record<string, string>;
 	};
