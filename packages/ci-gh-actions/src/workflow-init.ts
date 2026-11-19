@@ -77,7 +77,7 @@ const EVERY_READY_JOB = "all";
 const EXPRESSION_OPEN = "${{";
 
 const SECRET_REFERENCE =
-	/\bsecrets\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\2\s*\]|\[)/giu;
+	/\bsecrets\b\s*(?:(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\2\s*\]|\[))?/giu;
 
 const PACKAGE_INSTALL = /\b(apt-get|apt|yum|dnf|apk)\s+(-\S+\s+)*install\b/u;
 
@@ -106,7 +106,7 @@ const NOT_LOCATED =
 	"its runs-on could not be located in the file; change it by hand";
 
 const WOULD_NOT_READ_BACK =
-	"rewriting it would not leave a workflow that reads back with the job routed; change it by hand";
+	"rewriting it would not leave the selected jobs routed and every unselected job unchanged; change it by hand";
 
 type Value = Scalar | YAMLMap | YAMLSeq;
 
@@ -142,7 +142,11 @@ type Rewrite =
 	  }>
 	| Readonly<{ kind: "refuse"; why: string }>;
 
-type InspectedJob = Readonly<{ plan: WorkflowJobPlan; rewrite: Rewrite }>;
+type InspectedJob = Readonly<{
+	plan: WorkflowJobPlan;
+	rewrite: Rewrite;
+	indirectRouting: string;
+}>;
 
 type WorkflowReading = Readonly<{
 	error: string | undefined;
@@ -200,7 +204,11 @@ function valueUnder(
 }
 
 function stringOf(node: Node | undefined): string | undefined {
-	return isScalar(node) && node.value === node.source ? node.source : undefined;
+	if (!isScalar(node)) return undefined;
+	if (node.type === "BLOCK_FOLDED" || node.type === "BLOCK_LITERAL") {
+		return String(node.value);
+	}
+	return node.value === node.source ? node.source : undefined;
 }
 
 function sliceOf(source: string, node: Node): string {
@@ -231,7 +239,8 @@ function reachableText(workflow: Workflow, from: Node): readonly string[] {
 }
 
 function namesSecret(text: string): boolean {
-	return [...text.matchAll(SECRET_REFERENCE)].some(
+	const reference = new RegExp(SECRET_REFERENCE.source, SECRET_REFERENCE.flags);
+	return [...text.matchAll(reference)].some(
 		(match) => (match[1] ?? match[3])?.toUpperCase() !== "GITHUB_TOKEN",
 	);
 }
@@ -480,6 +489,22 @@ function locateRunsOn(
 	);
 }
 
+function indirectRoutingOf(
+	workflow: Workflow,
+	job: YAMLMap,
+	runsOn: RunsOn,
+): string {
+	const key =
+		pairOf(job, "uses") !== undefined
+			? "with"
+			: runsOn.text.includes(EXPRESSION_OPEN) && /\bmatrix\b/u.test(runsOn.text)
+				? "strategy"
+				: undefined;
+	if (key === undefined) return "";
+	const node = writtenUnder(job, key);
+	return node === undefined ? "" : reachableText(workflow, node).join("\n");
+}
+
 function inspectJob(
 	workflow: Workflow,
 	id: string,
@@ -499,11 +524,13 @@ function inspectJob(
 				warnings: [],
 			},
 			rewrite: refuse(`skipped: ${describeWorkflowSkip(reason)}`),
+			indirectRouting: "",
 		};
 	}
 	const runsOn = readRunsOn(workflow, job);
 	const standing = standingOf(workflow, job, runsOn);
 	const label = runsOn.label ?? "";
+	const indirectRouting = indirectRoutingOf(workflow, job, runsOn);
 	const plan: WorkflowJobPlan = {
 		file: workflow.file,
 		job: id,
@@ -515,15 +542,20 @@ function inspectJob(
 			standing.verdict === "ready" ? warningsOf(workflow, job, label) : [],
 	};
 	if (standing.verdict === "routed") {
-		return { plan, rewrite: refuse(ALREADY_ROUTED) };
+		return { plan, rewrite: refuse(ALREADY_ROUTED), indirectRouting };
 	}
 	if (standing.reason !== undefined) {
 		return {
 			plan,
 			rewrite: refuse(`skipped: ${describeWorkflowSkip(standing.reason)}`),
+			indirectRouting,
 		};
 	}
-	return { plan, rewrite: locateRunsOn(workflow, entry, job, label) };
+	return {
+		plan,
+		rewrite: locateRunsOn(workflow, entry, job, label),
+		indirectRouting,
+	};
 }
 
 function readWorkflow(
@@ -578,13 +610,17 @@ function routesJobs(id: string, jobs: readonly InspectedJob[]): boolean {
 		"iu",
 	);
 	return jobs.some(
-		(other) => other.plan.job !== id && reference.test(other.plan.runsOn),
+		(other) =>
+			other.plan.job !== id &&
+			(reference.test(other.plan.runsOn) ||
+				reference.test(other.indirectRouting)),
 	);
 }
 
 function asRouter(job: InspectedJob): InspectedJob {
 	const reason = "routes_jobs";
 	return {
+		...job,
 		plan: { ...job.plan, verdict: "skipped", reason, warnings: [] },
 		rewrite: refuse(`skipped: ${describeWorkflowSkip(reason)}`),
 	};
@@ -675,13 +711,19 @@ export function applyWorkflowPlan(
 			source,
 		);
 	const changed = splices.map((splice) => splice.job);
-
+	const changedSet = new Set(changed);
+	const unselectedPlans = (jobs: readonly InspectedJob[]) =>
+		jobs.filter((job) => !changedSet.has(job.plan.job)).map((job) => job.plan);
+	const after = readWorkflow(file, rewritten, settings);
 	const routed = new Set(
-		readWorkflow(file, rewritten, settings)
-			.jobs.filter((job) => job.plan.verdict === "routed")
+		after.jobs
+			.filter((job) => job.plan.verdict === "routed")
 			.map((job) => job.plan.job),
 	);
-	if (!changed.every((job) => routed.has(job))) {
+	const preservesUnselected =
+		JSON.stringify(unselectedPlans(reading.jobs)) ===
+		JSON.stringify(unselectedPlans(after.jobs));
+	if (!changed.every((job) => routed.has(job)) || !preservesUnselected) {
 		return {
 			source,
 			changed: [],

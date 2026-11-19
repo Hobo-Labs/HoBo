@@ -778,12 +778,12 @@ with the parser's own sentence.
 ```
 
 `parseCiRunnerOrder(json)` reads the block: the committed order, or the
-default (`fleet`, `machine`, `github`) when the file has none. A block that
-is there but broken, or a project document that is not a JSON object, is not
-silently replaced; the result carries `problem` and `source: "default"`, so a
-caller can refuse to route on an order nobody wrote. `hobo ci route` walks the
-order for one job and shows every step passed over. Nothing in the relay reads
-`runnerOrder` yet.
+default (`fleet`, `machine`, `github`) when the file has none. Invalid JSON,
+a project document that is not a JSON object, or a broken block returns
+`source: "invalid"`, `order: undefined` and a `problem`; there is no default
+order to walk by mistake. `hobo ci route` refuses that result. With a valid
+order it walks the order for one job and shows every step passed over. Nothing
+in the relay reads `runnerOrder` yet.
 
 ### Moving workflow jobs to the fleet
 
@@ -795,8 +795,14 @@ verdict: `ready` (its `runs-on` is a single GitHub-hosted Linux x64 label),
 quoting, line endings and anchors elsewhere in the file are untouched, the old
 label is kept as a trailing comment, and applying twice changes nothing. A job
 whose `runs-on` cannot be changed alone (it sits behind a YAML anchor) is
-refused rather than changed in two places. Both are pure; `hobo ci init` is
-the command over them ([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
+refused rather than changed in two places; a merged `runs-on` is skipped.
+Multiline `run` blocks count for package-install warnings, and passing the
+whole `secrets` context marks a job deploy-like. Jobs that route others
+directly, through a matrix, or through reusable-workflow inputs stay put.
+Applying also reads the result back and returns the original unless selected
+jobs are routed and every unselected job plan is unchanged. Both are pure;
+`hobo ci init` is the command over them
+([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
 
 ## Connect a repository
 

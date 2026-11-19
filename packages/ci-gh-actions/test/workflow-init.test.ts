@@ -263,6 +263,11 @@ describe("planWorkflow deploy-like jobs", () => {
 			"a computed secret",
 			"    env:\n      TOKEN: ${{ secrets[format('{0}_TOKEN', 'DEPLOY')] }}\n",
 		],
+		[
+			"the whole secrets context",
+			"    env:\n      CONTEXT: ${{ toJSON(secrets) }}\n",
+		],
+		["a bare secrets context", "    if: ${{ secrets }}\n    steps: []\n"],
 		["inherited secrets", "    secrets: inherit\n"],
 	])("skips a job with %s", (_what, body) => {
 		expect(ready(body)).toEqual(["job skipped uses_secrets"]);
@@ -383,6 +388,7 @@ describe("planWorkflow warnings", () => {
 		["apk install", "apk install jq"],
 		["sudo", "sudo systemctl start docker"],
 		["a later line", "|\n          set -e\n          sudo apt-get update"],
+		["a folded script", ">\n          set -e\n          dnf install -y jq"],
 	])("warns about %s in a step", (_what, script) => {
 		expect(
 			warningsOf("ubuntu-24.04", `    steps:\n      - run: ${script}\n`),
@@ -527,6 +533,25 @@ describe("planWorkflow on YAML anchors", () => {
 			"sixth routed",
 		]);
 	});
+
+	it("skips runs-on inherited through a YAML merge key", () => {
+		const source = `on: push
+job-defaults: &job-defaults
+  runs-on: ubuntu-24.04
+  steps:
+    - run: pnpm test
+jobs:
+  merged:
+    <<: *job-defaults
+`;
+		expect(standings(planOf(source))).toEqual(["merged skipped no_runs_on"]);
+		expect(applyWorkflowPlan(FILE, source, ["all"])).toEqual({
+			source,
+			changed: [],
+			refused: [],
+		});
+		expect(applyWorkflowPlan(FILE, source, ["merged"]).source).toBe(source);
+	});
 });
 
 describe("applyWorkflowPlan on a shared jobs mapping", () => {
@@ -656,6 +681,9 @@ describe("applyWorkflowPlan", () => {
 		expect(changedLines(COMMENTED, result.source)).toEqual([
 			"    runs-on: hobo # was ubuntu-24.04",
 		]);
+		const unselected = (source: string) =>
+			planOf(source).jobs.filter((job) => job.job !== "test");
+		expect(unselected(result.source)).toEqual(unselected(COMMENTED));
 	});
 
 	it("reports changed jobs in file order whatever order they were named in", () => {
@@ -1062,6 +1090,30 @@ describe("a job that routes other jobs", () => {
 		expect(all.changed).toEqual(["lint"]);
 		expect(all.refused).toEqual([]);
 		expect(all.source).toContain("  route:\n    runs-on: ubuntu-24.04\n");
+	});
+
+	it("recognizes routing through a matrix built from needs outputs", () => {
+		const matrix = source.replace(
+			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",
+			"    strategy:\n      matrix: ${{ fromJSON(needs.route.outputs.matrix) }}\n    runs-on: ${{ matrix.runner }}",
+		);
+		expect(planWorkflow("ci.yml", matrix).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes routing passed to a reusable workflow", () => {
+		const reusable = source.replace(
+			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
+			"    uses: ./.github/workflows/reusable.yml\n    with:\n      runner: ${{ needs.route.outputs.runner }}",
+		);
+		expect(planWorkflow("ci.yml", reusable).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
 	});
 
 	it("does not mistake a job that only reads its own name for a router", () => {

@@ -45,20 +45,20 @@ describe("committed runner order", () => {
 		);
 		expect(committed.source).toBe("committed");
 		expect(committed.problem).toBe("");
-		expect(committed.order.steps.map((step) => step.key)).toEqual([
+		expect(committed.order?.steps.map((step) => step.key)).toEqual([
 			"machine",
 			"github",
 			"depot",
 		]);
-		expect(committed.order.autoSizeVcpus).toBe(4);
+		expect(committed.order?.autoSizeVcpus).toBe(4);
 	});
 
-	it("keeps the default and says why when the committed order is broken", () => {
+	it("returns no order and says why when the committed order is broken", () => {
 		const duplicated = parseCiRunnerOrder(
 			project('{"steps":[{"key":"machine"},{"key":"machine"}]}'),
 		);
-		expect(duplicated.source).toBe("default");
-		expect(duplicated.order).toBe(DEFAULT_RUNNER_ORDER);
+		expect(duplicated.source).toBe("invalid");
+		expect(duplicated.order).toBeUndefined();
 		expect(duplicated.problem).toContain(
 			"the machine step appears more than once",
 		);
@@ -68,13 +68,14 @@ describe("committed runner order", () => {
 		expect(parseCiRunnerOrder(project('"fleet-first"')).problem).not.toBe("");
 	});
 
-	it("never throws on a file that is not JSON", () => {
+	it("never throws or supplies a fallback order for a file that is not JSON", () => {
 		expect(parseCiRunnerOrder("{not json")).toEqual({
-			order: DEFAULT_RUNNER_ORDER,
-			source: "default",
+			order: undefined,
+			source: "invalid",
 			problem: "the project file is not JSON",
 		});
-		expect(parseCiRunnerOrder("[]").source).toBe("default");
+		expect(parseCiRunnerOrder("[]").source).toBe("invalid");
+		expect(parseCiRunnerOrder("[]").order).toBeUndefined();
 	});
 
 	it.each([
