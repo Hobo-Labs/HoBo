@@ -76,6 +76,12 @@ message PostgresFleetUsage {
   uint64 used = 3;
 }
 
+message PostgresFleetUsageObservation {
+  string observation_id = 1;
+  uint64 observed_at_ms = 2;
+  uint64 statements = 3;
+}
+
 // A measured quantity: this period's total for a rate, the size for a level.
 message PostgresFleetUsageMeasurement {
   PostgresFleetUsageUnit unit = 1;

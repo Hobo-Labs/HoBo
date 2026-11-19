@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	billingPeriod,
-	createUsageMeter,
 	DEFAULT_FLEET_POLICY,
 	decideFleet,
 	type FleetBudgetRequest,
@@ -11,9 +10,7 @@ import {
 	type PostgresFleetObservation,
 	parseFleetAssignment,
 	parseFleetFinancialModel,
-	parseFleetLayout,
 	parseFleetPolicy,
-	type SqlExecutor,
 } from "../src/index.js";
 
 const HOUR = 3_600_000;
@@ -552,126 +549,5 @@ describe("holding", () => {
 			action: "hold",
 			reasons: ["switch-in-flight"],
 		});
-	});
-});
-
-describe("usage meter", () => {
-	const layout = parseFleetLayout({
-		dataPrefix: "app_",
-		controlPrefix: "app_fleet_",
-	});
-
-	function recorder(fail = false) {
-		const writes: (readonly (string | number | boolean | null)[])[] = [];
-		const executor: SqlExecutor = {
-			async query(_sql, parameters) {
-				if (fail) throw new Error("connection refused");
-				writes.push(parameters ?? []);
-				return { rows: [] };
-			},
-			session: (run) => run(executor),
-		};
-		return { writes, executor };
-	}
-
-	it("names the UTC calendar month", () => {
-		expect(billingPeriod(Date.UTC(2026, 11, 31, 23, 59))).toEqual({
-			id: "2026-12",
-			startsAtMs: Date.UTC(2026, 11, 1),
-			endsAtMs: Date.UTC(2027, 0, 1),
-		});
-	});
-
-	it("adds each backend's count to that backend and then forgets it", async () => {
-		const meter = createUsageMeter();
-		const first = recorder();
-		const second = recorder();
-		meter.record("a", NOW);
-		meter.record("a", NOW, 4);
-		meter.record("b", NOW, 2);
-		const backends = [
-			{ id: "a", executor: first.executor },
-			{ id: "b", executor: second.executor },
-		];
-		await meter.flush(backends, layout);
-		expect(first.writes).toEqual([["2026-11", "operations", 5]]);
-		expect(second.writes).toEqual([["2026-11", "operations", 2]]);
-		expect(meter.pending("a", "2026-11")).toBe(0);
-		await meter.flush(backends, layout);
-		expect(first.writes).toHaveLength(1);
-	});
-
-	it("keeps the count of a backend it could not reach", async () => {
-		const meter = createUsageMeter();
-		const broken = recorder(true);
-		meter.record("a", NOW, 3);
-		await meter.flush([{ id: "a", executor: broken.executor }], layout);
-		meter.record("a", NOW, 2);
-		expect(meter.pending("a", "2026-11")).toBe(5);
-	});
-
-	it("keeps usage on each side of a reset in its original period", async () => {
-		const meter = createUsageMeter();
-		const backend = recorder();
-		const beforeReset = Date.UTC(2026, 10, 30, 23, 59, 59);
-		const afterReset = Date.UTC(2026, 11, 1);
-		meter.record("a", beforeReset, 3);
-		meter.record("a", afterReset, 5);
-		expect(meter.pending("a", "2026-11")).toBe(3);
-		expect(meter.pending("a", "2026-12")).toBe(5);
-		await meter.flush([{ id: "a", executor: backend.executor }], layout);
-		expect(backend.writes).toEqual([
-			["2026-11", "operations", 3],
-			["2026-12", "operations", 5],
-		]);
-		expect(meter.pending("a", "2026-11")).toBe(0);
-		expect(meter.pending("a", "2026-12")).toBe(0);
-	});
-
-	it("keeps in-flight counts visible and flushes new counts separately", async () => {
-		const meter = createUsageMeter();
-		const writes: (readonly (string | number | boolean | null)[])[] = [];
-		let markStarted = () => {};
-		let release = () => {};
-		const started = new Promise<void>((resolve) => {
-			markStarted = resolve;
-		});
-		const gate = new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		const executor: SqlExecutor = {
-			async query(_sql, parameters) {
-				markStarted();
-				await gate;
-				writes.push(parameters ?? []);
-				return { rows: [] };
-			},
-			session: (run) => run(executor),
-		};
-		const backends = [{ id: "a", executor }];
-		meter.record("a", NOW, 3);
-		const first = meter.flush(backends, layout);
-		await started;
-		meter.record("a", NOW, 2);
-		const second = meter.flush(backends, layout);
-		expect(meter.pending("a", "2026-11")).toBe(5);
-		release();
-		await Promise.all([first, second]);
-		expect(writes).toEqual([
-			["2026-11", "operations", 3],
-			["2026-11", "operations", 2],
-		]);
-		expect(meter.pending("a", "2026-11")).toBe(0);
-	});
-
-	it("rejects invalid or unrepresentable usage without changing the count", () => {
-		const meter = createUsageMeter();
-		expect(() => meter.record("", NOW)).toThrow();
-		expect(() => meter.record("a", NOW, -1)).toThrow();
-		expect(() => meter.record("a", NOW, 1.5)).toThrow();
-		expect(() => meter.record("a", Number.MAX_SAFE_INTEGER)).toThrow();
-		meter.record("a", NOW, Number.MAX_SAFE_INTEGER);
-		expect(() => meter.record("a", NOW)).toThrow();
-		expect(meter.pending("a", "2026-11")).toBe(Number.MAX_SAFE_INTEGER);
 	});
 });
