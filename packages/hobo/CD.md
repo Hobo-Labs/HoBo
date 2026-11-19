@@ -207,6 +207,14 @@ and untracked files. It rejects unsafe paths, symlinks, submodules, missing Git
 objects, and snapshots above its file-count or byte limits; it does not fetch
 missing objects. Reading a snapshot does not deploy it.
 
+The reader gives Git a minimal environment: the executable search path, the
+Windows system root when needed, and an explicit Git discovery ceiling when
+configured. Owner-session values are not inherited. Global and system Git
+configuration are disabled, so a `safe.directory` exception defined only there
+does not apply; read the repository as its owner or make it accessible without
+that exception. The synthetic environment-isolation and missing-object tests
+currently skip Windows; that platform's behavior remains unverified.
+
 ```ts
 // hobo.delivery.ts
 export const camps = [
