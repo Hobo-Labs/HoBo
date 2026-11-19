@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "AfterTool": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "name": "repository-source-policy",
+            "command": "node \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mjs\" >/dev/null && printf '{}'",
+            "timeout": 60000
+          }
+        ]
+      }
+    ]
+  }
+}

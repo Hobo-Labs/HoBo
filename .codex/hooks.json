@@ -11,6 +11,16 @@
             "statusMessage": "Checking UI changes"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mjs\"",
+            "timeout": 60,
+            "statusMessage": "Checking repository source policy"
+          }
+        ]
       }
     ],
     "Stop": [

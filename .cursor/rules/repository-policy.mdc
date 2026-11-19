@@ -1,9 +1,8 @@
 ---
-description: Repository rules for self-documenting code and completed work
+description: Repository rules for self-documenting code and tracked work
 alwaysApply: true
 ---
 
 Follow the repository-wide rules at the start of `AGENTS.md`. They apply to
-Cursor and all plugins and skills, including the completion discipline and the
-prohibition on explanatory comments, deferred-work markers, and planning or design
-documents.
+Cursor and all plugins and skills. Preserve training input comments and track
+genuinely unfinished work in Linear before removing its marker or planning document.

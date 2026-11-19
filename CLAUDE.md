@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 The repository-wide rules at the start of [AGENTS.md](AGENTS.md) apply to Claude
-and every plugin or skill, including the completion discipline, the prohibition
-on explanatory comments, deferred work markers, and planning or design documents.
+and every plugin or skill. Preserve training input comments and track genuinely
+unfinished work in Linear before removing its marker or planning document.
 
 **Repo:** HoBo — a cloud-agnostic, AI-native hosting platform: an active design suite **plus a production `packages/` workspace** (140+ package manifests, ~400k lines of non-test TypeScript; S0–S3 stage-gate lanes green). Honest-scope caveats (in-memory Pulumi stand-in default, synthetic componentize bytes, not on npm) live in the README status summary and `docs/design/live-provider-matrix.md`. The design suite is in [`docs/design/`](docs/design/index.md); formal requirements are archived in [`docs/archive/requirements/`](docs/archive/requirements/index.md); competitor research is in [`docs/competitors/`](docs/competitors/index.md). Production packages live under `packages/`; draft proofs and agent tooling remain under `src/draft/` and `.agents/`/`.claude/`/`scripts/`.
 
