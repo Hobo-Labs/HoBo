@@ -360,9 +360,7 @@ jobs:
 			"publish skipped uses_secrets",
 			"ship skipped uses_secrets",
 		]);
-		expect(
-			applyWorkflowPlan(FILE, source, ["all"]).changed,
-		).toHaveLength(0);
+		expect(applyWorkflowPlan(FILE, source, ["all"]).changed).toHaveLength(0);
 	});
 
 	it("counts a secret in the workflow's env for every job", () => {

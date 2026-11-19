@@ -398,7 +398,9 @@ function computeSecretJobIds(
 				continue;
 			}
 			const text = reachableText(workflow, job).join("\n");
-			if ([...secret].some((upstream) => referencesNeedsOutputs(text, upstream))) {
+			if (
+				[...secret].some((upstream) => referencesNeedsOutputs(text, upstream))
+			) {
 				secret.add(id);
 				grew = true;
 			}
