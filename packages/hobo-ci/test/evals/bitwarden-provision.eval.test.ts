@@ -458,9 +458,7 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 			material: '{"a":"2"}',
 		});
 		expect(server.ciphers).toHaveLength(1);
-		expect(await port.createOnly?.("HOBO_CD_SETTINGS", "x")).toEqual({
-			created: false,
-		});
+		expect(port.createOnly).toBeUndefined();
 		// At rest, Vaultwarden holds ciphertext only.
 		const stored = JSON.stringify(server.ciphers);
 		expect(stored).not.toContain("HOBO_CD_SETTINGS");

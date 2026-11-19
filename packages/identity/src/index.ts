@@ -91,6 +91,17 @@ export {
 	validateTokenEvent,
 } from "./events.js";
 export {
+	type ExperimentFlagAllocation,
+	experimentAllocation,
+	experimentRampBucket,
+	pickExperimentVariant,
+} from "./experiment-allocation.js";
+export {
+	type ExperimentFlagPortConformance,
+	type ExperimentFlagPortFixture,
+	runExperimentFlagPortConformance,
+} from "./experiment-flag-conformance.js";
+export {
 	FEATURE_FLAG_BACKEND_RANKS,
 	type FeatureFlagBackendRank,
 	type RankedBackend,
@@ -100,7 +111,9 @@ export {
 	bucket,
 	createMigrationFlagId,
 	type DetailEvaluation,
+	experimentSubjectKey,
 	FEATURE_FLAG_PORT,
+	type FeatureFlagPort,
 	FeatureFlagStore,
 	FLAG_EVENT_SCHEMA_VERSION,
 	FLAG_EVENTS,
@@ -114,6 +127,7 @@ export {
 	type FlagTargeting,
 	type FlagValue,
 	type FractionalVariant,
+	flagContextBinding,
 	migrationCohortFlagKey,
 	pickFractionalVariant,
 } from "./feature-flag-store.js";
@@ -153,6 +167,7 @@ export {
 	EXPERIMENT_ANALYSIS_SCHEMA,
 	type ExperimentAnalysisPort,
 	type ExperimentAnalysisResult,
+	type ExperimentExposureRecord,
 	type MediatedFlagEvaluator,
 	OFREP_RESIDUAL_SCHEMA,
 	selectDeliveryAdapter,
@@ -161,6 +176,7 @@ export {
 	createHarness,
 	HARNESS_SCHEMA,
 	Harness,
+	type HarnessOptions,
 	type HarnessPorts,
 	type ProgressiveRun,
 } from "./harness-compose.js";
@@ -169,6 +185,7 @@ export {
 	contentHashRollout,
 	DELIVERY_PORT,
 	type DeliveryHealthSignal,
+	type DeliveryPort,
 	OpenDeliveryEngine,
 	ROLLOUT_EVENT_SCHEMA,
 	ROLLOUT_EVENTS,
@@ -190,7 +207,9 @@ export {
 	EXPERIMENT_PORT,
 	type ExperimentAssignment,
 	type ExperimentDefinition,
+	type ExperimentEvaluationExposure,
 	type ExperimentEvent,
+	type ExperimentPort,
 	OpenExperimentEngine,
 } from "./harness-experiment.js";
 export {

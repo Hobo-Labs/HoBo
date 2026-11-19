@@ -64,6 +64,8 @@ export const canary = rollout({
 Runtime evaluation and progressive composition live in `@hobo/identity`
 (`FeatureFlagStore`, `createHarness`) — see [ADR-0044](../../docs/design/adr/02-identity-security.md#adr-0044)
 and [ADR-0083](../../docs/design/adr/02-identity-security.md#adr-0083).
+`featureSpecsToStoreInputs` returns flag-store inputs and omits `targeting`
+when a feature does not define it.
 
 ## Continuity: HA/DR, replication and migration policy
 

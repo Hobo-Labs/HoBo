@@ -209,7 +209,7 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` with `classMb` and `learned`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class and job name.
 
-The daemon computes each job's heap from its admitted memory class and injects `NODE_OPTIONS=--max-old-space-size=<heap>` at container creation, so every Node process inherits it and no workflow-level value overrides it. `ci-runner-preflight` also runs `scripts/ci/memory-env.mts` before install (heap math lives in `packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts` so preflight does not load worker peak history). It reads the job cgroup limit and writes the non-blocked **`HOBO_NODE_OPTIONS`** (never `NODE_OPTIONS` through `$GITHUB_ENV`), **`HOBO_TURBO_CONCURRENCY=1`**, and the repo-owned `HOBO_TEST_MAX_WORKERS`. After a 768 MiB native/non-heap allowance, workers are `max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`; each Node process receives `min(3072, floor((limit - 768) / (workers + 1)))` MiB of heap. Thus `(workers + 1) × heap + 768 <= limit`: the turbo/Vitest parent and every worker fit the same container budget instead of each receiving an independent full-size heap.
+The daemon computes each job's heap from its admitted memory class and injects `NODE_OPTIONS=--max-old-space-size=<heap>` at container creation. `ci-runner-preflight` also runs `scripts/ci/memory-env.mts` before install (heap math lives in `packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts` so preflight does not load worker peak history). It reads the job cgroup limit and writes the non-blocked **`HOBO_NODE_OPTIONS`** (never `NODE_OPTIONS` through `$GITHUB_ENV`), **`HOBO_TURBO_CONCURRENCY=1`**, and the repo-owned `HOBO_TEST_MAX_WORKERS`. After a 768 MiB native/non-heap allowance, workers are `max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`; the selected heap is `min(3072, floor((limit - 768) / (workers + 1)))` MiB. The budget `(workers + 1) × heap + 768 <= limit` covers the planned parent and file workers when they inherit that heap setting. Some test launchers deliberately sanitize `NODE_OPTIONS`, and tests may spawn their own processes, so this is not a guarantee of peak memory usage.
 
 The memory-class re-export is blank-line separated from the memory-peaks import for Biome `organizeImports`.
 
@@ -220,6 +220,8 @@ The memory-class re-export is blank-line separated from the memory-peaks import 
 | `heavy` | 6144 MiB | 1344 MiB | 3 |
 
 Configs resolve the smaller of their own cap and this value; CI does not export `VITEST_MAX_WORKERS`, which Vitest would apply after config resolution and after `fileParallelism: false`, overriding correctness-critical single-worker pins. Workflows retain a conservative 1-worker/1024 MiB fallback if preflight is skipped. The Main full gate's `check:all` step also sets **`HOBO_RELEVANT_CHECK_CONCURRENCY=1`**. If `test:unit` ends with exit 1 and no Vitest summary, look for `run-tests: vitest was killed by <SIGNAL>` in the log.
+
+The required Scripts tests lane assigns tracked test files to four deterministic shards for pull requests and merge groups. Each shard uses the configured worker cap for both Vitest and concurrent `node:test` files; subprocesses started inside a test are not counted by that cap. The PR impact gate requires every shard to succeed. With one available runner, the shards queue for it and run separately rather than assuming four machines are available.
 
 **Disk and inode admission:** before each reservation, the daemon samples bytes and inodes on Docker's data root and the work root. Above 85% for either resource it runs the full non-pnpm GC described above at most once per 60 seconds, then samples again; decisions within that interval still use a fresh sample. Above 95% after pruning, the job waits and `hobo_ci_inode_pressure` is logged once per episode. A dispatch pass stops calling storage admission after its first refusal because pressure is host-wide. A trunk-label storage refusal blocks lower ranks and records `hobo_ci_trunk_wait` with `reason: "storage"`. Each admitted job reserves **bytes and inodes** from a **storage class** (`default`, `release_trunk` for Pages/npm/GHCR publish, `runner_image` for OCI gate builds); learned peaks from retired workdirs blend with class caps like memory admission. Defaults without peaks: **200000** workdir plus **170000** container inodes and class byte caps (release trunk **18 GiB** workroot + **6 GiB** container growth). Reservations on the same device add together; consumption since the oldest live grant reduces the outstanding estimate. If free space or inodes minus outstanding growth cannot fit the new job, the same rate-limited GC/recheck runs before the daemon waits and logs `hobo_ci_disk_reserve_wait` or `hobo_ci_inode_reserve_wait` once per episode. Grants without an active lease expire after a 60-second grace, and failed lease reservations release immediately. A live job's directory is never retired or deleted. See [finding 25](../../docs/ci/findings/0025-inode-exhaustion-made-pr-installs-fail-with-enospc.md), [finding 58](../../docs/ci/findings/0058-two-concurrent-jobs-exhausted-inodes-mid-run.md), [finding 68](../../docs/ci/findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md), and [finding 90](../../docs/ci/findings/0090-release-enospc-byte-admission.md).
 
@@ -456,6 +458,23 @@ git push
 pnpm ci:attest fleet --local-signoff --policy-current
 ```
 
+To verify a generated merge-queue commit, use a clean checkout and the live
+queue branch returned by GitHub. For example, with `queue_ref` set to a branch
+such as `gh-readonly-queue/main/pr-123-<base SHA>`:
+
+```bash
+git fetch origin "refs/heads/$queue_ref"
+git switch --detach FETCH_HEAD
+pnpm ci:attest fleet --local-signoff --policy-current --merge-group-ref="$queue_ref"
+```
+
+HoBo verifies the queue entry and its ref before and after the local run and
+around signoff. It accepts a group directly based on the current base and
+waits for a rebuilt group when another queued commit is ahead. A signoff on
+the PR head without this option remains a simulation of the merge-group event.
+These per-job statuses do not themselves replace the repository's required
+Actions checks.
+
 The command respects the committed pin and uses a usable routing slip with the
 same pickup and queue limits as runner routing. A fresh healthy fleet pickup
 takes precedence over an unpinned fallback slip. A slip naming the local runner
@@ -497,8 +516,18 @@ target repository; `git user.name` must be set. The command verifies that the
 repository selected by `gh` matches the base remote, pins `GH_HOST` and
 `GH_REPO` to that identity, and checks GitHub's live base tip before it calls
 the extension. A mismatch or unavailable identity/base check refuses signoff.
-The extension refuses an unpushed
-commit; this command does not use its force option. A separate
+The tested head must also be reachable from a live branch on that remote, or be
+the exact current head of an open PR against the tested base. Same-repository
+and readable fork heads are supported; pass `--pr=123` when the PR cannot be
+discovered from the current branch, including a detached checkout. A narrow
+fetch is supported: fetch a target branch if its newer tip is not present
+locally. Proving ancestry from a newer tip requires Git 2.45 or newer; older Git
+can still use an exact target-branch tip or a verified PR head. Fleet checks
+publication before running local jobs, and signoff
+rechecks the branch or PR, base and checkout before publishing. These reads are
+not atomic with the status write. The command does not use the extension's
+force option. Replacement refs or nonempty Git graft metadata cause attestation
+to refuse; remove those local graph overrides or use a clean clone. A separate
 `pnpm ci:attest signoff --event=merge_group` reports only jobs run for that
 simulated event. `--base=upstream/main` selects another remote branch; signoff
 must be able to read its live tip and refuses when it differs from the tested
@@ -542,8 +571,8 @@ that credential can create them without running checks.
 These statuses do not replace the existing required Actions jobs or produce a
 green Actions run. A repository administrator can require selected signoff
 contexts, but existing required checks and merge-queue rules still apply. A
-merge-group status here is attached to the tested PR head and represents a
-local simulation; it is not a status on GitHub's generated merge-group commit.
+merge-group status is attached to the tested PR head for a local simulation,
+or to GitHub's generated commit when `--merge-group-ref` is used.
 Commit statuses do not automatically expire when the base moves, or disappear
 after a failed or partial retry on the same commit. Rebase or merge a new base
 and repeat the run and signoff; inspect existing statuses after any retry before
@@ -553,17 +582,17 @@ so only run code trusted with that access. For other repositories, run their
 own checks and use `gh signoff` directly; HoBo's `ci:attest` job list is specific
 to this repository's workflows.
 
-- **What is covered.** In `hobo-ci.yml`: `pr_gate_validation`, `workspace_tests` (every shard), `pr_affected`, `pr-offpath`, `artifact-trust`, `ci-guard`, `secret-scan`. In `release-hobo.yml`: `release-contract`, but only when no release image is affected. If `release-oci-affected.mts` reports an image, the local run leaves that job out of the record and it runs in CI as usual.
+- **What is covered.** In `hobo-ci.yml`: `pr_gate_validation`, `workspace_tests` (every shard), `pr_affected`, `scripts-tests` (all four shards), `pr-offpath`, `artifact-trust`, `ci-guard`, `secret-scan`. In `release-hobo.yml`: `release-contract`, but only when no release image is affected. If `release-oci-affected.mts` reports an image, the local run leaves that job out of the record and it runs in CI as usual.
 - **What is not covered** and still runs in CI: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route job and both gates. The cold dev loop was considered and left out: its own install step narrows `node_modules` to a few packages, which would break the shared checkout the other jobs run in, and its offline copy of a fully installed tree is several gigabytes.
 - **The same commands.** `scripts/ci/attested-jobs.json` holds each covered job's steps as the workflow writes them: the script, the `if:`, the `env:`, in order. The local runner reads only that file, never a workflow. `scripts/test/attested-jobs.test.ts` fails when a workflow job and its description differ in any step. Steps that set up or tidy a CI machine (checkout, preflight, cache restore and save, trace export) are marked `skip` with a reason; every other step runs. When `main` changes a covered job, that test fails on every branch that rebases onto it until the description is updated to match, so a local run never signs for an older version of a job.
-- **Both events in one record.** The run executes each job once as `pull_request` and once as `merge_group`, with each step's own condition deciding. So the merge-group-only steps (the two contract tests and the S0 gate set in `pr_gate_validation`) run too, and one record is valid for both events. Every selected shell step runs separately, because filesystem and other state can change between identical commands. Each job's result lists the events it ran for, and the verifier accepts a job only for an event in that list. `--events=merge_group` makes a record that covers the merge group's jobs and nothing for the pull request.
+- **Both events in one record.** The run executes each job once as `pull_request` and once as `merge_group`, with each step's own condition deciding. The record lists the events it ran for; the verifier also requires an exact event commit for history-sensitive jobs. `--events=merge_group` makes a record that covers the merge group's jobs and nothing for the pull request.
 - **The tree it is bound to.** GitHub tests a pull request as a merge of its head into the base. That merge has the head's own tree exactly when the head already contains the base tip, which is why `run` requires it. The run rebuilds that merge commit locally (base first, head second, the head's tree) and points `HEAD` at it for the duration, because the jobs read `HEAD^1` and `HEAD^2`. The index and files do not change, and `HEAD` is put back afterwards, also on Ctrl-C.
-- **How a workflow verifies.** The **Route runners** job checks out `scripts/ci/verify-attestation.mts` and runs it first. It takes the tree of the commit it checked out, reads the event's base commit (`pull_request.base.sha` or `merge_group.base_sha`) and that commit's tree, reads `.hobo/ci-attestors.json` **at that base commit**, and reads `attestations/<tree>.json` on `ci-attestations`, all through the GitHub API with the job's read-only token. The record is accepted only if the signature verifies with a key listed at the base, that key has not expired, and the record names this tree, this base tree and this event. The list at the base is refused whole if any entry's `id` is not its own key's id, if any `expiresAt` is not strict ISO-8601 UTC, or if any entry expires more than 90 days later. Of the record's jobs, only those that ran for this event are reported. **Secret scan** is reported only when the record's `head` and `base` are exactly the event's `pull_request.head.sha` and base sha: it scans commits, and another history (a secret added, then reverted) can end in the same tree. Every other covered job is bound to the tree. The job then outputs `attested` (`true` or `false`) and `attested-jobs` (a JSON array). What it prints is one line: control characters from an API answer or a record are replaced.
+- **How a workflow verifies.** The **Route runners** job reads the attestation, the tested tree and `.hobo/ci-attestors.json` at the event's base through GitHub's API. The signature, key expiry, tree, base tree and event must match. The secret scan and scripts tests also require the exact head and base commits. Scripts-test evidence must cover all four shards for the event; an incomplete record cannot skip the impact gate. The job outputs `attested` and the accepted `attested-jobs`.
 - **It cannot fail a run.** No record, an API error, a bad signature, an expired key, a script that does not start: each is `attested=false`.
 - **Skipping.** Each covered job has a condition that skips it when `needs.route.outputs.attested == 'true'` and its own id is in `attested-jobs`. A skipped job needs no runner at all. `scripts/lint-actions.ts` rejects that condition on a job that is not covered, or naming another job's id.
-- **The gates.** **PR impact gate** needs the route job and accepts a skipped validation, workspace or affected-lanes job only when the route job succeeded and reported that job attested. A failed or cancelled job never passes, and with no attestation its rules are the old ones. **HoBo release PR gate** requires the route job to have succeeded and now accepts a skipped release contract only when the route job reported it attested; before, it accepted any skipped contract. Both gates decide with the same `attested()` shell helper, and `scripts/lint-actions.ts` rejects a gate that waits on a covered job and does not use it unchanged. **CI fabric contract guard** and **Secret scan** are required by name and are satisfied by being skipped, as they already are on `merge_group`.
+- **The gates.** **PR impact gate** accepts a skipped validation, workspace, affected-lanes or scripts-test job only when the route job succeeded and reported that job attested. A failed or cancelled job never passes. **HoBo release PR gate** similarly accepts a skipped release contract only when the route job reported it attested. Both gates use the same `attested()` shell helper. **CI fabric contract guard** and **Secret scan** are required by name and are satisfied by being skipped, as they already are on `merge_group`.
 - **Routing.** An attested run skips only the jobs covered by the verified record. Batch admission, the routing slip, committed pin and queue choose a runner for the remaining jobs as they do for any other run.
-- **Merge groups.** The record matches a merge-group run only when the queue's group commit has the same tree: the pull request is first in the queue and its head already contains the queue's base. Otherwise the tree differs, verification says `attested=false`, and the merge group runs in CI as it does today. Nothing tries to predict a queue tree.
+- **Merge groups.** The impact gate requires evidence for the actual merge-group head and base. Run and publish against the live `--merge-group-ref`; evidence for the PR head alone cannot skip that gate even if the trees match. A changed or removed queue entry is refused.
 - **Timing.** A run reads the record when it starts. Publish before you push. A record published later is picked up by re-running the workflow.
 - **Adding a machine.** Run `pnpm ci:attest init-key --note="whose machine"`, add the printed entry to `.hobo/ci-attestors.json`, and merge that change to `main`. The key works only for pull requests whose base already has the entry, so the pull request that adds a key cannot itself be attested with it. Every entry needs an `expiresAt` in ISO-8601 UTC; the default is 30 days out and `--days` takes at most 90, which the verifier enforces too.
 - **Revoking a key.** Remove its entry on `main`. That takes effect for events whose base commit no longer lists it: a pull request whose base still has the entry can still be attested with that key until the pull request is updated or re-based. Expiry is the backstop, so keep it short.

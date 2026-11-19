@@ -245,7 +245,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/evals",
 	"packages/fuzz",
 	"packages/patterns",
-	"packages/pixel-village",
 	"packages/registry",
 	"packages/dispatcher",
 	"packages/rift",

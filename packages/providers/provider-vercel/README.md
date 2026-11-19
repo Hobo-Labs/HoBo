@@ -27,6 +27,32 @@ Vercel CloudProvider for HoBo Examples OOB yards.
 pnpm --filter @hobo/provider-vercel test
 ```
 
+### Local Vercel API emulation
+
+`test/emulator.test.ts` runs the project resolver against Vercel Labs'
+[`@emulators/vercel`](https://github.com/vercel-labs/emulate) 0.13.1 and
+`@emulators/core`. It seeds two teams and a project, then checks authorized
+adoption, update, read, deletion, and isolation between teams, as well as
+refusal when authorization is absent. The emulator is invoked
+in-process, after the normal production-host guard, so this lane makes no
+network calls or Vercel account changes. The existing scripted tests still
+cover lost responses, malformed payloads and other failures.
+
+```sh
+pnpm --filter @hobo/provider-vercel exec vitest run test/emulator.test.ts
+```
+
+For interactive API debugging, `npx emulate@0.13.1 --service vercel` starts
+the same Vercel Labs service; see its [endpoint documentation](https://emulate.dev/docs/vercel).
+Point a test client explicitly at its local URL. This does not redirect HoBo's
+production transport or emulate deployed execution. The emulator implements
+project creation at `/v11/projects`, while the resolver uses `/v9/projects`
+without a Git repository. For Git-linked projects the resolver uses `/v11`,
+but emulator 0.13.1 returns the full `owner/repository` in `link.repo` with an
+empty `link.org`, so independent confirmation refuses it. The test checks that
+this failed confirmation does not produce a second project on retry. It does not
+prove successful project creation or behavior against Vercel.
+
 ## `vercel.sponsored-project-transfer/v1`
 
 ### This is not an anonymous deployment
