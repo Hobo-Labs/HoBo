@@ -59,8 +59,34 @@ export class CronExpressionUnsupportedError extends Error {
 export function parseIntervalCronSpec(
 	record: IntervalCronSpec,
 ): IntervalCronSpec {
+	const unknownField = Object.keys(record).find(
+		(field) => !["everyMs", "startAtMs", "jitterMs"].includes(field),
+	);
+	if (unknownField !== undefined) {
+		throw new SchedulerParseError(
+			unknownField,
+			"known interval field",
+			unknownField,
+		);
+	}
+	const everyMs = positiveInteger(
+		record.everyMs,
+		"everyMs",
+		SchedulerParseError,
+	);
+	const jitterMs =
+		record.jitterMs === undefined
+			? undefined
+			: nonNegativeInteger(record.jitterMs, "jitterMs", SchedulerParseError);
+	if (jitterMs !== undefined && jitterMs >= everyMs) {
+		throw new SchedulerParseError(
+			"jitterMs",
+			`integer less than ${everyMs}`,
+			jitterMs,
+		);
+	}
 	return deepFreeze({
-		everyMs: positiveInteger(record.everyMs, "everyMs", SchedulerParseError),
+		everyMs,
 		...(record.startAtMs !== undefined
 			? {
 					startAtMs: nonNegativeInteger(
@@ -70,5 +96,6 @@ export function parseIntervalCronSpec(
 					),
 				}
 			: undefined),
+		...(jitterMs !== undefined ? { jitterMs } : undefined),
 	});
 }

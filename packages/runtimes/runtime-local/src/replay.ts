@@ -71,6 +71,7 @@ export function replayClockTrace(
 			replay.clock.cron(parseScheduleId(entry.scheduleId), {
 				everyMs: entry.everyMs,
 				startAtMs: entry.startAtMs,
+				jitterMs: entry.jitterMs,
 			});
 		} else if (entry.type === "cron.expression-scheduled") {
 			if (replay.clock.nowMs() !== entry.startAtMs) {

@@ -12,14 +12,15 @@ package data_models
 #CronSchedule: {
 	schedule_id: string & !=""
 	start_at_ms: int & >=0
-} & ({every_ms: int & >0, expression?: _|_, timezone?: _|_} |
-	{every_ms?: 0, expression: string & !="", timezone: string & !=""})
+} & ({every_ms: int & >0, jitter_ms: int & >=0 & <every_ms, expression?: _|_, timezone?: _|_} |
+	{every_ms?: 0, jitter_ms?: _|_, expression: string & !="", timezone: string & !=""})
 
 #ClockTraceEntry: {
 	type:         string & !=""
 	at_ms?:       int & >=0
 	delta_ms?:    int & >=0
 	every_ms?:    int & >0
+	jitter_ms?:   int & >=0
 	expression?:  string & !=""
 	timezone?:    string & !=""
 	schedule_id?: string & !=""
@@ -31,7 +32,13 @@ package data_models
 	timezone:    string & !=""
 	start_at_ms: int & >=0
 } | {
-	type:  string & !="cron.expression-scheduled"
+	type:        "cron.scheduled"
+	schedule_id: string & !=""
+	every_ms:    int & >0
+	start_at_ms: int & >=0
+	jitter_ms:   int & >=0 & <every_ms
+} | {
+	type:  string & !="cron.expression-scheduled" & !="cron.scheduled"
 	at_ms: int & >=0
 })
 
