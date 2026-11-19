@@ -6,6 +6,11 @@
 			"why": "inspects shared package source and metadata through computed paths; the test dependency checker conservatively schedules core's build even though the scan does not execute it"
 		},
 		{
+			"from": "packages/runtime/test/durable-messaging-jspi-component.test.ts",
+			"needs": ["@hobo/core#build", "@hobo/wit#build"],
+			"why": "builds a real component using the WIT package's tools and sources, then loads core's built messaging limits by a computed file URL"
+		},
+		{
 			"from": "packages/control-yard/test/evidence-launch.test.ts",
 			"stubOnly": true,
 			"reason": "creates a temporary checkout and evidence tree to test symlink handling; it does not load the draft workspace"
