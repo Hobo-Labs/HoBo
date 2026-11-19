@@ -292,7 +292,7 @@ describe("@hobo/patterns", () => {
 
 	it("parses a render request", () => {
 		const parsed = parseRenderRequest({
-			id: "bindle.named",
+			patternId: "bindle.named",
 			params: { resourceName: "x" },
 		});
 		expect(parsed.patternId).toBe("bindle.named");

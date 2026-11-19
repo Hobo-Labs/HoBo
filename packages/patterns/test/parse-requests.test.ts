@@ -142,13 +142,6 @@ describe("parseRenderRequest", () => {
 		expect(Object.isFrozen(request)).toBe(true);
 	});
 
-	it("accepts id as an alias for patternId", () => {
-		expect(parseRenderRequest({ id: "a.b" }).patternId).toBe("a.b");
-		expect(
-			parseRenderRequest({ patternId: "first", id: "second" }).patternId,
-		).toBe("first");
-	});
-
 	it("refuses a missing, empty or whitespace-only pattern id", () => {
 		for (const bad of [undefined, "", "   ", 7, null]) {
 			expect(messageOf(() => parseRenderRequest({ patternId: bad }))).toBe(
@@ -158,10 +151,10 @@ describe("parseRenderRequest", () => {
 	});
 
 	it("treats an absent or non-string rendering id as unspecified", () => {
-		expect(parseRenderRequest({ id: "a.b" }).renderingId).toBe("");
-		expect(parseRenderRequest({ id: "a.b", renderingId: 7 }).renderingId).toBe(
-			"",
-		);
+		expect(parseRenderRequest({ patternId: "a.b" }).renderingId).toBe("");
+		expect(
+			parseRenderRequest({ patternId: "a.b", renderingId: 7 }).renderingId,
+		).toBe("");
 	});
 
 	it("refuses a non-object request", () => {
@@ -231,13 +224,6 @@ describe("parseApplicationRequest", () => {
 		}
 	});
 
-	it("accepts id as an alias for patternId here too", () => {
-		const { patternId, ...rest } = REQUEST;
-		expect(parseApplicationRequest({ ...rest, id: patternId }).patternId).toBe(
-			"a.b",
-		);
-	});
-
 	it("refuses a non-object request", () => {
 		expect(messageOf(() => parseApplicationRequest(undefined))).toBe(
 			"application request must be an object",
@@ -247,12 +233,13 @@ describe("parseApplicationRequest", () => {
 
 describe("request params", () => {
 	it("defaults to an empty record when omitted", () => {
-		expect(parseRenderRequest({ id: "a.b" }).params).toEqual({});
+		expect(parseRenderRequest({ patternId: "a.b" }).params).toEqual({});
 	});
 
 	it("stringifies scalar values", () => {
 		expect(
-			parseRenderRequest({ id: "a.b", params: { n: 7, b: true } }).params,
+			parseRenderRequest({ patternId: "a.b", params: { n: 7, b: true } })
+				.params,
 		).toEqual({ n: "7", b: "true" });
 	});
 
@@ -260,7 +247,7 @@ describe("request params", () => {
 		for (const value of [{}, [], null, undefined, () => 1]) {
 			expect(
 				messageOf(() =>
-					parseRenderRequest({ id: "a.b", params: { k: value } }),
+					parseRenderRequest({ patternId: "a.b", params: { k: value } }),
 				),
 			).toBe("param k must be a scalar");
 		}
@@ -269,13 +256,15 @@ describe("request params", () => {
 	it("refuses a params field that is not an object", () => {
 		for (const bad of ["a=b", 7, []]) {
 			expect(
-				messageOf(() => parseRenderRequest({ id: "a.b", params: bad })),
+				messageOf(() => parseRenderRequest({ patternId: "a.b", params: bad })),
 			).toBe("params must be an object");
 		}
 	});
 
 	it("accepts an empty params object", () => {
-		expect(parseRenderRequest({ id: "a.b", params: {} }).params).toEqual({});
+		expect(parseRenderRequest({ patternId: "a.b", params: {} }).params).toEqual(
+			{},
+		);
 	});
 });
 
