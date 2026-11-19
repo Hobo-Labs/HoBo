@@ -696,7 +696,8 @@ export function createBudgetAdmissionAuthority(options: {
 			};
 			entitlementHistory.set(entitlementKey(bucket), history);
 			const unitChangeKey = entitlementUnitChangeKey(bucket);
-			const unitChanges = entitlementUnitChangeHistory.get(unitChangeKey) ??
+			const unitChanges =
+				entitlementUnitChangeHistory.get(unitChangeKey) ??
 				new Map<string, EntitlementHistory>();
 			unitChanges.set(bucket.unit, history);
 			entitlementUnitChangeHistory.set(unitChangeKey, unitChanges);

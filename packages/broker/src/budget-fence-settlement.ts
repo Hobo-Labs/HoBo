@@ -499,7 +499,8 @@ export function canonicalBudgetFenceSettlement(
 	reservation: BudgetReservation,
 	actualMicros: number,
 	evidence: Evidence,
-	payloadVersion: BudgetFenceSettlementPayloadVersion = reservation.fenceSettlementPayloadVersion === ""
+	payloadVersion: BudgetFenceSettlementPayloadVersion = reservation.fenceSettlementPayloadVersion ===
+	""
 		? legacyBudgetFenceSettlementPayloadVersion
 		: currentBudgetFenceSettlementPayloadVersion,
 ): string {
