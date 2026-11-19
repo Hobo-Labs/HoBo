@@ -83,7 +83,7 @@ describe("Rivet actor inbox lifecycle", () => {
 	it.each([
 		false,
 		true,
-	])("finishes a committed command after reopen (legacy receipt: %s)", (legacyReceipt) => {
+	])("checks committed receipts after reopen (missing: %s)", (missingReceipt) => {
 		const path = journalPath();
 		const first = createActorLocalJournal(path);
 		const actor = createRivetActorHost({ journal: first });
@@ -98,7 +98,9 @@ describe("Rivet actor inbox lifecycle", () => {
 					type: "add",
 					eventId: "a",
 					payload: new TextEncoder().encode("2"),
-					metadataJson: "{}",
+					metadataJson: JSON.stringify({
+						format: "hobo.rivet.command-event/v1",
+					}),
 					tenant: "acme",
 				},
 			],
@@ -111,7 +113,7 @@ describe("Rivet actor inbox lifecycle", () => {
 		});
 		expect(() => first.commitCommand(commit)).toThrow(/not pending/);
 		first.close();
-		if (legacyReceipt) {
+		if (missingReceipt) {
 			const raw = new DatabaseSync(path);
 			raw
 				.prepare(
@@ -124,6 +126,15 @@ describe("Rivet actor inbox lifecycle", () => {
 		const reopened = createActorLocalJournal(path);
 		try {
 			const next = createRivetActorHost({ journal: reopened });
+			if (missingReceipt) {
+				expect(() => next.processNext(identity, add, 0)).toThrow(
+					"has no receipt",
+				);
+				expect(reopened.loadCommand(streamId, "a")?.status).toBe("committed");
+				expect(reopened.readFacts(streamId)).toHaveLength(1);
+				expect(reopened.pendingOutbox(streamId)).toHaveLength(1);
+				return;
+			}
 			expect(
 				next.processNext(
 					identity,
@@ -142,21 +153,6 @@ describe("Rivet actor inbox lifecycle", () => {
 			expect(next.processNext(identity, add, 0)).toBeUndefined();
 		} finally {
 			reopened.close();
-		}
-	});
-	it("does not invent a receipt for a committed command without a matching event", () => {
-		const journal = createActorLocalJournal();
-		try {
-			const actor = createRivetActorHost({ journal });
-			actor.accept(command("a", 2, 0));
-			journal.markCommitted(streamId, "a");
-			expect(() => actor.processNext(identity, add, 0)).toThrow(
-				/cannot recover committed revision/,
-			);
-			expect(journal.loadCommand(streamId, "a")?.status).toBe("committed");
-			expect(journal.readFacts(streamId)).toHaveLength(0);
-		} finally {
-			journal.close();
 		}
 	});
 });
