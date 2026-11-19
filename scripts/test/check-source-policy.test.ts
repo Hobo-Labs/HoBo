@@ -190,10 +190,10 @@ f: /* TODO: remove block */`;
 		assert.deepEqual(
 			commentViolations(
 				"schema.prisma",
-				"/* relation pkg/* */\n// TODO: follow up\n",
+				"/* TODO: inside */\n/* relation pkg/* */ TODO: outside */\n",
 				new Set([1, 2]),
 			).map((item) => item.line),
-			[2],
+			[1],
 		);
 		const wit = "/* outer /* inner */ outer */\n/// explanation";
 		assert.deepEqual(
