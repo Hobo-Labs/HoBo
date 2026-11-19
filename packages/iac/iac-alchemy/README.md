@@ -29,11 +29,19 @@ An invalid or incomplete model cannot use that path.
 
 `mapBindleToAlchemy` accepts provider-owned primitive mappers and assesses the
 Bindle's requirements, operations, annotations, dependencies and entrypoints.
-It refuses missing mappings and unbound dependencies. This foundational package
-does not provide built-in mappings for any particular Alchemy provider.
+It refuses missing mappings and unbound dependencies.
 `describeAlchemyPrimitiveSupport` reports the supplied mappers' operational
 coverage; it does not authenticate them, price their resources, or authorize
 routing. Hosts must attest the mapping and its execution environment.
+
+The optional `@hobo/iac-alchemy/rivet` entry point maps one attested API, web,
+or service entrypoint to an Alchemy Rivet `DurableObject`. The accompanying
+`rivet/runtime` entry point binds the application handler to a Rivet actor. The
+host must verify and fence the source, artifact and exclusive pool. This mapping
+does not bind resource dependencies or enabled session replay. Other primitive
+kinds remain unsupported; `describeRivetPrimitiveSupport` reports their gaps.
+The package tests exercise an isolated local Rivet engine and Alchemy providers
+with test doubles; a live cloud deployment has not been verified.
 
 The isolation test scans selected shared runtime, Bindle, financial and policy
 packages for literal Alchemy references, including escaped spellings. It does
