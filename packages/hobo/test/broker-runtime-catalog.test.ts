@@ -251,15 +251,6 @@ describe("defaultComponentHostFromBroker", () => {
 		expect(defaultComponentHostFromBroker(dir)).toBe("wasm");
 	});
 
-	it("normalizes a legacy preference rather than failing on it", () => {
-		const dir = home();
-		saveEmbeddedBrokerState(
-			state({ preferredComponentHost: "isolated-wasm" as never }),
-			dir,
-		);
-		expect(defaultComponentHostFromBroker(dir)).toBe("wasm");
-	});
-
 	it("falls back to the default host for an unrecognisable preference", () => {
 		const dir = home();
 		saveEmbeddedBrokerState(

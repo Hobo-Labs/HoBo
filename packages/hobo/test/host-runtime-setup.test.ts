@@ -34,16 +34,10 @@ afterEach(async () => {
 });
 
 describe("host runtime packages setup", () => {
-	it("normalizes legacy aliases", () => {
-		expect(normalizeComponentHostKind("isolated-wasm")).toBe("wasm");
-		expect(normalizeComponentHostKind("bare-metal")).toBe("local");
-		expect(normalizeComponentHostKind("runtime-local")).toBe("local");
-		expect(COMPONENT_HOST_KINDS).toEqual([
-			"local",
-			"wasm",
-			"oci",
-			"cloud-native",
-		]);
+	it("accepts the supported host kinds", () => {
+		for (const kind of COMPONENT_HOST_KINDS) {
+			expect(normalizeComponentHostKind(kind)).toBe(kind);
+		}
 	});
 
 	it("ensureAllRuntimeHosts marks each kind ready", async () => {
@@ -56,10 +50,8 @@ describe("host runtime packages setup", () => {
 		expect(results.map((r) => r.kind).sort()).toEqual(
 			["cloud-native", "local", "oci", "wasm"].sort(),
 		);
-		// oci ensure is ready when kubectl client probes (cluster optional).
 		for (const result of results) {
 			if (result.kind === "oci" && !result.ready) {
-				// Without kubectl binary, oci may report not ready — still a valid host.
 				expect(result.notes.join(" ")).toMatch(/kubectl|cluster|oci/i);
 				continue;
 			}
@@ -166,13 +158,11 @@ describe("host runtime packages setup", () => {
 			["yard", "ensure", "--home", hoboHome, "--json"],
 			{ cwd: hoboHome },
 		);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(result.stdout) as {
 			ok: boolean;
 			code: string;
 			data: { hosts: Array<{ kind: string; ready: boolean }> };
 		};
-		// ok may be false if kubectl missing for oci — still report four hosts.
 		expect(envelope.data.hosts).toHaveLength(4);
 		expect(envelope.data.hosts.map((h) => h.kind).sort()).toEqual(
 			["cloud-native", "local", "oci", "wasm"].sort(),

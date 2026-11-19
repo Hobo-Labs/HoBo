@@ -1,4 +1,3 @@
-
 import { must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
@@ -26,11 +25,7 @@ export interface WasmHostProbe {
 		readonly wasm: string;
 		readonly oci: string;
 		readonly "cloud-native": string;
-		/** @deprecated */
-		readonly "isolated-wasm": string;
 	};
-	/** @deprecated */
-	readonly tiers: WasmHostProbe["componentHosts"];
 }
 
 export function probeWasmHostInstall(
@@ -51,8 +46,6 @@ export function probeWasmHostInstall(
 		oci: "WASM-on-OCI scheduled on Kubernetes" as const,
 		"cloud-native":
 			"multi-cloud host registry (aws/gcp/azure/vercel/cloudflare)" as const,
-		"isolated-wasm":
-			"wasmtime OS-process sandboxes for private components" as const,
 	};
 
 	let lastError = "wasmtime not found";
@@ -76,7 +69,6 @@ export function probeWasmHostInstall(
 				wasmtimeCliAvailable: true,
 				notes,
 				componentHosts,
-				tiers: componentHosts,
 			};
 		} catch (error) {
 			lastError = error instanceof Error ? error.message : String(error);
@@ -98,16 +90,7 @@ export function probeWasmHostInstall(
 		wasmtimeCliAvailable: false,
 		notes,
 		componentHosts,
-		tiers: componentHosts,
 	};
-}
-
-/** @deprecated */
-export async function serveProjectOnWasmHost(
-	options: Parameters<typeof serveBindleOnLocalYard>[0],
-): Promise<BareMetalServeResult & { readonly componentHost: string }> {
-	const result = await serveBindleOnLocalYard(options);
-	return { ...result, componentHost: "local" };
 }
 
 export async function serveProjectOnLocalYard(options: {
@@ -116,19 +99,7 @@ export async function serveProjectOnLocalYard(options: {
 	readonly port?: number;
 	readonly hoboHome?: string;
 	readonly emitProgress?: (message: string) => void;
-	readonly componentHost?:
-		| ComponentHostKind
-		| "bare-metal"
-		| "runtime-local"
-		| "isolated-wasm"
-		| string;
-	/** @deprecated */
-	readonly host?:
-		| ComponentHostKind
-		| "bare-metal"
-		| "runtime-local"
-		| "isolated-wasm"
-		| string;
+	readonly componentHost?: ComponentHostKind;
 }): Promise<
 	BareMetalServeResult & {
 		readonly componentHost: string;
@@ -171,10 +142,7 @@ export async function serveProjectOnLocalYard(options: {
 
 	try {
 		const componentHost = normalizeComponentHostKind(
-			options.componentHost ??
-				options.host ??
-				yard.config.componentHost ??
-				yard.config.host,
+			options.componentHost ?? yard.config.componentHost,
 		);
 		if (componentHost === "local") {
 			const result = await serveBindleOnLocalYard({
