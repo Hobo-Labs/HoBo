@@ -58,6 +58,8 @@ stream ID, tenant, and actor for those records. Rebuilds reuse existing facts,
 verify that each names the same source event, and return the quarantined records
 with the resulting snapshot. Other projections continue to process the original
 events. `rebuildFromZero` remains read-only and reports fold failures directly.
+Malformed quarantine records stop the fold or rebuild; they are not ignored or
+turned into another quarantine record.
 
 Aggregate and projection definitions may provide `classifyFailure(error, event)`
 to return `"deterministic"` or `"transient"`. Transient failures are rethrown

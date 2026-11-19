@@ -1,4 +1,4 @@
-import { create, fromJsonString } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import {
 	type AppendOptions,
 	EVENTSTORE_LIMITS,
@@ -16,12 +16,12 @@ import {
 	type DataFact,
 } from "./events.js";
 import { type FoldFailureClassifier, shouldQuarantineFailure } from "./fold.js";
+import { hasFunctionTag, type Inspectable, isObjectLike } from "./json.js";
 import {
-	hasFunctionTag,
-	type Inspectable,
-	isObjectLike,
-	parseOffendingSeq,
-} from "./json.js";
+	parseEventStoreQuarantine,
+	parseProjectionQuarantine,
+	quarantineSequence,
+} from "./quarantine-facts.js";
 import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
 
 export type ApplyHandler<Row> = (
@@ -114,13 +114,6 @@ function isQuarantineFact(event: EventEnvelope): boolean {
 
 const PROJECTION_QUARANTINE_EVENT = "projection.QuarantineRecorded";
 
-function projectionQuarantine(event: EventEnvelope) {
-	return fromJsonString(
-		ProjectionQuarantinedEventDataSchema,
-		JSON.stringify(event.data),
-	);
-}
-
 function eventKey(
 	tenant: string,
 	streamId: string,
@@ -152,16 +145,15 @@ export function defineProjection<Row>(
 		const quarantinedEvents = new Set<string>();
 		for (const event of [...materialized, ...records]) {
 			if (isQuarantineFact(event)) {
-				const offending = parseOffendingSeq(event.data);
-				if (offending !== undefined)
-					quarantinedEvents.add(
-						eventKey(event.tenant, event.streamId, offending),
-					);
+				const offending = quarantineSequence(
+					parseEventStoreQuarantine(event).offendingSeq,
+				);
+				quarantinedEvents.add(
+					eventKey(event.tenant, event.streamId, offending),
+				);
 			} else if (event.type === PROJECTION_QUARANTINE_EVENT) {
-				const data = projectionQuarantine(event);
-				const offending = Number(data.offendingSeq);
-				if (!Number.isSafeInteger(offending) || offending < 1)
-					throw new TypeError("invalid projection quarantine sequence");
+				const data = parseProjectionQuarantine(event);
+				const offending = quarantineSequence(data.offendingSeq);
 				if (data.projection === definition.name)
 					quarantinedEvents.add(
 						eventKey(
@@ -277,7 +269,7 @@ export function defineProjection<Row>(
 						record.type !== PROJECTION_QUARANTINE_EVENT
 					)
 						throw new Error("quarantine stream contains an unexpected event");
-					const data = projectionQuarantine(record);
+					const data = parseProjectionQuarantine(record);
 					if (
 						data.projection !== definition.name ||
 						data.sourceStreamId !== streamId
@@ -363,7 +355,7 @@ export function defineProjection<Row>(
 							break;
 						}
 						for (const record of appended.appended) {
-							const data = projectionQuarantine(record);
+						const data = parseProjectionQuarantine(record);
 							quarantined.push({
 								sourceStreamId: data.sourceStreamId,
 								offendingSeq: Number(data.offendingSeq),

@@ -1,6 +1,3 @@
-
-import type { EventEnvelope } from "@hobo/core";
-
 const tagOf = Object.prototype.toString;
 
 const FUNCTION_TAGS = new Set([
@@ -91,14 +88,4 @@ export function parseNonEmptyString(value: Inspectable, field: string): string {
 		throw new TypeError(`${field} must be a non-empty string`);
 	}
 	return value;
-}
-
-export function parseOffendingSeq(
-	data: EventEnvelope["data"],
-): number | undefined {
-	const inspectable = data as Inspectable;
-	if (!isJsonObject(inspectable)) return undefined;
-	const offending = inspectable.offendingSeq;
-	if (!isJsonNumber(offending)) return undefined;
-	return offending;
 }
