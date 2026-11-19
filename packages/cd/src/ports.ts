@@ -43,6 +43,8 @@ import type {
 	FreightRecord,
 	FreightSourceRecord,
 	HealthQueryRecord,
+	HealthSamplePointRecord,
+	HealthSamplesRecord,
 	HealthSourceKind,
 	ObligationRef,
 	PipelineRecord,
@@ -660,11 +662,16 @@ export interface PublisherPort {
 }
 
 // ── Verification ───────────────────────────────────────────────────────────
-export type HealthSamples = Readonly<{
-	values: readonly number[];
-	fromMs: number;
-	toMs: number;
-}>;
+export type HealthSamplePoint = Readonly<
+	Pick<HealthSamplePointRecord, "value" | "observedAtMs" | "seriesKey">
+>;
+
+export type HealthSamples = Readonly<
+	Pick<HealthSamplesRecord, "fromMs" | "toMs"> & {
+		values: readonly number[];
+		points?: readonly HealthSamplePoint[];
+	}
+>;
 
 export interface HealthSource {
 	readonly kind: HealthSourceKind;

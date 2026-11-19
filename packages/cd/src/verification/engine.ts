@@ -380,16 +380,43 @@ export function createVerificationEngine(
 					);
 					continue;
 				}
-				for (const value of outcome.value.values) {
+				const { values, points } = outcome.value;
+				if (
+					points &&
+					(points.length !== values.length ||
+						values.some((value, index) => {
+							const point = points[index];
+							return (
+								!point ||
+								!Object.is(point.value, value) ||
+								!Number.isSafeInteger(point.observedAtMs) ||
+								point.observedAtMs < 0 ||
+								point.observedAtMs > 8_640_000_000_000_000 ||
+								!point.seriesKey
+							);
+						}))
+				) {
+					reasons.push(
+						reason(
+							"health-source-response-invalid",
+							`invalid observation points for ${plan.check}`,
+							plan.check,
+						),
+					);
+					continue;
+				}
+				for (const [index, value] of values.entries()) {
+					const point = points?.[index];
 					sampled.push(
 						create(EvidenceObservationRecordSchema, {
 							campId: state.campId,
 							signal: plan.check,
 							healthy: Number.isFinite(value),
 							value,
-							observedAt: iso(outcome.value.toMs),
+							observedAt: iso(point?.observedAtMs ?? outcome.value.toMs),
 							source: HealthSourceKind[plan.query.source] ?? "",
 							cohort: plan.cohort,
+							seriesKey: point?.seriesKey ?? "",
 						}),
 					);
 				}

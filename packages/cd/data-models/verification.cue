@@ -52,6 +52,23 @@ import (
 	}
 }
 
+#HealthSamplePointRecord: {
+	value?: number | "NaN" | "Infinity" | "-Infinity"
+	observedAtMs?: int & >=0 & <=8640000000000000
+	seriesKey: string & !=""
+}
+
+#HealthSamplesRecord: {
+	values?: [...(number | "NaN" | "Infinity" | "-Infinity")]
+	fromMs?: int & >=0 & <=8640000000000000
+	toMs?: int & >=0 & <=8640000000000000
+	points?: [...#HealthSamplePointRecord]
+	if points != _|_ {
+		values: [...]
+		_pointCount: true & (len(points) == len(values))
+	}
+}
+
 #ThresholdCheckRecord: {
 	query:       #HealthQueryRecord
 	aggregation: #Aggregation
@@ -165,6 +182,7 @@ import (
 	observedAt: #Timestamp
 	source:     string & !=""
 	cohort?:    #Cohort
+	seriesKey?: string & !=""
 }
 
 // verification.Started body: identity, start instant and the spec as parsed.

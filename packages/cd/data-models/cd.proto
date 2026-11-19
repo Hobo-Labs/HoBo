@@ -429,6 +429,19 @@ enum Aggregation {
   AGGREGATION_SUM = 6;
 }
 
+message HealthSamplePointRecord {
+  double value = 1;
+  double observed_at_ms = 2;
+  string series_key = 3;
+}
+
+message HealthSamplesRecord {
+  repeated double values = 1;
+  double from_ms = 2;
+  double to_ms = 3;
+  repeated HealthSamplePointRecord points = 4;
+}
+
 message ThresholdCheckRecord {
   HealthQueryRecord query = 1;
   Aggregation aggregation = 2;
@@ -516,6 +529,7 @@ message EvidenceObservationRecord {
   string observed_at = 5;
   string source = 6;
   Cohort cohort = 7;
+  string series_key = 8;
 }
 
 // ── Rollout ─────────────────────────────────────────────────────────────────
