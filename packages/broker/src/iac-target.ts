@@ -1,4 +1,5 @@
-import { clone, create, toJson } from "@bufbuild/protobuf";
+import { createHash } from "node:crypto";
+import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import {
 	addDecimal,
 	type Consumption,
@@ -209,6 +210,32 @@ function sortedProviderAccounts<
 	);
 }
 
+function hostingQuoteDigest(quote: HostingQuote): string {
+	return createHash("sha256")
+		.update(toJsonString(HostingQuoteSchema, quote))
+		.digest("hex");
+}
+
+function substantiveEvidenceHash(
+	evidence: IacTargetLiabilityEvidence,
+	maximumMicros: number,
+): string {
+	const accounts = sortedProviderAccounts(evidence.providerAccounts);
+	return stableHash({
+		targetId: evidence.targetId,
+		tenantId: evidence.tenantId,
+		planDigest: evidence.planDigest,
+		inventoryHash: evidence.inventoryHash,
+		modelHash: evidence.modelHash,
+		quoteHash: evidence.quoteHash,
+		maximumMicros,
+		providerAccounts: accounts.map((account) => ({
+			providerAccountId: account.providerAccountId,
+			liabilityMicros: account.liabilityMicros,
+		})),
+	});
+}
+
 function reservationMatchesQuote(
 	reservation: BudgetReservation,
 	input: {
@@ -223,7 +250,8 @@ function reservationMatchesQuote(
 		reservation.requestDigest !== input.requestDigest ||
 		reservation.quoteId !== input.quote.quoteId ||
 		reservation.financialPlanHash !== input.quote.financialPlanHash ||
-		reservation.reservedMicros !== input.quote.liabilityBoundMicros
+		reservation.reservedMicros !== input.quote.liabilityBoundMicros ||
+		reservation.quoteDigest !== hostingQuoteDigest(input.quote)
 	)
 		return false;
 	if (input.executionDigest === undefined) return true;
@@ -447,14 +475,9 @@ export async function admitIacTarget(
 			"ENTITLEMENT_CONSUMPTION_INVALID",
 			"pricing consumption cannot be reserved safely",
 		);
-	const canonicalEvidence = clone(IacTargetLiabilityEvidenceSchema, {
-		...evidence,
-		providerAccounts: sortedProviderAccounts(evidence.providerAccounts),
-	});
-	const evidenceHash = stableHash(
-		toJson(IacTargetLiabilityEvidenceSchema, canonicalEvidence, {
-			alwaysEmitImplicit: true,
-		}),
+	const evidenceHash = substantiveEvidenceHash(
+		evidence,
+		evidence.maximumMicros,
 	);
 	const financialPlanHash = stableHash({
 		planDigest: inventory.planDigest,
