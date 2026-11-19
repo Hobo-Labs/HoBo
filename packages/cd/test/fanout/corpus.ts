@@ -1,4 +1,3 @@
-// Golden-corpus file I/O shared by the WP23 golden tests.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { JsonValue } from "@bufbuild/protobuf";
@@ -9,7 +8,6 @@ export function readCorpus(file: string): Map<string, JsonValue> {
 	return new Map(isJsonObject(parsed) ? Object.entries(parsed) : []);
 }
 
-/** Rewrite the corpus only when asked (UPDATE_GOLDEN=1). */
 export function maybeWriteCorpus(
 	file: string,
 	current: ReadonlyMap<string, JsonValue>,

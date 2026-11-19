@@ -1,6 +1,3 @@
-// The RRULE subset and its wall-clock expansion, with DST golden cases for
-// America/Chicago (2026-03-08 spring forward, 2026-11-01 fall back) and
-// Europe/London (2026-03-29 spring forward, 2026-10-25 fall back).
 import { describe, expect, it } from "vitest";
 import {
 	fromLocal,
