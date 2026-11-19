@@ -178,7 +178,7 @@ Labelled by state, per the research contract:
 - **Fail-closed residency/jurisdiction** (*implemented*). `evaluateResidency` in `@hobo/core`
   (ADR-0146) is a typed, fail-closed port. Mia documents multi-cloud reach, not residency evaluation.
 - **Contract effects and visible resiliency** (*implemented*). `EffectSpec` on BoundaryContract
-  ([ADR-0136](../design/adr/03-data-plane-effects-resiliency.md)) has no documented Mia analog.
+  ([ADR-0136](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md)) has no documented Mia analog.
 - **Honest caveats.** HoBo's default Pulumi stand-in is in-memory and the packages are not on npm
   (see the [live provider matrix](../design/live-provider-matrix.md)). Against a shipping enterprise
   suite, HoBo's advantage is architectural, not operational maturity.
