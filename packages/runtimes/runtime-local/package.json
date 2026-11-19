@@ -24,6 +24,7 @@
 	"devDependencies": {
 		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/conformance": "workspace:*",
+		"@pact-foundation/pact": "17.1.4",
 		"@types/node": ">=24.0.0"
 	},
 	"scripts": {
@@ -33,7 +34,7 @@
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
 		"test": "vitest run && node --import tsx --test contracts/consumer/*.test.ts contracts/provider/*.test.ts",
 		"test:unit": "vitest run",
-		"test:contract:consumer": "node --import tsx --test contracts/consumer/*.test.ts",
-		"test:contract:provider": "node --import tsx --test contracts/provider/*.test.ts"
+		"test:contract:consumer": "node --import tsx --test contracts/consumer/*.test.ts && vitest run test/wrpc-link-manifest-pact.test.ts -t 'reads runtime manifests'",
+		"test:contract:provider": "node --import tsx --test contracts/provider/*.test.ts && vitest run test/wrpc-link-manifest-pact.test.ts"
 	}
 }

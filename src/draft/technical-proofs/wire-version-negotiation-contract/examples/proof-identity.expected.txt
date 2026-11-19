@@ -1,3 +1,0 @@
-slug: wire-version-negotiation-contract
-layer: technical
-proof-identity: ok

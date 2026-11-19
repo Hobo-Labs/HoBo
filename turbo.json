@@ -841,7 +841,6 @@
         "src/draft/technical-proofs/svid-auto-rotation-contract/**",
         "src/draft/technical-proofs/tier-three-private-interconnect-contract/**",
         "src/draft/technical-proofs/v1-outcome-activation-rail-contract/**",
-        "src/draft/technical-proofs/wire-version-negotiation-contract/**",
         "src/draft/technical-proofs/yard-receipt-consumption-contract/**",
         "packages/runtimes/runtime-wasm/src/**",
         "packages/runtimes/runtime-wasm/test/wasmtime-global-setup.ts"
