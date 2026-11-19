@@ -54,6 +54,127 @@ try {
 		process.stderr.write(result.stderr);
 		if (result.status !== 0) throw new Error(`${name} model checking failed`);
 	}
+	const budgetDirectory = join(root, "packages/broker/model");
+	const budgetSource = readFileSync(
+		join(budgetDirectory, "IacBudget.tla"),
+		"utf8",
+	);
+	const budgetConfig = readFileSync(
+		join(budgetDirectory, "IacBudget.cfg"),
+		"utf8",
+	);
+	const budgetResult = check(
+		"IacBudget",
+		budgetDirectory,
+		join(scratch, "IacBudget"),
+	);
+	process.stdout.write(budgetResult.stdout);
+	process.stderr.write(budgetResult.stderr);
+	if (budgetResult.status !== 0)
+		throw new Error("IacBudget model checking failed");
+	const narrow = join(scratch, "budget-limit-one");
+	mkdirSync(narrow);
+	if (budgetConfig.split("CONSTANT Limit = 2").length !== 2)
+		throw new Error("IacBudget limit configuration changed");
+	writeFileSync(join(narrow, "IacBudget.tla"), budgetSource);
+	writeFileSync(
+		join(narrow, "IacBudget.cfg"),
+		`${budgetConfig.replace("CONSTANT Limit = 2", "CONSTANT Limit = 1")}\nINVARIANT AtMostOnePricedHold\n`,
+	);
+	const narrowResult = check("IacBudget", narrow, join(narrow, "states"));
+	process.stdout.write(narrowResult.stdout);
+	process.stderr.write(narrowResult.stderr);
+	if (narrowResult.status !== 0)
+		throw new Error("IacBudget limit-one model checking failed");
+	const budgetMutations = [
+		[
+			"/\\ guard \\in BOOLEAN /\\ (settlementTrust \\/ guard)",
+			"/\\ guard \\in BOOLEAN",
+		],
+		['/\\ mode[o] # "priced" \\/ settlementTrust \\/ guarded[o]', "/\\ TRUE"],
+		[
+			'/\\ status[o] = "idle" /\\ ActiveUnpriced = {}',
+			'/\\ status[o] = "idle"',
+		],
+		[
+			"/\\ fenced[o] /\\ verified[o] /\\ ~live[o] /\\ actual \\in 0..3",
+			"/\\ actual \\in 0..3",
+		],
+	] as const;
+	for (const [index, [before, after]] of budgetMutations.entries()) {
+		if (budgetSource.split(before).length !== 2)
+			throw new Error("IacBudget mutation target changed");
+		const isolated = join(scratch, `budget-mutation-${index}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "IacBudget.tla"),
+			budgetSource.replace(before, after),
+		);
+		writeFileSync(join(isolated, "IacBudget.cfg"), budgetConfig);
+		const result = check("IacBudget", isolated, join(isolated, "states"));
+		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
+			throw new Error(
+				"IacBudget mutation did not produce an invariant counterexample",
+			);
+		process.stdout.write(
+			`IacBudget mutation ${index + 1}: counterexample found\n`,
+		);
+	}
+	const expectBudgetViolation = (
+		label: string,
+		source: string,
+		invariant: string,
+		limit = 2,
+	) => {
+		const isolated = join(scratch, `budget-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(join(isolated, "IacBudget.tla"), source);
+		writeFileSync(
+			join(isolated, "IacBudget.cfg"),
+			`SPECIFICATION Spec\nCONSTANT Limit = ${limit}\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = check("IacBudget", isolated, join(isolated, "states"));
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`IacBudget ${label} did not violate ${invariant}`);
+		process.stdout.write(
+			`IacBudget ${label}: ${invariant} counterexample found\n`,
+		);
+	};
+	const budgetGuard = "/\\ spent + Cardinality(ActivePriced) + 1 <= Limit";
+	if (budgetSource.split(budgetGuard).length !== 2)
+		throw new Error("IacBudget reserve-limit mutation target changed");
+	expectBudgetViolation(
+		"missing-reserve-limit",
+		budgetSource.replace(budgetGuard, "/\\ TRUE"),
+		"PricedReservationWithinBudget",
+	);
+	expectBudgetViolation(
+		"missing-outstanding-holds",
+		budgetSource.replace(budgetGuard, "/\\ spent + 1 <= Limit"),
+		"PricedReservationWithinBudget",
+		1,
+	);
+	expectBudgetViolation(
+		"missing-settled-spend",
+		budgetSource.replace(
+			budgetGuard,
+			"/\\ Cardinality(ActivePriced) + 1 <= Limit",
+		),
+		"PricedReservationWithinBudget",
+	);
+	expectBudgetViolation(
+		"two-concurrent-priced-holds",
+		budgetSource,
+		"AtMostOnePricedHold",
+	);
+	expectBudgetViolation(
+		"actual-cost-overrun",
+		budgetSource,
+		"PricedActualNeverExceedsBudget",
+	);
 	const mutations = [
 		["IacAgreementStatus", "IF NeedsRejection", "IF FALSE"],
 		[
@@ -170,6 +291,87 @@ try {
 			`${readFileSync(join(modelDirectory, `${name}.cfg`), "utf8")}\nINVARIANT ${invariant}\n`,
 		);
 		const result = check(name, witness, join(witness, "states"));
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`${invariant} witness was not reached`);
+		process.stdout.write(`${invariant}: witness found\n`);
+	}
+
+	const receiptDirectory = join(root, "packages/broker/model");
+	const receiptSource = readFileSync(
+		join(receiptDirectory, "IacPricedReceipt.tla"),
+		"utf8",
+	);
+	const receiptConfig = readFileSync(
+		join(receiptDirectory, "IacPricedReceipt.cfg"),
+		"utf8",
+	);
+	const receiptResult = check(
+		"IacPricedReceipt",
+		receiptDirectory,
+		join(scratch, "IacPricedReceipt"),
+	);
+	process.stdout.write(receiptResult.stdout);
+	process.stderr.write(receiptResult.stderr);
+	if (receiptResult.status !== 0)
+		throw new Error("IacPricedReceipt model checking failed");
+	const receiptMutations = [
+		[
+			'IF reserveMatches THEN "await-claim" ELSE "uncertain-reserve"',
+			'IF TRUE THEN "await-claim" ELSE "uncertain-reserve"',
+		],
+		[
+			'IF claimMatches THEN "await-check" ELSE "uncertain-claim"',
+			'IF TRUE THEN "await-check" ELSE "uncertain-claim"',
+		],
+		[
+			'IF stillHeld THEN "admitted" ELSE "uncertain-revalidation"',
+			'IF TRUE THEN "admitted" ELSE "uncertain-revalidation"',
+		],
+	] as const;
+	for (const [index, [before, after]] of receiptMutations.entries()) {
+		if (receiptSource.split(before).length !== 2)
+			throw new Error("receipt mutation target changed");
+		const isolated = join(scratch, `receipt-mutation-${index}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "IacPricedReceipt.tla"),
+			receiptSource.replace(before, after),
+		);
+		writeFileSync(join(isolated, "IacPricedReceipt.cfg"), receiptConfig);
+		const result = check(
+			"IacPricedReceipt",
+			isolated,
+			join(isolated, "states"),
+		);
+		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
+			throw new Error(
+				"receipt mutation did not produce an invariant counterexample",
+			);
+		process.stdout.write(
+			`IacPricedReceipt mutation ${index + 1}: counterexample found\n`,
+		);
+	}
+	for (const invariant of [
+		"NoAdmission",
+		"NoReserveUncertainty",
+		"NoClaimUncertainty",
+		"NoRevalidationUncertainty",
+	] as const) {
+		const isolated = join(scratch, `receipt-${invariant}`);
+		mkdirSync(isolated);
+		writeFileSync(join(isolated, "IacPricedReceipt.tla"), receiptSource);
+		writeFileSync(
+			join(isolated, "IacPricedReceipt.cfg"),
+			`${receiptConfig}\nINVARIANT ${invariant}\n`,
+		);
+		const result = check(
+			"IacPricedReceipt",
+			isolated,
+			join(isolated, "states"),
+		);
 		if (
 			result.status === 0 ||
 			!result.stdout.includes(`Invariant ${invariant} is violated`)
