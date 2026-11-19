@@ -227,3 +227,19 @@ function windowByName(status, name) {
   assert.ok(window, `missing window ${name}`);
   return window;
 }
+
+test("a fast-burn alert reports the remaining objective-window budget", () => {
+  const status = computeSloStatus({
+    definition: makeDefinition(),
+    sliSource: createFixtureSliSource([
+      sample("2026-06-26T03:50:00.000Z", 100000, 100000),
+      sample("2026-06-26T03:59:00.000Z", 80, 100),
+    ]),
+    now: NOW,
+  });
+  const event = makeBudgetBurnedEvent(status, { id: "evt-fast", seq: 1, time: NOW });
+  assert.equal(status.status, "burning");
+  assert.ok(status.objectiveWindow.remainingBudgetRatio > 0.98);
+  assert.equal(windowByName(status, "fast-burn").remainingBudgetRatio, 0);
+  assert.equal(event.data.remainingBudgetRatio, status.objectiveWindow.remainingBudgetRatio);
+});
