@@ -55,7 +55,12 @@ Default reads are **subscriptions** over materializations (**replay-then-live**)
 
 ## Upcasters & quarantine
 
-Event bodies evolve via forward-only upcasters. Poison events produce `*.Quarantined` facts so folds skip deterministically instead of wedging forever. Crypto-shred / erase rebuilds projections without rewriting history bytes in place.
+Event bodies evolve via forward-only upcasters. The runtime can record a
+stream-wide `*.Quarantined` fact, while aggregate and projection rebuilds can
+record fold-specific quarantine decisions. A projection's
+`rebuildWithQuarantine` writes its decisions to a separate stream; other folds
+can still process the original event. Crypto-shred / erase rebuilds projections
+without rewriting history bytes in place.
 
 ## What is *not* the event log
 
