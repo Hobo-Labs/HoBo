@@ -9,14 +9,17 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { Experimental_CompositionEvaluator as Evaluator } from "@json-render/core";
+
 import { z } from "zod";
+
+import { composeConnectSpec } from "./compose.js";
 import {
 	CONNECT_ACTIONS,
 	type ConnectActionName,
 	type ConnectStep,
 	isTerminalStep,
 } from "./steps.js";
-import { stepView } from "./view.js";
 
 // The connect page a lifecycle opens (`hobo ci up`, `hobo cd up`): a loopback
 // server that renders the current step's composed spec and turns the page's
@@ -30,8 +33,7 @@ import { stepView } from "./view.js";
 //   sends the browser back to `/s/<token>/callback`, which the flow handles.
 // - No secret value is ever in a response: steps carry store references only.
 // - CSP: scripts and connections are 'self' only. Inline *styles* are allowed
-//   for component positioning, and images may be data: URIs because
-//   vercel-labs/ui's web.css draws its icons as inline SVG masks; the page
+//   because Radix positions some shadcn parts with style attributes; the page
 //   renders no untrusted content.
 
 /** What a flow asks the browser to do next, beside the new step. */
@@ -68,6 +70,7 @@ export interface ConnectFlow {
 
 export interface ConnectPageOptions {
 	readonly flow: ConnectFlow;
+	readonly evaluate?: Evaluator | undefined;
 	/** Directory holding `connect.js` and `connect.css` (the built client). */
 	readonly assetsDir?: string;
 	readonly host?: "127.0.0.1";
@@ -115,7 +118,7 @@ function send(
 		"x-content-type-options": "nosniff",
 		"referrer-policy": "no-referrer",
 		"content-security-policy":
-			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action https://github.com; frame-ancestors 'none'",
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action https://github.com; frame-ancestors 'none'",
 	});
 	res.end(body);
 }
@@ -176,13 +179,6 @@ export async function startConnectPage(
 	const assetsDir = options.assetsDir ?? DEFAULT_ASSETS;
 	let step: ConnectStep = options.flow.initial;
 	let directive: BrowserDirective = { kind: "none" };
-	let pendingHandoff:
-		| {
-				readonly previousStep: ConnectStep;
-				readonly step: ConnectStep;
-				readonly directive: BrowserDirective;
-		  }
-		| undefined;
 	let settle: (step: ConnectStep) => void = () => undefined;
 	let terminalShown: () => void = () => undefined;
 	const terminalViewed = new Promise<void>((resolve) => {
@@ -191,8 +187,7 @@ export async function startConnectPage(
 	const done = new Promise<ConnectStep>((resolve) => {
 		settle = resolve;
 	});
-	if (isTerminalStep(step)) settle(step);
-	// One transition at a time; duplicate pending handoffs reuse their state.
+	// One transition at a time: a double click cannot run two provider calls.
 	let queue: Promise<void> = Promise.resolve();
 	const transition = (run: () => Promise<FlowTransition>) => {
 		const next = queue.then(async () => {
@@ -218,15 +213,18 @@ export async function startConnectPage(
 		return next;
 	};
 
-	// The step's generated component (view.ts): exactly the fields, choice
-	// and actions it needs, rendered by the browser with UI SDK parts.
-	const view = async () =>
-		JSON.stringify({
+	const view = async () => {
+		const composed = await composeConnectSpec(step, {
+			evaluate: options.evaluate,
+		});
+		return JSON.stringify({
 			step: step.kind,
 			terminal: isTerminalStep(step),
-			view: stepView(step),
+			composedBy: composed.composedBy,
+			spec: composed.spec,
 			directive,
 		});
+	};
 
 	const server = createServer((req, res) => {
 		void (async () => {
@@ -258,9 +256,6 @@ export async function startConnectPage(
 				return;
 			}
 			if (req.method === "POST" && route === "action") {
-				// Bind an in-flight request to the step it was sent for. A queued
-				// double submit must not be replayed against a later setup step.
-				const observedStep = step;
 				const parsed = parseActionBody(await readBody(req));
 				if (parsed === undefined)
 					return send(
@@ -269,52 +264,15 @@ export async function startConnectPage(
 						"application/json",
 						'{"error":"invalid action"}',
 					);
-				await transition(async () => {
-					// A flow may return a fresh object for the same handoff step.
-					// Reuse its directive for requests queued against either object.
-					if (
-						parsed.action === "connect.start" &&
-						pendingHandoff?.step === step &&
-						(observedStep === pendingHandoff.previousStep ||
-							observedStep === step)
-					)
-						return { step, directive: pendingHandoff.directive };
-					if (
-						step !== observedStep ||
-						!stepView(step).actions.some(
-							(action) => action.action === parsed.action,
-						)
-					)
-						return { step };
-					const previous = step;
-					const result = await options.flow.onAction(
-						parsed.action,
-						parsed.params,
-						step,
-					);
-					pendingHandoff =
-						parsed.action === "connect.start" &&
-						result.step.kind === previous.kind &&
-						result.step.provider === previous.provider &&
-						result.directive !== undefined &&
-						result.directive.kind !== "none"
-							? {
-									previousStep: previous,
-									step: result.step,
-									directive: result.directive,
-								}
-							: undefined;
-					return result;
-				});
+				await transition(() =>
+					options.flow.onAction(parsed.action, parsed.params, step),
+				);
 				return send(res, 200, "application/json", await view());
 			}
 			if (req.method === "GET" && route === "callback") {
 				const onCallback = options.flow.onCallback;
 				if (onCallback !== undefined)
-					await transition(() => {
-						pendingHandoff = undefined;
-						return onCallback(url.searchParams, step);
-					});
+					await transition(() => onCallback(url.searchParams, step));
 				// Back to the page, which renders the step the callback produced.
 				res.writeHead(303, { location: base, "cache-control": "no-store" });
 				return res.end();

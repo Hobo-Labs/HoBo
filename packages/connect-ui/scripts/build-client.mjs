@@ -1,6 +1,7 @@
-// Bundle the connect page's browser client (React + vercel-labs/ui) and its
-// stylesheet (UI SDK's web.css themed with HoBo's tokens) into dist/client/.
-// The server serves exactly these two files; nothing is loaded from a CDN.
+// Bundle the connect page's browser client (React + json-render + the shadcn
+// preset) and compile its Tailwind stylesheet into dist/client/. The server
+// serves exactly these two files; nothing is loaded from a CDN.
+import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,10 +26,14 @@ await build({
 	logLevel: "warning",
 });
 
-await build({
-	entryPoints: [path.join(root, "src", "client", "styles.css")],
-	outfile: path.join(out, "connect.css"),
-	bundle: true,
-	minify: true,
-	logLevel: "warning",
-});
+execFileSync(
+	path.join(root, "node_modules", ".bin", "tailwindcss"),
+	[
+		"-i",
+		path.join(root, "src", "client", "styles.css"),
+		"-o",
+		path.join(out, "connect.css"),
+		"--minify",
+	],
+	{ cwd: root, stdio: ["ignore", "ignore", "inherit"] },
+);
