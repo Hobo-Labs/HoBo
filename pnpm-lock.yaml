@@ -4877,8 +4877,6 @@ importers:
 
   src/draft/technical-proofs/projection-lag-consistency-contract: {}
 
-  src/draft/technical-proofs/projection-rebuild-contract: {}
-
   src/draft/technical-proofs/projection-sink-change-feed-conformance-contract: {}
 
   src/draft/technical-proofs/provider-authoring-contract: {}

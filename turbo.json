@@ -1066,7 +1066,6 @@
         "src/draft/technical-proofs/orchestrator-reconciliation-fsm-contract/**",
         "src/draft/technical-proofs/outbound-xaa-token-exchange-contract/**",
         "src/draft/technical-proofs/paradigm-idiom-packages-contract/**",
-        "src/draft/technical-proofs/projection-rebuild-contract/**",
         "src/draft/technical-proofs/provider-cloudflare-contract/**",
         "src/draft/technical-proofs/provider-kubernetes-contract/**",
         "src/draft/technical-proofs/provider-vercel-contract/**",
