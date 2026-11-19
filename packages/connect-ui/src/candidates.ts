@@ -62,6 +62,39 @@ function cancel(): Candidate {
 export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 	const provider = providerLabel(step.provider);
 	switch (step.kind) {
+		case "configure":
+			return [
+				root(step.title, step.reason),
+				heading(step.title),
+				text("reason", step.reason, "Why these settings are needed"),
+				...step.fields.map(
+					(field): Candidate => ({
+						id: `field-${field.name}`,
+						description: `Setting for ${field.label}`,
+						element: {
+							type: "Text",
+							props: {
+								text: `${field.label}${field.required ? " (required)" : ""}`,
+								variant: "body",
+							},
+						},
+					}),
+				),
+				{
+					id: "submit",
+					description: "Save settings and continue",
+					element: {
+						type: "Button",
+						props: {
+							label: "Save and continue",
+							variant: "primary",
+							disabled: null,
+						},
+						on: { press: { action: "connect.submit", params: {} } },
+					},
+				},
+				cancel(),
+			];
 		case "choose-secret-store": {
 			const recommended = step.stores.find((store) => store.recommended);
 			return [

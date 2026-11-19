@@ -23,6 +23,10 @@ export const connectCatalog = defineCatalog(schema, {
 		Radio: ui.Radio,
 	},
 	actions: {
+		"connect.submit": {
+			params: z.record(z.string(), z.string()),
+			description: "Submit configured settings and continue the flow",
+		},
 		"connect.chooseStore": {
 			params: z.object({
 				store: z.enum(["infisical", "1password", "bitwarden"]),
