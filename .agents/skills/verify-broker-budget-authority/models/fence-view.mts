@@ -15,7 +15,7 @@ export const step = (action) =>
 		Claim: 'claim admitted execution',
 		Settle: 'accept both signed proofs',
 		ConfirmUnused: 'confirm unused work',
-		Release: 'confirm unused work',
+		Release: 'release unused hold',
 		Uncertain: 'retain uncertain hold',
 		Offer: 'inspect evidence',
 		Done: 'wait',

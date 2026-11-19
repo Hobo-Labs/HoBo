@@ -38,8 +38,7 @@ Settle == /\ Usable /\ claimed /\ Matches /\ phase' = "settled"
 ConfirmUnused == /\ Active /\ ~claimed /\ ~unusedRelease
                  /\ unusedRelease' = TRUE
                  /\ UNCHANGED <<phase, claimed, bucketUnit, bucketPeriod, attempted, replay, claimUnits>>
-Release == /\ Active /\ ~claimed
-           /\ (phase = "held" \/ unusedRelease)
+Release == /\ Active /\ ~claimed /\ unusedRelease
            /\ phase' = "released"
            /\ UNCHANGED <<claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
 ChangeTerminalScope == /\ phase \in {"settled", "released"} /\ ~attempted

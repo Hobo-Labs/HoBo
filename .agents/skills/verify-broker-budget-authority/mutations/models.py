@@ -51,8 +51,18 @@ for label, name, constants, invariant, mutation, cfg_name in cases:
                 raise RuntimeError(f"{label}: mutation site is not unique")
             model = model.replace(before, after, 1)
         (scratch / f"{name}.tla").write_text(model)
-        config = (f"CONSTANTS {constants}\n" if constants else "") + f"SPECIFICATION Spec\nINVARIANT {invariant}\n"
-        (scratch / "Mutant.cfg").write_text(config)
+        mutant_lines: list[str] = []
+        if constants:
+            mutant_lines.append(f"CONSTANTS {constants}")
+        for line in baseline_cfg.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("CONSTANT"):
+                continue
+            if stripped.startswith("SPECIFICATION") or stripped.startswith("INVARIANT"):
+                continue
+            mutant_lines.append(line)
+        mutant_lines.extend(["SPECIFICATION Spec", f"INVARIANT {invariant}", ""])
+        (scratch / "Mutant.cfg").write_text("\n".join(mutant_lines))
         result = subprocess.run(
             ["java", "-XX:+UseParallelGC", "-cp", str(jar), "tlc2.TLC", "-workers", "1", "-config", "Mutant.cfg", f"{name}.tla"],
             cwd=scratch, text=True, capture_output=True, check=False, timeout=timeout,

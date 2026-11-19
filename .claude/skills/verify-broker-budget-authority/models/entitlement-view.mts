@@ -24,6 +24,7 @@ export const step = (action) =>
 	({
 		Reserve: 'reserve entitlement claim',
 		Claim: 'claim execution',
+		RecordZeroUnits: 'record zero-unit claim scope',
 		Uncertain: 'execution outcome uncertain',
 		ChangeScope: 'change or refuse entitlement scope',
 		ReplayMismatch: 'replay entitlement evidence',

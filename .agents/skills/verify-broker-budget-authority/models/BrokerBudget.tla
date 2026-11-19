@@ -6,7 +6,8 @@ vars == <<phase, claimed, evidence, unusedEvidence, usage>>
 Held == Cardinality({r \in Requests : phase[r] \in {"held", "uncertain"}})
 RECURSIVE SumUsage(_)
 SumUsage(rs) == IF rs = {} THEN 0
-                ELSE LET r == CHOOSE x \in rs : TRUE IN usage[r] + SumUsage(rs \ {r})
+                ELSE LET r == CHOOSE x \in rs : \A y \in rs : x <= y
+                     IN usage[r] + SumUsage(rs \ {r})
 Spent == SumUsage({r \in Requests : phase[r] = "settled"})
 Overrun == \E r \in Requests : phase[r] = "settled" /\ usage[r] > 1
 Init == /\ phase = [r \in Requests |-> "new"]
