@@ -24,12 +24,6 @@ export interface CodegenDependencies {
 	readonly engine?: CodegenEngine;
 }
 
-/**
- * Run codegen for a project: regenerate the artifact set and either write it
- * into the tree or (check mode) diff against what's on disk, failing on
- * drift. The engine is injectable; the default reads the conventional
- * project layout.
- */
 export async function runCodegen(
 	request: CodegenRequest,
 	deps: CodegenDependencies = {},
