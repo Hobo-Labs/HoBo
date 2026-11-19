@@ -382,6 +382,185 @@ describe("provider-neutral IaC target budget admission", () => {
 		}
 	});
 
+	function financialPlan() {
+		return {
+			targetId: "yard-a",
+			tenantId: "tenant-a",
+			planDigest: PLAN,
+			complete: true as const,
+			evidenceRef: "inventory:1",
+			resources: [
+				{
+					resourceId: "resource-a",
+					providerId: "sandbox",
+					providerAccountRef: "account-a",
+					productId: "sandbox",
+				},
+			],
+		};
+	}
+
+	it("rejects unbounded plans at assess before quoting", () => {
+		const ledger = authority();
+		try {
+			const financial = createIacFinancialServices({
+				...dependencies(ledger),
+				issueLiability: () => fixture().evidence,
+			});
+			expect(() =>
+				financial.assess({
+					...financialPlan(),
+					targetId: "x".repeat(10_000),
+				}),
+			).toThrow("unbounded");
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("rejects inventory mutation between assess expectation and admission", async () => {
+		const ledger = authority();
+		try {
+			const { pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("fixture model missing");
+			const plan = financialPlan();
+			const financial = createIacFinancialServices({
+				...dependencies(ledger),
+				pricing: {
+					modelId: "terms",
+					revision: "1",
+					scenario: pricing.state.value.scenario,
+					bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+				},
+				issueLiability: () => evidence,
+			});
+			const ranked = financial.assess(plan);
+			if (!ranked.quote.ok) throw new Error("expected priced plan");
+			Object.defineProperty(plan, "tenantId", {
+				value: "tenant-b",
+				enumerable: true,
+			});
+			expect(
+				await financial.admit("ranked-plan", plan, {
+					targetId: plan.targetId,
+					inventoryHash: ranked.quote.inventoryHash,
+					modelHash: ranked.quote.modelHash,
+					quoteHash: ranked.quote.quote.quoteHash,
+				}),
+			).toMatchObject({
+				status: "denied",
+				code: "ROUTING_QUOTE_CHANGED",
+			});
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("admit entitlement consumption reserves allowance minutes and credit micros", async () => {
+		const ledger = createSqliteBudgetAdmissionAuthority({
+			path: (() => {
+				const dir = mkdtempSync(join(tmpdir(), "hobo-iac-entitlements-"));
+				directories.push(dir);
+				return join(dir, "budget.sqlite");
+			})(),
+			now: () => NOW,
+			snapshot: create(BudgetLedgerSnapshotSchema, {
+				identity: {
+					tenantId: "tenant-a",
+					budgetId: "hosting",
+					periodId: "2026-01",
+					policyRevision: "r1",
+				},
+				limitMicros: 5_000_000,
+				observedAt: "2026-01-01T00:00:00Z",
+				validUntil: END,
+				providerAccounts: [
+					create(BudgetProviderAccountSchema, {
+						providerAccountId: "account-a",
+						limitMicros: 5_000_000,
+					}),
+				],
+				entitlements: [
+					{
+						bucketId: "allowance-a",
+						unit: "minute",
+						periodId: "2026-01",
+						remainingUnits: 1_000,
+						observedAt: "2026-01-01T00:00:00Z",
+						validUntil: END,
+					},
+					{
+						bucketId: "credit-a",
+						unit: "USD.micros",
+						periodId: "2026-01",
+						remainingUnits: 5_000_000,
+						observedAt: "2026-01-01T00:00:00Z",
+						validUntil: END,
+					},
+				],
+			}),
+		});
+		try {
+			const {
+				allowanceState,
+				creditState,
+				makeScenario,
+				perUnitCharge,
+				usage,
+				workload,
+			} = await import("../../pricing/test/fixtures.js");
+			const scenario = makeScenario({
+				charges: [perUnitCharge("runtime", "minute", "0.25")],
+				candidate: [workload("agreement-a", [usage("minute", "10", "minute")])],
+				allowances: [allowanceState("allowance-a", "5", "0")],
+				credits: [creditState("credit-a", "zero", 0)],
+			});
+			const plan = financialPlan();
+			const inventory = createTargetPricingInventory(plan);
+			const pricing = targetPricingModel({
+				modelId: "terms",
+				revision: "1",
+				planDigest: PLAN,
+				scenario,
+				bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+			});
+			const priced = quoteTargetPricing(inventory, pricing);
+			if (!priced.ok) throw new Error(priced.reason);
+			const evidence = create(IacTargetLiabilityEvidenceSchema, {
+				evidenceRef: "evidence:entitlements",
+				targetId: plan.targetId,
+				tenantId: plan.tenantId,
+				planDigest: PLAN,
+				inventoryHash: priced.inventoryHash,
+				modelHash: priced.modelHash,
+				quoteHash: priced.quote.quoteHash,
+				maximumMicros: 5_000_000,
+				observedAt: "2026-01-01T00:00:00Z",
+				validUntil: END,
+				providerAccounts: [
+					{ providerAccountId: "account-a", liabilityMicros: 5_000_000 },
+				],
+			});
+			const decision = await admitIacTarget(
+				{ requestId: "entitlement-path", inventory, pricing, evidence },
+				dependencies(ledger),
+			);
+			expect(decision).toMatchObject({ status: "admitted" });
+			expect(decision.quote?.entitlementClaims.length).toBeGreaterThan(0);
+			expect(
+				decision.quote?.entitlementClaims.some((claim) => claim.unit === "minute"),
+			).toBe(true);
+			expect(
+				decision.quote?.entitlementClaims.some(
+					(claim) => claim.unit === "USD.micros",
+				),
+			).toBe(true);
+		} finally {
+			ledger.close();
+		}
+	});
+
 	it("accepts intact generated pricing data at the broker entrypoint", () => {
 		const ledger = authority();
 		try {

@@ -91,7 +91,15 @@ export function createIacFinancialServices(
 	const assess = (plan: IacFinancialPlan) => {
 		if (plan.complete !== true)
 			throw new TypeError("infrastructure plan inventory must be complete");
-		const inventory = createTargetPricingInventory(plan);
+		if (!isBoundedPricingInput(plan))
+			throw new TypeError("invalid or unbounded infrastructure plan");
+		let stable: IacFinancialPlan;
+		try {
+			stable = structuredClone(plan);
+		} catch {
+			throw new TypeError("invalid infrastructure plan");
+		}
+		const inventory = createTargetPricingInventory(stable);
 		const pricing =
 			model === undefined
 				? targetPricingUnavailable(
