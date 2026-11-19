@@ -1,12 +1,3 @@
-/**
- * Consumer-driven contract verification for the yard boundary.
- *
- * `contracts/provider-webernetes-yard-boundary.pact.json` states what the yard
- * placement plane expects of this package. A pact nobody replays is a wish, so
- * this suite loads the file and drives the *real* `createWebernetesProvider()`
- * through every interaction it records. Nothing is stubbed: this half of the
- * package has no seam, because it makes no call out.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 

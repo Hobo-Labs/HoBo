@@ -4,7 +4,6 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
-// The SAME wire schema every HoBo IaC adapter consumes; only `provider` differs.
 // public-contract: the IacProgram schema version validateIacProgram accepts.
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
 // public-contract: the claim apiVersion this adapter renders.
@@ -36,18 +35,12 @@ export class CrossplaneApplyError extends Error {
 	}
 }
 
-// The cluster seam every lane implements: the in-memory fixture (offline
-// default, promoted from the HOBO-188 draft proof) and the real kubectl-driven
-// cluster (kubectl-cluster.ts) speak the same surface, so the adapter cannot
-// tell them apart — runIacBackendConformance is the proof.
-/** A composition as the adapter reads it: matched on its labels, named in a claim. */
 export interface CrossplaneComposition {
 	readonly name: string;
 	readonly labels?: Record<string, string>;
 	readonly [key: string]: JsonValue;
 }
 
-/** A claim as the adapter reads it — see `claimFor` for the writer. */
 export interface CrossplaneClaim {
 	readonly id: string;
 	readonly name: string;
@@ -57,18 +50,15 @@ export interface CrossplaneClaim {
 		readonly phase: string;
 		readonly outputs: JsonObject;
 	};
-	/** Snapshot of outputs recorded at apply time; drives status-drift detection. */
 	readonly appliedOutputs?: JsonObject;
 }
 
-/** A realized resource inside an `outputs` payload. Distinct from a claim. */
 export interface CrossplaneResourceOutcome {
 	readonly id?: string;
 	readonly status?: string;
 	readonly outputs?: JsonObject;
 }
 
-/** Fields the in-memory cluster lets a test mutate on a stored claim. */
 export interface CrossplaneClaimMutation {
 	readonly specPatch?: JsonObject;
 	readonly statusPatch?: JsonObject;
@@ -80,10 +70,8 @@ export interface CrossplaneClusterLike {
 	compositions():
 		| readonly CrossplaneComposition[]
 		| Promise<readonly CrossplaneComposition[]>;
-	// A command, not a query: every caller awaits it and discards the result.
 	applyClaim(claim: CrossplaneClaim): void | Promise<void>;
 	waitForReady(name: string, pollLimit: number): boolean | Promise<boolean>;
-	/** Absent claims come back nullish; callers already branch on that. */
 	getClaim(
 		name: string,
 	):
@@ -165,8 +153,6 @@ export function createCrossplaneIacAdapter(
 			const normalized = validateIacProgram(program);
 			await ensureRequiredCrds(cluster);
 
-			// Selector resolution fails closed for EVERY resource before any claim
-			// is applied — a half-applied program is worse than a rejected one.
 			for (const resource of normalized.resources) {
 				await selectComposition(cluster, resource);
 			}
@@ -227,9 +213,6 @@ export function createCrossplaneIacAdapter(
 				if (claim.status.phase !== "Ready") {
 					resources.push({ name: resource.name, reason: "not-ready" });
 				}
-				// Out-of-band STATUS mutation: compare live status outputs to the
-				// snapshot recorded at apply time (appliedOutputs), never to a
-				// fabricated expectation.
 				if (claim.appliedOutputs) {
 					for (const outputName of resource.outputs ?? []) {
 						if (
@@ -285,9 +268,6 @@ export function createCrossplaneIacAdapter(
 	});
 }
 
-// The in-memory Crossplane cluster fixture (offline default; promoted from the
-// HOBO-188 draft proof). Real CRD/composition/claim semantics — including
-// stuck-claim and out-of-band-mutation seams — without a kind/k3d cluster.
 export interface InMemoryCrossplaneClusterOptions {
 	readonly installedCrds?: readonly string[];
 	readonly compositions?: readonly CrossplaneComposition[];
@@ -320,8 +300,6 @@ export function createInMemoryCrossplaneCluster(
 				stored.status.phase = "Pending";
 				stored.status.outputs = {};
 			}
-			// Snapshot the outputs observed at apply time so refresh can detect
-			// out-of-band status mutation without fabricating expectations.
 			stored.appliedOutputs = structuredClone(stored.status.outputs ?? {});
 			claims.set(claim.name, stored);
 			return getClaim(claim.name);
@@ -389,9 +367,6 @@ export function outputsToBindings(outputs) {
 	return deepFreeze(bindings);
 }
 
-// The same @hobo/conformance/iac-backend smoke every IaC adapter passes —
-// identical assertion names to the Pulumi and Terraform lanes, so backends
-// stay substitutable behind one shape.
 export async function runIacBackendConformance({ adapter, program }) {
 	const preview = await adapter.preview(program);
 	assertConformance(preview.kind === "diff" && preview.dirty, "preview-diff");
@@ -445,8 +420,6 @@ function assertConformance(condition, assertion) {
 }
 
 export function validateIacProgram(program) {
-	// Parse, don't validate: returns a frozen, derived parsed domain program so
-	// callers work with a trusted ParsedIacProgram instead of re-checking DTO fields.
 	if (!program || !isJsonObject(program)) {
 		throw new CrossplaneProgramError(
 			"invalid-program",
@@ -501,12 +474,6 @@ export function validateIacProgram(program) {
 		}
 	}
 
-	// Resource inputs are where cross-resource references actually live —
-	// `resolveValue` substitutes them at apply time — yet only stackOutputs was
-	// checked here. A claim referencing a resource that is not in the program,
-	// or an output its target does not declare, parsed cleanly and then failed
-	// at resolve, deep inside the apply. This walks the resources the way every
-	// sibling adapter (iac-terraform, the provider mirrors) does.
 	for (const value of collectValues(program.resources)) {
 		validateOutputReference(value, resources);
 	}
@@ -518,10 +485,6 @@ export function validateIacProgram(program) {
 }
 
 function collectValues(value) {
-	// Arrays first: `isJsonObject` excludes them by design, so without this
-	// branch `program.resources` — itself an array — would come back as one
-	// opaque value and nothing inside any resource would be checked. That is
-	// the exact bug just fixed in iac-terraform and provider-kubernetes.
 	if (Array.isArray(value)) {
 		return value.flatMap((entry) => collectValues(entry));
 	}
@@ -635,8 +598,6 @@ export function claimFor(resource, composition) {
 	};
 }
 
-// Fixture status for the in-memory lane: on a real cluster the controller
-// writes status; the kubectl cluster ignores this seed and reads live status.
 function fixtureStatusFor(resource) {
 	const serviceName =
 		resource.name === "database"

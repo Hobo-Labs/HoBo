@@ -48,7 +48,6 @@ export async function runExampleFixture(
 			fixtureId = id;
 		}
 	} catch {
-		// stub fixtures may omit fixture.json during early bootstrap
 	}
 
 	if (opts.phase === "deploy-and-assert") {

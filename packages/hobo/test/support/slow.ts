@@ -1,4 +1,3 @@
-/** Allow a loaded runner to extend wall-clock test timeouts without reducing them. */
 export function slow(
 	minimumMs: number,
 	env: Readonly<Record<string, string | undefined>> = process.env,
@@ -7,7 +6,6 @@ export function slow(
 	return Number.isFinite(floor) && floor > minimumMs ? floor : minimumMs;
 }
 
-/** Time to let the spawned agent enter its loop before testing SIGTERM. */
 export function agentRunDuration(
 	env: Readonly<Record<string, string | undefined>> = process.env,
 ): number {

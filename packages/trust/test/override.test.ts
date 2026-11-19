@@ -84,7 +84,6 @@ describe("applyOperatorOverride", () => {
 		expect(overridden.override.expiresAtMs).toBe(NOW + 13 * DAY);
 		expect(overridden.override.ticketRef).toBe("HOBO-1234");
 		expect(overridden.override.recordDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);
-		// The underlying reasons stay on the record: an override hides nothing.
 		expect(overridden.reasons.map((reason) => reason.code)).toContain(
 			"PROVIDER_MATURITY_DENIED",
 		);

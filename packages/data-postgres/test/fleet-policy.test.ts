@@ -1,9 +1,3 @@
-/**
- * The fleet policy and the usage meter, offline.
- *
- * Every plan number in this file is a PLACEHOLDER chosen to make the
- * arithmetic easy to read. None of them describes a real product or price.
- */
 import { describe, expect, it } from "vitest";
 import {
 	billingPeriod,
@@ -24,7 +18,6 @@ import {
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-// Ten days into a thirty-day month.
 const NOW = Date.UTC(2026, 10, 11);
 const period = billingPeriod(NOW);
 
@@ -45,7 +38,6 @@ function assignment(
 	});
 }
 
-/** PLACEHOLDER plan: `included` operations a month, then the service stops. */
 function capped(backend: string, included: number) {
 	return parseFleetFinancialModel({
 		backend,
@@ -63,7 +55,6 @@ function capped(backend: string, included: number) {
 	});
 }
 
-/** PLACEHOLDER plan whose allowance nobody has verified. */
 function unverified(backend: string) {
 	return parseFleetFinancialModel({
 		backend,
@@ -152,7 +143,6 @@ describe("parsing", () => {
 
 describe("keep", () => {
 	it("keeps a healthy writer that is far from its allowance", () => {
-		// 10,000 used in ten days of thirty: on course for 30,000 of 100,000.
 		const decision = decideFleet(
 			input({
 				observations: [seen("a", 10_000), seen("b", 500), seen("c", 500)],
@@ -187,7 +177,6 @@ describe("keep", () => {
 });
 
 describe("planned switch", () => {
-	// 9,000 a day: 90,000 used of 100,000, so about 1.1 days are left.
 	const exhausting = seen("a", 90_000);
 
 	it("switches before a hard allowance runs out, to the standby with most headroom", () => {
@@ -215,7 +204,6 @@ describe("planned switch", () => {
 	});
 
 	it("does not flap: the standby it left is not a place to go back to", () => {
-		// After moving to c, a is still nearly spent this month.
 		const decision = decideFleet(
 			input({
 				assignment: assignment("c"),
@@ -265,14 +253,11 @@ describe("planned switch", () => {
 				},
 			}),
 		);
-		// The writer's cost is unknown, so nothing is concluded about it.
 		expect(asked).toEqual(["b"]);
 		expect(decision.action).toBe("keep");
 	});
 
 	it("needs a margin: headroom of one horizon is not enough", () => {
-		// b would last about four days under this workload: more than the
-		// three-day horizon, less than the six days the margin requires.
 		const decision = decideFleet(
 			input({
 				observations: [exhausting, seen("b", 0)],
@@ -350,7 +335,6 @@ describe("planned switch", () => {
 			target: "b",
 			reasons: ["budget-infeasible:budget.policy.exhausted"],
 		});
-		// b: 300 already spent plus twenty more days at 1,000 a day.
 		expect(requests.find((request) => request.backend === "b")).toEqual({
 			backend: "b",
 			costBoundMicros: 0,
@@ -385,7 +369,6 @@ describe("planned switch", () => {
 				},
 			}),
 		);
-		// 20,000 projected, 15,000 beyond the allowance at 10 micros each.
 		expect(
 			requests.find((request) => request.backend === "b")?.costBoundMicros,
 		).toBe(1_150_000);
@@ -541,7 +524,6 @@ describe("failover", () => {
 		const decision = decideFleet(
 			input({
 				observations: [
-					// The writer's last measured use is still known to the host.
 					{ ...down(HOUR), usage: [{ unit: "operations", used: 1000 }] },
 					seen("b", 0, { standbyLagMs: 60_000 }),
 					seen("c", 0, { standbyLagMs: 10 * 60_000 }),

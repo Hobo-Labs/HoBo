@@ -42,9 +42,6 @@ describe("claims-mapping conformance suite", () => {
 			try {
 				return mapClaimsToPrincipal(claims);
 			} catch {
-				// The failure mode ADR-0073 warns about: silently accepting whatever
-				// the new issuer sends instead of refusing an unmapped claim shape.
-				// SAFETY: assertion to `(claims ?? {}) as JsonObject` is required at this boundary.
 				const raw = (claims ?? {}) as JsonObject;
 				return Object.freeze({
 					subject: String(raw.sub ?? "unknown"),

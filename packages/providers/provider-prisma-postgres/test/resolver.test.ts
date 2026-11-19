@@ -45,8 +45,6 @@ const request: ResolveRequest = {
 	credentialRef: "vault://host/private-key",
 };
 
-// These fixture ports test provider composition, not persistence durability;
-// the host's SQLite race/reopen suites validate the actual repository/journal.
 function fixturePorts() {
 	const records = new Map<string, ResolveOutcome>();
 	const claims = new Map<

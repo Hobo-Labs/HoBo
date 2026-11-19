@@ -1,5 +1,3 @@
-// D21 late entry: a Camp that recovers converges to the node's *current*
-// qualified Freight, never to an older fan-out's Freight.
 import { describe, expect, it } from "vitest";
 import { FanoutState } from "../../src/_generated/cd_pb.js";
 import { decisionOf, FREIGHT, fanoutOf, healthy } from "./fakes.js";

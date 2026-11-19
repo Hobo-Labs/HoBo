@@ -1,9 +1,3 @@
-// Golden journal corpus for the three event bodies WP9 appends
-// (verification.Started, rollout.EvidenceObserved, verification.Completed).
-// Two guarantees: a stream recorded today still folds and replays to its
-// recorded verdict (old bodies stay readable), and the engine still writes
-// byte-identical bodies for the same inputs (no silent body drift). Refresh
-// deliberately with UPDATE_GOLDEN=1 and review the diff.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

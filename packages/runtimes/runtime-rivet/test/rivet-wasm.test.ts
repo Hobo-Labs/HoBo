@@ -19,7 +19,6 @@ describe("rivetkit wasm live", () => {
 			dirname(require.resolve("@rivetkit/rivetkit-wasm")),
 			"package.json",
 		);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const pkg = parseJsonObject(readFileSync(pkgPath, "utf8"));
 		expect(pkg.name).toBe("@rivetkit/rivetkit-wasm");
 		expect(JSON.stringify(pkg).toLowerCase()).not.toMatch(/component model/);

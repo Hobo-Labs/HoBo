@@ -6,10 +6,6 @@ import {
 	railFromBrokerConfig,
 } from "../src/rail.js";
 
-// ADR-0182 D14, D20: the Rail's opaque `delivery` object and the
-// neutral delivery policy. Stations never interprets `delivery`; @hobo/cd
-// parses it as RailDeliveryRecord.
-
 const base = {
 	id: "rail-prod",
 	name: "prod",
@@ -28,7 +24,6 @@ describe("Rail delivery object (D20)", () => {
 		const none = createRail(base);
 		expect(a.contentHash).not.toBe(b.contentHash);
 		expect(a.contentHash).not.toBe(none.contentHash);
-		// Key order inside delivery is not content: the digest is canonical.
 		const reordered = createRail({
 			...base,
 			delivery: { max_fanout_camps: 10, camp_sets: ["edge"] },
@@ -54,7 +49,6 @@ describe("Rail delivery object (D20)", () => {
 	});
 
 	it("legacy Rails parse unchanged (no delivery key, same digest)", () => {
-		// A Rail persisted before WP16: no `delivery`, legacy delivery engine.
 		const legacy = {
 			schemaVersion: "hobo.rail/v1",
 			id: "rail-legacy",
@@ -168,7 +162,6 @@ describe("neutral delivery policy (D14)", () => {
 			syncMode: "manual",
 			prune: true,
 		});
-		// destination_namespace is deprecated and never read.
 		expect(JSON.stringify(rail)).not.toContain('"ns"');
 	});
 });

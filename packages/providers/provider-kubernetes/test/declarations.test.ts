@@ -1,26 +1,3 @@
-/**
- * The kubernetes provider's three declaration modules: option blocks, the Yard
- * runtime registration, and the cross-cloud equivalence table.
- *
- * None of these talk to kubernetes. They are the *claims* the rest of HoBo plans
- * against, which is precisely why they are worth pinning: a wrong value here
- * does not fail — it plans, matches, and deploys the wrong thing.
- *
- * **Option blocks must stay inert for other providers.** One Bindle targets
- * many clouds unedited, so a block that forgot its `providerId`, or that
- * negotiated `require` instead of `prefer`, would turn an additive annotation
- * into a hard constraint and fail every deploy that is not kubernetes.
- *
- * **The runtime and connector ids are matched as exact strings.** Stations and
- * the Broker look up registrations by `runtimeId`; Broker policy is written
- * against `generatorConnectorId`. Generation is default-deny, so a renamed
- * connector id does not fail open — it silently stops matching the approval
- * that permitted generation at all, and Yards quietly stop being created.
- *
- * **An equivalence row is a promise that a product exists.** Matching answers
- * `full` for any port with a row, so a row for something kubernetes does not sell
- * would make Matching promise a capability nothing can realize.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -37,10 +14,6 @@ import {
 } from "../src/yard-defaults.js";
 
 describe("kubernetes option blocks", () => {
-	// Unlike every other provider, this namespace is not a uniform
-	// defaults-merge: `deployment` is an inert preference and `workload` parses
-	// its placement and negotiates `require`. That asymmetry is the contract,
-	// so it is asserted rather than smoothed over.
 	const placement = {
 		namespace: "apps",
 		name: "checkout",
@@ -67,8 +40,6 @@ describe("kubernetes option blocks", () => {
 	});
 
 	it("keeps a plain deployment an inert preference", () => {
-		// It simulates rather than reaching a cluster, so it must not constrain
-		// a Bindle that also targets somewhere else.
 		const block = kubernetes.with.deployment();
 		expect(block.negotiation).toBe("prefer");
 		expect(block.options.simulation).toBe(true);
@@ -92,31 +63,22 @@ describe("kubernetes option blocks", () => {
 	});
 
 	it("makes a real workload a requirement, not a preference", () => {
-		// A workload bound for an actual apiserver cannot be silently dropped
-		// onto another provider; `require` is what stops that.
 		expect(kubernetes.with.workload(placement).negotiation).toBe("require");
 	});
 
 	it("parses the placement rather than carrying it unchecked", () => {
-		// Parse-don't-validate: the block either holds a placement the apiserver
-		// can accept, or it does not exist. The parsed record is its own shape —
-		// `name`/`image` become `workloadName`/`imageRef` — so downstream code
-		// reads a checked field, never the caller's raw bag.
 		const parsed = kubernetes.with.workload(placement).placement;
 		expect(parsed.workloadName).toBe("checkout");
 		expect(parsed.imageRef).toBe("registry.example.com/checkout:1.2.3");
 	});
 
 	it("refuses a name that is not an RFC 1123 label", () => {
-		// The apiserver would refuse it anyway; refusing at authoring time turns
-		// a failed deploy into a failed build.
 		expect(() =>
 			kubernetes.with.workload({ ...placement, name: "Check_Out" }),
 		).toThrow(/RFC 1123/u);
 	});
 
 	it("refuses a placement that is not an object at all", () => {
-		// SAFETY: assertion to `d as never)).toThr` is required at this boundary.
 		expect(() => kubernetes.with.workload(undefined as never)).toThrow(
 			/placement must be an object/u,
 		);
@@ -127,8 +89,6 @@ describe("kubernetes option blocks", () => {
 	});
 
 	it("fills the resource requests the caller did not state", () => {
-		// A workload with no requests is unschedulable in a quota'd namespace;
-		// defaulting them is what makes the short form deployable.
 		const parsed = kubernetes.with.workload(placement).placement;
 		expect(parsed.requests.cpuMillicores).toBeGreaterThan(0);
 		expect(parsed.limits.memoryBytes).toBeGreaterThan(0);
@@ -138,8 +98,6 @@ describe("kubernetes option blocks", () => {
 
 describe("the kubernetes Yard runtime registration", () => {
 	it("registers under the exact documented runtime id", () => {
-		// Matched as a literal string; a change here unregisters every Yard
-		// already placed on this runtime.
 		expect(kubernetesYardRuntimeRegistration().runtimeId).toBe(
 			KUBERNETES_YARD_RUNTIME_ID,
 		);
@@ -156,8 +114,6 @@ describe("the kubernetes Yard runtime registration", () => {
 	});
 
 	it("names the connector Broker policy is written against", () => {
-		// Generation is default-deny: a mismatch stops matching the approval
-		// rather than failing open.
 		expect(kubernetesYardRuntimeRegistration().generatorConnectorId).toBe(
 			KUBERNETES_YARD_GENERATOR_CONNECTOR_ID,
 		);
@@ -184,29 +140,22 @@ describe("the kubernetes Yard runtime registration", () => {
 	});
 
 	it("freezes the registration", () => {
-		// It is handed to the Broker and to Stations; a mutable one lets one
-		// consumer reshape what the next reads.
 		expect(Object.isFrozen(kubernetesYardRuntimeRegistration())).toBe(true);
 	});
 
 	it("pins its catalog and conformance hashes by algorithm", () => {
-		// A bare hex string leaves the algorithm to be guessed; the prefix is
-		// what makes two implementations agree on what was hashed.
 		const registration = kubernetesYardRuntimeRegistration();
 		expect(registration.resolverCatalogHash).toMatch(/^sha256:/u);
 		expect(registration.conformanceHash).toMatch(/^sha256:/u);
 	});
 
 	it("declares a non-empty supported shape", () => {
-		// An empty shape matches nothing, so the runtime would register and then
-		// never be selected.
 		const supported = kubernetesYardRuntimeRegistration().supportedKind;
 		expect(supported.regions.length).toBeGreaterThan(0);
 		expect(supported.capabilities.length).toBeGreaterThan(0);
 	});
 
 	it("states the permissions generation needs", () => {
-		// The operator granting the connector has to know what they are granting.
 		expect(
 			kubernetesYardRuntimeRegistration().requiredPermissions.length,
 		).toBeGreaterThan(0);
@@ -225,7 +174,6 @@ describe("the kubernetes default resolver pins", () => {
 	});
 
 	it("pins each slot exactly once", () => {
-		// Two pins for one slot make the winner depend on iteration order.
 		const slots = kubernetesDefaultResolverPins().map((pin) => pin.slot);
 		expect(new Set(slots).size).toBe(slots.length);
 	});
@@ -251,8 +199,6 @@ describe("the kubernetes equivalence table", () => {
 	});
 
 	it("lists exactly the ports it has rows for", () => {
-		// The port list is what Matching iterates; a port without a row would
-		// resolve to undefined at match time.
 		expect([...INITIAL_CAPABILITY_PORTS].sort()).toEqual(
 			rows.map(([port]) => port).sort(),
 		);
@@ -264,24 +210,18 @@ describe("the kubernetes equivalence table", () => {
 	});
 
 	it.each(rows)("the %s row names the product it maps to", (_p, row) => {
-		// "Which kubernetes service is this?" is the question the table exists to
-		// answer for a human reading a plan.
 		expect(row.providerService.length).toBeGreaterThan(0);
 	});
 
 	it.each(rows)("the %s row lists the features it claims", (_p, row) => {
-		// Features are what a `require` in a Bindle is matched against; an empty
-		// list matches nothing.
 		expect(row.features.length).toBeGreaterThan(0);
 	});
 
 	it.each(rows)("the %s resource class is namespaced", (_p, row) => {
-		// Unnamespaced classes from two providers would collide in one plan.
 		expect(row.resourceClass).toContain(":");
 	});
 
 	it.each(rows)("looks the %s row up by port", (port, row) => {
-		// SAFETY: assertion to `never)).toBe(` is required at this boundary.
 		expect(equivalenceForPort(port as never)).toBe(row);
 	});
 

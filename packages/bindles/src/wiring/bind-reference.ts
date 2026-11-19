@@ -30,7 +30,6 @@ export function data(
 	options: {
 		paradigm?: string;
 		allow?: readonly string[];
-		/** Platform traits the planner reads (a schedule's `cadence`). */
 		annotations?: JsonObject;
 	} = {},
 ): ResourceHandle {
@@ -178,7 +177,6 @@ function componentHandle(
 			return found;
 		},
 		manifest() {
-			// ADR-0141: links + typed bindings only — never ConnectionStrings__* ambient grants.
 			const env = { ...this.env };
 			const links: Array<{ import: string; to: string }> = [];
 

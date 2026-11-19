@@ -1,5 +1,4 @@
 // public-contract: event names, stream ids and schema ids are wire contract
-// frozen contract.
 
 // public-contract: every event family @hobo/cd appends.
 export const CD_EVENTS = Object.freeze({
@@ -73,7 +72,6 @@ export const CD_EVENTS = Object.freeze({
 export type CdEventType = (typeof CD_EVENTS)[keyof typeof CD_EVENTS];
 
 // public-contract: stream ids. Desired state (spec) and observations (status)
-// live in separate per-Camp streams so they never contend.
 export const CD_STREAMS = Object.freeze({
 	freight: (freightId: string) => `cd-freight-${freightId}`,
 	source: (name: string) => `cd-source-${name}`,
@@ -95,7 +93,6 @@ export const CD_STREAMS = Object.freeze({
 });
 
 // public-contract: durable subscription ids. Leases are keyed by Camp so two
-// reconcilers can never both write one Camp.
 export const CD_SUBSCRIPTIONS = Object.freeze({
 	camp: (campId: string) => `cd:camp:${campId}`,
 	source: (name: string) => `cd:source:${name}`,

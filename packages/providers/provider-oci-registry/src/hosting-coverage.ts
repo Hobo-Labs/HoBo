@@ -14,11 +14,9 @@ import {
 	OCI_REGISTRY_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
-/** Every OCI registry product with a shipped resolver (I14). */
 export const OCI_REGISTRY_RESOLVED_PRODUCT_IDS: readonly string[] =
 	Object.freeze([OCI_REGISTRY_IMAGE_PRODUCT_ID]);
 
-/** Registry surfaces this package catalogs and refuses, each a decision. */
 export const OCI_REGISTRY_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -47,7 +45,6 @@ export const OCI_REGISTRY_HOSTING_COVERAGE: HostingCoverage =
 		absent: OCI_REGISTRY_TRAFFIC_ROUTING_ABSENT,
 	});
 
-/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product this package does not realize. */
 export function ociRegistryProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

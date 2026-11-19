@@ -1,32 +1,3 @@
-/**
- * From a declared continuity policy to the fleet's operating plan.
- *
- * A Bindle declares continuity with the `continuity` trait (`@hobo/bindles`):
- * how much a failure may lose, how fast to move, how many copies, and whether
- * to keep migrating to cheaper backends. This module is the one place that
- * turns that intent into numbers the fleet runs on, so every engine (the
- * PostgreSQL fleet, the cache fleet, a host's tick) reads the same answer:
- *
- * - `fleet`: the `FleetPolicy` `decideFleet` decides with. Its RPO is the
- *   declared recovery point; its failover delay is the declared one. A
- *   `continuous` policy keeps the default cost signals (switch before a hard
- *   allowance runs out, with hysteresis and a dwell); `on-failure` never makes
- *   a planned switch.
- * - `standbys`: what placement asks for beside the writer.
- * - `copyEveryMs`: how often the writer is copied to the standbys. A snapshot
- *   standby is as stale as the time since its last copy plus the copy itself,
- *   so copying every half recovery point keeps lag inside it; copying more
- *   often than that only spends reads and writes. `rebuildable` state is not
- *   copied at all: a move starts the next backend cold.
- * - `budget`: a `FleetBudgetCheck` holding the fleet to its declared ceiling.
- *
- * Interruption is not a separate mode. Every fleet step is resumable: a copy
- * is one transaction (an interrupted copy leaves the standby as it was), and a
- * move is a sealed entry in the assignment register that the next tick
- * completes or undoes. `continuityShortfalls` says where the running fleet
- * cannot keep the promise (too few standbys, a tick slower than the copy
- * cadence) so a degraded fleet is reported rather than silently trusted.
- */
 import { BackendFleetError } from "./errors.js";
 import {
 	DEFAULT_FLEET_POLICY,
@@ -35,10 +6,6 @@ import {
 	parseFleetPolicy,
 } from "./policy.js";
 
-/**
- * The declared policy, structurally: `ContinuityPolicy` from `@hobo/bindles`
- * (data-models/bindles.proto) without depending on the Bindle model.
- */
 export type ContinuityRequest = Readonly<{
 	tier: string;
 	onLoss: "rebuild" | "restore";
@@ -55,18 +22,14 @@ export type ContinuityFleetPlan = Readonly<{
 	tier: string;
 	fleet: FleetPolicy;
 	standbys: number;
-	/** `snapshot`: standbys are copied; `cold`: a move starts the next backend empty. */
 	copy: "snapshot" | "cold";
-	/** How often to copy the writer to every standby; 0 with `cold`. */
 	copyEveryMs: number;
 	backups: Readonly<{ everyMs: number; kept: number }>;
 	monthlyBudgetMicros: number | undefined;
 }>;
 
-/** No standby is copied more often than this, whatever the recovery point. */
 export const MIN_COPY_INTERVAL_MS = 15_000;
 
-/** Turn a declared continuity policy into the fleet's operating plan. */
 export function continuityFleetPlan(
 	request: ContinuityRequest,
 ): ContinuityFleetPlan {
@@ -79,8 +42,6 @@ export function continuityFleetPlan(
 		);
 	const continuous = request.migration === "continuous";
 	const fleet = parseFleetPolicy({
-		// A rebuildable fleet promises nothing about loss: any reachable member
-		// may take over, empty.
 		rpoMs: rebuild ? Number.MAX_SAFE_INTEGER : request.recoveryPointMs,
 		failoverAfterMs: request.failoverAfterMs,
 		exhaustionHorizonMs: DEFAULT_FLEET_POLICY.exhaustionHorizonMs,
@@ -110,10 +71,6 @@ export function continuityFleetPlan(
 	});
 }
 
-/**
- * Hold a fleet to its declared monthly ceiling, after the host's own budget
- * engine (if any) has agreed. Without a ceiling the host's check decides.
- */
 export function continuityBudgetCheck(
 	plan: ContinuityFleetPlan,
 	host?: FleetBudgetCheck,
@@ -148,19 +105,13 @@ export type ContinuityShortfall = Readonly<{
 	message: string;
 }>;
 
-/** Where the running fleet cannot keep the declared promise. */
 export function continuityShortfalls(
 	plan: ContinuityFleetPlan,
 	running: Readonly<{
-		/** Standbys the placement found. */
 		standbys: number;
-		/** How often the host actually runs the fleet's tick. */
 		tickEveryMs: number;
-		/** Verified distinct vendors across writer and standbys, if known. */
 		vendors?: number;
-		/** Register-only members (`reconcileFleet({ witnesses })`). */
 		witnesses?: number;
-		/** A member the plan's scheduled backups are kept on. */
 		backupsPlaced?: boolean;
 	}>,
 ): readonly ContinuityShortfall[] {

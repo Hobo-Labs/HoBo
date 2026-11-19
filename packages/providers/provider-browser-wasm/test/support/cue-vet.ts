@@ -1,4 +1,3 @@
-/** Vet a serialized JSON document against a CUE definition with the pinned cue binary. */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,7 +6,6 @@ import { fileURLToPath } from "node:url";
 
 const CUE_NAME = process.platform === "win32" ? "cue.exe" : "cue";
 
-/** The repo pins cue under `.tools/cue/v0.14.0`; a worktree finds the checkout's copy. */
 function cueBinary(): string {
 	if (process.env.HOBO_CUE_BIN) return process.env.HOBO_CUE_BIN;
 	let directory = dirname(fileURLToPath(import.meta.url));

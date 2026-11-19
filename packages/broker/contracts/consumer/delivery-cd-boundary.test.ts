@@ -11,10 +11,6 @@ import {
 import { parseDeliveryPolicy } from "../../src/policies.js";
 import type { PolicyHash, ResolutionReceipt } from "../../src/types.js";
 
-// Consumer side of the broker → @hobo/cd promotion boundary (D14). The broker
-// never applies anything: it hands an accepted receipt to CD's promotion
-// request and records the ticket CD returns. The pact pins the request the
-// broker sends and the two responses it must handle.
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const pact = JSON.parse(
 	readFileSync(
@@ -29,7 +25,6 @@ function receipt(requestId: string): ResolutionReceipt {
 		requestId,
 		brokerId: "broker:yard-1",
 		catalogHash: "sha256:catalog-abc",
-		// SAFETY: assertion required at this I/O or test boundary.
 		policyHash: "sha256:policy-abc" as PolicyHash,
 		placementPolicyId: "pp-bindle",
 		placements: [],
@@ -46,7 +41,6 @@ describe("broker → CD promotion boundary (consumer side of the pact)", () => {
 		const plane = createReconcilerDeliveryPlane({
 			requestPromotion: async (request) => {
 				seen = JSON.parse(JSON.stringify(request));
-				// SAFETY: assertion required at this I/O or test boundary.
 				return interaction.response as DeliveryPromotionResult;
 			},
 		});
@@ -67,7 +61,6 @@ describe("broker → CD promotion boundary (consumer side of the pact)", () => {
 		const plane = createReconcilerDeliveryPlane({
 			requestPromotion: async (request) => {
 				expect(request).toMatchObject(interaction.request);
-				// SAFETY: assertion required at this I/O or test boundary.
 				return interaction.response as DeliveryPromotionResult;
 			},
 		});

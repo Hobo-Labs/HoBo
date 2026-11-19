@@ -46,20 +46,16 @@ type Evidence = Pick<
 		>
 	>;
 
-/** Separately enrolled destination identity. The host must authenticate this
- * enrollment against the actual receiver; a declaration is not that proof. */
 export interface BudgetFenceReceiverEnrollment {
 	readonly keyId: string;
 	readonly publicKey: KeyObject;
 	readonly tenantId: string;
-	/** Exact independently authorized source dataset scope; empty is global. */
 	readonly sourceScopeTenant: string;
 	readonly dataset: string;
 	readonly source: BudgetFencedPlacementScope;
 	readonly destination: BudgetFencedPlacementScope;
 }
 
-/** Finance signers are scoped to a budget and its allowed provider accounts. */
 export interface BudgetFenceFinanceEnrollment {
 	readonly keyId: string;
 	readonly publicKey: KeyObject;
@@ -91,7 +87,6 @@ export interface BudgetFenceGuardRequest {
 	readonly decisionHead: string;
 }
 
-/** Preserve one host enrollment across every replay performed by an adapter. */
 export function captureBudgetFenceTrust(
 	trust: BudgetFenceTrust | undefined,
 ): BudgetFenceTrust | undefined {
@@ -270,7 +265,6 @@ function routeDigest(
 	return `sha256:${createHash("sha256").update(routePayload(reservation, guard)).digest("hex")}`;
 }
 
-/** Capture independently authenticated public enrollment once, before replay. */
 export function createBudgetFenceVerifier(trust?: BudgetFenceTrust) {
 	const receivers = new Map<
 		string,
@@ -476,8 +470,6 @@ function parseReceipt(value: string | undefined) {
 	return receiptSchema.parse(parsed);
 }
 
-/** Canonical finance statement signed by the independently enrolled finance
- * authority after verifying final charges and source retirement. */
 export function canonicalBudgetFenceSettlement(
 	reservation: BudgetReservation,
 	actualMicros: number,

@@ -1,4 +1,3 @@
-// Shared `cue vet` runner for the WP5 CUE agreement tests.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,7 +7,6 @@ import type { JsonValue } from "@bufbuild/protobuf";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** `cue` on PATH, else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`. */
 function findCue(): string | undefined {
 	try {
 		execFileSync("cue", ["version"], { stdio: "ignore" });

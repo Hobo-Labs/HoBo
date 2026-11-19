@@ -15,8 +15,6 @@ import {
 } from "../src/index.js";
 
 // S3-05 — the agent-docs surface is generated from CANONICAL_VERBS (single
-// source of truth): it covers every canonical verb, invents none, is
-// byte-deterministic, and is drift-gated exactly like `hobo codegen --check`.
 
 const checkedInDir = join(
 	dirname(fileURLToPath(import.meta.url)),
@@ -29,7 +27,6 @@ describe("agent-docs generation covers the canonical verb surface", () => {
 		expect(manifest.entries.map((entry) => entry.name)).toEqual(
 			CANONICAL_VERBS.map((verb) => verb.name),
 		);
-		// Every entry is a real canonical verb (no invented tool).
 		const canonical = new Set(CANONICAL_VERBS.map((verb) => verb.name));
 		for (const entry of manifest.entries) {
 			expect(canonical.has(entry.name)).toBe(true);
@@ -158,9 +155,6 @@ describe("agent-docs drift gate (mirrors hobo codegen --check)", () => {
 
 describe("checked-in agent-docs artifacts stay fresh", () => {
 	it("the packages/cli/agent-docs tree matches a fresh generation", async () => {
-		// Guards the repo: adding/removing a canonical verb without regenerating
-		// the agent-docs surface fails here, exactly as `hobo build` asserts
-		// generated-tree freshness.
 		await expect(assertAgentDocsFresh(checkedInDir)).resolves.toBeUndefined();
 	});
 

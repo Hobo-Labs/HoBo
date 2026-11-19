@@ -66,7 +66,6 @@ describe("meshNodeReport", () => {
 				NOW,
 			),
 		).toMatchObject({ state: "lost", sinceMs: NOW - 1_000 });
-		// Expiring exactly now is expired, as it is for ranking.
 		expect(meshNodeReport(node("d", { validUntilMs: NOW }), NOW).state).toBe(
 			"lost",
 		);
@@ -86,7 +85,6 @@ describe("meshNodeReport", () => {
 		expect(report).toMatchObject({
 			state: "live",
 			trust: "unverified",
-			// No total advertised: its free slots are all that is known.
 			totalSlots: 3,
 			freeSlots: 3,
 		});
@@ -115,7 +113,6 @@ describe("createMeshNodeTracker", () => {
 		]);
 		expect(first.capacity).toMatchObject({ nodes: 2, freeSlots: 4 });
 
-		// b's advertisement runs out while it is still on the board.
 		const later = NOW + 46_000;
 		const stale = tracker.observe(
 			[node("a", { validUntilMs: later + 45_000 }), node("b")],
@@ -127,7 +124,6 @@ describe("createMeshNodeTracker", () => {
 		});
 		expect(stale.capacity).toMatchObject({ nodes: 1, freeSlots: 2 });
 
-		// Then the board forgets it; the tracker does not.
 		const gone = tracker.observe(
 			[node("a", { validUntilMs: later + 90_000 })],
 			later + 30_000,
@@ -165,8 +161,6 @@ describe("createMeshNodeTracker", () => {
 		const tracker2 = createMeshNodeTracker({ retainLostMs: 60_000 });
 		tracker2.observe([node("gone")], NOW);
 		expect(tracker2.observe([], NOW + 60_000).nodes).toHaveLength(1);
-		// Lost since its advertisement ran out at NOW + 45 s, and kept for the
-		// minute of retention after that.
 		expect(tracker2.observe([], NOW + 110_000).nodes).toEqual([]);
 	});
 
@@ -237,7 +231,6 @@ describe("meshLabelStates", () => {
 		expect(Object.fromEntries(states)).toEqual({
 			hobo: { nodes: 3, trustedNodes: 1, freeSlots: 6 },
 			"hobo-trunk": { nodes: 1, trustedNodes: 1, freeSlots: 2 },
-			// Asked for and served by nobody: said, not left out.
 			"hobo-gpu": { nodes: 0, trustedNodes: 0, freeSlots: 0 },
 		});
 	});
@@ -248,10 +241,7 @@ describe("meshLabelStates", () => {
 			NOW,
 			{ labels: ["hobo"] },
 		);
-		// Neither hobo-trunk (a's other label) nor hobo-local-host is reported.
 		expect([...states.keys()]).toEqual(["hobo"]);
-		// Unverified and unchecked nodes count: trust does not filter routing
-		// counts, since an unlisted worker still picks up jobs.
 		expect(states.get("hobo")).toEqual({
 			nodes: 3,
 			trustedNodes: 1,

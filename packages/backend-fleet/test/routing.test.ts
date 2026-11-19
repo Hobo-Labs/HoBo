@@ -1,8 +1,3 @@
-/**
- * Budget routing, offline. Allowances below are the vendor free tiers the
- * ADR-0179 amendment records (Upstash 500,000 commands a month; Turso 500
- * million rows read and 10 million written), used here only as numbers.
- */
 import { describe, expect, it } from "vitest";
 import {
 	billingPeriod,
@@ -20,7 +15,6 @@ import {
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-// Ten days into a thirty-day month.
 const NOW = Date.UTC(2026, 10, 11);
 const evidence = { source: "test numbers", observedAt: "2026-11-11" };
 
@@ -77,7 +71,6 @@ const valkey: FleetOffer = parseFleetOffer({
 		evidence,
 	}),
 });
-/** Pay-as-you-go: 0.4 micro-dollars per simple, 5 per advanced operation. */
 function blob(capMicros: number | undefined): FleetOffer {
 	return parseFleetOffer({
 		tier: "payg",
@@ -113,7 +106,6 @@ function seen(
 	return { backend, health: "reachable", failingForMs: 0, usage, ...overrides };
 }
 
-/** A month's workload so far, in every unit, at `commands` port calls. */
 function workload(commands: number): FleetUsageMeasurement[] {
 	return [
 		{ unit: "commands", used: commands },
@@ -171,7 +163,6 @@ describe("marks", () => {
 
 describe("before exhaustion", () => {
 	it("keeps a free member well inside its allowance", () => {
-		// 100,000 commands in ten days: on course for 300,000 of 500,000 (60%).
 		const route = routeFleetByBudget(
 			input("upstash", {
 				workload: workload(100_000),
@@ -190,7 +181,6 @@ describe("before exhaustion", () => {
 	});
 
 	it("switches at 90% projected, to a free member, not the pay-as-you-go one", () => {
-		// 150,000 in ten days: on course for 450,000 (90%).
 		const route = routeFleetByBudget(
 			input("upstash", {
 				workload: workload(150_000),
@@ -210,7 +200,6 @@ describe("before exhaustion", () => {
 	});
 
 	it("does not switch back until the member is under the lower mark", () => {
-		// On Turso now; Upstash has spent 400,000 this month (projected far past 80%).
 		const back = routeFleetByBudget(
 			input("turso", {
 				workload: workload(150_000),
@@ -226,8 +215,6 @@ describe("before exhaustion", () => {
 			backend: "upstash",
 			eligible: false,
 		});
-		// A new month: Upstash's spend is gone and its projection is low again,
-		// but both are free and equally cheap, so no move for its own sake.
 		const nextMonth = Date.UTC(2026, 11, 2);
 		const fresh = routeFleetByBudget(
 			input("turso", {
@@ -319,8 +306,6 @@ describe("preference and budget caps", () => {
 			}),
 		);
 		expect(capped).toMatchObject({ action: "switch", target: "blob" });
-		// The twenty days left at the month's rate: 300,000 simple operations at
-		// 0.4 and 150,000 advanced at 5 micro-dollars.
 		expect(capped.candidates[1]?.projectedCostMicros).toBe(870_000);
 	});
 });

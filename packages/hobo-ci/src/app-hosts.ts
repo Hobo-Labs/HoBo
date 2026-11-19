@@ -1,8 +1,3 @@
-// Who may own the GitHub App, and which ways of hosting the App connection
-// support that owner. Resolution reduces to a path that satisfies every
-// criterion: a configured host that cannot serve the owner is explained, the
-// hosts that can are suggested, and when nothing was pinned the first host
-// that satisfies the owner is simply chosen.
 
 export type GithubOwnerKind = "User" | "Organization";
 
@@ -12,19 +7,16 @@ export interface GithubAppOwner {
 	readonly id: number;
 }
 
-/** GitHub account logins use alphanumerics and single interior hyphens. */
 export function validGithubOrganizationLogin(login: string): boolean {
 	return /^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(login);
 }
 
-/** A way of creating and holding the CI GitHub App connection. */
 export interface GithubAppHost {
 	readonly id: string;
 	readonly label: string;
 	readonly ownerKinds: readonly GithubOwnerKind[];
 }
 
-/** The manifest flow is the only App host wired by this composition. */
 export const GITHUB_APP_HOSTS: readonly GithubAppHost[] = Object.freeze([
 	Object.freeze({
 		id: "manifest",
@@ -41,7 +33,6 @@ export type GithubAppHostResolution =
 			readonly suggestions: readonly GithubAppHost[];
 	  };
 
-/** Resolve the host for an owner: the pinned one when it can serve, else one that can. */
 export function resolveGithubAppHost(
 	owner: GithubAppOwner,
 	options: {

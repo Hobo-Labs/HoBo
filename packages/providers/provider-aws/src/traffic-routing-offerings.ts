@@ -1,10 +1,5 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 
-/**
- * AWS TrafficRouting offerings declaration (scaffold).
- * Native ALB/NLB HTTP adapter may land later; Matching can negotiate these
- * features while realization falls back to inprocess.weighted until then.
- */
 export const AWS_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	provider: "other",
 	offerings: [

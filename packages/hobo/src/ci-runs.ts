@@ -182,7 +182,6 @@ function failed(conclusion: string | null): boolean {
 	].includes(conclusion ?? "");
 }
 
-/** GitHub owns Actions run history, logs and retry state; the relay owns runner leases. */
 export async function runCiRuns(input: {
 	command: string;
 	repository: string;
@@ -244,7 +243,6 @@ export async function runCiRuns(input: {
 			throw new CiRunUsage("Select a GitHub repository as owner/name.");
 		if (!Object.hasOwn(supported, command))
 			throw new CiRunUsage("Use hobo ci list, inspect, logs, grep, or rerun.");
-		// SAFETY: own-key check above narrows the external subcommand to this fixed table.
 		const allowed = supported[command as keyof typeof supported];
 		for (const key of Object.keys(options)) {
 			if (!allowed.includes(key))
@@ -430,8 +428,6 @@ export async function runCiRuns(input: {
 		};
 		const wait = switchOption(options, "wait");
 		const deadline = now() + 600000;
-		// Retry only read requests. A failed rerun response may already have
-		// committed at GitHub and must never be submitted a second time here.
 		const retryRead = async <T>(
 			readValue: () => Promise<T>,
 			newAttempt = false,
@@ -488,8 +484,6 @@ export async function runCiRuns(input: {
 			await gh(["rerun", runId]);
 			if (wait) {
 				targetAttempt = previousAttempt + 1;
-				// Pin the newly requested attempt. Another operator may retry the
-				// same run later; that must not replace the result we are waiting for.
 				viewFlags.push("--attempt", String(targetAttempt));
 				let observedAttempt = await retryRead(readAttempt);
 				while (observedAttempt < targetAttempt) {

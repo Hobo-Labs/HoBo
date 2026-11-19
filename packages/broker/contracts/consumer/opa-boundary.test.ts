@@ -15,9 +15,6 @@ const opaPact = JSON.parse(
 	),
 );
 
-// Pact-derived mock provider: replays the interaction's recorded response for
-// the request the consumer actually sends (no live OPA, per the
-// testing policy — mocked service boundaries derived from Pact contracts).
 function mockFetchFor(interaction: {
 	request: { path: string };
 	response: { status: number; body: JsonValue };
@@ -51,7 +48,6 @@ describe("OPA/Rego gate-plane boundary (consumer side of the pact)", () => {
 		const decision = await plane.evaluate(gateInput("bindle:checkout"));
 		expect(decision.effect).toBe(interaction.response.body.result.effect);
 		expect(decision.reasons).toHaveLength(0);
-		// policy.Decided is recorded on allow too, with the Rego policy ids.
 		expect(decision.events[0]?.type).toBe("policy.Decided");
 		expect(decision.events[0]?.policyIds).toEqual(
 			interaction.response.body.result.policyIds,
@@ -86,7 +82,6 @@ describe("OPA/Rego gate-plane boundary (consumer side of the pact)", () => {
 			interaction.response.body.expectedReasonCode,
 		);
 
-		// Transport failure fails closed the same way.
 		const broken = createOpaGatePlane({
 			endpoint: "http://opa.local:8181",
 			fetchFn: async () => {

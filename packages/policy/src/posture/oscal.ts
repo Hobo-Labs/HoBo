@@ -1,24 +1,14 @@
-// OSCAL assessment results from posture compliance records (ADR-0182 D25),
-// beside the control-evidence exporter in ../oscal-export.ts. One OSCAL
-// result per compliance record, one observation per evaluated resource and
-// one finding per control the record's rules cite. Deterministic: UUIDs are
-// name-based (version 5 layout) over a stable seed and timestamps come from
-// the records, never a clock. Validated against the pinned OSCAL 1.1.2
-// schema in test/posture.
 import { createHash } from "node:crypto";
 import { isJsonObject } from "../json.js";
 import { OSCAL_VERSION } from "../oscal-export.js";
 import type { PostureState } from "./evaluate.js";
 
-/** A compliance record as @hobo/cd records it (ComplianceRecord), in plain structural form. */
 export type PostureComplianceInput = Readonly<{
 	campId: string;
 	railDigest: string;
 	candidate: boolean;
 	state: PostureState;
-	/** Decimal journal position of the status observation evaluated. */
 	observationPosition: string;
-	/** RFC 3339 instant of the evaluation. */
 	evaluatedAt: string;
 	findings: readonly Readonly<{
 		rule: string;
@@ -88,7 +78,6 @@ export type OscalPostureAssessmentResults = Readonly<{
 	}>;
 }>;
 
-/** A typed refusal of the OSCAL export. */
 export class PostureOscalError extends Error {
 	readonly code: string;
 	readonly remediation: string;
@@ -103,7 +92,6 @@ export class PostureOscalError extends Error {
 // public-contract: version string of HoBo posture OSCAL documents.
 export const POSTURE_OSCAL_DOCUMENT_VERSION = "hobo-posture-1";
 
-/** Name-based UUID (RFC 4122 version 5 layout over SHA-256): same seed, same id. */
 function uuidOf(seed: string): string {
 	const hex = createHash("sha256")
 		.update(`hobo-posture-oscal|${seed}`, "utf8")
@@ -126,7 +114,6 @@ function deepFreeze<T>(value: T): T {
 	return value;
 }
 
-/** OSCAL StringDatatype: non-empty, no surrounding whitespace. */
 function oscalString(value: string, fallback: string): string {
 	const trimmed = value.trim();
 	return trimmed === "" ? fallback : trimmed;
@@ -234,10 +221,6 @@ function result(record: PostureComplianceInput): OscalPostureResult {
 	return observations.length > 0 ? { ...out, observations } : out;
 }
 
-/**
- * OSCAL assessment-results for posture compliance records. HoBo exports
- * evidence; it does not attest. Refuses an empty set (OSCAL needs a result).
- */
 export function toOscalAssessmentResults(
 	records: readonly PostureComplianceInput[],
 	options: Readonly<{ title?: string }> = {},

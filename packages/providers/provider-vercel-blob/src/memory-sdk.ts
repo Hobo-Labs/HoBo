@@ -1,31 +1,3 @@
-/**
- * An in-memory Vercel Blob store behind the `VercelBlobSdk` subset, for tests
- * of this binding and of anything built on it.
- *
- * It enforces the semantics the binding relies on, and throws the pinned
- * SDK's own error classes so the binding's error handling is what runs:
- *
- * - every blob has an ETag, and every write gives it a new one from a single
- *   increasing counter, so an ETag is never reused, not even by a pathname
- *   that is deleted and written again;
- * - `put` with `ifMatch` applies only while the blob exists with exactly that
- *   ETag, else throws `BlobPreconditionFailedError`;
- * - `put` without `ifMatch` and without `allowOverwrite: true` on an existing
- *   pathname throws a `BlobError` saying the blob already exists (the wording
- *   is this fake's: the real message is not documented);
- * - `del` with `ifMatch` deletes only on a matching ETag, else throws
- *   `BlobPreconditionFailedError` (also when the blob is gone — undocumented
- *   for the real store, which might answer `not_found`; the binding treats
- *   both as a refusal);
- * - `get` must be an origin read (`useCache: false`): the fake models no CDN
- *   cache, so a cached read would be a binding bug it would otherwise hide;
- * - each check-and-write is atomic: nothing awaits between them.
- *
- * `delay` runs before each call reaches the store, so a test can shuffle the
- * interleaving of concurrent clients. `loseReplyWhen` models a lost reply:
- * the call is applied, then answered the way the SDK's automatic retry of
- * the same request would be answered by the store as it now is.
- */
 import { BlobError, BlobPreconditionFailedError } from "@vercel/blob";
 
 import type {
@@ -48,11 +20,8 @@ export type MemoryBlob = {
 };
 
 export type MemoryBlobSdkOptions = {
-	/** Clock for `uploadedAt`. Default `Date.now`. */
 	readonly now?: () => number;
-	/** Awaited before each call reaches the store. */
 	readonly delay?: () => Promise<void>;
-	/** True to apply this call and then answer it as a retry of it would be answered. */
 	readonly loseReplyWhen?: (
 		method: VercelBlobSdkMethodName,
 		pathname: string,
@@ -60,9 +29,7 @@ export type MemoryBlobSdkOptions = {
 };
 
 export type MemoryBlobSdk = VercelBlobSdk & {
-	/** The stored blobs, by pathname. */
 	blobs(): ReadonlyMap<string, MemoryBlob>;
-	/** Store a raw body directly, as another writer would. */
 	seed(pathname: string, body: string, uploadedAtMs?: number): MemoryBlob;
 };
 

@@ -240,8 +240,6 @@ describe("createTrustedPublisherVerifier: OIDC trusted publishing (D3)", () => {
 				),
 			).toBe(INGEST_REASON.publisherToken);
 		}
-		// One forced refresh for the first unknown kid; the rest are refused
-		// from the negative cache without contacting the issuer.
 		expect(oidc.count(jwks)).toBe(2);
 		time.advance(JWKS_FORCED_REFRESH_INTERVAL_MS);
 		const rotated = rsaKey("gh-2");

@@ -12,10 +12,6 @@ const contractsDir = path.resolve(
 	"..",
 );
 
-/**
- * Composition-root consumer expectations for the oci Camp host boundary.
- * Uses the PACT mock — no kubectl process, no shell shim.
- */
 describe("runtime-oci-host consumer contract", () => {
 	it("composition root can drive RuntimeOciHost through pact mock", async () => {
 		const pacts = await loadPactDirectory(path.join(contractsDir, "pacts"));

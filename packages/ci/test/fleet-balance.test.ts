@@ -147,7 +147,6 @@ describe("runner financial models", () => {
 			expect(limits.source, id).toMatch(/^https:\/\//);
 			if (limits.maxRuntimeMinutes !== undefined)
 				expect(limits.maxRuntimeMinutes, id).toBeGreaterThan(0);
-			// The priced class cannot be larger than the provider's largest.
 			if (limits.maxMachine) {
 				expect(model.machine.vcpus, id).toBeLessThanOrEqual(
 					limits.maxMachine.vcpus,
@@ -156,7 +155,6 @@ describe("runner financial models", () => {
 					limits.maxMachine.memoryGb,
 				);
 			}
-			// Only a machine with its own kernel is a machine of its own.
 			if (model.eligibility.isolated) expect(limits.isolation, id).toBe("vm");
 		}
 		expect(read).toEqual(
@@ -244,7 +242,6 @@ describe("fleet eligibility", () => {
 		const result = balance(all);
 		expect(refusal(result, "jog-4vcpu")).toBe("fleet.visibility");
 		expect(refusal(result, "github-hosted-private")).toBe("fleet.visibility");
-		// Off until the owner turns public repositories on at the provider.
 		expect(refusal(result, "boat")).toBe("fleet.visibility");
 		expect(refusal(result, "depot-4vcpu")).toBe("fleet.visibility");
 		expect(
@@ -354,7 +351,6 @@ describe("fleet eligibility", () => {
 					machine,
 				},
 			});
-		// 2 vCPU / 8 GB cannot hold a 16 GB job; a 16 GB class can.
 		const memory = privateJob({ memoryGb: 16 });
 		expect(refusal(memory, "github-hosted-private")).toBe("fleet.machine");
 		expect(refusal(memory, "modal-sandbox-4vcpu")).toBe("fleet.machine");
@@ -363,11 +359,9 @@ describe("fleet eligibility", () => {
 			(entry) => entry.memberId === "github-hosted-private",
 		)?.reason;
 		expect(reason).toBe("job needs 16 GB; this machine class has 8");
-		// CPU is checked the same way, on its own.
 		const cpu = privateJob({ vcpus: 4 });
 		expect(refusal(cpu, "github-hosted-private")).toBe("fleet.machine");
 		expect(refusal(cpu, "jog-4vcpu")).toBeUndefined();
-		// A job that states no size fits every class.
 		expect(refusal(privateJob(undefined), "github-hosted-private")).toBe(
 			undefined,
 		);
@@ -406,7 +400,6 @@ describe("fleet eligibility", () => {
 		expect(over.refusals[0]?.reason).toBe(
 			"job reserves 61 minutes; one machine runs at most 60",
 		);
-		// No published limit means none is assumed.
 		expect(
 			balance([member("modal-sandbox-4vcpu")], {
 				demand: { ...PUBLIC_ORG_PR, minutes: 600 },
@@ -424,22 +417,18 @@ describe("fleet eligibility", () => {
 					isolationRequired: true,
 				},
 			});
-		// E2B stops a Hobby sandbox after an hour and a Pro one after a day.
 		const ninety = isolatedJob(90);
 		expect(refusal(ninety, "e2b-hobby-4vcpu")).toBe("fleet.runtime");
 		expect(refusal(ninety, "e2b-pro-4vcpu")).toBeUndefined();
 		expect(refusal(isolatedJob(60), "e2b-hobby-4vcpu")).toBeUndefined();
 		expect(refusal(isolatedJob(1441), "e2b-pro-4vcpu")).toBe("fleet.runtime");
-		// Daytona's default class shares the host's kernel; its VM class does not.
 		expect(refusal(ninety, "daytona-container-4vcpu")).toBe("fleet.isolation");
 		expect(refusal(ninety, "daytona-vm-4vcpu")).toBeUndefined();
-		// Lizard documents Docker on its runners, not inside its sandboxes.
 		expect(refusal(ninety, "lizard-sandbox-4vcpu")).toBe("fleet.docker");
 		expect(refusal(ninety, "lizard-runner-4vcpu")).toBeUndefined();
 		expect(
 			refusal(isolatedJob(90, false), "lizard-sandbox-4vcpu"),
 		).toBeUndefined();
-		// None of them has a 16 GB machine in the class the fleet prices.
 		const large = balance(all, {
 			demand: { ...PUBLIC_ORG_PR, machine: { memoryGb: 16 } },
 		});
@@ -479,7 +468,6 @@ describe("fleet balancing", () => {
 
 	it("spills to the cheapest rented member when the box is full", () => {
 		const result = balance(fleet(3));
-		// Blacksmith is inside its included minutes, so it bills nothing.
 		expect(result.ranking.map((choice) => choice.memberId)).toEqual([
 			"blacksmith-4vcpu",
 			"agent37-vm-4vcpu",
@@ -598,7 +586,6 @@ describe("fleet budget policy", () => {
 		]);
 		expect(capped.refusals[0]?.code).toBe("fleet.payer-budget");
 		expect(capped.selected?.memberId).toBe("github-hosted-public");
-		// A payer already past its ceiling takes no more work, even free work.
 		const overrun = balance([
 			member("blacksmith-4vcpu", {
 				payerExposureMicros: 1_200_000,
@@ -652,7 +639,6 @@ describe("fleet budget policy", () => {
 				commercial: { subscribed: true, allowanceRemainingMinutes: "9" },
 			}),
 		];
-		// Nine free minutes leave one paid minute: 8,000 micros against 5,220.
 		expect(balance(members).selected?.memberId).toBe("agent37-vm-4vcpu");
 		expect(
 			balance(members, { policy: policy({ objective: "maximize-credits" }) })

@@ -67,7 +67,6 @@ describe("a node's identity key", () => {
 		const garbage = join(folder, "garbage.key");
 		writeFileSync(garbage, "not a key");
 		await expect(loadMeshIdentity(garbage)).rejects.toThrow();
-		// The unreadable file is left alone: it is never overwritten with a new key.
 		expect(readFileSync(garbage, "utf8")).toBe("not a key");
 	});
 
@@ -83,7 +82,6 @@ describe("a node's identity key", () => {
 		const identity = await loadMeshIdentity(path, { chmod: refused });
 		expect(identity.publicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
 		expect(statSync(path).mode & 0o777).toBe(0o400);
-		// The same for a 0600 key: already private, so left alone.
 		const tight = join(folder, "tight.key");
 		writeFileSync(tight, generateMeshIdentity().privateKeyPem, { mode: 0o600 });
 		await loadMeshIdentity(tight, { chmod: refused });
@@ -156,7 +154,6 @@ describe("a worker's reliability across a restart", () => {
 		createdAt: "2026-11-10T02:59:00Z",
 	});
 
-	/** One life of the worker: open its journal, take jobs, close the journal. */
 	async function life(
 		path: string,
 		clock: { now: number },
@@ -215,11 +212,9 @@ describe("a worker's reliability across a restart", () => {
 			await mesh.claim(queued(11));
 			mesh.record("hobo_ci_job_pickup", { jobId: 11 });
 		});
-		// Ten dropped and one delivered behind four imaginary deliveries: 5 of 15.
 		expect(before.reliability).toBeCloseTo(5 / 15, 5);
 		expect(before.samples).toEqual({ delivered: 1, dropped: 10 });
 
-		// The process ends; nothing is left in memory. A new one starts at once.
 		const restarted = await life(path, clock, async () => undefined);
 		expect(restarted.reliability).toBeCloseTo(before.reliability, 10);
 		expect(restarted.samples).toEqual(before.samples);
@@ -228,7 +223,6 @@ describe("a worker's reliability across a restart", () => {
 			samples: { delivered: 1, dropped: 10 },
 		});
 
-		// Down for one half-life: every past job counts for half as much.
 		clock.now += 30 * 60_000;
 		const later = await life(path, clock, async () => undefined);
 		expect(later.samples).toEqual({ delivered: 0.5, dropped: 5 });
@@ -269,16 +263,13 @@ describe("a worker's reliability across a restart", () => {
 		const first = await life(path, clock, (mesh) => drop(mesh, 2), {
 			resetToken: "1",
 		});
-		// Cleared at start; the drop after the reset is kept.
 		expect(first.reset).toBe(true);
 		expect(first.samples).toEqual({ delivered: 0, dropped: 1 });
-		// HOBO_CI_MESH_RELIABILITY_RESET=1 is still set at the next start.
 		const again = await life(path, clock, async () => undefined, {
 			resetToken: "1",
 		});
 		expect(again.reset).toBe(false);
 		expect(again.samples).toEqual({ delivered: 0, dropped: 1 });
-		// A new token resets once more.
 		const fresh = await life(path, clock, async () => undefined, {
 			resetToken: "2026-11-11",
 		});
@@ -324,7 +315,6 @@ describe("a worker's reliability across a restart", () => {
 		expect(await broken.load()).toEqual({ record: undefined, reset: false });
 		await broken.save({ delivered: 1, dropped: 0, atMs: NOW });
 		expect(failures).toEqual(["disk gone", "disk full"]);
-		// A record that is not one reads as no record.
 		const garbled = meshReliabilityJournal(
 			{
 				controlRecord: () => ({ bodyJson: '{"delivered":"many"}' }),
@@ -367,7 +357,6 @@ describe("the trust settings a node works by", () => {
 			trustedKeys: [{ publicKey: self }],
 			requireTrusted: false,
 		});
-		// Nothing stored is the default, not a change worth an event.
 		expect(events).toEqual([]);
 
 		const listed = {
@@ -436,7 +425,6 @@ describe("the trust settings a node works by", () => {
 			publicKey: other,
 			nodeId: "box-b",
 		});
-		// Listing a key again replaces its entry: here, it gains a binding.
 		await changeMeshTrust(store, {
 			kind: "add",
 			publicKey: self,
@@ -458,7 +446,6 @@ describe("the trust settings a node works by", () => {
 			requireTrusted: true,
 		});
 		expect((await store.read())?.revision).toBe(5);
-		// What a node then works by.
 		const trust = createMeshTrust({ store, selfPublicKey: other });
 		await trust.refresh();
 		expect(trust.policy()).toEqual({
@@ -480,7 +467,6 @@ describe("the trust settings a node works by", () => {
 			publish: async (value: string, expectedRevision?: number) => {
 				if (!raced) {
 					raced = true;
-					// Someone else requires trust between this edit's read and write.
 					await changeMeshTrust(store, {
 						kind: "require",
 						requireTrusted: true,
@@ -497,7 +483,6 @@ describe("the trust settings a node works by", () => {
 			}),
 		).toEqual({
 			trustedKeys: [{ publicKey: self }, { publicKey: other }],
-			// The other operator's change survived.
 			requireTrusted: true,
 		});
 
@@ -542,7 +527,6 @@ describe("the trust settings a node works by", () => {
 		expect(events).toEqual([
 			{ event: "hobo_ci_mesh_trust_unreadable", failedClosed: true },
 		]);
-		// Settings it can read lift it.
 		const listed = {
 			trustedKeys: [{ publicKey: other }],
 			requireTrusted: false,
@@ -704,7 +688,6 @@ describe("a node that takes no jobs through the mesh", () => {
 		await relay.beat();
 		await box.beat();
 
-		// On the shared board every advertisement is signed, with no private key.
 		const stored = await memory.board.nodes();
 		expect(stored.map((each) => verifyMeshAdvert(each))).toEqual([
 			"valid",
@@ -717,13 +700,11 @@ describe("a node that takes no jobs through the mesh", () => {
 			identity: { publicKey: relayKey.publicKey },
 		});
 
-		// No keys listed: each trusts only itself.
 		const alone = await relay.reports();
 		expect(alone.nodes.map((each) => [each.id, each.trust])).toEqual([
 			["box-a", "unverified"],
 			["relay-a", "trusted"],
 		]);
-		// The operator lists the box's key; the relay's own drops off the list.
 		await trustStore.publish(
 			meshTrustConfigJson({
 				trustedKeys: [{ publicKey: boxKey.publicKey, nodeId: "box-a" }],
@@ -738,7 +719,6 @@ describe("a node that takes no jobs through the mesh", () => {
 			["relay-a", "unverified"],
 		]);
 
-		// The relay turns unhealthy: it says so, and since when.
 		clock.now += 10_000;
 		healthy = false;
 		await relay.beat();

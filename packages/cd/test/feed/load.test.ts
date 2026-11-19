@@ -1,10 +1,3 @@
-// Feed load baseline (WP11 Accept): 1,000 Camps served by 50 agents (20 each)
-// over the delivery feed. Every Camp is claimed, fed, reported and
-// checkpointed through the real agent transport and feed handler, with SVID
-// and DPoP verification and the journal-backed replay store on every request.
-// p99 frame latency (feed request → frame received) and p99 checkpoint
-// latency are recorded in the test output and bounded generously so the lane
-// catches order-of-magnitude regressions, not machine noise.
 import { describe, expect, it } from "vitest";
 import { ReconcileStatus } from "../../src/_generated/cd_pb.js";
 import { resolvedFor } from "./fakes.js";
@@ -96,7 +89,6 @@ describe("delivery feed load baseline", () => {
 		expect(checkpointMs).toHaveLength(CAMPS);
 		expect(baseline.p99FrameMs).toBeLessThan(2_000);
 		expect(baseline.p99CheckpointMs).toBeLessThan(1_000);
-		// Every Camp converged exactly once on its status stream.
 		const converged = station.store.log.filter(
 			(e) => e.event.type === "deployment.Converged",
 		);

@@ -8,9 +8,6 @@ import {
 	ResourceMutationJournalEntrySchema,
 } from "@hobo/core";
 
-/** Durable single-attempt claim before an external mutation. Only the process
- * that commits a fresh claim may send. A crash/lost acknowledgement is uncertain,
- * including a crash between the claim and the network call. */
 export function createDurableHostingMutationJournal(options: {
 	readonly store: DurableEventStore;
 	readonly tenantId: string;
@@ -153,7 +150,6 @@ export function createDurableHostingMutationJournal(options: {
 				await write(mutationId, requestDigest, "claimed", current.seq);
 				return { status: "claimed" };
 			} catch (error) {
-				// A committed claim with a lost response must never become a second send.
 				const observed = await read(mutationId);
 				if (!observed.entry) throw error;
 				verify(observed.entry, requestDigest);

@@ -1,8 +1,3 @@
-/**
- * Every port call's Blob operations, counted at the SDK by
- * `meterVercelBlobSdk`, against `VERCEL_BLOB_EPHEMERAL_COST`: the figures the
- * README's cost table and the relay's budget rest on.
- */
 import {
 	acquireEphemeralLock,
 	createEphemeralRing,
@@ -105,7 +100,6 @@ describe("VERCEL_BLOB_EPHEMERAL_COST matches the SDK calls made", () => {
 		await ring.append("1");
 		await ring.append("2");
 		await measure("ring.append", () => ring.append("3"));
-		// get(seq) + one read per sequence in the window of two.
 		await measure("ring.read", () => ring.read(0), 3);
 	});
 
@@ -154,7 +148,6 @@ describe("VERCEL_BLOB_EPHEMERAL_COST matches the SDK calls made", () => {
 
 describe("Pro pricing", () => {
 	it("prices a month of relay leases from the cost table", () => {
-		// acquire + renew + release + one feed append, 1,000 leases a day.
 		const lease: readonly VercelBlobEphemeralOperation[] = [
 			"lock.acquire",
 			"lock.renew",

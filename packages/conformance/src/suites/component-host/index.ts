@@ -575,7 +575,6 @@ function clone<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
-	// SAFETY: JSON round-trip preserves T at this clone fallback.
 	return cloned as T;
 }
 

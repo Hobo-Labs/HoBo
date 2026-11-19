@@ -1,6 +1,3 @@
-// data-models/fanout.cue and the fan-out parse boundary must agree: every body
-// the controller records vets clean, and what parseFanoutPlan refuses on the
-// record alone, CUE refuses.
 import { create, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

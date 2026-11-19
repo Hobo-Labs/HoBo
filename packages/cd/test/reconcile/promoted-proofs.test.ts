@@ -1,7 +1,4 @@
 /* oxlint-disable anti-slop/no-conditional-empty-object-spread, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
-// Promoted proof semantics. Each describe block
-// names the frozen proof under src/draft/technical-proofs/ whose semantics it
-// carries into @hobo/cd; the proofs themselves are not edited.
 
 import { create } from "@bufbuild/protobuf";
 import {
@@ -133,7 +130,6 @@ describe("resourceactor-reconcile-loop-contract", () => {
 		const obs = await g.realizer.converge(g.input([DB], 1), g.ctx);
 		expect(obs.status).toBe(ReconcileStatus.CONVERGED);
 		expect(g.calls).toEqual(["apply:db"]);
-		// Only the idempotent ledger fact may be re-offered; it dedupes.
 		expect(g.store.log.length).toBe(before);
 	});
 
@@ -269,8 +265,6 @@ describe("drift-detection-loop-contract / autonomous-drift-remediation-contract"
 		controller.abort();
 		await run;
 		expect(realizer.converges).toBe(1);
-		// The run loop re-observed (new lease → redelivery → observe-first) but
-		// never mutated; converged reports carry no drift events.
 		const after = statusEvents(store, CAMP)
 			.slice(count)
 			.map((e) => e.type);
@@ -313,7 +307,6 @@ describe("drift-detection-loop-contract / autonomous-drift-remediation-contract"
 		await desired.publish(setFor(CAMP, resolved, 1), resolved);
 		const obs = await reconciler.reconcileOnce(CAMP, ctxAt(clock));
 		expect(obs.reasons.map((r) => r.code)).toContain("realize-failed");
-		// Unknown target state: nothing is applied until an observation succeeds (I5).
 		expect(realizer.converges).toBe(0);
 		expect(
 			sink.points.some((p) => p.name === "hobo.cd.reconcile.blocked"),

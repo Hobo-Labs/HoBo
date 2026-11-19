@@ -11,8 +11,6 @@ import {
 	SNAPSHOT_QUERY,
 } from "../src/github-queue.js";
 
-// GitHub's published GraphQL schema, vendored by `pnpm contracts:github-schema`
-// from https://docs.github.com/public/fpt/schema.docs.graphql.
 const schema = buildSchema(
 	gunzipSync(
 		readFileSync(new URL("./github-schema.graphql.gz", import.meta.url)),

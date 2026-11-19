@@ -1,5 +1,3 @@
-// DPoP (RFC 9449) and JWK thumbprint (RFC 7638) units for the agent identity
-// boundary. Replay and key mismatch are refused (WP11 Accept).
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
@@ -16,7 +14,6 @@ const URL_REFRESH = "https://station.test/v1/cd/svid/refresh";
 
 describe("JWK thumbprint (RFC 7638)", () => {
 	it("matches the RFC 7638 §3.1 example for an RSA key shape over EC members", () => {
-		// RFC 7638 orders required members lexicographically with no whitespace.
 		const jwk = parsePublicJwk({
 			kty: "EC",
 			crv: "P-256",
@@ -211,7 +208,6 @@ describe("durable jti replay store", () => {
 		expect(
 			await a.claim({ reconcilerId: "agent-1", jti: "j-1", iatSeconds: 1000 }),
 		).toBe(false);
-		// A second Station replica over the same journal sees the replay.
 		const b = createJournalReplayStore({
 			store,
 			tenant: TENANT,

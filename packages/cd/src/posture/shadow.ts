@@ -1,12 +1,3 @@
-// ShadowRecorder (ADR-0182 D24): while a Camp is bound in INFORM, the gate
-// asks for the candidate Rail and its resolved pack, evaluates the same
-// request with it, and records the shadow decision here. The enforced Rail
-// alone decides (I23); this module never touches a verdict.
-//
-// Shadow decisions are `policy.ShadowDecided` facts on the Camp's compliance
-// stream `cd-compliance-<id>`, where the posture projections (and the
-// HOBO_POSTURE health source) read them. Divergence is derived from the two
-// effects, never trusted from the caller.
 import { create } from "@bufbuild/protobuf";
 import type { PolicyPack } from "@hobo/contracts";
 import {
@@ -31,7 +22,6 @@ import {
 export type ShadowRecorderDeps = CdBase & {
 	readonly campPolicy: CampPolicy;
 	readonly resolvePack: (railDigest: Digest) => Promise<PolicyPack>;
-	/** Optional: divergence metrics. The frozen factory signature does not carry it. */
 	readonly telemetry?: TelemetrySink;
 };
 

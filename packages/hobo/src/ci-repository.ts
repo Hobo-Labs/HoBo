@@ -6,7 +6,6 @@ export function validRepository(value: string): boolean {
 	);
 }
 
-/** Parse GitHub remotes without executing a shell or accepting another host. */
 export function ciRepositoryFromRemote(remote: string): string {
 	const match =
 		/^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)\/?$/.exec(

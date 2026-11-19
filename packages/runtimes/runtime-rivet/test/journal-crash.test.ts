@@ -127,10 +127,8 @@ describe("actor-local journal crash windows", () => {
 		const processed = bundle.actors.processNext(
 			identity,
 			(state, event) => {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const items = (state as { items: string[] }).items;
 				if (event.type === "addItem") {
-					// SAFETY: assertion required at this I/O or test boundary.
 					return { items: [...items, (event.payload as { sku: string }).sku] };
 				}
 				return state;

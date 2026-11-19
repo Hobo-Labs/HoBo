@@ -1,10 +1,6 @@
-// D18 retention decision. Pure: the ledger gathers the inputs from the
-// journal and appends `freight.Retired` for what this returns. No clock, no
-// I/O; the same inputs in any order give the same decision (I8).
 import { CD_DEFAULTS } from "../events.js";
 
 // public-contract: label key that always places Freight under legal hold, in
-// addition to any key a RetentionPolicyRecord lists.
 export const LEGAL_HOLD_LABEL = "hobo.cd/legal-hold" as const;
 
 export type RetentionKeepReason =
@@ -22,7 +18,6 @@ export type RetentionCandidate = Readonly<{
 	labels: Readonly<Record<string, string>>;
 }>;
 
-/** One Camp's Set history, oldest first: the last entry is what the Camp runs now. */
 export type CampDeployments = Readonly<{
 	campId: string;
 	freightIds: readonly string[];
@@ -34,13 +29,9 @@ export type RetentionPin = Readonly<{
 }>;
 
 export type RetentionPolicy = Readonly<{
-	/** Empty sweeps every Bindle. */
 	bindle: string;
-	/** 0 reads as CD_DEFAULTS.retentionKeepPerCamp. */
 	keepPerCamp: number;
-	/** 0 reads as CD_DEFAULTS.retentionKeepUnpromotedMs. */
 	keepUnpromotedMs: number;
-	/** Label keys (`key`) or exact pairs (`key=value`). */
 	legalHoldLabels: readonly string[];
 }>;
 

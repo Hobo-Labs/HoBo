@@ -1,10 +1,3 @@
-// Promoted proofs (AGENTS.md "Draft-proof promotion policy").
-// The semantics of three frozen technical proofs are copied here as package
-// tests against the production engine; the proofs themselves are untouched.
-//
-//   src/draft/technical-proofs/slo-promotion-gate-contract
-//   src/draft/technical-proofs/error-budget-deploy-gate-contract
-//   src/draft/technical-proofs/slo-as-code-contract
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

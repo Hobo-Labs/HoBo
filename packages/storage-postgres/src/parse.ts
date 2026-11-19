@@ -15,22 +15,18 @@ import {
 	parseJsonText,
 } from "./json.js";
 
-/** Largest value an int8 column holds; fence tokens and positions above it are refused. */
 export const MAX_INT8 = (1n << 63n) - 1n;
 
-/** One event input after parsing: JSON-clean, size-checked, key extracted. */
 export type ParsedEventInput = Readonly<{
 	type: string;
 	v: number;
 	data: JsonValue;
 	meta: JsonObject;
-	/** Canonical JSON text of `data` / `meta` as stored. */
 	dataText: string;
 	metaText: string;
 	idempotencyKey: string | undefined;
 }>;
 
-/** Append options after parsing. */
 export type ParsedAppend = Readonly<{
 	expectedSeq: number;
 	actor: PrincipalRef;
@@ -80,7 +76,6 @@ function optionalText<T>(value: T, field: string): string | undefined {
 	return value;
 }
 
-/** Canonical JSON text of a caller value, bounded in bytes. */
 function canonicalText<T>(value: T, field: string, maxBytes: number): string {
 	let text: string | undefined;
 	try {
@@ -170,7 +165,6 @@ export function parseAppendOptions(opts: AppendOptions): ParsedAppend {
 	});
 }
 
-/** Lease TTL from the caller, bounded to (0, 24 h]. */
 export function parseLeaseTtl(
 	value: number | undefined,
 	fallback: number,

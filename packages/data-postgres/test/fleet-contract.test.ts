@@ -1,11 +1,3 @@
-/**
- * The fleet's boundary contract, replayed.
- *
- * `contracts/pacts/postgres-fleet.pact.json` states what a reconciler may
- * expect of one backend's log and of a majority read. Each interaction is run
- * here against the same code the SQL backend and the reconciler use, so the
- * contract cannot drift from the behaviour it describes.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -54,7 +46,6 @@ type Pact = {
 	readonly interactions: readonly Interaction[];
 };
 
-// SAFETY: the pact is this package's own checked-in contract with this shape.
 const pact = JSON.parse(
 	readFileSync(
 		fileURLToPath(

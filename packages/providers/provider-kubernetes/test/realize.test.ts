@@ -46,12 +46,6 @@ describe("realize: ResourcePlan -> pulumi IacProgram", () => {
 		assert.ok(iac.resources[0].outputs.includes("binding"));
 	});
 
-	/**
-	 * `realize()` now emits the canonical IacProgram every provider emits, which
-	 * is what @hobo/core's CloudProvider contract requires. The driver-program
-	 * document this package used to return is still available by name, because
-	 * it names the apply path `./driver.ts` actually implements.
-	 */
 	it("returns the canonical IacProgram from the provider factory", () => {
 		const realized = createKubernetesProvider().realize({
 			name: "api",
@@ -144,11 +138,6 @@ describe("capabilityManifest: published well-known bundle", () => {
 		assert.equal(parsed.auth.staticSecrets, false);
 	});
 
-	/**
-	 * A structural zero, not a placeholder: the Kubernetes API charges nothing
-	 * for a Deployment, and the nodes are billed by whoever owns the cluster —
-	 * a provider HoBo already prices through that provider's own facts.
-	 */
 	it("declares a truthful zero rather than double-counting the node bill", () => {
 		const compute = createKubernetesProvider().capabilities.find(
 			(entry) => entry.port === "compute",
@@ -161,12 +150,6 @@ describe("capabilityManifest: published well-known bundle", () => {
 });
 
 describe("TrafficRouting offerings surface", () => {
-	/**
-	 * Simulated, not real: a Service load-balances across one Deployment's pods
-	 * and nothing more. Header matching and canaries need a controller or a mesh
-	 * an operator installs, so declaring them `real` would let Matching
-	 * negotiate a feature that falls through on a bare cluster.
-	 */
 	it("declares every offering as simulated except the portable floor", () => {
 		assert.ok(
 			KUBERNETES_TRAFFIC_ROUTING_OFFERING_IDS.includes("inprocess.weighted"),

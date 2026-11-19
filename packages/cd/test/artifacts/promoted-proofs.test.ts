@@ -1,13 +1,3 @@
-// Promoted draft proofs. The semantics of the frozen
-// proofs are restated here against the production store and verifiers; the
-// proofs themselves stay untouched under src/draft/technical-proofs/.
-//
-// - artifact-repo-port-contract: registered ecosystems only; digest-pinned
-//   pulls (a mutable tag never resolves into Freight); provenance is required
-//   before anything is trusted; unregistered mirrors are never consulted.
-// - registry-artifact-descriptor-contract: artifact references are
-//   sha256-digest-only, never a tag, never an inlined payload; OCI references
-//   are digest references.
 import { create, fromJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

@@ -1,10 +1,3 @@
-/**
- * Cases live in `plugin-manifest.cases.jsonl`.
- *
- * A plugin manifest is third-party input, so the refusals are the surface worth
- * covering — and `describeConcern` fails if the module grows a parser with no
- * cases.
- */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeConcern } from "@hobo/contract-harness";

@@ -1,7 +1,3 @@
-// @hobo/sdk — the operator SDK (ADR-0072 naming: this package is the
-// operator/self-host authoring surface; the WIT contract stays `hobo:sdk`).
-// Thin factories over existing engines plus frozen, parse-validated
-// greenfield declarations.
 
 export {
 	type ChaosDeclaration,

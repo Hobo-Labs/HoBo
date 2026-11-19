@@ -1,6 +1,3 @@
-// Golden upcaster corpus for the failover and rebalance event bodies. The
-// corpus pins v1 bodies; every corpus body must keep parsing. Regenerate
-// deliberately with UPDATE_GOLDEN=1.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { JsonValue } from "@bufbuild/protobuf";
@@ -21,7 +18,6 @@ const CORPUS = join(
 const failoverParses = (data: JsonValue) =>
 	parseFailoverFact(data) !== undefined;
 
-/** Whether a body of `type` parses with the current parsers. */
 const PARSES = new Map<string, (data: JsonValue) => boolean>([
 	[CD_EVENTS.FailoverProposed, failoverParses],
 	[CD_EVENTS.FailoverStarted, failoverParses],

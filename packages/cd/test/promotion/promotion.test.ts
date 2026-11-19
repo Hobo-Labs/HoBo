@@ -1,4 +1,3 @@
-// WP6 Accept bullets and §10 rows for the promotion saga.
 import { describe, expect, it } from "vitest";
 import {
 	ChangeKind,
@@ -85,14 +84,12 @@ describe("promotion saga (WP6)", () => {
 		const b = await h.desired.current(camp("prod-2"));
 		expect(a?.freightId).toBe("f1");
 		expect(b?.freightId).toBe("f1");
-		// Same Freight, same declaration (plan objective carries it here), different providers.
 		if (!a || !b) throw new Error("expected both Camps to hold a Set");
 		const ra = await h.desired.resolved(a);
 		const rb = await h.desired.resolved(b);
 		expect(ra.plan.objective).toBe(rb.plan.objective);
 		expect(ra.matches.map((m) => m.providerId)).toEqual(["alpha", "alpha"]);
 		expect(rb.matches.map((m) => m.providerId)).toEqual(["beta", "beta"]);
-		// prod-1 matches staging-1 exactly (no infra diff); prod-2 differs in provider.
 		const deltas = [...h.desired.deltas.values()].map((d) => d.delta);
 		const d1 = deltas.find((d) => d.campId === "prod-1");
 		const d2 = deltas.find((d) => d.campId === "prod-2");
@@ -123,7 +120,6 @@ describe("promotion saga (WP6)", () => {
 		const delta = [...h.desired.deltas.values()][0]?.delta;
 		const after = resolvedFor("dev-1", "alpha", "f2");
 		expect(delta?.baseSetId).toBe(base.setId);
-		// Only `web` carries the Freight's image; `db` is unchanged and absent from the diff.
 		expect(
 			delta?.changes.map((c) => ({
 				resource: c.resource,
@@ -204,14 +200,12 @@ describe("promotion saga (WP6)", () => {
 			expect(result.reasons[0]?.remediation).toMatch(/hotfix approval/);
 		}
 		expect(h.store.events(CD_EVENTS.EnvPromoteRequested)).toHaveLength(0);
-		// Promoting without naming the pipeline does not bypass lineage.
 		const bypass = await h.service.promote(
 			{ freightId: fid("f1"), targets: [camp("prod-1")], idempotencyKey: "k2" },
 			h.ctx(),
 		);
 		expect(bypass.ok).toBe(false);
 		if (!bypass.ok) expect(bypass.reasons[0]?.code).toBe(LINEAGE_UNSATISFIED);
-		// An unexpired hotfix approval for the target covers it.
 		h.freight.approveFor("f1", "prod-1", h.clock.now() + HOUR);
 		const hotfix = await h.service.promote(
 			{
@@ -350,7 +344,6 @@ describe("promotion saga (WP6)", () => {
 			]),
 		);
 		expect(h.store.events("saga.Compensated")).toHaveLength(1);
-		// The rollback Deltas went through the same gate (I7).
 		expect(h.gate.calls.filter((c) => c.intent === "rollback")).toHaveLength(2);
 	});
 
@@ -390,7 +383,6 @@ describe("promotion saga (WP6)", () => {
 		expect(proposed.value.state).toBe(PromotionState.AWAITING_APPROVAL);
 		expect(h.desired.applied).toHaveLength(0);
 		expect([...h.desired.deltas.values()][0]?.delta.proposal).toBe(true);
-		// The agent cannot approve its own proposal.
 		const self = await h.service.approve(
 			pid(proposed.value.promotionId),
 			h.ctx(AGENT),
@@ -491,7 +483,6 @@ describe("promotion saga (WP6)", () => {
 			if (bypass.ok) throw new Error("expected lineage refusal");
 			expect(bypass.reasons[0]?.code).toBe(LINEAGE_UNSATISFIED);
 			expect(bypass.reasons[0]?.message).toMatch(/prod-eu-1 \(fleet\/prod\)/);
-			// A Camp outside every node stays ungoverned.
 			const free = await h.service.promote(
 				{
 					freightId: fid("f1"),

@@ -1,27 +1,3 @@
-/**
- * `EphemeralStatePort` over libSQL — Turso, a self-hosted `sqld`, or a local
- * `file:` database — with the same semantics as the Redis-protocol binding in
- * `@hobo/kv-redis-compatible`, checked by the same conformance suite.
- *
- * Storage: one table (`statements.ts`), one row per key holding the value,
- * an incarnation chosen by the writer that created the key, a revision, and
- * an absolute expiry. The version a caller sees is `<incarnation>:<revision>`,
- * so a version from a deleted or expired incarnation never matches the
- * recreated key (no ABA). Reads treat an expired row as absent; expired rows
- * are deleted lazily — replaced in place by the next `putIfAbsent` or
- * `increment` of the key, removed by an unconditional `delete`, and swept by a
- * bounded purge that rides along with a write at most once per interval.
- *
- * Every port call is one request (one `execute`, or one `batch` when a purge
- * or a large `getMany` rides along) and at most one row read and written per
- * key: see `LIBSQL_EPHEMERAL_COST`.
- *
- * Errors use `KvRedisCompatibleError` with the same codes as the Redis
- * binding, so a host handles every cache binding's rejections alike: a
- * rejected increment is `EPHEMERAL_BACKEND_REJECTED`, a reply the statements
- * never produce is `EPHEMERAL_BACKEND_CONTRACT`. Transport failures from the
- * client are thrown as the client threw them.
- */
 import {
 	type EphemeralEntry,
 	type EphemeralKey,
@@ -52,33 +28,23 @@ import {
 } from "./statements.js";
 
 export type LibsqlPurgeOptions = {
-	/** Least time between purges by one client. Default one minute. */
 	readonly everyMs?: number;
-	/** Most expired rows one purge deletes. Default 64. */
 	readonly limit?: number;
 };
 
 export type LibsqlEphemeralStateOptions = {
 	readonly client: LibsqlStatementClient;
-	/** Default `hobo_ephemeral_state`. Created on first use if missing. */
 	readonly table?: string;
-	/**
-	 * Milliseconds since the Unix epoch. Omit to use the database's clock, so
-	 * every client agrees on expiry. Inject only for deterministic tests.
-	 */
 	readonly now?: () => number;
-	/** Incarnation for a key a call creates; must not repeat. Default a random UUID. */
 	readonly newIncarnation?: () => string;
-	/** `false` turns the opportunistic purge off. */
 	readonly purge?: LibsqlPurgeOptions | false;
-	/** Called once per call with the binding's upper-bound rows estimate. */
 	readonly onRows?: (charge: LibsqlRowsCharge) => void;
 };
 
 const contract = (message: string) =>
 	new KvRedisCompatibleError("EPHEMERAL_BACKEND_CONTRACT", message);
 
-const INCARNATION = /^[\x21-\x39\x3b-\x7e]{1,64}$/u; // printable ASCII without ':'
+const INCARNATION = /^[\x21-\x39\x3b-\x7e]{1,64}$/u;
 
 function parseIncarnation(value: string): string {
 	if (!INCARNATION.test(value)) {
@@ -101,7 +67,6 @@ function text(cell: Cell, operation: string): string {
 	return cell;
 }
 
-/** A stored value: UTF-8 bytes from `putIfAbsent`/`compareAndSet`, or a counter's decimal text. */
 function value(cell: Cell, operation: string): string {
 	if (isCellText(cell)) return cell;
 	if (isCellBytes(cell)) {
@@ -177,7 +142,6 @@ export function createLibsqlEphemeralState(
 		rowsWritten: number,
 	) => options.onRows?.({ operation, rowsRead, rowsWritten });
 
-	/** Create the table once, on the first statement that finds it missing. */
 	async function withSchema<T>(run: () => Promise<T>): Promise<T> {
 		try {
 			return await run();
@@ -192,7 +156,6 @@ export function createLibsqlEphemeralState(
 		}
 	}
 
-	/** One request: the statement alone, or with a purge in one write transaction. */
 	async function write(
 		statement: LibsqlStatement,
 	): Promise<LibsqlResult | undefined> {
@@ -313,7 +276,6 @@ export function createLibsqlEphemeralState(
 			);
 			charge("delete", 1, row === undefined ? 0 : 1);
 			if (row === undefined) return false;
-			// Unconditional delete returns whether the removed row was live.
 			return expected === undefined ? Number(row[0]) === 1 : true;
 		},
 

@@ -1,11 +1,3 @@
-// The engine binding against a real PostgreSQL server. Gated: every test here
-// is skipped unless HOBO_TEST_POSTGRES_URL names one (PostgreSQL 14 or later
-// with wal_level = logical, and a role allowed to create schemas, publications
-// and replication slots). CI's `Live data engines` job provides one.
-//
-// No simulation: datasets are real tables, the fence is a real trigger, and
-// capture is real logical decoding. Every binding gets its own namespace and
-// drops it — and its replication slots — on close.
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -74,10 +66,8 @@ const FIXTURE_PATH = fileURLToPath(
 	new URL("./fixtures/pgoutput-v1.recorded.json", import.meta.url),
 );
 
-/** Skipped by an engine whose declaration states no record bound; PostgreSQL states none. */
 const SIZE_CASE_ID = "records.oversize-record-refuses-the-batch";
 
-/** Skipped by an engine with no `schema` port. */
 const SCHEMA_CASE_IDS = [
 	"pattern.in-place-evolve.gated-and-restorable",
 	"pattern.in-place-evolve.failure-restores",
@@ -121,7 +111,6 @@ async function rejection<T>(action: () => Awaitable<T>): Promise<Error> {
 	throw new Error("expected the action to be refused, but it succeeded");
 }
 
-/** Read a subscription to its head, in batches, returning batches in order. */
 async function drain(
 	binding: EngineBinding,
 	subscription: string,
@@ -217,8 +206,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		);
 	});
 
-	// ── the conformance kit, three ways ───────────────────────────────────────
-
 	test("PostgreSQL passes every conformance case against itself", async () => {
 		const report = await runEngineConformance({
 			engine: harness,
@@ -227,10 +214,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "postgres");
-		// PostgreSQL declares every port and logical-copy, so the native cases
-		// run too — between two databases, over logical replication. The one
-		// case skipped is the size probe: the declaration states no record
-		// bound, and the kit invents none.
 		assert.deepEqual(report.skipped, [SIZE_CASE_ID]);
 		assert.equal(report.results.length, 51);
 		assert.equal(
@@ -255,7 +238,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			onFailure: conformanceFailureSink(),
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
-		// A native fast path exists only within one engine.
 		assert.deepEqual(report.skipped, [
 			SIZE_CASE_ID,
 			...NATIVE_CONFORMANCE_CASE_IDS,
@@ -274,8 +256,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			onFailure: conformanceFailureSink(),
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
-		// The reference engine states no record bound, has no schema port and
-		// shares no native profile with PostgreSQL; nothing else is skipped.
 		assert.deepEqual(report.skipped, [
 			SIZE_CASE_ID,
 			...NATIVE_CONFORMANCE_CASE_IDS,
@@ -284,7 +264,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 	}, 300_000);
 
 	test("without capture the declaration says so, and capture-free patterns still pass", async () => {
-		// The live harness with capture left out of every binding it creates.
 		const withoutCapture = {
 			...harness,
 			schemaFixture: POSTGRES_SCHEMA_FIXTURE,
@@ -310,8 +289,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		);
 	}, 300_000);
 
-	// ── capture under concurrency ─────────────────────────────────────────────
-
 	test("concurrent transactions on the same keys replay to the same state", async () => {
 		const binding = open();
 		await binding.datasets.ensureDataset(SMALL_SCHEMA);
@@ -325,9 +302,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			subscription: "concurrency",
 		});
 
-		// Eight writers, forty transactions each, all fighting over six keys
-		// in two tenants. Every transaction tags its rows with its own id and
-		// how many rows it wrote, so a batch holding part of one is detectable.
 		const keys = ["k0", "k1", "k2", "k3", "k4", "k5"];
 		const tenants = ["", "tenant-a"];
 		let committed = 0;
@@ -335,8 +309,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			for (let round = 0; round < 40; round += 1) {
 				const size = 1 + ((worker + round) % 3);
 				const tenant = tenants[(worker + round) % tenants.length] ?? "";
-				// Sorted, so two transactions never lock the same keys in
-				// opposite orders.
 				const chosen = [
 					...new Set(
 						Array.from(
@@ -377,16 +349,12 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			all.every((change) => change.key !== itemKey("before-start")),
 			"a change committed before start is never captured",
 		);
-		// Positions never go backwards across the whole stream.
 		for (let index = 1; index < all.length; index += 1) {
 			assert.ok(
 				parseLsn(all[index]?.position ?? "0/0") >=
 					parseLsn(all[index - 1]?.position ?? "0/0"),
 			);
 		}
-		// No batch holds part of a transaction: every tagged upsert arrives
-		// together with every other upsert its transaction made. (A delete of
-		// an absent record changes nothing and is rightly not in the log.)
 		for (const batch of batches) {
 			const byPosition = new Map<string, ChangeEnvelope[]>();
 			for (const change of batch) {
@@ -404,7 +372,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 				}
 			}
 		}
-		// The decoded order, replayed, is the store's own final state.
 		const reference = await replayOnReference(SMALL_SCHEMA, batches);
 		await binding.records.write({
 			dataset: SMALL_SCHEMA.name,
@@ -424,8 +391,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		});
 		const items = table(binding, SMALL_SCHEMA.name);
 		const upsert = `INSERT INTO ${items} (tenant_id, id, qty) VALUES ('', $1, $2) ON CONFLICT (tenant_id, id) DO UPDATE SET qty = EXCLUDED.qty`;
-		// Native writers on their own sessions: A begins first and commits
-		// last, B begins second and commits first. Both write `shared`.
 		const a = await pool.connect();
 		const b = await pool.connect();
 		try {
@@ -480,8 +445,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			dataset: SMALL_SCHEMA.name,
 			mutations: [item("", "big", 1, LARGE_NOTE)],
 		});
-		// A native writer changes one column; the server does not resend the
-		// out-of-line value.
 		await pool.query(`UPDATE ${items} SET qty = 2 WHERE id = 'big'`);
 		const batches = await drain(binding, "toast", SMALL_SCHEMA.name, start, 10);
 		const changes = batches.flat();
@@ -497,7 +460,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 
 	test("a subscription is durable across bindings, and loud once its log is gone", async () => {
 		const namespace = freshNamespace();
-		// The first binding is not ephemeral: closing it keeps the subscription.
 		const first = createPostgresEngine({
 			executor: harness.executor,
 			namespace,
@@ -529,8 +491,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		});
 		assert.equal(batch.changes.length, 1);
 		assert.ok(batch.caughtUp);
-		// A subscription carries one dataset; asking it for another is an
-		// error, not an empty batch.
 		const wrong = await rejection(() =>
 			capture.read({
 				scope: scopeOf("hobo_another_dataset"),
@@ -544,17 +504,13 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			subscription: "durable",
 			position: batch.position,
 		});
-		// Acknowledging an older position again is a no-op, not an error.
 		await capture.acknowledge({ subscription: "durable", position: start });
 		const released = await rejection(() =>
 			capture.read({ scope, subscription: "durable", after: start, limit: 10 }),
 		);
-		// The shared refusal from `@hobo/data-core`, not a package-local copy.
 		assert.ok(released instanceof CapturePositionError);
 		assert.equal(released.code, "CAPTURE_POSITION_INVALID");
 
-		// The slot vanishing underneath the subscription is reported, never
-		// papered over with an empty batch.
 		await pool.query(
 			"SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name LIKE 'hobo\\_s\\_%' AND slot_name IN (SELECT slot_name FROM " +
 				`${quoteIdentifier(namespace)}.hobo_data_subscriptions)`,
@@ -599,7 +555,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			};
 			writeFileSync(FIXTURE_PATH, `${JSON.stringify(recorded, null, "\t")}\n`);
 		}
-		// SAFETY: the fixture file is this repository's own recorded document.
 		const fixture = JSON.parse(
 			readFileSync(FIXTURE_PATH, "utf8"),
 		) as RecordedPgOutput;
@@ -608,8 +563,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			summarizePgOutput(fixture.messages),
 		);
 	}, 60_000);
-
-	// ── the fence is enforced by the store ────────────────────────────────────
 
 	test("a writer that bypasses the binding is still refused by the fence", async () => {
 		const binding = open();
@@ -629,13 +582,11 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		for (const statement of [
 			`UPDATE ${items} SET qty = 9 WHERE tenant_id = 'tenant-a'`,
 			`DELETE FROM ${items} WHERE tenant_id = 'tenant-a'`,
-			// Moving a row into, or out of, the fenced tenant.
 			`UPDATE ${items} SET tenant_id = 'tenant-a', id = 'moved' WHERE tenant_id = 'tenant-b'`,
 		]) {
 			const refused = await rejection(() => pool.query(statement));
 			assert.equal(sqlStateOf(refused), FENCED_WRITE_SQLSTATE, statement);
 		}
-		// Replica mode disables ordinary triggers; the fence is ALWAYS.
 		const replica = await pool.connect();
 		try {
 			await replica.query("BEGIN");
@@ -648,7 +599,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		} finally {
 			replica.release();
 		}
-		// Another tenant is untouched, and the token holder writes through.
 		await pool.query(insert, ["tenant-b", "free"]);
 		const holder = await pool.connect();
 		try {
@@ -661,7 +611,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		} finally {
 			holder.release();
 		}
-		// The token does not leak to the session's next transaction.
 		const truncate = await rejection(() => pool.query(`TRUNCATE ${items}`));
 		assert.equal(sqlStateOf(truncate), TRUNCATE_REFUSED_SQLSTATE);
 		const viaBinding = await rejection(() =>
@@ -673,7 +622,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		assert.ok(viaBinding instanceof FencedWriteError);
 		assert.equal(viaBinding.tenant, "tenant-a");
 
-		// A dataset-wide fence covers every tenant.
 		const wide = await fence.raise({
 			scope: scopeOf(SMALL_SCHEMA.name),
 			reason: "live",
@@ -708,8 +656,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			await writer.query(
 				`INSERT INTO ${items} (tenant_id, id, qty) VALUES ('', 'in-flight', 1)`,
 			);
-			// The writer passed the fence check and has not committed. A fence
-			// raised now must not return until that write is settled.
 			const raising = Promise.resolve(
 				fence.raise({ scope, reason: "live" }),
 			).then((grant) => {
@@ -721,7 +667,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			await writer.query("COMMIT");
 			const grant = await raising;
 			assert.ok(raised);
-			// Everything that got in before the fence is visible under it.
 			const digest = await requirePort(binding, "verify").digest({
 				scope,
 				buckets: 4,
@@ -732,8 +677,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			writer.release();
 		}
 	}, 60_000);
-
-	// ── the type mapping is honest ────────────────────────────────────────────
 
 	test("every canonical type round-trips byte for byte, at its edges", async () => {
 		const binding = open();
@@ -755,7 +698,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			{ id: "edge-ts-micro", placed_at: "9999-12-31T23:59:59.999999Z" },
 			{ id: "edge-ts-early", placed_at: "0100-01-01T00:00:00.000001-11:59" },
 			{ id: "edge-date", due: "0100-03-01" },
-			// The first century: years the server writes with leading zeros.
 			{ id: "edge-ts-year-1", placed_at: "0001-01-01T00:00:00Z" },
 			{ id: "edge-ts-year-99", placed_at: "0099-12-31T23:59:59.999999Z" },
 			{ id: "edge-date-year-1", due: "0001-01-01" },
@@ -772,8 +714,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 				},
 			},
 			{ id: "edge-json-scalar", attrs: "just a string" },
-			// jsonb stores numbers as exact decimals; these must come back as
-			// the same doubles.
 			{
 				id: "edge-json-numbers",
 				attrs: [1.7976931348623157e308, 5e-324, 0.1, 1e21, -1e-7, 2 ** 53],
@@ -822,14 +762,12 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			{ price: `0.${"1".repeat(20_000)}` },
 		];
 		for (const [index, refusal] of refusals.entries()) {
-			// Built by hand: a lone surrogate must reach the binding intact.
 			const record = { ...parseCanonicalRecord(schema, EVERY_TYPE_RECORD) };
 			const raw = { ...record, ...refusal, id: `refused-${index}` };
 			const key = canonicalEncode([raw.id]);
 			const refused = await rejection(() =>
 				binding.records.write({
 					dataset: schema.name,
-					// A good record first: the refusal must roll it back too.
 					mutations: [
 						upsertMutation("", canonicalEncode([`good-${index}`]), {
 							...record,
@@ -966,8 +904,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			(await binding.datasets.ensureDataset(SMALL_SCHEMA)).created,
 			true,
 		);
-		// A second binding on the same namespace sees the same dataset — and,
-		// finding the namespace already bootstrapped, runs no DDL at all.
 		const issued: string[] = [];
 		const watched: PostgresExecutor = {
 			query(sql, parameters) {
@@ -988,7 +924,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			issued.filter((sql) => /^\s*(CREATE|ALTER|COMMENT|DROP)\b/u.test(sql)),
 			[],
 		);
-		// A tenant the driver would silently alter is refused like any text.
 		const tenant = await rejection(() =>
 			again.records.write({
 				dataset: SMALL_SCHEMA.name,
@@ -1011,7 +946,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		);
 		assert.ok(differs instanceof DataCoreError);
 		assert.equal(differs.code, "INVALID_DATASET_SCHEMA");
-		// A table that already exists under the name is not adopted.
 		await pool.query(
 			`CREATE TABLE ${quoteIdentifier(binding.namespace)}.hobo_squatter (id text)`,
 		);
@@ -1045,8 +979,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		assert.ok(absent instanceof DataCoreError);
 	}, 60_000);
 
-	// ── schema apply ──────────────────────────────────────────────────────────
-
 	test("a schema snapshot restores structure and data, and a failed phase leaves nothing", async () => {
 		const binding = createPostgresEngine({
 			executor: harness.executor,
@@ -1074,7 +1006,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		const rowsBefore = await rows();
 		assert.equal(rowsBefore.length, 2);
 
-		// One transaction per phase: the failing statement undoes the first.
 		const failed = await rejection(() =>
 			port.applyPhase("expand", [
 				"ALTER TABLE hobo_live_accounts ADD COLUMN nickname text",
@@ -1100,7 +1031,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		await port.restore(snapshot);
 		assert.deepEqual(await columns(), columnsBefore);
 		assert.deepEqual(await rows(), rowsBefore);
-		// Constraints came back with the structure.
 		for (const [statement, state] of [
 			[
 				`INSERT INTO ${accounts} (id, email) VALUES (1, 'dup@example.test')`,
@@ -1119,19 +1049,16 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			const refused = await rejection(() => pool.query(statement));
 			assert.equal(sqlStateOf(refused), state, statement);
 		}
-		// Three indexes again: the key, the unique email, and the plain one.
 		assert.deepEqual(
 			await port.verify(
 				"SELECT count(*) AS n FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'hobo_live_accounts'",
 			),
 			[{ n: 3 }],
 		);
-		// A table that did not exist at the snapshot does not exist after it.
 		const later = await port.verify(
 			"SELECT 1 AS present FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'hobo_live_added_later'",
 		);
 		assert.deepEqual(later, []);
-		// A snapshot can be restored more than once, then dropped.
 		await port.restore(snapshot);
 		await binding.dropSchemaSnapshot(snapshot);
 		const missing = await rejection(() => port.restore(snapshot));

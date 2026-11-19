@@ -13,15 +13,10 @@ import {
 // public-contract: Railway's authenticated service product (mirrors resolvers.ts).
 const SERVICE_PRODUCT_ID = "railway.service/v1";
 
-/** Every Railway hosting product with a shipped resolver (I14). */
 export const RAILWAY_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze([
 	SERVICE_PRODUCT_ID,
 ]);
 
-/**
- * Railway products the equivalence table names but no resolver realizes.
- * Each is a decision, not a backlog item.
- */
 export const RAILWAY_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -49,7 +44,6 @@ export const RAILWAY_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	absent: RAILWAY_TRAFFIC_ROUTING_ABSENT,
 });
 
-/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product Railway does not realize. */
 export function railwayProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

@@ -21,10 +21,6 @@ export function parseDaprDeployMode<T>(value: T): DaprDeployMode {
 	throw new MessagingParseError("mode", "self-hosted|kubernetes", json);
 }
 
-/**
- * Tenant-scope Dapr app-id (multi-tenant default).
- * Physical form: `{tenant}.{camp}.{app}` unless already scoped.
- */
 export function tenantScopedAppId(
 	tenantId: string,
 	campId: string,

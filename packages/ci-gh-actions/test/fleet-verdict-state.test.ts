@@ -17,7 +17,6 @@ import {
 	FLEET_VERDICT_EXIT_MS,
 } from "../src/isolated-worker/fleet-verdict-state.js";
 
-/** The reporter's state (ADR-0180 amendment, item 2): holds, send schedule, sequence. */
 const T0 = Date.parse("2026-11-12T11:14:00.000Z");
 const SAMPLE = 10_000;
 
@@ -29,7 +28,6 @@ function holds() {
 	});
 }
 
-/** Feeds one sample per 10 s from `from`, `blocked` deciding each; returns when it changed. */
 function feed(
 	state: ReturnType<typeof holds>,
 	from: number,
@@ -55,7 +53,6 @@ describe("the fleet verdict holds", () => {
 
 	it("does not enter on a dip", () => {
 		const state = holds();
-		// Fifty seconds blocked, one clear sample, fifty more: never a full minute.
 		const samples = [
 			...Array(6).fill(true),
 			false,
@@ -69,7 +66,6 @@ describe("the fleet verdict holds", () => {
 	it("does not leave on a spike", () => {
 		const state = holds();
 		feed(state, T0, Array(7).fill(true));
-		// Twenty seconds clear, then blocked again: still blocked.
 		expect(
 			feed(state, T0 + 70_000, [
 				false,
@@ -110,12 +106,10 @@ describe("the send schedule", () => {
 	it("tries again at the next sample while a change is unsent, otherwise at the next 60 s mark", () => {
 		const schedule = createFleetVerdictSchedule({ resendMs: 60_000 });
 		schedule.attempted(T0, true);
-		// A change fails to send: the next sample tries again.
 		expect(schedule.due(T0 + 10_000, true)).toBe(true);
 		schedule.attempted(T0 + 10_000, false);
 		expect(schedule.due(T0 + 20_000, false)).toBe(true);
 		schedule.attempted(T0 + 20_000, true);
-		// A routine send fails: not until 60 s after it.
 		expect(schedule.due(T0 + 80_000, false)).toBe(true);
 		schedule.attempted(T0 + 80_000, false);
 		expect(schedule.due(T0 + 90_000, false)).toBe(false);
@@ -145,7 +139,6 @@ describe("the report sequence", () => {
 		const path = file();
 		const first = createFleetVerdictSequence(path);
 		const issued = [first.next(T0), first.next(T0 + 5_000)];
-		// The box restarts with its clock an hour behind.
 		const restarted = createFleetVerdictSequence(path);
 		const after = restarted.next(T0 - 3_600_000);
 		expect(after).toBe(BigInt(T0 + 5_000) + 1n);
@@ -156,7 +149,6 @@ describe("the report sequence", () => {
 		const path = file();
 		createFleetVerdictSequence(path).next(T0);
 		rmSync(path);
-		// Missing is a first start; malformed is not.
 		expect(createFleetVerdictSequence(path).next(T0)).toBe(BigInt(T0));
 		const malformed = file();
 		writeFileSync(malformed, '{"lastSequence":-1}');
@@ -177,11 +169,9 @@ describe("the pickup memory", () => {
 					runnerName: "hobo-runner-a",
 					startedAt: new Date(T0 - 60_000).toISOString(),
 				},
-				// No start time: the poll that saw it stands in.
 				{ label: "hobo-trunk", runnerName: "hobo-runner-b" },
 			],
 		});
-		// The next poll no longer sees them: they finished.
 		memory.remember({
 			completedAt: new Date(T0 + 10_000).toISOString(),
 			inProgress: [],

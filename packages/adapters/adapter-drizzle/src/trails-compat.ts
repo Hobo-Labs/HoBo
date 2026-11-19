@@ -1,28 +1,8 @@
-/**
- * Structural bridge from a `MigrationPlan` to the plan shape `@hobo/trails`
- * executes.
- *
- * `@hobo/trails` already owns migration execution — snapshot, phase apply,
- * verify, restore, and the expand/backfill/contract saga. This adapter must not
- * reimplement any of that, and as a layer-2 adapter it may not import
- * `@hobo/trails` at all. So it emits a *structurally* compatible object: the
- * same field names, the same three phase literals, the same `verify` shape. The
- * consumer passes it straight to `executeDataMigration`.
- *
- * The conversion is deliberately toolchain-gated by construction: trails
- * executes SQL statements, and this package cannot render SQL, so the caller
- * must hand in the emitted statements. There is no path here that fabricates a
- * statement.
- */
 
 import type { MigrationPlan } from "@hobo/core";
 import { type EmittedSqlStatement, stepKey } from "./engine.js";
 import { DrizzleAdapterError } from "./errors.js";
 
-/**
- * Mirror of `@hobo/trails`'s `DataMigrationPlan`. Duplicated structurally
- * rather than imported because adapters may not depend on layer-3 packages.
- */
 export interface DataMigrationPlanRecord {
 	readonly migrationId: string;
 	readonly expand: readonly string[];

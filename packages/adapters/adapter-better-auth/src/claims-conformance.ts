@@ -239,7 +239,6 @@ function describe<T>(value: T): string {
 	}
 }
 
-/** Key-order-independent structural equality over JSON-shaped values. */
 function deepEqual<T, U>(left: T, right: U): boolean {
 	if (Object.is(left, right)) return true;
 	if (Array.isArray(left) || Array.isArray(right)) {
@@ -255,9 +254,7 @@ function deepEqual<T, U>(left: T, right: U): boolean {
 	) {
 		return false;
 	}
-	// SAFETY: assertion to `ft as JsonObject; ` is required at this boundary.
 	const leftRecord = left as JsonObject;
-	// SAFETY: assertion to `ght as JsonObject; ` is required at this boundary.
 	const rightRecord = right as JsonObject;
 	const leftKeys = Object.keys(leftRecord).sort();
 	const rightKeys = Object.keys(rightRecord).sort();
@@ -268,12 +265,6 @@ function deepEqual<T, U>(left: T, right: U): boolean {
 	);
 }
 
-/**
- * Run the claims-mapping conformance cases against a mapping implementation.
- *
- * Pure and synchronous. Pass `map` to check a candidate replacement issuer's
- * mapping against this adapter's baseline before swapping it onto a live Yard.
- */
 export function runClaimsMappingConformance(options?: {
 	readonly cases?: readonly ClaimsMappingCase[];
 	readonly map?: <T>(claims: T) => MappedPrincipal;
@@ -335,12 +326,6 @@ export function runClaimsMappingConformance(options?: {
 	});
 }
 
-/**
- * Accepted claim keys not exercised by any mapped case.
- *
- * A non-empty result means the case list no longer proves the mapping total
- * over its accepted vocabulary — a test asserts it stays empty.
- */
 export function unexercisedAcceptedClaimKeys(
 	cases: readonly ClaimsMappingCase[] = BETTER_AUTH_CLAIMS_CONFORMANCE_CASES,
 ): readonly string[] {

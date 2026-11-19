@@ -1,11 +1,3 @@
-/**
- * The kubectl read probes (`version`, `cluster-info`) are bounded.
- *
- * A probe answers "is this cluster reachable?". With no kubeconfig,
- * `kubectl cluster-info` retries discovery against localhost:8080 for longer
- * than a caller may wait, so a probe that does not return has to come back as
- * 503 within `probeTimeoutMs`, not after the write paths' 120 s limit.
- */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +12,6 @@ afterEach(() => {
 		rmSync(dir, { recursive: true, force: true });
 });
 
-/** A stand-in `kubectl` script in its own folder; returns its path. */
 function stubKubectl(lines: readonly string[]): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-kubectl-probe-"));
 	dirs.push(dir);

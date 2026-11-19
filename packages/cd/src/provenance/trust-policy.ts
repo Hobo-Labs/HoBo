@@ -1,7 +1,3 @@
-// The provenance trust policy arrives as an opaque JsonObject (frozen
-// `createProvenanceVerifier` signature) and is parsed once, at construction,
-// into this typed form. A malformed policy throws there — composition fails
-// loudly — while an empty policy is valid and simply trusts nothing.
 import type { SignatureVerifier } from "@hobo/registry";
 import {
 	isJsonArray,
@@ -13,7 +9,6 @@ import {
 } from "../artifacts/json.js";
 
 // public-contract: the literal that selects the Sigstore public-good trusted
-// root shipped with sigstore@5.0.1 (@sigstore/tuf seeds) instead of an inline one.
 export const SIGSTORE_PUBLIC_GOOD_SEED = "public-good-seed";
 
 export type SigstorePolicy = Readonly<{
@@ -57,8 +52,6 @@ function strings(
 
 function threshold(value: JsonValue | undefined, path: string): number {
 	if (value === undefined) return 1;
-	// Thresholds can be raised, never lowered below one: a zero threshold would
-	// accept a bundle with no transparency evidence.
 	if (
 		!isJsonNumber(value) ||
 		!Number.isInteger(value) ||

@@ -12,10 +12,6 @@ import {
 } from "../src/index.js";
 import type { JsonValue } from "../src/json.js";
 
-// HOBO-716: the Kubernetes-substrate adapter over the in-memory cluster
-// fixture — the full behavior set promoted from the HOBO-188 draft proof plus
-// the shared IaC-backend conformance smoke.
-
 describe("validateIacProgram (parse, don't validate)", () => {
 	it("freezes the parsed program and requires composition selectors", () => {
 		const parsed = validateIacProgram(createFixtureIacProgram());
@@ -60,7 +56,6 @@ describe("createCrossplaneIacAdapter over the in-memory cluster", () => {
 		expect(outputs.stackOutputs.databaseEndpoint).toBe(
 			"postgres.database.svc.cluster.local",
 		);
-		// Outputs from claim status flow into bindings (resource.Provisioned).
 		expect(outputs.bindings["database.endpoint"]).toBe(
 			"postgres.database.svc.cluster.local",
 		);

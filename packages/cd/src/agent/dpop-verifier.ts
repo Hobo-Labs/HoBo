@@ -1,5 +1,3 @@
-// DPoP verification bound to the replay store: signature and claims first
-// (./dpop.ts), then the `jti` is claimed once per reconciler (./replay.ts).
 import type { Outcome } from "../ports.js";
 import {
 	type DpopExpectation,

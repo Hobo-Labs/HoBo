@@ -1,16 +1,3 @@
-/**
- * Tests for the E2E fixture runner.
- *
- * The module was 0% covered. It is what CI actually invokes per phase, and its
- * only durable output is a JSONL event log that later steps and humans read to
- * decide whether a run was clean. Three properties matter and none was pinned:
- * the right event is appended for each phase, a failed live-URL assertion still
- * records the failure *before* throwing, and teardown never depends on deploy
- * having succeeded.
- *
- * Everything is driven through a temp `eventsPath`, so no test touches the real
- * `test-results/` directory.
- */
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,14 +11,6 @@ import {
 	parseJsonTree,
 } from "../src/json.js";
 
-/**
- * The contract pins the E2E fixture to this exact path, and `deploy-and-assert`
- * builds a contract from it — so that phase can only be exercised with the real
- * value. `examples/hello-bindle` ships no `fixture.json`, which is why the id
- * falls back to the directory name in the assertions below. The other two
- * phases never build a contract from the fixture, so they run against a temp
- * directory.
- */
 const PINNED_FIXTURE = "examples/hello-bindle";
 
 const originalForceFail = process.env.HOBO_E2E_FORCE_FAIL;
@@ -102,8 +81,6 @@ describe("deploy-and-assert", () => {
 		).rejects.toThrow(/live URL assertion failed/);
 
 		const recorded = await events(eventsPath);
-		// Both events are on disk even though the call threw — a run that fails
-		// silently is worse than one that fails loudly.
 		expect(recorded.map((e) => e.type)).toEqual([
 			"e2e.FixtureDeployed",
 			"e2e.LiveUrlAsserted",
@@ -115,8 +92,6 @@ describe("deploy-and-assert", () => {
 		const { eventsPath } = await workspace();
 		process.env.HOBO_E2E_FORCE_FAIL = "1";
 
-		// examples/hello-bindle ships no fixture.json, so the id falls back to the
-		// basename — and the thrown message must still identify which fixture failed.
 		await expect(
 			runExampleFixture({
 				fixture: PINNED_FIXTURE,
@@ -154,8 +129,6 @@ describe("teardown", () => {
 			}),
 		).rejects.toThrow();
 
-		// Teardown must still run after a failed deploy — that is the whole point
-		// of `teardown.always` in the contract.
 		await expect(
 			runExampleFixture({
 				fixture,

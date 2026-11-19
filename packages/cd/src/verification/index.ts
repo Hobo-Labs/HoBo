@@ -1,4 +1,3 @@
-// "@hobo/cd/verification" (WP9): the verification engine and its health sources.
 export {
 	createVerificationEngine,
 	type VerificationEngineDeps,
@@ -21,7 +20,6 @@ export {
 	replayVerificationFromStore,
 	type VerificationReplay,
 } from "./replay.js";
-// Vendor adapters stay behind createHealthSources (I11: vendor names only in sources/).
 export {
 	cohortValue,
 	createHealthSources,

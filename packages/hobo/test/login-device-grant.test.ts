@@ -12,21 +12,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createBrokerAwareLoginCommand } from "../src/index.js";
 import type { JsonObject, JsonValue } from "../src/json.js";
 
-// `hobo login` device-code grant (RFC 8628) against an in-test fake issuer:
-// discovery + device endpoint + token endpoint + JWKS all served through the
-// INJECTED fetch — no network, no real timers (injected sleep/clock seam).
-// The fixture session stays the offline default when no issuer is configured;
-// once an issuer IS configured every failure is typed and fail-closed.
-// The grant's own protocol cases (slow_down, expiry, discovery and metadata
-// refusals) are in oidc-device-grant.test.ts; this file keeps what the command
-// adds: the session it persists, one typed refusal that writes nothing, the
-// audience it verifies against, and refusing without a fetch.
-
 const ISSUER = "https://issuer.test";
 const NOW_MS = 1_754_000_000_000;
 const NOW_SEC = Math.floor(NOW_MS / 1000);
 
-// Real RSA key material via @hobo/identity's in-memory KMS (read-only reuse).
 const kms = createInMemoryKms();
 kms.generateRsaKey("kid-1");
 const issuer = new JwtSvidIssuer({
@@ -52,7 +41,6 @@ function svidClaims(overrides: Partial<JwtSvidClaims> = {}): JwtSvidClaims {
 }
 
 function jsonResponse(status: number, body: JsonValue): Response {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return {
 		ok: status >= 200 && status < 300,
 		status,
@@ -61,7 +49,6 @@ function jsonResponse(status: number, body: JsonValue): Response {
 }
 
 interface FakeIssuerOptions {
-	/** Scripted token-endpoint responses, consumed one per poll. */
 	readonly tokenResponses: readonly Response[];
 	readonly discoveryOverride?: JsonObject | "unreachable";
 	readonly deviceOverride?: JsonObject;
@@ -70,7 +57,6 @@ interface FakeIssuerOptions {
 function createFakeIssuerFetch(options: FakeIssuerOptions) {
 	const tokenQueue = [...options.tokenResponses];
 	const requests: string[] = [];
-	// SAFETY: assertion required at this I/O or test boundary.
 	const fetchImpl = (async (input: JsonValue, init?: { body?: unknown }) => {
 		const url = String(input);
 		requests.push(url);
@@ -137,7 +123,6 @@ afterEach(async () => {
 function seams() {
 	return {
 		now: () => clockMs,
-		// No real timers: the fake sleep records the wait and advances the clock.
 		sleep: async (ms: number) => {
 			sleeps.push(ms);
 			clockMs += ms;
@@ -146,7 +131,6 @@ function seams() {
 }
 
 function runInput() {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return {
 		args: [],
 		verb: "login",
@@ -161,7 +145,6 @@ describe("hobo login — no issuer configured (offline default)", () => {
 		const command = createBrokerAwareLoginCommand({ env: {}, persist: false });
 		const result = await command.run(runInput());
 		expect(result.ok).toBe(true);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const data = result.data as JsonObject;
 		expect(data.authMethod).toBe("fixture");
 		expect(data.token).toBe(createFixtureSession().token);
@@ -188,26 +171,20 @@ describe("hobo login — device-code grant (issuer configured)", () => {
 		});
 		const result = await command.run(runInput());
 		expect(result.ok).toBe(true);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const data = result.data as JsonObject;
 		expect(data.authMethod).toBe("device-code");
 		expect(data.issuer).toBe(ISSUER);
 		expect(data.token).toBe(jwt);
 		expect(data.tenant).toBe("acme");
 		expect(data.principal).toEqual({ kind: "user", id: "user:tyler" });
-		// The user was told where to approve the device.
 		expect(progress.join("\n")).toContain("ABCD-1234");
 		expect(progress.join("\n")).toContain(`${ISSUER}/activate`);
-		// The verified JWT (not a fixture token) is persisted in the profile.
 		const profile = JSON.parse(
 			readFileSync(path.join(home, "profile.json"), "utf8"),
 		);
 		expect(profile.session.token).toBe(jwt);
 		expect(profile.session.tenant).toBe("acme");
-		// The command handed its sleep seam to the grant: one interval before
-		// the first poll, one after authorization_pending.
 		expect(sleeps).toEqual([5000, 5000]);
-		// Full RFC 8628 leg order through the injected fetch only.
 		expect(requests).toEqual([
 			`${ISSUER}/.well-known/openid-configuration`,
 			`${ISSUER}/device`,
@@ -231,8 +208,6 @@ describe("hobo login — device-code grant (issuer configured)", () => {
 		expect(result.ok).toBe(false);
 		expect(result.code).toBe("HOBO_OIDC_ACCESS_DENIED");
 		expect(result.remediation?.length).toBeGreaterThan(0);
-		// Fail-closed: no session token minted, no profile written.
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect((result.data as JsonObject).token).toBeUndefined();
 		expect(existsSync(path.join(home, "profile.json"))).toBe(false);
 	});

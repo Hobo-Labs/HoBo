@@ -24,8 +24,6 @@ import type {
 
 export const DEFAULT_COLOS = ["WNAM", "ENAM", "WEUR"];
 
-// Marginal-cost facts per equivalence class, aligned with the published
-// cost.json bundle in manifest.ts.
 const COST_FACTS = {
 	"web/service": { sku: "cloudflare.workers.request", unit: "request" },
 	kv: { sku: "cloudflare.kv.read", unit: "operation" },

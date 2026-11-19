@@ -172,7 +172,6 @@ describe("worker storage admission", () => {
 
 	it("sweeps retired dirs when inode reserve blocks admission", async () => {
 		const h = harness({
-			// One job's shared-device reserve fits; a second does not.
 			before: freeInodes(380_000),
 			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
 		});
@@ -226,13 +225,11 @@ describe("worker storage admission", () => {
 			dockerDataRootBytes: 0,
 		};
 		const h = harness({ before: freeInodes(500_000), now: () => nowMs });
-		// A job's grant with no lease lapses after the grace period.
 		await expect(h.admission.admit([], "job-0", reserve)).resolves.toBe(true);
 		nowMs += 60_000;
 		await expect(
 			h.admission.admit([], DEPS_BUILD_ADMISSION_ID, reserve),
 		).resolves.toBe(true);
-		// The build holds no lease, and its grant still counts after the grace period.
 		nowMs += 60_000;
 		await expect(h.admission.admit([], "job-1", reserve)).resolves.toBe(false);
 		h.admission.release(DEPS_BUILD_ADMISSION_ID);
@@ -365,11 +362,6 @@ describe("worker storage admission", () => {
 		).toThrow("invalid worker job storage reservation");
 	});
 
-	// The job mount belongs to the runner image's user, 1000. Only that user
-	// and root may give a directory to it, so this runs on the fleet's image and
-	// as root; on a machine with another user (a GitHub-hosted one is 1001) the
-	// chown is refused before anything is asserted. The next test covers the
-	// same preparation with the file system injected.
 	const mayOwnAsRunner = [0, 1000].includes(process.getuid?.() ?? -1);
 	it.runIf(mayOwnAsRunner)(
 		"prepares owned checkout directories inside each job mount",
@@ -438,7 +430,6 @@ describe("worker storage admission", () => {
 	it("treats only a missing entry as absent, and rethrows every other failure", async () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-worker-absent-"));
 		temporaryRoots.push(root);
-		// No `.retired` root yet: nothing has been retired on this host.
 		expect(
 			await createNodeWorkerStorageFileSystem().retiredDirectories(root),
 		).toEqual([]);

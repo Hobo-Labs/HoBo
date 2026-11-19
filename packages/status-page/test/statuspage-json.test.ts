@@ -67,12 +67,10 @@ describe("statuspage-v2 compatibility", () => {
 					},
 				),
 			],
-			// Far past the freshness budget.
 			"2026-08-17T12:00:00.000Z",
 		);
 		expect(summary.components[0]?.status).toBe("degraded_performance");
 		expect(summary.components[0]?.description).toBe("Status delayed / unknown");
-		// Overall indicator degrades to minor — never "none" for unknown.
 		expect(summary.status.indicator).toBe("minor");
 	});
 

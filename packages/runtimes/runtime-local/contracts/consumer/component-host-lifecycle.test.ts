@@ -26,7 +26,6 @@ async function loadPact(): Promise<PactContract> {
 		new URL("../component-host-lifecycle.pact.json", import.meta.url),
 		"utf8",
 	);
-	// SAFETY: assertion to `JSON.parse(raw) as PactContract` is required at this boundary.
 	return JSON.parse(raw) as PactContract;
 }
 

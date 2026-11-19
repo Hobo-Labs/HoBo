@@ -134,13 +134,11 @@ export interface ClockReplayResult {
 	readonly finalNow: IsoInstant;
 }
 
-/** Read-only clock facet for timestamp queries. */
 export interface Clock {
 	now(): IsoInstant;
 	nowMs(): number;
 }
 
-/** Deterministic virtual clock port with sleep, cron, and advance. */
 export interface VirtualClock extends Clock {
 	sleep(runId: RunId, delayMs: number, options: TimerOptions): ScheduledTimer;
 	cron(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule;
@@ -170,22 +168,18 @@ export class NondeterministicClockError extends Error {
 }
 
 export function parseIsoInstant(value: string): IsoInstant {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return isoTimestamp(value, "instant", ClockParseError) as IsoInstant;
 }
 
 export function parseTimerId(value: string): TimerId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "timerId", ClockParseError) as TimerId;
 }
 
 export function parseScheduleId(value: string): ScheduleId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "scheduleId", ClockParseError) as ScheduleId;
 }
 
 export function parseFireId(value: string): FireId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "fireId", ClockParseError) as FireId;
 }
 

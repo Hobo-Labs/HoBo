@@ -1,7 +1,3 @@
-// npm provenance signing for HoBo's own releases: the statement npm's client
-// builds, signed and bound to one tarball. Offline: the signer is a per-run
-// Sigstore trust root (sigstore-fixture.ts), and the bundle it returns is
-// verified end to end by HoBo's own ProvenanceVerifier.
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
@@ -171,11 +167,6 @@ describe("npm provenance signing", () => {
 	});
 
 	it("passes npm's own check of an externally signed bundle: the extra sha256 sits beside the sha512 npm compares", async () => {
-		// A port of the subject checks in npm's client for `--provenance-file`
-		// (libnpmpublish 11.2.0, lib/provenance.js verifyProvenance, as shipped
-		// with npm 11): exactly one subject, its name the package purl, and
-		// `digest.sha512` equal to the tarball's (ssri hexDigest). Other digest
-		// keys are not read; in-toto's DigestSet allows several algorithms.
 		const npmVerifySubject = (
 			subject: { name: string; digest: { sha512: string } },
 			bundle: Uint8Array,

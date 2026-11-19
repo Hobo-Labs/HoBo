@@ -1,10 +1,3 @@
-// broker.DeliverySubmitted fact bodies and their upcaster (ADR-0182 D14).
-//
-// v1 (pre-D14) named a delivery engine: { requestId, brokerId, engine:
-// "argo" | "in-proc", target }. v2 is neutral: it names the reconciler mode,
-// the cd-gitops publisher in publisher mode, and the CD promotion that carries
-// the receipt. Persisted v1 facts are lifted on read; replay never sees an
-// engine name. The golden corpus lives in test/fixtures/delivery-submitted.
 
 import { isJsonString, type JsonObject } from "./json.js";
 import type { DeliveryTicket } from "./planes.js";
@@ -14,7 +7,6 @@ import { LEGACY_ARGO_PUBLISHER } from "./types.js";
 export const DELIVERY_SUBMITTED_SCHEMA =
 	"hobo.broker.delivery-submitted/v2" as const;
 
-/** The current (v2) body for a delivered receipt. */
 export function deliverySubmittedBody(input: {
 	readonly requestId: string;
 	readonly brokerId: string;
@@ -50,11 +42,6 @@ function unknownFact(detail: string): Error {
 	);
 }
 
-/**
- * Lift any persisted broker.DeliverySubmitted body to the current schema.
- * Total over the shipped shapes and idempotent on the current one; an
- * unknown shape is refused, never guessed.
- */
 export function upcastDeliverySubmitted(body: JsonObject): JsonObject {
 	const schema = text(body, "schema");
 	if (schema === DELIVERY_SUBMITTED_SCHEMA) return { ...body };

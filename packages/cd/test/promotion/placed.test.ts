@@ -1,4 +1,3 @@
-// The placed-node reader resolves governed Camps from a recorded decision (D21).
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,8 +8,6 @@ import type { FanoutId } from "../../src/ports.js";
 import { campsOfDecision, placedCampsFrom } from "../../src/promotion/index.js";
 
 const asFanoutId = (id: string): FanoutId =>
-	// SAFETY: test fixture ids are literal fan-out ids; the reader under test
-	// only compares them by string equality.
 	id as FanoutId;
 
 const decision = (id: string, node = "prod") =>

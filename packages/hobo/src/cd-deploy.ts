@@ -1,15 +1,4 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: CLI flags and caught errors are untrusted input parsed here (text/list/num/oneOf); result data is an envelope payload serialized by cd-render, never read back. */
-/**
- * `hobo deploy` CD subcommands (ADR-0182 C2).
- *
- * Every subcommand is a thin, typed call into the composed
- * `ContinuousDelivery` facade (`@hobo/cd/compose`): this file parses flags,
- * calls one module method, and renders the result. It makes no delivery
- * decision and holds no fixture: the facade it receives is the real one, or
- * the labelled `--simulate` one the caller composed.
- *
- * `deploy` stays the one canonical verb; these are its subcommands.
- */
 
 import { create } from "@bufbuild/protobuf";
 import {
@@ -54,16 +43,12 @@ import {
 } from "./cd-render.js";
 import { isJsonNumber, isJsonString, type JsonObject } from "./json.js";
 
-/** What the subcommands run against. */
 export interface CdDeployHost {
 	readonly cd: ContinuousDelivery;
 	readonly ctx: CdContext;
 	readonly cwd: string;
-	/** True when composed with --simulate; echoed in every result. */
 	readonly simulated: boolean;
-	/** One in-process conductor for these Camps (`deploy reconcile`). */
 	readonly conductor?: (campIds: readonly CampId[]) => CampReconciler;
-	/** Run this process as an agent-mode reconciler until aborted (`deploy agent run`). */
 	readonly runAgent?: (
 		input: Readonly<{ flags: JsonObject }>,
 	) => Promise<Outcome<Readonly<{ reconcilerId: string; stoppedAt: string }>>>;
@@ -78,8 +63,6 @@ type Run = (
 ) => Promise<CommandResult>;
 
 type Sub = Readonly<{ usage: string; summary: string; run: Run }>;
-
-// ── Flag parsing (parse, don't validate) ─────────────────────────────────
 
 function text(flags: JsonObject, name: string): string | undefined {
 	const v = flags[name];
@@ -111,9 +94,7 @@ function bool(flags: JsonObject, name: string): boolean {
 	return v === true || v === "true";
 }
 
-// SAFETY: CLI arguments are opaque ids; the owning module parses and refuses unknown ones.
 const asCamp = (id: string) => id as CampId;
-// SAFETY: see asCamp.
 const asFreight = (id: string) => id as FreightId;
 
 class Usage extends Error {
@@ -169,7 +150,6 @@ const MODES = {
 	PUBLISHER: ReconcilerMode.PUBLISHER,
 } as const;
 
-/** Deterministic idempotency key (I12): the same request twice is one request. */
 function idempotencyKey(
 	flags: JsonObject,
 	...parts: readonly (string | undefined)[]
@@ -180,8 +160,6 @@ function idempotencyKey(
 		parts.map((p) => p ?? "").join("|")
 	);
 }
-
-// ── Result helpers ─────────────────────────────────────────────────────────
 
 function outcome<T>(
 	host: CdDeployHost,
@@ -345,8 +323,6 @@ function defineFrom<K extends keyof DeliveryModule>(
 		);
 	};
 }
-
-// ── Subcommands ────────────────────────────────────────────────────────────
 
 export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 	Object.freeze({
@@ -579,7 +555,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 								: r,
 						)
 					: await loadDeliveryFile(file, opts);
-				// A JSON exports object may carry more than pipelines; re-read it whole.
 				const module =
 					isJson && loaded.ok && loaded.value.pipelines.length === 0
 						? await loadDeliveryFile(file, opts)
@@ -838,7 +813,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 							to,
 							reason,
 						),
-						// SAFETY: an opaque Set id the Delta ledger verifies.
 						...(to ? { toSetId: to as SetId } : undefined),
 					},
 					host.ctx,
@@ -956,7 +930,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 					"<verification-id>",
 					CD_DEPLOY_SUBCOMMANDS["verify show"]?.usage ?? "",
 				);
-				// SAFETY: an opaque verification id.
 				const result = await host.cd.verification.get(id as VerificationId);
 				if (!result)
 					return notFound(
@@ -1029,7 +1002,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 						throw new Error(
 							"expected a public JWK object (no private member `d`)",
 						);
-					// SAFETY: checked to be a JSON object above.
 					publicJwk = parsed as JsonObject;
 				} catch (error) {
 					return moduleRefusal("agent enroll", format, {
@@ -1059,7 +1031,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 					"<reconciler-id>",
 					CD_DEPLOY_SUBCOMMANDS["agent approve-key"]?.usage ?? "",
 				);
-				// SAFETY: an opaque reconciler id the enrollment ledger verifies.
 				const result = await host.cd.enrollment.approveKey(
 					id as ReconcilerId,
 					host.ctx,
@@ -1085,7 +1056,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 				const id = need(args[0], "<reconciler-id>", usage);
 				const campIds = list(flags, "camp").map(asCamp);
 				if (campIds.length === 0) throw new Usage("missing --camp", usage);
-				// SAFETY: see agent approve-key.
 				const result = await host.cd.enrollment.accept(
 					{ reconcilerId: id as ReconcilerId, campIds },
 					host.ctx,
@@ -1125,7 +1095,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent revoke"]?.usage ?? "";
 				const id = need(args[0], "<reconciler-id>", usage);
 				const reason = need(text(flags, "reason"), "--reason", usage);
-				// SAFETY: see agent approve-key.
 				const result = await host.cd.enrollment.revoke(
 					id as ReconcilerId,
 					reason,
@@ -1436,7 +1405,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			run: async (host, args, flags, format) => {
 				const id = args[0];
 				if (id) {
-					// SAFETY: an opaque fan-out id.
 					const fanout = await host.cd.fanout.get(id as FanoutId);
 					if (!fanout)
 						return notFound(
@@ -1478,7 +1446,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 				const usage = CD_DEPLOY_SUBCOMMANDS["fanout halt"]?.usage ?? "";
 				const id = need(args[0], "<fanout-id>", usage);
 				const reason = need(text(flags, "reason"), "--reason", usage);
-				// SAFETY: see fanout show.
 				const result = await host.cd.fanout.halt(
 					id as FanoutId,
 					reason,
@@ -1500,7 +1467,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 					"<fanout-id>",
 					CD_DEPLOY_SUBCOMMANDS["fanout resume"]?.usage ?? "",
 				);
-				// SAFETY: see fanout show.
 				const result = await host.cd.fanout.resume(id as FanoutId, host.ctx);
 				return outcome(host, "fanout resume", format, result, (fanout) => ({
 					code: "HOBO_CD_FANOUT_RESUMED",
@@ -1516,7 +1482,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 				const usage = CD_DEPLOY_SUBCOMMANDS["fanout rollback"]?.usage ?? "";
 				const id = need(args[0], "<fanout-id>", usage);
 				const reason = need(text(flags, "reason"), "--reason", usage);
-				// SAFETY: see fanout show.
 				const result = await host.cd.fanout.rollback(
 					id as FanoutId,
 					reason,
@@ -1558,7 +1523,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 					"<failover-id>",
 					CD_DEPLOY_SUBCOMMANDS["failover approve"]?.usage ?? "",
 				);
-				// SAFETY: an opaque failover id.
 				const result = await host.cd.failover.approve(
 					id as FailoverId,
 					host.ctx,
@@ -1637,7 +1601,6 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 	});
 
-/** The authorized action each mutating subcommand performs (D15), for docs and audits. */
 export const CD_DEPLOY_ACTIONS: Readonly<Record<string, CdAction>> =
 	Object.freeze({
 		"freight record": "freight.record",
@@ -1668,12 +1631,10 @@ export const CD_DEPLOY_ACTIONS: Readonly<Record<string, CdAction>> =
 		rebalance: "rebalance",
 	});
 
-/** Every CD subcommand's usage line, in table order (`hobo deploy --help`). */
 export function cdDeployUsage(): readonly string[] {
 	return Object.values(CD_DEPLOY_SUBCOMMANDS).map((s) => s.usage);
 }
 
-/** Resolve `args` to a subcommand: two-word groups first, then one word. */
 export function matchCdSubcommand(
 	args: readonly string[],
 ): Readonly<{ name: string; rest: readonly string[] }> | undefined {
@@ -1686,7 +1647,6 @@ export function matchCdSubcommand(
 	return undefined;
 }
 
-/** True when `args` names a CD subcommand (or a CD group such as `freight`). */
 export function isCdSubcommand(args: readonly string[]): boolean {
 	if (matchCdSubcommand(args)) return true;
 	const group = args[0];
@@ -1696,7 +1656,6 @@ export function isCdSubcommand(args: readonly string[]): boolean {
 	);
 }
 
-/** Dispatch one `hobo deploy` CD subcommand against a composed host. */
 export async function runCdDeploySubcommand(
 	host: CdDeployHost,
 	args: readonly string[],

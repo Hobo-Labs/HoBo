@@ -4,19 +4,6 @@ import { describe, expect, it } from "vitest";
 
 import { EXISTING_INTENTS } from "./fixtures/existing-intents.js";
 
-/**
- * The fixture corpus claims to be a transcription of values that exist
- * elsewhere in this repository. This test is what makes that claim checkable.
- *
- * Without it the corpus is indistinguishable from invented data: it would pass
- * every round-trip assertion in this package while having drifted arbitrarily
- * far from the values `@hobo/cloud` actually builds. With it, deleting or
- * editing a cited value in `@hobo/cloud` fails here by name.
- *
- * Whitespace is stripped from both sides before comparing, so reformatting a
- * cited file is not a failure and changing a value is.
- */
-
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 function squash(value: string): string {
@@ -56,18 +43,12 @@ describe("fixture provenance", () => {
 		});
 	}
 
-	// The three hello-bindle intents are the only ones with a non-empty `deps`,
-	// and they are derived rather than transcribed: `lowerManifest` builds them
-	// from a JSON manifest fixture. The names and the bind edges are checkable
-	// against that JSON without importing @hobo/cloud, so they are checked.
 	it("the hello-bindle intents match the manifest fixture they are lowered from", () => {
-		// SAFETY: this is the repository-owned hello-bindle manifest fixture.
 		const manifest = JSON.parse(
 			readFileSync(
 				`${REPO_ROOT}packages/cloud/test/fixtures/hello-bindle.manifest.json`,
 				"utf8",
 			),
-			// SAFETY: this fixture is the repository-owned manifest shape under test.
 		) as { resources: Record<string, { bind?: string[] }> };
 
 		const helloBindle = EXISTING_INTENTS.filter((entry) =>
@@ -80,8 +61,6 @@ describe("fixture provenance", () => {
 		for (const entry of helloBindle) {
 			const resource = manifest.resources[entry.value.name];
 			expect(resource).toBeTypeOf("object");
-			// lowerManifest sorts the bind list; the fixture must carry the same
-			// edges in the same order.
 			expect(entry.value.deps).toEqual([...(resource?.bind ?? [])].sort());
 		}
 	});

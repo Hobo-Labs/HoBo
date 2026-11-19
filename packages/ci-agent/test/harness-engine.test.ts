@@ -60,8 +60,6 @@ describe("harness engine", () => {
 	});
 
 	it("builds the AI SDK harness agent for an installed runtime without starting it", async () => {
-		// Constructing the agent checks the adapter accepts an empty tool list and
-		// the in-memory sandbox; no runtime process is started until a run.
 		const runner = await createAiSdkHarnessRunner("claude-code");
 		expect(runner.run).toBeInstanceOf(Function);
 		await expect(createAiSdkHarnessRunner("emacs")).rejects.toThrow(

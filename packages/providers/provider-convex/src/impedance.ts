@@ -1,32 +1,17 @@
-// Impedance boundaries for the Convex provider path (ADR-0144 §5): hard
-// vendor limits and paradigm facts encoded as typed constants so planners,
-// reviewers, and the PortabilityReport (ADR-0024) see them at plan time
-// instead of discovering them in production. Narrative form lives in
-// docs/competitors/convex.md "Impedance boundaries for the provider path".
 
 // public-contract: the impedance record schema id consumers pin.
 export const CONVEX_IMPEDANCE_SCHEMA = "hobo.provider-impedance/v1";
 
-/** Hard Convex runtime limits (public vendor documentation, 2026-08). */
 export const CONVEX_LIMITS = Object.freeze({
-	/** Max query/mutation execution time. */
 	queryMutationMs: 1_000,
-	/** Max document size in bytes (1 MiB). */
 	documentBytes: 1_048_576,
-	/** Max action execution time (10 minutes). */
 	actionMs: 600_000,
-	/** Writes per mutation transaction cap (documents touched). */
 	transactionWriteCap: 8_192,
 } as const);
 
 // public-contract: the paradigm fact PortabilityReport consumers pin (Plan 25 vocabulary).
 export const CONVEX_PARADIGM = "document";
 
-/**
- * Paradigms a Resource Definition may request that this provider CANNOT
- * honestly satisfy — a request for one of these is a recorded paradigm
- * mismatch (PortabilityReport lock-in source), never a silent adaptation.
- */
 export const CONVEX_PARADIGM_MISMATCHES = Object.freeze([
 	"relational",
 	"kv",
@@ -41,11 +26,6 @@ export interface ImpedanceFinding {
 	readonly message: string;
 }
 
-/**
- * Plan-time impedance findings for a requested paradigm + feature set.
- * Pure and deterministic: safe on the Matching-adjacent path. Findings are
- * evidence for the PortabilityReport; only paradigm mismatches block.
- */
 function isParadigmMismatch(value: string): boolean {
 	switch (value) {
 		case "relational":

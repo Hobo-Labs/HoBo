@@ -1,11 +1,3 @@
-/**
- * Kafka broker transport seam (ADR-0138).
- *
- * Production messaging always routes produce/fetch/commit through this
- * interface when fidelity is `live`. Unit tests inject
- * {@link createInMemoryKafkaTransport}; optional env-gated integration can
- * inject a real broker client that implements the same methods.
- */
 
 import {
 	type MessagingMessageId,
@@ -100,10 +92,6 @@ interface GroupState {
 	attempts: Map<string, number>;
 }
 
-/**
- * In-process Kafka-protocol harness used as the live client path under test.
- * Same produce/fetch/commit methods a Redpanda/MSK client adapter implements.
- */
 export function createInMemoryKafkaTransport(
 	options: InMemoryKafkaTransportOptions = {},
 ): KafkaBrokerTransport {
@@ -258,11 +246,6 @@ export function createInMemoryKafkaTransport(
 	return Object.freeze(transport);
 }
 
-/**
- * Optional env-gated real broker probe. Returns a transport only when
- * HOBO_KAFKA_LIVE_TRANSPORT=memory (harness) or a bootstrap env is set and a
- * factory is injected — never fabricates live fidelity without a transport.
- */
 export function resolveKafkaTransportFromEnv(
 	env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 	options: {

@@ -1,5 +1,3 @@
-// The deploy gate adapter over the real Gatekeeper (D15, D24, D25, I22, I23)
-// and the promoted can-deploy-compatibility-gate-contract proof semantics.
 import { create } from "@bufbuild/protobuf";
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import {
@@ -138,7 +136,6 @@ class Shadow implements ShadowRecorder {
 		const binding = await this.policy.binding(campId);
 		if (!binding || binding.candidateRailDigest === "") return undefined;
 		return {
-			// SAFETY: test fixture; the value is the shape the port declares.
 			railDigest: binding.candidateRailDigest as Digest,
 			policyPack: packFor(binding.candidateRailDigest),
 		};
@@ -271,10 +268,8 @@ function input(
 	};
 }
 
-/** The optional `current` field of the gate input. */
 type CurrentField = { current?: SetRecord };
 
-/** The optional `current` field: present only when the Camp runs a Set. */
 function currentSet(current: boolean, campId: string): CurrentField {
 	const value: CurrentField = {};
 	if (current)
@@ -347,7 +342,6 @@ describe("deploy gate (gatekeeper.ts)", () => {
 		).toMatch(/Change the declaration of web/);
 		const changes = await s.gate.evaluate(
 			input(freight, "prod-1", [
-				// SAFETY: test fixture; the value is the shape the port declares.
 				{ resource: "web", kind: ChangeKind.UPDATE } as never,
 			]),
 			s.ctx,
@@ -417,7 +411,6 @@ describe("deploy gate (gatekeeper.ts)", () => {
 		expect(verdict.effect).toBe("deny");
 		expect(verdict.reasons[0]?.code).toBe(GATE_REASON.unknownRunningVersions);
 		expect(verdict.reasons[0]?.message).toMatch(/unknown running versions/);
-		// A first deployment has nothing running to break.
 		expect(
 			(await s.gate.evaluate(input(s.freights.add("f2")), s.ctx)).effect,
 		).toBe("allow");
@@ -426,7 +419,6 @@ describe("deploy gate (gatekeeper.ts)", () => {
 	it("refuses Freight whose provenance is not verified (trust)", async () => {
 		const s = setup();
 		const freight = s.freights.add("f1", {
-			// SAFETY: test fixture; the value is the shape the port declares.
 			provenance: [{ statementDigest: digest("aa"), verified: false } as never],
 		});
 		const verdict = await s.gate.evaluate(input(freight), s.ctx);

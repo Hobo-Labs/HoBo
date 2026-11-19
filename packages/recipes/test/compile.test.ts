@@ -99,7 +99,6 @@ describe("compileRecipe", () => {
 		const result = accepted(compileRecipe(compileInputFor(sqlApi)));
 		expect(result.claims.actionCount).toBe(2);
 		expect(result.claims.providerCount).toBe(2);
-		// Two providers cannot bundle a handover between them.
 		expect(result.claims.atomicity).toBe("best-effort-saga");
 		expect(result.claims.earliestDeadlineMs).toBe(NOW + 24 * 60 * 60 * 1000);
 		expect(result.claims.items.map((item) => item.claimId)).toEqual([
@@ -167,7 +166,6 @@ describe("compileRecipe", () => {
 			deploymentRef: "junction/mismatched-primitive",
 			capabilities: [
 				capabilityFor("inbox", "webhook.inbound-http/v1"),
-				// The recipe provisions a kv store for this slot.
 				{ ...capabilityFor("log", "kv.key-value/v1"), primitive: "bucket" },
 			],
 			requestedSemantics: inbox.delivers,

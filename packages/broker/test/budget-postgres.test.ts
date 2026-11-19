@@ -79,7 +79,6 @@ function input(
 	};
 }
 
-/** Set HOBO_TEST_POSTGRES_URL to an isolated real server. pg-mem cannot prove row locks. */
 describe.skipIf(!URL)(
 	"PostgreSQL shared financial authority with independent connections",
 	() => {
@@ -218,7 +217,6 @@ describe.skipIf(!URL)(
 		it("retains a committed hold when the COMMIT acknowledgement is lost", async () => {
 			const { snapshot, pool, second } = setup();
 			let dropAck = false;
-			// Inject response loss AFTER a real PostgreSQL commit, not a simulated transaction engine.
 			const lossyPool = new Proxy(pool, {
 				get(target, key) {
 					if (key === "connect")
@@ -238,12 +236,10 @@ describe.skipIf(!URL)(
 											}
 											return result;
 										};
-									// SAFETY: preserve the existing client's properties; only query is intercepted.
 									return connection[method as keyof typeof connection];
 								},
 							});
 						};
-					// SAFETY: preserve the existing Pool's properties; only connect is intercepted.
 					return target[key as keyof typeof target];
 				},
 			});
@@ -308,12 +304,10 @@ describe.skipIf(!URL)(
 											if (expired) lateSql.push(text);
 											return connection.query(text, values);
 										};
-									// SAFETY: preserve the real client's properties, intercepting only query.
 									return connection[method as keyof typeof connection];
 								},
 							});
 						};
-					// SAFETY: preserve the real Pool's properties, intercepting only connect.
 					return target[key as keyof typeof target];
 				},
 			});
@@ -335,7 +329,6 @@ describe.skipIf(!URL)(
 				await ciTransaction.query("ROLLBACK");
 				ciTransaction.release();
 			}
-			// Wait for this exact queued acquisition to be handed back and returned.
 			for (let attempt = 0; attempt < 50 && pool.idleCount !== 1; attempt++)
 				await new Promise((resolve) => setTimeout(resolve, 5));
 			expect(pool.waitingCount).toBe(0);

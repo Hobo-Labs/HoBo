@@ -3,18 +3,6 @@ import type {
 	TrafficRoutingProviderProfile,
 } from "@hobo/core";
 
-/**
- * npm TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
- *
- * A package registry serves tarballs to installers; it routes no request
- * traffic at all. The closest thing it has to a traffic lever is the dist-tag,
- * which selects which version `npm install <name>@<tag>` resolves, and that is
- * modelled as desired state of the package-version resource (the promotion
- * lever), not as a routing offering. So the profile declares nothing and no
- * fallback: a rollout that needs weighted or canary routing must refuse on an
- * npm Camp rather than be told the in-process floor applies to installers.
- * `provider` is `other`: the core union has no registry member.
- */
 export const NPM_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "other",

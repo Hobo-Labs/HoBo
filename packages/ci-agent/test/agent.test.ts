@@ -20,7 +20,6 @@ type Pull = {
 	started?: boolean;
 	fork?: boolean;
 	paths?: string[];
-	/** The branch it targets; another pull request's branch for a stack. */
 	base?: string;
 };
 
@@ -34,7 +33,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 	});
 	afterEach(() => repos.cleanup());
 
-	/** A pull request branch that changes line two of a.txt. */
 	function pull(number: number, text: string, extra: Partial<Pull> = {}): Pull {
 		const branch = `pr-${number}`;
 		const head = repos.commit(branch, { "a.txt": BASE.replace("two", text) });
@@ -46,7 +44,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		pulls: Pull[],
 		overrides: PolicyOverrides = {},
 		engines: ResolutionEngine[] = [takeBoth()],
-		/** Wraps the real workspace, to fail one of its steps. */
 		wrap: (workspace: MergeWorkspace) => MergeWorkspace = (w) => w,
 		structured?: StructuredMerger,
 	) {
@@ -55,7 +52,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const enqueued: number[] = [];
 		const refuseEnqueue = new Set<number>();
 		const base = { requiresChecks: true, lookupFails: false };
-		/** The repository's checks per commit; unlisted commits have none. */
 		const checks = new Map<string, CommitChecks>();
 		const agent = createCiAgent({
 			config: testConfig(mode, overrides),
@@ -80,7 +76,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 							position,
 							enqueuedAt: "2026-11-10T11:00:00.000Z",
 							changedPaths: entry.paths ?? [],
-							// Like the host: once enqueued, an entry is in the queue.
 							started:
 								(entry.started ?? false) || enqueued.includes(entry.number),
 							fork: entry.fork ?? false,
@@ -185,7 +180,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 			"ci.agent.ResolutionPublished",
 		]);
 
-		// The same queue again: no second model call, no second comment, no new event.
 		const again = await agent.tick();
 		expect(again.resolutions).toEqual([]);
 		expect(engine.requests).toHaveLength(1);
@@ -216,9 +210,7 @@ describe("CI agent tick (real git, scripted engine)", () => {
 			`${conflicted.head} ${main}`,
 		);
 		expect(comments[0]?.body).toContain("was pushed to this branch");
-		// Never the base branch, and never a merge: main is where it was.
 		expect(repos.remoteRef("refs/heads/main")).toBe(main);
-		// 3 is already in the queue; 1 still conflicted at this snapshot; 2 is clean.
 		expect(enqueued).toEqual([2]);
 		expect(report.enqueued).toEqual([2]);
 		expect(await types()).toEqual([
@@ -246,12 +238,10 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const report = await agent.tick();
 
 		expect(report.applyWithheld).toBe(true);
-		// Nothing a model wrote reached a pull request branch or the merge queue.
 		expect(repos.remoteRef("refs/heads/pr-1")).toBe(conflicted.head);
 		expect(repos.remoteRef("refs/heads/main")).toBe(main);
 		expect(enqueued).toEqual([]);
 		expect(report.enqueued).toEqual([]);
-		// The resolution is still offered, on a side branch.
 		expect(
 			repos.remoteRef(
 				`refs/heads/hobo-agent/resolve/1-${conflicted.head.slice(0, 8)}`,
@@ -265,7 +255,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 			"ci.agent.ResolutionPublished",
 		]);
 
-		// Recorded once a day, not once a pass; and apply resumes once confirmed.
 		await agent.tick();
 		expect(
 			(await types()).filter((type) => type === "ci.agent.ApplyWithheld"),
@@ -357,7 +346,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 			/^refs\/heads\/hobo-agent\/rollup\/[a-f0-9]{12}$/,
 		);
 		const ref = report.rollupRef ?? "";
-		// 1 merged cleanly onto main; 2 was resolved against main plus 1.
 		expect(repos.remoteFile(ref, "a.txt")).toBe(
 			"one\nTWO from 1\nTWO from 2\nthree\nfour\nfive\n",
 		);
@@ -377,7 +365,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 			"ci.agent.ResolutionSettled",
 			"ci.agent.RollupPublished",
 		]);
-		// Published once.
 		expect((await agent.tick()).rollupRef).toBeUndefined();
 		expect(comments).toHaveLength(2);
 	});
@@ -387,8 +374,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const second = pull(2, "TWO from 2");
 		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
 		const engine = takeBoth();
-		// An attempt reserves its prompt estimate plus 1,000 output tokens (about
-		// 1,720); the scripted engine reports 120 spent. The second cannot fit.
 		const budget = {
 			budget: { maxOutputTokens: 1_000, maxTokensPerDay: 1_800 },
 		};
@@ -398,7 +383,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		expect((await agent.tick()).resolutions).toHaveLength(1);
 
 		const next = setup("observe", [second], budget, [engine]);
-		// The same journal, as after a restart: today's spend is still known.
 		for (const event of await journal.events())
 			await next.journal.append(event);
 		expect((await next.agent.tick()).resolutions).toEqual([]);
@@ -468,7 +452,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		expect(repos.remoteRef(ref)).toBe(report.resolutions[0]?.commitSha);
 		expect(comments).toHaveLength(1);
 		expect(engine.requests).toHaveLength(1);
-		// Published once: a third pass changes nothing.
 		await agent.tick();
 		expect(comments).toHaveLength(1);
 	});
@@ -477,11 +460,9 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const clean = pull(1, "two", { paths: ["x.txt"] });
 		const { agent, enqueued } = setup("apply", [clean]);
 		expect((await agent.tick()).enqueued).toEqual([1]);
-		// The merge queue ejected it (its checks failed): it is waiting again.
 		enqueued.splice(0);
 		clock = "2026-11-10T13:00:00.000Z";
 		expect((await agent.tick()).enqueued).toEqual([]);
-		// A new commit on the pull request is a new candidate.
 		clean.head = repos.commit("pr-1", { "x.txt": "fixed\n" });
 		repos.pull(1, "pr-1");
 		expect((await agent.tick()).enqueued).toEqual([1]);
@@ -520,8 +501,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		);
 		expect((await agent.tick()).rollupRef).toBeUndefined();
 		expect(unsure.requests).toHaveLength(1);
-		// Commit dates come from the parents, not the clock: a later pass makes
-		// the same candidate commit, so the attempt is recognised.
 		await new Promise((resolve) => setTimeout(resolve, 1100));
 		await agent.tick();
 		expect(unsure.requests).toHaveLength(1);
@@ -546,7 +525,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const original = (await agent.tick()).resolutions[0]?.commitSha ?? "";
 		expect(repos.remoteRef(ref)).toBe(original);
 
-		// Checks still running: nothing happens.
 		checks.set(original, { state: "pending", failures: "" });
 		expect((await agent.tick()).resolutions).toEqual([]);
 		checks.set(original, {
@@ -556,13 +534,11 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		});
 		const repair = (await agent.tick()).resolutions[0];
 		expect(repair).toMatchObject({ outcome: "resolved", attempt: 1 });
-		// The engine saw what it wrote last time and what the checks said.
 		expect(engine.requests[1]?.previous).toEqual({
 			regions: [{ id: 0, resolution: "TWO from 1\nTWO from main\n" }],
 			checkFailures:
 				"check test (FAILURE): duplicate line\n  a.txt:2 expected one TWO",
 		});
-		// A fast-forward of the same branch, on top of the failed commit.
 		expect(repos.remoteRef(ref)).toBe(repair?.commitSha);
 		expect(
 			repos.git(
@@ -578,7 +554,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		);
 		expect(comments.at(-1)?.body).toContain("pushed a corrected merge commit");
 
-		// The repair fails too: one repair is the limit, so a person is told.
 		checks.set(repair?.commitSha ?? "", { state: "failure", failures: "x" });
 		await agent.tick();
 		expect(engine.requests).toHaveLength(2);
@@ -623,9 +598,7 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		await agent.tick();
 		expect(engine.requests).toHaveLength(1);
 
-		// A second pull request makes the same change and meets the same conflict.
 		{
-			// Branched from where the first one was, before main moved.
 			const head = repos.commit(
 				"pr-2",
 				{ "a.txt": BASE.replace("two", "TWO from 1") },
@@ -663,7 +636,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		checks.set(original, { state: "failure", failures: "test failed" });
 		await agent.tick();
 		{
-			// Branched from where the first one was, before main moved.
 			const head = repos.commit(
 				"pr-2",
 				{ "a.txt": BASE.replace("two", "TWO from 1") },
@@ -749,7 +721,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const engine = takeBoth();
 		const { agent, checks, comments } = setup("apply", [first], {}, [engine]);
 		const original = (await agent.tick()).resolutions[0]?.commitSha ?? "";
-		// The author pushed on top of the agent's commit.
 		const tree = repos.git(repos.remote, "rev-parse", `${original}^{tree}`);
 		first.head = repos.git(
 			repos.remote,
@@ -790,7 +761,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 				(event) => event.type === "ci.agent.ResolutionChecked",
 			),
 		).toBe(false);
-		// Someone re-ran the checks and they passed.
 		checks.set(resolved, { state: "success", failures: "" });
 		expect((await agent.tick()).enqueued).toEqual([1]);
 		expect(engine.requests).toHaveLength(1);
@@ -801,12 +771,10 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
 		const { agent, checks, enqueued } = setup("apply", [first]);
 		const resolved = (await agent.tick()).resolutions[0]?.commitSha ?? "";
-		// The pull request's head is now the agent's commit, and it merges cleanly.
 		first.head = resolved;
 		repos.git(repos.remote, "update-ref", "refs/pull/1/head", resolved);
 		checks.set(resolved, { state: "pending", failures: "" });
 		expect((await agent.tick()).enqueued).toEqual([]);
-		// The pass that sees them pass records it and enqueues.
 		checks.set(resolved, { state: "success", failures: "" });
 		expect((await agent.tick()).enqueued).toEqual([1]);
 		expect(enqueued).toEqual([1]);
@@ -817,7 +785,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const second = pull(2, "two", { paths: ["y.txt"] });
 		const { agent, enqueued, comments } = setup("apply", [first, second]);
 		expect((await agent.tick()).enqueued).toEqual([1, 2]);
-		// The queue removed #1; #2 is still in it.
 		enqueued.splice(enqueued.indexOf(1), 1);
 		clock = "2026-11-10T12:05:00.000Z";
 		const report = await agent.tick();
@@ -825,7 +792,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		expect(report.enqueued).toEqual([]);
 		expect(comments.filter((c) => c.number === 1)).toHaveLength(1);
 		expect(comments[0]?.body).toContain("the queue removed it");
-		// Batched alone, and noticed once.
 		expect(
 			report.plan?.batches.find((batch) => batch.numbers.includes(1))?.numbers,
 		).toEqual([1]);
@@ -838,7 +804,6 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const { agent, enqueued } = setup("apply", [first, second]);
 		expect((await agent.tick()).enqueued).toEqual([1]);
 		expect(enqueued).toEqual([1]);
-		// Once #1 has merged, #2 conflicts with the base branch and is resolved there.
 		repos.git(repos.remote, "update-ref", "refs/heads/main", first.head);
 		enqueued.splice(0);
 		const { agent: next } = setup("apply", [second]);

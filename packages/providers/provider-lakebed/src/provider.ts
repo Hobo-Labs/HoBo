@@ -83,12 +83,6 @@ export interface LakebedProviderOptions {
 	regions?: string[];
 }
 
-// The @hobo/provider-lakebed factory (HOBO-87 authoring contract, ADR-0127):
-// capability declarations honestly scoped to the closed Capsule PaaS as
-// default Resource Definitions, realize() -> a lakebed-deploy DRIVER program
-// (not IaC), a runtime client per port, and the published Capability Manifest
-// with declared cost facts and the brokered-deploy-token posture (HOBO-110 —
-// no static vendor tokens).
 export function createLakebedProvider(
 	options: LakebedProviderOptions = {},
 ): CloudProvider {

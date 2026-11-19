@@ -1,6 +1,3 @@
-// The synchronous dual-run port over two real SQLite files: the port
-// @hobo/trails runs its live lanes on. Includes the three interactions of
-// contracts/pacts/sqlite-dual-run.pact.json, replayed for real.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -45,7 +42,6 @@ function open(tenant?: string, paths = stores()) {
 	return { dual, paths };
 }
 
-/** The error an action throws, or undefined when it does not throw. */
 function thrown(action: () => void): Error | undefined {
 	try {
 		action();
@@ -61,7 +57,6 @@ interface Interaction {
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-// SAFETY: the pact file is a JSON document checked in beside this test.
 const pact = JSON.parse(
 	readFileSync(
 		path.join(here, "..", "contracts", "pacts", "sqlite-dual-run.pact.json"),
@@ -152,7 +147,6 @@ describe("SQLite dual-run port", () => {
 			dual.writeSource([{ id: "order-9", doc: { total: 9 }, tenant: "acme" }]),
 		);
 		assert.ok(error instanceof FencedTenantError);
-		// The refused writer is exactly who must not learn the token.
 		assert.ok(
 			!`${error.message} ${JSON.stringify(error)} ${JSON.stringify(error.detail)}`.includes(
 				fenceToken,
@@ -164,7 +158,6 @@ describe("SQLite dual-run port", () => {
 			{ error: { name: error.name, code: error.code, tenant: error.tenant } },
 			fencedPact.response.body,
 		);
-		// Another tenant on the same pooled store is untouched.
 		dual.writeSource([{ id: "order-2", doc: { total: 2 }, tenant: "globex" }]);
 	});
 
@@ -203,7 +196,6 @@ describe("SQLite dual-run port", () => {
 
 	test("a port with no tenant also refuses to reap rows the target does not hold", () => {
 		const paths = stores();
-		// Rows that predate the journal: nothing to replicate, nothing pending.
 		const legacy = new DatabaseSync(paths.sourcePath);
 		legacy.exec(`
 			CREATE TABLE records (
@@ -221,7 +213,6 @@ describe("SQLite dual-run port", () => {
 		assert.throws(() => dual.reapSource("acme"), /not checksum-equal/u);
 		assert.equal(dual.evidence().source.count, 2, "the source rows are intact");
 		assert.equal(dual.evidence().target.count, 0);
-		// Once the target really holds them, the reap goes through.
 		dual.backfill();
 		assert.deepEqual(dual.reapSource("acme"), { reaped: 2 });
 	});
@@ -247,7 +238,6 @@ describe("SQLite dual-run port", () => {
 
 	test("changes released before the port pinned the journal are backfill's, not the tail's", () => {
 		const paths = stores();
-		// Written through the engine with no subscription: applied, not kept.
 		const engine = createSqliteEngine({ path: paths.sourcePath });
 		const schema = parseDatasetSchema({
 			name: "records",
@@ -292,7 +282,6 @@ describe("SQLite dual-run port", () => {
 		const { dual: silo } = open("acme", paths);
 		assert.equal(silo.lag(), 2);
 		assert.equal(silo.replicate(), 2);
-		// The scope's head is its last own change, not the store's last change.
 		assert.equal(silo.headSeq(), 3);
 		assert.equal(silo.appliedWatermark(), 3);
 		assert.deepEqual(

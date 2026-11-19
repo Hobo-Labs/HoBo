@@ -1,7 +1,3 @@
-/**
- * Pure in-process policy (rego-lite / tag-acl) and billing aggregator tests.
- * HTTP OPA and Stripe boundaries are covered by PACT consumer tests.
- */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -202,7 +198,6 @@ describe("billing aggregator + durable ledger (pure)", () => {
 		expect(ledger.list("acme")).toHaveLength(1);
 		expect(exportInvoiceStripeLines(invoice).lines[0]?.amount).toBe(10);
 
-		// Period filter: old event excluded from close window.
 		const billing2 = createBillingAggregator();
 		await billing2.emit({
 			tenantId: parseTenantId("acme"),

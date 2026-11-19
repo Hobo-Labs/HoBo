@@ -121,8 +121,6 @@ describe("Blacksmith RunnerProvider (hobo:runner, replay lane)", () => {
 			blacksmithProvider.run(job),
 		]);
 
-		// Same result/fact shape from the same job object; only provenance and
-		// the runs-on substrate differ.
 		assert.equal(githubResult.status, blacksmithResult.status);
 		assert.equal(githubResult.jobId, blacksmithResult.jobId);
 		assert.deepEqual(

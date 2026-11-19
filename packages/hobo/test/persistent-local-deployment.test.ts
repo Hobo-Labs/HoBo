@@ -89,17 +89,12 @@ return {web: b.web(() => handler)};
 	try {
 		await run(project, env, command);
 	} finally {
-		// The local deployment's `down` acts on its receipt; with none left it
-		// falls through to the runtime `down`, which these deployments never
-		// used. Most cases have already stopped or expired theirs.
 		const live = await readLocalDeployment(project).catch(() => true);
 		if (live) await command(["down"]).catch(() => undefined);
 		await rm(project, { recursive: true, force: true });
 	}
 }
 
-// Every case deploys its own temporary project with its own HOBO_HOME on an
-// OS-assigned port, and spends most of its time waiting on `hobo` processes.
 describe.concurrent("product self-hosted deployment process lifecycle", () => {
 	it("refuses an application returning 503 and tears down its worker", async () => {
 		await setup(async (project, _env, command) => {
@@ -130,11 +125,6 @@ return new Response("application unavailable", {status: 503});
 		});
 	}, 300_000);
 
-	// One deployment walks the whole lifecycle: it serves after `up` exits, a
-	// second `up` reuses the same worker, the control plane refuses an
-	// unauthenticated caller and a different placement, an edit replaces the
-	// worker, an unrelated file does not, and `down` stops it. Each `up` and
-	// `down` is a CLI child process, so the checks share one deployment.
 	it("serves after up exits, reuses an unchanged worker, rejects unauthenticated control, deploys edits in a new worker, and down stops it", async () => {
 		await setup(async (project, _env, command) => {
 			const first = await command(["up"]);
@@ -238,7 +228,6 @@ return new Response("application unavailable", {status: 503});
 					store,
 					`local:${createHash("sha256").update(project).digest("hex")}`,
 				);
-				// The edit stops the first worker before the second starts.
 				expect(
 					events.map((event) => [
 						event.type,
@@ -272,10 +261,6 @@ return new Response("application unavailable", {status: 503});
 		});
 	}, 300_000);
 
-	// --anonymous and --temporary are one switch (`anonymous || temporary` in
-	// src/broker-up-command.ts and wantsAnonymousMode in src/broker-target.ts),
-	// and self-hosted-broker.test.ts places with each in-process, so one flag
-	// carries the real expiry.
 	it("expires a real self-hosted --anonymous deployment without a hosted service", async () => {
 		await setup(async (project, env, command) => {
 			env.HOBO_LOCAL_DEPLOYMENT_TTL_SECONDS = "3";

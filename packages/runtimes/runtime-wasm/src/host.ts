@@ -18,12 +18,10 @@ import {
 
 export interface WasmDependencySpec {
 	readonly resourceName: string;
-	/** Absolute or project-relative path to a wasi:http component .wasm */
 	readonly source: string;
 }
 
 export interface WasmRuntimeHostOptions {
-	/** Extra wasm component dependencies from bindle `b.wasmComponent(...)`. */
 	readonly wasmDependencies?: readonly WasmDependencySpec[];
 }
 
@@ -34,10 +32,6 @@ function resolveWasmSource(projectDir: string, source: string): string {
 	return join(projectDir, source);
 }
 
-/**
- * Camp host adapter: private components in real Wasmtime OS-process sandboxes.
- * Also boots arbitrary wasm component dependencies declared on the bindle.
- */
 export function createWasmRuntimeHost(
 	options: WasmRuntimeHostOptions = {},
 ): HoboRuntimeHost {
@@ -74,7 +68,6 @@ export function createWasmRuntimeHost(
 				(input: Request) => Response | Promise<Response>
 			>();
 			try {
-				// Arbitrary wasm component dependencies first.
 				for (const dep of options.wasmDependencies ?? []) {
 					const wasmPath = resolveWasmSource(ctx.projectDir, dep.source);
 					if (!existsSync(wasmPath)) {
@@ -143,7 +136,6 @@ export function createWasmRuntimeHost(
 	};
 }
 
-/** Alias for ensure API naming used by yard CLI. */
 export async function ensureWasmRuntime(
 	ctx: RuntimeEnsureContext,
 ): Promise<RuntimeEnsureResult> {

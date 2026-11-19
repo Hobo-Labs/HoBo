@@ -1,5 +1,3 @@
-// `@hobo/cd/pipelines` (WP5): the pipeline graph with lineage (D4), fleet
-// nodes (D21) and policy delivery nodes (D24).
 export type {
 	AvailabilityInput,
 	FreightFacts,

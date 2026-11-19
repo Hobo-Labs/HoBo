@@ -1,15 +1,5 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns */
 
-/**
- * The Pulumi automation adapter's parse boundary, per-resource stack keys and
- * in-memory state backend.
- *
- * Per-resource stacks mean each resource carries its own state. The failures
- * that follow from getting the key wrong are silent: two resources sharing a
- * key have the second overwrite the first's state, and a key that is unstable
- * across runs orphans state so every apply re-creates what already exists.
- * Neither throws.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -85,9 +75,6 @@ describe("validateIacProgram", () => {
 	});
 
 	it("refuses an unresolved output reference", () => {
-		// The parse boundary is what stops a binding resolving to the literal
-		// `${resources...}` string, which reaches a workload as a nonsense
-		// environment variable rather than as a failure.
 		expectRejection(
 			() =>
 				validateIacProgram(
@@ -110,9 +97,6 @@ describe("createPerResourceStackKey", () => {
 	});
 
 	it("falls back to the stack name, then to 'default'", () => {
-		// Three sources in precedence order. Collapsing to a constant would put
-		// two deployments' state in one stack, and each apply would report the
-		// other's resources as drift.
 		expect(
 			createPerResourceStackKey({ stack: "prod", resources: [] } as never, "a"),
 		).toBe("prod/a");
@@ -132,8 +116,6 @@ describe("createPerResourceStackKey", () => {
 
 	it("is stable and distinct per resource", () => {
 		const p = { deploymentId: "dep-1", resources: [] } as never;
-		// Stability is what keeps state attached across applies; distinctness is
-		// what keeps two resources from sharing one state file.
 		expect(createPerResourceStackKey(p, "a")).toBe(
 			createPerResourceStackKey(p, "a"),
 		);
@@ -155,8 +137,6 @@ describe("createStateBackendConfig", () => {
 		const config = createStateBackendConfig({ kind: "s3", bucket: "b" });
 		expect(config.kind).toBe("s3");
 		expect(config.bucket).toBe("b");
-		// Frozen: a config handed to an engine must not change under it once the
-		// engine has decided which backend to talk to.
 		expect(Object.isFrozen(config)).toBe(true);
 	});
 
@@ -183,8 +163,6 @@ describe("in-memory state backend", () => {
 		expect(backend.read("s1").resources.a.specHash).toBe("h1");
 		const read = backend.read("s1");
 		read.resources.a.specHash = "also";
-		// State is the record of what was applied; a live reference would let a
-		// caller rewrite that record after the fact.
 		expect(backend.read("s1").resources.a.specHash).toBe("h1");
 	});
 
@@ -203,8 +181,6 @@ describe("in-memory state backend", () => {
 			backend.holdLock("s1", "h2");
 			expect.unreachable("a held lock must not be taken");
 		} catch (error) {
-			// Two concurrent applies against one stack is the corruption the lock
-			// exists to prevent.
 			expect(codeOf(error)).toBeDefined();
 			expect((error as Error).message).toContain("h1");
 		}
@@ -222,8 +198,6 @@ describe("in-memory state backend", () => {
 	it("simulates a write failure for a nominated stack", () => {
 		const backend = createInMemoryStateBackend({ failOnWriteFor: "s1" });
 		expect(() => backend.write("s1", { resources: {} })).toThrow();
-		// Scoped to the nominated stack, so the failure path is reachable
-		// without disabling the whole backend.
 		expect(() => backend.write("s2", { resources: {} })).not.toThrow();
 	});
 
@@ -280,9 +254,6 @@ describe("adapter over the in-memory engine", () => {
 		await adapter.apply(p);
 		expect((await adapter.preview(p)).dirty).toBe(false);
 
-		// A resource removed from the program still has state, so the preview
-		// must report a delete — otherwise the resource would be orphaned in the
-		// provider with nothing tracking it.
 		const trimmed = program({
 			stackOutputs: {},
 			resources: [
@@ -297,8 +268,6 @@ describe("adapter over the in-memory engine", () => {
 	});
 
 	it("reports the pinned Pulumi version", () => {
-		// The stand-in claims the same pinned version as the real automation
-		// lane, so a receipt does not reveal which one produced it.
 		expect(createInMemoryAutomationEngine().pulumiVersion).toBe(
 			PINNED_PULUMI_AUTOMATION_VERSION,
 		);
@@ -308,8 +277,6 @@ describe("adapter over the in-memory engine", () => {
 		const adapter = createPulumiAutomationAdapter({
 			engine: createInMemoryAutomationEngine(),
 		});
-		// Parse first: an engine given an unvalidated program could create half
-		// the stacks before noticing the bad reference.
 		await expect(adapter.apply({} as never)).rejects.toThrow();
 	});
 });

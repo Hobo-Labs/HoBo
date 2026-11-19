@@ -1,24 +1,3 @@
-/**
- * The Depot provider's refusals, and how it answers a capability request it
- * cannot fully satisfy.
- *
- * The sibling suites prove the happy paths — a build registers and returns a
- * pullable ref, a runner dispatches with the Depot `runs-on`, the manifests
- * parse. This file is about the edges those leave: what each entry point
- * refuses. What `parsePublishedManifest` rejects when a published document
- * drifts is in `published-manifest-refusals.test.ts`.
- *
- * **A capability match has three answers, not two.** `satisfies` reports
- * `full`, `partial` with the missing feature names, or `none`. The middle one
- * is the reason the shape exists: a planner told only yes/no has to choose
- * between refusing a nearly-right provider and silently accepting one that
- * cannot do part of the job. `partial` names exactly what would be lost.
- *
- * **Credit is checked before the network, not after.** An over-budget build
- * throws `CreditExhaustedError` without ever calling the Depot API — billing a
- * request the operator has no budget for and then failing is the outcome the
- * ordering exists to prevent.
- */
 import type {
 	BuildMachineProvider,
 	GithubActionsClient,
@@ -34,7 +13,6 @@ import { createDepotCatalogEntry } from "../src/catalog-entry.js";
 import type { DepotClient } from "../src/depot-client.js";
 import { createDepotRunnerProvider } from "../src/runner-provider.js";
 
-/** A GitHub Actions client that records every call; no run ever appears. */
 function fakeActionsClient() {
 	const calls: string[] = [];
 	const client: GithubActionsClient = {
@@ -57,7 +35,6 @@ function fakeActionsClient() {
 	return { client, calls };
 }
 
-/** A Depot client that answers plausibly. */
 const DEPOT_CLIENT: DepotClient = {
 	async createBuild() {
 		return { buildId: "depot-build-1", buildToken: "token" };
@@ -67,7 +44,6 @@ const DEPOT_CLIENT: DepotClient = {
 	},
 };
 
-/** Tracking that would give up after one immediate poll. */
 const TRACKING = { attempts: 1, intervalMs: 0 };
 
 describe("matching a capability request", () => {
@@ -88,9 +64,6 @@ describe("matching a capability request", () => {
 	});
 
 	it("refuses a port it does not offer", () => {
-		// `none`, not `partial` with everything missing: a provider that cannot
-		// serve the port at all is a different answer from one that serves it
-		// incompletely, and a planner ranks them differently.
 		const [first] = createDepotCatalogEntry().capabilities;
 		expect(first?.satisfies({ port: "database/postgres" })).toEqual({
 			kind: "none",
@@ -106,8 +79,6 @@ describe("matching a capability request", () => {
 
 	it("fully satisfies a request for features it has", () => {
 		const [first] = createDepotCatalogEntry().capabilities;
-		// Ask for exactly what this capability declares, so the answer can only be
-		// `full` if the comparison is really being made.
 		const entry = createDepotCatalogEntry();
 		const declared = entry.capabilities[0];
 		expect(
@@ -120,9 +91,6 @@ describe("matching a capability request", () => {
 	});
 
 	it("partially satisfies a request naming a feature it lacks", () => {
-		// The middle answer, and the reason the shape has three arms: a planner
-		// told only yes/no must either refuse a nearly-right provider or accept
-		// one that cannot do part of the job.
 		const [first] = createDepotCatalogEntry().capabilities;
 		expect(
 			first?.satisfies({ port: first.port, features: ["time-travel"] }),
@@ -160,8 +128,6 @@ describe("matching a capability request", () => {
 
 describe("what the runner lane refuses", () => {
 	it("refuses an empty job id", async () => {
-		// The job id is how every later event is correlated; an empty one produces
-		// a run nobody can attribute.
 		const { client } = fakeActionsClient();
 		const provider = createDepotRunnerProvider({
 			client,
@@ -171,7 +137,6 @@ describe("what the runner lane refuses", () => {
 	});
 
 	it("refuses before dispatching anything", async () => {
-		// The check is first, so a malformed job never reaches the API.
 		const { client, calls } = fakeActionsClient();
 		const provider = createDepotRunnerProvider({
 			client,
@@ -221,7 +186,6 @@ describe("what the build lane refuses", () => {
 			...options,
 		});
 
-	/** An executor that reports this digest for one metered unit. */
 	const reporting = (digest: string): DepotBuildExecutor => ({
 		execute: async () => ({ digest, cacheHitRatio: 0, meteredUnits: 1 }),
 	});
@@ -233,8 +197,6 @@ describe("what the build lane refuses", () => {
 	});
 
 	it("refuses when the credit budget cannot cover the build", async () => {
-		// Checked before any API call: billing a request the operator has no
-		// budget for and *then* failing is the outcome this ordering prevents.
 		await expect(
 			build({ creditBudget: { remainingUnits: 0 } }).execute({
 				buildId: "b1",
@@ -252,8 +214,6 @@ describe("what the build lane refuses", () => {
 	});
 
 	it("allows a build that exactly fits the budget", async () => {
-		// `<` not `<=`: a build costing precisely the remaining units is affordable,
-		// and refusing it would strand the last unit of every budget forever.
 		await expect(
 			build({
 				creditBudget: { remainingUnits: 1 },
@@ -263,16 +223,12 @@ describe("what the build lane refuses", () => {
 	});
 
 	it("refuses when no executor is wired", async () => {
-		// Credit first, executor second: an over-budget build reports the budget
-		// rather than a configuration problem it also has.
 		await expect(build().execute({ buildId: "b1" })).rejects.toThrow(
 			/executor/iu,
 		);
 	});
 
 	it("refuses an executor result that is not a digest", async () => {
-		// A tag can be repointed; a digest cannot. Accepting `latest` here would
-		// let the image a deploy runs differ from the one that was built.
 		await expect(
 			build({
 				executor: reporting("latest"),

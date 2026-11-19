@@ -7,9 +7,7 @@ export const WASM_COMPONENT_MEDIA_TYPE =
 	"application/vnd.wasm.component.v1+wasm" as const;
 
 export interface OciPackResult {
-	/** Local filesystem layout root (OCI image layout-ish). */
 	readonly layoutDir: string;
-	/** Stable local image reference for manifests. */
 	readonly imageRef: string;
 	readonly digest: string;
 	readonly mediaType: typeof WASM_COMPONENT_MEDIA_TYPE;
@@ -17,10 +15,6 @@ export interface OciPackResult {
 	readonly resourceName: string;
 }
 
-/**
- * Pack a wasi:http component .wasm into a local OCI layout under HOBO_HOME.
- * Does not push to a registry — provenance is recorded on Deployment annotations.
- */
 export function packWasmAsOci(options: {
 	readonly hoboHome: string;
 	readonly resourceName: string;
@@ -106,8 +100,6 @@ export function deploymentManifests(options: {
 		image: options.imageRef,
 		ports: [{ containerPort }],
 		env,
-		// Keep the pod Ready without an app-level probe when the runtime image
-		// only holds the process open (wasm runners set their own probes).
 		readinessProbe: {
 			exec: { command: ["true"] },
 			initialDelaySeconds: 0,

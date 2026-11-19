@@ -9,9 +9,6 @@ import {
 	type ToolDescriptor,
 } from "../src/tool-surface.js";
 
-// NFR-004 — the MCP tool surface is DERIVED from CANONICAL_VERBS, not a
-// divergent hand-list.
-
 describe("MCP tool surface parity with CANONICAL_VERBS", () => {
 	it("derives exactly one tool per canonical verb, in order", () => {
 		expect(MCP_TOOL_SURFACE.map((tool) => tool.verb)).toEqual(
@@ -45,7 +42,6 @@ describe("MCP tool surface parity with CANONICAL_VERBS", () => {
 	});
 
 	it("fails parity for a divergent hand-list (an invented tool)", () => {
-		// Must not collide with any real CANONICAL_VERBS name (deploy/up/etc. are real).
 		const invented: ToolDescriptor = {
 			name: "not-a-canonical-verb",
 			verb: "not-a-canonical-verb",

@@ -15,9 +15,6 @@ import {
 	selectExecutionHost,
 } from "../src/index.js";
 
-// A registered fixture sibling (the self-hosted Executors-behind-Relay
-// default): free but with its OWN declared manifest, so ranking has a real
-// alternative to re-route to when GitHub's free tier is exhausted.
 function fixtureSibling(
 	id: string,
 	marginalPrice: string,
@@ -104,7 +101,6 @@ describe("Dispatcher cost routing over registered execution hosts (ADR-0071)", (
 			githubRunner(),
 			fixtureSibling("self-hosted", "0.0000"),
 		]);
-		// GitHub's 2000 free minutes are spent; self-hosted stays free.
 		const decision = selectExecutionHost(
 			{
 				category: "runner",
@@ -122,7 +118,6 @@ describe("Dispatcher cost routing over registered execution hosts (ADR-0071)", (
 		const github = decision.candidates.find(
 			(candidate) => candidate.providerId === GITHUB_RUNNER_PROVIDER_ID,
 		);
-		// GitHub falls back to its declared list price once free is gone.
 		assert.equal(github?.effectiveMarginalCost, 0.006);
 	});
 

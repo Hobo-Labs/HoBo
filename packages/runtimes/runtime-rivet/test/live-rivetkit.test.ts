@@ -82,7 +82,6 @@ describe("rivetkit live baremetal", () => {
 		const home = await mkdtemp(join(tmpdir(), "hobo-rivet-home-"));
 		process.env.HOME = home;
 		try {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const rivet = await loadRivetkit();
 			const ping = rivet.actor({
 				state: { n: 0 },
@@ -105,7 +104,6 @@ describe("rivetkit live baremetal", () => {
 					getOrCreate: (key: string[]) => LivePingHandle;
 				};
 			}
-			// SAFETY: setupTest client is the ping actor registry under test.
 			const pingClient = client as LivePingClient;
 			const handle = pingClient.ping.getOrCreate([`live-${Date.now()}`]);
 			expect(await handle.ping()).toBe("pong");

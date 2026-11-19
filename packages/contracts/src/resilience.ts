@@ -1,12 +1,3 @@
-/**
- * Visible secondary Resiliency layer (ADR-0136).
- * Polly-inspired strategies as metadata + thin fact-emitting applicator.
- * Fully aligned with docs/design/dx-sdk-resilience-semantics.md:
- * - deterministic retry schedules only
- * - never retry policy.Decided deny or typed terminal failures
- * - inspection from persisted facts, never process memory
- * No Effect-TS / Polly / XState public dependencies.
- */
 
 import type { EffectSpec } from "./effects.js";
 import { requiresNetwork } from "./effects.js";
@@ -34,12 +25,10 @@ export type ResilienceStrategyKind = (typeof RESILIENCE_STRATEGY_KINDS)[number];
 
 export interface DeterministicRetryStrategy {
 	readonly kind: "retry";
-	/** Stable seed for deterministic schedule (replay-safe). */
 	readonly seed: string;
 	readonly maxAttempts: number;
 	readonly baseDelayMs: number;
 	readonly maxDelayMs: number;
-	/** Transient-only classifier label; policy.Decided / terminal never retry. */
 	readonly retryOn: "transient-only";
 }
 
@@ -80,17 +69,11 @@ export type ResilienceStrategy =
 	| FallbackStrategy
 	| HedgingStrategy;
 
-// ADR-0136 parse-don't-validate resilience DSL surface (refined readonly
-// strategies); generated contracts_pb.ts ResilienceProfile is the wire form.
 // domain-view: deliberate refined domain type, permanent by design.
 export interface ResilienceProfile {
 	readonly schemaVersion: typeof RESILIENCE_PROFILE_SCHEMA_VERSION;
 	readonly id: string;
 	readonly strategies: readonly ResilienceStrategy[];
-	/**
-	 * Explicit never-retry classes (always enforced even if strategies omit them).
-	 * Matches dx-sdk-resilience-semantics.md HOBO-516 vectors.
-	 */
 	readonly neverRetry: readonly (
 		| "policy.Decided"
 		| "terminal"
@@ -160,11 +143,6 @@ export function createResilienceProfile(
 	});
 }
 
-/**
- * Circuit-breaker / hedging strategies require network or externalCall domain
- * effects. Pure contracts may still carry timeout/retry metadata for local
- * pure work units, but cannot declare circuit-breaker/hedging without I/O domains.
- */
 export function validateResilienceAgainstEffects(
 	profile: ResilienceProfile,
 	effects: EffectSpec,
@@ -179,8 +157,6 @@ export function validateResilienceAgainstEffects(
 		);
 	}
 }
-
-// ── Failure classification (never-retry rules) ──────────────────────────────
 
 export type FailureClass =
 	| "transient"
@@ -225,19 +201,9 @@ export interface ResilienceOpError {
 	readonly message: string;
 }
 
-/**
- * Thin deterministic applicator. Emits attempt/terminal facts; never retries
- * policy.Decided, terminal, or cancellation. Replay reconstructs from facts —
- * do not re-run the op when replaying facts.
- */
 export function applyResilienceProfile<T>(input: {
 	profile: ResilienceProfile;
-	/** Stable clock for facts (tests inject). */
 	now?: () => string;
-	/**
-	 * Operation that may throw ResilienceOpError-shaped failures or return T.
-	 * Transient failures may be retried under the deterministic schedule.
-	 */
 	op: (attempt: number) => T | Promise<T>;
 }): Promise<ResilienceApplyResult<T>> {
 	const profile = input.profile;
@@ -261,7 +227,6 @@ export function applyResilienceProfile<T>(input: {
 				const delayMs = retry ? computeDelay(retry, attempt) : 0;
 				const never =
 					profile.neverRetry.includes(
-						// SAFETY: assertion required at this I/O or test boundary.
 						failure.failureClass as
 							| "policy.Decided"
 							| "terminal"
@@ -300,8 +265,6 @@ export function applyResilienceProfile<T>(input: {
 						attempts,
 					};
 				}
-				// Deterministic delay is recorded as a fact; tests assert schedule
-				// without sleeping wall-clock for pure unit speed.
 			}
 		}
 		facts.push({
@@ -322,7 +285,6 @@ export interface ResilienceInspection {
 	readonly retried: boolean;
 }
 
-/** Reconstruct terminal state from facts without re-running effects. */
 export function inspectResilienceFromFacts(
 	facts: readonly ResilienceFact[],
 ): ResilienceInspection {
@@ -415,7 +377,6 @@ function classifyError(err: ThrownFailure): ClassifiedFailure {
 	return { failureClass: "terminal", message: e.message ?? `${err}` };
 }
 
-/** Deterministic delay from seed + attempt (no wall-clock sleep required for unit tests). */
 export function computeDelay(
 	retry: DeterministicRetryStrategy,
 	attempt: number,
@@ -507,10 +468,8 @@ function parseNeverRetry(
 				`invalid neverRetry entry: ${String(v)}`,
 			);
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
 		out.push(v as "policy.Decided" | "terminal" | "cancellation");
 	}
-	// Always enforce the three classes at minimum
 	for (const d of defaults) {
 		if (!out.includes(d)) out.push(d);
 	}
@@ -521,7 +480,6 @@ function expectObject(input: JsonValue, _label: string): JsonObject {
 	if (input === null || !isJsonObject(input) || Array.isArray(input)) {
 		throw new ResilienceValidationError("expected-object", "expected object");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return input as JsonObject;
 }
 
@@ -536,25 +494,21 @@ function nonEmpty(input: JsonValue, field: string): string {
 }
 
 function positiveInt(input: JsonValue, field: string): number {
-	// SAFETY: assertion required at this I/O or test boundary.
 	if (!Number.isSafeInteger(input) || (input as number) <= 0) {
 		throw new ResilienceValidationError(
 			"expected-positive-int",
 			`${field} must be a positive integer`,
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return input as number;
 }
 
 function nonNegInt(input: JsonValue, field: string): number {
-	// SAFETY: assertion required at this I/O or test boundary.
 	if (!Number.isSafeInteger(input) || (input as number) < 0) {
 		throw new ResilienceValidationError(
 			"expected-nonneg-int",
 			`${field} must be a non-negative integer`,
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return input as number;
 }

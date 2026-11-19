@@ -16,11 +16,9 @@ import { CommandEnvelopeSchema } from "./_generated/readiness_pb.js";
 type RunnerOptions = Parameters<CiContext["runner"]>[0];
 export interface CloudflareBackendOptions {
 	readonly context: CiContext;
-	/** Must terminate the owning Workflow/sandbox and resolve only after stopping it. */
 	readonly terminate: (
 		reason: Exclude<CloseReason, "completed">,
 	) => Promise<void>;
-	/** Independent controller acknowledgment that Workflow/sandbox work stopped. */
 	readonly verifyShutdown?: () => Promise<boolean>;
 }
 const CAPABILITIES: readonly PipelineCapability[] = Object.freeze([
@@ -80,16 +78,11 @@ function bytes(encoded: string): Uint8Array {
 	return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
 }
 
-/**
- * Capture the real command status while allowing Cloudflare to persist its snapshot.
- * Workflow retries are disabled separately: this wrapper never retries a command.
- */
 export function cloudflareCommand(argv: readonly string[]): string {
 	const command = argv.map(shellQuote).join(" ");
 	return `set +e\nhobo_tmp=$(mktemp -d) || exit 70\n${command} >"$hobo_tmp/stdout" 2>"$hobo_tmp/stderr"\nhobo_status=$?\nhobo_bytes=$(wc -c <"$hobo_tmp/stdout")\nhobo_errors=$(wc -c <"$hobo_tmp/stderr")\nif [ "$((hobo_bytes + hobo_errors))" -gt 196608 ]; then : >"$hobo_tmp/stdout"; echo "Cloudflare command output exceeds 192 KiB" >"$hobo_tmp/stderr"; hobo_status=75; fi\nprintf '{"exitCode":%s,"stdoutBase64":"' "$hobo_status"\nbase64 <"$hobo_tmp/stdout" | tr -d '\\n'\nprintf '","stderrBase64":"'\nbase64 <"$hobo_tmp/stderr" | tr -d '\\n'\nprintf '"}\\n'\nrm -rf "$hobo_tmp"\n`;
 }
 
-/** Binds the native SDK context supplied by a Cloudflare CIWorkflow. */
 export function createCloudflareBackend(
 	options: CloudflareBackendOptions,
 ): PipelineBackend {
@@ -282,7 +275,6 @@ exec env ${environment} ${argv.map(shellQuote).join(" ")}`;
 					if (closeTask) return closeTask;
 					closed = true;
 					closeTask = (async () => {
-						// A successful invocation has completed and the SDK drained its snapshots/logs.
 						if (!stopRequired) return;
 						await options.terminate(
 							reason === "completed" ? "cancelled" : reason,

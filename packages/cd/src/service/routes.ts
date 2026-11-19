@@ -1,7 +1,3 @@
-// Parse-don't-validate boundary of the CD read API (WP12). A raw request
-// becomes a `CdReadRoute` whose ids, enums and positions are already parsed;
-// nothing past this module re-checks a string. Paths that are not read
-// routes parse to `{kind: "feed"}` and go to the delivery feed unchanged.
 import type { EventPosition } from "@hobo/core";
 import {
 	type CampConditionType,
@@ -22,7 +18,6 @@ import type {
 } from "../ports.js";
 import { serviceRefusal } from "./errors.js";
 
-/** A path segment: 1–256 printable chars, no slash, not `.`/`..`. */
 export type PathName = string & { readonly __brand: "cd.service.PathName" };
 
 export type ConditionFilter = Readonly<{
@@ -86,7 +81,6 @@ const PATTERNS: readonly (readonly [RegExp, string])[] = [
 	[/^\/v1\/cd\/stream$/, "stream"],
 ];
 
-/** Route names as metric attributes (no ids, bounded cardinality). */
 export const READ_ROUTE_NAMES = Object.freeze(PATTERNS.map(([, name]) => name));
 
 const PRINTABLE = /^[\x21-\x7e]+$/;
@@ -116,7 +110,6 @@ export function parsePathName(raw: string, subject: string): Outcome<PathName> {
 			subject,
 		);
 	}
-	// SAFETY: the checks above are exactly the PathName invariant.
 	return { ok: true, value: value as PathName };
 }
 
@@ -134,7 +127,6 @@ function parseEnum<E extends number>(
 	const found = schema.values.find(
 		(v) => v.number !== 0 && (v.name === upper || v.localName === upper),
 	);
-	// SAFETY: `found` is a value of the enum schema E was instantiated with.
 	return found === undefined ? undefined : (found.number as E);
 }
 
@@ -206,7 +198,7 @@ const DIGEST = /^sha256:[0-9a-f]{1,64}$/;
 
 export function parseDigest(raw: string, subject: string): Outcome<Digest> {
 	return DIGEST.test(raw)
-		? // SAFETY: DIGEST matched, which is the Digest invariant.
+		?
 			{ ok: true, value: raw as Digest }
 		: serviceRefusal(
 				"query-invalid",
@@ -233,7 +225,6 @@ export function parsePosition(raw: string): Outcome<EventPosition> {
 			"last-event-id",
 		);
 	}
-	// SAFETY: a non-negative decimal within 64 bits is a valid EventPosition.
 	return { ok: true, value: value as EventPosition };
 }
 
@@ -267,16 +258,13 @@ function optional<T>(
 
 function asFanout(name: PathName): FanoutId {
 	const raw: string = name;
-	// SAFETY: a parsed PathName satisfies the FanoutId invariant (non-empty, printable, no slash).
 	return raw as FanoutId;
 }
 
 function asCamp(o: Outcome<PathName>): Outcome<CampId> {
-	// SAFETY: a parsed PathName satisfies the CampId invariant (non-empty, printable, no slash).
 	return o as Outcome<CampId>;
 }
 
-/** Parse a raw `/v1/cd/` request into a read route, or `feed` for everything else. */
 export function parseReadRequest(request: FeedRequest): Outcome<ParsedRequest> {
 	const url = new URL(request.path, "http://cd.invalid");
 	const path = url.pathname;
@@ -420,7 +408,6 @@ function parseRoute(
 			};
 		}
 		default: {
-			// stream
 			const lastEventId =
 				header(request, "last-event-id") ?? q.get("after") ?? undefined;
 			const after =

@@ -1,7 +1,3 @@
-/**
- * Pinned Rivet artifacts. Do not use latest, rc, or unpinned digests.
- * Checked 2026-08-13 against npm + Docker Hub + GitHub releases.
- */
 export const RIVETKIT_PIN = {
 	packageName: "rivetkit",
 	version: "2.3.10",

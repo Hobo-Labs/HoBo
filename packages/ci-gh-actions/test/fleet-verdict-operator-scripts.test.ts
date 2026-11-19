@@ -7,7 +7,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { parseFleetReporters } from "../src/fleet-verdict.js";
 
-/** The operator scripts of the fleet verdict runbook, steps G2 and G3. */
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function run(script: string, args: readonly string[]) {
@@ -67,7 +66,6 @@ describe("fleet-reporter-enroll.mts", { timeout: 60_000 }, () => {
 		expect(first.stdout.trim().split("\n")).toHaveLength(1);
 		expect(first.stdout).not.toMatch(/PRIVATE KEY/u);
 		expect(statSync(keyFile).mode & 0o077).toBe(0);
-		// The same key, the same entry: it reads the key it made.
 		expect(run("fleet-reporter-enroll.mts", args).stdout).toBe(first.stdout);
 		expect(
 			parseFleetReporters(JSON.stringify({ reporters: [entry] })),

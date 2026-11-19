@@ -1,10 +1,3 @@
-// Architecture tests over call sites (I2; D5 OBSERVE_ONLY; I11 for WP7 files).
-//   I2  Reconcilers are the only delivery mutators: within @hobo/cd, the
-//       mutating realization calls appear only in the reconcile module and the
-//       two realizer adapters it drives.
-//   D5  OBSERVE_ONLY never reaches a mutating path: Realizer.converge has one
-//       call site, inside `mutate`, which returns before it unless the Camp
-//       is MANAGED.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +23,6 @@ function stripComments(text: string): string {
 		.replace(/(^|[^:"'`])\/\/[^\n]*/gu, "$1");
 }
 
-// Calls that mutate a delivery target.
 const MUTATORS: readonly Readonly<{ name: string; pattern: RegExp }>[] = [
 	{ name: "Realizer.converge", pattern: /\.converge\(/u },
 	{ name: "runOrchestrator", pattern: /\brunOrchestrator\(/u },

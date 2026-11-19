@@ -30,7 +30,6 @@ export type StreamerConformanceReport = {
 export async function runStreamerConformance(
 	createStreamer: () => Streamer,
 ): Promise<StreamerConformanceReport> {
-	// SAFETY: assertion to `{} as Record<StreamerAssertionName, "pass" | "fail">` is required at this boundary.
 	const assertions = {} as Record<StreamerAssertionName, "pass" | "fail">;
 
 	const runAssertion = async (

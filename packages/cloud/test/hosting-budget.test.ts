@@ -484,7 +484,6 @@ describe("budget-aware cloud hosting planning", () => {
 			},
 		];
 		const pass = createHostingPlanningPass(input);
-		// Repeated scoring never spends the shared allowance.
 		expect(pass.evaluate("app", definition("a"))).toEqual(
 			pass.evaluate("app", definition("a")),
 		);

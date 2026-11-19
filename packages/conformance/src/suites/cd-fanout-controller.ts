@@ -1,6 +1,3 @@
-// FanoutController conformance (ADR-0182 D21, I20). Fan-out only schedules
-// per-Camp promotions: bounded concurrency, mandatory groups first, a failure
-// budget that halts, deferral that never counts as failure, and no wedge.
 import {
 	type CdConformanceReport,
 	type CdSuiteOptions,
@@ -28,7 +25,6 @@ export type FanoutControllerAssertion =
 export type FanoutCampOutcome = "succeed" | "fail" | "defer";
 
 export type FanoutScenario = Readonly<{
-	/** The decision's Camps in decision order. */
 	camps: readonly string[];
 	groups: readonly Readonly<{
 		name: string;
@@ -38,11 +34,9 @@ export type FanoutScenario = Readonly<{
 	strategy: number;
 	maxConcurrency: number;
 	maxFailures: number;
-	/** How each Camp's promotion ends (defer = unreachable when its turn comes). */
 	outcomes: Readonly<Record<string, FanoutCampOutcome>>;
 }>;
 
-/** Structural view of FanoutStatusRecord. */
 export type FanoutStatusLike = Readonly<{
 	fanoutId: string;
 	state: number;
@@ -55,11 +49,8 @@ export type FanoutStatusLike = Readonly<{
 
 export interface FanoutWorld {
 	status(): Promise<FanoutStatusLike>;
-	/** One controller tick plus settling of in-flight promotions per `outcomes`. */
 	tick(): Promise<void>;
-	/** Camps whose promotion was requested, in request order. */
 	started(): readonly string[];
-	/** Start again with the same idempotency key; returns the fan-out id. */
 	startAgain(): Promise<string>;
 }
 
@@ -82,7 +73,6 @@ function camps(prefix: string, n: number): string[] {
 	);
 }
 
-/** Tick until terminal, checking `each` after every tick. Fails if it wedges. */
 export async function settleFanout(
 	world: FanoutWorld,
 	bound: number,

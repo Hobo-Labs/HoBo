@@ -1,6 +1,3 @@
-// Parse boundary and pure rules for failover (D23, I21): Rail permission with
-// its defaults, the node's purge policy, NO_RUN toleration, and the
-// `failover-unsafe` data check. Nothing here reads a clock or the journal.
 import {
 	type FailoverPolicyRecord,
 	PurgeMode,
@@ -36,7 +33,6 @@ export const FAILOVER_REASON = Object.freeze({
 	rebalanceNoPlacement: "rebalance-node-not-placed",
 } as const);
 
-/** Rail `delivery.failover` with every unset field at its default (R13). */
 export type RailFailover = Readonly<{
 	automatic: boolean;
 	maxConcurrent: number;
@@ -57,7 +53,6 @@ export function railFailover(
 	};
 }
 
-/** The node's failover policy with defaults: GRACEFUL, 30-minute grace. */
 export type NodeFailover = Readonly<{
 	purge: PurgeMode;
 	graceMs: number;
@@ -89,11 +84,6 @@ function tolerates(toleration: TolerationRecord, taint: TaintRecord): boolean {
 	);
 }
 
-/**
- * True once a NO_RUN taint has outlived what the node's tolerations cover:
- * a matching toleration with `toleration_ms` 0 tolerates forever; otherwise
- * the longest matching toleration, else CD_DEFAULTS.noRunTolerationMs.
- */
 export function noRunDue(
 	taint: TaintRecord,
 	tolerations: readonly TolerationRecord[],
@@ -114,7 +104,6 @@ export function noRunDue(
 	return nowMs >= msOf(taint.addedAt) + graceMs;
 }
 
-/** Failover moves compute only (I21): any data resource in the source refuses it. */
 export function failoverUnsafe(
 	input: Readonly<{ fromCampId: string; dataResources: readonly string[] }>,
 ): readonly ReasonRecord[] | undefined {

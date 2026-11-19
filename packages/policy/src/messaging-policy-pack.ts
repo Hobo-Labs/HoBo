@@ -1,9 +1,3 @@
-/**
- * Example policy pack for Messaging plane (ADR-0138).
- * - require exactly-once for production topics
- * - deny Dapr in selected environments
- * - tenant topic quotas (soft)
- */
 
 export const MESSAGING_POLICY_PACK_ID = "hobo.policy.messaging/v1";
 

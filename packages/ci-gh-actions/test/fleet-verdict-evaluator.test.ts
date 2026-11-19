@@ -11,16 +11,10 @@ import {
 	hostMemoryAdmitFits,
 } from "../src/isolated-worker/host-resource-pressure.js";
 
-/**
- * The pure rule of ADR-0180 (amendment, item 1): a fleet label is blocked only
- * while the box is idle and admission would still refuse a job, and nothing
- * else in the fleet can take it.
- */
 const NOW = Date.parse("2026-11-12T11:14:00.000Z");
 const OWN_LEASE = "0b6f2a2e-7c1d-4b8e-9a51-2f6c1d9e8a10";
 const PEER_LEASE = "5d3c1b2a-9e8f-4a7b-8c6d-1e2f3a4b5c6d";
 
-/** An idle box that admission refuses for memory, a fresh poll, nothing else. */
 function input(
 	overrides: Partial<FleetVerdictEvaluatorInput> = {},
 ): FleetVerdictEvaluatorInput {
@@ -106,7 +100,6 @@ describe("the fleet verdict evaluator", () => {
 			expect(evaluation.blocked.size, reason).toBe(2);
 			expect(evaluation.labels.get("hobo")?.reasons).toEqual([reason]);
 		}
-		// The load average stays high for minutes after CI's own jobs end (R4).
 		expect(
 			blocked({
 				host: { ...host, health: { state: "critical", reasons: ["load"] } },
@@ -142,9 +135,7 @@ describe("the fleet verdict evaluator", () => {
 				runnerName,
 				startedAtMs: NOW - 120_000,
 			}));
-		// Two free: open.
 		expect(blocked({ pools })).toEqual(["hobo-trunk"]);
-		// One busy, minimum 2: below it, blocked.
 		expect(
 			blocked({
 				pools,
@@ -153,7 +144,6 @@ describe("the fleet verdict evaluator", () => {
 				pickups: busy(["hobo-runner-a"]),
 			}),
 		).toEqual(["hobo", "hobo-trunk"]);
-		// Both busy (and one more than declared): never below zero, blocked.
 		expect(
 			blocked({
 				pools,
@@ -163,7 +153,6 @@ describe("the fleet verdict evaluator", () => {
 				},
 			}),
 		).toEqual(["hobo", "hobo-trunk"]);
-		// A job on another label does not use this pool's runners.
 		expect(
 			blocked({
 				pools,
@@ -206,7 +195,6 @@ describe("the fleet verdict evaluator", () => {
 		);
 		expect([...stale.blocked.keys()]).toEqual([]);
 		expect(stale.labels.get("hobo")?.reasons).toContain("poll-stale");
-		// No poll at all is no fresher.
 		expect(blocked({ poll: undefined })).toEqual([]);
 	});
 
@@ -229,7 +217,6 @@ describe("the fleet verdict evaluator", () => {
 		expect(evaluation.unaccounted).toEqual([
 			"hobo-runner-set-x7k2p-runner-9q4z",
 		]);
-		// Older than 15 minutes no longer counts.
 		expect(
 			blocked({
 				pickups: [
@@ -327,7 +314,6 @@ describe("the fleet verdict evaluator", () => {
 });
 
 describe("the evaluator's answer for a lone idle box", () => {
-	// A small deterministic generator, so a failure names its seed.
 	function* samples(seed: number, count: number) {
 		let state = seed;
 		const next = () => {
@@ -399,9 +385,6 @@ describe("the evaluator's answer for a lone idle box", () => {
 	});
 });
 
-// ADR-0181, decision 5 and M6: a busy, healthy box is never refused (R4); critical
-// storage refuses whether or not the box is busy; pools are counted from
-// GitHub's runner list, and a list that cannot be read is unknown.
 describe("the evaluator behind the routing slip", () => {
 	const disk = {
 		availableMb: 64_000,

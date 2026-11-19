@@ -1,5 +1,3 @@
-// Impedance boundaries for Vercel (ADR-0144 pattern — typed evidence for
-// PortabilityReport). A Yard advertises only its provider's products.
 
 // public-contract: versions provider impedance reports.
 export const VERCEL_IMPEDANCE_SCHEMA = "hobo.provider-impedance/v1";

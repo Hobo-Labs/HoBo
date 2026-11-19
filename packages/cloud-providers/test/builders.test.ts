@@ -1,9 +1,3 @@
-/**
- * The one-import authoring surface, exercised as an author would type it. The
- * example in this file is the target shape verbatim; the assertions pin it to
- * the `defineStation` / `defineYard` authoring of the same topology, which is
- * the proof that the builder is a front end and not a second parse.
- */
 import { defineStation, defineYard } from "@hobo/yards";
 import { describe, expect, it } from "vitest";
 
@@ -36,7 +30,6 @@ describe("PROVIDER_ID", () => {
 });
 
 describe("the target authoring surface", () => {
-	// The example from the API brief, unedited.
 	const acme = station("acme", (s) => {
 		s.tenant("acme").residency("eu").trustDomain("acme.hobo.internal");
 
@@ -79,9 +72,6 @@ describe("the target authoring surface", () => {
 					],
 					data: azure.postgresFlexible({ tier: "GeneralPurpose" }),
 					bucket: azure.blobStorage({ accessTier: "hot" }),
-					// Camp-level equivalence against @hobo/camps' own `camp()` is
-					// proven in packages/yards/test/builder.test.ts; here the
-					// claim under test is that nesting equals attachment.
 					camps: [
 						camp("api", (c) => c.production().label("exposure", "public")),
 						camp("preview", (c) =>

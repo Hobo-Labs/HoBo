@@ -17,7 +17,6 @@ describe("HoBo CD continuity", () => {
 		const plan = continuityFleetPlan(cdJournalContinuity());
 		expect(plan.copy).toBe("snapshot");
 		expect(plan.fleet.rpoMs).toBe(5 * 60_000);
-		// CD's tick runs every minute, inside the 150 s copy cadence.
 		expect(
 			continuityShortfalls(plan, {
 				standbys: 2,

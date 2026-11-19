@@ -10,20 +10,11 @@ import { parseCodegenArgv } from "../src/parse.js";
 import { createCodegenReport, reportToJson } from "../src/types.js";
 
 const REPO_ROOT = join(fileURLToPath(new URL("../../..", import.meta.url)));
-// The frozen POC packages serve as read-only codegen fixtures. The frozen
-// s0-04 proof suite runs the same mutating tests against the same checked-in
-// tree, so this suite works on a private copy: two concurrent suites must
-// never tamper/write the same generated files.
 const POC_PACKAGES_SOURCE = join(
 	REPO_ROOT,
 	"src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages",
 );
 const CODEGEN_INTEGRATION_TIMEOUT_MS = 60_000;
-// `codegen --check --json` runs over the whole repository, so it grows with
-// each package it covers (@hobo/adapter-opensesame's data-models are one). Alone
-// it took 22 s at load average 64 on the 4-CPU build machine, and it timed out
-// at 60 s beside another suite at load 44. The budget is for the machine, not
-// the property under test: the assertions are unchanged.
 const REPO_WIDE_CODEGEN_TIMEOUT_MS = 180_000;
 
 let POC_PACKAGES = POC_PACKAGES_SOURCE;

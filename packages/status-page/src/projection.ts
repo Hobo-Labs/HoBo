@@ -1,19 +1,3 @@
-/**
- * Status-page read-model projection (ADR-0077 §1-2, ADR-0086).
- *
- * A pure `defineProjection` fold over `slo.*` / `incident.*` / `maintenance.*`
- * / `statuspage.*` events, keyed by scope. Deterministic by construction: no
- * clocks, no randomness, no IO — staleness ("delayed / unknown") is evaluated
- * later in `toStatusPageModel` against an explicit `evaluatedAt`.
- *
- * Out-of-order edge cases handled in the fold:
- * - `incident.Resolved` before `incident.Opened` → resolved tombstone; the
- *   late `Opened` backfills title/impact but never reopens.
- * - duplicate `incident.Opened` → idempotent (first open wins, fields backfill).
- * - lifecycle regressions (`monitoring` → `investigating`) → ignored.
- * - unknown event types / malformed data → row unchanged (poison events are
- *   quarantined upstream by the store; a bad payload must not wedge replay).
- */
 
 import type { EventEnvelope } from "@hobo/core";
 import { defineProjection, type Projection } from "@hobo/data";
@@ -37,7 +21,6 @@ import {
 // public-contract: projection name registered in the data plane.
 export const STATUS_PAGE_PROJECTION = "status-page" as const;
 
-/** Bounded per-component uptime history (githubstatus-style 90-day bars). */
 export const HISTORY_DAY_LIMIT = 90;
 
 export interface ComponentRow {
@@ -47,7 +30,6 @@ export interface ComponentRow {
 	readonly lastSignalAt?: string;
 	readonly attainment?: number;
 	readonly target?: number;
-	/** UTC date → worst observed status + sample count, bounded to 90 days. */
 	readonly history: ComponentHistory;
 }
 
@@ -93,7 +75,6 @@ function isFiniteNumber(value: JsonValue | undefined): value is number {
 }
 
 function eventData(event: EventEnvelope): JsonObject | undefined {
-	// SAFETY: EventEnvelope data is JSON at the event-store boundary.
 	return isRecordValue(event.data as JsonValue)
 		? (event.data as JsonObject)
 		: undefined;
@@ -158,11 +139,6 @@ function utcDate(ts: string): string | undefined {
 	return new Date(parsed).toISOString().slice(0, 10);
 }
 
-/**
- * Derive a component status from an SLO measurement. Attainment at or above
- * target is operational; a burn inside one point of target is degraded; below
- * 90% of target is a major outage; between is a partial outage.
- */
 export function statusFromAttainment(
 	attainment: number,
 	target: number,
@@ -221,11 +197,9 @@ function applySloMeasured(
 	const base = row ?? emptyRow(defaultScopeKey(event), event);
 	const data = eventData(event);
 	if (!isValidSlo(data)) return touch(base, event, {});
-	// Clamp attainment into [0,1] so a buggy emitter cannot render >100%.
 	const attainment = Math.min(1, Math.max(0, data.attainment));
 	const status = statusFromAttainment(attainment, data.target);
 	const existing = base.components[data.componentId];
-	// Late measurement: never let an older sample overwrite a newer status.
 	const isLate =
 		existing?.lastSignalAt !== undefined &&
 		Date.parse(data.measuredAt) < Date.parse(existing.lastSignalAt);
@@ -277,7 +251,6 @@ function applyIncidentOpened(
 			)
 		: [];
 	if (existing) {
-		// Idempotent duplicate / late open: backfill fields, never reopen.
 		const incident: Mutable<IncidentRecord> = {
 			...existing,
 			title:
@@ -334,8 +307,6 @@ function applyIncidentProgress(
 			? data.currentStatus
 			: "investigating";
 	const existing: IncidentRecord = base.incidents[data.incidentId] ?? {
-		// Update arrived before the open: create a placeholder that a late
-		// `incident.Opened` will backfill.
 		id: data.incidentId,
 		title: data.incidentId,
 		state: nextState,
@@ -386,8 +357,6 @@ function applyIncidentResolved(
 		return touch(base, event, {});
 	}
 	const existing: IncidentRecord = base.incidents[data.incidentId] ?? {
-		// Resolved before opened: keep a resolved tombstone so the late open
-		// cannot resurrect the incident.
 		id: data.incidentId,
 		title: data.incidentId,
 		state: "resolved" as const,

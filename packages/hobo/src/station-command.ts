@@ -1,11 +1,3 @@
-/**
- * `hobo station` — ops/setup family for Station occupancy (NOT a lifecycle verb).
- * up/down remain the only lifecycle verbs for app graphs.
- *
- * Subcommands: init | up | down | status | rails list|publish|approve|activate|status
- *
- * Pure ops delegated to `@hobo/management` (shared with control API + MCP).
- */
 
 import type { CommandModule } from "@hobo/cli";
 import {
@@ -67,7 +59,6 @@ export function createStationCommand(
 	return {
 		implemented: true,
 		async run({ args, flags }) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const flagBag = flags as JsonObject;
 			const home = resolveHome(deps);
 			const log = deps.log ?? ((line: string) => console.error(line));
@@ -81,7 +72,6 @@ export function createStationCommand(
 				const tenant = flagString(flagBag, "tenant") ?? name;
 				const result = stationInit(ctx, { name, id, tenant });
 				if (result.ok && result.data) {
-					// SAFETY: assertion required at this I/O or test boundary.
 					const data = result.data as {
 						stationId: string;
 						dataDir: string;
@@ -102,7 +92,6 @@ export function createStationCommand(
 					const result = stationUp(ctx, stationId);
 					if (result.ok) {
 						log(
-							// SAFETY: assertion required at this I/O or test boundary.
 							`hobo station up: occupancy ready ${stationId} rail=${(result.data as { activeRailHash?: string })?.activeRailHash ?? "none"}`,
 						);
 						try {
@@ -114,7 +103,6 @@ export function createStationCommand(
 							return {
 								...result,
 								data: {
-									// SAFETY: assertion required at this I/O or test boundary.
 									...(result.data as JsonObject),
 									pins: client.pins(),
 								},
@@ -183,7 +171,6 @@ export function createStationCommand(
 							return {
 								...result,
 								data: {
-									// SAFETY: assertion required at this I/O or test boundary.
 									...(result.data as JsonObject),
 									pins,
 								},

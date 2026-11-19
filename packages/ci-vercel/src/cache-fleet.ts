@@ -1,31 +1,3 @@
-/**
- * The relay's cache fleet (ADR-0179 phase 4c): every bound cache backend is a
- * member, exactly one is active, and every port call goes to it.
- *
- * - **Which one is active** is read from the fleet's assignment register
- *   (`@hobo/backend-fleet`), whose log is kept on every member in one key
- *   (`hobo-ci:<env>:fleet:assignment`) and decided by majority. A resolution
- *   is cached in memory for `assignmentTtlMs` (a minute), measured from when
- *   the read *started*. With a single member there is no register: it is
- *   active, and nothing is read.
- * - **Fail closed.** No majority, an undecided epoch that completion cannot
- *   settle, or a sealed fleet: every call is refused with a retryable
- *   `CacheFleetUnavailableError`. A queue message that hits it is redelivered;
- *   the relay never guesses a backend.
- * - **A move seals first.** The repair tick that decides a move writes a
- *   sealed entry (nobody writes), waits `sealWaitMs` (2.5 minutes, longer
- *   than twice the assignment cache, so every instance has dropped its old
- *   answer and any call it had in flight has ended), then activates the
- *   target. No two instances write to different backends. The wait is a
- *   delayed repair message, not a sleep in the function; the 15-minute tick is
- *   the backstop. The new backend starts cold, and the relay rebuilds leases
- *   by name as after any cache loss.
- * - **Budget routing.** Each tick reads what every member has spent this
- *   month (counters kept on the member itself, in the units it bills), turns
- *   the month's workload into every member's units with the bindings' cost
- *   tables, and asks `routeFleetByBudget` what to do. The decision is logged
- *   as one structured line: names, ids and numbers, never a value.
- */
 import {
 	type AssignmentResolution,
 	billingPeriod,
@@ -63,7 +35,6 @@ import type {
 } from "./cache-backend.js";
 import type { CacheOffers } from "./cache-offers.js";
 
-/** A structured log line: an event name, then names, ids and numbers. */
 export type CacheFleetLogLine = Readonly<
 	{ event: string } & Record<
 		string,
@@ -75,7 +46,6 @@ export type CacheFleetLogLine = Readonly<
 	>
 >;
 
-/** The fleet cannot say which backend is active right now. Retry later. */
 export class CacheFleetUnavailableError extends Error {
 	readonly retryable = true;
 	readonly reason: string;
@@ -102,7 +72,6 @@ type PortOperation =
 	| "increment"
 	| "expire";
 
-/** Port calls this instance routed, by operation, plus keys asked by `getMany`. */
 type PortTally = Record<PortOperation, number> & { getManyKeys: number };
 
 type CostTables = Readonly<{
@@ -120,12 +89,6 @@ type CostTables = Readonly<{
 	>;
 }>;
 
-/**
- * What a tally of port calls costs in one unit, by the bindings' own tables:
- * one command per call on a Redis-protocol store, rows from
- * `LIBSQL_EPHEMERAL_COST`, Blob operations (the uncontended path) from
- * `VERCEL_BLOB_EPHEMERAL_COST`.
- */
 export function tallyCost(
 	tally: PortTally,
 	unit: FleetUsageUnit,
@@ -180,7 +143,6 @@ async function loadCostTables(): Promise<CostTables> {
 	};
 }
 
-/** Which class of failure a cache call ended in. Only the class leaves. */
 export function classifyCacheFailure(
 	error: Error | undefined,
 ): FleetFailureClass {
@@ -197,7 +159,6 @@ export function classifyCacheFailure(
 	return "unreachable";
 }
 
-/** What one tick did, for the caller and its tests. */
 export type CacheFleetTick = Readonly<{
 	action:
 		| "single"
@@ -216,31 +177,23 @@ export type CacheFleetTick = Readonly<{
 
 export type CacheFleetOptions = Readonly<{
 	backends: readonly OpenedCacheBackend[];
-	/** Cache namespace: production, preview and local never share keys. */
 	environment: string;
 	offers: CacheOffers;
 	now?: () => number;
 	log?: (line: CacheFleetLogLine) => void;
-	/** Deliver a repair tick in `delaySeconds` (the activation of a sealed move). */
 	scheduleActivation?: (delaySeconds: number, epoch: number) => Promise<void>;
 	assignmentTtlMs?: number;
 	sealWaitMs?: number;
-	/** Who proposes entries; a short token, never a person. */
 	decidedBy?: string;
-	/** Usage is written to the members at most this often, outside a tick. */
 	flushIntervalMs?: number;
 	sleep?: (ms: number) => Promise<void>;
 }>;
 
 export type CacheFleet = Readonly<{
-	/** The port the relay uses: every call goes to the active backend. */
 	state: EphemeralStatePort;
 	members: readonly CacheBackendId[];
-	/** The active backend as last resolved, without a read. */
 	activeId(): string | undefined;
-	/** The repair tick: usage, register upkeep, the budget decision. */
 	tick(): Promise<CacheFleetTick>;
-	/** Write usage now (a tick does) or when the interval has passed. */
 	flushUsage(force?: boolean): Promise<void>;
 	close(): Promise<void>;
 }>;
@@ -267,7 +220,6 @@ function viewOf(resolution: AssignmentResolution): View {
 	}
 }
 
-/** A reason token an assignment entry can carry: lower-case, no punctuation. */
 function reasonToken(text: string): string {
 	return (
 		text
@@ -310,7 +262,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		classify: classifyCacheFailure,
 	});
 
-	// --- which backend is active ---------------------------------------------
 	let cached: { view: View; readStartedAt: number } | undefined;
 	let pending: Promise<View> | undefined;
 	const failingSince = new Map<string, number>();
@@ -326,7 +277,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 			const startedAt = now();
 			let resolution = await readCurrentAssignment(register);
 			if (resolution.status === "empty") {
-				// The first entry is the same bytes from every instance.
 				await bootstrapAssignment(register, members[0] ?? "memory");
 				resolution = await readCurrentAssignment(register);
 			} else if (resolution.status === "undecided") {
@@ -351,7 +301,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		return backend;
 	}
 
-	// --- the routed port --------------------------------------------------------
 	const tally: PortTally = {
 		get: 0,
 		getMany: 0,
@@ -397,7 +346,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		expire: (key, ttl) => routed("expire", (port) => port.expire(key, ttl)),
 	};
 
-	// --- usage, per member, in the units it bills ----------------------------
 	const flushed = new Map<string, Partial<Record<FleetUsageUnit, number>>>();
 	let lastFlushAt = Number.NEGATIVE_INFINITY;
 	let flushing: Promise<void> | undefined;
@@ -434,7 +382,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 				)?.included;
 				if (included !== undefined) allowance[unit] = included;
 			} catch {
-				// Kept for the next flush: nothing dropped, nothing counted twice.
 			}
 		}
 		flushed.set(backend.binding.id, done);
@@ -490,7 +437,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		}
 	}
 
-	/** The month's workload in every unit, from each member's spend and the call mix. */
 	async function workload(
 		spends: ReadonlyMap<string, readonly FleetUsageMeasurement[]>,
 	): Promise<FleetUsageMeasurement[]> {
@@ -511,7 +457,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 			if (native === undefined || !measured) continue;
 			const base = tallyCost(tally, native, tables);
 			for (const unit of units) {
-				// With no calls seen yet, assume one unit per unit: conservative.
 				const ratio = base > 0 ? tallyCost(tally, unit, tables) / base : 1;
 				totals.set(unit, (totals.get(unit) ?? 0) + measured * ratio);
 			}
@@ -522,7 +467,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		}));
 	}
 
-	// --- the tick ------------------------------------------------------------
 	async function probe(
 		replica: EphemeralAssignmentReplica,
 	): Promise<FleetBackendHealth> {
@@ -653,14 +597,12 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		}
 		const current = resolution.assignment;
 
-		// Health and spend of every member.
 		const observations: FleetRoutingObservation[] = [];
 		const spends = new Map<string, readonly FleetUsageMeasurement[]>();
 		for (const replica of replicas) {
 			const reply = replies.find((entry) => entry.replica === replica.id);
 			let health: FleetBackendHealth =
 				reply && "rows" in reply ? "reachable" : (reply?.failure ?? "unknown");
-			// The member that matters most gets more than one chance.
 			if (
 				health !== "reachable" &&
 				(replica.id === current.active || replica.id === current.target)
@@ -695,7 +637,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 					reasons: ["sealed-without-target"],
 				});
 			if (targetSeen?.health !== "reachable") {
-				// The target went away while sealed: choose again, as a failover from it.
 				const route = routeFleetByBudget({
 					assignment: {
 						...current,

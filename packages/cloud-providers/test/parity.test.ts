@@ -1,18 +1,3 @@
-/**
- * Parity taxonomy: every per-provider claim is recounted from code.
- *
- * The reason this file exists is that the resolver counts had drifted in three
- * places at once — this package's header said `aws (7/19)`, `src/aws.ts` said
- * AWS "ships no deployment resolvers", and the README said Hostinger resolved
- * 2 of 5 — while the constants in the provider packages said 8, some, and 5.
- * Each prose number was right once. None of them was checked.
- *
- * So the assertions here restate no count except Vercel's 4/5, which pins why
- * its catalog is widened. The catalog side is read through the exported
- * `PARITY_SOURCES` (no hand twin of its Yard calls); the resolved side is
- * imported straight from each provider package's `*_RESOLVED_PRODUCT_IDS`, so
- * a source wired to the wrong constant fails.
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,10 +33,6 @@ import {
 	vercel,
 } from "../src/index.js";
 
-/**
- * The resolved side, imported straight from each provider package — not read
- * back through `PARITY_SOURCES` — so a source wired to the wrong constant fails.
- */
 const RESOLVED_CONSTANTS = {
 	aws: AWS_RESOLVED_PRODUCT_IDS,
 	azure: AZURE_RESOLVED_PRODUCT_IDS,
@@ -64,7 +45,6 @@ const RESOLVED_CONSTANTS = {
 	vercel: VERCEL_RESOLVED_PRODUCT_IDS,
 } as const;
 
-/** Each provider namespace by name, for the bare-`Yard()` recount below. */
 const NAMESPACES = {
 	aws,
 	azure,
@@ -154,7 +134,6 @@ describe("providerParity()", () => {
 
 	it("renders the parity table from code", () => {
 		const table = rows.map(formatParityClaim).join("\n");
-		// Printed so a reviewer sees the projection, not just a green tick.
 		console.log(`\n${table}\n`);
 		expect(table.split("\n")).toHaveLength(PARITY_PROVIDERS.length);
 	});

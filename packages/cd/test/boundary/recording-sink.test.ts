@@ -33,7 +33,6 @@ describe("recording CDEvents sink", () => {
 		});
 		const snapshot = sink.events[0];
 		if (!snapshot) throw new Error("expected a recorded event");
-		// SAFETY: this mutates the returned test snapshot to prove it is detached.
 		const state = snapshot.subject.content.state as { value: string };
 		state.value = "changed-again";
 		expect(sink.events[0]?.subject.content).toEqual({

@@ -62,7 +62,6 @@ export function createSimpleTrafficRouting(options?: {
 					}),
 				);
 			} catch {
-				// Applied state remains authoritative when observation delivery fails.
 			}
 			return result;
 		},

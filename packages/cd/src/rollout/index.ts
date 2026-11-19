@@ -1,6 +1,3 @@
-// "@hobo/cd/rollout" (WP10): the rollout orchestrator, its D7 lowering, the
-// rollout ledger, and the adapters onto the Harness ramp engine and Station
-// cutover (the adapters live in ../adapters/ and are re-exported here).
 export {
 	createHarnessRolloutEngine,
 	HARNESS_LEDGER,

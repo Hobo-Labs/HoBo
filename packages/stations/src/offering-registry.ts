@@ -1,8 +1,3 @@
-// Station offering registry: operators register per-resource-class provider
-// profiles against a station; user intents resolve through the generic
-// prefer/require negotiation (plan-25 Resource Definition Matching). Traffic
-// routing was the first class; data stores are the first non-routing class —
-// the registry itself is vocabulary-agnostic.
 import {
 	matchResourceOfferings,
 	type ResourceOfferingMatch,
@@ -21,26 +16,17 @@ export interface StationOfferingRegistration {
 
 export interface StationOfferingRegistry {
 	readonly stationId: string;
-	/** Register a provider profile for a resource class; last write per (class, provider) wins. */
 	register(
 		resourceClass: string,
 		profile: ResourceOfferingProfile,
 	): StationOfferingRegistration;
-	/** All registered resource classes, sorted. */
 	resourceClasses(): readonly string[];
-	/** Profiles registered for a class, in registration order. */
 	profiles(resourceClass: string): readonly ResourceOfferingProfile[];
-	/** Match a request against one registered provider's profile. */
 	match(
 		resourceClass: string,
 		provider: string,
 		request?: ResourceOfferingRequest,
 	): ResourceOfferingMatch | undefined;
-	/**
-	 * Resolve a request against every profile registered for the class.
-	 * First non-`none` profile wins; callers rank candidates by cost/policy
-	 * before registration order matters.
-	 */
 	resolve(
 		resourceClass: string,
 		request?: ResourceOfferingRequest,
@@ -56,7 +42,6 @@ export function createStationOfferingRegistry(
 	options: CreateStationOfferingRegistryOptions,
 ): StationOfferingRegistry {
 	const clock = options.clock ?? (() => new Date().toISOString());
-	// class → provider → profile, preserving first-registration order per class.
 	const classes = new Map<string, Map<string, ResourceOfferingProfile>>();
 
 	function requireClass(resourceClass: string): string {

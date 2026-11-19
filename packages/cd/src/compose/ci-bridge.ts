@@ -1,17 +1,3 @@
-// The CI bridge and the seam through which HoBo delivers itself (WP18, plan
-// 0024, C15).
-//
-// HoBo CI enters CD as an ordinary pull subscription: a `HOBO_CI` Freight
-// source whose driver reads CI events structurally (the frozen CiEventReader)
-// and re-reads every output to verify its digest. A CI event triggers; the
-// read decides (I15). Nothing here creates Freight.
-//
-// HoBo delivering itself: HoBo's own CI relay and runner-fleet components are
-// delivered by `hobo deploy` through exactly this path. The sources below are
-// the records `hobo deploy source define` applies for them. The relay's
-// pipeline (preview -> production) is delivery-as-code beside its Yard
-// (`packages/ci-vercel/deploy/delivery.ts`) and `hobo ci deploy` promotes
-// through it; both use these names.
 import { create } from "@bufbuild/protobuf";
 import {
 	ArtifactKind,
@@ -25,23 +11,17 @@ import {
 import { CD_DEFAULTS, SOURCE_SCHEMA } from "../events.js";
 
 export type HoboCiSourceInput = Readonly<{
-	/** Freight source name (`cd-source-<name>`). */
 	name: string;
-	/** Bindle the Freight is for. */
 	bindle: string;
-	/** CI pipeline id or repository whose passing runs are read. */
 	pipeline: string;
-	/** Exact output paths (one subscription each); empty reads every output. */
 	outputs?: readonly Readonly<{ path: string; kind: ArtifactKind }>[];
 	branch?: string;
-	/** Default true: automatic polling at CD_DEFAULTS.sourcePollIntervalMs. */
 	automatic?: boolean;
 	requireProvenance?: boolean;
 	trustedBuilderIds?: readonly string[];
 	definedBy?: string;
 }>;
 
-/** A `HOBO_CI` Freight source (C15): CI events trigger, verified reads decide. */
 export function hoboCiSource(input: HoboCiSourceInput): FreightSourceRecord {
 	const outputs = input.outputs ?? [];
 	const subscriptions = (outputs.length === 0 ? [undefined] : outputs).map(
@@ -64,7 +44,6 @@ export function hoboCiSource(input: HoboCiSourceInput): FreightSourceRecord {
 		name: input.name,
 		bindle: input.bindle,
 		subscriptions,
-		// Every output of one CI run belongs to one commit.
 		assembly:
 			subscriptions.length > 1
 				? AssemblyRule.SAME_COMMIT
@@ -89,11 +68,6 @@ export const HOBO_CI_COMPONENTS = Object.freeze({
 	}),
 } as const);
 
-/**
- * The Freight sources that deliver HoBo's own CI relay and runner fleet
- * through CD. `ciPipeline` is the CI pipeline (or repository) that builds
- * HoBo; each component's outputs are read from its passing runs.
- */
 export function hoboSelfDeliverySources(
 	input: Readonly<{
 		ciPipeline: string;

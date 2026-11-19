@@ -1,9 +1,3 @@
-/**
- * Readers for one node of an untrusted JSON report. Each takes the parent
- * object, the key and the parent's path, and on a value of the wrong kind
- * records an issue and returns a neutral value, so a parser can report every
- * problem in one pass instead of stopping at the first.
- */
 import {
 	isJsonArray,
 	isJsonInteger,
@@ -14,12 +8,10 @@ import {
 } from "./json.js";
 import type { ReportObjectKeys } from "./report-keys.js";
 
-/** `a.b` from a parent path and a key; the root has the empty path. */
 export function pathOf(parent: string, key: string): string {
 	return parent === "" ? key : `${parent}.${key}`;
 }
 
-/** Own fields only: a report key named like an Object.prototype member reads as absent. */
 export function fieldOf(node: JsonObject, key: string): JsonValue | undefined {
 	return Object.hasOwn(node, key) ? node[key] : undefined;
 }
@@ -67,7 +59,6 @@ export function memberOf<T extends string>(
 	return allowed.find((entry) => entry === value);
 }
 
-/** Refuse a key the object's schema does not define, and a required key that is absent. */
 export function closedKeys(
 	node: JsonObject,
 	path: string,
@@ -86,7 +77,6 @@ export function closedKeys(
 	}
 }
 
-/** `durationMs`, which RunReport v1 bounds at 0. */
 export function durationOf(
 	node: JsonObject,
 	path: string,

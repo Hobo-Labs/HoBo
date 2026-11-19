@@ -1,8 +1,3 @@
-/**
- * Short-lived elevated access capabilities (audience-bound JWT-SVID claims).
- * Mint only after lower-env authn, step-up, dual approval, or break-glass.
- * Network membership alone is never sufficient.
- */
 import { createHash, randomBytes } from "node:crypto";
 
 import { mintJwtSvid, verifyJwtSvid } from "../crypto/jwt-svid.js";
@@ -24,13 +19,11 @@ import {
 export type MintElevatedInput = Readonly<{
 	subject: string;
 	isolationClass: IsolationClass;
-	/** e.g. production-access */
 	audience?: string;
 	priorAuthnClass?: IsolationClass;
 	issuedBy: string;
 	ttlSeconds?: number;
 	obligations?: readonly string[];
-	/** Evidence of prior lower-env authn / dual approval / break-glass id. */
 	evidence: Readonly<{
 		kind: "lower-env-authn" | "step-up-mfa" | "dual-approval" | "break-glass";
 		ref: string;
@@ -46,9 +39,6 @@ export type VerifiedElevatedAccess = Readonly<{
 	tokenClaims: Readonly<{ sub: string; aud: readonly string[]; exp: number }>;
 }>;
 
-/**
- * Mint an elevated-access capability as an audience-bound short-lived JWT.
- */
 export function mintElevatedAccessCapability(
 	input: MintElevatedInput,
 	options?: {
@@ -120,9 +110,6 @@ export function mintElevatedAccessCapability(
 	return { capability, token: minted.token, event };
 }
 
-/**
- * Verify elevated capability token. Fail-closed on expiry, audience, or env mismatch.
- */
 export function verifyElevatedAccessCapability(input: {
 	readonly token: string;
 	readonly expectedAudience: string;

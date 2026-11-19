@@ -77,7 +77,6 @@ describeLive("migrations", () => {
 			code: "MIGRATION_FAILURE",
 			failure: "migration-drift",
 		});
-		// Drift is permanent for the life of the store: every operation keeps refusing.
 		await expect(
 			store.append("x", [{ type: "x.Y" }], { ...OPTS, expectedSeq: 0 }),
 		).rejects.toMatchObject({

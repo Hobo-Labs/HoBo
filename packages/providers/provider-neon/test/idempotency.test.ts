@@ -100,7 +100,6 @@ describe("create idempotency and adoption", () => {
 		).rejects.toMatchObject({ code: "PROVIDER_OPERATION_AMBIGUOUS" });
 		expect((await store.get(KEY))?.state).toBe("in-flight");
 
-		// Second attempt: the key is unresolved, so the client must not POST.
 		const retryTransport = createStubTransport([]);
 		const retry = createNeonClient({
 			transport: retryTransport,
@@ -111,13 +110,11 @@ describe("create idempotency and adoption", () => {
 		try {
 			await retry.createDatabase({ ref: "hobo-test", idempotencyKey: KEY });
 		} catch (error) {
-			// SAFETY: value was established by the surrounding parse or typed constructor.
 			code = (error as NeonProviderError).code;
 		}
 		expect(code).toBe("PROVIDER_OPERATION_AMBIGUOUS");
 		expect(retryTransport.posts).toHaveLength(0);
 
-		// Once the operator supplies the id the attempt produced, adoption works.
 		await store.put({
 			key: KEY,
 			state: "created",

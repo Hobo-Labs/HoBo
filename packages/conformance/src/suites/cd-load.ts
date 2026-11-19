@@ -1,7 +1,3 @@
-// The CD fan-out load lane: 10,000 Camps, one fan-out, p99
-// controller tick under one second. The runner measures; the harness binds
-// the controller and store (Postgres in the real lane, any store otherwise).
-// Measurement uses an injected monotonic clock and is never a decision input.
 import {
 	type CdConformanceReport,
 	type CdSuiteOptions,
@@ -22,9 +18,7 @@ export const CD_FANOUT_LOAD_DEFAULTS = Object.freeze({
 export type CdLoadAssertion = "fanoutCompletes" | "p99TickUnderBudget";
 
 export interface FanoutLoadWorld {
-	/** One controller tick (the measured unit). */
 	tick(): Promise<void>;
-	/** Settle in-flight per-Camp promotions outside the measured tick. */
 	settle(): Promise<void>;
 	completed(): Promise<boolean>;
 }
@@ -32,7 +26,6 @@ export interface FanoutLoadWorld {
 export interface FanoutLoadHarness {
 	readonly subject: string;
 	create(camps: number): Promise<FanoutLoadWorld>;
-	/** Monotonic clock for measurement (e.g. performance.now). */
 	clock(): number;
 }
 

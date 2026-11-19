@@ -54,7 +54,6 @@ function harness() {
 		version += 1;
 		const item = artifact("api", `api-${version}`);
 		artifacts.register(item.coordinate, item.digest);
-		// A Rail is identified by its declaration hash and carries no artifacts.
 		const rail = subject === FreightSubject.RAIL;
 		const outcome = await ledger.record(
 			{
@@ -162,7 +161,6 @@ describe("retention sweep (D18)", () => {
 			h.policy({ keepPerCamp: 2 }),
 			context(h.time.now),
 		);
-		// prod-eu: v4 current, v3 and v2 within rollback depth 2; staging: v1 current.
 		expect(retired.map((record) => record.freightId)).toEqual([loose]);
 		for (const kept of [v1, v2, v3, v4, held])
 			expect(await h.ledger.isUsable(kept)).toBe(true);
@@ -177,15 +175,12 @@ describe("retention sweep (D18)", () => {
 		const r4 = await h.record({}, FreightSubject.RAIL);
 		await h.deploy("prod-eu", app);
 		for (const rail of [r1, r2, r3, r4]) await h.bind("prod-eu", rail);
-		// A restore that names no Freight adds nothing to the history.
 		await h.bind("prod-eu", "");
 		h.time.advance(CD_DEFAULTS.retentionKeepUnpromotedMs + DAY);
 		const retired = await h.ledger.retire(
 			h.policy({ keepPerCamp: 2 }),
 			context(h.time.now),
 		);
-		// prod-eu#rail: r4 bound, r3 and r2 within rollback depth; the Set
-		// history (app) is separate and does not push the Rail out.
 		expect(retired.map((record) => record.freightId)).toEqual([r1]);
 		for (const kept of [app, r2, r3, r4])
 			expect(await h.ledger.isUsable(kept)).toBe(true);
@@ -231,7 +226,6 @@ describe("retention sweep (D18)", () => {
 			h.policy({ keepPerCamp: 1 }),
 			context(h.time.now),
 		);
-		// v3 stays current and v2 the one rollback step; only v1 goes.
 		expect(retired.map((record) => record.freightId)).toEqual([v1]);
 	});
 

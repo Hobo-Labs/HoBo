@@ -1,6 +1,3 @@
-// Collaborator doubles for the pipeline controller tests: Freight ledger,
-// promotion service, placement engine, fan-out controller and topology. Each
-// implements the frozen port with in-memory state the test arranges.
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	CampManagement,
@@ -132,7 +129,6 @@ export class FakeFreightLedger {
 	}
 }
 
-// The port's `qualify` collides with the arrange helper above; expose the port shape.
 export function ledgerPort(ledger: FakeFreightLedger): FreightLedger {
 	return {
 		record: notUsed,
@@ -152,11 +148,9 @@ export function ledgerPort(ledger: FakeFreightLedger): FreightLedger {
 export class FakePromotions implements PromotionService {
 	readonly requests: PromoteRequest[] = [];
 	readonly records = new Map<string, PromotionRecord>();
-	/** Arranged history per Camp (beyond what this double records itself). */
 	readonly history: PromotionRecord[] = [];
 	onPromote: ((request: PromoteRequest) => void) | undefined;
 	refuseNext = false;
-	/** Like WP6, journal `env.PromoteRequested` (body: PromotionRecord) for each new request. */
 	constructor(private readonly store?: MemoryEventStore) {}
 
 	async promote(request: PromoteRequest): Promise<Outcome<PromotionRecord>> {
@@ -249,7 +243,6 @@ export class FakePlacement implements PlacementEngine {
 	}
 }
 
-/** A decision whose groups hold `camps` (first `mandatory` camps form the mandatory "pilot" group). */
 export function decisionOf(
 	camps: readonly string[],
 	mandatory: readonly string[],

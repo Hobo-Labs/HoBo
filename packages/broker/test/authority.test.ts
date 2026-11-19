@@ -128,8 +128,6 @@ describe("broker environments — admin controls", () => {
 		});
 		const result = await broker.resolve(baseRequest);
 		expect(result.outcome).toBe("resolved");
-		// The cheaper provider exists in the catalog but is outside the
-		// approved environment, so the approved (pricier) provider wins.
 		expect(result.receipt?.placements[0]?.providerId).toBe(
 			"@hobo/provider-pricey",
 		);
@@ -160,7 +158,6 @@ describe("hosted authority surface (HTTP)", () => {
 				body: JSON.stringify(baseRequest),
 			});
 			expect(resolved.status).toBe(200);
-			// SAFETY: assertion required at this I/O or test boundary.
 			const body = (await resolved.json()) as {
 				outcome: string;
 				receipt: { placements: Array<{ providerId: string }> };

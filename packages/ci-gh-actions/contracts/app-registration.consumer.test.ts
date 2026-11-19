@@ -3,7 +3,6 @@ import { expect, it } from "vitest";
 import { createAppRegistration } from "../src/app-registration.js";
 
 it("executes manifest conversion and app installation identity contract through shipped callbacks", async () => {
-	// SAFETY: hand-authored Pact is test input; runtime parses the provider responses.
 	const pact = JSON.parse(
 		readFileSync(
 			new URL("./app-registration-boundary.pact.json", import.meta.url),

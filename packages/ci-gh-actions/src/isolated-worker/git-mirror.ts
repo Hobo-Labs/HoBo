@@ -21,11 +21,9 @@ export type GitRunner = (
 	cwd?: string,
 ) => Promise<{ status: number; stdout: string; stderr: string }>;
 
-/** Prefer a durable mirror root; fall back when the preferred path is not writable. */
 export function resolveGitMirrorRoot(
 	preferred: string,
 	fallback: string,
-	/** Creates a root; a test passes one that fails as an unprivileged user's would. */
 	mkdir: (root: string) => void = (root) =>
 		mkdirSync(root, { recursive: true, mode: 0o755 }),
 ): string {
@@ -42,7 +40,6 @@ export function resolveGitMirrorRoot(
 	} catch (error: unknown) {
 		if (!(error instanceof Error)) throw error;
 		if (!("code" in error)) throw error;
-		// SAFETY: only `mkdirSync` is in try; its failures are Node system errors with string `code`.
 		const code = (error as Error & { code: string }).code;
 		if (code === "EACCES" || code === "EROFS" || code === "EPERM")
 			return tryRoot(fallback);
@@ -55,7 +52,6 @@ export function defaultGitMirrorFallbackRoot(): string {
 	return join(resolve(base), ".cache", "hobo-ci", "git");
 }
 
-/** Default mirror root on HoBo box workers (writable without `/var/lib`). */
 export function defaultGitMirrorPreferredRoot(): string {
 	const configured = process.env.HOBO_CI_GIT_MIRROR_ROOT?.trim();
 	if (configured) return configured;
@@ -172,12 +168,6 @@ export function createBoxGitMirror(options: {
 		]);
 	}
 
-	/**
-	 * Whether the mirror holds every object of the commit's tree, so a job can
-	 * check it out from here alone. Having the commit is not enough: a mirror
-	 * that began as a blobless clone keeps its commits and lacks their files,
-	 * and a job's fetch from it then dies reaching for blobs that are not there.
-	 */
 	async function servesCheckout(sha: string): Promise<boolean> {
 		const walked = await git([
 			`--git-dir=${path}`,
@@ -190,11 +180,6 @@ export function createBoxGitMirror(options: {
 		return walked.status === 0 && !/^\?/m.test(walked.stdout);
 	}
 
-	/**
-	 * `refetch` is for repairing a blobless mirror: without it the fetch is a
-	 * no-op, because the mirror already has every commit, so the server sends
-	 * nothing and the missing blobs never arrive.
-	 */
 	async function refreshMain(
 		refetch = false,
 	): Promise<BoxGitMirrorEnsureResult | undefined> {
@@ -347,8 +332,6 @@ export function createBoxGitMirror(options: {
 		}
 
 		if (!(await servesCheckout(sha))) {
-			// The commit is here but some of its files are not (finding 110): take
-			// the commit again, whole, rather than hand a job a checkout that fails.
 			await git([
 				`--git-dir=${path}`,
 				"-c",

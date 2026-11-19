@@ -15,16 +15,6 @@ import type {
 } from "@hobo/capability-profiles";
 import type { EvidenceFreshnessState } from "@hobo/trust";
 
-/**
- * The five things a cell may be covered by, kept apart because conflating them
- * is the specific dishonesty this package exists to prevent.
- *
- * - `native` — a public provider implements the primitive itself.
- * - `pack` — HoBo deploys a portable implementation onto generic compute.
- * - `bridge` — the primitive is reached through an adapting shim.
- * - `substrate` — the resource runs on infrastructure HoBo itself operates.
- * - `sponsor` — the bootstrap path spends HoBo sponsor budget.
- */
 export const CANDIDATE_BUCKETS = [
 	"native",
 	"pack",
@@ -35,13 +25,6 @@ export const CANDIDATE_BUCKETS = [
 
 export type CandidateBucket = (typeof CANDIDATE_BUCKETS)[number];
 
-/**
- * Why a candidate cannot be selected automatically.
- *
- * Every code is a fact about evidence or conformance, never about preference:
- * a candidate is not demoted for being slow or expensive, only for being
- * unproven.
- */
 export const CANDIDATE_UNAVAILABILITY_CODES = [
 	"evidence-absent",
 	"evidence-expired",
@@ -61,8 +44,6 @@ export type CandidateUnavailability = {
 };
 
 // domain-view: parsed narrowing of CapabilityMatrixCandidateRecord in
-// data-models/capability_matrix.proto — closed vocabularies plus the derived
-// bucket and availability the wire form carries as plain strings.
 export type CapabilityMatrixCandidate = {
 	readonly primitive: BindlePrimitive;
 	readonly runtime: BindleRuntime;
@@ -71,14 +52,11 @@ export type CapabilityMatrixCandidate = {
 	readonly profileId: string;
 	readonly realization: RealizationKind;
 	readonly bucket: CandidateBucket;
-	/** True only when trust, freshness, and conformance all pass. */
 	readonly available: boolean;
 	readonly evidenceState: EvidenceFreshnessState;
 	readonly evidenceExpiresAtMs?: number | undefined;
 	readonly conformance: "pass" | "fail" | "unknown";
-	/** Absent when the implementation claim names no conformance suite. */
 	readonly conformanceRef?: string | undefined;
-	/** Empty exactly when `available` is true. Sorted, so it digests stably. */
 	readonly unavailability: readonly CandidateUnavailability[];
 };
 
@@ -109,7 +87,6 @@ export function classifyCandidateBucket(input: {
 	return input.realization;
 }
 
-/** Map a trust freshness state onto the reason a candidate is held back. */
 export function unavailabilityForEvidenceState(
 	state: EvidenceFreshnessState,
 ): CandidateUnavailabilityCode | undefined {
@@ -127,7 +104,6 @@ export function unavailabilityForEvidenceState(
 	}
 }
 
-/** Total order over candidates. No key depends on catalog registration order. */
 export function compareCandidates(
 	a: CapabilityMatrixCandidate,
 	b: CapabilityMatrixCandidate,

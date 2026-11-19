@@ -30,7 +30,6 @@ function ledgerView(
 }
 
 function account(providerId: string, overrides: JsonObject = {}) {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const freeHeadroom = (overrides.freeHeadroom as number) ?? 0;
 	return {
 		providerId,
@@ -57,12 +56,9 @@ function runner(id: string, overrides: JsonObject = {}) {
 		id,
 		providerId: id,
 		category: "runner" as const,
-		// SAFETY: assertion required at this I/O or test boundary.
 		registered: (overrides.registered as boolean) ?? true,
 		dimension: "runner.minutes",
-		// SAFETY: assertion required at this I/O or test boundary.
 		listUnitCost: (overrides.listUnitCost as number) ?? 0.02,
-		// SAFETY: assertion required at this I/O or test boundary.
 		switchingCost: (overrides.switchingCost as number) ?? 0,
 	};
 }
@@ -70,21 +66,14 @@ function runner(id: string, overrides: JsonObject = {}) {
 function placementCandidate(definitionId: string, overrides: JsonObject = {}) {
 	return {
 		definitionId,
-		// SAFETY: assertion required at this I/O or test boundary.
 		providerId: (overrides.providerId as string) ?? definitionId,
-		// SAFETY: assertion required at this I/O or test boundary.
 		registered: (overrides.registered as boolean) ?? true,
 		resourceType: "object-store",
 		dimension: "object-store.gib-month",
-		// SAFETY: assertion required at this I/O or test boundary.
 		listUnitCost: (overrides.listUnitCost as number) ?? 0.02,
-		// SAFETY: assertion required at this I/O or test boundary.
 		specificity: (overrides.specificity as number) ?? 1,
-		// SAFETY: assertion required at this I/O or test boundary.
 		priority: (overrides.priority as number) ?? 0,
-		// SAFETY: assertion required at this I/O or test boundary.
 		region: (overrides.region as string) ?? "us-east-1",
-		// SAFETY: assertion required at this I/O or test boundary.
 		switchingCost: (overrides.switchingCost as number) ?? 0,
 	};
 }

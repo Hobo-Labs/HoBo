@@ -1,26 +1,3 @@
-/**
- * Pack upgrade as a decision, not a download.
- *
- * Written before the implementation. Packs carry a `<major>.<minor>.<patch>`
- * version that nothing in the repo could order: `parsePackVersion` checks the
- * shape and stops. So "is this newer?" — the question every upgrade begins
- * with — was unanswerable, and there was no place to put the rules that decide
- * whether an upgrade may proceed.
- *
- * The rules these tests hold come from what the corpus shows going wrong:
- *
- *   - **A major is a wall, not a step.** OLM's channels exist because silently
- *     crossing a breaking-change boundary is how an upgrade eats a database.
- *     Crossing one requires it to be asked for by name.
- *   - **A dropped profile claim blocks.** A pack that stops implementing a
- *     profile its consumers selected it for is not an upgrade for them, and
- *     discovering that after the swap is discovering it too late.
- *   - **Unverified is blocked, never skipped.** The one thing worse than
- *     refusing an upgrade is quietly not doing it — that is how a pack sits
- *     three CVEs behind while the surface reports "up to date".
- *   - **Downgrades are never automatic.** Rolling back is an operator
- *     decision; a resolver that picks it on its own has invented one.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -63,7 +40,6 @@ describe("comparePackVersions", () => {
 	});
 
 	it("compares numerically, not lexically", () => {
-		// The bug this function exists to prevent: "1.10.0" < "1.9.0" as strings.
 		expect(comparePackVersions(v("1.10.0"), v("1.9.0"))).toBeGreaterThan(0);
 	});
 
@@ -114,8 +90,6 @@ describe("nothing newer", () => {
 	});
 
 	it("holds when every available version is older", () => {
-		// A resolver that picks an older version has invented a rollback nobody
-		// asked for.
 		const verdict = planPackUpgrade(
 			inputs({
 				installed: candidate("1.5.0"),
@@ -150,8 +124,6 @@ describe("an in-major upgrade", () => {
 
 describe("crossing a major", () => {
 	it("holds and names the boundary when a new major exists", () => {
-		// Silence here would be the worst answer: the operator would never learn
-		// a new major shipped.
 		const verdict = planPackUpgrade(
 			inputs({ available: [candidate("1.2.0"), candidate("2.1.0")] }),
 		);
@@ -173,7 +145,6 @@ describe("crossing a major", () => {
 	});
 
 	it("does not skip an intermediate major that was not accepted", () => {
-		// Accepting v3 is not consent to whatever v2 did on the way past.
 		const verdict = planPackUpgrade(
 			inputs({
 				available: [candidate("2.0.0"), candidate("3.0.0")],
@@ -207,9 +178,6 @@ describe("crossing a major", () => {
 
 describe("verification", () => {
 	it("blocks rather than silently choosing an older verified version", () => {
-		// Skipping quietly is how a pack sits behind while the surface reports
-		// it current. The unverified candidate is the answer, and it is refused
-		// out loud.
 		const verdict = planPackUpgrade(
 			inputs({
 				available: [
@@ -235,8 +203,6 @@ describe("verification", () => {
 	});
 
 	it("does not block on an unverified version nobody would pick", () => {
-		// An unverified 1.1.0 below an installed 1.2.0 is not this decision's
-		// problem, and reporting it would be noise.
 		const verdict = planPackUpgrade(
 			inputs({
 				available: [
@@ -252,8 +218,6 @@ describe("verification", () => {
 
 describe("profile claims", () => {
 	it("blocks an upgrade that drops a profile the installed pack implements", () => {
-		// Consumers selected this pack for that profile. Finding out after the
-		// swap is finding out too late.
 		const verdict = planPackUpgrade(
 			inputs({
 				installed: candidate("1.2.0", {
@@ -282,8 +246,6 @@ describe("profile claims", () => {
 	});
 
 	it("still blocks a dropped profile across an accepted major", () => {
-		// A major bump explains a breaking change; it does not excuse one that
-		// was never named.
 		const verdict = planPackUpgrade(
 			inputs({
 				installed: candidate("1.2.0", {

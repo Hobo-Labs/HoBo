@@ -1,21 +1,3 @@
-/**
- * The Bindle scope, and the provider-agnosticism it enforces.
- *
- * A Bindle describes *what* an application needs; a Camp decides *who*
- * provides it. That separation is the whole portability claim, and
- * `assertNoProviderSpecificFields` is the only thing enforcing it at authoring
- * time. If it stops working nothing fails loudly — Bindles simply start
- * carrying provider detail, and the claim quietly becomes false one resource at
- * a time. So every field it rejects is pinned individually.
- *
- * The check runs twice per resource, before *and* after normalization, which
- * matters because a `toDescriptor()` implementation is caller-supplied code: a
- * resource that looks clean can produce a descriptor that is not.
- *
- * Everything returned is deep-frozen. A Bindle is hashed and deployed, so a
- * scope that could be mutated after construction would let the thing deployed
- * differ from the thing described.
- */
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/json.js";
@@ -51,20 +33,16 @@ describe("bindleScope", () => {
 	});
 
 	it("declares itself programmatic rather than config-driven", () => {
-		// The `configFile: false` marker is a claim downstream tooling reads;
-		// asserting it here keeps it from being quietly flipped.
 		const scope = bindleScope("app", () => {});
 		expect(scope.configFile).toBe(false);
 		expect(scope.providerIds).toEqual([]);
 	});
 
 	it.each(["", null, undefined, 42])("rejects the name %s", (name) => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => bindleScope(name as string, () => {})).toThrow(TypeError);
 	});
 
 	it("rejects a non-function builder", () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => bindleScope("app", undefined as never)).toThrow(
 			/builder must be a function/u,
 		);
@@ -91,8 +69,6 @@ describe("bindleScope", () => {
 	});
 
 	it("rejects two resources with the same stable id", () => {
-		// Stable ids address resources across deploys; a duplicate makes the
-		// address ambiguous, which is worse than a name collision.
 		expect(() =>
 			bindleScope("app", (b) => {
 				b.use(descriptor());
@@ -119,18 +95,14 @@ describe("bindleScope", () => {
 	it("rejects a toDescriptor that does not return an object", () => {
 		expect(() =>
 			bindleScope("app", (b) => {
-				// SAFETY: assertion required at this I/O or test boundary.
 				b.use({ toDescriptor: () => "nope" as never });
 			}),
 		).toThrow(/must be descriptor objects/u);
 	});
 
 	it("rejects a toDescriptor returning an array", () => {
-		// Arrays are objects; without the explicit check one would slip through
-		// and produce a descriptor of undefined fields.
 		expect(() =>
 			bindleScope("app", (b) => {
-				// SAFETY: assertion required at this I/O or test boundary.
 				b.use({ toDescriptor: () => [] as never });
 			}),
 		).toThrow(/must be descriptor objects/u);
@@ -157,7 +129,6 @@ describe("bindleScope", () => {
 	});
 
 	it("copies portRef rather than aliasing the caller's array", () => {
-		// A caller mutating their array afterwards must not change the Bindle.
 		const ports = ["hobo:data"];
 		const scope = bindleScope("app", (b) => {
 			b.use(descriptor({ portRef: ports }));
@@ -184,8 +155,6 @@ describe("provider-specific fields are refused", () => {
 		["options.providerOptions", { options: { providerOptions: { x: 1 } } }],
 		["annotations.with", { annotations: { with: { x: 1 } } }],
 	])("rejects a resource carrying %s", (_label, extra) => {
-		// Each of these is a way of naming a provider inside a Bindle. The
-		// portability claim is only true while all of them stay refused.
 		expect(() =>
 			bindleScope("app", (b) => {
 				b.use({ ...descriptor(), ...extra });
@@ -194,12 +163,9 @@ describe("provider-specific fields are refused", () => {
 	});
 
 	it("also refuses a descriptor produced by toDescriptor", () => {
-		// The second check exists because `toDescriptor` is caller code: a
-		// resource that looks clean can still produce a dirty descriptor.
 		expect(() =>
 			bindleScope("app", (b) => {
 				b.use({
-					// SAFETY: assertion required at this I/O or test boundary.
 					toDescriptor: () => ({ ...descriptor(), provider: "aws" }) as never,
 				});
 			}),
@@ -242,7 +208,6 @@ describe("assertNoProviderSpecificFields, used directly", () => {
 		"string",
 		42,
 	])("ignores the non-object %s", (value) => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => assertNoProviderSpecificFields(value as never)).not.toThrow();
 	});
 
@@ -309,8 +274,6 @@ describe("descriptorFromHandle", () => {
 
 describe("immutability", () => {
 	it("freezes the scope, since a Bindle is hashed and deployed", () => {
-		// A scope that could be mutated after construction would let the thing
-		// deployed differ from the thing described.
 		const scope = bindleScope("app", (b) => {
 			b.use(descriptor());
 		});

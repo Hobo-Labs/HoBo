@@ -1,6 +1,3 @@
-// PACT consumer verification for the hobo.freight-manifest/v1 boundary
-// (contracts/freight.pact.json): the real parser and ledger must produce the
-// hand-authored responses from the hand-authored requests.
 import { type JsonValue, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { FreightOrigin, FreightRecordSchema } from "../src/_generated/cd_pb.js";

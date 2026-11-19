@@ -1,18 +1,3 @@
-/**
- * Parse-don't-validate boundary for Kubernetes apiserver responses.
- *
- * Source of truth: the core/v1 and apps/v1 object schemas
- * (https://kubernetes.io/docs/reference/kubernetes-api/, checked 2026-08-08).
- * Every field this driver depends on is checked here once; downstream code
- * sees a {@link NamespaceRecord}, {@link DeploymentRecord} or
- * {@link ServiceRecord} and never a bag of unknowns.
- *
- * The one derivation that matters is {@link rolloutPhaseFor}. A Deployment has
- * no phase field — it has a generation, an observed generation, four replica
- * counters and a condition list that disagree with each other for the whole
- * length of a rollout. Reading `readyReplicas` on its own reports the previous
- * ReplicaSet's success as the new rollout's.
- */
 
 import { contractChanged, redactClusterText } from "./errors.js";
 import {
@@ -55,7 +40,6 @@ export type NamespaceRecord = {
 	readonly resourceVersion: string;
 	readonly phase: NamespacePhase;
 	readonly createdAtMs: number;
-	/** True only when this driver's own POST created it. Adoption never sets it. */
 	readonly createdByHobo: boolean;
 };
 
@@ -71,7 +55,6 @@ export type DeploymentRecord = {
 	readonly readyReplicas: number;
 	readonly availableReplicas: number;
 	readonly phase: RolloutPhase;
-	/** The controller's own condition reason. Empty unless `phase` is `failed`. */
 	readonly failureReason: string;
 };
 
@@ -95,7 +78,6 @@ export type ApiStatus = {
 function decodeObject(body: string, what: string): JsonObject {
 	let decoded: unknown;
 	try {
-		// SAFETY: assertion to `ON.parse(body) as unknown; ` is required at this boundary.
 		decoded = JSON.parse(body) as unknown;
 	} catch {
 		contractChanged(`${what} response was not JSON`, {
@@ -105,7 +87,6 @@ function decodeObject(body: string, what: string): JsonObject {
 	if (!isJsonObject(decoded) || decoded === null || Array.isArray(decoded)) {
 		contractChanged(`${what} response was not a JSON object`);
 	}
-	// SAFETY: assertion to `coded as JsonObject; ` is required at this boundary.
 	return decoded as JsonObject;
 }
 
@@ -114,7 +95,6 @@ function child(record: JsonObject, key: string, what: string): JsonObject {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		contractChanged(`${what} is missing its ${key} object`);
 	}
-	// SAFETY: assertion to `lue as JsonObject; ` is required at this boundary.
 	return value as JsonObject;
 }
 
@@ -123,7 +103,6 @@ function optionalChild(record: JsonObject, key: string): JsonObject {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		return {};
 	}
-	// SAFETY: assertion to `lue as JsonObject; ` is required at this boundary.
 	return value as JsonObject;
 }
 
@@ -207,7 +186,6 @@ function parseMeta(
 	};
 }
 
-/** Parse the `kind: "Status"` envelope every non-2xx apiserver body carries. */
 export function parseApiStatus(body: string): ApiStatus {
 	const record = decodeObject(body, "apiserver Status");
 	requireKind(record, "Status");
@@ -230,7 +208,6 @@ export function parseApiStatus(body: string): ApiStatus {
 	};
 }
 
-/** Parse a core/v1 Namespace. */
 export function parseNamespaceRecord(
 	body: string,
 	options: { readonly createdByHobo: boolean },
@@ -242,7 +219,6 @@ export function parseNamespaceRecord(
 	const phase = status.phase;
 	if (
 		!isJsonString(phase) ||
-		// SAFETY: assertion to `MESPACE_PHASES as readonly string[]).` is required at this boundary.
 		!(NAMESPACE_PHASES as readonly string[]).includes(phase)
 	) {
 		contractChanged(
@@ -256,7 +232,6 @@ export function parseNamespaceRecord(
 		name: meta.name,
 		uid: meta.uid,
 		resourceVersion: meta.resourceVersion,
-		// SAFETY: assertion to `ase as NamespacePhase, ` is required at this boundary.
 		phase: phase as NamespacePhase,
 		createdAtMs: meta.createdAtMs,
 		createdByHobo: options.createdByHobo,
@@ -279,7 +254,6 @@ function parseConditions(status: JsonObject): readonly Condition[] {
 		if (!isJsonObject(entry) || entry === null || Array.isArray(entry)) {
 			contractChanged("Deployment status.conditions holds a non-object");
 		}
-		// SAFETY: assertion to `try as JsonObject; ` is required at this boundary.
 		const condition = entry as JsonObject;
 		if (!isJsonString(condition.type) || !isJsonString(condition.status)) {
 			contractChanged("Deployment condition is missing its type or status");
@@ -292,14 +266,6 @@ function parseConditions(status: JsonObject): readonly Condition[] {
 	});
 }
 
-/**
- * Derive the rollout phase from the counters and conditions the controller
- * actually publishes.
- *
- * Order matters. A failure is reported even when the counters look healthy —
- * `ReplicaFailure` with every old replica still available is exactly the case
- * where "ready" is true and the rollout is dead.
- */
 export interface RolloutPhaseResult {
 	readonly phase: RolloutPhase;
 	readonly failureReason: string;
@@ -342,7 +308,6 @@ export function rolloutPhaseFor(input: {
 	return { phase: "progressing", failureReason: "" };
 }
 
-/** Parse an apps/v1 Deployment, from either the object or its `/status` subresource. */
 export function parseDeploymentRecord(body: string): DeploymentRecord {
 	const record = decodeObject(body, "Deployment");
 	requireKind(record, "Deployment");
@@ -355,8 +320,6 @@ export function parseDeploymentRecord(body: string): DeploymentRecord {
 	if (desiredReplicas < 1) {
 		contractChanged("Deployment spec.replicas is below one");
 	}
-	// A freshly created Deployment has an empty status. That is not a contract
-	// change — it is the pending state, and every counter defaults to zero.
 	const status = optionalChild(record, "status");
 	const observedGeneration = requireCount(
 		status,
@@ -406,7 +369,6 @@ export function parseDeploymentRecord(body: string): DeploymentRecord {
 
 	return {
 		name: meta.name,
-		// SAFETY: assertion to `amespace as string, ui` is required at this boundary.
 		namespace: meta.namespace as string,
 		uid: meta.uid,
 		resourceVersion: meta.resourceVersion,
@@ -421,7 +383,6 @@ export function parseDeploymentRecord(body: string): DeploymentRecord {
 	};
 }
 
-/** Parse a core/v1 Service. ClusterIP only — this provider creates no others. */
 export function parseServiceRecord(body: string): ServiceRecord {
 	const record = decodeObject(body, "Service");
 	requireKind(record, "Service");
@@ -438,8 +399,6 @@ export function parseServiceRecord(body: string): ServiceRecord {
 		clusterIp === "None" ||
 		!(IPV4.test(clusterIp) || IPV6.test(clusterIp))
 	) {
-		// A headless Service has no address, so a record built from one would
-		// promise an endpoint that does not exist.
 		contractChanged("Service spec.clusterIP is not a routable cluster address");
 	}
 	const ports = spec.ports;
@@ -448,7 +407,6 @@ export function parseServiceRecord(body: string): ServiceRecord {
 			"Service must expose exactly the one port this provider set",
 		);
 	}
-	// SAFETY: assertion to ` as JsonObject; const` is required at this boundary.
 	const port = ports[0] as JsonObject;
 	const servicePort = requireCount(port, "port", "Service port");
 	const targetPort = requireCount(port, "targetPort", "Service port");
@@ -463,7 +421,6 @@ export function parseServiceRecord(body: string): ServiceRecord {
 
 	return {
 		name: meta.name,
-		// SAFETY: assertion to `espace as string, clus` is required at this boundary.
 		namespace: meta.namespace as string,
 		clusterIp,
 		port: servicePort,

@@ -1,6 +1,3 @@
-// PipelineController.tick (D4, D10, D21, I12, I17): auto-promotion with
-// idempotency keys, availability facts, fan-outs for placed nodes, MATCH_NODE
-// for late entrants, and windows read at request time.
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -205,7 +202,6 @@ describe("tick: list nodes", () => {
 			h.ctx,
 		);
 		h.ledger.add("f1", start - HOUR);
-		// The first request takes the clock past noon: the freeze is now in force.
 		h.promotions.onPromote = () => h.c.set(Date.parse("2026-11-12T12:00:30Z"));
 		await h.controller.tick(h.ctx);
 		expect(h.promotions.requests.map((r) => r.node)).toEqual(["a"]);
@@ -303,7 +299,6 @@ describe("tick: placed nodes (D21)", () => {
 		const h = harness();
 		await placedPipeline(h, AutoPromotion.MATCH_NODE);
 		h.ledger.add("stable", T0 - 2 * HOUR);
-		// fleet-4 was deferred; fleet-3 already runs stable; fleet-2 has a promotion in flight.
 		h.fanout.setQualified(
 			"shop",
 			"fleet",
@@ -343,7 +338,6 @@ describe("tick: placed nodes (D21)", () => {
 			["fleet-1"],
 			"stable",
 		);
-		// A fan-out of newer Freight is running and owns fleet-2.
 		h.fanout.statuses.push(
 			create(
 				(await import("../../src/_generated/cd_pb.js"))
@@ -362,7 +356,6 @@ describe("tick: placed nodes (D21)", () => {
 		expect(h.promotions.requests.map((r) => [r.freightId, r.targets])).toEqual([
 			["stable", ["fleet-3"]],
 		]);
-		// No stable Freight recorded: nothing is requested.
 		const fresh = harness();
 		await placedPipeline(fresh, AutoPromotion.MATCH_NODE);
 		fresh.ledger.add("rolling", T0 - HOUR);

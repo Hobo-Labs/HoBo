@@ -1,9 +1,3 @@
-/**
- * The relay's offers as provider manifests (ADR-0179 phase 5): every manifest
- * in `offers/` lowers into an `@hobo/pricing` catalog, the relay's default
- * cache offers are the ones derived from those catalogs, and the lifecycle
- * driver is chosen by a logged rule that never picks an unbuilt driver.
- */
 import { readdir, readFile } from "node:fs/promises";
 import { fromJson } from "@bufbuild/protobuf";
 import { catalogHashOf, PricingCatalogSchema } from "@hobo/pricing";
@@ -48,7 +42,6 @@ describe("the relay's offer manifests", () => {
 				(entry) => entry.manifest === `offers/${file}`,
 			);
 			expect(generated?.catalogHash).toBe(lowered?.catalog.catalogHash);
-			// The stored catalog hashes to what it says.
 			const catalog = fromJson(PricingCatalogSchema, generated?.catalog ?? {});
 			expect(catalogHashOf(catalog)).toBe(generated?.catalogHash);
 		}
@@ -94,7 +87,6 @@ describe("default cache offers, from the catalog", () => {
 			expect.objectContaining({ beyond: "metered", meteredMicrosPerUnit: 0.4 }),
 			expect.objectContaining({ beyond: "metered", meteredMicrosPerUnit: 5 }),
 		]);
-		// Evidence names the manifest, and Blob's price says it is unverified.
 		expect(blob?.model.evidence.source).toContain(
 			"offers/vercel-blob.provider.yaml",
 		);

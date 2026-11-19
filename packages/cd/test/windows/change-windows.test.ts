@@ -1,5 +1,3 @@
-// createChangeWindows (D10, I17): governed definitions and overrides, FREEZE
-// over ALLOW, DST-correct evaluation, fail-closed on anything undecidable.
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -211,7 +209,6 @@ describe("evaluate", () => {
 
 	it("evaluates an America/Chicago weekend freeze DST-correctly (golden)", async () => {
 		const { windows, ctx, evaluate } = setup();
-		// Friday 17:00 local for 63 h; the 2026-03-06 occurrence spans the spring-forward night.
 		await windows.define(
 			window({
 				name: "weekend",
@@ -230,7 +227,6 @@ describe("evaluate", () => {
 		);
 		const closed = await evaluate("2026-03-08T12:00:00Z", ["weekend"]);
 		expect(closed.nextOpenAtMs).toBe(Date.parse("2026-03-09T14:00:00Z"));
-		// After the transition the freeze starts at 17:00 CDT = 22:00Z.
 		expect((await evaluate("2026-03-13T21:59:59Z", ["weekend"])).open).toBe(
 			true,
 		);
@@ -251,14 +247,12 @@ describe("evaluate", () => {
 			}),
 			ctx,
 		);
-		// GMT: 00:30Z–02:30Z.
 		expect((await evaluate("2026-03-28T00:30:00Z", ["nightly"])).open).toBe(
 			false,
 		);
 		expect((await evaluate("2026-03-28T02:30:00Z", ["nightly"])).open).toBe(
 			true,
 		);
-		// BST from 2026-03-29: 00:30 local = 23:30Z the evening before; 2 h exact.
 		expect((await evaluate("2026-03-29T23:30:00Z", ["nightly"])).open).toBe(
 			false,
 		);
@@ -268,7 +262,6 @@ describe("evaluate", () => {
 		expect((await evaluate("2026-03-30T01:30:00Z", ["nightly"])).open).toBe(
 			true,
 		);
-		// Back to GMT after 2026-10-25.
 		expect((await evaluate("2026-10-26T00:29:59Z", ["nightly"])).open).toBe(
 			true,
 		);
@@ -346,7 +339,6 @@ describe("evaluate", () => {
 				})
 			).open,
 		).toBe(false);
-		// No jurisdiction label: a FREEZE with a jurisdiction selector still applies.
 		expect((await evaluate("2026-11-12T12:00:00Z", [])).activeFreezes).toEqual([
 			"eu-freeze",
 		]);

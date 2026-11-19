@@ -81,7 +81,6 @@ const settings: FleetVerdictSettings = {
 const configuration = () =>
 	fromJsonString(ConfigurationSchema, JSON.stringify(fixtures.configuration));
 
-/** A workflow verifier that knows the Pact's tokens and no others. */
 const workflowIdentity = {
 	verify: async (token: string) => {
 		const repository = Object.entries(fixtures.workflowTokens).find(
@@ -123,7 +122,6 @@ it("serves the fleet verdict Pact over real HTTP: read by anyone, reported only 
 				if (!repository) throw new Error("no repository");
 				const key = MEMORY_FLEET_VERDICT_KEYS.allowance(repository);
 				const [current] = await kv.getMany([key]);
-				// What the relay already counted for other labels stays.
 				const allowance =
 					(current && parseFleetVerdictAllowance(current.value)) ??
 					create(FleetVerdictAllowanceSchema);
@@ -186,7 +184,6 @@ it("serves the fleet verdict Pact over real HTTP: read by anyone, reported only 
 		expect([...exercised].sort()).toEqual(
 			pact.interactions.map((entry) => entry.description).sort(),
 		);
-		// Every refused report was logged with the reporter it named and why.
 		expect(refused).toEqual([
 			"hobo_ci_fleet_verdict_refused:box-1:bad-request",
 			"hobo_ci_fleet_verdict_refused:box-9:unknown-reporter",
@@ -272,9 +269,6 @@ it("is switched off by the kill switch: reads block nothing, reports answer 503"
 	}
 });
 
-// Route jobs no longer ask this route: they read the box relay's routing slip
-// (ADR-0181). Until the hosted verdict routes are removed, the
-// relay still answers a plain read with what a signed reporter reported.
 it("answers a plain read with what a signed reporter reported, end to end", async () => {
 	const nowMs = Date.parse(NOW);
 	const kept = createMemoryFleetVerdicts(() => nowMs);
@@ -290,7 +284,6 @@ it("answers a plain read with what a signed reporter reported, end to end", asyn
 					return kept.read(repository, enrolled);
 				},
 			},
-			// box-1 alone serves hobo-trunk, so its report alone decides it.
 			settings: () => settings,
 		},
 	});
@@ -322,7 +315,6 @@ it("answers a plain read with what a signed reporter reported, end to end", asyn
 		return (await response.json()).blocked;
 	};
 	try {
-		// Nothing reported: nothing is blocked.
 		expect(await ask()).toEqual({});
 
 		await report('{"hobo-trunk":{"reason":"no-capacity"}}');
@@ -331,8 +323,6 @@ it("answers a plain read with what a signed reporter reported, end to end", asyn
 		await report("{}");
 		expect(await ask()).toEqual({});
 
-		// Asking about a repository no account is connected to reads nothing
-		// from the store: a made-up name costs the relay no lookup.
 		const asked = reads.length;
 		expect(await ask("acme/unknown")).toEqual({});
 		expect(reads).toHaveLength(asked);

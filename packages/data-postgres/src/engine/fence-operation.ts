@@ -1,4 +1,3 @@
-/** A durable source-side lock around a destination receiver's route operation. */
 import { createHash, createPublicKey, KeyObject, verify } from "node:crypto";
 import {
 	canonicalFenceOperationReceipt,
@@ -16,11 +15,6 @@ export type FenceOperationReceiverKeys = ReadonlyMap<
 	string | Buffer | KeyObject
 >;
 
-/**
- * The keys must come from independently authenticated enrollment. The first
- * claim fixes the exact key set in the source database; changing it needs an
- * independently authorized key-rotation protocol, which is not provided here.
- */
 export function createFenceOperationPort(
 	store: DatasetStore,
 	input: FenceOperationReceiverKeys | undefined,

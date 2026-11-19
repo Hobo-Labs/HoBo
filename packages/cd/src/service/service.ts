@@ -1,16 +1,3 @@
-// `createCdService` — the long-running CD host (ADR-0182 C13).
-//
-// Modelled on the CI relay host: one tick loop drives every module's `tick`
-// in a fixed order (sources → inventory → pipelines → promotions →
-// verification → rollouts → fan-out → failover → posture → previews →
-// retention), and a supervisor keeps each reconciler's `run` loop alive.
-// The host makes no delivery decision itself: every step is a module's own
-// "safe to repeat" tick, so a crash anywhere resumes by observation.
-//
-// Readiness reflects the journal (a probe each tick), reconciler leases (each
-// run loop alive) and source health (the sources step). Drain stops the loop,
-// aborts the reconcilers so they release their `cd:camp:<id>` leases, and
-// waits for the in-flight tick, bounded by the caller's deadline signal.
 import type { PrincipalRef } from "@hobo/core";
 import type { RetentionPolicyRecord } from "../_generated/cd_pb.js";
 import { CD_DEFAULTS } from "../events.js";
@@ -62,7 +49,6 @@ export const CD_SERVICE_METRICS = Object.freeze({
 	drainMs: "hobo.cd.service.drain_ms",
 });
 
-/** Retention is a sweep, not a hot loop: once an hour unless configured. */
 export const CD_SERVICE_RETENTION_INTERVAL_MS = 3_600_000;
 
 export class CdServiceError extends Error {
@@ -82,13 +68,9 @@ export type CdServiceDeps = CdBase & {
 	readonly retention: readonly RetentionPolicyRecord[];
 	readonly tickIntervalMs: number;
 	readonly principal: PrincipalRef;
-	/** Service metrics sink. Failures to emit never affect the loop. */
 	readonly telemetry?: TelemetrySink;
-	/** Reconciler restart backoff (default 1 s doubling to the 30 s lease TTL). */
 	readonly reconcilerBackoff?: Readonly<{ baseMs: number; maxMs: number }>;
-	/** Minimum time between retention sweeps (default 1 h). */
 	readonly retentionIntervalMs?: number;
-	/** A step still running after this long is reported failed and skipped until it settles (default 30 × tick, ≥ 30 s). */
 	readonly stepTimeoutMs?: number;
 };
 
@@ -113,9 +95,7 @@ export type DrainReport = Readonly<{
 }>;
 
 export interface CdServiceHost extends CdService {
-	/** Run one tick now (tests, `hobo up`). Ticks never overlap. */
 	tick(): Promise<TickReport>;
-	/** Readiness detail: one check per dependency and step. */
 	health(): HealthReport;
 }
 
@@ -161,7 +141,6 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		restarts: 0,
 	}));
 
-	// ── Telemetry ─────────────────────────────────────────────────────────
 	function point(
 		name: string,
 		kind: OtelMetricPoint["kind"],
@@ -174,7 +153,6 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 	function emit(points: readonly OtelMetricPoint[]): void {
 		if (!d.telemetry || points.length === 0) return;
 		d.telemetry.metrics(points).catch(() => {
-			// Telemetry is best-effort; a broken exporter never stops delivery.
 		});
 	}
 
@@ -187,7 +165,6 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		};
 	}
 
-	// ── Steps ─────────────────────────────────────────────────────────────
 	function stepFn(step: CdServiceStep): (() => Promise<void>) | undefined {
 		const c = ctx();
 		const cd = d.cd;
@@ -372,7 +349,6 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 	}
 
 	function tick(): Promise<TickReport> {
-		// Ticks never overlap: a caller during a tick gets the next one.
 		const next = (inflight ?? Promise.resolve())
 			.catch(() => undefined)
 			.then(runTick);
@@ -396,7 +372,6 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		loopTimer.unref?.();
 	}
 
-	// ── Reconciler supervision ────────────────────────────────────────────
 	function superviseReconciler(state: ReconcilerState): void {
 		if (draining) return;
 		state.running = true;
@@ -435,7 +410,6 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		);
 	}
 
-	// ── Readiness ─────────────────────────────────────────────────────────
 	function ready(): boolean {
 		if (!started || draining) return false;
 		if (!storeOk) return false;
@@ -479,7 +453,6 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 		return { ok: ready(), checks };
 	}
 
-	// ── Lifecycle ─────────────────────────────────────────────────────────
 	async function start(): Promise<void> {
 		if (started)
 			throw new CdServiceError(

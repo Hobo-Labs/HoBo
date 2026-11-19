@@ -16,7 +16,6 @@ export type GhostBindingDecision =
 	| Readonly<{ kind: "covered"; leaseId: string }>
 	| Readonly<{ kind: "ghost"; runnerName: string; runnerId: number }>;
 
-/** Job already bound to a box JIT runner this worker does not actively host. */
 export function decideGhostBoxRunnerBinding(
 	job: Readonly<{ repositoryId: number; id: number; runAttempt: number }>,
 	githubJob: GithubJobBinding,

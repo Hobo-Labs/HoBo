@@ -1,30 +1,3 @@
-/**
- * Which persistence mode the browser store opens, and what it refuses to claim.
- *
- * The rule this module exists to enforce is a negative one: **never report
- * durability that is not there.** A store that said "opfs-sahpool" while
- * holding an in-memory database would let a tab close take events with it
- * while every log line said they were safe — and an event store that loses
- * events silently is worse than one that refuses to open.
- *
- * So the decision has three outcomes and each is deliberate:
- *
- * - **OPFS present and openable** → durable, reported as `opfs-sahpool`.
- * - **Durable impossible, `allowTransient: true`** → in-memory, reported
- *   honestly as `transient-memory`. The caller opted in with a flag whose name
- *   says what it costs.
- * - **Durable impossible, no opt-in** → refuse with
- *   `PersistenceUnavailableError`, naming the flag that would allow it.
- *
- * The middle case is the interesting one: transient mode is reachable *only*
- * through an explicit opt-in, never as a fallback. A silent downgrade is the
- * exact failure the mode label is meant to prevent.
- *
- * These drive `hasOpfs()` by stubbing `navigator.storage`, which is the only
- * input the detection actually reads. A real OPFS open needs a Worker and a
- * browser; what is testable here is the *decision*, and the decision is where
- * a false durability claim would come from.
- */
 import { PersistenceUnavailableError } from "@hobo/core";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -44,7 +17,6 @@ afterEach(() => {
 	}
 });
 
-/** Present a navigator whose storage does or does not offer OPFS. */
 function withOpfs(present: boolean): void {
 	Object.defineProperty(globalThis, "navigator", {
 		configurable: true,
@@ -66,16 +38,11 @@ describe("detecting OPFS", () => {
 	});
 
 	it("reports absent when storage has no getDirectory", () => {
-		// The capability is the *method*, not the object. A storage manager
-		// without it is a browser that cannot give us a durable handle.
 		withOpfs(false);
 		expect(hasOpfs()).toBe(false);
 	});
 
 	it("reports absent when getDirectory is not callable", () => {
-		// A truthiness check here would accept a property that happens to
-		// exist — and then fail at the first real open, after the store has
-		// already reported itself durable.
 		Object.defineProperty(globalThis, "navigator", {
 			configurable: true,
 			writable: true,
@@ -97,12 +64,6 @@ describe("choosing a mode", () => {
 	});
 
 	it("chooses the same mode whether or not multiTab is set", () => {
-		// QUIRK: the multi-tab branch selects `opfs-sahpool` either way — both
-		// arms of that ternary are identical, so the option currently has no
-		// effect on the chosen mode. Pinned rather than removed: SAH-pool is
-		// the multi-tab-safe VFS, so the single-tab arm is the one that would
-		// change if a faster single-tab VFS were ever wired in, and silently
-		// dropping the option would remove the seam for it.
 		withOpfs(true);
 		expect(detectBrowserPersistence({ multiTab: true }).mode).toBe(
 			detectBrowserPersistence({ multiTab: false }).mode,
@@ -117,9 +78,6 @@ describe("choosing a mode", () => {
 	});
 
 	it("says why it fell back to transient", () => {
-		// The reason travels with the mode so a caller logging one logs both;
-		// a bare mode label leaves an operator to guess whether durability was
-		// impossible or merely not requested.
 		withOpfs(false);
 		expect(detectBrowserPersistence({ allowTransient: true }).reason).toMatch(
 			/OPFS unavailable/,
@@ -127,8 +85,6 @@ describe("choosing a mode", () => {
 	});
 
 	it("reports unavailable when durable is required and OPFS is missing", () => {
-		// The default. Falling back to memory here is the silent downgrade the
-		// mode label exists to prevent.
 		withOpfs(false);
 		expect(detectBrowserPersistence({}).mode).toBe("unavailable");
 	});
@@ -160,11 +116,6 @@ describe("opening a store", () => {
 	});
 
 	it("refuses to claim OPFS when the VFS cannot actually be opened", async () => {
-		// The important case. OPFS is *detected*, so the mode says durable —
-		// but the real Worker+OPFS open is not available here, and the store
-		// refuses rather than quietly returning a memory database labelled
-		// `opfs-sahpool`. A store that lied here would lose events on a tab
-		// close while every log line said they were safe.
 		withOpfs(true);
 		await expect(
 			createBrowserEventStore({ partitionId: "tenant-a" }),
@@ -172,8 +123,6 @@ describe("opening a store", () => {
 	});
 
 	it("names the flag that would allow a non-durable open", async () => {
-		// A refusal that does not say how to proceed sends the caller to the
-		// source; `allowTransient` is the whole remedy and it is one word.
 		withOpfs(true);
 		await expect(
 			createBrowserEventStore({ partitionId: "tenant-a" }),
@@ -181,8 +130,6 @@ describe("opening a store", () => {
 	});
 
 	it("still opens transient when OPFS is detected but opted down to", async () => {
-		// A caller that asked for transient gets transient even where durable
-		// looked possible — the flag is a decision, not a hint.
 		withOpfs(true);
 		const store = await createBrowserEventStore({
 			partitionId: "tenant-a",
@@ -220,8 +167,6 @@ describe("the opened store", () => {
 	} as const;
 
 	it("is frozen", async () => {
-		// It carries `persistenceMode`, which is a durability claim. A caller
-		// that could rewrite it could relabel a memory store as durable.
 		const store = await transientStore();
 		expect(Object.isFrozen(store)).toBe(true);
 		store.close();
@@ -242,8 +187,6 @@ describe("the opened store", () => {
 		await store.append("run:2", [{ type: "run.Started", data: {} }], APPEND);
 		const seen = [];
 		for await (const positioned of store.readAll()) seen.push(positioned);
-		// Both streams, in one global order — the readAll contract that makes a
-		// cross-stream projection possible at all.
 		expect(seen).toHaveLength(2);
 		store.close();
 	});
@@ -288,16 +231,12 @@ describe("the opened store", () => {
 	});
 
 	it("exposes its journal for the worker protocol to drive", async () => {
-		// `@internal`, but real: the Worker path operates the journal directly
-		// rather than through this wrapper.
 		const store = await transientStore();
 		expect(store.journal()).toBeDefined();
 		store.close();
 	});
 
 	it("keeps two partitions' stores independent", async () => {
-		// Transient stores are per-open in-memory databases; sharing one would
-		// leak a tenant's events into another's reads.
 		withOpfs(false);
 		const first = await createBrowserEventStore({
 			partitionId: "tenant-a",

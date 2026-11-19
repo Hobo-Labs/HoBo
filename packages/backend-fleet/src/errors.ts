@@ -1,12 +1,3 @@
-/**
- * Stable error codes of the engine-neutral fleet.
- *
- * Only two things can be wrong here: a configuration (a fleet with no members,
- * a repeated id, a policy out of range) or a record (an assignment entry or a
- * financial model that does not parse). The codes are the ones
- * `@hobo/data-postgres` used before these parts moved here, so a caller that
- * matches on `code` keeps working.
- */
 
 export const BACKEND_FLEET_ERROR_CODES = [
 	"FLEET_CONFIGURATION_INVALID",

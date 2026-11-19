@@ -1,7 +1,3 @@
-/**
- * The parse boundary: what an authored option bag has to survive before any
- * manifest exists.
- */
 
 import { describe, expect, it } from "vitest";
 import {
@@ -39,8 +35,6 @@ describe("Kubernetes quantities", () => {
 	});
 
 	it("keeps the binary and decimal memory suffixes apart", () => {
-		// 1M is 1,000,000 bytes and 1Mi is 1,048,576. Treating them alike
-		// under-provisions by 4.8% at gibibyte scale.
 		expect(parseMemoryBytes("128Mi", "memory")).toBe(134_217_728);
 		expect(parseMemoryBytes("128M", "memory")).toBe(128_000_000);
 	});
@@ -71,13 +65,10 @@ describe("parseWorkloadPlacement", () => {
 		const error = rejects({ ...VALID, name: "Try_Site" });
 
 		expect(isKubernetesProviderError(error)).toBe(true);
-		// SAFETY: assertion to `error as { code: string }` is required at this boundary.
 		expect((error as { code: string }).code).toBe("PLACEMENT_REJECTED");
 	});
 
 	it("rejects an unqualified image reference", () => {
-		// `nginx` resolves through whatever default registry the node is
-		// configured with, which is nobody's placement decision.
 		expect(() =>
 			parseWorkloadPlacement({ ...VALID, image: "nginx" }),
 		).toThrow();
@@ -93,7 +84,6 @@ describe("parseWorkloadPlacement", () => {
 			limits: { cpu: "250m", memory: "256Mi" },
 		});
 
-		// SAFETY: assertion to `error as { message: string }` is required at this boundary.
 		expect((error as { message: string }).message).toContain(
 			"cpu limit is below the cpu request",
 		);
@@ -105,7 +95,6 @@ describe("parseWorkloadPlacement", () => {
 			labels: { "app.kubernetes.io/managed-by": "someone-else" },
 		});
 
-		// SAFETY: assertion to `error as { message: string }` is required at this boundary.
 		expect((error as { message: string }).message).toContain(
 			"owned by this provider",
 		);
@@ -134,7 +123,6 @@ describe("kubernetes.with.workload", () => {
 
 describe("renderDeploymentManifest", () => {
 	it("drops every capability and mounts no service account token", () => {
-		// SAFETY: assertion to `renderDeploymentManifest( parseWorkloadPlacement(VALID), ) as { spec: { template: { spec: { automountServiceAccountToken` is required at this boundary.
 		const manifest = renderDeploymentManifest(
 			parseWorkloadPlacement(VALID),
 		) as {

@@ -1,14 +1,9 @@
-/**
- * The release-gate suites' own helpers (test/helpers/release-gate.ts): what
- * their assertions about processes rest on.
- */
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 import { gone } from "./helpers/release-gate.js";
 
-/** The state letter of a process, or "" once it cannot be read. */
 function stateOf(pid: number): string {
 	try {
 		const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
@@ -20,7 +15,6 @@ function stateOf(pid: number): string {
 
 const HAS_PYTHON3 = spawnSync("python3", ["-c", ""]).status === 0;
 
-/** Ends its main thread (pthread_exit) with a thread that runs for 20 s: /proc says `State: Z`, `Threads: 2`. */
 const LEADER_EXIT_PY = [
 	"import ctypes, threading, time",
 	"threading.Thread(target=time.sleep, args=(20,)).start()",
@@ -31,8 +25,6 @@ describe("gone", () => {
 	it.runIf(process.platform === "linux")(
 		"counts a process that has exited as gone, although its parent has not reaped it",
 		async () => {
-			// `sleep 0` exits at once; the shell then becomes `sleep 20`, which never reaps it.
-			// kill(pid, 0) still finds such a zombie, as it does an orphan init has not reaped yet.
 			const parent = spawn("sh", ["-c", "sleep 0 & echo $!; exec sleep 20"], {
 				stdio: ["ignore", "pipe", "ignore"],
 			});
@@ -76,7 +68,6 @@ describe("gone", () => {
 				while (!/^State:\s+Z/mu.test(status()) && Date.now() < until) {
 					await new Promise((done) => setTimeout(done, 50));
 				}
-				// The premise: zombie by its state line, yet running (two threads).
 				expect(status()).toMatch(/^State:\s+Z/mu);
 				expect(status()).toMatch(/^Threads:\s+2$/mu);
 				expect(await gone(pid, 5)).toBe(false);

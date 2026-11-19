@@ -34,7 +34,6 @@ test("can-deploy: every pricing.* contract replays clean against the pinned base
 		"corpus",
 		"golden-replay-baseline.json",
 	);
-	// SAFETY: the committed baseline file is validated by the gate as CorpusBaseline.
 	const pinned = JSON.parse(
 		readFileSync(baselinePath, "utf8"),
 	) as CorpusBaseline;

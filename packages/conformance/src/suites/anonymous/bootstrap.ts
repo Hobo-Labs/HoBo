@@ -1,13 +1,3 @@
-/**
- * Bootstrap conformance — does the advertised bootstrap class actually work?
- *
- * A catalog entry saying `anonymous-claimable` is a marketing string until
- * something proves that consent was captured *before* money or quota moved,
- * that a proof-of-work path terminates inside a declared ceiling, that the
- * lease expiry came out of the provider's own response rather than a local
- * timer we invented, and that asking for a resource kind nobody allowlisted is
- * refused rather than quietly provisioned.
- */
 
 import type { BootstrapClass } from "@hobo/claims";
 import { isJsonNumber, type JsonValue } from "../../json.js";
@@ -52,7 +42,6 @@ export const BOOTSTRAP_CLASSES: readonly BootstrapClass[] = [
 	"self-hosted-hobo",
 ];
 
-/** Everything the executor needs. No clock, no environment, no randomness. */
 export interface BootstrapAttemptRequest {
 	readonly caseId: string;
 	readonly advertisedClass: BootstrapClass;
@@ -60,7 +49,6 @@ export interface BootstrapAttemptRequest {
 	readonly requestedResourceKind: string;
 	readonly allowedResourceKinds: readonly string[];
 	readonly proofOfWorkCeiling: number;
-	/** Injected instant. The suite never reads a clock. */
 	readonly issuedAtMs: number;
 }
 
@@ -109,10 +97,6 @@ const ANONYMOUS_ALLOWLIST: readonly string[] = [
 	"site",
 ];
 
-/**
- * The declarative case table. Data only — no behavior, no imports of anything
- * effectful, and safe to serialize into the protobuf record in `data-models/`.
- */
 export const BOOTSTRAP_CASES: readonly BootstrapCase[] = Object.freeze([
 	{
 		id: "bootstrap/advertised-class-holds",

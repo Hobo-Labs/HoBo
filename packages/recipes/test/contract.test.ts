@@ -1,11 +1,3 @@
-/**
- * Provider verification for the Conductor ↔ recipe-compiler boundary.
- *
- * The pact file is the consumer's expectation; this test runs the real
- * compiler for each interaction and checks the response it would produce. No
- * HTTP is involved, and nothing here is a second implementation of the
- * compiler — it is the same functions, driven by the recorded requests.
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,7 +56,6 @@ type Pact = {
 	readonly interactions: readonly Interaction[];
 };
 
-// SAFETY: assertion to `.parse( readFileSync( join( dirname(fileURLToPath(import.meta.url)), "..", "contracts", "pacts", "recipe-compiler.pact.j` is required at this boundary.
 const PACT: Pact = JSON.parse(
 	readFileSync(
 		join(
@@ -101,13 +92,11 @@ function requestFor(recipe: SolutionRecipe, realtime: string | undefined) {
 		dependencies: base.dependencies,
 		requestedSemantics: {
 			...base.requestedSemantics,
-			// SAFETY: assertion to `time as RealtimeGrade, ` is required at this boundary.
 			realtime: realtime as RealtimeGrade,
 		},
 	});
 }
 
-/** `sha256:*` and `offer/*` are shape assertions, everything else is exact. */
 type JsonObject = { readonly [k: string]: Json };
 
 function isJsonObject(value: Json): value is JsonObject {

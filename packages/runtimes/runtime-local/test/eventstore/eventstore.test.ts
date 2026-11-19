@@ -60,7 +60,6 @@ describe("runtime-local EventStore", () => {
 				meta: {},
 			},
 		]);
-		// SAFETY: assertion to `event as { seq: number }` is required at this boundary.
 		expect(pushed.map((event) => (event as { seq: number }).seq)).toEqual([1]);
 
 		const snapshot = await store.snapshot(
@@ -206,7 +205,6 @@ describe("runtime-local EventStore", () => {
 			(await collectStream(store, "ticket:1")).map((event) => [
 				event.seq,
 				event.type,
-				// SAFETY: assertion to `event.data as { offendingSeq?: number }` is required at this boundary.
 				(event.data as { offendingSeq?: number }).offendingSeq,
 			]),
 		).toEqual([

@@ -1,16 +1,12 @@
 import { createRequire } from "node:module";
 import type TypeScript from "typescript";
 
-// TypeScript is a CommonJS package; requiring it directly keeps test runners
-// from transforming it and looking for a source map it does not ship.
 const ts: typeof TypeScript = createRequire(import.meta.url)("typescript");
 
 import { parseAllDocuments } from "yaml";
 
-/** Why a resolved file was refused after it was put together. Fixed codes. */
 export type VerifyRefusal = "unparseable-resolution" | "duplicate-declaration";
 
-/** The whole file on each side of the merge, and the file the engine produced. */
 export type ResolvedSides = Readonly<{
 	path: string;
 	ours: string;
@@ -34,11 +30,9 @@ const extension = (path: string) =>
 
 function scriptKind(path: string): TypeScript.ScriptKind | undefined {
 	const kind = SCRIPT_KINDS.get(extension(path));
-	// A `.d.ts` file declares the same name more than once on purpose.
 	return kind !== undefined && !/\.d\.[cm]?ts$/i.test(path) ? kind : undefined;
 }
 
-/** Whether a file of this kind parses. Undefined for a kind with no parser here. */
 function parses(path: string, text: string): boolean | undefined {
 	const kind = scriptKind(path);
 	if (kind !== undefined)
@@ -65,7 +59,6 @@ function parses(path: string, text: string): boolean | undefined {
 			}
 		case "yaml":
 		case "yml":
-			// A stream of documents, as Kubernetes manifests are, is one file.
 			try {
 				return parseAllDocuments(text, {
 					strict: true,
@@ -79,12 +72,6 @@ function parses(path: string, text: string): boolean | undefined {
 	}
 }
 
-/**
- * Names declared more than once at the top level of a script: imported
- * bindings, functions with a body, classes, and `let`/`const`/`var`
- * identifiers. Overload signatures, interfaces, namespaces and enums may
- * legally repeat and are not counted.
- */
 function duplicateDeclarations(
 	path: string,
 	text: string,
@@ -125,15 +112,6 @@ function duplicateDeclarations(
 	return duplicates;
 }
 
-/**
- * Checks a resolved file must pass before it is committed. A check only
- * refuses when both sides of the merge pass it, so a file that was already
- * unparseable, or a format with no parser here, never blocks a resolution.
- *
- * These are deterministic checks, not a judgement of the code: a resolution
- * that parses and declares each name once can still be wrong, and the
- * repository's required checks remain its verification.
- */
 export function verifyResolvedFile(
 	sides: ResolvedSides,
 ): VerifyRefusal | undefined {

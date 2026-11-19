@@ -1,7 +1,3 @@
-// Git wire formats for host-neutral discovery over smart HTTP protocol v2:
-// pkt-lines, side-band demultiplexing, and a packfile reader for the objects
-// a `deepen 1` fetch returns (commits and trees; blobs are filtered out).
-// No git binary and no host API: the bytes are parsed here.
 import { createHash } from "node:crypto";
 import { inflateSync } from "node:zlib";
 
@@ -22,8 +18,6 @@ export class GitFormatError extends Error {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-
-// ── pkt-line ────────────────────────────────────────────────────────────────
 
 // public-contract: Git smart-HTTP v2 pkt-line flush packet (gitprotocol-common).
 export const FLUSH = "0000";
@@ -75,10 +69,6 @@ export function packetText(packet: Packet): string | undefined {
 		: undefined;
 }
 
-/**
- * The v2 capability advertisement (`info/refs?service=git-upload-pack`),
- * tolerating the `# service=` preamble smart-HTTP servers send first.
- */
 export type CapabilityAdvert = Readonly<{
 	version: number;
 	capabilities: ReadonlyMap<string, string>;
@@ -128,7 +118,6 @@ export function parseLsRefs(bytes: Uint8Array): readonly RemoteRef[] {
 	return refs;
 }
 
-/** Concatenate side-band channel 1 of the `packfile` section of a v2 fetch response. */
 export function fetchPackfile(bytes: Uint8Array): Uint8Array {
 	const packets = readPackets(bytes);
 	let inPack = false;
@@ -154,8 +143,6 @@ export function fetchPackfile(bytes: Uint8Array): Uint8Array {
 	return Buffer.concat(chunks);
 }
 
-// ── packfile ────────────────────────────────────────────────────────────────
-
 const TYPES = new Map<number, GitObjectType>([
 	[1, "commit"],
 	[2, "tree"],
@@ -175,16 +162,11 @@ function hashObject(
 		.digest("hex");
 }
 
-// With `info: true` node:zlib returns `{ buffer, engine }` (documented); the
-// typing below narrows the declared Buffer return to carry `engine`, and the
-// code reads `buffer` only through `new Uint8Array(...)`, which copies the
-// bytes whether `buffer` is the inflated Buffer or an ArrayBuffer.
 type InflateWithInfo = (
 	buffer: Uint8Array,
 	options: Readonly<{ info: true }>,
 ) => ReturnType<typeof inflateSync> &
 	Readonly<{ engine: Readonly<{ bytesWritten: number }> }>;
-// SAFETY: @types/node does not model the documented `info: true` overload.
 const inflateWithInfo = inflateSync as InflateWithInfo;
 
 type Inflated = Readonly<{ data: Uint8Array; consumed: number }>;
@@ -197,7 +179,6 @@ function inflate(bytes: Uint8Array, offset: number, size: number): Inflated {
 			throw new GitFormatError(
 				"inflated size does not match the object header",
 			);
-		// `bytesWritten` is the compressed input zlib consumed for this stream.
 		return { data, consumed: result.engine.bytesWritten };
 	} catch (error) {
 		if (error instanceof GitFormatError) throw error;
@@ -276,7 +257,6 @@ type Pending = Readonly<{
 	delta: Uint8Array;
 }>;
 
-/** Read every object in a version-2 packfile, resolving OFS/REF deltas. */
 export function readPack(
 	pack: Uint8Array,
 	format: ObjectFormat,
@@ -364,7 +344,6 @@ export function readPack(
 		if (offset > pack.length - hashLength)
 			throw new GitFormatError("packfile object overruns the trailer");
 	}
-	// Resolve deltas until no progress: bases may themselves be deltas.
 	let remaining = pending;
 	while (remaining.length > 0) {
 		const next: Pending[] = [];
@@ -392,8 +371,6 @@ export function readPack(
 	}
 	return byOid;
 }
-
-// ── objects ─────────────────────────────────────────────────────────────────
 
 export type Commit = Readonly<{
 	tree: string;
@@ -447,7 +424,6 @@ export function parseTree(
 
 export type TreeFile = Readonly<{ path: string; mode: string; oid: string }>;
 
-/** Every non-tree entry under `treeOid`, with full paths. Missing subtrees are an error. */
 export function walkTree(
 	objects: ReadonlyMap<string, GitObject>,
 	treeOid: string,

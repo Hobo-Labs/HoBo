@@ -1,4 +1,3 @@
-/** Deterministic ULID-compatible id generation from a clock + counter. */
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -26,10 +25,6 @@ export function createUlidGenerator(
 			timePart = CROCKFORD[time % 32] + timePart;
 			time = Math.floor(time / 32);
 		}
-		// 16 chars of entropy: mix counter + fixed seed for tests. Sample the
-		// HIGH bits of the LCG state — the low bits of a mod-2^32 LCG cycle
-		// with period 32, which made the 33rd id within one millisecond
-		// collide with the first (UNIQUE constraint on events.id).
 		let entropy = "";
 		let n = (counter * 0x9e37_79b9) >>> 0;
 		for (let i = 0; i < 16; i++) {

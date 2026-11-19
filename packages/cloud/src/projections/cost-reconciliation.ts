@@ -47,46 +47,27 @@
  * them produces a number that is wrong in a way no reader can see.
  */
 
-/** A plan-time estimate for one resource, in minor units of the report's currency. */
 export interface EstimatedCost {
 	readonly resource: string;
 	readonly minorUnits: number;
 }
 
-/**
- * An observed charge. Bills arrive as many lines per resource, so repeats for
- * one resource are summed rather than treated as a conflict.
- */
 export interface ActualCost {
 	readonly resource: string;
 	readonly minorUnits: number;
-	/** Defaults to the report's currency. A different one refuses the report. */
 	readonly currency?: string;
 }
 
 export interface CostReconciliationInput {
 	readonly deploymentId: string;
 	readonly currency: string;
-	/** The span the estimate describes — a month's estimate is 30 days here. */
 	readonly estimatePeriodMs: number;
-	/** How much of that span the actuals actually cover. */
 	readonly observedWindowMs: number;
 	readonly estimated: readonly EstimatedCost[];
 	readonly actual: readonly ActualCost[];
-	/**
-	 * How far a resource may diverge before it is reported, in basis points of
-	 * its estimate. Defaults to 0 — exact comparison — so a caller that wants
-	 * slack has to say how much. Metered billing rounds, and a report that
-	 * fires on every cent grows an ignore-list by the second week.
-	 */
 	readonly toleranceBasisPoints?: number;
 }
 
-/**
- * - `variance` — estimated and observed, and they differ beyond tolerance.
- * - `unestimated` — charged for, never estimated.
- * - `unrealized` — estimated, never charged for.
- */
 export type CostFindingKind = "variance" | "unestimated" | "unrealized";
 
 export interface CostFinding {
@@ -95,16 +76,9 @@ export interface CostFinding {
 	readonly estimatedMinorUnits: number;
 	readonly actualMinorUnits: number;
 	readonly varianceMinorUnits: number;
-	/** One sentence a human can act on without opening the bill. */
 	readonly detail: string;
 }
 
-/**
- * - `reconciled` — compared, and nothing diverged.
- * - `over` / `under` — compared, and the total went the named way.
- * - `insufficient-window` — not compared; the actuals do not cover the period.
- * - `currency-mismatch` — not compared; an actual is in another currency.
- */
 export type CostReconciliationStatus =
 	| "reconciled"
 	| "over"
@@ -115,7 +89,6 @@ export type CostReconciliationStatus =
 export interface CostTotals {
 	readonly estimatedMinorUnits: number;
 	readonly actualMinorUnits: number;
-	/** Actual minus estimated. Absent when the comparison was refused. */
 	readonly varianceMinorUnits?: number;
 	readonly unestimatedMinorUnits: number;
 	readonly unrealizedMinorUnits: number;
@@ -125,7 +98,6 @@ export interface CostReconciliationReport {
 	readonly deploymentId: string;
 	readonly currency: string;
 	readonly status: CostReconciliationStatus;
-	/** Observed window over estimate period, capped at 1. */
 	readonly coverage: number;
 	readonly totals: CostTotals;
 	readonly findings: readonly CostFinding[];
@@ -167,8 +139,6 @@ export function reconcileCost(
 			entry.currency !== undefined && entry.currency !== input.currency,
 	);
 
-	// Both refusals report the totals anyway. Withholding the facts as well as
-	// the comparison would leave a caller with nothing at all to show.
 	if (mixedCurrency || coverage < 1) {
 		return {
 			deploymentId: input.deploymentId,
@@ -189,20 +159,11 @@ export function reconcileCost(
 	const findings: CostFinding[] = [];
 	let unestimatedMinorUnits = 0;
 	let unrealizedMinorUnits = 0;
-	/**
-	 * The part of the variance the report actually reported. Tolerance-suppressed
-	 * differences and unrealized estimates contribute nothing, so the status can
-	 * never say "over" beside an empty finding list — a summary that contradicts
-	 * the detail sends an operator hunting for a divergence the report just said
-	 * was not there. The exact figure stays in `totals`, which is what has to
-	 * agree with the invoice.
-	 */
 	let reportableVariance = 0;
 
 	for (const [resource, estimated] of estimatedBy) {
 		const observed = actualBy.get(resource);
 		if (observed === undefined) {
-			// Never charged for, so never tested. Not a saving.
 			unrealizedMinorUnits += estimated;
 			findings.push({
 				kind: "unrealized",
@@ -215,8 +176,6 @@ export function reconcileCost(
 			continue;
 		}
 		const variance = observed - estimated;
-		// Basis points of the estimate, compared without division so an estimate
-		// of zero does not have to be special-cased into infinity.
 		const allowed = (Math.abs(estimated) * tolerance) / 10_000;
 		if (Math.abs(variance) <= allowed) continue;
 		reportableVariance += variance;
@@ -232,7 +191,6 @@ export function reconcileCost(
 
 	for (const [resource, observed] of actualBy) {
 		if (estimatedBy.has(resource)) continue;
-		// Never dropped: the report has to sum to the invoice.
 		unestimatedMinorUnits += observed;
 		reportableVariance += observed;
 		findings.push({
@@ -247,8 +205,6 @@ export function reconcileCost(
 
 	findings.sort((a, b) => a.resource.localeCompare(b.resource));
 
-	// Unrealized estimates are excluded from both sides of the variance: a
-	// resource nobody built neither overspent nor underspent.
 	const varianceMinorUnits =
 		actualMinorUnits - (estimatedMinorUnits - unrealizedMinorUnits);
 

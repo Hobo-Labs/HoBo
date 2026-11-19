@@ -16,10 +16,6 @@ export type StationIsolation = Readonly<{
 	residency: string;
 	airgap: boolean;
 	trustDomain: string;
-	/**
-	 * Environment isolation class (ADR-0133). Station tagged to exactly one class.
-	 * Reachable only under that class's isolation + chaining rules.
-	 */
 	isolationClass?:
 		| "local-dev"
 		| "preview"
@@ -29,15 +25,8 @@ export type StationIsolation = Readonly<{
 		| "ephemeral";
 }>;
 
-/** How a Camp converges (ADR-0182 D14). Neutral: no engine or cluster vocabulary. */
 export type RailReconcilerMode = "conductor" | "agent" | "publisher";
 
-/**
- * Neutral delivery policy. `publisher` names a `@hobo/cd-gitops` publisher
- * target (for example `argo-cd` or `flux`) and is present only in
- * `publisher` mode. The legacy `engine` field is deprecated on the wire, never
- * read, and mapped by `neutralRailDeliveryPolicy`.
- */
 export type RailDeliveryPolicy = Readonly<{
 	reconcilerMode: RailReconcilerMode;
 	publisher?: string;
@@ -45,7 +34,6 @@ export type RailDeliveryPolicy = Readonly<{
 	prune: boolean;
 }>;
 
-/** A JSON value inside the opaque Rail `delivery` object. */
 export type RailDeliveryValue =
 	| string
 	| number
@@ -61,10 +49,6 @@ export type RailPolicyEngine = Readonly<{
 	endpoint?: string;
 }>;
 
-/**
- * Station-owned Rail: named, versioned, content-addressed policy profile.
- * Not Guardrail (effect language); Rail is the profile.
- */
 export type Rail = Readonly<{
 	schemaVersion: typeof RAIL_SCHEMA_VERSION;
 	id: string;
@@ -96,11 +80,6 @@ export type Rail = Readonly<{
 	obligationDefaults: readonly string[];
 	guardrailEnvelope: Readonly<Record<string, string>>;
 	metadata: Readonly<Record<string, string>>;
-	/**
-	 * Opaque delivery object (ADR-0182 D20). Part of the canonical content and
-	 * the digest; Stations never interprets it. `@hobo/cd` parses it as
-	 * `RailDeliveryRecord`. Absent on Rails published before it existed.
-	 */
 	delivery?: RailDeliveryObject;
 	publishedAt: string;
 }>;
@@ -113,13 +92,7 @@ export type Station = Readonly<{
 	name: string;
 	isolation: StationIsolation;
 	status: StationStatus;
-	/** Optional rail refs declared on the Station Bindle; ownership stays on Station. */
 	railRefs: readonly string[];
-	/**
-	 * Capabilities this Station declaration expects its occupying host to
-	 * offer (ADR-0155). Matching against host evidence produces a
-	 * StationCapabilityManifest; declared-but-unobserved is missing (fail-closed).
-	 */
 	capabilities: readonly StationCapability[];
 	metadata: Readonly<Record<string, string>>;
 }>;
@@ -130,7 +103,6 @@ export type StationConfig = Readonly<{
 		residency?: string;
 		airgap?: boolean;
 		trustDomain?: string;
-		/** ADR-0133 isolation class the declaration commits to (passed through verbatim). */
 		isolationClass?: StationIsolation["isolationClass"];
 	};
 	rails?: readonly string[];

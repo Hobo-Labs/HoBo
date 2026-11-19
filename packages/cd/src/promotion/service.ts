@@ -1,9 +1,3 @@
-// The promotion saga (WP6; C9, D2, D11, D12, I7, I13, I16). One saga per
-// promotion on `cd-promotion-<id>`, defined with `@hobo/events` `defineSaga`:
-// the forward path advances every target Camp as far as the journal and the
-// ports allow; the compensation path runs ON_FAILURE hooks and rolls the
-// environment group back (D12). Every step is a recorded fact, so `tick`
-// resumes any promotion from its journal after a crash.
 import { create } from "@bufbuild/protobuf";
 import {
 	createResolvedDeploymentSet,
@@ -117,17 +111,9 @@ import {
 export type PromotionServiceDeps = Parameters<
 	CdFactories["createPromotionService"]
 >[0] & {
-	/** Trails sequencing (D11). Freight that names a migration is refused without it. */
 	readonly trails?: TrailsMigrations;
-	/** Fan-out aggregate gate (D20); required for requests that carry a fanoutId. */
 	readonly aggregate?: FanoutAggregateGate;
-	/** Defaults to the hook runner over `runbooks`, `suites` and `notify`. */
 	readonly hooks?: HookRunner;
-	/**
-	 * Governed Camps of placement-based nodes (D21), from their recorded
-	 * decision (see `placedCampsFrom`). Without it, lineage fails closed for
-	 * every placed node.
-	 */
 	readonly placed?: PlacedCamps;
 };
 
@@ -145,10 +131,8 @@ const ORIGIN = {
 	"posture-remediate": SetOrigin.POSTURE_REMEDIATION,
 } as const satisfies Record<DeltaIntent, SetOrigin>;
 
-/** Intents that never need lineage: they remove compute rather than carry Freight forward. */
 const LINEAGE_FREE: ReadonlySet<DeltaIntent> = new Set(["down", "depart"]);
 
-/** A Camp that failed: the saga throws it so compensation unwinds the group. */
 class CampFailure extends Error {
 	constructor(
 		readonly campId: string,
@@ -160,7 +144,6 @@ class CampFailure extends Error {
 	}
 }
 
-/** The saga never dispatches aggregate commands; a lease request is a programming error. */
 const NO_DISPATCH: ActorLeaseHost = {
 	acquire() {
 		throw new Error(
@@ -194,46 +177,34 @@ function stagesFor(
 }
 
 function asCamp(id: string): CampId {
-	// SAFETY: Camp ids in promotion records were parsed as Camp ids at request time.
 	return id as CampId;
 }
 
 function asFreight(id: string): FreightId {
-	// SAFETY: Freight ids in promotion records were checked against the ledger at request time.
 	return id as FreightId;
 }
 
 function asSet(id: string): SetId {
-	// SAFETY: Set ids come from SetRecord.predecessor_set_id or the caller's toSetId.
 	return id as SetId;
 }
 
-/**
- * Delta id scoped to the command that opens it: a refused attempt's Delta
- * stays recorded, so a later attempt (another promotion, a retried rollback
- * or teardown) must not reuse its id. Deterministic per scope (I8, I12).
- */
 function scopedDeltaId(scope: string, deltaId: string): string {
 	return `delta_${sha256Hex(canonicalJson({ scope, deltaId })).slice(0, 24)}`;
 }
 
 function asDelta(id: string): DeltaId {
-	// SAFETY: Delta ids in saga facts were minted by the SetResolver.
 	return id as DeltaId;
 }
 
 function asRollout(id: string): RolloutId {
-	// SAFETY: rollout ids in saga facts come from RolloutOrchestrator.plan.
 	return id as RolloutId;
 }
 
 function asVerification(id: string): VerificationId {
-	// SAFETY: verification ids in saga facts come from VerificationEngine.start.
 	return id as VerificationId;
 }
 
 function asPromotion(id: string): PromotionId {
-	// SAFETY: promotion ids are minted by ids.ts.
 	return id as PromotionId;
 }
 
@@ -252,9 +223,7 @@ export function createPromotionService(
 			notify: d.notify,
 			telemetry: d.telemetry,
 		});
-	/** Resolved candidates by Delta id; rebuilt deterministically after a restart. */
 	const resolvedByDelta = new Map<string, ResolvedDeploymentSet>();
-	/** Promotion ids in request order (catch-up index over the journal). */
 	const order: string[] = [];
 	const known = new Set<string>();
 	let indexedThrough: EventPosition | undefined;
@@ -341,7 +310,6 @@ export function createPromotionService(
 			actor: ctx.principal,
 		});
 		if (!event)
-			// Transient: the step is retried on the next tick (no decision taken).
 			throw new Error(
 				`${PROMOTION_REASON.journalConflict}: step ${step} of Camp ${campId} lost the stream-head race twice`,
 			);
@@ -402,7 +370,6 @@ export function createPromotionService(
 		}
 	}
 
-	/** Mark `older` superseded at a Camp by `newer`, releasing its open Delta. */
 	async function supersede(
 		older: PromotionView,
 		campId: CampId,
@@ -455,8 +422,6 @@ export function createPromotionService(
 		return pipeline?.nodes.find((n) => n.name === view.request.node);
 	}
 
-	// ── Lineage (I16) ──────────────────────────────────────────────────────
-	/** Camps a node governs: its `camp_ids`, or its recorded placement decision (D21). */
 	async function governedBy(
 		pipeline: string,
 		node: PipelineNodeRecord,
@@ -574,8 +539,6 @@ export function createPromotionService(
 				],
 			};
 		}
-		// No pipeline named: allowed only for Camps that no pipeline node governs.
-		// A placed node whose decision cannot be resolved may govern any target.
 		const governed: string[] = [];
 		for (const pipeline of await d.pipelines.list()) {
 			for (const node of pipeline.nodes) {
@@ -619,7 +582,6 @@ export function createPromotionService(
 		return { ok: true, value: undefined };
 	}
 
-	// ── Gate helpers ───────────────────────────────────────────────────────
 	async function railResolved(
 		campId: CampId,
 	): Promise<{ resolved: ResolvedDeploymentSet; current?: SetRecord }> {
@@ -785,7 +747,6 @@ export function createPromotionService(
 		return !(intent === "rollback" && verdict.window.rollbackAllowed);
 	}
 
-	// ── One Camp's forward path ────────────────────────────────────────────
 	async function advanceCamp(
 		view: PromotionView,
 		progress: CampProgress,
@@ -808,7 +769,6 @@ export function createPromotionService(
 		) => {
 			throw new CampFailure(campId, reasons, terminal);
 		};
-		// I13: yanked or retired Freight never starts or continues.
 		if (
 			!freight ||
 			!(await d.freight.isUsable(asFreight(view.request.freightId)))
@@ -821,7 +781,6 @@ export function createPromotionService(
 					campId,
 				),
 			]);
-		// Per-Camp queue: one in-flight promotion per Camp; the newest queued wins.
 		if (!has(STEP.applied)) {
 			const mine = order.indexOf(view.promotionId);
 			let held = false;
@@ -842,7 +801,6 @@ export function createPromotionService(
 		const node = await nodeOf(view);
 		const rail = isRail(freight);
 		let verdict: GateVerdict | undefined;
-		// 5–6. Resolve and open the Delta (infrastructure_diff included).
 		if (!has(STEP.resolved)) {
 			const candidate = await candidateFor(
 				view,
@@ -886,7 +844,6 @@ export function createPromotionService(
 			);
 		}
 		const deltaId = progress.steps.get(STEP.resolved)?.handle ?? "";
-		// 7. Gate (policy, compat, trust, residency, ownership, windows, shadow).
 		if (!has(STEP.gated)) {
 			const candidate = await candidateFor(view, campId, freight, deltaId, ctx);
 			if (!candidate.ok) return fail(candidate.reasons);
@@ -923,7 +880,6 @@ export function createPromotionService(
 			);
 		}
 		const gatedHandle = progress.steps.get(STEP.gated)?.handle ?? "";
-		// 8. Approval: proposals wait for a human; require-approval and node approval use the ApprovalPort.
 		const needsApproval =
 			view.request.proposal ||
 			handleEffect(gatedHandle) === "require-approval" ||
@@ -1002,7 +958,6 @@ export function createPromotionService(
 				return;
 			}
 		}
-		// 9. BEFORE_APPLY hooks.
 		const subject = {
 			promotionId: view.promotionId,
 			campId,
@@ -1027,7 +982,6 @@ export function createPromotionService(
 				]);
 			await appendStep(view, campId, STEP.beforeApply, String(ran.value), ctx);
 		}
-		// 10. Trails expand when the declaration changes data shape (D11).
 		const migration = await migrationFor(freight, campId);
 		if (!migration.ok) return fail(migration.reasons);
 		if (migration.value && !has(STEP.expanded)) {
@@ -1042,11 +996,9 @@ export function createPromotionService(
 			}
 			await appendStep(view, campId, STEP.expanded, migration.value, ctx);
 		}
-		// 11. Apply: a Set through DeltaLedger, or (RAIL) the binding through CampPolicy.
 		if (!has(STEP.applied)) {
 			const candidate = await candidateFor(view, campId, freight, deltaId, ctx);
 			if (!candidate.ok) return fail(candidate.reasons);
-			// The decision that admits the apply must be current (windows, I17).
 			verdict ??= await gate(view, candidate.value, freight, node, ctx);
 			if (verdict.effect === "deny") {
 				if (!rail)
@@ -1138,7 +1090,6 @@ export function createPromotionService(
 				await appendStep(view, campId, STEP.applied, applied.value.setId, ctx);
 			}
 		}
-		// 12. Progressive rollout (workloads only; a Rail binding moves no traffic).
 		const strategy =
 			view.request.strategy !== RolloutStrategy.UNSPECIFIED
 				? view.request.strategy
@@ -1208,7 +1159,6 @@ export function createPromotionService(
 				ctx,
 			);
 		}
-		// 13. AFTER_CONVERGED hooks.
 		if (!has(STEP.afterConverged)) {
 			const ran = await hooks.run(
 				{ hooks: node?.hooks ?? [], point: HookPoint.AFTER_CONVERGED, subject },
@@ -1232,7 +1182,6 @@ export function createPromotionService(
 				ctx,
 			);
 		}
-		// 14. Verification (fails closed; PASS is the only qualification).
 		if (!has(STEP.verification)) {
 			const id = await d.verification.start(
 				{
@@ -1292,7 +1241,6 @@ export function createPromotionService(
 				ctx,
 			);
 		}
-		// 15. AFTER_QUALIFIED hooks, then env.Promoted.
 		if (!has(STEP.afterQualified)) {
 			const ran = await hooks.run(
 				{ hooks: node?.hooks ?? [], point: HookPoint.AFTER_QUALIFIED, subject },
@@ -1337,7 +1285,6 @@ export function createPromotionService(
 				Math.max(0, ctx.now() - recordedAt),
 				"histogram",
 			);
-		// 16. Trails contract after soak.
 		await contractAfterSoak(view, progress, ctx);
 	}
 
@@ -1390,7 +1337,6 @@ export function createPromotionService(
 			);
 	}
 
-	// ── Compensation (environment groups, D12) ─────────────────────────────
 	async function compensate(
 		view: PromotionView,
 		failure: CampFailure,
@@ -1400,7 +1346,6 @@ export function createPromotionService(
 		for (const progress of view.camps.values()) {
 			const campId = asCamp(progress.campId);
 			const failed = campId === failure.campId;
-			// A promoted member of a failed group is rolled back too; other terminal Camps stay.
 			if (progress.terminal !== undefined && progress.terminal !== "promoted")
 				continue;
 			const subject = {
@@ -1488,7 +1433,6 @@ export function createPromotionService(
 			});
 	}
 
-	/** Zero exposure, then a Delta to the predecessor Set through the same gate (D12). */
 	async function restoreCamp(
 		view: PromotionView,
 		progress: CampProgress,
@@ -1543,7 +1487,6 @@ export function createPromotionService(
 					),
 				],
 			};
-		// Compensation restores only the Set this promotion applied; a newer Set is not ours to undo.
 		if (expectedCurrent !== "" && current.setId !== expectedCurrent)
 			return { ok: true, value: current };
 		const targetId = toSetId ?? current.predecessorSetId;
@@ -1657,7 +1600,6 @@ export function createPromotionService(
 		);
 	}
 
-	// ── Saga driver ────────────────────────────────────────────────────────
 	async function advance(
 		promotionId: string,
 		ctx: CdContext,
@@ -1681,7 +1623,6 @@ export function createPromotionService(
 							failure = error;
 							throw error;
 						}
-						// A port threw (transient): nothing is decided; the next tick retries.
 						metric(PROMOTION_METRIC.stepError, ctx.now(), {
 							camp: progress.campId,
 							error: error instanceof Error ? error.name : "unknown",
@@ -1739,7 +1680,6 @@ export function createPromotionService(
 		return loaded ? recordOf(loaded.view) : undefined;
 	}
 
-	// ── Requests ───────────────────────────────────────────────────────────
 	async function request(
 		input: PromoteRequest,
 		promotionId: PromotionId,
@@ -1799,7 +1739,6 @@ export function createPromotionService(
 				input.freightId,
 			);
 		const rail = isRail(freight);
-		// 1. Authorize.
 		const authz = await d.authorizer.authorize(
 			rail
 				? "rail.promote"
@@ -1834,7 +1773,6 @@ export function createPromotionService(
 				],
 			};
 		}
-		// 2. Refuse yanked or retired Freight (I13).
 		if (!(await d.freight.isUsable(input.freightId)))
 			return refusal(
 				PROMOTION_REASON.freightUnusable,
@@ -1842,7 +1780,6 @@ export function createPromotionService(
 				"Promote other Freight; yanked or retired Freight never starts a promotion.",
 				input.freightId,
 			);
-		// 3. Lineage (I16), unless an approval covers the target.
 		const lineaged = await lineage(input, freight, intent, ctx);
 		if (!lineaged.ok) {
 			metric(PROMOTION_METRIC.refused, ctx.now(), {
@@ -1850,7 +1787,6 @@ export function createPromotionService(
 			});
 			return lineaged;
 		}
-		// D20 aggregate: refused before any Camp of the fan-out starts.
 		if (input.fanoutId !== undefined && input.fanoutId !== "") {
 			if (!d.aggregate)
 				return refusal(
@@ -1935,7 +1871,6 @@ export function createPromotionService(
 		return { ok: true, value: (await record(promotionId)) ?? promotion };
 	}
 
-	// ── Public surface ─────────────────────────────────────────────────────
 	const service: PromotionService & PreviewEnvironments = {
 		promote(input, ctx) {
 			return request(
@@ -1979,7 +1914,6 @@ export function createPromotionService(
 						!v.rolledBack && v.camps.get(input.campId)?.steps.has(STEP.applied),
 				);
 			const progress = latest?.camps.get(input.campId);
-			// D11: never roll back past a completed Trails contract.
 			const current = await d.desired.current(input.campId);
 			for (const v of all) {
 				const p = v.camps.get(input.campId);
@@ -2293,7 +2227,6 @@ export function createPromotionService(
 		},
 	};
 
-	/** Teardown Delta for an expired preview Camp: intent `down`, through the same gate. */
 	async function teardown(
 		campId: CampId,
 		ctx: CdContext,

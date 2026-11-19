@@ -137,7 +137,6 @@ capabilities:
 			database?.satisfies({ port: "database", features: ["ha", "vector"] }),
 		).toEqual({ kind: "partial", missing: ["vector"] });
 		expect(database?.satisfies({ port: "kv" })).toEqual({ kind: "none" });
-		// No billing declared: unknown, which the matcher ranks last.
 		expect(database?.estimateCost({ port: "database" })).toEqual({
 			marginalPrice: "0",
 			sku: "twin:database",
@@ -168,8 +167,6 @@ describe("toCostDocument", () => {
 				marginalPrice: "0.0005",
 				pricingStatus: "estimate",
 			}),
-			// Fee + tiers, and a two-meter token plan: no single number is
-			// honest, so the legacy ranking sees "unknown" (ranked last).
 			expect.objectContaining({ port: "database", pricingStatus: "unknown" }),
 			expect.objectContaining({ port: "inference", pricingStatus: "unknown" }),
 		]);

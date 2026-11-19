@@ -5,8 +5,6 @@ type RuntimeBinding = RelayBinding & {
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 };
 
-/** The production runtime uses a separate, identity-bound proxy VM. The
- * legacy direct Function proxy must not perform unbounded issuer discovery. */
 export function denyDirectSandboxEgress(
 	request: Request,
 ): Response | undefined {
@@ -16,7 +14,6 @@ export function denyDirectSandboxEgress(
 	return undefined;
 }
 
-/** One opt-in host is shared by admission, dispatch and repair. */
 export function isolatedExecutionWiring(host?: IsolatedRunnerHost) {
 	const relay: RelayBinding = {
 		denyUnisolated: true,

@@ -1,15 +1,3 @@
-/**
- * `hobo incident` — CD failure disposition through `@hobo/cd`.
- *
- * - `status [--camp <a,b>]`: failed, rolled-back and rejected promotions and
- *   open failovers, from the journal (no fixture).
- * - `open --camp <camp> --signal <s> [--reason <text>]`: the CD rollback (D12):
- *   zero exposure, then a Delta to the predecessor Set through the same gate.
- *   An agent principal (HOBO_AGENT_ID) only proposes it unless granted
- *   (ADR-0094); a human or granted principal executes it.
- *
- * `--simulate` is the only fixture path, as for `hobo deploy`.
- */
 
 import { type CampId, PromotionState } from "@hobo/cd";
 import type { CommandModule, CommandResult } from "@hobo/cli";
@@ -50,7 +38,6 @@ export const INCIDENT_STATES = Object.freeze([
 function camps(flags: JsonObject): readonly CampId[] {
 	const v = flags.camp;
 	const raw = isJsonString(v) ? v : "";
-	// SAFETY: opaque Camp ids; the CD modules refuse unknown ones.
 	return raw
 		.split(",")
 		.map((s) => s.trim())

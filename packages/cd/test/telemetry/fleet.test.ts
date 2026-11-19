@@ -1,7 +1,3 @@
-// WP19 "Fleet and policy" metrics: hobo.cd.fanout.camps{state},
-// hobo.cd.failover.count{state}, hobo.cd.compliance.noncompliant_ratio,
-// hobo.cd.policy.shadow_divergence, plus inventory gauges and the
-// collect/export/health surface of createCdTelemetry.
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -153,7 +149,6 @@ describe("hobo.cd.compliance.noncompliant_ratio", () => {
 	it("is the share of evaluated Camps noncompliant, per Rail and per control", () => {
 		const points = compliancePoints(
 			[
-				// c1 was noncompliant, then compliant: the latest evaluation wins.
 				record(
 					"c1",
 					RAIL_A,
@@ -176,7 +171,6 @@ describe("hobo.cd.compliance.noncompliant_ratio", () => {
 						finding(ComplianceState.COMPLIANT, ["SC-7"]),
 					],
 				),
-				// UNKNOWN counts as noncompliant (fail closed).
 				record(
 					"c3",
 					RAIL_A,
@@ -184,7 +178,6 @@ describe("hobo.cd.compliance.noncompliant_ratio", () => {
 					"2026-11-12T01:00:00.000Z",
 					[],
 				),
-				// NOT_APPLICABLE is excluded from the denominator.
 				record(
 					"c4",
 					RAIL_A,

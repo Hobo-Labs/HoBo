@@ -1,16 +1,3 @@
-/**
- * A decoder for the `pgoutput` logical-replication message format
- * (protocol version 1).
- *
- * Pure: bytes in, messages out. It opens no connection and reads no clock,
- * which is what lets it be tested offline against bytes recorded from a real
- * server. The capture port obtains the bytes through the server's SQL
- * decoding functions; this module neither knows nor cares how they arrived.
- *
- * Only what protocol version 1 can emit without streaming or two-phase
- * options is decoded. Anything else is refused by name rather than skipped:
- * a message this decoder does not understand may be a change it would lose.
- */
 import { PostgresDataError } from "../errors.js";
 
 function undecodable(message: string): never {
@@ -19,19 +6,15 @@ function undecodable(message: string): never {
 	});
 }
 
-/** One column value inside a tuple. */
 export type PgOutputCell =
 	| { readonly kind: "null" }
-	/** A large out-of-line value the statement did not change; not sent. */
 	| { readonly kind: "unchanged" }
 	| { readonly kind: "text"; readonly text: string };
 
-/** A decoded row, by column name. */
 export type PgOutputTuple = ReadonlyMap<string, PgOutputCell>;
 
 export interface PgOutputColumn {
 	readonly name: string;
-	/** True when the column is part of the replica identity. */
 	readonly key: boolean;
 	readonly typeOid: number;
 	readonly typeModifier: number;
@@ -41,12 +24,10 @@ export interface PgOutputRelation {
 	readonly oid: number;
 	readonly namespace: string;
 	readonly name: string;
-	/** `d` default, `n` nothing, `f` full, `i` index. */
 	readonly replicaIdentity: string;
 	readonly columns: readonly PgOutputColumn[];
 }
 
-/** Which old-row image a change carried: the key columns, or every column. */
 export type PgOutputOldImage = "key" | "full";
 
 export type PgOutputMessage =
@@ -59,7 +40,6 @@ export type PgOutputMessage =
 	| {
 			readonly kind: "commit";
 			readonly commitLsn: bigint;
-			/** Where the commit record ends: the position of the transaction. */
 			readonly endLsn: bigint;
 			readonly commitTimeMicros: bigint;
 	  }
@@ -105,7 +85,6 @@ export type PgOutputMessage =
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
-/** A bounds-checked big-endian reader over one message. */
 class Reader {
 	private offset = 0;
 	private readonly view: DataView;
@@ -164,7 +143,6 @@ class Reader {
 		}
 	}
 
-	/** A NUL-terminated string. */
 	cstring(): string {
 		const end = this.bytes.indexOf(0, this.offset);
 		if (end < 0) undecodable("unterminated string");
@@ -190,7 +168,6 @@ function tuple(reader: Reader): readonly PgOutputCell[] {
 		} else if (kind === "t") {
 			cells.push({ kind: "text", text: reader.text(reader.int32()) });
 		} else {
-			// `b` is binary format, which this binding never requests.
 			undecodable(`unsupported tuple column format ${kind}`);
 		}
 	}
@@ -221,7 +198,6 @@ function relation(reader: Reader): PgOutputRelation {
 	}
 	return {
 		oid,
-		// An empty namespace on the wire means pg_catalog.
 		namespace: namespace === "" ? "pg_catalog" : namespace,
 		name,
 		replicaIdentity,
@@ -239,7 +215,7 @@ function decodeBody(tag: string, reader: Reader): PgOutputMessage {
 				xid: reader.uint32(),
 			};
 		case "C": {
-			reader.uint8(); // flags, unused in protocol version 1
+			reader.uint8();
 			return {
 				kind: "commit",
 				commitLsn: reader.uint64(),
@@ -317,21 +293,16 @@ function decodeBody(tag: string, reader: Reader): PgOutputMessage {
 			};
 		}
 		default:
-			// Streaming (S, E, c, A) and two-phase (b, P, K, r, p) messages
-			// need options this binding does not set.
 			return undecodable(`unsupported message type ${tag}`);
 	}
 }
 
-/** Decode one `pgoutput` message. Trailing bytes are an error, not ignored. */
 export function decodePgOutputMessage(bytes: Uint8Array): PgOutputMessage {
 	const reader = new Reader(bytes);
 	const message = decodeBody(reader.char(), reader);
 	if (!reader.done) undecodable("message has trailing bytes");
 	return message;
 }
-
-// ── transactions ────────────────────────────────────────────────────────────
 
 export type PgOutputRowChange =
 	| {
@@ -343,7 +314,6 @@ export type PgOutputRowChange =
 			readonly op: "update";
 			readonly relation: PgOutputRelation;
 			readonly oldImage?: PgOutputOldImage;
-			/** Present only when the key changed or the identity is full. */
 			readonly old?: PgOutputTuple;
 			readonly row: PgOutputTuple;
 	  }
@@ -361,14 +331,12 @@ export type PgOutputRowChange =
 export interface PgOutputTransaction {
 	readonly xid: number;
 	readonly commitLsn: bigint;
-	/** Where the commit record ends; orders transactions and positions them. */
 	readonly endLsn: bigint;
 	readonly changes: readonly PgOutputRowChange[];
 }
 
 export interface PgOutputDecodeResult {
 	readonly transactions: readonly PgOutputTransaction[];
-	/** Every relation described so far, for a later call to start from. */
 	readonly relations: ReadonlyMap<number, PgOutputRelation>;
 }
 
@@ -389,14 +357,6 @@ function named(
 	return out;
 }
 
-/**
- * Group a message stream into whole transactions in commit order.
- *
- * A change is only meaningful against the relation description that preceded
- * it, so a change for a relation never described is an error. A stream that
- * ends inside a transaction is an error too: the server never emits a partial
- * transaction, so half of one means bytes went missing.
- */
 export function decodePgOutputTransactions(
 	messages: readonly Uint8Array[],
 	knownRelations: ReadonlyMap<number, PgOutputRelation> = new Map(),
@@ -477,7 +437,6 @@ export function decodePgOutputTransactions(
 			case "origin":
 			case "type":
 			case "message":
-				// Carry no row change.
 				break;
 		}
 	}

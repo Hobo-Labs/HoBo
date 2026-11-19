@@ -1,41 +1,3 @@
-/**
- * Budget routing: which member of a fleet of interchangeable, loss-tolerant
- * backends should be active, by preference and allowance.
- *
- * `decideFleet` (`policy.ts`) moves only when the writer is in trouble, and it
- * judges a standby by its copy lag, because a database fleet's standbys hold
- * the data. A fleet whose state may be lost (a cache: everything in it is
- * rebuilt by name after a move) has no lag to judge and a second reason to
- * move: a cheaper member is available. `routeFleetByBudget` decides that, and
- * is as pure as `decideFleet`: no clock, no I/O, one answer with its reasons
- * and every member ranked.
- *
- * - **Preference.** Free, then prepaid, then pay-as-you-go; within a tier the
- *   cheaper projected month, then the configured order.
- * - **Before exhaustion, with hysteresis.** The active member stays while its
- *   projected month is below `switchAt` of every allowance it would stop at
- *   (a hard stop or an unknown overage). Any other member is a candidate only
- *   below `switchBackBelow`. A member that was left because it neared its
- *   allowance is therefore not chosen again until its projection falls under
- *   the lower mark, which within one month it does not (its use so far is
- *   spent), so it comes back at the next month at the earliest.
- * - **Budget caps.** A member's projected cost (its fee plus metered use beyond
- *   its allowance) must stay within its cap. No cap means no money: only a
- *   member whose projected cost is zero is affordable.
- * - **Failover.** A member that has failed for longer than `failoverAfterMs`
- *   is left for the best reachable member that is affordable and not
- *   projected past a hard stop, whatever the marks say: a relay that is down
- *   costs more than a move.
- * - **Unknown is not a reason.** A member with no financial model, or with a
- *   fact missing, is never moved to for budget reasons and never left for
- *   them; it may still be the target of a failover.
- *
- * Projection: the fleet's workload this period, per unit, divided by the time
- * elapsed gives a rate; a member's projected month is what it has already
- * spent this period plus that rate over the time remaining. The workload in a
- * unit a member does not run on is the host's estimate (a cache relay converts
- * port calls with each binding's cost table).
- */
 import type { FleetAssignment } from "./assignment.js";
 import { parseFleetBackendId } from "./backend.js";
 import { BackendFleetError } from "./errors.js";
@@ -46,7 +8,6 @@ import type {
 	FleetUsageUnit,
 } from "./usage.js";
 
-/** Cheapest first. Prepaid is money already spent; pay-as-you-go is money to come. */
 export const FLEET_OFFER_TIERS = ["free", "prepaid", "payg"] as const;
 export type FleetOfferTier = (typeof FLEET_OFFER_TIERS)[number];
 
@@ -54,7 +15,6 @@ export type FleetOfferTier = (typeof FLEET_OFFER_TIERS)[number];
 export type FleetOffer = {
 	readonly model: FleetFinancialModel;
 	readonly tier: FleetOfferTier;
-	/** Most this member may cost in a period, in micro-dollars. Absent: zero. */
 	readonly capMicros: number | undefined;
 };
 
@@ -83,13 +43,9 @@ export function parseFleetOffer(input: FleetOffer): FleetOffer {
 
 // domain-view: the parsed marks, constructible only through parseFleetRoutingMarks; the generated FleetRoutingMarks in backend_fleet_pb.ts is its wire form.
 export type FleetRoutingMarks = {
-	/** Leave the active member when it is projected to reach this fraction. */
 	readonly switchAt: number;
-	/** Take a member only while it is projected below this fraction. */
 	readonly switchBackBelow: number;
-	/** No move for preference sooner than this after the previous decision. */
 	readonly minDwellMs: number;
-	/** How long the active member must have failed before it is left. */
 	readonly failoverAfterMs: number;
 };
 
@@ -130,21 +86,17 @@ export function parseFleetRoutingMarks(
 	return Object.freeze({ ...input });
 }
 
-/** What one tick saw of one member. `usage` is what it has spent this period. */
 export type FleetRoutingObservation = {
 	readonly backend: string;
 	readonly health: FleetBackendHealth;
-	/** How long it has been failing without a success; 0 when reachable. */
 	readonly failingForMs: number;
 	readonly usage: readonly FleetUsageMeasurement[];
 };
 
 export type FleetRoutingInput = {
 	readonly assignment: FleetAssignment;
-	/** Every member, in configured order (the last tie-break). */
 	readonly members: readonly string[];
 	readonly observations: readonly FleetRoutingObservation[];
-	/** The fleet's whole workload this period, in every unit any offer bills. */
 	readonly workload: readonly FleetUsageMeasurement[];
 	readonly offers: readonly FleetOffer[];
 	readonly marks: FleetRoutingMarks;
@@ -156,11 +108,8 @@ export type FleetRoutingInput = {
 export type FleetRouteCandidate = {
 	readonly backend: string;
 	readonly tier: FleetOfferTier | undefined;
-	/** Could be moved to (or, for the active member, stayed on). */
 	readonly eligible: boolean;
-	/** Highest projected fraction of an allowance it would stop at. */
 	readonly projectedFraction: number | undefined;
-	/** Projected cost of the period, micro-dollars. */
 	readonly projectedCostMicros: number | undefined;
 	readonly reasons: readonly string[];
 };
@@ -180,7 +129,6 @@ export type FleetRoute = {
 	readonly active: string | undefined;
 	readonly target: string | undefined;
 	readonly reasons: readonly string[];
-	/** The active member first, then every other member, best first. */
 	readonly candidates: readonly FleetRouteCandidate[];
 	readonly decidedAtMs: number;
 };
@@ -273,7 +221,6 @@ function percent(fraction: number): string {
 	return Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : "inf";
 }
 
-/** Decide which member should be active now. Pure: same input, same route. */
 export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 	const { assignment, marks, nowMs } = input;
 	const members = input.members.map((member) => parseFleetBackendId(member));
@@ -330,7 +277,6 @@ export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 				projectedCostMicros: projection.costMicros,
 				reasons,
 			} satisfies FleetRouteCandidate,
-			// A failover takes an unknown member, never one past a stop or a cap.
 			failoverTarget: reachable && !hardStop && !tooDear,
 			rank: [
 				projection.tier === undefined ? 3 : TIER_RANK[projection.tier],
@@ -385,8 +331,6 @@ export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 			? route("keep", undefined, [...signals, "no-feasible-standby"])
 			: route("switch", best.candidate.backend, signals);
 	}
-	// A move costs a cold start, so the configured order alone is no reason:
-	// only a cheaper tier, or a cheaper month within one, is.
 	if (
 		best !== undefined &&
 		knownActive &&

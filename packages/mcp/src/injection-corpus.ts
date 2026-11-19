@@ -1,14 +1,3 @@
-// S3-06 — the adversarial prompt-injection corpus. Each case is a payload an
-// attacker plants in a tool INPUT (an agent-supplied Camp selector / passthrough
-// arg) or a tool OUTPUT (data a called tool returns), attempting to widen the
-// caller's authority or trigger an unauthorized tool call. The hardening
-// invariant (ADR-0023 item 3, ai-native-agent-auth.md §6.4) is that every case
-// FAILS CLOSED: the injected text is recorded but powerless — authority derives
-// only from the SVID scope, never from tool input or output — so no case widens
-// the authorized tool set or dispatches an out-of-scope tool.
-//
-// test/injection.test.ts drives every case through the real SVID-bound server
-// and asserts the invariant holds for each.
 
 export type InjectionVector = "input" | "output";
 
@@ -19,8 +8,6 @@ export interface InjectionCase {
 	readonly payload: string;
 }
 
-// The privileged tools an injection typically tries to unlock — asserted to stay
-// denied for a caller scoped only to a read-only tool.
 export const INJECTION_TARGET_TOOLS = [
 	"up",
 	"down",

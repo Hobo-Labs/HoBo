@@ -7,28 +7,17 @@ import {
 } from "./errors.js";
 import { RUNBOOK_SCHEMA } from "./schema.js";
 
-// Greenfield declaration factory (walkthrough §6.2): a runbook is a trigger →
-// read-only diagnosis → gated, blast-radius-bounded fixes, versioned and
-// signed like a Resource Pack. executeRunbook consumes this declaration, runs
-// registered read-only diagnoses and gated verified effects, and persists/replays
-// its execution through the core EventStore.
-
 // domain-view: authored runbook trigger; wire form is RunbookTrigger in data-models/sdk.proto.
 export interface RunbookTrigger {
 	readonly alert: string;
-	/** Optional severity floor, e.g. ">=SEV2". */
 	readonly severity?: string;
 }
 
 // domain-view: authored gated fix step; wire form is RunbookFixStep in data-models/sdk.proto.
 export interface RunbookFixStep {
-	/** Classified condition, e.g. "provider-degraded". */
 	readonly when: string;
-	/** Fix verb, e.g. "failover" | "scale" | "escalate". */
 	readonly do: string;
-	/** Gate for the write — fail-closed default is "require-approval". */
 	readonly gate: "auto" | "require-approval";
-	/** Parsed JSON arguments (camp, to, …), independently cloned and frozen. */
 	readonly args: JsonObject;
 }
 
@@ -37,7 +26,6 @@ export interface RunbookDeclaration {
 	readonly schema: string;
 	readonly name: string;
 	readonly on: RunbookTrigger;
-	/** Read-only diagnosis queries (MCP), e.g. "logs api". */
 	readonly diagnose: readonly string[];
 	readonly fix: readonly RunbookFixStep[];
 }
@@ -55,7 +43,6 @@ export interface RunbookSpec {
 	fix: RunbookFixSpec[];
 }
 
-/** Parse the protobuf args_json document without dropping unsupported JS values. */
 function parseArgument(
 	value: JsonValue | undefined,
 	path: string,
@@ -69,7 +56,6 @@ function parseArgument(
 		value !== undefined &&
 		(Array.isArray(value) || tag === "[object Object]")
 	) {
-		// SAFETY: only the array/plain-object representation enters recursive JSON parsing.
 		const container = value as JsonValue[] | JsonObject;
 		if (ancestors.has(container))
 			throw new SdkDeclarationError("runbook", path, "must be acyclic JSON");

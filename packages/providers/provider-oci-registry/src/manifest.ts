@@ -1,10 +1,3 @@
-/**
- * Manifest parse boundary: what a manifest or index references, nothing more.
- *
- * The realizer never rewrites a manifest. It copies the exact bytes and reads
- * them only to learn which blobs and child manifests must exist first, so the
- * digest a mirror serves is the digest the source served (D22).
- */
 import {
 	isJsonArray,
 	isJsonNumber,
@@ -29,15 +22,11 @@ export interface Descriptor {
 
 export interface ParsedManifest {
 	readonly mediaType: ManifestMediaType;
-	/** Config and layers of an image manifest; empty for an index. */
 	readonly blobs: readonly Descriptor[];
-	/** Child manifests of an index; empty for an image manifest. */
 	readonly children: readonly Descriptor[];
-	/** Blobs a registry is not required to serve (foreign/non-distributable). */
 	readonly skipped: readonly Descriptor[];
 }
 
-/** Upper bounds: past these a manifest is a payload, not an image. */
 export const MAX_LAYERS = 256;
 export const MAX_CHILDREN = 128;
 
@@ -66,7 +55,6 @@ function nonDistributable(mediaType: string): boolean {
 	);
 }
 
-/** Strip parameters from a Content-Type and return it when it is a manifest type. */
 export function manifestMediaType(
 	contentType: string | undefined,
 ): ManifestMediaType | undefined {
@@ -74,18 +62,12 @@ export function manifestMediaType(
 	return MANIFEST_MEDIA_TYPES.find((type) => type === bare);
 }
 
-/**
- * Parse manifest text. `declared` is the media type the registry reported;
- * when it is absent the body's own `mediaType` decides, and when both are
- * absent or unknown (schema 1, a foreign artifact type) the copy is refused.
- */
 export function parseManifest(
 	text: string,
 	declared: string | undefined,
 ): ParsedManifest {
 	let value: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return unparseable("manifest is not JSON");
@@ -136,11 +118,9 @@ export function parseManifest(
 	};
 }
 
-/** The descriptors a referrers response (or fallback-tag index) lists. */
 export function parseReferrers(text: string): readonly Descriptor[] {
 	let value: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return unparseable("referrers response is not JSON");

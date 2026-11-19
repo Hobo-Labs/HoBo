@@ -24,7 +24,6 @@ const enrolled = { reporters: [box1], dailyBlockMinutes: 240 };
 function setup() {
 	if (!repository) throw new Error("no repository");
 	const clock = { now: START };
-	// The cache: an engine the test can replace, as a flushed store would be.
 	let engine = createMemoryRedisExecutor({ now: () => clock.now });
 	const state = createRedisEphemeralState({
 		executor: { execute: (command) => engine.execute(command) },
@@ -81,7 +80,6 @@ describe("fleet verdicts on the cache", () => {
 		expect(await h.served(kept)).toBe(false);
 		await h.report(kept, true);
 		expect(await h.served(kept)).toBe(true);
-		// The reporter stops (its box crashed): the entry lapses at 180 s.
 		h.clock.now += 179_000;
 		expect(await h.served(kept)).toBe(true);
 		h.clock.now += 1_000;
@@ -114,13 +112,11 @@ describe("fleet verdicts on the cache", () => {
 			(await kept.status(h.repository, enrolled)).allowance.hobo?.usedSeconds,
 		).toBe(180);
 		h.flush();
-		// Nothing kept: open, and no reporter is live.
 		expect(await h.served(kept)).toBe(false);
 		const lost = await kept.status(h.repository, enrolled);
 		expect(lost.reporters[0]?.live).toBe(false);
 		expect(lost.reporters[0]?.state).toBeUndefined();
 		expect(lost.allowance).toEqual({});
-		// The reporter's next report, within a minute, puts the block back.
 		h.clock.now += 60_000;
 		const accepted = await h.report(kept, true);
 		expect(accepted.accepted).toBe(true);
@@ -130,7 +126,6 @@ describe("fleet verdicts on the cache", () => {
 			usedSeconds: 0,
 			windowStart: "2026-11-12T16:04:00.000Z",
 		});
-		// Replay protection resumes from that report.
 		const replayed = await h.report(kept, true, {
 			sequence: back.reporters[0]?.state?.lastSequence ?? 0n,
 		});
@@ -143,7 +138,6 @@ describe("fleet verdicts on the cache", () => {
 		const state = createRedisEphemeralState({
 			executor: createMemoryRedisExecutor({ now: () => cacheClock.now }),
 		});
-		// A relay whose clock never moves: only the cache can end the verdict.
 		const kept = createCacheFleetVerdicts({
 			state,
 			environment: "production",
@@ -158,7 +152,6 @@ describe("fleet verdicts on the cache", () => {
 
 	it("does not serve a verdict past its own expiry even while the cache still holds it", async () => {
 		const h = setup();
-		// A cache whose clock never moves: it never drops the entry itself.
 		const state = createRedisEphemeralState({
 			executor: createMemoryRedisExecutor({ now: () => START }),
 		});

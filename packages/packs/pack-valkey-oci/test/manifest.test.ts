@@ -43,8 +43,6 @@ describe("the valkey pack manifest", () => {
 			"paas",
 			"vm_iaas",
 		]);
-		// A single-writer in-memory server with a volume is not a function
-		// invocation, and there is no WASI Valkey build.
 		assert.ok(!manifest.runtimeModels.includes("serverless_faas"));
 		assert.ok(!manifest.runtimeModels.includes("wasm"));
 	});
@@ -74,8 +72,6 @@ describe("the valkey pack manifest", () => {
 				`${profileId} is not a kv profile`,
 			);
 		}
-		// Valkey has lists, streams, and pub/sub. None of them is a delivery
-		// guarantee, so none of them appears here.
 		assert.ok(!claimed.some((id) => id.startsWith("queue.")));
 		assert.ok(!claimed.some((id) => id.startsWith("topic.")));
 	});
@@ -85,7 +81,6 @@ describe("the valkey pack manifest", () => {
 		const volume = manifest.persistence.volumes[0];
 		assert.equal(volume?.name, VALKEY_DATA_VOLUME);
 		assert.equal(volume?.mountPath, VALKEY_DATA_MOUNT_PATH);
-		// An RDB or AOF is an ordinary file, so object storage cannot back it.
 		assert.equal(volume?.externalStorageAllowed, false);
 		assert.equal(volume?.accessMode, "single-writer");
 	});
@@ -94,8 +89,6 @@ describe("the valkey pack manifest", () => {
 		for (const key of ["durabilityMode", "evictionPolicy", "maxmemoryBytes"]) {
 			const field = manifest.configSchema.find((entry) => entry.key === key);
 			assert.equal(field?.necessity, "required", `${key} must be required`);
-			// A default here would be the pack choosing the operator's data-loss
-			// budget for them.
 			assert.equal(
 				field?.defaultValue,
 				undefined,
@@ -144,13 +137,9 @@ describe("the valkey pack manifest", () => {
 	});
 
 	it("probes with a command, because an open port is not a ready server", () => {
-		// During an AOF load the socket accepts connections and every command is
-		// answered with LOADING, so a TCP readiness probe would lie.
 		assert.equal(manifest.probes.readiness.kind, "exec");
 		assert.deepEqual(manifest.probes.liveness?.kind, "tcp");
 		assert.equal(manifest.ports[0]?.containerPort, VALKEY_PORT);
-		// Camp exposure: an in-memory store on a Yard-wide port is a lateral
-		// movement path.
 		assert.equal(manifest.ports[0]?.exposure, "camp");
 	});
 
@@ -160,7 +149,6 @@ describe("the valkey pack manifest", () => {
 			assert.match(ref.url, /^https:\/\//u);
 			assert.match(ref.checkedAt, /^\d{4}-\d{2}-\d{2}$/u);
 		}
-		// Not invented: the digests came from the registry, not a build record.
 		assert.equal(manifest.provenance.sourceRevision, "unverified");
 	});
 

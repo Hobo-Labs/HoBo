@@ -26,7 +26,6 @@ import { isJsonString } from "./json.js";
 
 type Composition = Parameters<typeof createClaimableResourceResolver>[0];
 
-/** The actual claimable driver exposed through HoBo's resolver protocol. */
 export function createNeonClaimableResolver(
 	options: Pick<
 		Composition,

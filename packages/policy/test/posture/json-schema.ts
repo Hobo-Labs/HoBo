@@ -1,8 +1,3 @@
-// A strict JSON Schema draft-07 validator for the keyword subset the pinned
-// OSCAL 1.1.2 schemas use. Test-only: @hobo/policy is dependency-free, so
-// the conformance check carries its own evaluator. Any keyword outside the
-// supported set fails loudly instead of being skipped, so the check can
-// never pass by ignoring part of the schema.
 import {
 	isJsonArray,
 	isJsonBoolean,

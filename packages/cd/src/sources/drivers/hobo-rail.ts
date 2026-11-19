@@ -1,8 +1,3 @@
-// HOBO_RAIL subscriptions (D24): Rail approvals become Freight with subject
-// RAIL. The driver reads the frozen RailEventReader forward from its cursor
-// and yields one discovered artifact per approved Rail digest (the digest is
-// both the version and the declaration). Retired digests seen in the same
-// read are never discovered, and a digest approved twice is discovered once.
 import { create } from "@bufbuild/protobuf";
 import {
 	ArtifactKind,
@@ -20,7 +15,6 @@ import {
 	writeCursor,
 } from "./common.js";
 
-/** Upper bound of Rail events scanned per poll; the cursor resumes after it. */
 export const RAIL_SCAN_LIMIT = 10_000;
 
 export function railCoordinate(railId: string, railDigest: string): string {

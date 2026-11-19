@@ -1,6 +1,3 @@
-// Pact-derived mock provider: replays a pact's interactions, in order, for
-// the requests the consumer actually sends, and asserts each request against
-// the recorded expectation (method, path, query, header subset, body subset).
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,7 +54,6 @@ function bodyOf(request: TransportRequest): JsonValue | undefined {
 		: cloneAsJson(JSON.parse(request.body));
 }
 
-/** Transport that serves `interactions` strictly in order. */
 export function pactTransport(
 	interactions: readonly PactInteraction[],
 ): HttpTransport & {

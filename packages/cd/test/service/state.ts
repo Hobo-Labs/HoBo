@@ -1,7 +1,4 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: fixtures brand ids they mint. */
-// A small, deterministic CD world for read-API tests: one pipeline with a
-// list node (staging) and a placed node (prod), three Camps, one Freight with
-// qualifications, promotions, a fan-out, failovers and compliance.
 import { create } from "@bufbuild/protobuf";
 import {
 	CampConditionRecordSchema,
@@ -276,7 +273,6 @@ export function world(): FacadeState {
 	return s;
 }
 
-/** Journal facts mirrored on the SSE stream. */
 export function seedJournal(store: FakeStore): void {
 	store.push(CD_STREAMS.freight(FREIGHT_ID), CD_EVENTS.FreightRecorded, {
 		freightId: FREIGHT_ID,

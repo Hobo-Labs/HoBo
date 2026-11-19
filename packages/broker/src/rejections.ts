@@ -1,11 +1,5 @@
 import type { RejectionPlane } from "./types.js";
 
-// The rejection matrix (the HOBO-528 evidence requirement, now runtime): the
-// closed catalog of rejection codes the broker may emit, each pinned to the
-// plane that owns it and a remediation an agent can act on. broker.test.ts
-// asserts every reject path emits a cataloged code, so the matrix can never
-// silently drift from the pipeline.
-
 export interface RejectionMatrixRow {
 	code: string;
 	plane: RejectionPlane;

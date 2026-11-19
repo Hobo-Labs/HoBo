@@ -1,5 +1,3 @@
-// Shared WP24 posture harness: a journal, the three posture components wired
-// as WP18 composes them, and the doubles behind their frozen ports.
 import type { JsonObject } from "@hobo/core";
 import { POLICY_IR_SCHEMA_VERSION } from "@hobo/policy";
 import { POSTURE_PROFILE } from "@hobo/policy/posture";

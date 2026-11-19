@@ -52,7 +52,6 @@ type ManifestRecord = {
 	};
 	resources: Record<string, ResourceRecord>;
 	triggerEdges?: TriggerEdgeRecord[];
-	/** Scope policy is part of the canonical deployment input and hash. */
 	policy?: JsonObject;
 };
 
@@ -296,7 +295,6 @@ function validateResource(
 		);
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	return structuredClone(resource) as ResourceRecord;
 }
 
@@ -446,7 +444,6 @@ function sortKeys<T>(value: T): JsonValue {
 function brandManifest(record: ManifestRecord): ManifestV1 {
 	return {
 		brand: manifestV1Brand,
-		// SAFETY: assertion required at this I/O or test boundary.
 		value: Object.freeze(structuredClone(record)) as ManifestRecord,
 	};
 }

@@ -1,6 +1,3 @@
-// JSON guards for values that arrive as text (health-source answers) or as
-// persisted event bodies. They read the runtime tag, the idiom @hobo/core uses
-// internally, and establish the JSON contract callers then decode against.
 import type { JsonObject, JsonValue } from "@bufbuild/protobuf";
 
 const tagOf = Object.prototype.toString;
@@ -17,12 +14,10 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 	return Array.isArray(value);
 }
 
-/** A non-null, non-array plain object. */
 export function isJsonObject<T>(value: T): value is T & JsonObject {
 	return tagOf.call(value) === "[object Object]";
 }
 
-/** JSON text to a value, or undefined when it is not JSON. */
 export function parseJsonText(text: string): JsonValue | undefined {
 	try {
 		const parsed: JsonValue = JSON.parse(text);
@@ -32,7 +27,6 @@ export function parseJsonText(text: string): JsonValue | undefined {
 	}
 }
 
-/** A persisted event body as JSON (bodies are JSON by construction; anything else is undefined). */
 export function jsonOf<T>(data: T): JsonValue | undefined {
 	if (data === undefined) return undefined;
 	try {

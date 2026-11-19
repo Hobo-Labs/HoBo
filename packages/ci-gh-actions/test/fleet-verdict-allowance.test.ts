@@ -7,11 +7,6 @@ import {
 	parseFleetVerdictReport,
 } from "../src/fleet-verdict.js";
 
-/**
- * The allowance (ADR-0180, F7 and F10): the relay counts the time the
- * agreed verdict blocks a label and, once a 24-hour window holds the daily
- * allowance, serves that label open whatever the reporters say.
- */
 const NOW = Date.parse("2026-11-12T16:00:00.000Z");
 const MINUTE = 60_000;
 const repository = parseFleetVerdictPath("/v1/fleet/verdicts/hobo-labs/hobo");
@@ -69,7 +64,6 @@ describe("the verdict allowance", () => {
 			spent: true,
 		});
 		expect(await h.served()).toBe(false);
-		// The reporter keeps reporting; the label stays open for the window.
 		h.clock.now += 6 * 60 * MINUTE;
 		await h.report(reporter("box-1"), true);
 		expect(await h.served()).toBe(false);
@@ -118,7 +112,6 @@ describe("the verdict allowance", () => {
 	it("counts at most one report's lifetime across a silence", async () => {
 		const h = setup();
 		await h.report(reporter("box-1"), true);
-		// The reporter falls silent for an hour, then reports again.
 		h.clock.now += 60 * MINUTE;
 		await h.report(reporter("box-1"), true);
 		expect((await h.allowance())?.usedSeconds).toBe(0);

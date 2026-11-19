@@ -1,7 +1,3 @@
-/**
- * The retention table is the pack's honesty surface, so it gets tested directly
- * rather than only through the deployment path.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 
@@ -32,8 +28,6 @@ describe("valkey durability semantics", () => {
 	});
 
 	it("says which modes acknowledge a write before it is durable", () => {
-		// This is the property that makes "we use Redis for durable state" wrong
-		// most of the time, so it is stated per mode rather than implied.
 		assert.equal(
 			VALKEY_DURABILITY["aof-everysec"].acknowledgesBeforeDurable,
 			true,
@@ -98,8 +92,6 @@ describe("valkeyRetentionSemantics", () => {
 	});
 
 	it("does not call a crash-durable cache a keyspace", () => {
-		// The combination worth naming: no acknowledged write is lost to a crash,
-		// and a key can still be evicted under memory pressure.
 		const semantics = valkeyRetentionSemantics({
 			durabilityMode: "aof-always",
 			evictionPolicy: "allkeys-lru",

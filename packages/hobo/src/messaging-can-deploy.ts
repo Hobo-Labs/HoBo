@@ -1,7 +1,3 @@
-/**
- * Gatekeeper / can-deploy reasons for messaging capability + delivery-guarantee
- * mismatches (ADR-0138).
- */
 
 import type { DeliveryGuarantee, MessagingCapabilities } from "@hobo/core";
 import { assertDeliverySupported, MessagingCapabilityError } from "@hobo/core";

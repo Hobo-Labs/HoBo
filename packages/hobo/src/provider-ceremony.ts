@@ -10,17 +10,6 @@ import { openInBrowser } from "@hobo/hobo-ci";
 
 import { isJsonArray, isJsonObject, isJsonString } from "./json.js";
 
-// `hobo up`'s ceremony for providers: when planning finds a resource that no
-// registered (and approved) provider can serve, `up` does not just refuse. It
-// opens the setup page, offers the installable providers that advertise the
-// resource's port, connects the chosen ones (the `hobo add` path: register,
-// then approve), and runs `up` again. A rejected plan has no side effects, so
-// running `up` first and holding the ceremony only on that rejection changes
-// nothing for a plan that already resolves.
-//
-// Without a person at a browser — or for `--what-if` — the rejection stands,
-// and says which `hobo add` would satisfy each resource.
-
 const PROVIDER_GAPS: ReadonlySet<string> = new Set([
 	"capability.port-unavailable",
 	"capability.provider-not-approved",
@@ -34,9 +23,7 @@ interface Gap {
 }
 
 export interface ProviderCeremonyDeps {
-	/** `hobo add`: registers a provider (and approves it on a second run if held). */
 	readonly add: CommandModule;
-	/** Installable providers that advertise a port. */
 	readonly candidates: (port: string) => readonly string[];
 	readonly interactive?: boolean;
 	readonly openBrowser?: (url: string) => void;
@@ -73,7 +60,6 @@ function fieldName(resource: string): string {
 	return `provider:${resource}`;
 }
 
-/** Wrap `up` with the provider ceremony. */
 export function createProviderCeremonyUp(
 	up: CommandModule,
 	deps: ProviderCeremonyDeps,
@@ -138,8 +124,6 @@ export function createProviderCeremonyUp(
 							args: [id],
 						};
 						let result = await deps.add.run(addInput);
-						// A provider that registers held (data.approved false) is approved
-						// by a second add: choosing it here is the operator's decision.
 						if (
 							result.ok === true &&
 							isJsonObject(result.data) &&

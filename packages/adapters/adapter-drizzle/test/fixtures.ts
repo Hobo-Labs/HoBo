@@ -1,14 +1,3 @@
-/**
- * Hand-built stand-ins for the objects `drizzle-orm` publishes.
- *
- * The adapter recognizes Drizzle values structurally and takes no dependency on
- * `drizzle-orm`, so the tests build the same shape the ORM does: the
- * `Symbol.for("drizzle:*")` registry symbols plus the plain properties of a
- * column descriptor. Building the fixtures by hand is deliberate — it is the
- * only way to prove the recognizer matches the published shape rather than a
- * convenience shape invented for the tests, and it keeps the test suite free of
- * the ORM too.
- */
 
 import type { JsonObject, JsonValue } from "../src/json.js";
 import type { DrizzleColumnLike, ExtraConfigBuilder } from "../src/shape.js";
@@ -67,11 +56,6 @@ export function column(
 	};
 }
 
-/**
- * Column-shaped enough to be recognized (it has a name and a `getSQLType`) but
- * with no readable SQL type behind it — the shape a future Drizzle column class
- * this adapter does not understand would present.
- */
 export function typelessColumn(name: string): DrizzleColumnLike {
 	return { name, getSQLType: (): undefined => undefined };
 }
@@ -102,7 +86,6 @@ export function table(
 	if (overrides.extraConfigColumns !== undefined) {
 		built[DRIZZLE_EXTRA_CONFIG_COLUMNS] = overrides.extraConfigColumns;
 	}
-	// Column descriptors are also enumerable string properties on a real table.
 	for (const [property, value] of Object.entries(columns)) {
 		built[property] = value;
 	}
@@ -117,7 +100,6 @@ export function view(sqlName: string): FixtureHost {
 	};
 }
 
-/** Mimics a drizzle-kit index builder: state parked on a `config` property. */
 export function indexBuilder(
 	name: string,
 	columns: readonly (string | JsonObject)[],
@@ -126,7 +108,6 @@ export function indexBuilder(
 	return { config: { name, columns: [...columns], unique } };
 }
 
-/** A partial index: the same builder with a `where` SQL object parked on it. */
 export function partialIndexBuilder(
 	name: string,
 	columns: readonly (string | JsonObject)[],
@@ -141,12 +122,10 @@ export function partialIndexBuilder(
 	};
 }
 
-/** Mimics drizzle-orm's `SQL` object: an expression is a list of query chunks. */
 export function sqlExpression(text: string): JsonObject {
 	return { queryChunks: [{ value: [text] }] };
 }
 
-/** Mimics drizzle-orm's `IndexedColumn`: a column plus how the index keys it. */
 export function indexedColumn(
 	name: string,
 	indexConfig: JsonObject = { order: "asc", nulls: "last" },
@@ -154,7 +133,6 @@ export function indexedColumn(
 	return { name, indexConfig };
 }
 
-/** The representative schema module the ingestion tests read. */
 export function representativeSchemaModule(): JsonObject {
 	const usersColumns = {
 		id: column("id", {

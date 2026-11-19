@@ -1,12 +1,3 @@
-// NotificationPort over CDEvents webhooks (ADR-0182 D17).
-//
-// A notification is a HoBo custom CDEvent
-// (`dev.cdeventsx.hobo-notification.sent.0.1.0`) delivered to the channel's
-// webhook sink. Delivery is in the background: `notify` never blocks a
-// promotion on a slow receiver, and a failed delivery is dead-lettered by the
-// sink, never thrown into the caller. `drain` awaits everything in flight
-// (service shutdown, tests). An unknown channel is a configuration error and
-// is refused at once.
 
 import type { JsonObject } from "@hobo/core";
 import type { CdContext, NotificationPort } from "../ports.js";
@@ -27,16 +18,13 @@ export const NOTIFICATION_EVENT_TYPE = hoboEventType("notification", "sent");
 
 export type NotificationPortOptions = Readonly<{
 	channels: Readonly<Record<string, CdEventSink>>;
-	/** CDEvents `context.source` of notifications. */
 	source: string;
 }>;
 
 export interface DrainableNotificationPort extends NotificationPort {
-	/** Resolve when every in-flight delivery has finished (or dead-lettered). */
 	drain(): Promise<readonly WebhookDelivery[]>;
 }
 
-/** Build the CDEvent a notification is sent as. Deterministic in its inputs. */
 export function notificationEvent(
 	input: Readonly<{ channel: string; subject: string; body: JsonObject }>,
 	ctx: Pick<CdContext, "now" | "tenant">,

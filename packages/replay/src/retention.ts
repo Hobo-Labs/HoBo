@@ -1,7 +1,3 @@
-/**
- * Retention / GC / erasure recipes for session data.
- * Composes with Trails as platform recipe `replay.retention` (documented).
- */
 import { createReplayEvent, REPLAY_EVENTS } from "./events.js";
 import type { SessionIndex } from "./storage.js";
 import type { SessionRecord } from "./types.js";
@@ -10,11 +6,8 @@ import type { SessionRecord } from "./types.js";
 export const REPLAY_RETENTION_RECIPE = "replay.retention" as const;
 
 export type RetentionPolicy = Readonly<{
-	/** Max age in days for ended sessions before GC. */
 	maxAgeDays: number;
-	/** Right-to-erasure: drop blobs + mark erased. */
 	eraseOnRequest: boolean;
-	/** Isolation classes that keep longer (audit). */
 	retainIsolationClasses?: readonly string[];
 }>;
 
@@ -121,10 +114,6 @@ async function eraseSession(
 	return erased;
 }
 
-/**
- * Trail-composition descriptor (not a new control-plane noun).
- * Apps compose `replay.retention` via existing Trails recipes.
- */
 export function replayRetentionTrailStep(): Readonly<{
 	id: string;
 	kind: "replay-retention";

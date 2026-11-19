@@ -11,10 +11,6 @@ import {
 	runIacBackendConformance,
 } from "../src/index.js";
 
-// HOBO-716: the REAL cluster lane. Gating behavior is tested offline; the
-// live conformance smoke runs only where kubectl AND a reachable cluster with
-// Crossplane installed exist (the kind/k3d CI lane).
-
 function clusterReachable(): boolean {
 	try {
 		execFileSync("kubectl", ["get", "namespace", "default", "-o", "name"], {
@@ -42,7 +38,6 @@ describe("createKubectlCrossplaneCluster gating", () => {
 		try {
 			cluster.verifyReachable();
 		} catch (error) {
-			// SAFETY: `expect((error as CrossplaneClusterUnavailableError).code).toBe(` is required at this I/O or test boundary.
 			expect((error as CrossplaneClusterUnavailableError).code).toBe(
 				KUBECTL_UNAVAILABLE,
 			);
@@ -61,8 +56,6 @@ describe("createKubectlCrossplaneCluster gating", () => {
 	});
 });
 
-// The live lane: a real kind/k3d cluster with Crossplane installed and the
-// platform XRD/Compositions applied (CI installs them; dev machines may not).
 describe.runIf(
 	process.env.HOBO_RUN_LIVE_CROSSPLANE === "1" && clusterReachable(),
 )("real Crossplane cluster conformance", () => {

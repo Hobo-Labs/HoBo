@@ -1,17 +1,9 @@
-// Event names and stream ids the agent module appends beyond the frozen
-// CD_EVENTS / CD_STREAMS. Reported to the
-// coordinator as a contract-amendment candidate; until then they are owned
-// here and are wire contract.
 
 // public-contract: agent-identity event names appended by `@hobo/cd/agent`.
 export const AGENT_EVENTS = Object.freeze({
-	/** Stream `cd-bootstrap-<sha256(token)>`: a single-use token was issued (hash only, never the token). */
 	BootstrapTokenIssued: "reconciler.BootstrapTokenIssued",
-	/** Same stream: the token was consumed by one key thumbprint. */
 	BootstrapTokenConsumed: "reconciler.BootstrapTokenConsumed",
-	/** Reconciler stream: a key-bound JWT-SVID was issued (its jti and expiry; never the token). */
 	SvidIssued: "reconciler.SvidIssued",
-	/** Stream `cd-dpop-<reconcilerId>-<bucket>`: a DPoP proof jti was seen (idempotency key = jti). */
 	DpopProofAccepted: "reconciler.DpopProofAccepted",
 } as const);
 

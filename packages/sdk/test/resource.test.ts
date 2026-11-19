@@ -1,10 +1,3 @@
-/**
- * Cases live in `resource.cases.jsonl`; this file says what the concerns are.
- *
- * Two of them, because the file tests two things: the factory, and the object
- * it returns. `satisfies` is a member of the *result*, so it gets its own
- * subject rather than being smuggled in as a case of `defineResource`.
- */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeConcern } from "@hobo/contract-harness";
@@ -19,7 +12,6 @@ describeConcern("defineResource", {
 	cases: path.join(dir, "resource.cases.jsonl"),
 });
 
-/** The walkthrough's prod-only HA Postgres, whose verdicts are the second concern. */
 const haPostgres = defineResource({
 	type: "database",
 	engine: "postgres",

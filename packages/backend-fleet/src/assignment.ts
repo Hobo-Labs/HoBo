@@ -1,35 +1,3 @@
-/**
- * The assignment register: which backend of a fleet is active.
- *
- * Every backend keeps a small append-only log. A log entry names the active
- * backend (the writer) for one **epoch**. An epoch is **decided** when a
- * majority of the configured backends hold the same entry for it, and the
- * **current assignment** is the highest decided epoch. Three local rules are
- * all the safety there is:
- *
- * 1. A backend holds at most one entry per epoch.
- * 2. A backend takes an entry for epoch `e` only when its highest entry is
- *    `e - 1`, checked and written atomically on that backend.
- * 3. An entry that names a backend as the writer is written to that backend
- *    first, and to no other backend if it does not take it.
- *
- * From 1 and 2, two different entries can never both reach a majority for one
- * epoch, and a proposal made on a stale view lands only on backends that were
- * behind, which are a minority. From 3, a backend's own log always contains
- * every decided entry that makes it the writer, so a check made on one backend
- * alone is enough to refuse overwriting it.
- *
- * A reader needs answers from a majority. With fewer, or when the highest
- * epoch it can see is not decided, the answer is not a guess at the previous
- * writer: it is `no-majority` or `undecided`, and a caller stops.
- *
- * Nothing here knows an engine. A replica is anything that can `read` its log
- * and `accept` one entry under rules 1 and 2: a SQL table
- * (`sqlAssignmentReplica` in `@hobo/data-postgres`) or one key of a cache
- * (`ephemeralAssignmentReplica` here). What the rules do not survive by
- * themselves, a backend that comes back having lost its log, is discussed
- * where a replica can lose its log (`ephemeral-replica.ts`).
- */
 import {
 	type FleetFailureClass,
 	type FleetFailureClassifier,
@@ -38,26 +6,20 @@ import {
 } from "./backend.js";
 import { BackendFleetError } from "./errors.js";
 
-/** The first epoch. An empty log takes this epoch and no other. */
 export const FIRST_ASSIGNMENT_EPOCH = 1;
 
 // domain-view: the parsed entry, constructible only through parseFleetAssignment; the generated FleetAssignment in backend_fleet_pb.ts is its wire form.
 export type FleetAssignment = {
 	readonly epoch: number;
-	/** The writer. Absent means the fleet has deliberately no writer. */
 	readonly active: string | undefined;
-	/** True while a planned move is in flight: nobody may write. */
 	readonly sealed: boolean;
-	/** Where a sealed fleet is moving to. Set exactly when `sealed`. */
 	readonly target: string | undefined;
 	readonly reason: string;
-	/** Upper bound on writes lost by an unplanned move, in milliseconds. */
 	readonly lossWindowMs: number | undefined;
 	readonly decidedAtMs: number;
 	readonly decidedBy: string;
 };
 
-/** What a proposer chooses; the register supplies epoch, time and author. */
 export type FleetAssignmentValue = {
 	readonly active: string | undefined;
 	readonly sealed: boolean;
@@ -75,11 +37,6 @@ function invalid(message: string, field: string): never {
 	});
 }
 
-/**
- * Parse an assignment entry. After this, a sealed entry always has a target
- * other than its writer, an unsealed entry never has one, and every number is
- * a non-negative safe integer.
- */
 export function parseFleetAssignment(input: FleetAssignment): FleetAssignment {
 	if (
 		!Number.isSafeInteger(input.epoch) ||
@@ -121,7 +78,6 @@ export function parseFleetAssignment(input: FleetAssignment): FleetAssignment {
 	});
 }
 
-/** Identity of an entry. Two entries are the same decision when keys match. */
 export function assignmentKey(assignment: FleetAssignment): string {
 	return JSON.stringify([
 		assignment.epoch,
@@ -135,7 +91,6 @@ export function assignmentKey(assignment: FleetAssignment): string {
 	]);
 }
 
-/** How many backends make a majority of `count` configured ones. */
 export function fleetMajority(count: number): number {
 	if (!Number.isSafeInteger(count) || count < 1)
 		throw new BackendFleetError(
@@ -153,19 +108,11 @@ export const ASSIGNMENT_ACCEPT_OUTCOMES = [
 	"busy",
 ] as const;
 
-/**
- * What one backend did with an entry. `duplicate` means it already held the
- * identical entry; `conflict` that it holds a different one for that epoch;
- * `gap` that its log is too short to take it; `busy` that a copy into that
- * backend is in progress.
- */
 export type AssignmentAcceptOutcome =
 	(typeof ASSIGNMENT_ACCEPT_OUTCOMES)[number];
 
-/** One backend's copy of the log. */
 export type AssignmentReplica = {
 	readonly id: string;
-	/** Entries in ascending epoch order; `limit` keeps only the highest ones. */
 	read(limit?: number): Promise<readonly FleetAssignment[]>;
 	accept(assignment: FleetAssignment): Promise<AssignmentAcceptOutcome>;
 };
@@ -187,7 +134,6 @@ export type AssignmentResolution =
 			readonly status: "current";
 			readonly assignment: FleetAssignment;
 			readonly holders: readonly string[];
-			/** Backends that answered and do not hold the current entry. */
 			readonly behind: readonly string[];
 			readonly silent: readonly string[];
 	  }
@@ -239,14 +185,6 @@ function highestEpoch(replies: readonly AssignmentReply[]): number {
 	return top;
 }
 
-/**
- * Decide what a set of replies proves. Pure: no clock, no I/O.
- *
- * `current` is returned only for the highest epoch seen, and only when a
- * majority of the *configured* members hold the same entry for it. An entry
- * held by fewer is never treated as the answer, and neither is the decided
- * epoch below it: something newer may already be decided out of sight.
- */
 export function resolveAssignment(
 	members: readonly string[],
 	replies: readonly AssignmentReply[],
@@ -285,18 +223,13 @@ export function resolveAssignment(
 	return { status: "undecided", epoch, contenders, silent };
 }
 
-/** The members of one fleet's register, in configured order. */
 export type AssignmentRegister = {
 	readonly replicas: readonly AssignmentReplica[];
-	/** How a replica's failed read is classified. Default: `unknown`. */
 	readonly classify?: FleetFailureClassifier;
-	/** Optional application-specific proof that the current majority has all
-	 * information the caller needs. Absent means wait for every reply. */
 	readonly earlyCurrent?: (
 		resolution: Extract<AssignmentResolution, { status: "current" }>,
 		replies: readonly AssignmentReply[],
 	) => boolean;
-	/** Stop offering once a majority has accepted; no extra writes continue in the background. */
 	readonly stopAfterMajority?: boolean;
 };
 
@@ -327,7 +260,6 @@ export function parseAssignmentRegister(
 	});
 }
 
-/** Ask every member for its log. A member that fails is a classified absence. */
 export async function readAssignmentReplies(
 	register: AssignmentRegister,
 	limit?: number,
@@ -362,7 +294,6 @@ export async function readAssignmentReplies(
 					try {
 						sufficient = acceptCurrent(resolution, replies);
 					} catch {
-						/* wait for another holder */
 					}
 				}
 				if (sufficient || replies.length === members.length) {
@@ -373,14 +304,6 @@ export async function readAssignmentReplies(
 	});
 }
 
-/**
- * Majority read of the current assignment. Reads only the newest entry.
- *
- * It answers as soon as the replies in hand prove a current assignment, without
- * waiting for a backend that is slow or gone: a newest entry held by a majority
- * of the configured members is decided whatever the rest would say, and no
- * decided epoch above it can exist without one of those members holding it.
- */
 export function readCurrentAssignment(
 	register: AssignmentRegister,
 ): Promise<AssignmentResolution> {
@@ -417,11 +340,6 @@ async function offer(
 	}
 }
 
-/**
- * Copy entries that already exist onto members whose logs are shorter, up to
- * `upTo`. Nothing is invented: each copied entry is one a member holds, and
- * for an epoch with more than one entry the most widely held one is copied.
- */
 async function repairLogs(
 	register: AssignmentRegister,
 	replies: readonly AssignmentReply[],
@@ -451,37 +369,24 @@ export type AssignmentProposalOutcome =
 			readonly holders: readonly string[];
 	  }
 	| {
-			/** Written to fewer than a majority. It may still be completed later. */
 			readonly status: "undecided";
 			readonly assignment: FleetAssignment;
 			readonly holders: readonly string[];
 	  }
 	| {
-			/** The caller's expected epoch is no longer the current one. */
 			readonly status: "stale";
 			readonly resolution: AssignmentResolution;
 	  }
 	| {
-			/** No majority answered, or the newest epoch is not decided. */
 			readonly status: "unavailable";
 			readonly resolution: AssignmentResolution;
 	  }
 	| {
-			/** The backend the entry names as writer did not take it. */
 			readonly status: "refused";
 			readonly replica: string;
 			readonly outcome: AssignmentAcceptOutcome | "silent" | "not-a-member";
 	  };
 
-/**
- * Write one entry: to the backend it names as writer first, then to the rest
- * in configured order.
- *
- * A proposer stops at the first member that holds a different entry for the
- * epoch, because somebody else's proposal got there first; stopping leaves the
- * remaining members free, so a contested epoch can still be settled. Completion
- * does not stop: it offers the entry it chose to every member that can take it.
- */
 async function place(
 	register: AssignmentRegister,
 	assignment: FleetAssignment,
@@ -530,21 +435,12 @@ async function place(
 }
 
 export type AssignmentProposal = {
-	/** The epoch the caller believes is current; 0 when nothing is decided. */
 	readonly expectedEpoch: number;
 	readonly value: FleetAssignmentValue;
 	readonly decidedBy: string;
 	readonly nowMs: number;
 };
 
-/**
- * Propose the next assignment, as a compare-and-set on the current epoch.
- *
- * The proposer never decides on older information: if the newest epoch it can
- * see is not decided it returns `unavailable` and writes nothing. Only
- * `decided` means the entry is the current assignment. Any other outcome means
- * "read again"; an `undecided` entry may still be completed by someone else.
- */
 export async function proposeAssignment(
 	register: AssignmentRegister,
 	proposal: AssignmentProposal,
@@ -575,12 +471,6 @@ export async function proposeAssignment(
 	);
 }
 
-/**
- * The first assignment of a fleet with empty logs.
- *
- * The entry is the same bytes no matter who writes it, so any number of
- * instances starting at once agree instead of splitting the first epoch.
- */
 export async function bootstrapAssignment(
 	register: AssignmentRegister,
 	active: string,
@@ -599,13 +489,6 @@ export async function bootstrapAssignment(
 	});
 }
 
-/**
- * Finish what an interrupted proposer started.
- *
- * When the newest epoch is held by fewer than a majority, copy that same entry
- * (same epoch, same value) onto more members. No new value is chosen. Members
- * that are behind are first brought up to the epoch before it.
- */
 export async function completeAssignment(
 	register: AssignmentRegister,
 ): Promise<AssignmentResolution> {
@@ -637,15 +520,6 @@ export type AssignmentOverride = {
 	readonly nowMs: number;
 };
 
-/**
- * Operator override. Writes a new epoch above everything visible, whatever the
- * current epoch is or whether it is decided.
- *
- * This is the only way to break a split epoch and the only way to promote a
- * standby beyond the recovery point objective. It skips the compare-and-set on
- * purpose, so it belongs to a person, never to a scheduled job. It still needs
- * a majority to answer and still writes to the named writer first.
- */
 export async function overrideAssignment(
 	register: AssignmentRegister,
 	override: AssignmentOverride,

@@ -4,10 +4,6 @@ import { createDefaultDevRuntime } from "./compose.js";
 import { isJsonString } from "./json.js";
 
 export interface SandboxCommandDeps {
-	// Factory for a FRESH runtime-local Camp per invocation — the isolation the
-	// sandbox lane guarantees (each run boots its own in-process host, no shared
-	// state). Defaults to the offline hello-bindle DevRuntime. Injectable so a test
-	// can drive a degraded runtime.
 	readonly runtimeFactory?: () => DevRuntime;
 }
 
@@ -17,12 +13,6 @@ interface ContractCheck {
 	readonly detail: string;
 }
 
-// `hobo sandbox` (and its `test` alias) — run the project in a CONTRACT-BACKED
-// ISOLATED lane. It boots a fresh runtime-local Camp (offline, no cloud, no
-// shared state), serves the probe, and asserts the response contract: HTTP 200,
-// a non-empty body, and the NFR-002 cold-start budget. Unlike `hobo dev` (which
-// serves and live-tails), this asserts and exits with a pass/fail verdict — the
-// isolated test loop.
 export function createSandboxCommand(
 	deps: SandboxCommandDeps = {},
 ): CommandModule {

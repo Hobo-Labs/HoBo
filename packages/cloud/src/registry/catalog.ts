@@ -17,21 +17,6 @@ import {
 import type { CapabilityVerdict } from "../plan-types.js";
 import { collectStream } from "../store/index.js";
 
-// The Registry is a Provider + Capability Manifest catalog (control-plane.md
-// "Registry"). Per Decision D2 (build plan) it is a *projection* over provider
-// `capabilityManifest()` publications, not a standalone package. This module
-// carries both faces: (1) the read-model projection the kernel materializes, and
-// (2) a PlannerRegistry the pure Planner consults for context-matching + live
-// capability negotiation.
-
-// Structural shapes of a registrable CloudProvider — a declared narrowing of
-// @hobo/core's canonical `CloudProvider` port (ADR-0156), not a locally
-// invented contract: the registry consumes only the manifest/capability face
-// of that port, so these types pick exactly the members it folds. Assignability
-// of core's `CloudProvider` is proven by the compile-time assertion below
-// `RegistrableProvider`. Kept structural so `src/` never imports a provider
-// adapter (inward-only deps; provider-cloudflare is a test-only dependency
-// exercised from test/).
 export interface RegistrableCapability {
 	port: string;
 	satisfies(req: { port: string; features?: string[] }): {
@@ -50,9 +35,6 @@ export interface RegistrableProvider {
 	id: string;
 	regions: string[];
 	capabilities: RegistrableCapability[];
-	// `capabilities`/`cost` stay as opaque records — matching core's
-	// CapabilityManifest — and are narrowed to their document shapes
-	// (`{ capabilities?: [...] }` / `{ facts?: [...] }`) in definitionsFor.
 	capabilityManifest(): {
 		providerId: string;
 		published: Record<string, string>;
@@ -61,16 +43,11 @@ export interface RegistrableProvider {
 	};
 }
 
-// Compile-time proof (ADR-0156): every @hobo/core `CloudProvider` is a
-// `RegistrableProvider` as-is. If this stops compiling, the narrowing above
-// has drifted from the canonical port.
 const _coreCloudProviderIsRegistrable = (
 	provider: import("@hobo/core").CloudProvider,
 ): RegistrableProvider => provider;
 void _coreCloudProviderIsRegistrable;
 
-// A default Resource Definition candidate (control-plane.md: a provider's
-// equivalence mappings are its default Resource Definitions, one per capability).
 export interface ResourceDefinition {
 	id: string;
 	productId?: string;
@@ -86,12 +63,9 @@ export interface ResourceDefinition {
 		marginalPrice: string;
 		pricingStatus?: "unknown" | "estimate" | "verified-zero";
 	};
-	// Live capability negotiation delegated to the provider Capability.satisfies.
 	satisfies(req: { port: string; features?: string[] }): CapabilityVerdict;
 }
 
-// A registered-but-unapproved provider: visible to remediation, invisible to
-// Matching (walkthrough Part 0/2 — approval is the gate, registration is not).
 export interface HeldProvider {
 	providerId: string;
 	ports: string[];
@@ -101,9 +75,6 @@ export interface PlannerRegistry {
 	catalogHash: string;
 	definitions(): ResourceDefinition[];
 	providers(): string[];
-	// Optional live-view extensions (event-backed registries): re-fold the
-	// durable registry stream into the matchable snapshot, and list providers
-	// that are installed but not yet approved.
 	refresh?(): Promise<void>;
 	held?(): HeldProvider[];
 }
@@ -154,14 +125,10 @@ export function definitionsFor(
 	provider: RegistrableProvider,
 ): ResourceDefinition[] {
 	const manifest = provider.capabilityManifest();
-	// Narrow the opaque manifest records to the published document shapes the
-	// catalog folds (capabilities.json entries / cost.json facts).
 	const capsArray =
-		// SAFETY: `(manifest.capabilities as { capabilities?: Array<JsonObject> })` is required at this I/O or test boundary.
 		(manifest.capabilities as { capabilities?: Array<JsonObject> })
 			.capabilities ?? [];
 	const costFacts =
-		// SAFETY: `(manifest.cost as { facts?: Array<JsonObject> }).facts ?? [];` is required at this I/O or test boundary.
 		(manifest.cost as { facts?: Array<JsonObject> }).facts ?? [];
 
 	return provider.capabilities.map((capability) => {
@@ -187,17 +154,12 @@ export function definitionsFor(
 			port: capability.port,
 			features,
 			regions,
-			// Default provider definitions share a base specificity; explicit
-			// platform definitions would outscore them (control-plane.md step 2).
 			specificity: 10,
 			priority: 0,
 			cost: {
-				// SAFETY: `sku: (costFact?.sku as string) ?? estimate.sku,` is required at this I/O or test boundary.
 				sku: (costFact?.sku as string) ?? estimate.sku,
-				// SAFETY: `unit: (costFact?.unit as string) ?? estimate.unit,` is required at this I/O or test boundary.
 				unit: (costFact?.unit as string) ?? estimate.unit,
 				marginalPrice:
-					// SAFETY: `(costFact?.marginalPrice as string) ?? estimate.marginalPrice,` is required at this I/O or test boundary.
 					(costFact?.marginalPrice as string) ?? estimate.marginalPrice,
 				pricingStatus: parsePricingStatus(
 					costFact?.pricingStatus ??
@@ -223,8 +185,6 @@ export function createRegistryFromProviders(
 	};
 }
 
-// The command that registers a provider into the Registry catalog: it carries
-// the provider's Capability Manifest snapshot as the fact body.
 export function registerProviderFact(provider: RegistrableProvider) {
 	const definitions = definitionsFor(provider).map((d) => ({
 		id: d.id,
@@ -248,18 +208,12 @@ export function registerProviderFact(provider: RegistrableProvider) {
 	});
 }
 
-// The approval fact: `hobo add` (or the Yard bootstrap) approving a registered
-// provider for Matching.
 export function approveProviderFact(providerId: string, approvedBy?: string) {
 	return providerApproved(
 		approvedBy !== undefined ? { providerId, approvedBy } : { providerId },
 	);
 }
 
-// Deterministic, core-owned capability negotiation over a *recorded* catalog
-// entry (ADR-0090): the fact body carries data only, so `satisfies` is
-// reconstructed from the entry's port + features — full when every required
-// feature is advertised, partial(missing) when the port matches, none otherwise.
 function negotiateFromEntry(
 	port: string,
 	features: readonly string[],
@@ -274,8 +228,6 @@ function negotiateFromEntry(
 	};
 }
 
-// Parse a `provider.Registered` fact body into ResourceDefinitions
-// (parse-don't-validate: malformed entries are dropped, never half-trusted).
 export function parseRegisteredDefinitions<T>(data: T): ResourceDefinition[] {
 	if (data === null || !isJsonObject(data)) return [];
 	const body = data;
@@ -325,14 +277,10 @@ export function parseRegisteredDefinitions<T>(data: T): ResourceDefinition[] {
 }
 
 export interface RegistryStreamFold {
-	// providerId -> its recorded default Resource Definitions (last write wins).
 	installed: Map<string, ResourceDefinition[]>;
 	approved: Set<string>;
 }
 
-// Fold the durable registry stream (provider.Registered + provider.Approved)
-// into the installed/approved snapshot. Pure over the event list, so the
-// snapshot is rebuildable from zero.
 export function foldRegistryStream(
 	events: Iterable<{ type: string; data?: unknown }>,
 ): RegistryStreamFold {
@@ -344,7 +292,6 @@ export function foldRegistryStream(
 			const providerId = defs[0]?.providerId;
 			if (providerId !== undefined) installed.set(providerId, defs);
 		} else if (event.type === CLOUD_EVENTS.ProviderApproved) {
-			// SAFETY: `const providerId = (event.data as { providerId?: unknown } | undefined)` is required at this I/O or test boundary.
 			const providerId = (event.data as { providerId?: unknown } | undefined)
 				?.providerId;
 			if (isJsonString(providerId) && providerId.length > 0)
@@ -357,17 +304,9 @@ export function foldRegistryStream(
 export interface EventBackedRegistryDeps {
 	store: Pick<EventStore, "read">;
 	streamId: string;
-	// Providers compiled into the runtime (always matchable). Installed
-	// providers whose id collides with a base provider are deduped in favor of
-	// the live base definition.
 	base?: PlannerRegistry;
 }
 
-// A PlannerRegistry over the durable registry stream: base (in-code) providers
-// plus APPROVED installed providers folded from `provider.Registered`/
-// `provider.Approved` facts. `refresh()` re-folds the stream into the sync
-// snapshot the pure Planner reads; held() lists installed-but-unapproved
-// providers so Matching can name them in remediations without matching them.
 export function createEventBackedRegistry(
 	deps: EventBackedRegistryDeps,
 ): PlannerRegistry & {
@@ -410,8 +349,6 @@ export function createEventBackedRegistry(
 	};
 }
 
-// ---- The Registry catalog projection (read model, rebuildable from zero) ----
-
 export interface RegistryCatalogRow {
 	providerId: string;
 	ports: string[];
@@ -422,11 +359,9 @@ export interface RegistryCatalogRow {
 export const registryCatalogProjection: Projection<RegistryCatalogRow> =
 	defineProjection<RegistryCatalogRow>({
 		name: "registry-catalog",
-		// SAFETY: `key: (event) => (event.data as { providerId: string }).providerId,` is required at this I/O or test boundary.
 		key: (event) => (event.data as { providerId: string }).providerId,
 		on: {
 			[CLOUD_EVENTS.ProviderRegistered]: (_row, event) => {
-				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					providerId: string;
 					definitions: Array<{ port: string }>;

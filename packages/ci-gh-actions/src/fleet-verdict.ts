@@ -1,20 +1,3 @@
-/**
- * The fleet verdict at its boundaries (`data-models/fleet_verdict.proto`):
- * what a relay tells runner routing about one repository before a run's jobs
- * are queued. It names the fleet labels new work should stay off right now,
- * and nothing else: no capacity figure leaves the relay. A label it does not
- * name is not vouched for, so routing decides it from GitHub's queue.
- *
- * The box relay decides; the hosted relay keeps, agrees and serves
- * (ADR-0180). It keeps each enrolled reporter's last signed report until it
- * expires, serves a label blocked only while every reporter enrolled for it
- * blocks it in `report` mode, and stops serving a block once the label has
- * been blocked for its daily allowance.
- *
- * Parse, don't validate: a report or a stored record crosses one parser
- * here and comes out as a parsed type the rest of the relay uses without
- * checking again, or as nothing.
- */
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import {
 	FleetReporterEnrollmentsSchema,
@@ -43,35 +26,19 @@ export const FLEET_VERDICTS_PATH = "/v1/fleet/verdicts/";
 // public-contract: the relay route a repository's workflows read its reporters' status from.
 export const FLEET_REPORTERS_PATH = "/v1/fleet/reporters/";
 
-/** Why a label is blocked; see `FleetVerdictBlock` in the proto. */
 export const FLEET_VERDICT_REASONS = ["no-node", "no-capacity"] as const;
 export type FleetVerdictReason = (typeof FLEET_VERDICT_REASONS)[number];
 
-/** `shadow` reports are kept and shown, never served; `report` reports count. */
 export const FLEET_VERDICT_MODES = ["shadow", "report"] as const;
 export type FleetVerdictMode = (typeof FLEET_VERDICT_MODES)[number];
 
-/**
- * The longest a report stands without being repeated. A reporter repeats it
- * every minute while it holds, so one that has stopped is forgotten within
- * this long, and it is the most blocked time one report can account for.
- */
 export const FLEET_VERDICT_MAX_TTL_SECONDS = 180;
-/** Verdict-blocked minutes per label per 24-hour window, unless configured. */
 export const FLEET_VERDICT_DAILY_BLOCK_MINUTES = 240;
-/** What the relay keeps of a reporter, and an allowance window, lasts a day. */
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Far more labels than a fleet serves; a report naming more is not one. */
 const MAX_BLOCKED_LABELS = 16;
-/** At most this many reporters may be enrolled for one account. */
 export const FLEET_REPORTERS_PER_ACCOUNT = 8;
-/** A lost race on the cache is tried again this many times, then refused. */
 const ATTEMPTS = 8;
 
-// GitHub's own limits: an owner of at most 39 characters (a managed user's
-// login may carry an underscore) and a name of at most 100. Kept in step
-// with the route job's pattern in `scripts/ci/route-runner.mts`, and short
-// enough for a cache key.
 const OWNER_AND_NAME =
 	"([A-Za-z0-9][A-Za-z0-9_-]{0,38})\\/([A-Za-z0-9_.-]{1,100})";
 const VERDICT_PATH = new RegExp(
@@ -85,7 +52,6 @@ const LABEL = /^[a-z0-9][a-z0-9_.-]{0,79}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
-/** `owner/name` in lower case: the one spelling a verdict is kept under. */
 export type FleetVerdictRepository = string & {
 	readonly __brand: "FleetVerdictRepository";
 };
@@ -96,25 +62,21 @@ function repositoryOf(
 ): FleetVerdictRepository | undefined {
 	const match = pattern.exec(path);
 	if (!match?.[1] || !match[2]) return undefined;
-	// SAFETY: the pattern admits only an owner and a name, lower-cased here.
 	return `${match[1]}/${match[2]}`.toLowerCase() as FleetVerdictRepository;
 }
 
-/** The repository a verdict route names, or nothing when the path is not one. */
 export function parseFleetVerdictPath(
 	path: string,
 ): FleetVerdictRepository | undefined {
 	return repositoryOf(VERDICT_PATH, path);
 }
 
-/** The repository a reporter status route names, or nothing. */
 export function parseFleetReportersPath(
 	path: string,
 ): FleetVerdictRepository | undefined {
 	return repositoryOf(REPORTERS_PATH, path);
 }
 
-/** A report after parsing: the labels it blocks, how long it stands, its mode. */
 export type ParsedFleetVerdictReport = Readonly<{
 	blocked: ReadonlyMap<string, FleetVerdictReason>;
 	ttlMs: number;
@@ -129,25 +91,18 @@ function modeOf(value: string): FleetVerdictMode | undefined {
 	return FLEET_VERDICT_MODES.find((mode) => mode === value);
 }
 
-/**
- * How many labels the text itself names under `blocked`. The decoded record
- * can hold fewer: a key such as `__proto__` is not kept as an entry, and a
- * label that silently went missing must refuse the record, not shrink it.
- */
 function namedLabels(text: string): number | undefined {
 	try {
 		const blocked: unknown = JSON.parse(text)?.blocked;
 		if (blocked === undefined) return 0;
 		if (Object.prototype.toString.call(blocked) !== "[object Object]")
 			return undefined;
-		// SAFETY: the tag check proves a plain object, as JSON.parse builds one.
 		return Object.keys(blocked as object).length;
 	} catch {
 		return undefined;
 	}
 }
 
-/** Labels to reasons, or nothing when any entry is not a label or a reason. */
 function parseBlocked(
 	blocked: Readonly<Record<string, { readonly reason: string }>>,
 	named: number | undefined,
@@ -165,12 +120,6 @@ function parseBlocked(
 	return parsed;
 }
 
-/**
- * A report as a reporter sent it. A field the record does not have, a reason
- * or mode it does not know, or a lifetime out of range refuses the whole
- * report: a verdict moves runs between runners, so a half-understood one is
- * not acted on.
- */
 export function parseFleetVerdictReport(
 	text: string,
 ): ParsedFleetVerdictReport | undefined {
@@ -192,7 +141,6 @@ export function parseFleetVerdictReport(
 	}
 }
 
-/** The body a reporter sends: labels in order, so equal reports are equal text. */
 export function fleetVerdictReportJson(
 	blocked: ReadonlyMap<string, FleetVerdictReason>,
 	ttlSeconds: number,
@@ -216,13 +164,6 @@ function orderedBlocks(blocked: ReadonlyMap<string, FleetVerdictReason>) {
 	);
 }
 
-/**
- * The entry a relay keeps for one reporter's report received at `nowMs`, by
- * its own clock. It is dated even when it blocks nothing: while it stands,
- * the reporter is live and its "open" counts. A `shadow` report is kept as
- * blocking nothing, since it must never be served; what it said is in the
- * reporter's state.
- */
 export function reportedFleetVerdict(
 	repository: FleetVerdictRepository,
 	report: ParsedFleetVerdictReport,
@@ -236,7 +177,6 @@ export function reportedFleetVerdict(
 	});
 }
 
-/** What a relay answers when nothing is blocked: the repository, nothing more. */
 export function noFleetVerdict(
 	repository: FleetVerdictRepository,
 ): FleetVerdict {
@@ -249,7 +189,6 @@ export function fleetVerdictJson(verdict: FleetVerdict): string {
 	});
 }
 
-/** When a dated verdict stops standing; nothing for one that is not dated. */
 export function fleetVerdictExpiresAtMs(
 	verdict: FleetVerdict,
 ): number | undefined {
@@ -258,10 +197,6 @@ export function fleetVerdictExpiresAtMs(
 		: Date.parse(verdict.expiresAt);
 }
 
-/**
- * A verdict read back from where it is kept or from a relay's answer. One
- * that blocks a label must say when it was observed and when it lapses.
- */
 export function parseFleetVerdict(text: string): FleetVerdict | undefined {
 	try {
 		const verdict = fromJsonString(FleetVerdictSchema, text);
@@ -281,32 +216,24 @@ export function parseFleetVerdict(text: string): FleetVerdict | undefined {
 	}
 }
 
-/** One enrolled reporter after parsing: who it is, its key, and what it may block. */
 export type FleetReporter = Readonly<{
 	id: string;
-	/** The raw Ed25519 public key, base64url without padding. */
 	publicKey: string;
 	accountId: string;
-	/** Lower case, each once, in order. */
 	labels: readonly string[];
 }>;
 
-/** How the hosted relay serves verdicts, from its runtime configuration. */
 export type FleetVerdictSettings = Readonly<{
-	/** Every enrolled reporter, whatever its account. */
 	reporters: readonly FleetReporter[];
-	/** False is the kill switch: reads block nothing, reports answer 503. */
 	serving: boolean;
 	dailyBlockMinutes: number;
 }>;
 
-/** Who must agree for one repository: the reporters enrolled for its account. */
 export type FleetEnrollment = Readonly<{
 	reporters: readonly FleetReporter[];
 	dailyBlockMinutes: number;
 }>;
 
-/** The enrollment that governs a repository connected under `accountId`. */
 export function fleetEnrollmentFor(
 	settings: FleetVerdictSettings,
 	accountId: string,
@@ -325,12 +252,6 @@ function canonicalPublicKey(value: string): boolean {
 	return bytes.length === 32 && bytes.toString("base64url") === value;
 }
 
-/**
- * The enrolled reporters `HOBO_CI_FLEET_REPORTERS_JSON` names, or nothing
- * when it is not a whole enrollment: an unknown field (a private key, say),
- * a malformed id, key, account or label, a reporter listed twice, or more
- * than eight reporters for one account refuses all of it.
- */
 export function parseFleetReporters(
 	text: string,
 ): readonly FleetReporter[] | undefined {
@@ -375,7 +296,6 @@ function datedOrAbsent(value: string | undefined): boolean {
 	return value === undefined || INSTANT.test(value);
 }
 
-/** A reporter's state as the relay keeps it, or nothing when it is not one. */
 export function parseFleetReporterState(
 	text: string,
 ): FleetReporterState | undefined {
@@ -411,12 +331,6 @@ function blockedIn(entry: FleetReporterLabelState | undefined): boolean {
 	);
 }
 
-/**
- * The reporter's state after one more accepted report. Per label the
- * reporter serves, `lastBlockedAt` moves only when the report blocks a
- * label that was clear, and `lastClearedAt` only when it clears one that was
- * blocked: they mark changes, not repeats. Shadow reports count here too.
- */
 export function nextFleetReporterState(
 	previous: FleetReporterState | undefined,
 	reporter: FleetReporter,
@@ -446,7 +360,6 @@ export function nextFleetReporterState(
 	});
 }
 
-/** The allowance the relay keeps for a repository, or nothing when it is not one. */
 export function parseFleetVerdictAllowance(
 	text: string,
 ): FleetVerdictAllowance | undefined {
@@ -473,16 +386,6 @@ export function fleetVerdictAllowanceJson(
 	return toJsonString(FleetVerdictAllowanceSchema, allowance);
 }
 
-/**
- * The allowance after one accepted report. `before` and `after` are the
- * labels the agreed verdict blocked just before and just after it. For each
- * label blocked before, the time since it was last counted is added, capped
- * at a report's lifetime, so two reporters blocking together are counted
- * once and a silent spell counts no more than one report could have stood.
- * A label blocked after is marked counted now, starting a window at its
- * first counted second; one open after stops being counted. A window lasts
- * a day; a label whose window has passed starts again.
- */
 export function countFleetVerdictAllowance(
 	previous: FleetVerdictAllowance | undefined,
 	before: ReadonlySet<string>,
@@ -522,7 +425,6 @@ export function countFleetVerdictAllowance(
 	return create(FleetVerdictAllowanceSchema, { labels });
 }
 
-/** Whether a label's allowance is spent at `nowMs`: it is then served open. */
 export function fleetAllowanceSpent(
 	allowance: FleetVerdictAllowance | undefined,
 	label: string,
@@ -537,20 +439,12 @@ export function fleetAllowanceSpent(
 	);
 }
 
-/** A label the agreed verdict blocks, with when the block was seen and lapses. */
 type AgreedBlock = Readonly<{
 	reason: FleetVerdictReason;
 	observedAtMs: number;
 	expiresAtMs: number;
 }>;
 
-/**
- * The labels every reporter enrolled for them blocks, live and in `report`
- * mode. One that is silent, in shadow or says the label is open leaves it
- * open; one that does not serve the label has no say. `entries` holds each
- * reporter's kept entry by reporter id. The block is observed when the last
- * of them reported it, and lapses when the first of them does.
- */
 export function agreedFleetBlocks(
 	reporters: readonly FleetReporter[],
 	entries: ReadonlyMap<string, FleetVerdict>,
@@ -590,7 +484,6 @@ export function agreedFleetBlocks(
 	return agreed;
 }
 
-/** The verdict a relay serves for agreed blocks, less any label whose allowance is spent. */
 function servedFleetVerdict(
 	repository: FleetVerdictRepository,
 	agreed: ReadonlyMap<string, AgreedBlock>,
@@ -617,18 +510,11 @@ function servedFleetVerdict(
 	});
 }
 
-/** One kept value and the version a conditional write must name. */
 export type FleetVerdictKvEntry<Version extends string = string> = Readonly<{
 	value: string;
 	version: Version;
 }>;
 
-/**
- * The key/value store the verdicts live on: the relay's cache, or this
- * process's memory. `write` replaces a value only while the key is still at
- * `expected` (absent when `expected` is undefined), and answers false on a
- * lost race.
- */
 export type FleetVerdictKv<
 	Key extends string = string,
 	Version extends string = string,
@@ -644,17 +530,12 @@ export type FleetVerdictKv<
 	): Promise<boolean>;
 }>;
 
-/** The three keys of ADR-0180, per repository and reporter. */
 export type FleetVerdictKeys<Key extends string = string> = Readonly<{
-	/** The reporter's last report, until it expires. */
 	verdict(repository: FleetVerdictRepository, reporterId: string): Key;
-	/** The reporter's state, for a day after its last accepted report. */
 	reporter(repository: FleetVerdictRepository, reporterId: string): Key;
-	/** The repository's allowance, a day from its window's start. */
 	allowance(repository: FleetVerdictRepository): Key;
 }>;
 
-/** A report that has passed every check the route makes. */
 export type FleetVerdictSubmission = Readonly<{
 	repository: FleetVerdictRepository;
 	reporter: FleetReporter;
@@ -666,18 +547,11 @@ export type FleetVerdictAcceptance =
 	| Readonly<{ accepted: true; entry: FleetVerdict }>
 	| Readonly<{ accepted: false; reason: "replayed" }>;
 
-/**
- * Where the hosted relay keeps verdicts (ADR-0180). `read` answers the
- * agreed verdict for a repository's enrollment; `accept` keeps one report,
- * refusing a sequence it has already seen from that reporter, and counts the
- * allowance; `status` shows every enrolled reporter and the allowance.
- */
 export type FleetVerdictStore = Readonly<{
 	read(
 		repository: FleetVerdictRepository,
 		enrolled: FleetEnrollment,
 	): Promise<FleetVerdict>;
-	/** The highest sequence accepted from the reporter for the repository. */
 	lastSequence(
 		repository: FleetVerdictRepository,
 		reporterId: string,
@@ -699,7 +573,6 @@ function kept<T>(
 	return entry === undefined ? undefined : parse(entry.value);
 }
 
-/** The verdict store over any key/value binding; one implementation, two homes. */
 export function createFleetVerdictStore<
 	Key extends string,
 	Version extends string,
@@ -711,7 +584,6 @@ export function createFleetVerdictStore<
 	const { kv, keys } = options;
 	const now = options.now ?? Date.now;
 
-	/** Each enrolled reporter's entry, by id, and the allowance: one round trip. */
 	async function readAgreement(
 		repository: FleetVerdictRepository,
 		reporters: readonly FleetReporter[],
@@ -736,7 +608,6 @@ export function createFleetVerdictStore<
 		};
 	}
 
-	/** Write `value` whatever is there, trying again on a lost race. */
 	async function put(key: Key, value: string, ttlMs: number) {
 		for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
 			const [current] = await kv.getMany([key]);
@@ -782,7 +653,6 @@ export function createFleetVerdictStore<
 
 	return {
 		async read(repository, enrolled) {
-			// Nobody enrolled for this account: nothing can be blocked, nothing read.
 			if (enrolled.reporters.length === 0) return noFleetVerdict(repository);
 			const { entries, allowance } = await readAgreement(
 				repository,
@@ -818,7 +688,6 @@ export function createFleetVerdictStore<
 				const before = new Set(
 					agreedFleetBlocks(enrolled.reporters, entries, nowMs).keys(),
 				);
-				// The sequence is claimed first: of two equal reports, one wins.
 				if (
 					!(await kv.write(
 						stateKey,
@@ -908,11 +777,6 @@ export function fleetReporterStatusListJson(
 	});
 }
 
-/**
- * A key/value store in this process, with each key's time to live read from
- * `now`: what a relay host without a cache keeps verdicts on. A restart
- * forgets everything, which is the same as every report lapsing at once.
- */
 export function createMemoryFleetVerdictKv(
 	now: () => number = Date.now,
 ): FleetVerdictKv {
@@ -946,7 +810,6 @@ export function createMemoryFleetVerdictKv(
 	};
 }
 
-/** The plain keys a store in memory uses. */
 export const MEMORY_FLEET_VERDICT_KEYS: FleetVerdictKeys = Object.freeze({
 	verdict: (repository: string, reporterId: string) =>
 		`fleet-verdict:${repository}:${reporterId}`,
@@ -955,7 +818,6 @@ export const MEMORY_FLEET_VERDICT_KEYS: FleetVerdictKeys = Object.freeze({
 	allowance: (repository: string) => `fleet-allowance:${repository}`,
 });
 
-/** Verdicts kept in this process: enough for one relay host, gone at a restart. */
 export function createMemoryFleetVerdicts(
 	now: () => number = Date.now,
 	kv: FleetVerdictKv = createMemoryFleetVerdictKv(now),

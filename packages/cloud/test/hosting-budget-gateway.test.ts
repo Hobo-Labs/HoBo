@@ -100,7 +100,6 @@ function fixtures(input = evidence(), deny = false) {
 	});
 	let reserved = 0;
 	let calls = 0;
-	// Contract provider: admission is authoritative; the gateway never fabricates approval.
 	const authority: SharedHostingBudgetAuthority = {
 		persistence: "durable-cas",
 		claimExecution: async () => ({ ok: true }),

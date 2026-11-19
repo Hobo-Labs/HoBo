@@ -14,7 +14,6 @@ function key(
 	return `${tenantId}::${zone}::${name}::${type}`;
 }
 
-/** In-process DnsProvider for tests and local reconcile dry-runs. */
 export function createMemoryDnsProvider(): DnsProvider & {
 	readonly store: ReadonlyMap<string, DnsRecord>;
 } {

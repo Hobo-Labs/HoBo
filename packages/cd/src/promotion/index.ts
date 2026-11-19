@@ -1,5 +1,3 @@
-// `@hobo/cd/promotion` (WP6): the promotion saga, previews, and the adapters
-// it composes (planning, gate, approvals, Trails, hooks). See README.md.
 export {
 	type A2HApproverDeps,
 	APPROVAL_REASON,

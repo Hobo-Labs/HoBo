@@ -26,7 +26,6 @@ export function createContainer(): Container {
 			if (!implementations.has(key)) {
 				throw new Error(`port ${key} is not registered`);
 			}
-			// SAFETY: assertion required at this I/O or test boundary.
 			return implementations.get(key) as T;
 		},
 	};

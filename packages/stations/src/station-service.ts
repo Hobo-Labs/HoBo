@@ -1,7 +1,3 @@
-/**
- * Event-sourced Station occupancy aggregate: Station + Rails.
- * Connections are Station-scoped via stationId on the identity plane.
- */
 
 import { STATION_EVENTS, type StationEvent, stationEvent } from "./events.js";
 import { asJsonObject, isJsonNumber, type JsonObject } from "./json.js";
@@ -63,9 +59,7 @@ export function foldStationEvents(
 		const data = event.data;
 		switch (event.type) {
 			case STATION_EVENTS.Created: {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const isolation = data.isolation as StationIsolation;
-				// SAFETY: assertion required at this I/O or test boundary.
 				const bootstrapHash = data.bootstrapRailHash as
 					| `sha256:${string}`
 					| undefined;
@@ -116,7 +110,6 @@ export function foldStationEvents(
 			}
 			case STATION_EVENTS.RailPublished:
 			case STATION_EVENTS.RailApproved: {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const rail = data.rail as Rail | undefined;
 				if (rail?.contentHash) {
 					rails[rail.contentHash] = rail;
@@ -128,7 +121,6 @@ export function foldStationEvents(
 				break;
 			}
 			case STATION_EVENTS.RailActivated: {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const hash = data.contentHash as `sha256:${string}` | undefined;
 				const isBootstrap = data.isBootstrap === true;
 				if (occupancy && hash) {
@@ -155,7 +147,6 @@ export function foldStationEvents(
 			}
 			case STATION_EVENTS.RailDeactivated:
 			case STATION_EVENTS.RailRetired: {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const hash = data.contentHash as string | undefined;
 				if (hash && rails[hash]) {
 					rails[hash] = Object.freeze({

@@ -20,7 +20,6 @@ import {
 	parseRelativePath,
 } from "@hobo/ci";
 
-/** The SDK fluent command port, narrowed from the real Dagger client surface. */
 export interface DaggerContainerPort {
 	from(image: string): DaggerContainerPort;
 	withDirectory(path: string, source: Directory): DaggerContainerPort;
@@ -41,9 +40,7 @@ export interface DaggerClientPort {
 }
 export interface DaggerConnection {
 	readonly client: DaggerClientPort;
-	/** Ends this owned engine connection. Must resolve only after lifecycle teardown. */
 	close(): Promise<void>;
-	/** Optional stronger provider stop acknowledgment for an in-flight command. */
 	stop?(): Promise<void>;
 }
 export type DaggerConnector = (
@@ -51,13 +48,11 @@ export type DaggerConnector = (
 ) => Promise<DaggerConnection>;
 export interface DaggerBackendOptions {
 	readonly sourceDirectory: string;
-	/** Pin the toolchain image; it must provide GNU timeout and base64. */
 	readonly image: string;
 	readonly connect?: DaggerConnector;
 	readonly sdk?: ConnectOpts;
 }
 
-/** Compile-time witness that this port is actually implemented by the pinned SDK. */
 export function daggerClientPort(client: Client): DaggerClientPort {
 	return client;
 }
@@ -98,7 +93,6 @@ function workspacePath(path: string): string {
 	return path === "." ? "/workspace" : `/workspace/${parseRelativePath(path)}`;
 }
 
-/** Execute a portable pipeline using a bound Dagger SDK/engine connection. */
 export function createDaggerBackend(
 	options: DaggerBackendOptions,
 ): PipelineBackend {
@@ -125,16 +119,12 @@ export function createDaggerBackend(
 			let workspace = connection.client.host().directory(sourceDirectory);
 			async function output(container: DaggerContainerPort, id: string) {
 				pending++;
-				// One lost GraphQL response must not hide siblings that still evaluate
-				// the command graph. Track their aggregate lifetime independently from
-				// Promise.all's first-error result so cleanup can stop promptly.
 				const exitRead = Promise.resolve().then(() => container.exitCode());
 				const stdoutRead = Promise.resolve().then(() => container.stdout());
 				const stderrRead = Promise.resolve().then(() => container.stderr());
 				void Promise.allSettled([exitRead, stdoutRead, stderrRead]).then(
 					(results) => {
 						const exitResult = results[0];
-						// A rejected exit query does not prove that remote execution stopped.
 						if (exitResult?.status !== "fulfilled") unconfirmedWork++;
 						pending--;
 					},
@@ -159,11 +149,8 @@ export function createDaggerBackend(
 					let container = base
 						.withDirectory("/workspace", workspace)
 						.withWorkdir(workspacePath(step.cwd));
-					// Every command starts from the image environment, while workspace data chains.
 					for (const [name, value] of Object.entries(step.env))
 						container = container.withEnvVariable(name, value);
-					// A new logical execution must not reuse a prior side-effecting command DAG.
-					// Set this after user env so the caller cannot spoof another execution key.
 					container = container.withEnvVariable(
 						"HOBO_CI_EXECUTION_ID",
 						pipeline.id,

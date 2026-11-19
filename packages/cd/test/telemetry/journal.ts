@@ -1,6 +1,3 @@
-// Journal fixtures for the WP19 telemetry tests: append the same proto-JSON
-// bodies the freight ledger (WP1), promotion saga (WP6), desired-state store
-// (WP4) and reconcilers (WP7) record, at controlled times.
 import { create, toJson } from "@bufbuild/protobuf";
 import type { JsonObject, JsonValue } from "@hobo/core";
 import {
@@ -150,7 +147,6 @@ export async function rejected(
 	);
 }
 
-/** A rollback promotion's terminal event on its own stream (as WP6 records it). */
 export async function rolledBack(
 	j: Journal,
 	atMs: number,

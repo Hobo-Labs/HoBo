@@ -1,7 +1,3 @@
-/**
- * Messaging adapter conformance seed (ADR-0138).
- * Full runner integration can load this suite against Kafka/Dapr adapters.
- */
 
 import { createConformanceSuite } from "../suite.js";
 

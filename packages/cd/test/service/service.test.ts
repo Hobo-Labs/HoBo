@@ -1,7 +1,4 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-chained-type-assertions, anti-slop/no-conditional-empty-object-spread -- SAFETY: tests build generated records with create(), brand ids they mint, and swap one fake method in place. */
-// WP12 Accept: readiness flips on store loss; drain completes within the
-// deadline; the service ticks every module (incl. inventory, fan-out,
-// failover and posture); drain releases leases.
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { RetentionPolicyRecordSchema } from "../../src/_generated/cd_pb.js";
@@ -180,7 +177,6 @@ describe("createCdService — readiness", () => {
 		const check = service.health().checks.find((c) => c.name === "store");
 		expect(check).toMatchObject({ ok: false });
 		expect(check?.detail).toMatch(/journal unreachable/);
-		// No module steps run against a lost journal.
 		const before = cd.calls.length;
 		await service.tick();
 		expect(cd.calls.length).toBe(before);

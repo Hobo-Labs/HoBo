@@ -16,14 +16,10 @@ import {
 import { slow } from "./support/slow.js";
 import { compile, write } from "./support/typescript-project.js";
 
-// Generated code imported in-process registers trainables in the shared
-// registry; with files sharing a worker (isolate: false), clear it after each test.
 afterEach(() => {
 	resetTrainables();
 });
 
-// One of four files split from typescript-project-codegen.test.ts so the
-// files can spread across workers; helpers are in ./support/typescript-project.ts.
 describe("TypeScript app codegen executes the compiler-inferred app contract: ambient trainables and module resolution", {
 	timeout: slow(60_000),
 }, () => {
@@ -84,7 +80,6 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: am
 			).toEqual([]);
 			program.emit();
 			await packageTypeScriptAppArtifacts(root, join(root, "out"));
-			// SAFETY: local generated modules were compiled above; the runtime helpers are reexports of the production engines.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -207,7 +202,6 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: am
 			const engine = await selectTypeScriptProjectCodegenEngine(root);
 			await runCodegen({ projectRoot: root, check: false }, { engine });
 			await compile(root);
-			// SAFETY: generated client compiles from these actual project-local implementations above.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -316,7 +310,6 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: am
 				root,
 				join(workspace, "out/apps/shop"),
 			);
-			// SAFETY: this client was compiled from the fixture and its actual sibling dependency was bundled above.
 			const generated = (await import(
 				pathToFileURL(
 					join(workspace, "out/apps/shop/src/_generated/app-imprint/app.js"),

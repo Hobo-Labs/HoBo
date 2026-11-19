@@ -110,7 +110,6 @@ describe("CDEvents relay (journal → projection → sinks)", () => {
 			deadLettered: 0,
 		});
 		expect(first.deliveredThrough).toBe(19n);
-		// Nothing new: a second pump sends nothing.
 		expect((await relay.pump()).emitted).toBe(0);
 		expect(
 			telemetry.points.some(
@@ -127,14 +126,12 @@ describe("CDEvents relay (journal → projection → sinks)", () => {
 	it("resumes after a restart without re-sending and without losing history", async () => {
 		const sink = createRecordingCdEventSink();
 		const journal = fixtureJournal();
-		// The first run delivered through position 7 (the service.upgraded step).
 		const relay = createCdEventsRelay({
 			store: journalStore(journal),
 			tenant: "acme",
 			source: "/hobo/cd/acme",
 			sinks: [sink],
 			now: () => NOW,
-			// SAFETY: EventPosition is a branded bigint.
 			deliveredThrough: 7n as never,
 		});
 		await relay.pump();
@@ -143,7 +140,6 @@ describe("CDEvents relay (journal → projection → sinks)", () => {
 			source: "/hobo/cd/acme",
 		}).length;
 		expect(sink.events).toEqual(all.slice(tail));
-		// History was folded: the rollback still names the earlier artifact.
 		expect(sink.events[0]?.context.type).toBe(
 			"dev.cdevents.service.upgraded.0.3.0",
 		);

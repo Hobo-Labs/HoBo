@@ -1,13 +1,3 @@
-// FailoverController (WP23; C19, D23, I21). A NO_RUN taint the node does not
-// tolerate becomes `failover.Proposed` per Camp × placed node. Each failover
-// is a `defineSaga` over `cd-failover-<id>` under lease `cd:failover:<id>`:
-//   PROPOSED → REPLACING → VERIFYING → SHIFTING → PURGING → COMPLETED
-// or REFUSED (never started) / ABANDONED (started, source kept).
-// It never runs without Rail `automatic` or an approval, never beyond the
-// Rail's per-Station `max_concurrent`, never moves data (`failover-unsafe`),
-// re-checks residency on the replacement, purges GRACEFUL only after the
-// replacement qualified, and never fails back. `rebalance` records moves and
-// runs them as GRACEFUL moves under the node's fan-out limit.
 import { create, type JsonObject } from "@bufbuild/protobuf";
 import {
 	type ActorLeaseHost,
@@ -103,18 +93,9 @@ export type PlacementContext = Readonly<{
 export type FailoverControllerDeps = Parameters<
 	CdFactories["createFailoverController"]
 >[0] & {
-	/**
-	 * The Station and residency subject a node places under (the same context
-	 * the pipeline controller uses). Without it no replacement is chosen:
-	 * failovers are refused `placement-context-missing` (fail closed).
-	 */
 	readonly placementContext?: (
 		input: Readonly<{ pipeline: string; node: PipelineNodeRecord }>,
 	) => Promise<PlacementContext | undefined>;
-	/**
-	 * Junction reachability from the replacement to the Bindle's data Camps.
-	 * When present, `false` refuses the failover `failover-unsafe`.
-	 */
 	readonly junctions?: (
 		input: Readonly<{
 			pipeline: string;
@@ -159,7 +140,6 @@ const FAILED_PROMOTION: ReadonlySet<PromotionState> = new Set([
 
 type View = { fact: FailoverFact; seq: number };
 
-/** Wire form of the Station cutover plan, parsed by core `parseRoutingPlan`. */
 type CutoverPlanJson = {
 	planId: string;
 	intent: JsonObject;
@@ -176,7 +156,6 @@ export function failoverIdFor(
 	node: string,
 	key: string,
 ): FailoverId {
-	// SAFETY: a FailoverId is minted only here, from a deterministic digest.
 	return `failover-${sha256Hex(tenant, campId, pipeline, node, key).slice(0, 32)}` as FailoverId;
 }
 
@@ -185,7 +164,6 @@ function rebalanceStream(rebalanceId: string): string {
 }
 
 function asCamp(id: string): CampId {
-	// SAFETY: Camp ids in failover records come from inventory or a placement decision.
 	return id as CampId;
 }
 
@@ -346,7 +324,6 @@ export function createFailoverController(
 		);
 	}
 
-	/** Placed nodes whose effective decision includes the Camp. */
 	async function placedNodesOf(
 		campId: string,
 	): Promise<{ pipeline: string; node: PipelineNodeRecord }[]> {
@@ -412,7 +389,6 @@ export function createFailoverController(
 			fromCampId: input.campId,
 			toCampId: input.toCampId ?? "",
 			state: FailoverState.PROPOSED,
-			// Rebalance moves are always GRACEFUL (D23).
 			purge:
 				input.rebalanceId !== undefined ? PurgeMode.GRACEFUL : policy.purge,
 			triggerTaint: input.taint,
@@ -533,7 +509,6 @@ export function createFailoverController(
 		};
 	}
 
-	/** Defense in depth: the replacement's declared regions satisfy every residency constraint (I21). */
 	async function residencyHolds(
 		campId: string,
 		subject: PlacementSubject,
@@ -607,7 +582,6 @@ export function createFailoverController(
 		return dataResourcesOf(resolved, await d.desired.status(asCamp(campId)));
 	}
 
-	/** PROPOSED → REPLACING, or REFUSED. Caller holds the Station admission lease. */
 	async function admit(
 		view: View,
 		node: PipelineNodeRecord,
@@ -743,7 +717,6 @@ export function createFailoverController(
 		if (view.fact.purged || f.purge === PurgeMode.NEVER) return true;
 		const result = await d.promotions.promote(
 			{
-				// SAFETY: the Freight id was recorded from the node's qualified Freight.
 				freightId: f.freightId as FreightId,
 				targets: [asCamp(f.fromCampId)],
 				idempotencyKey: `failover:${f.failoverId}:purge`,
@@ -823,7 +796,6 @@ export function createFailoverController(
 		return true;
 	}
 
-	/** Advance an admitted failover one or more phases. Caller holds `cd:failover:<id>`. */
 	async function progress(
 		view: View,
 		node: PipelineNodeRecord,
@@ -833,7 +805,7 @@ export function createFailoverController(
 		const promotion =
 			f.promotionId === ""
 				? undefined
-				: // SAFETY: promotion ids are recorded from PromotionService results.
+				:
 					await d.promotions.get(f.promotionId as PromotionId);
 		if (
 			f.state === FailoverState.REPLACING ||
@@ -870,7 +842,6 @@ export function createFailoverController(
 				await graceExpired(view, node, ctx);
 				return;
 			}
-			// PROMOTED means verification PASS and the Freight qualified here.
 			if (view.fact.failover.state === FailoverState.REPLACING)
 				await write(
 					view,
@@ -910,7 +881,6 @@ export function createFailoverController(
 				plan.planId,
 			);
 			if (status === null || !status.active || status.realized !== "full") {
-				// Not yet realized: hold in SHIFTING; past the grace, keep both and escalate.
 				await graceExpired(view, node, ctx);
 				return;
 			}
@@ -967,7 +937,6 @@ export function createFailoverController(
 				if (view.fact.failover.state === FailoverState.PROPOSED) {
 					const { rail } = await railFor(f.fromCampId);
 					if (!view.fact.approved && !rail.automatic) return;
-					// Admission is serialized per Station so `max_concurrent` holds across replicas.
 					const scope =
 						view.fact.rebalanceId !== ""
 							? `rebalance-${view.fact.rebalanceId}`
@@ -995,8 +964,6 @@ export function createFailoverController(
 					await progress(view, node, ctx);
 			},
 			compensate: async (_event, _sagaCtx, cause) => {
-				// Nothing to unwind: every step is recorded before its effect and
-				// the source is never touched before the replacement qualified.
 				throw cause;
 			},
 		});
@@ -1252,7 +1219,6 @@ export function createFailoverController(
 
 		async tick(ctx) {
 			const nowMs = ctx.now();
-			// 1. Propose for NO_RUN taints the node does not tolerate (D23 trigger).
 			for (const view of await d.inventory.list()) {
 				for (const taint of view.status.taints) {
 					if (taint.effect !== TaintEffect.NO_RUN) continue;
@@ -1290,7 +1256,6 @@ export function createFailoverController(
 					}
 				}
 			}
-			// 2. Advance every open failover, oldest first.
 			let active = 0;
 			for (const view of await all()) {
 				if (TERMINAL.has(view.fact.failover.state)) continue;

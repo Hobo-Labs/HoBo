@@ -1,17 +1,6 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
-/**
- * Railway TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
- *
- * Railway routes a service's public domain to its single active deployment and
- * switches traffic only when a new deployment passes its deploy healthcheck.
- * There is no weighted split, no header or path routing between deployments,
- * no canary and no DNS steering a tenant controls. What remains is the
- * portable in-process floor, where the caller's own router splits traffic
- * between two Railway services it already owns. `provider` is `other`: the
- * core union has no Railway member and WP13 does not edit `@hobo/core`.
- */
 export const RAILWAY_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "other",
@@ -30,7 +19,6 @@ const NO_EDGE =
 const NO_DNS =
 	"Railway custom domains are CNAMEs to one service; there is no weighted or failover DNS product";
 
-/** Offerings Railway cannot realize, declared absent rather than preview. */
 export const RAILWAY_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 	Object.freeze(
 		(

@@ -6,20 +6,10 @@ import {
 } from "./contract-ir.js";
 import { isJsonString, type JsonValue } from "./json.js";
 
-// The `can-deploy` gate (contracts-policy-flags.md §can-deploy): given the
-// contract state currently deployed to a target and a candidate deployment plan,
-// decide whether the candidate's boundary contracts are compatible with what is
-// already running there. Incompatibility yields a precise, machine-readable
-// reason an agent can self-correct against (like `deployment.PlanRejected`).
-
 export const CAN_DEPLOY_SCHEMA_VERSION = "hobo.can-deploy/v1";
 export const COMPAT_GATE_PASSED = "compat.GatePassed";
 export const COMPAT_GATE_FAILED = "compat.GateFailed";
 
-// A minimal, structural mirror of @hobo/cloud's ResourcePlan/DeploymentPlan
-// (packages/cloud/src/plan-types.ts). The gate depends on the plan's *shape*,
-// not on @hobo/cloud at runtime, so contracts stays inward of cloud; a caller in
-// the gateway adapts a real DeploymentPlan to this input.
 export interface ResourcePlanRef {
 	name: string;
 	port: string;
@@ -92,8 +82,6 @@ export function evaluateCanDeploy(input: CanDeployInput): CanDeployResult {
 		const candidate = parseBoundaryContract(candidateRaw);
 		const prior = deployed.get(candidate.edge.channel);
 		if (!prior) {
-			// A channel nothing consumes yet — introducing it cannot break a
-			// running consumer, so it is compatible by construction.
 			matrix.push({
 				channel: candidate.edge.channel,
 				contractId: candidate.id,

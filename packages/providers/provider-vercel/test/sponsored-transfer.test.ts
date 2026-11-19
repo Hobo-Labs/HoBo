@@ -109,9 +109,6 @@ describe("vercel.sponsored-project-transfer/v1 classification", () => {
 			VERCEL_SPONSORED_PROJECT_TRANSFER_CANDIDATE.sponsorExposureMinorUnits,
 		).toBeGreaterThan(0);
 
-		// Offer copy and every serialized fact must not present this as an
-		// anonymous or accountless deploy. The only permitted mention of the word
-		// is the explicit `publiclyAnonymous: false` denial.
 		const serialized = JSON.stringify({
 			bootstrap: SPONSORED_PROJECT_TRANSFER_BOOTSTRAP,
 			candidate: VERCEL_SPONSORED_PROJECT_TRANSFER_CANDIDATE,
@@ -154,7 +151,6 @@ describe("vercel.sponsored-project-transfer/v1 classification", () => {
 	});
 
 	it("records the marketplace providers the docs actually name", () => {
-		// The docs name three; recording only Prisma would understate the surface.
 		expect([...RESOURCE_TRANSFER_CAPABLE_MARKETPLACE_PROVIDERS]).toEqual([
 			"neon",
 			"prisma",
@@ -228,7 +224,6 @@ describe("application and database are two ownership facts", () => {
 		expect(resource?.mode).toBe("resource-claim");
 		expect(resource?.subjectRef).toContain("prisma-postgres");
 		expect(resource?.postClaimActions).toContain("rotate-binding");
-		// One human ceremony, two subjects, and the database follows the project.
 		expect(claim.dependencyEdges).toEqual([
 			{
 				fromItemId: SPONSORED_CLAIM_ITEM_IDS.project,
@@ -295,8 +290,6 @@ describe("the claim bundle completes only when both subjects move", () => {
 			project: CLAIMED_AND_VERIFIED,
 			associatedResource: {
 				observed: "claimed",
-				// Vercel ran one ceremony and reported success; the independent
-				// probe says the database is still on the sponsor installation.
 				verified: false,
 				evidenceRef: "evidence://prisma-postgres/ownership/FAKE001",
 			},

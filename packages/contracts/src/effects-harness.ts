@@ -1,8 +1,3 @@
-/**
- * Effect-aware contract harness extensions (ADR-0136).
- * Pure contracts isolate without infrastructure; domain effects drive mocks;
- * ResilienceProfile guides fault-injection vectors.
- */
 
 import { type BoundaryContract, effectiveEffects } from "./contract-ir.js";
 import {
@@ -35,9 +30,6 @@ export interface EffectIsolationReport {
 	readonly isolationMode: "zero-infra" | "domain-mocked" | "conservative";
 }
 
-/**
- * Build an isolation report and automatic mocks from declared effects.
- */
 export function createEffectIsolation(
 	contract: BoundaryContract,
 ): EffectIsolationReport {
@@ -117,22 +109,15 @@ function mockForDomain(domain: DomainEffect): DomainMock {
 	}
 }
 
-/**
- * Filter contracts to those that are pure (zero-infra unit test candidates).
- */
 export function filterPureContracts(
 	contracts: readonly BoundaryContract[],
 ): BoundaryContract[] {
 	return contracts.filter((c) => isPure(effectiveEffects(c)));
 }
 
-/**
- * Fault-injection vectors guided by ResilienceProfile + declared effects.
- */
 export async function runResilienceFaultInjection(input: {
 	contract: BoundaryContract;
 	profile?: ResilienceProfile;
-	/** Injected failure sequence by attempt number (1-based). */
 	failures?: Array<{
 		attempt: number;
 		failureClass: "transient" | "policy.Decided" | "terminal" | "cancellation";
@@ -164,7 +149,6 @@ export async function runResilienceFaultInjection(input: {
 	const failureMap = new Map((input.failures ?? []).map((f) => [f.attempt, f]));
 
 	const result = await applyResilienceProfile({
-		// SAFETY: assertion required at this I/O or test boundary.
 		profile: profile as ResilienceProfile,
 		now: () => "2026-07-27T00:00:00.000Z",
 		op: (attempt) => {
@@ -199,9 +183,6 @@ export async function runResilienceFaultInjection(input: {
 	};
 }
 
-/**
- * Dual fixtures keyed on effects: pure vs domain-effect paths.
- */
 export interface DualEffectFixtures {
 	readonly purePath: { readonly mode: "pure"; readonly infrastructure: "none" };
 	readonly effectPath: {
@@ -222,9 +203,6 @@ export function dualFixturesForEffects(
 	};
 }
 
-/**
- * Capture declare+invoke without re-executing on inspection.
- */
 export function captureContractEffects(contract: BoundaryContract) {
 	const sink = createInMemoryEffectSink();
 	const tracer = createEffectTracer(sink);
@@ -243,7 +221,6 @@ export function captureContractEffects(contract: BoundaryContract) {
 	});
 	return {
 		facts: sink.facts(),
-		/** Replay inspection: return recorded facts only — no re-invoke. */
 		inspect() {
 			return sink.facts();
 		},

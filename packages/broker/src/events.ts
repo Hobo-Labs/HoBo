@@ -1,6 +1,3 @@
-// Broker command/event families. Commands (resolve/scale/deliver/register)
-// arrive at the broker actor; every decision is recorded as one of these
-// facts so read models rebuild from the event store alone.
 
 import type { JsonObject } from "./json.js";
 

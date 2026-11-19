@@ -26,20 +26,14 @@ import {
 
 const REGISTRY_ACTOR: PrincipalRef = { kind: "system", id: "yard/registry" };
 
-// Stamped on every `provider.Registered` this command appends. A provider id is
-// only ever refreshed from a manifest when its registration carries this: a
-// provider installed by `hobo add` or `hobo generate` has none, so a manifest
-// that reuses its id cannot overwrite it (and inherit its approval).
 const MANIFEST_SOURCE = "provider-manifest/v1";
 
-/** The `source` stamped on the latest registration of a provider, if any. */
 function registrationSource(
 	events: readonly { readonly type: string; readonly data: unknown }[],
 	providerId: string,
 ): string | undefined {
 	let source: string | undefined;
 	for (const event of events) {
-		// SAFETY: the event store persists JSON; the guards below refine it.
 		const data = event.data as JsonValue;
 		if (
 			event.type === "provider.Registered" &&
@@ -54,21 +48,12 @@ function registrationSource(
 
 export interface RegistryAddInput {
 	readonly runtime: YardRuntime;
-	/** Manifest path as typed; resolved against `cwd`. */
 	readonly file: string | undefined;
 	readonly cwd: string;
 	readonly emitProgress: (line: string) => void;
-	/** UTC timestamp for facts this command appends. Defaults to the wall clock. */
 	readonly now?: () => string;
 }
 
-// `hobo registry add <manifest>` — register a provider described by a data
-// file (`hobo.provider-manifest/v1`) instead of a provider package.
-//
-// A manifest declares; it cannot realize. So the first run registers the
-// provider HELD — visible in `hobo registry`, never matched — and running the
-// command again is the explicit approval, the same two-step posture
-// `hobo add` uses for deploy targets that need a deliberate decision.
 export async function runRegistryAdd(
 	input: RegistryAddInput,
 ): Promise<CommandResult> {
@@ -106,8 +91,6 @@ export async function runRegistryAdd(
 		path.endsWith(".json") ? "json" : "yaml",
 	);
 	if (!parsed.ok) {
-		// Refuse the whole document; a partial import would register a provider
-		// nobody declared.
 		return {
 			ok: false,
 			status: "invalid_manifest",
@@ -138,9 +121,6 @@ export async function runRegistryAdd(
 	const fold = foldRegistryStream(events);
 	const installed = fold.installed.has(provider.id);
 	const approved = fold.approved.has(provider.id);
-	// A data file must not take the id of a provider that came from somewhere
-	// else: one compiled into the runtime, or one installed with `hobo add` /
-	// `hobo generate`. Only a registration this command made may be refreshed.
 	const builtIn =
 		!installed && runtime.registry.providers().includes(provider.id);
 	const installedElsewhere =
@@ -176,18 +156,6 @@ export async function runRegistryAdd(
 			: { pricingCatalogHash: billing.catalog.catalogHash }),
 	};
 
-	// What this run has to write, decided from what the stream already holds.
-	//
-	// Pricing catalog: absent -> store it (a first registration, or a provider
-	// registered before catalogs were stored); present with a different hash ->
-	// the manifest's prices changed, store the new one; same hash -> nothing.
-	// Facts are append-only: the new catalog supersedes the old and the old one
-	// stays in the stream.
-	//
-	// Registration: the ranking facts (`cost.json` prices, capability mappings)
-	// ride `provider.Registered`, which is derived from the same manifest. If
-	// the manifest's digest moved, re-register so those facts and the stored
-	// catalog never disagree. Approval is a separate fact and is not reset.
 	const stored = storedCatalogs(events).get(provider.id);
 	const catalogStatus: "none" | "unchanged" | "added" | "updated" =
 		billing === undefined
@@ -211,13 +179,11 @@ export async function runRegistryAdd(
 	const base = registerProviderFact(provider);
 	const registered = {
 		...base,
-		// SAFETY: registerProviderFact builds an object body; the stamp is added.
 		data: { ...(base.data as object), source: MANIFEST_SOURCE },
 	};
 	const storedRow = registryCatalogProjection
 		.query(registryCatalogProjection.fold(events))
 		.find((row) => row.providerId === provider.id);
-	// SAFETY: registerProviderFact builds this body with a manifestIndexDigest.
 	const newDigest = (base.data as { manifestIndexDigest: string })
 		.manifestIndexDigest;
 	const registrationChanged =
@@ -288,8 +254,6 @@ export async function runRegistryAdd(
 		};
 	}
 
-	// One append: the registration and its pricing catalog land together or not
-	// at all, so a held provider never exists without the prices it was ranked on.
 	await runtime.store.append(
 		REGISTRY_STREAM,
 		[registered, ...catalogFacts],

@@ -1,11 +1,3 @@
-/**
- * Golden resolved topologies and offers.
- *
- * One pair of files per shipped recipe. They exist so a change in the compiler,
- * the profile registry, or a recipe's data shows up as a reviewable diff rather
- * than as a silently different deployment. Regenerate deliberately with
- * `HOBO_UPDATE_GOLDEN=1`.
- */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,7 +54,6 @@ function readOrWrite(name: string, actual: TopologySnapshot): TopologySnapshot {
 		return actual;
 	}
 	const parsed = JSON.parse(readFileSync(path, "utf8"));
-	// SAFETY: golden files are JSON snapshots of TopologySnapshot.
 	return parsed as TopologySnapshot;
 }
 
@@ -114,17 +105,14 @@ describe("golden resolutions", () => {
 	for (const recipe of STANDARD_SOLUTION_RECIPES) {
 		it(`${recipe.id} resolves to its recorded topology and offer`, () => {
 			const { golden, actual, offer } = resolutionOf(recipe);
-			// SAFETY: assertion to `JSON.parse(JSON.stringify(actual)) as unknown` is required at this boundary.
 			expect(JSON.parse(JSON.stringify(actual)) as unknown).toEqual(golden);
 
 			const goldenOffer = readOrWrite(fileNameFor(recipe, "offer"), offer);
-			// SAFETY: assertion to `JSON.parse(JSON.stringify(offer)) as unknown` is required at this boundary.
 			expect(JSON.parse(JSON.stringify(offer)) as unknown).toEqual(goldenOffer);
 		});
 	}
 
 	it("was not run in update mode", () => {
-		// A golden suite that silently rewrites itself asserts nothing.
 		expect(UPDATE).toBe(false);
 	});
 });

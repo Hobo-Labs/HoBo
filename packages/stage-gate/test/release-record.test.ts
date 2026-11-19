@@ -1,9 +1,3 @@
-/**
- * The record side of the release gate (ADR-0172): what a `release` record
- * must hold to claim `passed`, the `not_run` status, and how the runner turns
- * check exit codes into statuses when a check `requires` another or lists
- * `notRunExitCodes`. Checks here run `node -e`, so nothing depends on ai-bdd.
- */
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -48,7 +42,6 @@ function check(
 	};
 }
 
-/** What acceptance-replay records for a replay-only run that passed. */
 const REPLAY_EVIDENCE = {
 	run_id: "01a132d3-0000-7000-8000-000000000001",
 	report_digest: DIGEST,
@@ -70,7 +63,6 @@ const RELEASE_CHECKS = [
 	}),
 ];
 
-/** A passed release record as the runner writes it: no signature, a zero artifact. */
 function releaseRecord(
 	overrides: Partial<StageGateRecordJson> = {},
 ): StageGateRecordJson {
@@ -97,7 +89,6 @@ function releaseRecord(
 	};
 }
 
-/** A passed release record whose replay evidence is `evidence`. */
 function withReplayEvidence(
 	evidence: Readonly<Record<string, string>>,
 ): StageGateRecordJson {
@@ -209,7 +200,6 @@ describe("a passed release record", () => {
 		);
 	});
 
-	// The CUE reads each count with strconv.Atoi: decimal digits within int64.
 	const NOT_COUNTS =
 		"passed release record requires acceptance-replay evidence scenarios_total, scenarios_passed and scenarios_healed as decimal counts the CUE's strconv.Atoi reads (digits, at most 2^63 - 1)";
 	it.each([
@@ -290,7 +280,6 @@ describe("the not_run status", () => {
 		expect(recordStatusOf(of("passed", "not_run", "skipped"))).toBe("not_run");
 		expect(recordStatusOf(of("not_run", "failed"))).toBe("failed");
 		expect(recordStatusOf(of("passed", "passed"))).toBe("passed");
-		// A skipped check beside no failure cannot make a pass.
 		expect(recordStatusOf(of("passed", "skipped"))).toBe("failed");
 		expect(recordStatusOf([])).toBe("passed");
 		expect(runnerExitCodeOf("not_run")).toBe(3);
@@ -362,7 +351,6 @@ describe("runStageGate with requires and notRunExitCodes", () => {
 		expect(JSON.parse(result.record.checks[1]?.evidence.got ?? "")).toEqual({
 			first: { run_id: "r1", report_digest: "d1" },
 		});
-		// A check that requires nothing is handed nothing.
 		expect(result.record.checks[2]?.evidence.got).toBe("none");
 	});
 

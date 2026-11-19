@@ -1,24 +1,3 @@
-/**
- * One tick of the fleet: look, copy, decide, act.
- *
- * `reconcileFleet` is the only thing that changes who the writer is. A host
- * calls it on a schedule. Every tick does the same six things in order:
- *
- * 1. Settle the assignment: complete an interrupted entry, repair short logs,
- *    write the first entry of an empty fleet, finish or undo a move that an
- *    earlier tick sealed.
- * 2. Probe every backend. A failing writer is probed again until it has been
- *    failing for the failover threshold, so one tick can tell a blip from an
- *    outage without remembering anything between ticks.
- * 3. Copy the writer to every reachable standby.
- * 4. Measure: standby lag from each watermark, usage from each counter.
- * 5. Ask the policy.
- * 6. Carry out a switch or a failover through the assignment register.
- *
- * It reads no clock and opens no connection of its own: `now`, `sleep` and the
- * executors are the host's. It is safe to run two at once. Every change is a
- * compare-and-set on the assignment epoch, so the second one loses and stops.
- */
 import {
 	type AssignmentProposalOutcome,
 	type AssignmentRegister,
@@ -69,7 +48,6 @@ export type FleetReplicationResult = {
 	readonly refusal: ReplicationRefusal | undefined;
 	readonly failure: FleetFailureClass | undefined;
 	readonly rows: number | undefined;
-	/** Row text rewritten; 0 when nothing had changed. */
 	readonly bytes: number | undefined;
 	readonly durationMs: number;
 };
@@ -86,7 +64,6 @@ export type FleetTransitionStep = (typeof FLEET_TRANSITION_STEPS)[number];
 
 export type FleetTransition = {
 	readonly step: FleetTransitionStep;
-	/** `decided` is the only status that changed the assignment. */
 	readonly status: AssignmentProposalOutcome["status"];
 	readonly epoch: number | undefined;
 	readonly active: string | undefined;
@@ -94,7 +71,6 @@ export type FleetTransition = {
 	readonly reason: string;
 };
 
-/** What a tick reports as it goes. Ids, numbers and fixed tokens only. */
 export type FleetEvent =
 	| {
 			readonly kind: "replication";
@@ -108,34 +84,16 @@ export type FleetEvent =
 			readonly silent: readonly string[];
 	  };
 
-/** Which side of a copy a backend is when its schema is prepared. */
 export type FleetSchemaRole = "writer" | "standby";
 
 export type FleetReconcileOptions = {
-	/** In configured order. The first is the writer of an empty fleet. */
 	readonly backends: readonly FleetBackend[];
-	/**
-	 * Members that hold only the assignment register: never copied to, never
-	 * a writer. A writer and one standby are two members, and losing either
-	 * leaves no majority to decide a failover; a witness on a third failure
-	 * domain makes the majority, for the cost of a few rows.
-	 */
 	readonly witnesses?: readonly FleetBackend[];
 	readonly layout: FleetLayout;
 	readonly models: readonly PostgresFleetFinancialModel[];
 	readonly policy: FleetPolicy;
-	/** How long an application instance may trust an assignment it confirmed. */
 	readonly leaseMs: number;
-	/** Added to a lease when waiting for writers to stop after sealing. */
 	readonly graceMs: number;
-	/**
-	 * Prepare the application's schema on a backend. Called for both sides of a
-	 * copy, the standby first, and only when the copy found the standby's
-	 * schema different from the writer's. `role` says which side the backend
-	 * is under the assignment the tick resolved: a host may bring the writer
-	 * forward the way its application does, and must prepare a standby without
-	 * the application, which does not write there.
-	 */
 	readonly ensureSchema: (
 		backend: FleetBackend,
 		role: FleetSchemaRole,
@@ -143,7 +101,6 @@ export type FleetReconcileOptions = {
 	readonly checkBudget: FleetBudgetCheck;
 	readonly meter: UsageMeter | undefined;
 	readonly limits: Partial<ReplicationLimits> | undefined;
-	/** Identifies this process in the entries it writes. */
 	readonly decidedBy: string;
 	readonly now: () => number;
 	readonly sleep: (ms: number) => Promise<void>;
@@ -151,9 +108,7 @@ export type FleetReconcileOptions = {
 };
 
 export type FleetReconcileReport = {
-	/** `settled`: the tick ran on a decided assignment. Otherwise it stopped. */
 	readonly status: "settled" | "undecided" | "no-majority";
-	/** The current assignment when the tick ended, if it is known. */
 	readonly assignment: PostgresFleetAssignment | undefined;
 	readonly decision: PostgresFleetDecision | undefined;
 	readonly observations: readonly PostgresFleetObservation[];
@@ -181,10 +136,6 @@ async function probe(backend: FleetBackend, now: () => number): Promise<Probe> {
 	}
 }
 
-/**
- * Probe the writer; while it fails, keep probing until it has failed for the
- * whole threshold. One success ends the wait and counts as healthy.
- */
 async function probeWriter(
 	backend: FleetBackend,
 	options: FleetReconcileOptions,
@@ -230,7 +181,6 @@ function transition(
 	};
 }
 
-/** Run one tick. See the module comment for the order of work. */
 export async function reconcileFleet(
 	options: FleetReconcileOptions,
 ): Promise<FleetReconcileReport> {
@@ -280,8 +230,6 @@ export async function reconcileFleet(
 				outcome.status === "refused" &&
 				outcome.refusal === "schema-mismatch"
 			) {
-				// Either side may be the one that lacks a table: a writer creates
-				// some of its tables only when it first needs them.
 				await options.ensureSchema(target, "standby");
 				await options.ensureSchema(source, "writer");
 				outcome = await replicateSnapshot({
@@ -344,14 +292,12 @@ export async function reconcileFleet(
 		};
 	};
 
-	// 1. Settle the assignment.
 	const members = [...backends, ...(options.witnesses ?? [])];
 	await Promise.all(
 		members.map(async (backend) => {
 			try {
 				await ensureFleetControlTables(backend, layout);
 			} catch {
-				// An unreachable backend is found by the probe below.
 			}
 		}),
 	);
@@ -380,21 +326,10 @@ export async function reconcileFleet(
 		);
 	let assignment = resolution.assignment;
 
-	/**
-	 * Finish a sealed move: wait until no instance can still hold a lease from
-	 * before the seal, copy once more, and hand over.
-	 *
-	 * If the copy cannot succeed (the target is unreachable, its schema differs,
-	 * the database is oversized) the fleet is unsealed on the old writer. If the
-	 * copy was only beaten by another reconciler doing the same thing, nothing
-	 * is undone: that reconciler finishes, or the next tick does.
-	 */
 	const finishSwitch = async (
 		sealed: PostgresFleetAssignment,
 	): Promise<PostgresFleetAssignment | undefined> => {
 		await options.sleep(options.leaseMs + options.graceMs);
-		// The target takes a copy only when its own log holds the sealed entry;
-		// it may have missed it while another copy held its lock.
 		await completeAssignment(register);
 		const source = byId(sealed.active);
 		const target = byId(sealed.target);
@@ -413,8 +348,6 @@ export async function reconcileFleet(
 			await options.sleep(2000);
 			copied = await copy(sealed, source, target);
 		}
-		// Still busy, or the target is already the writer: another reconciler
-		// is finishing or has finished this switch. Leave it alone.
 		if (copied?.refusal === "busy" || copied?.refusal === "target-is-writer")
 			return undefined;
 		const outcome =
@@ -442,7 +375,6 @@ export async function reconcileFleet(
 		assignment = next;
 	}
 
-	// 2. Probe.
 	const writer = byId(assignment.active);
 	const probes = new Map<string, Probe>(
 		await Promise.all(
@@ -460,7 +392,6 @@ export async function reconcileFleet(
 	const healthy = (backend: FleetBackend) =>
 		probes.get(backend.id)?.health === "reachable";
 
-	// 3. Copy the writer to every reachable standby.
 	const copied = new Map<string, FleetReplicationResult>();
 	if (writer !== undefined && healthy(writer))
 		for (const backend of backends) {
@@ -468,7 +399,6 @@ export async function reconcileFleet(
 			copied.set(backend.id, await copy(assignment, writer, backend));
 		}
 
-	// 4. Measure.
 	const period = billingPeriod(now());
 	const observations = await Promise.all(
 		backends.map(async (backend): Promise<PostgresFleetObservation> => {
@@ -506,8 +436,6 @@ export async function reconcileFleet(
 				health: seen?.health ?? "unknown",
 				probeLatencyMs: seen?.latencyMs,
 				failingForMs: seen?.failingForMs ?? 0,
-				// With the writer down there is nothing to compare with; a standby
-				// that was copied before had the writer's schema then.
 				schemaCurrent:
 					backend === writer ||
 					(result === undefined
@@ -519,7 +447,6 @@ export async function reconcileFleet(
 		}),
 	);
 
-	// 5. Decide.
 	const decision = decideFleet({
 		assignment,
 		observations,
@@ -531,7 +458,6 @@ export async function reconcileFleet(
 	});
 	options.log({ kind: "decision", decision });
 
-	// 6. Act.
 	if (decision.action === "switch" && decision.target !== undefined) {
 		const outcome = await propose(register, "seal", assignment.epoch, {
 			active: assignment.active,

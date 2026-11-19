@@ -1,6 +1,3 @@
-// JSON guards for values that arrive already parsed (policy subjects, journal
-// bodies, collector responses). They read the runtime tag — the idiom
-// @hobo/core uses — and establish the JSON contract callers then narrow.
 import type { JsonObject, JsonValue } from "@hobo/core";
 
 const tagOf = Object.prototype.toString;
@@ -19,7 +16,6 @@ export function isJsonObject(
 	return tagOf.call(value) === "[object Object]";
 }
 
-/** Parse a JSON text; `undefined` when it is not JSON. */
 export function parseJsonText(text: string): JsonValue | undefined {
 	try {
 		const parsed: JsonValue = JSON.parse(text);

@@ -1,10 +1,3 @@
-/**
- * runAiBdd against a member of ai-bdd's group that forks and exits over and
- * over (ADR-0172): test/helpers/hop.sh ignores SIGTERM, writes its ready file,
- * and, 100 times, starts itself again in the background and exits. A /proc scan that lists the pids
- * before such a fork and reads the parent after its exit sees only a zombie;
- * the stop must still end in a SIGKILL to the group, which reaches the child.
- */
 import {
 	existsSync,
 	mkdtempSync,
@@ -28,7 +21,6 @@ afterAll(() => {
 	rmSync(scratch, { recursive: true, force: true });
 });
 
-/** The live processes whose command line names `token`: hop.sh's, which name their marker. */
 function survivors(token: string): number[] {
 	const found: number[] = [];
 	for (const entry of readdirSync("/proc")) {
@@ -38,7 +30,6 @@ function survivors(token: string): number[] {
 				found.push(Number(entry));
 			}
 		} catch {
-			// Gone between the listing and the read.
 		}
 	}
 	return found;
@@ -57,8 +48,6 @@ describe("runAiBdd on Linux, against a member that forks and exits while it is s
 								command: [
 									"sh",
 									"-c",
-									// ai-bdd (this shell) exits once the member ignores SIGTERM and says so in its
-									// ready file: a member SIGTERM ended before that could not escape at all.
 									'sh "$0" 100 "$1" "$1.ready" >/dev/null 2>&1 & i=0; until [ -e "$1.ready" ] || [ $i -ge 400 ]; do sleep 0.05; i=$((i+1)); done; exit 0',
 									HOP,
 									`${token}${run}`,
@@ -73,12 +62,10 @@ describe("runAiBdd on Linux, against a member that forks and exits while it is s
 						),
 					),
 				);
-				// Each member started, or nothing here could have escaped and the test would prove nothing.
 				const unstarted = Array.from({ length: RUNS }, (_, run) => run).filter(
 					(run) => !existsSync(`${token}${run}.ready`),
 				);
 				expect(unstarted).toEqual([]);
-				// A SIGKILLed hop.sh is gone within moments; one that escaped hops on, then sleeps 3 s.
 				const deadline = Date.now() + 2000;
 				while (survivors(token).length > 0 && Date.now() < deadline) {
 					await new Promise((done) => setTimeout(done, 100));

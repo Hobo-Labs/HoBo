@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * hobo-provider-manifest check <file>             parse; print issues
- * hobo-provider-manifest lower <file> <outDir>    write the derived documents
- * hobo-provider-manifest generate <file> <outDir> write API clients and MCP
- *                                                  artifacts; <file> is a
- *                                                  manifest or a bare OpenAPI spec
- */
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -49,7 +42,6 @@ function slug(value: string): string {
 	return cleaned === "" ? "api" : cleaned;
 }
 
-/** A bare OpenAPI/Swagger document rather than a provider manifest. */
 export function isApiSpec(text: string): boolean {
 	const root = parseDocument(text).toJS();
 	return (
@@ -95,7 +87,6 @@ function generate(file: string, text: string, outDir: string, out: Out) {
 				continue;
 			}
 			if (spec.path === "") {
-				// No network here: a published spec is fetched by the author.
 				out(
 					`${file}: skipped ${spec.id}: save ${spec.url} next to the manifest and reference it with path`,
 				);
@@ -119,8 +110,6 @@ function generate(file: string, text: string, outDir: string, out: Out) {
 	}
 	if (failed) return 1;
 
-	// A provider that already runs an MCP server is used as-is; one that only
-	// has an API spec gets a generated code-mode server.
 	const ownsMcp = (section?.mcpServers.length ?? 0) > 0;
 	mkdirSync(outDir, { recursive: true });
 	const generatedServers = new Map<string, string>();
@@ -203,7 +192,6 @@ export function run(argv: readonly string[], out: Out): number {
 
 if (
 	process.argv[1] !== undefined &&
-	// Resolve the symlink a package-manager bin shim points through.
 	import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
 ) {
 	process.exitCode = run(process.argv.slice(2), (line) => console.log(line));

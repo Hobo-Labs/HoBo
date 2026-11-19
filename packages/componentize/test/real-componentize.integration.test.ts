@@ -1,10 +1,3 @@
-/**
- * Gated integration test for the D13 real componentize lane.
- *
- * Skips when @bytecodealliance/componentize-js is not importable (offline
- * floor). When it runs, it ACTUALLY componentizes a tiny JS source exporting a
- * wasi-cli-ish `health` function against the default inline WIT world.
- */
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -54,11 +47,9 @@ describe.skipIf(!real.available)(
 				});
 				const bytes = result.component.bytes;
 
-				// wasm magic
 				expect(Array.from(bytes.subarray(0, 4))).toEqual([
 					0x00, 0x61, 0x73, 0x6d,
 				]);
-				// component-model layer bytes (not a core module)
 				expect(bytes[6]).toBe(0x01);
 				expect(bytes[7]).toBe(0x00);
 
@@ -88,17 +79,9 @@ describe.skipIf(!real.available)(
 					sourceDateEpoch: SOURCE_DATE_EPOCH,
 				});
 
-				// HONEST (ADR-0105, HOBO-603 spike, upstream ComponentizeJS#321):
-				// componentize-js wasm BYTES are not byte-stable across builds — the
-				// Wizer/StarlingMonkey snapshot varies even under pinned
-				// SOURCE_DATE_EPOCH. The S0 determinism gate is therefore the inputs
-				// contract (metadata) plus per-artifact digest integrity, not
-				// byte-identical wasm. Verified empirically in this suite: asserting
-				// digest equality here fails.
 				expect(second.component.metadata).toBe(first.component.metadata);
 				expect(first.component.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
 				expect(second.component.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
-				// Each run's OCI descriptor stays consistent with its own bytes.
 				expect(first.oci.manifest.layers[0]?.digest).toBe(
 					first.component.digest,
 				);

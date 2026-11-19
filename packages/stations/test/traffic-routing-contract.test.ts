@@ -38,7 +38,6 @@ type Interaction = Readonly<{
 }>;
 
 test("executes the TrafficRouting synthesis Pact fixture", () => {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const pact = JSON.parse(
 		readFileSync(
 			new URL(

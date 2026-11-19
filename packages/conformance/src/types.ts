@@ -213,12 +213,6 @@ export interface AdapterRegistry {
 	list(): ConformanceAdapter[];
 }
 
-/**
- * What a suite advertises about itself: the checks it can decide and the cases
- * it decides them with. Registering the description separately from the runner
- * is what lets a Resource Definition's `conformanceRef` point at a suite before
- * anybody has run it.
- */
 // domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface ConformanceSuiteDescriptor {
 	readonly suiteId: string;
@@ -231,7 +225,6 @@ export interface ConformanceSuiteRegistry {
 	register(descriptor: ConformanceSuiteDescriptor): void;
 	get(suiteId: string): ConformanceSuiteDescriptor | undefined;
 	list(): readonly ConformanceSuiteDescriptor[];
-	/** Every check any registered suite can decide, deduplicated and sorted. */
 	checks(): readonly string[];
 }
 

@@ -1,9 +1,3 @@
-// HOBO_CI subscriptions: a structural reader over CI events (the frozen
-// CiEventReader), so @hobo/cd never imports @hobo/ci. A passing
-// `ci.PipelineResultObserved` whose pipeline id or repository equals the
-// locator yields one discovered artifact per matching output. The digest is
-// sha256 over the bytes read back through CiArtifactReader and must equal the
-// sha256 the CI recorded: the event triggers, the read decides (I15).
 import { create } from "@bufbuild/protobuf";
 import type { JsonValue } from "@hobo/core";
 import {
@@ -38,7 +32,6 @@ import {
 export const CI_RESULT_EVENT = "ci.PipelineResultObserved" as const;
 // public-contract: the CI result status that qualifies a run.
 export const CI_PASSED = "passed" as const;
-/** Upper bound of CI events scanned per poll; the cursor resumes after it. */
 export const CI_SCAN_LIMIT = 10_000;
 
 const COMMIT = /^[0-9a-f]{7,64}$/;
@@ -50,7 +43,6 @@ type CiOutput = Readonly<{
 	commit?: string;
 }>;
 
-/** Structural parse of one CI event into its passing outputs for `locator`. */
 export function ciOutputs(
 	data: JsonValue,
 	locator: string,

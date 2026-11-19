@@ -1,17 +1,3 @@
-/**
- * Prints the enrollment entry for this box's fleet verdict reporter
- * (ADR-0180; operating step G2 in packages/ci-vercel/README.md):
- *
- *   node packages/ci-gh-actions/scripts/fleet-reporter-enroll.mts \
- *     --key-file <path> --id <reporter id> --account <account id> \
- *     --labels hobo,hobo-trunk
- *
- * It loads the reporter's Ed25519 key (the mesh key, `HOBO_CI_MESH_KEY_FILE`
- * or `mesh-node.key` beside the journal; made with safe file modes if there
- * is none) and prints one JSON line, the public half only, to add to the
- * `reporters` list of `HOBO_CI_FLEET_REPORTERS_JSON` on the hosted relay.
- * The private key never leaves its file.
- */
 import process from "node:process";
 import { parseArgs } from "node:util";
 import { FLEET_REPORTER_ID, loadMeshIdentity } from "@hobo/ci-gh-actions";

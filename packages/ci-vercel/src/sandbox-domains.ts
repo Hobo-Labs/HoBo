@@ -1,4 +1,3 @@
-/** Only documented runner service suffixes may be configured as wildcards. */
 const runnerWildcardSuffixes = new Set([
 	"actions.githubusercontent.com",
 	"blob.core.windows.net",
@@ -10,7 +9,6 @@ function validHostname(hostname: string): boolean {
 	);
 }
 
-/** A bare catch-all is never permitted: it can bypass Sandbox forwarding. */
 export function validSandboxDomainPattern(pattern: string): boolean {
 	if (pattern.startsWith("*.")) {
 		const suffix = pattern.slice(2);
@@ -19,7 +17,6 @@ export function validSandboxDomainPattern(pattern: string): boolean {
 	return validHostname(pattern);
 }
 
-/** Validate the exact domain list accepted for Sandbox forwarding. */
 export function validateSandboxDomains(domains: readonly string[]): void {
 	if (domains.length === 0 || domains.length > 100)
 		throw new Error("sandbox requires explicit allowed domains");
@@ -30,7 +27,6 @@ export function validateSandboxDomains(domains: readonly string[]): void {
 		throw new Error("invalid or repeated sandbox destination");
 }
 
-/** A wildcard matches subdomains only, with a whole-label boundary. */
 export function matchesSandboxDomain(
 	hostname: string,
 	patterns: ReadonlySet<string>,

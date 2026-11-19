@@ -63,7 +63,6 @@ function readPackages(): readonly ProviderPackage[] {
 		.map((entry) => join(PROVIDERS_ROOT, entry.name))
 		.filter((directory) => existsSync(join(directory, "package.json")))
 		.map((directory) => {
-			// SAFETY: a workspace package.json is a JSON object with a name.
 			const manifest = JSON.parse(
 				readFileSync(join(directory, "package.json"), "utf8"),
 			) as { name: string };
@@ -86,7 +85,6 @@ function packageFor(row: ProviderDeliveryCoverage): ProviderPackage {
 	return found;
 }
 
-/** Exports a row names, which must appear in the package's public entry point. */
 function namedExports(row: ProviderDeliveryCoverage): readonly string[] {
 	if (row.realization !== "resolver") return [];
 	return [
@@ -103,7 +101,6 @@ function missingExports(row: ProviderDeliveryCoverage): readonly string[] {
 	);
 }
 
-/** A provider entry point's exports, read by name. */
 async function load(
 	row: ProviderDeliveryCoverage,
 ): Promise<ReadonlyMap<string, object>> {
@@ -157,7 +154,6 @@ describe("I14: realization path plus traffic profile", () => {
 					expect(row.traffic.remediation.trim()).not.toBe("");
 					return;
 				}
-				// SAFETY: the named export is a TrafficRoutingProviderProfile record.
 				const profile = module.get(
 					row.traffic.profileExport,
 				) as TrafficRoutingProviderProfile;
@@ -167,7 +163,6 @@ describe("I14: realization path plus traffic profile", () => {
 					),
 				).toEqual(JSON.parse(JSON.stringify(profile)));
 				if (!row.coverageExport) return;
-				// SAFETY: the named export is the package's HostingCoverage document.
 				const coverage = module.get(row.coverageExport) as {
 					contract: string;
 					providerId: string;

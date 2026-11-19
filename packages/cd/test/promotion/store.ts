@@ -1,7 +1,3 @@
-// In-memory DurableEventStore for the WP6 tests, with the conformance-suite
-// semantics the saga relies on: per-stream expected-seq CAS, per-stream
-// idempotency-key dedup checked before the CAS, global positions, and
-// `readAll` filtered by type, tenant and position. Test-only.
 import type {
 	AppendOptions,
 	AppendResult,
@@ -36,17 +32,14 @@ export const APPROVER: PrincipalRef = { kind: "user", id: "lead@acme" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
 export function camp(id: string): CampId {
-	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
 export function pid(id: string): PromotionId {
-	// SAFETY: promotion ids in tests come from returned PromotionRecords.
 	return id as PromotionId;
 }
 
 export function fid(id: string): FreightId {
-	// SAFETY: test fixture ids are literal Freight ids.
 	return id as FreightId;
 }
 
@@ -111,7 +104,6 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = input.meta;
-			// SAFETY: test double; positions are minted from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);

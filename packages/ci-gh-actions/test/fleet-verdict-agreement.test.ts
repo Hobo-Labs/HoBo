@@ -7,11 +7,6 @@ import {
 	parseFleetVerdictReport,
 } from "../src/fleet-verdict.js";
 
-/**
- * Agreement (ADR-0180, F5 and F31): the hosted relay serves a label blocked
- * only while every reporter enrolled for the label, under the account the
- * repository is connected under, is live, in `report` mode, and blocks it.
- */
 const NOW = Date.parse("2026-11-12T16:00:00.000Z");
 const repository = parseFleetVerdictPath("/v1/fleet/verdicts/hobo-labs/hobo");
 const reporter = (id: string, labels: readonly string[]): FleetReporter => ({
@@ -76,7 +71,6 @@ describe("agreement among enrolled reporters", () => {
 		const h = setup();
 		await h.report(box1, ["hobo"]);
 		expect(await h.blocked()).toEqual([]);
-		// box-2 agreed once, then went quiet: its report lapses, and so does the block.
 		await h.report(box2, ["hobo"]);
 		h.clock.now += 120_000;
 		await h.report(box1, ["hobo"]);
@@ -105,7 +99,6 @@ describe("agreement among enrolled reporters", () => {
 
 	it("a reporter that does not serve the label has no say", async () => {
 		const h = setup();
-		// box-2 does not serve hobo-trunk, so box-1 alone decides it.
 		await h.report(box1, ["hobo-trunk"]);
 		expect(await h.blocked()).toEqual(["hobo-trunk"]);
 	});

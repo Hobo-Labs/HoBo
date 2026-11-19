@@ -16,8 +16,6 @@ import {
 	isJsonString,
 } from "../src/json.js";
 
-// A fresh, isolated event store per test (the real runtime-local EventStore,
-// backed by an in-memory-style temp dir). Callers close() it when done.
 export function freshStore(): RuntimeLocalEventStore {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-data-"));
 	return createRuntimeLocalEventStore({
@@ -48,7 +46,6 @@ export interface OrderRow {
 }
 
 function inspectEventData(data: EventEnvelope["data"]): Inspectable {
-	// SAFETY: EventEnvelope.data is JSON at the store boundary; callers tag-check fields.
 	return data as Inspectable;
 }
 

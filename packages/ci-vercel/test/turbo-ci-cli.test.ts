@@ -117,7 +117,6 @@ it("keeps handling repeated interrupts until Turbo has stopped its tasks", async
 		await new Promise((done) => setTimeout(done, 50));
 		command.child.kill("SIGINT");
 		expect(await command.closed).toEqual({ code: 1, signal: null });
-		// A container's PID 1 may retain an already-killed orphan as a zombie.
 		const status = spawnSync("ps", ["-p", String(runningPid), "-o", "stat="], {
 			encoding: "utf8",
 		});

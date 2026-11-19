@@ -1,12 +1,3 @@
-/**
- * The ephemeral-state suite against a real Valkey or Redis over RESP/TCP.
- *
- * Runs when a server binary is available: `HOBO_VALKEY_SERVER_BIN`, or
- * `valkey-server` / `redis-server` on PATH. Skipped otherwise, so the suite
- * does not need the binary; the same cases run on the in-memory engine in
- * `ephemeral-state.test.ts`. This is the lane that checks the Lua scripts
- * themselves — the in-memory engine only mirrors them.
- */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { type AddressInfo, createServer, Socket } from "node:net";
 
@@ -41,7 +32,6 @@ async function freePort(): Promise<number> {
 		const server = createServer();
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
 			const { port } = server.address() as AddressInfo;
 			server.close(() => resolve(port));
 		});

@@ -1,14 +1,3 @@
-/**
- * @hobo/componentize HONEST SCOPE
- *
- * `buildWasmContractBytes` emits **contract-shaped** wasm: the standard wasm magic
- * header (`\0asm` + version) plus a custom section carrying contract metadata.
- * That is enough for digest, determinism, and boundary/PACT checks.
- *
- * It is **not** production output from `jco` / `componentize-js` / wasm-tools.
- * Real Component Model tooling remains residual human work (H-E3b). Do not treat
- * digests from this path as evidence of a portable WASM production pipeline.
- */
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative, sep } from "node:path";
@@ -179,10 +168,8 @@ export async function runWasmtimeSmoke(
 
 function assertPinnedToolchain(toolchain: typeof PINNED_TOOLCHAIN) {
 	for (const [name, expected] of Object.entries(PINNED_TOOLCHAIN)) {
-		// SAFETY: `if (toolchain[name as keyof typeof PINNED_TOOLCHAIN] !== expected) {` is required at this I/O or test boundary.
 		if (toolchain[name as keyof typeof PINNED_TOOLCHAIN] !== expected) {
 			throw new Error(
-				// SAFETY: ``componentize.toolchain_skew: ${name} expected ${expected} got ${toolchain[name ` is required at this I/O or test boundary.
 				`componentize.toolchain_skew: ${name} expected ${expected} got ${toolchain[name as keyof typeof PINNED_TOOLCHAIN]}`,
 			);
 		}
@@ -248,7 +235,6 @@ function parseHealthBody(source: string) {
 }
 
 // public-contract: OCI descriptor builder shared by the synthetic floor and the
-// real componentize lane (D13). Manifest layers reference the component digest.
 export function buildOciDescriptor(component: WasmComponentArtifact) {
 	return {
 		artifactType: COMPONENT_MEDIA_TYPE,
@@ -277,14 +263,6 @@ export function buildOciDescriptor(component: WasmComponentArtifact) {
 	};
 }
 
-/**
- * Build contract-shaped wasm bytes (magic header + custom section only).
- *
- * HONEST: not jco/componentize-js production component output. Produces a
- * valid-looking wasm module envelope so consumers can hash, store, and re-parse
- * `hobo.componentize.contract` metadata. See package HONEST SCOPE above and
- * residual blocker H-E3b for a real toolchain path.
- */
 function buildWasmContractBytes(metadata: string) {
 	const header = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
 	const sectionName = Buffer.from(CUSTOM_SECTION_NAME, "utf8");
@@ -318,7 +296,6 @@ function readContractMetadata(bytes: Uint8Array) {
 				.toString("utf8");
 			offset += nameLength.value;
 			if (name === CUSTOM_SECTION_NAME) {
-				// SAFETY: `return JSON.parse(` is required at this I/O or test boundary.
 				return JSON.parse(
 					buffer.subarray(offset, sectionEnd).toString("utf8"),
 				) as {

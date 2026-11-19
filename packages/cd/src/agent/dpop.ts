@@ -1,8 +1,3 @@
-// DPoP proofs (RFC 9449). The agent signs one proof per request with its
-// enrolled key; the Station verifies `typ`, `alg`, the embedded public `jwk`,
-// `htm`, `htu` (no query or fragment), `iat` within the allowed skew, `jti`,
-// and — when an SVID accompanies the request — `ath`. Replay of `jti` is the
-// replay store's job (./replay.ts); key binding (`cnf.jkt`) is the caller's.
 import { createHash } from "node:crypto";
 import type { JsonObject } from "@hobo/core";
 import { isNumber, isText, isWireObject } from "../feed/json.js";
@@ -33,12 +28,10 @@ export type VerifiedDpop = Readonly<{
 	htu: string;
 }> & { readonly [verifiedDpopBrand]: "cd.VerifiedDpop" };
 
-/** base64url(SHA-256(access token)), the `ath` claim. */
 export function accessTokenHash(accessToken: string): string {
 	return createHash("sha256").update(accessToken).digest("base64url");
 }
 
-/** `htu` normal form: scheme, host and path; query and fragment removed. */
 export function normalizeHtu(url: string): string {
 	const parsed = new URL(url);
 	return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
@@ -53,7 +46,6 @@ export type DpopProofInput = Readonly<{
 	accessToken?: string;
 }>;
 
-/** RFC 9449 §4.2 proof claims. */
 export type DpopClaims = Readonly<{
 	htm: string;
 	htu: string;
@@ -85,7 +77,6 @@ export function createDpopProof(input: DpopProofInput): string {
 
 export type DpopExpectation = Readonly<{
 	method: string;
-	/** Full URL, or a path when the Station does not know its public origin. */
 	url: string;
 	nowMs: number;
 	skewMs: number;
@@ -173,7 +164,6 @@ export function verifyDpopProof(
 			"dpop-ath-mismatch",
 			"ath does not hash the presented SVID",
 		);
-	// SAFETY: every member was verified above, including the signature.
 	const value = Object.freeze({
 		jkt: jwkThumbprint(jwk.value),
 		jti,

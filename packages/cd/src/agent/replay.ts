@@ -1,16 +1,7 @@
-// Durable DPoP `jti` replay protection. A proof is accepted at most once per
-// reconciler. The journal's per-stream idempotency key is the replay record,
-// so the check is atomic and shared by every Station replica on one store.
-//
-// Proofs are only valid within ±skew of the Station clock, so a jti needs to
-// be remembered only for 2×skew. Streams are bucketed by the proof's `iat`
-// (`cd-dpop-<reconcilerId>-<floor(iat / 2·skew)>`): a replay carries the same
-// iat and lands in the same bucket; old buckets are compaction-eligible.
 import { type DurableEventStore, EventStoreError } from "@hobo/core";
 import { AGENT_EVENT_SCHEMA, AGENT_EVENTS, AGENT_STREAMS } from "./events.js";
 
 export interface DpopReplayStore {
-	/** True on first sight of this (reconciler, jti); false on a replay. */
 	claim(
 		input: Readonly<{ reconcilerId: string; jti: string; iatSeconds: number }>,
 	): Promise<boolean>;

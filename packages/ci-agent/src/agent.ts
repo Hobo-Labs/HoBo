@@ -34,58 +34,33 @@ import {
 } from "./resolver.js";
 import type { StructuredMerger } from "./structured-merge.js";
 
-/** Where queued work is read from. */
 export interface QueueSource {
 	snapshot(): Promise<ObservedQueue>;
-	/**
-	 * Whether the host confirms that the base branch requires status checks
-	 * before a merge. Only asked in apply mode. Anything short of a confirmed
-	 * yes, including a failed lookup, is treated as no.
-	 */
 	baseRequiresChecks(): Promise<boolean>;
-	/** The repository's checks on a commit the agent published. */
 	commitChecks(sha: string): Promise<CommitChecks>;
 }
 
-/**
- * Where a commit's checks stand. `failures` is bounded CI output, for a
- * prompt. `infrastructure` is a failure no change to the code can fix (a
- * timeout, a runner that did not start, a cancelled run): the agent waits for
- * a re-run instead of repairing.
- */
 export type CommitChecks = Readonly<{
 	state: "pending" | "success" | "failure" | "infrastructure" | "none";
 	failures: string;
 }>;
 
-/** The agent's only writes to the code host besides pushing a branch. */
 export interface QueuePublisher {
 	comment(number: number, body: string): Promise<void>;
-	/** Ask the host's merge queue to take a pull request at exactly this commit. */
 	enqueue(entry: { number: number; headSha: string }): Promise<void>;
 }
 
 export type AgentTickReport = Readonly<{
 	plan: QueuePlan | undefined;
-	/** Resolutions settled in this tick, in the order they were attempted. */
 	resolutions: readonly Resolution[];
 	enqueued: readonly number[];
-	/** The branch a combined candidate was pushed to, if one was. */
 	rollupRef: string | undefined;
-	/**
-	 * Apply mode was configured, but the base branch was not confirmed to
-	 * require status checks, so this pass only suggested.
-	 */
 	applyWithheld: boolean;
-	/** Entries the merge queue ejected at their current commit, noticed this pass. */
 	ejected: readonly number[];
-	/** Steps that failed and were skipped; the tick itself still completed. */
 	failures: number;
-	/** Each time an engine gave no usable answer, and why. */
 	engineFailures: readonly EngineFailure[];
 }>;
 
-/** A report while its tick is still running. */
 type TickProgress = {
 	plan: QueuePlan | undefined;
 	resolutions: Resolution[];
@@ -99,7 +74,6 @@ type TickProgress = {
 
 const sha256 = (value: readonly (string | number)[]) =>
 	createHash("sha256").update(JSON.stringify(value)).digest("hex");
-/** Whether two resolutions wrote the same content to the same paths. */
 function sameFiles(
 	a: readonly Readonly<{ path: string; contentSha256: string }>[],
 	b: readonly Readonly<{ path: string; contentSha256: string }>[],
@@ -112,22 +86,12 @@ function sameFiles(
 }
 const quoted = (path: string) => `\`${path.replace(/[`\r\n]/g, "'")}\``;
 
-/**
- * The agent: one `tick` observes the queue, plans it, resolves what it may,
- * and publishes as far as its mode allows.
- *
- * It never merges. A resolution is a commit on the pull request's own branch
- * (apply) or on a `hobo-agent/` branch (suggest), and it reaches the base
- * branch only through the repository's required checks and merge queue like
- * any other commit. Nothing a model returns is a merge condition.
- */
 export function createCiAgent(options: {
 	config: ParsedAgentConfig;
 	queue: QueueSource;
 	publisher: QueuePublisher;
 	workspace: MergeWorkspace;
 	engines: readonly ResolutionEngine[];
-	/** Set when `resolution.structuredMerge` is on. */
 	structured?: StructuredMerger | undefined;
 	journal: AgentJournal;
 	now?: (() => string) | undefined;
@@ -178,12 +142,6 @@ export function createCiAgent(options: {
 		);
 	}
 
-	/**
-	 * Merge `theirs` into `ours`, resolving conflicts, at most once per pair of
-	 * commits and policy. Returns nothing when today's budget is spent, so the
-	 * merge is tried again tomorrow instead of being recorded as declined.
-	 */
-	/** Engine failures of the tick in progress; ticks never overlap. */
 	let engineFailures: EngineFailure[] = [];
 
 	async function settle(input: {
@@ -193,7 +151,6 @@ export function createCiAgent(options: {
 		theirs: string;
 		oursLabel: string;
 		theirsLabel: string;
-		/** Correct an earlier resolution whose checks failed, on top of its commit. */
 		repair?: { of: Resolution; failures: string } | undefined;
 	}): Promise<{ resolution: Resolution; fresh: boolean } | undefined> {
 		const { repository, ours, theirs, repair } = input;
@@ -230,7 +187,6 @@ export function createCiAgent(options: {
 				});
 			}
 		const day = startOfDay();
-		// Regions resolved before, in resolutions whose checks then passed.
 		const recorded = new Map<string, string>();
 		for (const checked of await journal.recent(
 			repository,
@@ -250,8 +206,6 @@ export function createCiAgent(options: {
 				(await journal.tokensSince(day)),
 			oursLabel: input.oursLabel,
 			theirsLabel: input.theirsLabel,
-			// A repair corrects what was rejected; anything else may reuse
-			// what passed before.
 			previous: repair ? previous : undefined,
 			recorded,
 			structured: options.structured,
@@ -357,7 +311,6 @@ export function createCiAgent(options: {
 			]);
 
 			const baseConflicts = new Map<number, readonly string[]>();
-			// A trial merge that failed is not evidence of a clean one.
 			const baseUnknown = new Set<number>();
 			for (const entry of entries) {
 				const merge = await attempt(() => trial(entry.headSha, baseSha));
@@ -380,10 +333,6 @@ export function createCiAgent(options: {
 					}),
 				);
 			}
-			// A pull request the agent enqueued at this commit that is waiting
-			// again was ejected by the merge queue: its checks failed in a merge
-			// group. It is batched alone from now on, so whatever failed it cannot
-			// fail others with it, and it is not enqueued again at this commit.
 			const isolated = new Set<number>();
 			const enqueuedBefore = Date.parse(now()) - 120_000;
 			const weekAgo = new Date(
@@ -460,7 +409,6 @@ export function createCiAgent(options: {
 				body: string,
 				numbers: number[],
 			) => {
-				// The base branch only ever moves through the host's own merge.
 				if (ref === `refs/heads/${baseRef}`) throw new Error("refused git ref");
 				await workspace.push(resolution.commitSha, ref);
 				const published = create(ResolutionSchema, {
@@ -473,10 +421,6 @@ export function createCiAgent(options: {
 				return entry;
 			};
 
-			// In apply mode, text no person has read can enter the merge queue. The
-			// only thing standing between it and the base branch is then the
-			// repository's required checks, so apply acts only when the host
-			// confirms the base branch has them. Otherwise this pass suggests.
 			let mode = config.mode;
 			if (
 				mode === "apply" &&
@@ -489,8 +433,6 @@ export function createCiAgent(options: {
 					await record(repository, "ci.agent.ApplyWithheld", {});
 			}
 
-			// A pull request that no longer merges onto its base branch. A stacked
-			// one waits: its parent's resolution is part of its own history.
 			for (const entry of ordered) {
 				if (!baseConflicts.has(entry.number) || entry.baseRef !== baseRef)
 					continue;
@@ -503,8 +445,6 @@ export function createCiAgent(options: {
 					theirsLabel: baseRef,
 				});
 				const resolution = settled?.resolution;
-				// A resolution settled on an earlier pass is published now if its
-				// push never succeeded (or the mode then was observe).
 				if (
 					resolution?.outcome !== "resolved" ||
 					mode === "observe" ||
@@ -534,9 +474,6 @@ export function createCiAgent(options: {
 				);
 			}
 
-			// Read the checks on resolutions published in the last day. A failed
-			// one is repaired on top of its own commit, at most maxRepairs times;
-			// past that, or when it cannot be repaired, a person is told.
 			if (mode !== "observe") {
 				const since = new Date(Date.parse(now()) - 86_400_000).toISOString();
 				for (const event of await journal.recent(
@@ -570,8 +507,6 @@ export function createCiAgent(options: {
 					const direct = !published.publishedRef.startsWith(
 						"refs/heads/hobo-agent/",
 					);
-					// A pull request that left, or whose branch moved on, is its
-					// author's again.
 					if (
 						!entry ||
 						(direct &&
@@ -592,11 +527,8 @@ export function createCiAgent(options: {
 								repair: { of: published, failures: checks.failures },
 							})
 						: undefined;
-					// Deferred by the budget, the per-pass limit or an error: next pass.
 					if (canRepair && repaired === undefined) continue;
 					const resolution = repaired?.resolution;
-					// The same text again: the model sees nothing to correct in the
-					// regions it resolved. Pushing it would only re-run the checks.
 					const unchanged =
 						resolution?.outcome === "resolved" &&
 						sameFiles(resolution.files, published.files);
@@ -625,11 +557,9 @@ export function createCiAgent(options: {
 								[entry.number],
 							),
 						);
-						// An unpublished repair is pushed again next pass.
 						if (pushed) await concluded("failure");
 						continue;
 					}
-					// Out of attempts, or the repair abstained: a person resolves it.
 					await concluded("failure");
 					await attempt(() =>
 						publisher.comment(
@@ -640,10 +570,7 @@ export function createCiAgent(options: {
 				}
 			}
 
-			// Feed the host's merge queue in planned order.
 			if (mode === "apply") {
-				// A pull request whose head is one of the agent's own merge commits
-				// waits until the required checks have passed on that commit.
 				const unproven = new Set<string>();
 				for (const event of await journal.recent(
 					repository,
@@ -656,8 +583,6 @@ export function createCiAgent(options: {
 					const checked = await journal.latestChecked(key);
 					if (checked?.checksState !== "success") unproven.add(commit);
 				}
-				// Two pull requests that conflict cannot share a merge group: wait
-				// until the one ahead merges, then resolve against the base branch.
 				const verdictOf = createVerdicts(verdicts);
 				const queued = new Set(
 					entries.filter((entry) => entry.started).map((entry) => entry.number),
@@ -681,16 +606,11 @@ export function createCiAgent(options: {
 						}) ||
 						entry.dependsOn.some((parent) => !queued.has(parent)) ||
 						Date.parse(now()) - (enqueueAskedAt.get(key) ?? 0) < 600_000 ||
-						// Enqueued once at this commit already. If the queue ejected it
-						// (its checks failed), a person or a new commit re-enqueues it.
 						(await journal.has(
 							enqueuedKey(repository, entry.number, entry.headSha),
 						))
 					)
 						continue;
-					// Asked once per commit and ten minutes, whatever the answer: the
-					// host's queue can lag behind an accepted request, and it refuses
-					// a pull request that is not yet mergeable.
 					enqueueAskedAt.set(key, Date.parse(now()));
 					try {
 						await publisher.enqueue(entry);
@@ -706,7 +626,6 @@ export function createCiAgent(options: {
 				}
 			}
 
-			// One candidate branch carrying several waiting pull requests.
 			if (config.mode === "suggest" && policy.queue.rollup) {
 				const candidates = ordered
 					.filter((entry) => !entry.started)

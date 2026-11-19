@@ -1,15 +1,3 @@
-/**
- * The generated parts of the HoBo CI pages on the docs site.
- *
- * The site demonstrates the fleet by showing what it actually decides, so the
- * tables and worked examples on those pages are not typed by hand: they are
- * rendered here from the financial models and by running `balanceFleet`, and
- * written between `<!-- generated:… -->` markers in the page source.
- * `test/fleet-docs.test.ts` fails when a page no longer matches this output.
- *
- *   node --import tsx packages/ci/scripts/fleet-docs.ts          # rewrite
- *   node --import tsx packages/ci/scripts/fleet-docs.ts --check  # verify
- */
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -31,11 +19,6 @@ import {
 	runnerQuoteScenario,
 } from "../src/fleet/index.js";
 
-/**
- * Every example is priced the day after the newest price was read, so the
- * instant is inside every model's evidence and moves with it when a price is
- * refreshed.
- */
 const AT = new Date(
 	Math.max(
 		...RUNNER_FINANCIAL_MODELS.map((model) =>
@@ -69,7 +52,6 @@ function policy(limitMicros: number): BudgetPolicy {
 	});
 }
 
-/** The whole catalog as one fleet: connected, healthy, plans already open. */
 function fleet(
 	overrides: Partial<Record<RunnerModelId, Partial<FleetMemberState>>> = {},
 ): FleetMemberState[] {
@@ -118,8 +100,6 @@ function decide(
 	});
 }
 
-// ------------------------------------------------------------ formatting
-
 const NAMES = new Map<string, string>(
 	RUNNER_FINANCIAL_MODELS.map((model) => [model.id, model.displayName]),
 );
@@ -166,14 +146,6 @@ function decision(result: FleetBalance): string {
 	return result.refusals.length === 0 ? ranking : `${ranking}\n\n${refusals}`;
 }
 
-// -------------------------------------------------------------- fragments
-
-/**
- * How a relay can use the provider today. Admission reaches every label
- * provider through the companion-workflow bridge, which serves trusted private
- * repositories only; choosing one directly needs a workflow to read the route
- * table, which none does yet.
- */
 function policyStatus(model: RunnerFinancialModel): string {
 	if (model.provider === "hobo-box-worker") return "yes";
 	if (model.binding === "inject") return "no: modelled only, no host driver";
@@ -181,7 +153,6 @@ function policyStatus(model: RunnerFinancialModel): string {
 	return "yes, through the bridge";
 }
 
-/** Where a ceiling the provider does not publish comes from instead. */
 function ceiling(model: RunnerFinancialModel): string {
 	if (model.concurrency !== undefined) return String(model.concurrency);
 	if (model.id === "hobo-box") return "the worker's slots";
@@ -252,7 +223,6 @@ function duration(minutes: number | undefined): string {
 	return hours % 24 === 0 && hours > 24 ? `${hours / 24} days` : `${hours} h`;
 }
 
-/** What each machine can do, for every model whose limits have been read. */
 function capabilities(): string {
 	return table(
 		[
@@ -363,7 +333,6 @@ function routes(members: readonly FleetMemberState[]): string {
 	return `\`\`\`json\n${fleetRoutesVariableValue(routed)}\n\`\`\``;
 }
 
-/** Fragment id to markdown, grouped by the page that holds it. */
 export function renderFleetDocs() {
 	const privateTrunk: FleetDemand = {
 		...PULL_REQUEST,
@@ -419,7 +388,6 @@ const NOTICE =
 const marker = (id: string, edge: "start" | "end") =>
 	`<!-- generated:${id}:${edge} -->`;
 
-/** The page with every generated fragment replaced by its current output. */
 export function applyFleetDocs(
 	page: string,
 	fragments: Readonly<Record<string, string>>,

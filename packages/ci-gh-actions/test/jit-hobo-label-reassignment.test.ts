@@ -59,7 +59,6 @@ describe("shared hobo label JIT reassignment", () => {
 			createdAt: "2026-11-12T12:00:00.000Z",
 		});
 		const withdrawQueuedJob = vi.fn(async () => true);
-		// SAFETY: reconcile touches only get, transition, settle, withdrawQueuedJob.
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			activeLeases: async () => [lease],
@@ -182,7 +181,6 @@ describe("shared hobo label JIT reassignment", () => {
 			createdAt: "2026-11-12T12:00:00.000Z",
 		});
 		const settle = vi.fn();
-		// SAFETY: reconcile touches only get, transition, settle, withdrawQueuedJob.
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			activeLeases: async () => [lease],
@@ -318,7 +316,6 @@ describe("shared hobo label JIT reassignment", () => {
 			createdAt: "2026-11-12T12:00:00.000Z",
 		});
 		const settle = vi.fn();
-		// SAFETY: reconcile touches only get, transition, settle, withdrawQueuedJob.
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			activeLeases: async () => [lease],
@@ -431,7 +428,6 @@ describe("shared hobo label JIT reassignment", () => {
 			createdAt,
 		});
 		const settle = vi.fn();
-		// SAFETY: reconcile touches only get, activeLeases, transition, settle, withdrawQueuedJob.
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			activeLeases: async () => [lease],
@@ -508,7 +504,6 @@ describe("shared hobo label JIT reassignment", () => {
 		});
 		const settle = vi.fn();
 		const remove = vi.fn();
-		// SAFETY: reconcile touches only get, activeLeases, transition, settle, withdrawQueuedJob.
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			activeLeases: async () => [lease],
@@ -581,7 +576,6 @@ describe("shared hobo label JIT reassignment", () => {
 			createdAt: "2026-11-12T12:00:00.000Z",
 		});
 		const settle = vi.fn();
-		// SAFETY: reconcile touches only get, activeLeases, transition, settle.
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			activeLeases: async () => [lease],
@@ -645,7 +639,6 @@ describe("shared hobo label JIT reassignment", () => {
 		});
 		const settle = vi.fn();
 		const remove = vi.fn();
-		// SAFETY: reconcile touches only get, activeLeases, transition, settle, withdrawQueuedJob.
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			activeLeases: async () => [lease],
@@ -770,7 +763,6 @@ describe("shared hobo label JIT reassignment", () => {
 			const settle = vi.fn();
 			const stop = vi.fn();
 			const remove = vi.fn();
-			// SAFETY: reconcile touches only get, activeLeases, transition, settle.
 			const store = {
 				get: async (id: string) => (id === lease.id ? lease : undefined),
 				activeLeases: async () => [lease],
@@ -812,7 +804,6 @@ describe("shared hobo label JIT reassignment", () => {
 			const settle = vi.fn();
 			const stop = vi.fn();
 			const remove = vi.fn();
-			// SAFETY: reconcile touches only get, activeLeases, transition, settle, withdrawQueuedJob.
 			const store = {
 				get: async (id: string) => (id === lease.id ? lease : undefined),
 				activeLeases: async () => [lease],
@@ -864,7 +855,6 @@ describe("shared hobo label JIT reassignment", () => {
 			const settle = vi.fn();
 			const stop = vi.fn();
 			const remove = vi.fn();
-			// SAFETY: reconcile touches only get, activeLeases, transition, settle, withdrawQueuedJob.
 			const store = {
 				get: async (id: string) => (id === lease.id ? lease : undefined),
 				activeLeases: async () => [lease],
@@ -921,7 +911,6 @@ describe("shared hobo label JIT reassignment", () => {
 			const settle = vi.fn();
 			const stop = vi.fn();
 			const remove = vi.fn();
-			// SAFETY: reconcile touches only get, activeLeases, transition, settle.
 			const store = {
 				get: async (id: string) => (id === lease.id ? lease : undefined),
 				activeLeases: async () => [lease],
@@ -992,7 +981,6 @@ describe("shared hobo label JIT reassignment", () => {
 			const settle = vi.fn();
 			const stop = vi.fn();
 			const remove = vi.fn();
-			// SAFETY: reconcile touches only get, activeLeases, transition, settle.
 			const store = {
 				get: async (id: string) => (id === lease.id ? lease : undefined),
 				activeLeases: async () => [lease],

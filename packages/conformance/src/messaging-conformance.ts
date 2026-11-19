@@ -1,7 +1,3 @@
-/**
- * Executable messaging conformance against real adapter factories (ADR-0138).
- * Exercises publish/consume/ack, consumer-group isolation, DLQ, and capability gates.
- */
 
 import type { Messaging } from "@hobo/core";
 import {
@@ -38,7 +34,6 @@ export async function runMessagingConformance(
 		throw new TypeError("createMessaging must be a function");
 	}
 
-	// SAFETY: assertion to `{} as Record<MessagingAssertionName, "pass" | "fail">` is required at this boundary.
 	const assertions = {} as Record<MessagingAssertionName, "pass" | "fail">;
 
 	const run = async (
@@ -79,7 +74,6 @@ async function provesPublishConsumeAck(
 	const topic = parseTopicName("conf-orders");
 	await bus.ensureTopic({
 		name: topic,
-		// SAFETY: assertion to `"conf" as TenantId` is required at this boundary.
 		tenantId: "conf" as TenantId,
 		delivery: "at-least-once",
 	});
@@ -89,7 +83,6 @@ async function provesPublishConsumeAck(
 	});
 	if (batch.length < 1) return false;
 	bus.ack(first(batch).messageId, first(batch).leaseId);
-	// SAFETY: assertion to `bus as Messaging & { flush?: () => Promise<void> }` is required at this boundary.
 	const flushable = bus as Messaging & { flush?: () => Promise<void> };
 	if (flushable.flush instanceof Function) {
 		await flushable.flush();
@@ -115,11 +108,9 @@ async function provesDeadLetterMaxAttempts(
 	const bus = await create();
 	const topic = parseTopicName("conf-dlq");
 	await bus.ensureSubscription({
-		// SAFETY: assertion to `"s" as never` is required at this boundary.
 		name: "s" as never,
 		topic,
 		consumerGroup: parseConsumerGroupId("dlq"),
-		// SAFETY: assertion to `"conf" as TenantId` is required at this boundary.
 		tenantId: "conf" as TenantId,
 		delivery: "at-least-once",
 		maxDeliveryAttempts: 2,
@@ -144,7 +135,6 @@ async function provesExactlyOnceCapabilityGate(
 	const bus = await create();
 	try {
 		assertDeliverySupported(bus.capabilities, "exactly-once");
-		// Backend that supports exactly-once must accept publish with that delivery.
 		await bus.publish(
 			parseTopicName("conf-xo"),
 			{ x: 1 },
@@ -154,8 +144,6 @@ async function provesExactlyOnceCapabilityGate(
 		);
 		return true;
 	} catch (err) {
-		// Portable backends may reject — still a valid gate outcome when they
-		// throw MessagingCapabilityError rather than silently accepting.
 		if (err instanceof MessagingCapabilityError) {
 			return !bus.capabilities.deliveryGuarantees.includes("exactly-once");
 		}

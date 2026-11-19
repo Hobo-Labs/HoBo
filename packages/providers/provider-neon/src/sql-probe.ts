@@ -1,8 +1,6 @@
 import { fromJsonString } from "@bufbuild/protobuf";
 import { StructSchema } from "@bufbuild/protobuf/wkt";
 
-/** The acceptance query is SELECT 1 AS hobo_validation. HTTP success or an
- * echoed query alone is insufficient; require its exact returned scalar. */
 export function confirmsNeonSqlProbe(body: string): boolean {
 	try {
 		const decoded = fromJsonString(StructSchema, body);

@@ -1,7 +1,3 @@
-// The runner-host realizer's job ports read from the box worker's data
-// directory: the journal read-only, the advert the worker writes, and the
-// admission marker it honours. A second process (the CD agent) reads them;
-// the worker stays the journal's only writer.
 
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -43,7 +39,6 @@ async function freshDir(): Promise<string> {
 	return dir;
 }
 
-/** A worker journal with the leases table the worker's store creates. */
 function journal(path: string, leases: readonly [string, string][]): void {
 	const db = new DatabaseSync(path);
 	db.exec(
@@ -55,7 +50,6 @@ function journal(path: string, leases: readonly [string, string][]): void {
 			`job-${id}`,
 			toJsonString(
 				LeaseSchema,
-				// The worker's own JIT runner name: `hobo-<lease uuid>`.
 				create(LeaseSchema, { id, state, runnerName: `hobo-${randomUUID()}` }),
 			),
 		);
@@ -98,7 +92,6 @@ describe("the worker's data directory as the runner-host job ports", () => {
 		const leases = readWorkerLeases(database);
 		expect(leases.map((lease) => lease.id)).toEqual(["a", "b"]);
 		expect(inFlightJobCount(leases, [])).toBe(2);
-		// Read-only: the agent never takes the worker's writer lock.
 		const jobs = createWorkerHostJobs({
 			files: workerHostFiles(database),
 			hostKind: "box-worker",
@@ -146,7 +139,6 @@ describe("the worker's data directory as the runner-host job ports", () => {
 			...plain,
 			controllerDigest: digest,
 		});
-		// An invalid digest is never written.
 		await writeWorkerMeshAdvert(files, advert, "sha256:nope");
 		expect((await jobs.meshAdvert())?.controllerDigest).toBeUndefined();
 	});
@@ -162,7 +154,6 @@ describe("the worker's data directory as the runner-host job ports", () => {
 		await jobs.pauseAdmission?.();
 		await jobs.resumeAdmission?.();
 		expect(workerAdmissionPaused(files)).toBe(false);
-		// Reopening an open gate is a no-op.
 		await jobs.resumeAdmission?.();
 		expect(workerAdmissionPaused(files)).toBe(false);
 	});
@@ -186,7 +177,6 @@ describe("the worker's data directory as the runner-host job ports", () => {
 			hostKind: "local-runner",
 			now: () => nowMs,
 		});
-		// No report yet: no runner, never an assumed online one.
 		expect(await local.runners()).toEqual([]);
 		await writeWorkerRunnerPresence(files, {
 			observedAtMs: nowMs - 30_000,
@@ -197,11 +187,9 @@ describe("the worker's data directory as the runner-host job ports", () => {
 			{ name: "hobo-local-1", presence: { status: "online", busy: true } },
 		]);
 		expect(inFlightJobCount([], runners)).toBe(1);
-		// A JIT host's runners are counted by lease, never from this file.
 		expect(
 			await createWorkerHostJobs({ files, hostKind: "box-worker" }).runners(),
 		).toEqual([]);
-		// Stale (the controller stopped refreshing) or corrupt: no runner.
 		nowMs += 5 * 60_000;
 		expect(await local.runners()).toEqual([]);
 		nowMs -= 5 * 60_000;

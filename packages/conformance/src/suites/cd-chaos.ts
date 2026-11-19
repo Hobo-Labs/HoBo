@@ -1,7 +1,3 @@
-// The CD chaos lane. Each fault is injected into a world that
-// is converging a workload; the suite steps the world, checks the fault's
-// invariants after every step, heals, and requires convergence within a bound.
-// "Never ends wedged" is the shared property: every fault recovers.
 import {
 	type CdConformanceReport,
 	type CdSuiteOptions,
@@ -27,44 +23,32 @@ export type CdChaosAssertion =
 	| `${CdChaosFault}:invariants`
 	| `${CdChaosFault}:recovers`;
 
-/** What the harness observes of the world after each step. */
 export type ChaosObservation = Readonly<{
-	/** Every target Camp converged to the newest desired Set. */
 	converged: boolean;
-	/** Mutating applies beyond one per (Camp, Set). */
 	duplicateApplies: number;
-	/** NO_RUN taints present (only operators or multi-signal rules may add them). */
 	noRunTaints: number;
-	/** Failovers running and the Rail's max_concurrent. */
 	failoversInFlight: number;
 	failoverBudget: number;
-	/** Failover sources purged before their replacement qualified. */
 	purgedBeforeReplacementQualified: number;
-	/** Checkpoints that moved backwards or were lost across a store failover. */
 	checkpointRegressions: number;
-	/** Freight created from unverified payloads during a source outage. */
 	unverifiedFreight: number;
 }>;
 
 export interface ChaosWorld {
 	inject(fault: CdChaosFault): Promise<void>;
 	heal(fault: CdChaosFault): Promise<void>;
-	/** One tick of every controller and reconciler, plus clock advance. */
 	step(): Promise<void>;
 	observe(): Promise<ChaosObservation>;
 }
 
 export interface CdChaosHarness {
 	readonly subject: string;
-	/** A world converging a workload, with the controllers the fault touches running. */
 	create(fault: CdChaosFault): Promise<ChaosWorld>;
 }
 
 export type CdChaosOptions = CdSuiteOptions &
 	Readonly<{
-		/** Steps the fault stays injected. Default 20. */
 		faultSteps?: number;
-		/** Steps allowed to recover after heal. Default 40. */
 		recoverSteps?: number;
 	}>;
 
@@ -149,7 +133,6 @@ export async function runCdChaos(
 			try {
 				final = await play(fault);
 			} catch {
-				// Invariant breaches are reported under `:invariants`; recovery is judged separately.
 				return check(
 					false,
 					`${fault} broke an invariant before recovery could be judged`,

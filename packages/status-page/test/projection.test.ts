@@ -1,11 +1,3 @@
-/**
- * Every case is a line in `projection.cases.jsonl`.
- *
- * A projection is a fold over events, and an event is JSON, so the cases are
- * the events themselves. Event types are written as literals rather than
- * through `STATUS_*_EVENTS`: a rename then fails every case that uses it rather
- * than only the read-set assertion.
- */
 
 import { describeConcern } from "@hobo/contract-harness";
 import type { EventEnvelope, JsonObject } from "@hobo/core";
@@ -19,15 +11,12 @@ import {
 
 const STREAM = "status:test";
 
-/** One event, either spelled out or via the `slo` shorthand. */
 interface EventSpec {
 	readonly type?: string;
 	readonly seq: number;
 	readonly ts: string;
 	readonly project?: string;
-	/** The payload, verbatim — including deliberately malformed ones. */
 	readonly data?: JsonObject;
-	/** An `slo.Measured` with the standard payload, overridden field by field. */
 	readonly slo?: JsonObject;
 }
 
@@ -57,17 +46,9 @@ const fold = (specs: readonly EventSpec[]) =>
 describeConcern("status page projection", {
 	cases: `${import.meta.dirname}/projection.cases.jsonl`,
 	subject: () => ({
-		/** The folded rows, keyed by scope — what every snapshot case asserts on. */
 		rows: (specs: readonly EventSpec[]) => fold(specs).rows,
 		defaultScopeKey: (spec: EventSpec) => defaultScopeKey(toEnvelope(spec)),
 		statusFromAttainment,
-		/**
-		 * Bounded history, which needs more events than are worth writing down.
-		 *
-		 * Emits one clean sample per day past the limit, then a second, bad
-		 * sample on the final day so the day has to roll up to the worst of the
-		 * two rather than the last of them.
-		 */
 		historySummary: () => {
 			const specs: EventSpec[] = [];
 			for (let day = 0; day < HISTORY_DAY_LIMIT + 10; day += 1) {
@@ -93,11 +74,8 @@ describeConcern("status page projection", {
 				samples: last?.samples ?? null,
 			};
 		},
-		/** The read-set is a contract with the data plane, so it is pinned exactly. */
 		readSet: () => [...createStatusPageProjection().readSet].sort(),
 		isDeterministic: (specs: readonly EventSpec[]) => {
-			// Two independent folds over the same events, each from a fresh
-			// projection — replay must not depend on anything but the stream.
 			const first = JSON.stringify(fold(specs));
 			const second = JSON.stringify(fold(specs));
 			return first === second;

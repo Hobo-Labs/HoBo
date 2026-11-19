@@ -1,9 +1,3 @@
-/**
- * The relay mesh's records at their boundaries: protobuf JSON on the wire
- * and in storage (`data-models/mesh.proto`), the `@hobo/ci/mesh` types
- * inside. Each `parse*` either returns a value the rest of the code can use
- * without checking again, or nothing.
- */
 import { createHash } from "node:crypto";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import type {
@@ -23,7 +17,6 @@ import {
 	MeshTrustConfigSchema,
 } from "./_generated/mesh_pb.js";
 
-/** Node ids are bucket keys and hash inputs: a short, plain token. */
 export const MESH_NODE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const PUBLIC_KEY = /^[A-Za-z0-9_-]{43}$/;
 const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]{1,100}$/;
@@ -35,11 +28,6 @@ const optionalWithin = (value: number | undefined, max: number) =>
 const count = (value: number | undefined) =>
 	value === undefined || (Number.isFinite(value) && value >= 0);
 
-/**
- * The checks a board applies to an advertisement, written or read. A
- * signature is not judged here: an advertisement with a bad one is kept, so
- * the reader can report it as invalid.
- */
 function advertProblem(node: MeshNode): string | undefined {
 	if (!MESH_NODE_ID.test(node.id)) return "node id";
 	if (!within(node.freeSlots, 4096)) return "free slots";
@@ -80,12 +68,6 @@ function advertProblem(node: MeshNode): string | undefined {
 	return undefined;
 }
 
-/**
- * An advertisement as it is written to the board. Throws when the node's own
- * state does not fit the record, so a worker never publishes what no reader
- * would accept. What only a reader computes (`trust`, `seenAtMs`) is not a
- * field of the record and is never written.
- */
 export function meshAdvertJson(node: MeshNode): string {
 	const problem = advertProblem(node);
 	if (problem !== undefined) throw new Error(`invalid mesh ${problem}`);
@@ -97,7 +79,6 @@ export function meshAdvertJson(node: MeshNode): string {
 			healthy: node.healthy,
 			labels: [...node.labels],
 			validUntilMs: node.validUntilMs,
-			// An absent figure is left unset: unknown is not zero.
 			totalSlots: node.totalSlots,
 			free: node.free && {
 				memoryMb: node.free.memoryMb,
@@ -110,18 +91,10 @@ export function meshAdvertJson(node: MeshNode): string {
 			identity: node.identity,
 			repository: node.repository,
 		}),
-		// A node on an older version reads `freeSlots: 0` and `healthy: false`,
-		// not their absence.
 		{ alwaysEmitImplicit: true },
 	);
 }
 
-/**
- * The node an advertisement on the board describes, or nothing when this
- * version cannot read it. Fields it does not know are ignored, so a newer
- * node's advertisement is still read; fields it knows and finds missing (an
- * older node's) leave the node as that older version described it.
- */
 export function parseMeshAdvert(text: string): MeshNode | undefined {
 	let advert: MeshAdvert;
 	try {
@@ -161,7 +134,6 @@ export function parseMeshAdvert(text: string): MeshNode | undefined {
 	return advertProblem(node) === undefined ? node : undefined;
 }
 
-/** The mesh's trust settings as stored under `trust` in the config bucket. */
 export function meshTrustConfigJson(policy: MeshTrustPolicy): string {
 	for (const entry of policy.trustedKeys) {
 		if (!PUBLIC_KEY.test(entry.publicKey))
@@ -183,16 +155,10 @@ export function meshTrustConfigJson(policy: MeshTrustPolicy): string {
 	);
 }
 
-/**
- * The stored trust settings, or nothing when they cannot be read. Unreadable
- * settings are not half-applied: the reader falls back to trusting only itself.
- */
 export function parseMeshTrustConfig(
 	text: string,
 ): MeshTrustPolicy | undefined {
 	try {
-		// A field a newer version added is ignored: the keys this version
-		// understands still apply.
 		const config = fromJsonString(MeshTrustConfigSchema, text, {
 			ignoreUnknownFields: true,
 		});
@@ -218,14 +184,11 @@ export function parseMeshTrustConfig(
 	}
 }
 
-/** A node's reliability record as its journal keeps it. */
 export type StoredMeshReliability = Readonly<{
 	record: MeshReliability;
-	/** The reset value last applied; empty when none was. */
 	resetToken: string;
 }>;
 
-/** A node's reliability record as it is kept in its journal. */
 export function meshReliabilityRecordJson(
 	record: MeshReliability,
 	resetToken = "",
@@ -242,7 +205,6 @@ export function meshReliabilityRecordJson(
 	);
 }
 
-/** The stored record, or nothing when it is missing a count or cannot be read. */
 export function parseMeshReliabilityRecord(
 	text: string,
 ): StoredMeshReliability | undefined {
@@ -268,7 +230,6 @@ export function parseMeshReliabilityRecord(
 	}
 }
 
-/** Epoch milliseconds as RFC 3339, or empty when there is no time to give. */
 function instant(ms: number | undefined): string {
 	return ms === undefined || !Number.isFinite(ms)
 		? ""
@@ -287,7 +248,6 @@ function reportMessage(report: MeshNodeReportView) {
 		validUntil: instant(report.validUntilMs),
 		totalSlots: report.totalSlots,
 		freeSlots: report.freeSlots,
-		// Unknown stays unset: a report never turns "does not say" into zero.
 		freeMemoryMb: report.freeMemoryMb,
 		freeDiskMb: report.freeDiskMb,
 		platform: report.platform,
@@ -314,16 +274,10 @@ function capacityMessage(capacity: MeshCapacity) {
 	};
 }
 
-/** How a host stands to a mesh; see `MeshNodeReports.mesh`. */
 export type MeshReading = "configured" | "not-configured" | "unreachable";
 
-/**
- * The most nodes one answer lists. Nodes that are there come before nodes
- * that are lost; the capacity summary always covers every node read.
- */
 export const MESH_REPORT_MAX_NODES = 256;
 
-/** The one answer every surface gives: the reports, the summary, and how the host stands to a mesh. */
 export function meshNodeReportsMessage(input: {
 	mesh: MeshReading;
 	view?: MeshNodesView | undefined;
@@ -345,24 +299,13 @@ export function meshNodeReportsMessage(input: {
 		nodes: listed.map(reportMessage),
 		truncated: listed.length < all.length,
 		capacity: input.view && capacityMessage(input.view.capacity),
-		// A host with no mesh and no node of its own read nothing, at no time.
 		readAt: input.view === undefined ? "" : instant(input.nowMs),
 		requireTrusted: input.requireTrusted === true,
 	});
 }
 
-/** The label a machine running jobs for one repository serves. */
 const LOCAL_HOST_LABEL = "hobo-local-host";
 
-/**
- * The answer as one account may see it. Fleet nodes and relay hosts belong
- * to the relay and are shown to every account. A machine running jobs for
- * one repository is somebody's own computer: its id (derived from its host
- * name), platform and key are shown only to the account that owns that
- * repository. For anyone else, and for such a machine that does not say
- * which repository it serves, it is listed under a stable opaque id with
- * its state, capacity and trust only.
- */
 export function meshNodeReportsForAccount(
 	reports: MeshNodeReports,
 	ownRepositories: ReadonlySet<string>,
@@ -387,14 +330,12 @@ export function meshNodeReportsForAccount(
 	});
 }
 
-/** The answer as JSON, zeros and empty lists written out. */
 export function meshNodeReportsJson(reports: MeshNodeReports): string {
 	return toJsonString(MeshNodeReportsSchema, reports, {
 		alwaysEmitImplicit: true,
 	});
 }
 
-/** An answer read back from a relay; throws when it is not one. */
 export function parseMeshNodeReports(text: string): MeshNodeReports {
 	return fromJsonString(MeshNodeReportsSchema, text, {
 		ignoreUnknownFields: true,

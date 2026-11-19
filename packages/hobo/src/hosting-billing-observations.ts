@@ -17,9 +17,6 @@ function resourceKey(row: HostingBillingResource) {
 	]);
 }
 
-/** Each record is one resource's disjoint charge allocation. Account-wide final
- * invoices must be partitioned by the trusted billing reader before reaching
- * this boundary; repeating a whole-account total for every resource overcounts. */
 export function aggregateHostingBillingObservations(input: {
 	readonly tenantId: string;
 	readonly operationId: string;

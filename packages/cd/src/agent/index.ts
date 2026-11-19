@@ -1,5 +1,3 @@
-// `@hobo/cd/agent` (WP11): agent enrollment with double opt-in, key-bound
-// JWT-SVIDs with DPoP, and the agent-side HTTP ReconcilerTransport.
 export * from "./dpop.js";
 export * from "./dpop-verifier.js";
 export * from "./egress.js";

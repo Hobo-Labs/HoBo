@@ -85,11 +85,6 @@ export interface AwsProviderOptions {
 	regions?: string[];
 }
 
-// The @hobo/provider-aws factory (HOBO-87 authoring contract): capability
-// declarations + the AWS equivalence map as default Resource Definitions,
-// realize() -> IacProgram for the primary Pulumi lane, a runtime client per
-// port, and the published Capability Manifest with declared cost facts and the
-// keyless AssumeRoleWithWebIdentity auth posture (HOBO-110 — no static keys).
 export function createAwsProvider(
 	options: AwsProviderOptions = {},
 ): CloudProvider {

@@ -1,7 +1,3 @@
-/**
- * Nightly plan: RESTler sequences + Toxiproxy/Testcontainers around
- * simulators. Never Azure/AWS/GCP/paid SaaS.
- */
 import { dockerAvailable, schemathesisAvailable } from "./env.js";
 
 export interface NightlyPlan {

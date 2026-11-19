@@ -1,7 +1,3 @@
-/**
- * Minimal SQLite driver surface shared by Node (`node:sqlite`) and browser
- * (SQLite WASM). Semantic logic never imports Node or browser APIs.
- */
 
 import { isJsonBigInt, isJsonNumber, isJsonString } from "./json.js";
 
@@ -32,10 +28,6 @@ export interface SqliteDriver {
 	readonly kind: "node" | "browser" | "memory" | "test";
 	exec(sql: string): void;
 	prepare(sql: string): SqliteStatement;
-	/**
-	 * Prefer BEGIN IMMEDIATE on native single-owner partitions.
-	 * Browser VFS may map this to BEGIN.
-	 */
 	beginImmediate(): void;
 	commit(): void;
 	rollback(): void;

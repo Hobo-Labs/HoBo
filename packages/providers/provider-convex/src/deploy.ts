@@ -1,10 +1,3 @@
-/**
- * Real Convex function deploy executor (ADR-0144 thin adapter).
- * Live paths:
- * - Cloud: broker-minted CONVEX_DEPLOY_KEY
- * - Self-host: CONVEX_SELF_HOSTED_URL + CONVEX_SELF_HOSTED_ADMIN_KEY
- * Default CI uses an injected runner — no live network. Mock is explicit only.
- */
 import path from "node:path";
 
 import { ConvexCredentialsError } from "./management-api.js";
@@ -29,7 +22,6 @@ export type DeployConvexAppInput = {
 	readonly selfHostedAdminKey?: string;
 	readonly deploymentName?: string;
 	readonly spawn?: ConvexSpawn;
-	/** When true, skip spawn and return a deterministic mock URL (CI only). */
 	readonly mock?: boolean;
 };
 
@@ -63,10 +55,6 @@ export function hasConvexSelfHostedCredentials(input: {
 	);
 }
 
-/**
- * Fail-closed when neither Cloud deploy key nor self-host URL+admin key.
- * Mock lane (`mock: true`) is explicit CI only — never silent success.
- */
 export async function deployConvexApp(
 	input: DeployConvexAppInput,
 ): Promise<DeployConvexAppResult> {

@@ -1,4 +1,3 @@
-// "./inventory" (WP22): Camp inventory, conditions, claims, taints and Camp sets (D19, D20).
 
 export {
 	AUTO_TAINTS,
