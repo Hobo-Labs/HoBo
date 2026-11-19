@@ -6,6 +6,7 @@ export {
 	BudgetPolicyRecordSchema,
 	BudgetScopeIdentityRecordSchema,
 } from "./_generated/budget_policy_pb.js";
+export { WrpcLinkManifestSchema } from "./_generated/wrpc_link_manifest_pb.js";
 export type {
 	CapabilityDenialCode,
 	CapabilityDiagnostic,
@@ -951,6 +952,8 @@ export type {
 	TransportKind,
 	WireVersion,
 	WitCodec,
+	WrpcLinkManifest,
+	WrpcLinkManifestEntry,
 	WrpcLinkPort,
 	WrpcTransport,
 } from "./ports/wrpc-link.js";

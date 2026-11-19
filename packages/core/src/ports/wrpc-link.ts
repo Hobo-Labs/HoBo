@@ -1,3 +1,8 @@
+import type {
+	WrpcLinkManifestWire as NegotiatedManifestWire,
+	WrpcLinkManifestEntry as WrpcLinkManifestEntryWire,
+	WrpcLinkManifest as WrpcLinkManifestWire,
+} from "../_generated/wrpc_link_manifest_pb.js";
 import { isJsonString, type JsonValue } from "../json.js";
 
 const SEMVER_RE =
@@ -82,6 +87,19 @@ export interface EstablishedLink {
 	readonly negotiatedWire: NegotiatedWire;
 }
 
+export type WrpcLinkManifestEntry = Readonly<
+	Omit<WrpcLinkManifestEntryWire, "$typeName" | "wire"> & {
+		wire: Readonly<Omit<NegotiatedManifestWire, "$typeName">>;
+	}
+>;
+
+export type WrpcLinkManifest = Readonly<
+	Omit<WrpcLinkManifestWire, "$typeName" | "schema" | "links"> & {
+		schema: "hobo.manifest.wrpc-links/v1";
+		links: readonly WrpcLinkManifestEntry[];
+	}
+>;
+
 export interface LinkEstablishedEvent {
 	type: "link.Established";
 	componentId: string;
@@ -125,6 +143,7 @@ export interface WrpcLinkPort {
 	registerComponent(c: ComponentRegistration): void;
 	registerProvider(p: ProviderRegistration): void;
 	establishLink(req: LinkRequest): EstablishedLink;
+	manifestIr(): WrpcLinkManifest;
 	callImport(
 		componentId: string,
 		importInterface: string,

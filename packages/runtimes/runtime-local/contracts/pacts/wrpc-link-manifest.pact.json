@@ -1,0 +1,75 @@
+{
+  "consumer": { "name": "WrpcLinkManifestReader" },
+  "provider": { "name": "RuntimeLocalWrpcLinks" },
+  "metadata": {
+    "pactSpecification": { "version": "4.0.0" },
+    "transport": "library-call"
+  },
+  "interactions": [
+    {
+      "description": "Read an established link's negotiated wire version",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "componentId": "api",
+            "providerId": "kv",
+            "interfaceId": "wasi:keyvalue/store@1.2.0",
+            "callerVersions": ["1.2.0", "1.3.0"],
+            "providerVersions": ["1.2.1", "1.3.2"],
+            "floor": "1.2.0"
+          }
+        }
+      },
+      "response": [{
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "schema": "hobo.manifest.wrpc-links/v1",
+            "links": [{
+              "componentId": "api",
+              "importInterface": "wasi:keyvalue/store@1.2.0",
+              "providerId": "kv",
+              "exportInterface": "wasi:keyvalue/store@1.2.0",
+              "wire": {
+                "interfaceId": "wasi:keyvalue/store@1.2.0",
+                "version": "1.3.0",
+                "minor": "1.3",
+                "stability": "stable",
+                "floor": "1.2.0"
+              }
+            }]
+          }
+        }
+      }],
+      "type": "Synchronous/Messages"
+    },
+    {
+      "description": "Read no link when negotiation is below the compatibility floor",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "componentId": "api",
+            "providerId": "kv",
+            "interfaceId": "wasi:keyvalue/store@1.2.0",
+            "callerVersions": ["1.2.0"],
+            "providerVersions": ["1.2.1"],
+            "floor": "1.3.0"
+          }
+        }
+      },
+      "response": [{
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": { "schema": "hobo.manifest.wrpc-links/v1", "links": [] }
+        }
+      }],
+      "type": "Synchronous/Messages"
+    }
+  ]
+}
