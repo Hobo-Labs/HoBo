@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
 	type ActorHost,
 	type ActorLease,
@@ -9,14 +10,16 @@ import {
 	parseLogicalActorIdentity,
 } from "@hobo/core";
 import type { ActorLocalJournal, JournalFactRecord } from "./journal.js";
-import type { RivetOutboxEffectInput } from "./outbox.js";
 import {
 	cloneAsJson,
 	isJsonNumber,
 	isJsonObject,
+	isJsonString,
+	type JsonObject,
 	type JsonValue,
 	parseJsonValue,
 } from "./json.js";
+import type { RivetOutboxEffectInput } from "./outbox.js";
 import {
 	type AcceptCommandResult,
 	type InboxCommand,
@@ -59,6 +62,10 @@ export class RivetLeaseConflictError extends Error {
 		this.name = "RivetLeaseConflictError";
 	}
 }
+
+const ACTOR_STATE_METADATA = JSON.stringify({
+	format: "hobo.rivet.actor-state/v1",
+});
 
 const COMMAND_EVENT_METADATA = JSON.stringify({
 	format: "hobo.rivet.command-event/v1",
@@ -200,10 +207,25 @@ export function createRivetActorHost(options: {
 	journal: ActorLocalJournal;
 	fidelity?: "local-sqlite" | "rivetkit";
 	legacyEventPayloads?: "command" | "event" | undefined;
+	tenantId?: string;
+	nowMs?: () => number;
+	leaseTtlMs?: number;
 }): RivetActorHost {
-	const leases = new Map<string, RivetActorLease>();
+	const leases = new Map<
+		string,
+		{ lease: RivetActorLease; holderId: string; fenceToken: bigint }
+	>();
 	const journal = options.journal;
-	let epoch = 0n;
+	const tenantId = options.tenantId ?? "local";
+	const leaseTtlMs = options.leaseTtlMs ?? 30_000;
+	if (!tenantId.trim() || !Number.isSafeInteger(leaseTtlMs) || leaseTtlMs <= 0)
+		throw new RivetJournalError("PARSE", "invalid actor host options");
+	const nowMs = options.nowMs ?? Date.now;
+	const stateStreamId = (key: string) => {
+		if (!key.trim())
+			throw new RivetJournalError("PARSE", "actor key is required");
+		return `rivet:state:${JSON.stringify([tenantId, key])}`;
+	};
 
 	const streamIdFor = (identity: LogicalActorIdentity): string =>
 		actorCompoundKey(identity).join("/");
@@ -212,46 +234,95 @@ export function createRivetActorHost(options: {
 		placementMode: "rivet",
 		fidelity: options.fidelity ?? "local-sqlite",
 		acquire(key, request) {
-			const held = leases.get(key);
-			if (held && held.holderId !== request.holderId) {
+			const streamId = stateStreamId(key);
+			const holderId = request.holderId;
+			const now = nowMs();
+			const expiresAt = new Date(now + leaseTtlMs).toISOString();
+			const acquired = journal.acquireLease(
+				streamId,
+				holderId,
+				now,
+				leaseTtlMs,
+			);
+			if (!acquired)
 				throw new RivetLeaseConflictError(
 					`rivet placement conflict for ${key}`,
 				);
-			}
-			epoch += 1n;
-			const lease: RivetActorLease = {
+			const lease: RivetActorLease = Object.freeze<RivetActorLease>({
 				key,
-				holderId: request.holderId,
-				fenceToken: epoch,
-				expiresAt: new Date(Date.now() + 30_000).toISOString(),
+				holderId,
+				fenceToken: acquired.fenceToken,
+				expiresAt,
 				placement: "rivet",
 				release() {
-					if (leases.get(key) === lease) leases.delete(key);
+					journal.releaseLease(streamId, holderId, acquired.fenceToken);
+					if (leases.get(key)?.lease === lease) leases.delete(key);
 				},
-			};
-			leases.set(key, lease);
+			});
+			leases.set(key, { lease, holderId, fenceToken: acquired.fenceToken });
 			return lease;
 		},
 		state(key, request) {
-			const events: FoldEvent[] = [];
+			const streamId = stateStreamId(key);
 			return {
 				append(lease, event) {
-					if (leases.get(key) !== lease) {
+					const current = leases.get(key);
+					if (!current || current.lease !== lease)
 						throw new RivetLeaseConflictError(`stale rivet lease for ${key}`);
-					}
-					events.push(event);
+					const record = cloneAsJson(event);
+					if (
+						!isJsonObject(record) ||
+						!isJsonString(record.type) ||
+						!record.type.trim()
+					)
+						throw new RivetJournalError(
+							"PARSE",
+							"actor event type is required",
+						);
+					const appended = journal.appendLeased(
+						streamId,
+						current.holderId,
+						current.fenceToken,
+						nowMs(),
+						[
+							{
+								type: record.type,
+								eventId: randomUUID(),
+								payload: new TextEncoder().encode(JSON.stringify(record)),
+								metadataJson: ACTOR_STATE_METADATA,
+								tenant: tenantId,
+							},
+						],
+					);
+					if (!appended)
+						throw new RivetLeaseConflictError(`stale rivet lease for ${key}`);
 					return {
 						streamId: key,
-						seq: events.length,
-						fenceToken: lease.fenceToken,
+						seq: appended.revision,
+						fenceToken: current.fenceToken,
 					};
 				},
 				read() {
+					const facts = journal.readFacts(streamId);
 					let state = request.initialState;
-					for (const event of events) {
-						state = request.fold(state, event);
+					for (const fact of facts) {
+						const event = parseJsonValue(
+							new TextDecoder().decode(fact.payload),
+						);
+						if (
+							fact.metadataJson !== ACTOR_STATE_METADATA ||
+							!isJsonObject(event) ||
+							!isJsonString(event.type) ||
+							event.type !== fact.type
+						)
+							throw new RivetJournalError(
+								"PARSE",
+								`invalid actor state event at ${key}:${fact.seq}`,
+							);
+						const record: JsonObject = event;
+						state = request.fold(state, { ...record, type: fact.type });
 					}
-					return { streamId: key, seq: events.length, state };
+					return { streamId: key, seq: facts.at(-1)?.seq ?? 0, state };
 				},
 			};
 		},
