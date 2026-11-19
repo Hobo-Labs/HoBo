@@ -38,8 +38,7 @@ export function lexComments(
 			dialect === "wit" ||
 			dialect === "prisma" ||
 			(dialect === "toml" && quote === '"') ||
-			(dialect === "sql" &&
-				(quote === "'" || quote === '"' || quote === "`"));
+			(dialect === "sql" && (quote === "'" || quote === '"' || quote === "`"));
 		while (index < text.length) {
 			if (
 				dialect === "sql" &&
@@ -51,8 +50,7 @@ export function lexComments(
 			}
 			if (text.startsWith(closer, index)) {
 				let end = index + closer.length;
-				if (dialect === "toml" && triple)
-					while (text[end] === quote) end++;
+				if (dialect === "toml" && triple) while (text[end] === quote) end++;
 				return end;
 			}
 			if (text[index] === "\\") {
