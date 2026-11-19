@@ -102,3 +102,18 @@ export function captureWorkflowResult<T>(result: T, step?: string): T {
 		);
 	}
 }
+
+export function readJournaledWorkflowResult(
+	result: JsonValue | undefined,
+): JsonValue | undefined {
+	if (result === undefined) return undefined;
+	return captureWorkflowValue(result);
+}
+
+export function terminalCompletedHandleResult<R>(
+	journaled: JsonValue | undefined,
+): R | undefined {
+	if (journaled === undefined) return undefined;
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: journaled payloads are re-validated through readJournaledWorkflowResult.
+	return journaled as R;
+}
