@@ -38,7 +38,8 @@ export function lexComments(
 			dialect === "wit" ||
 			dialect === "prisma" ||
 			(dialect === "toml" && quote === '"') ||
-			(dialect === "sql" && (quote === "'" || quote === "`"));
+			(dialect === "sql" &&
+				(quote === "'" || quote === '"' || quote === "`"));
 		while (index < text.length) {
 			if (
 				dialect === "sql" &&
@@ -74,7 +75,11 @@ export function lexComments(
 		let index = start;
 		let parentheses = interpolation ? 1 : 0;
 		while (index < text.length) {
-			if (text.startsWith(line, index)) {
+			if (
+				text.startsWith(line, index) &&
+				(dialect !== "sql" ||
+					/[\s\p{Cc}]/u.test(text[index + line.length] ?? ""))
+			) {
 				const end = text.indexOf("\n", index);
 				const stop = end < 0 ? text.length : end;
 				comments.push({

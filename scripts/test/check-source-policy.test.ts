@@ -16,6 +16,7 @@ import {
 	commentViolations,
 	documentViolation,
 } from "../check-source-policy.mts";
+import { lexComments } from "../source-comment-lexer.mts";
 
 const script = resolve("scripts/check-source-policy.mts");
 const scratch: string[] = [];
@@ -289,11 +290,27 @@ f: /* TODO: remove block */`;
 	});
 
 	it("handles MySQL backslash escapes in strings and quoted identifiers", () => {
-		const sql =
-			"SELECT 'it\\'s -- not a comment', `column\\` -- still an identifier`; -- explanation";
+		const sql = [
+			"SELECT 'it\\'s -- not a comment', `column\\` -- still an identifier`; -- explanation",
+			'SELECT "a\\" -- still a string"; -- explanation',
+		].join("\n");
 		assert.deepEqual(
-			commentViolations("x.sql", sql, new Set([1])).map((item) => item.message),
-			["make the code self-documenting instead of adding a comment"],
+			lexComments(sql, "sql").map((comment) => comment.text),
+			["-- explanation", "-- explanation"],
+		);
+	});
+
+	it("requires whitespace or a control character after MySQL line comment delimiters", () => {
+		const sql = [
+			"SELECT 1--2;",
+			"SELECT 3--4;",
+			"SELECT 5 -- explanation",
+			"SELECT 6 --\tcontrolled",
+			"SELECT 7 --",
+		].join("\n");
+		assert.deepEqual(
+			lexComments(sql, "sql").map((comment) => comment.text),
+			["-- explanation", "--\tcontrolled"],
 		);
 	});
 
