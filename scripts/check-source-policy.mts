@@ -588,7 +588,7 @@ function xmlComments(file: string, text: string): CommentLocation[] {
 			);
 			if (match) {
 				const name = match[2]?.toLowerCase();
-				if (match[1] === "/" && rawElement?.name === name) {
+				if (match[1] === "/" && rawElement && rawElement.name === name) {
 					const first = text.slice(0, rawElement.start).split("\n").length;
 					const fragment = masked.slice(rawElement.start, index).join("");
 					const extension = name === "script" ? ".ts" : ".css";
@@ -1084,7 +1084,7 @@ function isExperiencePlanningArtifact(file: string): boolean {
 type MarkdownTextNode = {
 	readonly type: string;
 	readonly value?: string;
-	readonly alt?: string | null;
+	readonly alt?: string | null | undefined;
 	readonly children?: readonly MarkdownTextNode[];
 };
 

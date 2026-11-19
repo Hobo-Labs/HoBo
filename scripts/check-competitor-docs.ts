@@ -101,11 +101,7 @@ export const REQUIRED_SECTIONS = [
 ] as const;
 
 /** Files under docs/competitors/ that are navigation or synthesis, not captures. */
-const NON_CAPTURE = new Set([
-	"index.md",
-	"matrix.md",
-	"metadata-contract.md",
-]);
+const NON_CAPTURE = new Set(["index.md", "matrix.md", "metadata-contract.md"]);
 
 const STALE_AFTER_DAYS = 180;
 const marker = (name: string, edge: "BEGIN" | "END") =>
