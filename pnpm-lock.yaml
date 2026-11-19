@@ -3304,6 +3304,12 @@ importers:
         specifier: 3.0.0
         version: 3.0.0(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0)
     devDependencies:
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../conformance
+      '@hobo/wit':
+        specifier: workspace:*
+        version: link:../../wit
       '@types/node':
         specifier: '>=24.0.0'
         version: 24.13.2

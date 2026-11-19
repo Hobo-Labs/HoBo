@@ -38,6 +38,9 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/runtime/test/durable-messaging-jspi-component.test.ts",
 			"packages/runtimes/runtime-rivet/src/distributed-journal.ts",
 			"packages/runtimes/runtime-rivet/test/distributed-journal.test.ts",
+			"packages/runtimes/runtime-rivet/model/DurableTopic.tla",
+			"packages/runtimes/runtime-rivet/model/DurableTopic.cfg",
+			"scripts/check-durable-topic-model.ts",
 			"packages/conformance/src/durable-messaging-conformance.ts",
 			"packages/conformance/test/durable-messaging-conformance.test.ts",
 			"packages/wit/wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
@@ -122,6 +125,7 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 	for (const checker of [
 		"scripts/test/bounded-tlc.test.ts",
 		"scripts/check-iac-models.ts",
+		"scripts/check-durable-topic-model.ts",
 		"packages/iac/iac-alchemy/model/check-rivet-queue.mts",
 		"packages/iac/iac-alchemy/model/check-rivet-kv.mts",
 		"packages/iac/iac-alchemy/model/check-rivet-http-kv.mts",
