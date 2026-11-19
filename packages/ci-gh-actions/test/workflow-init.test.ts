@@ -269,6 +269,22 @@ describe("planWorkflow deploy-like jobs", () => {
 		],
 		["a bare secrets context", "    if: ${{ secrets }}\n    steps: []\n"],
 		["inherited secrets", "    secrets: inherit\n"],
+		[
+			"a filter after GITHUB_TOKEN",
+			"    env:\n      TOKEN: ${{ secrets.GITHUB_TOKEN.* }}\n",
+		],
+		[
+			"a bracket filter after GITHUB_TOKEN",
+			"    env:\n      TOKEN: ${{ secrets['GITHUB_TOKEN'][*] }}\n",
+		],
+		[
+			"a property after GITHUB_TOKEN",
+			"    env:\n      TOKEN: ${{ secrets['GITHUB_TOKEN']['password'] }}\n",
+		],
+		[
+			"a hyphen continuing GITHUB_TOKEN",
+			"    env:\n      TOKEN: ${{ secrets.GITHUB_TOKEN-extra }}\n",
+		],
 	])("skips a job with %s", (_what, body) => {
 		expect(ready(body)).toEqual(["job skipped uses_secrets"]);
 		expect(ready(body, { includeSecretJobs: true })).toEqual(["job ready"]);
@@ -297,6 +313,10 @@ describe("planWorkflow deploy-like jobs", () => {
 		[
 			"GITHUB_TOKEN in brackets",
 			"    env:\n      GH_TOKEN: ${{ secrets['GITHUB_TOKEN'] }}\n",
+		],
+		[
+			"GITHUB_TOKEN in double quotes",
+			'    env:\n      GH_TOKEN: ${{ secrets["GITHUB_TOKEN"] }}\n',
 		],
 		["read permissions", "    permissions:\n      contents: read\n"],
 		["no id-token", "    permissions:\n      id-token: none\n"],
@@ -456,6 +476,91 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - run: echo \${{ toJSON(needs.publish) }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it.each([
+		"NEEDS.PUBLISH.OUTPUTS.value",
+		"Needs['Publish']['Outputs'].value",
+		"tojson(needs.publish)",
+		"toJSON((needs.publish))",
+		"TOJSON( ( NEEDS.PUBLISH ) )",
+	])("counts a case-insensitive secret output read %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("counts a needs id that differs only by case as a secret dependency", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    needs: Publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("counts a case-insensitive wildcard needs read when that job is needed", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    needs: Publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ TOJSON(NEEDS) }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ NEEDS.*.OUTPUTS.value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+			"lint ready",
+		]);
+	});
+
+	it("fails closed when a dynamic needs index differs by case", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ NEEDS[format('{0}', 'publish')]['OUTPUTS'].value }}
 `;
 		expect(standings(planOf(source))).toEqual([
 			"publish skipped uses_secrets",
@@ -1498,7 +1603,7 @@ ${caller}`;
 		]);
 	});
 
-	it("recognizes a router from a case-sensitive needs output", () => {
+	it("recognizes a router from a case-insensitive needs output", () => {
 		const source = `jobs:
   route:
     runs-on: ubuntu-24.04
@@ -1509,10 +1614,87 @@ ${caller}`;
     steps:
       - run: pnpm test
 `;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("recognizes a router from mixed-case needs keywords", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ NEEDS['ROUTE'].RESULT == 'success' && 'ubuntu-24.04' || 'ubuntu-22.04' }}
+    steps:
+      - run: pnpm test
+`;
 		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
 			job: "route",
-			verdict: "ready",
+			verdict: "skipped",
+			reason: "routes_jobs",
 		});
+	});
+
+	it("does not treat a case-folded dotted property path as a dotted job id", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  "route.v2":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs.Route.v2.outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.verdict]),
+		).toEqual([
+			["route", "ready"],
+			["route.v2", "ready"],
+			["called", "skipped"],
+		]);
+	});
+
+	it("treats a case-mismatched wildcard needs list as routing only that job", () => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  test:
+    needs: Route
+    runs-on: \${{ NEEDS.*.OUTPUTS.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["test", "skipped", "expression"],
+		]);
 	});
 
 	it("recognizes a router whose result selects the runner", () => {

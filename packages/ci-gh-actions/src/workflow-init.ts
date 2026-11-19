@@ -77,7 +77,7 @@ const EVERY_READY_JOB = "all";
 const EXPRESSION_OPEN = "${{";
 
 const SECRET_REFERENCE =
-	/\bsecrets\b\s*(?:(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\2\s*\]|\[))?/giu;
+	/\bsecrets\b\s*(?:(?:\.\s*(?:\*(?![A-Za-z0-9_])|([A-Za-z_][A-Za-z0-9_-]*)(?![\w.-]|[\s]*\[))|\[\s*(?:\*(?![A-Za-z0-9_])|(['"])([A-Za-z_][A-Za-z0-9_-]*)\2\s*\](?![\s]*(?:\.|\[)))|\[))?/giu;
 
 const PACKAGE_INSTALL = /\b(apt-get|apt|yum|dnf|apk)\s+(-\S+\s+)*install\b/u;
 
@@ -359,20 +359,34 @@ function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
+function caseFoldEscaped(escaped: string): string {
+	return escaped.replace(/[A-Za-z]/gu, (letter) => {
+		const lower = letter.toLowerCase();
+		const upper = letter.toUpperCase();
+		return `[${lower}${upper}]`;
+	});
+}
+
+function caseFoldLiteral(value: string): string {
+	return caseFoldEscaped(escapeRegExp(value));
+}
+
 function expressionDouble(value: string): string {
 	return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
 function quoteAlternatives(value: string): string {
-	const expressionSingle = `'${escapeRegExp(value.replaceAll("'", "''"))}'`;
-	const expressionDoubleQuoted = `"${escapeRegExp(expressionDouble(value))}"`;
-	const yamlDoubledSingle = escapeRegExp(
-		`'${value.replaceAll("'", "''")}'`.replaceAll("'", "''"),
+	const expressionSingle = `'${caseFoldEscaped(escapeRegExp(value.replaceAll("'", "''")))}'`;
+	const expressionDoubleQuoted = `"${caseFoldEscaped(escapeRegExp(expressionDouble(value)))}"`;
+	const yamlDoubledSingle = caseFoldEscaped(
+		escapeRegExp(`'${value.replaceAll("'", "''")}'`.replaceAll("'", "''")),
 	);
-	const yamlEscapedDouble = escapeRegExp(
-		`"${expressionDouble(value)}"`
-			.replaceAll("\\", "\\\\")
-			.replaceAll('"', '\\"'),
+	const yamlEscapedDouble = caseFoldEscaped(
+		escapeRegExp(
+			`"${expressionDouble(value)}"`
+				.replaceAll("\\", "\\\\")
+				.replaceAll('"', '\\"'),
+		),
 	);
 	return [
 		expressionSingle,
@@ -391,7 +405,7 @@ function patternMatches(pattern: string, text: string): boolean {
 }
 
 function propertyAccessPattern(name: string): string {
-	return String.raw`(?:\.\s*${name}\b|\[\s*(?:${quoteAlternatives(name)})\s*\])`;
+	return String.raw`(?:\.\s*${caseFoldLiteral(name)}\b|\[\s*(?:${quoteAlternatives(name)})\s*\])`;
 }
 
 function outputsAccessPattern(): string {
@@ -405,17 +419,17 @@ function routingAccessPattern(): string {
 function needsJobReferencePattern(jobId: string): string {
 	const index = String.raw`\[\s*(?:${quoteAlternatives(jobId)})\s*\]`;
 	const dot = DOT_JOB_ID.test(jobId)
-		? String.raw`\.\s*${escapeRegExp(jobId)}(?![\w-])|`
+		? String.raw`\.\s*${caseFoldLiteral(jobId)}(?![\w-])|`
 		: "";
-	return String.raw`\bneeds\s*(?:${dot}${index})`;
+	return String.raw`\b${caseFoldLiteral("needs")}\s*(?:${dot}${index})`;
 }
 
 function needsWildcardPattern(): string {
 	const index = String.raw`\[\s*(?:${quoteAlternatives("*")}|\*)\s*\]`;
-	return String.raw`\bneeds\s*(?:\.\s*\*|${index})`;
+	return String.raw`\b${caseFoldLiteral("needs")}\s*(?:\.\s*\*|${index})`;
 }
 
-const DYNAMIC_NEEDS_INDEX = String.raw`\bneeds\s*\[(?!\s*['"\\])`;
+const DYNAMIC_NEEDS_INDEX = String.raw`\b${caseFoldLiteral("needs")}\s*\[(?!\s*['"\\])`;
 
 function classifyNeedsItem(
 	workflow: Workflow,
@@ -449,9 +463,21 @@ function readNeeds(workflow: Workflow, job: YAMLMap): NeedsRead {
 	};
 }
 
+function sameJobId(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase();
+}
+
 function needsCanSee(needs: NeedsRead, jobId: string): boolean {
 	if (!needs.present || needs.opaque) return needs.present;
-	return needs.ids.includes(jobId);
+	return needs.ids.some((id) => sameJobId(id, jobId));
+}
+
+function toJsonCallPattern(argument: string): string {
+	return (
+		String.raw`\b${caseFoldLiteral("toJSON")}\s*\(\s*(?:\(\s*)*` +
+		argument +
+		String.raw`\s*(?:\)\s*)*\)`
+	);
 }
 
 function referencesNeedsOutputs(
@@ -466,22 +492,14 @@ function referencesNeedsOutputs(
 		return true;
 	}
 	if (
-		patternMatches(
-			String.raw`\btoJSON\s*\(\s*` +
-				`${needsJobReferencePattern(jobId)}` +
-				String.raw`\s*\)`,
-			text,
-		)
+		patternMatches(toJsonCallPattern(needsJobReferencePattern(jobId)), text)
 	) {
 		return true;
 	}
 	const open =
 		patternMatches(`${needsWildcardPattern()}\\s*${outputs}`, text) ||
-		patternMatches(String.raw`\btoJSON\s*\(\s*needs\s*\)`, text) ||
-		patternMatches(
-			String.raw`\btoJSON\s*\(\s*${needsWildcardPattern()}\s*\)`,
-			text,
-		);
+		patternMatches(toJsonCallPattern(caseFoldLiteral("needs")), text) ||
+		patternMatches(toJsonCallPattern(needsWildcardPattern()), text);
 	if (open && needsCanSee(needs, jobId)) return true;
 	return patternMatches(
 		`${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]\\s*${outputs}`,
@@ -511,7 +529,11 @@ function computeSecretJobIds(
 				grew = true;
 				continue;
 			}
-			if (needs.ids.some((need) => secret.has(need))) {
+			if (
+				needs.ids.some((need) =>
+					[...secret].some((secretId) => sameJobId(secretId, need)),
+				)
+			) {
 				secret.add(id);
 				grew = true;
 				continue;
