@@ -52,7 +52,12 @@ export function lexComments(
 				index += 2;
 				continue;
 			}
-			if (text.startsWith(closer, index)) return index + closer.length;
+			if (text.startsWith(closer, index)) {
+				let end = index + closer.length;
+				if (dialect === "toml" && triple)
+					while (text[end] === quote) end++;
+				return end;
+			}
 			if (text[index] === "\\") {
 				const prefix = "\\" + "#".repeat(hashes);
 				if (cue && text.startsWith(prefix + "(", index)) {

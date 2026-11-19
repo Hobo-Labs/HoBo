@@ -248,6 +248,18 @@ f: /* TODO: remove block */`;
 			),
 			[1, 4],
 		);
+		for (const text of [
+			'a = """# data"""" # explanation',
+			'a = """# data""""" # explanation',
+			"a = '''# data'''' # explanation",
+			"a = '''# data''''' # explanation",
+		])
+			assert.deepEqual(
+				commentViolations("x.toml", text, new Set([1])).map(
+					(item) => item.line,
+				),
+				[1],
+			);
 		assert.equal(
 			commentViolations(
 				"x.yaml",
