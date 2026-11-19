@@ -55,11 +55,14 @@ state = safe(active, bucket_unit, bucket_period, claim_unit, claim_period)
 checks = [
     prove(
         "admit claim in the observed scope",
-        [claim_unit == bucket_unit, claim_period == bucket_period],
-        Implies(
+        [
             Not(active),
-            And(next_unit == bucket_unit, next_period == bucket_period, claim_unit == bucket_unit, claim_period == bucket_period),
-        ),
+            claim_unit == bucket_unit,
+            claim_period == bucket_period,
+            next_unit == bucket_unit,
+            next_period == bucket_period,
+        ],
+        And(next_unit == claim_unit, next_period == claim_period),
     ),
     prove(
         "revise scope while retaining active claims",
@@ -73,8 +76,20 @@ checks = [
     ),
     prove(
         "remove a terminal claim from the active projection",
-        [state, Or(Not(active), And(bucket_unit == claim_unit, bucket_period == claim_period))],
-        Implies(Not(active), And(bucket_unit == claim_unit, bucket_period == claim_period)),
+        [
+            claim_unit == bucket_unit,
+            claim_period == bucket_period,
+            *configure_guards,
+        ],
+        Implies(
+            Not(active),
+            And(
+                bucket_unit == claim_unit,
+                bucket_period == claim_period,
+                next_unit == bucket_unit,
+                next_period == bucket_period,
+            ),
+        ),
     ),
 ]
 sys.exit(0 if all(checks) else 1)

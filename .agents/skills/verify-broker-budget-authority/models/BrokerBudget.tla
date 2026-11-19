@@ -16,11 +16,9 @@ Init == /\ phase = [r \in Requests |-> "new"]
         /\ usage = [r \in Requests |-> 0] /\ badAdmission = FALSE
 Reserve == \E r \in Requests:
            /\ phase[r] = "new"
-           /\ IF Spent + Held + 1 <= 1
-                THEN /\ phase' = [phase EXCEPT ![r] = "held"]
-                     /\ UNCHANGED badAdmission
-                ELSE /\ badAdmission' = TRUE
-                     /\ UNCHANGED <<phase, claimed, evidence, unusedEvidence, usage>>
+           /\ Spent + Held + 1 <= 1
+           /\ phase' = [phase EXCEPT ![r] = "held"]
+           /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage, badAdmission>>
 Settle == \E r \in Requests, amount \in {0, 1, 2}:
           /\ phase[r] \in {"held", "uncertain"} /\ claimed[r] /\ evidence[r]
           /\ phase' = [phase EXCEPT ![r] = "settled"]
