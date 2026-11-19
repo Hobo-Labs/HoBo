@@ -15,8 +15,6 @@ enum PatternMaturity {
   PATTERN_MATURITY_STABLE = 1;
   PATTERN_MATURITY_PARTIAL = 2;
   PATTERN_MATURITY_EXPERIMENTAL = 3;
-  PATTERN_MATURITY_LEGACY = 4;
-  PATTERN_MATURITY_DEPRECATED = 5;
 }
 
 enum RenderingKind {
@@ -187,7 +185,6 @@ message PatternManifest {
   repeated PatternProvenance provenance = 21;
   repeated string limitations = 22;
   repeated ValidationObligation validations = 23;
-  string replacement_id = 24;
   string content_digest = 26;
 }
 

@@ -46,8 +46,6 @@ const MATURITY = {
 	stable: PatternMaturity.STABLE,
 	partial: PatternMaturity.PARTIAL,
 	experimental: PatternMaturity.EXPERIMENTAL,
-	legacy: PatternMaturity.LEGACY,
-	deprecated: PatternMaturity.DEPRECATED,
 } satisfies Record<string, PatternMaturity>;
 
 const RENDER = {
@@ -253,7 +251,6 @@ export function parsePatternManifest<T>(input: T): PatternManifest {
 		provenance,
 		limitations: strings(rec.limitations),
 		validations: [],
-		replacementId: optStr(rec.replacementId),
 		contentDigest: "",
 	});
 }
