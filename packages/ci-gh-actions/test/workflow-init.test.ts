@@ -1593,4 +1593,54 @@ ${caller}`;
 		);
 		expect(plan.jobs[0]?.verdict).toBe("ready");
 	});
+
+	it("does not treat a job id that is an invalid regex as a router unless another job reads it", () => {
+		const untouched = `jobs:
+  "(?":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  plain:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+`;
+		expect(
+			planWorkflow("ci.yml", untouched).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["(?", "ready", undefined],
+			["plain", "ready", undefined],
+		]);
+
+		const referenced = `jobs:
+  "(?":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs['(?'].outputs.runner }}
+    steps:
+      - run: pnpm test
+  plain:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+`;
+		expect(
+			planWorkflow("ci.yml", referenced).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["(?", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+			["plain", "ready", undefined],
+		]);
+	});
+
 });
