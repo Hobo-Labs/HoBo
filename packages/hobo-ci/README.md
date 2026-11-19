@@ -105,9 +105,10 @@ copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
 
 `isolatedOwnerFetch(env, options)` sends each request in a child process. It
 buffers the response before resolving and defaults to a 1 MiB response limit;
-`maxResponseBytes` accepts an integer from zero through 32 MiB. Request bodies
-over 32 MiB are refused before the child starts. URL, header, certificate and
-encoded-packet limits can also refuse a request before the child starts.
+`maxResponseBytes` accepts an integer from zero through 32 MiB. Request bodies,
+including streams, are fully buffered before the child starts; bodies over
+32 MiB are refused. URL, header, certificate and encoded-packet limits can also
+refuse a request before the child starts.
 It isolates request diagnostics from the parent process; it is not connected to
 a verified production owner session. Requests require HTTPS, and automatic
 redirects stay within the original origin so credential headers do not cross
@@ -119,8 +120,10 @@ Configured proxies with URL credentials must use HTTPS, even when a bypass
 list is present; unauthenticated HTTP CONNECT proxies remain supported. Each
 private request permits at most 32 proxy connection attempts; exhaustion after
 dispatch has an uncertain outcome.
-The `env` argument is read when the transport is constructed. Proxy selection
-uses the first nonempty `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, or `all_proxy`;
+The `env` argument is read when the transport is constructed. A proxy value that
+is not a valid HTTP(S) URL throws `HOBO_SETTING_INVALID` synchronously during
+construction. Proxy selection uses the first nonempty `HTTPS_PROXY`,
+`https_proxy`, `ALL_PROXY`, or `all_proxy`;
 the bypass list uses `NO_PROXY` then `no_proxy`. The extra CA bundle uses
 `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, then `REQUESTS_CA_BUNDLE`.
 Oversized responses and cancellation after dispatch fail with an uncertain
