@@ -3,6 +3,7 @@ import {
 	createDispatcherRegistry,
 	decideCreditDispatch,
 } from "@hobo/dispatcher";
+import { allocationQuote } from "@hobo/pricing";
 import type {
 	Account,
 	CiRoutingRefusal as CiRoutingRefusalWire,
@@ -10,7 +11,6 @@ import type {
 	Offer,
 	SandboxAllowance,
 } from "./_generated/ci_pb.js";
-import { allocationQuote } from "./accounting.js";
 import {
 	ciBudgetIdentity,
 	ciBudgetPolicy,

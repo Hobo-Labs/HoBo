@@ -4,7 +4,7 @@ Pure provider-cost rating for HoBo routing and FinOps. It models provider
 commercial terms only; customer billing, payments, tax, and invoices are out of
 scope.
 
-## Batch 2 surface
+## Quote engine
 
 `QuoteEngine.quote(scenario)` (also available as `quoteScenario(scenario)`)
 accepts the generated `QuoteScenario` protobuf type and returns
@@ -25,20 +25,18 @@ candidate snapshots use the same pinned state; incremental amounts are
 - No wall clock, network, environment, locale, or live provider calls.
 - New agreements and cancellation are denied unless explicitly enabled.
 
-`@hobo/pricing/legacy` exports the moved CI allocation and sandbox translators.
-Their function bodies are unchanged, and `legacy_ci.proto` mirrors the two
-CI-owned protobuf records with identical type names, fields, and wire numbers.
-The CI package preserves its original imports through thin re-exports.
+`allocationQuote` and `divideDecimalAtMost` provide exact allocation
+arithmetic for CI routing.
 
 `ExternalProviderQuote` is an evidence record, not an executable pricing model.
 `external-quote.ts` always rejects attempts to turn one into a rating engine.
 `@hobo/dispatcher` ranks pricing quotes with `decidePricedDispatch`. CI sandbox
-accounting is available from `@hobo/pricing/legacy`.
+accounting is available from `@hobo/ci`.
 
-## Phases 2–5 surface
+## Integrations
 
-- **`@hobo/pricing/legacy`**: moved CI decimal accounting (`allocationQuote`,
-  `divideDecimalAtMost`); `@hobo/ci` re-exports preserve import paths.
+- **Allocation arithmetic**: `allocationQuote` and `divideDecimalAtMost`
+  calculate reserved and paid runner usage.
 - **`decidePricedDispatch`**: ranks registered providers by minimum incremental
   billed amount from `quoteScenario`.
 - **Adversarial §13**: fixtures 10.1–10.11 (including stale observation,
@@ -48,7 +46,7 @@ accounting is available from `@hobo/pricing/legacy`.
 - **Broker / cloud**: `authorizeBillingSpend` prefers quote incremental USD;
   `pricingCatalogHashFromCommercialRefs` hashes commercial product refs without
   altering resource `catalogHashOf`.
-- **`@hobo/pricing/sync`**: offline provider billing sync adapter (§12 Phase 5).
+- **`@hobo/pricing/sync`**: offline provider billing sync adapter.
   Imports FOCUS-shaped rows through a `ProviderBillingPort`, dedupes by provider
   charge id, emits dated `hobo.pricing.billing-sync.snapshot/v1` snapshots,
   variance facts, and `ReconciliationRecorded` events. Missing fields, partial

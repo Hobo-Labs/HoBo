@@ -24,10 +24,8 @@ each peer in its provider's Yard and connects it through a Junction; the Bindles
 do not choose a provider or authorize a deployment. The repair schedule's
 declared cadence publishes to the relay's repair queue, not a separate endpoint.
 
-The legacy allocation and sandbox quote implementations live behind
-`@hobo/pricing/legacy`. The original `src/accounting.ts` and
-`src/sandbox-pricing.ts` imports remain as thin re-exports, preserving the CI
-public API and existing reservation/settlement behavior.
+Allocation arithmetic is provided by `@hobo/pricing`. Sandbox quotes use CI
+records and are available from `@hobo/ci`.
 
 A Sandbox offer requires a trusted current rate card for CPU, provisioned
 memory, creation, network, proxy, bootstrap and any host charges. The quote reserves
@@ -192,9 +190,8 @@ records measured consumption no greater than those quantities, so a later job
 cannot reuse the same credits. Missing allowance evidence counts as zero free
 units. An observation is only as reliable as its publisher; this accounting
 alone does not verify vendor entitlements or billed usage. Exact decimal
-allocation helpers (`allocationQuote`, `divideDecimalAtMost`) are implemented in
-`@hobo/pricing/legacy` and re-exported from this package for compatibility.
-The package root also exports `allocationQuote`, the isolated-retirement
+allocation helpers (`allocationQuote`, `divideDecimalAtMost`) are available from
+`@hobo/pricing`. The CI package root exports the isolated-retirement
 transition check (`isIsolatedRetirementTransition`) and the webhook envelope
 parser (`parseWebhookEnvelope`, `isWebhookDeliveryId`), so a store outside this
 package, such as the hosted relay's

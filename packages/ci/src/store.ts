@@ -12,8 +12,8 @@ import {
 	type BudgetSettlementEvidence,
 } from "@hobo/broker";
 import type { BudgetPolicyEvaluationContext } from "@hobo/core";
+import { allocationQuote } from "@hobo/pricing";
 import { z } from "zod";
-import { allocationQuote } from "./accounting.js";
 import {
 	accountEventPage,
 	type EventCursor,

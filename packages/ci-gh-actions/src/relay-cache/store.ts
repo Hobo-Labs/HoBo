@@ -5,7 +5,6 @@ import {
 	type Account,
 	AccountSchema,
 	accountEventPage,
-	allocationQuote,
 	type CiEvent,
 	type CiEventPage,
 	CiEventSchema,
@@ -53,6 +52,7 @@ import {
 	type EphemeralTtlMs,
 	type EphemeralVersion,
 } from "@hobo/core";
+import { allocationQuote } from "@hobo/pricing";
 import {
 	RelayCacheAssignmentSchema,
 	RelayCacheDeliverySchema,

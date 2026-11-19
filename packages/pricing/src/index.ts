@@ -1,3 +1,4 @@
+export * from "./allocation.js";
 export * from "./catalog.js";
 export * from "./decimal.js";
 export * from "./external-quote.js";
