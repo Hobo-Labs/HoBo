@@ -244,6 +244,7 @@ export async function composeCdHost(
 			if (!allowRecord()) return;
 			try {
 				const expectedSeq = await hostPassRevision();
+				if (!allowRecord()) return;
 				await runtime.store.append(hostPassStream, [event], {
 					expectedSeq,
 					actor: servicePrincipal,
