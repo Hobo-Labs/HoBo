@@ -1,44 +1,72 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ZodType } from "zod";
 
 type SetValue<T> = T | ((val: T) => T);
+
+function readStoredValue<T>(
+  key: string,
+  initialValue: T,
+  schema: ZodType<T>,
+): T {
+  if (!globalThis.window) {
+    return initialValue;
+  }
+  try {
+    const item = window.localStorage.getItem(key);
+    if (item === null) {
+      return initialValue;
+    }
+    return schema.parse(JSON.parse(item));
+  } catch {
+    return initialValue;
+  }
+}
 
 export function useLocalStorage<T>(
   key: string,
   initialValue: T,
+  schema: ZodType<T>,
 ): [T, (value: SetValue<T>) => void] {
-  // State to store our value
-  // Pass  initial state function to useState so logic is only executed once
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    if (window === undefined) {
-      return initialValue;
-    }
+  const [storedValue, setStoredValue] = useState<T>(() =>
+    readStoredValue(key, initialValue, schema),
+  );
+  const skipPersist = useRef(true);
 
-    try {
-      // Get from local storage by key
-      const item = window.localStorage.getItem(key);
-      // Parse stored json or if none return initialValue
-      // SAFETY: assertion to `JSON.parse(item) as T` is required at this boundary.
-      return item ? (JSON.parse(item) as T) : initialValue;
-    } catch (error) {
-      // If error also return initialValue
-      console.log(error);
-      return initialValue;
-    }
-  });
-
-  // useEffect to update local storage when the state changes
   useEffect(() => {
+    if (!globalThis.window) {
+      return;
+    }
+    skipPersist.current = true;
     try {
-      // Allow value to be a function so we have same API as useState
-      const valueToStore =
-        (Object.prototype.toString.call(storedValue) === "[object Function]" || Object.prototype.toString.call(storedValue) === "[object AsyncFunction]")
-          ? storedValue(storedValue)
-          : storedValue;
-      // Save state
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      const item = window.localStorage.getItem(key);
+      if (item === null) {
+        setStoredValue(initialValue);
+        window.localStorage.setItem(key, JSON.stringify(initialValue));
+        return;
+      }
+      setStoredValue(schema.parse(JSON.parse(item)));
+    } catch {
+      setStoredValue(initialValue);
+      window.localStorage.setItem(key, JSON.stringify(initialValue));
+    }
+  }, [key, initialValue, schema]);
+
+  useEffect(() => {
+    if (!globalThis.window) {
+      return;
+    }
+    if (skipPersist.current) {
+      skipPersist.current = false;
+      return;
+    }
+    try {
+      const item = window.localStorage.getItem(key);
+      const serialized = JSON.stringify(storedValue);
+      if (item !== serialized) {
+        window.localStorage.setItem(key, serialized);
+      }
     } catch (error) {
-      // A more advanced implementation would handle the error case
-      console.log(error);
+      console.warn("Unable to save preference", error);
     }
   }, [key, storedValue]);
 
