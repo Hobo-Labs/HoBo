@@ -104,13 +104,9 @@ function names(args: string[], filter: string): string[] {
 }
 
 function addedLineCounts(args: string[]): Map<string, number> {
-	const entries = git([
-		...args,
-		"--no-renames",
-		"--numstat",
-		"-z",
-		"--",
-	]).split("\0");
+	const entries = git([...args, "--no-renames", "--numstat", "-z", "--"]).split(
+		"\0",
+	);
 	const counts = new Map<string, number>();
 	for (const entry of entries) {
 		const firstTab = entry.indexOf("\t");
@@ -123,7 +119,7 @@ function addedLineCounts(args: string[]): Map<string, number> {
 	return counts;
 }
 
-function linearRelink(before: string, after: string): boolean {
+function relocationRelink(before: string, after: string): boolean {
 	const links = /\]\(([^)]+)\)/gu;
 	const previous = [...before.matchAll(links)].map((match) => match[1]);
 	const next = [...after.matchAll(links)].map((match) => match[1]);
@@ -134,14 +130,21 @@ function linearRelink(before: string, after: string): boolean {
 		return false;
 	let changed = false;
 	for (let index = 0; index < previous.length; index++) {
-		if (previous[index] === next[index]) continue;
-		if (!next[index]?.startsWith("https://linear.app/")) return false;
+		const target = next[index];
+		if (previous[index] === target) continue;
+		if (
+			!target ||
+			!/^https:\/\/(?:linear\.app\/|github\.com\/Hobo-Labs\/HoBo\/blob\/[\da-f]{40}\/)/u.test(
+				target,
+			)
+		)
+			return false;
 		changed = true;
 	}
 	return changed;
 }
 
-function removalOrLinearRelink(args: string[], file: string): boolean {
+function removalOrRelocationRelink(args: string[], file: string): boolean {
 	const patch = git([
 		...args,
 		"--no-color",
@@ -158,7 +161,9 @@ function removalOrLinearRelink(args: string[], file: string): boolean {
 		if (line.startsWith("+")) added.push(line.slice(1));
 	}
 	for (const line of added) {
-		const index = removed.findIndex((previous) => linearRelink(previous, line));
+		const index = removed.findIndex((previous) =>
+			relocationRelink(previous, line),
+		);
 		if (index < 0) return false;
 		removed.splice(index, 1);
 	}
@@ -433,7 +438,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			/\.mdx?$/iu.test(file) &&
 			!(
 				modified.has(file) &&
-				(deletionOnly || removalOrLinearRelink(args, file))
+				(deletionOnly || removalOrRelocationRelink(args, file))
 			) &&
 			parents.every((parent) => parent.files.has(file))
 		) {
