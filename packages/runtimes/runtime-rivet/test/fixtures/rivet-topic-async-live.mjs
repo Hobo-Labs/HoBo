@@ -12,8 +12,8 @@ import {
 	createDurableMessagingLimitsGrant,
 	createDurableMessagingPortMetadataGrant,
 	createDurableMessagingWitHost,
-	DURABLE_MESSAGING_JSPI_INTERFACE,
-	instantiateDurableMessagingJspi,
+	DURABLE_MESSAGING_WIT_INTERFACE,
+	instantiateDurableMessagingAsync,
 } from "../../../../runtime/src/durable-messaging-host.ts";
 import {
 	createRivetDurableTopicBusActor,
@@ -210,7 +210,7 @@ const componentBytes = await readFile(
 const actualDigest = `sha256:${createHash("sha256").update(componentBytes).digest("hex")}`;
 if (
 	actualDigest !== expectedDigest ||
-	JSON.stringify(imports) !== JSON.stringify([DURABLE_MESSAGING_JSPI_INTERFACE])
+	JSON.stringify(imports) !== JSON.stringify([DURABLE_MESSAGING_WIT_INTERFACE])
 )
 	throw new Error("component metadata mismatch");
 const generatedPath = join(outputDirectory, "probe.js");
@@ -321,7 +321,7 @@ try {
 		imports: Object.freeze(imports),
 		instantiate: factory,
 	});
-	const started = await instantiateDurableMessagingJspi(host, {
+	const started = await instantiateDurableMessagingAsync(host, {
 		component,
 		verify: (candidate, boundHost) =>
 			componentGrantActive &&
@@ -329,7 +329,7 @@ try {
 			candidate.digest === actualDigest &&
 			candidate.instantiate === factory &&
 			candidate.imports.length === 1 &&
-			candidate.imports[0] === DURABLE_MESSAGING_JSPI_INTERFACE &&
+			candidate.imports[0] === DURABLE_MESSAGING_WIT_INTERFACE &&
 			frozenArtifactDigest === digestArtifacts(),
 	});
 	if (started.status !== "started") throw new Error("component did not start");
@@ -376,7 +376,7 @@ try {
 	providerMetadataGrant.revoke();
 	let revokedLimits = false;
 	try {
-		host.limits();
+		await host.limits();
 	} catch {
 		revokedLimits = true;
 	}
@@ -400,7 +400,7 @@ try {
 	)
 		throw new Error("Rivet client not exercised");
 	process.stdout.write(
-		"rivet-jspi-bus-live-ok component=observed actor=observed host-grants=fixture source-fence=unverified owner-fence=unverified ingress=unverified process-restart=unverified fault-placement=unverified",
+		"rivet-async-bus-live-ok component=observed actor=observed host-grants=fixture source-fence=unverified owner-fence=unverified ingress=unverified process-restart=unverified fault-placement=unverified",
 	);
 } catch (error) {
 	process.stderr.write(`Rivet engine log:\n${engineLog}\n`);

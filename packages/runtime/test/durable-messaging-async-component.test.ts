@@ -7,51 +7,55 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
-import { DURABLE_MESSAGING_JSPI_INTERFACE } from "../src/durable-messaging-host.js";
+import { DURABLE_MESSAGING_WIT_INTERFACE } from "../src/durable-messaging-host.js";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const witRoot = join(packageRoot, "..", "wit");
 const requireFromWit = createRequire(join(witRoot, "package.json"));
 const jcoApi = requireFromWit.resolve("@bytecodealliance/jco");
-const componentize = join(
-	dirname(dirname(dirname(jcoApi))),
-	"componentize-js/src/componentize.js",
-);
+const componentize = requireFromWit.resolve("componentize-qjs");
+const jcoTranspile = requireFromWit.resolve("@bytecodealliance/jco-transpile");
 const jcoCli = join(dirname(jcoApi), "jco.js");
 
-it("executes a verified real JSPI component across delayed and lost replies", async () => {
-	const dir = await mkdtemp(join(tmpdir(), "hobo-messaging-jspi-"));
+it("executes a verified native async component across delayed and lost replies", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "hobo-messaging-async-"));
 	try {
 		const original = await readFile(
 			join(
 				witRoot,
-				"wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
+				"wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
 			),
 			"utf8",
 		);
 		const witPath = join(dir, "probe.wit");
 		await writeFile(
 			witPath,
-			`${original}\nworld bridge-test {\n  import messaging;\n  export run: func() -> string;\n}\n`,
+			`${original}\nworld bridge-test {\n  import messaging;\n  export run: async func() -> string;\n}\n`,
 		);
-		const guest = `import { ensureTopic, publish, consume } from '${DURABLE_MESSAGING_JSPI_INTERFACE}';
-export function run() {
+		const guest = `import { limits, ensureTopic, publish, consume } from '${DURABLE_MESSAGING_WIT_INTERFACE}';
+export async function run() {
+  if ((await limits()).nameBytes !== 128) throw new Error('unexpected messaging limits');
   const request = { operation: { id: 'v1.2000000000000.abcdefghijklmnop', expiresAtMs: 2000000000000n }, topic: 'orders' };
-  const lost = ensureTopic(request);
-  const replay = ensureTopic(request);
-  const published = publish({ operation: { id: 'v1.2000000000000.publishnonce1234', expiresAtMs: 2000000000000n }, topic: 'orders', message: { id: 'msg', subject: 'created', payload: new Uint8Array([4, 5]), attributes: [] } });
-  const received = consume({ operation: { id: 'v1.2000000000000.consumenonce1234', expiresAtMs: 2000000000000n }, topic: 'orders', consumerGroup: 'workers', maxMessages: 1, visibilityTimeoutMs: 10n });
+  const lost = await ensureTopic(request);
+  const replay = await ensureTopic(request);
+  const published = await publish({ operation: { id: 'v1.2000000000000.publishnonce1234', expiresAtMs: 2000000000000n }, topic: 'orders', message: { id: 'msg', subject: 'created', payload: new Uint8Array([4, 5]), attributes: [] } });
+  const received = await consume({ operation: { id: 'v1.2000000000000.consumenonce1234', expiresAtMs: 2000000000000n }, topic: 'orders', consumerGroup: 'workers', maxMessages: 1, visibilityTimeoutMs: 10n });
   return lost.tag + ':' + replay.tag + ':' + replay.val.topic + ':' + published.val.sequence + ':' + received.val[0].message.payload[0];
 }`;
 		const binaryPath = join(dir, "probe.wasm");
 		const builderPath = join(dir, "build.mjs");
+		const out = join(dir, "compiled");
 		await writeFile(
 			builderPath,
 			`import { componentize } from ${JSON.stringify(pathToFileURL(componentize).href)};
+import { transpile, writeFiles } from ${JSON.stringify(pathToFileURL(jcoTranspile).href)};
 import { writeFile } from 'node:fs/promises';
-const built = await componentize(${JSON.stringify(guest)}, { witPath: ${JSON.stringify(witPath)}, worldName: 'bridge-test', sourceName: 'guest.js', disableFeatures: ['stdio', 'random', 'clocks', 'http', 'fetch-event'], env: { XDG_CACHE_HOME: ${JSON.stringify(dir)} } });
+const built = await componentize({ witPath: ${JSON.stringify(witPath)}, jsSource: ${JSON.stringify(guest)}, world: 'bridge-test', stubWasi: true });
 await writeFile(${JSON.stringify(binaryPath)}, built.component);
+const operations = ['limits', 'ensure-topic', 'ensure-subscription', 'publish', 'consume', 'ack', 'nack', 'compact', 'events'];
+const output = await transpile(${JSON.stringify(binaryPath)}, { name: 'probe', instantiation: 'async', asyncMode: 'jspi', asyncImports: operations.map((operation) => ${JSON.stringify(DURABLE_MESSAGING_WIT_INTERFACE)} + '#' + operation), asyncExports: ['run'], wasiShim: false });
+await writeFiles(output.files, { baseDir: ${JSON.stringify(out)} });
 `,
 		);
 		await execFileAsync(process.execPath, [builderPath], {
@@ -69,40 +73,8 @@ await writeFile(${JSON.stringify(binaryPath)}, built.component);
 		const imports = [...metadata.matchAll(/^\s*import ([^;]+);/gmu)].map(
 			(match) => match[1],
 		);
-		expect(imports).toEqual([DURABLE_MESSAGING_JSPI_INTERFACE]);
-		const out = join(dir, "compiled");
-		const operations = [
-			"ensure-topic",
-			"ensure-subscription",
-			"publish",
-			"consume",
-			"ack",
-			"nack",
-			"compact",
-			"events",
-		];
-		await execFileAsync(
-			process.execPath,
-			[
-				jcoCli,
-				"transpile",
-				binaryPath,
-				"-o",
-				out,
-				"--instantiation",
-				"async",
-				"--async-mode",
-				"jspi",
-				"--async-imports",
-				...operations.map(
-					(operation) => `${DURABLE_MESSAGING_JSPI_INTERFACE}#${operation}`,
-				),
-				"--async-exports",
-				"run",
-				"--no-wasi-shim",
-			],
-			{ cwd: packageRoot, timeout: 120_000, maxBuffer: 2_000_000 },
-		);
+		expect(imports).toEqual([DURABLE_MESSAGING_WIT_INTERFACE]);
+
 		const driver = join(dir, "driver.mjs");
 		const hostUrl = pathToFileURL(
 			join(packageRoot, "src/durable-messaging-host.ts"),
@@ -114,7 +86,7 @@ await writeFile(${JSON.stringify(binaryPath)}, built.component);
 		await writeFile(
 			driver,
 			`import { readFile } from 'node:fs/promises';
-import { createDurableMessagingWitHost, createDurableMessagingLifecycle, createDurableMessagingLimitsGrant, instantiateDurableMessagingJspi, DURABLE_MESSAGING_JSPI_INTERFACE } from ${JSON.stringify(hostUrl)};
+import { createDurableMessagingWitHost, createDurableMessagingLifecycle, createDurableMessagingLimitsGrant, instantiateDurableMessagingAsync, DURABLE_MESSAGING_WIT_INTERFACE } from ${JSON.stringify(hostUrl)};
 import { DURABLE_MESSAGING_LIMITS } from ${JSON.stringify(coreUrl)};
 import { instantiate } from ${JSON.stringify(moduleUrl)};
 let attempts = 0;
@@ -126,7 +98,7 @@ const port = { limits: DURABLE_MESSAGING_LIMITS, async ensureTopic(input) { clai
 const factory = (imports) => instantiate(async (name) => WebAssembly.compile(await readFile(new URL('./compiled/' + name, import.meta.url))), imports);
 const component = { digest: ${JSON.stringify(digest)}, imports: ${JSON.stringify(imports)}, instantiate: factory };
 const host = createDurableMessagingWitHost(port, { authorize: () => true, limitsGrant: createDurableMessagingLimitsGrant(), lifecycle: createDurableMessagingLifecycle() });
-const started = await instantiateDurableMessagingJspi(host, { component, verify: (candidate) => candidate.digest === component.digest && candidate.instantiate === factory && candidate.imports.length === 1 && candidate.imports[0] === DURABLE_MESSAGING_JSPI_INTERFACE });
+const started = await instantiateDurableMessagingAsync(host, { component, verify: (candidate) => candidate.digest === component.digest && candidate.instantiate === factory && candidate.imports.length === 1 && candidate.imports[0] === DURABLE_MESSAGING_WIT_INTERFACE });
 if (started.status !== 'started') throw new Error('component start unresolved');
 const result = await started.value.run();
 if (result !== 'unknown:committed:orders:7:9' || attempts !== 2 || !durable) throw new Error('unexpected component response: ' + result);

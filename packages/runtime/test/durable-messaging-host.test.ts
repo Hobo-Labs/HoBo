@@ -6,11 +6,11 @@ import {
 	createDurableMessagingLimitsGrant,
 	createDurableMessagingPortMetadataGrant,
 	createDurableMessagingWitHost,
-	DURABLE_MESSAGING_JSPI_INTERFACE,
-	type DurableMessagingJspiComponent,
-	type DurableMessagingJspiImports,
-	instantiateDurableMessagingJspi,
-	supportsDurableMessagingJspi,
+	DURABLE_MESSAGING_WIT_INTERFACE,
+	type DurableMessagingAsyncComponent,
+	type DurableMessagingAsyncImports,
+	instantiateDurableMessagingAsync,
+	supportsDurableMessagingAsync,
 } from "../src/durable-messaging-host.js";
 
 const expiresAt = 2_000_000_000_000;
@@ -218,21 +218,23 @@ describe("durable messaging WIT host boundary", () => {
 			...options,
 			portMetadataGrant: grant,
 		});
-		expect(host.limits().nameBytes).toBe(DURABLE_MESSAGING_LIMITS.nameBytes);
+		expect((await host.limits()).nameBytes).toBe(
+			DURABLE_MESSAGING_LIMITS.nameBytes,
+		);
 		expect(await host.ensureTopic({ operation, topic: "orders" })).toEqual({
 			tag: "committed",
 			val: { topic: "orders" },
 		});
 		expect(reads).toBe(0);
 		active = false;
-		expect(() => host.limits()).toThrow();
+		await expect(host.limits()).rejects.toThrow();
 		expect(await host.ensureTopic({ operation, topic: "orders" })).toEqual({
 			tag: "unknown",
 			val: operation,
 		});
 		active = true;
 		grant.revoke();
-		expect(() => host.limits()).toThrow();
+		await expect(host.limits()).rejects.toThrow();
 		expect(await host.ensureTopic({ operation, topic: "orders" })).toEqual({
 			tag: "unknown",
 			val: operation,
@@ -325,7 +327,7 @@ describe("durable messaging WIT host boundary", () => {
 		await Promise.resolve();
 	});
 
-	it("never exposes its mutable metadata state as a verifier receiver", () => {
+	it("never exposes its mutable metadata state as a verifier receiver", async () => {
 		const { port } = fixture();
 		let receivedUnexpectedReceiver = false;
 		const grant = createDurableMessagingPortMetadataGrant({
@@ -344,7 +346,7 @@ describe("durable messaging WIT host boundary", () => {
 		});
 		expect(receivedUnexpectedReceiver).toBe(false);
 		grant.revoke();
-		expect(() => host.limits()).toThrow();
+		await expect(host.limits()).rejects.toThrow();
 	});
 
 	it("uses captured intrinsics for provider binding and typed-array copying", async () => {
@@ -469,10 +471,10 @@ describe("durable messaging WIT host boundary", () => {
 		grant.revoke();
 		release();
 		expect(await result).toEqual({ tag: "unknown", val: operation });
-		expect(() => host.limits()).toThrow();
+		await expect(host.limits()).rejects.toThrow();
 	});
 
-	it("rechecks permanent revocation performed inside a verifier", () => {
+	it("rechecks permanent revocation performed inside a verifier", async () => {
 		const { port } = fixture();
 		let trigger = false;
 		let grant:
@@ -493,8 +495,8 @@ describe("durable messaging WIT host boundary", () => {
 			authorize: () => true,
 		});
 		trigger = true;
-		expect(() => host.limits()).toThrow();
-		expect(() => host.limits()).toThrow();
+		await expect(host.limits()).rejects.toThrow();
+		await expect(host.limits()).rejects.toThrow();
 	});
 
 	it("rechecks metadata after the final asynchronous provider continuation", async () => {
@@ -535,68 +537,68 @@ describe("durable messaging WIT host boundary", () => {
 				});
 		}
 	});
-	it("gates JSPI and aliases by independently verified exact component identity", async () => {
+	it("gates native async imports and aliases by independently verified exact component identity", async () => {
 		const { host } = fixture();
 		vi.stubGlobal("WebAssembly", {});
 		try {
-			expect(supportsDurableMessagingJspi()).toBe(false);
+			expect(supportsDurableMessagingAsync()).toBe(false);
 			const instantiate = vi.fn(
-				(_imports: DurableMessagingJspiImports) => "ready",
+				(_imports: DurableMessagingAsyncImports) => "ready",
 			);
 			const component = {
 				digest: `sha256:${"a".repeat(64)}`,
-				imports: [DURABLE_MESSAGING_JSPI_INTERFACE],
+				imports: [DURABLE_MESSAGING_WIT_INTERFACE],
 				instantiate,
 			};
 			const verify = vi.fn(
 				(
-					_component: DurableMessagingJspiComponent<string>,
+					_component: DurableMessagingAsyncComponent<string>,
 					candidate: typeof host,
 				) => candidate === host,
 			);
 			await expect(
-				instantiateDurableMessagingJspi(host, {
+				instantiateDurableMessagingAsync(host, {
 					component,
 					verify,
 				}),
-			).rejects.toThrow("durable_messaging.jspi_unavailable");
+			).rejects.toThrow("durable_messaging.async_unavailable");
 			expect(verify).not.toHaveBeenCalled();
 			vi.stubGlobal("WebAssembly", {
 				Suspending: function Suspending() {},
 				promising: () => {},
 			});
-			expect(supportsDurableMessagingJspi()).toBe(true);
+			expect(supportsDurableMessagingAsync()).toBe(true);
 			for (const imports of [
 				[],
-				["hobo:durable-messaging-jspi/messaging@0.2.0"],
-				["hobo:durable-messaging-jspi/messaging"],
+				["hobo:durable-messaging/messaging@0.2.0"],
+				["hobo:durable-messaging/messaging"],
 				[
-					DURABLE_MESSAGING_JSPI_INTERFACE,
-					"hobo:durable-messaging-jspi/messaging@0.2.0",
+					DURABLE_MESSAGING_WIT_INTERFACE,
+					"hobo:durable-messaging/messaging@0.2.0",
 				],
 			]) {
 				await expect(
-					instantiateDurableMessagingJspi(host, {
+					instantiateDurableMessagingAsync(host, {
 						component: { ...component, imports },
 						verify,
 					}),
-				).rejects.toThrow("durable_messaging.jspi_interface_unverified");
+				).rejects.toThrow("durable_messaging.async_interface_unverified");
 			}
 			expect(verify).not.toHaveBeenCalled();
 			await expect(
-				instantiateDurableMessagingJspi(host, {
+				instantiateDurableMessagingAsync(host, {
 					component,
 					verify: () => false,
 				}),
-			).rejects.toThrow("durable_messaging.jspi_component_unverified");
+			).rejects.toThrow("durable_messaging.async_component_unverified");
 			expect(instantiate).not.toHaveBeenCalled();
 			const wrongHost = fixture().host;
 			await expect(
-				instantiateDurableMessagingJspi(wrongHost, { component, verify }),
-			).rejects.toThrow("durable_messaging.jspi_component_unverified");
+				instantiateDurableMessagingAsync(wrongHost, { component, verify }),
+			).rejects.toThrow("durable_messaging.async_component_unverified");
 			expect(instantiate).not.toHaveBeenCalled();
 			await expect(
-				instantiateDurableMessagingJspi(host, {
+				instantiateDurableMessagingAsync(host, {
 					component,
 					verify,
 				}),
@@ -604,8 +606,8 @@ describe("durable messaging WIT host boundary", () => {
 			const table = instantiate.mock.calls[0]?.[0];
 			expect(table).toBeDefined();
 			if (table === undefined) throw new Error("missing verified imports");
-			expect(table[DURABLE_MESSAGING_JSPI_INTERFACE]).toBe(
-				table["hobo:durable-messaging-jspi/messaging"],
+			expect(table[DURABLE_MESSAGING_WIT_INTERFACE]).toBe(
+				table["hobo:durable-messaging/messaging"],
 			);
 		} finally {
 			vi.unstubAllGlobals();
@@ -649,9 +651,9 @@ describe("durable messaging WIT host boundary", () => {
 		);
 		const component = {
 			digest: `sha256:${"a".repeat(64)}`,
-			imports: [DURABLE_MESSAGING_JSPI_INTERFACE],
-			instantiate: async (imports: DurableMessagingJspiImports) => {
-				void imports[DURABLE_MESSAGING_JSPI_INTERFACE].ensureTopic({
+			imports: [DURABLE_MESSAGING_WIT_INTERFACE],
+			instantiate: async (imports: DurableMessagingAsyncImports) => {
+				void imports[DURABLE_MESSAGING_WIT_INTERFACE].ensureTopic({
 					operation,
 					topic: "orders",
 				});
@@ -660,14 +662,14 @@ describe("durable messaging WIT host boundary", () => {
 			},
 		};
 		try {
-			const pending = instantiateDurableMessagingJspi(host, {
+			const pending = instantiateDurableMessagingAsync(host, {
 				component,
 				verify: () => true,
 				timeoutMs: 20,
 			});
 			await new Promise((resolve) => setTimeout(resolve, 1));
 			expect(
-				await instantiateDurableMessagingJspi(other, {
+				await instantiateDurableMessagingAsync(other, {
 					component,
 					verify: () => true,
 				}),
@@ -681,9 +683,11 @@ describe("durable messaging WIT host boundary", () => {
 				tag: "unknown",
 				val: operation,
 			});
-			expect(() => other.limits()).toThrow("durable_messaging.unauthorized");
+			await expect(other.limits()).rejects.toThrow(
+				"durable_messaging.unauthorized",
+			);
 			expect(
-				await instantiateDurableMessagingJspi(other, {
+				await instantiateDurableMessagingAsync(other, {
 					component,
 					verify: () => true,
 				}),
@@ -735,9 +739,9 @@ describe("durable messaging WIT host boundary", () => {
 				);
 				const component = {
 					digest: `sha256:${"a".repeat(64)}`,
-					imports: [DURABLE_MESSAGING_JSPI_INTERFACE],
-					instantiate: async (imports: DurableMessagingJspiImports) => {
-						void imports[DURABLE_MESSAGING_JSPI_INTERFACE].ensureTopic({
+					imports: [DURABLE_MESSAGING_WIT_INTERFACE],
+					instantiate: async (imports: DurableMessagingAsyncImports) => {
+						void imports[DURABLE_MESSAGING_WIT_INTERFACE].ensureTopic({
 							operation,
 							topic: "orders",
 						});
@@ -747,7 +751,7 @@ describe("durable messaging WIT host boundary", () => {
 					},
 				};
 				expect(
-					await instantiateDurableMessagingJspi(host, {
+					await instantiateDurableMessagingAsync(host, {
 						component,
 						verify: () => true,
 					}),
@@ -790,16 +794,16 @@ describe("durable messaging WIT host boundary", () => {
 			let observed: unknown;
 			const component = {
 				digest: `sha256:${"a".repeat(64)}`,
-				imports: [DURABLE_MESSAGING_JSPI_INTERFACE],
-				instantiate: async (imports: DurableMessagingJspiImports) => {
-					observed = await imports[
-						DURABLE_MESSAGING_JSPI_INTERFACE
-					].ensureTopic({ operation, topic: "orders" });
+				imports: [DURABLE_MESSAGING_WIT_INTERFACE],
+				instantiate: async (imports: DurableMessagingAsyncImports) => {
+					observed = await imports[DURABLE_MESSAGING_WIT_INTERFACE].ensureTopic(
+						{ operation, topic: "orders" },
+					);
 					return "ready";
 				},
 			};
 			expect(
-				await instantiateDurableMessagingJspi(host, {
+				await instantiateDurableMessagingAsync(host, {
 					component,
 					verify: () => true,
 				}),
@@ -814,7 +818,7 @@ describe("durable messaging WIT host boundary", () => {
 
 	it("translates each async operation, u64, optional value and outcome", async () => {
 		const { host, port } = fixture();
-		expect(host.limits()).toMatchObject({
+		expect(await host.limits()).toMatchObject({
 			leaseMs: BigInt(DURABLE_MESSAGING_LIMITS.leaseMs),
 			topics: DURABLE_MESSAGING_LIMITS.topics,
 		});
@@ -1232,7 +1236,7 @@ describe("durable messaging WIT host boundary", () => {
 		});
 	});
 
-	it("permanently revokes each limits grant even after a fresh regrant", () => {
+	it("permanently revokes each limits grant even after a fresh regrant", async () => {
 		const port = fixture().port;
 		const lifecycle = createDurableMessagingLifecycle();
 		const oldGrant = createDurableMessagingLimitsGrant();
@@ -1241,15 +1245,38 @@ describe("durable messaging WIT host boundary", () => {
 			lifecycle,
 			limitsGrant: oldGrant,
 		});
-		expect(oldHost.limits().nameBytes).toBe(DURABLE_MESSAGING_LIMITS.nameBytes);
+		expect((await oldHost.limits()).nameBytes).toBe(
+			DURABLE_MESSAGING_LIMITS.nameBytes,
+		);
+		const pendingLimits = oldHost.limits();
 		oldGrant.revoke();
+		await expect(pendingLimits).rejects.toThrow(
+			"durable_messaging.unauthorized",
+		);
 		const newHost = createDurableMessagingWitHost(port, {
 			authorize: () => true,
 			lifecycle,
 			limitsGrant: createDurableMessagingLimitsGrant(),
 		});
-		expect(() => oldHost.limits()).toThrow("durable_messaging.unauthorized");
-		expect(newHost.limits().nameBytes).toBe(DURABLE_MESSAGING_LIMITS.nameBytes);
+		await expect(oldHost.limits()).rejects.toThrow(
+			"durable_messaging.unauthorized",
+		);
+		expect((await newHost.limits()).nameBytes).toBe(
+			DURABLE_MESSAGING_LIMITS.nameBytes,
+		);
+	});
+
+	it("bounds concurrent asynchronous limits calls", async () => {
+		const host = createDurableMessagingWitHost(fixture().port, {
+			authorize: () => true,
+			lifecycle: createDurableMessagingLifecycle({ maxInFlight: 1 }),
+			limitsGrant: createDurableMessagingLimitsGrant(),
+		});
+		const first = host.limits();
+		await expect(host.limits()).rejects.toThrow(
+			"durable_messaging.host_capacity",
+		);
+		await expect(first).resolves.toMatchObject({ nameBytes: 128 });
 	});
 
 	it("refuses subscriptions, consume and nack when the dead-letter write is unauthorized", async () => {

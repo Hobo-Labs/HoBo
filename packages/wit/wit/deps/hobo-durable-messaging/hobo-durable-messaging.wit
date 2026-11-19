@@ -269,7 +269,7 @@ interface messaging {
     rejected(rejection-code),
   }
 
-  limits: func() -> messaging-limits;
+  limits: async func() -> messaging-limits;
   ensure-topic: async func(input: topic-request) -> topic-outcome;
   ensure-subscription: async func(input: subscription-request) -> subscription-outcome;
   publish: async func(input: publish-request) -> publish-outcome;

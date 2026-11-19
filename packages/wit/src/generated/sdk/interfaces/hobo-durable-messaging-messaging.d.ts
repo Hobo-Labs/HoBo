@@ -1,13 +1,13 @@
-/** @module Interface hobo:durable-messaging-jspi/messaging@0.1.0 **/
-export function limits(): MessagingLimits;
-export function ensureTopic(input: TopicRequest): TopicOutcome;
-export function ensureSubscription(input: SubscriptionRequest): SubscriptionOutcome;
-export function publish(input: PublishRequest): PublishOutcome;
-export function consume(input: ConsumeRequest): ConsumeOutcome;
-export function ack(input: AcknowledgementRequest): MessageOutcome;
-export function nack(input: RejectionRequest): NackOutcome;
-export function compact(input: CompactionRequest): CompactionOutcome;
-export function events(input: EventRequest): EventOutcome;
+/** @module Interface hobo:durable-messaging/messaging@0.1.0 **/
+export function limits(): Promise<MessagingLimits>;
+export function ensureTopic(input: TopicRequest): Promise<TopicOutcome>;
+export function ensureSubscription(input: SubscriptionRequest): Promise<SubscriptionOutcome>;
+export function publish(input: PublishRequest): Promise<PublishOutcome>;
+export function consume(input: ConsumeRequest): Promise<ConsumeOutcome>;
+export function ack(input: AcknowledgementRequest): Promise<MessageOutcome>;
+export function nack(input: RejectionRequest): Promise<NackOutcome>;
+export function compact(input: CompactionRequest): Promise<CompactionOutcome>;
+export function events(input: EventRequest): Promise<EventOutcome>;
 export interface MessagingLimits {
   nameBytes: number,
   reasonBytes: number,
