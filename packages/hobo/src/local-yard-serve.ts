@@ -506,7 +506,3 @@ export async function serveBindleOnLocalYard(options: {
 		throw error;
 	}
 }
-
-/** @deprecated */
-export const serveProjectOnLocalCamp = serveBindleOnLocalYard;
-export type LocalCampServeResult = LocalYardServeResult;
