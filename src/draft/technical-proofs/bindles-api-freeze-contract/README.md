@@ -1,6 +1,6 @@
 # HOBO-399 Bindles API Freeze Contract
 
-> **Promoted to `packages/bindles/` (S1-13 / HOBO-602).** The frozen public-API snapshot now lives at `packages/bindles/contracts/bindles-public-api.snapshot.json`.
+> **Promoted to `packages/bindles/` (S1-13 / HOBO-602).** Public export boundaries are tested in `packages/bindles/test/public-api.test.ts`.
 
 This draft freezes the narrow `@hobo/bindles` public API and representative
 `hobo.manifest/v1` IR contract described by the SDK API and authoring resource
