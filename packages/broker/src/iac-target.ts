@@ -188,9 +188,20 @@ function readDecimal(value: string): Decimal | undefined {
 	return parseDecimal(value);
 }
 
-function exactMaximumMicros(maximumMicros: bigint): number | undefined {
-	return maximumMicros >= 0n && maximumMicros <= MAX_SAFE
-		? Number(maximumMicros)
+function exactInt64Micros(value: bigint): number | undefined {
+	return value >= 0n && value <= MAX_SAFE ? Number(value) : undefined;
+}
+
+function exactEvidenceMaximumMicros(
+	evidence: IacTargetLiabilityEvidence,
+): number | undefined {
+	if (evidence.maximumMicrosExact !== undefined)
+		return exactInt64Micros(evidence.maximumMicrosExact);
+	const legacyMicros = evidence.maximumMicros;
+	return legacyMicros !== undefined &&
+		Number.isSafeInteger(legacyMicros) &&
+		legacyMicros >= 0
+		? legacyMicros
 		: undefined;
 }
 
@@ -382,9 +393,7 @@ export async function admitIacTarget(
 			"a current nonnegative USD quote is required",
 		);
 	const maximumMicros =
-		evidence === undefined
-			? undefined
-			: exactMaximumMicros(evidence.maximumMicros);
+		evidence === undefined ? undefined : exactEvidenceMaximumMicros(evidence);
 	if (
 		evidence === undefined ||
 		!safeName(evidence.evidenceRef) ||

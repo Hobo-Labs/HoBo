@@ -42,7 +42,10 @@ liability bound and pricing pin. Mismatched receipts are reported as uncertain;
 after a claim, the authority must revalidate that the exact hold remains active.
 These checks rely on the host's durable authority and do not prove its behavior.
 Liability evidence must cover each distinct provider-account ID exactly once;
-the input order of those account records does not affect the scope check.
+the input order of those account records does not affect the scope check. New
+evidence carries the exact integer `maximumMicrosExact`; admission also decodes
+legacy fixed64 `maximumMicros` evidence when that value is a nonnegative safe
+integer.
 The admission request accepts only its declared own data fields; unknown fields,
 accessors, proxies and inventory fields outside the exact schema are denied
 before financial authority calls. Enumerating JavaScript object keys can itself

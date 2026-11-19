@@ -95,11 +95,17 @@ import "list"
 	inventoryHash: string & =~"^sha256:[a-f0-9]{64}$"
 	modelHash:     string & =~"^sha256:[a-f0-9]{64}$"
 	quoteHash:     string & =~"^sha256:[a-f0-9]{64}$"
-	maximumMicros: #Micros
-	observedAt:    string & !=""
-	validUntil:    string & !=""
+	maximumMicros?:      #Micros
+	maximumMicrosExact?: #Micros
+	observedAt:          string & !=""
+	validUntil:          string & !=""
 	providerAccounts: [#ProviderAccountExposure, ...#ProviderAccountExposure]
-	maximumMicros: list.Sum([for account in providerAccounts {account.liabilityMicros}])
+	if maximumMicrosExact != _|_ {
+		maximumMicrosExact: list.Sum([for account in providerAccounts {account.liabilityMicros}])
+	}
+	if maximumMicrosExact == _|_ {
+		maximumMicros: list.Sum([for account in providerAccounts {account.liabilityMicros}])
+	}
 	_limit: true & (len(providerAccounts) <= 256)
 	_unique: {
 		for i, left in providerAccounts
@@ -200,7 +206,12 @@ import "list"
 			inventoryHash: iacDecision.inventoryHash
 			modelHash:     iacDecision.modelHash
 			quoteHash:     iacDecision.quoteHash
-			maximumMicros: iacDecision.quote.liabilityBoundMicros
+		}
+		if iacEvidence.maximumMicrosExact != _|_ {
+			iacEvidence: {maximumMicrosExact: iacDecision.quote.liabilityBoundMicros}
+		}
+		if iacEvidence.maximumMicrosExact == _|_ {
+			iacEvidence: {maximumMicros: iacDecision.quote.liabilityBoundMicros}
 		}
 	}
 }

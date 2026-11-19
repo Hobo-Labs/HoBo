@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clone, create } from "@bufbuild/protobuf";
+import { clone, create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	createTargetPricingInventory,
 	QuoteScenarioSchema,
@@ -78,7 +78,7 @@ function fixture() {
 		inventoryHash: result.inventoryHash,
 		modelHash: result.modelHash,
 		quoteHash: result.quote.quoteHash,
-		maximumMicros: 1_500_000n,
+		maximumMicrosExact: 1_500_000n,
 		observedAt: "2026-01-01T00:00:00Z",
 		validUntil: END,
 		providerAccounts: [
@@ -729,7 +729,7 @@ describe("provider-neutral IaC target budget admission", () => {
 			evidence.inventoryHash = priced.inventoryHash;
 			evidence.modelHash = priced.modelHash;
 			evidence.quoteHash = priced.quote.quoteHash;
-			evidence.maximumMicros = 2_500_000n;
+			evidence.maximumMicrosExact = 2_500_000n;
 			evidence.providerAccounts = [
 				{
 					...liability,
@@ -1428,17 +1428,105 @@ describe("provider-neutral IaC target budget admission", () => {
 		["negative", -1n],
 		["above max safe integer", BigInt(Number.MAX_SAFE_INTEGER) + 1n],
 		["int64 maximum", 9_223_372_036_854_775_807n],
-	] as const)("denies out-of-range maximumMicros bigint (%s) without throwing", async (label, maximumMicros) => {
+	] as const)("denies out-of-range maximumMicrosExact bigint (%s) without throwing", async (label, maximumMicrosExact) => {
 		const ledger = authority();
 		try {
 			const request = fixture();
-			request.evidence.maximumMicros = maximumMicros;
+			request.evidence.maximumMicrosExact = maximumMicrosExact;
 			const deps = dependencies(ledger);
 			const verifyLiability = vi.fn(deps.verifyLiability);
 			const authorize = vi.fn(deps.authorize);
 			await expect(
 				admitIacTarget(
 					{ requestId: `malformed-maximum-${label}`, ...request },
+					{ ...deps, verifyLiability, authorize },
+				),
+			).resolves.toMatchObject({
+				status: "denied",
+				code: "LIABILITY_EVIDENCE_INVALID",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(verifyLiability).not.toHaveBeenCalled();
+			expect(authorize).not.toHaveBeenCalled();
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("admits legacy fixed64 maximumMicros evidence after binary decoding", async () => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			request.evidence.maximumMicrosExact = undefined;
+			request.evidence.maximumMicros = 1_500_000;
+			const legacyBytes = toBinary(
+				IacTargetLiabilityEvidenceSchema,
+				request.evidence,
+			);
+			expect(legacyBytes.includes(0x41)).toBe(true);
+			expect(legacyBytes.includes(0x40)).toBe(false);
+			const legacyEvidence = fromBinary(
+				IacTargetLiabilityEvidenceSchema,
+				legacyBytes,
+			);
+			expect(legacyEvidence.maximumMicros).toBe(1_500_000);
+			expect(legacyEvidence.maximumMicrosExact).toBeUndefined();
+			await expect(
+				admitIacTarget(
+					{ requestId: "legacy-fixed64", ...request, evidence: legacyEvidence },
+					dependencies(ledger),
+				),
+			).resolves.toMatchObject({
+				status: "admitted",
+				quote: { liabilityBoundMicros: 1_500_000 },
+			});
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("prefers exact maximumMicrosExact over legacy maximumMicros", async () => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			request.evidence.maximumMicros = 1;
+			await expect(
+				admitIacTarget(
+					{ requestId: "exact-precedence", ...request },
+					dependencies(ledger),
+				),
+			).resolves.toMatchObject({
+				status: "admitted",
+				quote: { liabilityBoundMicros: 1_500_000 },
+			});
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it.each([
+		["missing", undefined],
+		["NaN", Number.NaN],
+		["positive infinity", Number.POSITIVE_INFINITY],
+		["negative infinity", Number.NEGATIVE_INFINITY],
+		["fractional", 1_500_000.5],
+		["negative fractional", -0.5],
+		["negative", -1],
+		["non-safe integer", Number.MAX_SAFE_INTEGER + 1],
+		["huge finite", Number.MAX_VALUE],
+	] as const)("denies malformed legacy maximumMicros (%s) without throwing", async (label, maximumMicros) => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			request.evidence.maximumMicrosExact = undefined;
+			request.evidence.maximumMicros = maximumMicros;
+			const deps = dependencies(ledger);
+			const verifyLiability = vi.fn(deps.verifyLiability);
+			const authorize = vi.fn(deps.authorize);
+			await expect(
+				admitIacTarget(
+					{ requestId: `malformed-legacy-${label}`, ...request },
 					{ ...deps, verifyLiability, authorize },
 				),
 			).resolves.toMatchObject({
@@ -1967,7 +2055,7 @@ describe("provider-neutral IaC target budget admission", () => {
 			if (kind === "wrong-plan")
 				request.evidence.planDigest = `sha256:${"b".repeat(64)}`;
 			if (kind === "expired") request.evidence.validUntil = NOW;
-			if (kind === "too-small") request.evidence.maximumMicros = 1n;
+			if (kind === "too-small") request.evidence.maximumMicrosExact = 1n;
 			const deps = dependencies(ledger);
 			if (kind === "unverified") deps.verifyLiability = async () => false;
 			expect(await admitIacTarget(request, deps)).toMatchObject({
@@ -2295,7 +2383,7 @@ describe("provider-neutral IaC target budget admission", () => {
 			if (!repriced.ok) throw new Error(repriced.reason);
 			second.evidence.targetId = "yard-b";
 			second.evidence.inventoryHash = repriced.inventoryHash;
-			second.evidence.maximumMicros = 1_000_000n;
+			second.evidence.maximumMicrosExact = 1_000_000n;
 			const account = second.evidence.providerAccounts[0];
 			if (account === undefined) throw new Error("fixture account missing");
 			account.liabilityMicros = 1_000_000;

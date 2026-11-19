@@ -301,10 +301,11 @@ message IacTargetLiabilityEvidence {
   string inventory_hash = 5;
   string model_hash = 6;
   string quote_hash = 7;
-  int64 maximum_micros = 8;
+  optional double maximum_micros = 8;
   string observed_at = 9;
   string valid_until = 10;
   repeated ProviderAccountExposure provider_accounts = 11;
+  optional int64 maximum_micros_exact = 12;
 }
 
 message IacBudgetDisclosure {
