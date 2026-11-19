@@ -93,17 +93,6 @@
 				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
 			}
 		},
-
-		{
-			"proof": "src/draft/technical-proofs/event-body-upcaster-gate/src",
-			"promotedTo": "packages/events/src/upcaster.ts",
-			"status": "frozen",
-			"note": "M4 promotion: typed golden-replay corpus + upcaster-totality can-deploy gate (coverage, append-only baseline, total chain, purity, replay); migration.* v1 corpus pinned in packages/events/corpus.",
-			"digests": {
-				"event-body-upcaster-gate.ts": "sha256:7bac097f619e18c6b07d42016a4614dc6fd4f098a506da250455b80f3d93051a",
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
-			}
-		},
 		{
 			"proof": "src/draft/technical-proofs/provider-vercel-contract",
 			"promotedTo": "packages/providers/provider-vercel",

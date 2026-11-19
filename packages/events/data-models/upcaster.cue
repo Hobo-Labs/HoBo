@@ -1,7 +1,3 @@
-// CUE constraints for every protobuf type in upcaster.proto, so the
-// architecture guard can confirm the corpus-gate shapes are bounded at parse
-// time.
-
 package events
 
 #CorpusEntryRecord: {

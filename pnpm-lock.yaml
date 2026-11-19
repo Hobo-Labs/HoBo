@@ -4449,8 +4449,6 @@ importers:
 
   src/draft/technical-proofs/evals-training-promotion-gates-poc: {}
 
-  src/draft/technical-proofs/event-body-upcaster-gate: {}
-
   src/draft/technical-proofs/execution-host-provider-contract: {}
 
   src/draft/technical-proofs/executor-skeleton-contract: {}
