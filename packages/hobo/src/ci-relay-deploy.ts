@@ -94,6 +94,7 @@ import {
 	type VercelGitDeploymentPlan,
 	VercelGitDeploymentPlanSchema,
 } from "./_generated/vercel_git_deployment_pb.js";
+import { relayAdoptDeadline } from "./ci-relay-adopt.js";
 import {
 	deliverRelay,
 	type RelayRealization,
@@ -145,7 +146,6 @@ import {
 	refusedEnvKeyReason,
 	refusedEnvValueReason,
 } from "./vercel-env-policy.js";
-import { relayAdoptDeadline } from "./ci-relay-adopt.js";
 
 export const RELAY_DEPLOY_REFUSAL = Object.freeze({
 	budgetExhausted: "HOBO_CI_DEPLOY_BUDGET_EXHAUSTED",
