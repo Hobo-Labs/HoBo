@@ -84,10 +84,6 @@ const ConnectViewSchema = z.object({
 	directive: DirectiveSchema,
 });
 
-function parseConnectView(body: unknown): View {
-	return ConnectViewSchema.parse(body);
-}
-
 const rootElement = document.getElementById("root");
 const base = rootElement?.dataset.base ?? "./";
 
@@ -119,7 +115,7 @@ function ConnectPage() {
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
 		if (!response.ok) throw new Error(`view failed (${response.status})`);
-		setView(parseConnectView(await response.json()));
+		setView(ConnectViewSchema.parse(await response.json()));
 	}, []);
 
 	useEffect(() => {
@@ -142,7 +138,7 @@ function ConnectPage() {
 				body: JSON.stringify({ action, params }),
 			});
 			if (!response.ok) throw new Error(`action failed (${response.status})`);
-			const next = parseConnectView(await response.json());
+			const next = ConnectViewSchema.parse(await response.json());
 			setView(next);
 			follow(next.directive);
 		} catch (reason) {
