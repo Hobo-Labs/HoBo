@@ -65,6 +65,24 @@ async function seedFixture(s: RuntimeLocalEventStore): Promise<void> {
 }
 
 describe("defineProjection read-model fold", () => {
+	it("materializes newly appended events directly from the event store", async () => {
+		const s = store();
+		const before = await orderView.rebuildFromZero(s, "order:live");
+		expect(before.rows).toEqual({});
+		await s.append(
+			"order:live",
+			[{ type: "order.Placed", data: { orderId: "live", totalCents: 500 } }],
+			{ expectedSeq: 0, actor, tenant: "tenant-a" },
+		);
+		const after = await orderView.rebuildFromZero(s, "order:live");
+		expect(after.streamSequences).toEqual({ "order:live": 1 });
+		expect(after.rows.live).toEqual({
+			orderId: "live",
+			status: "placed",
+			totalCents: 500,
+		});
+	});
+
 	it("rebuildFromZero equals the live fold byte-for-byte on a fixture stream", async () => {
 		const s = store();
 		await seedFixture(s);
@@ -182,6 +200,44 @@ describe("defineProjection read-model fold", () => {
 			eventType: "order.Placed",
 		});
 		expect(failure.cause).toBeInstanceOf(Error);
+	});
+
+	it("rejects incomplete definitions and invalid row keys", async () => {
+		const base = {
+			name: "orders",
+			key: (event: EventEnvelope) => event.streamId,
+			on: { "order.Placed": () => ({}) },
+		};
+		expect(() => defineProjection({ ...base, name: "  " })).toThrow(/name/);
+		expect(() => defineProjection({ ...base, on: {} })).toThrow(/handler/);
+		expect(() =>
+			defineProjection({ ...base, on: { " ": () => ({}) } }),
+		).toThrow(/handler/);
+		const s = store();
+		await seedFixture(s);
+		const events: EventEnvelope[] = [];
+		for await (const event of s.read("order:1001")) events.push(event);
+		const projection = defineProjection({ ...base, key: () => " " });
+		expect(() => projection.fold(events)).toThrow(ProjectionFoldError);
+		expect(() => projection.fold(events)).toThrow(/non-empty string/);
+	});
+
+	it("keeps source events immutable while calculating row keys", async () => {
+		const s = store();
+		await seedFixture(s);
+		const events: EventEnvelope[] = [];
+		for await (const event of s.read("order:1001")) events.push(event);
+		const original = structuredClone(events);
+		const projection = defineProjection({
+			name: "key-mutation",
+			key: (event) => {
+				Object.assign(event.data, { orderId: "changed" });
+				return event.streamId;
+			},
+			on: { "order.Placed": () => ({}) },
+		});
+		expect(() => projection.fold(events)).toThrow(ProjectionFoldError);
+		expect(events).toEqual(original);
 	});
 
 	it("preserves a classified transient error so the caller can retry", async () => {

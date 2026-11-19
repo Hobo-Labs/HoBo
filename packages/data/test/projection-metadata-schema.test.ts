@@ -42,7 +42,7 @@ describe.skipIf(!cueAvailable)("projection metadata contract", () => {
 			key: () => "row",
 			on: { "order.Placed": () => ({}) },
 		};
-		const legacy = defineProjection(base).declared().data;
+		const withoutMetadata = defineProjection(base).declared().data;
 		const withMetadata = defineProjection({
 			...base,
 			rowSchema: {
@@ -51,7 +51,7 @@ describe.skipIf(!cueAvailable)("projection metadata contract", () => {
 			},
 			indexHints: ["id"],
 		}).declared().data;
-		expect(validate(legacy)).toBe(0);
+		expect(validate(withoutMetadata)).toBe(0);
 		expect(validate(withMetadata)).toBe(0);
 		expect(
 			validate({ ...withMetadata, readModel: "shop:other/view@1.0.0" }),

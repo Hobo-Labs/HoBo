@@ -25,7 +25,12 @@ import {
 	type DataFact,
 } from "./events.js";
 import { type FoldFailureClassifier, shouldQuarantineFailure } from "./fold.js";
-import { hasFunctionTag, type Inspectable, isObjectLike } from "./json.js";
+import {
+	hasFunctionTag,
+	type Inspectable,
+	isJsonString,
+	isObjectLike,
+} from "./json.js";
 import {
 	parseEventStoreQuarantine,
 	parseProjectionQuarantine,
@@ -238,13 +243,24 @@ function projectionMetadata<Row>(definition: ProjectionDefinition<Row>) {
 export function defineProjection<Row>(
 	definition: ProjectionDefinition<Row>,
 ): QuarantinableProjection<Row> {
-	if (!definition.name) throw new TypeError("projection name is required");
+	if (!definition.name.trim())
+		throw new TypeError("projection name is required");
 	if (!hasFunctionTag(definition.key)) {
 		throw new TypeError("projection key must be a function");
 	}
 	const handlers = new Map<string, ApplyHandler<Row>>(
 		Object.entries(definition.on),
 	);
+	if (handlers.size === 0) {
+		throw new TypeError("projection requires at least one event handler");
+	}
+	for (const [eventType, handler] of handlers) {
+		if (!eventType.trim() || !hasFunctionTag(handler)) {
+			throw new TypeError(
+				"projection event handlers require a type and function",
+			);
+		}
+	}
 	const readSet = Object.freeze([...handlers.keys()]);
 	const reactivityClass = definition.reactivityClass ?? "reactive";
 	const metadata = projectionMetadata(definition);
@@ -308,11 +324,15 @@ export function defineProjection<Row>(
 				const upcast = definition.upcasters
 					? definition.upcasters.upcast(event)
 					: event;
-				key = definition.key(upcast);
+				const input = deepFreeze(clone(upcast));
+				key = definition.key(input);
+				if (!isJsonString(key) || !key.trim()) {
+					throw new TypeError("projection key must be a non-empty string");
+				}
 				nextRow = clone(
 					handler(
 						rows[key] === undefined ? undefined : deepFreeze(clone(rows[key])),
-						deepFreeze(clone(upcast)),
+						input,
 					),
 				);
 			} catch (error) {
