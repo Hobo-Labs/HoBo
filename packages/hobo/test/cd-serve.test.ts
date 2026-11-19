@@ -1,6 +1,7 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Yard fixtures are partial records cast once to the type under test. */
-import { Agent, request as httpRequest } from "node:http";
+
 import { mkdtemp, rm } from "node:fs/promises";
+import { Agent, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -158,9 +159,7 @@ describe("startCdServer probes", () => {
 				code: "cd-serve-error",
 			});
 			expect(
-				lines.some((line) =>
-					line.includes("hobo serve cd: request failed:"),
-				),
+				lines.some((line) => line.includes("hobo serve cd: request failed:")),
 			).toBe(true);
 		});
 	});
