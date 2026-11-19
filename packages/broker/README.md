@@ -44,11 +44,13 @@ These checks rely on the host's durable authority and do not prove its behavior.
 Liability evidence must cover each distinct provider-account ID exactly once;
 the input order of those account records does not affect the scope check. New
 evidence carries the exact integer `maximumMicrosExact` as a ProtoJSON decimal
-string; admission also decodes legacy fixed64 `maximumMicros` evidence when that
-value is a nonnegative safe integer. Entitlement history is independent for each
-kind, bucket and unit. Persisted pre-kind snapshots reopen with an empty kind
-normalized to `allowance`, while fresh writes require an explicit kind. An exact
-idempotent retry may replay a persisted kindless quote before strict validation.
+string bounded by the runtime's nonnegative safe-integer range; admission also
+decodes legacy fixed64 `maximumMicros` evidence in that range. Entitlement
+history is independent for each kind, bucket and unit, with each normalized
+claim scope unique in evidence, quotes, reservations and settlement. Persisted
+pre-kind snapshots reopen with an empty kind normalized to `allowance`, while
+fresh writes require an explicit kind. An exact idempotent retry may replay a
+persisted kindless quote before strict validation.
 Fenced reservations pin their settlement payload version through journal replay;
 v1 signs kindless claims and v2 signs explicit kinds.
 The admission request accepts only its declared own data fields; unknown fields,

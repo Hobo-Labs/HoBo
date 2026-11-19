@@ -28,7 +28,8 @@ operation only through the broker's unpriced policy and durable exposure hold.
 An invalid or incomplete model cannot use that path. Financial receipt parsing
 accepts the broker's explicit entitlement kinds and settlement payload version,
 and compares claims by kind, bucket and unit so separate units in one bucket do
-not collide. Legacy kindless claims retain their allowance meaning.
+not collide. Legacy kindless claims normalize to `allowance` for duplicate
+detection and receipt comparison.
 
 `mapBindleToAlchemy` accepts provider-owned primitive mappers and assesses the
 Bindle's requirements, operations, annotations, dependencies and entrypoints.

@@ -33,10 +33,21 @@ import (
 #BudgetEntitlement: {bucketId: string & !="", unit: string & !="", kind: #EntitlementKind | "", periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
 #ProviderAccountExposure: {providerAccountId: string & !="", liabilityMicros: #Micros}
 #EntitlementClaim: {
-	bucketId: string & !=""
-	unit:     string & !=""
-	units:    #Micros
-	kind:     #EntitlementKind
+	bucketId:   string & !=""
+	unit:       string & !=""
+	units:      #Micros
+	kind:       #EntitlementKind | ""
+	_scopeKind: #EntitlementKind
+	if kind == "" {_scopeKind: "allowance"}
+	if kind != "" {_scopeKind: kind}
+}
+#UniqueEntitlementClaims: {
+	claims: [...#EntitlementClaim]
+	for i, left in claims
+	for j, right in claims
+	if j > i {
+		"\(i)/\(j)": true & (left._scopeKind != right._scopeKind || left.bucketId != right.bucketId || left.unit != right.unit)
+	}
 }
 #ProviderAccountRowsMatch: {
 	left: [...#ProviderAccountExposure]
@@ -66,10 +77,10 @@ import (
 	right: [...#EntitlementClaim]
 	_length: true & (len(left) == len(right))
 	for i, row in left {
-		"left/\(i)": true & (len([for candidate in right if candidate.kind == row.kind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]) == len([for candidate in left if candidate.kind == row.kind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]))
+		"left/\(i)": true & (len([for candidate in right if candidate._scopeKind == row._scopeKind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]) == len([for candidate in left if candidate._scopeKind == row._scopeKind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]))
 	}
 	for i, row in right {
-		"right/\(i)": true & (len([for candidate in left if candidate.kind == row.kind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]) == len([for candidate in right if candidate.kind == row.kind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]))
+		"right/\(i)": true & (len([for candidate in left if candidate._scopeKind == row._scopeKind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]) == len([for candidate in right if candidate._scopeKind == row._scopeKind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]))
 	}
 }
 #HostingQuoteComponent: {name: string & !="", costMicros: #Micros}
@@ -88,6 +99,9 @@ import (
 	totalMicros: list.Sum([for component in components {component.costMicros}])
 	providerAccounts?: [...#ProviderAccountExposure]
 	entitlementClaims?: [...#EntitlementClaim]
+	if entitlementClaims != _|_ {
+		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
+	}
 	financialPlanHash?: string
 }
 #BudgetReservation: {
@@ -102,6 +116,9 @@ import (
 	quoteDigest:     string & !=""
 	providerAccounts?: [...#ProviderAccountExposure]
 	entitlementClaims?: [...#EntitlementClaim]
+	if entitlementClaims != _|_ {
+		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
+	}
 	usageEvidenceRef?:              string
 	sourceStoppedEvidenceRef?:      string
 	settlementEvidence?:            #BudgetSettlementEvidence
@@ -119,7 +136,17 @@ import (
 		if unboundedExposure == true {quoteId?: "", reservedMicros?: 0, unpricedPolicyProof: #IacUnpricedPolicyProof, unpricedScopeProof: #IacUnpricedScopeProof}
 	}
 }
-#BudgetSettlementEvidence: {usageEvidenceRef: string & !="", sourceStoppedEvidenceRef: string & !="", providerAccounts?: [...#ProviderAccountExposure], entitlementClaims?: [...#EntitlementClaim], fenceOperationReceiptJson?: string, financeSignature?: string}
+#BudgetSettlementEvidence: {
+	usageEvidenceRef:         string & !=""
+	sourceStoppedEvidenceRef: string & !=""
+	providerAccounts?: [...#ProviderAccountExposure]
+	entitlementClaims?: [...#EntitlementClaim]
+	if entitlementClaims != _|_ {
+		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
+	}
+	fenceOperationReceiptJson?: string
+	financeSignature?:          string
+}
 #HostingPolicyProof: {requestDigest: string & !="", quoteId: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool}
 #IacUnpricedPolicyProof: {requestDigest: string & !="", inventoryHash: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool, observedAt: string & !="", validUntil: string & !=""}
 #IacUnpricedScopeProof: {identity: #BudgetIdentity, providerAccountIds: [string & !="", ...string & !=""], authorityRef: string & !="", evidenceRef: string & !="", ownershipEpoch: string & !="", observedAt: string & !="", exclusiveUntilSettled: true, noSharedEntitlements: true, signature: string & !="", _limit: true & (len(providerAccountIds) <= 256)}
@@ -140,8 +167,12 @@ import (
 	validUntil:          string & !=""
 	providerAccounts: [#ProviderAccountExposure, ...#ProviderAccountExposure]
 	entitlementClaims?: [...#EntitlementClaim]
+	if entitlementClaims != _|_ {
+		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
+	}
 	if maximumMicrosExact != _|_ {
-		_exactTotal: strconv.Atoi(maximumMicrosExact) & list.Sum([for account in providerAccounts {account.liabilityMicros}])
+		_exactBound: strconv.Atoi(maximumMicrosExact) & #Micros
+		_exactTotal: _exactBound & list.Sum([for account in providerAccounts {account.liabilityMicros}])
 	}
 	if maximumMicrosExact == _|_ {
 		maximumMicros: list.Sum([for account in providerAccounts {account.liabilityMicros}])

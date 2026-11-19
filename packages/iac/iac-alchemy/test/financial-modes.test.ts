@@ -1038,6 +1038,7 @@ describe("financial admission modes", () => {
 		"reservation-liability",
 		"reservation-accounts",
 		"reservation-entitlements",
+		"duplicate-entitlement-kind-alias",
 		"quote-liability",
 		"quote-components",
 		"quote-currency",
@@ -1138,6 +1139,21 @@ describe("financial admission modes", () => {
 							units: 1,
 						}),
 					);
+				if (kind === "duplicate-entitlement-kind-alias" && decision.quote) {
+					const claim = decision.quote.entitlementClaims[0];
+					if (claim === undefined) throw new Error("fixture claim missing");
+					const kindlessClaim = {
+						bucketId: claim.bucketId,
+						unit: claim.unit,
+						units: claim.units,
+					};
+					decision.quote.entitlementClaims.push(
+						create(EntitlementClaimSchema, kindlessClaim),
+					);
+					reservation.entitlementClaims.push(
+						create(EntitlementClaimSchema, kindlessClaim),
+					);
+				}
 				if (kind === "quote-liability" && decision.quote)
 					decision.quote.liabilityBoundMicros = 5;
 				if (kind === "quote-components" && decision.quote) {

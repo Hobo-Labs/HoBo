@@ -315,7 +315,9 @@ function scopedIdentity(
 	const keys = typeof identityKey === "string" ? [identityKey] : identityKey;
 	const values = keys.map((key) => {
 		const value = ownData(row, key);
-		return key === "kind" && value === undefined ? "" : value;
+		return key === "kind" && (value === undefined || value === "")
+			? "allowance"
+			: value;
 	});
 	return values.every((value) => typeof value === "string")
 		? JSON.stringify(values)
