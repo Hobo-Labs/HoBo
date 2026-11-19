@@ -279,7 +279,14 @@ export function quoteAvailablePricing(
 		}
 	}
 	const quote = quoteScenarioV2(scenario);
-	if (!isQuoteVector(quote)) return failed(quote.code, quote.message);
+	if (!isQuoteVector(quote))
+		return failed(
+			quote.code === "PRICING_FIXED_QUANTITY_UNAVAILABLE" ||
+				quote.code === "PRICING_FIXED_SELECTOR_UNAVAILABLE"
+				? "PRICING_MODEL_INCOMPLETE"
+				: quote.code,
+			quote.message,
+		);
 	if (
 		!hasExplicitUnreferencedFixedCoverage(
 			catalog,

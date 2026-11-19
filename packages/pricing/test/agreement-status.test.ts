@@ -141,6 +141,48 @@ describe("provider agreement status in v2 pricing", () => {
 		).toBe(true);
 	});
 
+	it.each([
+		"",
+		"future-status",
+		"trialing",
+	])("rejects an unreferenced %s agreement whose baseline liability is unknown", (status) => {
+		const scenario = scenarioWithStatus(status, "unreferenced");
+		const reason =
+			status === "trialing" ? "explicit workload" : "unrecognized status";
+		expect(quoteScenarioV2(scenario)).toMatchObject({
+			code: "PRICING_AGREEMENT_UNAVAILABLE",
+			message: expect.stringContaining(reason),
+		});
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, scenario)),
+		).toMatchObject({
+			ok: false,
+			code: "PRICING_AGREEMENT_UNAVAILABLE",
+			reason: expect.stringContaining(reason),
+		});
+		const inventory = createTargetPricingInventory({
+			targetId: "target-a",
+			tenantId: "tenant-a",
+			planDigest: digest,
+			complete: true,
+			evidenceRef: "inventory:1",
+			resources: [resource],
+		});
+		const model = targetPricingModel({
+			modelId: scope.modelId,
+			revision: scope.revision,
+			planDigest: digest,
+			scenario,
+			bindings: [{ resourceId: resource.resourceId, candidateIndex: 0 }],
+		});
+		expect(assessTargetPricing(inventory, model)).toMatchObject({
+			quote: { ok: false, code: "PRICING_AGREEMENT_UNAVAILABLE" },
+			providerCoverage: {
+				providers: [{ providerId: "sandbox", status: "unverified" }],
+			},
+		});
+	});
+
 	it("preserves legacy v1 quote behavior for historical replay", () => {
 		expect(
 			isQuoteVector(
