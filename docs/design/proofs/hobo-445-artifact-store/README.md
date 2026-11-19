@@ -9,7 +9,7 @@ tags: [hobo, design]
 
 HOBO-445 is proven by the focused M0 contract at
 [`src/draft/exp-proofs/dx/artifact-store-scope-contract`](../../../../src/draft/exp-proofs/dx/artifact-store-scope-contract/README.md)
-and the durable scope record at [artifact-store.md](../../artifact-store.md).
+and the durable scope record at [artifact-store.md](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/artifact-store.md).
 
 ## Acceptance Evidence
 

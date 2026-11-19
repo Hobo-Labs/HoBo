@@ -85,7 +85,6 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`workspace-activation-telemetry-contract.md`](./workspace-activation-telemetry-contract.md) | Productization M0 contract for first-run workspace activation telemetry and privacy boundaries | — |
 | [`e2e-test-matrix.md`](./e2e-test-matrix.md) | Productization M0 scope and acceptance for the E2E Test Matrix project | — |
 | [`performance-load-tests.md`](./performance-load-tests.md) | Productization M0 scope, launch envelope, capacity assumptions, deterministic fixtures, threshold handoffs, and acceptance for Performance & Load Tests | — |
-| [`chaos-resilience-tests.md`](./chaos-resilience-tests.md) | Productization M0 scope and acceptance for Chaos & Resilience Tests scenarios, steady-state hypotheses, blast-radius limits, abort rules, evidence handoffs, and follow-up gates | — |
 | [`persona-operating-profile.md`](./persona-operating-profile.md) | Productization M0 contract for persona operating profile fields and v1 recommendation memory boundaries | — |
 | [`launch-e2e-persona-matrix.md`](./launch-e2e-persona-matrix.md) | Productization M0 contract for launch e2e persona journeys and pass/fail thresholds | — |
 | [`wasm-runtime-wit.md`](./wasm-runtime-wit.md#plan-20) | WASM/WASI runtime & WIT interface reference | 20 |
@@ -109,8 +108,6 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`product-notifications-lifecycle.md`](./product-notifications-lifecycle.md) | Productization M0 taxonomy for product lifecycle notifications, preferences, delivery evidence, and scope boundaries | — |
 | [`sbom-vulnerability-notice-evidence.md`](./sbom-vulnerability-notice-evidence.md) | Productization M0 evidence contract for SBOMs, dependency vulnerability posture, third-party notices, artifact provenance, and customer assurance readiness | — |
 | [`release-artifact-provenance-retention.md`](./release-artifact-provenance-retention.md) | Productization M0 handoff for release artifact provenance, retention, invalidation/yank, offline bundles, and support/debug access | — |
-| [`artifact-store.md`](./artifact-store.md) | Productization M0 scope and acceptance for artifact classes, custody states, access evidence, retention handoffs, yanks, and support-safe artifact evidence | — |
-| [`package-cache.md`](./package-cache.md) | Productization M0 scope and acceptance for package cache subjects, digest evidence, invalidation, offline availability, and support handoffs | — |
 | [`npm-publish-allowlist.md`](./npm-publish-allowlist.md) | First-publish npm allowlist, `0.1.0-alpha.x` prerelease policy, dual-bin (`@hobo/hobo` only), manual `workflow_dispatch` publish dry-run | — |
 | [`postgres-backend-catalog.md`](./postgres-backend-catalog.md) | PostgreSQL backend catalog: managed offerings plus self-hosted, a cited vendor source per claim, the product-level `DataStoreProvider` naming decision, and which registered compute providers could host a self-managed PostgreSQL (cited claims only; nothing provisioned) | — |
 | [`live-provider-matrix.md`](./live-provider-matrix.md) | Honest matrix: provider/IaC realize vs cred-gated live apply vs in-memory/stub (H-E5) | — |
