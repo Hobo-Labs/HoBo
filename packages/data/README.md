@@ -93,3 +93,30 @@ other EventStore connections every 250 ms by default; configure
 `pollIntervalMs` to change this. Await `drain()` to observe subscriber errors,
 call `unsubscribe()` when a watch ends, and call `close()` on the view when it
 is no longer needed.
+
+## Durable projection rebuilds
+
+`createProjectionRebuild` reads an ordered prefix from a durable EventStore and
+materializes rows into sharded journals in a separate physical EventStore.
+Provide a stable source ID, projection and schema version, event types, row key,
+row parser, and deterministic fold. The parser must produce finite JSON rows and
+return the same representation when replaying a stored row. For a
+nondeterministic projection, use `recorded-output` mode and list only the
+recorded output event types.
+
+Each `runBatch()` reads a bounded number of source events per shard. Row changes
+and the corresponding source position commit together. Competing workers retry
+on journal conflicts, and a new instance resumes from the committed positions.
+An optional snapshot seeds all shards from a pinned source position; the seed is
+persisted before shard initialization so an interrupted initialization can
+resume. A seed is limited to one EventStore payload and 255 rows per shard.
+
+Use a source position captured from the relevant source stream as the barrier
+for `cutover`. The cutover succeeds only after every shard reaches that position
+and a source read finds no later events, then records a `projection.SinkRebound`
+fact. Source and journal do not share a transaction: pause writes through the
+cutover or ensure the projection continues consuming the tail. Routing must read
+`activeSink()` to use the recorded sink. Events appended after the barrier still
+require further `runBatch()` calls. A short batch reports the prefix read at that
+time; it does not freeze concurrent writes. `read()` reconstructs rows from the shard
+journals and returns each shard's position, which may differ while catching up.

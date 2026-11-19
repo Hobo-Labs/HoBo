@@ -78,8 +78,24 @@ package hobo
 }
 
 #ProjectionSinkReboundData: {
-	projection:      string & !=""
-	matchDecidedRef: string & !=""
+	projection:       string & !=""
+	matchDecidedRef?: string & !=""
+	fromSinkId?:      string & !=""
+	toSinkId?:        string & !=""
+	configHash?:      =~"^sha256:[a-f0-9]{64}$"
+	verifiedPosition?: string & =~"^(0|[1-9][0-9]*)$"
+	{
+		matchDecidedRef: string & !=""
+		fromSinkId?: _|_
+		toSinkId?: _|_
+		configHash?: _|_
+		verifiedPosition?: _|_
+	} | {
+		matchDecidedRef?: _|_
+		fromSinkId: string & !=""
+		toSinkId: string & !=""
+		configHash: =~"^sha256:[a-f0-9]{64}$"
+	}
 }
 
 #ProjectionReplicatedEventData: {
@@ -126,4 +142,23 @@ package hobo
 	itemsJson: [...string]
 	nextCursor?: string
 	seq: [string]: int & >=0 & <=9007199254740991
+}
+
+#ProjectionRebuildRowRecord: {
+	configHash: =~"^sha256:[a-f0-9]{64}$"
+	key:        string & !=""
+	rowJson?:   string
+	deleted?:   bool
+}
+
+#ProjectionRebuildSeedRecord: {
+	configHash:      =~"^sha256:[a-f0-9]{64}$"
+	seeded?:        bool
+	sourcePosition?: string & =~"^(0|[1-9][0-9]*)$"
+	rowsJson:        string & !=""
+}
+
+#ProjectionRebuildCheckpointRecord: {
+	configHash:     =~"^sha256:[a-f0-9]{64}$"
+	sourcePosition?: string & =~"^(0|[1-9][0-9]*)$"
 }
