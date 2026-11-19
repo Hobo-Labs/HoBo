@@ -24,7 +24,7 @@ export const DISPATCH_EVENTS = Object.freeze({
 } as const);
 
 export type DispatchCategory = "runner" | "build-machine" | "traffic-backend";
-export type DispatchObjective = "maximize-credits";
+export type DispatchObjective = "min-cost" | "maximize-credits";
 export type CreditFacts = "present" | "present-empty" | "missing" | "invalid";
 
 const CATEGORY_DIMENSIONS: Readonly<Record<DispatchCategory, string>> =
@@ -336,7 +336,7 @@ export interface DispatcherRegistry {
 function decideDispatchInput(request: DispatchRequest) {
 	if (!isJsonObject(request)) throw new TypeError("request must be an object");
 	const category = requireCategory(request.category);
-	const objective = requireObjective(request.objective ?? "maximize-credits");
+	const objective = requireObjective(request.objective ?? "min-cost");
 	const dispatchId = requireString(request.dispatchId, "request.dispatchId");
 	const units = requirePositiveNumber(request.units ?? 1, "request.units");
 	const registry = parseRegistry(request.registry);
@@ -365,6 +365,7 @@ function decideDispatchInput(request: DispatchRequest) {
 	const ranked = rankCreditCandidates({
 		candidates,
 		ledgerView,
+		objective,
 		units,
 		incumbentProviderId,
 	});
@@ -1007,7 +1008,7 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 		);
 	}
 	const reservationLedger = request.reservationLedger;
-	const objective = requireObjective(request.objective ?? "maximize-credits");
+	const objective = requireObjective(request.objective ?? "min-cost");
 	const dispatchId = requireString(request.dispatchId, "request.dispatchId");
 	const reservationId =
 		request.reservationId === undefined
@@ -1204,7 +1205,7 @@ export function replayDispatchDecision(
 
 export function decidePlacement(request: PlacementRequest) {
 	if (!isJsonObject(request)) throw new TypeError("request must be an object");
-	const objective = requireObjective(request.objective ?? "maximize-credits");
+	const objective = requireObjective(request.objective ?? "min-cost");
 	const resourceId = requireString(request.resourceId, "request.resourceId");
 	const resourceType = requireString(
 		request.resourceType,
@@ -1248,6 +1249,7 @@ export function decidePlacement(request: PlacementRequest) {
 	const ranked = rankCreditCandidates({
 		candidates,
 		ledgerView,
+		objective,
 		units,
 		...(request.incumbentProviderId === undefined
 			? undefined
@@ -1307,11 +1309,13 @@ export function decidePlacement(request: PlacementRequest) {
 function rankCreditCandidates({
 	candidates,
 	ledgerView,
+	objective,
 	units,
 	incumbentProviderId,
 }: {
 	readonly candidates: readonly ParsedCandidate[];
 	readonly ledgerView: CreditLedgerView;
+	readonly objective: DispatchObjective;
 	readonly units: number;
 	readonly incumbentProviderId?: string | undefined;
 }): RankedCandidateWithRank[] {
@@ -1320,6 +1324,7 @@ function rankCreditCandidates({
 			rankCreditCandidate({
 				candidate,
 				ledgerView,
+				objective,
 				units,
 				incumbentProviderId,
 			}),
@@ -1451,12 +1456,14 @@ function applyHysteresis(
 function rankCreditCandidate({
 	candidate,
 	ledgerView,
+	objective = "min-cost",
 	units,
 	incumbentProviderId,
 	chargeSwitching = false,
 }: {
 	readonly candidate: ParsedCandidate;
 	readonly ledgerView: CreditLedgerView;
+	readonly objective?: DispatchObjective;
 	readonly units: number;
 	readonly incumbentProviderId?: string | undefined;
 	readonly chargeSwitching?: boolean;
@@ -1509,6 +1516,11 @@ function rankCreditCandidate({
 				? "capacity-exceeded"
 				: undefined;
 	const effectiveMarginalCost = roundCost(totalCost / units);
+	const creditScore = -roundQuantity(freeUnits);
+	const objectiveVector =
+		objective === "maximize-credits"
+			? [creditScore, effectiveMarginalCost]
+			: [effectiveMarginalCost, creditScore];
 	const freeButNotDepletable =
 		credit.valid && credit.freeHeadroom > 0 && freeUnits === 0;
 	const nextCreditExpiresAt = credit.valid
@@ -1524,6 +1536,7 @@ function rankCreditCandidate({
 	const rationale = rationaleFor({
 		credit,
 		ledgerView,
+		objective,
 		freeUnits,
 		paidUnits,
 		switchingCost,
@@ -1544,11 +1557,12 @@ function rankCreditCandidate({
 		rejectionReason,
 		creditFacts: credit.status,
 		nextCreditExpiresAt,
-		objectiveScore: effectiveMarginalCost,
+		objectiveScore:
+			objective === "maximize-credits" ? creditScore : effectiveMarginalCost,
 		rationale,
 		decisionVector: [
 			eligible ? 0 : 1,
-			effectiveMarginalCost,
+			...objectiveVector,
 			expiryScore,
 			-concurrencyScore,
 			listUnitCost,
@@ -1556,7 +1570,7 @@ function rankCreditCandidate({
 		],
 		rankVector: [
 			eligible ? 0 : 1,
-			effectiveMarginalCost,
+			...objectiveVector,
 			expiryScore,
 			-concurrencyScore,
 			listUnitCost,
@@ -1795,6 +1809,7 @@ function publicPlacementRanking(ranked: readonly RankedCandidateWithRank[]) {
 function rationaleFor({
 	credit,
 	ledgerView,
+	objective,
 	freeUnits,
 	paidUnits,
 	switchingCost,
@@ -1802,13 +1817,14 @@ function rationaleFor({
 }: {
 	readonly credit: CreditSummary;
 	readonly ledgerView: CreditLedgerView;
+	readonly objective: DispatchObjective;
 	readonly freeUnits: number;
 	readonly paidUnits: number;
 	readonly switchingCost: number;
 	readonly freeButNotDepletable: boolean;
 }): string {
 	const parts = [
-		"objective=maximize-credits",
+		`objective=${objective}`,
 		`ledgerSeq=${ledgerView.seq}`,
 		`credit-facts=${credit.status}`,
 		`freeUnits=${roundQuantity(freeUnits)}`,
@@ -2402,8 +2418,9 @@ function requireCategory(category: JsonValue | undefined): DispatchCategory {
 }
 
 function requireObjective(objective: JsonValue | undefined): DispatchObjective {
-	if (objective === "maximize-credits") return objective;
-	throw new TypeError("objective must be maximize-credits");
+	if (objective === "min-cost" || objective === "maximize-credits")
+		return objective;
+	throw new TypeError("objective must be min-cost or maximize-credits");
 }
 
 function requireString(

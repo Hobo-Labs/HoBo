@@ -164,6 +164,138 @@
           }
         }
       ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "min-cost chooses the lowest paid amount",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "registryCandidates": [
+              {
+                "providerId": "paid",
+                "category": "runner",
+                "listUnitCost": 1
+              },
+              {
+                "providerId": "credit",
+                "category": "runner",
+                "listUnitCost": 10
+              }
+            ],
+            "category": "runner",
+            "objective": "min-cost",
+            "dispatchId": "objective-min-cost",
+            "units": 10,
+            "ledgerView": {
+              "view": "CreditLedgerView",
+              "seq": 0,
+              "accounts": [
+                {
+                  "providerId": "paid",
+                  "dimension": "runner.minutes",
+                  "freeHeadroom": 0,
+                  "listUnitCost": 1
+                },
+                {
+                  "providerId": "credit",
+                  "dimension": "runner.minutes",
+                  "freeHeadroom": 1,
+                  "listUnitCost": 10
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "ok": true,
+              "selectedProvider": "paid",
+              "objective": "min-cost",
+              "dispatchEvent": {
+                "type": "dispatch.Decided",
+                "data": {
+                  "objective": "min-cost",
+                  "selectedProvider": "paid"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "maximize-credits chooses credited units before cost",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "registryCandidates": [
+              {
+                "providerId": "paid",
+                "category": "runner",
+                "listUnitCost": 1
+              },
+              {
+                "providerId": "credit",
+                "category": "runner",
+                "listUnitCost": 10
+              }
+            ],
+            "category": "runner",
+            "objective": "maximize-credits",
+            "dispatchId": "objective-maximize-credits",
+            "units": 10,
+            "ledgerView": {
+              "view": "CreditLedgerView",
+              "seq": 0,
+              "accounts": [
+                {
+                  "providerId": "paid",
+                  "dimension": "runner.minutes",
+                  "freeHeadroom": 0,
+                  "listUnitCost": 1
+                },
+                {
+                  "providerId": "credit",
+                  "dimension": "runner.minutes",
+                  "freeHeadroom": 1,
+                  "listUnitCost": 10
+                }
+              ]
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "ok": true,
+              "selectedProvider": "credit",
+              "objective": "maximize-credits",
+              "dispatchEvent": {
+                "type": "dispatch.Decided",
+                "data": {
+                  "objective": "maximize-credits",
+                  "selectedProvider": "credit"
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

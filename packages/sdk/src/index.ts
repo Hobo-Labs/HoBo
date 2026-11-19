@@ -6,7 +6,6 @@ export {
 } from "./chaos.js";
 export {
 	type DispatcherDeclaration,
-	type DispatcherObjective,
 	type DispatcherOptions,
 	dispatcher,
 	type ParsedRunnerOptions,

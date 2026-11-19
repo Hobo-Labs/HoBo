@@ -177,10 +177,8 @@ describe("decideCreditDispatch refusals", () => {
 		expect(dispatch({ units }).ok).toBe(true);
 	});
 
-	it("defaults the objective to maximize-credits", () => {
-		expect(dispatch({ objective: undefined }).objective).toBe(
-			"maximize-credits",
-		);
+	it("defaults the objective to min-cost", () => {
+		expect(dispatch({ objective: undefined }).objective).toBe("min-cost");
 	});
 
 	it("rejects an unknown objective rather than falling back", () => {

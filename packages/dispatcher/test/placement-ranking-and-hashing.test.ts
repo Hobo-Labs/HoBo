@@ -157,13 +157,13 @@ describe("decidePlacement request parsing", () => {
 			candidates: [candidate("a")],
 			ledgerView: ledgerView([account("a")]),
 		});
-		expect(result.objective).toBe("maximize-credits");
+		expect(result.objective).toBe("min-cost");
 		expect(result.ok).toBe(true);
 	});
 
 	it("refuses an unsupported objective", () => {
 		expect(() => placement({ objective: "minimize-latency" })).toThrow(
-			/objective must be maximize-credits/u,
+			/objective must be min-cost or maximize-credits/u,
 		);
 	});
 

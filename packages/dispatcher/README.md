@@ -24,6 +24,12 @@ stations routing control loop).
   `@hobo/pricing` quotes. `decideCreditDispatch` ranks candidates against credit
   and budget constraints.
 
+Credit dispatch defaults to `min-cost`: it minimizes the projected paid amount
+and uses free units to break cost ties. `maximize-credits` first consumes the
+most available free units, then minimizes projected cost. Both objectives reject
+candidates that exceed budget or capacity limits. The selected objective is
+recorded in the decision and retained during replay and reservation retries.
+
 ## Pricing-backed dispatch
 
 `decidePricedDispatch` uses schema `hobo.dispatcher/priced`. It ranks exact

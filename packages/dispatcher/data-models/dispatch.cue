@@ -143,7 +143,7 @@ package data_models
 	dispatch_id:       string & !=""
 	category:          "runner" | "build-machine" | "traffic-backend"
 	selected_provider: string & !=""
-	objective:         "maximize-credits"
+	objective:         "min-cost" | "maximize-credits"
 	ledger_input:      #LedgerInputRecord
 	candidates: [...#RankedCandidateRecord]
 }

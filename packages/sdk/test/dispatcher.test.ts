@@ -20,6 +20,36 @@ describeConcern("dispatcher", {
 });
 
 describe("the declaration the engine actually consumes", () => {
+	it.each([
+		["min-cost", "cheap"],
+		["maximize-credits", "credited"],
+	] as const)("honors the %s objective", (objective, selectedProvider) => {
+		const fleet = dispatcher({ objective }, [
+			runner.github({ id: "cheap", listUnitCost: 1 }),
+			runner.depot({ id: "credited", listUnitCost: 10 }),
+		]);
+		const decision = decideCreditDispatch({
+			category: "runner",
+			objective: fleet.objective,
+			dispatchId: "job-objective",
+			units: 10,
+			registry: fleet.registry,
+			ledgerView: {
+				view: "CreditLedgerView",
+				seq: 0,
+				accounts: [
+					{ providerId: "cheap", dimension: "runner.minutes", freeHeadroom: 0 },
+					{
+						providerId: "credited",
+						dimension: "runner.minutes",
+						freeHeadroom: 1,
+					},
+				],
+			},
+		});
+		expect(decision.selectedProvider).toBe(selectedProvider);
+	});
+
 	it("feeds decideCreditDispatch and records dispatch.Decided", () => {
 		const fleet = dispatcher({ objective: "min-cost" }, [
 			runner.selfHosted({ behind: "relay" }),
@@ -29,13 +59,13 @@ describe("the declaration the engine actually consumes", () => {
 		]);
 		const decision = decideCreditDispatch({
 			category: "runner",
-			objective: fleet.engineObjective,
+			objective: fleet.objective,
 			dispatchId: "ci-job-1",
 			registry: fleet.registry,
 			ledgerView: { view: "CreditLedgerView", seq: 0, accounts: [] },
 		});
 		expect(fleet.schema).toBe(DISPATCHER_DECLARATION_SCHEMA);
-		expect(fleet.engineObjective).toBe("maximize-credits");
+		expect(fleet.objective).toBe("min-cost");
 		expect(Object.isFrozen(fleet.runners)).toBe(true);
 		expect(fleet.registry.records).toHaveLength(4);
 		expect(fleet.registry.byCategory.get("runner")).toHaveLength(4);

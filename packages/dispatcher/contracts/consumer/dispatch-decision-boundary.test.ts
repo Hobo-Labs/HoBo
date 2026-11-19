@@ -21,7 +21,7 @@ type LibraryInteraction = {
 			content: {
 				registryCandidates: DispatchProviderInput[];
 				category: DispatchCategory;
-				objective: "maximize-credits";
+				objective: "min-cost" | "maximize-credits";
 				dispatchId: string;
 				units?: number;
 				ledgerView: CreditLedgerView;
@@ -62,7 +62,7 @@ describe("dispatch decision library contract", () => {
 			pactSpecification: { version: "4.0.0" },
 			transport: "library-call",
 		});
-		expect(pact.interactions).toHaveLength(3);
+		expect(pact.interactions).toHaveLength(5);
 	});
 
 	it.each(pact.interactions)("$description", (interaction) => {
