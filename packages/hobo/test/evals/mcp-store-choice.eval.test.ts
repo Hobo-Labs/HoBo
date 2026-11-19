@@ -147,6 +147,12 @@ describe("owner store choice over raw MCP stdio", () => {
 			});
 			expect(choice.result).toMatchObject({
 				isError: true,
+				content: [
+					{
+						type: "text",
+						text: "Store selection cannot continue in this HoBo session until a verified private owner hand-off is available.",
+					},
+				],
 				structuredContent: { status: "secure-form-unavailable" },
 			});
 			const submitted = await client.rpc("tools/call", {

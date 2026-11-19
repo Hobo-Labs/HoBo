@@ -322,7 +322,7 @@ export function createStoreChoiceApp(
 		readResource: () => undefined,
 		async callTool() {
 			return result(
-				"A private store-selection form is unavailable in this HoBo session. Use a verified HoBo owner session to continue.",
+				"Store selection cannot continue in this HoBo session until a verified private owner hand-off is available.",
 				{ status: "secure-form-unavailable" },
 				true,
 			);
