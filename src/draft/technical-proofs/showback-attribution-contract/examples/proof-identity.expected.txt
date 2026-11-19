@@ -1,3 +1,0 @@
-slug: showback-attribution-contract
-layer: technical
-proof-identity: ok

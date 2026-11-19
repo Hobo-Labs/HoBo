@@ -1,3 +1,0 @@
-slug: closure-builder-manifest-lowering-contract
-layer: technical
-proof-identity: ok

@@ -13,10 +13,7 @@
     "expProofs": []
   },
   "artifacts": {
-    "examples": "examples",
-    "notebook": "notebook.ipynb",
-    "diagrams": [],
-    "bench": "bench"
+    "diagrams": []
   },
   "waivers": []
 }

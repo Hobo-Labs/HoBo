@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -194,6 +195,98 @@ function fileAt(revision: string, file: string): string | undefined {
 	}
 }
 
+const IDENTITY_SCAFFOLD_DIGESTS = new Map<string, readonly string[]>([
+	[
+		"examples/proof-identity.ts",
+		[
+			"675ac55737ce135cc1e27c79cd589d3178512e47fc22089d70ea7562e5dc14ca",
+			"70fefc662e85ea6128d3d7d8a10c1fc3c5d580b8ab81c32c6c5487d460b4a909",
+		],
+	],
+	[
+		"examples/proof-identity.expected.txt",
+		["b03742b19dcecfa42f53d6840636c4d662e47cf1063166668a774c0dea6a047a"],
+	],
+	[
+		"bench/identity.bench.ts",
+		["ef3ca99124e340eed040b88c6efd804608460878ee3c752b0fb133eabb932ec7"],
+	],
+	[
+		"notebook.ipynb",
+		["77362e68407c912a8632a04f6bf85a4a627c3b5cce189fbff39f36963831ea21"],
+	],
+]);
+
+export function isIdentityScaffold(file: string, content: string): boolean {
+	const workspace = workspaceForDraftFile(file);
+	if (workspace === undefined) return false;
+	const digests = IDENTITY_SCAFFOLD_DIGESTS.get(
+		file.slice(workspace.length + 1),
+	);
+	if (digests === undefined) return false;
+	const normalized = content.replaceAll(path.basename(workspace), "<slug>");
+	const digest = createHash("sha256").update(normalized).digest("hex");
+	return digests.includes(digest);
+}
+
+const manifestCleanupSchema = z
+	.object({
+		artifacts: z
+			.object({
+				examples: z.string().optional(),
+				notebook: z.string().optional(),
+				bench: z.string().optional(),
+			})
+			.passthrough(),
+	})
+	.passthrough();
+
+export function removesOnlyIdentityDeclarations(
+	workspace: string,
+	before: string,
+	after: string,
+	priorFiles: ReadonlySet<string>,
+	removedScaffolds: ReadonlySet<string>,
+): boolean {
+	let left: z.infer<typeof manifestCleanupSchema>;
+	let right: z.infer<typeof manifestCleanupSchema>;
+	try {
+		left = manifestCleanupSchema.parse(JSON.parse(before));
+		right = manifestCleanupSchema.parse(JSON.parse(after));
+	} catch {
+		return false;
+	}
+	const expected = {
+		examples: [
+			"examples/proof-identity.ts",
+			"examples/proof-identity.expected.txt",
+		],
+		notebook: ["notebook.ipynb"],
+		bench: ["bench/identity.bench.ts"],
+	} as const;
+	let removed = false;
+	for (const key of ["examples", "notebook", "bench"] as const) {
+		const oldPath = left.artifacts[key];
+		if (oldPath === undefined || right.artifacts[key] !== undefined) continue;
+		if (oldPath !== (key === "notebook" ? "notebook.ipynb" : key)) return false;
+		const prefix = `${workspace}/${oldPath}`;
+		const previous = [...priorFiles].filter(
+			(file) => file === prefix || file.startsWith(`${prefix}/`),
+		);
+		const required = expected[key].map((file) => `${workspace}/${file}`);
+		if (
+			previous.length !== required.length ||
+			!required.every(
+				(file) => priorFiles.has(file) && removedScaffolds.has(file),
+			)
+		)
+			return false;
+		delete left.artifacts[key];
+		removed = true;
+	}
+	return removed && JSON.stringify(left) === JSON.stringify(right);
+}
+
 function cascadeFiles(files: string[], argv: string[]): string[] {
 	const staged = argv.includes("--staged");
 	const base =
@@ -206,7 +299,18 @@ function cascadeFiles(files: string[], argv: string[]): string[] {
 				encoding: "utf8",
 			}).trim();
 	const after = staged ? "" : "HEAD";
+	const removedScaffolds = new Set(
+		files.filter((file) => {
+			const previous = fileAt(before, file);
+			return (
+				previous !== undefined &&
+				fileAt(after, file) === undefined &&
+				isIdentityScaffold(file, previous)
+			);
+		}),
+	);
 	return files.filter((file) => {
+		if (removedScaffolds.has(file)) return false;
 		if (PROSE_EXTENSIONS.has(path.extname(file).toLowerCase())) {
 			const workspace = workspaceForDraftFile(file);
 			return Boolean(
@@ -215,6 +319,36 @@ function cascadeFiles(files: string[], argv: string[]): string[] {
 		}
 		const left = fileAt(before, file);
 		const right = fileAt(after, file);
+		const workspace = workspaceForDraftFile(file);
+		if (
+			workspace &&
+			file === `${workspace}/proof.json` &&
+			left !== undefined &&
+			right !== undefined
+		) {
+			const priorFiles = new Set(
+				execFileSync(
+					"git",
+					["ls-tree", "-r", "--name-only", before, "--", workspace],
+					{
+						cwd: repoRoot,
+						encoding: "utf8",
+					},
+				)
+					.split("\n")
+					.filter(Boolean),
+			);
+			if (
+				removesOnlyIdentityDeclarations(
+					workspace,
+					left,
+					right,
+					priorFiles,
+					removedScaffolds,
+				)
+			)
+				return false;
+		}
 		return (
 			left === undefined ||
 			right === undefined ||
