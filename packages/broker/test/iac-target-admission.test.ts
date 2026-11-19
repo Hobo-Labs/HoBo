@@ -665,8 +665,11 @@ describe("provider-neutral IaC target budget admission", () => {
 					{ requestId: "malformed-verifier", ...fixture() },
 					{
 						...deps,
-						verifyLiability: () =>
-							(asynchronous ? Promise.resolve(value) : value) as never,
+						verifyLiability: () => {
+							const result = asynchronous ? Promise.resolve(value) : value;
+							// SAFETY: negative trust-boundary fixture values are intentionally non-boolean.
+							return result as never;
+						},
 						authorize: (input) => {
 							policyCalls++;
 							return deps.authorize(input);

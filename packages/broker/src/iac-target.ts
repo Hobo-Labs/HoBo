@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
+import { clone, create, toJsonString } from "@bufbuild/protobuf";
 import {
 	type Decimal,
 	isBoundedPricingInput,
@@ -200,10 +200,9 @@ function reservationMatchesQuote(
 	return reservation.executionDigest === input.executionDigest;
 }
 
-function isReservationReplayConflict(error: unknown): boolean {
-	return (
-		error instanceof Error && error.message === "budget reservation replay differs"
-	);
+function isReservationReplayConflict(cause: unknown): boolean {
+	if (!(cause instanceof Error)) return false;
+	return cause.message === "budget reservation replay differs";
 }
 
 export async function admitIacTarget(
@@ -673,21 +672,6 @@ export async function admitIacTarget(
 		quote,
 		executionDigest,
 	} as const;
-	if (
-		claimed.ledgerSeq !== head.seq + 1 &&
-		reservationMatchesQuote(claimed, claimedMatch) &&
-		claimed.status === "held"
-	)
-		return create(IacTargetAdmissionDecisionSchema, {
-			requestId,
-			targetId,
-			status: "replay",
-			code: "EXECUTION_ALREADY_CLAIMED",
-			budget: { evaluation: "allowed", reservation: "held" },
-			requestDigest,
-			reservation: claimed,
-			quote,
-		});
 	let ledgerAfterClaim: ReturnType<BudgetAdmissionAuthority["read"]>;
 	try {
 		ledgerAfterClaim = await deps.authority.read(deps.now());

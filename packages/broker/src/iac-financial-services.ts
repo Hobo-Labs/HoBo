@@ -99,6 +99,8 @@ export function createIacFinancialServices(
 		} catch {
 			throw new TypeError("invalid infrastructure plan");
 		}
+		if (!isBoundedPricingInput(stable))
+			throw new TypeError("invalid or unbounded infrastructure plan");
 		const inventory = createTargetPricingInventory(stable);
 		const pricing =
 			model === undefined
