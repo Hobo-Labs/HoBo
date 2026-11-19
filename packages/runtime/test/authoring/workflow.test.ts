@@ -1008,6 +1008,53 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
+	it("rejects events recorded after a terminal fact", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/after-terminal",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "after-terminal-seed",
+					workflowName: "after-terminal",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/after-terminal",
+				seq: 2,
+				type: "run.Completed",
+				data: { result: "ok" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "late",
+				streamId: "run/after-terminal",
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "late", index: 0, result: "nope" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "after-terminal",
+			run() {
+				return "live";
+			},
+		});
+		await expect(engine.resume(wf, "after-terminal", {})).rejects.toThrow(
+			/events after terminal/,
+		);
+	});
+
 	it("rejects completed terminal when the journal still records a step failure", async () => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(

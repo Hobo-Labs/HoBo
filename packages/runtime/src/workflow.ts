@@ -308,6 +308,14 @@ export function createWorkflowEngine(
 		}
 		const terminal = terminals[0];
 		if (terminal) {
+			const terminalIndex = journal.indexOf(terminal);
+			if (terminalIndex >= 0) {
+				for (const event of journal.slice(terminalIndex + 1)) {
+					if (event.type.startsWith("run.")) {
+						throw new Error(`events after terminal for ${runId}`);
+					}
+				}
+			}
 			if (
 				terminal.type === "run.Completed" &&
 				journal.some((event) => event.type === "run.StepFailed")
