@@ -51,11 +51,12 @@ with `--follow`, it emits one JSON log or gap record per line. A gap record
 means a rotation or truncation may have caused some output to be missed. Local
 logs are stored in `.hobo/local-deployment.log` and retained across restarts.
 
-The local component host initializes HTTP components after their declared HTTP
-component dependencies are serving and makes dependency addresses available
-through service discovery before calling each component's entrypoint. Bindle
-environment values are also available during initialization. The host tears
-components down in reverse dependency order; a cycle stops startup.
+The local component host starts independent HTTP components concurrently and
+initializes each dependent after its declared HTTP component dependencies are
+serving. It makes dependency addresses available through service discovery
+before calling each component's entrypoint. Bindle environment values are also
+available during initialization. The host tears components down in reverse
+dependency order; a cycle stops startup.
 
 An HTTP component can require a successful readiness response before its
 dependents initialize:
