@@ -19,15 +19,13 @@ function isValidPhoto(value: string | null): boolean {
     return bytes
       .subarray(0, 8)
       .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-  if (type === "jpeg")
-    return (
-      bytes.length >= 5 &&
-      bytes[0] === 255 &&
-      bytes[1] === 216 &&
-      bytes[2] === 255 &&
-      bytes[bytes.length - 2] === 255 &&
-      bytes[bytes.length - 1] === 217
-    );
+  if (type === "jpeg") {
+    if (bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216) return false;
+    for (let i = 2; i < bytes.length - 1; i += 1) {
+      if (bytes[i] === 255 && bytes[i + 1] === 217) return true;
+    }
+    return false;
+  }
   return (
     bytes.length >= 12 &&
     bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
