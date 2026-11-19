@@ -576,7 +576,10 @@ or staged production deployments, reads and lists them, serves the saved source
 bytes from synthetic deployment origins, and moves existing production aliases.
 `seedDeployment`, `seedAlias`, `setState`, and `failNext` let tests model an
 earlier deployment, project production aliases, build completion, and a response
-lost before or after an operation. A staged production deployment receives no
+lost before or after an operation. API-created deployments start in `BUILDING`
+unless `initialState` overrides it; seeded deployments default to `READY` unless
+their `state` is set. Use `setState` to complete a simulated build. A staged
+production deployment receives no
 production alias automatically. The simulated project promotion and rollback
 endpoints immediately move the project's seeded production aliases; the provider
 may process those operations asynchronously. Manual alias assignment to a staged
@@ -597,6 +600,39 @@ a real provider request is terminal. `test/deployment-emulator.test.ts`
 exercises the HoBo resolver through the shared transport and the staged
 upload, project-promotion, rollback, and alias flow. These fixtures do not prove
 that a live provider has accepted or finished a promotion.
+
+A minimal paired fixture uses `@emulators/core` and `@emulators/vercel` as test
+dependencies:
+
+```ts
+import { createServer } from "@emulators/core";
+import { getVercelStore, seedFromConfig, vercelPlugin } from "@emulators/vercel";
+import { createVercelDeploymentEmulator } from "@hobo/provider-vercel/testing";
+
+const api = "https://api.vercel.com";
+const token = "synthetic-token";
+const { app, store } = createServer(vercelPlugin, {
+  baseUrl: api,
+  tokens: { [token]: { login: "fixture", id: 1 } },
+});
+vercelPlugin.seed?.(store, api);
+seedFromConfig(store, api, {
+  teams: [{ slug: "fixture" }],
+  projects: [{ name: "sample", team: "fixture" }],
+});
+const state = getVercelStore(store);
+const team = state.teams.findOneBy("slug", "fixture");
+const project = state.projects.findOneBy("name", "sample");
+if (!team || !project) throw new Error("Fixture is unavailable.");
+const emulator = createVercelDeploymentEmulator({
+  teamId: team.uid,
+  token,
+  projectFetch: (input, init) => app.fetch(new Request(input, init)),
+});
+emulator.seedProject({ id: project.uid, name: project.name, teamId: team.uid });
+```
+
+Pass `emulator.fetch` or `emulator.transport` to the service under test.
 
 For tests of the source uploader, `opaqueSourceArchives: true` accepts exactly
 one `.vercel/source.tgz.part1` reference whose uploaded bytes, SHA-1 and size
