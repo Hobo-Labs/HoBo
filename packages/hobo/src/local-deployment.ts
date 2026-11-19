@@ -1,7 +1,7 @@
 import { fork } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { create, fromJson, toJson } from "@bufbuild/protobuf";
@@ -18,6 +18,7 @@ import {
 import { isJsonObject, isJsonString } from "./json.js";
 import { fingerprintLocalDeployment } from "./local-deployment-fingerprint.js";
 import { acquireLocalDeploymentLock } from "./local-deployment-lock.js";
+import { localDeploymentLogPath } from "./local-deployment-log.js";
 
 const RECEIPT_FILE = "local-deployment.json";
 const TOKEN_FILE = "local-deployment.token";
@@ -207,13 +208,19 @@ export async function startLocalDeployment(
 		const worker = existsSync(fileURLToPath(js))
 			? js
 			: new URL("./local-deployment-worker.ts", import.meta.url);
-		const child = fork(worker, [], {
-			cwd: projectDir,
-			detached: true,
-			stdio: ["ignore", "ignore", "ignore", "ipc"],
-			execArgv: ["--import", import.meta.resolve("tsx")],
-			env: { ...process.env, HOBO_LOCAL_CONTROL_TOKEN: token },
-		});
+		const log = await open(localDeploymentLogPath(projectDir), "a", 0o600);
+		let child: ReturnType<typeof fork>;
+		try {
+			child = fork(worker, [], {
+				cwd: projectDir,
+				detached: true,
+				stdio: ["ignore", log.fd, log.fd, "ipc"],
+				execArgv: ["--import", import.meta.resolve("tsx")],
+				env: { ...process.env, HOBO_LOCAL_CONTROL_TOKEN: token },
+			});
+		} finally {
+			await log.close();
+		}
 		try {
 			const receipt = await new Promise<LocalDeploymentReceipt>(
 				(resolveReady, reject) => {
