@@ -1455,11 +1455,14 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 		});
 		const journalBefore = await engine.journal("bad-step-result");
-		const rejection = await engine
-			.resume(wf, "bad-step-result", {})
-			.catch((error: unknown) => error);
+		let rejection: TypeError | undefined;
+		try {
+			await engine.resume(wf, "bad-step-result", {});
+		} catch (reason: unknown) {
+			if (reason instanceof TypeError) rejection = reason;
+		}
 		expect(rejection).toBeInstanceOf(TypeError);
-		expect((rejection as TypeError).message).toMatch(
+		expect(rejection?.message).toMatch(
 			/invalid run\.StepCompleted|JSON-normalized/,
 		);
 		expect(runs).toBe(0);
