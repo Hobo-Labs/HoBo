@@ -29,6 +29,17 @@ describe("replay==live production corpus (S1-16)", () => {
 		expect(files.length).toBeGreaterThanOrEqual(2);
 	});
 
+	it("replays repeated greetings in their stream order", () => {
+		const corpus = loadCorpus("hello-bindle-repeated-greetings");
+		const result = assertCorpusReplayEqualsLive(corpus);
+		expect(result.liveState.served.map((entry) => entry.name)).toEqual([
+			"HoBo",
+			"world",
+			"HoBo",
+		]);
+		expect(result.report.stateDigest).toBe(corpus.expected.stateDigest);
+	});
+
 	it("rebuild-from-zero (replay) equals live byte-for-byte for the greeting corpus", () => {
 		const corpus = loadCorpus("hello-bindle-greetings");
 		const result = assertCorpusReplayEqualsLive(corpus);
@@ -37,21 +48,6 @@ describe("replay==live production corpus (S1-16)", () => {
 		expect(result.report.stateDigest).toBe(corpus.expected.stateDigest);
 		expect(result.report.mode).toBe("replay");
 		expect(result.liveState.count).toBe(2);
-	});
-
-	it("exercises an upcaster case: an evolved v1 event body round-trips vN -> vN+1", () => {
-		const corpus = loadCorpus("hello-bindle-greetings-upcast");
-		expect(corpus.requiresUpcaster).toBe(true);
-
-		const result = assertCorpusReplayEqualsLive(corpus);
-
-		// The committed v1 `greeting.Served` body carried `{ text }`; the upcaster
-		// lifts it to v2 `{ message }`, so the folded read model reflects the
-		// evolved field byte-for-byte.
-		expect(result.digestMatches).toBe(true);
-		expect(result.liveState.served).toEqual([
-			{ name: "legacy", message: "hello, legacy" },
-		]);
 	});
 
 	it("detects corpus tampering: a mutated event body breaks the golden digest", () => {

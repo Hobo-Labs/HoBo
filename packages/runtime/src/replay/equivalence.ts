@@ -19,14 +19,12 @@ import type {
 	ReplayMode,
 	ReplayReport,
 	SeqVector,
-	UpcastFn,
 } from "./types.js";
 
 export interface AssertReplayEqualsLiveInput<S> {
 	events: EventEnvelope[];
 	fold: FoldFn<S>;
 	initialState: S;
-	upcast?: UpcastFn;
 	targetSeq?: SeqVector;
 	seed?: string;
 	normalize?: (value: JsonValue) => JsonValue;
@@ -37,7 +35,6 @@ export function assertReplayEqualsLive<S>({
 	events,
 	fold,
 	initialState,
-	upcast = (event) => event,
 	targetSeq = seqVector(events),
 	seed = "hobo-replay-live",
 	normalize = stableValue,
@@ -50,7 +47,6 @@ export function assertReplayEqualsLive<S>({
 		events: eventSlice,
 		fold,
 		initialState,
-		upcast,
 		seed,
 		mode: "live",
 		ambientNow: 1_900_000_000_000,
@@ -61,7 +57,6 @@ export function assertReplayEqualsLive<S>({
 		events: replayEvents,
 		fold,
 		initialState,
-		upcast,
 		seed,
 		mode: "replay",
 		ambientNow: 2_000_000_000_000,
@@ -100,7 +95,6 @@ export interface RunFoldInput<S> {
 	events: EventEnvelope[];
 	fold: FoldFn<S>;
 	initialState: S;
-	upcast: UpcastFn;
 	seed: string;
 	mode: ReplayMode;
 	ambientNow: number;
@@ -111,7 +105,6 @@ export function runFold<S>({
 	events,
 	fold,
 	initialState,
-	upcast,
 	seed,
 	mode,
 	ambientNow,
@@ -128,8 +121,7 @@ export function runFold<S>({
 					mode,
 					eventKey: eventKey(event),
 				});
-				const lifted = upcast(clone(event), context);
-				state = fold(state, lifted, context);
+				state = fold(state, clone(event), context);
 			}
 
 			return state;

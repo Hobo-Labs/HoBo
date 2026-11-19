@@ -51,8 +51,3 @@ export type FoldFn<S> = (
 	event: EventEnvelope,
 	context: DeterministicContext,
 ) => S;
-
-export type UpcastFn = (
-	event: EventEnvelope,
-	context: DeterministicContext,
-) => EventEnvelope;
