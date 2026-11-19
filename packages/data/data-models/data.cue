@@ -197,6 +197,13 @@ import "list"
 	observedLagMs:  =~"^[0-9]+$"
 }
 
+#ProjectionReadEvidence: {
+	source:    "owner" | "replica"
+	readClass: "session" | "bounded-staleness" | "eventual"
+	if source == "owner" {readClass: "session"}
+	if source == "replica" {readClass: "bounded-staleness" | "eventual"}
+}
+
 #PaginatedChangeData: {
 	resource:       string & !=""
 	key:            string & !=""
