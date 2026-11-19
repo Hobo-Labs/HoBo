@@ -100,6 +100,12 @@ describe("a deadline that expires", () => {
 		const { link, release } = blockingLink();
 		const call = link.callImport("api", KV, "get", {}, { deadline: soon(20) });
 		await expect(call).rejects.toThrow(DeadlineExceededError);
+		expect(link.events.at(-1)).toMatchObject({
+			type: "link.Called",
+			outcome: "deadline-exceeded",
+			failureKind: "cancelled",
+			cancellation: "signaled",
+		});
 		release();
 	});
 

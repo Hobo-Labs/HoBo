@@ -109,6 +109,15 @@ it.each([
 			},
 		),
 	).resolves.toEqual({ deadline: iso(expected) });
+	expect(
+		link.events.filter((event) => event.type === "link.Called"),
+	).toMatchObject([
+		{ importInterface: inner, deadline: iso(expected) },
+		{
+			importInterface: outer,
+			deadline: parent === undefined ? null : iso(parent),
+		},
+	]);
 });
 
 it("keeps deadlines isolated across concurrent calls", async () => {

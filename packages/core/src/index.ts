@@ -6,6 +6,7 @@ export {
 	BudgetPolicyRecordSchema,
 	BudgetScopeIdentityRecordSchema,
 } from "./_generated/budget_policy_pb.js";
+export { WrpcCallEventSchema } from "./_generated/wrpc_call_pb.js";
 export { WrpcLinkManifestSchema } from "./_generated/wrpc_link_manifest_pb.js";
 export type {
 	CapabilityDenialCode,

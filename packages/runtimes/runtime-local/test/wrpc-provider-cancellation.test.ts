@@ -81,6 +81,16 @@ it("aborts cooperative provider work at the deadline and frees its slot", async 
 	const error = await result;
 	expect(error).toBeInstanceOf(DeadlineExceededError);
 	expect(runtime.signal()?.reason).toBe(error);
+	expect(runtime.link.events.at(-1)).toMatchObject({
+		type: "link.Called",
+		componentId: "api",
+		providerId: "kv",
+		operation: "hold",
+		deadline: "2030-01-01T00:00:01.000Z",
+		outcome: "deadline-exceeded",
+		failureKind: "cancelled",
+		cancellation: "signaled",
+	});
 	await expect(runtime.link.callImport("api", iface, "get")).resolves.toEqual({
 		value: "ready",
 	});

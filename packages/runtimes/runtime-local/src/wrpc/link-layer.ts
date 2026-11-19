@@ -12,10 +12,12 @@ import {
 	parseWireVersion,
 	type TransportInvocation,
 	WireVersionIncompatibleError,
+	type WrpcLinkCalledEvent,
 	type WrpcLinkPort,
 	type WrpcTransport,
 } from "@hobo/core";
 import {
+	classifyToRuntimeError,
 	DeadlineExceededError,
 	MembraneBackpressureError,
 	RuntimeMembraneError,
@@ -351,52 +353,7 @@ export function createWrpcLinkLayer(options: {
 				if (remaining === 0) inFlight.delete(providerId);
 				else inFlight.set(providerId, remaining);
 			};
-			let invocation: Promise<JsonValue>;
-			const transportInvocation: TransportInvocation = {
-				link,
-				operation,
-				payload,
-				deadline: deadlineIso,
-			};
-			if (transport.kind === "in-process") {
-				transportInvocation.signal = abort.signal;
-			}
-			try {
-				const invoke = () => transport.invoke(transportInvocation);
-				invocation = Promise.resolve(
-					deadlineIso !== null && deadlineMs !== null
-						? activeDeadline.run(
-								{ iso: deadlineIso, milliseconds: deadlineMs },
-								invoke,
-							)
-						: invoke(),
-				);
-			} catch (error) {
-				release();
-				throw error;
-			}
-			const tracked = invocation.finally(release);
-
-			const result =
-				deadlineMs !== null && deadlineIso !== null
-					? await raceDeadline(
-							tracked,
-							deadlineMs,
-							clock,
-							(observedNowMs) =>
-								new DeadlineExceededError({
-									componentId,
-									importInterface: parsedInterface,
-									operation,
-									deadline: deadlineIso,
-									deadlineMs,
-									observedNowMs,
-								}),
-							abort,
-						)
-					: await tracked;
-
-			events.push({
+			const callEvent: WrpcLinkCalledEvent = {
 				type: "link.Called",
 				componentId: link.componentId,
 				importInterface: link.importInterface,
@@ -407,8 +364,78 @@ export function createWrpcLinkLayer(options: {
 				transport: link.transport,
 				codec: codecName,
 				deadline: deadlineIso,
-			});
-			return result;
+			};
+			try {
+				let invocation: Promise<JsonValue>;
+				const transportInvocation: TransportInvocation = {
+					link,
+					operation,
+					payload,
+					deadline: deadlineIso,
+				};
+				if (transport.kind === "in-process") {
+					transportInvocation.signal = abort.signal;
+				}
+				try {
+					const invoke = () => transport.invoke(transportInvocation);
+					invocation = Promise.resolve(
+						deadlineIso !== null && deadlineMs !== null
+							? activeDeadline.run(
+									{ iso: deadlineIso, milliseconds: deadlineMs },
+									invoke,
+								)
+							: invoke(),
+					);
+				} catch (error) {
+					release();
+					throw error;
+				}
+				const tracked = invocation.finally(release);
+
+				const result =
+					deadlineMs !== null && deadlineIso !== null
+						? await raceDeadline(
+								tracked,
+								deadlineMs,
+								clock,
+								(observedNowMs) =>
+									new DeadlineExceededError({
+										componentId,
+										importInterface: parsedInterface,
+										operation,
+										deadline: deadlineIso,
+										deadlineMs,
+										observedNowMs,
+									}),
+								abort,
+							)
+						: await tracked;
+
+				events.push(callEvent);
+				return result;
+			} catch (error) {
+				const failure =
+					error instanceof DeadlineExceededError
+						? ({
+								outcome: "deadline-exceeded",
+								failureKind: "cancelled",
+							} as const)
+						: ({
+								outcome: "error",
+								failureKind: classifyToRuntimeError(error).tag,
+							} as const);
+				events.push({
+					...callEvent,
+					...failure,
+					...(abort.signal.aborted
+						? {
+								cancellation:
+									transport.kind === "in-process" ? "signaled" : "unavailable",
+							}
+						: undefined),
+				});
+				throw error;
+			}
 		},
 
 		get events() {
