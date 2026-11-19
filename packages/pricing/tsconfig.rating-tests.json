@@ -5,6 +5,7 @@
 		"types": ["node"]
 	},
 	"include": [
+		"test/agreement-status.test.ts",
 		"test/deterministic-developer-pricing.test.ts",
 		"test/deterministic-time-order.test.ts",
 		"test/financial-scope-identity.test.ts",
