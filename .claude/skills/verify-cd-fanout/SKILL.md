@@ -9,7 +9,7 @@ description: Check cd release fan-out state transitions when changing the listed
 
 **Why:** A halted or unsafe release can spread to additional environments.
 
-**Result at sync commit `7b1460485e25d427d1897237e473c3b6e0ee2446`:** PASS within the stated model bound and for the parameterized abstraction under its assumptions.
+**Result at sync commit `cde971698098b326dac91a32ed41f3b47bc34d2b`:** PASS within the stated model bound and for the parameterized abstraction under its assumptions.
 
 ## Covered code
 
@@ -36,10 +36,10 @@ FanoutCatchup explores 256 states and 256 steps with one pilot and one productio
 
 The Z3 induction proves a count-based abstraction for any number of mandatory Camps and production starts: production starts only once every mandatory Camp has succeeded, and a halt prevents a new start. The proof includes a separate catch-up start obligation and assumes an atomic scheduler, monotone mandatory successes during one run, and the mandatory guard in both modes. The proof does not establish TypeScript refinement, controller concurrency, retries, or behavior when state is reset.
 
-Mutation evidence: Removed the halt guard and mandatory-group scope separately in scratch copies; each corresponding real-code check failed. Scratch implementation mutations that bypass the catch-up gate or ignore missing slots fail the generated property; corresponding FanoutCatchup mutations violate their invariants. `FANOUT_PROOF_MUTATION=omit-halt-guard`, `omit-pilot-gate`, and `omit-catchup-gate` separately make their abstract obligations fail.
+Mutation evidence: The executable mutation harness checks four isolated implementation mutations: removing the halt guard, removing the normal mandatory-group scope, bypassing the catch-up mandatory gate, and ignoring missing slots during completion. Each generated property produces a counterexample, and the restored implementation passes. Four corresponding TLA+ mutations violate `NoNewStartsWhileHalted`, `PilotBeforeProduction`, `MandatoryBeforeProduction`, or `MissingIsNotComplete`. `FANOUT_PROOF_MUTATION=omit-halt-guard`, `omit-pilot-gate`, and `omit-catchup-gate` separately make their abstract obligations fail.
 
 A TLC pass checks this model, not the entire implementation. The tests exercise the stated real-code cases, not all possible implementations or production integrations. See `docs/state-machines.md` for the inventory and user-facing charts.
 
 ## Keep in sync
 
-Before trusting a result, inspect changes to the covered files since `7b1460485e25d427d1897237e473c3b6e0ee2446`, including uncommitted changes. If behavior changed, update the model and real-code checks; distinguish a real counterexample from a model mismatch by replaying it against the code. Run the check, reproduce a deliberately broken variant in a scratch copy, then move this sync commit forward only after confirming the model still describes the code. Use `/maintain-formal-verification-skill` for that update.
+Before trusting a result, inspect changes to the covered files since `cde971698098b326dac91a32ed41f3b47bc34d2b`, including uncommitted changes. If behavior changed, update the model and real-code checks; distinguish a real counterexample from a model mismatch by replaying it against the code. Run the check, reproduce a deliberately broken variant in a scratch copy, then move this sync commit forward only after confirming the model still describes the code. Use `/maintain-formal-verification-skill` for that update.
