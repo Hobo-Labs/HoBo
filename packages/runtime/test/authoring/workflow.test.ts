@@ -1568,9 +1568,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		).rejects.toThrow(/invalid run\.SleepScheduled/);
 		expect(effects).toBe(0);
 		expect(
-			(await engine.journal("hidden-invalid-sleep")).map(
-				(event) => event.type,
-			),
+			(await engine.journal("hidden-invalid-sleep")).map((event) => event.type),
 		).toEqual(["run.Started"]);
 	});
 
