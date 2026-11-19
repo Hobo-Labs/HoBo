@@ -118,7 +118,7 @@ describe("poison-event quarantine", () => {
 		expect(outcome.quarantined).toEqual([
 			{
 				offendingSeq: 2,
-				quarantineSeq: 3,
+				quarantineSeq: 4,
 				type: "order.Quarantined",
 				reason: "decode-error",
 			},

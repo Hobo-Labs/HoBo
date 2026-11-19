@@ -37,6 +37,7 @@ export {
 	isOptimisticConflict,
 	isStaleFenceError,
 	ProjectionWriteError,
+	UnpersistedQuarantineError,
 } from "./errors.js";
 export {
 	createActorActivatedEvent,

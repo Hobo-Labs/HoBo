@@ -24,6 +24,15 @@ package hobo
 	reason:        string & !=""
 }
 
+#AggregateQuarantinedEventData: {
+	offendingSeq:     int & >0 & <=9007199254740991
+	offendingType:    =~"^[a-z][a-z0-9]*\\.[A-Z][A-Za-z0-9]*$"
+	offendingEventId: string & !=""
+	fold:             string & !=""
+	foldKind:         "aggregate"
+	reason:           string
+}
+
 #UpcasterRegistration: {
 	type:        =~"^[a-z][a-z0-9]*\\.[A-Z][A-Za-z0-9]*$"
 	fromVersion: int & >=1

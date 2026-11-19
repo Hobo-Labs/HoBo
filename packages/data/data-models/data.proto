@@ -30,6 +30,15 @@ message QuarantineRecord {
   string reason = 4;
 }
 
+message AggregateQuarantinedEventData {
+  uint64 offending_seq = 1;
+  string offending_type = 2;
+  string offending_event_id = 3;
+  string fold = 4;
+  string fold_kind = 5;
+  string reason = 6;
+}
+
 message UpcasterRegistration {
   string type = 1;
   uint32 from_version = 2;
