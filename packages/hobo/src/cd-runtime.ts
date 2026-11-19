@@ -1,14 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: config files and CLI flags read here are untrusted JSON narrowed before use; @hobo/cd-kube-fleet parses each realizer record itself. */
-/**
- * The HoBo host's CD runtime (ADR-0182 C2): opens the journal, builds
- * the declared topology, binds the host adapters and composes `@hobo/cd`
- * through `composeContinuousDelivery`. `hobo deploy`, `hobo incident`,
- * `hobo serve cd` and the `hobo up` delivery seam all open CD here, so there
- * is one composition and one path.
- *
- * Fixtures are reachable only with `--simulate`: the in-memory journal, the
- * in-memory artifact store and the labelled simulated realizer.
- */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion */
 
 import { create } from "@bufbuild/protobuf";
 import { canonicalManifestHash } from "@hobo/bindles";
@@ -116,23 +106,15 @@ import {
 
 export type CdRuntimeOptions = Readonly<{
 	env: Readonly<Record<string, string | undefined>>;
-	/** HOBO_HOME. */
 	home: string;
 	cwd: string;
-	/** `--simulate`: the only path to fixtures. */
 	simulate: boolean;
 	now?: () => number;
 	principal?: PrincipalRef;
-	/** Share an already-open journal (e.g. the Yard runtime's, for `hobo up`). */
 	store?: DurableEventStore;
 	openStore?: CdStoreOpener;
 	yards?: readonly Yard[];
-	/**
-	 * Topology files (`--yard`, HOBO_CD_TOPOLOGY): Yard modules or delivery
-	 * modules exporting `yards`/`camps`, parsed once (cd-topology.ts).
-	 */
 	topologyFiles?: readonly string[];
-	/** Extra topology sources (e.g. an imported ClusterProfile inventory). */
 	topology?: readonly TopologyReader[];
 	http?: HttpTransport;
 	credentials?: CredentialResolver;
@@ -143,11 +125,6 @@ export type CdRuntimeOptions = Readonly<{
 	policyPack?: PolicyPack;
 	resolvePack?: CdHostInputs["resolvePack"];
 	packs?: CdHostInputs["packs"];
-	/**
-	 * The pricing and Station budget authorities the fan-out aggregate gate
-	 * reads (D20). Without them every fan-out promotion is refused before any
-	 * Camp starts (`fanout-aggregate-quote-missing`); cost is never assumed zero.
-	 */
 	fanoutCost?: FanoutCostAuthority;
 	trustPolicy?: CdJsonObject;
 	readCiEvents?: Parameters<
@@ -156,18 +133,8 @@ export type CdRuntimeOptions = Readonly<{
 	readCiArtifact?: Parameters<
 		typeof composeContinuousDelivery
 	>[0]["readCiArtifact"];
-	/**
-	 * A runner host's job ports (and, optionally, its container port) for
-	 * `hobo deploy agent run` with HOBO_CD_RUNNER_HOST (cd-agent.ts). The
-	 * container port defaults to the engine CLI; job ports have no default.
-	 */
 	runnerHost?: RunnerHostPorts;
-	/** How an agent's realizer waits between observations (default: a timer). */
 	sleep?: (ms: number) => Promise<void>;
-	/**
-	 * Where a failed runner-host health ingest is reported (default: one JSON
-	 * line on stderr, event `hobo_cd_runner_host_ingest_failed`).
-	 */
 	onRunnerHostIngestError?: (error: Error) => void;
 }>;
 
@@ -181,7 +148,6 @@ export type CdRuntime = Readonly<{
 	close(): Promise<void>;
 }>;
 
-/** The principal a CLI or MCP session acts as: an agent when HOBO_AGENT_ID is set (proposal-only by default, ADR-0094). */
 export function cdPrincipal(
 	env: Readonly<Record<string, string | undefined>>,
 ): PrincipalRef {
@@ -191,7 +157,6 @@ export function cdPrincipal(
 	return { kind: "user", id: user };
 }
 
-/** Secret-free credential locators: resolved from the process env for one use, never persisted. */
 export function envCredentials(
 	env: Readonly<Record<string, string | undefined>>,
 ): CredentialResolver {
@@ -210,7 +175,6 @@ export function envCredentials(
 	};
 }
 
-/** Telemetry when no OTLP endpoint is configured: nothing leaves the process. */
 export const DISABLED_TELEMETRY: TelemetrySink = Object.freeze({
 	spans: async () => {},
 	metrics: async () => {},
@@ -223,7 +187,6 @@ function refusal(code: string, message: string, remediation: string) {
 	};
 }
 
-/** Open the composed CD runtime. */
 export async function openCdRuntime(
 	options: CdRuntimeOptions,
 ): Promise<Outcome<CdRuntime>> {
@@ -234,10 +197,7 @@ export async function openCdRuntime(
 	});
 	if (!parsed.ok) return parsed;
 	const config = parsed.value;
-	// Declared topology is read before the journal opens: a malformed file
-	// refuses the command with nothing opened.
 	const files = options.topologyFiles ?? [];
-	// One evaluation per module: Camps and Rails are read from the same files.
 	const importModule = memoizedImporter(defaultModuleImporter);
 	const declared =
 		files.length === 0
@@ -324,13 +284,9 @@ export async function openCdRuntime(
 	const railCatalog = rails.value;
 	const policyPack = options.policyPack ?? createCdBaselinePack();
 	const resolvePack = options.resolvePack ?? (async () => policyPack);
-	// Camps declared on a catalogued publication provider (npm, OCI registry,
-	// GitHub Pages) are realized by that provider's shipped resolver.
 	const catalogCamps = (await declaredTopology.camps()).filter(
 		(camp) => catalogRealizedProvider(camp.provider) !== undefined,
 	);
-	// One conductor per runtime: a topology that needs both the kube fleet's
-	// realizer and the catalog's is refused, never silently resolved to one.
 	if (
 		!config.simulate &&
 		catalogCamps.length > 0 &&
@@ -366,9 +322,6 @@ export async function openCdRuntime(
 		...(kube?.value.realizer ? { conductor: kube.value.realizer } : undefined),
 		...options.realizers,
 	};
-	// Matching offers each declared Camp kind exactly its own product: the
-	// catalogued publication providers theirs, runner hosts the runner-host
-	// product. Nothing else is offered.
 	const plannerProviders = [
 		...catalogPlannerProviders(catalogCamps),
 		...runnerHostPlannerProviders(await declaredTopology.camps()),
@@ -378,9 +331,6 @@ export async function openCdRuntime(
 		(plannerProviders.length > 0
 			? createRegistryFromProviders(plannerProviders)
 			: undefined);
-	// A source-discovered Freight with no declaration member names its source
-	// definition (`declaration_hash`); the Bindle's declaration planned with
-	// it is bound to that digest here, never to a digest it does not have.
 	const sourceBound = new WeakMap<object, `sha256:${string}`>();
 	const host: CdHostInputs = {
 		store,
@@ -390,11 +340,7 @@ export async function openCdRuntime(
 		realizers,
 		...(options.routing ? { routing: options.routing } : undefined),
 		planning: {
-			// A Freight's declaration is the Bindle the build stored under its
-			// declaration hash (`hobo build`, D13); planning refuses when absent.
 			registry: registry ?? emptyRegistry(),
-			// The digest `hobo build` records as `declaration_hash` (D13), or the
-			// source definition's for a Bindle declared with its source.
 			declarationDigest: (declaration) =>
 				sourceBound.get(declaration) ?? canonicalManifestHash(declaration),
 			async declaration(freight: FreightRecord) {
@@ -420,16 +366,11 @@ export async function openCdRuntime(
 			},
 		},
 		gate: {
-			// Contracts come from the declaration the gate is handed; without a
-			// contract reader both sets are empty and can-deploy is vacuous.
 			contracts: async () => ({ deployed: [], candidate: [] }),
 			subject: async () => ({ classifications: [], residency: [] }),
 			...options.gate,
 		},
 	};
-	// The Station's Rail decides provider approval for Placement (I5): the
-	// active declared Rail's approvedProviders, else undefined (fail closed).
-	// Accepted runner-host reports also reach Camp inventory as health.
 	const factories = withRunnerHostHealthIngest(
 		{
 			...defaultCdFactories,
@@ -449,19 +390,14 @@ export async function openCdRuntime(
 		factories,
 		adapters: {
 			...adapters,
-			// A runner-host row carries the controller its Freight pins.
 			resolver: (scope) =>
 				withRunnerHostRealization(adapters.resolver(scope), scope.desired),
-			// A runner host verifies from its agent's own reports; every other
-			// suite stays fail-closed (no runner is composed for it).
 			suites: (scope) =>
 				createRunnerHostVerifySuite({
 					desired: scope.desired,
 					inventory: scope.inventory,
 					otherwise: adapters.suites?.(scope) ?? unconfiguredSuites(),
 				}),
-			// Fan-out promotions read placed Camps from the recorded decision
-			// and the aggregate gate from these authorities (compose/wire.ts).
 			...(fanoutCost !== undefined
 				? { fanoutCost: () => fanoutCost }
 				: undefined),
@@ -493,8 +429,6 @@ export async function openCdRuntime(
 		...(options.readCiArtifact
 			? { readCiArtifact: options.readCiArtifact }
 			: undefined),
-		// Telemetry is opt-in (CD.md): without an OTLP endpoint nothing is
-		// exported, rather than the sink's localhost default being retried.
 		...(config.telemetryEndpoint
 			? { telemetryEndpoint: config.telemetryEndpoint }
 			: { telemetry: DISABLED_TELEMETRY }),
@@ -552,7 +486,6 @@ export async function openCdRuntime(
 	};
 }
 
-/** A failed health ingest leaves readiness stale: say so on stderr. */
 function reportRunnerHostIngestError(error: Error): void {
 	process.stderr.write(
 		`${JSON.stringify({
@@ -564,17 +497,9 @@ function reportRunnerHostIngestError(error: Error): void {
 }
 
 function emptyRegistry(): PlannerRegistry {
-	// No providers: Matching finds no offering and the planning adapter
-	// refuses with a typed reason, never an invented provider.
 	return createRegistryFromProviders([]);
 }
 
-/**
- * `--feed` names the Station's delivery feed (`https://station/v1/cd/`, as
- * the usage and the runner fleet's agent.env document it); the agent
- * transport takes the Station origin and adds `/v1/cd/` itself. Any other
- * path is passed through for the transport to refuse.
- */
 export function stationOriginOf(feedUrl: string): string {
 	try {
 		const url = new URL(feedUrl);
@@ -584,18 +509,10 @@ export function stationOriginOf(feedUrl: string): string {
 			!url.hash
 		)
 			return url.origin;
-	} catch {
-		// Unparsable: the transport refuses it with its own reason.
-	}
+	} catch {}
 	return feedUrl;
 }
 
-/**
- * Planner offerings of the declared publication Camps: each catalogued
- * provider offers exactly its one resolver product as a port, so a
- * declaration resource `{ type: "data.v1", port: "hobo:<productId>" }`
- * matches only a Camp that provider realizes. Nothing else is offered.
- */
 export function catalogPlannerProviders(
 	camps: readonly CampTopology[],
 ): RegistrableProvider[] {
@@ -610,7 +527,6 @@ export function catalogPlannerProviders(
 	return [...byProvider.entries()]
 		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 		.map(([id, regions]) => {
-			// SAFETY: keys come from catalogRealizedProvider above.
 			const port =
 				CATALOG_REALIZED_PRODUCTS[id as keyof typeof CATALOG_REALIZED_PRODUCTS];
 			return {
@@ -656,14 +572,6 @@ export function catalogPlannerProviders(
 		});
 }
 
-/**
- * Planner offerings of the declared runner host Camps (`hobo-ci-runners/<host>`):
- * each Camp provider offers exactly the runner-host product as a port, so the
- * runner fleet's declared resource (`{ type: "data.v1", port:
- * "hobo:hobo-ci.runner-host/v1" }`, `runnerFleetDeclaration`) matches only a
- * runner host's offering, and the plan row carries the product id the
- * runner-host realizer acts on. Nothing else is offered.
- */
 export function runnerHostPlannerProviders(
 	camps: readonly CampTopology[],
 ): RegistrableProvider[] {
@@ -690,7 +598,6 @@ export function runnerHostPlannerProviders(
 							: { kind: "partial", missing: [...(request.features ?? [])] };
 					},
 					estimateCost() {
-						// The host is the operator's own machine: no metered price.
 						return {
 							marginalPrice: "0",
 							sku: port,
@@ -720,15 +627,6 @@ export function runnerHostPlannerProviders(
 		}));
 }
 
-/**
- * The planning declaration of a Bindle declared with its source, for a
- * Freight that source discovered with no declaration member (its
- * `declaration_hash` is the source definition's digest, `@hobo/cd/sources`).
- * Only while the source, as applied now, still has exactly that digest: a
- * redefined source no longer names this Freight's declaration, and planning
- * then refuses `planning-declaration-missing` rather than plan it anew.
- * Today one Bindle is declared this way: the runner fleet's controller.
- */
 export function sourceDeclaredBindle(
 	freight: FreightRecord,
 	sources: readonly FreightSourceRecord[],
@@ -768,16 +666,6 @@ function resolveRefusal(
 	};
 }
 
-/**
- * The Set resolver with each runner-host row bound to the controller its
- * Freight pins: Matching decides the row (`hobo-ci.runner-host/v1` on the
- * Camp's provider); its realization parameters are the Freight's own
- * artifacts (`runnerHostRealizationParameters`: the image by manifest
- * digest, and each paired release by its bytes' digest). The Delta is
- * recomputed over the bound Set. A runner-host row for a Camp outside the
- * runner fleet, or a Freight with no digest-pinned image, is refused; every
- * other Set passes through unchanged.
- */
 export function withRunnerHostRealization(
 	inner: SetResolver,
 	desired: DesiredStateReader,
@@ -865,7 +753,6 @@ export function withRunnerHostRealization(
 	return Object.freeze(resolver);
 }
 
-/** A thrown resolver refusal (or any failure) as a typed code and message. */
 function refusalOf(error: Error) {
 	return {
 		code:
@@ -880,13 +767,6 @@ function realizerReason(code: string, message: string, remediation: string) {
 	return create(ReasonRecordSchema, { code, message, remediation });
 }
 
-/**
- * The conductor realizer for publication Camps: the Set's Freight is realized
- * by the Camp's catalogued resolver (`catalogCampBinding`), one resolve
- * request per artifact. CONVERGED is reported only from the resolvers' own
- * observed outcomes (I5); a resolver refusal is a BLOCKED observation that
- * carries its typed code, never a success.
- */
 export function createCatalogResolverRealizer(
 	deps: Readonly<{
 		topology: TopologyReader;
@@ -928,7 +808,6 @@ export function createCatalogResolverRealizer(
 					"Declare the Camp on @hobo/provider-npm, @hobo/provider-oci-registry or @hobo/provider-github, or compose another conductor realizer.",
 				),
 			];
-		// SAFETY: a Set names the Freight id it was resolved from.
 		const record = await deps.freight(input.desired.freightId as FreightId);
 		if (!record?.manifest)
 			return [
@@ -980,7 +859,6 @@ export function createCatalogResolverRealizer(
 		});
 	}
 
-	// Per Camp, what a binding remembers across passes (acknowledged uploads).
 	const memories = new Map<string, Set<string>>();
 
 	async function pass(
@@ -999,7 +877,6 @@ export function createCatalogResolverRealizer(
 		if (!("binding" in bound))
 			return observation(input, ReconcileStatus.BLOCKED, bound);
 		const { binding, freight } = bound;
-		// An observe-mode Camp never writes, whatever the pass asks.
 		const mode = binding.mode === "observe" ? "observe" : asked;
 		let memory = memories.get(input.campId);
 		if (!memory) {
@@ -1034,9 +911,6 @@ export function createCatalogResolverRealizer(
 					mode === "converge"
 						? await resolver.reconcile(request, http)
 						: await resolver.read?.(request, http);
-				// Ready only as the resolver observed it: every realized product
-				// reports `outputs.ready` from its own read (digest and every tag,
-				// dist-tag, or the published tree and its build).
 				const ready = outcome?.outputs.ready === true;
 				if (!ready) pending = true;
 				resources.push({
@@ -1082,7 +956,6 @@ export function createCatalogResolverRealizer(
 	} satisfies Realizer);
 }
 
-/** An agent-mode reconciler for `hobo deploy agent run` (outbound HTTPS only, I3). */
 export function agentReconciler(
 	input: Readonly<{
 		feedUrl: string;
@@ -1100,7 +973,6 @@ export function agentReconciler(
 ): CampReconciler {
 	const http =
 		input.http ?? createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	// SAFETY: an enrolled reconciler id (the feed verifies it on every request).
 	const reconcilerId = input.reconcilerId as ReconcilerId;
 	const transport = defaultCdFactories.createHttpTransport({
 		baseUrl: stationOriginOf(input.feedUrl),
@@ -1130,13 +1002,6 @@ export function agentReconciler(
 	});
 }
 
-/**
- * The `hobo up` delivery seam (D13): the slice of the composed facade that
- * `hobo up`/`down`/`build` drive, with the Freight manifest codec. It is
- * structurally the `YardDelivery` of `@hobo/cli` (WP15); `attachCdDelivery`
- * puts it on a YardRuntime so `up` records LOCAL_BUILD Freight, promotes it
- * into the deployment Camp and an in-process conductor converges it.
- */
 export async function cdYardDelivery(runtime: CdRuntime) {
 	const { parseFreightManifest, writeFreightManifest } = await import(
 		"@hobo/cd/freight"
@@ -1158,7 +1023,6 @@ export async function cdYardDelivery(runtime: CdRuntime) {
 	});
 }
 
-/** Attach CD delivery to a Yard runtime (D13). The Yard and CD share one journal. */
 export function attachCdDelivery<R extends object, D>(
 	yardRuntime: R,
 	delivery: D,
@@ -1166,16 +1030,8 @@ export function attachCdDelivery<R extends object, D>(
 	return Object.freeze({ ...yardRuntime, delivery });
 }
 
-// public-contract: env var naming the @hobo/cd-kube-fleet config file (D26).
 export const CD_KUBE_FLEET_ENV = "HOBO_CD_KUBE_FLEET";
 
-/**
- * When HOBO_CD_KUBE_FLEET names a JSON file, wire `@hobo/cd-kube-fleet`
- * (D26): `{ "ocm": OcmRealizerRecord } | { "karmada": KarmadaRealizerRecord }`
- * as the conductor realizer, plus an optional `clusterProfiles`
- * ClusterProfileImportRecord imported as OBSERVE_ONLY Camps. Fleet managers
- * are transports and inventory, never schedulers.
- */
 async function openKubeFleet(
 	input: Readonly<{
 		env: Readonly<Record<string, string | undefined>>;
@@ -1203,7 +1059,6 @@ async function openKubeFleet(
 		);
 		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
 			throw new Error(`${file} must hold a JSON object`);
-		// SAFETY: a JSON object, parsed member by member by @hobo/cd-kube-fleet below.
 		const config = parsed as Record<string, CdJsonObject | undefined>;
 		const fleet = await import("@hobo/cd-kube-fleet");
 		const deps = { http: input.http, credentials: input.credentials };
@@ -1259,17 +1114,14 @@ async function openKubeFleet(
 	}
 }
 
-/** The `--camp` list of `agent run`. */
 function campsOf(flags: CdJsonObject): CampId[] {
 	const value = flags.camp;
-	// SAFETY: opaque Camp ids; the feed refuses Camps the agent was not accepted for.
 	return (typeof value === "string" ? value : "")
 		.split(",")
 		.map((s) => s.trim())
 		.filter((s) => s !== "") as CampId[];
 }
 
-/** `hobo deploy agent run`: an agent-mode reconciler loop until SIGINT/SIGTERM. */
 async function runAgentProcess(
 	input: Readonly<{
 		flags: CdJsonObject;
@@ -1325,10 +1177,8 @@ async function runAgentProcess(
 	const reconciler = agentReconciler({
 		feedUrl,
 		reconcilerId,
-		// SAFETY: checked to be a JSON object above.
 		privateJwk: parsedKey as CdJsonObject,
 		svid,
-		// SAFETY: opaque Camp ids; the feed refuses Camps the agent was not accepted for.
 		campIds: camps as CampId[],
 		realizer: input.realizer,
 		store: input.store,

@@ -84,11 +84,6 @@ export function formatDecimal128(text: string): string | undefined {
 	return `${sign}${mantissa}E${adjusted < 0 ? "" : "+"}${adjusted}`;
 }
 
-/**
- * The plain decimal a printed Decimal128 denotes, or `undefined` for `NaN`,
- * the infinities, and anything else that is not a finite decimal. The result
- * is plain but not yet normalised; the canonical parser does that.
- */
 export function fromDecimal128Text(text: string): string | undefined {
 	const parts = parseDecimalText(text);
 	if (parts === undefined) return undefined;

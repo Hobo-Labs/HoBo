@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
 
-/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: FOCUS billing rows are parsed once at the provider billing JSON boundary. */
+/* oxlint-disable anti-slop/no-runtime-typeof */
 
 export type SyntheticProviderCredentials = Readonly<{
 	authorization: string;
