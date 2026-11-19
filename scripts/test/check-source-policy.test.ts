@@ -187,6 +187,14 @@ f: /* TODO: remove block */`;
 			),
 			[1, 2],
 		);
+		assert.deepEqual(
+			commentViolations(
+				"schema.prisma",
+				"/* relation pkg/* */\n// TODO: follow up\n",
+				new Set([1, 2]),
+			).map((item) => item.line),
+			[2],
+		);
 		const wit = "/* outer /* inner */ outer */\n/// explanation";
 		assert.deepEqual(
 			commentViolations("x.wit", wit, new Set([1, 2])).map((item) => item.line),

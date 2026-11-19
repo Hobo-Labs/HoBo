@@ -92,6 +92,7 @@ export function lexComments(
 					if (
 						dialect !== "proto" &&
 						dialect !== "cue" &&
+						dialect !== "prisma" &&
 						text.startsWith("/*", index)
 					) {
 						nesting++;
