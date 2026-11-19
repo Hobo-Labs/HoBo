@@ -6,12 +6,18 @@ import { parseOffendingSeq } from "./json.js";
 import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
 
 export type Evolve<S> = (state: S, event: EventEnvelope) => S;
+export type FoldFailureClassification = "deterministic" | "transient";
+export type FoldFailureClassifier = (
+	error: Error,
+	event: EventEnvelope,
+) => FoldFailureClassification;
 
 export interface FoldSpec<S> {
 	name?: string;
 	initialState: S;
 	evolve: Evolve<S>;
 	upcasters?: UpcasterRegistry;
+	classifyFailure?: FoldFailureClassifier;
 }
 
 export interface FoldOutcome<S> {
@@ -26,6 +32,22 @@ function clone<T>(value: T): T {
 }
 
 export const AGGREGATE_QUARANTINE_EVENT = "aggregate.QuarantineRecorded";
+
+export function shouldQuarantineFailure(
+	error: Error,
+	event: EventEnvelope,
+	classify: FoldFailureClassifier | undefined,
+): boolean {
+	const result = classify
+		? classify(error, Object.freeze(clone(event)))
+		: "deterministic";
+	if (result !== "deterministic" && result !== "transient") {
+		throw new TypeError(
+			"fold failure classification must be deterministic or transient",
+		);
+	}
+	return result === "deterministic";
+}
 
 function isQuarantineFact(event: EventEnvelope): boolean {
 	return (
@@ -83,12 +105,15 @@ export function foldEvents<S>(
 			state = clone(spec.evolve(clone(state), Object.freeze(clone(upcast))));
 		} catch (cause) {
 			if (cause instanceof UpcasterChainError) throw cause;
+			const error = cause instanceof Error ? cause : new Error(String(cause));
+			if (!shouldQuarantineFailure(error, event, spec.classifyFailure))
+				throw cause;
 			quarantinedSeqs.add(event.seq);
 			quarantined.push({
 				offendingSeq: event.seq,
 				quarantineSeq: ++nextQuarantineSeq,
 				type: `${event.type.split(".")[0] ?? "event"}.Quarantined`,
-				reason: cause instanceof Error ? cause.message : String(cause),
+				reason: error.message,
 			});
 		}
 	}
