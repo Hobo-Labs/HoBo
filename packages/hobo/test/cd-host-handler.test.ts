@@ -155,7 +155,7 @@ describe("composeCdHost", () => {
 				runtime: refusing,
 				holderId: "test-service-refused",
 			});
-			expect(host.refusals).toContain("conductor refused");
+			expect(host.refusals).toContain("cd-host-refused");
 			await host.service.start();
 			try {
 				expect(host.service.ready()).toBe(true);
@@ -202,6 +202,78 @@ describe("composeCdHost", () => {
 			});
 			expect(host.managed).toEqual(["edge/managed"]);
 			expect(conducted).toEqual([["edge/managed"]]);
+		});
+	});
+
+	it("refuses readiness by code when the topology has no MANAGED camps", async () => {
+		await withRuntime(async (runtime) => {
+			const camps: readonly CampTopology[] = [
+				campTopology("edge/watched", CampManagement.OBSERVE_ONLY),
+			];
+			const overridden: TestRuntime = {
+				...runtime,
+				cd: {
+					...runtime.cd,
+					topology: {
+						camps: async () => camps,
+						camp: async (campId: CampId) =>
+							camps.find((camp) => camp.campId === campId),
+					},
+				},
+			};
+			const host = await composeCdHost({
+				runtime: overridden,
+				holderId: "test-no-managed",
+				readiness: "composed",
+			});
+			expect(host.managed).toEqual([]);
+			expect(host.refusals).toContain("cd-no-managed-camps");
+			const report = await host.pass();
+			expect(report.skipped).toBe(false);
+			const ready = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(ready.status).toBe(503);
+		});
+	});
+
+	it("stays not ready when every camp fails to reconcile", async () => {
+		await withRuntime(async (runtime) => {
+			const failing: TestRuntime = {
+				...runtime,
+				conductor: () =>
+					fakeReconciler(
+						async () =>
+							({
+								reasons: [
+									{
+										code: "reconcile-failed",
+										message: "the provider refused",
+										remediation: "fix the camp",
+									},
+								],
+								status: 0,
+							}) as never,
+					),
+			};
+			const host = await composeCdHost({
+				runtime: failing,
+				holderId: "test-all-failed",
+				readiness: "composed",
+			});
+			const report = await host.pass();
+			expect(report.skipped).toBe(false);
+			expect(report.reconciled.every((entry) => !entry.ok)).toBe(true);
+			const ready = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(ready.status).toBe(503);
+			expect(json(ready.body)).toMatchObject({
+				readiness: "composed",
+				refusals: [],
+			});
 		});
 	});
 
@@ -256,7 +328,7 @@ describe("composeCdHost", () => {
 		});
 	});
 
-	it("bounds a pass by its deadline and clears the flight on timeout", async () => {
+	it("bounds a pass by its deadline and holds the flight until the pass settles", async () => {
 		await withRuntime(async (runtime) => {
 			const signals: (AbortSignal | undefined)[] = [];
 			let calls = 0;
@@ -282,7 +354,7 @@ describe("composeCdHost", () => {
 			const second = host.pass();
 			expect(second).not.toBe(first);
 			await expect(second).rejects.toThrow("cd pass deadline exceeded");
-			expect(calls).toBe(2);
+			expect(calls).toBe(1);
 			await new Promise((resolve) => setTimeout(resolve, 200));
 		});
 	});
@@ -300,8 +372,8 @@ describe("composeCdHost", () => {
 				holderId: "test-refused",
 				readiness: "composed",
 			});
-			expect(host.refusals).toContain("conductor refused");
-			await expect(host.pass()).rejects.toThrow("conductor refused");
+			expect(host.refusals).toContain("cd-host-refused");
+			await expect(host.pass()).rejects.toThrow("cd-host-refused");
 		});
 	});
 
@@ -314,8 +386,8 @@ describe("composeCdHost", () => {
 			});
 			const first = host.pass();
 			const second = host.pass();
-			expect(first).toBe(second);
-			await first;
+			const [firstReport, secondReport] = await Promise.all([first, second]);
+			expect(secondReport).toBe(firstReport);
 		});
 	});
 });

@@ -33,10 +33,11 @@ A function has no disk worth a journal. A store with no fleet is therefore
 refused (`cd-journal-not-provisioned`) rather than falling back to SQLite. A
 composition that fails is forgotten, so the next request tries again.
 
-`/healthz` answers 200 and names the build's commit whatever CD's state.
-`/readyz` answers 200 once CD has composed with no refusals, completed one
-pass, and its journal health check passes. Until then it answers 503 with a
-`code`:
+`/healthz` answers 200 and names the build's commit whatever CD's state;
+only GET (or HEAD) is allowed on the probes. `/readyz` answers 200 once
+CD has composed with no refusals, the journal holds a durable record of
+a fully successful pass within the readiness window, and a live journal
+probe succeeds. Until then it answers 503 with a `code`:
 
 - `cd-non-production-deployment`: a preview or development deployment; it
   never opens the production journal.
@@ -44,7 +45,16 @@ pass, and its journal health check passes. Until then it answers 503 with a
 - `cd-store-binding-invalid`: the committed binding is malformed.
 - `cd-journal-not-provisioned`: the owner's store holds no journal fleet.
 - `cd-store-unavailable`: the journal could not be opened.
+- `cd-no-managed-camps`: the topology declares Camps but none are
+  MANAGED, so the pass has nothing to reconcile.
 - Otherwise, the CD runtime's own refusal code.
+
+Readiness is fleet-wide: whichever instance completes a pass appends a
+`host.PassSucceeded` event to the journal's `cd-host-pass` stream, so
+the `cd` function and the `tick` function — separate, short-lived
+instances — agree on readiness without sharing process state. A pass
+counts only when every reconciled Camp is ok and the journal store is
+healthy; the record decays after two pass deadlines.
 
 Unexpected request failures return a generic `cd-serve-error` response without
 exposing internal error details to HTTP clients.
@@ -64,8 +74,25 @@ The deployable and its tests (`test/`) exist. Two pieces are not done yet:
   created yet.
 
 Until both land, a deployment answers `/readyz` with
-`cd-store-binding-missing`. The journal fleet's copy timer runs only while an
-instance is alive. Driving it from the scheduled pass is not done yet.
+`cd-store-binding-missing`.
+
+The scheduled pass reconciles the managed Camps and runs one service
+tick (including its retention steps); the fleet pass lease makes the
+queue's `maxConcurrency: 1` a second layer, so a backlog of deliveries
+waits its turn instead of overlapping passes. A permanent refusal — a
+missing or malformed store binding, an unprovisioned journal fleet, a
+non-production deployment — is logged with its stable `reason` code and
+acked, never retried forever. The journal fleet's copy and backup timer
+(`hobo cd up`'s continuity plan) is process-local: on serverless it runs
+only while an instance happens to be warm, so the scheduled pass does
+not yet drive the fleet's copies or backups — that coverage gap is
+tracked, and the five-minute recovery point must not be assumed from a
+green `/readyz`.
+
+Sign-in spans two OIDC majors: the Vercel project's OIDC token (issued
+by Vercel) is exchanged with Infisical OIDC Auth for the CD workload
+identity, and the journal fleet's Postgres members are reached with the
+connection strings the owner's store holds.
 
 ## Architecture rules (AGENTS.md)
 
