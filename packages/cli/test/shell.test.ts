@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	CANONICAL_VERBS,
@@ -9,7 +9,8 @@ import {
 	helpText,
 	runHobo,
 } from "../src/index.js";
-import type { JsonObject } from "../src/json.js";
+import { parseJsonObject } from "../src/json.js";
+import type { CliContext } from "../src/types/envelope.js";
 
 const canonicalVerbNames = [
 	"up",
@@ -185,7 +186,6 @@ describe("HoBo CLI shell", () => {
 			expect(result.stdout).toMatch(new RegExp(flag.replace(/[<>]/g, "\\$&")));
 		}
 		for (const retired of [
-			// "deploy" is a first-class delivery verb (attested CD plane), not retired.
 			"destroy",
 			"teardown",
 			"rollback",
@@ -207,32 +207,27 @@ describe("HoBo CLI shell", () => {
 			expect(result.stderr).toBe("");
 			expect(result.stdout).not.toMatch(/not yet implemented\nUsage:/);
 
-			// SAFETY: `const envelope = JSON.parse(result.stdout) as JsonObject;` is required at this I/O or test boundary.
-			const envelope = JSON.parse(result.stdout) as JsonObject;
+			const envelope = parseJsonObject(result.stdout);
 			expect(envelope.ok).toBe(false);
 			expect(envelope.verb).toBe("plan");
 			expect(envelope.status).toBe("not_implemented");
 			expect(envelope.code).toBe("HOBO_CLI_STUB");
 			expect(String(envelope.message)).toMatch(/composed @hobo\/hobo binary/);
-			// SAFETY: `expect((envelope.context as { cwd: string }).cwd).toBe(cwd);` is required at this I/O or test boundary.
-			expect((envelope.context as { cwd: string }).cwd).toBe(cwd);
-			// SAFETY: `expect((envelope.context as { projectDir: string }).projectDir).toBe(cwd);` is required at this I/O or test boundary.
-			expect((envelope.context as { projectDir: string }).projectDir).toBe(cwd);
+			expect(envelope.context).toMatchObject({ cwd, projectDir: cwd });
 		});
 	});
 
-	it("keeps the legacy ok stub envelope behind HOBO_STUB_OK=1", async () => {
+	it("does not report success for an unavailable command when HOBO_STUB_OK is set", async () => {
 		await withBindle(async (cwd) => {
-			process.env.HOBO_STUB_OK = "1";
+			vi.stubEnv("HOBO_STUB_OK", "1");
 			try {
 				const result = await runHobo(["plan", "--json"], { cwd });
-				expect(result.exitCode).toBe(0);
-				// SAFETY: `const envelope = JSON.parse(result.stdout) as JsonObject;` is required at this I/O or test boundary.
-				const envelope = JSON.parse(result.stdout) as JsonObject;
-				expect(envelope.ok).toBe(true);
+				expect(result.exitCode).toBe(1);
+				const envelope = parseJsonObject(result.stdout);
+				expect(envelope.ok).toBe(false);
 				expect(envelope.code).toBe("HOBO_CLI_STUB");
 			} finally {
-				delete process.env.HOBO_STUB_OK;
+				vi.unstubAllEnvs();
 			}
 		});
 	});
@@ -255,8 +250,6 @@ describe("HoBo CLI shell", () => {
 
 	it("does not suggest verbs for short inputs more than one edit away", async () => {
 		await withBindle(async (cwd) => {
-			// "qeq" is 2 edits from "new" — under the old len/2 threshold this
-			// misfired a suggestion; short verbs now require distance ≤1.
 			const result = await runHobo(["qeq"], { cwd });
 			expect(result.exitCode).toBe(2);
 			expect(result.stderr).toMatch(/Unknown verb "qeq"/);
@@ -333,15 +326,12 @@ describe("HoBo CLI shell", () => {
 			expect(result.exitCode).toBe(2);
 			expect(result.stderr).toBe("");
 
-			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
-			const envelope = JSON.parse(result.stdout) as {
-				ok: boolean;
-				code: string;
-				remediation: string[];
-			};
+			const envelope = parseJsonObject(result.stdout);
 			expect(envelope.ok).toBe(false);
 			expect(envelope.code).toMatch(/^HOBO_/);
-			expect(envelope.remediation.length).toBeGreaterThanOrEqual(1);
+			expect(envelope.remediation).toEqual(
+				expect.arrayContaining([expect.any(String)]),
+			);
 		});
 	});
 
@@ -395,31 +385,27 @@ describe("HoBo CLI shell", () => {
 	it("constructs command context once and injects it into dispatch", async () => {
 		await withBindle(async (cwd) => {
 			let contextBuilds = 0;
-			let injectedContext: { buildId: string } | undefined;
+			let injectedContext: CliContext | undefined;
 			const cli = createHoboCli({
 				contextFactory: async (request) => {
 					contextBuilds += 1;
 					return {
 						cwd: request.cwd,
 						projectDir: request.cwd,
-						identity: "user:dev",
+						identity: `user:ctx-${contextBuilds}`,
 						clients: { readApi: "fake-read-api", runtime: "fake-runtime" },
-						buildId: `ctx-${contextBuilds}`,
 					};
 				},
 				commands: {
 					plan: {
 						run: async ({ context }) => {
-							// SAFETY: `injectedContext = context as { buildId: string };` is required at this I/O or test boundary.
-							injectedContext = context as { buildId: string };
+							injectedContext = context;
 							return {
 								ok: true,
-								status: "not_implemented",
-								code: "HOBO_CLI_STUB",
-								message: "plan is not yet implemented",
+								status: "ok",
+								code: "HOBO_OK",
 								data: {
-									// SAFETY: `contextBuildId: (context as { buildId: string }).buildId,` is required at this I/O or test boundary.
-									contextBuildId: (context as { buildId: string }).buildId,
+									identity: context.identity,
 								},
 							};
 						},
@@ -428,15 +414,12 @@ describe("HoBo CLI shell", () => {
 			});
 
 			const result = await cli.run(["plan", "--json"], { cwd });
-			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
-			const envelope = JSON.parse(result.stdout) as {
-				data: { contextBuildId: string };
-			};
+			const envelope = parseJsonObject(result.stdout);
 
 			expect(result.exitCode).toBe(0);
 			expect(contextBuilds).toBe(1);
-			expect(injectedContext?.buildId).toBe("ctx-1");
-			expect(envelope.data.contextBuildId).toBe("ctx-1");
+			expect(injectedContext?.identity).toBe("user:ctx-1");
+			expect(envelope.data).toMatchObject({ identity: "user:ctx-1" });
 		});
 	});
 });
