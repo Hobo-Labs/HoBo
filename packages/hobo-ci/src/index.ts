@@ -176,6 +176,11 @@ export {
 	VERCEL_DEPLOY_ENTRIES,
 	workloadOidcOf,
 } from "./prepare.js";
+export {
+	PrivateOwnerDispatchError,
+	PrivateOwnerRequestError,
+} from "./isolated-owner-errors.js";
+export { isolatedOwnerFetch } from "./isolated-owner-fetch.js";
 export { ciProjectDir } from "./project.js";
 export {
 	type OpenTunnel,
