@@ -594,16 +594,20 @@ export function conductorFor(
 		campIds: readonly CampId[];
 		holderId: string;
 		reconcilerId?: ReconcilerId;
+		transport?: ReconcilerTransport;
 	}>,
 ): CampReconciler {
-	return cd.createReconciler({
+	const options = {
 		mode: ReconcilerMode.CONDUCTOR,
 		// SAFETY: a conductor's id is derived from its holder; it is never enrolled.
 		reconcilerId:
 			input.reconcilerId ?? (`conductor:${input.holderId}` as ReconcilerId),
 		campIds: input.campIds,
 		holderId: input.holderId,
-	});
+	};
+	return input.transport === undefined
+		? cd.createReconciler(options)
+		: cd.createReconciler({ ...options, transport: input.transport });
 }
 
 /** The default retention policy (D18): CD_DEFAULTS applied to every Bindle (empty bindle). */

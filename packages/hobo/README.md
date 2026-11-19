@@ -426,8 +426,12 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--root-directory <dir>` | sent as `projectSettings.rootDirectory`, which Vercel saves on the project |
 | `--create-project` | create the project when Vercel has none by that name, with the Yard's `rootDirectory`; without it a missing project is a refusal |
 | `--provision` | attach the Marketplace bindings the Camp chooses first, idempotently, with the Vercel CLI (`src/ci-relay-provision.ts`); a failure is reported, not fatal |
-| `--wait` | wait up to 15 minutes for READY and verify the relay; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR, CANCELED or timeout is `HOBO_CI_DEPLOY_NOT_READY` |
+| `--wait` | drive the deployment to READY and verify the relay with a 20-minute budget checked between passes; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR or CANCELED is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
+
+An in-flight provider operation can outlast the wait budget. The relay path
+does not durably fence it across lease expiry, processes or restarts: inspect
+the provider and CD journal to establish its outcome before another deploy.
 
 A real run needs the deploy token in the owner's secret store. An embedding
 caller can provide it in a run-scoped vault; a GitHub Actions job with

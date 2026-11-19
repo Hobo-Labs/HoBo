@@ -24,18 +24,6 @@
 // (`<HOBO_HOME>/cd`, or the store HOBO_CD_SQLITE_PATH / HOBO_CD_POSTGRES_URL
 // names), the one `hobo deploy` reads.
 //
-// CONTRACT CHANGE (from the direct-deploy verb; packages/ci-vercel/README.md
-// "Contract changes of hobo ci deploy"): `--wait` now verifies and qualifies,
-// so it needs the target's probe origin (HOBO_CI_RELAY_PREVIEW_URL or
-// HOBO_CI_RELAY_URL) and is refused without it
-// (HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET); `--target production` needs `--sha`
-// and preview's qualification of that commit in the same journal
-// (HOBO_CI_DEPLOY_NOT_QUALIFIED); the wait limit is 20 minutes, not 15; new
-// failure codes: HOBO_CI_DEPLOY_INCOMPLETE, HOBO_CI_DEPLOY_VERIFICATION_FAILED,
-// HOBO_CI_DEPLOY_NOT_QUALIFIED, HOBO_CI_DEPLOY_SOURCE_UNPINNED,
-// HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE, HOBO_CI_DEPLOY_DELIVERY_INVALID,
-// HOBO_CI_DEPLOY_FREIGHT_REFUSED, HOBO_CI_DEPLOY_PROMOTION_REFUSED.
-//
 // The target is chosen HERE, where the deploy is run, not in the Bindle; and
 // it is PREVIEW unless `--target production` says otherwise. Production needs
 // `--sha`: it takes exactly the commit preview verified. The deploy workflow

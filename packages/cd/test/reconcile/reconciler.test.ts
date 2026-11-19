@@ -274,11 +274,35 @@ describe("createCampReconciler", () => {
 	});
 
 	it.each([
-		["observe", "known"],
-		["observe", "unknown"],
-		["converge", "known"],
-		["converge", "unknown"],
-	] as const)("sanitizes %s realizer reasons with %s codes", async (phase, codeKind) => {
+		["observe", "realize-blocked", "realize-blocked"],
+		["converge", "realize-blocked", "realize-blocked"],
+		["observe", "catalog-binding-invalid", "catalog-binding-invalid"],
+		[
+			"converge",
+			"npm-provenance-bundle-missing",
+			"npm-provenance-bundle-missing",
+		],
+		["observe", "npm-oidc-scoped-unsupported", "npm-oidc-scoped-unsupported"],
+		["converge", "runner-host-verify-failed", "runner-host-verify-failed"],
+		["observe", "runner-host-rollback-failed", "runner-host-rollback-failed"],
+		["converge", "HOBO_CI_DEPLOY_NOT_READY", "HOBO_CI_DEPLOY_NOT_READY"],
+		["observe", "RESOLVER_CREDENTIAL_MISSING", "RESOLVER_CREDENTIAL_MISSING"],
+		[
+			"observe",
+			"synthetic-private-provider.invalid",
+			"realizer-detail-redacted",
+		],
+		[
+			"converge",
+			"runner-host-verify-failed: synthetic-private-provider.invalid",
+			"realizer-detail-redacted",
+		],
+		[
+			"observe",
+			"HOBO_CI_DEPLOY_NOT_READY-synthetic-private-provider.invalid",
+			"realizer-detail-redacted",
+		],
+	] as const)("sanitizes %s realizer reason %s", async (phase, code, expected) => {
 		const h = harness();
 		const marker = "synthetic-private-provider.invalid";
 		h.realizer[phase] = async () =>
@@ -286,7 +310,7 @@ describe("createCampReconciler", () => {
 				status: ReconcileStatus.BLOCKED,
 				reasons: [
 					create(ReasonRecordSchema, {
-						code: codeKind === "known" ? "realize-blocked" : marker,
+						code,
 						message: marker,
 						remediation: marker,
 						subject: marker,
@@ -296,8 +320,6 @@ describe("createCampReconciler", () => {
 		const resolved = resolvedFor(CAMP, V1);
 		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
 		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
-		const expected =
-			codeKind === "known" ? "realize-blocked" : "realizer-detail-redacted";
 		expect(observation.status).toBe(ReconcileStatus.BLOCKED);
 		expect(observation.reasons[0]).toMatchObject({
 			code: expected,
@@ -310,6 +332,35 @@ describe("createCampReconciler", () => {
 		expect(journal).toContain(expected);
 		expect(
 			JSON.stringify({ observation, journal, telemetry: h.sink.points }),
+		).not.toContain(marker);
+	});
+
+	it("does not accept a realizer-only code from a transport refusal", async () => {
+		const h = harness();
+		const marker = "synthetic-private-transport.invalid";
+		const transport = {
+			...h.transport,
+			claim: async () => ({
+				ok: false as const,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code: "runner-host-verify-failed",
+						message: marker,
+						remediation: marker,
+						subject: marker,
+					}),
+				],
+			}),
+		};
+		const observation = await h
+			.reconciler("r1", "host-1", h.realizer, transport)
+			.reconcileOnce(CAMP, h.ctx);
+		expect(observation.reasons[0]).toMatchObject({
+			code: "transport-detail-redacted",
+			subject: CAMP,
+		});
+		expect(
+			JSON.stringify({ observation, telemetry: h.sink.points }),
 		).not.toContain(marker);
 	});
 

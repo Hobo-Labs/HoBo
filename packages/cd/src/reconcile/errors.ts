@@ -2,6 +2,7 @@
 // and every blocked observation carries a stable code plus a remediation an
 // operator or agent can act on.
 import { create } from "@bufbuild/protobuf";
+import { RESOLVER_ERROR_CODES } from "@hobo/core";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { AGENT_FAILURES } from "../agent/errors.js";
 import { FEED_FAILURES } from "../feed/errors.js";
@@ -85,13 +86,85 @@ const SAFE_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
 	),
 ]);
 
+const SAFE_REALIZER_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
+	...RESOLVER_ERROR_CODES.map(
+		(code) =>
+			[code, "Check the resolver configuration and provider access."] as const,
+	),
+	...[
+		"runner-host-ambiguous",
+		"runner-host-camp-unbound",
+		"runner-host-config-unsupported",
+		"runner-host-desired-invalid",
+		"runner-host-drain-deadline",
+		"runner-host-id-invalid",
+		"runner-host-image-unresolved",
+		"runner-host-interface-missing",
+		"runner-host-product-unsupported",
+		"runner-host-pull-failed",
+		"runner-host-release-unresolved",
+		"runner-host-retire-unobserved",
+		"runner-host-rollback-failed",
+		"runner-host-rollback-unobserved",
+		"runner-host-scope-mismatch",
+		"runner-host-slot-unsupported",
+		"runner-host-stage-failed",
+		"runner-host-swap-failed",
+		"runner-host-target-unobserved",
+		"runner-host-verify-failed",
+	].map(
+		(code) =>
+			[
+				code,
+				"Inspect the runner-host runbook and host state before retrying.",
+			] as const,
+	),
+	...[
+		"HOBO_CLI_USAGE",
+		"HOBO_CI_DEPLOY_FAILED",
+		"HOBO_CI_DEPLOY_NO_ANSWER",
+		"HOBO_CI_DEPLOY_NOT_READY",
+		"HOBO_CI_DEPLOY_SETTING_REFUSED",
+		"HOBO_CI_DEPLOY_SOURCE_UNPINNED",
+		"HOBO_CI_DEPLOY_VERCEL_REFUSED",
+		"relay-not-deployed",
+		"relay-readiness-unobserved",
+	].map(
+		(code) =>
+			[code, "Check the relay deployment and its configuration."] as const,
+	),
+	["catalog-camp-unknown", "Declare the Camp in the topology."],
+	[
+		"compose-realizer-missing",
+		"Bind the Camp to a supported catalog realizer.",
+	],
+	["catalog-freight-missing", "Record the Freight before promoting it."],
+	[
+		"catalog-freight-empty",
+		"Record the artifacts this Camp publishes in the Freight.",
+	],
+	["catalog-binding-invalid", "Check the Camp binding and Freight artifacts."],
+	[
+		"npm-oidc-scoped-unsupported",
+		"Bind token authentication for scoped packages.",
+	],
+	[
+		"npm-provenance-bundle-missing",
+		"Record the package's Sigstore bundle in the Freight.",
+	],
+]);
+
 export function sanitizeReasons(
 	entries: readonly ReasonRecord[],
 	subject: string,
 	source: "realizer" | "transport",
 ): ReasonRecord[] {
 	return entries.map((entry) => {
-		const remediation = SAFE_REMEDIATIONS.get(entry.code);
+		const remediation =
+			SAFE_REMEDIATIONS.get(entry.code) ??
+			(source === "realizer"
+				? SAFE_REALIZER_REMEDIATIONS.get(entry.code)
+				: undefined);
 		const fallback =
 			source === "realizer"
 				? "realizer-detail-redacted"

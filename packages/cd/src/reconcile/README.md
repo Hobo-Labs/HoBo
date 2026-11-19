@@ -119,6 +119,10 @@ parsed once into derived types and never re-checked downstream:
   reason, a value that no longer fits is dropped with `attribute-dropped`),
   `retained`, `claims` (attributed to the reconciler) and `handover`
   (secret-scanned).
+- **Realizer reasons** retain the stable codes of built-in catalog, relay,
+  runner-host and resolver failures, with fixed remediations. Other codes become
+  `realizer-detail-redacted`; provider-supplied messages, remediations and
+  subjects are never reported. A transport cannot use realizer-only codes.
 - **`OBSERVE_ONLY`** Camps are read and reported (`OBSERVED`), drift is
   recorded, nothing is applied (architecture-tested).
 - **Departure** (`SET_ORIGIN_DEPARTURE`) follows the `DepartureAction`
