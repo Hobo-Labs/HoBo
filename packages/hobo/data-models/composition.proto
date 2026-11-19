@@ -57,10 +57,15 @@ message LocalDeploymentLifecycleEvent {
   string reason = 2;
 }
 
+message LocalLogResources {
+  repeated string names = 1;
+}
+
 message LocalLogRecord {
   string type = 1;
   optional string message = 2;
   optional string reason = 3;
+  optional string resource = 4;
 }
 
 // User-owned CLI link. Credentials never enter this record or the repository.

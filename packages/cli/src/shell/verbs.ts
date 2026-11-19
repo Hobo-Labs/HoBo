@@ -393,12 +393,13 @@ export function verbHelpText(
 		return `HoBo logs
 
 Usage:
-  hobo logs [--lines <count> | --tail <count>] [--follow] [--json]
+  hobo logs [resource] [--lines <count> | --tail <count>] [--follow] [--json]
 
 Role: ${verb.role}
 ${statusLine}
 Read stdout, stderr, and component events from the local deployment for this
-project. --lines or --tail selects up to 10000 recent lines (default 200).
+project. An optional resource name selects that resource's output.
+--lines or --tail selects up to 10000 recent lines (default 200).
 --follow prints new lines until interrupted; with --json, each line is a JSON
 log or gap record. --follow cannot be combined with -q.
 `;
