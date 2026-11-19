@@ -427,11 +427,13 @@ describe("refusals before anything is opened", () => {
 
 	it("asks for the writer credential first when writes are not authorized", async () => {
 		const { app } = setup({ writable: false });
-		expect(
-			result(
-				await app.callTool(CAPTURE_SECRET_TOOL, { name: "VERCEL_TOKEN" }, APPS),
-			).structuredContent,
-		).toMatchObject({ code: "SECRET_STORE_WRITER_REQUIRED" });
+		const refusal = result(
+			await app.callTool(CAPTURE_SECRET_TOOL, { name: "VERCEL_TOKEN" }, APPS),
+		);
+		expect(refusal.structuredContent).toMatchObject({
+			code: "SECRET_STORE_WRITER_REQUIRED",
+		});
+		expect(JSON.stringify(refusal)).not.toContain("secref://memory");
 		expect(
 			result(
 				await app.callTool(

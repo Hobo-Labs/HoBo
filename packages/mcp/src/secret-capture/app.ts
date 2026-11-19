@@ -685,7 +685,7 @@ export function createSecretCaptureApp(
 		if (spec.target !== "writer" && !status.writable)
 			return new SecretCaptureError(
 				"SECRET_STORE_WRITER_REQUIRED",
-				`The secret store ${status.storeRef} is connected, but this session may not write to it yet.`,
+				"A secret store is configured, but this session may not write to it yet.",
 				`Call ${CAPTURE_SECRET_TOOL} with name ${status.writerSpec} and writerClientId (the writer identity's Client ID) first; the owner enters its one-use client secret in the same kind of form.`,
 			);
 		return undefined;

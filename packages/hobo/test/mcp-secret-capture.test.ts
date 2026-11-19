@@ -239,10 +239,14 @@ describe("hobo-mcp secret capture into Infisical (MCP App channel)", () => {
 		).toMatchObject({ contents: [{ mimeType: "text/html;profile=mcp-app" }] });
 
 		// No writer session yet: the deploy token cannot be captured.
-		expect(
-			(await h.call("capture_secret", { name: "TURSO_AUTH_TOKEN" }))
-				.structuredContent,
-		).toMatchObject({ code: "SECRET_STORE_WRITER_REQUIRED" });
+		const writerRequired = await h.call("capture_secret", {
+			name: "TURSO_AUTH_TOKEN",
+		});
+		expect(writerRequired.structuredContent).toMatchObject({
+			code: "SECRET_STORE_WRITER_REQUIRED",
+		});
+		expect(JSON.stringify(writerRequired)).not.toContain("infisical://proj-1");
+		expect(JSON.stringify(writerRequired)).not.toContain("/hobo-ci-relay");
 
 		const writer = (
 			await h.call("capture_secret", {

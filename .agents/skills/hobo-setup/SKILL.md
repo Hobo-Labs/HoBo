@@ -37,5 +37,9 @@ task; do not substitute provider-specific manual setup or claim that the store
 is connected. Once established, reuse the owner session for later HoBo
 operations and verify the outcome without exposing its private settings.
 
+The existing relay capture adapter accepts a writer identifier in tool
+arguments and returns store references. It does not establish the private
+owner setup described here and must not be used as its substitute.
+
 For a deployment that also needs CI or CD identities, follow the
 [HoBo deployment skill](../hobo-deploy/SKILL.md) after the initial connection.

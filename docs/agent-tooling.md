@@ -299,7 +299,9 @@ ceremony; otherwise report the missing capability without collecting settings.
 The relay's existing capture adapter reads a separately configured Infisical
 binding; a generic owner-store session is not yet wired to that adapter.
 Its `connected` status indicates that the binding was read; it does not verify
-owner authentication. `writable` reflects an active writer session.
+owner authentication. `writable` reflects an active writer session. The
+adapter accepts a writer identifier in tool arguments and returns store
+references, so it is not the private owner setup described by the setup skill.
 
 ### headroom — `chopratejas/headroom` (Apache-2.0)
 A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress`, `mcp__headroom__headroom_retrieve`, and `mcp__headroom__headroom_stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy with `headroom proxy --port 8787`, then launch Claude with:
