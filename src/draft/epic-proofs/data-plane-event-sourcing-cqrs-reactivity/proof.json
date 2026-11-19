@@ -17,8 +17,7 @@
       "src/draft/technical-proofs/replay-live-equivalence-poc",
       "src/draft/technical-proofs/search-extension-packages-contract",
       "src/draft/technical-proofs/projection-consistency-reactivity-contract",
-      "src/draft/technical-proofs/projection-sink-change-feed-conformance-contract",
-      "src/draft/technical-proofs/reads-your-writes-contract"
+      "src/draft/technical-proofs/projection-sink-change-feed-conformance-contract"
     ],
     "epicProofs": [],
     "expProofs": []
