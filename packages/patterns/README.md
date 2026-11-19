@@ -34,6 +34,10 @@ Programmatic use goes through `loadPatternCatalog`, `searchPatterns`,
 `renderPattern` and `applyPatternPlan`; `hobo new` reaches the CLI starters
 through `renderCliStarterFiles`.
 
+Search accepts a query string or a `PatternSearchRequest` protobuf JSON object.
+The object can set `exactId`, `maxResults`, `kindFilter`, `maturityFilter`,
+`languageFilter`, `contextFilter`, and `renderingFilter`.
+
 Zero-token means **0 LLM calls / input / output tokens**, not zero CPU. Vectors
 are one ranking channel beside exact ID/alias/symbol and FTS5. Default search
 is offline. Application writes only inside a caller-supplied isolation root;

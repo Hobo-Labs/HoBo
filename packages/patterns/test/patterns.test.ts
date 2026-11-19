@@ -189,7 +189,7 @@ describe("@hobo/patterns", () => {
 	});
 
 	it("parses a search object query", () => {
-		const parsed = parsePatternQuery({ query: "kv", topK: 3 });
+		const parsed = parsePatternQuery({ query: "kv", maxResults: 3 });
 		expect(parsed.query).toBe("kv");
 		expect(parsed.maxResults).toBe(3);
 	});
@@ -333,7 +333,7 @@ describe("@hobo/patterns", () => {
 			vocabulary,
 			query: {
 				query: "bindle.named",
-				kind: "starter",
+				kindFilter: ["PATTERN_KIND_STARTER"],
 				autoSelect: true,
 			},
 		});
@@ -341,5 +341,20 @@ describe("@hobo/patterns", () => {
 		expect(
 			receipt.candidates.every((item) => item.patternId.startsWith("starter.")),
 		).toBe(true);
+	});
+
+	it("filters search results by rendering kind", () => {
+		const receipt = searchPatterns({
+			catalog,
+			vocabulary,
+			query: {
+				query: "starter.cli.api",
+				renderingFilter: "RENDERING_KIND_FILE",
+			},
+		});
+		expect(receipt.selectedId).toBe("");
+		expect(
+			receipt.candidates.map((candidate) => candidate.patternId),
+		).not.toContain("starter.cli.api");
 	});
 });

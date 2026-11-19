@@ -23,7 +23,7 @@ export function composePatterns<P>(input: {
 	const search = searchPatterns({
 		catalog: input.catalog,
 		vocabulary: input.vocabulary,
-		query: { query: input.query, topK: 12, compose: true },
+		query: { query: input.query, maxResults: 12, allowComposition: true },
 	});
 	const chosen = search.candidates
 		.filter((item) => item.selectable)

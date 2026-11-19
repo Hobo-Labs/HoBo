@@ -6,6 +6,7 @@ import {
 	type PatternSearchReceipt,
 	PatternSearchReceiptSchema,
 	ReceiptStatus,
+	RenderingKind,
 	SearchChannel,
 	SearchDecision,
 } from "./_generated/patterns_pb.js";
@@ -102,6 +103,12 @@ export function searchPatterns(input: {
 		if (
 			request.contextFilter &&
 			!pattern.contexts.includes(request.contextFilter)
+		) {
+			return false;
+		}
+		if (
+			request.renderingFilter !== RenderingKind.UNSPECIFIED &&
+			!pattern.outputKinds.includes(request.renderingFilter)
 		) {
 			return false;
 		}
