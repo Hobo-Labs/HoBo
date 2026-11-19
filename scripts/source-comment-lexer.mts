@@ -17,6 +17,7 @@ export function lexComments(
 		dialect === "cue" ||
 		dialect === "proto" ||
 		dialect === "wit" ||
+		dialect === "prisma" ||
 		dialect === "sql";
 
 	function quoted(
@@ -88,7 +89,11 @@ export function lexComments(
 				index += 2;
 				let nesting = 1;
 				while (index < text.length && nesting > 0) {
-					if (dialect !== "proto" && text.startsWith("/*", index)) {
+					if (
+						dialect !== "proto" &&
+						dialect !== "cue" &&
+						text.startsWith("/*", index)
+					) {
 						nesting++;
 						index += 2;
 					} else if (text.startsWith("*/", index)) {

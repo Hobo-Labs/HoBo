@@ -171,6 +171,14 @@ f: /* TODO: remove block */`;
 			).length,
 			0,
 		);
+		assert.deepEqual(
+			commentViolations(
+				"x.cue",
+				"a: /* glob: pkg/* */\n// TODO: follow up\n",
+				new Set([1, 2]),
+			).map((item) => item.line),
+			[2],
+		);
 		const proto =
 			'option x = "https://example.test/* data */"; /* explanation */\n// todo: implement';
 		assert.deepEqual(
