@@ -2,22 +2,6 @@ import {
 	presentAuthMdCredential,
 	recordAuthMdDeployment,
 } from "./auth-md-command.js";
-/**
- * `hobo up` composition: deploy through embedded or remote broker.
- *
- * Flow:
- *   resolve target (flag > env > profile > local)
- *   if local: existing embedded path
- *   if remote: discover → anonymous|auth → place
- *
- * Explicit `.with({ provider })` pins hard-fail when that provider is absent
- * from the local broker junction catalog.
- *
- * Remote place uses a mock-capable HTTP client; live multi-broker hosts plug in
- * without changing CLI control flow. Client credentials use real ES256 DPoP +
- * audience-bound JWT-SVID mint/verify. Remaining follow-ons: broker **server**
- * DPoP enforcement and SPIRE Workload API fetch (replace local SVID mint).
- */
 
 import { createServer } from "node:net";
 import {
@@ -81,21 +65,11 @@ export interface BrokerAwareUpCommandDeps {
 	readonly authMdFetch?: typeof fetch;
 	readonly discovery?: BrokerDiscoveryClient;
 	readonly presenter?: CredentialPresenter;
-	/** Inject remote client factory (tests). */
 	readonly createRemoteClient?: (brokerUri: string) => RemoteBrokerClient;
-	/** Shared mock state for in-process remote lane tests. */
 	readonly mockRemote?: MockRemoteBrokerState;
 	readonly env?: NodeJS.ProcessEnv;
-	/**
-	 * Shared Yard runtime for the local event-sourced deploy lane (claim/inspect).
-	 * When set, local `hobo up` prefers the cloud mock orchestrator path so
-	 * deployments land on the durable log; broker placement+serve remains the
-	 * offline bindle-source path when no runtime is wired.
-	 */
 	readonly runtime?: YardRuntime;
-	/** Product composition keeps the self-hosted process running beyond CLI exit. */
 	readonly persistentLocal?: boolean;
-	/** Starts the persistent local deployment (default: the real worker process). */
 	readonly startLocalDeployment?: typeof startLocalDeployment;
 }
 
@@ -113,10 +87,8 @@ export function createBrokerAwareUpCommand(
 		run: async (input) => {
 			const { context, flags, emitProgress } = input;
 			const env =
-				// SAFETY: assertion required at this I/O or test boundary.
 				deps.env ?? (context as { env?: NodeJS.ProcessEnv }).env ?? process.env;
 			const projectDir =
-				// SAFETY: assertion required at this I/O or test boundary.
 				(context as { projectDir?: string }).projectDir ??
 				(isJsonString(flags.cwd) ? flags.cwd : context.cwd);
 			const hoboHome =
@@ -124,7 +96,6 @@ export function createBrokerAwareUpCommand(
 					? flags.home
 					: defaultHoboHome(env);
 
-			// Every lane places into a Yard, and a Yard holds nothing external.
 			const boundary = await externalBoundaryRefusal(projectDir, "up");
 			if (boundary !== undefined) return boundary;
 			try {
@@ -167,12 +138,6 @@ export function createBrokerAwareUpCommand(
 				});
 				if (flags.mode && target.kind !== "local") return unsupportedMode();
 
-				// Local zero-config: prefer event-sourced Yard lane when runtime is wired
-				// (preserves claim/inspect). Fall back to broker-runtime placement+serve
-				// when a bindle() source is present without a cloud runtime.
-				// `up --what-if`: the change set, never applied. The Yard lane
-				// computes it from the durable log; the local lane only names what
-				// it would place; a remote broker cannot answer it without placing.
 				if (flags.whatIf) {
 					if (target.kind !== "local")
 						return {
@@ -214,10 +179,8 @@ export function createBrokerAwareUpCommand(
 				}
 
 				if (target.kind === "local") {
-					// Event-sourced Yard lane when runtime is wired (claim/inspect).
 					if (yardUp) {
 						const yardResult = await yardUp.run(input);
-						// Only fall through when the Yard path is a pure stub (no manifest).
 						const isStub =
 							yardResult.code === "HOBO_CLI_STUB" ||
 							(yardResult.ok === false && yardResult.status === "stub");
@@ -225,7 +188,6 @@ export function createBrokerAwareUpCommand(
 							return {
 								...yardResult,
 								data: {
-									// SAFETY: assertion required at this I/O or test boundary.
 									...(yardResult.data as JsonObject),
 									mode: "local",
 								},
@@ -278,7 +240,6 @@ export function createBrokerAwareUpCommand(
 					};
 				}
 
-				// Remote path
 				emitProgress(
 					`hobo up: remote broker ${target.uri} (mode=${target.mode}, source=${target.source})`,
 				);
@@ -295,9 +256,7 @@ export function createBrokerAwareUpCommand(
 							? { mock: deps.mockRemote }
 							: deps.createRemoteClient
 								? undefined
-								: // HONEST SCOPE: without a live broker, unit tests inject mockRemote;
-									// composed CLI without mock fails discovery closed against real URI.
-									{}),
+								: {}),
 					});
 
 				let discovery: BrokerDiscoveryDocument;
@@ -345,8 +304,6 @@ export function createBrokerAwareUpCommand(
 								).toString(),
 							});
 				const wantAnonymous = target.mode === "anonymous";
-				// Also enter anonymous when auth has no principal and broker allows it
-				// only if explicitly requested via --anonymous/--temporary (product: opt-in).
 				if (wantAnonymous) {
 					if (!discovery.supportsAnonymous) {
 						return {
@@ -433,7 +390,6 @@ export function createBrokerAwareUpCommand(
 					};
 				}
 
-				// Authenticated remote
 				const credential =
 					agentCredential ??
 					(await presenter.presentAuthenticated({
@@ -501,7 +457,6 @@ export function createBrokerAwareUpCommand(
 							: undefined),
 						credentialScheme: credential.scheme,
 						resources: placed.resources,
-						// Dual principal is explicit in data — agents are never collapsed into human.
 						dualPrincipal: credential.humanPrincipal !== undefined,
 					},
 				};
@@ -566,7 +521,6 @@ async function runLocalUp(input: {
 }) {
 	const { projectDir, hoboHome, definition, emitProgress } = input;
 
-	// Installed runtime always has a broker.
 	if (loadBareMetalYardConfig(hoboHome) === null) {
 		emitProgress("hobo up: no Yard yet — installing local Yard + broker");
 		initBareMetalYard({ hoboHome });
@@ -592,7 +546,6 @@ async function runLocalUp(input: {
 				projectDir,
 				mode: "local",
 				brokerId: placement.brokerId,
-				explicitProviders: placement.explicitProviders,
 				rejection: placement.resolution.rejection,
 			},
 		};
@@ -674,7 +627,6 @@ async function runLocalUp(input: {
 	};
 }
 
-/** Test helper: build up command with shared mock remote broker. */
 export function createBrokerAwareUpCommandWithMock(options?: {
 	readonly supportsAnonymous?: boolean;
 	readonly brokerUri?: string;

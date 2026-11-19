@@ -104,7 +104,6 @@ export {
 	type RemotePlaceResult,
 } from "./broker-remote-client.js";
 export {
-	collectExplicitProviderPins,
 	collectRequiredRuntimes,
 	createYardBrokerCatalog,
 	defaultComponentHostFromBroker,

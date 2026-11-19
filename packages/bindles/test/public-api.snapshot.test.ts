@@ -78,7 +78,6 @@ export function createBindlesPublicApiSnapshot(
 		"assertNoBindleProviderSelection",
 		"BINDLE_PROVIDER_SELECTION_FORBIDDEN",
 		"BINDLE_PROVIDER_SELECTION_REMEDIATION",
-		"collectExplicitProviderPins",
 		"emptyBindleRequirements",
 		"hashBindleRequirements",
 		"isPlatformAnnotation",

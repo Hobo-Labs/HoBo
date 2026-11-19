@@ -36,6 +36,20 @@
       ]
     },
     {
+      "name": "cache",
+      "kind": "resource-factory",
+      "signature": "cache(name: string): ResourceHandle<\"cache\", \"delete\" | \"get\" | \"invalidate\" | \"set\">",
+      "portRef": [
+        "hobo:cache"
+      ],
+      "allowVerbs": [
+        "get",
+        "set",
+        "delete",
+        "invalidate"
+      ]
+    },
+    {
       "name": "bucket",
       "kind": "resource-factory",
       "signature": "bucket(name: string): ResourceHandle<\"bucket\", \"delete\" | \"read\" | \"write\">",
