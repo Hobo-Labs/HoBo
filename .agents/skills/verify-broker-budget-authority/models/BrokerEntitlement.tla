@@ -16,6 +16,9 @@ Reserve == /\ phase = "new"
            /\ UNCHANGED <<claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease>>
 Claim == /\ Usable /\ ~claimed /\ claimed' = TRUE
          /\ UNCHANGED <<phase, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
+RecordZeroUnits == /\ Usable /\ claimed /\ claimUnits = 1
+                   /\ claimUnits' = 0
+                   /\ UNCHANGED <<phase, claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease>>
 Uncertain == /\ phase = "held" /\ phase' = "uncertain"
              /\ UNCHANGED <<claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
 ChangeScope == /\ Active /\ ~attempted
@@ -42,7 +45,7 @@ ChangeTerminalScope == /\ phase \in {"settled", "released"} /\ ~attempted
                        /\ attempted' = TRUE /\ bucketUnit' = "other" /\ bucketPeriod' = "p2"
                        /\ UNCHANGED <<phase, claimed, replay, unusedRelease, claimUnits>>
 Done == /\ phase \in {"settled", "released"} /\ UNCHANGED vars
-Next == Reserve \/ Claim \/ Uncertain \/ ChangeScope \/ ReplayMismatch \/ Settle
+Next == Reserve \/ Claim \/ RecordZeroUnits \/ Uncertain \/ ChangeScope \/ ReplayMismatch \/ Settle
         \/ ConfirmUnused \/ Release \/ ChangeTerminalScope \/ Done
 Spec == Init /\ [][Next]_vars
 

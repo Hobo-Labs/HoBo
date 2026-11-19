@@ -19,6 +19,11 @@ Reserve == \E r \in Requests:
            /\ Spent + Held + 1 <= 1
            /\ phase' = [phase EXCEPT ![r] = "held"]
            /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage, badAdmission>>
+BadReserve == \E r \in Requests:
+              /\ phase[r] = "new"
+              /\ Spent + Held + 1 > 1
+              /\ badAdmission' = TRUE
+              /\ UNCHANGED <<phase, claimed, evidence, unusedEvidence, usage>>
 Settle == \E r \in Requests, amount \in {0, 1, 2}:
           /\ phase[r] \in {"held", "uncertain"} /\ claimed[r] /\ evidence[r]
           /\ phase' = [phase EXCEPT ![r] = "settled"]
@@ -48,7 +53,7 @@ Release == \E r \in Requests:
 Done == /\ \A r \in Requests : phase[r] \notin {"held", "uncertain"}
         /\ (Spent >= 1 \/ \A r \in Requests : phase[r] # "new")
         /\ UNCHANGED vars
-Next == Reserve \/ Claim \/ Uncertain \/ ObserveFinal \/ ObserveUnused \/ Release \/ Settle \/ Done
+Next == Reserve \/ BadReserve \/ Claim \/ Uncertain \/ ObserveFinal \/ ObserveUnused \/ Release \/ Settle \/ Done
 Spec == Init /\ [][Next]_vars
 NoUnfundedAdmission == ~badAdmission
 BudgetSafeUntilProviderOverrun == ~Overrun => Held + Spent <= 1

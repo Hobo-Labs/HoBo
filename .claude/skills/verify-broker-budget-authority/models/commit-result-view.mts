@@ -8,11 +8,11 @@ export const state = (v) =>
 	})[v.phase] ?? `Commit phase ${v.phase}`;
 export const step = (action, from, to) => {
 	if (action === 'Commit') {
-		if (to.phase === 'accepted') return 'commit completes';
-		if (to.phase === 'uncertain') return 'commit returns an ambiguous result';
 		if (from?.kind?.startsWith('throw-') || from?.kind?.startsWith('denial-')) {
 			return 'commit throws';
 		}
+		if (to.phase === 'accepted') return 'commit completes';
+		if (to.phase === 'uncertain') return 'commit returns an ambiguous result';
 		return 'commit completes';
 	}
 	if (action === 'Reuse') return 'reuse after uncertain or failed commit';
