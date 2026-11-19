@@ -8,8 +8,6 @@ enum ReactivityClass {
   REACTIVITY_CLASS_NON_REACTIVE = 2;
 }
 
-// Aggregate write-model snapshot: a fold result + the seq it covers, so actor
-// activation replays only the tail. A cache, never a source of truth.
 message AggregateSnapshotRecord {
   string stream_id = 1;
   uint64 seq = 2;
@@ -18,8 +16,6 @@ message AggregateSnapshotRecord {
   string saved_at = 5;
 }
 
-// Projection read-model checkpoint: the folded rows + the log position reached.
-// Rebuildable from zero by replay; the checkpoint only skips already-folded tail.
 message ProjectionCheckpointRecord {
   string projection = 1;
   uint64 seq = 2;
@@ -27,7 +23,6 @@ message ProjectionCheckpointRecord {
   string saved_at = 4;
 }
 
-// A poison event neutralized deterministically by a *.Quarantined fact.
 message QuarantineRecord {
   uint64 offending_seq = 1;
   uint64 quarantine_seq = 2;
@@ -35,14 +30,12 @@ message QuarantineRecord {
   string reason = 4;
 }
 
-// A registered forward-only upcaster in the chain for an event type.
 message UpcasterRegistration {
   string type = 1;
   uint32 from_version = 2;
   uint32 to_version = 3;
 }
 
-// actor.* lifecycle facts emitted by the aggregate single-writer boundary.
 message ActorActivatedData {
   string stream_id = 1;
   string holder_id = 2;
@@ -60,7 +53,6 @@ message ActorPassivatedData {
   uint64 seq = 2;
 }
 
-// projection.* facts: declaration read-set, lag signal, sink rebind.
 message ProjectionDeclaredData {
   string projection = 1;
   repeated string read_set = 2;
@@ -76,4 +68,25 @@ message ProjectionLaggedData {
 message ProjectionSinkReboundData {
   string projection = 1;
   string match_decided_ref = 2;
+}
+
+message ProjectionReplicatedEventData {
+  string event_json = 1;
+  uint64 source_position = 2;
+}
+
+message ProjectionReplicationCheckedData {
+  string source_stream_id = 1;
+  uint64 source_position = 2;
+  uint64 checked_at_ms = 3;
+  bool caught_up = 4;
+}
+
+message CrossCampProjectionLaggedData {
+  string projection = 1;
+  string owner_camp_id = 2;
+  string replica_camp_id = 3;
+  uint64 source_position = 4;
+  uint64 bound_ms = 5;
+  uint64 observed_lag_ms = 6;
 }

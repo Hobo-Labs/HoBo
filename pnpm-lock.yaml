@@ -1631,6 +1631,9 @@ importers:
 
   packages/data:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
@@ -4364,8 +4367,6 @@ importers:
   src/draft/technical-proofs/credit-ledger-view-contract: {}
 
   src/draft/technical-proofs/crew-event-contract: {}
-
-  src/draft/technical-proofs/cross-camp-bounded-staleness-contract: {}
 
   src/draft/technical-proofs/cross-camp-flag-state-consistency-contract: {}
 
