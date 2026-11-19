@@ -4,6 +4,10 @@ Deterministic, fail-closed verification of a Freight on one Camp (D9, invariants
 engine records every sample it decides from, and the verdict is a pure
 function of that record, so replay reproduces it exactly.
 
+Prometheus samples retain their original observation times and a deterministic
+series identifier within each query response. Sources that return only values
+record the end of the requested window as the observation time.
+
 | File | Role |
 |---|---|
 | `spec.ts` | `parseVerificationSpec` / `parseVerificationSpecJson`: applies `CD_DEFAULTS`, checks the constraints in `data-models/verification.cue`, returns the `ParsedVerificationSpec` brand. |
