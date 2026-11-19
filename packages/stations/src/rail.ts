@@ -16,14 +16,6 @@ import {
 	type RailDeliveryPolicy,
 } from "./types.js";
 
-export type LegacyRailDeliveryPolicy = Readonly<{
-	engine: "argo" | "in-proc";
-	syncMode: "auto" | "manual";
-	prune: boolean;
-}>;
-
-export const LEGACY_ARGO_PUBLISHER = "argo-cd" as const;
-
 const RECONCILER_MODES = ["conductor", "agent", "publisher"] as const;
 
 export function neutralRailDeliveryPolicy<T>(value: T): RailDeliveryPolicy {
@@ -33,32 +25,43 @@ export function neutralRailDeliveryPolicy<T>(value: T): RailDeliveryPolicy {
 			"rail-delivery-policy-invalid: deliveryPolicy must be an object",
 		);
 	}
-	const syncMode = json.syncMode === "manual" ? "manual" : "auto";
-	const prune = json.prune === true;
-	if (json.reconcilerMode === undefined && json.engine !== undefined) {
-		return json.engine === "argo"
-			? Object.freeze({
-					reconcilerMode: "publisher" as const,
-					publisher: LEGACY_ARGO_PUBLISHER,
-					syncMode,
-					prune,
-				})
-			: Object.freeze({
-					reconcilerMode: "conductor" as const,
-					syncMode,
-					prune,
-				});
+	const syncMode = json.syncMode === undefined ? "auto" : json.syncMode;
+	if (syncMode !== "auto" && syncMode !== "manual") {
+		throw new TypeError(
+			"rail-delivery-policy-invalid: syncMode must be auto or manual",
+		);
 	}
+	const prune = json.prune === true;
 	const mode = RECONCILER_MODES.find((m) => m === json.reconcilerMode);
 	if (mode === undefined) {
 		throw new TypeError(
 			`rail-delivery-policy-invalid: reconcilerMode must be one of ${RECONCILER_MODES.join("|")} (remediation: set deliveryPolicy.reconcilerMode)`,
 		);
 	}
-	const publisher = isJsonString(json.publisher) ? json.publisher : undefined;
-	if (mode === "publisher" && (publisher === undefined || publisher === "")) {
+	let publisher: RailDeliveryPolicy["publisher"];
+	if (json.publisher !== undefined) {
+		if (
+			!isJsonObject(json.publisher) ||
+			!isJsonString(json.publisher.target) ||
+			!json.publisher.target.trim() ||
+			(json.publisher.repository !== undefined &&
+				(!isJsonString(json.publisher.repository) ||
+					!json.publisher.repository.trim()))
+		) {
+			throw new TypeError(
+				"rail-delivery-policy-invalid: publisher must name a target and an optional repository",
+			);
+		}
+		publisher = Object.freeze({
+			target: json.publisher.target,
+			...(isJsonString(json.publisher.repository)
+				? { repository: json.publisher.repository }
+				: undefined),
+		});
+	}
+	if (mode === "publisher" && publisher === undefined) {
 		throw new TypeError(
-			"rail-delivery-policy-invalid: reconcilerMode publisher requires a publisher target (remediation: set deliveryPolicy.publisher, e.g. argo-cd or flux)",
+			"rail-delivery-policy-invalid: reconcilerMode publisher requires a publisher target",
 		);
 	}
 	if (mode !== "publisher" && publisher !== undefined) {
@@ -153,6 +156,7 @@ export function parseRail<T>(value: T): Rail {
 			: undefined;
 	const now = isJsonString(json.publishedAt) ? json.publishedAt : undefined;
 	const delivery = parseRailDelivery(json.delivery);
+	const deliveryPolicy = neutralRailDeliveryPolicy(json.deliveryPolicy);
 	const rail = createRail({
 		id: isJsonString(json.id) ? json.id : "",
 		name: isJsonString(json.name) ? json.name : "",
@@ -170,6 +174,7 @@ export function parseRail<T>(value: T): Rail {
 		...(catalogSnapshotPin !== undefined ? { catalogSnapshotPin } : undefined),
 		...(activationStatus !== undefined ? { activationStatus } : undefined),
 		...(now !== undefined ? { now } : undefined),
+		deliveryPolicy,
 		...(delivery !== undefined ? { delivery } : undefined),
 	});
 	const hash = json.contentHash;
@@ -197,7 +202,7 @@ export function createRail(input: {
 	readonly policyEngine?: Rail["policyEngine"];
 	readonly placementDefaults?: Rail["placementDefaults"];
 	readonly billingPolicy?: Rail["billingPolicy"];
-	readonly deliveryPolicy?: RailDeliveryPolicy | LegacyRailDeliveryPolicy;
+	readonly deliveryPolicy?: RailDeliveryPolicy;
 	readonly delivery?: RailDeliveryObject;
 	readonly requiredConnectorKinds?: readonly string[];
 	readonly catalogSnapshotPin?: string;
@@ -314,7 +319,15 @@ export function railFromBrokerConfig(
 		? brokerConfig.brokerId
 		: "imported";
 	const billing = (brokerConfig.billing ?? {}) as JsonObject;
-	const delivery = (brokerConfig.delivery ?? {}) as JsonObject;
+	const delivery =
+		brokerConfig.delivery === undefined
+			? { reconcilerMode: "conductor" }
+			: brokerConfig.delivery;
+	if (!isJsonObject(delivery)) {
+		throw new TypeError(
+			"rail-delivery-policy-invalid: delivery must be an object",
+		);
+	}
 	return createRail({
 		id: options?.id ?? `rail-from-broker-${brokerId}`,
 		name: options?.name ?? `imported-${brokerId}`,
@@ -338,8 +351,9 @@ export function railFromBrokerConfig(
 			spendCapUsd: isJsonNumber(billing.spendCapUsd) ? billing.spendCapUsd : 0,
 		},
 		deliveryPolicy: neutralRailDeliveryPolicy({
-			engine: delivery.engine === "argo" ? "argo" : "in-proc",
-			syncMode: delivery.syncMode === "manual" ? "manual" : "auto",
+			reconcilerMode: delivery.reconcilerMode,
+			publisher: delivery.publisher,
+			syncMode: delivery.syncMode === undefined ? "manual" : delivery.syncMode,
 			prune: delivery.prune === true,
 		}),
 		metadata: Object.freeze({ importedFrom: "hobo.broker.json" }),

@@ -7,7 +7,7 @@ import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_station: GenFile = /*@__PURE__*/
-  fileDesc("Cg1zdGF0aW9uLnByb3RvEhBob2JvLnN0YXRpb25zLnYxIlsKEFN0YXRpb25Jc29sYXRpb24SDgoGdGVuYW50GAEgASgJEhEKCXJlc2lkZW5jeRgCIAEoCRIOCgZhaXJnYXAYAyABKAgSFAoMdHJ1c3RfZG9tYWluGAQgASgJIoYCCg1TdGF0aW9uUmVjb3JkEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEgoKAmlkGAIgASgJEgwKBG5hbWUYAyABKAkSNQoJaXNvbGF0aW9uGAQgASgLMiIuaG9iby5zdGF0aW9ucy52MS5TdGF0aW9uSXNvbGF0aW9uEhAKCGRhdGFfZGlyGAUgASgJEg4KBnN0YXR1cxgGIAEoCRIYChBhY3RpdmVfcmFpbF9oYXNoGAcgASgJEhsKE2Jvb3RzdHJhcF9yYWlsX2hhc2gYCCABKAkSEgoKY3JlYXRlZF9hdBgJIAEoCRISCgp1cGRhdGVkX2F0GAogASgJEgsKA3NlcRgLIAEoBCLfAQoKUmFpbFJlY29yZBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB3ZlcnNpb24YAyABKAkSFAoMY29udGVudF9oYXNoGAQgASgJEhkKEWFjdGl2YXRpb25fc3RhdHVzGAUgASgJEhIKCnN0YXRpb25faWQYBiABKAkSFwoPcG9saWN5X3BhY2tfcmVmGAcgASgJEhwKFGNhdGFsb2dfc25hcHNob3RfcGluGAggASgJEhQKDGlzX2Jvb3RzdHJhcBgJIAEoCBIUCgxwdWJsaXNoZWRfYXQYCiABKAkilwIKF1N0YXRpb25DYXBhYmlsaXR5UmVjb3JkEg4KBnNjaGVtYRgBIAEoCRIKCgJpZBgCIAEoCRIMCgRraW5kGAMgASgJEgwKBHNsdWcYBCABKAkSDQoFdGl0bGUYBSABKAkSEgoKcHJvdmVuYW5jZRgGIAEoCRIQCghyZXF1aXJlZBgHIAEoCBITCgtyZW1lZGlhdGlvbhgIIAEoCRJJCghtZXRhZGF0YRgJIAMoCzI3LmhvYm8uc3RhdGlvbnMudjEuU3RhdGlvbkNhcGFiaWxpdHlSZWNvcmQuTWV0YWRhdGFFbnRyeRovCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEikQEKHk1hdGNoZWRTdGF0aW9uQ2FwYWJpbGl0eVJlY29yZBI9CgpjYXBhYmlsaXR5GAEgASgLMikuaG9iby5zdGF0aW9ucy52MS5TdGF0aW9uQ2FwYWJpbGl0eVJlY29yZBIOCgZzdGF0dXMYAiABKAkSEAoIZXZpZGVuY2UYAyADKAkSDgoGZGV0YWlsGAQgASgJIt4BCh9TdGF0aW9uQ2FwYWJpbGl0eU1hbmlmZXN0UmVjb3JkEg4KBnNjaGVtYRgBIAEoCRISCgpzdGF0aW9uX2lkGAIgASgJEgoKAm9rGAMgASgIEkYKDGNhcGFiaWxpdGllcxgEIAMoCzIwLmhvYm8uc3RhdGlvbnMudjEuTWF0Y2hlZFN0YXRpb25DYXBhYmlsaXR5UmVjb3JkEhgKEG1pc3NpbmdfcmVxdWlyZWQYBSADKAkSEwoLcmVtZWRpYXRpb24YBiADKAkSFAoMZ2VuZXJhdGVkX2F0GAcgASgJIo8BChdTdGF0aW9uQ3JlYXRlZEV2ZW50RGF0YRISCgpzdGF0aW9uX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSNQoJaXNvbGF0aW9uGAMgASgLMiIuaG9iby5zdGF0aW9ucy52MS5TdGF0aW9uSXNvbGF0aW9uEhsKE2Jvb3RzdHJhcF9yYWlsX2hhc2gYBCABKAkiaQoWUmFpbEFjdGl2YXRlZEV2ZW50RGF0YRISCgpzdGF0aW9uX2lkGAEgASgJEg8KB3JhaWxfaWQYAiABKAkSFAoMY29udGVudF9oYXNoGAMgASgJEhQKDGlzX2Jvb3RzdHJhcBgEIAEoCGIGcHJvdG8z");
+  fileDesc("Cg1zdGF0aW9uLnByb3RvEhBob2JvLnN0YXRpb25zLnYxIlsKEFN0YXRpb25Jc29sYXRpb24SDgoGdGVuYW50GAEgASgJEhEKCXJlc2lkZW5jeRgCIAEoCRIOCgZhaXJnYXAYAyABKAgSFAoMdHJ1c3RfZG9tYWluGAQgASgJIoYCCg1TdGF0aW9uUmVjb3JkEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEgoKAmlkGAIgASgJEgwKBG5hbWUYAyABKAkSNQoJaXNvbGF0aW9uGAQgASgLMiIuaG9iby5zdGF0aW9ucy52MS5TdGF0aW9uSXNvbGF0aW9uEhAKCGRhdGFfZGlyGAUgASgJEg4KBnN0YXR1cxgGIAEoCRIYChBhY3RpdmVfcmFpbF9oYXNoGAcgASgJEhsKE2Jvb3RzdHJhcF9yYWlsX2hhc2gYCCABKAkSEgoKY3JlYXRlZF9hdBgJIAEoCRISCgp1cGRhdGVkX2F0GAogASgJEgsKA3NlcRgLIAEoBCJPChVSYWlsRGVsaXZlcnlQdWJsaXNoZXISDgoGdGFyZ2V0GAEgASgJEhcKCnJlcG9zaXRvcnkYAiABKAlIAIgBAUINCgtfcmVwb3NpdG9yeSKLAQoSUmFpbERlbGl2ZXJ5UG9saWN5EhcKD3JlY29uY2lsZXJfbW9kZRgBIAEoCRI6CglwdWJsaXNoZXIYAiABKAsyJy5ob2JvLnN0YXRpb25zLnYxLlJhaWxEZWxpdmVyeVB1Ymxpc2hlchIRCglzeW5jX21vZGUYAyABKAkSDQoFcHJ1bmUYBCABKAgingIKClJhaWxSZWNvcmQSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIPCgd2ZXJzaW9uGAMgASgJEhQKDGNvbnRlbnRfaGFzaBgEIAEoCRIZChFhY3RpdmF0aW9uX3N0YXR1cxgFIAEoCRISCgpzdGF0aW9uX2lkGAYgASgJEhcKD3BvbGljeV9wYWNrX3JlZhgHIAEoCRIcChRjYXRhbG9nX3NuYXBzaG90X3BpbhgIIAEoCRIUCgxpc19ib290c3RyYXAYCSABKAgSFAoMcHVibGlzaGVkX2F0GAogASgJEj0KD2RlbGl2ZXJ5X3BvbGljeRgLIAEoCzIkLmhvYm8uc3RhdGlvbnMudjEuUmFpbERlbGl2ZXJ5UG9saWN5IpcCChdTdGF0aW9uQ2FwYWJpbGl0eVJlY29yZBIOCgZzY2hlbWEYASABKAkSCgoCaWQYAiABKAkSDAoEa2luZBgDIAEoCRIMCgRzbHVnGAQgASgJEg0KBXRpdGxlGAUgASgJEhIKCnByb3ZlbmFuY2UYBiABKAkSEAoIcmVxdWlyZWQYByABKAgSEwoLcmVtZWRpYXRpb24YCCABKAkSSQoIbWV0YWRhdGEYCSADKAsyNy5ob2JvLnN0YXRpb25zLnYxLlN0YXRpb25DYXBhYmlsaXR5UmVjb3JkLk1ldGFkYXRhRW50cnkaLwoNTWV0YWRhdGFFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIpEBCh5NYXRjaGVkU3RhdGlvbkNhcGFiaWxpdHlSZWNvcmQSPQoKY2FwYWJpbGl0eRgBIAEoCzIpLmhvYm8uc3RhdGlvbnMudjEuU3RhdGlvbkNhcGFiaWxpdHlSZWNvcmQSDgoGc3RhdHVzGAIgASgJEhAKCGV2aWRlbmNlGAMgAygJEg4KBmRldGFpbBgEIAEoCSLeAQofU3RhdGlvbkNhcGFiaWxpdHlNYW5pZmVzdFJlY29yZBIOCgZzY2hlbWEYASABKAkSEgoKc3RhdGlvbl9pZBgCIAEoCRIKCgJvaxgDIAEoCBJGCgxjYXBhYmlsaXRpZXMYBCADKAsyMC5ob2JvLnN0YXRpb25zLnYxLk1hdGNoZWRTdGF0aW9uQ2FwYWJpbGl0eVJlY29yZBIYChBtaXNzaW5nX3JlcXVpcmVkGAUgAygJEhMKC3JlbWVkaWF0aW9uGAYgAygJEhQKDGdlbmVyYXRlZF9hdBgHIAEoCSKPAQoXU3RhdGlvbkNyZWF0ZWRFdmVudERhdGESEgoKc3RhdGlvbl9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEjUKCWlzb2xhdGlvbhgDIAEoCzIiLmhvYm8uc3RhdGlvbnMudjEuU3RhdGlvbklzb2xhdGlvbhIbChNib290c3RyYXBfcmFpbF9oYXNoGAQgASgJImkKFlJhaWxBY3RpdmF0ZWRFdmVudERhdGESEgoKc3RhdGlvbl9pZBgBIAEoCRIPCgdyYWlsX2lkGAIgASgJEhQKDGNvbnRlbnRfaGFzaBgDIAEoCRIUCgxpc19ib290c3RyYXAYBCABKAhiBnByb3RvMw");
 
 export type StationIsolation = Message<"hobo.stations.v1.StationIsolation"> & {
   tenant: string;
@@ -49,6 +49,28 @@ export type StationRecord = Message<"hobo.stations.v1.StationRecord"> & {
 export const StationRecordSchema: GenMessage<StationRecord> = /*@__PURE__*/
   messageDesc(file_station, 1);
 
+export type RailDeliveryPublisher = Message<"hobo.stations.v1.RailDeliveryPublisher"> & {
+  target: string;
+
+  repository?: string | undefined;
+};
+
+export const RailDeliveryPublisherSchema: GenMessage<RailDeliveryPublisher> = /*@__PURE__*/
+  messageDesc(file_station, 2);
+
+export type RailDeliveryPolicy = Message<"hobo.stations.v1.RailDeliveryPolicy"> & {
+  reconcilerMode: string;
+
+  publisher?: RailDeliveryPublisher | undefined;
+
+  syncMode: string;
+
+  prune: boolean;
+};
+
+export const RailDeliveryPolicySchema: GenMessage<RailDeliveryPolicy> = /*@__PURE__*/
+  messageDesc(file_station, 3);
+
 export type RailRecord = Message<"hobo.stations.v1.RailRecord"> & {
   id: string;
 
@@ -69,10 +91,12 @@ export type RailRecord = Message<"hobo.stations.v1.RailRecord"> & {
   isBootstrap: boolean;
 
   publishedAt: string;
+
+  deliveryPolicy?: RailDeliveryPolicy | undefined;
 };
 
 export const RailRecordSchema: GenMessage<RailRecord> = /*@__PURE__*/
-  messageDesc(file_station, 2);
+  messageDesc(file_station, 4);
 
 export type StationCapabilityRecord = Message<"hobo.stations.v1.StationCapabilityRecord"> & {
   schema: string;
@@ -95,7 +119,7 @@ export type StationCapabilityRecord = Message<"hobo.stations.v1.StationCapabilit
 };
 
 export const StationCapabilityRecordSchema: GenMessage<StationCapabilityRecord> = /*@__PURE__*/
-  messageDesc(file_station, 3);
+  messageDesc(file_station, 5);
 
 export type MatchedStationCapabilityRecord = Message<"hobo.stations.v1.MatchedStationCapabilityRecord"> & {
   capability?: StationCapabilityRecord | undefined;
@@ -108,7 +132,7 @@ export type MatchedStationCapabilityRecord = Message<"hobo.stations.v1.MatchedSt
 };
 
 export const MatchedStationCapabilityRecordSchema: GenMessage<MatchedStationCapabilityRecord> = /*@__PURE__*/
-  messageDesc(file_station, 4);
+  messageDesc(file_station, 6);
 
 export type StationCapabilityManifestRecord = Message<"hobo.stations.v1.StationCapabilityManifestRecord"> & {
   schema: string;
@@ -127,7 +151,7 @@ export type StationCapabilityManifestRecord = Message<"hobo.stations.v1.StationC
 };
 
 export const StationCapabilityManifestRecordSchema: GenMessage<StationCapabilityManifestRecord> = /*@__PURE__*/
-  messageDesc(file_station, 5);
+  messageDesc(file_station, 7);
 
 export type StationCreatedEventData = Message<"hobo.stations.v1.StationCreatedEventData"> & {
   stationId: string;
@@ -140,7 +164,7 @@ export type StationCreatedEventData = Message<"hobo.stations.v1.StationCreatedEv
 };
 
 export const StationCreatedEventDataSchema: GenMessage<StationCreatedEventData> = /*@__PURE__*/
-  messageDesc(file_station, 6);
+  messageDesc(file_station, 8);
 
 export type RailActivatedEventData = Message<"hobo.stations.v1.RailActivatedEventData"> & {
   stationId: string;
@@ -153,5 +177,5 @@ export type RailActivatedEventData = Message<"hobo.stations.v1.RailActivatedEven
 };
 
 export const RailActivatedEventDataSchema: GenMessage<RailActivatedEventData> = /*@__PURE__*/
-  messageDesc(file_station, 7);
+  messageDesc(file_station, 9);
 

@@ -938,7 +938,12 @@ describe("initStation", () => {
 			JSON.stringify({
 				brokerId: "acme",
 				billing: { quota: "deploys/week", quotaLimit: 5 },
-				delivery: { engine: "argo", syncMode: "manual", prune: true },
+				delivery: {
+					reconcilerMode: "publisher",
+					publisher: { target: "argo-cd" },
+					syncMode: "manual",
+					prune: true,
+				},
 			}),
 			"utf8",
 		);
@@ -960,7 +965,7 @@ describe("initStation", () => {
 		expect(rail.isBootstrap).toBe(false);
 		expect(rail.deliveryPolicy).toMatchObject({
 			reconcilerMode: "publisher",
-			publisher: "argo-cd",
+			publisher: { target: "argo-cd" },
 		});
 		expect(rail.billingPolicy.quotaLimit).toBe(5);
 		// And the production guard is satisfied, which is the reason to import.
