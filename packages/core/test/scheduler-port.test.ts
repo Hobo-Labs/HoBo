@@ -30,24 +30,24 @@ describe("hobo:scheduler port descriptor", () => {
 	});
 
 	it("parses interval specs", () => {
-		expect(parseIntervalCronSpec({ every_ms: 1_000 })).toEqual({
+		expect(parseIntervalCronSpec({ everyMs: 1_000 })).toEqual({
 			everyMs: 1_000,
 		});
-		expect(parseIntervalCronSpec({ every_ms: 500, start_at_ms: 0 })).toEqual({
+		expect(parseIntervalCronSpec({ everyMs: 500, startAtMs: 0 })).toEqual({
 			everyMs: 500,
 			startAtMs: 0,
 		});
 	});
 
 	it("rejects non-positive intervals and negative starts", () => {
-		expect(() => parseIntervalCronSpec({ every_ms: 0 })).toThrow(
+		expect(() => parseIntervalCronSpec({ everyMs: 0 })).toThrow(
 			SchedulerParseError,
 		);
 		expect(() =>
-			parseIntervalCronSpec({ every_ms: 1_000, start_at_ms: -1 }),
+			parseIntervalCronSpec({ everyMs: 1_000, startAtMs: -1 }),
 		).toThrow(SchedulerParseError);
 		try {
-			parseIntervalCronSpec({ every_ms: -5 });
+			parseIntervalCronSpec({ everyMs: -5 });
 			expect.unreachable();
 		} catch (error) {
 			expect((error as SchedulerParseError).code).toBe(

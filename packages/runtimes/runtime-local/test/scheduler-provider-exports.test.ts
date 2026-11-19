@@ -33,31 +33,11 @@ describe("the export table", () => {
 });
 
 describe("registering an interval", () => {
-	it("accepts the camelCase spelling", () => {
+	it("registers an interval by schedule id", () => {
 		const { port } = fixture();
 		expect(
 			port?.every({ scheduleId: "nightly", everyMs: 1_000 }).scheduleId,
 		).toBe(parseScheduleId("nightly"));
-	});
-
-	it("accepts the snake_case spelling a WIT guest sends", () => {
-		const { port } = fixture();
-		expect(
-			port?.every({ scheduleId: "nightly", every_ms: 1_000 }).scheduleId,
-		).toBe(parseScheduleId("nightly"));
-	});
-
-	it("prefers camelCase when a caller sends both", () => {
-		const { port, scheduler } = fixture();
-		port?.every({ scheduleId: "nightly", everyMs: 1_000, every_ms: 5_000 });
-		const fires: FiredTimer[] = [];
-		scheduler.registerJob(
-			parseScheduleId("nightly"),
-			{ everyMs: 1_000 },
-			(fire) => fires.push(fire),
-		);
-		scheduler.advance(1_000);
-		expect(fires).toHaveLength(1);
 	});
 
 	it("registers a job that actually fires on the clock", () => {
@@ -73,13 +53,10 @@ describe("registering an interval", () => {
 		expect(fires.length).toBeGreaterThan(0);
 	});
 
-	it("accepts a start offset in either spelling", () => {
+	it("accepts a start offset", () => {
 		const { port } = fixture();
 		expect(() =>
 			port?.every({ scheduleId: "a", everyMs: 1_000, startAtMs: 500 }),
-		).not.toThrow();
-		expect(() =>
-			port?.every({ scheduleId: "b", every_ms: 1_000, start_at_ms: 500 }),
 		).not.toThrow();
 	});
 
@@ -110,6 +87,12 @@ describe("intervals the port refuses", () => {
 		expect(() =>
 			fixture().port?.every({ scheduleId: "a", everyMs: null }),
 		).toThrow(TypeError);
+	});
+
+	it("rejects unrecognized interval fields", () => {
+		expect(() =>
+			fixture().port?.every({ scheduleId: "a", everyMs: 1_000, unexpected: 5 }),
+		).toThrow("invalid interval schedule fields");
 	});
 
 	it("refuses a payload that is not an object", () => {
