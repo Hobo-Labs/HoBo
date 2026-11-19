@@ -39,6 +39,17 @@ export function renderSuccess(input: {
 		return okText("", exitCode);
 	}
 
+	if (input.verb === "logs" && envelope.ok) {
+		if (envelope.data.followed === true) return okText("", exitCode);
+		const lines = Array.isArray(envelope.data.lines)
+			? envelope.data.lines.filter(isJsonString)
+			: [];
+		return okText(
+			`${lines.length > 0 ? lines.join("\n") : envelope.message}\n`,
+			exitCode,
+		);
+	}
+
 	if (input.verb === "new" && envelope.ok) {
 		const nextSteps = Array.isArray(envelope.data.nextSteps)
 			? envelope.data.nextSteps.filter(isJsonString).join("\n")

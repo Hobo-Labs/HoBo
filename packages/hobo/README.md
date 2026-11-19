@@ -43,6 +43,12 @@ signal handler, so a host that embeds it keeps its own signal handling. SIGKILL 
 crash are out of reach.
 Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.ts`).
 
+`hobo logs` reads stdout, stderr, and component events from the project's local
+deployment. The most recent 200 lines are shown by default; use `--lines` to
+choose up to 10,000 or `--follow` to stream additions until interrupted.
+`--json` returns a bounded snapshot with a truncation indicator. Local logs are
+stored in `.hobo/local-deployment.log` and retained across restarts.
+
 ## CLI verification and remote deployment safety
 
 ### Budgeted cloud hosting

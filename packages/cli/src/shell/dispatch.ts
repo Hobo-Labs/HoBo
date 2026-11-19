@@ -57,6 +57,10 @@ function defaultProgressSink(message: string): void {
 	process.stderr.write(`${message}\n`);
 }
 
+function defaultLogSink(message: string): void {
+	process.stdout.write(`${message}\n`);
+}
+
 export function createHoboCli(options: CreateHoboCliOptions = {}): HoboCli {
 	const registry =
 		options.registry ??
@@ -186,7 +190,8 @@ export function createHoboCli(options: CreateHoboCliOptions = {}): HoboCli {
 						flags: request.flags,
 						context,
 					},
-					runOptions.onProgress ?? defaultProgressSink,
+					runOptions.onProgress ??
+						(request.verb === "logs" ? defaultLogSink : defaultProgressSink),
 				);
 
 				return renderSuccess({

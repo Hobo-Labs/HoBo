@@ -180,11 +180,20 @@ export const SERVE_SUBCOMMANDS: VerbSubcommandTable = table({
 	defaultSubcommand: "control",
 });
 
+export const LOGS_SUBCOMMANDS: VerbSubcommandTable = table({
+	strict: false,
+	options: [flag("follow"), value("lines")],
+	common: ["follow", "lines"],
+	subcommands: [],
+	defaultSubcommand: "tail",
+});
+
 export const VERB_SUBCOMMANDS: ReadonlyMap<string, VerbSubcommandTable> =
 	new Map([
 		["deploy", DEPLOY_SUBCOMMANDS],
 		["incident", INCIDENT_SUBCOMMANDS],
 		["serve", SERVE_SUBCOMMANDS],
+		["logs", LOGS_SUBCOMMANDS],
 	]);
 
 export function resolveSubcommand(

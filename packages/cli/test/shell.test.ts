@@ -110,7 +110,7 @@ Canonical verbs:
   verify      read-only     Run the unified Gatekeeper preflight
   can-deploy  read-only     Diagnose producer/consumer compatibility
   inspect     read-only     Render projections and time-travel views
-  logs        read-only     Live-tail Camp runtime streams
+  logs        read-only     Read or follow local deployment logs
   doctor      diagnostics   Report environment and portability hazards
   messaging   diagnostics   Inspect messaging capability and delivery-guarantee readiness
   codegen     authoring     Regenerate checked-in generated clients

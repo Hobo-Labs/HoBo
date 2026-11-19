@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+	appendFile,
+	mkdir,
+	mkdtemp,
+	rename,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +77,82 @@ it("returns the most recent real log lines for the selected project", async () =
 	expect(envelope.data.lines.at(-1)).toBe("line-204");
 	expect(envelope.data.truncated).toBe(true);
 });
+
+it("accepts a line limit and rejects invalid streaming options", async () => {
+	const project = await temporaryProject();
+	await writeFile(join(project, "hobo.bindle.json"), "{}\n");
+	await mkdir(join(project, ".hobo"));
+	await writeFile(localDeploymentLogPath(project), "one\ntwo\nthree\n");
+	const shell = cli();
+	const text = await shell.run(["logs", "--lines", "2"], { cwd: project });
+	expect(text.stdout).toBe("two\nthree\n");
+	const json = await shell.run(["logs", "--json", "--lines=1"], {
+		cwd: project,
+	});
+	expect(JSON.parse(json.stdout).data.lines).toEqual(["three"]);
+	for (const args of [
+		["--lines=0"],
+		["--lines=10001"],
+		["--follow", "--json"],
+		["--follow", "-q"],
+		["extra"],
+	]) {
+		const result = await shell.run(["logs", ...args], { cwd: project });
+		expect(result.exitCode).toBe(2);
+	}
+});
+
+it("follows complete lines across UTF-8 fragments and log rotation", async () => {
+	const project = await temporaryProject();
+	await writeFile(join(project, "hobo.bindle.json"), "{}\n");
+	await mkdir(join(project, ".hobo"));
+	const logPath = localDeploymentLogPath(project);
+	await writeFile(logPath, "initial\npar");
+	const controller = new AbortController();
+	const seen: string[] = [];
+	let initialSeen = () => {};
+	let partialSeen = () => {};
+	const initialReady = new Promise<void>((resolve) => {
+		initialSeen = resolve;
+	});
+	const partialReady = new Promise<void>((resolve) => {
+		partialSeen = resolve;
+	});
+	const shell = createHoboCli({
+		commands: {
+			logs: createLogsCommand({
+				signal: controller.signal,
+				pollIntervalMs: 10,
+			}),
+		},
+	});
+	const running = shell.run(["logs", "--follow"], {
+		cwd: project,
+		onProgress: (line) => {
+			seen.push(line);
+			if (line === "initial") initialSeen();
+			if (line === "partial 😀") partialSeen();
+			if (line === "after rotation") controller.abort();
+		},
+	});
+	try {
+		await initialReady;
+		const suffix = Buffer.from("tial 😀\n");
+		await appendFile(logPath, suffix.subarray(0, 7));
+		await new Promise<void>((resolve) => setTimeout(resolve, 40));
+		await appendFile(logPath, suffix.subarray(7));
+		await partialReady;
+		await rename(logPath, `${logPath}.1`);
+		await writeFile(logPath, "after rotation\n");
+		const result = await running;
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("");
+		expect(seen).toEqual(["initial", "partial 😀", "after rotation"]);
+	} finally {
+		controller.abort();
+		await running;
+	}
+}, 10_000);
 
 it("reads the running deployment's application output and component events", async () => {
 	const project = await temporaryProject();
