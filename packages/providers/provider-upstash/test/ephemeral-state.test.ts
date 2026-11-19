@@ -21,6 +21,7 @@ import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { type AddressInfo, createServer, Socket } from "node:net";
 
+import { createCacheClient } from "@hobo/core";
 import {
 	createManualClock,
 	createMemoryRedisExecutor,
@@ -199,6 +200,19 @@ describe("ephemeral-state conformance — Upstash REST over the in-memory engine
 			await entry.run(context());
 		});
 	}
+
+	it("composes the byte cache with the REST adapter across clients", async () => {
+		const { clients } = restClients(rest);
+		const first = createCacheClient(clients[0], "adapter-integration");
+		const second = createCacheClient(clients[1], "adapter-integration");
+		await first.set("user:1", Uint8Array.from([0, 255]), 1000, ["users"]);
+		expect(await second.get("user:1")).toEqual(Uint8Array.from([0, 255]));
+		await second.invalidate("users");
+		expect(await first.get("user:1")).toBeUndefined();
+		await first.set("user:1", Uint8Array.from([1]), 1000, ["users"]);
+		clock.advance(1000);
+		expect(await second.get("user:1")).toBeUndefined();
+	});
 
 	it("sent every request with the bearer token", () => {
 		expect(rest.unauthorized()).toBe(0);
