@@ -74,7 +74,7 @@ export function incrementalEntitlementClaims(
 				kind !== "credit" &&
 				kind !== "commitment"
 			)
-				continue;
+				return undefined;
 			if (
 				!safeName(row.sourceId) ||
 				quantity === undefined ||

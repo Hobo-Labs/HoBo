@@ -60,6 +60,41 @@ describe("incrementalEntitlementClaims", () => {
 		]);
 	});
 
+	it("fails closed on unsupported consumption kinds in full", () => {
+		for (const kind of ["grant", "", "ALLOWANCE"]) {
+			const unsupported = create(ConsumptionSchema, {
+				kind,
+				sourceId: "mystery-a",
+				quantity: { decimal: "1", unit: "minute" },
+			});
+			expect(
+				incrementalEntitlementClaims([unsupported], [], "USD"),
+			).toBeUndefined();
+			expect(
+				incrementalEntitlementClaims(
+					[row("allowance", "allowance-a", "1", "minute"), unsupported],
+					[],
+					"USD",
+				),
+			).toBeUndefined();
+		}
+	});
+
+	it("fails closed on unsupported consumption kinds in base", () => {
+		const unsupported = create(ConsumptionSchema, {
+			kind: "waiver",
+			sourceId: "mystery-a",
+			quantity: { decimal: "1", unit: "minute" },
+		});
+		expect(
+			incrementalEntitlementClaims(
+				[row("allowance", "allowance-a", "2", "minute")],
+				[unsupported],
+				"USD",
+			),
+		).toBeUndefined();
+	});
+
 	it("keeps credit and commitment rows with the same source id separate", () => {
 		const claims = incrementalEntitlementClaims(
 			[
