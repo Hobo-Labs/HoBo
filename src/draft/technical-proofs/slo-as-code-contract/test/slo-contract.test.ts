@@ -269,3 +269,27 @@ test("overlapping burn observations replace the objective budget and can recover
   assert.equal(replenished.exhausted, false);
   assert.equal(replenished.remainingBudgetRatio, 0.95);
 });
+
+test("rejects a burn lookback longer than the objective window", () => {
+  const slo = createGoldenSlo({ spec: {
+    timeWindow: { duration: "1h", isRolling: true },
+    burnRateThresholds: [{ name: "too-long", threshold: 2, lookbackWindow: "2h", samplingInterval: "1m" }],
+  } });
+  const result = parseSloDefinition(slo);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /lookbackWindow must not exceed spec\.timeWindow\.duration/);
+});
+
+test("preserves a small positive remaining budget in the projection", () => {
+  const slo = createGoldenSlo();
+  const event = makeSloEvent({
+    id: "small-remainder",
+    type: "slo.BudgetBurned",
+    sloName: slo.metadata.name,
+    seq: 1,
+    data: { window: "30d", good: 990, total: 1000, burnRate: 1, remainingBudgetRatio: 1e-14 },
+  });
+  const view = applyBudgetEvent(initialBudgetView(slo), slo, event);
+  assert.equal(view.remainingBudgetRatio, 1e-14);
+  assert.equal(view.exhausted, false);
+});

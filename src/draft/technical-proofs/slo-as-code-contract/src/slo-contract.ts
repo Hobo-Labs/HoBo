@@ -416,6 +416,9 @@ function validateBurnRateThresholds(spec, errors) {
     if (lookbackSeconds && samplingSeconds && lookbackSeconds < samplingSeconds) {
       errors.push(`${path}.lookbackWindow must be >= samplingInterval`);
     }
+    if (timeWindowSeconds && lookbackSeconds && lookbackSeconds > timeWindowSeconds) {
+      errors.push(`${path}.lookbackWindow must not exceed spec.timeWindow.duration`);
+    }
     if (timeWindowSeconds && samplingSeconds && timeWindowSeconds < samplingSeconds) {
       errors.push(`${path}.samplingInterval must not exceed spec.timeWindow.duration`);
     }
@@ -498,7 +501,9 @@ function clamp(value, min, max) {
 }
 
 function roundRatio(value) {
-  return Number(value.toFixed(12));
+  const rounded = Number(value.toFixed(12));
+  if ((rounded === 0 && value > 0) || (rounded === 1 && value !== 1)) return value;
+  return rounded;
 }
 
 function deepMerge(base, overrides) {
