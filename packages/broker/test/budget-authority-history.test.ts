@@ -262,7 +262,7 @@ describe("durable budget history fences", () => {
 		bucket.remainingUnits = 20;
 		refuse = true;
 		expect(() => authority.configure(refreshed, 1, NOW)).toThrow(
-			"write refused",
+			"budget commit outcome uncertain",
 		);
 		expect(() => authority.read(NOW)).toThrow(
 			"budget commit outcome uncertain",
@@ -330,7 +330,9 @@ describe("durable budget history fences", () => {
 		const p2 = snapshot();
 		if (!p2.identity) throw new Error("fixture identity missing");
 		p2.identity.periodId = "p2";
-		expect(() => authority.configure(p2, 0, NOW)).toThrow("write refused");
+		expect(() => authority.configure(p2, 0, NOW)).toThrow(
+			"budget commit outcome uncertain",
+		);
 		expect(() => authority.read(NOW)).toThrow(
 			"budget commit outcome uncertain",
 		);

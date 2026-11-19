@@ -11,6 +11,7 @@ package = root / "packages/broker"
 vitest = root / "node_modules/vitest/vitest.mjs"
 config = root / ".agents/skills/verify-broker-budget-authority/models/vitest.config.mts"
 properties = "test/budget-authority.property.test.ts"
+denials = "test/budget-admission-denial.test.ts"
 fenced = "test/fenced-budget-settlement.test.ts"
 admission = "admits only when every existing and requested exposure fits"
 dimensions = "keeps provider and entitlement exposure within their separate limits"
@@ -25,7 +26,8 @@ settlement = "src/budget-fence-settlement.ts"
 cases = [
     ("ambiguous commit result", authority, "committed !== null && Object(committed) === committed", "committed instanceof Promise", properties, ambiguous),
     ("uncertain commit reuse", authority, "if (commitOutcomeUncertain)", "if (false && commitOutcomeUncertain)", properties, ambiguous),
-    ("thrown commit reuse", authority, "} catch (error) {\n\t\t\tcommitOutcomeUncertain = true;\n\t\t\tthrow error;\n\t\t} finally {\n\t\t\tcommitting = false;", "} catch (error) {\n\t\t\tcommitOutcomeUncertain = false;\n\t\t\tthrow error;\n\t\t} finally {\n\t\t\t\tcommitting = false;", properties, commit),
+    ("thrown commit reuse", authority, "} catch (error) {\n\t\t\tcommitOutcomeUncertain = true;\n\t\t\tthrow new Error", "} catch (error) {\n\t\t\tcommitOutcomeUncertain = false;\n\t\t\tthrow new Error", properties, commit),
+    ("commit failure reported as denial", authority, 'throw new Error("budget commit outcome uncertain; reopen the authority", {\n\t\t\t\tcause: error,\n\t\t\t});', "throw error;", denials, "does not classify a commit exception as a denial"),
     ("unresolved exposure", authority, "current.unresolvedMicros,\n\t\t\t\t\tcurrent.recoveryReserveMicros", "0,\n\t\t\t\t\tcurrent.recoveryReserveMicros", properties, admission),
     ("provider holds", authority, "account.reservedMicros,\n\t\t\t\t\t\taccount.externalCommittedMicros", "0,\n\t\t\t\t\t\taccount.externalCommittedMicros", properties, dimensions),
     ("entitlement holds", authority, "add(bucket.reservedUnits, claim.units)", "add(0, claim.units)", properties, dimensions),
@@ -67,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix="hobo-broker-code-mutants-") as director
         print(f"Expected generated counterexample: {label}", flush=True)
     for filename, content in original.items():
         (scratch / filename).write_text(content)
-    for test_file in (properties, fenced):
+    for test_file in (properties, denials, fenced):
         result = run(test_file, ".*")
         if result.returncode:
             raise RuntimeError(f"restored {test_file} failed\n{result.stdout}{result.stderr}")

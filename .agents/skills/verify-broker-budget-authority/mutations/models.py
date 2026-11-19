@@ -8,9 +8,10 @@ import tempfile
 models = Path(__file__).resolve().parent.parent / "models"
 jar = Path(os.environ["TLA2TOOLS"]).resolve()
 cases = [
-    ("ambiguous commit result", "BrokerCommitResult", "RejectAmbiguous = FALSE\n          FenceUncertain = TRUE\n          FenceThrown = TRUE", "NoPrematureAcknowledgement", None),
-    ("reuse after ambiguous commit", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = FALSE\n          FenceThrown = TRUE", "NoUseAfterAmbiguousCommit", None),
-    ("reuse after thrown commit", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = TRUE\n          FenceThrown = FALSE", "NoUseAfterThrownCommit", None),
+    ("ambiguous commit result", "BrokerCommitResult", "RejectAmbiguous = FALSE\n          FenceUncertain = TRUE\n          FenceThrown = TRUE\n          SeparateCommitFailure = TRUE", "NoPrematureAcknowledgement", None),
+    ("reuse after ambiguous commit", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = FALSE\n          FenceThrown = TRUE\n          SeparateCommitFailure = TRUE", "NoUseAfterAmbiguousCommit", None),
+    ("reuse after thrown commit", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = TRUE\n          FenceThrown = FALSE\n          SeparateCommitFailure = TRUE", "NoUseAfterThrownCommit", None),
+    ("commit failure reported as denial", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = TRUE\n          FenceThrown = TRUE\n          SeparateCommitFailure = FALSE", "NoCommitFailureAsDenial", None),
     ("reentrant admission", "BrokerCommit", "GuardReentry = FALSE", "NoOverlappingAdmissions", None),
     ("active entitlement scope", "BrokerEntitlement", "PreserveScope = FALSE\n          CheckReplayScope = TRUE", "ActiveClaimKeepsScope", None),
     ("replayed entitlement scope", "BrokerEntitlement", "PreserveScope = TRUE\n          CheckReplayScope = FALSE", "ReplayRejectsMismatch", None),

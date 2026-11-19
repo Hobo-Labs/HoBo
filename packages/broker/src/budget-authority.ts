@@ -1227,24 +1227,27 @@ export function createBudgetAdmissionAuthority(options: {
 			reservations: [...rows.values()],
 			reconciliationEvidenceRef,
 		});
+		let committed: unknown;
 		committing = true;
 		try {
-			const committed: unknown = options.commit?.(
+			committed = options.commit?.(
 				clone(BudgetAuthorityEventSchema, event),
 				expectedSeq,
 			);
-			if (committed !== null && Object(committed) === committed) {
-				commitOutcomeUncertain = true;
-				void synchronousVerdict(committed);
-				throw new Error(
-					"budget commit must append synchronously before acknowledgement",
-				);
-			}
 		} catch (error) {
 			commitOutcomeUncertain = true;
-			throw error;
+			throw new Error("budget commit outcome uncertain; reopen the authority", {
+				cause: error,
+			});
 		} finally {
 			committing = false;
+		}
+		if (committed !== null && Object(committed) === committed) {
+			commitOutcomeUncertain = true;
+			void synchronousVerdict(committed);
+			throw new Error(
+				"budget commit must append synchronously before acknowledgement",
+			);
 		}
 		rememberFinancialHistory(next);
 		current = clone(BudgetLedgerSnapshotSchema, next);

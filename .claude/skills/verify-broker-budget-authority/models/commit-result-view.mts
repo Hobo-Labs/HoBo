@@ -5,5 +5,5 @@ export const state = (v) => ({
   uncertain: 'Commit uncertain, authority fenced',
 })[v.phase];
 export const step = (action, from, to) => action === 'Commit'
-  ? (to.phase === 'accepted' ? 'commit completes' : from.kind.startsWith('throw-') ? 'commit throws' : 'commit returns an ambiguous result')
+  ? (to.phase === 'accepted' ? 'commit completes' : from.kind.startsWith('throw-') || from.kind.startsWith('denial-') ? 'commit throws' : 'commit returns an ambiguous result')
   : 'wait';

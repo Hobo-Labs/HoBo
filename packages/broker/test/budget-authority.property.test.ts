@@ -430,7 +430,7 @@ describe("hosting budget authority generated properties", () => {
 								});
 								break;
 						}
-					}).toThrow("injected commit failure");
+					}).toThrow("budget commit outcome uncertain");
 					expect(observedBeforeFailure).toEqual(before);
 					expect(() => authority.read(NOW)).toThrow(
 						"budget commit outcome uncertain",
@@ -448,6 +448,11 @@ describe("hosting budget authority generated properties", () => {
 					if (appendBeforeThrow) {
 						expect(reopened.read(NOW)).toEqual(journal.at(-1)?.snapshot);
 						expect(reopened.read(NOW).seq).toBe(before.seq + 1);
+						expect(reopened.lookup("work")).toEqual(
+							journal
+								.at(-1)
+								?.reservations.find((row) => row.reservationId === "work"),
+						);
 					} else {
 						expect(reopened.read(NOW)).toEqual(before);
 						expect(reopened.lookup("work")).toEqual(reservationBefore);
@@ -487,7 +492,7 @@ describe("hosting budget authority generated properties", () => {
 						reserve(authority, "outer", bound);
 					} else {
 						expect(() => reserve(authority, "outer", bound)).toThrow(
-							"budget authority mutation during commit",
+							"budget commit outcome uncertain",
 						);
 						expect(() => authority.read(NOW)).toThrow(
 							"budget commit outcome uncertain",

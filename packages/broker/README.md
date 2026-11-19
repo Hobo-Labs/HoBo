@@ -215,7 +215,10 @@ An object or function return is refused because it could represent unfinished
 work; incidental primitive returns are ignored. After an ambiguous return or any
 callback exception, the authority refuses reads and operations until the host
 reconciles any pending write and reopens it from the durable journal: a callback
-can append successfully and then throw. A callback that starts asynchronous
+can append successfully and then throw. The authority wraps every callback
+exception as an uncertain commit with the original error as its cause, so even a
+denial from another module cannot be mistaken for a definite refusal.
+A callback that starts asynchronous
 work but returns a primitive cannot be detected; the host must honor the contract.
 The host must also handle rejections from foreign promises and other thenables,
 which the authority does not await or inspect.
