@@ -237,6 +237,9 @@ describe("the relay deploy workflow", () => {
 		assert.match(deploy, /--sha "\$GITHUB_SHA"/u);
 		assert.match(deploy, /for target in preview production/u);
 		assert.match(deploy, /--target "\$target" --wait/u);
+		assert.match(deploy, /HOBO_CI_RELAY_PREVIEW_PROBE_OIDC/u);
+		assert.match(deploy, /HOBO_CI_RELAY_STAGED_PRODUCTION/u);
+		assert.match(deploy, /HOBO_CI_RELAY_PUBLIC_URL/u);
 		assert.match(deploy, /set -euo pipefail/u);
 		assert.doesNotMatch(workflow, /gh api/u);
 		assert.doesNotMatch(deploy, /curl /u);
@@ -322,6 +325,9 @@ process.exitCode = failed ? 27 : 0;`,
 		const gate = step("Decide whether to deploy");
 		assert.match(gate, /id: gate/u);
 		assert.match(gate, /relay-deploy-gate\.mts/u);
+		const gateLine = stepLine("Decide whether to deploy");
+		const deliveryLine = stepLine("Deliver the relay through HoBo CD");
+		assert.ok(gateLine >= 0 && deliveryLine >= 0 && gateLine < deliveryLine);
 		const delivery = step("Deliver the relay through HoBo CD");
 		assert.match(
 			delivery,
@@ -329,6 +335,10 @@ process.exitCode = failed ? 27 : 0;`,
 		);
 		assert.match(delivery, /--deadline "\$DEPLOY_DEADLINE"/u);
 		const stepTimeout = Number(/timeout-minutes: (\d+)/u.exec(delivery)?.[1]);
+		assert.equal(
+			stepTimeout,
+			RELAY_DEPLOY_JOB_TIMEOUT_MINUTES - RELAY_DEPLOY_JOB_MARGIN_MINUTES,
+		);
 		assert.ok(stepTimeout > 0 && stepTimeout < jobTimeout);
 		const steps = workflow.slice(
 			workflow.indexOf("    steps:", workflow.indexOf("\n  deploy:")),
@@ -360,7 +370,7 @@ process.exitCode = failed ? 27 : 0;`,
 		assert.match(delivery, /HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true"/u);
 		assert.match(
 			delivery,
-			/HOBO_CI_RELAY_PUBLIC_URL: https:\/\/hobo-ci\.vercel\.app/u,
+			/^\s+HOBO_CI_RELAY_PUBLIC_URL: https:\/\/hobo-ci\.vercel\.app\s*$/m,
 		);
 		assert.match(delivery, /HOBO_CI_RELAY_STAGED_PRODUCTION: "true"/u);
 	});

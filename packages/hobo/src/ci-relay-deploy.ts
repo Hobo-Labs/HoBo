@@ -1003,7 +1003,9 @@ export async function runCiRelayDeploy(
 					RELAY_DEPLOY_REFUSAL.budgetExhausted,
 					`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
 				);
+			let previousProduction: string | undefined;
 			try {
+				previousProduction = await client.getProductionDeploymentId(project);
 				await client.promoteDeployment(project, safe.deploymentId);
 			} catch (error) {
 				const failed = realizationFailure(
@@ -1056,13 +1058,24 @@ export async function runCiRelayDeploy(
 						((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
 					)(5_000);
 			}
-			if (!liveReady)
+			if (!liveReady) {
+				if (
+					previousProduction !== undefined &&
+					previousProduction !== safe.deploymentId
+				) {
+					try {
+						await client.promoteDeployment(project, previousProduction);
+					} catch {
+						void 0;
+					}
+				}
 				return {
 					ok: false,
 					code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
 					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.`,
 					data: { ...deliveryData },
 				};
+			}
 		}
 		return {
 			code: "HOBO_CI_DEPLOYED",

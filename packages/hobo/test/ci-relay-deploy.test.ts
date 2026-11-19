@@ -1155,6 +1155,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			}
 			if (url.includes("/promote/")) {
 				expect(url).toContain("/projects/prj_relay/promote/");
+				trafficOnPublic = true;
 				events.push("promote");
 				return {
 					ok: true,
@@ -1166,7 +1167,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			return vercel.fetch(url, init);
 		};
 		const publicOrigin = "https://public.example.test";
-		const liveHealthCommit = SHA;
+		let trafficOnPublic = false;
 		const probe: HttpTransport = async (request) => {
 			const url = new URL(request.url);
 			const stage = request.url.startsWith(
@@ -1180,6 +1181,9 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			}
 			if (url.origin === publicOrigin) {
 				events.push(`live:${url.pathname}`);
+				expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
+					undefined,
+				);
 			}
 			return {
 				status:
@@ -1191,7 +1195,12 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				headers: {},
 				body: request.url.endsWith("/healthz")
 					? JSON.stringify({
-							commit: url.origin === publicOrigin ? liveHealthCommit : SHA,
+							commit:
+								url.origin === publicOrigin
+									? trafficOnPublic
+										? SHA
+										: "stale00000000000000000000000000000000"
+									: SHA,
 						})
 					: JSON.stringify({ ready: readyStatus === 200 }),
 			};
@@ -1254,11 +1263,13 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		});
 		if (readyStatus === 200) {
 			expect(result.exitCode, JSON.stringify(result.envelope)).toBe(0);
-			expect(events.indexOf("promote")).toBeGreaterThan(
-				events.indexOf("staged:/readyz"),
-			);
-			expect(events).toContain("live:/healthz");
-			expect(events).toContain("live:/readyz");
+			const stagedReadyAt = events.indexOf("staged:/readyz");
+			const promoteAt = events.indexOf("promote");
+			const liveHealthAt = events.indexOf("live:/healthz");
+			const liveReadyAt = events.indexOf("live:/readyz");
+			expect(promoteAt).toBeGreaterThan(stagedReadyAt);
+			expect(liveHealthAt).toBeGreaterThan(promoteAt);
+			expect(liveReadyAt).toBeGreaterThan(liveHealthAt);
 		} else {
 			expect(result.exitCode).not.toBe(0);
 			expect(events).not.toContain("promote");
@@ -1281,13 +1292,21 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(preview.exitCode).toBe(0);
 		const vercel = scriptedVercel(["READY"]);
 		const events: string[] = [];
+		const previousProduction = "dpl_previous_prod";
 		const fetch: VercelFetch = async (url, init) => {
 			if (url.includes("/v9/projects/hobo-ci")) {
 				return {
 					ok: true,
 					status: 200,
-					text: async () => '{"id":"prj_relay"}',
-					json: async () => ({ id: "prj_relay" }),
+					text: async () =>
+						JSON.stringify({
+							id: "prj_relay",
+							targets: { production: { id: previousProduction } },
+						}),
+					json: async () => ({
+						id: "prj_relay",
+						targets: { production: { id: previousProduction } },
+					}),
 				};
 			}
 			if (url.includes("/promote/")) {
@@ -1316,6 +1335,9 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				};
 			if (url.origin === publicOrigin) {
 				events.push(`live:${url.pathname}`);
+				expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
+					undefined,
+				);
 			}
 			return {
 				status: 200,
@@ -1381,7 +1403,10 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(result.envelope).toMatchObject({
 			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
 		});
-		expect(events).toContain("promote");
+		expect(events.filter((event) => event === "promote")).toEqual([
+			"promote",
+			"promote",
+		]);
 		expect(events).toContain("live:/healthz");
 	});
 
