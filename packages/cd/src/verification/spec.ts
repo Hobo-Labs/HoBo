@@ -23,6 +23,8 @@ export const RATIO_UNIT = "ratio";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const MAX_QUERY_CHARS = 4096;
+const PROMETHEUS_RECORDING_RULE =
+	/^[A-Za-z_:][A-Za-z0-9_:]*(?:\{(?:[^{}"\\]|"(?:[^"\\]|\\.)*")*\})?$/u;
 const MAX_REQUIRED_OBSERVATIONS = 10_000;
 const MAX_WINDOW_MS = 7n * 24n * 3_600_000n;
 function defaultSensitivity(): Sensitivity {
@@ -42,6 +44,10 @@ export const ERROR_BUDGET_CHECK = "error-budget";
 export const SLO_CHECK = "slo:gate";
 export const SLO_BURN_CHECK = "slo:burn";
 export const SLO_BUDGET_CHECK = "slo:budget";
+export const SLO_BURN_TIME_BEFORE_CHECK = "slo:burn-time-before";
+export const SLO_BURN_TIME_AFTER_CHECK = "slo:burn-time-after";
+export const SLO_BUDGET_TIME_BEFORE_CHECK = "slo:budget-time-before";
+export const SLO_BUDGET_TIME_AFTER_CHECK = "slo:budget-time-after";
 
 function isHttpsUrl(value: string): boolean {
 	try {
@@ -320,6 +326,21 @@ export function parseVerificationSpec(
 			"slo_gate.remaining_budget_ratio",
 			problems,
 		);
+		for (const [query, path] of [
+			[gate.burnRate, "slo_gate.burn_rate"],
+			[gate.remainingBudgetRatio, "slo_gate.remaining_budget_ratio"],
+		] as const) {
+			if (
+				query?.source === HealthSourceKind.PROMETHEUS &&
+				!PROMETHEUS_RECORDING_RULE.test(query.query)
+			) {
+				problems.push({
+					code: "verification-spec-invalid",
+					message: `${path}.query must select a Prometheus recording rule directly`,
+					subject: path,
+				});
+			}
+		}
 		if (
 			gate.burnRate?.unit !== BURN_RATE_UNIT ||
 			gate.remainingBudgetRatio?.unit !== RATIO_UNIT

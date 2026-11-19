@@ -64,10 +64,61 @@ describe("verification sample observation times", () => {
 		);
 		if (!result.ok) throw new Error("source query failed");
 		expect(result.value.values).toEqual([0.01, 0.02]);
-		expect(result.value.points).toEqual([
-			{ value: 0.01, observedAtMs: T0 + 1_000, seriesKey: "0" },
-			{ value: 0.02, observedAtMs: T0 + 2_000, seriesKey: "1" },
+		expect(result.value.points).toMatchObject([
+			{ value: 0.01, observedAtMs: T0 + 1_000 },
+			{ value: 0.02, observedAtMs: T0 + 2_000 },
 		]);
+		const keys = result.value.points?.map((point) => point.seriesKey) ?? [];
+		expect(keys).toHaveLength(2);
+		expect(keys[0]).toMatch(/^[0-9a-f]{64}$/);
+		expect(keys[1]).toMatch(/^[0-9a-f]{64}$/);
+		expect(keys[0]).not.toBe(keys[1]);
+	});
+
+	it("keeps a series identity when another series disappears", async () => {
+		let multiple = true;
+		const http = new ScriptedTransport(() =>
+			json(200, {
+				status: "success",
+				data: {
+					resultType: "matrix",
+					result: [
+						...(multiple
+							? [{ metric: { pod: "a" }, values: [[T0 / 1000, "1"]] }]
+							: []),
+						{ metric: { pod: "b" }, values: [[T0 / 1000, "2"]] },
+					],
+				},
+			}),
+		);
+		const prometheus = createPrometheusSource({
+			http: http.transport,
+			credentials: new MapCredentials({}),
+		});
+		const input = {
+			query: query("error_rate"),
+			campId: camp("camp-a"),
+			cohort: Cohort.ALL,
+			fromMs: T0,
+			toMs: T0 + MINUTE,
+			signal: new AbortController().signal,
+		};
+		const first = await prometheus.query(
+			input,
+			context(() => T0),
+		);
+		multiple = false;
+		const second = await prometheus.query(
+			input,
+			context(() => T0),
+		);
+		if (!first.ok || !second.ok) throw new Error("source query failed");
+		expect(second.value.points?.[0]?.seriesKey).toBe(
+			first.value.points?.[1]?.seriesKey,
+		);
+		expect(second.value.points?.[0]?.seriesKey).not.toBe(
+			first.value.points?.[0]?.seriesKey,
+		);
 	});
 
 	it("records sample times in the verification journal", async () => {
@@ -103,12 +154,12 @@ describe("verification sample observation times", () => {
 			{
 				value: 0.01,
 				observedAt: new Date(T0 + 1_000).toISOString(),
-				seriesKey: "0",
+				seriesKey: expect.stringMatching(/^[0-9a-f]{64}$/),
 			},
 			{
 				value: 0.02,
 				observedAt: new Date(T0 + 2_000).toISOString(),
-				seriesKey: "1",
+				seriesKey: expect.stringMatching(/^[0-9a-f]{64}$/),
 			},
 		]);
 		expect(prometheus.kind).toBe(HealthSourceKind.PROMETHEUS);

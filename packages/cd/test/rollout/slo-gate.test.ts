@@ -23,15 +23,20 @@ function sloRig() {
 	const source = new ScriptedHealthSource(
 		HealthSourceKind.PROMETHEUS,
 		(call) => {
-			const value =
-				call.query === "burn" ? (mode === "breach" ? 12 : 0.1) : 0.5;
 			const points =
 				mode === "missing"
 					? []
 					: [call.toMs - MINUTE, call.toMs].map((observedAtMs) => ({
-							value,
+							value: call.query.startsWith("timestamp(")
+								? observedAtMs / 1000
+								: call.query === "burn"
+									? mode === "breach"
+										? 12
+										: 0.1
+									: 0.5,
 							observedAtMs,
 							seriesKey: "0",
+							correlationKey: "0",
 						}));
 			return {
 				ok: true,
@@ -66,8 +71,14 @@ function sloRig() {
 	});
 	const spec = create(VerificationSpecRecordSchema, {
 		sloGate: {
-			burnRate: query("burn", { query: "burn", unit: "burn_rate" }),
-			remainingBudgetRatio: query("budget", { query: "budget", unit: "ratio" }),
+			burnRate: query("burn", {
+				query: "burn",
+				unit: "burn_rate",
+			}),
+			remainingBudgetRatio: query("budget", {
+				query: "budget",
+				unit: "ratio",
+			}),
 		},
 	});
 	async function start(strategy: RolloutStrategy) {

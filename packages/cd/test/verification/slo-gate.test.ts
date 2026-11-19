@@ -26,34 +26,74 @@ import {
 	TENANT,
 } from "./fakes.js";
 
-type Point = { value: number; observedAtMs: number; seriesKey: string };
+type Point = {
+	value: number;
+	observedAtMs: number;
+	seriesKey: string;
+	correlationKey: string;
+};
 
 function sloSpec() {
 	return create(VerificationSpecRecordSchema, {
 		sloGate: {
-			burnRate: query("burn", { query: "burn", unit: "burn_rate" }),
-			remainingBudgetRatio: query("budget", { query: "budget", unit: "ratio" }),
+			burnRate: query("burn", {
+				query: "burn",
+				unit: "burn_rate",
+			}),
+			remainingBudgetRatio: query("budget", {
+				query: "budget",
+				unit: "ratio",
+			}),
 		},
 	});
 }
 
 function point(minute: number, value: number, seriesKey = "0"): Point {
-	return { value, observedAtMs: T0 + minute * MINUTE, seriesKey };
+	return {
+		value,
+		observedAtMs: T0 + minute * MINUTE,
+		seriesKey,
+		correlationKey: seriesKey,
+	};
 }
 
 function harness() {
 	const store = new MemoryEventStore();
 	const time = clock();
-	const observations = { burn: [] as Point[], budget: [] as Point[] };
+	const observations = {
+		burn: [] as Point[],
+		budget: [] as Point[],
+		burnTime: undefined as Point[] | undefined,
+		budgetTime: undefined as Point[] | undefined,
+		burnTimeAfter: undefined as Point[] | undefined,
+		budgetTimeAfter: undefined as Point[] | undefined,
+	};
+	let burnTimeCalls = 0;
+	let budgetTimeCalls = 0;
 	const source = new ScriptedHealthSource(
 		HealthSourceKind.PROMETHEUS,
 		(call) => {
-			const selected =
-				call.query === "burn"
-					? observations.burn
-					: call.query === "budget"
-						? observations.budget
-						: [];
+			const sourceTimes = (points: Point[]) =>
+				points.map((item) => ({ ...item, value: item.observedAtMs / 1000 }));
+			let selected: Point[] = [];
+			if (call.query === "burn") selected = observations.burn;
+			if (call.query === "budget") selected = observations.budget;
+			if (call.query === "timestamp(burn)") {
+				burnTimeCalls += 1;
+				selected =
+					(burnTimeCalls % 2 === 0 ? observations.burnTimeAfter : undefined) ??
+					observations.burnTime ??
+					sourceTimes(observations.burn);
+			}
+			if (call.query === "timestamp(budget)") {
+				budgetTimeCalls += 1;
+				selected =
+					(budgetTimeCalls % 2 === 0
+						? observations.budgetTimeAfter
+						: undefined) ??
+					observations.budgetTime ??
+					sourceTimes(observations.budget);
+			}
 			const points = selected.filter(
 				(item) =>
 					item.observedAtMs >= call.fromMs && item.observedAtMs <= call.toMs,
@@ -114,6 +154,132 @@ describe("SLO rollout verification", () => {
 		if (!invalid.sloGate) throw new Error("missing gate");
 		invalid.sloGate.holdBurnRate = 12;
 		expect(parseVerificationSpec(invalid).ok).toBe(false);
+		const expression = sloSpec();
+		if (!expression.sloGate?.burnRate) throw new Error("missing burn query");
+		expression.sloGate.burnRate.query = "rate(burn[5m])";
+		expect(parseVerificationSpec(expression).ok).toBe(false);
+	});
+
+	it("waits until both Prometheus source samples advance", async () => {
+		const h = harness();
+		const id = await start(h);
+		h.observations.burn = [point(14, 0.1), point(15, 0.1)];
+		h.observations.budget = [point(14, 0.5), point(15, 0.5)];
+		h.observations.burnTime = [
+			point(14, (T0 + 14 * MINUTE) / 1000),
+			point(15, (T0 + 14 * MINUTE) / 1000),
+		];
+		h.observations.budgetTime = [
+			point(14, (T0 + 14 * MINUTE) / 1000),
+			point(15, (T0 + 15 * MINUTE) / 1000),
+		];
+		h.time.advance(15 * MINUTE);
+		expect(await h.engine.tick(h.ctx)).toEqual([]);
+		h.observations.burn.push(point(16, 0.1));
+		h.observations.budget.push(point(16, 0.5));
+		h.observations.burnTime.push(point(16, (T0 + 16 * MINUTE) / 1000));
+		h.observations.budgetTime.push(point(16, (T0 + 16 * MINUTE) / 1000));
+		h.time.advance(MINUTE);
+		expect((await h.engine.tick(h.ctx))[0]?.verdict).toBe(
+			VerificationVerdict.PASS,
+		);
+		expect(await replayVerificationFromStore(h.store, id)).toMatchObject({
+			matches: true,
+		});
+	});
+
+	it("breaks a healthy streak when either metric worsens between source samples", async () => {
+		const h = harness();
+		await start(h);
+		h.observations.burn = [point(14, 0.1), point(15, 0.1), point(16, 0.1)];
+		h.observations.budget = [point(14, 0.5), point(15, 0.08), point(16, 0.5)];
+		h.observations.burnTime = [
+			point(14, (T0 + 14 * MINUTE) / 1000),
+			point(15, (T0 + 14 * MINUTE) / 1000),
+			point(16, (T0 + 16 * MINUTE) / 1000),
+		];
+		h.time.advance(16 * MINUTE);
+		expect(await h.engine.tick(h.ctx)).toEqual([]);
+		h.observations.burn.push(point(17, 0.1));
+		h.observations.budget.push(point(17, 0.5));
+		h.observations.burnTime.push(point(17, (T0 + 17 * MINUTE) / 1000));
+		h.time.advance(MINUTE);
+		expect((await h.engine.tick(h.ctx))[0]?.verdict).toBe(
+			VerificationVerdict.PASS,
+		);
+	});
+
+	it("does not roll back from repeated evaluations of one source sample", async () => {
+		const h = harness();
+		await start(h);
+		h.observations.burn = [point(14, 12), point(15, 12)];
+		h.observations.budget = [point(14, 0.5), point(15, 0.5)];
+		h.observations.burnTime = [
+			point(14, (T0 + 14 * MINUTE) / 1000),
+			point(15, (T0 + 14 * MINUTE) / 1000),
+		];
+		h.time.advance(15 * MINUTE);
+		expect(await h.engine.tick(h.ctx)).toEqual([]);
+	});
+
+	it("holds when a timestamp query describes a different series", async () => {
+		const h = harness();
+		await start(h);
+		h.observations.burn = [point(14, 0.1), point(15, 0.1)];
+		h.observations.budget = [point(14, 0.5), point(15, 0.5)];
+		h.observations.burnTime = [14, 15].map((minute) => ({
+			...point(minute, (T0 + minute * MINUTE) / 1000),
+			correlationKey: "another-series",
+		}));
+		h.time.advance(15 * MINUTE);
+		expect(await h.engine.tick(h.ctx)).toEqual([]);
+	});
+
+	it("waits when a source sample changes while its metric is read", async () => {
+		const h = harness();
+		await start(h);
+		h.observations.burn = [point(14, 0.1), point(15, 0.1)];
+		h.observations.budget = [point(14, 0.5), point(15, 0.5)];
+		h.observations.burnTime = [
+			point(14, (T0 + 14 * MINUTE) / 1000),
+			point(15, (T0 + 14 * MINUTE) / 1000),
+		];
+		h.observations.burnTimeAfter = [
+			point(14, (T0 + 14 * MINUTE) / 1000),
+			point(15, (T0 + 15 * MINUTE) / 1000),
+		];
+		h.time.advance(15 * MINUTE);
+		expect(await h.engine.tick(h.ctx)).toEqual([]);
+		h.observations.burn = [point(30, 0.1), point(31, 0.1)];
+		h.observations.budget = [point(30, 0.5), point(31, 0.5)];
+		h.observations.burnTime = undefined;
+		h.observations.burnTimeAfter = undefined;
+		h.time.advance(16 * MINUTE);
+		expect((await h.engine.tick(h.ctx))[0]?.verdict).toBe(
+			VerificationVerdict.PASS,
+		);
+	});
+
+	it.each([
+		"missing",
+		"stale",
+		"future",
+	])("holds fresh-looking evaluations when source timestamps are %s", async (mode) => {
+		const h = harness();
+		await start(h);
+		h.observations.burn = [point(14, 0.1), point(15, 0.1)];
+		h.observations.budget = [point(14, 0.5), point(15, 0.5)];
+		const sourceMinute = mode === "stale" ? 1 : 16;
+		const times =
+			mode === "missing"
+				? []
+				: [14, 15].map((minute) =>
+						point(minute, (T0 + sourceMinute * MINUTE) / 1000),
+					);
+		h.observations.burnTime = times;
+		h.observations.budgetTime = times;
+		h.time.advance(15 * MINUTE);
+		expect(await h.engine.tick(h.ctx)).toEqual([]);
 	});
 
 	it.each([

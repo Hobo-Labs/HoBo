@@ -43,9 +43,10 @@ import (
 }
 
 #HealthSamplePointRecord: {
-	value?:        number | "NaN" | "Infinity" | "-Infinity"
-	observedAtMs?: int & >=0 & <=8640000000000000
-	seriesKey:     string & !=""
+	value?:          number | "NaN" | "Infinity" | "-Infinity"
+	observedAtMs?:   int & >=0 & <=8640000000000000
+	seriesKey:       string & !=""
+	correlationKey?: string & !=""
 }
 
 #HealthSamplesRecord: {
@@ -89,6 +90,12 @@ import (
 #SloGateRecord: {
 	burnRate: #HealthQueryRecord & {unit: "burn_rate"}
 	remainingBudgetRatio: #HealthQueryRecord & {unit: "ratio"}
+	if burnRate.source == "HEALTH_SOURCE_KIND_PROMETHEUS" {
+		burnRate: query: =~#"^[A-Za-z_:][A-Za-z0-9_:]*(\{([^{}"\\]|"([^"\\]|\\.)*")*\})?$"#
+	}
+	if remainingBudgetRatio.source == "HEALTH_SOURCE_KIND_PROMETHEUS" {
+		remainingBudgetRatio: query: =~#"^[A-Za-z_:][A-Za-z0-9_:]*(\{([^{}"\\]|"([^"\\]|\\.)*")*\})?$"#
+	}
 	rollbackBurnRate?:         number & >0
 	minRemainingBudgetRatio?:  number & >=0 & <=1
 	holdBurnRate?:             number & >0
@@ -191,14 +198,15 @@ import (
 }
 
 #EvidenceObservationRecord: {
-	campId:     string & !=""
-	signal:     =~"^(threshold|comparison|probe|suite|slo):[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
-	healthy?:   bool
-	value?:     number | "NaN" | "Infinity" | "-Infinity"
-	observedAt: #Timestamp
-	source:     string & !=""
-	cohort?:    #Cohort
-	seriesKey?: string & !=""
+	campId:          string & !=""
+	signal:          =~"^(threshold|comparison|probe|suite|slo):[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+	healthy?:        bool
+	value?:          number | "NaN" | "Infinity" | "-Infinity"
+	observedAt:      #Timestamp
+	source:          string & !=""
+	cohort?:         #Cohort
+	seriesKey?:      string & !=""
+	correlationKey?: string & !=""
 }
 
 #VerificationStarted: {
