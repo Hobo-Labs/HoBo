@@ -13,9 +13,7 @@ package patterns
 	"PATTERN_MATURITY_UNSPECIFIED" |
 	"PATTERN_MATURITY_STABLE" |
 	"PATTERN_MATURITY_PARTIAL" |
-	"PATTERN_MATURITY_EXPERIMENTAL" |
-	"PATTERN_MATURITY_LEGACY" |
-	"PATTERN_MATURITY_DEPRECATED"
+	"PATTERN_MATURITY_EXPERIMENTAL"
 
 #RenderingKind:
 	"RENDERING_KIND_UNSPECIFIED" |
@@ -179,7 +177,6 @@ package patterns
 	provenance: [...#PatternProvenance] & [_, ...]
 	limitations?: [...string]
 	validations?: [...#ValidationObligation]
-	replacementId?: string
 	contentDigest:  string
 }
 
