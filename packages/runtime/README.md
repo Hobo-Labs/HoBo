@@ -75,9 +75,9 @@ writes, and restarts. A 16-state model checks run-ID validation.
 
 A missing earlier step outcome is accepted only when that step was scheduled;
 this permits recovery when parallel steps finish out of order. Replay validates
-the recorded name before running the unfinished step and reuses later saved
-outcomes. A workflow may catch a step failure, perform compensating steps, and
-complete. Replay rethrows the saved failure into the workflow so it can take
+the recorded name before running the unfinished step, does not journal a
+second `run.StepScheduled` for it, and reuses later saved outcomes. A workflow
+may catch a step failure, perform compensating steps, and complete. Replay rethrows the saved failure into the workflow so it can take
 the same path. The workflow cannot record either terminal state while a prior
 outcome remains unconsumed. The bounded models check these paths and guards.
 

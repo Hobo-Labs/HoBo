@@ -288,15 +288,8 @@ export function createWorkflowEngine(
 		) {
 			throw new Error(`invalid step journal for ${runId}`);
 		}
-		let tip = 0;
-		while (outcomeIndexSet.has(tip)) tip += 1;
-		for (const index of outcomeIndexSet) {
-			if (index > tip) {
-				throw new Error(`gapped step journal for ${runId}`);
-			}
-		}
-		for (const index of scheduledIndices) {
-			if (index > tip) {
+		for (let index = 0; index < highestStepIndex; index += 1) {
+			if (!outcomeIndexSet.has(index) && !scheduledSteps.has(index)) {
 				throw new Error(`gapped step journal for ${runId}`);
 			}
 		}
@@ -456,7 +449,10 @@ export function createWorkflowEngine(
 						step: stepFailed.name,
 					});
 				}
-				await appendEvent("run.StepScheduled", { name, index });
+				if (scheduled === undefined) {
+					await appendEvent("run.StepScheduled", { name, index });
+					scheduledSteps.set(index, name);
+				}
 				assertReplayConsistent();
 				try {
 					const value = await runWithRetries(name, fn, opts ?? {});
