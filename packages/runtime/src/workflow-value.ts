@@ -90,9 +90,14 @@ export function parseRunStepFailedFact(data: JsonValue): ParsedRunStepFailed {
 		if (!allowed.has(key)) throw new TypeError("invalid run.StepFailed");
 	}
 	if (!isJsonString(data.name)) throw new TypeError("invalid run.StepFailed");
-	if (!isJsonNumber(data.index) || !Number.isInteger(data.index) || data.index < 0)
+	if (
+		!isJsonNumber(data.index) ||
+		!Number.isInteger(data.index) ||
+		data.index < 0
+	)
 		throw new TypeError("invalid run.StepFailed");
-	if (!isJsonString(data.message)) throw new TypeError("invalid run.StepFailed");
+	if (!isJsonString(data.message))
+		throw new TypeError("invalid run.StepFailed");
 	return { name: data.name, index: data.index, message: data.message };
 }
 
@@ -103,7 +108,8 @@ export function parseRunCompletedFact(data: JsonValue): JsonValue | undefined {
 		if (!allowed.has(key)) throw new TypeError("invalid run.Completed");
 	}
 	if (!("result" in data) || data.result === undefined) return undefined;
-	if (!isStoredJsonValue(data.result)) throw new TypeError("invalid run.Completed");
+	if (!isStoredJsonValue(data.result))
+		throw new TypeError("invalid run.Completed");
 	return data.result;
 }
 
@@ -113,13 +119,16 @@ export type ParsedRunStepCompleted = {
 	result?: JsonValue;
 };
 
-export function parseRunStepCompletedFact(data: JsonValue): ParsedRunStepCompleted {
+export function parseRunStepCompletedFact(
+	data: JsonValue,
+): ParsedRunStepCompleted {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.StepCompleted");
 	const allowed = new Set(["name", "index", "result"]);
 	for (const key of Object.keys(data)) {
 		if (!allowed.has(key)) throw new TypeError("invalid run.StepCompleted");
 	}
-	if (!isJsonString(data.name)) throw new TypeError("invalid run.StepCompleted");
+	if (!isJsonString(data.name))
+		throw new TypeError("invalid run.StepCompleted");
 	if (
 		!isJsonNumber(data.index) ||
 		!Number.isInteger(data.index) ||

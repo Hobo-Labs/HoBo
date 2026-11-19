@@ -379,9 +379,9 @@ describe("durable workflow: journal, restart, replay", () => {
 				return "done";
 			},
 		});
-		await expect(
-			engine.start(wf, {}, { runId: "void-step" }),
-		).rejects.toThrow("SIMULATED_HOST_CRASH");
+		await expect(engine.start(wf, {}, { runId: "void-step" })).rejects.toThrow(
+			"SIMULATED_HOST_CRASH",
+		);
 		expect(attempts).toBe(1);
 		const restarted = createWorkflowEngine({ store: engine.store });
 		const handle = await restarted.resume(wf, "void-step", {});
@@ -809,9 +809,9 @@ describe("durable workflow: journal, restart, replay", () => {
 				return { ok: true };
 			},
 		});
-		await expect(engine.resume(wf, "terminal-with-bad-step", {})).rejects.toThrow(
-			/duplicate run.StepCompleted/,
-		);
+		await expect(
+			engine.resume(wf, "terminal-with-bad-step", {}),
+		).rejects.toThrow(/duplicate run.StepCompleted/);
 	});
 
 	it("rejects run.StepCompleted with wrong-typed index", async () => {

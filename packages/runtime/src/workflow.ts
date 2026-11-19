@@ -35,15 +35,15 @@ import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
 	captureWorkflowResult,
+	type ParsedRunStepCompleted,
+	type ParsedRunStepFailed,
 	parseRunCompletedFact,
 	parseRunFailedFact,
 	parseRunStartedFact,
-	type ParsedRunStepCompleted,
-	type ParsedRunStepFailed,
 	parseRunStepCompletedFact,
 	parseRunStepFailedFact,
-	replayStepCompletedResult,
 	readJournaledWorkflowResult,
+	replayStepCompletedResult,
 	requireWorkflowRunId,
 	terminalCompletedHandleResult,
 } from "./workflow-value.js";
@@ -331,9 +331,7 @@ export function createWorkflowEngine(
 				const { completed, failed } = stepOutcomesFor(name, index);
 				const completedEvent = completed[0];
 				if (completedEvent && isRecord(completedEvent.data)) {
-					return replayStepCompletedResult<T>(
-						cloneAsJson(completedEvent.data),
-					);
+					return replayStepCompletedResult<T>(cloneAsJson(completedEvent.data));
 				}
 				const failedEvent = failed[0];
 				if (failedEvent && isRecord(failedEvent.data)) {
