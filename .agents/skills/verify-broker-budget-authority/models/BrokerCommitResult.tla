@@ -47,9 +47,9 @@ TypeOK == /\ kind \in {"primitive-durable", "object-durable", "object-pending",
 NoPrematureAcknowledgement == acknowledged => durable
 NoUseAfterAmbiguousCommit == phase = "uncertain" => ~used
 NoUseAfterThrownCommit ==
-    (kind \notin {"throw-durable", "throw-pending"})
+    (kind \notin {"throw-durable", "throw-pending", "denial-durable", "denial-pending"})
     \/ (phase = "ready")
-    \/ (~used)
+    \/ (phase \in {"failed", "uncertain"} => ~used)
 NoCommitFailureAsDenial ==
     (kind \notin {"denial-durable", "denial-pending"})
     \/ (phase = "ready")

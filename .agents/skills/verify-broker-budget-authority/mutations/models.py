@@ -26,7 +26,7 @@ cases = [
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed /\\ Valid(candidate)',
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed'), "BrokerFence.cfg"),
     ("claimed release", "BrokerFence", None, "ClaimedFundsRemainHeld", (
-        '/\\ phase \\in {"held", "uncertain"} /\\ ~claimed\n           /\\ (phase = "held" \\/ unusedWitness)\n           /\\ phase\' = "released"',
+        '/\\ phase \\in {"held", "uncertain"} /\\ ~claimed /\\ unusedWitness\n           /\\ phase\' = "released"',
         '/\\ phase \\in {"held", "uncertain"}\n           /\\ phase\' = "released"'), "BrokerFence.cfg"),
 ]
 

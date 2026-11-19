@@ -81,19 +81,12 @@ checks = [
     prove(
         "remove a terminal claim from the active projection",
         [
+            Not(active),
             claim_unit == bucket_unit,
             claim_period == bucket_period,
             *configure_guards,
         ],
-        Implies(
-            Not(active),
-            And(
-                bucket_unit == claim_unit,
-                bucket_period == claim_period,
-                next_unit == bucket_unit,
-                next_period == bucket_period,
-            ),
-        ),
+        And(next_unit == claim_unit, next_period == claim_period),
     ),
 ]
 sys.exit(0 if all(checks) else 1)
