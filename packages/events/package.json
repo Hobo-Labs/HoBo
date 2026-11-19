@@ -22,7 +22,8 @@
 	},
 	"devDependencies": {
 		"@hobo/data-core": "workspace:*",
-		"@hobo/runtime-local": "workspace:*"
+		"@hobo/runtime-local": "workspace:*",
+		"zod": "^4.1.13"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
