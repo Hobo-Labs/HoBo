@@ -6,12 +6,17 @@ import type { CommandModule, CommandResult, YardRuntime } from "@hobo/cli";
 import {
 	createInProcessExecutor,
 	createRegistryFromProviders,
+	type Executor,
 	type IacProgram,
 	type IacProvider,
 	type PlannerRegistry,
 } from "@hobo/cloud";
 import type { TrustedVault } from "@hobo/core";
-import { CD_PLACEMENT_YARDS } from "@hobo/hobo-cd";
+import {
+	CD_PLACEMENT_YARDS,
+	cdConfigYard,
+	cdJournalYard,
+} from "@hobo/hobo-cd";
 import type { Yard } from "@hobo/yards";
 
 import { relayYardRegistryProvider } from "./ci-relay-delivery.js";
@@ -68,10 +73,11 @@ export function cdPlacementRuntime<R extends YardRuntime>(runtime: R): R {
 	};
 }
 
-/** The providers the plan names for resources placed on those Yards. */
-const PREPARED_PROVIDERS: ReadonlySet<string> = new Set(
-	CD_PLACEMENT_YARDS.map((yard) => `yard:${yard.name}`),
-);
+/** The specific resources the prepare step makes on its reserved Yards. */
+const PREPARED_RESOURCES: ReadonlyMap<string, string> = new Map([
+	[`yard:${cdJournalYard.name}`, "cd-journal"],
+	[`yard:${cdConfigYard.name}`, "cd-config"],
+]);
 
 /**
  * `next`, except for a resource placed on a Yard `prepare` makes (the
@@ -82,8 +88,15 @@ const PREPARED_PROVIDERS: ReadonlySet<string> = new Set(
  * never drops either.
  */
 export function routePreparedPlacements(next: IacProvider): IacProvider {
-	const prepared = (program: IacProgram) =>
-		PREPARED_PROVIDERS.has(program.provider);
+	const prepared = (program: IacProgram) => {
+		const resource = PREPARED_RESOURCES.get(program.provider);
+		if (resource === undefined) return false;
+		if (program.resourceId !== resource)
+			throw new Error(
+				`${program.resourceId} was not prepared for ${program.provider}`,
+			);
+		return true;
+	};
 	const outputs = (program: IacProgram) => ({
 		provider: program.provider,
 		realizedBy: "prepare",
@@ -106,6 +119,28 @@ export function routePreparedPlacements(next: IacProvider): IacProvider {
 			prepared(program)
 				? { drift: false, observed: outputs(program) }
 				: next.refresh(program),
+	};
+}
+
+/** Keep prepared resources out of the generic teardown provider. */
+export function retainPreparedOnDown(next: Executor): Executor {
+	const unexpected = async () => {
+		throw new Error("resource was not prepared by hobo cd up");
+	};
+	const retained = createInProcessExecutor({
+		iac: routePreparedPlacements({
+			id: "cd-prepared-retention",
+			preview: unexpected,
+			apply: unexpected,
+			destroy: unexpected,
+			refresh: unexpected,
+		}),
+	});
+	return {
+		run: (program, credential, options) =>
+			program.action === "destroy" && PREPARED_RESOURCES.has(program.provider)
+				? retained.run(program, credential, options)
+				: next.run(program, credential, options),
 	};
 }
 

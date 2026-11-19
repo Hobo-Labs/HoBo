@@ -1,14 +1,15 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: CdHost stubs exercise only handle(); other fields are never read. */
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
-
 import type { CdHost } from "@hobo/hobo/cd-platform";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
 	CdStoreBindingError,
 	composeVercelCdHost,
 	createCdHttpEntry,
+	journalFleetEnvProvisioned,
 	memoizedCdHost,
 	parseCdStoreCoordinates,
 	readCdStoreCoordinates,
@@ -25,8 +26,7 @@ async function serve(handler: ReturnType<typeof createCdHttpEntry>) {
 	const server = createServer((req, res) => void handler(req, res));
 	servers.push(server);
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-	// SAFETY: a server listening on a TCP port reports an AddressInfo.
-	const { port } = server.address() as AddressInfo;
+	const { port } = z.object({ port: z.number() }).parse(server.address());
 	return `http://127.0.0.1:${port}`;
 }
 
@@ -68,7 +68,6 @@ describe("the CD function's HTTP entry", () => {
 
 	it("hands every other request to the CD mount", async () => {
 		const seen: string[] = [];
-		// SAFETY: the entry reads only handle() from the host.
 		const host: CdHost = {
 			handle: async (request: { path: string }) => {
 				seen.push(request.path);
@@ -88,7 +87,6 @@ describe("the CD function's HTTP entry", () => {
 
 	it("does not expose internal errors to HTTP clients", async () => {
 		const secret = "fixture-sensitive-value";
-		// SAFETY: the entry reads only handle() from the host.
 		const host: CdHost = {
 			handle: async () => {
 				throw new Error(`provider failed with ${secret}`);
@@ -105,9 +103,27 @@ describe("the CD function's HTTP entry", () => {
 		});
 	});
 
+	it("denies operator reads on the production entry", async () => {
+		const host: CdHost = {
+			handle: async () => ({
+				status: 200,
+				headers: {},
+				body: new Uint8Array(),
+			}),
+		} as never;
+		const origin = await serve(
+			createCdHttpEntry(async () => host, { operatorReads: "deny" }),
+		);
+		const response = await fetch(`${origin}/v1/cd/pipelines/main`);
+		expect(response.status).toBe(401);
+		expect(await response.json()).toMatchObject({
+			ok: false,
+			code: "cd-operator-read-denied",
+		});
+	});
+
 	it("composes once, and tries again after a failure", async () => {
 		let calls = 0;
-		// SAFETY: identity only; nothing reads the host.
 		const host = {} as CdHost;
 		const load = memoizedCdHost(async () => {
 			calls += 1;
@@ -136,6 +152,15 @@ describe("the owner's store, and the journal fleet in it", () => {
 		expect(parsed.identityId).toBe(binding.relayIdentityId);
 		expect(() => parseCdStoreCoordinates("{}")).toThrow(
 			expect.objectContaining({ code: "cd-store-binding-invalid" }),
+		);
+	});
+
+	it("treats a blank journal fleet env as not provisioned", () => {
+		expect(journalFleetEnvProvisioned({ HOBO_CD_POSTGRES_FLEET: "  " })).toBe(
+			false,
+		);
+		expect(journalFleetEnvProvisioned({ HOBO_CD_POSTGRES_FLEET: "f1" })).toBe(
+			true,
 		);
 	});
 

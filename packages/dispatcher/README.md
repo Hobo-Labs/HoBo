@@ -22,7 +22,7 @@ stations routing control loop).
   decision fact.
 - **`decideDispatchV2`** (schema `hobo.dispatcher/v2`) ranks registered providers
   by minimum incremental **billed** amount from `@hobo/pricing` quotes; v1
-  `decideDispatch` is unchanged for credit ranking.
+  `decideDispatch` continues to use credit ranking.
 
 ## Dispatcher v2
 
@@ -32,8 +32,11 @@ stations routing control loop).
 `min-incremental-billed` objective. Provider ID breaks equal-cost ties.
 Rejected, stale, partial, unpriced, or cross-currency quotes fail closed and
 never fall back to list price. `DispatchCostQuote` omits the advisory
-`allocatedEffective` field. V1 source and replay behavior remain untouched; a
-fixed-fixture SHA-256 golden pins the complete v1 decision.
+`allocatedEffective` field. A fixed-fixture SHA-256 golden pins an existing v1 decision; the numeric safety corrections below can change v1 decisions for edge cases.
+
+Overflowing available balances are capped at the largest finite number;
+reservations or settlements that cannot be represented leave the ledger and
+existing holds unchanged.
 
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's
 declared currency, using the existing `budgetCap`/`listUnitCost` number units.
@@ -41,8 +44,10 @@ declared currency, using the existing `budgetCap`/`listUnitCost` number units.
 switchingCost?, estimatedCost?, expiresAt? })` checks budget and capacity in the
 same CAS operation. `estimatedCost` may raise the reservation to a quoted
 all-in total; it cannot lower the modelled exposure. A caller must supply the
-appropriate account and authoritative quote: missing accounts retain the
+appropriate account and authoritative quote, including the unit price when it differs from the account list price: missing accounts retain the
 legacy unconstrained selection behavior and do not establish a budget guarantee.
+The combined selection-and-reservation helper uses the account price for both
+steps when present, falling back to the registry price.
 
 Pending reservations debit free allowance and rate headroom, occupy one
 concurrency slot, and hold paid exposure. `release` restores those quantities
@@ -81,3 +86,9 @@ remaining financial exposure to the pool.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 [`contracts/`](./contracts) for the v1 and v2 PACT boundaries.
+
+## Budget verification
+
+The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-routing/SKILL.md) describes generated reservation histories, the bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. The legacy number contract is interpreted as decimal values; liabilities round upward and available balances downward when conversion back to numbers requires it. This protects the budget conservatively but can leave tiny residual holds or reject an edge-case request that is exactly affordable in decimal arithmetic. Provider overruns are recorded, and callers remain responsible for authoritative quotes and fencing.
+
+Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. It includes the hard-budget and overflow regression suites and checks weakened models for counterexamples. The skill also documents a separate scratch-mutation command for the overflow and estimate guards. The abstract proof does not establish that the TypeScript implementation refines it or model numeric overflow.

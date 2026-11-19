@@ -232,10 +232,5 @@ export function createBitwardenVaultSecretsPort(
 			const note = await find(name);
 			return note === undefined ? [] : [note.revisionDate];
 		},
-		async createOnly(name, value) {
-			if ((await find(name)) !== undefined) return { created: false };
-			const saved = await create(name, value);
-			return { created: true, versionId: saved.versionId };
-		},
 	};
 }

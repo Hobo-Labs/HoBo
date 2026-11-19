@@ -349,7 +349,8 @@ function isAlwaysHostedJob(
 		return block.some(
 			(line) =>
 				line.trim() === "uses: ./.github/actions/route-runner" ||
-				line.trim() === "uses: $/.github/actions/route-runner",
+				line.trim() === "uses: $/.github/actions/route-runner" ||
+				line.trim() === "uses: ./.ci-trusted/.github/actions/route-runner",
 		);
 	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
 	if (/^  ci-health:$/.test(jobLine))

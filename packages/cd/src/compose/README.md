@@ -82,9 +82,15 @@ qualifies and soaks, defers a tainted host and catches it up once it recovers.
   environment variable. `HOBO_CD_POSTGRES_WITNESSES` names register-only
   members the same way; the first also keeps the scheduled backups. The fleet
   runs by the journal's declared continuity policy (`@hobo/hobo-cd`
-  `CD_CONTINUITY`), with writes fenced at the commit boundary. Member names do
-  not prove independent failure domains. Opening runs one tick. `hobo_cd_journal_continuity_short` on stderr reports known
-  shortfalls and unverified vendor diversity; the journal still serves.
+  `CD_CONTINUITY`). Planned moves fence writes at the commit boundary; an
+  unplanned failover cannot fence a partitioned writer it cannot reach, so
+  acknowledged writes there may be absent from the new writer. Safe failover
+  and its recovery point must not be assumed. Member names do not prove
+  independent failure domains. Opening runs one tick; scheduled copies and
+  backups require a host to keep ticking. `hobo_cd_journal_continuity_short`
+  on stderr reports configured shortfalls and unverified vendor diversity;
+  it does not report ongoing replication or backup health, and the journal
+  still serves when a shortfall is reported.
 - **`compose-store-invalid` / `compose-artifacts-invalid`** — fix the named
   environment variable; the message names it.
 - **`rail-delivery-invalid` metric rising** — a Station's Rail `delivery`

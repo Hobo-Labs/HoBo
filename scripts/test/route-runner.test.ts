@@ -2307,9 +2307,13 @@ describe("the workflows that route", () => {
 	};
 	const routed = readdirSync(join(root, ".github/workflows"))
 		.map((name) => `.github/workflows/${name}`)
-		.filter((path) =>
-			read(path).includes("uses: $/.github/actions/route-runner"),
-		);
+		.filter((path) => {
+			const text = read(path);
+			return (
+				text.includes("uses: $/.github/actions/route-runner") ||
+				text.includes("uses: ./.ci-trusted/.github/actions/route-runner")
+			);
+		});
 
 	// A file the script loads and a workflow does not check out stops the
 	// script before it decides, and the step then falls back to GitHub-hosted.
