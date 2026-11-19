@@ -6,10 +6,6 @@ import { createUpcasterRegistry, foldEvents } from "../src/index.js";
 import { isJsonNumber, isJsonObject } from "../src/json.js";
 import { parseTotalCents } from "./helpers.js";
 
-interface TotalState {
-	totalCents: number;
-}
-
 interface CountState {
 	count: number;
 }
@@ -61,36 +57,6 @@ describe("upcaster registry", () => {
 		);
 		expect(upcast.v).toBe(3);
 		expect(upcast.data).toEqual({ totalCents: 4200, currency: "USD" });
-	});
-
-	it("round-trips: a v1 event folds identically to its current-version form", () => {
-		const registry = createUpcasterRegistry();
-		registry.register("order.Placed", 1, (data) => ({
-			totalCents: parseLegacyCents(data),
-		}));
-
-		const spec = {
-			initialState: { totalCents: 0 } satisfies TotalState,
-			evolve: (state: TotalState, event: EventEnvelope) =>
-				event.type === "order.Placed"
-					? { totalCents: parseTotalCents(event.data) }
-					: state,
-			upcasters: registry,
-		};
-
-		const foldedFromV1 = foldEvents(
-			[evt({ type: "order.Placed", seq: 1, v: 1, data: { cents: 4200 } })],
-			spec,
-		);
-		const foldedFromV2 = foldEvents(
-			[evt({ type: "order.Placed", seq: 1, v: 2, data: { totalCents: 4200 } })],
-			spec,
-		);
-
-		expect(foldedFromV1.state).toEqual({ totalCents: 4200 });
-		expect(JSON.stringify(foldedFromV1.state)).toBe(
-			JSON.stringify(foldedFromV2.state),
-		);
 	});
 });
 

@@ -11,7 +11,6 @@ import {
 } from "../src/errors.js";
 import { foldEvents } from "../src/fold.js";
 import { isJsonNumber, type JsonObject } from "../src/json.js";
-import { createUpcasterRegistry } from "../src/upcaster.js";
 
 let nextSeq = 0;
 
@@ -65,6 +64,20 @@ describe("foldEvents", () => {
 		);
 		expect(outcome.state).toEqual({ total: 5 });
 		expect(outcome.seq).toBeGreaterThan(0);
+	});
+
+	test("evolves directly from the stored event data", () => {
+		const event = envelope("item.Added", { amount: 7, unit: "items" });
+		let received: EventEnvelope | undefined;
+		const outcome = foldEvents([event], {
+			initialState: { total: 0 },
+			evolve: (state, input) => {
+				received = input;
+				return { total: state.total + Number(dataOf(input).amount) };
+			},
+		});
+		expect(received).toEqual(event);
+		expect(outcome.state).toEqual({ total: 7 });
 	});
 
 	test("the seq is the maximum, not the last value seen", () => {
@@ -259,182 +272,6 @@ describe("quarantine determinism", () => {
 			},
 		});
 		expect(outcome.quarantined[0]?.quarantineSeq).toBeGreaterThan(50);
-	});
-});
-
-describe("upcasting on read", () => {
-	function registry() {
-		return createUpcasterRegistry();
-	}
-
-	test("an event of an unregistered type passes through untouched", () => {
-		const event = envelope("item.Added", { amount: 1 });
-		expect(registry().upcast(event)).toBe(event);
-	});
-
-	test("a single upcaster advances the event one version", () => {
-		const r = registry().register("item.Added", 1, (data) => ({
-			...(data as JsonObject),
-			amount: 10,
-		}));
-		const upcast = r.upcast(envelope("item.Added", { amount: 1 }));
-		expect(upcast.v).toBe(2);
-		expect(dataOf(upcast).amount).toBe(10);
-	});
-
-	test("a chain is applied end to end", () => {
-		const r = registry()
-			.register("item.Added", 1, (data) => ({
-				...(data as JsonObject),
-				step: "v2",
-			}))
-			.register("item.Added", 2, (data) => ({
-				...(data as JsonObject),
-				step: "v3",
-			}))
-			.register("item.Added", 3, (data) => ({
-				...(data as JsonObject),
-				step: "v4",
-			}));
-		const upcast = r.upcast(envelope("item.Added", { step: "v1" }));
-		expect(upcast.v).toBe(4);
-		expect(dataOf(upcast).step).toBe("v4");
-	});
-
-	test("a chain with a gap rejects the event", () => {
-		const r = registry()
-			.register("item.Added", 1, (data) => ({
-				...(data as JsonObject),
-				at: 2,
-			}))
-			.register("item.Added", 3, (data) => ({
-				...(data as JsonObject),
-				at: 4,
-			}));
-		expect(() => r.upcast(envelope("item.Added", { at: 1 }))).toThrow(
-			/missing 2->3/,
-		);
-	});
-
-	test("an event already at the latest version is returned unchanged", () => {
-		const r = registry().register("item.Added", 1, (data) => data);
-		const event = envelope("item.Added", { amount: 1 }, { v: 5 });
-		expect(r.upcast(event)).toBe(event);
-	});
-
-	test("upcasting starts from the event's own version, not from one", () => {
-		const applied: number[] = [];
-		const r = registry()
-			.register("item.Added", 1, (data) => {
-				applied.push(1);
-				return data;
-			})
-			.register("item.Added", 2, (data) => {
-				applied.push(2);
-				return data;
-			});
-		r.upcast(envelope("item.Added", {}, { v: 2 }));
-		expect(applied).toEqual([2]);
-	});
-
-	test("latestVersion reports the end of the chain", () => {
-		const r = registry()
-			.register("item.Added", 1, (d) => d)
-			.register("item.Added", 2, (d) => d);
-		expect(r.latestVersion("item.Added")).toBe(3);
-	});
-
-	test("latestVersion is one for a type with no upcasters", () => {
-		expect(registry().latestVersion("never.Registered")).toBe(1);
-	});
-
-	test("latestVersion rejects a gap", () => {
-		const r = registry()
-			.register("item.Added", 1, (d) => d)
-			.register("item.Added", 3, (d) => d);
-		expect(() => r.latestVersion("item.Added")).toThrow(/missing 2->3/);
-	});
-
-	test("registration is chainable", () => {
-		const r = registry();
-		expect(r.register("a", 1, (d) => d)).toBe(r);
-	});
-
-	test("a duplicate registration is refused", () => {
-		const r = registry().register("item.Added", 1, (d) => d);
-		expect(() => r.register("item.Added", 1, (d) => d)).toThrow(/duplicate/);
-	});
-
-	test("the same version for a different type is not a duplicate", () => {
-		const r = registry().register("item.Added", 1, (d) => d);
-		expect(() => r.register("other.Added", 1, (d) => d)).not.toThrow();
-	});
-
-	test("a non-function upcaster is refused", () => {
-		expect(() =>
-			registry().register("item.Added", 1, "not-a-function" as never),
-		).toThrow(TypeError);
-	});
-
-	test("a non-positive or non-integer fromVersion is refused", () => {
-		for (const version of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER]) {
-			expect(() =>
-				registry().register("item.Added", version, (d) => d),
-			).toThrow(TypeError);
-		}
-	});
-
-	test("upcasters run inside a fold", () => {
-		const upcasters = registry().register("item.Added", 1, (data) => ({
-			amount: Number((data as JsonObject).legacyAmount ?? 0),
-		}));
-		const outcome = foldEvents([envelope("item.Added", { legacyAmount: 7 })], {
-			...counting,
-			upcasters,
-		});
-		expect(outcome.state).toEqual({ total: 7 });
-	});
-
-	test("an upcaster that throws quarantines rather than wedging the fold", () => {
-		const upcasters = registry().register("item.Added", 1, () => {
-			throw new Error("bad migration");
-		});
-		const outcome = foldEvents([envelope("item.Added", { amount: 1 })], {
-			...counting,
-			upcasters,
-		});
-		expect(outcome.quarantined).toHaveLength(1);
-		expect(outcome.quarantined[0]?.reason).toBe("bad migration");
-	});
-
-	test("one bad migration does not stop the rest of the stream folding", () => {
-		const upcasters = registry().register("legacy.Added", 1, () => {
-			throw new Error("bad migration");
-		});
-		const outcome = foldEvents(
-			[
-				envelope("item.Added", { amount: 1 }),
-				envelope("legacy.Added", { amount: 99 }),
-				envelope("item.Added", { amount: 2 }),
-			],
-			{ ...counting, upcasters },
-		);
-		expect(outcome.state).toEqual({ total: 3 });
-		expect(outcome.quarantined).toHaveLength(1);
-	});
-
-	test("a failed migration is recoverable, because the fold can now produce its fact", () => {
-		const upcasters = registry().register("item.Added", 1, () => {
-			throw new Error("bad migration");
-		});
-		const poison = envelope("item.Added", { amount: 5 });
-		const live = foldEvents([poison], { ...counting, upcasters });
-		expect(live.quarantined[0]?.offendingSeq).toBe(poison.seq);
-
-		const fact = envelope("item.Quarantined", { offendingSeq: poison.seq });
-		const replay = foldEvents([poison, fact], { ...counting, upcasters });
-		expect(replay.quarantined).toEqual([]);
-		expect(replay.state).toEqual({ total: 0 });
 	});
 });
 

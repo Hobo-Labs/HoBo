@@ -49,7 +49,6 @@ import {
 	parseEventStoreQuarantine,
 	quarantineSequence,
 } from "./quarantine-facts.js";
-import type { UpcasterRegistry } from "./upcaster.js";
 
 export interface EventEmitOptions {
 	v?: number;
@@ -71,7 +70,6 @@ export interface AggregateDefinition<S, C> {
 	initialState: S;
 	evolve: Evolve<S>;
 	decide: Decide<S, C>;
-	upcasters?: UpcasterRegistry;
 	classifyFailure?: FoldFailureClassifier;
 }
 
@@ -151,7 +149,6 @@ export function defineAggregate<S, C>(
 		name: definition.name,
 		initialState: definition.initialState,
 		evolve: definition.evolve,
-		upcasters: definition.upcasters,
 		...(definition.classifyFailure === undefined
 			? undefined
 			: { classifyFailure: definition.classifyFailure }),
@@ -352,9 +349,6 @@ export function defineAggregate<S, C>(
 					},
 				};
 				definition.decide(outcome.state, command, emitter);
-				for (const event of staged) {
-					definition.upcasters?.assertCanUpcast?.(event.type, event.v ?? 1);
-				}
 				if (stagedEffects.length > 0 && !isDurableEventStore(deps.store))
 					throw new DurableEffectUnavailableError();
 
