@@ -283,12 +283,25 @@ A **Rust Token Killer command proxy** that compresses noisy shell-command output
 ### hobo — HoBo's own MCP server (this repo)
 `.mcp.json`, `.codex/config.toml`, and `.cursor/mcp.json` register the server from source without keys. The host must start the launcher within its intended trusted HoBo checkout: the launcher cannot identify which sibling checkout the host trusted. The Codex and Cursor launchers resolve that Git worktree root and refuse an ambiguous nested Git checkout. For a HoBo checkout nested inside another repository, configure the host to run `node --import tsx packages/hobo/src/bin/hobo-mcp.ts` with its working directory set to the HoBo checkout's absolute root. Install the workspace dependencies and run `pnpm exec turbo run build --filter=@hobo/hobo...` before starting an agent session in a fresh checkout; the source launcher imports built workspace packages. Codex loads the project configuration in a trusted project when the session starts. Registration alone does not establish that the host supports a private owner form. The server exposes the CLI verbs and secret capture used by the **hobo-deploy** skill. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings.
 
+Use the [HoBo setup skill](../.agents/skills/hobo-setup/SKILL.md) to connect the
+server and establish an owner-store session independently of a deployment.
+The initial MCP handshake describes this separation; it does not itself
+authenticate a store. For a linked worktree, Codex may check trust against the
+primary checkout; its effective-configuration diagnostics identify a disabled
+project layer and the checkout whose trust it requires.
+
 Store selection through **`choose_secret_store`** is temporarily unavailable
 until HoBo supports a verified, scoped owner session. Do not collect store
 identifiers in chat or tool arguments. Follow the **hobo-deploy** skill's
 privacy verification before using any owner form. When a verified private
 hand-off is available, use the same target project `cwd` throughout the
 ceremony; otherwise report the missing capability without collecting settings.
+The relay's existing capture adapter reads a separately configured Infisical
+binding; a generic owner-store session is not yet wired to that adapter.
+Its `connected` status indicates that the binding was read; it does not verify
+owner authentication. `writable` reflects an active writer session. The
+adapter accepts a writer identifier in tool arguments and returns store
+references, so it is not the private owner setup described by the setup skill.
 
 ### headroom — `chopratejas/headroom` (Apache-2.0)
 A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress`, `mcp__headroom__headroom_retrieve`, and `mcp__headroom__headroom_stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy with `headroom proxy --port 8787`, then launch Claude with:

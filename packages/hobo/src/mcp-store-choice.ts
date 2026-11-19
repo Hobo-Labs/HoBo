@@ -321,10 +321,10 @@ export function createStoreChoiceApp(
 		readResource: () => undefined,
 		async callTool() {
 			return result(
-				"Store selection cannot continue in this HoBo session until a verified private owner hand-off is available. Retry the HoBo setup ceremony once it is available.",
+				"Private owner store selection is not yet available in this HoBo MCP implementation. This tool cannot establish an owner store session.",
 				{
 					status: "secure-form-unavailable",
-					reason: "owner-channel-unverified",
+					reason: "owner-setup-unavailable",
 				},
 				true,
 			);
