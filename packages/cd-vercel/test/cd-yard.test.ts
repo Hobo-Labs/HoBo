@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 import { capability } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -20,7 +20,13 @@ const PlatformConfig = z.object({
 		z.object({
 			maxDuration: z.number().optional(),
 			experimentalTriggers: z
-				.array(z.object({ type: z.string(), topic: z.string() }))
+				.array(
+					z.object({
+						type: z.string(),
+						topic: z.string(),
+						maxConcurrency: z.number().optional(),
+					}),
+				)
 				.optional(),
 			includeFiles: z.string().optional(),
 		}),
@@ -32,7 +38,23 @@ const PlatformConfig = z.object({
 	rewrites: z
 		.array(z.object({ source: z.string(), destination: z.string() }))
 		.optional(),
-	routes: z.array(z.unknown()).optional(),
+	routes: z
+		.array(
+			z.object({
+				src: z.string(),
+				dest: z.string(),
+				transforms: z
+					.array(
+						z.object({
+							type: z.string(),
+							op: z.string(),
+							args: z.string(),
+						}),
+					)
+					.optional(),
+			}),
+		)
+		.optional(),
 });
 const platform = PlatformConfig.parse(JSON.parse(text("vercel.json")));
 
@@ -47,7 +69,14 @@ describe("HoBo.CD on Vercel: Yard, platform and Bindle agree", () => {
 		});
 		expect(
 			platform.functions[CD_PLATFORM.tickEntry]?.experimentalTriggers,
-		).toEqual([{ type: "queue/v2beta", topic: CD_PLATFORM.topic }]);
+		).toEqual([
+			{
+				type: "queue/v2beta",
+				topic: CD_PLATFORM.topic,
+				maxConcurrency: CD_PLATFORM.maxConcurrency,
+			},
+		]);
+		expect(CD_PLATFORM.maxConcurrency).toBe(1);
 	});
 
 	it("gives each entry the Yard's duration and the committed store binding", () => {
@@ -79,14 +108,26 @@ describe("HoBo.CD on Vercel: Yard, platform and Bindle agree", () => {
 		expect(profiles).not.toContain(capability.data.postgres);
 	});
 
-	it("rewrites public probes and the CD mount to the HTTP entry", () => {
-		expect(platform.routes).toBeUndefined();
-		expect(platform.rewrites).toEqual([
-			{ source: "/healthz", destination: "/api/cd" },
-			{ source: "/readyz", destination: "/api/cd" },
-			{ source: "/v1/cd", destination: "/api/cd" },
-			{ source: "/v1/cd/:path*", destination: "/api/cd" },
+	it("declares no preview camp on the production journal Yard", () => {
+		expect(cdYard.camps.map((camp) => camp.id)).toEqual(["hobo-cd/production"]);
+		expect(cdYard.camps.map((camp) => camp.envType)).toEqual(["production"]);
+	});
+
+	it("routes every request path to the real HTTP entry", () => {
+		expect(platform.rewrites).toBeUndefined();
+		expect(platform.routes).toEqual([
+			{
+				src: "/(.*)",
+				dest: "/api/cd",
+				transforms: [{ type: "request.path", op: "set", args: "/$1" }],
+			},
 		]);
+		const destination = platform.routes?.[0]?.dest ?? "";
+		expect(destination).toBe(
+			`/api/${CD_PLATFORM.httpEntry.replace(/^api\//u, "").replace(/\.ts$/u, "")}`,
+		);
+		expect(existsSync(new URL(CD_PLATFORM.httpEntry, packageUrl))).toBe(true);
+		expect(text(CD_PLATFORM.httpEntry)).toContain('from "../src/entry.js"');
 	});
 
 	it("keeps the declaration out of what the functions import", () => {

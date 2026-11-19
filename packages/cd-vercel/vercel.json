@@ -10,7 +10,8 @@
       "experimentalTriggers": [
         {
           "type": "queue/v2beta",
-          "topic": "hobo-cd"
+          "topic": "hobo-cd",
+          "maxConcurrency": 1
         }
       ],
       "includeFiles": "deploy/secret-store.binding.json"
@@ -22,10 +23,17 @@
       "topic": "hobo-cd"
     }
   },
-  "rewrites": [
-    { "source": "/healthz", "destination": "/api/cd" },
-    { "source": "/readyz", "destination": "/api/cd" },
-    { "source": "/v1/cd", "destination": "/api/cd" },
-    { "source": "/v1/cd/:path*", "destination": "/api/cd" }
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/cd",
+      "transforms": [
+        {
+          "type": "request.path",
+          "op": "set",
+          "args": "/$1"
+        }
+      ]
+    }
   ]
 }

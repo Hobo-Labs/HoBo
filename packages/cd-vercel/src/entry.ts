@@ -33,8 +33,14 @@ export function incomingRequestPath(request: IncomingMessage): string {
 		}
 	}
 	const invokePath = headerValue(request.headers, "x-vercel-invoke-path");
-	if (invokePath !== undefined && invokePath.length > 0)
-		return invokePath.startsWith("/") ? invokePath : `/${invokePath}`;
+	if (invokePath !== undefined && invokePath.length > 0) {
+		const path = invokePath.startsWith("/") ? invokePath : `/${invokePath}`;
+		if (path.includes("?")) return path;
+		const search = (request.url ?? "").split("?")[1];
+		return search === undefined || search.length === 0
+			? path
+			: `${path}?${search}`;
+	}
 	return request.url ?? "/";
 }
 
@@ -100,7 +106,7 @@ export type CdHttpEntryOptions = Readonly<{
 
 function deniesOperatorRead(request: FeedRequest): boolean {
 	const route = parseReadRequest(request);
-	return route.ok && route.value.kind !== "feed";
+	return !route.ok || route.value.kind !== "feed";
 }
 
 export function createCdHttpEntry(
@@ -108,7 +114,7 @@ export function createCdHttpEntry(
 	options: CdHttpEntryOptions = {},
 ) {
 	const commit = options.commit ?? null;
-	const operatorReads = options.operatorReads ?? "allow";
+	const operatorReads = options.operatorReads ?? "deny";
 	return async (
 		request: IncomingMessage,
 		response: ServerResponse,

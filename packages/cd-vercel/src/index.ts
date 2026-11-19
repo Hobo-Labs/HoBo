@@ -1,6 +1,7 @@
 export {
 	type CdHostDeps,
 	composeVercelCdHost,
+	holderIdOf,
 	journalFleetEnvProvisioned,
 	memoizedCdHost,
 	topologyFilesOf,
