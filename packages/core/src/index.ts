@@ -7,6 +7,9 @@ export {
 	BudgetScopeIdentityRecordSchema,
 } from "./_generated/budget_policy_pb.js";
 export {
+	SloBudgetObservationRecordSchema,
+	SloBudgetProjectionRecordSchema,
+	SloDeclaredRecordSchema,
 	SloDefinitionRecordSchema,
 	SloEvaluationRecordSchema,
 } from "./_generated/slo_pb.js";
@@ -807,6 +810,21 @@ export {
 	computeSloStatus,
 	SLO_COMPUTATION_SCHEMA,
 } from "./ports/slo-computation.js";
+export type {
+	SloBudgetObservation,
+	SloBudgetProjection,
+	SloDeclared,
+	SloEventContext,
+} from "./ports/slo-events.js";
+export {
+	applySloBudgetEvent,
+	initialSloBudgetProjection,
+	makeSloBudgetEvent,
+	makeSloDeclaredEvent,
+	replaySloBudgetProjection,
+	SLO_EVENT_SCHEMA,
+	SloBudgetProjectionError,
+} from "./ports/slo-events.js";
 export type {
 	RunId,
 	Seq,

@@ -112,3 +112,33 @@ message SloEvaluationRecord {
   string status = 5;
   repeated SloObjectiveEvaluationRecord objectives = 6;
 }
+
+message SloDeclaredRecord {
+  string schema = 1;
+  string slo_name = 2;
+  string definition_hash = 3;
+}
+
+message SloBudgetObservationRecord {
+  string schema = 1;
+  string slo_name = 2;
+  string objective = 3;
+  string window = 4;
+  double good = 5;
+  double total = 6;
+  double burn_rate = 7;
+  double remaining_budget_ratio = 8;
+}
+
+message SloBudgetProjectionRecord {
+  string slo_name = 1;
+  string objective = 2;
+  bool gateable = 3;
+  double consumed_budget_ratio = 4;
+  double remaining_budget_ratio = 5;
+  bool exhausted = 6;
+  optional double last_seq = 7;
+  optional string last_event_id = 8;
+  optional string last_event_hash = 9;
+  optional string reason = 10;
+}
