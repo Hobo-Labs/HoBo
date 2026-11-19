@@ -11,8 +11,8 @@ import {
 	type HostingPolicyProof,
 	HostingPolicyProofSchema,
 	type HostingQuote,
-	hostingQuoteDigest,
 	HostingQuoteSchema,
+	hostingQuoteDigest,
 	validateHostingQuote,
 } from "../budget-authority.js";
 import {

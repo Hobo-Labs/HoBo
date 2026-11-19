@@ -30,8 +30,8 @@ import {
 	type YardFirstPlacementDeps,
 	yardEvent,
 } from "../src/index.js";
-import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 import { approveLocalHosting } from "./helpers/local-hosting.js";
+import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 
 describe("yard event-store folds + provider resolvers", () => {
 	it("rebuilds inventory from yard.* facts alone", () => {
