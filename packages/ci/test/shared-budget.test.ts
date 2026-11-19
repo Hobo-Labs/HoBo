@@ -763,14 +763,24 @@ describe("CI bridge to the shared hosting financial authority", () => {
 					{ providerAccountId: "foreign", liabilityMicros: 20 },
 				],
 				entitlementClaims: [
-					{ bucketId: "shared-credit", kind: "credit", unit: "micro-minutes", units: 0 },
+					{
+						bucketId: "shared-credit",
+						kind: "credit",
+						unit: "micro-minutes",
+						units: 0,
+					},
 				],
 			}),
 		).toThrow("foreign provider");
 		hooks.settle(row, {
 			...evidence,
 			entitlementClaims: [
-				{ bucketId: "shared-credit", kind: "credit", unit: "micro-minutes", units: 0 },
+				{
+					bucketId: "shared-credit",
+					kind: "credit",
+					unit: "micro-minutes",
+					units: 0,
+				},
 			],
 		});
 		expect(first.read(NOW).spentMicros).toBe(20);
