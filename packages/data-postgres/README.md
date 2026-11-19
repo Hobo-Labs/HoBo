@@ -871,10 +871,13 @@ Events are reported through `log` as data (`replication`, `decision`,
 `createUsageMeter()` counts the statements a host sends per backend and
 `flush` adds each count to a per-period row on that backend (`addUsage`,
 `readUsage`, period ids from `billingPeriod`: the UTC calendar month). One
-statement is one operation. A backend that cannot be reached keeps its count
-for the next flush. The total is a lower bound: an instance stopped before it
-flushes loses what it had not written. `measureStorageBytes` reads the
-database size for a storage allowance.
+statement is one operation. Call `record(backendId, atMs, count)` with the
+time the statements were sent. Counts are kept by backend and month, including
+while a flush is in flight, so a delayed flush cannot move them to another month.
+A backend that cannot be reached keeps its count for the next flush. A stopped
+instance loses unflushed counts, and retrying an ambiguous write may count it
+twice if the first write committed. `measureStorageBytes` reads the database
+size for a storage allowance.
 
 ## Error codes
 

@@ -1,9 +1,3 @@
-/**
- * The fleet policy and the usage meter, offline.
- *
- * Every plan number in this file is a PLACEHOLDER chosen to make the
- * arithmetic easy to read. None of them describes a real product or price.
- */
 import { describe, expect, it } from "vitest";
 import {
 	billingPeriod,
@@ -24,7 +18,6 @@ import {
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-// Ten days into a thirty-day month.
 const NOW = Date.UTC(2026, 10, 11);
 const period = billingPeriod(NOW);
 
@@ -45,7 +38,6 @@ function assignment(
 	});
 }
 
-/** PLACEHOLDER plan: `included` operations a month, then the service stops. */
 function capped(backend: string, included: number) {
 	return parseFleetFinancialModel({
 		backend,
@@ -63,7 +55,6 @@ function capped(backend: string, included: number) {
 	});
 }
 
-/** PLACEHOLDER plan whose allowance nobody has verified. */
 function unverified(backend: string) {
 	return parseFleetFinancialModel({
 		backend,
@@ -152,7 +143,6 @@ describe("parsing", () => {
 
 describe("keep", () => {
 	it("keeps a healthy writer that is far from its allowance", () => {
-		// 10,000 used in ten days of thirty: on course for 30,000 of 100,000.
 		const decision = decideFleet(
 			input({
 				observations: [seen("a", 10_000), seen("b", 500), seen("c", 500)],
@@ -187,7 +177,6 @@ describe("keep", () => {
 });
 
 describe("planned switch", () => {
-	// 9,000 a day: 90,000 used of 100,000, so about 1.1 days are left.
 	const exhausting = seen("a", 90_000);
 
 	it("switches before a hard allowance runs out, to the standby with most headroom", () => {
@@ -215,7 +204,6 @@ describe("planned switch", () => {
 	});
 
 	it("does not flap: the standby it left is not a place to go back to", () => {
-		// After moving to c, a is still nearly spent this month.
 		const decision = decideFleet(
 			input({
 				assignment: assignment("c"),
@@ -265,14 +253,11 @@ describe("planned switch", () => {
 				},
 			}),
 		);
-		// The writer's cost is unknown, so nothing is concluded about it.
 		expect(asked).toEqual(["b"]);
 		expect(decision.action).toBe("keep");
 	});
 
 	it("needs a margin: headroom of one horizon is not enough", () => {
-		// b would last about four days under this workload: more than the
-		// three-day horizon, less than the six days the margin requires.
 		const decision = decideFleet(
 			input({
 				observations: [exhausting, seen("b", 0)],
@@ -350,7 +335,6 @@ describe("planned switch", () => {
 			target: "b",
 			reasons: ["budget-infeasible:budget.policy.exhausted"],
 		});
-		// b: 300 already spent plus twenty more days at 1,000 a day.
 		expect(requests.find((request) => request.backend === "b")).toEqual({
 			backend: "b",
 			costBoundMicros: 0,
@@ -385,7 +369,6 @@ describe("planned switch", () => {
 				},
 			}),
 		);
-		// 20,000 projected, 15,000 beyond the allowance at 10 micros each.
 		expect(
 			requests.find((request) => request.backend === "b")?.costBoundMicros,
 		).toBe(1_150_000);
@@ -541,7 +524,6 @@ describe("failover", () => {
 		const decision = decideFleet(
 			input({
 				observations: [
-					// The writer's last measured use is still known to the host.
 					{ ...down(HOUR), usage: [{ unit: "operations", used: 1000 }] },
 					seen("b", 0, { standbyLagMs: 60_000 }),
 					seen("c", 0, { standbyLagMs: 10 * 60_000 }),
@@ -604,27 +586,92 @@ describe("usage meter", () => {
 		const meter = createUsageMeter();
 		const first = recorder();
 		const second = recorder();
-		meter.record("a");
-		meter.record("a", 4);
-		meter.record("b", 2);
+		meter.record("a", NOW);
+		meter.record("a", NOW, 4);
+		meter.record("b", NOW, 2);
 		const backends = [
 			{ id: "a", executor: first.executor },
 			{ id: "b", executor: second.executor },
 		];
-		await meter.flush(backends, layout, NOW);
+		await meter.flush(backends, layout);
 		expect(first.writes).toEqual([["2026-11", "operations", 5]]);
 		expect(second.writes).toEqual([["2026-11", "operations", 2]]);
-		expect(meter.pending("a")).toBe(0);
-		await meter.flush(backends, layout, NOW);
+		expect(meter.pending("a", "2026-11")).toBe(0);
+		await meter.flush(backends, layout);
 		expect(first.writes).toHaveLength(1);
 	});
 
 	it("keeps the count of a backend it could not reach", async () => {
 		const meter = createUsageMeter();
 		const broken = recorder(true);
-		meter.record("a", 3);
-		await meter.flush([{ id: "a", executor: broken.executor }], layout, NOW);
-		meter.record("a", 2);
-		expect(meter.pending("a")).toBe(5);
+		meter.record("a", NOW, 3);
+		await meter.flush([{ id: "a", executor: broken.executor }], layout);
+		meter.record("a", NOW, 2);
+		expect(meter.pending("a", "2026-11")).toBe(5);
+	});
+
+	it("keeps usage on each side of a reset in its original period", async () => {
+		const meter = createUsageMeter();
+		const backend = recorder();
+		const beforeReset = Date.UTC(2026, 10, 30, 23, 59, 59);
+		const afterReset = Date.UTC(2026, 11, 1);
+		meter.record("a", beforeReset, 3);
+		meter.record("a", afterReset, 5);
+		expect(meter.pending("a", "2026-11")).toBe(3);
+		expect(meter.pending("a", "2026-12")).toBe(5);
+		await meter.flush([{ id: "a", executor: backend.executor }], layout);
+		expect(backend.writes).toEqual([
+			["2026-11", "operations", 3],
+			["2026-12", "operations", 5],
+		]);
+		expect(meter.pending("a", "2026-11")).toBe(0);
+		expect(meter.pending("a", "2026-12")).toBe(0);
+	});
+
+	it("keeps in-flight counts visible and flushes new counts separately", async () => {
+		const meter = createUsageMeter();
+		const writes: (readonly (string | number | boolean | null)[])[] = [];
+		let markStarted = () => {};
+		let release = () => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const executor: SqlExecutor = {
+			async query(_sql, parameters) {
+				markStarted();
+				await gate;
+				writes.push(parameters ?? []);
+				return { rows: [] };
+			},
+			session: (run) => run(executor),
+		};
+		const backends = [{ id: "a", executor }];
+		meter.record("a", NOW, 3);
+		const first = meter.flush(backends, layout);
+		await started;
+		meter.record("a", NOW, 2);
+		const second = meter.flush(backends, layout);
+		expect(meter.pending("a", "2026-11")).toBe(5);
+		release();
+		await Promise.all([first, second]);
+		expect(writes).toEqual([
+			["2026-11", "operations", 3],
+			["2026-11", "operations", 2],
+		]);
+		expect(meter.pending("a", "2026-11")).toBe(0);
+	});
+
+	it("rejects invalid or unrepresentable usage without changing the count", () => {
+		const meter = createUsageMeter();
+		expect(() => meter.record("", NOW)).toThrow();
+		expect(() => meter.record("a", NOW, -1)).toThrow();
+		expect(() => meter.record("a", NOW, 1.5)).toThrow();
+		expect(() => meter.record("a", Number.MAX_SAFE_INTEGER)).toThrow();
+		meter.record("a", NOW, Number.MAX_SAFE_INTEGER);
+		expect(() => meter.record("a", NOW)).toThrow();
+		expect(meter.pending("a", "2026-11")).toBe(Number.MAX_SAFE_INTEGER);
 	});
 });
