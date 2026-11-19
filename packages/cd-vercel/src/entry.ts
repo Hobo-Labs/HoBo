@@ -151,6 +151,12 @@ export function createCdHttpEntry(
 				headers: headersOf(request),
 				body: await readBody(request),
 			};
+			const perRequest = new AbortController();
+			response.on("close", () => perRequest.abort());
+			if (path === "/healthz" || path === "/readyz") {
+				await send(response, await host.handle(feed, perRequest.signal));
+				return;
+			}
 			if (operatorReads === "deny" && deniesOperatorRead(feed)) {
 				sendJson(response, 401, {
 					ok: false,
@@ -159,8 +165,6 @@ export function createCdHttpEntry(
 				});
 				return;
 			}
-			const perRequest = new AbortController();
-			response.on("close", () => perRequest.abort());
 			await send(response, await host.handle(feed, perRequest.signal));
 		} catch {
 			if (response.headersSent) {
