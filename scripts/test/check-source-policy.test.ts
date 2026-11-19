@@ -155,12 +155,21 @@ c: """
 d: "value: \(1 + // interpolation
   2)"
 e: ##"raw \##(2 + // raw interpolation
-  3) // literal"##`;
+  3) // literal"##
+f: /* TODO: remove block */`;
 		assert.deepEqual(
-			commentViolations("x.cue", cue, new Set([1, 3, 6, 8, 9])).map(
+			commentViolations("x.cue", cue, new Set([1, 3, 6, 8, 9, 10])).map(
 				(item) => item.line,
 			),
-			[1, 6, 8],
+			[1, 6, 8, 10],
+		);
+		assert.equal(
+			commentViolations(
+				"x.cue",
+				'g: /* see http://inside.example.test */',
+				new Set([1]),
+			).length,
+			0,
 		);
 		const proto =
 			'option x = "https://example.test/* data */"; /* explanation */\n// todo: implement';

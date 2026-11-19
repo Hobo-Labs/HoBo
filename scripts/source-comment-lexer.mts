@@ -13,7 +13,11 @@ export function lexComments(
 ): LexedComment[] {
 	const comments: LexedComment[] = [];
 	const line = dialect === "sql" ? "--" : dialect === "toml" ? "#" : "//";
-	const blocks = dialect === "proto" || dialect === "wit" || dialect === "sql";
+	const blocks =
+		dialect === "cue" ||
+		dialect === "proto" ||
+		dialect === "wit" ||
+		dialect === "sql";
 
 	function quoted(
 		start: number,
