@@ -9,7 +9,6 @@ import "google/protobuf/struct.proto";
 
 // POST /s/<token>/action: the only request body the server accepts.
 message ConnectActionRequest {
-  // connect.submit | connect.chooseStore | connect.start | connect.cancel
   string action = 1;
   // String values only; the flow refuses params it does not expect.
   map<string, string> params = 2;
@@ -25,8 +24,6 @@ message BrowserDirectiveRecord {
 
 // GET /s/<token>/view and the POST /action response.
 message ConnectViewRecord {
-  // configure | choose-secret-store | create-github-app | authorize-vercel |
-  // depositing | connected | failed
   string step = 1;
   bool terminal = 2;
   reserved 3;
