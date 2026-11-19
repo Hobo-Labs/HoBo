@@ -101,6 +101,24 @@ keeps is rebuilt from GitHub, so every policy is `rebuildable` and nothing is
 copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
 (`packages/hobo-cd` README, "Continuity").
 
+## Private owner HTTP
+
+`isolatedOwnerFetch(env, options)` sends each request in a child process. It
+buffers the response before resolving and defaults to a 1 MiB response limit;
+`maxResponseBytes` can select a limit from zero through 32 MiB for a consumer.
+Oversized responses and cancellation after dispatch fail with an uncertain
+outcome. Pass an `AbortSignal` to cancel a slow response. The child uses the
+parent's effective trust roots and the selected extra CA bundle without
+inheriting Node preload options. Encoded trust snapshots are limited to 8 MiB;
+larger snapshots are refused before the child starts. Request-body preparation
+and the dispatched request each have a 120-second ceiling.
+Private owner HTTP requires a runtime that exposes `tls.getCACertificates`:
+Node 22.15 or later within Node 22, Node 23.10 or later within Node 23, or Node
+24. Other versions are refused before dispatch until their trust behavior is
+verified. Requests are also refused if Node's reported default roots omit
+occurrences of its bundled or startup-extra roots, because that report may not
+match the active TLS configuration.
+
 ## Architecture rules (AGENTS.md)
 
 - **PACT**: `contracts/pacts/github-app-manifest.pact.json` (conversion, App

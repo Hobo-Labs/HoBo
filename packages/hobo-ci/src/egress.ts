@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { getCACertificates } from "node:tls";
+import * as tls from "node:tls";
 import {
 	Agent,
 	Dispatcher,
@@ -74,14 +74,17 @@ export function egressFrom(
 /** The dispatcher the egress requires, or none when the defaults serve. */
 function egressDispatcher(
 	egress: Egress,
+	trustedCertificates?: readonly string[],
 ): Agent | EnvHttpProxyAgent | undefined {
 	const tls =
-		egress.caFile === undefined
+		egress.caFile === undefined && trustedCertificates === undefined
 			? undefined
 			: {
 					ca: [
-						...getCACertificates("default"),
-						readFileSync(egress.caFile, "utf8"),
+						...(trustedCertificates ?? egressDefaultCaCertificates()),
+						...(egress.caFile === undefined
+							? []
+							: [readFileSync(egress.caFile, "utf8")]),
 					],
 				};
 	if (egress.proxy === undefined && tls === undefined) return undefined;
@@ -99,9 +102,20 @@ function egressDispatcher(
 			});
 }
 
+function egressDefaultCaCertificates(): readonly string[] {
+	if (!tls.getCACertificates)
+		throw new Error(
+			"This Node runtime cannot inspect its effective TLS trust.",
+		);
+	return tls.getCACertificates("default");
+}
+
 /** A `fetch` that goes through the required proxy, honouring its bypass list. */
-export function egressFetch(egress: Egress): typeof fetch {
-	const dispatcher = egressDispatcher(egress);
+export function egressFetch(
+	egress: Egress,
+	trustedCertificates?: readonly string[],
+): typeof fetch {
+	const dispatcher = egressDispatcher(egress, trustedCertificates);
 	if (dispatcher === undefined) return fetch;
 	// Node's fetch is undici's and takes its dispatcher as a request option.
 	return (input, init) => {
