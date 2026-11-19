@@ -1,15 +1,3 @@
-/**
- * Usage metering: what a host actually sent to each backend this period.
- *
- * A plan's allowance is spent by use, and a provider's dashboard is not
- * something a scheduled job can read. So the host counts what it sends (one
- * statement is one operation) and adds the count to a per-period row on the
- * backend the statements went to. "Operations used this month" is then a
- * measurement the policy can project from, not an estimate.
- *
- * The count is a lower bound. An instance that is stopped before it flushes
- * loses what it had not yet written; a host bounds that by flushing often.
- */
 import {
 	billingPeriod,
 	FLEET_USAGE_UNITS,
@@ -89,42 +77,72 @@ export async function measureStorageBytes(
 }
 
 export type UsageMeter = {
-	record(backendId: string, statements?: number): void;
-	/** Statements counted and not yet written for one backend. */
-	pending(backendId: string): number;
-	flush(
-		backends: readonly FleetBackend[],
-		layout: FleetLayout,
-		nowMs: number,
-	): Promise<void>;
+	record(backendId: string, atMs: number, statements?: number): void;
+	pending(backendId: string, period: string): number;
+	flush(backends: readonly FleetBackend[], layout: FleetLayout): Promise<void>;
 };
 
 export function createUsageMeter(): UsageMeter {
-	const counts = new Map<string, number>();
+	const counts = new Map<string, Map<string, number>>();
+	const inFlight = new Map<string, Map<string, number>>();
+	function adjust(
+		buckets: Map<string, Map<string, number>>,
+		backendId: string,
+		period: string,
+		delta: number,
+	): void {
+		const periods = buckets.get(backendId) ?? new Map<string, number>();
+		const next = (periods.get(period) ?? 0) + delta;
+		if (next === 0) periods.delete(period);
+		else periods.set(period, next);
+		if (periods.size === 0) buckets.delete(backendId);
+		else buckets.set(backendId, periods);
+	}
+	function pending(backendId: string, period: string): number {
+		return (
+			(counts.get(backendId)?.get(period) ?? 0) +
+			(inFlight.get(backendId)?.get(period) ?? 0)
+		);
+	}
 	return {
-		record(backendId, statements = 1) {
-			counts.set(backendId, (counts.get(backendId) ?? 0) + statements);
+		record(backendId, atMs, statements = 1) {
+			if (
+				!backendId.trim() ||
+				!Number.isSafeInteger(statements) ||
+				statements < 0
+			)
+				throw new PostgresDataError(
+					"FLEET_RECORD_INVALID",
+					"usage needs a backend and a non-negative integer count",
+				);
+			const period = billingPeriod(atMs).id;
+			if (!Number.isSafeInteger(pending(backendId, period) + statements))
+				throw new PostgresDataError(
+					"FLEET_RECORD_INVALID",
+					"pending usage exceeds the safe integer range",
+				);
+			if (statements > 0) adjust(counts, backendId, period, statements);
 		},
-		pending(backendId) {
-			return counts.get(backendId) ?? 0;
-		},
-		async flush(backends, layout, nowMs) {
-			const period = billingPeriod(nowMs).id;
+		pending,
+		async flush(backends, layout) {
 			await Promise.all(
-				backends.map(async (backend) => {
-					const used = counts.get(backend.id) ?? 0;
-					if (used === 0) return;
-					counts.set(backend.id, 0);
-					try {
-						await addUsage(backend, layout, {
-							period,
-							unit: "operations",
-							used,
-						});
-					} catch {
-						counts.set(backend.id, (counts.get(backend.id) ?? 0) + used);
-					}
-				}),
+				backends.flatMap((backend) =>
+					[...(counts.get(backend.id) ?? [])].map(async ([period, used]) => {
+						adjust(counts, backend.id, period, -used);
+						adjust(inFlight, backend.id, period, used);
+						try {
+							await addUsage(backend, layout, {
+								period,
+								unit: "operations",
+								used,
+							});
+						} catch {
+							adjust(counts, backend.id, period, used);
+						} finally {
+							adjust(inFlight, backend.id, period, -used);
+						}
+					}),
+				),
 			);
 		},
 	};

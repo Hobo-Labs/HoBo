@@ -396,7 +396,8 @@ export async function reconcileFleet(
 			copied.set(backend.id, await copy(assignment, writer, backend));
 		}
 
-	const period = billingPeriod(now());
+	const observedAtMs = now();
+	const period = billingPeriod(observedAtMs);
 	const observations = await Promise.all(
 		backends.map(async (backend): Promise<PostgresFleetObservation> => {
 			const seen = probes.get(backend.id);
@@ -410,7 +411,7 @@ export async function reconcileFleet(
 						unit: "operations",
 						used:
 							(counters.find((entry) => entry.unit === "operations")?.used ??
-								0) + (options.meter?.pending(backend.id) ?? 0),
+								0) + (options.meter?.pending(backend.id, period.id) ?? 0),
 					});
 					usage.push({
 						unit: "storage-bytes",
@@ -451,7 +452,7 @@ export async function reconcileFleet(
 		policy: options.policy,
 		period,
 		checkBudget: options.checkBudget,
-		nowMs: now(),
+		nowMs: observedAtMs,
 	});
 	options.log({ kind: "decision", decision });
 
@@ -476,7 +477,7 @@ export async function reconcileFleet(
 		});
 		if (outcome.status === "decided") assignment = outcome.assignment;
 	}
-	await options.meter?.flush(backends.filter(healthy), layout, now());
+	await options.meter?.flush(backends.filter(healthy), layout);
 	const final = await readCurrentAssignment(register);
 	return {
 		status: "settled",

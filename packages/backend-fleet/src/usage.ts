@@ -42,10 +42,17 @@ export function billingPeriod(nowMs: number): BillingPeriod {
 	const now = new Date(nowMs);
 	const year = now.getUTCFullYear();
 	const month = now.getUTCMonth();
+	const startsAtMs = Date.UTC(year, month, 1);
+	const endsAtMs = Date.UTC(year, month + 1, 1);
+	if (!Number.isFinite(startsAtMs) || !Number.isFinite(endsAtMs))
+		throw new BackendFleetError(
+			"FLEET_RECORD_INVALID",
+			"a billing period needs a representable month",
+		);
 	return {
 		id: `${year}-${String(month + 1).padStart(2, "0")}`,
-		startsAtMs: Date.UTC(year, month, 1),
-		endsAtMs: Date.UTC(year, month + 1, 1),
+		startsAtMs,
+		endsAtMs,
 	};
 }
 
