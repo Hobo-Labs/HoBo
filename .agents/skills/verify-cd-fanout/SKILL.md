@@ -9,7 +9,7 @@ description: Check cd release fan-out state transitions when changing the listed
 
 **Why:** A halted or unsafe release can spread to additional environments.
 
-**Result at sync commit `5d3997ed6d61e5d456f4024804918ad14f0e200a`:** PASS within the stated model bound and for the parameterized abstraction under its assumptions.
+**Result at sync commit `cde971698098b326dac91a32ed41f3b47bc34d2b`:** PASS within the stated model bound and for the parameterized abstraction under its assumptions.
 
 ## Covered code
 
@@ -42,4 +42,4 @@ A TLC pass checks this model, not the entire implementation. The tests exercise 
 
 ## Keep in sync
 
-Before trusting a result, inspect changes to the covered files since `5d3997ed6d61e5d456f4024804918ad14f0e200a`, including uncommitted changes. If behavior changed, update the model and real-code checks; distinguish a real counterexample from a model mismatch by replaying it against the code. Run the check, reproduce a deliberately broken variant in a scratch copy, then move this sync commit forward only after confirming the model still describes the code. Use `/maintain-formal-verification-skill` for that update.
+Before trusting a result, inspect changes to the covered files since `cde971698098b326dac91a32ed41f3b47bc34d2b`, including uncommitted changes. If behavior changed, update the model and real-code checks; distinguish a real counterexample from a model mismatch by replaying it against the code. Run the check, reproduce a deliberately broken variant in a scratch copy, then move this sync commit forward only after confirming the model still describes the code. Use `/maintain-formal-verification-skill` for that update.

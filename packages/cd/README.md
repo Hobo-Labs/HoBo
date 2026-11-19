@@ -121,8 +121,9 @@ completion, as it is when selecting candidates. The normal journal fold
 initializes a slot for every Camp. See the
 [fan-out verification skill](../../.agents/skills/verify-cd-fanout/SKILL.md)
 for the checked models, generated cases, and their limits.
-The skill also executes isolated implementation, TLA+, and induction mutations
-so every stated guard must produce a reproducible counterexample when removed.
+The skill also executes four isolated implementation mutations, four TLA+
+mutations, and three induction mutations so every stated guard must produce a
+reproducible counterexample when removed.
 Its maintained baseline records the exact reviewed commit used for those checks.
 
 This projection shows the modeled scheduling decision, not an execution
