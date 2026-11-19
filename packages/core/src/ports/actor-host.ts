@@ -33,6 +33,7 @@ export interface ActorStateHandle<S> {
 		event: FoldEvent,
 	): { streamId: string; seq: number; fenceToken: bigint };
 	read(): { streamId: string; seq: number; state: S };
+	passivate?(lease: ActorLease): { streamId: string; seq: number; state: S };
 }
 
 export interface ActorLeaseHost {
@@ -55,6 +56,10 @@ export interface AsyncActorLeaseHost {
 export interface ActorHost extends ActorLeaseHost {
 	state<S>(
 		key: string,
-		request: { initialState: S; fold: (state: S, event: FoldEvent) => S },
+		request: {
+			initialState: S;
+			fold: (state: S, event: FoldEvent) => S;
+			snapshotKey?: object;
+		},
 	): ActorStateHandle<S>;
 }
