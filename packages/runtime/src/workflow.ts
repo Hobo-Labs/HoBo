@@ -36,6 +36,8 @@ import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
 	captureWorkflowResult,
+	parseRunFailedFact,
+	parseRunStartedFact,
 	readJournaledWorkflowResult,
 	requireWorkflowRunId,
 	terminalCompletedHandleResult,
@@ -156,19 +158,29 @@ export function createWorkflowEngine(
 		const streamId = `run/${runId}`;
 		const journal = await store.readStream(streamId);
 		let seq = journal.at(-1)?.seq ?? 0;
-		const started = journal.find((event) => event.type === "run.Started");
+		const startedEvents = journal.filter(
+			(event) => event.type === "run.Started",
+		);
+		if (startedEvents.length !== 1) {
+			throw new Error(
+				startedEvents.length > 1
+					? `duplicate run.Started for ${runId}`
+					: `missing run.Started for ${runId}`,
+			);
+		}
+		const started = startedEvents[0];
 		if (!started || !isRecord(started.data)) {
 			throw new Error(`missing run.Started for ${runId}`);
 		}
-		const journalArgs = started.data.args ?? null;
+		const startedFact = parseRunStartedFact(started.data, seed);
 		const input = captureWorkflowInput(args);
-		if (!isDeepStrictEqual(journalArgs, cloneAsJson(input))) {
+		if (!isDeepStrictEqual(startedFact.args, cloneAsJson(input))) {
 			throw new Error(`workflow input differs from run.Started for ${runId}`);
 		}
 		const runArgs = input;
 		if (
-			isJsonString(started.data.workflowName) &&
-			started.data.workflowName !== def.name
+			startedFact.workflowName !== undefined &&
+			startedFact.workflowName !== def.name
 		) {
 			throw new Error(`workflow name differs from run.Started for ${runId}`);
 		}
@@ -189,14 +201,12 @@ export function createWorkflowEngine(
 				const result = terminalCompletedHandleResult<R>(journaled);
 				return { runId, status: "completed", result, error: undefined };
 			}
-			if (!isJsonString(data.message)) {
-				throw new Error(`invalid run.Failed for ${runId}`);
-			}
+			const failedFact = parseRunFailedFact(data);
 			const failure: NonNullable<WorkflowRunHandle<R>["error"]> = {
 				code: "workflow.failed",
-				message: data.message,
+				message: failedFact.message,
 			};
-			if (isJsonString(data.step)) failure.step = data.step;
+			if (failedFact.step !== undefined) failure.step = failedFact.step;
 			return {
 				runId,
 				status: "failed",
@@ -204,7 +214,7 @@ export function createWorkflowEngine(
 				error: failure,
 			};
 		}
-		const runSeed = isJsonString(started.data.seed) ? started.data.seed : seed;
+		const runSeed = startedFact.seed;
 
 		async function appendEvent<T>(type: string, data: T): Promise<number> {
 			const payload = cloneAsJson(data);
@@ -234,6 +244,15 @@ export function createWorkflowEngine(
 					event.data.index === index,
 			);
 
+		const findFailedStep = (name: string, index: number) =>
+			journal.find(
+				(event) =>
+					event.type === "run.StepFailed" &&
+					isRecord(event.data) &&
+					event.data.name === name &&
+					event.data.index === index,
+			);
+
 		const effects: CtxEffects = {
 			async step<T>(
 				name: string,
@@ -247,6 +266,15 @@ export function createWorkflowEngine(
 					// Journaled on a prior attempt — short-circuit, do NOT re-run.
 					// SAFETY: assertion to `ed.data.result as T; }` is required at this boundary.
 					return completed.data.result as T;
+				}
+				const failed = findFailedStep(name, index);
+				if (failed && isRecord(failed.data)) {
+					if (!isJsonString(failed.data.message)) {
+						throw new Error(`invalid run.StepFailed for ${runId}`);
+					}
+					throw new WorkflowFailure(failed.data.message, {
+						step: name,
+					});
 				}
 				await appendEvent("run.StepScheduled", { name, index });
 				try {

@@ -362,6 +362,130 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(first.report.stateDigest).toBe(second.report.stateDigest);
 	});
 
+	it("replays a journaled step failure without re-running the step effect", async () => {
+		const engine = createWorkflowEngine();
+		let attempts = 0;
+		let crash = true;
+		const wf = defineWorkflow({
+			name: "step-failed-replay",
+			async run(ctx) {
+				try {
+					await ctx.step(
+						"pay",
+						() => {
+							attempts += 1;
+							throw new WorkflowFailure("card declined", { step: "pay" });
+						},
+						{ retries: 0 },
+					);
+				} catch (error) {
+					if (crash) {
+						crash = false;
+						throw error instanceof WorkflowFailure
+							? new Error("SIMULATED_HOST_CRASH")
+							: error;
+					}
+				}
+				return "recovered";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "step-failed-replay" }),
+		).rejects.toThrow("SIMULATED_HOST_CRASH");
+		expect(attempts).toBe(1);
+		const restarted = createWorkflowEngine({ store: engine.store });
+		const handle = await restarted.resume(wf, "step-failed-replay", {});
+		expect(handle.result).toBe("recovered");
+		expect(attempts).toBe(1);
+	});
+
+	it("rejects duplicate run.Started facts", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start-1",
+				streamId: "run/dup-started",
+				seq: 1,
+				type: "run.Started",
+				data: { args: {}, workflowName: "dup-started" },
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "start-2",
+				streamId: "run/dup-started",
+				seq: 2,
+				type: "run.Started",
+				data: { args: {}, workflowName: "dup-started" },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "dup-started",
+			run() {
+				runs += 1;
+				return "live";
+			},
+		});
+		await expect(engine.resume(wf, "dup-started", {})).rejects.toThrow(
+			/duplicate run.Started/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it("rejects run.Started with wrong-typed fields", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "bad-start",
+				streamId: "run/bad-started",
+				seq: 1,
+				type: "run.Started",
+				data: { args: {}, workflowName: 42 },
+			},
+			0,
+		);
+		const wf = defineWorkflow({ name: "bad-started", run: () => "x" });
+		await expect(engine.resume(wf, "bad-started", {})).rejects.toThrow(
+			/invalid run.Started/,
+		);
+	});
+
+	it("rejects run.Failed with wrong-typed step", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/bad-failed-step",
+				seq: 1,
+				type: "run.Started",
+				data: { args: {}, workflowName: "bad-failed-step" },
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/bad-failed-step",
+				seq: 2,
+				type: "run.Failed",
+				data: { message: "nope", step: 7 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "bad-failed-step",
+			run() {
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "bad-failed-step", {})).rejects.toThrow(
+			/invalid run.Failed/,
+		);
+	});
+
 	it("executes with args stored on run.Started", async () => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(

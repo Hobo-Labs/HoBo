@@ -61,10 +61,9 @@ sparse arrays, frozen objects and other values that cannot be faithfully
 replayed are refused. Results are captured before storage waits, so later edits
 to the original do not change the first returned value. An unsupported result
 raises a workflow failure; an unsupported step result also records a step
-failure. If the workflow catches that failure and the host stops before a
-terminal outcome is recorded, this version can run the failed step again on
-resume. Convert other values to explicit JSON. Values already lost in older
-journals cannot be recovered.
+failure. A journaled `run.StepFailed` replays by rethrowing that failure without
+re-running the step effect. Convert other values to explicit JSON. Values
+already lost in older journals cannot be recovered.
 
 The [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md)
 includes statecharts and bounded models for input and result capture. They

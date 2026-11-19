@@ -2,11 +2,85 @@ import { isDeepStrictEqual, types } from "node:util";
 import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
+	isJsonArray,
 	isJsonBoolean,
 	isJsonNumber,
+	isJsonObject,
 	isJsonString,
 	type JsonValue,
 } from "./json.js";
+
+function isStoredJsonValue(value: unknown): value is JsonValue {
+	if (value === null) return true;
+	if (isJsonString(value) || isJsonBoolean(value)) return true;
+	if (isJsonNumber(value)) return Number.isFinite(value);
+	if (isJsonArray(value))
+		return value.every((entry) => isStoredJsonValue(entry));
+	if (isJsonObject(value))
+		return Object.keys(value).every((key) =>
+			isStoredJsonValue(value[key]),
+		);
+	return false;
+}
+
+export type ParsedRunStarted = {
+	args: JsonValue | null;
+	seed: string;
+	workflowName?: string;
+};
+
+export function parseRunStartedFact(
+	data: unknown,
+	defaultSeed: string,
+): ParsedRunStarted {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.Started");
+	const allowed = new Set(["args", "seed", "workflowName"]);
+	for (const key of Object.keys(data)) {
+		if (!allowed.has(key)) throw new TypeError("invalid run.Started");
+	}
+	let args: JsonValue | null = null;
+	if ("args" in data) {
+		const raw = data.args;
+		if (raw === null) args = null;
+		else if (!isStoredJsonValue(raw))
+			throw new TypeError("invalid run.Started");
+		else args = raw;
+	}
+	let runSeed = defaultSeed;
+	if ("seed" in data) {
+		if (!isJsonString(data.seed)) throw new TypeError("invalid run.Started");
+		runSeed = data.seed;
+	}
+	let workflowName: string | undefined;
+	if ("workflowName" in data) {
+		if (!isJsonString(data.workflowName))
+			throw new TypeError("invalid run.Started");
+		workflowName = data.workflowName;
+	}
+	return {
+		args,
+		seed: runSeed,
+		...(workflowName === undefined ? {} : { workflowName }),
+	};
+}
+
+export function parseRunFailedFact(data: unknown): {
+	message: string;
+	step?: string;
+} {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.Failed");
+	const allowed = new Set(["message", "step"]);
+	for (const key of Object.keys(data)) {
+		if (!allowed.has(key)) throw new TypeError("invalid run.Failed");
+	}
+	if (!isJsonString(data.message)) throw new TypeError("invalid run.Failed");
+	const parsed: { message: string; step?: string } = { message: data.message };
+	if ("step" in data) {
+		if (!isJsonString(data.step)) throw new TypeError("invalid run.Failed");
+		parsed.step = data.step;
+	}
+	return parsed;
+}
 
 export function requireWorkflowRunId(runId: string): string {
 	if (Object(runId) === runId || !isJsonString(runId) || runId.length === 0)
