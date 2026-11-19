@@ -51,6 +51,10 @@ with `--follow`, it emits one JSON log or gap record per line. A gap record
 means a rotation or truncation may have caused some output to be missed. Local
 logs are stored in `.hobo/local-deployment.log` and retained across restarts.
 
+The local component host loads HTTP components after their declared HTTP
+component dependencies and tears them down in reverse order. A cycle among
+those components stops startup.
+
 `hobo doctor` reports quarantined event incidents from the current tenant's
 durable journal. `hobo inspect quarantines --json` returns their source and
 record locations, fold, and reason. If the report contains a `nextPosition`,

@@ -30,6 +30,7 @@ import {
 } from "./bare-metal-yard.js";
 import { createHttpComponentDescriptor } from "./component-http.js";
 import { isJsonObject, isJsonString } from "./json.js";
+import { orderLocalComponents } from "./local-component-order.js";
 
 export type LocalYardServeResult = BareMetalServeResult & {
 	readonly componentHost: "local";
@@ -175,7 +176,16 @@ export async function serveBindleOnLocalYard(options: {
 		`hobo dev: Camp ${campObject.id} hosts bindle ${definition.name} (provider ${topology.providerId})`,
 	);
 
-	const entrypoints = listServableEntrypoints(definition);
+	let entrypoints: ReturnType<typeof listServableEntrypoints>;
+	try {
+		entrypoints = orderLocalComponents(
+			listServableEntrypoints(definition),
+			definition.edges,
+		);
+	} catch (error) {
+		ownedYard?.close();
+		throw error;
+	}
 	if (entrypoints.length === 0) {
 		ownedYard?.close();
 		throw new Error(
@@ -334,7 +344,7 @@ export async function serveBindleOnLocalYard(options: {
 					}),
 			),
 		);
-		for (const entry of entrypoints) {
+		for (const entry of [...entrypoints].reverse()) {
 			try {
 				await componentHost.teardownComponent(entry.name);
 			} catch {}
