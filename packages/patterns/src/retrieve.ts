@@ -22,7 +22,6 @@ import {
 	type PatternIndex,
 	searchIndexLexical,
 } from "./sqlite-index.js";
-import { catalogStarterId, isCliStarterAlias } from "./starters.js";
 import { type HoboVocabulary, normalizePatternQuery } from "./vocabulary.js";
 
 const RRF_K = 60;
@@ -214,18 +213,10 @@ export function searchPatterns(input: {
 	const best = top[0];
 	const second = top[1];
 	const uniqueExact = byExact.length === 1 ? byExact[0] : undefined;
-	const compatKey = (request.exactId || request.query).trim().toLowerCase();
-	const compatPattern = isCliStarterAlias(compatKey)
-		? ranked.find((row) => row.pattern.id === catalogStarterId(compatKey))
-		: undefined;
 	let decision = SearchDecision.ABSTAINED;
 	let selected: PatternManifest | undefined;
 	let reason = "below-threshold";
-	if (compatPattern) {
-		decision = SearchDecision.SELECTED;
-		selected = compatPattern.pattern;
-		reason = "compatibility-alias";
-	} else if (
+	if (
 		uniqueExact &&
 		(request.autoSelect ||
 			request.exactId ||
@@ -277,7 +268,6 @@ export function searchPatterns(input: {
 			SearchChannel.EXACT_ID,
 			SearchChannel.EXACT_ALIAS,
 			SearchChannel.EXACT_SYMBOL,
-			SearchChannel.COMPATIBILITY,
 			SearchChannel.ONTOLOGY_VECTOR,
 			...(ftsAvailable ? [SearchChannel.FTS5] : []),
 		],
