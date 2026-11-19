@@ -242,10 +242,10 @@ function windowEvaluation(
 	const burnRate = errors / total / (1 - objective.target);
 	if (!Number.isFinite(burnRate))
 		throw new RangeError("SLI burn rate overflow");
-	const remainingBudgetRatio = Math.max(
-		0,
-		Math.min(1, (errorBudget - errors) / errorBudget),
-	);
+	const remainingBudgetRatio =
+		good / total <= objective.target
+			? 0
+			: Math.max(0, Math.min(1, (errorBudget - errors) / errorBudget));
 	return {
 		...empty,
 		slices,

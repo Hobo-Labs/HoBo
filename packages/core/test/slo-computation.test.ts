@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { SloEvaluationRecordSchema } from "../src/_generated/slo_pb.js";
 import type { JsonObject } from "../src/json.js";
 import { parseSloDefinition } from "../src/ports/slo.js";
+import { createBuiltInSloDefinitions } from "../src/ports/slo-builtins.js";
 import {
 	computeSloStatus,
 	type SliSample,
@@ -48,6 +49,28 @@ function sample(time: string, good: number, total: number): SliSample {
 }
 
 describe("SLO computation", () => {
+	it("binds standard SLOs to caller-provided telemetry queries", () => {
+		const definitions = createBuiltInSloDefinitions({
+			deploySuccess: {
+				good: { query: "deployment_success" },
+				total: { query: "deployment_total" },
+			},
+			controlPlaneAvailability: {
+				good: { query: "request_success" },
+				total: { query: "request_total" },
+			},
+		});
+		expect(definitions.map((item) => item.metadata.name)).toEqual([
+			"deploy-success-rate",
+			"control-plane-availability",
+		]);
+		expect(
+			definitions[0]?.spec.indicator.ratioMetric.good.telemetry.query,
+		).toBe("deployment_success");
+		expect(
+			definitions[1]?.spec.indicator.ratioMetric.total.telemetry.query,
+		).toBe("request_total");
+	});
 	it("calculates occurrence budgets for every objective and emits valid protobuf and CUE", async () => {
 		const evaluation = await computeSloStatus({
 			definition: definition({
@@ -192,6 +215,46 @@ describe("SLO computation", () => {
 		expect(missing.status).toBe("no-data");
 	});
 
+	it("evaluates fast and slow burn windows independently", async () => {
+		const value = definition({
+			burnRateThresholds: [
+				{
+					name: "fast",
+					threshold: 14.4,
+					lookbackWindow: "5m",
+					samplingInterval: "1m",
+				},
+				{
+					name: "slow",
+					threshold: 2,
+					lookbackWindow: "1h",
+					samplingInterval: "5m",
+				},
+			],
+		});
+		const samples = Array.from({ length: 60 }, (_, index) =>
+			sample(
+				new Date(Date.parse(now) - index * 60_000).toISOString(),
+				980,
+				1000,
+			),
+		);
+		const result = await computeSloStatus({
+			definition: value,
+			sliSource: source(samples),
+			now,
+		});
+		expect(
+			result.objectives[0]?.burnWindows.map((item) => [
+				item.name,
+				item.triggered,
+			]),
+		).toEqual([
+			["fast", false],
+			["slow", true],
+		]);
+	});
+
 	it("fails closed for stale, invalid, and zero-budget observations", async () => {
 		const stale = await computeSloStatus({
 			definition: definition(),
@@ -228,6 +291,70 @@ describe("SLO computation", () => {
 		expect(result.status).toBe("healthy");
 		expect(result.objectives[0]?.window.remainingBudgetRatio).toBeGreaterThan(
 			0,
+		);
+	});
+
+	it("recognizes exact depletion and preserves tiny valid counts", async () => {
+		const exact = await computeSloStatus({
+			definition: definition(),
+			sliSource: source([sample(now, 9900, 10000)]),
+			now,
+		});
+		const tiny = await computeSloStatus({
+			definition: definition(),
+			sliSource: source([sample(now, 9.95e-8, 1e-7)]),
+			now,
+		});
+		expect(exact.status).toBe("budget-exhausted");
+		expect(exact.objectives[0]?.window.remainingBudgetRatio).toBe(0);
+		expect(tiny.objectives[0]?.window.remainingBudgetRatio).toBeCloseTo(0.5);
+	});
+
+	it("rejects overflow and compares thresholds without rounding the burn rate", async () => {
+		await expect(
+			computeSloStatus({
+				definition: definition(),
+				sliSource: source([
+					sample(now, Number.MAX_VALUE, Number.MAX_VALUE),
+					sample(now, Number.MAX_VALUE, Number.MAX_VALUE),
+				]),
+				now,
+			}),
+		).rejects.toThrow(/overflow/u);
+		const value = definition({
+			burnRateThresholds: [
+				{
+					name: "double",
+					threshold: 2,
+					lookbackWindow: "5m",
+					samplingInterval: "1m",
+				},
+			],
+		});
+		const below = await computeSloStatus({
+			definition: value,
+			sliSource: source([sample(now, 980.004, 1000)]),
+			now,
+		});
+		expect(below.objectives[0]?.burnWindows[0]?.triggered).toBe(false);
+		const nearPerfect = definition({
+			objectives: [{ displayName: "perfect", target: 1 - Number.EPSILON }],
+			burnRateThresholds: [
+				{
+					name: "double",
+					threshold: 2,
+					lookbackWindow: "5m",
+					samplingInterval: "1m",
+				},
+			],
+		});
+		const nearPerfectResult = await computeSloStatus({
+			definition: nearPerfect,
+			sliSource: source([sample(now, 1 - Number.EPSILON, 1)]),
+			now,
+		});
+		expect(nearPerfectResult.objectives[0]?.burnWindows[0]?.triggered).toBe(
+			false,
 		);
 	});
 

@@ -3808,7 +3808,11 @@ importers:
 
   src/draft/epic-proofs/providers-iac-build-adapters: {}
 
-  src/draft/epic-proofs/reliability-observability-cost-finops: {}
+  src/draft/epic-proofs/reliability-observability-cost-finops:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
 
   src/draft/epic-proofs/s1-10-conformance-trust-boundary:
     dependencies:
@@ -5054,7 +5058,11 @@ importers:
 
   src/draft/technical-proofs/s6-02-control-plane-ha-contract: {}
 
-  src/draft/technical-proofs/s6-05-observability-drift-loop-contract: {}
+  src/draft/technical-proofs/s6-05-observability-drift-loop-contract:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
 
   src/draft/technical-proofs/s6-09-operator-crew-yard-services-contract: {}
 
@@ -5101,8 +5109,6 @@ importers:
   src/draft/technical-proofs/signed-offline-bundle-contract: {}
 
   src/draft/technical-proofs/slo-as-code-contract: {}
-
-  src/draft/technical-proofs/slo-computation-engine-contract: {}
 
   src/draft/technical-proofs/slo-gaming-guard-contract: {}
 

@@ -144,6 +144,42 @@ describe("SLO events and projections", () => {
 		}
 	});
 
+	it("reports the objective budget when a fast burn window triggers", async () => {
+		const value = sloFixture();
+		const slo = parseSloDefinition({
+			...value,
+			spec: {
+				...value.spec,
+				timeWindow: { duration: "1h", isRolling: true },
+				burnRateThresholds: [
+					{
+						name: "fast",
+						threshold: 14.4,
+						lookbackWindow: "5m",
+						samplingInterval: "1m",
+					},
+				],
+			},
+		});
+		const status = await computeSloStatus({
+			definition: slo,
+			now: context.ts,
+			sliSource: {
+				readRatioSamples: () => [
+					{ time: "2026-06-26T03:50:00Z", good: 100000, total: 100000 },
+					{ time: "2026-06-26T03:59:00Z", good: 80, total: 100 },
+				],
+			},
+		});
+		const event = makeSloBudgetEvent(status, "availability", context);
+		expect(status.status).toBe("burning");
+		expect(event?.data.window).toBe("fast");
+		expect(event?.data.remainingBudgetRatio).toBe(
+			status.objectives[0]?.window.remainingBudgetRatio,
+		);
+		expect(event?.data.remainingBudgetRatio).toBeGreaterThan(0.98);
+	});
+
 	it("rejects inconsistent observations and ungateable objectives do not emit budget events", async () => {
 		const event = makeSloBudgetEvent(
 			await evaluated(985),

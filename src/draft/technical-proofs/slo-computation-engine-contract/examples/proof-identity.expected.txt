@@ -1,3 +1,0 @@
-slug: slo-computation-engine-contract
-layer: technical
-proof-identity: ok
