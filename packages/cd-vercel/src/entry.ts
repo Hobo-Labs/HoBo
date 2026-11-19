@@ -180,11 +180,15 @@ export function createCdHttpEntry(
 			const perRequest = new AbortController();
 			response.on("close", () => perRequest.abort());
 			if (path === "/healthz" || path === "/readyz") {
+<<<<<<< HEAD
 				await send(
 					response,
 					await host.handle(feed, perRequest.signal),
 					method === "HEAD",
 				);
+=======
+				await send(response, await host.handle(feed, perRequest.signal));
+>>>>>>> 8f5b7cc0e (fix(cd-vercel): let readyz bypass operator-read gate)
 				return;
 			}
 			if (operatorReads === "deny" && deniesOperatorRead(feed)) {
