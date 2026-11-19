@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { composeConnectSpec } from "./compose.js";
 import {
+	CONNECT_ACTIONS,
 	type ConnectActionName,
 	type ConnectStep,
 	isConnectAction,
