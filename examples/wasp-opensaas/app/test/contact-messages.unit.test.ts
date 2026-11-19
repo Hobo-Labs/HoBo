@@ -19,11 +19,34 @@ type MessageContext = Parameters<typeof listContactMessages>[0];
 
 function mockMessages(rows: MessageRow[]) {
   return {
-    findMany: vi.fn(async () => rows),
-    count: vi.fn(async () => rows.filter((row) => !row.isRead).length),
-    updateMany: vi.fn(async ({ where }: { where: { id: string } }) => ({
-      count: rows.some((row) => row.id === where.id) ? 1 : 0,
-    })),
+    findMany: vi.fn(
+      async ({
+        skip,
+        take,
+      }: {
+        skip: number;
+        take: number;
+        orderBy: unknown;
+        select: unknown;
+      }) => rows.slice(skip, skip + take),
+    ),
+    count: vi.fn(async ({ where }: { where: { isRead: boolean } }) =>
+      rows.filter((row) => row.isRead === where.isRead).length,
+    ),
+    updateMany: vi.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: { isRead: boolean };
+      }) => {
+        const match = rows.find((row) => row.id === where.id);
+        if (!match) return { count: 0 };
+        match.isRead = data.isRead;
+        return { count: 1 };
+      },
+    ),
   } satisfies MessageContext["messages"];
 }
 
@@ -58,8 +81,18 @@ describe("contact message operations", () => {
     const first = await listContactMessages(context, { page: 0 });
     expect(first.messages).toHaveLength(20);
     expect(first.hasNext).toBe(true);
+    expect(context.messages.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 0,
+        take: 21,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      }),
+    );
     const unread = await countUnreadContactMessages(context);
     expect(unread).toBe(10);
+    expect(context.messages.count).toHaveBeenCalledWith({
+      where: { isRead: false },
+    });
   });
 
   it("marks a message read or rejects unknown ids", async () => {
@@ -75,7 +108,10 @@ describe("contact message operations", () => {
       },
     ]);
     await setContactMessageRead(context, { id });
-    expect(context.messages.updateMany).toHaveBeenCalled();
+    expect(context.messages.updateMany).toHaveBeenCalledWith({
+      where: { id },
+      data: { isRead: true },
+    });
     await expect(
       setContactMessageRead(context, { id: crypto.randomUUID() }),
     ).rejects.toBeInstanceOf(ContactMessageError);
