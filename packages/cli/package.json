@@ -29,6 +29,7 @@
 		"@hobo/componentize": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/patterns": "workspace:*",
+		"chokidar": "4.0.3",
 		"esbuild": "^0.25.0",
 		"ts-autocode-grounding": "workspace:*",
 		"ts-autocode-training": "workspace:*",
