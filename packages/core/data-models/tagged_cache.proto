@@ -16,3 +16,19 @@ message TaggedCacheReadRecord {
   bool hit = 1;
   optional string value = 2;
 }
+
+message CacheEntryRecord {
+  string key = 1;
+  bytes value = 2;
+  uint32 ttl_ms = 3;
+  repeated string tags = 4;
+}
+
+message CacheInvalidateCommandRecord {
+  string tag = 1;
+}
+
+message CacheReadRecord {
+  bool hit = 1;
+  optional bytes value = 2;
+}

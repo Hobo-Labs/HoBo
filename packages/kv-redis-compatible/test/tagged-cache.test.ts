@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+	createCacheClient,
 	createTaggedCache,
 	type EphemeralKey,
 	type EphemeralStatePort,
@@ -17,6 +18,37 @@ const ttl = parseEphemeralTtlMs(1000);
 const user = parseEphemeralKey("user:1");
 
 describe("tagged cache", () => {
+	it("exposes binary cache values with TTL, tags, and independent returned buffers", async () => {
+		const clock = createManualClock();
+		const state = createMemoryEphemeralState({ now: clock.now });
+		const cache = createCacheClient(state, "shop");
+		const peer = createCacheClient(state, "shop");
+		const input = Uint8Array.from([0, 255, 128, 42]);
+		await cache.set("binary:1", input, 1000, ["users"]);
+		input[0] = 8;
+		const first = await peer.get("binary:1");
+		expect(first).toEqual(Uint8Array.from([0, 255, 128, 42]));
+		if (!first) throw new Error("expected cached bytes");
+		first[1] = 0;
+		expect(await cache.get("binary:1")).toEqual(
+			Uint8Array.from([0, 255, 128, 42]),
+		);
+		await peer.invalidate("users");
+		expect(await cache.get("binary:1")).toBeUndefined();
+		expect(
+			await cache.readThrough("binary:1", 1000, ["users"], () =>
+				Uint8Array.from([1, 2]),
+			),
+		).toEqual({ hit: false, value: Uint8Array.from([1, 2]) });
+		expect(
+			await peer.readThrough("binary:1", 1000, ["users"], () =>
+				Uint8Array.from([3]),
+			),
+		).toEqual({ hit: true, value: Uint8Array.from([1, 2]) });
+		clock.advance(1000);
+		expect(await cache.get("binary:1")).toBeUndefined();
+		await expect(cache.set("binary:1", input, 0)).rejects.toThrow();
+	});
 	it("reloads durable SQLite records after invalidation, expiration, and eviction", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-tagged-cache-"));
 		const path = join(directory, "source.db");

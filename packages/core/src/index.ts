@@ -14,6 +14,9 @@ export {
 	SloEvaluationRecordSchema,
 } from "./_generated/slo_pb.js";
 export {
+	CacheEntryRecordSchema,
+	CacheInvalidateCommandRecordSchema,
+	CacheReadRecordSchema,
 	TaggedCacheEntryRecordSchema,
 	TaggedCacheReadRecordSchema,
 	TaggedCacheTagEpochRecordSchema,
@@ -192,6 +195,8 @@ export {
 	parseBudgetPolicyJson,
 } from "./ports/budget-policy.js";
 export { readThroughCache } from "./ports/cache-aside.js";
+export type { CacheClient, CacheRead } from "./ports/cache-client.js";
+export { createCacheClient } from "./ports/cache-client.js";
 export type { CampTier } from "./ports/camp-tier.js";
 export {
 	CAMP_TIER_EGRESS,

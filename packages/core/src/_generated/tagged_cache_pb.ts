@@ -7,7 +7,7 @@ import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_tagged_cache: GenFile = /*@__PURE__*/
-  fileDesc("ChJ0YWdnZWRfY2FjaGUucHJvdG8SEmhvYm8uY29yZS5jYWNoZS52MSI3ChlUYWdnZWRDYWNoZVRhZ0Vwb2NoUmVjb3JkEgsKA3RhZxgBIAEoCRINCgVlcG9jaBgCIAEoCSJqChZUYWdnZWRDYWNoZUVudHJ5UmVjb3JkEg0KBXZhbHVlGAEgASgJEkEKCnRhZ19lcG9jaHMYAiADKAsyLS5ob2JvLmNvcmUuY2FjaGUudjEuVGFnZ2VkQ2FjaGVUYWdFcG9jaFJlY29yZCJCChVUYWdnZWRDYWNoZVJlYWRSZWNvcmQSCwoDaGl0GAEgASgIEhIKBXZhbHVlGAIgASgJSACIAQFCCAoGX3ZhbHVlYgZwcm90bzM");
+  fileDesc("ChJ0YWdnZWRfY2FjaGUucHJvdG8SEmhvYm8uY29yZS5jYWNoZS52MSI3ChlUYWdnZWRDYWNoZVRhZ0Vwb2NoUmVjb3JkEgsKA3RhZxgBIAEoCRINCgVlcG9jaBgCIAEoCSJqChZUYWdnZWRDYWNoZUVudHJ5UmVjb3JkEg0KBXZhbHVlGAEgASgJEkEKCnRhZ19lcG9jaHMYAiADKAsyLS5ob2JvLmNvcmUuY2FjaGUudjEuVGFnZ2VkQ2FjaGVUYWdFcG9jaFJlY29yZCJCChVUYWdnZWRDYWNoZVJlYWRSZWNvcmQSCwoDaGl0GAEgASgIEhIKBXZhbHVlGAIgASgJSACIAQFCCAoGX3ZhbHVlIkwKEENhY2hlRW50cnlSZWNvcmQSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgMEg4KBnR0bF9tcxgDIAEoDRIMCgR0YWdzGAQgAygJIisKHENhY2hlSW52YWxpZGF0ZUNvbW1hbmRSZWNvcmQSCwoDdGFnGAEgASgJIjwKD0NhY2hlUmVhZFJlY29yZBILCgNoaXQYASABKAgSEgoFdmFsdWUYAiABKAxIAIgBAUIICgZfdmFsdWViBnByb3RvMw");
 
 export type TaggedCacheTagEpochRecord = Message<"hobo.core.cache.v1.TaggedCacheTagEpochRecord"> & {
   tag: string;
@@ -35,4 +35,33 @@ export type TaggedCacheReadRecord = Message<"hobo.core.cache.v1.TaggedCacheReadR
 
 export const TaggedCacheReadRecordSchema: GenMessage<TaggedCacheReadRecord> = /*@__PURE__*/
   messageDesc(file_tagged_cache, 2);
+
+export type CacheEntryRecord = Message<"hobo.core.cache.v1.CacheEntryRecord"> & {
+  key: string;
+
+  value: Uint8Array;
+
+  ttlMs: number;
+
+  tags: string[];
+};
+
+export const CacheEntryRecordSchema: GenMessage<CacheEntryRecord> = /*@__PURE__*/
+  messageDesc(file_tagged_cache, 3);
+
+export type CacheInvalidateCommandRecord = Message<"hobo.core.cache.v1.CacheInvalidateCommandRecord"> & {
+  tag: string;
+};
+
+export const CacheInvalidateCommandRecordSchema: GenMessage<CacheInvalidateCommandRecord> = /*@__PURE__*/
+  messageDesc(file_tagged_cache, 4);
+
+export type CacheReadRecord = Message<"hobo.core.cache.v1.CacheReadRecord"> & {
+  hit: boolean;
+
+  value?: Uint8Array | undefined;
+};
+
+export const CacheReadRecordSchema: GenMessage<CacheReadRecord> = /*@__PURE__*/
+  messageDesc(file_tagged_cache, 5);
 

@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fromBinary, fromJsonString, toBinary } from "@bufbuild/protobuf";
 import { afterAll, describe, expect, it } from "vitest";
-import { TaggedCacheEntryRecordSchema } from "../src/_generated/tagged_cache_pb.js";
+import {
+	CacheEntryRecordSchema,
+	TaggedCacheEntryRecordSchema,
+} from "../src/_generated/tagged_cache_pb.js";
 import type { JsonValue } from "../src/json.js";
 
 const cue =
@@ -32,6 +35,27 @@ function check(type: string, value: JsonValue) {
 }
 
 describe("tagged cache records", () => {
+	it("round trips arbitrary bytes in the public entry contract", () => {
+		const value = {
+			key: "user:1",
+			value: "AP8=",
+			ttlMs: 1000,
+			tags: ["users"],
+		};
+		const record = fromJsonString(
+			CacheEntryRecordSchema,
+			JSON.stringify(value),
+		);
+		expect(
+			fromBinary(
+				CacheEntryRecordSchema,
+				toBinary(CacheEntryRecordSchema, record),
+			).value,
+		).toEqual(Uint8Array.from([0, 255]));
+		const result = check("CacheEntryRecord", value);
+		expect(result.stderr).toBe("");
+		expect(result.status).toBe(0);
+	});
 	it("preserves tags and epochs across protobuf and CUE", () => {
 		const value = {
 			value: "Ada",
@@ -59,6 +83,10 @@ describe("tagged cache records", () => {
 			{ value: "Ada", tagEpochs: [{ tag: "users", epoch: "invalid" }] },
 		],
 		["TaggedCacheReadRecord", { hit: true }],
+		[
+			"CacheEntryRecord",
+			{ key: "user:1", value: "not base64", ttlMs: 1000, tags: [] },
+		],
 	])("rejects invalid %s", (type, value) => {
 		const result = check(type, value);
 		expect(result.error).toBeUndefined();
