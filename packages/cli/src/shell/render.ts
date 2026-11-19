@@ -27,6 +27,8 @@ export function renderSuccess(input: {
 		: envelope.code === "HOBO_BUILD_USAGE" || envelope.code === "HOBO_CLI_USAGE"
 			? 2
 			: 1;
+	if (input.verb === "logs" && envelope.ok && envelope.data.followed === true)
+		return okText("", exitCode);
 
 	if (input.flags.json) {
 		return okText(`${JSON.stringify(envelope)}\n`, exitCode);
@@ -40,7 +42,6 @@ export function renderSuccess(input: {
 	}
 
 	if (input.verb === "logs" && envelope.ok) {
-		if (envelope.data.followed === true) return okText("", exitCode);
 		const lines = Array.isArray(envelope.data.lines)
 			? envelope.data.lines.filter(isJsonString)
 			: [];

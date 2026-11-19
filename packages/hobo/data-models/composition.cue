@@ -61,3 +61,11 @@ package hobo
 	receipt: #LocalDeploymentReceipt
 	reason:  "up" | "down" | "expired" | "process-exited" | "signal" | "startup-abandoned" | "startup-failed"
 }
+
+#LocalLogRecord: {
+	type:    "log"
+	message: string
+} | {
+	type:   "gap"
+	reason: "rotated" | "truncated"
+}

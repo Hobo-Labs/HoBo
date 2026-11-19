@@ -76,6 +76,7 @@ export async function followLocalDeploymentLog(options: {
 	readonly cursor: LogCursor | null;
 	readonly signal: AbortSignal;
 	readonly onLine: (line: string) => void;
+	readonly onGap?: (reason: "rotated" | "truncated") => void;
 	readonly pollIntervalMs?: number;
 }) {
 	let cursor = options.cursor;
@@ -94,6 +95,13 @@ export async function followLocalDeploymentLog(options: {
 				) {
 					const trailing = partial + decoder.end();
 					if (trailing) options.onLine(trailing);
+					if (cursor) {
+						options.onGap?.(
+							cursor.device !== dev || cursor.inode !== ino
+								? "rotated"
+								: "truncated",
+						);
+					}
 					partial = "";
 					decoder = new StringDecoder("utf8");
 					cursor = { device: dev, inode: ino, offset: 0 };

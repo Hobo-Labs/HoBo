@@ -44,10 +44,12 @@ crash are out of reach.
 Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.ts`).
 
 `hobo logs` reads stdout, stderr, and component events from the project's local
-deployment. The most recent 200 lines are shown by default; use `--lines` to
-choose up to 10,000 or `--follow` to stream additions until interrupted.
-`--json` returns a bounded snapshot with a truncation indicator. Local logs are
-stored in `.hobo/local-deployment.log` and retained across restarts.
+deployment. The most recent 200 lines are shown by default; use `--lines` or
+`--tail` to choose up to 10,000, or `--follow` to stream additions until
+interrupted. `--json` returns a bounded snapshot with a truncation indicator;
+with `--follow`, it emits one JSON log or gap record per line. A gap record
+means a rotation or truncation may have caused some output to be missed. Local
+logs are stored in `.hobo/local-deployment.log` and retained across restarts.
 
 `hobo doctor` reports quarantined event incidents from the current tenant's
 durable journal. `hobo inspect quarantines --json` returns their source and

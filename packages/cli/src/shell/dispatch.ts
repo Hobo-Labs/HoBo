@@ -92,7 +92,14 @@ export function createHoboCli(options: CreateHoboCliOptions = {}): HoboCli {
 			verb: invocation.verb,
 
 			emitProgress: (message) => {
-				if (invocation.flags.quiet || invocation.flags.json) {
+				if (
+					invocation.flags.quiet ||
+					(invocation.flags.json &&
+						!(
+							invocation.verb === "logs" &&
+							invocation.flags.subcommandOptions?.follow === true
+						))
+				) {
 					return;
 				}
 				onProgress(message);
