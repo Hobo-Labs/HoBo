@@ -61,17 +61,25 @@ sparse arrays, frozen objects and other values that cannot be faithfully
 replayed are refused. Results are captured before storage waits, so later edits
 to the original do not change the first returned value. An unsupported result
 raises a workflow failure; an unsupported step result also records a step
-failure. If the workflow catches that failure and the host stops before a
-terminal outcome is recorded, this version can run the failed step again on
-resume. Convert other values to explicit JSON. Values already lost in older
-journals cannot be recovered.
+failure. A journaled `run.StepFailed` replays by rethrowing that failure without
+re-running the step effect. Convert other values to explicit JSON. Values
+already lost in older journals cannot be recovered.
 
 The [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md)
 includes statecharts and bounded models for input and result capture. They
-check 18 input states and 15 result states, including edits around journal
-writes and restarts. A 16-state model checks run-ID validation.
+check 18 input states and 15 result states, including start and resume input
+isolation (mutation checks on those capture sites), edits around journal
+writes, and restarts. A 16-state model checks run-ID validation.
 
-`resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
+`resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. Legacy journals without recorded input are interpreted as null input. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused; a recorded `run.StepFailed` replays as failure without re-running the step. An external effect can still repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
+
+A missing earlier step outcome is accepted only when that step was scheduled;
+this permits recovery when parallel steps finish out of order. Replay validates
+the recorded name before running the unfinished step and reuses later saved
+outcomes. A workflow may catch a step failure, perform compensating steps, and
+complete. Replay rethrows the saved failure into the workflow so it can take
+the same path. The workflow cannot record either terminal state while a prior
+outcome remains unconsumed. The bounded models check these paths and guards.
 
 Resuming a completed or failed run returns its recorded terminal outcome without
 calling the workflow or appending another event. A journal with multiple
