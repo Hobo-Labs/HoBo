@@ -4,7 +4,8 @@ CONSTANTS PreserveScope, CheckReplayScope, FenceUncertain
 VARIABLES phase, claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits
 vars == <<phase, claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
 Active == phase \in {"held", "uncertain"}
-Usable == phase = "held" \/ (phase = "uncertain" /\ FenceUncertain)
+Usable == phase = "held"
+UncertainUsable == phase = "uncertain" /\ FenceUncertain
 Matches == bucketUnit = "units" /\ bucketPeriod = "p1"
 
 Init == /\ phase = "new" /\ claimed = FALSE /\ bucketUnit = "units"
@@ -16,7 +17,7 @@ Reserve == /\ phase = "new"
            /\ UNCHANGED <<claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease>>
 Claim == /\ Usable /\ ~claimed /\ claimed' = TRUE
          /\ UNCHANGED <<phase, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
-RecordZeroUnits == /\ Usable /\ claimed /\ claimUnits = 1
+RecordZeroUnits == /\ (Usable \/ UncertainUsable) /\ claimed /\ claimUnits = 1
                    /\ claimUnits' = 0
                    /\ UNCHANGED <<phase, claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease>>
 Uncertain == /\ phase = "held" /\ phase' = "uncertain"

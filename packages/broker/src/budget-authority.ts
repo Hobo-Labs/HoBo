@@ -1152,6 +1152,8 @@ export function createBudgetAdmissionAuthority(options: {
 				),
 			);
 		for (const row of holding) {
+			const authorityPeriod =
+				row.identity?.periodId ?? current.identity?.periodId;
 			if (
 				row.providerAccounts.some(
 					(entry) =>
@@ -1166,8 +1168,8 @@ export function createBudgetAdmissionAuthority(options: {
 							(bucket) =>
 								bucket.bucketId === entry.bucketId &&
 								bucket.unit === entry.unit &&
-								(row.identity === undefined ||
-									bucket.periodId === row.identity.periodId),
+								authorityPeriod !== undefined &&
+								bucket.periodId === authorityPeriod,
 						),
 				)
 			)

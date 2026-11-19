@@ -442,9 +442,9 @@ TLA+ models and unbounded arithmetic abstraction state their assumptions and do
 not prove the storage adapters, cryptography, or provider effects. The
 `BrokerBudget` finite model admits a unit reserve only while `Spent + Held` stays
 under the aggregate cap and records over-reserve attempts through `badAdmission`,
-and the `BrokerEntitlement` config exercises uncertain fencing plus the
-zero-unit scope invariant the journal enforces; optional Z3 scope lemmas in the
-skill mirror those same bucket rules.
+and the `BrokerEntitlement` config keeps claim/settle on held phases while
+`RecordZeroUnits` may run under uncertain fencing; optional Z3 scope lemmas in
+the skill mirror those same bucket rules. Pricing CI pins immutable TLC 1.7.4.
 
 The following is a projection of the signed-settlement model, not a production
 trace. TLC explored 129 states and 830 steps; the chart hides 723 steps that

@@ -46,7 +46,7 @@ ObserveUnused == \E r \in Requests:
                  /\ unusedEvidence' = [unusedEvidence EXCEPT ![r] = TRUE]
                  /\ UNCHANGED <<phase, claimed, evidence, usage, badAdmission>>
 Release == \E r \in Requests:
-           /\ ((phase[r] = "held") \/ (phase[r] = "uncertain" /\ unusedEvidence[r]))
+           /\ phase[r] \in {"held", "uncertain"}
            /\ ~claimed[r] /\ unusedEvidence[r] /\ ~evidence[r]
            /\ phase' = [phase EXCEPT ![r] = "released"]
            /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage, badAdmission>>
