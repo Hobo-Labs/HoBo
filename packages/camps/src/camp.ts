@@ -8,15 +8,25 @@ import {
 	EMPTY_RESOLVER_CONFIG,
 	type JsonValue,
 	type PrimitiveResolverConfig,
-	type ProviderSelection,
 	type ResolverPin,
 	type ResourceMappingRule,
 	TOPOLOGY_CONTRACT_VERSION,
 } from "./types.js";
 
-export const CAMP_MIGRATION_CODE = "camp-provider-selection-forbidden" as const;
-export const CAMP_BINDLE_OWNERSHIP_FORBIDDEN =
-	"camp-bindle-ownership-forbidden" as const;
+export const CAMP_PROVIDER_SELECTION_FORBIDDEN =
+	"camp-provider-selection-forbidden" as const;
+
+const CAMP_CONFIG_KEYS = {
+	logicalId: true,
+	envType: true,
+	tier: true,
+	require: true,
+	prefer: true,
+	labels: true,
+	resolverConfig: true,
+	resourceMappings: true,
+	runtimeRequirements: true,
+} satisfies Record<keyof CampConfig, true>;
 
 export function camp(name: string, config: CampConfig = {}): Camp {
 	requireName("camp name", name);
@@ -26,40 +36,17 @@ export function camp(name: string, config: CampConfig = {}): Camp {
 	if (config.logicalId !== undefined && !validLogicalId(config.logicalId))
 		throw new TypeError("camp logicalId must be a non-empty stable identity");
 
-	if (config.bindle !== undefined) {
-		throw Object.assign(
-			new Error(
-				"Camp must not own a Bindle. Attach the Bindle via a deployment request to a Yard/Camp.",
-			),
-			{
-				code: CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-				remediation:
-					"Use camp(name, { envType, require, prefer, labels }) and deploy(bindle, { yard, camp }).",
-			},
-		);
-	}
-
-	if (
-		config.defaultProvider !== undefined ||
-		config.tiers !== undefined ||
-		config.bindings !== undefined
-	) {
-		throw Object.assign(
-			new Error(
-				"Camp must not select a cloud provider. Provider selection belongs on a Yard.",
-			),
-			{
-				code: CAMP_MIGRATION_CODE,
-				remediation:
-					"Declare yard(name, { provider, camps: [camp(...)] }) and map resources within that provider.",
-			},
-		);
+	for (const key of Object.keys(config)) {
+		if (!Object.hasOwn(CAMP_CONFIG_KEYS, key)) {
+			throw new TypeError(`camp config has unknown property: ${key}`);
+		}
 	}
 
 	const env = name.includes("/")
 		? must(name.split("/").pop(), "name.split('/').pop()")
 		: name;
-	const id = sanitizeCampId(env);
+	requireName("camp env", env);
+	const id = env;
 	const envType: string =
 		typeof config.envType === "string" && config.envType.length > 0
 			? config.envType
@@ -92,11 +79,7 @@ export function camp(name: string, config: CampConfig = {}): Camp {
 		Array.isArray(config.resourceMappings) ? config.resourceMappings : [],
 	);
 	const runtimeRequirements = canonicalizeStringList(
-		Array.isArray(config.runtimeRequirements)
-			? config.runtimeRequirements
-			: config.runtime
-				? [runtimeRequirementFromDescriptor(config.runtime)]
-				: [],
+		Array.isArray(config.runtimeRequirements) ? config.runtimeRequirements : [],
 	);
 
 	const result: Camp = {
@@ -151,7 +134,7 @@ export function attachCampToYard(
 			new Error(
 				`Camp provider ${campObject.derivedProviderId} disagrees with Yard provider ${options.providerId}`,
 			),
-			{ code: CAMP_MIGRATION_CODE },
+			{ code: CAMP_PROVIDER_SELECTION_FORBIDDEN },
 		);
 	}
 	if (
@@ -160,7 +143,8 @@ export function attachCampToYard(
 			!campObject.id.startsWith(`${origin}/`) ||
 			campObject.id.slice(origin.length + 1).includes("/") ||
 			!campObject.id.slice(origin.length + 1) ||
-			(moving && (!campObject.placementDeclaration || !campObject.logicalId)))
+			!campObject.placementDeclaration ||
+			!campObject.logicalId)
 	)
 		throw new Error(
 			"Camp placement does not retain a valid provider-neutral declaration",
@@ -168,24 +152,18 @@ export function attachCampToYard(
 	const localId = origin
 		? campObject.id.slice(origin.length + 1)
 		: campObject.id;
-	const declaration =
-		campObject.placementDeclaration ??
-		(origin
-			? undefined
-			: {
-					resolverConfig: campObject.resolverConfig,
-					resourceMappings: campObject.resourceMappings,
-				});
+	const declaration = campObject.placementDeclaration ?? {
+		resolverConfig: campObject.resolverConfig,
+		resourceMappings: campObject.resourceMappings,
+	};
 	const mergedResolvers = mergeResolverConfig(
-		moving && declaration
-			? declaration.resolverConfig
-			: campObject.resolverConfig,
+		moving ? declaration.resolverConfig : campObject.resolverConfig,
 		parseResolverConfig(options.resolverConfig),
 	);
 	const mappings =
 		options.resourceMappings !== undefined
 			? parseResourceMappings(options.resourceMappings)
-			: moving && declaration
+			: moving
 				? declaration.resourceMappings
 				: campObject.resourceMappings;
 
@@ -195,78 +173,12 @@ export function attachCampToYard(
 		name: `${options.yardId}/${localId}`,
 		logicalId:
 			campObject.logicalId ?? `${options.yardId}/${options.yardId}/${localId}`,
-		...(declaration !== undefined
-			? { placementDeclaration: declaration }
-			: undefined),
+		placementDeclaration: declaration,
 		derivedProviderId: options.providerId,
 		enclosingYardId: options.yardId,
 		resolverConfig: mergedResolvers,
 		resourceMappings: mappings,
 	});
-}
-
-export type ParsedLegacyCampMappings = Readonly<{
-	resourceMappings: readonly ResourceMappingRule[];
-	deprecation: string;
-}>;
-
-export function parseLegacyCampMappings(
-	input: {
-		readonly defaultProvider?: ProviderSelection;
-		readonly tiers?: Readonly<Record<string, ProviderSelection>>;
-		readonly bindings?: Readonly<Record<string, ProviderSelection>>;
-	},
-	yardProviderId: string,
-): ParsedLegacyCampMappings {
-	const selections: ProviderSelection[] = [];
-	if (input.defaultProvider) selections.push(input.defaultProvider);
-	for (const s of Object.values(input.tiers ?? {})) selections.push(s);
-	for (const s of Object.values(input.bindings ?? {})) selections.push(s);
-	for (const s of selections) {
-		if (s.providerId !== yardProviderId) {
-			throw Object.assign(
-				new Error(
-					`legacy camp mapping provider ${s.providerId} != yard provider ${yardProviderId}`,
-				),
-				{ code: CAMP_MIGRATION_CODE },
-			);
-		}
-	}
-	const resourceMappings: ResourceMappingRule[] = [];
-	for (const [key, sel] of Object.entries(input.bindings ?? {})) {
-		const rule: ResourceMappingRule = {
-			selector: { resourceName: key },
-			require: [],
-			prefer: [],
-			properties: asJsonProperties(sel.options),
-			...(sel.selector ? { resolverId: sel.selector } : {}),
-		};
-		resourceMappings.push(rule);
-	}
-	for (const [key, sel] of Object.entries(input.tiers ?? {})) {
-		const rule: ResourceMappingRule = {
-			selector: { resourceKind: key },
-			require: [],
-			prefer: [],
-			properties: asJsonProperties(sel.options),
-			...(sel.selector ? { resolverId: sel.selector } : {}),
-		};
-		resourceMappings.push(rule);
-	}
-	if (input.defaultProvider?.selector) {
-		resourceMappings.push({
-			selector: {},
-			resolverId: input.defaultProvider.selector,
-			require: [],
-			prefer: [],
-			properties: asJsonProperties(input.defaultProvider.options),
-		});
-	}
-	return {
-		resourceMappings: Object.freeze(resourceMappings),
-		deprecation:
-			"legacy camp provider mappings accepted only when equal to yard provider; stripped from canonical camp",
-	};
 }
 
 export function campToContract(campObject: Camp): CampContract {
@@ -357,7 +269,7 @@ function parseResourceMappings(
 					new Error(
 						"ResourceMappingRule must not include provider; Yard fixes provider",
 					),
-					{ code: CAMP_MIGRATION_CODE },
+					{ code: CAMP_PROVIDER_SELECTION_FORBIDDEN },
 				);
 			}
 			return Object.freeze({
@@ -400,24 +312,6 @@ function mergeResolverConfig(
 	});
 }
 
-function runtimeRequirementFromDescriptor(runtime: unknown): string {
-	if (typeof runtime === "string") return runtime;
-	if (isPlainObject(runtime) && typeof runtime.id === "string") {
-		return runtime.id;
-	}
-	return "runtime";
-}
-
-function asJsonProperties(
-	options: Readonly<Record<string, unknown>>,
-): Readonly<Record<string, JsonValue>> {
-	const out: Record<string, JsonValue> = {};
-	for (const [k, v] of Object.entries(options ?? {})) {
-		out[k] = toJsonValue(v);
-	}
-	return Object.freeze(out);
-}
-
 function toJsonValue(value: unknown): JsonValue {
 	if (
 		value === null ||
@@ -442,7 +336,6 @@ function canonicalizeProperties(
 	const keys = Object.keys(input).sort();
 	const out: Record<string, JsonValue> = {};
 	for (const key of keys) {
-		if (key === "resolverId") continue;
 		if (
 			/^(provider|providerId|subscriptionId|accountId|projectId|resourceGroup)$/i.test(
 				key,
@@ -450,7 +343,7 @@ function canonicalizeProperties(
 		) {
 			throw Object.assign(
 				new Error(`provider-specific property key forbidden: ${key}`),
-				{ code: CAMP_MIGRATION_CODE },
+				{ code: CAMP_PROVIDER_SELECTION_FORBIDDEN },
 			);
 		}
 		out[key] = toJsonValue(input[key]);
@@ -480,27 +373,12 @@ function canonicalizeLabels(
 		if (/^(provider|providerId|resolverId)$/i.test(key)) {
 			throw Object.assign(
 				new Error(`provider-specific label forbidden: ${key}`),
-				{ code: CAMP_MIGRATION_CODE },
+				{ code: CAMP_PROVIDER_SELECTION_FORBIDDEN },
 			);
 		}
 		out[key] = value;
 	}
 	return Object.freeze(out);
-}
-
-function sanitizeCampId(env: string): string {
-	requireName("camp env", env);
-	return (
-		env
-			.replace(
-				/-(local|aws|azure|gcp|cloudflare|oci|wasm-sandbox)$/i,
-				(match, _provider) => {
-					if (match.length === env.length) return env;
-					return "";
-				},
-			)
-			.replace(/-+$/g, "") || env
-	);
 }
 
 function inferEnvType(env: string): string {
@@ -543,5 +421,3 @@ function deepFreeze<T>(value: T): T {
 	}
 	return Object.freeze(value);
 }
-
-export { providerSelection } from "./provider-selection.js";

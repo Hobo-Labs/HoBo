@@ -1,14 +1,10 @@
 export {
 	attachCampToYard,
-	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-	CAMP_MIGRATION_CODE,
+	CAMP_PROVIDER_SELECTION_FORBIDDEN,
 	camp,
 	campToContract,
-	type ParsedLegacyCampMappings,
-	parseLegacyCampMappings,
 	withResolvers,
 } from "./camp.js";
-export { providerSelection } from "./provider-selection.js";
 export {
 	type ResolvedEnv,
 	resolveLocalBindings,
@@ -22,7 +18,6 @@ export {
 	EMPTY_RESOLVER_CONFIG,
 	type JsonValue,
 	type PrimitiveResolverConfig,
-	type ProviderSelection,
 	type ResolverPin,
 	type ResourceMappingRule,
 	type ResourceSelector,

@@ -4,12 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import {
 	attachCampToYard,
-	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-	CAMP_MIGRATION_CODE,
+	CAMP_PROVIDER_SELECTION_FORBIDDEN,
 	camp,
 	campToContract,
-	parseLegacyCampMappings,
-	providerSelection,
 	withResolvers,
 } from "../src/camp.js";
 import { TOPOLOGY_CONTRACT_VERSION } from "../src/types.js";
@@ -18,12 +15,12 @@ function codeOf(error: unknown): string | undefined {
 	return (error as { code?: string }).code;
 }
 
-function expectMigrationRefusal(run: () => unknown, match: RegExp): void {
+function expectProviderRefusal(run: () => unknown, match: RegExp): void {
 	try {
 		run();
 	} catch (error) {
 		expect((error as Error).message).toMatch(match);
-		expect(codeOf(error)).toBe(CAMP_MIGRATION_CODE);
+		expect(codeOf(error)).toBe(CAMP_PROVIDER_SELECTION_FORBIDDEN);
 		return;
 	}
 	expect.unreachable(`expected a refusal matching ${match}`);
@@ -66,7 +63,7 @@ describe("camp() — identity and naming", () => {
 		);
 	});
 
-	it("strips a legacy -<provider> display suffix from the id", () => {
+	it("preserves provider words in the id", () => {
 		for (const provider of [
 			"local",
 			"aws",
@@ -76,9 +73,9 @@ describe("camp() — identity and naming", () => {
 			"oci",
 			"wasm-sandbox",
 		]) {
-			expect(camp(`prod-${provider}`).id, provider).toBe("prod");
+			expect(camp(`prod-${provider}`).id, provider).toBe(`prod-${provider}`);
 		}
-		expect(camp("prod-AWS").id).toBe("prod");
+		expect(camp("prod-AWS").id).toBe("prod-AWS");
 	});
 
 	it("keeps a name that is only a provider word", () => {
@@ -153,30 +150,9 @@ describe("camp() — tier", () => {
 });
 
 describe("camp() — provider neutrality", () => {
-	it("refuses to own a Bindle", () => {
-		try {
-			camp("prod", { bindle: {} } as never);
-			expect.unreachable("a Camp must not own a Bindle");
-		} catch (error) {
-			expect(codeOf(error)).toBe(CAMP_BINDLE_OWNERSHIP_FORBIDDEN);
-			expect((error as { remediation?: string }).remediation).toMatch(
-				/deploy\(bindle/u,
-			);
-		}
-	});
-
-	it("refuses each legacy provider-selection key", () => {
-		for (const key of ["defaultProvider", "tiers", "bindings"]) {
-			expectMigrationRefusal(
-				() => camp("prod", { [key]: {} } as never),
-				/must not select a cloud provider/u,
-			);
-		}
-	});
-
 	it("refuses a provider-specific label", () => {
 		for (const key of ["provider", "providerId", "resolverId", "ProviderId"]) {
-			expectMigrationRefusal(
+			expectProviderRefusal(
 				() => camp("prod", { labels: { [key]: "aws" } } as never),
 				/provider-specific label forbidden/u,
 			);
@@ -199,7 +175,7 @@ describe("camp() — provider neutrality", () => {
 			"resourceGroup",
 			"SUBSCRIPTIONID",
 		]) {
-			expectMigrationRefusal(
+			expectProviderRefusal(
 				() =>
 					camp("prod", {
 						resourceMappings: [
@@ -211,7 +187,7 @@ describe("camp() — provider neutrality", () => {
 		}
 	});
 
-	it("drops resolverId from properties instead of refusing it", () => {
+	it("retains resolverId within explicitly authored properties", () => {
 		const result = camp("prod", {
 			resourceMappings: [
 				{
@@ -222,12 +198,15 @@ describe("camp() — provider neutrality", () => {
 			],
 		} as never);
 		expect(result.resourceMappings[0]?.resolverId).toBe("sqlite");
-		expect(result.resourceMappings[0]?.properties).toEqual({ size: "small" });
+		expect(result.resourceMappings[0]?.properties).toEqual({
+			resolverId: "postgres",
+			size: "small",
+		});
 	});
 
 	it("refuses a resource mapping that carries a provider field", () => {
 		for (const key of ["provider", "providerId"]) {
-			expectMigrationRefusal(
+			expectProviderRefusal(
 				() =>
 					camp("prod", {
 						resourceMappings: [{ selector: {}, [key]: "aws" }],
@@ -281,36 +260,15 @@ describe("camp() — canonicalization", () => {
 });
 
 describe("camp() — runtime requirements", () => {
-	it("prefers an explicit runtimeRequirements list", () => {
+	it("canonicalizes the runtimeRequirements list", () => {
 		expect(
 			camp("prod", { runtimeRequirements: ["wasm", "node"] } as never)
 				.runtimeRequirements,
 		).toEqual(["node", "wasm"]);
 	});
 
-	it("accepts a runtime descriptor as a string or an object with an id", () => {
-		expect(
-			camp("prod", { runtime: "wasm" } as never).runtimeRequirements,
-		).toEqual(["wasm"]);
-		expect(
-			camp("prod", { runtime: { id: "node22" } } as never).runtimeRequirements,
-		).toEqual(["node22"]);
-	});
-
-	it("falls back to the literal 'runtime' for a descriptor it cannot read", () => {
-		expect(
-			camp("prod", { runtime: { name: "node" } } as never).runtimeRequirements,
-		).toEqual(["runtime"]);
-		expect(camp("prod", { runtime: 7 } as never).runtimeRequirements).toEqual([
-			"runtime",
-		]);
-	});
-
-	it("ignores a falsy runtime and yields an empty list", () => {
+	it("defaults to an empty requirement list", () => {
 		expect(camp("prod").runtimeRequirements).toEqual([]);
-		expect(camp("prod", { runtime: "" } as never).runtimeRequirements).toEqual(
-			[],
-		);
 	});
 });
 
@@ -426,26 +384,19 @@ describe("camp() — resource mappings", () => {
 });
 
 describe("attachCampToYard", () => {
-	it("reattaches a pre-upgrade serialized Camp to the same Yard without inventing a movable declaration", () => {
+	it("rejects a placement without its provider-neutral declaration", () => {
 		const original = attachCampToYard(camp("prod"), {
 			yardId: "eu",
 			providerId: "aws",
 		});
-		const {
-			logicalId: _logicalId,
-			placementDeclaration: _placementDeclaration,
-			...legacy
-		} = original;
-		const restored = attachCampToYard(legacy, {
-			yardId: "eu",
-			providerId: "aws",
-		});
-		expect(restored.id).toBe("eu/prod");
-		expect(restored.placementDeclaration).toBeUndefined();
-		expect(() =>
-			attachCampToYard(restored, { yardId: "west", providerId: "gcp" }),
-		).toThrow(/provider-neutral declaration/);
+		const { placementDeclaration: _declaration, ...incomplete } = original;
+		for (const yardId of ["eu", "west"]) {
+			expect(() =>
+				attachCampToYard(incomplete, { yardId, providerId: "aws" }),
+			).toThrow(/provider-neutral declaration/);
+		}
 	});
+
 	it("namespaces identity under the Yard and derives the provider", () => {
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "eu",
@@ -593,7 +544,7 @@ describe("attachCampToYard", () => {
 	});
 
 	it("applies the neutrality guards to Yard-supplied mappings too", () => {
-		expectMigrationRefusal(
+		expectProviderRefusal(
 			() =>
 				attachCampToYard(camp("prod"), {
 					yardId: "eu",
@@ -663,127 +614,5 @@ describe("campToContract", () => {
 		});
 		expect(campToContract(attached).id).toBe("prod");
 		expect(campToContract(attached).logicalId).toBe("eu/eu/prod");
-	});
-});
-
-describe("parseLegacyCampMappings", () => {
-	const sel = (selector?: string, options: Record<string, unknown> = {}) =>
-		providerSelection("aws", selector ?? "default", options);
-
-	it("converts bindings, tiers and a default into rules", () => {
-		const result = parseLegacyCampMappings(
-			{
-				bindings: { db: sel("rds") },
-				tiers: { kv: sel("elasticache") },
-				defaultProvider: sel("fallback"),
-			},
-			"aws",
-		);
-		const selectors = result.resourceMappings.map((rule) => rule.selector);
-		expect(selectors).toEqual([
-			{ resourceName: "db" },
-			{ resourceKind: "kv" },
-			{},
-		]);
-		expect(result.resourceMappings.map((rule) => rule.resolverId)).toEqual([
-			"rds",
-			"elasticache",
-			"fallback",
-		]);
-	});
-
-	it("strips the provider id, keeping only the selector as a resolver", () => {
-		const result = parseLegacyCampMappings(
-			{ bindings: { db: sel("rds") } },
-			"aws",
-		);
-		expect(JSON.stringify(result.resourceMappings)).not.toContain("aws");
-		expect(result.deprecation).toMatch(/stripped from canonical camp/u);
-	});
-
-	it("refuses a mapping whose provider disagrees with the Yard", () => {
-		for (const input of [
-			{ defaultProvider: providerSelection("gcp") },
-			{ tiers: { kv: providerSelection("gcp") } },
-			{ bindings: { db: providerSelection("gcp") } },
-		]) {
-			expectMigrationRefusal(
-				() => parseLegacyCampMappings(input, "aws"),
-				/!= yard provider aws/u,
-			);
-		}
-	});
-
-	it("returns nothing for an empty input", () => {
-		expect(parseLegacyCampMappings({}, "aws").resourceMappings).toEqual([]);
-	});
-
-	it("omits a default rule when the default selection has no selector", () => {
-		const result = parseLegacyCampMappings(
-			{ defaultProvider: { providerId: "aws", selector: "" } as never },
-			"aws",
-		);
-		expect(result.resourceMappings).toEqual([]);
-	});
-
-	it("carries selection options through as JSON properties", () => {
-		const result = parseLegacyCampMappings(
-			{ bindings: { db: sel("rds", { size: "small", nested: { a: 1 } }) } },
-			"aws",
-		);
-		expect(result.resourceMappings[0]?.properties).toEqual({
-			nested: { a: 1 },
-			size: "small",
-		});
-	});
-
-	it("freezes the emitted rule list", () => {
-		expect(
-			Object.isFrozen(
-				parseLegacyCampMappings({ bindings: { db: sel() } }, "aws")
-					.resourceMappings,
-			),
-		).toBe(true);
-	});
-});
-
-describe("providerSelection", () => {
-	it("builds a deeply frozen, key-sorted selection", () => {
-		const selection = providerSelection("aws", "rds", {
-			z: 1,
-			a: { d: 1, c: 2 },
-		});
-		expect(selection.kind).toBe("provider-selection");
-		expect(Object.keys(selection.options)).toEqual(["a", "z"]);
-		expect(Object.keys(selection.options.a as Record<string, unknown>)).toEqual(
-			["c", "d"],
-		);
-		expect(Object.isFrozen(selection)).toBe(true);
-		expect(Object.isFrozen(selection.options)).toBe(true);
-		expect(Object.isFrozen(selection.options.a)).toBe(true);
-	});
-
-	it("defaults the selector and options", () => {
-		const selection = providerSelection("aws");
-		expect(selection.selector).toBe("default");
-		expect(selection.options).toEqual({});
-	});
-
-	it("refuses an empty providerId or selector, and a non-object options", () => {
-		expect(() => providerSelection("")).toThrowError(
-			/providerId must be a non-empty string/u,
-		);
-		expect(() => providerSelection("aws", "")).toThrowError(
-			/selector must be a non-empty string/u,
-		);
-		expect(() => providerSelection("aws", "rds", [] as never)).toThrowError(
-			/options must be an object/u,
-		);
-	});
-
-	it("preserves array option values in order", () => {
-		expect(
-			providerSelection("aws", "rds", { zones: ["c", "a", "b"] }).options.zones,
-		).toEqual(["c", "a", "b"]);
 	});
 });
