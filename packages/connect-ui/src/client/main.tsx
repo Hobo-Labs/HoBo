@@ -58,6 +58,36 @@ interface View {
 	directive: Directive;
 }
 
+const DirectiveSchema = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("none") }),
+	z.object({ kind: z.literal("navigate"), url: z.string() }),
+	z.object({
+		kind: z.literal("post"),
+		url: z.string(),
+		fields: z.record(z.string(), z.string()),
+	}),
+]);
+
+const ConnectViewSchema = z.object({
+	step: z.string(),
+	terminal: z.boolean(),
+	composedBy: z.enum(["model", "deterministic"]),
+	spec: z
+		.object({
+			root: z.string(),
+			elements: z.record(
+				z.string(),
+				z.object({ type: z.string() }).passthrough(),
+			),
+		})
+		.passthrough(),
+	directive: DirectiveSchema,
+});
+
+function parseConnectView(body: unknown): View {
+	return ConnectViewSchema.parse(body);
+}
+
 const rootElement = document.getElementById("root");
 const base = rootElement?.dataset.base ?? "./";
 
@@ -89,8 +119,7 @@ function ConnectPage() {
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
 		if (!response.ok) throw new Error(`view failed (${response.status})`);
-		// SAFETY: The page server is same-origin loopback; it serializes the view the flow composed.
-		setView((await response.json()) as View);
+		setView(parseConnectView(await response.json()));
 	}, []);
 
 	useEffect(() => {
@@ -106,16 +135,19 @@ function ConnectPage() {
 	}, [view, load]);
 
 	const dispatch = useCallback(async (action: string, params: ActionParams) => {
-		const response = await fetch(`${base}action`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ action, params }),
-		});
-		if (!response.ok) throw new Error(`action failed (${response.status})`);
-		// SAFETY: Action responses reuse the same ConnectViewRecord JSON shape as GET view.
-		const next = (await response.json()) as View;
-		setView(next);
-		follow(next.directive);
+		try {
+			const response = await fetch(`${base}action`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ action, params }),
+			});
+			if (!response.ok) throw new Error(`action failed (${response.status})`);
+			const next = parseConnectView(await response.json());
+			setView(next);
+			follow(next.directive);
+		} catch (reason) {
+			setError(String(reason));
+		}
 	}, []);
 	dispatchToFlow = dispatch;
 
