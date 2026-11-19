@@ -4847,8 +4847,6 @@ importers:
 
   src/draft/technical-proofs/platform-engineer-flow-contract: {}
 
-  src/draft/technical-proofs/poison-event-quarantine-contract: {}
-
   src/draft/technical-proofs/policy-authoring-waiver-contract: {}
 
   src/draft/technical-proofs/policy-engine-port-contract: {}

@@ -573,7 +573,6 @@
         "src/draft/technical-proofs/operations-manifests-contract/**",
         "src/draft/technical-proofs/operator-integration-ports-contract/**",
         "src/draft/technical-proofs/partial-realize-rollback-contract/**",
-        "src/draft/technical-proofs/poison-event-quarantine-contract/**",
         "src/draft/technical-proofs/projection-consistency-reactivity-contract/**",
         "src/draft/technical-proofs/provider-aws-contract/**",
         "src/draft/technical-proofs/provider-fly-contract/**",

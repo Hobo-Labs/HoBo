@@ -1,3 +1,0 @@
-slug: poison-event-quarantine-contract
-layer: technical
-proof-identity: ok
