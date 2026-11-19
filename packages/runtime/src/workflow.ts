@@ -152,6 +152,36 @@ const DEFAULT_TOKEN_BROKER: TokenBroker = (request: WitTokenRequest) =>
 		ref: `stub://${request.provider}/${request.scope}`,
 	}) satisfies WitTokenHandle;
 
+function snapshotOwnProperty(
+	copy: JsonValue[] | JsonBag,
+	source: JsonValue[] | JsonBag,
+	key: string | symbol,
+	seen: Set<object>,
+): void {
+	const descriptor = Object.getOwnPropertyDescriptor(source, key);
+	if (!descriptor) return;
+	if (!("value" in descriptor)) {
+		const accessor: PropertyDescriptor = {
+			enumerable: descriptor.enumerable === true,
+			configurable: true,
+		};
+		if (descriptor.get) accessor.get = descriptor.get;
+		if (descriptor.set) accessor.set = descriptor.set;
+		Object.defineProperty(copy, key, accessor);
+		return;
+	}
+	const value =
+		descriptor.value === undefined
+			? undefined
+			: snapshotJournalData(descriptor.value, seen);
+	Object.defineProperty(copy, key, {
+		value,
+		enumerable: descriptor.enumerable === true,
+		writable: true,
+		configurable: true,
+	});
+}
+
 function snapshotJournalData(
 	value: JsonValue,
 	seen = new Set<object>(),
@@ -164,59 +194,20 @@ function snapshotJournalData(
 			const copy: JsonValue[] = [];
 			copy.length = value.length;
 			for (const name of Object.getOwnPropertyNames(value)) {
-				if (name === "length") {
-					continue;
-				}
-				const index = Number(name);
-				const isArrayIndex =
-					Number.isSafeInteger(index) && index >= 0 && String(index) === name;
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: journal arrays may carry own string keys beyond indices during snapshot walks.
-				const arrayBag = value as JsonValue[] & Record<string, JsonValue>;
-				const raw = isArrayIndex ? value[index] : arrayBag[name];
-				if (!Object.hasOwn(value, name)) continue;
-				const next =
-					raw === undefined ? undefined : snapshotJournalData(raw, seen);
-				if (isArrayIndex) {
-					if (next !== undefined) {
-						copy[index] = next;
-					}
-				} else {
-					Object.defineProperty(copy, name, {
-						value: next,
-						enumerable: true,
-						writable: true,
-						configurable: true,
-					});
-				}
+				if (name === "length") continue;
+				snapshotOwnProperty(copy, value, name, seen);
+			}
+			for (const symbol of Object.getOwnPropertySymbols(value)) {
+				snapshotOwnProperty(copy, value, symbol, seen);
 			}
 			return copy;
 		}
 		const copy: JsonBag = {};
-		for (const key of Object.keys(value)) {
-			const entry = value[key];
-			const next =
-				entry === undefined ? undefined : snapshotJournalData(entry, seen);
-			if (key === "__proto__" || entry === undefined) {
-				Object.defineProperty(copy, key, {
-					value: next,
-					enumerable: true,
-					writable: true,
-					configurable: true,
-				});
-			} else {
-				copy[key] = snapshotJournalData(entry, seen);
-			}
+		for (const key of Object.getOwnPropertyNames(value)) {
+			snapshotOwnProperty(copy, value, key, seen);
 		}
 		for (const symbol of Object.getOwnPropertySymbols(value)) {
-			const descriptor = Object.getOwnPropertyDescriptor(value, symbol);
-			if (descriptor?.enumerable === true && "value" in descriptor) {
-				Object.defineProperty(copy, symbol, {
-					value: snapshotJournalData(descriptor.value, seen),
-					enumerable: true,
-					writable: true,
-					configurable: true,
-				});
-			}
+			snapshotOwnProperty(copy, value, symbol, seen);
 		}
 		return copy;
 	} finally {
@@ -270,7 +261,7 @@ function assertContiguousStepJournal(
 	for (const index of scheduledSteps.keys()) {
 		if (index > maxIndex) maxIndex = index;
 	}
-	for (let index = 0; index < maxIndex; index += 1) {
+	for (let index = 0; index <= maxIndex; index += 1) {
 		if (!outcomeIndices.has(index) && !scheduledSteps.has(index)) {
 			throw new Error(`gapped step journal for ${runId}`);
 		}
@@ -307,7 +298,10 @@ export function createWorkflowEngine(
 		if (!started || !isRecord(started.data)) {
 			throw new Error(`missing run.Started for ${runId}`);
 		}
-		const startedFact = parseRunStartedFact(started.data, seed);
+		const startedFact = parseRunStartedFact(
+			snapshotJournalData(started.data),
+			seed,
+		);
 		const input = captureWorkflowInput(args);
 		if (!isDeepStrictEqual(startedFact.args, cloneAsJson(input))) {
 			throw new Error(`workflow input differs from run.Started for ${runId}`);
@@ -561,7 +555,7 @@ export function createWorkflowEngine(
 				const completedEvent = completed[0];
 				if (completedEvent && isRecord(completedEvent.data)) {
 					const result = replayStepCompletedResult<T>(
-						cloneAsJson(completedEvent.data),
+						snapshotJournalData(completedEvent.data),
 					);
 					unconsumedOutcomes.delete(index);
 					return result;

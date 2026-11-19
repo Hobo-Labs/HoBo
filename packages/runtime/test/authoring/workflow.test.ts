@@ -1103,6 +1103,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		let runs = 0;
 		let holeEffects = 0;
+		let laterEffects = 0;
 		const wf = defineWorkflow({
 			name: "scheduled-hole",
 			async run(ctx) {
@@ -1111,7 +1112,10 @@ describe("durable workflow: journal, restart, replay", () => {
 					holeEffects += 1;
 					return "first";
 				});
-				return ctx.step("later", () => "done");
+				return ctx.step("later", () => {
+					laterEffects += 1;
+					return "done";
+				});
 			},
 		});
 		const handle = await engine.resume(wf, "scheduled-hole", {});
@@ -1119,6 +1123,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(handle.result).toBe("done");
 		expect(runs).toBe(1);
 		expect(holeEffects).toBe(1);
+		expect(laterEffects).toBe(0);
 		const journal = await engine.journal("scheduled-hole");
 		expect(
 			journal.some(
@@ -1188,19 +1193,34 @@ describe("durable workflow: journal, restart, replay", () => {
 			4,
 		);
 		let runs = 0;
+		let firstEffects = 0;
+		let secondEffects = 0;
+		let thirdEffects = 0;
 		const wf = defineWorkflow({
 			name: "orphan-schedule",
 			async run(ctx) {
 				runs += 1;
-				await ctx.step("first", () => "ok");
-				await ctx.step("second", () => "open");
-				return ctx.step("third", () => "later");
+				await ctx.step("first", () => {
+					firstEffects += 1;
+					return "ok";
+				});
+				await ctx.step("second", () => {
+					secondEffects += 1;
+					return "open";
+				});
+				return ctx.step("third", () => {
+					thirdEffects += 1;
+					return "later";
+				});
 			},
 		});
 		const handle = await engine.resume(wf, "orphan-schedule", {});
 		expect(handle.status).toBe("completed");
 		expect(handle.result).toBe("later");
 		expect(runs).toBe(1);
+		expect(firstEffects).toBe(0);
+		expect(secondEffects).toBe(1);
+		expect(thirdEffects).toBe(0);
 	});
 
 	it("resumes a single open scheduled tip without scheduling it again", async () => {
@@ -1310,11 +1330,13 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(handle.result).toBe("done");
 		expect(runs).toBe(1);
 		expect(workEffects).toBe(1);
+		const journal = await engine.journal("dup-schedule");
 		expect(
-			(await engine.journal("dup-schedule")).filter(
-				(event) => event.type === "run.StepScheduled",
-			),
+			journal.filter((event) => event.type === "run.StepScheduled"),
 		).toHaveLength(2);
+		expect(
+			journal.filter((event) => event.type === "run.StepCompleted"),
+		).toHaveLength(1);
 	});
 
 	it("rejects a scheduled step index above 1000000", async () => {
@@ -1420,9 +1442,17 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 			1,
 		);
+		let runs = 0;
+		let readEffects = 0;
 		const wf = defineWorkflow({
 			name: "bad-step-result",
-			run: (ctx) => ctx.step("read", () => "live"),
+			run: (ctx) => {
+				runs += 1;
+				return ctx.step("read", () => {
+					readEffects += 1;
+					return "live";
+				});
+			},
 		});
 		const journalBefore = await engine.journal("bad-step-result");
 		await expect(
@@ -1431,7 +1461,186 @@ describe("durable workflow: journal, restart, replay", () => {
 			name: "TypeError",
 			message: /invalid run\.StepCompleted|JSON-normalized/,
 		});
+		expect(runs).toBe(0);
+		expect(readEffects).toBe(0);
 		expect(await engine.journal("bad-step-result")).toEqual(journalBefore);
+	});
+
+	it.each([
+		[
+			"non-enumerable fact key",
+			() => {
+				const data = { name: "read", index: 0, result: "ok" };
+				Object.defineProperty(data, "extra", {
+					value: true,
+					enumerable: false,
+				});
+				return data;
+			},
+		],
+		[
+			"non-enumerable result key",
+			() => {
+				const result = { a: 1 };
+				Object.defineProperty(result, "hidden", {
+					value: 2,
+					enumerable: false,
+				});
+				return { name: "read", index: 0, result };
+			},
+		],
+		[
+			"symbol result key",
+			() => {
+				const result = { a: 1 };
+				Object.defineProperty(result, Symbol("hidden"), {
+					value: 2,
+					enumerable: false,
+				});
+				return { name: "read", index: 0, result };
+			},
+		],
+		[
+			"symbol array result key",
+			() => {
+				const result = [1];
+				Object.defineProperty(result, Symbol("hidden"), {
+					value: 2,
+					enumerable: true,
+				});
+				return { name: "read", index: 0, result };
+			},
+		],
+		[
+			"extra array result key",
+			() => {
+				const result = [1];
+				Object.defineProperty(result, "extra", {
+					value: 2,
+					enumerable: true,
+				});
+				return { name: "read", index: 0, result };
+			},
+		],
+		[
+			"__proto__-only fact",
+			() => {
+				const data: Record<
+					string,
+					{ name: string; index: number; result: string }
+				> = {};
+				Object.defineProperty(data, "__proto__", {
+					value: { name: "read", index: 0, result: "ok" },
+					enumerable: true,
+				});
+				return data;
+			},
+		],
+	])("rejects %s preserved by the journal snapshot", async (_label, buildData) => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/bad-snapshot-shape";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-snapshot-shape",
+					workflowName: "bad-snapshot-shape",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: buildData(),
+			},
+			1,
+		);
+		let runs = 0;
+		let readEffects = 0;
+		const wf = defineWorkflow({
+			name: "bad-snapshot-shape",
+			run: (ctx) => {
+				runs += 1;
+				return ctx.step("read", () => {
+					readEffects += 1;
+					return "live";
+				});
+			},
+		});
+		const journalBefore = await engine.journal("bad-snapshot-shape");
+		await expect(
+			engine.resume(wf, "bad-snapshot-shape", {}),
+		).rejects.toMatchObject({
+			name: "TypeError",
+			message: "invalid run.StepCompleted",
+		});
+		expect(runs).toBe(0);
+		expect(readEffects).toBe(0);
+		expect(await engine.journal("bad-snapshot-shape")).toEqual(journalBefore);
+	});
+
+	it("replays a journaled result with an own __proto__ key", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/proto-result";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "proto-result",
+					workflowName: "proto-result",
+				},
+			},
+			0,
+		);
+		const result = { ok: 2 };
+		Object.defineProperty(result, "__proto__", {
+			value: { polluted: 1 },
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "read", index: 0, result },
+			},
+			1,
+		);
+		let readEffects = 0;
+		const wf = defineWorkflow({
+			name: "proto-result",
+			run: (ctx) =>
+				ctx.step("read", () => {
+					readEffects += 1;
+					return { ok: 2 };
+				}),
+		});
+		const handle = await engine.resume(wf, "proto-result", {});
+		expect(handle.status).toBe("completed");
+		expect(readEffects).toBe(0);
+		if (!isJsonObject(handle.result)) {
+			throw new Error("expected object result");
+		}
+		expect(Object.hasOwn(handle.result, "__proto__")).toBe(true);
+		expect(
+			Object.getOwnPropertyDescriptor(handle.result, "__proto__")?.value,
+		).toEqual({ polluted: 1 });
+		expect(Object.hasOwn(Object.prototype, "polluted")).toBe(false);
 	});
 
 	it("rejects sparse arrays and negative zero when reading a journaled value", () => {
@@ -1528,6 +1737,9 @@ describe("durable workflow: journal, restart, replay", () => {
 		{ delayMs: 10, index: 0.5 },
 		{ delayMs: 10, index: Number.NaN },
 		{ delayMs: -0, index: 0 },
+		{ delayMs: -0.5, index: 0 },
+		{ delayMs: 1e20, index: 0 },
+		{ delayMs: Number.MAX_SAFE_INTEGER + 1, index: 0 },
 	])("rejects invalid run.SleepScheduled %j", async (data) => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/bad-sleep";
@@ -1920,7 +2132,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		const wf = defineWorkflow({
 			name: "legacy-fractional-diverged",
 			async run(ctx) {
-				await ctx.sleep(2);
+				await ctx.sleep(1);
 				return "unexpected";
 			},
 		});
