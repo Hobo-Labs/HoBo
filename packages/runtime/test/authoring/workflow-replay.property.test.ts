@@ -63,10 +63,10 @@ describe("durable workflow histories", () => {
 						null,
 					),
 				).rejects.toThrow(/SleepScheduled/);
-					let changedIndex = 0;
-					const changed = events.map((event) =>
-						event.type === "run.SleepScheduled" && changedIndex++ === 1
-							? { ...event, data: { index: 1, delayMs: delay + 1 } }
+				let changedIndex = 0;
+				const changed = events.map((event) =>
+					event.type === "run.SleepScheduled" && changedIndex++ === 1
+						? { ...event, data: { index: 1, delayMs: delay + 1 } }
 						: event,
 				);
 				await expect(
