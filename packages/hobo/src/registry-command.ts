@@ -10,8 +10,6 @@ import { storedCatalogs } from "./pricing-catalog-store.js";
 import { runRegistryAdd } from "./registry-add.js";
 
 export interface RegistryCommandDeps {
-	// The shared Yard runtime whose PlannerRegistry (the provider + capability
-	// catalog the Planner matches against) this command lists.
 	readonly runtime?: YardRuntime;
 }
 
@@ -25,24 +23,11 @@ interface RegistryPort {
 interface RegistryProvider {
 	readonly providerId: string;
 	readonly ports: RegistryPort[];
-	// "base" = built into the runtime; "installed" = added via `hobo add`.
 	readonly source: "base" | "installed";
-	// Only approved providers are matchable (walkthrough Part 0/2); a held
-	// (installed-but-unapproved) provider renders approved: false.
 	readonly approved: boolean;
-	// Hash of the pricing catalog stored at registration, when the provider
-	// declared billing. Absent for built-in providers.
 	readonly pricingCatalogHash?: string;
 }
 
-// `hobo registry` — administer registry artifacts. This read view lists the
-// live provider + capability catalog the Planner matches deployments against:
-// the content-addressed catalog hash, the registered providers, and the ports
-// (with features/regions) each offers. It reads the injected PlannerRegistry
-// directly — no cloud call, no credential.
-//
-// `hobo registry add <manifest>` registers a provider described by a
-// hobo.provider-manifest/v1 data file (see ./registry-add.ts).
 export function createRegistryCommand(
 	deps: RegistryCommandDeps = {},
 ): CommandModule {
@@ -72,7 +57,6 @@ export function createRegistryCommand(
 			const registry = runtime.registry;
 			const definitions = registry.definitions();
 
-			// Group definitions by provider, then by port.
 			const byProvider = new Map<string, Map<string, RegistryPort>>();
 			for (const def of definitions) {
 				let ports = byProvider.get(def.providerId);
@@ -98,10 +82,6 @@ export function createRegistryCommand(
 				}
 			}
 
-			// Providers installed via `hobo add` — folded from the durable registry
-			// stream. Anything the stream knows about is "installed"; the rest of
-			// the live PlannerRegistry snapshot is "base" (compiled into the
-			// runtime). One projection, one fold — no second source of truth.
 			const registryEvents = await collectStream(
 				runtime.store,
 				REGISTRY_STREAM,
