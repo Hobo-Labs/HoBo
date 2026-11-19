@@ -15,11 +15,12 @@ import { z } from "zod";
 
 import { composeConnectSpec } from "./compose.js";
 import {
-	CONNECT_ACTIONS,
 	type ConnectActionName,
 	type ConnectStep,
+	isConnectAction,
 	isTerminalStep,
 } from "./steps.js";
+import { stepView } from "./view.js";
 
 // domain-view: narrowed union of BrowserDirectiveRecord in data-models/connect_ui.proto.
 export type BrowserDirective =
@@ -172,6 +173,13 @@ export async function startConnectPage(
 		settle = resolve;
 	});
 	if (isTerminalStep(step)) settle(step);
+	let pendingHandoff:
+		| {
+				readonly previousStep: ConnectStep;
+				readonly step: ConnectStep;
+				readonly directive: BrowserDirective;
+		  }
+		| undefined;
 	let transitionQueue: Promise<void> = Promise.resolve();
 	const transition = (run: () => Promise<FlowTransition>) => {
 		const next = transitionQueue.then(async () => {
@@ -240,6 +248,7 @@ export async function startConnectPage(
 				return;
 			}
 			if (req.method === "POST" && route === "action") {
+				const observedStep = step;
 				const parsed = parseActionBody(await readBody(req));
 				if (parsed === undefined)
 					return send(
@@ -248,15 +257,57 @@ export async function startConnectPage(
 						"application/json",
 						'{"error":"invalid action"}',
 					);
-				await transition(() =>
-					options.flow.onAction(parsed.action, parsed.params, step),
-				);
+				if (!isConnectAction(parsed.action))
+					return send(
+						res,
+						400,
+						"application/json",
+						'{"error":"invalid action"}',
+					);
+				await transition(async () => {
+					if (
+						parsed.action === "connect.start" &&
+						pendingHandoff?.step === step &&
+						(observedStep === pendingHandoff.previousStep ||
+							observedStep === step)
+					)
+						return { step, directive: pendingHandoff.directive };
+					if (
+						step !== observedStep ||
+						!stepView(step).actions.some(
+							(action) => action.action === parsed.action,
+						)
+					)
+						return { step };
+					const previous = step;
+					const result = await options.flow.onAction(
+						parsed.action,
+						parsed.params,
+						step,
+					);
+					pendingHandoff =
+						parsed.action === "connect.start" &&
+						result.step.kind === previous.kind &&
+						result.step.provider === previous.provider &&
+						result.directive !== undefined &&
+						result.directive.kind !== "none"
+							? {
+									previousStep: previous,
+									step: result.step,
+									directive: result.directive,
+								}
+							: undefined;
+					return result;
+				});
 				return send(res, 200, "application/json", await view());
 			}
 			if (req.method === "GET" && route === "callback") {
 				const onCallback = options.flow.onCallback;
 				if (onCallback !== undefined)
-					await transition(() => onCallback(url.searchParams, step));
+					await transition(() => {
+						pendingHandoff = undefined;
+						return onCallback(url.searchParams, step);
+					});
 				// Back to the page, which renders the step the callback produced.
 				res.writeHead(303, { location: base, "cache-control": "no-store" });
 				return res.end();
