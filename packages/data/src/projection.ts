@@ -152,6 +152,43 @@ function eventKey(
 	return JSON.stringify([tenant, streamId, seq, eventId ?? null]);
 }
 
+function orderProjectionEvents(
+	events: readonly EventEnvelope[],
+): EventEnvelope[] {
+	const streams = new Map<string, EventEnvelope[]>();
+	for (const event of events) {
+		if (!event.streamId || !Number.isSafeInteger(event.seq) || event.seq < 0) {
+			throw new TypeError(
+				"projection events require a stream and a non-negative safe sequence",
+			);
+		}
+		const stream = streams.get(event.streamId) ?? [];
+		stream.push(event);
+		streams.set(event.streamId, stream);
+	}
+	for (const [streamId, stream] of streams) {
+		stream.sort((a, b) => a.seq - b.seq);
+		for (let index = 1; index < stream.length; index += 1) {
+			if (stream[index]?.seq === stream[index - 1]?.seq) {
+				throw new TypeError(
+					`projection stream ${streamId} has a duplicate sequence`,
+				);
+			}
+		}
+	}
+	const offsets = new Map<string, number>();
+	return events.map((event) => {
+		const offset = offsets.get(event.streamId) ?? 0;
+		const ordered = streams.get(event.streamId)?.[offset];
+		if (!ordered)
+			throw new Error(
+				`projection stream ${event.streamId} is missing an event`,
+			);
+		offsets.set(event.streamId, offset + 1);
+		return ordered;
+	});
+}
+
 function projectionMetadata<Row>(definition: ProjectionDefinition<Row>) {
 	const schema = definition.rowSchema;
 	if (!schema) {
@@ -243,16 +280,7 @@ export function defineProjection<Row>(
 		const streamSequences = new Map<string, number>();
 		const failures: Array<{ event: EventEnvelope; reason: string }> = [];
 		const reprocessCandidates: QuarantineReprocessFinding[] = [];
-		for (const event of materialized) {
-			if (
-				!event.streamId ||
-				!Number.isSafeInteger(event.seq) ||
-				event.seq < 0
-			) {
-				throw new TypeError(
-					"projection events require a stream and a non-negative safe sequence",
-				);
-			}
+		for (const event of orderProjectionEvents(materialized)) {
 			seq = Math.max(seq, event.seq);
 			streamSequences.set(
 				event.streamId,
