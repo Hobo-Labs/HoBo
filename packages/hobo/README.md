@@ -49,6 +49,11 @@ choose up to 10,000 or `--follow` to stream additions until interrupted.
 `--json` returns a bounded snapshot with a truncation indicator. Local logs are
 stored in `.hobo/local-deployment.log` and retained across restarts.
 
+`hobo doctor` reports quarantined event incidents from the current tenant's
+durable journal. `hobo inspect quarantines --json` returns their source and
+record locations, fold, and reason. If the report contains a `nextPosition`,
+pass it to `hobo inspect quarantines <position>` to continue the scan.
+
 ## CLI verification and remote deployment safety
 
 ### Budgeted cloud hosting

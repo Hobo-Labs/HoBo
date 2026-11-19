@@ -1,4 +1,5 @@
 import type { CommandModule } from "@hobo/cli";
+import type { EventStore } from "@hobo/core";
 import {
 	createContractAssertedDualFixtures,
 	dualVerifyClaims,
@@ -20,6 +21,7 @@ import {
 import { loadHoboProfile } from "./hobo-profile.js";
 import { isJsonString } from "./json.js";
 import { buildMessagingDoctorSection } from "./messaging-doctor.js";
+import { quarantineDiagnostics } from "./quarantine-diagnostics.js";
 
 interface StationDoctorReport {
 	present: boolean;
@@ -33,16 +35,10 @@ interface StationDoctorReport {
 }
 
 export interface DoctorCommandDeps {
-	// The environment consulted for deploy credentials. Defaults to `process.env`.
-	// Injectable so a test can drive every backend lane without mutating the
-	// ambient process environment.
 	readonly env?: Record<string, string | undefined>;
+	readonly store?: EventStore;
 }
 
-// Turn the deploy-target description into operator-facing remediation lines.
-// When already live, there is nothing to remediate; otherwise emit one line per
-// real backend naming the exact env var(s) still missing to activate it — this
-// is the answer to "how do I go live?" straight from the binary.
 function remediationFor(target: DeployTargetDescription): string[] {
 	if (target.live) return [];
 	return target.activate.map(
@@ -51,12 +47,6 @@ function remediationFor(target: DeployTargetDescription): string[] {
 	);
 }
 
-// `hobo doctor` — report the deploy target the current environment selects and,
-// when on the in-memory fallback, exactly what to set to go live. It calls the
-// pure `describeDeployTarget` preflight (presence-only credential inspection),
-// so it never reads a secret value and is safe to run anywhere. This makes the
-// composed binary self-describing: the same precedence `hobo up` uses is
-// surfaced as a diagnostic before anything is deployed.
 export function createDoctorCommand(
 	deps: DoctorCommandDeps = {},
 ): CommandModule {
@@ -125,8 +115,6 @@ export function createDoctorCommand(
 				);
 			}
 
-			// Continuous identity migration dual fixtures (ADR-0070 extension) —
-			// offline dual-consistency oracle; fidelity remains simulated without real IdPs.
 			const dual = createContractAssertedDualFixtures({
 				tenant:
 					(isJsonString(env.HOBO_TENANT) && env.HOBO_TENANT) ||
@@ -166,7 +154,6 @@ export function createDoctorCommand(
 				);
 			}
 
-			// Trails (continuous migration plane) — identity hands-off + local dual fixtures.
 			const trailTenant =
 				(isJsonString(env.HOBO_TENANT) && env.HOBO_TENANT) ||
 				profile?.session?.tenant ||
@@ -207,13 +194,41 @@ export function createDoctorCommand(
 				);
 			}
 
-			// Binding delivery + 12-factor integrity (ADR-0141/0142).
 			const bindingDelivery = buildBindingDeliveryDoctorSection(env);
 			remediation.push(...bindingDelivery.remediation);
 
-			// Messaging plane readiness (ADR-0138): Kafka + optional Dapr.
 			const messaging = buildMessagingDoctorSection(env);
 			remediation.push(...messaging.remediation);
+
+			const quarantine = await quarantineDiagnostics(deps.store, trailTenant);
+			if (quarantine.available) {
+				if (
+					quarantine.report.complete &&
+					quarantine.report.findings.length === 0
+				) {
+					emitProgress("No quarantined events found.");
+				}
+				for (const finding of quarantine.report.findings) {
+					emitProgress(
+						`quarantine: ${finding.sourceStreamId}#${finding.offendingSeq} ${finding.foldKind} ${finding.fold} — ${finding.reason}`,
+					);
+				}
+				if (quarantine.report.findings.length > 0) {
+					remediation.push(
+						"Investigate quarantined events and choose an explicit reprocess policy.",
+					);
+				}
+				if (!quarantine.report.complete) {
+					remediation.push(
+						`Continue quarantine inspection with hobo inspect quarantines ${quarantine.report.nextPosition}.`,
+					);
+				}
+			} else if (deps.store) {
+				emitProgress(`Quarantine report unavailable: ${quarantine.reason}`);
+				remediation.push(
+					"Inspect the quarantine report failure and rerun hobo doctor.",
+				);
+			}
 
 			return {
 				ok: true,
@@ -231,6 +246,9 @@ export function createDoctorCommand(
 					trails: trailsReport,
 					bindingDelivery: bindingDelivery.report,
 					messaging: messaging.report,
+					quarantine: quarantine.available
+						? { available: true, report: quarantine.json }
+						: quarantine,
 				},
 			};
 		},

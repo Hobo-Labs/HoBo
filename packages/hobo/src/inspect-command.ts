@@ -5,28 +5,72 @@ import {
 	getNamedEndpointSession,
 	listNamedEndpointSessions,
 } from "@hobo/connectivity";
+import type { EventStore } from "@hobo/core";
+import { defaultHoboHome } from "./bare-metal-yard.js";
+import { loadHoboProfile } from "./hobo-profile.js";
+import { quarantineDiagnostics } from "./quarantine-diagnostics.js";
 
 export interface InspectCommandDeps {
-	// The shared Yard runtime whose durable event store `inspect` folds. The
-	// composed CLI injects the SAME runtime `up`/`down` write to, so `inspect`
-	// renders their real history. Un-injected, `inspect` reports that no runtime
-	// is wired rather than fabricating a view.
 	readonly runtime?: YardRuntime;
+	readonly quarantineStore?: EventStore;
+	readonly tenant?: string;
 }
 
-// `hobo inspect` — render the DeploymentView projection for the current project's
-// deployment by folding the durable event log from zero (the log is
-// authoritative; the view is derived). It answers "what is the current state of
-// my deployment, and how did each resource get there?" straight from the event
-// store — no cloud call, no credential. Rebuilding from zero is exactly the
-// property the data-plane guarantees: drop the sink, replay the stream, get the
-// same view.
 export function createInspectCommand(
 	deps: InspectCommandDeps = {},
 ): CommandModule {
 	return {
 		run: async ({ context, flags, args, emitProgress }) => {
 			const { runtime } = deps;
+			if (args[0] === "quarantines") {
+				if (
+					args.length > 2 ||
+					(args[1] !== undefined && !/^(0|[1-9]\d*)$/u.test(args[1]))
+				) {
+					return {
+						ok: false,
+						status: "usage_error",
+						code: "HOBO_CLI_USAGE",
+						message: "Use hobo inspect quarantines [position].",
+					};
+				}
+				const configuredTenant = process.env.HOBO_TENANT;
+				const tenant =
+					deps.tenant ??
+					(configuredTenant?.trim() ? configuredTenant : undefined) ??
+					loadHoboProfile(defaultHoboHome())?.session?.tenant ??
+					"local";
+				const diagnostic = await quarantineDiagnostics(
+					deps.quarantineStore ?? runtime?.store,
+					tenant,
+					args[1],
+				);
+				if (!diagnostic.available) {
+					return {
+						ok: false,
+						status: "unavailable",
+						code: "HOBO_QUARANTINE_UNAVAILABLE",
+						message: diagnostic.reason,
+						data: { command: "inspect", mode: "quarantines" },
+					};
+				}
+				for (const finding of diagnostic.report.findings) {
+					emitProgress(
+						`${finding.sourceStreamId}#${finding.offendingSeq} ${finding.foldKind} ${finding.fold}: ${finding.reason}`,
+					);
+				}
+				return {
+					ok: true,
+					status: "ok",
+					code: "HOBO_OK",
+					message: `Found ${diagnostic.report.findings.length} quarantined event(s)${diagnostic.report.complete ? "" : `; continue at position ${diagnostic.report.nextPosition}`}.`,
+					data: {
+						command: "inspect",
+						mode: "quarantines",
+						report: diagnostic.json,
+					},
+				};
+			}
 			if (!runtime) {
 				return {
 					ok: false,
@@ -41,11 +85,6 @@ export function createInspectCommand(
 			const projectDir = context.projectDir ?? flags.cwd ?? context.cwd;
 			const deploymentId = deploymentIdFor(projectDir);
 
-			// `hobo inspect graph` — render the TopologyView app-graph projection
-			// (E21): nodes are the bindle, its resources, and the yards they land
-			// on; edges are bindings and placements. Same durable log, same
-			// rebuild-from-zero discipline; `--json` gets the structured graph, the
-			// text path gets a readable adjacency listing via emitProgress.
 			if (args[0] === "graph") {
 				const graphSnapshot = await topologyViewProjection.rebuildFromZero(
 					runtime.store,
@@ -69,7 +108,6 @@ export function createInspectCommand(
 						},
 					};
 				}
-				// Adjacency listing: every node, then its outbound edges.
 				for (const node of graphRow.nodes) {
 					const detail = [
 						node.port !== undefined ? `port=${node.port}` : undefined,
@@ -114,8 +152,6 @@ export function createInspectCommand(
 			);
 			const row = deploymentViewProjection.get(snapshot, deploymentId);
 
-			// MCP/agent discovery of the current session's hierarchical named endpoints
-			// (list_local_named_endpoints surface via inspect).
 			const namedSessions = listNamedEndpointSessions();
 			const activeNamed =
 				getNamedEndpointSession("default") ??

@@ -82,42 +82,21 @@ import { createVerifyCommand } from "./verify-command.js";
 import { serveProjectOnLocalYard } from "./wasm-host.js";
 import { createYardCommand } from "./yard-command.js";
 
-// For an entry point that composes this CLI in its own process (a shell that
-// loads this module from another package): the directories the
-// composition owns are removed on SIGTERM, SIGHUP, SIGINT and SIGQUIT too. A
-// no-op in a worker thread; a library never calls it.
 export { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 
 export interface ComposedHoboCliOptions {
-	/** The production host supplies trusted financial and provider wiring. */
 	readonly hosting?: {
 		readonly budgetId: string;
 		readonly authority: SharedHostingBudgetAuthority;
 		readonly supervisor: ReturnType<typeof createProductionHostingExecution>;
 	};
-	// Override the default local/mocked YardRuntime shared across plan/up/down.
-	// Injecting one lets a caller (e.g. a test) hold the runtime so it can close
-	// `runtime.store` afterward.
 	readonly yardRuntime?: YardRuntime;
-	/** Binaries set this even when injecting the assembled production runtime. */
 	readonly requireRealExecution?: boolean;
-	/** Host transport injection for agent-principal discovery and TLS trust. */
 	readonly authMdFetch?: typeof fetch;
-	// Override the default offline DevRuntime `hobo dev` boots.
 	readonly devRuntime?: DevRuntime;
-	// Override the default `hobo collect` target.
 	readonly collectionTarget?: CollectionTarget;
 }
 
-// The composed `hobo` CLI. It reuses `createHoboCli` from @hobo/cli and injects
-// the DEFAULT runtimes into the command factories that would otherwise fall back
-// to shell stubs when un-injected. ONE YardRuntime is shared across plan/up/down
-// so `up` then `down` operate on the same event store. `login`/`new`/`build`/
-// `codegen` keep @hobo/cli's defaults — they already work un-injected.
-// Default-provider catalog entries (M1+ adapter slices): each real provider
-// registers itself as `hobo add`-able here at the composition root, keeping
-// add-command free of adapter imports. Approval semantics stay with HOBO-710
-// (`hobo add aws` registers + approves; `--hold` defers approval).
 registerInstallable("aws", () => toRegistrableProvider(createAwsProvider()));
 registerInstallable("azure", () =>
 	toRegistrableProvider(createAzureProvider()),
@@ -126,42 +105,24 @@ registerInstallable("gcp", () => toRegistrableProvider(createGcpProvider()));
 registerInstallable("digitalocean", () =>
 	toRegistrableProvider(createDigitalOceanProvider()),
 );
-// Hetzner declares two capability ports rather than six, and Hostinger two as
-// well: neither sells a managed database, cache or queue (Hostinger's MySQL
-// aside), so Matching answers `none` for the rest instead of a near-miss.
 registerInstallable("hetzner", () =>
 	toRegistrableProvider(createHetznerProvider()),
 );
 registerInstallable("hostinger", () =>
 	toRegistrableProvider(createHostingerProvider()),
 );
-// The cluster provider: `hobo add kubernetes` registers the compute port a
-// Deployment satisfies. Everything else a cluster can host arrives through
-// operators, which this adapter does not install or claim.
 registerInstallable("kubernetes", () =>
 	toRegistrableProvider(createKubernetesProvider()),
 );
-// The competitor deploy target registers HELD by default (ADR-0127): a second
-// `hobo add lakebed` records the explicit approval.
 registerInstallable(
 	"lakebed",
 	() => toRegistrableProvider(createLakebedProvider()),
 	{ defaultHold: true },
 );
-// The GitHub Actions execution-host adapter (M3): both `hobo:runner` and
-// `hobo:build-machine` ports register from one catalog entry so the
-// Dispatcher can cost-route jobs/builds across registered hosts (ADR-0071).
 registerInstallable("runner-github", () => createGithubRunnerCatalogEntry());
-// The Blacksmith fast-runner sibling: same job model, cheaper runs-on
-// substrate — registering both gives the Dispatcher a real price choice.
 registerInstallable("runner-blacksmith", () => createBlacksmithCatalogEntry());
-// The Depot remote-build specialist: shared-cache economics make its warm
-// builds competitive with "free" cold options (HOBO-720).
 registerInstallable("runner-depot", () => createDepotCatalogEntry());
-// Local provider — installable via `hobo add local`; default provider id for
-// local Yard topologies (`hobo yard init`).
 registerInstallable("local", () => createLocalProvider());
-// Camp component-host runtimes (installable; broker hard-fails when missing).
 registerInstallable("runtime-local", () => createLocalRuntimeCatalogEntry());
 registerInstallable("runtime-wasm", () => createWasmRuntimeCatalogEntry());
 registerInstallable("runtime-oci", () => createOciRuntimeCatalogEntry());
@@ -193,16 +154,7 @@ export function createComposedHoboCli(
 		);
 	const deployRuntime =
 		explicitFixture || cloudConfigured ? runtime : undefined;
-	// `sandbox` and its `test` alias share one command; each run() boots its OWN
-	// fresh runtime-local Camp (isolation), so no shared runtime is threaded here.
 	const sandbox = createSandboxCommand();
-	// The lifecycle engine every family shares (cli-spec.md "Lifecycle
-	// Semantics"): `hobo up|down|plan` and `hobo ci|cd up|down|plan|status` are
-	// the same three commands, pointed at a different project.
-	// Always place through the embedded broker-runtime (prefer wasm-sandbox
-	// yards). Remote --broker / --anonymous paths use discovery + credential
-	// presenter. The cloud mock `createUpCommand` remains for tests that wire
-	// it directly.
 	const up = createBrokerAwareUpCommand({
 		...(deployRuntime ? { runtime: deployRuntime } : undefined),
 		persistentLocal: !explicitFixture,
@@ -217,33 +169,22 @@ export function createComposedHoboCli(
 
 	return createHoboCli({
 		commands: {
-			// `hobo ci up|down|plan` converge the CI project; `hobo ci status`
-			// keeps inspecting the relay connection; every other subcommand is
-			// the existing CI surface.
 			ci: createLifecycleFamilyCommand({
 				family: "ci",
 				resolveProject: resolveCiProject,
 				up,
 				down,
 				plan,
-				// GitHub first: the App and its credentials in the owner's secret
-				// store, via the generative connect page (idempotent).
 				prepare: (input) => prepareGithubConnection(input),
 				status: ci,
 				fallback: ci,
 			}),
-			// `hobo cd up|down|plan|status` converge the CD project; any other
-			// subcommand is `hobo deploy` (freight, pipeline, promote, ...).
 			cd: createLifecycleFamilyCommand({
 				family: "cd",
 				resolveProject: resolveCdProject,
 				up,
 				down,
 				plan,
-				// Vercel first, then converge through the Vercel provider junction:
-				// the same journal, registry and actor host (one writer), with an
-				// executor whose IaC provider deploys with the junction's token,
-				// resolved from the owner's secret store for this run only.
 				prepare: (input) => prepareVercelConnection(input),
 				upWith: (junctionEnv) =>
 					createBrokerAwareUpCommand({
@@ -265,8 +206,6 @@ export function createComposedHoboCli(
 				fallback: deploy,
 			}),
 			build: createBuildCommand({ requireRealComponentize: true }),
-			// Local loop: open the Yard, place the Bindle into a Camp, run the Camp's
-			// component host (services__* + bindle env + external-only TCP).
 			dev: createDevCommand(
 				options.devRuntime !== undefined
 					? { runtime: options.devRuntime }
@@ -323,41 +262,26 @@ export function createComposedHoboCli(
 			),
 			plan,
 			up,
-			// Identity plane: persist profile + optional default broker association.
-			// The composition root injects the platform fetch — the login/grant
-			// modules never reach for the global, so tests drive them offline.
 			login: createBrokerAwareLoginCommand({ fetchImpl: fetch }),
-			// Durable Connections: authorize once, mint short-lived tokens thereafter.
 			connection: createConnectionCommand(),
-			// Continuous identity migration observe surface (Matching/policy-driven; zero Bindle config).
 			identity: createAuthMdIdentityCommand({
 				fallback: createIdentityCommand(),
 				fetchImpl: options.authMdFetch ?? fetch,
 				store: runtime.store,
 			}),
-			// Continuous migration Trails observe surface (identity hands-off + app-authored recipes).
 			trails: createTrailsCommand(),
-			// Elevated / cross-env access request + break-glass (short-lived capability).
 			access: createAccessCommand(),
-			// OpenFeature flags + canary/experiment observe (Harness ADR-0083).
 			feature: createFeatureCommand(),
-			// Continuous delivery observe / rollback (attested apply plane).
 			deploy,
-			// CD failure disposition (A2H default / sandboxed self-heal).
 			incident: createIncidentCommand(),
 			down,
-			doctor: createDoctorCommand(),
+			doctor: createDoctorCommand({ store: runtime.store }),
 			messaging: createMessagingCommand(),
 			verify: createVerifyCommand(),
 			"can-deploy": createCanDeployCommand(),
-			// The broker (the Conductor) resolves against the same live,
-			// approval-gated registry the Planner matches over.
 			broker: createBrokerCommand({ catalog: runtime.registry }),
-			// Install/inspect the default bare-metal yard (`hobo yard init|status`).
 			yard: createYardCommand(),
-			// Station occupancy setup/ops (main control-plane setup path; not lifecycle).
 			station: createStationCommand(),
-			// Session Replay (DOM/session reconstruction; distinct from event-log replay).
 			replay: createReplayCommand(),
 			serve: createServeControlCommand(),
 			inspect: createInspectCommand({ runtime }),
@@ -366,11 +290,8 @@ export function createComposedHoboCli(
 			claim: createClaimCommand({
 				runtime,
 				fetchImpl: options.authMdFetch ?? fetch,
-				// `hobo claim finalize secret-store` (ADR-0179 amendment).
 				verifyOwnership: secretStoreOwnershipVerifier({ env: process.env }),
 			}),
-			// Anonymous-to-owned: what HoBo can deploy before a provider login,
-			// and the proposal a human consents to before anything is created.
 			recipes: createRecipesCommand(),
 			offer: createOfferCommand({ runtime }),
 			registry: createRegistryCommand({ runtime }),

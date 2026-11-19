@@ -404,6 +404,20 @@ prints new lines until interrupted and cannot be combined with --json or -q.
 `;
 	}
 
+	if (verb.name === "inspect") {
+		return `HoBo inspect
+
+Usage:
+  hobo inspect [graph]
+  hobo inspect quarantines [position]
+
+Role: ${verb.role}
+${statusLine}
+Inspect deployment projections or persisted quarantine incidents. The quarantine
+report covers the current tenant; pass its next position to continue a scan.
+`;
+	}
+
 	if (verb.name === "cd") {
 		return `HoBo CD
 
