@@ -58,6 +58,15 @@ describe("wrpc in-process link layer", () => {
 			providerId: "local-kv",
 			exportInterface: KV,
 		});
+		expect(layer.events.at(-1)).toMatchObject({
+			type: "link.Established",
+			componentId: "api",
+			importInterface: KV,
+			providerId: "local-kv",
+			exportInterface: KV,
+			boundaryMode: "live",
+			transport: "in-process",
+		});
 		const result = await layer.callImport(
 			"api",
 			KV,

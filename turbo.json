@@ -421,7 +421,6 @@
         "src/draft/technical-proofs/token-broker-skeleton-contract/**",
         "src/draft/technical-proofs/token-budget-governance-contract/**",
         "src/draft/technical-proofs/version-pinning-drift-guard-contract/**",
-        "src/draft/technical-proofs/wrpc-in-process-link-contract/**",
         "packages/runtimes/runtime-wasm/src/**",
         "packages/runtimes/runtime-wasm/test/wasmtime-global-setup.ts"
       ],
@@ -907,7 +906,6 @@
         "src/draft/technical-proofs/tier-four-overlay-mesh-contract/**",
         "src/draft/technical-proofs/tier-two-cross-region-network-contract/**",
         "src/draft/technical-proofs/usage-inferred-permissions-contract/**",
-        "src/draft/technical-proofs/wrpc-link-layer-contract/**",
         "packages/runtimes/runtime-wasm/src/**",
         "packages/runtimes/runtime-wasm/test/wasmtime-global-setup.ts"
       ],
