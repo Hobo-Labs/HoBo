@@ -62,6 +62,19 @@ export interface ScheduleDriver {
 	advance(deltaMs: number): Promise<readonly FiredTimer[]>;
 }
 
+export class ScheduleHandlerError extends Error {
+	readonly fire: FiredTimer;
+
+	constructor(fire: FiredTimer, options: ErrorOptions) {
+		super(
+			`Scheduled handler failed for schedule ${JSON.stringify(fire.scheduleId)} and fire ${JSON.stringify(fire.fireId)}.`,
+			options,
+		);
+		this.name = "ScheduleHandlerError";
+		this.fire = fire;
+	}
+}
+
 export interface ScheduleEmulator extends ServiceEmulator<SchedulerPort> {
 	/** Present when the implementation supports controlled time. */
 	readonly clock?: VirtualClock;
@@ -296,7 +309,9 @@ export function createScheduleEmulator(): ScheduleEmulator {
 					try {
 						await executing.run(frame, () => item.handler(item.fire));
 					} catch (error) {
-						failures.push(error);
+						failures.push(
+							new ScheduleHandlerError(item.fire, { cause: error }),
+						);
 					} finally {
 						frame.active = false;
 					}

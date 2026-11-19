@@ -12,6 +12,7 @@ import {
 	deployInProcess,
 	destroyInProcess,
 	type ScheduleDriver,
+	ScheduleHandlerError,
 } from "../src/index.js";
 import { fakeBindle } from "./fixtures.js";
 
@@ -105,6 +106,78 @@ describe("in-process schedules", () => {
 		} finally {
 			await harness.destroy(bindle)();
 		}
+	});
+
+	it.each([
+		"driver",
+		"port",
+		"clock",
+	] as const)("keeps the original %s schedule while replacing its handler", async (source) => {
+		const emulator = createScheduleEmulator();
+		const { driver, clock } = emulator;
+		if (!driver || !clock) throw new Error("Schedule driver unavailable.");
+		const id = parseScheduleId("repair");
+		const start = clock.nowMs();
+		const originalSpec = { everyMs: 1000, startAtMs: start + 1000 };
+		const handled: string[] = [];
+		const oldHandler = () => {
+			handled.push("old");
+		};
+		const registered =
+			source === "driver"
+				? driver.registerJob(id, originalSpec, oldHandler)
+				: source === "port"
+					? emulator.port.every(id, originalSpec)
+					: clock.cron(id, originalSpec);
+		expect(registered.deduped).toBe(false);
+		if (source !== "driver")
+			expect(driver.registerJob(id, originalSpec, oldHandler).deduped).toBe(
+				true,
+			);
+		const replacement = driver.registerJob(
+			id,
+			{ everyMs: 5000, startAtMs: start + 9000 },
+			() => {
+				handled.push("new");
+			},
+		);
+		expect(replacement).toMatchObject({
+			scheduleId: id,
+			deduped: true,
+			everyMs: 1000,
+			nextFireAt: registered.nextFireAt,
+		});
+		expect((await driver.advance(1000)).map((fire) => fire.occurrence)).toEqual(
+			[1],
+		);
+		expect(handled).toEqual(["new"]);
+		await emulator.close?.();
+	});
+
+	it("retains the collected batch's handler after re-registration", async () => {
+		const emulator = createScheduleEmulator();
+		const driver = emulator.driver;
+		if (!driver) throw new Error("Schedule driver unavailable.");
+		const id = parseScheduleId("repair");
+		const handled: string[] = [];
+		driver.registerJob(id, { everyMs: 1000 }, (fire) => {
+			handled.push(`old:${fire.occurrence}`);
+			if (fire.occurrence === 1) {
+				const replacement = driver.registerJob(
+					id,
+					{ everyMs: 5000 },
+					(next) => {
+						handled.push(`new:${next.occurrence}`);
+					},
+				);
+				expect(replacement).toMatchObject({ deduped: true, everyMs: 1000 });
+			}
+		});
+		await driver.advance(3000);
+		expect(handled).toEqual(["old:1", "old:2", "old:3"]);
+		await driver.advance(1000);
+		expect(handled).toEqual(["old:1", "old:2", "old:3", "new:4"]);
+		await emulator.close?.();
 	});
 
 	it("awaits registered worker handlers in fire order", async () => {
@@ -255,26 +328,60 @@ describe("in-process schedules", () => {
 		await emulator.close?.();
 	});
 
-	it("reports worker failures after running the remaining due fires", async () => {
+	it("identifies each worker failure after running the remaining due fires", async () => {
 		const emulator = createScheduleEmulator();
-		const driver = emulator.driver;
-		if (!driver) throw new Error("Schedule driver unavailable.");
-		const handled: number[] = [];
-		driver.registerJob(
-			parseScheduleId("repair"),
-			{ everyMs: 1000 },
-			async (fire) => {
-				if (fire.occurrence !== undefined) handled.push(fire.occurrence);
-				if (fire.occurrence === 2) throw new Error("synthetic worker failure");
-			},
-		);
-		await expect(driver.advance(3000)).rejects.toMatchObject({
-			errors: [
-				expect.objectContaining({ message: "synthetic worker failure" }),
-			],
-		});
-		expect(handled).toEqual([1, 2, 3]);
+		const { driver, clock } = emulator;
+		if (!driver || !clock) throw new Error("Schedule driver unavailable.");
+		const start = clock.nowMs();
+		const alphaFailure = new Error("synthetic worker failure");
+		const betaFailure = new Error("synthetic worker failure");
+		const handled: string[] = [];
+		for (const id of ["alpha", "beta"]) {
+			driver.registerJob(parseScheduleId(id), { everyMs: 1000 }, (fire) => {
+				handled.push(`${id}:${fire.occurrence}`);
+				if (id === "alpha" && fire.occurrence === 1) throw alphaFailure;
+				if (id === "beta" && fire.occurrence === 1) throw betaFailure;
+				if (id === "beta" && fire.occurrence === 2)
+					return Promise.reject("synthetic signal");
+			});
+		}
+		try {
+			await driver.advance(3000);
+			throw new Error("Expected scheduled handlers to fail.");
+		} catch (error) {
+			if (!(error instanceof AggregateError)) throw error;
+			expect(error.errors).toHaveLength(3);
+			const [alpha, beta, signal] = error.errors;
+			for (const failure of error.errors)
+				expect(failure).toBeInstanceOf(ScheduleHandlerError);
+			expect(alpha).toMatchObject({
+				fire: { scheduleId: "alpha", fireId: "cron:alpha:1", occurrence: 1 },
+			});
+			expect(alpha.message).toContain('schedule "alpha"');
+			expect(alpha.message).toContain("cron:alpha:1");
+			expect(alpha.cause).toBe(alphaFailure);
+			expect(beta).toMatchObject({
+				fire: { scheduleId: "beta", fireId: "cron:beta:1", occurrence: 1 },
+			});
+			expect(beta.message).toContain('schedule "beta"');
+			expect(beta.message).toContain("cron:beta:1");
+			expect(beta.cause).toBe(betaFailure);
+			expect(signal).toMatchObject({
+				fire: { scheduleId: "beta", fireId: "cron:beta:2", occurrence: 2 },
+			});
+			expect(signal.cause).toBe("synthetic signal");
+		}
+		expect(handled).toEqual([
+			"alpha:1",
+			"beta:1",
+			"alpha:2",
+			"beta:2",
+			"alpha:3",
+			"beta:3",
+		]);
+		expect(clock.nowMs()).toBe(start + 3000);
 		expect(await driver.advance(0)).toEqual([]);
+		expect(handled).toHaveLength(6);
 		await emulator.close?.();
 	});
 

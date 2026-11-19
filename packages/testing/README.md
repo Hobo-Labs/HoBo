@@ -302,12 +302,26 @@ driver.registerJob(parseScheduleId("repair"), { everyMs: 1_000 }, async (fire) =
 await driver.advance(3_000);
 ```
 
-Register a handler explicitly for each interval schedule. Advancing the driver
-awaits handlers in fire order and reports failures after
-running the other due handlers. The clock reaches the requested target before
-handlers run, so each handler observes that target time rather than its own fire
-time. Driver advances run in call order. An advance starts asynchronously, so
-synchronous registrations made before it starts can fire during that advance.
+Register a handler explicitly for each interval schedule. The built-in driver
+deduplicates schedules by ID, including schedules created through the shared
+port or raw clock. Re-registering an ID keeps its original interval and start
+time even if the new spec differs, but replaces any prior handler. The returned
+schedule has `deduped: true` and reports the actual interval and next fire time.
+The replacement handler receives fires collected after registration; a batch
+already collected retains its earlier handler.
+
+Advancing the driver
+awaits handlers in fire order and reports failures after running the other due
+handlers. For the built-in driver, the `AggregateError` contains a
+`ScheduleHandlerError` for each failed fire; its `fire` identifies the schedule
+and occurrence, and its `cause` retains the original thrown value. When handlers
+fail, the rejected advance keeps the elapsed virtual time and their side effects,
+including effects performed before a failure; those fires are not retried
+automatically.
+The clock reaches the requested target before handlers run, so each handler
+observes that target time rather than its own fire time. Driver advances run in
+call order. An advance starts asynchronously, so synchronous registrations made
+before it starts can fire during that advance.
 Each advance collects its due fires before running handlers. Timers or schedules
 registered during a handler wait for the next advance, even if already due.
 
