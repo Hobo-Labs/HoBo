@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Install pinned chromium headless-shell into PLAYWRIGHT_BROWSERS_PATH.
-# Prefer a pre-staged zip in PLAYWRIGHT_CACHE_DIR (populated by build.sh or box cache).
 set -euo pipefail
 
 case "${TARGETARCH:-amd64}" in

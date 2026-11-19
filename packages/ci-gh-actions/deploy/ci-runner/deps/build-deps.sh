@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Build a lockfile-keyed node_modules layer. Only the fetch stage has network access.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../../../../.." && pwd)"
 cd "$root"
@@ -128,10 +127,6 @@ resolve_deps_headroom_sample_path() {
   return 1
 }
 
-# A keyed miss runs pnpm install and mv into /opt/hobo-deps inside BuildKit.
-# That overlay can exhaust the box and red concurrent main jobs. Prune only
-# the builder cache (never an unfiltered image prune) and refuse the rebuild
-# if headroom is still short.
 ensure_deps_build_headroom() {
   local docker_root sample_path iavail avail
   docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
@@ -295,8 +290,6 @@ fi
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
 "${prune_command[@]}" -f --keep-storage "$cap"
 sample_path="$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$base")" || sample_path="/"
-# A `host:` sample is read through a helper container; `df` in the recorder
-# cannot read it, so there is no peak to record from this job.
 if [[ "$sample_path" == host:* ]]; then
   echo "deps build telemetry: skipped (Docker data root sampled via host mount)"
 elif [[ "$before_iavail" =~ ^[0-9]+$ && "$before_avail" =~ ^[0-9]+$ ]]; then

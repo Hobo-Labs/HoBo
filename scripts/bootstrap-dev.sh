@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Bootstrap HoBo dev tools: mise + optional dotfiles + project tool install.
-# Safe for devcontainers, Cursor Cloud, Codex, and Claude Code remote (no sudo).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

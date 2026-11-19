@@ -1,14 +1,4 @@
-/* ==========================================================================
-   WORLDS — what the design axis could never be as tokens alone.
 
-   Each design carries its own marketing surface: copy, art, nav, interaction.
-   This file owns the switching rule and each world's chrome. The contract
-   with the audit stays intact: with no `data-design`, none of this renders
-   and ink is pixel-identical to its baseline; with one set, the ink hero,
-   parallax band and ink nav hide and the world's own surface takes over.
-   ========================================================================== */
-
-/* ---- The switching rule ---- */
 .world-hero,
 .world-nav {
 	display: none;
@@ -29,10 +19,6 @@
 	display: flex;
 }
 
-/* ==========================================================================
-   HERALD — front page. Masthead, column rules, an engraving with a caption.
-   Interaction register: print. Hovers are ink underlines, nothing moves.
-   ========================================================================== */
 .world-herald {
 	padding-block: 1.5rem 3rem;
 }
@@ -105,11 +91,6 @@
 	text-underline-offset: 3px;
 }
 
-/* ==========================================================================
-   PHOTOPLAY — a silent film. The hero IS an intertitle card inside the
-   generated deco frame; clicking advances the card. Grain flickers unless
-   reduced motion asks it not to.
-   ========================================================================== */
 .world-photoplay {
 	padding-block: 2.5rem 3rem;
 	text-align: center;
@@ -180,10 +161,6 @@
 	}
 }
 
-/* ==========================================================================
-   DISPATCH — the yard board. A log that types itself on, a cursor that
-   blinks, art that reads as machinery. Interaction register: terminal.
-   ========================================================================== */
 .world-dispatch {
 	padding-block: 2rem 3rem;
 	font-family: var(--font-mono);
@@ -241,10 +218,6 @@
 	}
 }
 
-/* ==========================================================================
-   SCRAPBOOK — pasted paper. Photo and postcard sit as taped scraps; hovering
-   lifts a scrap slightly, like checking whether the glue held.
-   ========================================================================== */
 .world-scrapbook {
 	padding-block: 2rem 3rem;
 }
@@ -310,11 +283,7 @@
 	}
 }
 
-/* ---- World navs share the header slot; each is its own structure ---- */
 .world-nav {
-	/* Five labelled destinations must hold one row at desktop: the first cut
-	   wrapped the Herald's uppercase nav into its own masthead. Tighter type,
-	   tighter gap, no separators — the vocabulary does the differentiating. */
 	gap: 0.85rem;
 	align-items: baseline;
 	white-space: nowrap;
@@ -375,22 +344,18 @@
 		align-items: center;
 		gap: 0.1rem;
 	}
-	/* The header collapses to the hamburger below 860px; world navs render
-	   inside the same panel and inherit its stacking. */
 	.world-nav {
 		flex-direction: column;
 		align-items: flex-start;
 	}
 }
 
-/* The ink nav keeps its flex row from inside the gating wrapper. */
 .site-nav .nav-links {
 	display: flex;
 	gap: inherit;
 	align-items: inherit;
 }
 
-/* ---- World bodies: the rest of each page, in its own form ---- */
 .herald-rule-thin { border-top-width: 1px; margin-block: 1.6rem; }
 .herald-columns {
 	display: grid;
