@@ -1,32 +1,3 @@
-/**
- * The yard event-store fold, read as a state machine rather than a projection.
- *
- * `yard-event-store-folds.test.ts` covers the happy path and the provider
- * resolvers that feed this fold. This covers what the fold does when the facts
- * are *not* well-formed or arrive out of the order anyone drew on a whiteboard —
- * which is the only order a real event stream guarantees.
- *
- * Three properties are worth stating up front, because most of what follows is
- * a consequence of one of them:
- *
- * **A fact that names nothing changes nothing but the sequence.** Every branch
- * that reads an id from `data` guards on it. A malformed fact that silently
- * created a row keyed on `""` would put a phantom yard in the inventory
- * snapshot, and the snapshot is content-hashed and pinned — so one bad event
- * would make two brokers that saw the same stream disagree on the hash.
- *
- * **The idempotency lease keeps the winner.** Two generation attempts racing on
- * one key is the normal case under retry, not an anomaly. The first attempt to
- * claim a key owns it until it *fails*, and only then may a successor take it.
- * If the loser could overwrite the winner, a retry would detach the caller from
- * the infrastructure their first attempt actually provisioned.
- *
- * **The snapshot round-trip is schema-guarded in one direction only.** Restore
- * refuses an unknown schema rather than best-efforting it, because a fold state
- * restored under the wrong layout is a broker confidently serving placements
- * from a projection it never built.
- */
-
 import { describe, expect, it } from "vitest";
 import {
 	emptyYardEventStoreState,
@@ -62,9 +33,6 @@ describe("the empty state", () => {
 	});
 
 	it("is frozen, so a caller cannot mutate the projection in place", () => {
-		// The fold's whole claim is that state is rebuildable from facts. A
-		// caller who could poke a yard into `state.yards` would produce a state
-		// no replay reproduces.
 		expect(Object.isFrozen(empty())).toBe(true);
 		expect(Object.isFrozen(empty().yards)).toBe(true);
 	});
@@ -94,9 +62,6 @@ describe("sequencing", () => {
 	});
 
 	it("never moves backwards for a late-arriving lower sequence", () => {
-		// A replayed or out-of-order fact must not rewind the projection's
-		// position; a consumer paging from `seq` would re-read what it already
-		// handled and re-fire its side effects.
 		const ahead = foldYardEventStore(
 			empty(),
 			yardEvent(YARD_EVENTS.Registered, { yard: yardOf("yard:a") }, { seq: 9 }),
@@ -109,8 +74,6 @@ describe("sequencing", () => {
 	});
 
 	it("advances the sequence even for a fact it ignores", () => {
-		// The position is about the stream, not about whether this projection
-		// cared: stalling on an unhandled fact would make the fold look stuck.
 		const state = fold([YARD_EVENTS.ProviderSignalNormalized, {}]);
 		expect(state.seq).toBe(1);
 	});
@@ -139,17 +102,12 @@ describe("registration", () => {
 	});
 
 	it("ignores a registration whose yard has no id", () => {
-		// A yard keyed on the empty string would show up in the inventory
-		// snapshot, and the snapshot is content-hashed.
 		expect(
 			fold([YARD_EVENTS.Registered, { yard: { yardId: "" } }]).yards,
 		).toEqual({});
 	});
 
 	it("admits a yard as registering rather than trusting a claimed status", () => {
-		// Registration is an assertion by the yard about itself. Anything other
-		// than an explicit `ready` starts as `registering` and has to earn its
-		// way up through attestation.
 		const state = fold([
 			YARD_EVENTS.Registered,
 			{ yard: { ...yardOf("yard:a"), status: "draining" } },
@@ -158,8 +116,6 @@ describe("registration", () => {
 	});
 
 	it("admits a local yard as ready, since it attests itself", () => {
-		// `localYardInstance` is the in-process yard: there is no remote
-		// attestation step for it, so it registers ready and the fold honours it.
 		expect(
 			fold([YARD_EVENTS.Registered, { yard: yardOf("yard:a") }]).yards["yard:a"]
 				?.status,
@@ -196,8 +152,6 @@ describe("registration", () => {
 });
 
 describe("status transitions", () => {
-	// A local yard registers itself `ready`; these cases start from an
-	// unattested one so a transition is observable rather than a no-op.
 	const registered = (yardId = "yard:a") =>
 		fold([
 			YARD_EVENTS.Registered,
@@ -213,8 +167,6 @@ describe("status transitions", () => {
 	});
 
 	it("keeps a yard attesting once attested, since ready is a separate fact", () => {
-		// Passing attestation is not the same as being able to take traffic;
-		// only `Ready` says that.
 		const state = foldYardEventStore(
 			registered(),
 			yardEvent(YARD_EVENTS.Attested, { yardId: "yard:a" }),
@@ -251,8 +203,6 @@ describe("status transitions", () => {
 	});
 
 	it("ignores a status change for a yard it has never seen", () => {
-		// Creating the yard here would invent inventory from a status ping, and
-		// the broker would then place work on a yard nobody registered.
 		const state = foldYardEventStore(
 			registered(),
 			yardEvent(YARD_EVENTS.StatusChanged, {
@@ -264,8 +214,6 @@ describe("status transitions", () => {
 	});
 
 	it("bumps the health generation on every transition", () => {
-		// The generation is how a reader tells a fresh observation from a cached
-		// one; a transition that left it alone would look like no news.
 		const before = registered();
 		const after = foldYardEventStore(
 			before,
@@ -311,8 +259,6 @@ describe("capacity updates", () => {
 	});
 
 	it("ignores an update carrying no capacity", () => {
-		// Absent is not the same as zero: treating a missing payload as empty
-		// capacity would make the broker stop placing on a healthy yard.
 		const before = registered.yards["yard:a"]?.capacity;
 		const state = foldYardEventStore(
 			registered,
@@ -360,9 +306,6 @@ describe("generation attempts", () => {
 	});
 
 	it("treats a compensation request as failed, not yet compensated", () => {
-		// Asking for compensation and having compensated are different states;
-		// collapsing them would let an operator believe cloud resources were
-		// released while the compensating call is still in flight.
 		const state = fold([
 			YARD_EVENTS.GenerationCompensationRequested,
 			{ attemptId: "gen-1" },
@@ -384,8 +327,6 @@ describe("generation attempts", () => {
 	});
 
 	it("keys an attempt on itself when no idempotency key is given", () => {
-		// Every attempt needs a lease key; without one the attempt id is the
-		// only value guaranteed unique to it.
 		const state = started({ attemptId: "gen-1" });
 		expect(state.generationAttempts["gen-1"]?.idempotencyKey).toBe("gen-1");
 		expect(state.generationByIdempotency["gen-1"]).toBe("gen-1");
@@ -397,8 +338,6 @@ describe("generation attempts", () => {
 	});
 
 	it("merges external refs across facts rather than replacing them", () => {
-		// Each provider step learns one more handle; a later fact that dropped
-		// the earlier ones would leave resources unreferenced and unreleasable.
 		const state = foldYardEventStore(
 			started({ attemptId: "gen-1", externalRefs: { subscription: "s1" } }),
 			yardEvent(YARD_EVENTS.GenerationProvisioned, {
@@ -442,8 +381,6 @@ describe("generation attempts", () => {
 	});
 
 	it("keeps a failure recorded once, so the reason survives compensation", () => {
-		// The failure is the only record of *why* the attempt is being unwound;
-		// a compensation fact that cleared it would leave an unexplained one.
 		const failure = { code: "quota", message: "out of quota", retryable: true };
 		const state = foldYardEventStore(
 			fold([YARD_EVENTS.GenerationFailed, { attemptId: "gen-1", failure }]),
@@ -494,9 +431,6 @@ describe("the idempotency lease", () => {
 	]);
 
 	it("refuses a second attempt while the holder is still live", () => {
-		// Two attempts on one key is the normal layout of a retry. If the loser
-		// could take the key, the caller would end up tracking an attempt that
-		// is not the one holding the provisioned infrastructure.
 		const state = foldYardEventStore(
 			first,
 			yardEvent(YARD_EVENTS.GenerationStarted, {
@@ -521,8 +455,6 @@ describe("the idempotency lease", () => {
 	});
 
 	it("releases the key once the holder has failed", () => {
-		// A failed attempt is not holding anything, so the retry is entitled to
-		// the key — otherwise one failure would poison that key forever.
 		const failed = foldYardEventStore(
 			first,
 			yardEvent(YARD_EVENTS.GenerationFailed, {
@@ -560,8 +492,6 @@ describe("the idempotency lease", () => {
 	});
 
 	it("keeps the failed attempt's own row after the key moves on", () => {
-		// The loser's history is still the record of what was tried; dropping it
-		// would hide a failure the operator needs to see.
 		const failed = foldYardEventStore(
 			first,
 			yardEvent(YARD_EVENTS.GenerationFailed, {
@@ -648,8 +578,6 @@ describe("linking a ready yard back to its generation attempt", () => {
 	});
 
 	it("ignores an attempt id it has never seen", () => {
-		// The alternative — creating the attempt here — would fabricate a
-		// generation saga out of a readiness ping.
 		const state = foldYardEventStore(
 			generating,
 			yardEvent(YARD_EVENTS.Ready, { yardId: "yard:gen", attemptId: "gen-x" }),
@@ -698,8 +626,6 @@ describe("placement decisions", () => {
 	});
 
 	it("provisionally selects the winning yard while still pending", () => {
-		// The match names a winner before the placement resolves; surfacing it
-		// early is what lets a caller watch a request converge.
 		const state = fold(
 			[YARD_EVENTS.PlacementRequested, { requestId: "r1" }],
 			[
@@ -720,8 +646,6 @@ describe("placement decisions", () => {
 	});
 
 	it("resolves a placement and clears the reason codes", () => {
-		// A resolved placement with reasons attached reads as a partial failure;
-		// once it resolved, the earlier objections no longer apply.
 		const state = fold(
 			[YARD_EVENTS.MatchDecided, { requestId: "r1", match: match("rejected") }],
 			[YARD_EVENTS.PlacementResolved, { requestId: "r1" }],
@@ -772,8 +696,6 @@ describe("placement decisions", () => {
 	});
 
 	it("takes the receipt hash from the receipt when the event names none", () => {
-		// The hash is what ties the decision to the artifact an auditor can
-		// re-derive; losing it makes the placement unverifiable.
 		const state = fold([
 			YARD_EVENTS.PlacementResolved,
 			{ requestId: "r1", receipt: { contentHash: "sha256:receipt" } },
@@ -782,8 +704,6 @@ describe("placement decisions", () => {
 	});
 
 	it("assumes an existing yard when no match was recorded", () => {
-		// A placement that resolved without a match decision took a yard that
-		// was already there; the alternative would be an empty outcome field.
 		const state = fold([YARD_EVENTS.PlacementResolved, { requestId: "r1" }]);
 		expect(state.placements.r1?.matchOutcome).toBe("existing-yard");
 	});
@@ -825,8 +745,6 @@ describe("placement rejections", () => {
 	});
 
 	it("never leaves a rejection unexplained", () => {
-		// A rejection with no reason is the worst possible output: the caller
-		// knows they were refused and cannot act on it.
 		const state = fold([YARD_EVENTS.PlacementRejected, { requestId: "r1" }]);
 		expect(state.placements.r1?.reasonCodes).toEqual(["placement-rejected"]);
 	});
@@ -868,9 +786,6 @@ describe("placement rejections", () => {
 });
 
 describe("the inventory snapshot", () => {
-	// The same two yard records, so the only difference between the folds below
-	// is the order the facts arrived in — a fresh `localYardInstance` would also
-	// differ by its observation timestamp.
 	const a = yardOf("yard:a");
 	const b = yardOf("yard:b");
 	const twoYards = fold(
@@ -879,8 +794,6 @@ describe("the inventory snapshot", () => {
 	);
 
 	it("orders yards by id regardless of registration order", () => {
-		// The snapshot is content-hashed, so two brokers that saw the same facts
-		// in a different order must still hash identically.
 		expect(
 			inventorySnapshotFromFold(twoYards).yards.map((y) => y.yardId),
 		).toEqual(["yard:a", "yard:b"]);
@@ -903,8 +816,6 @@ describe("the inventory snapshot", () => {
 	});
 
 	it("hashes an empty inventory rather than refusing one", () => {
-		// A broker with no yards is a normal cold start, and its peers still
-		// need a hash to compare against.
 		expect(inventorySnapshotFromFold(empty()).contentHash).toMatch(/^sha256:/u);
 	});
 
@@ -956,8 +867,6 @@ describe("the snapshot round trip", () => {
 	});
 
 	it("freezes what it restores", () => {
-		// A restored state that could be mutated would drift from the stream it
-		// was built from, silently.
 		expect(
 			Object.isFrozen(restoreYardEventStore(snapshotYardEventStore(state))),
 		).toBe(true);
@@ -976,8 +885,6 @@ describe("the snapshot round trip", () => {
 	});
 
 	it("refuses an unknown schema rather than best-efforting it", () => {
-		// A state restored under the wrong layout is a broker confidently serving
-		// placements from a projection it never built.
 		expect(() =>
 			restoreYardEventStore(
 				JSON.stringify({ schemaVersion: "hobo.yard-event-store/v2", state }),
@@ -1024,8 +931,6 @@ describe("yardEvent", () => {
 	});
 
 	it("keeps a declared occurrence time", () => {
-		// Replayed facts carry the time they happened, not the time they were
-		// re-read; overwriting it would destroy the history.
 		expect(
 			yardEvent(
 				YARD_EVENTS.Ready,
