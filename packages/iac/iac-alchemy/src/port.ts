@@ -120,7 +120,7 @@ export type HeldFinancialDecision = Omit<
 				budget: { evaluation: "allowed"; reservation: "held" };
 				reservation: {
 					reservationId: string;
-					executionDigest?: string | undefined;
+					executionDigest: string;
 					unboundedExposure?: false;
 				};
 				unpricedPolicyProof?: never;
@@ -129,7 +129,7 @@ export type HeldFinancialDecision = Omit<
 				budget: { evaluation: "bypassed"; reservation: "held" };
 				reservation: {
 					reservationId: string;
-					executionDigest?: string | undefined;
+					executionDigest: string;
 					unboundedExposure: true;
 					unpricedScopeProof: UnpricedScopeProof;
 				};

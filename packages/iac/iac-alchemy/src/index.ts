@@ -2520,8 +2520,11 @@ export function createAlchemyIacProvider<
 								knownReservation,
 							),
 						};
+					const executionDigest = decision.reservation?.executionDigest;
 					if (
 						decision.reservation === undefined ||
+						executionDigest === undefined ||
+						!/^sha256:[a-f0-9]{64}$/u.test(executionDigest) ||
 						!reservationName(decision.reservation.reservationId) ||
 						decision.reservation.reservationId !== `iac:${requestId}` ||
 						decision.budget?.reservation !== "held" ||
@@ -2530,9 +2533,6 @@ export function createAlchemyIacProvider<
 								decision.reservation.unboundedExposure !== true &&
 								decision.unpricedPolicyProof === undefined &&
 								decision.reservation.unpricedScopeProof === undefined &&
-								/^sha256:[a-f0-9]{64}$/u.test(
-									decision.reservation.executionDigest ?? "",
-								) &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.requestDigest ?? "") &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.inventoryHash ?? "") &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.modelHash ?? "") &&
@@ -2628,7 +2628,7 @@ export function createAlchemyIacProvider<
 							budget: { evaluation: "bypassed", reservation: "held" },
 							reservation: {
 								reservationId: claimedReservationId,
-								executionDigest: decision.reservation.executionDigest,
+								executionDigest,
 								unboundedExposure: true,
 								unpricedScopeProof: scope,
 							},
@@ -2644,7 +2644,7 @@ export function createAlchemyIacProvider<
 							budget: { evaluation: "allowed", reservation: "held" },
 							reservation: {
 								reservationId: claimedReservationId,
-								executionDigest: decision.reservation.executionDigest,
+								executionDigest,
 								unboundedExposure: false,
 							},
 						};

@@ -2597,10 +2597,13 @@ describe("financial admission modes", () => {
 		expect(f.uncertain).toEqual(["iac:attempt"]);
 	});
 
-	it("preserves a priced execution claim through revalidation", async () => {
+	it.each([
+		"priced",
+		"unpriced",
+	] as const)("preserves a %s execution claim through revalidation", async (mode) => {
 		let executionDigest: string | undefined;
 		const f = fixture(
-			(id) => generatedAdmission(id, "priced"),
+			(id) => generatedAdmission(id, mode),
 			(admission) => {
 				executionDigest = admission.reservation?.executionDigest;
 				return true;
@@ -2613,27 +2616,28 @@ describe("financial admission modes", () => {
 	});
 
 	it.each([
-		"missing",
-		"empty",
-		"malformed",
-	] as const)("refuses a priced direct apply with a %s execution claim", async (kind) => {
-		const f = fixture((id) => {
-			const decision = admitted(id, "allowed", false);
-			if (kind === "missing") delete decision.reservation.executionDigest;
-			else
-				decision.reservation.executionDigest =
-					kind === "empty" ? "" : "sha256:not-a-digest";
-			return decision;
-		});
-		await f.provider.preview(f.program);
-		await expect(
-			f.provider.applyWithAdmission(f.program, "attempt"),
-		).rejects.toMatchObject({
-			code: "ADMISSION_RECEIPT_INVALID",
-			requiresReconciliation: true,
-		});
-		expect(f.applies()).toBe(0);
-		expect(f.uncertain).toEqual(["iac:attempt"]);
+		"allowed",
+		"bypassed",
+	] as const)("refuses a %s direct apply without a valid execution claim", async (evaluation) => {
+		for (const kind of ["missing", "empty", "malformed"] as const) {
+			const f = fixture((id) => {
+				const decision = admitted(id, evaluation, evaluation === "bypassed");
+				if (kind === "missing") delete decision.reservation.executionDigest;
+				else
+					decision.reservation.executionDigest =
+						kind === "empty" ? "" : "sha256:not-a-digest";
+				return decision;
+			});
+			await f.provider.preview(f.program);
+			await expect(
+				f.provider.applyWithAdmission(f.program, "attempt"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_RECEIPT_INVALID",
+				requiresReconciliation: true,
+			});
+			expect(f.applies()).toBe(0);
+			expect(f.uncertain).toEqual(["iac:attempt"]);
+		}
 	});
 
 	it.each([

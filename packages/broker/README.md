@@ -201,8 +201,11 @@ The in-memory factory is explicitly marked `persistence: 'memory'` and cannot
 authorize funded Yard hosting.
 
 `createFleetBudgetAdmissionAuthority` replays decisions from a fixed,
-majority-chosen journal. Its inspection calls do not repair an undecided tail.
-For active workloads, `createOperationalFleetBudgetAdmissionAuthority` can
+majority-chosen journal. Reopen normalizes legacy kindless entitlement records
+from the persisted base instead of strictly validating the reopen seed; fresh
+initialization still requires explicit entitlement kinds. Its inspection calls
+do not repair an undecided tail. For active workloads,
+`createOperationalFleetBudgetAdmissionAuthority` can
 recover an already offered entry under a separately funded, revalidated actor
 lease before retrying the operation. The host must provide independently
 verified member identities, anti-rollback protection and per-voter funding;
