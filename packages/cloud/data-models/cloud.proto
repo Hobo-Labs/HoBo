@@ -287,8 +287,7 @@ message ResourceDestroyedRecord {
 
 message DeploymentDeployedRecord {
   string deployment_id = 1;
-  string set_id = 2;
-  repeated string resource_ids = 3;
+  repeated string resource_ids = 2;
 }
 
 message DeploymentRollbackStartedData {

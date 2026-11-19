@@ -335,7 +335,6 @@ export function execSucceeded(data: ExecSucceededData): EventInput {
 
 export interface DeploymentDeployedData {
 	deploymentId: string;
-	setId: string;
 	resourceIds: string[];
 }
 

@@ -290,7 +290,6 @@ package hobo
 
 #DeploymentDeployedRecord: {
 	deploymentId: string & !=""
-	setId:        string & !=""
 	resourceIds: [...string]
 }
 
