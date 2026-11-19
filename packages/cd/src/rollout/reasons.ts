@@ -27,6 +27,8 @@ export const ROLLOUT_REASONS = Object.freeze({
 		"The target Camp's reconciler reported BLOCKED for the promoted Set; a blocked report does not progress, so the rollout fails the Camp closed and rolls back without waiting for the progress deadline. Fix the cause in the reconciler's reasons and promote again.",
 	"rollout-traffic-unconverged":
 		"The provider acknowledged the shift but observed traffic is not the requested split; the rollout re-observes until the progress deadline. Provider self-report never counts as convergence.",
+	"rollout-slo-evidence-pending":
+		"The rollout is waiting for consecutive fresh SLO observations.",
 	"rollout-progress-deadline":
 		"Observation did not confirm progress before the progress deadline; the rollout fails closed and rolls back. Inspect the Camp's reconcile status and the Station routing state.",
 	"rollout-verification-failed":

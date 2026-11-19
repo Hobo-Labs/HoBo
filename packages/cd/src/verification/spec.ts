@@ -39,6 +39,9 @@ export const comparisonCheckId = (query: HealthQueryRecord) =>
 export const probeCheckId = (name: string) => `probe:${name}`;
 export const suiteCheckId = (suite: string) => `suite:${suite}`;
 export const ERROR_BUDGET_CHECK = "error-budget";
+export const SLO_CHECK = "slo:gate";
+export const SLO_BURN_CHECK = "slo:burn";
+export const SLO_BUDGET_CHECK = "slo:budget";
 
 function isHttpsUrl(value: string): boolean {
 	try {
@@ -110,7 +113,9 @@ export function parseVerificationSpec(
 	const problems: Problem[] = [];
 
 	if (spec.windowMs === 0n)
-		spec.windowMs = BigInt(CD_DEFAULTS.verificationWindowMs);
+		spec.windowMs = BigInt(
+			spec.sloGate ? 900_000 : CD_DEFAULTS.verificationWindowMs,
+		);
 	if (spec.requiredObservations === 0)
 		spec.requiredObservations = CD_DEFAULTS.verificationRequiredObservations;
 	if (spec.progressDeadlineMs === 0n)
@@ -152,7 +157,8 @@ export function parseVerificationSpec(
 		spec.thresholds.length +
 			spec.comparisons.length +
 			spec.probes.length +
-			spec.suites.length ===
+			spec.suites.length +
+			(spec.sloGate ? 1 : 0) ===
 		0
 	) {
 		problems.push({
@@ -297,6 +303,62 @@ export function parseVerificationSpec(
 		}
 		unique(suiteCheckId(suite.suite));
 	});
+
+	if (spec.sloGate) {
+		const gate = spec.sloGate;
+		gate.rollbackBurnRate ??= 12;
+		gate.minRemainingBudgetRatio ??= 0.08;
+		gate.holdBurnRate ??= 1;
+		gate.holdRemainingBudgetRatio ??= 0.2;
+		if (gate.sustainedBreachCount === 0) gate.sustainedBreachCount = 2;
+		if (gate.sustainedHealthyCount === 0) gate.sustainedHealthyCount = 2;
+		if (gate.maxSampleAgeMs === 0n)
+			gate.maxSampleAgeMs = spec.windowMs < 600_000n ? spec.windowMs : 600_000n;
+		checkQuery(gate.burnRate, "slo_gate.burn_rate", problems);
+		checkQuery(
+			gate.remainingBudgetRatio,
+			"slo_gate.remaining_budget_ratio",
+			problems,
+		);
+		if (
+			gate.burnRate?.unit !== BURN_RATE_UNIT ||
+			gate.remainingBudgetRatio?.unit !== RATIO_UNIT
+		)
+			problems.push({
+				code: "verification-spec-invalid",
+				message: "SLO queries require burn_rate and ratio units",
+				subject: "slo_gate",
+			});
+		if (
+			!Number.isFinite(gate.rollbackBurnRate) ||
+			!Number.isFinite(gate.holdBurnRate) ||
+			gate.holdBurnRate <= 0 ||
+			gate.rollbackBurnRate <= gate.holdBurnRate ||
+			!Number.isFinite(gate.minRemainingBudgetRatio) ||
+			!Number.isFinite(gate.holdRemainingBudgetRatio) ||
+			gate.minRemainingBudgetRatio < 0 ||
+			gate.holdRemainingBudgetRatio > 1 ||
+			gate.minRemainingBudgetRatio >= gate.holdRemainingBudgetRatio
+		)
+			problems.push({
+				code: "verification-spec-invalid",
+				message: "SLO hold and rollback thresholds must be finite and ordered",
+				subject: "slo_gate",
+			});
+		if (
+			gate.sustainedBreachCount < 2 ||
+			gate.sustainedBreachCount > MAX_REQUIRED_OBSERVATIONS ||
+			gate.sustainedHealthyCount < 2 ||
+			gate.sustainedHealthyCount > MAX_REQUIRED_OBSERVATIONS ||
+			gate.maxSampleAgeMs > spec.windowMs
+		)
+			problems.push({
+				code: "verification-spec-invalid",
+				message:
+					"SLO sample counts must be 2..10000 and sample age must fit the window",
+				subject: "slo_gate",
+			});
+	}
 
 	if (spec.maxErrorBudgetBurn > 0) {
 		const bound = [...spec.thresholds, ...spec.comparisons].some(

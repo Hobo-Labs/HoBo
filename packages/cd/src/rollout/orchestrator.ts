@@ -488,8 +488,7 @@ export function createRolloutOrchestrator(
 			const predecessor =
 				current.predecessorSetId === ""
 					? undefined
-					:
-						await d.desired.get(current.predecessorSetId as SetId);
+					: await d.desired.get(current.predecessorSetId as SetId);
 			if (!predecessor)
 				return [
 					await append(
@@ -777,6 +776,29 @@ export function createRolloutOrchestrator(
 		deadline: number,
 		ctx: CdContext,
 	): Promise<[RolloutLedgerState, StepResult]> {
+		if (state.plan.verification?.sloGate) {
+			if (
+				ctx.now() - state.lastProgressAtMs <= deadline ||
+				state.hold?.code === "rollout-slo-evidence-pending"
+			)
+				return [state, "waiting"];
+			return [
+				await append(
+					state,
+					ROLLOUT_LEDGER.held,
+					bodies.held(
+						reason(
+							"rollout-slo-evidence-pending",
+							`verification ${verificationId} on Camp ${campId} is awaiting fresh SLO evidence`,
+							verificationId,
+						),
+						ctx.now(),
+					),
+					ctx,
+				),
+				"progressed",
+			];
+		}
 		if (ctx.now() - state.lastProgressAtMs <= 2 * deadline)
 			return [state, "waiting"];
 		return [
@@ -991,6 +1013,16 @@ export function createRolloutOrchestrator(
 						deadline,
 						ctx,
 					);
+				if (state.hold?.code === "rollout-slo-evidence-pending")
+					return [
+						await append(
+							state,
+							ROLLOUT_LEDGER.released,
+							bodies.released(now),
+							ctx,
+						),
+						"progressed",
+					];
 				return [
 					await append(
 						state,
@@ -1160,6 +1192,16 @@ export function createRolloutOrchestrator(
 		) {
 			if (!result || result.verdict === VerificationVerdict.UNSPECIFIED)
 				return awaitVerdict(state, stage.verificationId, campId, deadline, ctx);
+			if (state.hold?.code === "rollout-slo-evidence-pending")
+				return [
+					await append(
+						state,
+						ROLLOUT_LEDGER.released,
+						bodies.released(now),
+						ctx,
+					),
+					"progressed",
+				];
 			return [
 				await append(
 					state,

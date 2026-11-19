@@ -7,6 +7,7 @@ import {
 import { CD_STREAMS } from "../events.js";
 import type { VerificationId } from "../ports.js";
 import { evaluateVerification } from "./evaluate.js";
+import { evidenceDigest } from "./evidence.js";
 import { foldVerification } from "./journal.js";
 
 export type VerificationReplay = Readonly<{
@@ -43,6 +44,18 @@ export function replayVerification(
 		atMs: Date.parse(recorded.finishedAt),
 	});
 	const mismatches: string[] = [];
+	if (
+		recorded.evidenceDigest &&
+		recorded.evidenceDigest !==
+			evidenceDigest({
+				spec: state.spec,
+				cohortAware: state.cohortAware,
+				evidence: state.evidence,
+				startedAtMs: state.startedAtMs,
+				atMs: Date.parse(recorded.finishedAt),
+			})
+	)
+		mismatches.push("evidence-digest");
 	if (!evaluation.complete) mismatches.push("incomplete");
 	const replayedByName = new Map(
 		evaluation.checks.map((check) => [check.check, check]),
