@@ -84,8 +84,9 @@ const ConnectViewSchema = z.object({
 	directive: DirectiveSchema,
 });
 
-function parseConnectView(input: unknown): View {
-	const parsed = ConnectViewSchema.parse(input);
+type ParsedConnectView = z.infer<typeof ConnectViewSchema>;
+
+function viewFromParsedConnect(parsed: ParsedConnectView): View {
 	if (!isNonEmptySpec(parsed.spec)) {
 		throw new Error("invalid connect view spec");
 	}
@@ -129,7 +130,7 @@ function ConnectPage() {
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
 		if (!response.ok) throw new Error(`view failed (${response.status})`);
-		setView(parseConnectView(await response.json()));
+		setView(viewFromParsedConnect(ConnectViewSchema.parse(await response.json())));
 	}, []);
 
 	useEffect(() => {
@@ -152,7 +153,9 @@ function ConnectPage() {
 				body: JSON.stringify({ action, params }),
 			});
 			if (!response.ok) throw new Error(`action failed (${response.status})`);
-			const next = parseConnectView(await response.json());
+			const next = viewFromParsedConnect(
+				ConnectViewSchema.parse(await response.json()),
+			);
 			setView(next);
 			follow(next.directive);
 		} catch (reason) {
