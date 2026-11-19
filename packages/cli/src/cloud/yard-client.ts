@@ -357,7 +357,7 @@ function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
 			reconciliationOperation?: string;
 		};
 		const resourceId = data.resourceId;
-		const reconciliation =
+		const reconciliation: ProgressEvent["reconciliation"] =
 			data.requiresReconciliation === true
 				? {
 						operation:
