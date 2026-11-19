@@ -40,7 +40,9 @@
 	},
 	"devDependencies": {
 		"@bytecodealliance/jco": "1.24.3",
+		"@bytecodealliance/jco-transpile": "0.24.0",
 		"@types/node": "^22.15.29",
+		"componentize-qjs": "0.5.0",
 		"tsx": "^4.20.3",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"

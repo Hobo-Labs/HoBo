@@ -48,7 +48,7 @@ A mandatory host authority checks current access before dispatch and again befor
 disclosing a response; the host must fence that authorization throughout each
 call, including in-flight work that outlives a timeout. Instance-scoped
 authorization is required for unfiltered audit events. The host issues a
-separate instance-metadata grant for synchronous `limits()` disclosure only
+separate instance-metadata grant for asynchronous `limits()` disclosure only
 after authorizing the binding. Revocation is permanent for that grant; each
 regrant requires a fresh grant and binding, and the host must propagate revocation
 and fence in-flight work across processes. For `ensureSubscription`, the authorizer must authorize the supplied dead-letter
@@ -132,8 +132,8 @@ old starts, calls, or executor credentials were fenced. Before replacement the
 host must independently fence and drain old executors and reconcile unresolved
 work, using authenticated noncommit evidence where noncommit is asserted.
 
-For JCO components, `instantiateDurableMessagingJspi` uses the distinct
-`hobo:durable-messaging-jspi/messaging@0.1.0` synchronous ABI with JSPI
+For JCO components, `instantiateDurableMessagingAsync` links the native
+`hobo:durable-messaging/messaging@0.1.0` asynchronous ABI using JSPI
 suspension. It refuses a runtime lacking `WebAssembly.Suspending` and
 `WebAssembly.promising`; Node 24 requires `--experimental-wasm-stack-switching`.
 The trusted verifier must independently bind the component digest, its complete
@@ -143,7 +143,7 @@ keep those artifacts and the binding immutable. Verification is a trusted,
 bounded, nonblocking synchronous callback; the start timeout cannot interrupt it and begins after verification.
 The adapter checks that the exact versioned interface is
 present before passing JCO's short alias solely to that verified factory.
-Configure JCO's JSPI transpiler to mark all eight mutation/read imports and each
+Configure JCO's JSPI transpiler to mark all nine imports and each
 guest entry point that can call them as asynchronous. For example, a host that
 has already identified the component and its factory can pass its independent
 verification capability:
@@ -151,7 +151,7 @@ verification capability:
 ```ts
 import {
   createDurableMessagingWitHost,
-  instantiateDurableMessagingJspi,
+  instantiateDurableMessagingAsync,
 } from "@hobo/runtime/durable-messaging-host";
 
 // Reuse the instance lifecycle and limits grant from the authorized binding.
@@ -160,7 +160,7 @@ const messaging = createDurableMessagingWitHost(authorizedMessagingPort, {
   limitsGrant,
   authorize: (request) => host.verifyMessagingAccess(binding, request),
 });
-const start = await instantiateDurableMessagingJspi(messaging, {
+const start = await instantiateDurableMessagingAsync(messaging, {
   component: hostComponent,
   verify: (candidate, bindingHost) => host.verifyComponentAndBinding(candidate, bindingHost),
   timeoutMs: 30_000,
@@ -191,7 +191,6 @@ CPU and memory limits; after termination, fence the executor and reconcile any
 prior effects. The monotonic deadline detects an eventual late return but cannot
 produce a result while the event loop is blocked.
 
-This is an opt-in JCO/JSPI path. The separately declared native async WIT still
-needs a host and toolchain that support native component async functions. The
-existing Wasmtime subprocess and JSON-only local component host do not yet link
-this interface; this adapter does not enable those hosts by itself.
+This JCO/JSPI path executes native async WIT components. The existing Wasmtime
+subprocess and JSON-only local component host do not yet link this interface;
+this adapter does not enable those hosts by itself.
