@@ -14,7 +14,7 @@ import {
 	type ReadAllOptions,
 } from "@hobo/core";
 import {
-	CrossCampProjectionLaggedDataSchema,
+	CrossCampProjectionLagDataSchema,
 	ProjectionReplicatedEventDataSchema,
 	ProjectionReplicationCheckedDataSchema,
 } from "./_generated/data_pb.js";
@@ -23,6 +23,8 @@ import type { Projection, ProjectionSnapshot } from "./projection.js";
 
 const REPLICATED = "projection.EventReplicated";
 const CHECKED = "projection.ReplicationChecked";
+const LAGGED = "projection.ReplicaLagged";
+const RECOVERED = "projection.ReplicaRecovered";
 
 export interface CrossCampProjectionOptions<Row> {
 	readonly projection: Projection<Row>;
@@ -37,7 +39,6 @@ export interface CrossCampProjectionOptions<Row> {
 	readonly maxStalenessMs: number;
 	readonly nowMs: () => number;
 	readonly maxBatchEvents?: number;
-	readonly onLag?: (event: EventInput) => void | Promise<void>;
 }
 
 export interface CrossCampProjectionView<Row> {
@@ -69,6 +70,7 @@ interface ReplicaState {
 	readonly replicaSeq: number;
 	readonly events: Array<{ position: bigint; event: EventEnvelope }>;
 	readonly checkedAtMs: number | null;
+	readonly lagged: boolean;
 }
 
 export function createCrossCampProjection<Row>(
@@ -127,6 +129,7 @@ export function createCrossCampProjection<Row>(
 		const events: Array<{ position: bigint; event: EventEnvelope }> = [];
 		let replicaSeq = 0;
 		let checkedAtMs: number | null = null;
+		let lagged = false;
 		let pending = false;
 		for await (const record of options.replica.read(options.replicaStreamId)) {
 			if (record.seq !== replicaSeq + 1)
@@ -168,57 +171,90 @@ export function createCrossCampProjection<Row>(
 					throw new Error("replica checkpoint clock moved backward");
 				if (data.caughtUp) checkedAtMs = checked;
 				pending = false;
+			} else if (record.type === LAGGED || record.type === RECOVERED) {
+				const data = fromJsonString(
+					CrossCampProjectionLagDataSchema,
+					JSON.stringify(record.data),
+				);
+				if (
+					pending ||
+					data.projection !== options.projection.name ||
+					data.ownerCampId !== options.ownerCampId ||
+					data.replicaCampId !== options.replicaCampId ||
+					lagged === (record.type === LAGGED)
+				)
+					throw new Error("replica contains an invalid lag transition");
+				lagged = record.type === LAGGED;
 			} else {
 				throw new Error(`unexpected replica event ${record.type}`);
 			}
 		}
 		if (pending) throw new Error("replica contains an incomplete batch");
-		return { replicaSeq, events, checkedAtMs };
+		return { replicaSeq, events, checkedAtMs, lagged };
 	}
 
 	async function view(
-		state: ReplicaState,
+		initial: ReplicaState,
 	): Promise<CrossCampProjectionView<Row>> {
-		const now = integer(options.nowMs(), "nowMs");
-		const checked = state.checkedAtMs;
-		if (checked !== null && now < checked)
-			throw new Error("replica clock moved backward");
-		const observedLagMs = checked === null ? null : now - checked;
-		const status =
-			observedLagMs === null
-				? "unknown"
-				: observedLagMs > options.maxStalenessMs
-					? "exceeds-bound"
-					: "within-bound";
-		if (status === "exceeds-bound" && observedLagMs !== null && options.onLag) {
-			await options.onLag({
-				type: "projection.ReplicaLagged",
-				data: toJson(
-					CrossCampProjectionLaggedDataSchema,
-					create(CrossCampProjectionLaggedDataSchema, {
-						projection: options.projection.name,
-						ownerCampId: options.ownerCampId,
-						replicaCampId: options.replicaCampId,
-						sourcePosition: state.events.at(-1)?.position ?? 0n,
-						boundMs: BigInt(options.maxStalenessMs),
-						observedLagMs: BigInt(observedLagMs),
-					}),
-					{ alwaysEmitImplicit: true },
+		let state = initial;
+		for (let attempt = 0; attempt < 8; attempt += 1) {
+			const now = integer(options.nowMs(), "nowMs");
+			const checked = state.checkedAtMs;
+			if (checked !== null && now < checked)
+				throw new Error("replica clock moved backward");
+			const observedLagMs = checked === null ? null : now - checked;
+			const status =
+				observedLagMs === null
+					? "unknown"
+					: observedLagMs > options.maxStalenessMs
+						? "exceeds-bound"
+						: "within-bound";
+			const lagged = status === "exceeds-bound";
+			if (observedLagMs !== null && lagged !== state.lagged) {
+				const event: EventInput = {
+					type: lagged ? LAGGED : RECOVERED,
+					data: toJson(
+						CrossCampProjectionLagDataSchema,
+						create(CrossCampProjectionLagDataSchema, {
+							projection: options.projection.name,
+							ownerCampId: options.ownerCampId,
+							replicaCampId: options.replicaCampId,
+							sourcePosition: state.events.at(-1)?.position ?? 0n,
+							boundMs: BigInt(options.maxStalenessMs),
+							observedLagMs: BigInt(observedLagMs),
+						}),
+						{ alwaysEmitImplicit: true },
+					),
+				};
+				try {
+					await options.replica.append(options.replicaStreamId, [event], {
+						expectedSeq: state.replicaSeq,
+						actor: options.actor,
+						tenant: options.tenant,
+					});
+				} catch (error) {
+					if (!(error instanceof Error) || !isOptimisticConflict(error))
+						throw error;
+					state = await loadReplica();
+					continue;
+				}
+			}
+			return {
+				snapshot: options.projection.fold(
+					state.events.map(({ event }) => event),
 				),
-			});
+				sourcePosition: String(state.events.at(-1)?.position ?? 0n),
+				staleness: {
+					status,
+					boundMs: options.maxStalenessMs,
+					checkedAtMs: checked,
+					observedLagMs,
+					ownerCampId: options.ownerCampId,
+					replicaCampId: options.replicaCampId,
+				},
+			};
 		}
-		return {
-			snapshot: options.projection.fold(state.events.map(({ event }) => event)),
-			sourcePosition: String(state.events.at(-1)?.position ?? 0n),
-			staleness: {
-				status,
-				boundMs: options.maxStalenessMs,
-				checkedAtMs: checked,
-				observedLagMs,
-				ownerCampId: options.ownerCampId,
-				replicaCampId: options.replicaCampId,
-			},
-		};
+		throw new Error("replica remained busy while recording lag state");
 	}
 
 	async function replicate(): Promise<CrossCampReplicationResult<Row>> {
@@ -296,6 +332,7 @@ export function createCrossCampProjection<Row>(
 					replicaSeq: state.replicaSeq + records.length,
 					events: [...state.events, ...events],
 					checkedAtMs: caughtUp ? checkedAtMs : state.checkedAtMs,
+					lagged: state.lagged,
 				}),
 			};
 		}

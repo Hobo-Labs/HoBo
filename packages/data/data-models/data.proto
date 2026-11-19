@@ -160,7 +160,7 @@ message ProjectionReplicationCheckedData {
   bool caught_up = 4;
 }
 
-message CrossCampProjectionLaggedData {
+message CrossCampProjectionLagData {
   string projection = 1;
   string owner_camp_id = 2;
   string replica_camp_id = 3;

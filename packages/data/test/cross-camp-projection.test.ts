@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { EventInput } from "@hobo/core";
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCrossCampProjection, defineProjection } from "../src/index.js";
@@ -35,7 +34,6 @@ function fixture(maxBatchEvents = 2) {
 		() => replica.close(),
 	);
 	let now = 1_000;
-	const lagged: unknown[] = [];
 	const options = {
 		projection,
 		owner,
@@ -48,19 +46,11 @@ function fixture(maxBatchEvents = 2) {
 		maxStalenessMs: 100,
 		maxBatchEvents,
 		nowMs: () => now,
-		onLag: async (event: EventInput) => {
-			await replica.append("lag:tickets", [event], {
-				...append,
-				expectedSeq: lagged.length,
-			});
-			lagged.push(event);
-		},
 	};
 	return {
 		owner,
 		replica,
 		options,
-		lagged,
 		setNow(value: number) {
 			now = value;
 		},
@@ -226,7 +216,11 @@ describe("cross-camp projection replication", () => {
 			checkedAtMs: 1_000,
 			observedLagMs: 200,
 		});
-		expect(f.lagged).toEqual([
+		const storedLag = [];
+		for await (const event of f.replica.read("replica:tickets")) {
+			if (event.type === "projection.ReplicaLagged") storedLag.push(event);
+		}
+		expect(storedLag).toMatchObject([
 			{
 				type: "projection.ReplicaLagged",
 				data: {
@@ -239,14 +233,44 @@ describe("cross-camp projection replication", () => {
 				},
 			},
 		]);
-		const storedLag = [];
-		for await (const event of f.replica.read("lag:tickets"))
-			storedLag.push(event);
 		expect(storedLag).toHaveLength(1);
-		expect(storedLag[0]).toMatchObject(f.lagged[0]);
 		const completed = await runtime.replicate();
 		expect(completed.caughtUp).toBe(true);
 		expect(completed.view.staleness.status).toBe("within-bound");
+	});
+
+	it("records lag and recovery once across concurrent readers and restart", async () => {
+		const f = fixture();
+		const first = createCrossCampProjection(f.options);
+		await first.replicate();
+		f.setNow(1_200);
+		const second = createCrossCampProjection(f.options);
+		const stale = await Promise.all([first.read(), second.read()]);
+		expect(stale.map((view) => view.staleness.status)).toEqual([
+			"exceeds-bound",
+			"exceeds-bound",
+		]);
+		const restarted = createCrossCampProjection(f.options);
+		await restarted.read();
+		f.setNow(1_300);
+		expect((await restarted.replicate()).view.staleness.status).toBe(
+			"within-bound",
+		);
+		await Promise.all([first.read(), second.read()]);
+		const transitions = [];
+		for await (const event of f.replica.read("replica:tickets")) {
+			if (
+				event.type === "projection.ReplicaLagged" ||
+				event.type === "projection.ReplicaRecovered"
+			)
+				transitions.push(event);
+		}
+		expect(transitions.map((event) => event.type)).toEqual([
+			"projection.ReplicaLagged",
+			"projection.ReplicaRecovered",
+		]);
+		expect(transitions[0]?.data).toMatchObject({ observedLagMs: "200" });
+		expect(transitions[1]?.data).toMatchObject({ observedLagMs: "0" });
 	});
 
 	it("stores replica and lag records accepted by their CUE contracts", async () => {
@@ -261,6 +285,8 @@ describe("cross-camp projection replication", () => {
 		await runtime.replicate();
 		f.setNow(1_200);
 		await runtime.read();
+		f.setNow(1_300);
+		await runtime.replicate();
 		const directory = mkdtempSync(join(tmpdir(), "hobo-replica-cue-"));
 		try {
 			const schema = fileURLToPath(
@@ -274,16 +300,14 @@ describe("cross-camp projection replication", () => {
 			const records = [];
 			for await (const event of f.replica.read("replica:tickets"))
 				records.push(event);
-			for await (const event of f.replica.read("lag:tickets"))
-				records.push(event);
-			expect(records).toHaveLength(3);
+			expect(records).toHaveLength(5);
 			for (const record of records) {
 				const definition =
 					record.type === "projection.EventReplicated"
 						? "#ProjectionReplicatedEventData"
 						: record.type === "projection.ReplicationChecked"
 							? "#ProjectionReplicationCheckedData"
-							: "#CrossCampProjectionLaggedData";
+							: "#CrossCampProjectionLagData";
 				const path = join(directory, "record.json");
 				writeFileSync(path, JSON.stringify(record.data));
 				execFileSync(cue, ["vet", schema, path, "-d", definition]);

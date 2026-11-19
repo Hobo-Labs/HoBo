@@ -56,9 +56,26 @@ describe.skipIf(!cueAvailable)("projection metadata contract", () => {
 		expect(
 			validate({ ...withMetadata, readModel: "shop:other/view@1.0.0" }),
 		).not.toBe(0);
+		expect(validate({ ...withMetadata, readSet: [] })).not.toBe(0);
+		expect(
+			validate({
+				...withMetadata,
+				rowSchema: { witRecord: "shop:orders/view@1.0.0", fields: [] },
+			}),
+		).not.toBe(0);
 	});
 
 	it("accepts protobuf checkpoint JSON with per-stream sequences", () => {
+		const basic = create(ProjectionCheckpointRecordSchema, {
+			projection: "orders",
+			seq: 3n,
+			rowsJson: "{}",
+			savedAt: "2026-11-19T00:00:00.000Z",
+		});
+		const basicJson = toJson(ProjectionCheckpointRecordSchema, basic);
+		if (!isJsonObject(basicJson))
+			throw new Error("checkpoint JSON must be an object");
+		expect(validate(basicJson, "#ProjectionCheckpointRecord")).toBe(0);
 		const checkpoint = create(ProjectionCheckpointRecordSchema, {
 			projection: "orders",
 			seq: 3n,
