@@ -2055,7 +2055,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
 	});
 
-	it("grandfathers a fractional journaled delayMs from a legacy writer", async () => {
+	it("rejects a journaled fractional delayMs on resume", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/legacy-fractional-sleep";
 		await engine.store.append(
@@ -2085,22 +2085,13 @@ describe("durable workflow: journal, restart, replay", () => {
 		const wf = defineWorkflow({
 			name: "legacy-fractional-sleep",
 			async run(ctx) {
-				await ctx.sleep(1.5);
+				await ctx.sleep(1);
 				return "done";
 			},
 		});
-		const handle = await engine.resume(wf, "legacy-fractional-sleep", {});
-		expect(handle.result).toBe("done");
-		const journal = await engine.journal("legacy-fractional-sleep");
-		const sleepEvents = journal.filter(
-			(event) => event.type === "run.SleepScheduled",
-		);
-		expect(sleepEvents).toHaveLength(1);
-		const sleepEvent = sleepEvents[0];
-		if (!sleepEvent || !isJsonObject(sleepEvent.data)) {
-			throw new Error("expected run.SleepScheduled");
-		}
-		expect(sleepEvent.data.delayMs).toBe(1.5);
+		await expect(
+			engine.resume(wf, "legacy-fractional-sleep", {}),
+		).rejects.toThrow(/invalid run\.SleepScheduled/);
 	});
 
 	it("rejects a replay whose sleep does not match a legacy fractional delayMs", async () => {
@@ -2139,7 +2130,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		});
 		await expect(
 			engine.resume(wf, "legacy-fractional-diverged", {}),
-		).rejects.toThrow(/sleep schedule diverged on replay/);
+		).rejects.toThrow(/invalid run\.SleepScheduled/);
 		const journal = await engine.journal("legacy-fractional-diverged");
 		expect(journal).toHaveLength(2);
 	});

@@ -185,18 +185,12 @@ export function parseRunSleepScheduledFact(
 		Object.is(data.delayMs, -0)
 	)
 		throw new TypeError("invalid run.SleepScheduled");
-	const journaledDelayMs = data.delayMs;
-	let delayMs: number;
-	if (Number.isSafeInteger(journaledDelayMs) && journaledDelayMs >= 0) {
-		delayMs = journaledDelayMs;
-	} else if (
-		Number.isFinite(journaledDelayMs) &&
-		!Number.isInteger(journaledDelayMs) &&
-		journaledDelayMs > 0 &&
-		journaledDelayMs < Number.MAX_SAFE_INTEGER
+	const delayMs = data.delayMs;
+	if (
+		!Number.isSafeInteger(delayMs) ||
+		delayMs < 0 ||
+		Object.is(delayMs, -0)
 	) {
-		delayMs = journaledDelayMs;
-	} else {
 		throw new TypeError("invalid run.SleepScheduled");
 	}
 	if (!Object.hasOwn(data, "index") || !isBoundedJournalIndex(data.index))
