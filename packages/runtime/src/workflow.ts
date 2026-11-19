@@ -35,6 +35,8 @@ import { runWithRetries } from "./step.js";
 import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
+	readJournaledWorkflowResult,
+	terminalCompletedHandleResult,
 	captureWorkflowResult,
 	requireWorkflowRunId,
 } from "./workflow-value.js";
@@ -184,8 +186,8 @@ export function createWorkflowEngine(
 				throw new Error(`invalid ${terminal.type} for ${runId}`);
 			}
 			if (terminal.type === "run.Completed") {
-				// SAFETY: the journal stores the JSON-normalized workflow result.
-				const result = data.result as R | undefined;
+				const journaled = readJournaledWorkflowResult(data.result);
+				const result = terminalCompletedHandleResult<R>(journaled);
 				return { runId, status: "completed", result, error: undefined };
 			}
 			if (!isJsonString(data.message)) {
