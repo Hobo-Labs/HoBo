@@ -120,10 +120,6 @@ const ALLOWANCES = {
 		literals: { "/nonexistent/elsewhere": 1 },
 		why: "a decoy HOBO_HOME that is compared, never opened: ceremony() passes flags.home (test :150), so claim-ceremony.ts:71-72 takes it and defaultHoboHome(env) at :73 does not run",
 	},
-	"packages/hobo/test/derivative-descriptor-and-conformance.test.ts": {
-		literals: { "/nonexistent": 1 },
-		why: "the command returns HOBO_NO_RUNTIME (src/derivative-command.ts:354-358) before it reads flags.cwd or context.cwd (:382-385)",
-	},
 	"packages/hobo/test/local-substrates.test.ts": {
 		literals: { "/definitely/not/here": 1 },
 		why: "readText wraps readFileSync in a try that returns null (src/local-substrates.ts:209-214)",
@@ -304,7 +300,7 @@ describe("the literal scan", () => {
 
 	it("reports a literal the allowances do not cover, an extra copy of one they do, and an allowance with no literal", () => {
 		const file =
-			"packages/hobo/test/derivative-descriptor-and-conformance.test.ts";
+			"packages/iac/iac-pulumi/test/pulumi-automation-api-engine.test.ts";
 		const { offenders, stale } = audit([
 			{
 				file: "packages/hobo/test/unlisted.test.ts",
@@ -316,9 +312,9 @@ describe("the literal scan", () => {
 			{ file, line: 12, literal: "/nonexistent/other" },
 		]);
 		expect(offenders).toEqual([
+			"packages/hobo/test/unlisted.test.ts:7  /nowhere",
 			`${file}:9  /nonexistent`,
 			`${file}:12  /nonexistent/other`,
-			"packages/hobo/test/unlisted.test.ts:7  /nowhere",
 		]);
 		expect(stale).toContain(
 			"packages/management/test/projections.test.ts  /nowhere x1",

@@ -1,10 +1,7 @@
 import type { EventEnvelope } from "@hobo/core";
-import { diagnosticJson } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
-import { createUpcasterRegistry, foldEvents } from "../src/index.js";
-import { isJsonNumber, isJsonObject } from "../src/json.js";
-import { parseTotalCents } from "./helpers.js";
+import { foldEvents } from "../src/index.js";
 
 interface CountState {
 	count: number;
@@ -12,14 +9,6 @@ interface CountState {
 
 interface SeenState {
 	seen: number[];
-}
-
-function parseLegacyCents(data: EventEnvelope["data"]): number {
-	const parsed = diagnosticJson(data);
-	if (!isJsonObject(parsed) || !isJsonNumber(parsed.cents)) {
-		throw new TypeError("order event data must include cents:number");
-	}
-	return parsed.cents;
 }
 
 function evt(
@@ -37,28 +26,6 @@ function evt(
 		data: partial.data,
 	};
 }
-
-describe("upcaster registry", () => {
-	it("chains vN -> vN+1 forward-only and reports the latest version", () => {
-		const registry = createUpcasterRegistry();
-		registry
-			.register("order.Placed", 1, (data) => ({
-				totalCents: parseLegacyCents(data),
-			}))
-			.register("order.Placed", 2, (data) => ({
-				totalCents: parseTotalCents(data),
-				currency: "USD",
-			}));
-
-		expect(registry.latestVersion("order.Placed")).toBe(3);
-
-		const upcast = registry.upcast(
-			evt({ type: "order.Placed", seq: 1, v: 1, data: { cents: 4200 } }),
-		);
-		expect(upcast.v).toBe(3);
-		expect(upcast.data).toEqual({ totalCents: 4200, currency: "USD" });
-	});
-});
 
 describe("poison-event quarantine", () => {
 	it("records a quarantine when an evolve throws and keeps folding", () => {

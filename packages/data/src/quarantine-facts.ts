@@ -1,8 +1,11 @@
 import { create, fromJsonString } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import {
+	type AggregateQuarantinedEventData,
 	AggregateQuarantinedEventDataSchema,
+	type EventStoreQuarantinedEventData,
 	EventStoreQuarantinedEventDataSchema,
+	type ProjectionQuarantinedEventData,
 	ProjectionQuarantinedEventDataSchema,
 	QuarantineReprocessFindingSchema,
 } from "./_generated/data_pb.js";
@@ -30,7 +33,9 @@ export function quarantineSequence(value: bigint): number {
 	return sequence;
 }
 
-export function parseAggregateQuarantine(event: EventEnvelope) {
+export function parseAggregateQuarantine(
+	event: EventEnvelope,
+): AggregateQuarantinedEventData {
 	const data = fromJsonString(
 		AggregateQuarantinedEventDataSchema,
 		JSON.stringify(event.data),
@@ -53,7 +58,9 @@ export function parseAggregateQuarantine(event: EventEnvelope) {
 	return data;
 }
 
-export function parseProjectionQuarantine(event: EventEnvelope) {
+export function parseProjectionQuarantine(
+	event: EventEnvelope,
+): ProjectionQuarantinedEventData {
 	const data = fromJsonString(
 		ProjectionQuarantinedEventDataSchema,
 		JSON.stringify(event.data),
@@ -76,7 +83,9 @@ export function parseProjectionQuarantine(event: EventEnvelope) {
 	return data;
 }
 
-export function parseEventStoreQuarantine(event: EventEnvelope) {
+export function parseEventStoreQuarantine(
+	event: EventEnvelope,
+): EventStoreQuarantinedEventData {
 	const data = fromJsonString(
 		EventStoreQuarantinedEventDataSchema,
 		JSON.stringify(event.data),

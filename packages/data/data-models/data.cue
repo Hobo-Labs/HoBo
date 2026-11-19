@@ -98,12 +98,6 @@ import "list"
 	foldKind:         "aggregate" | "projection"
 }
 
-#UpcasterRegistration: {
-	type:        =~"^[a-z][a-z0-9]*\\.[A-Z][A-Za-z0-9]*$"
-	fromVersion: int & >=1
-	toVersion:   int & >=2
-}
-
 #ActorActivatedData: {
 	streamId:   string & !=""
 	holderId:   string & !=""

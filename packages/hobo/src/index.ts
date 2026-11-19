@@ -233,12 +233,7 @@ export {
 	type DeployTargetDescription,
 	describeDeployTarget,
 } from "./deploy-preflight.js";
-export {
-	createDerivativeCommand,
-	type DerivativeCommandDeps,
-	type DerivativeUpcasterStep,
-	type UpcastedEventRecord,
-} from "./derivative-command.js";
+export { createDerivativeCommand } from "./derivative-command.js";
 export {
 	createDoctorCommand,
 	type DoctorCommandDeps,

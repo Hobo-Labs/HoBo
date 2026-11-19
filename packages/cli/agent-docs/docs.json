@@ -258,7 +258,7 @@
     {
       "name": "logs",
       "role": "read-only",
-      "summary": "Live-tail Camp runtime streams",
+      "summary": "Read or follow local deployment logs",
       "cli": "hobo logs",
       "mcpTool": "logs",
       "capability": {
@@ -510,7 +510,7 @@
     {
       "name": "derivative",
       "role": "extensibility",
-      "summary": "Manage derived HoBo implementations",
+      "summary": "Inspect a derived HoBo descriptor",
       "cli": "hobo derivative",
       "mcpTool": "derivative",
       "capability": {

@@ -293,7 +293,7 @@ export function createComposedHoboCli(
 			add: createAddCommand({ runtime }),
 			import: createImportCommand({ runtime }),
 			generate: createGenerateCommand({ runtime }),
-			derivative: createDerivativeCommand({ runtime }),
+			derivative: createDerivativeCommand(),
 			logs: createLogsCommand(),
 			runbook: createRunbookCommand({ runtime }),
 			erase: createEraseCommand({ runtime }),
