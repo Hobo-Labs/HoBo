@@ -234,3 +234,38 @@ test("conflicting overlapping SLOs resolve deterministically", () => {
     resolveOverlappingSloConflicts([relaxed, strict]),
   );
 });
+
+test("overlapping burn observations replace the objective budget and can recover", () => {
+  const slo = createGoldenSlo();
+  const event = (id, seq, remainingBudgetRatio) => makeSloEvent({
+    id,
+    type: "slo.BudgetBurned",
+    sloName: slo.metadata.name,
+    seq,
+    data: { window: "30d", good: 995, total: 1000, burnRate: 0.5, remainingBudgetRatio },
+  });
+  const first = event("first", 1, 0.8);
+  const overlapping = event("overlapping", 2, 0.8);
+  const recovered = event("recovered", 3, 0.9);
+  const once = applyBudgetEvent(initialBudgetView(slo), slo, first);
+  const twice = applyBudgetEvent(once, slo, overlapping);
+  const latest = applyBudgetEvent(twice, slo, recovered);
+  assert.equal(once.remainingBudgetRatio, 0.8);
+  assert.equal(twice.remainingBudgetRatio, 0.8);
+  assert.equal(latest.remainingBudgetRatio, 0.9);
+  assert.equal(latest.consumedBudgetRatio, 0.1);
+  assert.deepEqual(applyBudgetEvent(latest, slo, recovered), latest);
+  assert.throws(() => applyBudgetEvent(latest, slo, first), /sequence/);
+  const exhausted = makeSloEvent({
+    id: "exhausted",
+    type: "slo.BudgetExhausted",
+    sloName: slo.metadata.name,
+    seq: 4,
+    data: { remainingBudgetRatio: 0 },
+  });
+  const depleted = applyBudgetEvent(latest, slo, exhausted);
+  assert.equal(depleted.exhausted, true);
+  const replenished = applyBudgetEvent(depleted, slo, event("replenished", 5, 0.95));
+  assert.equal(replenished.exhausted, false);
+  assert.equal(replenished.remainingBudgetRatio, 0.95);
+});

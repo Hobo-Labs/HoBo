@@ -163,7 +163,7 @@ export function makeBudgetBurnedEvent(status, { id, seq, time }) {
       good: window.good,
       total: window.total,
       burnRate: window.burnRate,
-      remainingBudgetRatio: window.remainingBudgetRatio,
+      remainingBudgetRatio: status.objectiveWindow.remainingBudgetRatio,
     },
   });
 }

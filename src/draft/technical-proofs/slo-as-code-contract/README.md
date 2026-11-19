@@ -13,7 +13,10 @@ WIT sketch pin the public contract surface.
 - In scope: OpenSLO-aligned SLO declarations, SLI sources, objectives,
   error-budget windows, burn-rate thresholds, `slo.Declared`,
   `slo.BudgetBurned`, `slo.BudgetExhausted`, and the replayable remaining-budget
-  projection.
+  projection. Each burn event reports the objective window's remaining budget;
+  the projection replaces the previous observation as the rolling window moves.
+  Replaying the same event is idempotent; older or conflicting sequence numbers
+  are rejected.
 - Consumed but not owned: the telemetry envelope from HOBO-104. This POC validates
   only the minimal envelope boundary needed by SLO events: `type`, stream fields,
   and `meta.traceparent`.
