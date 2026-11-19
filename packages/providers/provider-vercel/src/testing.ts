@@ -183,6 +183,12 @@ export function createVercelDeploymentEmulator(
 	const uploads = new Map<string, Uint8Array>();
 	const aliases = new Map<string, string>();
 	const productionAliases = new Map<string, Set<string>>();
+	const configuredAliasProject = (alias: string): string | undefined =>
+		[...productionAliases].find(([, names]) => names.has(alias))?.[0];
+	const aliasReserved = (alias: string): boolean =>
+		aliases.has(alias) || configuredAliasProject(alias) !== undefined;
+	const deploymentOriginUsed = (hostname: string): boolean =>
+		[...deployments.values()].some((item) => item.url === hostname);
 	let nextId = 0;
 	let fault: Fault | undefined;
 	const team = options.teamId;
@@ -219,6 +225,7 @@ export function createVercelDeploymentEmulator(
 		if (!isJsonArray(input) || input.length === 0) return undefined;
 		const files = new Map<string, Uint8Array>();
 		let opaqueArchive = false;
+		let totalSize = 0;
 		for (const entry of input) {
 			const archive =
 				allowOpaqueArchives &&
@@ -244,7 +251,8 @@ export function createVercelDeploymentEmulator(
 				const found = uploads.get(entry.sha);
 				if (
 					!found ||
-					(entry.size !== undefined && entry.size !== found.byteLength)
+					(entry.size !== undefined && entry.size !== found.byteLength) ||
+					found.byteLength > FETCH_RESPONSE_LIMIT - totalSize
 				)
 					return undefined;
 				content = new Uint8Array(found);
@@ -261,6 +269,9 @@ export function createVercelDeploymentEmulator(
 					content = bytes(entry.data);
 				} else return undefined;
 			} else return undefined;
+			if (content.byteLength > FETCH_RESPONSE_LIMIT - totalSize)
+				return undefined;
+			totalSize += content.byteLength;
 			files.set(entry.file, content);
 		}
 		return { files, opaqueArchive };
@@ -342,8 +353,13 @@ export function createVercelDeploymentEmulator(
 		}
 		if (headers.get("authorization") !== `Bearer ${token}`)
 			return error(401, "unauthorized");
-		const scope = url.searchParams.get("teamId") ?? team;
-		if (scope !== team) return error(404, "not_found");
+		const scopes = url.searchParams.getAll("teamId");
+		if (
+			scopes.length > 1 ||
+			(scopes.length === 1 && scopes[0] !== team) ||
+			url.searchParams.has("slug")
+		)
+			return error(404, "not_found");
 		const parts = url.pathname.split("/").filter(Boolean);
 		if (
 			method === "GET" &&
@@ -426,7 +442,11 @@ export function createVercelDeploymentEmulator(
 			if (!Object.values(meta).every(isJsonString))
 				return error(400, "invalid_metadata");
 			do nextId += 1;
-			while (deployments.has(`dpl_${nextId}`));
+			while (
+				deployments.has(`dpl_${nextId}`) ||
+				aliasReserved(`deployment-${nextId}.vercel.app`) ||
+				deploymentOriginUsed(`deployment-${nextId}.vercel.app`)
+			);
 			const id = `dpl_${nextId}`;
 			const deployment: Deployment = {
 				id,
@@ -641,6 +661,7 @@ export function createVercelDeploymentEmulator(
 		},
 		seedDeployment(input) {
 			const project = projects.get(input.projectId);
+			const hostname = `${input.id.replace("_", "-").toLowerCase()}.vercel.app`;
 			if (
 				!project ||
 				!/^dpl_[A-Za-z0-9]+$/u.test(input.id) ||
@@ -648,7 +669,9 @@ export function createVercelDeploymentEmulator(
 				(input.staged === true && input.target !== "production") ||
 				(input.state !== undefined &&
 					!["BUILDING", "READY", "ERROR", "CANCELED"].includes(input.state)) ||
-				deployments.has(input.id)
+				deployments.has(input.id) ||
+				aliasReserved(hostname) ||
+				deploymentOriginUsed(hostname)
 			)
 				throw new TypeError("Invalid emulator deployment.");
 			const files = new Map<string, Uint8Array>();
@@ -664,7 +687,7 @@ export function createVercelDeploymentEmulator(
 			deployments.set(input.id, {
 				id: input.id,
 				project,
-				url: `${input.id.replace("_", "-")}.vercel.app`,
+				url: hostname,
 				target: input.target,
 				state: input.state ?? "READY",
 				staged: input.staged ?? false,
@@ -679,11 +702,15 @@ export function createVercelDeploymentEmulator(
 			const existingId = aliases.get(alias);
 			const existing =
 				existingId === undefined ? undefined : deployments.get(existingId);
+			const configuredProject = configuredAliasProject(alias);
 			if (
 				deployment?.target !== "production" ||
 				deployment.state !== "READY" ||
 				(existing !== undefined &&
 					existing.project.id !== deployment.project.id) ||
+				(configuredProject !== undefined &&
+					configuredProject !== deployment.project.id) ||
+				deploymentOriginUsed(alias) ||
 				!/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$/u.test(alias)
 			)
 				throw new TypeError("Invalid emulator alias.");
@@ -721,6 +748,8 @@ export function createVercelDeploymentEmulator(
 		setState(deploymentId, state) {
 			const deployment = deployments.get(deploymentId);
 			if (!deployment) throw new TypeError("Unknown emulator deployment.");
+			if (!["BUILDING", "READY", "ERROR", "CANCELED"].includes(state))
+				throw new TypeError("Invalid emulator deployment state.");
 			if (deployment.state !== "BUILDING" && deployment.state !== state)
 				throw new TypeError("An emulator deployment is already terminal.");
 			deployment.state = state;

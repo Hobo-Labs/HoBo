@@ -562,12 +562,14 @@ emulator's `app.fetch` as `projectFetch`, then seed the same project identity in
 both fixtures. It exposes both `fetch` and HoBo's `HttpTransport`, backed by the
 same isolated state. The adapter forwards project lookup and file uploads to the
 Labs emulator and supplies the deployment behavior that emulator does not yet
-model. It never chooses a network transport itself; `projectFetch` must be an
-in-process emulator, not the real provider.
+model. It supports one synthetic team selected by `teamId`; slug scope and
+duplicate team IDs are refused. It never chooses a network transport itself;
+`projectFetch` must be an in-process emulator, not the real provider.
 The `HttpTransport` uses HoBo's bounded fetch adapter and forwards its abort
 signal to `projectFetch`. An upstream operation that ignores cancellation can
 still have an uncertain outcome; delayed responses do not update the overlay.
-The emulator bounds request bodies and its `fetch` responses to 32 MiB.
+The emulator bounds each request body, `fetch` response, and deployment's
+aggregate file content to 32 MiB.
 
 The supported slice uploads content addressed by SHA-1, creates file-based preview
 or staged production deployments, reads and lists them, serves the saved source

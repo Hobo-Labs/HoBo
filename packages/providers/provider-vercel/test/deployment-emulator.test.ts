@@ -348,6 +348,19 @@ describe("Vercel deployment emulator", () => {
 			},
 		);
 		expect(foreign.status).toBe(404);
+		const forwardedBeforeScopeChecks = f.forwarded.length;
+		for (const query of [
+			`teamId=${f.team.uid}&teamId=team_foreign`,
+			`teamId=${f.team.uid}&slug=foreign`,
+			"slug=fixture",
+		]) {
+			const response = await f.emulator.fetch(
+				`${API}/v9/projects/${f.project.uid}?${query}`,
+				{ headers: { authorization: `Bearer ${TOKEN}` } },
+			);
+			expect(response.status).toBe(404);
+		}
+		expect(f.forwarded).toHaveLength(forwardedBeforeScopeChecks);
 		expect((await f.send("/unimplemented")).status).toBe(501);
 		expect(
 			(
@@ -492,6 +505,114 @@ describe("Vercel deployment emulator", () => {
 				)
 			).json(),
 		).toMatchObject({ deploymentId: "dpl_previous" });
+	});
+
+	it("normalizes seeded deployment hosts and rejects collisions", async () => {
+		const f = fixture("READY");
+		f.emulator.seedDeployment({
+			id: "dpl_AbC",
+			projectId: f.project.uid,
+			target: "production",
+			files: { "index.html": "synthetic content" },
+		});
+		expect(
+			await (
+				await f.emulator.fetch("https://dpl-AbC.vercel.app/index.html")
+			).text(),
+		).toBe("synthetic content");
+		expect(() =>
+			f.emulator.seedDeployment({
+				id: "dpl_aBc",
+				projectId: f.project.uid,
+				target: "production",
+			}),
+		).toThrow("Invalid emulator deployment");
+		expect(() => f.emulator.seedAlias("dpl-abc.vercel.app", "dpl_AbC")).toThrow(
+			"Invalid emulator alias",
+		);
+	});
+
+	it("does not generate a deployment origin reserved by an alias", async () => {
+		const f = fixture("READY");
+		f.emulator.seedDeployment({
+			id: "dpl_previous",
+			projectId: f.project.uid,
+			target: "production",
+		});
+		f.emulator.seedAlias("deployment-1.vercel.app", "dpl_previous");
+		expect(
+			(await f.send("/v13/deployments/dpl_previous", { method: "DELETE" }))
+				.status,
+		).toBe(200);
+		const created = await f.send("/v13/deployments", {
+			method: "POST",
+			body: JSON.stringify({
+				name: f.project.name,
+				project: f.project.uid,
+				files: [{ file: "index.html", data: "fixture" }],
+			}),
+		});
+		expect(created.status).toBe(200);
+		expect(await created.json()).toMatchObject({
+			id: "dpl_2",
+			url: "deployment-2.vercel.app",
+		});
+	});
+
+	it("rejects invalid runtime states without changing a deployment", async () => {
+		const f = fixture();
+		f.emulator.seedDeployment({
+			id: "dpl_fixture",
+			projectId: f.project.uid,
+			target: "production",
+			state: "BUILDING",
+		});
+		expect(() =>
+			f.emulator.setState("dpl_fixture", JSON.parse('"INVALID"')),
+		).toThrow("Invalid emulator deployment state");
+		expect(
+			await (await f.send("/v13/deployments/dpl_fixture")).json(),
+		).toMatchObject({
+			readyState: "BUILDING",
+		});
+		f.emulator.setState("dpl_fixture", "READY");
+		expect(
+			await (await f.send("/v13/deployments/dpl_fixture")).json(),
+		).toMatchObject({
+			readyState: "READY",
+		});
+	});
+
+	it("keeps a configured alias owned by its project after deployment deletion", async () => {
+		const f = fixture("READY");
+		seedFromConfig(f.store, API, {
+			projects: [{ name: "other", team: "fixture" }],
+		});
+		const other = getVercelStore(f.store).projects.findOneBy("name", "other");
+		if (!other) throw new Error("Fixture is unavailable.");
+		f.emulator.seedProject({
+			id: other.uid,
+			name: other.name,
+			teamId: f.team.uid,
+		});
+		f.emulator.seedDeployment({
+			id: "dpl_previous",
+			projectId: f.project.uid,
+			target: "production",
+		});
+		f.emulator.seedDeployment({
+			id: "dpl_other",
+			projectId: other.uid,
+			target: "production",
+		});
+		f.emulator.seedAlias("fixture.vercel.app", "dpl_previous");
+		expect(
+			(await f.send("/v13/deployments/dpl_previous", { method: "DELETE" }))
+				.status,
+		).toBe(200);
+		expect(() =>
+			f.emulator.seedAlias("fixture.vercel.app", "dpl_other"),
+		).toThrow("Invalid emulator alias");
 	});
 
 	it("keeps promotion readback separate from a lost promotion response", async () => {
@@ -762,6 +883,37 @@ describe("Vercel deployment emulator", () => {
 		controller.abort();
 		await expect(upload).rejects.toMatchObject({ name: "AbortError" });
 		expect(f.forwarded).not.toContain("POST /v2/files");
+	});
+
+	it("bounds aggregate deployment content even for repeated uploaded references", async () => {
+		const f = fixture("READY");
+		const content = new Uint8Array(11 * 1024 * 1024);
+		const sha = createHash("sha1").update(content).digest("hex");
+		expect(
+			(
+				await f.send("/v2/files", {
+					method: "POST",
+					headers: { "x-vercel-digest": sha },
+					body: content,
+				})
+			).status,
+		).toBe(200);
+		const files = ["one", "two", "three"].map((file) => ({
+			file,
+			sha,
+			size: content.byteLength,
+		}));
+		const create = (entries: typeof files) =>
+			f.send("/v13/deployments", {
+				method: "POST",
+				body: JSON.stringify({
+					name: f.project.name,
+					project: f.project.uid,
+					files: entries,
+				}),
+			});
+		expect((await create(files)).status).toBe(400);
+		expect((await create(files.slice(0, 2))).status).toBe(200);
 	});
 
 	it("refuses an upload larger than the bounded request body", async () => {
