@@ -184,7 +184,12 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	return {
 		persistence: "durable-cas",
 		async initializeFresh(verifyFresh) {
-			createBudgetAdmissionAuthority({ snapshot: initialSnapshot });
+			try {
+				createBudgetAdmissionAuthority({ snapshot: initialSnapshot });
+			} catch (error) {
+				const persisted = await journal.read().catch(() => []);
+				if (persisted.length === 0) throw error;
+			}
 			try {
 				await journal.bootstrap(verifyFresh);
 			} catch (error) {
