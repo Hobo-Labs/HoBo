@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-	mkdtempSync,
 	mkdirSync,
+	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -16,6 +17,7 @@ import * as z from "zod";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hook = join(root, "scripts/agent-source-policy.mts");
 const scratch: string[] = [];
+const stateDirectories = new Map<string, string>();
 const env = {
 	...process.env,
 	GIT_CONFIG_NOSYSTEM: "1",
@@ -25,6 +27,7 @@ const env = {
 afterEach(() => {
 	for (const directory of scratch.splice(0))
 		rmSync(directory, { recursive: true, force: true });
+	stateDirectories.clear();
 });
 
 function fixture() {
@@ -55,14 +58,104 @@ function fixture() {
 }
 
 function runHook(cwd: string) {
+	let stateDirectory = stateDirectories.get(cwd);
+	if (!stateDirectory) {
+		stateDirectory = mkdtempSync(join(tmpdir(), "hobo-agent-policy-state-"));
+		stateDirectories.set(cwd, stateDirectory);
+		scratch.push(stateDirectory);
+	}
 	return spawnSync(process.execPath, ["--experimental-strip-types", hook], {
 		cwd,
-		env,
+		env: { ...env, HOBO_AGENT_POLICY_STATE_DIR: stateDirectory },
 		encoding: "utf8",
 	});
 }
 
+function ageCheckpoint(cwd: string) {
+	const directory = stateDirectories.get(cwd);
+	assert.ok(directory);
+	const file = readdirSync(directory)[0];
+	assert.ok(file);
+	const path = join(directory, file);
+	const [head, status] = readFileSync(path, "utf8").trim().split("\n");
+	writeFileSync(path, `${head}\n${status}\n1\n`);
+}
+
+function git(cwd: string, args: readonly string[]) {
+	const result = spawnSync(
+		"git",
+		[
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			...args,
+		],
+		{ cwd, env, encoding: "utf8" },
+	);
+	assert.equal(result.status, 0, result.stderr);
+}
+
 describe("agent source policy hook", () => {
+	it("checks all commits since the last clean hook until their violations are fixed", () => {
+		const repository = fixture();
+		assert.equal(runHook(repository).status, 0);
+		git(repository, ["branch", "baseline"]);
+		const file = join(repository, "sample.ts");
+		writeFileSync(file, "// explanation\nexport const value = 1;\n");
+		git(repository, ["add", "sample.ts"]);
+		git(repository, ["commit", "--quiet", "-m", "add explanation"]);
+		git(repository, [
+			"commit",
+			"--allow-empty",
+			"--quiet",
+			"-m",
+			"another commit",
+		]);
+		const plan = join(repository, "PLAN.md");
+		writeFileSync(plan, "# Plan\n");
+		let result = runHook(repository);
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /sample\.ts:1/u);
+		assert.match(result.stderr, /PLAN\.md:1/u);
+		rmSync(plan);
+		ageCheckpoint(repository);
+		git(repository, ["switch", "--quiet", "baseline"]);
+		assert.equal(runHook(repository).status, 0);
+		git(repository, ["switch", "--quiet", "-"]);
+		assert.match(runHook(repository).stderr, /sample\.ts:1/u);
+		git(repository, [
+			"commit",
+			"--allow-empty",
+			"--quiet",
+			"-m",
+			"still present",
+		]);
+		assert.equal(runHook(repository).status, 2);
+		writeFileSync(file, "export const value = 1;\n");
+		git(repository, ["add", "sample.ts"]);
+		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
+		result = runHook(repository);
+		assert.equal(result.status, 0, result.stderr);
+	});
+
+	it("retains a failed first committed check across later commits", () => {
+		const repository = fixture();
+		const file = join(repository, "sample.ts");
+		writeFileSync(file, "// explanation\nexport const value = 1;\n");
+		git(repository, ["add", "sample.ts"]);
+		git(repository, ["commit", "--quiet", "-m", "add explanation"]);
+		assert.match(runHook(repository).stderr, /sample\.ts:1/u);
+		git(repository, ["commit", "--allow-empty", "--quiet", "-m", "next"]);
+		const result = runHook(repository);
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /sample\.ts:1/u);
+		writeFileSync(file, "export const value = 1;\n");
+		git(repository, ["add", "sample.ts"]);
+		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
+		assert.equal(runHook(repository).status, 0);
+	});
+
 	it("accepts a clean edit and reports comments and design artifacts", () => {
 		const repository = fixture();
 		writeFileSync(
