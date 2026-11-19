@@ -426,3 +426,34 @@ describe("probes and suites", () => {
 		expect(late.verdict).toBe(VerificationVerdict.FAIL);
 	});
 });
+
+describe("error-budget observations", () => {
+	it("evaluates a large sample window without exceeding the argument limit", () => {
+		const spec = parsed(
+			thresholdSpec({
+				maxErrorBudgetBurn: 1,
+				thresholds: [
+					{
+						query: query("burn", { unit: "burn_rate" }),
+						aggregation: Aggregation.MAX,
+						comparator: Comparator.LTE,
+						value: 1,
+					},
+				],
+			}),
+		);
+		const observation = evidence("threshold:burn", [0.2])[0];
+		if (!observation) throw new Error("missing observation");
+		const result = evaluateVerification({
+			spec,
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: WINDOW_END,
+			evidence: Array.from({ length: 600_000 }, () => observation),
+		});
+		expect(result.verdict).toBe(VerificationVerdict.PASS);
+		expect(
+			result.checks.find((check) => check.check === "error-budget")?.statistic,
+		).toBe(0.2);
+	});
+});

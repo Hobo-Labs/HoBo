@@ -475,7 +475,10 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 					),
 				);
 			} else {
-				const peak = Math.max(...burn);
+				const peak = burn.reduce(
+					(maximum, value) => Math.max(maximum, value),
+					Number.NEGATIVE_INFINITY,
+				);
 				const ok = peak <= spec.maxErrorBudgetBurn;
 				decided.set(
 					ERROR_BUDGET_CHECK,
