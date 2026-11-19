@@ -55,6 +55,12 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 						command: "logs",
 						projectDir,
 						lines: log.lines,
+						records: log.lines.map((message) =>
+							toJson(
+								LocalLogRecordSchema,
+								create(LocalLogRecordSchema, { type: "log", message }),
+							),
+						),
 						truncated: log.truncated,
 					},
 				};

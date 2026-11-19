@@ -55,10 +55,8 @@ it("reports no log history without starting a demo deployment", async () => {
 	const project = await temporaryProject();
 	await writeFile(join(project, "hobo.bindle.json"), "{}\n");
 	const result = await cli().run(["logs", "--json"], { cwd: project });
-	const envelope = JSON.parse(result.stdout);
 	expect(result.exitCode).toBe(0);
-	expect(envelope.status).toBe("no_history");
-	expect(envelope.data.lines).toEqual([]);
+	expect(result.stdout).toBe("");
 });
 
 it("returns the most recent real log lines for the selected project", async () => {
@@ -70,13 +68,14 @@ it("returns the most recent real log lines for the selected project", async () =
 		`${Array.from({ length: 205 }, (_, index) => `line-${index}`).join("\n")}\n`,
 	);
 	const result = await cli().run(["logs", "--json"], { cwd: project });
-	const envelope = JSON.parse(result.stdout);
+	const records = result.stdout
+		.trimEnd()
+		.split("\n")
+		.map((line) => JSON.parse(line));
 	expect(result.exitCode).toBe(0);
-	expect(envelope.status).toBe("tailed");
-	expect(envelope.data.lines).toHaveLength(200);
-	expect(envelope.data.lines[0]).toBe("line-5");
-	expect(envelope.data.lines.at(-1)).toBe("line-204");
-	expect(envelope.data.truncated).toBe(true);
+	expect(records).toHaveLength(200);
+	expect(records[0]).toEqual({ type: "log", message: "line-5" });
+	expect(records.at(-1)).toEqual({ type: "log", message: "line-204" });
 });
 
 it("accepts a line limit and rejects invalid streaming options", async () => {
@@ -92,7 +91,7 @@ it("accepts a line limit and rejects invalid streaming options", async () => {
 	const json = await shell.run(["logs", "--json", "--lines=1"], {
 		cwd: project,
 	});
-	expect(JSON.parse(json.stdout).data.lines).toEqual(["three"]);
+	expect(JSON.parse(json.stdout)).toEqual({ type: "log", message: "three" });
 	for (const args of [
 		["--lines=0"],
 		["--lines=10001"],
@@ -267,9 +266,12 @@ export default bindle("logs-app", b => ({ web: b.web(() => request => {
 		);
 		expect(await response.text()).toBe("actual app");
 		const result = await shell.run(["logs", "--json"], { cwd: project });
-		const envelope = JSON.parse(result.stdout);
+		const records = result.stdout
+			.trimEnd()
+			.split("\n")
+			.map((line) => JSON.parse(line));
 		expect(result.exitCode).toBe(0);
-		expect(envelope.data.lines).toEqual(
+		expect(records.map((record) => record.message)).toEqual(
 			expect.arrayContaining([
 				expect.stringContaining("actual-app-request /real-activity"),
 				expect.stringContaining('"type":"component.Invoked"'),
