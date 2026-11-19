@@ -78,9 +78,9 @@ test("the relevant check selects source-based visual validation for UI changes",
 
 test("design:lint runs the visual token gate instead of the retired design-md checker", () => {
 	// SAFETY: package.json is a committed repo file; scripts values are strings.
-	const root = JSON.parse(readFileSync("package.json", "utf8")) as {
+	const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
 		scripts: Record<string, string>;
 	};
-	assert.match(root.scripts["design:lint"] ?? "", /check-visual-tokens\.mts/u);
+	assert.match(packageJson.scripts["design:lint"], /check-visual-tokens\.mts/u);
 	assert.equal(existsSync("scripts/check-design-md.mts"), false);
 });
