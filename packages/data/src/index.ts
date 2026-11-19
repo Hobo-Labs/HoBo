@@ -1,4 +1,9 @@
 export {
+	createProjectionRebuild,
+	type ProjectionRebuildOptions,
+	type ProjectionRebuildShardResult,
+} from "./projection-rebuild.js";
+export {
 	type ActorHost,
 	type AggregateLease,
 	createInMemoryActorHost,

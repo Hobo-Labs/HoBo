@@ -86,6 +86,10 @@ message ProjectionLaggedData {
 message ProjectionSinkReboundData {
   string projection = 1;
   string match_decided_ref = 2;
+  string from_sink_id = 3;
+  string to_sink_id = 4;
+  string config_hash = 5;
+  uint64 verified_position = 6;
 }
 
 message ProjectionReplicatedEventData {
@@ -131,4 +135,23 @@ message PaginatedPageData {
   repeated string items_json = 1;
   string next_cursor = 2;
   map<string, double> seq = 3;
+}
+
+message ProjectionRebuildRowRecord {
+  string config_hash = 1;
+  string key = 2;
+  string row_json = 3;
+  bool deleted = 4;
+}
+
+message ProjectionRebuildSeedRecord {
+  string config_hash = 1;
+  bool seeded = 2;
+  uint64 source_position = 3;
+  string rows_json = 4;
+}
+
+message ProjectionRebuildCheckpointRecord {
+  string config_hash = 1;
+  uint64 source_position = 2;
 }
