@@ -1388,6 +1388,73 @@ describe("provider-neutral IaC target budget admission", () => {
 	});
 
 	it.each([
+		["NaN", Number.NaN],
+		["positive infinity", Number.POSITIVE_INFINITY],
+		["negative infinity", Number.NEGATIVE_INFINITY],
+		["fractional", 1_500_000.5],
+		["negative fractional", -0.5],
+		["negative", -1],
+		["non-safe integer", Number.MAX_SAFE_INTEGER + 1],
+		["huge finite", Number.MAX_VALUE],
+	] as const)("denies malformed provider account liability_micros (%s) without throwing", async (label, liabilityMicros) => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			const account = request.evidence.providerAccounts[0];
+			if (account === undefined) throw new Error("fixture account missing");
+			account.liabilityMicros = liabilityMicros;
+			const deps = dependencies(ledger);
+			const verifyLiability = vi.fn(deps.verifyLiability);
+			const authorize = vi.fn(deps.authorize);
+			await expect(
+				admitIacTarget(
+					{ requestId: `malformed-liability-${label}`, ...request },
+					{ ...deps, verifyLiability, authorize },
+				),
+			).resolves.toMatchObject({
+				status: "denied",
+				code: "LIABILITY_EVIDENCE_INVALID",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(verifyLiability).not.toHaveBeenCalled();
+			expect(authorize).not.toHaveBeenCalled();
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it.each([
+		["negative", -1n],
+		["above max safe integer", BigInt(Number.MAX_SAFE_INTEGER) + 1n],
+		["int64 maximum", 9_223_372_036_854_775_807n],
+	] as const)("denies out-of-range maximumMicros bigint (%s) without throwing", async (label, maximumMicros) => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			request.evidence.maximumMicros = maximumMicros;
+			const deps = dependencies(ledger);
+			const verifyLiability = vi.fn(deps.verifyLiability);
+			const authorize = vi.fn(deps.authorize);
+			await expect(
+				admitIacTarget(
+					{ requestId: `malformed-maximum-${label}`, ...request },
+					{ ...deps, verifyLiability, authorize },
+				),
+			).resolves.toMatchObject({
+				status: "denied",
+				code: "LIABILITY_EVIDENCE_INVALID",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(verifyLiability).not.toHaveBeenCalled();
+			expect(authorize).not.toHaveBeenCalled();
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it.each([
 		"missing-gate",
 		"missing-reasons",
 		"unknown-gate",

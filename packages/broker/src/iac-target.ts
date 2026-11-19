@@ -188,19 +188,22 @@ function readDecimal(value: string): Decimal | undefined {
 	return parseDecimal(value);
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: liability values cross the protobuf boundary as double (provider accounts) or int64 (maximum); discriminate them without coercing or converting unvalidated input. */
 function liabilityMicros(
 	value: bigint | number | undefined,
 ): number | undefined {
-	if (value === undefined) return undefined;
-	if (Number.isSafeInteger(value)) {
-		const numeric = Number(value);
-		const asBig = BigInt(numeric);
-		if (asBig < 0n || asBig > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
-		return numeric;
+	if (typeof value === "bigint") {
+		if (value < 0n || value > MAX_SAFE) return undefined;
+		return Number(value);
 	}
-	if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
-	return Number(value);
+	// Number.isSafeInteger rejects NaN, infinities, fractions and integers
+	// beyond the safe range, so only exact micros reach callers (and any
+	// BigInt conversion they perform on the result).
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
+		return undefined;
+	return value;
 }
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 function denial(
 	requestId: string,
@@ -369,6 +372,10 @@ export async function admitIacTarget(
 			"PRICING_NOT_COMPARABLE",
 			"a current nonnegative USD quote is required",
 		);
+	const maximumMicros =
+		evidence === undefined
+			? undefined
+			: liabilityMicros(evidence.maximumMicros);
 	if (
 		evidence === undefined ||
 		!safeName(evidence.evidenceRef) ||
@@ -378,8 +385,8 @@ export async function admitIacTarget(
 		evidence.inventoryHash !== priced.inventoryHash ||
 		evidence.modelHash !== priced.modelHash ||
 		evidence.quoteHash !== priced.quote.quoteHash ||
-		liabilityMicros(evidence.maximumMicros) === undefined ||
-		liabilityMicros(evidence.maximumMicros)! < totalMicros ||
+		maximumMicros === undefined ||
+		maximumMicros < totalMicros ||
 		!Number.isFinite(Date.parse(evidence.observedAt)) ||
 		Date.parse(evidence.observedAt) > nowMs ||
 		!Number.isFinite(Date.parse(evidence.validUntil)) ||
@@ -399,18 +406,19 @@ export async function admitIacTarget(
 	const accounts = [...evidence.providerAccounts].sort((left, right) =>
 		compareIdentifier(left.providerAccountId, right.providerAccountId),
 	);
+	const accountMicros = accounts.map((account) =>
+		liabilityMicros(account.liabilityMicros),
+	);
 	if (
 		accounts.length !== expectedAccounts.length ||
 		accounts.some(
 			(account, index) =>
 				account.providerAccountId !== expectedAccounts[index] ||
-				liabilityMicros(account.liabilityMicros) === undefined ||
-				liabilityMicros(account.liabilityMicros)! < 0,
+				accountMicros[index] === undefined,
 		) ||
-		accounts.reduce(
-			(sum, account) => sum + BigInt(liabilityMicros(account.liabilityMicros)!),
-			0n,
-		) !== BigInt(liabilityMicros(evidence.maximumMicros)!)
+		// Reached only when every captured account amount validated above.
+		accountMicros.reduce((sum, micros) => sum + BigInt(micros!), 0n) !==
+			BigInt(maximumMicros)
 	)
 		return denial(
 			requestId,
@@ -496,7 +504,6 @@ export async function admitIacTarget(
 		Date.parse(evidence.validUntil) < horizon
 			? evidence.validUntil
 			: scenario.horizon;
-	const maximumMicros = liabilityMicros(evidence.maximumMicros)!;
 	const quote = create(HostingQuoteSchema, {
 		quoteId: financialPlanHash,
 		yardId: targetId,
