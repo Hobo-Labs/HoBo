@@ -8,6 +8,8 @@ slot until it settles. A pending deadline keeps a standalone Node process alive
 until the call completes or the deadline expires.
 Nested calls inherit the parent deadline and may request an earlier deadline;
 they cannot extend it. Concurrent calls keep their deadlines isolated.
+Thrown values without a recognized failure signal are classified as fatal,
+including `null`, `undefined`, and values that cannot be converted to a string.
 
 The local scheduler supports interval schedules and five- or six-field cron
 expressions. Cron expressions use UTC by default; provider calls can specify an
