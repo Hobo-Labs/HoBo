@@ -1,11 +1,3 @@
-// Promoted proof semantics (AGENTS.md § Draft-proof promotion policy). Each
-// describe block carries the semantics of one frozen draft proof into the
-// production rollout path; the proofs themselves are not edited.
-//
-//   deployment-strategy-saga-templates-contract
-//   stuck-rollout-convergence-contract
-//   domain-cutover-saga-contract
-//   hobo-delivery-port
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -55,7 +47,7 @@ async function start(
 	};
 }
 
-describe("promoted: deployment-strategy-saga-templates-contract", () => {
+describe("rollout strategies", () => {
 	it("canary shifts traffic in stages and auto-rolls back on an injected regression", async () => {
 		const r = rig();
 		r.verification.script = ({ call }) =>
@@ -130,7 +122,7 @@ describe("promoted: deployment-strategy-saga-templates-contract", () => {
 	});
 });
 
-describe("promoted: stuck-rollout-convergence-contract", () => {
+describe("stuck rollout recovery", () => {
 	it("observed traffic is authoritative over provider self-report", async () => {
 		const r = rig();
 		r.traffic.stuck.add("prod-a");
@@ -175,7 +167,6 @@ describe("promoted: stuck-rollout-convergence-contract", () => {
 		r.time.advance(3 * MINUTE);
 		await r.orchestrator.tick(r.ctx);
 		const id = planned.value.rolloutId;
-		// SAFETY: the plan's own rollout id.
 		const snapshot = await r.orchestrator.get(id as RolloutId);
 		expect(snapshot?.status).toBe("failed");
 		expect(snapshot?.reasons.map((x) => x.code)).toContain(
@@ -189,7 +180,7 @@ describe("promoted: stuck-rollout-convergence-contract", () => {
 	});
 });
 
-describe("promoted: hobo-delivery-port", () => {
+describe("delivery engine", () => {
 	const signal = () => clock();
 
 	it("a no-op rollout drives start → stage → promoted and replays to the live view", async () => {
@@ -208,7 +199,6 @@ describe("promoted: hobo-delivery-port", () => {
 		});
 		const ctx = context(time.now);
 		await engine.start(plan, ctx);
-		// SAFETY: literal test id.
 		const id = "rollout-noop" as RolloutId;
 		const live = await engine.advance(
 			id,
@@ -238,7 +228,7 @@ describe("promoted: hobo-delivery-port", () => {
 		expect(snapshot.status).toBe("rolled-back");
 	});
 
-	it("missing traffic capability is refused with progressive-unsupported (HoBo D7 replaces the proof's PlanWarning degrade)", async () => {
+	it("missing traffic capability is refused with progressive-unsupported", async () => {
 		const r = rig();
 		r.traffic.offeringsByCamp.set("prod-a", []);
 		r.desired.promoted("prod-a", "freight-1");
