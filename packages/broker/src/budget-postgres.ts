@@ -119,7 +119,10 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 				validateBudgetSnapshot(options.snapshot, options.snapshot.observedAt);
 				await client.query(
 					"INSERT INTO hobo_budget_partitions(id,base_body) VALUES($1,$2) ON CONFLICT(id) DO NOTHING",
-					[partition, toJsonString(BudgetLedgerSnapshotSchema, options.snapshot)],
+					[
+						partition,
+						toJsonString(BudgetLedgerSnapshotSchema, options.snapshot),
+					],
 				);
 			}
 			await client.query("COMMIT");

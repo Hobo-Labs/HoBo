@@ -2612,28 +2612,29 @@ describe("financial admission modes", () => {
 		expect(f.applies()).toBe(1);
 	});
 
-	it.each(["missing", "empty", "malformed"] as const)(
-		"refuses a priced direct apply with a %s execution claim",
-		async (kind) => {
-			const f = fixture((id) => {
-				const decision = admitted(id, "allowed", false);
-				if (kind === "missing") delete decision.reservation.executionDigest;
-				else
-					decision.reservation.executionDigest =
-						kind === "empty" ? "" : "sha256:not-a-digest";
-				return decision;
-			});
-			await f.provider.preview(f.program);
-			await expect(
-				f.provider.applyWithAdmission(f.program, "attempt"),
-			).rejects.toMatchObject({
-				code: "ADMISSION_RECEIPT_INVALID",
-				requiresReconciliation: true,
-			});
-			expect(f.applies()).toBe(0);
-			expect(f.uncertain).toEqual(["iac:attempt"]);
-		},
-	);
+	it.each([
+		"missing",
+		"empty",
+		"malformed",
+	] as const)("refuses a priced direct apply with a %s execution claim", async (kind) => {
+		const f = fixture((id) => {
+			const decision = admitted(id, "allowed", false);
+			if (kind === "missing") delete decision.reservation.executionDigest;
+			else
+				decision.reservation.executionDigest =
+					kind === "empty" ? "" : "sha256:not-a-digest";
+			return decision;
+		});
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_RECEIPT_INVALID",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
 
 	it.each([
 		"requestDigest",

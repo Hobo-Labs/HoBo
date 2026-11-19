@@ -3,8 +3,8 @@ import { create } from "@bufbuild/protobuf";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-	type BudgetLedgerSnapshot,
 	BudgetEntitlementSchema,
+	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
 	HostingQuoteSchema,
 } from "../src/budget-authority.js";
