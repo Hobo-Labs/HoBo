@@ -43,27 +43,6 @@ export const MESSAGING_EVENTS = Object.freeze({
 export type MessagingEventType =
 	(typeof MESSAGING_EVENTS)[keyof typeof MESSAGING_EVENTS];
 
-export const LEGACY_MESSAGING_EVENT_UPCASTS = Object.freeze({
-	"messaging.topic.created": MESSAGING_EVENTS.TopicCreated,
-	"messaging.subscription.created": MESSAGING_EVENTS.SubscriptionCreated,
-	"messaging.published": MESSAGING_EVENTS.MessagePublished,
-	"messaging.published.deduped": MESSAGING_EVENTS.PublishDeduplicated,
-	"messaging.consumed": MESSAGING_EVENTS.MessageConsumed,
-	"messaging.acked": MESSAGING_EVENTS.MessageAcknowledged,
-	"messaging.nacked": MESSAGING_EVENTS.MessageNacked,
-	"messaging.dead_lettered": MESSAGING_EVENTS.MessageDeadLettered,
-	"messaging.delivery.permanent_failure":
-		MESSAGING_EVENTS.DeliveryPermanentlyFailed,
-	"messaging.federated": MESSAGING_EVENTS.MessageFederated,
-} satisfies Readonly<Record<string, MessagingEventType>>);
-
-const CANONICAL_MESSAGING_EVENT_TYPES = new Map<string, MessagingEventType>(
-	Object.values(MESSAGING_EVENTS).map((type) => [type, type]),
-);
-const LEGACY_MESSAGING_EVENT_TYPES = new Map<string, MessagingEventType>(
-	Object.entries(LEGACY_MESSAGING_EVENT_UPCASTS),
-);
-
 export type DeliveryGuarantee =
 	| "at-least-once"
 	| "exactly-once"
@@ -153,20 +132,6 @@ export interface MessagingEvent {
 	readonly reason?: string;
 	readonly at: string;
 	readonly metadata?: Readonly<Record<string, string | number | boolean>>;
-}
-
-export function upcastMessagingEventType(type: string): MessagingEventType {
-	const current = CANONICAL_MESSAGING_EVENT_TYPES.get(type);
-	if (current !== undefined) return current;
-	const upcasted = LEGACY_MESSAGING_EVENT_TYPES.get(type);
-	if (upcasted !== undefined) return upcasted;
-	throw new MessagingParseError("type", "a messaging event type", type);
-}
-
-export function upcastMessagingEvent(
-	event: Omit<MessagingEvent, "type"> & { readonly type: string },
-): MessagingEvent {
-	return deepFreeze({ ...event, type: upcastMessagingEventType(event.type) });
 }
 
 export interface Messaging {

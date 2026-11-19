@@ -74,11 +74,10 @@ treated as a drop and an add.
 ## Data-store vocabulary, catalog records and self-hosting
 
 `ports/data-store-offerings.ts` is the portable data-store vocabulary bound to
-the generic offering resolver. Provider ids come in two grains: the original
-engine-agnostic family ids (`aws-rds`, `gcp-cloudsql`, `azure-sql`) keep
-parsing unchanged, and product ids (`aws-rds-postgres`, `aws-aurora-postgres`,
-`azure-postgres-flexible`, `neon-postgres`, …) name one PostgreSQL product
-each; `DATA_STORE_PROVIDER_FAMILIES` maps a product to the family it refines.
+the generic offering resolver. Provider ids identify either a service that
+offers multiple engines (`aws-rds`, `gcp-cloudsql`) or a specific product
+(`aws-rds-postgres`, `aws-aurora-postgres`, `azure-postgres-flexible`,
+`neon-postgres`, …).
 Offering ids cover topology (`replica.multi-region`, `write.multi-writer`,
 `ha.failover`), logical replication by direction
 (`replicate.logical-publish`, `replicate.logical-subscribe`) and connection

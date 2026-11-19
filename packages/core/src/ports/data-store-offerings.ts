@@ -180,12 +180,6 @@ export const DATA_STORE_PROVIDERS: readonly DataStoreProvider[] = Object.freeze(
 	[...PROVIDERS],
 );
 
-// public-contract: backward-compatibility map from product ids to the original family ids.
-export const DATA_STORE_PROVIDER_FAMILIES = Object.freeze({
-	"aws-rds-postgres": "aws-rds",
-	"gcp-cloudsql-postgres": "gcp-cloudsql",
-} as const satisfies Partial<Record<DataStoreProvider, DataStoreProvider>>);
-
 const STABILITIES = new Set<OfferingStability>([
 	"stable",
 	"preview",
