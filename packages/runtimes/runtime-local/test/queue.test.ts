@@ -65,6 +65,78 @@ describe("createRuntimeLocalQueueClock queue", () => {
 		expect(retry.handled).toEqual([expect.any(String)]);
 	});
 
+	it("releases every unprocessed message when a batch handler fails", async () => {
+		const runtime = createRuntimeLocalQueueClock();
+		const queue = parseQueueName("batch");
+		const ids: string[] = [];
+		for (const key of ["first", "second", "third"]) {
+			const message = await runtime.queue.enqueue(
+				queue,
+				{ key },
+				{
+					idempotencyKey: parseIdempotencyKey(key),
+				},
+			);
+			ids.push(message.messageId);
+		}
+		await expect(
+			runtime.queue.handle(
+				queue,
+				async () => {
+					throw new Error("batch failed");
+				},
+				{ maxMessages: 3, visibilityTimeoutMs: 60_000 },
+			),
+		).rejects.toThrow("batch failed");
+		const retry = await runtime.queue.handle(queue, async () => {}, {
+			maxMessages: 3,
+		});
+		expect(retry.handled).toEqual(ids);
+	});
+
+	it("does not process or release a batch lease acquired by another consumer", async () => {
+		const runtime = createRuntimeLocalQueueClock();
+		const queue = parseQueueName("batch-race");
+		const ids: string[] = [];
+		for (const key of ["first", "second", "third"]) {
+			const message = await runtime.queue.enqueue(
+				queue,
+				{ key },
+				{
+					idempotencyKey: parseIdempotencyKey(key),
+				},
+			);
+			ids.push(message.messageId);
+		}
+		const processed: string[] = [];
+		let finish!: () => void;
+		const batch = runtime.queue.handle(
+			queue,
+			async (message) => {
+				processed.push(message.messageId);
+				await new Promise<void>((resolve) => {
+					finish = resolve;
+				});
+			},
+			{ maxMessages: 3, visibilityTimeoutMs: 1 },
+		);
+		runtime.clock.advance(1);
+		const [competing] = runtime.queue.dequeue(queue, {
+			maxMessages: 1,
+			visibilityTimeoutMs: 100,
+		});
+		if (!competing) throw new Error("competing lease missing");
+		expect(competing.messageId).toBe(ids[1]);
+		finish();
+		await expect(batch).rejects.toBeInstanceOf(QueueLeaseLostError);
+		expect(processed).toEqual([ids[0]]);
+		const remaining = runtime.queue.dequeue(queue, { maxMessages: 3 });
+		expect(remaining.map((message) => message.messageId)).toEqual([ids[2]]);
+		expect(
+			runtime.queue.complete(competing.messageId, competing.leaseId).deduped,
+		).toBe(false);
+	});
+
 	it("suppresses duplicate effects when a completed message is redelivered", async () => {
 		const runtime = createRuntimeLocalQueueClock();
 		const queue = parseQueueName("payments");

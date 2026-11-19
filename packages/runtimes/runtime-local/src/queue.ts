@@ -121,22 +121,26 @@ export function createLocalQueue(store: QueueClockStore): Queue {
 			const handled: MessageId[] = [];
 			const deduped: MessageId[] = [];
 
-			for (const message of leased) {
-				const record = findMessageById(store, message.messageId);
-				if (record.completedAtMs !== null) {
-					this.complete(message.messageId, message.leaseId);
-					deduped.push(message.messageId);
-					continue;
-				}
-
+			for (const [index, message] of leased.entries()) {
 				try {
+					const record = findMessageById(store, message.messageId);
+					if (record.completedAtMs !== null) {
+						this.complete(message.messageId, message.leaseId);
+						deduped.push(message.messageId);
+						continue;
+					}
+					validateLease(record, message.leaseId);
 					record.processing = true;
 					await handler(message);
 					this.complete(message.messageId, message.leaseId);
 					handled.push(message.messageId);
 				} catch (error) {
-					record.processing = false;
-					releaseForRetry(record, store, message.leaseId);
+					for (const pending of leased.slice(index)) {
+						const record = findMessageById(store, pending.messageId);
+						if (record.completedAtMs === null) {
+							releaseForRetry(record, store, pending.leaseId);
+						}
+					}
 					throw error;
 				}
 			}
@@ -214,21 +218,18 @@ export function createLocalQueue(store: QueueClockStore): Queue {
 }
 
 function publicMessage(message: QueueMessageRecord): LeasedMessage {
+	if (message.leaseId === null || message.leaseExpiresAtMs === null) {
+		throw new QueueLeaseLostError(`lease missing for ${message.messageId}`);
+	}
 	return Object.freeze({
 		messageId: parseMessageId(message.messageId),
 		queueName: parseQueueName(message.queueName),
 		idempotencyKey: parseIdempotencyKey(message.idempotencyKey),
 		body: cloneStore(message.body),
-		leaseId: parseLeaseId(message.leaseId ?? ""),
-		leaseExpiresAt: formatInstant(
-			message.leaseExpiresAtMs ?? storeFallbackMs(message),
-		),
+		leaseId: parseLeaseId(message.leaseId),
+		leaseExpiresAt: formatInstant(message.leaseExpiresAtMs),
 		deliveryAttempt: message.deliveryAttempt,
 	});
-}
-
-function storeFallbackMs(message: QueueMessageRecord): number {
-	return message.leaseExpiresAtMs ?? 0;
 }
 
 function queueEnqueueResult(
