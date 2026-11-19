@@ -15,7 +15,7 @@ try {
     if (install.status !== 0) throw new Error(`Z3 installation failed (${install.status ?? 'no exit status'})`);
     env.PYTHONPATH = target;
   }
-  for (const file of ['result_snapshot.py', 'input_snapshot.py', 'run_id_boundary.py', 'terminal_history.py']) {
+  for (const file of ['result_snapshot.py', 'input_snapshot.py', 'run_id_boundary.py', 'terminal_history.py', 'step_journal.py']) {
     const proof = fileURLToPath(new URL(`../proof/${file}`, import.meta.url));
     const result = spawnSync('python3', [proof], { env, stdio: 'inherit' });
     if (result.error) throw result.error;

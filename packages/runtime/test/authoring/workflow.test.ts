@@ -362,6 +362,536 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(first.report.stateDigest).toBe(second.report.stateDigest);
 	});
 
+	it("replays a void step completion after a host restart", async () => {
+		const engine = createWorkflowEngine();
+		let attempts = 0;
+		let crashed = false;
+		const wf = defineWorkflow({
+			name: "void-step",
+			async run(ctx) {
+				await ctx.step("noop", () => {
+					attempts += 1;
+				});
+				if (!crashed) {
+					crashed = true;
+					throw new Error("SIMULATED_HOST_CRASH");
+				}
+				return "done";
+			},
+		});
+		await expect(engine.start(wf, {}, { runId: "void-step" })).rejects.toThrow(
+			"SIMULATED_HOST_CRASH",
+		);
+		expect(attempts).toBe(1);
+		const restarted = createWorkflowEngine({ store: engine.store });
+		const handle = await restarted.resume(wf, "void-step", {});
+		expect(handle.result).toBe("done");
+		expect(attempts).toBe(1);
+	});
+
+	it("replays a journaled step failure without re-running the step effect", async () => {
+		const engine = createWorkflowEngine();
+		let attempts = 0;
+		let crash = true;
+		const wf = defineWorkflow({
+			name: "step-failed-replay",
+			async run(ctx) {
+				try {
+					await ctx.step(
+						"pay",
+						() => {
+							attempts += 1;
+							throw new WorkflowFailure("card declined", { step: "pay" });
+						},
+						{ retries: 0 },
+					);
+				} catch (error) {
+					if (crash) {
+						crash = false;
+						throw error instanceof WorkflowFailure
+							? new Error("SIMULATED_HOST_CRASH")
+							: error;
+					}
+				}
+				return "recovered";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "step-failed-replay" }),
+		).rejects.toThrow("SIMULATED_HOST_CRASH");
+		expect(attempts).toBe(1);
+		const restarted = createWorkflowEngine({ store: engine.store });
+		const handle = await restarted.resume(wf, "step-failed-replay", {});
+		expect(handle.result).toBe("recovered");
+		expect((await restarted.resume(wf, "step-failed-replay", {})).result).toBe(
+			"recovered",
+		);
+		expect(attempts).toBe(1);
+	});
+
+	it("rejects duplicate run.Started facts", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start-1",
+				streamId: "run/dup-started",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-started-seed",
+					workflowName: "dup-started",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "start-2",
+				streamId: "run/dup-started",
+				seq: 2,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-started-seed",
+					workflowName: "dup-started",
+				},
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "dup-started",
+			run() {
+				runs += 1;
+				return "live";
+			},
+		});
+		await expect(engine.resume(wf, "dup-started", {})).rejects.toThrow(
+			/duplicate run.Started/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it("rejects run.Started with wrong-typed fields", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "bad-start",
+				streamId: "run/bad-started",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-started-seed",
+					workflowName: 42,
+				},
+			},
+			0,
+		);
+		const wf = defineWorkflow({ name: "bad-started", run: () => "x" });
+		await expect(engine.resume(wf, "bad-started", {})).rejects.toThrow(
+			/invalid run.Started/,
+		);
+	});
+
+	it("resumes legacy run.Started without args as null input", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "legacy-start",
+				streamId: "run/legacy-no-args",
+				seq: 1,
+				type: "run.Started",
+				data: { seed: "legacy-no-args" },
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "legacy-complete",
+				streamId: "run/legacy-no-args",
+				seq: 2,
+				type: "run.Completed",
+				data: { result: "from-journal" },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "legacy-no-args",
+			run() {
+				return "live";
+			},
+		});
+		const handle = await engine.resume(wf, "legacy-no-args", null);
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("from-journal");
+	});
+
+	it("rejects a step name that diverges from the journal at the same index", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/name-diverge";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "name-diverge",
+					workflowName: "name-diverge",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done-b",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "b", index: 0, result: 2 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "name-diverge",
+			async run(ctx) {
+				await ctx.step("a", () => 1);
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "name-diverge", {})).rejects.toThrow(
+			/step name differs from journal/,
+		);
+	});
+
+	it("rejects duplicate step outcomes at the same positional index", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/dup-index";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-index",
+					workflowName: "dup-index",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done-a",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "a", index: 0, result: 1 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done-b",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "b", index: 0, result: 2 },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "dup-index",
+			async run(ctx) {
+				await ctx.step("a", () => 1);
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "dup-index", {})).rejects.toThrow(
+			/duplicate run.StepCompleted/,
+		);
+	});
+
+	it("rejects duplicate run.StepCompleted facts for the same step", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/dup-step-complete";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-step-seed",
+					workflowName: "dup-step-complete",
+				},
+			},
+			0,
+		);
+		const completed = { name: "work", index: 0, result: { ok: true } };
+		await engine.store.append(
+			{
+				id: "done-1",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done-2",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "dup-step-complete",
+			async run(ctx) {
+				await ctx.step("work", () => {
+					runs += 1;
+					return { ok: true };
+				});
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "dup-step-complete", {})).rejects.toThrow(
+			/duplicate run.StepCompleted/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it("rejects conflicting run.StepCompleted and run.StepFailed for the same step", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/conflict-step";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "conflict-seed",
+					workflowName: "conflict-step",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "work", index: 0, result: { ok: true } },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId,
+				seq: 3,
+				type: "run.StepFailed",
+				data: { name: "work", index: 0, message: "nope" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "conflict-step",
+			async run(ctx) {
+				await ctx.step("work", () => ({ ok: true }));
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "conflict-step", {})).rejects.toThrow(
+			/conflicting step outcomes/,
+		);
+	});
+
+	it("rejects run.StepFailed with non-record data before running", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/bad-step-failed-shape",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-step-failed-shape",
+					workflowName: "bad-step-failed-shape",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/bad-step-failed-shape",
+				seq: 2,
+				type: "run.StepFailed",
+				data: "not-a-record",
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "bad-step-failed-shape",
+			async run(ctx) {
+				await ctx.step("work", () => ({}));
+				return "done";
+			},
+		});
+		await expect(
+			engine.resume(wf, "bad-step-failed-shape", {}),
+		).rejects.toThrow(/invalid run.StepFailed/);
+	});
+
+	it("rejects corrupt step journals even when a terminal fact exists", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/terminal-with-bad-step";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "terminal-with-bad-step",
+					workflowName: "terminal-with-bad-step",
+				},
+			},
+			0,
+		);
+		const completed = { name: "work", index: 0, result: { ok: true } };
+		await engine.store.append(
+			{
+				id: "step-1",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "step-2",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "terminal",
+				streamId,
+				seq: 4,
+				type: "run.Completed",
+				data: { result: { ok: true } },
+			},
+			3,
+		);
+		const wf = defineWorkflow({
+			name: "terminal-with-bad-step",
+			run() {
+				return { ok: true };
+			},
+		});
+		await expect(
+			engine.resume(wf, "terminal-with-bad-step", {}),
+		).rejects.toThrow(/duplicate run.StepCompleted/);
+	});
+
+	it("rejects run.StepCompleted with wrong-typed index", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/bad-step-index",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-step-index",
+					workflowName: "bad-step-index",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/bad-step-index",
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "work", index: "0", result: {} },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "bad-step-index",
+			async run(ctx) {
+				await ctx.step("work", () => ({}));
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "bad-step-index", {})).rejects.toThrow(
+			/invalid run.StepCompleted/,
+		);
+	});
+
+	it("rejects run.Failed with wrong-typed step", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/bad-failed-step",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-failed-step-seed",
+					workflowName: "bad-failed-step",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/bad-failed-step",
+				seq: 2,
+				type: "run.Failed",
+				data: { message: "nope", step: 7 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "bad-failed-step",
+			run() {
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "bad-failed-step", {})).rejects.toThrow(
+			/invalid run.Failed/,
+		);
+	});
+
 	it("executes with args stored on run.Started", async () => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(
@@ -372,6 +902,7 @@ describe("durable workflow: journal, restart, replay", () => {
 				type: "run.Started",
 				data: {
 					args: { from: "journal" },
+					seed: "journal-args-seed",
 					workflowName: "journal-args",
 				},
 			},
@@ -400,7 +931,11 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/dup-terminal",
 				seq: 1,
 				type: "run.Started",
-				data: { args: {}, workflowName: "dup" },
+				data: {
+					args: {},
+					seed: "dup-terminal-seed",
+					workflowName: "dup",
+				},
 			},
 			0,
 		);
@@ -436,5 +971,285 @@ describe("durable workflow: journal, restart, replay", () => {
 			/duplicate terminal/,
 		);
 		expect(runs).toBe(0);
+	});
+
+	it("rejects a gapped step journal before running the workflow", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/gapped",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "gapped-seed",
+					workflowName: "gapped",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/gapped",
+				seq: 2,
+				type: "run.StepFailed",
+				data: { name: "only", index: 2, message: "boom" },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "gapped",
+			run(ctx) {
+				return ctx.step("only", () => "nope");
+			},
+		});
+		await expect(engine.resume(wf, "gapped", {})).rejects.toThrow(
+			/gapped step journal/,
+		);
+	});
+
+	it("rejects events recorded after a terminal fact", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/after-terminal",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "after-terminal-seed",
+					workflowName: "after-terminal",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/after-terminal",
+				seq: 2,
+				type: "run.Completed",
+				data: { result: "ok" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "late",
+				streamId: "run/after-terminal",
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "late", index: 0, result: "nope" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "after-terminal",
+			run() {
+				return "live";
+			},
+		});
+		await expect(engine.resume(wf, "after-terminal", {})).rejects.toThrow(
+			/events after terminal/,
+		);
+	});
+
+	it("returns a completed terminal after a recorded step failure", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/conflict-terminal",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "conflict-terminal-seed",
+					workflowName: "conflict-terminal",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/conflict-terminal",
+				seq: 2,
+				type: "run.StepFailed",
+				data: { name: "s", index: 0, message: "boom" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/conflict-terminal",
+				seq: 3,
+				type: "run.Completed",
+				data: { result: "nope" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "conflict-terminal",
+			run() {
+				return "live";
+			},
+		});
+		const handle = await engine.resume(wf, "conflict-terminal", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("nope");
+	});
+
+	it("refuses run.Completed when a journaled step outcome was not consumed", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/unconsumed",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "unconsumed-seed",
+					workflowName: "unconsumed",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/unconsumed",
+				seq: 2,
+				type: "run.StepFailed",
+				data: { name: "later", index: 1, message: "later" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/unconsumed",
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "early", index: 0, result: "ok" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "unconsumed",
+			run(ctx) {
+				return ctx.step("early", () => "ok");
+			},
+		});
+		await expect(engine.resume(wf, "unconsumed", {})).rejects.toThrow(
+			/unconsumed step outcome/,
+		);
+	});
+
+	it("refuses run.Failed when a journaled step outcome was not consumed", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/unconsumed-failure",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "unconsumed-failure-seed",
+					workflowName: "unconsumed-failure",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/unconsumed-failure",
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "later", index: 0, result: "ok" },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "unconsumed-failure",
+			run() {
+				throw new WorkflowFailure("early failure");
+			},
+		});
+		await expect(engine.resume(wf, "unconsumed-failure", {})).rejects.toThrow(
+			/unconsumed step outcome/,
+		);
+		expect(await engine.journal("unconsumed-failure")).toHaveLength(2);
+	});
+
+	it.each([
+		false,
+		true,
+	])("replays compensation after a caught step failure (crash: %s)", async (crash) => {
+		const engine = createWorkflowEngine();
+		let attempts = 0;
+		let compensations = 0;
+		let crashed = false;
+		const wf = defineWorkflow({
+			name: "compensation",
+			async run(ctx) {
+				try {
+					await ctx.step(
+						"charge",
+						() => {
+							attempts += 1;
+							throw new Error("declined");
+						},
+						{ retries: 0 },
+					);
+				} catch (error) {
+					if (!(error instanceof WorkflowFailure)) throw error;
+					await ctx.step("compensate", () => {
+						compensations += 1;
+						return "recovered";
+					});
+				}
+				if (crash && !crashed) {
+					crashed = true;
+					throw new Error("SIMULATED_HOST_CRASH");
+				}
+				return "recovered";
+			},
+		});
+		if (crash) {
+			await expect(
+				engine.start(wf, {}, { runId: "compensation" }),
+			).rejects.toThrow("SIMULATED_HOST_CRASH");
+		} else {
+			expect(
+				(await engine.start(wf, {}, { runId: "compensation" })).result,
+			).toBe("recovered");
+		}
+		const resumed = createWorkflowEngine({ store: engine.store });
+		const result = await resumed.resume(wf, "compensation", {});
+		expect(result.status).toBe("completed");
+		expect(result.result).toBe("recovered");
+		const journal = await resumed.journal("compensation");
+		expect(journal.map((event) => event.type)).toEqual([
+			"run.Started",
+			"run.StepScheduled",
+			"run.StepFailed",
+			"run.StepScheduled",
+			"run.StepCompleted",
+			"run.Completed",
+		]);
+		expect((await resumed.resume(wf, "compensation", {})).result).toBe(
+			"recovered",
+		);
+		expect(await resumed.journal("compensation")).toEqual(journal);
+		expect(attempts).toBe(1);
+		expect(compensations).toBe(1);
 	});
 });

@@ -10,24 +10,16 @@ print('Proved: a shared stream prefix preserves string identity')
 
 primitive, nonempty, admitted = Bool('primitive'), Bool('nonempty'), Bool('admitted')
 claim = Implies(admitted, primitive & nonempty)
-for checked in (True, False):
-    solver = Solver()
-    if checked:
-        solver.add(claim)
-    solver.add(Not(claim))
-    expected = unsat if checked else sat
-    if solver.check() != expected:
-        raise AssertionError('unexpected run-ID guard result')
-    print('Proved: admitted IDs meet the guard' if checked else 'Expected counterexample: missing run-ID guard')
+solver = Solver()
+solver.add(admitted, Not(primitive))
+if solver.check() != sat:
+    raise AssertionError('expected counterexample when admitted IDs skip primitive guard')
+print('Expected counterexample: missing run-ID guard')
 
 proxy, inspected = Bool('proxy'), Bool('inspected')
 inspection_claim = Implies(proxy, Not(inspected))
-for checked in (True, False):
-    solver = Solver()
-    if checked:
-        solver.add(inspection_claim)
-    solver.add(Not(inspection_claim))
-    expected = unsat if checked else sat
-    if solver.check() != expected:
-        raise AssertionError('unexpected ID inspection result')
-    print('Proved: proxy IDs are not inspected' if checked else 'Expected counterexample: inspecting a proxy ID')
+solver = Solver()
+solver.add(proxy, inspected)
+if solver.check() != sat:
+    raise AssertionError('expected counterexample when proxy IDs are inspected')
+print('Expected counterexample: inspecting a proxy ID')
