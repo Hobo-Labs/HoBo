@@ -462,11 +462,11 @@ fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the ch
 real-tree cases name packages and count none, so adding a package the change does not reach leaves
 them alone (the Planner section above says what each asserts).
 
-## Frozen proofs and live-repo tests
+## Legacy proof tests and live repositories
 
 `scripts/run-tests.ts` skips a frozen proof test that scans the live repo when its promoted package keeps
 the maintained copy. The S0-04 codegen proof flagged ci-vercel's non-protobuf `src/_generated` files as
-drift; `packages/schema-tools` already handles them, and the frozen proof cannot be edited.
+drift; `packages/schema-tools` already handles them. Retire the duplicate proof and its skip when its remaining dependencies have moved to the maintained package.
 
 ## Runner image base digest
 

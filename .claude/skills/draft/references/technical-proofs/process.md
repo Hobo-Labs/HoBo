@@ -9,6 +9,6 @@ tags: [hobo, draft, technical-proofs, contracts]
 
 Implement the requested behavior in its owning package and keep the affected contract fixtures and tests aligned. Use deterministic boundaries for default tests, and preserve generated protobuf, CUE, and Pact contracts where they apply.
 
-For `src/draft/technical-proofs/<slug>`, maintain an accurate `proof.json`, runnable examples with expected output, and the notebook required by `draft:artifacts`. Run a real benchmark when performance is relevant. Record an inapplicable requirement with a reason in the manifest; do not use a waiver to leave work unfinished.
+Move any missing behavior and meaningful tests into the owning package. Update dependents and remove the obsolete proof, its generated artifacts, and its promotion-ledger entry. Run a real benchmark when performance is relevant; do not waive unfinished work.
 
-Run `pnpm --prefix src/draft/technical-proofs/<slug> test` and the relevant staged checks. Update and test referencing packages when their behavior changes. Do not create ADRs, design documents, or placeholder proofs.
+Run the owning package tests and the relevant staged artifact and cascade checks. Update and test referencing packages when behavior changes. Do not create ADRs, design documents, or replacement proofs.

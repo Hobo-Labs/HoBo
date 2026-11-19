@@ -7,8 +7,8 @@ tags: [hobo, draft, epic-proofs, contracts]
 
 # Epic proof reference
 
-Epic proofs live under `src/draft/epic-proofs/<slug>`. Implement the requested integrated behavior, reuse the owning packages, and keep `proof.json` references aligned with actual dependencies. Update affected lower-level implementations and their callers when compatibility changes.
+Existing epic proofs live under `src/draft/epic-proofs/<slug>`. Complete integrated behavior in the owning packages, update affected consumers, and remove obsolete proofs and references.
 
-Keep `features/*.feature` and their step definitions executable, and run the package tests and `pnpm run test:behavior` when relevant. The artifact gate also checks runnable examples and the executed notebook. Do not create ADRs, planning documents, or placeholder features.
+Preserve meaningful executable behavior checks in the owning packages and run `pnpm run test:behavior` when relevant. Do not create ADRs, planning documents, or placeholder features.
 
 Run the relevant staged checks, including `draft:cascade` for changed dependencies.

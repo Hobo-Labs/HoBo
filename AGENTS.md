@@ -83,7 +83,7 @@ The repo-local **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/
 
 ## Repo-local draft skill
 
-The repo-local **draft** skill lives in both `.agents/skills/draft` and `.claude/skills/draft`. Use it when creating, moving, or reviewing draft proof material. It replaces the old one-level draft convention with the four-layer taxonomy:
+The repo-local **draft** skill lives in both `.agents/skills/draft` and `.claude/skills/draft`. Use it to complete and retire existing draft proof material. The remaining material uses four layers:
 
 - `src/draft/technical-proofs/<slug>` for isolated atomic technical concepts.
 - `src/draft/exp-proofs/<type>/<slug>` for experience proofs, grouped by experience type (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface). List them with `pnpm run draft:experiences`.
@@ -96,14 +96,14 @@ Repo-local skills keep Codex-valid `SKILL.md` frontmatter and store Open Knowled
 
 The repo-local **optimizexp** skill reviews real UX, DX, and AX behavior, implements improvements, and verifies them with relevant evidence. It follows the common rule against planning and design documents.
 
-### Draft-proof hardening
+### Retiring draft proofs
 
-Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Implement the requested behavior and executable checks directly; do not create planning documents or placeholder proofs. New or changed proofs are validated by two gates that run automatically through `agent:check`:
+Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Complete missing behavior in its owning package, verify it there, and remove the obsolete proof with its references. Do not create replacement proofs or synthetic evidence. Two gates check changes to remaining proofs and their dependents:
 
 - `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior.
 - `pnpm run draft:cascade` — a changed technical/exp proof must update every referencing epic/project rollup in the same diff (references resolve from `proof.json` graphs + import/ledger scans).
 
-Packages predating the standard are listed in `src/draft/_grandfathered.json` (advisory-only until their backfill wave removes them; never add new packages there).
+Remove obsolete entries from `src/draft/_grandfathered.json` when retiring their packages; do not add entries.
 
 
 ## Parallel work rule
@@ -232,9 +232,9 @@ State plainly what is **promoted** versus what is **sitting in a run for
 review**, and if the output is off-model, say so and leave it in the run. An
 asset the user cannot see is not delivered.
 
-## Draft-proof promotion policy
+## Draft-proof retirement policy
 
-When a draft proof under `src/draft/` is promoted into a production package, **the package copy becomes canonical and the proof is frozen** — record the promotion in [`scripts/promotions.json`](scripts/promotions.json) (`status: "frozen"`, digests pinned via `pnpm run promotions:check -- --update`). After that, all changes land in the package; `pnpm run promotions:check` (enforced by the root test suite) fails if a frozen proof is edited. Partial promotions that deliberately leave capability behind in the proof use `status: "reference"` with a note explaining the split.
+Complete every required behavior in the owning production package and verify it with meaningful tests. Update dependent imports, workspace entries, and documentation, then remove the obsolete proof and its promotion-ledger entry in the same change. Do not freeze or create duplicate proofs. Existing ledger entries identify material to retire; they do not authorize deferring missing behavior or deleting its only implementation.
 
 Before finishing a whole PR branch:
 
