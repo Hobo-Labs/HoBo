@@ -4271,8 +4271,6 @@ importers:
 
   src/draft/technical-proofs/chaos-experiment-orchestration-contract: {}
 
-  src/draft/technical-proofs/choreographed-compensation-contract: {}
-
   src/draft/technical-proofs/choreography-saga-engine-contract: {}
 
   src/draft/technical-proofs/ci-fabric-oidc-e2e-contract: {}

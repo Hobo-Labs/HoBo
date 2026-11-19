@@ -23,7 +23,7 @@ without waiting for S2-04 Planner production code.
 
 ## Executable evidence
 - [`urn:hobo:requirement:control-plane`](urn:hobo:requirement:control-plane) Plan 04
-- Prior proofs: `resourceactor-fsm-contract`, `orchestrator-choreography-skeleton-contract`, `choreographed-compensation-contract`
+- Prior proofs: `resourceactor-fsm-contract`, `orchestrator-choreography-skeleton-contract`
 
 ## Validation
 
