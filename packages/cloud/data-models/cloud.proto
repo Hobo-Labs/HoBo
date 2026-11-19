@@ -255,6 +255,18 @@ message ResourceFailedRecord {
   bool crossed_no_go_threshold = 5;
 }
 
+message ResourceCompensationFailedData {
+  string deployment_id = 1;
+  string resource_id = 2;
+  string reason = 3;
+}
+
+message IncidentEscalationRequestedData {
+  string deployment_id = 1;
+  string resource_id = 2;
+  string reason = 3;
+}
+
 message ResourceDestroyingRecord {
   string deployment_id = 1;
   string resource_id = 2;

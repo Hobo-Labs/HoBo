@@ -256,6 +256,18 @@ package hobo
 	crossedNoGoThreshold: bool
 }
 
+#ResourceCompensationFailedData: {
+	deploymentId: string & !=""
+	resourceId:   string & !=""
+	reason:       string & !=""
+}
+
+#IncidentEscalationRequestedData: {
+	deploymentId: string & !=""
+	resourceId:   string & !=""
+	reason:       "compensation-failed"
+}
+
 #ResourceDestroyingRecord: {
 	deploymentId: string & !=""
 	resourceId:   string & !=""

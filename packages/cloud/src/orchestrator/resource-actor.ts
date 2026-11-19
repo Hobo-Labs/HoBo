@@ -363,11 +363,10 @@ export async function destroyResource(
 	deps: ResourceActorDeps,
 	resource: ResourcePlan,
 	ctx: ReconcileContext,
-): Promise<{
-	kind: "destroyed" | "converged" | "failed";
-	snapshot: ResourceActorSnapshot;
-	reason?: string;
-}> {
+): Promise<
+	| { kind: "destroyed" | "converged"; snapshot: ResourceActorSnapshot }
+	| { kind: "failed"; snapshot: ResourceActorSnapshot; reason: string }
+> {
 	const key = resourceActorKey(ctx.deploymentId, resource.name);
 	const lease = deps.actorHost.acquire(key, {
 		holderId: `resource-actor:${key}`,

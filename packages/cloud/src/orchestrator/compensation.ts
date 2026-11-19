@@ -5,6 +5,8 @@ import { emit } from "@hobo/events";
 import {
 	CLOUD_EVENTS,
 	deploymentRolledBack,
+	incidentEscalationRequested,
+	resourceCompensationFailed,
 	resourceDestroying,
 } from "../events.js";
 import type { CredentialBroker, Executor } from "../executor/executor.js";
@@ -17,13 +19,6 @@ import {
 	type ResourceActorState,
 } from "./resource-actor.js";
 
-// Choreographed compensation (control-plane.md "Compensation is also
-// choreographed"): a `resource.Failed` past the no-go threshold emits
-// `deployment.RolledBack`, which each already-`Provisioned` actor observes and
-// reacts to by `Destroying` itself in reverse-dependency order (tracked via the
-// DAG). There is no central saga coordinator — the reverse-topological walk is
-// derived from the plan's dependency edges, and a resource is destroyed only once
-// all of its dependents are already Destroyed.
 
 export interface CompensationDeps {
 	store: EventStore;
@@ -48,9 +43,6 @@ function streamId(deploymentId: string): string {
 	return `deployment:${deploymentId}`;
 }
 
-// Reverse-topological order over the resources that reached a
-// provisioned-or-later state — the safe teardown order (dependents before
-// dependencies).
 function reverseDependencyOrder(
 	plan: DeploymentPlan,
 	states: Map<string, ResourceActorState>,
@@ -112,12 +104,8 @@ export async function runCompensation(
 
 	let events = await collectStream(deps.store, stream);
 
-	// Emit deployment.RolledBack once (idempotent — resume-safe). The stream is
-	// fenced by the leased writes that came before; continue under the current
-	// owner epoch.
 	if (!events.some((e) => e.type === CLOUD_EVENTS.DeploymentRolledBack)) {
 		const lastSeq =
-			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
 		const fenceToken = currentFenceToken(deps.store, stream);
 		await emit(
@@ -148,8 +136,6 @@ export async function runCompensation(
 	const byName = new Map(plan.resources.map((r) => [r.name, r]));
 	const destroyedOrder: string[] = [];
 
-	// Walk reverse-dependency order, destroying each provisioned actor once its
-	// live dependents are gone.
 	let progressed = true;
 	while (progressed) {
 		progressed = false;
@@ -164,11 +150,8 @@ export async function runCompensation(
 		for (const resourceId of reverseDependencyOrder(plan, states)) {
 			const state = states.get(resourceId);
 			if (state === "Destroyed") continue;
-			// Only compensate resources that actually got provisioned (an
-			// interrupted in-place update still exists at the provider).
 			if (state !== "Provisioned" && state !== "Updating") continue;
 
-			// Gate: all dependents must already be Destroyed (reverse order).
 			const liveDependents = dependentsOf(plan, resourceId).filter((depId) => {
 				const s = states.get(depId);
 				return s === "Provisioned" || s === "Updating" || s === "Destroying";
@@ -178,7 +161,6 @@ export async function runCompensation(
 			const resource = byName.get(resourceId);
 			if (!resource) continue;
 
-			// resource.Destroying (durable boundary), then Executor destroy → Destroyed.
 			const beforeEvents = await collectStream(deps.store, stream);
 			const last = beforeEvents[beforeEvents.length - 1];
 			const lastSeq = last === undefined ? 0 : last.seq;
@@ -214,6 +196,27 @@ export async function runCompensation(
 			);
 			if (outcome.kind === "failed") {
 				events = await collectStream(deps.store, stream);
+				const last = events.at(-1);
+				const reason = outcome.reason.trim() || "provider destroy failed";
+				const fenceToken = currentFenceToken(deps.store, stream);
+				await emit(
+					deps.store,
+					stream,
+					[
+						resourceCompensationFailed({ deploymentId, resourceId, reason }),
+						incidentEscalationRequested({
+							deploymentId,
+							resourceId,
+							reason: "compensation-failed",
+						}),
+					],
+					{
+						expectedSeq: last?.seq ?? 0,
+						...(fenceToken !== undefined ? { fenceToken } : undefined),
+						...appendOpts,
+					},
+				);
+				events = await collectStream(deps.store, stream);
 				return { status: "needs-human", destroyedOrder, events };
 			}
 			destroyedOrder.push(resourceId);
@@ -223,5 +226,18 @@ export async function runCompensation(
 	}
 
 	events = await collectStream(deps.store, stream);
-	return { status: "rolled-back", destroyedOrder, events };
+	const incomplete = plan.resources.some((resource) => {
+		const snapshot = foldResourceActor(events, { ...resource, deploymentId });
+		return (
+			snapshot.state === "Provisioned" ||
+			snapshot.state === "Updating" ||
+			snapshot.state === "Destroying" ||
+			(snapshot.state === "Failed" && snapshot.specHash !== undefined)
+		);
+	});
+	return {
+		status: incomplete ? "needs-human" : "rolled-back",
+		destroyedOrder,
+		events,
+	};
 }
