@@ -108,3 +108,40 @@ explicit policy decision.
 ## Durable topic bus
 
 Use `createRivetDurableTopicBusActor` with an independently verified `authorizeInstanceScope` callback, then pass its branded binding to `rivetDurableTopicBusResource`. The bus profile supports subscriptions, consumer groups, delivery leases, acknowledgement, dead letters, compaction, and audit within its advertised limits. It remains asynchronous and does not implement the legacy synchronous topic ABI. Its host must fence the complete instance, including all dead-letter destinations, and authenticate the same source and pool evidence as the retained log.
+
+## HTTP application with a topic bus
+
+`@hobo/alchemy-rivet/http-topic-bus` composes one HTTP actor with a separately authorized durable bus actor in the same verified Rivet registry. The application factory receives the bound bus client:
+
+```ts
+import { setup } from "rivetkit";
+import {
+  createRivetHttpTopicBusApplication,
+  createRivetHttpTopicBusMappers,
+} from "@hobo/alchemy-rivet/http-topic-bus";
+
+// bus is a branded createRivetDurableTopicBusActor result.
+// host supplies authenticated clientOptions and verifies the exact binding.
+const app = createRivetHttpTopicBusApplication({
+  actorName: "web",
+  bus,
+  clientOptions: host.busClientOptions,
+  verifyScope: (claim) => host.verifyBusScope(claim),
+  authorize: (claim) => host.authorizeHttp(claim),
+  application: (messages) => async (request) => {
+    const result = await messages.publish(host.messageFor(request));
+    return Response.json(result);
+  },
+});
+const registry = setup({ use: { web: app.http.actor, events: bus.actor } });
+const mappers = createRivetHttpTopicBusMappers({
+  application: app,
+  source: { ...host.httpSource, registry, binding: app.http },
+  poolDigest: host.poolDigest,
+  isolationDigest: host.isolationDigest,
+  poolHost: host.poolHost,
+  verifyPool: (claim) => host.verifyExclusivePool(claim),
+});
+```
+
+The host must fence the complete source, registry, transport and pool through each request and response. An unknown publish result can have committed and must be reconciled. This asynchronous API does not satisfy a legacy synchronous Bindle topic dependency. The finite model in `model/RivetHttpTopicBus.tla` checks a bounded authority and timeout abstraction; it does not prove the implementation or host.
