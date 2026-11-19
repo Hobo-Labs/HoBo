@@ -205,11 +205,92 @@ export function createCorpusBaseline(
 	});
 }
 
+function isEventVersion(version: number): boolean {
+	return Number.isInteger(version) && version > 0 && version <= 0xffff_ffff;
+}
+
+function evolutionContractErrors(contract: EventEvolutionContract): string[] {
+	const errors: string[] = [];
+	const currentIsValid = isEventVersion(contract.currentVersion);
+	if (!currentIsValid) errors.push("current version must be a positive uint32");
+	if (!contract.type) errors.push("event type is required");
+
+	const versions = new Set<number>();
+	for (const schema of contract.schemas) {
+		if (schema.type !== contract.type) {
+			errors.push(`schema type ${schema.type} does not match ${contract.type}`);
+		}
+		if (!isEventVersion(schema.version)) {
+			errors.push(`invalid schema version ${schema.version}`);
+			continue;
+		}
+		if (currentIsValid && schema.version > contract.currentVersion) {
+			errors.push(
+				`schema v${schema.version} is newer than current v${contract.currentVersion}`,
+			);
+		}
+		if (versions.has(schema.version)) {
+			errors.push(`duplicate schema for v${schema.version}`);
+		}
+		versions.add(schema.version);
+	}
+	if (currentIsValid) {
+		let expected = 1;
+		for (const version of [...versions].sort((a, b) => a - b)) {
+			if (version > contract.currentVersion) break;
+			if (version > expected)
+				errors.push(`no schema registered for v${expected}`);
+			expected = version + 1;
+		}
+		if (expected <= contract.currentVersion) {
+			errors.push(`no schema registered for v${expected}`);
+		}
+	}
+
+	const upcastVersions = new Set<number>();
+	for (const upcaster of contract.upcasters) {
+		if (upcaster.type !== contract.type) {
+			errors.push(
+				`upcaster type ${upcaster.type} does not match ${contract.type}`,
+			);
+		}
+		if (
+			!isEventVersion(upcaster.from) ||
+			(currentIsValid && upcaster.from >= contract.currentVersion)
+		) {
+			errors.push(`invalid upcaster from v${upcaster.from}`);
+		}
+		if (upcastVersions.has(upcaster.from)) {
+			errors.push(`duplicate upcaster from v${upcaster.from}`);
+		}
+		upcastVersions.add(upcaster.from);
+	}
+
+	const entries = new Set<string>();
+	for (const entry of contract.goldenCorpus ?? []) {
+		const key = corpusKey(entry);
+		if (entry.type !== contract.type) {
+			errors.push(`corpus type ${entry.type} does not match ${contract.type}`);
+		}
+		if (!entry.id) errors.push(`corpus entry ${key} has no id`);
+		if (!isEventVersion(entry.version))
+			errors.push(`invalid corpus version ${entry.version}`);
+		if (currentIsValid && entry.version > contract.currentVersion) {
+			errors.push(
+				`corpus entry ${key} is newer than current v${contract.currentVersion}`,
+			);
+		}
+		if (entries.has(key)) errors.push(`duplicate corpus entry ${key}`);
+		entries.add(key);
+	}
+	return errors;
+}
+
 export function runCanDeployUpcasterGate(
 	contract: EventEvolutionContract,
 	options: { readonly baselineCorpus?: CorpusBaseline } = {},
 ): UpcasterGateReport {
-	const errors: string[] = [];
+	const errors = evolutionContractErrors(contract);
 	const replays: CorpusReplay[] = [];
 	const schemas = [...contract.schemas].sort(
 		(left, right) => left.version - right.version,
@@ -265,48 +346,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	for (const upcaster of upcastersByFrom.values()) {
-		const sourceSchema = schemasByVersion.get(upcaster.from);
-		const targetSchema = schemasByVersion.get(upcaster.to);
-		const sourceEntry = corpus.find(
-			(entry) =>
-				entry.type === contract.type && entry.version === upcaster.from,
-		);
-		if (!sourceSchema || !targetSchema || !sourceEntry) continue;
-
-		let sourceBody: EventBody;
-		try {
-			sourceBody = decodeCorpusEntry(sourceSchema, sourceEntry);
-		} catch (error) {
-			errors.push(
-				`${contract.type}@v${upcaster.from} corpus decode failed: ${message(error)}`,
-			);
-			continue;
-		}
-		let first: EventBody;
-		let second: EventBody;
-		try {
-			first = upcaster.upcast(deepFreeze(deepClone(sourceBody)));
-			second = upcaster.upcast(deepFreeze(deepClone(sourceBody)));
-		} catch (error) {
-			errors.push(
-				`${contract.type}@v${upcaster.from} upcaster ${upcaster.from}->${upcaster.to} purity check threw: ${message(error)}`,
-			);
-			continue;
-		}
-		if (canonicalJson(first) !== canonicalJson(second)) {
-			errors.push(
-				`impure upcaster for ${contract.type}@v${upcaster.from}: identical input produced different output`,
-			);
-		}
-		const validation = validateEventBody(targetSchema, first);
-		if (!validation.ok) {
-			errors.push(
-				`${contract.type}@v${upcaster.from} upcaster ${upcaster.from}->${upcaster.to} produced invalid v${upcaster.to} body: ${validation.errors.join("; ")}`,
-			);
-		}
-	}
-
 	for (const entry of corpus) {
 		try {
 			replays.push(
@@ -331,6 +370,30 @@ export function runCanDeployUpcasterGate(
 	});
 }
 
+function upcastDeterministically(
+	upcaster: EventBodyUpcaster,
+	body: EventBody,
+): EventBody {
+	let first: EventBody;
+	let second: EventBody;
+	let firstResult: string;
+	try {
+		first = upcaster.upcast(deepFreeze(deepClone(body)));
+		firstResult = canonicalJson(first);
+		second = upcaster.upcast(deepFreeze(deepClone(body)));
+	} catch (error) {
+		throw new Error(
+			`${upcaster.type}@v${upcaster.from} upcaster ${upcaster.from}->${upcaster.to} purity check threw: ${message(error)}`,
+		);
+	}
+	if (firstResult !== canonicalJson(second)) {
+		throw new Error(
+			`impure upcaster for ${upcaster.type}@v${upcaster.from}: identical input produced different output`,
+		);
+	}
+	return first;
+}
+
 function replayCorpusEntry(input: {
 	contract: EventEvolutionContract;
 	schemasByVersion: ReadonlyMap<number, EventBodySchema>;
@@ -352,7 +415,7 @@ function replayCorpusEntry(input: {
 				`non-total upcaster chain for ${entry.type}@v${version}: missing ${version}->${version + 1}`,
 			);
 		}
-		body = upcaster.upcast(deepFreeze(deepClone(body)));
+		body = upcastDeterministically(upcaster, body);
 		version = upcaster.to;
 		const next = schemasByVersion.get(version);
 		if (!next) throw new Error(`no schema registered for v${version}`);

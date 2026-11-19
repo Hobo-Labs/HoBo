@@ -61,7 +61,10 @@ the `migration.*` family, one evolution contract per type, and
 `corpus/golden-replay-baseline.json` is the append-only record of every body
 ever pinned. `runCanDeployUpcasterGate` replays each pinned body through its
 upcaster chain to the current version; a body that cannot be lifted fails the
-test lane.
+test lane. Each contract declares one schema for every version from 1 through
+current and unique upcasters and corpus entries for its event type. The gate
+checks each step twice for every replayed body, including intermediate bodies,
+and reports inconsistent results.
 
 A body schema is a list of tagged fields: `stringField`, `u32Field`,
 `boolField`, `stringsField` (a list of strings) and `jsonField` (a JSON object,
