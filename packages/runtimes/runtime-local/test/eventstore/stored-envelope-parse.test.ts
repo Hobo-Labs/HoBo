@@ -18,7 +18,6 @@ const row = (overrides: Record<string, unknown> = {}) => ({
 	data: JSON.stringify({ workflow: "checkout" }),
 	meta: JSON.stringify({}),
 	...overrides,
-	// SAFETY: the fixture builds the exact row shape the store returns.
 });
 
 describe("optional columns that are NULL", () => {

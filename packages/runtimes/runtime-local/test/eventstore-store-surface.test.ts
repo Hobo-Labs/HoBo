@@ -35,14 +35,12 @@ const appendAt = (
 		actor: { kind: "user", id: "local-developer" },
 		tenant: "tenant-1",
 		...overrides,
-		// SAFETY: the store reads exactly the fields AppendOptions names.
 	}) as never;
 
 const event = (type = "thing.Happened", data: unknown = { a: 1 }) =>
 	({
 		type,
 		data,
-		// SAFETY: the store reads exactly the fields an EventInput names.
 	}) as never;
 
 describe("the manual clock", () => {
