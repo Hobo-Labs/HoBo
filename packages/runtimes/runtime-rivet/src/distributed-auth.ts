@@ -82,7 +82,11 @@ function canonical(
 			throw new RivetCapabilityError("INVALID_INPUT");
 		return ["number", String(value)];
 	}
-	if (typeof value !== "object" || utilTypes.isProxy(value) || ancestors.has(value))
+	if (
+		typeof value !== "object" ||
+		utilTypes.isProxy(value) ||
+		ancestors.has(value)
+	)
 		throw new RivetCapabilityError("INVALID_INPUT");
 	ancestors.add(value);
 	try {
@@ -219,10 +223,12 @@ export function issueRivetCapability(
 
 function readCapability(input: unknown): RivetSignedCapability | undefined {
 	try {
-		if (typeof input !== "object" ||
+		if (
+			typeof input !== "object" ||
 			input === null ||
 			utilTypes.isProxy(input) ||
-			Array.isArray(input))
+			Array.isArray(input)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
 		Object.setPrototypeOf(properties, null);

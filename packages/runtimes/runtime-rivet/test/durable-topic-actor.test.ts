@@ -211,7 +211,10 @@ describe("Rivet durable topic log actor", () => {
 			"authorizeInstanceScope",
 		] as const) {
 			const options = { ...base };
-			Object.defineProperty(options, field, { value: reject, enumerable: true });
+			Object.defineProperty(options, field, {
+				value: reject,
+				enumerable: true,
+			});
 			const actor = createRivetDurableTopicBusActor(options);
 			const response = await actor.handle(
 				{ name: "orders", key: ["tenant"], db: storage.db },

@@ -120,12 +120,25 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			),
 		),
 	);
-	assert.ok(
-		pricingSteps?.some((step) =>
+	const integrationIndex =
+		pricingSteps?.findIndex((step) =>
 			asText(asObject(step)?.run)?.includes(
 				"test/iac-alchemy-integration.test.ts",
 			),
-		),
+		) ?? -1;
+	const prerequisitesIndex =
+		pricingSteps?.findIndex((step) => {
+			const run = asText(asObject(step)?.run);
+			return (
+				run?.includes("turbo run build") &&
+				run.includes("--filter=@hobo/bindles") &&
+				run.includes("--filter=@hobo/runtime-local")
+			);
+		}) ?? -1;
+	assert.ok(integrationIndex >= 0, "Alchemy financial integration must run");
+	assert.ok(
+		prerequisitesIndex >= 0 && prerequisitesIndex < integrationIndex,
+		"Alchemy integration prerequisites must build before the test",
 	);
 	const modelSteps = asList(asObject(jobs?.["pricing-models"])?.steps);
 	const modelCheck = modelSteps

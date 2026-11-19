@@ -115,7 +115,9 @@ describe("source policy", () => {
 			"const last = input;",
 		].join("\n");
 		assert.deepEqual(
-			commentViolations("x.ts", text, new Set([1, 3, 5])).map((item) => item.line),
+			commentViolations("x.ts", text, new Set([1, 3, 5])).map(
+				(item) => item.line,
+			),
 			[3, 5],
 		);
 	});

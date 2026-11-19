@@ -131,9 +131,7 @@ describe("forward/reverse surface parity", () => {
 	it("keeps native async messaging out of the existing SDK world", async () => {
 		const { readFile } = await import("node:fs/promises");
 		const wit = await readFile(WIT_PATH, "utf8");
-		expect(wit).not.toContain(
-			"import hobo:durable-messaging/messaging@0.1.0;",
-		);
+		expect(wit).not.toContain("import hobo:durable-messaging/messaging@0.1.0;");
 		expect(wit).not.toContain(
 			"import hobo:durable-messaging-jspi/messaging@0.1.0;",
 		);

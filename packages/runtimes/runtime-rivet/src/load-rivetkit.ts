@@ -1,4 +1,3 @@
-
 export type RivetkitModule = typeof import("rivetkit");
 export type RivetkitClientModule = typeof import("rivetkit/client");
 

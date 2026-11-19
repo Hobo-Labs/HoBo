@@ -395,7 +395,9 @@ export async function runDurableReceiptJournal(
 						throw new Error("invalid state");
 					priorState = stored;
 				}
-				const decision = synchronousResult(execute(priorState, timestamp, requestBase64));
+				const decision = synchronousResult(
+					execute(priorState, timestamp, requestBase64),
+				);
 				if (
 					decision === null ||
 					typeof decision !== "object" ||
@@ -466,7 +468,9 @@ export async function runDurableReceiptJournal(
 				return parsed;
 			},
 		);
-		return synchronousResult(authorized(authority)) === true ? outcome : uncertain();
+		return synchronousResult(authorized(authority)) === true
+			? outcome
+			: uncertain();
 	} catch {
 		return uncertain();
 	}

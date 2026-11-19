@@ -4,7 +4,8 @@ import { snapshotDistributedData } from "../src/distributed-journal.js";
 
 describe("Rivet journal value boundaries", () => {
 	it("rejects sparse arrays even when a descriptor is inherited", () => {
-		const sparse = new Array(1);
+		const sparse: unknown[] = [];
+		sparse.length = 1;
 		let result: unknown;
 		try {
 			Object.defineProperty(Object.prototype, "0", {
@@ -46,12 +47,15 @@ describe("Rivet journal value boundaries", () => {
 
 	it("refuses proxy data before invoking its traps", () => {
 		let traps = 0;
-		const value = new Proxy({ item: "value" }, {
-			ownKeys(target) {
-				traps++;
-				return Reflect.ownKeys(target);
+		const value = new Proxy(
+			{ item: "value" },
+			{
+				ownKeys(target) {
+					traps++;
+					return Reflect.ownKeys(target);
+				},
 			},
-		});
+		);
 		expect(snapshotDistributedData(value)).toBeUndefined();
 		expect(() =>
 			computeRivetOperationDigest({

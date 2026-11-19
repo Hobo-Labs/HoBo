@@ -222,9 +222,15 @@ function clientOptions(input: unknown): RivetDurableTopicClientOptions {
 		fetch: raw.fetch as RivetDurableTopicClientOptions["fetch"],
 	};
 	if (typeof raw.timeoutMs === "number")
-		Object.defineProperty(result, "timeoutMs", { value: raw.timeoutMs, enumerable: true });
+		Object.defineProperty(result, "timeoutMs", {
+			value: raw.timeoutMs,
+			enumerable: true,
+		});
 	if (typeof raw.maxInFlight === "number")
-		Object.defineProperty(result, "maxInFlight", { value: raw.maxInFlight, enumerable: true });
+		Object.defineProperty(result, "maxInFlight", {
+			value: raw.maxInFlight,
+			enumerable: true,
+		});
 	return Object.freeze(result);
 }
 

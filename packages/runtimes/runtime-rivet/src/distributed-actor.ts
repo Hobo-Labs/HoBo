@@ -99,10 +99,12 @@ function validName(value: string): boolean {
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: RPC receipts may be malformed, mutable or contain accessors; copy only bounded own data properties. */
 function readDecision(input: unknown): RemoteDecision | undefined {
 	try {
-		if (typeof input !== "object" ||
+		if (
+			typeof input !== "object" ||
 			input === null ||
 			utilTypes.isProxy(input) ||
-			Array.isArray(input))
+			Array.isArray(input)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
 		Object.setPrototypeOf(properties, null);
@@ -167,10 +169,12 @@ function readSnapshot(
 	  }
 	| undefined {
 	try {
-		if (typeof input !== "object" ||
+		if (
+			typeof input !== "object" ||
 			input === null ||
 			utilTypes.isProxy(input) ||
-			Array.isArray(input))
+			Array.isArray(input)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
 		Object.setPrototypeOf(properties, null);

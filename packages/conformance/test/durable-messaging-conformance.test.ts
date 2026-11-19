@@ -573,8 +573,7 @@ describe("durable messaging conformance runner", () => {
 			...harness,
 			close: async () => {
 				const start = Date.now();
-				while (Date.now() - start < 20) {
-				}
+				while (Date.now() - start < 20) {}
 			},
 		};
 		const report = await runDurableMessagingConformance(async () => slowClose, {
@@ -590,8 +589,7 @@ describe("durable messaging conformance runner", () => {
 		const report = await runDurableMessagingConformance(
 			async () => {
 				const start = Date.now();
-				while (Date.now() - start < 20) {
-				}
+				while (Date.now() - start < 20) {}
 				return inertHarness(async () => {
 					connects++;
 					throw new Error("late connect");
@@ -613,8 +611,7 @@ describe("durable messaging conformance runner", () => {
 			ensureTopic: async ({ topic }) => {
 				calls++;
 				const start = Date.now();
-				while (Date.now() - start < 200) {
-				}
+				while (Date.now() - start < 200) {}
 				return { status: "committed", value: { topic } };
 			},
 			ensureSubscription: fail,

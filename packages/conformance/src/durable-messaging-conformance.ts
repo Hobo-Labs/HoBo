@@ -234,8 +234,7 @@ function ensureDefiniteOutcome(
 				throw new Error("authority or capability unavailable");
 			return;
 		}
-	} catch {
-	}
+	} catch {}
 	throw new DurableMessagingConformanceUnknown(
 		"provider outcome is uncertain or malformed",
 	);
@@ -584,8 +583,7 @@ function ensureAuditOutcome(
 			field("code") === "invalid-argument"
 		)
 			return;
-	} catch {
-	}
+	} catch {}
 	throw new DurableMessagingConformanceUnknown(
 		"audit response is unavailable or malformed",
 	);

@@ -19,7 +19,10 @@ const intrinsicApply = Reflect.apply;
 const intrinsicWeakGet = WeakMap.prototype.get;
 const intrinsicWeakSet = WeakMap.prototype.set;
 
-function readPrivate<K extends object, V>(table: WeakMap<K, V>, key: K): V | undefined {
+function readPrivate<K extends object, V>(
+	table: WeakMap<K, V>,
+	key: K,
+): V | undefined {
 	// SAFETY: the private table determines the value type for this key.
 	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
 }
@@ -1458,8 +1461,7 @@ export async function instantiateDurableMessagingJspi<T>(
 	let verified = false;
 	try {
 		verified = settings.verify(captured, host) === true;
-	} catch {
-	}
+	} catch {}
 	if (!verified) throw new Error("durable_messaging.jspi_component_unverified");
 	const table = Object.freeze({
 		[DURABLE_MESSAGING_JSPI_INTERFACE]: host,
