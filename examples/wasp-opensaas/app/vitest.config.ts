@@ -8,6 +8,6 @@ export default defineConfig({
     include: ["test/**/*.test.{ts,tsx}"],
     exclude: process.env.TEST_DATABASE_URL
       ? []
-      : ["test/messages.test.ts"],
+      : ["test/messages.test.ts", "test/admin-profile.test.ts"],
   },
 });
