@@ -798,6 +798,11 @@ export {
 	sloDurationMs,
 } from "./ports/slo.js";
 export type {
+	BuiltInSloQueries,
+	SloMetricQueries,
+} from "./ports/slo-builtins.js";
+export { createBuiltInSloDefinitions } from "./ports/slo-builtins.js";
+export type {
 	SliSample,
 	SliSource,
 	SloBurnEvaluation,

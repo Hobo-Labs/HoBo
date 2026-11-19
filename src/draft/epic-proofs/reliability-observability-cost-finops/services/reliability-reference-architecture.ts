@@ -24,8 +24,8 @@ import {
 } from "../../../technical-proofs/slo-as-code-contract/src/slo-contract.js";
 import {
   computeSloStatus,
-  createFixtureSliSource,
-} from "../../../technical-proofs/slo-computation-engine-contract/src/slo-computation-engine.js";
+  parseSloDefinition as parseSharedSloDefinition,
+} from "@hobo/core";
 import {
   evaluateRolloutMetricGate,
 } from "../../../technical-proofs/slo-gated-rollback-analysis-contract/src/slo-gated-rollback-analysis.js";
@@ -100,7 +100,7 @@ const CONTRACTS_COVERED = Object.freeze([
 ]);
 
 export async function runReliabilityObservabilityCostSimulation() {
-  const telemetry = runTelemetrySloGate();
+  const telemetry = await runTelemetrySloGate();
   const finops = runFinopsBudgetGuard();
   const recovery = await runSagaCompensationRecovery();
   const status = runGoldenChaosStatusRollup();
@@ -145,7 +145,7 @@ export async function runReliabilityObservabilityCostSimulation() {
   };
 }
 
-function runTelemetrySloGate() {
+async function runTelemetrySloGate() {
   const traceRuntime = createTraceContextRuntime({
     traceIds: ["11111111111111111111111111111111", "cccccccccccccccccccccccccccccccc"],
     spanIds: ["2222222222222222", "dddddddddddddddd"],
@@ -196,16 +196,17 @@ function runTelemetrySloGate() {
     },
   });
   const sloDefinitionCheck = parseSloDefinition(sloDefinition);
-  const sloStatus = computeSloStatus({
-    definition: sloDefinition,
-    sliSource: createFixtureSliSource([
+  const sharedSloDefinition = parseSharedSloDefinition(sloDefinition);
+  const sloStatus = await computeSloStatus({
+    definition: sharedSloDefinition,
+    sliSource: { readRatioSamples: () => [
       { time: "2026-06-29T02:59:00.000Z", good: 9850, total: 10000 },
-    ]),
+    ] },
     now: "2026-06-29T03:00:00.000Z",
   });
-  const noSliData = computeSloStatus({
-    definition: sloDefinition,
-    sliSource: createFixtureSliSource([]),
+  const noSliData = await computeSloStatus({
+    definition: sharedSloDefinition,
+    sliSource: { readRatioSamples: () => [] },
     now: "2026-06-29T03:00:00.000Z",
   });
   const rollbackGate = evaluateRolloutMetricGate({

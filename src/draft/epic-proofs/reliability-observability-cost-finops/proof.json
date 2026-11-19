@@ -25,7 +25,6 @@
       "src/draft/technical-proofs/shared-cost-attribution-contract",
       "src/draft/technical-proofs/showback-attribution-contract",
       "src/draft/technical-proofs/slo-as-code-contract",
-      "src/draft/technical-proofs/slo-computation-engine-contract",
       "src/draft/technical-proofs/slo-gaming-guard-contract",
       "src/draft/technical-proofs/slo-gated-rollback-analysis-contract",
       "src/draft/technical-proofs/structured-log-pipeline-contract",

@@ -13,6 +13,14 @@ import {
 
 const TRACEPARENT = "00-11111111111111111111111111111111-2222222222222222-01";
 const NOW = "2026-07-02T03:00:00.000Z";
+const SLO_EVENT_CONTEXT = {
+  id: "evt-slo-burn-1",
+  seq: 1,
+  ts: NOW,
+  actor: { kind: "service", id: "slo-observer" },
+  tenant: "tenant-a",
+  meta: { traceparent: TRACEPARENT },
+};
 
 describe("S6-05 observability drift loop E2E", () => {
   it("exports deploy and run traces with OTLP metrics and structured logs", () => {
@@ -34,15 +42,19 @@ describe("S6-05 observability drift loop E2E", () => {
     assert.equal(telemetry.logs.correlatedToTrace, true);
   });
 
-  it("fires an alert when a seeded SLO burn breaches burn-rate thresholds", () => {
-    const slo = evaluateSloBurnAlert({ now: NOW });
+  it("fires an alert when a seeded SLO burn breaches burn-rate thresholds", async () => {
+    const slo = await evaluateSloBurnAlert({ now: NOW, eventContext: SLO_EVENT_CONTEXT });
 
-    assert.equal(slo.status.healthy, false);
+    assert.notEqual(slo.status.status, "healthy");
     assert.ok(slo.budgetEvent);
-    assert.equal(slo.budgetEvent.type, "slo.BudgetBurned");
+    assert.equal(slo.budgetEvent.type, "slo.BudgetExhausted");
     assert.equal(slo.fired, true);
     assert.ok(slo.alertEvents.some((event) => event.type === "alert.Fired"));
     assert.ok(slo.alertEvents.some((event) => event.type === "alert.Routed"));
+  });
+
+  it("requires event context when a burn alert is emitted", async () => {
+    await assert.rejects(evaluateSloBurnAlert({ now: NOW }), /event context is required/);
   });
 
   it("detects injected provider drift and heals with drift.* events", async () => {
@@ -60,6 +72,7 @@ describe("S6-05 observability drift loop E2E", () => {
 
   it("satisfies full acceptance lane for telemetry, SLO burn alert, and drift heal", async () => {
     const result = await runObservabilityDriftLoopE2E({
+      sloEventContext: SLO_EVENT_CONTEXT,
       resources: [{ id: "api", desiredRef: "set:desired@sha256-good" }],
       providerState: { api: "provider:observed@sha256-drifted" },
       now: NOW,
@@ -124,8 +137,8 @@ describe("drift scheduler and MCP surfaces", () => {
 });
 
 describe("adversarial guards", () => {
-  it("does not fire alerts when SLO samples are healthy", () => {
-    const slo = evaluateSloBurnAlert({
+  it("does not fire alerts when SLO samples are healthy", async () => {
+    const slo = await evaluateSloBurnAlert({
       now: NOW,
       sliSamples: Array.from({ length: 60 }, (_, index) => ({
         time: new Date(Date.parse(NOW) - index * 60_000).toISOString(),

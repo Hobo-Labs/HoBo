@@ -586,7 +586,6 @@
         "src/draft/technical-proofs/s1-17-usage-permissions-coverage-poc/**",
         "src/draft/technical-proofs/secret-zero-genesis-bootstrap-contract/**",
         "src/draft/technical-proofs/session-replay-contracts/**",
-        "src/draft/technical-proofs/slo-computation-engine-contract/**",
         "src/draft/technical-proofs/slsa-provenance-certification-contract/**",
         "src/draft/technical-proofs/svid-partition-grace-spike/**",
         "src/draft/technical-proofs/token-broker-ha-cache-contract/**",
