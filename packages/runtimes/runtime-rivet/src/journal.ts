@@ -67,6 +67,12 @@ CREATE TABLE IF NOT EXISTS hobo_actor_head (
   revision INTEGER NOT NULL,
   owner_epoch INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS hobo_actor_lease (
+  stream_id TEXT PRIMARY KEY,
+  holder_id TEXT NOT NULL,
+  owner_epoch INTEGER NOT NULL,
+  expires_at_ms INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS hobo_events (
   stream_id TEXT NOT NULL,
   seq INTEGER NOT NULL,
@@ -108,6 +114,20 @@ export interface ActorLocalJournal {
 	close(): void;
 	transaction<T>(fn: () => T): T;
 	head(streamId: string): { revision: number; ownerEpoch: bigint };
+	acquireLease(
+		streamId: string,
+		holderId: string,
+		nowMs: number,
+		ttlMs: number,
+	): { fenceToken: bigint; expiresAtMs: number } | undefined;
+	releaseLease(streamId: string, holderId: string, fenceToken: bigint): boolean;
+	appendLeased(
+		streamId: string,
+		holderId: string,
+		fenceToken: bigint,
+		nowMs: number,
+		facts: readonly JournalFact[],
+	): { revision: number } | undefined;
 	append(
 		streamId: string,
 		expectedRevision: number,
@@ -178,6 +198,19 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 	const insertHead = db.prepare(
 		`INSERT OR IGNORE INTO hobo_actor_head(stream_id, revision, owner_epoch)
      VALUES (?, 0, 0)`,
+	);
+	const getLease = db.prepare(
+		`SELECT holder_id, owner_epoch, expires_at_ms FROM hobo_actor_lease WHERE stream_id = ?`,
+	);
+	const putLease = db.prepare(
+		`INSERT INTO hobo_actor_lease(stream_id, holder_id, owner_epoch, expires_at_ms) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(stream_id) DO UPDATE SET holder_id = excluded.holder_id, owner_epoch = excluded.owner_epoch, expires_at_ms = excluded.expires_at_ms`,
+	);
+	const removeLease = db.prepare(
+		`DELETE FROM hobo_actor_lease WHERE stream_id = ? AND holder_id = ? AND owner_epoch = ?`,
+	);
+	const updateOwnerEpoch = db.prepare(
+		`UPDATE hobo_actor_head SET owner_epoch = ? WHERE stream_id = ?`,
 	);
 	const casHead = db.prepare(
 		`UPDATE hobo_actor_head SET revision = ?
@@ -280,6 +313,56 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		insertOutbox.run(streamId, effectId, digest, payloadJson);
 	}
 
+	function leaseEpoch(value: SqliteValue | undefined): bigint {
+		let epoch: bigint;
+		if (isJsonBigInt(value)) epoch = value;
+		else if (isJsonNumber(value) && Number.isSafeInteger(value))
+			epoch = BigInt(value);
+		else if (isJsonString(value) && /^\d+$/u.test(value)) epoch = BigInt(value);
+		else throw new RivetJournalError("PARSE", "invalid actor lease epoch");
+		if (epoch < 0n || epoch > BigInt(Number.MAX_SAFE_INTEGER))
+			throw new RivetJournalError("PARSE", "actor lease epoch is out of range");
+		return epoch;
+	}
+
+	function appendAtRevision(
+		streamId: string,
+		expectedRevision: number,
+		facts: readonly JournalFact[],
+	) {
+		insertHead.run(streamId);
+		const head = getHead.get(streamId) as SqliteRow | undefined;
+		const current = asNumber(head?.revision);
+		if (current !== expectedRevision)
+			throw new RivetJournalError(
+				"STALE_REVISION",
+				`expected revision ${expectedRevision}, found ${current}`,
+			);
+		let seq = current;
+		for (const fact of facts) {
+			seq += 1;
+			insertEvent.run(
+				streamId,
+				seq,
+				fact.eventId,
+				fact.type,
+				fact.payload,
+				fact.metadataJson,
+				fact.causationId ?? null,
+				fact.correlationId ?? null,
+				fact.tenant,
+				fact.project ?? null,
+				fact.lane ?? null,
+			);
+		}
+		if (casHead.run(seq, streamId, current).changes !== 1)
+			throw new RivetJournalError(
+				"STALE_REVISION",
+				`cas failed at revision ${current}`,
+			);
+		return { revision: seq };
+	}
+
 	const mapInbox = (row: SqliteRow): InboxCommand => ({
 		commandId: String(row.command_id),
 		digest: String(row.digest),
@@ -318,44 +401,60 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 				ownerEpoch: asBigInt(row?.owner_epoch),
 			};
 		},
-		append(streamId, expectedRevision, facts) {
+		acquireLease(streamId, holderId, nowMs, ttlMs) {
+			if (
+				!streamId.trim() ||
+				!holderId.trim() ||
+				!Number.isSafeInteger(nowMs) ||
+				!Number.isSafeInteger(ttlMs) ||
+				ttlMs <= 0 ||
+				!Number.isSafeInteger(nowMs + ttlMs)
+			)
+				throw new RivetJournalError("PARSE", "invalid actor lease request");
 			return this.transaction(() => {
 				insertHead.run(streamId);
-
-				const headRow = getHead.get(streamId) as SqliteRow | undefined;
-				const current = asNumber(headRow?.revision);
-				if (current !== expectedRevision) {
+				const held = getLease.get(streamId) as SqliteRow | undefined;
+				if (held && asNumber(held.expires_at_ms) > nowMs) return undefined;
+				const head = getHead.get(streamId) as SqliteRow | undefined;
+				const fenceToken = leaseEpoch(head?.owner_epoch) + 1n;
+				if (fenceToken > BigInt(Number.MAX_SAFE_INTEGER))
 					throw new RivetJournalError(
-						"STALE_REVISION",
-						`expected revision ${expectedRevision}, found ${current}`,
+						"PARSE",
+						"actor lease epoch is exhausted",
 					);
-				}
-				let seq = current;
-				for (const fact of facts) {
-					seq += 1;
-					insertEvent.run(
-						streamId,
-						seq,
-						fact.eventId,
-						fact.type,
-						fact.payload,
-						fact.metadataJson,
-						fact.causationId ?? null,
-						fact.correlationId ?? null,
-						fact.tenant,
-						fact.project ?? null,
-						fact.lane ?? null,
-					);
-				}
-				const updated = casHead.run(seq, streamId, current);
-				if (updated.changes !== 1) {
-					throw new RivetJournalError(
-						"STALE_REVISION",
-						`cas failed at revision ${current}`,
-					);
-				}
-				return { revision: seq };
+				const expiresAtMs = nowMs + ttlMs;
+				updateOwnerEpoch.run(fenceToken, streamId);
+				putLease.run(streamId, holderId, fenceToken, expiresAtMs);
+				return { fenceToken, expiresAtMs };
 			});
+		},
+		releaseLease(streamId, holderId, fenceToken) {
+			return this.transaction(
+				() => removeLease.run(streamId, holderId, fenceToken).changes === 1,
+			);
+		},
+		appendLeased(streamId, holderId, fenceToken, nowMs, facts) {
+			if (!Number.isSafeInteger(nowMs))
+				throw new RivetJournalError("PARSE", "invalid actor lease clock");
+			return this.transaction(() => {
+				const held = getLease.get(streamId) as SqliteRow | undefined;
+				const head = getHead.get(streamId) as SqliteRow | undefined;
+				if (
+					!held ||
+					!head ||
+					held.holder_id !== holderId ||
+					leaseEpoch(held.owner_epoch) !== fenceToken ||
+					leaseEpoch(head.owner_epoch) !== fenceToken ||
+					asNumber(held.expires_at_ms) <= nowMs
+				)
+					return undefined;
+				return appendAtRevision(streamId, asNumber(head.revision), facts);
+			});
+		},
+		append(streamId, expectedRevision, facts) {
+			return this.transaction(() =>
+				appendAtRevision(streamId, expectedRevision, facts),
+			);
 		},
 		readFacts(streamId, fromSeq = 1) {
 			const rows = readEvents.all(streamId, fromSeq) as SqliteRow[];

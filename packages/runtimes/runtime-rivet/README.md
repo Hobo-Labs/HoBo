@@ -44,6 +44,10 @@ const accepted = bundle.actors.accept({
 });
 ```
 
+## Actor state and leases
+
+The local SQLite actor host stores `ActorHost.state` events in a dedicated journal stream. Handles for the same actor read the same history, including after reopening the database. Lease ownership and its increasing fence token are stored in SQLite; release or expiry allows a new holder, and stale handles cannot append through the actor host. The host uses a 30-second lease by default, with `leaseTtlMs` and `nowMs` options available for its local clock. The state stream is separate from the command inbox stream.
+
 ## Event replay
 
 Actor commands append their original payloads so the same fold can rebuild state after a restart. Each command requires its declared `expectedRevision` to match the revision replayed at commit. A stale command receives a durable `failed-terminal` receipt and does not block later commands. The commit receipt is stored with the facts and outbox rows, so a restart can finish a committed command without applying it again.

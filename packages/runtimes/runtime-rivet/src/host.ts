@@ -47,6 +47,7 @@ export function createRivetRuntimeHost(
 	const actors = createRivetActorHost({
 		journal,
 		fidelity: "local-sqlite",
+		tenantId: options.tenantId,
 		legacyEventPayloads: options.legacyEventPayloads,
 	});
 	const doctor: RivetDoctorReport = {
