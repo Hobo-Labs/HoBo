@@ -100,8 +100,19 @@ function pathOf(url: string): string | undefined {
 	}
 }
 
-function hostOf(url: string): string | undefined {
-	return /^https?:\/\//u.test(url) ? new URL(url).host : undefined;
+function originOf(url: string): string | undefined {
+	try {
+		const parsed = new URL(url);
+		if (
+			(parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+			parsed.username ||
+			parsed.password
+		)
+			return undefined;
+		return parsed.origin;
+	} catch {
+		return undefined;
+	}
 }
 
 export function verifyDpopProof(
@@ -149,12 +160,14 @@ export function verifyDpopProof(
 		);
 	const expectedPath = pathOf(expect.url);
 	const proofPath = pathOf(htu);
-	const expectedHost = hostOf(expect.url);
+	const expectedOrigin = originOf(expect.url);
+	const proofOrigin = originOf(htu);
 	if (
 		proofPath === undefined ||
 		proofPath !== expectedPath ||
+		proofOrigin === undefined ||
 		/[?#]/u.test(htu) ||
-		(expectedHost !== undefined && hostOf(htu) !== expectedHost)
+		(expectedOrigin !== undefined && proofOrigin !== expectedOrigin)
 	)
 		return agentRefusal(
 			"dpop-url-mismatch",

@@ -16,6 +16,7 @@ import type {
 	RoutingStatus,
 	TrafficRoutingOfferingId,
 } from "@hobo/core";
+import type { JwtSvidIssuer } from "@hobo/identity";
 import type {
 	ArtifactKind,
 	ArtifactRef,
@@ -1378,6 +1379,8 @@ export interface CdFactories {
 			readonly authorizer: CdAuthorizer;
 			readonly rails: RailDeliveryReader;
 			readonly inventory: CampInventory;
+			readonly publicOrigin?: string;
+			readonly issuer?: JwtSvidIssuer;
 		},
 	): AgentEnrollment;
 	/** "./agent" (WP11) */

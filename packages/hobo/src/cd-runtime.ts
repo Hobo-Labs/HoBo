@@ -102,6 +102,7 @@ import {
 	type CdStoreOpener,
 	openCdStore,
 } from "./cd-store.js";
+import { ownerCdSvidIssuer } from "./cd-svid-issuer.js";
 import {
 	loadTopologyFiles,
 	mergeTopologyReaders,
@@ -118,6 +119,8 @@ import {
 	catalogRealizedProvider,
 } from "./provider-hosting-catalog.js";
 
+export { CD_SVID_SIGNING_KEY } from "./cd-svid-issuer.js";
+
 export type CdRuntimeOptions = Readonly<{
 	env: Readonly<Record<string, string | undefined>>;
 	/** HOBO_HOME. */
@@ -125,6 +128,7 @@ export type CdRuntimeOptions = Readonly<{
 	cwd: string;
 	/** `--simulate`: the only path to fixtures. */
 	simulate: boolean;
+	publicOrigin?: string;
 	now?: () => number;
 	principal?: PrincipalRef;
 	/** Share an already-open journal (e.g. the Yard runtime's, for `hobo up`). */
@@ -183,6 +187,8 @@ export type CdRuntimeOptions = Readonly<{
 export type CdRuntime = Readonly<{
 	cd: ComposedContinuousDelivery;
 	config: CdComposeConfig;
+	publicOrigin?: string;
+	issuerKeyId?: string;
 	ctx: CdContext;
 	host: CdDeployHost;
 	store: DurableEventStore;
@@ -236,6 +242,28 @@ function refusal(code: string, message: string, remediation: string) {
 export async function openCdRuntime(
 	options: CdRuntimeOptions,
 ): Promise<Outcome<CdRuntime>> {
+	let publicOrigin: string | undefined;
+	if (options.publicOrigin !== undefined) {
+		try {
+			const origin = new URL(options.publicOrigin);
+			if (
+				origin.protocol !== "https:" ||
+				origin.username ||
+				origin.password ||
+				origin.pathname !== "/" ||
+				origin.search ||
+				origin.hash
+			)
+				throw new Error("invalid public origin");
+			publicOrigin = origin.origin;
+		} catch {
+			return refusal(
+				"cd-public-origin-invalid",
+				"the CD public origin must be an HTTPS origin without credentials, path, query, or fragment",
+				"Configure the public HTTPS origin of the CD service before starting a public listener.",
+			);
+		}
+	}
 	const parsed = parseCdComposeConfig({
 		env: options.env,
 		home: options.home,
@@ -243,6 +271,40 @@ export async function openCdRuntime(
 	});
 	if (!parsed.ok) return parsed;
 	const config = parsed.value;
+	let agentIssuer: Awaited<ReturnType<typeof ownerCdSvidIssuer>> | undefined;
+	if (publicOrigin !== undefined) {
+		try {
+			if (!options.readSecret) throw new Error("CD owner store unavailable");
+			agentIssuer = await ownerCdSvidIssuer(options.readSecret, publicOrigin);
+		} catch {
+			return refusal(
+				"cd-svid-issuer-unavailable",
+				"the CD public service cannot load its owner-managed signing key",
+				"Complete the HoBo owner setup and provision the CD signing key in the owner store before starting the public service.",
+			);
+		}
+	}
+	let retained = false;
+	try {
+		const result = await openComposedCdRuntime(
+			options,
+			config,
+			publicOrigin,
+			agentIssuer,
+		);
+		retained = result.ok;
+		return result;
+	} finally {
+		if (!retained) agentIssuer?.close();
+	}
+}
+
+async function openComposedCdRuntime(
+	options: CdRuntimeOptions,
+	config: CdComposeConfig,
+	publicOrigin: string | undefined,
+	agentIssuer: Awaited<ReturnType<typeof ownerCdSvidIssuer>> | undefined,
+): Promise<Outcome<CdRuntime>> {
 	// Declared topology is read before the journal opens: a malformed file
 	// refuses the command with nothing opened.
 	const files = options.topologyFiles ?? [];
@@ -501,6 +563,10 @@ export async function openCdRuntime(
 		policyPack,
 		topology,
 		railCatalog,
+		...(publicOrigin === undefined ? undefined : { publicOrigin }),
+		...(agentIssuer === undefined
+			? undefined
+			: { agentIssuer: agentIssuer.issuer }),
 		readRailEvents: createJournalRailEventReader({ store }),
 		...(options.readCiEvents
 			? { readCiEvents: options.readCiEvents }
@@ -524,6 +590,10 @@ export async function openCdRuntime(
 		value: Object.freeze({
 			cd,
 			config,
+			...(publicOrigin === undefined ? undefined : { publicOrigin }),
+			...(agentIssuer === undefined
+				? undefined
+				: { issuerKeyId: agentIssuer.issuer.activeKeyId }),
 			ctx,
 			store,
 			conductor,
@@ -561,6 +631,7 @@ export async function openCdRuntime(
 				},
 			},
 			close: async () => {
+				agentIssuer?.close();
 				await opened?.close();
 			},
 		}),
