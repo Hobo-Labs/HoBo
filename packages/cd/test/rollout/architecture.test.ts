@@ -1,6 +1,3 @@
-// Architecture tests over the WP10 sources: D8 (Station cutover is the only
-// traffic mutator), I8 (no clock, RNG or network in decisions), I11 (neutral
-// core) and the shared-constants rule (CD_RAMP_DEFAULTS, never local ramps).
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +18,6 @@ function sources(): ReadonlyArray<Readonly<{ file: string; text: string }>> {
 	return files.map((file) => ({ file, text: readFileSync(file, "utf8") }));
 }
 
-/** Source text without comments, so prose never trips a code rule. */
 function code(text: string): string {
 	return text
 		.replace(/\/\*[\s\S]*?\*\//g, "")
@@ -33,7 +29,6 @@ describe("WP10 architecture", () => {
 		for (const { file, text } of sources()) {
 			const calls = code(text).match(/\.port\.apply\(|\bport\.apply\(/g) ?? [];
 			if (file.endsWith("traffic.ts")) {
-				// The single call is the acknowledgement-capturing port handed to executeRoutingCutover.
 				expect(calls, file).toHaveLength(1);
 				expect(code(text)).toMatch(/executeRoutingCutover\(\{[\s\S]*\bport,/);
 			} else expect(calls, file).toHaveLength(0);
