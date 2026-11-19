@@ -1,4 +1,4 @@
-import { fromJson, type JsonValue, toJson } from "@bufbuild/protobuf";
+import { fromJsonString, toJson } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import {
 	catalogHashOf,
@@ -7,12 +7,6 @@ import {
 } from "@hobo/pricing";
 import { isJsonObject, isJsonString } from "./json.js";
 
-// A provider's pricing catalog is durable state: registering a provider from a
-// manifest appends one `pricing.CatalogRegistered` fact beside
-// `provider.Registered`, in the same registry stream and the same append. The
-// fact carries the whole catalog, so replaying the stream rebuilds it with no
-// other source. Wire shape: `PRICING_EVENT_CONTRACTS` in @hobo/events.
-// public-contract: the fact type pinned by PRICING_EVENT_CONTRACTS in @hobo/events.
 export const CATALOG_REGISTERED = "pricing.CatalogRegistered";
 
 export type CatalogRegisteredBody = {
@@ -30,7 +24,6 @@ export type CatalogRegisteredFact = {
 	readonly data: CatalogRegisteredBody;
 };
 
-/** The fact body for one provider's catalog. Pure: the caller supplies the time. */
 export function catalogRegisteredFact(
 	providerId: string,
 	catalog: PricingCatalog,
@@ -56,37 +49,36 @@ export type StoredCatalog = {
 	readonly occurredAt: string;
 };
 
-function isRegistered(
-	data: JsonValue,
-): data is JsonValue & CatalogRegisteredBody {
-	return (
-		isJsonObject(data) &&
-		isJsonString(data.providerId) &&
-		isJsonString(data.catalogHash) &&
-		isJsonString(data.catalogJson) &&
-		isJsonString(data.occurredAt)
-	);
-}
+type CatalogFact = Pick<
+	CatalogRegisteredBody,
+	"providerId" | "catalogHash" | "catalogJson" | "occurredAt"
+>;
 
-/**
- * Fold the stream into the latest catalog fact per provider (append-only:
- * a later fact supersedes an earlier one, nothing is rewritten).
- */
 function latestFacts(
 	events: readonly StreamEvent[],
-): ReadonlyMap<string, CatalogRegisteredBody> {
-	const latest = new Map<string, CatalogRegisteredBody>();
+): ReadonlyMap<string, CatalogFact> {
+	const latest = new Map<string, CatalogFact>();
 	for (const event of events) {
-		// SAFETY: the event store persists JSON; isRegistered refines the body.
-		const data = event.data as JsonValue;
-		if (event.type === CATALOG_REGISTERED && isRegistered(data)) {
-			latest.set(data.providerId, data);
+		const data = event.data;
+		if (
+			event.type === CATALOG_REGISTERED &&
+			isJsonObject(data) &&
+			isJsonString(data.providerId) &&
+			isJsonString(data.catalogHash) &&
+			isJsonString(data.catalogJson) &&
+			isJsonString(data.occurredAt)
+		) {
+			latest.set(data.providerId, {
+				providerId: data.providerId,
+				catalogHash: data.catalogHash,
+				catalogJson: data.catalogJson,
+				occurredAt: data.occurredAt,
+			});
 		}
 	}
 	return latest;
 }
 
-/** What is stored for each provider, without decoding any catalog body. */
 export function storedCatalogs(
 	events: readonly StreamEvent[],
 ): ReadonlyMap<string, StoredCatalog> {
@@ -106,12 +98,6 @@ export type CatalogRead =
 	| { readonly ok: true; readonly catalog: PricingCatalog }
 	| { readonly ok: false; readonly reason: string };
 
-/**
- * Rebuild a provider's catalog from the stream. Fails closed: a body that does
- * not decode, or whose recomputed hash differs from the one recorded, is an
- * error rather than a catalog — pricing is ranking input, and altered prices
- * must not rank anything.
- */
 export function readStoredCatalog(
 	events: readonly StreamEvent[],
 	providerId: string,
@@ -122,11 +108,7 @@ export function readStoredCatalog(
 	}
 	let catalog: PricingCatalog;
 	try {
-		// SAFETY: JSON.parse yields JSON; fromJson refines it or throws.
-		catalog = fromJson(
-			PricingCatalogSchema,
-			JSON.parse(body.catalogJson) as JsonValue,
-		);
+		catalog = fromJsonString(PricingCatalogSchema, body.catalogJson);
 	} catch (error) {
 		return {
 			ok: false,
