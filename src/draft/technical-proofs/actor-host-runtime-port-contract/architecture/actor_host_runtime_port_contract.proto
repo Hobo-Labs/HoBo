@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for the ActorHost runtime port draft package (HOBO-21 / HOBO-595).
 
 message LeaseInfo {
   string key = 1;

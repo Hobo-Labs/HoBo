@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the Deployment Strategy Saga
-// Orchestrator draft package reasons about.
 
 enum DeploymentStrategyKind {
   DEPLOYMENT_STRATEGY_UNSPECIFIED = 0;

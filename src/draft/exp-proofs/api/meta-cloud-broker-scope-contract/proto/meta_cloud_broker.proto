@@ -1,8 +1,5 @@
 syntax = "proto3";
 
-// M0 data-shape definitions for the HOBO-521 Meta-cloud Broker scope contract.
-// These records define artifact vocabulary only; no hosted broker runtime,
-// Yard planner, provider adapter, admin UI, or Gatekeeper implementation lives here.
 package hobo.meta_cloud_broker.v1;
 
 enum BrokerDecisionState {

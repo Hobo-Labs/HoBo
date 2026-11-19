@@ -5,7 +5,6 @@ package hobo.draft.v1;
 import "clock_port.proto";
 import "queue_port.proto";
 
-// Snapshot projection cache for queue + clock restart simulation.
 
 message QueueClockSnapshotRecord {
   string version = 1;

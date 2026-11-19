@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for REM-030 / HOBO-697.
 
 message CrewMcpAutonomyLimitationRow {
   string limitation = 1;

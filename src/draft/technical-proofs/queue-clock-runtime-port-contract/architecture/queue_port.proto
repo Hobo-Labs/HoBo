@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Queue port records for runtime-local conformance (HOBO-596 / HOBO-22).
 
 enum LeaseState {
   LEASE_STATE_UNSPECIFIED = 0;

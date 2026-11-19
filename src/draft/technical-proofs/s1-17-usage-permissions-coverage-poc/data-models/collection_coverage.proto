@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.collector.v1;
 
-// Collection-coverage gate records for S1-17 (HOBO-607 draft POC).
 
 message DeclaredResource {
   string resource_id = 1;

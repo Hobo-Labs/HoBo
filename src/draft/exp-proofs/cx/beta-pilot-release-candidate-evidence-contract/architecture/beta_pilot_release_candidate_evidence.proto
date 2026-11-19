@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes for the HOBO-470 beta
-// pilot release-candidate evidence contract. This is a design-time schema
-// artifact, not a runtime compilation target.
 
 enum BetaPilotReleaseCandidateEvidenceStatus {
   BETA_PILOT_RELEASE_CANDIDATE_EVIDENCE_STATUS_UNSPECIFIED = 0;

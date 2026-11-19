@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for the wit-port-stub-contract draft package.
 
 message WitPortStubContractRecord {
   string issue = 1;

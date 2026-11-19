@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.hosted_broker_ga_handoff;
 
-// Architecture-guard evidence: protobuf data shapes the Hosted Broker GA
-// Handoff Evidence draft package owns. This is a design-time contract artifact.
 
 message HostedBrokerGaHandoffEvidence {
   string issue = 1;

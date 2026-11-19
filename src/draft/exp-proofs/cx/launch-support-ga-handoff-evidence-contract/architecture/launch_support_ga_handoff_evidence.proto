@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.launch_support_ga_handoff_evidence;
 
-// Architecture-guard evidence: protobuf data shapes the Launch Support GA
-// Handoff Evidence draft package reasons about. Not compiled at runtime; this
-// is a design-time contract artifact.
 
 enum LaunchSupportGaEvidenceStatus {
   LAUNCH_SUPPORT_GA_EVIDENCE_STATUS_UNSPECIFIED = 0;
