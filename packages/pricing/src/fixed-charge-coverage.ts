@@ -20,17 +20,27 @@ export function hasExplicitFixedChargeCoverage(
 		codeUnitPricingOrder,
 	);
 	if (!hasUsageMeters && charges.length === 0) return false;
-	return charges.every((charge) => {
-		if (charge.variant.case !== "fixed") return false;
-		const dimension = charge.variant.value.quantityDimension;
-		return (
-			dimension === undefined ||
-			(dimension.length > 0 &&
-				dimension.length <= 200 &&
-				dimension.trim() === dimension &&
-				!/[\p{Cc}]/u.test(dimension) &&
-				Object.hasOwn(agreement.quantities, dimension) &&
-				Object.hasOwn(workload.quantities, dimension))
-		);
-	});
+	return charges.every((charge) =>
+		hasExplicitFixedQuantity(charge, agreement, [workload]),
+	);
+}
+
+export function hasExplicitFixedQuantity(
+	charge: RateCard["charges"][number],
+	agreement: ProviderAgreement,
+	workloads: readonly WorkloadDelta[],
+): boolean {
+	if (charge.variant.case !== "fixed") return false;
+	const dimension = charge.variant.value.quantityDimension;
+	return (
+		dimension === undefined ||
+		(dimension.length > 0 &&
+			dimension.length <= 200 &&
+			dimension.trim() === dimension &&
+			!/[\p{Cc}]/u.test(dimension) &&
+			Object.hasOwn(agreement.quantities, dimension) &&
+			workloads.every((workload) =>
+				Object.hasOwn(workload.quantities, dimension),
+			))
+	);
 }

@@ -9,6 +9,7 @@ import {
 	type QuoteScenario,
 	QuoteVectorSchema,
 } from "./_generated/pricing_pb.js";
+import { hasV2BaselineCharges } from "./agreement-status.js";
 import { validateV2BillingPeriods } from "./billing-period.js";
 import { catalogHashOf } from "./catalog.js";
 import {
@@ -156,8 +157,7 @@ function validateV2AgreementAvailability(scenario: QuoteScenario): void {
 	for (const agreement of scenario.state?.agreements ?? []) {
 		if (
 			referenced.has(agreement.id) &&
-			agreement.status !== "active" &&
-			agreement.status !== "past-due" &&
+			!hasV2BaselineCharges(agreement.status) &&
 			agreement.status !== "trialing"
 		)
 			throw new PricingFault(

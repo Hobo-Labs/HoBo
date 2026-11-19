@@ -27,6 +27,7 @@ import {
 	type UsageMeasurement,
 	type WorkloadDelta,
 } from "./_generated/pricing_pb.js";
+import { hasV2BaselineCharges } from "./agreement-status.js";
 import {
 	chargeSelectorValue,
 	resolveAgreement,
@@ -49,6 +50,7 @@ import {
 	roundDecimalToMultiple,
 	subtractDecimal,
 } from "./decimal.js";
+import { hasExplicitFixedQuantity } from "./fixed-charge-coverage.js";
 import { legacyPricingOrder, type PricingOrder } from "./ordering.js";
 import { PricingFault, scopeMatches, workingState } from "./state.js";
 import {
@@ -838,7 +840,11 @@ export function rateSnapshot(
 	let currency = "";
 	const agreementIds = new Set([
 		...state.agreements
-			.filter((agreement) => agreement.status === "active")
+			.filter((agreement) =>
+				timeOrder === utcPricingTimeOrder
+					? hasV2BaselineCharges(agreement.status)
+					: agreement.status === "active",
+			)
 			.map((agreement) => agreement.id),
 		...workloads.map((workload) => workload.agreementRef),
 	]);
@@ -884,6 +890,21 @@ export function rateSnapshot(
 				`workload product does not match agreement ${agreementRef}`,
 			);
 		const workload = agreementWorkloads[0];
+		if (
+			timeOrder === utcPricingTimeOrder &&
+			rateCard.charges.some(
+				(charge) =>
+					charge.variant.case === "fixed" &&
+					Object.keys(charge.base?.selectors ?? {}).some(
+						(key) =>
+							chargeSelectorValue(workload, key, undefined) === undefined,
+					),
+			)
+		)
+			throw new PricingFault(
+				"PRICING_FIXED_SELECTOR_UNAVAILABLE",
+				`agreement ${agreementRef} needs explicit workload selectors for fixed charges`,
+			);
 		if (workload !== undefined && agreementWorkloads.length > 1) {
 			const selectors = new Set(
 				rateCard.charges.flatMap((charge) =>
@@ -916,6 +937,14 @@ export function rateSnapshot(
 				throw new PricingFault(
 					"PRICING_MODEL_UNSUPPORTED",
 					"proration is not supported in batch 1",
+				);
+			if (
+				timeOrder === utcPricingTimeOrder &&
+				!hasExplicitFixedQuantity(charge, agreement, agreementWorkloads)
+			)
+				throw new PricingFault(
+					"PRICING_FIXED_QUANTITY_UNAVAILABLE",
+					`fixed charge ${charge.base.id} needs explicit agreement and workload quantities`,
 				);
 			const quantity = fixedQuantity(charge, agreementWorkloads, agreement);
 			const amount = charge.variant.value.amount;

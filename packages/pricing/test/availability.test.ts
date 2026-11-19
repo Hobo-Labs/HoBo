@@ -250,6 +250,7 @@ describe("declared pricing availability", () => {
 			throw new Error("fixture missing");
 		fixed.base.selectors.region = "west";
 		candidate.attributes.region = "east";
+		metered.baseline.push(structuredClone(candidate));
 		rateCard.charges.push(fixed);
 		rehashScenario(metered);
 		expect(

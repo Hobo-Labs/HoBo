@@ -67,6 +67,16 @@ not by itself prevent a quote. The legacy V1 behavior is unchanged.
 `model/IacAgreementStatus.tla` checks this decision over one agreement and six
 abstract statuses; it does not prove the TypeScript implementation or the
 provider's reported agreement state.
+V2 includes existing active and past-due agreements in the baseline, including
+their effect on shared credits. Every selected fixed charge with a quantity
+dimension requires an explicit agreement quantity and an explicit quantity on
+each workload for that agreement, even when the value is zero. A missing value
+returns `PRICING_FIXED_QUANTITY_UNAVAILABLE`; the developer-pricing helpers
+report an incomplete model. A selected rate card with conditional fixed charges
+requires a baseline workload with their selector values; otherwise V2 returns
+`PRICING_FIXED_SELECTOR_UNAVAILABLE` instead of assuming no charge applies.
+`model/IacSharedFixedQuantity.tla` checks a bounded
+two-agreement shared-credit decision; it is not a proof of the implementation.
 V2 also requires distinct, bounded IDs across financial-state allowances,
 credits and commitments. Those IDs identify reservation buckets, so a model
 cannot count the same bucket twice or alias different types of entitlement.

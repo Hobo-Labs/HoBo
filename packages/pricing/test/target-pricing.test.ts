@@ -150,6 +150,7 @@ describe("whole-target pricing contract", () => {
 			throw new Error("fixture missing");
 		fixed.base.selectors.region = "west";
 		candidate.attributes.region = "east";
+		metered.baseline.push(structuredClone(candidate));
 		rateCard.charges.push(fixed);
 		rehashScenario(metered);
 		expect(
@@ -199,8 +200,10 @@ describe("whole-target pricing contract", () => {
 
 	it("discloses unknown pricing for each provider without fabricating costs", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -245,8 +248,10 @@ describe("whole-target pricing contract", () => {
 
 	it("identifies missing and ambiguous bindings without claiming a partial provider quote", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -317,8 +322,10 @@ describe("whole-target pricing contract", () => {
 			candidateIndex: 1,
 		});
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -382,8 +389,10 @@ describe("whole-target pricing contract", () => {
 
 	it("exhausts two-resource binding choices without reporting a partial quote", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/worker",
 		});
 		const joint = makeScenario({
