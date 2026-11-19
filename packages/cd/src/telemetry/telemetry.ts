@@ -1,7 +1,3 @@
-// `createCdTelemetry` (WP19, C13): DORA four keys, reconcile lag and health
-// as queries over the DORA projection (a materialized view of the event
-// store), plus `collect`/`export` that turn them — and the fleet and policy
-// gauges — into OTel metric points for a TelemetrySink.
 import type {
 	CampId,
 	CdBase,
@@ -23,7 +19,6 @@ import { TelemetryError } from "./errors.js";
 import { collectFleetMetrics, type FleetSources } from "./fleet.js";
 import { CD_METRICS, HOBO_ATTR } from "./semconv.js";
 
-// public-contract: default DORA window for collected gauges (30 days).
 export const DORA_DEFAULT_WINDOW_MS = 30 * DAY_MS;
 
 export type CdTelemetryDeps = CdBase &
@@ -35,9 +30,7 @@ export type CdTelemetryDeps = CdBase &
 
 export type CdTelemetryService = CdTelemetry &
 	Readonly<{
-		/** Every CD gauge at `ctx.now()`: DORA, reconcile lag, fleet, policy. */
 		collect(ctx: CdContext): Promise<OtelMetricPoint[]>;
-		/** `collect` then push to the sink; never throws (health records it). */
 		export(ctx: CdContext): Promise<number>;
 	}>;
 

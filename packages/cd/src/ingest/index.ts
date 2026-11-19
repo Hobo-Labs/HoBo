@@ -1,8 +1,4 @@
-// "@hobo/cd/ingest" (WP1): push ingress into the Freight ledger: manifests,
-// in-toto/SLSA attestations, inbound CDEvents, and OIDC trusted publishers.
 
-// The manifest writer is exported here too so a build (WP15) or any CI
-// imports one subpath for the whole push path.
 export { writeFreightManifest } from "../freight/manifest.js";
 export {
 	type ArtifactCdEvent,

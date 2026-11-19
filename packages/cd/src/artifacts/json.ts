@@ -1,5 +1,3 @@
-// JSON guards for registry responses, event bodies and trust policy. They read
-// the runtime tag (the @hobo/core idiom) and never throw.
 import type { JsonObject, JsonValue } from "@bufbuild/protobuf";
 
 export type { JsonObject, JsonValue };
@@ -26,7 +24,6 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 	return tagOf.call(value) === "[object Object]";
 }
 
-/** JSON text to a value, or undefined when it is not JSON. */
 export function parseJsonText(text: string): JsonValue | undefined {
 	try {
 		const parsed: JsonValue = JSON.parse(text);
@@ -36,7 +33,6 @@ export function parseJsonText(text: string): JsonValue | undefined {
 	}
 }
 
-/** A persisted body as JSON (bodies are JSON by construction; anything else is undefined). */
 export function jsonOf<T>(data: T): JsonValue | undefined {
 	if (data === undefined) return undefined;
 	try {
@@ -46,11 +42,6 @@ export function jsonOf<T>(data: T): JsonValue | undefined {
 	}
 }
 
-/**
- * The `code` (Node system errors, sigstore errors) or else the `name` of a
- * thrown value, for typed failure messages. Never the message: messages of
- * third-party errors can carry URLs or payload fragments.
- */
 export function errorCodeOf<E>(error: E): string {
 	if (!(error instanceof Error)) return "error";
 	const code = Object.entries(error).find(([key]) => key === "code")?.[1];
