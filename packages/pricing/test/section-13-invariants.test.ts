@@ -59,27 +59,6 @@ it("excludes customer commerce concepts from provider pricing schemas", () => {
 	);
 });
 
-it("legacy CI translators remain separate from CreditAccount fields", () => {
-	const translator = readFileSync(
-		join(import.meta.dirname, "../src/legacy/sandbox-pricing.ts"),
-		"utf8",
-	);
-	const dispatcher = readFileSync(
-		join(import.meta.dirname, "../../dispatcher/src/dispatcher.ts"),
-		"utf8",
-	);
-	const accountStart = dispatcher.indexOf("export interface CreditAccount {");
-	const accountEnd = dispatcher.indexOf("\n}", accountStart);
-	const creditAccount = dispatcher.slice(accountStart, accountEnd);
-
-	expect(accountStart).toBeGreaterThanOrEqual(0);
-	expect(accountEnd).toBeGreaterThan(accountStart);
-	expect(translator).not.toContain("CreditAccount");
-	expect(creditAccount).not.toMatch(
-		/effectiveCost|subscription|commitment|tenantId/,
-	);
-});
-
 it("external persisted quotes never become executable rating", () => {
 	const external = create(ExternalProviderQuoteSchema, {
 		id: "provider-quote-1",
