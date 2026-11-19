@@ -1,27 +1,13 @@
-// D9 statistics: the two-sided Mann–Whitney U test that compares a canary
-// cohort with its baseline. Pure, deterministic, dependency-free.
-//
-// - Exact null distribution when the smaller cohort has fewer than 8 samples
-//   and there are no ties (the "exact table"; computed, not looked up, as the
-//   coefficients of the Gaussian binomial [m+n choose m]_q in BigInt).
-// - Otherwise the normal approximation with tie correction and continuity
-//   correction.
-//
-// Both match scipy's `mannwhitneyu(x, y, alternative="two-sided")`, which the
-// golden vectors in test/verification/stats.test.ts pin.
 import { Direction, Sensitivity } from "../_generated/cd_pb.js";
 
 export type MannWhitneyResult = Readonly<{
-	/** U for the canary (first) sample: pairs where canary > baseline, ties count ½. */
 	u: number;
-	/** Two-sided p-value in [0, 1]. */
 	p: number;
 	method: "exact" | "asymptotic";
 	nCanary: number;
 	nBaseline: number;
 }>;
 
-/** Below this many samples in the smaller cohort (and with no ties) the exact distribution is used. */
 export const EXACT_BELOW = 8;
 
 function midranks(values: readonly number[]) {
@@ -49,19 +35,16 @@ function midranks(values: readonly number[]) {
 	return { ranks, tieGroups };
 }
 
-/**
- * Counts of each U value under the null for cohort sizes m and n: the
- * coefficients of prod_{i=1..m} (1 - q^(n+i)) / (1 - q^i). Every intermediate
- * product is itself a Gaussian binomial, so the coefficients stay exact
- * non-negative integers.
- */
-function exactCounts(m: number, n: number): bigint[] {
-	const degree = m * n;
+function exactCounts(
+	smallerSampleSize: number,
+	largerSampleSize: number,
+): bigint[] {
+	const degree = smallerSampleSize * largerSampleSize;
 	let coefficients = Array.from({ length: degree + 1 }, () => 0n);
 	coefficients[0] = 1n;
-	for (let i = 1; i <= m; i += 1) {
+	for (let i = 1; i <= smallerSampleSize; i += 1) {
 		const next = coefficients.slice();
-		const shift = n + i;
+		const shift = largerSampleSize + i;
 		for (let k = degree; k >= shift; k -= 1)
 			next[k] = (next[k] ?? 0n) - (coefficients[k - shift] ?? 0n);
 		for (let k = i; k <= degree; k += 1)
@@ -82,14 +65,9 @@ function exactTwoSided(u: number, m: number, n: number): number {
 	return Math.min(1, (2 * Number(tail)) / Number(total));
 }
 
-/**
- * Complementary error function, |relative error| < 1e-14: the Maclaurin series
- * for erf near zero and a Lentz continued fraction for erfc in the tail.
- */
-function erfc(x: number): number {
-	if (x < 0) return 2 - erfc(-x);
+function complementaryErrorFunction(x: number): number {
+	if (x < 0) return 2 - complementaryErrorFunction(-x);
 	if (x < 2) {
-		// erf(x) = 2/sqrt(pi) * sum (-1)^k x^(2k+1) / (k! (2k+1))
 		let term = x;
 		let sum = x;
 		for (let k = 1; k < 200; k += 1) {
@@ -100,28 +78,29 @@ function erfc(x: number): number {
 		}
 		return 1 - (2 / Math.sqrt(Math.PI)) * sum;
 	}
-	// erfc(x) = exp(-x^2)/sqrt(pi) * 1/(x + 1/2/(x + 1/(x + 3/2/(x + ...))))
-	const tiny = 1e-300;
-	let f = x;
-	let c = x;
-	let d = 0;
+
+	const minimumDenominator = 1e-300;
+	let continuedFraction = x;
+	let ratio = x;
+	let reciprocalDenominator = 0;
 	for (let k = 1; k < 500; k += 1) {
-		const a = k / 2;
-		d = x + a * d;
-		d = d === 0 ? tiny : d;
-		c = x + a / c;
-		c = c === 0 ? tiny : c;
-		d = 1 / d;
-		const delta = c * d;
-		f *= delta;
-		if (Math.abs(delta - 1) < 1e-16) break;
+		const coefficient = k / 2;
+		reciprocalDenominator = x + coefficient * reciprocalDenominator;
+		if (reciprocalDenominator === 0) reciprocalDenominator = minimumDenominator;
+		ratio = x + coefficient / ratio;
+		if (ratio === 0) ratio = minimumDenominator;
+		reciprocalDenominator = 1 / reciprocalDenominator;
+		const multiplier = ratio * reciprocalDenominator;
+		continuedFraction *= multiplier;
+		if (Math.abs(multiplier - 1) < 1e-16) break;
 	}
-	return Math.exp(-x * x) / Math.sqrt(Math.PI) / f;
+	return Math.exp(-x * x) / Math.sqrt(Math.PI) / continuedFraction;
 }
 
-/** Survival function of the standard normal distribution, P(Z > z). */
 export function normalSurvival(z: number): number {
-	return 0.5 * erfc(z / Math.SQRT2);
+	if (z === Number.POSITIVE_INFINITY) return 0;
+	if (z === Number.NEGATIVE_INFINITY) return 1;
+	return 0.5 * complementaryErrorFunction(z / Math.SQRT2);
 }
 
 function assertSample(values: readonly number[], name: string): void {
@@ -131,7 +110,6 @@ function assertSample(values: readonly number[], name: string): void {
 		throw new RangeError(`${name} samples must be finite numbers`);
 }
 
-/** Two-sided Mann–Whitney U test of canary against baseline. */
 export function mannWhitneyU(
 	canary: readonly number[],
 	baseline: readonly number[],
@@ -170,7 +148,6 @@ export function mannWhitneyU(
 	};
 }
 
-/** D9: LOW 0.01, MEDIUM 0.05 (the default), HIGH 0.10. */
 export function alphaFor(sensitivity: Sensitivity): number {
 	switch (sensitivity) {
 		case Sensitivity.LOW:
@@ -185,11 +162,8 @@ export function alphaFor(sensitivity: Sensitivity): number {
 export type CohortComparison = MannWhitneyResult &
 	Readonly<{
 		alpha: number;
-		/** p < alpha. */
 		significant: boolean;
-		/** The canary sits on the worse side of the baseline for this direction. */
 		worse: boolean;
-		/** Significant and worse: the only way a comparison fails (D9). */
 		failed: boolean;
 	}>;
 
