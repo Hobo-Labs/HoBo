@@ -100,9 +100,40 @@ or service entrypoint to an Alchemy Rivet `DurableObject`. The accompanying
 `rivet/runtime` entry point binds the application handler to a Rivet actor. The
 host must verify and fence the source, artifact and exclusive pool. This mapping
 does not bind resource dependencies or enabled session replay. Other primitive
-kinds remain unsupported; `describeRivetPrimitiveSupport` reports their gaps.
+kinds require additional mappers; `describeRivetPrimitiveSupport` reports their gaps.
 The package tests exercise an isolated local Rivet engine and Alchemy providers
 with test doubles; a live cloud deployment has not been verified.
+
+`@hobo/iac-alchemy/rivet/namespace` maps an infrastructure-only `project`
+declaration to an Alchemy `Rivet.Namespace`:
+
+```ts
+import * as Redacted from "effect/Redacted";
+import {
+  rivetNamespaceBindleMappers,
+  rivetNamespaceResourceId,
+} from "@hobo/iac-alchemy/rivet/namespace";
+
+const mappers = rivetNamespaceBindleMappers([{
+  bindleName: "shop",
+  resourceName: "project",
+  endpoint: host.rivetEndpoint,
+  namespaceName: "shop-prod",
+  token: Redacted.make(host.rivetAdminToken),
+}]);
+const resourceId = rivetNamespaceResourceId("shop", "project");
+// Include resourceId and resourceType "Rivet.Namespace" in the authenticated target inventory.
+```
+
+This mapping does not bind the project's resource ownership or dependencies.
+The host must independently authenticate the control plane, namespace ownership,
+inventory and pricing. Alchemy's Rivet provider cannot delete namespaces, so
+HoBo refuses uncertain creation retries and namespace update, replacement,
+rename, removal and destroy plans before admission. Reconcile an interrupted
+creation independently; a retained namespace may continue to incur costs. Credentials
+and provider state are sensitive; use a protected Alchemy state backend.
+`model/RivetNamespace.tla` checks a finite abstraction of these decisions and
+does not prove the TypeScript implementation or the Rivet provider.
 
 `@hobo/iac-alchemy/rivet/queue` additionally provides an opt-in asynchronous
 JSON queue backed by a Rivet actor and an Alchemy `DurableObject`. Its runtime

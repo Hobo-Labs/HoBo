@@ -1072,6 +1072,18 @@ function inspectUnverified(
 				"the resource action is unsupported",
 			);
 		if (
+			row.resourceType === "Rivet.Namespace" &&
+			(plan.native.destroy === true ||
+				(row.action !== "create" && row.action !== "noop") ||
+				(row.action === "create" && previous !== undefined) ||
+				renamedFrom.length !== 0 ||
+				formerFqns.length !== 0)
+		)
+			throw inspectionFailure(
+				"RIVET_NAMESPACE_LIFECYCLE_UNSUPPORTED",
+				"Rivet namespaces cannot be deleted; uncertain creation, update, replacement, removal and rename are unsupported",
+			);
+		if (
 			previous === undefined &&
 			(node.action !== "create" || renamedFrom.length !== 0)
 		)
@@ -1133,6 +1145,14 @@ function inspectUnverified(
 				throw inspectionFailure(
 					"STATE_IDENTITY_UNVERIFIED",
 					"the prior resource state has an invalid type, identity, or status",
+				);
+			if (
+				type.value === "Rivet.Namespace" &&
+				row.resourceType !== "Rivet.Namespace"
+			)
+				throw inspectionFailure(
+					"RIVET_NAMESPACE_LIFECYCLE_UNSUPPORTED",
+					"a retained Rivet namespace cannot change resource type",
 				);
 
 			const allowedStatuses = {
