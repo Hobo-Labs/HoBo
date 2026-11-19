@@ -1,4 +1,6 @@
+import { create, toJson } from "@bufbuild/protobuf";
 import type { CommandModule, CommandResult } from "@hobo/cli";
+import { LocalLogRecordSchema } from "./_generated/composition_pb.js";
 import { isJsonString } from "./json.js";
 import {
 	followLocalDeploymentLog,
@@ -20,7 +22,11 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 		run: async ({ context, flags, args, emitProgress }) => {
 			if (args.length > 0)
 				return usage("hobo logs takes no positional arguments.");
-			const rawLimit = flags.subcommandOptions?.lines;
+			const linesLimit = flags.subcommandOptions?.lines;
+			const tailLimit = flags.subcommandOptions?.tail;
+			if (linesLimit !== undefined && tailLimit !== undefined)
+				return usage("Use either --lines or --tail, not both.");
+			const rawLimit = linesLimit ?? tailLimit;
 			const limit =
 				rawLimit === undefined
 					? 200
@@ -28,10 +34,10 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 						? Number(rawLimit)
 						: NaN;
 			if (!Number.isSafeInteger(limit) || limit > 10_000)
-				return usage("--lines must be an integer from 1 to 10000.");
+				return usage("--lines and --tail must be an integer from 1 to 10000.");
 			const follow = flags.subcommandOptions?.follow === true;
-			if (follow && (flags.json || flags.quiet))
-				return usage("--follow cannot be combined with --json or -q.");
+			if (follow && flags.quiet)
+				return usage("--follow cannot be combined with -q.");
 			const projectDir = context.projectDir ?? context.cwd;
 			const log = await (deps.readLog ?? readLocalDeploymentLog)(
 				projectDir,
@@ -53,9 +59,32 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 					},
 				};
 
+			const emitLine = (message: string) =>
+				emitProgress(
+					flags.json
+						? JSON.stringify(
+								toJson(
+									LocalLogRecordSchema,
+									create(LocalLogRecordSchema, { type: "log", message }),
+								),
+							)
+						: message,
+				);
+			const emitGap = (reason: "rotated" | "truncated") =>
+				emitProgress(
+					flags.json
+						? JSON.stringify(
+								toJson(
+									LocalLogRecordSchema,
+									create(LocalLogRecordSchema, { type: "gap", reason }),
+								),
+							)
+						: `[log gap possible: source ${reason}]`,
+				);
 			const initialLines = log.partial ? log.lines.slice(0, -1) : log.lines;
-			for (const line of initialLines) emitProgress(line);
-			if (!log.exists) emitProgress("Waiting for local deployment logs.");
+			for (const line of initialLines) emitLine(line);
+			if (!log.exists && !flags.json)
+				emitProgress("Waiting for local deployment logs.");
 			const controller = new AbortController();
 			const stop = () => controller.abort();
 			if (!deps.signal) {
@@ -67,7 +96,8 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 					projectDir,
 					cursor: log.cursor,
 					signal: deps.signal ?? controller.signal,
-					onLine: emitProgress,
+					onLine: emitLine,
+					onGap: emitGap,
 					...(deps.pollIntervalMs === undefined
 						? undefined
 						: { pollIntervalMs: deps.pollIntervalMs }),

@@ -182,8 +182,8 @@ export const SERVE_SUBCOMMANDS: VerbSubcommandTable = table({
 
 export const LOGS_SUBCOMMANDS: VerbSubcommandTable = table({
 	strict: false,
-	options: [flag("follow"), value("lines")],
-	common: ["follow", "lines"],
+	options: [flag("follow"), value("lines"), value("tail")],
+	common: ["follow", "lines", "tail"],
 	subcommands: [],
 	defaultSubcommand: "tail",
 });
