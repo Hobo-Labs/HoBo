@@ -15,6 +15,8 @@ type MessageRow = {
   user: { username: string | null; email: string };
 };
 
+type MessageContext = Parameters<typeof listContactMessages>[0];
+
 function mockMessages(rows: MessageRow[]) {
   return {
     findMany: vi.fn(async () => rows),
@@ -22,17 +24,24 @@ function mockMessages(rows: MessageRow[]) {
     updateMany: vi.fn(async ({ where }: { where: { id: string } }) => ({
       count: rows.some((row) => row.id === where.id) ? 1 : 0,
     })),
+  } satisfies MessageContext["messages"];
+}
+
+function adminContext(messages: MessageRow[]): MessageContext {
+  return {
+    user: { isAdmin: true },
+    messages: mockMessages(messages),
   };
 }
 
 describe("contact message operations", () => {
   it("fails closed without an admin user", async () => {
     const messages = mockMessages([]);
-  await expect(
-      listContactMessages({ user: null, messages: messages as never }, { page: 0 }),
+    await expect(
+      listContactMessages({ user: null, messages }, { page: 0 }),
     ).rejects.toMatchObject({ statusCode: 401 });
     await expect(
-      countUnreadContactMessages({ user: { isAdmin: false }, messages: messages as never }),
+      countUnreadContactMessages({ user: { isAdmin: false }, messages }),
     ).rejects.toMatchObject({ statusCode: 403 });
   });
 
@@ -45,23 +54,17 @@ describe("contact message operations", () => {
       repliedAt: null,
       user: { username: null, email: "admin@example.test" },
     }));
-    const messages = mockMessages(rows);
-    const first = await listContactMessages(
-      { user: { isAdmin: true }, messages: messages as never },
-      { page: 0 },
-    );
+    const context = adminContext(rows);
+    const first = await listContactMessages(context, { page: 0 });
     expect(first.messages).toHaveLength(20);
     expect(first.hasNext).toBe(true);
-    const unread = await countUnreadContactMessages({
-      user: { isAdmin: true },
-      messages: messages as never,
-    });
+    const unread = await countUnreadContactMessages(context);
     expect(unread).toBe(10);
   });
 
   it("marks a message read or rejects unknown ids", async () => {
     const id = crypto.randomUUID();
-    const messages = mockMessages([
+    const context = adminContext([
       {
         id,
         createdAt: new Date(),
@@ -71,16 +74,10 @@ describe("contact message operations", () => {
         user: { username: null, email: "a@example.test" },
       },
     ]);
-    await setContactMessageRead(
-      { user: { isAdmin: true }, messages: messages as never },
-      { id },
-    );
-    expect(messages.updateMany).toHaveBeenCalled();
+    await setContactMessageRead(context, { id });
+    expect(context.messages.updateMany).toHaveBeenCalled();
     await expect(
-      setContactMessageRead(
-        { user: { isAdmin: true }, messages: messages as never },
-        { id: crypto.randomUUID() },
-      ),
+      setContactMessageRead(context, { id: crypto.randomUUID() }),
     ).rejects.toBeInstanceOf(ContactMessageError);
   });
 });
