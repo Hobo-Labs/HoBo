@@ -1,3 +1,23 @@
+/**
+ * The versioned claims to principal mapping.
+ *
+ * ADR-0073 decision 2 makes this an explicit, versioned, conformance-tested part
+ * of every IdP adapter, and the reason is a swap: when a Yard's issuer changes
+ * from Better Auth to WorkOS or Entra, group and role claim shapes differ, and
+ * an implicit mapping would silently drop or remap the claims that populate a
+ * principal's roles. So this module states its accepted claim vocabulary as
+ * data, maps it totally, refuses everything else, and stamps the result with the
+ * mapping version so an audit can tell which rules produced a principal.
+ *
+ * The mapping is a pure function of its input: no clock, no randomness, no I/O.
+ * Roles are deduped and sorted, so two callers passing the same claims in a
+ * different order get byte-identical principals.
+ *
+ * Verification is emphatically *not* here. Signature checking, issuer trust, and
+ * expiry live on the existing JWKS/OIDC path (ADR-0038); this function maps
+ * claims that have *already* been verified. It parses `exp`/`nbf`/`iat` only far
+ * enough to prove they are well-formed, and never compares them to a clock.
+ */
 
 import {
 	BetterAuthClaimsError,
@@ -12,6 +32,15 @@ import {
 	type JsonObject,
 } from "./json.js";
 
+/**
+ * A principal derived from Better Auth claims.
+ *
+ * The first five fields are the platform-wide mapped-principal shape. The
+ * trailing `claimsMappingVersion` is this adapter's version stamp: it makes the
+ * ADR-0073 obligation visible on the record itself rather than only in the
+ * adapter descriptor, so a stored or audited principal names the rules that
+ * produced it.
+ */
 export interface MappedPrincipal {
 	readonly subject: string;
 	readonly issuer: string;
@@ -21,6 +50,11 @@ export interface MappedPrincipal {
 	readonly claimsMappingVersion: typeof BETTER_AUTH_CLAIMS_MAPPING_VERSION;
 }
 
+/**
+ * The complete accepted claim vocabulary. A claim outside this set is refused,
+ * never ignored — an ignored claim is indistinguishable from an unsupported one
+ * and that ambiguity is how role claims go missing across an issuer swap.
+ */
 export const BETTER_AUTH_ACCEPTED_CLAIM_KEYS = Object.freeze([
 	"activeOrganizationId",
 	"aud",
@@ -40,6 +74,7 @@ export const BETTER_AUTH_ACCEPTED_CLAIM_KEYS = Object.freeze([
 export type BetterAuthClaimKey =
 	(typeof BETTER_AUTH_ACCEPTED_CLAIM_KEYS)[number];
 
+/** Claims accepted for well-formedness but not projected onto the principal. */
 export const BETTER_AUTH_UNMAPPED_CLAIM_KEYS = Object.freeze([
 	"aud",
 	"emailVerified",
@@ -176,6 +211,7 @@ export function mapClaimsToPrincipal<T>(claims: T): MappedPrincipal {
 			"pass the decoded claim set object, not a raw token string",
 		);
 	}
+	// SAFETY: assertion to `ms as JsonObject; ` is required at this boundary.
 	const raw = claims as JsonObject;
 
 	const accepted = new Set<string>(BETTER_AUTH_ACCEPTED_CLAIM_KEYS);
@@ -231,6 +267,7 @@ export function mapClaimsToPrincipal<T>(claims: T): MappedPrincipal {
 
 	const roles = parseRoleList(raw.role, raw.roles);
 
+	// exactOptionalPropertyTypes: optional fields are added, never set undefined.
 	return Object.freeze({
 		subject: sub,
 		issuer: iss,
