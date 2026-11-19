@@ -42,6 +42,51 @@ function check(name: string, directory: string, stateDirectory: string) {
 }
 
 try {
+	const routeDirectory = join(root, "packages/dispatcher/model");
+	const routeSource = readFileSync(
+		join(routeDirectory, "IacRouting.tla"),
+		"utf8",
+	);
+	const routeConfig = readFileSync(
+		join(routeDirectory, "IacRouting.cfg"),
+		"utf8",
+	);
+	const routeResult = check(
+		"IacRouting",
+		routeDirectory,
+		join(scratch, "IacRouting"),
+	);
+	process.stdout.write(routeResult.stdout);
+	process.stderr.write(routeResult.stderr);
+	if (routeResult.status !== 0)
+		throw new Error("IacRouting model checking failed");
+	const routeGuard =
+		'/\\ phase = "uncertain" /\\ candidate \\in fenced /\\ candidate \\notin live\n  /\\ verified\' = TRUE';
+	if (routeSource.split(routeGuard).length !== 2)
+		throw new Error("IacRouting mutation target changed");
+	const routeMutation = join(scratch, "route-mutation");
+	mkdirSync(routeMutation);
+	writeFileSync(
+		join(routeMutation, "IacRouting.tla"),
+		routeSource.replace(
+			routeGuard,
+			'/\\ phase = "uncertain"\n  /\\ verified\' = TRUE',
+		),
+	);
+	writeFileSync(join(routeMutation, "IacRouting.cfg"), routeConfig);
+	const routeMutationResult = check(
+		"IacRouting",
+		routeMutation,
+		join(routeMutation, "states"),
+	);
+	if (
+		routeMutationResult.status === 0 ||
+		!/Invariant .+ is violated/u.test(routeMutationResult.stdout)
+	)
+		throw new Error(
+			"IacRouting mutation did not produce an invariant counterexample",
+		);
+	process.stdout.write("IacRouting mutation: counterexample found\n");
 	for (const name of [
 		"IacAgreementStatus",
 		"IacSharedFixedQuantity",
