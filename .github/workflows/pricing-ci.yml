@@ -165,3 +165,4 @@ jobs:
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-kv.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-http-kv.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-http-queue.mts
+          node --experimental-strip-types packages/iac/iac-alchemy/model/check-cloudflare-grants.mts
