@@ -33,6 +33,7 @@ import {
 	registerAlchemySource,
 	verifyAlchemySourceFence,
 } from "./source-fence.js";
+import { acceptSynchronousTrue } from "./synchronous-result.js";
 
 export interface CloudflareR2BucketClaim {
 	readonly bindleName: string;
@@ -199,7 +200,7 @@ export function cloudflareNativeR2BindleMappers<Requirements>(
 		);
 		const bucketVerified = () => {
 			try {
-				return verifyBucket(bucket) === true;
+				return acceptSynchronousTrue(verifyBucket(bucket));
 			} catch {
 				return false;
 			}
@@ -227,7 +228,7 @@ export function cloudflareNativeR2BindleMappers<Requirements>(
 		});
 		const grantVerified = () => {
 			try {
-				return verifyGrant(grantClaim) === true;
+				return acceptSynchronousTrue(verifyGrant(grantClaim));
 			} catch {
 				return false;
 			}

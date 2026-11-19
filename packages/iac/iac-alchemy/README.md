@@ -95,6 +95,15 @@ report distinguishes infrastructure provisioning from implemented runtime
 operations. Resource dependencies, consistency and identity must be validated
 against the exact mapping and independently attested host environment.
 
+The opt-in `@hobo/iac-alchemy/cloudflare/kv` and `cloudflare/r2` mappers bind
+Worker JavaScript to separately authorized KV and R2 proxy resources. KV grants
+are read-only or write-only and have eventual visibility; read-your-writes and
+WASI guests are unsupported. R2 supports bounded object reads, writes and deletes;
+blob events, presigned URLs, ranges and multipart uploads remain unsupported.
+Source, resource and grant authorities must be synchronous and host-attested.
+The finite `model/CloudflareGrant.tla` checks the abstract mapping decision under
+those host assumptions; it does not prove the implementation or provider.
+
 The isolation test scans selected shared runtime, Bindle, financial and policy
 packages for literal Alchemy references, including escaped spellings. It does
 not prove the absence of computed references or transitive dependencies.
