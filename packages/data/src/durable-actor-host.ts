@@ -1,4 +1,3 @@
-
 import {
 	type ActorHost,
 	type AggregateLease,
@@ -42,22 +41,23 @@ export function createDurableActorHost(
 				"request.holderId",
 			);
 			try {
-				const lease = journal.acquireActorLease({
+				const {
+					key: grantedKey,
+					holderId: grantedHolderId,
+					fenceToken,
+					expiresAt,
+				} = journal.acquireActorLease({
 					key,
 					holderId,
 					leaseTtlMs,
 				});
 				return Object.freeze({
-					key: lease.key,
-					holderId: lease.holderId,
-					fenceToken: lease.fenceToken,
-					expiresAt: lease.expiresAt,
+					key: grantedKey,
+					holderId: grantedHolderId,
+					fenceToken,
+					expiresAt,
 					release() {
-						journal.releaseActorLease(
-							lease.key,
-							lease.holderId,
-							lease.fenceToken,
-						);
+						journal.releaseActorLease(grantedKey, grantedHolderId, fenceToken);
 					},
 				});
 			} catch (error) {
