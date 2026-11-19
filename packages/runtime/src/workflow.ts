@@ -38,6 +38,8 @@ import {
 	parseRunCompletedFact,
 	parseRunFailedFact,
 	parseRunStartedFact,
+	type ParsedRunStepCompleted,
+	type ParsedRunStepFailed,
 	parseRunStepCompletedFact,
 	parseRunStepFailedFact,
 	replayStepCompletedResult,
@@ -281,6 +283,21 @@ export function createWorkflowEngine(
 			eventKey: `${streamId}:orchestration`,
 		});
 
+		const stepRecordedAtIndex = (index: number) => {
+			let completed: ParsedRunStepCompleted | undefined;
+			let failed: ParsedRunStepFailed | undefined;
+			for (const event of journal) {
+				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
+					const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+					if (fact.index === index) completed = fact;
+				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
+					const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+					if (fact.index === index) failed = fact;
+				}
+			}
+			return { completed, failed };
+		};
+
 		const stepOutcomesFor = (name: string, index: number) => {
 			const completed: typeof journal = [];
 			const failed: typeof journal = [];
@@ -304,6 +321,13 @@ export function createWorkflowEngine(
 			): Promise<T> {
 				const index = stepIndex;
 				stepIndex += 1;
+				const recorded = stepRecordedAtIndex(index);
+				if (recorded.completed && recorded.completed.name !== name) {
+					throw new Error(`step name differs from journal for ${runId}`);
+				}
+				if (recorded.failed && recorded.failed.name !== name) {
+					throw new Error(`step name differs from journal for ${runId}`);
+				}
 				const { completed, failed } = stepOutcomesFor(name, index);
 				const completedEvent = completed[0];
 				if (completedEvent && isRecord(completedEvent.data)) {

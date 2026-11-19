@@ -528,6 +528,45 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(handle.result).toBe("from-journal");
 	});
 
+	it("rejects a step name that diverges from the journal at the same index", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/name-diverge";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "name-diverge",
+					workflowName: "name-diverge",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done-b",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "b", index: 0, result: 2 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "name-diverge",
+			async run(ctx) {
+				await ctx.step("a", () => 1);
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "name-diverge", {})).rejects.toThrow(
+			/step name differs from journal/,
+		);
+	});
+
 	it("rejects duplicate step outcomes at the same positional index", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/dup-index";
