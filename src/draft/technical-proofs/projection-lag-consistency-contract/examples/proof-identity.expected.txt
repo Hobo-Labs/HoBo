@@ -1,3 +1,0 @@
-slug: projection-lag-consistency-contract
-layer: technical
-proof-identity: ok
