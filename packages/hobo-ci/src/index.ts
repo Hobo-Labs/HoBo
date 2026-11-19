@@ -224,6 +224,11 @@ export {
 	type SecretStoreOpening,
 	withStoreWriteLock,
 } from "./secret-stores.js";
+export type {
+	SetupEffectResult,
+	SetupReservation,
+	SetupReservationAuthority,
+} from "./setup-reservation.js";
 export {
 	type CommandEnv,
 	type CommandResult,
