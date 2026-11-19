@@ -1,32 +1,3 @@
-/**
- * `hobo derivative` — the descriptor parser and the seam-conformance verdict.
- *
- * A derived HoBo is a long-lived fork, and its `derivative.json` pins the
- * upcaster chain that carries its stored events across a version step
- * (ADR-0057). The upgrade ceremony's verdict is not a claim the descriptor
- * makes — it is derived from actually running the chain over the real corpus.
- * Three properties carry that weight.
- *
- * **The parser refuses a descriptor rather than half-reading it.** An upcaster
- * with no name, a `fromVersion` of zero, a `rename` that is not an object:
- * each would produce a chain that runs and silently transforms nothing, and
- * the ceremony would then record a success over a corpus it never touched.
- * Every refusal names the index and the field, because a descriptor with a
- * dozen steps gives the message nothing else to anchor to.
- *
- * **Renames are strict.** An upcaster whose source field is absent from a
- * stored body does not fit the corpus it claims to upgrade. Skipping silently
- * would leave events at the old version while reporting the fork upgraded —
- * the exact divergence the ceremony exists to catch.
- *
- * **Purity and totality are checked by execution, not by declaration.** The
- * chain is run twice over each event and compared, and every registered step
- * must be reachable by chaining from v1. A step above a gap would never run,
- * and nothing else in the system would ever say so.
- *
- * History is never rewritten: upcasting is a read-side derivation, so the
- * stored events keep their original versions even after a successful upgrade.
- */
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -53,12 +24,6 @@ function runtime(): YardRuntime {
 	return created;
 }
 
-/**
- * Run `hobo derivative <args>` in a throwaway directory holding `descriptor`.
- *
- * `descriptor` is written verbatim, including shapes the parser must refuse —
- * the point of most of these tests is what happens to a bad document.
- */
 async function run(
 	descriptor: unknown,
 	args: readonly string[] = ["read"],
@@ -89,7 +54,6 @@ async function run(
 	}
 }
 
-/** The descriptor's parsed upcaster steps, as `read` reports them. */
 async function steps(upcasters: unknown) {
 	const result = await run({ name: "fork", version: "1.0.0", upcasters });
 	expect(result.ok).toBe(true);
@@ -100,7 +64,6 @@ async function steps(upcasters: unknown) {
 	).descriptor.upcasters;
 }
 
-/** Seed a v1 corpus on `stream` — the events an upcaster chain must replay. */
 async function seed(
 	rt: YardRuntime,
 	stream: string,
@@ -115,9 +78,6 @@ async function seed(
 
 describe("runtime and subcommand gating", () => {
 	it("refuses without a wired Yard runtime rather than reading anything", async () => {
-		// The ceremony is recorded on the durable log. Reading the descriptor
-		// first and failing afterwards would report a parse error for what is
-		// really a composition problem, sending the user to edit a correct file.
 		const command = createDerivativeCommand();
 		const result = await command.run({
 			context: { cwd: "/nonexistent" } as unknown as CliContext,
@@ -144,9 +104,6 @@ describe("runtime and subcommand gating", () => {
 
 describe("descriptor file", () => {
 	it("reports a missing descriptor with the shape it wanted", async () => {
-		// A fork that has never been described has no file. Naming the five
-		// fields turns "could not read" into something the user can act on
-		// without opening the ADR.
 		const result = await run(undefined);
 		expect(result.ok).toBe(false);
 		expect(result.code).toBe("HOBO_DERIVATIVE_NO_DESCRIPTOR");
@@ -155,8 +112,6 @@ describe("descriptor file", () => {
 	});
 
 	it("reports malformed JSON under the same code, carrying the parse error", async () => {
-		// A truncated file and an absent one need the same fix — write a valid
-		// descriptor — but only the parse error says *where* the file is broken.
 		const result = await run(undefined, ["read"], { raw: "{ not json" });
 		expect(result.code).toBe("HOBO_DERIVATIVE_NO_DESCRIPTOR");
 		expect(result.message).toContain("derivative.json");
@@ -171,8 +126,6 @@ describe("descriptor file", () => {
 	});
 
 	it("requires a non-empty name and version, each by name", async () => {
-		// The name is the stream the ceremony is recorded on and the version is
-		// the step's origin. Either missing makes the upgrade unrecordable.
 		for (const [doc, field] of [
 			[{ version: "1.0.0" }, "name"],
 			[{ name: "", version: "1.0.0" }, "name"],
@@ -187,8 +140,6 @@ describe("descriptor file", () => {
 	});
 
 	it("defaults upcasters and streams to empty rather than refusing", async () => {
-		// A fork that has not yet needed an upcaster is a normal state — the
-		// descriptor still names the fork and its version.
 		const result = await run({ name: "fork", version: "1.0.0" });
 		expect(result.ok).toBe(true);
 		const descriptor = (
@@ -211,9 +162,6 @@ describe("descriptor file", () => {
 	});
 
 	it("coerces stream entries to strings", async () => {
-		// A stream name typed as a number in JSON is a typo, not a different
-		// stream. Coercing keeps the descriptor readable rather than failing on
-		// a detail the user cannot see in their editor.
 		const result = await run({
 			name: "fork",
 			version: "1.0.0",
@@ -243,16 +191,12 @@ describe("descriptor file", () => {
 
 describe("upcaster step parsing", () => {
 	it("expands a bare string into a named, unbound step", async () => {
-		// The shorthand pins a name for the record without claiming an event
-		// binding. Inventing a binding would make it execute over a corpus the
-		// author never named.
 		expect(await steps(["v1_to_v2"])).toEqual([
 			{ name: "v1_to_v2", fromVersion: 1, rename: {}, defaults: {}, drop: [] },
 		]);
 	});
 
 	it("refuses an empty string, naming the index", async () => {
-		// With several steps the index is the only way to find the offender.
 		const result = await run({
 			name: "f",
 			version: "1.0.0",
@@ -302,9 +246,6 @@ describe("upcaster step parsing", () => {
 	});
 
 	it("binds an event only when it is a non-empty string", async () => {
-		// An unbound step executes over zero events, which is a legitimate
-		// no-op. A step bound to the empty string would match nothing while
-		// looking bound — a chain that reports coverage it does not have.
 		expect((await steps([{ name: "s", event: "t.Opened" }]))[0]?.event).toBe(
 			"t.Opened",
 		);
@@ -334,8 +275,6 @@ describe("upcaster step parsing", () => {
 	});
 
 	it("takes defaults only from an object and drop only from an array", async () => {
-		// These two carry data into stored bodies. A string `drop` would iterate
-		// character by character and delete fields nobody named.
 		expect(
 			(await steps([{ name: "s", defaults: { source: "legacy" } }]))[0]
 				?.defaults,
@@ -355,8 +294,6 @@ describe("upcaster step parsing", () => {
 
 describe("upgrade target", () => {
 	it("refuses when the descriptor names no target and none was passed", async () => {
-		// Without a target there is nothing to upgrade *to*, and inventing one
-		// would bump a fork to a version its author never chose.
 		const result = await run({ name: "fork", version: "1.0.0" }, ["upgrade"]);
 		expect(result.ok).toBe(false);
 		expect(result.code).toBe("HOBO_DERIVATIVE_UPGRADE_FAILED");
@@ -364,8 +301,6 @@ describe("upgrade target", () => {
 	});
 
 	it("refuses when the target equals the current version", async () => {
-		// A no-op upgrade that reported success would make the ceremony's record
-		// claim a step that never happened.
 		const result = await run(
 			{ name: "fork", version: "1.0.0", upgradeTo: "1.0.0" },
 			["upgrade"],
@@ -375,8 +310,6 @@ describe("upgrade target", () => {
 	});
 
 	it("takes an explicit target argument over the descriptor's", async () => {
-		// The descriptor is the default, not a lock: an operator stepping a fork
-		// to a hotfix version should not have to edit the file first.
 		const result = await run(
 			{ name: "fork", version: "1.0.0", upgradeTo: "1.1.0" },
 			["upgrade", "2.0.0"],
@@ -386,8 +319,6 @@ describe("upgrade target", () => {
 	});
 
 	it("records the failure on the durable log, not only in the result", async () => {
-		// A refused ceremony is still a ceremony. Without the record, a fork's
-		// history would show only its successes.
 		const rt = runtime();
 		const result = await run({ name: "fork", version: "1.0.0" }, ["upgrade"], {
 			rt,
@@ -410,8 +341,6 @@ describe("seam conformance, derived by execution", () => {
 	});
 
 	it("fails the ceremony when a strict rename has no source field", async () => {
-		// The upcaster does not fit the corpus it claims to upgrade. Skipping
-		// would leave those events at v1 while the fork reported itself upgraded.
 		const rt = runtime();
 		await seed(rt, "ticket:corpus", [
 			{ type: "ticket.Opened", v: 1, data: { ticketId: "t1" } },
@@ -438,9 +367,6 @@ describe("seam conformance, derived by execution", () => {
 	});
 
 	it("fails when an event body is not an object, saying what it was", async () => {
-		// An array body would be spread into a numbered record and "upgraded"
-		// into something no consumer can read. Naming the actual shape is what
-		// separates a bad descriptor from a bad corpus.
 		const rt = runtime();
 		await seed(rt, "ticket:corpus", [
 			{ type: "ticket.Opened", v: 1, data: ["not", "an", "object"] },
@@ -461,8 +387,6 @@ describe("seam conformance, derived by execution", () => {
 	});
 
 	it("fails a non-total chain, naming the step that cannot be reached", async () => {
-		// A step above a gap never runs. Nothing else in the system reports
-		// that, so a chain with a hole would look like coverage it does not have.
 		const rt = runtime();
 		await seed(rt, "ticket:corpus", [
 			{ type: "ticket.Opened", v: 1, data: { ticketId: "t1" } },
@@ -480,11 +404,17 @@ describe("seam conformance, derived by execution", () => {
 		).conformance.errors.join(" ");
 		expect(errors).toContain("non-total chain");
 		expect(errors).toContain("stranded");
+		expect(errors).toContain("missing 1->2");
+		const types = (await collectStream(rt.store, "derivative:fork")).map(
+			(event) => event.type,
+		);
+		expect(types).toEqual([
+			"derivative.UpgradeStarted",
+			"derivative.UpgradeFailed",
+		]);
 	});
 
 	it("reports a stream it could not read without abandoning the others", async () => {
-		// One unreadable stream is a partial result, not a dead ceremony — the
-		// verdict still has to account for every stream that *was* checked.
 		const rt = runtime();
 		await seed(rt, "ticket:corpus", [
 			{ type: "ticket.Opened", v: 1, data: { summary: "s" } },
@@ -507,8 +437,7 @@ describe("seam conformance, derived by execution", () => {
 			["upgrade"],
 			{ rt },
 		);
-		// Whether an absent stream reads as empty or as an error is the store's
-		// contract; either way the checked corpus is still accounted for.
+
 		const conformance = (
 			result.data as {
 				conformance: { checkedEvents: number; upcastedEvents: number };
@@ -518,8 +447,6 @@ describe("seam conformance, derived by execution", () => {
 	});
 
 	it("counts only events the chain is bound to", async () => {
-		// An unbound event type is not evidence of anything. Counting it would
-		// inflate the ceremony's coverage with events no upcaster examined.
 		const rt = runtime();
 		await seed(rt, "ticket:corpus", [
 			{ type: "ticket.Opened", v: 1, data: { summary: "s" } },
@@ -548,8 +475,6 @@ describe("seam conformance, derived by execution", () => {
 	});
 
 	it("leaves the stored corpus untouched after a successful upgrade", async () => {
-		// Upcasting is a read-side derivation. Rewriting history would make the
-		// durable log disagree with every replay taken before the upgrade.
 		const rt = runtime();
 		await seed(rt, "ticket:corpus", [
 			{ type: "ticket.Opened", v: 1, data: { summary: "s" } },
@@ -572,8 +497,6 @@ describe("seam conformance, derived by execution", () => {
 	});
 
 	it("records the started and succeeded events in order", async () => {
-		// The pair is the ceremony. A success with no start would leave no
-		// record of what the fork was upgrading *from*.
 		const rt = runtime();
 		await run(
 			{ name: "fork", version: "1.0.0", upgradeTo: "1.1.0" },
@@ -590,8 +513,6 @@ describe("seam conformance, derived by execution", () => {
 	});
 
 	it("applies drop and defaults alongside a rename", async () => {
-		// The three run in a fixed order — rename, drop, then fill — and a
-		// default must not overwrite a field the body already carries.
 		const rt = runtime();
 		await seed(rt, "ticket:corpus", [
 			{
