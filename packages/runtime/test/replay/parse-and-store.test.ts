@@ -18,21 +18,21 @@ const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
 
 const REPORT = {
-	run_id: "run-1",
+	runId: "run-1",
 	seed: "seed-1",
 	mode: "replay",
-	seq_vector: [{ stream_id: "s1", seq: 3 }],
-	read_set_hash: DIGEST_A,
-	state_digest: DIGEST_B,
+	seqVector: [{ streamId: "s1", seq: 3 }],
+	readSetHash: DIGEST_A,
+	stateDigest: DIGEST_B,
 };
 
 const DIVERGENCE = {
-	run_id: "run-1",
-	live_state_digest: DIGEST_A,
-	replay_state_digest: DIGEST_B,
-	live_order: ["s1:1", "s1:2"],
-	replay_order: ["s1:2", "s1:1"],
-	first_divergent_event_key: "s1:1",
+	runId: "run-1",
+	liveStateDigest: DIGEST_A,
+	replayStateDigest: DIGEST_B,
+	liveOrder: ["s1:1", "s1:2"],
+	replayOrder: ["s1:2", "s1:1"],
+	firstDivergentEventKey: "s1:1",
 };
 
 function messageOf(thunk: () => void): string {
@@ -63,7 +63,7 @@ function envelope(overrides: Partial<FixtureEnvelope> = {}): FixtureEnvelope {
 }
 
 describe("parseReplayReport", () => {
-	it("parses a snake_case report and freezes it", () => {
+	it("parses a report and freezes it", () => {
 		const report = parseReplayReport(REPORT);
 		expect(report.runId).toBe("run-1");
 		expect(report.mode).toBe("replay");
@@ -71,29 +71,10 @@ describe("parseReplayReport", () => {
 		expect(Object.isFrozen(report)).toBe(true);
 	});
 
-	it("accepts camelCase for every dual-spelled field", () => {
-		const report = parseReplayReport({
-			runId: "run-1",
-			seed: "seed-1",
-			mode: "live",
-			seqVector: [{ streamId: "s1", seq: 0 }],
-			readSetHash: DIGEST_A,
-			stateDigest: DIGEST_B,
-		});
-		expect(report.runId).toBe("run-1");
-		expect(report.seqVector).toEqual([{ streamId: "s1", seq: 0 }]);
-	});
-
-	it("prefers the snake_case spelling when both are present", () => {
-		expect(parseReplayReport({ ...REPORT, runId: "other" }).runId).toBe(
-			"run-1",
-		);
-	});
-
 	it("copies the seq vector rather than aliasing the input", () => {
-		const input = { ...REPORT, seq_vector: [{ stream_id: "s1", seq: 3 }] };
+		const input = { ...REPORT, seqVector: [{ streamId: "s1", seq: 3 }] };
 		const report = parseReplayReport(input);
-		input.seq_vector.push({ stream_id: "s2", seq: 1 });
+		input.seqVector.push({ streamId: "s2", seq: 1 });
 		expect(report.seqVector).toHaveLength(1);
 	});
 
@@ -115,7 +96,7 @@ describe("parseReplayReport", () => {
 	});
 
 	it("requires each digest to be 64 lowercase hex characters", () => {
-		for (const field of ["read_set_hash", "state_digest"] as const) {
+		for (const field of ["readSetHash", "stateDigest"] as const) {
 			for (const bad of [
 				"a".repeat(63),
 				"a".repeat(65),
@@ -132,8 +113,8 @@ describe("parseReplayReport", () => {
 	});
 
 	it("requires a non-empty run id and seed", () => {
-		expect(messageOf(() => parseReplayReport({ ...REPORT, run_id: "" }))).toBe(
-			"run_id must be a non-empty string",
+		expect(messageOf(() => parseReplayReport({ ...REPORT, runId: "" }))).toBe(
+			"runId must be a non-empty string",
 		);
 		expect(messageOf(() => parseReplayReport({ ...REPORT, seed: 7 }))).toBe(
 			"seed must be a non-empty string",
@@ -144,17 +125,17 @@ describe("parseReplayReport", () => {
 		for (const bad of [undefined, {}, "s1:1"]) {
 			expect(
 				messageOf(() =>
-					parseReplayReport({ ...REPORT, seq_vector: bad } as never),
+					parseReplayReport({ ...REPORT, seqVector: bad } as never),
 				),
-			).toBe("seq_vector must be an array");
+			).toBe("seqVector must be an array");
 		}
 		expect(
-			messageOf(() => parseReplayReport({ ...REPORT, seq_vector: [7] })),
-		).toContain("seq_vector[0] must be an object");
+			messageOf(() => parseReplayReport({ ...REPORT, seqVector: [7] })),
+		).toContain("seqVector[0] must be an object");
 	});
 
 	it("accepts an empty seq vector", () => {
-		expect(parseReplayReport({ ...REPORT, seq_vector: [] }).seqVector).toEqual(
+		expect(parseReplayReport({ ...REPORT, seqVector: [] }).seqVector).toEqual(
 			[],
 		);
 	});
@@ -164,32 +145,51 @@ describe("parseReplayReport", () => {
 			messageOf(() =>
 				parseReplayReport({
 					...REPORT,
-					seq_vector: [
-						{ stream_id: "s1", seq: 1 },
-						{ stream_id: "s1", seq: 2 },
+					seqVector: [
+						{ streamId: "s1", seq: 1 },
+						{ streamId: "s1", seq: 2 },
 					],
 				}),
 			),
-		).toBe("duplicate stream_id s1");
+		).toBe("duplicate streamId s1");
 	});
 
 	it("accepts seq zero but refuses negative, fractional and non-numeric", () => {
 		expect(
 			parseReplayReport({
 				...REPORT,
-				seq_vector: [{ stream_id: "s1", seq: 0 }],
+				seqVector: [{ streamId: "s1", seq: 0 }],
 			}).seqVector[0]?.seq,
 		).toBe(0);
-		for (const bad of [-1, 1.5, Number.NaN, "3", undefined]) {
+		for (const bad of [
+			-1,
+			1.5,
+			Number.NaN,
+			Number.MAX_SAFE_INTEGER + 1,
+			"3",
+			undefined,
+		]) {
 			expect(
 				messageOf(() =>
 					parseReplayReport({
 						...REPORT,
-						seq_vector: [{ stream_id: "s1", seq: bad }],
+						seqVector: [{ streamId: "s1", seq: bad }],
 					} as never),
 				),
 			).toBe("seq must be a non-negative integer");
 		}
+	});
+
+	it("rejects fields outside the report schema", () => {
+		expect(() => parseReplayReport({ ...REPORT, extra: true })).toThrow(
+			"ReplayReport has an unexpected field: extra",
+		);
+		expect(() =>
+			parseReplayReport({
+				...REPORT,
+				seqVector: [{ streamId: "s1", seq: 1, extra: true }],
+			}),
+		).toThrow("seqVector[0] has an unexpected field: extra");
 	});
 
 	it("freezes each seq vector entry", () => {
@@ -207,24 +207,12 @@ describe("parseReplayDivergence", () => {
 		expect(Object.isFrozen(record)).toBe(true);
 	});
 
-	it("accepts camelCase throughout", () => {
-		const record = parseReplayDivergence({
-			runId: "run-1",
-			liveStateDigest: DIGEST_A,
-			replayStateDigest: DIGEST_B,
-			liveOrder: ["s1:1"],
-			replayOrder: ["s1:2"],
-			firstDivergentEventKey: "s1:1",
-		});
-		expect(record.liveOrder).toEqual(["s1:1"]);
-	});
-
 	it("refuses a record whose two digests agree", () => {
 		expect(
 			messageOf(() =>
 				parseReplayDivergence({
 					...DIVERGENCE,
-					replay_state_digest: DIGEST_A,
+					replayStateDigest: DIGEST_A,
 				}),
 			),
 		).toBe("ReplayDivergence requires differing state digests");
@@ -241,18 +229,18 @@ describe("parseReplayDivergence", () => {
 	it("requires both digests to be well-formed hex", () => {
 		expect(
 			messageOf(() =>
-				parseReplayDivergence({ ...DIVERGENCE, live_state_digest: "nope" }),
+				parseReplayDivergence({ ...DIVERGENCE, liveStateDigest: "nope" }),
 			),
-		).toContain("live_state_digest");
+		).toContain("liveStateDigest");
 		expect(
 			messageOf(() =>
-				parseReplayDivergence({ ...DIVERGENCE, replay_state_digest: "" }),
+				parseReplayDivergence({ ...DIVERGENCE, replayStateDigest: "" }),
 			),
-		).toContain("replay_state_digest");
+		).toContain("replayStateDigest");
 	});
 
 	it("requires both orders to be string arrays", () => {
-		for (const field of ["live_order", "replay_order"] as const) {
+		for (const field of ["liveOrder", "replayOrder"] as const) {
 			for (const bad of [undefined, "s1:1", [1], [null]]) {
 				expect(
 					messageOf(() =>
@@ -266,8 +254,8 @@ describe("parseReplayDivergence", () => {
 	it("accepts empty orders", () => {
 		const record = parseReplayDivergence({
 			...DIVERGENCE,
-			live_order: [],
-			replay_order: [],
+			liveOrder: [],
+			replayOrder: [],
 		});
 		expect(record.liveOrder).toEqual([]);
 	});
@@ -277,16 +265,16 @@ describe("parseReplayDivergence", () => {
 			messageOf(() =>
 				parseReplayDivergence({
 					...DIVERGENCE,
-					first_divergent_event_key: "",
+					firstDivergentEventKey: "",
 				}),
 			),
-		).toBe("first_divergent_event_key must be a non-empty string");
+		).toBe("firstDivergentEventKey must be a non-empty string");
 	});
 
 	it("copies the order arrays", () => {
-		const input = { ...DIVERGENCE, live_order: ["s1:1"] };
+		const input = { ...DIVERGENCE, liveOrder: ["s1:1"] };
 		const record = parseReplayDivergence(input);
-		input.live_order.push("s1:2");
+		input.liveOrder.push("s1:2");
 		expect(record.liveOrder).toHaveLength(1);
 	});
 });
