@@ -415,6 +415,60 @@ describe("receiver-bound budget settlement", () => {
 		});
 	});
 
+	it("backfills v2 for kind-bearing fenced reservation replay", () => {
+		const f = fixture();
+		f.base.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				periodId: "2026-10",
+				remainingUnits: 5,
+				reservedUnits: 0,
+				observedAt: "2026-10-29T00:00:00Z",
+				validUntil: "2026-11-01T00:00:00Z",
+			}),
+		];
+		f.quote.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				units: 2,
+			}),
+		];
+		const events: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: f.trust,
+			commit: (event) => events.push(event),
+		});
+		authority.reserve(f.input);
+		authority.claimExecution({
+			reservationId: "reservation-1",
+			requestDigest: REQUEST,
+			executionDigest: EXECUTION,
+		});
+		const held = authority.lookup("reservation-1");
+		if (!held) throw new Error("held reservation missing");
+		const proof = f.evidence(held);
+		const unversioned = events.map((event) => {
+			const legacy = clone(BudgetAuthorityEventSchema, event);
+			for (const reservation of legacy.reservations)
+				reservation.fenceSettlementPayloadVersion = "";
+			return legacy;
+		});
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			priorEvents: unversioned,
+			fenceTrust: f.trust,
+		});
+		expect(
+			reopened.lookup("reservation-1")?.fenceSettlementPayloadVersion,
+		).toBe("v2");
+		expect(reopened.settle("reservation-1", 30, proof).status).toBe("settled");
+	});
+
 	it("replays a legacy v1 reservation without entitlement claims", () => {
 		const f = fixture();
 		const events: BudgetAuthorityEvent[] = [];

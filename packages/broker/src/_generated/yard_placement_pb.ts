@@ -557,6 +557,8 @@ export type BudgetEntitlement = Message<"hobo.broker.yard.v1.BudgetEntitlement">
   validUntil: string;
 
   /**
+   * allowance | credit | commitment
+   *
    * @generated from field: string kind = 8;
    */
   kind: string;
@@ -1365,6 +1367,8 @@ export type IacTargetLiabilityEvidence = Message<"hobo.broker.yard.v1.IacTargetL
   quoteHash: string;
 
   /**
+   * Legacy bound; maximum_micros_exact wins when both are present.
+   *
    * @generated from field: optional double maximum_micros = 8;
    */
   maximumMicros?: number | undefined;
@@ -1385,6 +1389,8 @@ export type IacTargetLiabilityEvidence = Message<"hobo.broker.yard.v1.IacTargetL
   providerAccounts: ProviderAccountExposure[];
 
   /**
+   * Exact bound; prefer this field alone for new payloads.
+   *
    * @generated from field: optional int64 maximum_micros_exact = 12;
    */
   maximumMicrosExact?: bigint | undefined;

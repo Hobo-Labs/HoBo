@@ -675,6 +675,18 @@ export async function admitIacTarget(
 	const quoteDigest = createHash("sha256")
 		.update(toJsonString(HostingQuoteSchema, quote))
 		.digest("hex");
+	let legacyQuoteDigest: string | undefined;
+	if (
+		quote.entitlementClaims.every(
+			(claim) => persistedClaimKind(claim.kind) === "allowance",
+		)
+	) {
+		const legacyQuote = clone(HostingQuoteSchema, quote);
+		for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
+		legacyQuoteDigest = createHash("sha256")
+			.update(toJsonString(HostingQuoteSchema, legacyQuote))
+			.digest("hex");
+	}
 	const captureReceipt = (
 		raw: BudgetReservation,
 	): BudgetReservation | undefined => {
@@ -685,7 +697,8 @@ export async function admitIacTarget(
 				row.reservationId !== reservationId ||
 				row.requestDigest !== requestDigest ||
 				row.quoteId !== quote.quoteId ||
-				row.quoteDigest !== quoteDigest ||
+				(row.quoteDigest !== quoteDigest &&
+					row.quoteDigest !== legacyQuoteDigest) ||
 				row.financialPlanHash !== financialPlanHash ||
 				row.identity === undefined ||
 				budgetIdentityKey(row.identity) !== budgetIdentityKey(identity) ||

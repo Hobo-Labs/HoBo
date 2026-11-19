@@ -162,7 +162,7 @@ describe.skipIf(!URL)(
 		});
 		it("normalizes a legacy persisted base without validating the reopen seed", async () => {
 			const { first, second, pool, snapshot } = setup();
-			addEntitlement(snapshot, "allowance");
+			addEntitlement(snapshot, "credit");
 			await first.initialize();
 			const id = createHash("sha256")
 				.update(
@@ -172,11 +172,12 @@ describe.skipIf(!URL)(
 					]),
 				)
 				.digest("hex");
-			await pool.query(
+			const updated = await pool.query(
 				"UPDATE hobo_budget_partitions SET base_body=(base_body::jsonb #- '{entitlements,0,kind}')::text WHERE id=$1",
 				[id],
 			);
-			addEntitlement(snapshot, "");
+			expect(updated.rowCount).toBe(1);
+			addEntitlement(snapshot, "credit");
 			expect((await second.read(NOW)).entitlements[0]?.kind).toBe("allowance");
 		});
 		it("reopens the same durable journal without re-seeding a larger balance", async () => {

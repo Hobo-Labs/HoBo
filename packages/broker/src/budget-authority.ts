@@ -476,9 +476,7 @@ export function validateHostingQuote(
 		);
 	for (const row of quote.entitlementClaims) {
 		const kind =
-			options?.allowLegacyKindless && row.kind === ""
-				? "allowance"
-				: row.kind;
+			options?.allowLegacyKindless && row.kind === "" ? "allowance" : row.kind;
 		if (!validEntitlementKind(kind))
 			throw new TypeError("unsupported entitlement kind");
 		if (!row.bucketId || !row.unit)
@@ -643,8 +641,7 @@ export function createBudgetAdmissionAuthority(options: {
 	>();
 	const entitlementStableKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) =>
-		JSON.stringify([bucket.periodId, bucket.bucketId, bucket.unit]);
+	) => JSON.stringify([bucket.periodId, bucket.bucketId, bucket.unit]);
 	const entitlementLineageKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	) => JSON.stringify([bucket.periodId, bucket.bucketId]);
@@ -686,8 +683,7 @@ export function createBudgetAdmissionAuthority(options: {
 				!previous ||
 				(!configuration &&
 					current.entitlements.some(
-						(row) =>
-							entitlementStableKey(row) === entitlementStableKey(bucket),
+						(row) => entitlementStableKey(row) === entitlementStableKey(bucket),
 					))
 			)
 				continue;
@@ -744,6 +740,15 @@ export function createBudgetAdmissionAuthority(options: {
 		const event = clone(BudgetAuthorityEventSchema, persistedEvent);
 		if (event.snapshot)
 			event.snapshot = normalizeLegacyBudgetSnapshot(event.snapshot);
+		for (const reservation of event.reservations) {
+			if (
+				reservation.fenceSettlementGuard !== undefined &&
+				reservation.fenceSettlementPayloadVersion === "" &&
+				reservation.entitlementClaims.some((claim) => claim.kind !== "")
+			)
+				reservation.fenceSettlementPayloadVersion =
+					currentBudgetFenceSettlementPayloadVersion;
+		}
 		if (!event.snapshot?.identity || !current.identity)
 			throw new Error("budget journal snapshot identity missing");
 		if (
@@ -1558,9 +1563,23 @@ export function createBudgetAdmissionAuthority(options: {
 						budgetIdentityKey(current.identity)
 				)
 					throw new Error("reservation belongs to a superseded budget policy");
+				let legacyQuoteDigest: string | undefined;
+				if (
+					previous.entitlementClaims.every((claim) => claim.kind === "") &&
+					input.quote.entitlementClaims.every(
+						(claim) => persistedEntitlementKind(claim.kind) === "allowance",
+					)
+				) {
+					const legacyQuote = clone(HostingQuoteSchema, input.quote);
+					for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
+					legacyQuoteDigest = createHash("sha256")
+						.update(toJsonString(HostingQuoteSchema, legacyQuote))
+						.digest("hex");
+				}
 				if (
 					previous.requestDigest !== input.requestDigest ||
-					previous.quoteDigest !== quoteDigest ||
+					(previous.quoteDigest !== quoteDigest &&
+						previous.quoteDigest !== legacyQuoteDigest) ||
 					JSON.stringify(previous.iacPricingPin) !==
 						JSON.stringify(input.iacPricingPin) ||
 					!!previous.fenceSettlementGuard !== !!input.fenceSettlementGuard ||

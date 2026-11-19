@@ -24,7 +24,7 @@
         "units": 1
       },
       {
-        "bucketId": "credit-a",
+        "bucketId": "credit-b",
         "kind": "credit",
         "unit": "USD.micros",
         "units": 1
@@ -81,12 +81,6 @@
           "kind": "allowance",
           "unit": "request",
           "units": 2
-        },
-        {
-          "bucketId": "free-requests",
-          "kind": "allowance",
-          "unit": "request",
-          "units": 2
         }
       ],
       "components": [
@@ -124,12 +118,6 @@
           "kind": "credit",
           "unit": "USD.micros",
           "units": 1
-        },
-        {
-          "bucketId": "free-requests",
-          "kind": "allowance",
-          "unit": "request",
-          "units": 2
         },
         {
           "bucketId": "free-requests",

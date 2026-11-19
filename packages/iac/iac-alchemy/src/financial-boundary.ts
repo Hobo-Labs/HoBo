@@ -481,7 +481,11 @@ export function validFinancialMetadata(
 				entitlementClaims: entitlements,
 
 				settlementEvidence: (item) => item === undefined,
-				executionDigest: text,
+				executionDigest: (item) =>
+					typeof item === "string" &&
+					(item === ""
+						? status !== "admitted"
+						: /^sha256:[a-f0-9]{64}$/u.test(item)),
 				financialPlanHash: text,
 				fenceSettlementGuard: (item) => item === undefined,
 				fenceSettlementPayloadVersion: (item) => item === "" || item === "v2",

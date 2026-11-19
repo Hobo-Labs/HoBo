@@ -2629,12 +2629,16 @@ describe("financial admission modes", () => {
 				return decision;
 			});
 			await f.provider.preview(f.program);
-			await expect(
-				f.provider.applyWithAdmission(f.program, "attempt"),
-			).rejects.toMatchObject({
+			const attempt = f.provider.applyWithAdmission(f.program, "attempt");
+			await expect(attempt).rejects.toMatchObject({
 				code: "ADMISSION_RECEIPT_INVALID",
 				requiresReconciliation: true,
 			});
+			if (kind !== "missing")
+				await expect(attempt).rejects.toMatchObject({
+					message:
+						"ADMISSION_RECEIPT_INVALID: admission receipt could not be safely inspected",
+				});
 			expect(f.applies()).toBe(0);
 			expect(f.uncertain).toEqual(["iac:attempt"]);
 		}

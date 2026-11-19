@@ -1,7 +1,14 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clone, create, fromBinary, toBinary } from "@bufbuild/protobuf";
+import {
+	clone,
+	create,
+	fromBinary,
+	toBinary,
+	toJsonString,
+} from "@bufbuild/protobuf";
 import {
 	createTargetPricingInventory,
 	QuoteScenarioSchema,
@@ -11,6 +18,7 @@ import {
 } from "@hobo/pricing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	allowanceState,
 	commitmentState,
 	creditState,
 	fixedCharge,
@@ -30,6 +38,7 @@ import {
 	EntitlementClaimSchema,
 	type GateDecision,
 	HostingPolicyProofSchema,
+	HostingQuoteSchema,
 	IacTargetLiabilityEvidenceSchema,
 } from "../src/index.js";
 
@@ -135,8 +144,13 @@ function authority(
 			entitlements: entitlementIds.map((bucketId) =>
 				create(BudgetEntitlementSchema, {
 					bucketId,
-					kind: bucketId === "commitment-a" ? "commitment" : "credit",
-					unit: "USD.micros",
+					kind:
+						bucketId === "commitment-a"
+							? "commitment"
+							: bucketId === "allowance-a"
+								? "allowance"
+								: "credit",
+					unit: bucketId === "allowance-a" ? "minute" : "USD.micros",
 					periodId: "2026-01",
 					remainingUnits: 10_000_000,
 					observedAt: "2026-01-01T00:00:00Z",
@@ -745,6 +759,68 @@ describe("provider-neutral IaC target budget admission", () => {
 					}),
 				]),
 			);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("replays a legacy kindless allowance receipt", async () => {
+		const ledger = authority(3_000_000, true, ["account-a"], ["allowance-a"]);
+		try {
+			const { inventory, pricing, evidence } = fixture();
+			if (pricing.state.case !== "model")
+				throw new Error("missing model fixture");
+			pricing.state.value.scenario = makeScenario({
+				charges: [perUnitCharge("runtime", "minute", "1")],
+				candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+				allowances: [allowanceState("allowance-a", "10", "0")],
+			});
+			const priced = quoteTargetPricing(inventory, pricing);
+			if (!priced.ok) throw new Error(priced.reason);
+			evidence.inventoryHash = priced.inventoryHash;
+			evidence.modelHash = priced.modelHash;
+			evidence.quoteHash = priced.quote.quoteHash;
+			evidence.entitlementClaims = [
+				create(EntitlementClaimSchema, {
+					bucketId: "allowance-a",
+					kind: "allowance",
+					unit: "minute",
+					units: 4,
+				}),
+			];
+			const request = {
+				requestId: "legacy-allowance",
+				inventory,
+				pricing,
+				evidence,
+			};
+			const deps = dependencies(ledger);
+			expect(await admitIacTarget(request, deps)).toMatchObject({
+				status: "admitted",
+			});
+			const legacyAuthority = {
+				...deps.authority,
+				reserve: (input: Parameters<typeof ledger.reserve>[0]) => {
+					const row = ledger.reserve(input);
+					for (const claim of row.entitlementClaims) claim.kind = "";
+					const legacyQuote = clone(HostingQuoteSchema, input.quote);
+					for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
+					row.quoteDigest = createHash("sha256")
+						.update(toJsonString(HostingQuoteSchema, legacyQuote))
+						.digest("hex");
+					return row;
+				},
+			};
+			expect(
+				await admitIacTarget(request, {
+					...deps,
+					authority: legacyAuthority,
+				}),
+			).toMatchObject({
+				status: "replay",
+				code: "EXECUTION_ALREADY_CLAIMED",
+				reservation: { entitlementClaims: [{ kind: "" }] },
+			});
 		} finally {
 			ledger.close();
 		}
@@ -1569,7 +1645,10 @@ describe("provider-neutral IaC target budget admission", () => {
 	});
 
 	it("round-trips IacTargetLiabilityEvidence proto fields added for exact bounds and claims", () => {
-		const evidence = create(IacTargetLiabilityEvidenceSchema, fixture().evidence);
+		const evidence = create(
+			IacTargetLiabilityEvidenceSchema,
+			fixture().evidence,
+		);
 		evidence.entitlementClaims = [
 			create(EntitlementClaimSchema, {
 				kind: "allowance",

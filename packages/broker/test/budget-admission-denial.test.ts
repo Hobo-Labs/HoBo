@@ -225,6 +225,11 @@ describe("definitive budget admission denial", () => {
 			reservationId: "work",
 			status: "held",
 		});
+		for (const claim of q.entitlementClaims) claim.kind = "allowance";
+		expect(reserve(authority, q)).toMatchObject({
+			reservationId: "work",
+			status: "held",
+		});
 		expect(authority.read(NOW).seq).toBe(1);
 	});
 

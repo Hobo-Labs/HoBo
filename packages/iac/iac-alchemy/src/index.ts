@@ -1462,7 +1462,8 @@ function readFinancialDecision(
 				if (
 					!hasOwnDescriptor(execution, "value") ||
 					typeof execution.value !== "string" ||
-					execution.value.length > 200
+					((execution.value !== "" || status === "admitted") &&
+						!/^sha256:[a-f0-9]{64}$/u.test(execution.value))
 				)
 					return undefined;
 				executionDigest = execution.value;
