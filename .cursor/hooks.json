@@ -19,6 +19,12 @@
         "timeout": 10,
         "loop_limit": null
       }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 scripts/agent_completion_hook.py prompt cursor",
+        "timeout": 10
+      }
     ]
   }
 }

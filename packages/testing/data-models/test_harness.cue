@@ -1,14 +1,3 @@
-// App test harness invariants.
-//
-// Two constraints here are load-bearing rather than decorative. First, a
-// handle carries an endpoint only when something actually listens, so an
-// endpoint on a `mocked` or `camp-only` handle is a contradiction and is
-// rejected — an unreachable URL presented as an endpoint is the quiet lie the
-// fidelity labels exist to prevent. Second, `prod_readiness_claimable` is
-// derived, not asserted: it is false whenever any assertion rested on a
-// `mocked` handle (ADR-0042 / ADR-0159), so a report cannot be hand-written
-// into a green tick.
-
 #FidelityLabel: "real" | "simulated" | "mocked" | "camp-only"
 
 #LaneKind: "in-process" | "ephemeral-camp"
@@ -39,11 +28,7 @@
 		"camp-only": uint
 	}
 	asserted_against: [...#FidelityAssertionRecord]
-	prod_readiness_claimable: bool
-	// Derived, never asserted: a mocked handle under any assertion forfeits
-	// the claim, so the flag cannot be hand-written into a green tick.
-	_mockedAssertions: [for entry in asserted_against if entry.fidelity == "mocked" {entry}]
-	_claimIsDerived: true & (prod_readiness_claimable == (len(_mockedAssertions) == 0))
+	prod_readiness_claimable: false
 }
 
 #DeployedGraphRecord: {

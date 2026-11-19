@@ -1,27 +1,11 @@
-/**
- * `createTestHarness` — the out-of-box app harness (ADR-0159, GAP-026).
- *
- * Deploy the collected topology, assert against it, tear it down. The surface
- * is plain async/await and typed results: no Effect-TS, no Polly, no XState on
- * the public surface (ADR-0136).
- *
- * Two decisions here carry the unit's honesty:
- *
- * 1. Lane selection is fail-closed. `in-process` is the default; choosing
- *    `ephemeral-camp` runs its gates at construction so an author learns about
- *    a missing Yard or credential before writing assertions, and the lane
- *    never silently becomes `in-process`.
- * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
- *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, `secret`, or
- *    `data`, `schedule`, `scheduleClock`, `kv`, `bucket`, `bucketInspector`,
- *    `flag`, `flagInspector`, or `untilReady` marks it asserted-against;
- *    if any is `mocked`, this run
- *    cannot claim prod-readiness and the report says so.
- */
-
 import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
-import type { FeatureFlagPort, SecretsPort } from "@hobo/identity";
+import type {
+	DeliveryPort,
+	ExperimentPort,
+	FeatureFlagPort,
+	SecretsPort,
+} from "@hobo/identity";
 import type {
 	BlobStorePort,
 	BucketEmulator,
@@ -116,9 +100,7 @@ function buildFidelityReport(
 	return Object.freeze({
 		byFidelity: Object.freeze(byFidelity),
 		assertedAgainst: Object.freeze(assertedAgainst),
-		prodReadinessClaimable: assertedAgainst.every(
-			(entry) => entry.fidelity !== "mocked",
-		),
+		prodReadinessClaimable: false,
 	});
 }
 
@@ -211,6 +193,7 @@ function buildGraph(
 			// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: each value comes from the parsed deployment bindings.
 			const record: Record<string, unknown> = {};
 			for (const alias of aliases) {
+				asserted.add(alias);
 				record[alias] = deployment.bindings[alias];
 			}
 			// SAFETY: the caller selects the existing generic outputs view.
@@ -308,6 +291,34 @@ function buildGraph(
 		},
 		flag(alias: string): FeatureFlagPort {
 			return flagEmulator(alias).port;
+		},
+		rollout(alias: string): DeliveryPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.rollouts.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no rollout emulator`,
+					"use the alias of a rollout resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		experiment(alias: string): ExperimentPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.experiments.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no experiment emulator`,
+					"use the alias of an experiment resource in the in-process graph",
+				);
+			}
+			return emulator.port;
 		},
 		flagInspector(alias: string): FlagInspector | undefined {
 			return flagEmulator(alias).inspector;

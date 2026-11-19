@@ -91,6 +91,17 @@ export {
 	validateTokenEvent,
 } from "./events.js";
 export {
+	type ExperimentFlagAllocation,
+	experimentAllocation,
+	experimentRampBucket,
+	pickExperimentVariant,
+} from "./experiment-allocation.js";
+export {
+	type ExperimentFlagPortConformance,
+	type ExperimentFlagPortFixture,
+	runExperimentFlagPortConformance,
+} from "./experiment-flag-conformance.js";
+export {
 	FEATURE_FLAG_BACKEND_RANKS,
 	type FeatureFlagBackendRank,
 	type RankedBackend,
@@ -100,6 +111,7 @@ export {
 	bucket,
 	createMigrationFlagId,
 	type DetailEvaluation,
+	experimentSubjectKey,
 	FEATURE_FLAG_PORT,
 	type FeatureFlagPort,
 	FeatureFlagStore,
@@ -115,6 +127,7 @@ export {
 	type FlagTargeting,
 	type FlagValue,
 	type FractionalVariant,
+	flagContextBinding,
 	migrationCohortFlagKey,
 	pickFractionalVariant,
 } from "./feature-flag-store.js";
@@ -154,6 +167,7 @@ export {
 	EXPERIMENT_ANALYSIS_SCHEMA,
 	type ExperimentAnalysisPort,
 	type ExperimentAnalysisResult,
+	type ExperimentExposureRecord,
 	type MediatedFlagEvaluator,
 	OFREP_RESIDUAL_SCHEMA,
 	selectDeliveryAdapter,
@@ -193,6 +207,7 @@ export {
 	EXPERIMENT_PORT,
 	type ExperimentAssignment,
 	type ExperimentDefinition,
+	type ExperimentEvaluationExposure,
 	type ExperimentEvent,
 	type ExperimentPort,
 	OpenExperimentEngine,

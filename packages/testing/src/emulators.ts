@@ -11,9 +11,13 @@ import type { EngineBinding } from "@hobo/data-core";
 import { createSqliteEngine } from "@hobo/data-sqlite";
 import {
 	createMemorySecretsPort,
+	type DeliveryPort,
+	type ExperimentPort,
 	type FeatureFlagPort,
 	FeatureFlagStore,
 	type FlagEvent,
+	OpenDeliveryEngine,
+	OpenExperimentEngine,
 	type SecretsPort,
 } from "@hobo/identity";
 import {
@@ -84,6 +88,8 @@ export interface ServiceEmulatorFactories {
 	readonly kv?: EmulatorFactory<ServiceEmulator<KeyValuePort>>;
 	readonly bucket?: EmulatorFactory<BucketEmulator>;
 	readonly flag?: EmulatorFactory<FlagEmulator>;
+	readonly rollout?: EmulatorFactory<ServiceEmulator<DeliveryPort>>;
+	readonly experiment?: EmulatorFactory<ServiceEmulator<ExperimentPort>>;
 }
 
 export function createQueueEmulator(): QueueEmulator {
@@ -110,6 +116,40 @@ export function createFlagEmulator(
 		port: store,
 		inspector: { events: () => structuredClone(store.events) },
 		fidelity: "simulated",
+	};
+}
+
+export interface ProgressiveEmulatorOptions {
+	readonly store?: FeatureFlagPort;
+	readonly storeFidelity?: "simulated" | "mocked";
+	readonly now?: () => string;
+}
+
+export function createDeliveryEmulator(
+	options: ProgressiveEmulatorOptions = {},
+): ServiceEmulator<DeliveryPort> {
+	return {
+		port: new OpenDeliveryEngine({
+			store: options.store ?? new FeatureFlagStore(),
+			...(options.now !== undefined ? { now: options.now } : undefined),
+		}),
+		fidelity:
+			options.storeFidelity ??
+			(options.store === undefined ? "simulated" : "mocked"),
+	};
+}
+
+export function createExperimentEmulator(
+	options: ProgressiveEmulatorOptions = {},
+): ServiceEmulator<ExperimentPort> {
+	return {
+		port: new OpenExperimentEngine({
+			store: options.store ?? new FeatureFlagStore(),
+			...(options.now !== undefined ? { now: options.now } : undefined),
+		}),
+		fidelity:
+			options.storeFidelity ??
+			(options.store === undefined ? "simulated" : "mocked"),
 	};
 }
 

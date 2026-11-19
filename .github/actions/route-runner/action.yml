@@ -5,8 +5,9 @@ description: >-
   is. When the queue cannot be read, or the script cannot run,
   GitHub-hosted is chosen and a warning says why. Auto-routed pull-request
   batches require verified public standard-runner pricing or a verified fleet
-  batch claim; if routing fails, they stop before queuing jobs. Pinned to the
-  fleet, it stays there.
+  batch claim. Automatic merge-group batches use a verified public standard
+  runner unless explicitly pinned. If routing fails, these batches stop before
+  queuing jobs. Pinned to the fleet, it stays there.
   What the fleet can take is not passed in: the script reads the routing slip
   the box relay writes to refs/hobo/routing-slip (ADR-0181) and the routing
   policy committed in .hobo/ci.json (runnerRouting), so the workflow must check
@@ -127,8 +128,8 @@ runs:
         route='${{ contains(fromJSON('["auto","fleet","local","github"]'), inputs.route) && inputs.route || 'auto' }}'
         include_own_run='${{ inputs.include-own-run == 'true' && 'true' || 'false' }}'
         attested='${{ steps.attest.outputs.attested == 'true' && 'true' || 'false' }}'
-        if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${route}" = "auto" ] && [ -z "${GITHUB_WORKFLOW_REF:-}" ]; then
-          echo "::error title=hobo-ci-route-fallback::PR workflow identity is unavailable; no batch was queued"
+        if { [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; } && [ "${route}" = "auto" ] && [ -z "${GITHUB_WORKFLOW_REF:-}" ]; then
+          echo "::error title=hobo-ci-route-fallback::Batch workflow identity is unavailable; no batch was queued"
           exit 1
         fi
         fleet=hobo
@@ -145,8 +146,8 @@ runs:
           elif [ "${route}" = "fleet" ]; then
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); pinned to the fleet"
             { echo "runner=${fleet}"; echo "tier=fleet"; echo "shard_runner=${fleet}"; } >> "$GITHUB_OUTPUT"
-          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${route}" = "auto" ] && { [ -z "${GITHUB_WORKFLOW_REF:-}" ] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/hobo-ci.yml@* ]] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/release-hobo.yml@* ]]; }; then
-            echo "::error title=hobo-ci-route-fallback::PR batch routing did not verify a runner ($1); no batch was queued"
+          elif { [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; } && [ "${route}" = "auto" ] && { [ -z "${GITHUB_WORKFLOW_REF:-}" ] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/hobo-ci.yml@* ]] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/release-hobo.yml@* ]]; }; then
+            echo "::error title=hobo-ci-route-fallback::Batch routing did not verify a runner ($1); no batch was queued"
             return 1
           else
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); using GitHub-hosted runners"

@@ -64,6 +64,44 @@ export type BillingLowering = {
 	readonly included: readonly DeclaredIncludedUsage[];
 };
 
+export type PricingSupport =
+	| {
+			readonly status: "unavailable";
+			readonly reason: "NO_PRICING_MODEL" | "NO_RATEABLE_PLANS";
+			readonly rated: readonly RatedPlan[];
+			readonly unrated: readonly UnratedPlan[];
+	  }
+	| {
+			readonly status: "partial" | "supported";
+			readonly rated: readonly RatedPlan[];
+			readonly unrated: readonly UnratedPlan[];
+	  };
+
+export function describePricingSupport(
+	manifest: ParsedProviderManifest,
+): PricingSupport {
+	const lowered = toPricingCatalog(manifest);
+	if (lowered === undefined)
+		return {
+			status: "unavailable",
+			reason: "NO_PRICING_MODEL",
+			rated: [],
+			unrated: [],
+		};
+	if (lowered.rated.length === 0)
+		return {
+			status: "unavailable",
+			reason: "NO_RATEABLE_PLANS",
+			rated: lowered.rated,
+			unrated: lowered.unrated,
+		};
+	return {
+		status: lowered.unrated.length === 0 ? "supported" : "partial",
+		rated: lowered.rated,
+		unrated: lowered.unrated,
+	};
+}
+
 /** The pricing-catalog product id for a manifest product. */
 export function pricingProductRef(
 	providerId: string,
