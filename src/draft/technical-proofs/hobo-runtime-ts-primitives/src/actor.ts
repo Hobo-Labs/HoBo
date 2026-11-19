@@ -7,7 +7,6 @@ import {
 import type { ActorKey, Message, MessageMap } from "./types.js";
 import { type JsonValue } from "./json.js";
 
-
 export interface ActorRef<S, M extends MessageMap<S>> {
   name: string;
   key(id: string): ActorKey;
@@ -33,7 +32,6 @@ export function actor<S, M extends MessageMap<S>>(
   name: string,
   def: { state: () => S; on: M },
 ): ActorRef<S, M> {
-  // SAFETY: actor definitions are stored erased at the registry edge.
   const stored: StoredActorDef = def as never;
   actorDefinitions.set(name, stored);
   return {

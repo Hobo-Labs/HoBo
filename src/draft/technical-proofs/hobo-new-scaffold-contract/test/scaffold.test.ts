@@ -17,10 +17,6 @@ const tscPath = fileURLToPath(
   new URL("../../../../../node_modules/typescript/bin/tsc", import.meta.url)
 );
 
-// The generated stub's `npm test` is plain `node --test` over TypeScript
-// sources with tsc-style `.js` specifiers, so the harness must hand the
-// child a TypeScript loader explicitly; inheriting one from ambient
-// NODE_OPTIONS made this pass only in tsx-wrapped environments.
 const tsxLoaderUrl = new URL("../../../../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;
 
 const expectedCreatedFiles = [

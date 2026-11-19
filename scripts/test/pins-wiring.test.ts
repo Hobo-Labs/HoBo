@@ -1,8 +1,3 @@
-/**
- * The pins are only worth having if the entry points reach them: the package
- * scripts, `setup`, the remediation a missing submodule prints, the disabled
- * CI job, and the manifest's agreement with `.gitmodules`.
- */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,7 +9,6 @@ import { REPO_ROOT } from "./support/pins-support.ts";
 const read = (path: string): string =>
 	readFileSync(join(REPO_ROOT, path), "utf8");
 
-/** The body of one top-level job, the way scripts/lint-actions.ts finds it. */
 function jobText(workflow: string, job: string): string {
 	const lines = workflow.split("\n");
 	const rest = lines.slice(lines.indexOf(`  ${job}:`) + 1);
@@ -37,7 +31,6 @@ describe("pins wiring", () => {
 	it("setup initialises the pins before it installs, so the submodule exists first", () => {
 		const parts = String(scripts.setup).split(" && ");
 		assert.equal(parts[0], BOOTSTRAP);
-		// The install runs through bootstrap-dev + install:check (mise-provisioned pnpm).
 		assert.deepEqual(parts.slice(1), [
 			"bash scripts/bootstrap-dev.sh --project-only",
 			"pnpm run install:check",

@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-/**
- * Local station bridge for Examples console.
- * Binds 127.0.0.1:8787 —
- *   POST /station  — operator anonymous Environment Station (no Bindle/app)
- *   POST /deploy   — ship OpenSaaS onto an existing station (Compose / wasp / wrangler)
- */
 import { type JsonObject, type JsonValue } from "../src/lib/json-inspect.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
@@ -49,7 +43,6 @@ async function loadOpenSaasBindle(): Promise<{
 			>;
 		};
 	};
-	// SAFETY: OpenSaaS Bindle module is loaded from the examples tree at this boundary.
 	const mod = (await import(
 		path.join(REPO_ROOT, "examples/try-site/apps/opensaas/app.ts")
 	)) as OpenSaasBindleModule;
@@ -151,9 +144,6 @@ async function provisionAnonymousStation(input: {
 	| { ok: true; endpointUrl: string }
 	| { ok: false; error: string; remediation: string }
 > {
-	// Cloudflare: Temporary Accounts via provider package (zero permanent tokens).
-	// Other remotes: serve an anonymous station page from this bridge until those
-	// providers grow temporary-account APIs.
 	if (input.targetId === "cloudflare") {
 		try {
 			const { provisionTemporaryEnvironmentStation } = await import(
@@ -325,7 +315,6 @@ async function waitHealthy(url: string, attempts = 60): Promise<boolean> {
 			const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
 			if (response.ok || response.status < 500) return true;
 		} catch {
-			/* retry */
 		}
 		await new Promise((resolve) => setTimeout(resolve, 2_000));
 	}
@@ -404,7 +393,6 @@ async function deployCloudflare(waspAbsRoot: string): Promise<
 	const webApp = path.join(waspAbsRoot, ".wasp/build/web-app");
 	const deploy = await run("wrangler", ["pages", "deploy", "build", "--project-name", "hobo-opensaas"], webApp);
 	if (deploy.code !== 0) {
-		// Fallback: try workers deploy if pages project missing
 		const workers = await run("wrangler", ["deploy"], path.join(waspAbsRoot, ".wasp/build"));
 		if (workers.code !== 0) {
 			return {
@@ -578,7 +566,6 @@ const server = createServer(async (req, res) => {
 			homeStationId?: string;
 		};
 		try {
-			// SAFETY: assertion required at this I/O boundary.
 			body = JSON.parse(raw) as typeof body;
 		} catch {
 			sendJson(res, 400, { error: "invalid JSON body" });
@@ -621,7 +608,6 @@ const server = createServer(async (req, res) => {
 			bindleWebApp?: BindleWebAppRef;
 		};
 		try {
-			// SAFETY: assertion required at this I/O boundary.
 			body = JSON.parse(raw) as typeof body;
 		} catch {
 			sendJson(res, 400, { error: "invalid JSON body" });

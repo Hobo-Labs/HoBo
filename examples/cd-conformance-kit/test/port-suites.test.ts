@@ -1,5 +1,3 @@
-// The nine @hobo/cd port suites: each passes its reference
-// adapter, and each mutant is caught by the assertion that names its breach.
 import {
 	ARTIFACT_STORE_ASSERTIONS,
 	ARTIFACT_VERIFIER_ASSERTIONS,

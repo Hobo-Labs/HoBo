@@ -1,15 +1,3 @@
-/**
- * `.gitmodules` is read the way git reads it, and anything git could read
- * differently from the script is refused before any network call: two
- * sections that name the same path (git would use one of them, not
- * necessarily the one the script compared), and a value carrying a line break
- * or another control character (escapes such as `\n` are valid there, and
- * could make a line-based reader see a section that does not exist).
- *
- * The URLs are https on hosts that do not resolve, and HOBO_PINS_ALLOW_LOCAL
- * is off, so the real allow-list applies and any contact would show up as an
- * attempt to reach `evil.invalid`.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -31,7 +19,6 @@ function section(name: string, url: string): string {
 	return `[submodule "${name}"]\n\tpath = external/lib\n\turl = ${url}\n`;
 }
 
-/** A work tree whose manifest names GOOD and whose .gitmodules is `modules`. */
 function withModules(modules: string): string {
 	const dir = scratch("gitmodules");
 	const remote = makeRemote(dir);

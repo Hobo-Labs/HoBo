@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-/**
- * Wait until no other isolated job container runs. Docker headroom is left to
- * `build-deps.sh`, which prunes the builder cache and old deps images before
- * it refuses.
- */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { hostname } from "node:os";
@@ -20,9 +15,7 @@ import {
 const exec = promisify(execFile);
 
 const POLL_MS = Number(process.env.HOBO_CI_DEPS_BUILD_WAIT_POLL_MS ?? 10_000);
-// Callers run in 20-minute jobs; the build after the wait needs most of that.
 const MAX_WAIT_MS = Number(process.env.HOBO_CI_DEPS_BUILD_WAIT_MS ?? 300_000);
-// How long a caller that cannot identify its own container waits on job containers.
 const UNKNOWN_SELF_MAX_WAIT_MS = Number(
 	process.env.HOBO_CI_DEPS_BUILD_WAIT_UNKNOWN_SELF_MS ?? 120_000,
 );

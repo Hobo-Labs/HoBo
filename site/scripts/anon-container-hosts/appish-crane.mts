@@ -1,8 +1,3 @@
-/**
- * APPISH — docker-push-to-URL competitor (appi.sh).
- * Free slots: docs require dashboard push-id (login). Crane anon push historically
- * fails with BLOB_UPLOAD_INVALID. Adapter is one-shot + fail-closed — never loops.
- */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 
@@ -16,7 +11,6 @@ export const APPISH_REGISTRY = "push.to.appi.sh";
 export const APPISH_TIMEOUT_MS = 120_000;
 
 export type ProvisionAppishInput = AnonContainerDeployInput & {
-	/** Public OCI image to copy (linux/amd64). */
 	readonly sourceImage: string;
 	readonly craneBin?: string;
 };

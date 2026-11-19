@@ -1,13 +1,3 @@
-/**
- * Asset pins of release archives, the library half: the pin records the
- * archive's sha256 and the one member to run, and `extractMember` reads that
- * member, and only that member, out of a verified archive. The verbs over
- * such a pin are `pins-archive-verbs.test.ts`.
- *
- * Archives are built in memory (support/tar-support.ts) so the hostile ones
- * can be: a link where the binary should be, the binary twice, a pax header
- * that renames it, a corrupt header, a truncated stream.
- */
 import assert from "node:assert/strict";
 import fs, {
 	closeSync,
@@ -181,15 +171,10 @@ describe("writeAll", () => {
 });
 
 describe("a failure writing the member", () => {
-	/** An error shaped like node's own file system errors: `code` and a message that starts with it. */
 	function injected(code: string, call: string): Error {
 		return Object.assign(new Error(`${code}: injected, ${call}`), { code });
 	}
 
-	/**
-	 * Make node:fs's `name` throw `code` for any descriptor but stdin, stdout
-	 * and stderr until the test ends; the reader's named import sees it too.
-	 */
 	function inject(
 		t: TestContext,
 		name: "writeSync" | "fsyncSync",
@@ -223,7 +208,6 @@ describe("a failure writing the member", () => {
 		const dir = scratch("rename-failed");
 		const path = join(dir, "a.tar.gz");
 		writeFileSync(path, ARCHIVE);
-		// A directory with something in it where the entry goes: rename(2) cannot replace it.
 		const dest = join(dir, "out");
 		mkdirSync(join(dest, "x"), { recursive: true });
 		await assert.rejects(
@@ -256,7 +240,6 @@ describe("a failure writing the member", () => {
 		const path = join(dir, "a.tar.gz");
 		writeFileSync(path, ARCHIVE);
 		inject(t, "writeSync", "ENOSPC");
-		// As NFS reports a deferred write error: the descriptor is closed, and close says EIO.
 		const realClose = fs.closeSync;
 		t.mock.method(fs, "closeSync", (fd: number) => {
 			realClose(fd);
@@ -319,7 +302,6 @@ describe("a failure writing the member", () => {
 		const dir = scratch("interrupted");
 		const path = join(dir, "a.tar.gz");
 		writeFileSync(path, ARCHIVE);
-		// A listener of the test's own keeps the guard from ending the process.
 		const stay = (): void => undefined;
 		process.on("SIGTERM", stay);
 		t.after(() => {
@@ -366,13 +348,11 @@ describe("a failure writing the member", () => {
 		const path = join(dir, "a.tar.gz");
 		writeFileSync(path, ARCHIVE);
 		const dest = join(dir, "out");
-		// An embedder's own listener: the guard cleans up and does not end the process.
 		const stay = (): void => undefined;
 		process.on("SIGTERM", stay);
 		t.after(() => {
 			process.off("SIGTERM", stay);
 		});
-		// The guard's removal of the partial file fails, and so does the failure path's.
 		const realRm = fs.rmSync;
 		t.mock.method(fs, "rmSync", (target: string, options?: fs.RmOptions) => {
 			if (String(target).endsWith(".partial")) {
@@ -380,7 +360,6 @@ describe("a failure writing the member", () => {
 			}
 			return realRm(target, options);
 		});
-		// SIGTERM arrives during the read; every write still succeeds.
 		const realWrite = fs.writeSync;
 		let signalled = false;
 		t.mock.method(

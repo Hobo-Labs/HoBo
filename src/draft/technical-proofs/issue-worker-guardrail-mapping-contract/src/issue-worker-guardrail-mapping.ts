@@ -117,7 +117,6 @@ export function assertIssueWorkerGuardrailMapping(docText: string): IssueWorkerG
 
 function deepFreeze<T>(value: T): T {
   if (value && isJsonObject(value)) {
-    // SAFETY: `for (const child of Object.values(value as JsonObject)) {` is required at this I/O or test boundary.
     for (const child of Object.values(value as JsonObject)) {
       deepFreeze(child);
     }

@@ -1,6 +1,3 @@
-/**
- * End-to-end scenarios for ADR-0138 proof (ports only — no Kafka/Dapr app imports).
- */
 
 import {
 	type Messaging,
@@ -24,7 +21,6 @@ import {
 	createInMemoryDaprClient,
 } from "@hobo/runtime-dapr";
 import { isJsonNumber } from "./json.js";
-
 
 export const OrderActor = defineActor<{ total: number }>({
 	name: "Order",
@@ -51,7 +47,6 @@ export async function runNativeKafkaPath(tenantId = "acme"): Promise<{
 	events: readonly string[];
 	fidelity: "simulated" | "live";
 }> {
-	// Live client code path via harness transport (same methods as real broker).
 	const bus = createKafkaMessaging({
 		cluster: localRedpandaCluster(tenantId),
 		transport: createInMemoryKafkaTransport(),
@@ -59,20 +54,16 @@ export async function runNativeKafkaPath(tenantId = "acme"): Promise<{
 	const topic = parseTopicName("orders");
 	await bus.ensureTopic({
 		name: topic,
-		// SAFETY: `tenantId: tenantId as TenantId,` is required at this I/O or test boundary.
 		tenantId: tenantId as TenantId,
 		delivery: "exactly-once",
 	});
 	await bus.publish(topic, { orderId: "o1", amount: 10 }, { key: "o1" });
 	await bus.publish(topic, { orderId: "o2", amount: 5 }, { key: "o2" });
-	// SAFETY: `const batch = await bus.consume(topic, "workers" as never, {` is required at this I/O or test boundary.
 	const batch = await bus.consume(topic, "workers" as never, {
 		maxMessages: 10,
 	});
 	for (const m of batch) bus.ack(m.messageId, m.leaseId);
-	// SAFETY: `if (typeof (bus as { flush?: () => Promise<void> }).flush === "function") {` is required at this I/O or test boundary.
 	if ((bus as { flush?: () => Promise<void> }).flush instanceof Function) {
-		// SAFETY: `await (bus as { flush: () => Promise<void> }).flush();` is required at this I/O or test boundary.
 		await (bus as { flush: () => Promise<void> }).flush();
 	}
 	return {
@@ -80,7 +71,6 @@ export async function runNativeKafkaPath(tenantId = "acme"): Promise<{
 		published: 2,
 		consumed: batch.length,
 		events: bus.events().map((e) => e.type),
-		// SAFETY: `fidelity: (bus as { fidelity: "simulated" | "live" }).fidelity,` is required at this I/O or test boundary.
 		fidelity: (bus as { fidelity: "simulated" | "live" }).fidelity,
 	};
 }
@@ -101,7 +91,6 @@ export async function runDaprKafkaPath(tenantId = "acme"): Promise<{
 	const yaml = bundle.generateKafkaPubsubYaml("fromBinding:kafka-bootstrap");
 	const topic = parseTopicName("orders");
 	await bundle.messaging.publish(topic, { orderId: "d1" });
-	// SAFETY: `const batch = await bundle.messaging.consume(topic, "g" as never);` is required at this I/O or test boundary.
 	const batch = await bundle.messaging.consume(topic, "g" as never);
 	return {
 		yaml,
@@ -147,11 +136,6 @@ export function createProofHosts(tenantId = "acme") {
 	const dapr = createDaprActorHost({
 		config: createDaprRuntimeHost({ tenantId, campId: "proof" }).config,
 	});
-	// Minimal native-compatible host reusing dapr host structure is wrong —
-	// use a second dapr host instance labeled via placement only when dual.
-	// Prefer true native-shaped host from runtime-local when available; for the
-	// proof we construct a second independent DaprActorHost and also a thin
-	// native-compatible wrapper for the default placement path.
 	const native: ActorHost = {
 		acquire(key, req) {
 			return dapr.acquire(`native/${key}`, req);

@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for progressive-delivery-harness.feature.
- *
- * Drives the epic's real reference module (src/harness-reference.ts) —
- * runHarnessScenario over the committed progressive-delivery fixture — and
- * asserts the rollout, SLO, experiment, and compensation outcomes it
- * produces. Flag, traffic, SLO, and policy providers stay mocked.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -22,8 +14,6 @@ function fixture(): Promise<Fixture> {
 	fixturePromise ??= loadScenarioFixture();
 	return fixturePromise;
 }
-
-// --- Scenario: Healthy canary promotes checkout-v2 -------------------------
 
 let healthyOutcome: Outcome | undefined;
 
@@ -60,8 +50,6 @@ Then(
 	},
 );
 
-// --- Scenario: SLO burn rolls the Harness canary back ----------------------
-
 let burnOutcome: Outcome | undefined;
 
 Given("the checkout-v2 Harness fixture with an SLO burn snapshot", async () => {
@@ -88,8 +76,6 @@ Then(
 		assert.ok(burnOutcome?.auditEvents.includes("rollout.RolledBack"));
 	},
 );
-
-// --- Scenario: Stale rulesets and underpowered experiments -----------------
 
 let staleOutcome: Outcome | undefined;
 let underpoweredOutcome: Outcome | undefined;
@@ -129,8 +115,6 @@ Then("the underpowered Harness experiment refuses to conclude", () => {
 	assert.equal(underpoweredOutcome?.experiment.verdict, "do-not-conclude");
 	assert.equal(underpoweredOutcome?.experiment.reason, "underpowered");
 });
-
-// --- Scenario: Stuck traffic and failed compensation escalate --------------
 
 let stuckOutcome: Outcome | undefined;
 let compensationOutcome: Outcome | undefined;

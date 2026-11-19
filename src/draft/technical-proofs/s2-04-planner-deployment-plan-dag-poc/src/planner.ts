@@ -22,7 +22,6 @@ import { plan as planSkeleton } from "../../planner-dag-skeleton-contract/src/pl
 import { createResourceCatalog } from "../../resource-definition-driver-contract/src/resource-definition-driver-contract.js";
 import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
 
-
 export const PLANNER_VERSION = "hobo.planner/v1";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -152,10 +151,8 @@ export function createUnsatisfiableRequireRegistry() {
 
 export function planManifest(manifest: JsonObject, config: JsonObject = {}, registry: JsonObject = {}) {
   const skeleton = planSkeleton(manifest, config, registry);
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const catalog = (registry.catalog as { snapshot?: () => JsonValue | void }) ?? registry;
   const capabilitiesByProvider = registry.capabilitiesByProvider ?? {};
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const objective = (config.objective as string | undefined) ?? "cost";
   const deploymentPlan = skeleton.deploymentPlan;
   const matchEvents: ReturnType<typeof capabilityDecisionToMatchEvent>[] = [];
@@ -268,7 +265,6 @@ export function canonicalPlanJson(plan: JsonObject) {
 }
 
 function manifestResourceFor(manifest: JsonObject, resourceId: string) {
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const resources = manifest.resources as Record<string, JsonObject> | undefined;
   const resource = resources?.[resourceId];
   if (!resource) {
@@ -282,28 +278,22 @@ function buildResourceContext(
   resourcePlan: { id: string; context: Record<string, string> },
   manifestResource: JsonObject,
 ) {
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const baseContext = (config.context as Record<string, string> | undefined) ?? {};
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const planner = (manifestResource.planner as JsonObject | undefined) ?? {};
 
   return {
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     deploymentId: (config.deploymentId as string | undefined) ?? `deploy-${baseContext.app ?? "app"}-${baseContext.env ?? "dev"}`,
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     resourceType: (planner.resourceType as string | undefined) ?? resourcePlan.context.resourceType,
     envType: baseContext.envType ?? resourcePlan.context.envType,
     env: baseContext.env ?? resourcePlan.context.env,
     app: baseContext.app ?? resourcePlan.context.app,
     tenant: baseContext.tenant ?? resourcePlan.context.tenant,
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     resourceClass: (planner.resourceClass as string | undefined) ?? resourcePlan.context.resourceClass ?? "standard",
     resourceId: resourcePlan.id,
   };
 }
 
 function plannerPortRequests(manifestResource: JsonObject, resourceId: string) {
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const planner = manifestResource.planner as JsonObject | undefined;
   const explicit = planner?.capabilityRequests;
   if (Array.isArray(explicit) && explicit.length > 0) {
@@ -319,13 +309,10 @@ function plannerPortRequests(manifestResource: JsonObject, resourceId: string) {
 }
 
 function normalizeCatalogHash(config: JsonObject, registry: JsonObject) {
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const catalog = registry.catalog as { snapshot?: () => { contentHash?: string } } | undefined;
   const value =
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     (config.catalogContentHash as string | undefined) ??
     (catalog?.snapshot instanceof Function ? catalog.snapshot().contentHash : undefined) ??
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     (registry.contentHash as string | undefined);
 
   if (!isJsonString(value) || value.length === 0) {

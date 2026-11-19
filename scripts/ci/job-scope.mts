@@ -1,21 +1,3 @@
-/**
- * Decide whether a PR job whose whole subject is a few entry files can skip its
- * install and work because the diff cannot reach them.
- *
- * The job runs when the diff touches a workspace-wide input (see
- * affected-lanes.mts), CI configuration, the sibling pins or submodules, the
- * runner image, or anything the entry files reach: every file in their
- * relative-import closure (`new URL("./x", import.meta.url)` included) and,
- * for each workspace package that closure enters or imports by name, the whole
- * package directory plus its workspace dependencies. Anything the walk cannot
- * follow (a computed `import()`, an unresolvable relative import, a missing
- * entry) runs the job.
- *
- * Node builtins only: it runs before `pnpm install`, which is what it decides.
- *
- * CLI: `git diff --name-only HEAD^1 HEAD | node --experimental-strip-types scripts/ci/job-scope.mts <entry>...`
- * prints `run=true` or `run=false` (for $GITHUB_OUTPUT) and the reason on stderr.
- */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { posix } from "node:path";
 import process from "node:process";
@@ -32,7 +14,6 @@ export type Workspace = Readonly<{
 	dependencies: readonly string[];
 }>;
 
-/** Repository access, injectable so tests can describe a tree in memory. */
 export type Tree = Readonly<{
 	read: (path: string) => string | undefined;
 	isFile: (path: string) => boolean;
@@ -48,7 +29,6 @@ const ALWAYS = [
 	/^vitest\.config\.[^/]+$/,
 	/^scripts\/ci\/(job-scope|affected-lanes)\.mts$/,
 	/^scripts\/lib\/read-stdin\.mts$/,
-	// The runner image the jobs and the cold dev loop's container run in.
 	/^packages\/ci-gh-actions\/deploy\/ci-runner\//,
 	/^scripts\/(lib\/ci-runner-contract|ci-runner-preflight)\.mts$/,
 ];
@@ -81,10 +61,6 @@ function packageName(specifier: string): string {
 		: (parts[0] ?? "");
 }
 
-/**
- * Every repository path the entry files reach, as exact files and package
- * directories, or the reason the walk had to give up.
- */
 export function reach(
 	entries: readonly string[],
 	tree: Tree,
@@ -132,8 +108,6 @@ export function reach(
 					return { unscoped: `${file} imports outside the repository` };
 				const target = candidates(base).find((path) => tree.isFile(path));
 				if (target) queue.push(target);
-				// Inside its own package the target is covered by the package
-				// directory, even when it is generated or only quoted in a template.
 				else if (!owner || !base.startsWith(`${owner.dir}/`))
 					return { unscoped: `cannot resolve ${specifier} from ${file}` };
 				continue;
@@ -155,8 +129,6 @@ export function jobScope(
 		.filter((path) => path !== "");
 	if (changed.length === 0)
 		return { run: true, reason: "empty diff (base unresolved?)" };
-	// A path in any workspace package is judged by the walk, not by
-	// affected-lanes.
 	const outside = changed.filter(
 		(path) => !tree.workspaces.some((ws) => path.startsWith(`${ws.dir}/`)),
 	);
@@ -226,7 +198,6 @@ function directories(path: string): string[] {
 	}
 }
 
-/** Workspace packages named by `pnpm-workspace.yaml` (literal and `*` segments). */
 export function readWorkspaces(): Workspace[] {
 	const yaml = readFileSync("pnpm-workspace.yaml", "utf8");
 	const block = /^packages:\n((?:[ \t]+-[^\n]*\n)+)/m.exec(yaml)?.[1] ?? "";

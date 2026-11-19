@@ -1,29 +1,3 @@
-/**
- * Bounds the Turbo local cache that actions/cache saves, and says whether this
- * job added anything worth saving.
- *
- * Usage: node --experimental-strip-types scripts/ci/turbo-cache-prune.mts [repoRoot]
- *
- * Every entry a `.turbo/runs/*.json` summary from this job names (hit or miss)
- * is kept and stamped as used now. Any other restored entry is kept while it
- * was used within `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7) and dropped after:
- * an affected-only main run touches a handful of packages, and keeping only
- * those shrank main's cache until the next run rebuilt everything.
- *
- * With `GITHUB_OUTPUT` set it writes `save=false` when no task missed the cache
- * and left an entry, so the workflow skips the save step (and the action
- * download it starts with) when the restored cache already holds every result.
- * With no summaries it deletes nothing and has nothing to save; with an
- * unreadable one it deletes nothing and saves.
- *
- * On the box the cache is `TURBO_CACHE_DIR`, a host directory every job
- * shares: the same 7-day rule bounds it, a file another job's prune removed
- * mid-listing is skipped, and a read-only cache (`TURBO_CACHE=local:r`) is left
- * alone.
- *
- * Node builtins only: the step runs with `if: always()`, also on a job whose
- * `pnpm install` failed.
- */
 import {
 	appendFileSync,
 	readdirSync,
@@ -62,7 +36,6 @@ function isString(value: Json | undefined): value is string {
 	return tag(value) === "[object String]";
 }
 
-/** The tasks of a `.turbo/runs/*.json` summary; `undefined` when it is not one. */
 export function parseRunTasks(json: string): RunTask[] | undefined {
 	let summary: Json;
 	try {
@@ -84,7 +57,6 @@ export function parseRunTasks(json: string): RunTask[] | undefined {
 	return parsed;
 }
 
-/** `<hash>.tar.zst`, `<hash>-meta.json`, `<hash>-manifest.json` → `<hash>`. */
 export function entryHash(fileName: string): string {
 	return fileName.split(/[.-]/u, 1)[0] ?? fileName;
 }
@@ -97,10 +69,6 @@ export type PrunePlan = Readonly<{
 	save: boolean;
 }>;
 
-/**
- * Which files to stamp as used, which to delete, and whether the result is
- * worth saving. `tasks` is every task of every summary this job wrote.
- */
 export function planPrune(
 	files: readonly CacheFile[],
 	tasks: readonly RunTask[],
@@ -135,10 +103,6 @@ function listDir(dir: string): string[] {
 	}
 }
 
-/**
- * The cache Turbo wrote to: `TURBO_CACHE_DIR` when set (the box's shared host
- * directory), else `<root>/.turbo/cache`.
- */
 export function cacheDirOf(
 	root: string,
 	env: Readonly<Record<string, string | undefined>>,
@@ -147,7 +111,6 @@ export function cacheDirOf(
 	return dir ? dir : join(root, ".turbo", "cache");
 }
 
-/** `TURBO_CACHE=local:r` (a caller asked for a read-only cache): touch nothing. */
 export function localReadOnly(
 	env: Readonly<Record<string, string | undefined>>,
 ): boolean {
@@ -156,7 +119,6 @@ export function localReadOnly(
 		.some((part) => part.trim() === "local:r");
 }
 
-/** `undefined` when another job's prune deleted the file first. */
 function mtimeOf(path: string): number | undefined {
 	try {
 		return statSync(path).mtimeMs;
@@ -178,7 +140,6 @@ function output(save: boolean): void {
 function main(root: string): void {
 	const runsDir = join(root, ".turbo", "runs");
 	const cacheDir = cacheDirOf(root, process.env);
-	// The box keeps a shared cache on the host; there is nothing to upload.
 	const shared = process.env.HOBO_TURBO_CACHE_SHARED === "1";
 	const save = (worth: boolean) => output(worth && !shared);
 	if (localReadOnly(process.env)) {
@@ -191,7 +152,6 @@ function main(root: string): void {
 		if (!file.endsWith(".json")) continue;
 		const parsed = parseRunTasks(readFileSync(join(runsDir, file), "utf8"));
 		if (!parsed) {
-			// A run whose hashes are unknown could have used any entry.
 			console.log(
 				`turbo-cache-prune: unreadable ${file}; cache left as restored`,
 			);
@@ -212,7 +172,6 @@ function main(root: string): void {
 		try {
 			utimesSync(join(cacheDir, file), stamp, stamp);
 		} catch {
-			// Deleted by another job's prune since the listing; nothing to stamp.
 		}
 	}
 	for (const file of plan.drop) rmSync(join(cacheDir, file), { force: true });

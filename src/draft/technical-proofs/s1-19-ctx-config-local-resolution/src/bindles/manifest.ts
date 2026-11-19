@@ -2,7 +2,6 @@ import type { ConfigContract, ConfigEntry, ConfigManifest, ConfigManifestEntry }
 import { CONFIG_SCHEMA_VERSION } from "./types.js";
 import { isJsonObject, type JsonValue, type JsonObject } from "../json.js";
 
-
 export function emitConfigManifest(contract: ConfigContract): ConfigManifest {
   if (contract.schema !== CONFIG_SCHEMA_VERSION) {
     throw new TypeError(`expected ${CONFIG_SCHEMA_VERSION} contract`);
@@ -24,7 +23,6 @@ export function serializeConfigManifest(manifest: ConfigManifest): string {
 }
 
 export function scanSerializedManifestForValues(manifest: JsonValue, values: string[]): string[] {
-  // SAFETY: assertion to `const serialized = serializeConfigManifest(manifest as ConfigManifest);` is required at this boundary.
   const serialized = serializeConfigManifest(manifest as ConfigManifest);
   return values.filter((value) => value && serialized.includes(String(value)));
 }
@@ -58,7 +56,6 @@ function sortObject(value: JsonValue): JsonValue {
     return value;
   }
   return Object.fromEntries(
-    // SAFETY: assertion to `Object.entries(value as JsonObject)` is required at this boundary.
     Object.entries(value as JsonObject)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, nested]) => [key, sortObject(nested)]),

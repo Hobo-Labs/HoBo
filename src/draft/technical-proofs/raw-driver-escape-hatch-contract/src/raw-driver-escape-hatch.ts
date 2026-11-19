@@ -101,7 +101,6 @@ export function defineProjectionSink<TDriver extends RawDriverName = RawDriverNa
 
   return Object.freeze({
     name: assertString(input.name, "sink.name"),
-    // SAFETY: assertion to `driver: assertOneOf(input.driver, RAW_DRIVER_NAMES, "sink.driver") as TDriver,` is required at this boundary.
     driver: assertOneOf(input.driver, RAW_DRIVER_NAMES, "sink.driver") as TDriver,
     rawAccess: Boolean(input.rawAccess),
     source: assertOneOf(input.source, SINK_SOURCES, "sink.source"),
@@ -240,10 +239,8 @@ function createDriver(driver: RawDriverName): RawDriverMap[RawDriverName] {
 }
 
 function rawOperation<T>(input: T): RawDriverOperation {
-  // SAFETY: raw operations are stored as a JSON bag at this driver edge.
   const bag: JsonBag = input as never;
   const candidate: JsonBag = { ...bag };
-  // SAFETY: assertion to `return deepFreeze({` is required at this boundary.
   return deepFreeze({
     ...candidate,
     driver: assertOneOf(candidate.driver, RAW_DRIVER_NAMES, "operation.driver"),
@@ -258,7 +255,6 @@ function normalizeOperation<T>(operation: T, expectedDriver: RawDriverName): Raw
   if (!operation) {
     throw new TypeError("raw callback must return a raw driver operation");
   }
-  // SAFETY: callback results are treated as a JSON bag at this driver edge.
   const candidate: JsonBag = operation as never;
   if (candidate.driver !== expectedDriver) {
     throw new TypeError(`raw operation driver ${candidate.driver ?? "unknown"} does not match ${expectedDriver}`);
@@ -267,7 +263,6 @@ function normalizeOperation<T>(operation: T, expectedDriver: RawDriverName): Raw
 }
 
 function rawManifestEdge(sink: ProjectionSinkDefinition, operation: RawDriverOperation): RawManifestEdge {
-  // SAFETY: assertion to `return Object.freeze({` is required at this boundary.
   return Object.freeze({
     code: "RAW_DRIVER_ESCAPE_HATCH",
     driver: sink.driver,
@@ -282,9 +277,7 @@ function normalizeRawEdge<T>(edge: T): RawManifestEdge {
     throw new TypeError("raw edge must be an object");
   }
 
-  // SAFETY: assertion to `const candidate = edge as JsonObject;` is required at this boundary.
   const candidate = edge as JsonObject;
-  // SAFETY: assertion to `return Object.freeze({` is required at this boundary.
   return Object.freeze({
     code: "RAW_DRIVER_ESCAPE_HATCH",
     driver: assertOneOf(candidate.driver, RAW_DRIVER_NAMES, "edge.driver"),
@@ -299,11 +292,9 @@ function normalizeRawEdge<T>(edge: T): RawManifestEdge {
 }
 
 function planWarningsForEdges(edges: RawManifestEdge[]): PlanWarning[] {
-  // SAFETY: assertion to `return Object.freeze(` is required at this boundary.
   return Object.freeze(
     edges.map(
       (edge) =>
-        // SAFETY: assertion to `Object.freeze({` is required at this boundary.
         Object.freeze({
           code: "RAW_DRIVER_PORTABILITY_DEBT",
           driver: edge.driver,
@@ -320,12 +311,10 @@ function isolationWarningsFor(
   operation: RawDriverOperation,
 ): IsolationWarning[] {
   if (!sink.pooledMultiTenant || operation.access !== "read") {
-    // SAFETY: assertion to `return Object.freeze([]) as unknown as IsolationWarning[];` is required at this boundary.
     const empty: IsolationWarning[] = Object.freeze([]) as never;
     return empty;
   }
   if (!operation.tenantScope) {
-    // SAFETY: assertion to `return Object.freeze([` is required at this boundary.
     return Object.freeze([
       Object.freeze({
         code: "RAW_TENANT_SCOPE_UNPROVEN",
@@ -335,7 +324,6 @@ function isolationWarningsFor(
     ]) as IsolationWarning[];
   }
   if (context.tenantId && operation.tenantScope !== context.tenantId) {
-    // SAFETY: assertion to `return Object.freeze([` is required at this boundary.
     return Object.freeze([
       Object.freeze({
         code: "RAW_TENANT_SCOPE_MISMATCH",
@@ -347,7 +335,6 @@ function isolationWarningsFor(
     ]) as IsolationWarning[];
   }
 
-  // SAFETY: frozen empty isolation list is IsolationWarning[] at this boundary.
   const empty: IsolationWarning[] = Object.freeze([]) as never;
   return empty;
 }
@@ -367,7 +354,6 @@ function normalizeContext(context: JsonValue): { tenantId?: string } {
   if (!context || !isJsonObject(context)) {
     return Object.freeze({});
   }
-  // SAFETY: assertion to `const candidate = context as JsonObject;` is required at this boundary.
   const candidate = context as JsonObject;
   return Object.freeze({
     ...(candidate.tenantId === undefined ? undefined : { tenantId: assertString(candidate.tenantId, "context.tenantId") }),
@@ -382,11 +368,9 @@ function assertString(value: JsonValue, label: string): string {
 }
 
 function assertOneOf<T>(value: JsonValue, allowed: Set<T>, label: string): T {
-  // SAFETY: assertion to `if (!allowed.has(value as T)) {` is required at this boundary.
   if (!allowed.has(value as T)) {
     throw new TypeError(`${label} must be one of: ${[...allowed].join(", ")}`);
   }
-  // SAFETY: assertion to `return value as T;` is required at this boundary.
   return value as T;
 }
 
@@ -395,14 +379,12 @@ function deepFreeze<T>(value: T): T {
     for (const entry of value) {
       deepFreeze(entry);
     }
-    // SAFETY: assertion to `return Object.freeze(value) as T;` is required at this boundary.
     return Object.freeze(value) as T;
   }
   if (value && isJsonObject(value)) {
     for (const entry of Object.values(value)) {
       deepFreeze(entry);
     }
-    // SAFETY: assertion to `return Object.freeze(value) as T;` is required at this boundary.
     return Object.freeze(value) as T;
   }
   return value;

@@ -1,4 +1,3 @@
-/** Nerdbank.GitVersioning helpers for the fixed alpha release train. */
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";

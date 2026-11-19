@@ -1,30 +1,15 @@
-/**
- * Gzip-compressed ustar archives built in memory, so the archive tests can
- * make the hostile ones (a link where the binary should be, a pax header, a
- * member twice, a bad checksum) that no well-behaved `tar` writes.
- */
 import { gzipSync } from "node:zlib";
 
 export interface TarEntry {
 	readonly name: string;
 	readonly body?: Uint8Array | string;
-	/** ustar type flag: "0" file (default), "\0" old file, "2" symlink, "5" directory, "x" pax. */
 	readonly type?: string;
 	readonly linkname?: string;
-	/** Corrupt the header checksum. */
 	readonly badChecksum?: boolean;
-	/** The size the header claims, when it is not the body's length (no data follows then). */
 	readonly claimedSize?: number;
-	/**
-	 * The eight bytes at offset 257, magic then version: POSIX ustar's
-	 * `ustar\0` `00` unless given, GNU's `ustar  \0`, or `""` for a v7 header.
-	 */
 	readonly magic?: string;
-	/** The ustar prefix field (offset 345), written as given; `name` is then not split. */
 	readonly prefix?: string;
-	/** Header bytes written over the usual ones, as `[offset, latin1 text]`, before the checksum is summed. */
 	readonly raw?: readonly (readonly [number, string])[];
-	/** The checksum field's eight bytes for a header whose sum is `sum` (default: six octal digits, NUL, space). */
 	readonly checksum?: (sum: number) => string;
 }
 
@@ -70,7 +55,6 @@ function header(entry: TarEntry, size: number): Buffer {
 	return block;
 }
 
-/** The uncompressed ustar stream of `entries`: each header, then its data, padded. */
 export function tarStream(entries: readonly TarEntry[]): Buffer {
 	const parts: Buffer[] = [];
 	for (const entry of entries) {
@@ -85,11 +69,6 @@ export function tarStream(entries: readonly TarEntry[]): Buffer {
 	return Buffer.concat(parts);
 }
 
-/**
- * The archive bytes: entries in order (an entry with a body carries that data,
- * whatever its type), two zero blocks, then `after` (entries past the end, which
- * `tar` never reads), gzip with no name or time.
- */
 export function tarGz(
 	entries: readonly TarEntry[],
 	after: readonly TarEntry[] = [],
@@ -100,7 +79,6 @@ export function tarGz(
 	return gzipSync(Buffer.concat(parts));
 }
 
-/** A pax extended header body that renames the next entry. */
 export function paxPath(path: string): string {
 	const record = ` path=${path}\n`;
 	let length = record.length + 2;

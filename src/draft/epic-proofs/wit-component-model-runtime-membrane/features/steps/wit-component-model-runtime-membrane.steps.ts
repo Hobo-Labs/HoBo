@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for wit-component-model-runtime-membrane.feature.
- *
- * Drives the epic's real reference service (services/wit-runtime-reference.ts)
- * scenario runners over the committed fixture — runtime-local checkout,
- * cross-host membrane, SDK conformance, and host upgrade — plus the pact
- * boundary verification. All boundaries mocked; no live hosts.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -32,8 +24,6 @@ function eventTypes(run: MembraneRun): string[] {
 function failureCodes(run: MembraneRun): string[] {
   return run.failures.map((failure: { code: string }) => failure.code);
 }
-
-// --- Scenario: Runtime-local checkout records durable effects ----------------
 
 Given("a Bindle importing pinned WIT runtime and capability ports", async () => {
   world.scenarioId = "runtimeLocalCheckout";
@@ -75,8 +65,6 @@ Then("the membrane scenario makes no Yard data-path call", () => {
   );
 });
 
-// --- Scenario: Cross-host membrane refuses unsafe links ----------------------
-
 Given("caller and provider components negotiating WIT and wRPC versions", () => {
   world.scenarioId = "crossHostMembrane";
 });
@@ -115,8 +103,6 @@ Then("the cross-host link recovers only through the lattice's linked-only route"
   assert.equal(crossHostCall.detail.route, "linked-only");
 });
 
-// --- Scenario: SDK parity and websocket fan-out stay deny-by-default ---------
-
 Given("a generated SDK idiom layer and a websocket extension over Streamer", () => {
   world.scenarioId = "sdkConformance";
 });
@@ -144,8 +130,6 @@ Then(
     );
   },
 );
-
-// --- Scenario: Host upgrades require conformance and upcaster evidence -------
 
 Given("a component-host manifest pin and a candidate host adapter", () => {
   world.scenarioId = "hostUpgrade";

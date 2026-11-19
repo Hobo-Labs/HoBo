@@ -1,22 +1,3 @@
-/**
- * A `.gitmodules` section renamed after the submodule was cloned. git keeps
- * using the existing clone (`modules/<old name>`, whose `core.worktree` is
- * this path), and so do the pins, for the same repository (a clone made for
- * another upstream is refused: `pins-module-origin.test.ts`): following every
- * printed fix in turn ends
- * with the uncommitted change, or the local commit, still there, and status
- * naming that work. Before, the second fix was `rm -rf <path> && git
- * submodule update --init`, and following it lost the change and left the
- * commit only in the orphaned module directory.
- *
- * No printed fix deletes a checkout: where the `.git` names a repository
- * that cannot be the submodule's, the fix moves the checkout aside
- * (`mv <path> <path>.kept`, or the first free `.kept.N`:
- * `pins-move-aside.test.ts`), so any work in it is kept; where it names a
- * module directory git made under another name, of the same repository, with
- * no `core.worktree` to say which path it was made for, the fix renames the
- * section to that name.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -38,7 +19,6 @@ function section(name: string, path: string, url: string): string {
 	return `[submodule "${name}"]\n\tpath = ${path}\n\turl = ${url}\n`;
 }
 
-/** A checkout set up the ordinary way, then `work` done in external/lib. */
 function setUp(work: "uncommitted" | "commit" | "none") {
 	const dir = scratch("renamed");
 	const remote = makeRemote(dir);
@@ -56,7 +36,6 @@ function setUp(work: "uncommitted" | "commit" | "none") {
 	return { dir, root, lib, url: remote.url, commit };
 }
 
-/** Status, then each printed `git config` or `mv` fix, run as printed, at most four times; answers every output. */
 function followFixes(root: string): string[] {
 	const said: string[] = [];
 	for (let step = 0; step < 4; step += 1) {

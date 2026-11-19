@@ -1,11 +1,3 @@
-/**
- * Runnable example for contracts-policy-governance. The draft-artifact gate EXECUTES this
- * with `node --import tsx` and diffs stdout against usage.expected.txt — keep both honest.
- *
- * Uses the same mocked boundary harness and Gatekeeper simulations the cucumber
- * steps drive (services/reference-architecture.ts): a governed deploy with
- * approval obligations, a deny-ceiling bypass attempt, and fail-closed policy loss.
- */
 import { strict as assert } from "node:assert";
 
 import {
@@ -16,7 +8,6 @@ import {
 	validateBoundaryCoverage,
 } from "../services/reference-architecture.ts";
 
-// 1) Compatible deploy: Gatekeeper allows with approval obligations + replayable evidence.
 const harness = createMockBoundaryHarness();
 assert.deepEqual(harness.networkCalls, []);
 const governed = await runGovernedDeploySimulation(harness);
@@ -29,7 +20,6 @@ console.log(
 	`governed deploy status=${governed.gatekeeper.status} policy=${governed.policyDecision.effect} replayMatches=${governed.conformanceReplay.matchesRecordedDecision}`,
 );
 
-// 2) Every declared governance boundary reported a mocked decision; no live calls.
 const coverage = validateBoundaryCoverage(governed.boundaryDecisions);
 assert.deepEqual(coverage, { ok: true, missing: [], extra: [] });
 assert.deepEqual(harness.networkCalls, []);
@@ -37,7 +27,6 @@ console.log(
 	`boundary coverage ok=${coverage.ok} missing=${coverage.missing.length} extra=${coverage.extra.length} liveCalls=${harness.networkCalls.length}`,
 );
 
-// 3) Mandatory governance cannot be bypassed: the yard deny ceiling blocks the deploy.
 const denyCeiling = await runDenyCeilingBypassSimulation(
 	createMockBoundaryHarness(),
 );
@@ -54,7 +43,6 @@ console.log(
 	`deny-ceiling bypass status=${denyCeiling.gatekeeper.status} bypassFlagged=${!denyCeiling.denyCeiling.ok}`,
 );
 
-// 4) Policy uncertainty fails closed: no policy decision means deny, never allow.
 const failClosed = await runFailClosedSimulation(
 	createMockBoundaryHarness({ policyProviderMode: "unavailable" }),
 );

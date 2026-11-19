@@ -77,7 +77,6 @@ describe("main-gate-plan install-free", () => {
 			mainWorkspaceParallelCap(readRunnerRouting(JSON.stringify(project))),
 			2,
 		);
-		// A cap the policy does not allow makes the whole policy invalid: the default.
 		for (const value of [0, 9, 2.5, "two"]) {
 			project.runnerRouting.mainWorkspaceParallelCap = value;
 			assert.equal(
@@ -111,7 +110,6 @@ describe("main-gate-plan install-free", () => {
 	});
 
 	it("runs plan-main-workspace-shards without resolving workspace node_modules", () => {
-		// The retired variable no longer reaches it (ADR-0181, R2).
 		const capped = plan({ MAIN_WORKSPACE_PARALLEL_CAP: "2" });
 		assert.equal(capped.status, 0, `${capped.stdout}\n${capped.stderr}`);
 		assert.match(capped.stderr, /parallelCap=4/u);

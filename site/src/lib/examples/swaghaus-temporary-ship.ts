@@ -6,8 +6,6 @@ import {
 	type JsonValue,
 } from "../json-inspect.js";
 
-/** Same-origin Convex swaghaus Temporary Accounts ship for Examples console. */
-
 export type SwaghausTemporaryShipResult = {
 	readonly exampleId: string;
 	readonly stationId: string;
@@ -37,10 +35,6 @@ function sameOriginCfTempBase(pageUrl?: string | URL, basePath = "/HoBo/"): stri
 	return `${page.origin}${prefix}/api/cf-temp`;
 }
 
-/**
- * Ship real swaghaus via Temporary Accounts API.
- * `root` is the Bindle convexApp(root) path — server deploys that tree.
- */
 export async function shipSwaghausViaTemporaryAccounts(input: {
 	readonly stationId: string;
 	readonly pageUrl?: string | URL;

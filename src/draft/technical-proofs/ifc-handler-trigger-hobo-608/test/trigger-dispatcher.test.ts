@@ -14,7 +14,6 @@ import {
 } from "../src/index.js";
 import { type JsonValue } from "../src/json.js";
 
-
 describe("HOBO-608 TriggerDispatcher", () => {
   it("dispatches all five trigger kinds and emits trigger.Fired events", async () => {
     const ports = createRuntimeLocalPorts();
@@ -58,7 +57,6 @@ describe("HOBO-608 TriggerDispatcher", () => {
 
     const manifest = compileHandlerManifest([app, orders, nightly, uploads, jobs]);
     const dispatcher = new TriggerDispatcher({
-      // SAFETY: assertion to `manifest: manifest as { schema: "hobo.manifest/v1"; triggerEdges: typeof manifes` is required at this boundary.
       manifest: manifest as { schema: "hobo.manifest/v1"; triggerEdges: typeof manifest.triggerEdges },
       ports,
       eventStore,

@@ -1,19 +1,3 @@
-/**
- * Which repository a submodule's `.git` may name.
- *
- * git puts a submodule's repository at `<superproject git dir>/modules/<name>`,
- * also when the superproject was cloned with `--separate-git-dir`, is a
- * linked worktree, or is itself a submodule; an older git, or a person, keeps
- * it in the path's own `.git` directory; a hand-made `git clone
- * --separate-git-dir` keeps it in a directory that serves no other work tree
- * (no core.worktree naming another directory: that decides git's top level,
- * which is checked first).
- * Those are used. A `.git` file naming anything else (another working
- * clone's `.git`, a linked worktree of another repository, some other
- * directory inside the superproject's git dir) is refused before any git
- * runs there, with the fix to clone it again. Before, status advised a
- * `stash` in it and fetch then detached the other clone.
- */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -45,7 +29,6 @@ interface Fixture {
 	readonly lib: string;
 }
 
-/** A checkout set up the ordinary way: external/lib at the pin, shas[1]. */
 function fixture(): Fixture {
 	const dir = scratch("gitdir");
 	const remote = makeRemote(dir);
@@ -54,7 +37,6 @@ function fixture(): Fixture {
 	return { dir, remote, work, lib: join(work, "external/lib") };
 }
 
-/** Everything a run could change in the repository at `gitDir`. */
 function repositoryState(gitDir: string) {
 	const index = join(gitDir, "index");
 	return {
@@ -79,7 +61,6 @@ function pointAt(lib: string, gitdir: string): void {
 
 interface Elsewhere {
 	readonly label: string;
-	/** Points external/lib/.git elsewhere; answers the git dir it names. */
 	readonly arrange: (setup: Fixture) => string;
 	readonly reason: RegExp;
 }
@@ -190,7 +171,6 @@ describe("a submodule .git that names another repository is refused", () => {
 
 interface Layout {
 	readonly label: string;
-	/** Rearranges external/lib; answers the checkout to run the pins in. */
 	readonly arrange: (setup: Fixture) => string;
 }
 

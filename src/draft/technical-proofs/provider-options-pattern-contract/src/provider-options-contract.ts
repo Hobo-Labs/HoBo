@@ -137,7 +137,6 @@ export function resolvedProviderOptions(resource: ManifestResource | undefined, 
 
 export function projectAgnosticResource(resource: ManifestResource): JsonValue {
   const { annotations: _annotations, portability: _portability, ...agnostic } = resource;
-  // SAFETY: `return sortKeys(agnostic as JsonObject);` is required at this I/O or test boundary.
   return sortKeys(agnostic as JsonObject);
 }
 
@@ -282,12 +281,10 @@ function isPlainObject(value: JsonValue): value is JsonObject {
 
 function sortKeys<T extends JsonValue>(value: T): T {
   if (Array.isArray(value)) {
-    // SAFETY: `return value.map((item) => sortKeys(item)) as T;` is required at this I/O or test boundary.
     return value.map((item) => sortKeys(item)) as T;
   }
   if (!isPlainObject(value)) {
     return value;
   }
-  // SAFETY: `return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortKeys(` is required at this I/O or test boundary.
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortKeys(value[key])])) as T;
 }

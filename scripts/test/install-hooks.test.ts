@@ -31,7 +31,6 @@ const env = {
 	GIT_CONFIG_NOSYSTEM: "1",
 };
 
-/** A repository with a .githooks directory, as the root `prepare` sees it. */
 function checkout(): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-install-hooks-"));
 	scratch.push(dir);
@@ -59,9 +58,6 @@ function hooksPath(repo: string): string {
 	}).stdout.trim();
 }
 
-// `prepare` and the session-start script read the same two opt-outs, as
-// booleans: any non-empty value used to skip, so CI=false and
-// HOBO_SKIP_HOOKS=0 left a checkout with no commit hook.
 describe("scripts/install-hooks.mts opt-outs", () => {
 	it("skips for HOBO_SKIP_HOOKS or CI set to 1, true, yes or on", () => {
 		for (const optOut of [

@@ -9,7 +9,6 @@ import {
 } from "./types.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export class BindReferenceError extends Error {
   readonly path: string;
 
@@ -149,7 +148,6 @@ export function addContainer(
   };
 
   handle.withVolume = (volumeName, target) => {
-    // SAFETY: assertion to `const volumes = (handle.annotations.volumes as unknown[] | undefined) ?? [];` is required at this boundary.
     const volumes = (handle.annotations.volumes as unknown[] | undefined) ?? [];
     volumes.push({ name: volumeName, target });
     handle.annotations.volumes = volumes;
@@ -172,14 +170,12 @@ export function addContainer(
     });
 
   handle.withArgs = (...args) => {
-    // SAFETY: assertion to `const flat = (handle.annotations.args as unknown[] | undefined) ?? [];` is required at this boundary.
     const flat = (handle.annotations.args as unknown[] | undefined) ?? [];
     handle.annotations.args = [...flat, ...args.flat()];
     return handle;
   };
 
   handle.withBindMount = (mountSource, target, readOnly = false) => {
-    // SAFETY: assertion to `const mounts = (handle.annotations.bindMounts as unknown[] | undefined) ?? [];` is required at this boundary.
     const mounts = (handle.annotations.bindMounts as unknown[] | undefined) ?? [];
     mounts.push({ source: mountSource, target, readOnly });
     handle.annotations.bindMounts = mounts;
@@ -349,7 +345,6 @@ function recordWait(
       "must reference a declared resource handle or id",
     );
   }
-  // SAFETY: assertion to `const waits = (handle.annotations[key] as unknown[] | undefined) ?? [];` is required at this boundary.
   const waits = (handle.annotations[key] as unknown[] | undefined) ?? [];
   waits.push({ to: target, until });
   handle.annotations[key] = waits;
@@ -466,7 +461,6 @@ function assertComponent(handle: JsonValue, path: string): asserts handle is Com
   if (
     !handle ||
     !isJsonObject(handle) ||
-    // SAFETY: assertion to `!["service", "container"].includes((handle as ComponentHandle).kind)` is required at this boundary.
     !["service", "container"].includes((handle as ComponentHandle).kind)
   ) {
     throw new BindReferenceError(path, "must be a service or container handle");

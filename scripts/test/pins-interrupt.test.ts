@@ -1,13 +1,3 @@
-/**
- * A download that is interrupted leaves nothing in the cache: the handlers are
- * armed before the first directory or file the fetch makes, they stay until
- * the verified file has been renamed into place, and they clean the partial
- * file and any directory the fetch made on SIGINT, SIGTERM and SIGHUP alike.
- *
- * The script runs as a child of the test and is signalled only once the held
- * server has shown that it is past the point being tested; nothing here waits
- * for a fixed time.
- */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -37,7 +27,6 @@ afterEach(async () => {
 	server = undefined;
 });
 
-/** A manifest whose one file is served from `path` of the running server. */
 function pinTo(root: string, origin: string, path: string): string {
 	const file = {
 		url: `${origin}${path}`,
@@ -52,7 +41,6 @@ function pinTo(root: string, origin: string, path: string): string {
 	return join(root, ".cache/siblings", DIGEST);
 }
 
-/** The partial file once it holds bytes: the write came after the handlers. */
 function partialWithBytes(dir: string): string | undefined {
 	if (!existsSync(dir)) return undefined;
 	const name = readdirSync(dir).find((entry) => entry.endsWith(".partial"));
@@ -88,8 +76,6 @@ describe("a download that is interrupted leaves nothing in the cache", () => {
 			const root = scratch("interrupt-wait");
 			const digestDir = pinTo(root, server.origin, "/hang");
 			const running = spawnBootstrap(root, ["--fetch", "mirror"]);
-			// The request is sent only after the handlers are armed and the
-			// directory exists, so the server having it is the handshake.
 			await server.requested("/hang");
 			assert.equal(existsSync(digestDir), true, "the fetch made its directory");
 			running.child.kill(signal);

@@ -16,7 +16,6 @@ describe("playwright headless-shell archive", () => {
 		const cacheDir = mkdtempSync(join(tmpdir(), "pw-cache-"));
 		const dest = cachedArchivePath(cacheDir, spec);
 		writeFileSync(dest, "not-a-real-zip");
-		// Wrong digest should throw on ensure without skip — seed correct digest with tiny file
 		const prior = process.env.HOBO_CI_SKIP_PLAYWRIGHT_DOWNLOAD;
 		process.env.HOBO_CI_SKIP_PLAYWRIGHT_DOWNLOAD = "1";
 		assert.throws(() =>

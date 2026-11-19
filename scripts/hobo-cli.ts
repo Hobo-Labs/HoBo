@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * Root `pnpm hobo …` entrypoint.
- *
- * Every doc used to say `pnpm --filter @hobo/hobo exec hobo …`, which can
- * never work: pnpm does not link a package's own bin into its own
- * node_modules/.bin, so `hobo` is not resolvable there. This wrapper is the
- * supported invocation. It also self-heals the two fresh-clone traps:
- *
- *   - packages/hobo has no dist/ yet → build it (and @hobo/adapter-hono,
- *     which the flagship examples import) once, then run.
- *   - external/ts-autocode submodule missing → say exactly how to fix it
- *     instead of failing with a cryptic TS2307 mid-build.
- *
- * Usage: pnpm hobo <verb> [...args]   e.g. pnpm hobo dev --cwd examples/hello-bindle
- */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -39,10 +24,6 @@ if (!existsSync(SUBMODULE_MARKER)) {
 
 if (!existsSync(HOBO_BIN)) {
 	console.error("hobo CLI not built yet — building @hobo/hobo (one-time)…");
-	// Prefer the installed turbo binary directly: this script already runs
-	// under `node --import tsx`, so node_modules exists. Going through
-	// `pnpm exec` would need a `pnpm` shim on PATH, which a corepack-only
-	// setup (no writable Node bin dir for `corepack enable`) does not have.
 	const turboBin = path.join(
 		REPO_ROOT,
 		"node_modules",

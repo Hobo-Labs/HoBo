@@ -1,17 +1,3 @@
-/**
- * Canvas 2D office renderer — programmatic pixel look, no image assets.
- *
- * Talks to the server via GET /state (initial + per-tick refresh) + SSE /events.
- * Rendering is a fixed-timestep-friendly rAF loop decoupled from SSE ticks:
- * characters and packets lerp toward their latest tile position, so movement
- * never teleports. Camera: drag / arrow keys to pan, wheel to zoom (clamped),
- * pixel-crisp (image smoothing off). Click a character (or its bubble) to open
- * the inspect panel fed by GET /character/<id>/activity; click empty floor to
- * close it. Stuck characters get a pulsing flag; an optional WebAudio beep
- * fires on stuck transitions behind a muted-by-default toggle.
- *
- * State colors: working=green, reading=blue, idle=gray, stuck=red.
- */
 import { findPath, insideRect, type OfficeLayout } from "../layout.js";
 import type {
 	AgentEvent,
@@ -25,7 +11,6 @@ import type {
 const TILE = 24;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
-/** Interpolation speed (higher = snappier); movement lerps toward tile targets. */
 const LERP_RATE = 8;
 
 interface AgentStateColors {
@@ -63,19 +48,15 @@ let office: OfficeState | undefined;
 let activeStation: string | undefined;
 let selectedCharacter: string | undefined;
 
-/** Render positions (world px, float) keyed by entity id — the interpolation state. */
 const renderPos = new Map<string, { x: number; y: number }>();
 const prevStates = new Map<string, AgentState>();
 const camera = { x: 40, y: 40, zoom: 1 };
 let muted = true;
 let audio: AudioContext | undefined;
 
-/** Bubble bounds in world px for click hit-testing, rebuilt every frame. */
 const bubbleBounds = new Map<string, { x: number; y: number; w: number; h: number }>();
 
-// ---- Layout edit mode (Phase 2 slice 3) ------------------------------------
 let editMode = false;
-/** Working copy of the active station's layout while editing. */
 let draft: OfficeLayout | undefined;
 type EditSelection =
 	| { kind: "desk"; id: string }
@@ -100,7 +81,6 @@ function setEditMode(on: boolean): void {
 	if (button !== null) button.textContent = on ? "📐 editing…" : "📐 layout";
 }
 
-/** Push the current draft to the server; revert to server state on rejection. */
 async function submitDraft(): Promise<void> {
 	if (draft === undefined || activeStation === undefined) return;
 	const res = await fetch(`/layout/${encodeURIComponent(activeStation)}`, {
@@ -109,7 +89,6 @@ async function submitDraft(): Promise<void> {
 		body: JSON.stringify(draft),
 	});
 	if (!res.ok) {
-		// SAFETY: `const body = (await res.json()) as { reasons?: string[]; error?: string };` is required at this I/O or test boundary.
 		const body = (await res.json()) as { reasons?: string[]; error?: string };
 		alert(`layout rejected:\n${(body.reasons ?? [body.error ?? "unknown"]).join("\n")}`);
 		draft = structuredClone(currentLayout());
@@ -117,7 +96,6 @@ async function submitDraft(): Promise<void> {
 	}
 }
 
-/** Smallest room size that still fits every desk currently in the room. */
 interface RoomSize {
 	w: number;
 	h: number;
@@ -137,7 +115,6 @@ function minRoomSize(layout: OfficeLayout, campId: string): RoomSize {
 	return { w, h };
 }
 
-/** Rebuild the selected junction corridor through the accumulated waypoints. */
 function rerouteCorridor(layout: OfficeLayout, junctionId: string, waypoints: TilePoint[]): boolean {
 	const existing = layout.corridors[junctionId];
 	if (existing === undefined || existing.length === 0) return false;
@@ -161,14 +138,12 @@ function rerouteCorridor(layout: OfficeLayout, junctionId: string, waypoints: Ti
 
 async function bootstrap(): Promise<OfficeState> {
 	const res = await fetch("/state");
-	// SAFETY: `return (await res.json()) as OfficeState;` is required at this I/O or test boundary.
 	return (await res.json()) as OfficeState;
 }
 
 function connect(onTick: () => void): void {
 	const source = new EventSource("/events");
 	source.addEventListener("snapshot", (message) => {
-		// SAFETY: `office = JSON.parse((message as MessageEvent<string>).data) as OfficeState;` is required at this I/O or test boundary.
 		office = JSON.parse((message as MessageEvent<string>).data) as OfficeState;
 		onTick();
 	});
@@ -182,9 +157,7 @@ function connect(onTick: () => void): void {
 	]) {
 		source.addEventListener(type, (message) => {
 			if (office === undefined) return;
-			// SAFETY: `const event = JSON.parse((message as MessageEvent<string>).data) as AgentEvent;` is required at this I/O or test boundary.
 			const event = JSON.parse((message as MessageEvent<string>).data) as AgentEvent;
-			// The server owns state; the client re-pulls cheap snapshots each tick.
 			if (event.type === "tick") void refresh(onTick);
 		});
 	}
@@ -209,7 +182,6 @@ function beep(): void {
 	osc.stop(audio.currentTime + 0.25);
 }
 
-/** Lerp every render position toward its latest tile target. */
 function interpolate(dt: number): void {
 	if (office === undefined) return;
 	const seen = new Set<string>();
@@ -229,7 +201,6 @@ function interpolate(dt: number): void {
 		if (pos === undefined) {
 			renderPos.set(id, { x: tx, y: ty });
 		} else {
-			// Snap when far away (new station / teleport) so we never lerp across the map.
 			if (Math.abs(pos.x - tx) > TILE * 4 || Math.abs(pos.y - ty) > TILE * 4) {
 				pos.x = tx;
 				pos.y = ty;
@@ -244,7 +215,6 @@ function interpolate(dt: number): void {
 	}
 }
 
-/** Detect fresh stuck transitions and beep. */
 function watchStuck(): void {
 	if (office === undefined) return;
 	for (const ch of Object.values(office.characters)) {
@@ -295,7 +265,6 @@ function render(canvas: HTMLCanvasElement, stationBar: HTMLElement): void {
 	ctx.imageSmoothingEnabled = false;
 	const frame = Math.floor(performance.now() / 250) % 2;
 
-	// Station banner — isolation is explicit: only this station's entities below.
 	const stationName = office.stations[activeStation ?? ""]?.name ?? "";
 	ctx.fillStyle = "#eceff1";
 	ctx.font = "16px monospace";
@@ -309,7 +278,6 @@ function render(canvas: HTMLCanvasElement, stationBar: HTMLElement): void {
 	const camps = Object.values(office.camps).filter((c) => yardsInStation.has(c.yardId));
 	const campIds = new Set(camps.map((c) => c.id));
 
-	// Corridors (junctions between visible camps).
 	for (const junction of Object.values(office.junctions)) {
 		if (!campIds.has(junction.fromCampId) || !campIds.has(junction.toCampId)) continue;
 		ctx.fillStyle = "#37474f";
@@ -318,7 +286,6 @@ function render(canvas: HTMLCanvasElement, stationBar: HTMLElement): void {
 		}
 	}
 
-	// Camp rooms + desks.
 	for (const camp of camps) {
 		ctx.fillStyle = "#1e272e";
 		ctx.fillRect(camp.rect.x * TILE, camp.rect.y * TILE, camp.rect.w * TILE, camp.rect.h * TILE);
@@ -334,8 +301,6 @@ function render(canvas: HTMLCanvasElement, stationBar: HTMLElement): void {
 		}
 	}
 
-	// Trace packets walking junction corridors.
-	// SAFETY: `for (const packet of Object.values(office.packets) as Packet[]) {` is required at this I/O or test boundary.
 	for (const packet of Object.values(office.packets) as Packet[]) {
 		if (!campIds.has(packet.fromCampId) || !campIds.has(packet.toCampId)) continue;
 		const pos = renderPos.get(`packet:${packet.id}`) ?? {
@@ -348,7 +313,6 @@ function render(canvas: HTMLCanvasElement, stationBar: HTMLElement): void {
 		ctx.strokeRect(pos.x + 8, pos.y + 8, TILE - 16, TILE - 16);
 	}
 
-	// Characters.
 	bubbleBounds.clear();
 	for (const ch of Object.values(office.characters)) {
 		if (ch.stationId !== activeStation) continue;
@@ -362,7 +326,6 @@ function render(canvas: HTMLCanvasElement, stationBar: HTMLElement): void {
 		ctx.fillRect(pos.x + 5, pos.y + 8 - bob, TILE - 10, TILE - 10);
 		ctx.fillStyle = KIND_HATS[ch.kind];
 		ctx.fillRect(pos.x + 5, pos.y + 3 - bob, TILE - 10, 5);
-		// Stuck: pulsing attention flag.
 		if (ch.state === "stuck") {
 			const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 200);
 			ctx.globalAlpha = 0.4 + 0.6 * pulse;
@@ -375,12 +338,10 @@ function render(canvas: HTMLCanvasElement, stationBar: HTMLElement): void {
 			ctx.fill();
 			ctx.globalAlpha = 1;
 		}
-		// Health bar over the desk.
 		ctx.fillStyle = "#333";
 		ctx.fillRect(pos.x + 2, pos.y - 4, TILE - 4, 3);
 		ctx.fillStyle = ch.health > 0.4 ? "#4caf50" : "#ef5350";
 		ctx.fillRect(pos.x + 2, pos.y - 4, (TILE - 4) * ch.health, 3);
-		// Speech bubble.
 		if (ch.bubble !== undefined) {
 			ctx.font = "10px monospace";
 			const width = ctx.measureText(ch.bubble).width + 8;
@@ -415,7 +376,6 @@ function escapeHtml(text: string): string {
 		.replaceAll('"', "&quot;");
 }
 
-/** Group flat span activity into per-traceId journeys with timing bars. */
 function renderJourneys(activity: CharacterActivity): string {
 	const byTrace = new Map<string, typeof activity.spans>();
 	for (const span of activity.spans) {
@@ -423,7 +383,6 @@ function renderJourneys(activity: CharacterActivity): string {
 		list.push(span);
 		byTrace.set(span.traceId, list);
 	}
-	// Newest journey first (activity arrives newest-first already).
 	const journeys = [...byTrace.entries()].slice(0, 5);
 	if (journeys.length === 0) return "<p><small>no spans yet</small></p>";
 	return journeys
@@ -460,7 +419,6 @@ async function refreshPanel(): Promise<void> {
 		closePanel();
 		return;
 	}
-	// SAFETY: `const data = (await res.json()) as ActivityResponse;` is required at this I/O or test boundary.
 	const data = (await res.json()) as ActivityResponse;
 	const { character, activity } = data;
 	const logRows = activity.logs
@@ -493,7 +451,6 @@ async function refreshPanel(): Promise<void> {
 function handleClick(canvas: HTMLCanvasElement, event: MouseEvent): void {
 	if (office === undefined) return;
 	const world = toWorld(canvas, event.clientX, event.clientY);
-	// Bubble click opens the panel (attention affordance).
 	for (const [id, b] of bubbleBounds) {
 		if (world.x >= b.x && world.x <= b.x + b.w && world.y >= b.y && world.y <= b.y + b.h) {
 			void openPanel(id);
@@ -564,7 +521,6 @@ function attachCamera(canvas: HTMLCanvasElement): void {
 }
 
 async function start(): Promise<void> {
-	// SAFETY: `const canvas = document.getElementById("office") as HTMLCanvasElement | null;` is required at this I/O or test boundary.
 	const canvas = document.getElementById("office") as HTMLCanvasElement | null;
 	const stationBar = document.getElementById("stations");
 	const muteToggle = document.getElementById("mute");

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonObject, type JsonValue } from "./json.js";
 
-
 export const RESOLUTION_RECEIPT_SCHEMA = "hobo.resolution-receipt/v1";
 export const RESOLUTION_REJECTION_SCHEMA = "hobo.resolution-rejection/v1";
 export const BROKER_AUTHORITY = "meta-cloud-broker";
@@ -488,7 +487,6 @@ function sortedBy<T>(entries: readonly T[], selector: (entry: T) => string): T[]
 }
 
 function clone<T>(value: T): T {
-  // SAFETY: `return JSON.parse(JSON.stringify(value)) as T;` is required at this I/O or test boundary.
   return JSON.parse(JSON.stringify(value)) as T;
 }
 

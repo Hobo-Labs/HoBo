@@ -1,36 +1,3 @@
-/**
- * Start and stop the PostgreSQL and MongoDB servers the live data-engine lane
- * tests against (`pnpm run test:data-live`).
- *
- * A fleet job is itself a container that reaches the host's Docker engine
- * through the mounted socket, so the servers are started as *sibling*
- * containers and reached at their bridge address: a published port would bind
- * the host's loopback, which is not the job container's. A GitHub-hosted job
- * runs on the host and reaches the same bridge address.
- *
- * The containers carry their own label, never the worker's
- * `hobo.ci/isolated`: the box daemon removes containers under that label that
- * have no lease, and these have none. They are not started with `--rm`, so a
- * server that dies during start-up leaves its logs; `down` removes them.
- *
- * A job that is killed never reaches `down`, so nothing here relies on it:
- * each server stops itself after `SERVER_LIFETIME_SECONDS`, and `sweep`
- * (run by `up`, and by every job's preflight) removes containers of this lane
- * that are older than any job could be.
- *
- * Both servers are test fixtures: PostgreSQL trusts every connection and
- * MongoDB runs without access control, reachable on the box's bridge network
- * until the job's teardown, or their own lifetime if that never runs.
- *
- * CLI (Node builtins only):
- *   node --experimental-strip-types scripts/ci/data-live-servers.mts up
- *     prints `HOBO_TEST_POSTGRES_URL=…` and `HOBO_TEST_MONGODB_URL=…`
- *   node --experimental-strip-types scripts/ci/data-live-servers.mts verify <log>
- *     fails unless every package of the lane ran and no test was skipped
- *   node --experimental-strip-types scripts/ci/data-live-servers.mts logs
- *   node --experimental-strip-types scripts/ci/data-live-servers.mts down
- *   node --experimental-strip-types scripts/ci/data-live-servers.mts sweep
- */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import process from "node:process";
@@ -43,17 +10,10 @@ export const DATA_LIVE_LABEL = "hobo.data-live";
 export const LIVE_ENGINE_IMAGES_PATH =
 	"packages/data-core/deploy/live-engine-images.json";
 
-/** A container of this lane older than this outlived its job (jobs are capped at 20 minutes). */
 export const STALE_AFTER_MS = 30 * 60 * 1000;
 
-/**
- * How long a server runs before it stops itself. Longer than a job may run,
- * shorter than the sweep's threshold: a job that is killed leaves its servers
- * holding memory for at most this long, and the sweep then finds them stopped.
- */
 export const SERVER_LIFETIME_SECONDS = 25 * 60;
 
-/** The packages `pnpm run test:data-live` runs; `verify` requires a result from each. */
 export const LIVE_PACKAGES: readonly string[] = [
 	"@hobo/data-core",
 	"@hobo/data-sqlite",
@@ -96,7 +56,6 @@ function pinnedImage(value: string, key: string): string {
 	return value;
 }
 
-/** Parse the image catalog; a tag without a digest is refused. */
 export function parseLiveEngineImages(text: string): LiveEngineImages {
 	const catalog = JSON.parse(text);
 	return {
@@ -105,7 +64,6 @@ export function parseLiveEngineImages(text: string): LiveEngineImages {
 	};
 }
 
-/** Names scoped to one run attempt, so two jobs on one box never collide. */
 export function liveContainerNames(run: string): LiveContainerNames {
 	const token = run.toLowerCase().replace(RUN_TOKEN, "-");
 	if (token.length === 0) throw new Error("a run token is required");
@@ -119,32 +77,23 @@ function fixtureFlags(name: string): readonly string[] {
 	return [
 		"run",
 		"--detach",
-		// Not `--rm`: a server that exits during start-up must leave its logs
-		// behind. `down` and the stale sweep remove the containers instead.
 		"--name",
 		name,
 		"--label",
 		`${DATA_LIVE_LABEL}=1`,
-		// The network a fleet job container is created on, named rather than
-		// left to the engine's default: the job reaches the servers across it.
 		"--network",
 		"bridge",
-		// Sibling containers are outside the job's cgroup; bound them here.
 		"--memory",
 		"1024m",
 		"--memory-swap",
 		"1024m",
-		// The image's entrypoint runs under `timeout`, so the server stops
-		// itself even when no teardown ever runs.
 		"--entrypoint",
 		"timeout",
 	];
 }
 
-/** `timeout`'s own arguments, then the image's entrypoint it supervises. */
 function supervised(server: string): readonly string[] {
 	return [
-		// Both servers shut down cleanly on SIGINT.
 		"--signal=INT",
 		String(SERVER_LIFETIME_SECONDS),
 		"docker-entrypoint.sh",
@@ -152,11 +101,6 @@ function supervised(server: string): readonly string[] {
 	];
 }
 
-/**
- * PostgreSQL with logical decoding on: change capture and the logical-copy
- * fast path need `wal_level=logical`, and every capture subscription holds a
- * replication slot.
- */
 export function postgresRunArgv(name: string, image: string): string[] {
 	return [
 		...fixtureFlags(name),
@@ -175,22 +119,9 @@ export function postgresRunArgv(name: string, image: string): string[] {
 	];
 }
 
-/**
- * MongoDB 8's allocator misuses restartable sequences on Linux 6.19 through
- * 7.0.13 (SERVER-121912), so recent 8.0 releases refuse to start there, and
- * until 8.0.37 also on Ubuntu kernels that already carry the fix, which is
- * what a GitHub-hosted runner has. With glibc registering rseq itself the
- * allocator cannot, falls back to per-thread caches, and neither the bug nor
- * the refusal applies, whatever kernel the host runs. A fixture does not need
- * the per-CPU caches this gives up.
- */
 // public-contract: glibc tunable the MongoDB fixture is started with; the compose file sets the same.
 export const MONGO_RSEQ_TUNABLE = "GLIBC_TUNABLES=glibc.pthread.rseq=1";
 
-/**
- * MongoDB as a one-member replica set: transactions and change streams need
- * one. The cache is bounded because mongod otherwise sizes it from the host.
- */
 export function mongoRunArgv(name: string, image: string): string[] {
 	return [
 		...fixtureFlags(name),
@@ -210,23 +141,13 @@ export function mongoRunArgv(name: string, image: string): string[] {
 export const MONGO_PRIMARY_PROBE =
 	'try { rs.status() } catch (e) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }) } if (!db.hello().isWritablePrimary) quit(1)';
 
-/**
- * mongosh keeps lock and settings files under `$HOME/.mongodb`, and the image
- * sets HOME to /data/db. The image's entrypoint chowns everything under
- * /data/db as the container starts; a probe that creates and removes a lock
- * file there meanwhile makes that chown fail ("cannot access
- * ...json.lock") and the server exit during start-up. So mongosh keeps its
- * files elsewhere.
- */
 // public-contract: where every mongosh the lane and the compose healthcheck start keeps its own files.
 export const MONGOSH_HOME = "HOME=/tmp";
 
-/** `docker exec` of a one-shot mongosh in the fixture; the script follows. */
 export function mongoshExecArgv(name: string): string[] {
 	return ["exec", "--env", MONGOSH_HOME, name, "mongosh", "--quiet", "--eval"];
 }
 
-/** The container's address on the bridge network, from `docker inspect`. */
 export function bridgeAddress(inspectOutput: string): string {
 	const address = inspectOutput
 		.split(/\s+/u)
@@ -242,16 +163,10 @@ export function liveUrls(
 ): LiveUrls {
 	return {
 		postgres: `postgres://postgres@${addresses.postgres}:5432/postgres`,
-		// One member, addressed directly: the set's own member name is `localhost`.
 		mongodb: `mongodb://${addresses.mongodb}:27017/?replicaSet=rs0&directConnection=true`,
 	};
 }
 
-/**
- * Containers of this lane that outlived any job that could own them. One
- * whose creation time cannot be read is left alone: on a shared box it may be
- * a running job's server, and its own lifetime stops it either way.
- */
 export function staleContainers(
 	listed: readonly ListedContainer[],
 	nowMs: number,
@@ -265,7 +180,6 @@ export function staleContainers(
 		.map((container) => container.name);
 }
 
-/** Containers of this lane whose creation time could not be read. */
 export function undatedContainers(
 	listed: readonly ListedContainer[],
 ): string[] {
@@ -274,7 +188,6 @@ export function undatedContainers(
 		.map((container) => container.name);
 }
 
-/** `docker ps --format '{{.Names}}\t{{.CreatedAt}}'` lines as records. */
 export function parseListing(output: string): ListedContainer[] {
 	return output
 		.split("\n")
@@ -282,7 +195,6 @@ export function parseListing(output: string): ListedContainer[] {
 		.filter((line) => line.length > 0)
 		.map((line) => {
 			const [name = "", created = ""] = line.split("\t");
-			// Docker prints `2026-11-11 03:17:00 +0000 UTC`; ISO form parses everywhere.
 			const [date = "", time = "", offset = ""] = created.split(" ");
 			return {
 				name,
@@ -308,13 +220,6 @@ const TESTS_SUMMARY = /^\s*Tests\s+(.+?)\s+\((\d+)\)\s*$/u;
 const ALL_PASSED = /^(\d+) passed$/u;
 const PASSED = /(\d+) passed/u;
 
-/**
- * Read the lane's own output and say whether it proves a live run: a summary
- * from every expected package, and in each one every test passed. The live
- * tests are skipped when their variable is missing, so a skipped test means a
- * live lane that did not run; a package with no summary means a filter that
- * matched nothing. Either would otherwise still be a green job.
- */
 export function liveRunVerdict(
 	log: string,
 	expected: readonly string[],
@@ -365,13 +270,10 @@ export type DockerResult = Readonly<{
 	stderr: string;
 }>;
 
-/** Everything `up` touches outside itself, so a test can stand in for all of it. */
 export type LaneIo = Readonly<{
 	docker: (args: readonly string[], timeoutMs?: number) => DockerResult;
 	pause: (ms: number) => Promise<void>;
-	/** A line for stdout: only the two URL lines ever go here. */
 	out: (line: string) => void;
-	/** A line for the job log. */
 	note: (line: string) => void;
 	now: () => number;
 }>;
@@ -384,7 +286,6 @@ function spawnDocker(
 		encoding: "utf8",
 		timeout: timeoutMs,
 	});
-	// A spawn failure (no docker, a timeout) has no exit status and no stderr.
 	const failure = result.error === undefined ? "" : `${result.error.message}\n`;
 	return {
 		status: result.status ?? 1,
@@ -408,7 +309,6 @@ function must(io: LaneIo, args: readonly string[], timeoutMs?: number): string {
 }
 
 function running(io: LaneIo, name: string): boolean {
-	// A failed inspect is not an exited server; say which it was.
 	return (
 		must(io, ["inspect", "--format", "{{.State.Running}}", name]).trim() ===
 		"true"
@@ -428,7 +328,6 @@ async function until(
 		const result = probe();
 		if (ready(result)) return;
 		last = lastLines(`${result.stdout}\n${result.stderr}`, 2);
-		// A server that has exited will never answer; say so at once.
 		if (!running(io, name)) throw new Error(`${what} exited during start-up`);
 		await io.pause(1000);
 	}
@@ -458,11 +357,9 @@ function listed(io: LaneIo): ListedContainer[] | undefined {
 
 function remove(io: LaneIo, names: readonly string[]): void {
 	if (names.length === 0) return;
-	// A container that is already gone is not a failure; `down` checks what is left.
 	io.docker(["rm", "--force", "--volumes", ...names]);
 }
 
-/** Remove containers of this lane that outlived any job that could own them. */
 export function sweep(io: LaneIo, keep: readonly string[]): void {
 	const containers = listed(io);
 	if (containers === undefined) return;
@@ -487,7 +384,6 @@ function printLogs(io: LaneIo, names: LiveContainerNames): void {
 	}
 }
 
-/** Remove this run's containers; false when one is still there afterwards. */
 export function stopLiveServers(
 	io: LaneIo,
 	names: LiveContainerNames,
@@ -508,11 +404,6 @@ function version(io: LaneIo, args: readonly string[]): string {
 	return result.status === 0 ? result.stdout.trim() : "unknown";
 }
 
-/**
- * Start both servers and wait until each is really serving. Prints the two
- * URL lines only once both are; on any failure it prints the servers' logs,
- * removes them, and prints nothing to stdout.
- */
 export async function startLiveServers(
 	io: LaneIo,
 	names: LiveContainerNames,
@@ -520,10 +411,8 @@ export async function startLiveServers(
 	attempts = 90,
 ): Promise<LiveUrls> {
 	sweep(io, [names.postgres, names.mongodb]);
-	// A re-run of the same attempt starts clean.
 	remove(io, [names.postgres, names.mongodb]);
 	try {
-		// The first pull on a box can take a while; later runs find the layers cached.
 		must(io, postgresRunArgv(names.postgres, images.postgres16), 600_000);
 		must(io, mongoRunArgv(names.mongodb, images.mongo8), 600_000);
 		const psql = [
@@ -539,8 +428,6 @@ export async function startLiveServers(
 			"--command",
 		];
 		const mongosh = mongoshExecArgv(names.mongodb);
-		// The image's init phase serves a unix socket only, so answering on TCP
-		// means the real server is up, not the bootstrap one.
 		await until(
 			io,
 			"PostgreSQL",
@@ -567,7 +454,6 @@ export async function startLiveServers(
 			),
 		};
 		const urls = liveUrls(addresses);
-		// What a green run was against: the job log is the only record of it.
 		io.note(
 			`data-live: PostgreSQL ${version(io, [...psql, "show server_version"])} at ${addresses.postgres}, MongoDB ${version(io, [...mongosh, "db.version()"])} at ${addresses.mongodb}; each stops itself after ${SERVER_LIFETIME_SECONDS} s`,
 		);

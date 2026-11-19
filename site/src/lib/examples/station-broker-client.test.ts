@@ -69,7 +69,6 @@ describe("station-broker-client", () => {
 		const result = await provisionCloudflareStationViaBroker({
 			stationId: "station:home:cloudflare",
 			baseUrl: "https://broker.test",
-			// SAFETY: vitest mock stands in for fetch at this test boundary.
 			fetchImpl: fetchImpl as typeof fetch,
 		});
 		expect(result.stationUrl).toContain(".workers.dev");
@@ -84,7 +83,6 @@ describe("station-broker-client", () => {
 			provisionCloudflareStationViaBroker({
 				stationId: "x",
 				baseUrl: "https://broker.test",
-				// SAFETY: inline fetch double returns a broker JSON body.
 				fetchImpl: (async () =>
 					Response.json({
 						ok: true,

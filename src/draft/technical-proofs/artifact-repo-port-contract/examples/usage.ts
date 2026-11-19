@@ -1,12 +1,3 @@
-/**
- * Runnable example for artifact-repo-port-contract. The draft-artifact gate EXECUTES
- * this with `node --import tsx` and diffs stdout against usage.expected.txt.
- *
- * Proves HOBO-347: the hobo:artifact-repo port pulls ONLY digest-pinned artifacts
- * through mirror sets of registered adapters, requires provenance before publish,
- * and ships a conformance stub that fails adapters violating either invariant. The
- * WIT world and TypeScript declaration surfaces are checked as committed fixtures.
- */
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
@@ -21,7 +12,6 @@ import {
 	runArtifactRepoConformance,
 } from "../src/artifact-repo-port.ts";
 
-// 1) The committed WIT world and .d.ts publish the same port surface.
 const wit = readFileSync(new URL("../wit/world.wit", import.meta.url), "utf8");
 const declarations = readFileSync(new URL("../src/artifact-repo-port.d.ts", import.meta.url), "utf8");
 assert.match(wit, /package hobo:artifact-repo@0\.1\.0;/);
@@ -29,7 +19,6 @@ assert.match(wit, /record mirror-set/);
 assert.match(declarations, /export interface ArtifactRepoPort/);
 console.log(`surfaces: wit=${ARTIFACT_REPO_WIT_PACKAGE} dts=ArtifactRepoPort+MirrorSet declared`);
 
-// 2) Digest-pinned pull through a mirror set of registered adapters.
 const registry = createArtifactRepoRegistry();
 const artifact = createDigestArtifactRef("npm-leftpad-1.0.0", {
 	mediaType: "application/vnd.npm.package.tgz",
@@ -52,7 +41,6 @@ console.log(
 	`pull: adapter=${pulled.adapterId} digestPinned=${pulled.verification.digestPinned} digest=${pulled.artifact.digest.slice(0, 19)}...`,
 );
 
-// 3) Mutable-tag pulls (no resolved digest) fail closed.
 const tagOnly = {
 	id: "oci-tag-only",
 	kind: "oci",
@@ -72,7 +60,6 @@ await assert.rejects(
 );
 console.log("mutable tag pull: rejected (digest-pinned artifact required)");
 
-// 4) Publish requires provenance BEFORE the adapter is called.
 let publishCalls = 0;
 const countingAdapter = {
 	id: "pypi-primary",
@@ -101,7 +88,6 @@ const published = await publishArtifact(adapter, {
 assert.match(published.digest, /^sha256:[a-f0-9]{64}$/);
 console.log(`publish: without provenance adapterCalls=${publishCalls}; with provenance digest ok`);
 
-// 5) Mirror sets never consult unregistered adapters.
 assert.throws(
 	() =>
 		defineMirrorSet(registry, {
@@ -112,7 +98,6 @@ assert.throws(
 );
 console.log("mirror set: unregistered adapter rejected");
 
-// 6) The conformance stub passes a compliant adapter and fails a violating one.
 const passing = createInMemoryArtifactRepoAdapter({
 	id: "oci-primary",
 	kind: "oci",

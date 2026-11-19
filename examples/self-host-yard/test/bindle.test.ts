@@ -30,14 +30,12 @@ describe("self-host-yard bindle", () => {
 	it("serves the status page and accepts a parsed incident", async () => {
 		const bound = definition.entrypoint("api");
 		expect(bound).toBeTypeOf("function");
-		// SAFETY: assertion to `bound?.() as typeof statusApi` is required at this boundary.
 		const fetchHandler = bound?.() as typeof statusApi;
 
 		const status = await fetchHandler(
 			new Request("http://self-host-yard.test/status"),
 		);
 		expect(status.status).toBe(200);
-		// SAFETY: assertion to `(await status.json()) as { components: { component: string }[]; }` is required at this boundary.
 		const page = (await status.json()) as {
 			components: { component: string }[];
 		};
@@ -87,10 +85,6 @@ describe("self-host-yard bindle", () => {
 		expect(second.manifestHash).toBe(first.manifestHash);
 		expect(second.manifest).toEqual(first.manifest);
 
-		// The committed hobo.bindle.json (what `hobo plan`/`up`/`down` read from
-		// this project dir) is exactly the source compile — one manifest, two
-		// representations, and it still parses through the manifest boundary.
-		// SAFETY: assertion to `ON.parse( await readFile(new URL("../hobo.bindle.json", import.meta.url), "utf8"), ) as unknown; ` is required at this boundary.
 		const artifact = JSON.parse(
 			await readFile(new URL("../hobo.bindle.json", import.meta.url), "utf8"),
 		) as unknown;

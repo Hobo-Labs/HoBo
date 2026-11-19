@@ -12,7 +12,6 @@ function defaultSchemaToolsDir(repoRoot: string): string {
 function defaultPackagesRoot(repoRoot: string): string {
   const production = resolve(repoRoot, "packages");
   const draft = resolve(repoRoot, DRAFT_POC_PACKAGES);
-  // Promote to production packages only after S0-04 lands @hobo/schema-tools under packages/.
   if (existsSync(resolve(production, "schema-tools", "package.json"))) return production;
   if (existsSync(draft)) return draft;
   return production;

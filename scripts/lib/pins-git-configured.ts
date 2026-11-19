@@ -1,39 +1,19 @@
-/**
- * The URL git's configuration gives a submodule, read the way
- * `git submodule update` reads it, and what to say when it is not the one
- * `.gitmodules` names: where it came from, and the fix that works there.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { resolve } from "node:path";
 
 import { sameFile } from "./pins-file-identity.ts";
 import { git, gitFailure, sameRepo, shellWord } from "./pins-git-core.ts";
 
-/** A problem with the configured URL, and its fix. */
 export interface UrlProblem {
 	readonly problem: string;
 	readonly fix: string;
 }
 
-/** One value of the key, as git lists it: the scope, the file (or the command line), the value. */
 interface Setting {
 	readonly scope: string;
 	readonly origin: string;
 	readonly value: string;
 }
 
-/**
- * Read with no scope, so every one is read, as `git submodule update` reads
- * them: the system and global files and what they include, this clone's own,
- * a worktree's `config.worktree`, and the command line (`git -c`, which a
- * child git gets as GIT_CONFIG_COUNT or GIT_CONFIG_PARAMETERS), the last one
- * winning. GIT_CONFIG is dropped, so nothing redirects the read;
- * `--show-scope` and `--show-origin` say where the fix goes, and `--get-all`
- * how many times the key is set there. An exit other than 0 (a value) or 1
- * (none set), a death by a signal included, is git failing to answer, and
- * that is a problem too, never "nothing is configured".
- */
 export function configuredUrlProblem(
 	root: string,
 	path: string,
@@ -72,14 +52,11 @@ export function configuredUrlProblem(
 }
 
 interface StaleUrl {
-	/** Comes before the URL. */
 	readonly said: string;
-	/** Comes after the URL `.gitmodules` names. */
 	readonly why: string;
 	readonly fix: string;
 }
 
-/** What includes a file in `scope`'s configuration, in words. */
 function includedFrom(scope: string): string {
 	if (scope === "local") return "this clone's .git/config";
 	if (scope === "worktree") return "config.worktree";
@@ -87,7 +64,6 @@ function includedFrom(scope: string): string {
 	return `the ${scope} configuration`;
 }
 
-/** The file a scope keeps itself, when `origin` is it. */
 function isOwnFile(root: string, origin: string, own: string): boolean {
 	if (!origin.startsWith("file:")) return false;
 	const where = git(root, [
@@ -115,7 +91,6 @@ function staleUrl(
 		? last.origin.slice("file:".length)
 		: undefined;
 	if (last.scope === "local" && isOwnFile(root, last.origin, "config")) {
-		// sync refuses a key set more than once ("multiple values").
 		return times > 1
 			? {
 					said: `this clone's configured URL for ${path} is`,
@@ -128,8 +103,6 @@ function staleUrl(
 					fix: sync,
 				};
 	}
-	// `config.worktree` is read after `.git/config`, so sync, which writes
-	// the latter, would change nothing.
 	if (
 		last.scope === "worktree" &&
 		isOwnFile(root, last.origin, "config.worktree")
@@ -141,7 +114,6 @@ function staleUrl(
 		};
 	}
 	if (last.scope === "global" || last.scope === "system") {
-		// The file it is set in, which an `include.path` makes another file.
 		const where =
 			file === undefined ? `--${last.scope}` : `-f ${shellWord(file)}`;
 		return {

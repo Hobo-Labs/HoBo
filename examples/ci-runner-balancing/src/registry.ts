@@ -1,19 +1,3 @@
-/**
- * Default provider registry document for the example. Providers are the
- * hosted/self-hosted Actions runner providers curated by
- * github.com/neysofu/awesome-github-actions-runners plus GitHub-hosted and
- * genuine self-hosted pools. All third-party prices and free tiers are
- * DECLARED_UNVERIFIED snapshots of public pricing pages — ranking input,
- * never billing input — and operators are expected to override them (see
- * README). The document is data, not code: it crosses the same
- * parse-don't-validate boundary (`parseRegistryDocument`) as any untrusted
- * registry an operator supplies, and the router core never branches on the
- * provider names below.
- *
- * Every third-party rung is guarded behind an HOBO_RB_ENABLE_* variable so
- * the dispatcher can only route to providers whose GitHub App/runner pool
- * is actually installed for the repository.
- */
 
 const DECLARED = "COST_TRUST_DECLARED_UNVERIFIED";
 const REPORTED = "COST_TRUST_PROVIDER_REPORTED";
@@ -30,8 +14,6 @@ export const DEFAULT_REGISTRY_DOCUMENT = {
 			kind: "PROVIDER_KIND_GITHUB_HOSTED",
 			runsOnLabels: ["ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04"],
 			cost: {
-				// Free plan: 2,000 included minutes/month on private repos;
-				// public repos on standard runners bill nothing at all.
 				freeUnitsPerMonth: 2000,
 				freeTierResetDay: 1,
 				listPriceUsdPerUnit: 0.006,
@@ -47,8 +29,6 @@ export const DEFAULT_REGISTRY_DOCUMENT = {
 			kind: "PROVIDER_KIND_SELF_HOSTED",
 			runsOnLabels: ["self-hosted"],
 			cost: {
-				// BYO infrastructure: marginal per-minute cost declared 0; the
-				// idle cost lives outside this ledger.
 				freeUnitsPerMonth: 0,
 				freeTierResetDay: 0,
 				listPriceUsdPerUnit: 0,
@@ -64,11 +44,6 @@ export const DEFAULT_REGISTRY_DOCUMENT = {
 			kind: "PROVIDER_KIND_SELF_HOSTED",
 			runsOnLabels: ["hobo-last-resort"],
 			cost: {
-				// The developer/agent machine that requested CI, registered as
-				// an ephemeral self-hosted runner via `pnpm run host-runner`.
-				// Declared 0 marginal cost, but its rung is flagged
-				// last_resort so the dispatcher never prefers it while any
-				// normal provider is usable.
 				freeUnitsPerMonth: 0,
 				freeTierResetDay: 0,
 				listPriceUsdPerUnit: 0,
@@ -114,8 +89,6 @@ export const DEFAULT_REGISTRY_DOCUMENT = {
 			kind: "PROVIDER_KIND_BYOC_THIRD_PARTY",
 			runsOnLabels: ["actuated-4cpu-8gb"],
 			cost: {
-				// Flat-rate subscription over your own hosts; nominal amortized
-				// per-minute declaration.
 				freeUnitsPerMonth: 0,
 				freeTierResetDay: 0,
 				listPriceUsdPerUnit: 0.002,
@@ -146,8 +119,6 @@ export const DEFAULT_REGISTRY_DOCUMENT = {
 			kind: "PROVIDER_KIND_MANAGED_THIRD_PARTY",
 			runsOnLabels: ["blacksmith-2vcpu-ubuntu-2404"],
 			cost: {
-				// 3,000 free minutes/month on the free plan, then ~half
-				// GitHub's list price.
 				freeUnitsPerMonth: 3000,
 				freeTierResetDay: 1,
 				listPriceUsdPerUnit: 0.004,
@@ -163,7 +134,6 @@ export const DEFAULT_REGISTRY_DOCUMENT = {
 			kind: "PROVIDER_KIND_MANAGED_THIRD_PARTY",
 			runsOnLabels: ["ubicloud-standard-2"],
 			cost: {
-				// 1,250 free minutes/month, then ~10x cheaper than GitHub-hosted.
 				freeUnitsPerMonth: 1250,
 				freeTierResetDay: 1,
 				listPriceUsdPerUnit: 0.0008,
@@ -225,8 +195,6 @@ export const DEFAULT_REGISTRY_DOCUMENT = {
 			kind: "PROVIDER_KIND_MANAGED_THIRD_PARTY",
 			runsOnLabels: ["ghcr.io/cirruslabs/ubuntu-runner-amd64:24.04"],
 			cost: {
-				// Fixed monthly price per runner slot, unlimited minutes;
-				// nominal amortized per-minute declaration.
 				freeUnitsPerMonth: 0,
 				freeTierResetDay: 0,
 				listPriceUsdPerUnit: 0.002,
@@ -299,10 +267,6 @@ export const DEFAULT_REGISTRY_DOCUMENT = {
 					requires: enableGuard("DEPOT"),
 				},
 				{
-					// Final backup: the machine requesting CI. No enable guard —
-					// it must stay reachable exactly when everything else is
-					// blocked. Jobs routed here queue until the requester runs
-					// `pnpm --filter @hobo/example-ci-runner-balancing host-runner`.
 					value: "hobo-last-resort",
 					providerId: "requesting_machine",
 					requires: [],

@@ -1,8 +1,3 @@
-/**
- * Vitest bench for the proof's measurable hot path: the full drift decision
- * (classify -> policy resolve -> action build -> event emission) for the
- * propose path, which allocates the complete event graph without a gateway.
- */
 import { bench, describe } from "vitest";
 
 import { handleResourceDrift } from "../src/autonomous-drift-remediation.ts";

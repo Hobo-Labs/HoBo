@@ -14,7 +14,6 @@ function counterFold(state: CounterState, event: { type: string; amount?: number
 	return state;
 }
 
-// Numbers are advisory; the gate only requires that declared benches EXECUTE.
 describe("actor-host runtime port hot path", () => {
 	bench("acquire + fenced append + release", () => {
 		const host = createInMemoryActorHost({

@@ -145,7 +145,6 @@ describe("turbo-cache-prune", () => {
 	it("saves only when a missed task left an entry", () => {
 		assert.equal(planPrune(files("aa", 0), [hit("aa")], NOW, 7).save, false);
 		assert.equal(planPrune(files("aa", 0), [miss("aa")], NOW, 7).save, true);
-		// A miss that wrote nothing (a failed task) adds nothing to save.
 		assert.equal(planPrune(files("aa", 0), [miss("bb")], NOW, 7).save, false);
 	});
 
@@ -197,7 +196,6 @@ describe("turbo-cache-prune", () => {
 			readdirSync(cache).sort(),
 			[...ENTRY("aa"), ...ENTRY("bb")].sort(),
 		);
-		// The entry the run used is stamped, so it survives the next run's cutoff.
 		for (const file of ENTRY("aa")) {
 			assert.ok(Date.now() - statSync(join(cache, file)).mtimeMs < DAY_MS);
 		}

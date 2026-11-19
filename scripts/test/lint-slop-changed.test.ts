@@ -20,7 +20,6 @@ function emptyDir(): string {
 	return dir;
 }
 
-/** A repository with no commits and nothing staged. */
 function emptyRepo(): string {
 	const dir = emptyDir();
 	const init = spawnSync("git", ["init", "--quiet"], { cwd: dir });
@@ -69,10 +68,7 @@ function runLane(cwd: string, flag: string) {
 	);
 }
 
-// The lane is the only anti-slop gate a commit meets, so it must never report
-// itself clean for a diff it could not read. It used to: a git failure became
 // an empty file list, and the lane printed "ok". Nothing here reaches oxlint;
-// every case is decided by whether git could list the changed files.
 describe("lint:slop:changed when git cannot list the changed files", () => {
 	it("fails, naming the base, when the base does not resolve", () => {
 		const result = runLane(emptyRepo(), "--base=origin/no-such-branch");
@@ -105,17 +101,12 @@ describe("lint:slop:changed when git cannot list the changed files", () => {
 	});
 
 	it("still passes an empty but readable diff", () => {
-		// The control: nothing staged in a real repository is a genuine "nothing
-		// to lint", not a failure to look.
 		const result = runLane(emptyRepo(), "--staged");
 		assert.equal(result.status, 0, result.stdout + result.stderr);
 		assert.match(result.stdout, /no changed lintable files/u);
 	});
 });
 
-// A lint that never ran is not a clean lint, and the person committing has to
-// be told why it did not run: an exec it could not resolve used to crash with
-// a stack trace, and a binary that would not start printed nothing.
 describe("lint:slop:changed when oxlint cannot start", () => {
 	it("says oxlint is not installed, without a stack trace", () => {
 		const result = runLane(stagedRepo(undefined), "--staged");
@@ -128,7 +119,6 @@ describe("lint:slop:changed when oxlint cannot start", () => {
 	});
 
 	it("says why an installed oxlint could not start", () => {
-		// Present but not executable: the spawn itself fails (EACCES).
 		const result = runLane(stagedRepo("#!/bin/sh\nexit 0\n"), "--staged");
 		assert.notEqual(result.status, 0, result.stdout + result.stderr);
 		assert.match(

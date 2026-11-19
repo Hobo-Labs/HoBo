@@ -1,34 +1,11 @@
-/**
- * Which packages turbo builds before a package's task, read from the same
- * inputs turbo reads: the root `turbo.json`, a package's own `turbo.json`
- * (`extends: ["//"]`), and the workspace dependencies in each `package.json`.
- *
- * - `"^build"` reaches the `build` of every workspace package named in
- *   `dependencies`, `devDependencies` or `optionalDependencies` with a specifier
- *   turbo orders (`orderedDependency`). Not `peerDependencies`: turbo orders no
- *   task on one.
- * - `"build"` reaches the package's own `build`; `"@s/x#build"` reaches that
- *   package's.
- * - A root `"<pkg>#<task>"` entry replaces the generic `"<task>"` for that
- *   package, and a package's own `turbo.json` replaces that `dependsOn` when it
- *   sets one, unless the list names `"$TURBO_EXTENDS$"`: then turbo appends it
- *   to the inherited list, wherever the marker sits. An override of one task
- *   orders nothing for another.
- * - A task a package has no script for is still a node: turbo follows its
- *   `dependsOn` and runs nothing for it.
- */
 const TURBO_EXTENDS = "$TURBO_EXTENDS$";
 
-/** pnpm's link-workspace-packages, as turbo reads it, and why. */
 export interface LinkWorkspacePackages {
 	readonly enabled: boolean;
-	/** Which file sets it, or which default applies. */
 	readonly source: string;
 }
 
-/** The root files turbo reads link-workspace-packages from; each absent where the file is. */
 export interface LinkInputs {
-	/** The root `package.json`'s `packageManager`. */
 	readonly packageManager?: string | undefined;
 	readonly npmrc?: string | undefined;
 	readonly workspaceYaml?: string | undefined;
@@ -43,7 +20,6 @@ function yamlSetting(text: string | undefined): boolean | undefined {
 		return undefined;
 	if (/^(?:true|True|TRUE)$/u.test(value)) return true;
 	if (/^(?:false|False|FALSE)$/u.test(value)) return false;
-	// Any other value is a string, and only "deep" turns it on.
 	return value.replace(/^(["'])(.*)\1$/u, "$2") === "deep";
 }
 
@@ -60,13 +36,6 @@ function npmrcSetting(text: string | undefined): boolean | undefined {
 	return setting;
 }
 
-/**
- * Whether turbo links a workspace package for a specifier without the
- * `workspace:` protocol, as it decides for pnpm: from pnpm 9,
- * `linkWorkspacePackages` in pnpm-workspace.yaml, else
- * `link-workspace-packages` in .npmrc, else off; before pnpm 9, .npmrc, else
- * on. Read for pnpm only, the package manager this repository names.
- */
 export function linkWorkspacePackages(
 	inputs: LinkInputs,
 ): LinkWorkspacePackages {
@@ -89,7 +58,6 @@ export function linkWorkspacePackages(
 			};
 }
 
-/** A token of the YAML subset pnpm-workspace.yaml is written in. */
 interface YamlToken {
 	readonly kind:
 		| "scalar"
@@ -100,16 +68,10 @@ interface YamlToken {
 		| "dash"
 		| "newline";
 	readonly text: string;
-	/** Whether a scalar was quoted, so no indicator in it means anything. */
 	readonly quoted: boolean;
-	/** Where it starts on its line. */
 	readonly column: number;
 }
 
-/**
- * A YAML construct `catalogValues` does not read: it stops rather than guess
- * what a catalog says.
- */
 export class UnreadYaml extends Error {
 	constructor(readonly construct: string) {
 		super(
@@ -119,11 +81,6 @@ export class UnreadYaml extends Error {
 	}
 }
 
-/**
- * A quoted scalar from `start`, its text and the index after its closing
- * quote. A line break inside it folds, with the next line's indentation, to a
- * space.
- */
 function quoted(text: string, start: number): [string, number] {
 	const quote = text[start];
 	let value = "";
@@ -148,13 +105,6 @@ function quoted(text: string, start: number): [string, number] {
 	return [value, i];
 }
 
-/**
- * The tokens of `text`: scalars (plain, or quoted with their quotes taken
- * off), a mapping's `:`, a flow collection's brackets and commas, a block
- * sequence's `- `, and line ends. A comment is a `#` at a line's start or
- * after a space, outside quotes; a `:` is a mapping's only before a space, a
- * line's end or, in a flow collection, `,`, `}` or `]`.
- */
 function yamlTokens(text: string): YamlToken[] {
 	const tokens: YamlToken[] = [];
 	let flow = 0;
@@ -228,11 +178,6 @@ function yamlTokens(text: string): YamlToken[] {
 	return tokens;
 }
 
-/**
- * The construct a plain scalar is, where this reader does not read it: an
- * anchor, an alias, a tag other than `!!str`, an explicit key, a merge key, a
- * block scalar, a directive or a second document marker.
- */
 function unread(token: YamlToken, next: YamlToken | undefined, first: boolean) {
 	if (token.kind !== "scalar" || token.quoted) return undefined;
 	const word = token.text.split(/\s/u)[0]!;
@@ -250,18 +195,6 @@ function unread(token: YamlToken, next: YamlToken | undefined, first: boolean) {
 	return undefined;
 }
 
-/**
- * The scalar values under pnpm-workspace.yaml's `catalog` and `catalogs`
- * keys, read in the subset of YAML the file is written in: a key quoted or
- * not, entries in block or flow form, a named catalog a level deeper, a
- * double-quoted value over several lines, `!!str`, a leading `---`, and
- * comments after a `#` outside quotes. Nothing under any other key, such as
- * pnpm 10's `overrides`, is a catalog entry. Any construct outside that subset
- * (an anchor, an alias, a merge key, a block scalar, a value on the line
- * after its key, a document in flow style, an explicit key, a tag other than
- * `!!str`, a directive, a second document), wherever it is, throws
- * `UnreadYaml` naming it.
- */
 export function catalogValues(text: string): string[] {
 	const tokens = yamlTokens(text);
 	const values: string[] = [];
@@ -296,50 +229,22 @@ export function catalogValues(text: string): string[] {
 	return values;
 }
 
-/** How a dependency's specifier resolves to a workspace package. */
 export interface WorkspaceIndex {
-	/** The workspace package of that name. */
 	byName(name: string): string | undefined;
-	/** The workspace package at a path relative to the dependent's directory. */
 	byPath(path: string): string | undefined;
-	/** Whether a path relative to the dependent's directory stays in the repository. */
 	inside(path: string): boolean;
-	/** The `version` of the workspace package of that name, if it has one. */
 	versionOf(name: string): string | undefined;
-	/** Whether a pnpm catalog may name a workspace package (a `catalog`/`catalogs` entry says `workspace:`). */
 	readonly catalogNamesWorkspace: boolean;
 }
 
-/**
- * The workspace package turbo orders a dependency on; why it orders none; or
- * why this model cannot tell, which the check reports rather than guesses.
- */
 export type Ordered =
 	| { readonly kind: "ordered"; readonly target: string }
 	| { readonly kind: "external"; readonly reason: string }
 	| { readonly kind: "unmodelled"; readonly reason: string };
 
-/** `1.2.3`, `1.2.3-rc.1`, with an optional `=`/`v` and build metadata, which semver ignores. */
 const EXACT_VERSION =
 	/^[=v]?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\+[0-9A-Za-z.-]+)?$/u;
 
-/**
- * Whether turbo's dependency splitter (2.11.10) counts `"<key>": "<specifier>"`
- * as a workspace package, and which.
- * - `workspace:` always counts: `workspace:<name>@*` (`^`, `~`) names
- *   `<name>`, a specifier with a `/` is a path from the dependent, and
- *   anything else names `<key>`. A path is read from the dependent's directory,
- *   then from the repository root.
- * - Anything else counts only where link-workspace-packages is on, and names
- *   `<key>`: `*`, a version the workspace package's own matches, or a
- *   `file:`/`link:` path that stays in the repository. Not an npm alias
- *   (`npm:<name>@<version>`) or another protocol (`github:`, `git+https:`).
- *
- * Unmodelled, so reported: a `catalog:` specifier where the key names a
- * workspace package or a catalog may (turbo resolves the catalog first), and,
- * with link-workspace-packages on, a range or tag (turbo decides it with a
- * semver parser this model does not have).
- */
 export function orderedDependency(
 	key: string,
 	specifier: string,
@@ -392,7 +297,6 @@ export function orderedDependency(
 	if (own === "")
 		return external("orders no version on a workspace package that has none");
 	const ownExact = EXACT_VERSION.exec(own)?.[1];
-	// turbo counts a workspace package whose version it cannot parse.
 	if (ownExact === undefined) return found(target);
 	const wanted = EXACT_VERSION.exec(version)?.[1];
 	if (wanted !== undefined)
@@ -411,10 +315,8 @@ export interface TaskConfig {
 
 export interface GraphPackage {
 	readonly name: string;
-	/** Workspace packages it depends on through the fields and specifiers turbo orders. */
 	readonly dependencies: readonly string[];
 	readonly scripts: ReadonlySet<string>;
-	/** The `tasks` of the package's own turbo.json, if it has one. */
 	readonly tasks?: Readonly<Record<string, TaskConfig>> | undefined;
 }
 
@@ -437,7 +339,6 @@ export class TurboTaskGraph {
 		return [...inherited, ...own.filter((entry) => entry !== TURBO_EXTENDS)];
 	}
 
-	/** The packages whose `build` turbo runs before `<pkg>#<task>` (and, for `build`, the package itself). */
 	buildsBefore(name: string, task: string): ReadonlySet<string> {
 		const key = `${name}#${task}`;
 		const cached = this.reached.get(key);
@@ -468,11 +369,6 @@ export class TurboTaskGraph {
 		return builds;
 	}
 
-	/**
-	 * The packages that must be built before code can load `name`'s files: it
-	 * and everything its `build` builds first, where each has a `build` script.
-	 * Empty for a package whose closure builds nothing.
-	 */
 	needsBuilt(name: string): string[] {
 		return [...this.buildsBefore(name, "build")].filter(
 			(item) => this.packages.get(item)?.scripts.has("build") === true,

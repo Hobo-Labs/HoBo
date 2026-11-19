@@ -1,7 +1,3 @@
-/**
- * What an asset pin means on a machine: the cache location, the variable that
- * overrides a pin, and the reader of a release's SHA256SUMS.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 

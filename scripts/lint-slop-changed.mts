@@ -27,7 +27,6 @@ import {
 const LINTABLE = /\.(?:[cm]?[jt]s|[jt]sx)$/u;
 const CHUNK_SIZE = 200;
 
-/** git's output, or `undefined` when git failed: a failure is not "no output". */
 function git(args: string[]): string | undefined {
 	const result = spawnSync("git", args, {
 		encoding: "utf8",
@@ -38,12 +37,6 @@ function git(args: string[]): string | undefined {
 	return result.stdout.trim();
 }
 
-/**
- * The changed files, or a refusal. When git cannot list them (an unknown or
- * unfetched base, a shallow clone, no repository) the lane used to read the
- * failure as an empty diff and report itself clean, so a gate that never saw a
- * file passed. It fails closed instead.
- */
 function changedFiles(staged: boolean, base: string): string[] {
 	const diffArgs = ["diff", "--name-only", "--diff-filter=ACMR"];
 	const listed = staged

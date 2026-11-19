@@ -1,9 +1,6 @@
 import type { APIRoute } from "astro";
 import { nav } from "../nav";
 
-// Every docs page's raw markdown, in nav order, concatenated into one
-// agent-consumable document. llms.txt stays the condensed briefing;
-// llms-full.txt is the whole site.
 const pages = import.meta.glob<string>("./**/*.md", {
 	query: "?raw",
 	import: "default",

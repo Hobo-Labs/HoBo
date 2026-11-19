@@ -1,16 +1,3 @@
-/**
- * CLI shell for the rebalance actor.
- *
- *   node --import tsx src/bin/rebalance.ts [--mode plan|apply] [--fixture f.json]
- *
- * Live mode reads the repository from --repo / GITHUB_REPOSITORY and talks
- * to the GitHub API with GITHUB_TOKEN (billing) and VARS_ADMIN_TOKEN
- * (variable writes; falls back to GITHUB_TOKEN for reads). Fixture mode
- * runs fully offline against a JSON scenario — the same path the tests and
- * the simulate proof use. Events append to the JSONL event store and the
- * plan snapshot lands in the read store when HOBO_RB_STATE_DIR is set;
- * a GitHub step summary is written when Actions provides one.
- */
 
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -224,8 +211,6 @@ function writeOutputs(result: RebalanceResult, mode: string, seq: string): void 
 	const stateDir = process.env.HOBO_RB_STATE_DIR;
 	if (stateDir !== undefined && stateDir !== "") {
 		mkdirSync(stateDir, { recursive: true });
-		// Event store: append-only JSONL; snapshot.json is the read store's
-		// current-plan snapshot projected from this pass.
 		for (const event of result.events) {
 			appendFileSync(
 				path.join(stateDir, "events.jsonl"),

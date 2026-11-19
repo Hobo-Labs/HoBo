@@ -1,4 +1,3 @@
-/** In-browser anonymous Environment Station — static-site operator bootstrap (no CLI). */
 
 export type AnonymousStationInput = {
 	readonly stationId: string;
@@ -13,10 +12,6 @@ export type AnonymousStationHost = {
 	revoke(): void;
 };
 
-/**
- * Operator stamps an anonymous-remote station in the browser Home Station.
- * No Bindle/app code, no local bridge, no Docker — works on GitHub Pages.
- */
 export function createAnonymousBrowserStation(
 	input: AnonymousStationInput,
 ): AnonymousStationHost {

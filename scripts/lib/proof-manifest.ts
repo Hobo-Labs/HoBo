@@ -1,11 +1,3 @@
-/**
- * Single schema source for draft-proof manifests (`proof.json`).
- *
- * Every proof package added after the hardening baseline carries a `proof.json` that
- * declares its layer, references, artifacts, and waivers. The draft gates
- * (`check-draft-artifacts.ts`, `check-proof-cascade.ts`) validate against THIS module —
- * do not duplicate the shape in CUE/JSON Schema; one validator, one source of truth.
- */
 import { z } from "zod";
 
 export const EXPERIENCE_TYPES = ["dx", "ux", "cx", "ax", "api"] as const;
@@ -96,7 +88,6 @@ export const proofManifestSchema = z
 
 export type ProofManifest = z.infer<typeof proofManifestSchema>;
 
-/** Workspace-path helpers shared by the gates. */
 export function workspaceForDraftFile(file: string): string | undefined {
 	const normalized = file.replaceAll("\\", "/");
 	const flat = normalized.match(
@@ -123,6 +114,5 @@ export function experienceTypeForWorkspace(
 	const match = workspace.match(
 		/^src\/draft\/exp-proofs\/(dx|ux|cx|ax|api)\//u,
 	);
-	// SAFETY: assertion to `tch[1] as ExperienceType) ` is required at this boundary.
 	return match ? (match[1] as ExperienceType) : undefined;
 }

@@ -1,15 +1,3 @@
-/**
- * `git submodule update` takes `submodule.<name>.url` from every scope git
- * reads: the system and global files (and the files they include), this
- * clone's `.git/config`, a worktree's `config.worktree`, and the command line
- * (`git -c`, which reaches a child git as `GIT_CONFIG_COUNT` or
- * `GIT_CONFIG_PARAMETERS`), the command line winning. The stale-URL refusal
- * reads the same set with an unscoped `git config --get`, so a URL from any of
- * them is compared before anything is cloned, and the fix names where it came
- * from. Each fix is run here as printed, as the user would run it. GIT_CONFIG,
- * which would redirect that read to another file, is dropped from the
- * environment (as git does for a submodule).
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
@@ -28,24 +16,20 @@ import {
 
 const KEY = "submodule.external/lib.url";
 
-/** The printed fix, its alternative after "or:", or dropping the command-line key. */
 type Repair = "fix" | "alternative" | "drop";
 
 interface Source {
 	readonly label: string;
-	/** Puts the stale URL where this source keeps it; answers how to run the script. */
 	readonly arrange: (
 		dir: string,
 		work: string,
 		stale: string,
 	) => { env: NodeJS.ProcessEnv; more: GitConfig };
-	/** What status says about the URL, and the fix it gives. */
 	readonly said: RegExp;
 	readonly fix: RegExp;
 	readonly repair: Repair;
 }
 
-/** A file holding the stale URL, for another configuration to include. */
 function includedFile(dir: string, stale: string): string {
 	const file = join(dir, "included.cfg");
 	writeFileSync(file, `[submodule "external/lib"]\n\turl = ${stale}\n`);
@@ -186,7 +170,6 @@ const SOURCES: readonly Source[] = [
 	},
 ];
 
-/** Runs what status printed, in the user's environment; answers the command line after it. */
 function runRepair(
 	repair: Repair,
 	said: string,

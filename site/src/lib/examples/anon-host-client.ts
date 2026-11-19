@@ -6,15 +6,8 @@ import {
 	type JsonValue,
 } from "../json-inspect.js";
 
-/**
- * Same-origin agent anonymous host client for providers without Temporary Accounts.
- * Never uses blob: URLs.
- */
-
-/** Legacy type kept for OpenSaaS same-origin helper signatures (unused OOB). */
 export type AnonProviderId = string;
 
-/** Empty — Railway dropped from OOB; Vercel uses Drop (`/api/vercel-temp`). */
 export const ANON_SAME_ORIGIN_PROVIDERS: ReadonlySet<string> = new Set();
 
 export type AnonStationProvision = {

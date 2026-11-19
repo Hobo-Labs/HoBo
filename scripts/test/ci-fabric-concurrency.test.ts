@@ -8,8 +8,6 @@ const workflow = readFileSync(
 );
 
 describe("HoBo CI Fabric concurrency", () => {
-	// Finding 113: cancelling the running main push on every new push meant no
-	// main run finished while the merge queue landed faster than a run takes.
 	it("queues main pushes and cancels only a pull request's older run", () => {
 		const block =
 			/\nconcurrency:\n {2}group: (.+)\n {2}cancel-in-progress: (.+)\n/u.exec(

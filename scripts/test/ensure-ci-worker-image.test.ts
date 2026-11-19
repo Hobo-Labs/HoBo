@@ -34,8 +34,6 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("exposes materialize-only without throwing on missing image", () => {
-		// A stub Docker CLI with nothing local: a self-hosted runner shares the
-		// host's Docker, which may already hold this tree's worker image.
 		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-missing-"));
 		writeFileSync(
 			join(bin, "docker"),
@@ -64,8 +62,6 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("pulls the worker from GHCR when the registry has it", () => {
-		// A stub Docker CLI: nothing local, the login and the manifest answer, the
-		// pull works. Every call is recorded.
 		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-"));
 		const calls = join(bin, "calls");
 		writeFileSync(
@@ -115,7 +111,6 @@ describe("ensure-ci-worker-image", () => {
 		}
 	});
 
-	// The post-green publisher asks what GHCR has for this tree (finding 113).
 	function publishedStatus(stub: { host: boolean; manifest: boolean }) {
 		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-status-"));
 		try {

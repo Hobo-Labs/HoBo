@@ -1,7 +1,3 @@
-/**
- * I/O-boundary values without using `unknown` or `object`, plus a typeof-free
- * kind probe. Used by repo scripts that must stay anti-slop clean.
- */
 export type JsonValue =
 	| string
 	| number

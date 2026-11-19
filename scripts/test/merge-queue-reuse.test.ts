@@ -86,13 +86,11 @@ describe("merge-queue reuse on main", () => {
 			new URL("../../.hobo/ci.json", import.meta.url),
 			"utf8",
 		);
-		// The committed value is the default an unset variable had: on.
 		assert.equal(DEFAULT_REUSE_MERGE_QUEUE, true);
 		assert.equal(reuseMergeQueueSetting(committed), true);
 		const project = JSON.parse(committed);
 		project.runnerRouting.mainGate.reuseMergeQueue = false;
 		assert.equal(reuseMergeQueueSetting(JSON.stringify(project)), false);
-		// No valid policy, or no file: the default.
 		assert.equal(reuseMergeQueueSetting(undefined), true);
 		assert.equal(reuseMergeQueueSetting("{}"), true);
 		const script = readFileSync(

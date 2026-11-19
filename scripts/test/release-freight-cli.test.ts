@@ -221,7 +221,6 @@ describe("packCliBundle + restoreCliBundle", () => {
 			revision: REVISION,
 			out,
 		});
-		// A second archive with the same manifest plus one file outside dist/.
 		const staged = mkdtempSync(join(tmpdir(), "hobo-cli-evil-"));
 		spawnSync("tar", ["-xzf", out, "-C", staged]);
 		mkdirSync(join(staged, "packages/hobo/src"), { recursive: true });

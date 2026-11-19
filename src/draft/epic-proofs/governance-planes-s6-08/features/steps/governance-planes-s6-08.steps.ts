@@ -1,12 +1,3 @@
-/**
- * Executable step definitions for governance-planes-s6-08.feature.
- *
- * Drives the epic's real reference architecture
- * (services/governance-planes-reference-architecture.ts) — the Stage-6
- * evidence suite over its committed fixture — and asserts each scenario
- * against the events, policy decisions, and projections it produces.
- * Boundaries stay mocked from the promoted technical-proof modules.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -19,8 +10,6 @@ function suite(): Suite {
 	suiteCache ??= runStage6GovernanceEvidenceSuite();
 	return suiteCache;
 }
-
-// --- Scenario: Consent-gated notify send through hobo:notify ---------------
 
 let notifyResult: Suite["results"]["notify"] | undefined;
 
@@ -56,8 +45,6 @@ Then("Stage-6 notification.Delivered records the notify outcome", () => {
 	assert.equal(delivered.data.recipientId, "user:alice");
 });
 
-// --- Scenario: Residency obligation with crypto-shred erasure --------------
-
 let residencyResult: Suite["results"]["residencyErasure"] | undefined;
 
 Given("Stage-6 phi-classified data constrained to us-east-1", () => {
@@ -92,12 +79,9 @@ Then(
 			),
 			"rebuilt projection lists the shredded subject",
 		);
-		// The log kept every original event; erasure destroyed keys, not history.
 		assert.ok(erasure.logEventCount > 0, "append-only log retains its events");
 	},
 );
-
-// --- Scenario: Guardrail blocks flagged model output -----------------------
 
 let guardrailResult: Suite["results"]["guardrail"] | undefined;
 
@@ -125,8 +109,6 @@ Then(
 		);
 	},
 );
-
-// --- Scenario: Certified-only Registry install via Matching ----------------
 
 let installResult: Suite["results"]["registryInstall"] | undefined;
 

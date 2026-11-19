@@ -7,11 +7,6 @@ import {
 	type JsonValue,
 } from "../json-inspect.js";
 
-/**
- * Generic temporary/agent Environment Station client for Examples providers
- * that expose provisionTemporaryEnvironmentStation (local or anonymous).
- */
-
 export type ProviderTempProvision = {
 	readonly ok: true;
 	readonly stationId: string;

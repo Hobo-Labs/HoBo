@@ -119,10 +119,6 @@ async function linkPayload(): Promise<void> {
 	}
 	for (const source of await payloadNodeModules()) {
 		const destination = join(root, relative(payload, source));
-		// A package the layer has and this checkout does not was dropped from
-		// the tree after the layer was built. Its directory is not brought
-		// back: one holding only `node_modules` is a package directory with
-		// none of a package's files, and the layout check fails on it.
 		if (!(await exists(dirname(destination)))) continue;
 		await rm(destination, { recursive: true, force: true });
 		await symlink(source, destination, "dir");
@@ -146,7 +142,6 @@ function miss(reason: string): Match {
 	return { match: false, reason };
 }
 
-// pnpm writes .modules.yaml as pretty-printed JSON.
 const PNPM_VIRTUAL_STORE = /"virtualStoreDir"\s*:\s*"\.pnpm"/;
 
 async function matches(expected: string): Promise<Match> {
@@ -187,7 +182,6 @@ async function matches(expected: string): Promise<Match> {
 	);
 	if (!store.ok) return miss(store.reason);
 	if (!store.value) return miss("virtual-store");
-	// The root manifest declares no workspace dependency; packages do.
 	const workspaceLink = await step(
 		"workspace-link",
 		async () =>
@@ -234,8 +228,6 @@ if (command === "link") {
 	try {
 		expected = await expectedKey();
 	} catch (error) {
-		// A missing importer (sparse S0 used to omit media/package.json) is an
-		// ordinary install fallback. Name the path so the next miss is diagnosable.
 		const detail = error instanceof Error ? error.message : String(error);
 		console.error(`deps layer checkout-key unavailable: ${detail}`);
 	}

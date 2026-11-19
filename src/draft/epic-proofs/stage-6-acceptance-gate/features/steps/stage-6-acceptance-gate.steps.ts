@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for stage-6-acceptance-gate.feature.
- *
- * Drives the epic's real drill module (src/stage-6-acceptance-drill.ts)
- * over the committed fixture scenarios — the green GA drill plus the
- * adversarial fixtures that must fail the gate. Pact boundaries are the
- * mocked subsystem seams the drill re-verifies.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -22,7 +14,6 @@ type Fixture = { scenarios: Record<string, Stage6DrillScenario> };
 
 let fixturePromise: Promise<Fixture> | undefined;
 function fixture(): Promise<Fixture> {
-  // SAFETY: assertion to `adDrillFixture() as Promise<Fixture>; ` is required at this boundary.
   fixturePromise ??= loadDrillFixture() as Promise<Fixture>;
   return fixturePromise;
 }
@@ -33,8 +24,6 @@ type Stage6World = {
 };
 
 const world: Stage6World = {};
-
-// --- Scenario: Green fixture closes v1 GA readiness --------------------------
 
 Given(
   "the mocked Stage-6 green drill fixture with canary, FinOps, DR, dashboard, governance, and prior-gate evidence",
@@ -93,8 +82,6 @@ Then("every Stage-6 mocked boundary pact verifies", async () => {
     "every pact boundary verifies against the drill outputs",
   );
 });
-
-// --- Adversarial scenarios ----------------------------------------------------
 
 Given("the adversarial Stage-6 fixture {string}", async (key: string) => {
   const scenarios = (await fixture()).scenarios;

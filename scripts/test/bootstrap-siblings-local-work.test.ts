@@ -1,9 +1,3 @@
-/**
- * `setup` runs the git initialisation every time, so it must not quietly
- * abandon work done inside the submodule: ADR-0128's contribution workflow is
- * "edit inside external/ts-autocode, commit, push", and a commit made there on
- * a detached HEAD lives nowhere but the reflog once HEAD moves off it.
- */
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -37,7 +31,6 @@ function fixture(pinned: number): Fixture {
 	};
 }
 
-/** Initialise at the pin, then commit once inside the submodule on a detached HEAD. */
 function withLocalCommit(f: Fixture): string {
 	const first = runBootstrap(f.work, ["--reference", f.reference]);
 	assert.equal(first.status, 0, first.stderr);

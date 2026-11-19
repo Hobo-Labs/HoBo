@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// Parse, don't validate: markdown crosses this boundary once and becomes parsed
-// domain types for downstream parity checks.
-
 export const DAPR_COMPETITOR_DOC = "docs/competitors/dapr.md";
 
 export const AUDITED_DAPR_FEATURES = ["Bindings", "Distributed lock"] as const;
@@ -59,7 +56,6 @@ function extractMappingRows(markdown: string): DaprParityRow[] {
       throw new Error(`missing parity status marker for ${feature}`);
     }
 
-    // SAFETY: `const status = statusMatch[1] as DaprParityRow["status"];` is required at this I/O or test boundary.
     const status = statusMatch[1] as DaprParityRow["status"];
     const rowText = `${equivalent} ${notes}`;
     const designAnchors = [...rowText.matchAll(DESIGN_ANCHOR_PATTERN)].map((anchor) => anchor[0]);

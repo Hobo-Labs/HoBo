@@ -1,12 +1,3 @@
-// Deliver a Rail like software (ADR-0182 D24, D25, I22, I23).
-//
-// A Rail version is Freight with subject RAIL, discovered when the Rail is
-// approved (HOBO_RAIL). Its pipeline binds it first as a candidate in INFORM.
-// While it is a candidate, the enforced Rail still decides; the gate shadows
-// the candidate and posture evaluates it. The INFORM node qualifies on
-// HOBO_POSTURE series: noncompliant ratio and shadow divergence over 24 h.
-// Only then can the ENFORCE node bind it as the enforced Rail. Rollback
-// restores the previous digest through the gate, and windows always allow it.
 import { create } from "@bufbuild/protobuf";
 import {
 	Aggregation,
@@ -37,7 +28,6 @@ import {
 
 export const RAIL = "rail-eu-storage";
 
-/** The new Rail blocks public buckets, and its authors expect it to change exactly one decision during the shadow period. */
 export const EXPECTED_DIVERGENCES = 1;
 
 export const source = create(FreightSourceRecordSchema, {
@@ -52,7 +42,6 @@ export const source = create(FreightSourceRecordSchema, {
 const posture = (name: string, query: string) =>
 	create(HealthQueryRecordSchema, { name, source: HealthSourceKind.HOBO_POSTURE, endpointRef: "hobo://posture", query, unit: "ratio" });
 
-/** R12: pass only with ≤ 2 % noncompliant and no more than the declared divergences over 24 h. */
 export const informVerification = create(VerificationSpecRecordSchema, {
 	windowMs: BigInt(CD_DEFAULTS.informWindowMs),
 	requiredObservations: CD_DEFAULTS.verificationRequiredObservations,
@@ -104,7 +93,6 @@ export const pipeline = create(PipelineRecordSchema, {
 	],
 });
 
-/** Station Rail `delivery`: posture packs bound in `inform`; enforcement acts only through repair Deltas. */
 export const railDelivery = create(RailDeliveryRecordSchema, {
 	campSets: ["eu-storage"],
 	posture: [

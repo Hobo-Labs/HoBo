@@ -1,7 +1,3 @@
-// Shared pieces of the reference adapters: an injected clock, a context, and
-// typed refusals. Reference adapters are small, in-memory and deterministic;
-// each takes a `mutant` switch that breaks exactly one port property so the
-// kit can show the suite catching it.
 import { createHash } from "node:crypto";
 import type { CdOutcomeLike, CdReasonLike } from "@hobo/conformance";
 

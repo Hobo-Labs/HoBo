@@ -12,7 +12,6 @@ const page = `<!doctype html>
 </html>
 `;
 
-/** The storefront: a plain fetch handler bound to the API (see bindle.ts). */
 export function storefront(_request: Request): Response {
 	return new Response(page, {
 		headers: { "content-type": "text/html; charset=utf-8" },
