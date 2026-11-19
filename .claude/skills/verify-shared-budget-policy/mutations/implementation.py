@@ -9,6 +9,9 @@ source = repo / 'packages/core'
 config = repo / '.agents/skills/verify-shared-budget-policy/models/vitest.config.mts'
 test = 'test/budget-policy.property.test.ts'
 cases = [
+    ('scope shape', 'if (!isJsonObject(identity))', 'if (false)'),
+    ('scope Unicode', r'const IDENTIFIER = /^[^\p{Cc}\p{Cs}]{1,200}$/u;', r'const IDENTIFIER = /^[^\p{Cc}]{1,200}$/u;'),
+    ('target Unicode', r'const TARGET = /^[^\p{Cc}\p{Cs}]{0,200}$/u;', r'const TARGET = /^[^\p{Cc}]{0,200}$/u;'),
     ('null constraints', 'value.constraints === undefined ? [] : value.constraints', 'value.constraints ?? []'),
     ('context shape', 'if (!isJsonObject(context))', 'if (false)'),
     ('measurement collection', 'if (!Array.isArray(context.measurements))', 'if (false && !Array.isArray(context.measurements))'),

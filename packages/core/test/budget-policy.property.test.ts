@@ -1,8 +1,17 @@
+import {
+	create,
+	fromBinary,
+	fromJsonString,
+	toBinary,
+} from "@bufbuild/protobuf";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { BudgetPolicyRecordSchema } from "../src/_generated/budget_policy_pb.js";
 import type { JsonObject } from "../src/json.js";
 import {
+	BudgetPolicyError,
 	type BudgetPolicyEvaluationContext,
+	budgetScopeIdentityKey,
 	evaluateBudgetPolicy,
 	parseBudgetPolicy,
 } from "../src/ports/budget-policy.js";
@@ -51,6 +60,166 @@ function context(
 }
 
 describe("shared budget-policy properties", () => {
+	it.each([
+		null,
+		undefined,
+		false,
+		0,
+		"",
+		[],
+	])("rejects a malformed scope identity: %j", (value) => {
+		const identity = JSON.parse(JSON.stringify({ value })).value;
+		expect(() => budgetScopeIdentityKey(identity)).toThrow(BudgetPolicyError);
+	});
+
+	it("refuses malformed Unicode identities and targets before wire encoding can alias them", () => {
+		fc.assert(
+			fc.property(fc.integer({ min: 0xd800, max: 0xdfff }), (codeUnit) => {
+				const malformed = `a${String.fromCharCode(codeUnit)}b`;
+				const wire = create(BudgetPolicyRecordSchema, { tenantId: malformed });
+				expect(
+					fromBinary(
+						BudgetPolicyRecordSchema,
+						toBinary(BudgetPolicyRecordSchema, wire),
+					).tenantId,
+				).not.toBe(malformed);
+				for (const field of ["tenantId", "budgetId", "periodId", "revision"]) {
+					expect(() => policy(100, { [field]: malformed })).toThrow();
+				}
+				for (const field of [
+					"tenantId",
+					"budgetId",
+					"periodId",
+					"policyRevision",
+				]) {
+					expect(() =>
+						budgetScopeIdentityKey({
+							tenantId: "tenant",
+							budgetId: "budget",
+							periodId: "period",
+							policyRevision: "revision",
+							[field]: malformed,
+						}),
+					).toThrow();
+				}
+				expect(() =>
+					policy(100, {
+						constraints: [
+							{
+								key: "work.count",
+								workload: "ci",
+								unit: "count",
+								maximum: 1,
+								target: malformed,
+							},
+						],
+					}),
+				).toThrow();
+				expect(
+					evaluateBudgetPolicy(
+						policy(100),
+						context({
+							measurements: [
+								{
+									key: "work.count",
+									unit: "count",
+									value: 0,
+									target: malformed,
+								},
+							],
+						}),
+					),
+				).toMatchObject({ ok: false, code: "budget.policy.measurement" });
+			}),
+			CHECK,
+		);
+	});
+
+	it("preserves accepted Unicode identities through protobuf and counts target characters consistently", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.constantFrom("a", "é", "😀", "�"), {
+					minLength: 1,
+					maxLength: 40,
+				}),
+				(characters) => {
+					const identity = characters.join("");
+					const parsed = policy(100, {
+						tenantId: identity,
+						constraints: [
+							{
+								key: "work.count",
+								workload: "ci",
+								unit: "count",
+								maximum: 1,
+								target: identity,
+							},
+						],
+					});
+					const wire = fromJsonString(
+						BudgetPolicyRecordSchema,
+						JSON.stringify(parsed),
+					);
+					const roundTrip = fromBinary(
+						BudgetPolicyRecordSchema,
+						toBinary(BudgetPolicyRecordSchema, wire),
+					);
+					expect(roundTrip.tenantId).toBe(identity);
+					expect(roundTrip.constraints[0]?.target).toBe(identity);
+				},
+			),
+			CHECK,
+		);
+		const target = "😀".repeat(200);
+		const longTargetPolicy = policy(100, {
+			constraints: [
+				{
+					key: "work.count",
+					workload: "ci",
+					unit: "count",
+					maximum: 1,
+					target,
+				},
+			],
+		});
+		expect(
+			evaluateBudgetPolicy(
+				longTargetPolicy,
+				context({
+					measurements: [
+						{ key: "work.count", unit: "count", value: 1, target },
+					],
+				}),
+			).ok,
+		).toBe(true);
+		expect(() =>
+			policy(100, {
+				constraints: [
+					{
+						key: "work.count",
+						workload: "ci",
+						unit: "count",
+						maximum: 1,
+						target,
+					},
+				],
+			}),
+		).not.toThrow();
+		expect(() =>
+			policy(100, {
+				constraints: [
+					{
+						key: "work.count",
+						workload: "ci",
+						unit: "count",
+						maximum: 1,
+						target: `${target}a`,
+					},
+				],
+			}),
+		).toThrow();
+	});
+
 	it("rejects non-array constraints instead of silently dropping them", () => {
 		fc.assert(
 			fc.property(fc.constantFrom(null, false, 0, "", {}), (constraints) => {

@@ -13,6 +13,8 @@ const cases = [
   ['SharedBudget', String.raw`(strict /\ ~native /\ ~planning)`, String.raw`FALSE`, 'DeferredNativeEvidence', ''],
   ['BudgetContext', String.raw`IF ValidateContext THEN "refused" ELSE "crashed"`, String.raw`IF FALSE THEN "refused" ELSE "crashed"`, 'NoMalformedInputCrash', 'CONSTANTS ValidateContext = TRUE\n          ValidateMeasurements = TRUE'],
   ['BudgetContext', String.raw`IF ValidateMeasurements`, String.raw`IF FALSE`, 'InvalidMeasurementsRefused', 'CONSTANTS ValidateContext = TRUE\n          ValidateMeasurements = TRUE'],
+  ['BudgetText', String.raw`THEN ValidateScope ELSE ValidateTarget`, String.raw`THEN FALSE ELSE ValidateTarget`, 'WirePreservesAcceptedText', 'CONSTANTS ValidateScope = TRUE\n          ValidateTarget = TRUE'],
+  ['BudgetText', String.raw`THEN ValidateScope ELSE ValidateTarget`, String.raw`THEN ValidateScope ELSE FALSE`, 'WirePreservesAcceptedText', 'CONSTANTS ValidateScope = TRUE\n          ValidateTarget = TRUE'],
 ] as const;
 try {
   for (const [model, before, after, invariant, constants] of cases) {
