@@ -1,4 +1,10 @@
 export {
+	type QuarantineFinding,
+	QuarantineFindingSchema,
+	type QuarantineReport,
+	QuarantineReportSchema,
+} from "./_generated/data_pb.js";
+export {
 	type ActorHost,
 	type AggregateLease,
 	createInMemoryActorHost,
@@ -85,6 +91,10 @@ export {
 	type ProjectionRebuildOptions,
 	type ProjectionRebuildShardResult,
 } from "./projection-rebuild.js";
+export {
+	type QuarantineReportOptions,
+	readQuarantineReport,
+} from "./quarantine-report.js";
 export {
 	createUpcasterRegistry,
 	parseUpcasterVersion,

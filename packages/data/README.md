@@ -66,6 +66,13 @@ treated as deterministic by default. If an aggregate fails while folding events
 it just committed, inspect the stream before repeating the command; its events
 and effects may already have been committed.
 
+`readQuarantineReport` reads persisted aggregate, projection, and EventStore
+quarantine facts from a durable event store for a tenant. Findings include the
+source event, affected fold, reason, and quarantine record location. The report
+has bounded scanning and includes `nextPosition` when another page remains;
+pass that position back through `parseEventPosition` to continue. `complete`
+describes the journal observed during the scan.
+
 `createCrossCampProjection` copies an owner's ordered event stream into an
 independent replica event store and folds the copied events with the same
 projection. It can read all streams for a tenant or a named source stream.
