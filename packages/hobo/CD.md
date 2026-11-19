@@ -258,9 +258,9 @@ platform function with no loop uses the same host: `handle` answers one
 request, and `pass` reconciles each MANAGED Camp once and runs one tick.
 Built with `readiness: "composed"` (the Vercel host), its `/readyz`
 answers 200 only when the journal's durable pass record — a
-`host.PassSucceeded` event appended to the `cd-host-pass` stream after a
-fully successful pass — is fresh within the readiness window and a live
-journal probe succeeds. A function never starts the service's loop, so
+`host.PassSucceeded` event on the `cd-host-pass` stream whose `campIds`
+match the current managed camps — is fresh within the readiness window
+and a live journal probe succeeds. A function never starts the service's loop, so
 readiness is read from the journal every request, never from a
 process-local latch; any function instance sees the same record. With
 `fleetPassLease`, one holder at a time claims the shared fleet pass

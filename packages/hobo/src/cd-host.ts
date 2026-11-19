@@ -110,15 +110,29 @@ function passSucceededAtMs(data: unknown): number | undefined {
 	return undefined;
 }
 
-function passSucceededCamps(data: unknown): number | undefined {
+function passSucceededCampIds(data: unknown): readonly CampId[] | undefined {
 	if (data === null || typeof data !== "object") return undefined;
 	for (const [key, value] of Object.entries(data)) {
-		if (key !== "camps") continue;
-		return typeof value === "number" && Number.isFinite(value)
-			? value
-			: undefined;
+		if (key !== "campIds") continue;
+		if (!Array.isArray(value)) return undefined;
+		if (!value.every((entry) => typeof entry === "string" && entry.length > 0))
+			return undefined;
+		return value as CampId[];
 	}
 	return undefined;
+}
+
+function campIdsMatchManaged(
+	recorded: readonly CampId[],
+	expected: readonly CampId[],
+): boolean {
+	if (recorded.length !== expected.length) return false;
+	const left = [...recorded].sort();
+	const right = [...expected].sort();
+	for (let index = 0; index < left.length; index += 1) {
+		if (left[index] !== right[index]) return false;
+	}
+	return true;
 }
 
 function refusalCodeOf(error: unknown): string {
@@ -210,11 +224,13 @@ export async function composeCdHost(
 		return revision;
 	}
 
-	async function recordSuccessfulPass(campsReconciled: number): Promise<void> {
+	async function recordSuccessfulPass(
+		campIds: readonly CampId[],
+	): Promise<void> {
 		const atMs = runtime.ctx.now();
 		const event = {
 			type: HOST_PASS_SUCCEEDED,
-			data: { atMs, camps: campsReconciled },
+			data: { atMs, campIds: [...campIds] },
 			meta: { idempotencyKey: `host-pass:${input.holderId}:${atMs}` },
 		};
 		let lastError: unknown;
@@ -252,9 +268,9 @@ export async function composeCdHost(
 					: stored;
 				if (candidate === undefined) continue;
 				if (candidate - now > HOST_PASS_FUTURE_SKEW_MS) continue;
-				const camps = passSucceededCamps(event.data);
-				if (camps === undefined || camps < 0) continue;
-				if (managed.length > 0 && camps < managed.length) continue;
+				const campIds = passSucceededCampIds(event.data);
+				if (campIds === undefined) continue;
+				if (!campIdsMatchManaged(campIds, managed)) continue;
 				atMs = candidate;
 			}
 			return atMs;
@@ -385,7 +401,7 @@ export async function composeCdHost(
 				tick.store;
 			if (passCounts) {
 				if (signal.aborted) throw abortErrorOf(signal);
-				await recordSuccessfulPass(reconciled.length);
+				await recordSuccessfulPass(managed);
 			}
 			return Object.freeze({
 				tick,
