@@ -1,11 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { create, fromBinary, toBinary, toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
 import {
 	ActualChargeSchema,
 	MoneySchema,
-	ReconciliationRecordedSchema,
 } from "../src/_generated/pricing_pb.js";
 import {
 	isJsonObject,
@@ -73,7 +72,6 @@ it("§12 Phase 5 live billing sync produces dated snapshot and variance against 
 	expect("code" in result).toBe(false);
 	if ("code" in result) return;
 	expect(result.snapshot.schema).toBe("hobo.pricing.billing-sync.snapshot/v1");
-	expect(result.snapshot.hashVersion).toBe(2);
 	expect(result.snapshot.syncAt).toBe(AT);
 	expect(result.snapshot.snapshotHash).toMatch(/^sha256:[0-9a-f]{64}$/);
 	expect(result.snapshot.completeness).toBe("complete");
@@ -85,11 +83,9 @@ it("§12 Phase 5 live billing sync produces dated snapshot and variance against 
 	expect(result.reconciliation.reconciliationHash).toMatch(
 		/^sha256:[0-9a-f]{64}$/,
 	);
-	expect(result.reconciliation.hashVersion).toBe(2);
 	expect(result.reconciliation.actualCharges).toHaveLength(2);
 	expect(result.reconciliation.reconciliationHash).toBe(
 		stableHash({
-			hashVersion: 2,
 			eventId: result.reconciliation.eventId,
 			occurredAt: result.reconciliation.occurredAt,
 			reservationId: result.reconciliation.reservationId,
@@ -291,19 +287,4 @@ it("binds snapshot and reconciliation hashes to charge contents", async () => {
 	expect(changed.reconciliation.reconciliationHash).not.toBe(
 		original.reconciliation.reconciliationHash,
 	);
-});
-
-it("reads older reconciliation events with the legacy hash version", () => {
-	const legacy = create(ReconciliationRecordedSchema, {
-		eventId: "old-event",
-		occurredAt: AT,
-		reservationId: "old-reservation",
-		reconciliationHash: `sha256:${"a".repeat(64)}`,
-	});
-	const replayed = fromBinary(
-		ReconciliationRecordedSchema,
-		toBinary(ReconciliationRecordedSchema, legacy),
-	);
-	expect(replayed.hashVersion).toBe(0);
-	expect(replayed.reconciliationHash).toBe(legacy.reconciliationHash);
 });

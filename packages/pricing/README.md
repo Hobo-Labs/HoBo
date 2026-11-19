@@ -53,13 +53,8 @@ accounting is available from `@hobo/ci`.
   rows, invalid dates, and mixed quote/provider currencies are rejected. The
   adapter is independent of the pure quote kernel.
 
-New snapshots and reconciliation events carry `hashVersion: 2`; their hashes
-cover the complete imported charges and record identifiers. Earlier events
-without a hash version use the legacy identifier-only hash and should retain
-their original value when replayed.
-
-For version 2, the reconciliation hash is `stableHash` of the event ID,
-occurrence time, reservation ID, hash version, and ordered actual charges as
+The reconciliation hash is `stableHash` of the event ID,
+occurrence time, reservation ID, and ordered actual charges as
 protobuf JSON with implicit fields emitted. The snapshot hash covers every
 snapshot field except the hash itself, with imported charges in the same JSON
 form. `stableHash` sorts object keys before hashing the JSON bytes.

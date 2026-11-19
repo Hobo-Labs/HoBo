@@ -50,7 +50,6 @@ export type VarianceFact = Readonly<{
 
 export type BillingSyncSnapshot = Readonly<{
 	schema: "hobo.pricing.billing-sync.snapshot/v1";
-	hashVersion: 2;
 	syncAt: string;
 	snapshotHash: string;
 	completeness: "complete" | "partial";
@@ -272,7 +271,6 @@ export async function runBillingSync(
 		toJson(ActualChargeSchema, charge, { alwaysEmitImplicit: true }),
 	);
 	const reconciliationPayload: JsonValue = {
-		hashVersion: 2,
 		eventId: input.eventId,
 		occurredAt: input.syncAt,
 		reservationId: input.reservationId,
@@ -281,7 +279,6 @@ export async function runBillingSync(
 	const reconciliationHash = stableHash(reconciliationPayload);
 	const snapshotBody: JsonValue = {
 		schema: "hobo.pricing.billing-sync.snapshot/v1",
-		hashVersion: 2,
 		syncAt: input.syncAt,
 		completeness: snapshotCompleteness,
 		period: { start: input.periodStart, end: input.periodEnd },
@@ -294,7 +291,6 @@ export async function runBillingSync(
 	const snapshotHash = stableHash(snapshotBody);
 
 	const reconciliation = create(ReconciliationRecordedSchema, {
-		hashVersion: 2,
 		eventId: input.eventId,
 		occurredAt: input.syncAt,
 		reservationId: input.reservationId,
@@ -305,7 +301,6 @@ export async function runBillingSync(
 	return {
 		snapshot: {
 			schema: "hobo.pricing.billing-sync.snapshot/v1",
-			hashVersion: 2,
 			syncAt: input.syncAt,
 			snapshotHash,
 			completeness: snapshotCompleteness,

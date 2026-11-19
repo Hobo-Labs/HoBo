@@ -53,7 +53,6 @@
             "content": {
               "snapshot": {
                 "schema": "hobo.pricing.billing-sync.snapshot/v1",
-                "hashVersion": 2,
                 "syncAt": "2026-02-01T12:00:00Z",
                 "completeness": "complete",
                 "imported": [
@@ -76,7 +75,6 @@
               "reconciliation": {
                 "eventId": "event-pact-1",
                 "reservationId": "reservation-pact-1",
-                "hashVersion": 2,
                 "actualCharges": [
                   {
                     "id": "prov-charge-usage-1"
