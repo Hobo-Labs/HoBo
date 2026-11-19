@@ -69,8 +69,13 @@ function headersOf(request: IncomingMessage): FeedRequest["headers"] {
 async function send(
 	response: ServerResponse,
 	feed: FeedResponse,
+	headOnly = false,
 ): Promise<void> {
 	response.writeHead(feed.status, { ...feed.headers });
+	if (headOnly) {
+		response.end();
+		return;
+	}
 	if (feed.body instanceof Uint8Array) {
 		response.end(Buffer.from(feed.body));
 		return;
@@ -121,7 +126,18 @@ export function createCdHttpEntry(
 	): Promise<void> => {
 		const incoming = incomingRequestPath(request);
 		const path = incoming.split("?")[0] ?? "/";
-		if (request.method === "GET" && path === "/healthz") {
+		const method = (request.method ?? "GET").toUpperCase();
+		if (path === "/healthz" || path === "/readyz") {
+			if (method !== "GET" && method !== "HEAD") {
+				sendJson(response, 405, {
+					ok: false,
+					code: "cd-probe-method-not-allowed",
+					message: "The CD probes accept GET and HEAD only.",
+				});
+				return;
+			}
+		}
+		if (method === "GET" && path === "/healthz") {
 			sendJson(response, 200, { ok: true, commit });
 			return;
 		}
@@ -154,7 +170,11 @@ export function createCdHttpEntry(
 			const perRequest = new AbortController();
 			response.on("close", () => perRequest.abort());
 			if (path === "/healthz" || path === "/readyz") {
-				await send(response, await host.handle(feed, perRequest.signal));
+				await send(
+					response,
+					await host.handle(feed, perRequest.signal),
+					method === "HEAD",
+				);
 				return;
 			}
 			if (operatorReads === "deny" && deniesOperatorRead(feed)) {

@@ -78,6 +78,31 @@ describe("the CD function's HTTP entry", () => {
 		expect(composed).toBe(0);
 	});
 
+	it("rejects non-GET probes by method before composing CD", async () => {
+		let composed = 0;
+		const origin = await serve(
+			createCdHttpEntry(async () => {
+				composed += 1;
+				throw new Error("must not compose");
+			}),
+		);
+		for (const method of ["POST", "PUT", "DELETE"] as const) {
+			const health = await fetch(`${origin}/healthz`, { method });
+			expect(health.status).toBe(405);
+			expect(await health.json()).toMatchObject({
+				ok: false,
+				code: "cd-probe-method-not-allowed",
+			});
+			const ready = await fetch(`${origin}/readyz`, { method });
+			expect(ready.status).toBe(405);
+			expect(await ready.json()).toMatchObject({
+				ok: false,
+				code: "cd-probe-method-not-allowed",
+			});
+		}
+		expect(composed).toBe(0);
+	});
+
 	it("says why it is not ready, by code, while CD cannot compose", async () => {
 		const origin = await serve(
 			createCdHttpEntry(failing("cd-store-binding-missing")),
