@@ -4,6 +4,7 @@ import {
 	parseSeq,
 	StreamerBackpressureError,
 	StreamerClosedError,
+	StreamerHistoryExpiredError,
 	type StreamerRunResult,
 } from "@hobo/core";
 import { describe, expect, it, vi } from "vitest";
@@ -155,6 +156,48 @@ describe("backpressure", () => {
 			journal.write(DEFAULT_STREAM_NAME, chunk);
 		}
 		expect(journal.write(DEFAULT_STREAM_NAME, "f").seq).toBe(6);
+	});
+
+	it("bounds retained history and reports the earliest available frame", async () => {
+		const journal = journalFor(2);
+		for (const chunk of ["a", "b", "c", "d"]) {
+			journal.write(DEFAULT_STREAM_NAME, chunk);
+		}
+		expect(() => journal.attachReader(parseSeq(1))).toThrow(
+			StreamerHistoryExpiredError,
+		);
+		try {
+			journal.attachReader(parseSeq(1));
+		} catch (error) {
+			expect(error).toMatchObject({
+				runId: RUN,
+				requestedSeq: 1,
+				firstAvailableSeq: 3,
+			});
+		}
+		expect(await take(journal, 3, 2)).toEqual(["c", "d"]);
+	});
+
+	it("retains history if a new frame is invalid", async () => {
+		const journal = journalFor(1);
+		journal.write(DEFAULT_STREAM_NAME, "kept");
+		expect(() => journal.write("" as never, "invalid")).toThrow();
+		expect(await take(journal, 1, 1)).toEqual(["kept"]);
+	});
+
+	it("retains unread frames while evicting consumed history", async () => {
+		const journal = journalFor(2);
+		const reader = journal.attachReader(parseSeq(1))[Symbol.asyncIterator]();
+		journal.write(DEFAULT_STREAM_NAME, "a");
+		journal.write(DEFAULT_STREAM_NAME, "b");
+		expect((await reader.next()).value?.chunk).toBe("a");
+		journal.write(DEFAULT_STREAM_NAME, "c");
+		expect(() => journal.attachReader(parseSeq(1))).toThrow(
+			StreamerHistoryExpiredError,
+		);
+		expect((await reader.next()).value?.chunk).toBe("b");
+		expect((await reader.next()).value?.chunk).toBe("c");
+		await reader.return?.();
 	});
 
 	it("measures the slowest reader, not the fastest", async () => {

@@ -9,7 +9,7 @@ import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_streamer_port: GenFile = /*@__PURE__*/
-  fileDesc("ChNzdHJlYW1lcl9wb3J0LnByb3RvEgxob2JvLmNvcmUudjEiYwoNU3RyZWFtZXJGcmFtZRIOCgZydW5faWQYASABKAkSCwoDc2VxGAIgASgBEg4KBnN0cmVhbRgDIAEoCRIlCgVjaHVuaxgEIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZSJDChFTdHJlYW1lclJ1blJlc3VsdBIOCgZydW5faWQYASABKAkSDgoGc3RhdHVzGAIgASgJEg4KBnJlYXNvbhgDIAEoCWIGcHJvdG8z", [file_google_protobuf_struct]);
+  fileDesc("ChNzdHJlYW1lcl9wb3J0LnByb3RvEgxob2JvLmNvcmUudjEiYwoNU3RyZWFtZXJGcmFtZRIOCgZydW5faWQYASABKAkSCwoDc2VxGAIgASgBEg4KBnN0cmVhbRgDIAEoCRIlCgVjaHVuaxgEIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZSJDChFTdHJlYW1lclJ1blJlc3VsdBIOCgZydW5faWQYASABKAkSDgoGc3RhdHVzGAIgASgJEg4KBnJlYXNvbhgDIAEoCSJcChZTdHJlYW1lckhpc3RvcnlFeHBpcmVkEg4KBnJ1bl9pZBgBIAEoCRIVCg1yZXF1ZXN0ZWRfc2VxGAIgASgBEhsKE2ZpcnN0X2F2YWlsYWJsZV9zZXEYAyABKAFiBnByb3RvMw", [file_google_protobuf_struct]);
 
 export type StreamerFrame = Message<"hobo.core.v1.StreamerFrame"> & {
   runId: string;
@@ -34,4 +34,15 @@ export type StreamerRunResult = Message<"hobo.core.v1.StreamerRunResult"> & {
 
 export const StreamerRunResultSchema: GenMessage<StreamerRunResult> = /*@__PURE__*/
   messageDesc(file_streamer_port, 1);
+
+export type StreamerHistoryExpired = Message<"hobo.core.v1.StreamerHistoryExpired"> & {
+  runId: string;
+
+  requestedSeq: number;
+
+  firstAvailableSeq: number;
+};
+
+export const StreamerHistoryExpiredSchema: GenMessage<StreamerHistoryExpired> = /*@__PURE__*/
+  messageDesc(file_streamer_port, 2);
 

@@ -127,8 +127,8 @@ function getJournal(
 }
 
 function normalizeBufferLimit(value: number): number {
-	if (!Number.isInteger(value) || value < 1) {
-		throw new TypeError("bufferLimit must be a positive integer");
+	if (!Number.isSafeInteger(value) || value < 1) {
+		throw new TypeError("bufferLimit must be a positive safe integer");
 	}
 	return value;
 }

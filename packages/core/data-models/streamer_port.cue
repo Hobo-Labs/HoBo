@@ -14,3 +14,9 @@ package data_models
 	status: #StreamerRunStatus
 	reason: string & !=""
 }
+
+#StreamerHistoryExpired: {
+	runId:             string & !=""
+	requestedSeq:      int & >=1 & <=9007199254740991
+	firstAvailableSeq: int & >requestedSeq & <=9007199254740991
+}

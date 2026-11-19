@@ -20,6 +20,11 @@ only later events on reactivation. It reuses a snapshot only with the same
 snapshot key (the fold function by default) and equivalent initial state.
 Snapshots live in the host process and do not survive its restart.
 
+The local streamer retains at most `bufferLimit` frames per run. Active readers
+apply backpressure before an unread frame is discarded. A reader that requests
+an older, evicted sequence receives `StreamerHistoryExpiredError` with the
+first available sequence.
+
 The local scheduler supports interval schedules and five- or six-field cron
 expressions. Cron expressions use the specified IANA time zone, while the
 provider's `cron` operation uses UTC. The first occurrence is strictly after registration, and
