@@ -211,6 +211,9 @@ describe("cross-camp projection replication", () => {
 			source: "replica",
 			readClass: "bounded-staleness",
 		});
+		await expect(runtime.read("strong" as never)).rejects.toThrow(
+			"unsupported replica read class",
+		);
 		const session = await runtime.readSession(write);
 		expect(session.evidence).toEqual({ source: "owner", readClass: "session" });
 		expect(session.snapshot.rows.tickets).toEqual({ count: 1 });
