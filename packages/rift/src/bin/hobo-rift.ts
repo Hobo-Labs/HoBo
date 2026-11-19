@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { detectCapability } from "../capability.js";
+import { RiftRegistryError } from "../errors.js";
 import {
 	createWorkspace,
 	deriveContract,
@@ -11,7 +12,6 @@ import {
 	readRegistry,
 	rebuildRegistry,
 	type Registry,
-	RiftRegistryError,
 	removeWorkspace,
 	runInWorkspace,
 	type WorkspaceRecord,
@@ -121,7 +121,7 @@ try {
 	} else if (command === "repair") {
 		const registry = rebuildRegistry(root);
 		emit(
-			`registry now lists ${registry.workspaces.length} workspace(s)`,
+			`registry now lists ${registry.workspaces.length} workspace(s)${registry.preservedJournal ? `; damaged journal preserved at ${registry.preservedJournal}` : ""}`,
 			registry,
 		);
 	} else if (command === "remove") {

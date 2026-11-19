@@ -39,6 +39,13 @@ import (
 	root: string & !=""
 }
 
+#WorkspaceCreating: {
+	type: "WorkspaceCreating"
+	at:   string & !=""
+	name: #WorkspaceName
+	path: string & !=""
+}
+
 #WorkspaceCreated: {
 	type:      "WorkspaceCreated"
 	at:        string & !=""
@@ -51,10 +58,17 @@ import (
 	name: #WorkspaceName
 }
 
-#WorkspaceEvent: #RootInitialized | #WorkspaceCreated | #WorkspaceRemoved
+#WorkspaceEvent: #RootInitialized | #WorkspaceCreating | #WorkspaceCreated | #WorkspaceRemoved
 
 #Registry: {
 	root: string & !=""
 	workspaces: [...#WorkspaceRecord]
 	eventCount: uint & <=4294967295
+}
+
+#RepairResult: {
+	root: string & !=""
+	workspaces: [...#WorkspaceRecord]
+	eventCount:        uint & <=4294967295
+	preservedJournal?: string & !=""
 }

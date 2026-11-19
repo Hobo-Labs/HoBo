@@ -4,6 +4,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	readdirSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -11,10 +12,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { WorkspaceEvent } from "../src/journal.js";
+import { appendEvent, type WorkspaceEvent } from "../src/journal.js";
 import type { JsonObject } from "../src/json.js";
 
 import {
+	createWorkspace,
 	entriesToClone,
 	initRoot,
 	listDebris,
@@ -174,6 +176,148 @@ describe("the journal is the authority", () => {
 });
 
 describe("repair", () => {
+	it("rejects malformed complete entries without changing the journal or snapshot", () => {
+		const { abs } = rootWithWorkspace();
+		const path = join(abs, RIFT_DIR, "events.jsonl");
+		const snapshotPath = join(abs, RIFT_DIR, "registry.json");
+		const journal = `${readFileSync(path, "utf8")}{invalid}\n`;
+		const snapshot = readFileSync(snapshotPath, "utf8");
+		writeFileSync(path, journal);
+		expect(() => readRegistry(abs)).toThrow("invalid workspace journal");
+		expect(() => rebuildRegistry(abs)).toThrow("invalid workspace journal");
+		expect(readFileSync(path, "utf8")).toBe(journal);
+		expect(readFileSync(snapshotPath, "utf8")).toBe(snapshot);
+	});
+
+	it("rejects complete entries that do not match the current event schema", () => {
+		const abs = initRoot(root()).root;
+		const path = join(abs, RIFT_DIR, "events.jsonl");
+		const journal = `${readFileSync(path, "utf8")}{"type":"WorkspaceCreated","at":"today"}`;
+		writeFileSync(path, journal);
+		expect(() => rebuildRegistry(abs)).toThrow("invalid workspace journal");
+		expect(readFileSync(path, "utf8")).toBe(journal);
+	});
+
+	it("refuses to append after an incomplete tail", () => {
+		const abs = initRoot(root()).root;
+		const dir = join(abs, RIFT_DIR);
+		const path = join(dir, "events.jsonl");
+		const journal = `${readFileSync(path, "utf8")}{"type":"Workspace`;
+		writeFileSync(path, journal);
+		expect(() =>
+			appendEvent(dir, {
+				type: "WorkspaceRemoved",
+				at: "2026-08-20T01:00:00.000Z",
+				name: "feature",
+			}),
+		).toThrow("incomplete workspace journal");
+		expect(readFileSync(path, "utf8")).toBe(journal);
+	});
+
+	it("refuses workspace creation before claiming a name when the journal is incomplete", () => {
+		const abs = initRoot(root()).root;
+		const dir = join(abs, RIFT_DIR);
+		const path = join(dir, "events.jsonl");
+		const journal = `${readFileSync(path, "utf8")}{"type":"Workspace`;
+		writeFileSync(path, journal);
+		expect(() => createWorkspace({ root: abs, name: "feature" })).toThrow(
+			"incomplete workspace journal",
+		);
+		expect(readdirSync(join(dir, "workspaces"))).toEqual([]);
+		expect(readFileSync(path, "utf8")).toBe(journal);
+	});
+
+	it("preserves a damaged tail, restores the snapshot, and accepts later events", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const dir = join(abs, RIFT_DIR);
+		const path = join(dir, "events.jsonl");
+		const initial = readFileSync(path, "utf8").split("\n")[0];
+		const damaged = `${initial}\n{"type":"WorkspaceCreated","workspace":`;
+		writeFileSync(path, damaged);
+		writeSnapshot(abs, { root: abs, workspaces: [ws], eventCount: 2 });
+		const result = rebuildRegistry(abs);
+		expect(result.preservedJournal).toBeDefined();
+		if (!result.preservedJournal) throw new Error("missing preserved journal");
+		expect(readFileSync(result.preservedJournal, "utf8")).toBe(damaged);
+		expect(result.workspaces).toEqual([ws]);
+		expect(readSnapshotFile(abs)).not.toHaveProperty("preservedJournal");
+		const resultPath = join(abs, "repair-result.json");
+		writeFileSync(resultPath, JSON.stringify(result));
+		const cue =
+			process.env.HOBO_CUE_BIN ||
+			fileURLToPath(
+				new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+			);
+		const schema = fileURLToPath(
+			new URL("../data-models/rift_workspace.cue", import.meta.url),
+		);
+		execFileSync(cue, ["vet", schema, resultPath, "-d", "#RepairResult"]);
+		appendEvent(dir, {
+			type: "WorkspaceRemoved",
+			at: ws.createdAt,
+			name: ws.name,
+		});
+		expect(readRegistry(abs).workspaces).toEqual([]);
+	});
+
+	it("normalizes a valid final event without preserving a damaged copy", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const path = join(abs, RIFT_DIR, "events.jsonl");
+		const unterminated = readFileSync(path, "utf8").trimEnd();
+		writeFileSync(path, unterminated);
+		const result = rebuildRegistry(abs);
+		expect(result.preservedJournal).toBeUndefined();
+		expect(readFileSync(path, "utf8")).toBe(`${unterminated}\n`);
+		expect(readRegistry(abs).workspaces).toEqual([ws]);
+	});
+
+	it("separates a new event from a complete unterminated event", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const dir = join(abs, RIFT_DIR);
+		const path = join(dir, "events.jsonl");
+		writeFileSync(path, readFileSync(path, "utf8").trimEnd());
+		appendEvent(dir, {
+			type: "WorkspaceRemoved",
+			at: ws.createdAt,
+			name: ws.name,
+		});
+		expect(readRegistry(abs).workspaces).toEqual([]);
+		expect(readRegistry(abs).eventCount).toBe(3);
+	});
+
+	it("does not repair the journal if the snapshot is invalid", () => {
+		const abs = initRoot(root()).root;
+		const dir = join(abs, RIFT_DIR);
+		const path = join(dir, "events.jsonl");
+		const snapshot = join(dir, "registry.json");
+		const journal = `${readFileSync(path, "utf8")}{"type":"Workspace`;
+		writeFileSync(path, journal);
+		writeFileSync(snapshot, "{invalid");
+		expect(() => rebuildRegistry(abs)).toThrow("invalid workspace snapshot");
+		expect(readFileSync(path, "utf8")).toBe(journal);
+		expect(readFileSync(snapshot, "utf8")).toBe("{invalid");
+		expect(
+			readdirSync(dir).filter((name) => name.includes(".damaged-")),
+		).toEqual([]);
+	});
+
+	it("reports the preserved journal through the CLI", () => {
+		const abs = initRoot(root()).root;
+		const path = join(abs, RIFT_DIR, "events.jsonl");
+		const journal = `${readFileSync(path, "utf8")}{"type":"Workspace`;
+		writeFileSync(path, journal);
+		const cli = fileURLToPath(
+			new URL("../src/bin/hobo-rift.ts", import.meta.url),
+		);
+		const output = execFileSync(
+			process.execPath,
+			["--import", "tsx", cli, "repair", "--root", abs, "--json"],
+			{ encoding: "utf8" },
+		);
+		const result = JSON.parse(output) as { preservedJournal: string };
+		expect(readFileSync(result.preservedJournal, "utf8")).toBe(journal);
+	});
+
 	it("writes a registry that satisfies the current CUE contract", () => {
 		const { abs } = rootWithWorkspace();
 		rebuildRegistry(abs);

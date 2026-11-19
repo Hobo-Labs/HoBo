@@ -170,7 +170,7 @@
   "packages/resolver-components/src/egress.ts": ["EgressDenial"],
   "packages/resolver-components/src/manifest.ts": ["ComponentLimits"],
   "packages/rift/src/capability.ts": ["Capability"],
-  "packages/rift/src/workspace.ts": ["Registry"],
+  "packages/rift/src/workspace.ts": ["Registry","RepairResult"],
   "packages/runtime/src/replay/types.ts": ["ReplayReport","SeqVectorEntry"],
   "packages/runtimes/runtime-celld/src/host.ts": ["CelldDoctorReport"],
   "packages/runtimes/runtime-celld/src/parse.ts": ["CelldRuntimeConfig"],
