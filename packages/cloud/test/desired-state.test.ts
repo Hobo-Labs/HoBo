@@ -30,6 +30,7 @@ import {
 	resourceProvisioned,
 	resourceProvisioning,
 	resourceDestroying,
+	resourceFailed,
 	runCompensation,
 	runOrchestrator,
 } from "../src/index.js";
@@ -498,6 +499,97 @@ describe("upsert", () => {
 });
 
 describe("create/destroy cycle", () => {
+	it("serializes competing rollback facts and records independent destroys once", async () => {
+		const store = freshStore();
+		const fixture = loadPlan();
+		const template = fixture.resources[0];
+		if (!template) throw new Error("missing resource template");
+		const plan = {
+			...fixture,
+			resources: [
+				{ ...template, name: "first", deps: [] },
+				{ ...template, name: "second", deps: [] },
+			],
+		};
+		const attempts: string[] = [];
+		let release: (() => void) | undefined;
+		const bothStarted = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const iac: IacProvider = {
+			...recordingIac(),
+			async destroy(program) {
+				attempts.push(program.resourceId);
+				if (attempts.length === 2) release?.();
+				await bothStarted;
+			},
+		};
+		const runtime = deps(store, iac);
+		await runOrchestrator(runtime, plan, "parallel-rollback", {
+			tenant,
+			actor,
+		});
+		const failure = { resourceId: "first", reason: "rollback requested" };
+		const results = await Promise.all([
+			runCompensation(runtime, plan, "parallel-rollback", failure, {
+				tenant,
+				actor,
+			}),
+			runCompensation(runtime, plan, "parallel-rollback", failure, {
+				tenant,
+				actor,
+			}),
+		]);
+		expect(results.some((result) => result.status === "rolled-back")).toBe(
+			true,
+		);
+		expect(attempts.sort()).toEqual(["first", "second"]);
+		const events = await drain(store, "deployment:parallel-rollback");
+		expect(
+			events.filter((event) => event.type === "deployment.RolledBack"),
+		).toHaveLength(1);
+		expect(
+			events.filter((event) => event.type === "resource.Destroying"),
+		).toHaveLength(2);
+		expect(
+			events.filter((event) => event.type === "resource.Destroyed"),
+		).toHaveLength(2);
+	}, 10000);
+
+	it("keeps dependencies when a failed dependent was previously provisioned", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		const runtime = deps(store, iac);
+		await runOrchestrator(runtime, plan, "failed-dependent", { tenant, actor });
+		iac.calls.length = 0;
+		const stream = "deployment:failed-dependent";
+		const events = await drain(store, stream);
+		await emit(
+			store,
+			stream,
+			[
+				resourceFailed({
+					deploymentId: "failed-dependent",
+					resourceId: "web",
+					reason: "update failed",
+					classification: "fatal",
+					crossedNoGoThreshold: true,
+				}),
+			],
+			{ expectedSeq: events.at(-1)?.seq ?? 0, tenant, actor },
+		);
+		const result = await runCompensation(
+			runtime,
+			plan,
+			"failed-dependent",
+			{ resourceId: "web", reason: "update failed" },
+			{ tenant, actor },
+		);
+		expect(result.status).toBe("needs-human");
+		expect(iac.calls).toEqual([]);
+	});
+
 	it("does not claim rollback while an interrupted dependent is still destroying", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
@@ -652,6 +744,19 @@ describe("create/destroy cycle", () => {
 		expect(iac.calls.filter((c) => c.startsWith("apply:")).length).toBe(
 			plan.resources.length,
 		);
+		const secondDown = await runCompensation(
+			d,
+			plan,
+			"cycle",
+			{ resourceId: "*", reason: "operator-requested teardown" },
+			{ tenant, actor },
+		);
+		expect(secondDown.status).toBe("rolled-back");
+		expect(
+			secondDown.events.filter(
+				(event) => event.type === "deployment.RolledBack",
+			),
+		).toHaveLength(2);
 	});
 
 	it("a rolled-back failure does not block the next up", async () => {

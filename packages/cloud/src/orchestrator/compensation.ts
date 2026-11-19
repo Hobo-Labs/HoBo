@@ -1,5 +1,5 @@
 import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
-import type { ActorHost } from "@hobo/data";
+import { type ActorHost, isOptimisticConflict } from "@hobo/data";
 import { emit } from "@hobo/events";
 
 import {
@@ -16,9 +16,9 @@ import {
 	destroyResource,
 	foldResourceActor,
 	type ResourceActorDeps,
+	type ResourceActorSnapshot,
 	type ResourceActorState,
 } from "./resource-actor.js";
-
 
 export interface CompensationDeps {
 	store: EventStore;
@@ -86,6 +86,16 @@ function dependentsOf(plan: DeploymentPlan, resourceId: string): string[] {
 		.map((r) => r.name);
 }
 
+function hasLiveResource(snapshot: ResourceActorSnapshot | undefined): boolean {
+	return (
+		snapshot !== undefined &&
+		(snapshot.state === "Provisioned" ||
+			snapshot.state === "Updating" ||
+			snapshot.state === "Destroying" ||
+			(snapshot.state === "Failed" && snapshot.specHash !== undefined))
+	);
+}
+
 export async function runCompensation(
 	deps: CompensationDeps,
 	plan: DeploymentPlan,
@@ -102,30 +112,57 @@ export async function runCompensation(
 			: undefined),
 	};
 
-	let events = await collectStream(deps.store, stream);
-
-	if (!events.some((e) => e.type === CLOUD_EVENTS.DeploymentRolledBack)) {
-		const lastSeq =
-			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
-		const fenceToken = currentFenceToken(deps.store, stream);
-		await emit(
-			deps.store,
-			stream,
-			[
-				deploymentRolledBack({
-					deploymentId,
-					targetSetId: `${deploymentId}-previous-set`,
-					reason: `resource ${triggeringFailure.resourceId} crossed no-go threshold: ${triggeringFailure.reason}`,
-				}),
-			],
-			{
-				expectedSeq: lastSeq,
-				...(fenceToken !== undefined ? { fenceToken } : undefined),
-				...appendOpts,
-			},
-		);
+	let events: EventEnvelope[] = [];
+	let rollbackRecorded = false;
+	for (let attempt = 0; attempt < 8; attempt += 1) {
 		events = await collectStream(deps.store, stream);
+		const epochStart = events.reduce(
+			(position, event) =>
+				event.type === CLOUD_EVENTS.DeploymentPlanned ||
+				event.type === CLOUD_EVENTS.DeploymentDeployed ||
+				event.type === CLOUD_EVENTS.ResourceProvisioning
+					? event.seq
+					: position,
+			0,
+		);
+		if (
+			events.some(
+				(event) =>
+					event.type === CLOUD_EVENTS.DeploymentRolledBack &&
+					event.seq > epochStart,
+			)
+		) {
+			rollbackRecorded = true;
+			break;
+		}
+		const lastSeq = events.at(-1)?.seq ?? 0;
+		const fenceToken = currentFenceToken(deps.store, stream);
+		try {
+			await emit(
+				deps.store,
+				stream,
+				[
+					deploymentRolledBack({
+						deploymentId,
+						targetSetId: `${deploymentId}-previous-set`,
+						reason: `resource ${triggeringFailure.resourceId} crossed no-go threshold: ${triggeringFailure.reason}`,
+					}),
+				],
+				{
+					expectedSeq: lastSeq,
+					...(fenceToken !== undefined ? { fenceToken } : undefined),
+					...appendOpts,
+				},
+			);
+			rollbackRecorded = true;
+			break;
+		} catch (error) {
+			if (!(error instanceof Error) || !isOptimisticConflict(error))
+				throw error;
+		}
 	}
+	if (!rollbackRecorded)
+		throw new Error("deployment remained busy while recording rollback");
 
 	const actorDeps: ResourceActorDeps = {
 		store: deps.store,
@@ -137,14 +174,18 @@ export async function runCompensation(
 	const destroyedOrder: string[] = [];
 
 	let progressed = true;
+	let conflicts = 0;
 	while (progressed) {
 		progressed = false;
 		events = await collectStream(deps.store, stream);
-		const states = new Map<string, ResourceActorState>(
+		const snapshots = new Map<string, ResourceActorSnapshot>(
 			plan.resources.map((r) => [
 				r.name,
-				foldResourceActor(events, { ...r, deploymentId }).state,
+				foldResourceActor(events, { ...r, deploymentId }),
 			]),
+		);
+		const states = new Map<string, ResourceActorState>(
+			[...snapshots].map(([name, snapshot]) => [name, snapshot.state]),
 		);
 
 		for (const resourceId of reverseDependencyOrder(plan, states)) {
@@ -152,35 +193,45 @@ export async function runCompensation(
 			if (state === "Destroyed") continue;
 			if (state !== "Provisioned" && state !== "Updating") continue;
 
-			const liveDependents = dependentsOf(plan, resourceId).filter((depId) => {
-				const s = states.get(depId);
-				return s === "Provisioned" || s === "Updating" || s === "Destroying";
-			});
+			const liveDependents = dependentsOf(plan, resourceId).filter((depId) =>
+				hasLiveResource(snapshots.get(depId)),
+			);
 			if (liveDependents.length > 0) continue;
 
 			const resource = byName.get(resourceId);
 			if (!resource) continue;
 
-			const beforeEvents = await collectStream(deps.store, stream);
-			const last = beforeEvents[beforeEvents.length - 1];
+			const last = events[events.length - 1];
 			const lastSeq = last === undefined ? 0 : last.seq;
 			const fenceToken = currentFenceToken(deps.store, stream);
-			await emit(
-				deps.store,
-				stream,
-				[
-					resourceDestroying({
-						deploymentId,
-						resourceId,
-						reason: "rollback-compensation",
-					}),
-				],
-				{
-					expectedSeq: lastSeq,
-					...(fenceToken !== undefined ? { fenceToken } : undefined),
-					...appendOpts,
-				},
-			);
+			try {
+				await emit(
+					deps.store,
+					stream,
+					[
+						resourceDestroying({
+							deploymentId,
+							resourceId,
+							reason: "rollback-compensation",
+						}),
+					],
+					{
+						expectedSeq: lastSeq,
+						...(fenceToken !== undefined ? { fenceToken } : undefined),
+						...appendOpts,
+					},
+				);
+				conflicts = 0;
+			} catch (error) {
+				if (
+					!(error instanceof Error) ||
+					!isOptimisticConflict(error) ||
+					++conflicts >= 8
+				)
+					throw error;
+				progressed = true;
+				break;
+			}
 
 			const outcome = await destroyResource(
 				actorDeps,
@@ -195,46 +246,58 @@ export async function runCompensation(
 				},
 			);
 			if (outcome.kind === "failed") {
-				events = await collectStream(deps.store, stream);
-				const last = events.at(-1);
 				const reason = outcome.reason.trim() || "provider destroy failed";
-				const fenceToken = currentFenceToken(deps.store, stream);
-				await emit(
-					deps.store,
-					stream,
-					[
-						resourceCompensationFailed({ deploymentId, resourceId, reason }),
-						incidentEscalationRequested({
-							deploymentId,
-							resourceId,
-							reason: "compensation-failed",
-						}),
-					],
-					{
-						expectedSeq: last?.seq ?? 0,
-						...(fenceToken !== undefined ? { fenceToken } : undefined),
-						...appendOpts,
-					},
-				);
+				let recorded = false;
+				for (let attempt = 0; attempt < 8; attempt += 1) {
+					events = await collectStream(deps.store, stream);
+					const last = events.at(-1);
+					const fenceToken = currentFenceToken(deps.store, stream);
+					try {
+						await emit(
+							deps.store,
+							stream,
+							[
+								resourceCompensationFailed({
+									deploymentId,
+									resourceId,
+									reason,
+								}),
+								incidentEscalationRequested({
+									deploymentId,
+									resourceId,
+									reason: "compensation-failed",
+								}),
+							],
+							{
+								expectedSeq: last?.seq ?? 0,
+								...(fenceToken !== undefined ? { fenceToken } : undefined),
+								...appendOpts,
+							},
+						);
+						recorded = true;
+						break;
+					} catch (error) {
+						if (!(error instanceof Error) || !isOptimisticConflict(error))
+							throw error;
+					}
+				}
+				if (!recorded)
+					throw new Error(
+						"deployment remained busy while recording compensation failure",
+					);
 				events = await collectStream(deps.store, stream);
 				return { status: "needs-human", destroyedOrder, events };
 			}
-			destroyedOrder.push(resourceId);
+			if (outcome.kind === "destroyed") destroyedOrder.push(resourceId);
 			progressed = true;
 			break;
 		}
 	}
 
 	events = await collectStream(deps.store, stream);
-	const incomplete = plan.resources.some((resource) => {
-		const snapshot = foldResourceActor(events, { ...resource, deploymentId });
-		return (
-			snapshot.state === "Provisioned" ||
-			snapshot.state === "Updating" ||
-			snapshot.state === "Destroying" ||
-			(snapshot.state === "Failed" && snapshot.specHash !== undefined)
-		);
-	});
+	const incomplete = plan.resources.some((resource) =>
+		hasLiveResource(foldResourceActor(events, { ...resource, deploymentId })),
+	);
 	return {
 		status: incomplete ? "needs-human" : "rolled-back",
 		destroyedOrder,
