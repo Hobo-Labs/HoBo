@@ -25,7 +25,7 @@ cases = [
     ("signed settlement", "BrokerFence", None, "SettledRequiresClaimAndProofs", (
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed /\\ Valid(candidate)',
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed'), "BrokerFence.cfg"),
-    ("claimed release", "BrokerFence", None, "ClaimedFundsRemainHeld", (
+    ("claimed release", "BrokerFence", None, "NoClaimedRelease", (
         '/\\ phase \\in {"held", "uncertain"} /\\ ~claimed /\\ unusedWitness\n           /\\ phase\' = "released"',
         '/\\ phase \\in {"held", "uncertain"}\n           /\\ phase\' = "released"'), "BrokerFence.cfg"),
 ]

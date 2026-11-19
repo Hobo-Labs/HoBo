@@ -453,6 +453,7 @@ The verify-broker-budget-authority skill cites TLC state counts matching BrokerB
 BrokerFence TLC stutters on a claimed uncertain hold after three invalid proof offers.
 Terminal entitlement scope retarget is cfg-gated (`AllowTerminalScopeRetarget = FALSE`).
 Fence mutation needles track `BrokerFence` release guards and thrown-commit reuse rules.
+Invalid fence offers clear the candidate instead of retaining a prior valid proof.
 
 The following is a projection of the signed-settlement model, not a production
 trace. TLC explored 129 states and 830 steps; the chart hides 723 steps that

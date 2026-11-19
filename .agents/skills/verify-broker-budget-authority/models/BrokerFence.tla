@@ -16,7 +16,8 @@ Uncertain == /\ phase = "held" /\ phase' = "uncertain"
              /\ UNCHANGED <<claimed, candidate, stored, attempts, unusedWitness>>
 Offer == \E p \in Proofs:
          /\ phase \in {"held", "uncertain"} /\ claimed /\ attempts < 3
-         /\ candidate' = p /\ attempts' = attempts + 1
+         /\ candidate' = IF Valid(p) THEN p ELSE Empty
+         /\ attempts' = attempts + 1
          /\ UNCHANGED <<phase, claimed, stored, unusedWitness>>
 ConfirmUnused == /\ phase \in {"held", "uncertain"} /\ ~claimed /\ ~unusedWitness
                   /\ unusedWitness' = TRUE
@@ -37,5 +38,6 @@ TypeOK == /\ phase \in {"new", "held", "uncertain", "settled", "released"}
           /\ attempts \in 0..3 /\ unusedWitness \in BOOLEAN
 SettledRequiresClaimAndProofs == phase = "settled" => claimed /\ Valid(stored)
 ClaimedFundsRemainHeld == claimed /\ phase # "settled" => phase \in {"held", "uncertain"}
+NoClaimedRelease == ~(claimed /\ phase = "released")
 NoUnsettledReceipt == phase # "settled" => stored = Empty
 =============================================================================
