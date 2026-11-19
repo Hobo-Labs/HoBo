@@ -1,8 +1,3 @@
-/**
- * The claim this package exists to prove: a container satisfies the same
- * capability profile a managed product does, and is selected by the same
- * machinery — while remaining honest about being a pack.
- */
 import assert from "node:assert/strict";
 import {
 	createCapabilityProfileRegistry,
@@ -90,7 +85,6 @@ describe("the postgres pack as a selection candidate", () => {
 		assert.equal(candidate.sponsorExposureMinorUnits, 0);
 		assert.equal(candidate.claimActionCount, 0);
 		assert.equal(candidate.creatorAuthorityAfterClaim, "absent");
-		// Yard-owned means the endpoint and data are never disturbed by a claim.
 		assert.equal(candidate.continuity.endpoint, "preserved");
 		assert.equal(candidate.continuity.data, "preserved");
 	});

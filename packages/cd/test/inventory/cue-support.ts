@@ -1,5 +1,3 @@
-// `cue vet` driver shared by the WP22 CUE agreement tests. Finds `cue` on
-// PATH, else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,7 +29,6 @@ function findCue(): string | undefined {
 
 export const cue = findCue();
 
-/** A vetter bound to one schema under packages/cd/data-models. */
 export function vetter(schemaFile: string) {
 	const schema = resolve(here, "../../data-models", schemaFile);
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-cd-wp22-cue-"));

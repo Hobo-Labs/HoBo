@@ -1,11 +1,3 @@
-/**
- * Capability profile registry: an acyclic, versioned refinement graph.
- *
- * Satisfying a child profile satisfies its ancestors. The reverse is never
- * inferred — `data.postgres/v1` satisfies `data.relational/v1`, but a product
- * that only implements `data.relational/v1` (Cloudflare D1) never satisfies
- * `data.postgres/v1`.
- */
 import { createHash } from "node:crypto";
 
 import {
@@ -18,17 +10,13 @@ import {
 } from "@hobo/manifest-capability";
 
 export type CapabilityProfileRegistry = {
-	/** Deterministic digest over every selection-relevant profile fact. */
 	readonly digest: string;
 	get(id: string): ParsedCapabilityProfile | undefined;
 	require(id: string): ParsedCapabilityProfile;
 	has(id: string): boolean;
 	list(): readonly ParsedCapabilityProfile[];
-	/** The profile plus every profile it transitively refines. */
 	closureOf(id: string): readonly ProfileId[];
-	/** True when `candidate` satisfies `required` through refinement. */
 	satisfies(candidate: string, required: string): boolean;
-	/** Guarantee keys visible on a profile including inherited ones. */
 	guaranteeKeys(id: string): readonly string[];
 };
 
@@ -65,10 +53,6 @@ function digestOf(profiles: readonly ParsedCapabilityProfile[]): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(summary)).digest("hex")}`;
 }
 
-/**
- * Build a registry. Rejects unknown refinement targets, duplicate IDs, and
- * refinement cycles at load time rather than at match time.
- */
 export function createCapabilityProfileRegistry(
 	descriptors: readonly CapabilityProfileDescriptor[],
 ): CapabilityProfileRegistry {
@@ -95,7 +79,6 @@ export function createCapabilityProfileRegistry(
 					profile.id,
 				);
 			}
-			// A refinement may add guarantees but must not cross primitives.
 			if (target.primitive !== profile.primitive) {
 				throw new CapabilityProfileError(
 					"INVALID_CAPABILITY_PROFILE",
@@ -124,7 +107,6 @@ export function createCapabilityProfileRegistry(
 		}
 	}
 
-	// Iterative DFS cycle detection over the refinement edges.
 	const WHITE = 0;
 	const GREY = 1;
 	const BLACK = 2;
@@ -135,16 +117,13 @@ export function createCapabilityProfileRegistry(
 		const stack: { id: ProfileId; index: number }[] = [{ id: root, index: 0 }];
 		colour.set(root, GREY);
 		while (stack.length > 0) {
-			// SAFETY: stack length is checked above, so the top frame exists.
 			const frame = stack[stack.length - 1] as { id: ProfileId; index: number };
-			// SAFETY: every stack frame was pushed from a parsed profile key.
 			const node = parsed.get(frame.id) as ParsedCapabilityProfile;
 			if (frame.index >= node.refines.length) {
 				colour.set(frame.id, BLACK);
 				stack.pop();
 				continue;
 			}
-			// SAFETY: frame.index is bounded by node.refines.length above.
 			const next = node.refines[frame.index] as ProfileId;
 			frame.index += 1;
 			const state = colour.get(next);
@@ -169,7 +148,6 @@ export function createCapabilityProfileRegistry(
 		const seen = new Set<ProfileId>();
 		const queue: ProfileId[] = [id];
 		while (queue.length > 0) {
-			// SAFETY: queue length is checked above, so a queued profile exists.
 			const current = queue.shift() as ProfileId;
 			if (seen.has(current)) continue;
 			seen.add(current);

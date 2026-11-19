@@ -78,8 +78,6 @@ function createBrokenFenceActorHost() {
 			if (!(request.fold instanceof Function)) {
 				throw new TypeError("request.fold must be a function");
 			}
-			// Bind it here: the narrowing above does not survive into the nested
-			// closures below, which is what the assertion was papering over.
 			const fold = request.fold;
 			const stream = getBrokenStream(streams, actorKey);
 			const initialState = structuredClone(request.initialState);
@@ -97,10 +95,8 @@ function createBrokenFenceActorHost() {
 					});
 				},
 				read() {
-					// SAFETY: assertion to `structuredClone(initialState) as { value: number }` is required at this boundary.
 					let state = structuredClone(initialState) as { value: number };
 					for (const event of stream.events) {
-						// SAFETY: assertion to `fold(state, structuredClone(event)) as { value: number; }` is required at this boundary.
 						state = fold(state, structuredClone(event)) as {
 							value: number;
 						};

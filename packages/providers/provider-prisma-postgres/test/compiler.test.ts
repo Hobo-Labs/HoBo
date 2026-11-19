@@ -1,6 +1,3 @@
-/**
- * The compiler is pure, and these tests are what make that claim checkable.
- */
 import { describe, expect, it } from "vitest";
 
 import { PINNED_CREATE_DB_SPECIFIER } from "../src/cli.js";
@@ -100,11 +97,9 @@ describe("compilePrismaProvision", () => {
 			);
 			expect.unreachable("an undocumented required feature must not compile");
 		} catch (error) {
-			// SAFETY: value was established by the surrounding parse or typed constructor.
 			expect((error as PrismaProviderError).code).toBe(
 				"PROVIDER_CONTRACT_CHANGED",
 			);
-			// SAFETY: value was established by the surrounding parse or typed constructor.
 			expect((error as PrismaProviderError).message).toContain("`extensions`");
 		}
 	});
@@ -113,7 +108,6 @@ describe("compilePrismaProvision", () => {
 		expect(() =>
 			compilePrismaProvision(REQUIREMENT, {
 				...PLACEMENT,
-				// SAFETY: value was established by the surrounding parse or typed constructor.
 				region: "us-east-2" as never,
 			}),
 		).toThrowError(/not one the pinned create-db CLI accepts/u);

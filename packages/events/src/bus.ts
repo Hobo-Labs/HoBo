@@ -7,14 +7,8 @@ import type {
 	Subscription,
 } from "@hobo/core";
 
-// The naked emit/subscribe surface over the event log (data-plane.md: domain
-// facts that need no aggregate invariant boundary still ride the same log, and
-// subscribers observe them live). Aggregate-guarded writes go through
-// @hobo/data's `defineAggregate`; this is the choreography/fan-out path.
-
 export interface EmitResult {
 	streamId: string;
-	// The seq of the last appended fact — the reads-your-writes watermark.
 	seq: number;
 	appended: EventEnvelope[];
 }

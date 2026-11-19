@@ -1,12 +1,3 @@
-/**
- * Parsers for the executor port's request records.
- *
- * The port is in-process, but its requests are plain JSON on purpose: a host
- * may put an executor behind a worker, a sidecar, or an HTTP hop, and the
- * pact replays requests straight from a file. Whatever arrives as JSON
- * crosses one parser here and becomes the typed request the port accepts —
- * an unknown operation kind or a missing bound is refused, not guessed at.
- */
 import type { JsonObject, JsonValue } from "@hobo/data-core";
 import { MongoDataError } from "./errors.js";
 import type {
@@ -47,11 +38,6 @@ function text(value: JsonValue | undefined, field: string): string {
 		: invalid(`${field} must be a non-empty string`, field);
 }
 
-/**
- * A collection the port may address: a dataset's (an identifier) or the
- * metadata collection (`_` then an identifier). Never `system.*`, never a
- * name with a dot, a `$`, or a NUL.
- */
 function collectionName(value: JsonValue | undefined): string {
 	return isJsonString(value) && /^[a-z_][a-z0-9_]{0,62}$/u.test(value)
 		? value
@@ -61,7 +47,6 @@ function collectionName(value: JsonValue | undefined): string {
 			);
 }
 
-/** A dotted path of plain field names — never an operator. */
 function keyPath(value: JsonValue | undefined): string {
 	return isJsonString(value) &&
 		/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/u.test(value)
@@ -81,7 +66,6 @@ function document(value: JsonValue | undefined, field: string): MongoDocument {
 	return parsed;
 }
 
-/** The two optional bounds of a range, kept absent when absent. */
 function bounds(value: JsonObject): Omit<MongoIdRange, "kind"> {
 	return {
 		...(value.after === undefined ? undefined : { after: value.after }),

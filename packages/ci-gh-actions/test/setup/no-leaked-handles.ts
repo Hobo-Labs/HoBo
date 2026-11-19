@@ -1,25 +1,3 @@
-/**
- * Setup file for the shared-worker project: a test file must leave the worker
- * as it found it.
- *
- * Files in that project share one worker process and module graph, so a
- * timer, server, socket or child process one file leaves running keeps
- * running under the files after it, where it can fire into their state or
- * hold their ports. After each file, anything it started that still keeps the
- * event loop alive, and does not go away within a short grace, fails the file,
- * naming it and what was left.
- *
- * - Servers, sockets, pipes and child processes: the resources keeping the
- *   event loop alive (`process.getActiveResourcesInfo()`), against a record
- *   taken before the file. File system requests in flight are left out; they
- *   finish on their own.
- * - Timers: Node reports those per timer list (one entry per duration), not
- *   per timer, so a count of them misses a timer that shares a duration with
- *   another. The global `setTimeout` and `setInterval` are wrapped for the
- *   file instead, and every referenced timer the file started and neither
- *   fired (a timeout) nor cleared is reported. Vitest keeps its own references
- *   to the timer functions, so its timers are not counted.
- */
 import { afterAll, beforeAll, expect } from "vitest";
 
 const NOT_COUNTED = new Set([
@@ -101,13 +79,9 @@ function install() {
 		clear(timer);
 		original.clearInterval(timer);
 	};
-	// SAFETY: same call signature as setTimeout; the cast restores the overloads and Node's `__promisify__` a wrapper lacks.
 	globalThis.setTimeout = timeout as typeof setTimeout;
-	// SAFETY: same call signature as setInterval; the cast restores its overloads.
 	globalThis.setInterval = interval as typeof setInterval;
-	// SAFETY: same call signature as clearTimeout; the cast restores its overloads.
 	globalThis.clearTimeout = clearTimer as typeof clearTimeout;
-	// SAFETY: same call signature as clearInterval; the cast restores its overloads.
 	globalThis.clearInterval = clearRepeat as typeof clearInterval;
 }
 

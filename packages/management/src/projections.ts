@@ -16,17 +16,12 @@ type DoctorData = {
 	hint?: string;
 };
 
-/**
- * Fold Station + Connection stores into a single Yard snapshot for the game UI.
- * Never invents occupancy/rail/connection state outside event-sourced services.
- */
 export function projectYardSnapshot(
 	ctx: ManagementContext,
 	input: { stationId?: string; tenant?: string } = {},
 ): ManagementResult<YardProjectionSnapshot> {
 	const stationId = resolveDefaultStationId(ctx, input.stationId);
 	if (!stationId) {
-		// SAFETY: this failure result is returned through the typed yard projection API.
 		return errResult("station required for yard projection", {
 			code: "station-missing",
 			remediation: ["hobo station init"],
@@ -34,7 +29,6 @@ export function projectYardSnapshot(
 	}
 	const state = ctx.loadStationState(stationId);
 	if (!state) {
-		// SAFETY: this failure result is returned through the typed yard projection API.
 		return errResult(`station not found: ${stationId}`, {
 			code: "station-missing",
 			remediation: ["hobo station init"],
@@ -55,7 +49,6 @@ export function projectYardSnapshot(
 		? state.rails[state.occupancy.activeRailHash]
 		: undefined;
 
-	// Domain status after authorize is "active" (not "authorized").
 	const authorized = connections.filter((c) => c.status === "active");
 	const metering: MeteringView = Object.freeze({
 		quotaUsed: activeRail?.billingPolicy.quotaUsed ?? 0,
@@ -66,9 +59,6 @@ export function projectYardSnapshot(
 			1,
 			authorized.length * 0.25 + (authorized.length > 0 ? 0.15 : 0),
 		),
-		// Provenance badge (HIGHBALL "kill or badge"): this rate is synthesized
-		// from connection counts, not measured traffic. Flips to "otlp" when
-		// real metering signals feed the projection.
 		trafficRateSource: "synthetic",
 	});
 
@@ -77,8 +67,6 @@ export function projectYardSnapshot(
 			connectorKind: mapProviderToConnectorKind(c.provider),
 			status: mapConnectionStatusToActivity(String(c.status)),
 			connectionId: c.id,
-			// Provenance badge: status is statically derived from the connection
-			// lifecycle, not live agent telemetry.
 			statusSource: "derived-static",
 		}),
 	);

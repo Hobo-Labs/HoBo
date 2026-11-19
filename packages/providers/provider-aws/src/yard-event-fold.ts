@@ -1,13 +1,7 @@
-/**
- * AWS event-store fold resolver for Yard placement / generation.
- * Normalizes ECS/VPC/control-plane signals into yard.* facts.
- */
 
 import { isJsonArray, type JsonObject } from "./json.js";
 
 // public-contract: the event-store fold this provider is addressed by. Stored
-// events name the resolver that produced them, so a rename orphans every fact
-// already written under the old id.
 export const AWS_EVENT_STORE_RESOLVER_ID = "aws.yard.event-store/v1" as const;
 
 export interface AwsProviderNativeSignal {

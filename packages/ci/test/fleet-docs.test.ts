@@ -4,7 +4,6 @@ import { FLEET_REFUSAL_CODES } from "../src/fleet/index.js";
 
 describe("HoBo CI docs pages", () => {
 	it("show what the fleet code produces today", () => {
-		// Regenerate with: node --import tsx packages/ci/scripts/fleet-docs.ts
 		for (const page of fleetDocsPages())
 			expect(page.current, page.path).toBe(page.next);
 	});

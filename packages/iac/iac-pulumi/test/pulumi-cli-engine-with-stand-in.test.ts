@@ -1,31 +1,3 @@
-/**
- * The Pulumi CLI automation engine, driven through a stand-in binary.
- *
- * The engine takes its binary as an injected option, so a script that answers
- * `version`, `stack select`, `preview` and `up` is indistinguishable from the
- * real CLI to everything above it. That reaches the interesting parts without
- * a Pulumi install, a cloud account, or a state backend.
- *
- * **An unparseable preview fails dirty, never silently clean.** If
- * `preview --json` returns something this engine cannot read, reporting "no
- * changes" would let an apply skip pending work; a phantom create makes apply
- * re-check instead, which is the recoverable direction. The Terraform lane
- * makes the same choice, and the two agreeing is what lets a caller treat them
- * interchangeably.
- *
- * **State is local and per-resource.** The backend is a `file://` URL under the
- * engine's own work directory and each resource gets its own stack, so a
- * failure in one resource cannot corrupt another's state — and no test can
- * reach a real Pulumi Cloud organisation.
- *
- * **Rendering refuses a type it cannot translate.** Emitting a partial program
- * for an unknown type would deploy the wrong thing rather than nothing.
- *
- * **Every declared output resolves to a real expression.** An output that
- * silently became `${name.id}` for a field that is not an id would hand a
- * binding the wrong value, which surfaces much later as a broken connection
- * rather than as a deploy error.
- */
 import {
 	chmodSync,
 	existsSync,
@@ -60,7 +32,6 @@ function tempDir(prefix = "hobo-pulumi-"): string {
 	return dir;
 }
 
-/** A stand-in `pulumi`. `body` decides what each invocation does. */
 function fakePulumi(body: string): string {
 	const dir = tempDir("hobo-pulumi-bin-");
 	const bin = join(dir, "pulumi");
@@ -83,18 +54,15 @@ function engine(body = "process.exit(0);") {
 		ephemeralState: true,
 		workDir: tempDir("hobo-pulumi-work-"),
 		pulumiBin: fakePulumi(body),
-		// The stand-in is a node script, so its shebang needs node on PATH.
 		env: { PATH: dirname(process.execPath) },
 	});
 }
 
-/** A program with one Cloudflare KV resource. */
 const program = (type = "cloudflare:kv-namespace") => ({
 	deploymentId: "dep-1",
 	resources: [{ name: "cache", type, outputs: ["namespaceId"] }],
 });
 
-/** Render one resource of the given type. */
 interface RenderFixture {
 	name: string;
 	type: string;
@@ -119,8 +87,6 @@ describe("rendering a Pulumi YAML program", () => {
 	});
 
 	it("declares the yaml runtime", () => {
-		// The YAML runtime is what makes these programs dependency-free; a
-		// language runtime would need a toolchain per deploy.
 		expect(render("cloudflare:kv-namespace")).toContain("runtime: yaml");
 	});
 
@@ -131,13 +97,10 @@ describe("rendering a Pulumi YAML program", () => {
 	});
 
 	it("carries the account id into the properties", () => {
-		// The account id decides whose infrastructure a program touches.
 		expect(render("cloudflare:kv-namespace")).toContain("acct-1");
 	});
 
 	it("titles a KV namespace rather than naming it", () => {
-		// The Cloudflare provider spells a KV namespace's identity `title`;
-		// sending `name` would create an unnamed namespace.
 		expect(render("cloudflare:kv-namespace")).toContain('"title":"res"');
 	});
 
@@ -146,8 +109,6 @@ describe("rendering a Pulumi YAML program", () => {
 	});
 
 	it("gives a worker script a default body", () => {
-		// A script with no content is rejected by the provider, so an operator
-		// deploying a placeholder gets a working one rather than an error.
 		expect(render("cloudflare:workers-script")).toContain("hello from hobo");
 	});
 
@@ -160,8 +121,6 @@ describe("rendering a Pulumi YAML program", () => {
 	});
 
 	it("ignores a non-string script and uses the default", () => {
-		// A number coerced into a script body would deploy something that is not
-		// JavaScript and fail at the edge rather than at the render.
 		expect(
 			render("cloudflare:workers-script", undefined, {
 				options: { script: 7 },
@@ -178,16 +137,12 @@ describe("rendering a Pulumi YAML program", () => {
 			render("aws:s3-bucket");
 			expect.unreachable("expected the renderer to refuse");
 		} catch (error) {
-			// A caller choosing a fallback lane needs the code, not the prose.
 			if (!(error instanceof PulumiEngineUnavailableError)) throw error;
 			expect(error.code).toBe(PULUMI_UNSUPPORTED_RESOURCE);
 		}
 	});
 
 	it("renders every type it claims to support", () => {
-		// The token table is the lane's public claim about what it can deploy;
-		// a listed type that throws is a lie in the capability matrix.
-		// A cron trigger is only real with its cadence and the Worker it runs.
 		const required = new Map<string, JsonObject>([
 			[
 				"cloudflare:cron-trigger",
@@ -211,8 +166,6 @@ describe("resolving declared outputs", () => {
 	});
 
 	it("resolves binding to the stable resource name", () => {
-		// The binding alias is HoBo's own handle and must not depend on a
-		// provider-assigned id that changes on replace.
 		expect(render("cloudflare:kv-namespace", ["binding"])).toContain(
 			'binding: "res"',
 		);
@@ -231,9 +184,6 @@ describe("resolving declared outputs", () => {
 	});
 
 	it("resolves a worker URL as a literal, not a provider output", () => {
-		// The workers.dev URL needs the account subdomain, which is not a
-		// resource output — deriving it here rather than referencing a field
-		// that does not exist is what keeps the program valid.
 		expect(render("cloudflare:workers-script", ["url"])).toContain(
 			"https://res.workers.dev",
 		);
@@ -264,9 +214,6 @@ describe("resolving declared outputs", () => {
 	});
 
 	it("does not resolve a worker output for a KV resource", () => {
-		// `scriptName` on a KV namespace is a caller mistake; resolving it to
-		// `${res.name}` would produce a program referencing a field the provider
-		// does not expose on that type.
 		expect(render("cloudflare:kv-namespace", ["scriptName"])).toContain(
 			"scriptName: ${res.id}",
 		);
@@ -347,9 +294,6 @@ describe("gating on the CLI", () => {
 			env: { PATH: dirname(process.execPath) },
 		});
 		created.snapshot();
-		// Remove the binary. A second snapshot that re-probed would fail; one
-		// that cached the verification will not. A probe per operation would
-		// double the process count of every deploy for no information.
 		rmSync(bin);
 		expect(() => created.snapshot()).not.toThrow();
 	});
@@ -405,12 +349,7 @@ describe("keeping state local", () => {
 			`),
 			env: { PATH: dirname(process.execPath) },
 		});
-		// Driven through `preview` rather than `snapshot`: an empty estate short-
-		// circuits before invoking the CLI at all, so a snapshot-based assertion
-		// would observe nothing and pass for the wrong reason.
 		await created.preview(program());
-		// The backend must be a local file:// URL under this engine's own
-		// directory. Anything else would reach a real Pulumi Cloud organisation.
 		expect(readFileSync(log, "utf8")).toContain(`file://${workDir}`);
 	});
 
@@ -427,9 +366,6 @@ describe("keeping state local", () => {
 				if (argv[0] === "preview") { process.stdout.write("{}"); }
 				process.exit(0);
 			`),
-			// Even with a hosted backend in the ambient environment, the engine
-			// pins its own — otherwise a developer's shell config would silently
-			// send HoBo's state to their personal Pulumi account.
 			env: {
 				PATH: dirname(process.execPath),
 				PULUMI_BACKEND_URL: "https://api.pulumi.com",
@@ -444,8 +380,6 @@ describe("keeping state local", () => {
 	});
 
 	it("freezes the snapshot", () => {
-		// The snapshot is diffed against desired state; a caller mutating it
-		// would change the diff under the planner.
 		expect(Object.isFrozen(engine().snapshot())).toBe(true);
 	});
 });
@@ -468,8 +402,6 @@ describe("previewing a program", () => {
 			}
 			process.exit(0);
 		`);
-		// `same` is Pulumi's word for an unchanged resource; counting it would
-		// make every preview report work that is not happening.
 		expect((await created.preview(program())).changes).toEqual([]);
 	});
 
@@ -486,9 +418,6 @@ describe("previewing a program", () => {
 			if (argv[0] === "preview") { process.stdout.write("not json"); }
 			process.exit(0);
 		`);
-		// Reporting "no changes" here would let an apply skip pending work. The
-		// Terraform lane makes the same choice, and the two agreeing is what
-		// lets a caller treat them interchangeably.
 		expect((await created.preview(program())).changes).toHaveLength(1);
 	});
 
@@ -507,8 +436,6 @@ describe("previewing a program", () => {
 		`);
 		await created.preview(program());
 		const calls = readFileSync(log, "utf8");
-		// A preview against no selected stack runs against whatever was last
-		// selected — which is another resource's state.
 		expect(calls).toContain("stack select");
 	});
 
@@ -520,8 +447,6 @@ describe("previewing a program", () => {
 			process.exit(0);
 		`);
 		await created.preview(program());
-		// `--create` makes the first deploy of a resource work without a
-		// separate bootstrap step.
 		expect(readFileSync(log, "utf8")).toContain("--create");
 	});
 });

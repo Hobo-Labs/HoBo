@@ -12,7 +12,6 @@ import {
 export const POSTGRES_URL = inject("postgresUrl");
 export const POSTGRES_LANE = inject("postgresLane");
 
-/** `describe` that runs on the live lane and is skipped, with its reason, otherwise. */
 export function describeLive(name: string, body: () => void): void {
 	if (POSTGRES_URL !== "") describe(name, body);
 	else describe.skip(`${name} — SKIPPED: ${POSTGRES_LANE}`, body);
@@ -44,7 +43,6 @@ const RUN = randomUUID().replaceAll("-", "").slice(0, 10);
 let counter = 0;
 const created = new Set<string>();
 
-/** A schema no other test file or run uses; dropped after the file. */
 export function freshSchema(): string {
 	counter += 1;
 	const schema = `hobo_t_${RUN}_${counter}`;
@@ -72,7 +70,6 @@ export function liveStore(
 	return store;
 }
 
-/** Run SQL as an administrator on the lane (fixtures, inspection). */
 export async function adminQuery(
 	sql: string,
 	values: readonly PgParam[] = [],

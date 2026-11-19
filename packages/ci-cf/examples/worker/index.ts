@@ -16,15 +16,12 @@ type Bindings = CiBindings & {
 	CI_WORKFLOW: Workflow;
 };
 
-/** The SDK binds the pushed source before HoBo executes its portable commands. */
 export class HoBoCI extends CIWorkflow<CloudflareArtifacts, Bindings> {
 	protected async pipeline(
 		event: WorkflowEvent<CiParams<CloudflareArtifacts>>,
 		_step: WorkflowStep,
 		ci: CiContext,
 	): Promise<void> {
-		// A production control plane supplies verifyShutdown when it owns sandbox inventory.
-		// This source example keeps unverified stop outcomes uncertain.
 		const backend = createCloudflareBackend({
 			context: ci,
 			terminate: async () => {

@@ -1,6 +1,3 @@
-// PublisherPort conformance (ADR-0182 D5 publisher mode, D14, I5). A
-// publisher writes desired state where an external engine (GitOps) picks it
-// up; convergence is known only from observing that engine.
 import {
 	abortedSignal,
 	type CdConformanceReport,
@@ -32,11 +29,8 @@ export const PUBLISHER_ASSERTIONS = Object.freeze([
 ] as const);
 export type PublisherAssertion = (typeof PUBLISHER_ASSERTIONS)[number];
 
-/** The external engine the publisher writes to, as the harness controls it. */
 export interface PublisherEngine {
-	/** The engine applies the given revision to the target. */
 	sync(revision: string): Promise<void>;
-	/** Count of revisions written. */
 	writes(): number;
 }
 
@@ -46,7 +40,6 @@ export interface PublisherHarness<TSet extends SetRecordLike, TResolved, TCtx> {
 		publisher: PublisherLike<TSet, TResolved, TCtx>;
 		engine: PublisherEngine;
 	}>;
-	/** Desired Set number `n` (distinct content per n) and its resolved form. */
 	desired(n: number): Readonly<{ set: TSet; resolved: TResolved }>;
 	ctx(): TCtx;
 }

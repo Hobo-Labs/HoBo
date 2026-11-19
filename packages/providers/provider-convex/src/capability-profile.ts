@@ -1,27 +1,9 @@
-/**
- * `data.convex/v1` — the capability implementation profile for Convex, as
- * DATA. This is deliberately not a second registry: it is a frozen descriptor
- * that whoever owns the profile graph (Matching, PortabilityReport, the
- * capability-profiles package) reads. This package only publishes the fact.
- *
- * The honesty rule this file encodes: Convex is a reactive *document* store
- * with a transactional function runtime. It refines `data.document/v1` and it
- * refines nothing else. Self-hosted Convex can be *backed by* Postgres or
- * MySQL (`POSTGRES_URL` / `MYSQL_URL`), and the default single-container
- * backend stores state in SQLite — neither fact makes Convex a relational
- * port. Storage engine is not capability surface.
- */
 
 // public-contract: the profile record schema id consumers pin.
 export const CAPABILITY_PROFILE_SCHEMA = "hobo.capability-profile/v1";
 
-/**
- * A third-party fact with the URL it came from and the date a human/agent
- * actually read it (legal-hygiene rule: sourced-and-dated, never attested).
- */
 export interface VerifiedSourceRef {
 	readonly url: string;
-	/** UTC `YYYY-MM-DD` the URL was read. */
 	readonly checkedOn: string;
 	readonly note: string;
 }
@@ -31,18 +13,14 @@ export type ProfileMaturity = "experimental" | "preview" | "stable";
 export interface CapabilityProfile {
 	readonly schema: typeof CAPABILITY_PROFILE_SCHEMA;
 	readonly id: string;
-	/** The Bindle primitive this profile implements. */
 	readonly primitive: string;
-	/** Profiles this one is a strict specialization of (acyclic, no self). */
 	readonly refines: readonly string[];
-	/** Profiles a deployment of this one also surfaces. */
 	readonly composes: readonly string[];
 	readonly maturity: ProfileMaturity;
 	readonly conformanceSuiteRef: string;
 	readonly sourceRefs: readonly VerifiedSourceRef[];
 }
 
-/** A profile this one is explicitly NOT — recorded so nobody re-derives it. */
 export interface ProfileNonRefinement {
 	readonly profileId: string;
 	readonly reason: string;
@@ -52,7 +30,6 @@ export interface ProfileNonRefinement {
 export const DATA_CONVEX_PROFILE_ID = "data.convex/v1";
 
 // public-contract: the conformance suite a data.convex claim must clear.
-// Defined here (not in conformance.ts) so the profile stays a leaf module.
 // public-contract: stable conformance evidence reference for selection.
 export const CONVEX_CONFORMANCE_SUITE_REF =
 	"hobo.conformance.convex-hosting/v1";
@@ -89,10 +66,6 @@ export const DATA_CONVEX_CAPABILITY_PROFILE: CapabilityProfile = Object.freeze({
 	]),
 } satisfies CapabilityProfile);
 
-/**
- * Profiles `data.convex/v1` deliberately does NOT refine. Each entry exists
- * because the mistake is tempting, not because the profile is exotic.
- */
 export const DATA_CONVEX_NON_REFINEMENTS: readonly ProfileNonRefinement[] =
 	Object.freeze([
 		Object.freeze({
@@ -122,7 +95,6 @@ export const DATA_CONVEX_NON_REFINEMENTS: readonly ProfileNonRefinement[] =
 		}),
 	]);
 
-/** True when `profile` declares a refinement of `profileId`. */
 export function profileRefines(
 	profile: CapabilityProfile,
 	profileId: string,
@@ -130,7 +102,6 @@ export function profileRefines(
 	return profile.refines.includes(profileId);
 }
 
-/** True when `profile` declares that it also surfaces `profileId`. */
 export function profileComposes(
 	profile: CapabilityProfile,
 	profileId: string,
@@ -138,10 +109,6 @@ export function profileComposes(
 	return profile.composes.includes(profileId);
 }
 
-/**
- * Why `data.convex/v1` is not `profileId`, when that has been written down.
- * `undefined` means "not a recorded confusion", not "yes it refines it".
- */
 export function explainNonRefinement(profileId: string): string | undefined {
 	return DATA_CONVEX_NON_REFINEMENTS.find(
 		(entry) => entry.profileId === profileId,

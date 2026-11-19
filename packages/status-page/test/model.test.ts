@@ -149,9 +149,7 @@ describe("toStatusPageModel", () => {
 		const model = toStatusPageModel(row, { scope: SCOPE, evaluatedAt: now });
 		const web = model.components.find((c) => c.spec.id === "kit-web");
 		const api = model.components.find((c) => c.spec.id === "kit-api");
-		// Fresh operational component worsened by the critical incident.
 		expect(web?.status).toBe("major_outage");
-		// Component known only from the incident still renders.
 		expect(api?.status).toBe("major_outage");
 		expect(model.overall.indicator).toBe("critical");
 		expect(model.activeIncidents).toHaveLength(1);

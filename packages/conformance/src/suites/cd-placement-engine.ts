@@ -1,6 +1,3 @@
-// PlacementEngine conformance (ADR-0182 D20, I18, I19). The suite owns
-// neutral fleet scenarios; the harness binds each to real inventory,
-// placement and score records, in the Camp order the suite dictates.
 import {
 	type CdConformanceReport,
 	type CdReasonLike,
@@ -36,10 +33,8 @@ export type ScenarioCamp = Readonly<{
 	campId: string;
 	yard: string;
 	provider: string;
-	/** Declared Yard regions; residency is evaluated only against these. */
 	regions: readonly string[];
 	labels: Readonly<Record<string, string>>;
-	/** Observed claims (never trusted to grant). */
 	claims?: Readonly<Record<string, string>>;
 	taints?: readonly ("NO_PLACE" | "NO_RUN")[];
 	management?: "MANAGED" | "OBSERVE_ONLY";
@@ -59,7 +54,6 @@ export type PlacementSpec = Readonly<{
 	}>[];
 	requiredClaims?: readonly string[];
 	scores?: readonly Readonly<{ score: string; weight: number }>[];
-	/** Subject residency: allowed declared regions (empty = unrestricted). */
 	residencyRegions?: readonly string[];
 	defaultGroupSize?: number;
 }>;
@@ -71,7 +65,6 @@ export type PlacementScenario = Readonly<{
 	nowMs: number;
 }>;
 
-/** Structural view of PlacementDecisionRecord. */
 export type PlacementDecisionLike = Readonly<{
 	inventoryDigest: string;
 	scoreSnapshotDigests: readonly string[];
@@ -86,7 +79,6 @@ export type PlacementDecisionLike = Readonly<{
 
 export interface PlacementEngineHarness {
 	readonly subject: string;
-	/** Build a fresh world (Camps registered in `order`), define, score, decide. */
 	decide(
 		scenario: PlacementScenario,
 		order: readonly string[],
@@ -109,7 +101,6 @@ function camp(
 	};
 }
 
-/** The suite's reference fleet: three providers, three regions. */
 export function referenceFleet(): readonly ScenarioCamp[] {
 	return [
 		camp("camp-a1", "aws", "eu-west"),

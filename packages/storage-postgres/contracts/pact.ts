@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import type { JsonObject } from "@hobo/core";
 import { isJsonObject, isJsonString, parseJsonText } from "../src/json.js";
 
-/** One interaction of eventstore-boundary.pact.json, parsed. */
 export type PactInteraction = Readonly<{
 	description: string;
 	providerState: string;
@@ -26,7 +25,6 @@ function partyName(document: JsonObject, field: string): string {
 	return party.name;
 }
 
-/** Parse the boundary pact; a malformed file fails loudly. */
 export function loadPact(): Pact {
 	const here = dirname(fileURLToPath(import.meta.url));
 	const document = parseJsonText(

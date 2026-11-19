@@ -7,11 +7,6 @@ import {
 import type { BillingPlane } from "./planes.js";
 import type { RejectionReason } from "./types.js";
 
-// Metering-backed billing plane: instead of trusting static policy fields for
-// consumption, fold the Yard's `meter.UsageRecorded` facts (usage-metering.md)
-// into observed spend, then authorize the estimate against what the budget
-// has actually left. The event stream is truth; the fold rebuilds from zero.
-
 // public-contract: the metering fact family the billing plane folds.
 export const METER_USAGE_RECORDED_EVENT = "meter.UsageRecorded";
 
@@ -46,8 +41,6 @@ export function createMeteredBillingPlane(
 		| Iterable<{ type: string; data?: unknown }>
 		| (() => Iterable<{ type: string; data?: unknown }>),
 ): BillingPlane {
-	// One shared single-writer plane owns admission. Cross-process deployments
-	// use BudgetAdmissionAuthority backed by transactional storage instead.
 	const held = new Map<string, { amount: number; digest: string }>();
 	let lastSpentUsd = 0;
 	let lastSampleCount = 0;

@@ -1,6 +1,3 @@
-// Recorded compliance → OSCAL assessment results (ADR-0182 D25). The OSCAL
-// document itself is validated against the pinned OSCAL 1.1.2 schema in
-// packages/policy/test/posture; here the mapping from the journal is checked.
 import { describe, expect, it } from "vitest";
 import { RemediationMode } from "../../src/_generated/cd_pb.js";
 import {

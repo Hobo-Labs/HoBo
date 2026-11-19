@@ -43,10 +43,6 @@ function implementation(
 
 describe("trust gate reporting", () => {
 	it("reports a policy refusal as trust-gate-failed, not as a freshness problem", () => {
-		// A requirement that forbids sponsorship refuses the sponsored fixture on
-		// policy grounds while its evidence is perfectly fresh. Folding that into
-		// a freshness code would send an operator to renew evidence that was
-		// never the problem.
 		const strict = { ...TEST_REQUIREMENT, allowSponsor: false };
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ requirement: strict }),
@@ -57,8 +53,6 @@ describe("trust gate reporting", () => {
 		expect(sponsored?.available).toBe(false);
 		const codes = sponsored?.unavailability.map((r) => r.code) ?? [];
 		expect(codes).toContain("trust-gate-failed");
-		// Fresh evidence *and* a gate failure: the two facts coexist rather than
-		// one masking the other.
 		expect(sponsored?.evidenceState).toBe("fresh");
 		expect(codes).not.toContain("evidence-expired");
 	});
@@ -79,8 +73,6 @@ describe("trust gate reporting", () => {
 			);
 			if (gate === undefined) continue;
 			const parts = gate.detail.split(", ");
-			// Sorted and unique, because this string reaches the digest. An
-			// unordered join would make the same refusal hash two different ways.
 			expect([...parts].sort(), found.definitionId).toEqual(parts);
 			expect(new Set(parts).size).toBe(parts.length);
 		}
@@ -95,8 +87,6 @@ describe("trust gate reporting", () => {
 			.flatMap((cell) => cell.candidates)
 			.find((c) => c.definitionId === "sponsored.object-store/v1");
 		const codes = sponsored?.unavailability.map((r) => r.code) ?? [];
-		// Both problems reported. Renewing the evidence alone would not make this
-		// candidate selectable, and the report has to say so.
 		expect(codes).toContain("evidence-expired");
 		expect(codes.length).toBeGreaterThan(1);
 	});
@@ -106,9 +96,6 @@ describe("trust gate reporting", () => {
 			matrixInput({ requirement: undefined }),
 		);
 		const withExplicit = generateCapabilityMatrix(matrixInput());
-		// The two differ, which is the point: the default bar is stricter than
-		// the permissive test requirement, so a caller who omits it does not
-		// silently get the loosest possible judgement.
 		expect(withDefault.trustBundleDigest).not.toBe(
 			withExplicit.trustBundleDigest,
 		);
@@ -119,8 +106,6 @@ describe("trust gate reporting", () => {
 			matrixInput({ verifier: undefined }),
 		);
 		const verified = generateCapabilityMatrix(matrixInput());
-		// Fail-closed: with no trust root, a signature proves nothing, so nothing
-		// may be reported as fresh on the strength of it.
 		expect(unverified.digest).not.toBe(verified.digest);
 	});
 
@@ -128,7 +113,6 @@ describe("trust gate reporting", () => {
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ hoboOperatedProviderIds: undefined }),
 		);
-		// Nothing is demoted to substrate when the operator names no providers —
 		// defaulting the other way would understate market coverage everywhere.
 		const substrateIds = matrix.cells.flatMap((cell) => [
 			...cell.buckets.substrate.available,
@@ -139,7 +123,6 @@ describe("trust gate reporting", () => {
 });
 
 describe("exclusion ordering", () => {
-	/** Two definitions that differ in exactly one comparator key at a time. */
 	function excludingCatalog() {
 		return [
 			definition({
@@ -178,10 +161,6 @@ describe("exclusion ordering", () => {
 	});
 
 	it("breaks a full tie on code, then on detail", () => {
-		// Two claims on the same definition and profile that fail for different
-		// reasons: the comparator has to reach `code` and then `detail`, or the
-		// exclusion list order would depend on iteration order and move the
-		// digest between runs.
 		const twoFaults = definition({
 			id: "faulty/v1",
 			providerId: "p",
@@ -196,7 +175,6 @@ describe("exclusion ordering", () => {
 				{
 					profileId: "unregistered/v1",
 					versionRange: ">=1",
-					// SAFETY: this test deliberately injects an invalid realization.
 					realization: "sorcery" as never,
 					conformanceRef: "s",
 					conformance: "pass",
@@ -242,9 +220,6 @@ describe("cell accessors", () => {
 	});
 
 	it("cellDefinitionIds spans buckets rather than reporting one", () => {
-		// The point of the accessor: "who is registered here at all", which is a
-		// different question from "what could I select", and conflating them
-		// would hide the packs and bridges behind a native answer.
 		const dataOci = matrix.cells.find((c) => c.key === cellKey("data", "oci"));
 		expect(dataOci).toBeDefined();
 		if (dataOci === undefined) return;
@@ -262,8 +237,6 @@ describe("cell accessors", () => {
 		for (const cell of matrix.cells) {
 			const available = availableCandidates(cell);
 			for (const found of available) expect(found.available).toBe(true);
-			// And it is exactly the subset — a filter that dropped a usable
-			// candidate would make a covered cell look uncovered to a planner.
 			expect(available.length).toBe(
 				cell.candidates.filter((c) => c.available).length,
 			);
@@ -285,8 +258,6 @@ describe("validation summary", () => {
 		const matrix = generateCapabilityMatrix(matrixInput());
 		const validation = validateCapabilityMatrix(matrix);
 		const total = validation.summary.reduce((sum, row) => sum + row.cells, 0);
-		// A summary that double-counted or dropped a cell would misstate the size
-		// of the gap, which is the number a roadmap is built from.
 		expect(total).toBe(matrix.cells.length);
 	});
 
@@ -296,8 +267,6 @@ describe("validation summary", () => {
 				matrixInput({ definitions: [], trustEvidence: new Map() }),
 			),
 		);
-		// Zero rows are present rather than omitted: a missing row and a zero row
-		// read differently to anything charting the result over time.
 		expect(validation.summary.every((row) => Number.isFinite(row.cells))).toBe(
 			true,
 		);
@@ -307,8 +276,6 @@ describe("validation summary", () => {
 	it("carries the matrix digest and evaluation instant into the validation", () => {
 		const matrix = generateCapabilityMatrix(matrixInput());
 		const validation = validateCapabilityMatrix(matrix);
-		// A validation report that could not be tied back to the exact matrix it
-		// judged would be unfalsifiable.
 		expect(validation.matrixDigest).toBe(matrix.digest);
 		expect(validation.evaluatedAtMs).toBe(matrix.evaluatedAtMs);
 	});
@@ -323,9 +290,6 @@ describe("validation summary", () => {
 
 describe("evidence recorded for a definition that never reaches a cell", () => {
 	it("does not fabricate coverage from evidence alone", () => {
-		// Evidence is necessary and not sufficient: the ghost fixture has fresh
-		// evidence and claims a profile nobody registered, so it must reach no
-		// cell at all.
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ trustEvidence: TRUST_EVIDENCE }),
 		);
@@ -349,7 +313,6 @@ describe("deriveCoverageVerdict", () => {
 		> = {},
 	) {
 		const empty = { available: [], unavailable: [] };
-		// SAFETY: each returned bucket has the fixture's known bucket shape.
 		return {
 			native: empty,
 			pack: empty,
@@ -361,9 +324,6 @@ describe("deriveCoverageVerdict", () => {
 	}
 
 	it("reports the strongest bucket that has something selectable", () => {
-		// Precedence, not presence: a cell with both a native and a bridge
-		// candidate is covered natively, and reporting the bridge would
-		// understate what is actually available.
 		expect(
 			deriveCoverageVerdict(
 				buckets({
@@ -375,10 +335,6 @@ describe("deriveCoverageVerdict", () => {
 	});
 
 	it("distinguishes a lapsed cell from one nobody ever registered", () => {
-		// `evidence-lapsed` means someone claimed this and the claim no longer
-		// holds; `uncovered` means nobody ever did. They call for completely
-		// different work — renew evidence versus find a product — so collapsing
-		// them would misdirect a roadmap.
 		expect(
 			deriveCoverageVerdict(
 				buckets({ native: { available: [], unavailable: ["a"] } }),
@@ -419,8 +375,6 @@ describe("deriveCoverageVerdict", () => {
 				),
 			);
 		}
-		// Five buckets must not collapse onto one verdict — separating them is
-		// the entire point of the package.
 		expect(seen.size).toBeGreaterThan(1);
 	});
 });

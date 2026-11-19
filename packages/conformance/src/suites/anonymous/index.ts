@@ -1,9 +1,3 @@
-/**
- * The anonymous/claimable conformance dimension, assembled.
- *
- * Four suites, one registry entry each, and one convenience runner that drives
- * all four from a single set of executor ports.
- */
 import { createConformanceSuiteRegistry } from "../../registry.js";
 import type { ConformanceSuiteRegistry } from "../../types.js";
 import {
@@ -34,7 +28,6 @@ export * from "./migration.js";
 export * from "./reference-adapter.js";
 export * from "./types.js";
 
-/** Descriptors for the four suites, in the order the live lane runs them. */
 export const ANONYMOUS_SUITE_DESCRIPTORS: readonly AnonymousSuiteDescriptor[] =
 	Object.freeze([
 		describeAnonymousSuite(BOOTSTRAP_CONFORMANCE_SUITE),
@@ -43,17 +36,10 @@ export const ANONYMOUS_SUITE_DESCRIPTORS: readonly AnonymousSuiteDescriptor[] =
 		describeAnonymousSuite(MIGRATION_CONFORMANCE_SUITE),
 	]);
 
-/**
- * A registry pre-loaded with the anonymous dimension.
- *
- * Built fresh on each call so a caller that registers a provider-specific
- * variant cannot mutate everybody else's view of the catalog.
- */
 export function createAnonymousSuiteRegistry(): ConformanceSuiteRegistry {
 	return createConformanceSuiteRegistry(ANONYMOUS_SUITE_DESCRIPTORS);
 }
 
-/** The executor ports the whole dimension needs. One per suite. */
 export interface AnonymousExecutorPorts {
 	readonly bootstrap: AnonymousExecutor<BootstrapAttemptRequest>;
 	readonly claim: AnonymousExecutor<ClaimStepRequest>;
@@ -63,16 +49,9 @@ export interface AnonymousExecutorPorts {
 
 export interface RunAnonymousConformanceOptions {
 	readonly subjectId?: string;
-	/** Restrict each suite to these case ids. Omitted cases report `unknown`. */
 	readonly caseIds?: readonly string[];
 }
 
-/**
- * Run bootstrap, claim, binding, and migration against one product.
- *
- * Reports come back in descriptor order so a caller folding them into evidence
- * gets a stable digest regardless of how the executors resolved.
- */
 export async function runAnonymousConformance(
 	ports: AnonymousExecutorPorts,
 	options: RunAnonymousConformanceOptions = {},

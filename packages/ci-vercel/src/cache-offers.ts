@@ -1,31 +1,3 @@
-/**
- * What each cache backend costs and allows, and the marks the relay switches
- * at: declared configuration, with defaults derived from the relay's offer
- * catalog (phase 5): each backend's offer is a provider manifest in
- * `offers/*.provider.yaml`, lowered into an `@hobo/pricing` catalog by
- * `scripts/generate-offers.mts` (`src/_generated-assets/relay-offers.ts`).
- * The figures are the vendor tiers the ADR-0179 amendment records (read
- * 2026-11-11; re-check at provisioning).
- *
- * The record is `RelayCacheOffers` in `data-models/cache_offers.proto`
- * (constrained by `data-models/cache-offers/cache_offers.cue`); it arrives as
- * the JSON value of `HOBO_CI_CACHE_OFFERS_JSON`, from the config service or
- * the environment. Parse, don't validate: `parseCacheOffers` turns it into
- * the derived `FleetOffer`s and `FleetRoutingMarks` of `@hobo/backend-fleet`
- * once, and an invalid document is an error naming the key, never quoting it.
- *
- * | Backend | Default | Source |
- * |---|---|---|
- * | `upstash` | free: 500,000 commands a month, then blocked | upstash.com/pricing |
- * | `valkey` | free: no command cap (Aiven for Valkey free, or self-hosted) | aiven.io free-tier docs |
- * | `redis` | none: nobody has said what `REDIS_URL` is, so it is never moved to for budget reasons | — |
- * | `turso` | free: 500 million rows read and 10 million written a month, then blocked | turso.tech/pricing |
- * | `blob` | pay-as-you-go: $0.40 a million simple and $5 a million advanced operations, cap $0 | vercel.com/pricing (unverified for this store) |
- * | `memory` | free, no cap (tests and local runs) | — |
- *
- * A cap of zero means no money: a pay-as-you-go backend is a candidate only
- * once an owner declares a cap for it.
- */
 import {
 	DEFAULT_FLEET_ROUTING_MARKS,
 	type FleetAllowance,
@@ -44,7 +16,6 @@ import {
 	DEFAULT_MONTHLY_CACHE_COMMANDS,
 } from "./cache-backend.js";
 
-/** A default offer from the catalog; Upstash's command allowance may be overridden. */
 function catalogOffer(
 	entry: (typeof RELAY_CACHE_OFFER_DEFAULTS)[number],
 	commands: number,
@@ -75,11 +46,6 @@ function catalogOffer(
 	});
 }
 
-/**
- * The defaults, per backend, from the offer catalog; `commands` overrides
- * Upstash's allowance. `redis` (`REDIS_URL`) has no offer: nobody has said
- * what it is, so it is never moved to for budget reasons. `memory` is free.
- */
 export function defaultCacheOffers(
 	commands = DEFAULT_MONTHLY_CACHE_COMMANDS,
 ): ReadonlyMap<CacheBackendId, FleetOffer> {
@@ -109,7 +75,6 @@ export function defaultCacheOffers(
 	return offers;
 }
 
-/** Each backend's catalog rate card (`<backend>=<rate card id>`), for the start-up log. */
 export function cacheOfferRateCards(): readonly string[] {
 	return RELAY_CACHE_OFFER_DEFAULTS.map(
 		(entry) => `${entry.backend}=${entry.rateCardId}`,
@@ -162,11 +127,9 @@ const Document = z
 	})
 	.strict();
 
-/** The relay's marks, unless configured: switch at 90%, back below 80%. */
 export const DEFAULT_CACHE_ROUTING_MARKS: FleetRoutingMarks =
 	parseFleetRoutingMarks({
 		...DEFAULT_FLEET_ROUTING_MARKS,
-		// A tick that finds the active cache down probes it for about this long.
 		failoverAfterMs: 10_000,
 	});
 
@@ -175,12 +138,6 @@ export type CacheOffers = Readonly<{
 	marks: FleetRoutingMarks;
 }>;
 
-/**
- * The declared offers over the defaults: an offer named in the document
- * replaces the default for its backend entirely; marks are merged field by
- * field. `HOBO_CI_CACHE_MONTHLY_COMMANDS` still sets Upstash's default
- * allowance.
- */
 export function parseCacheOffers(
 	json: string | undefined,
 	commands = DEFAULT_MONTHLY_CACHE_COMMANDS,
@@ -242,7 +199,6 @@ export function parseCacheOffers(
 			}),
 		};
 	} catch {
-		// The fleet parsers' messages name fields; still, report the key only.
 		throw new CacheBindingError("HOBO_CI_CACHE_OFFERS_JSON is not valid");
 	}
 }

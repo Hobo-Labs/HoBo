@@ -46,7 +46,6 @@ describe("configuration (parse, don't validate)", () => {
 			applicationName: "hobo-storage-postgres",
 		});
 		expect(Object.isFrozen(config)).toBe(true);
-		// Parity with packages/cd/src/events.ts CD_DEFAULTS (frozen).
 		const events = readFileSync(join(here, "../../cd/src/events.ts"), "utf8");
 		expect(events).toContain(
 			`postgresMinMajorVersion: ${POSTGRES_STORE_DEFAULTS.minServerMajorVersion},`,
@@ -270,7 +269,6 @@ describe("migrations (offline)", () => {
 		expect(
 			checksums.every((checksum) => /^[0-9a-f]{64}$/u.test(checksum)),
 		).toBe(true);
-		// Pin the released checksums: editing an applied migration must be a new migration.
 		expect(checksums).toMatchSnapshot();
 	});
 

@@ -1,6 +1,3 @@
-// Semantic Version 2.0.0 precedence for the `semver-gte` posture operator.
-// Accepts an optional leading `v` and a missing minor/patch (read as 0), the
-// forms platform versions are reported in ("1.2", "v1.27.3").
 
 export type Semver = Readonly<{
 	major: number;
@@ -36,7 +33,6 @@ function compareIdentifier(a: string, b: string): number {
 	return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Precedence of `a` against `b` (negative, zero, positive), or undefined when either does not parse. */
 export function compareSemver(a: string, b: string): number | undefined {
 	const left = parseSemver(a);
 	const right = parseSemver(b);

@@ -1,9 +1,3 @@
-/**
- * What the conformance suite cannot see from the port: the table is created
- * on first use, expired rows are purged in bounded steps without a scan, the
- * counter guard leaves a rejected value untouched, a large getMany is still
- * one request, and the rows estimate matches the documented cost.
- */
 import {
 	EPHEMERAL_STATE_COMMAND_COST,
 	parseEphemeralKey,
@@ -63,7 +57,6 @@ describe("schema", () => {
 			now,
 		});
 		expect(await state.get(key("a"))).toBeUndefined();
-		// The failed read, the schema batch, and the retried read.
 		expect(metered.requests()).toEqual({
 			total: 3,
 			byKind: { execute: 2, batch: 1 },
@@ -116,9 +109,9 @@ describe("expiry", () => {
 		}
 		advance(2_000);
 		await state.putIfAbsent(key("live"), "x", ttl);
-		expect(await rowCount(client)).toBe(3); // 5 expired − 3 purged + 1 live
+		expect(await rowCount(client)).toBe(3);
 		await state.putIfAbsent(key("live-2"), "x", ttl);
-		expect(await rowCount(client)).toBe(2); // the last 2 expired are gone
+		expect(await rowCount(client)).toBe(2);
 		expect(
 			charges.filter((charge) => charge.operation === "purge").at(-1),
 		).toEqual({ operation: "purge", rowsRead: 5, rowsWritten: 2 });
@@ -132,7 +125,7 @@ describe("expiry", () => {
 			now,
 			purge: { everyMs: 60_000, limit: 64 },
 		});
-		await state.get(key("warm")); // create the table
+		await state.get(key("warm"));
 		metered.reset();
 		await state.putIfAbsent(key("a"), "x", ttl);
 		await state.putIfAbsent(key("b"), "x", ttl);
@@ -150,12 +143,12 @@ describe("expiry", () => {
 		const first = await state.putIfAbsent(key("k"), "old", ttl);
 		advance(1_000);
 		expect(await state.get(key("k"))).toBeUndefined();
-		expect(await rowCount(client)).toBe(1); // still stored, lazily
+		expect(await rowCount(client)).toBe(1);
 		const second = await state.putIfAbsent(key("k"), "new", ttl);
 		expect(second.applied && first.applied && second.version).not.toBe(
 			first.applied && first.version,
 		);
-		expect(await rowCount(client)).toBe(1); // replaced in place
+		expect(await rowCount(client)).toBe(1);
 	});
 });
 
@@ -234,7 +227,7 @@ describe("cost", () => {
 		await state.get(key("warm"));
 		meter.reset();
 		const created = await state.putIfAbsent(key("a"), "x", ttl);
-		await state.putIfAbsent(key("a"), "y", ttl); // lost race: no write
+		await state.putIfAbsent(key("a"), "y", ttl);
 		if (created.applied) {
 			await state.compareAndSet(key("a"), created.version, "z", ttl);
 		}

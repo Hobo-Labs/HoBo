@@ -1,7 +1,3 @@
-// A small in-memory event store for the executor tests. It implements exactly
-// the slice of the durable event-store port the executors use — append under
-// optimistic `seq` with idempotency keys, per-stream read, and catch-up read
-// by position — with the same refusals the real store makes.
 import {
 	type AppendOptions,
 	type AppendResult,
@@ -24,9 +20,7 @@ export interface MemoryEventStore {
 	read(streamId: string, fromSeq?: number): AsyncIterable<EventEnvelope>;
 	readAll(options?: ReadAllOptions): AsyncIterable<PositionedEvent>;
 	getStreamHead(streamId: string): StreamHead | undefined;
-	/** Number of events in the store. */
 	size(): number;
-	/** When set, every append is refused: a quiesced writer. */
 	quiesced: boolean;
 }
 

@@ -1,13 +1,3 @@
-/**
- * The full GitHub Pages lifecycle the consumer pact declares: first publish
- * to an absent branch, an update on top of the observed head, a build
- * request, a lost blob reply resolved by lookup, a `/docs` publish, a Pages
- * deployment observed until it is live, an unpublish, and every refusal the
- * realizer types: a revoked token (401), a repository invisible to the token
- * (404), primary and secondary rate limits (403), a token without
- * contents: write (403) and a non-fast-forward ref update (422). Every request
- * and its response is recorded.
- */
 import type {
 	HttpTransport,
 	ResolveOutcome,
@@ -98,7 +88,6 @@ export async function recordLifecycle(): Promise<Exchange[]> {
 	deployment.setDeploymentStatus(created.outputs.pagesBuildVersion, "succeed");
 	await deployer.reconcile(deploymentRequest, record(deployment));
 
-	// Refusals: each is recorded with the headers and error body GitHub sends.
 	const refused = async (run: () => Promise<ResolveOutcome>) => {
 		try {
 			await run();

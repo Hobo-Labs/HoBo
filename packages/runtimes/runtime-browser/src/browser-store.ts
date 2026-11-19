@@ -1,10 +1,3 @@
-/**
- * Browser DurableEventStore.
- *
- * Production path: Worker + SQLite WASM + OPFS (when capability present and
- * wired). Unit tests use an explicit transient memory driver only when
- * `allowTransient: true` — never claim OPFS durability without a real OPFS open.
- */
 
 import type {
 	AppendOptions,
@@ -57,7 +50,6 @@ export async function createBrowserEventStore(
 		);
 	}
 
-	// Attempt real SQLite WASM + OPFS when available.
 	const opfsJournal = await tryOpenSqliteWasm(
 		options.partitionId,
 		detection.mode,
@@ -66,7 +58,6 @@ export async function createBrowserEventStore(
 		return wrapJournal(opfsJournal, "opfs-sahpool");
 	}
 
-	// No real OPFS-backed journal: only open memory when explicitly allowed.
 	if (
 		options.allowTransient === true ||
 		detection.mode === "transient-memory"
@@ -132,28 +123,17 @@ function wrapJournal(
 	});
 }
 
-/**
- * Open a durable OPFS-backed journal when the environment and optional
- * dependency support it. Returns null when durable open is not possible
- * (caller decides fail-closed vs transient).
- */
 async function tryOpenSqliteWasm(
 	_partitionId: string,
 	_mode: BrowserPersistenceMode,
 ): Promise<SqliteJournal | null> {
-	// Optional dependency — may be absent in CI Node environments.
-	// Full Worker + OPFS integration is exercised where OPFS + Worker exist;
-	// this environment (Node unit tests) cannot open OPFS, so return null.
 	try {
 		await import("@sqlite.org/sqlite-wasm");
 	} catch {
 		return null;
 	}
-	// Package present does not imply OPFS VFS is configured. Require real OPFS.
 	if (!hasOpfs()) {
 		return null;
 	}
-	// Real Worker+OPFS open is not yet complete in this Node-hosted agent run;
-	// do not claim durability without an open handle.
 	return null;
 }

@@ -14,7 +14,6 @@ export type RoutingTopology = Readonly<{
 	tenantId: TenantId;
 	stationId?: string;
 	railHash?: `sha256:${string}`;
-	/** Explicit cost-routing eligibility; single-writer resources cannot move by price. */
 	costRouting?:
 		| "stateless"
 		| "active-active-eventual"
@@ -52,11 +51,6 @@ export function synthesizeRoutingPlan(
 		policyDecision: PolicyDecision;
 		now?: string;
 		planId?: string;
-		/**
-		 * Default "prefer-healthy". Pass "static" when the caller has already
-		 * folded health into explicit weights (e.g. the control loop's swap
-		 * plans) so weight-only providers can realize the plan in full.
-		 */
 		weightStrategy?: RoutingWeightStrategy;
 	}>,
 ): RoutingSynthesisResult {

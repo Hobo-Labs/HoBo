@@ -1,9 +1,5 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 
-/**
- * Azure TrafficRouting offerings declaration (scaffold).
- * Native LB HTTP adapter may land later; inprocess.weighted is the floor.
- */
 export const AZURE_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	provider: "other",
 	offerings: [

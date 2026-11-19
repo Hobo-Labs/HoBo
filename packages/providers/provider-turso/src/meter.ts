@@ -1,19 +1,6 @@
-/**
- * Request and rows metering for the libSQL binding.
- *
- * `meterLibsqlClient` wraps the client and counts what is actually sent: one
- * request per `execute` or `batch` call, including the schema creation a
- * fresh database needs once. That is the figure the conformance suite checks
- * against `LIBSQL_EPHEMERAL_COST`. Rows cannot be counted at the client — the
- * libSQL protocol does not return rows read or written — so the binding
- * reports its own upper-bound estimate per call through `onRows`, and
- * `createLibsqlUsageMeter` sums both. Only operation names and counts reach a
- * meter; keys, values and SQL never do.
- */
 import type { LibsqlCell } from "./cells.js";
 import type { LibsqlRowsCharge } from "./cost.js";
 
-/** The part of `@libsql/client`'s `Client` the binding uses. */
 export type LibsqlStatementClient = {
 	execute(statement: {
 		readonly sql: string;
@@ -28,7 +15,6 @@ export type LibsqlStatementClient = {
 	): Promise<readonly LibsqlResult[]>;
 };
 
-/** The part of `@libsql/client`'s `ResultSet` the binding reads. */
 export type LibsqlResult = {
 	readonly rows: ArrayLike<ArrayLike<LibsqlCell>>;
 };
@@ -77,9 +63,7 @@ export function meterLibsqlClient(
 }
 
 export type LibsqlUsageMeter = {
-	/** Pass as the binding's `onRows`. */
 	readonly onRows: (charge: LibsqlRowsCharge) => void;
-	/** Pass as `meterLibsqlClient`'s `onRequest`. */
 	readonly onRequest: (kind: "execute" | "batch") => void;
 	usage(): LibsqlUsageSnapshot;
 	reset(): void;

@@ -1,11 +1,3 @@
-// Journal → CDEvents projection (ADR-0182 D17).
-//
-// A pure fold over @hobo/cd journal events. Each fact that has a CDEvents
-// meaning becomes one or more CDEvents of the pinned spec; HoBo-specific
-// facts become `dev.cdeventsx.hobo-*` custom events. Bodies are parsed with
-// the generated protobuf schemas (parse, don't validate); a body that does
-// not parse is counted and skipped, never trusted. Deterministic: ids are
-// hashes of the source event id, timestamps are recorded event times (I8).
 
 import { type DescMessage, fromJson, toJson } from "@bufbuild/protobuf";
 import type { EventEnvelope, JsonObject, JsonValue } from "@hobo/core";
@@ -42,14 +34,11 @@ import {
 import { cloneAsJson, isJsonObject, isJsonString } from "./json.js";
 
 export type CdEventsProjectorOptions = Readonly<{
-	/** CDEvents `context.source` (URI-reference), e.g. `/hobo/cd/acme`. */
 	source: string;
 }>;
 
 export interface CdEventsProjector {
-	/** Fold one journal event; returns the CDEvents it produces, in order. */
 	apply(event: EventEnvelope): readonly CdEvent[];
-	/** Bodies that did not parse and were skipped. */
 	readonly skipped: number;
 }
 
@@ -66,7 +55,6 @@ type SetView = Readonly<{
 	freightId: string;
 }>;
 
-// One HoBo fact without a CDEvents vocabulary entry → one custom event.
 type CustomRule = Readonly<{
 	schema: DescMessage;
 	subject: string;
@@ -175,18 +163,15 @@ const CUSTOM_RULE_BY_TYPE = new Map<string, CustomRule>(
 	Object.entries(CUSTOM_RULES),
 );
 
-// Origins whose convergence removes every service from the Camp.
 const REMOVAL_ORIGINS = new Set<SetOrigin>([
 	SetOrigin.TEARDOWN,
 	SetOrigin.DEPARTURE,
 ]);
-// Origins that change the environment's definition, not a service version.
 const MODIFY_ORIGINS = new Set<SetOrigin>([
 	SetOrigin.CONFIG,
 	SetOrigin.TOPOLOGY,
 ]);
 
-/** The event body as a JSON value (journal bodies are JSON documents). */
 function bodyOf(event: EventEnvelope): JsonValue {
 	return cloneAsJson(event.data);
 }
@@ -212,7 +197,6 @@ export function createCdEventsProjector(
 	const freights = new Map<string, FreightView>();
 	const sets = new Map<string, SetView>();
 	const environments = new Set<string>();
-	// campId → bindle → deployed freight ids, oldest first.
 	const deployed = new Map<string, Map<string, string[]>>();
 	let skipped = 0;
 
@@ -465,7 +449,6 @@ export function createCdEventsProjector(
 					),
 				);
 			} else {
-				// Nothing earlier is known on this Camp: the service is gone.
 				out.push(
 					emit({
 						context: context(event, CDEVENT_TYPES.serviceRemoved, campId),
@@ -558,7 +541,6 @@ export function createCdEventsProjector(
 			skipped += 1;
 			return [];
 		}
-		// SAFETY: toJson of a generated message is a JSON object.
 		const content = toJson(rule.schema, record) as JsonObject;
 		const subjectId = rule.subjectId(content) || event.streamId;
 		const type = hoboEventType(rule.subject, rule.predicate);
@@ -603,7 +585,6 @@ export function createCdEventsProjector(
 	};
 }
 
-/** Project a whole journal (replay): same input, byte-identical output. */
 export function projectCdEvents(
 	events: Iterable<EventEnvelope>,
 	options: CdEventsProjectorOptions,

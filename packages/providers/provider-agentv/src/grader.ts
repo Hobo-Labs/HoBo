@@ -24,24 +24,9 @@ import type { JsonValue } from "./json.js";
 export type { JsonValue } from "./json.js";
 export type TrajectoryInput = JsonValue;
 
-// The agentV live-eval grader (ADR-0025 optional provider; IMPL-003
-// live-eval reward attachment). Microsoft-Trace-style: a stored trajectory
-// is graded WITHOUT re-running the agent — agentV's deterministic assertion
-// runners (and, via the custom escape hatch, its LlmGrader judges wired by
-// the caller with their own provider/keys — never ambient, secretless-first)
-// score the recorded root-span output per metric. The per-metric scores are
-// the reward vector the optimization loop consumes; the overall score rides
-// the core TrajectoryReward. Record shapes are generated proto types
-// (core's TrajectoryReward, this package's AgentVGrade).
-
 export type { AssertionResult } from "@agentv/core";
 export type { AgentVGrade } from "./_generated/agent_v_grade_pb.js";
 
-/**
- * One metric, lowered to an agentV assertion over the trajectory's recorded
- * root-span output JSON. `custom` accepts any scorer with agentV's
- * AssertionResult contract — including a wrapped agentV LlmGrader judge.
- */
 export type AgentVMetric =
 	| { readonly kind: "equals"; readonly value: string }
 	| { readonly kind: "contains"; readonly value: string }
@@ -61,11 +46,8 @@ export type AgentVMetric =
 
 export interface AgentVLiveEvalOptions {
 	readonly rubricRef: string;
-	/** Metric name → assertion; scores land in AgentVGrade.namedScores. */
 	readonly metrics: Readonly<Record<string, AgentVMetric>>;
-	/** Pass threshold in [0,1]; defaults to agentV's DEFAULT_THRESHOLD. */
 	readonly threshold?: number;
-	/** Injected clock (ISO-8601) for the reward's observedAt. */
 	readonly now?: () => string;
 }
 
@@ -89,7 +71,6 @@ export function createAgentVLiveEvalGrader(
 	return {
 		graderId: GRADER_ID,
 		async grade(trajectoryInput: TrajectoryInput) {
-			// Parse, don't validate: the boundary re-parses even trusted callers.
 			const trajectory = parseTrajectory(trajectoryInput);
 			const root = trajectory.spans.find((span) => span.parentId === "");
 			const output = root?.outputsJson ?? "";
@@ -137,7 +118,6 @@ export function createAgentVLiveEvalGrader(
 	};
 }
 
-// The grader identity this provider registers under (engine-internal).
 const GRADER_ID = "hobo.live-eval/agentv@4.42.4";
 
 async function runMetric(

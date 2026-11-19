@@ -70,7 +70,6 @@ import { NATIVE_PRAGMAS } from "./schema.js";
 export interface JournalOpenOptions {
 	readonly clock?: Clock;
 	readonly partitionId?: string;
-	/** Apply native WAL/FULL pragmas (default true for node drivers). */
 	readonly nativePragmas?: boolean;
 	readonly now?: string;
 }
@@ -110,10 +109,6 @@ export interface StreamHead {
 	readonly ownerEpoch: bigint;
 }
 
-/**
- * Portable SQLite journal implementing DurableEventStore semantics.
- * Driver-agnostic: Node and browser adapters supply SqliteDriver.
- */
 export class SqliteJournal {
 	readonly partitionId: string;
 	private readonly db: SqliteDriver;
@@ -135,18 +130,13 @@ export class SqliteJournal {
 			this.db.exec(`PRAGMA foreign_keys = ${NATIVE_PRAGMAS.foreign_keys}`);
 			this.db.exec(`PRAGMA busy_timeout = ${NATIVE_PRAGMAS.busy_timeout}`);
 		} else {
-			// Browser / memory: foreign keys + busy timeout only
 			try {
 				this.db.exec("PRAGMA foreign_keys = ON");
 			} catch {
-				// some WASM builds may not support
 			}
 		}
 
 		migrateToCurrent(this.db, { now: options.now ?? this.clock.now() });
-		// A deterministic clock can restart at the same instant after reopen.
-		// Seed from durable state, then check under the append transaction so
-		// independent handles and clock rewinds cannot reuse an existing ID.
 		const existing = this.db
 			.prepare("SELECT COUNT(*) AS count FROM events")
 			.get();
@@ -172,8 +162,6 @@ export class SqliteJournal {
 	getDriver(): SqliteDriver {
 		return this.db;
 	}
-
-	// ── EventStore surface ──────────────────────────────────────────────────
 
 	async append(
 		streamId: string,
@@ -215,7 +203,6 @@ export class SqliteJournal {
 		const pendingByKey = new Map<string, ParsedEventInput>();
 		const pendingDuplicateKeys: string[] = [];
 
-		// Pre-txn idempotency lookup for already-committed keys (also re-checked in txn)
 		for (const input of inputs) {
 			if (input.idempotencyKey) {
 				const existing = this.findByIdempotencyKey(
@@ -244,13 +231,10 @@ export class SqliteJournal {
 			});
 		}
 
-		// All-deduped with no new events: still allow effects; expectedSeq not required
-		// to match head when every input was an already-committed idempotent retry.
 		const allDeduped = pending.length === 0;
 
 		this.db.beginImmediate();
 		try {
-			// Ensure stream head
 			this.db
 				.prepare(
 					`INSERT OR IGNORE INTO streams (stream_id, revision, owner_epoch, created_at, updated_at)
@@ -269,7 +253,6 @@ export class SqliteJournal {
 			const revision = asNumber(headRow.revision, "revision");
 			const ownerEpoch = asBigInt(headRow.owner_epoch, "owner_epoch");
 
-			// Re-resolve idempotency inside txn
 			const toWrite: ParsedEventInput[] = [];
 			const txnDeduped: EventEnvelope[] = [...deduped];
 			for (const input of pending) {
@@ -286,7 +269,6 @@ export class SqliteJournal {
 				toWrite.push(input);
 			}
 
-			// Fencing
 			const fence = opts.fenceToken;
 			let nextOwnerEpoch = ownerEpoch;
 			if (ownerEpoch > FENCING_COMPAT.UNFENCED_EPOCH) {
@@ -307,7 +289,6 @@ export class SqliteJournal {
 				}
 			}
 
-			// expectedSeq CAS — only for new events
 			if (toWrite.length > 0) {
 				const expectedSeq = requireNonNegInt(opts.expectedSeq, "expectedSeq");
 				if (revision !== expectedSeq) {
@@ -318,7 +299,6 @@ export class SqliteJournal {
 					);
 				}
 			} else if (!allDeduped && effects.length === 0) {
-				// no-op
 			}
 
 			const appended: EventEnvelope[] = [];
@@ -361,7 +341,6 @@ export class SqliteJournal {
 					metaBytes,
 					input.idempotencyKey ?? null,
 				);
-				// SAFETY: assertion required at this I/O or test boundary.
 				const position = asBigInt(
 					result.lastInsertRowid,
 					"global_position",
@@ -372,7 +351,6 @@ export class SqliteJournal {
 				nextSeq += 1;
 			}
 
-			// Advance stream head with CAS on revision
 			if (toWrite.length > 0 || nextOwnerEpoch !== ownerEpoch) {
 				const newRevision = revision + toWrite.length;
 				const update = this.db
@@ -398,17 +376,14 @@ export class SqliteJournal {
 				}
 			}
 
-			// Stage durable effects
 			const effectReceipts: DurableEffectReceipt[] = [];
 			const createdPosition = lastPosition ?? 0n;
 			for (const effect of effects) {
 				effectReceipts.push(this.stageEffect(effect, now, createdPosition));
 			}
 
-			// In-batch duplicate keys → deduped as the just-appended event
 			const appendedByKey = new Map<string, EventEnvelope>();
 			for (const envelope of appended) {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const key = (envelope.meta as { idempotencyKey?: string } | undefined)
 					?.idempotencyKey;
 				if (isJsonString(key) && key.length > 0) {
@@ -422,7 +397,6 @@ export class SqliteJournal {
 
 			this.db.commit();
 
-			// Live wake only after commit
 			for (const envelope of appended) {
 				this.publish(envelope);
 			}
@@ -439,7 +413,6 @@ export class SqliteJournal {
 			try {
 				this.db.rollback();
 			} catch {
-				// ignore
 			}
 			throw error;
 		}
@@ -469,7 +442,6 @@ export class SqliteJournal {
 			after = parseEventPosition(options.after, "after");
 		} else {
 			const origin = 0n;
-			// SAFETY: EventPosition is a branded bigint; 0n is the exclusive lower bound.
 			after = origin as EventPosition;
 		}
 		const limit = Math.min(
@@ -491,7 +463,6 @@ export class SqliteJournal {
 			params.push(options.tenant);
 		}
 		if (options.lane) {
-			// lane filter: exact lane match only (no accidental baseline skip)
 			clauses.push("lane = ?");
 			params.push(options.lane);
 		}
@@ -505,7 +476,6 @@ export class SqliteJournal {
          LIMIT ?`;
 		const rows = this.db.prepare(sql).all(...params);
 		for (const row of rows) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const position = asBigInt(
 				row.global_position,
 				"global_position",
@@ -545,7 +515,6 @@ export class SqliteJournal {
 		if (snapshotSeq > headSeq) {
 			throw new SnapshotAheadError(id, snapshotSeq, headSeq);
 		}
-		// Ensure stream row exists for FK
 		if (!head) {
 			const now = this.clock.now();
 			this.db
@@ -590,7 +559,6 @@ export class SqliteJournal {
 			.get(id);
 		if (!row) return undefined;
 		const codec = asText(row.state_codec, "state_codec");
-		// SAFETY: assertion required at this I/O or test boundary.
 		const state = decodePayload(codec, asBytes(row.state, "state")) as S;
 		return Object.freeze({
 			streamId: asText(row.stream_id, "stream_id"),
@@ -618,12 +586,6 @@ export class SqliteJournal {
 		return this.getStreamHead(streamId)?.revision ?? 0;
 	}
 
-	// ── Durable subscriptions ───────────────────────────────────────────────
-
-	/**
-	 * Renew an existing subscription lease without rotating the fence token.
-	 * Distinct from claimSubscription, which issues a new fence.
-	 */
 	async renewSubscription(options: {
 		subscriptionId: string;
 		partitionId: string;
@@ -718,7 +680,6 @@ export class SqliteJournal {
 				subscriptionId,
 				partitionId,
 				holderId,
-				// SAFETY: assertion required at this I/O or test boundary.
 				fenceToken: fenceToken as FenceToken,
 				expiresAt,
 			});
@@ -726,7 +687,6 @@ export class SqliteJournal {
 			try {
 				this.db.rollback();
 			} catch {
-				// ignore
 			}
 			throw error;
 		}
@@ -747,16 +707,12 @@ export class SqliteJournal {
 			.get(subscriptionId, partitionId);
 		if (!row) return undefined;
 		return Object.freeze({
-			// SAFETY: assertion required at this I/O or test boundary.
 			subscriptionId: asText(
 				row.subscription_id,
 				"subscription_id",
 			) as SubscriptionId,
-			// SAFETY: assertion required at this I/O or test boundary.
 			partitionId: asText(row.partition_id, "partition_id") as PartitionId,
-			// SAFETY: assertion required at this I/O or test boundary.
 			position: asBigInt(row.position, "position") as EventPosition,
-			// SAFETY: assertion required at this I/O or test boundary.
 			fenceToken: asBigInt(row.fence_token, "fence_token") as FenceToken,
 			updatedAt: asText(row.updated_at, "updated_at"),
 		});
@@ -838,7 +794,6 @@ export class SqliteJournal {
 			try {
 				this.db.rollback();
 			} catch {
-				// ignore
 			}
 			throw error;
 		}
@@ -855,8 +810,6 @@ export class SqliteJournal {
 		const partitionId = parsePartitionId(options.partitionId);
 		const position = parseEventPosition(options.position);
 		const now = this.clock.now();
-		// Administrative reset uses fence 1 as marker; claim first in production
-		// SAFETY: assertion required at this I/O or test boundary.
 		const fenceToken = 1n as FenceToken;
 		this.db
 			.prepare(
@@ -877,8 +830,6 @@ export class SqliteJournal {
 			updatedAt: now,
 		});
 	}
-
-	// ── Queue operations ────────────────────────────────────────────────────
 
 	enqueueMessage(input: QueueEnqueueInput): EnqueueMessageResult {
 		const now = this.clock.now();
@@ -949,7 +900,6 @@ export class SqliteJournal {
 
 		this.db.beginImmediate();
 		try {
-			// reclaim expired
 			this.db
 				.prepare(
 					`UPDATE queue_messages
@@ -1000,7 +950,6 @@ export class SqliteJournal {
 			try {
 				this.db.rollback();
 			} catch {
-				// ignore
 			}
 			throw error;
 		}
@@ -1025,8 +974,6 @@ export class SqliteJournal {
 			.run(now, messageId, leaseId, leaseFence, deliveryAttempt);
 		return result.changes === 1;
 	}
-
-	// ── Outbox ──────────────────────────────────────────────────────────────
 
 	claimOutbox(input: {
 		limit: number;
@@ -1095,7 +1042,6 @@ export class SqliteJournal {
 						asBytes(row.payload, "payload"),
 					),
 				);
-				// SAFETY: assertion required at this I/O or test boundary.
 				const headers = decodeMetadata(
 					asText(row.headers_codec, "headers_codec"),
 					asBytes(row.headers, "headers"),
@@ -1117,7 +1063,6 @@ export class SqliteJournal {
 			try {
 				this.db.rollback();
 			} catch {
-				// ignore
 			}
 			throw error;
 		}
@@ -1142,8 +1087,6 @@ export class SqliteJournal {
 			.run(now, outboxId, leaseId, leaseFence, deliveryAttempt);
 		return result.changes === 1;
 	}
-
-	// ── Timers ──────────────────────────────────────────────────────────────
 
 	claimDueTimers(input: { limit: number; now?: string }): Array<{
 		timerId: string;
@@ -1188,8 +1131,6 @@ export class SqliteJournal {
 			.run(at, timerId);
 		return result.changes === 1;
 	}
-
-	// ── Actor leases (durable) ──────────────────────────────────────────────
 
 	acquireActorLease(input: {
 		key: string;
@@ -1247,7 +1188,6 @@ export class SqliteJournal {
 			try {
 				this.db.rollback();
 			} catch {
-				// ignore
 			}
 			throw error;
 		}
@@ -1261,8 +1201,6 @@ export class SqliteJournal {
 			)
 			.run(key, holderId, fenceToken);
 	}
-
-	// ── Internals ───────────────────────────────────────────────────────────
 
 	private stageEffect(
 		effect: DurableEffectInput,
@@ -1574,7 +1512,6 @@ function parseEventInputs(events: readonly EventInput[]): ParsedEventInput[] {
 		if (!Number.isSafeInteger(v) || v <= 0) {
 			throw new TypeError("event.v must be a positive safe integer");
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
 		const meta = Object.freeze(cloneJson(event.meta ?? {})) as JsonObject;
 		const idempotencyKey =
 			isJsonString(meta.idempotencyKey) && meta.idempotencyKey.length > 0
@@ -1626,7 +1563,6 @@ function cloneJson<T>(value: T): T {
 		return globalThis.structuredClone(value);
 	}
 	const text = JSON.stringify(value);
-	// SAFETY: JSON round-trip clones a JSON-serializable domain value.
 	const cloned = JSON.parse(text) as T;
 	return cloned;
 }

@@ -2,10 +2,6 @@ import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import * as root from "../src/index.js";
 
-// ADR-0180, "Retirement": whether the fleet can take a run is the relay's to
-// decide (ADR-0180), so the two repository-variable channels it superseded
-// are gone. ADR-0181 (decision 6) retired the third, the route table
-// (`HOBO_CI_FLEET_ROUTES`): routing travels as a routing slip (ADR-0181).
 const exported = Object.keys(root);
 const file = (path: string) => new URL(path, import.meta.url);
 

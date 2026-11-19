@@ -1,10 +1,3 @@
-// A replication slot is proven to decode before its position is handed to
-// anyone — without a server. A scripted executor plays PostgreSQL: it reports
-// transactions still open, and it fails the decoding probe the way a real
-// server does for a slot that was created at a bad moment.
-//
-// The live reproduction of that failure is in `engine-hardening-live.test.ts`;
-// this file pins what the binding does about it, statement by statement.
 import assert from "node:assert/strict";
 import {
 	CapturePositionError,
@@ -33,7 +26,6 @@ const NAMESPACE = "hobo_slot_proof";
 const DATASET = EVERY_TYPE_SCHEMA.name;
 const SCOPE = scopeOf(DATASET);
 
-/** What the server raises when a slot cannot map a change to a table. */
 function unmapped(): Error {
 	return Object.assign(
 		new Error('could not map filenumber "base/5/311262" to relation OID'),
@@ -42,15 +34,10 @@ function unmapped(): Error {
 }
 
 interface Script {
-	/** Answers to "have the open transactions ended": one per poll, then true. */
 	settled: boolean[];
-	/** What each decoding probe does, in order; then it succeeds. */
 	probes: (Error | "ok")[];
-	/** The registry row for the subscription, when it already exists. */
 	subscription?: PostgresRow;
-	/** What a read's decoding call raises. */
 	peek?: Error;
-	/** The end of the log, for an acknowledgement to be compared with. */
 	head?: string;
 }
 
@@ -58,7 +45,6 @@ interface Scripted {
 	readonly engine: PostgresEngine;
 	readonly statements: string[];
 	readonly waits: number[];
-	/** Statements of the slot proof and what surrounds it, by short name. */
 	steps(): string[];
 }
 
@@ -161,7 +147,6 @@ function captureOf(engine: PostgresEngine) {
 describe("a replication slot is proven before its position is handed out", () => {
 	test("only the server's unmapped-relation failure counts as a slot created at a bad moment", () => {
 		assert.equal(isUndecodableSlotError(unmapped()), true);
-		// PostgreSQL 15 and earlier word it with "filenode".
 		assert.equal(
 			isUndecodableSlotError(
 				Object.assign(
@@ -173,8 +158,6 @@ describe("a replication slot is proven before its position is handed out", () =>
 			),
 			true,
 		);
-		// The same SQLSTATE with any other text is an internal error like any
-		// other, and so is the same text without the SQLSTATE.
 		assert.equal(
 			isUndecodableSlotError(
 				Object.assign(new Error("unexpected chunk number"), { code: "XX000" }),
@@ -201,7 +184,6 @@ describe("a replication slot is proven before its position is handed out", () =>
 		});
 		assert.equal(position, "0/1000");
 		assert.deepEqual(server.steps(), [
-			// Leftovers of a start that died before it recorded itself.
 			"drop-slot",
 			"drop-publication",
 			"publish",
@@ -221,8 +203,6 @@ describe("a replication slot is proven before its position is handed out", () =>
 			subscription: "tail",
 		});
 		assert.deepEqual(server.waits, [7, 7, 7]);
-		// The probe comes only after they have ended: until a transaction has
-		// committed, a decoding pass cannot meet it.
 		const steps = server.steps();
 		assert.ok(steps.lastIndexOf("settled?") < steps.indexOf("probe"));
 		assert.equal(steps.filter((step) => step === "settled?").length, 4);
@@ -270,7 +250,6 @@ describe("a replication slot is proven before its position is handed out", () =>
 			const steps = server.steps();
 			assert.equal(steps.filter((step) => step === "create").length, 1);
 			assert.ok(!steps.includes("record"), "nothing was recorded");
-			// The slot and the publication nobody recorded are dropped.
 			assert.deepEqual(steps.slice(-2), ["drop-slot", "drop-publication"]);
 		}
 	});
@@ -401,7 +380,6 @@ describe("what the strengthened conformance kit found", () => {
 				cause.subscription === "tail",
 		);
 		assert.ok(!server.steps().includes("advance"));
-		// At or before the end of the log, it advances as before.
 		const level = scripted({ settled: [], probes: [], subscription: recorded });
 		await captureOf(level.engine).acknowledge({
 			subscription: "tail",
@@ -435,8 +413,6 @@ describe("what the strengthened conformance kit found", () => {
 
 	test("a delete naming a key in a non-canonical spelling is refused before any statement is sent", async () => {
 		const server = scripted({ settled: [], probes: [] });
-		// The same key, spelled with spaces: read leniently it would delete
-		// here and delete nothing in an engine that compares keys as text.
 		for (const key of ['[ "order-1" ]', '["order-1"] ']) {
 			await assert.rejects(
 				async () => {

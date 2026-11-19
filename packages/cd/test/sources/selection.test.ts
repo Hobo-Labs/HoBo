@@ -47,7 +47,6 @@ describe("semver", () => {
 		expect(range(">=1.0.0 <2.0.0").test("2.0.0")).toBe(false);
 		expect(range("<1.0.0 || >=3.0.0").test("3.1.0")).toBe(true);
 		expect(range("*").test("0.0.1")).toBe(true);
-		// Prereleases match only a comparator on the same tuple.
 		expect(range("^1.2.3").test("1.3.0-rc.1")).toBe(false);
 		expect(range(">=1.3.0-rc.0").test("1.3.0-rc.1")).toBe(true);
 		expect(parseSemverRange("^^1").ok).toBe(false);

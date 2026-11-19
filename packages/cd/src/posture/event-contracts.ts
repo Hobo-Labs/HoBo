@@ -1,14 +1,3 @@
-// Golden upcaster corpus for the event bodies the posture module appends:
-// policy.BindingChanged (PolicyBindingRecord), policy.ShadowDecided
-// (ShadowDecisionRecord), compliance.Observed and compliance.Changed
-// (ComplianceRecord) and posture.RemediationProposed
-// (PostureRemediationRecord). Append-only: a body change needs a new
-// version, a total upcaster and a new pinned entry (ADR-0032). Field tags
-// follow cd.proto.
-//
-// The corpus codec has scalar, string-list and JSON-object fields only, so
-// `toPostureCorpusBody` carries repeated messages (`findings`, `reasons`) as
-// their members' canonical JSON: a lossless, deterministic view.
 import {
 	boolField,
 	type CorpusBaseline,
@@ -49,7 +38,6 @@ const SHADOW_FIELDS: readonly EventFieldSpec[] = [
 	stringField("candidateRailDigest", 4),
 	stringField("enforcedEffect", 5),
 	stringField("candidateEffect", 6),
-	// bool diverged = 7 is omitted from protobuf JSON when false.
 	boolField("diverged", 7, OPTIONAL),
 	stringField("decidedAt", 8),
 ];
@@ -224,7 +212,6 @@ export function postureCorpusBaseline(): CorpusBaseline {
 
 const REPEATED_MESSAGES: ReadonlySet<string> = new Set(["findings", "reasons"]);
 
-/** The corpus view of a journal body: repeated messages become canonical JSON strings. */
 export function toPostureCorpusBody<T>(data: T): EventBody {
 	const document = jsonOf(data);
 	if (!isJsonObject(document)) return {};

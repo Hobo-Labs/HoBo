@@ -3,13 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../src/json.js";
 import { createMcpOwnerChannel } from "../../src/mcp-owner-channel.js";
 
-// EVAL: a step that waits on the owner off the request path (Vercel's
-// device grant) tells the host when it is done, with MCP's own event: the
-// URL prompt it showed is completed (`notifications/elicitation/complete`,
-// MCP 2025-11-25). Derived from the real-binary smoke: after the owner
-// approved, nothing said the grant had finished, so the agent's next run
-// could race it. No polling and no waiting: the event is the signal.
-
 describe("EVAL owner jobs: completion is an event, not a guess", () => {
 	it("completes the right prompt when concurrent jobs use the same URL", async () => {
 		const prompts: JsonObject[] = [];

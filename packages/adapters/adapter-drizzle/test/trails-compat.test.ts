@@ -92,11 +92,9 @@ describe("toDataMigrationPlan", () => {
 			expect.unreachable("a partially emitted plan must be refused");
 		} catch (error) {
 			expect(error).toBeInstanceOf(DrizzleAdapterError);
-			// SAFETY: assertion to `error as DrizzleAdapterError` is required at this boundary.
 			expect((error as DrizzleAdapterError).code).toBe(
 				"SQL_EMISSION_INCOMPLETE",
 			);
-			// SAFETY: assertion to `error as DrizzleAdapterError` is required at this boundary.
 			expect((error as DrizzleAdapterError).remediation).toContain("emitSql");
 		}
 	});

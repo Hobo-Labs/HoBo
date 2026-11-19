@@ -45,7 +45,6 @@ async function publish(snapshot: string, destination: string): Promise<void> {
 		await file.close();
 	}
 	await freshDatabase(destination);
-	// A same-filesystem hard link publishes atomically and never replaces an existing path.
 	await link(snapshot, destination);
 	const directory = await open(dirname(destination), constants.O_RDONLY);
 	try {
@@ -55,7 +54,6 @@ async function publish(snapshot: string, destination: string): Promise<void> {
 	}
 }
 
-/** SQLite's online backup includes committed WAL data while the relay is running. */
 export async function backupDatabase(
 	databasePath: string,
 	outputPath: string,
@@ -89,7 +87,6 @@ export async function backupDatabase(
 	}
 }
 
-/** Restore only an offline, self-contained snapshot into a new, exclusively locked partition. */
 export async function restoreDatabase(
 	databasePath: string,
 	inputPath: string,
@@ -118,7 +115,6 @@ export async function restoreDatabase(
 			try {
 				const snapshot = join(directory, "snapshot.sqlite");
 				await copyFile(inputPath, snapshot, constants.COPYFILE_EXCL);
-				// copyFile preserves read-only backup modes; only the private copy becomes writable.
 				await chmod(snapshot, 0o600);
 				const checked = new DatabaseSync(snapshot, { readOnly: true });
 				try {
@@ -157,7 +153,6 @@ async function main(): Promise<void> {
 	process.stdout.write("HoBo CI database operation completed.\n");
 }
 
-// Not inside a bundled controller release, whose entry is another module.
 if (
 	process.env.HOBO_CI_RELEASE_BUILD !== "1" &&
 	process.argv[1] &&

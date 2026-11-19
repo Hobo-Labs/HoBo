@@ -36,7 +36,6 @@ export interface NamedEndpointsResult {
 	readonly portless: PortlessProbe;
 	readonly tenant: TenantContext;
 	readonly serviceDiscovery: Readonly<Record<string, string>>;
-	/** Prefer named URL when present, else backend. */
 	readonly resolvePreferredUrl: (resourceName: string) => string | undefined;
 	readonly close: () => Promise<void>;
 }
@@ -51,7 +50,6 @@ export interface NamedEndpointInput {
 
 const sessionStore = new Map<string, NamedEndpointsResult>();
 
-/** In-process session registry for MCP / inspect discovery. */
 export function getNamedEndpointSession(
 	sessionId = "default",
 ): NamedEndpointsResult | null {
@@ -70,11 +68,6 @@ export function listNamedEndpointSessions(): readonly {
 	}));
 }
 
-/**
- * Build hierarchical named endpoints for a local serve result.
- * Portless is optional; without it we still emit hierarchical localhost names
- * (browsers resolve *.localhost → 127.0.0.1) and keep backend port URLs as source of truth.
- */
 export async function attachNamedEndpoints(options: {
 	readonly app: string;
 	readonly endpoints: readonly NamedEndpointInput[];
@@ -103,12 +96,10 @@ export async function attachNamedEndpoints(options: {
 	const serviceDiscovery: Record<string, string> = {};
 
 	for (const endpoint of options.endpoints) {
-		// Private mesh endpoints keep mesh URLs; still publish hierarchical overlay names for discovery.
 		const endpointMode: "local" | "overlay" = endpoint.external
 			? mode
 			: "overlay";
 
-		// Local-dev air-gap: never bind local mode to remote/prod backends.
 		if (endpointMode === "local") {
 			const airgap = assertLocalNamedEndpointBackend({
 				mode: "local",
@@ -120,8 +111,6 @@ export async function attachNamedEndpoints(options: {
 			}
 		}
 
-		// Omit default single-tenant "local" slug so pure-local names stay clean
-		// (web.myapp.local.hobo.localhost). Multi-tenant always includes tenant.
 		const includeTenant = tenant.tenantId !== LOCAL_DEFAULT_TENANT_ID;
 		const params: NamedEndpointParams = {
 			resource: endpoint.resourceName,
@@ -148,9 +137,6 @@ export async function attachNamedEndpoints(options: {
 		};
 
 		const hostname = getNamedEndpointHost(params);
-		// Portless terminates TLS on :443 as https://hostname.
-		// Without it, local external names ride the real loopback port as
-		// http — https://hostname (implied :443) has nothing listening.
 		const usePortlessHttps =
 			endpoint.external && portless.enabled && Boolean(portless.binPath);
 		const backendPort = listenPortOf(endpoint.backendUrl);
@@ -191,8 +177,6 @@ export async function attachNamedEndpoints(options: {
 		};
 		namedEndpoints.push(entry);
 
-		// Prefer named URL in discovery when external + portless, else keep backend
-		// but also publish hierarchical name under a companion key.
 		const preferred =
 			endpoint.external && portless.enabled ? url : endpoint.backendUrl;
 		serviceDiscovery[endpoint.serviceDiscoveryKey] = preferred;
@@ -265,7 +249,6 @@ export async function attachNamedEndpoints(options: {
 	return result;
 }
 
-/** Binding resolver that prefers hierarchical named URLs when registered. */
 export function createNamedPreferringBindingResolver(options: {
 	readonly named: NamedEndpointsResult;
 	readonly fallback?: BindingResolverPort;

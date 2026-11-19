@@ -71,13 +71,11 @@ describe("Planner: hello-bindle golden DeploymentPlan DAG", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 
-		// SAFETY: `const golden = fixture("golden-plan.json") as DeploymentPlan;` is required at this I/O or test boundary.
 		const golden = fixture("golden-plan.json") as DeploymentPlan;
 		expect(JSON.parse(canonicalPlanJson(result.plan))).toEqual(
 			JSON.parse(canonicalPlanJson(golden)),
 		);
 		expect(result.planHash).toBe(HELLO_BINDLE_PLAN_HASH);
-		// The hash is over the canonical form, so the committed fixture re-hashes equal.
 		expect(hashDeploymentPlan(golden)).toBe(HELLO_BINDLE_PLAN_HASH);
 	});
 
@@ -107,9 +105,6 @@ describe("Planner: hello-bindle golden DeploymentPlan DAG", () => {
 			expect(decision.winner).toBe(
 				`@hobo/provider-cloudflare.${decision.port}`,
 			);
-			// Canonical shape (ADR-0033/0088): ranking (winner first), structured
-			// rejections mirroring the deprecated flat list, tie flag, and the
-			// catalog content-hash alias staying in lockstep.
 			expect(decision.ranking[0]?.providerId).toBe("@hobo/provider-cloudflare");
 			expect(decision.rejectedCandidates.map((r) => r.definitionId)).toEqual(
 				decision.rejected,

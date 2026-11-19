@@ -16,10 +16,6 @@ const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 
 export type Usage = Readonly<Record<string, [quantity: string, unit: string]>>;
 
-/**
- * Rate one plan of a lowered manifest through the real `@hobo/pricing`
- * kernel and return the period's billed total with that usage placed.
- */
 export function billed(
 	lowering: BillingLowering,
 	productId: string,

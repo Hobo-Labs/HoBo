@@ -35,11 +35,6 @@ import {
 	fakeFreightManifestCodec,
 } from "./cd-delivery-fakes.js";
 
-// ADR-0182 D13: `hobo up` declares desired state. It records
-// LOCAL_BUILD Freight, promotes it into the deployment Camp, and an
-// in-process conductor converges it with `reconcileOnce`; `down` is a
-// teardown Delta. The UpResult/DownResult contracts are unchanged.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -83,7 +78,6 @@ function inMemoryIac(): IacProvider {
 			return { endpoint: `${program.resourceId}.local` };
 		},
 		async destroy() {
-			/* local backend no-op */
 		},
 		async refresh() {
 			return { drift: false, observed: {} };
@@ -197,11 +191,9 @@ type Envelope = {
 };
 
 function envelopeOf(stdout: string): Envelope {
-	// SAFETY: the CLI writes one JSON envelope on stdout; parsed at the test boundary.
 	return JSON.parse(stdout) as Envelope;
 }
 
-/** Every event in journal (global position) order, as `type`. */
 async function journal(store: RuntimeLocalEventStore): Promise<string[]> {
 	const types: string[] = [];
 	for await (const event of store.readAll()) types.push(event.event.type);
@@ -212,7 +204,6 @@ async function campSets(store: RuntimeLocalEventStore, campId: string) {
 	const sets = [];
 	for await (const event of store.read(`cd-camp-${campId}`))
 		if (event.type === CD_EVENTS.SetCreated)
-			// SAFETY: set.Created bodies are SetRecord protobuf JSON.
 			sets.push(fromJson(SetRecordSchema, event.data as ProtoJson));
 	return sets;
 }
@@ -230,7 +221,6 @@ describe("hobo up declares desired state (D13)", () => {
 			const before = await journal(store);
 			const preview = await cli.run(["up", "--what-if", "--json"], { cwd });
 			expect(preview.exitCode).toBe(0);
-			// SAFETY: the CLI emits its JSON envelope at this test boundary.
 			const up = JSON.parse(preview.stdout) as {
 				data: { changes: { converged: boolean } };
 			};
@@ -239,7 +229,6 @@ describe("hobo up declares desired state (D13)", () => {
 				cwd,
 			});
 			expect(downPreview.exitCode).toBe(0);
-			// SAFETY: the CLI emits its JSON envelope at this test boundary.
 			const down = JSON.parse(downPreview.stdout) as {
 				data: { wouldDestroy: string[] };
 			};
@@ -428,7 +417,6 @@ describe("hobo up declares desired state (D13)", () => {
 			const { runtime, fake } = harness();
 			const result = await cliFor(runtime).run(["up"], {
 				cwd,
-				// Interleave progress lines with the port calls they report on.
 				onProgress: (line) =>
 					fake.calls.push({ port: "progress", input: line }),
 			});
@@ -440,7 +428,6 @@ describe("hobo up declares desired state (D13)", () => {
 				at((c) => c.port === "progress" && String(c.input).startsWith(prefix));
 			const firstPromote = at((c) => c.port === "promotions.promote");
 			const firstReconcile = at((c) => c.port === "reconcileOnce");
-			// Each line is emitted as it happens, not after `up` returns.
 			expect(line("freight.Recorded")).toBeGreaterThanOrEqual(0);
 			expect(line("freight.Recorded")).toBeLessThan(firstPromote);
 			expect(line("set.Created")).toBeGreaterThan(firstPromote);
@@ -681,7 +668,6 @@ describe("hobo down is a teardown Delta", () => {
 				"service",
 				"sessions",
 			]);
-			// Dependents tear down before their dependencies.
 			expect(envelope.data.destroyed.indexOf("service")).toBeLessThan(
 				envelope.data.destroyed.indexOf("sessions"),
 			);

@@ -24,7 +24,6 @@ function request(
 	};
 }
 
-// The walkthrough §4.3 acme-baseline pack, verbatim call shape.
 const acmeBaseline = policyPack("acme-baseline", { mandatory: true }, [
 	rule("prod-deletes-need-approval", {
 		phase: "apply",

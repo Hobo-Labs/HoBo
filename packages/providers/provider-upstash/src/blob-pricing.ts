@@ -1,4 +1,3 @@
-/** Conservative metered liability bounds from independently observed rates. */
 export interface UpstashMeteredRates {
 	readonly simpleMicrosPerMillion: number;
 	readonly advancedMicrosPerMillion: number;
@@ -8,8 +7,6 @@ export interface UpstashMeteredRates {
 	readonly mintMicrosPerCall: number;
 }
 
-/** Round each possible native operation up, and conservatively allow one
- * additional rounding unit per call for separately metered bytes. */
 export function estimateUpstashBlobLiability(input: {
 	readonly simple: number;
 	readonly advanced: number;

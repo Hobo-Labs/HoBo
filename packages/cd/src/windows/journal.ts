@@ -1,6 +1,3 @@
-// Journal helpers shared by the change-window service and the pipeline
-// controller: protobuf-JSON event bodies, tolerant decoding, stream-head CAS
-// appends with idempotency keys, content digests, and advisory telemetry.
 import { createHash } from "node:crypto";
 import {
 	fromJson,
@@ -27,7 +24,6 @@ export function isJsonString<T>(value: T): value is T & string {
 	return tagOf.call(value) === "[object String]";
 }
 
-/** A persisted event body as JSON (bodies are JSON by construction). */
 export function jsonOf<T>(data: T): JsonValue | undefined {
 	if (data === undefined) return undefined;
 	try {
@@ -38,7 +34,6 @@ export function jsonOf<T>(data: T): JsonValue | undefined {
 	}
 }
 
-/** Event body for a generated record: its canonical protobuf JSON. */
 export function body<T extends Message>(
 	schema: GenMessage<T>,
 	record: T,
@@ -46,7 +41,6 @@ export function body<T extends Message>(
 	return toJson(schema, record);
 }
 
-/** Decode a persisted body; undefined when it is not that record (never throws). */
 export function decode<T extends Message, D>(
 	schema: GenMessage<T>,
 	data: D,
@@ -60,7 +54,6 @@ export function decode<T extends Message, D>(
 	}
 }
 
-/** JSON with object keys sorted at every depth (stable digests). */
 export function canonicalJson(value: JsonValue): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
 	if (isJsonObject(value)) {
@@ -86,7 +79,6 @@ export function iso(ms: number): string {
 	return new Date(ms).toISOString();
 }
 
-/** Current revision of a stream (the seq of its last event; 0 when empty). */
 export async function streamRevision(
 	store: DurableEventStore,
 	streamId: string,
@@ -108,12 +100,6 @@ export type AppendOne = Readonly<{
 	actor: PrincipalRef;
 }>;
 
-/**
- * Append one fact with stream-head CAS and an idempotency key. A concurrent
- * writer (CAS conflict) causes one re-read and retry; a repeated key returns
- * the event already recorded. Returns undefined only when both attempts lose
- * the race, which the caller reports as a journal conflict.
- */
 export async function appendOnce(
 	input: AppendOne,
 ): Promise<EventEnvelope | undefined> {
@@ -134,16 +120,11 @@ export async function appendOnce(
 			const event = result.appended[0] ?? result.deduped[0];
 			if (event) return event;
 		} catch {
-			// Stream-head CAS lost to a concurrent writer: re-read and retry once.
 		}
 	}
 	return undefined;
 }
 
-/**
- * Emit one counter point. Telemetry is advisory (the journal is the record),
- * so a failing sink never turns a committed command into an error.
- */
 export function emitCounter(
 	sink: TelemetrySink | undefined,
 	point: Readonly<{

@@ -3,10 +3,6 @@ import { describe, expect, it } from "vitest";
 import { createHoboMcpServer } from "../src/server.js";
 import { authGranting, makeWiredCli } from "./helpers.js";
 
-// A refused command's message and remediation reach the agent through MCP:
-// the remediation is what the agent relays to the owner (a sign-in link, the
-// capture that carries its result back). Dropping it left the agent with a
-// bare code.
 describe("MCP tool results keep a refusal's message and remediation", () => {
 	it("passes them through from the CLI's JSON envelope", async () => {
 		const refusal = {

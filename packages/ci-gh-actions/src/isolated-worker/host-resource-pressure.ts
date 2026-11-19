@@ -1,10 +1,3 @@
-/**
- * Host memory/CPU pressure beyond MemAvailable: PSI and swap activity.
- *
- * Shared boxes lose headroom without warning; MemAvailable can look adequate
- * while the kernel is already stalling tasks. Admission and in-flight stall
- * recovery use these signals separately from per-job CI usage metrics.
- */
 
 import { readFileSync } from "node:fs";
 import { cpus, loadavg } from "node:os";
@@ -28,16 +21,9 @@ export type HostResourcePressureSample = Readonly<{
 }>;
 
 export type HostPressureAdmissionThresholds = Readonly<{
-	/** Block admission when memory PSI `full` avg10 is at or above this. */
 	memoryPsiFullAdmit: number;
-	/** Block admission when CPU PSI `full` avg10 is at or above this. */
 	cpuPsiFullAdmit: number;
-	/**
-	 * Block admission when CPU PSI `some` avg10 is at or above this. The kernel
-	 * reports system-wide CPU `full` as zero, so `some` is the only host signal.
-	 */
 	cpuPsiSomeAdmit: number;
-	/** Block admission when swap used exceeds this share of swap total (0–1). */
 	swapUsedFractionAdmit: number;
 }>;
 
@@ -48,13 +34,9 @@ export const DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS = {
 	swapUsedFractionAdmit: 0.35,
 } as const satisfies HostPressureAdmissionThresholds;
 
-/** CPUs a Main Fabric workspace shard typically consumes on the host (observed ~430%). */
 export const DEFAULT_TRUNK_JOB_CPU_REQUEST = 4;
-/** Headroom kept under load when admitting another trunk job. */
 export const DEFAULT_CPU_ADMISSION_VOLATILITY_CPUS = 1;
-/** Time constant of the kernel's 1-minute load average. */
 export const LOAD1_TIME_CONSTANT_MS = 60_000;
-/** How long a started job is assumed to take to reach its resident memory. */
 export const DEFAULT_MEMORY_RAMP_MS = 120_000;
 
 function elapsedSince(startedAt: string | undefined, nowMs: number) {
@@ -64,11 +46,6 @@ function elapsedSince(startedAt: string | undefined, nowMs: number) {
 	return Math.max(0, nowMs - startedMs);
 }
 
-/**
- * Share of a running job's steady CPU the 1-minute load average does not show
- * yet. The average is an exponential one, so a job that started `t` ago is
- * only `1 - e^(-t/60s)` visible. A job with no start time is taken as visible.
- */
 export function cpuShareNotYetInLoad1(
 	startedAt: string | undefined,
 	nowMs: number,
@@ -79,11 +56,6 @@ export function cpuShareNotYetInLoad1(
 	return share < 0.05 ? 0 : share;
 }
 
-/**
- * Share of a running job's reservation MemAvailable does not show yet, falling
- * in a straight line over the ramp. A job with no start time is taken as
- * resident; a ramp of zero turns the hold off for running jobs.
- */
 export function memoryShareNotYetResident(
 	startedAt: string | undefined,
 	nowMs: number,
@@ -101,7 +73,6 @@ export type TrunkCpuLeaseSignal = Readonly<{
 	sandboxStage?: string;
 }>;
 
-/** Running trunk work is already in the 1m load average — do not reserve again. */
 export function trunkCpuLeaseSignal(
 	memoryMb: number,
 	state: string,
@@ -118,11 +89,6 @@ export function leaseCpuLoadAccountedInLoad1(
 	return lease.state === "running" && lease.sandboxStage === undefined;
 }
 
-/**
- * CPU reserve for standard+ work launching on the host (container coming up).
- * Memory-only `reserved` holds (no sandbox yet) are not started work — they
- * must not each claim four CPUs while blocked on this same admission gate.
- */
 function trunkSandboxNotStarted(stage: string | undefined): boolean {
 	return stage === undefined || stage === "";
 }
@@ -153,13 +119,10 @@ export function pendingTrunkCpuReservationCpus(
 
 export type HostCpuAdmissionInput = Readonly<{
 	cores: number;
-	/** 1-minute load average (includes CPUs used by running containers). */
 	load1: number;
-	/** CPUs reserved for admitted work not yet visible in load1. */
 	reservedCpus: number;
 	volatilityCpus: number;
 	requestCpus: number;
-	/** Standard+ jobs already running (logged; load already in load1). */
 	runningTrunkJobs?: number;
 }>;
 
@@ -304,7 +267,6 @@ export function hostMemoryAdmitFits(
 	volatilityMb: number,
 	pressure?: HostResourcePressureSample,
 	pressureThresholds?: HostPressureAdmissionThresholds,
-	/** Memory promised to admitted jobs that MemAvailable does not show yet. */
 	committedMb = 0,
 ): boolean {
 	if (

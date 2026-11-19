@@ -1,23 +1,3 @@
-/**
- * Pure fleet balancing: which member should take a job, and why not the rest.
- *
- * Three questions, asked in this order and never merged:
- *
- *   1. Can this member run the job at all? Visibility, ownership, Docker,
- *      forks, health, free slots, and whether the job's label can still reach
- *      it. These are facts about the provider, not about money.
- *   2. What does the job cost there? The pricing engine answers, through
- *      dispatcher v2, as the incremental billed amount for this account in
- *      this month. No rate is multiplied here.
- *   3. Does the budget policy allow that cost? `evaluateBudgetPolicy` answers
- *      for every candidate, with the same measurements CI admission supplies.
- *
- * Roles order the tiers: capacity already paid for, then rented capacity by
- * price, then the last resort. A cheaper member in a later tier never jumps
- * the queue, and a member the policy refuses is skipped, not retried.
- *
- * No I/O, no clock. Callers pass resolved member state and the current time.
- */
 
 import {
 	type BudgetPolicy,
@@ -39,31 +19,20 @@ import {
 export type FleetMemberState = Readonly<{
 	model: RunnerFinancialModel;
 	enabled: boolean;
-	/** Authored override of the model's tier. */
 	role?: FleetRole;
-	/** Authored ceiling on jobs at once; intersects the provider's own. */
 	concurrency?: number;
-	/** Jobs this member is running or holding a reservation for. */
 	activeJobs: number;
-	/** False while the member's circuit breaker is open. */
 	healthy: boolean;
 	commercial: RunnerCommercialState;
-	/** The owner turned on public repositories at an opt-in provider. */
 	publicRepositoriesEnabled?: boolean;
-	/** Exact payer the budget policy's `provider.cost` constraint names. */
 	payer: string;
-	/** That payer's spend and held commitments this budget period. */
 	payerExposureMicros: number;
-	/** The operator's own ceiling on that payer. Absent means none. */
 	payerBudgetMicros?: number;
-	/** Labels its runners register with besides the model's `runsOn`. */
 	servesLabels?: readonly string[];
 }>;
 
 export type FleetDemand = Readonly<{
-	/** Stable dispatch identity, for example `owner/repo:run:job:attempt`. */
 	id: string;
-	/** Reserved runner minutes, startup included. */
 	minutes: number;
 	repository: Readonly<{
 		visibility: "public" | "private";
@@ -71,21 +40,8 @@ export type FleetDemand = Readonly<{
 	}>;
 	forkPullRequest: boolean;
 	needsDocker: boolean;
-	/**
-	 * The smallest machine the job can run on. Absent parts constrain nothing:
-	 * a job that says nothing about its size fits every machine class.
-	 */
 	machine?: Readonly<{ vcpus?: number; memoryGb?: number }>;
-	/**
-	 * The job must run on a machine nothing else shares: admission requires it
-	 * for public repositories, pull requests and isolated-only connections.
-	 */
 	isolationRequired: boolean;
-	/**
-	 * The label the job is already queued on. GitHub does not let a queued job
-	 * change `runs-on`, so only a member serving that label can still take it.
-	 * Absent for a job that has not been queued yet.
-	 */
 	queuedOnLabel?: string;
 	queueDurationMs?: number;
 	attempt?: number;
@@ -95,17 +51,10 @@ export type FleetBalanceInput = Readonly<{
 	members: readonly FleetMemberState[];
 	demand: FleetDemand;
 	policy: BudgetPolicy;
-	/** Spend and held commitments against the whole budget this period. */
 	exposureMicros: number;
-	/** CI work already held by the admitting authority. */
 	activeWork: number;
-	/**
-	 * The account's legacy ceiling. Admission intersects it with an authored
-	 * policy's limit, so the lower of the two applies here too.
-	 */
 	ceilingMicros?: number;
 	now: string;
-	/** Opening a new provider account to place this job is permitted. */
 	allowNewProviderAgreements: boolean;
 	phase?: "plan" | "admit";
 }>;
@@ -116,9 +65,7 @@ export type FleetChoice = Readonly<{
 	binding: FleetBinding;
 	role: FleetRole;
 	runsOn: string;
-	/** Conservative whole microdollars the job adds to this month's bill. */
 	incrementalBilledMicros: number;
-	/** The job is covered by included minutes. */
 	usesAllowance: boolean;
 	quoteHash: string;
 }>;
@@ -204,9 +151,7 @@ export type FleetRefusal = Readonly<{
 }>;
 
 export type FleetBalance = Readonly<{
-	/** Best admitted member, or undefined when the job must wait. */
 	selected: FleetChoice | undefined;
-	/** Every admitted member, best first. */
 	ranking: readonly FleetChoice[];
 	refusals: readonly FleetRefusal[];
 }>;
@@ -224,7 +169,6 @@ function ceilingOf(member: FleetMemberState): number | undefined {
 	return Math.min(authored, provider);
 }
 
-/** Why this member cannot run the job, or undefined when it can. */
 function ineligible(
 	member: FleetMemberState,
 	input: FleetBalanceInput,
@@ -331,7 +275,6 @@ function policyContext(
 		nowMs: Date.parse(input.now),
 		costBoundMicros,
 		exposureMicros: input.exposureMicros,
-		// A vendor's published rate is not a provider-enforced ceiling.
 		boundKind: "conservative",
 		phase: input.phase ?? "plan",
 		measurements: [
@@ -375,7 +318,6 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 		else eligible.push(member);
 	}
 
-	// One payer can back several members; its exposure is counted once.
 	const payerExposure = new Map<string, number>();
 	for (const member of input.members)
 		payerExposure.set(
@@ -427,8 +369,6 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 				continue;
 			}
 			const payerSpent = payerExposure.get(member.payer) ?? 0;
-			// As in admission: a payer or account already past its ceiling takes
-			// no more work, free or not.
 			if (
 				member.payerBudgetMicros !== undefined &&
 				payerSpent + micros > member.payerBudgetMicros
@@ -476,9 +416,6 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 				quoteHash: entry.quote.quoteHash,
 			});
 		}
-		// The dispatcher orders by billed amount. Under `maximize-credits`,
-		// included minutes are spent before money; equal choices keep the order
-		// the operator authored the members in.
 		admitted.sort((left, right) => {
 			if (
 				input.policy.objective === "maximize-credits" &&

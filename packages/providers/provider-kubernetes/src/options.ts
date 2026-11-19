@@ -4,9 +4,6 @@ import { parseWorkloadPlacement, type WorkloadPlacement } from "./placement.js";
 // public-contract: provider target accepted by authoring options.
 export const PROVIDER_TARGET = "kubernetes";
 
-// A `type` alias (not an interface) so it keeps an implicit index signature
-// and stays assignable to @hobo/core's opaque `TypedOptionBlock`
-// (JsonObject) on ResourcePlan.options (ADR-0156).
 export type TypedOptionBlock = {
 	providerId: string;
 	port: string;
@@ -25,11 +22,6 @@ export const kubernetes = {
 				options,
 			);
 		},
-		/**
-		 * A placement bound for a real cluster. Unlike `deployment`, the option
-		 * bag crosses `parseWorkloadPlacement` here, so the block either holds a
-		 * placement the apiserver can accept or it does not exist.
-		 */
 		workload(options: JsonObject): TypedOptionBlock & {
 			readonly placement: WorkloadPlacement;
 		} {

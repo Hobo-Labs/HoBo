@@ -7,17 +7,9 @@ import type {
 import { CrossplaneProgramError } from "./crossplane-adapter.js";
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
 
-// The REAL cluster lane (HOBO-716): the same CrossplaneClusterLike surface the
-// in-memory fixture implements, driven through `kubectl` against a live
-// kind/k3d (or any) cluster with Crossplane installed. Binary- and
-// cluster-gated: creation is cheap; every operation fails closed with a typed
-// CrossplaneClusterUnavailableError when kubectl or the cluster is missing.
-
 // public-contract: error code for a missing/broken kubectl binary or cluster.
 export const KUBECTL_UNAVAILABLE = "kubectl-unavailable";
 
-// Refresh compares live status against this apply-time snapshot to detect
-// out-of-band status drift.
 // public-contract: the annotation carrying the apply-time outputs snapshot.
 export const APPLIED_OUTPUTS_ANNOTATION = "hobo.dev/applied-outputs";
 
@@ -32,20 +24,15 @@ export class CrossplaneClusterUnavailableError extends Error {
 }
 
 export interface KubectlCrossplaneClusterOptions {
-	// Claim group/version/kind to render (a platform's XRD claim kind).
 	readonly claimApiVersion?: string;
 	readonly claimKind?: string;
 	readonly namespace?: string;
 	readonly kubectlBin?: string;
 	readonly context?: string;
-	// Environment for kubectl invocations (KUBECONFIG rides here).
 	readonly env?: Record<string, string | undefined>;
-	// Milliseconds between ready polls (waitForReady does pollLimit polls).
 	readonly pollIntervalMs?: number;
 }
 
-// Create the kubectl-driven cluster. Same surface as the in-memory fixture —
-// the adapter cannot tell them apart (runIacBackendConformance is the proof).
 export function createKubectlCrossplaneCluster(
 	options: KubectlCrossplaneClusterOptions = {},
 ): CrossplaneClusterLike & { verifyReachable(): void } {
@@ -77,7 +64,6 @@ export function createKubectlCrossplaneCluster(
 		} catch (error) {
 			throw new CrossplaneClusterUnavailableError(
 				KUBECTL_UNAVAILABLE,
-				// SAFETY: ``kubectl (${bin}) failed for [${args.join(" ")}]: ${(error as Error).message}`,` is required at this I/O or test boundary.
 				`kubectl (${bin}) failed for [${args.join(" ")}]: ${(error as Error).message}`,
 			);
 		}
@@ -95,7 +81,6 @@ export function createKubectlCrossplaneCluster(
 		} catch (error) {
 			throw new CrossplaneClusterUnavailableError(
 				KUBECTL_UNAVAILABLE,
-				// SAFETY: ``kubectl (${bin}) failed for [${args.join(" ")}]: ${(error as Error).message}`,` is required at this I/O or test boundary.
 				`kubectl (${bin}) failed for [${args.join(" ")}]: ${(error as Error).message}`,
 			);
 		}
@@ -109,12 +94,10 @@ export function createKubectlCrossplaneCluster(
 	}
 
 	function sleep(ms: number): void {
-		// Bounded synchronous wait between ready polls (kubectl lane only).
 		const shared = new SharedArrayBuffer(4);
 		Atomics.wait(new Int32Array(shared), 0, 0, ms);
 	}
 
-	/** A `kubectl get` document as this module reads it. */
 	interface KubectlCondition {
 		readonly type?: string;
 		readonly status?: string;
@@ -132,11 +115,6 @@ export function createKubectlCrossplaneCluster(
 			readonly conditions?: readonly KubectlCondition[];
 			readonly outputs?: JsonObject;
 		};
-		// No `[key: string]: JsonValue` index signature: TypeScript requires every
-		// named property to be assignable to it, and `status` -- a specific shape
-		// this module reads by name -- is not. The named fields are the ones this
-		// code actually uses, so they are the half worth keeping; unknown keys on
-		// a kubectl document are ignored here rather than typed.
 	}
 
 	function toClusterDocument(claim: CrossplaneClaim): string {
@@ -192,12 +170,9 @@ export function createKubectlCrossplaneCluster(
 		hasCrd(name: string): boolean {
 			ensureAvailable();
 			const raw = run(["get", "crd", "-o", "json"]);
-			// SAFETY: `const parsed = JSON.parse(raw) as {` is required at this I/O or test boundary.
 			const parsed = JSON.parse(raw) as {
 				items?: Array<{ spec?: { names?: { kind?: string } } }>;
 			};
-			// Crossplane's core kinds (Composition/XRD) plus the platform's claim
-			// kind satisfy the generic "CompositeResourceClaim" requirement.
 			const kinds = new Set(
 				(parsed.items ?? []).map((item) => item.spec?.names?.kind ?? ""),
 			);
@@ -214,7 +189,6 @@ export function createKubectlCrossplaneCluster(
 				"-o",
 				"json",
 			]);
-			// SAFETY: `const parsed = JSON.parse(raw) as {` is required at this I/O or test boundary.
 			const parsed = JSON.parse(raw) as {
 				items?: Array<{
 					metadata?: { name?: string; labels?: Record<string, string> };
@@ -267,7 +241,6 @@ export function createKubectlCrossplaneCluster(
 		claimNames(): string[] {
 			ensureAvailable();
 			const raw = run(["get", claimResource, "-n", namespace, "-o", "json"]);
-			// SAFETY: `const parsed = JSON.parse(raw) as {` is required at this I/O or test boundary.
 			const parsed = JSON.parse(raw) as {
 				items?: Array<{ metadata?: { name?: string } }>;
 			};
@@ -290,7 +263,6 @@ export function createKubectlCrossplaneCluster(
 	};
 }
 
-// selectComposition fail-closed parity uses the shared program error type.
 export { CrossplaneProgramError };
 
 function stableJson(value: JsonValue): string {
@@ -298,12 +270,10 @@ function stableJson(value: JsonValue): string {
 		return `[${value.map((item) => stableJson(item)).join(",")}]`;
 	}
 	if (value && isJsonObject(value)) {
-		// SAFETY: `return `{${Object.keys(value as JsonObject)` is required at this I/O or test boundary.
 		return `{${Object.keys(value as JsonObject)
 			.sort()
 			.map(
 				(key) =>
-					// SAFETY: ``${JSON.stringify(key)}:${stableJson((value as JsonObject)[key])}`,` is required at this I/O or test boundary.
 					`${JSON.stringify(key)}:${stableJson((value as JsonObject)[key])}`,
 			)
 			.join(",")}}`;

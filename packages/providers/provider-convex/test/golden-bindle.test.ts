@@ -1,9 +1,4 @@
 // Golden coverage (ADR-0144 §5): a pure portable Bindle using only abstract
-// resource kinds, then the same requests satisfied by the thin Convex
-// adapter's honestly-scoped capabilities — with the portability guard proving
-// the Bindle never carried a provider pin. Bindle kind → provider port
-// mapping crosses the equivalence classes (data → database, bucket →
-// objectStore, api → compute).
 import assert from "node:assert/strict";
 import { assertNoBindleProviderSelection, bindle } from "@hobo/bindles";
 import { describe, it } from "vitest";
@@ -21,7 +16,6 @@ function goldenBindle() {
 describe("golden: portable Bindle → Convex realization", () => {
 	it("the Bindle is provider-neutral by construction", () => {
 		const definition = goldenBindle();
-		// Throws on any provider annotation — portability is a guard, not a hope.
 		assertNoBindleProviderSelection(definition);
 		assert.deepEqual(definition.resources.orders?.declaredAllow, [
 			"read",

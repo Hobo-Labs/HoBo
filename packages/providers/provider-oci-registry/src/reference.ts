@@ -1,12 +1,3 @@
-/**
- * OCI distribution grammar: the names this realizer accepts before any byte
- * leaves the process.
- *
- * Every pattern here is the distribution-spec grammar, bounded. A repository,
- * tag or digest that does not parse is refused with a typed resolver error
- * rather than percent-encoded and sent: an encoded `/` or `..` would be decoded
- * by the registry after every local check has passed.
- */
 import { createHash } from "node:crypto";
 import { ResolverError } from "@hobo/core";
 
@@ -15,14 +6,11 @@ export const OCI_REGISTRY_IMAGE_PRODUCT_ID = "oci-registry.image/v1";
 // public-contract: provider id stamped on every resolver of this package.
 export const OCI_REGISTRY_PROVIDER_ID = "oci-registry";
 
-/** distribution-spec `<name>` grammar, bounded to 255 characters overall. */
 const REPOSITORY_PATTERN =
 	/^[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)*$/u;
 /** distribution-spec `<reference>` tag grammar. */
 const TAG_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/u;
-/** Only sha256 is accepted: it is the only algorithm every target registry verifies. */
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
-/** A bare DNS host, lowercase, no port, no userinfo, no path. */
 const HOST_PATTERN =
 	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u;
 
@@ -50,7 +38,6 @@ export const INDEX_MEDIA_TYPES: readonly string[] = Object.freeze([
 	DOCKER_MANIFEST_LIST,
 ]);
 
-/** The Accept header every manifest read sends, so no registry down-converts. */
 export const MANIFEST_ACCEPT = MANIFEST_MEDIA_TYPES.join(", ");
 
 export function rejected(message: string, remediation?: string): never {
@@ -82,17 +69,14 @@ export function isRegistryHost(value: string): boolean {
 	return HOST_PATTERN.test(value);
 }
 
-/** The digest of exact bytes, in the `sha256:<hex>` form registries report. */
 export function digestOf(bytes: Uint8Array): string {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-/** The referrers tag-schema fallback name for a subject digest (OCI 1.1). */
 export function referrersFallbackTag(digest: string): string {
 	return digest.replace(":", "-");
 }
 
-/** Stable physical identity: the coordinates plus the content address. */
 export function physicalIdOf(
 	registry: string,
 	repository: string,

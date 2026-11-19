@@ -84,7 +84,6 @@ describe("standalone agent daemon", () => {
 			event: "agent.installation_missing",
 			repository: "hobo-labs/elsewhere",
 		});
-		// The found installation is remembered; the missing one is asked again.
 		await daemon.once();
 		expect(
 			lookups.filter((path) => path.includes("hobo-labs/hobo/")),

@@ -1,46 +1,3 @@
-/**
- * An assignment replica kept in one key of an `EphemeralStatePort`.
- *
- * The whole log of one backend is one value: a `FleetAssignmentLog` (protobuf
- * JSON, `data-models/backend_fleet.proto`) holding the newest entries in
- * ascending order. `accept` reads the key, checks the register's rules on
- * what it read, and writes the longer log back conditionally:
- *
- * - **One entry per epoch.** An epoch the log holds answers `duplicate` (the
- *   same entry) or `conflict` (another one). An epoch below the oldest entry
- *   kept answers `conflict`: the log held one, and which is no longer known.
- * - **Only `top + 1`.** Any other epoch answers `gap`. An empty log takes
- *   epoch 1 only.
- * - **Atomic per backend.** The write is `putIfAbsent` for an empty log and
- *   `compareAndSet` on the version read otherwise, so two writers racing on
- *   one backend cannot both extend the same log: the loser re-reads and
- *   re-checks. A replica that keeps losing races answers `busy`.
- *
- * Every write sets the key's TTL to the port's 30-day cap, and `refresh`
- * resets it without writing (the repair tick calls it on every member).
- *
- * **When a log is lost.** A cache may lose the key: it expires, the store is
- * flushed, or the store evicts it. A lost log reads as empty, so the backend
- * simply stops counting as a holder of anything. Safety needs one thing from
- * that: every decided entry stays held by a majority of the members. The
- * repair tick copies the current entry onto every member that answers (see
- * `completeAssignment`), so once it has run, a decided entry is held by all of
- * them, and losing the log of any minority leaves a majority holding it. Under
- * that precondition the register still never resolves two entries for one
- * epoch and never goes back to an older epoch: a reader that sees the
- * emptied member also sees a majority holding the current entry, and a
- * proposal still needs that majority. What it does not survive is losing a
- * log that was part of a *bare* majority before repair copied the entry
- * further, while another holder is silent: then nobody can prove the entry
- * was decided. `test/ephemeral-replica.test.ts` checks both.
- *
- * An emptied member is brought back by `rejoinAssignmentReplicas`: it is
- * seeded with the current entry only when a majority of all members *other
- * than itself* hold that entry as their newest, which proves it decided and
- * proves no newer entry is decided (a newer one would be held by a majority,
- * which would intersect those holders). Ordinary repair cannot do this once
- * the oldest epochs have been trimmed from every log.
- */
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import {
 	EPHEMERAL_STATE_MAX_TTL_MS,
@@ -69,32 +26,21 @@ import {
 import { parseFleetBackendId } from "./backend.js";
 import { BackendFleetError } from "./errors.js";
 
-/** Entries kept per log. Older ones are dropped; the register needs only the newest. */
 export const ASSIGNMENT_LOG_MAX_ENTRIES = 32;
-/** The key a log is kept under when the host names none. */
 // public-contract: the stored key every replica of an unnamed register shares.
 export const DEFAULT_ASSIGNMENT_LOG_KEY = "hobo:fleet:assignment";
 const LOG_FORMAT = 1;
 const RACE_RETRIES = 4;
 
-/** An `AssignmentReplica` on a cache, with the two extra moves a cache needs. */
 export type EphemeralAssignmentReplica = AssignmentReplica & {
 	readonly key: EphemeralKey;
-	/** Reset the log's TTL. False when the log is absent (never written, or lost). */
 	refresh(): Promise<boolean>;
-	/**
-	 * Start an empty log at `entry`. Only `rejoinAssignmentReplicas` calls it,
-	 * after proving `entry` current without this replica's vote.
-	 */
 	seed(entry: FleetAssignment): Promise<"seeded" | "not-empty">;
 };
 
 export type EphemeralAssignmentReplicaOptions = {
-	/** The key the log lives under; namespace it per deployment environment. */
 	readonly key?: string;
-	/** TTL set on every write and refresh. Default and maximum: 30 days. */
 	readonly ttlMs?: number;
-	/** Entries kept. Default 32. */
 	readonly maxEntries?: number;
 };
 
@@ -112,7 +58,6 @@ function toWire(entry: FleetAssignment) {
 	});
 }
 
-/** A uint64 off the wire as a safe integer, or a record error. */
 function safeNumber(value: bigint): number {
 	if (value > BigInt(Number.MAX_SAFE_INTEGER))
 		throw new BackendFleetError(
@@ -122,7 +67,6 @@ function safeNumber(value: bigint): number {
 	return Number(value);
 }
 
-/** Encode a log for storage. Entries must already be parsed and ascending. */
 export function encodeAssignmentLog(
 	entries: readonly FleetAssignment[],
 ): string {
@@ -135,11 +79,6 @@ export function encodeAssignmentLog(
 	);
 }
 
-/**
- * Parse a stored log into entries, ascending with no gap. Anything else is a
- * record error: a log that does not parse is never read as empty, because
- * empty is a vote ("holds nothing") and a corrupt log is not.
- */
 export function decodeAssignmentLog(value: string): FleetAssignment[] {
 	let log: ReturnType<typeof create<typeof FleetAssignmentLogSchema>>;
 	try {
@@ -179,7 +118,6 @@ export function decodeAssignmentLog(value: string): FleetAssignment[] {
 	return entries;
 }
 
-/** The log of one backend, in one key of its ephemeral-state port. */
 export function ephemeralAssignmentReplica(
 	state: EphemeralStatePort,
 	id: string,
@@ -236,7 +174,6 @@ export function ephemeralAssignmentReplica(
 					? await state.putIfAbsent(key, value, ttl)
 					: await state.compareAndSet(key, stored.version, value, ttl);
 			if (write.applied) return "accepted";
-			// Another writer changed the log between the read and the write.
 		}
 		return "busy";
 	}
@@ -259,7 +196,6 @@ export function ephemeralAssignmentReplica(
 	});
 }
 
-/** A register over cache replicas, in configured order. */
 export function ephemeralAssignmentRegister(
 	replicas: readonly EphemeralAssignmentReplica[],
 	options: Parameters<typeof parseAssignmentRegister>[1] = {},
@@ -275,12 +211,6 @@ export type RejoinOutcome = {
 	readonly outcome: "seeded" | "not-empty" | "unproven" | "silent";
 };
 
-/**
- * Seed every member whose log is empty with the current entry, where that is
- * provable without the member: a majority of *all* members, not counting it,
- * hold the entry as their newest. A member that answered with entries, or did
- * not answer, is left alone. Replies may be passed in to save a read.
- */
 export async function rejoinAssignmentReplicas(
 	register: AssignmentRegister & {
 		readonly replicas: readonly EphemeralAssignmentReplica[];

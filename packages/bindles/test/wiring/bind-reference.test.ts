@@ -21,7 +21,6 @@ describe("bind reference wiring", () => {
 		expect(manifest.resources.api?.links).toEqual([
 			{ import: "hobo:data", to: "db" },
 		]);
-		// ADR-0141: binding delivery is links only — no ambient ConnectionStrings__*
 		expect(manifest.resources.api?.env?.ConnectionStrings__db).toBeUndefined();
 		expect(JSON.stringify(manifest.resources.api?.env ?? {})).not.toMatch(
 			/ConnectionStrings__/,

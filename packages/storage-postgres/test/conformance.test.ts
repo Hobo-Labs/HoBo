@@ -16,12 +16,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(here, "..");
 const crasher = join(here, "support", "append-crasher.ts");
 
-/**
- * Passes suites/eventstore.ts unmodified. The suite's
- * `dataDir` is a store namespace; for PostgreSQL that is a schema, so the
- * factory maps it to one and `removeDataDir` is a no-op (schemas are dropped
- * after the file).
- */
 describeLive(
 	"WP17 conformance: @hobo/conformance EventStore suite on PostgreSQL",
 	() => {
@@ -81,7 +75,6 @@ describeLive(
 	},
 );
 
-/** Run a child that appends 3-event batches until killed after 3 acknowledgements. */
 function runCrasher(schema: string): Promise<number[]> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(

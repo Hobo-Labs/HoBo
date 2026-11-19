@@ -1,6 +1,3 @@
-// ArtifactStore conformance (ADR-0182 D3, D18). Content-addressed bytes:
-// the digest is the identity, a read never returns bytes that do not hash to
-// it, and deletion is explicit.
 import { createHash } from "node:crypto";
 import {
 	type CdConformanceReport,
@@ -32,7 +29,6 @@ export interface ArtifactStoreHarness<TCtx> {
 	readonly subject: string;
 	create(): Promise<{
 		store: ArtifactStoreLike<TCtx>;
-		/** Flip bytes at rest behind the store's back. */
 		corrupt?(digest: `sha256:${string}`): Promise<void>;
 	}>;
 	ctx(): TCtx;

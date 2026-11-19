@@ -15,12 +15,6 @@ import {
 	type TrafficRoutingProvider,
 } from "./traffic-routing.js";
 
-/**
- * Portable TrafficRouting offerings (ADR-0143).
- * Providers declare these up front; apply-result capabilities prove realization.
- * Negotiation semantics live in the generic resolver (`offering-resolution.ts`);
- * this module pins the traffic-routing vocabulary and parse boundary.
- */
 export type TrafficRoutingOfferingId =
 	| "lb.lifecycle"
 	| "lb.weighted"
@@ -56,7 +50,6 @@ export interface TrafficRoutingOffering {
 export interface TrafficRoutingProviderProfile {
 	readonly provider: TrafficRoutingProvider;
 	readonly offerings: readonly TrafficRoutingOffering[];
-	/** Ordered fallback offering ids when native realization cannot cover the plan. */
 	readonly fallbacks: readonly TrafficRoutingOfferingId[];
 }
 
@@ -106,7 +99,6 @@ const FIDELITIES = new Set<TrafficRoutingOfferingFidelity>([
 	"camp-only",
 ]);
 
-/** Default portable fallback ladder when a profile omits `fallbacks`. */
 export const DEFAULT_TRAFFIC_ROUTING_FALLBACKS: readonly TrafficRoutingOfferingId[] =
 	[
 		"edge.canary",
@@ -193,11 +185,6 @@ export function parseTrafficRoutingProviderProfile(
 // public-contract: registry key consumers use to register/resolve this class.
 export const TRAFFIC_ROUTING_RESOURCE_CLASS = "traffic-routing";
 
-/**
- * Match requested offerings against a provider profile with prefer/require
- * negotiation and the profile's fallback ladder. Thin vocabulary binding over
- * the generic per-resource-class resolver.
- */
 export function matchTrafficRoutingOfferings(
 	profile: TrafficRoutingProviderProfile,
 	request: TrafficRoutingPortRequest = {},
@@ -209,10 +196,6 @@ export function matchTrafficRoutingOfferings(
 	);
 }
 
-/**
- * Resolve a plan request against candidate provider profiles.
- * First profile that is not `none` wins (callers should rank by cost/policy).
- */
 export function resolveTrafficRouting(
 	profiles: readonly TrafficRoutingProviderProfile[],
 	request: TrafficRoutingPortRequest = {},

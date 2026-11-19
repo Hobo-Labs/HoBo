@@ -1,12 +1,6 @@
 import { deepFreeze, requireNonEmptyString, requireRecord } from "./errors.js";
 import { CHAOS_SCHEMA } from "./schema.js";
 
-// Greenfield declaration factory (walkthrough §6.4): a chaos experiment is a
-// typed hypothesis — steady-state invariant, injected fault, bounded blast
-// radius, abort trip-wire. executeChaosExperiment executes the declaration
-// against an isolated target/Camp membrane, records actual fault observations,
-// checks executable invariants, and restores injected faults.
-
 // domain-view: authored chaos injection; wire form is ChaosInjection in data-models/sdk.proto.
 export interface ChaosInjection {
 	readonly fault: string;
@@ -17,12 +11,9 @@ export interface ChaosInjection {
 export interface ChaosDeclaration {
 	readonly schema: string;
 	readonly name: string;
-	/** The invariant that must keep holding, e.g. "slo:checkout.latency". */
 	readonly steadyState: string;
 	readonly inject: ChaosInjection;
-	/** Bounded scope, e.g. "1 camp" — never the whole fleet. */
 	readonly blastRadius: string;
-	/** Trip-wire: stop and roll back when this predicate fires. */
 	readonly abortIf?: string;
 }
 

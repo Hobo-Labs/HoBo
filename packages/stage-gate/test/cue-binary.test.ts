@@ -1,8 +1,3 @@
-/**
- * The cue lookup of the CUE suite (ADR-0172, test/helpers/cue-binary.ts):
- * which binary record-cue.test.ts vets with, and which it refuses. Fake cue
- * binaries (POSIX shell scripts) stand in, so this needs no cue.
- */
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
@@ -28,7 +23,6 @@ afterAll(() => {
 	rmSync(scratch, { recursive: true, force: true });
 });
 
-/** A cue at `dir`/cue whose `cue version` starts with `firstLine`; like a real one, it names the language version last. */
 function fakeCue(dir: string, firstLine: string): string {
 	mkdirSync(dir, { recursive: true });
 	const path = join(dir, "cue");
@@ -40,7 +34,6 @@ function fakeCue(dir: string, firstLine: string): string {
 	return path;
 }
 
-/** A repo root with no .tools cache. */
 const bareRoot = join(scratch, "bare");
 
 describe.runIf(POSIX)("cueBinary", () => {
@@ -95,7 +88,6 @@ describe.runIf(POSIX)("record-cue.test.ts with a cue it refuses", () => {
 			dirname(createRequire(import.meta.url).resolve("vitest/package.json")),
 			"vitest.mjs",
 		);
-		// Another vitest run, of its own: none of this run's VITEST_* settings.
 		const env = Object.fromEntries(
 			Object.entries(process.env).filter(([key]) => !key.startsWith("VITEST")),
 		);

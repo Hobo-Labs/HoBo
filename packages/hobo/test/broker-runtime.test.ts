@@ -33,7 +33,6 @@ describe("embedded broker-runtime", () => {
 		const init = await cli.run(["yard", "init", "--home", hoboHome, "--json"], {
 			cwd: hoboHome,
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(init.stdout) as {
 			ok: boolean;
 			data: {
@@ -85,7 +84,6 @@ describe("embedded broker-runtime", () => {
 			await loadBindleDefinition(helloBindleDir),
 			"(await loadBindleDefinition(helloBindleDir))",
 		);
-		// Synthesize a forbidden cloud provider pin on the Bindle.
 		const pinned = {
 			...definition,
 			resources: {
@@ -127,7 +125,6 @@ describe("embedded broker-runtime", () => {
 		const up = await cli.run(["up", "--home", hoboHome, "--json"], {
 			cwd: helloBindleDir,
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(up.stdout) as {
 			ok: boolean;
 			code: string;
@@ -143,7 +140,6 @@ describe("embedded broker-runtime", () => {
 		};
 		expect(envelope.ok).toBe(true);
 		expect(envelope.code).toBe("HOBO_OK");
-		// Composed CLI may take event-sourced yard lane or broker-runtime path.
 		if (envelope.data.bindleName !== undefined) {
 			expect(envelope.data.bindleName).toBe("hello-bindle");
 		}

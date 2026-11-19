@@ -1,20 +1,13 @@
-/**
- * What a record that claims `passed` must also hold, per gate. The other
- * statuses describe what happened and carry no claim, so they are not held to
- * these. Constraints mirror data-models/stage_gate_record.cue.
- */
 import type { CheckEvidence, StageGateRecord } from "./types.js";
 
 const DIGEST_RE = /^sha256:[a-f0-9]{64}$/;
 
-/** The release gate's checks, in order (definition.ts builds them; ADR-0172). */
 export const RELEASE_CHECK_IDS = [
 	"acceptance-plans-fresh",
 	"acceptance-replay",
 	"acceptance-evidence-intact",
 ] as const;
 
-/** S0 attests a built, signed component. */
 function validatePassedS0(record: StageGateRecord, issues: string[]): void {
 	if (!record.signature.verified) {
 		issues.push("passed record requires signature.verified === true");
@@ -24,7 +17,6 @@ function validatePassedS0(record: StageGateRecord, issues: string[]): void {
 	}
 }
 
-/** What acceptance-replay records, as strings, for a replay-only run that passed. */
 const REPLAY_ONLY = {
 	model_calls: "0",
 	frozen: "true",
@@ -32,10 +24,8 @@ const REPLAY_ONLY = {
 	report_exit_code: "0",
 } as const;
 
-/** strconv.Atoi's ceiling: the CUE reads each count as an int64. */
 const INT64_MAX = 9_223_372_036_854_775_807n;
 
-/** A count as the CUE reads it, or undefined for anything else (absent, signed, not digits, past int64). */
 function countIn(
 	evidence: CheckEvidence | undefined,
 	key: string,
@@ -88,14 +78,6 @@ function validateReplayEvidence(
 	validateReplayCounts(replay, issues);
 }
 
-/**
- * The release gate attests that the documented scenarios replayed: all three
- * acceptance checks, in order; the replay's evidence of a replay-only run that
- * replayed something; and evidence-intact naming the same run and report the
- * replay judged. An empty or partial check list would pass "every check
- * passed" vacuously, and an evidence-intact about another run would vouch for
- * a report nobody judged.
- */
 function validatePassedRelease(
 	record: StageGateRecord,
 	issues: string[],

@@ -1,14 +1,3 @@
-/**
- * The body of a key's blob: a `VercelBlobEphemeralRecord` (see
- * `data-models/vercel_blob_ephemeral_state.proto`) written as protobuf JSON.
- *
- * Parse, don't validate: a body read back is decoded by the generated schema
- * and then parsed into `StoredRecord`, whose incarnation, revision, expiry and
- * write id are checked once here; nothing past this module handles a raw body.
- * A body that does not parse is a contract error, never an absent key: a blob
- * under the binding's namespace that is not one of its records means another
- * writer shares the namespace, and overwriting it would hide that.
- */
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import {
 	type EphemeralEntry,
@@ -25,7 +14,7 @@ import {
 // public-contract: format tag every record body carries.
 export const VERCEL_BLOB_RECORD_FORMAT = "hobo.vercel-blob.ephemeral/v1";
 
-const INCARNATION = /^[\x21-\x39\x3b-\x7e]{1,64}$/u; // printable ASCII without ':'
+const INCARNATION = /^[\x21-\x39\x3b-\x7e]{1,64}$/u;
 const WRITE_ID = /^[\x21-\x7e]{1,64}$/u;
 
 // domain-view: the parsed form of the generated VercelBlobEphemeralRecord, int64 fields as safe integers.
@@ -64,7 +53,6 @@ function safeInteger(value: bigint, field: string, least: number): number {
 	return parsed;
 }
 
-/** Decode and parse a blob body; a body that is not a record is a contract error. */
 export function parseStoredRecord(body: string): StoredRecord {
 	let message: VercelBlobEphemeralRecord;
 	try {

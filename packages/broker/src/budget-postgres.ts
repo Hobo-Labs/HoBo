@@ -19,7 +19,6 @@ import {
 } from "./budget-fence-settlement.js";
 
 type Authority = ReturnType<typeof createBudgetAdmissionAuthority>;
-/** Asynchronous view of the SAME financial authority used by local hosting and CI. */
 export type AsyncBudgetAdmissionAuthority = {
 	readonly persistence: BudgetAdmissionAuthority["persistence"];
 } & {
@@ -28,10 +27,6 @@ export type AsyncBudgetAdmissionAuthority = {
 	) => Promise<ReturnType<BudgetAdmissionAuthority[K]>>;
 };
 
-/** Shared distributed authority. Every client of a budget must use this database;
- * a local SQLite file on each host would create independent balances.
- * PostgreSQL holds one budget row lock while the existing pure journal evaluates
- * a command and commits its events. No provider/network operation runs in that transaction. */
 export function createPostgresBudgetAdmissionAuthority(options: {
 	pool: Pool;
 	snapshot: BudgetLedgerSnapshot;
@@ -39,7 +34,6 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 	unpricedScopeTrust?: IacUnpricedScopeTrust;
 	iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	now?: () => string;
-	/** Bound pool starvation, including a CI transaction holding the same pool. */
 	connectionTimeoutMs?: number;
 	lockTimeoutMs?: number;
 	statementTimeoutMs?: number;
@@ -73,7 +67,6 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 		let expired = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const pending = options.pool.connect().then((client) => {
-			// A timed-out caller may no longer execute SQL. Return a late client immediately.
 			if (expired) client.release();
 			return client;
 		});
@@ -190,7 +183,6 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 			await client.query("COMMIT");
 			return result;
 		} catch (error) {
-			// A failed COMMIT response is uncertain. Never issue a compensating release.
 			await client.query("ROLLBACK").catch(() => undefined);
 			throw error;
 		} finally {

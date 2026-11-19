@@ -1,5 +1,3 @@
-// `cue vet` driver for the kube_fleet.cue agreement tests. Finds `cue` on
-// PATH, else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,7 +33,6 @@ const schema = resolve(here, "../data-models/kube_fleet.cue");
 const scratch = mkdtempSync(join(tmpdir(), "hobo-cd-kube-fleet-cue-"));
 let written = 0;
 
-/** Whether `value` vets against `definition` in kube_fleet.cue. */
 export function vets(definition: string, value: JsonValue): boolean {
 	if (cue === undefined) throw new Error("cue binary not found");
 	written += 1;

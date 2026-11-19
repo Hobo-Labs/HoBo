@@ -12,7 +12,6 @@ import {
 
 const INTEGRATION_TIMEOUT_MS = 60_000;
 
-// One scaffolded repo for the whole file: each test restores what it tampers.
 let repoRoot: string;
 let generatedFile: string;
 let validFixturesDir: string;
@@ -24,7 +23,6 @@ beforeAll(async () => {
 	generatedFile = join(widgets, "src", "_generated", "widget_pb.ts");
 	validFixturesDir = join(widgets, "data-models", "fixtures", "valid");
 	invalidFixturesDir = join(widgets, "data-models", "fixtures", "invalid");
-	// Write mode materializes the golden generated tree the checks compare to.
 	const report = await runCodegen(parseCodegenArgv([], repoRoot));
 	expect(report.status).toBe("CLEAN");
 }, INTEGRATION_TIMEOUT_MS);
@@ -43,7 +41,6 @@ describe("hobo-codegen --check on a clean workspace", () => {
 			const envelope = JSON.parse(result.stdout);
 			expect(envelope.status).toBe("CLEAN");
 			expect(envelope.drift).toEqual([]);
-			// CLEAN implies the valid fixture vetted and the invalid one was rejected.
 			expect(envelope.cueViolations).toEqual([]);
 		},
 		INTEGRATION_TIMEOUT_MS,
@@ -76,7 +73,6 @@ describe("hobo-codegen --check drift semantics", () => {
 				expect(envelope.drift).toEqual([
 					{ path: "widgets/widget_pb.ts", kind: "changed" },
 				]);
-				// Check mode never repairs the tree.
 				expect(await readFile(generatedFile, "utf8")).toBe(
 					`${before}// tampered\n`,
 				);

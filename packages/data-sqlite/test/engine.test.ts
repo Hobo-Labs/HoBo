@@ -1,7 +1,3 @@
-// The SQLite binding's own guarantees, each against a real store file: what a
-// dataset may be named, what the write entry point accepts, what a capture
-// position means, how long the journal keeps a payload, and what a fence
-// token is.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -40,7 +36,6 @@ const ORDERS = parseDatasetSchema({
 	open: true,
 });
 
-// The shared refusal from `@hobo/data-core`, not a package-local copy.
 const POSITION_REFUSED = {
 	name: "CapturePositionError",
 	code: "CAPTURE_POSITION_INVALID",
@@ -55,7 +50,6 @@ function storePath(): string {
 interface Opened {
 	readonly engine: SqliteEngine;
 	readonly file: string;
-	/** Close the store now; the cleanup after the test then does nothing. */
 	close(): void;
 }
 
@@ -94,7 +88,6 @@ interface JournalRow {
 	readonly record: string | null;
 }
 
-/** The journal as a second connection to the file sees it. */
 function journal(file: string): JournalRow[] {
 	const db = new DatabaseSync(file);
 	try {
@@ -150,8 +143,6 @@ describe("dataset names", () => {
 			scope: scopeOf("orders", "acme"),
 			reason: "move",
 		});
-		// What the store looked like once the fence table had been adopted as
-		// a dataset: its schema row is all that made it readable.
 		const poisoned = new DatabaseSync(file);
 		poisoned
 			.prepare("INSERT INTO hobo_data_datasets (name, schema) VALUES (?, ?)")
@@ -187,8 +178,6 @@ describe("the write entry point", () => {
 		const capture = requirePort(engine, "capture");
 		const scope = scopeOf("orders");
 		const start = await capture.start({ scope, subscription: "sub_proto" });
-		// Parsed, not written as a literal: a literal `__proto__` key sets the
-		// prototype, where JSON.parse makes it an ordinary field.
 		const fields = parseJsonText(
 			'{"id":"order-1","__proto__":{"polluted":true}}',
 		);
@@ -235,8 +224,6 @@ describe("the write entry point", () => {
 			dataset: "subjects",
 			mutations: [canonical],
 		});
-		// The caller's own spelling in the record, the canonical key beside it:
-		// the record is normalised on the way in and lands on the same row.
 		await engine.records.write({
 			dataset: "subjects",
 			mutations: [
@@ -257,8 +244,6 @@ describe("the write entry point", () => {
 			}),
 			{ id: lower, note: "second" },
 		);
-		// A key that is not the canonical one is refused, for an upsert and for
-		// a delete, and nothing lands.
 		const uppercaseKey = JSON.stringify([lower.toUpperCase()]);
 		await assert.rejects(
 			async () => {
@@ -301,7 +286,6 @@ describe("the write entry point", () => {
 			{ code: "INVALID_RECORD" },
 		);
 		assert.equal(engine.store.count(scopeOf("orders")), 0);
-		// Applied changes take the same path.
 		await assert.rejects(
 			async () => {
 				await requirePort(engine, "apply").apply({
@@ -444,8 +428,6 @@ describe("capture batches", () => {
 			["order-4"],
 		);
 		assert.equal(rest.caughtUp, true);
-		// A limit that ends exactly on a write's last change adds nothing, and a
-		// whole write that is the last thing in the journal is caught up.
 		const exact = await capture.read({
 			scope,
 			subscription: "sub_a",
@@ -523,7 +505,6 @@ describe("capture batches", () => {
 			after: "0",
 			limit: 1,
 		});
-		// Unmarked rows are one write each: the limit is honoured as before.
 		assert.equal(batch.changes.length, 1);
 		assert.equal(batch.caughtUp, false);
 	});
@@ -544,9 +525,7 @@ describe("journal retention", () => {
 			mutations: [deleteMutation("acme", one.key)],
 		});
 		assert.deepEqual(journal(file), []);
-		// Positions still advance: the head is not the journal's row count.
 		assert.deepEqual([written.position, deleted.position], ["1", "2"]);
-		// A subscription that starts now starts after both, as it always did.
 		const capture = requirePort(engine, "capture");
 		const scope = scopeOf("orders");
 		const start = await capture.start({ scope, subscription: "sub_late" });
@@ -608,7 +587,6 @@ describe("journal retention", () => {
 		const capture = requirePort(engine, "capture");
 		const fence = requirePort(engine, "fence");
 		const scope = scopeOf("orders", "acme");
-		// A subscription that never acknowledges: the journal keeps everything.
 		await capture.start({ scope: scopeOf("orders"), subscription: "sub_a" });
 		const one = put("acme", { id: "order-1", email: PII });
 		await engine.records.write({ dataset: "orders", mutations: [one] });
@@ -640,7 +618,6 @@ describe("journal retention", () => {
 			["globex"],
 			"only the other tenant's change is left in the journal",
 		);
-		// The subscription sees what is left, and nothing of the retired scope.
 		const batch = await capture.read({
 			scope: scopeOf("orders"),
 			subscription: "sub_a",
@@ -673,9 +650,6 @@ describe("what the strengthened conformance kit found", () => {
 		const capture = requirePort(engine, "capture");
 		const home = scopeOf("orders", "acme");
 		const start = await capture.start({ scope: home, subscription: "sub_a" });
-		// Written before anyone asks for the name elsewhere. Answered the first
-		// scope's position, a reader of globex would be handed this change —
-		// one made before it existed.
 		await engine.records.write({
 			dataset: "orders",
 			mutations: [put("globex", { id: "order-early" })],
@@ -693,7 +667,6 @@ describe("what the strengthened conformance kit found", () => {
 			start,
 			"the name still answers its own scope",
 		);
-		// Stopped, the name is free again — for any scope.
 		await capture.stop("sub_a");
 		await capture.start({
 			scope: scopeOf("orders", "globex"),
@@ -752,8 +725,6 @@ describe("what the strengthened conformance kit found", () => {
 			(await retire.retire({ scope, fenceToken, expected })).removed,
 			1,
 		);
-		// The answer was lost, and the same request is sent again. It used to
-		// be refused: the empty scope no longer matched the digest it named.
 		assert.equal(
 			(await retire.retire({ scope, fenceToken, expected })).removed,
 			0,
@@ -779,8 +750,6 @@ describe("fence tokens", () => {
 			"raising a raised fence returns its token",
 		);
 		await fence.release({ scope, fenceToken: first.fenceToken });
-		// Same scope, same journal head, same clock: everything the token used
-		// to be derived from is unchanged.
 		const second = await fence.raise({ scope, reason: "move" });
 		assert.notEqual(second.fenceToken, first.fenceToken);
 		assert.ok(!first.fenceToken.includes("acme"), "nothing to guess from");

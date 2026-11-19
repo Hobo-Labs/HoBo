@@ -1,15 +1,7 @@
-/**
- * GCP provider-owned Yard runtime + primitive resolver defaults.
- * Generation requires Broker policy approval (default deny).
- */
 
 // public-contract: the Yard runtime this provider registers under. Stations and
-// the Broker match registrations by this exact string, so changing it silently
-// unregisters every Yard already placed on it.
 export const GCP_YARD_RUNTIME_ID = "gcp.yard-runtime/v1" as const;
 // public-contract: the connector id Broker policy is written against. Generation
-// is default-deny, so a rename does not fail open — it stops matching the
-// approval that let this provider generate Yards at all.
 export const GCP_YARD_GENERATOR_CONNECTOR_ID =
 	"connector:gcp-yard-generator" as const;
 

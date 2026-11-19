@@ -1,18 +1,3 @@
-/**
- * The in-memory ephemeral-state engine.
- *
- * It is a `KvRedisExecutor` that answers exactly the commands the
- * ephemeral-state binding issues — `HMGET`, `DEL`, `PEXPIRE`, and `EVAL` /
- * `EVALSHA` of the five scripts in `ephemeral-scripts.ts` — with each script's
- * semantics written out in TypeScript, under an injectable clock. So the
- * in-memory port is the *same* `createRedisEphemeralState` the TCP and REST
- * bindings use, over a different executor, and the conformance suite compares
- * these TypeScript semantics with the Lua ones on a real server.
- *
- * It keeps a script cache the way a server does: `EVALSHA` of a script it has
- * not seen through `EVAL` answers `NOSCRIPT`, so the fallback path and its
- * command cost are exercised in-process. Anything else is an error reply.
- */
 import type { EphemeralStatePort } from "@hobo/core";
 import {
 	EPHEMERAL_SCRIPTS,
@@ -32,7 +17,6 @@ export type ManualClock = {
 	advance(ms: number): void;
 };
 
-/** Deterministic time for tests: starts at `startMs` and moves only when told. */
 export function createManualClock(startMs = 1_000_000): ManualClock {
 	let nowMs = startMs;
 	return {
@@ -47,12 +31,10 @@ export function createManualClock(startMs = 1_000_000): ManualClock {
 }
 
 export type MemoryRedisExecutorOptions = {
-	/** Milliseconds since an arbitrary epoch. Defaults to wall time. */
 	readonly now?: () => number;
 };
 
 export type MemoryRedisExecutor = KvRedisExecutor & {
-	/** Forget every cached script handle, as `SCRIPT FLUSH` or a restart does. */
 	flushScripts(): void;
 };
 
@@ -254,10 +236,6 @@ export type MemoryEphemeralStateOptions = MemoryRedisExecutorOptions & {
 	readonly newIncarnation?: (() => string) | undefined;
 };
 
-/**
- * The in-memory `EphemeralStatePort`: the shared Redis-protocol binding over
- * the in-memory engine. Pair it with `createManualClock` for exact TTL tests.
- */
 export function createMemoryEphemeralState(
 	options: MemoryEphemeralStateOptions = {},
 ): EphemeralStatePort {

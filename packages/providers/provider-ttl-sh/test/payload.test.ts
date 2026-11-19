@@ -1,13 +1,3 @@
-/**
- * The durable-use refusal.
- *
- * Two halves are being tested. The runtime half is straightforward: a payload
- * describing durable state is refused. The type half is the one that actually
- * holds, and it is checked by `tsconfig.test.json` compiling this file — the
- * commented assignments below are the ones that must never compile, and they are
- * written out so a future change that widens `ArtifactPayload` has to delete a
- * comment explaining why it should not.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 
@@ -81,8 +71,6 @@ describe("parseArtifactPayload", () => {
 	});
 
 	it("refuses a reproducible payload that does not say how it is reproduced", () => {
-		// Without this the recovery procedure is somebody's memory, and the
-		// artifact is gone by the time anybody looks for it.
 		const { reproducedBy: _dropped, ...rest } = BUILD_IMAGE;
 		expectTtlShCode(
 			() => parseArtifactPayload(rest, ONE_HOUR),
@@ -130,8 +118,6 @@ describe("an accepted temporary handoff", () => {
 	});
 
 	it("refuses a promotion deadline that falls after the artifact expires", () => {
-		// A deadline past the TTL is not a plan, it is a hope: the artifact is
-		// gone before the promotion is due.
 		expectTtlShCode(
 			() =>
 				parseArtifactPayload(
@@ -214,13 +200,6 @@ describe("parseOwnerControlledRegistry", () => {
 
 describe("the types themselves", () => {
 	it("has no variant that could describe durable state", () => {
-		// The runtime list and the type union are the same fact stated twice, and
-		// this is where they are checked against each other. There is no
-		// `ArtifactPayload` value with any of these kinds, which is why the
-		// following would not compile:
-		//
-		//   const bad: ArtifactPayload = { kind: "database-backup", ... };
-		//   //                                   ^ not assignable
 		assert.ok(REFUSED_PAYLOAD_KINDS.length > 0);
 		for (const refused of REFUSED_PAYLOAD_KINDS) {
 			let found = false;

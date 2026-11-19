@@ -28,7 +28,6 @@ function classifiesPath(
 	return "other";
 }
 
-/** Count inodes by category without following directory symlinks. */
 export async function measureWorkDirInodeBreakdown(
 	root: string,
 	io: WorkDirInodeIo = defaultIo,

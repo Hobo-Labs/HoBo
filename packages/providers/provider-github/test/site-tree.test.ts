@@ -34,8 +34,6 @@ describe("git object ids computed without a git binary", () => {
 	});
 
 	it("matches git write-tree, including git's directory-sorts-as-slash rule and the executable mode", async () => {
-		// Recorded with `git add -A && git write-tree` over the same four files:
-		// "a.txt" sorts before directory "a" because "." < "/".
 		const freight = siteFreight(
 			{
 				"index.html": "hello\n",

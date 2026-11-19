@@ -1,9 +1,3 @@
-/**
- * The 24-case ephemeral-state conformance suite from
- * `@hobo/kv-redis-compatible`, unchanged, against the Blob binding. Nothing
- * here contacts Vercel: two lanes run on the in-memory store, and one runs
- * the real pinned SDK over HTTP to a local emulator backed by it.
- */
 import {
 	EPHEMERAL_STATE_CONFORMANCE_CASES,
 	runEphemeralStateConformance,

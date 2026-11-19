@@ -20,10 +20,6 @@ export const CAMP_MIGRATION_CODE = "camp-provider-selection-forbidden" as const;
 export const CAMP_BINDLE_OWNERSHIP_FORBIDDEN =
 	"camp-bindle-ownership-forbidden" as const;
 
-/**
- * Author a provider-neutral Camp. Camps do not own Bindles and do not select
- * cloud providers — those belong on Yard attachment / Bindle deployment requests.
- */
 export function camp(name: string, config: CampConfig = {}): Camp {
 	requireName("camp name", name);
 	if (!isPlainObject(config)) {
@@ -70,9 +66,6 @@ export function camp(name: string, config: CampConfig = {}): Camp {
 		typeof config.envType === "string" && config.envType.length > 0
 			? config.envType
 			: inferEnvType(env);
-	// Stated, never inferred. envType is inferred from the Camp's name for
-	// backwards compatibility, but repeating that trick for tier would make a
-	// Camp called "data-migration" silently a data-tier segment.
 	if (config.tier !== undefined && !isCampTier(config.tier as string)) {
 		throw Object.assign(
 			new Error(`camp tier ${JSON.stringify(config.tier)} is not a named tier`),
@@ -129,10 +122,6 @@ export function camp(name: string, config: CampConfig = {}): Camp {
 	return deepFreeze(result);
 }
 
-/**
- * Attach a Camp into a Yard: derive provider from this Yard and retain the
- * logical identity and provider-neutral declaration across later moves.
- */
 export function attachCampToYard(
 	campObject: Camp,
 	options: {
@@ -181,9 +170,6 @@ export function attachCampToYard(
 	const localId = origin
 		? campObject.id.slice(origin.length + 1)
 		: campObject.id;
-	// A pre-upgrade placement has already merged its Yard overrides. It can be
-	// restored in the same Yard, but cannot be moved until the original
-	// provider-neutral declaration is supplied again.
 	const declaration =
 		campObject.placementDeclaration ??
 		(origin
@@ -209,9 +195,6 @@ export function attachCampToYard(
 		...campObject,
 		id: `${options.yardId}/${localId}`,
 		name: `${options.yardId}/${localId}`,
-		// The first placement's existing CD identity must remain addressable by
-		// its journal after an upgrade. It is an opaque id, never a constraint
-		// on the Yard to which the Camp may subsequently move.
 		logicalId:
 			campObject.logicalId ?? `${options.yardId}/${options.yardId}/${localId}`,
 		...(declaration !== undefined
@@ -224,10 +207,6 @@ export function attachCampToYard(
 	});
 }
 
-/**
- * Compatibility: accept legacy provider-bearing mappings only when every
- * provider ID equals the enclosing Yard provider; strip provider IDs.
- */
 export function parseLegacyCampMappings(
 	input: {
 		readonly defaultProvider?: ProviderSelection;
@@ -373,7 +352,6 @@ function parseResourceMappings(
 			if (!isPlainObject(rule) || !isPlainObject(rule.selector)) {
 				throw new TypeError("resource mapping requires selector object");
 			}
-			// Reject provider field if present on legacy payloads.
 			if ("provider" in rule || "providerId" in rule) {
 				throw Object.assign(
 					new Error(
@@ -464,21 +442,7 @@ function canonicalizeProperties(
 	const keys = Object.keys(input).sort();
 	const out: Record<string, JsonValue> = {};
 	for (const key of keys) {
-		// `resolverId` is a first-class field on a mapping rule, not a property,
-		// so it is dropped rather than refused — a caller that spelled it as a
-		// property gets the field it meant, from `rule.resolverId`.
 		if (key === "resolverId") continue;
-		// Every other key this pattern names is a provider account identifier:
-		// `subscriptionId` and `resourceGroup` are Azure, `projectId` is GCP,
-		// `accountId` is AWS/Cloudflare. Allowing one into a Camp's properties
-		// is exactly the leak this module exists to prevent — a Camp that names
-		// an account is no longer placeable on any other provider.
-		//
-		// The previous shape tested this pattern and then acted only on
-		// `provider`/`providerId`, so the four account identifiers were listed
-		// as forbidden and silently accepted. `@hobo/bindles` refuses the same
-		// key set with the same pattern (`assertAnnotationAllowed`), so the
-		// Bindle authoring surface was provider-neutral and the Camp one was not.
 		if (
 			/^(provider|providerId|subscriptionId|accountId|projectId|resourceGroup)$/i.test(
 				key,
@@ -526,13 +490,11 @@ function canonicalizeLabels(
 
 function sanitizeCampId(env: string): string {
 	requireName("camp env", env);
-	// Strip legacy -<provider> suffix display convention when present.
 	return (
 		env
 			.replace(
 				/-(local|aws|azure|gcp|cloudflare|oci|wasm-sandbox)$/i,
 				(match, _provider) => {
-					// Keep as-is if the whole name is just the provider (unlikely).
 					if (match.length === env.length) return env;
 					return "";
 				},

@@ -250,11 +250,9 @@ async function provesOrderedReplayAfterReopen(
 				isContiguous(stream2) &&
 				isJsonObject(stream1[0]?.data) &&
 				stream1[0]?.data !== null &&
-				// SAFETY: assertion to `stream1[0].data as { n?: number }` is required at this boundary.
 				(stream1[0].data as { n?: number }).n === 1 &&
 				isJsonObject(stream2[0]?.data) &&
 				stream2[0]?.data !== null &&
-				// SAFETY: assertion to `stream2[0].data as { n?: number }` is required at this boundary.
 				(stream2[0].data as { n?: number }).n === 2
 			);
 		} finally {
@@ -315,26 +313,22 @@ async function provesReplayEqualsLive(
 			conformanceOptions(0),
 		);
 		const live = await store.fold("conformance:fold", {
-			// SAFETY: assertion to `[] as string[]` is required at this boundary.
 			initialState: { items: [] as string[] },
 			handlers: {
 				"cart.ItemAdded": (state, event) => ({
 					items: [
 						...state.items,
-						// SAFETY: assertion to `event.data as { sku?: string }` is required at this boundary.
 						String((event.data as { sku?: string }).sku ?? ""),
 					],
 				}),
 			},
 		});
 		const replay = await store.fold("conformance:fold", {
-			// SAFETY: assertion to `[] as string[]` is required at this boundary.
 			initialState: { items: [] as string[] },
 			handlers: {
 				"cart.ItemAdded": (state, event) => ({
 					items: [
 						...state.items,
-						// SAFETY: assertion to `event.data as { sku?: string }` is required at this boundary.
 						String((event.data as { sku?: string }).sku ?? ""),
 					],
 				}),

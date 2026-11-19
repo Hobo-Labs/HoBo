@@ -1,12 +1,3 @@
-/**
- * The declaration is the part of this package a planner reads without ever
- * calling the driver, so an over-claim here is worse than a bug in the client:
- * it is a promise made to a selection algorithm that no code will ever check.
- *
- * These tests hold the declaration to what the package actually implements —
- * a Redis-compatible store, REST only, no delivery semantics, no invented
- * limits — and pin the selection outcomes that follow from it.
- */
 import {
 	createCapabilityProfileRegistry,
 	DEFAULT_TRUST_POLICY,
@@ -41,16 +32,8 @@ import {
 
 const profiles = createCapabilityProfileRegistry(STANDARD_CAPABILITY_PROFILES);
 
-/** Well inside the 90-day evidence window the declaration sets. */
 const NOW = Date.UTC(2026, 7, 8);
 
-/**
- * The anonymous surface is `experimental`-adjacent and the creating party
- * keeps its token until a human rotates it, so the default policy would reject
- * this candidate on trust grounds before ever reaching a profile decision.
- * These tests are about profile matching, so the trust dials are opened and
- * the trust behaviour is asserted separately below.
- */
 const permissivePolicy: TrustPolicy = {
 	...DEFAULT_TRUST_POLICY,
 	minimumProviderClass: "experimental",
@@ -92,17 +75,12 @@ describe("the declared product", () => {
 
 	it("produces only the REST binding, because only REST is conformance-backed", () => {
 		expect(UPSTASH_BINDING_PROFILE_REFS).toEqual(["binding.redis-rest/v1"]);
-		// Upstash databases do speak RESP over TLS. This package has no
-		// evidence for it, so it must not appear.
 		expect(UPSTASH_RESOURCE_SEMANTICS.producesBindingProfiles).not.toContain(
 			"binding.redis-protocol/v1",
 		);
 	});
 
 	it("quotes no limit it cannot observe", () => {
-		// The account free tier publishes numbers. This surface does not, and
-		// borrowing them would be an invented fact that a planner would then
-		// enforce.
 		expect(UPSTASH_STRUCTURED_CAPABILITIES.maxValueBytes).toBeUndefined();
 		expect(UPSTASH_RESOURCE_DEFINITION.regions).toEqual([]);
 		expect(UPSTASH_UNCLAIMED_LIMITS.documentedExpiryHours).toBe(72);
@@ -112,14 +90,11 @@ describe("the declared product", () => {
 		expect(UPSTASH_RESOURCE_SEMANTICS.claimStrategyRef).toBe(
 			UPSTASH_CLAIM_STRATEGY_REF,
 		);
-		// The console ceremony, then the owner's rotation.
 		expect(UPSTASH_RESOURCE_SEMANTICS.claimActionCount).toBe(2);
 		expect(UPSTASH_RESOURCE_SEMANTICS.secretCustodyAvailable).toBe(true);
-		// No delete endpoint and no export endpoint exist on this surface.
 		expect(UPSTASH_RESOURCE_SEMANTICS.supportsRevocation).toBe(false);
 		expect(UPSTASH_RESOURCE_SEMANTICS.supportsExport).toBe(false);
 		expect(UPSTASH_RESOURCE_SEMANTICS.migrationProfiles).toEqual([]);
-		// Anonymous, on the provider's own allowance.
 		expect(UPSTASH_RESOURCE_SEMANTICS.sponsorExposureMinorUnits).toBe(0);
 	});
 
@@ -173,8 +148,6 @@ describe("selection for a store requirement", () => {
 			policy: permissivePolicy,
 			nowMs: NOW,
 		});
-		// Absent is not "probably fine": a required feature gate over an
-		// unadvertised capability has to fail closed.
 		expect(outcome.winner).toBeUndefined();
 	});
 
@@ -208,11 +181,6 @@ describe("selection for a delivery requirement", () => {
 
 describe("trust gating", () => {
 	it("clears the default policy, because its authority is rotatable in two actions", () => {
-		// This surface is anonymous, but it is not untrusted: the creating
-		// party's token can be rotated away by the owner, and the claim takes
-		// the two actions the default policy allows. Pinned because it is the
-		// declaration's most consequential claim — if `rotatable` ever became
-		// aspirational, a default workload would land here silently.
 		expect(
 			selectFor("kv.redis-compatible/v1", DEFAULT_TRUST_POLICY).winner,
 		).toBeDefined();
@@ -227,8 +195,6 @@ describe("trust gating", () => {
 	});
 
 	it("is excluded by a policy that requires a way out", () => {
-		// No export endpoint on this surface, so a portability-conscious
-		// policy should never pick it.
 		const outcome = selectFor("kv.redis-compatible/v1", {
 			...DEFAULT_TRUST_POLICY,
 			requireExportProfile: true,
@@ -251,8 +217,6 @@ describe("trust gating", () => {
 	});
 
 	it("is rejected when the conformance run did not complete", () => {
-		// `unknown` is what an incomplete offline run produces. It must not
-		// be selectable.
 		const unproven = createUpstashTemporaryRedisCandidate({
 			conformance: "unknown",
 		});
@@ -290,8 +254,6 @@ describe("the legacy resource definition half", () => {
 	});
 
 	it("is a pure function of the declaration", () => {
-		// No clock, no network, no ambient state: two calls agree, and the
-		// definition can be serialized into a catalog.
 		expect(UPSTASH_RESOURCE_DEFINITION.satisfies({ port: "kv" })).toEqual(
 			UPSTASH_RESOURCE_DEFINITION.satisfies({ port: "kv" }),
 		);

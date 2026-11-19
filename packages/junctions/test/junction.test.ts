@@ -67,7 +67,6 @@ describe("junction()", () => {
 				expect.unreachable(`accepted invalid name ${bad}`);
 			} catch (error) {
 				expect(error).toBeInstanceOf(JunctionParseError);
-				// SAFETY: `expect((error as JunctionParseError).code).toBe(` is required at this I/O or test boundary.
 				expect((error as JunctionParseError).code).toBe(
 					"junction.name.invalid",
 				);
@@ -81,7 +80,6 @@ describe("junction()", () => {
 			expect.unreachable("accepted empty membership");
 		} catch (error) {
 			expect(error).toBeInstanceOf(JunctionParseError);
-			// SAFETY: `expect((error as JunctionParseError).code).toBe("junction.members.empty");` is required at this I/O or test boundary.
 			expect((error as JunctionParseError).code).toBe("junction.members.empty");
 		}
 	});
@@ -91,7 +89,6 @@ describe("junction()", () => {
 			junction("my-app", { yards: [makeYard("aws", "aws")] });
 			expect.unreachable("accepted single member");
 		} catch (error) {
-			// SAFETY: `expect((error as JunctionParseError).code).toBe(` is required at this I/O or test boundary.
 			expect((error as JunctionParseError).code).toBe(
 				"junction.members.insufficient",
 			);
@@ -106,7 +103,6 @@ describe("junction()", () => {
 			junction("my-app", { yards: [one, two] });
 			expect.unreachable("accepted duplicate yard names");
 		} catch (error) {
-			// SAFETY: `expect((error as JunctionParseError).code).toBe(` is required at this I/O or test boundary.
 			expect((error as JunctionParseError).code).toBe(
 				"junction.member.duplicate",
 			);
@@ -118,12 +114,10 @@ describe("junction()", () => {
 
 		try {
 			junction("my-app", {
-				// SAFETY: `yards: [aws, { kind: "camp" } as never],` is required at this I/O or test boundary.
 				yards: [aws, { kind: "camp" } as never],
 			});
 			expect.unreachable("accepted a non-yard member");
 		} catch (error) {
-			// SAFETY: `expect((error as JunctionParseError).code).toBe(` is required at this I/O or test boundary.
 			expect((error as JunctionParseError).code).toBe(
 				"junction.member.invalid",
 			);
@@ -141,7 +135,6 @@ describe("junction()", () => {
 			});
 			expect.unreachable("accepted a manifest for a non-member");
 		} catch (error) {
-			// SAFETY: `expect((error as JunctionParseError).code).toBe(` is required at this I/O or test boundary.
 			expect((error as JunctionParseError).code).toBe(
 				"junction.manifest.unknown-yard",
 			);
@@ -155,12 +148,10 @@ describe("junction()", () => {
 		try {
 			junction("my-app", {
 				yards: [aws, azure],
-				// SAFETY: `manifests: { aws: { capabilities: ["quantum-tunnel" as never] } },` is required at this I/O or test boundary.
 				manifests: { aws: { capabilities: ["quantum-tunnel" as never] } },
 			});
 			expect.unreachable("accepted an unknown capability");
 		} catch (error) {
-			// SAFETY: `expect((error as JunctionParseError).code).toBe(` is required at this I/O or test boundary.
 			expect((error as JunctionParseError).code).toBe(
 				"junction.manifest.invalid",
 			);

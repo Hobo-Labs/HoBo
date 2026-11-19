@@ -17,16 +17,12 @@ export const RUNNER_WORKFLOW_DEFAULT = "hobo-runner.yml";
 export const RUNNER_REF_DEFAULT = "main";
 
 export interface RunTrackingOptions {
-	// Max poll attempts before the run is treated as failed (default 60).
 	readonly attempts?: number;
-	// Delay between polls in ms (default 5000; the replay lane injects a no-op).
 	readonly intervalMs?: number;
-	// The wait primitive — injected in tests so polling costs no wall clock.
 	readonly wait?: (ms: number) => Promise<void>;
 }
 
 export interface GithubRunnerProviderOptions {
-	// The real GitHub Actions client (injected fetch inside).
 	readonly client: GithubActionsClient;
 	readonly id?: string;
 	readonly workflow?: string;
@@ -37,8 +33,6 @@ export interface GithubRunnerProviderOptions {
 const defaultWait = (ms: number) =>
 	new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-// Track a dispatched workflow to completion: correlate the newest
-// workflow_dispatch run, then poll until GitHub reports `completed`.
 export async function trackDispatchedRun(
 	client: GithubActionsClient,
 	workflow: string,
@@ -74,10 +68,6 @@ export async function trackDispatchedRun(
 	return { id: run.id, conclusion: run.conclusion, htmlUrl: run.htmlUrl };
 }
 
-// The REAL GitHub Actions RunnerProvider (`hobo:runner`): `run(job)` fires a
-// workflow_dispatch carrying the job id + command as inputs, tracks the run to
-// completion, and returns the result with past-tense runner facts for the
-// caller to append to the durable log.
 export function createGithubRunnerProvider(
 	options: GithubRunnerProviderOptions,
 ): RunnerProvider {

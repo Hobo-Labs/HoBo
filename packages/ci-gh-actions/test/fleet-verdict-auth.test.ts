@@ -14,12 +14,6 @@ import {
 	BOX_2_PUBLIC_KEY,
 } from "./fixtures/fleet-reporter-keys.js";
 
-/**
- * The reporter on the box and the hosted relay agree on a report's signature
- * only through `fleetVerdictSigningInput`; these three vectors fix it. A
- * change that breaks one breaks every enrolled reporter: it needs a new
- * context string.
- */
 const VECTOR_KEY_PEM = BOX_1_KEY_PEM;
 const VECTOR_PUBLIC_KEY = BOX_1_PUBLIC_KEY;
 const OTHER_PUBLIC_KEY = BOX_2_PUBLIC_KEY;

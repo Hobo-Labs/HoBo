@@ -1,11 +1,3 @@
-/**
- * The mesh against a real NATS server.
- *
- * Runs when a `nats-server` binary is available: `HOBO_CI_NATS_SERVER_BIN`,
- * or `nats-server` on PATH. Skipped otherwise, so the suite does not need
- * the binary; the same behaviour is covered on the in-memory mesh in
- * `@hobo/ci`.
- */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { type AddressInfo, createServer } from "node:net";
@@ -36,7 +28,6 @@ const node = (id: string, freeSlots = 2): MeshNode => ({
 	freeSlots,
 	healthy: true,
 	labels: ["hobo"],
-	// As long as any advertisement may ask to be believed.
 	validUntilMs: START + 300_000,
 });
 const job = (jobId: number): MeshJob => ({
@@ -50,7 +41,6 @@ async function freePort(): Promise<number> {
 		const server = createServer();
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
 			const { port } = server.address() as AddressInfo;
 			server.close(() => resolve(port));
 		});
@@ -139,7 +129,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		const seen = await a.board.nodes();
 		expect(seen.map((each) => each.id).sort()).toEqual(["box-a", "box-b"]);
 		expect(seen.find((each) => each.id === "box-b")?.freeSlots).toBe(5);
-		// A node's later advertisement replaces its earlier one.
 		await b.board.advertise(node("box-b", 0));
 		expect(
 			(await a.board.nodes()).find((each) => each.id === "box-b")?.freeSlots,
@@ -147,8 +136,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		await expect(
 			a.board.advertise({ ...node("bad id with spaces"), id: "bad id" }),
 		).rejects.toThrow();
-		// What a job is sized against travels with the advertisement, and a
-		// node that does not send it is still read.
 		await a.board.advertise({
 			...node("box-a", 3),
 			free: { memoryMb: 12_288 },
@@ -162,7 +149,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			reliability: 0.625,
 		});
 		expect(sized.find((each) => each.id === "box-b")?.free).toBeUndefined();
-		// A node that sends no record is read as saying nothing, not as zero.
 		expect(
 			sized.find((each) => each.id === "box-b")?.reliability,
 		).toBeUndefined();
@@ -203,10 +189,8 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			sinceMs: START,
 		});
 		await boardB.advertise(node("box-b", 5));
-		// An older node on the same board: it does not sign.
 		await a.board.advertise(node("box-old", 1));
 
-		// What the server stores verifies, and says when it was stored.
 		const stored = await b.board.nodes();
 		expect(
 			Object.fromEntries(
@@ -227,7 +211,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			Object.fromEntries(
 				(await board.nodes()).map((each) => [each.id, each.trust]),
 			);
-		// No keys listed: each node trusts only itself.
 		await trustA.refresh();
 		await trustB.refresh();
 		expect(await trustOf(boardA)).toEqual({
@@ -241,7 +224,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			"box-old": "unverified",
 		});
 
-		// The operator lists both keys, in the mesh's shared configuration.
 		expect(await a.trust.read()).toBeUndefined();
 		const published = await a.trust.publish(
 			meshTrustConfigJson({
@@ -253,7 +235,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			}),
 		);
 		expect(published).not.toBe("conflict");
-		// It is its own key of the config bucket: the configuration is untouched.
 		expect(await a.config.read()).toBeUndefined();
 		await trustA.refresh();
 		await trustB.refresh();
@@ -265,13 +246,10 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			});
 		expect(trustB.requireTrusted()).toBe(true);
 
-		// Someone with write access to the bucket overwrites box-a's entry with
-		// altered figures: every reader sees it as invalid.
 		const forged = stored.find((each) => each.id === "box-a");
 		if (!forged) throw new Error("box-a was not stored");
 		await b.board.advertise({ ...forged, freeSlots: 64 });
 		expect((await trustOf(boardB))["box-a"]).toBe("invalid");
-		// And box-a's next advertisement puts it right.
 		await boardA.advertise(node("box-a", 3));
 		expect((await trustOf(boardB))["box-a"]).toBe("trusted");
 	});
@@ -286,7 +264,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			await a.board.advertise(node(id));
 		expect(await a.board.nodes()).toHaveLength(3);
 		expect(await a.board.nodes()).toHaveLength(3);
-		// Logged at most once a minute, however many passes are cut short.
 		expect(capped).toEqual([3]);
 	});
 
@@ -297,17 +274,14 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		const first = await a.config.publish('{"accounts":[]}');
 		expect(first).not.toBe("conflict");
 		const revision = first === "conflict" ? 0 : first.revision;
-		// Another node sees it, and cannot start over with something else.
 		expect(await b.config.read()).toEqual({
 			value: '{"accounts":[]}',
 			revision,
 		});
 		expect(await b.config.publish('{"accounts":[1]}')).toBe("conflict");
-		// Publishing what is already there is agreement, not a conflict.
 		expect(await b.config.publish('{"accounts":[]}')).toEqual({ revision });
 		const second = await b.config.publish('{"accounts":[1]}', revision);
 		expect(second).not.toBe("conflict");
-		// "a" still holds the old revision: its write is refused.
 		expect(await a.config.publish('{"accounts":[2]}', revision)).toBe(
 			"conflict",
 		);
@@ -328,7 +302,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		await a.board.advertise({ ...node("box-b"), ...live() });
 		await monitor.observe();
 		expect(events).toContain("hobo_ci_mesh_node_joined:box-b");
-		// "box-a" keeps advertising; "box-b" does not, and ages out of the bucket.
 		await until(async () => {
 			await a.board.advertise({ ...node("box-a"), ...live() });
 			await monitor.observe();
@@ -358,7 +331,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		);
 		for (const outcome of outcomes)
 			expect(outcome.filter((result) => result === "claimed")).toHaveLength(1);
-		// The winner asking again still holds it; the losers still do not.
 		const [first] = outcomes;
 		const winner = first?.indexOf("claimed") ?? 0;
 		expect(
@@ -430,7 +402,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		const once = (jobs: readonly MeshJob[]) =>
 			jobs.every((each) => started.get(each.jobId)?.length === 1);
 
-		// 1. All three nodes up.
 		const first = Array.from({ length: 400 }, (_, index) =>
 			job(80_000 + index),
 		);
@@ -440,8 +411,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		expect(Math.abs(share(first, "medium") - 2 / 8)).toBeLessThan(0.06);
 		expect(Math.abs(share(first, "large") - 5 / 8)).toBeLessThan(0.06);
 
-		// 2. "large" dies without a word. Its advertisement is still on the
-		// board, so the others wait for its turn to pass, then take its jobs.
 		const second = Array.from({ length: 200 }, (_, index) =>
 			job(90_000 + index),
 		);
@@ -452,7 +421,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		expect(once(second)).toBe(true);
 		expect(share(second, "large")).toBe(0);
 
-		// 3. NATS itself goes away. Nothing is exact any more, and nothing stops.
 		await stopServer();
 		const third = Array.from({ length: 100 }, (_, index) =>
 			job(95_000 + index),
@@ -467,8 +435,6 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			events.some((entry) => entry.event === "hobo_ci_mesh_claims_unreachable"),
 		).toBe(true);
 
-		// 4. NATS comes back on the same address; the clients reconnect on
-		// their own and claims are exact again.
 		await startServer();
 		await until(async () => {
 			const probe = await coordinators

@@ -23,18 +23,12 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		providerService: "Vercel Edge Config",
 		features: ["key-value", "edge"],
 	},
-	// Vercel Queues: at-least-once delivery to a function of the deployment
-	// (a queue consumer route), with delayed sends.
 	queue: {
 		port: "queue",
 		resourceClass: "vercel:queue",
 		providerService: "Vercel Queues",
 		features: ["queue", "at-least-once", "delay", "managed"],
 	},
-	// Vercel Cron Jobs: a cron expression in the project's `vercel.json` that
-	// calls one of the deployment's own paths (`crons[].path`) on the schedule,
-	// with the project's CRON_SECRET as bearer. Realized with the deployment
-	// that carries the path; nothing is provisioned beside it.
 	schedule: {
 		port: "schedule",
 		resourceClass: "vercel:cron-job",
@@ -45,10 +39,6 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 
 export type InitialCapabilityPort = keyof typeof EQUIVALENCE_CLASSES;
 
-// `Object.freeze`, not `as const` alone. `as const` is a compile-time claim
-// and leaves the array mutable at runtime; this table is read on every realize,
-// so a mutated entry would silently change what every later deploy provisions.
-// The package's own test asserts `Object.isFrozen` for exactly that reason.
 export const INITIAL_CAPABILITY_PORTS = Object.freeze([
 	"web/service",
 	"project",

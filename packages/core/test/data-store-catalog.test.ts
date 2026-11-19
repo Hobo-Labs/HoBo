@@ -1,5 +1,3 @@
-// A catalog entry is a profile with its evidence attached: the parser refuses
-// an unsourced assertion, and the profile is derived from the claims.
 import assert from "node:assert/strict";
 import { test } from "vitest";
 

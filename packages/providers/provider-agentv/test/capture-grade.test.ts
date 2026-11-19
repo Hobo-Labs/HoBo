@@ -13,13 +13,6 @@ import { test } from "vitest";
 import { createAgentVLiveEvalGrader } from "../src/index.js";
 import { REGION } from "./helpers.js";
 
-// The closed IMPL-003 loop, end to end and deterministic: spans captured
-// around agent actions (OTel/OpenInference span emission) assemble into the
-// stored Trajectory record, the agentV live-eval grader scores it without
-// re-running the agent, the scores aggregate into the gate's EvalResult, and
-// the three-lens promotion gate decides — capture → grade → aggregate →
-// promotion, all riding the training.*/eval.*/impl.* event families.
-
 const RUBRIC_REF = "rubric://support/classifier@1.0.0";
 
 function captureTrajectory(index: number, subject: string, category: string) {
@@ -81,8 +74,6 @@ const grader = createAgentVLiveEvalGrader({
 
 test("a captured trajectory is graded by the agentv live-eval path", async () => {
 	const captured = captureTrajectory(1, "site is down", "outage");
-	// The grader re-parses the stored record: feed it the proto-JSON wire
-	// form the capture emitted, exactly as it would come off the event log.
 	const { grade, reward } = await grader.grade(captured.trajectoryJson);
 
 	assert.equal(grade.caseId, "trajectory-run-1-1");
@@ -123,8 +114,6 @@ test("capture → grade → aggregate → promotion gate closes the loop", async
 	});
 	assert.equal(decision.outcome, PromotionOutcome.PROMOTE);
 
-	// One event-sourced loop: the capture fact and the promotion facts ride
-	// the same training.*/eval.*/impl.* families.
 	const eventNames = [
 		TRAINING_TRAJECTORY_CAPTURED,
 		...promotionEventNames(decision),

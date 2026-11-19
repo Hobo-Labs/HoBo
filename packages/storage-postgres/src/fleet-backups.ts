@@ -1,22 +1,3 @@
-/**
- * Scheduled logical backups of a PostgreSQL fleet (the `backupEveryMs` and
- * `backupsKept` of a Bindle's continuity policy).
- *
- * A backup is a whole copy of the writer's journal into a schema of its own,
- * `<schema>_b<taken-at-ms>`, on the fleet's backup member: a witness or
- * another database on a failure domain the writer does not share. The copy is
- * the fleet's own verified snapshot copy (`copySnapshot`: one REPEATABLE READ
- * read of the writer, every table digest-checked on the target before it
- * commits), so a backup is complete or absent, never partial. A catalog
- * table, `<schema>_backups.catalog`, written in the copy's transaction, lists
- * what was taken; the oldest beyond `backupsKept` are dropped after a new one
- * commits, so an interrupted run keeps at least the backups it had.
- *
- * The schedule is the catalog, not the process: a backup is due when the
- * newest one is `backupEveryMs` old, whichever process ticks the fleet.
- * Restore copies a backup into a member's schema the same way, and refuses a
- * member the register names writer.
- */
 import {
 	copySnapshot,
 	type FleetLayout,
@@ -46,19 +27,15 @@ export type FleetBackupOutcome =
 	| Readonly<{ kind: "failed"; message: string }>;
 
 export interface FleetBackups {
-	/** Take a backup of `source` when one is due. */
 	run(input: {
 		readonly source: string;
 		readonly executor: SqlExecutor;
 		readonly nowMs: number;
 	}): Promise<FleetBackupOutcome>;
-	/** Backups held, newest first. */
 	list(): Promise<readonly FleetBackup[]>;
-	/** Copy a backup (the newest by default) into `target`'s journal. */
 	restore(input: {
 		readonly target: SqlExecutor;
 		readonly name?: string;
-		/** Fence and admit the target inside the copy's transaction. */
 		readonly admit: (target: SqlSession) => Promise<void>;
 	}): Promise<FleetBackup>;
 }
@@ -68,9 +45,7 @@ export type FleetBackupsOptions = Readonly<{
 	everyMs: number;
 	kept: number;
 	layout: FleetLayout;
-	/** A pool on the backup member whose search path is `schema`. */
 	pool: (schema: string) => PgPoolLike;
-	/** The SQL port over a pool (the fleet's own). */
 	executor: (pool: PgPoolLike) => SqlExecutor;
 }>;
 
@@ -106,7 +81,6 @@ export function createFleetBackups(options: FleetBackupsOptions): FleetBackups {
 				)`,
 			);
 		})();
-		// A failed preparation is retried on the next call.
 		prepared.catch(() => {
 			prepared = undefined;
 		});
@@ -122,7 +96,6 @@ export function createFleetBackups(options: FleetBackupsOptions): FleetBackups {
 		return result.rows.map(backupFromRow);
 	};
 
-	/** A schema of the backup member with the journal's tables, migrated. */
 	const migrated = async (schema: SchemaName) => {
 		const pool = options.pool(schema);
 		const store = createPostgresEventStore({
@@ -173,7 +146,6 @@ export function createFleetBackups(options: FleetBackupsOptions): FleetBackups {
 						},
 					});
 				} catch (error) {
-					// Nothing was catalogued: the schema is an orphan of this run.
 					await homeSql
 						.query(`DROP SCHEMA IF EXISTS ${quoteSchema(name)} CASCADE`)
 						.catch(() => {});

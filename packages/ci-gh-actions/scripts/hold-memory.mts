@@ -1,15 +1,3 @@
-/**
- * Holds memory for a game day (operating steps G3 and G5): allocates and
- * touches `--mb` megabytes, keeps them for `--seconds`, then exits.
- *
- *   node packages/ci-gh-actions/scripts/hold-memory.mts --mb 12000 --seconds 300
- *
- * Run it on the box while CI is idle, with enough megabytes to fail
- * admission; the fleet verdict reporter should hold the box's labels
- * blocked within 90 s and clear them within 60 s of the end. It prints one
- * JSON line when the memory is held and one when it lets go. It imports
- * nothing but Node.
- */
 import process from "node:process";
 import { parseArgs } from "node:util";
 
@@ -50,7 +38,6 @@ const seconds = whole(values.seconds, "seconds", 0, 86_400);
 
 const held: Buffer[] = [];
 for (let left = megabytes; left > 0; left -= CHUNK_MB) {
-	// `fill` writes every page, so the kernel has to back all of it.
 	held.push(Buffer.allocUnsafe(Math.min(left, CHUNK_MB) * 1024 * 1024).fill(1));
 }
 const heldBytes = held.reduce((sum, chunk) => sum + chunk.length, 0);

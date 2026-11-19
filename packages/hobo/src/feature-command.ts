@@ -1,7 +1,3 @@
-/**
- * `hobo feature` — OpenFeature-native flag observe / local set / eval.
- * Subcommands: list | eval | set | kill | status
- */
 
 import type { CommandModule } from "@hobo/cli";
 import {
@@ -32,7 +28,6 @@ export function createFeatureCommand(
 ): CommandModule {
 	return {
 		run: async ({ args, flags, emitProgress }) => {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const f = flags as JsonObject;
 			const fixtures = createContractAssertedHarnessFixtures({
 				tenant:
@@ -42,10 +37,8 @@ export function createFeatureCommand(
 			});
 			const store = deps.store ?? fixtures.store;
 			const harness = createHarness({ store });
-			// SAFETY: assertion required at this I/O or test boundary.
 			const sub = (args[0] ?? "list") as string;
 
-			// SAFETY: assertion required at this I/O or test boundary.
 			if (!(SUBS as readonly string[]).includes(sub)) {
 				return {
 					ok: false,
@@ -142,7 +135,6 @@ export function createFeatureCommand(
 					},
 					environment: (isJsonString(f.env) && f.env) || "local-dev",
 				});
-				// Evaluate against the active store (injected or fixture), never a stale client.
 				const detail = store.evaluateBoolean(key, ctx, false);
 				emitProgress(
 					`eval ${key}=${detail.value} variant=${detail.variant} reason=${detail.reason}`,

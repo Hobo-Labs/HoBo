@@ -48,7 +48,6 @@ describe("writeStatusSite", () => {
 			"utf8",
 		);
 		expect(shopHtml).toContain("shop status");
-		// SAFETY: this fixture is the package's emitted Statuspage-v2 summary shape.
 		const summary = JSON.parse(
 			readFileSync(
 				join(root, "bindle-shop", "api", "v2", "summary.json"),

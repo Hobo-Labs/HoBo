@@ -1,25 +1,3 @@
-/**
- * Verification before execution — enforced by types, not by discipline.
- *
- * {@link verifyPackManifest} is the only producer of {@link VerifiedPackManifest},
- * and every surface that can cause something to run (the conformance harness,
- * the operation planner, the semantics projection that makes a pack selectable)
- * accepts nothing else. So "we forgot to check the signature before pulling" is
- * a compile error rather than an incident.
- *
- * Three rejections, all fail-closed:
- * - a moving tag or a malformed digest → `PACK_INTEGRITY_UNVERIFIED` (already
- *   raised during manifest parsing, re-asserted here for a manifest that was
- *   constructed rather than parsed);
- * - a missing, invalid, untrusted, or unknown-verdict signature →
- *   `PACK_INTEGRITY_UNVERIFIED`;
- * - a requested architecture the manifest does not pin →
- *   `ARCHITECTURE_UNSUPPORTED`.
- *
- * A signed payload whose digest does not match the manifest it arrived with is
- * `PROVIDER_CONTRACT_CHANGED`: the document changed after signing, which is a
- * different failure from a bad key and deserves a different code.
- */
 import { architecturesMatch, type PackArchitecture } from "./architecture.js";
 import { PackError } from "./errors.js";
 import {
@@ -31,32 +9,17 @@ import { type PackSignatureVerifier, sha256Of } from "./signature.js";
 
 declare const verifiedBrand: unique symbol;
 
-/**
- * A manifest whose signature verified against a trusted key and whose image for
- * the requested architecture is digest-pinned.
- */
 export type VerifiedPackManifest = ParsedPackManifest & {
 	readonly [verifiedBrand]: "VerifiedPackManifest";
-	/** The one image that may be pulled for this execution. */
 	readonly selectedImage: PinnedPackImage;
 	readonly selectedArchitecture: PackArchitecture;
-	/** Digest of the canonical payload that was actually verified. */
 	readonly verifiedPayloadDigest: string;
 	readonly verifiedKeyId: string;
 };
 
 export type PackTrustAnchors = {
-	/** Key ids the operator accepts. Empty means nothing is trusted. */
 	readonly trustedKeyIds: readonly string[];
-	/**
-	 * Registries a pack image may be pulled from. Empty means nothing is
-	 * allowed; a digest proves content but not who is serving it.
-	 */
 	readonly allowedRegistries: readonly string[];
-	/**
-	 * Reject a manifest whose conformance outcome is not `pass`. Defaults to
-	 * true, because `unknown` conformance is not evidence.
-	 */
 	readonly requireConformancePass?: boolean;
 };
 
@@ -78,14 +41,6 @@ function integrityFailure(
 	);
 }
 
-/**
- * Verify a parsed manifest and narrow it for execution.
- *
- * Pure apart from the injected verifier: no clock, no network, no filesystem.
- * Signature freshness is deliberately not evaluated here — evidence expiry is a
- * selection-time concern that `selectCapabilityImplementation` already gates on
- * with a caller-supplied `nowMs`.
- */
 export function verifyPackManifest(
 	input: VerifyPackManifestInput,
 ): VerifiedPackManifest {
@@ -167,7 +122,6 @@ export function verifyPackManifest(
 		);
 	}
 
-	// SAFETY: `return {` is required at this I/O or test boundary.
 	return {
 		...manifest,
 		selectedImage,
@@ -177,7 +131,6 @@ export function verifyPackManifest(
 	} as VerifiedPackManifest;
 }
 
-/** Convenience: parse then verify in one step. */
 export function parseAndVerifyPackManifest(
 	input: Omit<VerifyPackManifestInput, "manifest"> & {
 		readonly manifest: Parameters<typeof parsePackManifest>[0];

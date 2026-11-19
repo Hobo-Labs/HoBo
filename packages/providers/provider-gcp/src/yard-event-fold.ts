@@ -1,13 +1,7 @@
-/**
- * GCP event-store fold resolver for Yard placement / generation.
- * Normalizes Cloud Run / VPC signals into yard.* facts.
- */
 
 import { isJsonArray, type JsonObject } from "./json.js";
 
 // public-contract: the event-store fold this provider is addressed by. Stored
-// events name the resolver that produced them, so a rename orphans every fact
-// already written under the old id.
 export const GCP_EVENT_STORE_RESOLVER_ID = "gcp.yard.event-store/v1" as const;
 
 export interface GcpProviderNativeSignal {

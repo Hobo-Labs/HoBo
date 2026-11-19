@@ -1,7 +1,3 @@
-/**
- * Pure event-store folds for Yard inventory, generation saga, and placement.
- * Rebuildable from zero — no in-memory mutation outside applying facts.
- */
 
 import { must } from "@hobo/core/total-access";
 import {
@@ -57,9 +53,6 @@ export interface YardPlacementDecisionRow {
 	readonly receiptHash?: ContentHash;
 }
 
-/**
- * Full yard event-store projection state (inventory + generation + placements).
- */
 export interface YardEventStoreState {
 	readonly brokerId: string;
 	readonly seq: number;
@@ -67,7 +60,6 @@ export interface YardEventStoreState {
 	readonly generationAttempts: Readonly<
 		Record<string, YardGenerationAttemptRow>
 	>;
-	/** Index idempotencyKey → attemptId for lease/dedup. */
 	readonly generationByIdempotency: Readonly<Record<string, string>>;
 	readonly placements: Readonly<Record<string, YardPlacementDecisionRow>>;
 	readonly lastMatchByRequest: Readonly<Record<string, YardMatchDecision>>;
@@ -87,10 +79,6 @@ export function emptyYardEventStoreState(
 	});
 }
 
-/**
- * Pure fold: apply one yard.* fact. Provider fold resolvers may pre-normalize
- * provider-native signals into yard.* events before calling this.
- */
 export function foldYardEventStore(
 	state: YardEventStoreState,
 	event: YardEvent,
@@ -118,7 +106,6 @@ export function foldYardEventStore(
 
 	if (type === YARD_EVENTS.MatchDecided) {
 		const requestId = str(data.requestId);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const match = data.match as YardMatchDecision | undefined;
 		if (!requestId || !match) return withSeq(state, seq);
 		const prior = state.placements[requestId];
@@ -177,7 +164,6 @@ export function foldYardEventStore(
 			state,
 			seq,
 			data,
-			// SAFETY: assertion required at this I/O or test boundary.
 			(str(data.status) as YardGenerationAttemptRow["status"]) || "started",
 		);
 	}
@@ -195,7 +181,6 @@ export function foldYardEventStore(
 	}
 
 	if (type === YARD_EVENTS.Registered) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const yard = data.yard as YardInstanceRegistration | undefined;
 		if (!yard?.yardId) return withSeq(state, seq);
 		const registered: YardInstanceRegistration = Object.freeze({
@@ -220,7 +205,6 @@ export function foldYardEventStore(
 	if (type === YARD_EVENTS.Ready) {
 		const yardId = str(data.yardId);
 		const next = patchYardStatus(state, seq, yardId, "ready");
-		// Link generation attempt → ready yard
 		const attemptId = str(data.attemptId);
 		if (attemptId && next.generationAttempts[attemptId]) {
 			const attempt = must(
@@ -256,7 +240,6 @@ export function foldYardEventStore(
 
 	if (type === YARD_EVENTS.StatusChanged) {
 		const yardId = str(data.yardId);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const status = str(data.status) as YardInstanceStatus;
 		if (!yardId || !status) return withSeq(state, seq);
 		return patchYardStatus(state, seq, yardId, status);
@@ -264,7 +247,6 @@ export function foldYardEventStore(
 
 	if (type === YARD_EVENTS.CapacityUpdated) {
 		const yardId = str(data.yardId);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const capacity = data.capacity as YardInstanceRegistration["capacity"];
 		const existing = state.yards[yardId];
 		if (!existing || !capacity) return withSeq(state, seq);
@@ -281,7 +263,6 @@ export function foldYardEventStore(
 	if (type === YARD_EVENTS.PlacementResolved) {
 		const requestId = str(data.requestId);
 		if (!requestId) return withSeq(state, seq);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const receipt = data.receipt as YardPlacementReceipt | undefined;
 		const prior = state.placements[requestId];
 		const selectedYardId =
@@ -299,9 +280,7 @@ export function foldYardEventStore(
 		const generationAttemptId =
 			str(data.generationAttemptId) || prior?.generationAttemptId;
 		const receiptHash =
-			// SAFETY: assertion required at this I/O or test boundary.
 			(data.receiptHash as ContentHash | undefined) ||
-			// SAFETY: assertion required at this I/O or test boundary.
 			(receipt?.contentHash as ContentHash | undefined);
 		const row: YardPlacementDecisionRow = {
 			requestId,
@@ -351,7 +330,6 @@ export function foldYardEventStore(
 		});
 	}
 
-	// ProviderSignalNormalized is informational; provider resolvers expand it first.
 	return withSeq(state, seq);
 }
 
@@ -366,7 +344,6 @@ export function foldYardEventStoreAll(
 	return state;
 }
 
-/** Project fold state → inventory snapshot (pinned hash). */
 export function inventorySnapshotFromFold(
 	state: YardEventStoreState,
 ): YardInventorySnapshot {
@@ -382,7 +359,6 @@ export function inventorySnapshotFromFold(
 	return Object.freeze({
 		...body,
 		yards: Object.freeze(yards),
-		// SAFETY: assertion required at this I/O or test boundary.
 		contentHash: contentHashOf(body) as ContentHash,
 	});
 }
@@ -395,7 +371,6 @@ export function snapshotYardEventStore(state: YardEventStoreState): string {
 }
 
 export function restoreYardEventStore(snapshot: string): YardEventStoreState {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const parsed = JSON.parse(snapshot) as {
 		schemaVersion?: string;
 		state?: YardEventStoreState;
@@ -407,8 +382,6 @@ export function restoreYardEventStore(snapshot: string): YardEventStoreState {
 	}
 	return freezeState(parsed.state);
 }
-
-// ---- internals ----
 
 function foldGenerationLifecycle(
 	state: YardEventStoreState,
@@ -431,7 +404,6 @@ function upsertAttempt(
 	const idempotencyKey = str(data.idempotencyKey);
 	if (!attemptId) return withSeq(state, seq);
 
-	// Lease: if another attempt owns this idempotency key, keep the winner.
 	if (
 		idempotencyKey &&
 		state.generationByIdempotency[idempotencyKey] &&
@@ -454,14 +426,12 @@ function upsertAttempt(
 	const prior = state.generationAttempts[attemptId];
 	const externalRefs = {
 		...prior?.externalRefs,
-		// SAFETY: assertion required at this I/O or test boundary.
 		...(data.externalRefs as Record<string, string> | undefined),
 	};
 	const yardId = str(data.yardId) || prior?.yardId;
 	const failure =
 		data.failure && isJsonObject(data.failure)
 			? Object.freeze(
-					// SAFETY: assertion required at this I/O or test boundary.
 					data.failure as {
 						readonly code: string;
 						readonly message: string;

@@ -1,11 +1,3 @@
-/**
- * The key set of every RunReport v1 object the parser walks. Version 1 of the
- * schema closes every object (`additionalProperties: false`), so a key that is
- * not `allowed` makes the report invalid, and so does a `required` key that is
- * absent, whether or not the gate interprets it. Copied from the schema;
- * test/acceptance-fields.test.ts compares each set with the copy of the schema
- * in test/fixtures/ai-bdd/.
- */
 export interface ReportObjectKeys {
 	readonly name: string;
 	readonly allowed: readonly string[];

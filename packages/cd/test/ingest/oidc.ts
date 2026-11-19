@@ -1,6 +1,3 @@
-// OIDC fixtures shaped like the GitHub Actions and GitLab CI ID tokens, signed
-// with throwaway RS256 keys, plus an HttpTransport that serves each issuer's
-// discovery document and JWKS.
 import { createSign, generateKeyPairSync, type KeyObject } from "node:crypto";
 import { create, type JsonValue } from "@bufbuild/protobuf";
 import type {
@@ -46,10 +43,8 @@ function b64url(value: string | Buffer): string {
 	return Buffer.from(value).toString("base64url");
 }
 
-/** JWT claims or header members, as JSON. */
 export type Claims = { readonly [key: string]: JsonValue };
 
-/** The same claims without one member (for "missing claim" cases). */
 export function withoutClaim(claims: Claims, name: string): Claims {
 	return Object.fromEntries(
 		Object.entries(claims).filter(([key]) => key !== name),
@@ -115,7 +110,6 @@ export function gitlabClaims(nowMs: number, overrides: Claims = {}) {
 
 type Route = { status: number; body: string; headers: Record<string, string> };
 
-/** Serves OIDC discovery + JWKS per issuer; counts every request by URL. */
 export class OidcTransport {
 	readonly calls: string[] = [];
 	readonly routes = new Map<string, Route>();

@@ -15,9 +15,6 @@ import {
 	type ReactiveFact,
 } from "./events.js";
 
-// A materialization is a deterministic fold over subscribed event types, exposed
-// as a subscribable observable (data-plane.md Plan 32 "The model in one
-// paragraph"). The fold is read-only + replayable.
 export interface Materialization<S> {
 	name: string;
 	readSet: readonly string[];
@@ -37,11 +34,8 @@ export function defineMaterialization<S>(
 
 export interface SubscriptionHandle<S> {
 	readonly subscriptionId: string;
-	// Current materialized value + the monotonic log position it was computed at.
 	current(): { value: S; seq: number };
-	// Reads-your-writes: resolve once the subscription has advanced to >= seq.
 	awaitSeq(seq: number): Promise<{ value: S; seq: number }>;
-	// The subscription.*/push facts emitted so far (Opened/Recomputed/Pushed).
 	facts(): ReactiveFact[];
 	close(reason?: string): void;
 }
@@ -61,8 +55,6 @@ function hashReadSet(readSet: readonly string[], seq: number): string {
 	return `${[...readSet].sort().join(",")}@${seq}`;
 }
 
-// The Reactor grain: per subscription it holds { materialization, readSet,
-// lastSeq, state } and pushes recomputed snapshots over the Streamer port.
 export function createReactor(deps: {
 	store: EventStore;
 	streamer: Streamer;
@@ -98,7 +90,6 @@ export function createReactor(deps: {
 						readSetHash: hashReadSet(materialization.readSet, lastSeq),
 					}),
 				);
-				// Push the recomputed snapshot to the client over the Streamer port.
 				void writable.write({ seq: lastSeq, value: clone(state) });
 				facts.push(
 					createSubscriptionPushedEvent({
@@ -115,7 +106,6 @@ export function createReactor(deps: {
 				}
 			}
 
-			// Replay-then-live: fold the current stream to its head, then go live.
 			if (options.replayStreamId) {
 				for await (const event of deps.store.read(options.replayStreamId)) {
 					apply(event);

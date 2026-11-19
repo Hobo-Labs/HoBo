@@ -237,7 +237,6 @@ describe("offer and evidence agreement", () => {
 
 describe("receipt signing surface", () => {
 	it("covers guest evidence in the canonical signing payload", () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const guest = parseGuestResolutionEvidence(
 			evidence(),
 		) as GuestResolutionEvidence;
@@ -246,7 +245,6 @@ describe("receipt signing surface", () => {
 			requestId: "req-1",
 			brokerId: "broker-1",
 			catalogHash: DIGEST_A,
-			// SAFETY: assertion required at this I/O or test boundary.
 			policyHash: DIGEST_B as ResolutionReceipt["policyHash"],
 			placementPolicyId: "default",
 			placements: [
@@ -267,7 +265,6 @@ describe("receipt signing surface", () => {
 		const canonical = canonicalResolutionJson(receipt);
 		assert.ok(canonical.includes("bundle-1"));
 		assert.ok(canonical.includes("reauthorization-required"));
-		// Tampering with claim evidence changes the signed bytes.
 		const tampered = canonicalResolutionJson({
 			...receipt,
 			guest: { ...guest, claimActionCount: 0 },

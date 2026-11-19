@@ -1,8 +1,3 @@
-// Minimal JOSE for agent proof-of-possession keys: parse a public JWK into a
-// derived type (parse, don't validate), compute its RFC 7638 thumbprint, and
-// sign/verify compact JWS with ES256 (P-256) or EdDSA (Ed25519). node:crypto
-// only; no JOSE dependency. RSA agent keys are refused: DPoP keys are small,
-// fast and modern by policy.
 import {
 	createHash,
 	createPrivateKey,
@@ -23,13 +18,11 @@ export type JwsAlgorithm = "ES256" | "EdDSA";
 declare const publicJwkBrand: unique symbol;
 declare const thumbprintBrand: unique symbol;
 
-/** A parsed public JWK: one of the two accepted key shapes, never private material. */
 export type PublicJwk = (
 	| Readonly<{ kty: "EC"; crv: "P-256"; x: string; y: string }>
 	| Readonly<{ kty: "OKP"; crv: "Ed25519"; x: string }>
 ) & { readonly [publicJwkBrand]: "cd.PublicJwk" };
 
-/** RFC 7638 SHA-256 thumbprint, base64url (the `cnf.jkt` value of RFC 9449). */
 export type JwkThumbprint = string & {
 	readonly [thumbprintBrand]: "cd.JwkThumbprint";
 };
@@ -46,14 +39,12 @@ export function parsePublicJwk(json: JsonObject): Outcome<PublicJwk> {
 		const y = text(json.y);
 		if (!y || !B64URL.test(y))
 			return agentRefusal("jwk-invalid", "the EC JWK has no base64url `y`");
-		// SAFETY: every member of the EC branch was checked above.
 		return {
 			ok: true,
 			value: Object.freeze({ kty: "EC", crv: "P-256", x, y }) as PublicJwk,
 		};
 	}
 	if (json.kty === "OKP" && json.crv === "Ed25519")
-		// SAFETY: every member of the OKP branch was checked above.
 		return {
 			ok: true,
 			value: Object.freeze({ kty: "OKP", crv: "Ed25519", x }) as PublicJwk,
@@ -65,12 +56,10 @@ export function parsePublicJwk(json: JsonObject): Outcome<PublicJwk> {
 }
 
 export function jwkThumbprint(jwk: PublicJwk): JwkThumbprint {
-	// RFC 7638 §3.2: required members only, lexicographic order, no whitespace.
 	const canonical =
 		jwk.kty === "EC"
 			? `{"crv":"${jwk.crv}","kty":"EC","x":"${jwk.x}","y":"${jwk.y}"}`
 			: `{"crv":"${jwk.crv}","kty":"OKP","x":"${jwk.x}"}`;
-	// SAFETY: the RFC 7638 digest of a parsed key is a thumbprint by definition.
 	return createHash("sha256")
 		.update(canonical)
 		.digest("base64url") as JwkThumbprint;
@@ -87,7 +76,6 @@ export function publicJwkJson(jwk: PublicJwk): JsonObject {
 }
 
 function keyObject(jwk: JsonObject, kind: "public" | "private"): KeyObject {
-	// SAFETY: node:crypto validates the JWK members; a malformed key throws and is refused by the caller.
 	const options = { key: jwk as JsonWebKey, format: "jwk" as const };
 	return kind === "public"
 		? createPublicKey(options)
@@ -164,15 +152,12 @@ export type AgentKeyPair = Readonly<{
 	thumbprint: JwkThumbprint;
 }>;
 
-/** Generate an agent key pair (used by `hobo deploy agent run` and tests). The private JWK never leaves the agent. */
 export function generateAgentKey(alg: JwsAlgorithm = "ES256"): AgentKeyPair {
 	const pair =
 		alg === "ES256"
 			? generateKeyPairSync("ec", { namedCurve: "P-256" })
 			: generateKeyPairSync("ed25519");
-	// SAFETY: node exports a JWK as a plain JSON object.
 	const privateJwk = pair.privateKey.export({ format: "jwk" }) as JsonObject;
-	// SAFETY: node exports a JWK as a plain JSON object.
 	const publicJwk = pair.publicKey.export({ format: "jwk" }) as JsonObject;
 	const parsed = parsePublicJwk(publicJwk);
 	if (!parsed.ok) throw new Error("generated key did not parse");
@@ -183,7 +168,6 @@ export function generateAgentKey(alg: JwsAlgorithm = "ES256"): AgentKeyPair {
 	});
 }
 
-/** The public half of a private JWK (agent side). */
 export function publicOf(privateJwk: JsonObject): Outcome<PublicJwk> {
 	const { d: _d, ...rest } = privateJwk;
 	return parsePublicJwk(rest);

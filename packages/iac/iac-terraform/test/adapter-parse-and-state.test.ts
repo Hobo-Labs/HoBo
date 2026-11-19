@@ -1,16 +1,5 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-returns, anti-slop/no-unknown-parameters */
 
-/**
- * The Terraform adapter's parse boundary, in-memory state backend and
- * binding projection.
- *
- * `validateIacProgram` is a parse-don't-validate boundary: after it, "this
- * program's output references resolve" is a fact about the value rather than a
- * check somebody remembered. The failure it prevents is a program that applies
- * cleanly and produces a binding pointing at an output no resource declares —
- * which surfaces as a missing environment variable in a deployed workload,
- * far from here.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -39,8 +28,6 @@ function expectRejection(
 	try {
 		run();
 	} catch (error) {
-		// The code is what a caller branches on to tell an authoring mistake
-		// from an infrastructure failure; a bare Error would collapse the two.
 		expect(error).toBeInstanceOf(TerraformProgramError);
 		expect((error as TerraformProgramError).code).toBe(code);
 		return error as TerraformProgramError;
@@ -52,9 +39,6 @@ function expectRejection(
 describe("validateIacProgram — shape", () => {
 	it("accepts and freezes the trivial program", () => {
 		const parsed = validateIacProgram(createTrivialIacProgram());
-		// Frozen and cloned: the parsed program is handed to an engine that runs
-		// asynchronously, and a caller mutating its input afterwards must not be
-		// able to change what is applied.
 		expect(Object.isFrozen(parsed)).toBe(true);
 		expect(parsed.resources.length).toBeGreaterThan(0);
 	});
@@ -69,9 +53,6 @@ describe("validateIacProgram — shape", () => {
 	});
 
 	it("refuses a wrong or missing apiVersion", () => {
-		// The apiVersion is how a stored program declares which parser it was
-		// written for. Accepting an unknown one would apply a document this
-		// build cannot fully read.
 		expectRejection(
 			() => validateIacProgram(program({ apiVersion: "hobo.iac-program/v0" })),
 			"invalid-api-version",
@@ -94,8 +75,6 @@ describe("validateIacProgram — shape", () => {
 		for (const provider of HCL_PROVIDERS) {
 			expect(validateIacProgram(program({ provider })).provider).toBe(provider);
 		}
-		// `pulumi` is a real provider — just not this adapter's. Accepting it
-		// would have the HCL lane apply a program written for another engine.
 		expectRejection(
 			() => validateIacProgram(program({ provider: "pulumi" })),
 			"invalid-provider",
@@ -103,8 +82,6 @@ describe("validateIacProgram — shape", () => {
 	});
 
 	it("refuses a program with no resources", () => {
-		// An empty program applies cleanly and changes nothing, which reads as
-		// success. Refusing it surfaces the authoring mistake instead.
 		expectRejection(
 			() => validateIacProgram(program({ resources: [] })),
 			"empty-program",
@@ -125,8 +102,6 @@ describe("validateIacProgram — shape", () => {
 	});
 
 	it("refuses duplicate resource names", () => {
-		// Names key the per-resource workspace and its state file. Two resources
-		// sharing one would have the second silently overwrite the first's state.
 		expectRejection(
 			() =>
 				validateIacProgram(
@@ -144,9 +119,6 @@ describe("validateIacProgram — shape", () => {
 
 describe("validateIacProgram — output references", () => {
 	function withReference(value: unknown, outputs = ["greeting"]) {
-		// The trivial program's own `stackOutputs` reference its `hello`
-		// resource, which these cases replace — so they are cleared here rather
-		// than left to fail for a reason the test is not about.
 		return program({
 			stackOutputs: {},
 			resources: [
@@ -168,9 +140,6 @@ describe("validateIacProgram — output references", () => {
 	});
 
 	it("refuses a reference to a resource that does not exist", () => {
-		// This is the whole point of the parse boundary: the apply would succeed
-		// and the binding would be the literal `${resources.ghost...}` string,
-		// which reaches a workload as a nonsense environment variable.
 		expectRejection(
 			() =>
 				validateIacProgram(
@@ -188,8 +157,6 @@ describe("validateIacProgram — output references", () => {
 	});
 
 	it("refuses a malformed reference", () => {
-		// It starts with the sigil, so it is clearly *meant* to be a reference —
-		// treating it as a literal string would hide a typo forever.
 		expectRejection(
 			() => validateIacProgram(withReference("${resources.a}")),
 			"invalid-output-reference",
@@ -201,8 +168,6 @@ describe("validateIacProgram — output references", () => {
 	});
 
 	it("leaves ordinary strings alone", () => {
-		// Only values beginning with the sigil are references; a message that
-		// merely mentions the word `resources` must not be parsed as one.
 		for (const value of [
 			"hello",
 			"see resources.a.outputs.greeting for details",
@@ -226,8 +191,6 @@ describe("validateIacProgram — output references", () => {
 	});
 
 	it("checks references in stackOutputs too", () => {
-		// Stack outputs are what a consumer of the whole deployment reads, so an
-		// unresolved one there is at least as damaging as one inside a resource.
 		expectRejection(
 			() =>
 				validateIacProgram(
@@ -260,8 +223,6 @@ describe("validateIacProgram — output references", () => {
 describe("in-memory state backend", () => {
 	it("reads an empty state for an unknown workspace", () => {
 		const backend = createInMemoryStateBackend();
-		// An empty resources map rather than undefined, so the diff path can
-		// treat "never applied" and "applied nothing" the same way.
 		expect(backend.read("nope")).toEqual({ resources: {} });
 	});
 
@@ -270,9 +231,6 @@ describe("in-memory state backend", () => {
 		const state = { resources: { a: { specHash: "h1" } } };
 		backend.write("ws1", state);
 		state.resources.a.specHash = "mutated";
-		// Cloned on the way in *and* on the way out: state is the record of what
-		// was actually applied, and a live reference would let a caller rewrite
-		// it after the fact.
 		expect(backend.read("ws1").resources.a.specHash).toBe("h1");
 		const read = backend.read("ws1");
 		read.resources.a.specHash = "also-mutated";
@@ -283,8 +241,6 @@ describe("in-memory state backend", () => {
 		const backend = createInMemoryStateBackend();
 		backend.write("ws1", { resources: { a: {} } });
 		backend.write("ws2", { resources: { b: {} } });
-		// One state file per resource workspace is the model; a shared store
-		// would make one resource's apply clobber another's state.
 		expect(Object.keys(backend.read("ws1").resources)).toEqual(["a"]);
 		expect(Object.keys(backend.read("ws2").resources)).toEqual(["b"]);
 	});
@@ -295,28 +251,20 @@ describe("in-memory state backend", () => {
 			backend.write("ws1", { resources: {} });
 			expect.unreachable("the nominated workspace must fail");
 		} catch (error) {
-			// The seam exists so the adapter's failure path can be exercised
-			// without a real backend; the code is what the adapter branches on.
 			expect(error).toBeInstanceOf(TerraformStateError);
 			expect((error as { code?: string }).code).toBe("state-write-failed");
 		}
-		// Other workspaces are unaffected, so a failure is scoped rather than
-		// disabling the whole backend.
 		expect(() => backend.write("ws2", { resources: {} })).not.toThrow();
 	});
 
 	it("holds a lock exclusively and lets the holder re-take it", () => {
 		const backend = createInMemoryStateBackend();
 		backend.holdLock("ws1", "h1");
-		// Re-entrant for the same holder: an operation that locks twice in one
-		// call chain must not deadlock against itself.
 		expect(() => backend.holdLock("ws1", "h1")).not.toThrow();
 		try {
 			backend.holdLock("ws1", "h2");
 			expect.unreachable("a held lock must not be taken");
 		} catch (error) {
-			// Two concurrent applies against one state file is the corruption the
-			// lock exists to prevent.
 			expect((error as { code?: string }).code).toBe("state-lock-held");
 			expect((error as Error).message).toContain("h1");
 		}
@@ -326,8 +274,6 @@ describe("in-memory state backend", () => {
 		const backend = createInMemoryStateBackend();
 		backend.holdLock("ws1", "h1");
 		backend.releaseLock("ws1", "impostor");
-		// A release keyed only on the workspace would let a stale process drop
-		// the lock the current one is relying on.
 		expect(() => backend.holdLock("ws1", "h2")).toThrow();
 		backend.releaseLock("ws1", "h1");
 		expect(() => backend.holdLock("ws1", "h2")).not.toThrow();
@@ -358,8 +304,6 @@ describe("createWorkspaceKey", () => {
 	it("combines the program identity with the resource name", () => {
 		const key = createWorkspaceKey(createTrivialIacProgram(), "greeter");
 		expect(key).toContain("greeter");
-		// Stable for the same inputs — the key names the state file, so an
-		// unstable one would orphan state on every apply.
 		expect(createWorkspaceKey(createTrivialIacProgram(), "greeter")).toBe(key);
 	});
 
@@ -374,9 +318,6 @@ describe("outputsToBindings", () => {
 		const bindings = outputsToBindings({
 			resources: { greeter: { outputs: { greeting: "hello", id: "r1" } } },
 		} as never);
-		// The short form is what a human writes; the `${resources...}` form is
-		// what a program text contains verbatim. Emitting only one would leave
-		// half the references unresolvable at substitution time.
 		expect(bindings["greeter.greeting"]).toBe("hello");
 		expect(bindings["${resources.greeter.outputs.greeting}"]).toBe("hello");
 		expect(bindings["greeter.id"]).toBe("r1");
@@ -387,8 +328,6 @@ describe("outputsToBindings", () => {
 			resources: {},
 			stackOutputs: { url: "https://example.invalid" },
 		} as never);
-		// `stack.` keeps deployment-level outputs from colliding with a resource
-		// that happens to be named `stack`.
 		expect(bindings["stack.url"]).toBe("https://example.invalid");
 	});
 
@@ -402,9 +341,6 @@ describe("outputsToBindings", () => {
 	});
 
 	it("returns a frozen map", () => {
-		// Bindings are handed to a deploy step that substitutes them into a
-		// workload's environment; mutating them afterwards would change what is
-		// deployed without changing the recorded outputs.
 		expect(
 			Object.isFrozen(
 				outputsToBindings({ resources: { a: { outputs: { b: 1 } } } } as never),
@@ -421,8 +357,6 @@ describe("adapter over the in-memory engine", () => {
 		const p = createTrivialIacProgram();
 
 		const preview = await adapter.preview(p);
-		// A first preview must be dirty: nothing has been applied, so reporting
-		// clean would skip the apply entirely.
 		expect(preview.kind).toBe("diff");
 		expect(preview.dirty).toBe(true);
 
@@ -432,8 +366,6 @@ describe("adapter over the in-memory engine", () => {
 		expect(Object.keys(applied.bindings).length).toBeGreaterThan(0);
 
 		const refresh = await adapter.refresh(p);
-		// Clean after apply: a refresh that reported drift against state it just
-		// wrote would make every deployment look broken.
 		expect(refresh.kind).toBe("drift-report");
 		expect(refresh.drifted).toBe(false);
 
@@ -452,15 +384,11 @@ describe("adapter over the in-memory engine", () => {
 		const p = createTrivialIacProgram();
 		await adapter.apply(p);
 		const preview = await adapter.preview(p);
-		// Idempotence: re-applying an unchanged program must be recognized as a
-		// no-op rather than re-creating resources.
 		expect(preview.dirty).toBe(false);
 	});
 
 	it("reports the pinned toolchain version", () => {
 		const engine = createInMemoryHclEngine();
-		// The stand-in claims the same pinned version as the real binary lane so
-		// a receipt does not reveal which one produced it.
 		expect(engine.toolchainVersion).toBe(PINNED_TOFU_VERSION);
 		expect(engine.binary).toBe("tofu");
 	});
@@ -469,8 +397,6 @@ describe("adapter over the in-memory engine", () => {
 		const adapter = createTerraformAdapter({
 			engine: createInMemoryHclEngine(),
 		});
-		// Parse first: an engine that received an unvalidated program could
-		// create half the resources before noticing the bad reference.
 		await expect(adapter.apply({} as never)).rejects.toThrowError(
 			TerraformProgramError,
 		);

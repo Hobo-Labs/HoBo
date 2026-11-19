@@ -1,6 +1,3 @@
-// Phase-6 milestone: traffic-routing negotiation re-expressed through the
-// generic resolver (its own tests unmodified elsewhere), and one data-store
-// offering resolved against a station registration.
 import assert from "node:assert/strict";
 import {
 	CLOUDFLARE_TRAFFIC_ROUTING_PROFILE,

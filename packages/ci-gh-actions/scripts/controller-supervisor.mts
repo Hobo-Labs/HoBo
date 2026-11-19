@@ -1,26 +1,4 @@
 #!/usr/bin/env node
-/**
- * The runner controller's supervisor: runs the box worker (or a local
- * runner) as a release staged by digest in the worker's data directory and
- * swaps it when the host's CD agent asks (`src/runner-controller-process.ts`;
- * `deploy/runner-fleet/README.md`, "A controller that runs as a process").
- *
- * - `HOBO_CI_WORKER_DB` names the worker's journal; its directory is the data
- *   directory (default: the worker's own default path).
- * - `HOBO_CI_CONTROLLER_RELEASE` (optional) is a release file to adopt on
- *   first start: it is hashed, staged by its digest and requested, unless the
- *   agent has already asked for a release.
- * - `HOBO_CI_CONTROLLER_ARGS` (optional) is a JSON array of arguments the
- *   release is started with (a local runner's release takes `["daemon"]`).
- *
- * It starts each release as `node <release> ...args`, never through a shell,
- * with `HOBO_CI_CONTROLLER_DIGEST` set. SIGTERM or SIGINT stops the child
- * and then the supervisor. The child stops the way a graceful restart stops
- * it (`deploy/restart-worker.sh`): `HOBO_CI_WORKER_STOP_MODE` (default
- * drain) and `HOBO_CI_WORKER_DRAIN_TIMEOUT_MS` (default two hours) are passed
- * on, and SIGKILL comes only a minute after that deadline
- * (`controllerStopPolicy`).
- */
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -59,7 +37,6 @@ function parseControllerArgs(raw: string): string[] {
 		const parsed = ControllerArgs.safeParse(JSON.parse(raw));
 		if (parsed.success) return parsed.data;
 	} catch {
-		// Not JSON: refused below like any other malformed value.
 	}
 	return fail(
 		"HOBO_CI_CONTROLLER_ARGS must be a JSON array of up to 16 strings",

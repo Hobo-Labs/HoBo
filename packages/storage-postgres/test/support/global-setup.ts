@@ -3,9 +3,7 @@ import { planLane, startLane, systemProbe } from "./postgres-lane.js";
 
 declare module "vitest" {
 	export interface ProvidedContext {
-		/** Connection string of the live lane, or "" when unavailable. */
 		postgresUrl: string;
-		/** Lane description, or the reason it is unavailable. */
 		postgresLane: string;
 	}
 }

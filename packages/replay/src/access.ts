@@ -1,7 +1,3 @@
-/**
- * Policy-gated view access + PAM-style elevated capability for sensitive sessions.
- * Cross-Station / cross-isolation fails closed without federation or elevated grant.
- */
 import type { IsolationClass, SessionRecord } from "./types.js";
 
 export type AccessDecision = Readonly<{
@@ -26,14 +22,12 @@ export type AccessRequest = Readonly<{
 	session: SessionRecord;
 	viewerStationId: string;
 	viewerIsolationClass?: IsolationClass;
-	/** Short-lived Station/Broker capability for PAM break-glass. */
 	elevatedCapability?: Readonly<{
 		scope: "replay.view" | "replay.export";
 		stationId: string;
 		expiresAt: string;
 		now?: string;
 	}>;
-	/** Explicit Junction federation grant. */
 	federationGrant?: Readonly<{
 		fromStationId: string;
 		toStationId: string;

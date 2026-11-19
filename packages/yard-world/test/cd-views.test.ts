@@ -1,8 +1,3 @@
-// WP19 Accept: "yard-world renders a promotion trace". The golden OTLP trace
-// in cd-promotion-trace.otlp.json was produced by @hobo/cd's own span builder
-// and OTLP encoder (promotion `web`: staging-eu, then prod-eu + prod-us, with
-// prod-us failing). Plus the fleet views: Camps by condition and taint, and
-// the compliance heatmap by Rail and control.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
@@ -53,7 +48,6 @@ describe("renderPromotionTrace", () => {
 				stationId: station,
 			});
 		}
-		// Every CD span became a started+ended pair in the world event stream.
 		expect(r.events.filter((e) => e.type === "span-started")).toHaveLength(5);
 		expect(r.events.filter((e) => e.type === "span-ended")).toHaveLength(5);
 		const failed = r.events.find(
@@ -62,7 +56,6 @@ describe("renderPromotionTrace", () => {
 				e.characterId === "station-us/hobo-cd@prod-us",
 		);
 		expect(failed).toMatchObject({ status: "error" });
-		// The multi-Camp run span stays with the CD service itself.
 		expect(r.world.characters["station-eu/hobo-cd"]?.campId).toBe("default");
 	});
 
@@ -342,7 +335,7 @@ describe("fleet views", () => {
 			metrics([
 				ratio("sha256:b", "SC-7", 0.5),
 				ratio("sha256:a", "AC-2", 0.5, T0),
-				ratio("sha256:a", "AC-2", 0, T0 + MIN), // latest wins
+				ratio("sha256:a", "AC-2", 0, T0 + MIN),
 				ratio("sha256:a", "*", 0.01),
 				ratio("sha256:b", "*", 0.25, T0, "inform"),
 			]),

@@ -1,9 +1,3 @@
-// CDEvents (pinned spec, see STANDARDS.lock.json) as plain data: the event
-// shape, the pinned type ids, deterministic ids, purls and the structural
-// check every projected event passes before it may leave the process.
-//
-// Pure: no clock, no randomness, no I/O. Ids are hashes of the journal fact
-// that produced the event, so a replay emits byte-identical CDEvents (I8).
 
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "@hobo/core";
@@ -36,7 +30,6 @@ export const HOBO_CUSTOM_EVENT_VERSION = "0.1.0" as const;
 // public-contract: custom event namespace prefix (tool `hobo`).
 export const HOBO_CUSTOM_EVENT_PREFIX = "dev.cdeventsx.hobo-" as const;
 
-/** `dev.cdeventsx.hobo-<subject>.<predicate>.0.1.0`, the spec's custom form. */
 export function hoboEventType(subject: string, predicate: string): string {
 	if (
 		!/^[a-z][a-z0-9]*$/u.test(subject) ||
@@ -66,7 +59,6 @@ export type CdEventSubject = Readonly<{
 	content: JsonObject;
 }>;
 
-/** One CDEvent, exactly as it is serialized onto the wire. */
 export type CdEvent = Readonly<{
 	context: CdEventContext;
 	subject: CdEventSubject;
@@ -74,7 +66,6 @@ export type CdEvent = Readonly<{
 	customDataContentType?: string;
 }>;
 
-/** Canonical JSON: object keys sorted, no insignificant whitespace. */
 export function canonicalJson(value: JsonValue): string {
 	if (Array.isArray(value)) {
 		return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
@@ -95,11 +86,6 @@ export function sha256Hex(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
 }
 
-/**
- * Deterministic CDEvent id: a UUID-shaped rendering of
- * sha256(sourceEventId / type / discriminator). The same journal fact always
- * yields the same id, so a receiver can de-duplicate at-least-once delivery.
- */
 export function cdEventId(
 	sourceEventId: string,
 	type: string,
@@ -109,7 +95,6 @@ export function cdEventId(
 	return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
 
-/** Package URL for an artifact: its own purl coordinate, else derived. */
 export function artifactPurl(input: {
 	readonly name: string;
 	readonly digest: string;
@@ -123,14 +108,9 @@ export function artifactPurl(input: {
 	return `pkg:generic/${name}@${version}`;
 }
 
-/** Package URL standing for a whole Freight (used when it has no artifacts). */
 export function freightPurl(bindle: string, freightId: string): string {
 	return `pkg:generic/${encodeURIComponent(bindle || "freight")}@${encodeURIComponent(freightId)}`;
 }
-
-// ── Structural check against the pinned schemas ────────────────────────────
-// Mirrors the v0.5.1 JSON schemas: context keys, required subject content and
-// `additionalProperties: false` on every standard content object.
 
 const CONTEXT_KEYS = new Set([
 	"specversion",
@@ -211,7 +191,6 @@ function fail(detail: string): never {
 	throw new BoundaryError("cdevent-invalid", detail);
 }
 
-/** Refuse any event the pinned spec would refuse. Returns the event. */
 export function assertCdEvent(event: CdEvent): CdEvent {
 	for (const key of Object.keys(event)) {
 		if (!EVENT_KEYS.has(key)) fail(`unknown top-level key ${key}`);

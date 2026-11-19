@@ -1,11 +1,3 @@
-/**
- * Memory headroom arithmetic for box admission: whether a job of a given
- * size fits under the host reserve and volatility margin, and how many fit
- * side by side.
- *
- * No capacity record leaves the box: whether the fleet can take a run is the
- * relay's to decide (ADR-0180).
- */
 
 export function memoryAdmitHeadroom(
 	availableMb: number | undefined,
@@ -22,7 +14,6 @@ export function memoryAdmitHeadroom(
 	return availableMb - safeCommitted - requiredMb >= reserveMb + volatilityMb;
 }
 
-/** How many `requiredMb` jobs fit with one host reserve + volatility margin. */
 export function memoryAdmitParallelCount(
 	availableMb: number | undefined,
 	requiredMb: number,

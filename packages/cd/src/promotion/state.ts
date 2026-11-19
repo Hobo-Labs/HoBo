@@ -1,7 +1,3 @@
-// The promotion saga's write-model fold. One stream per promotion
-// (`cd-promotion-<id>`) holds the request, the per-Camp saga steps (as
-// `@hobo/events` saga facts) and the terminal outcomes; this module is the
-// only reader that turns those facts into a PromotionView.
 import { create } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import {
@@ -23,7 +19,6 @@ import type { DeltaIntent } from "../ports.js";
 import { decode, isJsonObject, isText, msOf } from "./journal.js";
 
 // public-contract: saga fact types the promotion saga appends to
-// `cd-promotion-<id>`; owned by `@hobo/events` (no new CD event family).
 export const SAGA_FACT = Object.freeze({
 	started: "saga.Started",
 	stepEmitted: "saga.StepEmitted",
@@ -35,9 +30,6 @@ export const SAGA_FACT = Object.freeze({
 export const PROMOTION_SAGA = "cd.promotion" as const;
 
 // public-contract: per-Camp saga steps in forward order. `step` in a
-// `saga.StepEmitted` body is `<campId>|<step>`; `emittedType` carries the
-// step's handle (Delta id, gate decision, approval request, Set id, rollout
-// id, verification id, migration id) or the CD event the step emitted.
 export const STEP = Object.freeze({
 	resolved: "resolved",
 	gated: "gated",
@@ -132,7 +124,6 @@ function isIntent(value: string): value is DeltaIntent {
 	return INTENTS.has(value);
 }
 
-/** `saga.Started` names the saga and the Delta intent: `cd.promotion/<intent>`. */
 export function startedFact(promotionId: string, intent: DeltaIntent) {
 	return createSagaStartedEvent({
 		sagaId: sagaIdOf(promotionId),
@@ -166,7 +157,6 @@ export function completedFact(promotionId: string, outcome: string) {
 	return createSagaCompletedEvent({ sagaId: sagaIdOf(promotionId), outcome });
 }
 
-/** Parse a saga step body; undefined when it is not a promotion step. */
 export function parseStep<D>(
 	promotionId: string,
 	data: D,
@@ -214,7 +204,6 @@ function terminalOf(record: PromotionRecord): CampTerminal | undefined {
 	}
 }
 
-/** Fold one promotion stream. Undefined when it holds no readable request. */
 export function foldPromotion(
 	promotionId: string,
 	events: readonly EventEnvelope[],
@@ -264,7 +253,6 @@ export function foldPromotion(
 			event.type === CD_EVENTS.EnvExpired
 		) {
 			const record = decode(PreviewEnvironmentRecordSchema, event.data);
-			// The preview fact always follows the request it belongs to.
 			if (!record || !view) continue;
 			view.preview = record;
 			if (event.type === CD_EVENTS.EnvExpired) view.previewExpired = true;
@@ -273,7 +261,6 @@ export function foldPromotion(
 		if (!view) continue;
 		if (event.type === SAGA_FACT.stepEmitted) {
 			const step = parseStep(promotionId, event.data);
-			// Steps of other scopes (e.g. rollout-stage approvals) are not Camp progress.
 			if (!step || !view.camps.has(step.campId)) continue;
 			const progress = progressOf(view, step.campId);
 			if (!progress.steps.has(step.step))
@@ -300,7 +287,6 @@ export function foldPromotion(
 		if (!record) continue;
 		for (const campId of record.targetCampIds) {
 			const progress = progressOf(view, campId);
-			// An outcome replaces "promoted" (group compensation) and "compensated".
 			if (
 				progress.terminal !== undefined &&
 				progress.terminal !== "promoted" &&
@@ -322,13 +308,11 @@ export function foldPromotion(
 	return view;
 }
 
-/** The id part of a `<effect> <decisionId>` gate handle. */
 export function handleId(handle: string): string {
 	const space = handle.indexOf(" ");
 	return space < 0 ? handle : handle.slice(space + 1);
 }
 
-/** The effect part of a `<effect> <decisionId>` gate handle. */
 export function handleEffect(handle: string): string {
 	const space = handle.indexOf(" ");
 	return space < 0 ? "" : handle.slice(0, space);
@@ -356,7 +340,6 @@ const RANK: ReadonlyMap<PromotionState, number> = new Map([
 	[PromotionState.VERIFYING, 6],
 ]);
 
-/** State of one Camp still in flight. */
 export function campState(progress: CampProgress): PromotionState {
 	if (progress.steps.has(STEP.qualified)) return PromotionState.VERIFYING;
 	const awaitingWindow =
@@ -369,7 +352,6 @@ export function campState(progress: CampProgress): PromotionState {
 	return PromotionState.QUEUED;
 }
 
-/** Overall state: terminal when every Camp is; otherwise the least advanced Camp. */
 export function overallState(view: PromotionView): PromotionState {
 	if (view.rolledBack) return PromotionState.ROLLED_BACK;
 	const camps = [...view.camps.values()];
@@ -396,7 +378,6 @@ export function overallState(view: PromotionView): PromotionState {
 	return least ?? PromotionState.QUEUED;
 }
 
-/** The PromotionRecord a reader sees: the request with folded state and reasons. */
 export function recordOf(view: PromotionView): PromotionRecord {
 	if (view.rolledBack && view.camps.size === 0) return view.rolledBack;
 	const reasons = [...view.camps.values()].flatMap((camp) => camp.reasons);

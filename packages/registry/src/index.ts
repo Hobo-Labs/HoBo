@@ -1,12 +1,4 @@
-// @hobo/registry — the Registry catalog service.
-//
-// The catalog engine (provider registration/approval facts, the event-backed
-// planner registry fold, and the registry-catalog projection) lives in
-// @hobo/cloud; this package re-exposes it unduplicated and adds the missing
-// thirds: bundle-manifest ingest, fail-closed signature/provenance
-// verification, and a deterministic in-memory search index.
 
-// Catalog engine, wrapped from @hobo/cloud (never reimplemented here).
 export {
 	approveProviderFact,
 	createEventBackedRegistry,

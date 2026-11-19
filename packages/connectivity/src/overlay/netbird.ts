@@ -15,10 +15,6 @@ import {
 	type NetbirdApiClient,
 } from "./netbird-api.js";
 
-/**
- * Netbird overlay adapter — management API for enrollment, peers, and DNS.
- * Ready when management URL + setup key (join) and/or access token (DNS admin).
- */
 export function createNetbirdOverlay(options?: {
 	readonly metering?: MeteringBus;
 	readonly managementUrl?: string;
@@ -82,7 +78,6 @@ export function createNetbirdOverlay(options?: {
 					nodeId = enrolled.peer.id;
 					if (enrolled.peer.ip) overlayIps = [enrolled.peer.ip];
 				}
-				// ready requires concrete peer identity (id and/or ip), not mere key validation.
 				if (enrolled.enrolled && !enrolled.peer?.id && !enrolled.peer?.ip) {
 					try {
 						const peers = await api.listPeers();
@@ -207,7 +202,6 @@ export function createNetbirdOverlay(options?: {
 			funnel: FunnelPublishOptions,
 		): Promise<FunnelPublishResult> {
 			const notes: string[] = [];
-			// Netbird reverse-proxy / public access: use configured gateway hostname.
 			let gateway =
 				funnel.hostnameHint &&
 				(funnel.hostnameHint.endsWith(".netbird.selfhosted") ||
@@ -252,7 +246,6 @@ export function createNetbirdOverlay(options?: {
 					}),
 				);
 			} catch {
-				// Public-route capability remains authoritative when observation fails.
 			}
 			return {
 				enabled: false,

@@ -1,7 +1,3 @@
-/**
- * Main-thread client for the storage worker. Serializes all ops through one
- * Worker so DatabaseSync never races and never monopolizes the event loop.
- */
 
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
@@ -119,7 +115,6 @@ export class StorageWorkerClient {
 			events,
 			options,
 		});
-		// SAFETY: append worker payload is AppendResult after bigint revive.
 		return revived as never;
 	}
 
@@ -129,7 +124,6 @@ export class StorageWorkerClient {
 			op: "commit",
 			request,
 		});
-		// SAFETY: commit worker payload is DurableCommitResult after bigint revive.
 		return revived as never;
 	}
 
@@ -139,7 +133,6 @@ export class StorageWorkerClient {
 				? { id: this.nextId(), op: "read", streamId }
 				: { id: this.nextId(), op: "read", streamId, fromSeq };
 		const revived = await this.call(req);
-		// SAFETY: read worker payload is EventEnvelope[] after bigint revive.
 		return revived as never;
 	}
 
@@ -167,7 +160,6 @@ export class StorageWorkerClient {
 			state,
 			seq,
 		});
-		// SAFETY: snapshot worker payload is SnapshotRecord after bigint revive.
 		return revived as never;
 	}
 
@@ -178,7 +170,6 @@ export class StorageWorkerClient {
 			streamId,
 		});
 		if (revived === null) return undefined;
-		// SAFETY: loadSnapshot worker payload is SnapshotRecord after bigint revive.
 		return revived as never;
 	}
 
@@ -187,7 +178,6 @@ export class StorageWorkerClient {
 		try {
 			await this.call({ id: this.nextId(), op: "shutdown" });
 		} catch {
-			// ignore
 		}
 		await this.worker.terminate();
 		this.worker = null;

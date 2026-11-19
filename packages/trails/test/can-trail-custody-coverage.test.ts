@@ -1,7 +1,4 @@
 // can-trail and custody coverage. A verdict judges the path it was given; when
-// a trail names the migration pattern a step realizes, the verdict's path has
-// to name every place that pattern puts data, or the trail is denied. The gate
-// stays a conjunction and fails closed.
 import assert from "node:assert/strict";
 import {
 	CUSTODY_ROLES,
@@ -40,7 +37,6 @@ function trail(pattern?: TrailDataPattern) {
 	});
 }
 
-/** A verdict over a path that names exactly these roles. */
 function verdictOver(roles: readonly string[]) {
 	return evaluateCustodyPath({
 		path: parseCustodyPath({
@@ -116,7 +112,6 @@ describe("can-trail denies a custody path that does not cover the named pattern"
 		);
 		const result = evaluateCanTrail({
 			trail: trail("offline-copy"),
-			// SAFETY: a verdict as recorded before `roles` existed, arriving as JSON evidence.
 			policyVerdict: legacy as CanTrailPolicyVerdict,
 		});
 		assert.equal(result.ok, false);
@@ -127,7 +122,6 @@ describe("can-trail denies a custody path that does not cover the named pattern"
 		for (const roles of ["source", [1, 2], [""], { source: true }, null]) {
 			const result = evaluateCanTrail({
 				trail: trail(),
-				// SAFETY: deliberately not the declared record — evidence that crossed a process boundary.
 				policyVerdict: JSON.parse(
 					JSON.stringify({
 						ok: true,
@@ -151,13 +145,11 @@ describe("can-trail denies a custody path that does not cover the named pattern"
 		});
 		assert.equal(denied.ok, false);
 		assert.match(denial(denied), /policy pack denies this trail/u);
-		// No pattern named: there is nothing to derive roles from.
 		const unnamed = evaluateCanTrail({
 			trail: trail(),
 			policyVerdict: verdictOver(["source", "target"]),
 		});
 		assert.equal(unnamed.ok, true, denial(unnamed));
-		// No verdict supplied: no path to be incomplete.
 		assert.equal(
 			evaluateCanTrail({ trail: trail("snapshot-and-tail") }).ok,
 			true,

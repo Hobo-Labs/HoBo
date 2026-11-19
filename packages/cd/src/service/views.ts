@@ -1,10 +1,3 @@
-// Read-side views of the CD read API (WP12). Each view is a pure fold over
-// the module ports' projections (no writes, no decisions); records leave as
-// canonical protobuf JSON. View shapes are constrained in
-// packages/control-api/data-models/control_api.{proto,cue} (`CdPipelineNodeView`,
-// `CdTimelineEntry`, …) and pinned by the PACT in
-// packages/control-api/contracts/pacts/control-api-cd.pact.json. Absent
-// optional members are `undefined` and are omitted on the wire.
 import type { DurableEventStore } from "@hobo/core";
 import {
 	type CampStatusRecord,
@@ -40,7 +33,6 @@ import type { CdReadRoute, ConditionFilter, TaintFilter } from "./routes.js";
 import { PROMOTIONS_MAX_LIMIT } from "./routes.js";
 import { recordJson, type WireValue } from "./wire.js";
 
-/** The journal reads the read API needs (never appends). */
 export type DurableStoreReader = Pick<DurableEventStore, "read" | "readAll">;
 
 export type ViewDeps = Readonly<{
@@ -65,7 +57,6 @@ export type ViewDeps = Readonly<{
 type Route<K extends CdReadRoute["kind"]> = Extract<CdReadRoute, { kind: K }>;
 
 function asCampId(campId: string): CampId {
-	// SAFETY: Camp ids here come from records the modules wrote (node camp_ids, decision groups).
 	return campId as CampId;
 }
 
@@ -165,7 +156,6 @@ async function findFreight(
 	d: ViewDeps,
 	idOrAlias: string,
 ): Promise<FreightRecord | undefined> {
-	// SAFETY: a lookup key only; an unknown id simply finds nothing.
 	const byId = await d.cd.freight.get(idOrAlias as FreightId);
 	return byId ?? (await d.cd.freight.getByAlias(idOrAlias));
 }
@@ -181,7 +171,6 @@ export async function freightTimeline(
 			`no Freight with id or alias ${r.idOrAlias}`,
 			r.idOrAlias,
 		);
-	// SAFETY: the ledger returned this record, so its id is a recorded FreightId.
 	const id = freight.freightId as FreightId;
 	const entries: TimelineEntry[] = [
 		{

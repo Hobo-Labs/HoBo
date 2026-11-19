@@ -1,10 +1,3 @@
-/**
- * Billing section -> `@hobo/pricing` `PricingCatalog`.
- *
- * The manifest is the authoring surface; the rating kernel's types are the
- * runtime ones. Nothing here invents a pricing model: a charge either maps
- * onto a model the kernel executes, or its whole plan is reported as unrated.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	catalogHashOf,
@@ -26,7 +19,6 @@ import type {
 } from "./_generated/provider_manifest_pb.js";
 import { type ParsedProviderManifest, perUnitPrice } from "./parse.js";
 
-/** A plan the kernel cannot rate. It gets no rate card rather than a low one. */
 export type UnratedPlan = {
 	readonly productId: string;
 	readonly planId: string;
@@ -38,16 +30,10 @@ export type UnratedPlan = {
 export type RatedPlan = {
 	readonly productId: string;
 	readonly planId: string;
-	/** Product id as it appears in the pricing catalog. */
 	readonly productRef: string;
 	readonly rateCardId: string;
 };
 
-/**
- * Included usage as the provider declares it. A fact about the plan, not a
- * tenant grant: an `AllowanceGrant` needs a tenant and dated evidence, which
- * a public manifest cannot supply.
- */
 export type DeclaredIncludedUsage = {
 	readonly productId: string;
 	readonly planId: string;
@@ -102,7 +88,6 @@ export function describePricingSupport(
 	};
 }
 
-/** The pricing-catalog product id for a manifest product. */
 export function pricingProductRef(
 	providerId: string,
 	productId: string,
@@ -155,7 +140,6 @@ function usagePrice(metered: MeteredCharge, currency: string) {
 					? undefined
 					: perUnitPrice(amount, per);
 			if (unit === undefined) {
-				// Unreachable for a ParsedProviderManifest; the parser refuses it.
 				throw new Error("package rate is not an exact per-unit price");
 			}
 			return {
@@ -238,7 +222,6 @@ function externalCharge(plan: BillingPlan): Charge | undefined {
 	return plan.charges.find((charge) => charge.model.case === "external");
 }
 
-/** Lower the billing section. `undefined` when the manifest declares none. */
 export function toPricingCatalog(
 	manifest: ParsedProviderManifest,
 ): BillingLowering | undefined {

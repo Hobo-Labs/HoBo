@@ -246,7 +246,6 @@ function validateLease(message: QueueMessageRecord, leaseId: LeaseId): void {
 function releaseForRetry(
 	message: QueueMessageRecord,
 	store: QueueClockStore,
-	// SAFETY: assertion to `message.leaseId as LeaseId | null` is required at this boundary.
 	leaseId: LeaseId | null = message.leaseId as LeaseId | null,
 ): boolean {
 	if (message.leaseId !== leaseId) {

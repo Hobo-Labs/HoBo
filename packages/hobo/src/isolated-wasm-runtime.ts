@@ -1,7 +1,3 @@
-/**
- * Isolated-wasm Camp component host — thin wrapper over multi-host serve
- * with `componentHost=wasm` (legacy name: isolated-wasm).
- */
 
 import type { INTERNAL_MESH_HOST } from "./bare-metal-host.js";
 import type { BareMetalYard } from "./bare-metal-yard.js";
@@ -18,10 +14,6 @@ export type IsolatedWasmServeResult = MultiHostServeResult & {
 	};
 };
 
-/**
- * Place a Bindle into a Camp on the local Yard using the wasm
- * component host (real Wasmtime OS-process sandboxes for private components).
- */
 export async function serveProjectOnIsolatedWasm(options: {
 	readonly projectDir: string;
 	readonly yard?: BareMetalYard;
@@ -33,6 +25,5 @@ export async function serveProjectOnIsolatedWasm(options: {
 		...options,
 		componentHost: "wasm",
 	});
-	// SAFETY: assertion required at this I/O or test boundary.
 	return result as IsolatedWasmServeResult;
 }

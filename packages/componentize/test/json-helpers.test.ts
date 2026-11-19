@@ -49,9 +49,6 @@ describe("recognising a string", () => {
 	});
 
 	it("accepts a boxed String", () => {
-		// The reason these use `Object.prototype.toString` rather than `typeof`:
-		// `typeof new String("x")` is "object", so a boxed primitive would slip
-		// past a typeof check and surprise whatever serialized it later.
 		expect(isJsonString(new String("hello"))).toBe(true);
 	});
 
@@ -76,9 +73,6 @@ describe("recognising a number", () => {
 	});
 
 	it("accepts NaN", () => {
-		// NaN *is* a number by tag, and this predicate does not claim otherwise.
-		// Recorded because `JSON.stringify(NaN)` is "null", so a caller that needs
-		// a finite value has to check for that itself — this is not the guard.
 		expect(isJsonNumber(Number.NaN)).toBe(true);
 	});
 
@@ -101,10 +95,6 @@ describe("recognising a boolean", () => {
 	});
 
 	it("refuses a boxed Boolean", () => {
-		// The one predicate that is an identity test rather than a tag test, so
-		// unlike its siblings it does *not* accept the boxed form. Recorded
-		// because the asymmetry is surprising and load-bearing: `new Boolean(false)`
-		// is truthy, so treating it as JSON `false` would invert a condition.
 		expect(isJsonBoolean(new Boolean(false))).toBe(false);
 	});
 
@@ -128,9 +118,6 @@ describe("recognising an object", () => {
 	});
 
 	it("refuses null", () => {
-		// `typeof null === "object"` is the oldest trap in the language, and this
-		// predicate guards a boundary where mistaking null for a record means
-		// reading properties off it.
 		expect(isJsonObject(null)).toBe(false);
 	});
 
@@ -139,14 +126,10 @@ describe("recognising an object", () => {
 	});
 
 	it("refuses an array", () => {
-		// A JSON array is a different branch of `JsonValue` with different
-		// handling downstream, so it must not answer to the object predicate.
 		expect(isJsonObject([1, 2])).toBe(false);
 	});
 
 	it("refuses a Date", () => {
-		// Tags as "[object Date]". It survives `JSON.stringify` as a string, so a
-		// caller treating it as a record would find no properties at all.
 		expect(isJsonObject(new Date(0))).toBe(false);
 	});
 
@@ -155,8 +138,6 @@ describe("recognising an object", () => {
 	});
 
 	it("accepts an object with no prototype", () => {
-		// `Object.create(null)` still tags as "[object Object]", which is what a
-		// parsed-with-a-reviver document can look like.
 		expect(isJsonObject(Object.create(null))).toBe(true);
 	});
 });
@@ -181,9 +162,6 @@ describe("recognising an array", () => {
 
 describe("recognising a bigint", () => {
 	it("accepts a bigint", () => {
-		// `JsonValue` has no bigint arm, and that is the point: this exists so a
-		// caller can *detect* one and convert it before serializing, because
-		// `JSON.stringify` throws on a bigint rather than degrading.
 		expect(isJsonBigInt(1n)).toBe(true);
 	});
 
@@ -204,18 +182,13 @@ describe("cloning across the document boundary", () => {
 	});
 
 	it("returns a copy rather than the original", () => {
-		// The whole point of the call: a document that shares structure with the
-		// domain object it came from lets a later mutation rewrite history.
 		const source = { nested: { value: 1 } };
 		const clone = cloneAsJson(source);
 		expect(clone).not.toBe(source);
-		// SAFETY: the clone of an object literal is an object.
 		expect((clone as { nested: unknown }).nested).not.toBe(source.nested);
 	});
 
 	it("turns undefined into null", () => {
-		// `?? null` before stringify. Without it `JSON.stringify(undefined)` is
-		// itself `undefined` — not a string — and the parse below would fail.
 		expect(cloneAsJson(undefined)).toBeNull();
 	});
 
@@ -253,8 +226,6 @@ describe("parsing a value", () => {
 		["an empty string", ""],
 		["a bare word", "text"],
 	])("answers null for %s", (_label, text) => {
-		// Never throws: this sits at a document boundary where the input is a file
-		// or a network body, so a throw would make every caller wrap it.
 		expect(parseJsonValue(text)).toBeNull();
 	});
 });
@@ -272,9 +243,6 @@ describe("parsing an object", () => {
 		["JSON null", "null"],
 		["a JSON number", "42"],
 	])("answers an empty object for %s", (_label, text) => {
-		// The empty object is the contract, and it covers both "could not parse"
-		// and "parsed to something that is not a record". A caller that needs to
-		// tell those apart uses `parseJsonValue` and checks.
 		expect(parseJsonObject(text)).toEqual({});
 	});
 });

@@ -1,15 +1,3 @@
-/**
- * Lower the relay's offer manifests (`offers/*.provider.yaml`, ADR-0179
- * phase 5) into `@hobo/pricing` catalogs with `@hobo/provider-manifest`, and
- * derive from those catalogs the relay's default cache offers and its
- * lifecycle-driver offers. Writes `src/_generated-assets/relay-offers.ts`;
- * `--check` fails when the file on disk is not what the manifests produce.
- *
- * What a catalog cannot say is recorded here, in the binding table, with
- * its reason: which offer a cache backend's default comes from, that a free
- * plan is blocked (not billed) when its allowance runs out, and when a
- * lifecycle driver becomes available.
- */
 import { execFileSync } from "node:child_process";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -40,9 +28,7 @@ function isUnit(value: string): value is Unit {
 	return UNITS.some((unit) => unit === value);
 }
 
-/** Each cache backend's default offer: the manifest product and plan it comes from. */
 const CACHE_BINDINGS = [
-	// Upstash's free plan is blocked when its 500,000 commands are spent.
 	{
 		backend: "upstash",
 		manifest: "upstash-redis",
@@ -51,7 +37,6 @@ const CACHE_BINDINGS = [
 		tier: "free",
 		beyond: "hard-stop",
 	},
-	// `VALKEY_URL` is Aiven's free plan or a self-hosted Valkey: neither caps commands.
 	{
 		backend: "valkey",
 		manifest: "aiven-valkey",
@@ -60,7 +45,6 @@ const CACHE_BINDINGS = [
 		tier: "free",
 		beyond: "hard-stop",
 	},
-	// Turso's free plan is blocked when its rows are spent.
 	{
 		backend: "turso",
 		manifest: "turso",
@@ -69,7 +53,6 @@ const CACHE_BINDINGS = [
 		tier: "free",
 		beyond: "hard-stop",
 	},
-	// Blob is pay-as-you-go: admitted only under a cap the owner declares.
 	{
 		backend: "blob",
 		manifest: "vercel-blob",
@@ -80,7 +63,6 @@ const CACHE_BINDINGS = [
 	},
 ] as const;
 
-/** The lease lifecycle drivers, and when each may be chosen. */
 const LIFECYCLE_BINDINGS = [
 	{
 		driver: "queues",
@@ -90,8 +72,6 @@ const LIFECYCLE_BINDINGS = [
 		built: true,
 		availableFrom: "2026-11-11",
 	},
-	// Needs `workflow` >= 5.4.0, pinnable under the two-week rule from this
-	// date, and the driver itself (phase 4d), which is not built.
 	{
 		driver: "workflows",
 		manifest: "vercel-workflows",
@@ -132,7 +112,6 @@ function source(name: string) {
 	return entry;
 }
 
-/** Micro-dollars per unit from an exact decimal per-unit price. */
 function micros(decimal: string): number {
 	const value = parseDecimal(decimal);
 	if (value === undefined) throw new Error(`invalid price ${decimal}`);
@@ -142,7 +121,6 @@ function micros(decimal: string): number {
 	return Math.round(result * 1_000_000) / 1_000_000;
 }
 
-/** Selection by capability: an offer must declare the profile the relay requires. */
 function requireProfile(name: string, product: string, profile: string) {
 	const { manifest } = source(name);
 	const mapping = manifest.capabilities?.mappings.find((entry) =>
@@ -217,7 +195,6 @@ const cacheOffers = CACHE_BINDINGS.map((binding) => {
 					meteredMicrosPerUnit: price,
 				},
 			];
-		// A free plan: its allowance, then blocked; no allowance means no cap.
 		if (price !== 0)
 			throw new Error(`${binding.manifest}: a free plan with a price`);
 		const quantity = included.get(unit);
@@ -258,7 +235,6 @@ const lifecycleOffers = LIFECYCLE_BINDINGS.map((binding) => {
 		availableFrom: binding.availableFrom,
 		rateCardId: card?.id ?? "",
 		catalogHash: billing.catalog.catalogHash,
-		// Unrated (an unverified price) is never read as free.
 		microsPerUnit: price ?? null,
 		unit: usage?.variant.case === "usage" ? usage.variant.value.dimension : "",
 		unrated: unrated ? unrated.reason : "",

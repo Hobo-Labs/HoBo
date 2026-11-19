@@ -1,6 +1,3 @@
-// Regression tests for the reviewed executor defects that are not about two
-// drivers or crash windows: the rollback posture, vacuous verification, reads
-// left at zero, erasure replay, holds after the flip, a quiet leg's resume
 // position, and custody coverage.
 import assert from "node:assert/strict";
 import type { EventEnvelope, PrincipalRef } from "@hobo/core";
@@ -69,7 +66,6 @@ function factsOf(
 	return facts.filter((fact) => fact.type === type);
 }
 
-/** A clock that moves one second on every reading. */
 function ticking(): () => string {
 	let tick = 0;
 	return () => {
@@ -77,8 +73,6 @@ function ticking(): () => string {
 		return new Date(Date.parse(NOW) + tick * 1000).toISOString();
 	};
 }
-
-// ── finding 3: lossless needs a fence on the target ─────────────────────────
 
 describe("a rollback is lossless only when the target can be fenced", () => {
 	test("the catalog names the target's fence among the reverse-tail ports", () => {
@@ -93,8 +87,6 @@ describe("a rollback is lossless only when the target can be fenced", () => {
 	for (const run of [runSnapshotAndTail, runOfflineCopy]) {
 		test(`${run.name}: a target with capture and no fence reports to-snapshot, and rolls back as such`, async () => {
 			const staged = await stage("hub");
-			// Capture and apply are both there: the old reading called this a
-			// reverse tail, and the rollback lossless.
 			const target = withoutPorts(staged.target, ["fence"]);
 			const options = copyOptions({ ...staged, target });
 			const held = await run({ ...options, soakDecision: () => "hold" });
@@ -103,8 +95,6 @@ describe("a rollback is lossless only when the target can be fenced", () => {
 			assert.equal(held.rollback, "to-snapshot");
 			const cutOver = factsOf(held.facts, MIGRATION_EVENTS.CutOver)[0];
 			assert.equal(cutOver?.data.reverseTail, false);
-			// A write the target acknowledges after the flip is not carried
-			// back, and the rollback says so rather than claiming none is lost.
 			await target.records.write({
 				dataset: "orders",
 				mutations: [order("after-flip", "9")],
@@ -184,8 +174,6 @@ describe("a rollback is lossless only when the target can be fenced", () => {
 	});
 });
 
-// ── finding 6: erasure replay ───────────────────────────────────────────────
-
 describe("erasure replay is fail-closed and windowed from before the fence", () => {
 	for (const realization of REALIZATIONS) {
 		test(`${realization}: without a ledger a to-snapshot rollback holds — nothing is rolled back and nothing is claimed`, async () => {
@@ -210,8 +198,6 @@ describe("erasure replay is fail-closed and windowed from before the fence", () 
 			assert.equal(await fenced(staged.source), true);
 			assert.equal(await fenced(staged.target), false);
 			assert.deepEqual(factsOf(held.facts, MIGRATION_EVENTS.RolledBack), []);
-			// With the ledger the same run goes through, and the subject erased
-			// on the authority stays erased on the restored one.
 			const rolled = await runSnapshotAndTail({
 				...options,
 				soakDecision: () => "rollback",
@@ -242,9 +228,6 @@ describe("erasure replay is fail-closed and windowed from before the fence", () 
 			"the fence was requested before the cutover",
 		);
 		assert.equal(cutOver?.data.fencedFrom, requested);
-		// The ledger holds one erasure, dated inside the fence window: after
-		// the fence was requested, before the cutover was decided. The source
-		// refused it; it landed on the target once writes moved there.
 		const entry = { at: requested, mutation: erase("o-3") };
 		assert.ok(entry.at < cutOverAt);
 		await staged.target.records.write({
@@ -263,8 +246,6 @@ describe("erasure replay is fail-closed and windowed from before the fence", () 
 			},
 		});
 		assert.equal(rolled.status, "rolled-back");
-		// Asked twice — before authority goes back, and again after it has,
-		// while the source is still fenced — and windowed the same both times.
 		assert.deepEqual(
 			asked,
 			[requested, requested],
@@ -280,8 +261,6 @@ describe("erasure replay is fail-closed and windowed from before the fence", () 
 	});
 });
 
-// ── finding 5: reads after a compensation ───────────────────────────────────
-
 describe("a compensated cutover puts reads back before it flips", () => {
 	test("reads go 10, 50, 100, home to 0 on the failed verification, and back to 100 before authority moves", async () => {
 		const staged = await stage("hub");
@@ -295,8 +274,6 @@ describe("a compensated cutover puts reads back before it flips", () => {
 				readsAtFlip.push(reads[reads.length - 1] ?? -1);
 			},
 		});
-		// A record the migration did not put there: verification under the
-		// fence fails once.
 		const held = await runSnapshotAndTail({
 			...options,
 			runtime: runtimeOf(staged.journal, {
@@ -342,8 +319,6 @@ describe("a compensated cutover puts reads back before it flips", () => {
 	});
 });
 
-// ── M9: a quiet leg's durable resume position ───────────────────────────────
-
 describe("a quiet scope still advances its durable resume position", () => {
 	test("changes outside a tenant-scoped tail move the leg's watermark, though nothing is applied", async () => {
 		const source = createReferenceEngine({ engine: "source" });
@@ -372,8 +347,6 @@ describe("a quiet scope still advances its durable resume position", () => {
 			"held",
 		);
 		const before = await watermark();
-		// The tenant being moved is quiet; another tenant keeps writing, and
-		// the source's log moves on.
 		const receipt = await source.records.write({
 			dataset: "orders",
 			mutations: [order("b-2", "2", "other"), order("b-3", "3", "other")],
@@ -385,7 +358,6 @@ describe("a quiet scope still advances its durable resume position", () => {
 			after?.endsWith(`@${receipt.position}`),
 			`the leg's durable position (${after}) is the source's head (${receipt.position})`,
 		);
-		// And nothing of the other tenant crossed.
 		assert.equal(
 			(
 				await requirePort(target, "verify").digest({
@@ -398,13 +370,10 @@ describe("a quiet scope still advances its durable resume position", () => {
 	});
 });
 
-// ── the fence across a restart ──────────────────────────────────────────────
-
 describe("a cutover fence that is gone is not quietly raised again", () => {
 	test("a resume that finds the decided fence down holds for a person; it neither flips nor re-fences the store", async () => {
 		const staged = await stage("hub");
 		const authority = new Authority();
-		// The process dies right after the decision is journaled…
 		await assert.rejects(
 			runSnapshotAndTail(
 				copyOptions(staged, {
@@ -415,7 +384,6 @@ describe("a cutover fence that is gone is not quietly raised again", () => {
 			),
 			/process died/u,
 		);
-		// …and the engine's fence does not survive the restart.
 		const fence = requirePort(staged.source, "fence");
 		const grant = await fence.raise({ scope: scopeOf("orders"), reason: "t" });
 		await fence.release({
@@ -436,11 +404,8 @@ describe("a cutover fence that is gone is not quietly raised again", () => {
 	});
 });
 
-// ── finding 10: holds after the flip, and absorbing terminal states ─────────
-
 describe("a hold after fence-and-flip is a fact", () => {
 	const toEvents = (change: ChangeEnvelope): readonly PivotEvent[] => {
-		// SAFETY: the canonical key of the orders schema is a one-element array.
 		const [id] = JSON.parse(change.key) as [string];
 		return change.op === "delete" || change.record === undefined
 			? [{ streamId: `order:${id}`, type: "order.Removed", data: { id } }]
@@ -455,7 +420,6 @@ describe("a hold after fence-and-flip is a fact", () => {
 	const fold: ProjectionFold = {
 		name: "orders-pivot",
 		project(event: EventEnvelope): readonly RecordMutation[] {
-			// SAFETY: pivot events carry the bodies `toEvents` built above.
 			const data = event.data as { id: string; total?: string };
 			const record = parseCanonicalRecord(ORDERS, {
 				id: data.id,
@@ -515,7 +479,6 @@ describe("a hold after fence-and-flip is a fact", () => {
 		const held = await pivot(runtime, staged.source, staged.target, log);
 		assert.equal(held.status, "held");
 		assert.equal(held.phase, "fence-and-flip");
-		// Authority moved into the log at the flip; it does not come back.
 		assert.equal(held.rollback, "none");
 		assert.match(held.reason ?? "", /CUSTODY_RETENTION_EXPIRED/u);
 		const fact = factsOf(held.facts, MIGRATION_EVENTS.Held)[0];
@@ -623,7 +586,6 @@ describe("a hold after fence-and-flip is a fact", () => {
 				finished.status,
 			);
 		}
-		// Failure is not terminal: a crash is resumed.
 		const failed = evolveMigration(
 			evolveMigration(
 				initialMigrationState("m"),
@@ -653,8 +615,6 @@ describe("a hold after fence-and-flip is a fact", () => {
 		assert.deepEqual(authority.flips, ["to-target"]);
 	});
 
-	// ── finding 4: log-pivot never verifies vacuously ────────────────────────
-
 	test("log-pivot with an unchanged schema and a source that cannot digest is refused before anything is journaled", async () => {
 		const staged = await stage("hub", { sourceOmit: ["verify"] });
 		const log = createMemoryEventStore(() => NOW);
@@ -670,11 +630,9 @@ describe("a hold after fence-and-flip is a fact", () => {
 	test("log-pivot with a fold that drops records holds; Verified with compared:true is only ever written after a real comparison", async () => {
 		const staged = await stage("hub", { rows: 6 });
 		const log = createMemoryEventStore(() => NOW);
-		// A broken fold: it silently drops every other record.
 		const lossy: ProjectionFold = {
 			name: "orders-pivot",
 			project(event) {
-				// SAFETY: pivot events carry the bodies `toEvents` built above.
 				const data = event.data as { id: string };
 				return Number(data.id.slice(2)) % 2 === 1
 					? []
@@ -698,7 +656,6 @@ describe("a hold after fence-and-flip is a fact", () => {
 			"the store stays writable",
 		);
 
-		// The honest case: the comparison is made, and the fact says so.
 		const other = await stage("hub", { rows: 6 });
 		const done = await pivot(
 			runtimeOf(other.journal),
@@ -714,8 +671,6 @@ describe("a hold after fence-and-flip is a fact", () => {
 	});
 });
 
-// ── rebuild-and-swap: a sink behind the log is not verified ─────────────────
-
 describe("rebuild-and-swap verifies only a sink that has reached the log head", () => {
 	test("with no previous sink to compare against, a sink still behind holds instead of being called verified", async () => {
 		const log = createMemoryEventStore(() => NOW);
@@ -729,7 +684,6 @@ describe("rebuild-and-swap verifies only a sink that has reached the log head", 
 		const fold: ProjectionFold = {
 			name: "orders-projection",
 			project(event) {
-				// SAFETY: test events carry the JSON bodies appended above.
 				const data = event.data as { id: string };
 				return [
 					upsertMutation(
@@ -744,8 +698,6 @@ describe("rebuild-and-swap verifies only a sink that has reached the log head", 
 		const journal = createMemoryMigrationJournal();
 		const result = await runRebuildAndSwap({
 			runtime: runtimeOf(journal, {
-				// The log runs ahead once the sink has converged: more events
-				// than one round of one event can fold.
 				afterPhase: async (phase) => {
 					if (phase !== "converge") return;
 					for (const id of ["o-2", "o-3", "o-4", "o-5", "o-6"]) await place(id);
@@ -802,7 +754,6 @@ describe("a run holds on a verdict that does not cover the copies it creates", (
 				undefined,
 				"nothing was provisioned",
 			);
-			// The same run over a path that names every role goes through.
 			const done = await runSnapshotAndTail(copyOptions(staged));
 			assert.equal(done.status, "completed", done.reason);
 		});
@@ -816,7 +767,6 @@ describe("a run holds on a verdict that does not cover the copies it creates", (
 				staged,
 				{},
 				{
-					// SAFETY: a verdict as it would arrive from evidence recorded before `roles` existed.
 					policy: () => legacy as PolicyVerdict,
 				},
 			),

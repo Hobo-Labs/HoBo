@@ -1,11 +1,3 @@
-/**
- * @hobo/yard-world — pure yard-world model for HoBo observability.
- *
- * Public surface: the typed event model + reducer, the OTLP/JSON mappers
- * (traces, logs, metrics), the bounded trace index, layout-as-data with
- * validation, and the deterministic simulator. No I/O here — the node-only
- * layout persistence lives behind the `@hobo/yard-world/layout-store` subpath.
- */
 
 export {
 	CD_FLEET_METRICS,

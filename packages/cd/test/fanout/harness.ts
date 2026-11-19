@@ -1,5 +1,3 @@
-// Shared wiring for the WP23 fan-out tests: one controller over the fakes,
-// and a driver that settles live promotions between ticks.
 import {
 	DepartureAction,
 	type FanoutRecord,
@@ -98,10 +96,6 @@ export function startInput(
 	};
 }
 
-/**
- * Tick until the fan-out settles: every live forward promotion is settled by
- * `outcome` (pass by default) and the clock moves past `min_success_ms`.
- */
 export async function drive(
 	h: Harness,
 	outcome: (campId: string) => "pass" | "fail" | "hold" = () => "pass",
@@ -136,8 +130,6 @@ export async function drive(
 
 export const freightB = freightIdOf("sha256:bbbb");
 
-/** The branded id of a fan-out status the controller returned. */
 export function idOf(status: Readonly<{ fanoutId: string }>): FanoutId {
-	// SAFETY: fan-out ids in status records are minted by fanoutIdFor.
 	return status.fanoutId as FanoutId;
 }

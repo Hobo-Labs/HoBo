@@ -68,12 +68,9 @@ describe("isolated worker daemon shutdown", () => {
 			{ accountId: "customer-a", offerId: "box", state: "reserved" },
 			{ accountId: "customer-a", offerId: "other-box", state: "running" },
 			{ accountId: "customer-a", offerId: "vercel", state: "running" },
-			// Same offer id, another account: not this worker's offer.
 			{ accountId: "customer-b", offerId: "box", state: "running" },
 		];
 		expect(countInFlightWorkerLeases(leases, offers)).toBe(3);
-		// The worker's own id never names a lease's account: the old check
-		// compared the two and found nothing to wait for.
 		expect(
 			countInFlightWorkerLeases(
 				leases,

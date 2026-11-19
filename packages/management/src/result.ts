@@ -1,6 +1,3 @@
-/**
- * Shared management result envelope used by CLI, MCP, and control API.
- */
 // oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
 export type ManagementResult<T = Record<string, unknown>> = Readonly<{
 	ok: boolean;

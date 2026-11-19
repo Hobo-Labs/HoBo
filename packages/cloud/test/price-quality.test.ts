@@ -1,26 +1,3 @@
-/**
- * What a price is worth knowing about itself.
- *
- * Written before the implementation. N5's question is whether HoBo resources
- * multi-provider price data or scopes its cost claims to what it can actually
- * price. Resourcing the data is a commercial decision; scoping the claim is an
- * engineering one, and it needs teeth, because today the catalog cannot tell
- * the two apart:
- *
- *   - `marginalPrice` is a bare decimal string with no currency, no source and
- *     no staleness. `ResourceDefinition` drops the `currency` that `CostSignal`
- *     carried.
- *   - Every default in the repo is `marginalPrice: "0"`. Under `min-cost`,
- *     `Number.parseFloat("0")` ranks a provider that declared *nothing* ahead
- *     of every provider that declared a real price. Silence wins the auction.
- *   - An unparseable price becomes `+Infinity` and quietly loses instead of
- *     being reported as broken.
- *
- * So "unpriced" and "free" are the same fact to the planner. These tests make
- * them different facts, and make a cost-optimality claim refuse to be made on
- * inputs that cannot support it. That is the scoping decision, expressed as
- * something that fails rather than as a paragraph.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -49,8 +26,6 @@ describe("classifyPriceQuality", () => {
 	});
 
 	it('calls the repo-wide "0" default unpriced, not free', () => {
-		// The whole point. Every provider manifest defaults to "0", and treating
-		// that as a real price of zero makes silence win a min-cost ranking.
 		expect(
 			classifyPriceQuality({ sku: "s", unit: "hour", marginalPrice: "0" }),
 		).toBe("unpriced");
@@ -63,8 +38,6 @@ describe("classifyPriceQuality", () => {
 	});
 
 	it("calls a non-numeric price unparseable rather than unpriced", () => {
-		// A declared price that cannot be read is a bug in a manifest, not an
-		// absence. Collapsing it into "unpriced" would hide the typo forever.
 		expect(
 			classifyPriceQuality({ sku: "s", unit: "hour", marginalPrice: "cheap" }),
 		).toBe("unparseable");
@@ -77,8 +50,6 @@ describe("classifyPriceQuality", () => {
 	});
 
 	it("treats a genuinely free offering as priced when it says so", () => {
-		// A real zero has to be expressible, or a free tier can never be modelled.
-		// Saying it explicitly is the difference between a claim and a default.
 		expect(
 			classifyPriceQuality({
 				sku: "s",
@@ -101,8 +72,6 @@ describe("assessCostObjective", () => {
 	});
 
 	it("is not claimable when any candidate is unpriced", () => {
-		// Ranking a priced candidate against an unpriced one does not produce a
-		// cheapest choice; it produces a choice that cannot be defended.
 		const verdict = assessCostObjective({
 			objective: "min-cost",
 			candidates: [candidate("a", "0.10"), candidate("b", "0")],
@@ -135,8 +104,6 @@ describe("assessCostObjective", () => {
 	});
 
 	it("prefers the unparseable reason, since it is a fixable defect", () => {
-		// An unpriced provider is a data-coverage problem someone has to resource.
-		// A malformed one is a typo, and saying so is more useful.
 		const verdict = assessCostObjective({
 			objective: "min-cost",
 			candidates: [candidate("a", "0"), candidate("b", "cheap")],
@@ -145,8 +112,6 @@ describe("assessCostObjective", () => {
 	});
 
 	it("is claimable for a non-cost objective regardless of prices", () => {
-		// Latency ranking does not rest on price, so unpriced candidates are not
-		// this verdict's business.
 		const verdict = assessCostObjective({
 			objective: "latency",
 			candidates: [candidate("a", "0"), candidate("b", "cheap")],
@@ -167,7 +132,6 @@ describe("assessCostObjective", () => {
 	});
 
 	it("is not claimable with no candidates at all", () => {
-		// Nothing to compare is not the same as everything comparing equal.
 		const verdict = assessCostObjective({
 			objective: "min-cost",
 			candidates: [],

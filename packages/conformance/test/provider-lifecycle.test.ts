@@ -1,9 +1,3 @@
-// Self-test for the provider scratch harness (ADR-0159, unit F). The reference
-// provider passes all six lifecycle cases; deliberately broken providers — a
-// delete that throws the second time, a create that mints a second instance on
-// a resumed apply, an "update" that replaces, a "replace" that mutates in
-// place, a provider with no adopt() — each fail the *named* case they break.
-// A conformance suite that cannot fail is decoration.
 
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -42,7 +36,6 @@ function failedNames(failed: readonly { readonly name: string }[]): string[] {
 	return failed.map((failure) => failure.name);
 }
 
-/** The reference provider with one verb swapped for a broken one. */
 function brokenProvider(overrides: Partial<ScratchProvider>): ScratchProvider {
 	return { ...createReferenceScratchProvider(), ...overrides };
 }
@@ -92,8 +85,6 @@ describe("@hobo/conformance provider lifecycle suite", () => {
 			},
 		});
 		await runProviderLifecycleConformance(provider);
-		// Every case's first create sees an empty world (except adopt, which is
-		// seeded and never routes through create).
 		expect(seenWorldSizes[0]).toBe(0);
 		expect(seenWorldSizes).not.toContain(2);
 	});
@@ -105,7 +96,6 @@ describe("scratch stacks stay in memory", () => {
 			fileURLToPath(new URL("../src/provider-lifecycle.ts", import.meta.url)),
 			"utf8",
 		);
-		// Comments name the forbidden stages; the code must not.
 		const code = source
 			.replace(/\/\*[\s\S]*?\*\//gu, "")
 			.replace(/^[\t ]*\/\/.*$/gmu, "");
@@ -155,7 +145,6 @@ describe("the suite fails a broken provider on the case it breaks", () => {
 		const result = await runProviderLifecycleConformance(
 			brokenProvider({
 				create(context: ScratchProviderContext): ScratchProviderResult {
-					// Never looks for what it already made: every apply provisions.
 					const created = context.world.put({
 						id: context.world.nextInstanceId(context.logicalId),
 						type: context.type,
@@ -415,7 +404,6 @@ describe("parse boundaries fail closed", () => {
 		try {
 			parseScratchDesired(input);
 		} catch (error) {
-			// SAFETY: assertion to `r as ProviderLifecycleError).co` is required at this boundary.
 			expect((error as ProviderLifecycleError).code).toBe(
 				"SCRATCH_DESIRED_INVALID",
 			);
@@ -434,7 +422,6 @@ describe("parse boundaries fail closed", () => {
 			parseScratchSeed(input);
 			expect.unreachable("seed should not parse");
 		} catch (error) {
-			// SAFETY: assertion to `r as ProviderLifecycleError).co` is required at this boundary.
 			expect((error as ProviderLifecycleError).code).toBe(
 				"SCRATCH_SEED_INVALID",
 			);
@@ -465,7 +452,6 @@ describe("parse boundaries fail closed", () => {
 			parseScratchProvider(input);
 			expect.unreachable("provider should not parse");
 		} catch (error) {
-			// SAFETY: assertion to `r as ProviderLifecycleError).co` is required at this boundary.
 			expect((error as ProviderLifecycleError).code).toBe(
 				"SCRATCH_PROVIDER_INVALID",
 			);
@@ -482,7 +468,6 @@ describe("parse boundaries fail closed", () => {
 		const stack = createScratchStack({
 			provider: brokenProvider({
 				create: (): ScratchProviderResult =>
-					// SAFETY: assertion to ` as ScratchProviderResult, ` is required at this boundary.
 					({}) as ScratchProviderResult,
 			}),
 		});

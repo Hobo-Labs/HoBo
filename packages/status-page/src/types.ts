@@ -1,15 +1,3 @@
-/**
- * Status-page domain model (ADR-0077 / Plan 49 §C).
- *
- * Parse-don't-validate: every record on a status page is built through a
- * parse function that throws `StatusPageParseError` on malformed input and
- * returns a frozen value. Wire forms live in `data-models/status_page.proto`;
- * CUE constraints in `data-models/status_page.cue`.
- *
- * The freshness rule is load-bearing: a component whose last signal is older
- * than the freshness budget renders as `unknown` ("status delayed / unknown"),
- * never as a stale `operational` (ADR-0077 §4).
- */
 
 // public-contract: schema tag on every status-page snapshot/model record.
 export const STATUS_PAGE_SCHEMA = "hobo.status-page/v1" as const;
@@ -25,7 +13,6 @@ export const COMPONENT_STATUSES = [
 ] as const;
 export type ComponentStatus = (typeof COMPONENT_STATUSES)[number];
 
-/** Severity rank for worst-of rollups. `unknown` outranks `operational`. */
 const COMPONENT_STATUS_RANK = {
 	operational: 0,
 	maintenance: 1,
@@ -56,7 +43,6 @@ export const INCIDENT_STATES = [
 ] as const;
 export type IncidentState = (typeof INCIDENT_STATES)[number];
 
-/** Forward-only lifecycle rank; late/out-of-order events must never regress. */
 export const INCIDENT_STATE_RANK = {
 	investigating: 0,
 	identified: 1,
@@ -200,7 +186,6 @@ type ParsedIncident = {
 	updates: readonly IncidentUpdateRecord[];
 };
 
-/** One UTC day of observed history for a component (uptime bar cell). */
 // domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
 export interface DailyStatusRecord {
 	readonly date: string;
@@ -216,7 +201,6 @@ export interface ComponentStatusRecord {
 	readonly attainment?: number;
 	readonly target?: number;
 	readonly history: readonly DailyStatusRecord[];
-	/** True when the freshness budget forced this component to `unknown`. */
 	readonly delayed: boolean;
 }
 
@@ -329,7 +313,6 @@ export function parseComponentSpec(input: JsonValue): ComponentSpec {
 			`must match ${ID_PATTERN} (got "${id}")`,
 		);
 	}
-	// SAFETY: every field is parsed immediately above, and the optional description is added only after parsing.
 	const result: ParsedComponent = {
 		id,
 		label: expectString(raw.label, "component.label"),
@@ -377,7 +360,6 @@ export function parseIncidentRecord(input: JsonValue): IncidentRecord {
 			"resolved incidents must carry resolvedAt",
 		);
 	}
-	// SAFETY: every field is parsed immediately above, and resolvedAt is added only after the state invariant.
 	const result: ParsedIncident = {
 		id,
 		title: expectString(raw.title, "incident.title"),
@@ -429,7 +411,6 @@ export function parseMaintenanceRecord(input: JsonValue): MaintenanceRecord {
 	});
 }
 
-/** Forward-only maintenance transition guard. */
 export function advanceMaintenanceState(
 	current: MaintenanceState,
 	next: MaintenanceState,
@@ -439,7 +420,6 @@ export function advanceMaintenanceState(
 		: current;
 }
 
-/** Forward-only incident transition guard. */
 export function advanceIncidentState(
 	current: IncidentState,
 	next: IncidentState,

@@ -5,8 +5,6 @@ import { createCiRelayClient } from "../../ci-gh-actions/src/client.js";
 import { createCiBudgetRoutingBridge } from "../src/ci-routing.js";
 
 it("executes both CI policy Pact interactions through the shipped client and Station budget bridge", async () => {
-	// SAFETY: the hand-authored Pact is a test-only I/O boundary; wire account
-	// bodies are independently parsed by the client's generated protobuf schemas.
 	const pact = JSON.parse(
 		readFileSync(
 			new URL("./ci-budget-routing.pact.json", import.meta.url),

@@ -1,7 +1,3 @@
-// @hobo/cd-kube-fleet (ADR-0182 D26): Kubernetes fleet managers as
-// transports and inventory for HoBo Camps, never schedulers. The public
-// surface takes and returns @hobo/cd and @hobo/core types only; Kubernetes
-// shapes stay inside this package (I11).
 export {
 	type CampClusterRecord,
 	CampClusterRecordSchema,

@@ -20,7 +20,6 @@ describe("resolved-file checks", () => {
 		expect(sides("ci.yml", "a: 1\n", "a: 2\n", "a: 1\na: 2\n")).toBe(
 			"unparseable-resolution",
 		);
-		// A stream of documents is checked as one file, document by document.
 		const manifest = (replicas: number) =>
 			`kind: Service\n---\nkind: Deployment\nspec:\n  replicas: ${replicas}\n`;
 		expect(
@@ -40,7 +39,6 @@ describe("resolved-file checks", () => {
 	});
 
 	it("does not block a file that was already unparseable, or a format it cannot parse", () => {
-		// tsconfig-style JSON with comments fails strict JSON on both sides.
 		expect(
 			sides("tsconfig.json", "{ // a\n}", "{ // b\n}", "{ // c\n}"),
 		).toBeUndefined();
@@ -94,7 +92,6 @@ describe("resolved-file checks", () => {
 				merged,
 			),
 		).toBeUndefined();
-		// A declaration file declares overloads and merges on purpose.
 		expect(
 			sides(
 				"types.d.ts",

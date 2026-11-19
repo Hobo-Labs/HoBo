@@ -47,7 +47,6 @@ describe("kafka live DLQ", () => {
 		);
 		expect(r2.deadLettered).toBe(1);
 
-		// Group advanced — no further redelivery.
 		const again = await bus.consume(
 			parseTopicName("fail"),
 			parseConsumerGroupId("g"),

@@ -18,11 +18,6 @@ import {
 	DEPOT_PROVIDER_ID,
 } from "../src/index.js";
 
-// Acceptance (HOBO-720): Dispatcher routing across github/blacksmith/depot
-// picks per declared effective cost; dispatch.Decided explains each pick
-// (ADR-0071). A warm-cache Depot build can outrank a "free"-exhausted cold
-// GitHub build once the CreditLedgerView folds observed cache facts.
-
 const noopFetch: GithubFetch = async () => ({
 	ok: true,
 	status: 200,
@@ -84,8 +79,6 @@ describe("Dispatcher routing across the M3 trio (ADR-0071)", () => {
 			runnerRegistry(),
 		);
 
-		// blacksmith and depot tie on list price (0.004) — deterministic
-		// provider-id tie-break picks blacksmith; github's 0.006 ranks last.
 		assert.equal(decision.selectedProvider, BLACKSMITH_PROVIDER_ID);
 		assert.equal(decision.dispatchDecided.data.candidates.length, 3);
 		const costs = Object.fromEntries(
@@ -106,9 +99,6 @@ describe("Dispatcher routing across the M3 trio (ADR-0071)", () => {
 				registry: "registry.depot.dev/hobo-builds",
 			}),
 		]);
-		// The CreditLedgerView folds observed build.CacheHitObserved facts into
-		// an effective per-unit cost for depot: 0.04 list * (1 - 0.9 hit) = 0.004
-		// — cheaper than dispatching the cold build anywhere at list price.
 		const decision = selectExecutionHost(
 			{
 				category: "build-machine",

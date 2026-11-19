@@ -1,11 +1,3 @@
-/**
- * Evaluate a projection row into a renderable `StatusPageModel`.
- *
- * The fold stays pure; wall-clock enters exactly here, as an explicit
- * `evaluatedAt`. The ADR-0077 §4 fail-safe ordering is enforced at this
- * boundary: a component with no signal inside the freshness budget is
- * `unknown` ("status delayed / unknown"), never a stale `operational`.
- */
 import type { ComponentRow, StatusPageRow } from "./projection.js";
 import type { Mutable } from "./types.js";
 import {
@@ -22,17 +14,13 @@ import {
 	worstComponentStatus,
 } from "./types.js";
 
-/** Default freshness budget: 15 minutes without a signal → delayed/unknown. */
 export const DEFAULT_FRESHNESS_BUDGET_MS = 15 * 60 * 1000;
 
-/** Resolved incidents stay in "past incidents" for 14 days. */
 export const DEFAULT_RECENT_INCIDENT_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface EvaluateOptions {
 	readonly scope: StatusScope;
-	/** ISO timestamp the page is generated at — the only clock input. */
 	readonly evaluatedAt: string;
-	/** Declared components rendered even when no signal has arrived yet. */
 	readonly declaredComponents?: readonly ComponentSpec[];
 	readonly freshnessBudgetMs?: number;
 	readonly recentIncidentWindowMs?: number;
@@ -167,9 +155,6 @@ export function toStatusPageModel(
 		}
 	}
 
-	// A component is on the page if it is declared, observed, or referenced by
-	// an active incident / maintenance — an incident on an unregistered
-	// component must still be visible.
 	const componentIds = [
 		...new Set([
 			...declared.keys(),
@@ -195,8 +180,6 @@ export function toStatusPageModel(
 			: "unknown";
 		const overlay = incidentOverlay.get(id);
 		if (overlay !== undefined) {
-			// An acknowledged incident is a stronger, human-confirmed signal than
-			// a stale probe: it overrides `unknown` and worsens anything else.
 			status =
 				status === "unknown"
 					? overlay

@@ -1,13 +1,3 @@
-/**
- * The assignment register's SQL replica: one backend's log in a table.
- *
- * The register itself (entries, majority, resolve, propose, bootstrap,
- * complete, override) is engine-neutral and lives in `@hobo/backend-fleet`
- * (ADR-0179 phase 4c moved it there so a cache fleet can use it without this
- * package); it is re-exported here under the names this package always had.
- * What stays is how a PostgreSQL backend holds its log: `readAssignmentRows`
- * and `sqlAssignmentReplica`, whose `accept` is one statement.
- */
 import {
 	type AssignmentRegister,
 	type AssignmentReplica,
@@ -57,7 +47,6 @@ export {
 	resolveAssignment,
 } from "@hobo/backend-fleet";
 
-/** This package's name for an assignment entry; the same parsed type. */
 export type PostgresFleetAssignment = FleetAssignment;
 
 function assignmentFromRow(row: SqlRow): FleetAssignment {
@@ -78,10 +67,6 @@ const SELECT_ASSIGNMENT = `epoch::text AS epoch, active, sealed::text AS sealed,
 	loss_window_ms::text AS loss_window_ms,
 	round(extract(epoch FROM decided_at) * 1000)::bigint::text AS decided_at_ms, decided_by`;
 
-/**
- * Read one backend's log on a given session, newest `limit` entries, ascending.
- * A backend whose log table does not exist yet holds nothing.
- */
 export async function readAssignmentRows(
 	session: SqlSession,
 	layout: FleetLayout,
@@ -100,14 +85,6 @@ export async function readAssignmentRows(
 	}
 }
 
-/**
- * The log of one backend, over its SQL executor.
- *
- * `accept` is one statement. It takes the fleet's shared advisory lock for the
- * statement's own transaction, so a copy into this backend (which holds the
- * exclusive form) and an entry arriving here can never interleave, and it
- * inserts only when the highest epoch held is exactly the one before.
- */
 export function sqlAssignmentReplica(
 	backend: FleetBackend,
 	layout: FleetLayout,
@@ -170,7 +147,6 @@ export function sqlAssignmentReplica(
 	};
 }
 
-/** Build the register of a fleet from its backends, in configured order. */
 export function sqlAssignmentRegister(
 	backends: readonly FleetBackend[],
 	layout: FleetLayout,

@@ -26,8 +26,6 @@ import {
 	type YardRuntime,
 } from "../src/index.js";
 
-// A failed provider call may have changed infrastructure before it timed out.
-
 const DB_ONLY = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -216,9 +214,7 @@ describe("re-running up after editing the project", () => {
 		);
 		const again = await cli.run(["up", "--json"], { cwd: dir });
 		expect(again.exitCode, again.stdout).toBe(0);
-		// Only the new resource was applied: the unchanged one was a no-op.
 		expect(applied).toEqual(["db@neon", "replica@neon"]);
-		// And an unchanged re-run is idempotent: nothing applied.
 		expect((await cli.run(["up", "--json"], { cwd: dir })).exitCode).toBe(0);
 		expect(applied).toEqual(["db@neon", "replica@neon"]);
 	});

@@ -18,14 +18,6 @@ import type { CapabilityMatrixCellKey } from "./grid.js";
 // public-contract: versions serialized capability coverage reports.
 export const CAPABILITY_MATRIX_SCHEMA_VERSION = "hobo.capability-matrix/v1";
 
-/**
- * What a cell would resolve to today.
- *
- * The `-only` verdicts exist because "covered" is a claim about public
- * provider-native support. A cell reachable solely through a bridge, solely on
- * infrastructure HoBo runs, or solely by spending sponsor budget is genuinely
- * usable and genuinely not the same thing.
- */
 export const COVERAGE_VERDICTS = [
 	"covered",
 	"pack-only",
@@ -38,20 +30,13 @@ export const COVERAGE_VERDICTS = [
 
 export type CoverageVerdict = (typeof COVERAGE_VERDICTS)[number];
 
-/** Definition ids in one bucket, split by whether they are selectable now. */
 // domain-view: parsed narrowing of CapabilityMatrixBucketRecord in
-// data-models/capability_matrix.proto; both lists are sorted and de-duplicated.
 export type CapabilityMatrixBucket = {
 	readonly available: readonly string[];
 	readonly unavailable: readonly string[];
 };
 
-/**
- * The five buckets of one cell. Modelled as named fields rather than a map so
- * that "somebody forgot to report bridges" is a compile error.
- */
 // domain-view: parsed narrowing of CapabilityMatrixBucketsRecord in
-// data-models/capability_matrix.proto.
 export type CapabilityMatrixBuckets = {
 	readonly native: CapabilityMatrixBucket;
 	readonly pack: CapabilityMatrixBucket;
@@ -61,7 +46,6 @@ export type CapabilityMatrixBuckets = {
 };
 
 // domain-view: parsed narrowing of CapabilityMatrixCellRecord in
-// data-models/capability_matrix.proto.
 export type CapabilityMatrixCell = {
 	readonly key: CapabilityMatrixCellKey;
 	readonly primitive: BindlePrimitive;
@@ -71,7 +55,6 @@ export type CapabilityMatrixCell = {
 	readonly candidates: readonly CapabilityMatrixCandidate[];
 };
 
-/** Why a declared claim reached no cell at all. */
 export const MATRIX_EXCLUSION_CODES = [
 	"no-declared-semantics",
 	"unregistered-profile",
@@ -83,7 +66,6 @@ export const MATRIX_EXCLUSION_CODES = [
 export type MatrixExclusionCode = (typeof MATRIX_EXCLUSION_CODES)[number];
 
 // domain-view: parsed narrowing of CapabilityMatrixExclusionRecord in
-// data-models/capability_matrix.proto.
 export type CapabilityMatrixExclusion = {
 	readonly definitionId: string;
 	readonly profileId: string;
@@ -92,15 +74,10 @@ export type CapabilityMatrixExclusion = {
 };
 
 // domain-view: parsed narrowing of CapabilityMatrixRecord in
-// data-models/capability_matrix.proto; `cells` is the complete grid, never a
-// sparse list of the interesting ones.
 export type CapabilityMatrix = {
 	readonly schemaVersion: typeof CAPABILITY_MATRIX_SCHEMA_VERSION;
-	/** The evaluation instant the caller supplied. Nothing here reads a clock. */
 	readonly evaluatedAtMs: number;
-	/** Digest of the profile registry the cells were resolved against. */
 	readonly profileRegistryDigest: string;
-	/** Digest of the trust bundle every candidate's evidence was judged in. */
 	readonly trustBundleDigest: string;
 	readonly cells: readonly CapabilityMatrixCell[];
 	readonly excluded: readonly CapabilityMatrixExclusion[];
@@ -120,11 +97,6 @@ export const EMPTY_BUCKETS: CapabilityMatrixBuckets = {
 	sponsor: EMPTY_BUCKET,
 };
 
-/**
- * Verdict precedence, best-supported first. `sponsor` sits last among the
- * usable outcomes because it is the only one that costs HoBo money to keep
- * true.
- */
 const VERDICT_BY_BUCKET: readonly (readonly [
 	CandidateBucket,
 	CoverageVerdict,
@@ -156,7 +128,6 @@ export function deriveCoverageVerdict(
 	return hasGatedCandidate ? "evidence-lapsed" : "uncovered";
 }
 
-/** Every definition id registered against a cell, whatever its bucket. */
 export function cellDefinitionIds(
 	cell: CapabilityMatrixCell,
 ): readonly string[] {
@@ -165,7 +136,6 @@ export function cellDefinitionIds(
 	return [...ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-/** The candidates a cell could actually select right now. */
 export function availableCandidates(
 	cell: CapabilityMatrixCell,
 ): readonly CapabilityMatrixCandidate[] {

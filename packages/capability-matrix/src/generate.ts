@@ -54,36 +54,21 @@ import {
 	type MatrixExclusionCode,
 } from "./matrix.js";
 
-/**
- * The registry view the matrix reads: identity plus declared semantics.
- *
- * Derived from `@hobo/cloud`'s `ResourceDefinitionVNext` with `Pick` rather
- * than restated, so a change to the catalog's semantics block is a compile
- * error here instead of a silently divergent second definition of the same
- * facts. Any `ResourceDefinitionVNext` is a `RegisteredDefinition`.
- */
 export type RegisteredDefinition = Pick<
 	ResourceDefinitionVNext,
 	"id" | "providerId" | "semantics"
 >;
 
 export type CapabilityMatrixInput = {
-	/** Registered Resource Definitions. Legacy entries contribute nothing. */
 	readonly definitions: readonly RegisteredDefinition[];
 	readonly profileRegistry: CapabilityProfileRegistry;
-	/** Trust evidence keyed by the `trustEvidenceRef` definitions point at. */
 	readonly trustEvidence: ReadonlyMap<string, TrustEvidence>;
-	/** Canonical evaluation instant in epoch milliseconds. */
 	readonly nowMs: number;
-	/** Operator trust bar. Defaults to `DEFAULT_TRUST_REQUIREMENT`. */
 	readonly requirement?: TrustRequirement | undefined;
-	/** Signature trust root. Absent means nobody vouched, so nothing is fresh. */
 	readonly verifier?: EvidenceVerifier | undefined;
-	/** Provider ids whose infrastructure HoBo itself operates. */
 	readonly hoboOperatedProviderIds?: readonly string[] | undefined;
 };
 
-/** Trust reasons already reported precisely as an evidence-freshness state. */
 const FRESHNESS_REASON_CODES: ReadonlySet<string> = new Set([
 	"EVIDENCE_ABSENT",
 	"EVIDENCE_STALE",
@@ -106,17 +91,9 @@ function compareExclusions(
 }
 
 function isRealizationKind(value: string): value is RealizationKind {
-	// SAFETY: REALIZATION_KINDS is the closed runtime vocabulary for this field.
 	return (REALIZATION_KINDS as readonly string[]).includes(value);
 }
 
-/**
- * Everything holding one candidate back, as separate facts.
- *
- * Freshness is reported by its own state rather than folded into a generic
- * gate failure, because "the evidence expired" and "the adapter failed a
- * check" call for different work.
- */
 function unavailabilityOf(
 	subject: TrustBundleSubjectVerdict | undefined,
 	conformance: "pass" | "fail" | "unknown",
@@ -180,8 +157,6 @@ function bucketOf(
 			.map((candidate) => candidate.definitionId),
 	);
 	const availableSet = new Set(available);
-	// One definition may claim a cell twice through two profiles. If either
-	// claim is usable the definition is usable, so it is never listed as both.
 	const unavailable = sortedUnique(
 		mine
 			.filter(
@@ -205,13 +180,6 @@ function bucketsOf(
 	};
 }
 
-/**
- * Build the complete primitive x runtime matrix for one instant.
- *
- * Every cell in the grid is present in the result even when nothing covers it:
- * an absent cell and an empty cell would otherwise be indistinguishable, and
- * only one of them is honest.
- */
 export function generateCapabilityMatrix(
 	input: CapabilityMatrixInput,
 ): CapabilityMatrix {
@@ -226,15 +194,10 @@ export function generateCapabilityMatrix(
 		byCell.set(coordinate.key, []);
 	}
 
-	// Sorting first makes every downstream list, and therefore the digest,
-	// independent of the order the catalog happened to register products in.
 	const definitions = [...input.definitions].sort((a, b) =>
 		a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
 	);
 
-	// One bundle evaluation for the whole catalog: every definition is judged
-	// against the same requirement at the same instant, and the bundle digest
-	// pins that judgement into the matrix digest.
 	const subjectInputs: TrustBundleSubject[] = [];
 	for (const definition of definitions) {
 		const semantics = definition.semantics;
@@ -281,8 +244,6 @@ export function generateCapabilityMatrix(
 	for (const definition of definitions) {
 		const semantics = definition.semantics;
 		if (semantics === undefined) {
-			// A legacy definition makes no capability claim, so it is reported as
-			// contributing nothing rather than quietly skipped.
 			exclude(
 				definition.id,
 				"",

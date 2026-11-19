@@ -1,7 +1,3 @@
-/**
- * Actor placement mode selection (ADR-0138).
- * Same defineActor / activateActor surface; host injection chooses native vs dapr.
- */
 
 import type { ActorPlacementMode } from "@hobo/core";
 import { parseActorPlacementMode } from "@hobo/core";
@@ -24,11 +20,6 @@ export interface ResolveActorPlacementInput {
 	readonly celldHost?: ActorHost;
 }
 
-/**
- * Resolve which ActorHost backs defineActor for this Camp.
- * Default: native (ADR-0031). Dapr / Rivet only when Camp asks or explicit mode.
- * Explicit pins fail closed when the matching host is missing.
- */
 export function resolveActorPlacement(
 	input: ResolveActorPlacementInput,
 ): PlacementResolved {
@@ -113,10 +104,6 @@ export function resolveActorPlacement(
 	return { mode: "native", host: input.nativeHost, source: "default" };
 }
 
-/**
- * Signal an actor via the messaging surface (queue signal or topic).
- * Keeps actor messaging on the unified Messaging plane when a bus is present.
- */
 export async function signalActor(
 	messaging: {
 		publish: (
@@ -129,7 +116,6 @@ export async function signalActor(
 	actorKey: string,
 	message: JsonValue,
 ): Promise<void> {
-	// SAFETY: assertion to ``actors.${actorType}` as string & { readonly __brand: "TopicName"; }` is required at this boundary.
 	const topic = `actors.${actorType}` as string & {
 		readonly __brand: "TopicName";
 	};

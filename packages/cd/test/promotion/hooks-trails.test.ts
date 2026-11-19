@@ -1,4 +1,3 @@
-// Hook runner (hooks.ts) and Trails adapter (trails.ts) unit behaviour.
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

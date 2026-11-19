@@ -1,10 +1,3 @@
-/**
- * The resolved topology a recipe compiles to.
- *
- * Junction ⊃ Yard ⊃ Camp ⊃ placement is the existing hierarchy; nothing here
- * adds a primitive to it. A resource-only Yard carries resources and no Camps,
- * which is a legal shape and not a degenerate one.
- */
 import type {
 	BindlePrimitive,
 	RealizationKind,
@@ -50,7 +43,6 @@ export type ResolvedYard = {
 	readonly sponsored: boolean;
 	readonly regions: readonly string[];
 	readonly camps: readonly ResolvedCamp[];
-	/** Resources held directly by a resource-only Yard. */
 	readonly resources: readonly ResolvedResource[];
 };
 
@@ -62,7 +54,6 @@ export type ResolvedBinding = {
 	readonly bindingProfileRef: string;
 	readonly connectivityImplementationId: string;
 	readonly crossYard: boolean;
-	/** True when the primary connectivity choice was not resolvable. */
 	readonly usedFallback: boolean;
 };
 
@@ -126,12 +117,6 @@ function resourceBody(resource: ResolvedResource): CanonicalValue {
 	};
 }
 
-/**
- * The exact bytes the topology digest is taken over.
- *
- * Written out by hand rather than reflected off the value so that adding a
- * field to the topology is a deliberate digest change, never an accidental one.
- */
 export function topologyDigestBody(topology: ResolvedTopology): CanonicalValue {
 	return {
 		schemaVersion: topology.schemaVersion,

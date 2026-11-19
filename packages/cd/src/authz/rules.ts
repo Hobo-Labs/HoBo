@@ -1,16 +1,3 @@
-// The CD baseline policy pack (D15, I10): exactly one `@hobo/contracts` policy
-// rule per `CdAction`. Each rule is pure over the decision request the
-// authorizer builds, so a decision replays from its recorded input (I8).
-//
-// What the baseline decides (most-restrictive-wins with the caller's pack):
-//   - Agent principals — or any principal delegated by an agent — are
-//     proposal-only (`require-approval`) unless granted the action
-//     (`cd:<action>` or `cd:*` scope; ADR-0094). `failover.propose` is itself
-//     a proposal, so an agent may make it without a grant.
-//   - The two enrollment grants (`reconciler.approve-key`,
-//     `reconciler.accept`) must come from separate principals (R14, I24):
-//     the principal that holds one grant for a reconciler is denied the other.
-//   - Everything else is allowed by the baseline and left to the caller's pack.
 import {
 	definePolicyRule,
 	type PolicyDecisionRequest,
@@ -27,13 +14,9 @@ export type CdPolicyPhase = "apply" | "promote" | "runtime" | "repair";
 export type CdActionSpec = Readonly<{
 	action: CdAction;
 	phase: CdPolicyPhase;
-	/** Policy resource kind (`cd.<noun>`). Decisions are recorded per resource. */
 	resourceKind: string;
-	/** Subject members that identify the resource, first non-empty wins. */
 	resourceKeys: readonly string[];
-	/** Whether an ungranted agent may perform the action outright. */
 	agentMayAct: boolean;
-	/** The other half of a separation-of-duties pair, when there is one. */
 	separateFrom: CdAction | undefined;
 }>;
 
@@ -55,7 +38,6 @@ function spec(
 }
 
 // public-contract: one spec per CdAction. `Record<CdAction, …>` makes a new
-// frozen CdAction a compile error here until it has a rule.
 export const CD_ACTION_SPECS: Readonly<Record<CdAction, CdActionSpec>> =
 	Object.freeze({
 		"freight.record": spec("freight.record", "promote", "cd.freight", [
@@ -189,15 +171,10 @@ export function isCdAction(value: string): value is CdAction {
 	return Object.hasOwn(CD_ACTION_SPECS, value);
 }
 
-/** Context members the authorizer adds before evaluation (pure rule input). */
 export type CdRuleContext = Readonly<{
-	/** True when the principal or any delegator is an agent. */
 	agentClass: boolean;
-	/** Principals holding the separation-of-duties counterpart grant. */
 	counterpartHolders: readonly string[];
-	/** The acting principal key (`kind:id`). */
 	principalKey: string;
-	/** Whether R14 separation of duties is enforced. */
 	separateEnrollmentApprovers: boolean;
 }>;
 
@@ -245,7 +222,6 @@ function decideFor(
 	};
 }
 
-/** One rule per CdAction, in CD_ACTIONS order. */
 export function cdBaselineRules(): PolicyRule[] {
 	return CD_ACTIONS.map((action) => {
 		const s = CD_ACTION_SPECS[action];

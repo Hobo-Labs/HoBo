@@ -1,5 +1,3 @@
-/** A fresh Sandbox need not contain the upload directory. Create it before
- * writing files, without assuming the default working directory exists. */
 export async function ensureSandboxWorkdir(session: {
 	runCommand(options: {
 		cmd: string;

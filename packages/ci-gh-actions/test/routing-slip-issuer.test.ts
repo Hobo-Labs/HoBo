@@ -45,7 +45,6 @@ function decide(overrides: Partial<RoutingSlipDecisionInput> = {}) {
 	});
 }
 
-/** A fake Git Data API: records every call, answers as GitHub does. */
 function gitApi(
 	options: { refExists?: boolean; status?: (method: string) => number } = {},
 ) {
@@ -97,7 +96,6 @@ describe("the routing slip decision (ADR-0181, decision 5)", () => {
 		});
 	});
 
-	// M6: busy and healthy is the fleet (R4).
 	it("a box busy with its own jobs is fleet-busy, never refused", () => {
 		const classes = decide({ full: both });
 		expect(classes.pr).toEqual({
@@ -196,7 +194,6 @@ describe("the stall watch", () => {
 		assignedAtMs,
 	});
 
-	// M6: assigned, and nothing started for ten minutes, is stalled.
 	it("names a label with work assigned and nothing started for the limit", () => {
 		const watch = createRoutingStallWatch({
 			stallMs: 600_000,
@@ -317,13 +314,11 @@ describe("the issuer (ADR-0181, decisions 1-2)", () => {
 			api.clock.now = NOW + second * 1_000;
 			await slips.tick();
 		}
-		// Ten minutes of the same answer: the first write and three heartbeats.
 		expect(api.commits().map((call) => (call.atMs - NOW) / 1_000)).toEqual([
 			0, 180, 360, 540,
 		]);
 	});
 
-	// M7: a decision that changes on every tick still stays within the caps.
 	it("never writes more than 20 slips a minute or 300 an hour", async () => {
 		const api = gitApi();
 		const slips = issuer(api, { decide: flipping() });

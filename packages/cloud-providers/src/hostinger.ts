@@ -41,17 +41,9 @@ export {
 	webHosting,
 } from "@hobo/provider-hostinger";
 
-/**
- * This namespace's provider id, read when it is passed to `yard(hostinger, …)`.
- *
- * A provider is stated, never inferred: without this the builder would have to
- * guess one from a Yard name or a product-id prefix, which is exactly the
- * load-bearing naming convention ADR-0144 forbids.
- */
 // public-contract: the provider id the authoring surface reads off this namespace; changing it repoints every Yard opened with yard(hostinger, …).
 export const PROVIDER_ID = "hostinger";
 
-/** Yard name used when the caller does not supply one. */
 // public-contract: the name every default Hostinger Yard is registered under; changing it renames them all.
 export const DEFAULT_HOSTINGER_YARD_NAME = "hostinger";
 
@@ -59,10 +51,6 @@ export interface HostingerYardOptions
 	extends ComposedYardOptions,
 		HostingerYardSpecOptions {}
 
-/**
- * The default Hostinger Yard: the full allocatable catalog, parsed and
- * canonical.
- */
 export function Yard(options: HostingerYardOptions = {}): ParsedYard {
 	return composeYard(
 		DEFAULT_HOSTINGER_YARD_NAME,

@@ -1,6 +1,3 @@
-// Metrics for @hobo/cd-kube-fleet, emitted through the frozen TelemetrySink.
-// A meter accumulates points during one pass and flushes once; a telemetry
-// failure never fails a pass (the sink is best-effort by contract).
 import type { OtelAttributes, OtelMetricPoint, TelemetrySink } from "@hobo/cd";
 
 // public-contract: metric names this package emits.
@@ -50,7 +47,6 @@ export function createMeter(
 			try {
 				await sink.metrics(batch);
 			} catch {
-				// Telemetry is best-effort: a sink failure never fails a pass.
 			}
 		},
 	});

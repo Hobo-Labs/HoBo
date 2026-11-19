@@ -1,26 +1,3 @@
-/**
- * Placement ranking, credit-fact derivation, hysteresis and the canonical
- * hashing helpers (ADR-0071).
- *
- * The dispatcher's central claim is that a decision is a *pure function* of
- * (registry, `CreditLedgerView@seq`, request) — identical inputs replay to a
- * byte-identical `dispatch.Decided` fact. Two things can break that quietly:
- *
- * - **A non-total ordering.** The rank vector ends in the provider id and the
- *   definition id precisely so that no two candidates can compare equal. If a
- *   tie were ever left to `Array.prototype.sort`, the winner would depend on
- *   the engine's sort stability and the input order, and two replays of the
- *   same inputs could select different providers.
- * - **A non-canonical hash.** `canonicalJson` sorts keys at every depth, so two
- *   objects that differ only in key order hash the same. Without that, a
- *   ledger snapshot re-serialized by a different service would produce a
- *   different `balanceHash` and every replay check would fail spuriously.
- *
- * The credit-fact classification matters for a different reason: an account
- * with an unusable number must be treated as *unusable*, not as free. Reading
- * a NaN headroom as available capacity would route paid work to a provider
- * that will bill for it.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -131,9 +108,6 @@ function dispatch(overrides: Record<string, JsonValue> = {}) {
 
 describe("decidePlacement candidate filtering", () => {
 	it("rejects an unregistered candidate with a stated reason", () => {
-		// Rejections are reported, not dropped. An operator asking "why did my
-		// cheaper provider not win?" needs the answer in the decision itself,
-		// not in a log line somewhere else.
 		const result = placement({
 			candidates: [candidate("a"), candidate("b", { registered: false })],
 		});
@@ -144,8 +118,6 @@ describe("decidePlacement candidate filtering", () => {
 	});
 
 	it("rejects a candidate whose resourceType does not match the request", () => {
-		// The reason names both types, because the mismatch is usually a typo in
-		// one of them and the reader needs to see which.
 		const result = placement({
 			candidates: [candidate("a"), candidate("b", { resourceType: "queue" })],
 		});
@@ -155,8 +127,6 @@ describe("decidePlacement candidate filtering", () => {
 	});
 
 	it("treats a candidate as registered unless it says otherwise", () => {
-		// `registered !== false`, so an absent flag means registered. A truthiness
-		// check would silently exclude every candidate that omitted the field.
 		const result = placement({
 			candidates: [candidate("a", { registered: undefined })],
 		});
@@ -172,7 +142,6 @@ describe("decidePlacement candidate filtering", () => {
 		expect(result.reason).toBe(
 			"no registered object-store placement candidates",
 		);
-		// The rejections survive onto the failure, so the failure explains itself.
 		expect(result.rejectedCandidates).toHaveLength(1);
 		expect(result.ranking).toEqual([]);
 	});
@@ -201,8 +170,6 @@ describe("decidePlacement request parsing", () => {
 	});
 
 	it("refuses an unsupported objective", () => {
-		// Only one objective exists today. Accepting an unknown one would rank by
-		// credits while telling the caller it optimised for something else.
 		expect(() => placement({ objective: "minimize-latency" })).toThrow(
 			/objective must be maximize-credits/u,
 		);
@@ -218,8 +185,6 @@ describe("decidePlacement request parsing", () => {
 	});
 
 	it("refuses a non-positive unit count", () => {
-		// Units divide into the effective marginal cost, so zero would produce an
-		// Infinity score that sorts unpredictably against real costs.
 		for (const units of [0, -1, Number.NaN]) {
 			expect(() => placement({ units })).toThrow(
 				/units must be greater than 0/u,
@@ -242,9 +207,6 @@ describe("decidePlacement request parsing", () => {
 	});
 
 	it("falls back from definitionId to id and from providerId to definitionId", () => {
-		// The three-way fallback exists because catalogs spell the identifier
-		// differently. What must not happen is a candidate silently ranking under
-		// an empty id, which would collide with every other such candidate.
 		const result = placement({
 			candidates: [
 				{
@@ -270,9 +232,6 @@ describe("decidePlacement request parsing", () => {
 	});
 
 	it("defaults a non-finite specificity and a non-integer priority to zero", () => {
-		// `Number.isFinite` and `Number.isInteger` rather than `??`. A NaN
-		// specificity would make every comparison against it false and give the
-		// candidate an arbitrary position.
 		const result = placement({
 			candidates: [candidate("a", { specificity: Number.NaN, priority: 1.5 })],
 		});
@@ -285,8 +244,6 @@ describe("decidePlacement request parsing", () => {
 	});
 
 	it("refuses a negative listUnitCost or switchingCost", () => {
-		// A negative cost would rank as *better than free* and win every
-		// comparison, which is the most direct way to misroute spend.
 		expect(() =>
 			placement({ candidates: [candidate("a", { listUnitCost: -1 })] }),
 		).toThrow(/must be a non-negative number/u);
@@ -298,17 +255,11 @@ describe("decidePlacement request parsing", () => {
 
 describe("credit fact classification", () => {
 	it("reports missing when the ledger holds no matching account", () => {
-		// The provider is still rankable — at its own list price — but the
-		// decision records that no credit facts were available, so a reader can
-		// tell "no free credit" from "we never looked".
 		const result = dispatch({ ledgerView: ledgerView([]) });
 		expect(result.ranking[0]?.creditFacts).toBe("missing");
 	});
 
 	it("matches an account on provider and dimension together", () => {
-		// Both, not just the provider. One provider bills several dimensions, and
-		// matching on the provider alone would spend an object-store credit on
-		// runner minutes.
 		const result = dispatch({
 			ledgerView: ledgerView([
 				account("a", {
@@ -337,9 +288,6 @@ describe("credit fact classification", () => {
 	});
 
 	it("reports invalid for an account carrying an unusable number", () => {
-		// The important direction: invalid falls back to *no* free headroom and
-		// the candidate's own list price. Treating a NaN as available capacity
-		// would route paid work to a provider believing it was free.
 		for (const overrides of [
 			{ freeHeadroom: Number.NaN },
 			{ rateHeadroom: -1 },
@@ -370,9 +318,6 @@ describe("credit fact classification", () => {
 	});
 
 	it("treats a grant with an unusable headroom as poisoning the sum", () => {
-		// Deliberately strict: one bad grant makes the whole account invalid
-		// rather than being skipped. Silently omitting it would under-report
-		// available credit in a way nobody could see from the decision.
 		const result = dispatch({
 			ledgerView: ledgerView([
 				runnerAccount("a", {
@@ -397,8 +342,6 @@ describe("credit fact classification", () => {
 	});
 
 	it("falls back to the candidate's list price when the account has none", () => {
-		// Visible through the effective marginal cost, which is the paid cost per
-		// unit: ten paid units at the registry's 0.02 is 0.02 per unit.
 		const result = dispatch({
 			ledgerView: ledgerView([
 				runnerAccount("a", { listUnitCost: undefined, freeHeadroom: 0 }),
@@ -408,9 +351,6 @@ describe("credit fact classification", () => {
 	});
 
 	it("treats absent rate and concurrency headroom as unbounded", () => {
-		// Undefined means "the ledger does not track this", which must not read
-		// as zero — a zero concurrency headroom removes the provider from
-		// consideration for free units entirely.
 		const result = dispatch({
 			ledgerView: ledgerView([
 				runnerAccount("a", {
@@ -434,8 +374,6 @@ describe("credit fact classification", () => {
 	});
 
 	it("yields no free units when concurrency headroom is exhausted", () => {
-		// Concurrency is a gate, not a quantity: at zero, none of the free
-		// headroom is reachable right now even though it exists.
 		const result = dispatch({
 			ledgerView: ledgerView([
 				runnerAccount("a", { freeHeadroom: 100, concurrencyHeadroom: 0 }),
@@ -455,10 +393,6 @@ describe("credit fact classification", () => {
 	});
 
 	it("marks a candidate whose cost exceeds the remaining budget", () => {
-		// Budget-exceeded is the first element of the rank vector, so such a
-		// candidate loses to every within-budget one regardless of price — and is
-		// still ranked rather than dropped, so the decision can explain itself
-		// when every candidate is over budget.
 		const result = dispatch({
 			units: 100,
 			ledgerView: ledgerView([
@@ -484,9 +418,6 @@ describe("credit fact classification", () => {
 	});
 
 	it("prefers the sooner-expiring credit and reports the next expiry", () => {
-		// Use-it-or-lose-it: the expiry term in the rank vector exists so that
-		// two equally-priced free options do not fall to the id tiebreaker and
-		// let credit lapse.
 		const result = dispatch({
 			ledgerView: ledgerView([
 				runnerAccount("a", {
@@ -556,9 +487,6 @@ describe("credit fact classification", () => {
 	});
 
 	it("ignores the expiry of a grant with no remaining headroom", () => {
-		// An exhausted grant's expiry is irrelevant — there is nothing left to
-		// lose — and letting it win the sort would prefer a provider whose free
-		// credit is already spent.
 		const result = dispatch({
 			ledgerView: ledgerView([
 				runnerAccount("a", {
@@ -586,9 +514,6 @@ describe("credit fact classification", () => {
 
 describe("ranking order", () => {
 	it("prefers the candidate with free headroom over a cheaper paid one", () => {
-		// The objective is maximize-credits, so a zero effective cost beats any
-		// non-zero list price. Ranking by list price alone would leave free
-		// credit unspent while paying for the work.
 		const result = placement({
 			candidates: [
 				candidate("cheap", { listUnitCost: 0.001 }),
@@ -603,9 +528,6 @@ describe("ranking order", () => {
 	});
 
 	it("breaks a true tie by provider id, so the order is total", () => {
-		// This is what makes replay deterministic. Two identically-priced
-		// candidates must not depend on input order, or the same inputs would
-		// select different providers on different runs.
 		const forward = placement({
 			candidates: [candidate("b"), candidate("a")],
 			ledgerView: ledgerView([account("a"), account("b")]),
@@ -619,9 +541,6 @@ describe("ranking order", () => {
 	});
 
 	it("reports every tied candidate and flags the tie", () => {
-		// The decision vector excludes the id tiebreakers, so `tiedDefinitionIds`
-		// tells an operator the winner was arbitrary among equals — information
-		// the rank order alone destroys.
 		const result = placement({
 			candidates: [candidate("a"), candidate("b")],
 			ledgerView: ledgerView([account("a"), account("b")]),
@@ -653,9 +572,6 @@ describe("ranking order", () => {
 
 describe("switching cost", () => {
 	it("is charged only to a challenger, never to the incumbent", () => {
-		// Otherwise every candidate would carry it and it would cancel out,
-		// which is the opposite of the intent: the cost exists to make switching
-		// away from an incumbent require a real saving.
 		const result = decideDispatch({
 			registry: createDispatcherRegistry([
 				{
@@ -704,9 +620,6 @@ describe("catalog content hash", () => {
 	});
 
 	it("prefixes a bare 64-hex digest", () => {
-		// Catalogs report a digest either way. Normalising here means a decision
-		// fact always carries one spelling, so two facts over the same catalog
-		// compare equal.
 		const bare =
 			"4444444444444444444444444444444444444444444444444444444444444444";
 		expect(
@@ -716,8 +629,6 @@ describe("catalog content hash", () => {
 	});
 
 	it("hashes anything that is not a recognisable digest", () => {
-		// Including `undefined`: the fallback hashes the candidate set itself, so
-		// a decision fact always names *some* content the ranking was over.
 		expect(
 			placement({ catalogContentHash: "not-a-digest" }).matchEvent.data
 				.catalogContentHash,
@@ -728,8 +639,6 @@ describe("catalog content hash", () => {
 	});
 
 	it("rejects a hex string of the wrong length or the wrong case", () => {
-		// Deliberately strict. A 63-character digest is a truncated one, and
-		// accepting it would let two different catalogs share a hash prefix.
 		const short = "4".repeat(63);
 		expect(
 			placement({ catalogContentHash: short }).matchEvent.data
@@ -751,17 +660,12 @@ describe("catalog content hash", () => {
 
 describe("canonicalJson and stableHash", () => {
 	it("sorts object keys at every depth", () => {
-		// The property the whole replay guarantee rests on: two services that
-		// serialize the same ledger with different key order must produce the
-		// same balance hash, or every replay check would fail spuriously.
 		expect(canonicalJson({ b: 1, a: { d: 2, c: 3 } })).toBe(
 			'{"a":{"c":3,"d":2},"b":1}',
 		);
 	});
 
 	it("preserves array order", () => {
-		// Arrays are ordered data, not a bag. Sorting them would make a ranking
-		// hash the same as its reverse.
 		expect(canonicalJson([3, 1, 2])).toBe("[3,1,2]");
 		expect(canonicalJson([3, 1, 2])).not.toBe(canonicalJson([1, 2, 3]));
 	});
@@ -789,8 +693,6 @@ describe("canonicalJson and stableHash", () => {
 
 describe("decideDispatch registry parsing", () => {
 	it("accepts a bare candidate array and builds the registry", () => {
-		// Callers pass either a built registry or the raw records. Accepting both
-		// keeps the one-shot call ergonomic without a second entry point.
 		const decision = decideDispatch({
 			registry: [
 				{
@@ -810,9 +712,6 @@ describe("decideDispatch registry parsing", () => {
 	});
 
 	it("refuses an object that is not a registry", () => {
-		// The shape check is on `byCategory` being a Map and `records` an array,
-		// so a plain object that merely looks registry-ish is refused rather than
-		// silently ranking zero candidates.
 		for (const bad of [null, {}, { records: [] }, { byCategory: {} }]) {
 			expect(() =>
 				decideDispatch({
@@ -841,9 +740,6 @@ describe("decideDispatch registry parsing", () => {
 	});
 
 	it("defaults a provider's dimension from its category", () => {
-		// So a registry entry need not repeat what the category already implies,
-		// and a typo'd dimension cannot silently orphan the provider from its
-		// ledger account.
 		const registry = createDispatcherRegistry([
 			{ id: "r1", category: "build-machine", listUnitCost: 0.02 },
 		]);

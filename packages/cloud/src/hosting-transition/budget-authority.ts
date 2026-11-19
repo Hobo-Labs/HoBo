@@ -10,7 +10,6 @@ export interface HostingReservationIdentity {
 	readonly commitmentHash: string;
 }
 
-/** A shared scope/period authority. A process-local ledger cannot provide this capability. */
 export interface SharedHostingBudgetAuthority {
 	readonly persistence: "durable-cas";
 	readonly resolve?: (request: {
@@ -18,9 +17,7 @@ export interface SharedHostingBudgetAuthority {
 		tenantId: string;
 		bindle: ManifestV1;
 		objective: string;
-		/** Omission is deployment planning; retirement must request cleanup quotes. */
 		intent?: "deploy" | "decommission";
-		/** Immutable incumbent identities for scoped retirement pricing. */
 		sourcePlanId?: string;
 		sourceIncarnationId?: string;
 	}) => Promise<HostingPlanningInput>;

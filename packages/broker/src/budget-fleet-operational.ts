@@ -11,15 +11,9 @@ import type {
 import type { BudgetFenceTrust } from "./budget-fence-settlement.js";
 import { createFleetBudgetAdmissionAuthority } from "./budget-fleet.js";
 
-/** Operational view: recovery is a separately funded mutation guarded by a
- * durable actor lease. Read-only preflight uses the base authority instead.
- * Each replica must independently meter/fence its own I/O, including requests
- * that finish after a caller or its actor lease has timed out. */
 export function createOperationalFleetBudgetAdmissionAuthority(input: {
 	readonly journal: ImmutableJournal;
 	readonly snapshot: BudgetLedgerSnapshot;
-	/** The independently enrolled current partition; it can differ from the
-	 * journal's original snapshot after an authorized policy/period change. */
 	readonly recoveryIdentity: BudgetIdentity;
 	readonly now?: () => string;
 	readonly fenceTrust?: BudgetFenceTrust;
@@ -65,7 +59,6 @@ export function createOperationalFleetBudgetAdmissionAuthority(input: {
 		fleetId: input.journal.fleetId,
 		anchorDigest: input.journal.anchorDigest,
 	});
-	// All policy revisions and periods of this journal share one actor fence.
 	const key = `broker-recovery:${createHash("sha256")
 		.update(
 			JSON.stringify([

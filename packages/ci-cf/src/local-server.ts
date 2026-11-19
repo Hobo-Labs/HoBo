@@ -5,7 +5,6 @@ import { atomicText } from "./local-preparation.js";
 
 const directory = process.argv[2];
 if (!directory) throw new Error("missing runtime preparation");
-// This durable ownership record is written before any native process starts.
 await atomicText(join(directory, "server.pid"), String(process.pid));
 const child = spawn(
 	process.execPath,

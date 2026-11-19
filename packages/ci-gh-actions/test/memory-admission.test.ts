@@ -852,7 +852,6 @@ describe("worker memory admission", () => {
 			const admission = createWorkerMemoryAdmission(config(14_336), {
 				now: () => NOW,
 				volatilityMb: 1_024,
-				// One 4096 MiB job fits (7168 needed); two do not.
 				availableMemoryMb: () => 7_500,
 				log: (event, fields) => {
 					if (event === "hobo_ci_memory_admission_wait") waits.push(fields);
@@ -860,7 +859,6 @@ describe("worker memory admission", () => {
 			});
 			const active: MemoryLease[] = [];
 			expect(admission.admit(shard(3, active)).admitted).toBe(true);
-			// The relay holds the reservation before any container exists.
 			active.push({
 				id: "shard-3",
 				jobId: 3,
@@ -897,9 +895,7 @@ describe("worker memory admission", () => {
 				sandboxStage: "running",
 				dispatchingAt: startedAt(12_000, NOW),
 			};
-			// Twelve seconds in, as shards 3 and 6 were: 9000 - 3687 - 4096 < 3072.
 			expect(admission.admit(shard(6, [running])).admitted).toBe(false);
-			// Past the ramp, MemAvailable alone shows what the job took.
 			nowMs = NOW + 120_000;
 			availableMb = 7_200;
 			expect(admission.admit(shard(6, [running])).admitted).toBe(true);
@@ -959,7 +955,6 @@ describe("worker memory admission", () => {
 				availableMemoryMb: () => availableMb,
 			});
 			expect(admission.admit(shard(0, [])).admitted).toBe(false);
-			// Other work pauses for a moment: 8000 MiB reads free ten seconds on.
 			nowMs += 10_000;
 			availableMb = 8_000;
 			expect(admission.admit(shard(0, []))).toMatchObject({
@@ -967,7 +962,6 @@ describe("worker memory admission", () => {
 				reason: "memory-headroom",
 			});
 			expect(admission.availableLowWaterMb()).toBe(3_000);
-			// It stays free for the whole window, so the job may start.
 			nowMs += 61_000;
 			expect(admission.admit(shard(0, [])).admitted).toBe(true);
 		});
@@ -990,7 +984,6 @@ describe("worker memory admission", () => {
 				sandboxStage: "running",
 			};
 			expect(admission.admit(shard(5, [running])).admitted).toBe(false);
-			// Shard 7 finishes and gives its memory back.
 			nowMs += 5_000;
 			availableMb = 7_600;
 			expect(admission.admit(shard(5, [])).admitted).toBe(true);
@@ -1013,12 +1006,10 @@ describe("worker memory admission", () => {
 				sandboxStage: "running",
 				dispatchingAt: startedAt(12_000, NOW),
 			};
-			// 8 - 0.5 - 4 x e^(-12/60) - 1 = 3.2 CPUs, under the 4 a shard asks for.
 			expect(admission.admit(shard(6, [running]))).toMatchObject({
 				admitted: false,
 				reason: "cpu-contention",
 			});
-			// Three minutes on the load average carries the job; nothing is held twice.
 			nowMs = NOW + 180_000;
 			expect(admission.admit(shard(6, [running])).admitted).toBe(true);
 		});

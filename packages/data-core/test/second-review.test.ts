@@ -1,8 +1,3 @@
-// The second review's findings against the copy executors, each reproduced:
-// a late authority move, a rollback under a negative verdict, a rollback with
-// the target gone, fences nobody proved they own, the erasure that lands
-// between the ledger read and the flip back, a native transfer that kept
-// copying while held, and a journal written by an earlier release.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -71,7 +66,6 @@ const DENY: PolicyVerdict = {
 	],
 };
 
-/** A point one driver waits at until the test lets it go. */
 function gate() {
 	let open: () => void = () => {};
 	let arrive: () => void = () => {};
@@ -113,8 +107,6 @@ function factsOf(facts: readonly MigrationFact[], type: string) {
 
 const NO_ERASURES = { since: () => [] };
 
-// ── a late authority move ───────────────────────────────────────────────────
-
 describe("an authority move that lands late is refused by the router", () => {
 	const variants = [
 		...REALIZATIONS.map((realization) => ({
@@ -131,7 +123,6 @@ describe("an authority move that lands late is refused by the router", () => {
 			);
 			const router = new Authority();
 			const stalled = gate();
-			// Driver A wins the cutover fact; its flip is slow to reach the router.
 			const a = settle(
 				runSnapshotAndTail(
 					copyOptions(staged, {
@@ -145,8 +136,6 @@ describe("an authority move that lands late is refused by the router", () => {
 				),
 			);
 			await stalled.arrived;
-			// Driver C finds the decision, finishes the flip, and the operator
-			// rolls the migration back. That is terminal.
 			const c = await runSnapshotAndTail(
 				copyOptions(staged, {
 					erasures: NO_ERASURES,
@@ -157,7 +146,6 @@ describe("an authority move that lands late is refused by the router", () => {
 			assert.equal(c.status, "rolled-back", c.reason);
 			assert.deepEqual(router.flips, ["to-target", "to-source"]);
 
-			// Now A's flip arrives.
 			stalled.open();
 			const error = errorOf(await a);
 			assert.ok(error instanceof StaleAuthorityMoveError, String(error));
@@ -170,14 +158,12 @@ describe("an authority move that lands late is refused by the router", () => {
 			assert.equal(router.side, "source");
 			const [late] = router.refused;
 			assert.equal(late?.direction, "to-target");
-			// It carried the head of the cutover; the rollback was decided later.
 			const journal = await staged.journal.load("m1");
 			const headOf = (type: string) =>
 				journal.findIndex((fact) => fact.type === type) + 1;
 			assert.equal(late?.head, headOf(MIGRATION_EVENTS.CutOver));
 			assert.ok((late?.head ?? 0) < headOf(MIGRATION_EVENTS.RollbackDecided));
 
-			// One writable side, and it is the one the journal says.
 			assert.equal(foldMigration("m1", journal).status, "rolled-back");
 			assert.equal(
 				journal[journal.length - 1]?.type,
@@ -186,7 +172,6 @@ describe("an authority move that lands late is refused by the router", () => {
 			assert.equal(await writable(staged.source), true);
 			if (targetFence) assert.equal(await writable(staged.target), false);
 
-			// And a re-run finds nothing to do and moves nothing.
 			const again = await runSnapshotAndTail(
 				copyOptions(staged, { flipAuthority: router.flip }),
 			);
@@ -227,7 +212,6 @@ describe("an authority move that lands late is refused by the router", () => {
 		const staged = await stage("hub");
 		const fence = requirePort(staged.source, "fence");
 		const stalled = gate();
-		// Driver A's view of the source: its release of the fence is slow.
 		const slow: EngineBinding = {
 			...staged.source,
 			fence: {
@@ -240,8 +224,6 @@ describe("an authority move that lands late is refused by the router", () => {
 			},
 		};
 		const router = new Authority();
-		// The target is made to differ, so A's verification under the fence
-		// fails and it compensates: hold journaled, then the release.
 		const a = settle(
 			runSnapshotAndTail(
 				copyOptions(
@@ -261,7 +243,6 @@ describe("an authority move that lands late is refused by the router", () => {
 		);
 		await stalled.arrived;
 		assert.equal(await fenced(staged.source), true);
-		// The difference is repaired and driver C resumes: it cuts over.
 		await staged.target.records.write({
 			dataset: "orders",
 			mutations: [erase("stray")],
@@ -275,15 +256,12 @@ describe("an authority move that lands late is refused by the router", () => {
 		assert.equal(c.status, "held");
 		assert.equal(c.state.cutOver, true);
 		assert.equal(router.side, "target");
-		// C did not decide under the fence A was about to release: it let
-		// that one go and raised its own.
 		const raised = factsOf(c.facts, MIGRATION_EVENTS.FenceRaised).map(
 			(fact) => fact.data.fenceTokenDigest,
 		);
 		assert.equal(raised.length, 2);
 		assert.notEqual(raised[0], raised[1]);
 
-		// A's release arrives, naming a token that opens nothing any more.
 		stalled.open();
 		const error = errorOf(await a);
 		assert.ok(error instanceof JournalConflictError, String(error));
@@ -293,15 +271,12 @@ describe("an authority move that lands late is refused by the router", () => {
 			"the late release unfenced the old authority after the cutover",
 		);
 		assert.equal(await writable(staged.source), false);
-		// The migration carries on as if A had never been.
 		const done = await runSnapshotAndTail(
 			copyOptions(staged, { flipAuthority: router.flip }),
 		);
 		assert.equal(done.status, "completed", done.reason);
 	});
 });
-
-// ── a rollback under a negative verdict ─────────────────────────────────────
 
 describe("a negative verdict does not hold a rollback", () => {
 	for (const realization of REALIZATIONS) {
@@ -327,14 +302,12 @@ describe("a negative verdict does not hold a rollback", () => {
 					{ policy: () => verdict },
 				);
 			assert.equal((await runSnapshotAndTail(options())).status, "held");
-			// The rollback is decided and journaled, and then the router fails.
 			decision = "rollback";
 			routerDown = true;
 			await assert.rejects(runSnapshotAndTail(options()), /router down/u);
 			const stuck = await staged.journal.load("m1");
 			assert.equal(foldMigration("m1", stuck).rollbackDecided, true);
 			assert.equal(await writable(staged.source), false);
-			// The verdict turns negative. The decided rollback still finishes.
 			routerDown = false;
 			verdict = DENY;
 			const rolled = await runSnapshotAndTail(options());
@@ -362,7 +335,6 @@ describe("a negative verdict does not hold a rollback", () => {
 				);
 			assert.equal((await runSnapshotAndTail(options())).status, "held");
 			verdict = DENY;
-			// Anything but a rollback is still held by the verdict.
 			decision = "finalize";
 			const blocked = await runSnapshotAndTail(options());
 			assert.equal(blocked.status, "held");
@@ -371,7 +343,6 @@ describe("a negative verdict does not hold a rollback", () => {
 				/policy verdict is negative before soak: CUSTODY_RETENTION_EXPIRED/u,
 			);
 			assert.equal(router.side, "target");
-			// A rollback moves authority back to where the data already was.
 			decision = "rollback";
 			const rolled = await runSnapshotAndTail(options());
 			assert.equal(rolled.status, "rolled-back", rolled.reason);
@@ -397,9 +368,6 @@ describe("a negative verdict does not hold a rollback", () => {
 	});
 });
 
-// ── a rollback with the target gone ─────────────────────────────────────────
-
-/** A target that stops answering its fence — and its native port — when down. */
 function mortal(target: EngineBinding) {
 	const state = { down: false, stops: 0 };
 	const refuse = (): never => {
@@ -437,8 +405,6 @@ function mortal(target: EngineBinding) {
 describe("a rollback to a stale source does not wait for a target that is gone", () => {
 	for (const realization of REALIZATIONS) {
 		test(`${realization}: the target stops answering in soak; the rollback still hands authority back, and records that the target was not fenced`, async () => {
-			// No reverse tail: the hub's source cannot apply, the native
-			// realization never has one. The posture is to-snapshot.
 			const staged = await stage(
 				realization,
 				realization === "hub" ? { sourceOmit: ["apply"] } : {},
@@ -487,13 +453,11 @@ describe("a rollback to a stale source does not wait for a target that is gone",
 			assert.equal(decided?.data.lossless, false);
 			assert.equal(decided?.data.targetFenced, false);
 			assert.deepEqual(rolled.impedance, [ROLLBACK_TARGET_UNREACHABLE]);
-			// No fact carries what the dead target said.
 			assert.doesNotMatch(
 				JSON.stringify(rolled.facts),
 				/ECONNREFUSED|10\.0\.0\.7/u,
 			);
 			if (realization === "native") {
-				// The source's half of the transfer is dropped regardless.
 				assert.deepEqual(sourceStops, [nativeTransferName("m1")]);
 				assert.ok(dead.state.stops > 0, "the target was asked, and failed");
 			}
@@ -540,8 +504,6 @@ describe("a rollback to a stale source does not wait for a target that is gone",
 	});
 });
 
-// ── fence ownership ─────────────────────────────────────────────────────────
-
 describe("a fence is released or adopted only by the migration that can prove it raised it", () => {
 	const foreignFence = (binding: EngineBinding) =>
 		requirePort(binding, "fence").raise({
@@ -563,13 +525,11 @@ describe("a fence is released or adopted only by the migration that can prove it
 			dataset: "orders",
 			mutations: [order("post", "1")],
 		});
-		// A rollback attempt that does not converge: held, its fence released.
 		decision = "rollback";
 		rounds = 0;
 		const attempt = await runSnapshotAndTail(options());
 		assert.equal(attempt.status, "held");
 		assert.equal(await fenced(staged.target), false);
-		// Someone else — a second migration out of this store — fences it.
 		const foreign = await foreignFence(staged.target);
 		decision = "hold";
 		rounds = undefined;
@@ -585,7 +545,6 @@ describe("a fence is released or adopted only by the migration that can prove it
 			"the other owner's fence was released",
 		);
 		assert.equal(await writable(staged.target), false);
-		// The other owner's token still opens its own fence.
 		await staged.target.records.write({
 			dataset: "orders",
 			mutations: [order("theirs", "2")],
@@ -648,13 +607,11 @@ describe("a fence is released or adopted only by the migration that can prove it
 		assert.equal(held.state.cutOver, false);
 		assert.deepEqual(router.flips, []);
 		assert.deepEqual(factsOf(held.facts, MIGRATION_EVENTS.FenceRequested), []);
-		// Still the other owner's fence, with the other owner's token.
 		assert.equal(await fenced(staged.source), true);
 		await requirePort(staged.source, "fence").release({
 			scope: scopeOf("orders"),
 			fenceToken: foreign.fenceToken,
 		});
-		// With it gone the migration raises its own and completes.
 		const done = await runSnapshotAndTail(
 			copyOptions(staged, { flipAuthority: router.flip }),
 		);
@@ -688,7 +645,6 @@ describe("a fence is released or adopted only by the migration that can prove it
 			fenceTokenDigest(sourceToken),
 		);
 		assert.ok(!JSON.stringify(rolled.facts).includes(sourceToken));
-		// Each raise sits between its request and what was decided under it.
 		assert.deepEqual(
 			types(rolled.facts).filter((type) =>
 				[
@@ -710,11 +666,8 @@ describe("a fence is released or adopted only by the migration that can prove it
 	});
 });
 
-// ── the erasure replay window ───────────────────────────────────────────────
-
 describe("an erasure that lands between the ledger read and the flip back is replayed", () => {
 	test("the ledger is read again after authority is back on the source and before its fence is released", async () => {
-		// A target that cannot be fenced keeps taking erasures until the flip.
 		const staged = await stage("hub", { targetOmit: ["fence"] });
 		const router = new Authority();
 		const ledger: RecordMutation[] = [];
@@ -728,8 +681,6 @@ describe("an erasure that lands between the ledger read and the flip back is rep
 					side: router.side,
 					sourceFenced: await fenced(staged.source),
 				});
-				// The erasure service is still running against the authority: an
-				// erasure lands there, and in the ledger, right after this read.
 				if (ledger.length === 0) {
 					await staged.target.records.write({
 						dataset: "orders",
@@ -765,9 +716,6 @@ describe("an erasure that lands between the ledger read and the flip back is rep
 	});
 });
 
-// ── a native transfer while the migration is held ───────────────────────────
-
-/** A native port that records when it is paused and resumed. */
 function recording(
 	port: NativeTransferPort,
 	calls: string[],
@@ -804,7 +752,6 @@ describe("a held native run stops its transfer", () => {
 		};
 	}
 
-	/** What a monitor asking the source "how far has it got" would trigger. */
 	async function poll(staged: Stage): Promise<void> {
 		const source = staged.source.nativeTransfer;
 		assert.ok(source);
@@ -878,14 +825,11 @@ describe("a held native run stops its transfer", () => {
 	});
 });
 
-// ── a journal written by an earlier release ─────────────────────────────────
-
 interface RecordedJournals {
 	readonly snapshotAndTail: { readonly facts: readonly MigrationFact[] };
 	readonly inPlaceEvolve: { readonly facts: readonly MigrationFact[] };
 }
 
-// SAFETY: the committed fixture has this layout; it is what the 65a46a72 executors appended.
 const RECORDED = JSON.parse(
 	readFileSync(
 		path.join(import.meta.dirname, "fixtures", "journal-65a46a72.json"),
@@ -913,7 +857,6 @@ async function journalOf(
 	return journal;
 }
 
-/** The two stores as the recorded run left them: cut over, in the soak window. */
 async function recordedStores() {
 	const source = createReferenceEngine({ engine: "src" });
 	const target = createReferenceEngine({ engine: "tgt" });
@@ -947,7 +890,6 @@ describe("a journal recorded from the 65a46a72 executors is lifted before it is 
 	test("the recorded copy run resumes to completion, and no fence token reaches a result", async () => {
 		const { source, target, fenceToken } = await recordedStores();
 		const recorded = RECORDED.snapshotAndTail.facts;
-		// The fixture really is the old form: the token itself, twice.
 		assert.equal(
 			recorded.find((fact) => fact.type === MIGRATION_EVENTS.CutOver)?.data
 				.fenceToken,
@@ -993,7 +935,6 @@ describe("a journal recorded from the 65a46a72 executors is lifted before it is 
 			runOfflineCopy({ ...base, runtime: runtime(copy, "m") }),
 			refused("snapshot-and-tail"),
 		);
-		// The in-place executor of that release wrote no pattern at all.
 		const [planned] = RECORDED.inPlaceEvolve.facts;
 		assert.equal(planned?.data.pattern, undefined);
 		const inPlace = await journalOf("evolve", RECORDED.inPlaceEvolve.facts);
@@ -1001,7 +942,6 @@ describe("a journal recorded from the 65a46a72 executors is lifted before it is 
 			runSnapshotAndTail({ ...base, runtime: runtime(inPlace, "evolve") }),
 			refused("in-place-evolve"),
 		);
-		// And the other way about.
 		const port = {
 			snapshot: () => ({ ref: "snap", takenAt: NOW }),
 			applyPhase: () => {
@@ -1030,7 +970,6 @@ describe("a journal recorded from the 65a46a72 executors is lifted before it is 
 			}),
 			refused("snapshot-and-tail"),
 		);
-		// Nothing was appended to either journal by a refused run.
 		assert.equal(
 			(await copy.load("m")).length,
 			RECORDED.snapshotAndTail.facts.length,

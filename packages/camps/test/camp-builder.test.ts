@@ -1,29 +1,3 @@
-/**
- * The Camp builder and the architectural rules it enforces.
- *
- * A Camp is a segment inside a Yard. The rules it refuses are the interesting
- * part, because each one is a boundary somebody will eventually try to cross by
- * accident:
- *
- * - **A Camp must not own a Bindle.** Ownership belongs to a deployment request
- *   against a Yard/Camp. Letting a Camp hold one would put deployment topology
- *   inside a segment definition, where nothing that decides placement can see it.
- * - **A Camp must not select a cloud provider.** Provider selection belongs on
- *   the Yard. A Camp that picked its own would let one Yard span two clouds
- *   without anything in the Yard's own declaration saying so.
- * - **`tier` is stated, never inferred.** `envType` *is* inferred from the name
- *   for backwards compatibility, and the source comment explains why that trick
- *   is not repeated: a Camp called `data-migration` would silently become a
- *   data-tier segment. The tests below hold both halves of that asymmetry.
- *
- * Each refusal carries a `code` and a `remediation`. Those are what a caller
- * branches on and what a user reads, so they are asserted rather than assumed —
- * an error whose code changed would silently stop being handled.
- *
- * Everything the builder returns is deep-frozen. That is load-bearing rather
- * than defensive: Camps are shared across a topology graph, and one caller
- * mutating a `require` array would change what every other reader sees.
- */
 /* oxlint-disable anti-slop/no-shape-in-symbol-names, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: test helpers intentionally inspect controlled Camp builder fixtures. */
 import { describe, expect, it } from "vitest";
 
@@ -37,7 +11,6 @@ import {
 	withResolvers,
 } from "../src/camp.js";
 
-/** The `code` a thrown refusal carries. */
 function codeOf(run: () => unknown): string | undefined {
 	try {
 		run();
@@ -64,8 +37,6 @@ describe("naming a camp", () => {
 	});
 
 	it("refuses an empty name", () => {
-		// An unnamed Camp cannot be addressed by a deployment request, so it would
-		// exist in the topology and be unreachable.
 		expect(() => camp("")).toThrow(/camp name must be a non-empty string/u);
 	});
 
@@ -82,21 +53,14 @@ describe("naming a camp", () => {
 	});
 
 	it("takes the last path segment as the environment", () => {
-		// Camps arrive namespaced from a Yard. Keeping the whole path as the env
-		// would make the same Camp under two Yards look like two environments.
 		expect(camp("acme/prod").env).toBe("prod");
 	});
 
 	it("strips a legacy provider suffix from the id", () => {
-		// `checkout-aws` was the old display convention for a Camp's provider.
-		// Keeping it would encode a provider into the Camp id, which is exactly
-		// the coupling the provider rule exists to prevent.
 		expect(camp("checkout-aws").id).toBe("checkout");
 	});
 
 	it("keeps a name that is only a provider word", () => {
-		// Stripping here would leave an empty id. The fallback is what stops a
-		// Camp legitimately named "local" from becoming nameless.
 		expect(camp("local").id).toBe("local");
 	});
 
@@ -127,14 +91,10 @@ describe("inferring an environment type", () => {
 	});
 
 	it("falls back to the name for an environment it does not recognise", () => {
-		// Guessing "production" for an unknown name would apply production posture
-		// to a Camp nobody said was production.
 		expect(camp("canary").envType).toBe("canary");
 	});
 
 	it("prefers an explicit envType over the inference", () => {
-		// The inference is a convenience. A caller who states the type must not
-		// have it overridden by what their Camp happens to be called.
 		expect(camp("canary", { envType: "production" }).envType).toBe(
 			"production",
 		);
@@ -153,14 +113,10 @@ describe("the tier is stated, never inferred", () => {
 	});
 
 	it("omits tier entirely when none is given", () => {
-		// An `undefined` tier key would serialise into the topology and read as a
-		// Camp that declared no tier, which is different from one that has none.
 		expect("tier" in camp("seg")).toBe(false);
 	});
 
 	it("refuses a tier that is not a named one", () => {
-		// The named set is what policy rules match on. An unrecognised tier would
-		// silently match nothing and the Camp would be governed by no rule at all.
 		expect(() => camp("seg", { tier: "middleware" })).toThrow(
 			/is not a named tier/u,
 		);
@@ -179,10 +135,6 @@ describe("the tier is stated, never inferred", () => {
 	});
 
 	it("does not infer a tier from a name that contains one", () => {
-		// This is the asymmetry the source comment calls out: envType is inferred
-		// from the name, tier deliberately is not. A Camp called "data-migration"
-		// becoming a data-tier segment would put migration traffic under data
-		// policy without anybody saying so.
 		expect("tier" in camp("data-migration")).toBe(false);
 		expect(camp("data-migration").envType).toBe("data-migration");
 	});
@@ -190,17 +142,12 @@ describe("the tier is stated, never inferred", () => {
 
 describe("refusing to own a bindle", () => {
 	it("refuses a camp carrying a bindle", () => {
-		// Ownership belongs to a deployment request. A Camp holding one puts
-		// deployment topology inside a segment definition, where nothing that
-		// decides placement can see it.
 		expect(() => camp("seg", { bindle: {} as never })).toThrow(
 			/must not own a Bindle/u,
 		);
 	});
 
 	it("codes the refusal distinctly from the provider one", () => {
-		// Two different architectural rules, two different fixes. A shared code
-		// would send the caller to the wrong remediation.
 		expect(codeOf(() => camp("seg", { bindle: {} as never }))).toBe(
 			CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
 		);
@@ -216,8 +163,6 @@ describe("refusing to own a bindle", () => {
 describe("refusing to select a provider", () => {
 	for (const key of ["defaultProvider", "tiers", "bindings"]) {
 		it(`refuses a camp carrying ${key}`, () => {
-			// All three are provider-selection surfaces from the old model. Missing
-			// any one of them would leave a way to smuggle a provider into a Camp.
 			expect(() => camp("seg", { [key]: {} } as never)).toThrow(
 				/must not select a cloud provider/u,
 			);
@@ -231,8 +176,6 @@ describe("refusing to select a provider", () => {
 	});
 
 	it("refuses a provider-specific label", () => {
-		// Labels are free-form, which makes them the obvious place to hide a
-		// provider once the explicit fields are closed off.
 		expect(() => camp("seg", { labels: { provider: "aws" } })).toThrow(
 			/provider-specific label forbidden/u,
 		);
@@ -247,8 +190,6 @@ describe("refusing to select a provider", () => {
 	}
 
 	it("refuses a non-string label value", () => {
-		// Labels are matched as strings. A number would compare false against
-		// every rule and the Camp would quietly match nothing.
 		expect(() => camp("seg", { labels: { size: 3 } as never })).toThrow(
 			/must be a string/u,
 		);
@@ -257,9 +198,6 @@ describe("refusing to select a provider", () => {
 
 describe("canonicalising the lists", () => {
 	it("sorts and dedupes require", () => {
-		// Two Camps declaring the same requirements in different orders must
-		// produce the same Camp, or content hashes over the topology differ for
-		// no reason.
 		expect(camp("seg", { require: ["b", "a", "b"] }).require).toEqual([
 			"a",
 			"b",
@@ -291,16 +229,11 @@ describe("canonicalising the lists", () => {
 
 describe("freezing", () => {
 	it("freezes the camp itself", () => {
-		// Camps are shared across a topology graph. One caller mutating a shared
-		// Camp changes what every other reader sees, and the change is invisible
-		// at the point it is later observed.
 		const built = camp("seg");
 		expect(Object.isFrozen(built)).toBe(true);
 	});
 
 	it("freezes the nested lists too", () => {
-		// A shallow freeze would leave `require` mutable, which is the array most
-		// likely to be pushed into by a caller building up requirements.
 		const built = camp("seg", { require: ["a"] });
 		expect(Object.isFrozen(built.require)).toBe(true);
 		expect(Object.isFrozen(built.labels)).toBe(true);
@@ -309,9 +242,6 @@ describe("freezing", () => {
 
 describe("attaching a camp to a yard", () => {
 	it("namespaces the id under the yard", () => {
-		// The same Camp definition can be attached to two Yards. Without the
-		// namespace both would answer to one id and the second would shadow the
-		// first wherever Camps are looked up.
 		const attached = attachCampToYard(camp("checkout"), {
 			yardId: "acme",
 			providerId: "aws",
@@ -351,9 +281,6 @@ describe("attaching a camp to a yard", () => {
 	});
 
 	it("refuses to re-attach under a different provider", () => {
-		// A Camp already derived from one provider cannot be moved under another
-		// by re-attaching: its resolvers and mappings were resolved against the
-		// first, so the result would be internally inconsistent.
 		const attached = attachCampToYard(camp("c"), {
 			yardId: "acme",
 			providerId: "aws",
@@ -364,8 +291,6 @@ describe("attaching a camp to a yard", () => {
 	});
 
 	it("allows re-attaching under the same provider", () => {
-		// Idempotent re-attachment happens when a topology is rebuilt. Refusing it
-		// would make a rebuild fail on unchanged input.
 		const attached = attachCampToYard(camp("c"), {
 			yardId: "acme",
 			providerId: "aws",
@@ -376,8 +301,6 @@ describe("attaching a camp to a yard", () => {
 	});
 
 	it("keeps the camp's own mappings when the yard supplies none", () => {
-		// Passing none means "no opinion", not "clear them". Overwriting would
-		// silently discard mappings the Camp author wrote.
 		const built = camp("c", {
 			resourceMappings: [{ selector: { resourceName: "db" } }],
 		} as never);
@@ -424,9 +347,6 @@ describe("resolver pins", () => {
 	});
 
 	it("refuses two pins for one slot", () => {
-		// A slot with two resolvers has no defined winner, and picking one
-		// silently would resolve a resource against a provider the author did not
-		// choose.
 		const pinned = withResolvers(camp("c"), { db: "postgres" });
 		expect(() => withResolvers(pinned, { db: "mysql" })).toThrow(
 			/duplicate resolver pin slot: db/u,
@@ -470,8 +390,6 @@ describe("resolver pins", () => {
 
 describe("the public shape", () => {
 	it("strips the yard namespace back off the id", () => {
-		// The shape is what a Camp author sees. Showing them `acme/checkout` when
-		// they wrote `checkout` would make the two look like different things.
 		const attached = attachCampToYard(camp("checkout"), {
 			yardId: "acme",
 			providerId: "aws",
@@ -484,8 +402,6 @@ describe("the public shape", () => {
 	});
 
 	it("does not expose the derived provider", () => {
-		// The shape is the provider-agnostic view. Leaking the derived provider
-		// through it would let authoring code start depending on it.
 		const attached = attachCampToYard(camp("checkout"), {
 			yardId: "acme",
 			providerId: "aws",
@@ -511,9 +427,6 @@ describe("legacy provider mappings", () => {
 	});
 
 	it("refuses a mapping naming a different provider", () => {
-		// This is the compatibility shim's one rule: legacy mappings are tolerated
-		// only where they agree with the Yard. A disagreement means the old config
-		// genuinely spanned two clouds, which the new model cannot express.
 		expect(() =>
 			parseLegacyCampMappings(
 				{ bindings: { db: { providerId: "gcp" } } },
@@ -551,9 +464,6 @@ describe("legacy provider mappings", () => {
 	});
 
 	it("maps a tier onto a resource-kind selector", () => {
-		// Bindings named a specific resource; tiers named a class of them. Losing
-		// that distinction would apply one resource's mapping to every resource of
-		// its kind.
 		const result = parseLegacyCampMappings(
 			{ tiers: { cache: { providerId: "aws" } } },
 			"aws",
@@ -572,8 +482,6 @@ describe("legacy provider mappings", () => {
 	});
 
 	it("omits a default provider that pins no resolver", () => {
-		// Without a selector there is nothing to carry forward — an empty catch-all
-		// rule would match every resource and resolve none of them.
 		const result = parseLegacyCampMappings(
 			{ defaultProvider: { providerId: "aws" } },
 			"aws",
@@ -586,8 +494,6 @@ describe("legacy provider mappings", () => {
 	});
 
 	it("says the mappings were stripped", () => {
-		// The deprecation string is what surfaces to a user still on the old
-		// config. Silence would let them keep writing it indefinitely.
 		expect(parseLegacyCampMappings({}, "aws").deprecation).toContain(
 			"stripped from canonical camp",
 		);

@@ -1,12 +1,3 @@
-/**
- * Selection behaviour, including the rejection this pack exists to guarantee.
- *
- * A Redis-compatible store is the single most common place a capability model
- * quietly over-claims: `LPUSH`/`BRPOP` looks like a work queue and streams look
- * like a durable log, so a candidate that advertised `queue.*` would win those
- * selections and then lose messages on a restart, a failover, or a consumer crash.
- * The `PROFILE_INCOMPATIBLE` cases below are the guardrail.
- */
 import assert from "node:assert/strict";
 import {
 	createCapabilityProfileRegistry,
@@ -72,8 +63,6 @@ describe("the valkey pack as a selection candidate", () => {
 				?.definitionId,
 			VALKEY_PACK_DEFINITION_ID,
 		);
-		// Through refinement: kv.valkey refines kv.redis-compatible refines
-		// kv.key-value.
 		assert.equal(
 			select({ requiredProfiles: [{ profileId: "kv.key-value/v1" }] }).winner
 				?.definitionId,
@@ -114,8 +103,6 @@ describe("the valkey pack as a selection candidate", () => {
 	});
 
 	it("is rejected even when a queue requirement is paired with the kv profile it does satisfy", () => {
-		// The realistic shape of the mistake: "I need a cache and a queue, and
-		// this thing does both."
 		const result = select({
 			requiredProfiles: [
 				{ profileId: "kv.redis-compatible/v1" },
@@ -159,7 +146,6 @@ describe("the valkey pack as a selection candidate", () => {
 		assert.equal(durableCandidate.structuredCapabilities.durableKeyspace, true);
 		assert.equal(durableCandidate.structuredCapabilities.worstCaseLossMs, 1000);
 
-		// Same image, same pack, different guarantee.
 		assert.equal(cacheCandidate.structuredCapabilities.durability, "none");
 		assert.equal(cacheCandidate.structuredCapabilities.keyLossPossible, true);
 		assert.equal(cacheCandidate.structuredCapabilities.durableKeyspace, false);

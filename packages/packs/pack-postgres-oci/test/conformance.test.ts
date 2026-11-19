@@ -1,8 +1,3 @@
-/**
- * The mandatory lane never starts a container. It replays recorded outcomes, so
- * what these tests prove is that the suite is well-formed, honestly classified,
- * and that a failure is reported as a failure — not that PostgreSQL works.
- */
 import {
 	containerCases,
 	createReplayConformanceRunner,
@@ -20,7 +15,6 @@ import {
 } from "../src/index.js";
 import { verifiedPostgresPack } from "./harness.js";
 
-/** A recording where every step of every case succeeds as declared. */
 function passingRecording(): RecordedStepOutcome[] {
 	const recorded: RecordedStepOutcome[] = [];
 	for (const testCase of POSTGRES_CONFORMANCE_CASES) {
@@ -75,8 +69,6 @@ describe("postgres conformance suite", () => {
 		for (const testCase of cases) {
 			expect(claimed.has(testCase.profileRef)).toBe(true);
 		}
-		// Both refinement levels carry their own evidence, so a requirement for
-		// either one is backed by a case rather than by the refinement graph.
 		const profiles = cases.map((testCase) => testCase.profileRef);
 		expect(profiles).toContain("data.postgres/v1");
 		expect(profiles).toContain("data.relational/v1");
@@ -116,7 +108,6 @@ describe("postgres conformance suite", () => {
 		});
 		expect(report.outcome).toBe("pass");
 		expect(report.packId).toBe("pack.postgres.oci/v1");
-		// Evidence is scoped to the bytes it was gathered against.
 		expect(report.imageDigest).toBe(manifest.selectedImage.digest);
 		expect(report.results).toHaveLength(POSTGRES_CONFORMANCE_CASES.length);
 	});

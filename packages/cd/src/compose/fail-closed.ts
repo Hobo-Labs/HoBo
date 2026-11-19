@@ -1,12 +1,3 @@
-// Fail-closed adapters for ports a host has not configured.
-//
-// Composition never invents a capability. An unconfigured runbook executor or
-// suite runner refuses with a typed reason; an unconfigured traffic shifter
-// offers no capability (so a required canary is refused honestly as
-// `progressive-unsupported`, I6) and realizes nothing; an unrouted NOTIFY is
-// dropped and counted (NOTIFY is best-effort by D4). Unconfigured fan-out
-// pricing quotes nothing and records no Station budget, so the D20 aggregate
-// refuses every fan-out before any Camp starts.
 import type { RoutingPlanId } from "@hobo/core";
 import type { FanoutAggregateDeps } from "../adapters/gatekeeper.js";
 import type {
@@ -37,7 +28,6 @@ function count(
 			{ name, kind: "counter", value: 1, unit: "1", atMs, attributes },
 		])
 		.catch(() => {
-			// Telemetry is best-effort; it never changes an outcome.
 		});
 }
 
@@ -90,7 +80,6 @@ export function unroutedNotifications(
 	return Object.freeze(port);
 }
 
-/** Offers nothing, realizes nothing, reports no plan. */
 export function unconfiguredTraffic(
 	d: Readonly<{ telemetry?: TelemetrySink }> = {},
 ): TrafficShifter {
@@ -118,12 +107,6 @@ export function unconfiguredTraffic(
 	return Object.freeze(port);
 }
 
-/**
- * No pricing or Station budget authority is composed: no quote, no budget.
- * The fan-out aggregate gate then refuses `fanout-aggregate-quote-missing`
- * (or `fanout-aggregate-budget-missing`) and the refusal is counted; the
- * aggregate never assumes zero cost.
- */
 export function unconfiguredFanoutCost(
 	d: Readonly<{ telemetry?: TelemetrySink; now?: () => number }> = {},
 ): Pick<FanoutAggregateDeps, "quote" | "budget"> {

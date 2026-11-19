@@ -1,9 +1,3 @@
-/**
- * Behaviour the conformance suite does not reach: the record format and the
- * pathname encoding, refusal classification, lost replies, contention limits,
- * a concurrent `expire` under a compare-and-set, lazy expiry, foreign blobs,
- * and the purge.
- */
 import {
 	parseEphemeralKey,
 	parseEphemeralTtlMs,
@@ -124,7 +118,6 @@ describe("refusal classification", () => {
 				new BlobError("This blob already exists, use `allowOverwrite: true`"),
 			),
 		).toBe("refused");
-		// Unclassified: treated as a refusal, which the binding confirms by reading.
 		expect(classifyBlobWriteError(new BlobUnknownError())).toBe("refused");
 		expect(classifyBlobWriteError(new BlobAccessError())).toBeUndefined();
 		expect(
@@ -175,7 +168,6 @@ describe("lost replies", () => {
 });
 
 describe("contention", () => {
-	/** An SDK whose every conditional write loses to another writer first. */
 	type Contested = { readonly sdk: VercelBlobSdk; readonly now: () => number };
 
 	function alwaysLoses(): Contested {
@@ -210,7 +202,6 @@ describe("contention", () => {
 		await expect(port.increment(key("hot"), 1, ttl)).rejects.toBeInstanceOf(
 			VercelBlobContentionError,
 		);
-		// 1, then three rival bumps of 100; none of the second call's writes landed.
 		expect((await port.get(key("hot")))?.value).toBe("301");
 	});
 
@@ -297,7 +288,6 @@ describe("lazy expiry", () => {
 		expect(sdk.blobs().size).toBe(1);
 		const second = await port.putIfAbsent(key("k"), "new", ttl);
 		expect(first).toEqual({ applied: true, version: "inc-1:1" });
-		// The refused create drew inc-3 (and w-4); the replace draws inc-5.
 		expect(second).toEqual({ applied: true, version: "inc-5:1" });
 		expect(sdk.blobs().size).toBe(1);
 	});

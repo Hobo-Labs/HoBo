@@ -29,13 +29,6 @@ const BASE_OPERATION = "broker:base";
 const eventId = (value: string) =>
 	`broker:event:${createHash("sha256").update(value).digest("hex")}`;
 
-/**
- * The existing financial authority, replayed and committed through HoBo's
- * fixed-membership majority journal. The host must independently verify the
- * complete voter anchor, pre-fund every journal operation and quarantine any
- * voter restored from an older backup. This adapter does not create that proof
- * or fence a provider's external effects.
- */
 export function createFleetBudgetAdmissionAuthority(options: {
 	readonly journal: Journal;
 	readonly snapshot: BudgetLedgerSnapshot;
@@ -43,8 +36,6 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	readonly fenceTrust?: BudgetFenceTrust;
 	readonly unpricedScopeTrust?: IacUnpricedScopeTrust;
 	readonly iacPricedSettlementTrust?: IacPricedSettlementTrust;
-	/** Operational hosts may install a separately funded, actor-authorized
-	 * recovery. Read-only inspection leaves this absent. */
 	readonly recover?: () => Promise<void>;
 }): AsyncBudgetAdmissionAuthority & {
 	initializeFresh(
@@ -72,8 +63,6 @@ export function createFleetBudgetAdmissionAuthority(options: {
 		try {
 			return await journal.read();
 		} catch (error) {
-			// Finishing an already offered command is a separately funded journal
-			// operation. It never invents a replacement financial decision.
 			if (
 				allowRecovery &&
 				recover &&
@@ -193,8 +182,6 @@ export function createFleetBudgetAdmissionAuthority(options: {
 					error.reason !== "freshness-unverified"
 				)
 					throw error;
-				// The journal checks every member's authenticated identity, exact
-				// local prefix and documents before recovering this one command.
 				const entries = await journal.recoverBootstrap(verifyFresh, {
 					operationId: BASE_OPERATION,
 					value: `${BASE}${initial}`,

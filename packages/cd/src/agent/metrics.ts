@@ -1,5 +1,3 @@
-// Advisory metrics through the frozen TelemetrySink. A failing sink never
-// fails a command or a request.
 import type { OtelAttributes, TelemetrySink } from "../ports.js";
 
 export type MetricKind = "counter" | "histogram" | "gauge";

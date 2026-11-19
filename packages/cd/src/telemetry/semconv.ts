@@ -1,7 +1,3 @@
-// OpenTelemetry CI/CD semantic conventions as used by @hobo/cd (D17, R8).
-// The pinned version lives in STANDARDS.lock.json next to this file; the two
-// must agree (a golden test enforces it). Names here are wire contract:
-// collectors, dashboards and the alert rules key on them.
 
 // public-contract: the pinned semantic-conventions release.
 export const SEMCONV = Object.freeze({

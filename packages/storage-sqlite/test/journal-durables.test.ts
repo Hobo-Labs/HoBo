@@ -1,27 +1,3 @@
-/**
- * The journal's durable primitives: queues, leases and fencing.
- *
- * These are the parts of ADR-0135 that make a crashed process safe rather than
- * merely recoverable, and every one of their guards fails silently if it
- * regresses — a broken fence check does not throw, it just lets two workers
- * both believe they hold the same actor.
- *
- * Three properties are asserted directly:
- *
- * **A lease is only releasable by its holder, at its fence.** `completeMessage`
- * and `releaseActorLease` both match on the fence token, so a worker whose
- * lease expired and was taken over cannot complete work it no longer owns.
- * Without that, a slow worker waking after a takeover overwrites the new
- * holder's state and the takeover was pointless.
- *
- * **The fence token only ever goes up.** It is monotonic across takeovers,
- * which is what lets a downstream store reject a stale writer by comparing
- * numbers rather than tracking identities.
- *
- * **Enqueue is idempotent per idempotency key.** A retry after a crashed
- * publish must not produce two messages, and the second call has to report
- * that it deduped rather than silently returning a different id.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -30,7 +6,6 @@ import {
 	StaleFenceError,
 } from "../src/index.js";
 
-/** A clock that advances only when a test asks it to. */
 function controllableClock(startMs = Date.parse("2026-07-27T12:00:00.000Z")) {
 	let ms = startMs;
 	return {
@@ -65,7 +40,6 @@ describe("enqueueMessage", () => {
 	});
 
 	it("dedupes a repeat of the same key", () => {
-		// A retry after a crashed publish must not produce two messages.
 		const { j } = journal();
 		const first = j.enqueueMessage({
 			queueName: "q",
@@ -83,7 +57,6 @@ describe("enqueueMessage", () => {
 	});
 
 	it("says it deduped rather than silently returning a new id", () => {
-		// Silence here would let a caller believe it published twice.
 		const { j } = journal();
 		j.enqueueMessage({ queueName: "q", idempotencyKey: "k1", body: {} });
 		expect(
@@ -146,7 +119,6 @@ describe("leaseMessages", () => {
 	});
 
 	it("does not lease the same message twice while the lease holds", () => {
-		// The whole point of a visibility timeout.
 		const { j } = seeded();
 		j.leaseMessages({
 			queueName: "q",
@@ -168,7 +140,6 @@ describe("leaseMessages", () => {
 	});
 
 	it("reclaims a message whose lease expired", () => {
-		// A crashed worker must not hold a message forever.
 		const { j, clock } = seeded();
 		j.leaseMessages({
 			queueName: "q",
@@ -190,8 +161,6 @@ describe("leaseMessages", () => {
 	});
 
 	it("increments the delivery attempt on redelivery", () => {
-		// The count is what a dead-letter policy reads; a reset would make a
-		// poison message immortal.
 		const { j, clock } = seeded();
 		const first = j.leaseMessages({
 			queueName: "q",
@@ -231,7 +200,6 @@ describe("leaseMessages", () => {
 	});
 
 	it("does not lease a message that is not yet available", () => {
-		// A delayed message must stay invisible until its time.
 		const { j, clock } = journal();
 		const later = new Date(Date.parse(clock.now()) + 60_000).toISOString();
 		j.enqueueMessage({
@@ -331,8 +299,6 @@ describe("completeMessage is fenced", () => {
 	});
 
 	it("refuses completion at a stale fence", () => {
-		// The case that matters: a slow worker waking after a takeover must not
-		// overwrite the new holder's outcome, or the takeover was pointless.
 		const { j, messageId } = leased();
 		expect(j.completeMessage(messageId, "w1", 6n, 1)).toBe(false);
 		j.close();
@@ -345,7 +311,6 @@ describe("completeMessage is fenced", () => {
 	});
 
 	it("refuses a second completion of the same message", () => {
-		// Idempotent in effect but honest about it: the second call says no.
 		const { j, messageId } = leased();
 		j.completeMessage(messageId, "w1", 7n, 1);
 		expect(j.completeMessage(messageId, "w1", 7n, 1)).toBe(false);
@@ -379,8 +344,6 @@ describe("actor leases", () => {
 	});
 
 	it("refuses a second holder while the lease is live", () => {
-		// Two holders of one actor is the failure the whole mechanism exists to
-		// prevent.
 		const { j } = journal();
 		j.acquireActorLease({ key: "a1", holderId: "h1" });
 		expect(() => j.acquireActorLease({ key: "a1", holderId: "h2" })).toThrow(
@@ -389,8 +352,6 @@ describe("actor leases", () => {
 	});
 
 	it("refuses even the same holder while the lease is live", () => {
-		// Re-acquiring without releasing would silently bump the fence and
-		// invalidate the holder's own outstanding writes.
 		const { j } = journal();
 		j.acquireActorLease({ key: "a1", holderId: "h1" });
 		expect(() => j.acquireActorLease({ key: "a1", holderId: "h1" })).toThrow(
@@ -409,8 +370,6 @@ describe("actor leases", () => {
 	});
 
 	it("increments the fence on takeover", () => {
-		// Monotonic fencing is what lets a downstream store reject a stale
-		// writer by comparing numbers rather than tracking identities.
 		const { j, clock } = journal();
 		j.acquireActorLease({ key: "a1", holderId: "h1", leaseTtlMs: 1000 });
 		clock.advance(5000);
@@ -443,8 +402,6 @@ describe("actor leases", () => {
 	});
 
 	it("still bumps the fence after a clean release", () => {
-		// A released lease is not a fresh one: the next holder must outrank
-		// anything the previous holder still has in flight.
 		const { j } = journal();
 		const lease = j.acquireActorLease({ key: "a1", holderId: "h1" });
 		j.releaseActorLease("a1", "h1", lease.fenceToken);
@@ -455,7 +412,6 @@ describe("actor leases", () => {
 	});
 
 	it("ignores a release from a different holder", () => {
-		// Otherwise any worker could evict any other by guessing a key.
 		const { j } = journal();
 		const lease = j.acquireActorLease({ key: "a1", holderId: "h1" });
 		j.releaseActorLease("a1", "impostor", lease.fenceToken);
@@ -494,8 +450,6 @@ describe("actor leases", () => {
 	});
 
 	it("defaults the ttl rather than granting an unbounded lease", () => {
-		// An unbounded lease is a permanent one, which turns a crash into an
-		// actor nobody can take over.
 		const { j, clock } = journal();
 		const lease = j.acquireActorLease({ key: "a1", holderId: "h1" });
 		expect(Date.parse(lease.expiresAt)).toBeGreaterThan(

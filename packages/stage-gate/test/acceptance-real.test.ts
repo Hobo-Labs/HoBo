@@ -1,19 +1,3 @@
-/**
- * The real ai-bdd lane of the release gate (ADR-0172), the provider side of
- * contracts/pacts/stage-gate-ai-bdd-report.pact.json. Selected by setting
- * HOBO_AI_BDD_CMD; once selected it fails, never skips, when anything it
- * needs is missing or the command cannot run:
- *
- * - HOBO_AI_BDD_CMD: the ai-bdd argv as JSON, e.g.
- *   '["node","--conditions=source","<ai-bdd>/packages/cli/src/bin.ts","-c","<test config>"]'
- * - HOBO_AI_BDD_PROJECT: a project whose committed plans and recordings replay
- *   with no agent, with its verdict cache (.ai-bdd/cache/) present
- * - HOBO_AI_BDD_STALE_DOC: one of its docs (relative path) for the negative
- *   control; it is edited for one gate run and restored byte for byte
- *
- * Run: pnpm --filter @hobo/stage-gate run test:real (the scripts' commands:
- * vitest run test/acceptance-real.test.ts in this package).
- */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -112,6 +96,5 @@ describe.skipIf(!SELECTED)("the release gate against a real ai-bdd", () => {
 
 describe.skipIf(SELECTED)("the release gate against a real ai-bdd", () => {
 	it.skip("is selected by HOBO_AI_BDD_CMD (see the header of this file)", () => {
-		// Not selected: the default lanes run the gate against the stand-in instead.
 	});
 });

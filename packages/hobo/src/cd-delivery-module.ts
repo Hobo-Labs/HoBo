@@ -1,15 +1,4 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names -- SAFETY: this is the parse boundary for an untrusted delivery module; module exports are unknown until fromJson parses each record with its generated schema. */
-/**
- * Delivery as code: a `hobo.delivery.ts` module, or a JSON file, that exports
- * CD records, applied by `hobo deploy pipeline apply --file`.
- *
- * The module exports plain data, never behaviour: `sources`, `pipelines`,
- * `windows`, `campSets`, `placements` and `publishers`, each an array of
- * records in protobuf JSON form (or records built with `create`). Every
- * record is parsed once here with the generated schema (parse, don't
- * validate); an unknown field or a wrong type refuses the whole file, so a
- * partly applied delivery module is impossible.
- */
 
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
@@ -46,12 +35,6 @@ export const DELIVERY_MODULE_EXPORTS = Object.freeze({
 	publishers: TrustedPublisherRecordSchema,
 } as const);
 
-/**
- * Topology a delivery module may also declare: `yards` (@hobo/yards Yards),
- * `camps` (CdTopologyCamp records) and `rails` (Station Rail declarations).
- * They are not applied: the topology loaders (cd-topology.ts,
- * cd-declared-rails.ts) parse them when the module is a topology file.
- */
 // public-contract: the delivery module's topology export names.
 export const DELIVERY_MODULE_TOPOLOGY_EXPORTS = Object.freeze([
 	"yards",
@@ -94,7 +77,6 @@ function parseRecords<D extends DescMessage>(
 	return value.map((item, index) => {
 		if (isMessage(item, schema)) return item;
 		try {
-			// SAFETY: fromJson parses and rejects anything that is not the schema's JSON form.
 			return fromJson(schema, item as ProtoJson);
 		} catch (error) {
 			throw new TypeError(
@@ -104,13 +86,12 @@ function parseRecords<D extends DescMessage>(
 	});
 }
 
-/** Parse the exports of a delivery module (already loaded). */
 export function parseDeliveryModule(
 	exports: Readonly<Record<string, unknown>>,
 ): DeliveryModuleOutcome {
 	const root =
 		typeof exports.default === "object" && exports.default !== null
-			? // SAFETY: a default export object carries the same named members.
+			?
 				(exports.default as Record<string, unknown>)
 			: exports;
 	const known = new Set<string>([
@@ -172,19 +153,15 @@ export type ModuleImporter = (
 	path: string,
 ) => Promise<Readonly<Record<string, unknown>>>;
 
-/** Load a `.ts`/`.mts` module through tsx, any other module natively. */
 export const defaultModuleImporter: ModuleImporter = async (path) => {
 	const url = pathToFileURL(path).href;
 	if (/\.(c|m)?ts$/.test(path)) {
 		const { tsImport } = await import("tsx/esm/api");
-		// SAFETY: a module namespace object.
 		return (await tsImport(url, import.meta.url)) as Record<string, unknown>;
 	}
-	// SAFETY: a module namespace object.
 	return (await import(url)) as Record<string, unknown>;
 };
 
-/** Read a delivery file: `.json` (one record or the exports object) or a module. */
 export async function loadDeliveryFile(
 	file: string,
 	options: Readonly<{ cwd: string; importModule?: ModuleImporter }>,
@@ -205,7 +182,6 @@ export async function loadDeliveryFile(
 					message: `${file} must hold a JSON object`,
 					remediation: INVALID_REMEDIATION,
 				};
-			// SAFETY: checked to be a non-array object above.
 			exports = parsed as Record<string, unknown>;
 		} else {
 			exports = await (options.importModule ?? defaultModuleImporter)(path);
@@ -224,10 +200,6 @@ export async function loadDeliveryFile(
 
 export type DeliveryKind = keyof typeof DELIVERY_MODULE_EXPORTS;
 
-/**
- * Records of one kind from `--file`: a delivery module/exports object, or a
- * JSON file holding exactly one record of that kind.
- */
 export async function loadRecordsOf<K extends DeliveryKind>(
 	kind: K,
 	file: string,
@@ -262,7 +234,6 @@ export async function loadRecordsOf<K extends DeliveryKind>(
 	return loaded.ok ? { ok: true, value: loaded.value[kind] } : loaded;
 }
 
-/** Every record a delivery module holds, in apply order. */
 export function deliveryRecordCount(module: DeliveryModule): number {
 	return (
 		module.publishers.length +

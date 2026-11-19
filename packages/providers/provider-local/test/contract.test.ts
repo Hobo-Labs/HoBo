@@ -1,13 +1,3 @@
-/**
- * Provider-side shape pin: the catalog pact, replayed against the real
- * exports. Not consumer-verified; the consumer side is the @hobo/hobo
- * first-party-catalog test.
- *
- * The boundary is in-process — a composition reading definitions — so the
- * pact's "responses" are computed here from `LOCAL_DEFINITIONS` and
- * `LOCAL_ENGINE_GAPS` and compared with the recorded bodies. A drift
- * between what this package publishes and what the pact promises fails.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -60,7 +50,6 @@ function parseInteraction(entry: JsonObject): PactInteraction {
 	};
 }
 
-/** Parse the pact rather than trusting its shape. */
 function loadPact(): PactFile {
 	const decoded = parseJsonObject(
 		readFileSync(

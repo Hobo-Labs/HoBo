@@ -23,7 +23,6 @@ export interface DaprRuntimeHostOptions {
 	readonly config?: DaprRuntimeConfig;
 	readonly tenantId?: string;
 	readonly campId?: string;
-	/** Live daprd client (harness or real). When set, messaging/actors use it. */
 	readonly client?: DaprSidecarClient;
 	readonly env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
 }
@@ -37,10 +36,6 @@ export interface DaprRuntimeBundle {
 	generateKafkaPubsubYaml(bootstrapBinding: string): string;
 }
 
-/**
- * Optional Camp runtime backend (`kind: "dapr"`).
- * Does not replace local/wasm defaults (ADR-0031).
- */
 export function createDaprRuntimeHost(
 	options: DaprRuntimeHostOptions = {},
 ): DaprRuntimeBundle {
@@ -75,7 +70,6 @@ export function createDaprRuntimeHost(
 				...(client?.health
 					? {
 							probeRuntime: () => {
-								// sync doctor path: treat injected client as reachable
 								return true;
 							},
 						}
@@ -107,8 +101,6 @@ export function createDaprRuntimeHost(
 			};
 		},
 		async servePrivate(ctx: ServePrivateContext): Promise<PrivateServeResult> {
-			// Polyglot path: handlers still in-process for tests; live mode would
-			// inject sidecar annotations / dapr run wrappers outside this host.
 			const handlers = new Map<
 				string,
 				(input: Request) => Response | Promise<Response>

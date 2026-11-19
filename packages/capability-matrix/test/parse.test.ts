@@ -20,16 +20,13 @@ type JsonValue =
 	| JsonObject;
 type JsonObject = Record<string, JsonValue>;
 
-/** A matrix that has been through JSON, as a stored or transmitted one would. */
 function documentOf(): JsonObject {
-	// SAFETY: JSON.stringify/parse round-trips the generated matrix as JSON.
 	return JSON.parse(
 		JSON.stringify(generateCapabilityMatrix(matrixInput())),
 	) as JsonObject;
 }
 
 function cells(document: JsonObject): JsonObject[] {
-	// SAFETY: documentOf() returns a generated matrix with a cells array.
 	return document.cells as JsonObject[];
 }
 
@@ -41,7 +38,6 @@ function expectRejection(
 	try {
 		parseCapabilityMatrix(document);
 	} catch (error) {
-		// SAFETY: parseCapabilityMatrix throws CapabilityMatrixError on refusal.
 		expect((error as CapabilityMatrixError).code).toBe(code);
 	}
 }
@@ -86,9 +82,7 @@ describe("the read boundary", () => {
 
 	it("refuses a bucket whose ids are unsorted or duplicated", () => {
 		const document = documentOf();
-		// SAFETY: cells() returns generated matrix cell objects with buckets.
 		const first = cells(document)[0] as JsonObject;
-		// SAFETY: generated cells carry a buckets object.
 		(first.buckets as JsonObject).native = {
 			available: ["b/v1", "a/v1"],
 			unavailable: [],
@@ -118,11 +112,9 @@ describe("the read boundary", () => {
 
 	it("refuses a candidate that claims availability while recording a reason", () => {
 		const document = documentOf();
-		// SAFETY: documentOf() returns a matrix with at least one populated cell.
 		const cell = cells(document).find(
 			(entry) => Array.isArray(entry.candidates) && entry.candidates.length > 0,
 		) as JsonObject;
-		// SAFETY: the selected populated cell contains candidate objects.
 		const candidate = (cell.candidates as JsonObject[])[0];
 		if (candidate !== undefined) {
 			candidate.unavailability = [

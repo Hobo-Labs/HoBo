@@ -1,12 +1,3 @@
-/**
- * Making the pack selectable.
- *
- * The capabilities advertised here are the ones `kv.redis-compatible/v1` declares
- * plus the retention facts, and they are computed from the deployment's chosen
- * durability and eviction settings rather than hard-coded. A pack deployed as a
- * lossy cache and a pack deployed with an fsync-per-write AOF are the same image
- * and *not* the same capability, so they must not present the same candidate.
- */
 import type { SelectionCandidate } from "@hobo/capability-profiles";
 import {
 	type PackSemanticsOptions,
@@ -25,24 +16,15 @@ import {
 export const VALKEY_PACK_DEFINITION_ID = "hobo.pack.valkey-oci/v1" as const;
 
 export type ValkeyCatalogOptions = {
-	/** The Yard that will run the container. Compute host, not a vendor. */
 	readonly yardId: string;
 	readonly evidenceExpiresAtMs: number;
 	readonly evidenceSignatureValid: boolean;
-	/** The durability the deployment is configured for. Not a default. */
 	readonly durabilityMode: ValkeyDurabilityMode;
-	/** The eviction policy the deployment is configured for. Not a default. */
 	readonly evictionPolicy: ValkeyEvictionPolicy;
 	readonly maxValueBytes?: number;
 	readonly tls?: boolean;
 };
 
-/**
- * The maximum value size the protocol permits: 512 MiB for a string value.
- *
- * Advertised because `kv.key-value/v1` declares `maxValueBytes` as a feature and
- * an absent feature and a stated one behave differently in selection.
- */
 export const VALKEY_MAX_VALUE_BYTES = 512 * 1024 * 1024;
 
 export function valkeyPackSemanticsOptions(
@@ -69,22 +51,17 @@ export function valkeyPackSemanticsOptions(
 			ttl: true,
 			atomicIncrement: true,
 			sortedSets: true,
-			// There is no HTTP command transport in this image. A `true` here
-			// would win selections for workloads that can only speak REST.
 			restTransport: false,
 			maxValueBytes: options.maxValueBytes ?? VALKEY_MAX_VALUE_BYTES,
-			// The retention facts, so a requirement can gate on them.
 			durability: retention.durability.mode,
 			survivesRestart: retention.durability.survivesRestart,
 			worstCaseLossMs: retention.durability.worstCaseLossMs ?? -1,
 			eviction: retention.eviction.policy,
 			keyLossPossible: retention.keyLossPossible,
 			durableKeyspace: retention.behavesAsDurableKeyspace,
-			// TLS is off unless the Yard terminates it.
 			tls: options.tls ?? false,
 		},
 		placementConstraints: [
-			// A single-writer volume cannot follow the container across hosts.
 			{ key: "storage.localVolume", operator: "equals", values: ["true"] },
 		],
 		requiresConnectivityProfiles: ["binding.redis-protocol/v1"],

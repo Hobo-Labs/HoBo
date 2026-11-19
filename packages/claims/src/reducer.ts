@@ -1,18 +1,3 @@
-/**
- * The claim coordinator reducer.
- *
- * Pure and restart-safe: every effect (provider call, rotation, destruction)
- * happens outside this module and comes back in as a command. The invariants
- * that matter live here so a provider package cannot weaken them:
- *
- *  - a provider callback reporting success never completes a claim;
- *  - an item completes only after independent verification AND every mandatory
- *    post-claim rotation/revocation;
- *  - a bundle completes only when all items complete;
- *  - partial claim is an explicit repairable state, never flattened;
- *  - a stale fence cannot mutate anything;
- *  - the human can own the infrastructure while the agent stays revoked.
- */
 import {
 	assertNoSecrets,
 	type ClaimCommand,
@@ -40,10 +25,8 @@ export type ClaimCoordinatorState = {
 	readonly lease?: GuestLease;
 	readonly bundle?: ClaimBundle;
 	readonly fencingToken: string;
-	/** Idempotency keys already applied, so a retry cannot double-provision. */
 	readonly appliedIdempotencyKeys: readonly string[];
 	readonly provisionedSubjects: readonly string[];
-	/** True once the human owns the infrastructure, regardless of agent state. */
 	readonly agentAuthorized: boolean;
 };
 
@@ -86,7 +69,6 @@ function replaceItem(
 	return { ...bundle, items };
 }
 
-/** Earliest deadline is derived, never stored independently. */
 function deriveEarliestDeadline(
 	items: readonly ClaimItem[],
 ): Instant | undefined {
@@ -110,7 +92,6 @@ function deriveBundleStatus(bundle: ClaimBundle): ClaimBundleStatus {
 		return "claimed-needs-remediation";
 	}
 	if (statuses.some((status) => status === "expired")) {
-		// Some subjects claimed, some lost: explicit, and repairable.
 		return statuses.some((status) => status === "completed")
 			? "partially-claimed"
 			: "expired";
@@ -174,7 +155,6 @@ function refreshBundle(
 		earliest === undefined
 			? (() => {
 					const { earliestDeadline: _dropped, ...rest } = withDeadline;
-					// SAFETY: `return rest as ClaimBundle;` is required at this I/O or test boundary.
 					return rest as ClaimBundle;
 				})()
 			: { ...withDeadline, earliestDeadline: earliest };
@@ -195,14 +175,9 @@ function emit(events: ClaimEvent[], event: ClaimEvent): void {
 }
 
 export type ReduceOptions = {
-	/** The fence the caller believes it holds. A stale worker is rejected. */
 	readonly fencingToken: string;
 };
 
-/**
- * Apply one command. Unknown-but-harmless repeats are no-ops rather than
- * errors, which is what makes at-least-once delivery safe here.
- */
 export function reduce(
 	state: ClaimCoordinatorState,
 	command: ClaimCommand,
@@ -230,7 +205,6 @@ export function reduce(
 		}
 		case "AcceptDeploymentOffer": {
 			if (state.lifecycle !== "Offered") {
-				// Accepting twice must not restart provisioning.
 				break;
 			}
 			next = {
@@ -349,8 +323,6 @@ export function reduce(
 				if (command.observedStatus === "expired") {
 					return { ...item, status: "expired" satisfies ClaimItemStatus };
 				}
-				// Observing "claimed" advances to observed — NOT to verified. A
-				// provider saying yes is a claim, not proof.
 				if (command.observedStatus === "claimed") {
 					return { ...item, status: "observed" satisfies ClaimItemStatus };
 				}
@@ -441,8 +413,6 @@ export function reduce(
 			const updated = replaceItem(bundle, command.itemId, (item) =>
 				command.granted ? markObligationDone(item, "reauthorize-agent") : item,
 			);
-			// Declining is a valid terminal outcome: the human owns the work and
-			// the agent stays revoked.
 			next = {
 				...refreshBundle(state, updated),
 				agentAuthorized: command.granted,
@@ -483,7 +453,6 @@ export function reduce(
 					`unknown claim item ${command.itemId}`,
 				);
 			}
-			// Cutover before destination verification would strand the source.
 			if (item.status !== "verified" && item.status !== "needs-rotation") {
 				throw new ClaimError(
 					"MIGRATION_VERIFICATION_FAILED",
@@ -560,7 +529,6 @@ export function reduce(
 				state.lifecycle === "OwnerControlled" ||
 				state.lifecycle === "OwnerAndAgentControlled"
 			) {
-				// Expiring a lease must not disturb work the human already owns.
 				break;
 			}
 			const lease = state.lease;

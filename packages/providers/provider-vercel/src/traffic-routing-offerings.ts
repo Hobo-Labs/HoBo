@@ -1,16 +1,6 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
-/**
- * Vercel TrafficRouting offerings (ADR-0143/0144; ADR-0182 I14).
- *
- * Realized by `@hobo/connectivity`'s Vercel adapter: Rolling Releases give a
- * weighted canary between two deployments, and project routes give path and
- * header rewrites. The in-process router is the portable fallback, realized by
- * the Station rather than by Vercel. This record is byte-equal to
- * `VERCEL_TRAFFIC_ROUTING_PROFILE` in `@hobo/connectivity` (asserted in
- * `@hobo/hobo`'s catalog tests); this package cannot import connectivity.
- */
 export const VERCEL_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "vercel",
@@ -27,7 +17,6 @@ const ONE_EDGE =
 const NO_DNS =
 	"Vercel serves the project domain itself; HoBo shifts traffic at the edge, not by steering DNS records";
 
-/** Offerings Vercel cannot realize through the shipped adapter, declared absent. */
 export const VERCEL_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 	Object.freeze(
 		(

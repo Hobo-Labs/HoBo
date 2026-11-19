@@ -42,14 +42,6 @@ function recoveryRole(
 	return "fleet_witness";
 }
 
-/**
- * Fleet cooperation:
- * - **Minting host** — the worker whose shared relay lease for `hobo-<lease-uuid>`
- *   is still active normally owns container stop + deregister on reconcile.
- * - **Fleet witness** — any other box worker that sees `in_progress` on a box JIT
- *   runner it does not host may deregister only when GitHub reports the runner
- *   offline (crashed peer / network loss). Online runners are never touched.
- */
 export function decideFleetGhostRecovery(
 	job: Readonly<{ repositoryId: number; id: number; runAttempt: number }>,
 	githubJob: GithubJobBinding,

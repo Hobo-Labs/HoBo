@@ -96,11 +96,6 @@ export function bundleFor(bytes: Uint8Array): Uint8Array {
 	);
 }
 
-/**
- * Stand-in for the WP3 Sigstore/HoBo verifier: the "bundle" must sign the
- * exact statement bytes and the statement's subjects must equal the subjects
- * the caller derived. `mode` makes it misbehave so ingest's own checks show.
- */
 export class FakeProvenanceVerifier implements ProvenanceVerifier {
 	mode: "honest" | "unverified-ref" | "partial-subjects" = "honest";
 	readonly calls: Readonly<{

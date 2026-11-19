@@ -10,10 +10,6 @@ import {
 	prepareJournalFleet,
 } from "../src/index.js";
 
-// `hobo cd up` provisions the CD journal's fleet into the owner's store:
-// connection strings and claim links straight into it, the fleet's shape as
-// a setting, resumable after an interruption, and nothing on a re-run.
-
 function memoryStore(): OpenedSecretStore {
 	return {
 		id: "infisical",
@@ -47,7 +43,6 @@ describe("prepareJournalFleet", () => {
 			provisioners: [neon.provisioner],
 		});
 		expect(step.outcome).toBe("created");
-		// standard with two standbys: a writer, two standbys and the witness.
 		expect(neon.created).toEqual([
 			"journal-1",
 			"journal-2",
@@ -60,7 +55,6 @@ describe("prepareJournalFleet", () => {
 			const claim = await store.port.access(journalMemberClaimEntry(member));
 			expect(claim.status).toBe("ok");
 		}
-		// The step says where things are, never what they are.
 		expect(step.detail).not.toContain("postgresql://");
 		expect(step.detail).not.toContain("neon.new/claim");
 		expect(await familySettings(store, "cd").read()).toMatchObject({

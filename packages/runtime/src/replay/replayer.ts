@@ -81,7 +81,6 @@ export async function replayRun<S, A>(
 			);
 			if (completed) {
 				stepCounter += 1;
-				// SAFETY: assertion to `completed.data as { result: T }` is required at this boundary.
 				const result = (completed.data as { result: T }).result as T;
 				stepResults.set(stepId, cloneAsJson(result));
 				return result;
@@ -96,10 +95,8 @@ export async function replayRun<S, A>(
 				throw new Error("missing run.SleepScheduled");
 			}
 			timerResults.set("sleep", {
-				// SAFETY: assertion to `scheduled.data as { delayMs: number }` is required at this boundary.
 				delayMs: (scheduled.data as { delayMs: number }).delayMs,
 			});
-			// SAFETY: assertion to `scheduled.data as { delayMs: number }` is required at this boundary.
 			if ((scheduled.data as { delayMs: number }).delayMs !== delayMs) {
 				throw new Error("sleep schedule diverged");
 			}
@@ -109,7 +106,6 @@ export async function replayRun<S, A>(
 			if (!resumed) {
 				throw new Error("missing run.HookResumed");
 			}
-			// SAFETY: assertion to `resumed.data as { payload: T }` is required at this boundary.
 			const payload = (resumed.data as { payload: T }).payload as T;
 			hookResults.set("hook", cloneAsJson(payload));
 			return payload;
@@ -137,7 +133,6 @@ function readSeed(events: EventEnvelope[]): string | undefined {
 	if (!started?.data || !isJsonObject(started.data)) {
 		return undefined;
 	}
-	// SAFETY: assertion to `started.data as { seed?: JsonValue }` is required at this boundary.
 	const seed = (started.data as { seed?: JsonValue }).seed;
 	return isJsonString(seed) ? seed : undefined;
 }
@@ -146,7 +141,6 @@ function matchesStep(data: JsonValue, name: string, index: number): boolean {
 	if (!data || !isJsonObject(data)) {
 		return false;
 	}
-	// SAFETY: assertion to `data as { name?: string; index?: number }` is required at this boundary.
 	const record = data as { name?: string; index?: number };
 	return record.name === name && record.index === index;
 }

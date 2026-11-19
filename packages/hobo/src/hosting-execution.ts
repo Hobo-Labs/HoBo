@@ -17,8 +17,6 @@ import { isJsonObject } from "./json.js";
 
 export interface ProductionHostingExecutionOptions
 	extends HostingTransitionCoordinatorOptions {
-	/** Trusted workload/source/routing approval, indexed by deployment id. The
-	 * financial commitment and target hash are taken from durable gateway facts. */
 	readonly templates: ReadonlyMap<string, HostingTransitionPlanInput>;
 	readonly maximumStepsPerResume?: number;
 	readonly decommissionTemplates?: ReadonlyMap<
@@ -28,8 +26,6 @@ export interface ProductionHostingExecutionOptions
 	readonly budgetId?: string;
 }
 
-/** Production application composition over the durable coordinator. The same
- * worker serves up/down and operator resume; no legacy apply can bypass a hold. */
 export function createProductionHostingExecution(
 	options: ProductionHostingExecutionOptions,
 ) {
@@ -240,8 +236,6 @@ export function createProductionHostingExecution(
 			const state = await coordinator.load(input.transitionId ?? "");
 			if (!state)
 				throw new Error("cannot teardown an unrecorded hosting transition");
-			// Normal cancellation compensates safely; retirement of a completed target
-			// requires a separately funded approved transition, not an unfunded destroy.
 			if (state.phase === HostingTransitionPhase.SETTLED) {
 				const retirement = retirements.get(deploymentId);
 				if (

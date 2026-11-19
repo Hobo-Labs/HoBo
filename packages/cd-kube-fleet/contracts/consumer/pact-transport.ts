@@ -1,6 +1,3 @@
-// Pact-derived mock provider: replays a pact's interactions, in order, for
-// the requests the consumer actually sends, and asserts each request against
-// the recorded expectation (method, path, query, header subset, body subset).
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,18 +36,15 @@ export type Pact = {
 const here = dirname(fileURLToPath(import.meta.url));
 
 export function loadPact(name: string): Pact {
-	// SAFETY: pact files are JSON documents of this shape.
 	return JSON.parse(
 		readFileSync(join(here, "../pacts", `${name}.pact.json`), "utf8"),
 	) as Pact;
 }
 
-/** The interactions recorded for one provider state, in order. */
 export function state(pact: Pact, providerState: string): PactInteraction[] {
 	return pact.interactions.filter((i) => i.providerState === providerState);
 }
 
-/** Transport that serves `interactions` strictly in order. */
 export function pactTransport(
 	interactions: readonly PactInteraction[],
 ): HttpTransport & { readonly served: () => number } {
@@ -75,7 +69,6 @@ export function pactTransport(
 			interaction.request.headers ?? {},
 		);
 		if (interaction.request.body !== undefined) {
-			// SAFETY: request bodies this consumer sends are JSON.
 			expect(
 				JSON.parse(request.body ?? "null") as JsonValue,
 				interaction.description,

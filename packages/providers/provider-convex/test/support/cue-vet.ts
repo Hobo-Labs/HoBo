@@ -1,4 +1,3 @@
-/** Vet a serialized JSON document against a CUE definition with the pinned cue binary. */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

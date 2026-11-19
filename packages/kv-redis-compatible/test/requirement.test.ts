@@ -49,8 +49,6 @@ describe("redisCompatible.store", () => {
 	});
 
 	it("treats an explicit false as 'do not care', never as a prohibition", () => {
-		// A prohibition would rule out a store that happens to support TTL,
-		// which is not what an author who wrote `ttl: false` means.
 		expect(redisCompatible.store({ ttl: false }).features).toEqual([]);
 	});
 

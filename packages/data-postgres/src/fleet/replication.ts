@@ -1,24 +1,3 @@
-/**
- * Snapshot replication from the writer to one standby.
- *
- * It needs nothing but two ordinary connections: no replication role, no
- * publication, no extension. The source is read in one `REPEATABLE READ READ
- * ONLY` transaction, so the copy is a single consistent point in time. The
- * target is replaced in one transaction, so a standby is always exactly some
- * earlier state of the writer and never a mixture.
- *
- * The cost is what a snapshot costs: every run reads and rewrites every row of
- * every copied table, so time and statement count grow with the size of the
- * database, not with how much changed. A standby is as stale as the time since
- * the last run. Both are stated limits, not accidents.
- *
- * The step that makes this safe to run unattended is on the target, inside the
- * target's transaction and under the fleet's exclusive lock: the target's own
- * newest log entry must be the very assignment the caller resolved, and that
- * assignment must name another backend as the writer. A backend that is, or is
- * about to be, the writer holds an entry saying so (it is always written there
- * first), so it refuses to be overwritten no matter how stale the caller is.
- */
 import { PostgresDataError } from "../errors.js";
 import {
 	assignmentKey,
@@ -45,23 +24,17 @@ import {
 export type ReplicatedTable = {
 	readonly name: string;
 	readonly rows: number;
-	/** Order-independent SHA-256 digest of the table's rows in text form. */
 	readonly digest: string;
 };
 
 // parallel-type-allowed: the parsed in-process record read back through readWatermark; the proto PostgresFleetWatermark is its wire projection.
 export type PostgresFleetWatermark = {
-	/** The backend the standby was copied from. */
 	readonly source: string;
-	/** The assignment epoch the copy was made under. */
 	readonly sourceEpoch: number;
-	/** When the snapshot was taken, on the source's clock. */
 	readonly snapshotAtMs: number;
 	readonly tables: readonly ReplicatedTable[];
 	readonly rowCount: number;
-	/** Row text rewritten by the run that produced this watermark. */
 	readonly byteCount: number;
-	/** SHA-256 over every table's name, row count and digest. */
 	readonly digest: string;
 };
 
@@ -79,9 +52,7 @@ export const REPLICATION_REFUSALS = [
 export type ReplicationRefusal = (typeof REPLICATION_REFUSALS)[number];
 
 export type ReplicationLimits = {
-	/** Refuse to copy more rows than this in one run. */
 	readonly maxRows: number;
-	/** Refuse to copy more JSON text than this in one run. */
 	readonly maxBytes: number;
 	readonly batchRows: number;
 	readonly batchBytes: number;
@@ -98,7 +69,6 @@ export type ReplicationRequest = {
 	readonly source: FleetBackend;
 	readonly target: FleetBackend;
 	readonly layout: FleetLayout;
-	/** The decided current assignment, as the caller resolved it by majority. */
 	readonly assignment: PostgresFleetAssignment;
 	readonly limits?: Partial<ReplicationLimits> | undefined;
 };
@@ -111,19 +81,12 @@ export type ReplicationOutcome =
 	| {
 			readonly status: "refused";
 			readonly refusal: ReplicationRefusal;
-			/** Names a table or column; never data and never a connection. */
 			readonly detail: string;
 	  };
 
-/**
- * Thrown inside a copy to stop it with a named reason. Both transactions are
- * rolled back. `replicateSnapshot` turns it into a `refused` outcome; a caller
- * of `copySnapshot` catches it itself.
- */
 export class ReplicationRefused extends Error {
 	constructor(
 		readonly refusal: ReplicationRefusal,
-		/** Names a table or column; never data and never a connection. */
 		readonly detail: string,
 	) {
 		super(refusal);
@@ -131,13 +94,10 @@ export class ReplicationRefused extends Error {
 	}
 }
 
-/** What one copy read and wrote. */
 export type SnapshotCopy = {
-	/** When the snapshot was taken, on the source's clock. */
 	readonly snapshotAtMs: number;
 	readonly tables: readonly ReplicatedTable[];
 	readonly rowCount: number;
-	/** Row text rewritten by this copy. */
 	readonly byteCount: number;
 };
 
@@ -146,17 +106,7 @@ export type SnapshotCopyRequest<T> = {
 	readonly target: SqlExecutor;
 	readonly layout: FleetLayout;
 	readonly limits?: Partial<ReplicationLimits> | undefined;
-	/**
-	 * Runs on the target, inside its transaction, before any of its copied
-	 * tables is read or changed. This is where a caller takes its lock and
-	 * decides whether the target may be overwritten at all; throwing rolls
-	 * both transactions back.
-	 */
 	readonly admit: (to: SqlSession) => Promise<void>;
-	/**
-	 * Runs on the target after the copy was verified, in the same transaction,
-	 * so what it writes commits with the copied rows or not at all.
-	 */
 	readonly record: (to: SqlSession, copy: SnapshotCopy) => Promise<T>;
 };
 
@@ -164,7 +114,6 @@ type CatalogColumn = {
 	readonly name: string;
 	readonly type: string;
 	readonly generated: boolean;
-	/** The sequence the column owns, and the last value it handed out. */
 	readonly sequence: string | undefined;
 	readonly sequenceValue: number | undefined;
 };
@@ -172,18 +121,10 @@ type CatalogColumn = {
 type CatalogTable = {
 	readonly name: string;
 	readonly columns: readonly CatalogColumn[];
-	/** Another table's foreign key points here, so it cannot be truncated alone. */
 	readonly referenced: boolean;
-	/** Copied tables this table's foreign keys point at. */
 	readonly references: readonly string[];
 };
 
-/**
- * Tables in an order that inserts every referenced row before the rows that
- * point at it: parents first, ties by name. A cycle of foreign keys has no
- * such order; its tables are copied in a fixed order and the insert that breaks a key
- * fails the copy, which leaves the target as it was.
- */
 export function insertionOrder<
 	T extends Pick<CatalogTable, "name" | "references">,
 >(tables: readonly T[]): readonly T[] {
@@ -207,12 +148,6 @@ export function insertionOrder<
 	return ordered;
 }
 
-/**
- * Make text output identical on both sides. A `timestamptz` is printed in the
- * session's time zone and a `bytea` in the session's output format, so two
- * servers with different defaults would otherwise describe the same row with
- * different bytes. Returns the transaction's start time on that server.
- */
 async function pinSession(session: SqlSession): Promise<number> {
 	const result = await session.query(
 		`SELECT set_config('TimeZone', 'UTC', true), set_config('DateStyle', 'ISO, YMD', true),
@@ -226,10 +161,6 @@ async function pinSession(session: SqlSession): Promise<number> {
 	);
 }
 
-/**
- * The copied tables of one backend, their columns and their sequences, from
- * its catalog in one statement.
- */
 async function readCatalog(
 	session: SqlSession,
 	layout: FleetLayout,
@@ -298,7 +229,6 @@ async function readCatalog(
 	return [...tables.entries()].map(([name, entry]) => ({ name, ...entry }));
 }
 
-/** The first difference between two catalogs, or nothing when they match. */
 function catalogDifference(
 	source: readonly CatalogTable[],
 	target: readonly CatalogTable[],
@@ -329,12 +259,6 @@ function catalogDifference(
 	return undefined;
 }
 
-/**
- * Every column as its text form. A value travels and is digested as the text
- * PostgreSQL itself prints for its type, which is the one representation every
- * type reads back exactly. Relying on JSON's own typing instead would lose the
- * difference between an SQL NULL and a `json` column holding `null`.
- */
 function textList(columns: readonly CatalogColumn[]): string {
 	return columns
 		.map((entry) => {
@@ -344,13 +268,6 @@ function textList(columns: readonly CatalogColumn[]): string {
 		.join(", ");
 }
 
-/**
- * Row count and an order-independent digest of every table, computed by the
- * server in one statement and one pass per table: each row, as a JSON object
- * of its columns' text forms, is hashed with SHA-256, the hash is split into
- * four 64-bit words, and the words are summed. Summation makes row order
- * irrelevant and keeps memory constant.
- */
 async function digestTables(
 	session: SqlSession,
 	tables: readonly CatalogTable[],
@@ -399,10 +316,6 @@ async function digestTables(
 	});
 }
 
-/**
- * Digest every copied table of one backend at one consistent point in time.
- * Two backends hold the same data exactly when these lists are equal.
- */
 export async function readDataDigests(
 	backend: FleetBackend,
 	layout: FleetLayout,
@@ -420,7 +333,6 @@ export async function readDataDigests(
 export type SequencePosition = {
 	readonly table: string;
 	readonly column: string;
-	/** The last value handed out, or nothing if the sequence was never used. */
 	readonly value: number | undefined;
 };
 
@@ -443,7 +355,6 @@ function sequencePositions(
 	);
 }
 
-/** Where every sequence owned by a copied table stands on one backend. */
 export async function readSequencePositions(
 	backend: FleetBackend,
 	layout: FleetLayout,
@@ -472,8 +383,6 @@ async function copyTable(
 		`DECLARE ${cursor} NO SCROLL CURSOR FOR
 			SELECT row_to_json(r)::text AS doc FROM (SELECT ${textList(writable)} FROM ${name}) r`,
 	);
-	// Start small: one row can be megabytes, and a fetch is sized from what
-	// the rows so far have actually weighed.
 	let fetchRows = Math.min(16, limits.batchRows);
 	for (;;) {
 		const batch = await from.query(`FETCH ${fetchRows} FROM ${cursor}`);
@@ -491,7 +400,6 @@ async function copyTable(
 				SELECT ${casts.join(", ")} FROM json_to_recordset($1::json) AS x(${record.join(", ")})`,
 			[`[${docs.join(",")}]`],
 		);
-		// A short batch is the last one; the cursor ends with the transaction.
 		if (docs.length < fetchRows) break;
 		const average = Math.max(1, Math.ceil(bytes / docs.length));
 		fetchRows = Math.max(
@@ -549,22 +457,6 @@ function sameTable(
 	);
 }
 
-/**
- * Replace the target's copied tables with a snapshot of the source's: the copy
- * itself, without a rule about who may be overwritten. The caller supplies
- * that rule as `admit` and what to write down afterwards as `record`.
- *
- * The source is read in one `REPEATABLE READ READ ONLY` transaction and the
- * target is replaced in one transaction. Refuses, by throwing
- * `ReplicationRefused`, a source over the row or byte limit (`oversized`),
- * catalogs that differ (`schema-mismatch`) and a target that does not digest
- * to the source after the copy (`digest-mismatch`). Anything thrown, by this
- * function, by `admit` or by `record`, rolls both transactions back.
- *
- * Only tables whose digest differs are rewritten, so a run over an unchanged
- * database costs a fixed handful of statements on each side. That matters on a
- * plan that meters statements.
- */
 export async function copySnapshot<T>(
 	request: SnapshotCopyRequest<T>,
 ): Promise<T> {
@@ -590,8 +482,6 @@ export async function copySnapshot<T>(
 				const difference = catalogDifference(catalog, targetCatalog);
 				if (difference !== undefined)
 					throw new ReplicationRefused("schema-mismatch", difference);
-				// What the target really holds now, not what a watermark says:
-				// a returned writer's watermark describes an older life.
 				const before = await digestTables(to, targetCatalog);
 				const stale = catalog.filter(
 					(relation, index) =>
@@ -600,7 +490,6 @@ export async function copySnapshot<T>(
 							before.find((entry) => entry.name === relation.name),
 						),
 				);
-				// A table another table points at cannot be truncated alone.
 				const rewrite =
 					stale.length > 0 && catalog.some((relation) => relation.referenced)
 						? catalog
@@ -629,7 +518,6 @@ export async function copySnapshot<T>(
 						: [{ sequence: match.sequence, value: position.value }];
 				});
 				if (positions.length > 0)
-					// Never backwards: a returned writer may have handed out more.
 					await to.query(
 						`SELECT setval(s.name::regclass, GREATEST(s.position,
 							coalesce(pg_sequence_last_value(s.name::regclass), s.position)), true)::text AS position
@@ -669,17 +557,6 @@ export async function copySnapshot<T>(
 	);
 }
 
-/**
- * Replace the target's copied tables with a snapshot of the source's.
- *
- * Returns `refused` with a named reason for every condition this function
- * checks. A failed connection or statement is thrown, and both transactions
- * are rolled back: the target keeps its previous snapshot and watermark.
- *
- * The copy is `copySnapshot`; what this adds is the fleet's rule for who may
- * be overwritten (the target's own assignment log, read under the fleet's
- * lock) and the watermark.
- */
 export async function replicateSnapshot(
 	request: ReplicationRequest,
 ): Promise<ReplicationOutcome> {
@@ -712,7 +589,6 @@ export async function replicateSnapshot(
 						"busy",
 						"another copy into the target is running",
 					);
-				// The target's own log, read on this session and under the lock.
 				const held = await readAssignmentRows(to, layout, 1);
 				const newest = held.at(-1);
 				if (newest?.active === target.id)
@@ -756,7 +632,6 @@ export async function replicateSnapshot(
 	}
 }
 
-/** The watermark of one backend, or nothing if it was never a copy target. */
 export async function readWatermark(
 	backend: FleetBackend,
 	layout: FleetLayout,
@@ -794,10 +669,6 @@ export async function readWatermark(
 	};
 }
 
-/**
- * How far a standby is behind: the time since its snapshot was taken. This is
- * an upper bound on what a promotion would lose, not a count of lost writes.
- */
 export function standbyLagMs(
 	watermark: PostgresFleetWatermark,
 	nowMs: number,

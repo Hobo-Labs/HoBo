@@ -96,7 +96,6 @@ describe("host health monitor", () => {
 			events,
 			pressure,
 			reads: () => reads,
-			/** Advance one sampling interval and observe. */
 			async step(count = 1) {
 				let verdict = health.current();
 				for (let index = 0; index < count; index += 1) {
@@ -127,7 +126,6 @@ describe("host health monitor", () => {
 	it("needs three bad samples in a row before it calls the host critical", async () => {
 		const h = monitor([HEALTHY, OVERLOADED, OVERLOADED, HEALTHY, OVERLOADED]);
 		expect((await h.step(3)).state).toBe("ok");
-		// One good sample breaks the run; the count starts over.
 		expect((await h.step(2)).state).toBe("ok");
 		expect((await h.step(2)).state).toBe("critical");
 		expect(h.pressure).toEqual([{ state: "critical", reasons: ["load"] }]);
@@ -147,7 +145,6 @@ describe("host health monitor", () => {
 		expect((await h.step(1)).state).toBe("critical");
 		expect((await h.step(5)).state).toBe("critical");
 		expect((await h.step(1)).state).toBe("ok");
-		// Recovery is not pressure.
 		expect(h.pressure).toHaveLength(1);
 	});
 
@@ -164,9 +161,7 @@ describe("host health monitor", () => {
 			OVERLOADED,
 			PRESSURED,
 		]);
-		// Pressured, critical, pressured: at least pressured three times running.
 		expect((await h.step(3)).state).toBe("pressured");
-		// Critical needs its own three in a row; alternating never gets there.
 		expect((await h.step(6)).state).toBe("pressured");
 		expect(h.pressure).toEqual([{ state: "pressured", reasons: ["load"] }]);
 	});

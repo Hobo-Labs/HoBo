@@ -1,18 +1,3 @@
-/**
- * Watch a relay mesh hand out jobs, on one machine.
- *
- *   pnpm --filter @hobo/ci-gh-actions run mesh:demo
- *   HOBO_CI_NATS_URL=nats://127.0.0.1:4222 pnpm --filter @hobo/ci-gh-actions run mesh:demo
- *
- * Without HOBO_CI_NATS_URL the nodes share an in-memory board and claims.
- * With it they use the real NATS adapter (start one with
- * `docker run --rm -p 4222:4222 nats:2 -js` or `nats-server -js`).
- *
- * Options: --nodes 1,2,5 (free slots per node)  --jobs 400  --step-ms 20000
- *
- * It queues a batch with every node up, then a second batch after the
- * largest node has died without saying so, and prints who took what.
- */
 import process from "node:process";
 import { createMemoryMesh, createMeshCoordinator } from "@hobo/ci/mesh";
 import { meshSettingsFromEnv } from "@hobo/ci-gh-actions";
@@ -33,7 +18,6 @@ const namespace = `demo-${Date.now().toString(36)}`;
 
 const memory = createMemoryMesh();
 const closers: (() => Promise<void>)[] = [];
-// The demo moves its own clock so nobody has to wait for a real step.
 const clock = { now: Date.now() };
 
 const nodes = await Promise.all(

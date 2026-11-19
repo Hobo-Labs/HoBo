@@ -11,15 +11,10 @@ import {
 	CONVEX_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
-/** Every Convex hosting product with a shipped resolver (I14). */
 export const CONVEX_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze([
 	CONVEX_CLOUD_DEPLOYMENT_PRODUCT_ID,
 ]);
 
-/**
- * Convex hosting forms and surfaces no resolver realizes. Each is a decision
- * (see `hosting-forms.ts` for the forms themselves).
- */
 export const CONVEX_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -54,7 +49,6 @@ export const CONVEX_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	absent: CONVEX_TRAFFIC_ROUTING_ABSENT,
 });
 
-/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product Convex does not realize. */
 export function convexProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

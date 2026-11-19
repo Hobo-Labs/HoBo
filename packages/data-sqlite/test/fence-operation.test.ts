@@ -269,7 +269,6 @@ it("serializes a native fence release against operation claims from another proc
 					receiverKeyId: "router",
 				});
 			} catch {
-				/* the concurrent release may win */
 			}
 			const [message] = await reply;
 			expect(Boolean(claim) && message.released === true).toBe(false);

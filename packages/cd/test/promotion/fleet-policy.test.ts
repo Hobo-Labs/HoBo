@@ -1,5 +1,3 @@
-// WP6 rollback, Trails, previews and the fleet-and-policy bullets (D11, D12,
-// D20–D25): intents, Rail subject, fan-out aggregate.
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -81,12 +79,10 @@ describe("rollback (D12, I7)", () => {
 		expect(rolled.value.freightId).toBe("f0");
 		const current = await h.desired.current(camp("dev-1"));
 		expect(current?.origin).toBe(SetOrigin.ROLLBACK);
-		// The predecessor plan, re-sealed by the rollback's own gate decision.
 		expect(current?.planHash).toBe(seed.planHash);
 		const rollbackGate = h.gate.calls.find((c) => c.intent === "rollback");
 		expect(rollbackGate?.delta.baseSetId).not.toBe("");
 		expect(current?.gateDecisionId).toBe(`gate-${h.gate.calls.length}`);
-		// Idempotent.
 		const again = await h.service.rollback(
 			{ campId: camp("dev-1"), reason: "error spike", idempotencyKey: "rb" },
 			h.ctx(),
@@ -324,7 +320,6 @@ describe("fleet and policy (D20–D25)", () => {
 			(await h.campPolicy.binding(camp("dev-1")))?.candidateRailDigest,
 		).toBe(digest);
 		expect(h.authorizer.calls[0]?.action).toBe("rail.promote");
-		// ENFORCE without a qualified INFORM upstream: shadow-required (I23).
 		const early = await h.service.promote(
 			{
 				freightId: fid("r1"),
@@ -407,9 +402,7 @@ describe("fleet and policy (D20–D25)", () => {
 		};
 		const aggregate = createFanoutAggregateGate({
 			tenant: "acme",
-			// SAFETY: test fixture; the value is the shape the port declares.
 			fanout: fanout as FanoutController,
-			// SAFETY: test fixture; the value is the shape the port declares.
 			placement: placement as PlacementEngine,
 			topology,
 			rails,
@@ -420,7 +413,6 @@ describe("fleet and policy (D20–D25)", () => {
 		const h = harness({ aggregate });
 		h.freight.add("f1");
 		const result = await h.service.promote(
-			// SAFETY: test fan-out id literal.
 			{
 				freightId: fid("f1"),
 				targets: [camp("c-1")],
@@ -441,7 +433,6 @@ describe("fleet and policy (D20–D25)", () => {
 	it("a fan-out request without the aggregate gate composed is refused (fail closed)", async () => {
 		const h = harness();
 		h.freight.add("f1");
-		// SAFETY: test fan-out id literal.
 		const result = await h.service.promote(
 			{
 				freightId: fid("f1"),

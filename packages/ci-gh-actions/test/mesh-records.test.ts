@@ -46,11 +46,6 @@ const node = (overrides: Partial<MeshNode> = {}): MeshNode => ({
 	...overrides,
 });
 
-/**
- * The advertisement as every version before this one read it: the schema the
- * board used until the record became protobuf. A node still running it must
- * go on reading what a newer node writes.
- */
 const AdvertBeforeSigning = z.object({
 	id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
 	freeSlots: z.number().int().min(0).max(4096),
@@ -116,12 +111,10 @@ describe("the advertisement record", () => {
 				requireTrusted: false,
 			}),
 		).toBe("unverified");
-		// Read as the node meant it: shortly before its advertisement runs out.
 		expect(meshNodeReport(read, read.validUntilMs - 10_000)).toMatchObject({
 			trust: "unverified",
 			state: "unhealthy",
 		});
-		// Exactly what a node on the version before memory and platform sent.
 		expect(
 			parseMeshAdvert(
 				'{"id":"box-b","freeSlots":5,"healthy":true,"labels":["hobo"],"validUntilMs":1794268845000}',
@@ -133,7 +126,6 @@ describe("the advertisement record", () => {
 		const { identity } = generateMeshIdentity();
 		for (const each of [
 			signMeshAdvert(node(), identity),
-			// Zeros and an empty list are written out, not left to be defaults.
 			signMeshAdvert(
 				{
 					id: "relay-host",
@@ -186,7 +178,6 @@ describe("the advertisement record", () => {
 		const written = meshAdvertJson(node({ trust: "trusted", seenAtMs: NOW }));
 		expect(written).not.toContain("trust");
 		expect(written).not.toContain("seenAtMs");
-		// A node that states its own trust is read without it.
 		const read = parseMeshAdvert(
 			fixture("invalid/mesh-advert-states-its-own-trust.json"),
 		);
@@ -259,7 +250,6 @@ describe("the trust settings record", () => {
 			`{"trustedKeys":[{"publicKey":"${key}","nodeId":"bad id"}]}`,
 		])
 			expect(parseMeshTrustConfig(unusable), unusable).toBeUndefined();
-		// A field a newer version added is ignored; the keys still apply.
 		expect(
 			parseMeshTrustConfig(
 				`{"trustedKeys":[{"publicKey":"${key}","comment":"box a"}],"requireTrusted":true,"rotation":{"next":"x"}}`,
@@ -291,7 +281,6 @@ describe("the reliability record", () => {
 			record: { delivered: 9.5, dropped: 0.25, atMs: 1_794_268_000_000 },
 			resetToken: "",
 		});
-		// Zeros survive the trip: a clean record is a record.
 		expect(
 			parseMeshReliabilityRecord(
 				meshReliabilityRecordJson({ delivered: 0, dropped: 0, atMs: 0 }),
@@ -392,7 +381,6 @@ describe("the report every surface answers with", () => {
 					state: "lost",
 					since: "2026-11-10T02:39:00.000Z",
 					healthy: true,
-					// Unknown stays unknown: no time, no memory, no disk, no score.
 					lastSeenAt: "",
 					validUntil: "2026-11-10T02:39:00.000Z",
 					totalSlots: 0,
@@ -516,7 +504,6 @@ describe("bounding and scoping the report", () => {
 			state: "live",
 			freeSlots: 1,
 		});
-		// The same opaque id each time, and the fleet node unchanged.
 		expect(meshNodeReportsForAccount(answer, new Set()).nodes[1]?.id).toBe(
 			hidden?.id,
 		);

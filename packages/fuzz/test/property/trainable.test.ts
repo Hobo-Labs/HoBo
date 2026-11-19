@@ -12,7 +12,6 @@ describe("trainable silver fuzz", () => {
 			const text =
 				input && Object(input) === input && "text" in input
 					? String(
-							// SAFETY: the object branch establishes a property-bearing input.
 							(input as { text?: unknown }).text ?? "",
 						)
 					: "";

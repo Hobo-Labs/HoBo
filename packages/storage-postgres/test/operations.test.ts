@@ -140,7 +140,6 @@ describeLive("operations: telemetry, health, timeouts", () => {
 			await blocker.query("ROLLBACK");
 			await blocker.end();
 		}
-		// The connection is reusable and the write succeeds once the lock is gone.
 		await expect(
 			store.append("locked", [{ type: "l.B", data: {} }], {
 				...OPTS,

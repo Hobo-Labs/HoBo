@@ -1,5 +1,3 @@
-// The hobo:resolver@0.1.0 WIT surface, as constants the host and the
-// conformance kit share. The WIT text itself lives in `wit/resolver.wit`.
 import { type InterfaceId, parseInterfaceId } from "@hobo/core";
 
 // public-contract: the WIT package every resolver component targets.

@@ -1,30 +1,3 @@
-/**
- * Re-evaluating a placement decision.
- *
- * Written before the implementation. `match.Decided` records where a workload
- * was placed and why, once. Catalogs gain and lose offerings, jurisdictions
- * change, objectives change — and nothing revisits the decision, so a placement
- * that was right on Tuesday stays recorded as right forever.
- *
- * The mechanism here is deliberately *not* an optimizer. It answers one
- * question — has an input changed such that the decision might now be
- * different, and are we permitted to act on that? — and leaves the actual
- * re-matching to the existing planner. Splitting it that way is what keeps
- * re-placement explainable: the verdict names the input that changed, so a
- * workload that moves at 3am can say why.
- *
- * Three rules the tests exist to hold:
- *
- *   - **No change, no churn.** Identical inputs must produce `hold`. A
- *     re-evaluator that re-decides on every tick is a workload shuffler.
- *   - **Residency outranks opportunity.** Moving to cheaper or newer capacity
- *     is a jurisdiction decision (ADR-0146). A re-placement that would land
- *     somewhere residency forbids is `blocked`, never silently skipped.
- *   - **Movement needs consent.** A workload that has not declared it tolerates
- *     interruption does not get moved for a mere improvement (ADR-0136). Being
- *     *forced* to move — the current placement became invalid — is different
- *     from being *able* to improve.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -58,7 +31,6 @@ describe("nothing changed", () => {
 	});
 
 	it("holds even for an interruptible workload — tolerance is not a reason to move", () => {
-		// Being willing to move is not the same as having a reason to.
 		expect(evaluateReplacement(inputs({ interruptible: true })).action).toBe(
 			"hold",
 		);
@@ -79,7 +51,6 @@ describe("the catalog changed", () => {
 			inputs({ catalogContentHash: "sha256:catalog-v2", interruptible: false }),
 		);
 		expect(verdict.action).toBe("hold");
-		// The opportunity is still named, so it can be surfaced without acting.
 		expect(verdict.reasons).toContain("catalog-changed");
 		expect(verdict.deferred).toBe(true);
 	});
@@ -105,8 +76,6 @@ describe("the objective changed", () => {
 
 describe("residency", () => {
 	it("forces a re-decision when the current region is no longer permitted", () => {
-		// This is not an optimization. The placement has become invalid, and
-		// consent to interruption is irrelevant to a placement that must move.
 		const verdict = evaluateReplacement(
 			inputs({ residencyOk: false, interruptible: false }),
 		);
@@ -130,8 +99,6 @@ describe("residency", () => {
 
 	it("blocks an opportunistic move when no permitted region is available", () => {
 		// Better capacity exists but every candidate region is forbidden. Saying
-		// `hold` would hide a real problem; `re-decide` would hand the planner an
-		// unsatisfiable request.
 		const verdict = evaluateReplacement(
 			inputs({
 				catalogContentHash: "sha256:catalog-v2",
@@ -144,8 +111,6 @@ describe("residency", () => {
 	});
 
 	it("blocks a forced move with nowhere lawful to go", () => {
-		// The worst case, and the one that must never be silent: the current
-		// placement is unlawful and no lawful alternative exists.
 		const verdict = evaluateReplacement(
 			inputs({ residencyOk: false, permittedRegions: [] }),
 		);
@@ -213,9 +178,6 @@ describe("explainability", () => {
 
 describe("defaults", () => {
 	it("treats residency as satisfied unless told otherwise", () => {
-		// Note this is the *evaluated* result being passed in, not an assumption:
-		// the caller runs evaluateResidency and reports it. Defaulting to true
-		// here would be fail-open, so the field is required to say false.
 		expect(evaluateReplacement(inputs()).action).toBe("hold");
 	});
 

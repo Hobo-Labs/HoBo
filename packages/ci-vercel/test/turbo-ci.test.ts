@@ -12,7 +12,6 @@ import { isolateTurboEnv } from "./isolated-turbo-env.js";
 isolateTurboEnv();
 const turboPath = createRequire(import.meta.url).resolve("turbo/bin/turbo");
 const roots: string[] = [];
-// Child Turbo must not inherit GITHUB_ACTIONS and write error annotations into the real job log.
 beforeEach(() => vi.stubEnv("GITHUB_ACTIONS", undefined));
 afterEach(async () => {
 	vi.unstubAllEnvs();
@@ -46,7 +45,6 @@ async function taskIsRunning(pid: number): Promise<boolean> {
 	try {
 		const stat = await readFile(`/proc/${pid}/stat`, "utf8");
 		const nameEnd = stat.lastIndexOf(")");
-		// An unreaped zombie still has a PID but cannot execute the cancelled task.
 		return nameEnd < 0 || stat.slice(nameEnd + 2, nameEnd + 3) !== "Z";
 	} catch (error) {
 		if (error instanceof Error && "code" in error && error.code === "ENOENT")
@@ -108,7 +106,6 @@ async function fixture() {
 			build: { tags: ["!ci"] },
 		},
 	});
-	// Package labels must not select tasks; Vercel uses task-level ci tags.
 	await json(cwd, "packages/legacy/turbo.json", {
 		extends: ["//"],
 		tags: ["ci"],

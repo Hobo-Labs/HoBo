@@ -1,6 +1,3 @@
-// Typed refusal and skip reasons for Freight sources. Every reason names a
-// remediation an operator can act on; codes are wire contract (journal meta,
-// CUE `#SourceReasonCode`, the runbook).
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { UNVERIFIED_TRIGGER } from "../events.js";
@@ -52,7 +49,6 @@ export function refuse(
 
 const RETRY_AFTER = /^retry-after-ms:(\d{1,10})$/;
 
-/** A rate-limit refusal carries the server's Retry-After (ms) as its subject. */
 export function rateLimited(where: string, retryAfterMs: number): Refusal {
 	return refuse(
 		SOURCE_REASON.rateLimited,

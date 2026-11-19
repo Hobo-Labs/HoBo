@@ -12,11 +12,6 @@ import {
 	withProject,
 } from "../../test/helpers.js";
 
-// The consumer side of the mcp-control-surface + identity-policy-boundary pacts
-// (lifted from the cli-mcp epic). Each recorded interaction is backed by a real
-// outcome from the SVID-bound MCP server. Note the pact's conceptual `deploy`
-// tool is HoBo's `up` lifecycle verb (the canonical verb the surface derives).
-
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 
 function loadPact(name: string) {
@@ -41,7 +36,6 @@ describe("mcp-control-surface pact — SVID-scoped agent boundary", () => {
 		await withProject(HELLO_BINDLE, async (cwd) => {
 			const server = createHoboMcpServer({ cli: makeWiredCli() });
 
-			// "SVID-scoped agent can call plan" -> { ok:true, tool:"plan" }
 			const planResult = await server.callTool(
 				"plan",
 				{ cwd },
@@ -50,8 +44,6 @@ describe("mcp-control-surface pact — SVID-scoped agent boundary", () => {
 			expect(planResult.ok).toBe(allow.response.body.ok);
 			expect(planResult.tool).toBe(allow.response.body.tool);
 
-			// "missing deploy scope is denied" -> { ok:false, code:"MCP_SCOPE_DENIED" }
-			// (the `deploy` tool is the `up` lifecycle verb; the agent lacks its scope.)
 			const deniedResult = await server.callTool(
 				"up",
 				{ cwd },
@@ -71,7 +63,6 @@ describe("mcp-control-surface pact — SVID-scoped agent boundary", () => {
 		expect(throttle).toBeTruthy();
 
 		await withProject(HELLO_BINDLE, async (cwd) => {
-			// A single-token bucket with a frozen clock: the second call is refused.
 			const server = createHoboMcpServer({
 				cli: makeWiredCli(),
 				rateLimit: { capacity: 1, refillTokens: 1, refillIntervalMs: 1000 },
@@ -103,7 +94,6 @@ describe("identity-policy-boundary pact — fail-closed decision", () => {
 				{ cwd },
 				authGranting(["plan"]),
 			);
-			// The MCP deny-by-default decision is the fail-closed effect the pact records.
 			expect(denied.decision.effect).toBe(denyInteraction.response.body.effect);
 			const auditEvent = server.getAuditEvents().at(-1);
 			expect(auditEvent?.data.effect).toBe("deny");

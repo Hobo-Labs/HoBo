@@ -14,14 +14,6 @@ import {
 
 const objectTag = Object.prototype.toString;
 
-/**
- * Round trip over the fixtures that already exist in the repo.
- *
- * These are `@hobo/cloud`'s own committed plans, read from their real location
- * rather than copied: a copy is how a schema comes to pass its own test while
- * failing on live data, and if someone moves or edits the originals this suite
- * should notice.
- */
 function fixture(name: string): JsonValue {
 	const parsed: JsonValue = JSON.parse(
 		readFileSync(
@@ -76,7 +68,6 @@ interface MutableJsonObject {
 	[key: string]: JsonValue;
 }
 
-/** The same canonicalization, written independently of the module under test. */
 function independentCanonicalJson(value: JsonValue): string {
 	const sort = (v: JsonValue): JsonValue => {
 		if (Array.isArray(v)) return v.map(sort);
@@ -106,11 +97,6 @@ function overlayResources(
 	return out;
 }
 
-// Pinned in packages/cloud/test/planner.test.ts, gateway.test.ts and
-// placement.test.ts as HELLO_BINDLE_PLAN_HASH. Reproducing it here is the whole
-// point of the round trip: the digest is compared across packages, so a
-// schema that loses a field, materializes an absent optional, or reorders an
-// array is caught by this one constant rather than by review.
 const GOLDEN_PLAN_HASH =
 	"sha256:0e1bbf78ae6b765d8a4cd5cb41c5b9c5eadc43e32ea4fedec97cf87a7deef915";
 const SHOP_PLAN_HASH =
@@ -124,10 +110,6 @@ describe("round trip over @hobo/cloud's committed plan fixtures", () => {
 		const raw = fixture(name);
 		const parsed = parseDeploymentPlan(raw);
 
-		// Byte-identical: the parsed value canonicalizes to exactly the bytes the
-		// raw fixture canonicalizes to. Not `toEqual` — a lost field, an added
-		// default, or a reordered array all survive a structural comparison of
-		// the wrong two things, and none of them survive this.
 		expect(canonicalPlanJson(parsed)).toBe(independentCanonicalJson(raw));
 		expect(hashDeploymentPlan(parsed)).toBe(digest);
 	});
@@ -139,23 +121,17 @@ describe("round trip over @hobo/cloud's committed plan fixtures", () => {
 		if (assets === undefined) {
 			throw new Error("expected assets resource");
 		}
-		// `in`, not `=== undefined`: under exactOptionalPropertyTypes the whole
-		// distinction this schema defends is absent-vs-present-holding-undefined,
-		// and only the key test can tell them apart.
 		expect(Object.hasOwn(assets, "deploymentId")).toBe(false);
 		expect(Object.hasOwn(assets, "productId")).toBe(false);
 		expect(Object.hasOwn(assets, "realizationParameters")).toBe(false);
 		expect(Object.hasOwn(assets, "nonPortableRows")).toBe(false);
-		// ...while the ones the fixture does carry are present and exact.
 		expect(assets.strategy).toBe("rolling-update");
 		expect(assets.region).toBe("ENAM");
 	});
 
 	it("materializing one absent optional as an empty string changes the digest", () => {
 		// This is what hobo.cloud.v1's wire form does today: `string region = 6;`
-		// is a bare proto3 singular, which has no field presence, so a decoder
 		// cannot tell an absent region from "". The measurement is why this
-		// package's .proto spells every optional scalar `optional`.
 		const raw = asPlanObject(
 			fixture("multi-cloud-shop-plan"),
 			"multi-cloud-shop-plan",
@@ -178,10 +154,6 @@ describe("round trip over @hobo/cloud's committed plan fixtures", () => {
 	});
 
 	it("a Yard-bound node's non-string realization parameters survive byte-identically", () => {
-		// The value is the one packages/cloud/test/plan-binding-authority.test.ts
-		// asserts the planner produces: `{ ttlSeconds: 3600, tier: "standard" }`.
-		// `ttlSeconds` is a number, and hobo.cloud.v1's `map<string, string>`
-		// cannot carry it — see the README.
 		const raw = asPlanObject(fixture("golden-plan"), "golden-plan");
 		const bound = overlayResources(
 			raw,
@@ -206,9 +178,6 @@ describe("round trip over @hobo/cloud's committed plan fixtures", () => {
 			ttlSeconds: 3600,
 			tier: "standard",
 		});
-		// The number stayed a number. Encoding it as canonical JSON text — the
-		// convention hobo.cloud.v1's proto comment names — would make it
-		// indistinguishable from the string "3600".
 		expect(objectTag.call(sessions?.realizationParameters?.ttlSeconds)).toBe(
 			"[object Number]",
 		);

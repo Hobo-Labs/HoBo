@@ -1,4 +1,3 @@
-// The hosted relay's store on a cache (ADR-0179 phase 4a). See README "Relay cache store".
 export {
 	isDeterministicLeaseId,
 	parseRelayJobKey,

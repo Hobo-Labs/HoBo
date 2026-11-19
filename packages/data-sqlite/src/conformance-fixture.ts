@@ -1,9 +1,3 @@
-/**
- * Real SQLite DDL the engine conformance kit drives `in-place-evolve` with.
- * Exported so any harness around a SQLite binding can prove the schema port —
- * a harness that supplies no fixture leaves those cases `not-run`, and the
- * report `unknown`.
- */
 import type { SchemaFixture } from "@hobo/data-core";
 
 export const SQLITE_SCHEMA_FIXTURE: SchemaFixture = Object.freeze({
@@ -25,8 +19,6 @@ export const SQLITE_SCHEMA_FIXTURE: SchemaFixture = Object.freeze({
 	provesContractApplied:
 		"SELECT 1 AS applied WHERE NOT EXISTS (SELECT 1 FROM pragma_table_info('checkout') WHERE name = 'email')",
 	failingStatement: "ALTER TABLE checkout DROP COLUMN no_such_column",
-	// Two statements with separate effects, for the probes that put more than
-	// one statement where one belongs.
 	probes: {
 		first: "CREATE TABLE checkout_probe_first (id TEXT PRIMARY KEY)",
 		second: "CREATE TABLE checkout_probe_second (id TEXT PRIMARY KEY)",

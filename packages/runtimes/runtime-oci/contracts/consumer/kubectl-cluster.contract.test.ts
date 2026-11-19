@@ -80,7 +80,6 @@ describe("kubectl-cluster consumer contract (PACT mock)", () => {
 		try {
 			const wasmPath = join(hoboHome, "guest.wasm");
 			await writeFile(wasmPath, Buffer.from("\0asm\x01\x00\x00\x00api"));
-			// prove pack still works alongside pact transport
 			const packed = packWasmAsOci({
 				hoboHome,
 				resourceName: "api",

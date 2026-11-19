@@ -6,10 +6,6 @@ import {
 	createDefaultYardRuntime,
 } from "../src/index.js";
 
-// HOBO-719: `hobo add runner-blacksmith` registers the Blacksmith fast-runner
-// execution-host adapter alongside runner-github so the Dispatcher can
-// cost-route the same job shape across both (ADR-0071).
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();
@@ -24,7 +20,6 @@ function envelope(stdout: string): any {
 describe("hobo add runner-blacksmith (fast-runner catalog entry)", () => {
 	it("installs both execution-host ports next to runner-github", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 

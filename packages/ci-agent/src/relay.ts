@@ -18,46 +18,30 @@ import type { StructuredMerger } from "./structured-merge.js";
 
 const REPOSITORY = /^(?!\.)[A-Za-z0-9_.-]+\/(?!\.)[A-Za-z0-9_.-]+$/;
 
-/** A repository the relay is connected to, as its configuration names it. */
 export type RelayConnection = Readonly<{
 	installationId: number;
 	repository: string;
 }>;
 
-/**
- * The agent as the relay runs it: one agent per connected repository, all
- * writing one journal. `stateDirectory` holds that journal and a bare clone
- * per repository; it is the only thing the agent keeps, and it can be
- * deleted to start over (which forgets attempts and today's spend).
- *
- * A repository that fails does not stop the others; the pass then rejects,
- * which the relay logs as a failed agent pass and nothing more.
- */
 export function createRelayAgent(options: {
 	config: ParsedAgentConfig;
 	connections: () => Promise<readonly RelayConnection[]>;
-	/** A short-lived installation token; asked for whenever one is needed. */
 	token: (installationId: number) => Promise<string>;
 	stateDirectory: string;
 	engines: readonly ResolutionEngine[];
-	/** The syntax-aware merge tried before any engine; see `resolution.structuredMerge`. */
 	structured?: StructuredMerger | undefined;
-	/** Signs every commit the agent writes; see `commit.signingKey`. */
 	signingKey?: CommitSigningKey | undefined;
 	intervalMs?: number;
 	fetch?: typeof fetch | undefined;
 	git?: string;
-	/** Where a repository is fetched from and pushed to; GitHub over HTTPS by default. */
 	remoteUrl?: ((repository: string) => string) | undefined;
 	now?: () => string;
-	/** Told of each repository's report, after its tick. */
 	onReport?: ((report: AgentTickReport) => void) | undefined;
 }) {
 	mkdirSync(join(options.stateDirectory, "repositories"), { recursive: true });
 	const journal = createSqliteJournal(
 		join(options.stateDirectory, "agent.sqlite"),
 	);
-	/** One agent per repository, rebuilt when its installation or default branch changes. */
 	const agents = new Map<string, { identity: string; agent: CiAgent }>();
 	const run = promisify(execFile);
 
@@ -67,7 +51,6 @@ export function createRelayAgent(options: {
 			throw new Error("invalid repository name");
 		const token = () => options.token(installationId);
 		const graphql = createGithubGraphql({ token, fetch: options.fetch });
-		// Read every pass: a repository can rename its default branch.
 		const baseRef = await githubDefaultBranch(graphql, repository);
 		const identity = `${installationId}@${baseRef}`;
 		const existing = agents.get(repository);
@@ -77,7 +60,6 @@ export function createRelayAgent(options: {
 			"repositories",
 			`${repository.replace("/", "__")}.git`,
 		);
-		// Both steps are idempotent, so a setup cut short is finished next time.
 		const git = options.git ?? "git";
 		await run(git, ["init", "--quiet", "--bare", directory]);
 		await run(
@@ -117,7 +99,6 @@ export function createRelayAgent(options: {
 		return agent;
 	}
 
-	/** One pass over every connected repository, with each repository's report. */
 	async function pass(): Promise<readonly AgentTickReport[]> {
 		const reports: AgentTickReport[] = [];
 		let failed = 0;
@@ -138,7 +119,6 @@ export function createRelayAgent(options: {
 		intervalMs: options.intervalMs ?? 60_000,
 		journal,
 		pass,
-		/** `pass` as the relay schedules it. */
 		async tick(): Promise<void> {
 			await pass();
 		},
@@ -148,11 +128,6 @@ export function createRelayAgent(options: {
 	};
 }
 
-/**
- * What a tick report says to an operator, as log entries: one summary, and
- * one entry per engine failure. Counts, ids, fixed reasons and HTTP statuses
- * only; never repository or model text.
- */
 export function reportLogEntries(
 	report: AgentTickReport,
 ): readonly Readonly<Record<string, string | number>>[] {

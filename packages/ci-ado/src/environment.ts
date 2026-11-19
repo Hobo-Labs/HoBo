@@ -1,7 +1,6 @@
 import type { ParsedPipeline, PipelineResult } from "@hobo/ci/execution";
 import { parseEnvironmentName } from "./project.js";
 
-/** Only declared names cross from the host into check processes. */
 export function resolveEnvironment(
 	refs: Readonly<Record<string, string>>,
 	pipeline: ParsedPipeline,
@@ -30,7 +29,6 @@ export function resolveEnvironment(
 	return Object.fromEntries(resolved);
 }
 
-/** Exact declared values are removed from logs; this is not a data-loss-prevention filter. */
 export function redactResult(
 	result: PipelineResult,
 	values: readonly string[],

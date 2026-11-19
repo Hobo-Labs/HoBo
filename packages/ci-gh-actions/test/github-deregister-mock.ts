@@ -2,7 +2,6 @@ import type { GithubTransport } from "../src/github.js";
 
 const JIT_RUNNER_DELETE = /^\/repos\/[^/]+\/[^/]+\/actions\/runners\/\d+$/u;
 
-/** Accept JIT runner DELETE without implementing the rest of the GitHub API. */
 export function jitRunnerDeregisterGithub(
 	inner?: GithubTransport,
 ): GithubTransport {

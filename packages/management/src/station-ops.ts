@@ -34,7 +34,6 @@ export function stationInit(
 		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(existsSync(railDoc) ? { importRailDocPath: railDoc } : {}),
 	});
-	// Profile default station — best-effort write for local ops (schema-compatible).
 	try {
 		const profilePath = join(ctx.hoboHome, "profile.json");
 		const existing = existsSync(profilePath)
@@ -57,7 +56,6 @@ export function stationInit(
 		mkdirSync(ctx.hoboHome, { recursive: true });
 		writeFileSync(profilePath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
 	} catch {
-		/* profile write is best-effort */
 	}
 	ctx.setOccupyMode(result.stationId, "idle");
 	return okResult(

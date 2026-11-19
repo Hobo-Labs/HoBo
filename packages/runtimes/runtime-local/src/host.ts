@@ -7,10 +7,6 @@ import type {
 	ServePrivateContext,
 } from "@hobo/core";
 
-/**
- * Camp host adapter for `componentHost=local`: private components run
- * in-process via supplied fetch handlers (no OS sandbox).
- */
 export function createLocalRuntimeHost(): HoboRuntimeHost {
 	return {
 		kind: "local",

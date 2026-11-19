@@ -1,16 +1,3 @@
-/**
- * Consumer-driven contract verification for the yard boundary.
- *
- * `contracts/provider-railway-yard-boundary.pact.json` states what the yard
- * placement plane expects of this package. A pact nobody replays is a wish, so
- * this suite loads the file and drives the *real* `createRailwayProvider()`
- * through every interaction it records.
- *
- * There is no transport to fake. This provider makes no network call from
- * `src/`: its boundary is in-process, the interactions are messages, and the
- * only seam is the refusal that stands in for a temporary Environment Station
- * Railway does not offer.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -45,11 +32,6 @@ type PactFile = {
 	readonly interactions: readonly PactMessage[];
 };
 
-/**
- * Parse the pact rather than trusting its shape: a suite that reads
- * `interactions[3].response.body` off an `unknown` fails three assertions
- * later with a property error instead of saying the pact is malformed.
- */
 function loadPact(): PactFile {
 	const decoded = parseJsonObject(
 		readFileSync(
@@ -141,7 +123,6 @@ function jsonStringMap(value: JsonObject[string] | undefined) {
 	return mapped;
 }
 
-/** Every recorded rejection carries the same code and names the offending field. */
 function expectRejection(fragment: string, run: () => void): void {
 	const expected = responseBody(fragment).error;
 	const expectedError = isJsonObject(expected) ? expected : {};
@@ -196,8 +177,6 @@ describe("matching answers, verified against the pact", () => {
 		const capability = provider.capabilities.find(
 			(entry) => entry.port === jsonString(request.port),
 		);
-		// A port Railway does not realize has no capability object at all, and
-		// the plane must still get "none" rather than an absent answer.
 		const features = isJsonArray(request.features)
 			? request.features.filter(isJsonString)
 			: undefined;

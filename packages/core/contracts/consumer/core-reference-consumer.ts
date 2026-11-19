@@ -3,9 +3,6 @@ import type {
 	PactResponse,
 	ProviderStub,
 } from "@hobo/contract-harness";
-// The package's json helpers live in src/, not beside this consumer — the
-// anti-slop sweep (#1242) rewrote this import to the by-convention "./json.js"
-// and left the whole contract suite failing at module resolution ever since.
 import {
 	isJsonObject,
 	isJsonString,
@@ -31,7 +28,6 @@ export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
 		throw new CoreContractSurfaceParseError("response body must be an object");
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	const record = body as JsonObject;
 	if (record.schemaVersion !== "hobo.core/v1") {
 		throw new CoreContractSurfaceParseError(
@@ -44,7 +40,6 @@ export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
 		!isJsonObject(eventMappings) ||
 		eventMappings === null ||
 		Array.isArray(eventMappings) ||
-		// SAFETY: assertion required at this I/O or test boundary.
 		(eventMappings as JsonObject).cloudEventSpecversion !== "1.0"
 	) {
 		throw new CoreContractSurfaceParseError(
@@ -57,7 +52,6 @@ export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
 		!isJsonObject(publicSurface) ||
 		publicSurface === null ||
 		Array.isArray(publicSurface) ||
-		// SAFETY: assertion required at this I/O or test boundary.
 		(publicSurface as JsonObject).ok !== true
 	) {
 		throw new CoreContractSurfaceParseError("invalid publicSurface.ok");
@@ -109,13 +103,11 @@ export async function fetchUnsupportedSchemaError(
 		throw new Error("error response body must be an object");
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	const error = (body as JsonObject).error;
 	if (!isJsonObject(error) || error === null || Array.isArray(error)) {
 		throw new Error("error envelope missing");
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	const record = error as JsonObject;
 	if (!isJsonString(record.code) || !isJsonString(record.message)) {
 		throw new Error("error envelope must include code and message");

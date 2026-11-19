@@ -45,7 +45,6 @@ describe("storage job classes", () => {
 			),
 		).toBe("runner_image");
 		expect(storageClassForJob("Attest GHCR images (hobo-sdk)")).toBe("light");
-		// A name that itself ends in parentheses still matches exactly.
 		expect(storageClassForJob("Publish GitHub Pages (site/)")).toBe(
 			"release_trunk",
 		);

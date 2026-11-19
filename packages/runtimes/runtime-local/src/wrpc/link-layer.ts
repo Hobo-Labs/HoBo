@@ -21,24 +21,12 @@ import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import { createInProcessTransport } from "./in-process-transport.js";
 import { negotiateWireVersion } from "./wire-version.js";
 
-/**
- * A monotonic-enough source of wall-clock milliseconds, injectable so tests
- * can drive deadline enforcement deterministically. Defaults to `Date.now`.
- */
 export interface LinkClock {
 	nowMs(): number;
 }
 
 const DEFAULT_LINK_CLOCK: LinkClock = { nowMs: () => Date.now() };
 
-/**
- * Race a link invocation against its carried deadline. A call that settles
- * before the remaining budget elapses wins (synchronous/fast providers resolve
- * on the microtask queue and beat even a zero-length timer); a slow provider
- * loses to the timer and is cancelled with a typed {@link DeadlineExceededError}.
- * The losing invocation's settlement is consumed so it never leaks as an
- * unhandled rejection.
- */
 function raceDeadline<T>(
 	work: Promise<T>,
 	remainingMs: number,
@@ -108,13 +96,7 @@ export function createWrpcLinkLayer(options: {
 	transport: WrpcTransport;
 	compatibilityFloor: string;
 	store?: ProviderHandlerStore;
-	/**
-	 * Membrane backpressure bound: the maximum number of concurrent in-flight
-	 * calls per provider before the link sheds load with a typed
-	 * {@link MembraneBackpressureError}. Defaults to unbounded (carry-only).
-	 */
 	maxInFlight?: number;
-	/** Clock used to enforce carried deadlines. Defaults to `Date.now`. */
 	clock?: LinkClock;
 }): WrpcLinkPort {
 	const floor = parseWireVersion(options.compatibilityFloor);
@@ -243,8 +225,6 @@ export function createWrpcLinkLayer(options: {
 				});
 			}
 
-			// Membrane backpressure: a saturated provider sheds load with a
-			// typed retryable error rather than buffering unboundedly.
 			const providerId = link.providerId;
 			const current = inFlight.get(providerId) ?? 0;
 			if (current >= maxInFlight) {
@@ -257,9 +237,6 @@ export function createWrpcLinkLayer(options: {
 				});
 			}
 
-			// Each link is a timeout boundary: a carried deadline is enforced,
-			// not merely propagated. A call still in flight past the deadline is
-			// cancelled with a typed `cancelled`/deadline-exceeded error.
 			const deadlineIso = options.deadline ?? null;
 			const deadlineMs =
 				deadlineIso !== null ? parseDeadlineMs(deadlineIso) : null;
@@ -284,7 +261,6 @@ export function createWrpcLinkLayer(options: {
 										componentId,
 										importInterface: parsedInterface,
 										operation,
-										// SAFETY: assertion to `deadlineIso as string` is required at this boundary.
 										deadline: deadlineIso as string,
 										deadlineMs,
 										observedNowMs: startedAtMs,

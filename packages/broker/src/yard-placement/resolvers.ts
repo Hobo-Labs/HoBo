@@ -7,20 +7,13 @@ import {
 } from "./types.js";
 
 export const EMPTY_RESOLVER_CONFIG: PrimitiveResolverConfig = Object.freeze({
-	// SAFETY: assertion required at this I/O or test boundary.
 	require: Object.freeze([] as string[]),
-	// SAFETY: assertion required at this I/O or test boundary.
 	prefer: Object.freeze([] as string[]),
-	// SAFETY: assertion required at this I/O or test boundary.
 	pins: Object.freeze([] as ResolverPin[]),
 	properties: Object.freeze({}),
 	labels: Object.freeze({}),
 });
 
-/**
- * Compose resolver pins for Yard → Camp → Bindle → resource under a fixed
- * provider. Bindle never contributes provider-specific pins.
- */
 export function composeResolverPins(options: {
 	readonly providerId: string;
 	readonly yardDefaults: PrimitiveResolverConfig;
@@ -32,7 +25,6 @@ export function composeResolverPins(options: {
 	const pinMap = new Map<string, { resolverId: string; source: string }>();
 	const contributing: string[] = [];
 
-	// Lowest: provider defaults for this provider.
 	for (const d of options.providerDefaults) {
 		if (d.providerId && d.providerId !== options.providerId) continue;
 		if (d.default) {
@@ -40,19 +32,15 @@ export function composeResolverPins(options: {
 			contributing.push(d.id);
 		}
 	}
-	// Authored yard defaults
 	for (const p of options.yardDefaults.pins) {
 		pinMap.set(p.slot, { resolverId: p.resolverId, source: "yard" });
 	}
-	// Camp config
 	for (const p of options.campConfig.pins) {
 		pinMap.set(p.slot, { resolverId: p.resolverId, source: "camp" });
 	}
-	// Broker policy pins (highest choice layer, still subject to deny)
 	for (const p of options.policyPins ?? []) {
 		const prior = pinMap.get(p.slot);
 		if (prior && prior.resolverId !== p.resolverId) {
-			// equal-precedence conflict if both policy — simplify: policy wins over authored
 		}
 		pinMap.set(p.slot, { resolverId: p.resolverId, source: "policy" });
 	}
@@ -68,7 +56,6 @@ export function composeResolverPins(options: {
 				{ code: "resolver-denied" },
 			);
 		}
-		// Provider constraint: resolver id must be platform or match provider prefix / listed.
 		if (
 			resolverId.includes(".") &&
 			!resolverId.startsWith("hobo.") &&
@@ -106,7 +93,6 @@ export function buildExecutionUnits(options: {
 			yardId: options.yardId,
 			destroyWithBindle: false,
 			claims: Object.freeze([`yard:${options.yardId}`]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			residualDefinitions: Object.freeze([] as string[]),
 		}),
 		Object.freeze({
@@ -116,7 +102,6 @@ export function buildExecutionUnits(options: {
 			yardId: options.yardId,
 			destroyWithBindle: false,
 			claims: Object.freeze([`camp:${options.campId}`]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			residualDefinitions: Object.freeze([] as string[]),
 		}),
 		Object.freeze({
@@ -126,7 +111,6 @@ export function buildExecutionUnits(options: {
 			yardId: options.yardId,
 			destroyWithBindle: true,
 			claims: Object.freeze([`bindle:${options.bindleName}`]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			residualDefinitions: Object.freeze([] as string[]),
 		}),
 	];
@@ -145,7 +129,6 @@ export function buildExecutionUnits(options: {
 			}),
 		);
 	}
-	// Shared infrastructure unit is never destroyed with bindle.
 	units.push(
 		Object.freeze({
 			unitId: `unit:shared:${options.yardId}`,
@@ -154,7 +137,6 @@ export function buildExecutionUnits(options: {
 			yardId: options.yardId,
 			destroyWithBindle: false,
 			claims: Object.freeze([`shared:${options.yardId}`]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			residualDefinitions: Object.freeze([] as string[]),
 		}),
 	);
@@ -176,7 +158,6 @@ export function defaultProviderResolvers(
 			source: "provider-default",
 			default: true,
 			priority: 100,
-			// SAFETY: assertion required at this I/O or test boundary.
 			requiresCapabilities: Object.freeze([] as string[]),
 			providesCapabilities: Object.freeze([slot]),
 			implementationRef: `${providerId}/resolvers/${slot}`,
@@ -187,7 +168,6 @@ export function defaultProviderResolvers(
 		mk("substrate", "camp.substrate"),
 		mk("workload", "bindle.workload"),
 		mk("network", "yard.network"),
-		// Event-store fold resolver: rebuilds inventory + generation from yard.* facts.
 		Object.freeze({
 			schemaVersion: "hobo.primitive-resolver/v1" as const,
 			id: `${providerId}.yard.event-store/v1`,
@@ -214,6 +194,5 @@ export function defaultProviderResolvers(
 export function hashResolverConfig(
 	config: PrimitiveResolverConfig,
 ): `sha256:${string}` {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return contentHashOf(config) as `sha256:${string}`;
 }

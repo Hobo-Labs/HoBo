@@ -1,6 +1,3 @@
-// Shared helpers for the inventory and placement modules (WP22): canonical
-// JSON digests, protobuf-JSON event bodies, typed refusals and advisory
-// telemetry. Nothing here reads a clock; callers pass `atMs`.
 import { createHash } from "node:crypto";
 import {
 	create,
@@ -20,11 +17,6 @@ import type {
 } from "../ports.js";
 import { isJsonArray, isJsonObject, jsonOf } from "./json.js";
 
-/**
- * Canonical JSON: object keys sorted by code unit, no whitespace, arrays in
- * order. Inputs are protobuf-JSON values, so this is the RFC 8785 subset
- * digests need.
- */
 export function canonicalJson(value: JsonValue): string {
 	if (isJsonArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
 	if (isJsonObject(value)) {
@@ -38,7 +30,6 @@ export function sha256Digest(value: JsonValue): Digest {
 	return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
 
-/** Event body for a generated record: its canonical protobuf JSON. */
 export function body<T extends Message>(
 	schema: GenMessage<T>,
 	record: T,
@@ -46,7 +37,6 @@ export function body<T extends Message>(
 	return toJson(schema, record);
 }
 
-/** Decode a persisted body; undefined when it is not that record (never throws). */
 export function decode<T extends Message, D>(
 	schema: GenMessage<T>,
 	data: D,
@@ -81,17 +71,12 @@ export function iso(ms: number): string {
 	return new Date(ms).toISOString();
 }
 
-/** Epoch ms of an RFC 3339 timestamp, or undefined when it does not parse. */
 export function parseTime(value: string): number | undefined {
 	if (value === "") return undefined;
 	const ms = Date.parse(value);
 	return Number.isFinite(ms) ? ms : undefined;
 }
 
-/**
- * Emit metric points. Telemetry is advisory (the journal is the record), so a
- * failing sink never turns a committed command into an error a caller retries.
- */
 export function emit(
 	sink: TelemetrySink | undefined,
 	points: readonly Readonly<{
@@ -107,7 +92,6 @@ export function emit(
 	sink.metrics(points).catch(() => undefined);
 }
 
-/** True when an append failed only because another writer moved the stream head. */
 export function isConflict<E>(error: E): boolean {
 	return error instanceof Error && isEventStoreOptimisticConflict(error);
 }

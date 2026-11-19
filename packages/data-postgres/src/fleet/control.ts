@@ -1,16 +1,6 @@
-/**
- * The fleet's own tables, created on every backend.
- *
- * Three small tables, all under the layout's control prefix so replication
- * never copies them: the assignment log, the standby's watermark, and the
- * per-period usage counters. Creation is serialised by an advisory lock
- * because concurrent `CREATE TABLE IF NOT EXISTS` statements can still collide
- * in the catalog.
- */
 import { FLEET_LOCK_CLASS, type FleetLayout } from "./layout.js";
 import { type FleetBackend, inTransaction, quoteIdentifier } from "./sql.js";
 
-/** Create the control tables on one backend. Safe to repeat and to race. */
 export async function ensureFleetControlTables(
 	backend: FleetBackend,
 	layout: FleetLayout,
@@ -32,10 +22,6 @@ export async function ensureFleetControlTables(
 			CHECK (sealed = (target IS NOT NULL)),
 			CHECK (NOT sealed OR target IS DISTINCT FROM active)
 		)`);
-		// Older fleets used `target IS DISTINCT FROM active` unconditionally.
-		// It rejects the supported unsealed/no-writer state (both are NULL).
-		// Replace only that exact old check, under the existing DDL lock and in
-		// one transaction. Preserve all data and any unrelated constraints.
 		const constraints = await session.query(
 			`SELECT conname::text AS name, pg_get_constraintdef(oid)::text AS definition
 			FROM pg_constraint WHERE conrelid = to_regclass($1) AND contype = 'c'`,

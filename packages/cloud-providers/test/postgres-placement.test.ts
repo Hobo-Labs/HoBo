@@ -2,10 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { type PostgresOffer, placePostgresFleet } from "../src/index.js";
 
-// Cheapest-available PostgreSQL placement: no vendor is a dependency. An
-// unreachable backend is skipped, standbys go to other vendors, and placement
-// is unavailable only when nothing configured answers.
-
 const usd = (dollars: number) => dollars * 1_000_000;
 
 const NEON: PostgresOffer = {
@@ -96,8 +92,6 @@ describe("placePostgresFleet", () => {
 	it("places the cheapest reachable backend as writer and a standby on another vendor", () => {
 		const placement = placePostgresFleet([PRISMA, SUPABASE, NEON]);
 		expect(placement.status).toBe("placed");
-		// Equal fee and both probed: the recorded lower latency (Supabase 40ms vs
-		// none recorded for Neon) breaks the tie.
 		expect(placement.writer?.provider).toBe("supabase-postgres");
 		expect(placement.standbys.map((b) => b.provider)).toEqual([
 			"neon-postgres",

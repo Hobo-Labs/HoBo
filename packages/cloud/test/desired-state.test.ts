@@ -30,11 +30,6 @@ import {
 	runOrchestrator,
 } from "../src/index.js";
 
-// Desired State Reconciliation: `up` is an upsert over the durable log.
-// Re-running an unchanged declaration is a no-op (idempotent deployment), a
-// changed spec updates in place, `down` then `up` re-creates, and `complete`
-// mode prunes what is no longer declared.
-
 let stores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const s of stores) s.close();
@@ -51,7 +46,6 @@ function freshStore(): RuntimeLocalEventStore {
 }
 
 function loadPlan(): DeploymentPlan {
-	// SAFETY: fixture JSON is a DeploymentPlan by construction.
 	return JSON.parse(
 		readFileSync(
 			fileURLToPath(
@@ -432,7 +426,6 @@ describe("upsert", () => {
 		expect(events.filter((e) => e.type === "deployment.Deployed").length).toBe(
 			2,
 		);
-		// The update converges: a third run is a no-op again.
 		iac.calls.length = 0;
 		await runOrchestrator(deps(store, iac), changed, "upsert", {
 			tenant,
@@ -640,7 +633,6 @@ describe("deployment modes", () => {
 		await recordPlan(store, "modes", plan);
 		await runOrchestrator(deps(store, iac), plan, "modes", { tenant, actor });
 
-		// Drop `web` (a leaf) and `api` (web's dependency) from the declaration.
 		const smaller: DeploymentPlan = {
 			...plan,
 			resources: plan.resources.filter(

@@ -1,8 +1,3 @@
-// Golden vectors for the D9 Mann–Whitney U test. Every expected value was
-// produced by scipy 1.18.1 `mannwhitneyu(canary, baseline, alternative=
-// "two-sided")` (method "exact" for the no-tie n<8 rows, "asymptotic" with
-// tie and continuity correction for the rest) and is pinned here, so a change
-// in the implementation shows up as a diff against an independent reference.
 import { describe, expect, it } from "vitest";
 import { Direction, Sensitivity } from "../../src/_generated/cd_pb.js";
 import {
@@ -132,7 +127,6 @@ describe("Mann–Whitney U golden vectors (D9)", () => {
 
 describe("normal survival function", () => {
 	it("matches reference values to 1e-12", () => {
-		// scipy.stats.norm.sf
 		expect(normalSurvival(0)).toBeCloseTo(0.5, 14);
 		expect(normalSurvival(1.959963984540054)).toBeCloseTo(0.025, 12);
 		expect(normalSurvival(3)).toBeCloseTo(0.0013498980316301035, 14);
@@ -190,7 +184,6 @@ describe("canary-vs-baseline comparison fails only in the worse direction", () =
 	});
 
 	it("a difference not significant at the chosen alpha passes", () => {
-		// p ≈ 0.0059 for the tie vector: significant at HIGH/MEDIUM, not at LOW.
 		const canary = [3, 4, 4, 5, 5, 6, 6, 7, 7, 8];
 		const base = [1, 2, 2, 3, 3, 3, 4, 4, 5, 5];
 		const low = compareCohorts({
@@ -205,7 +198,7 @@ describe("canary-vs-baseline comparison fails only in the worse direction", () =
 			direction: Direction.HIGHER_IS_WORSE,
 			sensitivity: Sensitivity.MEDIUM,
 		});
-		expect(low.failed).toBe(true); // 0.0059 < 0.01
+		expect(low.failed).toBe(true);
 		expect(medium.failed).toBe(true);
 		const subtle = compareCohorts({
 			canary: [1, 1, 2, 3],

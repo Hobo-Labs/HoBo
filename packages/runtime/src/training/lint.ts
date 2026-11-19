@@ -1,9 +1,3 @@
-// Promoted from src/draft/technical-proofs/evals-training-promotion-gates-poc
-// (src/lint/use-training-lint.ts), inverted for the bare-marker form
-// (ADR-0125): a "use training" method MAY carry explicit intent + contract +
-// rubric groundings; when it does not, the bindings are inferred and
-// generated (training.infer / hobo stub), so the lint reports them as
-// inferred `info` findings instead of errors.
 
 import { isJsonString } from "../json.js";
 
@@ -18,7 +12,6 @@ export interface UseTrainingLintFinding {
 export interface UseTrainingLintResult {
 	readonly ok: boolean;
 	readonly findings: readonly UseTrainingLintFinding[];
-	/** True when groundings will be inferred/generated rather than declared. */
 	readonly inferred?: boolean;
 	readonly required?: readonly string[];
 }

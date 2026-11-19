@@ -2,7 +2,6 @@ import type { MeteringSink, TenantId, UsageEvent } from "@hobo/core";
 import { createUsageEvent } from "@hobo/core";
 
 export interface PriceBook {
-	/** Price per unit in minor currency units (e.g. USD cents). */
 	readonly prices: Readonly<Partial<Record<UsageEvent["eventType"], number>>>;
 	readonly currency: string;
 }
@@ -37,7 +36,6 @@ export interface BillingPeriodBucket {
 
 export interface BillingAggregator extends MeteringSink {
 	readonly priceBook: PriceBook;
-	/** Ingested raw events (debug). */
 	readonly events: readonly UsageEvent[];
 	snapshot(tenantId?: TenantId): readonly BillingPeriodBucket[];
 	closePeriod(input: {
@@ -45,9 +43,6 @@ export interface BillingAggregator extends MeteringSink {
 		readonly periodStart: string;
 		readonly periodEnd: string;
 	}): Invoice;
-	/**
-	 * Close period, then charge via BillingProvider when configured.
-	 */
 	closeAndCharge(input: {
 		readonly tenantId: TenantId;
 		readonly periodStart: string;
@@ -84,10 +79,6 @@ const DEFAULT_PRICE_BOOK: PriceBook = {
 	},
 };
 
-/**
- * Aggregates UsageEvent streams into per-tenant period invoices.
- * Wire as a MeteringSink so every lifecycle path feeds billing.
- */
 export function createBillingAggregator(options?: {
 	readonly sinkId?: string;
 	readonly priceBook?: PriceBook;
@@ -140,7 +131,6 @@ export function createBillingAggregator(options?: {
 			const hasWindow =
 				Number.isFinite(periodStartMs) && Number.isFinite(periodEndMs);
 
-			// Rebuild buckets for this close from events in the period window when timestamps exist.
 			const periodBuckets = new Map<string, BillingPeriodBucket>();
 			for (const event of events) {
 				if (event.tenantId !== input.tenantId) continue;
@@ -153,7 +143,6 @@ export function createBillingAggregator(options?: {
 				if (hasWindow) {
 					const ts = Date.parse(event.timestamp);
 					if (!Number.isFinite(ts)) continue;
-					// Inclusive start, exclusive end-of-day if date-only, else inclusive range.
 					const endBound =
 						input.periodEnd.length <= 10
 							? periodEndMs + 24 * 60 * 60 * 1000
@@ -213,7 +202,6 @@ export function createBillingAggregator(options?: {
 			};
 			invoices.push(invoice);
 
-			// Clear closed tenant buckets so the next period starts clean.
 			for (const k of buckets.keys()) {
 				if (k.startsWith(`${input.tenantId}::`)) buckets.delete(k);
 			}
@@ -239,7 +227,6 @@ export function createBillingAggregator(options?: {
 	return aggregator;
 }
 
-/** Emit synthetic billing events for audit trails on a bus. */
 export function invoiceToUsageEvents(invoice: Invoice): UsageEvent[] {
 	const lines = invoice.lines.map((line) =>
 		createUsageEvent({

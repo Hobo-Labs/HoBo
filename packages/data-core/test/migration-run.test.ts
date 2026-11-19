@@ -1,5 +1,3 @@
-// The migration aggregate: policy is recomputed before every phase, a
-// negative verdict holds at a safe state, and a run resumes from its facts.
 import assert from "node:assert/strict";
 import type { PrincipalRef } from "@hobo/core";
 import { describe, test } from "vitest";
@@ -51,7 +49,6 @@ const FULL = [
 
 function verdict(targetRegion: string): PolicyVerdict {
 	return evaluateCustodyPath({
-		// One point per role: a run holds on a path that leaves out a copy it
 		// creates. Only the target's region varies.
 		path: parseCustodyPath({
 			points: CUSTODY_ROLES.map((role) => ({
@@ -94,7 +91,6 @@ describe("continuous policy", () => {
 		const target = createReferenceEngine({ engine: "target" });
 		const journal = createMemoryMigrationJournal();
 		// The residency rule changes after the seed: the target's region is no
-		// longer allowed. Nothing about the migration's own inputs changed.
 		let allowed = true;
 		const asked: MigrationPhase[] = [];
 		const policy = (phase: MigrationPhase): PolicyVerdict => {
@@ -126,7 +122,6 @@ describe("continuous policy", () => {
 		assert.match(held.reason ?? "", /CUSTODY_RESIDENCY_CONFLICT/u);
 		assert.deepEqual(asked, ["gate", "prepare", "seed", "converge"]);
 		assert.equal(held.state.heldAt, "seed");
-		// The source never stopped being writable: a hold is not an outage.
 		const record = parseCanonicalRecord(ORDERS, {
 			id: "while-held",
 			total: "1",
@@ -136,7 +131,6 @@ describe("continuous policy", () => {
 			mutations: [upsertMutation("", encodeRecordKey(ORDERS, record), record)],
 		});
 
-		// Still denied: re-running changes nothing and moves nothing.
 		const stillHeld = await runSnapshotAndTail({
 			...options,
 			runtime: { migrationId: "policy", journal, clock: () => NOW, policy },
@@ -205,8 +199,6 @@ describe("a crash at the worst moment", () => {
 			scope: scopeOf("orders"),
 			soakDecision: () => "hold" as const,
 		};
-		// The flip lands, the application starts writing to the target, and
-		// the process dies before the phase is recorded as complete.
 		await assert.rejects(
 			runSnapshotAndTail({
 				...options,
@@ -249,14 +241,11 @@ describe("a crash at the worst moment", () => {
 				policy: () => verdict("eu-central-1"),
 			},
 		});
-		// The resume did not re-verify against a target that had moved on, and
-		// so did not "compensate" by handing writes back to the source.
 		assert.equal(resumed.status, "held");
 		assert.equal(resumed.state.heldAt, "soak");
 		assert.equal(resumed.state.cutOver, true);
 		assert.equal(authority, "target");
 		assert.equal(flips, 2, "the flip is repeated, which its contract allows");
-		// Exactly one side is writable: the source is still fenced.
 		await assert.rejects(async () => {
 			await source.records.write({
 				dataset: "orders",
@@ -265,8 +254,6 @@ describe("a crash at the worst moment", () => {
 				],
 			});
 		}, /fenced/u);
-		// And the write the application made in between survived, here and — by
-		// the reverse tail — on the old side too.
 		const kept = await target.records.read({
 			dataset: "orders",
 			tenant: "",
@@ -383,13 +370,11 @@ describe("migration journal", () => {
 			store.getStreamHead("migration:durable")?.revision,
 			replayed.length,
 		);
-		// Facts carry positions, counts, and digests — nothing else.
 		assert.ok(!JSON.stringify(replayed).includes("o-3"));
 	});
 });
 
 describe("in-place-evolve policy and erasure", () => {
-	/** A schema port over a plain array of applied statements. */
 	interface FakePort extends SchemaApplyPort {
 		readonly applied: readonly string[];
 		readonly restored: number;
@@ -443,7 +428,6 @@ describe("in-place-evolve policy and erasure", () => {
 				ok: phase !== "contract",
 				findings:
 					phase === "contract" ? [{ code: "CUSTODY_RETENTION_EXPIRED" }] : [],
-				// The two places an in-place migration keeps data.
 				roles: ["source", "rollback-snapshot"],
 			}),
 		});

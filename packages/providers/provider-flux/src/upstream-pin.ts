@@ -1,4 +1,3 @@
-/** Flux/Orbit evidence. Orbit is Git UX over FluxCloud. Checked 2026-08-14. */
 export const FLUX_PIN = {
 	orbit: "https://orbit.runonflux.com/",
 	docs: "https://docs.runonflux.com/fluxcloud/register-new-app/deploy-with-git/introduction/",

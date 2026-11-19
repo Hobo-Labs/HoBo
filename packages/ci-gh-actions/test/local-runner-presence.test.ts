@@ -1,7 +1,3 @@
-// A local runner's GitHub presence, as its controller writes it for the
-// host's CD agent (`runner-presence.json` beside its other state): online only
-// when GitHub said so, busy also from what the machine sees itself, and
-// nothing once no runner is registered. Offline: a recorded GitHub response.
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -26,7 +22,6 @@ afterEach(async () => {
 		await rm(dir, { recursive: true, force: true });
 });
 
-/** GitHub's `GET /repos/{repo}/actions/runners/{id}` for a waiting runner, recorded. */
 const RECORDED_RUNNER = {
 	id: 42,
 	name: "hobo-local-0f8fad5b",
@@ -71,7 +66,6 @@ describe("local runner presence for the runner-host agent", () => {
 			},
 		]);
 
-		// The machine sees a job start before GitHub says busy: busy anyway.
 		await mkdir(join(work, "_diag"));
 		await writeFile(join(work, "_diag", "Worker_20261113-100000-utc.log"), "");
 		nowMs += 1_000;
@@ -102,8 +96,6 @@ describe("local runner presence for the runner-host agent", () => {
 		expect(await reporter.presence()).toMatchObject({
 			runners: [{ name: "r", status: "offline", busy: false }],
 		});
-		// The observer's own refresh writes in the background; wait for it so
-		// the presence file is complete before the state directory is removed.
 		await reporter.settled();
 		expect(
 			JSON.parse(readFileSync(files.runnerPresence, "utf8")).runners,
@@ -115,7 +107,6 @@ describe("local runner presence for the runner-host agent", () => {
 		dirs.push(state);
 		const work = join(state, "host-1");
 		await mkdir(work);
-		// An hour of a waiting runner's 5 s admission checks, admission open.
 		let refreshedAtMs = 0;
 		let refreshes = 0;
 		for (
@@ -136,12 +127,9 @@ describe("local runner presence for the runner-host agent", () => {
 			}
 		expect(refreshes).toBeLessThanOrEqual(80);
 		expect(refreshes).toBeGreaterThanOrEqual(60);
-		// The presence stays fresh for the agent between refreshes.
 		expect(
 			LOCAL_RUNNER_PRESENCE_REFRESH_MS + LOCAL_RUNNER_ADMISSION_CHECK_MS,
 		).toBeLessThan(RUNNER_PRESENCE_MAX_AGE_MS / 2);
-		// Closed admission gives up a runner with no job at the next check,
-		// whatever the presence schedule; one with a job is left to finish.
 		expect(
 			localRunnerWatchAction({
 				admissionPaused: true,

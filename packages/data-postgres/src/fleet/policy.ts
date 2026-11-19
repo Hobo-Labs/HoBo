@@ -1,10 +1,3 @@
-/**
- * The fleet policy: keep the writer, switch to a standby, or fail over.
- *
- * Engine-neutral, so it lives in `@hobo/backend-fleet` (ADR-0179 phase 4c);
- * re-exported here under the names this package always had. See `decideFleet`
- * there for the rules.
- */
 import type {
 	FleetAllowance,
 	FleetCandidate,
@@ -33,7 +26,6 @@ export {
 	parseFleetPolicy,
 } from "@hobo/backend-fleet";
 
-/** This package's names for the policy's records; the same parsed types. */
 export type PostgresFleetObservation = FleetObservation;
 export type PostgresFleetAllowance = FleetAllowance;
 export type PostgresFleetFinancialModel = FleetFinancialModel;

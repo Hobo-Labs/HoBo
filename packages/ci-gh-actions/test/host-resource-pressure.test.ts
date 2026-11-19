@@ -210,7 +210,6 @@ describe("host resource pressure", () => {
 	});
 
 	it("blocks admission on CPU `some` pressure, since the host never reports `full`", () => {
-		// /proc/pressure/cpu on a saturated host: the kernel prints full as zero.
 		const saturated = parsePsiAverages(
 			"some avg10=71.20 avg60=64.02 avg300=40.11 total=1447842\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
 		);
@@ -247,7 +246,6 @@ describe("host resource pressure", () => {
 		expect(cpuShareNotYetInLoad1(at(0), now)).toBe(1);
 		expect(cpuShareNotYetInLoad1(at(60_000), now)).toBeCloseTo(0.368, 3);
 		expect(cpuShareNotYetInLoad1(at(180_000), now)).toBe(0);
-		// No start time: the job is taken as already in the average.
 		expect(cpuShareNotYetInLoad1(undefined, now)).toBe(0);
 		expect(cpuShareNotYetInLoad1("", now)).toBe(0);
 	});

@@ -1,14 +1,3 @@
-/**
- * Replays `contracts/pacts/ephemeral-state-executor.pact.json` from both sides.
- *
- * Consumer: the ephemeral-state binding, driven through its port, must send
- * exactly the commands the pact lists. Provider: the in-memory engine,
- * starting with an empty script cache, must answer each of them as the pact
- * says. `ephemeral-resp.test.ts` replays the provider side against a real
- * Valkey/Redis when one is available. The REST envelope around these
- * commands is the existing `kv-redis-executor.pact.json` shape, which
- * `@hobo/provider-upstash`'s executor carries for every command alike.
- */
 import { parseEphemeralKey, parseEphemeralTtlMs } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 

@@ -1,11 +1,3 @@
-/**
- * `hobo trails` — observe-only continuous migration surface.
- *
- * Subcommands: status | plan | inspect
- * Mutations (run/cutover) are Matching/policy-gated platform ops or
- * progressive Harness ramps — not exposed as unconstrained CLI mutations.
- * Pure continuous identity requires zero Trail authoring (hands-off).
- */
 
 import type { CommandModule } from "@hobo/cli";
 import {
@@ -22,7 +14,6 @@ import { isJsonString, type JsonObject } from "./json.js";
 export interface TrailsCommandDeps {
 	readonly env?: NodeJS.ProcessEnv;
 	readonly hoboHome?: string;
-	/** Injectable fixtures for tests. */
 	readonly fixtures?: LocalTrailFixtures;
 }
 
@@ -62,9 +53,7 @@ export function createTrailsCommand(
 				(isJsonString(env.HOBO_HOME) && env.HOBO_HOME.length > 0
 					? env.HOBO_HOME
 					: defaultHoboHome());
-			// SAFETY: assertion required at this I/O or test boundary.
 			const sub = (args[0] ?? "status") as string;
-			// SAFETY: assertion required at this I/O or test boundary.
 			if (!(SUBCOMMANDS as readonly string[]).includes(sub)) {
 				return {
 					ok: false,
@@ -81,11 +70,9 @@ export function createTrailsCommand(
 
 			const tenant = resolveTenant(
 				hoboHome,
-				// SAFETY: assertion required at this I/O or test boundary.
 				flags as JsonObject,
 				env,
 			);
-			// SAFETY: assertion required at this I/O or test boundary.
 			const target = resolveTarget(flags as JsonObject, env);
 			const fixtures =
 				deps.fixtures ??
@@ -194,7 +181,6 @@ export function createTrailsCommand(
 							bindleConfigRequired: plan.bindleConfigRequired,
 							dryRun: true,
 						},
-						// Pure identity continuous never requires Bindle/Trail authoring.
 						bindleConfigRequired:
 							trail.id === identityTrail.id ? false : plan.bindleConfigRequired,
 						fidelity: fixtures.fidelity,
@@ -203,7 +189,6 @@ export function createTrailsCommand(
 				};
 			}
 
-			// status — dual fixtures + hands-off identity continuous + app sample
 			const plan = fixtures.runner.plan(fixtures.appTrail);
 			const message = plan.canTrail.ok
 				? `trails ready: identity continuous hands-off + app sample ${fixtures.appTrail.id} (fidelity=${fixtures.fidelity})`
@@ -241,7 +226,6 @@ export function createTrailsCommand(
 					fidelity: fixtures.fidelity,
 					label: fixtures.label,
 					observeOnly: true,
-					// Architecture guarantee surface for agents/doctor.
 					bindleConfigRequiredForIdentityContinuous: false,
 				},
 			};

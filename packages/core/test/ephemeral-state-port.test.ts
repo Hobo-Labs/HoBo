@@ -1,11 +1,3 @@
-/**
- * The ephemeral-state port's parse boundary and helper preconditions.
- *
- * Behaviour against real bindings (in-memory, RESP, REST) is the conformance
- * suite in `@hobo/kv-redis-compatible`; this file covers what core owns
- * alone: the refined types and the inputs the lock and ring helpers refuse
- * before touching a port.
- */
 
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
@@ -27,7 +19,6 @@ import {
 	parseIncrementBy,
 } from "../src/index.js";
 
-// SAFETY: every property read throws, so no member of the empty target is ever used as a port method.
 const untouched: EphemeralStatePort = new Proxy({} as EphemeralStatePort, {
 	get() {
 		throw new Error("the helper reached the port before refusing its input");

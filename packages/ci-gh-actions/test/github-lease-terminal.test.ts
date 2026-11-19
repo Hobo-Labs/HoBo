@@ -7,7 +7,6 @@ import {
 	resolveGithubLeaseFate,
 } from "../src/isolated-worker/github-lease-terminal.js";
 
-// SAFETY: resolveGithubLeaseFate only reads install/repo/run/job identity fields.
 const lease = {
 	installationId: 10,
 	repository: "Org/Repo",
@@ -43,7 +42,6 @@ describe("github lease terminal fate", () => {
 			runner_name: lease.runnerName,
 			run_attempt: 1,
 		});
-		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
 		const fate = await resolveGithubLeaseFate({} as GithubTransport, lease);
 		expect(fate).toEqual({ kind: "terminal", reason: "run-cancelled" });
 	});
@@ -72,7 +70,6 @@ describe("github lease terminal fate", () => {
 			runner_name: lease.runnerName,
 			run_attempt: 1,
 		});
-		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
 		const fate = await resolveGithubLeaseFate({} as GithubTransport, lease);
 		expect(fate).toEqual({ kind: "active" });
 	});

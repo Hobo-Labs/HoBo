@@ -1,11 +1,3 @@
-/**
- * Tests for workflow-file loading.
- *
- * Small, and it was 0% covered. Everything the CI guard concludes about a
- * repository's workflows is derived from what this returns, so a filter that
- * quietly skipped a file — or an order that varied between runs — would make
- * the guard's verdict wrong or non-reproducible without failing anything.
- */
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";

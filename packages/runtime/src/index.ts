@@ -1,9 +1,4 @@
-// Trainable-method authoring surface (ADR-0025 / ADR-0125): the promised
-// `training` namespace exported from the package root (sdk-api.md §Trainable methods).
 
-// Durable authoring surface (S1-14, sdk-api.md §Layer 4): actors/grains,
-// workflow/step, agent(), and the deny-by-default capability context — lowering
-// onto the `hobo:runtime@0.1.0` primitives.
 export {
 	type ActorDefinition,
 	type ActorHandlerContext,
@@ -51,9 +46,6 @@ export {
 	RuntimeAuthoringError,
 	WorkflowFailure,
 } from "./errors.js";
-// The JSON types the trainable surface is typed in. A generated module's
-// exports (`training.define`, `defineGrounding`) infer `Trainable<JsonValue,
-// JsonValue>`, and declaration emit can name that type only through the root.
 export type { JsonBag, JsonObject, JsonValue } from "./json.js";
 export {
 	type PlacementResolved,

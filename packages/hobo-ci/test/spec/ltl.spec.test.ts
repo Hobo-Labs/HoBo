@@ -13,10 +13,6 @@ import {
 	within,
 } from "../../src/ceremony-spec/ltl.js";
 
-// SPEC: the finite-trace temporal logic the ceremony's properties are
-// written in. Its laws are checked as properties over random traces, so the
-// checker itself is not the thing that guesses.
-
 const is = (value: number) => atom<number>((event) => event === value);
 const trace = fc.array(fc.integer({ min: 0, max: 3 }), { maxLength: 12 });
 
@@ -61,7 +57,6 @@ describe("SPEC LTLf: the operators' laws", () => {
 	});
 
 	it("an invariant names its first violation as the counterexample", () => {
-		// "every 2 has a 1 before it"
 		const property = {
 			name: "1 before 2",
 			kind: "invariant" as const,

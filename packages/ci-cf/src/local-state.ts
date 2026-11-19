@@ -9,7 +9,6 @@ export function initialLocalState(): LocalRunState {
 	return create(LocalRunStateSchema, { phase: "new" });
 }
 
-/** The production controller and exhaustive safety proof share this transition function. */
 export function transitionLocalRun(
 	state: LocalRunState,
 	event: LocalRunEvent,

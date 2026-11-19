@@ -71,11 +71,6 @@ export interface SandboxProxyDriver {
 	): Promise<{ commandId: string }>;
 	bind(origin: string, token: string, guestSessionId: string): Promise<void>;
 	discover(name: string): Promise<{ sessionId: string }>;
-	/**
-	 * The proxy VM's own meter, read through its port with the lease's token
-	 * before the VM is stopped. Optional: a host without it settles from the
-	 * store's counters alone.
-	 */
 	meter?(
 		name: string,
 		sessionId: string,
@@ -89,17 +84,7 @@ export interface SandboxProxyDriver {
 	stop(name: string, sessionId: string): Promise<SandboxUsage>;
 }
 export interface SandboxLeaseStore extends HostedRelayStore {
-	/**
-	 * The proxy session token for a lease, when the store derives it (the
-	 * relay cache store: an HMAC of the lease id under a key from the config
-	 * service). Without it the controller draws a random token.
-	 */
 	sandboxProxyToken?(leaseId: string): string;
-	/**
-	 * Keep what the proxy VM reported (the relay cache store: the VM is the
-	 * authority for its meter, so a lease rebuilt after a cache loss can
-	 * still settle). Without it the report is not read.
-	 */
 	recordSandboxProxyMeter?(
 		leaseId: string,
 		proxySessionId: string,
@@ -174,21 +159,17 @@ export interface SandboxLaunchFailure {
 	proxyStartupReason?: ProxyStartupFailure;
 }
 
-/** The caller authorizes only leases reserved against an isolated Sandbox quote.
- * It must re-read current policy and verify that quote before returning authority. */
 export function createSandboxController(options: {
 	store: SandboxLeaseStore;
 	github: GithubTransport;
 	driver: IsolatedSandboxDriver;
 	proxyDriver?: SandboxProxyDriver;
 	authorize: (lease: Lease) => Promise<SandboxAuthority>;
-	/** A trusted provider-usage ledger calculates the actual all-in charge. */
 	charge: (
 		lease: Lease,
 		usage: SandboxUsage | undefined,
 		proxyUsage?: SandboxUsage,
 	) => Promise<{ paidMicros: number; usedAllowance?: SandboxAllowance }>;
-	/** Assignment is distinct from billing; unknown is never asserted idle. */
 	assignment: (
 		lease: Lease,
 	) => Promise<
@@ -196,9 +177,7 @@ export function createSandboxController(options: {
 		| { kind: "unassigned" }
 		| { kind: "unknown" }
 	>;
-	/** Return original demand only if GitHub confirms it is still queued. */
 	unmet: (lease: Lease) => Promise<Job | undefined>;
-	/** Receives only fixed phase names, lease identity and a sanitized HTTP status. */
 	reportFailure?: (failure: SandboxLaunchFailure) => void;
 	now?: (() => string) | undefined;
 }) {
@@ -209,7 +188,6 @@ export function createSandboxController(options: {
 		status?: number,
 		proxyStartupReason?: ProxyStartupFailure,
 	) {
-		// Refuse log injection if an invalid ID ever reaches this internal path.
 		if (!/^[a-f0-9-]{36}$/.test(leaseId)) return;
 		const failure: SandboxLaunchFailure = { leaseId, phase };
 		const reason = z
@@ -234,12 +212,8 @@ export function createSandboxController(options: {
 		try {
 			options.reportFailure?.(failure);
 		} catch {
-			// Telemetry must never interrupt cancellation or cleanup.
 		}
 	}
-	// A lost JIT response may have created a runner. A positive, unique name
-	// lookup lets us delete it; an empty lookup cannot prove that the request
-	// will not complete later, so it must never release the reservation.
 	async function recoverRunner(lease: Lease): Promise<number | undefined> {
 		let runnerId: number | undefined;
 		for (let page = 1; page <= 100; page++) {
@@ -280,11 +254,6 @@ export function createSandboxController(options: {
 			now(),
 		);
 	}
-	/**
-	 * Read the proxy VM's meter into the store before the VM stops. Best
-	 * effort: a VM that no longer answers leaves settlement to the store's
-	 * own counters, and a lease with neither stays unsettled.
-	 */
 	async function readProxyMeter(lease: Lease): Promise<void> {
 		const store = options.store;
 		const driver = options.proxyDriver;
@@ -314,7 +283,6 @@ export function createSandboxController(options: {
 				now(),
 			);
 		} catch {
-			// The VM may already be gone; the store's counters still apply.
 		}
 	}
 	async function stopProxy(
@@ -407,8 +375,6 @@ export function createSandboxController(options: {
 		return lease;
 	}
 	const controller = {
-		/** Persist intent before every irreversible external operation. Ambiguous
-		 * calls are never retried and remain reserved for reconciliation. */
 		async launch(id: string, label: RunnerLabel = "hobo") {
 			const initial = await options.store.get(id);
 			if (initial?.state !== "reserved") return;
@@ -718,11 +684,9 @@ export function createSandboxController(options: {
 					error instanceof ProxyStartupError ? error.reason : undefined,
 				);
 				await uncertain(id, ["dispatching", "dispatched", "claiming"]);
-				// Persist stop intent and usage; ambiguous outcomes remain reserved.
 				await controller.reconcile(id, true).catch(() => report(id, "cleanup"));
 			}
 		},
-		/** Stop guest first, then proxy, and persist both usage proofs before settlement. */
 		async reconcile(id: string, forceStop = false) {
 			let lease = await options.store.get(id);
 			if (
@@ -730,9 +694,6 @@ export function createSandboxController(options: {
 				lease?.sandboxName &&
 				["dispatching", "dispatched", "claiming"].includes(lease.state)
 			) {
-				// Fence launch before inspecting or stopping either VM. A create or
-				// registration already in flight remains ambiguous until a positive
-				// identity is recovered; a negative lookup never releases the lease.
 				lease = await options.store.transition(
 					id,
 					[lease.state],
@@ -896,8 +857,6 @@ export function createSandboxController(options: {
 				if (!deleted) return;
 				lease = deleted;
 			}
-			// No runner command was started when registration failed. The guest is
-			// stopped, so this registration could not have accepted a job.
 			if (
 				lease.runnerId &&
 				(lease.sandboxStopFromStage !== "registering" || lease.actualJobId)

@@ -1,6 +1,3 @@
-// Bundle the connect page's browser client (React + vercel-labs/ui) and its
-// stylesheet (UI SDK's web.css themed with HoBo's tokens) into dist/client/.
-// The server serves exactly these two files; nothing is loaded from a CDN.
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

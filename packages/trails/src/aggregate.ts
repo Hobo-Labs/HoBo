@@ -1,7 +1,3 @@
-/**
- * Trail run aggregate — event-sourced progressive continuous migration state.
- * Idle → Planned → DualActive → Ramping → Validated → Cutover | Compensated | Aborted | Failed
- */
 import { randomUUID } from "node:crypto";
 
 import type { TrailDefinition } from "./definition.js";
@@ -30,7 +26,6 @@ export type TrailRunRecord = Readonly<{
 	tenant: string;
 	target: string;
 	state: TrailRunState;
-	/** 0–100 progressive ramp across dual steps. */
 	percent: number;
 	currentStepId?: string;
 	completedSteps: readonly string[];
@@ -78,7 +73,6 @@ export class TrailRunService {
 			target: input.target,
 			state: "planned",
 			percent: 0,
-			// SAFETY: the aggregate owns and mutates this private string list.
 			completedSteps: Object.freeze([] as string[]),
 			identityLinked: input.identityLinked === true,
 			junctionOk: true,
@@ -179,8 +173,6 @@ export class TrailRunService {
 	setDualHealth(ok: boolean): TrailRunRecord {
 		const prev = this.require();
 		if (!ok) {
-			// Fail-closed from any non-terminal path, including validated/cutover
-			// if dual re-check fails late (unsafe cutover must not stick).
 			if (!isTerminal(prev.state) || prev.state === "cutover") {
 				return this.compensate("dual-oracle-failed");
 			}
@@ -192,7 +184,6 @@ export class TrailRunService {
 	setJunctionHealth(ok: boolean): TrailRunRecord {
 		const prev = this.require();
 		if (!ok) {
-			// Same fail-closed rule as dual: compensate even after cutover.
 			if (!isTerminal(prev.state) || prev.state === "cutover") {
 				return this.compensate("junction-unhealthy");
 			}
@@ -206,7 +197,6 @@ export class TrailRunService {
 		patch: Partial<TrailRunRecord>,
 	): TrailRunRecord {
 		const prev = this.require();
-		// Allow compensating out of cutover (late dual/junction failure).
 		if (
 			isTerminal(prev.state) &&
 			!(prev.state === "cutover" && state === "compensated")

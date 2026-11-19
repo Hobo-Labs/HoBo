@@ -134,7 +134,6 @@ export function createPnpmStoreMaintenance(
 			);
 			if (isProcessAlive(lock.pid)) return false;
 		} catch {
-			// An unreadable or malformed lock is stale.
 		}
 		await fs.unlink(lockPath);
 		try {

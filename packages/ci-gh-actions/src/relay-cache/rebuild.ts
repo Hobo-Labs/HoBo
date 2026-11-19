@@ -1,12 +1,3 @@
-/**
- * Rebuild by name (ADR-0179). The cache may be emptied at any time; GitHub
- * and Vercel are the system of record. For a job GitHub still shows, the
- * relay computes the job's candidate lease ids (generations 0..bound), looks
- * the names they imply up at the providers, and turns what it finds back
- * into a lease record. A reconstructed record is always `uncertain`: it
- * holds capacity and budget, and is never retried blind — the relay's
- * reconcile and discover paths settle it from the evidence.
- */
 import { randomUUID } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -39,23 +30,17 @@ import {
 } from "./lease-id.js";
 import type { RelayCacheStore } from "./store.js";
 
-/** GitHub's REST view of one job attempt. */
 export type RelayGithubJobView = Readonly<{
 	status: string;
 	runnerName?: string | null | undefined;
-	/** GitHub's id for the runner the job was assigned to, when it was. */
 	runnerId?: number | null | undefined;
 	createdAt?: string | undefined;
 }>;
 
-/** What rebuild asks providers. Each lookup is by a deterministic name. */
 export interface RelayDiscoveryPort {
 	job(job: Job): Promise<RelayGithubJobView | undefined>;
-	/** A self-hosted runner registered under this name, if any. */
 	runner(job: Job, name: string): Promise<{ id: number } | undefined>;
-	/** A workflow-bridge run with this display title, if any. */
 	bridgeRun(job: Job, title: string): Promise<{ id: number } | undefined>;
-	/** A Vercel Sandbox with this name, if any (bound in phase 4b to `discoverIsolatedSandbox`). */
 	sandbox(name: string): Promise<{ sessionId: string } | undefined>;
 }
 
@@ -64,7 +49,6 @@ export type RelayEvidence = Readonly<{
 	leaseId: string;
 	from: "runner" | "bridge-run" | "sandbox";
 	runnerAssigned: boolean;
-	/** The registered runner's id, from GitHub's assignment or the name lookup; 0 when unknown. */
 	runnerId: number;
 	hostRunId: number;
 	sandboxSessionId: string;
@@ -86,7 +70,6 @@ export type RelayResolveOutcome =
 	| { kind: "unresolved" };
 
 export type RelayRebuildOptions = Readonly<{
-	/** Highest generation probed when the job record is gone. Default 3. */
 	maxGeneration?: number;
 }>;
 
@@ -98,7 +81,6 @@ function jobIdentity(job: Job) {
 	};
 }
 
-/** Look every name of every candidate up; GitHub's own assignment comes first. */
 async function gatherEvidence(
 	discovery: RelayDiscoveryPort,
 	job: Job,
@@ -130,7 +112,6 @@ async function gatherEvidence(
 			sandboxSessionId: sandbox?.sessionId ?? "",
 		});
 	}
-	// Two leases for one job collapse to the one GitHub assigned, else the newest.
 	return found.sort(
 		(a, b) =>
 			Number(b.runnerAssigned) - Number(a.runnerAssigned) ||
@@ -138,7 +119,6 @@ async function gatherEvidence(
 	);
 }
 
-/** The offer a found resource most likely ran on, priced conservatively (the dearest of its kind). */
 function conservativeOffer(
 	account: Account,
 	evidence: RelayEvidence,
@@ -158,11 +138,6 @@ function conservativeOffer(
 		.sort((a, b) => b.priceMicrosPerMinute - a.priceMicrosPerMinute)[0];
 }
 
-/**
- * Rebuild one job's lease when its records are missing. `job` carries the
- * GitHub coordinates (installation, repository) the lookups need; its key is
- * `repositoryId:jobId:runAttempt`.
- */
 export async function rebuildLease(
 	store: RelayCacheStore,
 	discovery: RelayDiscoveryPort,
@@ -189,7 +164,6 @@ export async function rebuildLease(
 	const live =
 		cached.find((slot) => ACTIVE_STATES.has(slot.lease.state)) ?? cached[0];
 	if (live) {
-		// The lease record survived but the job record or index did not.
 		await access.restoreJob(key, (current) =>
 			current?.leaseId === live.lease.id
 				? undefined
@@ -283,11 +257,9 @@ export async function rebuildLease(
 		actualJobId: chosen.runnerAssigned ? job.id : 0,
 		sandboxName: chosen.from === "sandbox" ? names.sandbox : "",
 		sandboxSessionId: chosen.sandboxSessionId,
-		// A Sandbox host deletes the runner it registered before it settles.
 		runnerId: chosen.from === "sandbox" ? chosen.runnerId : 0,
 		createdAt: at,
 	});
-	// The proxy VM is found by its name when the lease is cleaned up.
 	if (chosen.from === "sandbox" && offer?.sandboxPricing?.proxyVmRequired) {
 		lease.proxySandboxName = names.proxySandbox;
 		lease.proxySandboxStage = "creating";
@@ -317,12 +289,6 @@ export async function rebuildLease(
 		: { kind: "adopted", leaseId: chosen.leaseId };
 }
 
-/**
- * Resolve an `uncertain` lease by name: report what exists for the relay to
- * adopt, or — only when nothing exists under any of its names and GitHub
- * still shows the job queued — cancel it and re-queue the job, which the next
- * reservation admits under the next generation.
- */
 export async function resolveUncertainLease(
 	store: RelayCacheStore,
 	discovery: RelayDiscoveryPort,
@@ -365,24 +331,11 @@ const StatusRunList = z.object({
 });
 
 export type RelayRebuildPassResult = Readonly<{
-	/** Accounts whose holds were unknown when the pass began. */
 	accounts: readonly string[];
-	/** Accounts whose every live job was looked up: priced offers may admit again. */
 	marked: readonly string[];
-	/** Jobs rebuild was run for, by outcome kind. */
 	outcomes: Readonly<Record<string, number>>;
 }>;
 
-/**
- * Restore the in-flight holds of every account whose index the cache lost
- * (`accountsAwaitingRebuild`), from GitHub: for each of the account's
- * connections, the queued and in-progress workflow runs (one page of each),
- * their jobs, and `rebuildLease` for each live job HoBo serves. An account
- * whose listings all answered and fit on a page is marked holds-known;
- * otherwise priced offers stay paused and the next pass tries again.
- *
- * Cheap when nothing was lost: one cache read, no GitHub call.
- */
 export async function rebuildInflight(
 	store: RelayCacheStore,
 	discovery: RelayDiscoveryPort,
@@ -415,7 +368,6 @@ export async function rebuildInflight(
 					complete = false;
 					continue;
 				}
-				// A full page may have left runs unlisted.
 				if (runs.length === 100) complete = false;
 				for (const run of runs) {
 					try {
@@ -475,13 +427,6 @@ const RunList = z.object({
 	),
 });
 
-/**
- * GitHub lookups over the App's installation token: the job's REST view
- * (`getJob`), repository runners by name, and bridge runs by display title
- * (the same listing `HostedRelay.discover` walks). `bridgeWorkflow` names the
- * connection's bridge workflow file; without one, bridge lookups find nothing.
- * The sandbox lookup is Vercel's and is supplied by the host.
- */
 export function githubRelayDiscovery(
 	github: GithubTransport,
 	options: Readonly<{

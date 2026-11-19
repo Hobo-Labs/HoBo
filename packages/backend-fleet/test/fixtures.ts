@@ -1,9 +1,3 @@
-/**
- * Stand-ins for the replica tests: one in-memory ephemeral-state store per
- * backend (the shared Redis-protocol binding over the in-memory engine, each
- * with its own clock), which a test can wipe as a flushed or evicting cache
- * would, or make unreachable.
- */
 import type {
 	EphemeralKey,
 	EphemeralStatePort,
@@ -23,7 +17,6 @@ import {
 
 export const LOG_KEY = "hobo-ci:test:fleet:assignment";
 
-/** One backend's store: a clock of its own, a wipe, and an off switch. */
 export type TestBackend = {
 	readonly id: string;
 	readonly state: EphemeralStatePort;
@@ -124,7 +117,6 @@ export function writer(active: string): FleetAssignmentValue {
 	};
 }
 
-/** A small seeded generator, so a randomized run is repeatable. */
 export function seeded(seed: number) {
 	let state = seed >>> 0;
 	return {

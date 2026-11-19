@@ -1,6 +1,3 @@
-// Test doubles for the WP24 posture tests. Each models the frozen port it
-// stands in for (src/ports.ts, @hobo/core eventstore); none is reachable from
-// production code.
 import { create } from "@bufbuild/protobuf";
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import { createResolvedDeploymentSet, type ResourcePlan } from "@hobo/cloud";
@@ -74,12 +71,10 @@ export const STATION: PrincipalRef = { kind: "service", id: "station-eu" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
 export function camp(id: string): CampId {
-	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
 export function promotion(id: string): PromotionId {
-	// SAFETY: test fixture ids are literal promotion ids.
 	return id as PromotionId;
 }
 
@@ -106,17 +101,10 @@ export function context(
 
 const tagOf = Object.prototype.toString;
 
-/**
- * In-memory DurableEventStore with conformance-suite semantics: per-stream
- * expected-seq CAS (a stale expectedSeq throws the core conflict error),
- * per-stream idempotency-key dedup checked before the CAS, and monotonic
- * positions for readAll.
- */
 export class MemoryEventStore implements DurableEventStore {
 	private readonly streams = new Map<string, EventEnvelope[]>();
 	readonly all: PositionedEvent[] = [];
 	private nextId = 1;
-	/** Test hook: runs before the CAS check of the next append (a concurrent writer). */
 	beforeAppend: (() => Promise<void>) | undefined;
 
 	async append(
@@ -160,7 +148,6 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = structuredClone(input.meta);
-			// SAFETY: test double; positions are minted from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);
@@ -245,7 +232,6 @@ export class MemoryEventStore implements DurableEventStore {
 			.filter((event) => event.type === type);
 	}
 
-	/** Append raw facts another module owns (freight, pipelines, status). */
 	async put(
 		streamId: string,
 		type: string,
@@ -309,7 +295,6 @@ export class RecordingAuthorizer implements CdAuthorizer {
 	}
 }
 
-/** A Rail Freight record (subject RAIL; bindle = Rail id, declaration hash = Rail digest). */
 export function railFreight(
 	railDigest: Digest,
 	id = `sha256:${railDigest.slice(7, 15).padEnd(64, "0")}`,
@@ -330,7 +315,6 @@ export function railFreight(
 }
 
 export function freightId(record: FreightRecord): FreightId {
-	// SAFETY: test fixture.
 	return record.freightId as FreightId;
 }
 
@@ -407,7 +391,6 @@ export class FakeRails implements RailDeliveryReader {
 	}
 }
 
-/** One plan resource in a test Set: name, provider and realization parameters. */
 export type PlanResource = Readonly<{ name: string; parameters?: JsonObject }>;
 
 export function resolvedSet(
@@ -446,7 +429,6 @@ export function resolvedSet(
 	});
 }
 
-/** DesiredStateReader & DeltaLedger: Sets per Camp and a record of every Delta call. */
 export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	readonly sets = new Map<
 		string,
@@ -493,7 +475,6 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	async status() {
 		return undefined;
 	}
-	/** The posture service never reads changes: an empty feed. */
 	async *changes(): AsyncIterable<DesiredStateChange> {
 		yield* [];
 	}
@@ -527,7 +508,6 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	async reject(): Promise<void> {}
 }
 
-/** Append a reconcile observation to a Camp's status stream as WP7 does. */
 export async function observe(
 	store: MemoryEventStore,
 	campId: string,
@@ -556,7 +536,6 @@ export async function observe(
 	const observation = toJson(ReconcileObservationRecordSchema, record);
 	return store.put(CD_STREAMS.campStatus(campId), CD_EVENTS.StatusObserved, {
 		schema: "hobo.cd.reconcile-status/v1",
-		// SAFETY: toJson of a message is a JSON object.
 		observation: observation as JsonObject,
 	});
 }

@@ -1,9 +1,3 @@
-/**
- * Topology honesty: a Cloudflare-hosted (or other remote) frontend cannot
- * call a laptop loopback Convex URL. Remote frontends need a publicly
- * reachable Convex backend (Convex Cloud deploy key, or self-host URL that
- * is not loopback / private).
- */
 
 const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|::1)$/iu;
 
@@ -16,7 +10,6 @@ export function classifyConvexBackendUrl(url: string) {
 		if (LOOPBACK_HOST.test(host)) {
 			return { kind: "loopback", host };
 		}
-		// RFC1918 / link-local — unreachable from Cloudflare Temporary Accounts.
 		if (
 			/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.test(host) ||
 			/^192\.168\.\d{1,3}\.\d{1,3}$/u.test(host) ||
@@ -38,10 +31,6 @@ export class ConvexFrontendTopologyError extends Error {
 	}
 }
 
-/**
- * Fail closed when a remote-public frontend would bake a loopback/private
- * VITE_CONVEX_URL (e.g. Cloudflare Temporary Accounts + local docker Convex).
- */
 export function assertConvexBackendReachableFromFrontend(input: {
 	readonly frontendPlacement: FrontendPlacement;
 	readonly deploymentUrl: string;

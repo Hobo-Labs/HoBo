@@ -1,7 +1,3 @@
-/**
- * Messaging over Dapr pub/sub building block.
- * Live fidelity requires an injected {@link DaprSidecarClient}.
- */
 
 import {
 	type ConsumedMessage,
@@ -30,9 +26,7 @@ import type { DaprRuntimeConfig } from "./types.js";
 export interface DaprMessagingOptions {
 	readonly config: DaprRuntimeConfig;
 	readonly metering?: MeteringBus;
-	/** Requires {@link client} when true. */
 	readonly live?: boolean;
-	/** Live path: all publish/drain/ack go through daprd client. */
 	readonly client?: DaprSidecarClient;
 	readonly now?: () => string;
 }
@@ -122,7 +116,6 @@ export function createDaprMessaging(
 		string,
 		{ topic: string; group: string; maxDeliveryAttempts: number }
 	>();
-	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = config.tenantId as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
 	const emit = (
@@ -286,7 +279,6 @@ export function createDaprMessaging(
 				} catch (err) {
 					const reason = err instanceof Error ? err.message : String(err);
 					if (message.deliveryAttempt >= maxAttempts) {
-						// Permanent: ack under the real consumer group (do not nack first).
 						await doAck(
 							client,
 							pending,
@@ -407,7 +399,6 @@ async function meter(
 	if (!metering || quantity === 0) return;
 	await metering.emit(
 		createUsageEvent({
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: config.tenantId as TenantId,
 			eventType,
 			resource: tenantScopedTopicName(config.tenantId, String(topic)),

@@ -1,5 +1,3 @@
-// First non-routing vocabulary bound to the generic per-resource-class
-// resolver: data-store offerings negotiate exactly like traffic routing.
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
@@ -113,7 +111,6 @@ test("dataStoreOffering helper defaults to stable + real", () => {
 
 test("an engine is a different fact from a product (ADR-0177)", () => {
 	assert.equal(engineOfDataStoreProvider("sqlite-local"), "sqlite");
-	// D1 speaks SQLite: it must never be mistaken for a Postgres.
 	assert.equal(engineOfDataStoreProvider("cloudflare-d1"), "sqlite");
 	assert.equal(engineOfDataStoreProvider("supabase-postgres"), "postgres");
 	assert.equal(engineOfDataStoreProvider("azure-sql"), "sqlserver");
@@ -136,7 +133,6 @@ test("every product-level PostgreSQL id is the postgres engine; a family id stay
 		if (family) assert.equal(engineOfDataStoreProvider(provider), "other");
 		if (product) assert.equal(engineOfDataStoreProvider(provider), "postgres");
 	}
-	// A product refines its family; the engine is known for the product only.
 	assert.equal(engineOfDataStoreProvider("aws-rds-postgres"), "postgres");
 	assert.equal(engineOfDataStoreProvider("aws-rds"), "other");
 });
@@ -147,7 +143,6 @@ test("the engine vocabulary is closed", () => {
 		["sqlite", "postgres", "sqlserver", "mysql", "mongodb", "other"],
 	);
 });
-// --- vocabulary extension: product-level PostgreSQL ids + connection facts ---
 
 const ORIGINAL_PROVIDERS = [
 	"sqlite-local",
@@ -179,8 +174,6 @@ test("every original provider and offering id still parses unchanged", () => {
 	for (const id of ORIGINAL_OFFERINGS) {
 		assert.equal(parseDataStoreOfferingId(id), id);
 	}
-	// The original ids keep their position: a consumer that indexed the
-	// vocabulary by order sees the same prefix it always did.
 	assert.deepEqual(
 		DATA_STORE_OFFERING_IDS.slice(0, ORIGINAL_OFFERINGS.length),
 		ORIGINAL_OFFERINGS,

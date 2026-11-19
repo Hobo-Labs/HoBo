@@ -1,6 +1,3 @@
-// Version selection for subscriptions (D3): SemVer 2.0 ordering and ranges,
-// allow/ignore patterns, and the forward-only "newest N above the high-water
-// mark" rule. Pure: no clock, no I/O, deterministic for any input order.
 import {
 	SelectionStrategy,
 	type SubscriptionRecord,
@@ -77,10 +74,6 @@ function lexical(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-/**
- * Total order for one strategy. SEMVER puts unparseable versions below every
- * SemVer (they are filtered before selection anyway); the others are lexical.
- */
 export function compareVersions(
 	strategy: SelectionStrategy,
 	left: string,
@@ -95,8 +88,6 @@ export function compareVersions(
 	}
 	return lexical(left, right);
 }
-
-// ── Ranges ──────────────────────────────────────────────────────────────────
 
 type Operator = "<" | "<=" | ">" | ">=" | "=";
 type Comparator = Readonly<{ operator: Operator; version: Semver }>;
@@ -164,7 +155,6 @@ function lowerOf(partial: Partial): Semver {
 	);
 }
 
-/** Expand one range token (caret, tilde, x-range, comparator) to comparators. */
 function expand(token: string): readonly Comparator[] | undefined {
 	const operatorMatch = /^(\^|~|<=|>=|<|>|=)?(.*)$/.exec(token);
 	const operator = operatorMatch?.[1] ?? "";
@@ -273,8 +263,6 @@ function sameTuple(left: Semver, right: Semver): boolean {
 function testSet(set: readonly Comparator[], version: Semver): boolean {
 	if (!set.every((comparator) => satisfies(version, comparator))) return false;
 	if (version.prerelease.length === 0) return true;
-	// npm semantics: a prerelease satisfies only when some comparator names a
-	// prerelease on the same major.minor.patch (synthetic `-0` bounds do not).
 	return set.some(
 		(comparator) =>
 			comparator.version.prerelease.length > 0 &&
@@ -327,8 +315,6 @@ export function parseSemverRange(source: string): Outcome<SemverRange> {
 	};
 }
 
-// ── Filters and selection ───────────────────────────────────────────────────
-
 export type VersionFilter = Pick<
 	SubscriptionRecord,
 	"selection" | "allowPattern" | "ignorePatterns" | "semverRange"
@@ -336,7 +322,6 @@ export type VersionFilter = Pick<
 
 const MAX_PATTERN_LENGTH = 256;
 
-/** Compile a subscription pattern; refuses oversized or invalid expressions. */
 export function compilePattern(
 	pattern: string,
 	subject: string,
@@ -360,7 +345,6 @@ export function compilePattern(
 	}
 }
 
-/** Whether a version passes the subscription's allow/ignore/range filters. */
 export function versionAllowed(
 	filter: VersionFilter,
 	version: string,
@@ -387,7 +371,6 @@ export function versionAllowed(
 	if (filter.selection === SelectionStrategy.SEMVER) {
 		const parsed = parseSemver(version);
 		if (!parsed) return skip(`${version} is not SemVer`);
-		// Conservative default: a prerelease is discovered only when a range admits it.
 		if (filter.semverRange === "" && parsed.prerelease.length > 0)
 			return skip(
 				`${version} is a prerelease and no semverRange admits prereleases`,
@@ -402,10 +385,6 @@ export function versionAllowed(
 	return { ok: true, value: version };
 }
 
-/**
- * Forward-only selection: versions strictly above `highWater`, the newest
- * `limit` of them, returned oldest first so they are recorded in order.
- */
 export function selectNewest(
 	strategy: SelectionStrategy,
 	versions: readonly string[],
