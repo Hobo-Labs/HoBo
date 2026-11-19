@@ -6,7 +6,12 @@ import {
 } from "../json.js";
 import { createDeterministicContext } from "./context.js";
 import { digest } from "./divergence.js";
-import { hashReadSet, seqVector, stableStringify } from "./equivalence.js";
+import {
+	hashReadSet,
+	replayJson,
+	seqVector,
+	stableStringify,
+} from "./equivalence.js";
 import type { EventStoreReader } from "./store.js";
 import type { EventEnvelope, ReplayReport } from "./types.js";
 
@@ -120,7 +125,7 @@ export async function replayRun<S, A>(
 			.map(([streamIdEntry, seq]) => ({ streamId: streamIdEntry, seq }))
 			.sort((left, right) => left.streamId.localeCompare(right.streamId)),
 		readSetHash: hashReadSet(events),
-		stateDigest: digest(cloneAsJson(state)),
+		stateDigest: digest(state),
 		mode: "replay",
 		seed,
 	};
@@ -146,5 +151,5 @@ function matchesStep(data: JsonValue, name: string, index: number): boolean {
 }
 
 export function canonicalStateBytes<S>(state: S): string {
-	return stableStringify(cloneAsJson(state));
+	return stableStringify(replayJson(state));
 }

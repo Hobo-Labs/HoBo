@@ -3,7 +3,11 @@ import crypto from "node:crypto";
 import { must, mustGet } from "@hobo/core/total-access";
 import {
 	cloneAsJson,
+	isJsonBigInt,
+	isJsonBoolean,
+	isJsonNumber,
 	isJsonObject,
+	isJsonString,
 	type JsonObject,
 	type JsonValue,
 } from "../json.js";
@@ -64,8 +68,8 @@ export function assertReplayEqualsLive<S>({
 		ambientRandom: 0.999999999,
 	});
 
-	const normalizedLive = normalize(cloneAsJson(liveState));
-	const normalizedReplay = normalize(cloneAsJson(replayState));
+	const normalizedLive = normalize(replayJson(liveState));
+	const normalizedReplay = normalize(replayJson(replayState));
 
 	try {
 		assert.deepEqual(normalizedLive, normalizedReplay);
@@ -195,46 +199,88 @@ export function compareCanonicalEventOrder(
 	);
 }
 
-export function stableValue(value: JsonValue): JsonValue {
-	if (value instanceof Map) {
-		return [...value.entries()]
-			.map(([key, entry]) => [stableValue(key), stableValue(entry)])
-			.sort(([left], [right]) =>
-				stableStringify(left ?? null).localeCompare(
-					stableStringify(right ?? null),
-				),
-			);
+export function replayJson<T>(value: T): JsonValue {
+	const ancestors = new Set<object>();
+	function convert<T>(item: T): JsonValue {
+		if (item == null) return null;
+		if (isJsonString(item)) return String(item);
+		if (isJsonBoolean(item)) return Boolean(item);
+		if (isJsonNumber(item)) {
+			const number = Number(item);
+			return Number.isFinite(number)
+				? Object.is(number, -0)
+					? 0
+					: number
+				: null;
+		}
+		if (isJsonBigInt(item))
+			throw new TypeError("BigInt is not JSON serializable");
+		if (
+			!isJsonObject(item) &&
+			!Array.isArray(item) &&
+			!(item instanceof Map) &&
+			!(item instanceof Set) &&
+			!(item instanceof Date)
+		)
+			return cloneAsJson(item);
+		if (ancestors.has(item))
+			throw new TypeError("Cyclic replay state is not serializable");
+		ancestors.add(item);
+		try {
+			if (item instanceof Map) {
+				return [...item.entries()]
+					.map(([key, entry]) => [convert(key), convert(entry)])
+					.sort((left, right) =>
+						stableStringify(left).localeCompare(stableStringify(right)),
+					);
+			}
+			if (item instanceof Set) {
+				return [...item]
+					.map(convert)
+					.sort((left, right) =>
+						stableStringify(left).localeCompare(stableStringify(right)),
+					);
+			}
+			if (Array.isArray(item)) return Array.from(item, convert);
+			if ("toJSON" in item && item.toJSON instanceof Function)
+				return convert(item.toJSON());
+			if (isJsonObject(item)) {
+				return Object.fromEntries(
+					Object.entries(item)
+						.filter(
+							([, entry]) =>
+								entry !== undefined &&
+								!(entry instanceof Function) &&
+								Object.prototype.toString.call(entry) !== "[object Symbol]",
+						)
+						.map(([key, entry]) => [key, convert(entry)]),
+				);
+			}
+			return cloneAsJson(item);
+		} finally {
+			ancestors.delete(item);
+		}
 	}
+	return convert(value);
+}
 
-	if (value instanceof Set) {
-		return [...value]
-			.map(stableValue)
-			.sort((left, right) =>
-				stableStringify(left ?? null).localeCompare(
-					stableStringify(right ?? null),
-				),
-			);
-	}
+export function stableValue<T>(value: T): JsonValue {
+	return sortJson(replayJson(value));
+}
 
-	if (Array.isArray(value)) {
-		return value.map(stableValue);
-	}
-
+function sortJson(value: JsonValue): JsonValue {
+	if (Array.isArray(value)) return value.map(sortJson);
 	if (value && isJsonObject(value)) {
 		return stableObject(
 			Object.fromEntries(
-				Object.entries(value).map(([key, entry]) => [
-					key,
-					stableValue(entry ?? null),
-				]),
+				Object.entries(value).map(([key, entry]) => [key, sortJson(entry)]),
 			),
 		);
 	}
-
 	return value;
 }
 
-export function stableStringify(value: JsonValue): string {
+export function stableStringify<T>(value: T): string {
 	return JSON.stringify(stableValue(value));
 }
 

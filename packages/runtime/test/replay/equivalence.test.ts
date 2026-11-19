@@ -27,6 +27,45 @@ describe("equivalence harness", () => {
 		}
 	});
 
+	it.each(["map", "set"] as const)("detects divergent %s state", (kind) => {
+		const events = [event("b", 1, "updated", {}), event("a", 1, "updated", {})];
+		expect(() =>
+			assertReplayEqualsLive({
+				events,
+				initialState: {
+					value: kind === "map" ? new Map<string, string>() : new Set<string>(),
+				},
+				fold: (state, current) => ({
+					value:
+						state.value instanceof Map
+							? new Map([["last", current.streamId]])
+							: new Set([current.streamId]),
+				}),
+			}),
+		).toThrow(ReplayDivergenceError);
+	});
+
+	it("normalizes collection insertion order while retaining contents", () => {
+		const events = [event("b", 1, "updated", {}), event("a", 1, "updated", {})];
+		const result = assertReplayEqualsLive({
+			events,
+			initialState: {
+				entries: new Map<string, number>(),
+				keys: new Set<string>(),
+			},
+			fold: (state, current) => ({
+				entries: new Map([...state.entries, [current.streamId, current.seq]]),
+				keys: new Set([...state.keys, current.streamId]),
+			}),
+		});
+		const empty = assertReplayEqualsLive({
+			events: [],
+			initialState: { entries: new Map(), keys: new Set() },
+			fold: (state) => state,
+		});
+		expect(result.stateDigest).not.toBe(empty.stateDigest);
+	});
+
 	it("catches folds that read the ambient wall clock", () => {
 		const events = interleaveStreams(makeStreams(1), "wall-clock");
 
