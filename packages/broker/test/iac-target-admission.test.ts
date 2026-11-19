@@ -35,10 +35,12 @@ afterEach(() => {
 });
 
 function trustBoundaryMalformedVerifier(
-	value: string | number | object | undefined | boolean,
+	value: string | number | Record<string, never> | undefined | boolean,
 	asynchronous: boolean,
 ): boolean | Promise<boolean> {
-	return (asynchronous ? Promise.resolve(value) : value) as boolean;
+	const delivered = asynchronous ? Promise.resolve(value) : value;
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- negative fixture payloads are intentionally non-boolean
+	return delivered as boolean;
 }
 
 function fixture() {
@@ -656,10 +658,11 @@ describe("provider-neutral IaC target budget admission", () => {
 			ledger.close();
 		}
 	});
+	const emptyRecord: Record<string, never> = {};
 	it.each([
 		"verified",
 		1,
-		{},
+		emptyRecord,
 		undefined,
 		false,
 	])("requires literal true from liability trust (%s)", async (value) => {
