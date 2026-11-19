@@ -19,8 +19,7 @@ import {
 	type IacTargetLiabilityEvidence,
 } from "./iac-target.js";
 
-/** Provider-neutral input accepted from an injected IaC adapter. */
-export type IacFinancialPlan = Omit<TargetPricingInventoryInput, "complete">;
+export type IacFinancialPlan = TargetPricingInventoryInput;
 
 export interface IacFinancialExpectation {
 	readonly targetId: string;
@@ -37,7 +36,6 @@ export interface IacFinancialServicesOptions extends IacTargetAdmissionDeps {
 	}) => IacTargetLiabilityEvidence | Promise<IacTargetLiabilityEvidence>;
 }
 
-/** Compose pricing and durable admission behind a provider-independent port. */
 export function createIacFinancialServices(
 	options: IacFinancialServicesOptions,
 ) {
@@ -91,7 +89,9 @@ export function createIacFinancialServices(
 		};
 	}
 	const assess = (plan: IacFinancialPlan) => {
-		const inventory = createTargetPricingInventory({ ...plan, complete: true });
+		if (plan.complete !== true)
+			throw new TypeError("infrastructure plan inventory must be complete");
+		const inventory = createTargetPricingInventory(plan);
 		const pricing =
 			model === undefined
 				? targetPricingUnavailable(

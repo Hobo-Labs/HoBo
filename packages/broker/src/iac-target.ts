@@ -33,6 +33,7 @@ import {
 	BudgetAdmissionDeniedError,
 	type BudgetIdentity,
 	BudgetIdentitySchema,
+	type BudgetReservation,
 	budgetIdentityKey,
 	type HostingPolicyProof,
 	HostingPolicyProofSchema,
@@ -57,7 +58,6 @@ export interface IacTargetAdmissionInput {
 	readonly evidence?: IacTargetLiabilityEvidence;
 }
 
-/** Host-owned ports: developer terms are never accepted as liability evidence. */
 export interface IacTargetAdmissionDeps {
 	readonly authority: BudgetAdmissionAuthority | AsyncBudgetAdmissionAuthority;
 	readonly now: () => string;
@@ -100,9 +100,6 @@ function readDecimal(value: string): Decimal | undefined {
 	return parseDecimal(value);
 }
 
-/** Reservation quantities are the positive increase over the baseline.
- * Commitment consumption is money in pricing-rating/v1 despite its legacy
- * quantity unit; its dimension is normalized to the quote currency here. */
 function incrementalClaims(
 	full: readonly Consumption[],
 	base: readonly Consumption[],
@@ -196,8 +193,49 @@ function uncertain(
 	});
 }
 
-/** Admission is a broker authority boundary. A successful result owns a newly
- * claimed durable reservation; a replay never authorizes another provider call. */
+function compareAccountIds(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function sortedUniqueAccountIds(accountIds: readonly string[]): string[] {
+	return [...new Set(accountIds)].sort(compareAccountIds);
+}
+
+function sortedProviderAccounts<
+	T extends { readonly providerAccountId: string },
+>(accounts: readonly T[]): T[] {
+	return [...accounts].sort((left, right) =>
+		compareAccountIds(left.providerAccountId, right.providerAccountId),
+	);
+}
+
+function reservationMatchesQuote(
+	reservation: BudgetReservation,
+	input: {
+		readonly reservationId: string;
+		readonly requestDigest: string;
+		readonly quote: HostingQuote;
+		readonly executionDigest?: string;
+	},
+): boolean {
+	if (
+		reservation.reservationId !== input.reservationId ||
+		reservation.requestDigest !== input.requestDigest ||
+		reservation.quoteId !== input.quote.quoteId ||
+		reservation.financialPlanHash !== input.quote.financialPlanHash ||
+		reservation.reservedMicros !== input.quote.liabilityBoundMicros
+	)
+		return false;
+	if (input.executionDigest === undefined) return true;
+	return reservation.executionDigest === input.executionDigest;
+}
+
+function isReservationReplayConflict(error: unknown): boolean {
+	return (
+		error instanceof Error && error.message === "budget reservation replay differs"
+	);
+}
+
 export async function admitIacTarget(
 	input: IacTargetAdmissionInput,
 	deps: IacTargetAdmissionDeps,
@@ -259,6 +297,13 @@ export async function admitIacTarget(
 			"financial input is malformed",
 		);
 	}
+	if (inventory.complete !== true)
+		return denial(
+			requestId,
+			targetId,
+			"TARGET_INVENTORY_INCOMPLETE",
+			"target inventory must be complete before admission",
+		);
 	if (!priced.ok)
 		return denial(requestId, targetId, priced.code, priced.reason);
 	if (
@@ -334,14 +379,10 @@ export async function admitIacTarget(
 			"LIABILITY_EVIDENCE_INVALID",
 			"current liability evidence must cover this exact target, model and quote",
 		);
-	const expectedAccounts = [
-		...new Set(
-			inventory.resources.map((resource) => resource.providerAccountRef),
-		),
-	].sort();
-	const accounts = [...evidence.providerAccounts].sort((left, right) =>
-		left.providerAccountId.localeCompare(right.providerAccountId),
+	const expectedAccounts = sortedUniqueAccountIds(
+		inventory.resources.map((resource) => resource.providerAccountRef),
 	);
+	const accounts = sortedProviderAccounts(evidence.providerAccounts);
 	if (
 		accounts.length !== expectedAccounts.length ||
 		accounts.some(
@@ -406,8 +447,12 @@ export async function admitIacTarget(
 			"ENTITLEMENT_CONSUMPTION_INVALID",
 			"pricing consumption cannot be reserved safely",
 		);
+	const canonicalEvidence = clone(IacTargetLiabilityEvidenceSchema, {
+		...evidence,
+		providerAccounts: sortedProviderAccounts(evidence.providerAccounts),
+	});
 	const evidenceHash = stableHash(
-		toJson(IacTargetLiabilityEvidenceSchema, evidence, {
+		toJson(IacTargetLiabilityEvidenceSchema, canonicalEvidence, {
 			alwaysEmitImplicit: true,
 		}),
 	);
@@ -534,16 +579,25 @@ export async function admitIacTarget(
 	try {
 		validateHostingQuote(quote, deps.now());
 		ledger = await deps.authority.read(deps.now());
-		if (
-			ledger.identity === undefined ||
-			budgetIdentityKey(ledger.identity) !== budgetIdentityKey(identity)
-		)
-			return denial(
-				requestId,
-				targetId,
-				"BUDGET_POLICY_CHANGED",
-				"budget identity changed during authorization",
-			);
+	} catch {
+		return denial(
+			requestId,
+			targetId,
+			"BUDGET_AUTHORITY_UNAVAILABLE",
+			"budget or quote evidence is unavailable",
+		);
+	}
+	if (
+		ledger.identity === undefined ||
+		budgetIdentityKey(ledger.identity) !== budgetIdentityKey(identity)
+	)
+		return denial(
+			requestId,
+			targetId,
+			"BUDGET_POLICY_CHANGED",
+			"budget identity changed during authorization",
+		);
+	try {
 		reservation = await deps.authority.reserve({
 			reservationId,
 			requestDigest,
@@ -555,7 +609,14 @@ export async function admitIacTarget(
 	} catch (error) {
 		if (error instanceof BudgetAdmissionDeniedError)
 			return denial(requestId, targetId, error.code, error.message, false);
-		// A persistence failure may have committed despite a lost acknowledgement.
+		if (isReservationReplayConflict(error))
+			return denial(
+				requestId,
+				targetId,
+				"RESERVATION_REQUEST_CONFLICT",
+				"request id is already bound to a different financial plan",
+				false,
+			);
 		return uncertain(
 			requestId,
 			targetId,
@@ -564,7 +625,15 @@ export async function admitIacTarget(
 			requestDigest,
 		);
 	}
-	if (reservation.status !== "held")
+	const heldMatch = {
+		reservationId,
+		requestDigest,
+		quote,
+	} as const;
+	if (
+		reservation.status !== "held" ||
+		!reservationMatchesQuote(reservation, heldMatch)
+	)
 		return uncertain(
 			requestId,
 			targetId,
@@ -578,7 +647,13 @@ export async function admitIacTarget(
 		planDigest: inventory.planDigest,
 	});
 	if (reservation.executionDigest) {
-		if (reservation.executionDigest !== executionDigest)
+		if (
+			reservation.executionDigest !== executionDigest ||
+			!reservationMatchesQuote(reservation, {
+				...heldMatch,
+				executionDigest,
+			})
+		)
 			return uncertain(
 				requestId,
 				targetId,
@@ -597,28 +672,26 @@ export async function admitIacTarget(
 			quote,
 		});
 	}
+	let head: ReturnType<BudgetAdmissionAuthority["read"]>;
 	try {
 		validateHostingQuote(quote, deps.now());
-		const head = await deps.authority.read(deps.now());
-		const claimed = await deps.authority.claimExecution({
+		head = await deps.authority.read(deps.now());
+	} catch {
+		return denial(
+			requestId,
+			targetId,
+			"BUDGET_AUTHORITY_UNAVAILABLE",
+			"budget or quote evidence is unavailable",
+		);
+	}
+	let claimed: BudgetReservation;
+	try {
+		claimed = await deps.authority.claimExecution({
 			reservationId,
 			requestDigest,
 			executionDigest,
 			expectedSeq: head.seq,
 		});
-		if (claimed.ledgerSeq !== head.seq + 1)
-			return create(IacTargetAdmissionDecisionSchema, {
-				requestId,
-				targetId,
-				status: "replay",
-				code: "EXECUTION_ALREADY_CLAIMED",
-				budget: { evaluation: "allowed", reservation: "held" },
-				requestDigest,
-				reservation: claimed,
-				quote,
-			});
-		reservation = claimed;
-		validateHostingQuote(quote, deps.now());
 	} catch {
 		return uncertain(
 			requestId,
@@ -626,6 +699,50 @@ export async function admitIacTarget(
 			"EXECUTION_CLAIM_UNCERTAIN",
 			"held",
 			requestDigest,
+		);
+	}
+	const claimedMatch = {
+		reservationId,
+		requestDigest,
+		quote,
+		executionDigest,
+	} as const;
+	if (
+		claimed.ledgerSeq !== head.seq + 1 &&
+		reservationMatchesQuote(claimed, claimedMatch) &&
+		claimed.status === "held"
+	)
+		return create(IacTargetAdmissionDecisionSchema, {
+			requestId,
+			targetId,
+			status: "replay",
+			code: "EXECUTION_ALREADY_CLAIMED",
+			budget: { evaluation: "allowed", reservation: "held" },
+			requestDigest,
+			reservation: claimed,
+			quote,
+		});
+	if (
+		claimed.ledgerSeq !== head.seq + 1 ||
+		claimed.status !== "held" ||
+		!reservationMatchesQuote(claimed, claimedMatch)
+	)
+		return uncertain(
+			requestId,
+			targetId,
+			"EXECUTION_CLAIM_UNCERTAIN",
+			"held",
+			requestDigest,
+		);
+	reservation = claimed;
+	try {
+		validateHostingQuote(quote, deps.now());
+	} catch {
+		return denial(
+			requestId,
+			targetId,
+			"BUDGET_AUTHORITY_UNAVAILABLE",
+			"budget or quote evidence is unavailable",
 		);
 	}
 	return create(IacTargetAdmissionDecisionSchema, {

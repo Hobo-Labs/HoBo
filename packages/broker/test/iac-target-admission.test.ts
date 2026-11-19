@@ -464,7 +464,6 @@ describe("provider-neutral IaC target budget admission", () => {
 					{ requestId: "malformed-verifier", ...fixture() },
 					{
 						...deps,
-						// SAFETY: intentionally malformed host result exercises the trust boundary.
 						verifyLiability: () =>
 							(asynchronous ? Promise.resolve(value) : value) as never,
 						authorize: (input) => {
@@ -702,7 +701,7 @@ describe("provider-neutral IaC target budget admission", () => {
 			const deps = dependencies(ledger);
 			const wrapped = { ...ledger };
 			wrapped.claimExecution = (input) => {
-				ledger.claimExecution(input); // A competing worker commits using the same prior sequence.
+				ledger.claimExecution(input);
 				return ledger.claimExecution(input);
 			};
 			deps.authority = wrapped;
@@ -748,8 +747,8 @@ describe("provider-neutral IaC target budget admission", () => {
 			expect(
 				await admitIacTarget({ requestId: "shared-route", ...first }, deps),
 			).toMatchObject({
-				status: "uncertain",
-				code: "RESERVATION_OUTCOME_UNKNOWN",
+				status: "denied",
+				code: "RESERVATION_REQUEST_CONFLICT",
 			});
 			expect(
 				await admitIacTarget({ requestId: "shared-route", ...second }, deps),
