@@ -4,8 +4,41 @@ import { loadCdHost, runCdPass } from "./entry.js";
 
 const queue = new QueueClient();
 
-export async function onTick(): Promise<void> {
-	const { tick, reconciled } = await runCdPass(loadCdHost);
+function singleFlight<T>(run: () => Promise<T>): () => Promise<T> {
+	let inFlight: Promise<T> | undefined;
+	return () => {
+		if (inFlight !== undefined) return inFlight;
+		const tracked = run().finally(() => {
+			if (inFlight === tracked) inFlight = undefined;
+		});
+		inFlight = tracked;
+		return tracked;
+	};
+}
+
+async function runTick(): Promise<void> {
+	const vercelEnv = process.env.VERCEL_ENV;
+	if (vercelEnv !== undefined && vercelEnv !== "production") {
+		process.stdout.write(
+			`${JSON.stringify({
+				event: "cd.pass.skipped",
+				reason: "non-production",
+				vercelEnv,
+			})}\n`,
+		);
+		return;
+	}
+	const report = await runCdPass(loadCdHost);
+	if (report.skipped) {
+		process.stdout.write(
+			`${JSON.stringify({
+				event: "cd.pass.skipped",
+				reason: "fleet-pass-lease-held",
+			})}\n`,
+		);
+		return;
+	}
+	const { tick, reconciled } = report;
 	const failed = reconciled.filter((camp) => !camp.ok);
 	process.stdout.write(
 		`${JSON.stringify({
@@ -16,5 +49,7 @@ export async function onTick(): Promise<void> {
 		})}\n`,
 	);
 }
+
+export const onTick = singleFlight(runTick);
 
 export const consume = queue.handleNodeCallback(onTick);

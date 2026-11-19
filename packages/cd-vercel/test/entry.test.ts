@@ -10,6 +10,8 @@ import {
 	cdStoreCoordinates,
 	composeVercelCdHost,
 	createCdHttpEntry,
+	holderIdOf,
+	incomingRequestPath,
 	journalFleetEnvProvisioned,
 	memoizedCdHost,
 	parseCdStoreCoordinates,
@@ -36,6 +38,29 @@ const failing = (code: string) => async (): Promise<CdHost> => {
 };
 
 describe("the CD function's HTTP entry", () => {
+	it("uses the original URL path when Vercel rewrites to the function", () => {
+		const path = incomingRequestPath({
+			url: "/api/cd",
+			headers: {
+				"x-vercel-original-url": "https://hobo-cd.vercel.app/v1/cd/freight?x=1",
+			},
+		} as never);
+		expect(path).toBe("/v1/cd/freight?x=1");
+	});
+
+	it("uses the invoke path of the /api/cd destination, keeping the query", () => {
+		const path = incomingRequestPath({
+			url: "/api/cd?x=1",
+			headers: { "x-vercel-invoke-path": "/v1/cd/freight" },
+		} as never);
+		expect(path).toBe("/v1/cd/freight?x=1");
+		const probe = incomingRequestPath({
+			url: "/api/cd",
+			headers: { "x-vercel-invoke-path": "healthz" },
+		} as never);
+		expect(probe).toBe("/healthz");
+	});
+
 	it("answers /healthz with the build's commit without composing CD", async () => {
 		let composed = 0;
 		const origin = await serve(
@@ -123,6 +148,44 @@ describe("the CD function's HTTP entry", () => {
 		});
 	});
 
+	it("denies operator reads by default", async () => {
+		let handled = 0;
+		const host: CdHost = {
+			handle: async () => {
+				handled += 1;
+				return { status: 200, headers: {}, body: new Uint8Array() };
+			},
+		} as never;
+		const origin = await serve(createCdHttpEntry(async () => host));
+		const response = await fetch(`${origin}/v1/cd/pipelines/main`);
+		expect(response.status).toBe(401);
+		expect(await response.json()).toMatchObject({
+			ok: false,
+			code: "cd-operator-read-denied",
+		});
+		expect(handled).toBe(0);
+	});
+
+	it("denies requests the read parser refuses", async () => {
+		let handled = 0;
+		const host: CdHost = {
+			handle: async () => {
+				handled += 1;
+				return { status: 200, headers: {}, body: new Uint8Array() };
+			},
+		} as never;
+		const origin = await serve(createCdHttpEntry(async () => host));
+		const response = await fetch(`${origin}/v1/cd/pipelines/main`, {
+			method: "POST",
+		});
+		expect(response.status).toBe(401);
+		expect(await response.json()).toMatchObject({
+			ok: false,
+			code: "cd-operator-read-denied",
+		});
+		expect(handled).toBe(0);
+	});
+
 	it("composes once, and tries again after a failure", async () => {
 		let calls = 0;
 		const host = {} as CdHost;
@@ -193,6 +256,30 @@ describe("the owner's store, and the journal fleet in it", () => {
 				nowhere,
 			),
 		).toThrow(expect.objectContaining({ code: "cd-store-binding-invalid" }));
+	});
+
+	it("names each composition by deployment and a fresh holder id", () => {
+		const first = holderIdOf({ VERCEL_DEPLOYMENT_ID: "dpl_123" });
+		const second = holderIdOf({ VERCEL_DEPLOYMENT_ID: "dpl_123" });
+		expect(first).toMatch(/^hobo-cd-vercel:dpl_123:[0-9a-f-]{36}$/u);
+		expect(second).toMatch(/^hobo-cd-vercel:dpl_123:[0-9a-f-]{36}$/u);
+		expect(first).not.toBe(second);
+		expect(holderIdOf({})).not.toBe("hobo-cd-vercel:local");
+	});
+
+	it("refuses a non-production deployment before opening the store", async () => {
+		let opened = 0;
+		await expect(
+			composeVercelCdHost({
+				env: { VERCEL_ENV: "preview" },
+				cwd: "/tmp",
+				open: () => {
+					opened += 1;
+					throw new Error("must not open");
+				},
+			}),
+		).rejects.toMatchObject({ code: "cd-non-production-deployment" });
+		expect(opened).toBe(0);
 	});
 
 	it("refuses to start on a store with no journal fleet, never on SQLite", async () => {

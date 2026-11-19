@@ -10,7 +10,8 @@
       "experimentalTriggers": [
         {
           "type": "queue/v2beta",
-          "topic": "hobo-cd"
+          "topic": "hobo-cd",
+          "maxConcurrency": 1
         }
       ],
       "includeFiles": "deploy/secret-store.binding.json"

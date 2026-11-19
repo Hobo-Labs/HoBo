@@ -18,6 +18,7 @@ export const CD_PLATFORM = Object.freeze({
 	httpEntry: "api/cd.ts",
 	tickEntry: "api/tick.ts",
 	maxDuration: 300,
+	maxConcurrency: 1,
 } as const);
 
 const PROJECT = project({ rootDirectory: CD_PLACEMENT.rootDirectory });
@@ -57,7 +58,11 @@ const CD_YARD = yard("hobo-cd", {
 		{
 			profile: capability.service.queueConsumer,
 			productId: "vercel.function/v1",
-			properties: { entry: CD_PLATFORM.tickEntry, topic: CD_PLATFORM.topic },
+			properties: {
+				entry: CD_PLATFORM.tickEntry,
+				topic: CD_PLATFORM.topic,
+				maxConcurrency: CD_PLATFORM.maxConcurrency,
+			},
 		},
 		{
 			profile: capability.queue.atLeastOnce,
@@ -74,10 +79,7 @@ const CD_YARD = yard("hobo-cd", {
 			},
 		},
 	],
-	camps: [
-		camp("production", { envType: "production", require: REQUIREMENTS }),
-		camp("preview", { envType: "preview", require: REQUIREMENTS }),
-	],
+	camps: [camp("production", { envType: "production", require: REQUIREMENTS })],
 });
 
 export default CD_YARD;

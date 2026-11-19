@@ -34,9 +34,12 @@ refused (`cd-journal-not-provisioned`) rather than falling back to SQLite. A
 composition that fails is forgotten, so the next request tries again.
 
 `/healthz` answers 200 and names the build's commit whatever CD's state.
-`/readyz` answers 200 once CD has composed. Until then it answers 503 with a
+`/readyz` answers 200 once CD has composed with no refusals, completed one
+pass, and its journal health check passes. Until then it answers 503 with a
 `code`:
 
+- `cd-non-production-deployment`: a preview or development deployment; it
+  never opens the production journal.
 - `cd-store-binding-missing`: no binding is committed yet.
 - `cd-store-binding-invalid`: the committed binding is malformed.
 - `cd-journal-not-provisioned`: the owner's store holds no journal fleet.
