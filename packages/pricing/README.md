@@ -62,6 +62,14 @@ schedules, grant expiries and latest measurements by instant. It rejects invalid
 calendar dates, finer precision, and conflicting latest measurements at the same
 instant. If different rate cards start at the same selected instant, it rejects
 that ambiguity as well; input order cannot silently select a cheaper value.
+V2 also rejects a baseline or candidate that references a suspended, cancelled
+or unknown-status provider agreement with `PRICING_AGREEMENT_UNAVAILABLE`.
+Active and past-due agreements remain quotable; trial agreements still require
+the applicable new-agreement permission. An unrelated inactive agreement does
+not by itself prevent a quote. The legacy V1 behavior is unchanged.
+`model/IacAgreementStatus.tla` checks this decision over one agreement and six
+abstract statuses; it does not prove the TypeScript implementation or the
+provider's reported agreement state.
 V2 also requires distinct, bounded IDs across financial-state allowances,
 credits and commitments. Those IDs identify reservation buckets, so a model
 cannot count the same bucket twice or alias different types of entitlement.

@@ -43,6 +43,7 @@ function check(name: string, directory: string, stateDirectory: string) {
 
 try {
 	for (const name of [
+		"IacAgreementStatus",
 		"IacPricingScope",
 		"IacDestroyPricing",
 		"IacFixedPricing",
@@ -53,6 +54,7 @@ try {
 		if (result.status !== 0) throw new Error(`${name} model checking failed`);
 	}
 	const mutations = [
+		["IacAgreementStatus", "IF NeedsRejection", "IF FALSE"],
 		[
 			"IacDestroyPricing",
 			'ELSE IF operation = "destroy" /\\ model # "destroy" THEN "unsupported"',
@@ -127,6 +129,8 @@ try {
 		);
 	}
 	for (const [name, invariant] of [
+		["IacAgreementStatus", "AgreementNoUnavailable"],
+		["IacAgreementStatus", "AgreementNoContinuation"],
 		["IacDestroyPricing", "NoPricedHold"],
 		["IacDestroyPricing", "NoUnpricedHold"],
 		["IacFixedPricing", "NoFixedZero"],
