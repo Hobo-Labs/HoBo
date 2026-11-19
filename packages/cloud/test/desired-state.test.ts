@@ -29,6 +29,7 @@ import {
 	reconcileResource,
 	resourceProvisioned,
 	resourceProvisioning,
+	resourceDestroying,
 	runCompensation,
 	runOrchestrator,
 } from "../src/index.js";
@@ -497,6 +498,135 @@ describe("upsert", () => {
 });
 
 describe("create/destroy cycle", () => {
+	it("does not claim rollback while an interrupted dependent is still destroying", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		const runtime = deps(store, iac);
+		await runOrchestrator(runtime, plan, "interrupted-destroy", {
+			tenant,
+			actor,
+		});
+		iac.calls.length = 0;
+		const stream = "deployment:interrupted-destroy";
+		const events = await drain(store, stream);
+		await emit(
+			store,
+			stream,
+			[
+				resourceDestroying({
+					deploymentId: "interrupted-destroy",
+					resourceId: "web",
+					reason: "rollback-compensation",
+				}),
+			],
+			{ expectedSeq: events.at(-1)?.seq ?? 0, tenant, actor },
+		);
+		const result = await runCompensation(
+			runtime,
+			plan,
+			"interrupted-destroy",
+			{ resourceId: "web", reason: "interrupted" },
+			{ tenant, actor },
+		);
+		expect(result.status).toBe("needs-human");
+		expect(result.destroyedOrder).toEqual([]);
+		expect(iac.calls).toEqual([]);
+	});
+
+	it("records a failed compensation and escalation once without repeating the destroy", async () => {
+		const store = freshStore();
+		const plan = loadPlan();
+		const attempts: string[] = [];
+		const iac: IacProvider = {
+			...recordingIac(),
+			async destroy(program) {
+				attempts.push(program.resourceId);
+				throw new Error("provider destroy failed");
+			},
+		};
+		const runtime = deps(store, iac);
+		await runOrchestrator(runtime, plan, "failed-destroy", { tenant, actor });
+		const failure = { resourceId: "web", reason: "rollback requested" };
+		const first = await runCompensation(
+			runtime,
+			plan,
+			"failed-destroy",
+			failure,
+			{ tenant, actor },
+		);
+		expect(first.status).toBe("needs-human");
+		expect(attempts).toEqual(["web"]);
+		expect(
+			first.events.filter(
+				(event) => event.type === "resource.CompensationFailed",
+			),
+		).toMatchObject([
+			{
+				data: {
+					deploymentId: "failed-destroy",
+					resourceId: "web",
+					reason: "executor.destroy_failed: provider destroy failed",
+				},
+			},
+		]);
+		expect(
+			first.events.filter(
+				(event) => event.type === "incident.EscalationRequested",
+			),
+		).toMatchObject([
+			{
+				data: {
+					deploymentId: "failed-destroy",
+					resourceId: "web",
+					reason: "compensation-failed",
+				},
+			},
+		]);
+		const directory = mkdtempSync(join(tmpdir(), "hobo-compensation-facts-"));
+		try {
+			const cue =
+				process.env.HOBO_CUE_BIN ||
+				fileURLToPath(
+					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+				);
+			const schema = fileURLToPath(
+				new URL("../data-models/cloud.cue", import.meta.url),
+			);
+			const path = join(directory, "record.json");
+			for (const [type, definition] of [
+				["resource.CompensationFailed", "#ResourceCompensationFailedData"],
+				["incident.EscalationRequested", "#IncidentEscalationRequestedData"],
+			] as const) {
+				const fact = first.events.find((event) => event.type === type);
+				if (!fact) throw new Error(`missing ${type}`);
+				writeFileSync(path, JSON.stringify(fact.data));
+				execFileSync(cue, ["vet", schema, path, "-d", definition]);
+			}
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+		const resumed = await runCompensation(
+			runtime,
+			plan,
+			"failed-destroy",
+			failure,
+			{ tenant, actor },
+		);
+		expect(resumed.status).toBe("needs-human");
+		expect(attempts).toEqual(["web"]);
+		expect(
+			resumed.events.filter(
+				(event) => event.type === "resource.CompensationFailed",
+			),
+		).toHaveLength(1);
+		expect(
+			resumed.events.filter(
+				(event) => event.type === "incident.EscalationRequested",
+			),
+		).toHaveLength(1);
+	});
+
 	it("up after down re-creates every resource", async () => {
 		const store = freshStore();
 		const iac = recordingIac();

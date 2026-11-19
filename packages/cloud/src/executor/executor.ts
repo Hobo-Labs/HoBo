@@ -233,13 +233,13 @@ export function createInProcessExecutor(
 				}
 			}
 
+			let stage: "preview" | "apply" | "destroy" = "preview";
 			try {
-				// preview then apply, inside the sandbox (control-plane.md resolution
-				// pipeline step 4: "IaC adapter runs preview then apply … with scoped creds").
 				const diff = await iac.preview(program);
 				push("exec.Diff", { summary: diff.summary, changes: diff.changes });
 
 				if (program.action === "destroy") {
+					stage = "destroy";
 					await iac.destroy(program);
 					push("exec.Succeeded", {
 						outputsHash: hashRef({ destroyed: program.resourceId }),
@@ -254,20 +254,18 @@ export function createInProcessExecutor(
 					};
 				}
 
+				stage = "apply";
 				const outputs = await iac.apply(program);
 				push("exec.Succeeded", { outputsHash: hashRef(outputs) });
 				return { status: "succeeded", execId, events, outputs, diff, sandbox };
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				// Provider/apply errors are classified retryable by default; a caller
-				// (the ResourceActor) decides whether the failure crosses the no-go
-				// threshold (control-plane.md reconcile loop step 4).
 				return fail(
 					events,
 					push,
 					sandbox,
 					"retryable",
-					`executor.apply_failed: ${reason}`,
+					`executor.${stage}_failed: ${reason}`,
 				);
 			}
 		},

@@ -33,8 +33,10 @@ export const CLOUD_EVENTS = Object.freeze({
 	ResourceProvisioning: "resource.Provisioning",
 	ResourceProvisioned: "resource.Provisioned",
 	ResourceFailed: "resource.Failed",
+	ResourceCompensationFailed: "resource.CompensationFailed",
 	ResourceDestroying: "resource.Destroying",
 	ResourceDestroyed: "resource.Destroyed",
+	IncidentEscalationRequested: "incident.EscalationRequested",
 	ExecDiff: "exec.Diff",
 	ExecSucceeded: "exec.Succeeded",
 	DeploymentDeployed: "deployment.Deployed",
@@ -264,6 +266,30 @@ export interface ResourceFailedData {
 
 export function resourceFailed(data: ResourceFailedData): EventInput {
 	return { type: CLOUD_EVENTS.ResourceFailed, data };
+}
+
+export interface ResourceCompensationFailedData {
+	deploymentId: string;
+	resourceId: string;
+	reason: string;
+}
+
+export function resourceCompensationFailed(
+	data: ResourceCompensationFailedData,
+): EventInput {
+	return { type: CLOUD_EVENTS.ResourceCompensationFailed, data };
+}
+
+export interface IncidentEscalationRequestedData {
+	deploymentId: string;
+	resourceId: string;
+	reason: "compensation-failed";
+}
+
+export function incidentEscalationRequested(
+	data: IncidentEscalationRequestedData,
+): EventInput {
+	return { type: CLOUD_EVENTS.IncidentEscalationRequested, data };
 }
 
 export interface ResourceDestroyingData {
