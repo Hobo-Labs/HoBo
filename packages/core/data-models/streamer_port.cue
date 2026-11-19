@@ -3,13 +3,14 @@ package data_models
 #StreamerRunStatus: "completed" | "closed" | "failed"
 
 #StreamerFrame: {
-	run_id: string & !=""
-	seq:    int & >=1
+	runId:  string & !=""
+	seq:    int & >=1 & <=9007199254740991
 	stream: string & !=""
+	chunk:  _
 }
 
 #StreamerRunResult: {
-	run_id: string & !=""
+	runId:  string & !=""
 	status: #StreamerRunStatus
-	reason: string
+	reason: string & !=""
 }

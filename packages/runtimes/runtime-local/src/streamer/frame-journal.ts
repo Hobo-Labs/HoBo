@@ -136,7 +136,7 @@ export function createFrameJournal<TChunk>(options: {
 
 			const frame = createStreamerFrame<TChunk>(
 				{
-					run_id: options.runId,
+					runId: options.runId,
 					seq: nextSeq,
 					stream,
 				},

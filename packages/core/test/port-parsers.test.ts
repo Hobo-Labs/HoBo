@@ -488,12 +488,11 @@ describe("streamer parsers", () => {
 });
 
 describe("createStreamerFrame", () => {
-	it("keeps both the wire and the parsed run id", () => {
+	it("normalizes the run id", () => {
 		const frame = createStreamerFrame(
-			{ run_id: " run-1 ", seq: 1, stream: "stdout" },
+			{ runId: " run-1 ", seq: 1, stream: "stdout" },
 			"chunk",
 		);
-		expect(frame.run_id).toBe(" run-1 ");
 		expect(frame.runId).toBe("run-1");
 		expect(frame.seq).toBe(1);
 		expect(frame.stream).toBe("stdout");
@@ -501,17 +500,15 @@ describe("createStreamerFrame", () => {
 		expect(Object.isFrozen(frame)).toBe(true);
 	});
 
-	it("defaults the stream when the record omits it", () => {
-		const frame = createStreamerFrame(
-			{ run_id: "run-1", seq: 1 } as never,
-			"c",
-		);
-		expect(frame.stream).toBe(DEFAULT_STREAM_NAME);
+	it("requires the stream on a frame record", () => {
+		expect(() =>
+			createStreamerFrame({ runId: "run-1", seq: 1 } as never, "c"),
+		).toThrow(StreamerParseError);
 	});
 
 	it("deep-freezes an object chunk", () => {
 		const frame = createStreamerFrame(
-			{ run_id: "run-1", seq: 1, stream: "stdout" },
+			{ runId: "run-1", seq: 1, stream: "stdout" },
 			{ nested: { a: 1 } },
 		);
 		expect(Object.isFrozen(frame.chunk)).toBe(true);
@@ -519,7 +516,7 @@ describe("createStreamerFrame", () => {
 
 	it("refuses a bad seq before building anything", () => {
 		expect(() =>
-			createStreamerFrame({ run_id: "run-1", seq: 0, stream: "stdout" }, "c"),
+			createStreamerFrame({ runId: "run-1", seq: 0, stream: "stdout" }, "c"),
 		).toThrow(StreamerParseError);
 	});
 });
@@ -528,7 +525,7 @@ describe("createStreamerRunResult", () => {
 	it("accepts each declared status", () => {
 		for (const status of ["completed", "closed", "failed"] as const) {
 			const result = createStreamerRunResult({
-				run_id: "run-1",
+				runId: "run-1",
 				status,
 				reason: "done",
 			});
@@ -539,7 +536,7 @@ describe("createStreamerRunResult", () => {
 	it("refuses an undeclared status and names the alternatives", () => {
 		try {
 			createStreamerRunResult({
-				run_id: "run-1",
+				runId: "run-1",
 				status: "complete" as never,
 				reason: "done",
 			});
@@ -555,20 +552,19 @@ describe("createStreamerRunResult", () => {
 	it("requires a reason", () => {
 		expect(() =>
 			createStreamerRunResult({
-				run_id: "run-1",
+				runId: "run-1",
 				status: "completed",
 				reason: "",
 			}),
 		).toThrow(StreamerParseError);
 	});
 
-	it("keeps the raw run id alongside the parsed one", () => {
+	it("returns the normalized run id", () => {
 		const result = createStreamerRunResult({
-			run_id: " run-1 ",
+			runId: " run-1 ",
 			status: "closed",
 			reason: "teardown",
 		});
-		expect(result.run_id).toBe(" run-1 ");
 		expect(result.runId).toBe("run-1");
 		expect(Object.isFrozen(result)).toBe(true);
 	});

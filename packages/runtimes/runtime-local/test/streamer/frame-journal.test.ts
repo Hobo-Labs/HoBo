@@ -25,7 +25,7 @@ function journalFor(bufferLimit = 8) {
 const result = (
 	status: "completed" | "failed" | "closed",
 	reason = "done",
-): StreamerRunResult => ({ run_id: RUN, runId: RUN, status, reason });
+): StreamerRunResult => ({ runId: RUN, status, reason });
 
 async function take(
 	journal: ReturnType<typeof journalFor>,
@@ -113,7 +113,7 @@ describe("writing and reading", () => {
 
 	it("carries the run id onto every frame", () => {
 		const journal = journalFor();
-		expect(journal.write(DEFAULT_STREAM_NAME, "a").run_id).toBe(RUN);
+		expect(journal.write(DEFAULT_STREAM_NAME, "a").runId).toBe(RUN);
 	});
 
 	it("carries the stream name onto the frame", () => {
