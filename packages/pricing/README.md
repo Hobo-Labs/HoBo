@@ -61,7 +61,8 @@ Provider charge periods must fall inside the requested billing period.
 
 The reconciliation hash is `stableHash` of the event ID,
 occurrence time, reservation ID, and ordered actual charges as
-protobuf JSON with implicit fields emitted. The snapshot hash covers every
+protobuf JSON with implicit fields emitted. Charges are ordered by provider
+charge ID. The snapshot hash covers every
 snapshot field except the hash itself, with imported charges in the same JSON
 form. `stableHash` sorts object keys before hashing the JSON bytes.
 

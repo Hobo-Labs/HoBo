@@ -141,6 +141,10 @@ function chargeFingerprint(charge: ActualCharge): string {
 	);
 }
 
+function compareText(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function varianceAgainstQuote(
 	actualTotal: Money,
 	quoted: Money,
@@ -308,11 +312,17 @@ export async function runBillingSync(
 		imported.push(mapped);
 	}
 
+	imported.sort((left, right) => compareText(left.id, right.id));
 	const total = sumBilled([...knownCharges, ...imported], quote.currency);
 	if ("code" in total) return total;
 
 	variances.push(
 		...varianceAgainstQuote(total, input.quotedIncrementalBilled, imported),
+	);
+	variances.sort(
+		(left, right) =>
+			compareText(left.kind, right.kind) ||
+			compareText(left.providerChargeId, right.providerChargeId),
 	);
 
 	const actualCharges = imported.map((charge) =>
