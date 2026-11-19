@@ -192,6 +192,11 @@ describe("idempotent deployment", () => {
 		expect(first.changes.summary.create).toBe(plan.resources.length);
 		const applies = iac.calls.length;
 		const before = await drain(store, "deployment:idem");
+		expect(before.at(-1)?.type).toBe("deployment.Deployed");
+		expect(before.at(-1)?.data).toEqual({
+			deploymentId: "idem",
+			resourceIds: plan.resources.map((resource) => resource.name).sort(),
+		});
 
 		const second = await runOrchestrator(deps(store, iac), plan, "idem", {
 			tenant,
@@ -311,7 +316,10 @@ describe("upsert", () => {
 		const provisioned = events.find((event) =>
 			isResourceFact(event, "resource.Provisioned"),
 		);
-		if (!provisioning || !provisioned)
+		const deployed = events.find(
+			(event) => event.type === "deployment.Deployed",
+		);
+		if (!provisioning || !provisioned || !deployed)
 			throw new Error("missing resource facts");
 		const snapshot = foldResourceActor(events, {
 			...resource,
@@ -331,6 +339,7 @@ describe("upsert", () => {
 			for (const [definition, data] of [
 				["#ResourceProvisioningRecord", provisioning.data],
 				["#ResourceProvisionedRecord", provisioned.data],
+				["#DeploymentDeployedRecord", deployed.data],
 				["#ResourceActorSnapshot", snapshot],
 			] as const) {
 				writeFileSync(path, JSON.stringify(data));
