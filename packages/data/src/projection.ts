@@ -7,7 +7,10 @@ import {
 	type EventStore,
 	type PrincipalRef,
 } from "@hobo/core";
-import { ProjectionQuarantinedEventDataSchema } from "./_generated/data_pb.js";
+import {
+	ProjectionQuarantinedEventDataSchema,
+	type QuarantineReprocessFinding,
+} from "./_generated/data_pb.js";
 import { isOptimisticConflict, ProjectionWriteError } from "./errors.js";
 import {
 	createProjectionDeclaredEvent,
@@ -20,6 +23,7 @@ import { hasFunctionTag, type Inspectable, isObjectLike } from "./json.js";
 import {
 	parseEventStoreQuarantine,
 	parseProjectionQuarantine,
+	quarantineReprocessFinding,
 	quarantineSequence,
 } from "./quarantine-facts.js";
 import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
@@ -78,6 +82,10 @@ export interface ProjectionQuarantineRecord {
 }
 
 export interface QuarantinableProjection<Row> extends Projection<Row> {
+	inspectQuarantines(
+		events: Iterable<EventEnvelope>,
+		records?: Iterable<EventEnvelope>,
+	): QuarantineReprocessFinding[];
 	rebuildWithQuarantine(
 		store: EventStore,
 		streamId: string,
@@ -140,6 +148,7 @@ export function defineProjection<Row>(
 		materialized: readonly EventEnvelope[],
 		records: readonly EventEnvelope[],
 		collectFailures: boolean,
+		inspectQuarantines = false,
 	) {
 		const rows: Record<string, Row> = {};
 		const quarantinedEvents = new Set<string>();
@@ -168,32 +177,36 @@ export function defineProjection<Row>(
 
 		let seq = 0;
 		const failures: Array<{ event: EventEnvelope; reason: string }> = [];
+		const reprocessCandidates: QuarantineReprocessFinding[] = [];
 		for (const event of materialized) {
 			seq = Math.max(seq, event.seq);
-			if (
-				isQuarantineFact(event) ||
-				event.type === PROJECTION_QUARANTINE_EVENT ||
+			if (isQuarantineFact(event) || event.type === PROJECTION_QUARANTINE_EVENT)
+				continue;
+			const quarantined =
 				quarantinedEvents.has(
 					eventKey(event.tenant, event.streamId, event.seq),
 				) ||
 				quarantinedEvents.has(
 					eventKey(event.tenant, event.streamId, event.seq, event.id),
-				)
-			)
-				continue;
+				);
+			if (quarantined && !inspectQuarantines) continue;
 			const handler = handlers.get(event.type);
 			if (!handler) continue;
+			let key: string;
+			let nextRow: Row;
 			try {
 				const upcast = definition.upcasters
 					? definition.upcasters.upcast(event)
 					: event;
-				const key = definition.key(upcast);
-				const nextRow = handler(
-					rows[key] === undefined ? undefined : deepFreeze(clone(rows[key])),
-					deepFreeze(clone(upcast)),
+				key = definition.key(upcast);
+				nextRow = clone(
+					handler(
+						rows[key] === undefined ? undefined : deepFreeze(clone(rows[key])),
+						deepFreeze(clone(upcast)),
+					),
 				);
-				rows[key] = clone(nextRow);
 			} catch (error) {
+				if (quarantined) continue;
 				if (!collectFailures || error instanceof UpcasterChainError)
 					throw error;
 				const failure =
@@ -206,10 +219,20 @@ export function defineProjection<Row>(
 					event,
 					reason: failure.message,
 				});
+				continue;
 			}
+			if (quarantined)
+				reprocessCandidates.push(
+					quarantineReprocessFinding(event, definition.name, "projection"),
+				);
+			else rows[key] = nextRow;
 		}
 
-		return { snapshot: { projection: definition.name, seq, rows }, failures };
+		return {
+			snapshot: { projection: definition.name, seq, rows },
+			failures,
+			reprocessCandidates,
+		};
 	}
 
 	function fold(events: Iterable<EventEnvelope>): ProjectionSnapshot<Row> {
@@ -220,6 +243,65 @@ export function defineProjection<Row>(
 		name: definition.name,
 		readSet,
 		fold,
+
+		inspectQuarantines(events, records = []) {
+			const source = [...events];
+			const quarantineRecords = [...records];
+			const byPosition = new Map(
+				source.map((event) => [
+					eventKey(event.tenant, event.streamId, event.seq),
+					event,
+				]),
+			);
+			for (const record of [...source, ...quarantineRecords]) {
+				if (isQuarantineFact(record)) {
+					const data = parseEventStoreQuarantine(record);
+					const target = byPosition.get(
+						eventKey(
+							record.tenant,
+							record.streamId,
+							quarantineSequence(data.offendingSeq),
+						),
+					);
+					if (
+						!target ||
+						target.seq >= record.seq ||
+						isQuarantineFact(target) ||
+						target.type === PROJECTION_QUARANTINE_EVENT ||
+						(data.offendingType && data.offendingType !== target.type) ||
+						(record.meta?.quarantines !== undefined &&
+							record.meta.quarantines !== target.id)
+					) {
+						throw new Error(
+							"event-store quarantine target does not match the source event",
+						);
+					}
+				} else if (record.type === PROJECTION_QUARANTINE_EVENT) {
+					const data = parseProjectionQuarantine(record);
+					if (data.projection !== definition.name) continue;
+					const target = byPosition.get(
+						eventKey(
+							record.tenant,
+							data.sourceStreamId,
+							quarantineSequence(data.offendingSeq),
+						),
+					);
+					if (
+						!target ||
+						isQuarantineFact(target) ||
+						target.type === PROJECTION_QUARANTINE_EVENT ||
+						target.id !== data.offendingEventId ||
+						target.type !== data.offendingType
+					) {
+						throw new Error(
+							"projection quarantine target does not match the source event",
+						);
+					}
+				}
+			}
+			return foldInternal(source, quarantineRecords, false, true)
+				.reprocessCandidates;
+		},
 
 		async rebuildFromZero(store, streamId) {
 			const events: EventEnvelope[] = [];
@@ -355,7 +437,7 @@ export function defineProjection<Row>(
 							break;
 						}
 						for (const record of appended.appended) {
-						const data = parseProjectionQuarantine(record);
+							const data = parseProjectionQuarantine(record);
 							quarantined.push({
 								sourceStreamId: data.sourceStreamId,
 								offendingSeq: Number(data.offendingSeq),

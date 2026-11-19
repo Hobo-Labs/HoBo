@@ -75,6 +75,15 @@ message QuarantineReport {
   string next_position = 3;
 }
 
+message QuarantineReprocessFinding {
+  string code = 1;
+  string source_stream_id = 2;
+  uint64 offending_seq = 3;
+  string offending_event_id = 4;
+  string fold = 5;
+  string fold_kind = 6;
+}
+
 message UpcasterRegistration {
   string type = 1;
   uint32 from_version = 2;
