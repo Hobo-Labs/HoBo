@@ -36,6 +36,19 @@ package data_models
 	option:   string & !=""
 }
 
+#HttpHealthCheck: {
+	type: "http"
+	path: string & =~"^/([^/].*)?$"
+	intervalMs?: int & >=1 & <=300000
+	timeoutMs?:  int & >=1 & <=300000
+	if intervalMs != _|_ && timeoutMs != _|_ {
+		_intervalFits: true & (intervalMs <= timeoutMs)
+	}
+	if intervalMs == _|_ && timeoutMs != _|_ {
+		_defaultIntervalFits: true & (250 <= timeoutMs)
+	}
+}
+
 #BindleResourceRecord: {
 	kind:           string & !=""
 	name:           string & !=""

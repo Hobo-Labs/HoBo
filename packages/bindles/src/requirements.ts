@@ -18,6 +18,7 @@ const PLATFORM_PROVIDERS = new Set(["hobo", "hobo:build"]);
 const PLATFORM_OPTIONS = new Set([
 	"endpoint",
 	"env",
+	"health",
 	"dependency",
 	"session-replay",
 	"status-page",
@@ -104,10 +105,7 @@ export function assertNoBindleProviderSelection(
 	}
 }
 
-/**
- * @deprecated Use assertNoBindleProviderSelection. Provider pins on Bindles
- * are forbidden; this always returns [] after asserting none exist, or throws.
- */
+/** @deprecated */
 export function collectExplicitProviderPins(
 	definition: BindleDefinition,
 ): readonly string[] {

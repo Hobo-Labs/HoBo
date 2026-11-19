@@ -36,6 +36,13 @@ message ProviderAnnotation {
   string option = 2;
 }
 
+message HttpHealthCheck {
+  string type = 1;
+  string path = 2;
+  optional uint32 interval_ms = 3;
+  optional uint32 timeout_ms = 4;
+}
+
 message BindleResourceRecord {
   string kind = 1;
   string name = 2;
