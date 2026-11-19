@@ -43,7 +43,6 @@ export const connectCatalog = defineCatalog(schema, {
 
 export type ConnectCatalog = typeof connectCatalog;
 
-/** The component names a connect spec may use. */
 export const CONNECT_COMPONENTS = Object.freeze([
 	"Card",
 	"Stack",
