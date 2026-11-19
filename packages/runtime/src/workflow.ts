@@ -161,11 +161,36 @@ function snapshotJournalData(
 	seen.add(value);
 	try {
 		if (Array.isArray(value)) {
-			const copy: JsonValue[] = Array.from({ length: value.length });
-			for (let index = 0; index < value.length; index += 1) {
-				const entry = Object.hasOwn(value, index) ? value[index] : undefined;
-				if (entry !== undefined) {
-					copy[index] = snapshotJournalData(entry, seen);
+			const copy: JsonValue[] = [];
+			copy.length = value.length;
+			for (const name of Object.getOwnPropertyNames(value)) {
+				if (name === "length") {
+					continue;
+				}
+				const index = Number(name);
+				const isArrayIndex =
+					Number.isSafeInteger(index) &&
+					index >= 0 &&
+					String(index) === name;
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: journal arrays may carry own string keys beyond indices during snapshot walks.
+				const arrayBag = value as JsonValue[] & Record<string, JsonValue>;
+				const raw = isArrayIndex ? value[index] : arrayBag[name];
+				if (!Object.hasOwn(value, name)) continue;
+				const next =
+					raw === undefined
+						? undefined
+						: snapshotJournalData(raw, seen);
+				if (isArrayIndex) {
+					if (next !== undefined) {
+						copy[index] = next;
+					}
+				} else {
+					Object.defineProperty(copy, name, {
+						value: next,
+						enumerable: true,
+						writable: true,
+						configurable: true,
+					});
 				}
 			}
 			return copy;
@@ -173,7 +198,18 @@ function snapshotJournalData(
 		const copy: JsonBag = {};
 		for (const key of Object.keys(value)) {
 			const entry = value[key];
-			if (entry !== undefined) {
+			const next =
+				entry === undefined
+					? undefined
+					: snapshotJournalData(entry, seen);
+			if (key === "__proto__" || entry === undefined) {
+				Object.defineProperty(copy, key, {
+					value: next,
+					enumerable: true,
+					writable: true,
+					configurable: true,
+				});
+			} else {
 				copy[key] = snapshotJournalData(entry, seen);
 			}
 		}
@@ -236,7 +272,11 @@ function assertContiguousStepJournal(
 			throw new Error(`invalid step journal for ${runId}`);
 		}
 	}
-	for (let index = 0; index < maxOutcome; index += 1) {
+	let maxIndex = maxOutcome;
+	for (const index of scheduledSteps.keys()) {
+		if (index > maxIndex) maxIndex = index;
+	}
+	for (let index = 0; index < maxIndex; index += 1) {
 		if (!outcomeIndices.has(index) && !scheduledSteps.has(index)) {
 			throw new Error(`gapped step journal for ${runId}`);
 		}
@@ -571,12 +611,6 @@ export function createWorkflowEngine(
 					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
 				}
 				const normalizedDurationMs = Object.is(durationMs, -0) ? 0 : durationMs;
-				if (
-					!Number.isSafeInteger(normalizedDurationMs) ||
-					normalizedDurationMs < 0
-				) {
-					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
-				}
 				const scheduled = sleepFacts.get(index);
 				unconsumedScheduledSleeps.delete(index);
 				if (scheduled) {
@@ -587,6 +621,12 @@ export function createWorkflowEngine(
 						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
 					}
 					return;
+				}
+				if (
+					!Number.isSafeInteger(normalizedDurationMs) ||
+					normalizedDurationMs < 0
+				) {
+					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
 				}
 				if (unconsumedScheduledSleeps.size > 0) {
 					rejectReplay(`sleep schedule diverged on replay for ${runId}`);

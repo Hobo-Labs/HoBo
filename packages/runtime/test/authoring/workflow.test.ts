@@ -1011,6 +1011,59 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
+	it("rejects a schedule above maxOutcome with a gapped prefix", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/scheduled-far-gap";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "scheduled-far-gap",
+					workflowName: "scheduled-far-gap",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "early", index: 0, result: "ok" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 3,
+				type: "run.StepScheduled",
+				data: { name: "late", index: 5 },
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "scheduled-far-gap",
+			async run(ctx) {
+				runs += 1;
+				await ctx.step("early", () => "ok");
+				await ctx.step("late", () => "nope");
+				return "nope";
+			},
+		});
+		await expect(engine.resume(wf, "scheduled-far-gap", {})).rejects.toThrow(
+			/gapped step journal/,
+		);
+		expect(runs).toBe(0);
+	});
+
 	it("resumes a scheduled-only hole below a later step outcome", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/scheduled-hole";
@@ -1049,11 +1102,15 @@ describe("durable workflow: journal, restart, replay", () => {
 			2,
 		);
 		let runs = 0;
+		let holeEffects = 0;
 		const wf = defineWorkflow({
 			name: "scheduled-hole",
 			async run(ctx) {
 				runs += 1;
-				await ctx.step("hole", () => "first");
+				await ctx.step("hole", () => {
+					holeEffects += 1;
+					return "first";
+				});
 				return ctx.step("later", () => "done");
 			},
 		});
@@ -1061,6 +1118,16 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(handle.status).toBe("completed");
 		expect(handle.result).toBe("done");
 		expect(runs).toBe(1);
+		expect(holeEffects).toBe(1);
+		const journal = await engine.journal("scheduled-hole");
+		expect(
+			journal.some(
+				(event) =>
+					event.type === "run.StepCompleted" &&
+					isJsonObject(event.data) &&
+					event.data.index === 0,
+			),
+		).toBe(true);
 	});
 
 	it("resumes a schedule above the open journal tip", async () => {
@@ -1227,17 +1294,22 @@ describe("durable workflow: journal, restart, replay", () => {
 			2,
 		);
 		let runs = 0;
+		let workEffects = 0;
 		const wf = defineWorkflow({
 			name: "dup-schedule",
 			run(ctx) {
 				runs += 1;
-				return ctx.step("work", () => "done");
+				return ctx.step("work", () => {
+					workEffects += 1;
+					return "done";
+				});
 			},
 		});
 		const handle = await engine.resume(wf, "dup-schedule", {});
 		expect(handle.status).toBe("completed");
 		expect(handle.result).toBe("done");
 		expect(runs).toBe(1);
+		expect(workEffects).toBe(1);
 		expect(
 			(await engine.journal("dup-schedule")).filter(
 				(event) => event.type === "run.StepScheduled",
@@ -1352,12 +1424,12 @@ describe("durable workflow: journal, restart, replay", () => {
 			name: "bad-step-result",
 			run: (ctx) => ctx.step("read", () => "live"),
 		});
-		await expect(engine.resume(wf, "bad-step-result", {})).rejects.toThrow(
-			TypeError,
-		);
-		await expect(engine.resume(wf, "bad-step-result", {})).rejects.toThrow(
-			/invalid run\.StepCompleted|JSON-normalized/,
-		);
+		const journalBefore = await engine.journal("bad-step-result");
+		await expect(engine.resume(wf, "bad-step-result", {})).rejects.toMatchObject({
+			name: "TypeError",
+			message: /invalid run\.StepCompleted|JSON-normalized/,
+		});
+		expect(await engine.journal("bad-step-result")).toEqual(journalBefore);
 	});
 
 	it("rejects sparse arrays and negative zero when reading a journaled value", () => {
@@ -1798,7 +1870,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		const wf = defineWorkflow({
 			name: "legacy-fractional-sleep",
 			async run(ctx) {
-				await ctx.sleep(1);
+				await ctx.sleep(1.5);
 				return "done";
 			},
 		});
@@ -1889,8 +1961,8 @@ describe("durable workflow: journal, restart, replay", () => {
 		const wf = defineWorkflow({
 			name: "invalid-sleep-label",
 			async run(ctx) {
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately injects a non-string label to assert the live-path write rejection.
-				await ctx.sleep(10, { label: 5 as string });
+				// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately injects a non-string label to assert the live-path write rejection.
+				await ctx.sleep(10, { label: 5 as unknown as string });
 				return "done";
 			},
 		});
@@ -2129,7 +2201,7 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 		});
 		await expect(engine.resume(wf, "orphan-scheduled", {})).rejects.toThrow(
-			/unconsumed scheduled step \(orphan StepScheduled\)/,
+			/gapped step journal|unconsumed scheduled step \(orphan StepScheduled\)/,
 		);
 		expect(effects).toBe(0);
 		const journal = await engine.journal("orphan-scheduled");
