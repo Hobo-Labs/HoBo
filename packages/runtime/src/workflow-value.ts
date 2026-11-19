@@ -10,16 +10,18 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-function isStoredJsonValue(value: unknown): value is JsonValue {
+function isStoredJsonValue(value: JsonValue): boolean {
 	if (value === null) return true;
 	if (isJsonString(value) || isJsonBoolean(value)) return true;
 	if (isJsonNumber(value)) return Number.isFinite(value);
 	if (isJsonArray(value))
 		return value.every((entry) => isStoredJsonValue(entry));
-	if (isJsonObject(value))
-		return Object.keys(value).every((key) =>
-			isStoredJsonValue(value[key]),
-		);
+	if (isJsonObject(value)) {
+		return Object.keys(value).every((key) => {
+			const entry = value[key];
+			return entry !== undefined && isStoredJsonValue(entry);
+		});
+	}
 	return false;
 }
 
@@ -30,7 +32,7 @@ export type ParsedRunStarted = {
 };
 
 export function parseRunStartedFact(
-	data: unknown,
+	data: JsonValue,
 	defaultSeed: string,
 ): ParsedRunStarted {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.Started");
@@ -57,24 +59,24 @@ export function parseRunStartedFact(
 			throw new TypeError("invalid run.Started");
 		workflowName = data.workflowName;
 	}
-	return {
-		args,
-		seed: runSeed,
-		...(workflowName === undefined ? {} : { workflowName }),
-	};
+	const parsed: ParsedRunStarted = { args, seed: runSeed };
+	if (workflowName !== undefined) parsed.workflowName = workflowName;
+	return parsed;
 }
 
-export function parseRunFailedFact(data: unknown): {
+export type ParsedRunFailed = {
 	message: string;
 	step?: string;
-} {
+};
+
+export function parseRunFailedFact(data: JsonValue): ParsedRunFailed {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.Failed");
 	const allowed = new Set(["message", "step"]);
 	for (const key of Object.keys(data)) {
 		if (!allowed.has(key)) throw new TypeError("invalid run.Failed");
 	}
 	if (!isJsonString(data.message)) throw new TypeError("invalid run.Failed");
-	const parsed: { message: string; step?: string } = { message: data.message };
+	const parsed: ParsedRunFailed = { message: data.message };
 	if ("step" in data) {
 		if (!isJsonString(data.step)) throw new TypeError("invalid run.Failed");
 		parsed.step = data.step;

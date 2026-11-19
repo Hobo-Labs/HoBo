@@ -201,7 +201,7 @@ export function createWorkflowEngine(
 				const result = terminalCompletedHandleResult<R>(journaled);
 				return { runId, status: "completed", result, error: undefined };
 			}
-			const failedFact = parseRunFailedFact(data);
+			const failedFact = parseRunFailedFact(cloneAsJson(data));
 			const failure: NonNullable<WorkflowRunHandle<R>["error"]> = {
 				code: "workflow.failed",
 				message: failedFact.message,
