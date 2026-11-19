@@ -75,10 +75,7 @@ export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 											? ("text" as const)
 											: ("text" as const),
 								placeholder: field.description ?? null,
-								value:
-									field.kind === "secret"
-										? null
-										: (field.value ?? null),
+								value: field.kind === "secret" ? null : (field.value ?? null),
 								checks: null,
 								validateOn: null,
 							},
