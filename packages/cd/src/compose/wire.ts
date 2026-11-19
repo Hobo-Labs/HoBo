@@ -13,6 +13,7 @@
 import { create } from "@bufbuild/protobuf";
 import type { PolicyPack } from "@hobo/contracts";
 import type { HttpTransport, JsonObject } from "@hobo/core";
+import type { JwtSvidIssuer } from "@hobo/identity";
 import {
 	ReconcilerMode,
 	type RetentionPolicyRecord,
@@ -167,6 +168,8 @@ export type CdComposeInput = Readonly<{
 	policyPack: PolicyPack;
 	topology: TopologyReader;
 	railCatalog: RailCatalog;
+	publicOrigin?: string;
+	agentIssuer?: JwtSvidIssuer;
 	/** CI bridge: HOBO_CI subscriptions read these (C15). */
 	readCiEvents?: CiEventReader;
 	readCiArtifact?: CiArtifactReader;
@@ -484,6 +487,12 @@ export function wireContinuousDelivery(
 		authorizer,
 		rails,
 		inventory,
+		...(input.publicOrigin === undefined
+			? undefined
+			: { publicOrigin: input.publicOrigin }),
+		...(input.agentIssuer === undefined
+			? undefined
+			: { issuer: input.agentIssuer }),
 	});
 	const feed = f.createDeliveryFeedHandler({
 		...base,

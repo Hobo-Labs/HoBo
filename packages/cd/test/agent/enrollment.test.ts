@@ -51,6 +51,7 @@ function code<T>(outcome: Outcome<T>): string {
 function setup(
 	rail = railWith(),
 	deny: Parameters<typeof createFakeAuthorizer>[0] = [],
+	publicOrigin: string | null = "https://station.test",
 ) {
 	const clock = createClock();
 	const store = createFakeStore(clock);
@@ -76,7 +77,7 @@ function setup(
 			inventory,
 			telemetry,
 			issuer,
-			publicOrigin: "https://station.test",
+			...(publicOrigin === null ? undefined : { publicOrigin }),
 		});
 	return {
 		clock,
@@ -541,6 +542,85 @@ describe("key-bound SVIDs and DPoP", () => {
 		expect(
 			code(await s.enrollment.verify(feedRequest(thief, s.clock, a.svid))),
 		).toBe("dpop-key-mismatch");
+	});
+
+	it("binds a hosted agent proof to the configured HTTPS scheme", async () => {
+		const s = setup();
+		const a = await activated(s);
+		const wrongScheme = proof(
+			a.key,
+			s.clock,
+			"GET",
+			"http://station.test/v1/cd/feed",
+			a.svid,
+		);
+		expect(
+			code(
+				await s.enrollment.verify(
+					feedRequest(a.key, s.clock, a.svid, wrongScheme),
+				),
+			),
+		).toBe("dpop-url-mismatch");
+	});
+
+	it("binds hosted activation and refresh proofs to the configured origin", async () => {
+		const s = setup();
+		const e = await accepted(s);
+		const otherOrigins = [
+			"http://station.test/v1/cd/svid/refresh",
+			"https://other.test/v1/cd/svid/refresh",
+		];
+		for (const url of otherOrigins) {
+			const result = await s.enrollment.activate(
+				{ reconcilerId: e.id, dpopProof: proof(e.key, s.clock, "POST", url) },
+				ctxAt(s.clock),
+			);
+			expect(code(result)).toBe("dpop-url-mismatch");
+		}
+		const activated = await s.enrollment.activate(
+			{ reconcilerId: e.id, dpopProof: proof(e.key, s.clock) },
+			ctxAt(s.clock),
+		);
+		expect(activated.ok).toBe(true);
+		if (!activated.ok) return;
+		for (const url of otherOrigins) {
+			const result = await s.enrollment.refresh(
+				{
+					svid: activated.value.svid,
+					dpopProof: proof(e.key, s.clock, "POST", url, activated.value.svid),
+				},
+				ctxAt(s.clock),
+			);
+			expect(code(result)).toBe("dpop-url-mismatch");
+		}
+		const refreshed = await s.enrollment.refresh(
+			{
+				svid: activated.value.svid,
+				dpopProof: proof(
+					e.key,
+					s.clock,
+					"POST",
+					REFRESH_URL,
+					activated.value.svid,
+				),
+			},
+			ctxAt(s.clock),
+		);
+		expect(refreshed.ok).toBe(true);
+	});
+
+	it("accepts a local HTTP agent proof when no public origin is configured", async () => {
+		const s = setup(railWith(), [], null);
+		const a = await activated(s);
+		const local = proof(
+			a.key,
+			s.clock,
+			"GET",
+			"http://127.0.0.1/v1/cd/feed",
+			a.svid,
+		);
+		const request = feedRequest(a.key, s.clock, a.svid, local);
+		expect((await s.enrollment.verify(request)).ok).toBe(true);
 	});
 
 	it("refuses missing credentials, a Bearer scheme and a proof for another route", async () => {
