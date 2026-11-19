@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +15,7 @@ import {
 	validateRealWasmComponent,
 } from "../src/index.js";
 import { parseJsonObject } from "../src/json.js";
+import { assertComponentizerVersion } from "../src/real-componentize.js";
 
 const SOURCE_DATE_EPOCH = "2026-01-01T00:00:00.000Z";
 const HELLO_BINDLE_ROOT = new URL("./fixtures/hello-bindle", import.meta.url);
@@ -291,9 +293,27 @@ describe("createRealComponentize (toolchain probe)", () => {
 			.catch((caught: ComponentizeToolchainError) => caught);
 		expect(error).toBeInstanceOf(ComponentizeToolchainError);
 		if (error instanceof ComponentizeToolchainError) {
-			expect(error.remediation).toMatch(/componentizeHelloBindle/);
-			expect(error.remediation).toMatch(/synthetic contract-shaped floor/);
+			expect(error.remediation).toMatch(/componentize-js@0\.21\.0/);
 		}
+	});
+
+	it("checks the installed compiler package version from its entrypoint", async () => {
+		const root = await mkdtemp(join(tmpdir(), "hobo-componentizer-version-"));
+		tempRoots.push(root);
+		await mkdir(join(root, "src"));
+		const manifest = join(root, "package.json");
+		const entry = pathToFileURL(join(root, "src/componentize.js")).href;
+		const writeManifest = (version: string) =>
+			writeFile(
+				manifest,
+				JSON.stringify({ name: "@bytecodealliance/componentize-js", version }),
+			);
+		await writeManifest("0.21.0");
+		await expect(assertComponentizerVersion(entry)).resolves.toBe("0.21.0");
+		await writeManifest("0.20.0");
+		await expect(assertComponentizerVersion(entry)).rejects.toThrow(
+			/toolchain_skew.*expected 0\.21\.0 got 0\.20\.0/,
+		);
 	});
 
 	it("reports unavailable when the module lacks a componentize export", async () => {
