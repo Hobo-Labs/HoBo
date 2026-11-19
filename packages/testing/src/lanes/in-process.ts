@@ -30,12 +30,14 @@ import {
 import type { AddressInfo } from "node:net";
 import type { BindingResolverPort, Messaging } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
-import type { SecretsPort } from "@hobo/identity";
+import type { DeliveryPort, ExperimentPort, SecretsPort } from "@hobo/identity";
 import { createLocalBindingResolver } from "@hobo/runtime-local";
 import {
 	type BucketEmulator,
 	createBucketEmulator,
 	createDataEmulator,
+	createDeliveryEmulator,
+	createExperimentEmulator,
 	createFlagEmulator,
 	createKeyValueEmulator,
 	createQueueEmulator,
@@ -75,6 +77,8 @@ export interface InProcessDeployment {
 	readonly kv: ReadonlyMap<string, ServiceEmulator<KeyValuePort>>;
 	readonly buckets: ReadonlyMap<string, BucketEmulator>;
 	readonly flags: ReadonlyMap<string, FlagEmulator>;
+	readonly rollouts: ReadonlyMap<string, ServiceEmulator<DeliveryPort>>;
+	readonly experiments: ReadonlyMap<string, ServiceEmulator<ExperimentPort>>;
 }
 
 type FetchLikeHandler = (request: Request) => Response | Promise<Response>;
@@ -223,7 +227,13 @@ function validateFactories(value: unknown): void {
 			typeof value.bucket !== "function") ||
 		("flag" in value &&
 			value.flag !== undefined &&
-			typeof value.flag !== "function")
+			typeof value.flag !== "function") ||
+		("rollout" in value &&
+			value.rollout !== undefined &&
+			typeof value.rollout !== "function") ||
+		("experiment" in value &&
+			value.experiment !== undefined &&
+			typeof value.experiment !== "function")
 	) {
 		throw new TestHarnessError(
 			"HARNESS_EMULATOR_INVALID",
@@ -244,7 +254,9 @@ function validateEmulator(
 		| "schedule"
 		| "kv"
 		| "bucket"
-		| "flag",
+		| "flag"
+		| "rollout"
+		| "experiment",
 ): void {
 	const record =
 		typeof value === "object" && value !== null ? value : undefined;
@@ -254,49 +266,65 @@ function validateEmulator(
 		typeof port === "object" && port !== null
 			? (port as Record<string, unknown>)
 			: undefined;
-	const methods =
-		kind === "queue"
-			? [
-					"enqueue",
-					"dequeue",
-					"handle",
-					"complete",
-					"release",
-					"simulateRedelivery",
-					"signal",
-				]
-			: kind === "topic"
-				? [
-						"ensureTopic",
-						"ensureSubscription",
-						"publish",
-						"consume",
-						"subscribe",
-						"ack",
-						"nack",
-						"events",
-					]
-				: kind === "secret"
-					? ["put", "access", "accessVersion", "listVersions"]
-					: kind === "data"
-						? ["close"]
-						: kind === "schedule"
-							? ["every"]
-							: kind === "kv"
-								? ["get", "set", "delete", "exists"]
-								: kind === "bucket"
-									? ["get", "put", "delete"]
-									: [
-											"list",
-											"get",
-											"define",
-											"loadDefinitions",
-											"evaluateBoolean",
-											"evaluate",
-											"activateKillSwitch",
-											"clearKillSwitch",
-											"archive",
-										];
+	const methodsByKind = {
+		queue: [
+			"enqueue",
+			"dequeue",
+			"handle",
+			"complete",
+			"release",
+			"simulateRedelivery",
+			"signal",
+		],
+		topic: [
+			"ensureTopic",
+			"ensureSubscription",
+			"publish",
+			"consume",
+			"subscribe",
+			"ack",
+			"nack",
+			"events",
+		],
+		secret: ["put", "access", "accessVersion", "listVersions"],
+		data: ["close"],
+		schedule: ["every"],
+		kv: ["get", "set", "delete", "exists"],
+		bucket: ["get", "put", "delete"],
+		flag: [
+			"list",
+			"get",
+			"define",
+			"loadDefinitions",
+			"evaluateBoolean",
+			"evaluate",
+			"activateKillSwitch",
+			"clearKillSwitch",
+			"archive",
+		],
+		rollout: [
+			"list",
+			"get",
+			"start",
+			"step",
+			"nextBatch",
+			"reportOutcomes",
+			"grantApproval",
+			"resume",
+			"rollback",
+			"gatewayWeight",
+		],
+		experiment: [
+			"define",
+			"assign",
+			"expose",
+			"evaluateAndExpose",
+			"conclude",
+			"getAssignment",
+			"list",
+		],
+	} satisfies Record<typeof kind, readonly string[]>;
+	const methods = methodsByKind[kind];
 	const datasets = portRecord?.datasets;
 	const records = portRecord?.records;
 	const hasMethods = (candidate: unknown, names: readonly string[]) =>
@@ -316,6 +344,8 @@ function validateEmulator(
 		(service.close !== undefined && typeof service.close !== "function") ||
 		portRecord === undefined ||
 		methods.some((method) => typeof portRecord[method] !== "function") ||
+		((kind === "rollout" || kind === "experiment") &&
+			!Array.isArray(portRecord.events)) ||
 		(kind === "topic" &&
 			(typeof portRecord.backend !== "string" ||
 				typeof portRecord.capabilities !== "object" ||
@@ -366,6 +396,9 @@ export async function deployInProcess(
 	const topology = parseTestTopology(bindle);
 	const order = deploymentOrder(topology);
 	const byAlias = new Map(topology.nodes.map((node) => [node.alias, node]));
+	const unresolved = new Set(
+		topology.unresolvedDependencies.map((dependency) => dependency.alias),
+	);
 	const handles = new Map<string, ResourceHandle>();
 	const servers = new Map<string, Server>();
 	const queues = new Map<string, QueueEmulator>();
@@ -376,6 +409,8 @@ export async function deployInProcess(
 	const kv = new Map<string, ServiceEmulator<KeyValuePort>>();
 	const buckets = new Map<string, BucketEmulator>();
 	const flags = new Map<string, FlagEmulator>();
+	const rollouts = new Map<string, ServiceEmulator<DeliveryPort>>();
+	const experiments = new Map<string, ServiceEmulator<ExperimentPort>>();
 	const resources = {
 		servers,
 		queues,
@@ -386,8 +421,23 @@ export async function deployInProcess(
 		kv,
 		buckets,
 		flags,
+		rollouts,
+		experiments,
 	};
 	const bindings: Record<string, Record<string, string>> = {};
+	const linkedFlag = (alias: string, dependencies: readonly string[]) => {
+		const linked = dependencies.flatMap((dependency) => {
+			const flag = flags.get(dependency);
+			return flag === undefined ? [] : [flag];
+		});
+		if (linked.length > 1)
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_INVALID",
+				`"${alias}" has more than one flag dependency`,
+				"depend on one flag resource or provide an explicit emulator factory",
+			);
+		return linked[0];
+	};
 
 	try {
 		for (const alias of order) {
@@ -440,6 +490,28 @@ export async function deployInProcess(
 				);
 				flags.set(alias, emulator);
 				validateEmulator(emulator, alias, "flag");
+			} else if (node.kind === "rollout") {
+				const flag = factories.rollout
+					? undefined
+					: linkedFlag(alias, node.dependsOn);
+				const emulator = factories.rollout
+					? await factories.rollout(context)
+					: createDeliveryEmulator(
+							flag ? { store: flag.port, storeFidelity: flag.fidelity } : {},
+						);
+				rollouts.set(alias, emulator);
+				validateEmulator(emulator, alias, "rollout");
+			} else if (node.kind === "experiment") {
+				const flag = factories.experiment
+					? undefined
+					: linkedFlag(alias, node.dependsOn);
+				const emulator = factories.experiment
+					? await factories.experiment(context)
+					: createExperimentEmulator(
+							flag ? { store: flag.port, storeFidelity: flag.fidelity } : {},
+						);
+				experiments.set(alias, emulator);
+				validateEmulator(emulator, alias, "experiment");
 			}
 			const handler =
 				isHttpServedKind(node.kind) && node.hasEntrypoint
@@ -453,7 +525,13 @@ export async function deployInProcess(
 				endpoint = opened.endpoint;
 			}
 
-			const fidelity =
+			const unavailableDependency =
+				unresolved.has(alias) ||
+				node.dependsOn.some((dependency) => {
+					const fidelity = handles.get(dependency)?.fidelity;
+					return fidelity === "mocked" || fidelity === "camp-only";
+				});
+			const ownFidelity =
 				queues.get(alias)?.fidelity ??
 				topics.get(alias)?.fidelity ??
 				secrets.get(alias)?.fidelity ??
@@ -462,7 +540,13 @@ export async function deployInProcess(
 				kv.get(alias)?.fidelity ??
 				buckets.get(alias)?.fidelity ??
 				flags.get(alias)?.fidelity ??
+				rollouts.get(alias)?.fidelity ??
+				experiments.get(alias)?.fidelity ??
 				inProcessFidelity(node.kind, endpoint !== undefined);
+			const fidelity =
+				unavailableDependency && ownFidelity !== "camp-only"
+					? "mocked"
+					: ownFidelity;
 			handles.set(
 				alias,
 				Object.freeze({
@@ -541,6 +625,8 @@ async function closeResources(
 		| "kv"
 		| "buckets"
 		| "flags"
+		| "rollouts"
+		| "experiments"
 	>,
 ): Promise<unknown[]> {
 	const errors: unknown[] = [];
@@ -554,6 +640,8 @@ async function closeResources(
 		kv,
 		buckets,
 		flags,
+		rollouts,
+		experiments,
 	} = resources;
 	for (const alias of order) {
 		const server = servers.get(alias);
@@ -565,7 +653,9 @@ async function closeResources(
 			schedules.get(alias) ??
 			kv.get(alias) ??
 			buckets.get(alias) ??
-			flags.get(alias);
+			flags.get(alias) ??
+			rollouts.get(alias) ??
+			experiments.get(alias);
 		try {
 			if (server?.listening) {
 				await new Promise<void>((resolve, reject) => {

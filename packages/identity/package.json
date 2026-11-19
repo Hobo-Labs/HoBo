@@ -19,6 +19,9 @@
 	"dependencies": {
 		"@hobo/core": "workspace:*"
 	},
+	"devDependencies": {
+		"fast-check": "^4.3.0"
+	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p test/tsconfig.types.json",

@@ -39,10 +39,13 @@ For a target containing several resources, `createTargetPricingInventory`
 describes each resource's provider, account and product, and
 `targetPricingModel` binds every resource to one candidate workload in a joint
 scenario. `quoteTargetPricing` rejects incomplete inventories, missing meters,
-scope mismatches and oversized inputs. It rates the resources together so
-shared credits and commitments are counted once. An unavailable model remains
-explicit through `targetPricingUnavailable`. Inventory completeness and
-developer-supplied usage still need independent verification at admission.
+scope mismatches and oversized inputs. Every baseline workload must match a
+provider, account and product in the target inventory. The joint quote rates
+resources together so shared credits and commitments are counted once. For
+other active agreements it also requires explicit quantities for any selected
+fixed charges. An unavailable model remains explicit through
+`targetPricingUnavailable`. Inventory completeness and developer-supplied
+usage still need independent verification at admission.
 
 Developer-supplied single-offering and whole-target models use
 `pricing-rating/v2`, which orders identifiers by UTF-16 code units instead of

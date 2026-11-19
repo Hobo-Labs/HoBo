@@ -13,7 +13,10 @@ import {
 	type WorkloadDelta,
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard } from "./catalog.js";
-import { hasExplicitFixedChargeCoverage } from "./fixed-charge-coverage.js";
+import {
+	hasExplicitFixedChargeCoverage,
+	hasExplicitUnreferencedFixedCoverage,
+} from "./fixed-charge-coverage.js";
 import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
@@ -483,10 +486,28 @@ export function quoteTargetPricing(
 				"PRICING_MODEL_SCOPE_MISMATCH",
 				"baseline workload does not match its tenant and product agreement",
 			);
+		const resourceMatch = inventory.resources.find(
+			(resource) =>
+				resource.productId === workload.productRef &&
+				resource.providerId === product.providerId &&
+				resource.providerAccountRef === agreement.providerAccountRef,
+		);
+		if (resourceMatch === undefined) {
+			return refuse(
+				"PRICING_MODEL_SCOPE_MISMATCH",
+				"baseline workload must align with target inventory product, provider, and account",
+			);
+		}
 		const dimensions = product.meters.map((meter) => meter.dimension);
 		const measured = new Set(
 			workload.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== workload.usage.length) {
+			return refuse(
+				"TARGET_PRICING_INCOMPLETE",
+				"baseline usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !validName(dimension)) ||
 			new Set(dimensions).size !== dimensions.length ||
@@ -544,6 +565,12 @@ export function quoteTargetPricing(
 		const measured = new Set(
 			candidate.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== candidate.usage.length) {
+			return refuse(
+				"TARGET_PRICING_INCOMPLETE",
+				"candidate usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !validName(dimension)) ||
 			new Set(dimensions).size !== dimensions.length ||
@@ -568,6 +595,19 @@ export function quoteTargetPricing(
 				? "TARGET_PRICING_INCOMPLETE"
 				: quote.code,
 			quote.message,
+		);
+	if (
+		!hasExplicitUnreferencedFixedCoverage(
+			catalog,
+			state.agreements,
+			[...scenario.baseline, ...scenario.candidate],
+			scenario.at,
+			scenario.horizon,
+		)
+	)
+		return refuse(
+			"TARGET_PRICING_INCOMPLETE",
+			"an active agreement is missing a fixed-charge quantity",
 		);
 	if (
 		quote.unpriced.length > 0 ||
