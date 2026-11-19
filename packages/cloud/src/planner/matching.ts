@@ -17,7 +17,6 @@ import {
 } from "./placement.js";
 import { assessCostObjective, classifyPriceQuality } from "./price-quality.js";
 
-
 export interface MatchAccepted {
 	ok: true;
 	decision: MatchDecided;
@@ -186,10 +185,15 @@ export function matchResource(
 
 	const criteria = intent.placement;
 	let survivors = accepted;
-	if (criteria !== undefined) {
+	if (criteria !== undefined || intent.region !== undefined) {
 		survivors = [];
 		for (const candidate of accepted) {
-			const reason = placementRejection(candidate, criteria, context);
+			const reason = placementRejection(
+				candidate,
+				criteria ?? { selectors: [], affinities: [] },
+				context,
+				intent.region,
+			);
 			if (reason === undefined) survivors.push(candidate);
 			else rejectedCandidates.push({ definitionId: candidate.id, reason });
 		}

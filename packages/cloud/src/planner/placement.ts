@@ -6,7 +6,6 @@ import type {
 } from "../plan-types.js";
 import type { ResourceDefinition } from "../registry/catalog.js";
 
-
 export interface DecidedPlacement {
 	resource: string;
 	port: string;
@@ -16,6 +15,11 @@ export interface DecidedPlacement {
 
 export interface PlacementContext {
 	placements: DecidedPlacement[];
+}
+
+interface EligibleRegions {
+	regions: string[];
+	rejection?: string;
 }
 
 export function emptyPlacementContext(): PlacementContext {
@@ -145,16 +149,76 @@ export function placementRejection(
 	def: ResourceDefinition,
 	criteria: PlacementCriteria,
 	context: PlacementContext,
+	region?: string,
 ): string | undefined {
+	return eligibleRegions(def, criteria, context, region).rejection;
+}
+
+function eligibleRegions(
+	def: ResourceDefinition,
+	criteria: PlacementCriteria,
+	context: PlacementContext,
+	requestedRegion?: string,
+): EligibleRegions {
+	let regions = [...def.regions].sort();
+	if (requestedRegion !== undefined) {
+		if (!regions.includes(requestedRegion)) {
+			return {
+				regions: [],
+				rejection: `placement: requested region ${requestedRegion} is not advertised by ${def.id}`,
+			};
+		}
+		regions = [requestedRegion];
+	}
 	for (const selector of criteria.selectors) {
-		const reason = selectorRejection(def, selector);
-		if (reason !== undefined) return reason;
+		if (selector.key !== "region") {
+			const reason = selectorRejection(def, selector);
+			if (reason !== undefined) return { regions: [], rejection: reason };
+			continue;
+		}
+		const candidates = regions.filter(
+			(region) =>
+				selectorRejection({ ...def, regions: [region] }, selector) ===
+				undefined,
+		);
+		if (candidates.length === 0) {
+			return {
+				regions: [],
+				rejection:
+					selectorRejection({ ...def, regions }, selector) ??
+					`placement: selector region ${selector.op} [${selector.values.join(", ")}] leaves no eligible region`,
+			};
+		}
+		regions = candidates;
 	}
 	for (const rule of criteria.affinities) {
-		const reason = affinityRejection(def, rule, context);
-		if (reason !== undefined) return reason;
+		if (rule.scope !== "region") {
+			const reason = affinityRejection(def, rule, context);
+			if (reason !== undefined) return { regions: [], rejection: reason };
+			continue;
+		}
+		const targetRegions = new Set(
+			targetsOf(rule, context)
+				.map((target) => target.region)
+				.filter((region) => region !== ""),
+		);
+		if (targetRegions.size === 0) continue;
+		const candidates = regions.filter((region) =>
+			rule.mode === "affinity"
+				? targetRegions.has(region)
+				: !targetRegions.has(region),
+		);
+		if (candidates.length === 0) {
+			return {
+				regions: [],
+				rejection:
+					affinityRejection({ ...def, regions }, rule, context) ??
+					`placement: ${rule.mode} to class ${rule.targetPort} leaves no eligible region`,
+			};
+		}
+		regions = candidates;
 	}
-	return undefined;
+	return { regions };
 }
 
 export function spreadSurvivors(
@@ -178,29 +242,15 @@ export function pickPlacementRegion(
 	def: ResourceDefinition,
 	context: PlacementContext,
 ): string {
-	if (intent.region) return intent.region;
-	let regions = [...def.regions].sort();
 	const criteria = intent.placement;
-	if (criteria === undefined) return regions[0] ?? "";
+	let { regions } = eligibleRegions(
+		def,
+		criteria ?? { selectors: [], affinities: [] },
+		context,
+		intent.region,
+	);
 
-	for (const rule of criteria.affinities) {
-		if (rule.scope !== "region") continue;
-		const targetRegions = new Set(
-			targetsOf(rule, context)
-				.map((t) => t.region)
-				.filter((r) => r !== ""),
-		);
-		if (targetRegions.size === 0) continue;
-		if (rule.mode === "affinity") {
-			const kept = regions.filter((region) => targetRegions.has(region));
-			if (kept.length > 0) regions = kept;
-		} else {
-			const kept = regions.filter((region) => !targetRegions.has(region));
-			if (kept.length > 0) regions = kept;
-		}
-	}
-
-	if (criteria.spread?.dimension === "region" && regions.length > 1) {
+	if (criteria?.spread?.dimension === "region" && regions.length > 1) {
 		const usage = (region: string): number =>
 			context.placements.filter(
 				(p) => p.port === intent.port && p.region === region,

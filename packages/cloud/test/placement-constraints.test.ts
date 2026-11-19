@@ -577,14 +577,14 @@ describe("spreadSurvivors", () => {
 describe("pickPlacementRegion", () => {
 	const def = definition({ regions: ["us-east", "eu-west", "ap-south"] });
 
-	test("an explicit region on the intent wins over everything", () => {
+	test("an explicit region cannot violate anti-affinity", () => {
 		const pinned = intent({
 			region: "ap-south",
 			placement: criteria({ affinities: [rule("anti-affinity", "region")] }),
 		} as Partial<ResourceIntent>);
 		expect(
 			pickPlacementRegion(pinned, def, context(placed("p", "ap-south"))),
-		).toBe("ap-south");
+		).toBe("");
 	});
 
 	test("with no criteria it picks the lexicographically smallest region", () => {
@@ -622,16 +622,16 @@ describe("pickPlacementRegion", () => {
 		).toBe("eu-west");
 	});
 
-	test("an affinity that would empty the set is declined rather than applied", () => {
+	test("an affinity that eliminates every region yields no region", () => {
 		const withAffinity = intent({
 			placement: criteria({ affinities: [rule("affinity", "region")] }),
 		} as Partial<ResourceIntent>);
 		expect(
 			pickPlacementRegion(withAffinity, def, context(placed("p", "sa-east"))),
-		).toBe("ap-south");
+		).toBe("");
 	});
 
-	test("an anti-affinity that would empty the set is declined too", () => {
+	test("an anti-affinity that eliminates every region yields no region", () => {
 		const single = definition({ regions: ["us-east"] });
 
 		const withAnti = intent({
@@ -639,7 +639,7 @@ describe("pickPlacementRegion", () => {
 		} as Partial<ResourceIntent>);
 		expect(
 			pickPlacementRegion(withAnti, single, context(placed("p", "us-east"))),
-		).toBe("us-east");
+		).toBe("");
 	});
 
 	test("yard-scope rules do not influence the region choice", () => {
