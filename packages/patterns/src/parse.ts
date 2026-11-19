@@ -1,4 +1,4 @@
-import { create } from "@bufbuild/protobuf";
+import { create, fromJson } from "@bufbuild/protobuf";
 
 import {
 	EffectKind,
@@ -122,20 +122,6 @@ function strings<T>(value: T): string[] {
 		throw new PatternParseError("expected a string array");
 	}
 	return value;
-}
-
-function csv<T>(value: T): string[] {
-	if (value === undefined || value === "") return [];
-	if (isJsonString(value)) {
-		return value
-			.split(",")
-			.map((item) => item.trim())
-			.filter(Boolean);
-	}
-	return strings(value)
-		.flatMap((item) => item.split(","))
-		.map((item) => item.trim())
-		.filter(Boolean);
 }
 
 function parseParameter<T>(raw: T): PatternParameter {
@@ -282,29 +268,19 @@ export function parsePatternQuery<T>(input: T): PatternSearchRequest {
 	if (!isJsonObject(input)) {
 		throw new PatternParseError("query must be a string or object");
 	}
-	const rec = input;
-	const topKRaw = rec.topK ?? rec.maxResults;
-	const topK = isJsonNumber(topKRaw)
-		? topKRaw
-		: isJsonString(topKRaw)
-			? Number(topKRaw)
-			: 8;
-	const kinds = csv(rec.kind ?? rec.kinds);
-	const maturities = csv(rec.maturity ?? rec.maturities);
-	return create(PatternSearchRequestSchema, {
-		query: optStr(rec.query),
-		exactId: optStr(rec.id ?? rec.exactId),
-		maxResults: Number.isFinite(topK) && topK > 0 ? topK : 8,
-		allowDense: rec.allowDense === true,
-		autoSelect: rec.autoSelect === true,
-		allowComposition: rec.compose === true,
-		languageFilter: optStr(rec.language),
-		contextFilter: optStr(rec.context),
-		kindFilter: kinds.map((item) => lookup(KIND, item, "kind")),
-		maturityFilter: maturities.map((item) =>
-			lookup(MATURITY, item, "maturity"),
-		),
-	});
+	let request: PatternSearchRequest;
+	try {
+		request = fromJson(PatternSearchRequestSchema, input);
+	} catch (cause) {
+		throw new PatternParseError(
+			cause instanceof Error ? cause.message : "invalid search request",
+		);
+	}
+	if (input.maxResults === undefined && input.max_results === undefined)
+		request.maxResults = 8;
+	else if (request.maxResults === 0)
+		throw new PatternParseError("maxResults must be greater than zero");
+	return request;
 }
 
 export type ParsedRenderRequest = {

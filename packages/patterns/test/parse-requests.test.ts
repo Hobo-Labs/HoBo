@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+	PatternKind,
+	PatternMaturity,
+	RenderingKind,
+} from "../src/_generated/patterns_pb.js";
 
 import {
 	canonicalJson,
@@ -20,112 +25,72 @@ function messageOf(thunk: () => void): string {
 }
 
 describe("parsePatternQuery", () => {
-	it("accepts a bare string as the query", () => {
+	it("accepts a string query", () => {
 		const query = parsePatternQuery("event store");
 		expect(query.query).toBe("event store");
 		expect(query.maxResults).toBe(8);
 	});
 
-	it("refuses a non-object, non-string input", () => {
-		for (const bad of [null, undefined, 7, true, []]) {
-			if (Array.isArray(bad)) continue;
-			expect(messageOf(() => parsePatternQuery(bad))).toBe(
+	it("refuses values that are neither strings nor objects", () => {
+		for (const value of [null, undefined, 7, true, []]) {
+			expect(messageOf(() => parsePatternQuery(value))).toBe(
 				"query must be a string or object",
 			);
 		}
 	});
 
-	it("refuses an array as a query object", () => {
-		expect(messageOf(() => parsePatternQuery([]))).toBe(
-			"query must be a string or object",
-		);
-	});
-
-	it("defaults maxResults to 8 and accepts either spelling", () => {
-		expect(parsePatternQuery({ topK: 3 }).maxResults).toBe(3);
-		expect(parsePatternQuery({ maxResults: 4 }).maxResults).toBe(4);
+	it("defaults maxResults and accepts a positive result limit", () => {
 		expect(parsePatternQuery({}).maxResults).toBe(8);
+		expect(parsePatternQuery({ maxResults: 4 }).maxResults).toBe(4);
 	});
 
-	it("prefers topK when both spellings are present", () => {
-		expect(parsePatternQuery({ topK: 3, maxResults: 9 }).maxResults).toBe(3);
-	});
-
-	it("accepts a numeric string for topK", () => {
-		expect(parsePatternQuery({ topK: "5" }).maxResults).toBe(5);
-	});
-
-	it("falls back to 8 for a topK that is not a usable positive number", () => {
-		for (const bad of [0, -1, "abc", Number.NaN, null, {}, true]) {
-			expect(parsePatternQuery({ topK: bad }).maxResults).toBe(8);
+	it("rejects invalid result limits", () => {
+		for (const value of [0, -1, 2.5, "abc", Number.NaN, null, {}, true]) {
+			expect(() => parsePatternQuery({ maxResults: value })).toThrow(
+				PatternParseError,
+			);
 		}
 	});
 
-	it("keeps a fractional topK as given", () => {
-		expect(parsePatternQuery({ topK: 2.5 }).maxResults).toBe(2.5);
-	});
-
-	it("accepts either spelling of the exact id", () => {
-		expect(parsePatternQuery({ id: "a.b" }).exactId).toBe("a.b");
-		expect(parsePatternQuery({ exactId: "a.b" }).exactId).toBe("a.b");
-		expect(parsePatternQuery({ id: "first", exactId: "second" }).exactId).toBe(
-			"first",
-		);
-	});
-
-	it("requires the boolean flags to be exactly true", () => {
-		for (const value of ["true", 1, {}, []]) {
-			const query = parsePatternQuery({
-				allowDense: value,
-				autoSelect: value,
-				compose: value,
-			});
-			expect(query.allowDense).toBe(false);
-			expect(query.autoSelect).toBe(false);
-			expect(query.allowComposition).toBe(false);
-		}
-		const enabled = parsePatternQuery({
+	it("parses the current search request fields", () => {
+		const query = parsePatternQuery({
+			query: "event store",
+			exactId: "bindle.named",
+			maxResults: 4,
+			languageFilter: "ts",
+			contextFilter: "new-file",
+			kindFilter: ["PATTERN_KIND_STARTER"],
+			maturityFilter: ["PATTERN_MATURITY_STABLE"],
+			renderingFilter: "RENDERING_KIND_PROJECT",
 			allowDense: true,
 			autoSelect: true,
-			compose: true,
+			allowComposition: true,
 		});
-		expect(enabled.allowDense).toBe(true);
-		expect(enabled.autoSelect).toBe(true);
-		expect(enabled.allowComposition).toBe(true);
+		expect(query).toMatchObject({
+			query: "event store",
+			exactId: "bindle.named",
+			maxResults: 4,
+			languageFilter: "ts",
+			contextFilter: "new-file",
+			kindFilter: [PatternKind.STARTER],
+			maturityFilter: [PatternMaturity.STABLE],
+			renderingFilter: RenderingKind.PROJECT,
+			allowDense: true,
+			autoSelect: true,
+			allowComposition: true,
+		});
 	});
 
-	it("treats a non-string language or context filter as absent", () => {
-		expect(parsePatternQuery({ language: 7 }).languageFilter).toBe("");
-		expect(parsePatternQuery({ context: null }).contextFilter).toBe("");
-		expect(parsePatternQuery({ language: "ts" }).languageFilter).toBe("ts");
-	});
-
-	it("accepts kind and maturity filters in either spelling", () => {
-		expect(parsePatternQuery({ kind: "starter" }).kindFilter).toHaveLength(1);
-		expect(parsePatternQuery({ kinds: "starter" }).kindFilter).toHaveLength(1);
-		expect(
-			parsePatternQuery({ maturity: "stable" }).maturityFilter,
-		).toHaveLength(1);
-	});
-
-	it("splits a comma-separated filter list", () => {
-		expect(
-			parsePatternQuery({ kind: "starter,guidance" }).kindFilter,
-		).toHaveLength(2);
-	});
-
-	it("refuses an unrecognised kind or maturity, naming the value", () => {
-		expect(messageOf(() => parsePatternQuery({ kind: "nope" }))).toContain(
-			'kind has unknown value "nope"',
+	it("rejects invalid filters and flag types", () => {
+		expect(() => parsePatternQuery({ kindFilter: ["unknown"] })).toThrow(
+			PatternParseError,
 		);
-		expect(messageOf(() => parsePatternQuery({ maturity: "nope" }))).toContain(
-			"maturity has unknown value",
+		expect(() => parsePatternQuery({ maturityFilter: ["unknown"] })).toThrow(
+			PatternParseError,
 		);
-	});
-
-	it("treats an empty filter string as no filter", () => {
-		expect(parsePatternQuery({ kind: "" }).kindFilter).toEqual([]);
-		expect(parsePatternQuery({}).kindFilter).toEqual([]);
+		expect(() => parsePatternQuery({ autoSelect: "true" })).toThrow(
+			PatternParseError,
+		);
 	});
 });
 
