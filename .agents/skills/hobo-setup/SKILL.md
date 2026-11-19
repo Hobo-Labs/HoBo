@@ -26,6 +26,10 @@ and HoBo keep settings, identifiers, connection references, and credentials in
 a private temporary session and exclude them from agent-visible calls, results,
 traces, and diagnostics. Do not ask for these values in chat or put them in
 commands or the repository. The owner's store choice is theirs alone.
+After verifying that private channel, invoke HoBo's `choose_secret_store`
+without passing store settings or credentials in its arguments, and follow
+its owner-facing steps. If the tool reports setup unavailable, do not claim a
+store session was established.
 
 If the host or HoBo cannot provide that private flow, report which capability
 is missing. Continue safe implementation and verification authorized by the
