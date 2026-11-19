@@ -167,7 +167,12 @@ function listStepOutcomeIndices(
 }
 
 function isBoundedStepIndex(index: number): boolean {
-	return Number.isSafeInteger(index) && index >= 0 && index <= 1_000_000;
+	return (
+		Number.isSafeInteger(index) &&
+		index >= 0 &&
+		index <= 1_000_000 &&
+		!Object.is(index, -0)
+	);
 }
 
 function assertContiguousStepJournal(
@@ -182,36 +187,13 @@ function assertContiguousStepJournal(
 		}
 		if (index > maxOutcome) maxOutcome = index;
 	}
-	const open: number[] = [];
 	for (const index of scheduledSteps.keys()) {
 		if (!isBoundedStepIndex(index)) {
 			throw new Error(`invalid step journal for ${runId}`);
 		}
-		if (!outcomeIndices.has(index)) open.push(index);
 	}
-	if (open.length > 1) {
-		throw new Error(`invalid step journal for ${runId}`);
-	}
-	let tip = maxOutcome + 1;
-	if (open.length === 1) {
-		const openTip = open[0];
-		if (openTip === undefined) {
-			throw new Error(`invalid step journal for ${runId}`);
-		}
-		tip = openTip;
-	}
-	for (let index = 0; index < tip; index += 1) {
-		if (!outcomeIndices.has(index)) {
-			throw new Error(`gapped step journal for ${runId}`);
-		}
-	}
-	for (const index of scheduledSteps.keys()) {
-		if (index > tip) {
-			throw new Error(`invalid step journal for ${runId}`);
-		}
-	}
-	for (const index of outcomeIndices) {
-		if (index >= tip) {
+	for (let index = 0; index < maxOutcome; index += 1) {
+		if (!outcomeIndices.has(index) && !scheduledSteps.has(index)) {
 			throw new Error(`gapped step journal for ${runId}`);
 		}
 	}
@@ -267,10 +249,9 @@ export function createWorkflowEngine(
 			if (previous !== undefined && previous !== fact.name) {
 				throw new Error(`step name differs from journal for ${runId}`);
 			}
-			if (previous !== undefined) {
-				throw new Error(`duplicate run.StepScheduled for ${runId}`);
+			if (previous === undefined) {
+				scheduledSteps.set(fact.index, fact.name);
 			}
-			scheduledSteps.set(fact.index, fact.name);
 		}
 		const stepOutcomeCounts = new Map<
 			string,
@@ -325,10 +306,21 @@ export function createWorkflowEngine(
 		const journaledOutcomeIndices = listStepOutcomeIndices(journal);
 		const unconsumedOutcomes = new Set(journaledOutcomeIndices);
 		assertContiguousStepJournal(runId, scheduledSteps, unconsumedOutcomes);
-		const sleepFacts: ParsedRunSleepScheduled[] = [];
+		const sleepFacts = new Map<number, ParsedRunSleepScheduled>();
 		for (const event of journal) {
 			if (event.type !== "run.SleepScheduled") continue;
-			sleepFacts.push(parseRunSleepScheduledFact(event.data));
+			const fact = parseRunSleepScheduledFact(event.data);
+			const previous = sleepFacts.get(fact.index);
+			if (previous !== undefined) {
+				if (
+					previous.delayMs !== fact.delayMs ||
+					previous.label !== fact.label
+				) {
+					throw new Error(`invalid run.SleepScheduled for ${runId}`);
+				}
+				continue;
+			}
+			sleepFacts.set(fact.index, fact);
 		}
 		const terminals = journal.filter(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
@@ -456,6 +448,9 @@ export function createWorkflowEngine(
 				assertReplayConsistent();
 				const index = stepIndex;
 				stepIndex += 1;
+				if (!isBoundedStepIndex(index)) {
+					rejectReplay(`invalid step journal for ${runId}`);
+				}
 				const scheduled = scheduledSteps.get(index);
 				if (scheduled !== undefined && scheduled !== name) {
 					rejectStepName();
@@ -507,26 +502,33 @@ export function createWorkflowEngine(
 				assertReplayConsistent();
 				const index = sleepIndex;
 				sleepIndex += 1;
-				const scheduled = sleepFacts.find((fact) => fact.index === index);
+				if (!isBoundedStepIndex(index)) {
+					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+				}
+				const normalizedDurationMs = Object.is(durationMs, -0) ? 0 : durationMs;
+				const scheduled = sleepFacts.get(index);
 				if (scheduled) {
-					if (scheduled.delayMs !== durationMs) {
+					if (
+						scheduled.delayMs !== normalizedDurationMs ||
+						scheduled.label !== sleepOptions?.label
+					) {
 						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
 					}
 					return;
 				}
-				const data: JsonBag = { delayMs: durationMs, index };
+				const data: JsonBag = { delayMs: normalizedDurationMs, index };
 				if (sleepOptions?.label !== undefined) {
 					data.label = sleepOptions.label;
 				}
 				await appendEvent("run.SleepScheduled", data);
 				const recorded: ParsedRunSleepScheduled = {
-					delayMs: durationMs,
+					delayMs: normalizedDurationMs,
 					index,
 				};
 				if (sleepOptions?.label !== undefined) {
 					recorded.label = sleepOptions.label;
 				}
-				sleepFacts.push(recorded);
+				sleepFacts.set(index, recorded);
 			},
 			async emit(type, data) {
 				assertReplayConsistent();

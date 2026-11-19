@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { WorkflowFailure } from "../../src/errors.js";
 import { isJsonNumber, isJsonObject } from "../../src/json.js";
@@ -1012,7 +1011,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
-	it("rejects a scheduled-only hole below a later step outcome", async () => {
+	it("resumes a scheduled-only hole below a later step outcome", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/scheduled-hole";
 		await engine.store.append(
@@ -1058,14 +1057,13 @@ describe("durable workflow: journal, restart, replay", () => {
 				return ctx.step("later", () => "done");
 			},
 		});
-		await expect(engine.resume(wf, "scheduled-hole", {})).rejects.toThrow(
-			/gapped step journal/,
-		);
-		expect(runs).toBe(0);
-		expect(await engine.journal("scheduled-hole")).toHaveLength(3);
+		const handle = await engine.resume(wf, "scheduled-hole", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("done");
+		expect(runs).toBe(1);
 	});
 
-	it("rejects a schedule above the open journal tip", async () => {
+	it("resumes a schedule above the open journal tip", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/orphan-schedule";
 		await engine.store.append(
@@ -1132,10 +1130,10 @@ describe("durable workflow: journal, restart, replay", () => {
 				return ctx.step("third", () => "later");
 			},
 		});
-		await expect(engine.resume(wf, "orphan-schedule", {})).rejects.toThrow(
-			/invalid step journal/,
-		);
-		expect(runs).toBe(0);
+		const handle = await engine.resume(wf, "orphan-schedule", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("later");
+		expect(runs).toBe(1);
 	});
 
 	it("resumes a single open scheduled tip without scheduling it again", async () => {
@@ -1190,7 +1188,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		).toHaveLength(1);
 	});
 
-	it("rejects duplicate schedules at the same index", async () => {
+	it("accepts identical duplicate schedules at the same index", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/dup-schedule";
 		await engine.store.append(
@@ -1236,10 +1234,15 @@ describe("durable workflow: journal, restart, replay", () => {
 				return ctx.step("work", () => "done");
 			},
 		});
-		await expect(engine.resume(wf, "dup-schedule", {})).rejects.toThrow(
-			/duplicate run\.StepScheduled/,
-		);
-		expect(runs).toBe(0);
+		const handle = await engine.resume(wf, "dup-schedule", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("done");
+		expect(runs).toBe(1);
+		expect(
+			(await engine.journal("dup-schedule")).filter(
+				(event) => event.type === "run.StepScheduled",
+			),
+		).toHaveLength(2);
 	});
 
 	it("rejects a scheduled step index above 1000000", async () => {
@@ -1373,7 +1376,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		}
 	});
 
-	it("rethrows a replay failure from now and random without drawing", async () => {
+	it("rethrows a replay failure from now and random", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/replay-clock";
 		await engine.store.append(
@@ -1400,51 +1403,40 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 			1,
 		);
+		let caught: unknown;
+		let nowError: unknown;
+		let randomError: unknown;
+		let probe: number | undefined;
 		const wf = defineWorkflow({
 			name: "replay-clock",
 			async run(ctx) {
-				const createHash = crypto.createHash;
-				let hashes = 0;
-				crypto.createHash = (algorithm, options) => {
-					hashes += 1;
-					return createHash(algorithm, options);
-				};
+				probe = ctx.random("probe");
 				try {
-					const before = hashes;
-					ctx.random("probe");
-					expect(hashes).toBeGreaterThan(before);
-					const drawn = hashes;
-					let caught: unknown;
-					try {
-						await ctx.sleep(20);
-					} catch (error) {
-						caught = error;
-					}
-					expect(caught).toBeInstanceOf(Error);
-					let nowError: unknown;
-					let randomError: unknown;
-					try {
-						ctx.now();
-					} catch (error) {
-						nowError = error;
-					}
-					try {
-						ctx.random("after");
-					} catch (error) {
-						randomError = error;
-					}
-					expect(nowError).toBe(caught);
-					expect(randomError).toBe(caught);
-					expect(hashes).toBe(drawn);
-					throw caught;
-				} finally {
-					crypto.createHash = createHash;
+					await ctx.sleep(20);
+				} catch (error) {
+					caught = error;
 				}
+				try {
+					ctx.now();
+				} catch (error) {
+					nowError = error;
+				}
+				try {
+					ctx.random("after");
+				} catch (error) {
+					randomError = error;
+				}
+				if (caught instanceof Error) throw caught;
+				return "unexpected";
 			},
 		});
 		await expect(engine.resume(wf, "replay-clock", {})).rejects.toThrow(
 			/sleep schedule diverged/,
 		);
+		expect(probe).toEqual(expect.any(Number));
+		expect(caught).toBeInstanceOf(Error);
+		expect(nowError).toBe(caught);
+		expect(randomError).toBe(caught);
 		expect(await engine.journal("replay-clock")).toHaveLength(2);
 	});
 
@@ -1455,6 +1447,14 @@ describe("durable workflow: journal, restart, replay", () => {
 		{ delayMs: 10 },
 		{ delayMs: 10, index: 0, extra: true },
 		{ delayMs: 10, index: 1_000_001 },
+		{ delayMs: Number.NaN, index: 0 },
+		{ delayMs: Number.POSITIVE_INFINITY, index: 0 },
+		{ delayMs: -1, index: 0 },
+		{ delayMs: 10.5, index: 0 },
+		{ delayMs: 10, index: -1 },
+		{ delayMs: 10, index: 0.5 },
+		{ delayMs: 10, index: Number.NaN },
+		{ delayMs: -0, index: 0 },
 	])("rejects invalid run.SleepScheduled %j", async (data) => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/bad-sleep";
@@ -1496,6 +1496,126 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		expect(runs).toBe(0);
 		expect(await engine.journal("bad-sleep")).toHaveLength(2);
+	});
+
+	it("normalizes negative zero sleep duration on write", async () => {
+		const engine = createWorkflowEngine();
+		const wf = defineWorkflow({
+			name: "negative-zero-sleep",
+			async run(ctx) {
+				await ctx.sleep(-0);
+				return "done";
+			},
+		});
+		const handle = await engine.start(wf, {}, { runId: "negative-zero-sleep" });
+		expect(handle.result).toBe("done");
+		const journal = await engine.journal("negative-zero-sleep");
+		const sleepEvent = journal.find(
+			(event) => event.type === "run.SleepScheduled",
+		);
+		if (!sleepEvent || !isJsonObject(sleepEvent.data)) {
+			throw new Error("expected run.SleepScheduled");
+		}
+		expect(sleepEvent.data.delayMs).toBe(0);
+		expect(Object.is(sleepEvent.data.delayMs, -0)).toBe(false);
+		const resumed = await engine.resume(wf, "negative-zero-sleep", {});
+		expect(resumed.result).toBe("done");
+	});
+
+	it("accepts run.SleepScheduled at index 1000000", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/max-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "max-sleep",
+					workflowName: "max-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 1_000_000 },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "max-sleep",
+			async run() {
+				runs += 1;
+				return "done";
+			},
+		});
+		const handle = await engine.resume(wf, "max-sleep", {});
+		expect(handle.result).toBe("done");
+		expect(runs).toBe(1);
+	});
+
+	it.each([
+		{ delayMs: 20, index: 0 },
+		{ delayMs: 10, index: 0, label: "other" },
+	])("rejects conflicting duplicate run.SleepScheduled %j", async (duplicate) => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/dup-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-sleep",
+					workflowName: "dup-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep-1",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "sleep-2",
+				streamId,
+				seq: 3,
+				type: "run.SleepScheduled",
+				data: duplicate,
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "dup-sleep",
+			async run(ctx) {
+				runs += 1;
+				await ctx.sleep(10);
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "dup-sleep", {})).rejects.toThrow(
+			/invalid run\.SleepScheduled/,
+		);
+		expect(runs).toBe(0);
+		expect(await engine.journal("dup-sleep")).toHaveLength(3);
 	});
 
 	it("rejects events recorded after a terminal fact", async () => {

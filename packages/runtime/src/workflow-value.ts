@@ -16,15 +16,29 @@ function isStoredJsonValue(value: JsonValue): boolean {
 	if (isJsonNumber(value))
 		return Number.isFinite(value) && !Object.is(value, -0);
 	if (isJsonArray(value)) {
-		if (Object.getOwnPropertyNames(value).length !== value.length + 1)
-			return false;
+		if (Object.getOwnPropertySymbols(value).length !== 0) return false;
+		const names = Object.getOwnPropertyNames(value);
+		if (names.length !== value.length + 1) return false;
+		for (const name of names) {
+			if (name === "length") continue;
+			const index = Number(name);
+			if (
+				!Number.isSafeInteger(index) ||
+				index < 0 ||
+				index >= value.length ||
+				String(index) !== name
+			)
+				return false;
+		}
 		for (let index = 0; index < value.length; index += 1) {
+			if (!Object.hasOwn(value, String(index))) return false;
 			const entry = value[index];
 			if (entry === undefined || !isStoredJsonValue(entry)) return false;
 		}
 		return true;
 	}
 	if (isJsonObject(value)) {
+		if (Object.getOwnPropertySymbols(value).length !== 0) return false;
 		return Object.keys(value).every((key) => {
 			const entry = value[key];
 			return entry !== undefined && isStoredJsonValue(entry);
@@ -138,7 +152,8 @@ export function parseRunSleepScheduledFact(
 	if (
 		!("delayMs" in data) ||
 		!isJsonNumber(data.delayMs) ||
-		!Number.isFinite(data.delayMs) ||
+		!Number.isSafeInteger(data.delayMs) ||
+		data.delayMs < 0 ||
 		Object.is(data.delayMs, -0)
 	)
 		throw new TypeError("invalid run.SleepScheduled");
@@ -163,11 +178,7 @@ export function parseRunStepFailedFact(data: JsonValue): ParsedRunStepFailed {
 		if (!allowed.has(key)) throw new TypeError("invalid run.StepFailed");
 	}
 	if (!isJsonString(data.name)) throw new TypeError("invalid run.StepFailed");
-	if (
-		!isJsonNumber(data.index) ||
-		!Number.isInteger(data.index) ||
-		data.index < 0
-	)
+	if (!isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.StepFailed");
 	if (!isJsonString(data.message))
 		throw new TypeError("invalid run.StepFailed");
@@ -202,11 +213,7 @@ export function parseRunStepCompletedFact(
 	}
 	if (!isJsonString(data.name))
 		throw new TypeError("invalid run.StepCompleted");
-	if (
-		!isJsonNumber(data.index) ||
-		!Number.isInteger(data.index) ||
-		data.index < 0
-	)
+	if (!isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.StepCompleted");
 	const parsed: ParsedRunStepCompleted = {
 		name: data.name,
