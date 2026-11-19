@@ -251,7 +251,7 @@ Vendored Oxlint rules in [`../tools/oxlint/anti-slop/`](../tools/oxlint/anti-slo
 
 The **repo** skill is mirrored in `.agents/skills/repo` and `.claude/skills/repo`. Use it for setup, cleanup, search, implementation iteration, validation, commits, PRs, deployment, and final handoff. It encodes the repo's performance-first loop: search before validate, validate changed scope before package scope, validate package scope before repo scope, use fast approximate tools first, and leave exact or slow compatibility tools for final proof. Search defaults to local hybrid retrieval: OKF `index.md` files, `tgrep` when available, `rg`, `fd`, `ast-grep`, `git grep`, and memory or semantic tooling only after exact or structural search narrows the target. It does not use Google ingestion or query products by default; LlamaIndex Index v2 is documented as an optional beta/cloud path, not the default.
 
-The **draft** skill is mirrored in `.agents/skills/draft` and `.claude/skills/draft`. Use it when creating, moving, or reviewing draft proof material under `src/draft/<kind>/<slug>`, including technical proofs, experience proofs, epic proofs, and project MVP rollups.
+The **draft** skill is mirrored in `.agents/skills/draft` and `.claude/skills/draft`. Use it to finish behavior in existing draft material, update its consumers, and retire obsolete proofs under `src/draft/<kind>/<slug>`.
 
 The **sdlc** skill coordinates implementation, validation, incremental commits, and stacked pull requests. It does not create planning state or design documents.
 
