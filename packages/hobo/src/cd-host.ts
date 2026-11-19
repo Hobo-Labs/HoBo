@@ -30,6 +30,7 @@ export function cdJson(status: number, value: unknown): FeedResponse {
 
 export type CdReadiness = "service" | "composed";
 
+// public-contract: shared subscription lease id every Vercel CD instance claims; deployed holders coordinate on this exact value.
 export const FLEET_PASS_SUBSCRIPTION = "cd:vercel:fleet-pass";
 export const DEFAULT_PASS_DEADLINE_MS = 240_000;
 
