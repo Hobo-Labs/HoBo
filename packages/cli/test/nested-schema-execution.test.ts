@@ -10,8 +10,6 @@ import {
 } from "../src/codegen/schema.js";
 import type { JsonValue } from "../src/json.js";
 
-// Generated code imported in-process registers trainables in the shared
-// registry; with files sharing a worker (isolate: false), clear it after each test.
 afterEach(() => {
 	resetTrainables();
 });
@@ -33,7 +31,6 @@ async function emittedValidator(): Promise<Validator> {
 		reportDiagnostics: true,
 	});
 	expect(result.diagnostics).toEqual([]);
-	// SAFETY: the imported module is the compiler output of our executable validator source.
 	return (await import(
 		`data:text/javascript;base64,${Buffer.from(result.outputText).toString("base64")}`
 	)) as Validator;
