@@ -101,6 +101,26 @@ function names(args: string[], filter: string): string[] {
 		.filter(Boolean);
 }
 
+function addedLineCounts(args: string[]): Map<string, number> {
+	const entries = git([
+		...args,
+		"--no-renames",
+		"--numstat",
+		"-z",
+		"--",
+	]).split("\0");
+	const counts = new Map<string, number>();
+	for (const entry of entries) {
+		const firstTab = entry.indexOf("\t");
+		const secondTab = entry.indexOf("\t", firstTab + 1);
+		if (firstTab < 0 || secondTab < 0) continue;
+		const added = entry.slice(0, firstTab);
+		if (/^\d+$/u.test(added))
+			counts.set(entry.slice(secondTab + 1), Number(added));
+	}
+	return counts;
+}
+
 function renameSources(args: string[]): Map<string, string> {
 	const entries = git([
 		...args,
@@ -351,6 +371,9 @@ export function documentViolation(
 export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
+	const untrackedSet = new Set(untracked);
+	const modified = new Set(names(args, "M"));
+	const addedCounts = addedLineCounts(args);
 	const renamed = renameSources(args);
 	const parents = mergeParentDiffs(mode).map((parentArgs) => ({
 		args: parentArgs,
@@ -361,8 +384,10 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 	const violations: Violation[] = [];
 	for (const file of files) {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
+		const deletionOnly = !untrackedSet.has(file) && addedCounts.get(file) === 0;
 		if (
 			/\.mdx?$/iu.test(file) &&
+			!(deletionOnly && modified.has(file)) &&
 			parents.every((parent) => parent.files.has(file))
 		) {
 			const reason = documentViolation(file, contents(mode, file));
@@ -375,9 +400,10 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			!OTHER_LANGUAGES.has(extension)
 		)
 			continue;
+		if (deletionOnly) continue;
 		const text = contents(mode, file);
 		const source = renamed.get(file);
-		const added = untracked.includes(file)
+		const added = untrackedSet.has(file)
 			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
 			: addedLineNumbers(
 					git([
