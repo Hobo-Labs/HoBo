@@ -1,5 +1,4 @@
 import { create } from "@bufbuild/protobuf";
-import { EVENTSTORE_LIMITS, parseDurableEffect } from "@hobo/core";
 import type {
 	AppendOptions,
 	DurableEffectInput,
@@ -11,6 +10,7 @@ import type {
 	PrincipalRef,
 	QuarantineRecord,
 } from "@hobo/core";
+import { EVENTSTORE_LIMITS, parseDurableEffect } from "@hobo/core";
 
 import { AggregateQuarantinedEventDataSchema } from "./_generated/data_pb.js";
 import type { ActorHost } from "./actor-host.js";
@@ -29,7 +29,12 @@ import {
 	createActorStateAppendedEvent,
 	type DataFact,
 } from "./events.js";
-import { AGGREGATE_QUARANTINE_EVENT, type Evolve, foldEvents } from "./fold.js";
+import {
+	AGGREGATE_QUARANTINE_EVENT,
+	type Evolve,
+	type FoldFailureClassifier,
+	foldEvents,
+} from "./fold.js";
 import {
 	hasFunctionTag,
 	type Inspectable,
@@ -59,6 +64,7 @@ export interface AggregateDefinition<S, C> {
 	evolve: Evolve<S>;
 	decide: Decide<S, C>;
 	upcasters?: UpcasterRegistry;
+	classifyFailure?: FoldFailureClassifier;
 }
 
 export interface CommandContext {
@@ -134,6 +140,9 @@ export function defineAggregate<S, C>(
 		initialState: definition.initialState,
 		evolve: definition.evolve,
 		upcasters: definition.upcasters,
+		...(definition.classifyFailure === undefined
+			? undefined
+			: { classifyFailure: definition.classifyFailure }),
 	};
 
 	async function load(store: EventStore, streamId: string) {

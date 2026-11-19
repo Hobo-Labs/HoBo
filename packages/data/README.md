@@ -59,6 +59,13 @@ verify that each names the same source event, and return the quarantined records
 with the resulting snapshot. Other projections continue to process the original
 events. `rebuildFromZero` remains read-only and reports fold failures directly.
 
+Aggregate and projection definitions may provide `classifyFailure(error, event)`
+to return `"deterministic"` or `"transient"`. Transient failures are rethrown
+without recording quarantine, so the caller can retry. Other fold failures are
+treated as deterministic by default. If an aggregate fails while folding events
+it just committed, inspect the stream before repeating the command; its events
+and effects may already have been committed.
+
 `createCrossCampProjection` copies an owner's ordered event stream into an
 independent replica event store and folds the copied events with the same
 projection. It can read all streams for a tenant or a named source stream.

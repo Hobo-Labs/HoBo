@@ -1,7 +1,7 @@
 import { create, fromJsonString } from "@bufbuild/protobuf";
 import {
-	EVENTSTORE_LIMITS,
 	type AppendOptions,
+	EVENTSTORE_LIMITS,
 	type EventEnvelope,
 	type EventInput,
 	type EventStore,
@@ -15,6 +15,7 @@ import {
 	createProjectionSinkReboundEvent,
 	type DataFact,
 } from "./events.js";
+import { type FoldFailureClassifier, shouldQuarantineFailure } from "./fold.js";
 import {
 	hasFunctionTag,
 	type Inspectable,
@@ -34,6 +35,7 @@ export interface ProjectionDefinition<Row> {
 	on: Record<string, ApplyHandler<Row>>;
 	reactivityClass?: "reactive" | "non-reactive";
 	upcasters?: UpcasterRegistry;
+	classifyFailure?: FoldFailureClassifier;
 }
 
 export interface ProjectionSnapshot<Row> {
@@ -202,9 +204,15 @@ export function defineProjection<Row>(
 			} catch (error) {
 				if (!collectFailures || error instanceof UpcasterChainError)
 					throw error;
+				const failure =
+					error instanceof Error ? error : new Error(String(error));
+				if (
+					!shouldQuarantineFailure(failure, event, definition.classifyFailure)
+				)
+					throw error;
 				failures.push({
 					event,
-					reason: error instanceof Error ? error.message : String(error),
+					reason: failure.message,
 				});
 			}
 		}

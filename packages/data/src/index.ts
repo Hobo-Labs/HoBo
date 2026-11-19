@@ -1,9 +1,4 @@
 export {
-	createProjectionRebuild,
-	type ProjectionRebuildOptions,
-	type ProjectionRebuildShardResult,
-} from "./projection-rebuild.js";
-export {
 	type ActorHost,
 	type AggregateLease,
 	createInMemoryActorHost,
@@ -24,18 +19,18 @@ export {
 	type EventEmitOptions,
 } from "./aggregate.js";
 export {
+	type CrossCampProjectionOptions,
+	type CrossCampProjectionSubscription,
+	type CrossCampProjectionView,
+	type CrossCampReplicationResult,
+	createCrossCampProjection,
+} from "./cross-camp-projection.js";
+export {
 	type ActorLeaseGrant,
 	type ActorLeaseJournal,
 	createDurableActorHost,
 	type DurableActorHostOptions,
 } from "./durable-actor-host.js";
-export {
-	createCrossCampProjection,
-	type CrossCampProjectionOptions,
-	type CrossCampProjectionSubscription,
-	type CrossCampProjectionView,
-	type CrossCampReplicationResult,
-} from "./cross-camp-projection.js";
 export {
 	AggregateStaleFenceError,
 	DurableEffectUnavailableError,
@@ -57,15 +52,13 @@ export {
 } from "./events.js";
 export {
 	type Evolve,
+	type FoldFailureClassification,
+	type FoldFailureClassifier,
 	type FoldOutcome,
 	type FoldSpec,
 	foldEvents,
 } from "./fold.js";
 export type { Inspectable, JsonObject, JsonValue } from "./json.js";
-export {
-	PROJECTION_INTERFACE,
-	PROJECTION_PORT,
-} from "./port.js";
 export {
 	createPaginatedEventView,
 	type PaginatedPage,
@@ -73,6 +66,10 @@ export {
 	type PaginatedSubscription,
 	type PaginatedViewOptions,
 } from "./paginated-view.js";
+export {
+	PROJECTION_INTERFACE,
+	PROJECTION_PORT,
+} from "./port.js";
 export {
 	type ApplyHandler,
 	defineProjection,
@@ -83,6 +80,11 @@ export {
 	type ProjectionSnapshot,
 	type QuarantinableProjection,
 } from "./projection.js";
+export {
+	createProjectionRebuild,
+	type ProjectionRebuildOptions,
+	type ProjectionRebuildShardResult,
+} from "./projection-rebuild.js";
 export {
 	createUpcasterRegistry,
 	parseUpcasterVersion,
