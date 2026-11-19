@@ -27,9 +27,10 @@ credentials are in the owner's secret store.
    connection is refused instead of being replaced. This check does not prove
    that the stored webhook or OAuth secrets work end to end. `--what-if`
    opens nothing either.
-2. **A generative connect page** (`@hobo/connect-ui`, json-render on
-   shadcn/ui) opens in the browser. The owner chooses the store (Infisical
-   Cloud with OIDC by default, or 1Password) and confirms GitHub's App screen,
+2. **A generative connect page** (`@hobo/connect-ui`, on vercel-labs/ui)
+   opens in the browser. The owner chooses the store (Infisical Cloud with
+   OIDC by default, 1Password, or Bitwarden Secrets Manager) and confirms
+   GitHub's App screen,
    which receives HoBo's reviewed manifest.
 3. GitHub sends the browser back with a one-time code. HoBo converts it,
    verifies the App with the reviewed `verifyConvertedGithubApp` (owner,
@@ -40,33 +41,65 @@ credentials are in the owner's secret store.
    Without a person at a browser (CI, no TTY), `up` refuses with the reason;
    later runs find the connection and skip the page.
 
-**Secretless and passwordless for the owner.** Infisical uses your own session
-(`INFISICAL_TOKEN` from `infisical login`). 1Password uses the desktop app's
-integration (`OP_ACCOUNT`, unlocked with your biometrics), or a service
-account token where no desktop app runs. HoBo writes none of these anywhere.
-The relay reads the credentials back with its own workload identity (OIDC),
-so no secret is put in the repository, a CI variable or the page.
+**Connection credentials.** Setup filters known secret environment names and
+secret-shaped values, but that heuristic cannot identify every possible secret.
+The browser opener receives only an allowlist of desktop and process-location
+variables; loader hooks and arbitrary application variables are excluded.
+Other CI paths still read credentials from the environment. The store is found through
+a locator in the owner's HoBo settings
+(`~/.config/hobo/projects/<project>/secret-store.json`, never the repository:
+which store, its ids, no credential). You sign in on the setup page: an Infisical access token from your
+own `infisical login`, the 1Password desktop app (`OP_ACCOUNT`, unlocked with
+your biometrics), or a Bitwarden Secrets Manager machine account token on the
+US or EU cloud. The sign-in's vault buffer is cleared when setup ends, including
+on refusal or error; a late callback cannot refill it. Copies of JavaScript
+strings cannot be reliably erased. In CI, a preconfigured
+Infisical machine identity with OIDC Auth (`INFISICAL_IDENTITY_ID` in the
+locator) signs in with the job's own OIDC token. Bitwarden has no workload OIDC
+sign-in, so a relay on Bitwarden reads back with its own machine account
+token, kept by the platform; Infisical stays the default for that reason.
+Selecting the Infisical OAuth application sign-in keeps the store read-only
+even if another credential is available. Selecting the egress proxy sends its
+placeholder rather than a token retained from another sign-in choice.
+The intended relay connection reads credentials with its own workload identity
+(OIDC); it still needs an end-to-end observation with the configured store.
 When updating an existing 1Password item, HoBo preserves its other metadata and
 refuses the update if the item changed since it was read. Displayed 1Password
 references point to the item's `password` field.
 
-Configuration (environment, nothing secret): `HOBO_CI_PUBLIC_URL`,
-`HOBO_CI_GITHUB_OWNER`, `HOBO_CI_GITHUB_OWNER_ID`, `HOBO_CI_GITHUB_OWNER_TYPE`
-(`User` by default, or `Organization`), optional `HOBO_CI_SECRET_STORE`
-(`infisical` | `1password`), and the store's coordinates (`INFISICAL_PROJECT_ID` /
-`INFISICAL_ENVIRONMENT` / `INFISICAL_SECRET_PATH`, or `OP_VAULT_ID`).
+Configuration is a **ceremony**, not a list of environment variables, and it
+survives the machine: whatever `hobo ci up` is missing is asked for on the
+setup page, checked, and kept **in the secret store** as `HOBO_CI_SETTINGS`
+(the relay URL and the App's owner), beside the App's credentials. A destroyed
+devbox is set up again by cloning (the locator comes with the repository) and
+signing in; nothing else is asked.
 
-**Users or organizations own the App.** The App is created under the owner's
-settings (an organization's when it is one) and verified as that owner's
-(`verifyConvertedGithubApp` with `expectedOwnerId` and `expectedOwnerType`).
-An invalid organization login is refused before setup opens its store or App page.
-How the App is hosted is resolved for the owner (`resolveGithubAppHost`):
-`HOBO_CI_APP_HOST` pins a host. If a pinned host cannot serve the owner's kind,
-`hobo ci up` says so and names the hosts that can, rather than creating an App
-that would then be refused. Unpinned, resolution takes the first host that
-satisfies every criterion. The implemented `manifest` host supports both
-owner kinds. An unknown host or the not-yet-wired `hosted-relay` option is
-refused rather than silently starting the local manifest flow.
+**Users or organizations own the App.** The reviewed conversion verifies
+the owner's ID and type. `HOBO_CI_APP_HOST` pins the host; an unknown or
+unimplemented host is refused before opening the store. If a host cannot
+serve the owner's kind, setup names a compatible host instead of creating an
+App that would be refused. An invalid organization login supplied in the
+environment is refused before the store or App page is opened.
+
+## Where `hobo ci up` places the relay
+
+`hobo ci plan` and `hobo ci up --what-if` plan against the relay's own Yards
+(`packages/ci-vercel/deploy/yard.ts`): the Vercel project `hobo-ci` (Functions,
+Queues, Cron Jobs, the Marketplace cache) and the Yards its junction joins (the
+config service's secret projection, the non-Vercel caches). Every relay resource
+places there, whatever providers this machine has registered. `hobo ci up`
+delivers the current branch to the project's preview, as `hobo ci deploy` does,
+with the Vercel connection `hobo cd up` keeps in your secret store; the prepare
+step hands only that connection on, in a trusted vault, and ends the store
+sign-in. Production is `hobo ci deploy --target production --sha <commit>`.
+
+## Continuity
+
+The relay this project deploys declares a `continuity` policy on every
+stateful resource (`RELAY_CONTINUITY`, `packages/ci-vercel`). Everything it
+keeps is rebuilt from GitHub, so every policy is `rebuildable` and nothing is
+copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
+(`packages/hobo-cd` README, "Continuity").
 
 ## Architecture rules (AGENTS.md)
 
