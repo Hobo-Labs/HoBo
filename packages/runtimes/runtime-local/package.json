@@ -34,7 +34,7 @@
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
 		"test": "vitest run && node --import tsx --test contracts/consumer/*.test.ts contracts/provider/*.test.ts",
 		"test:unit": "vitest run",
-		"test:contract:consumer": "node --import tsx --test contracts/consumer/*.test.ts && vitest run test/wrpc-link-manifest-pact.test.ts -t 'reads runtime manifests'",
-		"test:contract:provider": "node --import tsx --test contracts/provider/*.test.ts && vitest run test/wrpc-link-manifest-pact.test.ts"
+		"test:contract:consumer": "node --import tsx --test contracts/consumer/*.test.ts && vitest run test/wrpc-link-manifest-pact.test.ts -t 'reads runtime manifests' && vitest run test/wrpc-call-event-contract.test.ts -t 'round-trips real call events'",
+		"test:contract:provider": "node --import tsx --test contracts/provider/*.test.ts && vitest run test/wrpc-link-manifest-pact.test.ts test/wrpc-call-event-contract.test.ts"
 	}
 }

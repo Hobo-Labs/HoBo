@@ -177,6 +177,50 @@ describe("membrane failure semantics (S1-23)", () => {
 		expect(caught.kind).toBe("ambiguous-commit");
 		expect(caught.ambiguousCommit).toBe(true);
 		expect(classifyToRuntimeError(caught).tag).toBe("ambiguous-commit");
+		expect(layer.events.at(-1)).toMatchObject({
+			type: "link.Called",
+			operation: "put",
+			outcome: "error",
+			failureKind: "ambiguous-commit",
+		});
+	});
+
+	it("records synchronous transport failures and releases the provider slot", async () => {
+		const store = new ProviderHandlerStore();
+		const layer = createWrpcLinkLayer({
+			store,
+			transport: {
+				kind: "in-process",
+				invoke: () => {
+					throw new Error("transport unavailable");
+				},
+			},
+			compatibilityFloor: "0.2.0",
+			maxInFlight: 1,
+		});
+		layer.registerComponent({ id: "api", imports: [kvPin()] });
+		layer.registerProvider({
+			id: "local-kv",
+			exports: [kvPin()],
+			handlers: { [KV]: { get: () => null } },
+		});
+		layer.establishLink({
+			componentId: "api",
+			importInterface: KV,
+			providerId: "local-kv",
+			exportInterface: KV,
+		});
+		for (let attempt = 0; attempt < 2; attempt++) {
+			await expect(layer.callImport("api", KV, "get")).rejects.toThrow(
+				"transport unavailable",
+			);
+		}
+		expect(
+			layer.events.filter((event) => event.type === "link.Called"),
+		).toMatchObject([
+			{ outcome: "error", failureKind: "fatal" },
+			{ outcome: "error", failureKind: "fatal" },
+		]);
 	});
 
 	it("classifies every failure onto a WIT runtime-error kind, failing closed to fatal", () => {

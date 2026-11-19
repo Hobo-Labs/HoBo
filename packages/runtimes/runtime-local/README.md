@@ -7,7 +7,11 @@ signal to stop work promptly; a provider that ignores it retains its in-flight
 slot until it settles. A pending deadline keeps a standalone Node process alive
 until the call completes or the deadline expires.
 Nested calls inherit the parent deadline and may request an earlier deadline;
-they cannot extend it. Concurrent calls keep their deadlines isolated.
+they cannot extend it. Concurrent calls keep their deadlines isolated. Dispatched
+calls produce a `link.Called` event: successful calls omit `outcome`, while
+failures record their outcome and runtime failure kind. Deadline failures record
+whether cancellation was signaled to the provider. Calls rejected before
+dispatch do not produce a call event.
 Thrown values without a recognized failure signal are classified as fatal,
 including `null`, `undefined`, and values that cannot be converted to a string.
 

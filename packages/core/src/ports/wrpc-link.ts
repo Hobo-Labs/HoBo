@@ -1,3 +1,4 @@
+import type { WrpcCallEvent as WrpcCallEventWire } from "../_generated/wrpc_call_pb.js";
 import type {
 	WrpcLinkManifestWire as NegotiatedManifestWire,
 	WrpcLinkManifestEntry as WrpcLinkManifestEntryWire,
@@ -111,18 +112,41 @@ export interface LinkEstablishedEvent {
 	negotiatedWire: NegotiatedWire;
 }
 
-export interface LinkCalledEvent {
-	type: "link.Called";
-	componentId: string;
-	importInterface: string;
-	providerId: string;
-	exportInterface: string;
-	operation: string;
-	boundaryMode: "live";
-	transport: TransportKind;
-	codec: string;
-	deadline: string | null;
-}
+export type LinkCalledEvent = Readonly<
+	Omit<
+		WrpcCallEventWire,
+		| "$typeName"
+		| "type"
+		| "boundaryMode"
+		| "transport"
+		| "deadline"
+		| "outcome"
+		| "failureKind"
+		| "cancellation"
+	> & {
+		type: "link.Called";
+		boundaryMode: "live";
+		transport: TransportKind;
+		deadline: string | null;
+	} & (
+			| { outcome?: never; failureKind?: never; cancellation?: never }
+			| {
+					outcome: "deadline-exceeded";
+					failureKind: "cancelled";
+					cancellation?: "signaled" | "unavailable";
+			  }
+			| {
+					outcome: "error";
+					failureKind:
+						| "retryable"
+						| "fatal"
+						| "cancelled"
+						| "version-incompatible"
+						| "ambiguous-commit";
+					cancellation?: "signaled" | "unavailable";
+			  }
+		)
+>;
 
 export interface LinkRejectedEvent {
 	type: "link.Rejected";

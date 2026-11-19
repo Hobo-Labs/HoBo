@@ -1,0 +1,120 @@
+{
+  "consumer": {
+    "name": "WrpcCallEventReader"
+  },
+  "provider": {
+    "name": "RuntimeLocalWrpcCalls"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
+    "transport": "library-call"
+  },
+  "interactions": [
+    {
+      "description": "Records a successful call",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "scenario": "success"
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "type": "link.Called",
+              "componentId": "api",
+              "importInterface": "wasi:keyvalue/store@0.2.0",
+              "providerId": "kv",
+              "exportInterface": "wasi:keyvalue/store@0.2.0",
+              "operation": "get",
+              "boundaryMode": "live",
+              "transport": "in-process",
+              "codec": "json-wit",
+              "deadline": "2030-01-01T00:00:01.000Z"
+            }
+          }
+        }
+      ],
+      "type": "Synchronous/Messages"
+    },
+    {
+      "description": "Records an expired deadline after dispatch",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "scenario": "timeout"
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "type": "link.Called",
+              "componentId": "api",
+              "importInterface": "wasi:keyvalue/store@0.2.0",
+              "providerId": "kv",
+              "exportInterface": "wasi:keyvalue/store@0.2.0",
+              "operation": "get",
+              "boundaryMode": "live",
+              "transport": "in-process",
+              "codec": "json-wit",
+              "deadline": "2030-01-01T00:00:01.000Z",
+              "outcome": "deadline-exceeded",
+              "failureKind": "cancelled",
+              "cancellation": "signaled"
+            }
+          }
+        }
+      ],
+      "type": "Synchronous/Messages"
+    },
+    {
+      "description": "Records a provider failure",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "scenario": "provider-error"
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "type": "link.Called",
+              "componentId": "api",
+              "importInterface": "wasi:keyvalue/store@0.2.0",
+              "providerId": "kv",
+              "exportInterface": "wasi:keyvalue/store@0.2.0",
+              "operation": "get",
+              "boundaryMode": "live",
+              "transport": "in-process",
+              "codec": "json-wit",
+              "deadline": "2030-01-01T00:00:01.000Z",
+              "outcome": "error",
+              "failureKind": "fatal"
+            }
+          }
+        }
+      ],
+      "type": "Synchronous/Messages"
+    }
+  ]
+}
