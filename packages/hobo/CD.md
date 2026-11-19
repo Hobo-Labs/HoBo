@@ -224,7 +224,7 @@ export const pipelines = [
 
 ### HoBo's own CI (dogfooding)
 
-`@hobo/cd/compose` exports `hoboCiDogfoodSources({ ciPipeline })`: HOBO_CI
+`@hobo/cd/compose` exports `hoboSelfDeliverySources({ ciPipeline })`: HOBO_CI
 Freight sources for HoBo's CI relay (`hobo-ci-relay`) and runner fleet
 (`hobo-ci-runner-fleet`). Write them into a delivery module and apply them;
 their pipelines promote the relay and the fleet like any other Bindle. The

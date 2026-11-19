@@ -15,7 +15,7 @@ delivery decision: every decision stays in the module that owns it.
 | `config.ts` | `parseCdComposeConfig`: store selection (SQLite default, Postgres when configured, memory only with `--simulate`) and artifact-store selection. |
 | `fail-closed.ts` | Adapters for unconfigured ports: runbooks/suites refuse, traffic offers nothing, NOTIFY is dropped and counted, fan-out pricing quotes nothing (the aggregate refuses). |
 | `simulate.ts` | The labelled `--simulate` realizer: every observation carries reason `simulated`. |
-| `ci-bridge.ts` | `hoboCiSource` (HOBO_CI subscription, C15) and `hoboCiDogfoodSources` (HoBo's own CI relay and runner fleet). |
+| `ci-bridge.ts` | `hoboCiSource` (HOBO_CI subscription, C15) and `hoboSelfDeliverySources` (HoBo's own CI relay and runner fleet). |
 | `errors.ts` | `COMPOSE_FAILURES`: every code with its remediation; `ComposeError`. |
 
 ## Wiring order

@@ -526,7 +526,7 @@ deliverable leaves the run as Freight that a `HOBO_CI` Freight source in
 | `sdk` | `hobo-sdk` | `sdk/tarball` | `PACKAGE` (npm) |
 | `site` | `hobo-site` | `site/bundle` | `STATIC_ASSETS` |
 
-The relay and runner-fleet rows are the Bindles and paths `hoboCiDogfoodSources`
+The relay and runner-fleet rows are the Bindles and paths `hoboSelfDeliverySources`
 in `@hobo/cd` subscribes to. For each deliverable a build emits three CI
 outputs (`ciFreightOutputs`):
 
