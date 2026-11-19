@@ -13,7 +13,7 @@ post-399 cross-cutting delta pattern.
 ## Branch Evidence
 
 - Issue: S5-01 ([HOBO-646](https://linear.app/quickdeploy-ai/issue/HOBO-646/s5-01-m0-acceptance-record-productionization-plan-for-stage-s5-forge))
-- Source M0 record: [stage-5-forge-extensibility-acceptance.md](../../stage-5-forge-extensibility-acceptance.md)
+- Source M0 record: [stage-5-forge-extensibility-acceptance.md](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/stage-5-forge-extensibility-acceptance.md)
 - Promoted epic proofs:
   - [`generation-pipeline-training-ai-safety`](../../../../src/draft/epic-proofs/generation-pipeline-training-ai-safety/README.md)
   - [`providers-iac-build-adapters`](../../../../src/draft/epic-proofs/providers-iac-build-adapters/README.md)
