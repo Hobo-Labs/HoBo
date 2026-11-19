@@ -215,6 +215,21 @@ does not apply; read the repository as its owner or make it accessible without
 that exception. The synthetic environment-isolation and missing-object tests
 currently skip Windows; that platform's behavior remains unverified.
 
+Vercel source preparation reads that pinned snapshot and produces a deployment
+manifest plus content-addressed upload bytes. The manifest uses file uploads
+without a Git-connected Vercel project; production plans require a new build,
+disable automatic domain assignment, and include an operation identifier.
+Optional archives are gzip-compressed tar files with the
+`.vercel/source.tgz.part1` marker. If an archive exceeds the 32 MiB request
+limit, the plan falls back to individual files, each still subject to that
+limit. Preparation does not call Vercel or authorize an upload, build,
+promotion, or rollback. Archive extraction and [emulator checks](../providers/provider-vercel/README.md#deployment-test-emulator)
+use synthetic fixtures and do not establish live provider behavior. The
+emulator caps aggregate file content at 32 MiB, so it can refuse an
+individual-file fallback plan even when each upload is within the request limit.
+Production dispatch still needs a durable, owner-authorized boundary and a
+request-bound terminal outcome.
+
 ```ts
 // hobo.delivery.ts
 export const camps = [
