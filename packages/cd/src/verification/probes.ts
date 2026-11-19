@@ -1,6 +1,3 @@
-// HTTP probes (D9): one GET per due interval through the injected
-// HttpTransport. A probe is healthy only when the status equals expect_status;
-// a timeout, guard refusal or reset is an unhealthy attempt, never skipped.
 import { create } from "@bufbuild/protobuf";
 import type { HttpTransport } from "@hobo/core";
 import {
@@ -43,7 +40,6 @@ export async function runProbe(
 	});
 }
 
-/** Whether a probe should fire now: on its interval, inside the window or until it has enough attempts. */
 export function probeDue(
 	input: Readonly<{
 		probe: ProbeCheckRecord;

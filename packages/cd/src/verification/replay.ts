@@ -1,7 +1,3 @@
-// Replay (I8): recompute a recorded verdict from the recorded spec, evidence
-// and finished_at, with no source, probe, suite or clock involved. Live and
-// replay share evaluateVerification, so any mismatch means the journal or the
-// verdict function changed — never that the world did.
 import { equals } from "@bufbuild/protobuf";
 import type { DurableEventStore, EventEnvelope } from "@hobo/core";
 import {
@@ -18,11 +14,9 @@ export type VerificationReplay = Readonly<{
 	recorded: VerificationVerdict;
 	replayed: VerificationVerdict;
 	matches: boolean;
-	/** Check names whose recomputed outcome differs from the recorded one. */
 	mismatches: readonly string[];
 }>;
 
-/** Replay one cd-verification stream; undefined while it has no Completed event. */
 export function replayVerification(
 	events: Iterable<EventEnvelope>,
 ): VerificationReplay | undefined {
@@ -30,7 +24,6 @@ export function replayVerification(
 	const recorded = state?.result;
 	if (!state || !recorded) return undefined;
 	if (!state.spec) {
-		// A refused spec always completes FAIL with no checks.
 		const matches =
 			recorded.verdict === VerificationVerdict.FAIL &&
 			recorded.checks.length === 0;
@@ -74,7 +67,6 @@ export function replayVerification(
 	};
 }
 
-/** Replay a verification straight from the store. */
 export async function replayVerificationFromStore(
 	store: DurableEventStore,
 	id: VerificationId,

@@ -1,14 +1,3 @@
-// createVerificationEngine (D9, I5, I8, I12). Runs a VerificationSpec over its
-// window against health sources, probes and verify suites, and records every
-// sample it decides from on cd-verification-<id>:
-//
-//   start → verification.Started
-//   tick  → rollout.EvidenceObserved (probes and suites as they happen; health
-//           source samples together with the verdict) → verification.Completed
-//
-// The verdict is evaluateVerification(spec, recorded evidence, finished_at),
-// so replay reproduces it exactly. A crash anywhere resumes from the journal:
-// the first tick rediscovers every Started stream without a Completed event.
 import { createHash } from "node:crypto";
 import { create, type JsonValue, toJson } from "@bufbuild/protobuf";
 import type { EventInput, HttpTransport } from "@hobo/core";
@@ -61,11 +50,9 @@ export type VerificationEngineDeps = CdBase &
 		sources: readonly HealthSource[];
 		suites: VerifyPort;
 		http: HttpTransport;
-		/** Optional metrics sink; the journal is the record, so a failing sink never fails a tick. */
 		telemetry?: TelemetrySink;
 	}>;
 
-/** Source refusals that retrying cannot fix: the check is decided as no data at once. */
 const PERMANENT_SOURCE_CODES: ReadonlySet<string> = new Set([
 	"health-source-unconfigured",
 	"health-source-endpoint-invalid",
@@ -99,7 +86,6 @@ function verificationId(
 			]),
 		)
 		.digest("hex");
-	// SAFETY: a VerificationId is any stable token; this one is content-derived.
 	return `ver-${digest.slice(0, 32)}` as VerificationId;
 }
 
@@ -179,7 +165,6 @@ export function createVerificationEngine(
 		})) {
 			const data = jsonOf(entry.event.data);
 			if (isJsonObject(data) && isJsonString(data.verificationId)) {
-				// SAFETY: read back from a Started body this engine wrote.
 				ids.add(data.verificationId as VerificationId);
 			}
 		}
@@ -480,7 +465,7 @@ export function createVerificationEngine(
 					state.cohortAware === input.cohortAware &&
 					sameSpec
 				) {
-					return state.id; // I12: idempotent while running.
+					return state.id;
 				}
 			}
 			const atMs = ctx.now();
@@ -525,7 +510,6 @@ export function createVerificationEngine(
 				subject(base),
 			);
 			if (!parsed.ok) {
-				// Fail closed and on the record: a refused spec completes FAIL at once.
 				const result = finish(
 					base,
 					atMs,
@@ -563,7 +547,6 @@ export function createVerificationEngine(
 			const state = running.get(id) ?? (await load(id));
 			if (!state) return undefined;
 			if (state.result) return state.result;
-			// Still running: identity and start time, no verdict yet.
 			return create(VerificationResultRecordSchema, {
 				verificationId: state.id,
 				freightId: state.freightId,
@@ -584,8 +567,6 @@ export function createVerificationEngine(
 					const result = await advance(state, ctx);
 					if (result) results.push(result);
 				} catch {
-					// Another writer moved the stream (expected-seq CAS) or the store
-					// failed: drop the cache entry and resume from the journal next tick.
 					running.delete(state.id);
 					const fresh = await load(state.id).catch(() => undefined);
 					if (fresh && !fresh.result) running.set(state.id, fresh);
