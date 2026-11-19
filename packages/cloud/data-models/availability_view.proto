@@ -1,0 +1,79 @@
+syntax = "proto3";
+package hobo.cloud.availability.v1;
+
+message AvailabilityNode {
+  optional string type = 1;
+  optional double availability = 2;
+  optional string provider = 3;
+  repeated string depends_on = 4;
+  repeated string members = 5;
+  repeated string shared_dependencies = 6;
+}
+
+message AvailabilityGraph {
+  string root = 1;
+  map<string, AvailabilityNode> nodes = 2;
+  optional double default_hop_availability = 3;
+}
+
+message AvailabilityViewRequest {
+  AvailabilityGraph graph = 1;
+  optional double observed_availability = 2;
+  optional double availability_slo = 3;
+  optional double conservative_unrated_availability = 4;
+  optional double divergence_threshold = 5;
+}
+
+message AvailabilityWarning {
+  string code = 1;
+  string message = 2;
+  optional string node = 3;
+  optional string provider = 4;
+  optional double assumed_availability = 5;
+  optional double estimated_availability = 6;
+  optional double observed_availability = 7;
+  optional double availability_slo = 8;
+  optional double gap = 9;
+  repeated string shared_dependencies = 10;
+  optional bool hard_gate = 11;
+}
+
+message AvailabilityIssue {
+  string code = 1;
+  string message = 2;
+}
+
+message AvailabilityNodeEstimate {
+  string type = 1;
+  double availability = 2;
+}
+
+message AvailabilityBreakdown {
+  map<string, AvailabilityNodeEstimate> by_node = 1;
+  repeated string counted_nodes = 2;
+}
+
+message AvailabilitySummary {
+  string estimated = 1;
+  string observed = 2;
+  string estimate_observed_gap = 3;
+}
+
+message AvailabilityDeployAssessment {
+  string effect = 1;
+  repeated AvailabilityWarning warnings = 2;
+}
+
+message AvailabilityView {
+  string schema = 1;
+  string status = 2;
+  optional double estimated_availability = 3;
+  optional double estimated_downtime_minutes_per_year = 4;
+  optional double observed_availability = 5;
+  optional double availability_slo = 6;
+  AvailabilitySummary summary = 7;
+  AvailabilityDeployAssessment can_deploy = 8;
+  repeated AvailabilityWarning warnings = 9;
+  repeated AvailabilityIssue errors = 10;
+  AvailabilityBreakdown breakdown = 11;
+}
