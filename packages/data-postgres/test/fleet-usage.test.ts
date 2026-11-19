@@ -8,10 +8,10 @@ import type {
 	FleetBackend,
 	SqlExecutor,
 	SqlParameter,
-	SqlRow,
 	SqlSession,
 } from "../src/fleet/sql.js";
 import { readUsage, recordUsage } from "../src/fleet/usage.js";
+import { fleetTestExecutor } from "./fleet-postgres.js";
 
 const layout = parseFleetLayout({
 	dataPrefix: "usage_data_",
@@ -20,38 +20,6 @@ const layout = parseFleetLayout({
 const november = Date.UTC(2026, 10, 30, 23, 59, 59);
 const december = Date.UTC(2026, 11, 1);
 const url = process.env.HOBO_TEST_POSTGRES_URL;
-
-function executor(pool: Pool): SqlExecutor {
-	return {
-		async query(sql, parameters) {
-			const result = await pool.query<SqlRow>(
-				sql,
-				parameters ? [...parameters] : [],
-			);
-			return { rows: result.rows };
-		},
-		async session<T>(run: (session: SqlSession) => Promise<T>): Promise<T> {
-			const client = await pool.connect();
-			let discard = false;
-			try {
-				return await run({
-					async query(sql, parameters) {
-						const result = await client.query<SqlRow>(
-							sql,
-							parameters ? [...parameters] : [],
-						);
-						return { rows: result.rows };
-					},
-				});
-			} catch (error) {
-				discard = true;
-				throw error;
-			} finally {
-				client.release(discard);
-			}
-		},
-	};
-}
 
 function intercept(
 	base: SqlExecutor,
@@ -109,7 +77,7 @@ describe.skipIf(!url)("PostgreSQL fleet control and usage", () => {
 
 	beforeAll(async () => {
 		pool = new Pool({ connectionString: url, max: 20 });
-		backend = { id: "a", executor: executor(pool) };
+		backend = { id: "a", executor: fleetTestExecutor(pool) };
 		await ensureFleetControlTables(backend, layout);
 	});
 	beforeEach(async () => {
@@ -244,7 +212,7 @@ describe.skipIf(!url)("PostgreSQL fleet control and usage", () => {
 		await recordUsage(backend, layout, observation);
 		const reopened = new Pool({ connectionString: url });
 		try {
-			const second = { id: "a", executor: executor(reopened) };
+			const second = { id: "a", executor: fleetTestExecutor(reopened) };
 			expect((await readUsage(second, layout, "2026-11"))[0]?.used).toBe(4);
 			expect(await recordUsage(second, layout, observation)).toBe("duplicate");
 		} finally {

@@ -653,8 +653,9 @@ odd count.
 seeded interleavings of concurrent proposers, completers and overrides against
 an in-memory fleet of two to five backends that go down and come back,
 including writes that were applied but whose answer was lost.
-`contracts/pacts/postgres-fleet.pact.json` is the boundary contract for one
-backend's log and for a majority read; `test/fleet-contract.test.ts` replays it.
+`contracts/pacts/postgres-fleet.pact.json` records the SQL replica's synchronous
+accept boundary. `test/fleet-contract.test.ts` verifies it against PostgreSQL
+when `HOBO_TEST_POSTGRES_URL` is set. The assignment tests cover majority reads.
 
 ### Replication: keeping standbys current
 
