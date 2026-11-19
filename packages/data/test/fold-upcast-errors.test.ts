@@ -219,15 +219,16 @@ describe("quarantine determinism", () => {
 		expect(outcome.state).toEqual({ total: 0 });
 	});
 
-	test("a quarantine fact with no numeric offendingSeq neutralises nothing", () => {
-		const outcome = foldEvents(
-			[
-				envelope("item.Quarantined", { offendingSeq: "not-a-number" }),
-				envelope("item.Added", { amount: 7 }),
-			],
-			counting,
-		);
-		expect(outcome.state).toEqual({ total: 7 });
+	test("rejects a quarantine fact with an invalid target sequence", () => {
+		expect(() =>
+			foldEvents(
+				[
+					envelope("item.Quarantined", { offendingSeq: "not-a-number" }),
+					envelope("item.Added", { amount: 7 }),
+				],
+				counting,
+			),
+		).toThrow();
 	});
 
 	test("several poison events are each quarantined", () => {

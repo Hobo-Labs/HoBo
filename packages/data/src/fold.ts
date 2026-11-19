@@ -1,8 +1,10 @@
-import { fromJsonString } from "@bufbuild/protobuf";
 import type { EventEnvelope, QuarantineRecord } from "@hobo/core";
 
-import { AggregateQuarantinedEventDataSchema } from "./_generated/data_pb.js";
-import { parseOffendingSeq } from "./json.js";
+import {
+	parseAggregateQuarantine,
+	parseEventStoreQuarantine,
+	quarantineSequence,
+} from "./quarantine-facts.js";
 import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
 
 export type Evolve<S> = (state: S, event: EventEnvelope) => S;
@@ -56,18 +58,17 @@ function isQuarantineFact(event: EventEnvelope): boolean {
 	);
 }
 
-function quarantineApplies(
+function quarantineTarget(
 	event: EventEnvelope,
 	name: string | undefined,
-): boolean {
-	if (event.type !== AGGREGATE_QUARANTINE_EVENT) return true;
-	const data = fromJsonString(
-		AggregateQuarantinedEventDataSchema,
-		JSON.stringify(event.data),
-	);
-	return (
-		name !== undefined && data.fold === name && data.foldKind === "aggregate"
-	);
+): number | undefined {
+	if (event.type !== AGGREGATE_QUARANTINE_EVENT) {
+		return quarantineSequence(parseEventStoreQuarantine(event).offendingSeq);
+	}
+	const data = parseAggregateQuarantine(event);
+	return name !== undefined && data.fold === name
+		? quarantineSequence(data.offendingSeq)
+		: undefined;
 }
 
 export function foldEvents<S>(
@@ -78,8 +79,8 @@ export function foldEvents<S>(
 
 	const quarantinedSeqs = new Set<number>();
 	for (const event of materialized) {
-		if (isQuarantineFact(event) && quarantineApplies(event, spec.name)) {
-			const offending = parseOffendingSeq(event.data);
+		if (isQuarantineFact(event)) {
+			const offending = quarantineTarget(event, spec.name);
 			if (offending !== undefined) quarantinedSeqs.add(offending);
 		}
 	}

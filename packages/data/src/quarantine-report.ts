@@ -1,4 +1,4 @@
-import { create, fromJsonString } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import {
 	type DurableEventStore,
 	EVENTSTORE_LIMITS,
@@ -6,15 +6,18 @@ import {
 	type EventPosition,
 } from "@hobo/core";
 import {
-	AggregateQuarantinedEventDataSchema,
-	EventStoreQuarantinedEventDataSchema,
-	ProjectionQuarantinedEventDataSchema,
 	type QuarantineFinding,
 	QuarantineFindingSchema,
 	type QuarantineReport,
 	QuarantineReportSchema,
 } from "./_generated/data_pb.js";
 import { isJsonString } from "./json.js";
+import {
+	parseAggregateQuarantine,
+	parseEventStoreQuarantine,
+	parseProjectionQuarantine,
+	quarantineSequence,
+} from "./quarantine-facts.js";
 
 export interface QuarantineReportOptions {
 	readonly store: Pick<DurableEventStore, "read" | "readAll">;
@@ -36,13 +39,6 @@ function positiveLimit(
 	if (!Number.isSafeInteger(result) || result < 1)
 		throw new TypeError(`${name} must be a positive integer`);
 	return result;
-}
-
-function checkedSequence(sequence: bigint): number {
-	const value = Number(sequence);
-	if (!Number.isSafeInteger(value) || value < 1)
-		throw new TypeError("invalid quarantine target sequence");
-	return value;
 }
 
 async function sourceEvent(
@@ -70,14 +66,11 @@ async function toFinding(
 	let foldKind: "aggregate" | "projection" | "eventstore";
 	let reason: string;
 	if (record.type === "aggregate.QuarantineRecorded") {
-		const data = fromJsonString(
-			AggregateQuarantinedEventDataSchema,
-			JSON.stringify(record.data),
-		);
+		const data = parseAggregateQuarantine(record);
 		const source = await sourceEvent(
 			store,
 			sourceStreamId,
-			checkedSequence(data.offendingSeq),
+			quarantineSequence(data.offendingSeq),
 			record.tenant,
 		);
 		if (
@@ -97,11 +90,7 @@ async function toFinding(
 		foldKind = "aggregate";
 		reason = data.reason;
 	} else if (record.type === "projection.QuarantineRecorded") {
-		const data = fromJsonString(
-			ProjectionQuarantinedEventDataSchema,
-			JSON.stringify(record.data),
-		);
-		checkedSequence(data.offendingSeq);
+		const data = parseProjectionQuarantine(record);
 		sourceStreamId = data.sourceStreamId;
 		offendingSeq = data.offendingSeq;
 		offendingEventId = data.offendingEventId;
@@ -110,15 +99,11 @@ async function toFinding(
 		foldKind = "projection";
 		reason = data.reason;
 	} else if (record.type.endsWith(".Quarantined")) {
-		const data = fromJsonString(
-			EventStoreQuarantinedEventDataSchema,
-			JSON.stringify(record.data),
-			{ ignoreUnknownFields: true },
-		);
+		const data = parseEventStoreQuarantine(record);
 		const source = await sourceEvent(
 			store,
 			sourceStreamId,
-			checkedSequence(data.offendingSeq),
+			quarantineSequence(data.offendingSeq),
 			record.tenant,
 		);
 		const targetId = record.meta?.quarantines;
