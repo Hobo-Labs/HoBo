@@ -588,7 +588,14 @@ export function quoteTargetPricing(
 		});
 	}
 	const quote = quoteScenarioV2(scenario);
-	if (!isQuoteVector(quote)) return refuse(quote.code, quote.message);
+	if (!isQuoteVector(quote))
+		return refuse(
+			quote.code === "PRICING_FIXED_QUANTITY_UNAVAILABLE" ||
+				quote.code === "PRICING_FIXED_SELECTOR_UNAVAILABLE"
+				? "TARGET_PRICING_INCOMPLETE"
+				: quote.code,
+			quote.message,
+		);
 	if (
 		!hasExplicitUnreferencedFixedCoverage(
 			catalog,

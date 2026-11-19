@@ -44,6 +44,7 @@ function check(name: string, directory: string, stateDirectory: string) {
 try {
 	for (const name of [
 		"IacAgreementStatus",
+		"IacSharedFixedQuantity",
 		"IacPricingScope",
 		"IacDestroyPricing",
 		"IacFixedPricing",
@@ -55,6 +56,21 @@ try {
 	}
 	const mutations = [
 		["IacAgreementStatus", "IF NeedsRejection", "IF FALSE"],
+		[
+			"IacSharedFixedQuantity",
+			"Eligible == targetKnown /\\ otherKnown /\\ selectorKnown",
+			"Eligible == targetKnown /\\ selectorKnown",
+		],
+		[
+			"IacSharedFixedQuantity",
+			"Eligible == targetKnown /\\ otherKnown /\\ selectorKnown",
+			"Eligible == targetKnown /\\ otherKnown",
+		],
+		[
+			"IacSharedFixedQuantity",
+			"BaselineAmount == otherCost",
+			'BaselineAmount == IF status = "past-due" THEN 0 ELSE otherCost',
+		],
 		[
 			"IacDestroyPricing",
 			'ELSE IF operation = "destroy" /\\ model # "destroy" THEN "unsupported"',
@@ -131,6 +147,12 @@ try {
 	for (const [name, invariant] of [
 		["IacAgreementStatus", "AgreementNoUnavailable"],
 		["IacAgreementStatus", "AgreementNoContinuation"],
+		["IacAgreementStatus", "NoUnknownStatusRejection"],
+		["IacAgreementStatus", "NoUnreferencedTrialRejection"],
+		["IacSharedFixedQuantity", "NoMissingQuantity"],
+		["IacSharedFixedQuantity", "NoUnknownSelector"],
+		["IacSharedFixedQuantity", "NoExplicitZeroQuote"],
+		["IacSharedFixedQuantity", "NoPastDueQuote"],
 		["IacDestroyPricing", "NoPricedHold"],
 		["IacDestroyPricing", "NoUnpricedHold"],
 		["IacFixedPricing", "NoFixedZero"],
