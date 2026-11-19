@@ -7,27 +7,22 @@ import { z } from "zod";
 
 import { connectCatalog } from "../catalog.js";
 
-// The connect page in the browser: fetch the step's composed spec, render it
-// with json-render's shadcn preset, and send every action to the flow on the
-// loopback server. The page holds no state of its own beyond the last view.
-
-/** Action params as the flow accepts them: string values only. */
 const ActionParamsSchema = z.record(z.string(), z.string());
 type ActionParams = z.infer<typeof ActionParamsSchema>;
 
-/** Parse what the renderer hands an action into the flow's params. */
 function actionParams(
 	params: Parameters<typeof ActionParamsSchema.parse>[0],
 ): ActionParams {
 	return ActionParamsSchema.parse(params ?? {});
 }
 
-// Set by the mounted page; every catalog action goes to the loopback flow.
 let dispatchToFlow: (action: string, params: ActionParams) => Promise<void> =
 	async () => undefined;
 
 const { registry } = defineRegistry(connectCatalog, {
 	actions: {
+		"connect.submit": async (params) =>
+			dispatchToFlow("connect.submit", actionParams(params)),
 		"connect.chooseStore": async (params) =>
 			dispatchToFlow("connect.chooseStore", actionParams(params)),
 		"connect.start": async (params) =>
@@ -94,8 +89,6 @@ function ConnectPage() {
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
 		if (!response.ok) throw new Error(`view failed (${response.status})`);
-		// SAFETY: the loopback server builds this body from a step it just
-		// composed and validated (compose.ts isRenderableConnectSpec).
 		setView((await response.json()) as View);
 	}, []);
 
@@ -103,7 +96,6 @@ function ConnectPage() {
 		load().catch((reason) => setError(String(reason)));
 	}, [load]);
 
-	// While a deposit is in flight the server moves the step on its own.
 	useEffect(() => {
 		if (view === null || view.terminal || view.step !== "depositing") return;
 		const timer = window.setTimeout(() => {
@@ -119,7 +111,6 @@ function ConnectPage() {
 			body: JSON.stringify({ action, params }),
 		});
 		if (!response.ok) throw new Error(`action failed (${response.status})`);
-		// SAFETY: as above, the server's own validated view.
 		const next = (await response.json()) as View;
 		setView(next);
 		follow(next.directive);
@@ -137,6 +128,8 @@ function ConnectPage() {
 		<JSONUIProvider
 			registry={registry}
 			handlers={{
+				"connect.submit": (params) =>
+					dispatch("connect.submit", actionParams(params)),
 				"connect.chooseStore": (params) =>
 					dispatch("connect.chooseStore", actionParams(params)),
 				"connect.start": (params) =>
