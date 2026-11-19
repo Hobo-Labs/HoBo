@@ -233,7 +233,6 @@ function stringList(value: MongoValue | undefined): readonly string[] {
 function satisfies(value: MongoValue, rule: MongoValue): boolean {
 	if (!isJsonObject(rule)) return refuse(BAD_VALUE, "FailedToParse");
 	for (const keyword of Object.keys(rule)) {
-		// than a server; an unimplemented keyword is refused instead.
 		if (!RULE_KEYWORDS.has(keyword)) refuse(BAD_VALUE, "FailedToParse");
 	}
 	const type = mongoTypeOf(value);
