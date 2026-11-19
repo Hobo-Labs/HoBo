@@ -91,6 +91,43 @@ describe("the CD function's HTTP entry", () => {
 		expect((await fetch(`${origin}/v1/cd/openapi.json`)).status).toBe(503);
 	});
 
+	it("hands /readyz to the composed host past the operator-read gate", async () => {
+		let ready = false;
+		const seen: string[] = [];
+		const host: CdHost = {
+			handle: async (request: { path: string }) => {
+				seen.push(request.path);
+				return {
+					status: ready ? 200 : 503,
+					headers: { "content-type": "application/json" },
+					body: new TextEncoder().encode(
+						JSON.stringify({ ok: ready, readiness: "composed" }),
+					),
+				};
+			},
+		} as never;
+		const origin = await serve(
+			createCdHttpEntry(async () => host, { operatorReads: "deny" }),
+		);
+		const notReady = await fetch(`${origin}/readyz`);
+		expect(notReady.status).toBe(503);
+		expect(await notReady.json()).toEqual({
+			ok: false,
+			readiness: "composed",
+		});
+		ready = true;
+		const readyRes = await fetch(`${origin}/readyz`);
+		expect(readyRes.status).toBe(200);
+		expect(await readyRes.json()).toEqual({
+			ok: true,
+			readiness: "composed",
+		});
+		expect(seen).toEqual(["/readyz", "/readyz"]);
+		const denied = await fetch(`${origin}/v1/cd/pipelines/main`);
+		expect(denied.status).toBe(401);
+		expect(seen).toEqual(["/readyz", "/readyz"]);
+	});
+
 	it("hands every other request to the CD mount", async () => {
 		const seen: string[] = [];
 		const host: CdHost = {
