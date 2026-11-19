@@ -13,7 +13,7 @@ function deferred() {
 	return { promise, resolve };
 }
 
-it("resumes an earlier in-flight step after a later parallel step completed", async () => {
+it("rejects an earlier scheduled gap after a later parallel step completed", async () => {
 	const base = createInMemoryEventStore();
 	const laterRecorded = deferred();
 	const releaseEarlier = deferred();
@@ -59,47 +59,19 @@ it("resumes an earlier in-flight step after a later parallel step completed", as
 	}
 	releaseEarlier.resolve();
 	await running;
-	let unexpectedEffects = 0;
-	const changed = defineWorkflow({
-		name: "parallel-replay",
-		async run(ctx) {
-			try {
-				await ctx.step("renamed", () => {
-					unexpectedEffects += 1;
-				});
-			} catch {}
-			try {
-				await ctx.step("later", () => {
-					unexpectedEffects += 1;
-				});
-			} catch {}
-			try {
-				await ctx.emit("app.Unexpected");
-			} catch {}
-			return "unexpected";
-		},
-	});
 	await expect(
 		createWorkflowEngine({ store: recoveredStore }).resume(
-			changed,
+			wf,
 			"parallel-replay",
 			null,
 		),
-	).rejects.toThrow(/step name differs from journal/);
+	).rejects.toThrow(/gapped step journal/);
 	expect(await recoveredStore.readStream("run/parallel-replay")).toEqual(saved);
-	expect(unexpectedEffects).toBe(0);
-
-	const resumed = await createWorkflowEngine({ store: recoveredStore }).resume(
-		wf,
-		"parallel-replay",
-		null,
-	);
-	expect(resumed.result).toEqual(["earlier", "later"]);
-	expect(earlierCalls).toBe(2);
+	expect(earlierCalls).toBe(1);
 	expect(laterCalls).toBe(1);
 });
 
-it("replays generated scheduled gaps without repeating recorded effects", async () => {
+it("resumes generated journals only with contiguous outcomes and one trailing schedule", async () => {
 	await fc.assert(
 		fc.asyncProperty(
 			fc.array(fc.boolean(), { minLength: 1, maxLength: 6 }),
@@ -145,6 +117,16 @@ it("replays generated scheduled gaps without repeating recorded effects", async 
 						return values;
 					},
 				});
+				const firstMissing = recorded.indexOf(false);
+				const contiguous =
+					firstMissing === -1 || firstMissing === recorded.length - 1;
+				if (!contiguous) {
+					await expect(
+						createWorkflowEngine({ store }).resume(wf, "generated-gaps", null),
+					).rejects.toThrow(/gapped step journal/);
+					expect(calls).toEqual(recorded.map(() => 0));
+					return;
+				}
 				const result = await createWorkflowEngine({ store }).resume(
 					wf,
 					"generated-gaps",
@@ -156,6 +138,129 @@ it("replays generated scheduled gaps without repeating recorded effects", async 
 		),
 		{ seed: 614451, numRuns: 100 },
 	);
+});
+
+it.each([
+	{
+		label: "scheduled-only gap",
+		events: [{ type: "run.StepScheduled", name: "step-2", index: 2 }],
+		error: /gapped step journal/,
+	},
+	{
+		label: "schedule above the outcome tip",
+		events: [
+			{ type: "run.StepScheduled", name: "step-0", index: 0 },
+			{ type: "run.StepCompleted", name: "step-0", index: 0, result: 0 },
+			{ type: "run.StepScheduled", name: "step-2", index: 2 },
+		],
+		error: /gapped step journal/,
+	},
+	{
+		label: "interior scheduled gap",
+		events: [
+			{ type: "run.StepScheduled", name: "step-0", index: 0 },
+			{ type: "run.StepScheduled", name: "step-1", index: 1 },
+			{ type: "run.StepScheduled", name: "step-2", index: 2 },
+			{ type: "run.StepCompleted", name: "step-0", index: 0, result: 0 },
+			{ type: "run.StepCompleted", name: "step-2", index: 2, result: 2 },
+		],
+		error: /gapped step journal/,
+	},
+	{
+		label: "scheduled index above the cap",
+		events: [
+			{ type: "run.StepScheduled", name: "step-huge", index: 1_000_001 },
+		],
+		error: /invalid step journal/,
+	},
+])("rejects $label before running", async ({ events, error }) => {
+	const store = createInMemoryEventStore();
+	const stream = "run/gapped-schedules";
+	let seq = 0;
+	await store.append(
+		nextEnvelope(stream, ++seq, "run.Started", {
+			args: null,
+			seed: "seed",
+			workflowName: "gapped-schedules",
+		}),
+		seq - 1,
+	);
+	for (const event of events) {
+		const { type, ...data } = event;
+		await store.append(nextEnvelope(stream, ++seq, type, data), seq - 1);
+	}
+	let effects = 0;
+	const wf = defineWorkflow({
+		name: "gapped-schedules",
+		run(ctx) {
+			return ctx.step("step-0", () => {
+				effects += 1;
+			});
+		},
+	});
+	await expect(
+		createWorkflowEngine({ store }).resume(wf, "gapped-schedules", null),
+	).rejects.toThrow(error);
+	expect(effects).toBe(0);
+	expect(await store.readStream(stream)).toHaveLength(events.length + 1);
+});
+
+it("resumes a single trailing scheduled step at the tip", async () => {
+	const store = createInMemoryEventStore();
+	const stream = "run/trailing-schedule";
+	let seq = 0;
+	await store.append(
+		nextEnvelope(stream, ++seq, "run.Started", {
+			args: null,
+			seed: "seed",
+			workflowName: "trailing-schedule",
+		}),
+		seq - 1,
+	);
+	await store.append(
+		nextEnvelope(stream, ++seq, "run.StepScheduled", {
+			name: "step-0",
+			index: 0,
+		}),
+		seq - 1,
+	);
+	await store.append(
+		nextEnvelope(stream, ++seq, "run.StepCompleted", {
+			name: "step-0",
+			index: 0,
+			result: 0,
+		}),
+		seq - 1,
+	);
+	await store.append(
+		nextEnvelope(stream, ++seq, "run.StepScheduled", {
+			name: "step-1",
+			index: 1,
+		}),
+		seq - 1,
+	);
+	const calls = [0, 0];
+	const wf = defineWorkflow({
+		name: "trailing-schedule",
+		async run(ctx) {
+			const first = await ctx.step("step-0", () => {
+				calls[0] = (calls[0] ?? 0) + 1;
+				return 0;
+			});
+			const second = await ctx.step("step-1", () => {
+				calls[1] = (calls[1] ?? 0) + 1;
+				return 1;
+			});
+			return [first, second];
+		},
+	});
+	const resumed = await createWorkflowEngine({ store }).resume(
+		wf,
+		"trailing-schedule",
+		null,
+	);
+	expect(resumed.result).toEqual([0, 1]);
+	expect(calls).toEqual([0, 1]);
 });
 
 it("rejects inconsistent scheduled step names before running", async () => {

@@ -164,7 +164,7 @@ function listStepOutcomeIndices(
 	return indices;
 }
 
-function maxStepOutcomeIndex(indices: number[]): number {
+function maxStepIndex(indices: number[]): number {
 	let max = -1;
 	for (const index of indices) {
 		if (index > max) max = index;
@@ -276,19 +276,28 @@ export function createWorkflowEngine(
 		}
 		const journaledOutcomeIndices = listStepOutcomeIndices(journal);
 		const unconsumedOutcomes = new Set(journaledOutcomeIndices);
-		if (journaledOutcomeIndices.length > 0) {
-			const outcomeIndexSet = new Set(journaledOutcomeIndices);
-			const maxOutcomeIndex = maxStepOutcomeIndex(journaledOutcomeIndices);
-			if (
-				!Number.isSafeInteger(maxOutcomeIndex) ||
-				maxOutcomeIndex > 1_000_000
-			) {
-				throw new Error(`invalid step journal for ${runId}`);
+		const outcomeIndexSet = new Set(journaledOutcomeIndices);
+		const scheduledIndices = [...scheduledSteps.keys()];
+		const highestStepIndex = maxStepIndex([
+			...journaledOutcomeIndices,
+			...scheduledIndices,
+		]);
+		if (
+			!Number.isSafeInteger(highestStepIndex) ||
+			highestStepIndex > 1_000_000
+		) {
+			throw new Error(`invalid step journal for ${runId}`);
+		}
+		let tip = 0;
+		while (outcomeIndexSet.has(tip)) tip += 1;
+		for (const index of outcomeIndexSet) {
+			if (index > tip) {
+				throw new Error(`gapped step journal for ${runId}`);
 			}
-			for (let index = 0; index < maxOutcomeIndex; index += 1) {
-				if (!outcomeIndexSet.has(index) && !scheduledSteps.has(index)) {
-					throw new Error(`gapped step journal for ${runId}`);
-				}
+		}
+		for (const index of scheduledIndices) {
+			if (index > tip) {
+				throw new Error(`gapped step journal for ${runId}`);
 			}
 		}
 		const terminals = journal.filter(
