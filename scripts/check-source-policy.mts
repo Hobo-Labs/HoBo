@@ -123,6 +123,48 @@ function addedLineCounts(args: string[]): Map<string, number> {
 	return counts;
 }
 
+function linearRelink(before: string, after: string): boolean {
+	const links = /\]\(([^)]+)\)/gu;
+	const previous = [...before.matchAll(links)].map((match) => match[1]);
+	const next = [...after.matchAll(links)].map((match) => match[1]);
+	if (
+		previous.length !== next.length ||
+		before.replace(links, "]()") !== after.replace(links, "]()")
+	)
+		return false;
+	let changed = false;
+	for (let index = 0; index < previous.length; index++) {
+		if (previous[index] === next[index]) continue;
+		if (!next[index]?.startsWith("https://linear.app/")) return false;
+		changed = true;
+	}
+	return changed;
+}
+
+function removalOrLinearRelink(args: string[], file: string): boolean {
+	const patch = git([
+		...args,
+		"--no-color",
+		"--no-ext-diff",
+		"--unified=0",
+		"--",
+		file,
+	]);
+	const removed: string[] = [];
+	const added: string[] = [];
+	for (const line of patch.split("\n")) {
+		if (line.startsWith("--- ") || line.startsWith("+++ ")) continue;
+		if (line.startsWith("-")) removed.push(line.slice(1));
+		if (line.startsWith("+")) added.push(line.slice(1));
+	}
+	for (const line of added) {
+		const index = removed.findIndex((previous) => linearRelink(previous, line));
+		if (index < 0) return false;
+		removed.splice(index, 1);
+	}
+	return true;
+}
+
 function renameSources(args: string[]): Map<string, string> {
 	const entries = git([
 		...args,
@@ -389,7 +431,10 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		const deletionOnly = !untrackedSet.has(file) && addedCounts.get(file) === 0;
 		if (
 			/\.mdx?$/iu.test(file) &&
-			!(deletionOnly && modified.has(file)) &&
+			!(
+				modified.has(file) &&
+				(deletionOnly || removalOrLinearRelink(args, file))
+			) &&
 			parents.every((parent) => parent.files.has(file))
 		) {
 			const reason = documentViolation(file, contents(mode, file));

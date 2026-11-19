@@ -422,6 +422,32 @@ describe("source policy", () => {
 		assert.equal(guard(repo, "--staged").status, 1);
 	});
 
+	it("allows existing design links to move to Linear without adding prose", () => {
+		const repo = fixture();
+		write(repo, "docs/design/existing.md", "# Existing\n[Scope](./old.md)\n");
+		git(repo, "add", "--all");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"add design",
+		);
+		write(repo, "docs/design/existing.md", "# Existing\n[Scope](https://linear.app/team/doc)\n");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(repo, "docs/design/existing.md", "# Existing\n[Scope](https://example.test/doc)\n");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 1);
+		write(repo, "docs/design/existing.md", "# Existing\n[New scope](https://linear.app/team/doc)\n");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 1);
+	});
+
 	it("allows tracked planning documents to be removed before staging", () => {
 		const repo = fixture();
 		write(repo, "old.md", "# Existing reference\n");
