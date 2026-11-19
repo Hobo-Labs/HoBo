@@ -10,6 +10,13 @@ import {
 	stableDigest,
 } from "@hobo/core";
 import {
+	MIGRATION_EVENTS,
+	migrationFactVersion,
+	type MigrationCutOverEventData,
+	MigrationCutOverEventDataSchema,
+	MigrationPhaseAppliedEventDataSchema,
+} from "@hobo/data-core";
+import {
 	ProjectionRebuildCheckpointRecordSchema,
 	ProjectionRebuildRowRecordSchema,
 	ProjectionRebuildSeedRecordSchema,
@@ -40,6 +47,7 @@ export interface ProjectionRebuildOptions<Row extends JsonObject> {
 	readonly journalPrefix: string;
 	readonly cutoverStreamId: string;
 	readonly projection: string;
+	readonly migrationId: string;
 	readonly schemaVersion: string;
 	readonly targetSinkId: string;
 	readonly tenant: string;
@@ -59,6 +67,7 @@ export interface ProjectionRebuildOptions<Row extends JsonObject> {
 		readonly rows: Readonly<Record<string, Row>>;
 	};
 	readonly batchSize?: number;
+	readonly clock?: () => string;
 }
 
 export interface ProjectionRebuildShardResult {
@@ -127,6 +136,7 @@ export function createProjectionRebuild<Row extends JsonObject>(
 		journalPrefix,
 		cutoverStreamId,
 		projection,
+		migrationId,
 		schemaVersion,
 		targetSinkId,
 		tenant,
@@ -138,11 +148,13 @@ export function createProjectionRebuild<Row extends JsonObject>(
 		parseRow,
 	} = options;
 	const actor = structuredClone(options.actor);
+	const clock = options.clock ?? (() => new Date().toISOString());
 	for (const [name, value] of [
 		["sourceId", sourceId],
 		["journalPrefix", journalPrefix],
 		["cutoverStreamId", cutoverStreamId],
 		["projection", projection],
+		["migrationId", migrationId],
 		["schemaVersion", schemaVersion],
 		["targetSinkId", targetSinkId],
 		["tenant", tenant],
@@ -155,6 +167,7 @@ export function createProjectionRebuild<Row extends JsonObject>(
 	integer(shardCount, "shardCount", 256);
 	if (
 		cutoverStreamId === `${journalPrefix}/config` ||
+		cutoverStreamId === `${journalPrefix}/audit` ||
 		Array.from(
 			{ length: shardCount },
 			(_, shard) => `${journalPrefix}/shard/${shard}`,
@@ -179,6 +192,7 @@ export function createProjectionRebuild<Row extends JsonObject>(
 		sourceId,
 		sourceStreamId: sourceStreamId ?? null,
 		projection,
+		migrationId,
 		schemaVersion,
 		targetSinkId,
 		tenant,
@@ -203,6 +217,22 @@ export function createProjectionRebuild<Row extends JsonObject>(
 		return sourceStreamId === undefined
 			? base
 			: { ...base, filter: { streamId: sourceStreamId } };
+	}
+
+	async function sourceAdvanced(position: bigint): Promise<boolean> {
+		for await (const item of source.readAll(sourceReadOptions(position, 1))) {
+			if (item.position <= position)
+				throw new Error("source returned an invalid position");
+			return true;
+		}
+		return false;
+	}
+
+	function now(): string {
+		const timestamp = Date.parse(clock());
+		if (!Number.isFinite(timestamp))
+			throw new TypeError("clock must return a valid timestamp");
+		return new Date(timestamp).toISOString();
 	}
 
 	function validatedRow(value: JsonValue): Row {
@@ -521,18 +551,118 @@ export function createProjectionRebuild<Row extends JsonObject>(
 		throw new Error("rebuild retries exhausted");
 	}
 
+	async function ensureBackfillAudit(position: bigint): Promise<bigint> {
+		const auditStreamId = `${journalPrefix}/audit`;
+		const seed = await loadSeed();
+		const backfillKind =
+			mode === "deterministic" ? "deterministic-replay" : "recorded-output";
+		const strategy =
+			mode === "recorded-output"
+				? "recorded-output-backfill"
+				: seed.seeded
+					? "snapshot-tail"
+					: "rebuild-from-zero";
+		for (let attempt = 0; attempt < 8; attempt += 1) {
+			let recorded: bigint | undefined;
+			for await (const event of journal.read(auditStreamId)) {
+				if (
+					recorded !== undefined ||
+					event.seq !== 1 ||
+					event.tenant !== tenant ||
+					event.type !== MIGRATION_EVENTS.PhaseApplied ||
+					event.v !== migrationFactVersion(event.type)
+				)
+					throw new Error("invalid rebuild phase audit journal");
+				const data = fromJsonString(
+					MigrationPhaseAppliedEventDataSchema,
+					JSON.stringify(event.data),
+				);
+				if (
+					data.migrationId !== migrationId ||
+					data.phase !== "backfill" ||
+					!data.appliedAt ||
+					data.projection !== projection ||
+					data.targetSinkId !== targetSinkId ||
+					data.schemaVersion !== schemaVersion ||
+					data.backfillKind !== backfillKind ||
+					data.strategy !== strategy ||
+					data.checkpointed !== true ||
+					data.configHash !== configHash ||
+					data.sourcePosition === undefined
+				)
+					throw new Error("invalid rebuild phase audit");
+				recorded = parseEventPosition(data.sourcePosition);
+			}
+			if (recorded !== undefined) return recorded;
+			const data = create(MigrationPhaseAppliedEventDataSchema, {
+				migrationId,
+				phase: "backfill",
+				appliedAt: now(),
+				projection,
+				targetSinkId,
+				schemaVersion,
+				backfillKind,
+				strategy,
+				checkpointed: true,
+				sourcePosition: position.toString(),
+				configHash,
+			});
+			try {
+				await journal.append(
+					auditStreamId,
+					[
+						{
+							type: MIGRATION_EVENTS.PhaseApplied,
+							v: migrationFactVersion(MIGRATION_EVENTS.PhaseApplied),
+							data: toJson(MigrationPhaseAppliedEventDataSchema, data),
+						},
+					],
+					{ expectedSeq: 0, tenant, actor },
+				);
+				return position;
+			} catch (error) {
+				if (
+					!(error instanceof Error) ||
+					!isOptimisticConflict(error) ||
+					attempt === 7
+				)
+					throw error;
+			}
+		}
+		throw new Error("rebuild phase audit retries exhausted");
+	}
+
 	async function currentCutover() {
 		let revision = 0;
 		let activeSinkId: string | undefined;
 		let activeConfigHash: string | undefined;
 		let previousSinkId: string | undefined;
 		let verifiedPosition: bigint | undefined;
+		let migrationCutover: MigrationCutOverEventData | undefined;
 		for await (const event of journal.read(cutoverStreamId)) {
-			if (
-				event.seq !== revision + 1 ||
-				event.tenant !== tenant ||
-				event.type !== CUTOVER
-			)
+			if (event.seq !== revision + 1 || event.tenant !== tenant)
+				throw new Error("invalid projection cutover journal");
+			revision = event.seq;
+			if (event.type === MIGRATION_EVENTS.CutOver) {
+				if (migrationCutover || event.v !== migrationFactVersion(event.type))
+					throw new Error("invalid rebuild audit sequence");
+				migrationCutover = fromJsonString(
+					MigrationCutOverEventDataSchema,
+					JSON.stringify(event.data),
+				);
+				if (
+					!migrationCutover.migrationId ||
+					migrationCutover.projection !== projection ||
+					!migrationCutover.toSinkId ||
+					!migrationCutover.fromSinkId ||
+					!migrationCutover.cutOverAt ||
+					migrationCutover.cutover !== "blue-green" ||
+					migrationCutover.logPosition === undefined
+				)
+					throw new Error("invalid rebuild cutover audit");
+				continue;
+			}
+			if (event.type !== CUTOVER)
 				throw new Error("invalid projection cutover journal");
 			const data = fromJsonString(
 				ProjectionSinkReboundDataSchema,
@@ -542,15 +672,28 @@ export function createProjectionRebuild<Row extends JsonObject>(
 				data.projection !== projection ||
 				!data.fromSinkId ||
 				!data.toSinkId ||
+				!data.configHash ||
 				(activeSinkId !== undefined && activeSinkId !== data.fromSinkId)
 			)
 				throw new Error("invalid projection cutover record");
+			if (migrationCutover || data.migrationId) {
+				if (
+					!migrationCutover ||
+					data.migrationId !== migrationCutover.migrationId ||
+					data.fromSinkId !== migrationCutover.fromSinkId ||
+					data.toSinkId !== migrationCutover.toSinkId ||
+					data.verifiedPosition !==
+						parseEventPosition(migrationCutover.logPosition)
+				)
+					throw new Error("rebuild audit does not match the sink switch");
+			}
 			activeSinkId = data.toSinkId;
 			activeConfigHash = data.configHash;
 			previousSinkId = data.fromSinkId;
 			verifiedPosition = data.verifiedPosition;
-			revision = event.seq;
+			migrationCutover = undefined;
 		}
+		if (migrationCutover) throw new Error("incomplete rebuild audit");
 		return {
 			revision,
 			activeSinkId,
@@ -577,9 +720,23 @@ export function createProjectionRebuild<Row extends JsonObject>(
 
 	return {
 		async runBatch(): Promise<readonly ProjectionRebuildShardResult[]> {
-			return Promise.all(
+			const results = await Promise.all(
 				Array.from({ length: shardCount }, (_, shard) => runShard(shard)),
 			);
+			const first = results[0];
+			if (first && results.every((result) => result.caughtUp)) {
+				if (
+					results.some(
+						(result) => result.sourcePosition !== first.sourcePosition,
+					)
+				)
+					return results.map((result) => ({ ...result, caughtUp: false }));
+				const position = parseEventPosition(first.sourcePosition);
+				if (await sourceAdvanced(position))
+					return results.map((result) => ({ ...result, caughtUp: false }));
+				await ensureBackfillAudit(position);
+			}
+			return results;
 		},
 		async read() {
 			const shards = await Promise.all(
@@ -615,11 +772,10 @@ export function createProjectionRebuild<Row extends JsonObject>(
 				throw new Error(
 					"projection rebuild has not reached the cutover position",
 				);
-			for await (const item of source.readAll(sourceReadOptions(barrier, 1))) {
-				if (item.position > barrier)
-					throw new Error("source advanced beyond the cutover position");
-				throw new Error("source returned an invalid cutover position");
-			}
+			if (await sourceAdvanced(barrier))
+				throw new Error("source advanced beyond the cutover position");
+			if ((await ensureBackfillAudit(barrier)) > barrier)
+				throw new Error("backfill audit is newer than the cutover position");
 			for (let attempt = 0; attempt < 8; attempt += 1) {
 				const current = await currentCutover();
 				if (matchesCutover(current, fromSinkId, barrier)) return targetSinkId;
@@ -634,11 +790,26 @@ export function createProjectionRebuild<Row extends JsonObject>(
 					toSinkId: targetSinkId,
 					configHash,
 					verifiedPosition: barrier,
+					migrationId,
+				});
+				const migrationCutover = create(MigrationCutOverEventDataSchema, {
+					migrationId,
+					cutOverAt: now(),
+					logPosition: barrier.toString(),
+					projection,
+					fromSinkId,
+					toSinkId: targetSinkId,
+					cutover: "blue-green",
 				});
 				try {
 					await journal.append(
 						cutoverStreamId,
 						[
+							{
+								type: MIGRATION_EVENTS.CutOver,
+								v: migrationFactVersion(MIGRATION_EVENTS.CutOver),
+								data: toJson(MigrationCutOverEventDataSchema, migrationCutover),
+							},
 							{
 								type: CUTOVER,
 								data: toJson(ProjectionSinkReboundDataSchema, data),

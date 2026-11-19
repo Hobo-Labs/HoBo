@@ -90,6 +90,7 @@ message ProjectionSinkReboundData {
   string to_sink_id = 4;
   string config_hash = 5;
   uint64 verified_position = 6;
+  string migration_id = 7;
 }
 
 message ProjectionReplicatedEventData {

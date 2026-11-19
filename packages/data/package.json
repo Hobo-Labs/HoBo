@@ -19,6 +19,7 @@
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/core": "workspace:*",
+		"@hobo/data-core": "workspace:*",
 		"@hobo/storage-sqlite": "workspace:*"
 	},
 	"devDependencies": {

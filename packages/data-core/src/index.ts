@@ -1,3 +1,9 @@
+export {
+	type MigrationCutOverEventData,
+	MigrationCutOverEventDataSchema,
+	type MigrationPhaseAppliedEventData,
+	MigrationPhaseAppliedEventDataSchema,
+} from "./_generated/data_core_pb.js";
 export * from "./canonical.js";
 export * from "./conformance.js";
 export * from "./crash-injection.js";
