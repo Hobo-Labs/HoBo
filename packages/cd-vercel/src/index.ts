@@ -1,6 +1,7 @@
 export {
 	type CdHostDeps,
 	composeVercelCdHost,
+	journalFleetEnvProvisioned,
 	memoizedCdHost,
 	topologyFilesOf,
 } from "./compose.js";

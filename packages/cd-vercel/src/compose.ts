@@ -24,12 +24,17 @@ export function topologyFilesOf(env: Env): readonly string[] {
 		.filter((file) => file.length > 0);
 }
 
+export function journalFleetEnvProvisioned(env: Env): boolean {
+	const fleet = env.HOBO_CD_POSTGRES_FLEET?.trim();
+	return fleet !== undefined && fleet.length > 0;
+}
+
 export async function composeVercelCdHost(deps: CdHostDeps): Promise<CdHost> {
 	const store = await deps.open();
 	const journal = await withOwnerJournalFleet(deps.env, deps.cwd, async () =>
 		Promise.resolve(store),
 	);
-	if (journal.env.HOBO_CD_POSTGRES_FLEET === undefined)
+	if (!journalFleetEnvProvisioned(journal.env))
 		throw new CdStoreBindingError(
 			"cd-journal-not-provisioned",
 			"The owner's store holds no CD journal fleet. Run hobo cd up, which provisions it.",

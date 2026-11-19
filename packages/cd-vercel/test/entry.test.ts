@@ -9,6 +9,7 @@ import {
 	CdStoreBindingError,
 	composeVercelCdHost,
 	createCdHttpEntry,
+	journalFleetEnvProvisioned,
 	memoizedCdHost,
 	parseCdStoreCoordinates,
 	readCdStoreCoordinates,
@@ -102,6 +103,25 @@ describe("the CD function's HTTP entry", () => {
 		});
 	});
 
+	it("denies operator reads on the production entry", async () => {
+		const host: CdHost = {
+			handle: async () => ({
+				status: 200,
+				headers: {},
+				body: new Uint8Array(),
+			}),
+		} as never;
+		const origin = await serve(
+			createCdHttpEntry(async () => host, { operatorReads: "deny" }),
+		);
+		const response = await fetch(`${origin}/v1/cd/pipelines/main`);
+		expect(response.status).toBe(401);
+		expect(await response.json()).toMatchObject({
+			ok: false,
+			code: "cd-operator-read-denied",
+		});
+	});
+
 	it("composes once, and tries again after a failure", async () => {
 		let calls = 0;
 		const host = {} as CdHost;
@@ -132,6 +152,15 @@ describe("the owner's store, and the journal fleet in it", () => {
 		expect(parsed.identityId).toBe(binding.relayIdentityId);
 		expect(() => parseCdStoreCoordinates("{}")).toThrow(
 			expect.objectContaining({ code: "cd-store-binding-invalid" }),
+		);
+	});
+
+	it("treats a blank journal fleet env as not provisioned", () => {
+		expect(journalFleetEnvProvisioned({ HOBO_CD_POSTGRES_FLEET: "  " })).toBe(
+			false,
+		);
+		expect(journalFleetEnvProvisioned({ HOBO_CD_POSTGRES_FLEET: "f1" })).toBe(
+			true,
 		);
 	});
 

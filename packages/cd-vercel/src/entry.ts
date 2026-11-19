@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { FeedRequest, FeedResponse } from "@hobo/cd";
+import { parseReadRequest } from "@hobo/cd/service";
 import type { CdHost } from "@hobo/hobo/cd-platform";
 
 import { composeVercelCdHost, memoizedCdHost } from "./compose.js";
@@ -67,11 +68,22 @@ function sendJson(
 	response.end(JSON.stringify(value));
 }
 
+export type CdHttpEntryOptions = Readonly<{
+	commit?: string | null;
+	operatorReads?: "allow" | "deny";
+}>;
+
+function deniesOperatorRead(request: FeedRequest): boolean {
+	const route = parseReadRequest(request);
+	return route.ok && route.value.kind !== "feed";
+}
+
 export function createCdHttpEntry(
 	load: () => Promise<CdHost>,
-	options: Readonly<{ commit?: string | null }> = {},
+	options: CdHttpEntryOptions = {},
 ) {
 	const commit = options.commit ?? null;
+	const operatorReads = options.operatorReads ?? "allow";
 	return async (
 		request: IncomingMessage,
 		response: ServerResponse,
@@ -107,6 +119,14 @@ export function createCdHttpEntry(
 				headers: headersOf(request),
 				body: await readBody(request),
 			};
+			if (operatorReads === "deny" && deniesOperatorRead(feed)) {
+				sendJson(response, 401, {
+					ok: false,
+					code: "cd-operator-read-denied",
+					message: "Operator read routes are not exposed on this mount.",
+				});
+				return;
+			}
 			const perRequest = new AbortController();
 			response.on("close", () => perRequest.abort());
 			await send(response, await host.handle(feed, perRequest.signal));
@@ -145,4 +165,5 @@ export const loadCdHost = memoizedCdHost(() =>
 
 export const http = createCdHttpEntry(loadCdHost, {
 	commit: buildCommit(process.env),
+	operatorReads: "deny",
 });
