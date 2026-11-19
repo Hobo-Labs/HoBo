@@ -171,6 +171,7 @@ export async function startConnectPage(
 	const done = new Promise<ConnectStep>((resolve) => {
 		settle = resolve;
 	});
+	if (isTerminalStep(step)) settle(step);
 	let transitionQueue: Promise<void> = Promise.resolve();
 	const transition = (run: () => Promise<FlowTransition>) => {
 		const next = transitionQueue.then(async () => {

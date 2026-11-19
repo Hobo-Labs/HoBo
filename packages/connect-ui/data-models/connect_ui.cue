@@ -4,7 +4,7 @@
 package connect_ui
 
 #ConnectActionName: "connect.chooseStore" | "connect.start" | "connect.cancel"
-#StoreId:           "infisical" | "1password" | "bitwarden"
+#StoreId:           "infisical" | "1password" | "bitwarden" | "yard"
 #Provider:          "github" | "vercel"
 
 #ConnectActionRequest: {
