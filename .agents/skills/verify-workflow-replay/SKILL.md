@@ -5,11 +5,11 @@ description: Verify durable workflow run identity, replay, and terminal outcomes
 
 # Durable workflow identity and replay
 
-**Properties:** A completed journaled step is reused on resume; workflow operations validate run IDs; a fresh run atomically claims its ID; start and resume capture reproducible input; a resume checks recorded input and workflow identity, uses the recorded seed, refuses duplicate terminal facts, and returns a recorded terminal outcome without running the workflow or appending another terminal fact. Journaled step and workflow results are captured before return. A terminal fact is not appended while recorded step outcomes remain unconsumed, and no outcome may follow a failed step.
+**Properties:** A completed journaled step is reused on resume; workflow operations validate run IDs; a fresh run atomically claims its ID; start and resume capture reproducible input; a resume checks recorded input and workflow identity, uses the recorded seed, refuses duplicate terminal facts, and returns a recorded terminal outcome without running the workflow or appending another terminal fact. Journaled step and workflow results are captured before return. A terminal fact is not appended while recorded step outcomes remain unconsumed; a caught step failure can be followed by compensation and a completed run.
 
 **Why:** Repeating effects or reusing results for different inputs can corrupt work.
 
-**Review baseline:** `ee94e75947e49b47b4a04e5bc8021eb908a91ef7`.
+**Review baseline:** `09d3783f1000a1f9b9bb7b6c1e0a4ac098f53281`.
 
 ## Covered code
 
@@ -42,7 +42,7 @@ The first command runs the real-code checks, generated properties, TLC 1.7.4 wit
 
 WorkflowReplay bounds one step to two calls and permits crashes before or after its completion fact (17 states). WorkflowRunIds explores two workers, two candidate IDs, preexisting legacy journals, retries, and an atomic empty-stream claim (278 states). WorkflowResume checks input, recorded workflow name, and recorded seed (280 states). WorkflowTerminal explores completed and failed terminal outcomes and repeated resumes (15 states); independent invariants require no subsequent body call, no duplicate terminal fact, and the recorded outcome to be returned.
 
-WorkflowTerminalHistory explores seven states and eleven steps for a journal with zero, one or two terminal facts. It checks that duplicate terminal facts do not return an outcome and that a terminal journal does not execute the workflow. The five-state projection hides seven same-label steps. Removing duplicate detection returns a conflicting outcome; real-code checks exercise all four pairs of completed and failed facts. Z3 finds counterexamples when duplicate terminal facts still return an outcome. This model assumes the journal read is truthful and does not validate the complete order or authenticity of history, prove TypeScript refinement, or establish liveness.
+WorkflowTerminalHistory explores seven states and eleven steps for a journal with zero, one or two terminal facts. It checks that duplicate terminal facts do not return an outcome and that a terminal journal does not execute the workflow. The five-state projection hides seven same-label steps. Removing duplicate detection returns a conflicting outcome; real-code checks exercise all four pairs of completed and failed facts and reject a `run.*` fact following a terminal. Z3 finds counterexamples when duplicate terminal facts still return an outcome. This model assumes the journal read is truthful and does not model the post-terminal ordering check or validate the complete order or authenticity of history, prove TypeScript refinement, or establish liveness.
 
 ```mermaid
 stateDiagram-v2
@@ -60,22 +60,27 @@ stateDiagram-v2
 
 Read this model with `/statechart` using the terminal-history view in `models/`.
 
-WorkflowStepJournal explores bounded histories of up to three step outcomes, including a failed outcome at any position, early body success or failure, and terminal recording. It requires every journaled outcome to be consumed before either terminal is recorded and refuses histories containing an outcome after a failed step. Removing either guard yields a TLC counterexample; Z3 proves the corresponding integer implications and exhibits counterexamples without the guards. Real-code tests reproduce both paths and verify that refusal does not append a terminal fact. The model treats parsing and index uniqueness as established preconditions, bounds the history, and does not prove storage authenticity, TypeScript refinement, or liveness.
+WorkflowStepJournal explores 148 states and 306 steps for histories of up to three outcomes and at most one failed step. It checks that terminal recording consumes every saved outcome, that a caught failure was replayed, and that completion after a failed step requires catching it. TLC reaches a caught failure followed by another outcome and completion. Removing either terminal-consumption guard produces a counterexample; Z3 checks the corresponding integer implications. Real-code tests cover normal compensation, a crash after compensation, repeated terminal resume, and refusal of unconsumed outcomes. The seven-state projection hides 162 steps within the same displayed state. The model assumes sequential consumption, truthful parsing and unique indices; it does not establish storage authenticity, TypeScript refinement, concurrent execution, or liveness.
 
 ```mermaid
 stateDiagram-v2
-  s0: Journal read
-  s1: Replaying workflow
-  s2: Workflow returned or failed
-  s3: Inconsistent journal refused
-  s4: Terminal recorded
+  s0: Replaying workflow
+  s1: Workflow failed
+  s2: Workflow returned
+  s3: Recorded step failed
+  s4: Completion recorded
+  s5: Failure recorded
+  s6: Inconsistent journal refused
   [*] --> s0
-  s0 --> s3: reject outcome after failure
-  s0 --> s1: validate outcome history
-  s1 --> s1: consume recorded outcome
-  s1 --> s2: workflow returns or fails
-  s2 --> s3: reject unconsumed outcome
-  s2 --> s4: record terminal
+  s0 --> s1: workflow fails
+  s0 --> s2: workflow returns
+  s0 --> s3: consume failed step
+  s1 --> s5: validate before failure
+  s1 --> s6: validate before failure
+  s2 --> s4: validate before completion
+  s2 --> s6: validate before completion
+  s3 --> s1: propagate failure
+  s3 --> s0: catch failure and compensate
 ```
 
 Read this model with `/statechart` using the step-journal view in `models/`.
@@ -137,7 +142,7 @@ stateDiagram-v2
 
 For the mutable-return variant, `/statechart` found the shortest violation: produce a result, capture it, edit the original while storage waits, record the capture, and return the edited original. The delayed-write real-code tests reproduce that path for both a step and a workflow. Read this model with `/statechart` using the result-snapshot view in `models/`.
 
-The generated implementation properties use seeds 614448 and 614449 and 150 examples each. They check successful and failed terminal resumes and races between fresh runs claiming the same ID. Seeds 151942 and 151943 generate 150 JSON results each for terminal and step replay. Input seeds 614606 and 614607 generate 40 caller-edit and 100 ordinary-JSON cases; seed 614605 generates 100 invalid IDs. The generated-app SQLite integration test covers starting and resuming through the generated adapter, including no extra terminal journal entry.
+The generated implementation properties use seeds 614448, 614449 and 614450 and 150 examples each. They check successful and failed terminal resumes, races between fresh runs claiming the same ID, and multiple caught failures with later steps and crashes at varying points. Seeds 151942 and 151943 generate 150 JSON results each for terminal and step replay. Input seeds 614606 and 614607 generate 40 caller-edit and 100 ordinary-JSON cases; seed 614605 generates 100 invalid IDs. The generated-app SQLite integration test covers starting and resuming through the generated adapter, including no extra terminal journal entry.
 
 The store must implement atomic expected-sequence compare-and-set. Legacy journals without recorded input are interpreted as null, so prior undefined inputs cannot be recovered. Legacy journals without a workflow name cannot establish workflow identity; legacy journals without a seed use the current engine seed, and old failed events without a step cannot recover that step. Concurrent resumes are not fenced. An external effect can repeat after a crash between the effect and its completion fact; this is not an exactly-once guarantee.
 

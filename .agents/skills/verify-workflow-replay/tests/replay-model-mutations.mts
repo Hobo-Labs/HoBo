@@ -23,8 +23,10 @@ const cases = [
   ['WorkflowTerminal', String.raw`returnedOutcome' = savedOutcome`, String.raw`returnedOutcome' = "none"`, 'ResumeReturnsRecorded', ''],
   ['WorkflowStepJournal', String.raw`FinishFailed == /\ phase = "finishing-failure"
                 /\ phase' = IF EnforceConsumption /\ consumed <= maxIndex`, String.raw`FinishFailed == /\ phase = "finishing-failure"
-                /\ phase' = IF FALSE /\ consumed <= maxIndex`, 'NoUnconsumedTerminal', 'CONSTANTS EnforceConsumption = TRUE\n          RejectPostFailure = TRUE'],
-  ['WorkflowStepJournal', String.raw`IF RejectPostFailure`, String.raw`IF FALSE`, 'PostFailureHistoryRefused', 'CONSTANTS EnforceConsumption = TRUE\n          RejectPostFailure = TRUE'],
+                /\ phase' = IF FALSE /\ consumed <= maxIndex`, 'NoUnconsumedTerminal', 'CONSTANT EnforceConsumption = TRUE'],
+  ['WorkflowStepJournal', String.raw`FinishSucceeded == /\ phase = "finishing-success"
+                   /\ phase' = IF EnforceConsumption /\ consumed <= maxIndex`, String.raw`FinishSucceeded == /\ phase = "finishing-success"
+                   /\ phase' = IF FALSE /\ consumed <= maxIndex`, 'NoUnconsumedTerminal', 'CONSTANT EnforceConsumption = TRUE'],
 ] as const;
 try {
   for (const [model, before, after, invariant, constants] of cases) {

@@ -182,15 +182,6 @@ function assertUnconsumedStepOutcomes(
 	}
 }
 
-function assertNoStepFailureBeforeCompletion(
-	journal: ReadonlyArray<{ type: string; data: JsonValue }>,
-	runId: string,
-): void {
-	if (journal.some((event) => event.type === "run.StepFailed")) {
-		throw new Error(`conflicting completed terminal for ${runId}`);
-	}
-}
-
 export function createWorkflowEngine(
 	options: WorkflowEngineOptions = {},
 ): WorkflowEngine {
@@ -279,7 +270,10 @@ export function createWorkflowEngine(
 		if (journaledOutcomeIndices.length > 0) {
 			const outcomeIndexSet = new Set(journaledOutcomeIndices);
 			const maxOutcomeIndex = maxStepOutcomeIndex(journaledOutcomeIndices);
-			if (!Number.isSafeInteger(maxOutcomeIndex) || maxOutcomeIndex > 1_000_000) {
+			if (
+				!Number.isSafeInteger(maxOutcomeIndex) ||
+				maxOutcomeIndex > 1_000_000
+			) {
 				throw new Error(`invalid step journal for ${runId}`);
 			}
 			for (let index = 0; index < maxOutcomeIndex; index += 1) {
@@ -287,18 +281,6 @@ export function createWorkflowEngine(
 					throw new Error(`gapped step journal for ${runId}`);
 				}
 			}
-		}
-		const maxJournaledOutcomeIndex = maxStepOutcomeIndex(journaledOutcomeIndices);
-		const failedOutcomeIndices = journal
-			.filter(
-				(event) => event.type === "run.StepFailed" && isRecord(event.data),
-			)
-			.map((event) => parseRunStepFailedFact(cloneAsJson(event.data)).index);
-		if (
-			maxJournaledOutcomeIndex >= 0 &&
-			failedOutcomeIndices.some((index) => index < maxJournaledOutcomeIndex)
-		) {
-			throw new Error(`step outcome follows failure for ${runId}`);
 		}
 		const terminals = journal.filter(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
@@ -315,12 +297,6 @@ export function createWorkflowEngine(
 						throw new Error(`events after terminal for ${runId}`);
 					}
 				}
-			}
-			if (
-				terminal.type === "run.Completed" &&
-				journal.some((event) => event.type === "run.StepFailed")
-			) {
-				throw new Error(`conflicting completed terminal for ${runId}`);
 			}
 			const data = cloneAsJson(terminal.data);
 			if (!isRecord(data)) {
@@ -532,7 +508,6 @@ export function createWorkflowEngine(
 		try {
 			const value = await def.run(ctx, runArgs);
 			assertUnconsumedStepOutcomes(journal, stepIndex, runId);
-			assertNoStepFailureBeforeCompletion(journal, runId);
 			const result = captureWorkflowResult(value);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };

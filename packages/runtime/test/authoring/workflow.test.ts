@@ -421,9 +421,11 @@ describe("durable workflow: journal, restart, replay", () => {
 		).rejects.toThrow("SIMULATED_HOST_CRASH");
 		expect(attempts).toBe(1);
 		const restarted = createWorkflowEngine({ store: engine.store });
-		await expect(
-			restarted.resume(wf, "step-failed-replay", {}),
-		).rejects.toThrow(/conflicting completed terminal/);
+		const handle = await restarted.resume(wf, "step-failed-replay", {});
+		expect(handle.result).toBe("recovered");
+		expect((await restarted.resume(wf, "step-failed-replay", {})).result).toBe(
+			"recovered",
+		);
 		expect(attempts).toBe(1);
 	});
 
@@ -1055,7 +1057,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
-	it("rejects completed terminal when the journal still records a step failure", async () => {
+	it("returns a completed terminal after a recorded step failure", async () => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(
 			{
@@ -1097,28 +1099,9 @@ describe("durable workflow: journal, restart, replay", () => {
 				return "live";
 			},
 		});
-		await expect(engine.resume(wf, "conflict-terminal", {})).rejects.toThrow(
-			/conflicting completed terminal/,
-		);
-	});
-
-	it("refuses run.Completed when a step failure was recorded in the same attempt", async () => {
-		const engine = createWorkflowEngine();
-		const wf = defineWorkflow({
-			name: "catch-step-fail",
-			async run(ctx) {
-				try {
-					await ctx.step("pay", () => {
-						throw new WorkflowFailure("card declined", { step: "pay" });
-					});
-				} catch {
-					return "recovered";
-				}
-			},
-		});
-		await expect(engine.start(wf, {})).rejects.toThrow(
-			/conflicting completed terminal/,
-		);
+		const handle = await engine.resume(wf, "conflict-terminal", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("nope");
 	});
 
 	it("refuses run.Completed when a journaled step outcome was not consumed", async () => {
@@ -1206,50 +1189,67 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(await engine.journal("unconsumed-failure")).toHaveLength(2);
 	});
 
-	it("rejects a step outcome after a failed step", async () => {
+	it.each([
+		false,
+		true,
+	])("replays compensation after a caught step failure (crash: %s)", async (crash) => {
 		const engine = createWorkflowEngine();
-		await engine.store.append(
-			{
-				id: "start",
-				streamId: "run/outcome-after-failure",
-				seq: 1,
-				type: "run.Started",
-				data: {
-					args: {},
-					seed: "outcome-after-failure-seed",
-					workflowName: "outcome-after-failure",
-				},
-			},
-			0,
-		);
-		await engine.store.append(
-			{
-				id: "failed",
-				streamId: "run/outcome-after-failure",
-				seq: 2,
-				type: "run.StepFailed",
-				data: { name: "first", index: 0, message: "boom" },
-			},
-			1,
-		);
-		await engine.store.append(
-			{
-				id: "done",
-				streamId: "run/outcome-after-failure",
-				seq: 3,
-				type: "run.StepCompleted",
-				data: { name: "later", index: 1, result: "impossible" },
-			},
-			2,
-		);
+		let attempts = 0;
+		let compensations = 0;
+		let crashed = false;
 		const wf = defineWorkflow({
-			name: "outcome-after-failure",
-			run(ctx) {
-				return ctx.step("first", () => "nope");
+			name: "compensation",
+			async run(ctx) {
+				try {
+					await ctx.step(
+						"charge",
+						() => {
+							attempts += 1;
+							throw new Error("declined");
+						},
+						{ retries: 0 },
+					);
+				} catch (error) {
+					if (!(error instanceof WorkflowFailure)) throw error;
+					await ctx.step("compensate", () => {
+						compensations += 1;
+						return "recovered";
+					});
+				}
+				if (crash && !crashed) {
+					crashed = true;
+					throw new Error("SIMULATED_HOST_CRASH");
+				}
+				return "recovered";
 			},
 		});
-		await expect(
-			engine.resume(wf, "outcome-after-failure", {}),
-		).rejects.toThrow(/step outcome follows failure/);
+		if (crash) {
+			await expect(
+				engine.start(wf, {}, { runId: "compensation" }),
+			).rejects.toThrow("SIMULATED_HOST_CRASH");
+		} else {
+			expect(
+				(await engine.start(wf, {}, { runId: "compensation" })).result,
+			).toBe("recovered");
+		}
+		const resumed = createWorkflowEngine({ store: engine.store });
+		const result = await resumed.resume(wf, "compensation", {});
+		expect(result.status).toBe("completed");
+		expect(result.result).toBe("recovered");
+		const journal = await resumed.journal("compensation");
+		expect(journal.map((event) => event.type)).toEqual([
+			"run.Started",
+			"run.StepScheduled",
+			"run.StepFailed",
+			"run.StepScheduled",
+			"run.StepCompleted",
+			"run.Completed",
+		]);
+		expect((await resumed.resume(wf, "compensation", {})).result).toBe(
+			"recovered",
+		);
+		expect(await resumed.journal("compensation")).toEqual(journal);
+		expect(attempts).toBe(1);
+		expect(compensations).toBe(1);
 	});
 });

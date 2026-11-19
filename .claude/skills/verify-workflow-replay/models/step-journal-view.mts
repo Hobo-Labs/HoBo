@@ -1,6 +1,6 @@
 export const state = v => ({
-  checking: 'Journal read',
   running: 'Replaying workflow',
+  'handling-failure': 'Recorded step failed',
   'finishing-success': 'Workflow returned',
   'finishing-failure': 'Workflow failed',
   rejected: 'Inconsistent journal refused',
@@ -9,9 +9,10 @@ export const state = v => ({
 })[v.phase];
 
 export const step = action => ({
-  Check: 'validate outcome history',
   ReplayCompleted: 'consume completed step',
   ReplayFailed: 'consume failed step',
+  CatchFailure: 'catch failure and compensate',
+  PropagateFailure: 'propagate failure',
   BodySucceeded: 'workflow returns',
   BodyFailed: 'workflow fails',
   FinishSucceeded: 'validate before completion',

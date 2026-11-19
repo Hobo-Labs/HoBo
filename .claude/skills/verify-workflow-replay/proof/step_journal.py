@@ -1,8 +1,8 @@
-"""Prove the abstract guards for consuming a workflow step journal."""
-from z3 import And, Bool, Implies, Int, Not, Solver, sat, unsat
+"""Check abstract guards for consuming outcomes and handling failures."""
+from z3 import Bool, Implies, Int, Not, Solver, sat, unsat
 
 max_index, consumed, failure_index = Int('max_index'), Int('consumed'), Int('failure_index')
-terminal, accepted = Bool('terminal'), Bool('accepted')
+terminal, completed, caught = Bool('terminal'), Bool('completed'), Bool('caught')
 
 def check(label, guards, claim, expected):
     solver = Solver()
@@ -14,7 +14,7 @@ def check(label, guards, claim, expected):
 
 check(
     'terminal requires every recorded outcome to be consumed',
-    [terminal == (consumed > max_index)],
+    [Implies(terminal, consumed > max_index)],
     Implies(terminal, consumed > max_index),
     unsat,
 )
@@ -24,16 +24,16 @@ check(
     Implies(terminal, consumed > max_index),
     sat,
 )
-post_failure = And(failure_index >= 0, failure_index < max_index)
 check(
-    'an outcome after failure is refused',
-    [accepted == Not(post_failure)],
-    Implies(accepted, Not(post_failure)),
+    'completion after replayed failure requires the failure to be caught',
+    [failure_index >= 0, failure_index <= max_index,
+     Implies(completed, consumed > max_index),
+     Implies(consumed > failure_index, caught)],
+    Implies(completed, caught),
     unsat,
 )
-check(
-    'missing post-failure guard accepts an impossible history',
-    [accepted, post_failure],
-    Implies(accepted, Not(post_failure)),
-    sat,
-)
+solver = Solver()
+solver.add(failure_index == 0, max_index == 1, consumed == 2, caught, completed)
+if solver.check() != sat:
+    raise AssertionError('caught failure followed by compensation must be possible')
+print('caught failure followed by compensation: sat')
