@@ -8,13 +8,6 @@ import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
 import { column, type FleetBackend, inTransaction, parseCount } from "./sql.js";
 
-export {
-	type BillingPeriod,
-	billingPeriod,
-	FLEET_USAGE_UNITS,
-	type FleetUsageUnit,
-} from "@hobo/backend-fleet";
-
 export type PostgresFleetUsage = {
 	readonly period: string;
 	readonly unit: FleetUsageUnit;

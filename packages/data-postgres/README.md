@@ -570,19 +570,10 @@ It opens no connection. A host gives it one `SqlExecutor` per backend (a
 opaque id for each. Nothing in it knows how many backends there are or what any
 of them is called.
 
-The engine-neutral parts — the assignment entry and its rules, majority,
-`resolveAssignment`, `readCurrentAssignment`, `proposeAssignment`,
-`bootstrapAssignment`, `completeAssignment`, `overrideAssignment`, the backend
-id and failure classes, billing periods and usage units, and `decideFleet` with
-its models and policy — live in
-[`@hobo/backend-fleet`](../backend-fleet/README.md) since ADR-0179 phase 4c, so
-the hosted relay's cache fleet can use them without this package. This package
-re-exports them under the names below (`PostgresFleetAssignment` is
-`FleetAssignment`, and so on) and keeps what is PostgreSQL's: the SQL replica
-(`sqlAssignmentReplica`, whose register classifies failures with
-`classifyFleetFailure`), control tables, usage rows, replication and
-reconcile. A parse failure in a moved part is a `BackendFleetError` with the
-same code and message it had as a `PostgresDataError`.
+The shared assignment register, usage units, and fleet policy live in
+[`@hobo/backend-fleet`](../backend-fleet/README.md). This package provides the
+PostgreSQL replicas, control tables, usage recording, replication, and
+reconciler.
 
 Every statement the fleet sends casts its result columns to `text`, so the port
 does not depend on how a driver decodes a `bigint` or a `timestamptz`.
@@ -766,12 +757,12 @@ standby ranked, so one log line of its result explains the decision.
 | `failover` (unplanned) | The writer has been failing for at least `failoverAfterMs`, and a reachable, schema-current standby has lag within `rpoMs` | up to the promoted standby's lag |
 | `hold` | The writer is failing and it is too early, or no standby is within the objective; or a switch is in flight | nothing, and nothing moves |
 
-**Observations** (`PostgresFleetObservation`): health (`reachable`, or the
+**Observations** (`FleetObservation`): health (`reachable`, or the
 failure class `unreachable`, `quota-exhausted`, `auth`, `unknown` from
 `classifyFleetFailure`), probe latency, how long it has been failing, whether
 its schema matches the writer's, its standby lag, and measured usage.
 
-**Financial model** (`PostgresFleetFinancialModel`): a fixed monthly fee, and
+**Financial model** (`FleetFinancialModel`): a fixed monthly fee, and
 allowances each in a named unit (`operations`, `compute-hours`,
 `storage-bytes`) with what happens beyond (`hard-stop`, `metered` with a price,
 or `unknown`), plus the evidence source and the day somebody read it. This
@@ -925,8 +916,8 @@ that the rest of the package accepts as-is:
 | `pgoutput` bytes | `decodePgOutputTransactions` | whole `PgOutputTransaction`s | a partial transaction, a change for an undescribed relation, or an unknown message being skipped |
 | an executor result | `createPgExecutor` | a text-only `PostgresRow` | a driver-parsed number or `Date` slipping past the cast-everything rule |
 | table prefixes | `parseFleetLayout` | `FleetLayout` | a control table that replication would copy, or an identifier that is not plain |
-| a log row or a proposal | `parseFleetAssignment` | `PostgresFleetAssignment` | a sealed entry with no target, a target on an unsealed entry, a negative loss window |
-| a plan's numbers | `parseFleetFinancialModel` | `PostgresFleetFinancialModel` | a metered allowance without a price, two allowances for one unit, numbers with no source or date |
+| a log row or a proposal | `parseFleetAssignment` | `FleetAssignment` | a sealed entry with no target, a target on an unsealed entry, a negative loss window |
+| a plan's numbers | `parseFleetFinancialModel` | `FleetFinancialModel` | a metered allowance without a price, two allowances for one unit, numbers with no source or date |
 | policy settings | `parseFleetPolicy` | `FleetPolicy` | a negative objective, a hysteresis factor below 1 |
 
 `buildPgDumpArgv` and its siblings take the parsed target, never the raw fields,

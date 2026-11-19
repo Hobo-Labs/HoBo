@@ -1,24 +1,9 @@
 # `@hobo/backend-fleet`
 
-A fleet of interchangeable backends of which exactly one is active: which one
-(the assignment register), and when to move (the budget policies). Nothing here
-knows an engine. `@hobo/data-postgres` keeps its register in SQL tables on each
-PostgreSQL backend; the hosted CI relay keeps it in one key of each cache
-through `EphemeralStatePort` ([ADR-0179](urn:hobo:decision:adr-0179),
-phase 4c).
-
-These parts lived in `@hobo/data-postgres` (`src/fleet/`) until phase 4c moved
-them here, so a cache fleet can use them without depending on a PostgreSQL
-package (which also keeps `@hobo/data-postgres` out of the relay's bundle for
-phase 7). `@hobo/data-postgres` re-exports every moved name under the name it
-always had (`PostgresFleetAssignment` is `FleetAssignment`, and so on); only
-the error class changed, to `BackendFleetError`, with the same codes
-(`FLEET_CONFIGURATION_INVALID`, `FLEET_RECORD_INVALID`) and messages.
-
-It is a package of its own rather than part of `@hobo/core` because it is a
-policy with its own records and pact, not a port: core holds the
-`EphemeralStatePort` contract this package's cache replica is written
-against, and nothing in core needs a fleet.
+A fleet selects one active backend and decides when to move it. This package
+owns the shared assignment register, usage units, and routing policies.
+PostgreSQL fleets provide SQL-backed replicas through `@hobo/data-postgres`;
+cache fleets use `EphemeralStatePort` replicas.
 
 ## What this package owns
 
@@ -110,8 +95,8 @@ fleet's policy, is unchanged.
 - **Tests:** `test/ephemeral-replica.test.ts` (the replica's rules, races on
   one backend, TTL, lost and expired logs on a minority, rejoin, and a seeded
   random run that never resolves two entries for one epoch);
-  `test/routing.test.ts`. The register's own cases still run in
-  `@hobo/data-postgres` through its re-exports.
+  `test/routing.test.ts` and `test/policy.test.ts`. The PostgreSQL replica and
+  shared assignment contract are exercised in `@hobo/data-postgres`.
 
 ## Architecture placement
 

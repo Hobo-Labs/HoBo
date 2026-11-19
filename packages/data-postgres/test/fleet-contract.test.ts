@@ -1,18 +1,15 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
 import {
 	type AssignmentReply,
-	type PostgresFleetAssignment,
+	type FleetAssignment,
 	parseFleetAssignment,
 	resolveAssignment,
-} from "../src/index.js";
+} from "@hobo/backend-fleet";
+import { describe, expect, it } from "vitest";
 import { MemoryReplica } from "./fleet-model.js";
 
-type WireEntry = Omit<
-	PostgresFleetAssignment,
-	"active" | "target" | "lossWindowMs"
-> & {
+type WireEntry = Omit<FleetAssignment, "active" | "target" | "lossWindowMs"> & {
 	readonly active?: string;
 	readonly target?: string;
 	readonly lossWindowMs?: number;
@@ -55,7 +52,7 @@ const pact = JSON.parse(
 	),
 ) as Pact;
 
-function fromWire(entry: WireEntry): PostgresFleetAssignment {
+function fromWire(entry: WireEntry): FleetAssignment {
 	return parseFleetAssignment({
 		...entry,
 		active: entry.active,

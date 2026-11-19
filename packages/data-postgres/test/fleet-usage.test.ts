@@ -1,6 +1,7 @@
-import { billingPeriod } from "@hobo/backend-fleet";
+import { billingPeriod, parseFleetAssignment } from "@hobo/backend-fleet";
 import { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { sqlAssignmentReplica } from "../src/fleet/assignment.js";
 import { ensureFleetControlTables } from "../src/fleet/control.js";
 import { parseFleetLayout } from "../src/fleet/layout.js";
 import type {
@@ -127,6 +128,29 @@ describe.skipIf(!url)("PostgreSQL fleet control and usage", () => {
 				`INSERT INTO ${layout.assignmentTable} VALUES (2, 'a', true, 'a', 'invalid', NULL, now(), 'test')`,
 			),
 		).rejects.toMatchObject({ code: "23514" });
+	});
+
+	it("stores and reads assignment records through the shared replica contract", async () => {
+		const replica = sqlAssignmentReplica(backend, layout);
+		const first = parseFleetAssignment({
+			epoch: 1,
+			active: "a",
+			sealed: false,
+			target: undefined,
+			reason: "bootstrap",
+			lossWindowMs: undefined,
+			decidedAtMs: november,
+			decidedBy: "test",
+		});
+		const second = { ...first, epoch: 2, reason: "steady" };
+		expect(await replica.accept(first)).toBe("accepted");
+		expect(await replica.accept(first)).toBe("duplicate");
+		expect(await replica.accept({ ...first, reason: "conflict" })).toBe(
+			"conflict",
+		);
+		expect(await replica.accept({ ...second, epoch: 3 })).toBe("gap");
+		expect(await replica.accept(second)).toBe("accepted");
+		expect(await replica.read()).toEqual([first, second]);
 	});
 
 	it("refuses incompatible assignment constraints without rewriting them", async () => {

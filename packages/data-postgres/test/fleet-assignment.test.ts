@@ -1,19 +1,19 @@
-import { describe, expect, it } from "vitest";
 import {
 	type AssignmentReply,
 	assignmentKey,
 	bootstrapAssignment,
 	completeAssignment,
+	type FleetAssignment,
 	type FleetAssignmentValue,
 	fleetMajority,
 	overrideAssignment,
-	type PostgresFleetAssignment,
 	parseAssignmentRegister,
 	parseFleetAssignment,
 	proposeAssignment,
 	readCurrentAssignment,
 	resolveAssignment,
-} from "../src/index.js";
+} from "@hobo/backend-fleet";
+import { describe, expect, it } from "vitest";
 import {
 	decidedEntries,
 	highestDecided,
@@ -25,7 +25,7 @@ function entry(
 	epoch: number,
 	active: string,
 	decidedBy = "test",
-): PostgresFleetAssignment {
+): FleetAssignment {
 	return parseFleetAssignment({
 		epoch,
 		active,
@@ -97,7 +97,7 @@ describe("resolveAssignment", () => {
 	const members = ["b0", "b1", "b2"];
 	const rows = (
 		replica: string,
-		...held: PostgresFleetAssignment[]
+		...held: FleetAssignment[]
 	): AssignmentReply => ({
 		replica,
 		rows: held,

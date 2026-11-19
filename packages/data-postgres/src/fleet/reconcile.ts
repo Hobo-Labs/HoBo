@@ -1,26 +1,26 @@
 import {
 	type AssignmentProposalOutcome,
 	type AssignmentRegister,
+	billingPeriod,
 	bootstrapAssignment,
 	completeAssignment,
-	type FleetAssignmentValue,
-	type PostgresFleetAssignment,
-	proposeAssignment,
-	readCurrentAssignment,
-	sqlAssignmentRegister,
-} from "./assignment.js";
-import { ensureFleetControlTables } from "./control.js";
-import type { FleetLayout } from "./layout.js";
-import {
 	decideFleet,
+	type FleetAssignment,
+	type FleetAssignmentValue,
 	type FleetBackendHealth,
 	type FleetBudgetCheck,
+	type FleetDecision,
+	type FleetFailureClass,
+	type FleetFinancialModel,
+	type FleetObservation,
 	type FleetPolicy,
 	type FleetUsageMeasurement,
-	type PostgresFleetDecision,
-	type PostgresFleetFinancialModel,
-	type PostgresFleetObservation,
-} from "./policy.js";
+	proposeAssignment,
+	readCurrentAssignment,
+} from "@hobo/backend-fleet";
+import { sqlAssignmentRegister } from "./assignment.js";
+import { ensureFleetControlTables } from "./control.js";
+import type { FleetLayout } from "./layout.js";
 import {
 	type ReplicationLimits,
 	type ReplicationRefusal,
@@ -28,12 +28,8 @@ import {
 	replicateSnapshot,
 	standbyLagMs,
 } from "./replication.js";
-import {
-	classifyFleetFailure,
-	type FleetBackend,
-	type FleetFailureClass,
-} from "./sql.js";
-import { billingPeriod, measureStorageBytes, readUsage } from "./usage.js";
+import { classifyFleetFailure, type FleetBackend } from "./sql.js";
+import { measureStorageBytes, readUsage } from "./usage.js";
 
 export type FleetReplicationResult = {
 	readonly source: string;
@@ -71,7 +67,7 @@ export type FleetEvent =
 			readonly kind: "replication";
 			readonly replication: FleetReplicationResult;
 	  }
-	| { readonly kind: "decision"; readonly decision: PostgresFleetDecision }
+	| { readonly kind: "decision"; readonly decision: FleetDecision }
 	| { readonly kind: "transition"; readonly transition: FleetTransition }
 	| {
 			readonly kind: "unsettled";
@@ -84,7 +80,7 @@ export type FleetSchemaRole = "writer" | "standby";
 export type FleetReconcileOptions = {
 	readonly backends: readonly FleetBackend[];
 	readonly layout: FleetLayout;
-	readonly models: readonly PostgresFleetFinancialModel[];
+	readonly models: readonly FleetFinancialModel[];
 	readonly policy: FleetPolicy;
 	readonly leaseMs: number;
 	readonly graceMs: number;
@@ -102,9 +98,9 @@ export type FleetReconcileOptions = {
 
 export type FleetReconcileReport = {
 	readonly status: "settled" | "undecided" | "no-majority";
-	readonly assignment: PostgresFleetAssignment | undefined;
-	readonly decision: PostgresFleetDecision | undefined;
-	readonly observations: readonly PostgresFleetObservation[];
+	readonly assignment: FleetAssignment | undefined;
+	readonly decision: FleetDecision | undefined;
+	readonly observations: readonly FleetObservation[];
 	readonly replications: readonly FleetReplicationResult[];
 	readonly transitions: readonly FleetTransition[];
 };
@@ -200,7 +196,7 @@ export async function reconcileFleet(
 		return outcome;
 	};
 	const copy = async (
-		assignment: PostgresFleetAssignment,
+		assignment: FleetAssignment,
 		source: FleetBackend,
 		target: FleetBackend,
 	): Promise<FleetReplicationResult> => {
@@ -318,8 +314,8 @@ export async function reconcileFleet(
 	let assignment = resolution.assignment;
 
 	const finishSwitch = async (
-		sealed: PostgresFleetAssignment,
-	): Promise<PostgresFleetAssignment | undefined> => {
+		sealed: FleetAssignment,
+	): Promise<FleetAssignment | undefined> => {
 		await options.sleep(options.leaseMs + options.graceMs);
 		await completeAssignment(register);
 		const source = byId(sealed.active);
@@ -393,7 +389,7 @@ export async function reconcileFleet(
 	const observedAtMs = now();
 	const period = billingPeriod(observedAtMs);
 	const observations = await Promise.all(
-		backends.map(async (backend): Promise<PostgresFleetObservation> => {
+		backends.map(async (backend): Promise<FleetObservation> => {
 			const seen = probes.get(backend.id);
 			const usage: FleetUsageMeasurement[] = [];
 			let lagMs: number | undefined;
