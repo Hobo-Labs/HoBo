@@ -33,6 +33,15 @@ package hobo
 	reason:           string
 }
 
+#ProjectionQuarantinedEventData: {
+	projection:       string & !=""
+	sourceStreamId:   string & !=""
+	offendingSeq:     int & >0 & <=9007199254740991
+	offendingEventId: string & !=""
+	offendingType:    =~"^[a-z][a-z0-9]*\\.[A-Z][A-Za-z0-9]*$"
+	reason:           string
+}
+
 #UpcasterRegistration: {
 	type:        =~"^[a-z][a-z0-9]*\\.[A-Z][A-Za-z0-9]*$"
 	fromVersion: int & >=1
