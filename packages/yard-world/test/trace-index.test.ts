@@ -64,8 +64,8 @@ describe("TraceIndex", () => {
 		const index = new TraceIndex(2, TRACE_INDEX_TTL_MS);
 		index.record(entry("t", "s1"), 0);
 		index.record(entry("t", "s2"), 1);
-		index.record(entry("t", "s1", "camp-c"), 2); // refresh s1
-		index.record(entry("t", "s3"), 3); // evicts s2, not s1
+		index.record(entry("t", "s1", "camp-c"), 2);
+		index.record(entry("t", "s3"), 3);
 		expect(index.lookup("t", "s1", 3)?.campId).toBe("camp-c");
 		expect(index.lookup("t", "s2", 3)).toBeUndefined();
 	});

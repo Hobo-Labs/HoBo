@@ -1,13 +1,3 @@
-/**
- * Every case is a line in `otel-mapper.cases.jsonl`.
- *
- * Two payload fixtures live here rather than in the data: the single-span one
- * that most cases vary a field of, and the cross-camp parent/child pair that
- * the junction cases slice up. Everything else — which world to start from,
- * whether a trace index is in play, which emitted events get folded back — is
- * a field in the case.
- */
-
 import { describeConcern } from "@hobo/contract-harness";
 import { applyEvent, emptyWorld, visibleCharacters } from "../src/model.js";
 import {
@@ -59,7 +49,7 @@ function onePayload(overrides: PayloadOverrides = {}): OtlpTraceRequest {
 								startTimeUnixNano: "1000000000",
 								endTimeUnixNano: "1500000000",
 								status: { code: overrides.statusCode ?? 1 },
-								attributes: overrides.spanAttrs,
+								attributes: overrides.spanAttrs ?? [],
 							},
 						],
 					},
@@ -77,7 +67,6 @@ const resource = (service: string, camp: string) => ({
 	],
 });
 
-/** A client span in one camp and its server child in another. */
 function crossCampPayload(childCamp = "camp-b"): OtlpTraceRequest {
 	return {
 		resourceSpans: [
@@ -122,14 +111,14 @@ function crossCampPayload(childCamp = "camp-b"): OtlpTraceRequest {
 	};
 }
 
-const PRESETS: Record<string, () => OtlpTraceRequest> = {
+const PRESETS = {
 	"cross-camp": () => crossCampPayload(),
 	"cross-camp-same-camp": () => crossCampPayload("camp-a"),
 	"cross-camp-parent-only": () => ({
-		resourceSpans: crossCampPayload().resourceSpans?.slice(0, 1),
+		resourceSpans: crossCampPayload().resourceSpans?.slice(0, 1) ?? [],
 	}),
 	"cross-camp-child-only": () => ({
-		resourceSpans: crossCampPayload().resourceSpans?.slice(1),
+		resourceSpans: crossCampPayload().resourceSpans?.slice(1) ?? [],
 	}),
 };
 
@@ -165,25 +154,15 @@ function worldWithCampsAndJunction() {
 interface Submission {
 	readonly preset?: keyof typeof PRESETS;
 	readonly payload?: PayloadOverrides;
-	/** Spelled out where no fixture fits — a junction attribute with no parent. */
 	readonly raw?: OtlpTraceRequest;
 	readonly nowMs?: number;
-	/**
-	 * Which emitted events to fold back into the world.
-	 *
-	 * `except-ended` keeps a span open on purpose: a packet only exists while
-	 * its server span is still running, so folding `span-ended` would erase the
-	 * very thing the case is about.
-	 */
 	readonly apply?: "all" | "started" | "except-ended" | "none";
 }
 
 interface Ask {
 	readonly world?: "empty" | "camps-and-junction";
-	/** Present means a TraceIndex is threaded through every submission. */
-	readonly index?: { readonly ttlMs?: number; readonly sweepMs?: number };
+	readonly index?: { readonly maxEntries?: number; readonly ttlMs?: number };
 	readonly submissions: readonly Submission[];
-	/** Stations whose visible character ids the case asserts on. */
 	readonly visibleIn?: readonly string[];
 }
 
@@ -193,12 +172,12 @@ function payloadOf(submission: Submission): OtlpTraceRequest {
 	return onePayload(submission.payload);
 }
 
-const KEEP: Record<string, (type: string) => boolean> = {
+const KEEP = {
 	all: () => true,
 	started: (type) => type === "span-started",
 	"except-ended": (type) => type !== "span-ended",
 	none: () => false,
-};
+} satisfies Record<NonNullable<Submission["apply"]>, (type: string) => boolean>;
 
 function run(ask: Ask) {
 	let state =
@@ -208,8 +187,8 @@ function run(ask: Ask) {
 	const index =
 		ask.index === undefined
 			? undefined
-			: new TraceIndex(ask.index.ttlMs, ask.index.sweepMs);
-	let events: readonly { type: string }[] = [];
+			: new TraceIndex(ask.index.maxEntries, ask.index.ttlMs);
+	let events: ReturnType<typeof mapTracePayload> = [];
 	for (const submission of ask.submissions) {
 		events = mapTracePayload(
 			payloadOf(submission),
@@ -228,11 +207,10 @@ describeConcern("otel mapper", {
 	cases: `${import.meta.dirname}/otel-mapper.cases.jsonl`,
 	subject: () => ({
 		spanKindFromOtlp,
-		/** The last submission's events plus the world they fold into. */
 		after: (ask: Ask) => {
 			const { state, events, index } = run(ask);
 			return {
-				events: events as readonly Record<string, unknown>[],
+				events,
 				eventTypes: events.map((event) => event.type),
 				characters: state.characters,
 				packetIds: Object.keys(state.packets).sort(),
