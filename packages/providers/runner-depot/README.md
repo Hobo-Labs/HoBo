@@ -8,7 +8,7 @@ with shared-cache economics, plus Depot-managed Actions runners.
   (Connect RPC `CreateBuild` → per-build token), runs it through the
   BuildKit executor seam (the `depot` CLI in the live lane) and returns a
   pullable `ImageRef`. Every build surfaces a `build.CacheHitObserved`
-  fact (observed hit ratio + metered units); only observed units debit
+  fact (observed hit ratio, metered units, and estimated units); only observed units debit
   the credit budget, so the second identical build demonstrates the
   shared-cache speedup in the log.
 - **RunnerProvider** (`hobo:runner`) — the SAME job spec as

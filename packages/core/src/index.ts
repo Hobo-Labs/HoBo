@@ -1,3 +1,5 @@
+export type { BuildCostObservationRecord } from "./_generated/build_cost_pb.js";
+export { BuildCostObservationRecordSchema } from "./_generated/build_cost_pb.js";
 export {
 	BudgetPolicyConstraintRecordSchema,
 	BudgetPolicyEvaluationContextRecordSchema,
