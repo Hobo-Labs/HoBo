@@ -273,6 +273,7 @@ export function createBudgetAdmissionAuthority(options: {
 } {
 	let current = clone(BudgetLedgerSnapshotSchema, options.snapshot);
 	let reservations = new Map<string, BudgetReservation>();
+	let committing = false;
 	const fenced = createBudgetFenceVerifier(options.fenceTrust);
 	validateBudgetSnapshot(current, current.observedAt);
 	const replayed = new Map<number, string>();
@@ -574,7 +575,10 @@ export function createBudgetAdmissionAuthority(options: {
 				row.entitlementClaims.some(
 					(entry) =>
 						!snapshot.entitlements.some(
-							(bucket) => bucket.bucketId === entry.bucketId,
+							(bucket) =>
+								bucket.bucketId === entry.bucketId &&
+								bucket.unit === entry.unit &&
+								bucket.periodId === row.identity?.periodId,
 						),
 				)
 			)
@@ -606,6 +610,7 @@ export function createBudgetAdmissionAuthority(options: {
 		rows: Map<string, BudgetReservation>,
 		reconciliationEvidenceRef = "",
 	): void {
+		if (committing) throw new Error("budget authority mutation during commit");
 		const expectedSeq = current.seq;
 		if (!next.identity) throw new Error("budget identity missing");
 		assertFinancialHistory(next, type);
@@ -624,14 +629,19 @@ export function createBudgetAdmissionAuthority(options: {
 			reservations: [...rows.values()],
 			reconciliationEvidenceRef,
 		});
-		const committed: unknown = options.commit?.(
-			clone(BudgetAuthorityEventSchema, event),
-			expectedSeq,
-		);
-		if (committed instanceof Promise)
-			throw new Error(
-				"budget commit must append synchronously before acknowledgement",
+		committing = true;
+		try {
+			const committed: unknown = options.commit?.(
+				clone(BudgetAuthorityEventSchema, event),
+				expectedSeq,
 			);
+			if (committed instanceof Promise)
+				throw new Error(
+					"budget commit must append synchronously before acknowledgement",
+				);
+		} finally {
+			committing = false;
+		}
 		rememberFinancialHistory(next);
 		current = clone(BudgetLedgerSnapshotSchema, next);
 		policyBindings.set(policyKey, policyFingerprint(current));
@@ -1059,7 +1069,11 @@ export function createBudgetAdmissionAuthority(options: {
 				);
 				if (
 					old &&
-					old.reservedUnits > 0 &&
+					active().some((row) =>
+						row.entitlementClaims.some(
+							(claim) => claim.bucketId === old.bucketId,
+						),
+					) &&
 					(old.periodId !== bucket.periodId || old.unit !== bucket.unit)
 				)
 					throw new Error("active entitlement cannot change unit or period");

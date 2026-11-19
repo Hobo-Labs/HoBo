@@ -1,8 +1,9 @@
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
 	type BudgetAuthorityEvent,
+	BudgetAuthorityEventSchema,
 	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
@@ -324,6 +325,157 @@ describe("hosting budget authority generated properties", () => {
 				},
 			),
 			run,
+		);
+	});
+
+	it("serializes journal callbacks that attempt another admission", () => {
+		fc.assert(
+			fc.property(
+				fc.integer({ min: 1, max: 1000 }),
+				fc.boolean(),
+				(bound, catchNested) => {
+					const snapshot = base(bound);
+					const journal: BudgetAuthorityEvent[] = [];
+					let tryNested = true;
+					const authority = createBudgetAdmissionAuthority({
+						snapshot,
+						commit(event) {
+							if (tryNested) {
+								tryNested = false;
+								if (catchNested) {
+									expect(() => reserve(authority, "nested", bound)).toThrow(
+										"budget authority mutation during commit",
+									);
+								} else {
+									reserve(authority, "nested", bound);
+								}
+							}
+							journal.push(event);
+						},
+					});
+					if (catchNested) {
+						reserve(authority, "outer", bound);
+					} else {
+						expect(() => reserve(authority, "outer", bound)).toThrow(
+							"budget authority mutation during commit",
+						);
+						expect(authority.read(NOW).reservedMicros).toBe(0);
+						expect(journal).toHaveLength(0);
+						reserve(authority, "outer", bound);
+					}
+					expect(authority.lookup("nested")).toBeUndefined();
+					expect(authority.read(NOW).reservedMicros).toBe(bound);
+					expect(journal).toHaveLength(1);
+					expect(
+						createBudgetAdmissionAuthority({
+							snapshot,
+							priorEvents: journal,
+						}).read(NOW),
+					).toEqual(authority.read(NOW));
+				},
+			),
+			{ seed: 614441, numRuns: 100 },
+		);
+	});
+
+	it("preserves the scope of active zero-unit entitlement claims", () => {
+		fc.assert(
+			fc.property(
+				fc.constantFrom("held", "uncertain", "claimed"),
+				fc.constantFrom("unit", "periodId"),
+				(phase, field) => {
+					const snapshot = base(10);
+					snapshot.entitlements = [
+						create(BudgetEntitlementSchema, {
+							bucketId: "credit",
+							unit: "units",
+							periodId: "p1",
+							remainingUnits: 10,
+							observedAt: "2026-10-30T00:00:00Z",
+							validUntil: "2026-10-31T00:00:00Z",
+						}),
+					];
+					const journal: BudgetAuthorityEvent[] = [];
+					const authority = createBudgetAdmissionAuthority({
+						snapshot,
+						commit(event) {
+							journal.push(event);
+						},
+					});
+					const candidate = quote("zero", 0);
+					candidate.entitlementClaims = [
+						create(EntitlementClaimSchema, {
+							bucketId: "credit",
+							unit: "units",
+							units: 0,
+						}),
+					];
+					const before = authority.read(NOW);
+					if (!before.identity) throw new Error("fixture identity missing");
+					authority.reserve({
+						reservationId: "zero",
+						requestDigest: candidate.requestDigest,
+						quote: candidate,
+						identity: before.identity,
+						expectedSeq: before.seq,
+						now: NOW,
+					});
+					if (phase === "uncertain") authority.uncertain("zero");
+					if (phase === "claimed")
+						authority.claimExecution({
+							reservationId: "zero",
+							requestDigest: candidate.requestDigest,
+							executionDigest: "execution",
+						});
+					const updated = authority.read(NOW);
+					const bucket = updated.entitlements[0];
+					if (!bucket) throw new Error("fixture bucket missing");
+					bucket[field] = field === "unit" ? "other" : "p2";
+					bucket.observedAt = "2026-10-30T01:00:00Z";
+					expect(() => authority.configure(updated, updated.seq, NOW)).toThrow(
+						"active entitlement cannot change unit or period",
+					);
+					expect(authority.read(NOW).seq).toBe(updated.seq);
+					const last = journal.at(-1);
+					if (!last) throw new Error("fixture journal missing");
+					const changed = clone(BudgetAuthorityEventSchema, last);
+					const changedBucket = changed.snapshot?.entitlements[0];
+					if (!changed.snapshot || !changedBucket)
+						throw new Error("fixture journal bucket missing");
+					changed.type = "budget.PolicyRevised";
+					changed.snapshot.seq++;
+					changedBucket[field] = field === "unit" ? "other" : "p2";
+					changedBucket.observedAt = "2026-10-30T01:00:00Z";
+					expect(() =>
+						createBudgetAdmissionAuthority({
+							snapshot,
+							priorEvents: [...journal, changed],
+						}),
+					).toThrow("active financial scopes cannot be removed");
+					const reopened = createBudgetAdmissionAuthority({
+						snapshot,
+						priorEvents: journal,
+					});
+					for (const instance of [authority, reopened]) {
+						instance.settle("zero", 0, {
+							usageEvidenceRef: "usage",
+							sourceStoppedEvidenceRef: "stopped",
+							entitlementClaims: candidate.entitlementClaims,
+						});
+						expect(instance.read(NOW).reservedMicros).toBe(0);
+					}
+					const after = authority.read(NOW);
+					const retiredBucket = after.entitlements[0];
+					if (!retiredBucket) throw new Error("fixture bucket missing");
+					retiredBucket[field] = field === "unit" ? "other" : "p2";
+					retiredBucket.observedAt = "2026-10-30T01:00:00Z";
+					authority.configure(after, after.seq, NOW);
+					expect(authority.read(NOW).entitlements[0]?.[field]).toBe(
+						field === "unit" ? "other" : "p2",
+					);
+				},
+			),
+			{ seed: 614442, numRuns: 100 },
 		);
 	});
 });
