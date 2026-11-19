@@ -316,7 +316,10 @@ describe("Alchemy Rivet durable topic bus resource", () => {
 			);
 			const fixture = JSON.parse(
 				readFileSync(
-					new URL("../data-models/fixtures/valid/bus-source.json", import.meta.url),
+					new URL(
+						"../data-models/fixtures/valid/bus-source.json",
+						import.meta.url,
+					),
 					"utf8",
 				),
 			);

@@ -650,7 +650,9 @@ export async function admitIacTarget(
 		.digest("hex");
 	const accountRows = (rows: BudgetReservation["providerAccounts"]) =>
 		rows
-			.map((row) => JSON.stringify([row.providerAccountId, row.liabilityMicros]))
+			.map((row) =>
+				JSON.stringify([row.providerAccountId, row.liabilityMicros]),
+			)
 			.sort();
 	const entitlementRows = (rows: BudgetReservation["entitlementClaims"]) =>
 		rows

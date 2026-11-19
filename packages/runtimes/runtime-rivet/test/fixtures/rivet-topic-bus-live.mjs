@@ -314,8 +314,7 @@ try {
 	const firstOutcome = await messaging.consume(firstRequest);
 	const [first] = committed(firstOutcome, "first lease");
 	if (
-		!first ||
-		first.deliveryAttempt !== 1 ||
+		first?.deliveryAttempt !== 1 ||
 		first.message.id !== "order-1" ||
 		Buffer.compare(first.message.payload, publish.message.payload) !== 0
 	)
@@ -339,11 +338,7 @@ try {
 		await messaging.consume(consume("orders", "workers")),
 		"second lease",
 	)[0];
-	if (
-		!second ||
-		second.deliveryAttempt !== 2 ||
-		second.leaseId === first.leaseId
-	)
+	if (second?.deliveryAttempt !== 2 || second.leaseId === first.leaseId)
 		throw new Error("second attempt did not get a new lease");
 	const nack = { operation: operation(), ...settle(second), reason: "fatal" };
 	dropPath = "/nack";
@@ -385,8 +380,7 @@ try {
 	const expiryRequest = consume("orders", "workers");
 	const expiryOutcome = await messaging.consume(expiryRequest);
 	const expired = committed(expiryOutcome, "expiry first lease")[0];
-	if (!expired || expired.deliveryAttempt !== 1)
-		throw new Error("missing expiry lease");
+	if (expired?.deliveryAttempt !== 1) throw new Error("missing expiry lease");
 	logicalNow += 101;
 	same(
 		await messaging.consume(expiryRequest),
@@ -404,8 +398,7 @@ try {
 		"expiry redelivery",
 	)[0];
 	if (
-		!redelivery ||
-		redelivery.deliveryAttempt !== 2 ||
+		redelivery?.deliveryAttempt !== 2 ||
 		redelivery.leaseId === expired.leaseId
 	)
 		throw new Error("expired message was not re-leased");
@@ -422,8 +415,7 @@ try {
 		"expired DLQ delivery",
 	)[0];
 	if (
-		!expiredDead ||
-		expiredDead.deadLetter?.originalMessageId !== "order-2" ||
+		expiredDead?.deadLetter?.originalMessageId !== "order-2" ||
 		expiredDead.deadLetter.deliveryAttempt !== 2 ||
 		expiredDead.deadLetter.cause.kind !== "lease-expired"
 	)

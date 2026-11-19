@@ -47,12 +47,15 @@ describe("Rivet journal value boundaries", () => {
 
 	it("refuses proxy data before invoking its traps", () => {
 		let traps = 0;
-		const value = new Proxy({ item: "value" }, {
-			ownKeys(target) {
-				traps++;
-				return Reflect.ownKeys(target);
+		const value = new Proxy(
+			{ item: "value" },
+			{
+				ownKeys(target) {
+					traps++;
+					return Reflect.ownKeys(target);
+				},
 			},
-		});
+		);
 		expect(snapshotDistributedData(value)).toBeUndefined();
 		expect(() =>
 			computeRivetOperationDigest({

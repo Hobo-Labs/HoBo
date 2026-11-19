@@ -80,6 +80,42 @@ function fixture(send: (path: string, init: RequestInit) => Promise<Response>) {
 }
 
 describe("Rivet durable topic HTTP client", () => {
+	it("refuses a forged metadata grant when WeakMap methods are replaced", () => {
+		const forged = Object.freeze({ revoke() {} });
+		const nativeGet = WeakMap.prototype.get;
+		const original = Object.getOwnPropertyDescriptor(WeakMap.prototype, "get");
+		if (original === undefined) throw new Error("WeakMap.get missing");
+		let calls = 0;
+		let accepted = false;
+		try {
+			Object.defineProperty(WeakMap.prototype, "get", {
+				...original,
+				value<K extends object>(this: WeakMap<K, unknown>, key: K) {
+					if (key === forged) {
+						calls++;
+						return { active: true };
+					}
+					return nativeGet.call(this, key);
+				},
+			});
+			try {
+				createRivetDurableTopicClient({
+					binding,
+					metadataGrant: forged,
+					verifyTransport: () => true,
+					authorize: async () => ({}),
+					revalidate: async () => true,
+					fetch: async () => new Response(),
+				});
+				accepted = true;
+			} catch {}
+		} finally {
+			Object.defineProperty(WeakMap.prototype, "get", original);
+		}
+		expect(accepted).toBe(false);
+		expect(calls).toBe(0);
+	});
+
 	it("does not accept a forged client through substituted WeakMap methods", () => {
 		const forged = {};
 		const identity = {

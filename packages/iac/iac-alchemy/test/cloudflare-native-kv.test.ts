@@ -480,8 +480,15 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 		"grant",
 	] as const)("rejects and observes an asynchronous KV %s verifier", async (field) => {
 		const rejected = Promise.reject(new Error("authority unavailable"));
-		// SAFETY: this fixture supplies an asynchronous value to a synchronous callback boundary.
-		const invalid = () => rejected as never;
+		const verifiers = {
+			verifyNamespace: () => true,
+			verifyGrant: () => true,
+		};
+		Object.defineProperty(
+			verifiers,
+			field === "namespace" ? "verifyNamespace" : "verifyGrant",
+			{ value: () => rejected, enumerable: true },
+		);
 		expect(() =>
 			mapBindleToAlchemy(
 				application,
@@ -493,8 +500,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 						proofRef: "test:host",
 						verify: () => true,
 					},
-					verifyNamespace: field === "namespace" ? invalid : () => true,
-					verifyGrant: field === "grant" ? invalid : () => true,
+					...verifiers,
 				}),
 				{ assessRequirements: () => ({ status: "supported" }) },
 			),

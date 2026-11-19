@@ -149,7 +149,7 @@ function captureRecoveryDependencies(
 		const host = recoveryRecord(input);
 		if (!host) return undefined;
 		const store = recoveryRecord(host.store);
-		if (!store || store.persistence !== "durable-cas") return undefined;
+		if (store?.persistence !== "durable-cas") return undefined;
 		for (const value of [store.get, store.inspect, store.commit]) {
 			if (typeof value !== "function" || isRecoveryProxy(value))
 				return undefined;

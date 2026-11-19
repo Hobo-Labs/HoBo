@@ -200,16 +200,22 @@ describe("Cloudflare R2 Bindle mapping", () => {
 		"grant",
 	] as const)("rejects and observes an asynchronous R2 %s verifier", async (field) => {
 		const rejected = Promise.reject(new Error("authority unavailable"));
-		// SAFETY: this fixture supplies an asynchronous value to a synchronous callback boundary.
-		const invalid = () => rejected as never;
+		const verifiers = {
+			verifyBucket: () => true,
+			verifyGrant: () => true,
+		};
+		Object.defineProperty(
+			verifiers,
+			field === "bucket" ? "verifyBucket" : "verifyGrant",
+			{ value: () => rejected, enumerable: true },
+		);
 		expect(() =>
 			mapBindleToAlchemy(
 				application,
 				cloudflareNativeR2BindleMappers({
 					workerModules: { web: main },
 					sourceFence,
-					verifyBucket: field === "bucket" ? invalid : () => true,
-					verifyGrant: field === "grant" ? invalid : () => true,
+					...verifiers,
 				}),
 				{ assessRequirements },
 			),
