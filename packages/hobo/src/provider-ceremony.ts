@@ -159,7 +159,7 @@ export function createProviderCeremonyUp(
 					const done: ConnectStep = {
 						kind: "connected",
 						provider: "hobo",
-						store: "the Yard registry",
+						store: "yard",
 						references: added.map((id) => `provider:${id}`),
 						nextHint: "hobo up continues in your terminal.",
 						link: undefined,

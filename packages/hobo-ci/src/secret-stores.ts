@@ -543,6 +543,13 @@ export async function openSecretStore(
 				};
 			}
 		}
+		case "yard":
+			return {
+				ok: false,
+				message:
+					"The Yard registry is not a third-party secret store and is opened by the control plane.",
+				remediation: [],
+			};
 	}
 }
 
