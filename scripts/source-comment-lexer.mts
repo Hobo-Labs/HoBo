@@ -38,11 +38,7 @@ export function lexComments(
 			dialect === "wit" ||
 			dialect === "prisma" ||
 			(dialect === "toml" && quote === '"') ||
-			(dialect === "sql" &&
-				quote === "'" &&
-				/(?:^|[^a-zA-Z0-9_])[eE]$/.test(
-					text.slice(Math.max(0, start - 2), start),
-				));
+			(dialect === "sql" && (quote === "'" || quote === "`"));
 		while (index < text.length) {
 			if (
 				dialect === "sql" &&
@@ -135,7 +131,11 @@ export function lexComments(
 				}
 			}
 			const character = text[index];
-			if (character === '"' || character === "'") {
+			if (
+				character === '"' ||
+				character === "'" ||
+				(dialect === "sql" && character === "`")
+			) {
 				index = quoted(index, character, 0, dialect === "cue");
 				continue;
 			}

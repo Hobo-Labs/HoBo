@@ -280,6 +280,15 @@ f: /* TODO: remove block */`;
 		);
 	});
 
+	it("handles MySQL backslash escapes in strings and quoted identifiers", () => {
+		const sql =
+			"SELECT 'it\\'s -- not a comment', `column\\` -- still an identifier`; -- explanation";
+		assert.deepEqual(
+			commentViolations("x.sql", sql, new Set([1])).map((item) => item.message),
+			["make the code self-documenting instead of adding a comment"],
+		);
+	});
+
 	it("handles Rust and Kotlin line and block comments", () => {
 		for (const file of ["example.rs", "example.kt"]) {
 			assert.deepEqual(
