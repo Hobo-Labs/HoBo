@@ -201,7 +201,9 @@ The public router can also receive an account directly, without the configuratio
 parser. If multiple offers report the same provider account and any reports free
 runner minutes or a sandbox allowance, those offers are ineligible: the router
 cannot establish which allocation snapshot is authoritative. Other providers
-remain eligible. Duplicate cash-only reports use the greatest reported exposure.
+remain eligible. This rule applies even when the duplicate reports agree; publish
+a single current offer to restore that provider account's availability. Duplicate
+cash-only reports use the greatest reported exposure.
 
 `Offer.freeMinutes` is measured in **minutes on the selected runner SKU**, not
 in the provider's shared base-unit minutes. Blacksmith's x64 free balance and
