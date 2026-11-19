@@ -13,6 +13,11 @@ export {
 	SloDefinitionRecordSchema,
 	SloEvaluationRecordSchema,
 } from "./_generated/slo_pb.js";
+export {
+	TaggedCacheEntryRecordSchema,
+	TaggedCacheReadRecordSchema,
+	TaggedCacheTagEpochRecordSchema,
+} from "./_generated/tagged_cache_pb.js";
 export { WrpcCallEventSchema } from "./_generated/wrpc_call_pb.js";
 export { WrpcLinkManifestSchema } from "./_generated/wrpc_link_manifest_pb.js";
 export type {
@@ -854,6 +859,8 @@ export {
 	StreamerClosedError,
 	StreamerParseError,
 } from "./ports/streamer.js";
+export type { TaggedCachePort, TaggedCacheRead } from "./ports/tagged-cache.js";
+export { createTaggedCache, TaggedCacheError } from "./ports/tagged-cache.js";
 export type {
 	TemporaryEnvironmentStationInput,
 	TemporaryEnvironmentStationResult,
