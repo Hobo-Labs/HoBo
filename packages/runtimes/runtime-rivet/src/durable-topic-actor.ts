@@ -1,4 +1,5 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: HTTP and actor host data cross validated boundaries. */
+import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { types as utilTypes } from "node:util";
 import {
@@ -21,6 +22,7 @@ import {
 	RIVET_DURABLE_TOPIC_BUS_LIMITS,
 	readRivetTopicBusAudit,
 	reduceRivetTopicBus,
+	reduceRivetTopicBusWithDeclaredTopics,
 } from "./durable-topic-bus.js";
 import {
 	RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
@@ -62,6 +64,7 @@ export interface RivetDurableTopicBinding {
 export interface RivetDurableTopicBusBinding {
 	readonly actorName: string;
 	readonly semanticDigest: string;
+	readonly declaredTopics: readonly string[];
 	readonly actor: AnyActorDefinition;
 	readonly handle: (
 		context: RivetDurableTopicContext,
@@ -90,6 +93,10 @@ export interface RivetDurableTopicOptions {
 }
 export interface RivetDurableTopicBusOptions extends RivetDurableTopicOptions {
 	readonly authorizeInstanceScope: (claim: TopicClaim) => boolean;
+	readonly declaredTopics?: readonly string[];
+	readonly authorizeDeclaredTopics?: (
+		claim: TopicClaim & { readonly topics: readonly string[] },
+	) => boolean;
 }
 const intrinsicApply = Reflect.apply;
 const intrinsicWeakGet = WeakMap.prototype.get;
@@ -148,6 +155,37 @@ function name(value: unknown): value is string {
 		!/[\p{Cc}\uD800-\uDFFF]/u.test(value) &&
 		encoder.encode(value).length <= 128
 	);
+}
+function declaredTopics(options: RivetDurableTopicOptions): readonly string[] {
+	if (utilTypes.isProxy(options)) throw new TypeError("invalid bus options");
+	const descriptor = Object.getOwnPropertyDescriptor(options, "declaredTopics");
+	if (descriptor === undefined) return Object.freeze([]);
+	if (!Object.hasOwn(descriptor, "value"))
+		throw new TypeError("declared topics must be own data");
+	const value: unknown = descriptor.value;
+	if (
+		utilTypes.isProxy(value) ||
+		!Array.isArray(value) ||
+		Object.getPrototypeOf(value) !== Array.prototype ||
+		value.length > RIVET_DURABLE_TOPIC_BUS_LIMITS.topics ||
+		Reflect.ownKeys(value).length !== value.length + 1
+	)
+		throw new TypeError("declared topics must be a bounded array");
+	const names: string[] = [];
+	for (let index = 0; index < value.length; index++) {
+		const entry = Object.getOwnPropertyDescriptor(value, String(index));
+		if (
+			!entry ||
+			!Object.hasOwn(entry, "value") ||
+			!entry.enumerable ||
+			!name(entry.value)
+		)
+			throw new TypeError("declared topics must be valid own names");
+		names.push(entry.value);
+	}
+	if (new Set(names).size !== names.length)
+		throw new TypeError("declared topics must be unique");
+	return Object.freeze(names.sort());
 }
 function record(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -338,7 +376,7 @@ function buildTopicActor(
 ): RivetDurableTopicBinding | RivetDurableTopicBusBinding {
 	const {
 		actorName,
-		semanticDigest,
+		semanticDigest: sourceSemanticDigest,
 		now,
 		resolveScope,
 		authorize,
@@ -348,10 +386,24 @@ function buildTopicActor(
 		"authorizeInstanceScope" in options
 			? options.authorizeInstanceScope
 			: undefined;
+	const topics = mode === "bus" ? declaredTopics(options) : Object.freeze([]);
+	const declarationAuthority =
+		mode === "bus"
+			? Object.getOwnPropertyDescriptor(options, "authorizeDeclaredTopics")
+			: undefined;
+	if (
+		(declarationAuthority !== undefined &&
+			(!Object.hasOwn(declarationAuthority, "value") ||
+				typeof declarationAuthority.value !== "function" ||
+				utilTypes.isProxy(declarationAuthority.value))) ||
+		(topics.length > 0 && declarationAuthority === undefined)
+	)
+		throw new TypeError("declared topics require a trusted authority");
+	const authorizeDeclaredTopics = declarationAuthority?.value;
 	if (
 		!name(actorName) ||
-		typeof semanticDigest !== "string" ||
-		!/^sha256:[0-9a-f]{64}$/u.test(semanticDigest) ||
+		typeof sourceSemanticDigest !== "string" ||
+		!/^sha256:[0-9a-f]{64}$/u.test(sourceSemanticDigest) ||
 		typeof now !== "function" ||
 		typeof resolveScope !== "function" ||
 		typeof authorize !== "function" ||
@@ -361,6 +413,18 @@ function buildTopicActor(
 		throw new TypeError(
 			"actor identity, semantic digest and trusted host functions are required",
 		);
+	const semanticDigest =
+		topics.length === 0
+			? sourceSemanticDigest
+			: `sha256:${createHash("sha256")
+					.update(
+						JSON.stringify([
+							"hobo.rivet.declared-topics/v1",
+							sourceSemanticDigest,
+							topics,
+						]),
+					)
+					.digest("hex")}`;
 	const database = db({ onMigrate: migrateDurableReceiptJournal });
 	const handle = async (
 		context: RivetDurableTopicContext,
@@ -469,7 +533,11 @@ function buildTopicActor(
 				return (
 					synchronousResult(authorize(claim())) === true &&
 					(mode === "log" ||
-						synchronousResult(authorizeInstanceScope?.(claim())) === true)
+						synchronousResult(authorizeInstanceScope?.(claim())) === true) &&
+					(topics.length === 0 ||
+						synchronousResult(
+							authorizeDeclaredTopics(Object.freeze({ ...claim(), topics })),
+						) === true)
 				);
 			} catch {
 				return false;
@@ -497,7 +565,15 @@ function buildTopicActor(
 						);
 						return mode === "log"
 							? reduceRivetTopicLog(prior, method, decoded)
-							: reduceRivetTopicBus(prior, method, decoded, timestamp);
+							: topics.length === 0
+								? reduceRivetTopicBus(prior, method, decoded, timestamp)
+								: reduceRivetTopicBusWithDeclaredTopics(
+										prior,
+										method,
+										decoded,
+										timestamp,
+										topics,
+									);
 					},
 				);
 				if (!check()) return reply(503, { error: "authority-unavailable" });
@@ -579,6 +655,7 @@ function buildTopicActor(
 				})
 			: Object.freeze({
 					...base,
+					declaredTopics: topics,
 					limits: RIVET_DURABLE_TOPIC_BUS_LIMITS,
 					capabilities: RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
 				});

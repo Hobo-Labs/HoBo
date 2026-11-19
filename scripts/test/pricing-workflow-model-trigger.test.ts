@@ -40,6 +40,8 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/runtimes/runtime-rivet/test/distributed-journal.test.ts",
 			"packages/runtimes/runtime-rivet/model/DurableTopic.tla",
 			"packages/runtimes/runtime-rivet/model/DurableTopic.cfg",
+			"packages/runtimes/runtime-rivet/model/DeclaredTopics.tla",
+			"packages/runtimes/runtime-rivet/model/DeclaredTopics.cfg",
 			"scripts/check-durable-topic-model.ts",
 			"packages/conformance/src/durable-messaging-conformance.ts",
 			"packages/conformance/test/durable-messaging-conformance.test.ts",
