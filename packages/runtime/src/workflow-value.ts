@@ -83,6 +83,30 @@ export type ParsedRunStepFailed = {
 	message: string;
 };
 
+export type ParsedRunStepScheduled = {
+	name: string;
+	index: number;
+};
+
+export function parseRunStepScheduledFact(
+	data: JsonValue,
+): ParsedRunStepScheduled {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.StepScheduled");
+	const allowed = new Set(["name", "index"]);
+	for (const key of Object.keys(data)) {
+		if (!allowed.has(key)) throw new TypeError("invalid run.StepScheduled");
+	}
+	if (!isJsonString(data.name))
+		throw new TypeError("invalid run.StepScheduled");
+	if (
+		!isJsonNumber(data.index) ||
+		!Number.isSafeInteger(data.index) ||
+		data.index < 0
+	)
+		throw new TypeError("invalid run.StepScheduled");
+	return { name: data.name, index: data.index };
+}
+
 export function parseRunStepFailedFact(data: JsonValue): ParsedRunStepFailed {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.StepFailed");
 	const allowed = new Set(["name", "index", "message"]);
