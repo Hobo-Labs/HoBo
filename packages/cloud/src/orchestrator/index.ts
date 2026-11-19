@@ -1,5 +1,6 @@
 export {
 	type CompensationContext,
+	type CompensationBlockedResource,
 	type CompensationDeps,
 	type CompensationResult,
 	runCompensation,

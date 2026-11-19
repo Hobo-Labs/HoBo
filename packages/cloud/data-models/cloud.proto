@@ -261,6 +261,12 @@ message ResourceCompensationFailedData {
   string reason = 3;
 }
 
+message CompensationBlockedResource {
+  string resource_id = 1;
+  string reason = 2;
+  repeated string dependents = 3;
+}
+
 message IncidentEscalationRequestedData {
   string deployment_id = 1;
   string resource_id = 2;

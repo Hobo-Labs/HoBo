@@ -12,6 +12,7 @@ import {
 } from "../events.js";
 import type { CredentialBroker, Executor } from "../executor/executor.js";
 import type { DeploymentPlan } from "../plan-types.js";
+import { isJsonObject } from "../json.js";
 import { collectStream, currentFenceToken } from "../store/index.js";
 import {
 	destroyResource,
@@ -37,7 +38,18 @@ export interface CompensationContext {
 export interface CompensationResult {
 	status: "rolled-back" | "needs-human";
 	destroyedOrder: string[];
+	blocked: CompensationBlockedResource[];
 	events: EventEnvelope[];
+}
+
+export interface CompensationBlockedResource {
+	resourceId: string;
+	reason:
+		| "waiting-for-dependent-destroyed"
+		| "destroy-outcome-unknown"
+		| "destroy-failed"
+		| "failed-after-provisioning";
+	dependents: string[];
 }
 
 function streamId(deploymentId: string): string {
@@ -95,6 +107,75 @@ function hasLiveResource(snapshot: ResourceActorSnapshot | undefined): boolean {
 			snapshot.state === "Destroying" ||
 			(snapshot.state === "Failed" && snapshot.specHash !== undefined))
 	);
+}
+
+function compensationBlockers(
+	plan: DeploymentPlan,
+	events: EventEnvelope[],
+	deploymentId: string,
+): CompensationBlockedResource[] {
+	const snapshots = new Map(
+		plan.resources.map((resource) => [
+			resource.name,
+			foldResourceActor(events, { ...resource, deploymentId }),
+		]),
+	);
+	const blocked: CompensationBlockedResource[] = [];
+	for (const resource of plan.resources) {
+		const snapshot = snapshots.get(resource.name);
+		if (!hasLiveResource(snapshot)) continue;
+		const dependents = dependentsOf(plan, resource.name).filter((id) =>
+			hasLiveResource(snapshots.get(id)),
+		);
+		if (dependents.length) {
+			blocked.push({
+				resourceId: resource.name,
+				reason: "waiting-for-dependent-destroyed",
+				dependents,
+			});
+		} else if (snapshot?.state === "Destroying") {
+			const facts = events.filter(
+				(event) =>
+					isJsonObject(event.data) && event.data.resourceId === resource.name,
+			);
+			const destroyingSeq =
+				facts
+					.filter((event) => event.type === CLOUD_EVENTS.ResourceDestroying)
+					.at(-1)?.seq ?? 0;
+			const failed = facts.some(
+				(event) =>
+					event.type === CLOUD_EVENTS.ResourceCompensationFailed &&
+					event.seq > destroyingSeq,
+			);
+			blocked.push({
+				resourceId: resource.name,
+				reason: failed ? "destroy-failed" : "destroy-outcome-unknown",
+				dependents: [],
+			});
+		} else if (snapshot?.state === "Failed") {
+			blocked.push({
+				resourceId: resource.name,
+				reason: "failed-after-provisioning",
+				dependents: [],
+			});
+		}
+	}
+	return blocked;
+}
+
+function compensationResult(
+	status: CompensationResult["status"],
+	destroyedOrder: string[],
+	events: EventEnvelope[],
+	plan: DeploymentPlan,
+	deploymentId: string,
+): CompensationResult {
+	return {
+		status,
+		destroyedOrder,
+		events,
+		blocked: compensationBlockers(plan, events, deploymentId),
+	};
 }
 
 export async function runCompensation(
@@ -290,7 +371,13 @@ export async function runCompensation(
 						"deployment remained busy while recording compensation failure",
 					);
 				events = await collectStream(deps.store, stream);
-				return { status: "needs-human", destroyedOrder, events };
+				return compensationResult(
+					"needs-human",
+					destroyedOrder,
+					events,
+					plan,
+					deploymentId,
+				);
 			}
 			if (outcome.kind === "destroyed") destroyedOrder.push(resourceId);
 			progressed = true;
@@ -302,7 +389,14 @@ export async function runCompensation(
 	const incomplete = plan.resources.some((resource) =>
 		hasLiveResource(foldResourceActor(events, { ...resource, deploymentId })),
 	);
-	if (incomplete) return { status: "needs-human", destroyedOrder, events };
+	if (incomplete)
+		return compensationResult(
+			"needs-human",
+			destroyedOrder,
+			events,
+			plan,
+			deploymentId,
+		);
 	for (let attempt = 0; attempt < 8; attempt += 1) {
 		events = await collectStream(deps.store, stream);
 		if (
@@ -314,7 +408,13 @@ export async function runCompensation(
 						event.type === CLOUD_EVENTS.ResourceProvisioning),
 			)
 		)
-			return { status: "needs-human", destroyedOrder, events };
+			return compensationResult(
+				"needs-human",
+				destroyedOrder,
+				events,
+				plan,
+				deploymentId,
+			);
 		if (
 			events.some(
 				(event) =>
@@ -322,7 +422,13 @@ export async function runCompensation(
 					event.seq > rollbackStartSeq,
 			)
 		)
-			return { status: "rolled-back", destroyedOrder, events };
+			return compensationResult(
+				"rolled-back",
+				destroyedOrder,
+				events,
+				plan,
+				deploymentId,
+			);
 		if (
 			plan.resources.some((resource) =>
 				hasLiveResource(
@@ -330,7 +436,13 @@ export async function runCompensation(
 				),
 			)
 		)
-			return { status: "needs-human", destroyedOrder, events };
+			return compensationResult(
+				"needs-human",
+				destroyedOrder,
+				events,
+				plan,
+				deploymentId,
+			);
 		const fenceToken = currentFenceToken(deps.store, stream);
 		try {
 			await emit(deps.store, stream, [deploymentRolledBack({ deploymentId })], {
@@ -339,7 +451,13 @@ export async function runCompensation(
 				...appendOpts,
 			});
 			events = await collectStream(deps.store, stream);
-			return { status: "rolled-back", destroyedOrder, events };
+			return compensationResult(
+				"rolled-back",
+				destroyedOrder,
+				events,
+				plan,
+				deploymentId,
+			);
 		} catch (error) {
 			if (!(error instanceof Error) || !isOptimisticConflict(error))
 				throw error;

@@ -39,6 +39,7 @@
   "packages/cli/src/types/scaffold.ts": ["ScaffoldRequest","ScaffoldResult"],
   "packages/cloud/src/executor/executor.ts": ["IacProgram","ScopedCredential"],
   "packages/cloud/src/events.ts": ["ResourceCompensationFailedData","IncidentEscalationRequestedData","DeploymentRollbackStartedData"],
+  "packages/cloud/src/orchestrator/compensation.ts": ["CompensationBlockedResource"],
   "packages/cloud/src/orchestrator/resource-actor.ts": ["ResourceActorSnapshot"],
   "packages/cloud/src/plan-types.ts": ["MatchDecided","PlanRemediation","RankedCandidate","RejectedCandidate"],
   "packages/cloud/src/projections/credential-audit.ts": ["CredentialAuditScope","CredentialAuditTimelineEntry","CredentialGrantAudit"],
