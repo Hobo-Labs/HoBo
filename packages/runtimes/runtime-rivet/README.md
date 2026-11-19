@@ -1,28 +1,48 @@
 # `@hobo/runtime-rivet`
 
-Optional **Camp runtime** realizing HoBo `actor()` / `agent()` grains on a
-HoBo-owned **actor-local journal**. Rivet is a resolver, not a topology noun
-and not an authoring model.
+Optional **Camp runtime** with a HoBo-owned local journal and Rivet-compatible
+actor keys. The local host remains an oracle. The separate distributed journal
+uses a real RivetKit actor and an asynchronous lease host.
 
 | HoBo contract | Realization |
 |---|---|
-| `ActorHost` / `defineActor` | Rivet placement + compound key |
-| Event facts | `hobo_events` + stream-head CAS in actor SQLite |
+| `ActorHost` / `defineActor` | Local host + Rivet-compatible compound key |
+| Event facts | `hobo_events` + stream-head CAS in local SQLite |
 | Durable mailbox | action-first `hobo_inbox` (not raw Rivet queue) |
 | Effects | `hobo_outbox` staged with facts; dispatch after commit |
 
-**ADR-0031 stands:** in-process wasm / native local remains the fallback.
-Rivet is the *preferred compatible* resolver when Matching evidence is current.
+RivetKit, its WASM package, and the Rivet Engine image are pinned to 3.0.0.
+`loadRivetkit()` uses dynamic import for ESM and CommonJS hosts. The live tests
+exercise the distributed journal against the pinned upstream engine, including
+lease contention, durable appends, replay, actor sleep and wake.
 
-Published `rivetkit` 2.3.10 `.cjs` uses `import.meta`, so `require("rivetkit")`
-throws. Adapters and CJS hosts must `await import("rivetkit")` via
-`loadRivetkit()`. Live tests fail closed: missing package, CJS load error,
-engine start failure, or a non-`pong` action is a test failure — never a skip.
+Register `createRivetDistributedJournalActor(verifier)` in a RivetKit registry,
+and pass its client namespace, tenant, Camp and capability issuer to
+`createRivetDistributedJournal`. Each operation needs a short-lived signed
+capability bound to the actor key, action and exact arguments; the actor checks
+it against a host-owned authorization policy before accessing its journal.
+Keep the signing key and authority outside the deployed actor.
+
+Lease grants, fences, deduplication identities and facts share one actor-local
+SQLite transaction. Pages contain at most 16 events of at most 32 KiB each;
+use the first page's `revision` as `throughRevision` for subsequent pages. If
+a grant or append returns `OUTCOME_UNKNOWN`, reconcile with the same request
+or event ID. The asynchronous lease port fences appends in this journal only:
+it cannot fence a separate event store or external effects. The asynchronous
+journal does not yet implement the local host's durable inbox and outbox.
+The actor rejects a clock earlier than any time it has persisted; lease expiry
+also relies on the host's clock not moving backward between observations.
 
 ## Fidelity
 
-- Default `local-sqlite`: `node:sqlite` behind the same journal schema Rivet `c.db` will host.
-- `rivetkit` is advertised only after a pinned package + conformance digest exist.
+- `local-sqlite` uses `node:sqlite` for the local HoBo journal.
+- `runner`, `serverless`, and `managed` modes are rejected until a Rivet-backed
+  implementation of the synchronous `ActorHost` contract exists. Use the
+  separate asynchronous Rivet journal for distributed leases and facts; a
+  local journal cannot be labeled `rivetkit`.
+- The 3.0.0 pin does not migrate data from an existing Rivet 2 engine. An
+  operator must establish and verify an upstream migration before upgrading
+  an existing deployment.
 - Raw Rivet queue **receive-loss** is not HoBo at-least-once. Inbox rows are authority.
 
 ```ts

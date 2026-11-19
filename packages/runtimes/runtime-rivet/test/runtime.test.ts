@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
 	assertNoWaitTrue,
+	createActorLocalJournal,
+	createRivetActorHost,
 	createRivetRuntimeHost,
 	HOBO_RUNTIME_RIVET_PACKAGE,
 	RIVET_ENGINE_PIN,
@@ -26,9 +29,24 @@ describe("@hobo/runtime-rivet", () => {
 		expect(RIVET_RESOLVER_PROFILES.some((id) => id.startsWith("actor."))).toBe(
 			false,
 		);
-		expect(RIVETKIT_PIN.version).toBe("2.3.10");
-		expect(RIVET_ENGINE_PIN.tag).toBe("2.3.10");
-		expect(rivetEngineImageRef()).toContain("@sha256:");
+		expect(RIVETKIT_PIN.version).toBe("3.0.0");
+		expect(RIVET_ENGINE_PIN.tag).toBe("3.0.0");
+		expect(rivetEngineImageRef()).toBe(
+			"rivetdev/engine:3.0.0@sha256:5ae3c24275eeff87ad1962f4d66fcdb85786fc1397feeeb55afc2ca1f7ccf6f2",
+		);
+	});
+
+	it.each([
+		"rivetkit",
+		"@rivetkit/rivetkit-wasm",
+	])("installs the pinned Rivet 3 %s artifact", (packageName) => {
+		const packageJson = JSON.parse(
+			readFileSync(
+				new URL(`../node_modules/${packageName}/package.json`, import.meta.url),
+				"utf8",
+			),
+		);
+		expect(packageJson.version).toBe(RIVETKIT_PIN.version);
 	});
 
 	it("ensure reports rivet kind and local-sqlite fidelity offline", async () => {
@@ -40,6 +58,31 @@ describe("@hobo/runtime-rivet", () => {
 		expect(result.details.fidelity).toBe("local-sqlite");
 		expect(result.details.secretless).toBe(true);
 		bundle.journal.close();
+	});
+
+	it.each([
+		"runner",
+		"serverless",
+		"managed",
+	] as const)("rejects %s mode until a real Rivet-backed host exists", (mode) => {
+		expect(() =>
+			createRivetRuntimeHost({ tenantId: "t1", campId: "c1", mode }),
+		).toThrow(/only local-sqlite.*implemented/i);
+	});
+
+	it("cannot label a local journal as RivetKit fidelity", () => {
+		const journal = createActorLocalJournal();
+		try {
+			expect(() =>
+				createRivetActorHost({ journal, fidelity: "rivetkit" }),
+			).toThrow(/RivetKit fidelity.*not implemented/i);
+			// @ts-expect-error invalid fidelity is intentionally tested
+			expect(() =>
+				createRivetActorHost({ journal, fidelity: "remote" }),
+			).toThrow(/RivetKit fidelity.*not implemented/i);
+		} finally {
+			journal.close();
+		}
 	});
 
 	it("actor host enforces single-writer and durable accept-before-ack", () => {
