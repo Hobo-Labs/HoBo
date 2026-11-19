@@ -1,11 +1,4 @@
 /* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: the HTTP edge: a response body is any JSON the service reports, only stringified. */
-/**
- * The CD conductor service over an opened CD runtime, without a server: the
- * one HTTP mount (`/healthz`, `/readyz`, `/v1/cd/`) as a request handler, and
- * one bounded pass as a function. `hobo serve cd` runs it behind `node:http`
- * with the service's own tick loop (`cd-serve.ts`); a platform function
- * (`packages/cd-vercel`) calls `handle` per request and `pass` per schedule.
- */
 
 import {
 	type CampId,
@@ -23,7 +16,6 @@ import {
 } from "@hobo/cd/service";
 import type { CdRuntime } from "./cd-runtime.js";
 
-/** A JSON response on the CD mount. */
 export function cdJson(status: number, value: unknown): FeedResponse {
 	return {
 		status,
@@ -35,22 +27,15 @@ export function cdJson(status: number, value: unknown): FeedResponse {
 	};
 }
 
-/** What `/readyz` says, beyond the service's own health. */
 export type CdReadiness = "service" | "composed";
 
 export type CdHost = Readonly<{
 	service: CdServiceHost;
-	/** The Camps this host converges (all but OBSERVE_ONLY). */
 	managed: readonly CampId[];
 	reconcilers: number;
 	refusals: readonly string[];
 	pathPrefix: string;
-	/** Answer one request on the mount. */
 	handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse>;
-	/**
-	 * One bounded pass: each managed Camp reconciled once, then one service
-	 * tick (sources → … → retention). For a host without a tick loop.
-	 */
 	pass(): Promise<
 		Readonly<{
 			tick: TickReport;
@@ -63,19 +48,11 @@ export type CdHost = Readonly<{
 	>;
 }>;
 
-/** Compose the conductor service, its read API and the feed. */
 export async function composeCdHost(
 	input: Readonly<{
 		runtime: CdRuntime;
-		/** Names the conductor's lease holder. */
 		holderId: string;
-		/** The service's principal id (default: the holder id). */
 		principalId?: string;
-		/**
-		 * `service`: ready when the service says so (its tick loop runs).
-		 * `composed`: ready when the runtime opened and the conductor was
-		 * built; a platform function has no loop, so the service never starts.
-		 */
 		readiness?: CdReadiness;
 	}>,
 ): Promise<CdHost> {
@@ -148,7 +125,6 @@ export async function composeCdHost(
 						);
 						reconciled.push({
 							campId,
-							// A blocked or refused pass says why in its reasons.
 							ok: observed.reasons.length === 0,
 							detail:
 								observed.reasons[0]?.message ?? `status ${observed.status}`,

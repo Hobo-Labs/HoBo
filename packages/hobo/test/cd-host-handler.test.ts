@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Yard fixtures are partial records cast once to the type under test. */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,8 +9,21 @@ import { describe, expect, it } from "vitest";
 import { composeCdHost } from "../src/cd-host.js";
 import { openCdRuntime } from "../src/cd-runtime.js";
 
-// The CD service's mount without a server: what a platform function calls,
-// one request (`handle`) or one schedule (`pass`) at a time.
+function yard(name: string, camps: { id: string; envType: string }[]) {
+	return {
+		kind: "yard",
+		name,
+		providerId: "vercel",
+		regions: ["us-east-1"],
+		labels: {},
+		camps: camps.map((c) => ({
+			kind: "camp",
+			id: c.id,
+			envType: c.envType,
+			labels: {},
+		})),
+	} as never;
+}
 
 async function withRuntime(
 	body: (
@@ -26,20 +40,7 @@ async function withRuntime(
 		cwd: home,
 		simulate: true,
 		now: () => Date.UTC(2026, 10, 17),
-		// One Yard with one MANAGED Camp, so a pass has something to reconcile.
-		// SAFETY: a partial Yard record, the fields yardTopology reads.
-		yards: [
-			{
-				kind: "yard",
-				name: "edge",
-				providerId: "vercel",
-				regions: ["us-east-1"],
-				labels: {},
-				camps: [
-					{ kind: "camp", id: "prod", envType: "production", labels: {} },
-				],
-			} as never,
-		],
+		yards: [yard("edge", [{ id: "prod", envType: "production" }])],
 	});
 	if (!opened.ok) throw new Error(JSON.stringify(opened.reasons));
 	try {
@@ -61,8 +62,8 @@ const json = (body: FeedResponse["body"]) => {
 	return JSON.parse(new TextDecoder().decode(body));
 };
 
-describe("composeCdHost: the CD mount as a request handler", () => {
-	it("is ready once composed when no loop runs (a platform function)", async () => {
+describe("composeCdHost", () => {
+	it("is ready once composed when no loop runs", async () => {
 		await withRuntime(async (runtime) => {
 			const host = await composeCdHost({
 				runtime,
@@ -78,7 +79,6 @@ describe("composeCdHost: the CD mount as a request handler", () => {
 				refusals: [],
 			});
 			expect((await host.handle(get("/elsewhere"), signal)).status).toBe(404);
-			// The read API answers under the mount.
 			const openapi = await host.handle(
 				get(`${host.pathPrefix}openapi.json`),
 				signal,
@@ -87,7 +87,7 @@ describe("composeCdHost: the CD mount as a request handler", () => {
 		});
 	});
 
-	it("is not ready by the service's own rule until its loop starts", async () => {
+	it("is not ready by the service rule until its loop starts", async () => {
 		await withRuntime(async (runtime) => {
 			const host = await composeCdHost({ runtime, holderId: "test-loop" });
 			const ready = await host.handle(
@@ -98,7 +98,7 @@ describe("composeCdHost: the CD mount as a request handler", () => {
 		});
 	});
 
-	it("runs one bounded pass: every managed Camp once, then one tick", async () => {
+	it("runs one bounded pass", async () => {
 		await withRuntime(async (runtime) => {
 			const host = await composeCdHost({
 				runtime,

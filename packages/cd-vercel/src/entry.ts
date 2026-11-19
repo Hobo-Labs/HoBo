@@ -10,11 +10,6 @@ import {
 	readCdStoreCoordinates,
 } from "./store.js";
 
-// The Vercel entries (`api/cd.ts`, `api/tick.ts`). `/healthz` answers 200
-// whatever CD's state (the function is up) and names the build's commit;
-// everything else waits for the CD host, and answers 503 while it cannot
-// compose (`/readyz` says why, by code).
-
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 async function readBody(request: IncomingMessage): Promise<Uint8Array> {
@@ -55,7 +50,6 @@ async function send(
 	response.end();
 }
 
-/** What the function answers itself, before or around the CD mount. */
 type CdOwnAnswer =
 	| Readonly<{ ok: true; commit: string | null }>
 	| Readonly<{ ready: false; started: false; code: string }>
@@ -73,7 +67,6 @@ function sendJson(
 	response.end(JSON.stringify(value));
 }
 
-/** The Node function handler for the CD mount. */
 export function createCdHttpEntry(
 	load: () => Promise<CdHost>,
 	options: Readonly<{ commit?: string | null }> = {},
@@ -96,7 +89,6 @@ export function createCdHttpEntry(
 				sendJson(response, 503, {
 					ready: false,
 					started: false,
-					// Each known refusal is a CdStoreBindingError with a code.
 					code:
 						error instanceof CdStoreBindingError
 							? error.code
@@ -132,20 +124,17 @@ export function createCdHttpEntry(
 	};
 }
 
-/** One scheduled pass; what the tick function runs per delivery. */
 export async function runCdPass(load: () => Promise<CdHost>) {
 	const host = await load();
 	return host.pass();
 }
 
-/** The build's commit, from Vercel's system environment. */
 export function buildCommit(
 	env: Readonly<Record<string, string | undefined>>,
 ): string | null {
 	return env.VERCEL_GIT_COMMIT_SHA ?? null;
 }
 
-/** The CD host this instance composes, on the committed store binding. */
 export const loadCdHost = memoizedCdHost(() =>
 	composeVercelCdHost({
 		env: process.env,

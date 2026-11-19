@@ -1,16 +1,9 @@
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
-
 import { expect, it } from "vitest";
 import { z } from "zod";
 
 import { CdStoreBindingError, createCdHttpEntry } from "../src/index.js";
-
-// `hobo cd up` verifies a delivered CD by its probes, as `hobo ci up` does the
-// relay. The two run in different places, so the probes' answers are a
-// contract: the provider side here is the function's own entry
-// (`createCdHttpEntry`) in the recorded state.
 
 const Pact = z.object({
 	consumer: z.object({ name: z.string() }),
@@ -46,8 +39,7 @@ it("answers each recorded probe as recorded", async () => {
 	const server = createServer((req, res) => void entry(req, res));
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	try {
-		// SAFETY: a server listening on a TCP port reports an AddressInfo.
-		const { port } = server.address() as AddressInfo;
+		const { port } = z.object({ port: z.number() }).parse(server.address());
 		for (const { request, response } of pact.interactions) {
 			const res = await fetch(`http://127.0.0.1:${port}${request.path}`, {
 				method: request.method,
