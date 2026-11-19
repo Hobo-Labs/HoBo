@@ -9,7 +9,6 @@ import "list"
 	policyRevision: string & !=""
 }
 #Micros: int & >=0 & <=9007199254740991
-#IacSha256: string & =~"^sha256:[a-f0-9]{64}$"
 #EntitlementKind: "allowance" | "credit" | "commitment"
 #BudgetLedgerSnapshot: {
 	identity:       #BudgetIdentity
@@ -24,6 +23,7 @@ import "list"
 	unresolvedMicros?:        #Micros
 	recoveryReserveMicros?:   #Micros
 	externalCommittedMicros?: #Micros
+	unboundedExposureCount?: int & >=0 & <=256
 }
 #BudgetProviderAccount: {providerAccountId: string & !="", limitMicros: #Micros, spentMicros: #Micros, reservedMicros: #Micros, externalCommittedMicros?: #Micros}
 #BudgetEntitlement: {bucketId: string & !="", unit: string & !="", periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
@@ -53,36 +53,48 @@ import "list"
 	financialPlanHash?: string
 }
 #BudgetReservation: {
-	reservationId: string & !=""
-	identity: #BudgetIdentity
-	requestDigest: string & !=""
-	quoteId: string & !=""
-	reservedMicros: #Micros
-	status: "held" | "uncertain" | "settled" | "released"
-	actualMicros: #Micros
-	ledgerSeq: int & >=0
-	quoteDigest: string & !=""
-	providerAccounts?: [...#ProviderAccountExposure]
-	entitlementClaims?: [...#EntitlementClaim]
-	usageEvidenceRef?: string
-	sourceStoppedEvidenceRef?: string
-	settlementEvidence?: #BudgetSettlementEvidence
-	executionDigest?: string
-	financialPlanHash?: string
-	fenceSettlementGuard?: #BudgetFenceSettlementGuard
+  reservationId: string & !=""
+  identity: #BudgetIdentity
+  requestDigest: string & !=""
+  quoteId?: string
+  reservedMicros?: #Micros
+  status: "held" | "uncertain" | "settled" | "released"
+  actualMicros?: #Micros
+  ledgerSeq: int & >=0
+  quoteDigest: string & !=""
+  providerAccounts?: [...#ProviderAccountExposure]
+  entitlementClaims?: [...#EntitlementClaim]
+  usageEvidenceRef?: string
+  sourceStoppedEvidenceRef?: string
+  settlementEvidence?: #BudgetSettlementEvidence
+  executionDigest?: string
+  financialPlanHash?: string
+  fenceSettlementGuard?: #BudgetFenceSettlementGuard
+  unboundedExposure?: bool
+  unpricedPolicyProof?: #IacUnpricedPolicyProof
+  unpricedScopeProof?: #IacUnpricedScopeProof
+  iacPricingPin?: #IacPricingPin
+  if unboundedExposure == _|_ {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
+  if unboundedExposure != _|_ {
+    if unboundedExposure == false {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
+    if unboundedExposure == true {quoteId?: "", reservedMicros?: 0, unpricedPolicyProof: #IacUnpricedPolicyProof, unpricedScopeProof: #IacUnpricedScopeProof}
+  }
 }
 #BudgetSettlementEvidence: {usageEvidenceRef: string & !="", sourceStoppedEvidenceRef: string & !="", providerAccounts?: [...#ProviderAccountExposure], entitlementClaims?: [...#EntitlementClaim], fenceOperationReceiptJson?: string, financeSignature?: string}
 #HostingPolicyProof: {requestDigest: string & !="", quoteId: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool}
+#IacUnpricedPolicyProof: {requestDigest: string & !="", inventoryHash: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool, observedAt: string & !="", validUntil: string & !=""}
+#IacUnpricedScopeProof: {identity: #BudgetIdentity, providerAccountIds: [string & !="", ...string & !=""], authorityRef: string & !="", evidenceRef: string & !="", ownershipEpoch: string & !="", observedAt: string & !="", exclusiveUntilSettled: true, noSharedEntitlements: true, signature: string & !="", _limit: true & (len(providerAccountIds) <= 256)}
+#IacPricingPin: {planDigest: string & !="", inventoryHash: string & !="", modelHash: string & !="", quoteHash: string & !="", evidenceHash: string & !="", validUntil: string & !=""}
 #BudgetAuthorityEvent: {type: string & !="", snapshot: #BudgetLedgerSnapshot, reservations: [...#BudgetReservation], reconciliationEvidenceRef?: string}
 
 #IacTargetLiabilityEvidence: {
 	evidenceRef:   string & !=""
 	targetId:      string & !=""
 	tenantId:      string & !=""
-	planDigest:    #IacSha256
-	inventoryHash: #IacSha256
-	modelHash:     #IacSha256
-	quoteHash:     #IacSha256
+	planDigest:    string & =~"^sha256:[a-f0-9]{64}$"
+	inventoryHash: string & =~"^sha256:[a-f0-9]{64}$"
+	modelHash:     string & =~"^sha256:[a-f0-9]{64}$"
+	quoteHash:     string & =~"^sha256:[a-f0-9]{64}$"
 	maximumMicros: #Micros
 	observedAt:    string & !=""
 	validUntil:    string & !=""
@@ -96,43 +108,9 @@ import "list"
 	}
 }
 #IacBudgetDisclosure: {
-	evaluation:  "allowed" | "denied" | "unavailable"
+	evaluation:  "allowed" | "bypassed" | "denied" | "unavailable"
 	reservation: "not-created" | "held" | "uncertain" | "settled" | "released" | "unknown"
 	if evaluation == "denied" {reservation: "not-created"}
-	if evaluation == "allowed" {reservation: "held" | "settled" | "released"}
-}
-#IacAdmissionHold: {
-	_requestID:    string & #IacSha256
-	_quoteID:      string & !=""
-	requestDigest: _requestID
-	inventoryHash: #IacSha256
-	modelHash:     #IacSha256
-	quoteHash:     #IacSha256
-	quote: {
-		requestDigest:        _requestID
-		yardId:               string & !=""
-		ownerTenantId:        string & !=""
-		financialPlanHash:    #IacSha256
-		providerAccounts:     [#ProviderAccountExposure, ...#ProviderAccountExposure]
-		entitlementClaims:    [...#EntitlementClaim]
-		liabilityBoundMicros: list.Sum([for account in providerAccounts {account.liabilityMicros}])
-	}
-	reservation: {
-		requestDigest:        _requestID
-		quoteId:                _quoteID
-		status:                 "held"
-		reservedMicros:         quote.liabilityBoundMicros
-		providerAccounts:       quote.providerAccounts
-		entitlementClaims:      quote.entitlementClaims
-		financialPlanHash:      quote.financialPlanHash
-	}
-	policyProof: {
-		requestDigest:        _requestID
-		quoteId:                _quoteID
-		identity:               #BudgetIdentity
-		effect:                 "allow" | "allow-degraded"
-		obligationsSatisfied: true
-	}
 }
 #IacTargetAdmissionDecision: {
 	requestId:      string & !=""
@@ -148,36 +126,65 @@ import "list"
 	quote?:         #HostingQuote
 	reservation?:   #BudgetReservation
 	policyProof?:   #HostingPolicyProof
+	unpricedPolicyProof?: #IacUnpricedPolicyProof
 	if status == "denied" {
 		code: string & !=""
 		budget: {evaluation: "denied" | "unavailable", reservation: "not-created"}
-		quote?: _
-		reservation?: _
-		policyProof?: _
 	}
-	if status == "admitted" {
-		code: string
+	if status == "admitted" && budget.evaluation == "allowed" {
+		unpricedPolicyProof?: _|_
 		budget: {evaluation: "allowed", reservation: "held"}
-		#IacAdmissionHold
-		quote: {yardId: targetId}
+		requestDigest: string & =~"^sha256:[a-f0-9]{64}$"
+		inventoryHash: string & =~"^sha256:[a-f0-9]{64}$"
+		modelHash:     string & =~"^sha256:[a-f0-9]{64}$"
+		quoteHash:     string & =~"^sha256:[a-f0-9]{64}$"
+		quote:         #HostingQuote
+		reservation:   #BudgetReservation
+		policyProof:   #HostingPolicyProof
+		_requestID:    requestDigest
+		_quoteID:      quote.quoteId
+		quote: {
+			requestDigest: _requestID
+			yardId:        targetId
+			ownerTenantId: reservation.identity.tenantId
+		}
+		reservation: {
+			requestDigest:  _requestID
+			quoteId:        _quoteID
+			status:         "held"
+			reservedMicros: quote.liabilityBoundMicros
+		}
+		policyProof: {
+			requestDigest:        _requestID
+			quoteId:              _quoteID
+			identity:             reservation.identity
+			effect:               "allow" | "allow-degraded"
+			obligationsSatisfied: true
+		}
 	}
+	if status == "admitted" && budget.evaluation == "bypassed" {
+		budget: {reservation: "held"}
+		modelHash?: ""
+		quoteHash?: ""
+		quote?: _|_
+		policyProof?: _|_
+		requestDigest: string & =~"^sha256:[a-f0-9]{64}$"
+		inventoryHash: string & =~"^sha256:[a-f0-9]{64}$"
+		_requestID: requestDigest
+		_inventoryID: inventoryHash
+		_identity: reservation.identity
+		_policy: unpricedPolicyProof
+		reservation: {status: "held", unboundedExposure: true, requestDigest: _requestID, financialPlanHash: _inventoryID, executionDigest: string & !="", unpricedPolicyProof: _policy, unpricedScopeProof: {identity: _identity}}
+		unpricedPolicyProof: {requestDigest: _requestID, inventoryHash: _inventoryID, identity: _identity, effect: "allow" | "allow-degraded", obligationsSatisfied: true}
+	}
+	if status == "admitted" {budget: {evaluation: "allowed" | "bypassed"}}
 	if status == "replay" {
 		code: "EXECUTION_ALREADY_CLAIMED"
-		budget: {evaluation: "allowed", reservation: "held"}
-		#IacAdmissionHold
-		quote: {yardId: targetId}
+		budget: {evaluation: "allowed" | "bypassed", reservation: "held"}
 	}
 	if status == "uncertain" {
 		code: string & !=""
 		budget: {evaluation: "unavailable", reservation: "unknown" | "held" | "uncertain"}
-		quote?: _
-		policyProof?: _
-		if budget.reservation == "held" {
-			reservation: #BudgetReservation & {status: "held" | "uncertain"}
-		}
-		if budget.reservation != "held" {
-			reservation?: _
-		}
 	}
 }
 
@@ -185,7 +192,7 @@ import "list"
 #Budget: {
 	iacEvidence?: #IacTargetLiabilityEvidence
 	iacDecision?: #IacTargetAdmissionDecision
-	if iacDecision != _|_ && iacDecision.status == "admitted" {
+	if iacDecision != _|_ && iacDecision.status == "admitted" && iacDecision.budget.evaluation == "allowed" {
 		iacEvidence: #IacTargetLiabilityEvidence & {
 			targetId:      iacDecision.targetId
 			tenantId:      iacDecision.quote.ownerTenantId

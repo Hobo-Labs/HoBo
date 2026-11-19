@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { clone, create, toJsonString } from "@bufbuild/protobuf";
+import { types as utilTypes } from "node:util";
+import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import {
 	type Decimal,
 	isBoundedPricingInput,
@@ -10,7 +11,7 @@ import {
 	QuoteScenarioSchema,
 	type QuoteVector,
 	QuoteVectorSchema,
-	quoteScenario,
+	quoteScenarioV2,
 	quoteTargetPricing,
 	stableHash,
 	type TargetPricingAvailability,
@@ -19,7 +20,7 @@ import {
 	TargetPricingInventorySchema,
 } from "@hobo/pricing";
 import {
-	EntitlementClaimSchema,
+	IacPricingPinSchema,
 	type IacTargetAdmissionDecision,
 	IacTargetAdmissionDecisionSchema,
 	type IacTargetLiabilityEvidence,
@@ -31,6 +32,7 @@ import {
 	type BudgetIdentity,
 	BudgetIdentitySchema,
 	type BudgetReservation,
+	BudgetReservationSchema,
 	budgetIdentityKey,
 	type HostingPolicyProof,
 	HostingPolicyProofSchema,
@@ -42,6 +44,9 @@ import type { AsyncBudgetAdmissionAuthority } from "./budget-postgres.js";
 import { incrementalEntitlementClaims } from "./iac-incremental-claims.js";
 import { validIacPolicyGate } from "./iac-policy-gate.js";
 import type { GateDecision } from "./planes.js";
+
+const hasOwnAdmissionField = Object.hasOwn;
+const isAdmissionProxy = utilTypes.isProxy;
 
 export type {
 	IacTargetAdmissionDecision,
@@ -76,6 +81,10 @@ export interface IacTargetAdmissionDeps {
 
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
+function compareIdentifier(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function safeName(value: string): boolean {
 	return (
 		value.length > 0 &&
@@ -84,6 +93,87 @@ function safeName(value: string): boolean {
 		!/[\p{Cc}]/u.test(value)
 	);
 }
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: the broker validates a potentially untrusted runtime envelope without invoking accessors or proxy traps. */
+function captureTargetAdmissionInput(
+	input: IacTargetAdmissionInput,
+): IacTargetAdmissionInput | undefined {
+	try {
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			isAdmissionProxy(input) ||
+			Array.isArray(input)
+		)
+			return undefined;
+		const keys = Reflect.ownKeys(input);
+		if (
+			keys.length > 4 ||
+			keys.some(
+				(key) =>
+					typeof key !== "string" ||
+					!["requestId", "inventory", "pricing", "evidence"].includes(key),
+			)
+		)
+			return undefined;
+		const requestId = Object.getOwnPropertyDescriptor(input, "requestId");
+		const inventory = Object.getOwnPropertyDescriptor(input, "inventory");
+		const pricing = Object.getOwnPropertyDescriptor(input, "pricing");
+		const evidence = Object.getOwnPropertyDescriptor(input, "evidence");
+		for (const field of [requestId, inventory, pricing]) {
+			if (
+				field === undefined ||
+				!hasOwnAdmissionField(field, "value") ||
+				!field.enumerable
+			)
+				return undefined;
+		}
+		if (
+			evidence !== undefined &&
+			(!hasOwnAdmissionField(evidence, "value") || !evidence.enumerable)
+		)
+			return undefined;
+		if (typeof requestId?.value !== "string") return undefined;
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the detached envelope is further validated against the exact protobuf schemas before use.
+		const captured = {
+			requestId: requestId.value,
+			inventory: inventory?.value as TargetPricingInventory,
+			pricing: pricing?.value as TargetPricingAvailability,
+		};
+		if (evidence !== undefined && evidence.value !== undefined)
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the exact liability-evidence schema is checked before use.
+			return {
+				...captured,
+				evidence: evidence.value as IacTargetLiabilityEvidence,
+			};
+		return captured;
+	} catch {
+		return undefined;
+	}
+}
+
+function safeTargetId(inventory: TargetPricingInventory): string {
+	try {
+		if (
+			typeof inventory !== "object" ||
+			inventory === null ||
+			isAdmissionProxy(inventory) ||
+			Array.isArray(inventory)
+		)
+			return "";
+		const field = Object.getOwnPropertyDescriptor(inventory, "targetId");
+		return field !== undefined &&
+			hasOwnAdmissionField(field, "value") &&
+			field.enumerable &&
+			typeof field.value === "string" &&
+			safeName(field.value)
+			? field.value
+			: "";
+	} catch {
+		return "";
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 function ceilUnits(value: Decimal, scale: number): number | undefined {
 	if (value.coefficient < 0n || value.scale > 128) return undefined;
@@ -95,11 +185,21 @@ function ceilUnits(value: Decimal, scale: number): number | undefined {
 
 function readDecimal(value: string): Decimal | undefined {
 	if (value.length > 128) return undefined;
-	try {
-		return parseDecimal(value);
-	} catch {
-		return undefined;
+	return parseDecimal(value);
+}
+
+function liabilityMicros(
+	value: bigint | number | undefined,
+): number | undefined {
+	if (value === undefined) return undefined;
+	if (Number.isSafeInteger(value)) {
+		const numeric = Number(value);
+		const asBig = BigInt(numeric);
+		if (asBig < 0n || asBig > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
+		return numeric;
 	}
+	if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
+	return Number(value);
 }
 
 function denial(
@@ -141,162 +241,23 @@ function uncertain(
 	});
 }
 
-function liabilityMicros(
-	value: bigint | number | undefined,
-): number | undefined {
-	if (value === undefined) return undefined;
-	if (Number.isSafeInteger(value)) {
-		const numeric = Number(value);
-		const asBig = BigInt(numeric);
-		if (asBig < 0n || asBig > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
-		return numeric;
-	}
-	if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
-	return Number(value);
-}
-
-function compareAccountIds(left: string, right: string): number {
-	return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function sortedUniqueAccountIds(accountIds: readonly string[]): string[] {
-	return [...new Set(accountIds)].sort(compareAccountIds);
-}
-
-function sortedProviderAccounts<
-	T extends { readonly providerAccountId: string },
->(accounts: readonly T[]): T[] {
-	return [...accounts].sort((left, right) =>
-		compareAccountIds(left.providerAccountId, right.providerAccountId),
-	);
-}
-
-function hostingQuoteDigest(quote: HostingQuote): string {
-	return createHash("sha256")
-		.update(toJsonString(HostingQuoteSchema, quote))
-		.digest("hex");
-}
-
-function substantiveEvidenceHash(
-	evidence: IacTargetLiabilityEvidence,
-	maximumMicros: number,
-): string {
-	const accounts = sortedProviderAccounts(evidence.providerAccounts);
-	return stableHash({
-		evidenceRef: evidence.evidenceRef,
-		observedAt: evidence.observedAt,
-		validUntil: evidence.validUntil,
-		targetId: evidence.targetId,
-		tenantId: evidence.tenantId,
-		planDigest: evidence.planDigest,
-		inventoryHash: evidence.inventoryHash,
-		modelHash: evidence.modelHash,
-		quoteHash: evidence.quoteHash,
-		maximumMicros,
-		providerAccounts: accounts.map((account) => ({
-			providerAccountId: account.providerAccountId,
-			liabilityMicros: account.liabilityMicros,
-		})),
-	});
-}
-
-function reservationMatchesQuote(
-	reservation: BudgetReservation,
-	input: {
-		readonly reservationId: string;
-		readonly requestDigest: string;
-		readonly quote: HostingQuote;
-		readonly executionDigest?: string;
-	},
-): boolean {
-	if (
-		reservation.reservationId !== input.reservationId ||
-		reservation.requestDigest !== input.requestDigest ||
-		reservation.quoteId !== input.quote.quoteId ||
-		reservation.financialPlanHash !== input.quote.financialPlanHash ||
-		reservation.reservedMicros !== input.quote.liabilityBoundMicros ||
-		reservation.quoteDigest !== hostingQuoteDigest(input.quote)
-	)
-		return false;
-	if (input.executionDigest === undefined) return true;
-	return reservation.executionDigest === input.executionDigest;
-}
-
-function isReservationReplayConflict(cause: unknown): boolean {
-	if (!(cause instanceof Error)) return false;
-	return cause.message === "budget reservation replay differs";
-}
-
-async function denyWhenUnheld(
-	deps: IacTargetAdmissionDeps,
-	requestId: string,
-	targetId: string,
-	code: string,
-	message: string,
-	unavailable = true,
-	requestDigest = "",
-): Promise<IacTargetAdmissionDecision> {
-	const existing = await Promise.resolve(
-		deps.authority.lookup(`iac:${requestId}`),
-	);
-	if (
-		existing &&
-		(existing.status === "held" || existing.status === "uncertain")
-	) {
-		if (
-			requestDigest &&
-			existing.requestDigest &&
-			existing.requestDigest !== requestDigest
-		)
-			return denial(
-				requestId,
-				targetId,
-				"RESERVATION_REQUEST_CONFLICT",
-				"request id is already bound to a different financial plan",
-				false,
-			);
-		return uncertain(
-			requestId,
-			targetId,
-			"REQUEST_ALREADY_RESERVED",
-			existing.status,
-			existing.requestDigest || requestDigest,
-		);
-	}
-	return denial(requestId, targetId, code, message, unavailable);
-}
-
-function normalizeLiabilityEvidence(
-	evidence: IacTargetLiabilityEvidence,
-): IacTargetLiabilityEvidence {
-	const maximum = liabilityMicros(evidence.maximumMicros);
-	const maximumMicros =
-		maximum === undefined ? evidence.maximumMicros : BigInt(maximum);
-	return create(IacTargetLiabilityEvidenceSchema, {
-		evidenceRef: evidence.evidenceRef,
-		targetId: evidence.targetId,
-		tenantId: evidence.tenantId,
-		planDigest: evidence.planDigest,
-		inventoryHash: evidence.inventoryHash,
-		modelHash: evidence.modelHash,
-		quoteHash: evidence.quoteHash,
-		maximumMicros,
-		observedAt: evidence.observedAt,
-		validUntil: evidence.validUntil,
-		providerAccounts: evidence.providerAccounts,
-	});
-}
-
 export async function admitIacTarget(
-	input: IacTargetAdmissionInput,
+	rawInput: IacTargetAdmissionInput,
 	deps: IacTargetAdmissionDeps,
 ): Promise<IacTargetAdmissionDecision> {
+	const input = captureTargetAdmissionInput(rawInput);
+	if (input === undefined)
+		return denial(
+			"",
+			"",
+			"REQUEST_INVALID",
+			"an inspectable admission request is required",
+		);
 	const { requestId } = input;
-	const targetId = input.inventory.targetId;
-	const rawEvidence = input.evidence == null ? undefined : input.evidence;
+	const targetId = safeTargetId(input.inventory);
 	if (!safeName(requestId))
 		return denial(
-			requestId,
+			"",
 			targetId,
 			"REQUEST_INVALID",
 			"a bounded request id is required",
@@ -311,39 +272,24 @@ export async function admitIacTarget(
 			"PRICING_INPUT_TOO_LARGE",
 			"financial input exceeds the bounded data limits",
 		);
-	if (rawEvidence !== undefined && !isBoundedPricingInput(rawEvidence))
+	if (!isExactProtoMessage(TargetPricingInventorySchema, input.inventory))
+		return denial(
+			requestId,
+			targetId,
+			"TARGET_INVENTORY_INCOMPLETE",
+			"target inventory contains unsupported or malformed data",
+		);
+	if (
+		input.evidence !== undefined &&
+		(!isExactProtoMessage(IacTargetLiabilityEvidenceSchema, input.evidence) ||
+			input.evidence.providerAccounts.length > 256)
+	)
 		return denial(
 			requestId,
 			targetId,
 			"LIABILITY_EVIDENCE_INVALID",
 			"liability evidence is malformed or exceeds the bounded data limits",
 		);
-	const evidenceInput =
-		rawEvidence === undefined ? undefined : normalizeLiabilityEvidence(rawEvidence);
-	if (rawEvidence !== undefined && evidenceInput !== undefined) {
-		const exactOnRaw = isExactProtoMessage(
-			IacTargetLiabilityEvidenceSchema,
-			rawEvidence,
-		);
-		const exactOnNormalized = isExactProtoMessage(
-			IacTargetLiabilityEvidenceSchema,
-			evidenceInput,
-		);
-		const microsCoercionOnly =
-			!exactOnRaw &&
-			Number.isSafeInteger(rawEvidence.maximumMicros) &&
-			exactOnNormalized;
-		if (
-			!(exactOnRaw || microsCoercionOnly) ||
-			evidenceInput.providerAccounts.length > 256
-		)
-			return denial(
-				requestId,
-				targetId,
-				"LIABILITY_EVIDENCE_INVALID",
-				"liability evidence is malformed or exceeds the bounded data limits",
-			);
-	}
 	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, input.pricing))
 		return denial(
 			requestId,
@@ -359,9 +305,9 @@ export async function admitIacTarget(
 		inventory = clone(TargetPricingInventorySchema, input.inventory);
 		pricing = clone(TargetPricingAvailabilitySchema, input.pricing);
 		evidence =
-			evidenceInput === undefined
+			input.evidence === undefined
 				? undefined
-				: clone(IacTargetLiabilityEvidenceSchema, evidenceInput);
+				: clone(IacTargetLiabilityEvidenceSchema, input.evidence);
 		priced = quoteTargetPricing(inventory, pricing);
 	} catch {
 		return denial(
@@ -371,13 +317,6 @@ export async function admitIacTarget(
 			"financial input is malformed",
 		);
 	}
-	if (inventory.complete !== true)
-		return denial(
-			requestId,
-			targetId,
-			"TARGET_INVENTORY_INCOMPLETE",
-			"target inventory must be complete before admission",
-		);
 	if (!priced.ok)
 		return denial(requestId, targetId, priced.code, priced.reason);
 	if (
@@ -392,8 +331,7 @@ export async function admitIacTarget(
 		);
 	const scenario = pricing.state.value.scenario;
 	if (deps.authority.persistence !== "durable-cas")
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"BUDGET_AUTHORITY_UNAVAILABLE",
@@ -403,8 +341,7 @@ export async function admitIacTarget(
 	try {
 		now = deps.now();
 	} catch {
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"TIME_UNAVAILABLE",
@@ -426,8 +363,7 @@ export async function admitIacTarget(
 		total?.currency !== "USD" ||
 		totalMicros === undefined
 	)
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"PRICING_NOT_COMPARABLE",
@@ -449,32 +385,34 @@ export async function admitIacTarget(
 		!Number.isFinite(Date.parse(evidence.validUntil)) ||
 		Date.parse(evidence.validUntil) <= nowMs
 	)
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"LIABILITY_EVIDENCE_INVALID",
 			"current liability evidence must cover this exact target, model and quote",
 		);
-	const expectedAccounts = sortedUniqueAccountIds(
-		inventory.resources.map((resource) => resource.providerAccountRef),
+	const expectedAccounts = [
+		...new Set(
+			inventory.resources.map((resource) => resource.providerAccountRef),
+		),
+	].sort(compareIdentifier);
+	const accounts = [...evidence.providerAccounts].sort((left, right) =>
+		compareIdentifier(left.providerAccountId, right.providerAccountId),
 	);
-	const accounts = sortedProviderAccounts(evidence.providerAccounts);
 	if (
 		accounts.length !== expectedAccounts.length ||
 		accounts.some(
 			(account, index) =>
 				account.providerAccountId !== expectedAccounts[index] ||
-				!Number.isSafeInteger(account.liabilityMicros) ||
-				account.liabilityMicros < 0,
+				liabilityMicros(account.liabilityMicros) === undefined ||
+				liabilityMicros(account.liabilityMicros)! < 0,
 		) ||
 		accounts.reduce(
-			(sum, account) => sum + BigInt(account.liabilityMicros),
+			(sum, account) => sum + BigInt(liabilityMicros(account.liabilityMicros)!),
 			0n,
 		) !== BigInt(liabilityMicros(evidence.maximumMicros)!)
 	)
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"LIABILITY_EVIDENCE_INVALID",
@@ -489,16 +427,14 @@ export async function admitIacTarget(
 				quote: clone(QuoteVectorSchema, priced.quote),
 			})) !== true
 		)
-			return denyWhenUnheld(
-				deps,
+			return denial(
 				requestId,
 				targetId,
 				"LIABILITY_EVIDENCE_UNVERIFIED",
 				"liability evidence was not authenticated",
 			);
 	} catch {
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"LIABILITY_VERIFIER_UNAVAILABLE",
@@ -507,10 +443,9 @@ export async function admitIacTarget(
 	}
 	const baseline = clone(QuoteScenarioSchema, scenario);
 	baseline.candidate = [];
-	const baselineQuote = quoteScenario(baseline);
+	const baselineQuote = quoteScenarioV2(baseline);
 	if (!isQuoteVector(baselineQuote))
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			baselineQuote.code,
@@ -522,15 +457,17 @@ export async function admitIacTarget(
 		"USD",
 	);
 	if (claims === undefined)
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"ENTITLEMENT_CONSUMPTION_INVALID",
 			"pricing consumption cannot be reserved safely",
 		);
-	const maximumMicros = liabilityMicros(evidence.maximumMicros)!;
-	const evidenceHash = substantiveEvidenceHash(evidence, maximumMicros);
+	const evidenceHash = stableHash(
+		toJson(IacTargetLiabilityEvidenceSchema, evidence, {
+			alwaysEmitImplicit: true,
+		}),
+	);
 	const financialPlanHash = stableHash({
 		planDigest: inventory.planDigest,
 		inventoryHash: priced.inventoryHash,
@@ -549,19 +486,17 @@ export async function admitIacTarget(
 	];
 	const firstProvider = providers[0];
 	if (firstProvider === undefined)
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"TARGET_INVENTORY_INCOMPLETE",
 			"target has no provider",
-			true,
-			requestDigest,
 		);
 	const validUntil =
 		Date.parse(evidence.validUntil) < horizon
 			? evidence.validUntil
 			: scenario.horizon;
+	const maximumMicros = liabilityMicros(evidence.maximumMicros)!;
 	const quote = create(HostingQuoteSchema, {
 		quoteId: financialPlanHash,
 		yardId: targetId,
@@ -575,9 +510,7 @@ export async function admitIacTarget(
 		components: [{ name: "joint-target-quote", costMicros: totalMicros }],
 		requestDigest,
 		providerAccounts: accounts,
-		entitlementClaims: claims.map((claim) =>
-			create(EntitlementClaimSchema, claim),
-		),
+		entitlementClaims: claims,
 		financialPlanHash,
 	});
 	let ledger: ReturnType<BudgetAdmissionAuthority["read"]>;
@@ -585,27 +518,26 @@ export async function admitIacTarget(
 		validateHostingQuote(quote, deps.now());
 		ledger = await deps.authority.read(deps.now());
 	} catch {
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"BUDGET_AUTHORITY_UNAVAILABLE",
 			"budget or quote evidence is unavailable",
-			true,
-			requestDigest,
 		);
 	}
-	const identity = ledger.identity;
-	if (identity === undefined || identity.tenantId !== inventory.tenantId)
-		return denyWhenUnheld(
-			deps,
+	const ledgerIdentity = ledger.identity;
+	if (
+		ledgerIdentity === undefined ||
+		!isExactProtoMessage(BudgetIdentitySchema, ledgerIdentity) ||
+		ledgerIdentity.tenantId !== inventory.tenantId
+	)
+		return denial(
 			requestId,
 			targetId,
 			"BUDGET_SCOPE_MISMATCH",
 			"the budget does not belong to the target tenant",
-			true,
-			requestDigest,
 		);
+	const identity = cloneIdentity(ledgerIdentity);
 	let policy: { gate: GateDecision; proof: HostingPolicyProof };
 	try {
 		policy = await deps.authorize({
@@ -614,14 +546,11 @@ export async function admitIacTarget(
 			identity: cloneIdentity(identity),
 		});
 	} catch {
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"POLICY_UNAVAILABLE",
 			"budget policy authorization failed",
-			true,
-			requestDigest,
 		);
 	}
 	let proof: HostingPolicyProof;
@@ -637,14 +566,11 @@ export async function admitIacTarget(
 			throw new Error("malformed policy decision");
 		proof = clone(HostingPolicyProofSchema, policy.proof);
 	} catch {
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"POLICY_UNAVAILABLE",
 			"budget policy proof is malformed",
-			true,
-			requestDigest,
 		);
 	}
 	if (
@@ -659,88 +585,103 @@ export async function admitIacTarget(
 		proof.identity === undefined ||
 		budgetIdentityKey(proof.identity) !== budgetIdentityKey(identity)
 	)
-		return denyWhenUnheld(
-			deps,
+		return denial(
 			requestId,
 			targetId,
 			"POLICY_NOT_ALLOWED",
 			"policy denied, requires approval or has unfulfilled obligations",
 			false,
-			requestDigest,
 		);
 	const reservationId = `iac:${requestId}`;
+	const pricingPin = create(IacPricingPinSchema, {
+		planDigest: inventory.planDigest,
+		inventoryHash: priced.inventoryHash,
+		modelHash: priced.modelHash,
+		quoteHash: priced.quote.quoteHash,
+		evidenceHash,
+		validUntil: quote.validUntil,
+	});
+	const quoteDigest = createHash("sha256")
+		.update(toJsonString(HostingQuoteSchema, quote))
+		.digest("hex");
+	const accountRows = (rows: BudgetReservation["providerAccounts"]) =>
+		rows
+			.map((row) =>
+				JSON.stringify([row.providerAccountId, row.liabilityMicros]),
+			)
+			.sort();
+	const entitlementRows = (rows: BudgetReservation["entitlementClaims"]) =>
+		rows
+			.map((row) =>
+				JSON.stringify([row.bucketId, row.unit, row.units, row.kind]),
+			)
+			.sort();
+	const captureReceipt = (
+		raw: BudgetReservation,
+	): BudgetReservation | undefined => {
+		try {
+			if (!isExactProtoMessage(BudgetReservationSchema, raw)) return undefined;
+			const row = clone(BudgetReservationSchema, raw);
+			if (
+				row.reservationId !== reservationId ||
+				row.requestDigest !== requestDigest ||
+				row.quoteId !== quote.quoteId ||
+				row.quoteDigest !== quoteDigest ||
+				row.financialPlanHash !== financialPlanHash ||
+				row.identity === undefined ||
+				budgetIdentityKey(row.identity) !== budgetIdentityKey(identity) ||
+				row.reservedMicros !== quote.liabilityBoundMicros ||
+				row.actualMicros !== 0 ||
+				row.unboundedExposure ||
+				row.unpricedPolicyProof !== undefined ||
+				row.unpricedScopeProof !== undefined ||
+				row.iacPricingPin === undefined ||
+				toJsonString(IacPricingPinSchema, row.iacPricingPin) !==
+					toJsonString(IacPricingPinSchema, pricingPin) ||
+				JSON.stringify(accountRows(row.providerAccounts)) !==
+					JSON.stringify(accountRows(quote.providerAccounts)) ||
+				JSON.stringify(entitlementRows(row.entitlementClaims)) !==
+					JSON.stringify(entitlementRows(quote.entitlementClaims))
+			)
+				return undefined;
+			return row;
+		} catch {
+			return undefined;
+		}
+	};
 	let reservation: ReturnType<BudgetAdmissionAuthority["reserve"]>;
 	try {
 		validateHostingQuote(quote, deps.now());
 		ledger = await deps.authority.read(deps.now());
-	} catch {
-		return denyWhenUnheld(
-			deps,
-			requestId,
-			targetId,
-			"BUDGET_AUTHORITY_UNAVAILABLE",
-			"budget or quote evidence is unavailable",
-			true,
-			requestDigest,
-		);
-	}
-	if (
-		ledger.identity === undefined ||
-		budgetIdentityKey(ledger.identity) !== budgetIdentityKey(identity)
-	)
-		return denyWhenUnheld(
-			deps,
-			requestId,
-			targetId,
-			"BUDGET_POLICY_CHANGED",
-			"budget identity changed during authorization",
-			true,
-			requestDigest,
-		);
-	try {
+		if (
+			ledger.identity === undefined ||
+			budgetIdentityKey(ledger.identity) !== budgetIdentityKey(identity)
+		)
+			return denial(
+				requestId,
+				targetId,
+				"BUDGET_POLICY_CHANGED",
+				"budget identity changed during authorization",
+			);
 		reservation = await deps.authority.reserve({
 			reservationId,
 			requestDigest,
-			quote,
-			identity: ledger.identity,
+			quote: clone(HostingQuoteSchema, quote),
+			iacPricingPin: clone(IacPricingPinSchema, pricingPin),
+			identity: cloneIdentity(identity),
 			expectedSeq: ledger.seq,
 			now: deps.now(),
 		});
 	} catch (error) {
 		if (error instanceof BudgetAdmissionDeniedError)
-			return denyWhenUnheld(
-				deps,
+			return denial(
 				requestId,
 				targetId,
 				error.code,
 				error.message,
-				false,
-				requestDigest,
+				error.code === "budget.settlement-unavailable",
 			);
-		if (isReservationReplayConflict(error))
-			return denyWhenUnheld(
-				deps,
-				requestId,
-				targetId,
-				"RESERVATION_REQUEST_CONFLICT",
-				"request id is already bound to a different financial plan",
-				false,
-				requestDigest,
-			);
-		const reserved = await Promise.resolve(
-			deps.authority.lookup(`iac:${requestId}`),
-		);
-		if (
-			reserved &&
-			(reserved.status === "held" || reserved.status === "uncertain")
-		)
-			return uncertain(
-				requestId,
-				targetId,
-				"RESERVATION_OUTCOME_UNKNOWN",
-				reserved.status,
-				requestDigest,
-			);
+
 		return uncertain(
 			requestId,
 			targetId,
@@ -749,15 +690,17 @@ export async function admitIacTarget(
 			requestDigest,
 		);
 	}
-	const heldMatch = {
-		reservationId,
-		requestDigest,
-		quote,
-	} as const;
-	if (
-		reservation.status !== "held" ||
-		!reservationMatchesQuote(reservation, heldMatch)
-	)
+	const capturedReservation = captureReceipt(reservation);
+	if (capturedReservation === undefined)
+		return uncertain(
+			requestId,
+			targetId,
+			"PRICED_RESERVATION_RECEIPT_INVALID",
+			"unknown",
+			requestDigest,
+		);
+	reservation = capturedReservation;
+	if (reservation.status !== "held")
 		return uncertain(
 			requestId,
 			targetId,
@@ -771,13 +714,7 @@ export async function admitIacTarget(
 		planDigest: inventory.planDigest,
 	});
 	if (reservation.executionDigest) {
-		if (
-			reservation.executionDigest !== executionDigest ||
-			!reservationMatchesQuote(reservation, {
-				...heldMatch,
-				executionDigest,
-			})
-		)
+		if (reservation.executionDigest !== executionDigest)
 			return uncertain(
 				requestId,
 				targetId,
@@ -796,70 +733,62 @@ export async function admitIacTarget(
 			quote,
 		});
 	}
-	let head: ReturnType<BudgetAdmissionAuthority["read"]>;
 	try {
 		validateHostingQuote(quote, deps.now());
-		head = await deps.authority.read(deps.now());
-	} catch {
-		return uncertain(
-			requestId,
-			targetId,
-			"EXECUTION_CLAIM_UNCERTAIN",
-			"held",
-			requestDigest,
+		const head = await deps.authority.read(deps.now());
+		const claimed = captureReceipt(
+			await deps.authority.claimExecution({
+				reservationId,
+				requestDigest,
+				executionDigest,
+				expectedSeq: head.seq,
+			}),
 		);
-	}
-	let claimed: BudgetReservation;
-	try {
-		claimed = await deps.authority.claimExecution({
+		if (
+			claimed === undefined ||
+			claimed.status !== "held" ||
+			claimed.executionDigest !== executionDigest
+		)
+			return uncertain(
+				requestId,
+				targetId,
+				"PRICED_EXECUTION_RECEIPT_INVALID",
+				"held",
+				requestDigest,
+			);
+		if (claimed.ledgerSeq !== head.seq + 1)
+			return create(IacTargetAdmissionDecisionSchema, {
+				requestId,
+				targetId,
+				status: "replay",
+				code: "EXECUTION_ALREADY_CLAIMED",
+				budget: { evaluation: "allowed", reservation: "held" },
+				requestDigest,
+				reservation: claimed,
+				quote,
+			});
+		reservation = claimed;
+		validateHostingQuote(quote, deps.now());
+		const stillHeld = await deps.authority.revalidatePriced({
 			reservationId,
+			requestId,
+			targetId,
+			tenantId: inventory.tenantId,
 			requestDigest,
-			executionDigest,
-			expectedSeq: head.seq,
+			planDigest: inventory.planDigest,
+			inventoryHash: priced.inventoryHash,
+			modelHash: priced.modelHash,
+			quoteHash: priced.quote.quoteHash,
+			now: deps.now(),
 		});
-	} catch {
-		return uncertain(
-			requestId,
-			targetId,
-			"EXECUTION_CLAIM_UNCERTAIN",
-			"held",
-			requestDigest,
-		);
-	}
-	const claimedMatch = {
-		reservationId,
-		requestDigest,
-		quote,
-		executionDigest,
-	} as const;
-	let ledgerAfterClaim: ReturnType<BudgetAdmissionAuthority["read"]>;
-	try {
-		ledgerAfterClaim = await deps.authority.read(deps.now());
-	} catch {
-		return uncertain(
-			requestId,
-			targetId,
-			"EXECUTION_CLAIM_UNCERTAIN",
-			"held",
-			requestDigest,
-		);
-	}
-	if (
-		claimed.ledgerSeq !== head.seq + 1 ||
-		claimed.ledgerSeq !== ledgerAfterClaim.seq ||
-		claimed.status !== "held" ||
-		!reservationMatchesQuote(claimed, claimedMatch)
-	)
-		return uncertain(
-			requestId,
-			targetId,
-			"EXECUTION_CLAIM_UNCERTAIN",
-			"held",
-			requestDigest,
-		);
-	reservation = claimed;
-	try {
-		validateHostingQuote(quote, deps.now());
+		if (stillHeld !== true)
+			return uncertain(
+				requestId,
+				targetId,
+				"PRICED_EXECUTION_UNVERIFIED",
+				"held",
+				requestDigest,
+			);
 	} catch {
 		return uncertain(
 			requestId,

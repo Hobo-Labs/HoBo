@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -2221,6 +2222,8 @@ describe("the routing step without a decision", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-route-fallback-"));
 		try {
 			const output = join(dir, "output");
+			const actionDir = join(dir, ".github/actions/route-runner");
+			mkdirSync(actionDir, { recursive: true });
 			writeFileSync(output, "");
 			const run = spawnSync("bash", ["-c", expressions], {
 				cwd: dir,
@@ -2229,6 +2232,7 @@ describe("the routing step without a decision", () => {
 					PATH: process.env.PATH ?? "",
 					GITHUB_OUTPUT: output,
 					GITHUB_EVENT_NAME: "push",
+					GITHUB_ACTION_PATH: actionDir,
 				},
 			});
 			assert.equal(run.status, 0, run.stderr);
@@ -2261,7 +2265,7 @@ describe("the routing step without a decision", () => {
 	it("passes what the run chose to the script as arguments, never as environment", () => {
 		assert.match(
 			script,
-			/scripts\/ci\/route-runner\.mts \\\n\s+--route "\$\{route\}" --include-own-run "\$\{include_own_run\}" --attested "\$\{attested\}"/,
+			/"\$\{action_root\}\/scripts\/ci\/route-runner\.mts" \\\n\s+--route "\$\{route\}" --include-own-run "\$\{include_own_run\}" --attested "\$\{attested\}"/,
 		);
 		// Only a fixed literal can come out of each expression.
 		assert.ok(
@@ -2311,6 +2315,7 @@ describe("the workflows that route", () => {
 			const text = read(path);
 			return (
 				text.includes("uses: $/.github/actions/route-runner") ||
+				text.includes("uses: ./.github/actions/route-runner") ||
 				text.includes("uses: ./.ci-trusted/.github/actions/route-runner")
 			);
 		});

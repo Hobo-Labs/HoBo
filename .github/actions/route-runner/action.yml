@@ -169,7 +169,11 @@ runs:
           without_a_decision "no Node 22.18 or later on this machine" || exit 1
           exit 0
         fi
-        "${node_bin}" --no-warnings scripts/ci/route-runner.mts \
+        if [ -z "${GITHUB_ACTION_PATH:-}" ] || ! action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"; then
+          without_a_decision "the route action directory cannot be resolved" || exit 1
+          exit 0
+        fi
+        "${node_bin}" --no-warnings "${action_root}/scripts/ci/route-runner.mts" \
           --route "${route}" --include-own-run "${include_own_run}" --attested "${attested}" \
           || without_a_decision "the routing script failed"
     # Never fails and never blocks: anything short of a verified green

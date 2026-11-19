@@ -228,6 +228,22 @@ jobs:
       attested: ${{ steps.route.outputs.attested }}
       attested-jobs: ${{ steps.route.outputs.attested-jobs }}
     steps:
+      - id: routing-base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            merge_group) base="$MERGE_BASE_SHA" ;;
+            *) base="$GITHUB_SHA" ;;
+          esac
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The trusted routing base is unavailable"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -244,15 +260,19 @@ jobs:
             packages/ci/src/fleet-overflow.ts
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.sha }}
+          ref: ${{ steps.routing-base.outputs.sha }}
           path: .ci-trusted
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/actions/route-runner
+            .hobo/ci.json
+            scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
+            packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
