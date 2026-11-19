@@ -109,8 +109,8 @@ export function defineSaga(definition: SagaDefinition): Saga {
 						: cause instanceof Error
 							? cause.message
 							: String(cause);
-				facts.push(createSagaCompensatedEvent({ sagaId, step, reason }));
 				await definition.compensate(triggerEvent, ctx, cause);
+				facts.push(createSagaCompensatedEvent({ sagaId, step, reason }));
 				facts.push(
 					createSagaCompletedEvent({ sagaId, outcome: "compensated" }),
 				);

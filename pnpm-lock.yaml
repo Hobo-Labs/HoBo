@@ -1764,6 +1764,9 @@ importers:
       '@hobo/runtime-local':
         specifier: workspace:*
         version: link:../runtimes/runtime-local
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
 
   packages/fuzz:
     dependencies:
