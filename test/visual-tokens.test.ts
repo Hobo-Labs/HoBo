@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "vitest";
 import {
 	checkVisualTokens,
@@ -67,19 +67,19 @@ test("the gate reports unreadable, missing, and ambiguous tokens", () => {
 test("the relevant check selects source-based visual validation for UI changes", () => {
 	const checksFor = (file: string) =>
 		selectRelevantChecks({ files: [file], base: "origin/main" }).checks;
-	assert.ok(
-		checksFor("site/src/styles/global.css").some(
-			(check) => check.args.join(" ") === "run design:lint",
-		),
-	);
-	assert.ok(
-		checksFor("scripts/check-visual-tokens.mts").some(
-			(check) => check.args.join(" ") === "run design:lint",
-		),
-	);
-	assert.ok(
-		!checksFor("packages/core/src/index.ts").some(
-			(check) => check.args.join(" ") === "run design:lint",
-		),
-	);
+	const selectsDesignLint = (file: string) =>
+		checksFor(file).some((check) => check.args.join(" ") === "run design:lint");
+	assert.ok(selectsDesignLint("site/src/styles/global.css"));
+	assert.ok(selectsDesignLint("packages/connect-ui/src/client/styles.css"));
+	assert.ok(selectsDesignLint("scripts/check-visual-tokens.mts"));
+	assert.ok(!selectsDesignLint("packages/core/src/index.ts"));
+	assert.ok(!selectsDesignLint("packages/ui/src/card.tsx"));
+});
+
+test("design:lint runs the visual token gate instead of the retired design-md checker", () => {
+	const root = JSON.parse(readFileSync("package.json", "utf8")) as {
+		scripts: Record<string, string>;
+	};
+	assert.match(root.scripts["design:lint"] ?? "", /check-visual-tokens\.mts/u);
+	assert.equal(existsSync("scripts/check-design-md.mts"), false);
 });
