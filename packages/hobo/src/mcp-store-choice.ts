@@ -306,13 +306,12 @@ export function createStoreChoiceApp(
 			return [
 				{
 					name: CHOOSE_SECRET_STORE_TOOL,
-					title: "Choose your secret store",
+					title: "Check store selection availability",
 					description:
 						"Check whether a private HoBo owner store-selection ceremony is available.",
 					inputSchema: {
 						type: "object",
 						properties: familyArg,
-						required: ["family"],
 						additionalProperties: false,
 					},
 				},
@@ -322,8 +321,11 @@ export function createStoreChoiceApp(
 		readResource: () => undefined,
 		async callTool() {
 			return result(
-				"Store selection cannot continue in this HoBo session until a verified private owner hand-off is available.",
-				{ status: "secure-form-unavailable" },
+				"Store selection cannot continue in this HoBo session until a verified private owner hand-off is available. Retry the HoBo setup ceremony once it is available.",
+				{
+					status: "secure-form-unavailable",
+					reason: "owner-channel-unverified",
+				},
 				true,
 			);
 		},

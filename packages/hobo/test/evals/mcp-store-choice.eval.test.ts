@@ -150,10 +150,13 @@ describe("owner store choice over raw MCP stdio", () => {
 				content: [
 					{
 						type: "text",
-						text: "Store selection cannot continue in this HoBo session until a verified private owner hand-off is available.",
+						text: "Store selection cannot continue in this HoBo session until a verified private owner hand-off is available. Retry the HoBo setup ceremony once it is available.",
 					},
 				],
-				structuredContent: { status: "secure-form-unavailable" },
+				structuredContent: {
+					status: "secure-form-unavailable",
+					reason: "owner-channel-unverified",
+				},
 			});
 			const submitted = await client.rpc("tools/call", {
 				name: SUBMIT_STORE_CHOICE_TOOL,
@@ -167,7 +170,10 @@ describe("owner store choice over raw MCP stdio", () => {
 			});
 			expect(submitted.result).toMatchObject({
 				isError: true,
-				structuredContent: { status: "secure-form-unavailable" },
+				structuredContent: {
+					status: "secure-form-unavailable",
+					reason: "owner-channel-unverified",
+				},
 			});
 			const resources = await client.rpc("resources/list");
 			expect(JSON.stringify(resources)).not.toContain(
