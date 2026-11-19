@@ -197,11 +197,17 @@ STOP_REQUEST = re.compile(
     r"(?:^|[.!?,;:\n]\s*|\b(?:please|kindly|just)\s+|"
     r"\b(?:want|need|ask|asking)\s+(?:you\s+)?to\s+|\bcan\s+you\s+)"
     r"(?:immediately\s+)?(?:stop|pause|cancel|halt|cease)\b"
-    r"(?:\s+(?:all\s+(?:(?:the|this)\s+)?(?:work|tasks?|activity)|"
+    r"(?:\s+(?:(?:babysitting|monitoring|watching|reviewing|merging|checking|"
+    r"processing|working|updating|editing|deploying|testing|building|fixing|"
+    r"running|using|inspecting|handling|tracking|investigating|rechecking|"
+    r"retrying|following|maintaining|doing)\b"
+    r"(?:\s+(?!(?:and|then|but|after|once|when|until|while|for|please|"
+    r"now|here|immediately)\b)[^\s,.;:!?]+){0,12}|"
+    r"all\s+(?:(?:the|this)\s+)?(?:work|tasks?|activity)|"
     r"(?:the|this|your|current)\s+(?:work|tasks?|activity|job|request)|"
     r"work(?:ing)?|everything|what\s+you(?:'re|\s+are)\s+doing))?"
     r"(?:\s+(?:right\s+now|now|here|immediately))?"
-    r"(?=\s*(?:$|[.,!?;:]|(?:and|for|until|while|please)\b))"
+    r"(?=\s*(?:$|[.,!?;:]|(?:and|then|but|for|until|while|please)\b))"
 )
 NEGATED_REQUEST = re.compile(
     r"\b(?:don't|do not|never|not|shouldn't|mustn't|cannot|can't|won't|"
@@ -266,7 +272,7 @@ def stop_only(prompt):
             if re.match(
                 r"^(?:explain (?:why|what|how)|tell me|why|what|how|"
                 r"do nothing|no more (?:tools|tool calls)|stop using tools|"
-                r"wait for my next message|(?:until|while) i)\b",
+                r"wait for my next message|until|while i)\b",
                 clause,
             ):
                 continue
