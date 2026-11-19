@@ -35,10 +35,10 @@ import { runWithRetries } from "./step.js";
 import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
-	readJournaledWorkflowResult,
-	terminalCompletedHandleResult,
 	captureWorkflowResult,
+	readJournaledWorkflowResult,
 	requireWorkflowRunId,
+	terminalCompletedHandleResult,
 } from "./workflow-value.js";
 
 /** Durability primitives are always granted; effect capabilities are declared. */
@@ -173,8 +173,7 @@ export function createWorkflowEngine(
 			throw new Error(`workflow name differs from run.Started for ${runId}`);
 		}
 		const terminals = journal.filter(
-			(event) =>
-				event.type === "run.Completed" || event.type === "run.Failed",
+			(event) => event.type === "run.Completed" || event.type === "run.Failed",
 		);
 		if (terminals.length > 1) {
 			throw new Error(`duplicate terminal facts for ${runId}`);
