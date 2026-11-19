@@ -3,6 +3,7 @@ import { EVENTSTORE_LIMITS } from "@hobo/core";
 import type {
 	AppendOptions,
 	DurableEffectInput,
+	DurableEffectReceipt,
 	DurableEventStore,
 	EventEnvelope,
 	EventInput,
@@ -17,6 +18,7 @@ import {
 	AggregateConflictError,
 	AggregateInvariantError,
 	AggregateStaleFenceError,
+	DurableEffectUnavailableError,
 	isOptimisticConflict,
 	isStaleFenceError,
 	UnpersistedQuarantineError,
@@ -74,6 +76,7 @@ export interface CommandResult<S> {
 	seq: number;
 	state: S;
 	appended: EventEnvelope[];
+	effects: readonly DurableEffectReceipt[];
 	fenceToken: bigint;
 	lifecycle: DataFact[];
 	quarantined: QuarantineRecord[];
@@ -283,6 +286,8 @@ export function defineAggregate<S, C>(
 				for (const event of staged) {
 					definition.upcasters?.assertCanUpcast?.(event.type, event.v ?? 1);
 				}
+				if (stagedEffects.length > 0 && !isDurableEventStore(deps.store))
+					throw new DurableEffectUnavailableError();
 
 				if (staged.length === 0 && stagedEffects.length === 0) {
 					if (quarantineEvents.length > 0)
@@ -298,6 +303,7 @@ export function defineAggregate<S, C>(
 						seq: finalSeq,
 						state: outcome.state,
 						appended: quarantineEvents,
+						effects: [],
 						fenceToken: lease.fenceToken,
 						lifecycle,
 						quarantined,
@@ -305,6 +311,7 @@ export function defineAggregate<S, C>(
 				}
 
 				let appended: EventEnvelope[];
+				let effects: readonly DurableEffectReceipt[] = [];
 				try {
 					if (isDurableEventStore(deps.store)) {
 						const result = await deps.store.commit({
@@ -314,8 +321,7 @@ export function defineAggregate<S, C>(
 							effects: stagedEffects,
 						});
 						appended = result.appended;
-					} else if (staged.length === 0) {
-						appended = [];
+						effects = result.effects;
 					} else {
 						const result = await deps.store.append(
 							streamId,
@@ -350,19 +356,25 @@ export function defineAggregate<S, C>(
 				);
 				const newSeq = appendOptions.expectedSeq;
 				finalSeq = newSeq;
-				lifecycle.push(
-					createActorStateAppendedEvent({
-						streamId,
-						seq: newSeq,
-						fenceToken: lease.fenceToken,
-					}),
-				);
+				if (
+					quarantineEvents.length > 0 ||
+					appended.length > 0 ||
+					newQuarantines.length > 0
+				)
+					lifecycle.push(
+						createActorStateAppendedEvent({
+							streamId,
+							seq: newSeq,
+							fenceToken: lease.fenceToken,
+						}),
+					);
 
 				return {
 					streamId,
 					seq: newSeq,
 					state: updated.state,
 					appended: [...quarantineEvents, ...appended, ...newQuarantines],
+					effects: [...effects],
 					fenceToken: lease.fenceToken,
 					lifecycle,
 					quarantined,
