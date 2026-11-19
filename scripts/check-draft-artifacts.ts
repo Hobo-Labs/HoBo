@@ -104,7 +104,7 @@ export function checkWorkspace(
 	}
 
 	const waived = new Set(manifest.waivers.map((w) => w.requirement));
-	if (!waived.has("examples")) {
+	if (manifest.artifacts.examples) {
 		let examplesReady = true;
 		const packagePath = path.join(abs, "package.json");
 		const packageJson = existsSync(packagePath)
@@ -136,6 +136,13 @@ export function checkWorkspace(
 			);
 		}
 		for (const example of examples) {
+			const examplePath = path.join(examplesDir, example);
+			if (
+				/\bproof-identity:\s*ok\b/iu.test(readFileSync(examplePath, "utf8"))
+			) {
+				problems.push(`example ${example} only checks proof identity`);
+				continue;
+			}
 			const expected = path.join(
 				examplesDir,
 				example.replace(/\.ts$/u, ".expected.txt"),
@@ -173,13 +180,16 @@ export function checkWorkspace(
 		}
 	}
 
-	if (!waived.has("notebook")) {
+	if (manifest.artifacts.notebook) {
 		const notebookPath = path.join(abs, manifest.artifacts.notebook);
 		if (!existsSync(notebookPath)) {
 			problems.push(`missing notebook: ${manifest.artifacts.notebook}`);
 		} else {
 			try {
-				const nb = JSON.parse(readFileSync(notebookPath, "utf8")) as {
+				const notebook = readFileSync(notebookPath, "utf8");
+				if (/Hardened notebook scaffold/iu.test(notebook))
+					problems.push("notebook only reports proof identity");
+				const nb = JSON.parse(notebook) as {
 					nbformat?: number;
 					cells?: Array<{ cell_type?: string; outputs?: unknown[] }>;
 				};
@@ -203,8 +213,8 @@ export function checkWorkspace(
 		}
 	}
 
-	if (layer === "technical" && !waived.has("bench")) {
-		const benchPath = path.join(abs, manifest.artifacts.bench ?? "bench");
+	if (manifest.artifacts.bench) {
+		const benchPath = path.join(abs, manifest.artifacts.bench);
 		const benches =
 			existsSync(benchPath) && statSync(benchPath).isDirectory()
 				? readdirSync(benchPath).filter((f) => f.endsWith(".bench.ts"))
@@ -212,19 +222,22 @@ export function checkWorkspace(
 					? [benchPath]
 					: [];
 		if (benches.length === 0) {
-			problems.push(
-				"technical proof declares no bench (bench/*.bench.ts) and no bench waiver",
-			);
-		} else if (runBench) {
+			problems.push("declared benchmark has no executable file");
+		} else {
+			for (const bench of benches) {
+				const file = statSync(benchPath).isDirectory()
+					? path.join(benchPath, bench)
+					: bench;
+				if (/\bidentity\s+noop\b/iu.test(readFileSync(file, "utf8")))
+					problems.push(
+						`bench ${path.basename(file)} only checks proof identity`,
+					);
+			}
+		}
+		if (benches.length > 0 && runBench) {
 			const run = spawnSync(
 				"pnpm",
-				[
-					"exec",
-					"vitest",
-					"bench",
-					"--run",
-					manifest.artifacts.bench ?? "bench",
-				],
+				["exec", "vitest", "bench", "--run", manifest.artifacts.bench],
 				{
 					cwd: abs,
 					encoding: "utf8",

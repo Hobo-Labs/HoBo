@@ -37,18 +37,14 @@ export const proofManifestSchema = z
 			}),
 		artifacts: z
 			.object({
-				examples: relPath.default("examples"),
-				notebook: relPath.default("notebook.ipynb"),
+				examples: relPath.optional(),
+				notebook: relPath.optional(),
 				features: relPath.optional(),
 				bench: relPath.optional(),
 				diagrams: z.array(relPath).default([]),
 				assets: relPath.optional(),
 			})
-			.default({
-				examples: "examples",
-				notebook: "notebook.ipynb",
-				diagrams: [],
-			}),
+			.default({ diagrams: [] }),
 		waivers: z
 			.array(
 				z.object({
