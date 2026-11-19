@@ -104,14 +104,14 @@ export async function startCdServer(
 				res.on("close", () => perRequest.abort());
 				const signal = AbortSignal.any([abort.signal, perRequest.signal]);
 				await send(res, await host.handle(request, signal));
-			} catch (error) {
+			} catch {
 				if (!res.headersSent)
 					await send(
 						res,
 						cdJson(500, {
 							ok: false,
 							code: "cd-serve-error",
-							message: error instanceof Error ? error.message : String(error),
+							message: "The CD request could not be processed.",
 						}),
 					);
 				else res.destroy();
