@@ -1,7 +1,10 @@
-import { create } from "@bufbuild/protobuf";
+import { createHash } from "node:crypto";
+import { clone, create, toJsonString } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
 	BudgetAdmissionDeniedError,
+	type BudgetAuthorityEvent,
+	BudgetAuthorityEventSchema,
 	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
@@ -172,6 +175,57 @@ describe("definitive budget admission denial", () => {
 		expect(() => reserve(authority, q)).toThrow("unsupported entitlement kind");
 		expect(authority.lookup("work")).toBeUndefined();
 		expect(authority.read(NOW).seq).toBe(0);
+	});
+
+	it("replays a persisted kindless quote before strict kind validation", () => {
+		const base = snapshot();
+		base.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "credit",
+				kind: "allowance",
+				unit: "runner-ms",
+				periodId: "p1",
+				remainingUnits: 10,
+				observedAt: "2026-10-30T00:00:00Z",
+				validUntil: "2026-10-31T00:00:00Z",
+			}),
+		];
+		const q = quote();
+		q.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "credit",
+				kind: "allowance",
+				unit: "runner-ms",
+				units: 1,
+			}),
+		];
+		const events: BudgetAuthorityEvent[] = [];
+		const initial = createBudgetAdmissionAuthority({
+			snapshot: base,
+			commit: (event) => events.push(event),
+		});
+		reserve(initial, q);
+		const event = events[0];
+		if (!event) throw new Error("reservation event missing");
+		const legacyEvent = clone(BudgetAuthorityEventSchema, event);
+		for (const entitlement of legacyEvent.snapshot?.entitlements ?? [])
+			entitlement.kind = "";
+		const reservation = legacyEvent.reservations[0];
+		if (!reservation) throw new Error("reservation missing");
+		for (const claim of reservation.entitlementClaims) claim.kind = "";
+		for (const claim of q.entitlementClaims) claim.kind = "";
+		reservation.quoteDigest = createHash("sha256")
+			.update(toJsonString(HostingQuoteSchema, q))
+			.digest("hex");
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: [legacyEvent],
+		});
+		expect(reserve(authority, q)).toMatchObject({
+			reservationId: "work",
+			status: "held",
+		});
+		expect(authority.read(NOW).seq).toBe(1);
 	});
 
 	it("preserves unsupported financial scope failures instead of treating them as queueable exhaustion", () => {

@@ -369,6 +369,41 @@ describe("durable budget history fences", () => {
 		]);
 	});
 
+	it("keeps new units independent in a multi-unit bucket", () => {
+		const base = multiUnitSnapshot();
+		const journal: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: base,
+			commit: (event) => journal.push(event),
+		});
+		const removed = authority.read(NOW);
+		removed.entitlements = [];
+		authority.configure(removed, 0, NOW);
+		const added = authority.read(NOW);
+		const request = multiUnitSnapshot().entitlements.find(
+			(row) => row.unit === "request",
+		);
+		if (!request) throw new Error("request fixture missing");
+		added.entitlements = [
+			create(BudgetEntitlementSchema, {
+				...request,
+				unit: "scheduler-ms",
+				remainingUnits: 30,
+			}),
+		];
+		authority.configure(added, 1, NOW);
+		expect(authority.read(NOW).entitlements).toMatchObject([
+			{ unit: "scheduler-ms", remainingUnits: 30 },
+		]);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: journal,
+		});
+		expect(reopened.read(NOW).entitlements).toMatchObject([
+			{ unit: "scheduler-ms", remainingUnits: 30 },
+		]);
+	});
+
 	it("reopens a legacy SQLite snapshot with an implicit allowance kind", () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-legacy-budget-kind-"));
 		directories.push(directory);
@@ -383,7 +418,15 @@ describe("durable budget history fences", () => {
 			)
 			.run();
 		database.close();
-		const reopened = createSqliteBudgetAdmissionAuthority(options);
+		const legacySeed = snapshot();
+		const legacyEntitlement = legacySeed.entitlements[0];
+		if (!legacyEntitlement) throw new Error("legacy seed entitlement missing");
+		legacyEntitlement.kind = "";
+		const reopened = createSqliteBudgetAdmissionAuthority({
+			path,
+			snapshot: legacySeed,
+			now: () => NOW,
+		});
 		try {
 			expect(reopened.read(NOW).entitlements[0]?.kind).toBe("allowance");
 			const invalidWrite = reopened.read(NOW);

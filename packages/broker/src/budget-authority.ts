@@ -621,7 +621,10 @@ export function createBudgetAdmissionAuthority(options: {
 		"unit" | "observedAt" | "validUntil" | "remainingUnits"
 	>;
 	const entitlementHistory = new Map<string, EntitlementHistory>();
-	const entitlementUnitChangeHistory = new Map<string, EntitlementHistory>();
+	const entitlementUnitChangeHistory = new Map<
+		string,
+		Map<string, EntitlementHistory>
+	>();
 	const entitlementKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	) =>
@@ -648,9 +651,14 @@ export function createBudgetAdmissionAuthority(options: {
 			type === "budget.PolicyRevised" || type === "budget.PeriodReset";
 		for (const bucket of next.entitlements) {
 			const key = entitlementKey(bucket);
+			const unitChanges = entitlementUnitChangeHistory.get(
+				entitlementUnitChangeKey(bucket),
+			);
 			const previous =
 				entitlementHistory.get(key) ??
-				entitlementUnitChangeHistory.get(entitlementUnitChangeKey(bucket));
+				(unitChanges?.size === 1
+					? unitChanges.values().next().value
+					: undefined);
 			// Settlement legitimately reduces a live bucket at its existing observation.
 			// Configuration and any reintroduced bucket must respect the retained fence.
 			if (
@@ -687,10 +695,11 @@ export function createBudgetAdmissionAuthority(options: {
 				remainingUnits: bucket.remainingUnits,
 			};
 			entitlementHistory.set(entitlementKey(bucket), history);
-			entitlementUnitChangeHistory.set(
-				entitlementUnitChangeKey(bucket),
-				history,
-			);
+			const unitChangeKey = entitlementUnitChangeKey(bucket);
+			const unitChanges = entitlementUnitChangeHistory.get(unitChangeKey) ??
+				new Map<string, EntitlementHistory>();
+			unitChanges.set(bucket.unit, history);
+			entitlementUnitChangeHistory.set(unitChangeKey, unitChanges);
 		}
 	}
 	rememberFinancialHistory(current);
@@ -847,6 +856,8 @@ export function createBudgetAdmissionAuthority(options: {
 			}
 			if (
 				!next.fenceSettlementGuard ||
+				old.fenceSettlementPayloadVersion !==
+					next.fenceSettlementPayloadVersion ||
 				toJsonString(
 					BudgetFenceSettlementGuardSchema,
 					old.fenceSettlementGuard,
@@ -1490,7 +1501,6 @@ export function createBudgetAdmissionAuthority(options: {
 		},
 		reserve(input) {
 			validateBudgetSnapshot(current, input.now);
-			validateHostingQuote(input.quote, input.now);
 			if (
 				input.iacPricingPin &&
 				(!validIacPin(input.iacPricingPin, input.quote.financialPlanHash) ||
@@ -1542,6 +1552,7 @@ export function createBudgetAdmissionAuthority(options: {
 					throw new Error("released reservation cannot authorize execution");
 				return clone(BudgetReservationSchema, previous);
 			}
+			validateHostingQuote(input.quote, input.now);
 			if (
 				input.iacPricingPin &&
 				!input.fenceSettlementGuard &&

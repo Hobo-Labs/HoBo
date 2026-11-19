@@ -49,7 +49,6 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 	const iacPricedSettlementTrust = captureIacPricedSettlementTrust(
 		options.iacPricedSettlementTrust,
 	);
-	validateBudgetSnapshot(options.snapshot, options.snapshot.observedAt);
 	const database = new DatabaseSync(options.path);
 	try {
 		const main = database
@@ -68,9 +67,13 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 	database.exec(
 		"PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS budget_base(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS budget_events(seq INTEGER PRIMARY KEY, body TEXT NOT NULL)",
 	);
-	database
-		.prepare("INSERT OR IGNORE INTO budget_base(id,body) VALUES(1,?)")
-		.run(toJsonString(BudgetLedgerSnapshotSchema, options.snapshot));
+	const seed = database.prepare("SELECT body FROM budget_base WHERE id=1").get();
+	if (seed === undefined) {
+		validateBudgetSnapshot(options.snapshot, options.snapshot.observedAt);
+		database
+			.prepare("INSERT OR IGNORE INTO budget_base(id,body) VALUES(1,?)")
+			.run(toJsonString(BudgetLedgerSnapshotSchema, options.snapshot));
+	}
 	function authority() {
 		const row = database
 			.prepare("SELECT body FROM budget_base WHERE id=1")

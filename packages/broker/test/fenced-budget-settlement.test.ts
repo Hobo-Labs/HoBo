@@ -380,6 +380,9 @@ describe("receiver-bound budget settlement", () => {
 		legacyHeld.fenceSettlementPayloadVersion = "";
 		for (const claim of legacyHeld.entitlementClaims) claim.kind = "";
 		const legacyProof = f.evidence(legacyHeld, 30, "v1");
+		expect(canonicalBudgetFenceSettlement(legacyHeld, 30, legacyProof)).toBe(
+			canonicalBudgetFenceSettlement(legacyHeld, 30, legacyProof, "v1"),
+		);
 		expect(() => authority.settle("reservation-1", 30, legacyProof)).toThrow();
 		authority.settle("reservation-1", 30, currentProof);
 		const legacyBase = clone(BudgetLedgerSnapshotSchema, f.base);
@@ -683,6 +686,13 @@ describe("receiver-bound budget settlement", () => {
 		if (!row) throw new Error("fixture missing");
 		row.fenceSettlementGuard = undefined;
 		expect(() => reopen(removed)).toThrow("immutable fenced reservation");
+		const reversioned = events.map((event) =>
+			clone(BudgetAuthorityEventSchema, event),
+		);
+		const versioned = reversioned[1]?.reservations[0];
+		if (!versioned) throw new Error("fixture missing");
+		versioned.fenceSettlementPayloadVersion = "";
+		expect(() => reopen(reversioned)).toThrow("immutable fenced reservation");
 		const reallocated = events.map((event) =>
 			clone(BudgetAuthorityEventSchema, event),
 		);

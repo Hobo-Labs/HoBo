@@ -25,7 +25,10 @@ model is not a zero price. Assessment and ranking do not evaluate a budget or
 create a reservation. Applying or destroying requires the host's financial
 admission and route authority. A host may explicitly authorize an unpriced
 operation only through the broker's unpriced policy and durable exposure hold.
-An invalid or incomplete model cannot use that path.
+An invalid or incomplete model cannot use that path. Financial receipt parsing
+accepts the broker's explicit entitlement kinds and settlement payload version,
+and compares claims by kind, bucket and unit so separate units in one bucket do
+not collide. Legacy kindless claims retain their allowance meaning.
 
 `mapBindleToAlchemy` accepts provider-owned primitive mappers and assesses the
 Bindle's requirements, operations, annotations, dependencies and entrypoints.

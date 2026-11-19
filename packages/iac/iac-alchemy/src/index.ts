@@ -936,6 +936,7 @@ const reservationFields = new Set([
 	"executionDigest",
 	"financialPlanHash",
 	"fenceSettlementGuard",
+	"fenceSettlementPayloadVersion",
 	"unboundedExposure",
 	"unpricedPolicyProof",
 	"unpricedScopeProof",

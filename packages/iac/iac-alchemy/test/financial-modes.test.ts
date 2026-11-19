@@ -308,6 +308,10 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 	const quoteId = `sha256:${"a".repeat(64)}`;
 	const observedAt = "2026-01-01T00:00:00Z";
 	const validUntil = "2027-01-01T00:00:00Z";
+	const entitlementClaims = [
+		{ bucketId: "shared", kind: "allowance", unit: "request", units: 1 },
+		{ bucketId: "shared", kind: "allowance", unit: "runner-ms", units: 2 },
+	];
 	return create(IacTargetAdmissionDecisionSchema, {
 		...base,
 		quote: {
@@ -323,7 +327,7 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 			components: [{ name: "joint", costMicros: 10 }],
 			requestDigest: base.requestDigest,
 			providerAccounts: [{ providerAccountId: "account", liabilityMicros: 10 }],
-			entitlementClaims: [],
+			entitlementClaims,
 			financialPlanHash: quoteId,
 		},
 		policyProof: {
@@ -345,6 +349,7 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 			reservedMicros: 10,
 			status: "held",
 			providerAccounts: [{ providerAccountId: "account", liabilityMicros: 10 }],
+			entitlementClaims,
 			iacPricingPin: {
 				planDigest: `sha256:${"1".repeat(64)}`,
 				inventoryHash: base.inventoryHash,

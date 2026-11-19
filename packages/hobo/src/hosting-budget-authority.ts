@@ -544,7 +544,11 @@ export function createHostingBudgetAuthorityBridge(options: {
 						entitlementClaims: (actual.entitlementClaims ?? []).map((claim) =>
 							create(EntitlementClaimSchema, {
 								...claim,
-								kind: claim.kind || hostingFreeTierKind,
+								kind:
+									row.fenceSettlementGuard &&
+									row.fenceSettlementPayloadVersion === ""
+										? claim.kind
+										: claim.kind || hostingFreeTierKind,
 							}),
 						),
 					},

@@ -7,7 +7,7 @@
     "inventoryHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "modelHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "quoteHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "maximumMicrosExact": 1,
+    "maximumMicrosExact": "1",
     "observedAt": "2026-01-01T00:00:00Z",
     "validUntil": "2026-02-01T00:00:00Z",
     "providerAccounts": [

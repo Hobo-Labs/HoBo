@@ -204,6 +204,8 @@ const entitlement: Check = (value) =>
 			bucketId: named,
 			unit: named,
 			units: nonnegative,
+			kind: (item) =>
+				item === "" || item === "allowance" || item === "credit" || item === "commitment",
 		},
 		["bucketId", "unit", "units"],
 	);
@@ -297,9 +299,29 @@ const quote: Check = (value) =>
 		],
 	);
 
+type FinancialRow = Readonly<Record<string, string | number | undefined>>;
+
+function isFinancialRow(value: unknown): value is FinancialRow {
+	return typeof value === "object" && value !== null && !isProxy(value);
+}
+
+function scopedIdentity(
+	row: FinancialRow,
+	identityKey: string | readonly string[],
+): string | undefined {
+	const keys = typeof identityKey === "string" ? [identityKey] : identityKey;
+	const values = keys.map((key) => {
+		const value = ownData(row, key);
+		return key === "kind" && value === undefined ? "" : value;
+	});
+	return values.every((value) => typeof value === "string")
+		? JSON.stringify(values)
+		: undefined;
+}
+
 function sumAndUnique(
 	value: unknown,
-	identityKey: string,
+	identityKey: string | readonly string[],
 	amountKey: string,
 	unique = true,
 ): number | undefined {
@@ -307,12 +329,11 @@ function sumAndUnique(
 	const seen = new Set<string>();
 	let total = 0;
 	for (const item of value) {
-		if (typeof item !== "object" || item === null || isProxy(item))
-			return undefined;
-		const id = ownData(item, identityKey);
+		if (!isFinancialRow(item)) return undefined;
+		const id = scopedIdentity(item, identityKey);
 		const amount = ownData(item, amountKey);
 		if (
-			typeof id !== "string" ||
+			id === undefined ||
 			(unique && seen.has(id)) ||
 			typeof amount !== "number" ||
 			!nonnegative(amount)
@@ -328,7 +349,7 @@ function sumAndUnique(
 function sameScopedRows(
 	left: unknown,
 	right: unknown,
-	identityKey: string,
+	identityKey: string | readonly string[],
 	otherKeys: readonly string[],
 ): boolean {
 	if (
@@ -341,15 +362,15 @@ function sameScopedRows(
 		return false;
 	const rows = new Map<string, unknown>();
 	for (const row of left) {
-		if (typeof row !== "object" || row === null || isProxy(row)) return false;
-		const id = ownData(row, identityKey);
-		if (typeof id !== "string" || rows.has(id)) return false;
+		if (!isFinancialRow(row)) return false;
+		const id = scopedIdentity(row, identityKey);
+		if (id === undefined || rows.has(id)) return false;
 		rows.set(id, row);
 	}
 	for (const row of right) {
-		if (typeof row !== "object" || row === null || isProxy(row)) return false;
-		const id = ownData(row, identityKey);
-		if (typeof id !== "string") return false;
+		if (!isFinancialRow(row)) return false;
+		const id = scopedIdentity(row, identityKey);
+		if (id === undefined) return false;
 		const match = rows.get(id);
 		if (typeof match !== "object" || match === null) return false;
 		for (const key of otherKeys)
@@ -414,7 +435,11 @@ export function validFinancialMetadata(
 				sumAndUnique(accountRows, "providerAccountId", "liabilityMicros") !==
 					bound) ||
 			!isArray(entitlementRows) ||
-			sumAndUnique(entitlementRows, "bucketId", "units") === undefined ||
+			sumAndUnique(
+				entitlementRows,
+				["kind", "bucketId", "unit"],
+				"units",
+			) === undefined ||
 			typeof observedAt !== "string" ||
 			typeof validUntil !== "string" ||
 			!Number.isFinite(Date.parse(observedAt)) ||
@@ -457,6 +482,7 @@ export function validFinancialMetadata(
 				executionDigest: text,
 				financialPlanHash: text,
 				fenceSettlementGuard: (item) => item === undefined,
+				fenceSettlementPayloadVersion: (item) => item === "" || item === "v2",
 				unboundedExposure: flag,
 
 				unpricedPolicyProof: () => true,
@@ -510,8 +536,8 @@ export function validFinancialMetadata(
 			!sameScopedRows(
 				read(reservation, "entitlementClaims"),
 				read(checkedQuote, "entitlementClaims"),
-				"bucketId",
-				["unit", "units"],
+				["kind", "bucketId", "unit"],
+				["units"],
 			) ||
 			(pin !== undefined &&
 				read(pin, "validUntil") !== read(checkedQuote, "validUntil"))

@@ -1,6 +1,9 @@
 package data_models
 
-import "list"
+import (
+	"list"
+	"strconv"
+)
 
 #BudgetIdentity: {
 	tenantId:       string & !=""
@@ -8,7 +11,8 @@ import "list"
 	periodId:       string & !=""
 	policyRevision: string & !=""
 }
-#Micros: int & >=0 & <=9007199254740991
+#Micros:          int & >=0 & <=9007199254740991
+#ProtoJSONMicros: string & =~"^(0|[1-9][0-9]{0,15})$"
 #EntitlementKind: "allowance" | "credit" | "commitment"
 #BudgetLedgerSnapshot: {
 	identity:       #BudgetIdentity
@@ -23,10 +27,10 @@ import "list"
 	unresolvedMicros?:        #Micros
 	recoveryReserveMicros?:   #Micros
 	externalCommittedMicros?: #Micros
-	unboundedExposureCount?: int & >=0 & <=256
+	unboundedExposureCount?:  int & >=0 & <=256
 }
 #BudgetProviderAccount: {providerAccountId: string & !="", limitMicros: #Micros, spentMicros: #Micros, reservedMicros: #Micros, externalCommittedMicros?: #Micros}
-#BudgetEntitlement: {bucketId: string & !="", unit: string & !="", kind: #EntitlementKind, periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
+#BudgetEntitlement: {bucketId: string & !="", unit: string & !="", kind: #EntitlementKind | "", periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
 #ProviderAccountExposure: {providerAccountId: string & !="", liabilityMicros: #Micros}
 #EntitlementClaim: {
 	bucketId: string & !=""
@@ -35,7 +39,7 @@ import "list"
 	kind:     #EntitlementKind
 }
 #ProviderAccountRowsMatch: {
-	left:  [...#ProviderAccountExposure]
+	left: [...#ProviderAccountExposure]
 	right: [...#ProviderAccountExposure]
 	_length: true & (len(left) == len(right))
 	for i, row in left {
@@ -58,34 +62,14 @@ import "list"
 	}
 }
 #EntitlementClaimRowsMatch: {
-	left:  [...#EntitlementClaim]
+	left: [...#EntitlementClaim]
 	right: [...#EntitlementClaim]
 	_length: true & (len(left) == len(right))
 	for i, row in left {
-		"left/\(i)": true & list.Contains([for candidate in right {
-			kind:     candidate.kind
-			bucketId: candidate.bucketId
-			unit:     candidate.unit
-			units:    candidate.units
-		}], {
-			kind:     row.kind
-			bucketId: row.bucketId
-			unit:     row.unit
-			units:    row.units
-		})
+		"left/\(i)": true & (len([for candidate in right if candidate.kind == row.kind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]) == len([for candidate in left if candidate.kind == row.kind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]))
 	}
 	for i, row in right {
-		"right/\(i)": true & list.Contains([for candidate in left {
-			kind:     candidate.kind
-			bucketId: candidate.bucketId
-			unit:     candidate.unit
-			units:    candidate.units
-		}], {
-			kind:     row.kind
-			bucketId: row.bucketId
-			unit:     row.unit
-			units:    row.units
-		})
+		"right/\(i)": true & (len([for candidate in left if candidate.kind == row.kind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]) == len([for candidate in right if candidate.kind == row.kind && candidate.bucketId == row.bucketId && candidate.unit == row.unit && candidate.units == row.units {candidate}]))
 	}
 }
 #HostingQuoteComponent: {name: string & !="", costMicros: #Micros}
@@ -107,33 +91,33 @@ import "list"
 	financialPlanHash?: string
 }
 #BudgetReservation: {
-  reservationId: string & !=""
-  identity: #BudgetIdentity
-  requestDigest: string & !=""
-  quoteId?: string
-  reservedMicros?: #Micros
-  status: "held" | "uncertain" | "settled" | "released"
-  actualMicros?: #Micros
-  ledgerSeq: int & >=0
-  quoteDigest: string & !=""
-  providerAccounts?: [...#ProviderAccountExposure]
-  entitlementClaims?: [...#EntitlementClaim]
-  usageEvidenceRef?: string
-  sourceStoppedEvidenceRef?: string
-  settlementEvidence?: #BudgetSettlementEvidence
-  executionDigest?: string
-  financialPlanHash?: string
-  fenceSettlementGuard?: #BudgetFenceSettlementGuard
-  fenceSettlementPayloadVersion?: "v2"
-  unboundedExposure?: bool
-  unpricedPolicyProof?: #IacUnpricedPolicyProof
-  unpricedScopeProof?: #IacUnpricedScopeProof
-  iacPricingPin?: #IacPricingPin
-  if unboundedExposure == _|_ {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
-  if unboundedExposure != _|_ {
-    if unboundedExposure == false {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
-    if unboundedExposure == true {quoteId?: "", reservedMicros?: 0, unpricedPolicyProof: #IacUnpricedPolicyProof, unpricedScopeProof: #IacUnpricedScopeProof}
-  }
+	reservationId:   string & !=""
+	identity:        #BudgetIdentity
+	requestDigest:   string & !=""
+	quoteId?:        string
+	reservedMicros?: #Micros
+	status:          "held" | "uncertain" | "settled" | "released"
+	actualMicros?:   #Micros
+	ledgerSeq:       int & >=0
+	quoteDigest:     string & !=""
+	providerAccounts?: [...#ProviderAccountExposure]
+	entitlementClaims?: [...#EntitlementClaim]
+	usageEvidenceRef?:              string
+	sourceStoppedEvidenceRef?:      string
+	settlementEvidence?:            #BudgetSettlementEvidence
+	executionDigest?:               string
+	financialPlanHash?:             string
+	fenceSettlementGuard?:          #BudgetFenceSettlementGuard
+	fenceSettlementPayloadVersion?: "v2"
+	unboundedExposure?:             bool
+	unpricedPolicyProof?:           #IacUnpricedPolicyProof
+	unpricedScopeProof?:            #IacUnpricedScopeProof
+	iacPricingPin?:                 #IacPricingPin
+	if unboundedExposure == _|_ {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
+	if unboundedExposure != _|_ {
+		if unboundedExposure == false {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
+		if unboundedExposure == true {quoteId?: "", reservedMicros?: 0, unpricedPolicyProof: #IacUnpricedPolicyProof, unpricedScopeProof: #IacUnpricedScopeProof}
+	}
 }
 #BudgetSettlementEvidence: {usageEvidenceRef: string & !="", sourceStoppedEvidenceRef: string & !="", providerAccounts?: [...#ProviderAccountExposure], entitlementClaims?: [...#EntitlementClaim], fenceOperationReceiptJson?: string, financeSignature?: string}
 #HostingPolicyProof: {requestDigest: string & !="", quoteId: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool}
@@ -143,21 +127,21 @@ import "list"
 #BudgetAuthorityEvent: {type: string & !="", snapshot: #BudgetLedgerSnapshot, reservations: [...#BudgetReservation], reconciliationEvidenceRef?: string}
 
 #IacTargetLiabilityEvidence: {
-	evidenceRef:   string & !=""
-	targetId:      string & !=""
-	tenantId:      string & !=""
-	planDigest:    string & =~"^sha256:[a-f0-9]{64}$"
-	inventoryHash: string & =~"^sha256:[a-f0-9]{64}$"
-	modelHash:     string & =~"^sha256:[a-f0-9]{64}$"
-	quoteHash:     string & =~"^sha256:[a-f0-9]{64}$"
+	evidenceRef:         string & !=""
+	targetId:            string & !=""
+	tenantId:            string & !=""
+	planDigest:          string & =~"^sha256:[a-f0-9]{64}$"
+	inventoryHash:       string & =~"^sha256:[a-f0-9]{64}$"
+	modelHash:           string & =~"^sha256:[a-f0-9]{64}$"
+	quoteHash:           string & =~"^sha256:[a-f0-9]{64}$"
 	maximumMicros?:      #Micros
-	maximumMicrosExact?: #Micros
+	maximumMicrosExact?: #ProtoJSONMicros
 	observedAt:          string & !=""
 	validUntil:          string & !=""
 	providerAccounts: [#ProviderAccountExposure, ...#ProviderAccountExposure]
 	entitlementClaims?: [...#EntitlementClaim]
 	if maximumMicrosExact != _|_ {
-		maximumMicrosExact: list.Sum([for account in providerAccounts {account.liabilityMicros}])
+		_exactTotal: strconv.Atoi(maximumMicrosExact) & list.Sum([for account in providerAccounts {account.liabilityMicros}])
 	}
 	if maximumMicrosExact == _|_ {
 		maximumMicros: list.Sum([for account in providerAccounts {account.liabilityMicros}])
@@ -175,19 +159,19 @@ import "list"
 	if evaluation == "denied" {reservation: "not-created"}
 }
 #IacTargetAdmissionDecision: {
-	requestId:      string & !=""
-	targetId:       string & !=""
-	status:         "admitted" | "denied" | "replay" | "uncertain"
-	code:           string
-	message:        string
-	budget:         #IacBudgetDisclosure
-	requestDigest?: string
-	inventoryHash?: string
-	modelHash?:     string
-	quoteHash?:     string
-	quote?:         #HostingQuote
-	reservation?:   #BudgetReservation
-	policyProof?:   #HostingPolicyProof
+	requestId:            string & !=""
+	targetId:             string & !=""
+	status:               "admitted" | "denied" | "replay" | "uncertain"
+	code:                 string
+	message:              string
+	budget:               #IacBudgetDisclosure
+	requestDigest?:       string
+	inventoryHash?:       string
+	modelHash?:           string
+	quoteHash?:           string
+	quote?:               #HostingQuote
+	reservation?:         #BudgetReservation
+	policyProof?:         #HostingPolicyProof
 	unpricedPolicyProof?: #IacUnpricedPolicyProof
 	if status == "denied" {
 		code: string & !=""
@@ -226,16 +210,16 @@ import "list"
 	}
 	if status == "admitted" && budget.evaluation == "bypassed" {
 		budget: {reservation: "held"}
-		modelHash?: ""
-		quoteHash?: ""
-		quote?: _|_
-		policyProof?: _|_
+		modelHash?:    ""
+		quoteHash?:    ""
+		quote?:        _|_
+		policyProof?:  _|_
 		requestDigest: string & =~"^sha256:[a-f0-9]{64}$"
 		inventoryHash: string & =~"^sha256:[a-f0-9]{64}$"
-		_requestID: requestDigest
-		_inventoryID: inventoryHash
-		_identity: reservation.identity
-		_policy: unpricedPolicyProof
+		_requestID:    requestDigest
+		_inventoryID:  inventoryHash
+		_identity:     reservation.identity
+		_policy:       unpricedPolicyProof
 		reservation: {status: "held", unboundedExposure: true, requestDigest: _requestID, financialPlanHash: _inventoryID, executionDigest: string & !="", unpricedPolicyProof: _policy, unpricedScopeProof: {identity: _identity}}
 		unpricedPolicyProof: {requestDigest: _requestID, inventoryHash: _inventoryID, identity: _identity, effect: "allow" | "allow-degraded", obligationsSatisfied: true}
 	}
@@ -264,7 +248,7 @@ import "list"
 			quoteHash:     iacDecision.quoteHash
 		}
 		if iacEvidence.maximumMicrosExact != _|_ {
-			iacEvidence: {maximumMicrosExact: iacDecision.quote.liabilityBoundMicros}
+			iacEvidence: {maximumMicrosExact: strconv.FormatInt(iacDecision.quote.liabilityBoundMicros, 10)}
 		}
 		if iacEvidence.maximumMicrosExact == _|_ {
 			iacEvidence: {maximumMicros: iacDecision.quote.liabilityBoundMicros}
