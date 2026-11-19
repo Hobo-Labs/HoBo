@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Claude SWE adapter wire records. One constraint
-// per protobuf message in swe_claude.proto.
 
 #ClaudeLaunchRecord: {
 	command: "claude-code-acp"

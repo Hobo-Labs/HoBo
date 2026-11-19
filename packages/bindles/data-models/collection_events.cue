@@ -1,7 +1,5 @@
 package data_models
 
-// CUE constraints for the run-to-collect facts (one definition per proto
-// message). Every collection run produces exactly these two events in order.
 
 #BindleEventType: "bindle.ResourcesCollected" | "bindle.ManifestProduced"
 #BindleId: string & =~"^[A-Za-z][A-Za-z0-9_-]*$"

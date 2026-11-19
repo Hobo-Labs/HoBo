@@ -1,8 +1,5 @@
 package data_models
 
-// Constraints for runner_balancing.proto. Parse boundaries in src/parse.ts
-// mirror these invariants so invalid registry/usage documents are
-// unrepresentable past the boundary (parse, don't validate).
 
 #ProviderKind: int & >=0 & <=4
 
@@ -40,7 +37,6 @@ package data_models
 	provider_id:  string & !=""
 	soft_cap_usd: number & >=0
 	hard_cap_usd: number & >=0
-	// The hard cap can never sit below the soft cap it backs.
 	_soft_within_hard: true & (hard_cap_usd >= soft_cap_usd)
 }
 

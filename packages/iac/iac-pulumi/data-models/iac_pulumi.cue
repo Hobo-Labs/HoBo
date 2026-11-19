@@ -1,4 +1,3 @@
-// CUE constraints for every protobuf type in iac_pulumi.proto.
 
 package data_models
 

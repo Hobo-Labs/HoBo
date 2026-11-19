@@ -1,7 +1,5 @@
 package oteloffice
 
-// CUE constraints for data-models/otel_office.proto. Every proto message
-// defined there has a matching definition here.
 
 #SpanRecord: {
 	trace_id:        string & =~"^[0-9a-f]{32}$"
@@ -24,7 +22,6 @@ package oteloffice
 #MetricSample: {
 	metric: string & !=""
 	value:  number
-	// Health-mapped metrics are constrained to the 0..1 range the bar renders.
 	if metric == "hobo.health" {
 		value: >=0 & <=1
 	}

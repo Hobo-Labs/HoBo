@@ -77,7 +77,6 @@ import "list"
 	actual_sha256:    string & =~"^sha256:[0-9a-f]{64}$"
 }
 
-// ADR-0085: preview pin changes require upcaster ceremony markers on the lock revision.
 #PreviewBumpCeremony: {
 	upcaster:            string & != ""
 	new_bindle_version:  string & != ""

@@ -1,4 +1,3 @@
-// CUE constraints for hosting_coverage.proto (ADR-0182 I14).
 package provider_vercel
 
 import "list"
@@ -32,9 +31,7 @@ import "list"
 
 #TrafficCoverage: {
 	kind: "simple" | "cloudflare" | "funnel" | "vercel" | "lakebed" | "other"
-	// At least one native offering: never nothing.
 	offerings: [#TrafficOfferingId, ...#TrafficOfferingId] & list.UniqueItems()
 	fallbacks: [...#TrafficOfferingId] & list.UniqueItems()
-	// Present plus absent is the whole portable vocabulary (17 ids).
 	absent: [...#AbsentTrafficOffering] & list.MinItems(17-len(offerings)) & list.MaxItems(17-len(offerings))
 }

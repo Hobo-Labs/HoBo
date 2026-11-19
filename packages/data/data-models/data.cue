@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the @hobo/data CQRS fold-kernel records (S1-15a). One
-// constraint definition per protobuf message/enum in data.proto.
 
 #ReactivityClass: "reactive" | "non-reactive"
 

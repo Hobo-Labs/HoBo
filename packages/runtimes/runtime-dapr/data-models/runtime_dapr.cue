@@ -1,8 +1,5 @@
 package hobo
 
-// CUE constraints for Dapr runtime adapter wire records (ADR-0138).
-// One constraint per protobuf message/enum in runtime_dapr.proto.
-// Parse, don't validate: derived domain types from parseDapr* parsers.
 
 #DaprDeployMode: "self-hosted" | "kubernetes"
 

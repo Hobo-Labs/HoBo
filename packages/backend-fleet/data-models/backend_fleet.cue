@@ -2,10 +2,6 @@ package data_models
 
 import ( "list"
 
-	// Invariants for every record in backend_fleet.proto. Each mirrors a check the
-	// TypeScript parsers in src/ make (parseFleetAssignment, parseFleetFinancialModel,
-	// parseFleetOffer, parseFleetRoutingMarks), so a record they refuse is
-	// refused here too. Field names are the protobuf JSON names.
 )
 
 #FleetBackendId: string & =~"^[a-z0-9][a-z0-9_-]{0,62}$"
@@ -20,7 +16,6 @@ import ( "list"
 	decidedAtMs:   int & >=0
 	decidedBy:     string & =~"^[A-Za-z0-9][A-Za-z0-9:._-]{0,119}$"
 
-	// A sealed fleet is moving somewhere, and not to where it already is.
 	if sealed {
 		target: #FleetBackendId
 		if active != _|_ {
@@ -28,14 +23,11 @@ import ( "list"
 		}
 	}
 
-	// An unsealed entry has no target: there is no move in flight.
 	if !sealed {
 		target?: _|_
 	}
 }
 
-// A replica's log: format 1, at most the newest 32 entries, ascending by
-// epoch with no gap (rule 2 of the register).
 #FleetAssignmentLog: {
 	format: 1
 	entries: [...#FleetAssignment] & list.MaxItems(32)
@@ -58,7 +50,6 @@ import ( "list"
 	schemaCurrent:   bool
 	standbyLagMs?:   int & >=0
 	usage: [...#FleetUsageMeasurement]
-	// A reachable backend is not failing.
 	if health == "reachable" {
 		failingForMs: 0
 	}
@@ -71,7 +62,6 @@ import ( "list"
 	included?:             int & >=0
 	beyond:                #FleetOverageKind
 	meteredMicrosPerUnit?: number & >=0
-	// Exactly a metered allowance carries a price.
 	if beyond == "metered" {
 		meteredMicrosPerUnit: number & >=0
 	}
@@ -115,7 +105,6 @@ import ( "list"
 	reasons: [...string]
 	candidates: [...#FleetCandidate]
 	decidedAtMs: int & >=0
-	// A move names where it goes; keep and hold do not.
 	if action == "switch" || action == "failover" {
 		target: #FleetBackendId
 	}
@@ -158,7 +147,6 @@ import ( "list"
 	}
 }
 
-// The fleet's operating plan for a declared continuity policy.
 #ContinuityFleetPlan: {
 	tier:                   string & !=""
 	rpo_ms:                 int & >=0

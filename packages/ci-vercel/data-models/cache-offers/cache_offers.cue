@@ -1,9 +1,5 @@
 package vercel
 
-// Constraints on HOBO_CI_CACHE_OFFERS_JSON (../cache_offers.proto). The
-// TypeScript parser in src/cache-offers.ts applies the same ones, then the
-// fleet parsers of @hobo/backend-fleet (parseFleetFinancialModel,
-// parseFleetOffer, parseFleetRoutingMarks).
 
 #RelayCacheBackend: "upstash" | "valkey" | "redis" | "turso" | "blob" | "memory"
 
@@ -12,7 +8,6 @@ package vercel
 	included?:             int & >=0
 	beyond:                "hard-stop" | "metered" | "unknown"
 	meteredMicrosPerUnit?: number & >=0
-	// Exactly a metered allowance carries a price.
 	if beyond == "metered" {
 		meteredMicrosPerUnit: number & >=0
 	}
@@ -41,7 +36,6 @@ package vercel
 	switchBackBelowPercent?: number & >0 & <100
 	minDwellMinutes?:        int & >=0 & <=44640
 	failoverAfterSeconds?:   int & >=0 & <=86400
-	// The lower mark is lower, or the fleet flaps.
 	if switchAtPercent != _|_ && switchBackBelowPercent != _|_ {
 		switchBackBelowPercent: <switchAtPercent
 	}

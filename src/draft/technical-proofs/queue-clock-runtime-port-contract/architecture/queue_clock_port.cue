@@ -1,4 +1,3 @@
-// CUE constraints for queue + clock runtime port records (HOBO-596).
 
 package queue_clock
 

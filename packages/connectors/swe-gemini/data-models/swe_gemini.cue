@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Gemini SWE adapter wire records. One constraint
-// per protobuf message in swe_gemini.proto.
 
 #GeminiLaunchRecord: {
 	command: "gemini"

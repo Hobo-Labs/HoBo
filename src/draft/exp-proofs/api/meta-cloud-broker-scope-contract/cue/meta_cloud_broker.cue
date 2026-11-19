@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in proto/meta_cloud_broker.proto.
-// These are M0 data-shape constraints only; no live hosted broker runtime,
-// Yard planner, provider adapter, admin UI, or Gatekeeper behavior is provided.
 package meta_cloud_broker
 
 import (
