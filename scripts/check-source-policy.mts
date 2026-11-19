@@ -267,11 +267,19 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 			: undefined);
 	if (!language) {
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
-		return commentsIn(file, text).map((comment) => ({
-			text: comment.text,
-			first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
-			last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
-		}));
+		const training = trainingRanges(file, text);
+		return commentsIn(file, text)
+			.filter(
+				(comment) =>
+					!training.some(
+						([start, end]) => start <= comment.start && comment.end <= end,
+					),
+			)
+			.map((comment) => ({
+				text: comment.text,
+				first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
+				last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
+			}));
 	}
 	const kinds =
 		language === "kotlin"
@@ -788,6 +796,58 @@ function astroComments(file: string, text: string): CommentLocation[] {
 
 	visit(result.ast);
 	return found;
+}
+
+function trainingRanges(file: string, text: string): Array<[number, number]> {
+	if (!/\.[cm]?[jt]sx?$/iu.test(sourcePath(file))) return [];
+	const kind = /\.[jt]sx$/iu.test(sourcePath(file))
+		? ts.ScriptKind.TSX
+		: ts.ScriptKind.TS;
+	const source = ts.createSourceFile(
+		file,
+		text,
+		ts.ScriptTarget.Latest,
+		true,
+		kind,
+	);
+	const ranges: Array<[number, number]> = [];
+	function visit(node: ts.Node): void {
+		if (
+			(ts.isFunctionDeclaration(node) ||
+				ts.isFunctionExpression(node) ||
+				ts.isArrowFunction(node) ||
+				ts.isMethodDeclaration(node)) &&
+			node.body &&
+			ts.isBlock(node.body)
+		) {
+			const body = node.body;
+			const first = body.statements[0];
+			const directive =
+				first &&
+				ts.isExpressionStatement(first) &&
+				ts.isStringLiteral(first.expression) &&
+				first.expression.text === "use training"
+					? first
+					: undefined;
+			const decorated =
+				ts.isMethodDeclaration(node) &&
+				ts.getDecorators(node)?.some((decorator) => {
+					const expression = ts.isCallExpression(decorator.expression)
+						? decorator.expression.expression
+						: decorator.expression;
+					return ts.isIdentifier(expression) && expression.text === "trainable";
+				});
+			if (directive || decorated) {
+				ranges.push([
+					directive?.end ?? body.getStart(source) + 1,
+					body.end - 1,
+				]);
+			}
+		}
+		ts.forEachChild(node, visit);
+	}
+	visit(source);
+	return ranges;
 }
 
 export function commentViolations(

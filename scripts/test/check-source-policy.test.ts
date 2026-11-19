@@ -637,6 +637,82 @@ describe("source policy", () => {
 		);
 	});
 
+	it("preserves training inputs only inside marked functions and methods", () => {
+		const lines = [
+			"// outside before",
+			"export function rank(items: string[]) {",
+			'  "use training";',
+			"  // TODO rank the best items first",
+			"  /* Keep the order stable for equal scores. */",
+			"  return items;",
+			"}",
+			"const summarize = () => {",
+			'  "use training";',
+			"  // Summarize the result.",
+			"};",
+			"class Ranker {",
+			"  @trainable()",
+			"  rank() {",
+			"    // Rank the items.",
+			"  }",
+			"  @trainable",
+			"  score() {",
+			"    /* Score the items. */",
+			"  }",
+			"  ordinary() {",
+			'    const marker = "use training";',
+			"    // outside ordinary function",
+			"    return marker;",
+			"  }",
+			"}",
+			"// outside after",
+		];
+		const added = new Set(lines.map((_, index) => index + 1));
+		const expected = lines.flatMap((line, index) =>
+			line.includes("// outside") ? [index + 1] : [],
+		);
+		for (const file of ["example.ts", "example.js", "example.ts.tpl"]) {
+			assert.deepEqual(
+				commentViolations(file, lines.join("\n"), added).map(
+					(issue) => issue.line,
+				),
+				expected,
+				file,
+			);
+		}
+	});
+
+	it("accepts training input in staged code, examples, and notebooks", () => {
+		const repo = fixture();
+		const source = [
+			"export function rank(items: string[]) {",
+			'  "use training";',
+			"  // Sort the highest priority items first.",
+			"  return [...items].sort();",
+			"}",
+			"",
+		].join("\n");
+		write(repo, "training.ts", source);
+		write(repo, "README.md", `# Training\n\n\`\`\`ts\n${source}\`\`\`\n`);
+		write(
+			repo,
+			"training.ipynb",
+			JSON.stringify({
+				metadata: { language_info: { name: "typescript" } },
+				cells: [{ cell_type: "code", source: [source], outputs: [] }],
+			}),
+		);
+		git(repo, "add", "training.ts", "README.md", "training.ipynb");
+		const accepted = guard(repo, "--staged");
+		assert.equal(accepted.status, 0, accepted.stderr);
+		write(repo, "training.ts", `${source}// ordinary commentary\n`);
+		git(repo, "add", "training.ts");
+		assert.match(
+			guard(repo, "--staged").stderr,
+			/training\.ts:6:.*self-documenting/u,
+		);
+	});
+
 	it("allows required tool directives but rejects deferred markers, including inside directives", () => {
 		const text = [
 			"// @ts-expect-error",
