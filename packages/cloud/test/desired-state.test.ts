@@ -17,6 +17,8 @@ import {
 	createInProcessExecutor,
 	type DeploymentPlan,
 	deploymentPlanned,
+	deploymentRollbackStarted,
+	deploymentViewProjection,
 	desiredSpecHash,
 	foldResourceActor,
 	isConverged,
@@ -499,6 +501,105 @@ describe("upsert", () => {
 });
 
 describe("create/destroy cycle", () => {
+	it("resumes a started rollback after the event store reopens", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-rollback-resume-"));
+		let store = createRuntimeLocalEventStore({ dataDir: directory });
+		const iac = recordingIac();
+		const plan = loadPlan();
+		try {
+			await runOrchestrator(deps(store, iac), plan, "resume-rollback", {
+				tenant,
+				actor,
+			});
+			iac.calls.length = 0;
+			const stream = "deployment:resume-rollback";
+			const events = await drain(store, stream);
+			await emit(
+				store,
+				stream,
+				[
+					deploymentRollbackStarted({
+						deploymentId: "resume-rollback",
+						resourceId: "web",
+						reason: "operator requested rollback",
+					}),
+				],
+				{ expectedSeq: events.at(-1)?.seq ?? 0, tenant, actor },
+			);
+			const before = await deploymentViewProjection.rebuildFromZero(
+				store,
+				stream,
+			);
+			expect(
+				deploymentViewProjection.get(before, "resume-rollback")?.status,
+			).toBe("rolling-back");
+			store.close();
+			store = createRuntimeLocalEventStore({ dataDir: directory });
+			const result = await runCompensation(
+				deps(store, iac),
+				plan,
+				"resume-rollback",
+				{ resourceId: "web", reason: "operator requested rollback" },
+				{ tenant, actor },
+			);
+			expect(result.status).toBe("rolled-back");
+			expect(
+				result.events.filter(
+					(event) => event.type === "deployment.RollbackStarted",
+				),
+			).toHaveLength(1);
+			expect(
+				result.events.filter((event) => event.type === "deployment.RolledBack"),
+			).toHaveLength(1);
+			const started = result.events.find(
+				(event) => event.type === "deployment.RollbackStarted",
+			);
+			const completed = result.events.find(
+				(event) => event.type === "deployment.RolledBack",
+			);
+			if (!started || !completed) throw new Error("missing rollback facts");
+			expect(started.data).toEqual({
+				deploymentId: "resume-rollback",
+				resourceId: "web",
+				reason: "operator requested rollback",
+			});
+			expect(completed.data).toEqual({ deploymentId: "resume-rollback" });
+			const cue =
+				process.env.HOBO_CUE_BIN ||
+				fileURLToPath(
+					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+				);
+			const schema = fileURLToPath(
+				new URL("../data-models/cloud.cue", import.meta.url),
+			);
+			const path = join(directory, "rollback.json");
+			for (const [definition, data] of [
+				["#DeploymentRollbackStartedData", started.data],
+				["#DeploymentRolledBackRecord", completed.data],
+			] as const) {
+				writeFileSync(path, JSON.stringify(data));
+				execFileSync(cue, ["vet", schema, path, "-d", definition]);
+			}
+			expect(result.destroyedOrder).toEqual([
+				"web",
+				"api",
+				"cache",
+				"database",
+				"network",
+			]);
+			const after = await deploymentViewProjection.rebuildFromZero(
+				store,
+				stream,
+			);
+			expect(
+				deploymentViewProjection.get(after, "resume-rollback")?.status,
+			).toBe("rolled-back");
+		} finally {
+			store.close();
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
 	it("serializes competing rollback facts and records independent destroys once", async () => {
 		const store = freshStore();
 		const fixture = loadPlan();
@@ -545,6 +646,9 @@ describe("create/destroy cycle", () => {
 		);
 		expect(attempts.sort()).toEqual(["first", "second"]);
 		const events = await drain(store, "deployment:parallel-rollback");
+		expect(
+			events.filter((event) => event.type === "deployment.RollbackStarted"),
+		).toHaveLength(1);
 		expect(
 			events.filter((event) => event.type === "deployment.RolledBack"),
 		).toHaveLength(1);
@@ -624,6 +728,10 @@ describe("create/destroy cycle", () => {
 		expect(result.status).toBe("needs-human");
 		expect(result.destroyedOrder).toEqual([]);
 		expect(iac.calls).toEqual([]);
+		const view = await deploymentViewProjection.rebuildFromZero(store, stream);
+		expect(
+			deploymentViewProjection.get(view, "interrupted-destroy")?.status,
+		).toBe("rolling-back");
 	});
 
 	it("records a failed compensation and escalation once without repeating the destroy", async () => {
@@ -648,6 +756,13 @@ describe("create/destroy cycle", () => {
 			{ tenant, actor },
 		);
 		expect(first.status).toBe("needs-human");
+		const view = await deploymentViewProjection.rebuildFromZero(
+			store,
+			"deployment:failed-destroy",
+		);
+		expect(deploymentViewProjection.get(view, "failed-destroy")?.status).toBe(
+			"needs-human",
+		);
 		expect(attempts).toEqual(["web"]);
 		expect(
 			first.events.filter(

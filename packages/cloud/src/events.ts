@@ -40,6 +40,7 @@ export const CLOUD_EVENTS = Object.freeze({
 	ExecDiff: "exec.Diff",
 	ExecSucceeded: "exec.Succeeded",
 	DeploymentDeployed: "deployment.Deployed",
+	DeploymentRollbackStarted: "deployment.RollbackStarted",
 	DeploymentRolledBack: "deployment.RolledBack",
 	// Ownership rebind: an anonymous `npx hobo up` deployment is bound to an
 	// account, preserving all provisioned state (resources, outputs, URL).
@@ -342,10 +343,20 @@ export function deploymentDeployed(data: DeploymentDeployedData): EventInput {
 	return { type: CLOUD_EVENTS.DeploymentDeployed, data };
 }
 
+export interface DeploymentRollbackStartedData {
+	deploymentId: string;
+	resourceId: string;
+	reason: string;
+}
+
+export function deploymentRollbackStarted(
+	data: DeploymentRollbackStartedData,
+): EventInput {
+	return { type: CLOUD_EVENTS.DeploymentRollbackStarted, data };
+}
+
 export interface DeploymentRolledBackData {
 	deploymentId: string;
-	targetSetId: string;
-	reason: string;
 }
 
 export function deploymentRolledBack(
