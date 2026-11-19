@@ -32,8 +32,7 @@ export interface MatchRejected {
 export type MatchOutcome = MatchAccepted | MatchRejected;
 
 function marginal(def: ResourceDefinition): number {
-	if (def.cost.pricingStatus === "unknown") return Number.POSITIVE_INFINITY;
-	if (classifyPriceQuality(def.cost) === "unparseable")
+	if (classifyPriceQuality(def.cost) !== "priced")
 		return Number.POSITIVE_INFINITY;
 	const value = Number(def.cost.marginalPrice);
 	return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;

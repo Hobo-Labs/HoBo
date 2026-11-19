@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
-
+import type { ResourceIntent } from "../src/plan-types.js";
+import { matchResource } from "../src/planner/matching.js";
 import {
 	assessCostObjective,
 	classifyPriceQuality,
 	type PricedCandidate,
 } from "../src/planner/price-quality.js";
+import type {
+	PlannerRegistry,
+	ResourceDefinition,
+} from "../src/registry/catalog.js";
 
 function candidate(
 	id: string,
@@ -184,5 +189,82 @@ describe("assessCostObjective", () => {
 		const before = structuredClone(input);
 		assessCostObjective(input);
 		expect(input).toEqual(before);
+	});
+});
+
+describe("cost ranking", () => {
+	function definition(
+		id: string,
+		marginalPrice: string,
+		pricingStatus?: ResourceDefinition["cost"]["pricingStatus"],
+	): ResourceDefinition {
+		const cost: ResourceDefinition["cost"] = {
+			sku: id,
+			unit: "hour",
+			marginalPrice,
+		};
+		if (pricingStatus !== undefined) cost.pricingStatus = pricingStatus;
+		return {
+			id,
+			providerId: id,
+			port: "kv",
+			features: [],
+			regions: ["local"],
+			specificity: 10,
+			priority: 0,
+			cost,
+			satisfies: () => ({ kind: "full" }),
+		};
+	}
+
+	function match(...definitions: ResourceDefinition[]) {
+		const registry: PlannerRegistry = {
+			catalogHash: "sha256:pricing",
+			definitions: () => definitions,
+			providers: () => definitions.map((entry) => entry.providerId),
+		};
+		const intent: ResourceIntent = {
+			name: "cache",
+			port: "kv",
+			require: [],
+			prefer: [],
+			negotiation: "require",
+			deps: [],
+			objective: "min-cost",
+		};
+		return matchResource(intent, registry);
+	}
+
+	it.each([
+		"0",
+		"",
+		"  ",
+	])("does not rank the unpriced value %j as a free offering", (price) => {
+		const result = match(
+			definition("unknown", price),
+			definition("priced", "0.01"),
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.definition.id).toBe("priced");
+		expect(result.decision.rationale).toContain("unpriced-candidates");
+		expect(result.decision.tie).toBe(false);
+	});
+
+	it("ranks a verified free offering ahead of a paid one", () => {
+		const result = match(
+			definition("free", "0", "verified-zero"),
+			definition("paid", "0.01"),
+		);
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.definition.id).toBe("free");
+	});
+
+	it("uses the stable identifier when no candidate has a price", () => {
+		const result = match(definition("z", "0"), definition("a", ""));
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.definition.id).toBe("a");
+		expect(result.decision.tie).toBe(true);
 	});
 });
