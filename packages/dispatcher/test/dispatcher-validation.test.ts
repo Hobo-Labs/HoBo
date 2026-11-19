@@ -3,7 +3,7 @@ import {
 	canonicalJson,
 	createDispatcherRegistry,
 	createReservationLedger,
-	decideDispatch,
+	decideCreditDispatch,
 	parseCreditLedgerView,
 	stableHash,
 } from "../src/dispatcher.js";
@@ -49,7 +49,7 @@ function runner(id: string, overrides: JsonObject = {}) {
 }
 
 const dispatch = (overrides: JsonObject = {}) =>
-	decideDispatch({
+	decideCreditDispatch({
 		registry: createDispatcherRegistry([runner("a")]),
 		category: "runner",
 		dispatchId: "d1",
@@ -151,9 +151,9 @@ describe("createDispatcherRegistry", () => {
 	});
 });
 
-describe("decideDispatch refusals", () => {
+describe("decideCreditDispatch refusals", () => {
 	it("rejects a non-object request", () => {
-		expect(() => decideDispatch(null as never)).toThrow(TypeError);
+		expect(() => decideCreditDispatch(null as never)).toThrow(TypeError);
 	});
 
 	it("requires a dispatch id", () => {

@@ -3,7 +3,7 @@ import {
 	type BudgetPolicyEvaluationContext,
 	evaluateBudgetPolicy,
 } from "@hobo/core";
-import { decideDispatchV2 } from "@hobo/dispatcher";
+import { decidePricedDispatch } from "@hobo/dispatcher";
 import type {
 	FleetBinding,
 	FleetRole,
@@ -325,7 +325,7 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 	for (const role of ROLE_ORDER) {
 		const tier = eligible.filter((member) => roleOf(member) === role);
 		if (tier.length === 0) continue;
-		const decision = decideDispatchV2({
+		const decision = decidePricedDispatch({
 			dispatchId: input.demand.id,
 			category: "runner",
 			candidates: tier.map((member) => ({

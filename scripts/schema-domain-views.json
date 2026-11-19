@@ -112,6 +112,7 @@
   "packages/data-sqlite/src/data-dual-port.ts": ["CreateSqliteDataDualPortOptions","DataDualEvidence"],
   "packages/data-sqlite/src/engine.ts": ["SqliteEngineOptions"],
   "packages/dispatcher/src/dispatcher.ts": ["CreditAccount","CreditGrant","CreditLedgerView","HysteresisInput","RankedCandidate","ReservedConsumption"],
+  "packages/dispatcher/src/priced-dispatch.ts": ["PricedDispatchEventRanking","PricedDispatchRejection"],
   "packages/evals/src/index.ts": ["CriterionScore","EvalsFailure","GateReason","PromotionGateVerdict","Rubric","RubricCriterion","RubricReport","ValueDiff"],
   "packages/events/src/saga.ts": ["Saga"],
   "packages/events/src/upcaster.ts": ["CorpusBaseline","CorpusEntry","UpcasterGateReport"],

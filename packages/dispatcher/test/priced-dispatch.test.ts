@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-	DISPATCHER_V2_SCHEMA_VERSION,
-	decideDispatchV2,
-} from "../src/dispatcher-v2.js";
+	decidePricedDispatch,
+	PRICED_DISPATCH_SCHEMA,
+} from "../src/priced-dispatch.js";
 import {
 	dispatchQuoteScenario,
 	staleDispatchQuoteScenario,
 	zeroCostCommitmentDispatchScenario,
-} from "./dispatcher-v2-fixtures.js";
+} from "./priced-dispatch-fixtures.js";
 
-describe("dispatcher v2", () => {
+describe("priced dispatcher", () => {
 	it("ranks exact incremental billed decimals and removes advisory allocation", () => {
-		const decision = decideDispatchV2({
-			dispatchId: "dispatch-v2",
+		const decision = decidePricedDispatch({
+			dispatchId: "priced-dispatch",
 			category: "runner",
 			objective: "min-incremental-billed",
 			candidates: [
@@ -29,7 +29,7 @@ describe("dispatcher v2", () => {
 
 		expect(decision).toMatchObject({
 			ok: true,
-			schema: DISPATCHER_V2_SCHEMA_VERSION,
+			schema: PRICED_DISPATCH_SCHEMA,
 			selectedProvider: "cheap",
 			objective: "min-incremental-billed",
 		});
@@ -39,12 +39,18 @@ describe("dispatcher v2", () => {
 			currency: "USD",
 		});
 		expect(decision.ranking[0]?.quote).not.toHaveProperty("allocatedEffective");
-		expect(decision.dispatchEvent.type).toBe("dispatch.Decided");
+		expect(decision.dispatchEvent.type).toBe("dispatch.Priced");
+		expect(decision.dispatchEvent.data.ranking[0]).toEqual({
+			providerId: "cheap",
+			rank: 1,
+			incrementalBilled: { decimal: "0.9", currency: "USD" },
+			quoteHash: decision.ranking[0]?.quote.quoteHash,
+		});
 	});
 
 	it("uses sooner projected waste expiry for zero-cost ties (§10.11)", () => {
-		const decision = decideDispatchV2({
-			dispatchId: "dispatch-v2-tie",
+		const decision = decidePricedDispatch({
+			dispatchId: "priced-dispatch-tie",
 			category: "runner",
 			candidates: [
 				{
@@ -70,8 +76,8 @@ describe("dispatcher v2", () => {
 	});
 
 	it("fails closed instead of treating rejected pricing as zero", () => {
-		const decision = decideDispatchV2({
-			dispatchId: "dispatch-v2-stale",
+		const decision = decidePricedDispatch({
+			dispatchId: "priced-dispatch-stale",
 			category: "runner",
 			candidates: [
 				{ providerId: "stale", scenario: staleDispatchQuoteScenario("stale") },
@@ -80,7 +86,7 @@ describe("dispatcher v2", () => {
 
 		expect(decision).toMatchObject({
 			ok: false,
-			schema: DISPATCHER_V2_SCHEMA_VERSION,
+			schema: PRICED_DISPATCH_SCHEMA,
 			reason: "no completely priced dispatch candidates",
 			rejectedCandidates: [{ providerId: "stale", code: "STALE_OBSERVATION" }],
 		});

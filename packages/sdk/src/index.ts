@@ -9,6 +9,8 @@ export {
 	type DispatcherObjective,
 	type DispatcherOptions,
 	dispatcher,
+	type ParsedRunnerOptions,
+	parseRunnerOptions,
 	type RunnerDeclaration,
 	type RunnerKind,
 	type RunnerOptions,

@@ -13,7 +13,7 @@ const INTERVAL = {
 	end: "2027-01-01T00:00:00Z",
 };
 const EVIDENCE = {
-	source: "fixture://dispatcher-v2",
+	source: "fixture://priced-dispatch",
 	observedAt: AT,
 	validFrom: AT,
 	validUntil: "2027-01-01T00:00:00Z",
@@ -104,7 +104,7 @@ export function dispatchQuoteScenario(
 			completeness: "complete",
 			observations: [
 				{
-					source: "fixture://dispatcher-v2-state",
+					source: "fixture://priced-dispatch-state",
 					observedAt: AT,
 					validUntil: "2027-01-01T00:00:00Z",
 					detail: "complete fixture",
@@ -138,7 +138,8 @@ export function dispatchQuoteScenario(
 			allocationForecast: [],
 		},
 	});
-	if (scenario === undefined) throw new Error("invalid dispatcher v2 fixture");
+	if (scenario === undefined)
+		throw new Error("invalid priced dispatcher fixture");
 	return rehash(scenario);
 }
 
@@ -197,7 +198,7 @@ export function zeroCostCommitmentDispatchScenario(
 
 function rehash(scenario: QuoteScenario): QuoteScenario {
 	if (scenario.catalog === undefined || scenario.state === undefined) {
-		throw new Error("dispatcher v2 fixture requires catalog and state");
+		throw new Error("priced dispatcher fixture requires catalog and state");
 	}
 	scenario.catalog.catalogHash = catalogHashOf(scenario.catalog);
 	scenario.pricingCatalogHash = scenario.catalog.catalogHash;

@@ -10,7 +10,7 @@ import {
 	parseJsonObject,
 } from "./json.js";
 
-export const DISPATCHER_SCHEMA_VERSION = "hobo.dispatcher/v1";
+export const CREDIT_DISPATCH_SCHEMA = "hobo.dispatcher/credit";
 
 export const DISPATCH_EVENTS = Object.freeze({
 	DispatchDecided: "dispatch.Decided",
@@ -321,7 +321,7 @@ export function createDispatcherRegistry(
 	}
 
 	return {
-		schema: `${DISPATCHER_SCHEMA_VERSION}.registry`,
+		schema: `${CREDIT_DISPATCH_SCHEMA}.registry`,
 		records,
 		byCategory,
 	};
@@ -408,7 +408,7 @@ function decideDispatchInput(request: DispatchRequest) {
 
 	return {
 		ok: true as const,
-		schema: DISPATCHER_SCHEMA_VERSION,
+		schema: CREDIT_DISPATCH_SCHEMA,
 		objective,
 		selectedProvider: winner.providerId,
 		ranking: publicDispatchRanking(finalRanked),
@@ -428,7 +428,7 @@ function decideDispatchInput(request: DispatchRequest) {
 	};
 }
 
-export function decideDispatch(request: DispatchRequest) {
+export function decideCreditDispatch(request: DispatchRequest) {
 	return decideDispatchInput(request);
 }
 
@@ -1160,7 +1160,7 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 
 	return {
 		ok: false as const,
-		schema: DISPATCHER_SCHEMA_VERSION,
+		schema: CREDIT_DISPATCH_SCHEMA,
 		objective,
 		reason: `reservation CAS failed after ${maxAttempts} attempts`,
 		ranking: [],
@@ -1293,7 +1293,7 @@ export function decidePlacement(request: PlacementRequest) {
 
 	return {
 		ok: true as const,
-		schema: DISPATCHER_SCHEMA_VERSION,
+		schema: CREDIT_DISPATCH_SCHEMA,
 		objective,
 		winner: winner.definitionId,
 		selectedProvider: winner.providerId,
@@ -2348,7 +2348,7 @@ function failedDecision({
 }) {
 	return {
 		ok: false as const,
-		schema: DISPATCHER_SCHEMA_VERSION,
+		schema: CREDIT_DISPATCH_SCHEMA,
 		objective,
 		reason,
 		ranking: [],

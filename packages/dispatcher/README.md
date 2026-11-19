@@ -1,6 +1,6 @@
 # @hobo/dispatcher
 
-The Dispatcher (ADR-0071): deterministic, credit/budget-aware selection across
+The dispatcher provides deterministic, credit/budget-aware selection across
 registered providers for placement (`match.Decided`), dispatch
 (`dispatch.Decided`), and traffic (`traffic-backend` category — consumed by the
 stations routing control loop).
@@ -20,20 +20,19 @@ stations routing control loop).
   `dispatch.Reservation*` facts.
 - `replayDispatchDecision` replays identical inputs to a byte-identical
   decision fact.
-- **`decideDispatchV2`** (schema `hobo.dispatcher/v2`) ranks registered providers
-  by minimum incremental **billed** amount from `@hobo/pricing` quotes; v1
-  `decideDispatch` is unchanged for credit ranking.
+- `decidePricedDispatch` ranks providers by incremental billed amount using
+  `@hobo/pricing` quotes. `decideCreditDispatch` ranks candidates against credit
+  and budget constraints.
 
-## Dispatcher v2
+## Pricing-backed dispatch
 
-`decideDispatchV2` and `@hobo/dispatcher/v2` use schema
-`hobo.dispatcher/v2`. For each candidate's `QuoteScenario`, the adapter calls
-`@hobo/pricing` and ranks exact `incremental.billed` decimals under the
-`min-incremental-billed` objective. Provider ID breaks equal-cost ties.
-Rejected, stale, partial, unpriced, or cross-currency quotes fail closed and
-never fall back to list price. `DispatchCostQuote` omits the advisory
-`allocatedEffective` field. V1 source and replay behavior remain untouched; a
-fixed-fixture SHA-256 golden pins the complete v1 decision.
+`decidePricedDispatch` uses schema `hobo.dispatcher/priced`. It ranks exact
+`incremental.billed` decimals under the `min-incremental-billed` objective,
+then breaks ties by projected waste, expiry, and provider ID. Rejected, stale,
+partial, unpriced, or cross-currency quotes are excluded. `DispatchCostQuote`
+omits the advisory `allocatedEffective` field. Successful decisions emit a
+`dispatch.Priced` event containing ranked amounts and quote hashes; the full
+quotes remain available in the returned decision.
 
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's
 declared currency, using the existing `budgetCap`/`listUnitCost` number units.
@@ -42,7 +41,7 @@ switchingCost?, estimatedCost?, expiresAt? })` checks budget and capacity in the
 same CAS operation. `estimatedCost` may raise the reservation to a quoted
 all-in total; it cannot lower the modelled exposure. A caller must supply the
 appropriate account and authoritative quote: missing accounts retain the
-legacy unconstrained selection behavior and do not establish a budget guarantee.
+unconstrained selection behavior and do not establish a budget guarantee.
 
 Pending reservations debit free allowance and rate headroom, occupy one
 concurrency slot, and hold paid exposure. `release` restores those quantities
@@ -79,4 +78,4 @@ release never makes an expired grant eligible again. Expiry only releases a
 reservation: execution owners must stop or fence work before returning its
 remaining financial exposure to the pool.
 
-See [`contracts/`](./contracts) for the v1 and v2 PACT boundaries.
+See [`contracts/`](./contracts) for the dispatch PACT boundaries.

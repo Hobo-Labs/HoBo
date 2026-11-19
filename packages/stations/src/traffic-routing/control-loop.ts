@@ -17,7 +17,7 @@ import {
 	type CreditLedgerView,
 	createDispatcherRegistry,
 	type DispatchFact,
-	decideDispatch,
+	decideCreditDispatch,
 	parseCreditLedgerView,
 } from "@hobo/dispatcher";
 import {
@@ -379,7 +379,7 @@ export function createRoutingControlLoop(
 		const mandatoryRecovery = !healthy.some(
 			(b) => b.id === state.incumbentBackendId,
 		);
-		let decision: ReturnType<typeof decideDispatch>;
+		let decision: ReturnType<typeof decideCreditDispatch>;
 		try {
 			const ledgerView = parseCreditLedgerView(
 				(mandatoryRecovery ? options.recoveryLedgerView?.() : undefined) ??
@@ -404,7 +404,7 @@ export function createRoutingControlLoop(
 				throw new Error(
 					"budget routing requires a ledger account for each candidate",
 				);
-			const request: Parameters<typeof decideDispatch>[0] = {
+			const request: Parameters<typeof decideCreditDispatch>[0] = {
 				registry: createDispatcherRegistry(candidates),
 				category: "traffic-backend",
 				dispatchId: `route:${topology.service}:r${state.revision + 1}`,
@@ -427,7 +427,7 @@ export function createRoutingControlLoop(
 					request.hysteresis.savingsSince = state.savingsSince;
 				}
 			}
-			decision = decideDispatch(request);
+			decision = decideCreditDispatch(request);
 		} catch (error) {
 			const reasons = [
 				{

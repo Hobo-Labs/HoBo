@@ -32,18 +32,15 @@ The CI package preserves its original imports through thin re-exports.
 
 `ExternalProviderQuote` is an evidence record, not an executable pricing model.
 `external-quote.ts` always rejects attempts to turn one into a rating engine.
-Dispatcher v1 is unchanged; v2 lives in `@hobo/dispatcher` as
-`decideDispatchV2`. Legacy CI sandbox accounting re-exports from
-`@hobo/pricing/legacy`. Broker quote authorization and cloud commercial catalog
-hashes integrate without changing dispatcher v1 replay.
+`@hobo/dispatcher` ranks pricing quotes with `decidePricedDispatch`. CI sandbox
+accounting is available from `@hobo/pricing/legacy`.
 
 ## Phases 2–5 surface
 
 - **`@hobo/pricing/legacy`**: moved CI decimal accounting (`allocationQuote`,
   `divideDecimalAtMost`); `@hobo/ci` re-exports preserve import paths.
-- **`decideDispatchV2`**: ranks registered providers by minimum incremental
-  billed amount from `quoteScenario`; v1 `decideDispatch` is byte-identical on
-  the pinned replay fixture.
+- **`decidePricedDispatch`**: ranks registered providers by minimum incremental
+  billed amount from `quoteScenario`.
 - **Adversarial §13**: fixtures 10.1–10.11 (including stale observation,
   cross-currency, and zero-incremental tie cases).
 - **`pricing.*` events**: pinned v1 corpus entry for `pricing.QuoteCreated` in

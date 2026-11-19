@@ -8,7 +8,7 @@ import {
 	createDispatcherRegistry,
 	type DispatchCategory,
 	type DispatchProviderInput,
-	decideDispatch,
+	decideCreditDispatch,
 } from "../../src/dispatcher.js";
 
 type LibraryInteraction = {
@@ -76,7 +76,7 @@ describe("dispatch decision library contract", () => {
 		expect(response.contents.encoded).toBe(false);
 		const { registryCandidates, ...request } =
 			interaction.request.contents.content;
-		const decision = decideDispatch({
+		const decision = decideCreditDispatch({
 			...request,
 			registry: createDispatcherRegistry(registryCandidates),
 		});
@@ -93,7 +93,7 @@ describe("dispatch decision library contract", () => {
 				JSON.parse(JSON.stringify(message.content));
 			const { registryCandidates, ...request } = input;
 			verified.add(message.description);
-			return decideDispatch({
+			return decideCreditDispatch({
 				...request,
 				registry: createDispatcherRegistry(registryCandidates),
 			});

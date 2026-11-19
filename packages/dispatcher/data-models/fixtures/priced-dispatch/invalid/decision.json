@@ -1,0 +1,25 @@
+{
+  "dispatchId": "schema-check",
+  "category": "runner",
+  "schema": "hobo.dispatcher/priced",
+  "objective": "min-incremental-billed",
+  "selectedProvider": "cheap",
+  "ranking": [
+    {
+      "providerId": "cheap",
+      "rank": 1,
+      "incrementalBilled": {
+        "decimal": "0.9",
+        "currency": "USD"
+      },
+      "quoteHash": "invalid"
+    }
+  ],
+  "rejectedCandidates": [
+    {
+      "providerId": "stale",
+      "code": "STALE_OBSERVATION",
+      "reason": "observation 0 does not cover the quote horizon"
+    }
+  ]
+}

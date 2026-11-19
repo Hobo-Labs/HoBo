@@ -30,6 +30,12 @@ export interface RunnerOptions {
 	switchingCost?: number;
 }
 
+export interface ParsedRunnerOptions {
+	id?: string;
+	listUnitCost: number;
+	switchingCost: number;
+}
+
 export interface SelfHostedRunnerOptions extends RunnerOptions {
 	behind?: "relay";
 }
@@ -65,21 +71,15 @@ function nonNegative(
 	return value;
 }
 
-function makeRunner(
-	kind: RunnerKind,
-	options: RunnerOptions = {},
-	behind?: "relay",
-): RunnerDeclaration {
+export function parseRunnerOptions(
+	options: RunnerOptions,
+): ParsedRunnerOptions {
 	requireRecord("runner", "options", options);
-	const providerId =
-		options.id !== undefined
-			? requireNonEmptyString("runner", "options.id", options.id)
-			: `runner.${kind}`;
-	const declaration = {
-		schema: RUNNER_SCHEMA,
-		kind,
-		providerId,
-		category: "runner" as const,
+	const id =
+		options.id === undefined
+			? undefined
+			: requireNonEmptyString("runner", "options.id", options.id);
+	const parsed: ParsedRunnerOptions = {
 		listUnitCost: nonNegative(
 			"runner",
 			"options.listUnitCost",
@@ -92,6 +92,25 @@ function makeRunner(
 			options.switchingCost,
 			0,
 		),
+	};
+	if (id !== undefined) parsed.id = id;
+	return parsed;
+}
+
+function makeRunner(
+	kind: RunnerKind,
+	options: RunnerOptions = {},
+	behind?: "relay",
+): RunnerDeclaration {
+	const parsed = parseRunnerOptions(options);
+	const providerId = parsed.id ?? `runner.${kind}`;
+	const declaration = {
+		schema: RUNNER_SCHEMA,
+		kind,
+		providerId,
+		category: "runner" as const,
+		listUnitCost: parsed.listUnitCost,
+		switchingCost: parsed.switchingCost,
 	};
 	return behind === undefined
 		? deepFreeze(declaration)

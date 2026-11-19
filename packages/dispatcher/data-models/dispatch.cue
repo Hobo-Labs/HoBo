@@ -147,3 +147,31 @@ package data_models
 	ledger_input:      #LedgerInputRecord
 	candidates: [...#RankedCandidateRecord]
 }
+
+#PricedDispatchAmountRecord: {
+	decimal: string & =~"^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$" & !~"^-0(\\.0+)?$"
+	currency: string & !=""
+}
+
+#PricedDispatchRankRecord: {
+	providerId: string & !=""
+	rank: int & >0
+	incrementalBilled: #PricedDispatchAmountRecord
+	quoteHash: string & =~"^sha256:[a-f0-9]{64}$"
+}
+
+#PricedDispatchRejectionRecord: {
+	providerId: string & !=""
+	code: string & !=""
+	reason: string & !=""
+}
+
+#PricedDispatchDecidedRecord: {
+	dispatchId: string & !=""
+	category: "runner" | "build-machine" | "traffic-backend"
+	schema: "hobo.dispatcher/priced"
+	objective: "min-incremental-billed"
+	selectedProvider: string & !=""
+	ranking: [#PricedDispatchRankRecord, ...#PricedDispatchRankRecord]
+	rejectedCandidates: [...#PricedDispatchRejectionRecord]
+}
