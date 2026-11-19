@@ -222,6 +222,11 @@ the missing capability instead of collecting identifiers or values in chat.
 The transcript audit flags known private fields in nested owner-tool inputs and
 results, including API keys and numeric identifiers, without printing their values.
 
+Vercel source preparation builds a file manifest from a pinned commit without
+contacting the provider or deploying. The [CD guide](./CD.md#delivery-as-code)
+describes archive fallback, the synthetic emulator's aggregate limit, and the
+authorization still required before production dispatch.
+
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which
 `selectIacProvider` never picks) deploys first, with one

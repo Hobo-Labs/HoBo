@@ -1994,6 +1994,9 @@ importers:
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
+      tar-stream:
+        specifier: 3.1.7
+        version: 3.1.7
       tsx:
         specifier: 4.22.4
         version: 4.22.4
@@ -2025,6 +2028,9 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      '@types/tar-stream':
+        specifier: 3.1.5
+        version: 3.1.5
       fast-check:
         specifier: ^4.3.0
         version: 4.9.0
@@ -10082,6 +10088,9 @@ packages:
 
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
+
+  '@types/tar-stream@3.1.5':
+    resolution: {integrity: sha512-zCUA6CSDw0t2cpQiZixpyzfubpeuVZmBr5wztvuCG4bhy7reX/9wGXdZxEzz2CjMFLQ32UPR/01jzUUSRJeCeQ==}
 
   '@types/three@0.185.4':
     resolution: {integrity: sha512-gAsBIC07NIFrxjbf7tH2t71c38uulFfk/RFoC7FNBSjMRAQ8J1x/RBvusX0N5PJouaYFJawXQqfCQ0RKUx/1nA==}
@@ -21389,6 +21398,10 @@ snapshots:
       '@types/node': 18.19.130
 
   '@types/stats.js@0.17.4': {}
+
+  '@types/tar-stream@3.1.5':
+    dependencies:
+      '@types/node': 22.20.0
 
   '@types/three@0.185.4':
     dependencies:
