@@ -1,22 +1,3 @@
-// Fleet and policy metrics (WP19 "Fleet and policy"): pure builders from the
-// records the frozen read ports return, plus a collector over those ports.
-// Reading through ports (not journal bodies) keeps this module independent of
-// how the fan-out, failover, inventory and posture owners lay out their
-// streams. Every builder emits a complete gauge set (zeros included) so a
-// state that empties is visible, never stale.
-//
-// - hobo.cd.fanout.camps{state}: Camps per slot state of each RUNNING or
-//   HALTED fan-out (pending, in_flight, succeeded, failed, deferred).
-// - hobo.cd.failover.count{state}: failovers per FailoverState.
-// - hobo.cd.compliance.noncompliant_ratio{rail, control, mode}: share of
-//   evaluated Camps under a Rail that are noncompliant, overall (`control=*`)
-//   and per control. UNKNOWN counts as noncompliant (fail closed, I5);
-//   NOT_APPLICABLE is excluded from the denominator.
-// - hobo.cd.policy.shadow_divergence{camp, rail}: shadow divergences of a
-//   Camp's candidate (INFORM) Rail over the INFORM window.
-// - hobo.cd.camp.condition{camp, condition, status} and
-//   hobo.cd.camp.taint{camp, key, effect}: the inventory as gauges, for the
-//   yard-world fleet views.
 import {
 	CampConditionType,
 	type CampStatusRecord,
@@ -60,7 +41,6 @@ function enumName(
 	return (table[value] ?? "UNSPECIFIED").toLowerCase();
 }
 
-// public-contract: fan-out slot states reported by hobo.cd.fanout.camps.
 export const FANOUT_SLOT_STATES = Object.freeze([
 	"pending",
 	"in_flight",
@@ -98,7 +78,6 @@ export function fanoutCampsPoints(
 	});
 }
 
-// public-contract: failover states reported by hobo.cd.failover.count.
 export const FAILOVER_STATES: readonly FailoverState[] = Object.freeze([
 	FailoverState.PROPOSED,
 	FailoverState.REPLACING,
@@ -139,7 +118,6 @@ export function compliancePoints(
 	records: readonly ComplianceRecord[],
 	atMs: number,
 ): OtelMetricPoint[] {
-	// Latest evaluation per (camp, rail, mode).
 	const latest = new Map<string, ComplianceRecord>();
 	for (const r of records) {
 		const key = `${r.campId}\u0000${r.railDigest}\u0000${r.candidate}`;
@@ -215,7 +193,6 @@ export function campInventoryPoints(
 	return points;
 }
 
-/** The read ports the fleet collector uses (all optional; composed by WP18). */
 export type FleetSources = Readonly<{
 	fanout?: Pick<FanoutController, "list">;
 	failover?: Pick<FailoverController, "list">;
@@ -255,7 +232,6 @@ export async function collectFleetMetrics(
 			const binding = await sources.campPolicy.binding(campId);
 			const rail = binding?.candidateRailDigest ?? "";
 			if (!rail.startsWith("sha256:")) continue;
-			// SAFETY: guarded by the sha256: prefix check above.
 			const railDigest = rail as Digest;
 			const series = await sources.postureSeries.shadowDivergence({
 				campId,
