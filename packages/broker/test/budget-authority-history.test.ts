@@ -404,6 +404,32 @@ describe("durable budget history fences", () => {
 		]);
 	});
 
+	it("keeps credit and allowance history independent", () => {
+		const base = snapshot();
+		const credit = base.entitlements[0];
+		if (!credit) throw new Error("credit fixture missing");
+		credit.bucketId = "shared";
+		credit.observedAt = "2026-10-30T01:00:00Z";
+		const authority = createBudgetAdmissionAuthority({ snapshot: base });
+		const removed = authority.read(NOW);
+		removed.entitlements = [];
+		authority.configure(removed, 0, NOW);
+		const allowance = snapshot();
+		const allowanceBucket = allowance.entitlements[0];
+		if (!allowanceBucket) throw new Error("allowance fixture missing");
+		allowanceBucket.bucketId = "shared";
+		allowanceBucket.kind = "allowance";
+		authority.configure(allowance, 1, NOW);
+		expect(authority.read(NOW).entitlements[0]?.kind).toBe("allowance");
+		const staleCredit = snapshot();
+		const staleCreditBucket = staleCredit.entitlements[0];
+		if (!staleCreditBucket) throw new Error("stale credit fixture missing");
+		staleCreditBucket.bucketId = "shared";
+		expect(() => authority.configure(staleCredit, 2, NOW)).toThrow(
+			"entitlement observation",
+		);
+	});
+
 	it("rejects a kindless fresh memory seed but reopens a persisted base", () => {
 		const legacy = snapshot();
 		const entitlement = legacy.entitlements[0];

@@ -641,10 +641,21 @@ export function createBudgetAdmissionAuthority(options: {
 	>();
 	const entitlementStableKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) => JSON.stringify([bucket.periodId, bucket.bucketId, bucket.unit]);
+	) =>
+		JSON.stringify([
+			persistedEntitlementKind(bucket.kind),
+			bucket.periodId,
+			bucket.bucketId,
+			bucket.unit,
+		]);
 	const entitlementLineageKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) => JSON.stringify([bucket.periodId, bucket.bucketId]);
+	) =>
+		JSON.stringify([
+			persistedEntitlementKind(bucket.kind),
+			bucket.periodId,
+			bucket.bucketId,
+		]);
 	function resolveEntitlementPrevious(
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	): EntitlementHistory | undefined {
