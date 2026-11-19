@@ -158,4 +158,6 @@ jobs:
       - name: Verify tool digest and check models
         env:
           HOBO_TLA_TOOLS: ${{ runner.temp }}/tla2tools.jar
-        run: node --experimental-strip-types scripts/check-iac-models.ts
+        run: |
+          node --experimental-strip-types scripts/check-iac-models.ts
+          node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-queue.mts
