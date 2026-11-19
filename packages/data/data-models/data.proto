@@ -21,6 +21,11 @@ message ProjectionCheckpointRecord {
   uint64 seq = 2;
   string rows_json = 3;
   string saved_at = 4;
+  string read_model = 5;
+  ProjectionRowSchema row_schema = 6;
+  repeated string index_hints = 7;
+  repeated string read_set = 8;
+  ReactivityClass reactivity_class = 9;
 }
 
 message QuarantineRecord {
@@ -107,10 +112,23 @@ message ActorPassivatedData {
   uint64 seq = 2;
 }
 
+message ProjectionRowField {
+  string name = 1;
+  string type = 2;
+}
+
+message ProjectionRowSchema {
+  string wit_record = 1;
+  repeated ProjectionRowField fields = 2;
+}
+
 message ProjectionDeclaredData {
   string projection = 1;
   repeated string read_set = 2;
   ReactivityClass reactivity_class = 3;
+  string read_model = 4;
+  ProjectionRowSchema row_schema = 5;
+  repeated string index_hints = 6;
 }
 
 message ProjectionLaggedData {
