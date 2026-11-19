@@ -462,7 +462,6 @@
         "src/draft/technical-proofs/compensation-escalation-contract/**",
         "src/draft/technical-proofs/connector-authoring-contract/**",
         "src/draft/technical-proofs/cross-camp-flag-state-consistency-contract/**",
-        "src/draft/technical-proofs/dispatcher-reservation-hardening-contract/**",
         "src/draft/technical-proofs/endpoint-monitor-operator-contract/**",
         "src/draft/technical-proofs/error-budget-deploy-gate-contract/**",
         "src/draft/technical-proofs/generation-certify-stage-contract/**",
