@@ -480,6 +480,7 @@ Use `pnpm run check:changed:build -- --base=<ref>` only when you intentionally n
 - `pnpm run test:unit:quiet` when the full unit lane is needed without heartbeat/pass spam or runner log artifacts.
 - `pnpm --prefix src/draft/<kind>/<package> test` when editing one draft proof package.
 - `pnpm run test:all` only for full-repo verification or before merging large cross-cutting changes.
+- `examples/wasp-opensaas/app` is outside the pnpm workspace. `agent:check` selects `npm --prefix examples/wasp-opensaas/app run ci:test:unit` when `src/`, `test/`, `scripts/`, `package.json`, or `vitest.config.ts` under that app changes (not README-only).
 
 The non-staged relevant-check runner forwards its selected `--base` into
 `docs:freshness` so PR impact checks evaluate the same merge-base file set even
