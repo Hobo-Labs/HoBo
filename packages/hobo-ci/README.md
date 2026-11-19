@@ -105,8 +105,9 @@ copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
 
 `isolatedOwnerFetch(env, options)` sends each request in a child process. It
 buffers the response before resolving and defaults to a 1 MiB response limit;
-`maxResponseBytes` can select a limit from zero through 32 MiB for a consumer.
-Request bodies over 32 MiB are refused before the child starts.
+`maxResponseBytes` accepts an integer from zero through 32 MiB. Request bodies
+over 32 MiB are refused before the child starts. URL, header, certificate and
+encoded-packet limits can also refuse a request before the child starts.
 It isolates request diagnostics from the parent process; it is not connected to
 a verified production owner session. Requests require HTTPS, and automatic
 redirects stay within the original origin so credential headers do not cross
@@ -118,12 +119,21 @@ Configured proxies with URL credentials must use HTTPS, even when a bypass
 list is present; unauthenticated HTTP CONNECT proxies remain supported. Each
 private request permits at most 32 proxy connection attempts; exhaustion after
 dispatch has an uncertain outcome.
+The `env` argument is read when the transport is constructed. Proxy selection
+uses the first nonempty `HTTPS_PROXY`, `https_proxy`, `ALL_PROXY`, or `all_proxy`;
+the bypass list uses `NO_PROXY` then `no_proxy`. The extra CA bundle uses
+`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, then `REQUESTS_CA_BUNDLE`.
 Oversized responses and cancellation after dispatch fail with an uncertain
-outcome. Pass an `AbortSignal` to cancel a slow response. The child uses the
-parent's effective trust roots and the selected extra CA bundle without
-inheriting Node preload options. Encoded trust snapshots are limited to 8 MiB;
-larger snapshots are refused before the child starts. Request-body preparation
-and the dispatched request each have a 120-second ceiling.
+outcome. `PrivateOwnerRequestError` indicates the request could not be prepared;
+cancellation before dispatch raises `AbortError`. `PrivateOwnerDispatchError`
+means the operation may have reached its target. Confirm a terminal outcome
+using operation-specific evidence or reconcile it before retrying; if the
+outcome remains unknown, do not retry. Pass an `AbortSignal` to cancel a slow
+response. The child uses the parent's effective trust roots and the selected
+extra CA bundle without inheriting Node preload options. Encoded trust snapshots
+are limited to 8 MiB; larger snapshots are refused before the child starts.
+Request-body preparation and the dispatched request each have a 120-second
+ceiling.
 Private owner HTTP requires a runtime that exposes `tls.getCACertificates`:
 Node 22.15 or later within Node 22, Node 23.10 or later within Node 23, or Node
 24. Other versions are refused before dispatch until their trust behavior is
