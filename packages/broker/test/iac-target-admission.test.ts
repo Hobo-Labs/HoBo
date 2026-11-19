@@ -34,6 +34,13 @@ afterEach(() => {
 		rmSync(path, { recursive: true, force: true });
 });
 
+function trustBoundaryMalformedVerifier(
+	value: string | number | object | undefined | boolean,
+	asynchronous: boolean,
+): boolean | Promise<boolean> {
+	return (asynchronous ? Promise.resolve(value) : value) as boolean;
+}
+
 function fixture() {
 	const scenario = makeScenario({
 		charges: [perUnitCharge("runtime", "minute", "0.25")],
@@ -665,11 +672,8 @@ describe("provider-neutral IaC target budget admission", () => {
 					{ requestId: "malformed-verifier", ...fixture() },
 					{
 						...deps,
-						verifyLiability: () => {
-							const result = asynchronous ? Promise.resolve(value) : value;
-							// SAFETY: negative trust-boundary fixture values are intentionally non-boolean.
-							return result as never;
-						},
+						verifyLiability: () =>
+							trustBoundaryMalformedVerifier(value, asynchronous),
 						authorize: (input) => {
 							policyCalls++;
 							return deps.authorize(input);
