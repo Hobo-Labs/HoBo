@@ -22,6 +22,7 @@
 	},
 	"devDependencies": {
 		"@hobo/data-core": "workspace:*",
+		"@hobo/kv-redis-compatible": "workspace:*",
 		"@hobo/runtime-local": "workspace:*",
 		"zod": "^4.1.13"
 	},

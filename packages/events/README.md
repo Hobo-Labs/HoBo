@@ -8,6 +8,14 @@ per-stream positions, and `defineSaga` for cross-aggregate choreography with com
 Builds on [`@hobo/data`](../data) (aggregates/commands) and
 [`@hobo/core`](../core) (EventEnvelope, EventStore, Streamer ports).
 
+`subscribeCacheInvalidation` observes `data.Changed` events and invalidates the
+tags selected by the caller. Await `ready` before publishing changes, and await
+`drain()` to wait for already queued invalidations and receive any errors. Pass
+`replayStreams` to replay those event streams before `ready` resolves. Live
+changes are buffered during replay; exceeding `maxBufferedEvents` rejects
+`ready` and closes the subscription. With no replay streams, it observes live
+changes only.
+
 ```ts
 import { createReactor, defineMaterialization, defineSaga } from "@hobo/events";
 

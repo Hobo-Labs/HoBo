@@ -1764,6 +1764,9 @@ importers:
       '@hobo/data-core':
         specifier: workspace:*
         version: link:../data-core
+      '@hobo/kv-redis-compatible':
+        specifier: workspace:*
+        version: link:../kv-redis-compatible
       '@hobo/runtime-local':
         specifier: workspace:*
         version: link:../runtimes/runtime-local
@@ -4243,8 +4246,6 @@ importers:
   src/draft/technical-proofs/built-in-opto-training-engine-contract: {}
 
   src/draft/technical-proofs/built-in-policy-engine-contract: {}
-
-  src/draft/technical-proofs/cache-port-catalog-contract: {}
 
   src/draft/technical-proofs/camp-eventstore-runtime-port-contract: {}
 

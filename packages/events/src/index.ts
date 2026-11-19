@@ -1,4 +1,8 @@
 export { type EmitResult, emit, subscribe } from "./bus.js";
+export {
+	type CacheInvalidationConnection,
+	subscribeCacheInvalidation,
+} from "./cache-invalidation.js";
 export { SagaCompensationError } from "./errors.js";
 export {
 	createDataChangedEvent,
