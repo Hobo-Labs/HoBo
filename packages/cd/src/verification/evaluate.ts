@@ -7,6 +7,7 @@ import {
 	Comparator,
 	type EvidenceObservationRecord,
 	type HealthQueryRecord,
+	HealthSourceKind,
 	type ReasonRecord,
 	VerificationVerdict,
 } from "../_generated/cd_pb.js";
@@ -19,7 +20,11 @@ import {
 	probeCheckId,
 	RATIO_UNIT,
 	SLO_BUDGET_CHECK,
+	SLO_BUDGET_TIME_AFTER_CHECK,
+	SLO_BUDGET_TIME_BEFORE_CHECK,
 	SLO_BURN_CHECK,
+	SLO_BURN_TIME_AFTER_CHECK,
+	SLO_BURN_TIME_BEFORE_CHECK,
 	SLO_CHECK,
 	suiteCheckId,
 	thresholdCheckId,
@@ -227,6 +232,63 @@ function comparatorText(comparator: Comparator): string {
 	}
 }
 
+type SloSeries = Readonly<{
+	values: Map<number, number>;
+	correlationKey: string | undefined;
+}>;
+
+function sloSeries(
+	input: EvaluationInput,
+	check: string,
+	cohort: Cohort,
+	fromMs: number,
+): SloSeries | undefined {
+	const timestamps = new Map<number, number>();
+	const keys = new Set<string>();
+	const correlationKeys = new Set<string>();
+	let missingCorrelation = false;
+	for (const point of input.evidence) {
+		if (point.signal !== check || point.cohort !== cohort) continue;
+		const at = Date.parse(point.observedAt);
+		if (!Number.isFinite(at) || !point.seriesKey) return undefined;
+		if (at < fromMs) continue;
+		if (at > input.atMs || !point.healthy || !Number.isFinite(point.value))
+			return undefined;
+		if (point.value < 0 || (check === SLO_BUDGET_CHECK && point.value > 1))
+			return undefined;
+		keys.add(point.seriesKey);
+		if (point.correlationKey) correlationKeys.add(point.correlationKey);
+		else missingCorrelation = true;
+		const previous = timestamps.get(at);
+		if (previous !== undefined && previous !== point.value) return undefined;
+		timestamps.set(at, point.value);
+	}
+	if (keys.size !== 1 || timestamps.size === 0 || correlationKeys.size > 1)
+		return undefined;
+	return {
+		values: timestamps,
+		correlationKey: missingCorrelation
+			? undefined
+			: correlationKeys.values().next().value,
+	};
+}
+
+function sloSourceTime(
+	query: HealthQueryRecord | undefined,
+	at: number,
+	before: SloSeries | undefined,
+	after: SloSeries | undefined,
+): number | undefined {
+	if (query?.source !== HealthSourceKind.PROMETHEUS) return at;
+	const seconds = before?.values.get(at);
+	if (seconds === undefined || seconds !== after?.values.get(at))
+		return undefined;
+	const milliseconds = Math.round(seconds * 1000);
+	return Number.isSafeInteger(milliseconds) && milliseconds >= 0
+		? milliseconds
+		: undefined;
+}
+
 function evaluateSlo(input: EvaluationInput): Decided {
 	const gate = input.spec.sloGate;
 	if (!gate) return "pending";
@@ -236,71 +298,131 @@ function evaluateSlo(input: EvaluationInput): Decided {
 		input.atMs - Number(input.spec.windowMs),
 	);
 	const maxAgeMs = Number(gate.maxSampleAgeMs);
-	const series = new Map<string, Map<number, number>>();
-	for (const check of [SLO_BURN_CHECK, SLO_BUDGET_CHECK]) {
-		const points = input.evidence.filter(
-			(item) => item.signal === check && item.cohort === cohort,
-		);
-		const timestamps = new Map<number, number>();
-		const keys = new Set<string>();
-		for (const point of points) {
-			const at = Date.parse(point.observedAt);
-			if (!Number.isFinite(at) || !point.seriesKey) return "pending";
-			if (at < fromMs) continue;
-			if (at > input.atMs || !point.healthy || !Number.isFinite(point.value))
-				return "pending";
-			if (point.value < 0 || (check === SLO_BUDGET_CHECK && point.value > 1))
-				return "pending";
-			keys.add(point.seriesKey);
-			const previous = timestamps.get(at);
-			if (previous !== undefined && previous !== point.value) return "pending";
-			timestamps.set(at, point.value);
-		}
-		if (keys.size !== 1 || timestamps.size === 0) return "pending";
-		series.set(check, timestamps);
-	}
-	const burn = series.get(SLO_BURN_CHECK);
-	const budget = series.get(SLO_BUDGET_CHECK);
+	const burn = sloSeries(input, SLO_BURN_CHECK, cohort, fromMs);
+	const budget = sloSeries(input, SLO_BUDGET_CHECK, cohort, fromMs);
 	if (!burn || !budget) return "pending";
-	const timestamps = [...new Set([...burn.keys(), ...budget.keys()])].sort(
-		(a, b) => a - b,
+	const burnBefore = sloSeries(
+		input,
+		SLO_BURN_TIME_BEFORE_CHECK,
+		cohort,
+		fromMs,
 	);
+	const burnAfter = sloSeries(input, SLO_BURN_TIME_AFTER_CHECK, cohort, fromMs);
+	const budgetBefore = sloSeries(
+		input,
+		SLO_BUDGET_TIME_BEFORE_CHECK,
+		cohort,
+		fromMs,
+	);
+	const budgetAfter = sloSeries(
+		input,
+		SLO_BUDGET_TIME_AFTER_CHECK,
+		cohort,
+		fromMs,
+	);
+	if (
+		gate.burnRate?.source === HealthSourceKind.PROMETHEUS &&
+		(!burnBefore ||
+			!burnAfter ||
+			!burn.correlationKey ||
+			burn.correlationKey !== burnBefore.correlationKey ||
+			burn.correlationKey !== burnAfter.correlationKey)
+	)
+		return "pending";
+	if (
+		gate.remainingBudgetRatio?.source === HealthSourceKind.PROMETHEUS &&
+		(!budgetBefore ||
+			!budgetAfter ||
+			!budget.correlationKey ||
+			budget.correlationKey !== budgetBefore.correlationKey ||
+			budget.correlationKey !== budgetAfter.correlationKey)
+	)
+		return "pending";
+	const timestamps = [
+		...new Set([...burn.values.keys(), ...budget.values.keys()]),
+	].sort((a, b) => a - b);
 	let burnBreaches = 0;
 	let budgetBreaches = 0;
 	let healthy = 0;
 	let last = -1;
+	let lastBurnSource = -1;
+	let lastBudgetSource = -1;
+	let latestBurnSource = -1;
+	let latestBudgetSource = -1;
 	for (const at of timestamps) {
-		const burnRate = burn.get(at);
-		const remaining = budget.get(at);
+		const burnRate = burn.values.get(at);
+		const remaining = budget.values.get(at);
+		const burnSource = sloSourceTime(gate.burnRate, at, burnBefore, burnAfter);
+		const budgetSource = sloSourceTime(
+			gate.remainingBudgetRatio,
+			at,
+			budgetBefore,
+			budgetAfter,
+		);
 		if (
 			burnRate === undefined ||
 			remaining === undefined ||
-			(last >= 0 && at - last > maxAgeMs)
+			burnSource === undefined ||
+			budgetSource === undefined ||
+			burnSource < fromMs ||
+			budgetSource < fromMs ||
+			burnSource > at ||
+			budgetSource > at ||
+			at - burnSource > maxAgeMs ||
+			at - budgetSource > maxAgeMs
 		) {
 			burnBreaches = 0;
 			budgetBreaches = 0;
 			healthy = 0;
+			lastBurnSource = -1;
+			lastBudgetSource = -1;
+			latestBurnSource = -1;
+			latestBudgetSource = -1;
+			last = at;
+			continue;
 		}
-		if (burnRate !== undefined && remaining !== undefined) {
-			burnBreaches =
-				burnRate >= (gate.rollbackBurnRate ?? 12) ? burnBreaches + 1 : 0;
-			budgetBreaches =
-				remaining <= (gate.minRemainingBudgetRatio ?? 0.08)
-					? budgetBreaches + 1
-					: 0;
-			healthy =
-				burnRate < (gate.holdBurnRate ?? 1) &&
-				remaining > (gate.holdRemainingBudgetRatio ?? 0.2)
-					? healthy + 1
-					: 0;
+		if (last >= 0 && at - last > maxAgeMs) {
+			burnBreaches = 0;
+			budgetBreaches = 0;
+			healthy = 0;
+			lastBurnSource = -1;
+			lastBudgetSource = -1;
 		}
+		if (burnSource < lastBurnSource || budgetSource < lastBudgetSource) {
+			burnBreaches = 0;
+			budgetBreaches = 0;
+			healthy = 0;
+			lastBurnSource = -1;
+			lastBudgetSource = -1;
+		}
+		const burnBreached = burnRate >= (gate.rollbackBurnRate ?? 12);
+		const budgetBreached = remaining <= (gate.minRemainingBudgetRatio ?? 0.08);
+		const isHealthy =
+			burnRate < (gate.holdBurnRate ?? 1) &&
+			remaining > (gate.holdRemainingBudgetRatio ?? 0.2);
+		if (!burnBreached) burnBreaches = 0;
+		if (!budgetBreached) budgetBreaches = 0;
+		if (!isHealthy) healthy = 0;
+		if (burnSource > lastBurnSource && budgetSource > lastBudgetSource) {
+			if (burnBreached) burnBreaches += 1;
+			if (budgetBreached) budgetBreaches += 1;
+			if (isHealthy) healthy += 1;
+			lastBurnSource = burnSource;
+			lastBudgetSource = budgetSource;
+		}
+		latestBurnSource = burnSource;
+		latestBudgetSource = budgetSource;
 		last = at;
 	}
 	if (
 		last < 0 ||
 		input.atMs - last > maxAgeMs ||
-		!burn.has(last) ||
-		!budget.has(last)
+		latestBurnSource < 0 ||
+		latestBudgetSource < 0 ||
+		input.atMs - latestBurnSource > maxAgeMs ||
+		input.atMs - latestBudgetSource > maxAgeMs ||
+		!burn.values.has(last) ||
+		!budget.values.has(last)
 	)
 		return "pending";
 	if (

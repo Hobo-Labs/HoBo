@@ -43,7 +43,11 @@ import {
 	parseVerificationSpec,
 	probeCheckId,
 	SLO_BUDGET_CHECK,
+	SLO_BUDGET_TIME_AFTER_CHECK,
+	SLO_BUDGET_TIME_BEFORE_CHECK,
 	SLO_BURN_CHECK,
+	SLO_BURN_TIME_AFTER_CHECK,
+	SLO_BURN_TIME_BEFORE_CHECK,
 	suiteCheckId,
 	thresholdCheckId,
 } from "./spec.js";
@@ -123,14 +127,36 @@ function queryPlan(
 	}
 	if (spec.sloGate?.burnRate && spec.sloGate.remainingBudgetRatio) {
 		const cohort = thresholdCohort(cohortAware);
-		plans.push(
-			{ check: SLO_BURN_CHECK, query: spec.sloGate.burnRate, cohort },
-			{
-				check: SLO_BUDGET_CHECK,
-				query: spec.sloGate.remainingBudgetRatio,
-				cohort,
-			},
-		);
+		for (const [check, before, after, query] of [
+			[
+				SLO_BURN_CHECK,
+				SLO_BURN_TIME_BEFORE_CHECK,
+				SLO_BURN_TIME_AFTER_CHECK,
+				spec.sloGate.burnRate,
+			],
+			[
+				SLO_BUDGET_CHECK,
+				SLO_BUDGET_TIME_BEFORE_CHECK,
+				SLO_BUDGET_TIME_AFTER_CHECK,
+				spec.sloGate.remainingBudgetRatio,
+			],
+		] as const) {
+			if (query.source === HealthSourceKind.PROMETHEUS) {
+				plans.push({
+					check: before,
+					query: { ...query, query: `timestamp(${query.query})` },
+					cohort,
+				});
+			}
+			plans.push({ check, query, cohort });
+			if (query.source === HealthSourceKind.PROMETHEUS) {
+				plans.push({
+					check: after,
+					query: { ...query, query: `timestamp(${query.query})` },
+					cohort,
+				});
+			}
+		}
 	}
 	return plans;
 }
@@ -443,6 +469,7 @@ export function createVerificationEngine(
 							source: HealthSourceKind[plan.query.source] ?? "",
 							cohort: plan.cohort,
 							seriesKey: point?.seriesKey ?? "",
+							correlationKey: point?.correlationKey ?? "",
 						}),
 					);
 				}

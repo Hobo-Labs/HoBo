@@ -433,6 +433,7 @@ message HealthSamplePointRecord {
   double value = 1;
   double observed_at_ms = 2;
   string series_key = 3;
+  string correlation_key = 4;
 }
 
 message HealthSamplesRecord {
@@ -544,6 +545,7 @@ message EvidenceObservationRecord {
   string source = 6;
   Cohort cohort = 7;
   string series_key = 8;
+  string correlation_key = 9;
 }
 
 // ── Rollout ─────────────────────────────────────────────────────────────────

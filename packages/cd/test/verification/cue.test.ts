@@ -92,8 +92,14 @@ describe.skipIf(cue === undefined)(
 				create(VerificationSpecRecordSchema, {
 					windowMs: BigInt(15 * MINUTE),
 					sloGate: {
-						burnRate: query("burn", { unit: "burn_rate" }),
-						remainingBudgetRatio: query("remaining", { unit: "ratio" }),
+						burnRate: query("burn", {
+							query: "burn",
+							unit: "burn_rate",
+						}),
+						remainingBudgetRatio: query("remaining", {
+							query: "remaining",
+							unit: "ratio",
+						}),
 					},
 				});
 			const valid = slo();
@@ -116,6 +122,12 @@ describe.skipIf(cue === undefined)(
 			const unit = slo();
 			if (!unit.sloGate?.burnRate) throw new Error("missing query");
 			unit.sloGate.burnRate.unit = "ratio";
+			const expression = slo();
+			if (!expression.sloGate?.burnRate) throw new Error("missing query");
+			expression.sloGate.burnRate.query = "rate(burn[5m])";
+			const labelled = slo();
+			if (!labelled.sloGate?.burnRate) throw new Error("missing query");
+			labelled.sloGate.burnRate.query = 'burn{service="api"}';
 			const age = slo();
 			if (!age.sloGate) throw new Error("missing gate");
 			age.sloGate.maxSampleAgeMs = BigInt(16 * MINUTE);
@@ -126,6 +138,8 @@ describe.skipIf(cue === undefined)(
 				[reversed, false],
 				[count, false],
 				[unit, false],
+				[expression, false],
+				[labelled, true],
 				[age, false],
 			] as const) {
 				expect(parseVerificationSpec(spec).ok).toBe(expected);

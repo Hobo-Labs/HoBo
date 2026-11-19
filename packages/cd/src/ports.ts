@@ -663,7 +663,9 @@ export interface PublisherPort {
 
 // ── Verification ───────────────────────────────────────────────────────────
 export type HealthSamplePoint = Readonly<
-	Pick<HealthSamplePointRecord, "value" | "observedAtMs" | "seriesKey">
+	Pick<HealthSamplePointRecord, "value" | "observedAtMs" | "seriesKey"> & {
+		correlationKey?: string;
+	}
 >;
 
 export type HealthSamples = Readonly<

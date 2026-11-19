@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
 import { isJsonArray, isJsonNumber, isJsonObject } from "../json.js";
@@ -69,6 +70,7 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 			const series: Array<
 				Readonly<{
 					key: string;
+					correlationKey: string;
 					points: Array<{ value: number; observedAtMs: number }>;
 				}>
 			> = [];
@@ -103,12 +105,26 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 					points.push({ value, observedAtMs });
 				}
 				points.sort((a, b) => a.observedAtMs - b.observedAtMs);
-				series.push({ key: stableKey(item.metric), points });
+				const labels = Object.fromEntries(
+					Object.entries(item.metric).filter(([name]) => name !== "__name__"),
+				);
+				series.push({
+					key: stableKey(item.metric),
+					correlationKey: createHash("sha256")
+						.update(stableKey(labels))
+						.digest("hex"),
+					points,
+				});
 			}
 			series.sort(byKey);
-			const points = series.flatMap((item, index) =>
-				item.points.map((point) => ({ ...point, seriesKey: String(index) })),
-			);
+			const points = series.flatMap((item) => {
+				const seriesKey = createHash("sha256").update(item.key).digest("hex");
+				return item.points.map((point) => ({
+					...point,
+					seriesKey,
+					correlationKey: item.correlationKey,
+				}));
+			});
 			return {
 				ok: true,
 				value: {
