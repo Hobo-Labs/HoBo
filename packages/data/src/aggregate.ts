@@ -176,9 +176,15 @@ export function defineAggregate<S, C>(
 					appendOptions.correlationId = context.correlationId;
 				if (context.lane !== undefined) appendOptions.lane = context.lane;
 
-				const eventsBySeq = new Map(events.map((event) => [event.seq, event]));
-				const quarantineInputs: EventInput[] = outcome.quarantined.map(
-					(entry) => {
+				const quarantined: QuarantineRecord[] = [];
+				async function persistQuarantines(
+					candidates: readonly QuarantineRecord[],
+					source: readonly EventEnvelope[],
+				): Promise<EventEnvelope[]> {
+					const eventsBySeq = new Map(
+						source.map((event) => [event.seq, event]),
+					);
+					const quarantineInputs: EventInput[] = candidates.map((entry) => {
 						const offending = eventsBySeq.get(entry.offendingSeq);
 						if (!offending)
 							throw new Error("quarantine target is missing from the stream");
@@ -205,48 +211,59 @@ export function defineAggregate<S, C>(
 								idempotencyKey: `aggregate-quarantine:${definition.name}:${offending.id}`,
 							},
 						};
-					},
-				);
-				const quarantineEvents: EventEnvelope[] = [];
-				const quarantined = outcome.quarantined.map((entry) => ({
-					...entry,
-					type: AGGREGATE_QUARANTINE_EVENT,
-				}));
-				for (
-					let offset = 0;
-					offset < quarantineInputs.length;
-					offset += EVENTSTORE_LIMITS.maxBatchEvents
-				) {
-					const batch = quarantineInputs.slice(
-						offset,
-						offset + EVENTSTORE_LIMITS.maxBatchEvents,
-					);
-					try {
-						const result = await deps.store.append(
-							streamId,
-							batch,
-							appendOptions,
+					});
+					const persisted: EventEnvelope[] = [];
+					for (
+						let offset = 0;
+						offset < quarantineInputs.length;
+						offset += EVENTSTORE_LIMITS.maxBatchEvents
+					) {
+						const batch = quarantineInputs.slice(
+							offset,
+							offset + EVENTSTORE_LIMITS.maxBatchEvents,
 						);
-						if (result.appended.length !== batch.length)
-							throw new AggregateConflictError(
+						try {
+							const result = await deps.store.append(
 								streamId,
-								appendOptions.expectedSeq,
+								batch,
+								appendOptions,
 							);
-						quarantineEvents.push(...result.appended);
-						appendOptions.expectedSeq =
-							result.appended.at(-1)?.seq ?? appendOptions.expectedSeq;
-						finalSeq = appendOptions.expectedSeq;
-					} catch (error) {
-						if (error instanceof Error && isOptimisticConflict(error))
-							throw new AggregateConflictError(
-								streamId,
-								appendOptions.expectedSeq,
-							);
-						if (error instanceof Error && isStaleFenceError(error))
-							throw new AggregateStaleFenceError(streamId);
-						throw error;
+							if (result.appended.length !== batch.length)
+								throw new AggregateConflictError(
+									streamId,
+									appendOptions.expectedSeq,
+								);
+							persisted.push(...result.appended);
+							appendOptions.expectedSeq =
+								result.appended.at(-1)?.seq ?? appendOptions.expectedSeq;
+							finalSeq = appendOptions.expectedSeq;
+						} catch (error) {
+							if (error instanceof Error && isOptimisticConflict(error))
+								throw new AggregateConflictError(
+									streamId,
+									appendOptions.expectedSeq,
+								);
+							if (error instanceof Error && isStaleFenceError(error))
+								throw new AggregateStaleFenceError(streamId);
+							throw error;
+						}
 					}
+					for (const [index, entry] of candidates.entries()) {
+						const recorded = persisted[index];
+						if (!recorded)
+							throw new Error("quarantine append did not return its event");
+						quarantined.push({
+							...entry,
+							type: AGGREGATE_QUARANTINE_EVENT,
+							quarantineSeq: recorded.seq,
+						});
+					}
+					return persisted;
 				}
+				const quarantineEvents = await persistQuarantines(
+					outcome.quarantined,
+					events,
+				);
 
 				const staged: EventInput[] = [];
 				const stagedEffects: DurableEffectInput[] = [];
@@ -320,19 +337,18 @@ export function defineAggregate<S, C>(
 					throw error;
 				}
 
-				let state = outcome.state;
-				for (const event of appended) {
-					const upcast = definition.upcasters
-						? definition.upcasters.upcast(event)
-						: event;
-					state = definition.evolve(state, upcast);
-				}
-				const lastAppended = appended.at(-1);
-				const newSeq =
-					lastAppended === undefined
-						? appendOptions.expectedSeq
-						: lastAppended.seq;
-
+				appendOptions.expectedSeq =
+					appended.at(-1)?.seq ?? appendOptions.expectedSeq;
+				finalSeq = appendOptions.expectedSeq;
+				const updated = foldEvents(appended, {
+					...foldSpec,
+					initialState: outcome.state,
+				});
+				const newQuarantines = await persistQuarantines(
+					updated.quarantined,
+					appended,
+				);
+				const newSeq = appendOptions.expectedSeq;
 				finalSeq = newSeq;
 				lifecycle.push(
 					createActorStateAppendedEvent({
@@ -345,8 +361,8 @@ export function defineAggregate<S, C>(
 				return {
 					streamId,
 					seq: newSeq,
-					state,
-					appended: [...quarantineEvents, ...appended],
+					state: updated.state,
+					appended: [...quarantineEvents, ...appended, ...newQuarantines],
 					fenceToken: lease.fenceToken,
 					lifecycle,
 					quarantined,

@@ -40,12 +40,12 @@ const result = await orders.execute(
 `result.seq` is the client's reads-your-writes watermark.
 
 When an aggregate fold rejects an event, `execute` records an
-`aggregate.QuarantineRecorded` fact before running the command. The fact names
-the original event and the affected aggregate fold; other folds can still
-process that event. Replays of the same aggregate skip the recorded event even
-if its implementation changes. `load` raises `UnpersistedQuarantineError` when
-it encounters an unrecorded failure; execute a command to record it under the
-aggregate lease.
+`aggregate.QuarantineRecorded` fact before running the command, or immediately
+after appending an event emitted by that command. The fact names the original
+event and the affected aggregate fold; other folds can still process that event.
+Replays of the same aggregate skip the recorded event even if its implementation
+changes. `load` raises `UnpersistedQuarantineError` when it encounters an
+unrecorded failure; execute a command to record it under the aggregate lease.
 
 For projection rebuilds, `rebuildWithQuarantine` stores
 `projection.QuarantineRecorded` facts in a separate stream. Pass the store,
