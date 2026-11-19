@@ -36,6 +36,7 @@ import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
 	captureWorkflowResult,
+	requireWorkflowRunId,
 } from "./workflow-value.js";
 
 /** Durability primitives are always granted; effect capabilities are declared. */
@@ -157,21 +158,26 @@ export function createWorkflowEngine(
 		if (!started || !isRecord(started.data)) {
 			throw new Error(`missing run.Started for ${runId}`);
 		}
-		if (!isDeepStrictEqual(started.data.args ?? null, cloneAsJson(args))) {
+		const journalArgs = started.data.args ?? null;
+		const input = captureWorkflowInput(args);
+		if (!isDeepStrictEqual(journalArgs, cloneAsJson(input))) {
 			throw new Error(`workflow input differs from run.Started for ${runId}`);
 		}
+		const runArgs = input;
 		if (
 			isJsonString(started.data.workflowName) &&
 			started.data.workflowName !== def.name
 		) {
 			throw new Error(`workflow name differs from run.Started for ${runId}`);
 		}
-		const terminal = [...journal]
-			.reverse()
-			.find(
-				(event) =>
-					event.type === "run.Completed" || event.type === "run.Failed",
-			);
+		const terminals = journal.filter(
+			(event) =>
+				event.type === "run.Completed" || event.type === "run.Failed",
+		);
+		if (terminals.length > 1) {
+			throw new Error(`duplicate terminal facts for ${runId}`);
+		}
+		const terminal = terminals[0];
 		if (terminal) {
 			const data = cloneAsJson(terminal.data);
 			if (!isRecord(data)) {
@@ -346,7 +352,7 @@ export function createWorkflowEngine(
 		});
 
 		try {
-			const value = await def.run(ctx, args);
+			const value = await def.run(ctx, runArgs);
 			const result = captureWorkflowResult(value);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
@@ -380,14 +386,10 @@ export function createWorkflowEngine(
 	return {
 		store,
 		async start(def, args, startOptions) {
-			const runId = startOptions?.runId ?? `run-${randomUUID()}`;
-			if (
-				!isJsonString(runId) ||
-				String(runId) !== runId ||
-				runId.length === 0
-			) {
-				throw new TypeError("workflow runId must be a non-empty string");
-			}
+			const requestedRunId = startOptions?.runId;
+			const runId = requireWorkflowRunId(
+				requestedRunId === undefined ? `run-${randomUUID()}` : requestedRunId,
+			);
 			const input = captureWorkflowInput(args);
 			const streamId = `run/${runId}`;
 			const started = nextEnvelope(
@@ -400,11 +402,13 @@ export function createWorkflowEngine(
 			return execute(def, runId, input);
 		},
 		async resume(def, runId, args) {
+			const id = requireWorkflowRunId(runId);
 			const input = captureWorkflowInput(args);
-			return execute(def, runId, input);
+			return execute(def, id, input);
 		},
 		async journal(runId) {
-			const events = await store.readStream(`run/${runId}`);
+			const id = requireWorkflowRunId(runId);
+			const events = await store.readStream(`run/${id}`);
 			return events.map((event) => ({
 				type: event.type,
 				data: cloneAsJson(event.data),

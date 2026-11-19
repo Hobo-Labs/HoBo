@@ -361,4 +361,80 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(first.state).toEqual(handle.result);
 		expect(first.report.stateDigest).toBe(second.report.stateDigest);
 	});
+
+	it("executes with args stored on run.Started", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "journal-start",
+				streamId: "run/journal-args",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: { from: "journal" },
+					workflowName: "journal-args",
+				},
+			},
+			0,
+		);
+		const wf = defineWorkflow({
+			name: "journal-args",
+			run(_ctx, args: { from: string }) {
+				return args.from;
+			},
+		});
+		const result = await engine.resume(wf, "journal-args", { from: "journal" });
+		expect(result.result).toBe("journal");
+	});
+
+	it.each([
+		["run.Completed", "run.Completed"],
+		["run.Completed", "run.Failed"],
+		["run.Failed", "run.Completed"],
+		["run.Failed", "run.Failed"],
+	] as const)("rejects duplicate terminal facts %s then %s", async (first, second) => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/dup-terminal",
+				seq: 1,
+				type: "run.Started",
+				data: { args: {}, workflowName: "dup" },
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "completed",
+				streamId: "run/dup-terminal",
+				seq: 2,
+				type: first,
+				data: { result: "first" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "completed-again",
+				streamId: "run/dup-terminal",
+				seq: 3,
+				type: second,
+				data: { result: "second" },
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "dup",
+			run() {
+				runs++;
+				return "live";
+			},
+		});
+		await expect(engine.resume(wf, "dup-terminal", {})).rejects.toThrow(
+			/duplicate terminal/,
+		);
+		expect(runs).toBe(0);
+	});
 });
