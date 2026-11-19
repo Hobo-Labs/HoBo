@@ -62,7 +62,10 @@ export function SettingsPage({ user }: { user: AuthUser }) {
       setError("The image could not be read.");
     };
     reader.onload = () => {
-      if (generation !== photoReadGeneration.current) return;
+      if (generation !== photoReadGeneration.current) {
+        setReadingPhoto(false);
+        return;
+      }
       setReadingPhoto(false);
       const result = z.string().safeParse(reader.result);
       if (!result.success) {
@@ -91,8 +94,8 @@ export function SettingsPage({ user }: { user: AuthUser }) {
       setSaved(profile);
       setDraft(profile);
       setLayoutUser((current) => ({ ...current, ...profile }));
-      await refetchAuth();
       setNotice("Settings saved.");
+      void refetchAuth();
     } catch {
       setError("Settings could not be saved. Check the fields and try again.");
     } finally {

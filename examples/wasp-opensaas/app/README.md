@@ -9,7 +9,6 @@ Built with [Wasp](https://wasp.sh), based on the [Open Saas](https://opensaas.sh
 - Make sure you have the `.env.client` and `.env.server` files with correct dev values in the root of the project.
 - Run the database with `wasp start db` and leave it running.
 - Run `wasp start` and leave it running.
-- [OPTIONAL]: If this is the first time starting the app, or you've just made changes to your entities/prisma schema, also run `wasp db migrate-dev`.
 
 ### Existing databases
 
@@ -22,6 +21,8 @@ npx prisma migrate deploy --schema schema.prisma
 ```
 
 New databases receive both migrations through the normal Wasp migration flow.
+
+- [OPTIONAL]: If this is the first time starting the app on an already baselined database, or you've just made changes to your entities/prisma schema, also run `wasp db migrate-dev`.
 ### Client configuration
 
 Set `REACT_APP_PLAUSIBLE_DOMAIN` to enable Plausible analytics. Set
