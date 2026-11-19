@@ -43,13 +43,22 @@ if (repository.status !== 0 || !repository.stdout.trim()) {
 		stateDirectory,
 		`${createHash("sha256").update(root).update("\0").update(branch).digest("hex")}.txt`,
 	);
+	const repositoryStateFile = join(
+		stateDirectory,
+		`${createHash("sha256").update(root).digest("hex")}.txt`,
+	);
 	let previousHead: string | undefined;
 	let pending = false;
 	let stateAvailable = true;
 	try {
 		mkdirSync(stateDirectory, { recursive: true });
-		if (existsSync(stateFile)) {
-			const [storedHead, status, lastChecked] = readFileSync(stateFile, "utf8")
+		const hasBranchState = existsSync(stateFile);
+		const checkpointFile = hasBranchState ? stateFile : repositoryStateFile;
+		if (existsSync(checkpointFile)) {
+			const [storedHead, status, lastChecked] = readFileSync(
+				checkpointFile,
+				"utf8",
+			)
 				.trim()
 				.split("\n");
 			if (
@@ -62,7 +71,13 @@ if (repository.status !== 0 || !repository.stdout.trim()) {
 				throw new Error("invalid checkpoint");
 			}
 			pending = status === "pending";
-			if (pending || Date.now() - Number(lastChecked) <= 12 * 60 * 60 * 1000) {
+			const active =
+				pending || Date.now() - Number(lastChecked) <= 12 * 60 * 60 * 1000;
+			const inheritedAncestor =
+				!hasBranchState && head
+					? git(["merge-base", "--is-ancestor", storedHead, head]).status === 0
+					: false;
+			if (active && (hasBranchState || inheritedAncestor)) {
 				previousHead = storedHead;
 			}
 		}
@@ -122,20 +137,22 @@ if (repository.status !== 0 || !repository.stdout.trim()) {
 	}
 	const checkpoint = committedChangesClean ? head : checkpointBase;
 	if (stateAvailable && checkpoint) {
-		const temporaryStateFile = `${stateFile}.${process.pid}`;
-		try {
-			writeFileSync(
-				temporaryStateFile,
-				`${checkpoint}\n${committedChangesClean ? "clean" : "pending"}\n${Date.now()}\n`,
-				"utf8",
-			);
-			renameSync(temporaryStateFile, stateFile);
-		} catch (error) {
-			rmSync(temporaryStateFile, { force: true });
-			process.stderr.write(
-				`Source policy could not write its checkpoint: ${error instanceof Error ? error.message : String(error)}\n`,
-			);
-			process.exitCode = 2;
+		for (const target of [stateFile, repositoryStateFile]) {
+			const temporaryStateFile = `${target}.${process.pid}`;
+			try {
+				writeFileSync(
+					temporaryStateFile,
+					`${checkpoint}\n${committedChangesClean ? "clean" : "pending"}\n${Date.now()}\n`,
+					"utf8",
+				);
+				renameSync(temporaryStateFile, target);
+			} catch (error) {
+				rmSync(temporaryStateFile, { force: true });
+				process.stderr.write(
+					`Source policy could not write its checkpoint: ${error instanceof Error ? error.message : String(error)}\n`,
+				);
+				process.exitCode = 2;
+			}
 		}
 	}
 }
