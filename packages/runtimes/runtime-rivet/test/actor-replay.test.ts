@@ -82,131 +82,31 @@ describe("Rivet actor event replay", () => {
 		}
 	});
 
-	it("replays a legacy state-valued event using its committed inbox payload", () => {
-		const journal = createActorLocalJournal(journalPath());
-		try {
-			const streamId = rivetStreamId(identity);
-			journal.acceptCommand({
-				streamId,
-				commandId: "a",
-				digest: "legacy",
-				commandType: "add",
-				payloadJson: "3",
-				expectedRevision: 0,
-			});
-			journal.claimNext(streamId);
-			journal.commitCommand({
-				streamId,
-				commandId: "a",
-				expectedRevision: 0,
-				facts: [
-					{
-						type: "add",
-						eventId: "a",
-						payload: new TextEncoder().encode('{"total":3}'),
-						metadataJson: "{}",
-						tenant: "acme",
-					},
-				],
-			});
-			journal.completeCommand(streamId, "a", '{"revision":1}');
-			const actor = createRivetActorHost({ journal });
-			actor.accept({
-				identity,
-				commandId: "b",
-				commandType: "add",
-				payload: 5,
-				expectedRevision: 1,
-			});
-			const states: JsonValue[] = [];
-			expect(
-				actor.processNext(
-					identity,
-					(state, event) => {
-						states.push(state);
-						return add(state, event);
-					},
-					{ total: 0 },
-				)?.revision,
-			).toBe(2);
-			expect(states.at(-1)).toEqual({ total: 3 });
-		} finally {
-			journal.close();
-		}
-	});
-	it.each([
-		["command", 7],
-		["event", 11],
-	] as const)("requires an explicit %s interpretation when an old payload is ambiguous", (interpretation, expectedState) => {
+	it("rejects journal facts without the command-event format", () => {
 		const journal = createActorLocalJournal(journalPath());
 		try {
 			const streamId = rivetStreamId(identity);
 			journal.append(streamId, 0, [
 				{
 					type: "add",
-					eventId: "external",
-					payload: new TextEncoder().encode("4"),
+					eventId: "unmarked",
+					payload: new TextEncoder().encode("3"),
 					metadataJson: "{}",
 					tenant: "acme",
 				},
 			]);
-			journal.acceptCommand({
-				streamId,
-				commandId: "a",
-				digest: "legacy",
-				commandType: "add",
-				payloadJson: "3",
-				expectedRevision: 1,
-			});
-			journal.claimNext(streamId);
-			journal.commitCommand({
-				streamId,
-				commandId: "a",
-				expectedRevision: 1,
-				facts: [
-					{
-						type: "add",
-						eventId: "a",
-						payload: new TextEncoder().encode("7"),
-						metadataJson: "{}",
-						tenant: "acme",
-					},
-				],
-			});
-			journal.completeCommand(streamId, "a", '{"revision":2}');
-			const ambiguous = createRivetActorHost({ journal });
-			ambiguous.accept({
+			const actor = createRivetActorHost({ journal });
+			actor.accept({
 				identity,
-				commandId: "b",
+				commandId: "next",
 				commandType: "add",
-				payload: 1,
-				expectedRevision: 2,
+				payload: 5,
+				expectedRevision: 1,
 			});
-			const addNumber = (state: JsonValue, event: FoldEvent): JsonValue => {
-				if (!isJsonNumber(state) || !isJsonNumber(event.payload))
-					throw new TypeError("numbers required");
-				return state + event.payload;
-			};
-			expect(() => ambiguous.processNext(identity, addNumber, 0)).toThrow(
-				/ambiguous legacy event payload/,
+			expect(() => actor.processNext(identity, add, { total: 0 })).toThrow(
+				"invalid command event metadata",
 			);
-			expect(journal.head(streamId).revision).toBe(2);
-			const recovered = createRivetActorHost({
-				journal,
-				legacyEventPayloads: interpretation,
-			});
-			const inputs: JsonValue[] = [];
-			expect(
-				recovered.processNext(
-					identity,
-					(state, event) => {
-						inputs.push(state);
-						return addNumber(state, event);
-					},
-					0,
-				)?.revision,
-			).toBe(3);
-			expect(inputs.at(-1)).toBe(expectedState);
+			expect(journal.head(streamId).revision).toBe(1);
 		} finally {
 			journal.close();
 		}

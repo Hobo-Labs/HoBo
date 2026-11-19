@@ -136,7 +136,6 @@ export interface ActorLocalJournal {
 	readFacts(streamId: string, fromSeq?: number): readonly JournalFactRecord[];
 	acceptCommand(input: AcceptCommandInput): AcceptCommandResult;
 	claimNext(streamId: string): InboxCommand | undefined;
-	markCommitted(streamId: string, commandId: string): void;
 	rejectCommand(
 		streamId: string,
 		commandId: string,
@@ -248,10 +247,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 	const claimInbox = db.prepare(
 		`UPDATE hobo_inbox SET status = 'processing', attempt = attempt + 1
      WHERE stream_id = ? AND command_id = ? AND status IN ('persisted', 'processing')`,
-	);
-	const commitInbox = db.prepare(
-		`UPDATE hobo_inbox SET status = 'committed'
-     WHERE stream_id = ? AND command_id = ?`,
 	);
 	const commitInboxWithReceipt = db.prepare(
 		`UPDATE hobo_inbox SET status = 'committed', result_json = ?
@@ -515,11 +510,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 
 				const claimed = getInbox.get(streamId, commandId) as SqliteRow;
 				return mapInbox(claimed);
-			});
-		},
-		markCommitted(streamId, commandId) {
-			this.transaction(() => {
-				commitInbox.run(streamId, commandId);
 			});
 		},
 		rejectCommand(streamId, commandId, resultJson) {

@@ -72,59 +72,21 @@ const COMMAND_EVENT_METADATA = JSON.stringify({
 });
 
 function foldJournalFacts(
-	journal: ActorLocalJournal,
 	streamId: string,
 	facts: readonly JournalFactRecord[],
 	initialState: JsonValue,
 	fold: (state: JsonValue, event: FoldEvent) => JsonValue,
-	legacyEventPayloads: "command" | "event" | undefined,
 ): JsonValue {
 	let state = initialState;
 	for (const fact of facts) {
-		const payloadText = new TextDecoder().decode(fact.payload);
-		const command =
-			fact.metadataJson === "{}"
-				? journal.loadCommand(streamId, fact.eventId)
-				: undefined;
-		if (
-			legacyEventPayloads !== "event" &&
-			command &&
-			command.commandType === fact.type &&
-			(command.status === "committed" || command.status === "completed")
-		) {
-			let legacyState: JsonValue | undefined;
-			try {
-				const candidate = fold(state, {
-					type: fact.type,
-					payload: parseJsonValue(command.payloadJson),
-				});
-				if (JSON.stringify(candidate) === payloadText) legacyState = candidate;
-			} catch {}
-			if (legacyState !== undefined) {
-				let eventState: JsonValue | undefined;
-				try {
-					eventState = fold(state, {
-						type: fact.type,
-						payload: parseJsonValue(payloadText),
-					});
-				} catch {}
-				if (
-					eventState === undefined ||
-					JSON.stringify(eventState) === payloadText ||
-					legacyEventPayloads === "command"
-				) {
-					state = legacyState;
-					continue;
-				}
-				throw new RivetJournalError(
-					"PARSE",
-					`ambiguous legacy event payload at ${streamId}:${fact.seq}; choose legacyEventPayloads`,
-				);
-			}
-		}
+		if (fact.metadataJson !== COMMAND_EVENT_METADATA)
+			throw new RivetJournalError(
+				"PARSE",
+				`invalid command event metadata at ${streamId}:${fact.seq}`,
+			);
 		state = fold(state, {
 			type: fact.type,
-			payload: parseJsonValue(payloadText),
+			payload: parseJsonValue(new TextDecoder().decode(fact.payload)),
 		});
 	}
 	return state;
@@ -135,36 +97,23 @@ function completeCommittedCommand(
 	streamId: string,
 	command: InboxCommand,
 ) {
-	let revision: number;
-	if (command.resultJson !== undefined) {
-		const receipt = parseJsonValue(command.resultJson);
-		if (
-			!isJsonObject(receipt) ||
-			!isJsonNumber(receipt.revision) ||
-			!Number.isSafeInteger(receipt.revision) ||
-			receipt.revision < 0
-		)
-			throw new RivetJournalError(
-				"PARSE",
-				`invalid committed receipt for command ${command.commandId}`,
-			);
-		revision = receipt.revision;
-	} else {
-		const facts = journal
-			.readFacts(streamId)
-			.filter(
-				(fact) =>
-					fact.eventId === command.commandId &&
-					fact.type === command.commandType,
-			);
-		const [fact] = facts;
-		if (facts.length !== 1 || fact === undefined)
-			throw new RivetJournalError(
-				"INBOX_CONFLICT",
-				`cannot recover committed revision for command ${command.commandId}`,
-			);
-		revision = fact.seq;
-	}
+	if (command.resultJson === undefined)
+		throw new RivetJournalError(
+			"PARSE",
+			`committed command ${command.commandId} has no receipt`,
+		);
+	const receipt = parseJsonValue(command.resultJson);
+	if (
+		!isJsonObject(receipt) ||
+		!isJsonNumber(receipt.revision) ||
+		!Number.isSafeInteger(receipt.revision) ||
+		receipt.revision < 0
+	)
+		throw new RivetJournalError(
+			"PARSE",
+			`invalid committed receipt for command ${command.commandId}`,
+		);
+	const revision = receipt.revision;
 	if (command.status === "committed")
 		journal.completeCommand(
 			streamId,
@@ -206,7 +155,6 @@ function rejectStaleCommand(
 export function createRivetActorHost(options: {
 	journal: ActorLocalJournal;
 	fidelity?: "local-sqlite" | "rivetkit";
-	legacyEventPayloads?: "command" | "event" | undefined;
 	tenantId?: string;
 	nowMs?: () => number;
 	leaseTtlMs?: number;
@@ -351,14 +299,7 @@ export function createRivetActorHost(options: {
 			const replayedRevision = facts.at(-1)?.seq ?? 0;
 			if (replayedRevision !== claimed.expectedRevision)
 				return rejectStaleCommand(journal, streamId, claimed, replayedRevision);
-			const state = foldJournalFacts(
-				journal,
-				streamId,
-				facts,
-				initialState,
-				fold,
-				options.legacyEventPayloads,
-			);
+			const state = foldJournalFacts(streamId, facts, initialState, fold);
 			const event: FoldEvent = {
 				type: claimed.commandType,
 				payload: parseJsonValue(claimed.payloadJson),
