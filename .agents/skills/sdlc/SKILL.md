@@ -196,7 +196,7 @@ is honest against its final base.
 
 - Interactive stages (brainstorming, plan approval, dispatch permission) happen in the MAIN
   conversation — subagents cannot ask the user anything.
-- One writer per shared file: Linear, `docs/design/traceability.md`, ledgers, registries, GAPS-style
+- One writer per shared resource: Linear, ledgers, registries, GAPS-style
   registers, and the state file are coordinator-only. Implementation agents report deltas via the
   handback schema (`.sdlc/report.json` locally, a fenced `sdlc-report` block on cloud PRs); you
   apply them serially.

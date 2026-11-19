@@ -141,7 +141,7 @@ describe("source policy", () => {
 		assert.equal(commentViolations("x.ts", text, new Set([4])).length, 0);
 	});
 
-	it("parses shell, Python, CSS, and HTML without confusing strings or heredocs with comments", () => {
+	it("parses shell, Python, CSS, HTML, and YAML without confusing data with comments", () => {
 		const shell =
 			"#!/usr/bin/env sh\ncat <<'EOF'\n# data\nEOF\necho ok # explanation\n";
 		assert.deepEqual(
@@ -173,6 +173,13 @@ describe("source policy", () => {
 				new Set([1]),
 			).length,
 			1,
+		);
+		const yaml = "run: |\n  # script data\n  echo ok\n# explanation\n# yamllint disable rule:line-length\n";
+		assert.deepEqual(
+			commentViolations("example.yaml", yaml, new Set([2, 4, 5])).map(
+				(issue) => issue.line,
+			),
+			[4],
 		);
 	});
 
