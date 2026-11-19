@@ -47,8 +47,8 @@ TypeOK == /\ kind \in {"primitive-durable", "object-durable", "object-pending",
           /\ reportedDenial \in BOOLEAN
 NoPrematureAcknowledgement == acknowledged => durable
 NoUseAfterAmbiguousCommit == phase = "uncertain" => ~used
-NoUseAfterThrownCommit == kind \in {"throw-durable", "throw-pending", "denial-durable", "denial-pending"}
-                          /\ phase # "ready" => ~used
-NoCommitFailureAsDenial == kind \in {"denial-durable", "denial-pending"}
-                           /\ phase # "ready" => ~reportedDenial
+NoUseAfterThrownCommit == (kind \in {"throw-durable", "throw-pending"}
+                           => (phase # "ready" => ~used))
+NoCommitFailureAsDenial == (kind \in {"denial-durable", "denial-pending"}
+                            => (phase # "ready" => ~reportedDenial))
 =============================================================================

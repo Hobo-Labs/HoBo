@@ -1166,7 +1166,8 @@ export function createBudgetAdmissionAuthority(options: {
 							(bucket) =>
 								bucket.bucketId === entry.bucketId &&
 								bucket.unit === entry.unit &&
-								bucket.periodId === row.identity?.periodId,
+								(row.identity === undefined ||
+									bucket.periodId === row.identity.periodId),
 						),
 				)
 			)
@@ -1227,13 +1228,11 @@ export function createBudgetAdmissionAuthority(options: {
 			reservations: [...rows.values()],
 			reconciliationEvidenceRef,
 		});
+		const payload = clone(BudgetAuthorityEventSchema, event);
 		let committed: unknown;
 		committing = true;
 		try {
-			committed = options.commit?.(
-				clone(BudgetAuthorityEventSchema, event),
-				expectedSeq,
-			);
+			committed = options.commit?.(payload, expectedSeq);
 		} catch (error) {
 			commitOutcomeUncertain = true;
 			throw new Error("budget commit outcome uncertain; reopen the authority", {
@@ -1991,11 +1990,12 @@ export function createBudgetAdmissionAuthority(options: {
 				);
 				if (
 					old &&
-					active().some((row) =>
-						row.entitlementClaims.some(
-							(claim) => claim.bucketId === old.bucketId,
-						),
-					) &&
+					(old.reservedUnits > 0 ||
+						active().some((row) =>
+							row.entitlementClaims.some(
+								(claim) => claim.bucketId === old.bucketId,
+							),
+						)) &&
 					(old.periodId !== bucket.periodId || old.unit !== bucket.unit)
 				)
 					throw new Error("active entitlement cannot change unit or period");

@@ -522,6 +522,51 @@ describe("hosting budget authority generated properties", () => {
 		);
 	});
 
+	it("rejects configure scope changes while reserved units remain on the bucket", () => {
+		const snapshot = base(10);
+		snapshot.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "credit",
+				unit: "units",
+				periodId: "p1",
+				remainingUnits: 10,
+				observedAt: "2026-10-30T00:00:00Z",
+				validUntil: "2026-10-31T00:00:00Z",
+			}),
+		];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot,
+			commit() {},
+		});
+		const candidate = quote("units", 10);
+		candidate.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "credit",
+				unit: "units",
+				units: 2,
+			}),
+		];
+		const before = authority.read(NOW);
+		if (!before.identity) throw new Error("fixture identity missing");
+		authority.reserve({
+			reservationId: "units",
+			requestDigest: candidate.requestDigest,
+			quote: candidate,
+			identity: before.identity,
+			expectedSeq: before.seq,
+			now: NOW,
+		});
+		const updated = authority.read(NOW);
+		const bucket = updated.entitlements[0];
+		if (!bucket) throw new Error("fixture bucket missing");
+		expect(bucket.reservedUnits).toBeGreaterThan(0);
+		bucket.periodId = "p2";
+		bucket.observedAt = "2026-10-30T01:00:00Z";
+		expect(() => authority.configure(updated, updated.seq, NOW)).toThrow(
+			"active entitlement cannot change unit or period",
+		);
+	});
+
 	it("preserves the scope of active zero-unit entitlement claims", () => {
 		fc.assert(
 			fc.property(

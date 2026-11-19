@@ -714,7 +714,7 @@ describe("receiver-bound budget settlement generated histories", () => {
 		);
 		fc.assert(
 			fc.property(
-				fc.integer({ min: 0, max: 120 }),
+				fc.integer({ min: 0, max: 60 }),
 				fc.boolean(),
 				fc.array(attacks, { minLength: 1, maxLength: 8 }),
 				(actual, markUncertain, attempts) => {

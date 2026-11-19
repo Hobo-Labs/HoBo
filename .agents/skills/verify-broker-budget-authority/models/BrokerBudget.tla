@@ -15,10 +15,17 @@ Init == /\ phase = [r \in Requests |-> "new"]
         /\ unusedEvidence = [r \in Requests |-> FALSE]
         /\ usage = [r \in Requests |-> 0] /\ badAdmission = FALSE
 Reserve == \E r \in Requests:
-           /\ phase[r] = "new" /\ Spent + Held + 1 <= 1
-           /\ phase' = [phase EXCEPT ![r] = "held"]
-           /\ badAdmission' = (badAdmission \/ Spent + Held + 1 > 1)
-           /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage>>
+           /\ phase[r] = "new"
+           /\ IF Spent + Held + 1 <= 1
+                THEN /\ phase' = [phase EXCEPT ![r] = "held"]
+                     /\ UNCHANGED badAdmission
+                ELSE /\ badAdmission' = TRUE
+                     /\ UNCHANGED <<phase, claimed, evidence, unusedEvidence, usage>>
+Settle == \E r \in Requests, amount \in {0, 1, 2}:
+          /\ phase[r] \in {"held", "uncertain"} /\ claimed[r] /\ evidence[r]
+          /\ phase' = [phase EXCEPT ![r] = "settled"]
+          /\ usage' = [usage EXCEPT ![r] = amount]
+          /\ UNCHANGED <<claimed, evidence, unusedEvidence, badAdmission>>
 Claim == \E r \in Requests:
          /\ phase[r] \in {"held", "uncertain"} /\ ~claimed[r] /\ ~unusedEvidence[r]
          /\ claimed' = [claimed EXCEPT ![r] = TRUE]
@@ -36,14 +43,10 @@ ObserveUnused == \E r \in Requests:
                  /\ unusedEvidence' = [unusedEvidence EXCEPT ![r] = TRUE]
                  /\ UNCHANGED <<phase, claimed, evidence, usage, badAdmission>>
 Release == \E r \in Requests:
-           /\ phase[r] \in {"held", "uncertain"} /\ ~claimed[r] /\ unusedEvidence[r] /\ ~evidence[r]
+           /\ ((phase[r] = "held") \/ (phase[r] = "uncertain" /\ unusedEvidence[r]))
+           /\ ~claimed[r] /\ unusedEvidence[r] /\ ~evidence[r]
            /\ phase' = [phase EXCEPT ![r] = "released"]
            /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage, badAdmission>>
-Settle == \E r \in Requests, amount \in {0, 1, 2}:
-          /\ phase[r] \in {"held", "uncertain"} /\ evidence[r]
-          /\ phase' = [phase EXCEPT ![r] = "settled"]
-          /\ usage' = [usage EXCEPT ![r] = amount]
-          /\ UNCHANGED <<claimed, evidence, unusedEvidence, badAdmission>>
 Done == /\ \A r \in Requests : phase[r] \notin {"held", "uncertain"}
         /\ (Spent >= 1 \/ \A r \in Requests : phase[r] # "new")
         /\ UNCHANGED vars

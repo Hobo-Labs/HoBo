@@ -425,10 +425,15 @@ label (`in-proc`, `agent`, `publisher:<target>`) for existing readers.
 
 ## Budget authority verification
 
-The authority rejects mutations made from its journal commit callback. A live
-entitlement claim also keeps its bucket's unit and period stable, including when
-the claim has zero units; reconcile or settle the reservation before changing
-that scope. Replay rejects journal entries that violate the same scope rule.
+The authority rejects mutations made from its journal commit callback.
+Configure refuses to retarget a bucket's unit or period while reserved units
+remain on that bucket or a live claim still references it. A live entitlement
+claim also keeps its bucket's unit and period stable, including when the claim
+has zero units; reconcile or settle the reservation before changing that scope.
+Replay rejects journal entries that violate the same scope rule, without
+requiring reservation identity when matching entitlement buckets.
+The journal commit path clones events before invoking the host callback so local
+schema failures do not fence the authority.
 
 The [budget-authority verification skill](../../.agents/skills/verify-broker-budget-authority/SKILL.md)
 checks admission, held liabilities, replay, and receiver- and finance-signed
