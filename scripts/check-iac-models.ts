@@ -13,8 +13,8 @@ import { assertTlcExited, runBoundedTlc } from "./lib/bounded-tlc.ts";
 
 const configuredJar = process.env.HOBO_TLA_TOOLS;
 const expected =
-	"fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713";
-if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.8.0");
+	"936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88";
+if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.7.4");
 const jar = resolve(configuredJar);
 const actual = createHash("sha256").update(readFileSync(jar)).digest("hex");
 if (actual !== expected)
