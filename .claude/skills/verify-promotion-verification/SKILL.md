@@ -9,7 +9,7 @@ description: Check the promotion saga's fail-closed verification and qualificati
 
 **Why:** An inconclusive or failed verification must not make a release eligible for later environments, and a different request must not be mistaken for an earlier operation.
 
-**Result at sync commit `0c64d14db561bca28f080aa15e8f56027019bffa`:** PASS for the bounded model and generated real-code cases.
+**Result at sync commit `261ad4840e7d062caa9c2accdd61f447123ed95f`:** PASS for the bounded model and generated real-code cases.
 
 ## Covered code
 
@@ -41,4 +41,4 @@ Actual-code properties use seeds 614453 and 614454 for 100 generated sequential 
 
 ## Keep in sync
 
-Before trusting a result, inspect changes to the covered files since `0c64d14db561bca28f080aa15e8f56027019bffa`, including uncommitted changes. Update model and code check for intentional behavior changes and replay counterexamples against real code. Rerun and demonstrate a broken scratch variant, then advance the sync commit only after confirming that the model describes the code. Use `/maintain-formal-verification-skill` for the update.
+Before trusting a result, inspect changes to the covered files since `261ad4840e7d062caa9c2accdd61f447123ed95f`, including uncommitted changes. Update model and code check for intentional behavior changes and replay counterexamples against real code. Rerun and demonstrate a broken scratch variant, then advance the sync commit only after confirming that the model describes the code. Use `/maintain-formal-verification-skill` for the update.
