@@ -25,6 +25,13 @@ export {
 	type DurableActorHostOptions,
 } from "./durable-actor-host.js";
 export {
+	createCrossCampProjection,
+	type CrossCampProjectionOptions,
+	type CrossCampProjectionSubscription,
+	type CrossCampProjectionView,
+	type CrossCampReplicationResult,
+} from "./cross-camp-projection.js";
+export {
 	AggregateStaleFenceError,
 	type ErrorSignal,
 	isOptimisticConflict,

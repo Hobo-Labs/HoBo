@@ -958,7 +958,6 @@
         "src/draft/technical-proofs/componentize-artifact-trust-contract/**",
         "src/draft/technical-proofs/connectivity-tier-ir-contract/**",
         "src/draft/technical-proofs/cost-routing-eligibility-contract/**",
-        "src/draft/technical-proofs/cross-camp-bounded-staleness-contract/**",
         "src/draft/technical-proofs/distributed-artifact-resolver-contract/**",
         "src/draft/technical-proofs/document-projection-sink-contract/**",
         "src/draft/technical-proofs/eval-promotion-gate-contract/**",

@@ -38,3 +38,20 @@ const result = await orders.execute(
 ```
 
 `result.seq` is the client's reads-your-writes watermark.
+
+`createCrossCampProjection` copies an owner's ordered event stream into an
+independent replica event store and folds the copied events with the same
+projection. It can read all streams for a tenant or a named source stream.
+Calls to `append` from either Camp write to the owner. Call `replicate` until
+it reports `caughtUp`, and call it again on the application's polling schedule.
+Each batch and its checkpoint are appended atomically; competing replicators
+retry on sequence conflicts. A new instance can resume from the replica log.
+
+Replica reads and subscriptions include the age of the last completed owner
+read. A partial batch does not advance that time, and a replica with no
+completed read reports `unknown`. The age is measured from the start of the
+owner read with the supplied clock. This bound depends on the owner store's
+`readAll` returning a complete, ordered prefix; it does not account for any
+staleness inside that store. Configure `onLag` to record or publish the emitted
+`projection.ReplicaLagged` input when a read exceeds the bound. Reads are required to
+detect lag while replication is idle.
