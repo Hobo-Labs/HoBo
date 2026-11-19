@@ -1455,12 +1455,13 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 		});
 		const journalBefore = await engine.journal("bad-step-result");
-		await expect(
-			engine.resume(wf, "bad-step-result", {}),
-		).rejects.toMatchObject({
-			name: "TypeError",
-			message: /invalid run\.StepCompleted|JSON-normalized/,
-		});
+		const rejection = await engine
+			.resume(wf, "bad-step-result", {})
+			.catch((error: unknown) => error);
+		expect(rejection).toBeInstanceOf(TypeError);
+		expect((rejection as TypeError).message).toMatch(
+			/invalid run\.StepCompleted|JSON-normalized/,
+		);
 		expect(runs).toBe(0);
 		expect(readEffects).toBe(0);
 		expect(await engine.journal("bad-step-result")).toEqual(journalBefore);
@@ -2141,6 +2142,63 @@ describe("durable workflow: journal, restart, replay", () => {
 		).rejects.toThrow(/sleep schedule diverged on replay/);
 		const journal = await engine.journal("legacy-fractional-diverged");
 		expect(journal).toHaveLength(2);
+	});
+
+	it("resumes a journaled sleep before the first step without a step-index gap", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/sleep-then-step";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "sleep-then-step",
+					workflowName: "sleep-then-step",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "work", index: 0, result: "ok" },
+			},
+			2,
+		);
+		let runs = 0;
+		let workEffects = 0;
+		const wf = defineWorkflow({
+			name: "sleep-then-step",
+			async run(ctx) {
+				runs += 1;
+				await ctx.sleep(10);
+				return ctx.step("work", () => {
+					workEffects += 1;
+					return "ok";
+				});
+			},
+		});
+		const handle = await engine.resume(wf, "sleep-then-step", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("ok");
+		expect(runs).toBe(1);
+		expect(workEffects).toBe(0);
 	});
 
 	it("consumes a journaled sleep across a host restart", async () => {
