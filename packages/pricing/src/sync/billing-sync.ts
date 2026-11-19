@@ -1,4 +1,4 @@
-import { create, toJson } from "@bufbuild/protobuf";
+import { clone, create, toJson } from "@bufbuild/protobuf";
 import {
 	type ActualCharge,
 	ActualChargeSchema,
@@ -77,7 +77,7 @@ export type BillingSyncInput = Readonly<{
 	quotedIncrementalBilled: Money;
 	port: ProviderBillingPort;
 	credentials: SyntheticProviderCredentials;
-	knownActualIds?: ReadonlySet<string>;
+	knownActualCharges?: readonly ActualCharge[];
 }>;
 
 function reject(
@@ -131,6 +131,14 @@ function sumBilled(
 		decimal: formatDecimal(total),
 		currency: currency ?? defaultCurrency,
 	});
+}
+
+function chargeFingerprint(charge: ActualCharge): string {
+	const comparable = clone(ActualChargeSchema, charge);
+	comparable.observedAt = "";
+	return stableHash(
+		toJson(ActualChargeSchema, comparable, { alwaysEmitImplicit: true }),
+	);
 }
 
 function varianceAgainstQuote(
@@ -202,6 +210,33 @@ export async function runBillingSync(
 	) {
 		return reject("INVALID_SYNC_INPUT", "sync identity or period is invalid");
 	}
+	const knownCharges = input.knownActualCharges ?? [];
+	const seen = new Map<string, string>();
+	for (const charge of knownCharges) {
+		if (
+			!charge.id.trim() ||
+			!charge.agreementId.trim() ||
+			!charge.chargeId.trim() ||
+			charge.billedCost === undefined
+		) {
+			return reject("INVALID_SYNC_INPUT", "known actual charge is incomplete");
+		}
+		if (charge.billedCost.currency !== quote.currency) {
+			return reject(
+				"CROSS_CURRENCY",
+				"known charge and quote currencies differ",
+			);
+		}
+		if (seen.has(charge.id)) {
+			return reject(
+				"DUPLICATE_PROVIDER_CHARGE",
+				`known charge ${charge.id} repeats`,
+			);
+		}
+		seen.set(charge.id, chargeFingerprint(charge));
+	}
+	const knownTotal = sumBilled(knownCharges, quote.currency);
+	if ("code" in knownTotal) return knownTotal;
 	const fetchRequest: ProviderBillingFetchRequest = {
 		syncAt: input.syncAt,
 		periodStart: input.periodStart,
@@ -211,7 +246,6 @@ export async function runBillingSync(
 	const rows = await input.port.fetchFocusRows(fetchRequest);
 	const imported: ActualCharge[] = [];
 	const variances: VarianceFact[] = [];
-	const seen = new Set(input.knownActualIds ?? []);
 	const snapshotCompleteness = "complete" as const;
 
 	for (const row of rows) {
@@ -248,7 +282,15 @@ export async function runBillingSync(
 				"actual charge and quote currencies differ",
 			);
 		}
-		if (seen.has(parsed.providerChargeId)) {
+		const fingerprint = chargeFingerprint(mapped);
+		const previous = seen.get(mapped.id);
+		if (previous !== undefined) {
+			if (previous !== fingerprint) {
+				return reject(
+					"DUPLICATE_PROVIDER_CHARGE",
+					`provider charge ${mapped.id} has conflicting contents`,
+				);
+			}
 			variances.push({
 				kind: "duplicate-suppressed",
 				providerChargeId: parsed.providerChargeId,
@@ -256,11 +298,11 @@ export async function runBillingSync(
 			});
 			continue;
 		}
-		seen.add(mapped.id);
+		seen.set(mapped.id, fingerprint);
 		imported.push(mapped);
 	}
 
-	const total = sumBilled(imported, quote.currency);
+	const total = sumBilled([...knownCharges, ...imported], quote.currency);
 	if ("code" in total) return total;
 
 	variances.push(

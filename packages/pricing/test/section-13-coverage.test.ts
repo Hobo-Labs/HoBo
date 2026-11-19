@@ -1,6 +1,9 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { MoneySchema } from "../src/_generated/pricing_pb.js";
+import {
+	ActualChargeSchema,
+	MoneySchema,
+} from "../src/_generated/pricing_pb.js";
 import { quoteScenario } from "../src/quote.js";
 import {
 	fixtureProviderPort,
@@ -72,7 +75,16 @@ describe("section 13 extended coverage", () => {
 				},
 			]),
 			credentials: createSyntheticProviderCredentials(),
-			knownActualIds: new Set(["prov-1"]),
+			knownActualCharges: [
+				create(ActualChargeSchema, {
+					id: "prov-1",
+					agreementId: "agreement-a",
+					chargeId: "usage",
+					billedCost: create(MoneySchema, { decimal: "1", currency: "USD" }),
+					category: "usage",
+					observedAt: "2026-02-01T00:00:00Z",
+				}),
+			],
 		});
 		expect("code" in result).toBe(false);
 		if ("code" in result) return;
