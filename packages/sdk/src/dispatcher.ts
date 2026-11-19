@@ -1,6 +1,7 @@
 import {
 	createDispatcherRegistry,
 	type DispatcherRegistry,
+	type DispatchObjective,
 	type DispatchProviderInput,
 } from "@hobo/dispatcher";
 
@@ -40,16 +41,13 @@ export interface SelfHostedRunnerOptions extends RunnerOptions {
 	behind?: "relay";
 }
 
-export type DispatcherObjective = "min-cost" | "maximize-credits";
-
 export interface DispatcherOptions {
-	objective: DispatcherObjective;
+	objective: DispatchObjective;
 }
 
 export interface DispatcherDeclaration {
 	readonly schema: string;
-	readonly objective: DispatcherObjective;
-	readonly engineObjective: "maximize-credits";
+	readonly objective: DispatchObjective;
 	readonly runners: readonly RunnerDeclaration[];
 	readonly registry: DispatcherRegistry;
 }
@@ -183,7 +181,6 @@ export function dispatcher(
 	return Object.freeze({
 		schema: DISPATCHER_DECLARATION_SCHEMA,
 		objective,
-		engineObjective: "maximize-credits" as const,
 		runners: Object.freeze([...runners]),
 		registry,
 	});
