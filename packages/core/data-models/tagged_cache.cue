@@ -18,3 +18,23 @@ package core
 		value?: string
 	}
 }
+
+#CacheEntryRecord: {
+	key:   string & =~"^[!-~]{1,512}$"
+	value: #CacheBytes
+	ttlMs: int & >0 & <=2592000000
+	tags: [...string & !=""]
+}
+#CacheBytes: string & =~"^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+#CacheInvalidateCommandRecord: {
+	tag: string & !=""
+}
+#CacheReadRecord: {
+	hit: bool
+	if hit {
+		value: #CacheBytes
+	}
+	if !hit {
+		value?: #CacheBytes
+	}
+}

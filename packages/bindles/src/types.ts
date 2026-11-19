@@ -151,11 +151,15 @@ export interface ResourceDescriptor<K extends ResourceKind = ResourceKind> {
 type VerbArgument<
 	K extends ResourceKind,
 	V extends AllowVerbsFor<K>,
-> = K extends "bucket"
-	? V extends "write"
+> = K extends "cache"
+	? V extends "set"
 		? JsonValue | Uint8Array
 		: JsonValue
-	: JsonValue;
+	: K extends "bucket"
+		? V extends "write"
+			? JsonValue | Uint8Array
+			: JsonValue
+		: JsonValue;
 
 type VerbMethodsFor<K extends ResourceKind> = {
 	[V in AllowVerbsFor<K>]: (

@@ -1,4 +1,12 @@
-import { bindle, bucket, data, kv, secret, secretRef } from "../src/index.js";
+import {
+	bindle,
+	bucket,
+	cache,
+	data,
+	kv,
+	secret,
+	secretRef,
+} from "../src/index.js";
 import type {
 	AllowVerbsFor,
 	BindleBuilder,
@@ -32,6 +40,10 @@ const files = bucket("files");
 files.read("avatar.png");
 files.write("avatar.png", new Uint8Array());
 files.delete("avatar.png");
+
+const cached = cache("sessions");
+cached.set("session-1", new Uint8Array([0, 255]), 1000, ["sessions"]);
+cached.invalidate("sessions");
 
 // @ts-expect-error
 type _BucketEnqueue = BucketHandle["enqueue"];
