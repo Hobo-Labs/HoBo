@@ -65,6 +65,7 @@
     "@hobo/cd-gitops#test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/cd-kube-fleet#test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/runtime#test": { "dependsOn": ["build", "@hobo/runtime-local#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo-draft/s1-stage-gate#test": { "dependsOn": ["build", "@hobo/runtime-local#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "test:unit": { "dependsOn": ["^build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "test:schema": { "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/conformance#test:schema": { "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/generate-sdk-conformance.mts", "$TURBO_ROOT$/packages/schema-tools/src/generated-typescript.ts", "$TURBO_ROOT$/buf.gen.yaml"], "outputs": [] },
