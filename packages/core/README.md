@@ -12,6 +12,8 @@ lock and capped-ring helpers; bindings in `@hobo/kv-redis-compatible` and
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
+The asynchronous `DurableMessaging` port exposes finite limits and makes committed, rejected, unknown, and expired outcomes explicit. Implementations live outside core; the accompanying finite-state tests exercise bounded scenarios and do not prove an implementation correct.
+
 ## Honest scope
 
 Implemented: parsers, derived record constructors, error taxonomies, the port
