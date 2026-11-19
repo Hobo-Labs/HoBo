@@ -112,7 +112,8 @@ describe("deterministicConnectSpec", () => {
 					value: "must-not-show",
 				},
 			],
-			submitConfirm: "Submits the GitHub settings, including the secret you entered.",
+			submitConfirm:
+				"Submits the GitHub settings, including the secret you entered.",
 		};
 		const spec = deterministicConnectSpec(step);
 		const serialized = JSON.stringify(spec);

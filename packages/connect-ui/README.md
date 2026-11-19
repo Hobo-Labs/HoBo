@@ -22,7 +22,7 @@ a CI variable or this page.
 | Piece | Entry point |
 |---|---|
 | The flow's steps (data) | `ConnectStep`, `DEFAULT_SECRET_STORES` (`src/steps.ts`) |
-| The component vocabulary | `connectCatalog`: shadcn Card, Stack, Heading, Text, Button, Alert, Badge, Link, Progress, Separator, Radio; actions `connect.chooseStore`, `connect.start`, `connect.cancel` |
+| The component vocabulary | `connectCatalog`: shadcn Card, Stack, Heading, Text, Button, Alert, Badge, Link, Progress, Separator, Radio, Input; actions `connect.submit`, `connect.chooseStore`, `connect.start`, `connect.cancel` |
 | What a step may show | `connectCandidates(step)`: configured, already valid component instances |
 | Compose | `composeConnectSpec(step, { evaluate })` |
 | Serve | `startConnectPage({ flow })` |
@@ -51,7 +51,7 @@ picks the model (default `typesafe-ai/jev`). The composer API is experimental, s
 per-session path (`/s/<token>/`); anything else is a 404.
 
 - `GET view` returns the step's composed spec.
-- `POST action` accepts only `{ action: one of the three, params: string map }` and asks the flow.
+- `POST action` accepts only `{ action: one of the four, params: string map }` and asks the flow.
 - `GET callback` is where a provider sends the browser back (GitHub's manifest code, Vercel's authorization). The flow handles it.
 
 Transitions run one at a time, so a double click cannot call a provider twice.
