@@ -4,8 +4,9 @@
 artifacts with `@bytecodealliance/componentize-js`, emits OCI descriptors, and
 executes exported functions with the pinned Wasmtime runtime.
 
-Production callers use `createRealComponentize()` and fail closed when the
-componentizer is unavailable. `runWasmtimeSmoke()` validates the component
+Production callers use `createRealComponentize()` and require the pinned
+componentizer version. An unavailable or different version fails the build.
+`runWasmtimeSmoke()` validates the component
 layer and digest before invoking the requested export in Wasmtime.
 Real-build metadata records the bundled source and WIT interface digests. The
 component digest describes the emitted bytes; identical inputs do not guarantee

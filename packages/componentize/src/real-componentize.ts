@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
 	buildOciDescriptor,
@@ -10,6 +11,7 @@ import {
 	type WasmComponentArtifact,
 	type WasmOciDescriptor,
 } from "./componentize.js";
+import { isJsonObject, isJsonString } from "./json.js";
 import { sourceDateEpochToUnixSeconds } from "./source-date-epoch.js";
 import { bundleTypeScriptEntry } from "./sources.js";
 
@@ -40,12 +42,10 @@ export class ComponentizeToolchainError extends Error {
 	constructor(cause?: string) {
 		const detail = cause ? ` (${cause})` : "";
 		super(
-			`componentize.toolchain_unavailable: ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs} is not importable${detail}`,
+			`componentize.toolchain_unavailable: ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs} is unavailable${detail}`,
 		);
 		this.name = "ComponentizeToolchainError";
-		this.remediation =
-			`Install ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs} ` +
-			"or drop the real-lane request to use the synthetic contract-shaped floor (componentizeHelloBindle).";
+		this.remediation = `Install ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs} and retry.`;
 	}
 }
 
@@ -156,10 +156,55 @@ type ToolchainProbe =
 	| { readonly ok: true; readonly impl: RealComponentizeImpl }
 	| { readonly ok: false; readonly cause: string };
 
+export async function assertComponentizerVersion(
+	entryUrl: string,
+): Promise<string> {
+	let directory = dirname(fileURLToPath(entryUrl));
+	for (;;) {
+		let text: string | undefined;
+		try {
+			text = await readFile(join(directory, "package.json"), "utf8");
+		} catch (error) {
+			if (
+				!(error instanceof Error && "code" in error && error.code === "ENOENT")
+			)
+				throw error;
+		}
+		if (text !== undefined) {
+			const manifest: unknown = JSON.parse(text);
+			if (
+				isJsonObject(manifest) &&
+				manifest.name === COMPONENTIZE_JS_SPECIFIER
+			) {
+				if (
+					!isJsonString(manifest.version) ||
+					manifest.version !== PINNED_TOOLCHAIN.componentizeJs
+				) {
+					throw new Error(
+						`componentize.toolchain_skew: ${COMPONENTIZE_JS_SPECIFIER} expected ${PINNED_TOOLCHAIN.componentizeJs} got ${String(manifest.version)}`,
+					);
+				}
+				return manifest.version;
+			}
+		}
+		const parent = dirname(directory);
+		if (parent === directory)
+			throw new Error(
+				`package manifest not found for ${COMPONENTIZE_JS_SPECIFIER}`,
+			);
+		directory = parent;
+	}
+}
+
 async function probeToolchain(
 	importModule?: () => Promise<{ readonly componentize?: unknown }>,
 ): Promise<ToolchainProbe> {
 	try {
+		if (!importModule) {
+			await assertComponentizerVersion(
+				import.meta.resolve(COMPONENTIZE_JS_SPECIFIER),
+			);
+		}
 		const module = await (importModule
 			? importModule()
 			: import(COMPONENTIZE_JS_SPECIFIER));
