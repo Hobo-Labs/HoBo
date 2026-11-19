@@ -14,6 +14,10 @@ over conflicting repository workflow guidance.
   maintained source while preserving required notices.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
+- Change HoBo APIs and internal formats directly. Update their callers, schemas,
+  tests, and documentation together. Do not add or retain deprecated aliases,
+  compatibility shims, fallback parsers, or upcasters for earlier HoBo designs.
+  Implement required external protocols and data movement as product behavior.
 - Evidence must exercise real behavior. Do not create identity-only examples,
   no-op benchmarks, synthetic contracts, or fabricated results; replace existing
   scaffolds with executable checks of the behavior they claim to prove.

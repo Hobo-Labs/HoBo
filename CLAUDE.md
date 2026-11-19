@@ -2,7 +2,7 @@
 
 The repository-wide rules at the start of [AGENTS.md](AGENTS.md) apply to Claude
 and every plugin or skill, including the prohibition on explanatory comments,
-deferred work markers, plans, design or architecture documents, ADRs, RFCs, and proposals.
+deferred work markers, plans, design or architecture documents, ADRs, RFCs, proposals, and compatibility shims for earlier HoBo APIs.
 
 **Repo:** HoBo is a cloud-agnostic, AI-native hosting platform. Production packages live under `packages/`; runnable examples, proof packages, and agent tooling live under `examples/`, `src/draft/`, `.agents/`, `.claude/`, and `scripts/`. The README describes the current implementation and its limits.
 
