@@ -181,7 +181,6 @@ package patterns
 	limitations?: [...string]
 	validations?: [...#ValidationObligation]
 	replacementId?: string
-	legacyAliases?: [...string]
 	contentDigest:  string
 }
 
