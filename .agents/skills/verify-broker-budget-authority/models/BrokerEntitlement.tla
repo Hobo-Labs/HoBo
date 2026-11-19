@@ -1,6 +1,6 @@
 ----------------------- MODULE BrokerEntitlement -----------------------
 EXTENDS Naturals
-CONSTANTS PreserveScope, CheckReplayScope, FenceUncertain
+CONSTANTS PreserveScope, CheckReplayScope, FenceUncertain, AllowTerminalScopeRetarget
 VARIABLES phase, claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits
 vars == <<phase, claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
 Active == phase \in {"held", "uncertain"}
@@ -17,7 +17,7 @@ Reserve == /\ phase = "new"
            /\ UNCHANGED <<claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease>>
 Claim == /\ Usable /\ ~claimed /\ claimed' = TRUE
          /\ UNCHANGED <<phase, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
-RecordZeroUnits == /\ (Usable \/ UncertainUsable) /\ claimed /\ claimUnits = 1
+RecordZeroUnits == /\ Usable /\ claimed /\ claimUnits = 1
                    /\ claimUnits' = 0
                    /\ UNCHANGED <<phase, claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease>>
 Uncertain == /\ phase = "held" /\ phase' = "uncertain"
@@ -41,7 +41,8 @@ ConfirmUnused == /\ Active /\ ~claimed /\ ~unusedRelease
 Release == /\ Active /\ ~claimed /\ unusedRelease
            /\ phase' = "released"
            /\ UNCHANGED <<claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
-ChangeTerminalScope == /\ phase \in {"settled", "released"} /\ ~attempted /\ claimUnits # 0
+ChangeTerminalScope == /\ AllowTerminalScopeRetarget
+                       /\ phase \in {"settled", "released"} /\ ~attempted /\ claimUnits # 0
                        /\ attempted' = TRUE /\ bucketUnit' = "other" /\ bucketPeriod' = "p2"
                        /\ UNCHANGED <<phase, claimed, replay, unusedRelease, claimUnits>>
 Done == /\ phase \in {"settled", "released"} /\ UNCHANGED vars

@@ -27,9 +27,8 @@ Commit == /\ phase = "ready"
                                 /\ ~SeparateCommitFailure)
           /\ UNCHANGED <<kind, used>>
 
-Reuse == /\ phase \in {"uncertain", "failed"}
-         /\ IF phase = "uncertain" /\ FenceUncertain
-               THEN UNCHANGED used ELSE used' = TRUE
+Reuse == /\ phase = "failed" \/ (phase = "uncertain" /\ ~FenceUncertain)
+         /\ used' = TRUE
          /\ UNCHANGED <<kind, phase, durable, acknowledged, reportedDenial>>
 
 CompletePending == /\ phase # "ready" /\ ~durable

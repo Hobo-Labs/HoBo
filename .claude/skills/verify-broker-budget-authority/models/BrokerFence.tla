@@ -24,8 +24,7 @@ ConfirmUnused == /\ phase \in {"held", "uncertain"} /\ ~claimed /\ ~unusedWitnes
 Settle == /\ phase \in {"held", "uncertain"} /\ claimed /\ Valid(candidate)
           /\ phase' = "settled" /\ stored' = candidate
           /\ UNCHANGED <<claimed, candidate, attempts, unusedWitness>>
-Release == /\ phase \in {"held", "uncertain"} /\ ~claimed
-           /\ (phase = "held" \/ unusedWitness)
+Release == /\ phase \in {"held", "uncertain"} /\ ~claimed /\ unusedWitness
            /\ phase' = "released"
            /\ UNCHANGED <<claimed, candidate, stored, attempts, unusedWitness>>
 Fenced == /\ phase = "uncertain" /\ claimed /\ attempts = 3 /\ ~Valid(candidate)
