@@ -901,12 +901,7 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		const state = stateRefusal(view);
 		if (state) return state;
 		const path = request.path.split("?")[0] ?? request.path;
-		const host = headerOf(request.headers, "host");
-		const url = d.publicOrigin
-			? `${d.publicOrigin}${path}`
-			: host
-				? `https://${host}${path}`
-				: path;
+		const url = d.publicOrigin ? `${d.publicOrigin}${path}` : path;
 		const proof = await dpop.verify(proofHeader, {
 			reconcilerId: view.record.reconcilerId,
 			method: request.method,
