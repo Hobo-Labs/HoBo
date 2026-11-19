@@ -11,8 +11,8 @@ and not an authoring model.
 | Durable mailbox | action-first `hobo_inbox` (not raw Rivet queue) |
 | Effects | `hobo_outbox` staged with facts; dispatch after commit |
 
-**ADR-0031 stands:** in-process wasm / native local remains the fallback.
-Rivet is the *preferred compatible* resolver when Matching evidence is current.
+In-process wasm and native local remain the fallback. Rivet is the preferred
+resolver when matching evidence is current.
 
 Published `rivetkit` 2.3.10 `.cjs` uses `import.meta`, so `require("rivetkit")`
 throws. Adapters and CJS hosts must `await import("rivetkit")` via
@@ -52,7 +52,7 @@ The local SQLite actor host stores `ActorHost.state` events in a dedicated journ
 
 Actor commands append their original payloads so the same fold can rebuild state after a restart. Each command requires its declared `expectedRevision` to match the revision replayed at commit. A stale command receives a durable `failed-terminal` receipt and does not block later commands. The commit receipt is stored with the facts and outbox rows, so a restart can finish a committed command without applying it again.
 
-Older actor journals may contain folded state in event payloads. When the matching committed inbox entry identifies the original command payload and only one interpretation is valid, replay recovers it automatically. If both interpretations are valid but produce different states, replay stops with an ambiguous-payload error. Set `legacyEventPayloads: "command"` when those records are known to contain folded state, or `legacyEventPayloads: "event"` when they are original event payloads. Both `createRivetActorHost` and `createRivetRuntimeHost` accept the option. Folds must be deterministic and free of side effects.
+Folds must be deterministic and free of side effects.
 
 ## Outbox delivery
 
