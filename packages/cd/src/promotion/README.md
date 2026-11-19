@@ -109,6 +109,10 @@ retries also compare their recorded inputs and return the persisted expiry.
 This binding does not fence concurrent executions of the same request.
 CUE constraints: [`data-models/promotion.cue`](../../data-models/promotion.cue).
 
+The maintained verification skill executes five isolated implementation
+mutations, four TLA+ mutations, and one induction mutation. Every weakened
+guard must produce its expected counterexample before the baseline advances.
+
 New rollbacks claim a separate `cd-rollback-claim-<rollback-id>` stream before
 effects. Its metadata binds the Camp, reason, requested Set, and current Set;
 the result stores the request fingerprint. Conflicting requests using the same
