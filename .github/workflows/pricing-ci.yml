@@ -5,6 +5,8 @@ on:
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"
+      - "packages/cloud/**"
+      - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
@@ -23,6 +25,8 @@ on:
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"
+      - "packages/cloud/**"
+      - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
@@ -127,6 +131,8 @@ jobs:
           pnpm exec turbo run build test \
             --filter=@hobo/pricing \
             --filter=@hobo/broker \
+            --filter=@hobo/cloud \
+            --filter=@hobo/iac-alchemy \
             --filter=@hobo/dispatcher \
             --filter=@hobo/events \
             --filter=@hobo/provider-manifest \
@@ -143,7 +149,7 @@ jobs:
           mode: save
 
   pricing-models:
-    name: Check bounded pricing models
+    name: Check bounded IaC models
     needs: route
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
