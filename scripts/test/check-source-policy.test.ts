@@ -219,25 +219,27 @@ f: /* TODO: remove block */`;
 			[1, 2],
 		);
 		const sql =
-			"SELECT 'it''s -- data', $$-- data$$; -- explanation\n/* explanation */";
+			"SELECT 'it''s -- data # data', $$-- data # data$$; -- explanation\n/* explanation */\n# explanation";
 		assert.deepEqual(
-			commentViolations("x.sql", sql, new Set([1, 2])).map((item) => item.line),
-			[1, 2],
+			commentViolations("x.sql", sql, new Set([1, 2, 3])).map(
+				(item) => item.line,
+			),
+			[1, 2, 3],
 		);
 		assert.deepEqual(
 			commentViolations(
 				"x.sql",
-				"/* relation pkg/* */\n-- TODO: follow up\n",
+				"/* relation pkg/* nested */ TODO: follow up */\n-- explanation\n",
 				new Set([1, 2]),
 			).map((item) => ({ line: item.line, message: item.message })),
 			[
 				{
 					line: 1,
-					message: "make the code self-documenting instead of adding a comment",
+					message: "finish deferred work instead of adding a marker",
 				},
 				{
 					line: 2,
-					message: "finish deferred work instead of adding a marker",
+					message: "make the code self-documenting instead of adding a comment",
 				},
 			],
 		);

@@ -78,7 +78,10 @@ export function lexComments(
 		let index = start;
 		let parentheses = interpolation ? 1 : 0;
 		while (index < text.length) {
-			if (text.startsWith(line, index)) {
+			if (
+				text.startsWith(line, index) ||
+				(dialect === "sql" && text[index] === "#")
+			) {
 				const end = text.indexOf("\n", index);
 				const stop = end < 0 ? text.length : end;
 				comments.push({
@@ -94,7 +97,10 @@ export function lexComments(
 				index += 2;
 				let nesting = 1;
 				while (index < text.length && nesting > 0) {
-					if (dialect === "wit" && text.startsWith("/*", index)) {
+					if (
+						(dialect === "wit" || dialect === "sql") &&
+						text.startsWith("/*", index)
+					) {
 						nesting++;
 						index += 2;
 					} else if (text.startsWith("*/", index)) {
