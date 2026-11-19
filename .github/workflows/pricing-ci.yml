@@ -6,6 +6,7 @@ on:
       - "packages/pricing/**"
       - "packages/broker/**"
       - "packages/cloud/**"
+      - "packages/core/**"
       - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
@@ -26,6 +27,7 @@ on:
       - "packages/pricing/**"
       - "packages/broker/**"
       - "packages/cloud/**"
+      - "packages/core/**"
       - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
@@ -115,6 +117,7 @@ jobs:
             --filter=@hobo/pricing \
             --filter=@hobo/broker \
             --filter=@hobo/cloud \
+            --filter=@hobo/core \
             --filter=@hobo/iac-alchemy \
             --filter=@hobo/dispatcher \
             --filter=@hobo/events \
