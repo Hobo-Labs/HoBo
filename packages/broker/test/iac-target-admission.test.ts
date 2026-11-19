@@ -580,7 +580,9 @@ describe("provider-neutral IaC target budget admission", () => {
 			expect(decision).toMatchObject({ status: "admitted" });
 			expect(decision.quote?.entitlementClaims.length).toBeGreaterThan(0);
 			expect(
-				decision.quote?.entitlementClaims.some((claim) => claim.unit === "minute"),
+				decision.quote?.entitlementClaims.some(
+					(claim) => claim.unit === "minute",
+				),
 			).toBe(true);
 			expect(
 				decision.quote?.entitlementClaims.some(
