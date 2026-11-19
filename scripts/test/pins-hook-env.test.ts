@@ -1,11 +1,3 @@
-/**
- * A git hook runs with the repository named in its environment: in a linked
- * worktree git exports GIT_DIR and GIT_INDEX_FILE to pre-commit, GIT_DIR to
- * pre-push. Those variables beat the working directory, so every git the pins
- * run would act on the superproject instead of the submodule or the probe.
- * The pins scrub the repository-locating variables from every git they run:
- * each verb behaves exactly as it does without them.
- */
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -19,7 +11,6 @@ import {
 	scratch,
 } from "./support/pins-support.ts";
 
-/** What a run must not change in the superproject. */
 function superState(work: string) {
 	return {
 		head: git(work, ["rev-parse", "HEAD"]),
@@ -30,7 +21,6 @@ function superState(work: string) {
 	};
 }
 
-/** The environment a pre-commit hook in that worktree would see. */
 function hookEnv(work: string): NodeJS.ProcessEnv {
 	return {
 		GIT_DIR: join(work, ".git"),
@@ -39,7 +29,6 @@ function hookEnv(work: string): NodeJS.ProcessEnv {
 	};
 }
 
-/** Commit ids and scratch paths differ between two fixtures; the rest must not. */
 function comparable(text: string, work: string, remote: Remote): string {
 	return text
 		.replaceAll(work, "<work>")

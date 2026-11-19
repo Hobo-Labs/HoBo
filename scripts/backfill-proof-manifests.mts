@@ -1,18 +1,3 @@
-/**
- * W1 proof.json bootstrap.
- *
- * For every grandfathered proof package without a proof.json, generate an
- * honest manifest: layer/type from the path, title from the README's first
- * heading, the Linear id when the README names one, a references graph derived
- * mechanically from real imports and README links (existing targets only),
- * and an artifacts block that declares what actually exists on disk. No
- * fabricated waivers — packages missing wave-W3+/W6 artifacts stay in
- * `_grandfathered.json` (advisory tier) until their wave lands.
- *
- * Idempotent: re-running rewrites only packages without a proof.json (or all
- * with --force). Every manifest is validated against proofManifestSchema
- * before writing.
- */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +15,6 @@ const repoRoot = path.resolve(
 );
 const force = process.argv.includes("--force");
 
-// SAFETY: assertion to `ON.parse( readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"), ) as { packages: string[] }; ` is required at this boundary.
 const registry = JSON.parse(
 	readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
 ) as { packages: string[] };
@@ -57,8 +41,6 @@ function listFilesRecursive(dir: string): string[] {
 	return out;
 }
 
-// Repo-relative proof-package references found in real import specifiers and
-// README links. Only targets that exist on disk are recorded.
 function referencesFor(workspace: string): ProofManifest["references"] {
 	const absolute = path.join(repoRoot, workspace);
 	const technical = new Set<string>();

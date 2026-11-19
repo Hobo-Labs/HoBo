@@ -1,21 +1,3 @@
-/**
- * Draft-artifact hardening gate.
- *
- * For proof packages ADDED or MODIFIED in the validated diff, asserts the per-layer artifact
- * requirements from the draft skill (`.claude/skills/draft/references/<layer>/process.md`):
- * a zod-valid `proof.json` (schema: `scripts/lib/proof-manifest.ts`), executed `examples/`
- * (the gate runs each example and diffs committed expected output — the unforgeable artifact),
- * optional package-local `draft:prepare` setup before example execution,
- * a structure-valid notebook, layer artifacts (bench for technical, executable features for
- * epic, per-experience-type assets for exp), and waivers backed by an ADR.
- *
- * Packages listed in `src/draft/_grandfathered.json` (the pre-hardening baseline) get
- * ADVISORY warnings only — backfill waves delete entries to activate enforcement. New
- * packages must comply fully. Modes mirror the other gates: `--staged`, `--base=<ref>`,
- * default `HEAD~1`. Positional args select packages directly (no git diff), so backfill
- * work can verify a package before its grandfather entry is deleted:
- * `tsx scripts/check-draft-artifacts.ts src/draft/technical-proofs/<slug>`.
- */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -70,7 +52,7 @@ export function checkWorkspace(
 ): WorkspaceReport {
 	const root = options.root ?? repoRoot;
 	const runExamples = options.runExamples ?? true;
-	const runBench = options.runBench ?? false; // benches execute in their own lane; presence is gated here
+	const runBench = options.runBench ?? false;
 	const abs = path.join(root, workspace);
 	const problems: string[] = [];
 	const layer = layerForWorkspace(workspace);
@@ -131,7 +113,6 @@ export function checkWorkspace(
 			);
 	}
 
-	// examples/ — executed, unforgeable.
 	if (!waived.has("examples")) {
 		let examplesReady = true;
 		const packagePath = path.join(abs, "package.json");
@@ -201,14 +182,12 @@ export function checkWorkspace(
 		}
 	}
 
-	// notebook — structure-level (outputs are forgeable JSON; examples carry execution).
 	if (!waived.has("notebook")) {
 		const notebookPath = path.join(abs, manifest.artifacts.notebook);
 		if (!existsSync(notebookPath)) {
 			problems.push(`missing notebook: ${manifest.artifacts.notebook}`);
 		} else {
 			try {
-				// SAFETY: assertion to `se(readFileSync(notebookPath, "utf8")) as { nbformat?: number; cells?: Array<{ cell_type?: string; outputs?: unknown[] }` is required at this boundary.
 				const nb = JSON.parse(readFileSync(notebookPath, "utf8")) as {
 					nbformat?: number;
 					cells?: Array<{ cell_type?: string; outputs?: unknown[] }>;
@@ -233,7 +212,6 @@ export function checkWorkspace(
 		}
 	}
 
-	// layer-specific artifacts
 	if (layer === "technical" && !waived.has("bench")) {
 		const benchPath = path.join(abs, manifest.artifacts.bench ?? "bench");
 		const benches =
@@ -322,14 +300,13 @@ export function checkWorkspace(
 				const text = head.toString("utf8");
 				const looksReal = f.endsWith(".svg")
 					? text.includes("<svg") || text.includes("<?xml")
-					: head.length >= 8 && head[0] !== 0x20; // binary magic present, not whitespace padding
+					: head.length >= 8 && head[0] !== 0x20;
 				if (!looksReal || statSync(path.join(abs, f)).size < 128)
 					problems.push(`asset ${f} does not look like a real image/wireframe`);
 			}
 		}
 	}
 
-	// diagrams — presence where declared
 	if (!waived.has("diagrams")) {
 		for (const diagram of manifest.artifacts.diagrams) {
 			const target = path.join(abs, diagram);
@@ -350,7 +327,6 @@ export function checkWorkspace(
 function main() {
 	const argv = process.argv.slice(2);
 	const grandfathered = new Set(
-		// SAFETY: assertion to `( readFileSync( path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8", ), ) as { packages: string[] } ).packa` is required at this boundary.
 		(
 			JSON.parse(
 				readFileSync(
@@ -378,8 +354,6 @@ function main() {
 
 	let failures = 0;
 	for (const workspace of workspaces) {
-		// Direct package selection is the backfill verification path: enforce
-		// strictly even while the grandfather entry still exists.
 		const isGrandfathered =
 			positional.length === 0 && grandfathered.has(workspace);
 		const report = checkWorkspace(workspace);

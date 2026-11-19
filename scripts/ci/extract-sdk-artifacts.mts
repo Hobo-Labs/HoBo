@@ -4,7 +4,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** Copy /sdk/artifacts from a local hobo-sdk candidate image into a host directory. */
 export function extractSdkArtifactsFromImage(
 	imageRef: string,
 	destination?: string,

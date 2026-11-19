@@ -17,7 +17,6 @@ import {
 import { negotiateWireVersion } from "./wire-version.js";
 import { isJsonString, isJsonObject, type JsonValue } from "./json.js";
 
-
 type IndexedPins = Map<
   string,
   ComponentRegistration["imports"][number] | ProviderRegistration["exports"][number]
@@ -50,7 +49,6 @@ export function createWrpcLinkLayer(options: {
   const codec =
     "codec" in transport && isJsonObject(transport.codec) ? transport.codec : undefined;
   const namedCodec: { name?: JsonValue } =
-    // SAFETY: transport.codec is a host codec bag when present.
     codec as never;
   const codecName = isJsonString(namedCodec.name) ? namedCodec.name : "unknown";
 

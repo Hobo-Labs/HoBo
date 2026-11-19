@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** Stage npm pack tarballs for allowlisted SDK packages into an artifact directory. */
 import { spawnSync } from "node:child_process";
 import {
 	cpSync,
@@ -30,7 +29,6 @@ export const SDK_PACKAGES = [
 	"@hobo/cli",
 ] as const;
 
-/** Turbo argv for the SDK allowlist build (honors `HOBO_TURBO_CONCURRENCY`). */
 export function releaseSdkTurboBuildArgv(
 	env: NodeJS.ProcessEnv = process.env,
 ): string[] {
@@ -45,7 +43,6 @@ export function releaseSdkTurboBuildArgv(
 	];
 }
 
-/** Turbo-build every allowlisted SDK package before `npm pack` staging. */
 export function buildReleaseSdkPackages(
 	env: NodeJS.ProcessEnv = process.env,
 ): void {
@@ -68,7 +65,6 @@ type NpmPackLine = { filename: string };
 
 type WorkspaceManifest = { name: string };
 
-/** Install order for SDK tarballs (MANIFEST.json pack order, not lexical). */
 export function orderedSdkTarballPaths(artifactsDir: string): string[] {
 	const manifestPath = join(artifactsDir, "MANIFEST.json");
 	if (!existsSync(manifestPath)) {
@@ -77,7 +73,6 @@ export function orderedSdkTarballPaths(artifactsDir: string): string[] {
 		);
 	}
 	const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
-	// SAFETY: stageSdkArtifactsDir writes MANIFEST.json from SdkArtifactManifest.
 	const manifest = parsed as SdkArtifactManifest;
 	const paths = manifest.packages.map((entry) =>
 		join(artifactsDir, entry.file),
@@ -103,11 +98,9 @@ function findPackageDir(name: string): string {
 		const pkgPath = join(root, "packages", rel, "package.json");
 		try {
 			const raw: unknown = JSON.parse(readFileSync(pkgPath, "utf8"));
-			// SAFETY: only `name` is read to locate the workspace directory.
 			const manifest = raw as { name?: string };
 			if (manifest.name === name) return join(root, "packages", rel);
 		} catch {
-			/* skip */
 		}
 	}
 	throw new Error(`package dir not found for ${name}`);
@@ -129,7 +122,6 @@ export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 		const rawPkg: unknown = JSON.parse(
 			readFileSync(join(pkgDir, "package.json"), "utf8"),
 		);
-		// SAFETY: workspace package.json must declare `name` before pack staging.
 		const staged = applyScopeToManifest(rawPkg as WorkspaceManifest, map, {
 			version: semver,
 		});
@@ -153,7 +145,6 @@ export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 			process.exit(1);
 		}
 		const parsedRaw: unknown = JSON.parse(pack.stdout);
-		// SAFETY: `npm pack --json` emits a one-element array with `filename`.
 		const parsed = parsedRaw as NpmPackLine[];
 		const file = parsed[0]?.filename;
 		if (!file)

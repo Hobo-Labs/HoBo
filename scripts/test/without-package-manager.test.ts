@@ -39,9 +39,6 @@ after(() => {
 	for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
 });
 
-// The relevant-check policy names its gates as `pnpm run …` / `pnpm exec …`.
-// The pre-commit hook runs them on machines with no usable pnpm, so the
-// runner rewrites them to what Node and the checkout already provide.
 describe("running a pnpm-shaped check without pnpm", () => {
 	it("runs a script through scripts/run-script.mts, arguments after --", () => {
 		assert.deepEqual(posix("pnpm", ["run", "lint", "--", "--staged"]), {
@@ -62,7 +59,6 @@ describe("running a pnpm-shaped check without pnpm", () => {
 	});
 
 	it("hands a script an argument holding ' and ; as itself", () => {
-		// `node --run lint -- "--base=main';touch PWNED;#"` ran `touch PWNED`.
 		const dir = mkdtempSync(join(tmpdir(), "hobo-without-pm-"));
 		scratch.push(dir);
 		mkdirSync(join(dir, "scripts"));
@@ -110,8 +106,6 @@ describe("running a pnpm-shaped check without pnpm", () => {
 	});
 
 	it("refuses an exec it would have to guess at", () => {
-		// pnpm reads these as options, a path or a PATH lookup; joining them onto
-		// node_modules/.bin would run something else, or nothing.
 		for (const [args, says] of [
 			[
 				["exec", "--filter", "./pkg", "turbo", "run", "test"],

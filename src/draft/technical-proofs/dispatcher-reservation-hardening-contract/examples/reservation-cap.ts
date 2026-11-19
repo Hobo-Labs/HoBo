@@ -1,7 +1,3 @@
-/**
- * Runnable example: free-tier reservation ledger cannot over-commit concurrent
- * dispatch. Gate executes this file and diffs stdout to the sibling .expected.txt.
- */
 import assert from "node:assert/strict";
 
 import {

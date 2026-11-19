@@ -1,10 +1,5 @@
 import type { BindleDefinition } from "@hobo/bindles";
 
-/**
- * Extract OCI image refs from a Bindle definition's container resources.
- * Ship/bridge paths must use this — never invent images from example ids.
- */
-
 export type BindleContainerRef = {
 	readonly name: string;
 	readonly image: string;

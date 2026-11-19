@@ -7,7 +7,6 @@ const trainingMarker = join(
 	root,
 	"external/ts-autocode/packages/training/node_modules/@agentv/core/package.json",
 );
-/** Hoisted for @hobo/runtime — not at repo root (pnpm.overrides only). */
 const groundingMarker = join(
 	root,
 	"packages/runtime/node_modules/ts-autocode-grounding/package.json",

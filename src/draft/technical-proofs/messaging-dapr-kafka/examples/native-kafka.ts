@@ -1,7 +1,3 @@
-/**
- * Example: native Kafka messaging path (ports only).
- * Run: pnpm exec tsx examples/native-kafka.ts
- */
 
 import { runNativeKafkaPath } from "../src/scenarios.js";
 

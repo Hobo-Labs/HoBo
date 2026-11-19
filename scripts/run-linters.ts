@@ -25,7 +25,6 @@ const base =
 const staged = args.has("--staged");
 const all = args.has("--all");
 
-/** The command's output, or `undefined` when it failed. */
 function tryCapture(
 	command: string,
 	commandArgs: string[],
@@ -46,12 +45,6 @@ function splitFiles(output: string) {
 		.filter(Boolean);
 }
 
-/**
- * A listing the linters are chosen from. A git failure (an unknown or
- * unfetched base, a shallow clone, no repository) used to read as "no changed
- * markdown files", so the gate skipped every linter and passed. It is an
- * error instead.
- */
 function listing(
 	commandArgs: string[],
 	failure: string,
@@ -146,8 +139,6 @@ const designProblems =
 	designTargets?.length === 0
 		? []
 		: (await checkDesignDocs({ root, files: designTargets })).problems;
-// The corpus is cross-referential — one changed capture can invalidate a category
-// page or the generated matrix — so any touch re-checks the whole of it.
 const competitorProblems = competitorTouched(markdownFiles)
 	? (await checkCompetitorDocs({ root })).problems
 	: [];

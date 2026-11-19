@@ -342,7 +342,6 @@ export function parseCliMcpParityContract(contract: CliMcpParityContract): Parse
     throw new CliMcpParityParseError(errors);
   }
 
-  // SAFETY: `return contract as ParsedCliMcpParityContract;` is required at this I/O or test boundary.
   return contract as ParsedCliMcpParityContract;
 }
 

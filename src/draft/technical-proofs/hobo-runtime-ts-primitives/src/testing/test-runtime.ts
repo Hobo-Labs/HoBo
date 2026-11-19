@@ -9,7 +9,6 @@ import type { Hook, StepOpts } from "../types.js";
 import type { RunContextBinding } from "../step.js";
 import { isJsonString, isJsonNumber, type JsonValue, type JsonObject } from "../json.js";
 
-
 const DEFAULT_RETRIES = 3;
 
 export interface TestRuntimeOptions {
@@ -85,7 +84,6 @@ export function testRuntime(options: TestRuntimeOptions = {}): TestRuntime {
 
   async function readStream(streamId: string): Promise<ParsedEnvelope[]> {
     const raw = await eventStore.read(streamId, 1);
-    // SAFETY: assertion to `return (raw as unknown[]).map((entry) => parseEnvelope(entry));` is required at this boundary.
     return (raw as unknown[]).map((entry) => parseEnvelope(entry));
   }
 
@@ -139,7 +137,6 @@ export function testRuntime(options: TestRuntimeOptions = {}): TestRuntime {
 
   async function appendGlobalEvent(type: string, data: JsonValue): Promise<number> {
     globalSeq += 1;
-    // SAFETY: assertion to `const payload = { ...(data as JsonObject), seq: globalSeq };` is required at this boundary.
     const payload = { ...(data as JsonObject), seq: globalSeq };
     const existing = await readStream("global:events");
     await eventStore.append(
@@ -187,7 +184,6 @@ export function testRuntime(options: TestRuntimeOptions = {}): TestRuntime {
     const events = await readRunEvents(run.runId);
     const memoHit = findStepCompleted(events, stepKey);
     if (memoHit) {
-      // SAFETY: assertion to `return memoHit.data.result as O;` is required at this boundary.
       return memoHit.data.result as O;
     }
     const failed = findStepFailed(events, stepKey);
@@ -242,7 +238,6 @@ export function testRuntime(options: TestRuntimeOptions = {}): TestRuntime {
   async function runSleep(run: InternalRun, duration: string | number): Promise<void> {
     const events = await readRunEvents(run.runId);
     const existing = events.find((event) => event.type === "run.SleepScheduled");
-    // SAFETY: assertion to `const wakeAtMs = existing?.data.wakeAtMs as number | undefined;` is required at this boundary.
     const wakeAtMs = existing?.data.wakeAtMs as number | undefined;
     if (existing && wakeAtMs !== undefined && clock.nowMs() >= wakeAtMs) {
       return;
@@ -283,7 +278,6 @@ export function testRuntime(options: TestRuntimeOptions = {}): TestRuntime {
           (event) => event.type === "run.HookResumed" && event.data.token === token,
         );
         if (resumed) {
-          // SAFETY: assertion to `return resumed.data.payload as T;` is required at this boundary.
           return resumed.data.payload as T;
         }
 

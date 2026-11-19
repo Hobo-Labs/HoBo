@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-/**
- * Apply release/npm-scope-map.json to a staged package manifest (publish boundary only).
- * Does not rewrite workspace source manifests.
- */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -12,11 +8,6 @@ const mapPath = join(root, "release", "npm-scope-map.json");
 type ScopeMap = {
 	publicScope: string;
 	packages: Record<string, string>;
-	/**
-	 * The source repository every published manifest names. npmjs verifies a
-	 * provenance bundle against it: the statement's workflow repository must
-	 * match `repository.url` in the tarball's package.json.
-	 */
 	repository?: string;
 };
 
@@ -46,7 +37,6 @@ export function assertNpmScopeMapAllowlist(map: ScopeMap): void {
 
 export function loadNpmScopeMap(): ScopeMap {
 	const parsed: unknown = JSON.parse(readFileSync(mapPath, "utf8"));
-	// SAFETY: `release/npm-scope-map.json` is repo-owned release metadata; contract tests pin every row.
 	const map = parsed as ScopeMap;
 	assertNpmScopeMapAllowlist(map);
 	return map;
@@ -93,7 +83,6 @@ function remapDeps(
 
 const WORKSPACE_RANGE = /^workspace:/;
 
-/** Replace workspace ranges with the release semver for published @hobo-labs deps. */
 function pinReleaseDependencyRanges(
 	deps: Record<string, string> | undefined,
 	map: ScopeMap,
@@ -114,7 +103,6 @@ function pinReleaseDependencyRanges(
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** Returns a publish-ready manifest object (caller writes to staging dir). */
 export function applyScopeToManifest(
 	manifest: PackageJson,
 	map: ScopeMap = loadNpmScopeMap(),
@@ -161,7 +149,6 @@ function main(): void {
 		process.exit(2);
 	}
 	const manifest = JSON.parse(readFileSync(inPath, "utf8"));
-	// SAFETY: CLI passes a workspace package.json path; parse boundary is the publish staging step.
 	const staged = applyScopeToManifest(manifest as PackageJson);
 	writeFileSync(outPath, `${JSON.stringify(staged, null, "\t")}\n`, "utf8");
 }

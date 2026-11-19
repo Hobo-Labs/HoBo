@@ -1,12 +1,3 @@
-/**
- * `scripts/bootstrap-siblings.mts` for asset pins: a release asset is pinned
- * by sha256, fetched once per machine into a content-addressed cache, and
- * re-hashed whenever the cache is asked about it.
- *
- * The release server is a real HTTP server on loopback and the script is the
- * real script; the manifest's `repo` points at that server, which the script
- * accepts only because the test sets HOBO_PINS_ALLOW_LOCAL.
- */
 import assert from "node:assert/strict";
 import {
 	existsSync,
@@ -205,7 +196,6 @@ describe("bootstrap-siblings --status (assets)", () => {
 			/fix: pnpm run pins:fetch mirror {3}\(replaces the corrupt file\)/,
 		);
 		assert.doesNotMatch(run.stdout, /fix: delete/);
-		// Fetching replaces the corrupt file instead of trusting it.
 		ok(await runBootstrapAsync(root, ["--fetch", "mirror"]));
 		assert.deepEqual(readFileSync(cached), BYTES);
 		ok(await runBootstrapAsync(root, ["--status", "--offline"]));
@@ -231,7 +221,6 @@ describe("bootstrap-siblings --status (assets)", () => {
 		ok(await runBootstrapAsync(root, ["--fetch", "mirror"]));
 		const agrees = ok(await runBootstrapAsync(root, ["--status", "--online"]));
 		assert.match(agrees.stdout, /matches SHA256SUMS/);
-		// A corrupt cache is not the release's fault: no suggestion to re-pin.
 		writeFileSync(cached, "corrupt");
 		const corrupt = await runBootstrapAsync(root, ["--status", "--online"]);
 		assert.equal(corrupt.status, 1);
@@ -288,7 +277,6 @@ describe("bootstrap-siblings --bump (assets)", () => {
 		assert.equal(after.assets.kit, null);
 		assert.deepEqual(after.git, JSON.parse(before).git);
 		assert.deepEqual(after.vendor, JSON.parse(before).vendor);
-		// The download that proved the sum primed the cache, so status is ok offline.
 		assert.deepEqual(
 			readFileSync(join(root, ".cache/siblings", sha256Hex(bytes), "mirror")),
 			bytes,

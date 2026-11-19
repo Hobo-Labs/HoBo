@@ -1,7 +1,6 @@
 import { createPortDescriptor, portKey } from "./ports.js";
 import { cloneAsJson, type JsonValue } from "./json.js";
 
-
 export interface Container {
   register<T>(descriptor: JsonValue, implementation: T): void;
   resolve<T>(descriptor: JsonValue): T;
@@ -24,7 +23,6 @@ export function createContainer(): Container {
       if (!implementations.has(key)) {
         throw new Error(`port ${key} is not registered`);
       }
-      // SAFETY: `return implementations.get(key) as T;` is required at this I/O or test boundary.
       return implementations.get(key) as T;
     },
   };

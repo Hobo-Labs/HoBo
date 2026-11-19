@@ -1,12 +1,3 @@
-/**
- * A submodule's `.git` that names the superproject's own repository is
- * refused before any git runs there: a `.git` link to `../../.git`, or a
- * `.git` file holding `gitdir: ../../.git`. git's top level is then the
- * submodule's path (so the R4 check passes) but the repository is the
- * superproject's: status used to report the superproject's commit as the
- * submodule's HEAD and advise `git -C <path> stash`, and fetch, following
- * that, wrote the library's branches into the superproject's refs.
- */
 import assert from "node:assert/strict";
 import {
 	existsSync,
@@ -46,7 +37,6 @@ interface Pointed {
 	readonly remote: Remote;
 }
 
-/** An initialised checkout whose external/lib/.git names the superproject's. */
 function pointedAtSuper(kind: "link" | "gitfile"): Pointed {
 	const dir = scratch("dotgit");
 	const remote = makeRemote(dir);

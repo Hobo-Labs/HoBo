@@ -341,13 +341,11 @@ export function parseKnownLimitationsRegister(input: JsonValue): ParsedKnownLimi
     }
   }
 
-  // SAFETY: `const result = validateKnownLimitationsRegister(input as KnownLimitationsRegiste` is required at this I/O or test boundary.
   const result = validateKnownLimitationsRegister(input as KnownLimitationsRegister);
   if (!result.ok) {
     throw new Error(`known limitations register invalid:\n${result.errors.join("\n")}`);
   }
 
-  // SAFETY: `return result.record as ParsedKnownLimitationsRegister;` is required at this I/O or test boundary.
   return result.record as ParsedKnownLimitationsRegister;
 }
 

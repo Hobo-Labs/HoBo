@@ -1,20 +1,3 @@
-/**
- * Codemod: replace `expr!` (non-null assertion) with a total accessor that
- * fails loudly and names what was missing.
- *
- * eli5: `xs[0]!` tells the type checker "trust me". When the trust is
- * misplaced, `undefined` leaks downstream and blows up somewhere unrelated.
- * `first(xs, "xs")` narrows the same way but throws *here*, saying what was
- * missing — see `@hobo/core/total-access`.
- *
- * Usage:
- *   node --import tsx scripts/codemod-total-access.mts <file-or-dir>...
- *   node --import tsx scripts/codemod-total-access.mts --dry <paths>
- *
- * The rewrite is textual but driven by the TypeScript AST, so it never guesses
- * where an expression begins. Sites it cannot rewrite safely are reported and
- * left alone for a human.
- */
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -33,7 +16,6 @@ type HelperName = "must" | "at" | "first" | "last" | "get";
 const DRY = process.argv.includes("--dry");
 const TARGETS = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 
-/** Source text of a node, collapsed to a single line for use as a label. */
 function label(node: ts.Node, source: ts.SourceFile): string {
 	return node
 		.getText(source)
@@ -42,12 +24,6 @@ function label(node: ts.Node, source: ts.SourceFile): string {
 		.slice(0, 80);
 }
 
-/**
- * Choose the helper that best expresses this assertion.
- *
- * `xs[0]!` → first(xs, "xs"); `xs[i]!` → at(xs, i, "xs");
- * `m.get(k)!` → get(m, k, "m"); anything else → must(expr, "expr").
- */
 function planRewrite(
 	node: ts.NonNullExpression,
 	source: ts.SourceFile,
@@ -57,14 +33,6 @@ function planRewrite(
 	if (ts.isElementAccessExpression(inner)) {
 		const target = inner.expression.getText(source);
 		const index = inner.argumentExpression;
-		// `at`/`first` are array accessors. Without a type checker the only
-		// index we can *prove* is an array index is a numeric literal — a
-		// variable key may well be a record lookup, so that falls through to
-		// `must`, which is correct for both shapes.
-		// A negative literal is NOT an array index: `xs[-1]` is always undefined,
-		// whereas `at(xs, -1)` returns the last element. Routing it through `at`
-		// would turn a latent bug into working code and hide it. Send it to
-		// `must`, which preserves the original meaning exactly.
 		const negative =
 			ts.isPrefixUnaryExpression(index) &&
 			index.operator === ts.SyntaxKind.MinusToken;
@@ -127,7 +95,6 @@ function planRewrite(
 	) {
 		const method = inner.expression.name.text;
 		if (method === "pop" || method === "shift") {
-			// `q.shift()!` mutates — keep the call, just make the emptiness loud.
 			return {
 				start: node.getStart(source),
 				end: node.getEnd(),
@@ -137,8 +104,6 @@ function planRewrite(
 		}
 	}
 
-	// A bare `foo!` used as a *call target* or in a `new` position would change
-	// meaning if wrapped; those are left for a human.
 	const parent = node.parent;
 	if (
 		(ts.isCallExpression(parent) && parent.expression === node) ||
@@ -161,7 +126,6 @@ function collect(node: ts.Node, out: ts.NonNullExpression[]): void {
 	ts.forEachChild(node, (child) => collect(child, out));
 }
 
-/** Import specifier for `@hobo/core/total-access` from a file inside core itself. */
 function importSpecifier(file: string): string {
 	const parts = file.split(sep);
 	const packagesAt = parts.lastIndexOf("packages");
@@ -207,18 +171,10 @@ function rewriteFile(file: string): RewriteCount {
 	}
 	if (rewrites.length === 0) return { changed: 0, skipped };
 
-	// Apply back-to-front so earlier offsets stay valid. Nested assertions are
-	// rewritten outermost-first; the inner text is carried along verbatim.
 	const ordered = [...rewrites].sort((a, b) => b.start - a.start);
 	const helpers = new Set<HelperName>(ordered.map((r) => r.helper));
 	const names = [...helpers].sort();
 
-	// A helper name may already be bound in this file (`const first = …`).
-	// Rather than reason about scopes, fall back to a namespace import whenever
-	// the name appears as a binding anywhere — always correct, never shadowed.
-	// The prefix is applied to the replacement text we generate, NEVER by a
-	// blanket regex over the file: a local `function first()` that is *called*
-	// would otherwise have its own calls rewritten to point at the helper.
 	const collides = names.some((n) =>
 		new RegExp(`\\b(?:const|let|var|function|class)\\s+${n}\\b`, "u").test(
 			text,
@@ -231,15 +187,13 @@ function rewriteFile(file: string): RewriteCount {
 	let applied = 0;
 	let lastStart = Number.POSITIVE_INFINITY;
 	for (const r of ordered) {
-		if (r.end > lastStart) continue; // nested inside a rewrite already applied
+		if (r.end > lastStart) continue;
 		out = `${out.slice(0, r.start)}${qualify(r)}${out.slice(r.end)}`;
 		lastStart = r.start;
 		applied += 1;
 	}
 
-	// Re-running over an already-converted file must not add a second import:
 	// biome merges the two lines and leaves `import { must, must }`, a parse
-	// error. Merge into the existing one instead.
 	const existing = new RegExp(
 		`import \\{([^}]*)\\} from "${importSpecifier(file).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}";`,
 		"u",

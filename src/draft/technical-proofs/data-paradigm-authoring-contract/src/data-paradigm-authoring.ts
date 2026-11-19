@@ -436,7 +436,6 @@ class DataHandleImpl implements DataHandle {
     }
 
     const existing = this.providerAnnotations[option.annotationKey] ?? {};
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     this.providerAnnotations[option.annotationKey] = sortKeys(
       mergeOptionValues(existing, option.value, option.annotationKey),
     ) as JsonObject;
@@ -462,7 +461,6 @@ class DataHandleImpl implements DataHandle {
 
     if (Object.keys(this.providerAnnotations).length > 0) {
       resource.annotations = {
-        // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
         with: sortKeys(this.providerAnnotations) as Record<string, JsonObject>,
       };
       lockInMarkers.push(...buildProviderLockInMarkers(this.name, this.providerAnnotations));
@@ -520,7 +518,6 @@ class DataHandleImpl implements DataHandle {
       };
     }
 
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     return sortKeys(resource) as DataManifestResource;
   }
 }
@@ -602,7 +599,6 @@ function assertParadigmPackage<T>(packageDescriptor: T, path: string): void {
 }
 
 function assertDataHandle<T>(handle: T): void {
-  // SAFETY: data handles are host objects with kind and toManifestResource.
   const candidate = handle as { kind?: JsonValue; toManifestResource?: JsonValue };
   if (!isRecord(handle) || candidate.kind !== "data" || !(candidate.toManifestResource instanceof Function)) {
     throw new AuthoringSurfaceError("handles", "must contain data() handles");
@@ -645,7 +641,6 @@ function mergeOptionValues(left: JsonValue, right: JsonValue, path: string): Jso
 function sortKeys<T>(value: T): T {
   if (Array.isArray(value)) {
     const sorted: T =
-      // SAFETY: array entries are recursively sorted with the same T contract.
       value.map((entry) => sortKeys(entry)) as never;
     return sorted;
   }
@@ -657,7 +652,6 @@ function sortKeys<T>(value: T): T {
     bag[key] = sortKeys(value[key] ?? null);
   }
   const sorted: T =
-    // SAFETY: sorted bag preserves the caller's JSON-compatible object contract.
     bag as never;
   return sorted;
 }

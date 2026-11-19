@@ -1,12 +1,3 @@
-/**
- * `scripts/bootstrap-siblings.mts` for git pins, against real repositories on
- * disk: a throwaway remote, a work tree whose submodule is uninitialised, and
- * the real script run under Node's native type stripping.
- *
- * The pin is the submodule's gitlink, so every case here is a statement about
- * what `git submodule update --depth 1`, sparse-checkout and the index end up
- * holding, never about the script's own bookkeeping.
- */
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -69,7 +60,6 @@ describe("bootstrap-siblings: initialising a git pin", () => {
 			new RegExp(`lib {2}initialised at ${short(f.remote.shas[1])}`),
 		);
 		assert.match(run.stdout, /borrowed from .*; keep that clone in place\)/);
-		// The gitlink, not the branch tip: shas[2] is the tip and is not what was asked for.
 		assert.equal(git(f.sub, ["rev-parse", "HEAD"]), f.remote.shas[1]);
 		assert.equal(git(f.sub, ["rev-parse", "--is-shallow-repository"]), "true");
 		const gitDir = git(f.sub, ["rev-parse", "--absolute-git-dir"]);
@@ -131,7 +121,6 @@ describe("bootstrap-siblings: initialising a git pin", () => {
 		]) {
 			git(f.remote.dir, ["config", `uploadpack.${key}`, "false"]);
 		}
-		// Protocol v0 is where a server can refuse an unadvertised commit.
 		const run = ok(runBootstrap(f.work, [], {}, [["protocol.version", "0"]]));
 		assert.match(run.stdout, /initialised at/);
 		assert.match(run.stdout, /full/);
@@ -312,7 +301,6 @@ describe("bootstrap-siblings --bump", () => {
 	it("a short id the submodule lacks is resolved through --reference", () => {
 		const f = fixture(1);
 		ok(runBootstrap(f.work, []));
-		// shas[0] is older than anything the shallow clone fetched.
 		ok(
 			runBootstrap(f.work, [
 				"--bump",

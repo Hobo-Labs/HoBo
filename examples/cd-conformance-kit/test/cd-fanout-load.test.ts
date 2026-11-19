@@ -1,7 +1,3 @@
-// The CD fan-out load lane: 10,000 Camps, one fan-out,
-// p99 controller tick under 1 s. The Postgres-backed run binds the same
-// harness to @hobo/storage-postgres when HOBO_TEST_POSTGRES_URL is set; this
-// file proves the runner and the in-memory reference.
 import { CD_FANOUT_LOAD_DEFAULTS, cdPercentile, runFanoutLoad } from "@hobo/conformance";
 import { describe, expect, it } from "vitest";
 import { refLoadHarness } from "../src/index.js";

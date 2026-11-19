@@ -36,13 +36,6 @@ type ChangedFileRecord = {
 	status: string;
 };
 
-/**
- * How a check is actually started: pnpm-shaped checks run through
- * scripts/run-script.mts or `node_modules/.bin` (see `withoutPackageManager`),
- * so root-script gates need no usable pnpm; what still needs pnpm (turbo's
- * package-test lanes, installs) stays pnpm. A check that cannot be started that
- * way is reported and fails.
- */
 function invocationFor(
 	command: string,
 	commandArgs: string[],
@@ -179,7 +172,6 @@ async function runBounded(
 	return statuses;
 }
 
-/** The command's output, or `undefined` when it failed. */
 function tryCapture(
 	command: string,
 	commandArgs: string[],
@@ -194,17 +186,10 @@ function tryCapture(
 	return result.stdout.trim();
 }
 
-/** For probes whose failure has a meaning of its own (no merge base, no file). */
 function capture(command: string, commandArgs: string[]) {
 	return tryCapture(command, commandArgs) ?? "";
 }
 
-/**
- * The listing every gate is chosen from. A git failure here (an unknown or
- * unfetched base, a depth-1 clone's HEAD~1, no repository) used to read as an
- * empty list, so agent:check printed "ok" having selected nothing. It is an
- * error instead.
- */
 function changedListing(commandArgs: string[]): string {
 	const listed = tryCapture("git", commandArgs);
 	if (listed !== undefined) return listed;
@@ -278,17 +263,13 @@ function stableJson(value: JsonValue): string {
 
 function rootPackageJsonScriptsOnlyChanged() {
 	if (all) return false;
-	// Compare against index (staged) or HEAD when unstaged — scripts-only edits
-	// should not be treated like dependency/task-graph changes.
 	const beforeRaw = staged
 		? capture("git", ["show", "HEAD:package.json"])
 		: capture("git", ["show", `${diffBase}:package.json`]);
 	if (!beforeRaw || !fs.existsSync("package.json")) return false;
 
 	try {
-		// SAFETY: package.json is committed repo JSON; scripts key is compared by stableJson.
 		const before = JSON.parse(beforeRaw) as { scripts?: JsonValue };
-		// SAFETY: working-tree package.json is the same manifest family as HEAD.
 		const after = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
 			scripts?: JsonValue;
 		};
@@ -300,9 +281,6 @@ function rootPackageJsonScriptsOnlyChanged() {
 	}
 }
 
-// The gates are handed this base in staged mode too, where nothing else diffs
-// against it, so a named one has to be a commit before anything is chosen.
-// (Otherwise the diff below refuses a base it cannot reach.)
 if (staged && baseArg !== undefined && !isCommit(base)) {
 	console.error(
 		`fail  agent:check — --base=${base} is not a commit here, so no check was selected. ${reachRemedy(base)}`,

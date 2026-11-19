@@ -6,7 +6,6 @@ import { describe, it } from "node:test";
 const root = join(import.meta.dirname, "..", "..");
 const workflowDir = join(root, ".github", "workflows");
 
-/** Only main-gate may branch above 20 minutes for the weekly schedule sweep. */
 const SCHEDULE_JOB_TIMEOUT = /^hobo-ci\.yml:main-gate$/;
 
 function jobBlocks(text: string): { id: string; block: string }[] {

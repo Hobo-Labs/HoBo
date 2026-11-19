@@ -1,14 +1,3 @@
-/**
- * The archive reader against the archives a careful reader must not trust:
- * entries `tar` would read differently, names spelled two ways, files that
- * cannot be opened, bytes that are not the pinned archive.
- *
- * Where the question is "what would `tar` do", the answer is GNU tar's, run
- * on the same bytes: an entry type the reader does not model carries data
- * that GNU tar treats as that entry's contents, never as headers, so a reader
- * that skipped over the type and parsed the data as headers would find a
- * member `tar` never extracts. Refusing such a type is the only safe reading.
- */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -47,7 +36,6 @@ function archiveFile(bytes: Buffer) {
 	return { dir, path };
 }
 
-/** What GNU tar lists, and what it extracts into a fresh directory. */
 function asGnuTarSees(path: string) {
 	const listed = execFileSync("tar", ["-tzf", path], { encoding: "utf8" })
 		.split("\n")
@@ -58,7 +46,6 @@ function asGnuTarSees(path: string) {
 	return { listed, extracted: readdirSync(into).sort() };
 }
 
-/** An entry of `type` whose data is a ustar stream holding a `mirror` member. */
 function decoy(type: string): Buffer {
 	return tarGz([
 		{
@@ -198,7 +185,6 @@ describe("member names", () => {
 			[utf8("caf\u00e9/../x"), '"caf\\u{00E9}/../x"'],
 			[utf8("\u202emirror/../x"), '"\\u{202E}mirror/../x"'],
 			[utf8("a\u00a0b/../x"), '"a\\u{00A0}b/../x"'],
-			// Two Hangul fillers: letters that draw nothing.
 			[utf8("\u3164\u3164/../x"), '"\\u{3164}\\u{3164}/../x"'],
 			[utf8("mirror\ufe0f/../x"), '"mirror\\u{FE0F}/../x"'],
 			[utf8("\ud83d\ude00/../x"), '"\\u{1F600}/../x"'],
@@ -352,7 +338,6 @@ describe("the end of the archive", () => {
 		assert.deepEqual(readFileSync(join(dir, "out")), BINARY);
 	});
 
-	/** A megabyte that does not compress. */
 	function incompressible(): Buffer {
 		const filler: Buffer[] = [];
 		let seed = Buffer.from("filler");
@@ -416,7 +401,6 @@ describe("the end of the archive", () => {
 	});
 
 	it("refuses an archive that inflates more skipped data than 32 times its size plus 1 MiB", async () => {
-		// Eight MiB of zeros compress to a few KiB: as another entry's data, and after the end blocks.
 		const zeros = Buffer.alloc(8 * 1024 ** 2);
 		for (const bytes of [
 			tarGz([

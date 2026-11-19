@@ -88,7 +88,6 @@ describe("sdk conformance gate", () => {
         runSdkIdiomConformance({
           corpus,
           annexVectors,
-          // SAFETY: `adapter: undefined as never,` is required at this I/O or test boundary.
           adapter: undefined as never,
         }),
       TypeError,

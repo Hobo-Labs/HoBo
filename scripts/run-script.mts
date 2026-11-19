@@ -1,32 +1,4 @@
 #!/usr/bin/env node
-/**
- * Runs a root package.json script without a package manager:
- *
- *   node --experimental-strip-types scripts/run-script.mts <name> [--] [args...]
- *
- * The pre-commit hook and the relevant-check runner start their gates through
- * it, so a root-script gate needs Node and installed dependencies, not a usable
- * pnpm (turbo's package-test lanes still run package scripts through pnpm). It
- * does what `pnpm run` does for a script with no `pre`/`post` script: runs it
- * from the repository root, with `node_modules/.bin` first on PATH and the
- * arguments appended.
- *
- * The arguments are appended as positional parameters, never as text:
- * `sh -c '<script> "$@"' <name> args...`. `node --run <name> -- args` splices
- * them into the command line and escapes `'` as `\'` inside single quotes,
- * which POSIX sh reads as the end of the quote, so a base branch named
- * `main';touch PWNED;#` ran `touch PWNED`. Here each argument reaches the
- * script as itself.
- *
- * One difference from pnpm follows: the script text itself sees the arguments
- * as `$1`, `$2`, … and `$#` (and `$0` is the script's name), where pnpm leaves
- * them empty. No root script uses them; do not write one that does, or it
- * behaves differently under the package manager. As with pnpm, a script that
- * ends in a `#` comment swallows its arguments.
- *
- * Refused with exit 2: no name, an unknown script, and a script with a `pre`
- * or `post` script, which pnpm would run and this launcher does not.
- */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";

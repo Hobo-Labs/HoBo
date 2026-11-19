@@ -1,12 +1,3 @@
-/**
- * Runnable example for gated-live-fix-loop. The draft-artifact gate EXECUTES this
- * with `node --import tsx` and diffs stdout against usage.expected.txt — keep both honest.
- *
- * Drives the same loop the cucumber steps use (services/gated-live-fix-loop.ts)
- * with the committed simulation fixture: a staging canary regression auto-rolls
- * back and retains the failing trace as a permanent regression test; the same
- * incident in prod blocks on human approval before any canary starts.
- */
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
@@ -25,7 +16,6 @@ const fixture = JSON.parse(
 	),
 );
 
-// 1) Staging: low-risk fix goes through canary; the seeded SLO regression rolls it back.
 assert.equal(fixture.incident.environment, "staging");
 assert.equal(fixture.candidate.riskClass, "low");
 const staging = runGatedLiveFixLoop(fixture);
@@ -36,7 +26,6 @@ console.log(
 	`staging status=${staging.status} applied=${staging.applied} canaryGate=${staging.canaryGate.outcome}`,
 );
 
-// 2) The failing trace persists as a permanent regression test, event-sourced end to end.
 assert.equal(staging.regressionTests[0].sourceTraceId, "trace-checkout-500");
 assert.equal(staging.regressionTests[0].permanent, true);
 const stagingEventTypes = staging.events.map(
@@ -49,7 +38,6 @@ console.log(
 	`regression test source=${staging.regressionTests[0].sourceTraceId} permanent=${staging.regressionTests[0].permanent}`,
 );
 
-// 3) Replay from the event log reaches the same terminal state.
 const stagingReplay = replayGatedLiveFixLoop(staging.events);
 assert.equal(stagingReplay.status, "rolled-back");
 assert.equal(
@@ -60,7 +48,6 @@ console.log(
 	`replay status=${stagingReplay.status} retained=${stagingReplay.retainedRegressionTests[0].id}`,
 );
 
-// 4) Production: the same incident (healthy canary signals) still blocks on approval.
 const prodScenario = {
 	...fixture,
 	incident: { ...fixture.incident, environment: "prod" },

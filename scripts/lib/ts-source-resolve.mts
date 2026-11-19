@@ -1,11 +1,3 @@
-/**
- * Let `node --experimental-strip-types` load workspace TypeScript sources that
- * use NodeNext `.js` specifiers for sibling `.ts` files, without tsx. Jobs that
- * run before (or without) `pnpm install` have no node_modules to resolve tsx
- * from. Node builtins only.
- *
- * Usage: `node --experimental-strip-types --import ./scripts/lib/ts-source-resolve.mts …`
- */
 import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";

@@ -1,7 +1,3 @@
-/**
- * Pinned Playwright chromium headless-shell zip: cache on disk, bounded CDN fetch.
- * Shared by runner base Dockerfile (via install script), build.sh, hosted-toolchain.
- */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -56,13 +52,11 @@ export function headlessShellArchiveSpec(
 export type EnsureArchiveOptions = Readonly<{
 	cacheDir: string;
 	arch: HeadlessShellArch;
-	/** Max attempts per URL (primary then primary again with backoff cap). */
 	maxAttempts?: number;
 	connectTimeoutSeconds?: number;
 	perAttemptMaxSeconds?: number;
 	initialBackoffMs?: number;
 	maxBackoffMs?: number;
-	/** Wall-clock budget for all download attempts. */
 	totalBudgetMs?: number;
 }>;
 
@@ -87,10 +81,6 @@ export function cachedArchivePath(
 	return join(cacheDir, spec.cacheName);
 }
 
-/**
- * Return a verified zip on disk, fetching from CDN only when the cache miss
- * and env HOBO_CI_SKIP_PLAYWRIGHT_DOWNLOAD is unset.
- */
 export function ensurePlaywrightHeadlessShellArchive(
 	options: EnsureArchiveOptions,
 ): string {
@@ -147,7 +137,6 @@ export function ensurePlaywrightHeadlessShellArchive(
 					`${Date.now()}\n`,
 				);
 			} catch {
-				// cache marker is best-effort
 			}
 			return dest;
 		}

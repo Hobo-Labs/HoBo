@@ -34,7 +34,6 @@ function parseWorkflowEnvMultiline(
 		.filter((line) => line.length > 0);
 }
 
-/** The sparse-checkout block of one job; the route job has a small one of its own. */
 function parseInlineSparseCheckout(
 	workflowText: string,
 	jobId: string,
@@ -52,7 +51,6 @@ function parseInlineSparseCheckout(
 	);
 }
 
-/** Paths from a job's hobo-checkout `sparse-paths:` (inline block or env ref). */
 function parseJobHoboCheckoutSparsePaths(
 	workflowText: string,
 	jobName: string,

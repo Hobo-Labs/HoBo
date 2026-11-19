@@ -245,7 +245,6 @@ export async function reuseVerifiedRuntime(
 		if (
 			error instanceof Error &&
 			"code" in error &&
-			// SAFETY: assertion required at this I/O boundary.
 			(error as NodeJS.ErrnoException).code === "ENOENT"
 		) {
 			return null;
@@ -276,7 +275,6 @@ async function resolveToolchain(): Promise<{
 	const esbuildEntry = runtimeRequire.resolve("esbuild");
 	const esbuildManifestPath = path.join(path.dirname(esbuildEntry), "..", "package.json");
 	const [jco, componentize, esbuild, jcoManifest, componentizeManifest, esbuildManifest] =
-		// SAFETY: toolchain entries are loaded from resolved package paths.
 		await Promise.all([
 			import(pathToFileURL(jcoEntry).href) as Promise<JcoModule>,
 			import(pathToFileURL(componentizeEntry).href) as Promise<ToolchainModule>,
@@ -319,7 +317,6 @@ async function calculateBuildDigest(
 }
 
 async function readPackageVersion(packageJsonPath: string): Promise<string> {
-	// SAFETY: assertion required at this I/O boundary.
 	const manifest = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
 		version?: unknown;
 	};

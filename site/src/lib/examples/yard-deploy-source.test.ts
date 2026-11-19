@@ -83,10 +83,8 @@ describe("Yard deploy sources", () => {
 	});
 
 	it("prerenders yards-deploy.json for the console", async () => {
-		// SAFETY: Astro endpoint tests only need an empty context bag.
 		const response = await GET({} as never);
 		type DeployRow = { targetId: string };
-		// SAFETY: yards-deploy JSON is decoded as target rows at this test boundary.
 		const body = (await response.json()) as DeployRow[];
 		expect(response.headers.get("content-type")).toContain("application/json");
 		expect(body.map((entry) => entry.targetId)).toEqual(

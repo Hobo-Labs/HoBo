@@ -9,7 +9,6 @@ type BridgeGlobal = typeof globalThis & {
 };
 
 function bridgeGlobal(): BridgeGlobal {
-	// SAFETY: we only read/write HOBO_EXAMPLES_BRIDGE_URL on globalThis.
 	return globalThis as BridgeGlobal;
 }
 
@@ -17,8 +16,6 @@ export type BridgeStationHost = {
 	readonly url: string;
 	revoke(): void;
 };
-
-/** Local examples bridge — Docker Compose host for Wasp OpenSaaS (non-browser stations). */
 
 export const LOCAL_BRIDGE_DEFAULT_URL = "http://127.0.0.1:8787";
 
@@ -40,12 +37,10 @@ export type LocalBridgeDeployRequest = {
 	readonly exampleId: string;
 	readonly stationId: string;
 	readonly targetId: string;
-	/** Wasp webApp from Bindle — ship runs wasp in `root`. */
 	readonly bindleWebApp: {
 		readonly framework: string;
 		readonly root: string;
 	};
-	/** Optional OCI deps from Bindle (e.g. Postgres) — not HoBo server/client tags. */
 	readonly bindleContainers: readonly {
 		readonly name: string;
 		readonly image: string;
@@ -76,7 +71,6 @@ export function resolveLocalBridgeBase(
 	return picked.replace(/\/$/u, "");
 }
 
-/** Apply `?bridge=` / `data-bridge-url` before probe/deploy (agent regressions). */
 export function applyLocalBridgeUrlOverride(raw: string | null | undefined): string {
 	const trimmed = raw?.trim();
 	if (!trimmed) return resolveLocalBridgeBase();
@@ -219,7 +213,6 @@ export async function stopLocalBridgeDeploy(
 		method: "POST",
 		signal: AbortSignal.timeout(60_000),
 	}).catch(() => {
-		/* best-effort */
 	});
 }
 
@@ -227,7 +220,6 @@ export function createBridgeStationHost(clientUrl: string): BridgeStationHost {
 	return {
 		url: clientUrl,
 		revoke() {
-			/* remote compose lifecycle owned by bridge /stop */
 		},
 	};
 }

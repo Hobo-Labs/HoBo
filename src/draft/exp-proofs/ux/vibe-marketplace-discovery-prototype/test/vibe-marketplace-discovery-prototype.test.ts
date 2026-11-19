@@ -175,7 +175,6 @@ describe("vibe marketplace discovery prototype", () => {
   });
 
   it("keeps Pact and CUE architecture artifacts aligned with the parser", () => {
-    // SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
     const pact = JSON.parse(
       readFileSync(
         new URL(

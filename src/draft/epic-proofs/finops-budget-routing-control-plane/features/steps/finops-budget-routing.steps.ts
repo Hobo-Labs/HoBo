@@ -1,10 +1,3 @@
-/**
- * Executable step definitions for finops-budget-routing-control-plane.feature.
- *
- * Runs the epic's offline simulation (no live providers — every boundary is mocked from
- * Pact/protobuf/CUE fixtures) and asserts each scenario against the routing artifacts it
- * produces. This is the wiring proof for the repo-wide `test:behavior` cucumber lane.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -27,8 +20,6 @@ type RoutingWorld = {
   stabilityRoute?: Simulation["stabilityCooldown"];
 };
 
-// --- Scenario: Provider-neutral dry run -------------------------------------------------
-
 Given("a ResourceIntent with budget, capability, and routing objective", async function (this: RoutingWorld) {
   const sim = await simulation();
   this.route = sim.approvedRoute;
@@ -49,8 +40,6 @@ Then("it emits a DecisionGraph and backend-neutral ActionPlan", function (this: 
     "action plan stays backend-neutral; provider detail lives in adapter fixtures",
   );
 });
-
-// --- Scenario: Governed user metrics ----------------------------------------------------
 
 Given("a user metric contract", function (this: RoutingWorld) {
   this.metricParse = parseMetricContracts([
@@ -76,8 +65,6 @@ Then("parsing fails before routing begins", function (this: RoutingWorld) {
   );
   assert.deepEqual(this.metricParse?.contracts, [], "no contracts reach routing");
 });
-
-// --- Scenario: Constraint-first Pareto routing -------------------------------------------
 
 Given("valid, invalid, and dominated candidates", async function (this: RoutingWorld) {
   const sim = await simulation();
@@ -106,8 +93,6 @@ Then("preference weights select only within the Pareto frontier", function (this
     "preference selection stays inside the frontier",
   );
 });
-
-// --- Scenario: Stability-controlled feedback ---------------------------------------------
 
 Given("recent routing history", async function (this: RoutingWorld) {
   const sim = await simulation();

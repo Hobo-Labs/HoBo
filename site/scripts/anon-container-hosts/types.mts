@@ -1,7 +1,3 @@
-/**
- * Shared types for anon/temp container (and Node-dynamic) host adapters.
- * Examples Temporary: zero project API keys; one-shot per host + cooldown.
- */
 
 export type AnonContainerHostId =
 	| "openpouch-http"
@@ -42,11 +38,9 @@ export class AnonContainerHostError extends Error {
 }
 
 export type AnonContainerDeployInput = {
-	/** Working directory already staged for the host (source / Dockerfile / etc.). */
 	readonly workDir: string;
 	readonly projectHint?: string;
 	readonly port?: number;
-	/** Env injected where the host supports it (never log values). */
 	readonly env?: Readonly<Record<string, string>>;
 	readonly mock?: boolean;
 	readonly fetchImpl?: typeof fetch;

@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-/**
- * Print the release OCI image ids whose build inputs differ between the diff
- * base and HEAD, as a JSON array. An empty array means nothing to build.
- *
- * An image's input key covers what can change the image: its Dockerfile
- * directory, the release build scripts, the worker toolchain it builds FROM
- * (mise files and the ci-runner image definition), the Turbo build inputs of
- * every workspace package in its pnpm-lock.yaml closure, the slice of the
- * lockfile that closure resolves, and the root settings pnpm and Turbo read.
- * Both sides are hashed from git trees, so a test-only, docs-only or unrelated
- * dependency change builds nothing, and nothing has to be checked out.
- *
- * HOBO_CHECK_BASE selects the base (default origin/main); its merge base with
- * HOBO_CHECK_HEAD (default HEAD) is compared. Flags: --all (every image), --only=a,b, --exclude=a,b,
- * --explain (which input group changed, on stderr).
- */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
@@ -33,7 +17,6 @@ const RELEASE_IMAGE_ORDER = [
 	"hobo-site",
 ] as const;
 
-/** Inputs of every image. A trailing slash hashes the whole directory. */
 const RELEASE_BUILD_INPUTS = [
 	"scripts/ci/build-release-oci-image.mts",
 	"scripts/ci/stage-release-oci-app.mts",
@@ -48,7 +31,6 @@ const RELEASE_BUILD_INPUTS = [
 	"packages/ci-gh-actions/deploy/ci-runner/",
 ] as const;
 
-/** Inputs the lockfile graph cannot see: files read by path, not by import of a workspace dependency. */
 const EXTRA_INPUTS = new Map<string, readonly string[]>([
 	[
 		"hobo-sdk",
@@ -65,13 +47,10 @@ const EXTRA_INPUTS = new Map<string, readonly string[]>([
 	],
 ]);
 
-/** Images built FROM another release image. */
 const BUILT_FROM = new Map([["hobo-mcp", "hobo-cli"]]);
 
 export type RepoTree = {
-	/** Blob oid by path, for every file the commit tracks outside submodules. */
 	readonly files: ReadonlyMap<string, string>;
-	/** Commit oid by submodule path. */
 	readonly gitlinks: ReadonlyMap<string, string>;
 	read(paths: readonly string[]): ReadonlyMap<string, string>;
 };
@@ -106,7 +85,6 @@ function sha256(text: string): string {
 
 const gitTreeCache = new Map<string, RepoTree>();
 
-/** Drop cached git trees (tests that swap cwd/rev fixtures). */
 export function clearReleaseOciGitTreeCache(): void {
 	gitTreeCache.clear();
 }
@@ -133,7 +111,6 @@ type ImporterLines = {
 };
 type SnapshotLines = { block: string[]; deps: [string, string][] };
 
-/** The importers, packages and snapshots of a pnpm v9 lockfile, by raw block. */
 export function parseLockfile(text: string): Lockfile {
 	const settings: string[] = [];
 	const importers = new Map<string, ImporterLines>();
@@ -222,7 +199,6 @@ export function parseLockfile(text: string): Lockfile {
 	};
 }
 
-/** `name` + `version` (or an `alias@version` value) as a snapshot key. */
 function snapshotKey(name: string, version: string): string {
 	const bare = version.split("(")[0] ?? version;
 	return bare.includes("@") ? version : `${name}@${version}`;
@@ -248,7 +224,6 @@ export function importerClosure(
 	return seen;
 }
 
-/** The lockfile text a set of importers resolves: their blocks and every snapshot they reach. */
 export function lockfileSlice(
 	lockfile: Lockfile,
 	importers: Iterable<string>,
@@ -295,7 +270,6 @@ export function globToRegExp(glob: string): RegExp {
 	return new RegExp(`^${source}$`);
 }
 
-/** Whether Turbo hashes `file` (relative to its package) for a build task with these inputs. */
 export function isBuildInput(
 	file: string,
 	inputs: readonly string[] | undefined,
@@ -318,7 +292,6 @@ export function isBuildInput(
 function parseJson<T>(text: string | undefined, path: string): T | undefined {
 	if (text === undefined) return undefined;
 	try {
-		// SAFETY: repo-owned JSON; every field read below is optional and checked at use.
 		return JSON.parse(text) as T;
 	} catch (error) {
 		throw new Error(
@@ -330,13 +303,11 @@ function parseJson<T>(text: string | undefined, path: string): T | undefined {
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 type RootPackageJson = { packageManager?: string; pnpm?: Json; engines?: Json };
 
-/** Docs, tests, and detector-only scripts never change a product image. */
 export function isReleaseOciLayerNoise(path: string): boolean {
 	if (path.endsWith(".md")) return true;
 	if (path.includes("/test/") || path.endsWith(".test.ts")) return true;
 	if (path.startsWith("docs/")) return true;
 	if (path.startsWith("scripts/test/")) return true;
-	// SAFETY: RELEASE_BUILD_INPUTS is a const string tuple; Array.includes requires readonly string[] to accept a general path.
 	const layerScripts = RELEASE_BUILD_INPUTS as readonly string[];
 	if (path.startsWith("scripts/ci/") && !layerScripts.includes(path))
 		return true;
@@ -369,7 +340,6 @@ export type ImageInputs = {
 	readonly from: string;
 };
 
-/** Workspace package names whose build closure an image ships. */
 function imagePackages(id: string): readonly string[] {
 	const spec = Object.entries(RELEASE_OCI_STAGE_SPECS).find(
 		([key]) => key === id,
@@ -387,7 +357,6 @@ function imagePackages(id: string): readonly string[] {
 	}
 }
 
-/** Input groups of every manifest image at one revision. */
 export function imageInputs(
 	tree: RepoTree,
 	packagesOf: (id: string) => readonly string[] = imagePackages,
@@ -531,7 +500,6 @@ export function orderedImageIds(ids: Iterable<string>): string[] {
 	const all = [...ids];
 	return [
 		...RELEASE_IMAGE_ORDER.filter((id) => all.includes(id)),
-		// SAFETY: Readonly widening preserves the tuple while allowing arbitrary manifest ids.
 		...all.filter(
 			(id) => !(RELEASE_IMAGE_ORDER as readonly string[]).includes(id),
 		),
@@ -540,7 +508,6 @@ export function orderedImageIds(ids: Iterable<string>): string[] {
 
 export type AffectedImage = { readonly id: string; readonly changed: string[] };
 
-/** Images whose input key differs between the two revisions, in build order. */
 export function affectedReleaseOciImages(
 	base: ReadonlyMap<string, ImageInputs>,
 	head: ReadonlyMap<string, ImageInputs>,
@@ -595,7 +562,6 @@ function lsTreeRecords(
 	return { files, gitlinks };
 }
 
-/** Pathspecs covering release OCI input hashing — not the whole repo (docs/tests/.github). */
 const RELEASE_INPUT_PATHSPECS = [
 	"packages/",
 	"site/",
@@ -617,7 +583,6 @@ const RELEASE_INPUT_PATHSPECS = [
 	OCI_IMAGES_MANIFEST,
 ] as const;
 
-/** Directory cones a sparse checkout needs for every scoped release input blob. */
 export function releaseOciInputSparseCones(): readonly string[] {
 	return Object.freeze(
 		RELEASE_INPUT_PATHSPECS.filter((pathspec) => pathspec.endsWith("/")).map(
@@ -712,7 +677,6 @@ function readGitArchive(
 	return contents;
 }
 
-/** Git tree scoped to release OCI inputs (fast on sparse CI checkouts). */
 export function releaseInputGitTree(rev: string, cwd: string): RepoTree {
 	const cacheKey = `${cwd}\0${rev}\0release-inputs`;
 	const cached = gitTreeCache.get(cacheKey);

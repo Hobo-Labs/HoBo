@@ -1,13 +1,3 @@
-/**
- * Nothing the pin code asks of the network can hang: every git call that
- * touches it and every download is bounded by HOBO_PINS_NET_TIMEOUT_MS
- * (default 120 s, at most 600 s), git is told to give up on a link slower
- * than 1000 bytes/s for 30 s, and running out is a NET_TIMEOUT that names
- * the call, with nothing staged or kept.
- *
- * The other side is a server that accepts every connection and never says a
- * word; the tests set a short bound and kill a run that outlives it by far.
- */
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
@@ -41,7 +31,6 @@ import {
 } from "./support/pins-support.ts";
 
 const SHORT = { HOBO_PINS_NET_TIMEOUT_MS: "1500" };
-/** Far past the short bound: a run still alive then is hanging. */
 const KILL_AFTER_MS = 25_000;
 
 let tarpit: { server: Server; sockets: Socket[] } | undefined;
@@ -54,7 +43,6 @@ afterEach(async () => {
 	files = undefined;
 });
 
-/** A TCP server that accepts and never answers; the URL of a repository on it. */
 async function silentRepo(): Promise<string> {
 	const sockets: Socket[] = [];
 	const server = createServer((socket) => {
@@ -63,12 +51,10 @@ async function silentRepo(): Promise<string> {
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	tarpit = { server, sockets };
-	// SAFETY: listen(0, host) binds a TCP socket, so address() is an AddressInfo.
 	const { port } = server.address() as AddressInfo;
 	return `http://127.0.0.1:${port}/o/r.git`;
 }
 
-/** The real script, killed if it is still running long after the bound. */
 async function bounded(
 	root: string,
 	args: readonly string[],
@@ -79,8 +65,6 @@ async function bounded(
 	const timer = setTimeout(() => {
 		killed = true;
 		running.child.kill("SIGKILL");
-		// A git it started may outlive it and hold the pipes open; the sockets
-		// are closed in afterEach, which ends that git too.
 		running.child.stdout?.destroy();
 		running.child.stderr?.destroy();
 	}, KILL_AFTER_MS);
@@ -91,11 +75,9 @@ async function bounded(
 
 interface Pointed {
 	readonly work: string;
-	/** The commit the submodule is checked out at. */
 	readonly head: string;
 }
 
-/** An initialised work tree whose manifest, .gitmodules and config all name `url`. */
 function pointedAt(url: string): Pointed {
 	const dir = scratch("timeout-git");
 	const remote = makeRemote(dir);

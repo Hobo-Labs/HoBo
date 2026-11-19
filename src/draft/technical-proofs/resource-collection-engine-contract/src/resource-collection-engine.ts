@@ -1,4 +1,3 @@
-// Backward-compatible entry for existing imports.
 export {
   collectBindleResources,
   CollectionEngineError,

@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 
-/** Public web — calls private api via camp-injected services__api__http__0. */
 export const app = new Hono().get("/", async (c) => {
 	const name = c.req.query("name") ?? "";
 	const title = process.env.APP_TITLE?.trim() || "hello-bindle";
@@ -12,7 +11,6 @@ export const app = new Hono().get("/", async (c) => {
 		name ? `hello?name=${encodeURIComponent(name)}` : "hello",
 		apiBase.endsWith("/") ? apiBase : `${apiBase}/`,
 	);
-	// SAFETY: assertion to `it (await fetch(url)).json()) as { message: string }; r` is required at this boundary.
 	const { message } = (await (await fetch(url)).json()) as { message: string };
 	return c.html(`<!doctype html>
 <html lang="en">

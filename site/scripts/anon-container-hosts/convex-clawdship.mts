@@ -1,7 +1,3 @@
-/**
- * Attempt Convex self-host via Clawdship Docker (OpenPouch competitor).
- * One-shot only. Dockerfile FROM official Convex OCI — host must have enough RAM.
- */
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";

@@ -4,8 +4,6 @@ import { readFile } from "node:fs/promises";
 
 const root = new URL("..", import.meta.url);
 const lock = JSON.parse(await readFile(new URL("toolchain-lock.json", root), "utf8"));
-// The workspace is pnpm-managed (single root lockfile), so pin-verify the
-// installed jco against its resolved package manifest, not a per-package lock.
 const jcoManifest = JSON.parse(
   await readFile(new URL("node_modules/@bytecodealliance/jco/package.json", root), "utf8"),
 );

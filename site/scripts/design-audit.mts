@@ -1,29 +1,3 @@
-/**
- * Interactive design audit — the gate the design axis was missing.
- *
- * Every design defect that reached production this cycle (16px headings,
- * clipped code panels, design bleedover) passed the build, the linters and
- * static screenshots, because none of those *use* the page. This script does:
- * it clicks the real picker, scrolls, hovers, switches designs mid-session,
- * and pixel-compares states that must be identical.
- *
- * Two comparisons carry the acceptance criteria:
- *
- *  1. SWITCH == FRESH. Picking a design through the header picker must render
- *     pixel-identically to arriving with that design already stored. Any diff
- *     is bleedover — state from the previous design surviving the switch.
- *  2. INK == BASELINE. The design axis must leave the default design alone.
- *     Given a baseline dist (a build from before the axis landed), ink pages
- *     with no attribute must pixel-match it, aside from intended art changes,
- *     which the diff heatmaps make reviewable.
- *
- * Usage:
- *   node --import tsx site/scripts/design-audit.mts \
- *     --dist site/dist [--baseline-dist /path/to/old/dist] [--out runs/design-audit]
- *
- * Exit code: number of failed acceptance checks (0 = pass). The screenshot
- * corpus and findings.md land in --out (gitignored under runs/).
- */
 import {
 	existsSync,
 	mkdirSync,
@@ -36,10 +10,6 @@ import { extname, join, resolve } from "node:path";
 import { PNG } from "pngjs";
 import pixelmatch from "pixelmatch";
 import { chromium, type Browser, type Page } from "playwright";
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
 
 const args = new Map<string, string>();
 for (let i = 2; i < process.argv.length; i += 2)
@@ -59,14 +29,13 @@ const PAGES = [
 	"/primitives/bindles/",
 	"/agents/",
 	"/examples/",
-	"/definitely-not-a-page/", // 404
+	"/definitely-not-a-page/",
 ] as const;
 const VIEWPORTS = [
 	{ name: "desktop", width: 1280, height: 900 },
 	{ name: "mobile", width: 390, height: 844 },
 ] as const;
 
-/** Kill all motion so pixel comparisons compare layout, not animation phase. */
 const FREEZE_CSS = `
 	*, *::before, *::after {
 		animation: none !important;
@@ -74,10 +43,6 @@ const FREEZE_CSS = `
 		caret-color: transparent !important;
 	}
 `;
-
-// ---------------------------------------------------------------------------
-// Static server (the site is built for a /HoBo/ base)
-// ---------------------------------------------------------------------------
 
 interface MimeByExt {
 	readonly [ext: string]: string;
@@ -119,10 +84,6 @@ function serve(dist: string, port: number): Promise<http.Server> {
 	return new Promise((ok) => server.listen(port, () => ok(server)));
 }
 
-// ---------------------------------------------------------------------------
-// Findings
-// ---------------------------------------------------------------------------
-
 type Finding = {
 	severity: "FAIL" | "WARN" | "INFO";
 	check: string;
@@ -137,10 +98,6 @@ const warn = (check: string, detail: string, evidence?: string) =>
 const info = (check: string, detail: string, evidence?: string) =>
 	findings.push({ severity: "INFO", check, detail, evidence });
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 const shot = (...parts: string[]) => join(OUT, parts.join("-") + ".png");
 
 async function applyState(
@@ -148,8 +105,6 @@ async function applyState(
 	design: string,
 	theme: string,
 ): Promise<void> {
-	// Pre-seeded storage is the legitimate "fresh load" path: it is exactly what
-	// the boot script reads on every navigation.
 	await page.addInitScript(
 		([d, t]) => {
 			if (d === "ink") localStorage.removeItem("hobo-design");
@@ -177,10 +132,6 @@ function diffPngs(aPath: string, bPath: string, outPath: string): number {
 	return n;
 }
 
-// ---------------------------------------------------------------------------
-// Passes
-// ---------------------------------------------------------------------------
-
 async function matrixPass(browser: Browser, base: string) {
 	for (const vp of VIEWPORTS) {
 		for (const design of DESIGNS) {
@@ -205,7 +156,6 @@ async function matrixPass(browser: Browser, base: string) {
 								"home";
 					const id = [vp.name, design, theme, slug].join("-");
 
-					// Scroll-step captures on desktop; top + full page on mobile.
 					if (vp.name === "desktop") {
 						const steps = await page.evaluate(
 							() =>
@@ -226,15 +176,10 @@ async function matrixPass(browser: Browser, base: string) {
 						await page.screenshot({ path: shot(id, "full"), fullPage: true });
 					}
 
-					// Structural checks.
 					const m = await page.evaluate(() => {
 						const de = document.documentElement;
 						const pre = document.querySelector(".terminal pre");
 						const proseH2 = document.querySelector(".prose h2");
-						// Wide code that scrolls inside its own container is the
-						// sanctioned pattern (DESIGN.md). Clipped means wider than its
-						// box with NO scroll affordance — that is content you cannot
-						// reach, which is what shipped on desktop broadsheet once.
 						const preStyle = pre ? getComputedStyle(pre) : null;
 						return {
 							overflowX: de.scrollWidth > de.clientWidth + 1,
@@ -269,8 +214,6 @@ async function matrixPass(browser: Browser, base: string) {
 	}
 }
 
-/** The real picker, clicked. Switch through every design without reload, then
- *  compare each stop against a fresh load of the same design. */
 async function bleedoverPass(browser: Browser, base: string, path: string) {
 	const slug = path === "/" ? "home" : path.replaceAll("/", "").trim();
 	const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -278,10 +221,8 @@ async function bleedoverPass(browser: Browser, base: string, path: string) {
 	await page.goto(base + "/HoBo" + path, { waitUntil: "networkidle" });
 	await freeze(page);
 
-	// SAFETY: assertion required at this I/O boundary.
 	const order = [...DESIGNS.slice(1), "ink"] as string[];
 	for (const design of order) {
-		// Real interaction: open the details menu, click the design's button.
 		await page.click(".palette-picker > summary");
 		await page.waitForTimeout(120);
 		await page.screenshot({ path: shot("switch", slug, design, "menu-open") });
@@ -289,12 +230,6 @@ async function bleedoverPass(browser: Browser, base: string, path: string) {
 		await page.waitForTimeout(250);
 		await freeze(page);
 		await page.evaluate(() => scrollTo(0, 0));
-		// Park the cursor before capturing. The first run flagged three designs
-		// for "bleedover" that was actually the parallax pause affordance,
-		// revealed because the mouse path to the picker crossed the band — a
-		// hover state of the test, not of the product. Both capture paths must
-		// SAFETY: assertion required at this I/O boundary.
-		// hold the same cursor position or hover styling shows up as a diff.
 		await page.mouse.move(0, 0);
 		await page.waitForTimeout(120);
 		await page.screenshot({ path: shot("switch", slug, design) });
@@ -329,7 +264,6 @@ async function bleedoverPass(browser: Browser, base: string, path: string) {
 	}
 }
 
-/** Ink at HEAD vs ink at the pre-axis baseline. */
 async function baselinePass(browser: Browser, headBase: string, blBase: string) {
 	for (const path of ["/", "/guide/"]) {
 		const slug = path === "/" ? "home" : path.replaceAll("/", "");
@@ -362,12 +296,6 @@ async function baselinePass(browser: Browser, headBase: string, blBase: string) 
 	}
 }
 
-/** Each design must actually differ from ink. Without this, a boot-script
- // SAFETY: assertion required at this I/O boundary.
- *  regression that never sets data-design renders everything as ink and the
- *  whole audit passes trivially — switch==fresh compares ink to ink, and the
- *  baseline pass compares ink to ink. Differentiation is an acceptance
- *  criterion, not a nice-to-have: it is the entire point of the axis. */
 async function differentiationPass(browser: Browser, base: string) {
 	const signatures = new Map<string, string>();
 	for (const design of DESIGNS) {
@@ -400,13 +328,11 @@ async function differentiationPass(browser: Browser, base: string) {
 	}
 }
 
-/** Interactions that static shots cannot cover. */
 async function interactionPass(browser: Browser, base: string) {
 	const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 	await applyState(page, "ink", "light");
 	await page.goto(base + "/HoBo/", { waitUntil: "networkidle" });
 
-	// Theme toggle via the real button, both directions.
 	await page.click(".theme-toggle");
 	await page.waitForTimeout(250);
 	const t1 = await page.evaluate(() => document.documentElement.dataset.theme);
@@ -417,7 +343,6 @@ async function interactionPass(browser: Browser, base: string) {
 	if (t1 !== "dark" || t2 !== "light")
 		fail("theme-toggle", `toggle cycle gave ${t1} then ${t2}`);
 
-	// Picker closes on Escape.
 	await page.click(".palette-picker > summary");
 	await page.keyboard.press("Escape");
 	const open = await page.evaluate(
@@ -425,9 +350,6 @@ async function interactionPass(browser: Browser, base: string) {
 	);
 	if (open) fail("picker-escape", "design menu does not close on Escape");
 
-	// Hover states exist (button + card). Filter to VISIBLE: the world heroes
-	// put hidden .btn elements first in the DOM, and hovering a hidden node
-	// times out — which is itself the audit doing its job on the audit.
 	await page.locator(".btn").locator("visible=true").first().hover();
 	await page.screenshot({ path: shot("interact", "btn-hover") });
 	const card = page.locator(".card").locator("visible=true").first();
@@ -436,7 +358,6 @@ async function interactionPass(browser: Browser, base: string) {
 		await page.screenshot({ path: shot("interact", "card-hover") });
 	}
 
-	// Keyboard reach: first 8 tab stops must be visible elements.
 	await page.evaluate(() => scrollTo(0, 0));
 	const stops: string[] = [];
 	for (let i = 0; i < 8; i++) {
@@ -450,13 +371,11 @@ async function interactionPass(browser: Browser, base: string) {
 	}
 	info("tab-order", stops.join(" → "));
 
-	// Reduced motion.
 	await page.emulateMedia({ reducedMotion: "reduce" });
 	await page.reload({ waitUntil: "networkidle" });
 	await page.screenshot({ path: shot("interact", "reduced-motion") });
 	await page.close();
 
-	// Examples page tabs.
 	const ex = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 	await applyState(ex, "ink", "light");
 	await ex.goto(base + "/HoBo/examples/", { waitUntil: "networkidle" });
@@ -471,10 +390,6 @@ async function interactionPass(browser: Browser, base: string) {
 	}
 	await ex.close();
 }
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
 
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
@@ -500,10 +415,6 @@ if (blServer) {
 await browser.close();
 headServer.close();
 blServer?.close();
-
-// ---------------------------------------------------------------------------
-// Report
-// ---------------------------------------------------------------------------
 
 const bySev = { FAIL: 0, WARN: 0, INFO: 0 };
 for (const f of findings) {

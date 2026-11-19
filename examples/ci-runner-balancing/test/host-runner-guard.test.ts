@@ -5,12 +5,6 @@ import {
 	repositoryPath,
 } from "../src/host-runner.js";
 
-/**
- * The last-resort host runner executes repository workflow code on the
- * operator's own machine. On a public repository that code can originate from
- * a stranger's pull request, so registration must refuse by default — the
- * README's "your own repository and branches only" posture, enforced.
- */
 describe("evaluateRegistrationGuard", () => {
 	it("allows a private repository", () => {
 		expect(

@@ -4,7 +4,6 @@ import { parseBuildRequest, type BuildRequest } from "./parse.js";
 import { runBuild } from "./build.js";
 import { isJsonNumber, type JsonValue } from "./json.js";
 
-
 export type CliRunResult = {
   readonly exitCode: number;
   readonly stdout: string;
@@ -48,7 +47,6 @@ export function registerBuildCommand(registry: {
 }): void {
   registry.register("build", {
     async run(input) {
-      // SAFETY: `const request = input as BuildRequest;` is required at this I/O or test boundary.
       const request = input as BuildRequest;
       return runBuild(request);
     },

@@ -39,7 +39,6 @@ export function parseStageGateS1Record(input: JsonValue): StageGateS1Record {
     throw new StageGateRecordParseError("record must be an object");
   }
 
-  // SAFETY: `const raw = input as JsonObject;` is required at this I/O or test boundary.
   const raw = input as JsonObject;
   const gateId = readString(raw, "gate_id");
   if (gateId !== GATE_ID) {
@@ -103,7 +102,6 @@ function parseCheck(input: JsonValue, expectedId: CheckId, index: number): Stage
     throw new StageGateRecordParseError(`checks[${index}] must be an object`);
   }
 
-  // SAFETY: `const raw = input as JsonObject;` is required at this I/O or test boundary.
   const raw = input as JsonObject;
   const checkId = readString(raw, "check_id");
   if (checkId !== expectedId) {

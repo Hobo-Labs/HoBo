@@ -13,7 +13,6 @@ import { runStage6GovernanceEvidenceSuite } from "../services/governance-planes-
 
 const suite = runStage6GovernanceEvidenceSuite();
 
-// 1) Consent-gated notify: granted consent allows the send and both events append.
 const notify = suite.results.notify;
 assert.equal(notify.ok, true);
 assert.equal(notify.port, "hobo:notify");
@@ -30,8 +29,6 @@ console.log(
 	`notify ok=${notify.ok} port=${notify.port} consentRef=${requested.data.consentRef} recipient=${delivered.data.recipientId}`,
 );
 
-// 2) Residency: phi data pinned to us-east-1 denies an eu-central-1 deploy;
-//    erasure crypto-shreds the subject key without rewriting history.
 const residency = suite.results.residencyErasure;
 assert.equal(residency.deployable, false);
 assert.equal(residency.residencyEnforced, true);
@@ -52,7 +49,6 @@ console.log(
 	`residency deployable=${residency.deployable} effect=${residency.governance.decision.effect} erasedSubject=${residency.erasure.erasedSubject} logEvents=${residency.erasure.logEventCount}`,
 );
 
-// 3) Guardrail: flagged model output is blocked with a deny policy decision.
 const guardrail = suite.results.guardrail;
 assert.equal(guardrail.effect, "block");
 assert.equal(guardrail.policyDecision.effect, "deny");
@@ -65,7 +61,6 @@ console.log(
 	`guardrail effect=${guardrail.effect} policy=${guardrail.policyDecision.effect}`,
 );
 
-// 4) Registry: only the certified listing is discoverable and installable.
 const install = suite.results.registryInstall;
 assert.equal(install.discovery.ok, true);
 assert.equal(install.installed, true);

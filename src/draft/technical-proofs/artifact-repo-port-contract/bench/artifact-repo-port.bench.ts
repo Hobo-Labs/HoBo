@@ -24,7 +24,6 @@ const provenance = createDigestArtifactRef("npm-leftpad-provenance", {
 	mediaType: "application/vnd.in-toto+json",
 });
 
-// Numbers are advisory; the gate only requires that declared benches EXECUTE.
 describe("artifact-repo port hot path", () => {
 	bench("digest-pinned pull through mirror set", async () => {
 		await pullArtifact(mirrorSet, { ecosystem: "npm", name: "@acme/leftpad", version: "1.0.0" });

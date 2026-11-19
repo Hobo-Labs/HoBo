@@ -1,11 +1,3 @@
-/**
- * What the content-addressed cache holds for a pinned file, re-hashed every
- * time it is asked about: never trusted by its name, and never read unless it
- * is a regular file. For an archive pin, the archive is checked against the
- * pin and the unpacked entry against the member the verified archive holds.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat } from "node:fs/promises";
@@ -23,21 +15,17 @@ export async function sha256OfFile(path: string): Promise<string> {
 export type CacheState =
 	| { readonly state: "absent" }
 	| { readonly state: "ok" }
-	/** `path` is the file that failed: the archive, for an archive pin. */
 	| {
 			readonly state: "mismatch";
 			readonly actual: string;
 			readonly path: string;
 	  }
-	/** Something is there that is not a regular file: a link, a directory, a device. */
 	| {
 			readonly state: "invalid";
 			readonly reason: string;
 			readonly path: string;
 	  }
-	/** An archive pin's entry is not the member of the verified archive it was unpacked from. */
 	| { readonly state: "stale"; readonly reason: string }
-	/** The archive is the pinned one, but it cannot supply the member (missing, unsafe, unreadable as ustar). */
 	| {
 			readonly state: "unusable";
 			readonly reason: string;
@@ -50,7 +38,6 @@ function describeKind(info: Awaited<ReturnType<typeof lstat>>): string {
 	return "not a regular file";
 }
 
-/** What a pinned archive that reads can still fail with, per asset, not for the whole status. */
 const UNUSABLE = new Set([
 	"ARCHIVE_MALFORMED",
 	"ARCHIVE_UNSUPPORTED",
@@ -59,7 +46,6 @@ const UNUSABLE = new Set([
 	"SIZE_EXCEEDED",
 ]);
 
-/** `null` for a regular file, else the state that says what is there instead. */
 async function regularFile(path: string): Promise<CacheState | null> {
 	let info: Awaited<ReturnType<typeof lstat>>;
 	try {
@@ -74,7 +60,6 @@ async function regularFile(path: string): Promise<CacheState | null> {
 		: { state: "invalid", reason: describeKind(info), path };
 }
 
-/** The state of one cached file against the digest it must have. */
 export async function verifyFile(
 	path: string,
 	sha256: string,
@@ -95,12 +80,6 @@ export async function verifyFile(
 		: { state: "mismatch", actual, path };
 }
 
-/**
- * Re-hash what the cache holds for `file`; never trusts a file by its name,
- * and never reads anything but a regular file (a link to a correct file, or to
- * /dev/zero, is not a verified file). For an archive pin, the archive is
- * re-hashed against the pin and the entry against the member it holds.
- */
 export async function verifyCached(
 	cache: string,
 	file: AssetFile,
@@ -110,8 +89,6 @@ export async function verifyCached(
 	const archivePath = cachedArchivePath(cache, file);
 	const kind = await regularFile(archivePath);
 	if (kind !== null) return kind;
-	// One read gives both digests: the archive's, against the pin, and the
-	// member's, against the entry.
 	let digests: { readonly archive: string; readonly member: string };
 	try {
 		digests = await memberDigest(archivePath, file.archive.member);

@@ -1,12 +1,3 @@
-/**
- * Executable step definitions for providers-iac-build-adapters.feature.
- *
- * Drives the epic's real reference simulation
- * (services/providers-reference-architecture.ts) over the committed
- * providers-reference-scenarios fixture and asserts the catalog, realize
- * pipeline, containment, and multi-cloud evidence it produces. All provider,
- * IaC, and build boundaries stay mocked.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -29,8 +20,6 @@ function fixture(): Promise<Fixture> {
 	fixturePromise ??= loadProvidersScenarioFixture();
 	return fixturePromise;
 }
-
-// --- Scenario: Register provider-owned defaults ----------------------------
 
 let catalogSim: Simulation | undefined;
 
@@ -89,8 +78,6 @@ Then("provider adapter Matching rejects the unsupported require clause", () => {
 	);
 });
 
-// --- Scenario: Realize a Bindle resource without live providers ------------
-
 let realizeSim: Simulation | undefined;
 
 Given(
@@ -123,8 +110,6 @@ Then("the adapter realization records zero live provider calls", () => {
 	assert.deepEqual(realizeSim?.realize.liveProviderCalls, []);
 	assert.deepEqual(realizeSim?.liveNetworkCalls, []);
 });
-
-// --- Scenario: Reject malicious and drifting provider behavior -------------
 
 let safetySim: Simulation | undefined;
 
@@ -169,8 +154,6 @@ Then(
 		);
 	},
 );
-
-// --- Scenario: Run the same shop Bindle on AWS and Azure -------------------
 
 let multiCloudSim: Simulation | undefined;
 

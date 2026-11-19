@@ -107,10 +107,6 @@ describe("Main full gate S0 sparse checkout", () => {
 	});
 
 	it("would have failed job 127191339479 without the pin cone + pins:fetch", () => {
-		// Exact prepare error from Main Fabric 42011481177 / job 127191339479:
-		// ". prepare: Error: ts-autocode sibling packages are not linked
-		//  (packages/runtime/node_modules/ts-autocode-grounding and
-		//  ts-autocode-training cone); run `pnpm run pins:fetch` then `pnpm install`"
 		const linker = readFileSync(
 			join(root, "scripts/ensure-ts-autocode-links.mts"),
 			"utf8",
@@ -216,8 +212,6 @@ describe("hobo-checkout mirror and partial clone contract", () => {
 	});
 
 	it("leaves the box mirror after the first failed attempt", () => {
-		// Three attempts through a mirror that cannot serve the fetch are one
-		// failure three times (finding 110). The later attempts go to GitHub.
 		const drop = action.indexOf(
 			"Disable box git mirror after transport errors",
 		);

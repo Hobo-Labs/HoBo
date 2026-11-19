@@ -36,8 +36,6 @@ describe("deps build headroom defaults", () => {
 		expect(Number(bytes)).toBe(reserve.dockerDataRootBytes);
 	});
 
-	// The pre-install reader cannot load the worker's zod schema, so it has its
-	// own; the two must decide the same way.
 	it("reads telemetry the way the worker's schema does", () => {
 		for (const text of [
 			"{}",

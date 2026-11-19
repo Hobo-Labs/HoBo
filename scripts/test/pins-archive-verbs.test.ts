@@ -1,11 +1,3 @@
-/**
- * Asset pins of release archives, the verbs: `pins:fetch` verifies the
- * archive and then unpacks the pinned member into the cache, `pins:status`
- * re-checks both, and `pins:bump` finds a Go-named archive
- * (`<name>_<tag>_<os>_<arch>.tar.gz`) in a release's SHA256SUMS, which is what
- * mirror.cloud publishes. Each runs the real script against a loopback release.
- * The archive reader itself is `pins-archive.test.ts`.
- */
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,7 +16,6 @@ import { tarGz } from "./support/tar-support.ts";
 
 const TARGET = currentTarget();
 const [GOOS = "linux", NODE_ARCH = "x64"] = TARGET.split("-");
-// Go names the architectures node calls x64 and arm64 amd64 and arm64.
 const GOARCH = NODE_ARCH === "x64" ? "amd64" : NODE_ARCH;
 const BINARY = Buffer.from("#!/bin/sh\necho mirror from an archive\n");
 const ARCHIVE = tarGz([
@@ -157,7 +148,6 @@ describe("pins:fetch and pins:status of an archive pin", () => {
 		);
 		assert.match(status.stdout, /holds no regular file named bin\/mirror/u);
 		assert.match(status.stdout, /kit {2}unpinned/u);
-		// The one ERR line is the summary, not an abort on the first asset.
 		assert.match(status.stderr, /^ERR 1 pin\(s\) out of date$/mu);
 		assert.doesNotMatch(status.stdout + status.stderr, /^ERR [A-Z_]+:/mu);
 	});

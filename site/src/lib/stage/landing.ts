@@ -1,24 +1,3 @@
-// ==========================================================================
-// The landing page as a trail: one section at a time, and Bo walks between.
-//
-// The page is a row of <section data-trail-stop> elements and a band (see
-// ../../components/TrailStage.astro). Without this script that is an ordinary
-// page. With it the page stops scrolling and becomes a set of stops:
-//
-//   desktop  The page keeps its own layout. Moving on hands the current
-//            section over to the next one while Bo walks to its stop in the
-//            band, where the props for its cards stand up around him.
-//   phone    The trail fills the screen and the sections themselves are moved
-//            onto signs beside it. Walking the trail is reading the page.
-//
-// Every move is one stop, however hard the wheel was spun, and every move is
-// a timed glide that starts from rest and arrives at rest: the reader decides
-// where to go, never how fast Bo runs. Nothing here is required to read the
-// page. With `prefers-reduced-motion` the stops swap in place.
-//
-// It only runs for the ink design. Choosing another world puts the page back
-// as it was, and choosing ink again builds the trail again.
-// ==========================================================================
 
 import contract from "../../../public/cast/cast.json";
 import { isPaused, isStill, onMotionChange, prefersStill, restoreMotion, setPaused } from "./motion";
@@ -41,15 +20,12 @@ import {
 
 type PropArt = { key: string; src: string; aspect: number; units: number; say: string };
 
-/** A card of a section, and the prop that stands for it. */
 type Item = {
 	card: HTMLElement | null;
 	art: PropArt | null;
 	wide: boolean;
-	/** On a phone, the card's sign, and the prop that stands beside it. */
 	board: HTMLElement | null;
 	pnode: HTMLElement | null;
-	/** On a desktop, the prop in the stop's set. */
 	dprop: HTMLElement | null;
 	x: number;
 	w: number;
@@ -57,12 +33,10 @@ type Item = {
 	on: boolean;
 };
 
-/** Something on a phone's trail that stands up as it is reached. */
 type Pop = { node: HTMLElement; x: number; w: number; want: number; on: boolean };
 
 type ExtraKind = "hint" | "tuck" | "cog";
 
-/** A sign beside the trail, and the inside it is lettered on. */
 type Sign = { node: HTMLElement; inner: HTMLElement };
 
 type Cart = { node: HTMLElement; rider: HTMLElement; gone: boolean };
@@ -70,7 +44,6 @@ type Cart = { node: HTMLElement; rider: HTMLElement; gone: boolean };
 type Stop = {
 	key: string;
 	name: string;
-	/** The section's heading, read before it can be moved onto a sign. */
 	title: string;
 	sign: string;
 	sec: HTMLElement;
@@ -80,7 +53,6 @@ type Stop = {
 	set: HTMLElement;
 	signNode: HTMLElement;
 	folds: number;
-	/** What travels when the section is handed over, in reading order. */
 	parts: HTMLElement[];
 	cards: HTMLElement[];
 	bb: Pop | null;
@@ -132,7 +104,6 @@ function extraOf(value: string | undefined): ExtraKind | null {
 	return value === "hint" || value === "tuck" || value === "cog" ? value : null;
 }
 
-/** Where a key was pressed, as far as the trail cares (see pageKeepsKey). */
 function keyPlace(target: EventTarget | null): KeyPlace {
 	if (!(target instanceof Element)) return "page";
 	if (target.closest("input, textarea, select, [contenteditable], .palette-picker, .site-nav")) return "editable";
@@ -145,7 +116,6 @@ export function mountLanding(page: HTMLElement, stage: HTMLElement): void {
 	const root = document.documentElement;
 	let live: (() => void) | null = null;
 
-	// The trail is ink's. Another world puts the page back; ink builds it again.
 	const sync = () => {
 		const wanted = !root.dataset.design && innerHeight >= 460;
 		if (wanted && !live) live = stageOn(page, stage);
@@ -159,7 +129,6 @@ export function mountLanding(page: HTMLElement, stage: HTMLElement): void {
 	sync();
 }
 
-/** The parts of the band the controller drives. */
 type Band = {
 	scene: HTMLElement;
 	world: HTMLElement;
@@ -202,8 +171,6 @@ function bandOf(stage: HTMLElement): Band | null {
 	return { scene, world, sets, bo, boWalk, boLeft, iris, route, routeList, prevBtn, nextBtn, pauseBtn, help, said, toast };
 }
 
-// Everything below runs while the trail is on, and is undone by the function
-// it returns.
 function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	if (!page.querySelector("[data-trail-stop]")) return () => {};
 	const ART = readProps(stage);
@@ -212,8 +179,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	if (!band) return () => {};
 	const { scene, world, sets, bo, boWalk, boLeft, iris, route, routeList, prevBtn, nextBtn, pauseBtn, help, said, toast } = band;
 
-	// Every timer and listener belongs to this run, so turning the trail off
-	// cannot leave a hobit waking up on a page that no longer has a trail.
 	let alive = true;
 	const timers = new Set<number>();
 	const later = (ms: number, fn: () => void): number => {
@@ -239,7 +204,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		made.push(n);
 		return n;
 	};
-	/** Nodes moved onto a phone's signs, to put back exactly where they were. */
 	const moved: Array<{ node: Element; parent: Element; next: Node | null }> = [];
 	const move = (node: Element, host: Element) => {
 		if (!node.parentElement) return;
@@ -265,11 +229,8 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		return n;
 	};
 
-	// ---------- build ----------
 	let tilts = 0;
 	const tilt = () => [-1.1, 0.8, -0.6, 1.2, -0.9, 0.5][tilts++ % 6];
-	// A prop's art is fetched when the reader is at its stop or next to it, and
-	// the rest once the page is idle: eighteen drawings are not the first paint.
 	const waiting = new Map<number, HTMLImageElement[]>();
 	const fetchStop = (i: number) => {
 		for (const img of waiting.get(i) ?? []) img.src = img.dataset.src ?? "";
@@ -346,11 +307,8 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		return { key: sec.dataset.trailStop ?? "", name, title, sign, sec, head, items, extra: extraOf(sec.dataset.stopExtra), set, signNode, folds: n, parts, cards: items.flatMap((it) => (it.card ? [it.card] : [])), bb: null, pos: 0, anchor: 0, gone: 0, cue: 0 };
 	});
 
-	// On a phone the sections themselves go onto the signs.
 	if (!desk) {
 		for (const s of STOPS) {
-			// A section's own text is its billboard; a section that is one card
-			// (the last one) is that card.
 			const lead = s.head ?? s.sec.querySelector<HTMLElement>(".stop-card");
 			if (lead) {
 				const { node, inner } = board("tst-billboard", world);
@@ -370,9 +328,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		}
 	}
 
-	// ---------- the hidden joy ----------
-	// On a phone it waits on the road between stops; on a desktop it stands at
-	// the far end of the stop it belongs to.
 	type RoadExtra = { stop: Stop; kind: ExtraKind; at: number; node: HTMLElement; w: number; x: number; cart: Cart | null };
 	const road: RoadExtra[] = [];
 	const stagedTuck: { node: HTMLElement; stop: Stop; fits: boolean }[] = [];
@@ -447,10 +402,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		toastTimer = later(4200, () => toast.classList.remove("is-shown"));
 	}
 
-	// ---------- the camera ----------
-	// Every move is a minimum-jerk glide: it starts from rest without a lurch and
-	// arrives without a stop. Asked to go somewhere new mid-glide, it bends toward
-	// the new place from the speed it already has, so nothing ever cuts.
 	const cam = { x: 0, v: 0, a: 0, c: [0, 0, 0, 0, 0, 0], moving: false, t0: 0, T: 0, to: 0 };
 	function glide(to: number, T: number): void {
 		const d = to - cam.x;
@@ -491,7 +442,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	};
 	const heading = () => (cam.moving ? cam.to : cam.x);
 
-	// ---------- layout ----------
 	const PS = 0.78;
 	let boX = 0;
 	let H = 0;
@@ -517,7 +467,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		cloudLayout();
 		routeAt = -1;
 	}
-	// Desktop: each prop stands under the card it belongs to.
 	function deskLayout(u: number): void {
 		const w = vw();
 		const left = page.getBoundingClientRect().left;
@@ -527,13 +476,10 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		D = Math.round(clamp(w * 0.4, 480, 640));
 		for (const s of STOPS) {
 			const sw = s.signNode.offsetWidth;
-			// Over his head the sign would reach the marker's labels on a short
-			// band, so there it stands beside him instead.
 			const beside = H < 200;
 			const reach = u * 128 * (554 / 542) * 0.42;
 			s.signNode.classList.toggle("is-beside", beside);
 			s.signNode.style.left = `${beside ? boX + reach : boX - sw / 2}px`;
-			// Nothing stands on Bo or his sign.
 			let floor = beside ? boX + reach + sw + 30 : boX + Math.max(sw / 2, 60) + 34;
 			s.items.forEach((it, n) => {
 				if (!it.art || !it.dprop) return;
@@ -563,7 +509,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			}
 		}
 	}
-	// Phone: every sign is a step, and a sign goes up over its prop.
 	function phoneLayout(u: number, base: number): void {
 		const w = vw();
 		boX = Math.round(Math.max(64, w * 0.17));
@@ -641,18 +586,11 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		for (const c of clouds) {
 			c.w = Math.round((desk ? clamp(H * 0.34, 64, 110) : clamp(vw() * 0.28, 110, 180)) * c.size);
 			c.node.style.width = `${c.w}px`;
-			// On a desktop the trail marker runs along the top of the band, so the
-			// sky starts below its labels.
 			c.node.style.top = desk ? `${64 + H * 0.2 * c.row}px` : `${top + sky * c.row}px`;
 			c.node.style.bottom = "";
 		}
 	}
 
-	// ---------- desktop: one move, two parts ----------
-	// The page hands over first: what you were reading drifts back the way Bo came
-	// and goes out of focus while the next section is already coming in from ahead,
-	// so there is never a frame with nothing arriving. The band finishes after it:
-	// the old stop folds flat, Bo walks on, and the next stop stands up around him.
 	const OUT = "cubic-bezier(.5, 0, .75, .4)";
 	const IN = "cubic-bezier(.16, 1, .3, 1)";
 	let pageBusy = false;
@@ -729,22 +667,15 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	function announce(i: number, aloud = true): void {
 		const s = STOPS[i];
 		if (aloud) said.textContent = `${i + 1} of ${STOPS.length}, ${s.name}: ${s.title}`;
-		// A reload or a shared link lands on the same stop, without a history
-		// entry per step.
 		const url = `${location.pathname}${location.search}${hashForStop(i, s.sec.id)}`;
 		if (url !== `${location.pathname}${location.search}${location.hash}`) history.replaceState(history.state, "", url);
 	}
-	/** Mark a stop that is taller than its area, so it reads top-down and shows there is more. */
 	function measureFit(s: Stop): void {
 		const inner = s.sec.querySelector<HTMLElement>(":scope > .container");
 		const tall = desk && inner !== null && !fits(inner.scrollHeight, s.sec.clientHeight);
 		s.sec.classList.toggle("is-tall", tall);
 		s.sec.classList.toggle("has-more", tall && canScroll(1, s.sec.scrollTop, s.sec.scrollHeight, s.sec.clientHeight));
 	}
-	/**
-	 * A phone sign taller than the sky scrolls inside its frame and keeps
-	 * vertical swipes for that; every other sign lets them through to the trail.
-	 */
 	function markTallSigns(): void {
 		for (const inner of world.querySelectorAll<HTMLElement>(".tst-inner")) {
 			inner.classList.remove("is-tall");
@@ -752,23 +683,13 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		}
 		for (const wrap of world.querySelectorAll<HTMLElement>(".table-wrap")) markMoreSides(wrap);
 	}
-	/**
-	 * A table on a phone sign is wider than the sign and scrolls sideways; its
-	 * `data-more` names the sides still hidden, so the edge there fades.
-	 */
 	function markMoreSides(wrap: HTMLElement): void {
 		const more = moreSides(wrap.scrollLeft, wrap.scrollWidth, wrap.clientWidth);
 		if (more) wrap.dataset.more = more;
 		else delete wrap.dataset.more;
 	}
-	/** The scroll box of the stop being read, on a desktop. */
 	const reading = () => (desk ? STOPS[active].sec : null);
 	let pendingFocus = false;
-	/**
-	 * Go to a stop. `carry` is true when the reader moved with the keyboard or
-	 * the Previous/Next buttons: if focus was inside the stop being left, it
-	 * goes to the new stop's heading instead of falling back to the page.
-	 */
 	function goStop(want: number, carry = false): void {
 		const j = clampStop(want, STOPS.length);
 		if (j === active) return;
@@ -785,7 +706,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		active = j;
 		const carried = focusIn || pendingFocus;
 		// A heading that takes focus is read out by itself; the live region
-		// would only say it twice.
 		announce(j, !carried);
 		fetchNear(j);
 		STOPS[j].sec.scrollTop = 0;
@@ -815,7 +735,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		if (dir > 0 && ++steps % 3 === 2) race();
 	}
 
-	// ---------- phone: the trail itself is the page ----------
 	let trip: { to: number; t0: number; R: number; swapped: boolean } | null = null;
 	const stopAt = (p: number) => {
 		let i = 0;
@@ -833,7 +752,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			camSet(p);
 			return;
 		}
-		// Too far to walk: the iris closes on Bo and opens on the new place.
 		if (dist > vw() * 3.2) {
 			trip = { to: p, t0: now(), R: Math.hypot(vw(), vh()), swapped: false };
 			return;
@@ -842,12 +760,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		if (p > cam.x && dist > vw() * 0.7 && ++steps % 3 === 2) race();
 	}
 
-	// ---------- input ----------
-	// One gesture is one step, however hard the wheel was spun. Past the last
-	// stop the page lets go, so the footer is a normal scroll away.
-	/** Is the trail on screen? A small scroll (a rotated phone, a nudged window) still is. */
 	const atTop = () => inStageZone(scrollY, page.offsetHeight);
-	/** The trail is about to take a step: bring it fully back into view first. */
 	const settle = () => {
 		if (scrollY > 0) scrollTo({ top: 0, behavior: "auto" });
 	};
@@ -867,20 +780,11 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		}
 	}
 	const goSection = (i: number) => (desk ? goStop(i) : walkTo(STOPS[i].pos));
-	/** Past the last stop, the page's own footer. */
 	const toFooter = () => {
 		document.querySelector(".site-footer, footer")?.scrollIntoView({ behavior: rm ? "auto" : "smooth", block: "start" });
 	};
-	/** May the trail take this step, or does it belong to the page's own scroll? */
 	const takes = (dir: number) => trailTakes(atTop(), dir, atStart(), atEnd());
 
-	// One gesture is one move, however long it runs on. A gesture ends when the
-	// wheel goes quiet, or when a dying stream rises again: a second flick.
-	//
-	// Two listeners. The window's only *watches* (passive, in the capture
-	// phase, so it sees a gesture that starts down at the footer before it
-	// reaches the trail) and never holds up the page's own scrolling. The
-	// trail's acts, and calls preventDefault only for an event it takes.
 	let lastWheel = Number.NEGATIVE_INFINITY;
 	let gesture = { acc: 0, fired: false, stepped: false, fromPage: false, peak: 0, last: 0 };
 	const wheelDelta = (e: WheelEvent) => (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 32 : 1);
@@ -897,24 +801,17 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	page.addEventListener("wheel", (e) => {
 		const d = wheelDelta(e);
 		const dir = Math.sign(d);
-		// A gesture that began down at the footer only brings the trail back to
-		// where the reader left it. It never steps; the next gesture can.
 		if (gesture.fromPage) {
 			e.preventDefault();
 			if (scrollY > 0) scrollBy({ top: d, behavior: "instant" });
 			return;
 		}
-		// The rest of a gesture that already stepped belongs to that step.
 		if (gesture.stepped) {
 			e.preventDefault();
 			return;
 		}
-		// A phone sign taller than the sky scrolls itself.
 		const sign = e.target instanceof Element ? e.target.closest(".tst-world .tst-inner") : null;
 		if (sign && canScroll(dir, sign.scrollTop, sign.scrollHeight, sign.clientHeight)) return;
-		// A stop taller than its area is read first: the wheel scrolls it, and
-		// only a new gesture at its edge moves on. Not while it is still being
-		// handed over: a gesture then is a second flick, and steps on.
 		const box = reading();
 		if (atTop() && !pageBusy && box && canScroll(dir, box.scrollTop, box.scrollHeight, box.clientHeight)) {
 			e.preventDefault();
@@ -940,7 +837,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		const dir = keyDirection(k, e.shiftKey, free);
 		if (dir !== 0) {
 			if (!atTop()) return;
-			// Down reads the rest of a tall stop before it moves on.
 			const box = reading();
 			if (readsDown(k) && box && canScroll(dir, box.scrollTop, box.scrollHeight, box.clientHeight)) {
 				box.scrollBy({ top: dir * scrollAmount(k, box.clientHeight), behavior: rm ? "auto" : "smooth" });
@@ -1012,7 +908,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	};
 	bo.addEventListener("click", hop, { signal });
 
-	// ---------- the trail marker ----------
 	const you = make("i", "tst-you");
 	you.setAttribute("aria-hidden", "true");
 	const marks = STOPS.map((s, i) => {
@@ -1054,7 +949,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			want = i + clamp((cam.x - a) / (b - a || 1), 0, 1);
 			at = stopAt(trip ? trip.to : heading());
 		}
-		// He follows the marker; he does not teleport along it.
 		youAt = desk && !rm ? youAt + (want - youAt) * (1 - Math.exp(-dt * 4.2)) : want;
 		you.style.left = `calc(8px + (100% - 16px) * ${(youAt / Math.max(1, STOPS.length - 1)).toFixed(4)})`;
 		if (prevBtn) prevBtn.disabled = at <= 0 && (desk || heading() <= 0);
@@ -1070,7 +964,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		});
 	}
 
-	// ---------- the troupe ----------
 	const awake = new WeakSet<HTMLElement>();
 	function wake(node: HTMLElement, clicked: boolean): void {
 		if (awake.has(node) && !clicked) return;
@@ -1104,7 +997,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		if (isStill() || peeker || peeks >= 5) return;
 		const n = hobit("mags", "stand", "is-peeking");
 		if (desk) {
-			// From behind a card, and only where the space above it is empty.
 			const s = STOPS[active];
 			s.sec.appendChild(n);
 			const c = n.offsetHeight;
@@ -1160,7 +1052,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			stillAt = now();
 		});
 	}
-	// The moment the reader moves on, whoever is out gets out of the way.
 	function flee(): void {
 		if (!peeker) return;
 		const { n, ids } = peeker;
@@ -1190,7 +1081,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		later(2000, stop);
 	}
 
-	// ---------- pause ----------
 	const syncPause = () => {
 		rm = prefersStill();
 		pauseBtn.hidden = rm;
@@ -1202,7 +1092,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	undo.push(onMotionChange(syncPause));
 	syncPause();
 
-	// ---------- frame ----------
 	let facing = 1;
 	let walking = false;
 	let strideAt = 0;
@@ -1262,9 +1151,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 				if (g.cart && g.x - x < 280 && g.x - x > -200) rideOff(g.cart);
 			}
 		}
-		// His stride comes from the ground he covers, up to the pace a stride can
-		// still be read at. Heading back, he turns round: the other drawing, not
-		// the same one run in reverse.
 		const moving = Math.abs(cam.v) > 14;
 		if (moving) facing = cam.v > 0 ? 1 : -1;
 		strideAt += Math.min(Math.abs(x - lastX) / ((13 * H) / 300), 30 * dt);
@@ -1294,8 +1180,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 			c.node.style.transform = `translate3d(${cx}px,0,0)`;
 		}
 		routeDraw(dt);
-		// Whether the trail is travelling: a check waits for "still" instead of
-		// guessing how long a move takes on a loaded machine.
 		const travel = cam.moving || trip !== null || pageBusy ? "moving" : "still";
 		if (page.dataset.travel !== travel) page.dataset.travel = travel;
 		const end = atEnd();
@@ -1330,10 +1214,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		} else camSet(STOPS[i].pos);
 		lastX = cam.x;
 	}
-	// A tall stop says there is more below it until it has been read.
 	for (const s of STOPS) s.sec.addEventListener("scroll", () => measureFit(s), { passive: true, signal });
-	// Scroll does not bubble: catch a phone sign's table scrolling sideways on
-	// the way down, and fade whichever edge still hides columns.
 	world.addEventListener(
 		"scroll",
 		(e) => {
@@ -1347,8 +1228,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		resizeTimer = later(80, () => reset(desk ? active : stopAt(cam.x)));
 	}, { signal });
 
-	// Arriving on a link to a section starts at that section, and following one
-	// later (Back, an in-page link) goes there.
 	const named = STOPS.map((s) => ({ id: s.sec.id, inner: [...s.sec.querySelectorAll("[id]")].map((n) => n.id) }));
 	const hashed = stopFromHash(location.hash, named);
 	addEventListener("hashchange", () => {
@@ -1359,9 +1238,7 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	}, { signal });
 	reset(Math.max(0, hashed));
 	settle();
-	// Everything else once the page has nothing better to do.
 	const idle = () => {
-		// Deleting the key being visited is safe while iterating a Map.
 		for (const i of waiting.keys()) fetchStop(i);
 	};
 	if ("requestIdleCallback" in window) requestIdleCallback(idle, { timeout: 4000 });
@@ -1373,7 +1250,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	});
 	raf = requestAnimationFrame(frame);
 
-	// The mode is chosen once per run: crossing between desk and phone rebuilds.
 	const wasDesk = desk;
 	const modeWatch = () => {
 		const isDesk = innerWidth >= 900 && innerHeight >= 560;

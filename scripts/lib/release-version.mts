@@ -1,15 +1,10 @@
-/** Parse HoBo release git refs (v*, sdk-v*, cli-v*) into semver + npm dist-tag. */
 
 export type ReleaseTrain = "full" | "sdk" | "cli";
 
 export type ParsedReleaseRef = {
-	/** Original git tag or dispatch input (e.g. v0.0.0-alpha.0). */
 	ref: string;
-	/** Semver version without train prefix (e.g. 0.0.0-alpha.0). */
 	semver: string;
-	/** npm dist-tag: prerelease id (alpha) or `latest` for stable releases. */
 	npmDistTag: string;
-	/** GHCR tag (same as ref — never `:latest` for prereleases). */
 	ghcrTag: string;
 	train: ReleaseTrain;
 };
@@ -20,7 +15,6 @@ const TRAIN_PREFIXES: { prefix: string; train: ReleaseTrain }[] = [
 	{ prefix: "v", train: "full" },
 ];
 
-/** Semver 2.0 core + optional prerelease/build (no leading v). */
 export const SEMVER_CORE =
 	/^(0|[1-9]\d*)\.(0|[1-9]\d*|\d+)\.(0|[1-9]\d*|\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
@@ -70,7 +64,6 @@ export function tryParseReleaseRef(ref: string): ParsedReleaseRef | undefined {
 	}
 }
 
-/** CI staging refs (PR / merge queue / dispatch) → valid semver for npm pack + OCI labels. */
 export function stagingSemverFromRef(ref: string): string | undefined {
 	const trimmed = ref.trim();
 	const pr = /^pr-(.+)$/.exec(trimmed);

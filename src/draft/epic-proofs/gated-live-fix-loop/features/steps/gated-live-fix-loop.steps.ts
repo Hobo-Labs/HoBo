@@ -1,12 +1,3 @@
-/**
- * Executable step definitions for gated-live-fix-loop.feature.
- *
- * Drives the epic's real loop (services/gated-live-fix-loop.ts) with the
- * committed simulation fixture — the staging scenario replays the fixture
- * as-is (its canary observation regresses); the production scenario reuses
- * the same incident with the environment flipped to prod and a healthy
- * canary observation, so only policy classification changes the outcome.
- */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Given, Then, When } from "@cucumber/cucumber";
@@ -59,8 +50,6 @@ type LiveFixWorld = {
 	result?: LoopResult;
 };
 
-// --- Scenario: low-risk fix through canary with auto-rollback ----------------------------
-
 Given(
 	"a staging SLO regression fixture with a captured failing trace",
 	function (this: LiveFixWorld) {
@@ -107,8 +96,6 @@ Then(
 		);
 	},
 );
-
-// --- Scenario: production fix blocks until approved --------------------------------------
 
 Given(
 	"the same incident classified in the production environment",

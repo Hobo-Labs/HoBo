@@ -145,8 +145,6 @@ describe("resolveBoxGitMirror", () => {
 	});
 
 	it("misses a blobless mirror that has the commit but not its files", () => {
-		// What the box built (finding 110): the commit is there, so the probe
-		// used to say hit, and the checkout then died asking the mirror for blobs.
 		git(source, ["config", "uploadpack.allowFilter", "true"]);
 		const blobless = join(temp, "blobless.git");
 		execFileSync("git", [

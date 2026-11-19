@@ -1,9 +1,3 @@
-/**
- * The pin tests build git repositories and caches under the temp directory.
- * A run that leaves them behind costs disk on a machine that has very little,
- * so what `scratch()` hands out is removed when the process ends, and what an
- * earlier run (a killed one) left is swept the next time.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, utimesSync } from "node:fs";

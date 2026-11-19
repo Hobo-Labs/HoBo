@@ -1,10 +1,7 @@
 #!/usr/bin/env node
-/** Resolve measured deps-build inode/byte headroom (shared with build-deps.sh and admission). */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-// Not `deps-build-budget.ts`: that module holds the worker's zod schema, and
-// this file runs in the deps layer job before anything is installed.
 import { depsBuildDockerReserve } from "../../packages/ci-gh-actions/src/isolated-worker/deps-build-docker-reserve.ts";
 import {
 	isNonNegativeInt,
@@ -20,7 +17,6 @@ const TELEMETRY_FIELDS = [
 ] as const;
 type TelemetryField = (typeof TELEMETRY_FIELDS)[number];
 
-/** The record `DepsBuildTelemetrySchema` in the worker package describes. */
 export type DepsBuildTelemetry = Readonly<{
 	[field in TelemetryField]?: number;
 }>;
@@ -29,11 +25,6 @@ function isTelemetryField(key: string): key is TelemetryField {
 	return TELEMETRY_FIELDS.some((field) => field === key);
 }
 
-/**
- * Reads a telemetry file's text with node builtins only. Same rule as the
- * worker's schema: an object, no other key, each value a non-negative integer.
- * Anything else is `undefined`.
- */
 export function parseDepsBuildTelemetry(
 	text: string,
 ): DepsBuildTelemetry | undefined {

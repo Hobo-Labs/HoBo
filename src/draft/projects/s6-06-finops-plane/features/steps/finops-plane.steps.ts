@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for finops-plane.feature.
- *
- * Drives the real s6-06 modules (plan-cost estimator, budget deploy gate,
- * showback projection) against the committed fixture scenario — no live
- * providers; every boundary is the same Pact/protobuf/CUE-backed fixture the
- * acceptance test uses.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -42,8 +34,6 @@ function costCatalog(fixture: Scenario) {
     unitPrices: fixture.costJson.unitPrices,
   };
 }
-
-// --- Scenario: hobo plan returns projected cost from provider cost.json -----
 
 Given(
   "a capability manifest cost.json and a deployment plan usage profile",
@@ -87,8 +77,6 @@ Then(
   },
 );
 
-// --- Scenario: Hard budget breach blocks deploy ------------------------------
-
 Given("a camp hard budget below the projected plan cost", () => {
   const fixture = scenario();
   world.planEstimate = estimatePlanCost({
@@ -125,8 +113,6 @@ Then("the gate denies the deployment", () => {
   assert.equal(world.gate.effect, "deny");
   assert.equal(world.gate.blocksDeploy, true);
 });
-
-// --- Scenario: Showback reconciles against recorded spend --------------------
 
 Given("meter.UsageRecorded events in the event log", () => {
   const fixture = scenario();

@@ -1,10 +1,3 @@
-/**
- * Executable step definitions for deployment-strategy-saga-orchestrator.feature.
- *
- * Drives the epic's real saga orchestrator
- * (services/deployment-strategy-orchestrator.ts) against the committed
- * multi-cloud-shop fixture and asserts the rollout outcomes it produces.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -33,8 +26,6 @@ type SagaWorld = {
 	unhealthy?: Deployment;
 };
 
-// --- Scenario: Deploy multi-cloud-shop with mixed strategies to green --------------------
-
 Given(
 	"each multi-cloud-shop service declares recreate, blue-green, canary, or progressive",
 	async function (this: SagaWorld) {
@@ -42,7 +33,6 @@ Given(
 		for (const [serviceId, serviceConfig] of Object.entries(
 			this.fixture.referenceApp.services,
 		)) {
-			// SAFETY: assertion to `serviceConfig as { strategy: string }` is required at this boundary.
 			const config = serviceConfig as { strategy: string };
 			assert.ok(
 				STRATEGY_KINDS.includes(config.strategy),
@@ -85,8 +75,6 @@ Then(
 	},
 );
 
-// --- Scenario: Auto-roll back a seeded canary regression ---------------------------------
-
 Given(
 	"a seeded canary SLO regression on the multi-cloud-shop web service",
 	async function (this: SagaWorld) {
@@ -118,8 +106,6 @@ Then(
 		assert.equal(regression.gatewayState.activeVersion, "web@sha256:blue");
 	},
 );
-
-// --- Scenario: Health-gate promotion from data-plane and provider signals ----------------
 
 Given(
 	"healthy and provider-unhealthy signal scenarios for the web service",

@@ -26,10 +26,6 @@ describe("multi-cloud-shop", () => {
 	});
 
 	it("stays provider-neutral: provider selection belongs on a Yard", () => {
-		// bindle-provider-selection-forbidden: no cloud provider pins may appear
-		// in resource annotations; only platform annotations (hobo env /
-		// session-replay) are allowed. Two-cloud deployment attaches this same
-		// bindle to provider-specific Camps/Yards.
 		for (const resource of Object.values(definition.resources)) {
 			for (const annotation of resource.annotations) {
 				expect(annotation.provider).toBe("hobo");
@@ -41,14 +37,12 @@ describe("multi-cloud-shop", () => {
 		const boundApi = definition.entrypoint("api");
 		expect(boundApi).toBeTypeOf("function");
 
-		// SAFETY: assertion to `boundApi?.() as typeof shopApi` is required at this boundary.
 		const fetch = boundApi?.() as typeof shopApi;
 		const response = await fetch(
 			new Request("http://multi-cloud-shop.test/products"),
 		);
 		expect(response.status).toBe(200);
 
-		// SAFETY: assertion to `JSON.parse( await readFile( new URL("../contracts/pacts/web-to-api.pact.json", import.meta.url), "utf8", ), ) as { inter` is required at this boundary.
 		const pact = JSON.parse(
 			await readFile(
 				new URL("../contracts/pacts/web-to-api.pact.json", import.meta.url),

@@ -1,26 +1,9 @@
-/**
- * How the archive reader reads an entry's name besides its spelling: the
- * code points another file system ignores, the forms under which two names
- * are one file elsewhere, and how a name is shown in a refusal. A name
- * reaches these as the reader holds it: its bytes, one latin1 character
- * each.
- *
- * Erasable TypeScript with node builtins only.
- */
 
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
-/** A name's bytes read as UTF-8, any that are not UTF-8 as U+FFFD. */
 const asText = (name: string): string =>
 	Buffer.from(name, "latin1").toString("utf8");
 
-/**
- * Unicode 15.1's Default_Ignorable_Code_Point, as DerivedCoreProperties.txt
- * lists it, in inclusive ranges. HFS+ and some Linux casefold kernels drop
- * such code points when they compare names, so `mi‍rror` is `mirror`
- * there. `pins-archive-fold.test.ts` checks this list against the table
- * written from that file.
- */
 export const DEFAULT_IGNORABLE: readonly (readonly [number, number])[] = [
 	[0x00ad, 0x00ad],
 	[0x034f, 0x034f],
@@ -41,7 +24,6 @@ export const DEFAULT_IGNORABLE: readonly (readonly [number, number])[] = [
 	[0xe0000, 0xe0fff],
 ];
 
-/** The first default-ignorable code point in `name`, if it holds one. */
 export function firstIgnorable(name: string): number | undefined {
 	for (const char of asText(name)) {
 		const point = char.codePointAt(0) ?? 0;
@@ -54,30 +36,11 @@ export function firstIgnorable(name: string): number | undefined {
 	return undefined;
 }
 
-/**
- * A name as a case-insensitive, normalisation-insensitive file system sees it,
- * Unicode's canonical caseless key NFD(casefold(NFD(name))): its bytes read
- * as UTF-8, put in NFD, case-folded by `toLowerCase().toUpperCase()
- * .toLowerCase()`, and put in NFD again. NFD comes first so that marks are
- * ordered before they are folded (NFC would compose U+0345 into a letter and
- * fold it to an iota after the other marks). `pins-archive-fold.test.ts`
- * checks that this joins each code point of Unicode 15.1 with its full case
- * folding, the folding ext4 and f2fs casefold directories apply, and checks
- * whole names on a random sample. It also joins some names those keep apart
- * (`ı` with `i`), and bytes that are not UTF-8 all read as U+FFFD: both only
- * refuse more. It does not model NTFS, which does not normalise: that is
- * `upcaseName`, the reader's second key.
- */
 export function foldName(name: string): string {
 	const text = asText(name).normalize("NFD");
 	return text.toLowerCase().toUpperCase().toLowerCase().normalize("NFD");
 }
 
-/**
- * The BMP code points whose simple uppercase (UnicodeData.txt) is one code
- * point while their full uppercase, what `toUpperCase` gives, is several:
- * the Greek letters with a subscript iota.
- */
 const SIMPLE_UPPER_ONLY: ReadonlyMap<number, number> = new Map([
 	[0x1f80, 0x1f88],
 	[0x1f81, 0x1f89],
@@ -108,14 +71,6 @@ const SIMPLE_UPPER_ONLY: ReadonlyMap<number, number> = new Map([
 	[0x1ff3, 0x1ffc],
 ]);
 
-/**
- * A name as NTFS compares it: each UTF-16 unit of its text, un-normalised,
- * replaced by its simple uppercase, as the volume's $UpCase table does.
- * Code points past the BMP are left as they are. Two names NTFS stores as
- * one file have one `upcaseName`; `pins-archive-fold.test.ts` checks the
- * mapping for every BMP code point of Unicode 15.1, and holds random names
- * to it.
- */
 export function upcaseName(name: string): string {
 	let upcased = "";
 	for (const char of asText(name)) {
@@ -131,7 +86,6 @@ export function upcaseName(name: string): string {
 	return upcased;
 }
 
-/** A character for a message: printable ASCII as it is (`"` and `\\` escaped), anything else as `\\u{XXXX}`. */
 function shownChar(char: string): string {
 	if (char === '"' || char === "\\") return `\\${char}`;
 	const point = char.codePointAt(0) ?? 0;
@@ -139,13 +93,6 @@ function shownChar(char: string): string {
 	return `\\u{${point.toString(16).toUpperCase().padStart(4, "0")}}`;
 }
 
-/**
- * A name for a message, quoted and unambiguous: its bytes read as UTF-8, each
- * printable ASCII character as it is and every other code point as
- * `\\u{XXXX}`, so a letter that does not show (U+3164, U+115F), a variation
- * selector or a direction override can never hide in a refusal. Bytes that
- * are not UTF-8 are shown as `\\xNN`.
- */
 export function shownName(raw: string): string {
 	let text: string | undefined;
 	try {

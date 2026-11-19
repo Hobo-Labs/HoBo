@@ -1,12 +1,3 @@
-/**
- * What the git side of the bootstrap script trusts, and what it refuses to
- * do on trust: the repository named by the manifest, by `.gitmodules` and by
- * this clone's own configuration must be the same one before any network call,
- * a transport git would run code for is never used, a commit only a local
- * clone has is never pinned, and local work is not abandoned by a `setup`.
- *
- * Real repositories on disk, the real script, git configuration isolated.
- */
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -52,11 +43,6 @@ function fixture(pinned = 1, options: PinsFileOptions = {}): Fixture {
 
 const OTHER = "https://github.com/example/other.git";
 
-/**
- * An `ext::` URL whose command leaves a marker if git ever runs it. (The ext
- * helper splits on spaces and does not interpret quotes, so the command is a
- * script file, not `sh -c '...'`.)
- */
 interface ExtCommand {
 	readonly url: string;
 	readonly marker: string;
@@ -171,7 +157,6 @@ describe("the repository must be the same everywhere before anything is fetched"
 			"submodule.external/lib.url",
 			url,
 		]);
-		// The user's configuration enables ext; the script must not care.
 		const run = runBootstrap(f.work, [], { HOBO_PINS_ALLOW_LOCAL: "" }, [
 			["protocol.ext.allow", "always"],
 		]);
@@ -244,7 +229,6 @@ describe("network git pins the transports", () => {
 	});
 });
 
-/** A commit that exists in the reference clone and nowhere the remote can see. */
 function localOnlyCommit(f: Fixture): string {
 	writeFileSync(join(f.reference, "f.txt"), "never pushed\n");
 	git(f.reference, ["add", "f.txt"]);
@@ -355,7 +339,6 @@ describe("the script does not move a submodule it cannot account for", () => {
 
 	it("init reports a submodule that git declined to update, instead of calling it pinned", () => {
 		const f = fixture(1);
-		// `update = none` makes `git submodule update` skip the path and succeed.
 		git(f.work, ["config", "submodule.external/lib.update", "none"]);
 		const run = runBootstrap(f.work, []);
 		assert.equal(run.status, 1, `${run.stdout}${run.stderr}`);

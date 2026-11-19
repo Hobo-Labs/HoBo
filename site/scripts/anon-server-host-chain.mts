@@ -1,13 +1,3 @@
-/**
- * Anon OpenSaaS server host chain (zero project API keys).
- *
- * 1) OpenPouch HTTP Instant Lane — one-shot; 429 → cooldown
- * 2) Clawdship Docker (zero-signup competitor) — one-shot; cooldown
- * 3) Cloudflare Temporary Worker + Neon HTTP shim — last resort
- *
- * Never loops/retries free anon hosts (avoids DDoS).
- * Instanode blacklisted (dead 404 API) — never probed here.
- */
 import { type JsonObject } from "../src/lib/json-inspect.js";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -76,7 +66,6 @@ export async function readOpenpouchCooldown(
 ): Promise<OpenpouchCooldown | null> {
 	try {
 		const raw = await readFile(filePath, "utf8");
-		// SAFETY: assertion required at this I/O boundary.
 		const parsed = JSON.parse(raw) as Partial<OpenpouchCooldown>;
 		if (Object.prototype.toString.call(parsed.until) !== "[object Number]" || parsed.until <= Date.now()) {
 			return null;
@@ -103,7 +92,6 @@ export async function writeOpenpouchCooldown(
 	};
 	await mkdir(path.dirname(filePath), { recursive: true });
 	await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`);
-	// Keep new per-host cooldown in sync for chain adapters.
 	await writeHostCooldown("openpouch-http", reason, ms);
 	return payload;
 }
@@ -114,7 +102,6 @@ function debugLog(
 	message: string,
 	data: JsonObject,
 ): void {
-	// #region agent log
 	fetch("http://127.0.0.1:7655/ingest/eac23247-0462-43c4-8e6e-14b2a6cecba6", {
 		method: "POST",
 		headers: {
@@ -131,7 +118,6 @@ function debugLog(
 			timestamp: Date.now(),
 		}),
 	}).catch(() => {});
-	// #endregion
 }
 
 export type ProvisionAnonOpenSaasServerInput = {
@@ -139,7 +125,6 @@ export type ProvisionAnonOpenSaasServerInput = {
 	readonly databaseUrl: string;
 	readonly webClientUrl: string;
 	readonly mock?: boolean;
-	/** auto (default) | openpouch | clawdship | cloudflare */
 	readonly prefer?: "auto" | "openpouch" | "clawdship" | "cloudflare";
 };
 
@@ -205,9 +190,6 @@ async function provisionClawdshipAnonServer(input: {
 	}
 }
 
-/**
- * Prefer OpenPouch → Clawdship competitor → CF Temporary Neon shim.
- */
 export async function provisionAnonOpenSaasServer(
 	input: ProvisionAnonOpenSaasServerInput,
 ): Promise<AnonServerHostResult> {
@@ -303,7 +285,6 @@ export async function provisionAnonOpenSaasServer(
 					? error
 					: new OpenpouchAnonServerError(message);
 			}
-			// fall through to Clawdship / CF
 		}
 	} else if (legacyCooldown || openpouchHostCooldown) {
 		debugLog(

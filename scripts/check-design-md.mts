@@ -1,19 +1,3 @@
-/**
- * Lint every Google DESIGN.md for web UI projects in the monorepo.
- *
- * Web UI project = any of:
- *   - directory is in the hard-coded web roots (`site/`)
- *   - package.json has `"hobo": { "webUi": true }`
- *   - package.json depends on a web app framework (astro, next, nuxt, …)
- *   - directory already has a DESIGN.md (opt-in identity surface)
- *
- * Every web UI project must ship DESIGN.md at its package root. Lint uses the
- * same `@google/design.md` / `designmd` CLI as the Pages site.
- *
- *   pnpm run design:lint
- *   node --import tsx scripts/check-design-md.mts
- *   node --import tsx scripts/check-design-md.mts --json
- */
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -22,10 +6,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const jsonMode = process.argv.includes("--json");
 
-/** Always treat these workspace roots as web UI (must have DESIGN.md). */
 export const WEB_UI_ROOTS = ["site"] as const;
 
-/** package.json dependency names that mark a package as a web app host. */
 export const WEB_FRAMEWORK_DEPS = new Set([
 	"astro",
 	"next",
@@ -66,7 +48,6 @@ function readPackageJson(dir: string): PackageJson | null {
 	const path = join(dir, "package.json");
 	if (!existsSync(path)) return null;
 	try {
-		// SAFETY: assertion to `ON.parse(readFileSync(path, "utf8")) as PackageJson; ` is required at this boundary.
 		return JSON.parse(readFileSync(path, "utf8")) as PackageJson;
 	} catch {
 		return null;
@@ -95,7 +76,6 @@ export function isWebUiProject(
 	repoRoot = root,
 ): boolean {
 	const rel = relative(repoRoot, dir).replaceAll("\\", "/") || ".";
-	// SAFETY: assertion to `B_UI_ROOTS as readonly string[]).` is required at this boundary.
 	if ((WEB_UI_ROOTS as readonly string[]).includes(rel)) return true;
 	if (existsSync(join(dir, "DESIGN.md"))) return true;
 	if (pkg?.hobo?.webUi === true) return true;
@@ -103,7 +83,6 @@ export function isWebUiProject(
 	return false;
 }
 
-/** Collect package directories under site/, packages/**, examples/**, apps/**. */
 export function discoverPackageDirs(repoRoot = root): string[] {
 	const out: string[] = [];
 
@@ -129,7 +108,6 @@ export function discoverPackageDirs(repoRoot = root): string[] {
 			if (existsSync(join(child, "package.json"))) {
 				out.push(child);
 			}
-			// group folders (runtimes, providers, iac, …)
 			walkPackages(child, depth + 1);
 		}
 	}
@@ -157,7 +135,6 @@ export function listWebUiProjects(repoRoot = root): DesignMdProject[] {
 		...discoverPackageDirs(repoRoot),
 	]);
 
-	// Also pick up any DESIGN.md under repoRoot that isn't in a package yet
 	function walkDesignFiles(dir: string, depth: number) {
 		if (!isDir(dir) || depth > 6) return;
 		let entries: string[];
@@ -182,7 +159,6 @@ export function listWebUiProjects(repoRoot = root): DesignMdProject[] {
 		if (!isDir(dir)) continue;
 		const rel = relative(repoRoot, dir).replaceAll("\\", "/") || ".";
 		if (seen.has(rel)) continue;
-		// skip non-project DESIGN.md under docs/ or scripts/
 		if (
 			rel.startsWith("docs/") ||
 			rel.startsWith("scripts/") ||
@@ -196,7 +172,6 @@ export function listWebUiProjects(repoRoot = root): DesignMdProject[] {
 		seen.add(rel);
 		const hasDesign = existsSync(join(dir, "DESIGN.md"));
 		let reason = "DESIGN.md present";
-		// SAFETY: assertion to `UI_ROOTS as readonly string[]).in` is required at this boundary.
 		if ((WEB_UI_ROOTS as readonly string[]).includes(rel))
 			reason = "web-ui root";
 		else if (pkg?.hobo?.webUi) reason = "hobo.webUi";
@@ -299,7 +274,6 @@ export function runDesignMdCheck(repoRoot = root): DesignMdCheckRun {
 			});
 			continue;
 		}
-		// When testing against a fake repoRoot, only check presence; lint uses real designmd on real paths
 		if (repoRoot !== root) {
 			results.push({
 				rel: relative(repoRoot, project.designMd).replaceAll("\\", "/"),
@@ -344,7 +318,6 @@ function main() {
 			const info = result.stdout.trim();
 			if (info) {
 				try {
-					// SAFETY: assertion to `nfo) as { summary?: { errors?: number; warnings?: number }; }; const` is required at this boundary.
 					const parsed = JSON.parse(info) as {
 						summary?: { errors?: number; warnings?: number };
 					};
@@ -354,7 +327,6 @@ function main() {
 							`  errors=${s.errors ?? 0} warnings=${s.warnings ?? 0}`,
 						);
 				} catch {
-					/* ignore */
 				}
 			}
 		} else {

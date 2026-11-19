@@ -9,10 +9,6 @@ import { collectBindleResources } from "../src/index.js";
 import { defineHelloBindle } from "./fixtures/hello-bindle-collector-target.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// Local golden for this engine's collector-target output. The shared example
-// manifest (examples/hello-bindle/contracts/manifests) was repurposed by the
-// S1-15 bind-wiring promotion to a different bindle shape that other proofs
-// consume, so this proof pins its own copy to stay byte-stable.
 const fixturePath = join(here, "fixtures/hello-bindle.manifest.json");
 
 function serializeCanonicalManifest(manifest) {

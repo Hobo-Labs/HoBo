@@ -44,7 +44,6 @@ export async function loadCliSpec(root: string) {
 }
 
 export async function checkCliDocs(
-	// SAFETY: assertion to `{} as CheckCliDocsOptions` is required at this boundary.
 	{ root, files }: CheckCliDocsOptions = {} as CheckCliDocsOptions,
 ) {
 	const spec = await loadCliSpec(root);

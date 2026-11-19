@@ -125,7 +125,6 @@ describe("impact-classifier inert rules", () => {
 		});
 		assert.deepEqual(inert.meaningfulPaths, []);
 		assert.equal(inert.inert[0]?.rule, "json-canonical");
-		// Key order is observable (exports conditions, goldens): never inert.
 		const reordered = classify({
 			"packages/core/package.json": {
 				base: '{"name":"x","scripts":{"a":"1"}}',
@@ -211,7 +210,6 @@ describe("impact-classifier shadow comparison", () => {
 			"// only a comment\nexport const a = 1;\n",
 		);
 		const classification = classify(files);
-		// Default lanes read the real tree: packages/core exists.
 		const shadow = shadowLanes(Object.keys(files), classification);
 		assert.equal(shadow.current.mode, "filtered");
 		assert.equal(shadow.proposed.mode, "skip");
@@ -256,7 +254,6 @@ describe("impact-classifier shadow comparison", () => {
 				stdio: ["pipe", "pipe", "ignore"],
 			},
 		);
-		// SAFETY: the CLI's own output contract, asserted right below.
 		const parsed = JSON.parse(out) as { meaningfulPaths: string[] };
 		assert.deepEqual(parsed.meaningfulPaths, ["packages/core/src/a.ts"]);
 	});

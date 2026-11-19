@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, isJsonObject } from "./json.js";
 
-
 const VALID_RECORD_TYPES = new Set(["A", "AAAA", "CNAME", "TXT", "CAA"]);
 const COST_ROUTABLE_REPLICA_CLASSES = new Set(["active-active-eventual", "pinned"]);
 
@@ -135,7 +134,6 @@ export async function runDnsConformance(adapter, { domain, camp }) {
     ]);
     failures.push("malformed weighted routing policy was coerced");
   } catch {
-    // Expected.
   }
 
   return {

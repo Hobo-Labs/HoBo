@@ -1,11 +1,3 @@
-/**
- * Runnable example for data-plane-event-sourcing-cqrs-reactivity. The draft-artifact
- * gate EXECUTES this with `node --import tsx` and diffs stdout against usage.expected.txt.
- *
- * Runs the same reference simulation the cucumber steps drive
- * (services/data-plane-reference-architecture.ts): a typed order event through CQRS,
- * replay/live equivalence, portable sinks + search, and adversarial data handling.
- */
 import { strict as assert } from "node:assert";
 
 import { runDataPlaneReferenceSimulation } from "../services/data-plane-reference-architecture.ts";
@@ -13,7 +5,6 @@ import { runDataPlaneReferenceSimulation } from "../services/data-plane-referenc
 const result = await runDataPlaneReferenceSimulation();
 assert.equal(result.epic.slug, "data-plane-event-sourcing-cqrs-reactivity");
 
-// 1) Order flow: typed event appends once, replay==live, Reactor pushes the view.
 const orderFlow = result.orderFlow;
 assert.equal(orderFlow.domainBody.roundTripValid, true);
 assert.equal(orderFlow.command.seq, 1);
@@ -26,7 +17,6 @@ console.log(
 );
 console.log(`graphql read totalCents=${orderFlow.graphql.orders[0].totalCents}`);
 
-// 2) Sinks stay portable and consumer-tested; raw driver access is read-only + flagged.
 assert.equal(result.sinks.relational.status, "consumer_tested");
 assert.equal(result.sinks.document.status, "consumer_tested");
 assert.equal(result.sinks.changeFeed.eventType, "data.Changed");
@@ -44,7 +34,6 @@ console.log(
 	`raw escape hatch flagged=${result.rawEscapeHatch.portabilityFlagged} writeBlocked=${result.rawEscapeHatch.writeBlocked}`,
 );
 
-// 3) Adversarial paths: lag labeled, divergence replays, poison quarantines, erasure tombstones.
 const adversarial = result.adversarial;
 assert.equal(adversarial.projectionLag.eventType, "projection.Lagged");
 assert.equal(adversarial.snapshotDivergence.recoveredBy, "full-replay");

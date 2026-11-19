@@ -10,7 +10,6 @@ import {
 import { reconcileAmbiguousFailure } from "./reconcile-ambiguous-failure.js";
 import { type JsonValue } from "./json.js";
 
-
 const KV = "wasi:keyvalue/store@0.2.0";
 const WORKFLOW = "hobo:runtime/workflow@0.1.0";
 
@@ -147,7 +146,6 @@ async function provesNestedDeadlineShrinks() {
 
   return (
     innerDeadlines.length === 1 &&
-    // SAFETY: assertion to `(innerDeadlines[0] as { remainingAtDispatchMs: number }).remainingAtDispatchMs =` is required at this boundary.
     (innerDeadlines[0] as { remainingAtDispatchMs: number }).remainingAtDispatchMs === 50
   );
 }

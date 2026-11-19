@@ -46,7 +46,6 @@ describe("ci-trace action artifact names", () => {
 	});
 
 	it("never fails the job it reports on when the upload fails", () => {
-		// Only the upload talks to an outside service; it alone may fail quietly.
 		const upload = ACTION.slice(
 			ACTION.indexOf("- name: Upload trace artifact"),
 		);

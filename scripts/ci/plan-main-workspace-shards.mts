@@ -1,7 +1,3 @@
-/**
- * Resolve main push test base/scope and print balanced workspace shard indexes.
- * Used by main-gate-plan so shards start before Main full gate S0 finishes.
- */
 import { spawnSync } from "node:child_process";
 import {
 	appendFileSync,
@@ -34,16 +30,8 @@ import {
 } from "./runner-routing.mts";
 import { loadWorkspaceDurations } from "./workspace-test-durations.mts";
 
-/**
- * How many shards the plan sizes for at once. Committed routing policy
- * (`runnerRouting.mainWorkspaceParallelCap` in `.hobo/ci.json`, ADR-0181),
- * not a reading of the fleet and not an environment variable:
- * where the shards run is the route's decision (the plan job reads the
- * routing slip, else the queue, again before them).
- */
 export const DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP = 4;
 
-/** The committed cap (a whole number from 1 to 8, as the reader checks), else the default. */
 export function mainWorkspaceParallelCap(
 	policy: RunnerRouting | undefined,
 ): number {
@@ -52,7 +40,6 @@ export function mainWorkspaceParallelCap(
 	);
 }
 
-/** `runnerRouting` from the checkout's `.hobo/ci.json`, or nothing. */
 export function readCommittedRunnerRouting(
 	root: string = process.cwd(),
 ): RunnerRouting | undefined {
@@ -86,7 +73,6 @@ function tryRestorePlanCache(head: string): boolean {
 	if (!CACHE_DIR || !GITHUB_OUTPUT) return false;
 	const manifest = join(CACHE_DIR, "manifest.json");
 	try {
-		// SAFETY: manifest.json is written by savePlanCache in this script as { head: string }.
 		const parsed = JSON.parse(readFileSync(manifest, "utf8")) as {
 			head?: string;
 		};
@@ -109,7 +95,6 @@ function savePlanCache(head: string, outputs: Record<string, string>): void {
 	writeFileSync(join(CACHE_DIR, "manifest.json"), JSON.stringify({ head }));
 }
 
-/** What the plan reports when the merge queue's result stands in for main's tests. */
 export const EMPTY_PLAN_OUTPUTS = {
 	main_base: "",
 	main_tests: "",
@@ -117,7 +102,6 @@ export const EMPTY_PLAN_OUTPUTS = {
 	shards: "[]",
 } as const;
 
-/** Only a push reuses the merge queue; schedule and dispatch always plan. */
 export function reusesMergeQueue(
 	setting: string | undefined,
 	eventName: string,
@@ -126,13 +110,10 @@ export function reusesMergeQueue(
 }
 
 async function main(): Promise<void> {
-	// Install-free on the worker: turbo via mise, no pnpm install for planning.
 	process.env.HOBO_TURBO_INVOKER ??= "mise";
 	const eventName = process.env.EVENT_NAME ?? "";
 	const pushBefore = process.env.PUSH_BEFORE ?? "";
 	const head = process.env.HEAD_SHA ?? process.env.GITHUB_SHA ?? "";
-	// The merge queue already passed this tree (scripts/ci/merge-queue-reuse.mts):
-	// no shard runs, and nothing is cached, so a re-run with reuse off plans afresh.
 	if (reusesMergeQueue(process.env.MAIN_REUSE_MERGE_QUEUE, eventName)) {
 		console.error(
 			"main gate plan: merge queue passed this tree; no workspace shards",
@@ -184,8 +165,6 @@ async function main(): Promise<void> {
 		const readRootFile = cliRootFileReader(base);
 		const gateScope = mainGateScope(changedPaths, undefined, readRootFile);
 		scope = gateScope.mode;
-		// Repo-wide workspace tests only when root config or the lockfile widens
-		// the main gate; every other push runs turbo against last-green main.
 		tests = gateScope.mode === "repo-wide" ? "all" : "affected";
 	}
 	const repo = readRepo();

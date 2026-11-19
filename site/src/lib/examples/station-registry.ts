@@ -24,11 +24,8 @@ export interface DeployedStation {
 	readonly policy: BudgetPolicy;
 	readonly label: string;
 	readonly createdAt: string;
-	/** Remote anonymous station endpoint (operator bootstrap). Absent for local. */
 	readonly endpointUrl?: string;
-	/** Cloudflare Temporary Accounts claim URL (~60m). */
 	readonly claimUrl?: string;
-	/** ISO expiry for temporary stations. */
 	readonly expiresAt?: string;
 }
 

@@ -1,11 +1,3 @@
-/**
- * `pins:bump` for an asset pin, and what it must not do quietly: drop a build
- * the new release does not list, rename the file a binary runs under, move a
- * pin to another repository, or let an unchecked tag steer a request.
- *
- * The release is a real loopback http server and the script is the real
- * script (HOBO_PINS_ALLOW_LOCAL lets the manifest name that server).
- */
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,7 +34,6 @@ function pinFile(origin: string, target: string, bytes: Buffer, entry: string) {
 	return `"${target}":{"url":"${origin}/old/${target}","sha256":"${sha256Hex(bytes)}","size":${bytes.byteLength},"entry":"${entry}"}`;
 }
 
-/** A two-target pin at v1.0.0 whose files run under `entry`. */
 async function setup(entry = "mirror.real-name"): Promise<Setup> {
 	const srv = await startServer();
 	server = srv;
@@ -60,7 +51,6 @@ async function setup(entry = "mirror.real-name"): Promise<Setup> {
 	};
 }
 
-/** Publish v2.0.0 with these builds (and only these) in its SHA256SUMS. */
 function release(
 	srv: FileServer,
 	builds: Readonly<Record<string, Buffer>>,

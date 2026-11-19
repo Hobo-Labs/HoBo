@@ -21,7 +21,6 @@ function emptyDir(): string {
 	return dir;
 }
 
-/** A repository with no commits and nothing staged. */
 function emptyRepo(): string {
 	const dir = emptyDir();
 	const init = spawnSync("git", ["init", "--quiet"], { cwd: dir });
@@ -37,10 +36,6 @@ function runLinters(cwd: string, flag: string) {
 	});
 }
 
-// lint:docs:changed and lint:docs:staged are gates agent:check selects, so a
-// changed-file list they could not read must stop them, as it stops
-// agent:check and lint:slop:changed. They used to read a git failure as "no
-// changed markdown files" and exit 0.
 describe("lint:docs when git cannot list the changed files", () => {
 	it("fails, naming the base, when the base does not resolve", () => {
 		const result = runLinters(emptyRepo(), "--base=origin/no-such-branch");

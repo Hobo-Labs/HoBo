@@ -1,8 +1,3 @@
-// Reference chaos world and fan-out load world. A small simulated fleet: a
-// Station with a fenced reconciler per Camp, a source, and a failover budget.
-// Faults act on the simulation; mutants model the failure modes the chaos
-// lane exists to catch (repeat applies, early purge, NO_RUN from self-report,
-// lost checkpoints, wedging).
 import type { CdChaosFault, CdChaosHarness, ChaosObservation, ChaosWorld, FanoutLoadHarness, FanoutLoadWorld } from "@hobo/conformance";
 
 export type ChaosMutant =
@@ -37,7 +32,6 @@ class SimWorld implements ChaosWorld {
 	async inject(fault: CdChaosFault): Promise<void> {
 		this.faults.add(fault);
 		if (fault === "source-registry-outage") {
-			// A webhook nudges during the outage; only a verified read may create Freight.
 			if (this.mutant === "trusts-payload") this.unverifiedFreight += 1;
 			this.sourceVersion += 1;
 			return;
@@ -75,7 +69,6 @@ class SimWorld implements ChaosWorld {
 			if (partitioned || leaseLost || storeDown) continue;
 			if ((this.applied.get(camp) ?? 0) >= this.desired) continue;
 			if (this.faults.has("reconciler-killed-mid-converge") && !this.crashed.has(camp)) {
-				// Applied, then killed before observing.
 				this.#apply(camp);
 				this.crashed.add(camp);
 				continue;
@@ -115,11 +108,8 @@ export function refChaosHarness(mutant?: ChaosMutant): CdChaosHarness {
 	return { subject: mutant ? `reference-chaos[${mutant}]` : "reference-chaos", create: async () => new SimWorld(mutant) };
 }
 
-// ── Load ─────────────────────────────────────────────────────────────────────
-
 export type LoadMutant = "scans-fleet-quadratically";
 
-/** A fan-out over `camps` with 10% group concurrency; each tick is O(batch). */
 export function refLoadHarness(mutant?: LoadMutant): FanoutLoadHarness {
 	return {
 		subject: mutant ? `reference-load[${mutant}]` : "reference-load",

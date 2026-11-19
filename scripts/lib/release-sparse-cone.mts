@@ -1,13 +1,8 @@
-/**
- * Git sparse-checkout cones for release workflows (cone mode).
- * Contract tests keep workflow YAML aligned with job requirements.
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { releaseOciInputSparseCones } from "../ci/release-oci-affected.mts";
 import { loadReleaseOciManifest } from "./release-oci-contract.mts";
 
-/** Repo-root files listed explicitly in sparse cones (not directory cones). */
 export const RELEASE_ROOT_FILES = [
 	"mise.toml",
 	"mise.lock",
@@ -23,13 +18,11 @@ export const MISE_LOCK_SPARSE_CONES = [".mise/locks"] as const;
 
 export const PINS_REQUIRED_FILES = ["tools/pins/siblings.json"] as const;
 
-/** Paths `pnpm run pins:fetch` reads before submodule checkout. */
 export const PINS_FETCH_REQUIRED_FILES = [
 	...PINS_REQUIRED_FILES,
 	"scripts/bootstrap-siblings.mts",
 ] as const;
 
-/** Parse root vitest.config.ts globalSetup + setupFiles (release jobs use root vitest). */
 export function rootVitestSetupFiles(repoRoot: string): readonly string[] {
 	const configPath = join(repoRoot, "vitest.config.ts");
 	const src = readFileSync(configPath, "utf8");
@@ -47,7 +40,6 @@ export function rootVitestSetupFiles(repoRoot: string): readonly string[] {
 	return Object.freeze(rel);
 }
 
-/** Minimal directory cones so every root vitest setup file is checked out. */
 export function rootVitestSparseCones(repoRoot: string): readonly string[] {
 	const files = rootVitestSetupFiles(repoRoot);
 	const cones = new Set<string>();
@@ -56,7 +48,6 @@ export function rootVitestSparseCones(repoRoot: string): readonly string[] {
 			cones.add("test/setup");
 			continue;
 		}
-		// packages/… is already covered by the packages cone in release workflows.
 		const parts = file.split("/");
 		if (parts[0] === "packages" && parts.length > 1) {
 			continue;
@@ -101,7 +92,6 @@ const HOBO_RELEASE_DIR_CONES = [
 	"external",
 ] as const;
 
-/** HoBo release (npm + GHCR) jobs using RELEASE_SPARSE_PATHS. */
 export function hoboReleaseSparseCones(repoRoot: string): readonly string[] {
 	return Object.freeze([
 		...new Set([
@@ -115,7 +105,6 @@ export function hoboReleaseSparseCones(repoRoot: string): readonly string[] {
 	]);
 }
 
-/** gh-pages release job (no root vitest). */
 export function hoboReleasePagesSparseCones(): readonly string[] {
 	return Object.freeze([
 		".github",
@@ -133,7 +122,6 @@ export function hoboReleasePagesSparseCones(): readonly string[] {
 	]);
 }
 
-/** ts-autocode release workflow sparse cone. */
 export function tsAutocodeReleaseSparseCones(): readonly string[] {
 	return Object.freeze([
 		".github",
@@ -150,7 +138,6 @@ export function tsAutocodeReleaseSparseCones(): readonly string[] {
 	]);
 }
 
-/** Workspace paths root `pnpm install` needs so `ensure-ts-autocode-links` passes after pins:fetch. */
 export const TS_AUTOCODE_PNPM_PREPARE_REQUIRED = [
 	"packages/runtime/package.json",
 	"external/ts-autocode/packages/grounding/package.json",
@@ -158,7 +145,6 @@ export const TS_AUTOCODE_PNPM_PREPARE_REQUIRED = [
 	"external/ts-autocode/packages/rewrite/package.json",
 ] as const;
 
-/** Vitest files run by HoBo release contract jobs (static manifest checks). */
 export const RELEASE_CONTRACT_VITEST_FILES = [
 	"scripts/test/release-oci-affected.test.ts",
 	"scripts/test/release-oci-attest-contract.test.ts",
@@ -168,7 +154,6 @@ export const RELEASE_CONTRACT_VITEST_FILES = [
 	"scripts/test/stage-release-oci-app.test.ts",
 ] as const;
 
-/** Repo-relative paths those tests read via join(root, …) or loadReleaseOciManifest. */
 export function filePathsRequiredByReleaseOciContractTests(
 	repoRoot: string,
 ): readonly string[] {
@@ -198,7 +183,6 @@ export function formatSparseCheckoutBlock(cones: readonly string[]): string {
 	return `${cones.join("\n")}\n`;
 }
 
-/** Git cone mode treats each pattern as a directory; root manifests are checked out separately. */
 export function splitSparseCheckoutPaths(
 	all: readonly string[],
 	rootFileNames: readonly string[] = RELEASE_ROOT_FILES,
@@ -224,7 +208,6 @@ export function splitSparseCheckoutPaths(
 	});
 }
 
-/** Required on-disk paths per release sparse job (contract gate). */
 export function requiredPathsForHoboReleaseContract(
 	repoRoot: string,
 ): readonly string[] {
