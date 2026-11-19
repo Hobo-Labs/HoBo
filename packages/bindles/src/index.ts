@@ -29,6 +29,7 @@ export {
 	auth,
 	bucket,
 	CATALOG,
+	cache,
 	catalogFactoryNames,
 	crypto,
 	data,

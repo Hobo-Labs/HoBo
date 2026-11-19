@@ -15,6 +15,7 @@ import {
 	type Handle,
 	type ResourceHandle,
 	type WiringManifest,
+	cache as wiringCache,
 	data as wiringData,
 	service as wiringService,
 } from "../wiring/index.js";
@@ -30,6 +31,15 @@ export interface CollectionContext {
 		name: string,
 		options?: {
 			paradigm?: string;
+			allow?: readonly string[];
+			env?: Readonly<Record<string, string>>;
+			connectionString?: string;
+			endpoints?: JsonObject;
+		},
+	): ResourceHandle;
+	cache(
+		name: string,
+		options?: {
 			allow?: readonly string[];
 			env?: Readonly<Record<string, string>>;
 			connectionString?: string;
@@ -106,6 +116,11 @@ export function collectBindleManifest(
 	const collect: CollectionContext = {
 		data(name, options) {
 			const handle = wiringData(name, options);
+			handles.push(handle);
+			return handle;
+		},
+		cache(name, options) {
+			const handle = wiringCache(name, options);
 			handles.push(handle);
 			return handle;
 		},

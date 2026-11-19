@@ -294,7 +294,8 @@ export function targetFromBindleDefinition(
 				const dependency = readDependencyConfig(record.annotations);
 				const options = {
 					paradigm,
-					...(record.kind === "secret" && record.declaredAllow?.length
+					...((record.kind === "secret" || record.kind === "cache") &&
+					record.declaredAllow?.length
 						? { allow: [...record.declaredAllow] }
 						: undefined),
 					...(Object.keys(env).length > 0 ? { env } : undefined),
@@ -305,7 +306,12 @@ export function targetFromBindleDefinition(
 						? { endpoints: dependency.endpoints }
 						: undefined),
 				};
-				backing.set(name, collect.data(resourceId(name), options));
+				backing.set(
+					name,
+					record.kind === "cache"
+						? collect.cache(resourceId(name), options)
+						: collect.data(resourceId(name), options),
+				);
 			}
 
 			for (const [name, record] of Object.entries(definition.resources)) {

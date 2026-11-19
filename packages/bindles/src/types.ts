@@ -9,6 +9,11 @@ export const CATALOG_ROWS = [
 		allowVerbs: ["get", "set", "delete"],
 	},
 	{
+		factory: "cache",
+		portRef: ["hobo:cache"],
+		allowVerbs: ["get", "set", "delete", "invalidate"],
+	},
+	{
 		factory: "bucket",
 		portRef: ["wasi:blobstore", "hobo:blob-events"],
 		allowVerbs: ["read", "write", "delete"],
@@ -89,6 +94,7 @@ export type ResourceKind = (typeof CATALOG_ROWS)[number]["factory"];
 export type AllowVerbsByKind = {
 	api: never;
 	kv: "get" | "set" | "delete";
+	cache: "get" | "set" | "delete" | "invalidate";
 	bucket: "read" | "write" | "delete";
 	queue: "enqueue" | "dequeue";
 	topic: "publish" | "subscribe";
@@ -356,6 +362,7 @@ export interface BindleBuilder {
 	api(binding?: ComponentBinding): BindleResource<"api">;
 	web(binding?: ComponentBinding): BindleResource<"web">;
 	kv(): BindleResource<"kv">;
+	cache(): BindleResource<"cache">;
 	bucket(): BindleResource<"bucket">;
 	queue<Message = JsonValue>(): BindleResource<"queue", Message>;
 	topic<Message = JsonValue>(): BindleResource<"topic", Message>;

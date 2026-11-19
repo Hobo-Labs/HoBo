@@ -70,6 +70,21 @@ export function data(
 	};
 }
 
+export function cache(
+	name: string,
+	options: Omit<NonNullable<Parameters<typeof data>[1]>, "paradigm"> = {},
+): ResourceHandle {
+	const handle = data(name, { ...options, paradigm: "cache" });
+	return {
+		...handle,
+		port: "hobo:cache",
+		clientType: "CacheClient",
+		manifest() {
+			return { ...handle.manifest(), port: "hobo:cache" };
+		},
+	};
+}
+
 export function service(
 	name: string,
 	options: {
