@@ -156,6 +156,7 @@ export { type LowerOptions, lowerManifest } from "./intent.js";
 export {
 	type BlockedDependency,
 	type CompensationContext,
+	type CompensationBlockedResource,
 	type CompensationDeps,
 	type CompensationResult,
 	changedSinceLastDeployed,

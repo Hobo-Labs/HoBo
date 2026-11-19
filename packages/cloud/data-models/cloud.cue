@@ -262,6 +262,14 @@ package hobo
 	reason:       string & !=""
 }
 
+#CompensationBlockedResource: {
+	resourceId: string & !=""
+	reason:     "waiting-for-dependent-destroyed" | "destroy-outcome-unknown" | "destroy-failed" | "failed-after-provisioning"
+	dependents: [...string & !=""]
+	if reason == "waiting-for-dependent-destroyed" {dependents: [string & !="", ...string & !=""]}
+	if reason != "waiting-for-dependent-destroyed" {dependents: []}
+}
+
 #IncidentEscalationRequestedData: {
 	deploymentId: string & !=""
 	resourceId:   string & !=""

@@ -543,6 +543,7 @@ describe("create/destroy cycle", () => {
 				{ tenant, actor },
 			);
 			expect(result.status).toBe("rolled-back");
+			expect(result.blocked).toEqual([]);
 			expect(
 				result.events.filter(
 					(event) => event.type === "deployment.RollbackStarted",
@@ -691,6 +692,20 @@ describe("create/destroy cycle", () => {
 			{ tenant, actor },
 		);
 		expect(result.status).toBe("needs-human");
+		expect(result.blocked).toEqual(
+			expect.arrayContaining([
+				{
+					resourceId: "web",
+					reason: "failed-after-provisioning",
+					dependents: [],
+				},
+				{
+					resourceId: "api",
+					reason: "waiting-for-dependent-destroyed",
+					dependents: ["web"],
+				},
+			]),
+		);
 		expect(iac.calls).toEqual([]);
 	});
 
@@ -727,6 +742,20 @@ describe("create/destroy cycle", () => {
 		);
 		expect(result.status).toBe("needs-human");
 		expect(result.destroyedOrder).toEqual([]);
+		expect(result.blocked).toEqual(
+			expect.arrayContaining([
+				{
+					resourceId: "web",
+					reason: "destroy-outcome-unknown",
+					dependents: [],
+				},
+				{
+					resourceId: "api",
+					reason: "waiting-for-dependent-destroyed",
+					dependents: ["web"],
+				},
+			]),
+		);
 		expect(iac.calls).toEqual([]);
 		const view = await deploymentViewProjection.rebuildFromZero(store, stream);
 		expect(
@@ -756,6 +785,16 @@ describe("create/destroy cycle", () => {
 			{ tenant, actor },
 		);
 		expect(first.status).toBe("needs-human");
+		expect(first.blocked).toEqual(
+			expect.arrayContaining([
+				{ resourceId: "web", reason: "destroy-failed", dependents: [] },
+				{
+					resourceId: "api",
+					reason: "waiting-for-dependent-destroyed",
+					dependents: ["web"],
+				},
+			]),
+		);
 		const view = await deploymentViewProjection.rebuildFromZero(
 			store,
 			"deployment:failed-destroy",
@@ -809,6 +848,16 @@ describe("create/destroy cycle", () => {
 				if (!fact) throw new Error(`missing ${type}`);
 				writeFileSync(path, JSON.stringify(fact.data));
 				execFileSync(cue, ["vet", schema, path, "-d", definition]);
+			}
+			for (const blocker of first.blocked) {
+				writeFileSync(path, JSON.stringify(blocker));
+				execFileSync(cue, [
+					"vet",
+					schema,
+					path,
+					"-d",
+					"#CompensationBlockedResource",
+				]);
 			}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
