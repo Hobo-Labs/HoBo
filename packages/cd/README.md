@@ -123,6 +123,7 @@ initializes a slot for every Camp. See the
 for the checked models, generated cases, and their limits.
 The skill also executes isolated implementation, TLA+, and induction mutations
 so every stated guard must produce a reproducible counterexample when removed.
+Its maintained baseline records the exact reviewed commit used for those checks.
 
 This projection shows the modeled scheduling decision, not an execution
 trace. TLC explored 256 states and 256 steps; the chart hides 128 steps that
