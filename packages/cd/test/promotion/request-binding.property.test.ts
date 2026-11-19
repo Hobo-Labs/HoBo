@@ -113,6 +113,28 @@ describe("promotion request binding", () => {
 		expect(h.store.events(CD_EVENTS.EnvPromoteRequested)).toHaveLength(1);
 	});
 
+	it("binds the target execution order", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		const request = {
+			freightId: fid("f1"),
+			targets: [camp("dev-1"), camp("dev-2")],
+			idempotencyKey: "target-order",
+		};
+		expect((await h.service.promote(request, h.ctx())).ok).toBe(true);
+		const reversed = await h
+			.restart()
+			.promote(
+				{ ...request, targets: [...request.targets].reverse() },
+				h.ctx(),
+			);
+		expect(reversed.ok).toBe(false);
+		if (!reversed.ok)
+			expect(reversed.reasons[0]?.code).toBe(
+				PROMOTION_REASON.idempotencyReused,
+			);
+	});
+
 	it("checks legacy records using available fields and refuses ambiguous replays", async () => {
 		const h = harness();
 		h.freight.add("f1");
