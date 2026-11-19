@@ -88,12 +88,7 @@ async function provesPublishConsumeAck(
 		maxMessages: 5,
 	});
 	if (batch.length < 1) return false;
-	bus.ack(first(batch).messageId, first(batch).leaseId);
-	// SAFETY: assertion to `bus as Messaging & { flush?: () => Promise<void> }` is required at this boundary.
-	const flushable = bus as Messaging & { flush?: () => Promise<void> };
-	if (flushable.flush instanceof Function) {
-		await flushable.flush();
-	}
+	await bus.ack(first(batch).messageId, first(batch).leaseId);
 	const again = await bus.consume(topic, parseConsumerGroupId("cg"));
 	return again.length === 0;
 }

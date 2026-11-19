@@ -39,6 +39,12 @@ const yaml = bundle.generateKafkaPubsubYaml("fromBinding:kafka-bootstrap");
 
 ## Modes
 
+Await messaging `ack` and `nack` directly. A timeout or sidecar failure is an
+unknown settlement outcome and blocks another settlement for that delivery in
+the adapter instance. `settlementTimeoutMs` sets a positive deadline of at most
+30 seconds. The sidecar interface does not carry a provider lease token, so the
+host must provide any cross-process fencing and recovery its deployment needs.
+
 - **self-hosted:** `dapr run` / local daprd (`HOBO_DAPR_ENDPOINT`)
 - **kubernetes:** sidecar injector annotations (control-plane emits; this package generates component YAML)
 

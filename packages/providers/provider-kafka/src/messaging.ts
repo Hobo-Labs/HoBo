@@ -8,12 +8,15 @@
  * - `live: true` without a transport throws (never labels live falsely).
  */
 
+import { randomUUID } from "node:crypto";
 import {
 	type ConsumedMessage,
 	type ConsumerGroupId,
 	createInMemoryMessaging,
+	createMessagingSettlementTracker,
 	createUsageEvent,
 	type DeliveryGuarantee,
+	MESSAGING_SETTLEMENT_ID_LIMIT,
 	type Messaging,
 	type MessagingCapabilities,
 	MessagingCapabilityError,
@@ -21,6 +24,7 @@ import {
 	type MessagingEvent,
 	type MessagingLeaseId,
 	type MessagingMessageId,
+	MessagingSettlementCommittedError,
 	type MeteringBus,
 	type PublishOptions,
 	type PublishResult,
@@ -28,7 +32,6 @@ import {
 	parseMessagingLeaseId,
 	parseMessagingMessageId,
 	parseTenantId,
-	parseTopicName,
 	type SubscriptionSpec,
 	type TenantId,
 	type TopicName,
@@ -53,6 +56,7 @@ export interface KafkaMessagingOptions {
 	/** Production/live path: all produce/fetch/commit go through this seam. */
 	readonly transport?: KafkaBrokerTransport;
 	readonly now?: () => string;
+	readonly settlementTimeoutMs?: number;
 }
 
 export interface KafkaMessaging extends Messaging {
@@ -60,8 +64,6 @@ export interface KafkaMessaging extends Messaging {
 	readonly fidelity: "simulated" | "live";
 	readonly transport: KafkaBrokerTransport | null;
 	readonly partitionsFor: (topic: TopicName) => number;
-	/** Await outstanding live transport ack/nack ops (tests + sync API bridge). */
-	flush?(): Promise<void>;
 }
 
 /**
@@ -87,6 +89,11 @@ export function createKafkaMessaging(
 	};
 
 	const partitionMap = new Map<string, number>();
+	const pendingCommits = createMessagingSettlementTracker<{
+		topic: TopicName;
+		group: string;
+		backendLease: string;
+	}>(options.settlementTimeoutMs);
 
 	if (!transport) {
 		const inner = createInMemoryMessaging({
@@ -151,15 +158,14 @@ export function createKafkaMessaging(
 				reason?: string,
 			) => inner.nack(id, lease, reason),
 			events: () => inner.events(),
-			async flush() {},
 		};
 		return Object.freeze(simulated);
 	}
 
 	// Live path: every I/O goes through the broker transport.
 	const eventLog: MessagingEvent[] = [];
-	const pendingCommits = new Map<string, { topic: string; group: string }>();
-	const pendingOps: Promise<void>[] = [];
+	const leasePrefix = randomUUID();
+	let leaseSequence = 0;
 	const subscriptions = new Map<string, SubscriptionSpec>();
 	const tenantId = parseTenantId(cluster.tenantId);
 	const now = options.now ?? (() => new Date().toISOString());
@@ -277,17 +283,58 @@ export function createKafkaMessaging(
 		async consume(topic, consumerGroup, consumeOptions = {}) {
 			const physical = tenantScopedTopicName(tenantId, topic);
 			const group = tenantScopedConsumerGroup(tenantId, consumerGroup);
+			if (
+				physical.length > MESSAGING_SETTLEMENT_ID_LIMIT ||
+				group.length > MESSAGING_SETTLEMENT_ID_LIMIT
+			)
+				throw new MessagingDeliveryError("messaging scope is not bounded");
+			const maxMessages = consumeOptions.maxMessages ?? 1;
+			if (
+				!Number.isSafeInteger(maxMessages) ||
+				maxMessages < 1 ||
+				maxMessages > pendingCommits.capacity()
+			)
+				throw new MessagingDeliveryError(
+					"invalid or unavailable messaging capacity",
+				);
 			const batch = await transport.fetch({
 				topic: physical,
 				consumerGroup: group,
-				maxMessages: consumeOptions.maxMessages ?? 1,
+				maxMessages,
 			});
+			if (batch.length > maxMessages)
+				throw new MessagingDeliveryError("broker returned too many messages");
+			const claims: {
+				messageId: MessagingMessageId;
+				leaseId: MessagingLeaseId;
+				scope: string;
+				context: { topic: TopicName; group: string; backendLease: string };
+			}[] = [];
 			const mapped: ConsumedMessage[] = batch.map((m) => {
 				const messageId = m.messageId;
-				const leaseId = parseMessagingLeaseId(m.leaseId);
-				pendingCommits.set(`${messageId}::${leaseId}`, {
-					topic: physical,
-					group,
+				if (
+					messageId.length > MESSAGING_SETTLEMENT_ID_LIMIT ||
+					m.leaseId.length > MESSAGING_SETTLEMENT_ID_LIMIT
+				)
+					throw new MessagingDeliveryError(
+						"messaging lease identity is not bounded",
+					);
+				if (leaseSequence >= Number.MAX_SAFE_INTEGER)
+					throw new MessagingDeliveryError(
+						"messaging lease sequence exhausted",
+					);
+				const leaseId = parseMessagingLeaseId(
+					`kafka-${leasePrefix}-${++leaseSequence}`,
+				);
+				claims.push({
+					messageId,
+					leaseId,
+					scope: JSON.stringify([physical, group, messageId]),
+					context: {
+						topic: physical,
+						group,
+						backendLease: parseMessagingLeaseId(m.leaseId),
+					},
 				});
 				return Object.freeze({
 					messageId,
@@ -300,6 +347,7 @@ export function createKafkaMessaging(
 					headers: m.headers,
 				});
 			});
+			pendingCommits.register(claims);
 			for (const m of mapped) {
 				emitLocal({
 					type: "messaging.consumed",
@@ -336,26 +384,12 @@ export function createKafkaMessaging(
 			for (const message of batch) {
 				try {
 					await handler(message);
-					await ackAsync(
-						transport,
-						pendingCommits,
-						message.messageId,
-						message.leaseId,
-						emitLocal,
-					);
-					handled += 1;
 				} catch (err) {
 					const reason = err instanceof Error ? err.message : String(err);
 					if (message.deliveryAttempt >= maxAttempts) {
 						// Permanent: commit under the still-held lease (do not nack first —
 						// release drops inflight and makes commit fail with lease mismatch).
-						await ackAsync(
-							transport,
-							pendingCommits,
-							message.messageId,
-							message.leaseId,
-							emitLocal,
-						);
+						await live.ack(message.messageId, message.leaseId);
 						deadLettered += 1;
 						emitLocal({
 							type: "messaging.dead_lettered",
@@ -373,110 +407,67 @@ export function createKafkaMessaging(
 						});
 					} else {
 						// Transient: release for redelivery.
-						await nackAsync(
-							transport,
-							pendingCommits,
-							message.messageId,
-							message.leaseId,
-							reason,
-							emitLocal,
-						);
+						await live.nack(message.messageId, message.leaseId, reason);
 					}
+					continue;
 				}
+				await live.ack(message.messageId, message.leaseId);
+				handled += 1;
 			}
 			return { handled, deadLettered };
 		},
 
-		ack(messageId, leaseId) {
+		async ack(messageId, leaseId) {
 			const id = parseMessagingMessageId(String(messageId));
 			const lease = parseMessagingLeaseId(String(leaseId));
-			const pending = pendingCommits.get(`${id}::${lease}`);
-			if (!pending) {
-				throw new MessagingDeliveryError(`no inflight kafka message ${id}`);
-			}
-			// Sync Messaging.ack contract: schedule transport commit; callers
-			// await messaging.flush() for deterministic completion.
-			pendingOps.push(
-				ackAsync(transport, pendingCommits, id, lease, emitLocal),
+			const context = await pendingCommits.settle(id, lease, "ack", (value) =>
+				transport.commit({
+					topic: value.topic,
+					consumerGroup: value.group,
+					messageId: id,
+					leaseId: value.backendLease,
+				}),
 			);
+			try {
+				emitLocal({
+					type: "messaging.acked",
+					topic: context.topic,
+					messageId: id,
+				});
+			} catch {
+				throw new MessagingSettlementCommittedError("ack", id, lease);
+			}
 		},
 
-		nack(messageId, leaseId, reason) {
+		async nack(messageId, leaseId, reason) {
 			const id = parseMessagingMessageId(String(messageId));
 			const lease = parseMessagingLeaseId(String(leaseId));
-			const pending = pendingCommits.get(`${id}::${lease}`);
-			if (!pending) {
-				throw new MessagingDeliveryError(`no inflight kafka message ${id}`);
-			}
-			pendingOps.push(
-				nackAsync(transport, pendingCommits, id, lease, reason, emitLocal),
+			const context = await pendingCommits.settle(id, lease, "nack", (value) =>
+				transport.release({
+					topic: value.topic,
+					consumerGroup: value.group,
+					messageId: id,
+					leaseId: value.backendLease,
+				}),
 			);
+			try {
+				emitLocal({
+					type: "messaging.nacked",
+					topic: context.topic,
+					messageId: id,
+					reason: reason ?? "nack",
+				});
+			} catch {
+				throw new MessagingSettlementCommittedError("nack", id, lease);
+			}
 		},
 
 		events() {
 			return eventLog.slice();
 		},
-
-		async flush() {
-			await Promise.all(pendingOps.splice(0, pendingOps.length));
-		},
 	};
 
 	return Object.freeze(live);
-}
-
-async function ackAsync(
-	transport: KafkaBrokerTransport,
-	pendingCommits: Map<string, { topic: string; group: string }>,
-	messageId: MessagingMessageId,
-	leaseId: MessagingLeaseId,
-	emitLocal: (e: Omit<MessagingEvent, "at" | "tenantId">) => void,
-): Promise<void> {
-	const key = `${messageId}::${leaseId}`;
-	const pending = pendingCommits.get(key);
-	if (!pending) {
-		throw new MessagingDeliveryError(`no inflight kafka message ${messageId}`);
-	}
-	await transport.commit({
-		topic: parseTopicName(pending.topic),
-		consumerGroup: pending.group,
-		messageId,
-		leaseId,
-	});
-	pendingCommits.delete(key);
-	emitLocal({
-		type: "messaging.acked",
-		topic: parseTopicName(pending.topic),
-		messageId,
-	});
-}
-
-async function nackAsync(
-	transport: KafkaBrokerTransport,
-	pendingCommits: Map<string, { topic: string; group: string }>,
-	messageId: MessagingMessageId,
-	leaseId: MessagingLeaseId,
-	reason: string | undefined,
-	emitLocal: (e: Omit<MessagingEvent, "at" | "tenantId">) => void,
-): Promise<void> {
-	const key = `${messageId}::${leaseId}`;
-	const pending = pendingCommits.get(key);
-	if (!pending) {
-		throw new MessagingDeliveryError(`no inflight kafka message ${messageId}`);
-	}
-	await transport.release({
-		topic: parseTopicName(pending.topic),
-		consumerGroup: pending.group,
-		messageId,
-		leaseId,
-	});
-	pendingCommits.delete(key);
-	emitLocal({
-		type: "messaging.nacked",
-		topic: parseTopicName(pending.topic),
-		messageId,
-		reason: reason ?? "nack",
-	});
 }
 
 async function publishViaInner<TBody>(

@@ -33,6 +33,15 @@
  * the consumer does not hold means either a double-ack or a forged id, and
  * both would release a lease someone else owns.
  */
+import {
+	createMeteringBus,
+	type MeteringBus,
+	parseConsumerGroupId,
+	parseSubscriptionName,
+	parseTenantId,
+	parseTopicName,
+	type UsageEvent,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -44,15 +53,14 @@ import {
 
 const CONFIG = defaultDaprRuntimeConfig("acme", "prod");
 
-function busFor(
-	options: { metering?: { emit: (event: unknown) => void } } = {},
-) {
-	return createDaprMessaging({
+function busFor(options: { metering?: MeteringBus } = {}) {
+	const base = {
 		config: CONFIG,
 		client: createInMemoryDaprClient(),
-		...(options.metering ? { metering: options.metering } : {}),
-		// SAFETY: the factory reads exactly the fields an options bag names.
-	} as never);
+	};
+	if (options.metering)
+		return createDaprMessaging({ ...base, metering: options.metering });
+	return createDaprMessaging(base);
 }
 
 /** Publish `count` messages onto one topic. */
@@ -91,7 +99,6 @@ describe("a handler that succeeds", () => {
 			"g1" as never,
 			async () => undefined,
 		);
-		await bus.flush?.();
 		// SAFETY: the fixture uses wire-shaped topic and group names.
 		const again = await bus.consume("events" as never, "g1" as never);
 		expect(again).toHaveLength(0);
@@ -167,7 +174,6 @@ describe("a handler that throws", () => {
 		await bus.subscribe("events" as never, "g1" as never, async () => {
 			throw new Error("downstream timeout");
 		});
-		await bus.flush?.();
 		// SAFETY: the fixture uses wire-shaped topic and group names.
 		expect(await bus.consume("events" as never, "g1" as never)).toHaveLength(1);
 	});
@@ -192,12 +198,13 @@ describe("dead-lettering", () => {
 	) {
 		if (maxDeliveryAttempts !== undefined) {
 			await bus.ensureSubscription({
-				tenantId: "acme",
-				topic: "events",
-				consumerGroup: "g1",
+				name: parseSubscriptionName("events-g1"),
+				tenantId: parseTenantId("acme"),
+				topic: parseTopicName("events"),
+				consumerGroup: parseConsumerGroupId("g1"),
+				delivery: "at-least-once",
 				maxDeliveryAttempts,
-				// SAFETY: the bus reads exactly the fields a subscription names.
-			} as never);
+			});
 		}
 		let deadLettered = 0;
 		for (let round = 0; round < rounds; round += 1) {
@@ -210,7 +217,6 @@ describe("dead-lettering", () => {
 				},
 			);
 			deadLettered += result.deadLettered;
-			await bus.flush?.();
 		}
 		return deadLettered;
 	}
@@ -267,26 +273,26 @@ describe("acking a message the consumer does not hold", () => {
 		// Either a double-ack or a forged id; both would release a lease
 		// someone else owns.
 		const bus = busFor();
-		expect(() =>
+		await expect(
 			// SAFETY: the fixture uses wire-shaped ids.
 			bus.ack("no-such-message" as never, "no-such-lease" as never),
-		).toThrow(MessagingDeliveryError);
+		).rejects.toThrow(MessagingDeliveryError);
 	});
 
-	it("refuses a nack for an unknown message id", () => {
+	it("refuses a nack for an unknown message id", async () => {
 		const bus = busFor();
-		expect(() =>
+		await expect(
 			// SAFETY: the fixture uses wire-shaped ids.
 			bus.nack("no-such-message" as never, "no-such-lease" as never, "why"),
-		).toThrow(MessagingDeliveryError);
+		).rejects.toThrow(MessagingDeliveryError);
 	});
 
-	it("names the message it could not find", () => {
+	it("names the message it could not find", async () => {
 		const bus = busFor();
-		expect(() =>
+		await expect(
 			// SAFETY: the fixture uses wire-shaped ids.
 			bus.ack("no-such-message" as never, "no-such-lease" as never),
-		).toThrow(/no-such-message/);
+		).rejects.toThrow(/no-such-message/);
 	});
 
 	it("refuses a second ack for a message already acked", async () => {
@@ -298,9 +304,8 @@ describe("acking a message the consumer does not hold", () => {
 		const batch = await bus.consume("events" as never, "g1" as never);
 		const message = batch[0];
 		if (!message) throw new Error("expected a message");
-		bus.ack(message.messageId, message.leaseId);
-		await bus.flush?.();
-		expect(() => bus.ack(message.messageId, message.leaseId)).toThrow(
+		await bus.ack(message.messageId, message.leaseId);
+		await expect(bus.ack(message.messageId, message.leaseId)).rejects.toThrow(
 			MessagingDeliveryError,
 		);
 	});
@@ -308,13 +313,16 @@ describe("acking a message the consumer does not hold", () => {
 
 describe("metering", () => {
 	it("reports messages published", async () => {
-		const emitted: Array<{ eventType?: string; quantity?: number }> = [];
+		const emitted: UsageEvent[] = [];
 		const bus = busFor({
-			metering: {
-				emit: (event: unknown) => {
-					emitted.push(event as { eventType?: string; quantity?: number });
+			metering: createMeteringBus([
+				{
+					sinkId: "capture",
+					emit: (event) => {
+						emitted.push(event);
+					},
 				},
-			},
+			]),
 		});
 		await publish(bus, 1);
 		expect(emitted.map((event) => event.eventType)).toContain(
@@ -325,13 +333,16 @@ describe("metering", () => {
 	it("reports nothing for a consume that returned no messages", async () => {
 		// Quantity zero is not a billable event. Emitting it would fill the
 		// meter with noise from idle pollers and make real usage harder to see.
-		const emitted: unknown[] = [];
+		const emitted: UsageEvent[] = [];
 		const bus = busFor({
-			metering: {
-				emit: (event: unknown) => {
-					emitted.push(event);
+			metering: createMeteringBus([
+				{
+					sinkId: "capture",
+					emit: (event) => {
+						emitted.push(event);
+					},
 				},
-			},
+			]),
 		});
 		// SAFETY: the fixture uses wire-shaped topic and group names.
 		await bus.consume("events" as never, "g1" as never);

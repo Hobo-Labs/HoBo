@@ -564,6 +564,7 @@ export {
 	MessagingCapabilityError,
 	MessagingDeliveryError,
 	MessagingParseError,
+	MessagingSettlementCommittedError,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
 	parseConsumerGroupId,
@@ -578,6 +579,15 @@ export {
 	tenantScopedConsumerGroup,
 	tenantScopedTopicName,
 } from "./ports/messaging.js";
+export type { MessagingSettlementOperation } from "./ports/messaging-settlement.js";
+export {
+	createMessagingSettlementTracker,
+	MESSAGING_SETTLEMENT_ID_LIMIT,
+	MESSAGING_SETTLEMENT_LIMIT,
+	MESSAGING_SETTLEMENT_TIMEOUT_MS,
+	MessagingSettlementPendingError,
+	MessagingSettlementUnknownError,
+} from "./ports/messaging-settlement.js";
 export type {
 	MeteringBus,
 	MeteringSink,

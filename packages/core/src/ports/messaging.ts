@@ -6,6 +6,7 @@
  * are adapters. Never import Kafka/Dapr clients from app Bindles.
  */
 
+import { randomUUID } from "node:crypto";
 import { CoreParseError } from "../errors.js";
 import {
 	cloneAsJson,
@@ -32,7 +33,7 @@ function stringBagFrom(value: JsonObject) {
 	return bag;
 }
 
-export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v1";
+export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v2";
 export const MESSAGING_WIT_INTERFACE = "wasi:messaging/messaging@0.2.0";
 
 export type DeliveryGuarantee =
@@ -175,12 +176,12 @@ export interface Messaging {
 		options?: ConsumeOptions,
 	): Promise<{ handled: number; deadLettered: number }>;
 
-	ack(messageId: MessagingMessageId, leaseId: MessagingLeaseId): void;
+	ack(messageId: MessagingMessageId, leaseId: MessagingLeaseId): Promise<void>;
 	nack(
 		messageId: MessagingMessageId,
 		leaseId: MessagingLeaseId,
 		reason?: string,
-	): void;
+	): Promise<void>;
 
 	/** Audit / control-plane fact log (replayable). */
 	events(): readonly MessagingEvent[];
@@ -226,6 +227,20 @@ export class MessagingDeliveryError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = "MessagingDeliveryError";
+	}
+}
+
+export class MessagingSettlementCommittedError extends Error {
+	readonly code = "MESSAGING_SETTLEMENT_COMMITTED" as const;
+	constructor(
+		readonly operation: "ack" | "nack",
+		readonly messageId: MessagingMessageId,
+		readonly leaseId: MessagingLeaseId,
+	) {
+		super(
+			`${operation} for ${messageId} committed but local observation failed`,
+		);
+		this.name = "MessagingSettlementCommittedError";
 	}
 }
 
@@ -521,6 +536,7 @@ export function createInMemoryMessaging(
 	let offsetSeq = 0;
 	let msgSeq = 0;
 	let leaseSeq = 0;
+	const leasePrefix = randomUUID();
 
 	const emit = (
 		partial: Omit<MessagingEvent, "at" | "tenantId"> & {
@@ -684,7 +700,13 @@ export function createInMemoryMessaging(
 
 				const attempt = (cursor.attempts.get(msg.messageId) ?? 0) + 1;
 				cursor.attempts.set(msg.messageId, attempt);
-				const leaseId = parseMessagingLeaseId(`lease-${++leaseSeq}`);
+				if (leaseSeq >= Number.MAX_SAFE_INTEGER)
+					throw new MessagingDeliveryError(
+						"messaging lease sequence exhausted",
+					);
+				const leaseId = parseMessagingLeaseId(
+					`lease-${leasePrefix}-${++leaseSeq}`,
+				);
 				cursor.inflight.set(msg.messageId, {
 					leaseId,
 					expiresAtMs: nowMs + visibility,
@@ -728,15 +750,9 @@ export function createInMemoryMessaging(
 			for (const message of batch) {
 				try {
 					await handler(message);
-					messaging.ack(message.messageId, message.leaseId);
-					handled += 1;
 				} catch (err) {
-					messaging.nack(
-						message.messageId,
-						message.leaseId,
-						err instanceof Error ? err.message : String(err),
-					);
 					if (message.deliveryAttempt >= maxAttempts) {
+						await messaging.ack(message.messageId, message.leaseId);
 						deadLettered += 1;
 						emit({
 							type: "messaging.dead_lettered",
@@ -752,49 +768,89 @@ export function createInMemoryMessaging(
 							consumerGroup: group,
 							reason: "max_delivery_attempts",
 						});
-						const cursor = getGroup(physical, group);
-						cursor.acked.add(message.messageId);
-						cursor.inflight.delete(message.messageId);
+					} else {
+						await messaging.nack(
+							message.messageId,
+							message.leaseId,
+							err instanceof Error ? err.message : String(err),
+						);
 					}
+					continue;
 				}
+				await messaging.ack(message.messageId, message.leaseId);
+				handled += 1;
 			}
 			return { handled, deadLettered };
 		},
 
-		ack(messageId, leaseId) {
+		async ack(messageId, leaseId) {
+			let found = false;
 			for (const [key, cursor] of groups) {
 				const inflight = cursor.inflight.get(messageId);
 				if (!inflight) continue;
+				found = true;
 				if (inflight.leaseId !== leaseId) {
-					throw new MessagingDeliveryError(`lease mismatch for ${messageId}`);
+					continue;
 				}
+				const current = Date.parse(now());
+				if (!Number.isFinite(current) || inflight.expiresAtMs <= current)
+					throw new MessagingDeliveryError(`lease expired for ${messageId}`);
 				cursor.acked.add(messageId);
 				cursor.inflight.delete(messageId);
 				const topic = parseTopicName(key.split("::")[0] ?? "unknown");
-				emit({ type: "messaging.acked", topic, messageId });
+				try {
+					emit({ type: "messaging.acked", topic, messageId });
+				} catch {
+					throw new MessagingSettlementCommittedError(
+						"ack",
+						messageId,
+						leaseId,
+					);
+				}
 				return;
 			}
-			throw new MessagingDeliveryError(`no inflight message ${messageId}`);
+			throw new MessagingDeliveryError(
+				found
+					? `lease mismatch for ${messageId}`
+					: `no inflight message ${messageId}`,
+			);
 		},
 
-		nack(messageId, leaseId, reason) {
+		async nack(messageId, leaseId, reason) {
+			let found = false;
 			for (const [key, cursor] of groups) {
 				const inflight = cursor.inflight.get(messageId);
 				if (!inflight) continue;
+				found = true;
 				if (inflight.leaseId !== leaseId) {
-					throw new MessagingDeliveryError(`lease mismatch for ${messageId}`);
+					continue;
 				}
+				const current = Date.parse(now());
+				if (!Number.isFinite(current) || inflight.expiresAtMs <= current)
+					throw new MessagingDeliveryError(`lease expired for ${messageId}`);
 				cursor.inflight.delete(messageId);
 				const topic = parseTopicName(key.split("::")[0] ?? "unknown");
-				emit({
-					type: "messaging.nacked",
-					topic,
-					messageId,
-					reason: reason ?? "nack",
-				});
+				try {
+					emit({
+						type: "messaging.nacked",
+						topic,
+						messageId,
+						reason: reason ?? "nack",
+					});
+				} catch {
+					throw new MessagingSettlementCommittedError(
+						"nack",
+						messageId,
+						leaseId,
+					);
+				}
 				return;
 			}
-			throw new MessagingDeliveryError(`no inflight message ${messageId}`);
+			throw new MessagingDeliveryError(
+				found
+					? `lease mismatch for ${messageId}`
+					: `no inflight message ${messageId}`,
+			);
 		},
 
 		events() {

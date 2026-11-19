@@ -14,6 +14,18 @@ intent with explicit `full | partial | none` realization and capability notes.
 
 The asynchronous `DurableMessaging` port exposes finite limits and makes committed, rejected, unknown, and expired outcomes explicit. Implementations live outside core; the accompanying finite-state tests exercise bounded scenarios and do not prove an implementation correct.
 
+`Messaging.ack` and `Messaging.nack` are asynchronous and must be awaited. Live
+adapters report a transport failure or deadline as `MESSAGING_SETTLEMENT_UNKNOWN`:
+the broker may have applied the operation. The adapter refuses another
+settlement for that delivery while its outcome is unknown. This protection is
+local to the adapter instance; the host must reconcile uncertain operations and
+enforce any cross-process lease fencing required by its provider.
+`MESSAGING_SETTLEMENT_COMMITTED` means settlement succeeded but local event
+observation failed; callers must not retry that settlement.
+The bounded `model/MessagingSettlement.tla` checks an abstraction of local
+settlement and lease replacement; it does not prove the implementation or
+provider behavior.
+
 ## Honest scope
 
 Implemented: parsers, derived record constructors, error taxonomies, the port
