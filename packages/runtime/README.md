@@ -50,7 +50,8 @@ should run `hobo codegen` before checking generated-file freshness after upgradi
 
 A function with a `"use training"` directive can set its `trainingIntent`
 property before registration. An explicit `intent` passed to `training.infer`
-takes precedence over that property.
+takes precedence over that property. Without either, the runtime derives an
+intent from the method name.
 
 `parseReplayReport` and `parseReplayDivergence` parse, don't validate: they
 reject malformed input and return parsed domain types with validated sequence

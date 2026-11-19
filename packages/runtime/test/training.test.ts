@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { runInNewContext } from "node:vm";
 import { afterEach, test } from "vitest";
 import {
 	applyTrainingArtifact,
@@ -379,7 +378,10 @@ test("marker form: training.infer grounds a bare use-training function", async (
 	assert.equal(record?.fact.contractRef, "inferred://rankFeed");
 	assert.equal(record?.fact.baseline, "body");
 	assert.deepEqual(record?.fact.rubric, { exactMatch: 1 });
-	assert.match(record?.fact.intent ?? "", /rankFeed/);
+	assert.equal(
+		record?.fact.intent,
+		"Inferred: implement rankFeed to reproduce and improve its recorded behavior.",
+	);
 
 	assert.deepEqual(await ranked({ subject: "abc" }), { category: "ABC" });
 	applyTrainingArtifact("rankFeed", {
@@ -431,24 +433,6 @@ test("marker form: structured intent and explicit overrides take precedence", as
 	assert.equal(
 		getTrainable("classify")?.fact.intent,
 		"Use the explicit override.",
-	);
-});
-
-test("marker form: legacy leading comments remain valid intent", () => {
-	const source = [
-		"async function summarize(input) {",
-		'  "use training";',
-		"  // One-paragraph summary; no blame, no internal names.",
-		"  return { category: input.subject };",
-		"}",
-	].join("\n");
-	const summarize: (input: Ticket) => Promise<Classification> = runInNewContext(
-		`(${source})`,
-	);
-	training.infer(summarize);
-	assert.equal(
-		getTrainable("summarize")?.fact.intent,
-		"One-paragraph summary; no blame, no internal names.",
 	);
 });
 

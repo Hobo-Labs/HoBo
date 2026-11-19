@@ -280,7 +280,9 @@ training.infer = function infer<I, O>(
 	}
 	const options: TrainingOptions = {
 		intent:
-			overrides.intent ?? fn.trainingIntent ?? inferIntent(methodRef, source),
+			overrides.intent ??
+			fn.trainingIntent ??
+			`Inferred: implement ${methodRef} to reproduce and improve its recorded behavior.`,
 		contract: (overrides.contract ?? {
 			ref: `inferred://${methodRef}`,
 		}) as TrainingContract,
@@ -295,15 +297,6 @@ training.infer = function infer<I, O>(
 		return cloneAsJson(await fn(typed));
 	}) as never;
 };
-
-function inferIntent(methodRef: string, source: string): string {
-	const comment = source.match(
-		/["']use training["'];?\s*(?:\/\/\s*(.+)|\/\*\*?\s*([\s\S]*?)\*\/)/,
-	);
-	const text = (comment?.[1] ?? comment?.[2])?.replace(/\s*\*\s*/g, " ").trim();
-	if (text) return text;
-	return `Inferred: implement ${methodRef} to reproduce and improve its recorded behavior.`;
-}
 
 export function stub<I = JsonValue, O = JsonValue>(): (input: I) => Promise<O> {
 	const marker = async (): Promise<O> => {
