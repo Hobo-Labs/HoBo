@@ -1,4 +1,4 @@
-import type { QuarantineRecord } from "@hobo/core";
+import type { EventEnvelope, QuarantineRecord } from "@hobo/core";
 import { type ErrorSignal, isJsonString } from "./json.js";
 
 export type { ErrorSignal } from "./json.js";
@@ -50,6 +50,27 @@ export class ProjectionWriteError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = "ProjectionWriteError";
+	}
+}
+
+export class ProjectionFoldError extends Error {
+	readonly projection: string;
+	readonly streamId: string;
+	readonly seq: number;
+	readonly eventType: string;
+	override readonly cause: Error;
+
+	constructor(projection: string, event: EventEnvelope, cause: Error) {
+		super(
+			`projection ${projection} failed at ${event.streamId}@${event.seq} (${event.type}): ${cause.message}`,
+			{ cause },
+		);
+		this.name = "ProjectionFoldError";
+		this.projection = projection;
+		this.streamId = event.streamId;
+		this.seq = event.seq;
+		this.eventType = event.type;
+		this.cause = cause;
 	}
 }
 

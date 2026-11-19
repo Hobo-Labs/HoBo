@@ -2,7 +2,7 @@ import type { EventEnvelope } from "@hobo/core";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { defineProjection } from "../src/index.js";
+import { defineProjection, ProjectionFoldError } from "../src/index.js";
 import { type Inspectable, isJsonObject } from "../src/json.js";
 import {
 	freshStore,
@@ -154,6 +154,60 @@ describe("defineProjection read-model fold", () => {
 		expect(() => orderView.fold([placed, placed])).toThrow(
 			/duplicate sequence/,
 		);
+	});
+
+	it("reports the projection and source event when a fold fails", async () => {
+		const s = store();
+		await s.append(
+			"orders:broken",
+			[{ type: "order.Placed", data: { orderId: "broken" } }],
+			{ expectedSeq: 0, actor, tenant: "tenant-a" },
+		);
+		const events: EventEnvelope[] = [];
+		for await (const event of s.read("orders:broken")) events.push(event);
+		let failure: Error | undefined;
+		try {
+			orderView.fold(events);
+		} catch (error) {
+			if (!(error instanceof Error)) throw error;
+			failure = error;
+		}
+		expect(failure).toBeInstanceOf(ProjectionFoldError);
+		if (!(failure instanceof ProjectionFoldError))
+			throw new Error("fold did not fail");
+		expect(failure).toMatchObject({
+			projection: "orders",
+			streamId: "orders:broken",
+			seq: 1,
+			eventType: "order.Placed",
+		});
+		expect(failure.cause).toBeInstanceOf(Error);
+	});
+
+	it("preserves a classified transient error so the caller can retry", async () => {
+		const s = store();
+		await seedFixture(s);
+		const events: EventEnvelope[] = [];
+		for await (const event of s.read("order:1001")) events.push(event);
+		const failure = new Error("temporary dependency failure");
+		const projection = defineProjection({
+			name: "retryable-orders",
+			key: (event) => event.streamId,
+			on: {
+				"order.Placed": () => {
+					throw failure;
+				},
+			},
+			classifyFailure: () => "transient",
+		});
+		let observed: Error | undefined;
+		try {
+			projection.fold(events);
+		} catch (error) {
+			if (!(error instanceof Error)) throw error;
+			observed = error;
+		}
+		expect(observed).toBe(failure);
 	});
 
 	it("cannot mutate the write model — the fold is read-only by construction", async () => {
