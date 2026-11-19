@@ -1,10 +1,8 @@
 import type { BindleEdge } from "@hobo/bindles";
-import type { ServableEntrypoint } from "./servable-entrypoints.js";
-
-export function orderLocalComponents(
-	entries: readonly ServableEntrypoint[],
+export function orderLocalComponents<T extends { readonly name: string }>(
+	entries: readonly T[],
 	edges: readonly BindleEdge[],
-): ServableEntrypoint[] {
+): T[] {
 	const pending = new Set(entries.map((entry) => entry.name));
 	const dependencies = new Map(
 		entries.map((entry) => [entry.name, new Set<string>()]),
@@ -14,7 +12,7 @@ export function orderLocalComponents(
 			dependencies.get(edge.from)?.add(edge.to);
 		}
 	}
-	const ordered: ServableEntrypoint[] = [];
+	const ordered: T[] = [];
 	while (pending.size > 0) {
 		const remaining = pending.size;
 		for (const entry of entries) {
