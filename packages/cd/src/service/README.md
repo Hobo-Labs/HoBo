@@ -79,8 +79,15 @@ exits or throws before drain is restarted with backoff (1 s doubling to the
 journal probe passed, every reconciler run loop is alive (each holds its
 per-Camp `cd:camp:<id>` leases), and the last `sources` step succeeded.
 `health()` returns one check per dependency and step (`store`,
-`reconciler:<id>`, `step:<name>`, `drain`). `GET /v1/cd/ready` serves it: 200
-with the report, or 503 with one `not-ready` reason per failing check.
+`reconciler:<id>`, `step:<name>`, `drain`). `GET /v1/cd/ready` reports 200
+when ready and 503 with `not-ready` reasons for failing checks. Its report
+keeps the fixed service and step check names, groups reconciler checks under
+`reconcilers` and other host-specific checks under `dependencies`, and uses
+fixed `ok` or `unavailable` details. The in-process `health()` method retains
+the original names and details. Hosts can use `sanitizedCdHealth` when
+exposing readiness through another surface. Network readiness fails closed on
+nonboolean check values and on a reported failure of a gating check; non-gating
+step failures remain visible without blocking readiness.
 
 ## Drain
 

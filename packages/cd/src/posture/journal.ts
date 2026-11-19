@@ -25,6 +25,7 @@ import type {
 	Refusal,
 	TelemetrySink,
 } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 
 const tagOf = Object.prototype.toString;
 
@@ -214,5 +215,5 @@ export function emit(
 	points: readonly MetricPoint[],
 ): void {
 	if (sink === undefined || points.length === 0) return;
-	sink.metrics(points).catch(() => undefined);
+	emitMetrics(sink, points);
 }

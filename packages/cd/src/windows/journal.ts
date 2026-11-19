@@ -16,6 +16,7 @@ import type {
 	PrincipalRef,
 } from "@hobo/core";
 import type { Digest, TelemetrySink } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 
 const tagOf = Object.prototype.toString;
 
@@ -154,16 +155,14 @@ export function emitCounter(
 		unit?: string;
 	}>,
 ): void {
-	sink
-		?.metrics([
-			{
-				name: point.name,
-				kind: "counter",
-				value: point.value ?? 1,
-				unit: point.unit ?? "{event}",
-				atMs: point.atMs,
-				attributes: point.attributes,
-			},
-		])
-		.catch(() => undefined);
+	emitMetrics(sink, [
+		{
+			name: point.name,
+			kind: "counter",
+			value: point.value ?? 1,
+			unit: point.unit ?? "{event}",
+			atMs: point.atMs,
+			attributes: point.attributes,
+		},
+	]);
 }

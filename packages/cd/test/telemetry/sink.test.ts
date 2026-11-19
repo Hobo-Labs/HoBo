@@ -212,8 +212,55 @@ describe("createTelemetrySink", () => {
 		});
 	});
 
+	it("keeps transport and collector diagnostics out of errors and stats", async () => {
+		const marker = "synthetic-private-provider.invalid";
+		const failed = createTelemetrySink({
+			http: async () => {
+				throw new Error(marker);
+			},
+			maxAttempts: 1,
+		});
+		let failure: Error | undefined;
+		try {
+			await failed.metrics([point(1)]);
+		} catch (error) {
+			if (error instanceof Error) failure = error;
+		}
+		expect(failure).toMatchObject({ code: "otlp-retries-exhausted" });
+		expect(
+			JSON.stringify({ error: String(failure), stats: failed.stats() }),
+		).not.toContain(marker);
+		const partial = createTelemetrySink({
+			http: async () => ({
+				status: 200,
+				headers: {},
+				body: JSON.stringify({
+					partialSuccess: { rejectedDataPoints: "1", errorMessage: marker },
+				}),
+			}),
+		});
+		try {
+			await partial.metrics([point(1)]);
+		} catch (error) {
+			if (error instanceof Error) failure = error;
+		}
+		expect(failure).toMatchObject({ code: "otlp-partial-success" });
+		expect(
+			JSON.stringify({ error: String(failure), stats: partial.stats() }),
+		).not.toContain(marker);
+		expect(() => parseOtlpEndpoint(`not a url ${marker}`)).toThrow(
+			"OTLP endpoint is not a valid URL.",
+		);
+	});
+
 	it("rejects an invalid endpoint at construction", () => {
-		for (const bad of ["not a url", "ftp://x", "http://u:p@x", "http://x/?q=1"])
+		for (const bad of [
+			"not a url",
+			"ftp://x",
+			"http://u:p@x",
+			"http://:p@x",
+			"http://x/?q=1",
+		])
 			expect(() => parseOtlpEndpoint(bad)).toThrow(TelemetryError);
 		expect(parseOtlpEndpoint("http://x:4318/otlp/")).toBe("http://x:4318/otlp");
 	});

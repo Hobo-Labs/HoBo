@@ -141,7 +141,9 @@ parsed once into derived types and never re-checked downstream:
   version transition `planFor(input)` returns, with the lease fence as the
   coordinator's writer fence, and advances at most `maxSteps` steps. Only a
   `SETTLED` state whose destination owns writes is `CONVERGED`; `RESTORED`,
-  `BLOCKED` or settled-back states block with the coordinator's reason.
+  `BLOCKED` or settled-back states block with a fixed reason; provider and
+  coordinator exception text is not included in observations. Check provider
+  access, credentials, and the transition's private diagnostics when needed.
 
 ## Metrics (`TelemetrySink`)
 

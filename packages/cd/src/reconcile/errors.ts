@@ -3,6 +3,8 @@
 // operator or agent can act on.
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
+import { AGENT_FAILURES } from "../agent/errors.js";
+import { FEED_FAILURES } from "../feed/errors.js";
 import type { Refusal } from "../ports.js";
 
 // public-contract: reason codes the reconcile module writes.
@@ -22,9 +24,17 @@ export const RECONCILE_FAILURES = Object.freeze({
 	"resolved-set-mismatch":
 		"The resolved set does not match the Set's content hash; promotion never rebuilds (I1). Restore the original blob or re-promote the Freight.",
 	"realize-failed":
-		"The realizer failed; inspect the reason, fix the provider or credentials, and the next pass retries by observation.",
+		"Check provider access, credentials, and the realizer configuration; the next pass retries by observation.",
+	"realize-outcome-unknown":
+		"Observe the target before retrying; the dispatched operation may have completed.",
+	"reconcile-cancelled":
+		"Retry reconciliation when cancellation is cleared; no new target mutation was dispatched by this pass.",
 	"realize-blocked":
-		"The realizer refused the change; read the reason and fix the declaration or the provider capability.",
+		"The realizer refused the change; check the declaration and provider capability before retrying.",
+	"realizer-detail-redacted":
+		"Check the realizer and provider configuration for the reported condition.",
+	"transport-detail-redacted":
+		"Check the reconciler transport and Station connection for the reported condition.",
 	"attestation-refused":
 		"The apply worker could not be attested; check the host attestor keys and the code digest before retrying.",
 	"report-refused":
@@ -64,6 +74,39 @@ export const RECONCILE_FAILURES = Object.freeze({
 } as const);
 
 export type ReconcileFailureCode = keyof typeof RECONCILE_FAILURES;
+
+const SAFE_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
+	...Object.entries(RECONCILE_FAILURES),
+	...Object.entries(AGENT_FAILURES).map(
+		([code, spec]) => [code, spec.remediation] as const,
+	),
+	...Object.entries(FEED_FAILURES).map(
+		([code, spec]) => [code, spec.remediation] as const,
+	),
+]);
+
+export function sanitizeReasons(
+	entries: readonly ReasonRecord[],
+	subject: string,
+	source: "realizer" | "transport",
+): ReasonRecord[] {
+	return entries.map((entry) => {
+		const remediation = SAFE_REMEDIATIONS.get(entry.code);
+		const fallback =
+			source === "realizer"
+				? "realizer-detail-redacted"
+				: "transport-detail-redacted";
+		return create(ReasonRecordSchema, {
+			code: remediation === undefined ? fallback : entry.code,
+			message:
+				source === "realizer"
+					? "The realizer reported a condition."
+					: "The reconciler transport reported a condition.",
+			remediation: remediation ?? RECONCILE_FAILURES[fallback],
+			subject,
+		});
+	});
+}
 
 export function reason(
 	code: ReconcileFailureCode,

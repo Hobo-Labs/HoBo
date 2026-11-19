@@ -18,6 +18,7 @@ import type {
 	Refusal,
 	TelemetrySink,
 } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { isJsonArray, isJsonObject, jsonOf } from "./json.js";
 
 /**
@@ -104,7 +105,7 @@ export function emit(
 	}>[],
 ): void {
 	if (sink === undefined || points.length === 0) return;
-	sink.metrics(points).catch(() => undefined);
+	emitMetrics(sink, points);
 }
 
 /** True when an append failed only because another writer moved the stream head. */

@@ -790,6 +790,10 @@ importers:
       sigstore:
         specifier: 5.0.1
         version: 5.0.1
+    devDependencies:
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../conformance
 
   packages/cd-gitops:
     dependencies:

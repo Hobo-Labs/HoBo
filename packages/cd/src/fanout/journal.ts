@@ -19,6 +19,7 @@ import {
 } from "@hobo/core";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { OtelMetricPoint, TelemetrySink } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 
 // ── Time ───────────────────────────────────────────────────────────────────
 export function iso(ms: number): string {
@@ -254,8 +255,7 @@ export function emit(
 	points: readonly OtelMetricPoint[],
 ): void {
 	if (sink === undefined || points.length === 0) return;
-	// Telemetry never decides and never blocks delivery.
-	void sink.metrics(points).catch(() => undefined);
+	emitMetrics(sink, points);
 }
 
 export function counter(

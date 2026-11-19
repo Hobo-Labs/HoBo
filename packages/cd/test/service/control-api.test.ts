@@ -1,10 +1,11 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-chained-type-assertions, anti-slop/no-unknown-returns -- SAFETY: tests read controlled JSON envelopes and swap one fake method in place. */
 // WP12 read API over the CD ports: every route, query parsing, refusals with
 // remediation, feed fall-through, and the SSE stream resuming by Last-Event-ID.
+import { PersistenceUnavailableError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { CD_EVENTS } from "../../src/events.js";
 import type { FeedRequest } from "../../src/ports.js";
-import { CD_API_METRICS } from "../../src/service/index.js";
+import { CD_API_METRICS, createCdControlApi } from "../../src/service/index.js";
 import { get, json, setupApi, text } from "./harness.js";
 import { FREIGHT_ID, RAIL_DIGEST } from "./state.js";
 
@@ -267,6 +268,185 @@ describe("CD read API — routes", () => {
 		await service.drain(AbortSignal.timeout(500));
 	});
 
+	it("sanitizes direct-host readiness failures while preserving check categories", async () => {
+		const { cd, store } = setupApi();
+		const marker = "synthetic-private-health.invalid";
+		const api = createCdControlApi({
+			store,
+			cd,
+			tenant: "t1",
+			now: () => 1,
+			service: {
+				health: () => ({
+					ok: false,
+					checks: [
+						{ name: "store", ok: false, detail: marker },
+						{ name: "step:sources", ok: false, detail: marker },
+						{ name: "issuer", ok: false, detail: marker },
+						{ name: "conductor", ok: false, detail: marker },
+						{ name: `reconciler:${marker}`, ok: false, detail: marker },
+						{ name: marker, ok: false, detail: marker },
+					],
+				}),
+			},
+		});
+		const res = await api.handle(get("/v1/cd/ready"), signal());
+		expect(res.status).toBe(503);
+		const body = await json(res);
+		expect(JSON.stringify(body)).not.toContain(marker);
+		expect(body.reasons?.map((reason) => reason.subject)).toEqual([
+			"store",
+			"step:sources",
+			"issuer",
+			"conductor",
+			"reconcilers",
+			"dependencies",
+		]);
+		for (const reason of body.reasons ?? []) {
+			expect(reason.code).toBe("not-ready");
+			expect(reason.message).toBe("unavailable");
+			expect(reason.remediation).toContain("dependency is unhealthy");
+		}
+	});
+
+	it("sanitizes direct-host healthy checks and remains stable on already grouped checks", async () => {
+		const { cd, store } = setupApi();
+		const marker = "synthetic-private-health.invalid";
+		const api = createCdControlApi({
+			store,
+			cd,
+			tenant: "t1",
+			now: () => 1,
+			service: {
+				health: () => ({
+					ok: true,
+					checks: [
+						{ name: "store", ok: true, detail: marker },
+						{ name: "issuer", ok: true, detail: marker },
+						{ name: "reconcilers", ok: true, detail: marker },
+						{ name: "dependencies", ok: true, detail: marker },
+						{ name: `reconciler:${marker}`, ok: true, detail: marker },
+						{ name: marker, ok: true, detail: marker },
+					],
+				}),
+			},
+		});
+		const res = await api.handle(get("/v1/cd/ready"), signal());
+		expect(res.status).toBe(200);
+		const body = await json(res);
+		expect(JSON.stringify(body)).not.toContain(marker);
+		expect(body.value.checks).toEqual([
+			{ name: "store", ok: true, detail: "ok" },
+			{ name: "issuer", ok: true, detail: "ok" },
+			{ name: "reconcilers", ok: true, detail: "ok" },
+			{ name: "dependencies", ok: true, detail: "ok" },
+		]);
+	});
+
+	it("returns an actionable readiness refusal when the health provider throws", async () => {
+		const { cd, store } = setupApi();
+		const api = createCdControlApi({
+			store,
+			cd,
+			tenant: "t1",
+			now: () => 1,
+			service: {
+				health: () => {
+					throw new Error("synthetic-private-health.invalid");
+				},
+			},
+		});
+		const res = await api.handle(get("/v1/cd/ready"), signal());
+		expect(res.status).toBe(503);
+		const body = await json(res);
+		expect(JSON.stringify(body)).not.toContain(
+			"synthetic-private-health.invalid",
+		);
+		expect(body.reasons?.[0]).toMatchObject({
+			code: "not-ready",
+			message: "Readiness could not be determined.",
+			subject: "service",
+		});
+		expect(body.reasons?.[0].remediation).toContain("dependency is unhealthy");
+	});
+
+	it("does not accept a non-boolean readiness value", async () => {
+		const { cd, store } = setupApi();
+		const api = createCdControlApi({
+			store,
+			cd,
+			tenant: "t1",
+			now: () => 1,
+			service: { health: () => JSON.parse('{"ok":"yes","checks":[]}') },
+		});
+		const res = await api.handle(get("/v1/cd/ready"), signal());
+		expect(res.status).toBe(503);
+		expect((await json(res)).reasons?.[0]).toMatchObject({
+			code: "not-ready",
+			subject: "service",
+		});
+	});
+
+	it.each([
+		{ name: "started", ok: false, subject: "started" },
+		{ name: "store", ok: false, subject: "store" },
+		{ name: "step:sources", ok: false, subject: "step:sources" },
+		{ name: "reconciler:fixture", ok: false, subject: "reconcilers" },
+		{ name: "issuer", ok: false, subject: "issuer" },
+		{ name: "conductor", ok: false, subject: "conductor" },
+		{ name: "store", ok: "yes", subject: "store" },
+		{ name: "step:inventory", ok: "yes", subject: "step:inventory" },
+	])("refuses a healthy report with an unhealthy gating or invalid $name check", async ({
+		name,
+		ok,
+		subject,
+	}) => {
+		const { cd, store } = setupApi();
+		const api = createCdControlApi({
+			store,
+			cd,
+			tenant: "t1",
+			now: () => 1,
+			service: {
+				health: () =>
+					JSON.parse(
+						JSON.stringify({
+							ok: true,
+							checks: [{ name, ok, detail: "fixture" }],
+						}),
+					),
+			},
+		});
+		const res = await api.handle(get("/v1/cd/ready"), signal());
+		expect(res.status).toBe(503);
+		expect((await json(res)).reasons?.[0]).toMatchObject({
+			code: "not-ready",
+			message: "unavailable",
+			subject,
+		});
+	});
+
+	it("keeps a non-gating step failure visible without blocking readiness", async () => {
+		const { cd, store } = setupApi();
+		const api = createCdControlApi({
+			store,
+			cd,
+			tenant: "t1",
+			now: () => 1,
+			service: {
+				health: () => ({
+					ok: true,
+					checks: [{ name: "step:inventory", ok: false, detail: "private" }],
+				}),
+			},
+		});
+		const res = await api.handle(get("/v1/cd/ready"), signal());
+		expect(res.status).toBe(200);
+		expect((await json(res)).value.checks).toEqual([
+			{ name: "step:inventory", ok: false, detail: "unavailable" },
+		]);
+	});
+
 	it("GET /v1/cd/openapi.json lists every read route", async () => {
 		const { api } = setupApi();
 		const doc = (await json(
@@ -347,6 +527,42 @@ describe("CD read API — routes", () => {
 		});
 	});
 
+	it.each([
+		{
+			error: new Error("synthetic-private-provider.invalid"),
+			status: 500,
+			code: "view-failed",
+			message: "The CD view could not be built.",
+			remediation: "runbook",
+		},
+		{
+			error: new PersistenceUnavailableError(
+				"synthetic-private-provider.invalid",
+			),
+			status: 503,
+			code: "store-unavailable",
+			message: "The CD journal is unavailable.",
+			remediation: "storage health",
+		},
+	])("does not expose a provider exception in a $code response", async (fixture) => {
+		const { api, cd } = setupApi();
+		cd.pipelines.get = async () => {
+			throw fixture.error;
+		};
+		const res = await api.handle(get("/v1/cd/pipelines/shop"), signal());
+		expect(res.status).toBe(fixture.status);
+		const body = await json(res);
+		expect(body.reasons?.[0]).toMatchObject({
+			code: fixture.code,
+			message: fixture.message,
+			subject: "pipelines",
+		});
+		expect(body.reasons?.[0].remediation).toContain(fixture.remediation);
+		expect(JSON.stringify(body)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
+	});
+
 	it("emits request metrics through TelemetrySink", async () => {
 		const { api, sink } = setupApi();
 		await api.handle(get("/v1/cd/fanouts/fan-1"), signal());
@@ -361,6 +577,18 @@ describe("CD read API — routes", () => {
 		).toBe(true);
 		expect(sink.points.some((p) => p.name === CD_API_METRICS.requestMs)).toBe(
 			true,
+		);
+	});
+
+	it("keeps a synchronous telemetry failure from breaking a successful response", async () => {
+		const { api, sink } = setupApi();
+		sink.metrics = () => {
+			throw new Error("synthetic-private-exporter.invalid");
+		};
+		const response = await api.handle(get("/v1/cd/fanouts/fan-1"), signal());
+		expect(response.status).toBe(200);
+		expect(JSON.stringify(await json(response))).not.toContain(
+			"synthetic-private-exporter.invalid",
 		);
 	});
 });
@@ -515,5 +743,35 @@ describe("CD read API — SSE /v1/cd/stream", () => {
 			event: "error",
 			data: { code: "store-unavailable" },
 		});
+	});
+
+	it("does not expose a journal exception in a streaming error frame", async () => {
+		const { api, store } = setupApi();
+		const readAll = store.readAll.bind(store);
+		store.readAll = async function* (options) {
+			yield* readAll(options);
+			throw new PersistenceUnavailableError(
+				"synthetic-private-journal.invalid",
+			);
+		};
+		const res = await api.handle(
+			get("/v1/cd/stream", { "last-event-id": "4" }),
+			signal(),
+		);
+		expect(res.status).toBe(200);
+		const raw = await text(res);
+		expect(raw).not.toContain("synthetic-private-journal.invalid");
+		const streamed = frames(raw);
+		expect(streamed[0]?.id).toBe("5");
+		const frame = streamed.at(-1);
+		expect(frame).toMatchObject({
+			event: "error",
+			data: {
+				code: "store-unavailable",
+				message: "The CD journal is unavailable.",
+				lastEventId: "6",
+			},
+		});
+		expect(frame?.data.remediation).toContain("storage health");
 	});
 });
