@@ -116,7 +116,7 @@ mid-stage. Overrides are governed, expire, and are audited. Rollback is allowed
 by default.
 
 If the Freight's declaration changes data shape, promotion is sequenced with
-[Trails](./data-engines-continuous-migration.md): `expand`, then the hosting
+[Trails](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md): `expand`, then the hosting
 transition, then soak, then `contract`. Rollback past a completed `contract` is
 refused, and the refusal names the compensating `expand` (D11).
 

@@ -200,7 +200,7 @@ or engine-specific storage is refused in any form — static, dynamic `import()`
 runtime is refused too. `@hobo/data` is
 unchanged — it stays the app-authoring kernel and is deliberately not the
 common engine package. Detail, evidence, and limits are in
-[data-engines-continuous-migration.md](./data-engines-continuous-migration.md).
+[data-engines-continuous-migration.md](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md).
 
 ### Stations
 

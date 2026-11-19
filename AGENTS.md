@@ -138,7 +138,7 @@ Prefer changes inside one package, app, feature folder, or test folder.
 - **ResilienceProfile** is a **secondary** visible layer (retry / circuitBreaker / timeout / bulkhead / fallback / hedging). Thin `applyResilienceProfile` applicator emits facts; **never** retries `policy.Decided` deny, terminal, or cancellation — aligned with [`docs/design/dx-sdk-resilience-semantics.md`](docs/design/dx-sdk-resilience-semantics.md). Not a primary control-plane noun.
 - Capture/export: `EffectManifest`, `EffectTracer` (`contract.EffectDeclared` / `contract.EffectInvoked`); Gatekeeper `effectSummaries` + `gate: "effects" | "resilience"`.
 - Harness: `@hobo/contracts` `createEffectIsolation`, `mocksForEffects`, `runResilienceFaultInjection` — pure contracts isolate with zero infra (`@hobo/contract-harness` itself stays dependency-free PACT infra).
-- No public Effect-TS, Polly, or XState dependency. Design: [`docs/design/adr/03-data-plane-effects-resiliency.md`](docs/design/adr/03-data-plane-effects-resiliency.md).
+- No public Effect-TS, Polly, or XState dependency. Design: [Effects and resilience ADR](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md).
 
 ### Secretless-first config & secrets (ADR-0027)
 

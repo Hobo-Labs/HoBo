@@ -54,10 +54,10 @@ Shared temp contract: `hobo.temporary-environment-station/v1` in `@hobo/core` (`
 ## Data engines (`packages/data-*`, ADR-0177)
 
 Each engine implements the `@hobo/data-core` SPI and is run against one conformance kit
-([data-engines-continuous-migration](./data-engines-continuous-migration.md#9-verification)). "Live"
+([data-engines-continuous-migration](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md#9-verification)). "Live"
 here means the kit ran against a real server. The kit grows as defects are found, so this section
 gives no case or test counts; each run's counts are in that run's CI log, and
-[§9 "What each engine skips"](./data-engines-continuous-migration.md#what-each-engine-skips) lists
+[§9 "What each engine skips"](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md#what-each-engine-skips) lists
 the skipped cases. What follows states which cases each engine skips and why.
 
 | Engine package | Default lane | Live lane | Notes |
@@ -76,7 +76,7 @@ change capture, in the fence under real concurrency, or in the native path is th
 the pull request that touches those packages, and not otherwise. An intermittent failure once seen in the live PostgreSQL lane was traced to a
 replication slot created at a bad moment and is fixed by proving a slot decodable before use; the
 residual is the table-sync slots PostgreSQL creates itself
-([honest limits](./data-engines-continuous-migration.md#10-honest-limits)).
+([honest limits](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md#10-honest-limits)).
 
 **Native logical-copy, live.** `migration.postgres.logical-copy/v1` is the one native realization
 any engine declares. Its live proof is `packages/data-postgres/test/native-live.test.ts`, which
