@@ -108,6 +108,24 @@ describe("createLocalStreamer", () => {
 		streamer.teardownRun(runId);
 	});
 
+	it("delivers consecutive writes to concurrent pending reads", async () => {
+		const streamer = createLocalStreamer({ bufferLimit: 1 });
+		const runId = parseRunId("run:concurrent-reads");
+		const run = streamer.createRun<string>({ runId });
+		const reader = run.readable[Symbol.asyncIterator]();
+		const reads = Promise.all([reader.next(), reader.next()]);
+		const writer = run.getWritable();
+		try {
+			await Promise.all([writer.write("one"), writer.write("two")]);
+			expect((await reads).map((item) => item.value?.chunk)).toEqual([
+				"one",
+				"two",
+			]);
+		} finally {
+			streamer.teardownRun(runId);
+		}
+	});
+
 	it("passes all seven Streamer conformance assertions", async () => {
 		const report = await runStreamerConformance(() =>
 			createLocalStreamer({ runIdPrefix: "run:conf", bufferLimit: 32 }),

@@ -6,7 +6,7 @@ import {
 	StreamerClosedError,
 	type StreamerRunResult,
 } from "@hobo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createFrameJournal, foldLifecycleStatus } from "../../src/index.js";
 import { defaultFromSeq } from "../../src/streamer/frame-journal.js";
@@ -86,6 +86,29 @@ describe("writing and reading", () => {
 		journal.write(DEFAULT_STREAM_NAME, "b");
 		journal.write(DEFAULT_STREAM_NAME, "c");
 		expect(await pending).toStrictEqual(["a", "b", "c"]);
+	});
+
+	it("settles concurrent pending reads when consecutive frames arrive", async () => {
+		const journal = journalFor();
+		const reader = journal.attachReader(parseSeq(1))[Symbol.asyncIterator]();
+		const delivered: (string | undefined)[] = [];
+		const first = reader
+			.next()
+			.then((item) => delivered.push(item.value?.chunk));
+		const second = reader
+			.next()
+			.then((item) => delivered.push(item.value?.chunk));
+		journal.write(DEFAULT_STREAM_NAME, "a");
+		journal.write(DEFAULT_STREAM_NAME, "b");
+		try {
+			await vi.waitFor(() => expect(delivered).toEqual(["a", "b"]), {
+				timeout: 1_000,
+				interval: 25,
+			});
+			await Promise.all([first, second]);
+		} finally {
+			journal.close(result("closed"));
+		}
 	});
 
 	it("carries the run id onto every frame", () => {

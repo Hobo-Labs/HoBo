@@ -111,10 +111,7 @@ export function createFrameJournal<TChunk>(options: {
 									return { value: undefined, done: true };
 								}
 
-								if (value.seq === reader.nextSeq) {
-									reader.nextSeq += 1;
-									return { value, done: false };
-								}
+								return { value, done: false };
 							}
 						},
 						async return() {
@@ -199,6 +196,7 @@ export function createFrameJournal<TChunk>(options: {
 			if (reader.nextSeq === frame.seq) {
 				const waiter = reader.waiters.shift();
 				if (waiter) {
+					reader.nextSeq += 1;
 					waiter(frame);
 				}
 			}
