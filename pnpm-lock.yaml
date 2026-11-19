@@ -5199,11 +5199,7 @@ importers:
 
   src/draft/technical-proofs/wrpc-deadline-propagation-contract: {}
 
-  src/draft/technical-proofs/wrpc-in-process-link-contract: {}
-
   src/draft/technical-proofs/wrpc-lattice-transport-contract: {}
-
-  src/draft/technical-proofs/wrpc-link-layer-contract: {}
 
   src/draft/technical-proofs/wrpc-membrane-failure-contract: {}
 

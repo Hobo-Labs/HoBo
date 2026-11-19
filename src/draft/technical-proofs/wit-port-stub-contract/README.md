@@ -28,7 +28,7 @@ schema-valid responses.
 ## Scope Boundary
 
 Does not promote into `packages/runtime/`, wire Camp persistence, LLM stub fill,
-or full WIT codegen. Composes patterns from `wrpc-in-process-link-contract` and
+or full WIT codegen. Composes patterns from `packages/runtimes/runtime-local` and
 `conformance-port-suite-contract` replay traces.
 
 ## Verification

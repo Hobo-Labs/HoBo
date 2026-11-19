@@ -1,3 +1,0 @@
-slug: wrpc-in-process-link-contract
-layer: technical
-proof-identity: ok
