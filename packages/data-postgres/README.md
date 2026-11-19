@@ -868,16 +868,15 @@ Events are reported through `log` as data (`replication`, `decision`,
 
 ### Usage metering
 
-`createUsageMeter()` counts the statements a host sends per backend and
-`flush` adds each count to a per-period row on that backend (`addUsage`,
-`readUsage`, period ids from `billingPeriod`: the UTC calendar month). One
-statement is one operation. Call `record(backendId, atMs, count)` with the
-time the statements were sent. Counts are kept by backend and month, including
-while a flush is in flight, so a delayed flush cannot move them to another month.
-A backend that cannot be reached keeps its count for the next flush. A stopped
-instance loses unflushed counts, and retrying an ambiguous write may count it
-twice if the first write committed. `measureStorageBytes` reads the database
-size for a storage allowance.
+`recordUsage(backend, layout, observation)` persists an identified statement
+count and its UTC billing month on that backend in one transaction. Give each
+observation a stable `observationId`, its `observedAtMs`, and its `statements`
+count. A repeated observation with the same data is counted once; reuse of an
+id with different data fails. Each id is retained for deduplication. Await the
+call and retry with the same id if its
+outcome is uncertain. `readUsage` returns the recorded period totals, and
+`measureStorageBytes` reads the database size for a storage allowance. The
+caller supplies the observations and is responsible for recording them.
 
 ## Error codes
 

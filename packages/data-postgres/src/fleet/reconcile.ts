@@ -33,12 +33,7 @@ import {
 	type FleetBackend,
 	type FleetFailureClass,
 } from "./sql.js";
-import {
-	billingPeriod,
-	measureStorageBytes,
-	readUsage,
-	type UsageMeter,
-} from "./usage.js";
+import { billingPeriod, measureStorageBytes, readUsage } from "./usage.js";
 
 export type FleetReplicationResult = {
 	readonly source: string;
@@ -98,7 +93,6 @@ export type FleetReconcileOptions = {
 		role: FleetSchemaRole,
 	) => Promise<void>;
 	readonly checkBudget: FleetBudgetCheck;
-	readonly meter: UsageMeter | undefined;
 	readonly limits: Partial<ReplicationLimits> | undefined;
 	readonly decidedBy: string;
 	readonly now: () => number;
@@ -410,8 +404,7 @@ export async function reconcileFleet(
 					usage.push({
 						unit: "operations",
 						used:
-							(counters.find((entry) => entry.unit === "operations")?.used ??
-								0) + (options.meter?.pending(backend.id, period.id) ?? 0),
+							counters.find((entry) => entry.unit === "operations")?.used ?? 0,
 					});
 					usage.push({
 						unit: "storage-bytes",
@@ -477,7 +470,6 @@ export async function reconcileFleet(
 		});
 		if (outcome.status === "decided") assignment = outcome.assignment;
 	}
-	await options.meter?.flush(backends.filter(healthy), layout);
 	const final = await readCurrentAssignment(register);
 	return {
 		status: "settled",

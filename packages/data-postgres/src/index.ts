@@ -275,16 +275,15 @@ export {
 	sqlState,
 } from "./fleet/sql.js";
 export {
-	addUsage,
 	type BillingPeriod,
 	billingPeriod,
-	createUsageMeter,
 	FLEET_USAGE_UNITS,
 	type FleetUsageUnit,
 	measureStorageBytes,
 	type PostgresFleetUsage,
+	type PostgresFleetUsageObservation,
 	readUsage,
-	type UsageMeter,
+	recordUsage,
 } from "./fleet/usage.js";
 export {
 	assertArgvSafe,

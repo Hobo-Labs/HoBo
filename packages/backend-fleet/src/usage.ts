@@ -42,6 +42,11 @@ export function billingPeriod(nowMs: number): BillingPeriod {
 	const now = new Date(nowMs);
 	const year = now.getUTCFullYear();
 	const month = now.getUTCMonth();
+	if (year > 9999)
+		throw new BackendFleetError(
+			"FLEET_RECORD_INVALID",
+			"a billing period must use a four-digit year",
+		);
 	const startsAtMs = Date.UTC(year, month, 1);
 	const endsAtMs = Date.UTC(year, month + 1, 1);
 	if (!Number.isFinite(startsAtMs) || !Number.isFinite(endsAtMs))

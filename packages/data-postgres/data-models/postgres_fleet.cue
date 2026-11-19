@@ -63,6 +63,12 @@ import (
 	used:   int & >=0
 }
 
+#PostgresFleetUsageObservation: {
+	observationId: string & =~"^[A-Za-z0-9][A-Za-z0-9:._-]{0,199}$"
+	observedAtMs: int & >=0 & <=253402300799999
+	statements: int & >=0 & <=9007199254740991
+}
+
 #PostgresFleetUsageMeasurement: {
 	unit: #PostgresFleetUsageUnit
 	used: int & >=0

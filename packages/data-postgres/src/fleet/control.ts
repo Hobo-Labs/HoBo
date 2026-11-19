@@ -69,5 +69,12 @@ export async function ensureFleetControlTables(
 			updated_at timestamptz NOT NULL,
 			PRIMARY KEY (period, unit)
 		)`);
+		await session.query(`CREATE TABLE IF NOT EXISTS ${layout.usageObservationsTable} (
+			observation_id text PRIMARY KEY,
+			observed_at_ms bigint NOT NULL CHECK (observed_at_ms >= 0),
+			period text NOT NULL,
+			unit text NOT NULL,
+			used bigint NOT NULL CHECK (used >= 0)
+		)`);
 	});
 }

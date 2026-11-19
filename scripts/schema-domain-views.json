@@ -107,7 +107,7 @@
   "packages/data-postgres/src/engine/identifiers.ts": ["PostgresCaptureObjects"],
   "packages/data-postgres/src/engine/native.ts": ["PostgresNativeTicket"],
   "packages/data-postgres/src/fleet/replication.ts": ["PostgresFleetWatermark"],
-  "packages/data-postgres/src/fleet/usage.ts": ["PostgresFleetUsage"],
+  "packages/data-postgres/src/fleet/usage.ts": ["PostgresFleetUsage","PostgresFleetUsageObservation"],
   "packages/data-postgres/src/migration-profiles.ts": ["PostgresTarget"],
   "packages/data-sqlite/src/data-dual-port.ts": ["CreateSqliteDataDualPortOptions","DataDualEvidence"],
   "packages/data-sqlite/src/engine.ts": ["SqliteEngineOptions"],

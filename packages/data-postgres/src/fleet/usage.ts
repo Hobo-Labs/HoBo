@@ -3,9 +3,10 @@ import {
 	FLEET_USAGE_UNITS,
 	type FleetUsageUnit,
 } from "@hobo/backend-fleet";
+import { isJsonString } from "@hobo/data-core";
 import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
-import { column, type FleetBackend, parseCount } from "./sql.js";
+import { column, type FleetBackend, inTransaction, parseCount } from "./sql.js";
 
 export {
 	type BillingPeriod,
@@ -30,23 +31,80 @@ function parseUnit(value: string): FleetUsageUnit {
 	return unit;
 }
 
-export async function addUsage(
+export type PostgresFleetUsageObservation = {
+	readonly observationId: string;
+	readonly observedAtMs: number;
+	readonly statements: number;
+};
+
+export async function recordUsage(
 	backend: FleetBackend,
 	layout: FleetLayout,
-	usage: PostgresFleetUsage,
-): Promise<void> {
-	if (!Number.isSafeInteger(usage.used) || usage.used < 0)
+	observation: PostgresFleetUsageObservation,
+): Promise<"recorded" | "duplicate"> {
+	const { observationId, observedAtMs, statements } = observation;
+	if (
+		!isJsonString(observationId) ||
+		!/^[A-Za-z0-9][A-Za-z0-9:._-]{0,199}$/u.test(observationId) ||
+		!Number.isSafeInteger(statements) ||
+		statements < 0
+	) {
 		throw new PostgresDataError(
 			"FLEET_RECORD_INVALID",
-			"usage must be a non-negative integer",
+			"usage needs an observation id and a non-negative integer count",
 		);
-	if (usage.used === 0) return;
-	await backend.executor.query(
-		`INSERT INTO ${layout.usageTable} (period, unit, used, updated_at)
-		VALUES ($1::text, $2::text, $3::bigint, clock_timestamp())
-		ON CONFLICT (period, unit) DO UPDATE
-		SET used = ${layout.usageTable}.used + EXCLUDED.used, updated_at = EXCLUDED.updated_at`,
-		[usage.period, usage.unit, usage.used],
+	}
+	const period = billingPeriod(observedAtMs).id;
+	return inTransaction(
+		backend.executor,
+		"BEGIN ISOLATION LEVEL READ COMMITTED",
+		async (session) => {
+			const inserted = await session.query(
+				`INSERT INTO ${layout.usageObservationsTable} (observation_id, observed_at_ms, period, unit, used)
+			VALUES ($1::text, $2::bigint, $3::text, $4::text, $5::bigint)
+			ON CONFLICT (observation_id) DO NOTHING RETURNING observation_id::text AS observation_id`,
+				[observationId, observedAtMs, period, "operations", statements],
+			);
+			if (inserted.rows.length === 0) {
+				const previous = await session.query(
+					`SELECT observed_at_ms::text AS observed_at_ms, period, unit, used::text AS used FROM ${layout.usageObservationsTable}
+				WHERE observation_id = $1::text`,
+					[observationId],
+				);
+				const row = previous.rows[0];
+				if (
+					!row ||
+					parseCount(column(row, "observed_at_ms"), "observed_at_ms") !==
+						observedAtMs ||
+					column(row, "period") !== period ||
+					column(row, "unit") !== "operations" ||
+					parseCount(column(row, "used"), "used") !== statements
+				) {
+					throw new PostgresDataError(
+						"FLEET_RECORD_INVALID",
+						"usage observation id was reused with different data",
+					);
+				}
+				return "duplicate";
+			}
+			if (statements > 0) {
+				const updated = await session.query(
+					`INSERT INTO ${layout.usageTable} (period, unit, used, updated_at)
+				VALUES ($1::text, $2::text, $3::bigint, clock_timestamp())
+				ON CONFLICT (period, unit) DO UPDATE
+				SET used = ${layout.usageTable}.used + EXCLUDED.used, updated_at = EXCLUDED.updated_at
+				WHERE ${layout.usageTable}.used <= 9007199254740991 - EXCLUDED.used
+				RETURNING used::text AS used`,
+					[period, "operations", statements],
+				);
+				if (updated.rows.length !== 1)
+					throw new PostgresDataError(
+						"FLEET_RECORD_INVALID",
+						"usage exceeds the safe integer range",
+					);
+			}
+			return "recorded";
+		},
 	);
 }
 
@@ -74,76 +132,4 @@ export async function measureStorageBytes(
 		"SELECT pg_database_size(current_database())::text AS bytes",
 	);
 	return parseCount(column(result.rows[0] ?? {}, "bytes"), "bytes");
-}
-
-export type UsageMeter = {
-	record(backendId: string, atMs: number, statements?: number): void;
-	pending(backendId: string, period: string): number;
-	flush(backends: readonly FleetBackend[], layout: FleetLayout): Promise<void>;
-};
-
-export function createUsageMeter(): UsageMeter {
-	const counts = new Map<string, Map<string, number>>();
-	const inFlight = new Map<string, Map<string, number>>();
-	function adjust(
-		buckets: Map<string, Map<string, number>>,
-		backendId: string,
-		period: string,
-		delta: number,
-	): void {
-		const periods = buckets.get(backendId) ?? new Map<string, number>();
-		const next = (periods.get(period) ?? 0) + delta;
-		if (next === 0) periods.delete(period);
-		else periods.set(period, next);
-		if (periods.size === 0) buckets.delete(backendId);
-		else buckets.set(backendId, periods);
-	}
-	function pending(backendId: string, period: string): number {
-		return (
-			(counts.get(backendId)?.get(period) ?? 0) +
-			(inFlight.get(backendId)?.get(period) ?? 0)
-		);
-	}
-	return {
-		record(backendId, atMs, statements = 1) {
-			if (
-				!backendId.trim() ||
-				!Number.isSafeInteger(statements) ||
-				statements < 0
-			)
-				throw new PostgresDataError(
-					"FLEET_RECORD_INVALID",
-					"usage needs a backend and a non-negative integer count",
-				);
-			const period = billingPeriod(atMs).id;
-			if (!Number.isSafeInteger(pending(backendId, period) + statements))
-				throw new PostgresDataError(
-					"FLEET_RECORD_INVALID",
-					"pending usage exceeds the safe integer range",
-				);
-			if (statements > 0) adjust(counts, backendId, period, statements);
-		},
-		pending,
-		async flush(backends, layout) {
-			await Promise.all(
-				backends.flatMap((backend) =>
-					[...(counts.get(backend.id) ?? [])].map(async ([period, used]) => {
-						adjust(counts, backend.id, period, -used);
-						adjust(inFlight, backend.id, period, used);
-						try {
-							await addUsage(backend, layout, {
-								period,
-								unit: "operations",
-								used,
-							});
-						} catch {
-							adjust(counts, backend.id, period, used);
-						} finally {
-							adjust(inFlight, backend.id, period, -used);
-						}
-					}),
-				),
-			);
-		},
-	};
 }

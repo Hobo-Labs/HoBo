@@ -14,6 +14,7 @@ export type FleetLayout = {
 	readonly assignmentTable: string;
 	readonly watermarkTable: string;
 	readonly usageTable: string;
+	readonly usageObservationsTable: string;
 };
 
 export const FLEET_LOCK_CLASS = 1_212_112_710;
@@ -46,6 +47,7 @@ export function parseFleetLayout(input: FleetLayoutInput): FleetLayout {
 		assignmentTable: `${controlPrefix}assignments`,
 		watermarkTable: `${controlPrefix}watermarks`,
 		usageTable: `${controlPrefix}usage`,
+		usageObservationsTable: `${controlPrefix}usage_observations`,
 	});
 }
 
