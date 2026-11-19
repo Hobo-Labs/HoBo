@@ -1,7 +1,7 @@
 ---
 layout: ../../layouts/Docs.astro
 title: Migration fixtures
-description: "Legacy schema → current, dual windows, fail-closed integrity, can-trail/can-migrate gates, and Trail golden oracles."
+description: "Journal schema integrity, dual windows, can-trail/can-migrate gates, and Trail golden oracles."
 ---
 
 # Migration fixtures
@@ -12,7 +12,7 @@ Migrations are product features — test them as such.
 
 | Class | Prove |
 |---|---|
-| **Journal schema** | v1 → v2 user_version; integrity checks; fail closed |
+| **Journal schema** | initialization, schema verification, and integrity checks |
 | **Event upcast** | Old body bytes → current fold state |
 | **Identity continuous** | Dual principal fixtures offline |
 | **Trail recipes** | `can-trail`, plan evidence, golden oracles |
@@ -22,7 +22,7 @@ Migrations are product features — test them as such.
 
 | Failure | Expected |
 |---|---|
-| Noncontiguous seq after migrate | `STREAM_INTEGRITY` / migrate fail |
+| Incomplete or altered journal schema | `INTEGRITY_FAILURE` |
 | Opening newer DB with older code | `UNSUPPORTED_SCHEMA_VERSION` |
 | Snapshot ahead of head | `SNAPSHOT_AHEAD` |
 | Trail gate fail | No partial cutover mute |

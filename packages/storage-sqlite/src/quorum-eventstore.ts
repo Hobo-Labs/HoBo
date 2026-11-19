@@ -472,7 +472,6 @@ function createMaterialized(
 	const driver = createMemoryNodeSqliteDriver();
 	const journal = new SqliteJournal(driver, {
 		clock: { now: () => new Date(timeMs).toISOString() },
-		now: new Date(0).toISOString(),
 	});
 	return {
 		journal,

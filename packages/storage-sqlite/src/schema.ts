@@ -1,27 +1,13 @@
-/** Current SQLite schema version stored in PRAGMA user_version. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 1;
 
-/** Schema version of the pre-migration runtime-local events/snapshots layout. */
-export const LEGACY_SCHEMA_VERSION = 1;
-
-/**
- * Native connection pragmas. Browser adapters must NOT copy WAL blindly —
- * use the OPFS VFS journal/locking mode documented for that VFS.
- */
 export const NATIVE_PRAGMAS = Object.freeze({
 	journal_mode: "WAL",
 	synchronous: "FULL",
 	foreign_keys: "ON",
 	busy_timeout: 5000,
-	// defensive / security
-	// recursive_triggers off by default
 });
 
-/**
- * Schema v2 — stream heads, positioned events, durable journal tables.
- * STRICT tables when the runtime supports them; applied after version check.
- */
-export const SCHEMA_V2_SQL = `
+export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS streams (
   stream_id        TEXT PRIMARY KEY,
   revision         INTEGER NOT NULL CHECK (revision >= 0),
@@ -175,36 +161,4 @@ CREATE TABLE IF NOT EXISTS actor_leases (
   expires_at           TEXT NOT NULL,
   released             INTEGER NOT NULL DEFAULT 0
 ) STRICT;
-`;
-
-/**
- * Legacy v1 schema as created by runtime-local before this package.
- * Used only to build migration fixtures and detect v1 databases.
- */
-export const LEGACY_V1_SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS events (
-  stream_id TEXT NOT NULL,
-  seq INTEGER NOT NULL CHECK (seq > 0),
-  id TEXT NOT NULL UNIQUE,
-  type TEXT NOT NULL,
-  v INTEGER NOT NULL DEFAULT 1,
-  ts TEXT NOT NULL,
-  actor TEXT NOT NULL,
-  tenant TEXT NOT NULL,
-  project TEXT,
-  causation_id TEXT,
-  correlation_id TEXT,
-  lane TEXT,
-  data TEXT NOT NULL,
-  meta TEXT NOT NULL DEFAULT '{}',
-  idempotency_key TEXT,
-  PRIMARY KEY (stream_id, seq),
-  UNIQUE (stream_id, idempotency_key)
-);
-CREATE TABLE IF NOT EXISTS snapshots (
-  stream_id TEXT PRIMARY KEY,
-  seq INTEGER NOT NULL,
-  state TEXT NOT NULL,
-  saved_at TEXT NOT NULL
-);
 `;

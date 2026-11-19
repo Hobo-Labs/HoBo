@@ -31,7 +31,6 @@ Parse-don’t-validate constructors throw typed parse errors (`CoreParseError`, 
 | `CHECKPOINT_REGRESSION` | Non-monotonic checkpoint | No |
 | `UNSUPPORTED_SCHEMA_VERSION` | DB newer than code | No — upgrade binary |
 | `MIGRATION_FAILURE` | Migrate failed | No until fixed |
-| `STREAM_INTEGRITY` | Noncontiguous / head mismatch | No |
 | `UNSUPPORTED_CODEC` | Unknown payload codec | No |
 | `PERSISTENCE_UNAVAILABLE` | e.g. OPFS required but missing | No / change mode |
 | `SQLITE_BUSY` | Busy timeout | Maybe — backoff |
