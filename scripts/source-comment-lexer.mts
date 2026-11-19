@@ -89,12 +89,7 @@ export function lexComments(
 				index += 2;
 				let nesting = 1;
 				while (index < text.length && nesting > 0) {
-					if (
-						dialect !== "proto" &&
-						dialect !== "cue" &&
-						dialect !== "prisma" &&
-						text.startsWith("/*", index)
-					) {
+					if (dialect === "wit" && text.startsWith("/*", index)) {
 						nesting++;
 						index += 2;
 					} else if (text.startsWith("*/", index)) {

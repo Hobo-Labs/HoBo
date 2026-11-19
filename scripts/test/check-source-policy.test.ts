@@ -163,21 +163,30 @@ f: /* TODO: remove block */`;
 			),
 			[1, 6, 8, 10],
 		);
-		assert.equal(
+		assert.deepEqual(
 			commentViolations(
 				"x.cue",
-				'g: /* see http://inside.example.test */',
+				"g: /* see http://inside.example.test */",
 				new Set([1]),
-			).length,
-			0,
+			).map((item) => item.message),
+			["make the code self-documenting instead of adding a comment"],
 		);
 		assert.deepEqual(
 			commentViolations(
 				"x.cue",
 				"a: /* glob: pkg/* */\n// TODO: follow up\n",
 				new Set([1, 2]),
-			).map((item) => item.line),
-			[2],
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+				{
+					line: 2,
+					message: "finish deferred work instead of adding a marker",
+				},
+			],
 		);
 		const proto =
 			'option x = "https://example.test/* data */"; /* explanation */\n// todo: implement';
@@ -192,8 +201,17 @@ f: /* TODO: remove block */`;
 				"schema.prisma",
 				"/* TODO: inside */\n/* relation pkg/* */ TODO: outside */\n",
 				new Set([1, 2]),
-			).map((item) => item.line),
-			[1],
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "finish deferred work instead of adding a marker",
+				},
+				{
+					line: 2,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+			],
 		);
 		const wit = "/* outer /* inner */ outer */\n/// explanation";
 		assert.deepEqual(
@@ -205,6 +223,23 @@ f: /* TODO: remove block */`;
 		assert.deepEqual(
 			commentViolations("x.sql", sql, new Set([1, 2])).map((item) => item.line),
 			[1, 2],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.sql",
+				"/* relation pkg/* */\n-- TODO: follow up\n",
+				new Set([1, 2]),
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+				{
+					line: 2,
+					message: "finish deferred work instead of adding a marker",
+				},
+			],
 		);
 		const toml = `a = '# data' # explanation\nb = """\n# data\n""" # explanation`;
 		assert.deepEqual(
@@ -258,6 +293,35 @@ f: /* TODO: remove block */`;
 				new Set([1]),
 			).length,
 			0,
+		);
+		assert.equal(
+			commentViolations("x.proto", "// buf: retry later\n", new Set([1]))
+				.length,
+			1,
+		);
+		assert.equal(
+			commentViolations("x.ts", "//go:embed schema.json\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.ts", "// go: retry later\n", new Set([1])).length,
+			1,
+		);
+		assert.equal(
+			commentViolations("x.cue", "//cue:generate cue get go\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.sql", "-- atlas:nolint DS101\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.sql", "-- atlas: retry later\n", new Set([1]))
+				.length,
+			1,
 		);
 	});
 

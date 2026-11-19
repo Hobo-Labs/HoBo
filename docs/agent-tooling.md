@@ -9,10 +9,13 @@ tags: [hobo, agent-tooling.md]
 
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
-design documents. The shared pre-commit hook and CI run `source:guard` on new
-JavaScript, TypeScript, shell, Python, CSS, and HTML comments and added or
-changed planning or design documents. It reads the staged content for commits
-and the PR diff for CI; it does not inspect other languages or unchanged content.
+design documents. The shared pre-commit hook and CI run `source:guard` on new comments in the
+languages listed in [`AGENTS.md`](../AGENTS.md) and on added or changed planning
+or design documents, including `.impeccable/design.json` and
+`.impeccable/surfaces/`. Compiler and tool directives stay allowed, including
+`//go:` directives, `cue:generate`, buf lint and breaking ignores, and Atlas
+schema directives. It reads the staged content for commits and the PR diff for
+CI; it does not inspect unchanged content.
 For renamed files, it compares against the original path so existing comments
 remain allowed while newly added comments are checked. During a staged merge it
 compares against every parent, so content inherited unchanged from either side
