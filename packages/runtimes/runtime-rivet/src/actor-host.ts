@@ -8,19 +8,16 @@ import {
 	type LogicalActorIdentity,
 	parseLogicalActorIdentity,
 } from "@hobo/core";
-import type { ActorLocalJournal } from "./journal.js";
+import type { ActorLocalJournal, JournalFactRecord } from "./journal.js";
 import { cloneAsJson, type JsonValue, parseJsonValue } from "./json.js";
 import { RivetJournalError } from "./types.js";
 
-/** Core `ActorLease` (ADR-0156) tagged with the Rivet placement. */
 export interface RivetActorLease extends ActorLease {
 	readonly placement: "rivet";
 }
 
-/** The canonical `@hobo/core` state handle (ADR-0156), under its Rivet name. */
 export type RivetActorStateHandle<S> = ActorStateHandle<S>;
 
-/** The core ActorHost port (ADR-0156) plus Rivet-specific journal members. */
 export interface RivetActorHost extends ActorHost {
 	readonly placementMode: "rivet";
 	readonly fidelity: "local-sqlite" | "rivetkit";
@@ -46,9 +43,73 @@ export class RivetLeaseConflictError extends Error {
 	}
 }
 
+const COMMAND_EVENT_METADATA = JSON.stringify({
+	format: "hobo.rivet.command-event/v1",
+});
+
+function foldJournalFacts(
+	journal: ActorLocalJournal,
+	streamId: string,
+	facts: readonly JournalFactRecord[],
+	initialState: JsonValue,
+	fold: (state: JsonValue, event: FoldEvent) => JsonValue,
+	legacyEventPayloads: "command" | "event" | undefined,
+): JsonValue {
+	let state = initialState;
+	for (const fact of facts) {
+		const payloadText = new TextDecoder().decode(fact.payload);
+		const command =
+			fact.metadataJson === "{}"
+				? journal.loadCommand(streamId, fact.eventId)
+				: undefined;
+		if (
+			legacyEventPayloads !== "event" &&
+			command &&
+			command.commandType === fact.type &&
+			(command.status === "committed" || command.status === "completed")
+		) {
+			let legacyState: JsonValue | undefined;
+			try {
+				const candidate = fold(state, {
+					type: fact.type,
+					payload: parseJsonValue(command.payloadJson),
+				});
+				if (JSON.stringify(candidate) === payloadText) legacyState = candidate;
+			} catch {}
+			if (legacyState !== undefined) {
+				let eventState: JsonValue | undefined;
+				try {
+					eventState = fold(state, {
+						type: fact.type,
+						payload: parseJsonValue(payloadText),
+					});
+				} catch {}
+				if (
+					eventState === undefined ||
+					JSON.stringify(eventState) === payloadText ||
+					legacyEventPayloads === "command"
+				) {
+					state = legacyState;
+					continue;
+				}
+				throw new RivetJournalError(
+					"PARSE",
+					`ambiguous legacy event payload at ${streamId}:${fact.seq}; choose legacyEventPayloads`,
+				);
+			}
+		}
+		state = fold(state, {
+			type: fact.type,
+			payload: parseJsonValue(payloadText),
+		});
+	}
+	return state;
+}
+
 export function createRivetActorHost(options: {
 	journal: ActorLocalJournal;
 	fidelity?: "local-sqlite" | "rivetkit";
+	legacyEventPayloads?: "command" | "event" | undefined;
 }): RivetActorHost {
 	const leases = new Map<string, RivetActorLease>();
 	const journal = options.journal;
@@ -129,28 +190,29 @@ export function createRivetActorHost(options: {
 			const claimed = journal.claimNext(streamId);
 			if (!claimed) return undefined;
 			const facts = journal.readFacts(streamId);
-			let state = initialState;
-			for (const fact of facts) {
-				state = fold(state, {
-					type: fact.type,
-					payload: parseJsonValue(new TextDecoder().decode(fact.payload)),
-				});
-			}
-			const decided = fold(state, {
+			const state = foldJournalFacts(
+				journal,
+				streamId,
+				facts,
+				initialState,
+				fold,
+				options.legacyEventPayloads,
+			);
+			fold(state, {
 				type: claimed.commandType,
 				payload: parseJsonValue(claimed.payloadJson),
 			});
-			const payload = new TextEncoder().encode(JSON.stringify(decided));
+			const payload = new TextEncoder().encode(claimed.payloadJson);
 			const committed = journal.commitCommand({
 				streamId,
 				commandId: claimed.commandId,
-				expectedRevision: journal.head(streamId).revision,
+				expectedRevision: facts.at(-1)?.seq ?? 0,
 				facts: [
 					{
 						type: claimed.commandType,
 						eventId: claimed.commandId,
 						payload,
-						metadataJson: "{}",
+						metadataJson: COMMAND_EVENT_METADATA,
 						tenant: identity.tenantId,
 						project: identity.projectId,
 						...(identity.lane !== undefined

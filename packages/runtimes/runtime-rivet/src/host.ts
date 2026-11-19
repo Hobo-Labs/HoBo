@@ -12,6 +12,7 @@ export interface RivetRuntimeHostOptions {
 	readonly campId: string;
 	readonly mode?: RivetRuntimeMode;
 	readonly journalPath?: string;
+	readonly legacyEventPayloads?: "command" | "event";
 }
 
 export interface RivetRuntimeBundle {
@@ -46,6 +47,7 @@ export function createRivetRuntimeHost(
 	const actors = createRivetActorHost({
 		journal,
 		fidelity: "local-sqlite",
+		legacyEventPayloads: options.legacyEventPayloads,
 	});
 	const doctor: RivetDoctorReport = {
 		mode: config.mode,
