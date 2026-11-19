@@ -38,6 +38,7 @@ import {
 	parseRunCompletedFact,
 	parseRunFailedFact,
 	parseRunStartedFact,
+	parseRunStepCompletedFact,
 	parseRunStepFailedFact,
 	replayStepCompletedResult,
 	readJournaledWorkflowResult,
@@ -238,23 +239,28 @@ export function createWorkflowEngine(
 			eventKey: `${streamId}:orchestration`,
 		});
 
-		const findCompletedStep = (name: string, index: number) =>
-			journal.find(
-				(event) =>
-					event.type === "run.StepCompleted" &&
-					isRecord(event.data) &&
-					event.data.name === name &&
-					event.data.index === index,
-			);
+		for (const event of journal) {
+			if (event.type === "run.StepCompleted" && isRecord(event.data)) {
+				parseRunStepCompletedFact(cloneAsJson(event.data));
+			} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
+				parseRunStepFailedFact(cloneAsJson(event.data));
+			}
+		}
 
-		const failedStepsFor = (name: string, index: number) =>
-			journal.filter(
-				(event) =>
-					event.type === "run.StepFailed" &&
-					isRecord(event.data) &&
-					event.data.name === name &&
-					event.data.index === index,
-			);
+		const stepOutcomesFor = (name: string, index: number) => {
+			const completed: typeof journal = [];
+			const failed: typeof journal = [];
+			for (const event of journal) {
+				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
+					const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+					if (fact.name === name && fact.index === index) completed.push(event);
+				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
+					const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+					if (fact.name === name && fact.index === index) failed.push(event);
+				}
+			}
+			return { completed, failed };
+		};
 
 		const effects: CtxEffects = {
 			async step<T>(
@@ -264,17 +270,27 @@ export function createWorkflowEngine(
 			): Promise<T> {
 				const index = stepIndex;
 				stepIndex += 1;
-				const completed = findCompletedStep(name, index);
-				if (completed && isRecord(completed.data)) {
-					return replayStepCompletedResult<T>(cloneAsJson(completed.data));
+				const { completed, failed } = stepOutcomesFor(name, index);
+				if (completed.length > 1) {
+					throw new Error(`duplicate run.StepCompleted for ${runId}`);
 				}
-				const failedMatches = failedStepsFor(name, index);
-				if (failedMatches.length > 1) {
+				if (failed.length > 1) {
 					throw new Error(`duplicate run.StepFailed for ${runId}`);
 				}
-				const failed = failedMatches[0];
-				if (failed && isRecord(failed.data)) {
-					const stepFailed = parseRunStepFailedFact(cloneAsJson(failed.data));
+				if (completed.length > 0 && failed.length > 0) {
+					throw new Error(`conflicting step outcomes for ${runId}`);
+				}
+				const completedEvent = completed[0];
+				if (completedEvent && isRecord(completedEvent.data)) {
+					return replayStepCompletedResult<T>(
+						cloneAsJson(completedEvent.data),
+					);
+				}
+				const failedEvent = failed[0];
+				if (failedEvent && isRecord(failedEvent.data)) {
+					const stepFailed = parseRunStepFailedFact(
+						cloneAsJson(failedEvent.data),
+					);
 					throw new WorkflowFailure(stepFailed.message, {
 						step: stepFailed.name,
 					});

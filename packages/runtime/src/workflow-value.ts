@@ -102,7 +102,13 @@ export function parseRunCompletedFact(data: JsonValue): JsonValue | undefined {
 	return data.result;
 }
 
-export function parseRunStepCompletedResult(data: JsonValue): JsonValue | undefined {
+export type ParsedRunStepCompleted = {
+	name: string;
+	index: number;
+	result?: JsonValue;
+};
+
+export function parseRunStepCompletedFact(data: JsonValue): ParsedRunStepCompleted {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.StepCompleted");
 	const allowed = new Set(["name", "index", "result"]);
 	for (const key of Object.keys(data)) {
@@ -115,17 +121,32 @@ export function parseRunStepCompletedResult(data: JsonValue): JsonValue | undefi
 		data.index < 0
 	)
 		throw new TypeError("invalid run.StepCompleted");
-	if (!("result" in data) || data.result === undefined) return undefined;
-	if (!isStoredJsonValue(data.result))
-		throw new TypeError("invalid run.StepCompleted");
-	return readJournaledWorkflowResult(data.result);
+	const parsed: ParsedRunStepCompleted = {
+		name: data.name,
+		index: data.index,
+	};
+	if ("result" in data && data.result !== undefined) {
+		if (!isStoredJsonValue(data.result))
+			throw new TypeError("invalid run.StepCompleted");
+		const journaled = readJournaledWorkflowResult(data.result);
+		if (journaled !== undefined) {
+			parsed.result = journaled;
+		}
+	}
+	return parsed;
 }
 
 export function replayStepCompletedResult<T>(data: JsonValue): T {
-	const journaled = parseRunStepCompletedResult(data);
-	if (journaled === undefined) throw new TypeError("invalid run.StepCompleted");
-	const replayed = terminalCompletedHandleResult<T>(journaled);
-	if (replayed === undefined) throw new TypeError("invalid run.StepCompleted");
+	const step = parseRunStepCompletedFact(data);
+	if (step.result === undefined) {
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: void steps journal an explicit undefined result field.
+		return undefined as T;
+	}
+	const replayed = terminalCompletedHandleResult<T>(step.result);
+	if (replayed === undefined) {
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: undefined is the declared void-step replay outcome.
+		return undefined as T;
+	}
 	return replayed;
 }
 

@@ -362,6 +362,33 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(first.report.stateDigest).toBe(second.report.stateDigest);
 	});
 
+	it("replays a void step completion after a host restart", async () => {
+		const engine = createWorkflowEngine();
+		let attempts = 0;
+		let crashed = false;
+		const wf = defineWorkflow({
+			name: "void-step",
+			async run(ctx) {
+				await ctx.step("noop", () => {
+					attempts += 1;
+				});
+				if (!crashed) {
+					crashed = true;
+					throw new Error("SIMULATED_HOST_CRASH");
+				}
+				return "done";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "void-step" }),
+		).rejects.toThrow("SIMULATED_HOST_CRASH");
+		expect(attempts).toBe(1);
+		const restarted = createWorkflowEngine({ store: engine.store });
+		const handle = await restarted.resume(wf, "void-step", {});
+		expect(handle.result).toBe("done");
+		expect(attempts).toBe(1);
+	});
+
 	it("replays a journaled step failure without re-running the step effect", async () => {
 		const engine = createWorkflowEngine();
 		let attempts = 0;
