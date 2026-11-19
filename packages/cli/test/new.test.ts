@@ -12,12 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import {
-	runHobo,
-	scaffoldHoboProject,
-	VALID_TEMPLATES,
-	validateScaffoldProject,
-} from "../src/index.js";
+import { runHobo, scaffoldHoboProject, VALID_TEMPLATES } from "../src/index.js";
 import { parseProjectName, parseTemplateId } from "../src/types/scaffold.js";
 
 const expectedCreatedFiles = [
@@ -86,9 +81,6 @@ describe("hobo new scaffold", () => {
 			for (const relativePath of expectedCreatedFiles) {
 				await assertFile(projectDir, relativePath);
 			}
-
-			const report = await validateScaffoldProject(projectDir);
-			expect(report.ok).toBe(true);
 		});
 	});
 
@@ -103,16 +95,13 @@ describe("hobo new scaffold", () => {
 				path.join(projectDir, "src/_generated/index.ts"),
 				'const example = "export function createHobo() {}";\nexport function createTestRuntime() {}\nexport declare function createApiStore(): void;\n',
 			);
-			const report = await validateScaffoldProject(projectDir);
-			expect(report.ok).toBe(false);
-			if (!("violations" in report))
-				throw new Error("expected contract violations");
-			expect(report.violations).toEqual(
-				expect.arrayContaining([
-					"generated bindings must export createHobo",
-					"generated bindings must export createApiStore",
-				]),
+			const typecheck = generatedProjectTypecheck(projectDir);
+			expect(typecheck.status).not.toBe(0);
+			expect(`${typecheck.stdout}\n${typecheck.stderr}`).toMatch(
+				/createHobo|createApiStore/u,
 			);
+			const tests = generatedProjectTests(projectDir);
+			expect(tests.status).not.toBe(0);
 		});
 	});
 
@@ -135,7 +124,6 @@ describe("hobo new scaffold", () => {
 					'export const createApiStore = (): Store => createMemoryStore("api");',
 				),
 			);
-			expect((await validateScaffoldProject(projectDir)).ok).toBe(true);
 			assertGeneratedProjectRuns(projectDir);
 			assertGeneratedProjectTypechecks(projectDir);
 		});
@@ -156,9 +144,6 @@ describe("hobo new scaffold", () => {
 
 				expect(createdFiles).toEqual(expectedCreatedFiles);
 
-				const report = await validateScaffoldProject(projectDir);
-				expect(report.ok).toBe(true);
-				expect(report.template).toBe(template);
 				assertGeneratedProjectRuns(projectDir);
 				assertGeneratedProjectTypechecks(projectDir);
 			}
@@ -303,17 +288,25 @@ function subprocessReport(
 		: `${label} failed:\n${parts.join("\n")}`;
 }
 
-function assertGeneratedProjectRuns(projectDir: string) {
-	const result = spawnSync(
+function generatedProjectTests(projectDir: string) {
+	return spawnSync(
 		process.execPath,
 		["--experimental-strip-types", "--test", "app.test.ts"],
-		{
-			cwd: projectDir,
-			encoding: "utf8",
-			shell: false,
-		},
+		{ cwd: projectDir, encoding: "utf8", shell: false },
 	);
+}
 
+function generatedProjectTypecheck(projectDir: string) {
+	return spawnSync(
+		process.execPath,
+		[typescriptCliPath(), "--noEmit", "--project", "tsconfig.json"],
+		{ cwd: projectDir, encoding: "utf8", shell: false },
+	);
+}
+
+function assertGeneratedProjectRuns(projectDir: string) {
+	const result = generatedProjectTests(projectDir);
+	expect(result.error).toBeUndefined();
 	expect(
 		result.status,
 		subprocessReport("generated project tests", result),
@@ -321,16 +314,7 @@ function assertGeneratedProjectRuns(projectDir: string) {
 }
 
 function assertGeneratedProjectTypechecks(projectDir: string) {
-	const result = spawnSync(
-		process.execPath,
-		[typescriptCliPath(), "--noEmit", "--project", "tsconfig.json"],
-		{
-			cwd: projectDir,
-			encoding: "utf8",
-			shell: false,
-		},
-	);
-
+	const result = generatedProjectTypecheck(projectDir);
 	expect(result.error).toBeUndefined();
 	expect(result.status, subprocessReport("generated project tsc", result)).toBe(
 		0,
