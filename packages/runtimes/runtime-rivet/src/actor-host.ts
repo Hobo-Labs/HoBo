@@ -9,6 +9,7 @@ import {
 	parseLogicalActorIdentity,
 } from "@hobo/core";
 import type { ActorLocalJournal, JournalFactRecord } from "./journal.js";
+import type { RivetOutboxEffectInput } from "./outbox.js";
 import {
 	cloneAsJson,
 	isJsonNumber,
@@ -43,6 +44,12 @@ export interface RivetActorHost extends ActorHost {
 		identity: JsonValue,
 		fold: (state: JsonValue, event: FoldEvent) => JsonValue,
 		initialState: JsonValue,
+		options?: {
+			effects?: (
+				state: JsonValue,
+				event: FoldEvent,
+			) => readonly RivetOutboxEffectInput[];
+		},
 	): { revision: number; commandId: string } | undefined;
 }
 
@@ -267,7 +274,7 @@ export function createRivetActorHost(options: {
 			});
 			return { ...accepted, digest };
 		},
-		processNext(identityInput, fold, initialState) {
+		processNext(identityInput, fold, initialState, commandOptions) {
 			const identity = parseLogicalActorIdentity(identityInput);
 			const streamId = streamIdFor(identity);
 			const claimed = journal.claimNext(streamId);
@@ -286,10 +293,12 @@ export function createRivetActorHost(options: {
 				fold,
 				options.legacyEventPayloads,
 			);
-			fold(state, {
+			const event: FoldEvent = {
 				type: claimed.commandType,
 				payload: parseJsonValue(claimed.payloadJson),
-			});
+			};
+			const nextState = fold(state, event);
+			const effects = commandOptions?.effects?.(nextState, event) ?? [];
 			const payload = new TextEncoder().encode(claimed.payloadJson);
 			let committed: { revision: number };
 			try {
@@ -297,6 +306,7 @@ export function createRivetActorHost(options: {
 					streamId,
 					commandId: claimed.commandId,
 					expectedRevision: replayedRevision,
+					effects,
 					facts: [
 						{
 							type: claimed.commandType,
