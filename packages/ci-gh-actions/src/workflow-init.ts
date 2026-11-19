@@ -371,6 +371,11 @@ function caseFoldLiteral(value: string): string {
 	return caseFoldEscaped(escapeRegExp(value));
 }
 
+const MATRIX_CONTEXT = new RegExp(
+	String.raw`\b${caseFoldLiteral("matrix")}\b`,
+	"u",
+);
+
 function expressionDouble(value: string): string {
 	return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
@@ -809,7 +814,8 @@ function indirectRoutingOf(
 	const key =
 		effectivePairOf(workflow, job, "uses") !== undefined
 			? "with"
-			: runsOn.text.includes(EXPRESSION_OPEN) && /\bmatrix\b/u.test(runsOn.text)
+			: runsOn.text.includes(EXPRESSION_OPEN) &&
+				MATRIX_CONTEXT.test(runsOn.text)
 				? "strategy"
 				: undefined;
 	if (key === undefined) return "";
