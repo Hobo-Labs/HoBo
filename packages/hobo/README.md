@@ -57,6 +57,22 @@ through service discovery before calling each component's entrypoint. Bindle
 environment values are also available during initialization. The host tears
 components down in reverse dependency order; a cycle stops startup.
 
+An HTTP component can require a successful readiness response before its
+dependents initialize:
+
+```ts
+const api = b.api(() => () => new Response("ready")).with({
+  provider: "hobo",
+  option: "health",
+  config: { type: "http", path: "/ready" },
+});
+```
+
+The local host retries non-successful responses every 250 ms for up to 30
+seconds. Set `intervalMs` and `timeoutMs` in the configuration to adjust those
+limits. A failed or timed-out check stops startup and tears down components
+that have already started.
+
 `hobo doctor` reports quarantined event incidents from the current tenant's
 durable journal. `hobo inspect quarantines --json` returns their source and
 record locations, fold, and reason. If the report contains a `nextPosition`,

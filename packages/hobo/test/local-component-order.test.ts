@@ -259,3 +259,161 @@ it("preserves session replay wrapping on initialized components", async () => {
 		await running.close();
 	}
 });
+
+it("waits for a dependency's HTTP health check before initializing its consumer", async () => {
+	const directory = await project(`export default bindle("health-app", b => {
+  let attempts = 0;
+  const api = b.api(() => request => {
+    if (new URL(request.url).pathname !== "/ready") return new Response("api");
+    attempts += 1;
+    if (attempts < 3) return new Response("starting", { status: 503 });
+    process.env.HOBO_TEST_API_READY = "yes";
+    return new Response("ready");
+  }).with({ provider: "hobo", option: "health", config: { type: "http", path: "/ready", intervalMs: 10, timeoutMs: 1000 } });
+  const web = b.web(() => {
+    if (process.env.HOBO_TEST_API_READY !== "yes") throw new Error("api was not ready");
+    return () => new Response("web");
+  }).dependsOn(api);
+  return { web, api };
+});`);
+	const hoboHome = join(directory, "home");
+	initBareMetalYard({ hoboHome, componentHost: "local" });
+	vi.stubEnv("HOBO_PORTLESS", "0");
+	vi.stubEnv("HOBO_TEST_API_READY", "no");
+	const running = await serveBindleOnLocalYard({
+		projectDir: directory,
+		hoboHome,
+		port: 0,
+	});
+	try {
+		expect(await (await fetch(running.primaryUrl)).text()).toBe("web");
+		expect(process.env.HOBO_TEST_API_READY).toBe("yes");
+	} finally {
+		await running.close();
+	}
+});
+
+it("times out an unhealthy dependency without initializing its consumer", async () => {
+	const directory = await project(`export default bindle("unhealthy-app", b => {
+  const api = b.api(() => () => {
+    process.env.HOBO_TEST_HEALTH_ATTEMPTS = String(Number(process.env.HOBO_TEST_HEALTH_ATTEMPTS) + 1);
+    return new Response("starting", { status: 503 });
+  }).with({ provider: "hobo", option: "health", config: { type: "http", path: "/ready", intervalMs: 10, timeoutMs: 120 } });
+  const web = b.web(() => { process.env.HOBO_TEST_CONSUMER_STARTED = "yes"; return () => new Response("web"); }).dependsOn(api);
+  return { web, api };
+});`);
+	const hoboHome = join(directory, "home");
+	initBareMetalYard({ hoboHome, componentHost: "local" });
+	vi.stubEnv("HOBO_TEST_HEALTH_ATTEMPTS", "0");
+	vi.stubEnv("HOBO_TEST_CONSUMER_STARTED", "no");
+	vi.stubEnv("services__api__http__0", "previous");
+	const events: string[] = [];
+	await expect(
+		serveBindleOnLocalYard({
+			projectDir: directory,
+			hoboHome,
+			port: 0,
+			emitProgress: (line) => events.push(line),
+		}),
+	).rejects.toThrow(/api.*health.*timed out/i);
+	expect(Number(process.env.HOBO_TEST_HEALTH_ATTEMPTS)).toBeGreaterThan(1);
+	expect(process.env.HOBO_TEST_CONSUMER_STARTED).toBe("no");
+	expect(process.env.services__api__http__0).toBe("previous");
+	expect(
+		events.some((line) => line.includes('"type":"component.TornDown"')),
+	).toBe(true);
+});
+
+it("times out a health handler that never responds", async () => {
+	const directory =
+		await project(`export default bindle("hung-health-app", b => {
+  const api = b.api(() => () => new Promise(() => {})).with({ provider: "hobo", option: "health", config: { type: "http", path: "/ready", intervalMs: 10, timeoutMs: 80 } });
+  const web = b.web(() => { throw new Error("consumer started"); }).dependsOn(api);
+  return { web, api };
+});`);
+	const hoboHome = join(directory, "home");
+	initBareMetalYard({ hoboHome, componentHost: "local" });
+	const previousFetch = globalThis.fetch;
+	await expect(
+		serveBindleOnLocalYard({ projectDir: directory, hoboHome, port: 0 }),
+	).rejects.toThrow(/api.*health.*timed out/i);
+	expect(globalThis.fetch).toBe(previousFetch);
+});
+
+it("waits for a public dependency's HTTP health check", async () => {
+	const directory =
+		await project(`export default bindle("public-health-app", b => {
+  let attempts = 0;
+  const backend = b.web(() => () => {
+    attempts += 1;
+    if (attempts === 1) return new Response("starting", { status: 503 });
+    process.env.HOBO_TEST_API_READY = "yes";
+    return new Response("ready");
+  }).with({ provider: "hobo", option: "health", config: { type: "http", path: "/ready", intervalMs: 10, timeoutMs: 1000 } });
+  const frontend = b.web(() => {
+    if (process.env.HOBO_TEST_API_READY !== "yes") throw new Error("backend was not ready");
+    return () => new Response("frontend");
+  }).dependsOn(backend);
+  return { frontend, backend };
+});`);
+	const hoboHome = join(directory, "home");
+	initBareMetalYard({ hoboHome, componentHost: "local" });
+	vi.stubEnv("HOBO_PORTLESS", "0");
+	vi.stubEnv("HOBO_TEST_API_READY", "no");
+	const running = await serveBindleOnLocalYard({
+		projectDir: directory,
+		hoboHome,
+		port: 0,
+	});
+	try {
+		const frontend = running.endpoints.find(
+			(endpoint) => endpoint.resourceName === "frontend",
+		);
+		if (!frontend) throw new Error("frontend endpoint was not started");
+		expect(await (await fetch(frontend.url)).text()).toBe("frontend");
+	} finally {
+		await running.close();
+	}
+});
+
+it("closes a public endpoint whose health handler never responds", async () => {
+	const directory =
+		await project(`export default bindle("hung-public-health-app", b => {
+  const backend = b.web(() => () => new Promise(() => {})).with({ provider: "hobo", option: "health", config: { type: "http", path: "/ready", intervalMs: 10, timeoutMs: 80 } });
+  const frontend = b.web(() => { throw new Error("consumer started"); }).dependsOn(backend);
+  return { frontend, backend };
+});`);
+	const hoboHome = join(directory, "home");
+	initBareMetalYard({ hoboHome, componentHost: "local" });
+	let backendUrl = "";
+	await expect(
+		serveBindleOnLocalYard({
+			projectDir: directory,
+			hoboHome,
+			port: 0,
+			emitProgress: (line) => {
+				const match = /Yard exposed web:backend at (http:\/\/\S+)/.exec(line);
+				if (match?.[1]) backendUrl = match[1];
+			},
+		}),
+	).rejects.toThrow(/backend.*health.*timed out/i);
+	expect(backendUrl).not.toBe("");
+	await expect(fetch(backendUrl)).rejects.toThrow();
+});
+
+it("rejects an invalid health check before starting any component", async () => {
+	const directory =
+		await project(`export default bindle("invalid-health-app", b => {
+  const api = b.api(() => { process.env.HOBO_TEST_API_STARTED = "yes"; return () => new Response("api"); })
+    .with({ provider: "hobo", option: "health", config: { type: "http", path: "ready" } });
+  const web = b.web(() => () => new Response("web")).dependsOn(api);
+  return { web, api };
+});`);
+	const hoboHome = join(directory, "home");
+	initBareMetalYard({ hoboHome, componentHost: "local" });
+	vi.stubEnv("HOBO_TEST_API_STARTED", "no");
+	await expect(
+		serveBindleOnLocalYard({ projectDir: directory, hoboHome, port: 0 }),
+	).rejects.toThrow(/invalid HTTP health check/);
+	expect(process.env.HOBO_TEST_API_STARTED).toBe("no");
+});

@@ -111,6 +111,7 @@
   "packages/events/src/saga.ts": ["Saga"],
   "packages/events/src/upcaster.ts": ["CorpusBaseline","CorpusEntry","UpcasterGateReport"],
   "packages/fuzz/src/model.ts": ["InvariantVerdict"],
+  "packages/hobo/src/local-health.ts": ["LocalHttpHealthCheck"],
   "packages/iac/iac-terraform/src/terraform-cli-engine.ts": ["PlanChangeSummary"],
   "packages/junctions/src/types.ts": ["ConnectivityHalf","JunctionConnectivityPlan","JunctionMemberManifest","PeeringEdge","PolicyPackDistribution","RegistryBundleDistribution","ResidencyConflict","TrustAnchorExchange","YardConnectivityHalfPlan"],
   "packages/kv-redis-compatible/src/cases.ts": ["ConformanceCase","ConformanceStep","ConsistencyClaim"],

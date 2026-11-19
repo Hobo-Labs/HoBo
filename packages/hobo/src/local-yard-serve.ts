@@ -31,6 +31,10 @@ import {
 import { createHttpComponentDescriptor } from "./component-http.js";
 import { isJsonObject, isJsonString } from "./json.js";
 import { orderLocalComponents } from "./local-component-order.js";
+import {
+	localHttpHealthCheck,
+	waitForLocalHttpHealth,
+} from "./local-health.js";
 import { listServableEntrypointFactories } from "./servable-entrypoints.js";
 
 export type LocalYardServeResult = BareMetalServeResult & {
@@ -178,6 +182,7 @@ export async function serveBindleOnLocalYard(options: {
 	);
 
 	let entrypoints: ReturnType<typeof listServableEntrypointFactories>;
+	let healthChecks: Map<string, ReturnType<typeof localHttpHealthCheck>>;
 	try {
 		const factories = listServableEntrypointFactories(definition);
 		const rank = (entry: (typeof factories)[number]) =>
@@ -185,6 +190,12 @@ export async function serveBindleOnLocalYard(options: {
 		entrypoints = orderLocalComponents(
 			factories.sort((a, b) => rank(a) - rank(b)),
 			definition.edges,
+		);
+		healthChecks = new Map(
+			entrypoints.map((entry) => [
+				entry.name,
+				localHttpHealthCheck(must(definition.resources[entry.name])),
+			]),
 		);
 	} catch (error) {
 		ownedYard?.close();
@@ -352,6 +363,13 @@ export async function serveBindleOnLocalYard(options: {
 				external: entry.external,
 				serviceDiscoveryKey: key,
 			});
+			const health = healthChecks.get(entry.name);
+			if (health) {
+				await waitForLocalHttpHealth(entry.name, url, health);
+				emit(
+					`hobo dev: ${entry.kind}:${entry.name} passed its HTTP health check`,
+				);
+			}
 			serviceDiscovery[key] = url;
 			setEnv(key, url);
 			started.add(entry.name);
