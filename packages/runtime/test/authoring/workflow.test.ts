@@ -746,9 +746,11 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 			1,
 		);
+		let runs = 0;
 		const wf = defineWorkflow({
 			name: "bad-step-failed-shape",
 			async run(ctx) {
+				runs++;
 				await ctx.step("work", () => ({}));
 				return "done";
 			},
@@ -756,6 +758,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		await expect(
 			engine.resume(wf, "bad-step-failed-shape", {}),
 		).rejects.toThrow(/invalid run.StepFailed/);
+		expect(runs).toBe(0);
 	});
 
 	it("rejects corrupt step journals even when a terminal fact exists", async () => {
@@ -945,7 +948,8 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/dup-terminal",
 				seq: 2,
 				type: first,
-				data: { result: "first" },
+				data:
+					first === "run.Failed" ? { message: "first" } : { result: "first" },
 			},
 			1,
 		);
@@ -955,7 +959,10 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/dup-terminal",
 				seq: 3,
 				type: second,
-				data: { result: "second" },
+				data:
+					second === "run.Failed"
+						? { message: "second" }
+						: { result: "second" },
 			},
 			2,
 		);
@@ -999,15 +1006,18 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 			1,
 		);
+		let runs = 0;
 		const wf = defineWorkflow({
 			name: "gapped",
 			run(ctx) {
+				runs++;
 				return ctx.step("only", () => "nope");
 			},
 		});
 		await expect(engine.resume(wf, "gapped", {})).rejects.toThrow(
 			/gapped step journal/,
 		);
+		expect(runs).toBe(0);
 	});
 
 	it("rejects events recorded after a terminal fact", async () => {
@@ -1146,6 +1156,10 @@ describe("durable workflow: journal, restart, replay", () => {
 				return ctx.step("early", () => "ok");
 			},
 		});
+		await expect(engine.resume(wf, "unconsumed", {})).rejects.toThrow(
+			/unconsumed step outcome/,
+		);
+		expect(await engine.journal("unconsumed")).toHaveLength(3);
 		await expect(engine.resume(wf, "unconsumed", {})).rejects.toThrow(
 			/unconsumed step outcome/,
 		);
