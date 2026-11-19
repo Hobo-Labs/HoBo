@@ -92,7 +92,7 @@ export interface CampConfig {
 	readonly runtime?: unknown;
 }
 
-export interface CampShape {
+export interface CampContract {
 	readonly id?: string;
 	readonly logicalId?: string;
 	readonly env?: string;
@@ -102,6 +102,9 @@ export interface CampShape {
 	readonly labels: Readonly<Record<string, string>>;
 	readonly runtimeRequirements: readonly string[];
 }
+
+/** @deprecated */
+export type CampShape = CampContract;
 
 export const EMPTY_RESOLVER_CONFIG: PrimitiveResolverConfig = Object.freeze({
 	require: Object.freeze([] as string[]),

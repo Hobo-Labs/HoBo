@@ -4,6 +4,7 @@ export {
 	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
 	CAMP_MIGRATION_CODE,
 	camp,
+	campToContract,
 	campToShape,
 	type ParsedLegacyCampMappings,
 	parseLegacyCampMappings,
@@ -19,6 +20,7 @@ export { standardCamps } from "./standard-camps.js";
 export {
 	type Camp,
 	type CampConfig,
+	type CampContract,
 	type CampShape,
 	EMPTY_RESOLVER_CONFIG,
 	type JsonValue,

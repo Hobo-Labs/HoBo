@@ -1,9 +1,14 @@
 import {
 	attachCampToYard,
 	type Camp,
+	type CampContract,
+	campToContract,
 	EMPTY_RESOLVER_CONFIG,
 	type PrimitiveResolverConfig,
 } from "@hobo/camps";
+
+export type { CampContract } from "@hobo/camps";
+
 import {
 	parseYardBindings,
 	type YardBinding,
@@ -136,7 +141,6 @@ export function yard(name: string, config: YardConfig): Yard {
 	});
 }
 
-/** Project authored Yard into a planning contract record (not a topology primitive). */
 export function yardToContract(yardObject: Yard): {
 	readonly providerId: string;
 	readonly runtimeId?: string;
@@ -166,44 +170,8 @@ export function yardToContract(yardObject: Yard): {
 		componentHosts: yardObject.componentHosts,
 		labels: yardObject.labels,
 		properties: yardObject.properties,
-		// Structural: selection consumes rows from the planning contract without
-		// importing @hobo/yards.
 		bindings: yardObject.bindings,
 		camps: Object.freeze(yardObject.camps.map(campToContract)),
-	});
-}
-
-/**
- * The Camp projection selection consumes — the same record `campToShape` in
- * `@hobo/camps` produces, field for field. It is re-projected here rather than
- * imported because the camps projection still ships under the banned "shape"
- * vocabulary; when the camps layer of the anti-slop initiative renames it,
- * this can collapse back to an import.
- */
-export interface CampContract {
-	readonly id?: string;
-	readonly logicalId?: string;
-	readonly env?: string;
-	readonly envType?: string;
-	readonly require: readonly string[];
-	readonly prefer: readonly string[];
-	readonly labels: Readonly<Record<string, string>>;
-	readonly runtimeRequirements: readonly string[];
-}
-
-function campToContract(campObject: Camp): CampContract {
-	const localId = campObject.id.includes("/")
-		? campObject.id.slice(campObject.id.lastIndexOf("/") + 1)
-		: campObject.id;
-	return deepFreeze({
-		id: localId,
-		...(campObject.logicalId ? { logicalId: campObject.logicalId } : undefined),
-		env: campObject.env,
-		envType: campObject.envType,
-		require: campObject.require,
-		prefer: campObject.prefer,
-		labels: campObject.labels,
-		runtimeRequirements: campObject.runtimeRequirements,
 	});
 }
 
