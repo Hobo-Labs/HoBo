@@ -3,6 +3,14 @@ import type { ZodType } from "zod";
 
 type SetValue<T> = T | ((val: T) => T);
 
+function safeSetItem(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    return;
+  }
+}
+
 function readStoredValue<T>(
   key: string,
   initialValue: T,
@@ -41,13 +49,13 @@ export function useLocalStorage<T>(
       const item = window.localStorage.getItem(key);
       if (item === null) {
         setStoredValue(initialValue);
-        window.localStorage.setItem(key, JSON.stringify(initialValue));
+        safeSetItem(key, JSON.stringify(initialValue));
         return;
       }
       setStoredValue(schema.parse(JSON.parse(item)));
     } catch {
       setStoredValue(initialValue);
-      window.localStorage.setItem(key, JSON.stringify(initialValue));
+      safeSetItem(key, JSON.stringify(initialValue));
     }
   }, [key, initialValue, schema]);
 
@@ -63,7 +71,7 @@ export function useLocalStorage<T>(
       const item = window.localStorage.getItem(key);
       const serialized = JSON.stringify(storedValue);
       if (item !== serialized) {
-        window.localStorage.setItem(key, serialized);
+        safeSetItem(key, serialized);
       }
     } catch (error) {
       console.warn("Unable to save preference", error);
