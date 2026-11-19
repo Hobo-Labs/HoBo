@@ -1,7 +1,7 @@
 import type { CdPassReport } from "@hobo/hobo/cd-platform";
 import { QueueClient } from "@vercel/queue";
 import { loadCdHost, runCdPass } from "./entry.js";
-import { CdStoreBindingError } from "./store.js";
+import { cdStoreBindingErrorOf } from "./store.js";
 
 const queue = new QueueClient();
 
@@ -19,11 +19,17 @@ function singleFlight<T>(run: () => Promise<T>): () => Promise<T> {
 
 async function runTick(): Promise<void> {
 	const vercelEnv = process.env.VERCEL_ENV;
-	if (vercelEnv !== undefined && vercelEnv !== "production") {
+	if (
+		vercelEnv !== "production" &&
+		!(
+			vercelEnv === undefined &&
+			process.env.HOBO_CD_ALLOW_UNSET_VERCEL_ENV === "1"
+		)
+	) {
 		process.stdout.write(
 			`${JSON.stringify({
 				event: "cd.pass.skipped",
-				reason: "non-production",
+				reason: "cd-non-production-deployment",
 				vercelEnv,
 			})}\n`,
 		);
@@ -33,11 +39,12 @@ async function runTick(): Promise<void> {
 	try {
 		report = await runCdPass(loadCdHost);
 	} catch (error) {
-		if (error instanceof CdStoreBindingError) {
+		const permanent = cdStoreBindingErrorOf(error);
+		if (permanent !== undefined) {
 			process.stdout.write(
 				`${JSON.stringify({
 					event: "cd.pass.refused",
-					reason: error.code,
+					reason: permanent.code,
 				})}\n`,
 			);
 			return;

@@ -14,8 +14,10 @@ export {
 } from "./entry.js";
 export {
 	CD_STORE_BINDING_URL,
+	cdStoreBindingErrorOf,
 	CdStoreBindingError,
 	type CdStoreCoordinates,
+	isPermanentComposeError,
 	openCdStore,
 	parseCdStoreCoordinates,
 	readCdStoreCoordinates,

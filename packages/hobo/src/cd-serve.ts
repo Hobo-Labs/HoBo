@@ -14,6 +14,7 @@
  * banner and in `/readyz`.
  */
 
+import { randomUUID } from "node:crypto";
 import {
 	createServer,
 	type IncomingMessage,
@@ -84,7 +85,7 @@ export async function startCdServer(
 	const { config } = runtime;
 	const host = await composeCdHost({
 		runtime,
-		holderId: `hobo-serve-cd:${process.pid}`,
+		holderId: `hobo-serve-cd:${config.stationId}:${randomUUID()}`,
 		principalId: `hobo-serve-cd:${config.stationId}`,
 	});
 	const { service, refusals } = host;
@@ -93,11 +94,12 @@ export async function startCdServer(
 		void (async () => {
 			try {
 				const path = (req.url ?? "/").split("?")[0] ?? "/";
+				const probe = path === "/healthz" || path === "/readyz";
 				const request: FeedRequest = {
 					method: req.method ?? "GET",
 					path: req.url ?? path,
 					headers: headersOf(req),
-					body: await readBody(req),
+					body: probe ? new Uint8Array() : await readBody(req),
 				};
 				// A client hang-up aborts its long-poll or stream.
 				const perRequest = new AbortController();

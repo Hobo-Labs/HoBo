@@ -19,7 +19,7 @@
   },
   "schedules": {
     "hobo-cd-tick": {
-      "schedule": "* * * * *",
+      "schedule": "*/5 * * * *",
       "topic": "hobo-cd"
     }
   },

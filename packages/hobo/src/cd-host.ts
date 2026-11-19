@@ -35,7 +35,7 @@ export const FLEET_PASS_SUBSCRIPTION = "cd:vercel:fleet-pass";
 export const DEFAULT_PASS_DEADLINE_MS = 240_000;
 // public-contract: the fleet pass lease must outlive the pass deadline with a margin over a Vercel function's 300 s maxDuration, so the lease never expires mid-pass.
 export const DEFAULT_FLEET_PASS_LEASE_TTL_MS = 360_000;
-// public-contract: durable readiness record every holder appends after a fully successful pass; /readyz reads it back instead of any process-local latch.
+// public-contract: durable readiness record every holder appends after a fully successful pass; /readyz reads it back instead of any process-local latch. The durable stream is tenant-scoped: `${tenant}:${HOST_PASS_STREAM}`.
 export const HOST_PASS_STREAM = "cd-host-pass";
 // public-contract: event type every holder appends to HOST_PASS_STREAM after a successful pass.
 export const HOST_PASS_SUCCEEDED = "host.PassSucceeded";
@@ -43,6 +43,15 @@ export const HOST_PASS_SUCCEEDED = "host.PassSucceeded";
 export const CD_NO_MANAGED_CAMPS = "cd-no-managed-camps";
 // public-contract: how many tail events of the readiness stream /readyz folds; the latest host.PassSucceeded among them wins.
 const HOST_PASS_LOOKBACK = 8;
+const HOST_PASS_FUTURE_SKEW_MS = 5_000;
+
+export class CdHostPassRecordError extends Error {
+	readonly code = "cd-host-pass-record-failed";
+	constructor(message: string) {
+		super(message);
+		this.name = "CdHostPassRecordError";
+	}
+}
 
 export type CdPassCampReport = Readonly<{
 	campId: CampId;
@@ -69,16 +78,20 @@ export type CdHost = Readonly<{
 	pass(signal?: AbortSignal): Promise<CdPassReport>;
 }>;
 
+const LEASE_CONFLICT_CODES: ReadonlySet<string> = new Set([
+	"STALE_FENCE",
+	"LEASE_CONFLICT",
+	"SUBSCRIPTION_LEASE_CONFLICT",
+]);
+
 function isLeaseConflict<T>(error: T): boolean {
 	if (error instanceof EventStoreError)
-		return (
-			error.code === "STALE_FENCE" || error.code.endsWith("LEASE_CONFLICT")
-		);
+		return LEASE_CONFLICT_CODES.has(error.code);
 	return (
 		error instanceof Error &&
 		"code" in error &&
-		(String(error.code) === "STALE_FENCE" ||
-			String(error.code).endsWith("LEASE_CONFLICT"))
+		isString(error.code) &&
+		LEASE_CONFLICT_CODES.has(error.code)
 	);
 }
 
@@ -171,16 +184,17 @@ export async function composeCdHost(
 		service,
 		telemetry: cd.sink,
 	});
+	const hostPassStream = `${config.tenant}:${HOST_PASS_STREAM}`;
 	const readiness = input.readiness ?? "service";
 	const storeHealthy = () =>
 		service.health().checks.some((check) => check.name === "store" && check.ok);
 	const serviceReady = () => refusals.length === 0 && service.ready();
 
 	async function hostPassRevision(): Promise<number> {
-		const head = runtime.store.getStreamHead?.(HOST_PASS_STREAM);
+		const head = runtime.store.getStreamHead?.(hostPassStream);
 		if (head !== undefined) return head.revision;
 		let revision = 0;
-		for await (const event of runtime.store.read(HOST_PASS_STREAM))
+		for await (const event of runtime.store.read(hostPassStream))
 			revision = event.seq;
 		return revision;
 	}
@@ -192,39 +206,42 @@ export async function composeCdHost(
 			data: { atMs, camps: campsReconciled },
 			meta: { idempotencyKey: `host-pass:${input.holderId}:${atMs}` },
 		};
+		let lastError: unknown;
 		for (let attempt = 0; attempt < 2; attempt += 1) {
-			const expectedSeq = await hostPassRevision();
-			const appended = await runtime.store
-				.append(HOST_PASS_STREAM, [event], {
+			try {
+				const expectedSeq = await hostPassRevision();
+				await runtime.store.append(hostPassStream, [event], {
 					expectedSeq,
 					actor: servicePrincipal,
 					tenant: config.tenant,
-				})
-				.then(
-					() => true,
-					() => false,
-				);
-			if (appended) return;
+				});
+				return;
+			} catch (error) {
+				lastError = error;
+			}
 		}
+		throw new CdHostPassRecordError(
+			`the successful pass could not be recorded on ${hostPassStream}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+		);
 	}
 
 	async function lastSuccessfulPassAtMs(): Promise<number | undefined> {
 		try {
-			const head = runtime.store.getStreamHead?.(HOST_PASS_STREAM);
-			const fromSeq =
-				head !== undefined
-					? Math.max(1, head.revision - (HOST_PASS_LOOKBACK - 1))
-					: 1;
+			const head = runtime.store.getStreamHead?.(hostPassStream);
+			const tail =
+				head !== undefined ? head.revision : await hostPassRevision();
+			const fromSeq = Math.max(1, tail - (HOST_PASS_LOOKBACK - 1));
+			const now = runtime.ctx.now();
 			let atMs: number | undefined;
-			for await (const event of runtime.store.read(HOST_PASS_STREAM, fromSeq)) {
+			for await (const event of runtime.store.read(hostPassStream, fromSeq)) {
 				if (event.type !== HOST_PASS_SUCCEEDED) continue;
-				const recorded = passSucceededAtMs(event.data);
-				if (recorded !== undefined) {
-					atMs = recorded;
-					continue;
-				}
-				const parsed = Date.parse(event.ts);
-				if (!Number.isNaN(parsed)) atMs = parsed;
+				const stored = Date.parse(event.ts);
+				const candidate = Number.isNaN(stored)
+					? passSucceededAtMs(event.data)
+					: stored;
+				if (candidate === undefined) continue;
+				if (candidate - now > HOST_PASS_FUTURE_SKEW_MS) continue;
+				atMs = candidate;
 			}
 			return atMs;
 		} catch {
@@ -248,7 +265,8 @@ export async function composeCdHost(
 			probeJournal(),
 		]);
 		if (!journalOk || passedAtMs === undefined || !storeHealthy()) return false;
-		return runtime.ctx.now() - passedAtMs <= passRecordMaxAgeMs;
+		const ageMs = runtime.ctx.now() - passedAtMs;
+		return ageMs >= -HOST_PASS_FUTURE_SKEW_MS && ageMs <= passRecordMaxAgeMs;
 	}
 
 	async function claimFleetPass(): Promise<
@@ -294,6 +312,7 @@ export async function composeCdHost(
 	}
 
 	async function runPass(signal: AbortSignal): Promise<CdPassReport> {
+		if (signal.aborted) throw abortErrorOf(signal);
 		const fleet = await claimFleetPass();
 		if (!fleet.held)
 			return Object.freeze({
@@ -309,6 +328,7 @@ export async function composeCdHost(
 					: undefined),
 			});
 		try {
+			if (signal.aborted) throw abortErrorOf(signal);
 			const reconciled: CdPassCampReport[] = [];
 			const [reconciler] = reconcilers;
 			if (managed.length > 0 && reconciler === undefined) {
@@ -343,8 +363,10 @@ export async function composeCdHost(
 			if (signal.aborted) throw abortErrorOf(signal);
 			const tick = await service.tick();
 			if (signal.aborted) throw abortErrorOf(signal);
-			if (reconciled.every((entry) => entry.ok) && tick.store)
+			if (reconciled.every((entry) => entry.ok) && tick.store) {
+				if (signal.aborted) throw abortErrorOf(signal);
 				await recordSuccessfulPass(reconciled.length);
+			}
 			return Object.freeze({
 				tick,
 				reconciled: Object.freeze(reconciled),
@@ -385,11 +407,11 @@ export async function composeCdHost(
 				if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
 			}
 		})();
-		const tracked = running.finally(() => {
-			if (inFlightPass === tracked) inFlightPass = undefined;
-		});
-		tracked.catch(() => undefined);
-		inFlightPass = tracked;
+		inFlightPass = bounded;
+		const release = () => {
+			if (inFlightPass === bounded) inFlightPass = undefined;
+		};
+		void running.then(release, release);
 		return bounded;
 	}
 

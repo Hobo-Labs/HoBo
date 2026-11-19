@@ -14,7 +14,7 @@ export const CD_PLACEMENT = Object.freeze({
 export const CD_PLATFORM = Object.freeze({
 	topic: "hobo-cd",
 	schedule: "hobo-cd-tick",
-	cron: "* * * * *",
+	cron: "*/5 * * * *",
 	httpEntry: "api/cd.ts",
 	tickEntry: "api/tick.ts",
 	maxDuration: 300,
@@ -62,6 +62,7 @@ const CD_YARD = yard("hobo-cd", {
 				entry: CD_PLATFORM.tickEntry,
 				topic: CD_PLATFORM.topic,
 				maxConcurrency: CD_PLATFORM.maxConcurrency,
+				maxDuration: CD_PLATFORM.maxDuration,
 			},
 		},
 		{

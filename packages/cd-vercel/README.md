@@ -8,7 +8,7 @@ is `deploy/yard.ts`; the Bindle it realizes is the CD project's
 | Bindle resource | Here | Vercel |
 |---|---|---|
 | `cd-api` | `api/cd.ts` | A Function: `/healthz`, `/readyz` and the `/v1/cd/` mount (read API, agent delivery feed) |
-| `cd-tick` | `api/tick.ts` | The `hobo-cd-tick` schedule, delivered to the `hobo-cd` queue topic: one bounded pass per delivery |
+| `cd-tick` | `api/tick.ts` | The `hobo-cd-tick` schedule (every five minutes), delivered to the `hobo-cd` queue topic: one bounded pass per delivery |
 | `cd-journal` | (`@hobo/hobo-cd` `placement.ts`) | The Neon journal fleet `hobo cd up` provisions; not a Vercel resource |
 | `cd-config` | (`@hobo/hobo-cd` `placement.ts`) | The owner's secret store; not a Vercel resource |
 
@@ -50,7 +50,7 @@ probe succeeds. Until then it answers 503 with a `code`:
 - Otherwise, the CD runtime's own refusal code.
 
 Readiness is fleet-wide: whichever instance completes a pass appends a
-`host.PassSucceeded` event to the journal's `cd-host-pass` stream, so
+`host.PassSucceeded` event to the journal's `<tenant>:cd-host-pass` stream, so
 the `cd` function and the `tick` function — separate, short-lived
 instances — agree on readiness without sharing process state. A pass
 counts only when every reconciled Camp is ok and the journal store is
@@ -76,7 +76,7 @@ The deployable and its tests (`test/`) exist. Two pieces are not done yet:
 Until both land, a deployment answers `/readyz` with
 `cd-store-binding-missing`.
 
-The scheduled pass reconciles the managed Camps and runs one service
+The scheduled pass (enqueued every five minutes) reconciles the managed Camps and runs one service
 tick (including its retention steps); the fleet pass lease makes the
 queue's `maxConcurrency: 1` a second layer, so a backlog of deliveries
 waits its turn instead of overlapping passes. A permanent refusal — a

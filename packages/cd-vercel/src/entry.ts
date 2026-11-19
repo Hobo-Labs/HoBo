@@ -23,23 +23,25 @@ function headerValue(
 }
 
 export function incomingRequestPath(request: IncomingMessage): string {
-	const original = headerValue(request.headers, "x-vercel-original-url");
-	if (original !== undefined && original.length > 0) {
-		try {
-			const parsed = new URL(original, "http://hobo-cd.local");
-			return `${parsed.pathname}${parsed.search}`;
-		} catch {
-			return original.startsWith("/") ? original : `/${original}`;
+	if (process.env.VERCEL === "1") {
+		const original = headerValue(request.headers, "x-vercel-original-url");
+		if (original !== undefined && original.length > 0) {
+			try {
+				const parsed = new URL(original, "http://hobo-cd.local");
+				return `${parsed.pathname}${parsed.search}`;
+			} catch {
+				return original.startsWith("/") ? original : `/${original}`;
+			}
 		}
-	}
-	const invokePath = headerValue(request.headers, "x-vercel-invoke-path");
-	if (invokePath !== undefined && invokePath.length > 0) {
-		const path = invokePath.startsWith("/") ? invokePath : `/${invokePath}`;
-		if (path.includes("?")) return path;
-		const search = (request.url ?? "").split("?")[1];
-		return search === undefined || search.length === 0
-			? path
-			: `${path}?${search}`;
+		const invokePath = headerValue(request.headers, "x-vercel-invoke-path");
+		if (invokePath !== undefined && invokePath.length > 0) {
+			const path = invokePath.startsWith("/") ? invokePath : `/${invokePath}`;
+			if (path.includes("?")) return path;
+			const search = (request.url ?? "").split("?")[1];
+			return search === undefined || search.length === 0
+				? path
+				: `${path}?${search}`;
+		}
 	}
 	return request.url ?? "/";
 }
@@ -137,7 +139,15 @@ export function createCdHttpEntry(
 				return;
 			}
 		}
-		if (method === "GET" && path === "/healthz") {
+		if ((method === "GET" || method === "HEAD") && path === "/healthz") {
+			if (method === "HEAD") {
+				response.writeHead(200, {
+					"Content-Type": "application/json",
+					"Cache-Control": "no-store",
+				});
+				response.end();
+				return;
+			}
 			sendJson(response, 200, { ok: true, commit });
 			return;
 		}

@@ -13,6 +13,8 @@ import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { z } from "zod";
 
+/* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: cdStoreBindingErrorOf is the parse boundary for untyped compose failures from deps.open and openCdRuntime. */
+
 export class CdStoreBindingError extends Error {
 	readonly code: string;
 	constructor(code: string, message: string) {
@@ -20,6 +22,28 @@ export class CdStoreBindingError extends Error {
 		this.name = "CdStoreBindingError";
 		this.code = code;
 	}
+}
+
+function isString(value: unknown): value is string {
+	return value === String(value);
+}
+
+export function cdStoreBindingErrorOf(
+	error: unknown,
+): CdStoreBindingError | undefined {
+	if (error instanceof CdStoreBindingError) return error;
+	if (
+		error instanceof Error &&
+		"code" in error &&
+		isString(error.code) &&
+		error.code.startsWith("cd-")
+	)
+		return new CdStoreBindingError(error.code, error.message);
+	return undefined;
+}
+
+export function isPermanentComposeError(error: unknown): boolean {
+	return cdStoreBindingErrorOf(error) !== undefined;
 }
 
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
