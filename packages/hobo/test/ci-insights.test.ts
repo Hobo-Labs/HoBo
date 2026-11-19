@@ -351,6 +351,44 @@ describe("hobo ci diagnose", () => {
 		});
 	});
 
+	it("sanitizes GitHub metadata and log text in terminal output", async () => {
+		const maliciousRun = {
+			...failedRun,
+			name: "ci\u001b]0;owned\u0007",
+			display_title: "change\u202e\r\u0008",
+		};
+		const maliciousJob = job(start, {
+			id: 71,
+			name: "check\u001b[2J\u202e",
+			labels: ["hobo"],
+			runner: "runner\r\u0008",
+			conclusion: "failure",
+			waitMs: 0,
+			runMs: minute,
+			steps: [
+				{ name: "Set up job", conclusion: "success" },
+				{ name: "Run\u001b[31m tests\u001b[0m\u202e", conclusion: "failure" },
+			],
+		});
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(maliciousRun)],
+				[jobsPath(7), JSON.stringify({ jobs: [maliciousJob] })],
+				[
+					"repos/acme/app/actions/jobs/71/logs",
+					"\u001b]0;owned\u0007error TS2322\u0007\u202e",
+				],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(result.message).toContain("ci #7");
+		expect(result.message).toContain("error TS2322");
+		expect(result.message).not.toContain("\u001b");
+		expect(result.message).not.toMatch(/[\u202a-\u202e\u2066-\u2069]/u);
+		expect(result.message?.replaceAll("\n", "")).not.toMatch(/\p{Cc}/u);
+	});
+
 	it("reads annotations after the first page", async () => {
 		const fake = github(
 			new Map([
@@ -373,7 +411,9 @@ describe("hobo ci diagnose", () => {
 				],
 				[
 					"repos/acme/app/check-runs/1071/annotations?per_page=100",
-					JSON.stringify(Array.from({ length: 100 }, () => ({ message: null }))),
+					JSON.stringify(
+						Array.from({ length: 100 }, () => ({ message: null })),
+					),
 				],
 				[
 					"repos/acme/app/check-runs/1071/annotations?per_page=100&page=2",
@@ -664,10 +704,10 @@ describe("hobo ci diagnose", () => {
 });
 
 describe("GitHub read contract", () => {
-	it("diagnoses a run from exactly the reads the contract names", async () => {
-		const fake = github(
+	const fakeFor = (interactions: typeof pact.interactions) =>
+		github(
 			new Map(
-				pact.interactions.map((interaction) => [
+				interactions.map((interaction) => [
 					interaction.request.path,
 					interaction.response.headers
 						? String(interaction.response.body)
@@ -675,10 +715,37 @@ describe("GitHub read contract", () => {
 				]),
 			),
 		);
-		const result = await insights("diagnose", fake);
+	const expectReads = (
+		fake: ReturnType<typeof github>,
+		interactions: typeof pact.interactions,
+	) =>
 		expect(fake.asked).toEqual(
-			pact.interactions.map((interaction) => interaction.request.path),
+			interactions.map((interaction) => interaction.request.path),
 		);
+
+	it("reads recent runs for signals from exactly the contract", async () => {
+		const paths = new Set([
+			"repos/acme/app",
+			"repos/acme/app/actions/runs?per_page=50",
+			"repos/acme/app/actions/runs/7/attempts/1/jobs?per_page=100",
+		]);
+		const interactions = pact.interactions.filter((interaction) =>
+			paths.has(interaction.request.path),
+		);
+		const fake = fakeFor(interactions);
+		const result = await insights("signals", fake);
+		expectReads(fake, interactions);
+		expect(result.data).toMatchObject({ repository: "acme/app", runs: 1 });
+	});
+
+	it("diagnoses a run from exactly the reads the contract names", async () => {
+		const interactions = pact.interactions.filter(
+			(interaction) =>
+				interaction.request.path !== "repos/acme/app/actions/runs?per_page=50",
+		);
+		const fake = fakeFor(interactions);
+		const result = await insights("diagnose", fake);
+		expectReads(fake, interactions);
 		expect(result.data).toMatchObject({
 			run: { id: 7, attempt: 1 },
 			jobs: [

@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { isGithubHostedLabel } from "@hobo/ci";
 import {
 	type CiSignal,
@@ -228,6 +229,12 @@ function insightRun(
 		run.status !== "completed"
 		? base
 		: { ...base, completedAtMs: completed };
+}
+
+function terminalText(text: string): string {
+	return stripVTControlCharacters(text)
+		.replace(/[\u202a-\u202e\u2066-\u2069]/gu, "")
+		.replace(/\p{Cc}/gu, " ");
 }
 
 function duration(ms: number | undefined): string {
@@ -473,7 +480,7 @@ export async function runCiInsights(input: {
 			if (runners.length > 0)
 				lines.push("runners", ...runners.slice(0, 10).map(runnerLine));
 			return {
-				message: lines.join("\n"),
+				message: lines.map(terminalText).join("\n"),
 				data: {
 					repository: input.repository,
 					runs: listed.length,
@@ -573,7 +580,7 @@ export async function runCiInsights(input: {
 							: []),
 					];
 		return {
-			message: lines.join("\n"),
+			message: lines.map(terminalText).join("\n"),
 			data: {
 				repository: input.repository,
 				run: { id: run.id, attempt, url: run.html_url ?? "" },

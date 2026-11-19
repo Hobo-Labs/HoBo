@@ -355,10 +355,7 @@ jobs:
 	});
 
 	it.each([
-		[
-			"an environment",
-			"    <<: &deploy\n      environment: production\n",
-		],
+		["an environment", "    <<: &deploy\n      environment: production\n"],
 		["inherited secrets", "    <<: &deploy\n      secrets: inherit\n"],
 		[
 			"write permissions",
@@ -377,14 +374,15 @@ jobs:
 		expect(ready(body, { includeSecretJobs: true })).toEqual(["job ready"]);
 	});
 
-	it.each(["permissions", "env"])(
-		"counts workflow %s behind a YAML merge key",
-		(key) => {
-			const value =
-				key === "permissions"
-					? "contents: write"
-					: "TOKEN: ${{ secrets.DEPLOY_TOKEN }}";
-			const source = `on: push
+	it.each([
+		"permissions",
+		"env",
+	])("counts workflow %s behind a YAML merge key", (key) => {
+		const value =
+			key === "permissions"
+				? "contents: write"
+				: "TOKEN: ${{ secrets.DEPLOY_TOKEN }}";
+		const source = `on: push
 defaults: &defaults
   ${key}:
     ${value}
@@ -393,11 +391,8 @@ jobs:
   test:
     runs-on: ubuntu-24.04
 `;
-			expect(standings(planOf(source))).toEqual([
-				"test skipped uses_secrets",
-			]);
-		},
-	);
+		expect(standings(planOf(source))).toEqual(["test skipped uses_secrets"]);
+	});
 
 	it("lets a direct permissions mapping override a merged one", () => {
 		const source = oneJob(`    runs-on: ubuntu-24.04
@@ -1163,6 +1158,18 @@ describe("a job that routes other jobs", () => {
 		const reusable = source.replace(
 			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
 			"    uses: ./.github/workflows/reusable.yml\n    with:\n      runner: ${{ needs.route.outputs.runner }}",
+		);
+		expect(planWorkflow("ci.yml", reusable).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes reusable workflow inputs behind a YAML merge", () => {
+		const reusable = source.replace(
+			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
+			"    uses: ./.github/workflows/reusable.yml\n    <<: &call\n      with:\n        runner: ${{ needs.route.outputs.runner }}",
 		);
 		expect(planWorkflow("ci.yml", reusable).jobs[0]).toMatchObject({
 			job: "route",

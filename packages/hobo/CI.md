@@ -284,8 +284,9 @@ rewritten and those refused. Nothing is committed.
 A job is left alone when it calls another workflow, takes `runs-on` from an
 expression, names a runner group or several labels, asks for Windows, macOS
 or ARM, already runs on a hosted provider's or a self-hosted label, or decides
-where other jobs run (another job's `runs-on` reads its outputs: a routing job
-has to start even when the fleet cannot). A YAML value shared by an anchor is
+where other jobs run (another job's `runs-on`, a matrix, or reusable-workflow
+inputs read its outputs, including through YAML merge keys: a routing job has
+to start even when the fleet cannot). A YAML value shared by an anchor is
 left alone when changing it would affect another part of the workflow. A job
 that uses an environment, any write permission, or a secret other than `GITHUB_TOKEN`
 is left alone unless `--include-secret-jobs` is passed. A ready job can carry
@@ -320,8 +321,10 @@ looks like, whether a re-run is likely to help, and the log lines leading up to
 the last error. A log, annotation, or check-run identity read failure fails the
 command rather than producing a partial diagnosis. If the GitHub CLI truncates
 a log, the diagnosis says it may be incomplete and sets `logTruncated` on that
-job's JSON result. The rules are fixed pattern tables in `@hobo/ci/insights`;
-no log text leaves the machine.
+job's JSON result. Human-readable reports remove terminal escape sequences,
+control characters, and bidirectional overrides from GitHub metadata, logs, and
+annotations. The rules are fixed pattern tables in `@hobo/ci/insights`; no log
+text leaves the machine.
 
 ## Route a job against the runner order
 

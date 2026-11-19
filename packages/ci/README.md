@@ -401,8 +401,11 @@ on a provider. A relay job names the label it would ask each type for, and
 `decideRunnerRoute(order, request, facts)` walks the order and returns a
 `RunnerRouteDecision`: the label to run on, the label to queue on when every
 runner that fits is busy, or one sentence saying why nothing can take the
-job. Every step passed over is recorded with its reason. Allocation routing
-above ranks published offers by cost; a runner order is walked as written.
+job. Every step passed over is recorded with its reason. GitHub-hosted routing
+accepts only the known standard GitHub labels; an arbitrary label beginning
+with `ubuntu-`, `windows-`, or `macos-` is not treated as GitHub-hosted.
+Allocation routing above ranks published offers by cost; a runner order is
+walked as written.
 
 ```ts
 import { decideRunnerRoute, parseRunnerOrder } from "@hobo/ci";
@@ -430,7 +433,7 @@ journal parses into those types first.
 | --- | --- |
 | `ciSignals(runs)` | Where time or money went that did not have to: `no-concurrency`, `same-commit`, `short-jobs` (cost); `queue-waits`, `slowest-job`, `flaky-jobs`, `runner-failures` (speed); `docs-changes`, `wide-fanout` (complexity). A signal is `shown` once it covers 30 minutes and 1% of all job minutes |
 | `runnerTimes`, `jobTimes`, `workflowTimes` | Per runner: jobs, share started, median wait, median and p90 run time, success rate. Per job: the same by runner, the fastest runner, and the speed-up against a baseline |
-| `diagnoseFailure({ job, logTail, annotations })` | The first failed step, a log excerpt ending at the last error, a kind (`infra`, `config`, `lint`, `build`, `test`, `flaky`, `unclear`) and whether a re-run is likely to pass. The pattern tables are exported; nothing is sent to a model |
+| `diagnoseFailure({ job, logTail, annotations })` | The first failed step, a log excerpt ending at the last error, a kind (`infra`, `config`, `lint`, `build`, `test`, `flaky`, `unclear`) and whether a re-run is likely to pass. Terminal controls and bidirectional overrides are stripped from quoted evidence. The pattern tables are exported; nothing is sent to a model |
 | `checkPullRequestTitle(title)` | Whether a title is a Conventional Commits title, with the reason when it is not |
 
 A re-run is only ever called likely to pass for a runner or network failure.

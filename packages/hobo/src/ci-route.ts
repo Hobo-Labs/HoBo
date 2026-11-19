@@ -140,6 +140,16 @@ function text(options: CiRouteOptions, name: string): string | undefined {
 	return z.string().optional().parse(options[name]);
 }
 
+function routeLabels(
+	options: CiRouteOptions,
+	key: (typeof RUNNER_STEP_KEYS)[number],
+): readonly string[] {
+	const value = options[key];
+	return relayInputLabels(
+		Array.isArray(value) ? value.join(",") : (text(options, key) ?? ""),
+	);
+}
+
 function stepText(step: ParsedRunnerOrder["steps"][number]): string {
 	if (step.minutesLimitPercent > 0)
 		return `${step.key} (under ${step.minutesLimitPercent}% of included minutes)`;
@@ -190,15 +200,19 @@ export async function runCiRoute(input: {
 	for (const name of ["public", "fork"] as const)
 		if (options[name] !== undefined && options[name] !== true)
 			return usage(`--${name} does not take a value.`);
-	for (const name of [...RUNNER_STEP_KEYS, "event", "facts"])
+	for (const name of ["event", "facts"])
 		if (!z.string().optional().safeParse(options[name]).success)
 			return usage(`--${name} takes a text value.`);
-	for (const key of RUNNER_STEP_KEYS)
-		if (
-			options[key] !== undefined &&
-			relayInputLabels(text(options, key) ?? "").length === 0
-		)
+	for (const key of RUNNER_STEP_KEYS) {
+		const schema =
+			key === "runs-on"
+				? z.union([z.string(), z.array(z.string())])
+				: z.string();
+		if (!schema.optional().safeParse(options[key]).success)
+			return usage(`--${key} takes a text value.`);
+		if (options[key] !== undefined && routeLabels(options, key).length === 0)
 			return usage(`--${key} needs at least one runner label.`);
+	}
 
 	let project: string | undefined;
 	try {
@@ -227,7 +241,7 @@ export async function runCiRoute(input: {
 		};
 
 	const inputs = RUNNER_STEP_KEYS.flatMap((key) => {
-		const labels = relayInputLabels(text(options, key) ?? "");
+		const labels = routeLabels(options, key);
 		return labels.length > 0 ? [{ key, labels: [...labels] }] : [];
 	});
 	const event = text(options, "event") ?? "push";

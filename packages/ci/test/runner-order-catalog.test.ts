@@ -71,8 +71,13 @@ describe("runner provider catalog", () => {
 
 	it("tells GitHub-hosted labels from unknown ones", () => {
 		expect(runnerProviderOfLabel("ubuntu-24.04")).toBe("github");
-		expect(isGithubHostedLabel("macos-15")).toBe(true);
-		expect(isGithubHostedLabel("windows-2025")).toBe(true);
+		expect(isGithubHostedLabel(" macos-15 ")).toBe(true);
+		expect(isGithubHostedLabel("WINDOWS-2025")).toBe(true);
+		expect(isGithubHostedLabel("ubuntu-latest")).toBe(true);
+		expect(isGithubHostedLabel("ubuntu-24.04-arm")).toBe(true);
+		expect(isGithubHostedLabel("ubuntu- arbitrary-label")).toBe(false);
+		expect(isGithubHostedLabel("windows-2099")).toBe(false);
+		expect(isGithubHostedLabel("macos-99")).toBe(false);
 		expect(runnerProviderOfLabel("self-hosted")).toBeUndefined();
 		expect(runnerProviderOfLabel("hobo")).toBeUndefined();
 	});

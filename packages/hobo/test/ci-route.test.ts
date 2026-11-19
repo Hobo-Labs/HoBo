@@ -215,6 +215,23 @@ describe("hobo ci route", () => {
 		expect(envelope.data.request.private).toBeUndefined();
 	});
 
+	it("accepts the route parser's array form of --runs-on", async () => {
+		const { route } = await repository({ project: order("runs-on") });
+		const { exitCode, envelope } = await route(
+			"--runs-on",
+			"runs-on=7/runner=2cpu-linux-x64",
+		);
+		expect(exitCode).toBe(0);
+		expect(envelope.data.request.inputs).toEqual([
+			{ key: "runs-on", labels: ["runs-on=7/runner=2cpu-linux-x64"] },
+		]);
+		expect(envelope.data.decision).toMatchObject({
+			outcome: "routed",
+			runner: "runs-on=7/runner=2cpu-linux-x64",
+			step: "runs-on",
+		});
+	});
+
 	it("treats a relay with no inputs as any runner type", async () => {
 		const { route } = await repository({ project: order("runs-on", "github") });
 		const { envelope } = await route();

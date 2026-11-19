@@ -575,6 +575,24 @@ describe("diagnoseFailure: order and evidence", () => {
 		expect(kindOf(["3 failed"])).toBe("test");
 	});
 
+	it("strips terminal controls and bidirectional overrides", () => {
+		const stepName = "Run \u001b[31mtests\u001b[0m\u202e";
+		const diagnosis = diagnoseFailure({
+			job: failedAt(stepName),
+			annotations: ["\u001b]0;owned\u0007error TS2322\u0007\r\u0008\u202e"],
+		});
+		expect(diagnosis.evidence).toContain("error TS2322");
+		expect(summarizeDiagnosis(diagnosis)).toContain('Failed at "Run tests"');
+		const testDiagnosis = diagnoseFailure({
+			job: failedAt(stepName),
+			logTail: "2 failed",
+		});
+		expect(testDiagnosis.evidence).toContain('step "Run tests"');
+		expect(JSON.stringify(diagnosis)).not.toMatch(
+			/[\p{Cc}\u202a-\u202e\u2066-\u2069]/u,
+		);
+	});
+
 	it("reads annotations as well as the log", () => {
 		const diagnosis = diagnoseFailure({
 			job: failedAt(PLAIN_STEP),

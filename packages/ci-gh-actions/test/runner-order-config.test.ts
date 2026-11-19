@@ -83,9 +83,9 @@ describe("committed runner order", () => {
 		expect(parsed.source).toBe("invalid");
 		expect(parsed.order).toBeUndefined();
 		expect(parsed.problem).not.toBe("");
-		expect(
-			RunnerOrderDocumentSchema.safeParse(JSON.parse(order)).success,
-		).toBe(false);
+		expect(RunnerOrderDocumentSchema.safeParse(JSON.parse(order)).success).toBe(
+			false,
+		);
 	});
 
 	it("never throws or supplies a fallback order for a file that is not JSON", () => {

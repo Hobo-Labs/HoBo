@@ -557,13 +557,13 @@ function indirectRoutingOf(
 	runsOn: RunsOn,
 ): string {
 	const key =
-		pairOf(job, "uses") !== undefined
+		effectivePairOf(workflow, job, "uses") !== undefined
 			? "with"
 			: runsOn.text.includes(EXPRESSION_OPEN) && /\bmatrix\b/u.test(runsOn.text)
 				? "strategy"
 				: undefined;
 	if (key === undefined) return "";
-	const node = writtenUnder(job, key);
+	const node = effectiveWrittenUnder(workflow, job, key);
 	return node === undefined ? "" : reachableText(workflow, node).join("\n");
 }
 

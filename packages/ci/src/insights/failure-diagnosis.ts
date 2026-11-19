@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { type InsightJob, ranSteps, SETUP_STEP_NAME } from "./types.js";
 
 export type FailureKind =
@@ -195,10 +196,6 @@ export const FLAKE_HINT_PATTERNS: readonly DiagnosisPattern[] = [
 	{ label: "Navigation timeout", pattern: /navigation timeout/i },
 ];
 
-const ESCAPE = String.fromCharCode(27);
-
-const ANSI_SEQUENCE = new RegExp(`${ESCAPE}\\[[0-9;?]*[ -/]*[@-~]`, "g");
-
 const BYTE_ORDER_MARK = /^﻿/;
 
 const TIMESTAMP_PREFIX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z ?/;
@@ -211,10 +208,11 @@ const ERROR_WORD =
 const ZERO_PROBLEMS = /\b(?:0|no)\s+(?:errors?|failed|failures?)\b/gi;
 
 function cleanLine(line: string): string {
-	return line
-		.replace(ANSI_SEQUENCE, "")
+	return stripVTControlCharacters(line)
 		.replace(BYTE_ORDER_MARK, "")
 		.replace(TIMESTAMP_PREFIX, "")
+		.replace(/[\u202a-\u202e\u2066-\u2069]/gu, "")
+		.replace(/\p{Cc}/gu, " ")
 		.trimEnd();
 }
 
@@ -276,7 +274,7 @@ export function logExcerpt(logTail: string): readonly string[] {
 }
 
 function quoted(text: string): string {
-	return text.trim().slice(0, MAX_EVIDENCE_LENGTH);
+	return cleanLine(text).trim().slice(0, MAX_EVIDENCE_LENGTH);
 }
 
 function linesMatching(
@@ -400,7 +398,7 @@ export function diagnoseFailure(
 	const excerpt = logExcerpt(input.logTail ?? "");
 	const verdict = classify({
 		lines: [...(input.annotations ?? []).flatMap(cleanLines), ...excerpt],
-		stepName: failed?.name,
+		stepName: failed === undefined ? undefined : cleanLine(failed.name).trim(),
 		runnerFailed,
 		jobTimedOut,
 	});
@@ -414,7 +412,10 @@ export function diagnoseFailure(
 	};
 	if (failed === undefined) return diagnosis;
 	return {
-		failedStep: { name: failed.name, number: failed.number },
+		failedStep: {
+			name: cleanLine(failed.name).trim(),
+			number: failed.number,
+		},
 		...diagnosis,
 	};
 }
@@ -453,7 +454,7 @@ export function summarizeDiagnosis(diagnosis: FailureDiagnosis): string {
 	const verb = diagnosis.timedOut ? "Timed out" : "Failed";
 	let lead = verb;
 	if (diagnosis.failedStep !== undefined) {
-		lead = `${verb} at "${diagnosis.failedStep.name}"`;
+		lead = `${verb} at "${cleanLine(diagnosis.failedStep.name).trim()}"`;
 	} else if (diagnosis.runnerFailed) {
 		lead = "Failed before any step ran";
 	}
