@@ -618,8 +618,16 @@ export function createWorkflowEngine(
 				) {
 					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
 				}
+				for (const unconsumedIndex of unconsumedScheduledSleeps) {
+					if (unconsumedIndex < index) {
+						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+					}
+				}
 				if (unconsumedScheduledSleeps.size > 0) {
-					rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+					const nextUnconsumed = Math.min(...unconsumedScheduledSleeps);
+					if (nextUnconsumed > index) {
+						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+					}
 				}
 				const data: JsonBag = { delayMs: normalizedDurationMs, index };
 				if (sleepOptions?.label !== undefined) {
