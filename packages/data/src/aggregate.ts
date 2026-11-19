@@ -170,6 +170,9 @@ export function defineAggregate<S, C>(
 					},
 				};
 				definition.decide(outcome.state, command, emitter);
+				for (const event of staged) {
+					definition.upcasters?.assertCanUpcast?.(event.type, event.v ?? 1);
+				}
 
 				if (staged.length === 0 && stagedEffects.length === 0) {
 					finalSeq = outcome.seq;

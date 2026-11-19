@@ -7,6 +7,11 @@ via an `ActorHost` single-writer lease + fencing) and `defineProjection`
 Includes a forward-only upcaster registry and deterministic poison-event
 quarantine.
 
+An upcaster chain must contain every transition needed by an event. Missing
+transitions raise `UpcasterChainError` before a fold or aggregate append; they
+are configuration failures and do not quarantine the event. Registration order
+does not matter, and a chain can be completed before it is used.
+
 Reuses the `EventEnvelope` and runtime ports from [`@hobo/core`](../core);
 runs against the real `EventStore` (e.g. `@hobo/runtime-local`) rather than
 reinventing a store.
@@ -30,5 +35,6 @@ const result = await orders.execute(
   { id: "1001", totalCents: 4200 },
   { tenant: "t-a", actor: { kind: "user", id: "u1" } },
 );
-// result.seq is the client's reads-your-writes watermark.
 ```
+
+`result.seq` is the client's reads-your-writes watermark.
