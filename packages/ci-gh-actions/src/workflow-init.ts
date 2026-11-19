@@ -345,46 +345,148 @@ function needsJobId(node: Node | undefined): string | undefined {
 	return undefined;
 }
 
-function needsJobIds(workflow: Workflow, job: YAMLMap): readonly string[] {
-	const needs = effectiveValueUnder(workflow, job, "needs");
-	if (needs === undefined) return [];
-	if (isScalar(needs)) {
-		const id = needsJobId(needs);
-		return id === undefined ? [] : [id];
+type NeedsRead = Readonly<{
+	ids: readonly string[];
+	opaque: boolean;
+	present: boolean;
+}>;
+
+const EMPTY_NEEDS: NeedsRead = { ids: [], opaque: false, present: false };
+
+const DOT_JOB_ID = /^[A-Za-z_][A-Za-z0-9_-]*$/u;
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function expressionDouble(value: string): string {
+	return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function quoteAlternatives(value: string): string {
+	const expressionSingle = `'${escapeRegExp(value.replaceAll("'", "''"))}'`;
+	const expressionDoubleQuoted = `"${escapeRegExp(expressionDouble(value))}"`;
+	const yamlDoubledSingle = escapeRegExp(
+		`'${value.replaceAll("'", "''")}'`.replaceAll("'", "''"),
+	);
+	const yamlEscapedDouble = escapeRegExp(
+		`"${expressionDouble(value)}"`
+			.replaceAll("\\", "\\\\")
+			.replaceAll('"', '\\"'),
+	);
+	return [
+		expressionSingle,
+		expressionDoubleQuoted,
+		yamlDoubledSingle,
+		yamlEscapedDouble,
+	].join("|");
+}
+
+function patternMatches(pattern: string, text: string): boolean {
+	try {
+		return new RegExp(pattern, "u").test(text);
+	} catch {
+		return true;
 	}
-	if (isSeq(needs)) {
-		return needs.items.flatMap((item) => {
-			const id = needsJobId(isNode(item) ? item : undefined);
-			return id === undefined ? [] : [id];
-		});
-	}
-	if (isMap(needs)) {
-		return needs.items.flatMap((pair) => {
-			if (!isScalar(pair.key)) return [];
-			const id = pair.key.source?.trim() ?? String(pair.key.value ?? "").trim();
-			return id.length === 0 ? [] : [id];
-		});
-	}
-	return [];
+}
+
+function propertyAccessPattern(name: string): string {
+	return String.raw`(?:\.\s*${name}\b|\[\s*(?:${quoteAlternatives(name)})\s*\])`;
+}
+
+function outputsAccessPattern(): string {
+	return propertyAccessPattern("outputs");
+}
+
+function routingAccessPattern(): string {
+	return `(?:${propertyAccessPattern("outputs")}|${propertyAccessPattern("result")})`;
 }
 
 function needsJobReferencePattern(jobId: string): string {
-	const id = jobId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-	const single = `'${id}'`;
-	const double = `"${id}"`;
-	const yamlEscapedDouble = `\\\\"${id}\\\\"`;
-	const yamlDoubledSingle = `''${id}''`;
-	const quoted = [single, double, yamlEscapedDouble, yamlDoubledSingle].join(
-		"|",
-	);
-	return `\\bneeds\\s*(?:\\.\\s*${id}(?![\\w-])|\\[\\s*(?:${quoted})\\s*\\])`;
+	const index = String.raw`\[\s*(?:${quoteAlternatives(jobId)})\s*\]`;
+	const dot = DOT_JOB_ID.test(jobId)
+		? String.raw`\.\s*${escapeRegExp(jobId)}(?![\w-])|`
+		: "";
+	return String.raw`\bneeds\s*(?:${dot}${index})`;
 }
 
-function referencesNeedsOutputs(text: string, jobId: string): boolean {
-	return new RegExp(
-		`${needsJobReferencePattern(jobId)}\\s*\\.\\s*outputs\\b`,
-		"iu",
-	).test(text);
+function needsWildcardPattern(): string {
+	const index = String.raw`\[\s*(?:${quoteAlternatives("*")}|\*)\s*\]`;
+	return String.raw`\bneeds\s*(?:\.\s*\*|${index})`;
+}
+
+const DYNAMIC_NEEDS_INDEX = String.raw`\bneeds\s*\[(?!\s*['"\\])`;
+
+function classifyNeedsItem(
+	workflow: Workflow,
+	node: Node | undefined,
+): "blank" | "opaque" | string {
+	if (node === undefined) return "blank";
+	const resolved = follow(workflow.doc, node);
+	if (!isScalar(resolved)) return "opaque";
+	const id = needsJobId(resolved);
+	if (id === undefined) return "blank";
+	if (id.includes(EXPRESSION_OPEN)) return "opaque";
+	return id;
+}
+
+function readNeeds(workflow: Workflow, job: YAMLMap): NeedsRead {
+	const needs = effectiveValueUnder(workflow, job, "needs");
+	if (needs === undefined) return EMPTY_NEEDS;
+	const items = isScalar(needs)
+		? [classifyNeedsItem(workflow, needs)]
+		: isSeq(needs)
+			? needs.items.map((item) =>
+					classifyNeedsItem(workflow, isNode(item) ? item : undefined),
+				)
+			: ["opaque" as const];
+	return {
+		present: true,
+		opaque: items.some((item) => item === "opaque"),
+		ids: items.filter(
+			(item): item is string => item !== "blank" && item !== "opaque",
+		),
+	};
+}
+
+function needsCanSee(needs: NeedsRead, jobId: string): boolean {
+	if (!needs.present || needs.opaque) return needs.present;
+	return needs.ids.includes(jobId);
+}
+
+function referencesNeedsOutputs(
+	text: string,
+	jobId: string,
+	needs: NeedsRead,
+): boolean {
+	const outputs = outputsAccessPattern();
+	if (
+		patternMatches(`${needsJobReferencePattern(jobId)}\\s*${outputs}`, text)
+	) {
+		return true;
+	}
+	if (
+		patternMatches(
+			String.raw`\btoJSON\s*\(\s*` +
+				`${needsJobReferencePattern(jobId)}` +
+				String.raw`\s*\)`,
+			text,
+		)
+	) {
+		return true;
+	}
+	const open =
+		patternMatches(`${needsWildcardPattern()}\\s*${outputs}`, text) ||
+		patternMatches(String.raw`\btoJSON\s*\(\s*needs\s*\)`, text) ||
+		patternMatches(
+			String.raw`\btoJSON\s*\(\s*${needsWildcardPattern()}\s*\)`,
+			text,
+		);
+	if (open && needsCanSee(needs, jobId)) return true;
+	return patternMatches(
+		`${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]\\s*${outputs}`,
+		text,
+	);
 }
 
 type WorkflowJobEntry = Readonly<{ id: string; job: YAMLMap }>;
@@ -392,6 +494,7 @@ type WorkflowJobEntry = Readonly<{ id: string; job: YAMLMap }>;
 function computeSecretJobIds(
 	workflow: Workflow,
 	entries: readonly WorkflowJobEntry[],
+	needsByJob: ReadonlyMap<string, NeedsRead>,
 ): ReadonlySet<string> {
 	const secret = new Set<string>();
 	for (const { id, job } of entries) {
@@ -402,15 +505,22 @@ function computeSecretJobIds(
 		grew = false;
 		for (const { id, job } of entries) {
 			if (secret.has(id)) continue;
-			const needs = needsJobIds(workflow, job);
-			if (needs.some((need) => secret.has(need))) {
+			const needs = needsByJob.get(id) ?? EMPTY_NEEDS;
+			if (needs.present && needs.opaque && secret.size > 0) {
+				secret.add(id);
+				grew = true;
+				continue;
+			}
+			if (needs.ids.some((need) => secret.has(need))) {
 				secret.add(id);
 				grew = true;
 				continue;
 			}
 			const text = reachableText(workflow, job).join("\n");
 			if (
-				[...secret].some((upstream) => referencesNeedsOutputs(text, upstream))
+				[...secret].some((upstream) =>
+					referencesNeedsOutputs(text, upstream, needs),
+				)
 			) {
 				secret.add(id);
 				grew = true;
@@ -744,7 +854,10 @@ function readWorkflow(
 		if (!isMap(job)) return [];
 		return [{ id, job }] satisfies WorkflowJobEntry[];
 	});
-	const secretJobIds = computeSecretJobIds(workflow, entries);
+	const needsByJob = new Map(
+		entries.map(({ id, job }) => [id, readNeeds(workflow, job)]),
+	);
+	const secretJobIds = computeSecretJobIds(workflow, entries, needsByJob);
 	const inspected = jobs.items.flatMap((pair) => {
 		const id = isScalar(pair.key) ? pair.key.source : undefined;
 		if (id === undefined) return [];
@@ -760,21 +873,46 @@ function readWorkflow(
 	return {
 		error: undefined,
 		jobs: inspected.map((job) =>
-			job.plan.verdict === "ready" && routesJobs(job.plan.job, inspected)
+			job.plan.verdict === "ready" &&
+			routesJobs(job.plan.job, inspected, needsByJob)
 				? asRouter(job)
 				: job,
 		),
 	};
 }
 
-function routesJobs(id: string, jobs: readonly InspectedJob[]): boolean {
-	const reference = new RegExp(needsJobReferencePattern(id), "iu");
-	return jobs.some(
-		(other) =>
-			other.plan.job !== id &&
-			(reference.test(other.plan.runsOn) ||
-				reference.test(other.indirectRouting)),
+function routingText(job: InspectedJob): string {
+	return `${job.plan.runsOn}\n${job.indirectRouting}`;
+}
+
+function referencesRoutedJob(text: string, jobId: string): boolean {
+	const access = routingAccessPattern();
+	if (patternMatches(`${needsJobReferencePattern(jobId)}\\s*${access}`, text)) {
+		return true;
+	}
+	return patternMatches(
+		`${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]\\s*${access}`,
+		text,
 	);
+}
+
+function routesJobs(
+	id: string,
+	jobs: readonly InspectedJob[],
+	needsByJob: ReadonlyMap<string, NeedsRead>,
+): boolean {
+	return jobs.some((other) => {
+		if (other.plan.job === id) return false;
+		const text = routingText(other);
+		if (referencesRoutedJob(text, id)) return true;
+		const needs = needsByJob.get(other.plan.job) ?? EMPTY_NEEDS;
+		return (
+			patternMatches(
+				`${needsWildcardPattern()}\\s*${routingAccessPattern()}`,
+				text,
+			) && needsCanSee(needs, id)
+		);
+	});
 }
 
 function asRouter(job: InspectedJob): InspectedJob {
