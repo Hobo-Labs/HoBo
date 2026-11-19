@@ -114,6 +114,9 @@ export function api(name: string): ResourceHandle<"api"> {
 export function kv(name: string): ResourceHandle<"kv"> {
 	return createHandle("kv", name);
 }
+export function cache(name: string): ResourceHandle<"cache"> {
+	return createHandle("cache", name);
+}
 export function bucket(name: string): ResourceHandle<"bucket"> {
 	return createHandle("bucket", name);
 }

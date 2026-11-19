@@ -27,6 +27,8 @@ interface LoweredDataPort {
 }
 
 function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
+	if (port === "hobo:cache")
+		return { capabilityPort: "kv", require: ["ttl", "atomicCompareAndSet"] };
 	if ((port === "hobo:data" || port === "data") && paradigm === "project")
 		return { capabilityPort: "project", require: [] };
 	if ((port === "hobo:data" || port === "data") && paradigm === "object")

@@ -1,18 +1,5 @@
-/**
- * App Kits — Bindle-declared application surfaces (ADR-0137 language).
- *
- * Prefer **Kit** / **App Kit** over calling these "membrane types" at the Bindle
- * authoring layer. The WIT/WASM *membrane* (ADR-0069 / wRPC) remains the
- * low-level portability contract; Kits are the app-facing composition of ports
- * into entrypoint-bearing surfaces that hosts can serve and Session Replay can
- * attach to by default.
- */
 import type { ResourceKind } from "./types.js";
 
-/**
- * Application Kit kinds — surfaces that host app entrypoints or interactive
- * runtime behavior. Session Replay is default-supplied for every Kit.
- */
 export const APP_KIT_KINDS = Object.freeze([
 	"api",
 	"web",
@@ -25,10 +12,6 @@ export const APP_KIT_KINDS = Object.freeze([
 
 export type AppKitKind = (typeof APP_KIT_KINDS)[number];
 
-/**
- * HTTP-servable Kits (fetch handlers on local Yard / Camp hosts).
- * Subset of APP_KIT_KINDS that participate in listServableEntrypoints.
- */
 export const HTTP_APP_KIT_KINDS = Object.freeze([
 	"api",
 	"web",
@@ -38,9 +21,9 @@ export const HTTP_APP_KIT_KINDS = Object.freeze([
 
 export type HttpAppKitKind = (typeof HTTP_APP_KIT_KINDS)[number];
 
-/** Port / infrastructure Kits — not entrypoint hosts; no default Session Replay. */
 export const INFRA_KIT_KINDS = Object.freeze([
 	"kv",
+	"cache",
 	"bucket",
 	"queue",
 	"topic",
@@ -60,16 +43,13 @@ export const INFRA_KIT_KINDS = Object.freeze([
 ] as const satisfies readonly ResourceKind[]);
 
 export function isAppKitKind(kind: string): kind is AppKitKind {
-	// SAFETY: assertion required at this I/O or test boundary.
-	return (APP_KIT_KINDS as readonly string[]).includes(kind);
+	return APP_KIT_KINDS.some((item) => item === kind);
 }
 
 export function isHttpAppKitKind(kind: string): kind is HttpAppKitKind {
-	// SAFETY: assertion required at this I/O or test boundary.
-	return (HTTP_APP_KIT_KINDS as readonly string[]).includes(kind);
+	return HTTP_APP_KIT_KINDS.some((item) => item === kind);
 }
 
-/** Display label for docs / doctor surfaces. */
 export function appKitLabel(kind: AppKitKind): string {
 	switch (kind) {
 		case "api":

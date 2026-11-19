@@ -4,6 +4,7 @@ import {
 	auth,
 	bucket,
 	CATALOG,
+	cache,
 	catalogFactoryNames,
 	crypto,
 	data,
@@ -47,6 +48,11 @@ const expectedCatalog = [
 		factory: "kv",
 		portRef: ["wasi:keyvalue"],
 		verbs: ["get", "set", "delete"],
+	},
+	{
+		factory: "cache",
+		portRef: ["hobo:cache"],
+		verbs: ["get", "set", "delete", "invalidate"],
 	},
 	{
 		factory: "bucket",
@@ -103,6 +109,7 @@ const expectedCatalog = [
 const factories = {
 	api,
 	kv,
+	cache,
 	bucket,
 	queue,
 	topic,
@@ -125,7 +132,6 @@ const factories = {
 
 describe("resource catalog", () => {
 	it("has exactly one factory per catalog row", () => {
-		// Plan 21 base factories plus external/container/wasm-component (+ optional).
 		expect(catalogFactoryNames()).not.toContain("golden");
 		expect(CATALOG.length).toBeGreaterThanOrEqual(20);
 		expect(catalogFactoryNames()).toHaveLength(CATALOG.length);
@@ -136,7 +142,6 @@ describe("resource catalog", () => {
 			expect(entry).toBeDefined();
 			expect(entry?.portRef).toEqual(expected.portRef);
 			expect(entry?.allowVerbs).toEqual(expected.verbs);
-			// SAFETY: assertion required at this I/O or test boundary.
 			expect(
 				factories[expected.factory as keyof typeof factories] instanceof
 					Function,
@@ -146,7 +151,6 @@ describe("resource catalog", () => {
 
 	it("returns frozen handles with deterministic lowering descriptors", () => {
 		for (const expected of expectedCatalog) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const factory = factories[expected.factory as keyof typeof factories];
 			const handle = factory(`${expected.factory}-main`);
 
@@ -157,7 +161,6 @@ describe("resource catalog", () => {
 			);
 			expect(handle.portRef).toEqual(expected.portRef);
 
-			// SAFETY: assertion required at this I/O or test boundary.
 			const narrowed = handle.allow(...(expected.verbs as never[]));
 			expect(narrowed).not.toBe(handle);
 			expect(Object.isFrozen(narrowed)).toBe(true);
@@ -185,7 +188,6 @@ describe("resource catalog", () => {
 	});
 
 	it("throws TypeError for unknown allow verbs", () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => kv("state").allow("publish" as never)).toThrow(
 			/kv does not allow verb "publish"/,
 		);

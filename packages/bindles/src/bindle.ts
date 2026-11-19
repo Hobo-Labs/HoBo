@@ -218,6 +218,7 @@ function createBuilder(
 			return resource;
 		},
 		kv: (...args: never[]) => createUnbound("kv", args),
+		cache: (...args: never[]) => createUnbound("cache", args),
 		bucket: (...args: never[]) => createUnbound("bucket", args),
 		queue: <Message = JsonValue>(...args: never[]) => {
 			assertNoFactoryArguments("queue", args);
@@ -513,6 +514,7 @@ export function inferRequirementsFromResources(
 				runtimes.add("wasm");
 				break;
 			case "kv":
+			case "cache":
 				require.add("kv");
 				break;
 			case "queue":
