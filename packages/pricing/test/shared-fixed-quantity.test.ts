@@ -134,6 +134,17 @@ describe("fixed quantities on other billable agreements", () => {
 		expect(quote.incremental?.billed?.decimal).toBe("10");
 	});
 
+	it("does not assume an unrelated trial consumes no shared credit", () => {
+		const scenario = scenarioWithOtherAgreement("1", "trialing");
+		expect(quoteScenarioV2(scenario)).toMatchObject({
+			code: "PRICING_AGREEMENT_UNAVAILABLE",
+			message: expect.stringContaining("explicit workload"),
+		});
+		const legacy = quoteScenario(scenario);
+		if (!isQuoteVector(legacy)) throw new Error("expected legacy quote");
+		expect(legacy.incremental?.billed?.decimal).toBe("0");
+	});
+
 	it("validates the billing period of an unrelated past-due agreement", () => {
 		const scenario = scenarioWithOtherAgreement("1", "past-due");
 		const period = scenario.state?.agreements[1]?.billingPeriod;
