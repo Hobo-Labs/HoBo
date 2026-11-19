@@ -446,6 +446,19 @@ test("marker form: structured intent and explicit overrides take precedence", as
 	);
 });
 
+test("marker form: an authored comment provides training intent", () => {
+	async function summarize(input: Ticket): Promise<Classification> {
+		"use training";
+		// One-paragraph summary; no blame, no internal names.
+		return { category: input.subject };
+	}
+	training.infer(summarize);
+	assert.equal(
+		getTrainable("summarize")?.fact.intent,
+		"One-paragraph summary; no blame, no internal names.",
+	);
+});
+
 test.each([
 	[
 		"line",
