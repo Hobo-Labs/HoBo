@@ -879,7 +879,6 @@
         "src/draft/technical-proofs/cqrs-command-aggregate-contract/**",
         "src/draft/technical-proofs/default-read-surface-contract/**",
         "src/draft/technical-proofs/delivery-experiment-adapter-conformance-suite/**",
-        "src/draft/technical-proofs/event-body-upcaster-gate/**",
         "src/draft/technical-proofs/execution-host-provider-contract/**",
         "src/draft/technical-proofs/full-text-search-contract/**",
         "src/draft/technical-proofs/gateway-realization-contract/**",

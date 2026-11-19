@@ -1,3 +1,0 @@
-slug: event-body-upcaster-gate
-layer: technical
-proof-identity: ok
