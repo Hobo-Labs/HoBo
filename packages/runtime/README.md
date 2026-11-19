@@ -43,6 +43,11 @@ manufacturing placeholder values.
 
 Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
 
+An explicit run ID must be a nonempty primitive string for start, resume and
+journal access. Omitting it on start generates an ID; passing null, a number,
+an empty string or an object is rejected rather than coercing it into a stream
+name. Rejection does not invoke conversion hooks on an object ID.
+
 Workflow input must be an ordinary JSON tree. The engine captures it before
 the first asynchronous operation, so later caller edits do not change the run.
 Unsupported inputs, including `undefined`, non-finite numbers, dates, shared
@@ -64,12 +69,13 @@ journals cannot be recovered.
 The [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md)
 includes statecharts and bounded models for input and result capture. They
 check 18 input states and 15 result states, including edits around journal
-writes and restarts.
+writes and restarts. A 16-state model checks run-ID validation.
 
 `resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
 Resuming a completed or failed run returns its recorded terminal outcome without
-calling the workflow or appending another event. New failure records preserve
+calling the workflow or appending another event. A journal with multiple
+terminal facts is rejected before returning an outcome. New failure records preserve
 the failed step when present; older failure records without a step cannot
 reconstruct that detail.
 

@@ -1,6 +1,10 @@
-import { clone } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { ChargeComponentSchema } from "../src/_generated/pricing_pb.js";
+import {
+	ChargeComponentSchema,
+	ProviderAgreementSchema,
+	RateCardSchema,
+} from "../src/_generated/pricing_pb.js";
 import {
 	developerPricing,
 	parsePricingAvailability,
@@ -186,6 +190,52 @@ describe("declared pricing availability", () => {
 				incremental: { billed: { decimal: price, currency: "USD" } },
 			},
 		});
+	});
+
+	it("rejects a missing fixed quantity on another active account", () => {
+		const incomplete = scenario();
+		const state = incomplete.state;
+		const source = state?.agreements[0];
+		const sourceCard = incomplete.catalog?.rateCards[0];
+		if (state === undefined || source === undefined || sourceCard === undefined)
+			throw new Error("fixture agreement missing");
+		const agreement = clone(ProviderAgreementSchema, source);
+		agreement.id = "agreement-b";
+		agreement.providerAccountRef = "account-b";
+		for (const entry of agreement.rateSchedule) entry.rateCardId = "card-b";
+		state.agreements.push(agreement);
+		const rateCard = clone(RateCardSchema, sourceCard);
+		rateCard.id = "card-b";
+		rateCard.charges.push(
+			create(ChargeComponentSchema, {
+				base: {
+					id: "seat",
+					selectors: {},
+					fallback: false,
+					invoiceBehavior: "itemized",
+				},
+				variant: {
+					case: "fixed",
+					value: {
+						cadence: "monthly",
+						timing: "advance",
+						amount: { decimal: "10", currency: "USD" },
+						quantityDimension: "seat",
+						proration: "none",
+					},
+				},
+			}),
+		);
+		incomplete.catalog?.rateCards.push(rateCard);
+		rehashScenario(incomplete);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+		agreement.quantities.seat = "2";
+		rehashScenario(incomplete);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
+		).toMatchObject({ ok: true });
 	});
 
 	it("recognizes an existing flat subscription as a zero incremental cost", () => {
