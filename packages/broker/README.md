@@ -47,12 +47,14 @@ Liability evidence must cover each distinct provider-account ID exactly once;
 the input order of those account records does not affect the scope check. New
 evidence carries the exact integer `maximumMicrosExact` as a ProtoJSON decimal
 string bounded by the runtime's nonnegative safe-integer range; admission also
-decodes legacy fixed64 `maximumMicros` evidence in that range. Entitlement
-history is independent for each kind, bucket and unit, with each normalized
-claim scope unique in evidence, quotes, reservations and settlement. Persisted
-pre-kind snapshots reopen with an empty kind normalized to `allowance`, while
-fresh writes require an explicit kind. An exact idempotent retry may replay a
-persisted kindless quote before strict validation.
+decodes legacy fixed64 `maximumMicros` evidence in that range. Normalized claim
+scope includes kind, bucket and unit, while the latest observation across each
+kind and bucket lineage fences stale unit migrations, including A→B→A restores.
+Persisted pre-kind snapshots reopen with an empty kind normalized to `allowance`,
+while fresh writes require an explicit kind. An exact idempotent retry may replay
+a persisted kindless quote before strict validation. Legacy evidence and receipt
+rows that both omit entitlement claims retain their original quote digest; current
+claims are still recomputed from the pinned pricing model.
 Fenced reservations pin their settlement payload version through journal replay;
 v1 signs kindless claims and v2 signs explicit kinds.
 The admission request accepts only its declared own data fields; unknown fields,
@@ -222,9 +224,11 @@ accounts, units, periods and expired allowance evidence refuse admission. Entitl
 identity includes its kind, bucket and unit throughout configuration and replay.
 Persisted snapshots written before entitlement kinds reopen with an empty kind
 interpreted as `allowance`; new configurations require an explicit supported kind.
-Liability evidence, admitted quotes and reservations must contain the same
-provider-account and entitlement-claim rows independent of input order. Every
-entitlement must have one authoritative owner, including across budget scopes;
+Provider-account rows must match independent of input order. Evidence that
+itemizes entitlement claims must match the admitted quote and current reservation;
+legacy evidence can omit those rows and replay a reservation whose claims are
+also absent. Every entitlement must have one authoritative owner, including
+across budget scopes;
 independent ledgers may not duplicate a provider account's free allocation.
 `unresolvedMicros`, `externalCommittedMicros` and `recoveryReserveMicros` remain
 protected in every reserve calculation. `reservedMicros` is exclusively the

@@ -345,7 +345,13 @@ export async function admitUnpricedIacTarget(
 		),
 	].sort();
 	const entitlementKeys = ledger.entitlements
-		.map((row) => JSON.stringify([row.kind, row.bucketId, row.unit]))
+		.map((row) =>
+			JSON.stringify([
+				row.kind === "" ? "allowance" : row.kind,
+				row.bucketId,
+				row.unit,
+			]),
+		)
 		.sort();
 	const validReservation = (value: BudgetReservation): boolean => {
 		try {
@@ -391,7 +397,11 @@ export async function admitUnpricedIacTarget(
 				JSON.stringify(
 					value.entitlementClaims
 						.map((claim) =>
-							JSON.stringify([claim.kind, claim.bucketId, claim.unit]),
+							JSON.stringify([
+								claim.kind === "" ? "allowance" : claim.kind,
+								claim.bucketId,
+								claim.unit,
+							]),
 						)
 						.sort(),
 				) === JSON.stringify(entitlementKeys) &&

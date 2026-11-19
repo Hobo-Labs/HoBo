@@ -660,19 +660,18 @@ export function createBudgetAdmissionAuthority(options: {
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	): EntitlementHistory | undefined {
 		const direct = entitlementHistory.get(entitlementStableKey(bucket));
-		if (direct) return direct;
 		const unitChanges = entitlementUnitChangeHistory.get(
 			entitlementLineageKey(bucket),
 		);
-		if (!unitChanges || unitChanges.size === 0) return undefined;
-		const forUnit = unitChanges.get(bucket.unit);
-		if (forUnit) return forUnit;
-		if (unitChanges.size === 1) {
-			const [only] = unitChanges.values();
-			if (only) return only;
-		}
-		if (!unitChanges.has(bucket.unit)) return undefined;
-		throw new Error("ambiguous entitlement unit history");
+		if (!unitChanges || unitChanges.size === 0) return direct;
+		let latest = unitChanges.get(bucket.unit) ?? direct;
+		for (const candidate of unitChanges.values())
+			if (
+				!latest ||
+				Date.parse(candidate.observedAt) > Date.parse(latest.observedAt)
+			)
+				latest = candidate;
+		return latest;
 	}
 	function assertFinancialHistory(
 		next: BudgetLedgerSnapshot,
@@ -1587,10 +1586,19 @@ export function createBudgetAdmissionAuthority(options: {
 						.update(toJsonString(HostingQuoteSchema, legacyQuote))
 						.digest("hex");
 				}
+				let legacyEmptyQuoteDigest: string | undefined;
+				if (previous.entitlementClaims.length === 0) {
+					const legacyQuote = clone(HostingQuoteSchema, input.quote);
+					legacyQuote.entitlementClaims = [];
+					legacyEmptyQuoteDigest = createHash("sha256")
+						.update(toJsonString(HostingQuoteSchema, legacyQuote))
+						.digest("hex");
+				}
 				if (
 					previous.requestDigest !== input.requestDigest ||
 					(previous.quoteDigest !== quoteDigest &&
-						previous.quoteDigest !== legacyQuoteDigest) ||
+						previous.quoteDigest !== legacyQuoteDigest &&
+						previous.quoteDigest !== legacyEmptyQuoteDigest) ||
 					JSON.stringify(previous.iacPricingPin) !==
 						JSON.stringify(input.iacPricingPin) ||
 					!!previous.fenceSettlementGuard !== !!input.fenceSettlementGuard ||

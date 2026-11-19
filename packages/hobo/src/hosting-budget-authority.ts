@@ -195,7 +195,7 @@ export function createHostingBudgetAuthorityBridge(options: {
 			const normalized = scaleFor(entitlement, input),
 				bucket = snapshot.entitlements.find(
 					(row) =>
-						row.kind === hostingFreeTierKind &&
+						(row.kind === hostingFreeTierKind || row.kind === "") &&
 						row.bucketId === entitlement.id &&
 						row.unit === normalized.unit,
 				);

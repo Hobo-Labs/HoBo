@@ -528,8 +528,9 @@ export async function admitIacTarget(
 			"pricing consumption cannot be reserved safely",
 		);
 	if (
+		evidence.entitlementClaims.length > 0 &&
 		JSON.stringify(entitlementRows(evidence.entitlementClaims)) !==
-		JSON.stringify(entitlementRows(claims))
+			JSON.stringify(entitlementRows(claims))
 	)
 		return denial(
 			requestId,
@@ -689,18 +690,30 @@ export async function admitIacTarget(
 			.update(toJsonString(HostingQuoteSchema, legacyQuote))
 			.digest("hex");
 	}
+	let legacyEmptyQuoteDigest: string | undefined;
+	if (evidence.entitlementClaims.length === 0) {
+		const legacyQuote = clone(HostingQuoteSchema, quote);
+		legacyQuote.entitlementClaims = [];
+		legacyEmptyQuoteDigest = createHash("sha256")
+			.update(toJsonString(HostingQuoteSchema, legacyQuote))
+			.digest("hex");
+	}
 	const captureReceipt = (
 		raw: BudgetReservation,
 	): BudgetReservation | undefined => {
 		try {
 			if (!isExactProtoMessage(BudgetReservationSchema, raw)) return undefined;
 			const row = clone(BudgetReservationSchema, raw);
+			const legacyEmptyClaims =
+				row.entitlementClaims.length === 0 &&
+				row.quoteDigest === legacyEmptyQuoteDigest;
 			if (
 				row.reservationId !== reservationId ||
 				row.requestDigest !== requestDigest ||
 				row.quoteId !== quote.quoteId ||
 				(row.quoteDigest !== quoteDigest &&
-					row.quoteDigest !== legacyQuoteDigest) ||
+					row.quoteDigest !== legacyQuoteDigest &&
+					!legacyEmptyClaims) ||
 				row.financialPlanHash !== financialPlanHash ||
 				row.identity === undefined ||
 				budgetIdentityKey(row.identity) !== budgetIdentityKey(identity) ||
@@ -714,8 +727,9 @@ export async function admitIacTarget(
 					toJsonString(IacPricingPinSchema, pricingPin) ||
 				JSON.stringify(accountRows(row.providerAccounts)) !==
 					JSON.stringify(accountRows(quote.providerAccounts)) ||
-				JSON.stringify(entitlementRows(row.entitlementClaims)) !==
-					JSON.stringify(entitlementRows(quote.entitlementClaims))
+				(!legacyEmptyClaims &&
+					JSON.stringify(entitlementRows(row.entitlementClaims)) !==
+						JSON.stringify(entitlementRows(quote.entitlementClaims)))
 			)
 				return undefined;
 			return row;

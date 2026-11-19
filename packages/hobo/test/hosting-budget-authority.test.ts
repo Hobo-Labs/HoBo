@@ -509,6 +509,33 @@ describe("durable core hosting financial authority composition", () => {
 				?.reservedUnits,
 		).toBe(1);
 	});
+	it("matches kindless allowance snapshots from a custom durable authority", async () => {
+		const initial = snapshot();
+		initial.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "legacy",
+				kind: "allowance",
+				unit: "request",
+				periodId: "period",
+				remainingUnits: 1,
+				observedAt: new Date(NOW).toISOString(),
+				validUntil: new Date(VALID).toISOString(),
+			}),
+		];
+		const fx = fixture(initial);
+		const kindless = fx.authority.read(new Date(NOW).toISOString());
+		const entitlement = kindless.entitlements[0];
+		if (!entitlement) throw new Error("legacy entitlement missing");
+		entitlement.kind = "";
+		const custom: BudgetAdmissionAuthority = {
+			...fx.authority,
+			read: () => create(BudgetLedgerSnapshotSchema, kindless),
+		};
+		const commitment = proposal(input(custom));
+		expect((await reserve(fx.bridge(custom), "legacy", commitment)).ok).toBe(
+			true,
+		);
+	});
 	it.each([
 		"",
 		"allowance",

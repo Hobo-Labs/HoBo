@@ -353,6 +353,7 @@ describe("durable budget history fences", () => {
 			(row) => row.unit === "request",
 		);
 		if (!request) throw new Error("request fixture missing");
+		request.observedAt = "2026-10-30T02:00:00Z";
 		restored.entitlements.push(request);
 		authority.configure(restored, 2, NOW);
 		expect(authority.read(NOW).entitlements).toMatchObject([
@@ -389,6 +390,7 @@ describe("durable budget history fences", () => {
 				...request,
 				unit: "scheduler-ms",
 				remainingUnits: 30,
+				observedAt: "2026-10-30T01:00:00Z",
 			}),
 		];
 		authority.configure(added, 1, NOW);
@@ -401,6 +403,44 @@ describe("durable budget history fences", () => {
 		});
 		expect(reopened.read(NOW).entitlements).toMatchObject([
 			{ unit: "scheduler-ms", remainingUnits: 30 },
+		]);
+	});
+
+	it("uses the latest lineage observation after a unit migration returns to an earlier unit", () => {
+		const base = snapshot();
+		const journal: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: base,
+			commit: (event) => journal.push(event),
+		});
+		const removed = authority.read(NOW);
+		removed.entitlements = [];
+		authority.configure(removed, 0, NOW);
+		const migrated = snapshot();
+		const migratedBucket = migrated.entitlements[0];
+		if (!migratedBucket) throw new Error("migrated bucket missing");
+		migratedBucket.unit = "runner-ms";
+		migratedBucket.remainingUnits = 20;
+		migratedBucket.observedAt = "2026-10-30T01:00:00Z";
+		authority.configure(migrated, 1, NOW);
+		const removedAgain = authority.read(NOW);
+		removedAgain.entitlements = [];
+		authority.configure(removedAgain, 2, NOW);
+		const restored = snapshot();
+		expect(() => authority.configure(restored, 3, NOW)).toThrow(
+			"entitlement observation",
+		);
+		const restoredBucket = restored.entitlements[0];
+		if (!restoredBucket) throw new Error("restored bucket missing");
+		restoredBucket.remainingUnits = 30;
+		restoredBucket.observedAt = "2026-10-30T02:00:00Z";
+		authority.configure(restored, 3, NOW);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: journal,
+		});
+		expect(reopened.read(NOW).entitlements).toMatchObject([
+			{ unit: "micros", remainingUnits: 30 },
 		]);
 	});
 

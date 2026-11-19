@@ -13,6 +13,7 @@ import {
 	createTargetPricingInventory,
 	QuoteScenarioSchema,
 	quoteTargetPricing,
+	stableHash,
 	targetPricingModel,
 	targetPricingUnavailable,
 } from "@hobo/pricing";
@@ -821,6 +822,84 @@ describe("provider-neutral IaC target budget admission", () => {
 				code: "EXECUTION_ALREADY_CLAIMED",
 				reservation: { entitlementClaims: [{ kind: "" }] },
 			});
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("replays a legacy priced reservation with empty evidence and receipt claims", async () => {
+		const { inventory, pricing, evidence } = fixture();
+		if (pricing.state.case !== "model")
+			throw new Error("missing model fixture");
+		pricing.state.value.scenario = makeScenario({
+			charges: [perUnitCharge("runtime", "minute", "1")],
+			candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+			allowances: [allowanceState("allowance-a", "10", "0")],
+		});
+		const priced = quoteTargetPricing(inventory, pricing);
+		if (!priced.ok) throw new Error(priced.reason);
+		evidence.inventoryHash = priced.inventoryHash;
+		evidence.modelHash = priced.modelHash;
+		evidence.quoteHash = priced.quote.quoteHash;
+		evidence.entitlementClaims = [];
+		const request = {
+			requestId: "legacy-empty-claims",
+			inventory,
+			pricing,
+			evidence,
+		};
+		let legacyInput:
+			| Parameters<ReturnType<typeof authority>["reserve"]>[0]
+			| undefined;
+		const captureLedger = authority(
+			3_000_000,
+			true,
+			["account-a"],
+			["allowance-a"],
+		);
+		try {
+			const deps = dependencies(captureLedger);
+			await admitIacTarget(request, {
+				...deps,
+				authority: {
+					...deps.authority,
+					reserve: (input: Parameters<typeof captureLedger.reserve>[0]) => {
+						legacyInput = input;
+						throw new Error("captured legacy reservation input");
+					},
+				},
+			});
+		} finally {
+			captureLedger.close();
+		}
+		if (!legacyInput) throw new Error("legacy reservation input missing");
+		legacyInput.quote.entitlementClaims = [];
+		const ledger = authority(3_000_000, true, ["account-a"], ["allowance-a"]);
+		try {
+			const current = ledger.read(NOW);
+			if (!current.identity) throw new Error("budget identity missing");
+			ledger.reserve({
+				...legacyInput,
+				identity: current.identity,
+				expectedSeq: current.seq,
+			});
+			const executionDigest = stableHash({
+				kind: "iac-target-execution",
+				requestDigest: legacyInput.requestDigest,
+				planDigest: inventory.planDigest,
+			});
+			ledger.claimExecution({
+				reservationId: "iac:legacy-empty-claims",
+				requestDigest: legacyInput.requestDigest,
+				executionDigest,
+			});
+			expect(await admitIacTarget(request, dependencies(ledger))).toMatchObject(
+				{
+					status: "replay",
+					code: "EXECUTION_ALREADY_CLAIMED",
+					reservation: { entitlementClaims: [] },
+				},
+			);
 		} finally {
 			ledger.close();
 		}
