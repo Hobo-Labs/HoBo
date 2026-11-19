@@ -117,7 +117,6 @@ describe("composeConnectSpec", () => {
 	type Evaluate = NonNullable<
 		Parameters<typeof composeConnectSpec>[1]
 	>["evaluate"];
-	// A stand-in evaluator: picks "use:<id>" (or the root) for every question.
 	const including: Evaluate = async ({ questions }) => ({
 		answers: Object.fromEntries(
 			Object.entries(questions).map(([id, question]) => {

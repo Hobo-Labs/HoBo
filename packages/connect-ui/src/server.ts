@@ -21,22 +21,6 @@ import {
 	isTerminalStep,
 } from "./steps.js";
 
-// The connect page a lifecycle opens (`hobo ci up`, `hobo cd up`): a loopback
-// server that renders the current step's composed spec and turns the page's
-// actions into flow transitions. The flow is the authority: the page can only
-// ask for one of three actions, and only the flow moves the step.
-//
-// - Bound to 127.0.0.1 on an ephemeral port, under an unguessable per-session
-//   path (`/s/<token>/`). A request outside it is a 404.
-// - A provider redirect (GitHub's App manifest POST, Vercel's authorize URL)
-//   is a *directive* the flow returns; the browser follows it and the provider
-//   sends the browser back to `/s/<token>/callback`, which the flow handles.
-// - No secret value is ever in a response: steps carry store references only.
-// - CSP: scripts and connections are 'self' only. Inline *styles* are allowed
-//   because Radix positions some shadcn parts with style attributes; the page
-//   renders no untrusted content.
-
-/** What a flow asks the browser to do next, beside the new step. */
 // domain-view: narrowed union of BrowserDirectiveRecord in data-models/connect_ui.proto.
 export type BrowserDirective =
 	| { readonly kind: "none" }
@@ -187,10 +171,9 @@ export async function startConnectPage(
 	const done = new Promise<ConnectStep>((resolve) => {
 		settle = resolve;
 	});
-	// One transition at a time: a double click cannot run two provider calls.
-	let queue: Promise<void> = Promise.resolve();
+	let transitionQueue: Promise<void> = Promise.resolve();
 	const transition = (run: () => Promise<FlowTransition>) => {
-		const next = queue.then(async () => {
+		const next = transitionQueue.then(async () => {
 			if (isTerminalStep(step)) return;
 			try {
 				const result = await run();
@@ -209,7 +192,7 @@ export async function startConnectPage(
 			}
 			if (isTerminalStep(step)) settle(step);
 		});
-		queue = next.catch(() => undefined);
+		transitionQueue = next.catch(() => undefined);
 		return next;
 	};
 
