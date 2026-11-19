@@ -976,6 +976,17 @@ function readCheckoutFile(
 	}
 }
 
+function readRoutingPolicy(): string | undefined {
+	try {
+		return readFileSync(
+			join(import.meta.dirname, "../..", RUNNER_ROUTING_PATH),
+			"utf8",
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 /** The event that started the run, from the file GitHub names, or nothing. */
 function readEventPayload(env: NodeJS.ProcessEnv): JsonValue | undefined {
 	if (!env.GITHUB_EVENT_PATH) return undefined;
@@ -1082,9 +1093,7 @@ export async function main(
 	const args = parseRouteArgs(argv);
 	const settings = routeSettings(
 		readRunnerRouting(
-			"routingConfig" in io
-				? io.routingConfig
-				: readCheckoutFile(env, RUNNER_ROUTING_PATH),
+			"routingConfig" in io ? io.routingConfig : readRoutingPolicy(),
 		),
 	);
 	const { labels, limits } = settings;

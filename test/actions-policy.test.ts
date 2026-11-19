@@ -528,7 +528,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
 				assert.match(
 					block,
-					/uses: (?:\$\/\.github|\.\/\.ci-trusted\/\.github)\/actions\/route-runner$/m,
+					/uses: (?:[$.]\/\.github|\.\/\.ci-trusted\/\.github)\/actions\/route-runner$/m,
 				);
 				continue;
 			}
