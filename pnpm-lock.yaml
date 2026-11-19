@@ -4411,8 +4411,6 @@ importers:
 
   src/draft/technical-proofs/dispatcher-maximize-credits-contract: {}
 
-  src/draft/technical-proofs/dispatcher-reservation-hardening-contract: {}
-
   src/draft/technical-proofs/distributed-artifact-resolver-contract: {}
 
   src/draft/technical-proofs/distributed-artifact-version-policy: {}

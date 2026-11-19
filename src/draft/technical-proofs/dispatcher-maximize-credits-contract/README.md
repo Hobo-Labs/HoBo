@@ -40,7 +40,6 @@ HOBO-286 requires and the lifecycle hardening HOBO-379 adds.
 
 ```powershell
 npm.cmd --prefix src\draft\technical-proofs\dispatcher-maximize-credits-contract test
-npm.cmd --prefix src\draft\technical-proofs\dispatcher-reservation-hardening-contract test
 npm.cmd test
 ```
 
