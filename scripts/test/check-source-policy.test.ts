@@ -359,6 +359,40 @@ f: /* TODO: remove block */`;
 		);
 	});
 
+	it("allows Go compiler directives without exempting lookalike comments", () => {
+		const directives = [
+			"//go:generate stringer -type=Value",
+			"//line parser.go:10",
+			"// #cgo CFLAGS: -DNDEBUG",
+			"//export Run",
+			"//extern run",
+			"// +build linux,amd64",
+		];
+		for (const directive of directives)
+			assert.equal(
+				commentViolations("x.go", `${directive}\n`, new Set([1])).length,
+				0,
+				directive,
+			);
+
+		const comments = [
+			"// go:generate stringer -type=Value",
+			"// line parser.go:10",
+			"//#cgo CFLAGS: -DNDEBUG",
+			"// export Run",
+			"// extern run",
+			"//+build linux,amd64",
+		];
+		assert.deepEqual(
+			commentViolations(
+				"x.go",
+				comments.join("\n"),
+				new Set(comments.map((_, index) => index + 1)),
+			).map((item) => item.line),
+			comments.map((_, index) => index + 1),
+		);
+	});
+
 	it("recognizes additions in zero-context patches", () => {
 		const patch =
 			"@@ -1,2 +1,3 @@\n-old\n+one\n+two\n@@ -8,0 +10,1 @@\n+three\n";
