@@ -1252,4 +1252,42 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(attempts).toBe(1);
 		expect(compensations).toBe(1);
 	});
+
+	it("refuses run.* appends after a terminal fact is already in the journal", async () => {
+		const engine = createWorkflowEngine();
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const wf = defineWorkflow({
+			name: "late-step",
+			async run(ctx) {
+				void ctx
+					.step("slow", async () => {
+						await gate;
+						return "slow";
+					})
+					.catch((error) => {
+						if (!(error instanceof Error)) throw error;
+						expect(error.message).toBe("events after terminal for late-step");
+					});
+				return "fast";
+			},
+		});
+		const handle = await engine.start(wf, {}, { runId: "late-step" });
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("fast");
+		release();
+		await new Promise<void>((resolve) => {
+			setTimeout(resolve, 0);
+		});
+		const journal = await engine.journal("late-step");
+		const terminalIndex = journal.findIndex(
+			(event) => event.type === "run.Completed" || event.type === "run.Failed",
+		);
+		expect(terminalIndex).toBeGreaterThanOrEqual(0);
+		for (const event of journal.slice(terminalIndex + 1)) {
+			expect(event.type.startsWith("run.")).toBe(false);
+		}
+	});
 });

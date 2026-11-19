@@ -332,7 +332,17 @@ export function createWorkflowEngine(
 		}
 		const runSeed = startedFact.seed;
 
+		function assertNoTerminalBeforeRunEvent(type: string): void {
+			if (!type.startsWith("run.")) return;
+			for (const event of journal) {
+				if (event.type === "run.Completed" || event.type === "run.Failed") {
+					throw new Error(`events after terminal for ${runId}`);
+				}
+			}
+		}
+
 		async function appendEvent<T>(type: string, data: T): Promise<number> {
+			assertNoTerminalBeforeRunEvent(type);
 			const payload = cloneAsJson(data);
 			seq += 1;
 			const envelope = nextEnvelope(streamId, seq, type, payload, {
