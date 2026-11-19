@@ -18,6 +18,7 @@ import {
 import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
+	isJsonNumber,
 	isJsonObject,
 	type JsonBag,
 	type JsonValue,
@@ -231,6 +232,40 @@ export function createWorkflowEngine(
 				throw new Error(`conflicting step outcomes for ${runId}`);
 			}
 		}
+		const journaledOutcomeIndices: number[] = [];
+		const journaledScheduledIndices: number[] = [];
+		for (const event of journal) {
+			if (event.type === "run.StepScheduled" && isRecord(event.data)) {
+				const index = event.data.index;
+				if (isJsonNumber(index) && Number.isInteger(index) && index >= 0) {
+					journaledScheduledIndices.push(index);
+				}
+			} else if (event.type === "run.StepCompleted" && isRecord(event.data)) {
+				const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+				journaledOutcomeIndices.push(fact.index);
+			} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
+				const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+				journaledOutcomeIndices.push(fact.index);
+			}
+		}
+		const journaledStepMarkers = [
+			...journaledOutcomeIndices,
+			...journaledScheduledIndices,
+		];
+		if (journaledStepMarkers.length > 0) {
+			const outcomeIndexSet = new Set(journaledOutcomeIndices);
+			const scheduledIndexSet = new Set(journaledScheduledIndices);
+			const maxIndex = Math.max(...journaledStepMarkers);
+			for (let index = 0; index < maxIndex; index += 1) {
+				if (!outcomeIndexSet.has(index) && !scheduledIndexSet.has(index)) {
+					throw new Error(`gapped step journal for ${runId}`);
+				}
+			}
+		}
+		const maxJournaledOutcomeIndex =
+			journaledOutcomeIndices.length > 0
+				? Math.max(...journaledOutcomeIndices)
+				: -1;
 		const terminals = journal.filter(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
 		);
@@ -448,6 +483,12 @@ export function createWorkflowEngine(
 
 		try {
 			const value = await def.run(ctx, runArgs);
+			if (
+				maxJournaledOutcomeIndex >= 0 &&
+				stepIndex <= maxJournaledOutcomeIndex
+			) {
+				throw new Error(`unconsumed step outcome for ${runId}`);
+			}
 			const result = captureWorkflowResult(value);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };

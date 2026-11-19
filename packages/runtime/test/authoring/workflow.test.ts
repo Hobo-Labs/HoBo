@@ -969,4 +969,88 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		expect(runs).toBe(0);
 	});
+
+	it("rejects a gapped step journal before running the workflow", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/gapped",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "gapped-seed",
+					workflowName: "gapped",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/gapped",
+				seq: 2,
+				type: "run.StepFailed",
+				data: { name: "only", index: 2, message: "boom" },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "gapped",
+			run(ctx) {
+				return ctx.step("only", () => "nope");
+			},
+		});
+		await expect(engine.resume(wf, "gapped", {})).rejects.toThrow(
+			/gapped step journal/,
+		);
+	});
+
+	it("refuses run.Completed when a journaled step outcome was not consumed", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/unconsumed",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "unconsumed-seed",
+					workflowName: "unconsumed",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/unconsumed",
+				seq: 2,
+				type: "run.StepFailed",
+				data: { name: "later", index: 1, message: "later" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/unconsumed",
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "early", index: 0, result: "ok" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "unconsumed",
+			run(ctx) {
+				return ctx.step("early", () => "ok");
+			},
+		});
+		await expect(engine.resume(wf, "unconsumed", {})).rejects.toThrow(
+			/unconsumed step outcome/,
+		);
+	});
 });
