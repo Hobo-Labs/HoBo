@@ -1259,18 +1259,15 @@ describe("durable workflow: journal, restart, replay", () => {
 		const gate = new Promise<void>((resolve) => {
 			release = resolve;
 		});
+		let lateStep: Promise<string> | undefined;
 		const wf = defineWorkflow({
 			name: "late-step",
 			async run(ctx) {
-				void ctx
-					.step("slow", async () => {
-						await gate;
-						return "slow";
-					})
-					.catch((error) => {
-						if (!(error instanceof Error)) throw error;
-						expect(error.message).toBe("events after terminal for late-step");
-					});
+				lateStep = ctx.step("slow", async () => {
+					await gate;
+					return "slow";
+				});
+				void lateStep;
 				return "fast";
 			},
 		});
@@ -1278,9 +1275,9 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(handle.status).toBe("completed");
 		expect(handle.result).toBe("fast");
 		release();
-		await new Promise<void>((resolve) => {
-			setTimeout(resolve, 0);
-		});
+		await expect(lateStep).rejects.toThrow(
+			"events after terminal for late-step",
+		);
 		const journal = await engine.journal("late-step");
 		const terminalIndex = journal.findIndex(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
