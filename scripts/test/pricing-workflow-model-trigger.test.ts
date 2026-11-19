@@ -47,6 +47,8 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/conformance/test/durable-messaging-conformance.test.ts",
 			"packages/wit/wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
 			"packages/iac/iac-alchemy/model/IacGrant.tla",
+			"packages/iac/iac-alchemy/model/SharedMapping.tla",
+			"packages/iac/iac-alchemy/model/SharedMapping.cfg",
 			"packages/iac/iac-alchemy/model/RivetQueue.tla",
 			"packages/iac/iac-alchemy/model/RivetQueue.cfg",
 			"packages/iac/iac-alchemy/model/check-rivet-queue.mts",

@@ -7,6 +7,7 @@
 		]
 	},
 	"include": [
+		"test/bindle-shared.test.ts",
 		"test/budget-integration.test.ts",
 		"test/composite.test.ts",
 		"test/core-isolation.test.ts",

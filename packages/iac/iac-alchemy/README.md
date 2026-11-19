@@ -91,6 +91,12 @@ financial admission checks the budget and creates the appropriate hold.
 `mapBindleToAlchemy` accepts provider-owned primitive mappers and assesses the
 Bindle's requirements, operations, annotations, dependencies and entrypoints.
 It refuses missing mappings and unbound dependencies.
+When two declarations share one Alchemy resource, a mapper can set
+`sharedDependency` to a declared dependency's name and return that dependency's
+exact primary resource. It must return no additional resources, actions or
+bindings. The shared resource appears once
+in the mapped inventory; the mapper and host remain responsible for proving the
+application binding and for accounting for all usage of that resource.
 `describeAlchemyPrimitiveSupport` reports the supplied mappers' operational
 coverage; it does not authenticate them, price their resources, or authorize
 routing. Hosts must attest the mapping and its execution environment.
@@ -142,7 +148,7 @@ The host supplies authorization, a trusted clock, source fencing and exclusive
 pool verification. The actor retains at most 10,000 messages and rejects new
 ones at capacity. A timeout or lost response leaves the outcome unknown;
 consumers must reconcile leases and fence their own effects. This queue is not a
-mapping for HoBo's synchronous byte-and-attribute WIT queue or message bus, so
+mapping for HoBo's WIT queue or asynchronous durable topic ABI, so
 those Bindle capabilities remain unsupported.
 The finite `model/RivetQueue.tla` checks queue retry, lease and completion
 decisions for one key, two payloads, at most two leases and three clock values.

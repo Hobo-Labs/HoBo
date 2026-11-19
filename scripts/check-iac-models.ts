@@ -660,6 +660,88 @@ try {
 		concurrencyWitness("NoPartialConcurrentDrain"),
 		"NoPartialConcurrentDrain",
 	);
+	const sharedDirectory = join(root, "packages/iac/iac-alchemy/model");
+	const sharedSource = readFileSync(
+		join(sharedDirectory, "SharedMapping.tla"),
+		"utf8",
+	);
+	const sharedConfig = readFileSync(
+		join(sharedDirectory, "SharedMapping.cfg"),
+		"utf8",
+	);
+	const sharedResult = check(
+		"SharedMapping",
+		sharedDirectory,
+		join(scratch, "SharedMapping"),
+	);
+	if (
+		sharedResult.status !== 0 ||
+		!sharedResult.stdout.includes("No error has been found")
+	)
+		throw new Error(
+			`SharedMapping model checking failed:\n${sharedResult.stdout}\n${sharedResult.stderr}`,
+		);
+	const sharedCases = [
+		[
+			"external",
+			"/\\ owned /\\ ~shared",
+			"/\\ (owned \\/ external) /\\ ~shared",
+			"NoExternalAlias",
+		],
+		[
+			"undeclared",
+			"/\\ declared /\\ exact /\\ writes = 0",
+			"/\\ exact /\\ writes = 0",
+			"ShareExactAndDeclared",
+		],
+		[
+			"hidden",
+			"/\\ declared /\\ exact /\\ writes = 0",
+			"/\\ declared /\\ exact",
+			"InventoryComplete",
+		],
+	] as const;
+	for (const [label, before, after, invariant] of sharedCases) {
+		if (sharedSource.split(before).length !== 2)
+			throw new Error("SharedMapping mutation target changed");
+		const isolated = join(scratch, `shared-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "SharedMapping.tla"),
+			sharedSource.replace(before, after),
+		);
+		writeFileSync(
+			join(isolated, "SharedMapping.cfg"),
+			`SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = check("SharedMapping", isolated, join(isolated, "states"));
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`SharedMapping ${label} did not violate ${invariant}`);
+		process.stdout.write(
+			`SharedMapping ${label}: ${invariant} counterexample found\n`,
+		);
+	}
+	const witness = join(scratch, "shared-witness");
+	mkdirSync(witness);
+	writeFileSync(join(witness, "SharedMapping.tla"), sharedSource);
+	writeFileSync(
+		join(witness, "SharedMapping.cfg"),
+		`${sharedConfig}\nINVARIANT NeverShared\n`,
+	);
+	const witnessResult = check(
+		"SharedMapping",
+		witness,
+		join(witness, "states"),
+	);
+	if (
+		witnessResult.status === 0 ||
+		!witnessResult.stdout.includes("Invariant NeverShared is violated")
+	)
+		throw new Error("SharedMapping shared-resource state is unreachable");
+	process.stdout.write("SharedMapping: shared-resource witness found\n");
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }
