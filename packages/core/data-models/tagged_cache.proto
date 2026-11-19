@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package hobo.core.cache.v1;
+
+message TaggedCacheTagEpochRecord {
+  string tag = 1;
+  string epoch = 2;
+}
+
+message TaggedCacheEntryRecord {
+  string value = 1;
+  repeated TaggedCacheTagEpochRecord tag_epochs = 2;
+}
+
+message TaggedCacheReadRecord {
+  bool hit = 1;
+  optional string value = 2;
+}
