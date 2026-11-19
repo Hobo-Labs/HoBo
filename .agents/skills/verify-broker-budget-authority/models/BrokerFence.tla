@@ -28,7 +28,9 @@ Release == /\ phase \in {"held", "uncertain"} /\ ~claimed
            /\ (phase = "held" \/ unusedWitness)
            /\ phase' = "released"
            /\ UNCHANGED <<claimed, candidate, stored, attempts, unusedWitness>>
-Done == /\ phase \in {"settled", "released"} /\ UNCHANGED vars
+Fenced == /\ phase = "uncertain" /\ claimed /\ attempts = 3 /\ ~Valid(candidate)
+Done == \/ /\ phase \in {"settled", "released"} /\ UNCHANGED vars
+        \/ /\ Fenced /\ UNCHANGED vars
 Next == Reserve \/ Claim \/ Uncertain \/ Offer \/ ConfirmUnused \/ Settle \/ Release \/ Done
 Spec == Init /\ [][Next]_vars
 TypeOK == /\ phase \in {"new", "held", "uncertain", "settled", "released"}
