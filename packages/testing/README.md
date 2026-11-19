@@ -225,7 +225,7 @@ otherwise duplicate code without testing a service contract.
 | Queue / topic | This harness's `Queue` / `Messaging` port implementations | In-memory, process-local, not a provider protocol or a durability proof |
 | Secrets | `graph.secret(alias)` and `createSecretEmulator()` wrap the identity package's in-memory `SecretsPort` | Test material lives in process memory; use fixture values, not real credentials |
 | Data engine | `graph.data(alias)` and `createDataEmulator()` use SQLite through the shared engine SPI; the emulator runs its conformance suite | Process-local SQLite, no raw SQL or remote database protocol; no schema migration port in memory |
-| Schedule | `graph.schedule(alias)` and `graph.scheduleClock(alias)` use the local scheduler and virtual clock | Interval schedules only; fired timers do not automatically invoke a handler |
+| Schedule | `graph.schedule(alias)` uses the scheduler port; `graph.scheduleDriver(alias)` registers handlers and advances virtual time | Interval schedules only; the raw clock does not invoke handlers and graph edges are not wired automatically |
 | Key-value / blob metadata | `graph.kv(alias)` and `graph.bucket(alias)` implement generated types from the pinned WASI subsets | Process-local; the pinned blob interface has no body-read operation and does not claim a complete WASI or cloud storage implementation |
 | Flags | `graph.flag(alias)` or `createFlagEmulator()` supplies an isolated `FeatureFlagPort` | In-process flag engine; not a remote provider or a complete WIT implementation |
 | Experiments / rollout | `graph.experiment(alias)` and `graph.rollout(alias)` expose identity ports linked to a declared flag dependency | In-process engines; application ports require explicit injection and no remote provider is emulated |
@@ -256,7 +256,7 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `topic` | `port` | HoBo Messaging; no external broker |
 | `secret` | `port` | Identity SecretsPort with fixture material only |
 | `data` | `port` | SQLite data-engine SPI, not raw SQL or provider query semantics |
-| `schedule` | `port` | Intervals and virtual fires; no cron expressions or automatic handler execution |
+| `schedule` | `port` | Interval fires and explicitly registered handlers; no cron expressions or automatic graph wiring |
 | `project` | `placeholder` | Placement metadata; no service port in the graph |
 | `websocket` | `placeholder` | Use a protocol-specific test server until a shared port exists |
 | `job` | `placeholder` | Use a real local worker or a contract double for its boundary |
@@ -284,6 +284,48 @@ emulator only when sequences matter, and keep its scope narrower than the
 service it imitates. A green fake or local emulator is not live-provider
 verification.
 
+The optional schedule driver builds on the local scheduler's `registerJob` and
+`advance` methods:
+
+```ts
+import { parseIdempotencyKey, parseQueueName, parseScheduleId } from "@hobo/core";
+
+const alias = "nightly";
+const driver = graph.scheduleDriver(alias);
+if (!driver) throw new Error(`No schedule driver for ${alias}`);
+const queue = graph.queue("inbox");
+driver.registerJob(parseScheduleId("repair"), { everyMs: 1_000 }, async (fire) => {
+  await queue.enqueue(parseQueueName("inbox"), { occurrence: fire.occurrence }, {
+    idempotencyKey: parseIdempotencyKey(JSON.stringify([alias, fire.fireId])),
+  });
+});
+await driver.advance(3_000);
+```
+
+Register a handler explicitly for each interval schedule. Advancing the driver
+awaits handlers in fire order and reports failures after
+running the other due handlers. The clock reaches the requested target before
+handlers run, so each handler observes that target time rather than its own fire
+time. Driver advances run in call order. An advance starts asynchronously, so
+synchronous registrations made before it starts can fire during that advance.
+Each advance collects its due fires before running handlers. Timers or schedules
+registered during a handler wait for the next advance, even if already due.
+
+For the built-in driver, teardown waits for the active advance and refuses
+queued work. A handler invoked through the graph's driver cannot destroy its
+own graph. A factory cannot destroy the graph while its own deployment is in
+progress. Detached tasks started by a handler are not tracked.
+`scheduleClock(alias).advance` consumes raw clock fires without running their
+handlers; later driver advances do not deliver those fires. The raw clock
+refuses to advance while a driver advance is queued. Fire IDs are unique within
+a clock, so include the schedule resource alias when using one as an idempotency
+key across resources, as in the example. Include a graph or deployment namespace
+too when sharing a destination across deployments. The driver does not automatically
+retry failed work, parse cron expressions, wire graph dependencies or model
+provider delivery guarantees. A custom schedule emulator may omit the driver.
+Declare dependencies on resources a handler uses so graph teardown keeps them
+alive until that handler finishes.
+
 ## Surface
 
 - `createTestHarness(options?)` → `{ deploy, destroy, untilReady }`.
@@ -291,7 +333,7 @@ verification.
   straight into `beforeAll`/`afterAll`.
 - `DeployedGraph` → `outputs()`, `resource(alias)`, `http(alias)`,
   `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `secret(alias)`, `data(alias)`,
-  `schedule(alias)`, `scheduleClock(alias)`, `kv(alias)`, `bucket(alias)`,
+  `schedule(alias)`, `scheduleClock(alias)`, `scheduleDriver(alias)`, `kv(alias)`, `bucket(alias)`,
   `bucketInspector(alias)`, `flag(alias)`, `flagInspector(alias)`, `experiment(alias)`,
   `rollout(alias)`, `fidelity()`.
 - `untilReady(target, { attempts = 20, initialDelayMs = 500 })` — bounded

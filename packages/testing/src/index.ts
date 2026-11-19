@@ -36,6 +36,7 @@ export {
 	type KeyValuePort,
 	type ProgressiveEmulatorOptions,
 	type QueueEmulator,
+	type ScheduleDriver,
 	type ScheduleEmulator,
 	type ServiceEmulator,
 	type ServiceEmulatorFactories,
