@@ -449,6 +449,7 @@ a rejected reentry; `BrokerEntitlement` release keeps the unused-evidence guard;
 TLC mutation runs keep the baseline cfg constraints. `Settle` updates usage without
 freezing the prior usage map, and terminal scope change is disabled for zero-unit claims.
 Pricing CI pins immutable TLC 1.7.4. Entitlement TLC settles from `uncertain` when claimed.
+The verify-broker-budget-authority skill cites TLC state counts matching BrokerBudget (81) and BrokerCommit (5).
 
 The following is a projection of the signed-settlement model, not a production
 trace. TLC explored 129 states and 830 steps; the chart hides 723 steps that
