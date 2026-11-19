@@ -161,6 +161,12 @@ export function commentsIn(file: string, text: string): Comment[] {
 	);
 	const found = new Map<number, Comment>();
 	function visit(node: ts.Node): void {
+		if (ts.isJSDoc(node)) {
+			const start = node.getStart(source);
+			const end = node.getEnd();
+			found.set(start, { start, end, text: text.slice(start, end) });
+			return;
+		}
 		const children = node.getChildren(source);
 		if (children.length > 0) {
 			for (const child of children) visit(child);
@@ -187,6 +193,55 @@ export function commentsIn(file: string, text: string): Comment[] {
 	return [...found.values()].sort((left, right) => left.start - right.start);
 }
 
+function trainingRanges(file: string, text: string): Array<[number, number]> {
+	if (!CODE_EXTENSIONS.has(extname(file).toLowerCase())) return [];
+	const kind = /\.[jt]sx$/iu.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+	const source = ts.createSourceFile(
+		file,
+		text,
+		ts.ScriptTarget.Latest,
+		true,
+		kind,
+	);
+	const ranges: Array<[number, number]> = [];
+	function visit(node: ts.Node): void {
+		if (
+			(ts.isFunctionDeclaration(node) ||
+				ts.isFunctionExpression(node) ||
+				ts.isArrowFunction(node) ||
+				ts.isMethodDeclaration(node)) &&
+			node.body &&
+			ts.isBlock(node.body)
+		) {
+			const body = node.body;
+			const first = body.statements[0];
+			const directive =
+				first &&
+				ts.isExpressionStatement(first) &&
+				ts.isStringLiteral(first.expression) &&
+				first.expression.text === "use training"
+					? first
+					: undefined;
+			const decorated =
+				ts.isMethodDeclaration(node) &&
+				ts.getDecorators(node)?.some((decorator) => {
+					const expression = ts.isCallExpression(decorator.expression)
+						? decorator.expression.expression
+						: decorator.expression;
+					return ts.isIdentifier(expression) && expression.text === "trainable";
+				});
+			if (directive || decorated)
+				ranges.push([
+					directive?.end ?? body.getStart(source) + 1,
+					body.end - 1,
+				]);
+		}
+		ts.forEachChild(node, visit);
+	}
+	visit(source);
+	return ranges;
+}
+
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(file).toLowerCase();
 	const extensionLanguage = OTHER_LANGUAGES.get(extension);
@@ -201,11 +256,19 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 			: undefined);
 	if (!language) {
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
-		return commentsIn(file, text).map((comment) => ({
-			text: comment.text,
-			first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
-			last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
-		}));
+		const training = trainingRanges(file, text);
+		return commentsIn(file, text)
+			.filter(
+				(comment) =>
+					!training.some(
+						([start, end]) => start <= comment.start && comment.end <= end,
+					),
+			)
+			.map((comment) => ({
+				text: comment.text,
+				first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
+				last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
+			}));
 	}
 	const result = spawnSync(
 		AST_GREP,
@@ -258,7 +321,7 @@ export function commentViolations(
 				file,
 				line: first,
 				message: DEFERRED.test(comment.text)
-					? "finish deferred work instead of adding a marker"
+					? "resolve the work or track it in Linear instead of adding a marker"
 					: "make the code self-documenting instead of adding a comment",
 			},
 		];
