@@ -1065,7 +1065,11 @@ function productionDeploymentId(payload: JsonObject): string | undefined {
 	const production = targets.production;
 	if (!isJsonObject(production)) return undefined;
 	const id = production.id;
-	return isJsonString(id) && /^dpl_[A-Za-z0-9_-]+$/u.test(id) ? id : undefined;
+	if (!isJsonString(id) || !/^dpl_[A-Za-z0-9_-]+$/u.test(id))
+		throw new Error(
+			"vercel-client: project read returned an invalid production deployment identity",
+		);
+	return id;
 }
 
 export function createVercelClient(options: VercelClientOptions): VercelClient {

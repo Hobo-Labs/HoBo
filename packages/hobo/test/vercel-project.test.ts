@@ -1524,6 +1524,72 @@ describe("production promotion", () => {
 		).rejects.toThrow("project read returned an invalid identity");
 		expect(transport.routes()).toEqual(["GET /v9/projects/hobo-ci"]);
 	});
+
+	it.each([
+		["no targets", { id: "prj_relay" }],
+		["no production target", { id: "prj_relay", targets: {} }],
+		[
+			"a null production target",
+			{ id: "prj_relay", targets: { production: null } },
+		],
+	])("reads no current production deployment when the project has %s", async (_case, body) => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [reply(200, body)],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(
+			client.getProductionDeploymentId("hobo-ci"),
+		).resolves.toBeUndefined();
+		expect(transport.routes()).toEqual(["GET /v9/projects/hobo-ci"]);
+	});
+
+	it("reads the current production deployment id", async () => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_current" } },
+				}),
+			],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(client.getProductionDeploymentId("hobo-ci")).resolves.toBe(
+			"dpl_current",
+		);
+	});
+
+	it.each([
+		[
+			"a production id that is not a deployment id",
+			{ id: "prj_relay", targets: { production: { id: "not-a-deployment" } } },
+		],
+		[
+			"a production id that is not a string",
+			{ id: "prj_relay", targets: { production: { id: 7 } } },
+		],
+		[
+			"a production target holding no id",
+			{ id: "prj_relay", targets: { production: {} } },
+		],
+	])("refuses to read the current production deployment when it holds %s", async (_case, body) => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [reply(200, body)],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(client.getProductionDeploymentId("hobo-ci")).rejects.toThrow(
+			"invalid production deployment identity",
+		);
+		expect(transport.routes()).toEqual(["GET /v9/projects/hobo-ci"]);
+	});
 });
 
 describe("createVercelClient's deployment read and delete (scripted transport, no network)", () => {

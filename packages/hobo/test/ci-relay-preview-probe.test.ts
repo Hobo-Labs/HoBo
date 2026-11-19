@@ -33,10 +33,11 @@ describe("protected preview probe", () => {
 	it("fails closed for invalid deployment URLs, paths and token failures", async () => {
 		for (const deploymentUrl of [
 			undefined,
+			"",
 			"http://evil.vercel.app",
 			"https://vercel.app.evil.test",
 			"https://user@a.vercel.app",
-			"https://a.vercel.app/path",
+			"https://a.vercel.app:444",
 		]) {
 			let sent = false;
 			const probe = protectedPreviewProbe({
@@ -66,5 +67,28 @@ describe("protected preview probe", () => {
 			(await probe({ ...request, url: "https://preview.invalid/other" }))
 				.status,
 		).toBe(503);
+	});
+
+	it("normalizes a host-only or path-carrying deployment URL to its https origin", async () => {
+		const sent: TransportRequest[] = [];
+		for (const deploymentUrl of [
+			"hobo-ci-example.vercel.app",
+			"https://hobo-ci-example.vercel.app/anything/deep?query=1#fragment",
+		]) {
+			const probe = protectedPreviewProbe({
+				placeholderOrigin: "https://preview.invalid",
+				deploymentUrl: () => deploymentUrl,
+				jwt: async () => "synthetic-oidc-token",
+				base: async (outbound) => {
+					sent.push(outbound);
+					return { status: 200, headers: {}, body: "{}" };
+				},
+			});
+			expect((await probe(request)).status).toBe(200);
+		}
+		expect(sent.map((outbound) => outbound.url)).toEqual([
+			"https://hobo-ci-example.vercel.app/healthz",
+			"https://hobo-ci-example.vercel.app/healthz",
+		]);
 	});
 });

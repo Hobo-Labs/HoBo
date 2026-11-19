@@ -339,7 +339,6 @@ process.exitCode = failed ? 27 : 0;`,
 			stepTimeout,
 			RELAY_DEPLOY_JOB_TIMEOUT_MINUTES - RELAY_DEPLOY_JOB_MARGIN_MINUTES,
 		);
-		assert.ok(stepTimeout > 0 && stepTimeout < jobTimeout);
 		const steps = workflow.slice(
 			workflow.indexOf("    steps:", workflow.indexOf("\n  deploy:")),
 			workflow.indexOf("\n  app-credentials:"),
@@ -368,9 +367,13 @@ process.exitCode = failed ? 27 : 0;`,
 		);
 		const delivery = step("Deliver the relay through HoBo CD");
 		assert.match(delivery, /HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true"/u);
+		assert.ok(origin[1]);
 		assert.match(
 			delivery,
-			/^\s+HOBO_CI_RELAY_PUBLIC_URL: https:\/\/hobo-ci\.vercel\.app\s*$/m,
+			new RegExp(
+				`^\\s+HOBO_CI_RELAY_PUBLIC_URL: ${origin[1].replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\s*$`,
+				"m",
+			),
 		);
 		assert.match(delivery, /HOBO_CI_RELAY_STAGED_PRODUCTION: "true"/u);
 	});

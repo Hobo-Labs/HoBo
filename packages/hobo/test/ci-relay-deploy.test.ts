@@ -1154,7 +1154,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				};
 			}
 			if (url.includes("/promote/")) {
-				expect(url).toContain("/projects/prj_relay/promote/");
+				expect(url).toContain("/projects/prj_relay/promote/dpl_wait");
 				trafficOnPublic = true;
 				events.push("promote");
 				return {
@@ -1293,23 +1293,31 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const vercel = scriptedVercel(["READY"]);
 		const events: string[] = [];
 		const previousProduction = "dpl_previous_prod";
+		let promotedNewDeployment = false;
 		const fetch: VercelFetch = async (url, init) => {
 			if (url.includes("/v9/projects/hobo-ci")) {
+				const production = promotedNewDeployment
+					? { id: "dpl_wait" }
+					: { id: previousProduction };
 				return {
 					ok: true,
 					status: 200,
 					text: async () =>
 						JSON.stringify({
 							id: "prj_relay",
-							targets: { production: { id: previousProduction } },
+							targets: { production },
 						}),
 					json: async () => ({
 						id: "prj_relay",
-						targets: { production: { id: previousProduction } },
+						targets: { production },
 					}),
 				};
 			}
 			if (url.includes("/promote/")) {
+				if (promotedNewDeployment)
+					expect(url).toContain(`/promote/${previousProduction}`);
+				else expect(url).toContain("/promote/dpl_wait");
+				promotedNewDeployment = true;
 				events.push("promote");
 				return {
 					ok: true,
@@ -1402,6 +1410,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(result.exitCode).toBe(1);
 		expect(result.envelope).toMatchObject({
 			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+			data: { rollback: "restored" },
 		});
 		expect(events.filter((event) => event === "promote")).toEqual([
 			"promote",

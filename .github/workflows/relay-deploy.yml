@@ -140,9 +140,11 @@ jobs:
       # Both commands share the CD journal. The preview's placeholder origin
       # is routed to the deployment just created, with a GitHub OIDC header;
       # the Vercel project must trust this workflow for preview access.
-      # Bounded by the gate's deadline (the job's timeout less 3 minutes,
-      # counted from the gate), which hobo enforces before production is
-      # created or promoted. The step timeout is a backstop only.
+      # Bounded by the gate's deadline (the job's timeout less the 3 minute
+      # margin, counted from the gate), which hobo enforces before production
+      # is created, promoted, and verified live, so a failed promotion's
+      # rollback runs before the job is killed. The step timeout is a
+      # backstop only.
       - name: Deliver the relay through HoBo CD
         if: steps.gate.outputs.run == 'true'
         timeout-minutes: 17

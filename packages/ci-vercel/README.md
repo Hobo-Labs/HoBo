@@ -237,9 +237,11 @@ verification (a node whose origin is unset probes a reserved `.invalid` host).
 PASS is the only qualification. A failed verification fails the promotion
 and the job. The workflow stages production without assigning domains and
 leaves traffic unchanged if staged verification fails. If the public origin
-fails after the verified deployment is promoted, the job fails; there is no
-automatic Vercel rollback realizer, so roll back by hand (`vercel rollback`, or
-promote the previous deployment in the dashboard).
+still fails after the verified deployment is promoted, the job fails, and the
+deploy promotes the previous production deployment back: the failure's
+`data.rollback` records whether that restore `restored` or `failed`. When the
+restore failed, or no previous deployment was recorded, roll back by hand
+(`vercel rollback`, or promote the previous deployment in the dashboard).
 `hobo ci deploy --target production` needs `--sha` and is refused, before
 anything is sent, when preview has not qualified that commit
 (`HOBO_CI_DEPLOY_NOT_QUALIFIED`). `--wait` drives the promotion to its end;

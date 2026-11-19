@@ -102,7 +102,10 @@ import {
 	relayCampId,
 } from "./ci-relay-delivery.js";
 import { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
-import { protectedPreviewProbe } from "./ci-relay-preview-probe.js";
+import {
+	normalizeDeploymentUrl,
+	protectedPreviewProbe,
+} from "./ci-relay-preview-probe.js";
 import {
 	type AttachmentResult,
 	describeAttachments,
@@ -873,7 +876,8 @@ export async function runCiRelayDeploy(
 					outputs = await provider.apply(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
-				if (protectedPreview || stagedProduction) deploymentUrl = outputs.url;
+				if (protectedPreview || stagedProduction)
+					deploymentUrl = normalizeDeploymentUrl(outputs.url);
 				return {
 					ok: true,
 					outputs: Object.fromEntries(
@@ -1020,7 +1024,7 @@ export async function runCiRelayDeploy(
 				};
 			}
 			let liveReady = false;
-			for (let attempt = 0; attempt < 24; attempt++) {
+			for (let attempt = 0; attempt < 24 && clock() < deadlineAt; attempt++) {
 				const live = commitCheckingProbe(baseProbe, {
 					origin: liveOrigin,
 					commit: sha.toLowerCase(),
@@ -1052,28 +1056,40 @@ export async function runCiRelayDeploy(
 				} catch {
 					void 0;
 				}
-				if (attempt < 23)
+				const remaining = deadlineAt - clock();
+				if (attempt < 23 && remaining > 0)
 					await (
 						input.sleep ??
 						((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
-					)(5_000);
+					)(Math.min(5_000, remaining));
 			}
 			if (!liveReady) {
+				let rollback: "restored" | "failed" | undefined;
 				if (
 					previousProduction !== undefined &&
 					previousProduction !== safe.deploymentId
 				) {
 					try {
 						await client.promoteDeployment(project, previousProduction);
+						rollback = "restored";
 					} catch {
-						void 0;
+						rollback = "failed";
 					}
 				}
 				return {
 					ok: false,
 					code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
-					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.`,
-					data: { ...deliveryData },
+					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.${
+						rollback === "restored"
+							? ` The previous production deployment ${previousProduction} was restored.`
+							: rollback === "failed"
+								? " The automatic rollback failed; promote the previous deployment by hand."
+								: ""
+					}`,
+					data: {
+						...deliveryData,
+						...(rollback !== undefined ? { rollback } : undefined),
+					},
 				};
 			}
 		}
