@@ -277,6 +277,17 @@ f: /* TODO: remove block */`;
 		}
 	});
 
+	it("reports Swift line and block comments", () => {
+		assert.deepEqual(
+			commentViolations(
+				"example.swift",
+				"// line\n/* block */",
+				new Set([1, 2]),
+			).map((item) => item.line),
+			[1, 2],
+		);
+	});
+
 	it("preserves actual licensing and tool directives without exempting arbitrary banner comments", () => {
 		assert.equal(
 			commentViolations("x.ts", "/*! @license MIT */\n", new Set([1])).length,
@@ -338,6 +349,7 @@ f: /* TODO: remove block */`;
 			["notes/implementation-plan.md", "# New"],
 			["notes/new.md", "---\ntype: Design\n---\n"],
 			[".impeccable/design.json", "{}"],
+			[".impeccable/surfaces/example.json", "{}"],
 			["site/.impeccable/surfaces/example.md", "# Example"],
 		] as const)
 			assert.ok(documentViolation(file, text), file);
@@ -382,11 +394,18 @@ f: /* TODO: remove block */`;
 			'endpoint: "https://example.test" // explanation\n',
 		);
 		write(repo, ".impeccable/design.json", "{}\n");
+		write(repo, ".impeccable/surfaces/example.json", "{}\n");
+		write(repo, "site/.impeccable/surfaces/nested/widget.txt", "notes\n");
 		git(repo, "add", "--all");
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /schema\.cue:1/u);
 		assert.match(result.stderr, /\.impeccable\/design\.json:1/u);
+		assert.match(result.stderr, /\.impeccable\/surfaces\/example\.json:1/u);
+		assert.match(
+			result.stderr,
+			/site\/\.impeccable\/surfaces\/nested\/widget\.txt:1/u,
+		);
 	});
 
 	it("allows unchanged comments in renamed files but rejects new ones", () => {

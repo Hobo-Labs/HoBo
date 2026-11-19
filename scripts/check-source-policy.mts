@@ -243,9 +243,11 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 	const kinds =
 		language === "kotlin"
 			? ["line_comment", "multiline_comment"]
-			: ["rust", "java"].includes(language)
-				? ["line_comment", "block_comment"]
-				: ["comment"];
+			: language === "swift"
+				? ["comment", "multiline_comment"]
+				: ["rust", "java"].includes(language)
+					? ["line_comment", "block_comment"]
+					: ["comment"];
 	return kinds.flatMap((kind) => {
 		const result = spawnSync(
 			AST_GREP,
@@ -340,7 +342,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		if (
 			(/\.mdx?$/iu.test(file) &&
 				parents.every((parent) => parent.files.has(file))) ||
-			/(?:^|\/)\.impeccable\/design\.json$/iu.test(file)
+			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(file)
 		) {
 			const reason = documentViolation(file, contents(mode, file));
 			if (reason) violations.push({ file, line: 1, message: reason });
