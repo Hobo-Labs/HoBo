@@ -25,6 +25,13 @@ const PLATFORM_OPTIONS = new Set([
 	"webapp",
 ]);
 
+const BINDLE_REQUIREMENT_KEYS = {
+	require: true,
+	prefer: true,
+	runtimes: true,
+	labels: true,
+} satisfies Record<keyof BindleRequirements, true>;
+
 export interface BindleRequirements {
 	readonly require: readonly string[];
 	readonly prefer: readonly string[];
@@ -54,14 +61,17 @@ export function parseBindleRequirements<T>(input: T): BindleRequirements {
 	const raw = json;
 	for (const key of Object.keys(raw)) {
 		assertProviderNeutralKey(key, "bindle.requirements");
+		if (!Object.hasOwn(BINDLE_REQUIREMENT_KEYS, key)) {
+			throw new TypeError(`bindle requirements have unknown property: ${key}`);
+		}
 	}
 	const labels = canonicalizeLabels(raw.labels);
 	for (const key of Object.keys(labels)) {
 		assertProviderNeutralKey(key, "bindle.requirements.labels");
 	}
-	const require = canonicalizeList(asStringArray(raw.require ?? raw.requires));
-	const prefer = canonicalizeList(asStringArray(raw.prefer ?? raw.prefers));
-	const runtimes = canonicalizeList(asStringArray(raw.runtimes ?? raw.runtime));
+	const require = canonicalizeList(asStringArray(raw.require));
+	const prefer = canonicalizeList(asStringArray(raw.prefer));
+	const runtimes = canonicalizeList(asStringArray(raw.runtimes));
 	for (const item of [...require, ...prefer, ...runtimes]) {
 		assertProviderNeutralCapability(item);
 	}
@@ -103,14 +113,6 @@ export function assertNoBindleProviderSelection(
 	if (anyDef.resolution !== undefined) {
 		throw bindleProviderForbidden("bindle.resolution");
 	}
-}
-
-/** @deprecated */
-export function collectExplicitProviderPins(
-	definition: BindleDefinition,
-): readonly string[] {
-	assertNoBindleProviderSelection(definition);
-	return Object.freeze([]);
 }
 
 export function isPlatformAnnotation(annotation: ProviderAnnotation): boolean {
@@ -178,7 +180,6 @@ function bindleProviderForbidden(path: string): Error {
 
 function asStringArray(value: JsonValue | undefined): string[] {
 	if (value === undefined) return [];
-	if (isJsonString(value)) return [value];
 	if (!Array.isArray(value)) {
 		throw new TypeError("expected string array");
 	}

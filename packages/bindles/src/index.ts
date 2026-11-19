@@ -135,7 +135,6 @@ export {
 	BINDLE_PROVIDER_SELECTION_FORBIDDEN,
 	BINDLE_PROVIDER_SELECTION_REMEDIATION,
 	type BindleRequirementsHash,
-	collectExplicitProviderPins,
 	emptyBindleRequirements,
 	hashBindleRequirements,
 	isPlatformAnnotation,
