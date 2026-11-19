@@ -58,7 +58,7 @@ export function incrementalEntitlementClaims(
 			const money = row.kind === "credit" || row.kind === "commitment";
 			if (money && quantity.unit !== currency) return undefined;
 			const unit = money ? `${currency}.micros` : quantity.unit;
-			const scale = money ? 6 : decimal.scale;
+			const scale = money ? 6 : 0;
 			const key = `${row.sourceId}\u0000${unit}\u0000${scale}`;
 			const prior = result.get(key);
 			result.set(key, {

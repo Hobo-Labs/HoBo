@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
 import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import {
-	type Consumption,
-	DECIMAL_ZERO,
 	type Decimal,
 	isBoundedPricingInput,
 	isExactProtoMessage,

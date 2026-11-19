@@ -26,6 +26,17 @@ describe("incrementalEntitlementClaims", () => {
 		).toBeUndefined();
 	});
 
+	it("reserves whole native allowance units for fractional consumption", () => {
+		const claims = incrementalEntitlementClaims(
+			[row("allowance", "allowance-a", "1.5", "minute")],
+			[],
+			"USD",
+		);
+		expect(claims).toEqual([
+			{ bucketId: "allowance-a", unit: "minute", units: 2 },
+		]);
+	});
+
 	it("keeps allowance and money claims in separate buckets and scales", () => {
 		const full = [
 			row("allowance", "allowance-a", "500000", "minute"),

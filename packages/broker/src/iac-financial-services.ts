@@ -109,7 +109,7 @@ export function createIacFinancialServices(
 						...model,
 						scenario: clone(QuoteScenarioSchema, model.scenario),
 						bindings: model.bindings.map((binding) => ({ ...binding })),
-						planDigest: plan.planDigest,
+						planDigest: stable.planDigest,
 					});
 		return {
 			inventory,
@@ -128,7 +128,19 @@ export function createIacFinancialServices(
 			plan: IacFinancialPlan,
 			expected?: IacFinancialExpectation,
 		) {
-			const assessment = assess(plan);
+			let assessment: ReturnType<typeof assess>;
+			try {
+				assessment = assess(plan);
+			} catch {
+				return create(IacTargetAdmissionDecisionSchema, {
+					requestId,
+					targetId: plan.targetId,
+					status: "denied",
+					code: "PLAN_INVALID",
+					message: "infrastructure plan failed bounded validation",
+					budget: { evaluation: "unavailable", reservation: "not-created" },
+				});
+			}
 			if (
 				expected !== undefined &&
 				(expected.targetId !== plan.targetId ||

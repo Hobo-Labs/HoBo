@@ -400,6 +400,28 @@ describe("provider-neutral IaC target budget admission", () => {
 		};
 	}
 
+	it("returns a denied admission decision for unbounded plans", async () => {
+		const ledger = authority();
+		try {
+			const financial = createIacFinancialServices({
+				...dependencies(ledger),
+				issueLiability: () => fixture().evidence,
+			});
+			expect(
+				await financial.admit("bad-plan", {
+					...financialPlan(),
+					targetId: "x".repeat(10_000),
+				}),
+			).toMatchObject({
+				status: "denied",
+				code: "PLAN_INVALID",
+				budget: { reservation: "not-created" },
+			});
+		} finally {
+			ledger.close();
+		}
+	});
+
 	it("rejects unbounded plans at assess before quoting", () => {
 		const ledger = authority();
 		try {
