@@ -285,10 +285,14 @@ message DeploymentDeployedRecord {
   repeated string resource_ids = 3;
 }
 
+message DeploymentRollbackStartedData {
+  string deployment_id = 1;
+  string resource_id = 2;
+  string reason = 3;
+}
+
 message DeploymentRolledBackRecord {
   string deployment_id = 1;
-  string target_set_id = 2;
-  string reason = 3;
 }
 
 

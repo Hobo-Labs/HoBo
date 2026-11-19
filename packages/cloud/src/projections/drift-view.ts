@@ -32,6 +32,8 @@ const IN_FLIGHT: ReadonlySet<ResourceLifecycle> = new Set([
 
 const NOT_MEASURED: ReadonlySet<DeploymentViewRow["status"]> = new Set([
 	"rejected",
+	"rolling-back",
+	"needs-human",
 	"rolled-back",
 ]);
 

@@ -4,6 +4,7 @@ import { emit } from "@hobo/events";
 
 import {
 	CLOUD_EVENTS,
+	deploymentRollbackStarted,
 	deploymentRolledBack,
 	incidentEscalationRequested,
 	resourceCompensationFailed,
@@ -103,6 +104,8 @@ export async function runCompensation(
 	triggeringFailure: { resourceId: string; reason: string },
 	ctx: CompensationContext,
 ): Promise<CompensationResult> {
+	if (!triggeringFailure.resourceId.trim() || !triggeringFailure.reason.trim())
+		throw new TypeError("rollback requires a resource and reason");
 	const stream = streamId(deploymentId);
 	const appendOpts = {
 		actor: ctx.actor,
@@ -113,7 +116,7 @@ export async function runCompensation(
 	};
 
 	let events: EventEnvelope[] = [];
-	let rollbackRecorded = false;
+	let rollbackStartSeq: number | undefined;
 	for (let attempt = 0; attempt < 8; attempt += 1) {
 		events = await collectStream(deps.store, stream);
 		const epochStart = events.reduce(
@@ -125,27 +128,28 @@ export async function runCompensation(
 					: position,
 			0,
 		);
-		if (
-			events.some(
+		const started = events
+			.filter(
 				(event) =>
-					event.type === CLOUD_EVENTS.DeploymentRolledBack &&
+					event.type === CLOUD_EVENTS.DeploymentRollbackStarted &&
 					event.seq > epochStart,
 			)
-		) {
-			rollbackRecorded = true;
+			.at(-1);
+		if (started) {
+			rollbackStartSeq = started.seq;
 			break;
 		}
 		const lastSeq = events.at(-1)?.seq ?? 0;
 		const fenceToken = currentFenceToken(deps.store, stream);
 		try {
-			await emit(
+			const emitted = await emit(
 				deps.store,
 				stream,
 				[
-					deploymentRolledBack({
+					deploymentRollbackStarted({
 						deploymentId,
-						targetSetId: `${deploymentId}-previous-set`,
-						reason: `resource ${triggeringFailure.resourceId} crossed no-go threshold: ${triggeringFailure.reason}`,
+						resourceId: triggeringFailure.resourceId,
+						reason: triggeringFailure.reason,
 					}),
 				],
 				{
@@ -154,14 +158,14 @@ export async function runCompensation(
 					...appendOpts,
 				},
 			);
-			rollbackRecorded = true;
+			rollbackStartSeq = emitted.seq;
 			break;
 		} catch (error) {
 			if (!(error instanceof Error) || !isOptimisticConflict(error))
 				throw error;
 		}
 	}
-	if (!rollbackRecorded)
+	if (rollbackStartSeq === undefined)
 		throw new Error("deployment remained busy while recording rollback");
 
 	const actorDeps: ResourceActorDeps = {
@@ -298,9 +302,48 @@ export async function runCompensation(
 	const incomplete = plan.resources.some((resource) =>
 		hasLiveResource(foldResourceActor(events, { ...resource, deploymentId })),
 	);
-	return {
-		status: incomplete ? "needs-human" : "rolled-back",
-		destroyedOrder,
-		events,
-	};
+	if (incomplete) return { status: "needs-human", destroyedOrder, events };
+	for (let attempt = 0; attempt < 8; attempt += 1) {
+		events = await collectStream(deps.store, stream);
+		if (
+			events.some(
+				(event) =>
+					event.seq > rollbackStartSeq &&
+					(event.type === CLOUD_EVENTS.DeploymentPlanned ||
+						event.type === CLOUD_EVENTS.DeploymentDeployed ||
+						event.type === CLOUD_EVENTS.ResourceProvisioning),
+			)
+		)
+			return { status: "needs-human", destroyedOrder, events };
+		if (
+			events.some(
+				(event) =>
+					event.type === CLOUD_EVENTS.DeploymentRolledBack &&
+					event.seq > rollbackStartSeq,
+			)
+		)
+			return { status: "rolled-back", destroyedOrder, events };
+		if (
+			plan.resources.some((resource) =>
+				hasLiveResource(
+					foldResourceActor(events, { ...resource, deploymentId }),
+				),
+			)
+		)
+			return { status: "needs-human", destroyedOrder, events };
+		const fenceToken = currentFenceToken(deps.store, stream);
+		try {
+			await emit(deps.store, stream, [deploymentRolledBack({ deploymentId })], {
+				expectedSeq: events.at(-1)?.seq ?? 0,
+				...(fenceToken !== undefined ? { fenceToken } : undefined),
+				...appendOpts,
+			});
+			events = await collectStream(deps.store, stream);
+			return { status: "rolled-back", destroyedOrder, events };
+		} catch (error) {
+			if (!(error instanceof Error) || !isOptimisticConflict(error))
+				throw error;
+		}
+	}
+	throw new Error("deployment remained busy while completing rollback");
 }

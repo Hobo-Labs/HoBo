@@ -4,7 +4,6 @@ import { CLOUD_EVENTS } from "../events.js";
 import type { JsonValue } from "../json.js";
 import type { DeploymentPlan, PlanRemediation } from "../plan-types.js";
 
-
 export interface DeploymentDecisionRow {
 	resource: string;
 	winner: string;
@@ -24,14 +23,21 @@ export type ResourceLifecycle =
 
 export interface DeploymentViewRow {
 	deploymentId: string;
-	status: "requested" | "planned" | "rejected" | "deployed" | "rolled-back";
+	status:
+		| "requested"
+		| "planned"
+		| "rejected"
+		| "deployed"
+		| "rolling-back"
+		| "needs-human"
+		| "rolled-back";
 	bindleHash?: string;
 	decisions: DeploymentDecisionRow[];
 	planHash?: string;
 	plan?: DeploymentPlan;
 	rejection?: { reason: string; remediations: PlanRemediation[] };
 	resources: Record<string, ResourceLifecycle>;
-	rollback?: { reason: string; targetSetId: string };
+	rollback?: { resourceId: string; reason: string };
 	owner?: { kind: string; id: string };
 	claimed?: boolean;
 	imported?: boolean;
@@ -170,17 +176,30 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				const data = event.data as { deploymentId: string };
 				const next = base(row, data.deploymentId);
 				next.status = "deployed";
+				delete next.rollback;
+				return next;
+			},
+			[CLOUD_EVENTS.DeploymentRollbackStarted]: (row, event) => {
+				const data = event.data as {
+					deploymentId: string;
+					resourceId: string;
+					reason: string;
+				};
+				const next = base(row, data.deploymentId);
+				next.status = "rolling-back";
+				next.rollback = { resourceId: data.resourceId, reason: data.reason };
+				return next;
+			},
+			[CLOUD_EVENTS.ResourceCompensationFailed]: (row, event) => {
+				const data = event.data as { deploymentId: string };
+				const next = base(row, data.deploymentId);
+				next.status = "needs-human";
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentRolledBack]: (row, event) => {
-				const data = event.data as {
-					deploymentId: string;
-					reason: string;
-					targetSetId: string;
-				};
+				const data = event.data as { deploymentId: string };
 				const next = base(row, data.deploymentId);
 				next.status = "rolled-back";
-				next.rollback = { reason: data.reason, targetSetId: data.targetSetId };
 				return next;
 			},
 		},

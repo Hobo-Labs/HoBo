@@ -286,10 +286,14 @@ package hobo
 	resourceIds: [...string]
 }
 
+#DeploymentRollbackStartedData: {
+	deploymentId: string & !=""
+	resourceId:   string & !=""
+	reason:       string & !=""
+}
+
 #DeploymentRolledBackRecord: {
 	deploymentId: string & !=""
-	targetSetId:  string & !=""
-	reason:       string & !=""
 }
 
 #CredentialAuditScope: {
