@@ -90,7 +90,9 @@ function passSucceededAtMs(data: unknown): number | undefined {
 	if (data === null || typeof data !== "object") return undefined;
 	for (const [key, value] of Object.entries(data)) {
 		if (key !== "atMs") continue;
-		return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+		return typeof value === "number" && Number.isFinite(value)
+			? value
+			: undefined;
 	}
 	return undefined;
 }
