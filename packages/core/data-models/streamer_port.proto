@@ -16,3 +16,9 @@ message StreamerRunResult {
   string status = 2;
   string reason = 3;
 }
+
+message StreamerHistoryExpired {
+  string run_id = 1;
+  double requested_seq = 2;
+  double first_available_seq = 3;
+}

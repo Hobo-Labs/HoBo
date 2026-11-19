@@ -94,6 +94,20 @@ export class StreamerClosedError extends Error {
 	}
 }
 
+export class StreamerHistoryExpiredError extends Error {
+	readonly code = "STREAMER_HISTORY_EXPIRED" as const;
+	constructor(
+		readonly runId: RunId,
+		readonly requestedSeq: Seq,
+		readonly firstAvailableSeq: Seq,
+	) {
+		super(
+			`streamer history for ${runId} begins at ${firstAvailableSeq}; requested ${requestedSeq}`,
+		);
+		this.name = "StreamerHistoryExpiredError";
+	}
+}
+
 export function parseRunId(value: string): RunId {
 	if (!isJsonString(value)) {
 		throw new StreamerParseError("runId", "non-empty trimmed string", value);

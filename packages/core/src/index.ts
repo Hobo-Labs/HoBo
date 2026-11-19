@@ -861,6 +861,7 @@ export {
 	parseStreamName,
 	StreamerBackpressureError,
 	StreamerClosedError,
+	StreamerHistoryExpiredError,
 	StreamerParseError,
 } from "./ports/streamer.js";
 export type { TaggedCachePort, TaggedCacheRead } from "./ports/tagged-cache.js";

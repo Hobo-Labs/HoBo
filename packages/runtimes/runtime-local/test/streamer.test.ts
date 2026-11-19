@@ -5,6 +5,7 @@ import {
 	parseStreamName,
 	StreamerBackpressureError,
 	StreamerClosedError,
+	StreamerHistoryExpiredError,
 	StreamerParseError,
 } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -75,8 +76,10 @@ describe("createLocalStreamer", () => {
 		const writer = run.getWritable();
 		await writer.write("one");
 		await writer.write("two");
-		const reader = run.readable[Symbol.asyncIterator]();
-		expect((await reader.next()).value?.chunk).toBe("one");
+		expect(() => run.readable[Symbol.asyncIterator]()).toThrow(
+			StreamerHistoryExpiredError,
+		);
+		const reader = run.read({ fromSeq: parseSeq(2) })[Symbol.asyncIterator]();
 		expect((await reader.next()).value?.chunk).toBe("two");
 		await reader.return?.();
 		streamer.teardownRun(runId);

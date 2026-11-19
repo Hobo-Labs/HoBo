@@ -7,6 +7,7 @@ import {
 	StreamerBackpressureError,
 	StreamerClosedError,
 	type StreamerFrame,
+	StreamerHistoryExpiredError,
 	type StreamerRunResult,
 	type StreamerRunStatus,
 	type StreamName,
@@ -54,6 +55,9 @@ export function createFrameJournal<TChunk>(options: {
 	bufferLimit: number;
 	openedAt: string;
 }): FrameJournal<TChunk> {
+	if (!Number.isSafeInteger(options.bufferLimit) || options.bufferLimit < 1) {
+		throw new TypeError("bufferLimit must be a positive safe integer");
+	}
 	const frames: StreamerFrame<TChunk>[] = [];
 	const readers = new Map<symbol, ReaderState<TChunk>>();
 	let nextSeq = 1;
@@ -71,6 +75,14 @@ export function createFrameJournal<TChunk>(options: {
 		lifecycleEvents,
 		done: done.promise,
 		attachReader(fromSeq: Seq) {
+			const firstAvailableSeq = frames[0]?.seq ?? parseSeq(nextSeq);
+			if (fromSeq < firstAvailableSeq) {
+				throw new StreamerHistoryExpiredError(
+					options.runId,
+					fromSeq,
+					firstAvailableSeq,
+				);
+			}
 			const readerId = Symbol("reader");
 			readers.set(readerId, {
 				nextSeq: fromSeq,
@@ -142,6 +154,7 @@ export function createFrameJournal<TChunk>(options: {
 				},
 				chunk,
 			);
+			if (frames.length >= options.bufferLimit) frames.shift();
 			frames.push(frame);
 			nextSeq += 1;
 			notifyReaders(frame);
