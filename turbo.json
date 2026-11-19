@@ -884,7 +884,6 @@
         "src/draft/technical-proofs/hobo-bindles-resource-catalog/**",
         "src/draft/technical-proofs/hobo-contract-ir/**",
         "src/draft/technical-proofs/hobo-doctor-contract/**",
-        "src/draft/technical-proofs/hobo-runtime-primitives/**",
         "src/draft/technical-proofs/hobo-runtime-ts-primitives/**",
         "src/draft/technical-proofs/idiom-semantics-annex/**",
         "src/draft/technical-proofs/metrics-catalog-pipeline-contract/**",

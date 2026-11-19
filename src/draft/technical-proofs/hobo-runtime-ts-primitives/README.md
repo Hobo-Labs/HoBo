@@ -6,7 +6,7 @@ event-sourced executions over draft runtime-port mocks.
 
 Promotes:
 
-- `src/draft/technical-proofs/hobo-runtime-primitives/` (WIT / SDK_PRIMITIVE_TABLE)
+- `packages/wit/wit/deps/hobo-runtime/` (runtime WIT)
 - `src/draft/technical-proofs/camp-eventstore-runtime-port-contract/` (EventStore)
 - `src/draft/technical-proofs/actor-host-runtime-port-contract/` (ActorHost)
 - `src/draft/technical-proofs/replay-live-equivalence-poc/` (replay == live)
