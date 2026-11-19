@@ -1064,6 +1064,10 @@ e: ##"raw \##(2 + // raw interpolation
 			["notes/protocol-rfc.md", "# New"],
 			["notes/new-record.md", "---\ntype: Architecture Decision Record\n---\n"],
 			["notes/implementation-plan.md", "# New"],
+			["notes/decision-map.md", "# Choices"],
+			["notes/storage-decision_map.md", "# Choices"],
+			["notes/choices.md", "# Decision Map: Storage"],
+			["notes/options.md", "---\ntype: Decision Map\n---\n"],
 			["GAPS.md", "# Gaps"],
 			["docs/competitors/gap-analysis.md", "# Gaps"],
 			["src/draft/epic-proofs/example/poc-rollup-ledger.md", "# Rollup"],
@@ -1082,6 +1086,10 @@ e: ##"raw \##(2 + // raw interpolation
 		] as const)
 			assert.ok(documentViolation(file, text), file);
 		assert.equal(documentViolation("docs/usage.md", "# Usage"), undefined);
+		assert.equal(
+			documentViolation("docs/decision-making.md", "# Making decisions"),
+			undefined,
+		);
 		assert.equal(
 			documentViolation(
 				"docs/usage.md",

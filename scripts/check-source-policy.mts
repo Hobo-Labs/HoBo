@@ -1101,10 +1101,10 @@ function planningDocumentTitle(text: string): string | undefined {
 	if (!heading) return undefined;
 	const title = markdownText(heading).replace(/\s+/gu, " ").trim();
 	if (
-		/^(?:implementation plan|technical design|design document|design brief|architecture document|architecture decision record|roadmap|proposal|adr\b|rfc\b)(?:\s|:|-|$)/iu.test(
+		/^(?:implementation plan|technical design|design document|design brief|architecture document|architecture decision record|decision map|roadmap|proposal|adr\b|rfc\b)(?:\s|:|-|$)/iu.test(
 			title,
 		) ||
-		/\b(?:implementation plan|technical design|design document|design brief|architecture document|architecture decision record|project roadmap|delivery roadmap)\b/iu.test(
+		/\b(?:implementation plan|technical design|design document|design brief|architecture document|architecture decision record|decision map|project roadmap|delivery roadmap)\b/iu.test(
 			title,
 		)
 	)
@@ -1158,12 +1158,15 @@ export function documentViolation(
 		/(?:^|\/)(?:gaps?|gap[-_](?:analysis|register)|backlog|poc[-_]rollup[-_]ledger|scope[-_]review|(?:implementation[-_])?handoff(?:[-_]notes)?)\.md(?:x|c)?$/iu.test(
 			sourceFile,
 		) ||
-		/(?:^|\/)[^/]+[-_]handoff(?:[-_]notes)?\.md(?:x|c)?$/iu.test(sourceFile)
+		/(?:^|\/)[^/]+[-_]handoff(?:[-_]notes)?\.md(?:x|c)?$/iu.test(sourceFile) ||
+		/(?:^|\/)(?:[^/]+[-_])?decision[-_]map\.md(?:x|c)?$/iu.test(sourceFile)
 	)
 		return "planning, architecture, and design documents are not allowed";
 	const type = frontmatterType(text);
 	return type &&
-		/\b(?:plan|design|roadmap|architecture|adr|rfc|proposal)\b/iu.test(type)
+		/\b(?:plan|design|roadmap|architecture|adr|rfc|proposal|decision map)\b/iu.test(
+			type,
+		)
 		? `document type "${type}" is not allowed`
 		: undefined;
 }
