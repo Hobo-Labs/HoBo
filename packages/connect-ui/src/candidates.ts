@@ -2,6 +2,7 @@ import type { Experimental_CompositionCandidate as Candidate } from "@json-rende
 
 import { type ConnectStep, providerLabel } from "./steps.js";
 
+// public-contract: the marker compose.ts reads to tell required candidates from optional ones.
 export const OPTIONAL_SUFFIX = "-optional";
 
 function heading(text: string): Candidate {
@@ -50,7 +51,6 @@ function cancel(): Candidate {
 	};
 }
 
-/** The candidates for one step, in the order a person reads them. */
 export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 	const provider = providerLabel(step.provider);
 	switch (step.kind) {
