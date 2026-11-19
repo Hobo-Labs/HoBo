@@ -9,11 +9,20 @@ over conflicting repository workflow guidance.
   directives consumed by compilers or tools.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
+- Before ending an action request, compare the current user goal with the
+  actual result and evidence. Continue any known, safe, authorized action that
+  advances essential unfinished work; a partial merge, a failed approach,
+  passing subtask, or report of next steps is not completion. Consider available
+  alternatives and independent work before reporting a blocker. Respect the
+  latest explicit stop, pause, cancellation, scope change, and real permission
+  or safety boundary; do not invent work or repeat futile attempts.
 - Do not create or retain planning documents, roadmaps, or design documents.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
+- HoBo manages deployment of its CI relay. Its Vercel project is intentionally
+  not Git-linked; do not reconnect it or treat the missing link as a defect.
 
 # Agent tooling for this repo
 
@@ -706,13 +715,14 @@ other — `site/src/lib/examples`, `packages/componentize`, and the
 shared run. A red bare-root run is not by itself evidence of a regression;
 reproduce under the owning package before believing it.
 
-The root config excludes three things it cannot execute, each of which runs
-elsewhere: `external/` (vendored third-party source — `external/ts-autocode` is a
-git submodule with its own CI), `dist/` (build output, where every compiled
-`*.test.js` is a staler duplicate of a source test that already runs), and
-Playwright specs (`@playwright/test`, driven from `packages/pixel-village`'s own
-`playwright.config.ts`). Before that exclude existed a bare root run reported
-~40 failures on a clean tree, which is enough noise to hide a real one.
+The root config excludes `external/` (vendored third-party source —
+`external/ts-autocode` is a git submodule with its own CI), `dist/` (build
+output whose compiled tests duplicate source tests), and files under `**/e2e/**`
+or matching `**/*.spec.ts`. The latter patterns keep other runners' suites out
+of root Vitest; they do not show that those suites have run. For example,
+Bombadil browser specs run through their evaluation harness when present. Before
+these exclusions a bare root run reported ~40 failures on a clean tree, enough
+noise to hide a real one.
 
 Tests that require a binary or hardware **fail rather than skip** when it is
 absent — `packages/runtimes/runtime-celld/test/live-*.test.ts` says so in the

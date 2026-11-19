@@ -5,6 +5,7 @@ import {
 	type PrincipalRef,
 	type ResourceMutationJournalEntry,
 	ResourceMutationJournalEntrySchema,
+	ResourceMutationNotSentError,
 } from "@hobo/core";
 
 export interface HostingMutationScope {
@@ -132,6 +133,13 @@ export function createDurableHostingMutationScope(options: {
 			try {
 				value = await action();
 			} catch (error) {
+				// A provider that proves nothing was sent releases the scope and
+				// surfaces its own refusal; any other failure may have reached the
+				// provider, so the scope stays occupied until reconciled.
+				if (error instanceof ResourceMutationNotSentError) {
+					await write(streamId, owner, digest, "acknowledged", current.seq + 1);
+					throw error.refusal;
+				}
 				await write(streamId, owner, digest, "uncertain", current.seq + 1);
 				throw error;
 			}
