@@ -108,9 +108,15 @@ describe("HoBo.CD on Vercel: Yard, platform and Bindle agree", () => {
 		expect(profiles).not.toContain(capability.data.postgres);
 	});
 
-	it("declares no preview camp on the production journal Yard", () => {
-		expect(cdYard.camps.map((camp) => camp.id)).toEqual(["hobo-cd/production"]);
-		expect(cdYard.camps.map((camp) => camp.envType)).toEqual(["production"]);
+	it("declares production and preview camps for git delivery", () => {
+		expect(cdYard.camps.map((camp) => camp.id)).toEqual([
+			"hobo-cd/production",
+			"hobo-cd/preview",
+		]);
+		expect(cdYard.camps.map((camp) => camp.envType)).toEqual([
+			"production",
+			"preview",
+		]);
 	});
 
 	it("routes every request path to the real HTTP entry", () => {

@@ -184,4 +184,6 @@ whatever this machine has registered:
 current commit to CD's preview on Vercel, and records the journal and config as
 made by prepare. Production stays an explicit promotion. The deployment signs
 in with the CD workload identity `hobo cd up` makes (see
-[The CD workload identity](#the-cd-workload-identity)).
+[The CD workload identity](#the-cd-workload-identity)). Until the CD workload
+identity exists and its store binding is committed, the deployment answers
+`/readyz` with `cd-store-binding-missing`.

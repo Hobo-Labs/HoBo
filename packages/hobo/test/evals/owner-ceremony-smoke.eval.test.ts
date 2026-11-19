@@ -238,8 +238,6 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
 				),
 			).toHaveLength(1);
-			// The CD workload identity was made through Infisical's API, and the
-			// deployment was given its store's coordinates: five ids, no secret.
 			expect(world.requests).toContainEqual(
 				expect.stringMatching(
 					/^app\.infisical\.com POST \/api\/v1\/projects\/proj-1\/identities$/u,

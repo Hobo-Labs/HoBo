@@ -4,6 +4,7 @@ export {
 	holderIdOf,
 	journalFleetEnvProvisioned,
 	memoizedCdHost,
+	productionDeploymentRefusal,
 	topologyFilesOf,
 } from "./compose.js";
 export {
@@ -16,8 +17,10 @@ export {
 	CD_STORE_BINDING_URL,
 	CdStoreBindingError,
 	type CdStoreCoordinates,
+	cdStoreBindingErrorOf,
 	cdStoreCoordinates,
 	cdStoreCoordinatesFromEnv,
+	isPermanentComposeError,
 	openCdStore,
 	parseCdStoreCoordinates,
 	readCdStoreCoordinates,

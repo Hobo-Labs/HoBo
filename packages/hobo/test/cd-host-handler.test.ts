@@ -13,7 +13,7 @@ import {
 } from "@hobo/cd";
 import { describe, expect, it } from "vitest";
 
-import { composeCdHost } from "../src/cd-host.js";
+import { composeCdHost, HOST_PASS_SUCCEEDED } from "../src/cd-host.js";
 import { openCdRuntime } from "../src/cd-runtime.js";
 
 function yard(name: string, camps: { id: string; envType: string }[]) {
@@ -230,6 +230,12 @@ describe("composeCdHost", () => {
 			expect(host.refusals).toContain("cd-no-managed-camps");
 			const report = await host.pass();
 			expect(report.skipped).toBe(false);
+			const recorded: string[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				recorded.push(event.type);
+			expect(recorded).toEqual([]);
 			const ready = await host.handle(
 				get("/readyz"),
 				AbortSignal.timeout(5_000),
@@ -265,6 +271,12 @@ describe("composeCdHost", () => {
 			const report = await host.pass();
 			expect(report.skipped).toBe(false);
 			expect(report.reconciled.every((entry) => !entry.ok)).toBe(true);
+			const recorded: string[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				recorded.push(event.type);
+			expect(recorded).toEqual([]);
 			const ready = await host.handle(
 				get("/readyz"),
 				AbortSignal.timeout(5_000),
@@ -289,6 +301,12 @@ describe("composeCdHost", () => {
 			expect(host.managed).toEqual(["edge/prod"]);
 			expect(reconciled.map((r) => r.campId)).toEqual(["edge/prod"]);
 			expect(tick.steps.length).toBeGreaterThan(0);
+			const recorded: unknown[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				recorded.push(event.data);
+			expect(recorded).toEqual([{ atMs: Date.UTC(2026, 10, 17), camps: 1 }]);
 		});
 	});
 
@@ -298,10 +316,15 @@ describe("composeCdHost", () => {
 			const gate = new Promise<void>((resolve) => {
 				releaseGate = resolve;
 			});
+			let signalEntered = () => {};
+			const entered = new Promise<void>((resolve) => {
+				signalEntered = resolve;
+			});
 			const gated: TestRuntime = {
 				...runtime,
 				conductor: () =>
 					fakeReconciler(async () => {
+						signalEntered();
 						await gate;
 						return { reasons: [], status: 0 } as never;
 					}),
@@ -319,16 +342,20 @@ describe("composeCdHost", () => {
 				fleetPassLease: true,
 			});
 			const running = first.pass();
-			const skipped = await second.pass();
-			expect(skipped.skipped).toBe(true);
-			expect(skipped.reconciled).toEqual([]);
-			releaseGate();
+			await entered;
+			try {
+				const skipped = await second.pass(AbortSignal.timeout(5_000));
+				expect(skipped.skipped).toBe(true);
+				expect(skipped.reconciled).toEqual([]);
+			} finally {
+				releaseGate();
+			}
 			const completed = await running;
 			expect(completed.skipped).toBe(false);
 		});
 	});
 
-	it("bounds a pass by its deadline and holds the flight until the pass settles", async () => {
+	it("bounds a pass by its deadline and frees the slot once the bounded pass settles", async () => {
 		await withRuntime(async (runtime) => {
 			const signals: (AbortSignal | undefined)[] = [];
 			let calls = 0;
@@ -338,7 +365,29 @@ describe("composeCdHost", () => {
 					fakeReconciler(async (_campId, ctx) => {
 						calls += 1;
 						signals.push(ctx.signal);
-						await new Promise((resolve) => setTimeout(resolve, 150));
+						await new Promise<void>((resolve, reject) => {
+							if (ctx.signal?.aborted) {
+								reject(
+									ctx.signal.reason instanceof Error
+										? ctx.signal.reason
+										: new Error("cd pass aborted"),
+								);
+								return;
+							}
+							const timer = setTimeout(resolve, 150);
+							ctx.signal?.addEventListener(
+								"abort",
+								() => {
+									clearTimeout(timer);
+									reject(
+										ctx.signal?.reason instanceof Error
+											? ctx.signal.reason
+											: new Error("cd pass aborted"),
+									);
+								},
+								{ once: true },
+							);
+						});
 						return { reasons: [], status: 0 } as never;
 					}),
 			};
@@ -349,13 +398,94 @@ describe("composeCdHost", () => {
 				passDeadlineMs: 30,
 			});
 			const first = host.pass();
-			await expect(first).rejects.toThrow("cd pass deadline exceeded");
-			expect(signals[0]?.aborted).toBe(true);
 			const second = host.pass();
-			expect(second).not.toBe(first);
+			expect(second).toBe(first);
 			await expect(second).rejects.toThrow("cd pass deadline exceeded");
+			expect(signals[0]?.aborted).toBe(true);
 			expect(calls).toBe(1);
-			await new Promise((resolve) => setTimeout(resolve, 200));
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const third = host.pass();
+			expect(third).not.toBe(first);
+			await expect(third).rejects.toThrow("cd pass deadline exceeded");
+			expect(calls).toBe(2);
+			expect(signals[1]?.aborted).toBe(true);
+		});
+	});
+
+	it("frees the pass slot at the deadline while the ghost run keeps the fleet lease", async () => {
+		await withRuntime(async (runtime) => {
+			let releaseGate = () => {};
+			const gate = new Promise<void>((resolve) => {
+				releaseGate = resolve;
+			});
+			let signalEntered = () => {};
+			const entered = new Promise<void>((resolve) => {
+				signalEntered = resolve;
+			});
+			const gated: TestRuntime = {
+				...runtime,
+				conductor: () =>
+					fakeReconciler(async () => {
+						signalEntered();
+						await gate;
+						return { reasons: [], status: 0 } as never;
+					}),
+			};
+			const stalled = await composeCdHost({
+				runtime: gated,
+				holderId: "test-deadline-lease-a",
+				readiness: "composed",
+				fleetPassLease: true,
+				passDeadlineMs: 30,
+			});
+			const peer = await composeCdHost({
+				runtime: gated,
+				holderId: "test-deadline-lease-b",
+				readiness: "composed",
+				fleetPassLease: true,
+			});
+			const ghost = stalled.pass();
+			await entered;
+			await new Promise((resolve) => setTimeout(resolve, 40));
+			const successor = stalled.pass();
+			expect(successor).not.toBe(ghost);
+			const queued = await peer.pass();
+			expect(queued.skipped).toBe(true);
+			expect(queued.skipReason).toBe("fleet-pass-lease-held");
+			releaseGate();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await expect(ghost).rejects.toThrow("cd pass deadline exceeded");
+			const settled = await stalled.pass();
+			expect(settled.skipped).toBe(false);
+		});
+	});
+
+	it("ignores a pass record that reconciled fewer camps than it manages", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-forged-record",
+				readiness: "composed",
+			});
+			await runtime.store.append(
+				`${runtime.config.tenant}:cd-host-pass`,
+				[
+					{
+						type: HOST_PASS_SUCCEEDED,
+						data: { atMs: Date.UTC(2026, 10, 17), camps: 0 },
+					},
+				],
+				{
+					expectedSeq: 0,
+					actor: { kind: "service", id: "test-forged-record" },
+					tenant: runtime.config.tenant,
+				},
+			);
+			const ready = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(ready.status).toBe(503);
 		});
 	});
 
@@ -388,6 +518,91 @@ describe("composeCdHost", () => {
 			const second = host.pass();
 			const [firstReport, secondReport] = await Promise.all([first, second]);
 			expect(secondReport).toBe(firstReport);
+		});
+	});
+
+	it("shares one bounded promise across concurrent pass callers", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-shared-flight",
+				readiness: "composed",
+			});
+			const first = host.pass();
+			const second = host.pass();
+			expect(second).toBe(first);
+			const [firstReport, secondReport] = await Promise.all([first, second]);
+			expect(secondReport).toBe(firstReport);
+		});
+	});
+
+	it("records successful passes on the tenant-scoped stream only", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-tenant-stream",
+				readiness: "composed",
+			});
+			await host.pass();
+			const scoped: string[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				scoped.push(event.type);
+			expect(scoped).toContain(HOST_PASS_SUCCEEDED);
+			const bare: string[] = [];
+			for await (const event of runtime.store.read("cd-host-pass"))
+				bare.push(event.type);
+			expect(bare).toEqual([]);
+		});
+	});
+
+	it("fails the pass when the successful pass cannot be recorded", async () => {
+		await withRuntime(async (runtime) => {
+			const append = runtime.store.append.bind(runtime.store);
+			runtime.store.append = async (streamId, events, opts) => {
+				if (streamId.endsWith("cd-host-pass"))
+					throw new Error("journal append refused");
+				return append(streamId, events, opts);
+			};
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-record-failure",
+				readiness: "composed",
+			});
+			await expect(host.pass()).rejects.toMatchObject({
+				code: "cd-host-pass-record-failed",
+			});
+			const ready = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(ready.status).toBe(503);
+		});
+	});
+
+	it("rejects pass records from the future or past the readiness window", async () => {
+		await withRuntime(async (runtime) => {
+			const base = Date.UTC(2026, 10, 17);
+			let nowMs = base;
+			const clocked: TestRuntime = {
+				...runtime,
+				ctx: { ...runtime.ctx, now: () => nowMs },
+			};
+			const host = await composeCdHost({
+				runtime: clocked,
+				holderId: "test-pass-ages",
+				readiness: "composed",
+			});
+			await host.pass();
+			const signal = AbortSignal.timeout(5_000);
+			expect((await host.handle(get("/readyz"), signal)).status).toBe(200);
+			nowMs = base - 60_000;
+			expect((await host.handle(get("/readyz"), signal)).status).toBe(503);
+			nowMs = base + 600_000;
+			expect((await host.handle(get("/readyz"), signal)).status).toBe(503);
+			nowMs = base + 60_000;
+			expect((await host.handle(get("/readyz"), signal)).status).toBe(200);
 		});
 	});
 });

@@ -8,7 +8,7 @@ is `deploy/yard.ts`; the Bindle it realizes is the CD project's
 | Bindle resource | Here | Vercel |
 |---|---|---|
 | `cd-api` | `api/cd.ts` | A Function: `/healthz`, `/readyz` and the `/v1/cd/` mount (read API, agent delivery feed) |
-| `cd-tick` | `api/tick.ts` | The `hobo-cd-tick` schedule, delivered to the `hobo-cd` queue topic: one bounded pass per delivery |
+| `cd-tick` | `api/tick.ts` | The `hobo-cd-tick` schedule (every five minutes), delivered to the `hobo-cd` queue topic: one bounded pass per delivery |
 | `cd-journal` | (`@hobo/hobo-cd` `placement.ts`) | The Neon journal fleet `hobo cd up` provisions; not a Vercel resource |
 | `cd-config` | (`@hobo/hobo-cd` `placement.ts`) | The owner's secret store; not a Vercel resource |
 
@@ -39,8 +39,8 @@ CD has composed with no refusals, the journal holds a durable record of
 a fully successful pass within the readiness window, and a live journal
 probe succeeds. Until then it answers 503 with a `code`:
 
-- `cd-non-production-deployment`: a preview or development deployment; it
-  never opens the production journal.
+- `cd-non-production-deployment`: `VERCEL_ENV` is not `production` (preview,
+  development, or unset); it never opens the production journal.
 - `cd-store-binding-missing`: no binding is committed yet.
 - `cd-store-binding-invalid`: the committed binding is malformed.
 - `cd-journal-not-provisioned`: the owner's store holds no journal fleet.
@@ -50,11 +50,12 @@ probe succeeds. Until then it answers 503 with a `code`:
 - Otherwise, the CD runtime's own refusal code.
 
 Readiness is fleet-wide: whichever instance completes a pass appends a
-`host.PassSucceeded` event to the journal's `cd-host-pass` stream, so
+`host.PassSucceeded` event to the journal's `<tenant>:cd-host-pass` stream, so
 the `cd` function and the `tick` function — separate, short-lived
 instances — agree on readiness without sharing process state. A pass
-counts only when every reconciled Camp is ok and the journal store is
-healthy; the record decays after two pass deadlines.
+counts only when the composition has no refusals, every managed Camp
+reconciled ok, and the journal store is healthy; the record decays after two
+pass deadlines.
 
 Unexpected request failures return a generic `cd-serve-error` response without
 exposing internal error details to HTTP clients.
@@ -65,10 +66,12 @@ non-secret declarations.
 
 ## Status
 
-The deployable and its tests (`test/`) exist. Two pieces are not done yet:
+The deployable and its tests (`test/`) exist. One piece is done and one is not:
 
-- `hobo cd up` does not deliver it yet; it will, by a git deployment of this
-  directory, the way `hobo ci up` delivers the relay.
+- `hobo cd up` delivers it as a git deployment of this directory at the
+  current commit to the `hobo-cd` project's preview, the way `hobo ci up`
+  delivers the relay (`createCdVercelUpCommand`). It does not yet verify the
+  delivery by its probes: a preview URL is protected.
 - No store binding is committed, because the CD workload identity (an
   Infisical identity that trusts this Vercel project's OIDC tokens) is not
   created yet.
@@ -76,7 +79,7 @@ The deployable and its tests (`test/`) exist. Two pieces are not done yet:
 Until both land, a deployment answers `/readyz` with
 `cd-store-binding-missing`.
 
-The scheduled pass reconciles the managed Camps and runs one service
+The scheduled pass (enqueued every five minutes) reconciles the managed Camps and runs one service
 tick (including its retention steps); the fleet pass lease makes the
 queue's `maxConcurrency: 1` a second layer, so a backlog of deliveries
 waits its turn instead of overlapping passes. A permanent refusal — a

@@ -166,7 +166,6 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 		const vault = createTrustedVault();
 		vault.put("VERCEL_TOKEN", "tok_test");
 		vault.put("VERCEL_TEAM_ID", "team_abc");
-		// What prepare's identity step leaves for the deployment (ids only).
 		vault.put("HOBO_CD_DEPLOY_INFISICAL_PROJECT_ID", "proj-1");
 		vault.put(
 			"HOBO_CD_DEPLOY_INFISICAL_IDENTITY_ID",

@@ -305,8 +305,6 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 					],
 				);
 			const teamId = team();
-			// The store coordinates prepare put in the vault with the CD workload
-			// identity (ids only): the deployment signs in with them.
 			const configuration = Object.fromEntries(
 				Object.entries(CD_DEPLOY_SETTINGS).flatMap(([setting, held]) => {
 					const value = deps.credentials.reveal(held);

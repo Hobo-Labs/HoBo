@@ -14,6 +14,8 @@ import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { z } from "zod";
 
+/* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: cdStoreBindingErrorOf is the parse boundary for untyped compose failures from deps.open and openCdRuntime. */
+
 export class CdStoreBindingError extends Error {
 	readonly code: string;
 	constructor(code: string, message: string) {
@@ -21,6 +23,28 @@ export class CdStoreBindingError extends Error {
 		this.name = "CdStoreBindingError";
 		this.code = code;
 	}
+}
+
+function isString(value: unknown): value is string {
+	return value === String(value);
+}
+
+export function cdStoreBindingErrorOf(
+	error: unknown,
+): CdStoreBindingError | undefined {
+	if (error instanceof CdStoreBindingError) return error;
+	if (
+		error instanceof Error &&
+		"code" in error &&
+		isString(error.code) &&
+		error.code.startsWith("cd-")
+	)
+		return new CdStoreBindingError(error.code, error.message);
+	return undefined;
+}
+
+export function isPermanentComposeError(error: unknown): boolean {
+	return cdStoreBindingErrorOf(error) !== undefined;
 }
 
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
@@ -87,10 +111,20 @@ export function readCdStoreCoordinates(
 	let text: string;
 	try {
 		text = readFileSync(url, "utf8");
-	} catch {
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			"code" in error &&
+			isString(error.code) &&
+			error.code === "ENOENT"
+		)
+			throw new CdStoreBindingError(
+				"cd-store-binding-missing",
+				"No store binding is committed for HoBo.CD (deploy/secret-store.binding.json). hobo cd up writes it once the CD workload identity exists.",
+			);
 		throw new CdStoreBindingError(
-			"cd-store-binding-missing",
-			"No store binding is committed for HoBo.CD (deploy/secret-store.binding.json), and no store coordinates are configured. Run hobo cd up, which makes the CD workload identity and configures them.",
+			"cd-store-binding-unreadable",
+			"deploy/secret-store.binding.json exists but could not be read.",
 		);
 	}
 	return parseCdStoreCoordinates(text);

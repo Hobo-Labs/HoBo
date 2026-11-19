@@ -4,7 +4,7 @@ import type { CdHost } from "@hobo/hobo/cd-platform";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-
+import { loadCdHost } from "../src/entry.js";
 import {
 	CdStoreBindingError,
 	composeVercelCdHost,
@@ -36,28 +36,73 @@ const failing = (code: string) => async (): Promise<CdHost> => {
 	throw new CdStoreBindingError(code, "not today");
 };
 
+function withVercel<T>(value: string | undefined, run: () => T): T {
+	const previous = process.env.VERCEL;
+	if (value === undefined) delete process.env.VERCEL;
+	else process.env.VERCEL = value;
+	try {
+		return run();
+	} finally {
+		if (previous === undefined) delete process.env.VERCEL;
+		else process.env.VERCEL = previous;
+	}
+}
+
 describe("the CD function's HTTP entry", () => {
 	it("uses the original URL path when Vercel rewrites to the function", () => {
-		const path = incomingRequestPath({
-			url: "/api/cd",
-			headers: {
-				"x-vercel-original-url": "https://hobo-cd.vercel.app/v1/cd/freight?x=1",
-			},
-		} as never);
+		const path = withVercel("1", () =>
+			incomingRequestPath({
+				url: "/api/cd",
+				headers: {
+					"x-vercel-original-url":
+						"https://hobo-cd.vercel.app/v1/cd/freight?x=1",
+				},
+			} as never),
+		);
 		expect(path).toBe("/v1/cd/freight?x=1");
 	});
 
 	it("uses the invoke path of the /api/cd destination, keeping the query", () => {
-		const path = incomingRequestPath({
-			url: "/api/cd?x=1",
-			headers: { "x-vercel-invoke-path": "/v1/cd/freight" },
-		} as never);
+		const path = withVercel("1", () =>
+			incomingRequestPath({
+				url: "/api/cd?x=1",
+				headers: { "x-vercel-invoke-path": "/v1/cd/freight" },
+			} as never),
+		);
 		expect(path).toBe("/v1/cd/freight?x=1");
-		const probe = incomingRequestPath({
-			url: "/api/cd",
-			headers: { "x-vercel-invoke-path": "healthz" },
-		} as never);
+		const probe = withVercel("1", () =>
+			incomingRequestPath({
+				url: "/api/cd",
+				headers: { "x-vercel-invoke-path": "healthz" },
+			} as never),
+		);
 		expect(probe).toBe("/healthz");
+	});
+
+	it("ignores Vercel path headers outside Vercel", () => {
+		const original = withVercel(undefined, () =>
+			incomingRequestPath({
+				url: "/api/cd?x=1",
+				headers: {
+					"x-vercel-original-url": "https://spoofed.example/v1/cd/freight?x=1",
+				},
+			} as never),
+		);
+		expect(original).toBe("/api/cd?x=1");
+		const invoke = withVercel(undefined, () =>
+			incomingRequestPath({
+				url: "/api/cd?x=1",
+				headers: { "x-vercel-invoke-path": "/v1/cd/freight" },
+			} as never),
+		);
+		expect(invoke).toBe("/api/cd?x=1");
+		const otherValue = withVercel("0", () =>
+			incomingRequestPath({
+				url: "/api/cd",
+				headers: { "x-vercel-invoke-path": "/readyz" },
+			} as never),
+		);
+		expect(otherValue).toBe("/api/cd");
 	});
 
 	it("answers /healthz with the build's commit without composing CD", async () => {
@@ -74,6 +119,26 @@ describe("the CD function's HTTP entry", () => {
 		const res = await fetch(`${origin}/healthz`);
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ ok: true, commit: "abc123" });
+		expect(composed).toBe(0);
+	});
+
+	it("answers HEAD /healthz without composing CD", async () => {
+		let composed = 0;
+		const origin = await serve(
+			createCdHttpEntry(
+				async () => {
+					composed += 1;
+					throw new Error("must not compose");
+				},
+				{ commit: "abc123" },
+			),
+		);
+		const head = await fetch(`${origin}/healthz`, { method: "HEAD" });
+		expect(head.status).toBe(200);
+		expect(composed).toBe(0);
+		const get = await fetch(`${origin}/healthz`);
+		expect(get.status).toBe(head.status);
+		expect(await get.json()).toEqual({ ok: true, commit: "abc123" });
 		expect(composed).toBe(0);
 	});
 
@@ -266,14 +331,18 @@ describe("the owner's store, and the journal fleet in it", () => {
 	const binding = {
 		kind: "infisical-cloud-attach",
 		endpoint: "https://app.infisical.com",
-		projectId: "d08a4752-b0e7-4784-b869-ada54f20f4e6",
+		projectId: "00000000-0000-4000-8000-000000000001",
 		environment: "prod",
 		secretPath: "/hobo-cd",
-		relayIdentityId: "65814a06-a335-43b7-9653-3135a704c4f8",
+		relayIdentityId: "00000000-0000-4000-8000-000000000002",
 	};
 
 	it("reads the committed coordinates, and refuses a malformed binding", () => {
 		const parsed = parseCdStoreCoordinates(JSON.stringify(binding));
+		expect(parsed.binding.siteUrl).toBe("https://app.infisical.com");
+		expect(parsed.binding.projectId).toBe(binding.projectId);
+		expect(parsed.binding.environment).toBe("prod");
+		expect(parsed.binding.secretPath).toBe("/hobo-cd");
 		expect(parsed.identityId).toBe(binding.relayIdentityId);
 		expect(() => parseCdStoreCoordinates("{}")).toThrow(
 			expect.objectContaining({ code: "cd-store-binding-invalid" }),
@@ -301,7 +370,11 @@ describe("the owner's store, and the journal fleet in it", () => {
 		expect(first).toMatch(/^hobo-cd-vercel:dpl_123:[0-9a-f-]{36}$/u);
 		expect(second).toMatch(/^hobo-cd-vercel:dpl_123:[0-9a-f-]{36}$/u);
 		expect(first).not.toBe(second);
-		expect(holderIdOf({})).not.toBe("hobo-cd-vercel:local");
+		const unsetFirst = holderIdOf({});
+		const unsetSecond = holderIdOf({});
+		expect(unsetFirst).toMatch(/^hobo-cd-vercel:[^:]*:[0-9a-f-]{36}$/u);
+		expect(unsetSecond).toMatch(/^hobo-cd-vercel:[^:]*:[0-9a-f-]{36}$/u);
+		expect(unsetFirst).not.toBe(unsetSecond);
 	});
 
 	it("refuses a non-production deployment before opening the store", async () => {
@@ -319,18 +392,77 @@ describe("the owner's store, and the journal fleet in it", () => {
 		expect(opened).toBe(0);
 	});
 
-	it("refuses to start on a store with no journal fleet, never on SQLite", async () => {
+	it("refuses an unset VERCEL_ENV before opening the store", async () => {
+		let opened = 0;
 		await expect(
 			composeVercelCdHost({
 				env: {},
 				cwd: "/tmp",
-				open: () => ({
-					id: "infisical",
-					port: createMemorySecretsPort({ id: "memory" }),
-					reference: (name) => `infisical://test/${name}`,
-				}),
+				open: () => {
+					opened += 1;
+					throw new Error("must not open");
+				},
+			}),
+		).rejects.toMatchObject({ code: "cd-non-production-deployment" });
+		expect(opened).toBe(0);
+	});
+
+	it("refuses an unset VERCEL_ENV even with the allowance flag set", async () => {
+		let opened = 0;
+		await expect(
+			composeVercelCdHost({
+				env: { HOBO_CD_ALLOW_UNSET_VERCEL_ENV: "1" },
+				cwd: "/tmp",
+				open: () => {
+					opened += 1;
+					throw new Error("must not open");
+				},
+			}),
+		).rejects.toMatchObject({ code: "cd-non-production-deployment" });
+		expect(opened).toBe(0);
+	});
+
+	it("refuses a preview deployment even with the allowance flag set", async () => {
+		let opened = 0;
+		await expect(
+			composeVercelCdHost({
+				env: {
+					VERCEL_ENV: "preview",
+					HOBO_CD_ALLOW_UNSET_VERCEL_ENV: "1",
+				},
+				cwd: "/tmp",
+				open: () => {
+					opened += 1;
+					throw new Error("must not open");
+				},
+			}),
+		).rejects.toMatchObject({ code: "cd-non-production-deployment" });
+		expect(opened).toBe(0);
+	});
+
+	it("refuses to start on a store with no journal fleet, never on SQLite", async () => {
+		let opened = 0;
+		await expect(
+			composeVercelCdHost({
+				env: { VERCEL_ENV: "production" },
+				cwd: "/tmp",
+				open: () => {
+					opened += 1;
+					return {
+						id: "infisical",
+						port: createMemorySecretsPort({ id: "memory" }),
+						reference: (name) => `infisical://test/${name}`,
+					};
+				},
 			}),
 		).rejects.toMatchObject({ code: "cd-journal-not-provisioned" });
+		expect(opened).toBe(1);
+	});
+
+	it("loadCdHost refuses a non-production deployment before reading the binding", async () => {
+		await expect(loadCdHost()).rejects.toMatchObject({
+			code: "cd-non-production-deployment",
+		});
 	});
 
 	it("reads the topology files a deployment declares", () => {
