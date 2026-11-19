@@ -1768,6 +1768,242 @@ ${caller}`;
 		]);
 	});
 
+	it.each([
+		"toJSON(needs.route)",
+		"toJSON((needs.route))",
+		"TOJSON( ( NEEDS.ROUTE ) )",
+		"fromJSON(toJSON(needs.route)).outputs.runner",
+		"(needs.route).outputs.runner",
+		"(needs['route']).result == 'success' && 'ubuntu-24.04' || 'ubuntu-22.04'",
+	])("fails closed when routing reads %s", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("fails closed when a matrix is built from toJSON of the router", () => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ matrix.runner }}
+    strategy:
+      matrix: \${{ fromJSON(toJSON(needs.route)) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("fails closed when a reusable workflow input is toJSON of the router", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    uses: ./.github/workflows/reusable.yml
+    with:
+      runner: \${{ toJSON(needs['route']) }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "reusable_workflow"],
+			["lint", "ready", undefined],
+		]);
+	});
+
+	it.each([
+		["toJSON(needs)", "route"],
+		["toJSON(needs.*)", "route"],
+		["TOJSON( ( NEEDS.* ) )", "Route"],
+		["(needs.*).outputs.runner", "route"],
+		["needs[*].result", "route"],
+		["NEEDS[ '*' ].OUTPUTS.runner", "Route"],
+	])("fails closed for %s only when needs names that job (%s)", (expression, needed) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    needs: ${needed}
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("does not treat toJSON(needs) as routing when the caller needs nobody", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ toJSON(needs) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("fails closed when toJSON(needs) follows an opaque needs list", () => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    needs: \${{ inputs.job }}
+    runs-on: \${{ toJSON(needs) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.reason]),
+		).toEqual([
+			["lint", "routes_jobs"],
+			["route", "routes_jobs"],
+			["called", "expression"],
+		]);
+	});
+
+	it.each([
+		"needs['route' || inputs.job].outputs.runner",
+		"needs[inputs.job || 'route'].outputs.runner",
+		"toJSON(needs[inputs.job])",
+		"TOJSON( ( NEEDS[format('{0}', inputs.job)] ) )",
+		"(needs[inputs.job]).outputs.runner",
+		"(needs[inputs.job]).result",
+	])("fails closed when the needs index is not a static job id (%s)", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.reason]),
+		).toEqual([
+			["lint", "routes_jobs"],
+			["route", "routes_jobs"],
+			["called", "expression"],
+		]);
+	});
+
+	it("does not treat toJSON of a different job as this job routing", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  other:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ toJSON(needs.other) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
+			["other", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
 	it("does not mistake a job that only reads its own name for a router", () => {
 		const plan = planWorkflow(
 			"ci.yml",

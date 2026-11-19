@@ -429,7 +429,15 @@ function needsWildcardPattern(): string {
 	return String.raw`\b${caseFoldLiteral("needs")}\s*(?:\.\s*\*|${index})`;
 }
 
-const DYNAMIC_NEEDS_INDEX = String.raw`\b${caseFoldLiteral("needs")}\s*\[(?!\s*['"\\])`;
+function staticNeedsIndex(): string {
+	const expressionSingle = `'(?:[^']|'')*'`;
+	const yamlDoubledSingle = `''(?:[^']|'')*''`;
+	const expressionDouble = String.raw`"(?:[^"\\]|\\.)*"`;
+	const yamlEscapedDouble = String.raw`\\"(?:[^"\\]|\\.)*\\"`;
+	return String.raw`(?:\*|${yamlDoubledSingle}|${expressionSingle}|${expressionDouble}|${yamlEscapedDouble})`;
+}
+
+const DYNAMIC_NEEDS_INDEX = String.raw`\b${caseFoldLiteral("needs")}\s*\[(?!\s*${staticNeedsIndex()}\s*\])`;
 
 function classifyNeedsItem(
 	workflow: Workflow,
@@ -480,31 +488,42 @@ function toJsonCallPattern(argument: string): string {
 	);
 }
 
+function groupedNeeds(reference: string): string {
+	return String.raw`(?:\(\s*)*${reference}\s*(?:\)\s*)*`;
+}
+
+function referencesNeedsAccess(
+	text: string,
+	jobId: string,
+	needs: NeedsRead,
+	access: string,
+): boolean {
+	const jobReference = needsJobReferencePattern(jobId);
+	if (patternMatches(`${groupedNeeds(jobReference)}\\s*${access}`, text)) {
+		return true;
+	}
+	if (patternMatches(toJsonCallPattern(jobReference), text)) return true;
+	const open =
+		patternMatches(
+			`${groupedNeeds(needsWildcardPattern())}\\s*${access}`,
+			text,
+		) ||
+		patternMatches(toJsonCallPattern(caseFoldLiteral("needs")), text) ||
+		patternMatches(toJsonCallPattern(needsWildcardPattern()), text);
+	if (open && needsCanSee(needs, jobId)) return true;
+	const dynamicIndex = `${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]`;
+	if (patternMatches(`${groupedNeeds(dynamicIndex)}\\s*${access}`, text)) {
+		return true;
+	}
+	return patternMatches(toJsonCallPattern(dynamicIndex), text);
+}
+
 function referencesNeedsOutputs(
 	text: string,
 	jobId: string,
 	needs: NeedsRead,
 ): boolean {
-	const outputs = outputsAccessPattern();
-	if (
-		patternMatches(`${needsJobReferencePattern(jobId)}\\s*${outputs}`, text)
-	) {
-		return true;
-	}
-	if (
-		patternMatches(toJsonCallPattern(needsJobReferencePattern(jobId)), text)
-	) {
-		return true;
-	}
-	const open =
-		patternMatches(`${needsWildcardPattern()}\\s*${outputs}`, text) ||
-		patternMatches(toJsonCallPattern(caseFoldLiteral("needs")), text) ||
-		patternMatches(toJsonCallPattern(needsWildcardPattern()), text);
-	if (open && needsCanSee(needs, jobId)) return true;
-	return patternMatches(
-		`${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]\\s*${outputs}`,
-		text,
-	);
+	return referencesNeedsAccess(text, jobId, needs, outputsAccessPattern());
 }
 
 type WorkflowJobEntry = Readonly<{ id: string; job: YAMLMap }>;
@@ -907,15 +926,12 @@ function routingText(job: InspectedJob): string {
 	return `${job.plan.runsOn}\n${job.indirectRouting}`;
 }
 
-function referencesRoutedJob(text: string, jobId: string): boolean {
-	const access = routingAccessPattern();
-	if (patternMatches(`${needsJobReferencePattern(jobId)}\\s*${access}`, text)) {
-		return true;
-	}
-	return patternMatches(
-		`${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]\\s*${access}`,
-		text,
-	);
+function referencesRoutedJob(
+	text: string,
+	jobId: string,
+	needs: NeedsRead,
+): boolean {
+	return referencesNeedsAccess(text, jobId, needs, routingAccessPattern());
 }
 
 function routesJobs(
@@ -925,15 +941,8 @@ function routesJobs(
 ): boolean {
 	return jobs.some((other) => {
 		if (other.plan.job === id) return false;
-		const text = routingText(other);
-		if (referencesRoutedJob(text, id)) return true;
 		const needs = needsByJob.get(other.plan.job) ?? EMPTY_NEEDS;
-		return (
-			patternMatches(
-				`${needsWildcardPattern()}\\s*${routingAccessPattern()}`,
-				text,
-			) && needsCanSee(needs, id)
-		);
+		return referencesRoutedJob(routingText(other), id, needs);
 	});
 }
 
