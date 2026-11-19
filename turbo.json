@@ -482,7 +482,6 @@
         "src/draft/technical-proofs/mtls-by-default-conformance-gate/**",
         "src/draft/technical-proofs/multi-cloud-shop-provider-e2e-contract/**",
         "src/draft/technical-proofs/openinference-live-eval-stream-contract/**",
-        "src/draft/technical-proofs/pact-contract-harness/**",
         "src/draft/technical-proofs/paginated-query-contract/**",
         "src/draft/technical-proofs/platform-engineer-flow-contract/**",
         "src/draft/technical-proofs/policy-engine-provider-adapters-contract/**",

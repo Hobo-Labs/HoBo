@@ -1,1 +1,1 @@
-Package-local PACT evidence lives under `contracts/pacts/`.
+Package-local PACT fixtures live under `contracts/pacts/`. The core contract surface exercises a reference consumer against a mock; the provider fixtures test the harness and do not verify a deployed provider.

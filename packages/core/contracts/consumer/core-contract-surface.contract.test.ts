@@ -10,6 +10,7 @@ import { must } from "../../src/total-access.js";
 import {
 	fetchCoreContractSurface,
 	fetchUnsupportedSchemaError,
+	parseCoreContractSurface,
 } from "./core-reference-consumer.js";
 
 const contractsDir = path.resolve(
@@ -39,5 +40,18 @@ describe("core-contract-surface consumer contract", () => {
 
 		const inventory = await checkPactInventory(contractsDir);
 		expect(inventory.ok).toBe(true);
+	});
+	it.each([
+		null,
+		[],
+		{ schemaVersion: "hobo.core/v0" },
+		{ schemaVersion: "hobo.core/v1", eventMappings: [] },
+		{
+			schemaVersion: "hobo.core/v1",
+			eventMappings: { cloudEventSpecversion: "1.0" },
+			publicSurface: { ok: false },
+		},
+	])("rejects an invalid reference consumer response", (body) => {
+		expect(() => parseCoreContractSurface(body)).toThrow();
 	});
 });
