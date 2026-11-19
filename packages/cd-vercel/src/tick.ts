@@ -1,6 +1,7 @@
+import type { CdPassReport } from "@hobo/hobo/cd-platform";
 import { QueueClient } from "@vercel/queue";
-
 import { loadCdHost, runCdPass } from "./entry.js";
+import { CdStoreBindingError } from "./store.js";
 
 const queue = new QueueClient();
 
@@ -28,12 +29,26 @@ async function runTick(): Promise<void> {
 		);
 		return;
 	}
-	const report = await runCdPass(loadCdHost);
+	let report: CdPassReport;
+	try {
+		report = await runCdPass(loadCdHost);
+	} catch (error) {
+		if (error instanceof CdStoreBindingError) {
+			process.stdout.write(
+				`${JSON.stringify({
+					event: "cd.pass.refused",
+					reason: error.code,
+				})}\n`,
+			);
+			return;
+		}
+		throw error;
+	}
 	if (report.skipped) {
 		process.stdout.write(
 			`${JSON.stringify({
 				event: "cd.pass.skipped",
-				reason: "fleet-pass-lease-held",
+				reason: report.skipReason ?? "fleet-pass-lease-held",
 			})}\n`,
 		);
 		return;
