@@ -186,11 +186,7 @@ export function parseRunSleepScheduledFact(
 	)
 		throw new TypeError("invalid run.SleepScheduled");
 	const delayMs = data.delayMs;
-	if (
-		!Number.isSafeInteger(delayMs) ||
-		delayMs < 0 ||
-		Object.is(delayMs, -0)
-	) {
+	if (!Number.isSafeInteger(delayMs) || delayMs < 0 || Object.is(delayMs, -0)) {
 		throw new TypeError("invalid run.SleepScheduled");
 	}
 	if (!Object.hasOwn(data, "index") || !isBoundedJournalIndex(data.index))
@@ -357,7 +353,11 @@ function faithfullyReproduces<T>(
 	original: T,
 	captured: JsonValue,
 ): captured is T & JsonValue {
-	return isDeepStrictEqual(original, captured);
+	return isDeepStrictEqual(
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: `isReproducibleJsonValue` already validated JSON shape.
+		cloneAsJson(original as JsonValue),
+		captured,
+	);
 }
 
 function captureWorkflowValue<T>(value: T): T {
