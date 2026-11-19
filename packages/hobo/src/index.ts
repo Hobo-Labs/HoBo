@@ -363,10 +363,8 @@ export {
 	registerLocalSubstrateYards,
 } from "./local-substrates.js";
 export {
-	type LocalCampServeResult,
 	type LocalYardServeResult,
 	serveBindleOnLocalYard,
-	serveProjectOnLocalCamp,
 } from "./local-yard-serve.js";
 export {
 	type BrokerAwareLoginCommandDeps,
