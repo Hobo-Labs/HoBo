@@ -47,6 +47,13 @@ if its implementation changes. `load` raises `UnpersistedQuarantineError` when
 it encounters an unrecorded failure; execute a command to record it under the
 aggregate lease.
 
+For projection rebuilds, `rebuildWithQuarantine` stores
+`projection.QuarantineRecorded` facts in a separate stream. Pass the store,
+stream ID, tenant, and actor for those records. Rebuilds reuse existing facts,
+verify that each names the same source event, and return the quarantined records
+with the resulting snapshot. Other projections continue to process the original
+events. `rebuildFromZero` remains read-only and reports fold failures directly.
+
 `createCrossCampProjection` copies an owner's ordered event stream into an
 independent replica event store and folds the copied events with the same
 projection. It can read all streams for a tenant or a named source stream.

@@ -65,7 +65,10 @@ export {
 	defineProjection,
 	type Projection,
 	type ProjectionDefinition,
+	type ProjectionQuarantineOptions,
+	type ProjectionQuarantineRecord,
 	type ProjectionSnapshot,
+	type QuarantinableProjection,
 } from "./projection.js";
 export {
 	createUpcasterRegistry,

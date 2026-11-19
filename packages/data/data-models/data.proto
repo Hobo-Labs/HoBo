@@ -39,6 +39,15 @@ message AggregateQuarantinedEventData {
   string reason = 6;
 }
 
+message ProjectionQuarantinedEventData {
+  string projection = 1;
+  string source_stream_id = 2;
+  uint64 offending_seq = 3;
+  string offending_event_id = 4;
+  string offending_type = 5;
+  string reason = 6;
+}
+
 message UpcasterRegistration {
   string type = 1;
   uint32 from_version = 2;

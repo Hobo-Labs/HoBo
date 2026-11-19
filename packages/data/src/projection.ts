@@ -1,5 +1,14 @@
-import type { EventEnvelope, EventStore } from "@hobo/core";
-import { ProjectionWriteError } from "./errors.js";
+import { create, fromJsonString } from "@bufbuild/protobuf";
+import {
+	EVENTSTORE_LIMITS,
+	type AppendOptions,
+	type EventEnvelope,
+	type EventInput,
+	type EventStore,
+	type PrincipalRef,
+} from "@hobo/core";
+import { ProjectionQuarantinedEventDataSchema } from "./_generated/data_pb.js";
+import { isOptimisticConflict, ProjectionWriteError } from "./errors.js";
 import {
 	createProjectionDeclaredEvent,
 	createProjectionLaggedEvent,
@@ -12,7 +21,7 @@ import {
 	isObjectLike,
 	parseOffendingSeq,
 } from "./json.js";
-import type { UpcasterRegistry } from "./upcaster.js";
+import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
 
 export type ApplyHandler<Row> = (
 	row: Row | undefined,
@@ -49,6 +58,34 @@ export interface Projection<Row> {
 	rebound(matchDecidedRef: string): DataFact;
 }
 
+export interface ProjectionQuarantineOptions {
+	quarantineStore: EventStore;
+	quarantineStreamId: string;
+	tenant: string;
+	actor: PrincipalRef;
+	fenceToken?: bigint;
+}
+
+export interface ProjectionQuarantineRecord {
+	sourceStreamId: string;
+	offendingSeq: number;
+	offendingEventId: string;
+	offendingType: string;
+	reason: string;
+	recordedSeq: number;
+}
+
+export interface QuarantinableProjection<Row> extends Projection<Row> {
+	rebuildWithQuarantine(
+		store: EventStore,
+		streamId: string,
+		options: ProjectionQuarantineOptions,
+	): Promise<{
+		snapshot: ProjectionSnapshot<Row>;
+		quarantined: ProjectionQuarantineRecord[];
+	}>;
+}
+
 function clone<T>(value: T): T {
 	if (value === undefined) return value;
 	return structuredClone(value);
@@ -73,9 +110,27 @@ function isQuarantineFact(event: EventEnvelope): boolean {
 	return event.type.endsWith(".Quarantined");
 }
 
+const PROJECTION_QUARANTINE_EVENT = "projection.QuarantineRecorded";
+
+function projectionQuarantine(event: EventEnvelope) {
+	return fromJsonString(
+		ProjectionQuarantinedEventDataSchema,
+		JSON.stringify(event.data),
+	);
+}
+
+function eventKey(
+	tenant: string,
+	streamId: string,
+	seq: number,
+	eventId?: string,
+): string {
+	return JSON.stringify([tenant, streamId, seq, eventId ?? null]);
+}
+
 export function defineProjection<Row>(
 	definition: ProjectionDefinition<Row>,
-): Projection<Row> {
+): QuarantinableProjection<Row> {
 	if (!definition.name) throw new TypeError("projection name is required");
 	if (!hasFunctionTag(definition.key)) {
 		throw new TypeError("projection key must be a function");
@@ -86,45 +141,79 @@ export function defineProjection<Row>(
 	const readSet = Object.freeze([...handlers.keys()]);
 	const reactivityClass = definition.reactivityClass ?? "reactive";
 
-	function fold(events: Iterable<EventEnvelope>): ProjectionSnapshot<Row> {
+	function foldInternal(
+		materialized: readonly EventEnvelope[],
+		records: readonly EventEnvelope[],
+		collectFailures: boolean,
+	) {
 		const rows: Record<string, Row> = {};
 		const quarantinedEvents = new Set<string>();
-		const materialized = [...events];
-		for (const event of materialized) {
+		for (const event of [...materialized, ...records]) {
 			if (isQuarantineFact(event)) {
 				const offending = parseOffendingSeq(event.data);
-				if (offending !== undefined) {
+				if (offending !== undefined)
 					quarantinedEvents.add(
-						JSON.stringify([event.tenant, event.streamId, offending]),
+						eventKey(event.tenant, event.streamId, offending),
 					);
-				}
+			} else if (event.type === PROJECTION_QUARANTINE_EVENT) {
+				const data = projectionQuarantine(event);
+				const offending = Number(data.offendingSeq);
+				if (!Number.isSafeInteger(offending) || offending < 1)
+					throw new TypeError("invalid projection quarantine sequence");
+				if (data.projection === definition.name)
+					quarantinedEvents.add(
+						eventKey(
+							event.tenant,
+							data.sourceStreamId,
+							offending,
+							data.offendingEventId,
+						),
+					);
 			}
 		}
 
 		let seq = 0;
+		const failures: Array<{ event: EventEnvelope; reason: string }> = [];
 		for (const event of materialized) {
 			seq = Math.max(seq, event.seq);
 			if (
 				isQuarantineFact(event) ||
+				event.type === PROJECTION_QUARANTINE_EVENT ||
 				quarantinedEvents.has(
-					JSON.stringify([event.tenant, event.streamId, event.seq]),
+					eventKey(event.tenant, event.streamId, event.seq),
+				) ||
+				quarantinedEvents.has(
+					eventKey(event.tenant, event.streamId, event.seq, event.id),
 				)
 			)
 				continue;
 			const handler = handlers.get(event.type);
 			if (!handler) continue;
-			const upcast = definition.upcasters
-				? definition.upcasters.upcast(event)
-				: event;
-			const key = definition.key(upcast);
-			const nextRow = handler(
-				rows[key] === undefined ? undefined : deepFreeze(clone(rows[key])),
-				deepFreeze(clone(upcast)),
-			);
-			rows[key] = clone(nextRow);
+			try {
+				const upcast = definition.upcasters
+					? definition.upcasters.upcast(event)
+					: event;
+				const key = definition.key(upcast);
+				const nextRow = handler(
+					rows[key] === undefined ? undefined : deepFreeze(clone(rows[key])),
+					deepFreeze(clone(upcast)),
+				);
+				rows[key] = clone(nextRow);
+			} catch (error) {
+				if (!collectFailures || error instanceof UpcasterChainError)
+					throw error;
+				failures.push({
+					event,
+					reason: error instanceof Error ? error.message : String(error),
+				});
+			}
 		}
 
-		return { projection: definition.name, seq, rows };
+		return { snapshot: { projection: definition.name, seq, rows }, failures };
+	}
+
+	function fold(events: Iterable<EventEnvelope>): ProjectionSnapshot<Row> {
+		return foldInternal([...events], [], false).snapshot;
 	}
 
 	return {
@@ -136,6 +225,161 @@ export function defineProjection<Row>(
 			const events: EventEnvelope[] = [];
 			for await (const event of store.read(streamId)) events.push(event);
 			return fold(events);
+		},
+
+		async rebuildWithQuarantine(store, streamId, options) {
+			if (
+				!streamId.trim() ||
+				!options.quarantineStreamId.trim() ||
+				!options.tenant.trim()
+			)
+				throw new TypeError(
+					"source stream, quarantine stream, and tenant are required",
+				);
+			if (
+				store === options.quarantineStore &&
+				streamId === options.quarantineStreamId
+			)
+				throw new TypeError("quarantine records require a separate stream");
+			for (let attempt = 0; attempt < 8; attempt += 1) {
+				const events: EventEnvelope[] = [];
+				for await (const event of store.read(streamId)) {
+					if (
+						event.tenant !== options.tenant ||
+						event.streamId !== streamId ||
+						event.seq !== events.length + 1
+					)
+						throw new Error(
+							"source stream has an unexpected event or sequence",
+						);
+					events.push(event);
+				}
+				const bySeq = new Map(events.map((event) => [event.seq, event]));
+				const records: EventEnvelope[] = [];
+				const quarantined: ProjectionQuarantineRecord[] = [];
+				let recordSeq = 0;
+				for await (const record of options.quarantineStore.read(
+					options.quarantineStreamId,
+				)) {
+					if (record.seq !== recordSeq + 1)
+						throw new Error("quarantine stream has a sequence gap");
+					recordSeq = record.seq;
+					if (
+						record.tenant !== options.tenant ||
+						record.type !== PROJECTION_QUARANTINE_EVENT
+					)
+						throw new Error("quarantine stream contains an unexpected event");
+					const data = projectionQuarantine(record);
+					if (
+						data.projection !== definition.name ||
+						data.sourceStreamId !== streamId
+					)
+						continue;
+					const offendingSeq = Number(data.offendingSeq);
+					const offending = bySeq.get(offendingSeq);
+					if (
+						!Number.isSafeInteger(offendingSeq) ||
+						offendingSeq < 1 ||
+						!offending ||
+						offending.id !== data.offendingEventId ||
+						offending.type !== data.offendingType
+					)
+						throw new Error(
+							"projection quarantine target does not match the source event",
+						);
+					records.push(record);
+					quarantined.push({
+						sourceStreamId: streamId,
+						offendingSeq,
+						offendingEventId: offending.id,
+						offendingType: offending.type,
+						reason: data.reason,
+						recordedSeq: record.seq,
+					});
+				}
+				const result = foldInternal(events, records, true);
+				if (result.failures.length === 0)
+					return { snapshot: result.snapshot, quarantined };
+				const inputs: EventInput[] = result.failures.map(
+					({ event, reason }) => {
+						const data = create(ProjectionQuarantinedEventDataSchema, {
+							projection: definition.name,
+							sourceStreamId: streamId,
+							offendingSeq: BigInt(event.seq),
+							offendingEventId: event.id,
+							offendingType: event.type,
+							reason,
+						});
+						return {
+							type: PROJECTION_QUARANTINE_EVENT,
+							data: {
+								projection: data.projection,
+								sourceStreamId: data.sourceStreamId,
+								offendingSeq: Number(data.offendingSeq),
+								offendingEventId: data.offendingEventId,
+								offendingType: data.offendingType,
+								reason: data.reason,
+							},
+							meta: {
+								quarantines: event.id,
+								idempotencyKey: `projection-quarantine:${definition.name}:${event.id}`,
+							},
+						};
+					},
+				);
+				const appendOptions: AppendOptions = {
+					expectedSeq: recordSeq,
+					actor: options.actor,
+					tenant: options.tenant,
+				};
+				if (options.fenceToken !== undefined)
+					appendOptions.fenceToken = options.fenceToken;
+				let retry = false;
+				for (
+					let offset = 0;
+					offset < inputs.length;
+					offset += EVENTSTORE_LIMITS.maxBatchEvents
+				) {
+					const batch = inputs.slice(
+						offset,
+						offset + EVENTSTORE_LIMITS.maxBatchEvents,
+					);
+					try {
+						const appended = await options.quarantineStore.append(
+							options.quarantineStreamId,
+							batch,
+							appendOptions,
+						);
+						if (appended.appended.length !== batch.length) {
+							retry = true;
+							break;
+						}
+						for (const record of appended.appended) {
+							const data = projectionQuarantine(record);
+							quarantined.push({
+								sourceStreamId: data.sourceStreamId,
+								offendingSeq: Number(data.offendingSeq),
+								offendingEventId: data.offendingEventId,
+								offendingType: data.offendingType,
+								reason: data.reason,
+								recordedSeq: record.seq,
+							});
+						}
+						appendOptions.expectedSeq =
+							appended.appended.at(-1)?.seq ?? appendOptions.expectedSeq;
+					} catch (error) {
+						if (error instanceof Error && isOptimisticConflict(error)) {
+							retry = true;
+							break;
+						}
+						throw error;
+					}
+				}
+				if (!retry) return { snapshot: result.snapshot, quarantined };
+			}
+			throw new Error(
+				"projection quarantine stream remained busy after retries",
+			);
 		},
 
 		query(snapshot) {
