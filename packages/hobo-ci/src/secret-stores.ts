@@ -72,12 +72,35 @@ import {
 
 export type SecretStoreId = SecretStoreOption["id"];
 
+export type PreparedStoreWrite<P, T> =
+	| { readonly kind: "completed"; readonly result: T }
+	| { readonly kind: "write"; readonly value: P };
+
 /** An opened store: the port, and how to name a stored entry without its value. */
 export interface OpenedSecretStore {
 	readonly id: SecretStoreId;
 	readonly port: SecretsPort;
 	readonly reference: (name: string) => string;
 	readonly withWriteLock?: <T>(operation: () => Promise<T>) => Promise<T>;
+	readonly withPreparedWriteLock?: <P, T>(
+		prepareReadOnly: () => Promise<PreparedStoreWrite<P, T>>,
+		write: (prepared: P) => Promise<T>,
+	) => Promise<T>;
+}
+
+export function withPreparedStoreWriteLock<P, T>(
+	store: OpenedSecretStore,
+	prepareReadOnly: () => Promise<PreparedStoreWrite<P, T>>,
+	write: (prepared: P) => Promise<T>,
+): Promise<T> {
+	if (store.withPreparedWriteLock)
+		return store.withPreparedWriteLock(prepareReadOnly, write);
+	return withStoreWriteLock(store, async () => {
+		const prepared = await prepareReadOnly();
+		return prepared.kind === "completed"
+			? prepared.result
+			: write(prepared.value);
+	});
 }
 
 export function withStoreWriteLock<T>(

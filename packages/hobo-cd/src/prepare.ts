@@ -11,6 +11,7 @@ import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
 	adoptStoreSignIn,
 	awaitHandOffStore,
+	ClaimStoreUnavailableError,
 	canReachOwner,
 	ensureBitwardenSignIn,
 	familySettings,
@@ -21,6 +22,7 @@ import {
 	lazyEgressFetch,
 	type OpenedSecretStore,
 	type OwnerStoreDeps,
+	OwnerStoreOperationUncertainError,
 	openInBrowser,
 	ownerLocator,
 	ownerStore,
@@ -179,7 +181,13 @@ async function journalStep(
 	try {
 		return [await prepareJournalFleet({ store, provisioners, whatIf })];
 	} catch (error) {
-		if (error instanceof Error && error.name === "ClaimStoreUnavailableError")
+		if (error instanceof OwnerStoreOperationUncertainError)
+			return refused(
+				"HOBO_CD_STORE_OPERATION_UNCERTAIN",
+				"A store operation may have completed and needs reconciliation before retrying.",
+				["Reconcile the store operation before trying setup again."],
+			);
+		if (error instanceof ClaimStoreUnavailableError)
 			return refused(
 				"HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
 				"The selected store cannot safely guard new CD journal members.",
@@ -248,7 +256,13 @@ export async function prepareVercelConnection(
 		});
 		try {
 			ownerLocator(deps).assertCurrent?.();
-		} catch {
+		} catch (error) {
+			if (error instanceof OwnerStoreOperationUncertainError)
+				return refused(
+					"HOBO_CD_STORE_OPERATION_UNCERTAIN",
+					"A store operation may have completed and needs reconciliation before retrying.",
+					["Reconcile the store operation before trying setup again."],
+				);
 			return refused(
 				"HOBO_CD_OWNER_CHOICE_CHANGED",
 				"The owner changed the selected store while this operation was running.",

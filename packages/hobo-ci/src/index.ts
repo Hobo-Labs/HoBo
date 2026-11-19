@@ -151,6 +151,11 @@ export {
 	storeSignInGuidance,
 } from "./owner-store.js";
 export {
+	ClaimStoreUnavailableError,
+	OwnerStoreOperationUncertainError,
+	supportsAtomicOwnerClaim,
+} from "./owner-store-errors.js";
+export {
 	type AppHandOffMode,
 	checkedBy,
 	type HttpsOrigin,
@@ -219,9 +224,11 @@ export {
 	type Env,
 	type OpenedSecretStore,
 	openSecretStore,
+	type PreparedStoreWrite,
 	type SecretStoreDeps,
 	type SecretStoreId,
 	type SecretStoreOpening,
+	withPreparedStoreWriteLock,
 	withStoreWriteLock,
 } from "./secret-stores.js";
 export {

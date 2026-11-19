@@ -15,6 +15,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
+import { OwnerWriteGuardUnavailableError } from "./owner-write-guard.js";
 
 /**
  * The secret-store choice as an MCP experience, not a question in prose.
@@ -392,7 +393,13 @@ export function createStoreChoiceApp(
 			ticket.locator.assertCurrent?.();
 			ticket.locator.onOwnerChoice?.();
 			revisions.set(ticket.key, ticket.revision + 1);
-		} catch {
+		} catch (error) {
+			if (error instanceof OwnerWriteGuardUnavailableError)
+				return result(
+					"Store changes are unavailable on this HoBo host. Existing connections can still be used read-only. Check the host's storage and permissions, or use a supported host.",
+					{ status: "write-guard-unavailable" },
+					true,
+				);
 			if (ticket.locator.hasPendingWrites?.())
 				return result(
 					"The selected store is saving a change. Wait until it finishes, then open the picker again.",

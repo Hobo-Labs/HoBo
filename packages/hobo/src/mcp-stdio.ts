@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { parseArgv, parseLifecycleArgs } from "@hobo/cli";
+import { OwnerStoreOperationUncertainError } from "@hobo/hobo-ci";
 import {
 	type AuthContext,
 	capabilityForTool,
@@ -29,6 +30,7 @@ import {
 	type StoreChoiceApp,
 	type StoreChoiceSupport,
 } from "./mcp-store-choice.js";
+import { OwnerWriteGuardUnavailableError } from "./owner-write-guard.js";
 
 // The MCP stdio protocol layer for the composed `hobo-mcp` binary.
 // Newline-delimited JSON-RPC 2.0 per the MCP
@@ -601,6 +603,18 @@ export async function handleMcpMessage(
 					auth,
 				);
 			} catch (error) {
+				if (ownerUp && error instanceof OwnerStoreOperationUncertainError)
+					return ownerSetupRefusal(
+						id,
+						`HOBO_${params.name.toUpperCase()}_STORE_OPERATION_UNCERTAIN`,
+						"A store operation may have completed; reconcile it before retrying.",
+					);
+				if (ownerUp && error instanceof OwnerWriteGuardUnavailableError)
+					return ownerSetupRefusal(
+						id,
+						"HOBO_MCP_OWNER_WRITE_GUARD_UNAVAILABLE",
+						"HoBo cannot safely write to the owner store on this filesystem or platform.",
+					);
 				if (ownerUp)
 					return ownerSetupRefusal(
 						id,
