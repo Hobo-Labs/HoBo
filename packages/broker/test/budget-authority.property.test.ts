@@ -1,3 +1,5 @@
+/* oxlint-disable unicorn/no-thenable -- SAFETY: exercise an untrusted thenable without invoking its accessor. */
+import { runInNewContext } from "node:vm";
 import { clone, create } from "@bufbuild/protobuf";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -10,6 +12,8 @@ import {
 	createBudgetAdmissionAuthority,
 	EntitlementClaimSchema,
 	HostingQuoteSchema,
+	IacUnpricedPolicyProofSchema,
+	IacUnpricedScopeProofSchema,
 	ProviderAccountExposureSchema,
 } from "../src/budget-authority.js";
 
@@ -67,6 +71,114 @@ function reserve(
 }
 
 describe("hosting budget authority generated properties", () => {
+	it("fails closed after a commit returns an asynchronous or ambiguous result", () => {
+		let thenAccesses = 0;
+		// biome-ignore lint/suspicious/noThenProperty: this test refuses the accessor without invoking it.
+		const thenable = Object.defineProperty({}, "then", {
+			get() {
+				thenAccesses += 1;
+				throw new Error("then must not be inspected");
+			},
+		});
+		const foreignPromise: unknown = runInNewContext("Promise.resolve()");
+		const variants = [
+			foreignPromise,
+			Promise.resolve(),
+			thenable,
+			{},
+			() => {},
+		];
+		const seen = new Set<unknown>();
+		fc.assert(
+			fc.property(fc.constantFrom(...variants), (result) => {
+				seen.add(result);
+				const snapshot = base(100);
+				const identity = snapshot.identity;
+				if (!identity) throw new Error("fixture identity missing");
+				const authority = createBudgetAdmissionAuthority({
+					snapshot,
+					commit: () => result,
+				});
+				expect(() => reserve(authority, "work", 10)).toThrow(
+					"budget commit must append synchronously",
+				);
+				expect(() => authority.read(NOW)).toThrow(
+					"budget commit outcome uncertain",
+				);
+				expect(() => authority.lookup("work")).toThrow(
+					"budget commit outcome uncertain",
+				);
+				expect(() => authority.configure(snapshot, 0, NOW)).toThrow(
+					"budget commit outcome uncertain",
+				);
+				const operations = [
+					() =>
+						authority.claimExecution({
+							reservationId: "work",
+							requestDigest: "request-work",
+							executionDigest: "execution",
+						}),
+					() =>
+						authority.reserve({
+							reservationId: "work",
+							requestDigest: "request-work",
+							quote: quote("work", 10),
+							identity,
+							expectedSeq: 0,
+							now: NOW,
+						}),
+					() =>
+						authority.reserveUnbounded({
+							reservationId: "work",
+							requestDigest: "request-work",
+							inventoryHash: "inventory",
+							policyProof: create(IacUnpricedPolicyProofSchema),
+							scopeProof: create(IacUnpricedScopeProofSchema),
+							identity,
+							providerAccountIds: [],
+							expectedSeq: 0,
+							now: NOW,
+						}),
+					() =>
+						authority.revalidateUnbounded({
+							reservationId: "work",
+							requestDigest: "request-work",
+							inventoryHash: "inventory",
+							executionDigest: "execution",
+							policyProofHash: "policy",
+							scopeProofHash: "scope",
+							now: NOW,
+						}),
+					() =>
+						authority.revalidatePriced({
+							reservationId: "work",
+							requestId: "request",
+							targetId: "target",
+							tenantId: "tenant",
+							requestDigest: "request-work",
+							planDigest: "plan",
+							inventoryHash: "inventory",
+							modelHash: "model",
+							quoteHash: "quote",
+							now: NOW,
+						}),
+					() =>
+						authority.settle("work", 0, {
+							usageEvidenceRef: "usage",
+							sourceStoppedEvidenceRef: "stopped",
+						}),
+					() => authority.uncertain("work"),
+					() => authority.release("work", true, "unused"),
+				];
+				for (const operation of operations)
+					expect(operation).toThrow("budget commit outcome uncertain");
+			}),
+			{ seed: SEED, numRuns: 100 },
+		);
+		expect(seen.size).toBe(variants.length);
+		expect(thenAccesses).toBe(0);
+	});
+
 	it("admits only when every existing and requested exposure fits", () => {
 		fc.assert(
 			fc.property(
@@ -271,14 +383,20 @@ describe("hosting budget authority generated properties", () => {
 			fc.property(
 				fc.integer({ min: 1, max: 1000 }),
 				fc.constantFrom("reserve", "claim", "uncertain", "release", "settle"),
-				(bound, operation) => {
+				fc.boolean(),
+				(bound, operation, appendBeforeThrow) => {
 					const snapshot = base(bound);
 					const journal: BudgetAuthorityEvent[] = [];
 					let failCommit = false;
+					let observedBeforeFailure: ReturnType<typeof base> | undefined;
 					const authority = createBudgetAdmissionAuthority({
 						snapshot,
 						commit(event) {
-							if (failCommit) throw new Error("injected commit failure");
+							if (failCommit) {
+								observedBeforeFailure = authority.read(NOW);
+								if (appendBeforeThrow) journal.push(event);
+								throw new Error("injected commit failure");
+							}
 							journal.push(event);
 						},
 					});
@@ -313,15 +431,27 @@ describe("hosting budget authority generated properties", () => {
 								break;
 						}
 					}).toThrow("injected commit failure");
-					expect(authority.read(NOW)).toEqual(before);
-					expect(authority.lookup("work")).toEqual(reservationBefore);
-					expect(journal).toHaveLength(entriesBefore);
-					expect(
-						createBudgetAdmissionAuthority({
-							snapshot,
-							priorEvents: journal,
-						}).read(NOW),
-					).toEqual(before);
+					expect(observedBeforeFailure).toEqual(before);
+					expect(() => authority.read(NOW)).toThrow(
+						"budget commit outcome uncertain",
+					);
+					expect(() => authority.lookup("work")).toThrow(
+						"budget commit outcome uncertain",
+					);
+					expect(journal).toHaveLength(
+						entriesBefore + Number(appendBeforeThrow),
+					);
+					const reopened = createBudgetAdmissionAuthority({
+						snapshot,
+						priorEvents: journal,
+					});
+					if (appendBeforeThrow) {
+						expect(reopened.read(NOW)).toEqual(journal.at(-1)?.snapshot);
+						expect(reopened.read(NOW).seq).toBe(before.seq + 1);
+					} else {
+						expect(reopened.read(NOW)).toEqual(before);
+						expect(reopened.lookup("work")).toEqual(reservationBefore);
+					}
 				},
 			),
 			run,
@@ -337,7 +467,7 @@ describe("hosting budget authority generated properties", () => {
 					const snapshot = base(bound);
 					const journal: BudgetAuthorityEvent[] = [];
 					let tryNested = true;
-					const authority = createBudgetAdmissionAuthority({
+					let authority = createBudgetAdmissionAuthority({
 						snapshot,
 						commit(event) {
 							if (tryNested) {
@@ -359,8 +489,17 @@ describe("hosting budget authority generated properties", () => {
 						expect(() => reserve(authority, "outer", bound)).toThrow(
 							"budget authority mutation during commit",
 						);
-						expect(authority.read(NOW).reservedMicros).toBe(0);
+						expect(() => authority.read(NOW)).toThrow(
+							"budget commit outcome uncertain",
+						);
 						expect(journal).toHaveLength(0);
+						authority = createBudgetAdmissionAuthority({
+							snapshot,
+							priorEvents: journal,
+							commit(event) {
+								journal.push(event);
+							},
+						});
 						reserve(authority, "outer", bound);
 					}
 					expect(authority.lookup("nested")).toBeUndefined();

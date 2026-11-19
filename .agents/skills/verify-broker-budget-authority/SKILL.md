@@ -5,11 +5,11 @@ description: Verify hosting budget admission, execution claims, uncertain holds,
 
 # Broker hosting budget authority
 
-**Properties:** Admission counts the complete liability bound and existing outside exposure; claimed or uncertain execution retains its hold; journal callbacks cannot re-enter the authority; a callback that fails before appending leaves no acknowledged state change; live entitlement claims retain their unit and period; evidence-backed settlement is idempotent.
+**Properties:** Admission counts the complete liability bound and existing outside exposure; claimed or uncertain execution retains its hold; journal callbacks cannot re-enter a mutation; a failed callback leaves no acknowledged state change; exceptions and ambiguous callback results fence subsequent use; live entitlement claims retain their unit and period; evidence-backed settlement is idempotent.
 
 **Why:** A missing hold or lost journal entry can fund multiple provider operations with the same money, while a premature release can leave running work unaccounted for.
 
-**Review baseline:** commit `3e7526f7b`. PASS for the stated generated cases, bounded models, and Z3 abstractions under the assumptions below.
+**Review baseline:** merge of `8f118eb733fcb00cc659728dda729cbafa0716e9` and `ff48618c5a88f2980b753b00ead3d5f7aa436306`, plus the commit-result changes in this skill's commit. PASS for the stated generated cases, bounded models, and Z3 abstractions under the assumptions below.
 
 ## Covered code
 
@@ -32,7 +32,7 @@ This runs fast-check, signed-settlement cases, the HoBo hosting bridge's existin
 
 ## Scope and evidence
 
-The generated tests use seed 614440 and 350 examples per original property, seed 614441 and 100 re-entry histories, and seed 614442 and 100 zero-unit entitlement-scope histories. They vary spend, unresolved liability, recovery reserves, outside commitments, request bounds and repeated holds; independently check provider-account and entitlement limits and reserved projections; check uncertain and claimed execution, journal replay and evidence-backed idempotent settlement; inject a journal callback failure before append into reserve, claim, uncertain, release and settle; attempt nested admissions from the commit callback; and vary active scope changes across held, uncertain, and claimed reservations. They exercise the synchronous authority with an in-memory journal. A callback that appends and then throws is not covered. The separate existing HoBo composition tests exercise concrete examples of SQLite authority connections, shared credits, reservation adoption, crash recovery and final settlement; they are not generated tests. Neither check proves the SQLite or PostgreSQL adapters, and the generated tests do not cover competing processes, provider effects, or overrun settlement.
+The generated tests use seed 614440 and 350 examples per original property, seed 614441 and 100 re-entry histories, and seed 614442 and 100 zero-unit entitlement-scope histories. They vary spend, unresolved liability, recovery reserves, outside commitments, request bounds and repeated holds; independently check provider-account and entitlement limits and reserved projections; check uncertain and claimed execution, journal replay and evidence-backed idempotent settlement; inject a journal callback failure before and after append into reserve, claim, uncertain, release and settle; attempt nested admissions from the commit callback; and vary active scope changes across held, uncertain, and claimed reservations. They exercise the synchronous authority with an in-memory journal and check recovery from the actual recorded events. The separate existing HoBo composition tests exercise concrete examples of SQLite authority connections, shared credits, reservation adoption, crash recovery and final settlement; they are not generated tests. Neither check proves the SQLite or PostgreSQL adapters, and the generated tests do not cover competing processes, provider effects, or overrun settlement.
 
 TLC explores 385 distinct states for two requests, one unit of budget, and one-unit holds. Atomic reserve, claim, uncertainty, evidence, release, and settlement actions model the synchronous authority. A request cannot be released after claim, settlement requires final evidence, and release requires unused-execution evidence. Actual cost may be zero, one, or two units; spent plus held remains within the cap until a provider overrun. The model abstracts observation contents, persistent storage, CAS, outside commitments, policy changes, retries, and account and entitlement dimensions. The chart follows the first request and hides the other request's same-label steps; release is possible only if execution was never claimed.
 
@@ -40,13 +40,27 @@ BrokerFence explores 129 distinct states and 830 steps for one reservation, a cl
 
 BrokerCommit explores 6 distinct states. It models a journal callback attempting a nested admission and requires at most one acknowledged admission and sequence write; aborting a rejected nested mutation leaves neither. It abstracts the adapter's physical append and assumes a single JavaScript authority instance.
 
+BrokerCommitResult explores 12 states for primitive synchronous results, ambiguous object results, and exceptions raised before or after a write completes. Pending writes can complete after the authority is fenced. It refuses ambiguous object results and prevents further use of the same authority after uncertainty or an exception; weakened guards produce counterexamples for premature acknowledgement and stale reuse. Generated actual-code cases cover cross-realm and local promises, a thenable with an accessor that must not run, ordinary objects and functions, and all public operations after the refusal. A synchronous callback must still actually persist the event before returning: no return-value check can detect a host that starts asynchronous work and returns a primitive. The host must reconcile any possibly pending write before reopening.
+
+The model explores 25 steps. The three-state projection hides 20 that stay within a displayed state, including completion of a pending write:
+
+```mermaid
+stateDiagram-v2
+  s0: Budget change requested
+  s1: Budget change acknowledged
+  s2: Commit uncertain, authority fenced
+  [*] --> s0
+  s0 --> s2: commit returns an ambiguous result or commit throws
+  s0 --> s1: commit completes
+```
+
 BrokerEntitlement explores 35 distinct states and 81 steps. It follows a zero-unit claim through reserve, claim, uncertainty, configuration, replay, release, and settlement. Its invariants keep unit and period stable while the claim is active and reject mismatched replay. The `/statechart` view draws eight states and 16 arrows and hides 38 steps that stay in the same displayed state. It abstracts bucket quantities and durable adapter concurrency.
 
 The signed-settlement property uses seed 614450 and 120 generated histories. It varies final usage including overruns, uncertainty, and sequences of forged receiver signatures, forged finance signatures, changed charges, evidence references, account usage, and receipt scopes. The receiver forgery is accompanied by an otherwise valid finance signature. Every rejection must retain the hold and produce no event; after valid settlement, repeated settlement and journal replay preserve the result. A PostgreSQL integration case is skipped without its configured database.
 
 The budget Z3 induction proves that arbitrarily many exact-real reserve, release, and settlement steps preserve `spent + held + unresolved + recovery + external <= cap`, assuming a safe initial state, fixed nonnegative outside exposures, an admission guard counting the full quote, and final usage no larger than its released hold. Claims and uncertain outcomes retain the same aggregate. The scope induction proves an equality-only abstraction in which active claims preserve their unit and period through configuration and replay, while terminal claims leave the active projection. These are unbounded mathematical proofs of abstractions, not proofs of TypeScript refinement, durable CAS, provider bills, or behavior when outside exposure changes. The budget proof also demonstrates that an actual overrun can exceed the cap; the implementation records overruns rather than pretending they cannot occur.
 
-In scratch copies, 11 implementation mutations are detected: missing unresolved, account, or entitlement exposure; release after claim; state publication before a failing commit; commit re-entry; zero-unit scope changes in configuration or replay; and omitted receiver or finance signature verification. Seven weakened-model cases violate independently stated invariants for evidence, signatures, claimed holds, re-entry, and live entitlement scope. Three weakened Z3 obligations produce counterexamples when unresolved liability, claim unit, or claim period is omitted. The mutation runner restores the unmodified implementation and reruns both generated suites before passing.
+In scratch copies, 14 implementation mutations are detected: missing unresolved, account, or entitlement exposure; release after claim; state publication before a failing commit; commit re-entry or reuse after an exception or ambiguous result; zero-unit scope changes in configuration or replay; and omitted receiver or finance signature verification. Ten weakened-model cases violate independently stated invariants for evidence, signatures, claimed holds, commit handling, and live entitlement scope. Three weakened Z3 obligations produce counterexamples when unresolved liability, claim unit, or claim period is omitted. The mutation runner restores the unmodified implementation and reruns both generated suites before passing.
 
 ## Keep in sync
 

@@ -9,6 +9,7 @@ import {
 	type QuoteScenario,
 	QuoteVectorSchema,
 } from "./_generated/pricing_pb.js";
+import { hasV2BaselineCharges } from "./agreement-status.js";
 import { validateV2BillingPeriods } from "./billing-period.js";
 import { catalogHashOf } from "./catalog.js";
 import {
@@ -147,6 +148,36 @@ function migrationAndTerminationTotal(
 	return create(MoneySchema, { decimal: decimalText(total), currency });
 }
 
+function validateV2AgreementAvailability(scenario: QuoteScenario): void {
+	const referenced = new Set(
+		[...scenario.baseline, ...scenario.candidate].map(
+			(workload) => workload.agreementRef,
+		),
+	);
+	for (const agreement of scenario.state?.agreements ?? []) {
+		const used = referenced.has(agreement.id);
+		if (hasV2BaselineCharges(agreement.status)) continue;
+		if (agreement.status === "trialing") {
+			if (used) continue;
+			throw new PricingFault(
+				"PRICING_AGREEMENT_UNAVAILABLE",
+				`trial agreement ${agreement.id} needs an explicit workload to determine its liability`,
+			);
+		}
+		if (agreement.status === "suspended" || agreement.status === "cancelled") {
+			if (!used) continue;
+			throw new PricingFault(
+				"PRICING_AGREEMENT_UNAVAILABLE",
+				`agreement ${agreement.id} is not available for pricing`,
+			);
+		}
+		throw new PricingFault(
+			"PRICING_AGREEMENT_UNAVAILABLE",
+			`agreement ${agreement.id} has an unrecognized status`,
+		);
+	}
+}
+
 function validateQuoteOptions(scenario: QuoteScenario): void {
 	const options = scenario.options;
 	if (
@@ -227,6 +258,7 @@ function quoteWithOrdering(
 				validateV2GrantScopes(scenario.state);
 			}
 			validateV2BillingPeriods(scenario);
+			validateV2AgreementAvailability(scenario);
 		}
 		validateQuoteOptions(scenario);
 		if (timeOrder === utcPricingTimeOrder && scenario.action === "destroy") {

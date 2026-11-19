@@ -4,10 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clone, create, toJsonString } from "@bufbuild/protobuf";
 import { canonicalFenceOperationReceipt } from "@hobo/data-core";
+import { stableHash } from "@hobo/pricing";
 import fc from "fast-check";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
-import { BudgetFenceSettlementGuardSchema } from "../src/_generated/yard_placement_pb.js";
+import {
+	BudgetFenceSettlementGuardSchema,
+	IacPricingPinSchema,
+} from "../src/_generated/yard_placement_pb.js";
 import {
 	BudgetAuthorityEventSchema,
 	BudgetLedgerSnapshotSchema,
@@ -197,6 +201,64 @@ function fixture() {
 }
 
 describe("receiver-bound budget settlement", () => {
+	it("accepts an authenticated fence guard as the priced IaC settlement authority", () => {
+		const f = fixture();
+		const fields = {
+			planDigest: `sha256:${"1".repeat(64)}`,
+			inventoryHash: `sha256:${"2".repeat(64)}`,
+			modelHash: `sha256:${"3".repeat(64)}`,
+			quoteHash: `sha256:${"4".repeat(64)}`,
+			evidenceHash: `sha256:${"5".repeat(64)}`,
+		};
+		const financialPlanHash = stableHash(fields);
+		const destinationWithPlan = { ...destination, planHash: financialPlanHash };
+		f.quote.financialPlanHash = financialPlanHash;
+		const trust = {
+			...f.trust,
+			receivers: f.trust.receivers.map((receiver) => ({
+				...receiver,
+				destination: destinationWithPlan,
+			})),
+		};
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: trust,
+		});
+		expect(() =>
+			authority.reserve({
+				...f.input,
+				fenceSettlementGuard: {
+					...fenceRequest,
+					destination: destinationWithPlan,
+					financeKeyId: "unknown",
+				},
+				iacPricingPin: create(IacPricingPinSchema, {
+					...fields,
+					validUntil: f.quote.validUntil,
+				}),
+			}),
+		).toThrow("independently enrolled");
+		expect(authority.read(now).reservedMicros).toBe(0);
+		const held = authority.reserve({
+			...f.input,
+			fenceSettlementGuard: {
+				...fenceRequest,
+				destination: destinationWithPlan,
+			},
+			iacPricingPin: create(IacPricingPinSchema, {
+				...fields,
+				validUntil: f.quote.validUntil,
+			}),
+		});
+		expect(held.fenceSettlementGuard).toBeDefined();
+		expect(
+			authority.claimExecution({
+				reservationId: held.reservationId,
+				requestDigest: REQUEST,
+				executionDigest: EXECUTION,
+			}),
+		).toMatchObject({ status: "held", executionDigest: EXECUTION });
+	});
 	it("retains claimed funds until both the exact receiver and finance authorities sign", () => {
 		const f = fixture();
 		const authority = createBudgetAdmissionAuthority({

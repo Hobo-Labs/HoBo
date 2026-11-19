@@ -178,6 +178,8 @@ describe("definitive budget admission denial", () => {
 		});
 		expect(() => reserve(authority)).toThrow(failure);
 		expect(failure).not.toBeInstanceOf(BudgetAdmissionDeniedError);
-		expect(authority.lookup("work")).toBeUndefined();
+		expect(() => authority.lookup("work")).toThrow(
+			"budget commit outcome uncertain",
+		);
 	});
 });

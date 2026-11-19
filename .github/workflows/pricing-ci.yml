@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "packages/pricing/**"
+      - "packages/broker/**"
+      - "packages/cloud/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
@@ -21,6 +23,8 @@ on:
     branches: [main]
     paths:
       - "packages/pricing/**"
+      - "packages/broker/**"
+      - "packages/cloud/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
@@ -62,8 +66,25 @@ jobs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
     steps:
+      - id: routing-base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            merge_group) base="$MERGE_BASE_SHA" ;;
+            *) base="$GITHUB_SHA" ;;
+          esac
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The trusted routing base is unavailable"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ steps.routing-base.outputs.sha }}
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
@@ -74,7 +95,7 @@ jobs:
             .hobo/ci.json
             packages/ci/src/fleet-overflow.ts
       - id: route
-        uses: $/.github/actions/route-runner
+        uses: ./.github/actions/route-runner
         with:
           token: ${{ github.token }}
 
@@ -108,6 +129,7 @@ jobs:
           pnpm exec turbo run build test \
             --filter=@hobo/pricing \
             --filter=@hobo/broker \
+            --filter=@hobo/cloud \
             --filter=@hobo/dispatcher \
             --filter=@hobo/events \
             --filter=@hobo/provider-manifest \

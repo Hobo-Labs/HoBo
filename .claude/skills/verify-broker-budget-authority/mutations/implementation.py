@@ -17,11 +17,15 @@ dimensions = "keeps provider and entitlement exposure within their separate limi
 claimed = "retains claimed or uncertain holds through replay until evidence-backed settlement"
 commit = "does not acknowledge an operation when its journal commit fails"
 reentry = "serializes journal callbacks that attempt another admission"
+ambiguous = "fails closed after a commit returns an asynchronous or ambiguous result"
 scope = "preserves the scope of active zero-unit entitlement claims"
 signed = "receiver-bound budget settlement generated histories"
 authority = "src/budget-authority.ts"
 settlement = "src/budget-fence-settlement.ts"
 cases = [
+    ("ambiguous commit result", authority, "committed !== null && Object(committed) === committed", "committed instanceof Promise", properties, ambiguous),
+    ("uncertain commit reuse", authority, "if (commitOutcomeUncertain)", "if (false && commitOutcomeUncertain)", properties, ambiguous),
+    ("thrown commit reuse", authority, "} catch (error) {\n\t\t\tcommitOutcomeUncertain = true;\n\t\t\tthrow error;\n\t\t} finally {\n\t\t\tcommitting = false;", "} catch (error) {\n\t\t\tcommitOutcomeUncertain = false;\n\t\t\tthrow error;\n\t\t} finally {\n\t\t\t\tcommitting = false;", properties, commit),
     ("unresolved exposure", authority, "current.unresolvedMicros,\n\t\t\t\t\tcurrent.recoveryReserveMicros", "0,\n\t\t\t\t\tcurrent.recoveryReserveMicros", properties, admission),
     ("provider holds", authority, "account.reservedMicros,\n\t\t\t\t\t\taccount.externalCommittedMicros", "0,\n\t\t\t\t\t\taccount.externalCommittedMicros", properties, dimensions),
     ("entitlement holds", authority, "add(bucket.reservedUnits, claim.units)", "add(0, claim.units)", properties, dimensions),
