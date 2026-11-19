@@ -196,9 +196,21 @@ function exactInt64Micros(value: bigint): number | undefined {
 function exactEvidenceMaximumMicros(
 	evidence: IacTargetLiabilityEvidence,
 ): number | undefined {
-	if (evidence.maximumMicrosExact !== undefined)
-		return exactInt64Micros(evidence.maximumMicrosExact);
 	const legacyMicros = evidence.maximumMicros;
+	const exactMicros =
+		evidence.maximumMicrosExact !== undefined
+			? exactInt64Micros(evidence.maximumMicrosExact)
+			: undefined;
+	if (exactMicros !== undefined) {
+		if (
+			legacyMicros !== undefined &&
+			Number.isSafeInteger(legacyMicros) &&
+			legacyMicros >= 0 &&
+			legacyMicros !== exactMicros
+		)
+			return undefined;
+		return exactMicros;
+	}
 	return legacyMicros !== undefined &&
 		Number.isSafeInteger(legacyMicros) &&
 		legacyMicros >= 0
@@ -222,6 +234,10 @@ function accountRows(
 		.sort();
 }
 
+function persistedClaimKind(kind: string): string {
+	return kind === "" ? "allowance" : kind;
+}
+
 function entitlementRows(
 	rows: readonly Pick<
 		EntitlementClaim,
@@ -229,7 +245,14 @@ function entitlementRows(
 	>[],
 ): string[] {
 	return rows
-		.map((row) => JSON.stringify([row.kind, row.bucketId, row.unit, row.units]))
+		.map((row) =>
+			JSON.stringify([
+				persistedClaimKind(row.kind),
+				row.bucketId,
+				row.unit,
+				row.units,
+			]),
+		)
 		.sort();
 }
 

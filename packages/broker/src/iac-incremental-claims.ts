@@ -100,6 +100,9 @@ export function incrementalEntitlementClaims(
 	const current = collect(full);
 	const before = collect(base);
 	if (current === undefined || before === undefined) return undefined;
+	for (const key of before.keys()) {
+		if (!current.has(key)) return undefined;
+	}
 	const claims: {
 		bucketId: string;
 		unit: string;

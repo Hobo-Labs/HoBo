@@ -1549,7 +1549,7 @@ describe("provider-neutral IaC target budget admission", () => {
 		}
 	});
 
-	it("prefers exact maximumMicrosExact over legacy maximumMicros", async () => {
+	it("rejects disagreeing maximumMicros and maximumMicrosExact", async () => {
 		const ledger = authority();
 		try {
 			const request = fixture();
@@ -1560,12 +1560,29 @@ describe("provider-neutral IaC target budget admission", () => {
 					dependencies(ledger),
 				),
 			).resolves.toMatchObject({
-				status: "admitted",
-				quote: { liabilityBoundMicros: 1_500_000 },
+				status: "denied",
+				code: "LIABILITY_EVIDENCE_INVALID",
 			});
 		} finally {
 			ledger.close();
 		}
+	});
+
+	it("round-trips IacTargetLiabilityEvidence proto fields added for exact bounds and claims", () => {
+		const evidence = create(IacTargetLiabilityEvidenceSchema, fixture().evidence);
+		evidence.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				kind: "allowance",
+				bucketId: "free-requests",
+				unit: "request",
+				units: 10,
+			}),
+		];
+		const bytes = toBinary(IacTargetLiabilityEvidenceSchema, evidence);
+		const decoded = fromBinary(IacTargetLiabilityEvidenceSchema, bytes);
+		expect(decoded.maximumMicrosExact).toBe(evidence.maximumMicrosExact);
+		expect(decoded.entitlementClaims).toHaveLength(1);
+		expect(decoded.entitlementClaims[0]?.kind).toBe("allowance");
 	});
 
 	it.each([

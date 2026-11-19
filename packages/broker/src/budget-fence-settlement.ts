@@ -440,10 +440,9 @@ export function createBudgetFenceVerifier(trust?: BudgetFenceTrust) {
 			reservation.executionDigest !== guard.executionDigest
 		)
 			throw new Error("fenced route was not claimed for execution");
-		const payloadVersion =
-			reservation.fenceSettlementPayloadVersion === ""
-				? legacyBudgetFenceSettlementPayloadVersion
-				: currentBudgetFenceSettlementPayloadVersion;
+		const payloadVersion = budgetFenceSettlementPayloadVersion(
+			reservation.fenceSettlementPayloadVersion,
+		);
 		const payload = canonicalBudgetFenceSettlement(
 			reservation,
 			actualMicros,
@@ -493,16 +492,28 @@ type BudgetFenceSettlementPayloadVersion =
 	| typeof legacyBudgetFenceSettlementPayloadVersion
 	| typeof currentBudgetFenceSettlementPayloadVersion;
 
+function budgetFenceSettlementPayloadVersion(
+	version: string,
+): BudgetFenceSettlementPayloadVersion {
+	if (
+		version === "" ||
+		version === legacyBudgetFenceSettlementPayloadVersion
+	)
+		return legacyBudgetFenceSettlementPayloadVersion;
+	if (version === currentBudgetFenceSettlementPayloadVersion)
+		return currentBudgetFenceSettlementPayloadVersion;
+	throw new Error("unsupported fence settlement payload version");
+}
+
 /** Canonical finance statement signed by the independently enrolled finance
  * authority after verifying final charges and source retirement. */
 export function canonicalBudgetFenceSettlement(
 	reservation: BudgetReservation,
 	actualMicros: number,
 	evidence: Evidence,
-	payloadVersion: BudgetFenceSettlementPayloadVersion = reservation.fenceSettlementPayloadVersion ===
-	""
-		? legacyBudgetFenceSettlementPayloadVersion
-		: currentBudgetFenceSettlementPayloadVersion,
+	payloadVersion: BudgetFenceSettlementPayloadVersion = budgetFenceSettlementPayloadVersion(
+		reservation.fenceSettlementPayloadVersion,
+	),
 ): string {
 	const guard = reservation.fenceSettlementGuard;
 	if (

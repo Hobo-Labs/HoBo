@@ -429,7 +429,11 @@ export function validateBudgetSnapshot(
 		throw new TypeError("budget snapshot is stale or future-dated");
 }
 
-export function validateHostingQuote(quote: HostingQuote, now: string): void {
+export function validateHostingQuote(
+	quote: HostingQuote,
+	now: string,
+	options?: { allowLegacyKindless?: boolean },
+): void {
 	if (
 		!quote.quoteId ||
 		!quote.yardId ||
@@ -471,7 +475,11 @@ export function validateHostingQuote(quote: HostingQuote, now: string): void {
 			"provider-account exposures must itemize the liability bound",
 		);
 	for (const row of quote.entitlementClaims) {
-		if (!validEntitlementKind(row.kind))
+		const kind =
+			options?.allowLegacyKindless && row.kind === ""
+				? "allowance"
+				: row.kind;
+		if (!validEntitlementKind(kind))
 			throw new TypeError("unsupported entitlement kind");
 		if (!row.bucketId || !row.unit)
 			throw new TypeError("entitlement scope missing");
@@ -611,7 +619,12 @@ export function createBudgetAdmissionAuthority(options: {
 				.sort(),
 			entitlements: snapshot.entitlements
 				.map((row) =>
-					[row.kind, row.bucketId, row.unit, row.periodId].join("\u0000"),
+					[
+						persistedEntitlementKind(row.kind),
+						row.bucketId,
+						row.unit,
+						row.periodId,
+					].join("\u0000"),
 				)
 				.sort(),
 		});
@@ -628,18 +641,31 @@ export function createBudgetAdmissionAuthority(options: {
 		string,
 		Map<string, EntitlementHistory>
 	>();
-	const entitlementKey = (
+	const entitlementStableKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	) =>
-		JSON.stringify([
-			bucket.periodId,
-			bucket.kind,
-			bucket.bucketId,
-			bucket.unit,
-		]);
-	const entitlementUnitChangeKey = (
+		JSON.stringify([bucket.periodId, bucket.bucketId, bucket.unit]);
+	const entitlementLineageKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) => JSON.stringify([bucket.periodId, bucket.kind, bucket.bucketId]);
+	) => JSON.stringify([bucket.periodId, bucket.bucketId]);
+	function resolveEntitlementPrevious(
+		bucket: BudgetLedgerSnapshot["entitlements"][number],
+	): EntitlementHistory | undefined {
+		const direct = entitlementHistory.get(entitlementStableKey(bucket));
+		if (direct) return direct;
+		const unitChanges = entitlementUnitChangeHistory.get(
+			entitlementLineageKey(bucket),
+		);
+		if (!unitChanges || unitChanges.size === 0) return undefined;
+		const forUnit = unitChanges.get(bucket.unit);
+		if (forUnit) return forUnit;
+		if (unitChanges.size === 1) {
+			const [only] = unitChanges.values();
+			if (only) return only;
+		}
+		if (!unitChanges.has(bucket.unit)) return undefined;
+		throw new Error("ambiguous entitlement unit history");
+	}
 	function assertFinancialHistory(
 		next: BudgetLedgerSnapshot,
 		type: string,
@@ -653,21 +679,16 @@ export function createBudgetAdmissionAuthority(options: {
 		const configuration =
 			type === "budget.PolicyRevised" || type === "budget.PeriodReset";
 		for (const bucket of next.entitlements) {
-			const key = entitlementKey(bucket);
-			const unitChanges = entitlementUnitChangeHistory.get(
-				entitlementUnitChangeKey(bucket),
-			);
-			const previous =
-				entitlementHistory.get(key) ??
-				(unitChanges?.size === 1
-					? unitChanges.values().next().value
-					: undefined);
+			const previous = resolveEntitlementPrevious(bucket);
 			// Settlement legitimately reduces a live bucket at its existing observation.
 			// Configuration and any reintroduced bucket must respect the retained fence.
 			if (
 				!previous ||
 				(!configuration &&
-					current.entitlements.some((row) => entitlementKey(row) === key))
+					current.entitlements.some(
+						(row) =>
+							entitlementStableKey(row) === entitlementStableKey(bucket),
+					))
 			)
 				continue;
 			const observedAt = Date.parse(bucket.observedAt);
@@ -697,8 +718,8 @@ export function createBudgetAdmissionAuthority(options: {
 				validUntil: bucket.validUntil,
 				remainingUnits: bucket.remainingUnits,
 			};
-			entitlementHistory.set(entitlementKey(bucket), history);
-			const unitChangeKey = entitlementUnitChangeKey(bucket);
+			entitlementHistory.set(entitlementStableKey(bucket), history);
+			const unitChangeKey = entitlementLineageKey(bucket);
 			const unitChanges =
 				entitlementUnitChangeHistory.get(unitChangeKey) ??
 				new Map<string, EntitlementHistory>();
@@ -1524,6 +1545,9 @@ export function createBudgetAdmissionAuthority(options: {
 			)
 				throw new Error("budget reservation scope mismatch");
 			const previous = reservations.get(input.reservationId);
+			validateHostingQuote(input.quote, input.now, {
+				allowLegacyKindless: !!previous,
+			});
 			const quoteDigest = createHash("sha256")
 				.update(toJsonString(HostingQuoteSchema, input.quote))
 				.digest("hex");
@@ -1556,7 +1580,6 @@ export function createBudgetAdmissionAuthority(options: {
 					throw new Error("released reservation cannot authorize execution");
 				return clone(BudgetReservationSchema, previous);
 			}
-			validateHostingQuote(input.quote, input.now);
 			if (
 				input.iacPricingPin &&
 				!input.fenceSettlementGuard &&

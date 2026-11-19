@@ -541,16 +541,27 @@ export function createHostingBudgetAuthorityBridge(options: {
 					integer(actual.actualMicros),
 					{
 						...actual,
-						entitlementClaims: (actual.entitlementClaims ?? []).map((claim) =>
-							create(EntitlementClaimSchema, {
+						entitlementClaims: (actual.entitlementClaims ?? []).map((claim) => {
+							const legacyFence =
+								!!row.fenceSettlementGuard &&
+								row.fenceSettlementPayloadVersion === "";
+							if (legacyFence) {
+								if (
+									claim.kind !== "" &&
+									claim.kind !== hostingFreeTierKind
+								)
+									throw new Error("unsupported hosting entitlement kind");
+								return create(EntitlementClaimSchema, claim);
+							}
+							const normalized =
+								claim.kind === "" ? hostingFreeTierKind : claim.kind;
+							if (normalized !== hostingFreeTierKind)
+								throw new Error("unsupported hosting entitlement kind");
+							return create(EntitlementClaimSchema, {
 								...claim,
-								kind:
-									row.fenceSettlementGuard &&
-									row.fenceSettlementPayloadVersion === ""
-										? claim.kind
-										: claim.kind || hostingFreeTierKind,
-							}),
-						),
+								kind: hostingFreeTierKind,
+							});
+						}),
 					},
 				);
 				if (actual.actualMicros !== request.settledMicros)

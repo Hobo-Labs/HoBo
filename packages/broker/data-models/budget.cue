@@ -173,6 +173,9 @@ import (
 	if entitlementClaims != _|_ {
 		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
 	}
+	if maximumMicros != _|_ && maximumMicrosExact != _|_ {
+		maximumMicros: strconv.Atoi(maximumMicrosExact) & #Micros
+	}
 	if maximumMicrosExact != _|_ {
 		_exactBound: strconv.Atoi(maximumMicrosExact) & #Micros
 		_exactTotal: _exactBound & list.Sum([for account in providerAccounts {account.liabilityMicros}])
@@ -274,6 +277,8 @@ import (
 	iacEvidence?: #IacTargetLiabilityEvidence
 	iacDecision?: #IacTargetAdmissionDecision
 	if iacDecision != _|_ && iacDecision.status == "admitted" && iacDecision.budget.evaluation == "allowed" {
+		_admittedQuote:       iacDecision.quote & #HostingQuote
+		_admittedReservation: iacDecision.reservation & #BudgetReservation & {iacPricingPin: #IacPricingPin}
 		iacEvidence: #IacTargetLiabilityEvidence & {
 			targetId:      iacDecision.targetId
 			tenantId:      iacDecision.quote.ownerTenantId
