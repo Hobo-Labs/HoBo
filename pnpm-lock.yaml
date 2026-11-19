@@ -4836,8 +4836,6 @@ importers:
 
   src/draft/technical-proofs/outbound-xaa-token-exchange-contract: {}
 
-  src/draft/technical-proofs/paginated-query-contract: {}
-
   src/draft/technical-proofs/paradigm-idiom-packages-contract: {}
 
   src/draft/technical-proofs/partial-realize-rollback-contract: {}
