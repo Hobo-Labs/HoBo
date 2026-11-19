@@ -138,8 +138,8 @@ export function evaluatorFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 	fetchImpl?: typeof fetch,
 ): Evaluator | undefined {
-	if (env.HOBO_CONNECT_UI_COMPOSE === "off") return undefined;
 	const apiKey = env.VERCEL_OIDC_TOKEN || env.AI_GATEWAY_API_KEY;
+	if (env.HOBO_CONNECT_UI_COMPOSE !== "on") return undefined;
 	if (!apiKey) return undefined;
 	return experimental_createEvaluator({
 		apiKey,
