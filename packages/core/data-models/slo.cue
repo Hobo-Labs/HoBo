@@ -68,3 +68,45 @@ package core
 	metadata:   #SloMetadataRecord
 	spec:       #SloSpecRecord
 }
+
+#SliSampleRecord: {
+	time:  string & !=""
+	good:  number & >=0
+	total: number & >=0 & >=good
+}
+#SloWindowEvaluationRecord: {
+	startTime:             string & !=""
+	endTime:               string & !=""
+	status:                "ok" | "no-data" | "invalid-sli"
+	good?:                 number & >=0
+	total?:                number & >=0
+	errors?:               number & >=0
+	errorBudget?:          number & >=0
+	burnRate?:             number & >=0
+	remainingBudgetRatio?: number & >=0 & <=1
+	slices?:               int & >=0
+}
+#SloBurnEvaluationRecord: {
+	name:             string & !=""
+	threshold:        number & >0
+	triggered:        bool
+	window:           #SloWindowEvaluationRecord
+	lookbackWindow:   #SloSliceDuration
+	samplingInterval: #SloSliceDuration
+}
+#SloObjectiveEvaluationRecord: {
+	displayName: string & !=""
+	target:      number & >0 & <=1
+	status:      #SloEvaluationStatus
+	window:      #SloWindowEvaluationRecord
+	burnWindows: [...#SloBurnEvaluationRecord]
+}
+#SloEvaluationStatus: "healthy" | "burning" | "budget-exhausted" | "no-data" | "stale" | "invalid-sli" | "no-error-budget"
+#SloEvaluationRecord: {
+	schema:      "hobo.slo-computation-engine/v1"
+	sloName:     string & !=""
+	service:     string & !=""
+	evaluatedAt: string & !=""
+	status:      #SloEvaluationStatus
+	objectives: [#SloObjectiveEvaluationRecord, ...#SloObjectiveEvaluationRecord]
+}

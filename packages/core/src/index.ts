@@ -6,7 +6,10 @@ export {
 	BudgetPolicyRecordSchema,
 	BudgetScopeIdentityRecordSchema,
 } from "./_generated/budget_policy_pb.js";
-export { SloDefinitionRecordSchema } from "./_generated/slo_pb.js";
+export {
+	SloDefinitionRecordSchema,
+	SloEvaluationRecordSchema,
+} from "./_generated/slo_pb.js";
 export { WrpcCallEventSchema } from "./_generated/wrpc_call_pb.js";
 export { WrpcLinkManifestSchema } from "./_generated/wrpc_link_manifest_pb.js";
 export type {
@@ -791,6 +794,19 @@ export {
 	serializeSloDefinition,
 	sloDurationMs,
 } from "./ports/slo.js";
+export type {
+	SliSample,
+	SliSource,
+	SloBurnEvaluation,
+	SloEvaluation,
+	SloEvaluationStatus,
+	SloObjectiveEvaluation,
+	SloWindowEvaluation,
+} from "./ports/slo-computation.js";
+export {
+	computeSloStatus,
+	SLO_COMPUTATION_SCHEMA,
+} from "./ports/slo-computation.js";
 export type {
 	RunId,
 	Seq,

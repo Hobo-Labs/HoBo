@@ -67,3 +67,48 @@ message SloDefinitionRecord {
   SloMetadataRecord metadata = 4;
   SloSpecRecord spec = 5;
 }
+
+message SliSampleRecord {
+  string time = 1;
+  double good = 2;
+  double total = 3;
+}
+
+message SloWindowEvaluationRecord {
+  string start_time = 1;
+  string end_time = 2;
+  string status = 3;
+  optional double good = 4;
+  optional double total = 5;
+  optional double errors = 6;
+  optional double error_budget = 7;
+  optional double burn_rate = 8;
+  optional double remaining_budget_ratio = 9;
+  uint32 slices = 10;
+}
+
+message SloBurnEvaluationRecord {
+  string name = 1;
+  double threshold = 2;
+  bool triggered = 3;
+  SloWindowEvaluationRecord window = 4;
+  string lookback_window = 5;
+  string sampling_interval = 6;
+}
+
+message SloObjectiveEvaluationRecord {
+  string display_name = 1;
+  double target = 2;
+  string status = 3;
+  SloWindowEvaluationRecord window = 4;
+  repeated SloBurnEvaluationRecord burn_windows = 5;
+}
+
+message SloEvaluationRecord {
+  string schema = 1;
+  string slo_name = 2;
+  string service = 3;
+  string evaluated_at = 4;
+  string status = 5;
+  repeated SloObjectiveEvaluationRecord objectives = 6;
+}
