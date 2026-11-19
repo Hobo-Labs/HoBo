@@ -169,17 +169,13 @@ function snapshotJournalData(
 				}
 				const index = Number(name);
 				const isArrayIndex =
-					Number.isSafeInteger(index) &&
-					index >= 0 &&
-					String(index) === name;
+					Number.isSafeInteger(index) && index >= 0 && String(index) === name;
 				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: journal arrays may carry own string keys beyond indices during snapshot walks.
 				const arrayBag = value as JsonValue[] & Record<string, JsonValue>;
 				const raw = isArrayIndex ? value[index] : arrayBag[name];
 				if (!Object.hasOwn(value, name)) continue;
 				const next =
-					raw === undefined
-						? undefined
-						: snapshotJournalData(raw, seen);
+					raw === undefined ? undefined : snapshotJournalData(raw, seen);
 				if (isArrayIndex) {
 					if (next !== undefined) {
 						copy[index] = next;
@@ -199,9 +195,7 @@ function snapshotJournalData(
 		for (const key of Object.keys(value)) {
 			const entry = value[key];
 			const next =
-				entry === undefined
-					? undefined
-					: snapshotJournalData(entry, seen);
+				entry === undefined ? undefined : snapshotJournalData(entry, seen);
 			if (key === "__proto__" || entry === undefined) {
 				Object.defineProperty(copy, key, {
 					value: next,

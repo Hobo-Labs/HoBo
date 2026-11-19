@@ -1425,7 +1425,9 @@ describe("durable workflow: journal, restart, replay", () => {
 			run: (ctx) => ctx.step("read", () => "live"),
 		});
 		const journalBefore = await engine.journal("bad-step-result");
-		await expect(engine.resume(wf, "bad-step-result", {})).rejects.toMatchObject({
+		await expect(
+			engine.resume(wf, "bad-step-result", {}),
+		).rejects.toMatchObject({
 			name: "TypeError",
 			message: /invalid run\.StepCompleted|JSON-normalized/,
 		});
