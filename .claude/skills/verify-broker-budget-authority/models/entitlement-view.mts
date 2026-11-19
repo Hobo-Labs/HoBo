@@ -2,8 +2,6 @@ export const title = 'Keep an active entitlement claim settleable';
 const matches = (v) => v.bucketUnit === 'units' && v.bucketPeriod === 'p1';
 export const state = (v) => {
 	if (v.phase === 'new') return 'No reservation';
-	if (v.phase === 'settled') return 'Usage settled';
-	if (v.phase === 'released') return 'Unused reservation released';
 	if (v.attempted) {
 		return matches(v)
 			? v.claimed
@@ -16,6 +14,8 @@ export const state = (v) => {
 	if (v.replay === 'accepted-invalid') return 'Incompatible replay accepted';
 	if (v.replay === 'rejected') return 'Incompatible replay rejected';
 	if (v.claimed) return 'Execution claimed; hold retained';
+	if (v.phase === 'settled') return 'Usage settled';
+	if (v.phase === 'released') return 'Unused reservation released';
 	return v.phase === 'uncertain'
 		? 'Outcome uncertain; hold retained'
 		: 'Hold reserved';

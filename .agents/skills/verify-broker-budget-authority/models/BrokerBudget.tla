@@ -24,7 +24,7 @@ Settle == \E r \in Requests, amount \in {0, 1, 2}:
           /\ phase[r] \in {"held", "uncertain"} /\ claimed[r] /\ evidence[r]
           /\ phase' = [phase EXCEPT ![r] = "settled"]
           /\ usage' = [usage EXCEPT ![r] = amount]
-          /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage>>
+          /\ UNCHANGED <<claimed, evidence, unusedEvidence>>
 Claim == \E r \in Requests:
          /\ phase[r] \in {"held", "uncertain"} /\ ~claimed[r] /\ ~unusedEvidence[r]
          /\ claimed' = [claimed EXCEPT ![r] = TRUE]

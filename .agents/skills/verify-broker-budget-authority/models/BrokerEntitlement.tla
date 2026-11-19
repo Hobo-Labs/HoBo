@@ -41,7 +41,7 @@ ConfirmUnused == /\ Active /\ ~claimed /\ ~unusedRelease
 Release == /\ Active /\ ~claimed /\ unusedRelease
            /\ phase' = "released"
            /\ UNCHANGED <<claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
-ChangeTerminalScope == /\ phase \in {"settled", "released"} /\ ~attempted
+ChangeTerminalScope == /\ phase \in {"settled", "released"} /\ ~attempted /\ claimUnits # 0
                        /\ attempted' = TRUE /\ bucketUnit' = "other" /\ bucketPeriod' = "p2"
                        /\ UNCHANGED <<phase, claimed, replay, unusedRelease, claimUnits>>
 Done == /\ phase \in {"settled", "released"} /\ UNCHANGED vars

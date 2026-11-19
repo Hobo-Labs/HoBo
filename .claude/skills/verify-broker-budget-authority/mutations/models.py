@@ -21,7 +21,7 @@ cases = [
         '/\\ phase[r] \\in {"held", "uncertain"} /\\ ~claimed[r]'), "BrokerBudget.cfg"),
     ("final evidence", "BrokerBudget", "Requests = {1, 2}", "SettlementNeedsEvidence", (
         '/\\ phase[r] \\in {"held", "uncertain"} /\\ claimed[r] /\\ evidence[r]',
-        '/\\ phase[r] \\in {"held", "uncertain"} /\\ evidence[r]'), "BrokerBudget.cfg"),
+        '/\\ phase[r] \\in {"held", "uncertain"} /\\ claimed[r]'), "BrokerBudget.cfg"),
     ("signed settlement", "BrokerFence", None, "SettledRequiresClaimAndProofs", (
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed /\\ Valid(candidate)',
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed'), "BrokerFence.cfg"),
