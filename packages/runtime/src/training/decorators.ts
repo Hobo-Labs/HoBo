@@ -28,16 +28,6 @@ export interface TrainableDecorator<This, I, O> {
 	) => Trainable<I, O>;
 }
 
-/**
- * `trainable` is both the options factory (`@trainable(opts)`) and a BARE
- * decorator (`@trainable` with no call) — on a class it registers every
- * granular-declared method (`@intent`/`@returns`/`@description`), or every
- * own method with fully inferred groundings when nothing was annotated;
- * on a method it registers that method the same way. TC39 stage-3 call
- * shapes only (ADR-0125). Note: decorators never run on ambient `declare class`
- * declarations — those are honored by `scanDeclaredTrainables` (the
- * `hobo stub` source-scanning path).
- */
 export function trainable<This, I, O>(
 	options: TrainingOptions<I, O>,
 ): TrainableDecorator<This, I, O>;
