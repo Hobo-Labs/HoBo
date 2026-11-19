@@ -1105,6 +1105,9 @@ importers:
       '@hobo/provider-vercel':
         specifier: workspace:*
         version: link:../providers/provider-vercel
+      '@hobo/testing':
+        specifier: workspace:*
+        version: link:../testing
       '@hobo/yards':
         specifier: workspace:*
         version: link:../yards
