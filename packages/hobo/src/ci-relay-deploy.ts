@@ -1,58 +1,3 @@
-// `hobo ci deploy` — HoBo delivering its own hosted CI relay, a thin front
-// over @hobo/cd.
-//
-// The relay is a HoBo app (`packages/ci-vercel/src/bindle.ts`), built by Vercel
-// from the git repository. This verb loads that Bindle from the project
-// directory, checks it names no provider, and places it with the relay's Yard
-// (`deploy/yard.ts`, `ci-relay-yard.ts`): the Yard names the provider, the
-// project and repository, and the binding rows; the Camp the target names
-// chooses the rows its environment requires, and those rows project the
-// non-secret settings (the config service's coordinates among them). Only
-// Vercel Yards are realized here today.
-//
-// A real run does not deploy by itself: it hands the relay to CD
-// (`ci-relay-delivery.ts`). The build is recorded as Freight (the Bindle, its
-// declaration and the commit it pins), promoted through the relay's pipeline
-// (`deploy/delivery.ts`: preview, then production, which takes only Freight
-// preview qualified) and the CD gate, and realized by a conductor reconciler
-// whose realizer is `createVercelDeployProvider`'s git-artifact mode: the
-// settings first, then one deployment for the whole Bindle. `--wait` drives the
-// promotion to its end: READY, then the node's probes (`/healthz` for
-// preview, `/healthz` and `/readyz` for production, failing closed on no
-// data), then qualification. Without `--wait` the command returns once the
-// deployment exists, unverified. The journal is the shared CD journal
-// (`<HOBO_HOME>/cd`, or the store HOBO_CD_SQLITE_PATH / HOBO_CD_POSTGRES_URL
-// names), the one `hobo deploy` reads.
-//
-// CONTRACT CHANGE (from the direct-deploy verb; packages/ci-vercel/README.md
-// "Contract changes of hobo ci deploy"): `--wait` now verifies and qualifies,
-// so it needs the target's probe origin (HOBO_CI_RELAY_PREVIEW_URL or
-// HOBO_CI_RELAY_URL) and is refused without it
-// (HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET); `--target production` needs `--sha`
-// and preview's qualification of that commit in the same journal
-// (HOBO_CI_DEPLOY_NOT_QUALIFIED); the wait limit is 20 minutes, not 15; new
-// failure codes: HOBO_CI_DEPLOY_INCOMPLETE, HOBO_CI_DEPLOY_VERIFICATION_FAILED,
-// HOBO_CI_DEPLOY_NOT_QUALIFIED, HOBO_CI_DEPLOY_SOURCE_UNPINNED,
-// HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE, HOBO_CI_DEPLOY_DELIVERY_INVALID,
-// HOBO_CI_DEPLOY_FREIGHT_REFUSED, HOBO_CI_DEPLOY_PROMOTION_REFUSED.
-//
-// `--provision` first attaches the chosen Marketplace bindings (the cache)
-// with the Vercel CLI, idempotently (`ci-relay-provision.ts`).
-//
-// What it deliberately does not do: set a secret (a `--set` must name a field
-// the app's `config()` schema declares non-secret, and pass the name and value
-// screen in `vercel-env-policy.ts`), provision a database or a storage
-// integration, or create the project unless `--create-project` asks.
-//
-// `--dry-run` forms the plan (`VercelGitDeploymentPlan`,
-// data-models/vercel_git_deployment.proto) with the same functions the client
-// sends with, names the delivery CD would run, reads no token and opens no
-// connection.
-//
-// HONEST SCOPE: exercised against fake transports and a temporary journal
-// only. No live deployment has been made from this repository through this
-// verb.
-
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -77,10 +22,7 @@ import {
 	type HttpTransport,
 	type TrustedVault,
 } from "@hobo/core";
-import {
-	type ParsedSecretStoreBinding,
-	SECRET_STORE_BINDING_FILE,
-} from "@hobo/secret-store-claim";
+import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
 import type { Yard } from "@hobo/yards";
 import {
 	type VercelGitDeploymentPlan,
@@ -467,10 +409,6 @@ export async function runCiRelayDeploy(
 		return usage(
 			"--target is preview (the default) or production; production is never implied.",
 		);
-	// The secret store chosen when the relay was first deployed
-	// (`hobo ci secret-store provision`): its committed coordinates fill the
-	// config-service binding's inputs and name the team, so no repository
-	// variable or Vercel secret holds them.
 	let storeBinding: ParsedSecretStoreBinding | undefined;
 	try {
 		storeBinding = loadSecretStoreBinding(input.cwd);
@@ -580,7 +518,7 @@ export async function runCiRelayDeploy(
 	const missing = placement.inputs.filter((name) => !settings.has(name));
 	if (missing.length > 0)
 		return usage(
-			`Camp ${placement.camp} needs ${missing.map((name) => `--set ${name}=<value>`).join(" ")}: its bindings ask the deploy for these, and the Yard holds no value for them. The config service's coordinates come from ${SECRET_STORE_BINDING_FILE}, which hobo ci secret-store provision writes when it chooses the store.`,
+			`Camp ${placement.camp} needs a private owner-selected runtime connection. Complete the HoBo setup ceremony when private runtime provisioning is available.`,
 		);
 	// The Yard's settings and the command's, one map, sorted by name.
 	const configuration = new Map(

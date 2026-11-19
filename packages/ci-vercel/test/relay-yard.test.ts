@@ -110,7 +110,6 @@ describe("the relay's Yard", () => {
 				connectivityId: "infisical.oidc-auth/v1",
 				properties: {
 					capability: "secrets.config-service/v1",
-					bindingFile: "deploy/secret-store.binding.json",
 					inputs: [
 						"INFISICAL_IDENTITY_ID",
 						"INFISICAL_PROJECT_ID",

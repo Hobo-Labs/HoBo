@@ -17,6 +17,7 @@ import {
 	type RelayRealization,
 	type RelayTargetName,
 } from "./ci-relay-delivery.js";
+import { readOwnerRelayBinding } from "./ci-relay-owner-binding.js";
 import { relayCommitSnapshot } from "./ci-relay-snapshot.js";
 import { readRelaySource } from "./ci-relay-source.js";
 import {
@@ -24,10 +25,6 @@ import {
 	loadRelayYard,
 	resolveRelayPlacement,
 } from "./ci-relay-yard.js";
-import {
-	loadSecretStoreBinding,
-	secretStoreDeployInputs,
-} from "./ci-secret-store.js";
 import {
 	createGithubReleaseJournal,
 	findPendingGithubRelease,
@@ -43,7 +40,6 @@ import {
 	createReleaseJournal,
 	findPendingLocalRelease,
 } from "./release-journal.js";
-import { createVercelClient, type VercelFetch } from "./vercel-client.js";
 import {
 	createVercelReleaseProvider,
 	resolveVercelProject,
@@ -107,6 +103,15 @@ export interface CiRelayManagedInput {
 	>[0]["ownerSettings"];
 	readonly openOwnerStore?: Parameters<
 		typeof loadOwnerDeployCredentials
+	>[0]["open"];
+	readonly relayOwnerSession?: Parameters<
+		typeof readOwnerRelayBinding
+	>[0]["ownerSession"];
+	readonly relayOwnerSettings?: Parameters<
+		typeof readOwnerRelayBinding
+	>[0]["ownerSettings"];
+	readonly openRelayOwnerStore?: Parameters<
+		typeof readOwnerRelayBinding
 	>[0]["open"];
 	readonly fetch?: typeof fetch;
 	readonly now?: () => number;
@@ -177,23 +182,20 @@ export async function runCiRelayManaged(
 		const loaded = await loadDeliveryFile(RELAY_DELIVERY_FILE, {
 			cwd: snapshot.dir,
 		});
-		const binding = loadSecretStoreBinding(snapshot.dir);
-		if (yard?.providerId !== "vercel" || !declaration || !loaded.ok || !binding)
+		if (yard?.providerId !== "vercel" || !declaration || !loaded.ok)
 			return refused(
 				"HOBO_CI_MANAGED_CONFIG_INVALID",
-				"The pinned relay needs a Vercel Yard, delivery records, Bindle and secret-store binding.",
+				"The pinned relay needs a Vercel Yard, delivery records and Bindle.",
 			);
 		const joined = await loadRelayJoinedYards(snapshot.dir, yard);
 		const preview = resolveRelayPlacement(yard, "preview", joined);
 		const production = resolveRelayPlacement(yard, "production", joined);
 		const { project, repository, rootDirectory, productionOrigin } = production;
-		const teamId = binding.vercelTeamId;
 		if (
 			!project ||
 			!repository ||
 			rootDirectory !== "packages/ci-vercel" ||
 			!productionOrigin ||
-			!teamId ||
 			preview.project !== project ||
 			preview.repository !== repository
 		)
@@ -231,11 +233,11 @@ export async function runCiRelayManaged(
 				"HOBO_CI_DEPLOY_AUTH_REQUIRED",
 				"HoBo CD needs access to the Vercel connection in the owner's selected store session.",
 			);
-		const savedTeam = vault.reveal("VERCEL_TEAM_ID");
-		if (savedTeam && savedTeam !== teamId)
+		const teamId = vault.reveal("VERCEL_TEAM_ID");
+		if (!teamId)
 			return refused(
-				"HOBO_CI_DEPLOY_TEAM_MISMATCH",
-				"The selected Vercel connection does not belong to the relay's team.",
+				"HOBO_CI_DEPLOY_AUTH_REQUIRED",
+				"HoBo CD needs its scoped Vercel connection from the owner's selected store session.",
 			);
 		const githubActions =
 			input.env.GITHUB_ACTIONS === "true" && requestedTarget === "production";
@@ -260,7 +262,6 @@ export async function runCiRelayManaged(
 				signal: AbortSignal.timeout(remaining),
 			});
 		};
-		const vercelFetch: VercelFetch = (url, init) => boundedFetch(url, init);
 		let projectId: string;
 		try {
 			projectId = await resolveVercelProject({
@@ -274,6 +275,44 @@ export async function runCiRelayManaged(
 				"HOBO_CI_MANAGED_PROJECT_UNAVAILABLE",
 				"The selected Vercel project could not be verified for this team.",
 			);
+		}
+		let runtimeBinding:
+			| Awaited<ReturnType<typeof readOwnerRelayBinding>>
+			| undefined;
+		if (requestedTarget === "production") {
+			runtimeBinding = await readOwnerRelayBinding({
+				cwd: input.cwd,
+				env: input.env,
+				teamId,
+				projectId,
+				...(input.relayOwnerSession
+					? { ownerSession: input.relayOwnerSession }
+					: undefined),
+				...(input.relayOwnerSettings
+					? { ownerSettings: input.relayOwnerSettings }
+					: undefined),
+				...(input.openRelayOwnerStore
+					? { open: input.openRelayOwnerStore }
+					: undefined),
+				...(input.fetch ? { fetch: input.fetch } : undefined),
+			});
+			if (runtimeBinding.kind !== "ready")
+				return refused(
+					runtimeBinding.kind === "mismatch"
+						? "HOBO_CI_MANAGED_BINDING_MISMATCH"
+						: "HOBO_CI_MANAGED_BINDING_REQUIRED",
+					"The relay's scoped runtime identity is unavailable or does not match the selected deployment. Complete the HoBo setup ceremony.",
+				);
+			if (
+				runtimeBinding.binding.environment !==
+					production.settings.get("INFISICAL_ENVIRONMENT") ||
+				runtimeBinding.binding.secretPath !==
+					production.settings.get("INFISICAL_SECRET_PATH")
+			)
+				return refused(
+					"HOBO_CI_MANAGED_BINDING_MISMATCH",
+					"The relay's scoped runtime identity does not match the selected deployment. Complete the HoBo setup ceremony.",
+				);
 		}
 		const home = input.home ?? defaultHoboHome(input.env);
 		let recovery: Awaited<ReturnType<typeof findPendingGithubRelease>>;
@@ -296,11 +335,6 @@ export async function runCiRelayManaged(
 				);
 			}
 		}
-		const client = createVercelClient({
-			token,
-			teamId,
-			fetch: vercelFetch,
-		});
 		const provider = createVercelReleaseProvider({
 			token,
 			teamId,
@@ -379,8 +413,20 @@ export async function runCiRelayManaged(
 							},
 						};
 					}
+					let runtimeEnvironment: Record<string, string> | undefined;
 					if (target === "production") {
-						const inputs = secretStoreDeployInputs(binding);
+						if (runtimeBinding?.kind !== "ready")
+							return {
+								ok: false,
+								code: "HOBO_CI_MANAGED_BINDING_REQUIRED",
+								message:
+									"The relay's scoped runtime identity is unavailable. Complete the HoBo setup ceremony.",
+							};
+						const inputs = new Map([
+							["INFISICAL_SITE_URL", runtimeBinding.binding.siteUrl],
+							["INFISICAL_PROJECT_ID", runtimeBinding.binding.projectId],
+							["INFISICAL_IDENTITY_ID", runtimeBinding.binding.identityId],
+						]);
 						const missing = production.inputs.filter(
 							(name) => !inputs.has(name),
 						);
@@ -391,18 +437,16 @@ export async function runCiRelayManaged(
 								message:
 									"A production binding has no non-secret setting in the store binding.",
 							};
-						await client.setProjectEnv({
-							project: projectId,
-							target,
-							variables: Object.fromEntries(
-								[...production.settings, ...inputs].filter(
-									([name]) =>
-										production.settings.has(name) ||
-										production.inputs.includes(name),
-								),
+						runtimeEnvironment = Object.fromEntries(
+							[...production.settings, ...inputs].filter(
+								([name]) =>
+									production.settings.has(name) ||
+									production.inputs.includes(name),
 							),
-						});
+						);
 					}
+					if (target === "production")
+						input.relayOwnerSettings?.assertCurrent?.();
 					const deployment = await deployVercelSource({
 						token,
 						teamId,
@@ -413,6 +457,11 @@ export async function runCiRelayManaged(
 						rootDirectory,
 						source,
 						target,
+						...(runtimeEnvironment ? { runtimeEnvironment } : undefined),
+						...(target === "production" &&
+						input.relayOwnerSettings?.selectionSignal
+							? { signal: input.relayOwnerSettings.selectionSignal }
+							: undefined),
 						buildSettings: {
 							installCommand: "pnpm install --frozen-lockfile --ignore-scripts",
 							buildCommand:

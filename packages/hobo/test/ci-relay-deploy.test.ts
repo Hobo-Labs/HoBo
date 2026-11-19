@@ -10,7 +10,8 @@ import { at } from "@hobo/core/total-access";
 import { type PactLifecycle, pactBackedTransport } from "@hobo/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { createCiCommand } from "../src/ci-command.js";
+import { createCiCommand, parseCiArgs } from "../src/ci-command.js";
+import { CI_DEPLOY_OPTIONS, runCiRelayDeploy } from "../src/ci-relay-deploy.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
 import { RELAY_VERIFY_REFUSAL } from "../src/ci-relay-verify.js";
 import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
@@ -109,18 +110,45 @@ async function deploy(
 		deployCredentials.put("VERCEL_TOKEN", storeToken);
 	const cli = createHoboCli({
 		commands: {
-			ci: createCiCommand({
-				env: plainEnv,
-				deployCredentials,
-				vercelFetch: options.fetch,
-				...(options.vercelCli !== undefined
-					? { vercelCli: options.vercelCli }
-					: undefined),
-				...(options.sleep !== undefined ? { sleep: options.sleep } : undefined),
-				...(options.now !== undefined ? { now: options.now } : undefined),
-				hoboHome: options.hoboHome ?? freshHome(),
-				probeHttp: options.probe ?? healthyRelay().http,
-			}),
+			ci: {
+				implemented: true,
+				async run({ args: raw, flags, emitProgress }) {
+					const { values, positionals } = parseCiArgs(raw);
+					const usage = (message: string) => ({
+						ok: false,
+						status: "usage",
+						code: "HOBO_CLI_USAGE",
+						message,
+					});
+					if (positionals.length !== 1)
+						return usage("hobo ci deploy takes no positional arguments.");
+					const allowed = new Set<string>(CI_DEPLOY_OPTIONS);
+					const unsupported = Object.entries(values).find(
+						([key, value]) => value !== undefined && !allowed.has(key),
+					);
+					if (unsupported)
+						return usage(
+							`--${unsupported[0]} does not apply to hobo ci deploy.`,
+						);
+					return runCiRelayDeploy({
+						cwd: flags.cwd,
+						values,
+						env: plainEnv,
+						credentials: deployCredentials,
+						fetch: options.fetch,
+						...(options.vercelCli !== undefined
+							? { runVercelCli: options.vercelCli }
+							: undefined),
+						...(options.sleep !== undefined
+							? { sleep: options.sleep }
+							: undefined),
+						...(options.now !== undefined ? { now: options.now } : undefined),
+						home: options.hoboHome ?? freshHome(),
+						probe: options.probe ?? healthyRelay().http,
+						emitProgress,
+					});
+				},
+			},
 		},
 	});
 	const teamOverride = args.includes("--team")
@@ -346,40 +374,15 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		);
 	});
 
-	it("fills production Infisical coordinates from deploy/secret-store.binding.json when present", async () => {
-		const binding = parseJsonObject(
-			readFileSync(
-				new URL(
-					"../../ci-vercel/deploy/secret-store.binding.json",
-					import.meta.url,
-				),
-				"utf8",
-			),
-		);
+	it("refuses production when a private runtime connection is unavailable", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
 			[...RELAY, "--target", "production", "--sha", SHA, "--dry-run"],
 			{ fetch },
 		);
-		expect(ran.exitCode).toBe(0);
-		const plan = isJsonObject(ran.data.plan) ? ran.data.plan : {};
-		const rawSettings = plan.settings;
-		const settings = Array.isArray(rawSettings) ? rawSettings : [];
-		expect(settings).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					key: "INFISICAL_PROJECT_ID",
-					value: binding.projectId,
-				}),
-				expect.objectContaining({
-					key: "INFISICAL_IDENTITY_ID",
-					value: binding.relayIdentityId,
-				}),
-				expect.objectContaining({
-					key: "INFISICAL_SITE_URL",
-					value: binding.endpoint,
-				}),
-			]),
+		expect(ran.exitCode).not.toBe(0);
+		expect(ran.envelope.message).toContain(
+			"private owner-selected runtime connection",
 		);
 		expect(sent).toEqual([]);
 	});

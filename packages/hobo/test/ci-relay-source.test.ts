@@ -38,6 +38,9 @@ describe("relay source inputs", () => {
 		expect(source.commit).toBe(sha);
 		expect(paths.has("pnpm-lock.yaml")).toBe(true);
 		expect(paths.has("packages/ci-vercel/api/relay.ts")).toBe(true);
+		expect(
+			paths.has("packages/ci-vercel/deploy/secret-store.binding.json"),
+		).toBe(false);
 		expect(paths.has("packages/core/src/index.ts")).toBe(true);
 		expect([...paths].some((path) => path.startsWith("site/"))).toBe(false);
 	});

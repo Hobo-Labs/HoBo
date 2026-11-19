@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
 	createSecretCaptureApp,
 	SECRET_CAPTURE_SEAL_SOURCE,
 } from "@hobo/mcp";
+import { readSecretStoreBinding } from "@hobo/secret-store-claim";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createComposedHoboCli } from "../src/cli.js";
 import type { JsonObject } from "../src/json.js";
@@ -116,26 +117,6 @@ let emptyDir: string;
 beforeAll(() => {
 	projectDir = mkdtempSync(path.join(tmpdir(), "hobo-capture-"));
 	emptyDir = mkdtempSync(path.join(tmpdir(), "hobo-capture-empty-"));
-	mkdirSync(path.join(projectDir, "deploy"));
-	writeFileSync(
-		path.join(projectDir, "deploy", "secret-store.binding.json"),
-		`${JSON.stringify(
-			{
-				kind: "infisical-cloud-attach",
-				endpoint: "https://infisical.test",
-				projectId: "proj-1",
-				environment: "prod",
-				secretPath: "/hobo-ci-relay",
-				relayIdentityId: "relay-identity",
-				deployIdentityId: "deploy-identity",
-				claimBundleId: "secret-store:hobo-ci-relay:1",
-				deployProjectId: "proj-deploy",
-				claimState: "claimed",
-			},
-			null,
-			"\t",
-		)}\n`,
-	);
 });
 
 afterAll(() => {
@@ -149,12 +130,28 @@ const APPS_CLIENT = {
 	},
 };
 
+const fixtureBinding = readSecretStoreBinding(
+	JSON.stringify({
+		kind: "infisical-cloud-attach",
+		endpoint: "https://infisical.test",
+		projectId: "proj-1",
+		environment: "prod",
+		secretPath: "/hobo-ci-relay",
+		relayIdentityId: "relay-identity",
+		deployIdentityId: "deploy-identity",
+		claimBundleId: "fixture-claim",
+		deployProjectId: "proj-deploy",
+		claimState: "claimed",
+	}),
+);
+
 function harness(dir: string) {
 	const infisical = fakeInfisical();
 	const capture = createSecretCaptureApp({
 		specs: RELAY_SECRET_CAPTURE_SPECS,
 		connector: createInfisicalCaptureConnector({
 			projectDir: dir,
+			privateBinding: () => (dir === projectDir ? fixtureBinding : undefined),
 			fetch: infisical.fetcher,
 		}),
 	});
@@ -301,7 +298,16 @@ describe("hobo-mcp secret capture into Infisical (MCP App channel)", () => {
 		expect(revoke?.authorized).toBe(false);
 
 		const transcript = h.transcript.join("\n");
-		for (const secret of [valkey, turso, WRITER_SECRET, ACCESS_TOKEN])
+		for (const secret of [
+			valkey,
+			turso,
+			WRITER_SECRET,
+			ACCESS_TOKEN,
+			"proj-1",
+			"proj-deploy",
+			"relay-identity",
+			"deploy-identity",
+		])
 			expect(transcript).not.toContain(secret);
 		expect(transcript).not.toContain(
 			"infisical://proj-1/prod/hobo-ci-relay/VALKEY_URL",

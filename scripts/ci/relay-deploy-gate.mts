@@ -32,10 +32,6 @@ export const RELAY_OPTIONAL_ROOT_INPUTS = [
 	".pnpmfile.mjs",
 ] as const;
 
-/** The relay's committed secret store binding: coordinates only. */
-export const RELAY_SECRET_STORE_BINDING =
-	"packages/ci-vercel/deploy/secret-store.binding.json";
-
 /** The deploy job's `timeout-minutes` in relay-deploy.yml (CI caps every job at 20). */
 export const RELAY_DEPLOY_JOB_TIMEOUT_MINUTES = 20;
 
@@ -48,9 +44,6 @@ export function adoptDeadline(nowMs: number): string {
 				60_000,
 	).toISOString();
 }
-
-/** What the gate knows of the binding; it never reads a value out. */
-export type StoreBindingState = "absent" | "unreadable" | "bound";
 
 export type GateDecision = Readonly<{
 	run: boolean;
@@ -85,44 +78,12 @@ export function touchesRelay(
 	);
 }
 
-/**
- * Whether the binding file is there, is JSON, and names a kind and an HTTPS
- * endpoint. A shape hint only: the full parse (`@hobo/secret-store-claim`'s
- * `readSecretStoreBinding`) runs in the credential step, and this gate runs
- * before anything is installed, on node builtins only.
- */
-export function storeBindingState(text: string | undefined): StoreBindingState {
-	if (text === undefined) return "absent";
-	try {
-		JSON.parse(text);
-	} catch {
-		return "unreadable";
-	}
-	return /"kind"\s*:\s*"[a-z-]{1,64}"/u.test(text) &&
-		/"endpoint"\s*:\s*"https:\/\/[A-Za-z0-9.-]+/u.test(text)
-		? "bound"
-		: "unreadable";
-}
-
 export function decide(input: {
 	readonly event: string;
-	readonly store: StoreBindingState;
 	/** Changed paths of a push, or undefined when the range could not be read. */
 	readonly changed?: readonly string[];
 	readonly inputDirs: readonly string[];
 }): GateDecision {
-	if (input.store === "absent")
-		return {
-			run: false,
-			error: true,
-			reason: `the relay runtime configuration ${RELAY_SECRET_STORE_BINDING} is missing; use the HoBo owner hand-off to restore the connection`,
-		};
-	if (input.store === "unreadable")
-		return {
-			run: false,
-			error: true,
-			reason: `${RELAY_SECRET_STORE_BINDING} is not a valid relay runtime configuration; use the HoBo owner hand-off to repair it`,
-		};
 	if (input.event === "workflow_dispatch")
 		return { run: true, reason: "a manual run deploys" };
 	if (input.event !== "push")
@@ -163,15 +124,8 @@ function main(argv: readonly string[]): void {
 	const to = flag("--to") ?? "HEAD";
 	const output = flag("--github-output");
 	const changed = event === "push" ? changedPaths(from, to) : undefined;
-	let bindingText: string | undefined;
-	try {
-		bindingText = readFileSync(join(root, RELAY_SECRET_STORE_BINDING), "utf8");
-	} catch {
-		bindingText = undefined;
-	}
 	const decision = decide({
 		event,
-		store: storeBindingState(bindingText),
 		...(event === "push" && changed !== undefined ? { changed } : undefined),
 		inputDirs:
 			event === "push"

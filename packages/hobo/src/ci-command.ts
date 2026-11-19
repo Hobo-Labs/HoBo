@@ -40,12 +40,7 @@ import {
 	meshNodesData,
 	meshNodesTable,
 } from "./ci-mesh-status.js";
-import { CI_DEPLOY_ADOPT_OPTIONS, runCiRelayAdopt } from "./ci-relay-adopt.js";
-import {
-	CI_DEPLOY_ONLY_OPTIONS,
-	CI_DEPLOY_OPTIONS,
-	runCiRelayDeploy,
-} from "./ci-relay-deploy.js";
+import { CI_DEPLOY_ONLY_OPTIONS } from "./ci-relay-deploy.js";
 import {
 	CI_DEPLOY_MANAGED_OPTIONS,
 	runCiRelayManaged,
@@ -375,6 +370,9 @@ export function createCiCommand(
 		ownerFor?: (
 			cwd: string,
 		) => Pick<OwnerChannel, "vault" | "storeSettings"> | undefined;
+		relayOwnerFor?: (
+			cwd: string,
+		) => Pick<OwnerChannel, "vault" | "storeSettings"> | undefined;
 		ownerSettings?: Parameters<
 			typeof loadOwnerDeployCredentials
 		>[0]["ownerSettings"];
@@ -435,96 +433,51 @@ export function createCiCommand(
 				return usage("Unknown CI command. Run hobo ci --help.");
 			if (command === "deploy") {
 				const owner = deps.ownerFor?.(context.cwd);
+				const relayOwner = deps.relayOwnerFor?.(context.cwd);
 				const ownerSession = owner?.vault ?? deps.ownerSession;
 				const ownerSettings = owner?.storeSettings ?? deps.ownerSettings;
 				if (positionals.length !== 1)
 					return usage("hobo ci deploy takes no positional arguments.");
-				if (values.managed === true) {
-					const allowed = new Set<string>(CI_DEPLOY_MANAGED_OPTIONS);
-					const unsupported = Object.entries(values).find(
-						([key, value]) => value !== undefined && !allowed.has(key),
+				if (values.adopt === true)
+					return usage(
+						"--adopt requires a Git-linked Vercel deployment. Use the HoBo managed pinned-source delivery ceremony.",
 					);
-					if (unsupported)
-						return usage(
-							`--${unsupported[0]} does not apply to hobo ci deploy --managed.`,
-						);
-					return runCiRelayManaged({
-						cwd: flags.cwd,
-						values,
-						env: deps.env ?? process.env,
-						...(deps.deployCredentials !== undefined
-							? { credentials: deps.deployCredentials }
-							: undefined),
-						...(ownerSession !== undefined ? { ownerSession } : undefined),
-						...(ownerSettings !== undefined ? { ownerSettings } : undefined),
-						...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
-						...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
-						...(deps.now !== undefined ? { now: deps.now } : undefined),
-						...(deps.hoboHome !== undefined
-							? { home: deps.hoboHome }
-							: undefined),
-						emitProgress,
-					});
-				}
-				if (values.adopt === true) {
-					const adoptable = new Set<string>(CI_DEPLOY_ADOPT_OPTIONS);
-					const other = Object.entries(values).find(
-						([key, value]) => value !== undefined && !adoptable.has(key),
-					);
-					if (other)
-						return usage(
-							`--${other[0]} does not apply to hobo ci deploy --adopt: it observes the deployment Vercel's Git integration made and configures none.`,
-						);
-					return runCiRelayAdopt({
-						cwd: flags.cwd,
-						values,
-						env: deps.env ?? process.env,
-						...(deps.githubHttp !== undefined
-							? { github: deps.githubHttp }
-							: undefined),
-						...(deps.probeHttp !== undefined
-							? { probe: deps.probeHttp }
-							: undefined),
-						...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
-						...(deps.now !== undefined ? { now: deps.now } : undefined),
-						...(deps.hoboHome !== undefined
-							? { home: deps.hoboHome }
-							: undefined),
-						emitProgress,
-					});
-				}
-				const allowed = new Set<string>(CI_DEPLOY_OPTIONS);
+				const allowed = new Set<string>([...CI_DEPLOY_MANAGED_OPTIONS, "wait"]);
 				const unsupported = Object.entries(values).find(
 					([key, value]) => value !== undefined && !allowed.has(key),
 				);
 				if (unsupported)
-					return usage(`--${unsupported[0]} does not apply to hobo ci deploy.`);
-				return runCiRelayDeploy({
+					return usage(
+						`--${unsupported[0]} is unavailable for HoBo managed delivery. Use the HoBo setup ceremony and pinned-source options.`,
+					);
+				return runCiRelayManaged({
 					cwd: flags.cwd,
-					values,
+					values:
+						values.managed === true
+							? values
+							: { ...values, target: values.target ?? "preview" },
 					env: deps.env ?? process.env,
 					...(deps.deployCredentials !== undefined
 						? { credentials: deps.deployCredentials }
 						: undefined),
 					...(ownerSession !== undefined ? { ownerSession } : undefined),
 					...(ownerSettings !== undefined ? { ownerSettings } : undefined),
-					...(deps.vercelFetch !== undefined
-						? { fetch: deps.vercelFetch }
+					...(relayOwner?.vault
+						? { relayOwnerSession: relayOwner.vault }
 						: undefined),
-					...(deps.vercelCli !== undefined
-						? { runVercelCli: deps.vercelCli }
+					...(relayOwner?.storeSettings
+						? { relayOwnerSettings: relayOwner.storeSettings }
 						: undefined),
+					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
 					...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
 					...(deps.now !== undefined ? { now: deps.now } : undefined),
 					...(deps.hoboHome !== undefined
 						? { home: deps.hoboHome }
 						: undefined),
-					...(deps.probeHttp !== undefined
-						? { probe: deps.probeHttp }
-						: undefined),
 					emitProgress,
 				});
 			}
+
 			if (command === "secret-store") {
 				if (positionals.length !== 2)
 					return usage(

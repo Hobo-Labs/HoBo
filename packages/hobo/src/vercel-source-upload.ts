@@ -16,6 +16,15 @@ export class VercelSourceDeploymentError extends Error {
 
 type SourceDeployment = Readonly<{ id: string; url: string }>;
 
+const RELAY_RUNTIME_ENV_KEYS = [
+	"HOBO_CI_CONFIG_SERVICE",
+	"INFISICAL_SITE_URL",
+	"INFISICAL_PROJECT_ID",
+	"INFISICAL_IDENTITY_ID",
+	"INFISICAL_ENVIRONMENT",
+	"INFISICAL_SECRET_PATH",
+] as const;
+
 function object(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -30,12 +39,14 @@ export async function deployVercelSource(input: {
 	readonly rootDirectory: string;
 	readonly source: PinnedGitSource;
 	readonly target: "preview" | "production";
+	readonly runtimeEnvironment?: Readonly<Record<string, string>>;
 	readonly buildSettings?: Readonly<{
 		installCommand: string;
 		buildCommand: string;
 	}>;
 	readonly fetch?: typeof fetch;
 	readonly deadline?: number;
+	readonly signal?: AbortSignal;
 	readonly sleep?: (ms: number) => Promise<void>;
 }): Promise<SourceDeployment> {
 	if (
@@ -57,6 +68,26 @@ export async function deployVercelSource(input: {
 		throw new VercelSourceDeploymentError(
 			"invalid-input",
 			"The Vercel source deployment input is invalid.",
+		);
+
+	if (
+		input.runtimeEnvironment !== undefined &&
+		(input.target !== "production" ||
+			Object.keys(input.runtimeEnvironment).length !==
+				RELAY_RUNTIME_ENV_KEYS.length ||
+			input.runtimeEnvironment.HOBO_CI_CONFIG_SERVICE !== "infisical" ||
+			RELAY_RUNTIME_ENV_KEYS.some((key) => {
+				const value = input.runtimeEnvironment?.[key];
+				return (
+					!value ||
+					value.length > 1024 ||
+					[...value].some((character) => (character.codePointAt(0) ?? 0) < 32)
+				);
+			}))
+	)
+		throw new VercelSourceDeploymentError(
+			"invalid-input",
+			"The deployment runtime configuration is invalid.",
 		);
 
 	const blobs = new Map<string, Buffer>();
@@ -106,7 +137,10 @@ export async function deployVercelSource(input: {
 			hoboSourceCommit: input.source.commit,
 			hoboStagedProduction: input.target === "production" ? "true" : "false",
 		},
-		env: { HOBO_CI_SOURCE_SHA: input.source.commit },
+		env: {
+			HOBO_CI_SOURCE_SHA: input.source.commit,
+			...input.runtimeEnvironment,
+		},
 		projectSettings: {
 			rootDirectory: input.rootDirectory,
 			sourceFilesOutsideRootDirectory: true,
@@ -120,6 +154,11 @@ export async function deployVercelSource(input: {
 	const team = `?teamId=${encodeURIComponent(input.teamId)}`;
 	const headers = { Authorization: `Bearer ${input.token}` };
 	const send = async (url: string, init: RequestInit): Promise<Response> => {
+		if (input.signal?.aborted)
+			throw new VercelSourceDeploymentError(
+				"aborted",
+				"The owner session changed before deployment.",
+			);
 		const remaining =
 			input.deadline === undefined
 				? 30_000
@@ -133,7 +172,9 @@ export async function deployVercelSource(input: {
 			return await http(url, {
 				...init,
 				redirect: "error",
-				signal: AbortSignal.timeout(remaining),
+				signal: input.signal
+					? AbortSignal.any([input.signal, AbortSignal.timeout(remaining)])
+					: AbortSignal.timeout(remaining),
 			});
 		} catch {
 			throw new VercelSourceDeploymentError(

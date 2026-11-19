@@ -1,11 +1,8 @@
 # @hobo/secret-store-claim
 
-The `secrets.config-service/v1` capability: the config/secret store a HoBo
-deployment chooses **when it runs**, provisions, and hands to its owner **by
-claim** (ADR-0179 amendment
-[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
-No human pre-setup, nothing in Vercel environment secrets, nothing in GitHub
-secrets or variables.
+The `secrets.config-service/v1` package models store offers, claim handoffs,
+and workload identity bindings. The legacy CLI provisioning flow is disabled
+until HoBo setup can establish the private runtime identity and target trust.
 
 ## Offers, in HoBo's preference order
 
@@ -26,8 +23,8 @@ with its reason.
 
 - `offers.ts`: the offer kinds, claim mechanisms and defaults; `parseSecretStoreOffer`.
 - `select.ts`: `parseSecretStoreEvidence`, `selectSecretStore`.
-- `binding.ts`: `SecretStoreBinding`, the coordinates committed as
-  `deploy/secret-store.binding.json`; parse, read and format.
+- `binding.ts`: the legacy `SecretStoreBinding` parser and formatter. Owner
+  coordinates belong in a private session, not a repository file.
 - `claim.ts`: the claim bundle (`@hobo/claims`), one-time action sealing
   scoped the way `hobo claim open` redeems.
 - `auth-md.ts`: `probeAuthMdStore`, `provisionAuthMdStore`.
@@ -43,10 +40,9 @@ with its reason.
   with `repository_id` and `repository_owner_id` pinned. Pinned by
   `contracts/pacts/github-oidc-subject.pact.json`.
 
-The CLI is `hobo ci secret-store plan|provision` in `@hobo/hobo`
-([CI.md](../hobo/CI.md#choose-the-relays-secret-store-hobo-ci-secret-store));
-agents drive it through the [`hobo-deploy`](../../.claude/skills/hobo-deploy/SKILL.md)
-skill.
+`hobo ci secret-store plan` lists the offers. Legacy connect and provision
+refuse until private runtime setup is available; see
+[CI.md](../hobo/CI.md#choose-the-relays-secret-store-hobo-ci-secret-store).
 
 ## Bearer material
 

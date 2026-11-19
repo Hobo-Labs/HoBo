@@ -548,7 +548,8 @@ describe("EVAL remote box: hobo ci app create with no receiver (owner hand-off)"
 			},
 		});
 		expect(result.ok).not.toBe(false);
-		expect(result.data).toMatchObject({ appId: 4242, handoff: "store" });
+		expect(result.data).toMatchObject({ handoff: "store" });
+		expect(JSON.stringify(result)).not.toContain("4242");
 		expect(lines.join("\n")).not.toMatch(/127\.0\.0\.1|localhost|PRIVATE KEY/u);
 	});
 });

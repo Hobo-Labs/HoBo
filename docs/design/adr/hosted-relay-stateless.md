@@ -361,11 +361,11 @@ narrows the previous amendment in four ways.
 ### The deploy target does not change
 
 The relay deploys to the owner's Vercel project `hobo-ci`
-(`prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO`, team `tyler-r-kendricks-projects`,
-`team_BRBUnG6uGhSsVV3EG5GFV3FM`), placed by the Yard `hobo-ci-relay`
+(`[redacted]`, team `[redacted]`,
+`[redacted]`), placed by the Yard `hobo-ci-relay`
 (`packages/ci-vercel/deploy/yard.ts`), **through Vercel's Git integration**:
 a push to `main` builds and promotes it, as every production deployment of
-`hobo-ci` so far has been (its latest, `dpl_9WSb8PKdF666xLVczNBabrjcoTEp`,
+`hobo-ci` so far has been (its latest, `[redacted]`,
 carries `githubOrg: Hobo-Labs`, `githubCommitRef: main` and the
 `hobo-ci-git-main-…` alias; read with the Vercel MCP, 2026-11-12). No
 Cloudflare Worker, no new target. The Cloudflare temporary-account Worker
@@ -494,12 +494,12 @@ Infisical Cloud has no agent signup or claim, so the `hobo-deploy` skill
 walks the owner through the dashboard one step at a time, every value
 prefilled: project `hobo-ci` (folder `/hobo-ci-relay`, `prod`);
 `hobo-ci-relay` with OIDC Auth trusting Vercel (issuer and discovery
-`https://oidc.vercel.com/tyler-r-kendricks-projects`, subject
-`owner:tyler-r-kendricks-projects:project:hobo-ci:environment:production`,
-audience `https://vercel.com/tyler-r-kendricks-projects`, `project_id` and
+`https://oidc.vercel.com/[redacted]`, subject
+`owner:[redacted]:project:hobo-ci:environment:production`,
+audience `https://vercel.com/[redacted]`, `project_id` and
 `owner_id` pinned), Viewer; `hobo-ci-writer` with OIDC Auth trusting GitHub
 Actions (`https://token.actions.githubusercontent.com`, subject
-`repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main` — GitHub's immutable subject for this repository, which
+`repo:Hobo-Labs@[redacted]/HoBo@[redacted]:ref:refs/heads/main` — GitHub's immutable subject for this repository, which
 `hobo ci secret-store connect` reads from GitHub rather than formatting the
 legacy `repo:<owner>/<repo>` one Infisical now refuses — with
 `repository_id` and `repository_owner_id` pinned, audience

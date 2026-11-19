@@ -68,16 +68,19 @@ export function readPinnedGitSource(input: {
 	readonly cwd: string;
 	readonly sha: string;
 	readonly paths: readonly string[];
+	readonly excludePaths?: readonly string[];
 	readonly maxBytes?: number;
 	readonly maxFiles?: number;
 }): PinnedGitSource {
 	const { cwd, sha, paths } = input;
 	const maxBytes = input.maxBytes ?? DEFAULT_MAX_BYTES;
 	const maxFiles = input.maxFiles ?? DEFAULT_MAX_FILES;
+	const excluded = new Set(input.excludePaths ?? []);
 	if (
 		!COMMIT.test(sha) ||
 		paths.length === 0 ||
 		paths.some((path) => !safePath(path)) ||
+		[...excluded].some((path) => !safePath(path)) ||
 		!Number.isSafeInteger(maxBytes) ||
 		maxBytes < 0 ||
 		maxBytes > DEFAULT_MAX_BYTES ||
@@ -127,6 +130,13 @@ export function readPinnedGitSource(input: {
 		);
 		if (metadata === null) throw new Error("Malformed Git tree metadata.");
 		const [, mode, kind, oid, sizeText] = metadata;
+		const path = decoder.decode(entry.subarray(tab + 1));
+		if (!safePath(path))
+			throw new Error("Pinned Git source contains an unsafe path.");
+		if (excluded.has(path)) {
+			offset = end + 1;
+			continue;
+		}
 		if (mode === "120000")
 			throw new Error("Pinned Git source contains a symlink.");
 		if (
@@ -138,9 +148,6 @@ export function readPinnedGitSource(input: {
 			throw new Error(
 				"Pinned Git source contains an unsupported object, such as a submodule.",
 			);
-		const path = decoder.decode(entry.subarray(tab + 1));
-		if (!safePath(path))
-			throw new Error("Pinned Git source contains an unsafe path.");
 		const size = Number(sizeText);
 		total += size;
 		if (

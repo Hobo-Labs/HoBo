@@ -1,23 +1,3 @@
-// The relay deploy workflow's Vercel token, read from the relay's secret
-// store with the job's own GitHub Actions OIDC token (ADR-0179 phase 6, as
-// amended: "Secret store chosen at deploy, provisioned by claim").
-//
-// The workflow on `main` holds no Vercel secret and reads no repository
-// variable. Where to sign in comes from the store's committed binding
-// (`packages/ci-vercel/deploy/secret-store.binding.json`, coordinates only,
-// written by `hobo ci secret-store provision`): the store's origin, the deploy
-// credential's own project, and the deploy identity, which trusts GitHub
-// Actions on `main` through OIDC Auth (no secret zero: `githubActionsJwtSource`
-// asks GitHub for the job's token, which needs `permissions: id-token: write`).
-// `hobo ci deploy` calls it in-process and keeps the token in its trusted
-// vault for the deploy it makes: the token never becomes an environment
-// variable and never goes through a file (no `$GITHUB_ENV`, which is a file
-// on the runner's disk every later step can read). Nothing here logs or
-// throws the value.
-//
-// HONEST SCOPE: exercised against fakes of GitHub's token endpoint and of
-// Infisical only. No request has been made from this repository to either.
-
 import {
 	createInfisicalClient,
 	githubActionsJwtSource,

@@ -212,6 +212,13 @@ project does not need a connected Git repository: the deploy command reads the
 selected commit from the local Git object database, uploads the relay's pinned
 pnpm workspace inputs, and records the source as Freight in the CD journal.
 Dirty and untracked files are excluded.
+The relay's runtime store binding is excluded from the source artifact. For a
+production run, HoBo reads the scoped binding from the CI owner's selected
+store and checks it against the selected Vercel team, project and config
+scope before sending it to that deployment's runtime environment. A missing or
+mismatched binding is refused; the values are not included in command results.
+The current setup ceremony does not yet create that private binding or verify
+the relay workload's provider trust.
 
 On a relevant push to `main`, the relay workflow invokes:
 
@@ -254,10 +261,6 @@ same HoBo home, but the checkpoint is not a lock; operators must serialize
 local and workflow releases.
 The command's tests use fake provider responses; a live deployment must be reported
 separately after it is observed.
-
-The older `--adopt` command remains available for a deployment created by an
-existing Vercel Git integration. It is an observation path and is not used by
-this project's managed deployment workflow.
 
 ### Continuity
 

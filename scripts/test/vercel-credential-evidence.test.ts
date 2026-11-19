@@ -21,9 +21,22 @@ const workflow = readFileSync(
 );
 
 describe("trusted-main Vercel credential evidence", () => {
+	it("fails closed when no private scope is supplied", async () => {
+		let calls = 0;
+		const report = await inspectVercelCredentials({
+			env,
+			fetch: async () => {
+				calls++;
+				throw new Error("unexpected");
+			},
+		});
+		assert.equal(report.status, "unavailable");
+		assert.equal(calls, 0);
+	});
 	it("reports missing candidates without network calls or readiness claims", async () => {
 		let calls = 0;
 		const report = await inspectVercelCredentials({
+			scope: { teamId: "team_fixture", projectId: "prj_fixture" },
 			env,
 			fetch: async () => {
 				calls++;
@@ -52,6 +65,7 @@ describe("trusted-main Vercel credential evidence", () => {
 			redirect: RequestRedirect | undefined;
 		}> = [];
 		const result = await inspectVercelCredentials({
+			scope: { teamId: "team_fixture", projectId: "prj_fixture" },
 			env: { ...env, HOBO_VERCEL_TOKEN_CANDIDATE: "fake-provider-secret" },
 			fetch: async (resource, init) => {
 				calls.push({
@@ -64,8 +78,8 @@ describe("trusted-main Vercel credential evidence", () => {
 					"Bearer fake-provider-secret",
 				);
 				return Response.json({
-					id: "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO",
-					accountId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+					id: "prj_fixture",
+					accountId: "team_fixture",
 					name: "hobo-ci",
 				});
 			},
@@ -77,7 +91,7 @@ describe("trusted-main Vercel credential evidence", () => {
 		});
 		assert.deepEqual(calls, [
 			{
-				url: "https://api.vercel.com/v9/projects/prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO?teamId=team_BRBUnG6uGhSsVV3EG5GFV3FM",
+				url: "https://api.vercel.com/v9/projects/prj_fixture?teamId=team_fixture",
 				method: "GET",
 				redirect: "manual",
 			},
@@ -101,6 +115,7 @@ describe("trusted-main Vercel credential evidence", () => {
 		]) {
 			let calls = 0;
 			const result = await inspectVercelCredentials({
+				scope: { teamId: "team_fixture", projectId: "prj_fixture" },
 				env: { ...env, ...change, HOBO_VERCEL_TOKEN_CANDIDATE: "secret" },
 				fetch: async () => {
 					calls++;
@@ -114,6 +129,7 @@ describe("trusted-main Vercel credential evidence", () => {
 	it("checks each present candidate once even if another is denied", async () => {
 		let calls = 0;
 		const result = await inspectVercelCredentials({
+			scope: { teamId: "team_fixture", projectId: "prj_fixture" },
 			env: {
 				...env,
 				HOBO_VERCEL_TOKEN_CANDIDATE: "candidate-one",
@@ -124,8 +140,8 @@ describe("trusted-main Vercel credential evidence", () => {
 				return calls === 1
 					? new Response("denied", { status: 403 })
 					: Response.json({
-							id: "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO",
-							accountId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+							id: "prj_fixture",
+							accountId: "team_fixture",
 							name: "hobo-ci",
 						});
 			},
@@ -140,11 +156,11 @@ describe("trusted-main Vercel credential evidence", () => {
 		for (const response of [
 			Response.json({
 				id: "prj_other",
-				accountId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+				accountId: "team_fixture",
 				name: "hobo-ci",
 			}),
 			Response.json({
-				id: "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO",
+				id: "prj_fixture",
 				accountId: "team_other",
 				name: "hobo-ci",
 			}),
@@ -156,6 +172,7 @@ describe("trusted-main Vercel credential evidence", () => {
 		]) {
 			let calls = 0;
 			const result = await inspectVercelCredentials({
+				scope: { teamId: "team_fixture", projectId: "prj_fixture" },
 				env: { ...env, HOBO_VERCEL_TOKEN_CANDIDATE: "fake-provider-secret" },
 				fetch: async () => {
 					calls++;
@@ -171,6 +188,7 @@ describe("trusted-main Vercel credential evidence", () => {
 		}
 		let calls = 0;
 		const malformed = await inspectVercelCredentials({
+			scope: { teamId: "team_fixture", projectId: "prj_fixture" },
 			env: { ...env, HOBO_VERCEL_TOKEN_CANDIDATE: "bad\ntoken" },
 			fetch: async () => {
 				calls++;
@@ -193,7 +211,6 @@ describe("trusted-main Vercel credential evidence", () => {
 		assert.equal(
 			decide({
 				event: "push",
-				store: "bound",
 				inputDirs: relayInputDirs(readFileSync("pnpm-lock.yaml", "utf8")),
 				changed: [
 					".github/workflows/vercel-credential-evidence.yml",

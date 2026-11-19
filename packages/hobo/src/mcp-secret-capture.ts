@@ -1,29 +1,3 @@
-// The hosted relay's secret capture, composed for the `hobo-mcp` server
-// (ADR-0179 amendment "Deploy secrets captured by an MCP App into the secret
-// store"). `@hobo/mcp` owns the MCP App, the fallback page and the sealing;
-// this module supplies what is relay-specific: which secrets a relay
-// deployment captures (with their size and shape), and the connector that
-// writes them to the store the committed binding names
-// (`packages/ci-vercel/deploy/secret-store.binding.json`).
-//
-// Write authorization (the decision the amendment records): the MCP server
-// keeps no credential for the store. The owner creates a machine identity
-// `hobo-secret-writer` whose custom role may create and edit secrets in the
-// relay's folder and the deploy project's root, and nothing else (no read),
-// with Universal Auth whose client secret Infisical lets log in ONCE
-// (`numUsesLimit: 1`) and lives minutes (`ttl`). The owner types that client
-// secret into the same capture form; this process logs in with it once
-// (spending it), holds the resulting access token in memory for at most
-// WRITER_SESSION_MAX_MS, writes, and revokes the token
-// (`POST /api/v1/auth/token/revoke`) when the agent ends the session, when the
-// session lapses, or when the server stops. Rejected alternatives: Infisical
-// OAuth applications offer only `secrets:read` (no write scope; checked
-// 2026-11-12), and writing through the deploy workflow's GitHub Actions OIDC
-// identity would put the value in a workflow input, visible in the run.
-//
-// HONEST SCOPE: exercised against a fake Infisical only. No request has been
-// made from this repository to Infisical.
-
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -31,7 +5,6 @@ import {
 	createInfisicalClient,
 	type InfisicalClient,
 	InfisicalError,
-	infisicalSecretRef,
 	parseInfisicalBinding,
 } from "@hobo/adapter-infisical";
 import {
@@ -41,15 +14,7 @@ import {
 	type SecretStoreStatus,
 	secretCaptureSpec,
 } from "@hobo/mcp";
-import {
-	type ParsedSecretStoreBinding,
-	SECRET_STORE_BINDING_FILE,
-} from "@hobo/secret-store-claim";
-
-import {
-	loadSecretStoreBinding,
-	SecretStoreBindingRefusal,
-} from "./ci-secret-store.js";
+import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
 
 // public-contract: the capture name of the writer identity's one-use client secret.
 export const WRITER_SECRET_NAME = "INFISICAL_WRITER_CLIENT_SECRET";
@@ -123,21 +88,12 @@ type Session = {
 	readonly expiresAtMs: number;
 };
 
-function folderRef(binding: ParsedSecretStoreBinding): string {
-	const folders = binding.secretPath === "/" ? "" : binding.secretPath;
-	return `infisical://${binding.projectId}/${binding.environment}${folders}`;
-}
-
-/**
- * The connector for the store the relay project's committed binding names.
- * The binding is read on every status check, so a binding the owner commits
- * mid-session is picked up without a restart.
- */
 export function createInfisicalCaptureConnector(options: {
 	/** The relay's project directory (`packages/ci-vercel`). */
 	readonly projectDir: string;
 	readonly fetch?: typeof fetch;
 	readonly now?: () => number;
+	readonly privateBinding?: () => ParsedSecretStoreBinding | undefined;
 }): SecretStoreConnector {
 	const now = options.now ?? Date.now;
 	let session: Session | undefined;
@@ -146,16 +102,13 @@ export function createInfisicalCaptureConnector(options: {
 		| { binding: ParsedSecretStoreBinding }
 		| { reason: string } {
 		try {
-			const found = loadSecretStoreBinding(options.projectDir);
+			const found = options.privateBinding?.();
 			return found === undefined
-				? { reason: `${SECRET_STORE_BINDING_FILE} is not committed yet` }
+				? { reason: "A private owner-selected store connection is required" }
 				: { binding: found };
-		} catch (error) {
+		} catch {
 			return {
-				reason:
-					error instanceof SecretStoreBindingRefusal
-						? error.message
-						: `${SECRET_STORE_BINDING_FILE} could not be read`,
+				reason: "The private owner-selected store connection is unavailable",
 			};
 		}
 	}
@@ -195,7 +148,7 @@ export function createInfisicalCaptureConnector(options: {
 				};
 			return {
 				connected: true,
-				storeRef: folderRef(found.binding),
+				storeRef: "owner-selected",
 				writable: live() !== undefined,
 				writerSpec: WRITER_SECRET_NAME,
 			};
@@ -241,7 +194,7 @@ export function createInfisicalCaptureConnector(options: {
 				const until = Math.min(expiresAtMs, now() + WRITER_SESSION_MAX_MS);
 				session = { clientId, runtime, deploy, expiresAtMs: until };
 				return {
-					ref: `hobo-writer-session://${clientId}`,
+					ref: "owner-selected-writer-session",
 					expiresAt: new Date(until).toISOString(),
 				};
 			} catch (error) {
@@ -259,7 +212,7 @@ export function createInfisicalCaptureConnector(options: {
 				throw new SecretStoreConnectorError("no-deploy-project");
 			try {
 				await client.putSecret(secret.name, secret.reveal());
-				return { ref: infisicalSecretRef(client.binding, secret.name) };
+				return { ref: `owner-selected/${secret.name}` };
 			} catch (error) {
 				throw new SecretStoreConnectorError(
 					error instanceof InfisicalError ? error.code : "unavailable",

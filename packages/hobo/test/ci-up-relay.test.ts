@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
 	chmodSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -218,6 +219,10 @@ describe("hobo ci up through the relay's Yards", () => {
 			mkdirSync(join(project, "src"));
 			mkdirSync(join(project, "deploy"));
 			writeFileSync(join(project, "deploy", "yard.ts"), "committed yard");
+			writeFileSync(
+				join(project, "deploy", "secret-store.binding.json"),
+				"synthetic private data",
+			);
 			writeFileSync(join(project, "deploy", "check.sh"), "#!/bin/sh\n");
 			chmodSync(join(project, "deploy", "check.sh"), 0o755);
 			writeFileSync(
@@ -258,6 +263,9 @@ export default bindle("relay", (b) => {
 			]);
 			const snapshot = await relayCommitSnapshot(project, sha);
 			try {
+				expect(
+					existsSync(join(snapshot.dir, "deploy", "secret-store.binding.json")),
+				).toBe(false);
 				expect(
 					readFileSync(join(snapshot.dir, "deploy", "yard.ts"), "utf8"),
 				).toBe("committed yard");

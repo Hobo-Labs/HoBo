@@ -8,6 +8,34 @@ const content = Buffer.from("same bytes\n");
 const digest = createHash("sha1").update(content).digest("hex");
 
 describe("Vercel source delivery", () => {
+	it("does not dispatch after the owner session is revoked", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		let calls = 0;
+		await expect(
+			deployVercelSource({
+				token: TOKEN,
+				teamId: "team_123",
+				project: "prj_123",
+				name: "hobo-ci",
+				repository: "Hobo-Labs/HoBo",
+				ref: "main",
+				rootDirectory: "packages/ci-vercel",
+				source: {
+					commit: COMMIT,
+					files: [{ path: "a", mode: "100644", content }],
+				},
+				target: "production",
+				signal: controller.signal,
+				fetch: async () => {
+					calls++;
+					return Response.json({});
+				},
+			}),
+		).rejects.toThrow(/owner session changed/u);
+		expect(calls).toBe(0);
+	});
+
 	it.each([
 		"nested",
 		"top-level",

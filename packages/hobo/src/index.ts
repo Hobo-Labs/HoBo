@@ -162,10 +162,12 @@ export {
 	staticTopologyReader,
 	yardTopology,
 } from "./cd-topology.js";
+export type { CiRelayDeployInput } from "./ci-relay-deploy.js";
 export {
-	type CiRelayDeployInput,
-	runCiRelayDeploy,
-} from "./ci-relay-deploy.js";
+	type CiRelayManagedInput,
+	runCiRelayManaged,
+} from "./ci-relay-managed.js";
+export { runCiRelayDeploy } from "./ci-relay-public.js";
 export {
 	type ClaimCommandDeps,
 	createClaimCommand,

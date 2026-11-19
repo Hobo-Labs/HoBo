@@ -17,9 +17,7 @@ import {
 	RELAY_DEPLOY_JOB_MARGIN_MINUTES,
 	RELAY_DEPLOY_JOB_TIMEOUT_MINUTES,
 	RELAY_EXTRA_INPUTS,
-	RELAY_SECRET_STORE_BINDING,
 	relayInputDirs,
-	storeBindingState,
 	touchesRelay,
 } from "../ci/relay-deploy-gate.mts";
 import { lintActionsRepository } from "../lint-actions.ts";
@@ -33,7 +31,6 @@ const workflowPath = join(root, ".github", "workflows", "relay-deploy.yml");
 const workflow = readFileSync(workflowPath, "utf8");
 const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
 const inputDirs = relayInputDirs(lockfile);
-const configured = "bound" as const;
 
 /** The block of one step, from its `- name:` line to the next step. */
 function step(name: string): string {
@@ -98,68 +95,18 @@ describe("the relay deploy gate", () => {
 		);
 	});
 
-	it("fails the deploy when a secret store is absent or unreadable", () => {
-		const decision = decide({
-			event: "push",
-			store: "absent",
-			changed: ["packages/ci-vercel/src/entry.ts"],
-			inputDirs,
-		});
-		assert.equal(decision.run, false);
-		assert.equal(decision.error, true);
-		assert.ok(decision.reason.includes(RELAY_SECRET_STORE_BINDING));
-		assert.match(decision.reason, /owner hand-off/u);
-		const broken = decide({
-			event: "workflow_dispatch",
-			store: "unreadable",
-			inputDirs,
-		});
-		assert.equal(broken.run, false);
-		assert.equal(broken.error, true);
-	});
-
-	it("reads the binding's shape only, and only an HTTPS endpoint counts", () => {
-		assert.equal(storeBindingState(undefined), "absent");
-		assert.equal(storeBindingState("not json"), "unreadable");
-		assert.equal(
-			storeBindingState(
-				JSON.stringify({ kind: "infisical-self-hosted", endpoint: "http://x" }),
-			),
-			"unreadable",
-		);
-		assert.equal(
-			storeBindingState(
-				JSON.stringify({
-					kind: "infisical-self-hosted",
-					endpoint: "https://secrets.example",
-				}),
-			),
-			"bound",
-		);
-	});
-
 	it("deploys a manual run, and a push whose range it cannot read", () => {
-		assert.equal(
-			decide({ event: "workflow_dispatch", store: configured, inputDirs }).run,
-			true,
-		);
-		assert.equal(
-			decide({ event: "push", store: configured, inputDirs }).run,
-			true,
-		);
+		assert.equal(decide({ event: "workflow_dispatch", inputDirs }).run, true);
+		assert.equal(decide({ event: "push", inputDirs }).run, true);
 		assert.equal(
 			decide({
 				event: "push",
-				store: configured,
 				changed: ["README.md"],
 				inputDirs,
 			}).run,
 			false,
 		);
-		assert.equal(
-			decide({ event: "pull_request", store: configured, inputDirs }).run,
-			false,
-		);
+		assert.equal(decide({ event: "pull_request", inputDirs }).run, false);
 	});
 });
 
@@ -167,14 +114,7 @@ describe("the relay deploy workflow", () => {
 	it("runs on a push to main and by hand, and nowhere else", () => {
 		assert.match(
 			workflow,
-			/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n {4}inputs:\n/mu,
-		);
-		// The only dispatch inputs: the App's one-time code and two ids.
-		assert.deepEqual(
-			[...workflow.matchAll(/^ {6}([a-z_]+):\n {8}description:/gmu)].map(
-				(match) => match[1],
-			),
-			["manifest_code", "relay", "owner_id"],
+			/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n/mu,
 		);
 		assert.match(
 			workflow,
@@ -188,10 +128,6 @@ describe("the relay deploy workflow", () => {
 		assert.match(
 			workflow,
 			/ {4}permissions:\n {6}contents: read\n {6}deployments: write\n {6}id-token: write\n/u,
-		);
-		assert.match(
-			workflow,
-			/ {4}permissions:\n {6}contents: read\n {6}id-token: write\n/u,
 		);
 		assert.doesNotMatch(workflow, /write-all|secrets\.|\$\{\{\s*secrets/u);
 	});
@@ -302,41 +238,12 @@ describe("the relay deploy workflow", () => {
 		assert.ok(stepTimeout >= jobTimeout - RELAY_DEPLOY_JOB_MARGIN_MINUTES);
 	});
 
-	it("checks the store identity before asking HoBo CD to deliver", () => {
-		const verify = step("Verify the secret store connection");
-		assert.match(verify, /ci secret-store verify/u);
-		assert.match(verify, /relay-deploy-secret-store-verify-report\.mts/u);
-		assert.doesNotMatch(verify, /\|\| true/u);
-		assert.ok(
-			workflow.indexOf("ci secret-store verify") <
-				workflow.indexOf("Deliver the pinned relay through HoBo CD"),
-		);
-	});
-
-	it("deposits the GitHub App's credentials with OIDC only when handed a manifest code, masked first", () => {
-		assert.match(
-			workflow,
-			/ {2}app-credentials:\n[\s\S]*?if: [^\n]*github\.event\.inputs\.manifest_code != ''/u,
-		);
-		assert.match(
-			workflow,
-			/ {2}deploy:\n[\s\S]*?if: [^\n]*github\.event\.inputs\.manifest_code == ''/u,
-		);
-		const mask = step("Mask the one-time manifest code");
-		assert.match(mask, /::add-mask::\$HOBO_APP_MANIFEST_CODE/u);
-		const deposit = step(
-			"Convert the manifest code and store the credentials (GitHub OIDC)",
-		);
-		assert.match(deposit, /ci app deposit/u);
-		// The code reaches the command through the environment, never argv.
+	it("leaves private binding validation to managed delivery", () => {
 		assert.doesNotMatch(
-			deposit,
-			/--code|\$\{\{ github\.event\.inputs\.manifest_code \}\}"/u,
+			workflow,
+			/ci secret-store verify|secret-store\.binding\.json/u,
 		);
-		assert.ok(
-			workflow.indexOf("Mask the one-time manifest code") <
-				workflow.indexOf("ci app deposit"),
-		);
+		assert.doesNotMatch(workflow, /manifest_code|owner_id|ci app deposit/u);
 	});
 
 	describe("probes the public origin", () => {
@@ -373,16 +280,10 @@ describe("the relay deploy workflow", () => {
 			assert.match(probe, /if: steps\.gate\.outputs\.run == 'true'/u);
 		});
 
-		it("runs after the existing checks, so it reports on what Vercel already deployed", () => {
+		it("runs after managed delivery", () => {
 			assert.ok(
 				workflow.indexOf(`- name: ${name}`) >
-					workflow.indexOf(
-						"- name: Adopt Vercel's Git deployment of this commit",
-					),
-			);
-			assert.ok(
-				workflow.indexOf(`- name: ${name}`) <
-					workflow.indexOf("  app-credentials:"),
+					workflow.indexOf("- name: Deliver the pinned relay through HoBo CD"),
 			);
 		});
 
