@@ -305,6 +305,7 @@ export function createWorkflowEngine(
 		}
 		const journaledOutcomeIndices = listStepOutcomeIndices(journal);
 		const unconsumedOutcomes = new Set(journaledOutcomeIndices);
+		const unconsumedScheduledSteps = new Set(scheduledSteps.keys());
 		assertContiguousStepJournal(runId, scheduledSteps, unconsumedOutcomes);
 		const sleepFacts = new Map<number, ParsedRunSleepScheduled>();
 		for (const event of journal) {
@@ -402,6 +403,11 @@ export function createWorkflowEngine(
 			if (unconsumedOutcomes.size > 0) {
 				throw new Error(`unconsumed step outcome for ${runId}`);
 			}
+			if (unconsumedScheduledSteps.size > 0) {
+				throw new Error(
+					`unconsumed scheduled step (orphan StepScheduled) for ${runId}`,
+				);
+			}
 		}
 		const deterministic = createDeterministicContext({
 			seed: runSeed,
@@ -452,6 +458,7 @@ export function createWorkflowEngine(
 					rejectReplay(`invalid step journal for ${runId}`);
 				}
 				const scheduled = scheduledSteps.get(index);
+				unconsumedScheduledSteps.delete(index);
 				if (scheduled !== undefined && scheduled !== name) {
 					rejectStepName();
 				}
@@ -506,6 +513,12 @@ export function createWorkflowEngine(
 					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
 				}
 				const normalizedDurationMs = Object.is(durationMs, -0) ? 0 : durationMs;
+				if (
+					!Number.isSafeInteger(normalizedDurationMs) ||
+					normalizedDurationMs < 0
+				) {
+					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+				}
 				const scheduled = sleepFacts.get(index);
 				if (scheduled) {
 					if (
