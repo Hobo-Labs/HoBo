@@ -21,7 +21,6 @@ import {
 	type Executor,
 	type IacProgram,
 } from "../executor/executor.js";
-import { isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
 import { collectStream, currentFenceToken } from "../store/index.js";
 import {
@@ -29,14 +28,8 @@ import {
 	blockedProviderMove,
 	desiredSpecHash,
 	recordedResources,
+	requireResourceSpecHash,
 } from "./desired-state.js";
-
-// The ResourceActor reconciliation FSM (control-plane.md "The ResourceActor
-// reconciliation FSM"). Each resource in a plan gets a durable virtual actor
-// keyed `resource:<deployment>:<name>`; its job is to converge observed → desired
-// idempotently, surviving crashes by replaying its own event stream. This module
-// is the actor's fold (state derived only from facts) and its reconcile loop
-// (single-writer lease + fencing via the ActorHost port, then Executor dispatch).
 
 export const RESOURCE_ACTOR_STATES = Object.freeze([
 	"Pending",
@@ -52,7 +45,6 @@ export const RESOURCE_ACTOR_STATES = Object.freeze([
 
 export type ResourceActorState = (typeof RESOURCE_ACTOR_STATES)[number];
 
-// domain-view: parsed ResourceActorSnapshot; wire form is ResourceActorSnapshot in data-models/cloud.proto.
 export interface ResourceActorSnapshot {
 	deploymentId: string;
 	resourceId: string;
@@ -60,11 +52,6 @@ export interface ResourceActorSnapshot {
 	sequence: number;
 	outputs: Record<string, string>;
 	deps: string[];
-	/**
-	 * Hash of the desired spec the resource was last provisioned from
-	 * (`desiredSpecHash`). Absent before the first Provisioned fact, and on
-	 * facts written before spec hashes were recorded.
-	 */
 	specHash?: string;
 }
 
@@ -75,14 +62,10 @@ export function resourceActorKey(
 	return `resource:${deploymentId}:${resourceId}`;
 }
 
-// Fold a resource's own facts (filtered from the deployment stream) into its FSM
-// snapshot. Authoritative state is derived, never stored — this is what makes the
-// actor crash-resumable: drop in-memory state, replay the log, resume.
 export function foldResourceActor(
 	events: Iterable<EventEnvelope>,
 	resource: ResourcePlan,
 ): ResourceActorSnapshot {
-	const history = Array.isArray(events) ? events : [...events];
 	const snapshot: ResourceActorSnapshot = {
 		deploymentId: resource.deploymentId ?? "",
 		resourceId: resource.name,
@@ -92,8 +75,7 @@ export function foldResourceActor(
 		deps: [...resource.deps],
 	};
 
-	for (const event of history) {
-		// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
+	for (const event of events) {
 		const data = event.data as {
 			resourceId?: string;
 			outputs?: Record<string, string>;
@@ -102,8 +84,6 @@ export function foldResourceActor(
 		if (data.resourceId !== resource.name) continue;
 		switch (event.type) {
 			case CLOUD_EVENTS.ResourceProvisioning:
-				// Re-applying a provisioned resource is an in-place update (upsert);
-				// its outputs stay readable until the new apply replaces them.
 				snapshot.state =
 					snapshot.state === "Provisioned" || snapshot.state === "Updating"
 						? "Updating"
@@ -114,8 +94,7 @@ export function foldResourceActor(
 				snapshot.state = "Provisioned";
 				snapshot.sequence += 1;
 				if (data.outputs) snapshot.outputs = { ...data.outputs };
-				if (isJsonString(data.specHash)) snapshot.specHash = data.specHash;
-				else delete snapshot.specHash;
+				snapshot.specHash = requireResourceSpecHash(data.specHash);
 				break;
 			case CLOUD_EVENTS.ResourceFailed:
 				snapshot.state = "Failed";
@@ -135,14 +114,6 @@ export function foldResourceActor(
 				break;
 		}
 	}
-	// Old facts have no hash. When their original plan is in the log, derive
-	// the baseline from that plan rather than ignoring every subsequent change.
-	if (snapshot.state === "Provisioned" && snapshot.specHash === undefined) {
-		const recordedHash = recordedResources(history).get(
-			resource.name,
-		)?.specHash;
-		if (recordedHash !== undefined) snapshot.specHash = recordedHash;
-	}
 	return snapshot;
 }
 
@@ -158,8 +129,6 @@ export interface ReconcileContext {
 	tenant: string;
 	actor: PrincipalRef;
 	correlationId?: string;
-	// A resource whose apply crosses the no-go threshold triggers choreographed
-	// compensation (control-plane.md "Compensation"). Tests seed this set.
 	noGoThresholdResources?: ReadonlySet<string>;
 }
 
@@ -208,29 +177,16 @@ function finalStateHash(resourceId: string): string {
 	return `sha256:${createHash("sha256").update(resourceId).digest("hex")}`;
 }
 
-/**
- * True when a resource's recorded state already matches its declaration, so
- * reconciling it must call no provider: it is Provisioned from the same
- * desired spec, or Provisioned by a legacy fact whose original plan is not
- * available (treated as converged rather than guessing what was applied).
- */
 export function isConverged(
 	snapshot: ResourceActorSnapshot,
 	resource: ResourcePlan,
 ): boolean {
 	if (snapshot.state !== "Provisioned") return false;
 	return (
-		snapshot.specHash === undefined ||
-		snapshot.specHash === desiredSpecHash(resource)
+		requireResourceSpecHash(snapshot.specHash) === desiredSpecHash(resource)
 	);
 }
 
-// The idempotent reconcile core (control-plane.md reconcile loop). Runs under the
-// per-resource single-writer lease (ActorHost fencing). Because it emits
-// resource.Provisioning to the durable log BEFORE dispatching apply, a crash
-// between "provisioning" and "provisioned" is recoverable: on resume the fold
-// sees Provisioning and re-dispatches the (idempotent) apply through to
-// resource.Provisioned.
 export async function reconcileResource(
 	deps: ResourceActorDeps,
 	resource: ResourcePlan,
@@ -247,18 +203,12 @@ export async function reconcileResource(
 			...resource,
 			deploymentId: ctx.deploymentId,
 		});
-		// Recheck under the actor lease: another reconciliation may have
-		// recorded an apply since the orchestrator inspected its snapshot.
 		const move = blockedProviderMove(
 			recordedResources(events).get(resource.name),
 			resource,
 		);
 		if (move) return { kind: "blocked", snapshot, move };
 
-		// Converged: nothing to do (empty diff — the controller no-op). A
-		// Destroyed resource is not converged: `up` declares it should exist, so
-		// it is re-created. A Provisioned one whose declared spec changed is
-		// updated in place (upsert).
 		if (isConverged(snapshot, resource)) {
 			return { kind: "converged", snapshot };
 		}
@@ -270,19 +220,14 @@ export async function reconcileResource(
 		const appendOpts = {
 			actor: ctx.actor,
 			tenant: ctx.tenant,
-			// The deployment stream may already be fenced by an earlier leased
-			// write; continue it under the current owner epoch (no rotation).
 			...(fenceToken !== undefined ? { fenceToken } : undefined),
 			...(ctx.correlationId !== undefined
 				? { correlationId: ctx.correlationId }
 				: undefined),
 		};
 		let lastSeq =
-			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
 
-		// Transition Pending/Planning → Provisioning (durable boundary) unless we
-		// are resuming an already-in-flight Provisioning after a crash.
 		const program = iacProgramFor(
 			ctx.deploymentId,
 			resource,
@@ -298,10 +243,6 @@ export async function reconcileResource(
 				action: "apply",
 			}),
 		});
-		// Credential-audit metadata (NFR-018): the grant is recorded as a
-		// `token.Granted` fact, then `token.Used` on a successful apply and
-		// `token.Revoked` when the scoped credential is dropped — a full,
-		// replayable grant -> use -> revoke trail correlated by correlationId.
 		const grant = {
 			grantId: credential.id,
 			tokenRef: `tokenref://scoped/${credential.id}`,
@@ -336,7 +277,6 @@ export async function reconcileResource(
 				lastSeq = emitted.seq;
 			}
 
-			// Dispatch the IacProgram to the sandboxed Executor (preview → apply).
 			const result = await deps.executor.run(program, credential);
 
 			if (result.status === "failed") {
@@ -373,7 +313,6 @@ export async function reconcileResource(
 				};
 			}
 
-			// exec.Succeeded → record outputs, emit resource.Provisioned.
 			const emitted = await emit(
 				deps.store,
 				stream,
@@ -420,7 +359,6 @@ export async function reconcileResource(
 	}
 }
 
-// Destroy a provisioned resource under its lease (choreographed compensation).
 export async function destroyResource(
 	deps: ResourceActorDeps,
 	resource: ResourcePlan,
@@ -447,15 +385,12 @@ export async function destroyResource(
 		const appendOpts = {
 			actor: ctx.actor,
 			tenant: ctx.tenant,
-			// Same fenced-stream rule as reconcile: continue under the current
-			// owner epoch.
 			...(fenceToken !== undefined ? { fenceToken } : undefined),
 			...(ctx.correlationId !== undefined
 				? { correlationId: ctx.correlationId }
 				: undefined),
 		};
 		let lastSeq =
-			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
 
 		const program = iacProgramFor(

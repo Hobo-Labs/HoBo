@@ -127,8 +127,6 @@ export function blockedProviderMove(
 		return undefined;
 	const provider = previous.providerId;
 	if (provider === resource.provider) return undefined;
-	if (provider === undefined && previous.specHash === desiredSpecHash(resource))
-		return undefined;
 	return {
 		resource: resource.name,
 		...(provider !== undefined ? { from: provider } : undefined),
@@ -142,18 +140,24 @@ function resourceIdOf(event: EventEnvelope): string | undefined {
 		: undefined;
 }
 
-function specHashOf(event: EventEnvelope): string | undefined {
-	return isJsonObject(event.data) && isJsonString(event.data.specHash)
-		? event.data.specHash
-		: undefined;
+export function requireResourceSpecHash(value: string | undefined): string {
+	if (!isJsonString(value) || !/^sha256:[0-9a-f]{64}$/u.test(value))
+		throw new TypeError("resource fact requires a valid spec hash");
+	return value;
 }
 
-function providerIdOf(event: EventEnvelope): string | undefined {
-	return isJsonObject(event.data) &&
-		isJsonString(event.data.providerId) &&
-		event.data.providerId !== ""
+function specHashOf(event: EventEnvelope): string {
+	const value = isJsonObject(event.data) ? event.data.specHash : undefined;
+	return requireResourceSpecHash(isJsonString(value) ? value : undefined);
+}
+
+function providerIdOf(event: EventEnvelope): string {
+	const providerId = isJsonObject(event.data)
 		? event.data.providerId
 		: undefined;
+	if (!isJsonString(providerId) || !providerId.trim())
+		throw new TypeError("resource provisioning requires a provider");
+	return providerId;
 }
 
 function plannedResources(event: EventEnvelope): readonly ResourcePlan[] {
@@ -196,7 +200,7 @@ export function recordedResources(
 			case CLOUD_EVENTS.ResourceProvisioning: {
 				const targetHash = specHashOf(event);
 				const candidate = plans.get(resourceId);
-				const targetProvider = providerIdOf(event) ?? candidate?.provider;
+				const targetProvider = providerIdOf(event);
 				const providerId =
 					previous && previous.state !== "Destroyed"
 						? previous.providerId === targetProvider
@@ -207,12 +211,10 @@ export function recordedResources(
 					previous !== undefined &&
 					previous.state !== "Destroyed" &&
 					previous.specHash !== undefined
-						? targetHash !== undefined && targetHash === previous.specHash
+						? targetHash === previous.specHash
 							? previous.plan
 							: undefined
-						: candidate &&
-								(targetHash === undefined ||
-									desiredSpecHash(candidate) === targetHash)
+						: candidate && desiredSpecHash(candidate) === targetHash
 							? candidate
 							: undefined;
 				states.set(resourceId, {
@@ -227,18 +229,17 @@ export function recordedResources(
 			}
 			case CLOUD_EVENTS.ResourceProvisioned: {
 				const eventHash = specHashOf(event);
+				if (!previous || previous.state !== "Provisioning")
+					throw new Error("resource provisioned without a provisioning fact");
 				const candidate = plans.get(resourceId);
 				const plan =
-					candidate &&
-					(eventHash === undefined || desiredSpecHash(candidate) === eventHash)
+					candidate && desiredSpecHash(candidate) === eventHash
 						? candidate
 						: undefined;
-				const specHash =
-					eventHash ?? (plan ? desiredSpecHash(plan) : undefined);
-				const providerId = previous ? previous.providerId : candidate?.provider;
+				const providerId = previous.providerId;
 				states.set(resourceId, {
 					state: "Provisioned",
-					...(specHash !== undefined ? { specHash } : undefined),
+					specHash: eventHash,
 					...(plan !== undefined ? { plan } : undefined),
 					...(providerId !== undefined ? { providerId } : undefined),
 				});
@@ -327,11 +328,7 @@ export function classifyResource(
 			};
 		case "Provisioned":
 			if (recorded.specHash === undefined)
-				return {
-					...base,
-					action: "no-op",
-					reason: "provisioned before spec hashes; treated as converged",
-				};
+				throw new Error("provisioned resource is missing its spec hash");
 			return recorded.specHash === desired
 				? { ...base, ...recordedHash, action: "no-op", reason: "up to date" }
 				: {

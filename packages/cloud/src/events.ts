@@ -232,10 +232,8 @@ export interface ResourceProvisioningData {
 	resourceId: string;
 	execId: string;
 	programHash: string;
-	/** `desiredSpecHash` of the resource being applied (upsert detection). */
-	specHash?: string;
-	/** Provider that may have received the apply; absent on legacy facts. */
-	providerId?: string;
+	specHash: string;
+	providerId: string;
 }
 
 export function resourceProvisioning(
@@ -249,8 +247,7 @@ export interface ResourceProvisionedData {
 	resourceId: string;
 	outputs: Record<string, string>;
 	execId: string;
-	/** `desiredSpecHash` the resource now matches; absent on legacy facts. */
-	specHash?: string;
+	specHash: string;
 }
 
 export function resourceProvisioned(data: ResourceProvisionedData): EventInput {

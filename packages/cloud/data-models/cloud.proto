@@ -227,6 +227,7 @@ message ResourceActorSnapshot {
   uint32 sequence = 4;
   map<string, string> outputs = 5;
   repeated string deps = 6;
+  optional string spec_hash = 7;
 }
 
 message ResourceProvisioningRecord {
@@ -234,8 +235,8 @@ message ResourceProvisioningRecord {
   string resource_id = 2;
   string exec_id = 3;
   string program_hash = 4;
-  optional string spec_hash = 5;
-  optional string provider_id = 6;
+  string spec_hash = 5;
+  string provider_id = 6;
 }
 
 message ResourceProvisionedRecord {
@@ -243,7 +244,7 @@ message ResourceProvisionedRecord {
   string resource_id = 2;
   map<string, string> outputs = 3;
   string exec_id = 4;
-  optional string spec_hash = 5;
+  string spec_hash = 5;
 }
 
 message ResourceFailedRecord {
