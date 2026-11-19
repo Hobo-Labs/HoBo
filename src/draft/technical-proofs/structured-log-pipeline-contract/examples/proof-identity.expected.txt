@@ -1,3 +1,0 @@
-slug: structured-log-pipeline-contract
-layer: technical
-proof-identity: ok

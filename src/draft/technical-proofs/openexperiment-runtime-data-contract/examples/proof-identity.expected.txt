@@ -1,3 +1,0 @@
-slug: openexperiment-runtime-data-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: champion-challenger-promotion-contract
-layer: technical
-proof-identity: ok

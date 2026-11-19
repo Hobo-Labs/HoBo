@@ -1,3 +1,0 @@
-slug: snapshot-compaction-contract
-layer: technical
-proof-identity: ok

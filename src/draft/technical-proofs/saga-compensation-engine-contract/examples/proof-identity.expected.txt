@@ -1,3 +1,0 @@
-slug: saga-compensation-engine-contract
-layer: technical
-proof-identity: ok

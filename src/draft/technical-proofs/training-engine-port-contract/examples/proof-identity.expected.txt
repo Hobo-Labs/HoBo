@@ -1,3 +1,0 @@
-slug: training-engine-port-contract
-layer: technical
-proof-identity: ok

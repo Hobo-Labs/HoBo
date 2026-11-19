@@ -1,3 +1,0 @@
-slug: manifest-resource-intent-bridge-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: full-text-search-contract
-layer: technical
-proof-identity: ok

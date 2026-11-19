@@ -1,3 +1,0 @@
-slug: usage-to-invoice-reconciliation-contract
-layer: technical
-proof-identity: ok

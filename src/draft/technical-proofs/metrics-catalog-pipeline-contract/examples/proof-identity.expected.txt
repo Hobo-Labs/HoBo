@@ -1,3 +1,0 @@
-slug: metrics-catalog-pipeline-contract
-layer: technical
-proof-identity: ok

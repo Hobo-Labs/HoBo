@@ -1,3 +1,0 @@
-slug: evals-training-promotion-gates-poc
-layer: technical
-proof-identity: ok

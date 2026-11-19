@@ -1,3 +1,0 @@
-slug: hobo-code-dsl-contract
-layer: technical
-proof-identity: ok
