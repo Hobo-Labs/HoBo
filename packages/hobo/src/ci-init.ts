@@ -26,13 +26,7 @@ export type CiInitFiles = Readonly<{
 }>;
 
 const disk: CiInitFiles = {
-	list: async (directory) => {
-		try {
-			return await readdir(directory);
-		} catch {
-			return [];
-		}
-	},
+	list: (directory) => readdir(directory),
 	read: (path) => readFile(path, "utf8"),
 	write: (path, text) => writeFile(path, text),
 };
@@ -115,9 +109,25 @@ export async function runCiInit(input: {
 	};
 
 	const directory = join(input.cwd, WORKFLOWS);
-	const names = (await files.list(directory))
-		.filter((name) => /\.ya?ml$/u.test(name))
-		.sort();
+	let names: readonly string[];
+	try {
+		names = await files.list(directory);
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT")
+			return {
+				ok: false,
+				status: "not-found",
+				code: "HOBO_CI_NO_WORKFLOWS",
+				message: `No workflow files in ${WORKFLOWS}.`,
+			};
+		return {
+			ok: false,
+			status: "unreadable",
+			code: "HOBO_CI_WORKFLOWS_UNREADABLE",
+			message: `Cannot read ${WORKFLOWS}. Check the directory and its permissions.`,
+		};
+	}
+	names = names.filter((name) => /\.ya?ml$/u.test(name)).sort();
 	if (names.length === 0)
 		return {
 			ok: false,
@@ -175,7 +185,14 @@ export async function runCiInit(input: {
 	const matched = new Set<string>();
 	for (const plan of plans) {
 		const source = sources.get(plan.file);
-		if (source === undefined || plan.error !== undefined) continue;
+		if (source === undefined || plan.error !== undefined) {
+			refused.push({
+				file: plan.file,
+				job: "(workflow)",
+				why: plan.error ?? "the file cannot be read",
+			});
+			continue;
+		}
 		const wanted = all
 			? ["all"]
 			: plan.jobs
@@ -241,11 +258,14 @@ export async function runCiInit(input: {
 			: []),
 	];
 	const data = { fleetLabel, changed, refused };
-	if (changed.length === 0 && refused.length > 0)
+	if (refused.length > 0)
 		return {
 			ok: false,
-			status: "unchanged",
-			code: "HOBO_CI_INIT_NOTHING_APPLIED",
+			status: changed.length > 0 ? "partial" : "unchanged",
+			code:
+				changed.length > 0
+					? "HOBO_CI_INIT_PARTIAL"
+					: "HOBO_CI_INIT_NOTHING_APPLIED",
 			message: lines.join("\n"),
 			data,
 		};

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file runner_route.proto.
  */
 export const file_runner_route: GenFile = /*@__PURE__*/
-  fileDesc("ChJydW5uZXJfcm91dGUucHJvdG8SCmhvYm8uY2kudjEiVgoPUnVubmVyT3JkZXJTdGVwEgsKA2tleRgBIAEoCRIdChVtaW51dGVzX2xpbWl0X3BlcmNlbnQYAiABKA0SFwoPc3BlbmRfbGltaXRfdXNkGAMgASgNIkEKEVJ1bm5lclJldHJ5UG9saWN5Eg8KB2VuYWJsZWQYASABKAgSDgoGcnVubmVyGAIgASgJEgsKA21heBgDIAEoDSKwAQoLUnVubmVyT3JkZXISKgoFc3RlcHMYASADKAsyGy5ob2JvLmNpLnYxLlJ1bm5lck9yZGVyU3RlcBIbCg5za2lwX3VuaGVhbHRoeRgCIAEoCEgAiAEBEiwKBXJldHJ5GAMgASgLMh0uaG9iby5jaS52MS5SdW5uZXJSZXRyeVBvbGljeRIXCg9hdXRvX3NpemVfdmNwdXMYBCABKA1CEQoPX3NraXBfdW5oZWFsdGh5Ii8KEFJ1bm5lclJlbGF5SW5wdXQSCwoDa2V5GAEgASgJEg4KBmxhYmVscxgCIAMoCSL7AQoSUnVubmVyUm91dGVSZXF1ZXN0EhIKCnJlcG9zaXRvcnkYASABKAkSDwoHcHJpdmF0ZRgCIAEoCBIMCgRmb3JrGAMgASgIEg0KBWV2ZW50GAQgASgJEg4KBnJ1bl9pZBgFIAEoARITCgtydW5fYXR0ZW1wdBgGIAEoDRILCgNqb2IYByABKAkSLAoGaW5wdXRzGAggAygLMhwuaG9iby5jaS52MS5SdW5uZXJSZWxheUlucHV0EhAKCGFjdG9yX2lkGAkgASgJEhsKE3RyaWdnZXJpbmdfYWN0b3JfaWQYCiABKAkSFAoMd29ya2Zsb3dfcmVmGAsgASgJIj4KD1J1bm5lclJvdXRlU2tpcBILCgNrZXkYASABKAkSDgoGcmVhc29uGAIgASgJEg4KBmRldGFpbBgDIAEoCSLIAQoTUnVubmVyUm91dGVEZWNpc2lvbhIPCgdvdXRjb21lGAEgASgJEg4KBnJ1bm5lchgCIAEoCRIMCgRzdGVwGAMgASgJEhIKCm1hY2hpbmVfaWQYBCABKAkSLAoHc2tpcHBlZBgFIAMoCzIbLmhvYm8uY2kudjEuUnVubmVyUm91dGVTa2lwEhQKDG5vdF9pbl9vcmRlchgGIAMoCRIOCgZyZWFzb24YByABKAkSGgoSdW5oZWFsdGh5X2ZhbGxiYWNrGAggASgIYgZwcm90bzM");
+  fileDesc("ChJydW5uZXJfcm91dGUucHJvdG8SCmhvYm8uY2kudjEiVgoPUnVubmVyT3JkZXJTdGVwEgsKA2tleRgBIAEoCRIdChVtaW51dGVzX2xpbWl0X3BlcmNlbnQYAiABKA0SFwoPc3BlbmRfbGltaXRfdXNkGAMgASgNIkEKEVJ1bm5lclJldHJ5UG9saWN5Eg8KB2VuYWJsZWQYASABKAgSDgoGcnVubmVyGAIgASgJEgsKA21heBgDIAEoDSKwAQoLUnVubmVyT3JkZXISKgoFc3RlcHMYASADKAsyGy5ob2JvLmNpLnYxLlJ1bm5lck9yZGVyU3RlcBIbCg5za2lwX3VuaGVhbHRoeRgCIAEoCEgAiAEBEiwKBXJldHJ5GAMgASgLMh0uaG9iby5jaS52MS5SdW5uZXJSZXRyeVBvbGljeRIXCg9hdXRvX3NpemVfdmNwdXMYBCABKA1CEQoPX3NraXBfdW5oZWFsdGh5Ii8KEFJ1bm5lclJlbGF5SW5wdXQSCwoDa2V5GAEgASgJEg4KBmxhYmVscxgCIAMoCSKJAgoSUnVubmVyUm91dGVSZXF1ZXN0EhIKCnJlcG9zaXRvcnkYASABKAkSDwoHcHJpdmF0ZRgCIAEoCBIRCgRmb3JrGAMgASgISACIAQESDQoFZXZlbnQYBCABKAkSDgoGcnVuX2lkGAUgASgEEhMKC3J1bl9hdHRlbXB0GAYgASgNEgsKA2pvYhgHIAEoCRIsCgZpbnB1dHMYCCADKAsyHC5ob2JvLmNpLnYxLlJ1bm5lclJlbGF5SW5wdXQSEAoIYWN0b3JfaWQYCSABKAkSGwoTdHJpZ2dlcmluZ19hY3Rvcl9pZBgKIAEoCRIUCgx3b3JrZmxvd19yZWYYCyABKAlCBwoFX2ZvcmsiPgoPUnVubmVyUm91dGVTa2lwEgsKA2tleRgBIAEoCRIOCgZyZWFzb24YAiABKAkSDgoGZGV0YWlsGAMgASgJIsgBChNSdW5uZXJSb3V0ZURlY2lzaW9uEg8KB291dGNvbWUYASABKAkSDgoGcnVubmVyGAIgASgJEgwKBHN0ZXAYAyABKAkSEgoKbWFjaGluZV9pZBgEIAEoCRIsCgdza2lwcGVkGAUgAygLMhsuaG9iby5jaS52MS5SdW5uZXJSb3V0ZVNraXASFAoMbm90X2luX29yZGVyGAYgAygJEg4KBnJlYXNvbhgHIAEoCRIaChJ1bmhlYWx0aHlfZmFsbGJhY2sYCCABKAhiBnByb3RvMw");
 
 /**
  * One step of a runner order. `key` is `fleet` (the HoBo isolated fleet),
@@ -167,9 +167,9 @@ export type RunnerRouteRequest = Message<"hobo.ci.v1.RunnerRouteRequest"> & {
   /**
    * The run's head is a fork of the repository.
    *
-   * @generated from field: bool fork = 3;
+   * @generated from field: optional bool fork = 3;
    */
-  fork: boolean;
+  fork?: boolean | undefined;
 
   /**
    * @generated from field: string event = 4;
@@ -177,9 +177,9 @@ export type RunnerRouteRequest = Message<"hobo.ci.v1.RunnerRouteRequest"> & {
   event: string;
 
   /**
-   * @generated from field: double run_id = 5;
+   * @generated from field: uint64 run_id = 5;
    */
-  runId: number;
+  runId: bigint;
 
   /**
    * @generated from field: uint32 run_attempt = 6;

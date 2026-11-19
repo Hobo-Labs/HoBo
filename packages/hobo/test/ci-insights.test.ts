@@ -33,6 +33,7 @@ function job(at: number, value: Job) {
 		created_at: iso(at),
 		started_at: iso(started),
 		completed_at: iso(started + value.runMs),
+		check_run_url: `https://api.github.com/repos/acme/app/check-runs/${value.id + 1000}`,
 		steps: steps.map((step, index) => ({
 			name: step.name,
 			number: index + 1,
@@ -82,6 +83,10 @@ function github(responses: ReadonlyMap<string, string | CiProcessError>) {
 		const path = args[1] ?? "";
 		asked.push(path);
 		const answer = responses.get(path);
+		if (answer === undefined && path.endsWith("/logs"))
+			return { stdout: "", stderr: "" };
+		if (answer === undefined && path.endsWith("/annotations"))
+			return { stdout: "[]", stderr: "" };
 		if (answer === undefined) throw new CiProcessError("failed", "gh", 404);
 		if (answer instanceof CiProcessError) throw answer;
 		return { stdout: answer, stderr: "" };
@@ -318,7 +323,7 @@ describe("hobo ci diagnose", () => {
 				],
 				["repos/acme/app/actions/jobs/71/logs", log],
 				[
-					"repos/acme/app/check-runs/71/annotations",
+					"repos/acme/app/check-runs/1071/annotations",
 					JSON.stringify([{ message: "Process completed with exit code 2." }]),
 				],
 			]),
@@ -481,6 +486,54 @@ describe("hobo ci diagnose", () => {
 		const result = await insights("diagnose", fake, ["7"]);
 		expect(result).toMatchObject({ ok: false, code: "HOBO_CI_JOB_LIMIT" });
 		expect(result.message).toContain("1000");
+	});
+
+	it.each([
+		"logs",
+		"annotations",
+	] as const)("fails diagnosis when the %s read fails", async (resource) => {
+		const path =
+			resource === "logs"
+				? "repos/acme/app/actions/jobs/71/logs"
+				: "repos/acme/app/check-runs/1071/annotations";
+		const fake = github(
+			new Map<string, string | CiProcessError>([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[
+					jobsPath(7),
+					JSON.stringify({
+						jobs: [
+							job(start, {
+								id: 71,
+								name: "test",
+								labels: ["hobo"],
+								conclusion: "failure",
+								waitMs: 0,
+								runMs: minute,
+							}),
+						],
+					}),
+				],
+				[path, new CiProcessError("failed", "gh", 500)],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(result).toMatchObject({ ok: false, code: "HOBO_CI_GITHUB_FAILED" });
+	});
+
+	it("validates the repository before constructing gh api paths", async () => {
+		const fake = github(new Map());
+		const result = await runCiInsights({
+			command: "signals",
+			repository: "acme/app?unexpected=path",
+			cwd: "/work",
+			args: [],
+			options: {},
+			execFile: fake.execFile,
+		});
+		expect(result).toMatchObject({ ok: false, code: "HOBO_CLI_USAGE" });
+		expect(fake.asked).toEqual([]);
 	});
 
 	it("says so when there is nothing to diagnose", async () => {

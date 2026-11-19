@@ -1,5 +1,5 @@
 import { lstat, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	decideRunnerRoute,
@@ -137,10 +137,7 @@ function usage(message: string): CommandResult {
 }
 
 function text(options: CiRouteOptions, name: string): string | undefined {
-	const value = options[name];
-	return value === undefined || value === true || value === false
-		? undefined
-		: String(value);
+	return z.string().optional().parse(options[name]);
 }
 
 function stepText(step: ParsedRunnerOrder["steps"][number]): string {
@@ -193,6 +190,9 @@ export async function runCiRoute(input: {
 	for (const name of ["public", "fork"] as const)
 		if (options[name] !== undefined && options[name] !== true)
 			return usage(`--${name} does not take a value.`);
+	for (const name of [...RUNNER_STEP_KEYS, "event", "facts"])
+		if (!z.string().optional().safeParse(options[name]).success)
+			return usage(`--${name} takes a text value.`);
 	for (const key of RUNNER_STEP_KEYS)
 		if (
 			options[key] !== undefined &&
@@ -215,7 +215,7 @@ export async function runCiRoute(input: {
 		};
 	}
 	const committed = parseCiRunnerOrder(project ?? "{}");
-	if (committed.problem.length > 0)
+	if (committed.source === "invalid")
 		return {
 			ok: false,
 			status: "invalid",
@@ -239,7 +239,7 @@ export async function runCiRoute(input: {
 	if (factsPath !== undefined) {
 		let raw: string | undefined;
 		try {
-			raw = await readText(join(input.cwd, factsPath));
+			raw = await readText(resolve(input.cwd, factsPath));
 		} catch {
 			return usage(`--facts: cannot read ${factsPath}.`);
 		}
@@ -266,7 +266,7 @@ export async function runCiRoute(input: {
 		private: options.public !== true,
 		fork: options.fork === true,
 		event,
-		runId: 1,
+		runId: 1n,
 		runAttempt: 1,
 		job: "relay",
 		inputs,

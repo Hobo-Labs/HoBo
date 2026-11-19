@@ -543,6 +543,21 @@ describe("diagnoseFailure: tests", () => {
 	it("does not call a failure flaky on a hint alone", () => {
 		expect(diagnoseLog("Retry #1").kind).toBe("unclear");
 	});
+
+	it("does not treat any mention of retrying as flake evidence", () => {
+		expect(
+			diagnoseLog(["Do not retry this request", "2 failed"].join("\n")),
+		).toMatchObject({
+			kind: "test",
+			rerun: "likely-fails",
+		});
+	});
+
+	it("does not treat an unrelated operation timeout as flake evidence", () => {
+		expect(
+			diagnoseLog(["The operation timed out", "2 failed"].join("\n")).kind,
+		).toBe("test");
+	});
 });
 
 describe("diagnoseFailure: order and evidence", () => {

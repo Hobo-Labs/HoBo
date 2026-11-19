@@ -14,6 +14,7 @@ import {
 } from "@hobo/ci/insights";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
+import { validRepository } from "./ci-repository.js";
 import { CiProcessError, type CiRunExec, runCiProcess } from "./ci-runs.js";
 
 export type CiInsightOptions = Readonly<
@@ -50,6 +51,7 @@ const JobSchema = z.looseObject({
 	labels: z.array(z.string()).nullish(),
 	runner_name: z.string().nullish(),
 	runner_group_name: z.string().nullish(),
+	check_run_url: z.string().nullish(),
 	conclusion: z.string().nullish(),
 	created_at: z.string().min(1),
 	started_at: time,
@@ -132,6 +134,21 @@ function insightStep(step: z.infer<typeof StepSchema>): InsightStep {
 		: { ...base, startedAtMs: started, completedAtMs: completed };
 }
 
+function checkRunId(job: GithubJob): number | undefined {
+	if (job.check_run_url === undefined || job.check_run_url === null) {
+		return undefined;
+	}
+	try {
+		const match = /\/check-runs\/([1-9]\d*)$/u.exec(
+			new URL(job.check_run_url).pathname,
+		);
+		const id = Number(match?.[1]);
+		return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 	const labels = job.labels ?? [];
 	const steps = (job.steps ?? []).map(insightStep);
@@ -139,6 +156,7 @@ function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 
 	const started = job.runner_name ? at(job.started_at) : undefined;
 	const completed = at(job.completed_at);
+	const checkRun = checkRunId(job);
 	const base = {
 		id: job.id,
 		name: job.name,
@@ -152,9 +170,11 @@ function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 			labels.every((label) => isGithubHostedLabel(label)),
 		relay: isRelayJob(job.name),
 	};
+	const identified =
+		checkRun === undefined ? base : { ...base, checkRunId: checkRun };
 	const named = job.runner_name
-		? { ...base, runnerName: job.runner_name }
-		: base;
+		? { ...identified, runnerName: job.runner_name }
+		: identified;
 	if (started === undefined)
 		return completed === undefined
 			? named
@@ -333,6 +353,8 @@ export async function runCiInsights(input: {
 	env?: NodeJS.ProcessEnv;
 	now?: () => number;
 }): Promise<CommandResult> {
+	if (!validRepository(input.repository))
+		return failure(new InsightUsage("--repo must be a GitHub owner/name."));
 	const exec = input.execFile ?? runCiProcess;
 	const env = { ...(input.env ?? process.env) };
 	delete env.HOBO_CI_ACCOUNT_TOKEN;
@@ -492,16 +514,16 @@ export async function runCiInsights(input: {
 			summary: string;
 		}[] = [];
 		for (const job of failed.slice(0, MAX_DIAGNOSED_JOBS)) {
-			const logTail = await api(`${repo}/actions/jobs/${job.id}/logs`)
-				.then((log) => log.slice(-LOG_TAIL_BYTES))
-				.catch(() => "");
-			const annotations = await api(`${repo}/check-runs/${job.id}/annotations`)
-				.then((body) =>
-					AnnotationsSchema.parse(JSON.parse(body)).flatMap(
-						(annotation) => annotation.message ?? [],
-					),
-				)
-				.catch(() => []);
+			if (job.checkRunId === undefined)
+				throw new Error(`GitHub returned no check-run ID for job ${job.id}`);
+			const logTail = (await api(`${repo}/actions/jobs/${job.id}/logs`)).slice(
+				-LOG_TAIL_BYTES,
+			);
+			const annotations = AnnotationsSchema.parse(
+				JSON.parse(
+					await api(`${repo}/check-runs/${job.checkRunId}/annotations`),
+				),
+			).flatMap((annotation) => annotation.message ?? []);
 			const diagnosis = diagnoseFailure({ job, logTail, annotations });
 			diagnosed.push({
 				job: job.name,

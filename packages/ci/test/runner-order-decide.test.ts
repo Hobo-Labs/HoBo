@@ -39,7 +39,7 @@ function request(
 		private: extra.private ?? true,
 		fork: extra.fork ?? false,
 		event: "pull_request",
-		runId: 9001,
+		runId: 9001n,
 		runAttempt: 1,
 		job: "relay-test",
 		actorId: extra.actorId ?? "42",

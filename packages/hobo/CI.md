@@ -277,7 +277,9 @@ and why. `--apply` rewrites the jobs named (`job`, `file:job`, or `all`) and
 nothing else: only the `runs-on` value changes, every other byte of the file
 is kept, and the old label stays as a trailing `# was ...` comment so the
 change can be undone by hand. A workflow that changes or becomes unreadable
-after planning is left alone. Nothing is committed.
+after planning is left alone. Any refused selection, including an unreadable
+workflow, makes the apply exit non-zero; a partial apply reports both the jobs
+rewritten and those refused. Nothing is committed.
 
 A job is left alone when it calls another workflow, takes `runs-on` from an
 expression, names a runner group or several labels, asks for Windows, macOS
@@ -312,11 +314,12 @@ runner: jobs, share started, median wait, median and p90 run time, share
 passed. Job lists are paged up to 1,000 jobs per attempt; an unreadable page
 or a larger attempt is reported as an error instead of a partial result.
 `diagnose` reads a run's failed jobs (five at most), the last 256 KiB of
-each log and its annotations, and prints the first failed step, what kind of
-failure it looks like, whether a re-run is likely to help, and the log lines
-leading up to the last error. The rules are fixed pattern tables in
-`@hobo/ci/insights`; no log text leaves the machine. A job whose log cannot be
-read is still diagnosed from its steps.
+each log and the annotations of the check run identified by `check_run_url`,
+and prints the first failed step, what kind of failure it looks like, whether
+a re-run is likely to help, and the log lines leading up to the last error. A
+log, annotation, or check-run identity read failure fails the command rather
+than producing a partial diagnosis. The rules are fixed pattern tables in
+`@hobo/ci/insights`; no log text leaves the machine.
 
 ## Route a job against the runner order
 
@@ -330,10 +333,11 @@ hobo ci route --github ubuntu-24.04 --depot auto --facts facts.json --json
 `runnerOrder` in `.hobo/ci.json` (the default order, fleet then machines then
 GitHub-hosted, when there is none), the label the job would ask each runner
 type for, and every step passed over with its reason. It contacts nothing.
-`--facts` names a JSON file saying what is true now (fleet room, machines,
-minutes used, money spent, tripped runner types); without it the fleet and
-machines are absent and no limit is measured. When nothing can take the job
-the command exits non-zero with `HOBO_CI_NO_RUNNER` and the reason. A
+`--facts` names a JSON file, relative to the checkout or absolute, saying what
+is true now (fleet room, machines, minutes used, money spent, tripped runner
+types); without it the fleet and machines are absent and no limit is measured.
+When nothing can take the job the command exits non-zero with
+`HOBO_CI_NO_RUNNER` and the reason. A
 committed order that breaks a rule is refused with
 `HOBO_CI_RUNNER_ORDER_INVALID` instead of being replaced by the default. An
 existing configuration that cannot be read, including a dangling file link,

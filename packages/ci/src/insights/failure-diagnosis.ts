@@ -183,10 +183,13 @@ export const TEST_STEP_PATTERNS: readonly DiagnosisPattern[] = [
 
 // public-contract: log text that makes a failed test look timing-dependent rather than wrong.
 export const FLAKE_HINT_PATTERNS: readonly DiagnosisPattern[] = [
-	{ label: "Timeout", pattern: /timeout/i },
-	{ label: "timed out", pattern: /timed out/i },
+	{
+		label: "Timeout of <duration>",
+		pattern: /\btimeout of \d+(?:\.\d+)?\s*(?:ms|milliseconds?|s|seconds?)\b/i,
+	},
+	{ label: "Test timed out", pattern: /\btests? timed out\b/i },
 	{ label: "flaky", pattern: /flaky/i },
-	{ label: "retry", pattern: /retry/i },
+	{ label: "Retry #<number>", pattern: /\bretry #\d+\b/i },
 	{ label: "ECONNREFUSED", pattern: /ECONNREFUSED/ },
 	{ label: "Target closed", pattern: /target closed/i },
 	{ label: "Navigation timeout", pattern: /navigation timeout/i },

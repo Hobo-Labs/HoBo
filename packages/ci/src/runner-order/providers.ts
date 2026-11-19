@@ -197,7 +197,7 @@ export function runnerProviderOfLabel(
 export function runnerLabelForSize(
 	key: RunnerStepKey,
 	vcpus: number,
-	runId: number,
+	runId: number | bigint,
 ): string | undefined {
 	const sizes =
 		key === "github"

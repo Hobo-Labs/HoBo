@@ -40,7 +40,7 @@ function isAuto(labels: readonly string[]): boolean {
 function autoLabels(
 	key: RunnerStepKey,
 	vcpus: number,
-	runId: number,
+	runId: number | bigint,
 ): readonly string[] | undefined {
 	if (key === "machine") return [ANY_MACHINE_LABEL];
 	if (key === "fleet") return [FLEET_LABEL];
@@ -51,7 +51,7 @@ function autoLabels(
 export function resolveAutoInputs(
 	inputs: RelayInputs,
 	vcpus: number,
-	runId: number,
+	runId: number | bigint,
 ): RelayInputs {
 	const resolved = new Map<RunnerStepKey, readonly string[]>();
 	for (const [key, labels] of inputs) {
