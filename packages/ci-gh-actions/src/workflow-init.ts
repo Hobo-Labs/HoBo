@@ -368,10 +368,21 @@ function needsJobIds(workflow: Workflow, job: YAMLMap): readonly string[] {
 	return [];
 }
 
+function needsJobReferencePattern(jobId: string): string {
+	const id = jobId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+	const single = `'${id}'`;
+	const double = `"${id}"`;
+	const yamlEscapedDouble = `\\\\"${id}\\\\"`;
+	const yamlDoubledSingle = `''${id}''`;
+	const quoted = [single, double, yamlEscapedDouble, yamlDoubledSingle].join(
+		"|",
+	);
+	return `\\bneeds\\s*(?:\\.\\s*${id}(?![\\w-])|\\[\\s*(?:${quoted})\\s*\\])`;
+}
+
 function referencesNeedsOutputs(text: string, jobId: string): boolean {
-	const escaped = jobId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 	return new RegExp(
-		`\\bneeds\\s*(?:\\.\\s*${escaped}(?![\\w-])|\\[\\s*(['"])${escaped}\\1\\s*\\])\\s*\\.\\s*outputs\\b`,
+		`${needsJobReferencePattern(jobId)}\\s*\\.\\s*outputs\\b`,
 		"iu",
 	).test(text);
 }
@@ -757,11 +768,7 @@ function readWorkflow(
 }
 
 function routesJobs(id: string, jobs: readonly InspectedJob[]): boolean {
-	const escaped = id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-	const reference = new RegExp(
-		`\\bneeds\\s*(?:\\.\\s*${escaped}(?![\\w-])|\\[\\s*(['"])${escaped}\\1\\s*\\])`,
-		"iu",
-	);
+	const reference = new RegExp(needsJobReferencePattern(id), "iu");
 	return jobs.some(
 		(other) =>
 			other.plan.job !== id &&

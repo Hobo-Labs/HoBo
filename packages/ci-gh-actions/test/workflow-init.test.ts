@@ -363,6 +363,24 @@ jobs:
 		expect(applyWorkflowPlan(FILE, source, ["all"]).changed).toHaveLength(0);
 	});
 
+	it("counts needs outputs when the job id has a regex metacharacter and the quote is YAML-escaped", () => {
+		const source = `on: push
+jobs:
+  "publish.v2":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ needs[\\"publish.v2\\"].outputs.value }}"
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish.v2 skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
 	it("counts a secret in the workflow's env for every job", () => {
 		const source = `on: push
 env:
@@ -1196,6 +1214,69 @@ describe("a job that routes other jobs", () => {
 		);
 		expect(planWorkflow("ci.yml", reusable).jobs[0]).toMatchObject({
 			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it.each([
+		[
+			"runs-on",
+			`  called:
+    runs-on: \${{ needs['route.v2'].outputs.runner || 'ubuntu-24.04' }}
+    steps:
+      - run: pnpm test
+`,
+		],
+		[
+			"a reusable workflow input",
+			`  called:
+    uses: ./.github/workflows/reusable.yml
+    with:
+      runner: "\${{ needs[\\"route.v2\\"].outputs.runner }}"
+`,
+		],
+		[
+			"a strategy matrix",
+			`  called:
+    strategy:
+      matrix: '\${{ fromJSON(needs[''route.v2''].outputs.matrix) }}'
+    runs-on: \${{ matrix.runner }}
+    steps:
+      - run: pnpm test
+`,
+		],
+	])("recognizes router id route.v2, which breaks a backreference, from %s", (_where, caller) => {
+		const source = `jobs:
+  "route.v2":
+    runs-on: ubuntu-24.04
+    outputs:
+      runner: \${{ steps.pick.outputs.runner }}
+    steps:
+      - id: pick
+        run: echo "runner=hobo" >> "$GITHUB_OUTPUT"
+${caller}`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route.v2",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes a quoted job id referenced with YAML-escaped double quotes", () => {
+		const source = `jobs:
+  "a'b":
+    runs-on: ubuntu-24.04
+    steps:
+      - id: pick
+        run: echo "runner=hobo" >> "$GITHUB_OUTPUT"
+  called:
+    uses: ./.github/workflows/reusable.yml
+    with:
+      runner: "\${{ needs[\\"a'b\\"].outputs.runner }}"
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "a'b",
 			verdict: "skipped",
 			reason: "routes_jobs",
 		});
