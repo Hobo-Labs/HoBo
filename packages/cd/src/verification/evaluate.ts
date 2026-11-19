@@ -1,11 +1,3 @@
-// The pure verdict function (D9, I5, I8). Given a parsed spec, the evidence
-// recorded on a cd-verification stream and an instant, it decides every check
-// and the overall verdict. The engine calls it live; replay calls it with the
-// recorded evidence and finished_at and must get the same answer.
-//
-// Fail closed: no data is FAIL (or INCONCLUSIVE when fail_on_no_data is
-// false), never PASS; a check that still lacks evidence at the progress
-// deadline is INCONCLUSIVE, which the rollout treats as FAIL.
 import { create } from "@bufbuild/protobuf";
 import {
 	Aggregation,
@@ -37,16 +29,11 @@ export type EvaluationInput = Readonly<{
 	evidence: readonly EvidenceObservationRecord[];
 	startedAtMs: number;
 	atMs: number;
-	/**
-	 * Checks whose health source refused at this instant. Live only: such a
-	 * check stays pending (it is retried) until the progress deadline, after
-	 * which an empty check is no data like any other.
-	 */
+
 	unavailable?: ReadonlySet<string>;
 }>;
 
 export type Evaluation = Readonly<{
-	/** False while any check is still waiting for evidence before the deadline. */
 	complete: boolean;
 	verdict: VerificationVerdict;
 	checks: readonly CheckOutcomeRecord[];
@@ -57,7 +44,6 @@ type Decided = CheckOutcomeRecord | "pending";
 
 type Clock = Readonly<{ windowEnded: boolean; deadlinePassed: boolean }>;
 
-/** The cohort a threshold reads: the canary when traffic is split, else everything. */
 export function thresholdCohort(cohortAware: boolean): Cohort {
 	return cohortAware ? Cohort.CANARY : Cohort.ALL;
 }
@@ -112,7 +98,6 @@ function noData(
 	);
 }
 
-/** Shared "enough evidence yet?" rule for every sampled check. */
 function sufficiency(
 	check: string,
 	counts: readonly number[],
@@ -161,15 +146,30 @@ function nearestRank(sorted: readonly number[], quantile: number): number {
 	return sorted[index] ?? Number.NaN;
 }
 
-/** Thresholds per aggregation; percentiles use the nearest-rank method. */
+function scaledTotal(values: readonly number[]) {
+	const scale = values.reduce(
+		(largest, value) => Math.max(largest, Math.abs(value)),
+		0,
+	);
+	return {
+		scale,
+		total: values.reduce((sum, value) => sum + value / scale, 0),
+	};
+}
+
 export function aggregate(
 	values: readonly number[],
 	aggregation: Aggregation,
 ): number {
 	const sorted = [...values].sort((a, b) => a - b);
 	switch (aggregation) {
-		case Aggregation.MEAN:
-			return sorted.reduce((sum, value) => sum + value, 0) / sorted.length;
+		case Aggregation.MEAN: {
+			const total = sorted.reduce((sum, value) => sum + value, 0);
+			if (Number.isFinite(total) || !sorted.every(Number.isFinite))
+				return total / sorted.length;
+			const scaled = scaledTotal(sorted);
+			return (scaled.total / sorted.length) * scaled.scale;
+		}
 		case Aggregation.P50:
 			return nearestRank(sorted, 0.5);
 		case Aggregation.P95:
@@ -178,8 +178,13 @@ export function aggregate(
 			return nearestRank(sorted, 0.99);
 		case Aggregation.MAX:
 			return sorted[sorted.length - 1] ?? Number.NaN;
-		case Aggregation.SUM:
-			return sorted.reduce((sum, value) => sum + value, 0);
+		case Aggregation.SUM: {
+			const total = sorted.reduce((sum, value) => sum + value, 0);
+			if (Number.isFinite(total) || !sorted.every(Number.isFinite))
+				return total;
+			const scaled = scaledTotal(sorted);
+			return scaled.total * scaled.scale;
+		}
 		default:
 			return Number.NaN;
 	}
@@ -269,6 +274,21 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 			continue;
 		}
 		const value = aggregate(values, threshold.aggregation);
+		if (!Number.isFinite(value)) {
+			decided.set(
+				check,
+				outcome(
+					check,
+					VerificationVerdict.FAIL,
+					{ samplesCanary: values.length },
+					{
+						code: "verification-invalid-sample",
+						message: `${check} has a non-finite aggregate`,
+					},
+				),
+			);
+			continue;
+		}
 		const ok = holds(value, threshold.comparator, threshold.value);
 		decided.set(
 			check,
@@ -455,7 +475,10 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 					),
 				);
 			} else {
-				const peak = Math.max(...burn);
+				const peak = burn.reduce(
+					(maximum, value) => Math.max(maximum, value),
+					Number.NEGATIVE_INFINITY,
+				);
 				const ok = peak <= spec.maxErrorBudgetBurn;
 				decided.set(
 					ERROR_BUDGET_CHECK,
@@ -512,10 +535,6 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 	return { complete: true, verdict, checks, reasons };
 }
 
-/**
- * The only verdict that qualifies Freight or advances a stage. INCONCLUSIVE
- * and FAIL both stop the rollout (D9, I5).
- */
 export function qualifies(verdict: VerificationVerdict): boolean {
 	return verdict === VerificationVerdict.PASS;
 }
