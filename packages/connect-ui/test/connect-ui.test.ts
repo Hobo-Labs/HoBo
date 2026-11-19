@@ -260,6 +260,23 @@ describe("startConnectPage", () => {
 
 	const SECRET = "-----BEGIN RSA PRIVATE KEY----- never-shown";
 
+	it("includes person-confirmation metadata on the view wire before handoff", async () => {
+		page = await startConnectPage({
+			flow: {
+				initial: APP_STEP,
+				async onAction(_action, _params, current) {
+					return { step: current };
+				},
+			},
+			assetsDir: "dist/client",
+		});
+		const view = await (await fetch(`${page.url}view`)).json();
+		const confirm = view.view?.actions?.find(
+			(entry: { action: string }) => entry.action === "connect.start",
+		)?.confirm;
+		expect(confirm).toMatch(/GitHub/);
+	});
+
 	function githubFlow(): ConnectFlow {
 		return {
 			initial: STORE_STEP,

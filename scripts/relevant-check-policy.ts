@@ -277,11 +277,13 @@ export function selectRelevantChecks(
 			/\.(tsx|jsx|css|astro)$/u,
 			/^scripts\/check-visual-tokens\.mts$/u,
 		]);
-	const visualTokensChanged =
-		touchedAny([
-			/^scripts\/check-visual-tokens\.mts$/u,
-			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
-		]) || uiChanged;
+	const visualTokensChanged = touchedAny([
+		/^scripts\/check-visual-tokens\.mts$/u,
+		/^site\/src\/styles\//u,
+		/^packages\/connect-ui\/src\/client\/styles\.css$/u,
+		/^packages\/status-page\/src\/tokens\.ts$/u,
+		/^packages\/mcp\/src\/secret-capture\/html\.ts$/u,
+	]);
 	const behaviorChanged =
 		touched(["tests/behavior"]) ||
 		// Feature files and step definitions live inside proof packages
