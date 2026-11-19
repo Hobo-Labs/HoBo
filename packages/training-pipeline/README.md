@@ -7,6 +7,11 @@ conformance green, eval thresholds met over enough samples, and policy allows
 the change. `promotionEventNames` maps the decision to the platform's
 past-tense event names.
 
+Aggregation records a sample count for each metric. A required metric must
+have its own count and meet `minSamples`; trajectories that omit that metric
+do not contribute to its count. Older results without per-metric counts remain
+readable, and cannot satisfy a metric floor until their counts are supplied.
+
 ## Trajectory capture (OTel / OpenInference span emission)
 
 `createTrajectoryCapture` starts/ends spans around agent actions — `AGENT`
