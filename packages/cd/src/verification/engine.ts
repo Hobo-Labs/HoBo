@@ -26,6 +26,7 @@ import type {
 	VerifyPort,
 } from "../ports.js";
 import { evaluateVerification, thresholdCohort } from "./evaluate.js";
+import { evidenceDigest } from "./evidence.js";
 import {
 	evidenceBody,
 	foldVerification,
@@ -41,6 +42,8 @@ import {
 	type ParsedVerificationSpec,
 	parseVerificationSpec,
 	probeCheckId,
+	SLO_BUDGET_CHECK,
+	SLO_BURN_CHECK,
 	suiteCheckId,
 	thresholdCheckId,
 } from "./spec.js";
@@ -118,6 +121,17 @@ function queryPlan(
 			);
 		}
 	}
+	if (spec.sloGate?.burnRate && spec.sloGate.remainingBudgetRatio) {
+		const cohort = thresholdCohort(cohortAware);
+		plans.push(
+			{ check: SLO_BURN_CHECK, query: spec.sloGate.burnRate, cohort },
+			{
+				check: SLO_BUDGET_CHECK,
+				query: spec.sloGate.remainingBudgetRatio,
+				cohort,
+			},
+		);
+	}
 	return plans;
 }
 
@@ -194,8 +208,9 @@ export function createVerificationEngine(
 		verdict: VerificationVerdict,
 		checks: readonly CheckOutcomeRecord[],
 		reasons: readonly ReasonRecord[],
+		evidence: readonly EvidenceObservationRecord[] = [],
 	): VerificationResultRecord {
-		return create(VerificationResultRecordSchema, {
+		const result = create(VerificationResultRecordSchema, {
 			verificationId: state.id,
 			freightId: state.freightId,
 			campId: state.campId,
@@ -205,6 +220,15 @@ export function createVerificationEngine(
 			finishedAt: iso(atMs),
 			reasons: [...reasons],
 		});
+		if (state.spec?.sloGate)
+			result.evidenceDigest = evidenceDigest({
+				spec: state.spec,
+				cohortAware: state.cohortAware,
+				evidence,
+				startedAtMs: state.startedAtMs,
+				atMs,
+			});
+		return result;
 	}
 
 	function completed(
@@ -342,8 +366,10 @@ export function createVerificationEngine(
 							query: plan.query,
 							campId: state.campId,
 							cohort: plan.cohort,
-							fromMs: state.startedAtMs,
-							toMs: windowEndMs,
+							fromMs: plan.check.startsWith("slo:")
+								? Math.max(state.startedAtMs, atMs - Number(spec.windowMs))
+								: state.startedAtMs,
+							toMs: plan.check.startsWith("slo:") ? atMs : windowEndMs,
 							signal,
 						},
 						ctx,
@@ -456,10 +482,14 @@ export function createVerificationEngine(
 					(known) => known.code === item.code && known.subject === item.subject,
 				),
 		);
-		const result = finish(state, atMs, evaluation.verdict, evaluation.checks, [
-			...evaluation.reasons,
-			...extra,
-		]);
+		const result = finish(
+			state,
+			atMs,
+			evaluation.verdict,
+			evaluation.checks,
+			[...evaluation.reasons, ...extra],
+			[...state.evidence, ...recordedNow, ...sampled],
+		);
 		await append(
 			state,
 			[

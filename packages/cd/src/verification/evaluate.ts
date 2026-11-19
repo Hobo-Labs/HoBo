@@ -18,6 +18,9 @@ import {
 	type ParsedVerificationSpec,
 	probeCheckId,
 	RATIO_UNIT,
+	SLO_BUDGET_CHECK,
+	SLO_BURN_CHECK,
+	SLO_CHECK,
 	suiteCheckId,
 	thresholdCheckId,
 } from "./spec.js";
@@ -222,6 +225,103 @@ function comparatorText(comparator: Comparator): string {
 		default:
 			return "?";
 	}
+}
+
+function evaluateSlo(input: EvaluationInput): Decided {
+	const gate = input.spec.sloGate;
+	if (!gate) return "pending";
+	const cohort = thresholdCohort(input.cohortAware);
+	const fromMs = Math.max(
+		input.startedAtMs,
+		input.atMs - Number(input.spec.windowMs),
+	);
+	const maxAgeMs = Number(gate.maxSampleAgeMs);
+	const series = new Map<string, Map<number, number>>();
+	for (const check of [SLO_BURN_CHECK, SLO_BUDGET_CHECK]) {
+		const points = input.evidence.filter(
+			(item) => item.signal === check && item.cohort === cohort,
+		);
+		const timestamps = new Map<number, number>();
+		const keys = new Set<string>();
+		for (const point of points) {
+			const at = Date.parse(point.observedAt);
+			if (!Number.isFinite(at) || !point.seriesKey) return "pending";
+			if (at < fromMs) continue;
+			if (at > input.atMs || !point.healthy || !Number.isFinite(point.value))
+				return "pending";
+			if (point.value < 0 || (check === SLO_BUDGET_CHECK && point.value > 1))
+				return "pending";
+			keys.add(point.seriesKey);
+			const previous = timestamps.get(at);
+			if (previous !== undefined && previous !== point.value) return "pending";
+			timestamps.set(at, point.value);
+		}
+		if (keys.size !== 1 || timestamps.size === 0) return "pending";
+		series.set(check, timestamps);
+	}
+	const burn = series.get(SLO_BURN_CHECK);
+	const budget = series.get(SLO_BUDGET_CHECK);
+	if (!burn || !budget) return "pending";
+	const timestamps = [...new Set([...burn.keys(), ...budget.keys()])].sort(
+		(a, b) => a - b,
+	);
+	let burnBreaches = 0;
+	let budgetBreaches = 0;
+	let healthy = 0;
+	let last = -1;
+	for (const at of timestamps) {
+		const burnRate = burn.get(at);
+		const remaining = budget.get(at);
+		if (
+			burnRate === undefined ||
+			remaining === undefined ||
+			(last >= 0 && at - last > maxAgeMs)
+		) {
+			burnBreaches = 0;
+			budgetBreaches = 0;
+			healthy = 0;
+		}
+		if (burnRate !== undefined && remaining !== undefined) {
+			burnBreaches =
+				burnRate >= (gate.rollbackBurnRate ?? 12) ? burnBreaches + 1 : 0;
+			budgetBreaches =
+				remaining <= (gate.minRemainingBudgetRatio ?? 0.08)
+					? budgetBreaches + 1
+					: 0;
+			healthy =
+				burnRate < (gate.holdBurnRate ?? 1) &&
+				remaining > (gate.holdRemainingBudgetRatio ?? 0.2)
+					? healthy + 1
+					: 0;
+		}
+		last = at;
+	}
+	if (
+		last < 0 ||
+		input.atMs - last > maxAgeMs ||
+		!burn.has(last) ||
+		!budget.has(last)
+	)
+		return "pending";
+	if (
+		burnBreaches >= gate.sustainedBreachCount ||
+		budgetBreaches >= gate.sustainedBreachCount
+	)
+		return outcome(
+			SLO_CHECK,
+			VerificationVerdict.FAIL,
+			{ samplesCanary: Math.max(burnBreaches, budgetBreaches) },
+			{
+				code: "verification-slo-breach",
+				message:
+					"SLO burn or remaining budget breached its rollback threshold in consecutive samples",
+			},
+		);
+	if (healthy >= gate.sustainedHealthyCount)
+		return outcome(SLO_CHECK, VerificationVerdict.PASS, {
+			samplesCanary: healthy,
+		});
+	return "pending";
 }
 
 export function evaluateVerification(input: EvaluationInput): Evaluation {
@@ -498,8 +598,16 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 		}
 	}
 
+	if (spec.sloGate) decided.set(SLO_CHECK, evaluateSlo(input));
+
 	const pending = [...decided.values()].some((value) => value === "pending");
-	if (!clock.windowEnded || pending) {
+	const failedBeforePending =
+		spec.sloGate &&
+		[...decided.values()].some(
+			(value) =>
+				value !== "pending" && value.verdict === VerificationVerdict.FAIL,
+		);
+	if (!clock.windowEnded || (pending && !failedBeforePending)) {
 		return {
 			complete: false,
 			verdict: VerificationVerdict.UNSPECIFIED,
