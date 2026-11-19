@@ -110,3 +110,31 @@ package core
 	status:      #SloEvaluationStatus
 	objectives: [#SloObjectiveEvaluationRecord, ...#SloObjectiveEvaluationRecord]
 }
+
+#SloDeclaredRecord: {
+	schema:         "hobo.slo.event/v1"
+	sloName:        string & !=""
+	definitionHash: string & =~"^sha256:[a-f0-9]{64}$"
+}
+#SloBudgetObservationRecord: {
+	schema:               "hobo.slo.event/v1"
+	sloName:              string & !=""
+	objective:            string & !=""
+	window:               string & !=""
+	good:                 number & >=0
+	total:                number & >0 & >=good
+	burnRate:             number & >=0
+	remainingBudgetRatio: number & >=0 & <=1
+}
+#SloBudgetProjectionRecord: {
+	sloName:              string & !=""
+	objective:            string & !=""
+	gateable:             bool
+	consumedBudgetRatio:  number & >=0 & <=1
+	remainingBudgetRatio: number & >=0 & <=1
+	exhausted:            bool
+	lastSeq?:             int & >=0
+	lastEventId?:         string & !=""
+	lastEventHash?:       string & =~"^sha256:[a-f0-9]{64}$"
+	reason?:              string & !=""
+}
