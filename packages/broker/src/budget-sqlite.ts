@@ -10,6 +10,7 @@ import {
 	createBudgetAdmissionAuthority,
 	type IacPricedSettlementTrust,
 	type IacUnpricedScopeTrust,
+	validateBudgetSnapshot,
 } from "./budget-authority.js";
 import {
 	type BudgetFenceTrust,
@@ -48,6 +49,7 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 	const iacPricedSettlementTrust = captureIacPricedSettlementTrust(
 		options.iacPricedSettlementTrust,
 	);
+	validateBudgetSnapshot(options.snapshot, options.snapshot.observedAt);
 	const database = new DatabaseSync(options.path);
 	try {
 		const main = database

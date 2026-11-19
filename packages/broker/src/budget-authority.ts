@@ -28,6 +28,8 @@ import {
 	createBudgetFenceVerifier,
 } from "./budget-fence-settlement.js";
 
+const currentBudgetFenceSettlementPayloadVersion = "v2";
+
 export type {
 	BudgetEntitlement,
 	BudgetProviderAccount,
@@ -128,19 +130,32 @@ function validEntitlementKind(kind: string): boolean {
 
 type EntitlementScope = { kind: string; bucketId: string; unit: string };
 
+function persistedEntitlementKind(kind: string): string {
+	return kind === "" ? "allowance" : kind;
+}
+
 function entitlementScopeKey(row: EntitlementScope): string {
-	return JSON.stringify([row.kind, row.bucketId, row.unit]);
+	return JSON.stringify([
+		persistedEntitlementKind(row.kind),
+		row.bucketId,
+		row.unit,
+	]);
 }
 
 function sameEntitlementScope(
 	left: EntitlementScope,
 	right: EntitlementScope,
 ): boolean {
-	return (
-		left.kind === right.kind &&
-		left.bucketId === right.bucketId &&
-		left.unit === right.unit
-	);
+	return entitlementScopeKey(left) === entitlementScopeKey(right);
+}
+
+function normalizeLegacyBudgetSnapshot(
+	snapshot: BudgetLedgerSnapshot,
+): BudgetLedgerSnapshot {
+	const normalized = clone(BudgetLedgerSnapshotSchema, snapshot);
+	for (const entitlement of normalized.entitlements)
+		entitlement.kind = persistedEntitlementKind(entitlement.kind);
+	return normalized;
 }
 
 function unboundedFingerprint(input: {
@@ -567,7 +582,7 @@ export function createBudgetAdmissionAuthority(options: {
 		evidence?: { liabilityResolutionEvidenceRef?: string },
 	): void;
 } {
-	let current = clone(BudgetLedgerSnapshotSchema, options.snapshot);
+	let current = normalizeLegacyBudgetSnapshot(options.snapshot);
 	let reservations = new Map<string, BudgetReservation>();
 	const fenced = createBudgetFenceVerifier(options.fenceTrust);
 	const scopeTrust = captureIacUnpricedScopeTrust(options.unpricedScopeTrust);
@@ -601,14 +616,22 @@ export function createBudgetAdmissionAuthority(options: {
 	// Derived from the complete journal, including snapshots that no longer expose
 	// a bucket. Dropping a projection row must never erase its financial history.
 	const retiredPeriods = new Set<string>();
-	const entitlementHistory = new Map<
-		string,
-		Pick<
-			BudgetLedgerSnapshot["entitlements"][number],
-			"unit" | "observedAt" | "validUntil" | "remainingUnits"
-		>
-	>();
+	type EntitlementHistory = Pick<
+		BudgetLedgerSnapshot["entitlements"][number],
+		"unit" | "observedAt" | "validUntil" | "remainingUnits"
+	>;
+	const entitlementHistory = new Map<string, EntitlementHistory>();
+	const entitlementUnitChangeHistory = new Map<string, EntitlementHistory>();
 	const entitlementKey = (
+		bucket: BudgetLedgerSnapshot["entitlements"][number],
+	) =>
+		JSON.stringify([
+			bucket.periodId,
+			bucket.kind,
+			bucket.bucketId,
+			bucket.unit,
+		]);
+	const entitlementUnitChangeKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	) => JSON.stringify([bucket.periodId, bucket.kind, bucket.bucketId]);
 	function assertFinancialHistory(
@@ -625,7 +648,9 @@ export function createBudgetAdmissionAuthority(options: {
 			type === "budget.PolicyRevised" || type === "budget.PeriodReset";
 		for (const bucket of next.entitlements) {
 			const key = entitlementKey(bucket);
-			const previous = entitlementHistory.get(key);
+			const previous =
+				entitlementHistory.get(key) ??
+				entitlementUnitChangeHistory.get(entitlementUnitChangeKey(bucket));
 			// Settlement legitimately reduces a live bucket at its existing observation.
 			// Configuration and any reintroduced bucket must respect the retained fence.
 			if (
@@ -654,13 +679,19 @@ export function createBudgetAdmissionAuthority(options: {
 			next.identity?.periodId !== current.identity.periodId
 		)
 			retiredPeriods.add(current.identity.periodId);
-		for (const bucket of next.entitlements)
-			entitlementHistory.set(entitlementKey(bucket), {
+		for (const bucket of next.entitlements) {
+			const history = {
 				unit: bucket.unit,
 				observedAt: bucket.observedAt,
 				validUntil: bucket.validUntil,
 				remainingUnits: bucket.remainingUnits,
-			});
+			};
+			entitlementHistory.set(entitlementKey(bucket), history);
+			entitlementUnitChangeHistory.set(
+				entitlementUnitChangeKey(bucket),
+				history,
+			);
+		}
 	}
 	rememberFinancialHistory(current);
 	if (current.identity)
@@ -675,7 +706,10 @@ export function createBudgetAdmissionAuthority(options: {
 		current.entitlements.some((row) => row.reservedUnits !== 0)
 	)
 		throw new TypeError("reservation history required for held exposure");
-	for (const event of options.priorEvents ?? []) {
+	for (const persistedEvent of options.priorEvents ?? []) {
+		const event = clone(BudgetAuthorityEventSchema, persistedEvent);
+		if (event.snapshot)
+			event.snapshot = normalizeLegacyBudgetSnapshot(event.snapshot);
 		if (!event.snapshot?.identity || !current.identity)
 			throw new Error("budget journal snapshot identity missing");
 		if (
@@ -1603,11 +1637,14 @@ export function createBudgetAdmissionAuthority(options: {
 				status: "held",
 				ledgerSeq: current.seq + 1,
 			});
-			if (input.fenceSettlementGuard)
+			if (input.fenceSettlementGuard) {
+				reservation.fenceSettlementPayloadVersion =
+					currentBudgetFenceSettlementPayloadVersion;
 				reservation.fenceSettlementGuard = fenced.createGuard(
 					reservation,
 					input.fenceSettlementGuard,
 				);
+			}
 			const rows = new Map(reservations);
 			rows.set(input.reservationId, reservation);
 			save(

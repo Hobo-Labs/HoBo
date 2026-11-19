@@ -34,6 +34,60 @@ import "list"
 	units:    #Micros
 	kind:     #EntitlementKind
 }
+#ProviderAccountRowsMatch: {
+	left:  [...#ProviderAccountExposure]
+	right: [...#ProviderAccountExposure]
+	_length: true & (len(left) == len(right))
+	for i, row in left {
+		"left/\(i)": true & list.Contains([for candidate in right {
+			providerAccountId: candidate.providerAccountId
+			liabilityMicros:   candidate.liabilityMicros
+		}], {
+			providerAccountId: row.providerAccountId
+			liabilityMicros:   row.liabilityMicros
+		})
+	}
+	for i, row in right {
+		"right/\(i)": true & list.Contains([for candidate in left {
+			providerAccountId: candidate.providerAccountId
+			liabilityMicros:   candidate.liabilityMicros
+		}], {
+			providerAccountId: row.providerAccountId
+			liabilityMicros:   row.liabilityMicros
+		})
+	}
+}
+#EntitlementClaimRowsMatch: {
+	left:  [...#EntitlementClaim]
+	right: [...#EntitlementClaim]
+	_length: true & (len(left) == len(right))
+	for i, row in left {
+		"left/\(i)": true & list.Contains([for candidate in right {
+			kind:     candidate.kind
+			bucketId: candidate.bucketId
+			unit:     candidate.unit
+			units:    candidate.units
+		}], {
+			kind:     row.kind
+			bucketId: row.bucketId
+			unit:     row.unit
+			units:    row.units
+		})
+	}
+	for i, row in right {
+		"right/\(i)": true & list.Contains([for candidate in left {
+			kind:     candidate.kind
+			bucketId: candidate.bucketId
+			unit:     candidate.unit
+			units:    candidate.units
+		}], {
+			kind:     row.kind
+			bucketId: row.bucketId
+			unit:     row.unit
+			units:    row.units
+		})
+	}
+}
 #HostingQuoteComponent: {name: string & !="", costMicros: #Micros}
 #HostingQuote: {
 	quoteId:               string & !=""
@@ -70,6 +124,7 @@ import "list"
   executionDigest?: string
   financialPlanHash?: string
   fenceSettlementGuard?: #BudgetFenceSettlementGuard
+  fenceSettlementPayloadVersion?: "v2"
   unboundedExposure?: bool
   unpricedPolicyProof?: #IacUnpricedPolicyProof
   unpricedScopeProof?: #IacUnpricedScopeProof
@@ -100,6 +155,7 @@ import "list"
 	observedAt:          string & !=""
 	validUntil:          string & !=""
 	providerAccounts: [#ProviderAccountExposure, ...#ProviderAccountExposure]
+	entitlementClaims?: [...#EntitlementClaim]
 	if maximumMicrosExact != _|_ {
 		maximumMicrosExact: list.Sum([for account in providerAccounts {account.liabilityMicros}])
 	}
@@ -212,6 +268,23 @@ import "list"
 		}
 		if iacEvidence.maximumMicrosExact == _|_ {
 			iacEvidence: {maximumMicros: iacDecision.quote.liabilityBoundMicros}
+		}
+		iacEvidence: {entitlementClaims: [...#EntitlementClaim]}
+		_evidenceQuoteAccounts: #ProviderAccountRowsMatch & {
+			left:  iacEvidence.providerAccounts
+			right: iacDecision.quote.providerAccounts
+		}
+		_quoteReservationAccounts: #ProviderAccountRowsMatch & {
+			left:  iacDecision.quote.providerAccounts
+			right: iacDecision.reservation.providerAccounts
+		}
+		_evidenceQuoteClaims: #EntitlementClaimRowsMatch & {
+			left:  iacEvidence.entitlementClaims
+			right: iacDecision.quote.entitlementClaims
+		}
+		_quoteReservationClaims: #EntitlementClaimRowsMatch & {
+			left:  iacDecision.quote.entitlementClaims
+			right: iacDecision.reservation.entitlementClaims
 		}
 	}
 }

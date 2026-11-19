@@ -346,6 +346,12 @@ export function createBudgetFenceVerifier(trust?: BudgetFenceTrust) {
 			(row) => row.providerAccountId,
 		);
 		if (
+			reservation.fenceSettlementPayloadVersion !== "" &&
+			reservation.fenceSettlementPayloadVersion !==
+				currentBudgetFenceSettlementPayloadVersion
+		)
+			throw new Error("unsupported fenced settlement payload version");
+		if (
 			guard.destination &&
 			guard.destination.planHash !== reservation.financialPlanHash
 		)
@@ -434,10 +440,15 @@ export function createBudgetFenceVerifier(trust?: BudgetFenceTrust) {
 			reservation.executionDigest !== guard.executionDigest
 		)
 			throw new Error("fenced route was not claimed for execution");
+		const payloadVersion =
+			reservation.fenceSettlementPayloadVersion === ""
+				? legacyBudgetFenceSettlementPayloadVersion
+				: currentBudgetFenceSettlementPayloadVersion;
 		const payload = canonicalBudgetFenceSettlement(
 			reservation,
 			actualMicros,
 			evidence,
+			payloadVersion,
 		);
 		const receipt = parseReceipt(evidence.fenceOperationReceiptJson);
 		const { signature: signed, ...body } = receipt;
@@ -476,12 +487,19 @@ function parseReceipt(value: string | undefined) {
 	return receiptSchema.parse(parsed);
 }
 
+const legacyBudgetFenceSettlementPayloadVersion = "v1";
+const currentBudgetFenceSettlementPayloadVersion = "v2";
+type BudgetFenceSettlementPayloadVersion =
+	| typeof legacyBudgetFenceSettlementPayloadVersion
+	| typeof currentBudgetFenceSettlementPayloadVersion;
+
 /** Canonical finance statement signed by the independently enrolled finance
  * authority after verifying final charges and source retirement. */
 export function canonicalBudgetFenceSettlement(
 	reservation: BudgetReservation,
 	actualMicros: number,
 	evidence: Evidence,
+	payloadVersion: BudgetFenceSettlementPayloadVersion = currentBudgetFenceSettlementPayloadVersion,
 ): string {
 	const guard = reservation.fenceSettlementGuard;
 	if (
@@ -509,35 +527,49 @@ export function canonicalBudgetFenceSettlement(
 	const accounts = [...(evidence.providerAccounts ?? [])]
 		.map((row) => [row.providerAccountId, row.liabilityMicros] as const)
 		.sort((a, b) => compare(a[0], b[0]));
-	const claims = [...(evidence.entitlementClaims ?? [])]
-		.map((row) => [row.kind, row.bucketId, row.unit, row.units] as const)
-		.sort(
-			(a, b) =>
-				compare(a[0], b[0]) || compare(a[1], b[1]) || compare(a[2], b[2]),
-		);
+	const evidenceClaims = [...(evidence.entitlementClaims ?? [])];
 	if (
 		accounts.some(
 			([id, amount]) =>
 				!text(id) || !Number.isSafeInteger(amount) || amount < 0,
 		) ||
-		claims.some(
-			([kind, id, unit, count]) =>
-				!["allowance", "credit", "commitment"].includes(kind) ||
-				!text(id) ||
-				!text(unit) ||
-				!Number.isSafeInteger(count) ||
-				count < 0,
+		evidenceClaims.some(
+			(row) =>
+				(payloadVersion === legacyBudgetFenceSettlementPayloadVersion
+					? row.kind !== ""
+					: !["allowance", "credit", "commitment"].includes(row.kind)) ||
+				!text(row.bucketId) ||
+				!text(row.unit) ||
+				!Number.isSafeInteger(row.units) ||
+				row.units < 0,
 		)
 	)
 		throw new Error("invalid fenced settlement dimensions");
+	const claims =
+		payloadVersion === legacyBudgetFenceSettlementPayloadVersion
+			? evidenceClaims
+					.map((row) => [row.bucketId, row.unit, row.units] as const)
+					.sort((a, b) => compare(a[0], b[0]))
+			: evidenceClaims
+					.map((row) => [row.kind, row.bucketId, row.unit, row.units] as const)
+					.sort(
+						(a, b) =>
+							compare(a[0], b[0]) || compare(a[1], b[1]) || compare(a[2], b[2]),
+					);
+	const claimScopes = claims.map((row) =>
+		JSON.stringify(
+			payloadVersion === legacyBudgetFenceSettlementPayloadVersion
+				? [row[0]]
+				: row.slice(0, -1),
+		),
+	);
 	if (
 		new Set(accounts.map((row) => row[0])).size !== accounts.length ||
-		new Set(claims.map((row) => JSON.stringify(row.slice(0, 3)))).size !==
-			claims.length
+		new Set(claimScopes).size !== claims.length
 	)
 		throw new Error("duplicate fenced settlement dimensions");
 	return JSON.stringify([
-		"hobo.budget-fence-settlement/v1",
+		`hobo.budget-fence-settlement/${payloadVersion}`,
 		identity(reservation),
 		guard.routeDigest,
 		guard.financeKeyId,

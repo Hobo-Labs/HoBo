@@ -15,7 +15,8 @@
         "providerAccountId": "account-a",
         "liabilityMicros": 1500000
       }
-    ]
+    ],
+    "entitlementClaims": []
   },
   "iacDecision": {
     "requestId": "request-1",
@@ -72,6 +73,13 @@
       "actualMicros": 0,
       "ledgerSeq": 1,
       "quoteDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "providerAccounts": [
+        {
+          "providerAccountId": "account-a",
+          "liabilityMicros": 1500000
+        }
+      ],
+      "entitlementClaims": [],
       "financialPlanHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "iacPricingPin": {
         "planDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",

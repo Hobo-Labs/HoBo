@@ -27,6 +27,7 @@ import {
 	BudgetProviderAccountSchema,
 	createIacFinancialServices,
 	createSqliteBudgetAdmissionAuthority,
+	EntitlementClaimSchema,
 	type GateDecision,
 	HostingPolicyProofSchema,
 	IacTargetLiabilityEvidenceSchema,
@@ -582,6 +583,14 @@ describe("provider-neutral IaC target budget admission", () => {
 			evidence.inventoryHash = priced.inventoryHash;
 			evidence.modelHash = priced.modelHash;
 			evidence.quoteHash = priced.quote.quoteHash;
+			evidence.entitlementClaims = [
+				create(EntitlementClaimSchema, {
+					bucketId: "commitment-a",
+					kind: "commitment",
+					unit: "USD.micros",
+					units: 4_000_000,
+				}),
+			];
 			expect(
 				await admitIacTarget(
 					{ requestId: "commitment-units", inventory, pricing, evidence },
@@ -600,6 +609,45 @@ describe("provider-neutral IaC target budget admission", () => {
 					}),
 				]),
 			);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("denies liability evidence whose entitlement claims differ from the quote", async () => {
+		const ledger = authority(3_000_000, true, ["account-a"], ["commitment-a"]);
+		try {
+			const { inventory, pricing, evidence } = fixture();
+			if (pricing.state.case !== "model")
+				throw new Error("missing model fixture");
+			pricing.state.value.scenario = makeScenario({
+				charges: [perUnitCharge("runtime", "minute", "1")],
+				candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+				commitments: [commitmentState()],
+			});
+			const priced = quoteTargetPricing(inventory, pricing);
+			if (!priced.ok) throw new Error(priced.reason);
+			evidence.inventoryHash = priced.inventoryHash;
+			evidence.modelHash = priced.modelHash;
+			evidence.quoteHash = priced.quote.quoteHash;
+			evidence.entitlementClaims = [
+				create(EntitlementClaimSchema, {
+					bucketId: "commitment-a",
+					kind: "commitment",
+					unit: "USD.micros",
+					units: 3_999_999,
+				}),
+			];
+			expect(
+				await admitIacTarget(
+					{ requestId: "claim-mismatch", inventory, pricing, evidence },
+					dependencies(ledger),
+				),
+			).toMatchObject({
+				status: "denied",
+				code: "LIABILITY_EVIDENCE_INVALID",
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
 		} finally {
 			ledger.close();
 		}
@@ -665,6 +713,20 @@ describe("provider-neutral IaC target budget admission", () => {
 			evidence.inventoryHash = priced.inventoryHash;
 			evidence.modelHash = priced.modelHash;
 			evidence.quoteHash = priced.quote.quoteHash;
+			evidence.entitlementClaims = [
+				create(EntitlementClaimSchema, {
+					bucketId: "a-credit",
+					kind: "credit",
+					unit: "USD.micros",
+					units: 5_000_000,
+				}),
+				create(EntitlementClaimSchema, {
+					bucketId: "Z-credit",
+					kind: "credit",
+					unit: "USD.micros",
+					units: 5_000_000,
+				}),
+			];
 			expect(
 				await admitIacTarget(
 					{ requestId: "credit-order", inventory, pricing, evidence },

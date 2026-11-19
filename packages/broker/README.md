@@ -206,7 +206,12 @@ results. The test does not establish a distributed actor lease.
 
 One transaction reserves global money, provider-account ceilings and each named
 free-allocation bucket. Quantities use integer normalized base units; unknown
-accounts, units, periods and expired allowance evidence refuse admission. Every
+accounts, units, periods and expired allowance evidence refuse admission. Entitlement
+identity includes its kind, bucket and unit throughout configuration and replay.
+Persisted snapshots written before entitlement kinds reopen with an empty kind
+interpreted as `allowance`; new configurations require an explicit supported kind.
+Liability evidence, admitted quotes and reservations must contain the same
+provider-account and entitlement-claim rows independent of input order. Every
 entitlement must have one authoritative owner, including across budget scopes;
 independent ledgers may not duplicate a provider account's free allocation.
 `unresolvedMicros`, `externalCommittedMicros` and `recoveryReserveMicros` remain
@@ -243,9 +248,13 @@ and separately enrolled receiver and financial authority keys. A later claim
 cannot change that scope.
 The hold remains reserved until the receiver signs the exact committed route and
 the financial authority independently signs the final usage and source-stop
-evidence. Both proofs and the guard are checked again when replaying the journal.
-Keep historical public enrollments available while their records remain in the
-journal. An unsigned or uncertain result leaves the hold in place.
+evidence. Current reservations use the `hobo.budget-fence-settlement/v2` canonical
+payload, which includes entitlement kinds. Reservations persisted before kinds
+were introduced retain v1 signature verification; current reservations cannot
+select that legacy payload. Both proofs and the guard are checked again when
+replaying the journal. Keep historical public enrollments available while their
+records remain in the journal. An unsigned or uncertain result leaves the hold in
+place.
 
 The host must authenticate those enrollments and use a receiver that atomically
 holds the source operation and commits the route before signing. The finance

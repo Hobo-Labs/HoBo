@@ -483,6 +483,7 @@ describe("durable core hosting financial authority composition", () => {
 		initial.entitlements = [
 			create(BudgetEntitlementSchema, {
 				bucketId: "shared",
+				kind: "allowance",
 				unit: "request",
 				periodId: "period",
 				remainingUnits: 1,
@@ -563,6 +564,7 @@ describe("durable core hosting financial authority composition", () => {
 		initial.entitlements = [
 			create(BudgetEntitlementSchema, {
 				bucketId: "half-hour",
+				kind: "allowance",
 				unit: "time-ms",
 				periodId: "period",
 				remainingUnits: 1_800_000,

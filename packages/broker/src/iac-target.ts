@@ -20,6 +20,7 @@ import {
 	TargetPricingInventorySchema,
 } from "@hobo/pricing";
 import {
+	type EntitlementClaim,
 	IacPricingPinSchema,
 	type IacTargetAdmissionDecision,
 	IacTargetAdmissionDecisionSchema,
@@ -211,6 +212,25 @@ function exactProviderAccountMicros(
 	return Number.isSafeInteger(liabilityMicros) && liabilityMicros >= 0
 		? liabilityMicros
 		: undefined;
+}
+
+function accountRows(
+	rows: IacTargetLiabilityEvidence["providerAccounts"],
+): string[] {
+	return rows
+		.map((row) => JSON.stringify([row.providerAccountId, row.liabilityMicros]))
+		.sort();
+}
+
+function entitlementRows(
+	rows: readonly Pick<
+		EntitlementClaim,
+		"kind" | "bucketId" | "unit" | "units"
+	>[],
+): string[] {
+	return rows
+		.map((row) => JSON.stringify([row.kind, row.bucketId, row.unit, row.units]))
+		.sort();
 }
 
 function totalProviderAccountMicros(
@@ -482,6 +502,16 @@ export async function admitIacTarget(
 			"ENTITLEMENT_CONSUMPTION_INVALID",
 			"pricing consumption cannot be reserved safely",
 		);
+	if (
+		JSON.stringify(entitlementRows(evidence.entitlementClaims)) !==
+		JSON.stringify(entitlementRows(claims))
+	)
+		return denial(
+			requestId,
+			targetId,
+			"LIABILITY_EVIDENCE_INVALID",
+			"liability evidence must itemize the exact incremental entitlement claims",
+		);
 	const evidenceHash = stableHash(
 		toJson(IacTargetLiabilityEvidenceSchema, evidence, {
 			alwaysEmitImplicit: true,
@@ -622,18 +652,6 @@ export async function admitIacTarget(
 	const quoteDigest = createHash("sha256")
 		.update(toJsonString(HostingQuoteSchema, quote))
 		.digest("hex");
-	const accountRows = (rows: BudgetReservation["providerAccounts"]) =>
-		rows
-			.map((row) =>
-				JSON.stringify([row.providerAccountId, row.liabilityMicros]),
-			)
-			.sort();
-	const entitlementRows = (rows: BudgetReservation["entitlementClaims"]) =>
-		rows
-			.map((row) =>
-				JSON.stringify([row.bucketId, row.unit, row.units, row.kind]),
-			)
-			.sort();
 	const captureReceipt = (
 		raw: BudgetReservation,
 	): BudgetReservation | undefined => {

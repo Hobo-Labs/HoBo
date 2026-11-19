@@ -1,11 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { clone, create } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type BudgetAuthorityEvent,
 	BudgetAuthorityEventSchema,
+	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
 	createBudgetAdmissionAuthority,
 	HostingQuoteSchema,
@@ -41,6 +43,21 @@ function snapshot() {
 			},
 		],
 	});
+}
+function multiUnitSnapshot() {
+	const base = snapshot();
+	const bucket = base.entitlements[0];
+	if (!bucket) throw new Error("fixture bucket missing");
+	base.entitlements = (["request", "runner-ms"] as const).map((unit, index) =>
+		create(BudgetEntitlementSchema, {
+			...bucket,
+			bucketId: "shared",
+			kind: "allowance",
+			unit,
+			remainingUnits: (index + 1) * 10,
+		}),
+	);
+	return base;
 }
 function consume(authority: ReturnType<typeof createBudgetAdmissionAuthority>) {
 	const current = authority.read(NOW);
@@ -311,6 +328,85 @@ describe("durable budget history fences", () => {
 				priorEvents: [...journal, revived],
 			}),
 		).toThrow("retired period");
+	});
+
+	it("keeps multi-unit bucket history independent through configuration and replay", () => {
+		const base = multiUnitSnapshot();
+		const journal: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: base,
+			commit: (event) => journal.push(event),
+		});
+		const removed = authority.read(NOW);
+		removed.entitlements = [];
+		authority.configure(removed, 0, NOW);
+		const refreshed = multiUnitSnapshot();
+		const runner = refreshed.entitlements.find(
+			(row) => row.unit === "runner-ms",
+		);
+		if (!runner) throw new Error("runner fixture missing");
+		runner.observedAt = "2026-10-30T01:00:00Z";
+		refreshed.entitlements = [runner];
+		authority.configure(refreshed, 1, NOW);
+		const restored = authority.read(NOW);
+		const request = multiUnitSnapshot().entitlements.find(
+			(row) => row.unit === "request",
+		);
+		if (!request) throw new Error("request fixture missing");
+		restored.entitlements.push(request);
+		authority.configure(restored, 2, NOW);
+		expect(authority.read(NOW).entitlements).toMatchObject([
+			{ unit: "runner-ms", remainingUnits: 20 },
+			{ unit: "request", remainingUnits: 10 },
+		]);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: journal,
+		});
+		expect(reopened.read(NOW).entitlements).toMatchObject([
+			{ unit: "runner-ms", remainingUnits: 20 },
+			{ unit: "request", remainingUnits: 10 },
+		]);
+	});
+
+	it("reopens a legacy SQLite snapshot with an implicit allowance kind", () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-legacy-budget-kind-"));
+		directories.push(directory);
+		const path = join(directory, "budget.sqlite");
+		const options = { path, snapshot: snapshot(), now: () => NOW };
+		const initial = createSqliteBudgetAdmissionAuthority(options);
+		initial.close();
+		const database = new DatabaseSync(path);
+		database
+			.prepare(
+				"UPDATE budget_base SET body=json_remove(body, '$.entitlements[0].kind') WHERE id=1",
+			)
+			.run();
+		database.close();
+		const reopened = createSqliteBudgetAdmissionAuthority(options);
+		try {
+			expect(reopened.read(NOW).entitlements[0]?.kind).toBe("allowance");
+			const invalidWrite = reopened.read(NOW);
+			const entitlement = invalidWrite.entitlements[0];
+			if (!entitlement) throw new Error("legacy entitlement missing");
+			entitlement.kind = "";
+			expect(() => reopened.configure(invalidWrite, 0, NOW)).toThrow(
+				"entitlement scope",
+			);
+		} finally {
+			reopened.close();
+		}
+		const fresh = snapshot();
+		const entitlement = fresh.entitlements[0];
+		if (!entitlement) throw new Error("fresh entitlement missing");
+		entitlement.kind = "";
+		expect(() =>
+			createSqliteBudgetAdmissionAuthority({
+				path: join(directory, "fresh.sqlite"),
+				snapshot: fresh,
+				now: () => NOW,
+			}),
+		).toThrow("entitlement scope");
 	});
 
 	it("does not retire a period when its durable commit fails", () => {

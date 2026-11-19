@@ -237,6 +237,7 @@ message BudgetReservation {
   IacUnpricedPolicyProof unpriced_policy_proof = 20;
   IacUnpricedScopeProof unpriced_scope_proof = 21;
   IacPricingPin iac_pricing_pin = 22;
+  string fence_settlement_payload_version = 23;
 }
 
 message BudgetAuthorityEvent {
@@ -307,6 +308,7 @@ message IacTargetLiabilityEvidence {
   string valid_until = 10;
   repeated ProviderAccountExposure provider_accounts = 11;
   optional int64 maximum_micros_exact = 12;
+  repeated EntitlementClaim entitlement_claims = 13;
 }
 
 message IacBudgetDisclosure {
