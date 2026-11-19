@@ -113,6 +113,18 @@ export function isConnectAction(name: string): name is ConnectActionName {
 }
 
 /** The stores HoBo offers by default: Infisical with OIDC first (no secret to hold). */
+const SECRET_STORE_LABELS: ReadonlyMap<SecretStoreOption["id"], string> =
+	new Map([
+		["infisical", "Infisical Cloud"],
+		["1password", "1Password"],
+		["bitwarden", "Bitwarden"],
+		["yard", "Yard"],
+	]);
+
+export function storeLabel(id: SecretStoreOption["id"]): string {
+	return SECRET_STORE_LABELS.get(id) ?? id;
+}
+
 export const DEFAULT_SECRET_STORES: readonly SecretStoreOption[] =
 	Object.freeze([
 		Object.freeze({

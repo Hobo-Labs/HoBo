@@ -1,6 +1,6 @@
 import type { Experimental_CompositionCandidate as Candidate } from "@json-render/core";
 
-import { type ConnectStep, providerLabel } from "./steps.js";
+import { type ConnectStep, providerLabel, storeLabel } from "./steps.js";
 
 // public-contract: the marker compose.ts reads to tell required candidates from optional ones.
 export const OPTIONAL_SUFFIX = "-optional";
@@ -64,10 +64,20 @@ export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 						id: `field-${field.name}`,
 						description: `Setting for ${field.label}`,
 						element: {
-							type: "Text",
+							type: "Input",
 							props: {
-								text: `${field.label}${field.required ? " (required)" : ""}`,
-								variant: "body",
+								label: field.label,
+								name: field.name,
+								type:
+									field.kind === "secret"
+										? ("password" as const)
+										: field.kind === "url"
+											? ("text" as const)
+											: ("text" as const),
+								placeholder: field.description ?? null,
+								value: field.value ?? null,
+								checks: null,
+								validateOn: null,
 							},
 						},
 					}),
@@ -220,7 +230,7 @@ export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 						type: "Alert",
 						props: {
 							title: `${provider} is connected`,
-							message: `Credentials are in ${step.store}. ${step.nextHint}`,
+							message: `Credentials are in ${storeLabel(step.store)}. ${step.nextHint}`,
 							type: "success",
 						},
 					},
