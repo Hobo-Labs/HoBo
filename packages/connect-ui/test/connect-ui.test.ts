@@ -166,12 +166,33 @@ describe("composeConnectSpec", () => {
 		expect(isRenderableConnectSpec(composed.spec)).toBe(true);
 	});
 
-	it("configures an evaluator only from OIDC or a gateway key, and honours off", () => {
+	it("configures an evaluator only with compose=on plus a credential", () => {
 		expect(evaluatorFromEnv({})).toBeUndefined();
-		expect(evaluatorFromEnv({ VERCEL_OIDC_TOKEN: "t" })).toBeTypeOf("function");
+		expect(evaluatorFromEnv({ HOBO_CONNECT_UI_COMPOSE: "on" })).toBeUndefined();
+		expect(evaluatorFromEnv({ VERCEL_OIDC_TOKEN: "t" })).toBeUndefined();
+		expect(evaluatorFromEnv({ AI_GATEWAY_API_KEY: "k" })).toBeUndefined();
+		expect(
+			evaluatorFromEnv({
+				VERCEL_OIDC_TOKEN: "t",
+				HOBO_CONNECT_UI_COMPOSE: "on",
+			}),
+		).toBeTypeOf("function");
 		expect(
 			evaluatorFromEnv({
 				AI_GATEWAY_API_KEY: "k",
+				HOBO_CONNECT_UI_COMPOSE: "on",
+			}),
+		).toBeTypeOf("function");
+		expect(
+			evaluatorFromEnv({
+				VERCEL_OIDC_TOKEN: "t",
+				HOBO_CONNECT_UI_COMPOSE: "ON",
+			}),
+		).toBeUndefined();
+		expect(
+			evaluatorFromEnv({
+				AI_GATEWAY_API_KEY: "k",
+				VERCEL_OIDC_TOKEN: "t",
 				HOBO_CONNECT_UI_COMPOSE: "off",
 			}),
 		).toBeUndefined();

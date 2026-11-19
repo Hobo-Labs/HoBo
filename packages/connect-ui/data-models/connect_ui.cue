@@ -3,7 +3,7 @@
 // closed step and directive kinds, and store references that are references.
 package connect_ui
 
-#ConnectActionName: "connect.chooseStore" | "connect.start" | "connect.cancel"
+#ConnectActionName: "connect.submit" | "connect.chooseStore" | "connect.start" | "connect.cancel"
 #StoreId:           "infisical" | "1password" | "bitwarden" | "yard"
 #Provider:          "github" | "vercel"
 
@@ -19,7 +19,7 @@ package connect_ui
 }
 
 #ConnectViewRecord: {
-	step:       "choose-secret-store" | "create-github-app" | "authorize-vercel" | "depositing" | "connected" | "failed"
+	step:       "configure" | "choose-secret-store" | "create-github-app" | "authorize-vercel" | "depositing" | "connected" | "failed"
 	terminal:   bool
 	composedBy: "model" | "deterministic"
 	spec: {

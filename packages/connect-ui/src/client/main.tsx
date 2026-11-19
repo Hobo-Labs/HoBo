@@ -42,6 +42,7 @@ const { registry } = defineRegistry(connectCatalog, {
 		Progress: shadcnComponents.Progress,
 		Separator: shadcnComponents.Separator,
 		Radio: shadcnComponents.Radio,
+		Input: shadcnComponents.Input,
 	},
 });
 
@@ -56,6 +57,7 @@ interface View {
 	composedBy: "model" | "deterministic";
 	spec: Spec;
 	directive: Directive;
+	confirmByAction: ReadonlyMap<string, string>;
 }
 
 const DirectiveSchema = z.discriminatedUnion("kind", [
@@ -82,6 +84,16 @@ const ConnectViewSchema = z.object({
 		})
 		.passthrough(),
 	directive: DirectiveSchema,
+	view: z
+		.object({
+			actions: z.array(
+				z.object({
+					action: z.string(),
+					confirm: z.string().optional(),
+				}),
+			),
+		})
+		.optional(),
 });
 
 type ParsedConnectView = z.infer<typeof ConnectViewSchema>;
@@ -90,12 +102,18 @@ function viewFromParsedConnect(parsed: ParsedConnectView): View {
 	if (!isNonEmptySpec(parsed.spec)) {
 		throw new Error("invalid connect view spec");
 	}
+	const confirmByAction = new Map<string, string>();
+	for (const entry of parsed.view?.actions ?? []) {
+		if (entry.confirm !== undefined)
+			confirmByAction.set(entry.action, entry.confirm);
+	}
 	return {
 		step: parsed.step,
 		terminal: parsed.terminal,
 		composedBy: parsed.composedBy,
 		spec: parsed.spec,
 		directive: parsed.directive,
+		confirmByAction,
 	};
 }
 
@@ -126,6 +144,7 @@ function follow(directive: Directive): void {
 function ConnectPage() {
 	const [view, setView] = useState<View | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [busy, setBusy] = useState(false);
 
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
@@ -147,23 +166,32 @@ function ConnectPage() {
 		return () => window.clearTimeout(timer);
 	}, [view, load]);
 
-	const dispatch = useCallback(async (action: string, params: ActionParams) => {
-		try {
-			const response = await fetch(`${base}action`, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ action, params }),
-			});
-			if (!response.ok) throw new Error(`action failed (${response.status})`);
-			const next = viewFromParsedConnect(
-				ConnectViewSchema.parse(await response.json()),
-			);
-			setView(next);
-			follow(next.directive);
-		} catch (reason) {
-			setError(String(reason));
-		}
-	}, []);
+	const dispatch = useCallback(
+		async (action: string, params: ActionParams) => {
+			if (busy) return;
+			const confirm = view?.confirmByAction.get(action);
+			if (confirm !== undefined && !window.confirm(confirm)) return;
+			setBusy(true);
+			try {
+				const response = await fetch(`${base}action`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ action, params }),
+				});
+				if (!response.ok) throw new Error(`action failed (${response.status})`);
+				const next = viewFromParsedConnect(
+					ConnectViewSchema.parse(await response.json()),
+				);
+				setView(next);
+				follow(next.directive);
+			} catch (reason) {
+				setError(String(reason));
+			} finally {
+				setBusy(false);
+			}
+		},
+		[busy, view],
+	);
 	dispatchToFlow = dispatch;
 
 	if (error !== null)

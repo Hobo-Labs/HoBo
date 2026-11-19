@@ -206,10 +206,23 @@ export async function startConnectPage(
 		return next;
 	};
 
+	let composedCache:
+		| {
+				readonly stepJson: string;
+				readonly composed: Awaited<ReturnType<typeof composeConnectSpec>>;
+		  }
+		| undefined;
+
 	const view = async () => {
-		const composed = await composeConnectSpec(step, {
-			evaluate: options.evaluate,
-		});
+		const stepJson = JSON.stringify(step);
+		const composed =
+			composedCache?.stepJson === stepJson
+				? composedCache.composed
+				: await composeConnectSpec(step, {
+						evaluate: options.evaluate,
+					});
+		if (composedCache?.stepJson !== stepJson)
+			composedCache = { stepJson, composed };
 		return JSON.stringify({
 			step: step.kind,
 			terminal: isTerminalStep(step),
