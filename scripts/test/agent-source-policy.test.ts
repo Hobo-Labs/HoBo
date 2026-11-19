@@ -74,11 +74,13 @@ function runHook(cwd: string) {
 function ageCheckpoint(cwd: string) {
 	const directory = stateDirectories.get(cwd);
 	assert.ok(directory);
-	const file = readdirSync(directory)[0];
-	assert.ok(file);
-	const path = join(directory, file);
-	const [head, status] = readFileSync(path, "utf8").trim().split("\n");
-	writeFileSync(path, `${head}\n${status}\n1\n`);
+	const files = readdirSync(directory);
+	assert.ok(files.length > 0);
+	for (const file of files) {
+		const path = join(directory, file);
+		const [head, status] = readFileSync(path, "utf8").trim().split("\n");
+		writeFileSync(path, `${head}\n${status}\n1\n`);
+	}
 }
 
 function git(cwd: string, args: readonly string[]) {
@@ -137,6 +139,37 @@ describe("agent source policy hook", () => {
 		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
 		result = runHook(repository);
 		assert.equal(result.status, 0, result.stderr);
+	});
+
+	it("checks every new commit when a tool creates a branch", () => {
+		const repository = fixture();
+		assert.equal(runHook(repository).status, 0);
+		git(repository, ["switch", "--quiet", "-c", "new-branch"]);
+		writeFileSync(
+			join(repository, "sample.ts"),
+			"// explanation\nexport const value = 1;\n",
+		);
+		git(repository, ["add", "sample.ts"]);
+		git(repository, ["commit", "--quiet", "-m", "add explanation"]);
+		git(repository, [
+			"commit",
+			"--allow-empty",
+			"--quiet",
+			"-m",
+			"another commit",
+		]);
+		let result = runHook(repository);
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /sample\.ts:1/u);
+		git(repository, ["switch", "--quiet", "-c", "continued-branch"]);
+		git(repository, ["commit", "--allow-empty", "--quiet", "-m", "later"]);
+		result = runHook(repository);
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /sample\.ts:1/u);
+		writeFileSync(join(repository, "sample.ts"), "export const value = 1;\n");
+		git(repository, ["add", "sample.ts"]);
+		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
+		assert.equal(runHook(repository).status, 0);
 	});
 
 	it("retains a failed first committed check across later commits", () => {

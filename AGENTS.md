@@ -26,8 +26,9 @@ over conflicting repository workflow guidance.
 
 Agent tool hooks run the common source policy for Claude Code, Codex, Cursor,
 Copilot, and Gemini. They check the worktree and commits since the last clean
-checkpoint on each branch. A new or inactive session checks the latest commit;
-an unresolved committed violation remains checked until fixed. Checkpoints live in the system
+checkpoint on each branch. New branches inherit a recent ancestor checkpoint;
+otherwise a new or inactive session checks the latest commit. An unresolved
+committed violation remains checked until fixed. Checkpoints live in the system
 temporary directory, or `HOBO_AGENT_POLICY_STATE_DIR` when set. Standalone
 documentation comments follow the same rule. Run `pnpm run source:guard --
 --worktree` when checking manually, including ignored agent artifacts in nested
