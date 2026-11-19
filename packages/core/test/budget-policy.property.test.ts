@@ -60,6 +60,58 @@ describe("shared budget-policy properties", () => {
 		);
 	});
 
+	it("refuses malformed measurement collections and records", () => {
+		const invalidCollection = fc.constantFrom(
+			null,
+			false,
+			0,
+			"",
+			{},
+			undefined,
+		);
+		const invalidRecord = fc.constantFrom(
+			null,
+			false,
+			{},
+			{ key: 7, unit: "count", value: 0 },
+			{ key: "work.count", unit: null, value: 0 },
+			{ key: "work.count", unit: "count", value: 0, target: 7 },
+			{ key: "unqualified", unit: "count", value: 0 },
+			{ key: "work.count", unit: "", value: 0 },
+		);
+		fc.assert(
+			fc.property(
+				fc.oneof(
+					invalidCollection,
+					fc.array(invalidRecord, { minLength: 1, maxLength: 3 }),
+				),
+				(measurements) => {
+					const input = JSON.parse(
+						JSON.stringify({ ...context(), measurements }),
+					);
+					const result = evaluateBudgetPolicy(policy(100), input);
+					expect(result).toMatchObject({
+						ok: false,
+						code: "budget.policy.measurement",
+					});
+				},
+			),
+			CHECK,
+		);
+	});
+
+	it.each([
+		null,
+		undefined,
+		0,
+		"",
+		[],
+	])("refuses a malformed evaluation context: %j", (value) => {
+		const input = JSON.parse(JSON.stringify({ value })).value;
+		const result = evaluateBudgetPolicy(policy(100), input);
+		expect(result).toMatchObject({ ok: false, code: "budget.policy.context" });
+	});
+
 	it("uses exact integer arithmetic for all generated safe-integer exposure and limits", () => {
 		fc.assert(
 			fc.property(

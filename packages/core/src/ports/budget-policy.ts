@@ -343,6 +343,11 @@ export function evaluateBudgetPolicy(
 	} catch {
 		return refuse("budget.policy.invalid", "budget policy is invalid");
 	}
+	if (!isJsonObject(context))
+		return refuse(
+			"budget.policy.context",
+			"budget evaluation context is invalid",
+		);
 	if (!parsed.workloads.includes(context.workload))
 		return refuse(
 			"budget.policy.workload",
@@ -398,8 +403,23 @@ export function evaluateBudgetPolicy(
 			"budget.policy.exhausted",
 			"projected commitments exceed the budget",
 		);
+	if (!Array.isArray(context.measurements))
+		return refuse("budget.policy.measurement", "invalid trusted measurements");
 	const measurements = new Map<string, { unit: string; value: number }>();
 	for (const measurement of context.measurements) {
+		if (
+			!isJsonObject(measurement) ||
+			!isJsonString(measurement.key) ||
+			!IDENTIFIER.test(measurement.key) ||
+			!KEY.test(measurement.key) ||
+			!isJsonString(measurement.unit) ||
+			!UNIT.test(measurement.unit) ||
+			(measurement.target !== undefined &&
+				(!isJsonString(measurement.target) ||
+					measurement.target.length > 200 ||
+					/\p{Cc}/u.test(measurement.target)))
+		)
+			return refuse("budget.policy.measurement", "invalid trusted measurement");
 		const key = JSON.stringify([measurement.key, measurement.target ?? ""]);
 		if (measurements.has(key) || !integer(measurement.value))
 			return refuse(
