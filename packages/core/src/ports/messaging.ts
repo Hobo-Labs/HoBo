@@ -1,11 +1,3 @@
-/**
- * Unified Messaging port — backend-agnostic publish/subscribe surface over
- * `wasi:messaging` / `topic()` (ADR-0138).
- *
- * App code targets this port; Kafka (native), Dapr pubsub, and local emulators
- * are adapters. Never import Kafka/Dapr clients from app Bindles.
- */
-
 import { randomUUID } from "node:crypto";
 import { CoreParseError } from "../errors.js";
 import {
@@ -34,7 +26,6 @@ function stringBagFrom(value: JsonObject) {
 }
 
 export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v2";
-export const MESSAGING_WIT_INTERFACE = "wasi:messaging/messaging@0.2.0";
 
 export type DeliveryGuarantee =
 	| "at-least-once"
@@ -159,10 +150,6 @@ export interface Messaging {
 		options?: PublishOptions,
 	): Promise<PublishResult>;
 
-	/**
-	 * Pull-consume from a consumer group (aligned with wasi:messaging + queue
-	 * semantics). Push-style handlers use {@link subscribe}.
-	 */
 	consume(
 		topic: TopicName,
 		consumerGroup: ConsumerGroupId,

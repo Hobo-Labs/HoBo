@@ -5,7 +5,9 @@ Optional **Camp runtime / component-host adapter** realizing HoBo ports onto **D
 | HoBo port / primitive | Dapr realization |
 |---|---|
 | `ActorHost` / `defineActor` | Virtual actors + placement + reminders |
-| `wasi:messaging` / `topic()` | Pub/sub (incl. `pubsub.kafka`) |
+| TypeScript `Messaging` client | Pub/sub (incl. `pubsub.kafka`) |
+
+The client does not implement the native asynchronous `hobo:durable-messaging` component interface.
 | Workflows / steps | **Activity-name mapping only** (permanent non-goal: full engine parity) |
 
 **ADR-0031 stands:** in-process wasm remains the default preferred path. Dapr is **opt-in** via Camp `runtimeRequirements: ["dapr"]` or explicit wiring.

@@ -1,4 +1,4 @@
-import { MESSAGING_WIT_INTERFACE } from "@hobo/core";
+import { MESSAGING_PORT_CONTRACT_VERSION } from "@hobo/core";
 
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
 export const CAPABILITIES_SCHEMA = "hobo.capabilities/v1";
@@ -22,36 +22,18 @@ export function publishCapabilityManifest(
 		"/.well-known/capability-manifest/index.json": JSON.stringify({
 			schema: MANIFEST_SCHEMA,
 			providerId,
-			ports: ["topic", "queue"],
-			witExports: [MESSAGING_WIT_INTERFACE, "hobo:queue/queue@0.1.0"],
+			ports: [],
+			witExports: [],
+			nativeMessaging: {
+				contract: MESSAGING_PORT_CONTRACT_VERSION,
+				componentWit: false,
+			},
 			regions,
 		}),
 		"/.well-known/capability-manifest/capabilities.json": JSON.stringify({
 			schema: CAPABILITIES_SCHEMA,
 			providerId,
-			capabilities: [
-				{
-					port: "topic",
-					wit: MESSAGING_WIT_INTERFACE,
-					features: [
-						"consumer-groups",
-						"at-least-once",
-						"exactly-once",
-						"transactional-produce",
-						"idempotent-produce",
-						"schema-registry",
-						"partition-aware",
-						"cross-yard-federation",
-					],
-				},
-				{
-					port: "queue",
-					wit: "hobo:queue/queue@0.1.0",
-					features: ["enqueue", "dequeue", "complete"],
-					notes:
-						"aligned semantics where pull-queue maps to consumer-group poll",
-				},
-			],
+			capabilities: [],
 		}),
 		"/.well-known/capability-manifest/auth.json": JSON.stringify({
 			schema: AUTH_SCHEMA,

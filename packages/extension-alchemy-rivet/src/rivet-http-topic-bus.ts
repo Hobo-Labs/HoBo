@@ -543,7 +543,7 @@ export function createRivetHttpTopicBusMappers<Requirements>(
 		}
 		Object.defineProperty(limits, String(limits.length), {
 			value:
-				"The colocated durable bus is asynchronous and does not implement the legacy synchronous topic or WIT queue dependency.",
+				"The colocated durable bus is asynchronous; Bindle topic and WIT queue dependencies are not mapped by this composition.",
 			writable: true,
 			configurable: true,
 			enumerable: true,
