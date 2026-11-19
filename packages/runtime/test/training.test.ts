@@ -473,6 +473,25 @@ test.each([
 	assert.equal(getTrainable("summarize")?.fact.intent, intent);
 });
 
+test("marker form: an empty comment does not turn code into intent", () => {
+	const source = [
+		"async function summarize(input) {",
+		'  "use training";',
+		"  //",
+		"  return { category: input.subject };",
+		"}",
+	].join("\n");
+	const summarize: ((input: Ticket) => Promise<Classification>) & {
+		trainingIntent?: string;
+	} = runInNewContext(`(${source})`);
+	summarize.trainingIntent = "Summarize the ticket subject.";
+	training.infer(summarize);
+	assert.equal(
+		getTrainable("summarize")?.fact.intent,
+		"Summarize the ticket subject.",
+	);
+});
+
 test("rubric is optional: declaration grounds with intent + shape alone", () => {
 	const declared = training.define<Ticket, Classification>({
 		methodRef: "storefront.classify",
