@@ -10,8 +10,11 @@ import {
 	quoteVector,
 	readRegistry,
 	rebuildRegistry,
+	type Registry,
+	RiftRegistryError,
 	removeWorkspace,
 	runInWorkspace,
+	type WorkspaceRecord,
 } from "../workspace.js";
 
 const argv = process.argv.slice(2);
@@ -45,122 +48,138 @@ const command = verb();
 const root = flag("root") ?? process.cwd();
 const json = ours.includes("--json");
 
-function emit(human: string, data: unknown): void {
+type RiftCommandOutput =
+	| (ReturnType<typeof detectCapability> & {
+			contract: ReturnType<typeof deriveContract>;
+	  })
+	| ReturnType<typeof initRoot>
+	| WorkspaceRecord
+	| Registry
+	| (Registry & { debris: readonly string[] })
+	| { removed: readonly string[] }
+	| { removed: boolean; name: string };
+
+function emit(human: string, data: RiftCommandOutput): void {
 	process.stdout.write(
 		json ? `${JSON.stringify(data, null, 2)}\n` : `${human}\n`,
 	);
 }
 
-if (command === "capability") {
-	const cap = { ...detectCapability(root), contract: deriveContract() };
-	emit(
-		`${cap.tier} · ${cap.reason}${cap.isolatesInPlaceWrites ? "" : " · WARNING: in-place writes reach the source"}`,
-		cap,
-	);
-} else if (command === "init") {
-	const result = initRoot(root);
-	emit(
-		`${result.created ? "initialized" : "already registered"} ${result.root}`,
-		result,
-	);
-} else if (command === "create") {
-	const name = flag("name") ?? `ws-${Date.now()}`;
-	const created = createWorkspace({
-		root,
-		name,
-		copyAll: ours.includes("--copy-all"),
-	});
-	if (!created.workspace) {
-		process.stderr.write(`${created.reason ?? "create failed"}\n`);
-		process.exit(1);
-	}
-	if (created.debris) {
-		process.stderr.write(
-			`note: an unrecognised directory was in the way and was moved to ${created.debris} (not deleted)\n`,
+try {
+	if (command === "capability") {
+		const cap = { ...detectCapability(root), contract: deriveContract() };
+		emit(
+			`${cap.tier} · ${cap.reason}${cap.isolatesInPlaceWrites ? "" : " · WARNING: in-place writes reach the source"}`,
+			cap,
 		);
-	}
-	emit(created.workspace.path, created.workspace);
-} else if (command === "list") {
-	const registry = readRegistry(root);
-	const parked = listDebris(root);
-	emit(
-		[
-			...registry.workspaces.map((w) => `${w.name}\t${w.tier}\t${w.path}`),
-			...(parked.length > 0
-				? [
-						`\n${parked.length} parked director${parked.length === 1 ? "y" : "ies"} awaiting review (hobo-rift prune to delete):`,
-						...parked.map((p) => `  ${p}`),
-					]
-				: []),
-		].join("\n"),
-		{ ...registry, debris: parked },
-	);
-} else if (command === "prune") {
-	const removed = pruneDebris(root);
-	emit(
-		removed.length === 0
-			? "no parked directories"
-			: `deleted ${removed.length} parked director${removed.length === 1 ? "y" : "ies"}`,
-		{ removed },
-	);
-} else if (command === "repair") {
-	const registry = rebuildRegistry(root);
-	if (registry.undecidable) process.stderr.write(`${registry.undecidable}\n`);
-	emit(
-		`registry now lists ${registry.workspaces.length} workspace(s)`,
-		registry,
-	);
-} else if (command === "remove") {
-	const name = flag("name");
-	if (!name) {
-		process.stderr.write("remove needs --name\n");
-		process.exit(2);
-	}
-	const removed = removeWorkspace(root, name);
-	emit(removed ? `removed ${name}` : `no workspace named ${name}`, {
-		removed,
-		name,
-	});
-	if (!removed) process.exitCode = 1;
-} else if (command === "exec") {
-	const name = flag("name");
-	const vector = sep >= 0 ? argv.slice(sep + 1) : [];
-	const snippet = flag("shell");
-	const inner = snippet !== undefined ? snippet : quoteVector(vector);
-	if (!name || inner.length === 0) {
-		process.stderr.write(
-			"exec needs --name <name> and either -- <cmd> [args…] or --shell <snippet>\n",
+	} else if (command === "init") {
+		const result = initRoot(root);
+		emit(
+			`${result.created ? "initialized" : "already registered"} ${result.root}`,
+			result,
 		);
-		process.exit(2);
-	}
-	const record = readRegistry(root).workspaces.find((w) => w.name === name);
-	if (!record) {
-		process.stderr.write(`no workspace named ${name} under ${root}\n`);
-		process.exit(1);
-	}
-	if (ours.includes("--print-cmd")) {
-		process.stdout.write(`${execCommand(record, inner)}\n`);
+	} else if (command === "create") {
+		const name = flag("name") ?? `ws-${Date.now()}`;
+		const created = createWorkspace({
+			root,
+			name,
+			copyAll: ours.includes("--copy-all"),
+		});
+		if (!created.workspace) {
+			process.stderr.write(`${created.reason ?? "create failed"}\n`);
+			process.exit(1);
+		}
+		if (created.debris) {
+			process.stderr.write(
+				`note: an unrecognised directory was in the way and was moved to ${created.debris} (not deleted)\n`,
+			);
+		}
+		emit(created.workspace.path, created.workspace);
+	} else if (command === "list") {
+		const registry = readRegistry(root);
+		const parked = listDebris(root);
+		emit(
+			[
+				...registry.workspaces.map((w) => `${w.name}\t${w.tier}\t${w.path}`),
+				...(parked.length > 0
+					? [
+							`\n${parked.length} parked director${parked.length === 1 ? "y" : "ies"} awaiting review (hobo-rift prune to delete):`,
+							...parked.map((p) => `  ${p}`),
+						]
+					: []),
+			].join("\n"),
+			{ ...registry, debris: parked },
+		);
+	} else if (command === "prune") {
+		const removed = pruneDebris(root);
+		emit(
+			removed.length === 0
+				? "no parked directories"
+				: `deleted ${removed.length} parked director${removed.length === 1 ? "y" : "ies"}`,
+			{ removed },
+		);
+	} else if (command === "repair") {
+		const registry = rebuildRegistry(root);
+		emit(
+			`registry now lists ${registry.workspaces.length} workspace(s)`,
+			registry,
+		);
+	} else if (command === "remove") {
+		const name = flag("name");
+		if (!name) {
+			process.stderr.write("remove needs --name\n");
+			process.exit(2);
+		}
+		const removed = removeWorkspace(root, name);
+		emit(removed ? `removed ${name}` : `no workspace named ${name}`, {
+			removed,
+			name,
+		});
+		if (!removed) process.exitCode = 1;
+	} else if (command === "exec") {
+		const name = flag("name");
+		const vector = sep >= 0 ? argv.slice(sep + 1) : [];
+		const snippet = flag("shell");
+		const inner = snippet !== undefined ? snippet : quoteVector(vector);
+		if (!name || inner.length === 0) {
+			process.stderr.write(
+				"exec needs --name <name> and either -- <cmd> [args…] or --shell <snippet>\n",
+			);
+			process.exit(2);
+		}
+		const record = readRegistry(root).workspaces.find((w) => w.name === name);
+		if (!record) {
+			process.stderr.write(`no workspace named ${name} under ${root}\n`);
+			process.exit(1);
+		}
+		if (ours.includes("--print-cmd")) {
+			process.stdout.write(`${execCommand(record, inner)}\n`);
+		} else {
+			process.exitCode = (await runInWorkspace(record, inner)) ?? 1;
+		}
 	} else {
-		process.exitCode = (await runInWorkspace(record, inner)) ?? 1;
+		if (command !== "help") process.exitCode = 2;
+		process.stdout.write(
+			[
+				"hobo-rift — virtual worktrees for agent workspaces",
+				"",
+				"  hobo-rift capability [--root DIR] [--json]   which CoW primitive is available",
+				"  hobo-rift init       [--root DIR]            register a source root",
+				"  hobo-rift create --name NAME [--copy-all]    make a workspace, print its path",
+				"  hobo-rift list       [--root DIR] [--json]   list workspaces",
+				"  hobo-rift remove --name NAME                 delete a workspace",
+				"  hobo-rift exec --name NAME -- CMD [ARGS…]    run CMD inside the workspace",
+				"  hobo-rift exec --name NAME --shell SNIPPET   run a shell snippet there",
+				"  hobo-rift repair     [--root DIR]            reconcile the registry with the journal",
+				"  hobo-rift prune      [--root DIR]            delete directories parked by create",
+				"",
+				"Tiers, best first: reflink · overlayfs · hardlink · copy.",
+				"",
+			].join("\n"),
+		);
 	}
-} else {
-	if (command !== "help") process.exitCode = 2;
-	process.stdout.write(
-		[
-			"hobo-rift — virtual worktrees for agent workspaces",
-			"",
-			"  hobo-rift capability [--root DIR] [--json]   which CoW primitive is available",
-			"  hobo-rift init       [--root DIR]            register a source root",
-			"  hobo-rift create --name NAME [--copy-all]    make a workspace, print its path",
-			"  hobo-rift list       [--root DIR] [--json]   list workspaces",
-			"  hobo-rift remove --name NAME                 delete a workspace",
-			"  hobo-rift exec --name NAME -- CMD [ARGS…]    run CMD inside the workspace",
-			"  hobo-rift exec --name NAME --shell SNIPPET   run a shell snippet there",
-			"  hobo-rift repair     [--root DIR]            reconcile the registry with the journal",
-			"  hobo-rift prune      [--root DIR]            delete directories parked by create",
-			"",
-			"Tiers, best first: reflink · overlayfs · hardlink · copy.",
-			"",
-		].join("\n"),
-	);
+} catch (error) {
+	if (!(error instanceof RiftRegistryError)) throw error;
+	process.stderr.write(`${error.message}\n`);
+	process.exitCode = 1;
 }

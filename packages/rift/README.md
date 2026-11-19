@@ -72,3 +72,8 @@ hobo-rift create --name claude  # prints the workspace path on stdout
 hobo-rift list --json
 hobo-rift remove --name claude
 ```
+
+`hobo-rift repair` rebuilds the registry from its journal and restores surviving
+workspaces from a newer, valid snapshot when the journal has been truncated.
+If the journal is missing, run `repair` before listing or changing workspaces.
+An invalid snapshot stops repair and is left untouched for inspection.

@@ -24,7 +24,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { must } from "@hobo/core/total-access";
 import { afterAll, describe, expect, it } from "vitest";
-import { type JsonBag, type JsonValue, parseJsonObject } from "../src/json.js";
+import type { JsonValue } from "../src/json.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -421,20 +421,15 @@ describe("registry is a projection of the journal", () => {
 		expect(projectWorkspaces(events).map((w) => w.name)).toEqual(["two"]);
 	});
 
-	it("survives a torn snapshot by replaying the journal", () => {
+	it("keeps the journal readable and preserves a torn snapshot", () => {
 		const root = source();
 		createWorkspace({ root, name: "alive" });
-		// The crash shape: a half-written snapshot. It must cost time, not data.
 		writeFileSync(join(root, RIFT_DIR, "registry.json"), '{"root":"/x","works');
 		expect(readRegistry(root).workspaces.map((w) => w.name)).toEqual(["alive"]);
-		expect(rebuildRegistry(root).workspaces.map((w) => w.name)).toEqual([
-			"alive",
-		]);
-		// And the snapshot is valid again afterwards.
-		expect(
-			JSON.parse(readFileSync(join(root, RIFT_DIR, "registry.json"), "utf8"))
-				.workspaces,
-		).toHaveLength(1);
+		expect(() => rebuildRegistry(root)).toThrow("invalid workspace snapshot");
+		expect(readFileSync(join(root, RIFT_DIR, "registry.json"), "utf8")).toBe(
+			'{"root":"/x","works',
+		);
 	});
 
 	it("skips a truncated tail line rather than losing the whole journal", () => {
@@ -725,28 +720,6 @@ describe("debris only accumulates when there is work to keep", () => {
 	});
 });
 
-describe("a root that predates event counting", () => {
-	it("declines to guess, and says why, rather than resurrecting", () => {
-		const root = source();
-		createWorkspace({ root, name: "old" });
-		const snapshotPath = join(root, RIFT_DIR, "registry.json");
-		const snapshot: JsonBag = {
-			...parseJsonObject(readFileSync(snapshotPath, "utf8")),
-		};
-		writeFileSync(
-			snapshotPath,
-			JSON.stringify({
-				root: snapshot.root,
-				workspaces: snapshot.workspaces,
-			}),
-		);
-		writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
-		const repaired = rebuildRegistry(root);
-		expect(repaired.workspaces).toEqual([]);
-		expect(repaired.undecidable).toMatch(/predates event counting/);
-	});
-});
-
 describe("repair leaves evidence intact", () => {
 	it("does not overwrite the snapshot it tells the operator to read", () => {
 		// registry.json is the only surviving record of a workspace's name, tier
@@ -766,8 +739,7 @@ describe("repair leaves evidence intact", () => {
 		);
 		writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
 
-		const repaired = rebuildRegistry(root);
-		expect(repaired.undecidable).toBeDefined();
+		expect(() => rebuildRegistry(root)).toThrow("invalid workspace snapshot");
 		// SAFETY: `const after = JSON.parse(readFileSync(snapshotPath, "utf8")) as {` is required at this I/O or test boundary.
 		const after = JSON.parse(readFileSync(snapshotPath, "utf8")) as {
 			workspaces: JsonValue[];

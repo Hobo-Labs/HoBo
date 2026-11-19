@@ -18,6 +18,7 @@ export {
 	REGENERABLE,
 	RIFT_DIR,
 	readRegistry,
+	RiftRegistryError,
 	removeWorkspace,
 	runInWorkspace,
 	type WorkspaceRecord,

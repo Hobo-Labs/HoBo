@@ -20,7 +20,7 @@
  *   exit non-zero, because a caller that believes it cleaned up or ran
  *   something it did not is the failure mode with consequences.
  */
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,13 +65,13 @@ async function run(argv: readonly string[]): Promise<RunResult> {
 
 	const outSpy = vi
 		.spyOn(process.stdout, "write")
-		.mockImplementation((chunk: unknown) => {
+		.mockImplementation((chunk: string | Uint8Array) => {
 			stdout.push(String(chunk));
 			return true;
 		});
 	const errSpy = vi
 		.spyOn(process.stderr, "write")
-		.mockImplementation((chunk: unknown) => {
+		.mockImplementation((chunk: string | Uint8Array) => {
 			stderr.push(String(chunk));
 			return true;
 		});
@@ -202,9 +202,11 @@ describe("capability", () => {
 			isolatesInPlaceWrites: boolean;
 			contract: unknown;
 		};
-		expect(typeof parsed.tier).toBe("string");
-		expect(typeof parsed.reason).toBe("string");
-		expect(typeof parsed.isolatesInPlaceWrites).toBe("boolean");
+		expect(parsed).toMatchObject({
+			tier: expect.any(String),
+			reason: expect.any(String),
+			isolatesInPlaceWrites: expect.any(Boolean),
+		});
 		expect(parsed.contract).toBeDefined();
 	});
 
@@ -370,6 +372,16 @@ describe("prune", () => {
 });
 
 describe("repair", () => {
+	it("reports an invalid snapshot without overwriting it", async () => {
+		const root = await makeRoot();
+		await run(["init", "--root", root]);
+		const path = join(root, ".hobo-rift", "registry.json");
+		await writeFile(path, "{invalid");
+		const result = await run(["repair", "--root", root]);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("invalid workspace snapshot");
+		expect(await readFile(path, "utf8")).toBe("{invalid");
+	});
 	it("rebuilds the registry and reports the count", async () => {
 		// Repair exists for a torn write; the count is how an operator confirms
 		// the rebuild found what they expected rather than silently emptying it.
