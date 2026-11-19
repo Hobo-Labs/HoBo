@@ -62,15 +62,15 @@ package hobo
 }
 
 #RankedCandidate: {
-	definition_id: string & !=""
-	provider_id:   string & !=""
-	specificity:   uint
-	priority:      uint
+	definitionId: string & !=""
+	providerId:   string & !=""
+	specificity:  uint
+	priority:     uint
 }
 
 #RejectedCandidate: {
-	definition_id: string & !=""
-	reason:        string & !=""
+	definitionId: string & !=""
+	reason:       string & !=""
 }
 
 #CloudCredentialKeyPattern: "(?i)(secret|password|token|credential|private[_-]?key|api[_-]?key)"
@@ -82,7 +82,6 @@ package hobo
 	providerId:   string & !=""
 	port:         string & !=""
 	specificity:  uint
-	rejected: [...string]
 	ranking: [...#RankedCandidate]
 	rejectedCandidates: [...#RejectedCandidate]
 	tie:                bool
@@ -90,7 +89,6 @@ package hobo
 	objective:          string & !=""
 	region?:            string
 	rationale:          string
-	catalogHash:        string & !=""
 	productId?:         string & !=""
 	appliedRows?: [...string & !=""]
 	realizationParameters?: {[!~#CloudCredentialKeyPattern]: string}
@@ -138,7 +136,7 @@ package hobo
 #DeploymentPlanRejected: {
 	deploymentId: string & !=""
 	reason:       string & !=""
-	remediations: [...#PlanRemediation] & !=[]
+	remediations: [#PlanRemediation, ...#PlanRemediation]
 }
 
 #RegistryCatalogEntry: {
