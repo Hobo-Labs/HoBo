@@ -243,3 +243,76 @@ test("a fast-burn alert reports the remaining objective-window budget", () => {
   assert.equal(windowByName(status, "fast-burn").remainingBudgetRatio, 0);
   assert.equal(event.data.remainingBudgetRatio, status.objectiveWindow.remainingBudgetRatio);
 });
+
+test("a 100 percent objective is ungateable without an error budget", () => {
+  const definition = createGoldenSlo({ spec: { objectives: [{ displayName: "perfect", target: 1 }] } });
+  const status = computeSloStatus({ definition, sliSource: createFixtureSliSource([sample(NOW, 100, 100)]), now: NOW });
+  assert.equal(status.status, "no-error-budget");
+  assert.equal(status.healthy, false);
+  assert.equal(status.objectiveWindow.burnRate, null);
+  assert.equal(status.objectiveWindow.remainingBudgetRatio, 0);
+  assert.equal(makeBudgetBurnedEvent(status, { id: "no-budget", seq: 1, time: NOW }), null);
+});
+
+test("keeps tiny nonzero SLI counts and their error budget", () => {
+  const status = computeSloStatus({
+    definition: makeDefinition(),
+    sliSource: createFixtureSliSource([sample(NOW, 9.95e-8, 1e-7)]),
+    now: NOW,
+  });
+  assert.equal(status.objectiveWindow.total, 1e-7);
+  assert.ok(status.objectiveWindow.errorBudget > 0);
+  assert.ok(Math.abs(status.objectiveWindow.remainingBudgetRatio - 0.5) < 1e-6);
+});
+
+test("rejects finite samples whose combined counts overflow", () => {
+  const source = createFixtureSliSource([sample(NOW, Number.MAX_VALUE, Number.MAX_VALUE), sample(NOW, Number.MAX_VALUE, Number.MAX_VALUE)]);
+  assert.throws(() => computeSloStatus({ definition: makeDefinition(), sliSource: source, now: NOW }), /overflow/);
+});
+
+test("evaluates burn thresholds before rounding the displayed rate", () => {
+  const status = computeSloStatus({
+    definition: makeDefinition(),
+    sliSource: createFixtureSliSource([sample(NOW, 980.004, 1000)]),
+    now: NOW,
+  });
+  assert.equal(windowByName(status, "slow-burn").burnRate, 2);
+  assert.equal(windowByName(status, "slow-burn").triggered, false);
+  assert.deepEqual(status.violatedThresholds, []);
+});
+
+
+test("does not let tolerance trigger a threshold for a near-perfect objective", () => {
+  const definition = createGoldenSlo({ spec: {
+    objectives: [{ displayName: "near-perfect", target: 1 - Number.EPSILON }],
+    burnRateThresholds: [{ name: "double", threshold: 2, lookbackWindow: "5m", samplingInterval: "1m" }],
+  } });
+  const status = computeSloStatus({
+    definition,
+    sliSource: createFixtureSliSource([sample(NOW, 1 - Number.EPSILON, 1)]),
+    now: NOW,
+  });
+  assert.equal(windowByName(status, "double").triggered, false);
+});
+
+test("does not exhaust a budget that still has a small positive remainder", () => {
+  const status = computeSloStatus({
+    definition: makeDefinition(),
+    sliSource: createFixtureSliSource([sample(NOW, 9900000.01, 10000000)]),
+    now: NOW,
+  });
+  assert.equal(status.status, "healthy");
+  assert.ok(status.objectiveWindow.remainingBudgetRatio > 0);
+  assert.ok(status.objectiveWindow.consumedBudgetRatio < 1);
+});
+
+
+test("recognizes exactly depleted budget despite decimal floating point error", () => {
+  const status = computeSloStatus({
+    definition: makeDefinition(),
+    sliSource: createFixtureSliSource([sample(NOW, 9900, 10000)]),
+    now: NOW,
+  });
+  assert.equal(status.status, "budget-exhausted");
+  assert.equal(status.objectiveWindow.remainingBudgetRatio, 0);
+});

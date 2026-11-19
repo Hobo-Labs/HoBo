@@ -5,6 +5,8 @@ import {
 } from "../../slo-as-code-contract/src/slo-contract.js";
 
 export const SLO_COMPUTATION_ENGINE_VERSION = "hobo.slo-computation-engine/v1";
+const MAX_RELATIVE_THRESHOLD_TOLERANCE = 1e-8;
+const THRESHOLD_ROUNDING_ULPS = 2;
 
 export function createFixtureSliSource(samples) {
   const normalized = samples.map(normalizeSample).sort(compareSampleTime);
@@ -73,6 +75,9 @@ export function computeSloStatus({
     };
   }
 
+  if (!Number.isFinite(sum(objectiveSamples, "good")) || !Number.isFinite(sum(objectiveSamples, "total"))) {
+    throw new RangeError("SLI sample counts overflow");
+  }
   const invalidReason = validateSamples(objectiveSamples);
   if (invalidReason) {
     return {
@@ -86,6 +91,18 @@ export function computeSloStatus({
       status: invalidReason.status,
       healthy: false,
       reason: invalidReason.reason,
+    };
+  }
+
+  if (primaryObjective(slo).target === 1) {
+    const total = sum(objectiveSamples, "total");
+    const good = sum(objectiveSamples, "good");
+    return {
+      ...base,
+      objectiveWindow: { ...noDataWindow, total, good, errors: total - good },
+      status: "no-error-budget",
+      healthy: false,
+      reason: "objective-has-no-error-budget",
     };
   }
 
@@ -108,7 +125,14 @@ export function computeSloStatus({
       (sample) => sample.timeMs > nowMs - lookbackMs && sample.timeMs <= nowMs,
     );
     const metrics = computeWindowMetrics(slo, thresholdSamples, threshold.lookbackWindow);
-    const triggered = metrics.total > 0 && metrics.burnRate >= threshold.threshold;
+    const total = sum(thresholdSamples, "total");
+    const errors = total - sum(thresholdSamples, "good");
+    const thresholdErrorRate = threshold.threshold * (1 - primaryObjective(slo).target);
+    const tolerance = Math.min(
+      thresholdErrorRate * MAX_RELATIVE_THRESHOLD_TOLERANCE,
+      Number.EPSILON * threshold.threshold * THRESHOLD_ROUNDING_ULPS,
+    );
+    const triggered = total > 0 && errors > 0 && errors / total >= thresholdErrorRate - tolerance;
 
     return {
       ...metrics,
@@ -243,18 +267,27 @@ export function createBuiltInSloDefinitions() {
 
 function computeWindowMetrics(slo, samples, window) {
   const target = primaryObjective(slo).target;
-  const total = roundDecimal(sum(samples, "total"), 6);
-  const good = roundDecimal(sum(samples, "good"), 6);
-  const errors = roundDecimal(total - good, 6);
+  const total = sum(samples, "total");
+  const good = sum(samples, "good");
+  const errors = total - good;
 
   if (total === 0) {
     return emptyWindowMetrics(window);
   }
 
   const errorBudgetRatio = 1 - target;
-  const errorBudget = roundDecimal(total * errorBudgetRatio, 6);
-  const burnRate = roundDecimal(errors / total / errorBudgetRatio, 3);
-  const consumedBudgetRatio = errorBudget === 0 ? 1 : roundDecimal(errors / errorBudget, 6);
+  const rawErrorBudget = total * errorBudgetRatio;
+  const roundedErrorBudget = roundDecimal(rawErrorBudget, 6);
+  const errorBudget = roundedErrorBudget === 0 && rawErrorBudget !== 0 ? rawErrorBudget : roundedErrorBudget;
+  const rawConsumedBudgetRatio = errors / total / errorBudgetRatio;
+  const budgetTolerance = Math.min(
+    MAX_RELATIVE_THRESHOLD_TOLERANCE,
+    Number.EPSILON * THRESHOLD_ROUNDING_ULPS / errorBudgetRatio,
+  );
+  const consumedBudgetRatio = errors > 0 && Math.abs(rawConsumedBudgetRatio - 1) <= budgetTolerance
+    ? 1
+    : rawConsumedBudgetRatio;
+  const burnRate = roundDecimal(rawConsumedBudgetRatio, 3);
   const remainingBudgetRatio = roundRatio(clamp(1 - consumedBudgetRatio, 0, 1));
 
   return {
@@ -366,7 +399,9 @@ function clamp(value, min, max) {
 }
 
 function roundRatio(value) {
-  return roundDecimal(value, 6);
+  const rounded = roundDecimal(value, 6);
+  if ((rounded === 0 && value > 0) || (rounded === 1 && value !== 1)) return value;
+  return rounded;
 }
 
 function roundDecimal(value, places) {

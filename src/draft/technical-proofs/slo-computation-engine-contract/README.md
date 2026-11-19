@@ -13,7 +13,10 @@ the existing `slo.BudgetBurned` event shape when a burn is present.
 - In scope: `SLISource` ratio samples, half-open evaluation windows, objective
   budget math, fast and slow burn-rate thresholds, built-in deploy success and
   control-plane availability SLOs, fail-closed no-data/stale/zero-traffic
-  handling, and `slo.BudgetBurned` event materialization.
+  handling, and `slo.BudgetBurned` event materialization. A 100% objective is
+  ungateable because it has no error budget; lookbacks cannot exceed the
+  objective window. Thresholds use unrounded burn rates, and overflowing sample
+  totals are rejected.
 - Consumed but not owned: the HOBO-111 SLO declaration and event envelope
   contract.
 - Out of scope: metrics ingestion, alert routing, deploy-freeze gates,
