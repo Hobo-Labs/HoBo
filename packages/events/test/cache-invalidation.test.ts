@@ -22,6 +22,25 @@ function change(key: string): EventInput {
 	return { type: fact.type, data: fact.data };
 }
 
+describe("data change facts", () => {
+	it("carries optional replay data without changing the existing fact shape", () => {
+		const base = {
+			resource: "tickets",
+			key: "a",
+			op: "update" as const,
+			sourceSeq: 2,
+		};
+		expect(createDataChangedEvent(base).data).toEqual(base);
+		expect(
+			createDataChangedEvent({
+				...base,
+				sourceStreamId: "ticket:a",
+				rowJson: '{"id":"a"}',
+			}).data,
+		).toEqual({ ...base, sourceStreamId: "ticket:a", rowJson: '{"id":"a"}' });
+	});
+});
+
 describe("cache invalidation from data changes", () => {
 	it("invalidates selected tags after a real event-store delivery", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-cache-events-"));

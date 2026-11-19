@@ -62,6 +62,13 @@ export {
 	PROJECTION_PORT,
 } from "./port.js";
 export {
+	createPaginatedEventView,
+	type PaginatedPage,
+	type PaginatedRow,
+	type PaginatedSubscription,
+	type PaginatedViewOptions,
+} from "./paginated-view.js";
+export {
 	type ApplyHandler,
 	defineProjection,
 	type Projection,

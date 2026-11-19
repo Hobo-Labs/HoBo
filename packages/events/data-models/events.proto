@@ -79,4 +79,6 @@ message DataChangedData {
   string key = 2;
   ChangeOp op = 3;
   uint64 source_seq = 4;
+  optional string source_stream_id = 5;
+  optional string row_json = 6;
 }
