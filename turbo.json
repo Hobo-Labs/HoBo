@@ -501,7 +501,6 @@
         "src/draft/technical-proofs/shared-cost-attribution-contract/**",
         "src/draft/technical-proofs/slo-rollback-decision-correctness-spike/**",
         "src/draft/technical-proofs/sre-mttd-mttr-postmortem-contract/**",
-        "src/draft/technical-proofs/stuck-rollout-convergence-contract/**",
         "src/draft/technical-proofs/telemetry-envelope-contract/**",
         "src/draft/technical-proofs/training-data-poisoning-guard-contract/**",
         "src/draft/technical-proofs/websocket-preview-wit-contract/**",

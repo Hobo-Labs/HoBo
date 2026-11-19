@@ -5129,8 +5129,6 @@ importers:
 
   src/draft/technical-proofs/stub-implementation-generation-contract: {}
 
-  src/draft/technical-proofs/stuck-rollout-convergence-contract: {}
-
   src/draft/technical-proofs/supervision-child-lifetime-contract: {}
 
   src/draft/technical-proofs/svid-auto-rotation-contract: {}

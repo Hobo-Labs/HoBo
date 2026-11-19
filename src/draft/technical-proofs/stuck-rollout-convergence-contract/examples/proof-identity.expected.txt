@@ -1,3 +1,0 @@
-slug: stuck-rollout-convergence-contract
-layer: technical
-proof-identity: ok
