@@ -108,7 +108,7 @@ export const CANONICAL_VERBS = [
 	{
 		name: "logs",
 		role: "read-only",
-		summary: "Live-tail Camp runtime streams",
+		summary: "Read or follow local deployment logs",
 	},
 	{
 		name: "doctor",
@@ -388,6 +388,21 @@ export function verbHelpText(
 			: options.implemented
 				? "Status: implemented in this composition\n"
 				: "Status: not yet implemented in this composition\n";
+
+	if (verb.name === "logs") {
+		return `HoBo logs
+
+Usage:
+  hobo logs [--lines <count>] [--follow]
+  hobo logs --json [--lines <count>]
+
+Role: ${verb.role}
+${statusLine}
+Read stdout, stderr, and component events from the local deployment for this
+project. --lines selects up to 10000 recent lines (default 200). --follow
+prints new lines until interrupted and cannot be combined with --json or -q.
+`;
+	}
 
 	if (verb.name === "cd") {
 		return `HoBo CD
