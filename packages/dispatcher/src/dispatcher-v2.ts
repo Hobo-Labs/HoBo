@@ -1,5 +1,7 @@
 import {
+	addDecimal,
 	compareDecimal,
+	DECIMAL_ZERO,
 	isQuoteVector,
 	type Money,
 	parseDecimal,
@@ -74,16 +76,16 @@ function withoutAllocatedEffective(quote: QuoteVector): DispatchCostQuote {
 	return dispatchQuote;
 }
 
-function wasteScore(quote: QuoteVector): number {
-	let total = 0n;
+function wasteScore(quote: QuoteVector) {
+	let total = DECIMAL_ZERO;
 	for (const waste of quote.projectedWaste) {
 		const amount = waste.amount?.value;
 		if (amount?.case === "money" && amount.value?.decimal !== undefined) {
 			const parsed = parseDecimal(amount.value.decimal);
-			if (parsed !== undefined) total += parsed.coefficient;
+			if (parsed !== undefined) total = addDecimal(total, parsed);
 		}
 	}
-	return total === 0n ? 0 : Number(total);
+	return total;
 }
 
 function earliestExpiryMs(quote: QuoteVector): number {
@@ -186,7 +188,8 @@ export function decideDispatchV2(
 		if (billedCompare !== 0) return billedCompare;
 		const leftWaste = wasteScore(left.quote);
 		const rightWaste = wasteScore(right.quote);
-		if (leftWaste !== rightWaste) return leftWaste - rightWaste;
+		const wasteCompare = compareDecimal(leftWaste, rightWaste);
+		if (wasteCompare !== 0) return wasteCompare;
 		const leftExpiry = earliestExpiryMs(left.quote);
 		const rightExpiry = earliestExpiryMs(right.quote);
 		if (leftExpiry !== rightExpiry) return leftExpiry - rightExpiry;
