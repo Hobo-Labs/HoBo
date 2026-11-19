@@ -18,7 +18,9 @@ import {
 import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
+	isJsonArray,
 	isJsonObject,
+	isJsonString,
 	type JsonBag,
 	type JsonValue,
 } from "./json.js";
@@ -150,16 +152,58 @@ const DEFAULT_TOKEN_BROKER: TokenBroker = (request: WitTokenRequest) =>
 		ref: `stub://${request.provider}/${request.scope}`,
 	}) satisfies WitTokenHandle;
 
+function snapshotJournalData(
+	value: JsonValue,
+	seen = new Set<object>(),
+): JsonValue {
+	if (!isJsonObject(value) && !isJsonArray(value)) return value;
+	if (seen.has(value)) throw new Error("cyclic journal data");
+	seen.add(value);
+	try {
+		if (Array.isArray(value)) {
+			const copy: JsonValue[] = Array.from({ length: value.length });
+			for (let index = 0; index < value.length; index += 1) {
+				const entry = Object.hasOwn(value, index) ? value[index] : undefined;
+				if (entry !== undefined) {
+					copy[index] = snapshotJournalData(entry, seen);
+				}
+			}
+			return copy;
+		}
+		const copy: JsonBag = {};
+		for (const key of Object.keys(value)) {
+			const entry = value[key];
+			if (entry !== undefined) {
+				copy[key] = snapshotJournalData(entry, seen);
+			}
+		}
+		for (const symbol of Object.getOwnPropertySymbols(value)) {
+			const descriptor = Object.getOwnPropertyDescriptor(value, symbol);
+			if (descriptor?.enumerable === true && "value" in descriptor) {
+				Object.defineProperty(copy, symbol, {
+					value: snapshotJournalData(descriptor.value, seen),
+					enumerable: true,
+					writable: true,
+					configurable: true,
+				});
+			}
+		}
+		return copy;
+	} finally {
+		seen.delete(value);
+	}
+}
+
 function listStepOutcomeIndices(
 	journal: ReadonlyArray<{ type: string; data: JsonValue }>,
 ): number[] {
 	const indices: number[] = [];
 	for (const event of journal) {
 		if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-			const fact = parseRunStepCompletedFact(event.data);
+			const fact = parseRunStepCompletedFact(snapshotJournalData(event.data));
 			indices.push(fact.index);
 		} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-			const fact = parseRunStepFailedFact(event.data);
+			const fact = parseRunStepFailedFact(snapshotJournalData(event.data));
 			indices.push(fact.index);
 		}
 	}
@@ -244,7 +288,7 @@ export function createWorkflowEngine(
 		const scheduledSteps = new Map<number, string>();
 		for (const event of journal) {
 			if (event.type !== "run.StepScheduled") continue;
-			const fact = parseRunStepScheduledFact(event.data);
+			const fact = parseRunStepScheduledFact(snapshotJournalData(event.data));
 			const previous = scheduledSteps.get(fact.index);
 			if (previous !== undefined && previous !== fact.name) {
 				throw new Error(`step name differs from journal for ${runId}`);
@@ -262,7 +306,7 @@ export function createWorkflowEngine(
 				if (!isRecord(event.data)) {
 					throw new Error(`invalid run.StepCompleted for ${runId}`);
 				}
-				const fact = parseRunStepCompletedFact(event.data);
+				const fact = parseRunStepCompletedFact(snapshotJournalData(event.data));
 				const scheduled = scheduledSteps.get(fact.index);
 				if (scheduled !== undefined && scheduled !== fact.name) {
 					throw new Error(`step name differs from journal for ${runId}`);
@@ -278,7 +322,7 @@ export function createWorkflowEngine(
 				if (!isRecord(event.data)) {
 					throw new Error(`invalid run.StepFailed for ${runId}`);
 				}
-				const fact = parseRunStepFailedFact(event.data);
+				const fact = parseRunStepFailedFact(snapshotJournalData(event.data));
 				const scheduled = scheduledSteps.get(fact.index);
 				if (scheduled !== undefined && scheduled !== fact.name) {
 					throw new Error(`step name differs from journal for ${runId}`);
@@ -310,7 +354,7 @@ export function createWorkflowEngine(
 		const sleepFacts = new Map<number, ParsedRunSleepScheduled>();
 		for (const event of journal) {
 			if (event.type !== "run.SleepScheduled") continue;
-			const fact = parseRunSleepScheduledFact(event.data);
+			const fact = parseRunSleepScheduledFact(snapshotJournalData(event.data));
 			const previous = sleepFacts.get(fact.index);
 			if (previous !== undefined) {
 				if (
@@ -323,6 +367,7 @@ export function createWorkflowEngine(
 			}
 			sleepFacts.set(fact.index, fact);
 		}
+		const unconsumedScheduledSleeps = new Set(sleepFacts.keys());
 		const terminals = journal.filter(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
 		);
@@ -408,6 +453,11 @@ export function createWorkflowEngine(
 					`unconsumed scheduled step (orphan StepScheduled) for ${runId}`,
 				);
 			}
+			if (unconsumedScheduledSleeps.size > 0) {
+				throw new Error(
+					`unconsumed scheduled sleep (orphan SleepScheduled) for ${runId}`,
+				);
+			}
 		}
 		const deterministic = createDeterministicContext({
 			seed: runSeed,
@@ -420,10 +470,12 @@ export function createWorkflowEngine(
 			let failed: ParsedRunStepFailed | undefined;
 			for (const event of journal) {
 				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-					const fact = parseRunStepCompletedFact(event.data);
+					const fact = parseRunStepCompletedFact(
+						snapshotJournalData(event.data),
+					);
 					if (fact.index === index) completed = fact;
 				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-					const fact = parseRunStepFailedFact(event.data);
+					const fact = parseRunStepFailedFact(snapshotJournalData(event.data));
 					if (fact.index === index) failed = fact;
 				}
 			}
@@ -435,10 +487,12 @@ export function createWorkflowEngine(
 			const failed: typeof journal = [];
 			for (const event of journal) {
 				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-					const fact = parseRunStepCompletedFact(event.data);
+					const fact = parseRunStepCompletedFact(
+						snapshotJournalData(event.data),
+					);
 					if (fact.name === name && fact.index === index) completed.push(event);
 				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-					const fact = parseRunStepFailedFact(event.data);
+					const fact = parseRunStepFailedFact(snapshotJournalData(event.data));
 					if (fact.name === name && fact.index === index) failed.push(event);
 				}
 			}
@@ -472,13 +526,17 @@ export function createWorkflowEngine(
 				const { completed, failed } = stepOutcomesFor(name, index);
 				const completedEvent = completed[0];
 				if (completedEvent && isRecord(completedEvent.data)) {
-					const result = replayStepCompletedResult<T>(completedEvent.data);
+					const result = replayStepCompletedResult<T>(
+						cloneAsJson(completedEvent.data),
+					);
 					unconsumedOutcomes.delete(index);
 					return result;
 				}
 				const failedEvent = failed[0];
 				if (failedEvent && isRecord(failedEvent.data)) {
-					const stepFailed = parseRunStepFailedFact(failedEvent.data);
+					const stepFailed = parseRunStepFailedFact(
+						snapshotJournalData(failedEvent.data),
+					);
 					unconsumedOutcomes.delete(index);
 					throw new WorkflowFailure(stepFailed.message, {
 						step: stepFailed.name,
@@ -520,6 +578,7 @@ export function createWorkflowEngine(
 					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
 				}
 				const scheduled = sleepFacts.get(index);
+				unconsumedScheduledSleeps.delete(index);
 				if (scheduled) {
 					if (
 						scheduled.delayMs !== normalizedDurationMs ||
@@ -529,8 +588,14 @@ export function createWorkflowEngine(
 					}
 					return;
 				}
+				if (unconsumedScheduledSleeps.size > 0) {
+					rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+				}
 				const data: JsonBag = { delayMs: normalizedDurationMs, index };
 				if (sleepOptions?.label !== undefined) {
+					if (!isJsonString(sleepOptions.label)) {
+						rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+					}
 					data.label = sleepOptions.label;
 				}
 				await appendEvent("run.SleepScheduled", data);

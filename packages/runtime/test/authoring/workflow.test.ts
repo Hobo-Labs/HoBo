@@ -1450,7 +1450,6 @@ describe("durable workflow: journal, restart, replay", () => {
 		{ delayMs: Number.NaN, index: 0 },
 		{ delayMs: Number.POSITIVE_INFINITY, index: 0 },
 		{ delayMs: -1, index: 0 },
-		{ delayMs: 10.5, index: 0 },
 		{ delayMs: 10, index: -1 },
 		{ delayMs: 10, index: 0.5 },
 		{ delayMs: 10, index: Number.NaN },
@@ -1572,7 +1571,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		).toEqual(["run.Started"]);
 	});
 
-	it("accepts run.SleepScheduled at index 1000000", async () => {
+	it("rejects an unconsumed run.SleepScheduled at index 1000000 without appending run.Completed", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/max-sleep";
 		await engine.store.append(
@@ -1607,9 +1606,13 @@ describe("durable workflow: journal, restart, replay", () => {
 				return "done";
 			},
 		});
-		const handle = await engine.resume(wf, "max-sleep", {});
-		expect(handle.result).toBe("done");
+		await expect(engine.resume(wf, "max-sleep", {})).rejects.toThrow(
+			/unconsumed scheduled sleep \(orphan SleepScheduled\)/,
+		);
 		expect(runs).toBe(1);
+		const journal = await engine.journal("max-sleep");
+		expect(journal).toHaveLength(2);
+		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
 	});
 
 	it.each([
@@ -1666,6 +1669,237 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		expect(runs).toBe(0);
 		expect(await engine.journal("dup-sleep")).toHaveLength(3);
+	});
+
+	it("rejects an orphan SleepScheduled without appending run.Completed", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/orphan-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "orphan-sleep",
+					workflowName: "orphan-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "orphan-sleep",
+			async run() {
+				runs += 1;
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "orphan-sleep", {})).rejects.toThrow(
+			/unconsumed scheduled sleep \(orphan SleepScheduled\)/,
+		);
+		expect(runs).toBe(1);
+		const journal = await engine.journal("orphan-sleep");
+		expect(journal).toHaveLength(2);
+		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
+	});
+
+	it("rejects a sleep appended past an unconsumed journaled sleep", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/sleep-gap";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "sleep-gap",
+					workflowName: "sleep-gap",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep-0",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "sleep-2",
+				streamId,
+				seq: 3,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 2 },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "sleep-gap",
+			async run(ctx) {
+				await ctx.sleep(10);
+				await ctx.sleep(10);
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "sleep-gap", {})).rejects.toThrow(
+			/sleep schedule diverged on replay/,
+		);
+		const journal = await engine.journal("sleep-gap");
+		expect(journal).toHaveLength(3);
+		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
+	});
+
+	it("grandfathers a fractional journaled delayMs from a legacy writer", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/legacy-fractional-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "legacy-fractional-sleep",
+					workflowName: "legacy-fractional-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 1.5, index: 0 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "legacy-fractional-sleep",
+			async run(ctx) {
+				await ctx.sleep(1);
+				return "done";
+			},
+		});
+		const handle = await engine.resume(wf, "legacy-fractional-sleep", {});
+		expect(handle.result).toBe("done");
+		const journal = await engine.journal("legacy-fractional-sleep");
+		const sleepEvents = journal.filter(
+			(event) => event.type === "run.SleepScheduled",
+		);
+		expect(sleepEvents).toHaveLength(1);
+		const sleepEvent = sleepEvents[0];
+		if (!sleepEvent || !isJsonObject(sleepEvent.data)) {
+			throw new Error("expected run.SleepScheduled");
+		}
+		expect(sleepEvent.data.delayMs).toBe(1.5);
+	});
+
+	it("rejects a replay whose sleep does not match a legacy fractional delayMs", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/legacy-fractional-diverged";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "legacy-fractional-diverged",
+					workflowName: "legacy-fractional-diverged",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 1.5, index: 0 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "legacy-fractional-diverged",
+			async run(ctx) {
+				await ctx.sleep(2);
+				return "unexpected";
+			},
+		});
+		await expect(
+			engine.resume(wf, "legacy-fractional-diverged", {}),
+		).rejects.toThrow(/sleep schedule diverged on replay/);
+		const journal = await engine.journal("legacy-fractional-diverged");
+		expect(journal).toHaveLength(2);
+	});
+
+	it("consumes a journaled sleep across a host restart", async () => {
+		const engine = createWorkflowEngine();
+		let crashed = false;
+		const wf = defineWorkflow({
+			name: "sleep-restart",
+			async run(ctx) {
+				await ctx.sleep(10, { label: "cooldown" });
+				if (!crashed) {
+					crashed = true;
+					throw new Error("SIMULATED_HOST_CRASH");
+				}
+				return "done";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "sleep-restart" }),
+		).rejects.toThrow("SIMULATED_HOST_CRASH");
+		const resumed = createWorkflowEngine({ store: engine.store });
+		const handle = await resumed.resume(wf, "sleep-restart", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("done");
+		const journal = await resumed.journal("sleep-restart");
+		expect(
+			journal.filter((event) => event.type === "run.SleepScheduled"),
+		).toHaveLength(1);
+	});
+
+	it("rejects a non-string ctx.sleep label on write", async () => {
+		const engine = createWorkflowEngine();
+		const wf = defineWorkflow({
+			name: "invalid-sleep-label",
+			async run(ctx) {
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately injects a non-string label to assert the live-path write rejection.
+				await ctx.sleep(10, { label: 5 as string });
+				return "done";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "invalid-sleep-label" }),
+		).rejects.toThrow(/invalid run\.SleepScheduled/);
+		expect(
+			(await engine.journal("invalid-sleep-label")).map((event) => event.type),
+		).toEqual(["run.Started"]);
 	});
 
 	it("rejects events recorded after a terminal fact", async () => {

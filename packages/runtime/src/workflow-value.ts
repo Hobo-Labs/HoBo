@@ -152,15 +152,20 @@ export function parseRunSleepScheduledFact(
 	if (
 		!("delayMs" in data) ||
 		!isJsonNumber(data.delayMs) ||
-		!Number.isSafeInteger(data.delayMs) ||
-		data.delayMs < 0 ||
 		Object.is(data.delayMs, -0)
 	)
 		throw new TypeError("invalid run.SleepScheduled");
+	const journaledDelayMs = data.delayMs;
+	let delayMs = journaledDelayMs;
+	if (!Number.isSafeInteger(delayMs) || delayMs < 0) {
+		if (!(Number.isFinite(journaledDelayMs) && journaledDelayMs > 0))
+			throw new TypeError("invalid run.SleepScheduled");
+		delayMs = Math.trunc(journaledDelayMs);
+	}
 	if (!("index" in data) || !isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.SleepScheduled");
 	const parsed: ParsedRunSleepScheduled = {
-		delayMs: data.delayMs,
+		delayMs,
 		index: data.index,
 	};
 	if ("label" in data) {
