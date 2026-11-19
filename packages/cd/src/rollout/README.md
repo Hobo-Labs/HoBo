@@ -57,47 +57,6 @@ Progressive exposure for one promotion, Camp by Camp and stage by stage
    the same base supersedes it (`delta-superseded`), so compensation is never
    refused as `delta-overlap`.
 
-## Architecture notes
-
-- **Commands, events, actors.** `plan`/`run`/`rollback`/`tick` are commands.
-  Each decision appends an event to the rollout ledger on the durable event
-  store with an expected-seq CAS, so one rollout behaves as a single-writer
-  actor: two drivers can never both shift a Camp (I4, I12).
-- **Event store, projections, snapshots.** The ledger is the whole truth.
-  `foldRollout` is the projection (a materialized view of the rollout) that
-  `get` reads; the engine adapter rebuilds its in-memory `OpenDeliveryEngine`
-  snapshot from its own command ledger. No separate read store is needed:
-  every read store view is a fold of the same streams, so replay equals live
-  (I8; `test/rollout/golden-journal.test.ts`).
-- **Parse, don't validate.** Ledger bodies are protobuf JSON of the generated
-  records (`RolloutPlanRecord`, `ReasonRecord`, `ObligationRef`) decoded once
-  at the fold into derived types (`RolloutLedgerState`); stage percents are
-  parsed by `stagePercentsFor` into an `Outcome`, never re-checked downstream.
-  `data-models/rollout.cue` constrains the same records and bodies, and
-  `test/rollout/cue.test.ts` proves the two boundaries agree.
-- **Streams.** `cd-rollout-<rolloutId>` (orchestrator ledger) and
-  `cd-rollout-engine-<rolloutId>` (engine command ledger). Both ids are local
-  to this module; the frozen `CD_STREAMS` has no rollout entry.
-- **Event types.** Every ledger type is `rollout.<PastTenseFact>` beside the
-  frozen `rollout.Lowered` / `rollout.EvidenceObserved`, so a durable journal
-  (`@hobo/storage-sqlite`, `@hobo/storage-postgres`) accepts it:
-  `rollout.RampStarted`, `CapacityReserved`, `ShiftRequested`, `Shifted`,
-  `TrafficObserved`, `VerificationStarted`, `StageVerified`,
-  `StageApprovalRequested`, `Held`, `Released`, `Advanced`, `RollbackStarted`,
-  `RollbackDeltaOpened`, `Finished`, and `rollout.EngineCommanded` on the
-  engine stream. (`rollout.Started` / `rollout.ApprovalRequested` belong to
-  the OpenDelivery port in `@hobo/identity` with other bodies, hence
-  `RampStarted` / `StageApprovalRequested`.) The ledger's first names
-  (`cd.rollout.<Fact>`, refused by every durable journal) and the interim
-  `cdrollout.<Fact>` storage encoding are upcast on read by `ledgerType`;
-  bodies are unchanged. `test/rollout/golden/rollout-journal.legacy-cd-rollout.json`
-  pins the legacy corpus, and `test/rollout/durable-journal.test.ts` runs
-  plan, run and rollback on a real SQLite journal with the real desired state
-  and reconcile transport.
-- **PACT.** `test/rollout/pacts/analysis-webhook.pact.json` (verified by
-  `test/rollout/analysis.test.ts`). The Station cutover boundary is exercised
-  against the real `executeRoutingCutover` in `test/rollout/traffic.test.ts`.
-
 ## Metrics (TelemetrySink)
 
 | Metric | Kind | Attributes |

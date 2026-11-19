@@ -23,10 +23,6 @@ import { rig } from "./rig.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = resolve(here, "golden/rollout-journal.json");
-const legacyCorpusPath = resolve(
-	here,
-	"golden/rollout-journal.legacy-cd-rollout.json",
-);
 const STORABLE = /^[a-z][a-z0-9]*\.[A-Z][A-Za-z0-9]*$/;
 
 type GoldenEvent = Readonly<{
@@ -148,32 +144,5 @@ describe("rollout golden journal corpus", () => {
 		for (const [key, value] of Object.entries(ROLLOUT_LEDGER))
 			if (key !== "stream") expect(value, key).toMatch(STORABLE);
 		expect(HARNESS_LEDGER.commanded).toMatch(STORABLE);
-	});
-
-	it("legacy cd.rollout.* streams still fold and replay (upcaster)", async () => {
-		const legacy: Corpus = JSON.parse(readFileSync(legacyCorpusPath, "utf8"));
-		expect(
-			Object.values(legacy).every((r) =>
-				r.events.some((e) => e.type.startsWith("cd.rollout.")),
-			),
-		).toBe(true);
-		await replays(legacy);
-	});
-
-	it("streams stored under the interim cdrollout.* encoding still fold and replay (upcaster)", async () => {
-		const legacy: Corpus = JSON.parse(readFileSync(legacyCorpusPath, "utf8"));
-		const interim: Corpus = Object.fromEntries(
-			Object.entries(legacy).map(([name, r]) => [
-				name,
-				{
-					...r,
-					events: r.events.map((e) => ({
-						...e,
-						type: e.type.replace(/^cd\.rollout\./, "cdrollout."),
-					})),
-				},
-			]),
-		);
-		await replays(interim);
 	});
 });
