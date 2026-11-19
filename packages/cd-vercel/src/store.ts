@@ -14,15 +14,6 @@ import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { z } from "zod";
 
-// The owner's secret store, as HoBo.CD on Vercel opens it: the store's
-// coordinates come from the committed `deploy/secret-store.binding.json`
-// (ids only, the `SecretStoreBinding` record of `@hobo/secret-store-claim`),
-// and the deployment signs in with its own Vercel OIDC token (Infisical OIDC
-// Auth). No token is stored anywhere: not in Vercel's environment, not in a
-// file. The folder is the one `hobo cd up` writes (`/hobo-cd`): the journal
-// fleet's roster and connection strings.
-
-/** Why the store could not be opened; names a cause, never a value. */
 export class CdStoreBindingError extends Error {
 	readonly code: string;
 	constructor(code: string, message: string) {
@@ -32,7 +23,6 @@ export class CdStoreBindingError extends Error {
 	}
 }
 
-/** The deployment's Vercel OIDC token; Vercel delivers it per request. */
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
 
 // public-contract: the committed store coordinates HoBo.CD on Vercel reads (ids only).
@@ -41,8 +31,6 @@ export const CD_STORE_BINDING_URL = new URL(
 	import.meta.url,
 );
 
-// The fields of `SecretStoreBinding` CD reads. `relayIdentityId` is the
-// record's name for the workload identity, whichever workload it is.
 const BindingRecord = z
 	.object({
 		kind: z.enum(["infisical-cloud-attach", "infisical-self-hosted"]),
@@ -54,13 +42,11 @@ const BindingRecord = z
 	})
 	.loose();
 
-/** Where CD signs in, parsed from the committed binding. */
 export type CdStoreCoordinates = Readonly<{
 	binding: ParsedInfisicalBinding;
 	identityId: string;
 }>;
 
-/** Parse the committed binding; a malformed one is refused by name. */
 export function parseCdStoreCoordinates(text: string): CdStoreCoordinates {
 	let json: unknown;
 	try {
@@ -95,7 +81,6 @@ export function parseCdStoreCoordinates(text: string): CdStoreCoordinates {
 	}
 }
 
-/** The committed binding bundled with the function. */
 export function readCdStoreCoordinates(
 	url: URL = CD_STORE_BINDING_URL,
 ): CdStoreCoordinates {
@@ -113,11 +98,6 @@ export function readCdStoreCoordinates(
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-/**
- * The coordinates `hobo cd up` gives the deployment as its configuration
- * (ids only): the owner's Infisical project, environment and folder, and the
- * CD workload identity it made. Undefined when none are set.
- */
 export function cdStoreCoordinatesFromEnv(
 	env: Env,
 ): CdStoreCoordinates | undefined {
@@ -136,10 +116,6 @@ export function cdStoreCoordinatesFromEnv(
 	);
 }
 
-/**
- * Where this deployment signs in: the committed binding when there is one,
- * else the configuration `hobo cd up` set. Refused by name when neither is.
- */
 export function cdStoreCoordinates(
 	env: Env,
 	url: URL = CD_STORE_BINDING_URL,
@@ -158,7 +134,6 @@ export function cdStoreCoordinates(
 	}
 }
 
-/** Open the owner's store with the deployment's own OIDC token. */
 export function openCdStore(
 	coordinates: CdStoreCoordinates,
 	options: Readonly<{ jwt?: JwtSource; fetch?: typeof fetch }> = {},

@@ -1,15 +1,21 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { YardRuntime } from "@hobo/cli";
-import type { IacProgram, IacProvider } from "@hobo/cloud";
+import { createHoboCli, createUpCommand, type YardRuntime } from "@hobo/cli";
+import {
+	createInProcessExecutor,
+	type IacProgram,
+	type IacProvider,
+} from "@hobo/cloud";
 import { createTrustedVault } from "@hobo/core";
+import { CD_PLACEMENT_YARDS } from "@hobo/hobo-cd";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
 	createCdVercelUpCommand,
 	routePreparedPlacements,
+	withYardOfferings,
 } from "../src/cd-placement.js";
 import {
 	createComposedHoboCli,
@@ -117,6 +123,28 @@ describe("hobo cd up hands each resource to whoever makes it", () => {
 			// cd down never drops the journal's databases or the owner's store.
 			await iac.destroy(program(resource, yard));
 			expect((await iac.refresh(program(resource, yard))).drift).toBe(false);
+		}
+		expect(calls).toEqual([]);
+	});
+
+	it("refuses other resources merely assigned to a prepared Yard", async () => {
+		calls.length = 0;
+		const iac = routePreparedPlacements(deploy);
+		for (const [resource, yard] of [
+			["another-database", "yard:hobo-cd-journal"],
+			["another-secret", "yard:hobo-cd-config"],
+			["cd-config", "yard:hobo-cd-journal"],
+		] as const) {
+			for (const operation of [
+				"preview",
+				"apply",
+				"destroy",
+				"refresh",
+			] as const) {
+				await expect(iac[operation](program(resource, yard))).rejects.toThrow(
+					/not prepared/u,
+				);
+			}
 		}
 		expect(calls).toEqual([]);
 	});
@@ -250,4 +278,82 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 		} as never);
 		expect(result.code).toBe("HOBO_CD_UP_NO_BRANCH");
 	});
+});
+
+it("does not send the prepared journal or store to the provider on cd down", async () => {
+	const base = createDefaultYardRuntime({ env: {} });
+	// SAFETY: the default runtime's store is the runtime-local one.
+	stores.push(base.store as RuntimeLocalEventStore);
+	const destroyed: string[] = [];
+	const iac: IacProvider = {
+		id: "test",
+		preview: async () => ({ summary: "", changes: 1 }),
+		apply: async () => ({}),
+		destroy: async (p) => {
+			destroyed.push(p.resourceId);
+		},
+		refresh: async () => ({ drift: false, observed: {} }),
+	};
+	const runtime = {
+		...base,
+		registry: withYardOfferings(base.registry, CD_PLACEMENT_YARDS),
+		executor: createInProcessExecutor({ iac }),
+	};
+	const up = createHoboCli({ commands: { up: createUpCommand({ runtime }) } });
+	const result = await up.run(["up", "--json"], { cwd: CD_PROJECT, env: {} });
+	expect(JSON.parse(result.stdout)).toMatchObject({
+		ok: true,
+		status: "deployed",
+	});
+	const cli = createComposedHoboCli({ yardRuntime: runtime });
+	const down = await cli.run(["cd", "down", "--json"], {
+		cwd: CD_PROJECT,
+		env: {},
+	});
+	expect(JSON.parse(down.stdout)).toMatchObject({
+		ok: true,
+		status: "destroyed",
+	});
+	expect(destroyed).not.toContain("cd-journal");
+	expect(destroyed).not.toContain("cd-config");
+});
+
+it("refuses CD up and down before an unguarded hosting supervisor is called", async () => {
+	const base = createDefaultYardRuntime({ env: {} });
+	// SAFETY: the default runtime's store is the runtime-local one.
+	stores.push(base.store as RuntimeLocalEventStore);
+	const called: string[] = [];
+	const cli = createComposedHoboCli({
+		yardRuntime: {
+			...base,
+			hostingExecution: {
+				up: async () => {
+					called.push("up");
+					throw new Error("unexpected");
+				},
+				down: async () => {
+					called.push("down");
+					throw new Error("unexpected");
+				},
+			},
+		},
+	});
+	for (const action of ["up", "down"] as const) {
+		const result = await cli.run(["cd", action, "--json"], {
+			cwd: CD_PROJECT,
+			env: {},
+		});
+		expect(JSON.parse(result.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
+		});
+	}
+	const preview = await cli.run(["cd", "up", "--what-if", "--json"], {
+		cwd: CD_PROJECT,
+		env: {},
+	});
+	expect(JSON.parse(preview.stdout).code).not.toBe(
+		"HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
+	);
+	expect(called).toEqual([]);
 });

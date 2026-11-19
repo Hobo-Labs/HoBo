@@ -4,10 +4,9 @@ HoBo's CD as a HoBo project:
 
 - **A Bindle** (`src/bindle.ts`): the CD service (`hobo serve cd`: the read
   API, the agent feed, health), its tick, the provider connections it reads,
-  and its journal. The journal's requirement (`cdJournal`) is a
-  provider-neutral `postgres.database({ version: ">=16" })`, placed on a fleet
-  of vendors by `placePostgresFleet`, so one vendor's outage is a failover.
-  It names no provider.
+  and its journal. The intended journal requirement (`cdJournal`) is a
+  provider-neutral `postgres.database({ version: ">=16" })`; it is not yet
+  attached to the Bindle. The declaration names no provider.
 - **A lifecycle**: `hobo cd up|down|plan|status` (and `hobo up` here) through
   the one HoBo engine. Re-running is idempotent, a changed declaration is an
   upsert, `--what-if` changes nothing, and `down` then `up` re-creates. This
@@ -72,6 +71,12 @@ is (Infisical by default, 1Password or Bitwarden) is chosen when the run
 starts. `hobo cd up` applies both by recording that `prepare` made them in the
 same run; nothing is deployed for them, and `hobo cd down` never drops the
 journal's databases or the owner's store.
+The prepared-resource adapter accepts only the named journal and config on
+their corresponding Yards. It refuses other resources assigned to those Yards
+instead of recording them as provisioned.
+CD up and down also refuse a runtime whose delivery or hosting supervisor owns
+the executor, until that supervisor can guarantee the same retention. This
+refusal occurs before the up ceremony provisions anything.
 
 ### The CD workload identity
 
@@ -119,14 +124,16 @@ that keeps what the data is for:
 
 | resource     | tier          | why                                                                 |
 | ------------ | ------------- | ------------------------------------------------------------------- |
-| `cd-journal` | `standard`, 2 standbys | The rollout ledger. A few minutes' loss is re-derived from desired state, so a 5-minute recovery point is enough; three voting members fail over by majority when any one vendor stops; free tiers make the copies cheap; daily backups, 7 kept. |
+| `cd-journal` | `standard`, 2 standbys | Desired policy for the rollout ledger: a five-minute recovery point and seven daily backups. This is a target, not a verified availability guarantee. |
 | `cd-config`  | `rebuildable` | References into the secret store, which keeps its own replicas; `hobo cd up` rebuilds them idempotently. |
 
 `hobo cd up` plans that fleet (`src/journal-fleet.ts`): a writer, the policy's
 standbys and a witness, each a Neon Claimable Postgres database by default.
-Creating missing Neon members currently refuses until an owner-scoped durable
-atomic idempotency store is wired in; Neon cannot deduplicate a create across
-processes or after a crash. Existing complete fleets can still be opened.
+Creating a missing Neon member requires a durable, owner-scoped store with an
+atomic create-if-absent operation; Neon cannot deduplicate a create across
+processes or after a crash. The Infisical and Bitwarden vault adapters do not
+advertise that operation, so they refuse creation of missing members. Existing
+complete fleets can still be opened.
 Each connection string goes straight into the
 owner's secret store at `HOBO_CD_POSTGRES_URL_<ID>`, its claim link beside it at
 `HOBO_CD_POSTGRES_CLAIM_<ID>` (claim each to keep it: an unclaimed database
@@ -135,31 +142,16 @@ cd` and `hobo deploy` open the same journal on any machine signed in to the
 store. All default members are one
 vendor in one region, which the fleet reports as a shortfall when it opens.
 
-A PostgreSQL fleet is selected with `HOBO_CD_POSTGRES_FLEET` (see
-`packages/cd/src/compose/README.md`). Member connection strings are read from
-secret-store entries (`HOBO_CD_POSTGRES_URL_<ID>`). Writes are fenced at the
-database commit boundary, so a planned move loses none; the daily backups are
-kept on the first witness; a member entry may name its vendor plan
-(`neon-eu:neon-claimable`), whose cost model (`src/fleet-plans.ts`, cited
-figures only) keeps a move off a member it would push over its allowance. A
-reported shortfall (an unverified vendor spread, no witness for quorum or
-backups) does not stop it serving.
-
-## Continuity: what CD keeps, and how hard
-
-Each stateful resource declares its policy with the `continuity` trait
-(`src/continuity.ts`, attached in `src/bindle.ts`), choosing the cheapest tier
-that keeps what the data is for:
-
-| resource     | tier          | why                                                                 |
-| ------------ | ------------- | ------------------------------------------------------------------- |
-| `cd-journal` | `standard`, 2 standbys | Desired policy for the rollout ledger. Replication, independent failure domains, fenced failover, and scheduled backups are not yet proven. |
-| `cd-config`  | `rebuildable` | References into the secret store, which keeps its own replicas; `hobo cd up` rebuilds them idempotently. |
-
 An experimental PostgreSQL fleet can be selected with `HOBO_CD_POSTGRES_FLEET`
-(see `packages/cd/src/compose/README.md`). It does not yet fence an in-flight
-write at the database commit boundary and must not be relied on for safe
-failover. A reported policy shortfall does not prevent the fleet from serving.
+(see `packages/cd/src/compose/README.md`). Member connection strings come from
+secret-store entries (`HOBO_CD_POSTGRES_URL_<ID>`). Planned moves fence writes
+at the database commit boundary. An unplanned failover cannot fence a
+partitioned writer that the move never reached, and acknowledged writes there
+can be absent from the new writer. Safe failover and its recovery point must
+not be assumed. Snapshot copies and scheduled backups run while a host ticks
+the fleet; independent failure domains are not proven. A reported policy
+shortfall does not prevent the fleet from serving, and the absence of a
+shortfall does not establish current replication or backup health.
 
 ## Architecture rules (AGENTS.md)
 

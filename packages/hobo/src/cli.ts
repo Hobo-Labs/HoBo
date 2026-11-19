@@ -1,5 +1,6 @@
 import type { CollectionTarget } from "@hobo/bindles";
 import {
+	type CommandModule,
 	createBuildCommand,
 	createCollectCommand,
 	createDevCommand,
@@ -43,8 +44,10 @@ import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
 import { defaultJournalProvisioners } from "./cd-journal-provisioners.js";
 import {
+	cdPlacementRuntime,
 	createCdPlanCommand,
 	createCdVercelUpCommand,
+	retainPreparedOnDown,
 } from "./cd-placement.js";
 import { createCiCommand } from "./ci-command.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
@@ -253,6 +256,31 @@ export function createComposedHoboCli(
 	const down = createLocalDeploymentDownCommand(
 		deployRuntime ? createDownCommand({ runtime: deployRuntime }) : undefined,
 	);
+	// Delivery and hosting supervisors own their own executors, so wrapping the
+	// local executor cannot prove that they retain the prepared journal and store.
+	const cdUnavailableResult = (action: "up" | "down") => ({
+		ok: false,
+		status: "unavailable",
+		code: "HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
+		message: `hobo cd ${action} cannot safely manage prepared resources with this runtime.`,
+		remediation: [
+			"Use a runtime that can retain the CD journal and owner store during teardown.",
+		],
+	});
+	const cdUnavailable = (action: "up" | "down"): CommandModule => ({
+		implemented: true,
+		run: async () => cdUnavailableResult(action),
+	});
+	const cdDownFallback =
+		!deployRuntime || deployRuntime.delivery || deployRuntime.hostingExecution
+			? cdUnavailable("down")
+			: createDownCommand({
+					runtime: {
+						...cdPlacementRuntime(deployRuntime),
+						executor: retainPreparedOnDown(deployRuntime.executor),
+					},
+				});
+	const cdDown = createLocalDeploymentDownCommand(cdDownFallback);
 	// `plan` (and every `--what-if`) never opens a page, but a rejection for a
 	// missing provider says which `hobo add` would satisfy each resource.
 	const plan = createProviderCeremonyUp(createPlanCommand({ runtime }), {
@@ -300,7 +328,7 @@ export function createComposedHoboCli(
 				family: "cd",
 				resolveProject: resolveCdProject,
 				up,
-				down,
+				down: cdDown,
 				// The journal and config are placed on the Yards cd up makes for
 				// them (the journal's fleet, the owner's config service).
 				plan: createCdPlanCommand(runtime, (placed) =>
@@ -316,30 +344,35 @@ export function createComposedHoboCli(
 				// resolved from the owner's secret store for this run only.
 				// hobo cd up also provisions the CD journal's fleet.
 				prepare: (input) =>
-					prepareVercelConnection(input, {
-						journalProvisioners: defaultJournalProvisioners(),
-						runCommand: machineRunner(),
-						...(options.ownerChannel !== undefined
-							? { ownerChannel: options.ownerChannel }
-							: undefined),
-						...(options.clock !== undefined
-							? { now: options.clock.now, sleep: options.clock.sleep }
-							: undefined),
-						which: (bin) => whichOnPath(bin),
-					}),
-				// CD runs on Vercel: up places it on CD's own Yards and delivers
-				// packages/cd-vercel as a git deployment of the current commit.
-				upWith: (credentials) =>
-					createCdVercelUpCommand({
-						credentials,
-						runtime,
-						upWith: (placed) =>
-							createBrokerAwareUpCommand({
-								runtime: placed,
-								persistentLocal: !explicitFixture,
-								authMdFetch: options.authMdFetch ?? fetch,
+					!input.whatIf && (runtime.delivery || runtime.hostingExecution)
+						? Promise.resolve({
+								kind: "refused" as const,
+								result: cdUnavailableResult("up"),
+							})
+						: prepareVercelConnection(input, {
+								journalProvisioners: defaultJournalProvisioners(),
+								runCommand: machineRunner(),
+								...(options.ownerChannel !== undefined
+									? { ownerChannel: options.ownerChannel }
+									: undefined),
+								...(options.clock !== undefined
+									? { now: options.clock.now, sleep: options.clock.sleep }
+									: undefined),
+								which: (bin) => whichOnPath(bin),
 							}),
-					}),
+				upWith: (credentials) =>
+					runtime.delivery || runtime.hostingExecution
+						? cdUnavailable("up")
+						: createCdVercelUpCommand({
+								credentials,
+								runtime,
+								upWith: (placed) =>
+									createBrokerAwareUpCommand({
+										runtime: placed,
+										persistentLocal: !explicitFixture,
+										authMdFetch: options.authMdFetch ?? fetch,
+									}),
+							}),
 				fallback: deploy,
 			}),
 			build: createBuildCommand({ requireRealComponentize: true }),

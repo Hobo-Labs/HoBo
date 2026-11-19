@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import { capability } from "@hobo/core";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { CD_TICK_SCHEDULE } from "../../hobo-cd/src/bindle.js";
 import cdYard, {
@@ -10,24 +11,26 @@ import cdYard, {
 	cdJunction,
 } from "../deploy/yard.js";
 
-// The CD Yard, vercel.json and the CD Bindle say the same thing.
-
 const packageUrl = new URL("../", import.meta.url);
 const text = (path: string) => readFileSync(new URL(path, packageUrl), "utf8");
 
-type PlatformConfig = {
-	functions: Record<
-		string,
-		{
-			maxDuration?: number;
-			experimentalTriggers?: { type: string; topic: string }[];
-			includeFiles?: string;
-		}
-	>;
-	schedules: Record<string, { schedule: string; topic: string }>;
-};
-// SAFETY: vercel.json is this package's own committed platform configuration.
-const platform = JSON.parse(text("vercel.json")) as PlatformConfig;
+const PlatformConfig = z.object({
+	functions: z.record(
+		z.string(),
+		z.object({
+			maxDuration: z.number().optional(),
+			experimentalTriggers: z
+				.array(z.object({ type: z.string(), topic: z.string() }))
+				.optional(),
+			includeFiles: z.string().optional(),
+		}),
+	),
+	schedules: z.record(
+		z.string(),
+		z.object({ schedule: z.string(), topic: z.string() }),
+	),
+});
+const platform = PlatformConfig.parse(JSON.parse(text("vercel.json")));
 
 describe("HoBo.CD on Vercel: Yard, platform and Bindle agree", () => {
 	it("schedules the tick at the Bindle's cadence, onto the tick's topic", () => {

@@ -317,6 +317,27 @@ export async function startFakeInfisical(
 		/** The names held in the store (never the values). */
 		secretNames: () =>
 			[...secrets.keys()].map((at) => at.split(":").at(-1) ?? at),
+		seedJournalFleet() {
+			const folder = "prod:/hobo-cd";
+			folders.add(folder);
+			const values = new Map([
+				[
+					"HOBO_CD_SETTINGS",
+					JSON.stringify({
+						HOBO_CD_POSTGRES_FLEET:
+							"journal-1:neon-claimable,journal-2:neon-claimable,journal-3:neon-claimable",
+						HOBO_CD_POSTGRES_WITNESSES: "journal-witness:neon-claimable",
+					}),
+				],
+			]);
+			for (const member of ["1", "2", "3", "WITNESS"])
+				values.set(
+					`HOBO_CD_POSTGRES_URL_JOURNAL_${member}`,
+					`postgresql://fixture:fixture@journal-${member.toLowerCase()}.example.test/db`,
+				);
+			for (const [name, value] of values)
+				secrets.set(`${folder}:${name}`, { value, version: 1 });
+		},
 		/** The owner signs in: a fresh session, as Infisical's web app issues. */
 		signIn() {
 			const jwt = jwtFor(organizationId, randomUUID());

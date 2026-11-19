@@ -3,6 +3,7 @@
  * runner routing. Local signoff is an opt-in fallback, never a runner label.
  */
 import { execFileSync } from "node:child_process";
+import { devNull } from "node:os";
 import {
 	type FleetMember,
 	type FleetVerificationSelection,
@@ -538,6 +539,9 @@ export async function observeFleetVerification(input: {
 		"GIT_QUARANTINE_PATH",
 	])
 		delete environment[name];
+	delete environment.GIT_REPLACE_REF_BASE;
+	environment.GIT_NO_REPLACE_OBJECTS = "1";
+	environment.GIT_GRAFT_FILE = devNull;
 	const git = (args: readonly string[]) =>
 		execFileSync("git", args, {
 			cwd: input.cwd,

@@ -606,6 +606,39 @@ describe("prepareVercelConnection", () => {
 		expect(vault.names()).toEqual([]);
 	});
 
+	it("reports that an atomic claim store is required without asking for a retry", async () => {
+		const { store } = await memoryStore();
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
+		await store.port.put("HOBO_CD_VERCEL_TEAM_ID", "team_test");
+		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
+		const result = await prepareVercelConnection(prepareInput(), {
+			env: {},
+			locator: memorySettings(LOCATOR),
+			vault: signedInVault(),
+			openStore: opened(store),
+			journalProvisioners: [
+				{
+					plan: "neon-claimable",
+					async create() {
+						const error = new Error("private store details");
+						error.name = "ClaimStoreUnavailableError";
+						throw error;
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			result: {
+				code: "HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
+				remediation: [
+					"An existing complete journal fleet or a durable, owner-scoped atomic claim store is required.",
+				],
+			},
+		});
+		expect(JSON.stringify(result)).not.toContain("private store details");
+	});
+
 	it("refuses a successful installation read without material", async () => {
 		const { store } = await memoryStore();
 		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
