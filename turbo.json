@@ -381,7 +381,6 @@
         "src/draft/technical-proofs/crew-event-contract/**",
         "src/draft/technical-proofs/crypto-shred-erasure-contract/**",
         "src/draft/technical-proofs/deployment-plan-ir-contract/**",
-        "src/draft/technical-proofs/dispatcher-maximize-credits-contract/**",
         "src/draft/technical-proofs/distributed-artifact-version-policy/**",
         "src/draft/technical-proofs/domain-validation-gate-contract/**",
         "src/draft/technical-proofs/entitlement-abuse-rate-limit-policy-contract/**",

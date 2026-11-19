@@ -49,17 +49,6 @@
 			}
 		},
 		{
-			"proof": "src/draft/technical-proofs/dispatcher-maximize-credits-contract/src",
-			"promotedTo": "packages/dispatcher/src",
-			"status": "frozen",
-			"note": "ADR-0071 promotion: typed engine with traffic-backend category, EventInput-shaped facts (no proof envelope), parse-don't-validate boundaries; reservation-hardening invariants folded in.",
-			"digests": {
-				"dispatcher.d.ts": "sha256:00aac63a6d4af4e04e8a3f81dd464c8fc1fcb2b8b31ae936a602eb9f928b09dd",
-				"dispatcher.ts": "sha256:d8325dc768c215c72edcc90beebf304edbcfab1e601de3016302c131e8f20c2f",
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
-			}
-		},
-		{
 			"proof": "src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools",
 			"promotedTo": "packages/schema-tools",
 			"status": "frozen",

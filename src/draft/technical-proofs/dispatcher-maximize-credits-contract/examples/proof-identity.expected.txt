@@ -1,3 +1,0 @@
-slug: dispatcher-maximize-credits-contract
-layer: technical
-proof-identity: ok

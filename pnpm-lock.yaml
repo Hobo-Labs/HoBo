@@ -4409,8 +4409,6 @@ importers:
 
   src/draft/technical-proofs/disaster-recovery-failover-contract: {}
 
-  src/draft/technical-proofs/dispatcher-maximize-credits-contract: {}
-
   src/draft/technical-proofs/distributed-artifact-resolver-contract: {}
 
   src/draft/technical-proofs/distributed-artifact-version-policy: {}

@@ -19,12 +19,8 @@ provider's budget envelope, then (b) declared billable cost — optimizing free
 credits before realtime billing starts** (the `maximize-credits` objective,
 [ADR-0071](urn:hobo:decision:adr-0071)).
 
-The implementation is repurposed from QuickDeployAI's
-`monorepo/apps/ci-routing-control-plane` (reactive variable-patching router,
-hysteresis, hard-block classification) and `deployment-watcher`'s CI runner
-failover (infrastructure-failure regexes), re-cut onto HoBo's dispatcher
-vocabulary from the `dispatcher-maximize-credits-contract` and
-`execution-host-provider-contract` draft proofs.
+The example implements credit-aware ranking and runner failover in its `src`
+directory. The shared dispatcher implementation lives in `packages/dispatcher`.
 
 ## How a pass works
 

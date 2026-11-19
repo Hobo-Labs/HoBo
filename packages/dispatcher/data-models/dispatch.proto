@@ -2,11 +2,6 @@ syntax = "proto3";
 
 package hobo.dispatcher.v1;
 
-// Wire records for ADR-0071 Dispatcher decisions: credit/budget-aware
-// deterministic selection across registered providers for placement,
-// dispatch, and traffic. Promoted from
-// src/draft/technical-proofs/dispatcher-maximize-credits-contract.
-
 message CreditGrantRecord {
   string credit_id = 1;
   double free_headroom = 2;
