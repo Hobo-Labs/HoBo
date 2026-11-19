@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,9 +16,10 @@ import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
 	type DeploymentPlan,
-	deploymentDeployed,
 	deploymentPlanned,
 	desiredSpecHash,
+	foldResourceActor,
+	isConverged,
 	type IacProgram,
 	type IacProvider,
 	type OrchestratorDeps,
@@ -26,14 +28,11 @@ import {
 	planDeploymentChanges,
 	reconcileResource,
 	resourceProvisioned,
+	resourceProvisioning,
 	runCompensation,
 	runOrchestrator,
 } from "../src/index.js";
-
-// Desired State Reconciliation: `up` is an upsert over the durable log.
-// Re-running an unchanged declaration is a no-op (idempotent deployment), a
-// changed spec updates in place, `down` then `up` re-creates, and `complete`
-// mode prunes what is no longer declared.
+import { isJsonObject } from "../src/json.js";
 
 let stores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
@@ -51,7 +50,6 @@ function freshStore(): RuntimeLocalEventStore {
 }
 
 function loadPlan(): DeploymentPlan {
-	// SAFETY: fixture JSON is a DeploymentPlan by construction.
 	return JSON.parse(
 		readFileSync(
 			fileURLToPath(
@@ -240,56 +238,143 @@ describe("upsert", () => {
 		expect(iac.calls.filter((call) => call.startsWith("destroy:"))).toEqual([]);
 	});
 
-	it("detects later changes to legacy resources when their applied plan is recorded", async () => {
+	it("rejects provisioned facts without a recorded desired specification", async () => {
 		const store = freshStore();
-		const iac = recordingIac();
 		const fixture = loadPlan();
-		const plan = {
-			...fixture,
-			resources: fixture.resources.filter((r) => r.name === "network"),
-		};
-		await recordPlan(store, "legacy-plan", plan);
-		const stream = "deployment:legacy-plan";
+		const resource = fixture.resources.find(
+			(entry) => entry.name === "network",
+		);
+		if (!resource) throw new Error("missing network resource");
+		const plan = { ...fixture, resources: [resource] };
+		await recordPlan(store, "invalid-fact", plan);
+		const stream = "deployment:invalid-fact";
+		const existing = await drain(store, stream);
+		await emit(
+			store,
+			stream,
+			[
+				{
+					type: "resource.Provisioned",
+					data: {
+						deploymentId: "invalid-fact",
+						resourceId: "network",
+						outputs: {},
+						execId: "apply",
+					},
+				},
+			],
+			{ expectedSeq: existing.at(-1)?.seq ?? 0, actor, tenant },
+		);
+		const events = await drain(store, stream);
+		expect(() => foldResourceActor(events, resource)).toThrow(
+			"resource fact requires a valid spec hash",
+		);
+		expect(() => planDeploymentChanges(plan, events)).toThrow(
+			"resource fact requires a valid spec hash",
+		);
+		expect(() =>
+			isConverged(
+				{
+					deploymentId: "invalid-fact",
+					resourceId: "network",
+					state: "Provisioned",
+					sequence: 1,
+					outputs: {},
+					deps: resource.deps,
+				},
+				resource,
+			),
+		).toThrow("resource fact requires a valid spec hash");
+	});
+
+	it("stores resource facts and snapshots that satisfy the current contracts", async () => {
+		const store = freshStore();
+		const plan = loadPlan();
+		const resource = plan.resources[0];
+		if (!resource) throw new Error("missing resource");
+		await runOrchestrator(deps(store, recordingIac()), plan, "schema-facts", {
+			tenant,
+			actor,
+		});
+		const events = await drain(store, "deployment:schema-facts");
+		const isResourceFact = (event: EventEnvelope, type: string) =>
+			event.type === type &&
+			isJsonObject(event.data) &&
+			event.data.resourceId === resource.name;
+		const provisioning = events.find((event) =>
+			isResourceFact(event, "resource.Provisioning"),
+		);
+		const provisioned = events.find((event) =>
+			isResourceFact(event, "resource.Provisioned"),
+		);
+		if (!provisioning || !provisioned)
+			throw new Error("missing resource facts");
+		const snapshot = foldResourceActor(events, {
+			...resource,
+			deploymentId: "schema-facts",
+		});
+		const directory = mkdtempSync(join(tmpdir(), "hobo-resource-facts-"));
+		try {
+			const cue =
+				process.env.HOBO_CUE_BIN ||
+				fileURLToPath(
+					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+				);
+			const schema = fileURLToPath(
+				new URL("../data-models/cloud.cue", import.meta.url),
+			);
+			const path = join(directory, "record.json");
+			for (const [definition, data] of [
+				["#ResourceProvisioningRecord", provisioning.data],
+				["#ResourceProvisionedRecord", provisioned.data],
+				["#ResourceActorSnapshot", snapshot],
+			] as const) {
+				writeFileSync(path, JSON.stringify(data));
+				execFileSync(cue, ["vet", schema, path, "-d", definition]);
+			}
+			const { specHash: _omitted, ...incomplete } = snapshot;
+			writeFileSync(path, JSON.stringify(incomplete));
+			expect(() =>
+				execFileSync(
+					cue,
+					["vet", schema, path, "-d", "#ResourceActorSnapshot"],
+					{ stdio: "pipe" },
+				),
+			).toThrow();
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("does not infer a provisioning provider from a plan", async () => {
+		const store = freshStore();
+		const plan = loadPlan();
+		const resource = plan.resources[0];
+		if (!resource) throw new Error("missing resource");
+		await recordPlan(store, "invalid-provider", plan);
+		const stream = "deployment:invalid-provider";
 		const events = await drain(store, stream);
 		await emit(
 			store,
 			stream,
 			[
-				resourceProvisioned({
-					deploymentId: "legacy-plan",
-					resourceId: "network",
-					outputs: {},
-					execId: "legacy",
-				}),
-				deploymentDeployed({
-					deploymentId: "legacy-plan",
-					setId: "legacy-set",
-					resourceIds: ["network"],
-				}),
+				{
+					type: "resource.Provisioning",
+					data: {
+						deploymentId: "invalid-provider",
+						resourceId: resource.name,
+						execId: "apply",
+						programHash: "program",
+						specHash: desiredSpecHash(resource),
+					},
+				},
 			],
 			{ expectedSeq: events.at(-1)?.seq ?? 0, actor, tenant },
 		);
-		await runOrchestrator(deps(store, iac), plan, "legacy-plan", {
-			tenant,
-			actor,
-		});
-		expect(iac.calls).toEqual([]);
-
-		const changed = {
-			...plan,
-			resources: plan.resources.map((r) => ({ ...r, region: "new-region" })),
-		};
-		await recordPlan(store, "legacy-plan", changed);
-		const whatIf = planDeploymentChanges(changed, await drain(store, stream));
-		expect(whatIf.changes[0]?.action).toBe("update");
-		const result = await runOrchestrator(
-			deps(store, iac),
-			changed,
-			"legacy-plan",
-			{ tenant, actor },
+		const history = await drain(store, stream);
+		expect(() => planDeploymentChanges(plan, history)).toThrow(
+			"resource provisioning requires a provider",
 		);
-		expect(iac.calls).toEqual(["apply:network"]);
-		expect(result.status).toBe("deployed");
 	});
 
 	it("sends the changed resource declaration to the provider", async () => {
@@ -402,7 +487,6 @@ describe("upsert", () => {
 		expect(events.filter((e) => e.type === "deployment.Deployed").length).toBe(
 			2,
 		);
-		// The update converges: a third run is a no-op again.
 		iac.calls.length = 0;
 		await runOrchestrator(deps(store, iac), changed, "upsert", {
 			tenant,
@@ -487,7 +571,15 @@ describe("deployment modes", () => {
 		await emit(
 			store,
 			stream,
-			cyclic.resources.map((resource) =>
+			cyclic.resources.flatMap((resource) => [
+				resourceProvisioning({
+					deploymentId: "orphan-cycle",
+					resourceId: resource.name,
+					execId: resource.name,
+					programHash: "program",
+					providerId: resource.provider,
+					specHash: desiredSpecHash(resource),
+				}),
 				resourceProvisioned({
 					deploymentId: "orphan-cycle",
 					resourceId: resource.name,
@@ -495,7 +587,7 @@ describe("deployment modes", () => {
 					execId: resource.name,
 					specHash: desiredSpecHash(resource),
 				}),
-			),
+			]),
 			{ expectedSeq: events.at(-1)?.seq ?? 0, actor, tenant },
 		);
 		const result = await runOrchestrator(
@@ -607,7 +699,6 @@ describe("deployment modes", () => {
 		await recordPlan(store, "modes", plan);
 		await runOrchestrator(deps(store, iac), plan, "modes", { tenant, actor });
 
-		// Drop `web` (a leaf) and `api` (web's dependency) from the declaration.
 		const smaller: DeploymentPlan = {
 			...plan,
 			resources: plan.resources.filter(

@@ -227,6 +227,8 @@ package hobo
 	sequence:     uint
 	outputs: {[string]: string}
 	deps: [...string]
+	specHash?: =~"^sha256:[0-9a-f]{64}$"
+	if state == "Provisioned" {specHash: =~"^sha256:[0-9a-f]{64}$"}
 }
 
 #ResourceProvisioningRecord: {
@@ -234,16 +236,16 @@ package hobo
 	resourceId:   string & !=""
 	execId:       string & !=""
 	programHash:  string & !=""
-	specHash?:    =~"^sha256:[0-9a-f]{64}$"
-	providerId?:  string & !=""
+	specHash:     =~"^sha256:[0-9a-f]{64}$"
+	providerId:   string & !=""
 }
 
 #ResourceProvisionedRecord: {
 	deploymentId: string & !=""
 	resourceId:   string & !=""
 	outputs: {[string]: string}
-	execId:    string & !=""
-	specHash?: =~"^sha256:[0-9a-f]{64}$"
+	execId:   string & !=""
+	specHash: =~"^sha256:[0-9a-f]{64}$"
 }
 
 #ResourceFailedRecord: {
