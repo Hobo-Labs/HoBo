@@ -20,6 +20,13 @@ import {
 	StructuralEffectSchema,
 	WritePolicy,
 } from "./_generated/patterns_pb.js";
+import {
+	isJsonBoolean,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+} from "./json.js";
 
 export class PatternParseError extends TypeError {
 	constructor(message: string) {
@@ -28,22 +35,22 @@ export class PatternParseError extends TypeError {
 	}
 }
 
-const KIND: Record<string, PatternKind> = {
+const KIND = {
 	concept: PatternKind.CONCEPT,
 	starter: PatternKind.STARTER,
 	guidance: PatternKind.GUIDANCE,
 	transform: PatternKind.TRANSFORM,
-};
+} satisfies Record<string, PatternKind>;
 
-const MATURITY: Record<string, PatternMaturity> = {
+const MATURITY = {
 	stable: PatternMaturity.STABLE,
 	partial: PatternMaturity.PARTIAL,
 	experimental: PatternMaturity.EXPERIMENTAL,
 	legacy: PatternMaturity.LEGACY,
 	deprecated: PatternMaturity.DEPRECATED,
-};
+} satisfies Record<string, PatternMaturity>;
 
-const RENDER: Record<string, RenderingKind> = {
+const RENDER = {
 	snippet: RenderingKind.SNIPPET,
 	file: RenderingKind.FILE,
 	project: RenderingKind.PROJECT,
@@ -52,9 +59,9 @@ const RENDER: Record<string, RenderingKind> = {
 	vscode_snippet: RenderingKind.VSCODE_SNIPPET,
 	effects: RenderingKind.STRUCTURAL_EFFECTS,
 	structural_effects: RenderingKind.STRUCTURAL_EFFECTS,
-};
+} satisfies Record<string, RenderingKind>;
 
-const PARAM: Record<string, ParameterKind> = {
+const PARAM = {
 	typescript_identifier: ParameterKind.TYPESCRIPT_IDENTIFIER,
 	typescript_string: ParameterKind.TYPESCRIPT_STRING,
 	json_string: ParameterKind.JSON_STRING,
@@ -65,9 +72,9 @@ const PARAM: Record<string, ParameterKind> = {
 	integer: ParameterKind.INTEGER,
 	boolean: ParameterKind.BOOLEAN,
 	literal_choice: ParameterKind.LITERAL_CHOICE,
-};
+} satisfies Record<string, ParameterKind>;
 
-const EFFECT: Record<string, EffectKind> = {
+const EFFECT = {
 	ensure_import: EffectKind.ENSURE_IMPORT,
 	declare_resource: EffectKind.DECLARE_RESOURCE,
 	declare_connector: EffectKind.DECLARE_CONNECTOR,
@@ -78,28 +85,28 @@ const EFFECT: Record<string, EffectKind> = {
 	create_file: EffectKind.CREATE_FILE,
 	create_project_file: EffectKind.CREATE_PROJECT_FILE,
 	emit_guidance: EffectKind.EMIT_GUIDANCE,
-};
+} satisfies Record<string, EffectKind>;
 
-function str(value: unknown, field: string): string {
-	if (typeof value !== "string" || value.trim() === "") {
+function str<T>(value: T, field: string): string {
+	if (!isJsonString(value) || value.trim() === "") {
 		throw new PatternParseError(`${field} must be a non-empty string`);
 	}
 	return value;
 }
 
-function optStr(value: unknown): string {
-	return typeof value === "string" ? value : "";
+function optStr<T>(value: T): string {
+	return isJsonString(value) ? value : "";
 }
 
-function num(value: unknown, field: string): number {
-	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+function num<T>(value: T, field: string): number {
+	if (!isJsonNumber(value) || !Number.isFinite(value) || value <= 0) {
 		throw new PatternParseError(`${field} must be a positive number`);
 	}
 	return value;
 }
 
-function lookup<T>(table: Record<string, T>, value: unknown, field: string): T {
-	const key = typeof value === "string" ? value : "";
+function lookup<T, V>(table: Record<string, T>, value: V, field: string): T {
+	const key = isJsonString(value) ? value : "";
 	const found = table[key];
 	if (found === undefined) {
 		throw new PatternParseError(
@@ -109,17 +116,17 @@ function lookup<T>(table: Record<string, T>, value: unknown, field: string): T {
 	return found;
 }
 
-function strings(value: unknown): string[] {
+function strings<T>(value: T): string[] {
 	if (value === undefined) return [];
-	if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+	if (!Array.isArray(value) || value.some((item) => !isJsonString(item))) {
 		throw new PatternParseError("expected a string array");
 	}
 	return value;
 }
 
-function csv(value: unknown): string[] {
+function csv<T>(value: T): string[] {
 	if (value === undefined || value === "") return [];
-	if (typeof value === "string") {
+	if (isJsonString(value)) {
 		return value
 			.split(",")
 			.map((item) => item.trim())
@@ -131,11 +138,11 @@ function csv(value: unknown): string[] {
 		.filter(Boolean);
 }
 
-function parseParameter(raw: unknown): PatternParameter {
-	if (typeof raw !== "object" || raw === null) {
+function parseParameter<T>(raw: T): PatternParameter {
+	if (!isJsonObject(raw)) {
 		throw new PatternParseError("parameter must be an object");
 	}
-	const rec = raw as Record<string, unknown>;
+	const rec = raw;
 	return create(PatternParameterSchema, {
 		name: str(rec.name, "parameter.name"),
 		kind: lookup(PARAM, rec.kind, "parameter.kind"),
@@ -149,15 +156,15 @@ function parseParameter(raw: unknown): PatternParameter {
 	});
 }
 
-function parseRendering(
-	raw: unknown,
+function parseRendering<T>(
+	raw: T,
 	patternId: string,
 	version: number,
 ): PatternRendering {
-	if (typeof raw !== "object" || raw === null) {
+	if (!isJsonObject(raw)) {
 		throw new PatternParseError("rendering must be an object");
 	}
-	const rec = raw as Record<string, unknown>;
+	const rec = raw;
 	return create(PatternRenderingSchema, {
 		patternId,
 		patternVersion: version,
@@ -175,27 +182,26 @@ function parseRendering(
 	});
 }
 
-function parseEffect(raw: unknown): StructuralEffect {
-	if (typeof raw !== "object" || raw === null) {
+function parseEffect<T>(raw: T): StructuralEffect {
+	if (!isJsonObject(raw)) {
 		throw new PatternParseError("effect must be an object");
 	}
-	const rec = raw as Record<string, unknown>;
+	const rec = raw;
 	return create(StructuralEffectSchema, {
 		id: str(rec.id, "effect.id"),
 		kind: lookup(EFFECT, rec.kind, "effect.kind"),
 		target: optStr(rec.target),
-		payload:
-			typeof rec.payload === "string"
-				? rec.payload
-				: JSON.stringify(rec.payload ?? {}),
+		payload: isJsonString(rec.payload)
+			? rec.payload
+			: JSON.stringify(rec.payload ?? {}),
 	});
 }
 
-function parseProvenance(raw: unknown): PatternProvenance {
-	if (typeof raw !== "object" || raw === null) {
+function parseProvenance<T>(raw: T): PatternProvenance {
+	if (!isJsonObject(raw)) {
 		throw new PatternParseError("provenance must be an object");
 	}
-	const rec = raw as Record<string, unknown>;
+	const rec = raw;
 	return create(PatternProvenanceSchema, {
 		sourcePath: str(rec.path, "provenance.path"),
 		sourceCommit: optStr(rec.commit),
@@ -204,11 +210,11 @@ function parseProvenance(raw: unknown): PatternProvenance {
 	});
 }
 
-export function parsePatternManifest(input: unknown): PatternManifest {
-	if (typeof input !== "object" || input === null) {
+export function parsePatternManifest<T>(input: T): PatternManifest {
+	if (!isJsonObject(input)) {
 		throw new PatternParseError("manifest must be an object");
 	}
-	const rec = input as Record<string, unknown>;
+	const rec = input;
 	const id = str(rec.id, "id");
 	const version = num(rec.version, "version");
 	const renderings = Array.isArray(rec.renderings)
@@ -225,10 +231,10 @@ export function parsePatternManifest(input: unknown): PatternManifest {
 	}
 	const features = Array.isArray(rec.features)
 		? rec.features.map((item) => {
-				if (typeof item !== "object" || item === null) {
+				if (!isJsonObject(item)) {
 					throw new PatternParseError("feature must be an object");
 				}
-				const feat = item as Record<string, unknown>;
+				const feat = item;
 				return {
 					id: str(feat.id, "feature.id"),
 					weight: num(feat.weight, "feature.weight"),
@@ -262,29 +268,27 @@ export function parsePatternManifest(input: unknown): PatternManifest {
 		limitations: strings(rec.limitations),
 		validations: [],
 		replacementId: optStr(rec.replacementId),
-		legacyAliases: strings(rec.legacyAliases),
 		contentDigest: "",
 	});
 }
 
-export function parsePatternQuery(input: unknown): PatternSearchRequest {
-	if (typeof input === "string") {
+export function parsePatternQuery<T>(input: T): PatternSearchRequest {
+	if (isJsonString(input)) {
 		return create(PatternSearchRequestSchema, {
 			query: input,
 			maxResults: 8,
 		});
 	}
-	if (typeof input !== "object" || input === null) {
+	if (!isJsonObject(input)) {
 		throw new PatternParseError("query must be a string or object");
 	}
-	const rec = input as Record<string, unknown>;
+	const rec = input;
 	const topKRaw = rec.topK ?? rec.maxResults;
-	const topK =
-		typeof topKRaw === "number"
-			? topKRaw
-			: typeof topKRaw === "string"
-				? Number(topKRaw)
-				: 8;
+	const topK = isJsonNumber(topKRaw)
+		? topKRaw
+		: isJsonString(topKRaw)
+			? Number(topKRaw)
+			: 8;
 	const kinds = csv(rec.kind ?? rec.kinds);
 	const maturities = csv(rec.maturity ?? rec.maturities);
 	return create(PatternSearchRequestSchema, {
@@ -322,18 +326,14 @@ export type ParsedApplicationRequest = {
 	readonly params: Readonly<Record<string, string>>;
 };
 
-function recordParams(value: unknown): Record<string, string> {
+function recordParams<T>(value: T): ParsedRenderRequest["params"] {
 	if (value === undefined) return {};
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+	if (!isJsonObject(value)) {
 		throw new PatternParseError("params must be an object");
 	}
 	const out: Record<string, string> = {};
-	for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-		if (
-			typeof item !== "string" &&
-			typeof item !== "number" &&
-			typeof item !== "boolean"
-		) {
+	for (const [key, item] of Object.entries(value)) {
+		if (!isJsonString(item) && !isJsonNumber(item) && !isJsonBoolean(item)) {
 			throw new PatternParseError(`param ${key} must be a scalar`);
 		}
 		out[key] = String(item);
@@ -341,11 +341,11 @@ function recordParams(value: unknown): Record<string, string> {
 	return out;
 }
 
-export function parseRenderRequest(input: unknown): ParsedRenderRequest {
-	if (typeof input !== "object" || input === null) {
+export function parseRenderRequest<T>(input: T): ParsedRenderRequest {
+	if (!isJsonObject(input)) {
 		throw new PatternParseError("render request must be an object");
 	}
-	const rec = input as Record<string, unknown>;
+	const rec = input;
 	return Object.freeze({
 		patternId: str(rec.patternId ?? rec.id, "patternId"),
 		renderingId: optStr(rec.renderingId),
@@ -353,26 +353,22 @@ export function parseRenderRequest(input: unknown): ParsedRenderRequest {
 	});
 }
 
-export function parseCompositionRequest(
-	input: unknown,
-): ParsedCompositionRequest {
-	if (typeof input !== "object" || input === null) {
+export function parseCompositionRequest<T>(input: T): ParsedCompositionRequest {
+	if (!isJsonObject(input)) {
 		throw new PatternParseError("composition request must be an object");
 	}
-	const rec = input as Record<string, unknown>;
+	const rec = input;
 	return Object.freeze({
 		query: str(rec.query, "query"),
 		params: recordParams(rec.params),
 	});
 }
 
-export function parseApplicationRequest(
-	input: unknown,
-): ParsedApplicationRequest {
-	if (typeof input !== "object" || input === null) {
+export function parseApplicationRequest<T>(input: T): ParsedApplicationRequest {
+	if (!isJsonObject(input)) {
 		throw new PatternParseError("application request must be an object");
 	}
-	const rec = input as Record<string, unknown>;
+	const rec = input;
 	return Object.freeze({
 		patternId: str(rec.patternId ?? rec.id, "patternId"),
 		isolationRoot: str(rec.isolationRoot, "isolationRoot"),
@@ -382,13 +378,11 @@ export function parseApplicationRequest(
 	});
 }
 
-export function canonicalJson(value: unknown): string {
-	return `${JSON.stringify(value, (_, item: unknown) => {
-		if (item && typeof item === "object" && !Array.isArray(item)) {
+export function canonicalJson<T>(value: T): string {
+	return `${JSON.stringify(value, (_, item: JsonValue) => {
+		if (isJsonObject(item)) {
 			return Object.fromEntries(
-				Object.entries(item as Record<string, unknown>).sort(([a], [b]) =>
-					a.localeCompare(b),
-				),
+				Object.entries(item).sort(([a], [b]) => a.localeCompare(b)),
 			);
 		}
 		return item;

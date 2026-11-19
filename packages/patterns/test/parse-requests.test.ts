@@ -9,7 +9,7 @@ import {
 	parseRenderRequest,
 } from "../src/parse.js";
 
-function messageOf(thunk: () => unknown): string {
+function messageOf(thunk: () => void): string {
 	try {
 		thunk();
 	} catch (error) {
@@ -35,10 +35,10 @@ describe("parsePatternQuery", () => {
 		}
 	});
 
-	it("treats an array as an empty query object rather than refusing it", () => {
-		const query = parsePatternQuery([]);
-		expect(query.query).toBe("");
-		expect(query.maxResults).toBe(8);
+	it("refuses an array as a query object", () => {
+		expect(messageOf(() => parsePatternQuery([]))).toBe(
+			"query must be a string or object",
+		);
 	});
 
 	it("defaults maxResults to 8 and accepts either spelling", () => {

@@ -136,6 +136,5 @@ export function parseAtomAsPattern<T>(
 			},
 		],
 		limitations: [],
-		legacyAliases: [id],
 	});
 }

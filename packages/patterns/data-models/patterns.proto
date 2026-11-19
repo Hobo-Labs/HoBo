@@ -189,7 +189,6 @@ message PatternManifest {
   repeated string limitations = 22;
   repeated ValidationObligation validations = 23;
   string replacement_id = 24;
-  repeated string legacy_aliases = 25;
   string content_digest = 26;
 }
 
