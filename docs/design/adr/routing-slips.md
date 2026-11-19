@@ -18,7 +18,7 @@ hosted verdict read (`GET /v1/fleet/verdicts/{owner}/{repo}` and the signed
 reports behind it). ADR-0180's rule stands: the relay decides, and no
 capacity figure leaves it.
 **Amends:** [CI Relay Mesh](../ci-relay-mesh.md), "Routing reads the mesh when
-it can"; [CI fleet balancing](../ci-fleet-balancing.md), "The route table".
+it can"; [CI fleet balancing](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/ci-fleet-balancing.md), "The route table".
 
 ## Context
 

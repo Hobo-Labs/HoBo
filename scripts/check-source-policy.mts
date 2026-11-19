@@ -104,13 +104,9 @@ function names(args: string[], filter: string): string[] {
 }
 
 function addedLineCounts(args: string[]): Map<string, number> {
-	const entries = git([
-		...args,
-		"--no-renames",
-		"--numstat",
-		"-z",
-		"--",
-	]).split("\0");
+	const entries = git([...args, "--no-renames", "--numstat", "-z", "--"]).split(
+		"\0",
+	);
 	const counts = new Map<string, number>();
 	for (const entry of entries) {
 		const firstTab = entry.indexOf("\t");
@@ -121,6 +117,57 @@ function addedLineCounts(args: string[]): Map<string, number> {
 			counts.set(entry.slice(secondTab + 1), Number(added));
 	}
 	return counts;
+}
+
+function relocationRelink(before: string, after: string): boolean {
+	const links = /\]\(([^)]+)\)/gu;
+	const previous = [...before.matchAll(links)].map((match) => match[1]);
+	const next = [...after.matchAll(links)].map((match) => match[1]);
+	if (
+		previous.length !== next.length ||
+		before.replace(links, "]()") !== after.replace(links, "]()")
+	)
+		return false;
+	let changed = false;
+	for (let index = 0; index < previous.length; index++) {
+		const target = next[index];
+		if (previous[index] === target) continue;
+		if (
+			!target ||
+			!/^https:\/\/(?:linear\.app\/|github\.com\/Hobo-Labs\/HoBo\/blob\/[\da-f]{40}\/)/u.test(
+				target,
+			)
+		)
+			return false;
+		changed = true;
+	}
+	return changed;
+}
+
+function removalOrRelocationRelink(args: string[], file: string): boolean {
+	const patch = git([
+		...args,
+		"--no-color",
+		"--no-ext-diff",
+		"--unified=0",
+		"--",
+		file,
+	]);
+	const removed: string[] = [];
+	const added: string[] = [];
+	for (const line of patch.split("\n")) {
+		if (line.startsWith("--- ") || line.startsWith("+++ ")) continue;
+		if (line.startsWith("-")) removed.push(line.slice(1));
+		if (line.startsWith("+")) added.push(line.slice(1));
+	}
+	for (const line of added) {
+		const index = removed.findIndex((previous) =>
+			relocationRelink(previous, line),
+		);
+		if (index < 0) return false;
+		removed.splice(index, 1);
+	}
+	return true;
 }
 
 function renameSources(args: string[]): Map<string, string> {
@@ -389,7 +436,10 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		const deletionOnly = !untrackedSet.has(file) && addedCounts.get(file) === 0;
 		if (
 			/\.mdx?$/iu.test(file) &&
-			!(deletionOnly && modified.has(file)) &&
+			!(
+				modified.has(file) &&
+				(deletionOnly || removalOrRelocationRelink(args, file))
+			) &&
 			parents.every((parent) => parent.files.has(file))
 		) {
 			const reason = documentViolation(file, contents(mode, file));

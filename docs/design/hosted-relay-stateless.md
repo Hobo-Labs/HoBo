@@ -1177,7 +1177,7 @@ Every `hobo_ci_*` table the hosted relay used, and where its job goes:
 [CI Relay Mesh](./ci-relay-mesh.md) ·
 [`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) ·
 [`@hobo/kv-redis-compatible`](../../packages/kv-redis-compatible/README.md) ·
-[Shared budget policy](./shared-budget-policy.md)
+[Shared budget policy](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/shared-budget-policy.md)
 
 ## Maintenance (2026-11-12)
 

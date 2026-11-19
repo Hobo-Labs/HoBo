@@ -174,7 +174,8 @@ describe("source policy", () => {
 			).length,
 			1,
 		);
-		const yaml = "run: |\n  # script data\n  echo ok\n# explanation\n# yamllint disable rule:line-length\n";
+		const yaml =
+			"run: |\n  # script data\n  echo ok\n# explanation\n# yamllint disable rule:line-length\n";
 		assert.deepEqual(
 			commentViolations("example.yaml", yaml, new Set([2, 4, 5])).map(
 				(issue) => issue.line,
@@ -418,6 +419,51 @@ describe("source policy", () => {
 	it("rejects a new empty design document", () => {
 		const repo = fixture();
 		write(repo, "docs/design/empty.md", "");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 1);
+	});
+
+	it("allows existing design links to move to Linear or immutable history without adding prose", () => {
+		const repo = fixture();
+		write(repo, "docs/design/existing.md", "# Existing\n[Scope](./old.md)\n");
+		git(repo, "add", "--all");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"add design",
+		);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[Scope](https://linear.app/team/doc)\n",
+		);
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[Scope](https://github.com/Hobo-Labs/HoBo/blob/0123456789012345678901234567890123456789/old.md)\n",
+		);
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[Scope](https://example.test/doc)\n",
+		);
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 1);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[New scope](https://linear.app/team/doc)\n",
+		);
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 1);
 	});

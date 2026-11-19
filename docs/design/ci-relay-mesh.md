@@ -712,4 +712,4 @@ publisher.
 
 [Hosted CI Relay Without Durable State](./hosted-relay-stateless.md) ·
 [Runner queue runbook](../../packages/ci/RUNNER-QUEUE.md) ·
-[Shared budget policy](./shared-budget-policy.md)
+[Shared budget policy](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/shared-budget-policy.md)

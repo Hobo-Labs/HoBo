@@ -21,7 +21,7 @@ and the retirement. Its operating record is
 **Date:** 2026-11-12
 **Amends:** [CI Relay Mesh](../ci-relay-mesh.md), "Routing reads the mesh when
 it can" and "No hosted database in the job path";
-[CI fleet balancing](../ci-fleet-balancing.md), "The route table".
+[CI fleet balancing](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/ci-fleet-balancing.md), "The route table".
 **Supersedes, for the route job:** the `HOBO_CI_FLEET_STATE` and
 `HOBO_CI_FLEET_CAPACITY` repository variables as inputs to
 `scripts/ci/route-runner.mts`.
@@ -335,7 +335,7 @@ explanation against the code before this was chosen.
   selection rules. Every environment that takes CI names the same relay today.
 - **Paid routing is still outside the budget.** A run the route job sends to
   GitHub-hosted never passes relay admission
-  ([CI fleet balancing](../ci-fleet-balancing.md), "What is not built"). A
+  ([CI fleet balancing](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/ci-fleet-balancing.md), "What is not built"). A
   verdict changes when that happens, not that it is unaccounted.
 - **Until a reporter is enrolled and in `report` mode, nothing is blocked.**
   The route job asks, the relay answers that nothing is blocked, and routing
