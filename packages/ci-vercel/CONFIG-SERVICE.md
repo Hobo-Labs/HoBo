@@ -158,7 +158,8 @@ The job and the relay each authenticate to Infisical through OIDC:
   does **not** assert Infisical role shape); `hobo-ci-relay` by `/readyz` after
   Vercel deploys. The workflow step runs
   `scripts/ci/relay-deploy-secret-store-verify-report.mts` so empty stdout or
-  stderr-only crashes fail loudly in the log and job summary.
+  stderr-only crashes fail loudly in the log and job summary. The workflow test
+  pins that step before *Deliver the relay through HoBo CD* by step line order.
 
 ### Least privilege on Infisical Cloud Free (attach)
 

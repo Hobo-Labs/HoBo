@@ -46,6 +46,12 @@ function step(name: string): string {
 	return lines.slice(start, end === -1 ? undefined : end).join("\n");
 }
 
+function stepLine(name: string): number {
+	return workflow
+		.split("\n")
+		.findIndex((line) => line.trim() === `- name: ${name}`);
+}
+
 describe("the relay deploy gate", () => {
 	it("takes the relay and every workspace package it is built from as its inputs", () => {
 		for (const dir of [
@@ -367,10 +373,13 @@ process.exitCode = failed ? 27 : 0;`,
 		);
 		assert.match(verify, /relay-deploy-secret-store-verify-report\.mts/u);
 		assert.doesNotMatch(verify, /\|\| true/u);
-		assert.ok(
-			workflow.indexOf("ci secret-store verify") <
-				workflow.indexOf("Deliver the relay through HoBo CD"),
-		);
+		const verifyCmdAt = verify.indexOf("ci secret-store verify");
+		const verifyLine = stepLine("Verify the secret store connection");
+		const deliverLine = stepLine("Deliver the relay through HoBo CD");
+		assert.ok(verifyCmdAt >= 0);
+		assert.ok(verifyLine >= 0);
+		assert.ok(deliverLine >= 0);
+		assert.ok(verifyLine < deliverLine);
 	});
 
 	it("deposits the GitHub App's credentials with OIDC only when handed a manifest code, masked first", () => {
