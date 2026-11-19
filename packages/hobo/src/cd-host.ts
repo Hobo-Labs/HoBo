@@ -7,6 +7,7 @@ import {
 	type FeedRequest,
 	type FeedResponse,
 } from "@hobo/cd";
+import { asCamp } from "@hobo/cd/rollout";
 import { defaultRetention } from "@hobo/cd/compose";
 import {
 	type CdServiceHost,
@@ -118,7 +119,7 @@ function passSucceededCampIds(data: unknown): readonly CampId[] | undefined {
 		const ids: CampId[] = [];
 		for (const entry of value) {
 			if (typeof entry !== "string" || entry.length === 0) return undefined;
-			ids.push(entry);
+			ids.push(asCamp(entry));
 		}
 		return ids;
 	}
@@ -229,7 +230,9 @@ export async function composeCdHost(
 
 	async function recordSuccessfulPass(
 		campIds: readonly CampId[],
+		allowRecord: () => boolean,
 	): Promise<void> {
+		if (!allowRecord()) return;
 		const atMs = runtime.ctx.now();
 		const event = {
 			type: HOST_PASS_SUCCEEDED,
@@ -238,6 +241,7 @@ export async function composeCdHost(
 		};
 		let lastError: unknown;
 		for (let attempt = 0; attempt < 2; attempt += 1) {
+			if (!allowRecord()) return;
 			try {
 				const expectedSeq = await hostPassRevision();
 				await runtime.store.append(hostPassStream, [event], {
@@ -407,7 +411,7 @@ export async function composeCdHost(
 			const passCounts = reconcilesOk && tick?.store;
 			if (passCounts && allowRecord()) {
 				if (signal.aborted) throw abortErrorOf(signal);
-				await recordSuccessfulPass(managed);
+				await recordSuccessfulPass(managed, allowRecord);
 			}
 			return Object.freeze({
 				tick:
@@ -454,6 +458,12 @@ export async function composeCdHost(
 							});
 					});
 		let recordPassOutcome = true;
+		const suppressRecord = () => {
+			recordPassOutcome = false;
+		};
+		deadline.addEventListener("abort", suppressRecord, { once: true });
+		if (external !== undefined)
+			external.addEventListener("abort", suppressRecord, { once: true });
 		const running = runPass(signal, () => recordPassOutcome);
 		void running.catch(() => undefined);
 		const racers: Promise<CdPassReport>[] = [running, deadlineRejection];
