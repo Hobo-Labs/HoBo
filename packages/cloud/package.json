@@ -33,7 +33,8 @@
 	"devDependencies": {
 		"@hobo/contract-harness": "workspace:*",
 		"@hobo/provider-cloudflare": "workspace:*",
-		"@hobo/runtime-local": "workspace:*"
+		"@hobo/runtime-local": "workspace:*",
+		"@pact-foundation/pact": "17.1.4"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
@@ -41,6 +42,7 @@
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run",
-		"test:contract:consumer": "vitest run contracts/consumer"
+		"test:contract:consumer": "vitest run contracts/consumer",
+		"test:contract:provider": "vitest run contracts/provider"
 	}
 }

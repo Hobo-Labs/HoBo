@@ -11,6 +11,16 @@ Commercial provider pricing catalogs use `pricingCatalogHashFromCommercialRefs` 
 `src/commercial-pricing.ts` (sorted product-ref digest) without altering resource
 definition `catalogHashOf`.
 
+`computeAvailabilityView` estimates the availability of a dependency graph from
+declared component availability and network hops. It treats distinct components
+and hops as independent and counts a shared component once, including when it
+appears in multiple redundant paths. Unrated components default to 95%; hops
+default to 100%. The result includes per-node estimates, annual downtime,
+observed-versus-estimated divergence, and a warning when the estimate misses
+an availability SLO. The SLO result is advisory. Observed availability is
+supplied by the caller. `parseAvailabilityViewRequest` accepts the protobuf JSON
+representation defined in `data-models/availability_view.proto`.
+
 An SDK `b.bucket()` is collected as data with an object-storage paradigm. The
 planner lowers it to the durable `objectStore` capability, so provider-owned
 bucket implementations can satisfy it without an app selecting a provider.

@@ -1,4 +1,24 @@
 export {
+	AvailabilityViewRequestSchema,
+	AvailabilityViewSchema,
+} from "./_generated/availability_view_pb.js";
+export {
+	AVAILABILITY_VIEW_VERSION,
+	type AvailabilityBreakdown,
+	type AvailabilityDeployAssessment,
+	type AvailabilityGraph,
+	type AvailabilityIssue,
+	type AvailabilityNode,
+	type AvailabilityNodeEstimate,
+	type AvailabilitySummary,
+	type AvailabilityView,
+	type AvailabilityViewRequest,
+	type AvailabilityWarning,
+	computeAvailabilityView,
+	formatAvailabilityPercent,
+	parseAvailabilityViewRequest,
+} from "./availability-view.js";
+export {
 	createResolvedDeploymentSet,
 	type GatekeeperApproval,
 	listResources,

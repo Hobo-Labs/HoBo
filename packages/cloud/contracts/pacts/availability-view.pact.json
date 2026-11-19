@@ -1,0 +1,132 @@
+{
+  "consumer": {
+    "name": "AvailabilityViewClient"
+  },
+  "provider": {
+    "name": "CloudAvailabilityView"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
+    "transport": "library-call"
+  },
+  "interactions": [
+    {
+      "description": "Estimate an API and its database with an unmet availability target",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "graph": {
+              "root": "api",
+              "nodes": {
+                "api": {
+                  "availability": 0.99,
+                  "dependsOn": [
+                    "db"
+                  ]
+                },
+                "db": {
+                  "availability": 0.98
+                }
+              }
+            },
+            "observedAvailability": 0.96,
+            "availabilitySlo": 0.98
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "schema": "hobo.availability-view/v1",
+              "status": "estimated",
+              "estimatedAvailability": 0.9702,
+              "estimatedDowntimeMinutesPerYear": 15662.88,
+              "summary": {
+                "estimated": "97.020%",
+                "observed": "96.000%",
+                "estimateObservedGap": "1.020%"
+              },
+              "canDeploy": {
+                "effect": "warn",
+                "warnings": [
+                  {
+                    "code": "availability-floor-unmet",
+                    "hardGate": false
+                  }
+                ]
+              },
+              "breakdown": {
+                "byNode": {
+                  "api": {
+                    "type": "component",
+                    "availability": 0.9702
+                  },
+                  "db": {
+                    "type": "component",
+                    "availability": 0.98
+                  }
+                },
+                "countedNodes": [
+                  "api",
+                  "db"
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "type": "Synchronous/Messages"
+    },
+    {
+      "description": "Report a missing dependency without an estimate",
+      "request": {
+        "contents": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "graph": {
+              "root": "api",
+              "nodes": {
+                "api": {
+                  "availability": 0.99,
+                  "dependsOn": [
+                    "missing"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "contentType": "application/json",
+            "encoded": false,
+            "content": {
+              "schema": "hobo.availability-view/v1",
+              "status": "invalid-graph",
+              "estimatedAvailability": null,
+              "errors": [
+                {
+                  "code": "missing-node"
+                }
+              ],
+              "canDeploy": {
+                "effect": "warn"
+              }
+            }
+          }
+        }
+      ],
+      "type": "Synchronous/Messages"
+    }
+  ]
+}
