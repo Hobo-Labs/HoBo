@@ -18,7 +18,7 @@ const cases = [
   ['WorkflowResume', String.raw`(IF seedRecorded THEN storedSeed ELSE engineSeed)`, String.raw`engineSeed`, 'RecordedSeedIsPreserved', ''],
   ['WorkflowTerminal', String.raw`Run == /\ phase = "running"`, String.raw`Run == /\ phase \in {"running", "completed", "failed"}`, 'NoTerminalRerun', ''],
   ['WorkflowTerminal', String.raw`/\ resumes' = resumes + 1 /\ returnedOutcome' = savedOutcome
-          /\ UNCHANGED <<phase, calls, terminalCalls, savedOutcome>>`, String.raw`/\ resumes' = resumes + 1 /\ returnedOutcome' = savedOutcome /\ terminalFacts' = terminalFacts + 1
+          /\ UNCHANGED <<phase, calls, terminalCalls, terminalFacts, savedOutcome>>`, String.raw`/\ resumes' = resumes + 1 /\ returnedOutcome' = savedOutcome /\ terminalFacts' = terminalFacts + 1
           /\ UNCHANGED <<phase, calls, terminalCalls, savedOutcome>>`, 'NoDuplicateTerminalFact', ''],
   ['WorkflowTerminal', String.raw`returnedOutcome' = savedOutcome`, String.raw`returnedOutcome' = "none"`, 'ResumeReturnsRecorded', ''],
   ['WorkflowStepJournal', String.raw`FinishFailed == /\ phase = "finishing-failure"

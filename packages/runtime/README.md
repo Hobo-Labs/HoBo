@@ -90,6 +90,8 @@ the failed step when present; older failure records without a step cannot
 reconstruct that detail.
 
 The terminal-outcome model explores 15 distinct states and 18 transitions.
+The verification runner also checks that a resume which writes a second
+terminal fact violates the model's invariant.
 This projection hides ten transitions that do not change the displayed state;
 it shows the modeled flow, rather than a trace of one execution.
 
