@@ -610,6 +610,64 @@ jobs:
 		]);
 	});
 
+	it.each([
+		"needs.publish.*",
+		"NEEDS.PUBLISH['*']",
+		"toJSON(needs.publish.*)",
+		"(needs.publish).*",
+		"needs.publish[format('{0}', 'outputs')].value",
+		"needs['publish'][inputs.key]",
+	])("counts a fail-closed secret property read %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("does not treat a star or result on another property as this job's secret outputs", () => {
+		const starOnOther = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.other.* }}
+`;
+		const resultIndex = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.publish['result'] }}
+`;
+		expect(standings(planOf(starOnOther))).toEqual([
+			"publish skipped uses_secrets",
+			"ship ready",
+		]);
+		expect(standings(planOf(resultIndex))).toEqual([
+			"publish skipped uses_secrets",
+			"ship ready",
+		]);
+	});
+
 	it("fails closed when needs cannot be read and a secret job exists", () => {
 		const source = `on: push
 jobs:
@@ -1973,6 +2031,45 @@ ${caller}`;
 			["lint", "routes_jobs"],
 			["route", "routes_jobs"],
 			["called", "expression"],
+		]);
+	});
+
+	it.each([
+		"needs.route.*",
+		"needs['route'].*",
+		"NEEDS.ROUTE['*']",
+		"(needs.route).*",
+		"toJSON(needs.route.*)",
+		"toJSON((needs.route).*)",
+		"needs.route[format('{0}', 'outputs')].runner",
+		"needs['route'][format('{0}', 'result')]",
+		"needs.route[inputs.key || 'outputs']",
+		"(needs['route'])[format('{0}', 'outputs')]",
+	])("fails closed when %s reads a job property that can carry the runner", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
 		]);
 	});
 

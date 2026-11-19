@@ -492,6 +492,12 @@ function groupedNeeds(reference: string): string {
 	return String.raw`(?:\(\s*)*${reference}\s*(?:\)\s*)*`;
 }
 
+function jobPropertyPattern(access: string): string {
+	const starFilter = String.raw`(?:\.\s*\*|\[\s*(?:${quoteAlternatives("*")}|\*)\s*\])`;
+	const nonLiteralIndex = String.raw`\[(?!\s*${staticNeedsIndex()}\s*\])[\s\S]*?\]`;
+	return `(?:${access}|${starFilter}|${nonLiteralIndex})`;
+}
+
 function referencesNeedsAccess(
 	text: string,
 	jobId: string,
@@ -499,7 +505,12 @@ function referencesNeedsAccess(
 	access: string,
 ): boolean {
 	const jobReference = needsJobReferencePattern(jobId);
-	if (patternMatches(`${groupedNeeds(jobReference)}\\s*${access}`, text)) {
+	if (
+		patternMatches(
+			`${groupedNeeds(jobReference)}\\s*${jobPropertyPattern(access)}`,
+			text,
+		)
+	) {
 		return true;
 	}
 	if (patternMatches(toJsonCallPattern(jobReference), text)) return true;
