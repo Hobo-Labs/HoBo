@@ -78,6 +78,7 @@ process.on("message", (message) => {
 			hoboHome: launch.hoboHome,
 			componentHost: normalizeComponentHostKind(launch.componentHost),
 			port: launch.port,
+			emitProgress: (message) => process.stdout.write(`${message}\n`),
 		});
 		closeServe = served.close;
 		if (served.probe.status < 100 || served.probe.status >= 500)

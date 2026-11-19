@@ -1,4 +1,3 @@
-
 import { createServer, type Server } from "node:http";
 import { discoveryEnvForDependency, readDependencyConfig } from "@hobo/bindles";
 import { loadBindleDefinition } from "@hobo/cli";
@@ -7,11 +6,7 @@ import {
 	createInMemoryMeteringSink,
 	createMeteringBus,
 } from "@hobo/connectivity";
-import type {
-	FetchHandler,
-	HttpRequest,
-	HttpResponse,
-} from "@hobo/core";
+import type { FetchHandler, HttpRequest, HttpResponse } from "@hobo/core";
 import { first, must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
@@ -303,7 +298,7 @@ export async function serveProjectOnHost(options: {
 
 	const host = createRuntimeLocalComponentHost({
 		engine: createInProcessWasmtimeEngine(),
-		appendEvent: () => {},
+		appendEvent: (event) => emit(JSON.stringify(event)),
 	});
 	const servers: Server[] = [];
 	let publicIndex = 0;
@@ -398,8 +393,7 @@ export async function serveProjectOnHost(options: {
 		for (const entry of externalEntries) {
 			try {
 				await host.teardownComponent(entry.name);
-			} catch {
-			}
+			} catch {}
 		}
 		for (const key of Object.keys(serviceDiscovery)) {
 			if (process.env[key] === serviceDiscovery[key]) {

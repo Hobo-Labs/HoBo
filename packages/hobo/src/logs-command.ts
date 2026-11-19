@@ -1,44 +1,27 @@
-import type { CommandModule, DevRuntime } from "@hobo/cli";
-import { bootLocalCamp, deploymentIdFor } from "@hobo/cli";
-
-import { createDefaultDevRuntime } from "./compose.js";
+import type { CommandModule } from "@hobo/cli";
+import { readLocalDeploymentLog } from "./local-deployment-log.js";
 
 export interface LogsCommandDeps {
-	// Factory for the runtime-local Camp whose Streamer this command tails.
-	// Defaults to the offline hello-bindle DevRuntime.
-	readonly runtimeFactory?: () => DevRuntime;
+	readonly readLog?: typeof readLocalDeploymentLog;
 }
 
-// `hobo logs` — live-tail the Camp runtime streams. It boots the runtime-local
-// Camp, serves the probe to exercise the component host, and returns the
-// component-host event tail mirrored through the Streamer (the frames a live
-// `hobo dev` session would print). Read-only and offline — no cloud call, no
-// credential. Unlike `hobo dev` (which serves and holds the loop open), this
-// captures the current stream tail and returns it.
 export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 	return {
-		run: async ({ context, flags, emitProgress }) => {
-			const factory = deps.runtimeFactory ?? createDefaultDevRuntime;
-			const runtime = factory();
-			const projectDir = context.projectDir ?? flags.cwd ?? context.cwd;
-			const deploymentId = deploymentIdFor(projectDir);
-
-			const boot = await bootLocalCamp(runtime, { deploymentId, emitProgress });
-			const lines = boot.events.map((event) => event.type);
-
+		run: async ({ context }) => {
+			const projectDir = context.projectDir ?? context.cwd;
+			const log = await (deps.readLog ?? readLocalDeploymentLog)(projectDir);
 			return {
 				ok: true,
-				status: "tailed",
+				status: log.exists ? "tailed" : "no_history",
 				code: "HOBO_OK",
-				message: `hobo logs: ${lines.length} runtime event(s), ${boot.streamedFrames} streamed frame(s) from ${boot.runtime} (offline)`,
+				message: log.exists
+					? log.lines.join("\n")
+					: "No local deployment logs found. Run hobo up to start a deployment.",
 				data: {
 					command: "logs",
-					deploymentId,
-					runtime: boot.runtime,
-					offline: boot.offline,
-					streamedFrames: boot.streamedFrames,
-					events: lines,
-					served: boot.served,
+					projectDir,
+					lines: log.lines,
+					truncated: log.truncated,
 				},
 			};
 		},

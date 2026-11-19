@@ -5,10 +5,7 @@ import {
 	createInMemoryMeteringSink,
 	createMeteringBus,
 } from "@hobo/connectivity";
-import type {
-	HttpRequest,
-	HttpResponse,
-} from "@hobo/core";
+import type { HttpRequest, HttpResponse } from "@hobo/core";
 import { first, must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
@@ -188,7 +185,7 @@ export async function serveBindleOnLocalYard(options: {
 
 	const componentHost = createRuntimeLocalComponentHost({
 		engine: engineInfo.engine,
-		appendEvent: () => {},
+		appendEvent: (event) => emit(JSON.stringify(event)),
 	});
 	for (const entry of entrypoints) {
 		componentHost.loadComponent(
@@ -340,8 +337,7 @@ export async function serveBindleOnLocalYard(options: {
 		for (const entry of entrypoints) {
 			try {
 				await componentHost.teardownComponent(entry.name);
-			} catch {
-			}
+			} catch {}
 		}
 		uninstallMesh();
 		await named.close();
