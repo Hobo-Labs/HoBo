@@ -19,16 +19,10 @@ import {
 	executionHostManifest,
 } from "./manifest.js";
 
-// public-contract: the default workflow file `execute(build)` dispatches.
 export const BLACKSMITH_BUILD_WORKFLOW_DEFAULT = "hobo-build-blacksmith.yml";
-// public-contract: the cache lane Blacksmith accelerates container builds with.
 export const BLACKSMITH_CACHE_LANE = "sticky-disk";
-// public-contract: the past-tense fact recorded for every accelerated build.
 export const BUILD_CACHE_LANE_OBSERVED = "build.CacheLaneObserved";
 
-// The cache-lane fact surfaced per build: which run built the image and which
-// declared acceleration lane it used — appended by the caller's actor so
-// effective build cost stays auditable from the log.
 export interface CacheLaneFact {
 	readonly type: typeof BUILD_CACHE_LANE_OBSERVED;
 	readonly buildId: string;
@@ -39,29 +33,17 @@ export interface CacheLaneFact {
 }
 
 export interface BlacksmithBuildMachineProviderOptions {
-	// The real GitHub Actions client (injected fetch inside).
 	readonly client: GithubActionsClient;
-	// The GHCR owner segment of published image URIs (usually the org).
 	readonly owner: string;
 	readonly id?: string;
 	readonly workflow?: string;
 	readonly ref?: string;
 	readonly runsOn?: string;
-	// Remaining prepaid/free units — the Dispatcher's reservation against the
-	// CreditLedgerView (Plan 5). Defaults to unbounded.
 	readonly creditBudget?: CreditBudget;
 	readonly tracking?: RunTrackingOptions;
-	// Receives the cache-lane fact for the caller to append to the event store.
 	readonly onFact?: (fact: CacheLaneFact) => void;
 }
 
-// The REAL Blacksmith BuildMachineProvider (`hobo:build-machine`): the
-// BuildProvider engine executes on a Blacksmith fast machine with sticky-disk
-// Docker-layer caching; `execute(build)` dispatches the build workflow,
-// tracks the run, resolves the published GHCR digest into a pullable
-// ImageRef, and surfaces the cache-lane fact. Credit exhaustion throws the
-// typed `credit.exhausted` failure BEFORE any dispatch so the Dispatcher can
-// re-route to the next-cheapest host.
 export function createBlacksmithBuildMachineProvider(
 	options: BlacksmithBuildMachineProviderOptions,
 ): BuildMachineProvider {

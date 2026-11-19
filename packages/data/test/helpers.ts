@@ -10,14 +10,12 @@ import {
 } from "@hobo/runtime-local";
 
 import {
-	type Inspectable,
+	type JsonValue,
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 } from "../src/json.js";
 
-// A fresh, isolated event store per test (the real runtime-local EventStore,
-// backed by an in-memory-style temp dir). Callers close() it when done.
 export function freshStore(): RuntimeLocalEventStore {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-data-"));
 	return createRuntimeLocalEventStore({
@@ -47,9 +45,12 @@ export interface OrderRow {
 	totalCents: number;
 }
 
-function inspectEventData(data: EventEnvelope["data"]): Inspectable {
-	// SAFETY: EventEnvelope.data is JSON at the store boundary; callers tag-check fields.
-	return data as Inspectable;
+function inspectEventData(data: EventEnvelope["data"]): JsonValue {
+	const serialized = JSON.stringify(data);
+	if (serialized === undefined)
+		throw new TypeError("order event data must be JSON");
+	const parsed: JsonValue = JSON.parse(serialized);
+	return parsed;
 }
 
 export function parseOrderId(data: EventEnvelope["data"]): string {
