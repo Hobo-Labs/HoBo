@@ -1,7 +1,9 @@
 import type { EventEnvelope } from "@hobo/core";
+import { diagnosticJson } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import { createUpcasterRegistry, foldEvents } from "../src/index.js";
+import { isJsonNumber, isJsonObject } from "../src/json.js";
 import { parseTotalCents } from "./helpers.js";
 
 interface TotalState {
@@ -16,7 +18,14 @@ interface SeenState {
 	seen: number[];
 }
 
-// Minimal envelope factory for pure fold/upcast unit tests.
+function parseLegacyCents(data: EventEnvelope["data"]): number {
+	const parsed = diagnosticJson(data);
+	if (!isJsonObject(parsed) || !isJsonNumber(parsed.cents)) {
+		throw new TypeError("order event data must include cents:number");
+	}
+	return parsed.cents;
+}
+
 function evt(
 	partial: Pick<EventEnvelope, "type" | "seq" | "v" | "data">,
 ): EventEnvelope {
@@ -37,11 +46,11 @@ describe("upcaster registry", () => {
 	it("chains vN -> vN+1 forward-only and reports the latest version", () => {
 		const registry = createUpcasterRegistry();
 		registry
-			.register("order.Placed", 1, (data: { cents: number }) => ({
-				totalCents: data.cents,
+			.register("order.Placed", 1, (data) => ({
+				totalCents: parseLegacyCents(data),
 			}))
-			.register("order.Placed", 2, (data: { totalCents: number }) => ({
-				totalCents: data.totalCents,
+			.register("order.Placed", 2, (data) => ({
+				totalCents: parseTotalCents(data),
 				currency: "USD",
 			}));
 
@@ -56,8 +65,8 @@ describe("upcaster registry", () => {
 
 	it("round-trips: a v1 event folds identically to its current-version form", () => {
 		const registry = createUpcasterRegistry();
-		registry.register("order.Placed", 1, (data: { cents: number }) => ({
-			totalCents: data.cents,
+		registry.register("order.Placed", 1, (data) => ({
+			totalCents: parseLegacyCents(data),
 		}));
 
 		const spec = {
@@ -138,7 +147,6 @@ describe("poison-event quarantine", () => {
 			spec,
 		);
 
-		// seq 2 is skipped on replay; the quarantine fact itself is never folded.
 		expect(outcome.state).toEqual({ seen: [1] });
 		expect(outcome.seq).toBe(3);
 	});

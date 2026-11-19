@@ -10,7 +10,7 @@ import {
 } from "@hobo/cloud";
 import type { EventEnvelope, EventInput, PrincipalRef } from "@hobo/core";
 import { must } from "@hobo/core/total-access";
-import { createUpcasterRegistry } from "@hobo/data";
+import { createUpcasterRegistry, UpcasterChainError } from "@hobo/data";
 import {
 	cloneAsJson,
 	isJsonObject,
@@ -20,8 +20,6 @@ import {
 } from "./json.js";
 
 export interface DerivativeCommandDeps {
-	// The shared Yard runtime whose durable log records the upgrade ceremony and
-	// holds the stored events the upcaster chain runs over.
 	readonly runtime?: YardRuntime;
 }
 
@@ -32,13 +30,6 @@ interface MutableJson {
 const DERIVATIVE_ACTOR: PrincipalRef = { kind: "user", id: "user:derivative" };
 const DESCRIPTOR_FILE = "derivative.json";
 
-// domain-view: one pinned upcaster step in the derivative descriptor
-// (parse-don't-validate). A declarative, PURE `vN -> vN+1` event-body
-// transform: rename fields, drop fields, fill defaults. A bare string in
-// derivative.json parses to a named-but-unbound step (no event binding, so it
-// executes over zero events). Renames are strict — a missing source field is
-// an execution failure, which is exactly how a broken upcaster surfaces in the
-// conformance verdict.
 export interface DerivativeUpcasterStep {
 	readonly name: string;
 	readonly event?: string;
@@ -48,9 +39,6 @@ export interface DerivativeUpcasterStep {
 	readonly drop: readonly string[];
 }
 
-// The derived-HoBo descriptor (parse-don't-validate). A fork declares its name,
-// current version, the version it upgrades to, the pinned upcasters to run, and
-// the stored streams those upcasters affect.
 interface DerivativeDescriptor {
 	readonly name: string;
 	readonly version: string;
@@ -74,7 +62,7 @@ function parseUpcaster(
 			`derivative.json.upcasters[${index}] must be a string or object`,
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
+
 	const doc = raw as {
 		name?: unknown;
 		event?: unknown;
@@ -143,9 +131,6 @@ function parseDescriptor(raw: JsonValue | undefined): DerivativeDescriptor {
 	};
 }
 
-// Build the pure event-body transform a declarative step pins. Strict renames:
-// upcasting a body that lacks a renamed source field is a FAILURE (the
-// upcaster does not fit the stored corpus), never a silent skip.
 function transformFor(
 	step: DerivativeUpcasterStep,
 ): (data: JsonValue) => JsonValue {
@@ -188,12 +173,10 @@ function canonicalJson(value: JsonValue | undefined): string {
 		return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
 	}
 	if (value && isJsonObject(value)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return `{${Object.keys(value as JsonObject)
 			.sort()
 			.map(
 				(key) =>
-					// SAFETY: assertion required at this I/O or test boundary.
 					`${JSON.stringify(key)}:${canonicalJson((value as JsonObject)[key])}`,
 			)
 			.join(",")}}`;
@@ -201,8 +184,6 @@ function canonicalJson(value: JsonValue | undefined): string {
 	return JSON.stringify(value);
 }
 
-// domain-view: one executed upcast over a stored event — proof the chain ran,
-// with the version bump it produced.
 export interface UpcastedEventRecord {
 	readonly stream: string;
 	readonly seq: number;
@@ -218,14 +199,6 @@ interface SeamConformance {
 	readonly errors: readonly string[];
 }
 
-// Execute the pinned upcaster chain over the affected stored events and derive
-// the seam-conformance verdict from what ACTUALLY happened:
-//   - every affected event must reach the chain's latest version,
-//   - every transform must be pure (same input twice -> same output),
-//   - a transform that throws (e.g. a strict rename over a body missing the
-//     field) fails the verdict.
-// History is never rewritten — upcasting is a read-side derivation; the
-// ceremony proves the chain replays the real corpus before the fork upgrades.
 async function executeUpcasters(
 	store: YardRuntime["store"],
 	descriptor: DerivativeDescriptor,
@@ -246,20 +219,22 @@ async function executeUpcasters(
 				transformFor(step)(cloneAsJson(data)),
 			);
 		} catch (error) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			errors.push(`upcaster ${step.name}: ${(error as Error).message}`);
 		}
 	}
-	// Chain totality per bound type: every registered step must be reachable by
-	// chaining v1..latest (a gap strands the steps above it).
-	for (const step of descriptor.upcasters) {
-		if (step.event === undefined) {
-			continue;
-		}
-		const latest = registry.latestVersion(step.event);
-		if (step.fromVersion >= latest) {
+	const latestByType = new Map<string, number>();
+	for (const type of boundTypes) {
+		try {
+			latestByType.set(type, registry.latestVersion(type));
+		} catch (error) {
+			if (!(error instanceof UpcasterChainError)) throw error;
+			const stranded = descriptor.upcasters
+				.filter(
+					(step) => step.event === type && step.fromVersion > error.fromVersion,
+				)
+				.map((step) => step.name);
 			errors.push(
-				`upcaster ${step.name}: non-total chain for ${step.event} — v${step.fromVersion} is unreachable (chain stops at v${latest})`,
+				`upcaster ${stranded.join(", ")}: non-total chain for ${type} — ${error.message}`,
 			);
 		}
 	}
@@ -271,7 +246,6 @@ async function executeUpcasters(
 		try {
 			events = await collectStream(store, stream);
 		} catch (error) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			errors.push(`stream ${stream}: ${(error as Error).message}`);
 			continue;
 		}
@@ -280,8 +254,8 @@ async function executeUpcasters(
 				continue;
 			}
 			checkedEvents += 1;
-			const latest = registry.latestVersion(event.type);
-			if (event.v >= latest) {
+			const latest = latestByType.get(event.type);
+			if (latest === undefined || event.v >= latest) {
 				continue;
 			}
 			try {
@@ -311,7 +285,6 @@ async function executeUpcasters(
 				});
 			} catch (error) {
 				errors.push(
-					// SAFETY: assertion required at this I/O or test boundary.
 					`${event.type}@v${event.v} (${stream}#${event.seq}): ${(error as Error).message}`,
 				);
 			}
@@ -329,22 +302,6 @@ async function executeUpcasters(
 	};
 }
 
-// `hobo derivative <read|upgrade>` — manage a derived HoBo implementation (a
-// long-lived fork) via its `derivative.json` descriptor (ADR-0057).
-//   read    — load + report the descriptor.
-//   upgrade — the upgrade ceremony: check the descriptor's compat (a valid
-//             from -> to version step), record `derivative.UpgradeStarted`,
-//             EXECUTE the pinned event-body upcaster chain over the affected
-//             stored events (descriptor `streams`), derive the seam-conformance
-//             verdict from that execution, and record
-//             `derivative.UpgradeSucceeded` or `derivative.UpgradeFailed` on
-//             the durable log accordingly.
-// Reads the local descriptor + event store; no cloud call, no credential.
-// HONEST SCOPE: upcaster execution and the seam-conformance verdict are REAL —
-// the chain runs over the stored corpus and a failing/impure/non-total
-// upcaster fails the ceremony. Upcasting stays a read-side derivation (history
-// is never rewritten); a bare-string upcaster pins a name without an event
-// binding and therefore executes over zero events.
 export function createDerivativeCommand(
 	deps: DerivativeCommandDeps = {},
 ): CommandModule {
@@ -376,9 +333,6 @@ export function createDerivativeCommand(
 				};
 			}
 
-			// The derivative descriptor lives at the invocation directory (a fork
-			// need not be a Bindle project), so read from the actual cwd rather than
-			// a discovered project root.
 			const dir = flags.cwd ?? context.cwd;
 			let descriptor: DerivativeDescriptor;
 			try {
@@ -389,7 +343,7 @@ export function createDerivativeCommand(
 					ok: false,
 					status: "no_descriptor",
 					code: "HOBO_DERIVATIVE_NO_DESCRIPTOR",
-					// SAFETY: assertion required at this I/O or test boundary.
+
 					message: `hobo derivative: could not read ${DESCRIPTOR_FILE}: ${(error as Error).message}`,
 					remediation: [
 						`Add a ${DESCRIPTOR_FILE} with { name, version, upgradeTo, upcasters, streams }.`,
@@ -408,7 +362,6 @@ export function createDerivativeCommand(
 				};
 			}
 
-			// upgrade ceremony.
 			const toVersion = args[1] ?? descriptor.upgradeTo;
 			const stream = `derivative:${descriptor.name}`;
 			const existing = await collectStream(runtime.store, stream);
@@ -461,8 +414,6 @@ export function createDerivativeCommand(
 				}),
 			);
 
-			// EXECUTE the pinned upcaster chain over the affected stored events and
-			// rerun the seam-conformance check on the actual results.
 			const { conformance, upcasted } = await executeUpcasters(
 				runtime.store,
 				descriptor,

@@ -61,8 +61,11 @@ export {
 } from "./projection.js";
 export {
 	createUpcasterRegistry,
+	parseUpcasterVersion,
 	type Upcaster,
+	UpcasterChainError,
 	type UpcasterRegistry,
+	type UpcasterVersion,
 } from "./upcaster.js";
 
 export const HOBO_DATA_PACKAGE = "@hobo/data";

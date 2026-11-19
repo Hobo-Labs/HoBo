@@ -1,7 +1,7 @@
 import type { EventEnvelope, QuarantineRecord } from "@hobo/core";
 
 import { parseOffendingSeq } from "./json.js";
-import type { UpcasterRegistry } from "./upcaster.js";
+import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
 
 export type Evolve<S> = (state: S, event: EventEnvelope) => S;
 
@@ -39,6 +39,10 @@ export function foldEvents<S>(
 			if (offending !== undefined) quarantinedSeqs.add(offending);
 		}
 	}
+	for (const event of materialized) {
+		if (isQuarantineFact(event) || quarantinedSeqs.has(event.seq)) continue;
+		spec.upcasters?.assertCanUpcast?.(event.type, event.v);
+	}
 
 	let state = clone(spec.initialState);
 	let seq = 0;
@@ -52,6 +56,7 @@ export function foldEvents<S>(
 			const upcast = spec.upcasters ? spec.upcasters.upcast(event) : event;
 			state = clone(spec.evolve(clone(state), Object.freeze(clone(upcast))));
 		} catch (cause) {
+			if (cause instanceof UpcasterChainError) throw cause;
 			quarantinedSeqs.add(event.seq);
 			quarantined.push({
 				offendingSeq: event.seq,
