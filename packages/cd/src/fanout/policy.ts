@@ -1,8 +1,3 @@
-// Parse boundary for a fan-out (D21): a recorded PlacementDecisionRecord plus
-// a FanoutRecord become one FanoutPlan with every limit resolved to a count
-// against the decision's size. Nothing downstream re-reads the wire records,
-// so an unresolved percent, an unknown mandatory group or a Camp in two
-// groups cannot reach the scheduler (parse, don't validate).
 import {
 	type FanoutRecord,
 	FanoutStrategy,
@@ -24,19 +19,14 @@ export type FanoutGroup = Readonly<{
 	mandatory: boolean;
 }>;
 
-/** A fan-out with every limit resolved to a count. */
 export type FanoutPlan = Readonly<{
 	strategy: FanoutStrategyName;
-	/** ≥ 1. Camps in flight at once, never exceeded (I20). */
 	maxConcurrency: number;
-	/** Failures tolerated; one more halts (I20). */
 	maxFailures: number;
 	minSuccessMs: number;
 	progressDeadlineMs: number;
 	rollbackOnHalt: boolean;
-	/** Run order: mandatory groups first, then the rest, each in decision order. */
 	groups: readonly FanoutGroup[];
-	/** Every Camp in run order. */
 	campIds: readonly string[];
 }>;
 
@@ -90,7 +80,6 @@ function invalid(
 	return reason(FANOUT_REASON.invalid, message, remediation, subject);
 }
 
-/** Selected Camps of a decision grouped in decision order (one implicit group when none). */
 function decisionGroups(
 	decision: PlacementDecisionRecord,
 	mandatoryNames: ReadonlySet<string>,
@@ -198,8 +187,6 @@ export function parseFanoutPlan(
 		...groups.filter((group) => !group.mandatory),
 	];
 	const total = seen.size;
-	// "concurrency = group size" (I.9): the decision's largest group, else the
-	// default group size (10% of the decision).
 	const groupSize = Math.max(
 		1,
 		decision.groups.length > 0
