@@ -19,6 +19,11 @@ def check(name, assumptions, claim, wanted):
     print(f"{'Proved' if wanted == unsat else 'Expected counterexample'}: {name}")
 
 check('captured work matches journal', guards, properties[0], unsat)
-check('executed input is reproducible', guards, properties[1], unsat)
+check(
+    'executed input is reproducible',
+    guards,
+    Implies(ran, And(valid, effect == journal)),
+    unsat,
+)
 check('missing input snapshot', [guards[0], guards[2]], properties[0], sat)
 check('missing input validation', [guards[0], guards[1]], properties[1], sat)

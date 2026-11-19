@@ -188,9 +188,6 @@ export function route(
 			return [offer, { reserved, used, providerSpent }] as const;
 		}),
 	);
-	// Several offers can report the same provider account. Keep the largest
-	// observed exposure regardless of offer order, then aggregate across
-	// providers that share an account identifier.
 	const providerAccounts = new Map<string, { target: string; spent: number }>();
 	for (const [offer, accounting] of providerAccounting) {
 		const key = JSON.stringify([offer.provider, offer.providerAccountId]);

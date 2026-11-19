@@ -629,6 +629,8 @@ An unknown observation time cannot prove that completed local usage was
 included, so that usage remains counted. See the
 [CI budget verification skill](../../.agents/skills/verify-ci-budget-routing/SKILL.md)
 for the model, generated tests, and assumptions.
+The skill also runs weakened models, a weakened proof, and broken scratch
+implementations, then restores and reruns the generated routing properties.
 
 The following projection of the provider-observation model is not a runtime
 trace. TLC explored 36 states and 36 steps; the chart hides 18 steps that
