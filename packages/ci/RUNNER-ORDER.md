@@ -62,9 +62,10 @@ under `notInOrder`.
 
 An input is a label, or `auto`. `auto` asks for the order's size
 (`autoSizeVcpus`, 2 when unset) and becomes the provider's smallest machine
-at or above it. A provider with no machine that large is passed over as
-`no_size`. A relay with no inputs at all means every runner type at that
-size.
+at or above it. A provider with no machine that large is omitted from the
+resolved inputs. A relay with no inputs at all means every runner type with
+a machine at that size; calling `resolveAutoInputs` directly with an empty
+map returns an empty map.
 
 The label families are in `RUNNER_PROVIDER_CATALOG`, each with the vendor
 page it was read from and the day it was read. They are Linux x64 on the
@@ -77,15 +78,15 @@ Steps are tried top to bottom. A step is passed over, with a reason, when:
 
 | Reason | Meaning |
 | --- | --- |
-| `not_configured` | The relay did not name this runner type |
-| `public_repository` | A machine never takes a public repository's job; neither does a provider that is opt-in for public repositories until the owner has turned it on |
-| `fork_pull_request` | A machine never takes a run whose head is a fork |
+| `not_configured` | The relay did not name this runner type, or `auto` had no label at the requested size |
+| `public_repository` | A machine never takes a public repository's job; a hosted provider takes one only when its catalog stance is `yes` or the owner has explicitly opted it in |
+| `fork_pull_request` | A machine or hosted provider never takes a run whose head is a fork |
 | `needs_isolation` | The repository is public or the run comes from a fork, and the fleet is not set up to isolate such jobs |
-| `no_size` | `auto` asked for a size this runner type does not have |
+| `no_size` | An unresolved `auto` label reached a step |
 | `too_many_labels` | A fleet, GitHub or provider step was given more than one label |
 | `not_provider_label` | The label is not one of this provider's |
 | `minutes_limit` | The account has used the step's share of its included Actions minutes |
-| `minutes_runway` | The included minutes would run out within two hours at the measured burn |
+| `minutes_runway` | The step's share of included minutes would run out within two hours at the measured burn |
 | `spend_limit` | The account has spent the step's monthly limit at this provider |
 | `provider_unhealthy` | This runner type has stopped starting jobs |
 | `fleet_off` | The fleet does not serve this repository |
@@ -95,17 +96,20 @@ Steps are tried top to bottom. A step is passed over, with a reason, when:
 | `machine_paused` | The machines that would take it are paused |
 | `machine_full` | The machines that would take it are all busy |
 
-A measurement that is missing never blocks a step. Refusing a runner because
-a billing read failed would stop CI over a number nobody saw.
+Missing minutes or spend measurements never block a step. Refusing a runner
+because a billing read failed would stop CI over a number nobody saw. A
+provided minutes measurement with no included minutes denies the limited
+step.
 
 ## When no step takes the job
 
-1. A hosted runner type passed over only as `provider_unhealthy` takes the
-   job after all (`unhealthyFallback`). A slow runner beats no runner.
-2. Otherwise a step that would have taken the job but is busy (`fleet_full`,
+1. A step that would have taken the job but is busy (`fleet_full`,
    `machine_full`) is waited on. The outcome is `waiting`, the job is given
    that step's label and queues on GitHub as it would on any self-hosted
    runner. The first busy step in the order wins.
+2. Otherwise a hosted runner type passed over only as `provider_unhealthy`
+   takes the job after all (`unhealthyFallback`). A slow runner beats no
+   runner.
 3. Otherwise the outcome is `none` and `reason` is one sentence a person can
    act on. The relay job fails with it instead of leaving a job queued for a
    runner that will never come.
@@ -145,9 +149,10 @@ disconnected while the job was on it (`machine_lost`), or GitHub reported
 losing the runner (`runner_lost`). A failing test is never retried here.
 
 The policy's `runner` decides where the retry goes: `same` puts the failed
-step first, `other` puts it last, `any` leaves the order as written. A run is
-retried at most `max` times (1 or 2), an account at most 100 times a day, and
-a run with more than one relay is left alone.
+step first, `other` puts it last, `any` leaves the order as written. An
+unknown retry target refuses the retry. A run is retried at most `max` times
+(1 or 2), an account at most 100 times a day, and a run with more than one
+relay is left alone.
 
 ## What is not here
 

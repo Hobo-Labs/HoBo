@@ -1,7 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { RunnerOrderSchema } from "../src/_generated/runner_route_pb.js";
+import {
+	RunnerOrderSchema,
+	RunnerOrderStepSchema,
+} from "../src/_generated/runner_route_pb.js";
 import {
 	DEFAULT_RUNNER_ORDER,
 	defineRunnerOrder,
@@ -112,6 +115,9 @@ describe("runner provider catalog", () => {
 	it("parses step keys and auto sizes", () => {
 		expect(runnerStepKey("runs-on")).toBe("runs-on");
 		expect(runnerStepKey("buildjet")).toBeUndefined();
+		expect(
+			stepKey(create(RunnerOrderStepSchema, { key: "buildjet" })),
+		).toBeUndefined();
 		expect(runnerAutoSize(8)).toBe(8);
 		expect(runnerAutoSize(3)).toBeUndefined();
 	});
@@ -217,11 +223,11 @@ describe("runner order", () => {
 		).toThrow(/at least one step/u);
 	});
 
-	it("falls back to the default for a missing or broken stored order", () => {
+	it("defaults only a missing or blank stored order", () => {
 		expect(runnerOrderOrDefault(undefined)).toBe(DEFAULT_RUNNER_ORDER);
 		expect(runnerOrderOrDefault("  ")).toBe(DEFAULT_RUNNER_ORDER);
-		expect(runnerOrderOrDefault("{not json")).toBe(DEFAULT_RUNNER_ORDER);
-		expect(runnerOrderOrDefault('{"steps":[]}')).toBe(DEFAULT_RUNNER_ORDER);
+		expect(() => runnerOrderOrDefault("{not json")).toThrow();
+		expect(() => runnerOrderOrDefault('{"steps":[]}')).toThrow();
 		expect(keys(runnerOrderOrDefault('{"steps":[{"key":"depot"}]}'))).toEqual([
 			"depot",
 		]);
@@ -300,7 +306,7 @@ describe("relay inputs", () => {
 		]);
 	});
 
-	it("turns auto into the label for the size", () => {
+	it("turns auto into the label for the size and omits unsupported sizes", () => {
 		const resolved = resolveAutoInputs(
 			new Map([
 				["machine", ["auto"]],
@@ -315,20 +321,14 @@ describe("relay inputs", () => {
 		expect([...resolved]).toEqual([
 			["machine", ["self-hosted"]],
 			["fleet", ["hobo"]],
-
-			["github", ["auto"]],
 			["depot", ["depot-ubuntu-24.04-4"]],
 			["ubicloud", ["ubicloud-standard-8"]],
 		]);
+		expect(resolved.has("github")).toBe(false);
 	});
 
-	it("treats a relay with no inputs as every runner type at the size", () => {
-		const resolved = resolveAutoInputs(new Map(), 2, 55);
-		expect([...resolved.keys()]).toEqual([...RUNNER_STEP_KEYS]);
-		expect(resolved.get("runs-on")).toEqual([
-			"runs-on=55/runner=2cpu-linux-x64",
-		]);
-		expect(resolved.get("github")).toEqual(["ubuntu-24.04"]);
+	it("resolves an empty input map to an empty map", () => {
+		expect(resolveAutoInputs(new Map(), 2, 55).size).toBe(0);
 	});
 });
 

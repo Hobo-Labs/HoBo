@@ -278,12 +278,12 @@ export async function runCiRoute(input: {
 		`Relay: ${relayText(request)}`,
 		describeDecision(decision),
 	];
-	if (decision.outcome !== "none" && decision.skipped.length > 0)
+	if (decision.skipped.length > 0)
 		lines.push(
 			"Passed over:",
 			...decision.skipped.map((skipped) => `  ${describeSkip(skipped)}`),
 		);
-	if (decision.notInOrder.length > 0 && decision.outcome !== "none")
+	if (decision.notInOrder.length > 0)
 		lines.push(
 			`Not in the runner order, so never tried: ${decision.notInOrder.join(", ")}.`,
 		);

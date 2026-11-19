@@ -308,8 +308,8 @@ describe("decideRunnerRoute", () => {
 			reason: "minutes_limit",
 			detail: "1600 of 2000 included minutes used; the limit is 80%",
 		});
-		expect(reasons(ask(1000, 600))).toEqual(["github:minutes_runway"]);
-		expect(ask(1000, 499).step).toBe("github");
+		expect(reasons(ask(1000, 301))).toEqual(["github:minutes_runway"]);
+		expect(ask(1000, 300).step).toBe("github");
 
 		expect(
 			decideRunnerRoute(limited, request({ github: "ubuntu-24.04" })).step,
@@ -381,14 +381,19 @@ describe("decideRunnerRoute", () => {
 		expect(many.outcome).toBe("none");
 	});
 
-	it("keeps an opt-in provider off public repositories until it is turned on", () => {
-		const hosted = order({ key: "depot" }, { key: "blacksmith" });
-		const ask = (publicOptIn: ReadonlySet<"depot">) =>
+	it("keeps providers off public repositories unless allowed or opted in", () => {
+		const hosted = order(
+			{ key: "depot" },
+			{ key: "namespace" },
+			{ key: "blacksmith" },
+		);
+		const ask = (publicOptIn: ReadonlySet<"depot" | "namespace">) =>
 			decideRunnerRoute(
 				hosted,
 				request(
 					{
 						depot: "depot-ubuntu-24.04",
+						namespace: "nscloud-ubuntu-24.04-amd64-2x4",
 						blacksmith: "blacksmith-2vcpu-ubuntu-2404",
 					},
 					{ private: false },
@@ -397,11 +402,27 @@ describe("decideRunnerRoute", () => {
 			);
 		const closed = ask(new Set());
 		expect(closed.step).toBe("blacksmith");
-		expect(reasons(closed)).toEqual(["depot:public_repository"]);
+		expect(reasons(closed)).toEqual([
+			"depot:public_repository",
+			"namespace:public_repository",
+		]);
 		expect(ask(new Set(["depot"])).step).toBe("depot");
+		expect(ask(new Set(["namespace"])).step).toBe("namespace");
 	});
 
-	it("resolves auto to the order's size and reports a size nobody has", () => {
+	it("keeps hosted providers away from forks", () => {
+		const decision = decideRunnerRoute(
+			order({ key: "depot" }, { key: "github" }),
+			request(
+				{ depot: "depot-ubuntu-24.04", github: "ubuntu-24.04" },
+				{ fork: true },
+			),
+		);
+		expect(decision.step).toBe("github");
+		expect(reasons(decision)).toEqual(["depot:fork_pull_request"]);
+	});
+
+	it("omits auto inputs for sizes nobody has", () => {
 		const sized = parseRunnerOrder(
 			JSON.stringify({
 				steps: [{ key: "github" }, { key: "ubicloud" }, { key: "depot" }],
@@ -417,7 +438,10 @@ describe("decideRunnerRoute", () => {
 			runner: "depot-ubuntu-24.04-32",
 			step: "depot",
 		});
-		expect(reasons(decision)).toEqual(["github:no_size", "ubicloud:no_size"]);
+		expect(reasons(decision)).toEqual([
+			"github:not_configured",
+			"ubicloud:not_configured",
+		]);
 	});
 
 	it("routes a relay with no inputs to any step at the default size", () => {
@@ -462,7 +486,7 @@ describe("decideRunnerRoute", () => {
 		expect(describeDecision(alone)).toContain("failing to start jobs");
 	});
 
-	it("prefers an unhealthy runner over waiting for a full machine", () => {
+	it("prefers waiting for a full machine over an unhealthy runner", () => {
 		const decision = decideRunnerRoute(
 			order({ key: "machine" }, { key: "depot" }),
 			request({ machine: "self-hosted", depot: "depot-ubuntu-24.04" }),
@@ -472,9 +496,9 @@ describe("decideRunnerRoute", () => {
 			}),
 		);
 		expect(decision).toMatchObject({
-			outcome: "routed",
-			step: "depot",
-			unhealthyFallback: true,
+			outcome: "waiting",
+			step: "machine",
+			unhealthyFallback: false,
 		});
 	});
 

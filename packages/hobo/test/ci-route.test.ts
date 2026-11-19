@@ -173,6 +173,12 @@ describe("hobo ci route", () => {
 		expect(envelope.message).toContain(
 			"No runner available. machine: the repository is public. Not in the runner order, so never tried: depot.",
 		);
+		expect(envelope.message).toContain(
+			"Passed over:\n  machine: the repository is public",
+		);
+		expect(envelope.message).toContain(
+			"Not in the runner order, so never tried: depot.\nNo --facts given:",
+		);
 		expect(envelope.data.decision.outcome).toBe("none");
 		expect(envelope.data.request.private).toBeUndefined();
 	});

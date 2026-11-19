@@ -1,6 +1,5 @@
 import type { RunnerRelayInput } from "../_generated/runner_route_pb.js";
 import {
-	RUNNER_STEP_KEYS,
 	type RunnerStepKey,
 	runnerLabelForSize,
 	runnerStepKey,
@@ -42,12 +41,11 @@ function autoLabels(
 	key: RunnerStepKey,
 	vcpus: number,
 	runId: number,
-): readonly string[] {
+): readonly string[] | undefined {
 	if (key === "machine") return [ANY_MACHINE_LABEL];
 	if (key === "fleet") return [FLEET_LABEL];
 	const label = runnerLabelForSize(key, vcpus, runId);
-
-	return label ? [label] : [RUNNER_INPUT_AUTO];
+	return label ? [label] : undefined;
 }
 
 export function resolveAutoInputs(
@@ -56,13 +54,12 @@ export function resolveAutoInputs(
 	runId: number,
 ): RelayInputs {
 	const resolved = new Map<RunnerStepKey, readonly string[]>();
-	if (inputs.size === 0) {
-		for (const key of RUNNER_STEP_KEYS)
-			resolved.set(key, autoLabels(key, vcpus, runId));
-		return resolved;
+	for (const [key, labels] of inputs) {
+		const resolvedLabels = isAuto(labels)
+			? autoLabels(key, vcpus, runId)
+			: labels;
+		if (resolvedLabels) resolved.set(key, resolvedLabels);
 	}
-	for (const [key, labels] of inputs)
-		resolved.set(key, isAuto(labels) ? autoLabels(key, vcpus, runId) : labels);
 	return resolved;
 }
 

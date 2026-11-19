@@ -19,7 +19,7 @@ export function minutesVerdict(
 	percent: number,
 	usage: MinutesUsage | undefined,
 ): MinutesVerdict {
-	if (!usage || usage.includedMinutes <= 0) return { allowed: true };
+	if (!usage) return { allowed: true };
 	const limit = (usage.includedMinutes * percent) / 100;
 	if (usage.usedMinutes >= limit)
 		return {
@@ -27,7 +27,7 @@ export function minutesVerdict(
 			reason: "minutes_limit",
 			detail: `${Math.round(usage.usedMinutes)} of ${usage.includedMinutes} included minutes used; the limit is ${percent}%`,
 		};
-	const left = usage.includedMinutes - usage.usedMinutes;
+	const left = limit - usage.usedMinutes;
 	const burn = usage.burnPerHour ?? 0;
 	if (burn > 0 && left < burn * MINUTES_RUNWAY_HOURS)
 		return {
