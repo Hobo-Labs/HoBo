@@ -9,6 +9,7 @@ this package refuses to be.
 | Boundary | Consumer | Provider | Protocol | Pact file/test | Provider verification | Mock used | Status |
 |----------|----------|----------|----------|----------------|----------------------|-----------|--------|
 | App test harness (deploy / fidelity / readiness) | hobo-bindle-test-suite | hobo-app-test-harness | in-process HTTP-shaped | `pacts/app-test-harness.pact.json` | `test/harness.test.ts`, `test/lanes.test.ts`, `test/readiness.test.ts` | none — the real harness runs | active |
+| Queue, topic, secret, data, schedule, key-value, bucket and flag emulator access | HoboApplicationTestSuite | HoboServiceEmulators | in-process HTTP-shaped | `pacts/service-emulators.pact.json` | `test/service-emulators.pact.test.ts` executes the actual harness | none | provider_verified |
 
 ## Refusal interactions
 
@@ -25,3 +26,8 @@ The two success interactions exist to pin the fidelity attestation: the deploy
 response carries a per-label count and a teardown order, and the fidelity
 response shows `prod_readiness_claimable: false` once an assertion has rested
 on a `mocked` handle.
+
+The emulator pact pins observable port behavior and a wrong-kind refusal, not a
+cloud provider's behavior. The queue also reuses the runtime-local queue/clock
+pact; topic delivery and failure behavior use the executable Messaging
+conformance suite. No production-provider verification is implied.
