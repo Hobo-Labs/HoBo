@@ -45,12 +45,13 @@ idempotency.
 tool operations require their corresponding capabilities; unavailable or
 undeclared capabilities raise `CapabilityDeniedError`.
 
-Generated trainable modules carry a `// @generated` marker. Existing projects
-should run `hobo codegen` before checking generated-file freshness after upgrading.
-
-A function with a `"use training"` directive can set its `trainingIntent`
-property before registration. An explicit `intent` passed to `training.infer`
-takes precedence over that property.
+A function with a `"use training"` directive can declare intent in a comment
+immediately after the directive. `training.infer` accepts an explicit `intent`
+override; otherwise it reads that comment, then the function's `trainingIntent`
+property, and finally derives a default from the function name.
+Applying a training artifact serves its exact matching examples for a function
+with a body; other inputs still run that body. Removing the artifact restores
+the body for every input.
 
 `parseReplayReport` and `parseReplayDivergence` parse, don't validate: they
 reject malformed input and return parsed domain types with validated sequence

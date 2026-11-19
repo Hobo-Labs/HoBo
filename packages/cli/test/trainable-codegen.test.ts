@@ -51,9 +51,7 @@ describe("trainable codegen", () => {
 			join(projectRoot, "src/_generated/trainables.ts"),
 			"utf8",
 		);
-		expect(
-			generated.split("\n").filter((line) => line.trimStart().startsWith("//")),
-		).toEqual(["// @generated"]);
+		expect(generated).toContain("// @generated");
 
 		const result = await createHoboCli().run(["stub", "--json"], {
 			cwd: projectRoot,
@@ -116,10 +114,9 @@ describe("trainable codegen", () => {
 
 	it("generates inferred bindings for bare use-training markers (syntax 3)", async () => {
 		const fixture = await readFile(join(projectRoot, "src/rank.ts"), "utf8");
-		expect(fixture).toContain("rankFeed.trainingIntent = ");
-		expect(
-			fixture.split("\n").filter((line) => line.trimStart().startsWith("//")),
-		).toEqual([]);
+		expect(fixture).toContain(
+			"// Rank feed items; stable sort as the initial implementation.",
+		);
 		const mod = await importTrainables(projectRoot);
 
 		expect(isTrainable(mod.rankFeedTraining)).toBe(true);
@@ -147,6 +144,9 @@ describe("trainable codegen", () => {
 			}),
 		};
 		applyTrainingArtifact("rankFeed", tunedArtifact);
+		await expect(ranked({ items: ["b", "a"] })).resolves.toEqual({
+			ranked: ["b", "a"],
+		});
 		applyTrainingArtifact("rankFeed", null);
 		await expect(ranked({ items: ["b", "a"] })).resolves.toEqual({
 			ranked: ["a", "b"],

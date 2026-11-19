@@ -283,7 +283,7 @@ function toDeclaredModule(
 	ambient: AmbientTrainableClass,
 	layout: CodegenLayout,
 ): DeclaredModule {
-	const { declared } = ambient;
+	const { declared, file } = ambient;
 	const fromDir = posix.dirname(layout.files.trainables);
 	const path = posix.join(fromDir, "declared", `${declared.className}.ts`);
 	const specifier = `./${posix.relative(fromDir, path).replace(/\.ts$/u, ".js")}`;
@@ -295,7 +295,7 @@ function toDeclaredModule(
 				fromDir,
 				posix.dirname(path),
 			),
-			header: ["// @generated"],
+			header: [`// @generated from ${file}`],
 		}),
 	});
 	const entries = declared.operations.map((operation) => {
