@@ -109,6 +109,7 @@ if (repository.status !== 0 || !repository.stdout.trim()) {
 	}
 
 	let committedChangesClean = stateAvailable;
+	let failedCheckpoint = checkpointBase;
 	for (const mode of ["--worktree", ...bases]) {
 		const result = spawnSync(
 			process.execPath,
@@ -132,10 +133,32 @@ if (repository.status !== 0 || !repository.stdout.trim()) {
 					`Guard exited ${result.status}.\n`,
 			);
 			process.exitCode = 2;
-			if (mode !== "--worktree") committedChangesClean = false;
+			if (mode !== "--worktree") {
+				committedChangesClean = false;
+				if (mode === requestedBase && head) {
+					const requestedCommit = git([
+						"rev-parse",
+						"--verify",
+						"--end-of-options",
+						`${mode.slice("--base=".length)}^{commit}`,
+					]);
+					const requestedAncestor =
+						requestedCommit.status === 0
+							? git(["merge-base", requestedCommit.stdout.trim(), head])
+							: undefined;
+					if (requestedAncestor?.status === 0) {
+						const ancestor = requestedAncestor.stdout.trim();
+						const common = failedCheckpoint
+							? git(["merge-base", failedCheckpoint, ancestor])
+							: undefined;
+						failedCheckpoint =
+							common?.status === 0 ? common.stdout.trim() : ancestor;
+					}
+				}
+			}
 		}
 	}
-	const checkpoint = committedChangesClean ? head : checkpointBase;
+	const checkpoint = committedChangesClean ? head : failedCheckpoint;
 	if (stateAvailable && checkpoint) {
 		for (const target of [stateFile, repositoryStateFile]) {
 			const temporaryStateFile = `${target}.${process.pid}`;

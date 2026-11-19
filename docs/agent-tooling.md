@@ -14,9 +14,9 @@ common `source:guard` for the languages and source templates listed in
 `AGENTS.md`. Hooks check the worktree and commits since their last clean
 checkpoint on each branch. New branches inherit a recent ancestor checkpoint;
 otherwise hooks check the latest commit to start a session or resume after 12
-hours of inactivity. A failing committed check keeps its checkpoint until the
-changes are fixed. Checkpoints live in the system temporary directory, or in
-`HOBO_AGENT_POLICY_STATE_DIR` when set. Commit checks read staged content, CI
+hours of inactivity. A failing committed check, including an explicit `--base`
+check, keeps its checkpoint until the fix is committed. Checkpoints live in the
+system temporary directory, or in `HOBO_AGENT_POLICY_STATE_DIR` when set. Commit checks read staged content, CI
 checks the PR diff, and the worktree check also finds ignored agent planning
 artifacts.
 

@@ -57,18 +57,22 @@ function fixture() {
 	return directory;
 }
 
-function runHook(cwd: string) {
+function runHook(cwd: string, args: readonly string[] = []) {
 	let stateDirectory = stateDirectories.get(cwd);
 	if (!stateDirectory) {
 		stateDirectory = mkdtempSync(join(tmpdir(), "hobo-agent-policy-state-"));
 		stateDirectories.set(cwd, stateDirectory);
 		scratch.push(stateDirectory);
 	}
-	return spawnSync(process.execPath, ["--experimental-strip-types", hook], {
-		cwd,
-		env: { ...env, HOBO_AGENT_POLICY_STATE_DIR: stateDirectory },
-		encoding: "utf8",
-	});
+	return spawnSync(
+		process.execPath,
+		["--experimental-strip-types", hook, ...args],
+		{
+			cwd,
+			env: { ...env, HOBO_AGENT_POLICY_STATE_DIR: stateDirectory },
+			encoding: "utf8",
+		},
+	);
 }
 
 function ageCheckpoint(cwd: string) {
@@ -167,6 +171,39 @@ describe("agent source policy hook", () => {
 		assert.equal(result.status, 2);
 		assert.match(result.stderr, /sample\.ts:1/u);
 		writeFileSync(join(repository, "sample.ts"), "export const value = 1;\n");
+		git(repository, ["add", "sample.ts"]);
+		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
+		assert.equal(runHook(repository).status, 0);
+	});
+
+	it("retains an explicitly requested committed check until fixed", () => {
+		const repository = fixture();
+		const rootCommit = spawnSync("git", ["rev-parse", "HEAD"], {
+			cwd: repository,
+			env,
+			encoding: "utf8",
+		});
+		assert.equal(rootCommit.status, 0, rootCommit.stderr);
+		const file = join(repository, "sample.ts");
+		writeFileSync(file, "// explanation\nexport const value = 1;\n");
+		git(repository, ["add", "sample.ts"]);
+		git(repository, ["commit", "--quiet", "-m", "add explanation"]);
+		git(repository, [
+			"commit",
+			"--allow-empty",
+			"--quiet",
+			"-m",
+			"another commit",
+		]);
+		assert.equal(runHook(repository).status, 0);
+		let result = runHook(repository, [`--base=${rootCommit.stdout.trim()}`]);
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /sample\.ts:1/u);
+		git(repository, ["commit", "--allow-empty", "--quiet", "-m", "later"]);
+		result = runHook(repository);
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /sample\.ts:1/u);
+		writeFileSync(file, "export const value = 1;\n");
 		git(repository, ["add", "sample.ts"]);
 		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
 		assert.equal(runHook(repository).status, 0);
