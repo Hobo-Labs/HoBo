@@ -5,6 +5,10 @@ export {
 	QuarantineReportSchema,
 	type QuarantineReprocessFinding,
 	QuarantineReprocessFindingSchema,
+	type ProjectionReplicaObservation,
+	ProjectionReplicaObservationSchema,
+	type ProjectionReplicaReport,
+	ProjectionReplicaReportSchema,
 } from "./_generated/data_pb.js";
 export {
 	type ActorHost,
@@ -97,6 +101,10 @@ export {
 	type ProjectionRebuildOptions,
 	type ProjectionRebuildShardResult,
 } from "./projection-rebuild.js";
+export {
+	type ProjectionReplicaReportOptions,
+	readProjectionReplicaReport,
+} from "./projection-replica-report.js";
 export {
 	type QuarantineReportOptions,
 	readQuarantineReport,

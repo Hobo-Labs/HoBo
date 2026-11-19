@@ -166,6 +166,7 @@ message ProjectionReplicaConfiguredData {
   string replica_camp_id = 3;
   string source_stream_id = 4;
   uint64 bound_ms = 5;
+  string read_class = 6;
 }
 
 message CrossCampProjectionLagData {
@@ -180,6 +181,27 @@ message CrossCampProjectionLagData {
 message ProjectionReadEvidence {
   string source = 1;
   string read_class = 2;
+}
+
+message ProjectionReplicaObservation {
+  string projection = 1;
+  string owner_camp_id = 2;
+  string replica_camp_id = 3;
+  string replica_stream_id = 4;
+  string source_stream_id = 5;
+  uint64 source_position = 6;
+  uint64 bound_ms = 7;
+  string staleness_status = 8;
+  optional uint64 checked_at_ms = 9;
+  optional uint64 observed_lag_ms = 10;
+  bool lag_signal_active = 11;
+  bool missing_lag_signal = 12;
+  repeated ProjectionReadEvidence supported_reads = 13;
+  string default_read_class = 14;
+}
+
+message ProjectionReplicaReport {
+  repeated ProjectionReplicaObservation replicas = 1;
 }
 
 message PaginatedChangeData {
