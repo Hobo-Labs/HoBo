@@ -39,21 +39,16 @@ test("rejects malformed traceparents with a typed error", () => {
 		42,
 		"",
 		"not-a-traceparent",
-		// unsupported version
 		"01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
-		// uppercase hex
 		"00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01",
-		// short trace id
 		"00-4bf92f3577b34da6a3ce929d0e0e47-00f067aa0ba902b7-01",
-		// all-zero trace id
 		"00-00000000000000000000000000000000-00f067aa0ba902b7-01",
-		// all-zero span id
 		"00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
 	];
 	for (const value of invalid) {
 		assert.throws(
 			() => parseTraceContext(value),
-			(error: unknown) =>
+			(error) =>
 				error instanceof TrajectoryCaptureParseError &&
 				error.code === "HOBO_TRAINING_TRAJECTORY_PARSE",
 			`expected typed parse error for ${String(value)}`,
