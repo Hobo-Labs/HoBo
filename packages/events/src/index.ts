@@ -37,6 +37,7 @@ export {
 	pricingCorpusBaseline,
 } from "./pricing-event-contracts.js";
 export {
+	CommandObservationError,
 	createReactor,
 	defineMaterialization,
 	type Materialization,
