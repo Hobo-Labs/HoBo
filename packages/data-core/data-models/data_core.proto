@@ -437,6 +437,14 @@ message MigrationPhaseAppliedEventData {
   // An in-place phase found already in effect by the plan's probe after an
   // unanswered intent; this run did not run its statements.
   optional bool recovered = 7;
+  optional string projection = 8;
+  optional string target_sink_id = 9;
+  optional string schema_version = 10;
+  optional string backfill_kind = 11;
+  optional string strategy = 12;
+  optional bool checkpointed = 13;
+  optional string source_position = 14;
+  optional string config_hash = 15;
 }
 
 // Written before an in-place phase runs its statements, as a compare-and-set
@@ -477,6 +485,10 @@ message MigrationCutOverEventData {
   // When the source's fence was first requested: where a rollback's erasure
   // replay is windowed from.
   optional string fenced_from = 10;
+  optional string projection = 11;
+  optional string from_sink_id = 12;
+  optional string to_sink_id = 13;
+  optional string cutover = 14;
 }
 
 message MigrationRolledBackEventData {

@@ -84,12 +84,14 @@ package hobo
 	toSinkId?:        string & !=""
 	configHash?:      =~"^sha256:[a-f0-9]{64}$"
 	verifiedPosition?: string & =~"^(0|[1-9][0-9]*)$"
+	migrationId?:      string & !=""
 	{
 		matchDecidedRef: string & !=""
 		fromSinkId?: _|_
 		toSinkId?: _|_
 		configHash?: _|_
 		verifiedPosition?: _|_
+		migrationId?: _|_
 	} | {
 		matchDecidedRef?: _|_
 		fromSinkId: string & !=""

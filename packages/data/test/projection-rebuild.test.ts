@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EventInput, EventStore } from "@hobo/core";
+import type { DurableEventStore, EventInput, EventStore } from "@hobo/core";
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -59,10 +59,12 @@ function fixture(batchSize = 2, shardCount = 3) {
 			journalPrefix: "rebuild:tickets:v2",
 			cutoverStreamId: "active:tickets",
 			projection: "tickets",
+			migrationId: "tickets-v2-migration",
 			schemaVersion: "v2",
 			targetSinkId: "green",
 			tenant,
 			actor,
+			clock: () => "2026-01-02T03:04:05.000Z",
 			shardCount,
 			batchSize,
 			eventTypes: ["ticket.Opened", "ticket.Commented", "ticket.Closed"],
@@ -135,20 +137,49 @@ describe("durable projection rebuild", () => {
 			},
 			positions: [barrier.toString(), barrier.toString(), barrier.toString()],
 		});
+		const audit = [];
+		for await (const event of reopened.journal.read("rebuild:tickets:v2/audit"))
+			audit.push(event);
+		expect(audit).toHaveLength(1);
+		expect(audit[0]).toMatchObject({
+			type: "migration.PhaseApplied",
+			v: 2,
+			data: {
+				migrationId: "tickets-v2-migration",
+				phase: "backfill",
+				backfillKind: "deterministic-replay",
+				strategy: "rebuild-from-zero",
+				checkpointed: true,
+				appliedAt: "2026-01-02T03:04:05.000Z",
+				sourcePosition: barrier.toString(),
+			},
+		});
 		expect(await resumed.cutover("blue", barrier)).toBe("green");
 		expect(await resumed.activeSink()).toBe("green");
 		expect(await resumed.cutover("blue", barrier)).toBe("green");
 		const cutovers = [];
 		for await (const event of reopened.journal.read("active:tickets"))
 			cutovers.push(event);
-		expect(cutovers).toHaveLength(1);
+		expect(cutovers.map((event) => event.type)).toEqual([
+			"migration.CutOver",
+			"projection.SinkRebound",
+		]);
 		expect(cutovers[0]).toMatchObject({
+			v: 2,
+			data: {
+				migrationId: "tickets-v2-migration",
+				cutover: "blue-green",
+				logPosition: barrier.toString(),
+			},
+		});
+		expect(cutovers[1]).toMatchObject({
 			type: "projection.SinkRebound",
 			data: {
 				projection: "tickets",
 				fromSinkId: "blue",
 				toSinkId: "green",
 				verifiedPosition: barrier.toString(),
+				migrationId: "tickets-v2-migration",
 			},
 		});
 		expect(
@@ -187,6 +218,63 @@ describe("durable projection rebuild", () => {
 		});
 	});
 
+	it("retries a failed backfill audit without applying rows twice", async () => {
+		const f = fixture(3, 1);
+		await append(f.source, "ticket:a", [
+			{ type: "ticket.Opened" },
+			{ type: "ticket.Commented" },
+		]);
+		let fail = true;
+		const journal: EventStore = {
+			...f.journal,
+			async append(streamId, events, options) {
+				if (streamId === "rebuild:tickets:v2/audit" && fail) {
+					fail = false;
+					throw new Error("audit write failed");
+				}
+				return f.journal.append(streamId, events, options);
+			},
+		};
+		const runtime = createProjectionRebuild({ ...f.options(), journal });
+		await expect(runtime.runBatch()).rejects.toThrow("audit write failed");
+		await catchUp(runtime);
+		expect((await runtime.read()).rows["ticket:a"]).toEqual({
+			count: 1,
+			status: "open",
+		});
+		const facts = [];
+		for await (const event of f.journal.read("rebuild:tickets:v2/audit"))
+			facts.push(event);
+		expect(facts.map((event) => event.type)).toEqual([
+			"migration.PhaseApplied",
+		]);
+	});
+
+	it("does not report caught up when the source advances during the check", async () => {
+		const f = fixture(3, 1);
+		const position = await append(f.source, "ticket:a", [
+			{ type: "ticket.Opened" },
+		]);
+		let injected = false;
+		const source: DurableEventStore = {
+			...f.source,
+			async *readAll(options) {
+				if (!injected && options?.after === position) {
+					injected = true;
+					await append(f.source, "ticket:a", [{ type: "ticket.Commented" }], 1);
+				}
+				yield* f.source.readAll(options);
+			},
+		};
+		const runtime = createProjectionRebuild({ ...f.options(), source });
+		expect((await runtime.runBatch())[0]?.caughtUp).toBe(false);
+		await catchUp(runtime);
+		expect((await runtime.read()).rows["ticket:a"]).toEqual({
+			count: 1,
+			status: "open",
+		});
+	});
+
 	it("refuses a cutover barrier when the source has advanced beyond it", async () => {
 		const f = fixture(3, 1);
 		const oldPosition = await append(f.source, "ticket:a", [
@@ -218,26 +306,95 @@ describe("durable projection rebuild", () => {
 		);
 	});
 
+	it("retries a failed cutover without leaving partial audit facts", async () => {
+		const f = fixture(3, 1);
+		const position = await append(f.source, "ticket:a", [
+			{ type: "ticket.Opened" },
+		]);
+		let fail = true;
+		const journal: EventStore = {
+			...f.journal,
+			async append(streamId, events, options) {
+				if (streamId === "active:tickets" && fail) {
+					fail = false;
+					throw new Error("cutover write failed");
+				}
+				return f.journal.append(streamId, events, options);
+			},
+		};
+		const runtime = createProjectionRebuild({ ...f.options(), journal });
+		await catchUp(runtime);
+		await expect(runtime.cutover("blue", position)).rejects.toThrow(
+			"cutover write failed",
+		);
+		expect(await runtime.activeSink()).toBeUndefined();
+		expect(await runtime.cutover("blue", position)).toBe("green");
+		const events = [];
+		for await (const event of f.journal.read("active:tickets"))
+			events.push(event);
+		expect(events.map((event) => event.type)).toEqual([
+			"migration.CutOver",
+			"projection.SinkRebound",
+		]);
+	});
+
+	it("rejects an incomplete cutover audit", async () => {
+		const f = fixture(3, 1);
+		await f.journal.append(
+			"active:tickets",
+			[
+				{
+					type: "migration.CutOver",
+					v: 2,
+					data: {
+						migrationId: "tickets-v2-migration",
+						cutOverAt: "2026-01-02T03:04:05.000Z",
+						projection: "tickets",
+						fromSinkId: "blue",
+						toSinkId: "green",
+						cutover: "blue-green",
+						logPosition: "1",
+					},
+				},
+			],
+			{ actor, tenant, expectedSeq: 0 },
+		);
+		await expect(
+			createProjectionRebuild(f.options()).activeSink(),
+		).rejects.toThrow(/incomplete rebuild audit/);
+	});
+
 	it("continues from a durable snapshot and folds only its tail", async () => {
 		const f = fixture(3, 2);
 		const position = await append(f.source, "ticket:a", [
 			{ type: "ticket.Opened" },
 			{ type: "ticket.Commented" },
 		]);
-		await append(f.source, "ticket:a", [{ type: "ticket.Commented" }], 2);
+		const tailPosition = await append(
+			f.source,
+			"ticket:a",
+			[{ type: "ticket.Commented" }],
+			2,
+		);
 		const seeded = createProjectionRebuild({
 			...f.options(),
 			seed: { position, rows: { "ticket:a": { count: 1, status: "open" } } },
 		});
 		await catchUp(seeded);
 		f.close();
-		const resumed = createProjectionRebuild(f.options(f.open()));
+		const reopened = f.open();
+		const resumed = createProjectionRebuild(f.options(reopened));
 		expect((await resumed.read()).rows).toEqual({
 			"ticket:a": { count: 2, status: "open" },
 		});
 		expect(
 			(await resumed.runBatch()).every((shard) => shard.scanned === 0),
 		).toBe(true);
+		await resumed.cutover("blue", tailPosition);
+		const audit = [];
+		for await (const event of reopened.journal.read("rebuild:tickets:v2/audit"))
+			audit.push(event);
+		expect(audit[0]).toMatchObject({ data: { strategy: "snapshot-tail" } });
 	});
 
 	it("restores the seed after initialization fails on one shard", async () => {
@@ -357,7 +514,7 @@ describe("durable projection rebuild", () => {
 			determinism: "nondeterministic" as const,
 		};
 		expect(() => createProjectionRebuild(options)).toThrow(/recorded-output/);
-		await append(f.source, "ticket:a", [
+		const barrier = await append(f.source, "ticket:a", [
 			{ type: "ticket.Opened" },
 			{ type: "embed.OutputRecorded" },
 		]);
@@ -375,6 +532,16 @@ describe("durable projection rebuild", () => {
 		expect((await runtime.read()).rows["ticket:a"]).toEqual({
 			count: 1,
 			status: "recorded",
+		});
+		await runtime.cutover("blue", barrier);
+		const events = [];
+		for await (const event of f.journal.read("rebuild:tickets:v2/audit"))
+			events.push(event);
+		expect(events[0]).toMatchObject({
+			data: {
+				backfillKind: "recorded-output",
+				strategy: "recorded-output-backfill",
+			},
 		});
 	});
 
