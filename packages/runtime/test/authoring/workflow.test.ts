@@ -492,6 +492,91 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
+	it("resumes legacy run.Started without args as null input", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "legacy-start",
+				streamId: "run/legacy-no-args",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					seed: "legacy-no-args",
+					workflowName: "legacy-no-args",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "legacy-complete",
+				streamId: "run/legacy-no-args",
+				seq: 2,
+				type: "run.Completed",
+				data: { result: "from-journal" },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "legacy-no-args",
+			run() {
+				return "live";
+			},
+		});
+		const handle = await engine.resume(wf, "legacy-no-args", null);
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("from-journal");
+	});
+
+	it("rejects duplicate step outcomes at the same positional index", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/dup-index";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-index",
+					workflowName: "dup-index",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done-a",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "a", index: 0, result: 1 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done-b",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "b", index: 0, result: 2 },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "dup-index",
+			async run(ctx) {
+				await ctx.step("a", () => 1);
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "dup-index", {})).rejects.toThrow(
+			/duplicate run.StepCompleted/,
+		);
+	});
+
 	it("rejects duplicate run.StepCompleted facts for the same step", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/dup-step-complete";

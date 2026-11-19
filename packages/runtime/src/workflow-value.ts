@@ -40,12 +40,16 @@ export function parseRunStartedFact(
 	for (const key of Object.keys(data)) {
 		if (!allowed.has(key)) throw new TypeError("invalid run.Started");
 	}
-	if (!("args" in data)) throw new TypeError("invalid run.Started");
-	const rawArgs = data.args;
 	let args: JsonValue | null;
-	if (rawArgs === null) args = null;
-	else if (!isStoredJsonValue(rawArgs)) throw new TypeError("invalid run.Started");
-	else args = rawArgs;
+	if (!("args" in data)) {
+		args = null;
+	} else {
+		const rawArgs = data.args;
+		if (rawArgs === null) args = null;
+		else if (!isStoredJsonValue(rawArgs))
+			throw new TypeError("invalid run.Started");
+		else args = rawArgs;
+	}
 	const hasWorkflowName = "workflowName" in data;
 	let workflowName: string | undefined;
 	if (hasWorkflowName) {
@@ -57,8 +61,6 @@ export function parseRunStartedFact(
 	if ("seed" in data) {
 		if (!isJsonString(data.seed)) throw new TypeError("invalid run.Started");
 		runSeed = data.seed;
-	} else if (hasWorkflowName) {
-		throw new TypeError("invalid run.Started");
 	} else {
 		runSeed = defaultSeed;
 	}

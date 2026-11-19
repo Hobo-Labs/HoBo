@@ -197,7 +197,7 @@ export function createWorkflowEngine(
 					throw new Error(`invalid run.StepCompleted for ${runId}`);
 				}
 				const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
-				const key = `${fact.name}:${fact.index}`;
+				const key = String(fact.index);
 				const counts = stepOutcomeCounts.get(key) ?? {
 					completed: 0,
 					failed: 0,
@@ -209,7 +209,7 @@ export function createWorkflowEngine(
 					throw new Error(`invalid run.StepFailed for ${runId}`);
 				}
 				const fact = parseRunStepFailedFact(cloneAsJson(event.data));
-				const key = `${fact.name}:${fact.index}`;
+				const key = String(fact.index);
 				const counts = stepOutcomeCounts.get(key) ?? {
 					completed: 0,
 					failed: 0,
