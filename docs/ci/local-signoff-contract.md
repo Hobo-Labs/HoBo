@@ -46,6 +46,10 @@ the public repository and committed routing policy. It does not dispatch the
 optional box job: a one-time fleet observation cannot reserve capacity or
 recover jobs if the fleet becomes unavailable after routing. Missing evidence
 stops the batch before jobs are queued. Explicit operator pins remain in effect.
+On pull requests, the route action, its executable dependencies, and routing
+policy come from the event's base checkout. Proposed workflow content can still
+change the job graph itself; that requires a separately trusted required
+workflow to enforce.
 
 The candidates are general PR routes and enabled provider inventory. The
 special `runnerRouting.boxRunner` label is reserved for the deps-image job and
