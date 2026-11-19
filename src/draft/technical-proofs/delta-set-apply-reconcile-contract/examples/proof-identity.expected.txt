@@ -1,3 +1,0 @@
-slug: delta-set-apply-reconcile-contract
-layer: technical
-proof-identity: ok

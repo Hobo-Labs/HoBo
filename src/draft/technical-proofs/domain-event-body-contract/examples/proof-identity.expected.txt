@@ -1,3 +1,0 @@
-slug: domain-event-body-contract
-layer: technical
-proof-identity: ok

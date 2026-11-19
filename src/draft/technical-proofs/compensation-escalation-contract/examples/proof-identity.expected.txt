@@ -1,3 +1,0 @@
-slug: compensation-escalation-contract
-layer: technical
-proof-identity: ok

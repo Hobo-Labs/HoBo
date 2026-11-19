@@ -1,3 +1,0 @@
-slug: experiment-statistical-analysis-contract
-layer: technical
-proof-identity: ok

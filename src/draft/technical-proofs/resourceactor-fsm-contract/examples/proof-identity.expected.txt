@@ -1,3 +1,0 @@
-slug: resourceactor-fsm-contract
-layer: technical
-proof-identity: ok

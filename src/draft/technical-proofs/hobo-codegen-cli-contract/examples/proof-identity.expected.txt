@@ -1,3 +1,0 @@
-slug: hobo-codegen-cli-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: graphql-facade-runtime-contract
-layer: technical
-proof-identity: ok

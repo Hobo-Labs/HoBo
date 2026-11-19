@@ -1,3 +1,0 @@
-slug: snapshot-replay-divergence-contract
-layer: technical
-proof-identity: ok

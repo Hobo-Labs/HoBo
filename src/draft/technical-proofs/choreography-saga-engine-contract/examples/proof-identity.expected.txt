@@ -1,3 +1,0 @@
-slug: choreography-saga-engine-contract
-layer: technical
-proof-identity: ok

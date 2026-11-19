@@ -1,3 +1,0 @@
-slug: local-dev-test-authoring-contract
-layer: technical
-proof-identity: ok

@@ -1,7 +1,7 @@
 {
   "layer": "technical",
   "slug": "manifest-resource-intent-bridge-contract",
-  "title": "Manifest → ResourceIntent Bridge Contract",
+  "title": "Manifest \u2192 ResourceIntent Bridge Contract",
   "linear": "HOBO-696",
   "references": {
     "technicalProofs": [],
@@ -9,10 +9,7 @@
     "expProofs": []
   },
   "artifacts": {
-    "examples": "examples",
-    "notebook": "notebook.ipynb",
-    "diagrams": [],
-    "bench": "bench"
+    "diagrams": []
   },
   "waivers": []
 }
