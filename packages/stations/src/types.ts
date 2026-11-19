@@ -26,7 +26,7 @@ export type RailReconcilerMode = "conductor" | "agent" | "publisher";
 
 export type RailDeliveryPolicy = Readonly<{
 	reconcilerMode: RailReconcilerMode;
-	publisher?: string;
+	publisher?: Readonly<{ target: string; repository?: string }>;
 	syncMode: "auto" | "manual";
 	prune: boolean;
 }>;
