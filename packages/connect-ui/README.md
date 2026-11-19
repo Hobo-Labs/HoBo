@@ -39,8 +39,10 @@ a broken or stranded one.
 
 **Evaluator, secretless first.** `evaluatorFromEnv` uses `VERCEL_OIDC_TOKEN`
 (short-lived, on Vercel or after `vercel env pull`), then `AI_GATEWAY_API_KEY`.
-`HOBO_CONNECT_UI_COMPOSE=off` disables the model. `HOBO_CONNECT_UI_MODEL`
-picks it (default `typesafe-ai/jev`). The composer API is experimental, so
+Composition is opt-in: `HOBO_CONNECT_UI_COMPOSE=on` (case-sensitive) enables
+the model together with a credential; `off` disables it even when a credential
+is set, and unset means a credential alone does nothing. `HOBO_CONNECT_UI_MODEL`
+picks the model (default `typesafe-ai/jev`). The composer API is experimental, so
 `@json-render/*` is pinned to an exact version.
 
 ## The loopback server
