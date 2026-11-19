@@ -34,6 +34,10 @@ Rejected, stale, partial, unpriced, or cross-currency quotes fail closed and
 never fall back to list price. `DispatchCostQuote` omits the advisory
 `allocatedEffective` field. A fixed-fixture SHA-256 golden pins an existing v1 decision; the numeric safety corrections below can change v1 decisions for edge cases.
 
+Overflowing available balances are capped at the largest finite number;
+reservations or settlements that cannot be represented leave the ledger and
+existing holds unchanged.
+
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's
 declared currency, using the existing `budgetCap`/`listUnitCost` number units.
 `reserve({ expectedSeq, reservationId, providerId, dimension, units, unitCost?,
@@ -87,4 +91,4 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 
 The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-routing/SKILL.md) describes generated reservation histories, the bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. The legacy number contract is interpreted as decimal values; liabilities round upward and available balances downward when conversion back to numbers requires it. This protects the budget conservatively but can leave tiny residual holds or reject an edge-case request that is exactly affordable in decimal arithmetic. Provider overruns are recorded, and callers remain responsible for authoritative quotes and fencing.
 
-Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. The abstract proof does not establish that the TypeScript implementation refines it.
+Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. It includes the hard-budget and overflow regression suites and checks weakened models for counterexamples. The skill also documents a separate scratch-mutation command for the overflow and estimate guards. The abstract proof does not establish that the TypeScript implementation refines it or model numeric overflow.

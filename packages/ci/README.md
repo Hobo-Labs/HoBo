@@ -258,6 +258,18 @@ ask GitHub-hosted runners. `selectFleetBackend` orders the fleet, ARC, the
 local box, then GitHub-hosted; see "Runner routing" in
 [RUNNER-QUEUE.md](RUNNER-QUEUE.md).
 
+`selectFleetVerification` keeps that runner order and can select an opt-in
+local signoff only after all enabled runner tiers are known unavailable. It
+waits on unknown capacity when no runner is available, and always waits on
+malformed or contradictory observations. This is a separate
+verification path, not a `runs-on` label or an Actions job completion.
+In the HoBo checkout, after verifying the live policy as described in the
+[runbook](RUNNER-QUEUE.md#sign-off-without-an-actions-runner),
+`pnpm ci:attest fleet --local-signoff --policy-current` can apply that choice
+to a local run and publish its covered statuses with `gh-signoff`.
+The coordinator confirms an unpinned fleet slip against recent pickup evidence
+for its exact label; a failed queue read leaves availability unknown.
+
 An account can offer its own development machine with `provider: "local"`,
 `backend: "gh-actions"`, `runsOn: "hobo-local-host"`, and `concurrency: 1`.
 The workstation has zero provider runner-minute price and zero free-minute
@@ -320,6 +332,22 @@ UUID for a new execution, and reuse it only to replay that execution. Rebinding
 a different source directory/revision while reusing an old ID does not request
 a new run. Relative workspace paths are portable; host absolute paths and
 provider-specific toolchain/environment defaults are not part of this contract.
+
+`@hobo/ci/testing` provides `createScriptedPipelineBackend` for tests of the
+same `PipelineBackend` interface. Supply a backend kind and optional handlers
+for opening a session, running steps, producing artifact bytes, closing, and
+observing final usage. The returned `port` can be passed to `executePipeline`
+or `PipelineScheduler`; `calls` is a copied history of operation names and
+identifiers, and `clear()` resets that history. Each factory call has its own
+history. Its `mocked` fidelity is compatible with HoBo's test-harness
+convention. A session aborts pending work and waits for it to settle before close
+completes, so asynchronous handlers must respond to their abort signal.
+Unscripted steps succeed with empty output; an unscripted artifact is missing.
+
+The scripted backend executes no commands and contacts no provider. Its
+results, artifact bytes, allocation behavior and usage observations are test
+inputs; they do not establish provider compatibility, real cancellation,
+durability or billing finality.
 
 ## Apply routing and budgets
 

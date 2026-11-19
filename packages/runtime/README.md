@@ -43,6 +43,29 @@ manufacturing placeholder values.
 
 Fresh workflows claim a new journal atomically before user steps execute. Generated IDs use random UUIDs; a host that needs the ID to recover after a crash can pass `{ runId }` to `start` and persist that ID first. A duplicate ID is rejected, assuming the event store enforces its expected-sequence compare-and-set.
 
+Workflow input must be an ordinary JSON tree. The engine captures it before
+the first asynchronous operation, so later caller edits do not change the run.
+Unsupported inputs, including `undefined`, non-finite numbers, dates, shared
+references, proxies, accessors and frozen objects, are rejected before a new
+journal is claimed. Convert them to explicit JSON before starting or resuming.
+Older runs created from such inputs may need application-specific recovery.
+
+Workflow and step results must be ordinary JSON trees or top-level `undefined`.
+Dates, non-finite numbers, shared or circular references, accessors, proxies,
+sparse arrays, frozen objects and other values that cannot be faithfully
+replayed are refused. Results are captured before storage waits, so later edits
+to the original do not change the first returned value. An unsupported result
+raises a workflow failure; an unsupported step result also records a step
+failure. If the workflow catches that failure and the host stops before a
+terminal outcome is recorded, this version can run the failed step again on
+resume. Convert other values to explicit JSON. Values already lost in older
+journals cannot be recovered.
+
+The [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md)
+includes statecharts and bounded models for input and result capture. They
+check 18 input states and 15 result states, including edits around journal
+writes and restarts.
+
 `resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
 Resuming a completed or failed run returns its recorded terminal outcome without

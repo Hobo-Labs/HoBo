@@ -51,7 +51,8 @@ default; use `--mode complete` to remove them through the deployment gate.
 Broker placement and budgeted hosting refuse an explicit `--mode` until their
 execution paths can honor it. `hobo up
 --what-if` and `hobo down --what-if` report changes without applying them and
-require the current CD Set to have a converged observation. Revision selectors
+require the current CD Set to have a converged observation. `--dry-run` and
+`--preview` are aliases for `--what-if` on these two commands. Revision selectors
 and rollback cannot be combined with `--what-if`; rollback restores the prior
 Set exactly and cannot be combined with `--mode`.
 
