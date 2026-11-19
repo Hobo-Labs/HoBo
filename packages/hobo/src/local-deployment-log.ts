@@ -66,6 +66,8 @@ export async function readLocalDeploymentLog(
 			lines: [],
 			truncated: false,
 			partial: false,
+			overflow: false,
+			discardPartial: false,
 			cursor: null,
 		};
 	try {
@@ -84,8 +86,17 @@ export async function readLocalDeploymentLog(
 			bytesRead += result.bytesRead;
 		}
 		const bytes = buffer.subarray(0, bytesRead);
-		const firstNewline = offset > 0 ? bytes.indexOf(10) : -1;
-		const start = firstNewline >= 0 ? firstNewline + 1 : 0;
+		const previous = Buffer.alloc(1);
+		const previousRead =
+			offset > 0 ? await file.read(previous, 0, 1, offset - 1) : undefined;
+		const cutLine =
+			offset > 0 && (previousRead?.bytesRead !== 1 || previous[0] !== 10);
+		const firstNewline = cutLine ? bytes.indexOf(10) : -1;
+		const start = cutLine
+			? firstNewline >= 0
+				? firstNewline + 1
+				: bytes.length
+			: 0;
 		const content = bytes.subarray(start);
 		const partial = content.length > 0 && content.at(-1) !== 10;
 		const allLines = content.toString("utf8").split(/\r?\n/u);
@@ -96,6 +107,8 @@ export async function readLocalDeploymentLog(
 			lines: allLines.slice(-limit),
 			truncated: offset > 0 || allLines.length > limit,
 			partial,
+			overflow: cutLine && allLines.length < limit,
+			discardPartial: cutLine && firstNewline < 0 && bytes.length > 0,
 			cursor: {
 				device: dev,
 				inode: ino,
@@ -110,15 +123,21 @@ export async function readLocalDeploymentLog(
 export async function followLocalDeploymentLog(options: {
 	readonly projectDir: string;
 	readonly resource?: string | undefined;
+	readonly discardPartial?: boolean | undefined;
 	readonly cursor: LogCursor | null;
 	readonly signal: AbortSignal;
 	readonly onLine: (line: string) => void;
-	readonly onGap?: (reason: "rotated" | "truncated") => void;
+	readonly onGap?: (reason: "rotated" | "truncated" | "overflow") => void;
 	readonly pollIntervalMs?: number;
 }) {
 	let cursor = options.cursor;
 	let decoder = new StringDecoder("utf8");
 	let partial = "";
+	let dropping = options.discardPartial ?? false;
+	const gap = (reason: "rotated" | "truncated" | "overflow") => {
+		if (options.onGap) options.onGap(reason);
+		else options.onLine(`[log gap possible: source ${reason}]`);
+	};
 	while (!options.signal.aborted) {
 		const file = await openLog(options.projectDir, options.resource);
 		if (file) {
@@ -131,15 +150,16 @@ export async function followLocalDeploymentLog(options: {
 					cursor.offset > size
 				) {
 					const trailing = partial + decoder.end();
-					if (trailing) options.onLine(trailing);
+					if (trailing && !dropping) options.onLine(trailing);
 					if (cursor) {
-						options.onGap?.(
+						gap(
 							cursor.device !== dev || cursor.inode !== ino
 								? "rotated"
 								: "truncated",
 						);
 					}
 					partial = "";
+					dropping = false;
 					decoder = new StringDecoder("utf8");
 					cursor = { device: dev, inode: ino, offset: 0 };
 				}
@@ -154,15 +174,23 @@ export async function followLocalDeploymentLog(options: {
 					const bytesRead: number = readResult.bytesRead;
 					if (bytesRead === 0) break;
 					cursor = { ...cursor, offset: cursor.offset + bytesRead };
-					const lines = (
-						partial + decoder.write(bytes.subarray(0, bytesRead))
-					).split("\n");
+					let text = decoder.write(bytes.subarray(0, bytesRead));
+					if (dropping) {
+						const newline = text.indexOf("\n");
+						if (newline < 0) continue;
+						text = text.slice(newline + 1);
+						dropping = false;
+					}
+					const lines = (partial + text).split("\n");
 					partial = lines.pop() ?? "";
-					for (const line of lines)
-						options.onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
+					for (const line of lines) {
+						if (line.length > MAX_LOG_BYTES) gap("overflow");
+						else options.onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
+					}
 					if (partial.length > MAX_LOG_BYTES) {
-						options.onLine(partial);
+						gap("overflow");
 						partial = "";
+						dropping = true;
 					}
 				}
 			} finally {
@@ -178,5 +206,5 @@ export async function followLocalDeploymentLog(options: {
 		}
 	}
 	const trailing = partial + decoder.end();
-	if (trailing) options.onLine(trailing);
+	if (trailing && !dropping) options.onLine(trailing);
 }

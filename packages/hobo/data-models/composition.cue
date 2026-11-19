@@ -72,5 +72,5 @@ package hobo
 	resource?: string & !=""
 } | {
 	type:   "gap"
-	reason: "rotated" | "truncated"
+	reason: "rotated" | "truncated" | "overflow"
 }

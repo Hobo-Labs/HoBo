@@ -17,7 +17,10 @@ import {
 	createLocalDeploymentDownCommand,
 	startLocalDeployment,
 } from "../src/local-deployment.js";
-import { localDeploymentLogPath } from "../src/local-deployment-log.js";
+import {
+	localDeploymentLogPath,
+	readLocalDeploymentLog,
+} from "../src/local-deployment-log.js";
 import {
 	localLogResourcesPath,
 	localResourceLogPath,
@@ -208,6 +211,127 @@ it("follows complete lines across UTF-8 fragments and log rotation", async () =>
 			"[log gap possible: source rotated]",
 			"after rotation",
 		]);
+	} finally {
+		controller.abort();
+		await running;
+	}
+}, 10_000);
+
+it("does not discard a line when a bounded read starts at its boundary", async () => {
+	const project = await temporaryProject();
+	await mkdir(join(project, ".hobo"));
+	const retained = `marker\n${"x".repeat(1_048_576 - "marker\n".length - 1)}\n`;
+	await writeFile(localDeploymentLogPath(project), `old\n${retained}`);
+	const result = await readLocalDeploymentLog(project);
+	expect(result.lines[0]).toBe("marker");
+	expect(result.overflow).toBe(false);
+});
+
+it("reports an oversized initial line and skips its continuation", async () => {
+	const project = await temporaryProject();
+	await writeFile(join(project, "hobo.bindle.json"), "{}\n");
+	await mkdir(join(project, ".hobo"));
+	const logPath = localDeploymentLogPath(project);
+	await writeFile(logPath, "x".repeat(1_048_577));
+	const snapshot = await cli().run(["logs", "--json"], { cwd: project });
+	expect(JSON.parse(snapshot.stdout)).toEqual({
+		type: "gap",
+		reason: "overflow",
+	});
+	const controller = new AbortController();
+	const records: string[] = [];
+	let gapSeen = () => {};
+	const gapReady = new Promise<void>((resolve) => {
+		gapSeen = resolve;
+	});
+	const shell = createHoboCli({
+		commands: {
+			logs: createLogsCommand({
+				signal: controller.signal,
+				pollIntervalMs: 10,
+			}),
+		},
+	});
+	const running = shell.run(["logs", "--follow", "--json"], {
+		cwd: project,
+		onProgress: (line) => {
+			records.push(line);
+			const record = JSON.parse(line);
+			if (record.reason === "overflow") gapSeen();
+			if (record.message === "next") controller.abort();
+		},
+	});
+	try {
+		await gapReady;
+		await appendFile(logPath, "discarded\nnext\n");
+		expect((await running).exitCode).toBe(0);
+		expect(records.map((line) => JSON.parse(line))).toEqual([
+			{ type: "gap", reason: "overflow" },
+			{ type: "log", message: "next" },
+		]);
+	} finally {
+		controller.abort();
+		await running;
+	}
+}, 10_000);
+
+it("reports oversized lines as gaps and resumes at the next complete line", async () => {
+	const project = await temporaryProject();
+	await writeFile(join(project, "hobo.bindle.json"), "{}\n");
+	await mkdir(join(project, ".hobo"));
+	const logPath = localDeploymentLogPath(project);
+	await writeFile(logPath, "start\n");
+	const controller = new AbortController();
+	const records: Array<{ type: string; reason?: string; message?: string }> =
+		[];
+	let initialSeen = () => {};
+	let gapSeen = () => {};
+	const initialReady = new Promise<void>((resolve) => {
+		initialSeen = resolve;
+	});
+	const gapReady = new Promise<void>((resolve) => {
+		gapSeen = resolve;
+	});
+	const shell = createHoboCli({
+		commands: {
+			logs: createLogsCommand({
+				signal: controller.signal,
+				pollIntervalMs: 10,
+			}),
+		},
+	});
+	const running = shell.run(["logs", "--follow", "--json"], {
+		cwd: project,
+		onProgress: (line) => {
+			const record = JSON.parse(line);
+			records.push(line);
+			if (record.message === "start") initialSeen();
+			if (record.reason === "overflow") gapSeen();
+			if (record.message === "next") controller.abort();
+		},
+	});
+	try {
+		await initialReady;
+		await appendFile(logPath, "x".repeat(1_048_577));
+		await gapReady;
+		await appendFile(logPath, "ignored\nnext\n");
+		expect((await running).exitCode).toBe(0);
+		expect(records.map((line) => JSON.parse(line))).toEqual([
+			{ type: "log", message: "start" },
+			{ type: "gap", reason: "overflow" },
+			{ type: "log", message: "next" },
+		]);
+		const cue =
+			process.env.HOBO_CUE_BIN ||
+			fileURLToPath(
+				new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+			);
+		const schema = fileURLToPath(
+			new URL("../data-models/composition.cue", import.meta.url),
+		);
+		const gapFile = join(project, "overflow-record.json");
+		await writeFile(gapFile, records[1] ?? "");
+		execFileSync(cue, ["vet", schema, gapFile, "-d", "#LocalLogRecord"]);
 	} finally {
 		controller.abort();
 		await running;

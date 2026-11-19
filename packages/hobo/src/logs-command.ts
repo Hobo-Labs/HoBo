@@ -51,33 +51,41 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 				limit,
 				resource,
 			);
-			if (!follow)
+			if (!follow) {
+				const lines = [...log.lines];
+				const records = log.lines.map((message) =>
+					toJson(
+						LocalLogRecordSchema,
+						create(LocalLogRecordSchema, { type: "log", message, resource }),
+					),
+				);
+				if (log.overflow) {
+					lines.unshift("[log gap possible: source overflow]");
+					records.unshift(
+						toJson(
+							LocalLogRecordSchema,
+							create(LocalLogRecordSchema, { type: "gap", reason: "overflow" }),
+						),
+					);
+				}
 				return {
 					ok: true,
 					status: log.exists ? "tailed" : "no_history",
 					code: "HOBO_OK",
 					message: log.exists
-						? log.lines.join("\n")
+						? lines.join("\n")
 						: resource === undefined
 							? "No local deployment logs found. Run hobo up to start a deployment."
 							: `No logs for local resource ${resource}.`,
 					data: {
 						command: "logs",
 						projectDir,
-						lines: log.lines,
-						records: log.lines.map((message) =>
-							toJson(
-								LocalLogRecordSchema,
-								create(LocalLogRecordSchema, {
-									type: "log",
-									message,
-									resource,
-								}),
-							),
-						),
+						lines,
+						records,
 						truncated: log.truncated,
 					},
 				};
+			}
 
 			const emitLine = (message: string) =>
 				emitProgress(
@@ -94,7 +102,7 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 							)
 						: message,
 				);
-			const emitGap = (reason: "rotated" | "truncated") =>
+			const emitGap = (reason: "rotated" | "truncated" | "overflow") =>
 				emitProgress(
 					flags.json
 						? JSON.stringify(
@@ -105,6 +113,7 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 							)
 						: `[log gap possible: source ${reason}]`,
 				);
+			if (log.overflow) emitGap("overflow");
 			const initialLines = log.partial ? log.lines.slice(0, -1) : log.lines;
 			for (const line of initialLines) emitLine(line);
 			if (!log.exists && !flags.json)
@@ -119,6 +128,7 @@ export function createLogsCommand(deps: LogsCommandDeps = {}): CommandModule {
 				await followLocalDeploymentLog({
 					projectDir,
 					resource,
+					discardPartial: log.discardPartial,
 					cursor: log.cursor,
 					signal: deps.signal ?? controller.signal,
 					onLine: emitLine,
